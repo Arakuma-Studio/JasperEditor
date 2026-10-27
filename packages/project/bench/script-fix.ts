@@ -27,7 +27,13 @@ function once() {
 	const t3 = performance.now();
 	const w = buildScoreWindows(words, c.candidates);
 	const t4 = performance.now();
-	return { script, a, c, w, ms: { parse: t1 - t0, align: t2 - t1, candidates: t3 - t2, windows: t4 - t3, total: t4 - t0 } };
+	return {
+		script,
+		a,
+		c,
+		w,
+		ms: { parse: t1 - t0, align: t2 - t1, candidates: t3 - t2, windows: t4 - t3, total: t4 - t0 },
+	};
 }
 
 gc?.();
@@ -37,7 +43,11 @@ const rssAfter = process.resourceUsage().maxRSS * 1024;
 const runs = Array.from({ length: 5 }, () => once().ms);
 // degenerate input: one word repeated (20,000 × 6,000), bounded by the per-row caps
 const degScript = parseScript(Array.from({ length: 6000 }, () => 'la').join(' '), { language: 'es' });
-const degWords = Array.from({ length: 20_000 }, (_, k) => ({ text: 'la', start: k * 1000, end: k * 1000 + 900 }));
+const degWords = Array.from({ length: 20_000 }, (_, k) => ({
+	text: 'la',
+	start: k * 1000,
+	end: k * 1000 + 900,
+}));
 const d0 = performance.now();
 const deg = alignTranscript({ words: degWords, script: degScript, language: 'es' });
 const degMs = performance.now() - d0;
@@ -46,7 +56,12 @@ const r = first.a.report;
 console.log(
 	JSON.stringify(
 		{
-			machine: { cpu: cpus()[0]?.model, cores: cpus().length, memoryBytes: totalmem(), node: process.version },
+			machine: {
+				cpu: cpus()[0]?.model,
+				cores: cpus().length,
+				memoryBytes: totalmem(),
+				node: process.version,
+			},
 			loadAtStart,
 			loadAtEnd: loadavg().map((x) => Math.round(x * 100) / 100),
 			input: {
@@ -66,7 +81,10 @@ console.log(
 			},
 			targetMs: 5000,
 			medianMs: Object.fromEntries(
-				(['parse', 'align', 'candidates', 'windows', 'total'] as const).map((k) => [k, Math.round(median(runs.map((x) => x[k])))]),
+				(['parse', 'align', 'candidates', 'windows', 'total'] as const).map((k) => [
+					k,
+					Math.round(median(runs.map((x) => x[k]))),
+				]),
 			),
 			samplesTotalMs: runs.map((x) => Math.round(x.total)),
 			degenerate: {

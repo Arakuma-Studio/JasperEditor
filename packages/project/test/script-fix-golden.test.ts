@@ -41,7 +41,13 @@ function say(text: string): FixWord[] {
 function run(scriptText: string, transcript: string, lang = 'es', glossary?: GlossaryEntryInput[]) {
 	const script = parseScript(scriptText, { language: lang });
 	const words = say(transcript);
-	const alignment = alignTranscript({ words, script, language: lang, mediaId: 'media-1', transcriptId: 'tr-1' });
+	const alignment = alignTranscript({
+		words,
+		script,
+		language: lang,
+		mediaId: 'media-1',
+		transcriptId: 'tr-1',
+	});
 	if (!alignment.ok) throw new Error(alignment.message);
 	const res = findFixCandidates({
 		mediaId: 'media-1',
@@ -85,9 +91,12 @@ describe('script parsing (SC-002)', () => {
 	});
 
 	it('finds proper nouns by mid-sentence capitals and brand-like spellings, not by sentence starts or all caps', () => {
-		const s = parseScript('Hoy abrimos Glimmerbox. Glimmerbox es genial. Esto es MUY importante. Lo vi en iOS.', {
-			language: 'es',
-		});
+		const s = parseScript(
+			'Hoy abrimos Glimmerbox. Glimmerbox es genial. Esto es MUY importante. Lo vi en iOS.',
+			{
+				language: 'es',
+			},
+		);
 		expect(s.properNorms).toEqual(['glimmerbox', 'ios']);
 	});
 });
@@ -120,7 +129,10 @@ describe('alignment and candidates, Spanish (SC-010 … SC-026)', () => {
 		expect(r.candidates.map(brief)).toEqual(['join:proper:glimmer box→Glimmerbox']);
 		expect(r.candidates[0]!.needsAudio).toBe(false);
 		// a common word joined differently ("me dio" ↔ "medio") is left alone
-		const common = run('Al final me dio un error rarísimo en la consola.', 'al final medio un error rarísimo en la consola');
+		const common = run(
+			'Al final me dio un error rarísimo en la consola.',
+			'al final medio un error rarísimo en la consola',
+		);
 		expect(common.candidates).toEqual([]);
 	});
 
@@ -184,7 +196,10 @@ describe('alignment and candidates, Spanish (SC-010 … SC-026)', () => {
 		);
 		expect(r.candidates).toEqual([]);
 		expect(r.alignment.report.skippedScriptTokens).toBe(3);
-		const touching = run('Hola a todos (mirar a cámara) y bienvenidos.', 'hola a todos mirando la cámara y bienvenidos');
+		const touching = run(
+			'Hola a todos (mirar a cámara) y bienvenidos.',
+			'hola a todos mirando la cámara y bienvenidos',
+		);
 		expect(touching.candidates).toEqual([]);
 	});
 
@@ -199,15 +214,22 @@ describe('alignment and candidates, Spanish (SC-010 … SC-026)', () => {
 	});
 
 	it('"&" reads as "y": the spoken "y" matches; a misheard "en" is offered as "y"', () => {
-		expect(run('Hoy jugamos a Fireblob & Waterblob otra vez.', 'hoy jugamos a fireblob y waterblob otra vez').candidates).toEqual(
-			[],
+		expect(
+			run('Hoy jugamos a Fireblob & Waterblob otra vez.', 'hoy jugamos a fireblob y waterblob otra vez')
+				.candidates,
+		).toEqual([]);
+		const r = run(
+			'Hoy jugamos a Fireblob & Waterblob otra vez.',
+			'hoy jugamos a fireblob en waterblob otra vez',
 		);
-		const r = run('Hoy jugamos a Fireblob & Waterblob otra vez.', 'hoy jugamos a fireblob en waterblob otra vez');
 		expect(r.candidates.map(brief)).toEqual(['sub:function:en→y']);
 	});
 
 	it('numbers: digits match number words (24 = veinticuatro, 1 = una); number disagreements are never offered', () => {
-		const ok = run('Lo hice en 24 horas y con 1 sola mano.', 'lo hice en veinticuatro horas y con una sola mano');
+		const ok = run(
+			'Lo hice en 24 horas y con 1 sola mano.',
+			'lo hice en veinticuatro horas y con una sola mano',
+		);
 		expect(ok.candidates).toEqual([]);
 		expect(ok.alignment.report.exactTokens).toBe(10);
 		const bad = run('Lo hice en 24 horas y con una sola mano.', 'lo hice en 25 horas y con una sola mano');
@@ -216,7 +238,10 @@ describe('alignment and candidates, Spanish (SC-010 … SC-026)', () => {
 	});
 
 	it('stylised spellings in the script are never offered', () => {
-		const r = run('Y el resultado quedó Peeerfecto para el vídeo final.', 'y el resultado quedó perfecto para el vídeo final');
+		const r = run(
+			'Y el resultado quedó Peeerfecto para el vídeo final.',
+			'y el resultado quedó perfecto para el vídeo final',
+		);
 		expect(r.candidates).toEqual([]);
 		expect(r.skippedCounts.stylised).toBe(1);
 	});
@@ -234,27 +259,42 @@ describe('alignment and candidates, Spanish (SC-010 … SC-026)', () => {
 	});
 
 	it('display form (SC-031): script spelling, ASR punctuation and capital, script casing only for proper words', () => {
-		const r = run('Después programé los COCHES con físicas sencillas.', '¿Después programé los coche, con físicas sencillas?');
+		const r = run(
+			'Después programé los COCHES con físicas sencillas.',
+			'¿Después programé los coche, con físicas sencillas?',
+		);
 		expect(r.candidates.map((c) => c.script)).toEqual([['coches,']]);
 		const cap = run('Hoy abrimos Glimmerbox otra vez.', 'Hoy abrimos glimer-box. Otra vez');
 		expect(cap.candidates[0]!.script).toEqual(['Glimmerbox.']);
 	});
 
 	it('fingerprints are stable across re-transcription timing and differ by context', () => {
-		const a = run('Hoy probamos el motor de Pixelforge con un nivel nuevo.', 'hoy probamos el motor de pixelforch con un nivel nuevo');
+		const a = run(
+			'Hoy probamos el motor de Pixelforge con un nivel nuevo.',
+			'hoy probamos el motor de pixelforch con un nivel nuevo',
+		);
 		const b = run(
 			'Hoy probamos el motor de Pixelforge con un nivel nuevo.',
 			'| hoy probamos el motor de pixelforch con un nivel nuevo',
 		);
 		expect(a.candidates[0]!.fingerprint).toBe(b.candidates[0]!.fingerprint);
-		const c = run('Ayer probamos el motor de Pixelforge con un nivel nuevo.', 'ayer probamos el motor de pixelforch con un nivel nuevo');
+		const c = run(
+			'Ayer probamos el motor de Pixelforge con un nivel nuevo.',
+			'ayer probamos el motor de pixelforch con un nivel nuevo',
+		);
 		expect(c.candidates[0]!.fingerprint).toBe(a.candidates[0]!.fingerprint); // context is ± 2 words
-		const d = run('Hoy probamos el motor de Pixelforge sin un nivel nuevo.', 'hoy probamos el motor de pixelforch sin un nivel nuevo');
+		const d = run(
+			'Hoy probamos el motor de Pixelforge sin un nivel nuevo.',
+			'hoy probamos el motor de pixelforch sin un nivel nuevo',
+		);
 		expect(d.candidates[0]!.fingerprint).not.toBe(a.candidates[0]!.fingerprint);
 	});
 
 	it('rejected fingerprints are skipped unless asked for (SC-055)', () => {
-		const a = run('Hoy probamos el motor de Pixelforge con un nivel nuevo.', 'hoy probamos el motor de pixelforch con un nivel nuevo');
+		const a = run(
+			'Hoy probamos el motor de Pixelforge con un nivel nuevo.',
+			'hoy probamos el motor de pixelforch con un nivel nuevo',
+		);
 		const fp = a.candidates[0]!.fingerprint;
 		const again = findFixCandidates({
 			mediaId: 'media-1',
@@ -309,7 +349,12 @@ describe('glossary candidates (SC-073)', () => {
 		]);
 		expect(res.candidates.map((c) => c.needsAudio)).toEqual([true, false]);
 		const d = decideFix(res.candidates[1]!, null);
-		expect(d).toMatchObject({ decision: 'fix', group: 'spelling', rule: 'glossary-spelling', deltaTok: null });
+		expect(d).toMatchObject({
+			decision: 'fix',
+			group: 'spelling',
+			rule: 'glossary-spelling',
+			deltaTok: null,
+		});
 		expect(d.words.map((w) => w.text)).toEqual(['Pixelforge']);
 		expect(d.words[0]!.start).toBe(words[6]!.start);
 		expect(d.words[0]!.end).toBe(words[7]!.end);
@@ -347,7 +392,10 @@ function score(c: FixCandidate, deltaTok: number): CandidateScore {
 }
 
 describe('decisions (SC-034): presets and the Maybe band', () => {
-	const base = run('Hoy probamos el motor de Pixelforge con un nivel nuevo.', 'hoy probamos el motor de pixelforch con un nivel nuevo');
+	const base = run(
+		'Hoy probamos el motor de Pixelforge con un nivel nuevo.',
+		'hoy probamos el motor de pixelforch con un nivel nuevo',
+	);
 	const proper = base.candidates[0]!;
 	const plain = { ...proper, category: 'other' as const };
 
@@ -389,7 +437,10 @@ describe('decisions (SC-034): presets and the Maybe band', () => {
 	});
 
 	it('del is fixed only when the script reading is at least as likely; unscored candidates are kept', () => {
-		const r = run('Ahora vamos a guardar el proyecto en la carpeta.', 'ahora vamos guardar el proyecto en la carpeta');
+		const r = run(
+			'Ahora vamos a guardar el proyecto en la carpeta.',
+			'ahora vamos guardar el proyecto en la carpeta',
+		);
 		const del = r.candidates[0]!;
 		expect(decideFix(del, score(del, 0.1)).rule).toBe('del');
 		expect(decideFix(del, score(del, -0.5)).decision).toBe('maybe');
@@ -465,7 +516,10 @@ describe('windows, scores, edits (SC-030 … SC-042)', () => {
 	});
 
 	it('a malformed score result gives no score (kept, never a crash)', () => {
-		const r = run('Hoy probamos el motor de Pixelforge con un nivel nuevo.', 'hoy probamos el motor de pixelforch con un nivel nuevo');
+		const r = run(
+			'Hoy probamos el motor de Pixelforge con un nivel nuevo.',
+			'hoy probamos el motor de pixelforch con un nivel nuevo',
+		);
 		const { windows } = buildScoreWindows(r.words, r.candidates);
 		const bad: ScoreWindowResult[] = [
 			{

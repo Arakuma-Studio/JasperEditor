@@ -15,12 +15,37 @@ function rng(seed: number) {
 	};
 }
 
-const FUNCTION = 'de la el que en y a los las un una es se lo con por para del al me te no si mi tu su o le ya muy pero como esta este eso hay'.split(' ');
-const ONSETS = ['b', 'c', 'd', 'f', 'g', 'l', 'm', 'n', 'p', 'r', 's', 't', 'v', 'ch', 'br', 'tr', 'pl', 'gr', 'cr'];
+const FUNCTION =
+	'de la el que en y a los las un una es se lo con por para del al me te no si mi tu su o le ya muy pero como esta este eso hay'.split(
+		' ',
+	);
+const ONSETS = [
+	'b',
+	'c',
+	'd',
+	'f',
+	'g',
+	'l',
+	'm',
+	'n',
+	'p',
+	'r',
+	's',
+	't',
+	'v',
+	'ch',
+	'br',
+	'tr',
+	'pl',
+	'gr',
+	'cr',
+];
 const VOWELS = ['a', 'e', 'i', 'o', 'u'];
 const CODAS = ['', '', '', 'n', 's', 'r', 'l'];
 
-export function synthScriptFix(opts: { scriptTokens?: number; transcriptWords?: number; seed?: number } = {}) {
+export function synthScriptFix(
+	opts: { scriptTokens?: number; transcriptWords?: number; seed?: number } = {},
+) {
 	const scriptTokens = opts.scriptTokens ?? 6000;
 	const transcriptWords = opts.transcriptWords ?? 20_000;
 	const r = rng(opts.seed ?? 17);
@@ -87,7 +112,8 @@ export function synthScriptFix(opts: { scriptTokens?: number; transcriptWords?: 
 		si++;
 		if (r() < 0.12) {
 			// a take cut short, then the retake
-			for (const w of s.slice(0, Math.max(2, Math.floor(s.length * (0.3 + 0.5 * r()))))) emit(w.toLowerCase());
+			for (const w of s.slice(0, Math.max(2, Math.floor(s.length * (0.3 + 0.5 * r())))))
+				emit(w.toLowerCase());
 			t += 0.8;
 		}
 		if (r() < 0.1) {

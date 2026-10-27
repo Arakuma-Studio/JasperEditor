@@ -13,8 +13,9 @@
 // live cells (`maxActivePerRow`, only reached by degenerate input such as one word repeated thousands of times) is the
 // sole approximation; rows where it bit are counted in the report. Deterministic: ties resolve like the spike (first
 // move in the order diagonal, skip 1…8, jump, OFF; lowest script index).
-import type { ParsedScript } from './script.ts';
+
 import { cachedKey, PSIM_MIN_INDEL, psim, psimAtLeast } from './phonetic.ts';
+import type { ParsedScript } from './script.ts';
 import {
 	exactMatch,
 	functionWords,
@@ -317,7 +318,10 @@ function vocab(norms: readonly string[]): Vocab {
 export function alignTranscript(input: AlignInput): AlignmentResult {
 	const opt = alignOptions(input.options);
 	const script = input.script;
-	const lang = input.language !== undefined && input.language !== null ? scriptFixLanguage(input.language) : script.language;
+	const lang =
+		input.language !== undefined && input.language !== null
+			? scriptFixLanguage(input.language)
+			: script.language;
 	const words = Array.isArray(input.words) ? input.words : [];
 	const sTokens = Array.isArray(script?.tokens) ? script.tokens : [];
 	if (words.length > opt.maxTranscriptWords || sTokens.length > opt.maxScriptTokens)
@@ -397,7 +401,7 @@ export function alignCore(
 	const sims: Array<Sim | undefined> = new Array(tv.words.length);
 	const counts = new Int32Array(sv.words.length);
 	function simOf(t: number): Sim {
-		let sim = sims[t];
+		const sim = sims[t];
 		if (sim) return sim;
 		const w = tv.words[t]!;
 		const found = new Map<number, [number, number]>();
@@ -418,7 +422,8 @@ export function alignCore(
 			if (dice >= opt.prefilterDice) found.set(s, subScore(w, t, s));
 		}
 		const same = sByNorm.get(w);
-		if (same !== undefined) found.set(same, [isContentWord(w, stop) ? opt.exactContent : opt.exactFunction, 1]);
+		if (same !== undefined)
+			found.set(same, [isContentWord(w, stop) ? opt.exactContent : opt.exactFunction, 1]);
 		if (/^\d/.test(w)) {
 			for (const s of sv.words.keys()) if (numberEqual(w, sv.words[s]!)) found.set(s, [opt.exactContent, 1]);
 		} else for (const s of sNumeric) if (numberEqual(w, sv.words[s]!)) found.set(s, [opt.exactContent, 1]);
@@ -525,7 +530,10 @@ export function alignCore(
 	const sCache = new Map<string, Array<[number, number]>>();
 	const tCache = new Map<string, Array<[number, number]>>();
 	// 1:b cells per transcript vocabulary entry and b: script end positions (ascending) and similarities
-	const bByVocab: Array<{ js: number[]; ps: number[] } | undefined>[] = [new Array(tv.words.length), new Array(tv.words.length)];
+	const bByVocab: Array<{ js: number[]; ps: number[] } | undefined>[] = [
+		new Array(tv.words.length),
+		new Array(tv.words.length),
+	];
 	for (const b of [2, 3])
 		for (let j = b - 1; j < S; j++) {
 			const s = sSp.slice(j - b + 1, j + 1).join('');
@@ -622,7 +630,15 @@ export function alignCore(
 	const touched = new Int32Array(S);
 	let nTouched = 0;
 	// the last four kept rows (values for transitions and merge bases)
-	type Slot = { row: number; stamp: Int32Array; idx: Int32Array; js: Int32Array; H: Float64Array; I: Float64Array; n: number };
+	type Slot = {
+		row: number;
+		stamp: Int32Array;
+		idx: Int32Array;
+		js: Int32Array;
+		H: Float64Array;
+		I: Float64Array;
+		n: number;
+	};
 	const slots: Slot[] = Array.from({ length: 4 }, () => ({
 		row: -1,
 		stamp: new Int32Array(S).fill(-1),

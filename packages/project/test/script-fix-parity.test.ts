@@ -37,7 +37,9 @@ type Fixture = {
 	>;
 	psim: Array<{ a: string; b: string; psim: number; keyA: string; keyB: string }>;
 };
-const fx = JSON.parse(readFileSync(new URL('./fixtures/script-fix-parity.json', import.meta.url), 'utf8')) as Fixture;
+const fx = JSON.parse(
+	readFileSync(new URL('./fixtures/script-fix-parity.json', import.meta.url), 'utf8'),
+) as Fixture;
 
 /** The prototype driver's word times: each word 0.3 s after a 0.05 s gap (or the case's gap), rounded to 1 ms. */
 function words(c: Fixture['cases'][string]) {
@@ -47,13 +49,20 @@ function words(c: Fixture['cases'][string]) {
 		t += c.gaps[String(k)] ?? 0.05;
 		const s = Math.round(t * 1000) / 1000;
 		const e = Math.round((t + 0.3) * 1000) / 1000;
-		out.push({ text: w, start: Math.round(s * FLICKS_PER_SECOND), end: Math.round(e * FLICKS_PER_SECOND), s, e });
+		out.push({
+			text: w,
+			start: Math.round(s * FLICKS_PER_SECOND),
+			end: Math.round(e * FLICKS_PER_SECOND),
+			s,
+			e,
+		});
 		t += 0.3;
 	});
 	return out;
 }
 
-const round3 = (x: unknown) => JSON.parse(JSON.stringify(x, (_k, v) => (typeof v === 'number' ? Math.round(v * 1000) / 1000 : v)));
+const round3 = (x: unknown) =>
+	JSON.parse(JSON.stringify(x, (_k, v) => (typeof v === 'number' ? Math.round(v * 1000) / 1000 : v)));
 
 describe('script-fix parity with the prototype', () => {
 	it('phonetic keys and psim match sfcore', () => {
@@ -134,15 +143,18 @@ describe('script-fix parity with the prototype', () => {
 
 			// The random cases have the same 0.05 s gap everywhere, so where the prototype splits a long stretch is a
 			// floating-point tie between equal gaps; window parity is checked on the hand-written cases only.
-			it.skipIf(name.startsWith('random'))('window ranges and padded bounds match sfjobs.windows / bounds (unpacked)', () => {
-				const ranges = windowRanges(ws, { pack: false });
-				expect(ranges).toEqual(c.windows);
-				ranges.forEach(([a, b], k) => {
-					const bnd = windowBounds(ws, a, b);
-					expect(Math.abs(bnd.start / FLICKS_PER_SECOND - c.bounds[k]![0])).toBeLessThan(6e-4);
-					expect(Math.abs(bnd.end / FLICKS_PER_SECOND - c.bounds[k]![1])).toBeLessThan(6e-4);
-				});
-			});
+			it.skipIf(name.startsWith('random'))(
+				'window ranges and padded bounds match sfjobs.windows / bounds (unpacked)',
+				() => {
+					const ranges = windowRanges(ws, { pack: false });
+					expect(ranges).toEqual(c.windows);
+					ranges.forEach(([a, b], k) => {
+						const bnd = windowBounds(ws, a, b);
+						expect(Math.abs(bnd.start / FLICKS_PER_SECOND - c.bounds[k]![0])).toBeLessThan(6e-4);
+						expect(Math.abs(bnd.end / FLICKS_PER_SECOND - c.bounds[k]![1])).toBeLessThan(6e-4);
+					});
+				},
+			);
 		});
 	}
 });

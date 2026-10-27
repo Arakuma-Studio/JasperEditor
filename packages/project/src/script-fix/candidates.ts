@@ -3,7 +3,15 @@
 // §2.4, §2.5, §2.7, §5): a candidate is a maximal run of non-exact steps between exact cells, with anchors on both
 // sides and at most 4 + 4 words. Added by the spec: spelling joins (SC-024), mixed regions split into their proper /
 // plain parts (SC-025), glossary candidates (SC-073), stable fingerprints (SC-026). Pure; deterministic.
-import { type AlignmentResult, type AlignOptions, alignOptions, type AlignStep, transcriptTokens } from './align.ts';
+
+import { FLICKS_PER_SECOND } from '../time.ts';
+import {
+	type AlignmentResult,
+	type AlignOptions,
+	type AlignStep,
+	alignOptions,
+	transcriptTokens,
+} from './align.ts';
 import { psim } from './phonetic.ts';
 import type { ParsedScript, ScriptToken } from './script.ts';
 import {
@@ -16,7 +24,6 @@ import {
 	scriptFixLanguage,
 	spokenForm,
 } from './text.ts';
-import { FLICKS_PER_SECOND } from '../time.ts';
 
 /** A transcript word as the fixer reads it (a `TranscriptWord` fits). Times are integer media flicks. */
 export type FixWord = { text: string; start: number; end: number; confidence?: number | null };
@@ -94,7 +101,13 @@ export const SKIP_REASONS: readonly SkipReason[] = [
 ];
 
 /** A region that is not offered (kept for counts and the MCP report; the list is capped, the counts are not). */
-export type SkippedRegion = { reason: SkipReason; asr: string[]; script: string[]; start: number; end: number };
+export type SkippedRegion = {
+	reason: SkipReason;
+	asr: string[];
+	script: string[];
+	start: number;
+	end: number;
+};
 
 export type CandidateResult = {
 	candidates: FixCandidate[];
@@ -195,9 +208,11 @@ function categoryOf(scriptToks: readonly ScriptToken[], asrNorms: readonly strin
 
 function fingerprintOf(ctx: Ctx, from: number, to: number, scriptNorms: readonly string[]): string {
 	const before: string[] = [];
-	for (let k = from - 1; k >= 0 && before.length < FINGERPRINT_CONTEXT; k--) if (ctx.norms[k]) before.unshift(ctx.norms[k]!);
+	for (let k = from - 1; k >= 0 && before.length < FINGERPRINT_CONTEXT; k--)
+		if (ctx.norms[k]) before.unshift(ctx.norms[k]!);
 	const after: string[] = [];
-	for (let k = to; k < ctx.words.length && after.length < FINGERPRINT_CONTEXT; k++) if (ctx.norms[k]) after.push(ctx.norms[k]!);
+	for (let k = to; k < ctx.words.length && after.length < FINGERPRINT_CONTEXT; k++)
+		if (ctx.norms[k]) after.push(ctx.norms[k]!);
 	const asr = ctx.norms.slice(from, to).filter(Boolean);
 	const payload = [asr.join(' '), scriptNorms.join(' '), before.join(' '), after.join(' ')].join('|');
 	const media = ctx.mediaId.replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 120);
@@ -205,7 +220,13 @@ function fingerprintOf(ctx: Ctx, from: number, to: number, scriptNorms: readonly
 }
 
 /** SC-040 range for re-timed words of [from, to): previous word's end … next word's start (zero-length words excluded). */
-function boundsOf(ctx: Ctx, from: number, to: number, start: number, end: number): { start: number; end: number } {
+function boundsOf(
+	ctx: Ctx,
+	from: number,
+	to: number,
+	start: number,
+	end: number,
+): { start: number; end: number } {
 	const prev = ctx.words[from - 1];
 	const next = ctx.words[to];
 	let lo = prev ? prev.end + (prev.start === prev.end ? 1 : 0) : 0;
@@ -289,7 +310,9 @@ export function findFixCandidates(input: FindCandidatesInput): CandidateResult {
 		norms: words.map((w) => normalizeWord(textOf(w))),
 		mediaId: String(input.mediaId ?? ''),
 		transcriptId: String(input.transcriptId ?? ''),
-		contextWords: Number.isFinite(input.contextWords) ? Math.max(0, Math.min(20, Math.floor(input.contextWords!))) : 3,
+		contextWords: Number.isFinite(input.contextWords)
+			? Math.max(0, Math.min(20, Math.floor(input.contextWords!)))
+			: 3,
 	};
 	const skipped: SkippedRegion[] = [];
 	const skippedCounts = Object.fromEntries(SKIP_REASONS.map((r) => [r, 0])) as Record<SkipReason, number>;
@@ -320,7 +343,9 @@ export function findFixCandidates(input: FindCandidatesInput): CandidateResult {
 		kept.push(c);
 	}
 	const kindOrder: Record<FixKind, number> = { sub: 0, merge: 1, del: 2, join: 3, glossary: 4 };
-	kept.sort((x, y) => x.fromWord - y.fromWord || x.toWord - y.toWord || kindOrder[x.kind] - kindOrder[y.kind]);
+	kept.sort(
+		(x, y) => x.fromWord - y.fromWord || x.toWord - y.toWord || kindOrder[x.kind] - kindOrder[y.kind],
+	);
 	const seen = new Map<string, number>();
 	for (const c of kept) {
 		const n = (seen.get(c.fingerprint) ?? 0) + 1;
@@ -375,7 +400,10 @@ function scriptCandidates(
 		const asrWords = ctx.words.slice(from, to).map(textOf);
 		const [t0, t1] = timeOf(from, to);
 		if (!ti.length && !sj.length) return;
-		if (!sj.length) return skip('ins', asrWords, [], t0!, t1!);
+		if (!sj.length) {
+			skip('ins', asrWords, [], t0!, t1!);
+			return;
+		}
 		const kind: FixKind = !ti.length
 			? 'del'
 			: reg.some((s) => s.kind === 'cell' && (s.t[1] > s.t[0] || s.s[1] > s.s[0]))
@@ -508,9 +536,19 @@ function joinCandidate(
 	const sw = sToks.map((t) => t.text);
 	const t0 = ctx.words[from]!.start;
 	const t1 = ctx.words[to - 1]!.end;
-	if (asrWords.some((w) => /\d/.test(w)) || sw.some((w) => /\d/.test(w))) return skip('number', asrWords, sw, t0, t1);
-	if (sToks.some((t) => STYLISED.test(t.norm))) return skip('stylised', asrWords, sw, t0, t1);
-	if (sToks.some((t) => t.kind !== 'word')) return skip('direction', asrWords, sw, t0, t1);
+	if (asrWords.some((w) => /\d/.test(w)) || sw.some((w) => /\d/.test(w)))
+		{
+			skip('number', asrWords, sw, t0, t1);
+			return;
+		}
+	if (sToks.some((t) => STYLISED.test(t.norm))) {
+			skip('stylised', asrWords, sw, t0, t1);
+			return;
+		}
+	if (sToks.some((t) => t.kind !== 'word')) {
+			skip('direction', asrWords, sw, t0, t1);
+			return;
+		}
 	const shown = displayWords(
 		sToks.map((t) => ({ text: t.text, proper: isProperToken(t, ctx.proper) })),
 		asrWords,
@@ -578,7 +616,8 @@ function glossaryCandidates(
 			if (!l) byFirst.set(seq[0]!, (l = []));
 			l.push({ seq, entry });
 		}
-	for (const l of byFirst.values()) l.sort((a, b) => b.seq.length - a.seq.length || a.entry.order - b.entry.order);
+	for (const l of byFirst.values())
+		l.sort((a, b) => b.seq.length - a.seq.length || a.entry.order - b.entry.order);
 	const overlaps = (from: number, to: number) => taken.some(([a, b]) => from < b && a < to);
 	let i = 0;
 	while (i < toks.length) {
@@ -633,4 +672,3 @@ function glossaryCandidates(
 		if (!advanced) i++;
 	}
 }
-

@@ -26,11 +26,12 @@ export type DecisionThresholds = {
 };
 
 /** SC-034 table. */
-export const DECISION_PRESETS: Readonly<Record<StrictnessPreset, Readonly<DecisionThresholds>>> = Object.freeze({
-	careful: Object.freeze({ audio: -1.0, spelling: -4, spellingMinPsim: 0.8, del: 0, maybe: -3 }),
-	standard: Object.freeze({ audio: -1.5, spelling: -5, spellingMinPsim: 0.8, del: 0, maybe: -4 }),
-	generous: Object.freeze({ audio: -2.0, spelling: -5, spellingMinPsim: 0.8, del: 0, maybe: -4 }),
-});
+export const DECISION_PRESETS: Readonly<Record<StrictnessPreset, Readonly<DecisionThresholds>>> =
+	Object.freeze({
+		careful: Object.freeze({ audio: -1.0, spelling: -4, spellingMinPsim: 0.8, del: 0, maybe: -3 }),
+		standard: Object.freeze({ audio: -1.5, spelling: -5, spellingMinPsim: 0.8, del: 0, maybe: -4 }),
+		generous: Object.freeze({ audio: -2.0, spelling: -5, spellingMinPsim: 0.8, del: 0, maybe: -4 }),
+	});
 
 /** The audio evidence of one candidate (SC-033). */
 export type CandidateScore = {
@@ -65,7 +66,13 @@ export function candidateScores(
 		const reading = (id: string) => {
 			const req = w.readings.find((r) => r.id === id);
 			const got = res.readings.find((r) => r && r.id === id);
-			if (!req || !got || !finite(got.logprob) || !Array.isArray(got.words) || got.words.length !== req.words.length)
+			if (
+				!req ||
+				!got ||
+				!finite(got.logprob) ||
+				!Array.isArray(got.words) ||
+				got.words.length !== req.words.length
+			)
 				return null;
 			return got;
 		};
@@ -250,11 +257,31 @@ export function decideFix(
 		d >= th.spelling
 	)
 		rule = 'spelling';
-	const timed = () => ({ start: candidate.bounds.start, end: candidate.bounds.end, words: retimedWords(candidate, score) });
+	const timed = () => ({
+		start: candidate.bounds.start,
+		end: candidate.bounds.end,
+		words: retimedWords(candidate, score),
+	});
 	if (rule)
-		return { ...base, decision: 'fix', group: 'fix', rule, deltaTok: d, selected: !candidate.rejected, ...timed() };
+		return {
+			...base,
+			decision: 'fix',
+			group: 'fix',
+			rule,
+			deltaTok: d,
+			selected: !candidate.rejected,
+			...timed(),
+		};
 	if (d >= th.maybe)
-		return { ...base, decision: 'maybe', group: 'maybe', rule: 'maybe', deltaTok: d, selected: false, ...timed() };
+		return {
+			...base,
+			decision: 'maybe',
+			group: 'maybe',
+			rule: 'maybe',
+			deltaTok: d,
+			selected: false,
+			...timed(),
+		};
 	return keep('below-margin', d);
 }
 

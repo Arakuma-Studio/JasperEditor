@@ -29,7 +29,11 @@ describe('script-fix performance (SC-015)', () => {
 
 	it('degenerate input (one word repeated) stays bounded: capped rows, no refusal', () => {
 		const script = parseScript(Array.from({ length: 3000 }, () => 'la').join(' '), { language: 'es' });
-		const words = Array.from({ length: 6000 }, (_, k) => ({ text: 'la', start: k * 1000, end: k * 1000 + 900 }));
+		const words = Array.from({ length: 6000 }, (_, k) => ({
+			text: 'la',
+			start: k * 1000,
+			end: k * 1000 + 900,
+		}));
 		const t0 = performance.now();
 		const a = alignTranscript({ words, script, language: 'es' });
 		const ms = performance.now() - t0;

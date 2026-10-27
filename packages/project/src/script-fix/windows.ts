@@ -40,7 +40,13 @@ export type ScoreReading = { id: string; words: string[] };
  * Where a candidate sits in its window's readings: reading 0 words [from, asrTo) are replaced by reading
  * `readingId` words [from, scriptTo).
  */
-export type ScoreRegion = { candidateId: string; readingId: string; from: number; asrTo: number; scriptTo: number };
+export type ScoreRegion = {
+	candidateId: string;
+	readingId: string;
+	from: number;
+	asrTo: number;
+	scriptTo: number;
+};
 
 /** A window to score: the SC-092 request window plus the bookkeeping that maps readings back to candidates. */
 export type ScoreWindow = {
@@ -82,7 +88,8 @@ function windowOptions(o: Partial<ScoreWindowOptions> | undefined): ScoreWindowO
 		const v = o[k];
 		if (k === 'pack') {
 			if (typeof v === 'boolean') out.pack = v;
-		} else if (typeof v === 'number' && Number.isFinite(v) && v >= 0) (out as Record<string, number | boolean>)[k] = v;
+		} else if (typeof v === 'number' && Number.isFinite(v) && v >= 0)
+			(out as Record<string, number | boolean>)[k] = v;
 	}
 	return out;
 }
@@ -93,7 +100,10 @@ const fin = (x: unknown, d = 0) => (typeof x === 'number' && Number.isFinite(x) 
  * Word index ranges [a, b) of the windows (SC-030): split at gaps ≥ `gapSeconds`; a stretch spanning more than
  * `maxSeconds` is split at its largest gap (ties: nearest the middle, then earliest); then packed.
  */
-export function windowRanges(words: readonly FixWord[], options?: Partial<ScoreWindowOptions>): Array<[number, number]> {
+export function windowRanges(
+	words: readonly FixWord[],
+	options?: Partial<ScoreWindowOptions>,
+): Array<[number, number]> {
 	const o = windowOptions(options);
 	const n = words.length;
 	if (!n) return [];
@@ -155,9 +165,18 @@ export function windowBounds(
 	const last = fin(words[b - 1]!.end, first);
 	const prevEnd = a > 0 ? fin(words[a - 1]!.end) : 0;
 	const nextStart = b < words.length ? fin(words[b]!.start) : last + 5 * F;
-	let start = Math.max(prevEnd + o.edgeMarginSeconds * F, first - o.padBeforeSeconds * F, first - (first - prevEnd) / 2, 0);
+	let start = Math.max(
+		prevEnd + o.edgeMarginSeconds * F,
+		first - o.padBeforeSeconds * F,
+		first - (first - prevEnd) / 2,
+		0,
+	);
 	start = Math.min(start, first);
-	let end = Math.min(nextStart - o.edgeMarginSeconds * F, last + o.padAfterSeconds * F, last + (nextStart - last) / 2);
+	let end = Math.min(
+		nextStart - o.edgeMarginSeconds * F,
+		last + o.padAfterSeconds * F,
+		last + (nextStart - last) / 2,
+	);
 	end = Math.max(end, last);
 	return { start: Math.round(start), end: Math.round(end) };
 }
@@ -173,7 +192,9 @@ export function buildScoreWindows(
 ): { windows: ScoreWindow[]; unplaced: UnplacedCandidate[] } {
 	const ranges = windowRanges(words, options);
 	const winOf = new Int32Array(words.length).fill(-1);
-	ranges.forEach(([a, b], k) => winOf.fill(k, a, b));
+	ranges.forEach(([a, b], k) => {
+		winOf.fill(k, a, b);
+	});
 	const byWindow = new Map<number, FixCandidate[]>();
 	const unplaced: UnplacedCandidate[] = [];
 	for (const c of candidates) {
@@ -200,7 +221,13 @@ export function buildScoreWindows(
 			const r0 = c.fromWord - a;
 			const r1 = c.toWord - a;
 			readings.push({ id: c.id, words: [...base.slice(0, r0), ...c.script, ...base.slice(r1)] });
-			regions.push({ candidateId: c.id, readingId: c.id, from: r0, asrTo: r1, scriptTo: r0 + c.script.length });
+			regions.push({
+				candidateId: c.id,
+				readingId: c.id,
+				from: r0,
+				asrTo: r1,
+				scriptTo: r0 + c.script.length,
+			});
 		}
 		windows.push({ id: `w${a}`, start, end, readings, fromWord: a, toWord: b, regions });
 	}

@@ -4,8 +4,8 @@
 // touch numbers; psim is symmetric and in [0, 1].
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { ALIGN_DEFAULTS, type AlignStep, alignCore, alignTranscript } from '../src/script-fix/align.ts';
 import { cleanupNorm } from '../src/cleanup/lists.ts';
+import { ALIGN_DEFAULTS, type AlignStep, alignCore, alignTranscript } from '../src/script-fix/align.ts';
 import { findFixCandidates } from '../src/script-fix/candidates.ts';
 import { psim } from '../src/script-fix/phonetic.ts';
 import { parseScript } from '../src/script-fix/script.ts';
@@ -54,9 +54,9 @@ const VOCAB = [
 const words = (n: number) => fc.array(fc.constantFrom(...VOCAB), { maxLength: n });
 const anyText = fc.oneof(fc.string({ maxLength: 300 }), fc.string({ unit: 'grapheme', maxLength: 200 }));
 const lines = (n: number) =>
-	fc.array(fc.tuple(words(10), fc.constantFrom('', '.', ':', '\n', '\n\n')), { maxLength: n }).map((parts) =>
-		parts.map(([ws, end]) => ws.join(' ') + end).join(' '),
-	);
+	fc
+		.array(fc.tuple(words(10), fc.constantFrom('', '.', ':', '\n', '\n\n')), { maxLength: n })
+		.map((parts) => parts.map(([ws, end]) => ws.join(' ') + end).join(' '));
 const timed = (ws: string[]) =>
 	ws.map((text, k) => ({ text, start: k * 3_000_000, end: k * 3_000_000 + 2_000_000 }));
 
@@ -68,7 +68,8 @@ function coversInOrder(steps: readonly AlignStep[], T: number, S: number): boole
 			if (s.t[0] !== next || s.t[1] < s.t[0]) return false;
 			next = s.t[1] + 1;
 		}
-		if (s.kind === 'cell' || s.kind === 'skip') if (s.s[0] < 0 || s.s[1] >= S || s.s[1] < s.s[0]) return false;
+		if (s.kind === 'cell' || s.kind === 'skip')
+			if (s.s[0] < 0 || s.s[1] >= S || s.s[1] < s.s[0]) return false;
 	}
 	return next === T;
 }
@@ -102,8 +103,24 @@ describe('script-fix properties (SC-100)', () => {
 					expect(a.ok).toBe(true);
 					if (!a.ok) return;
 					expect(coversInOrder(a.steps, a.tokens.length, script.tokens.length)).toBe(true);
-					const c1 = findFixCandidates({ mediaId: 'm', transcriptId: 't', words: w, script, alignment: a, language: lang });
-					expect(findFixCandidates({ mediaId: 'm', transcriptId: 't', words: w, script, alignment: a, language: lang })).toEqual(c1);
+					const c1 = findFixCandidates({
+						mediaId: 'm',
+						transcriptId: 't',
+						words: w,
+						script,
+						alignment: a,
+						language: lang,
+					});
+					expect(
+						findFixCandidates({
+							mediaId: 'm',
+							transcriptId: 't',
+							words: w,
+							script,
+							alignment: a,
+							language: lang,
+						}),
+					).toEqual(c1);
 				},
 			),
 		);
@@ -114,7 +131,11 @@ describe('script-fix properties (SC-100)', () => {
 			fc.property(fc.integer({ min: 1, max: 30 }), fc.integer({ min: 1, max: 30 }), (nt, ns) => {
 				const script = parseScript(Array.from({ length: ns }, (_, k) => `palabra${k}`).join(' '));
 				const w = timed(Array.from({ length: nt }, (_, k) => `palabra${k}`));
-				const r = alignTranscript({ words: w, script, options: { maxTranscriptWords: 15, maxScriptTokens: 15 } });
+				const r = alignTranscript({
+					words: w,
+					script,
+					options: { maxTranscriptWords: 15, maxScriptTokens: 15 },
+				});
 				if (nt > 15 || ns > 15) expect(r).toMatchObject({ ok: false, code: 'E_LIMIT' });
 				else expect(r.ok).toBe(true);
 			}),
@@ -153,7 +174,8 @@ describe('script-fix properties (SC-100)', () => {
 				const res = findFixCandidates({ mediaId: 'm', transcriptId: 't', words: w, script, alignment: a });
 				const exactWord = new Set<number>();
 				for (const s of a.steps)
-					if (s.kind === 'cell' && s.exact) for (let i = s.t[0]; i <= s.t[1]; i++) exactWord.add(a.tokens[i]!.word);
+					if (s.kind === 'cell' && s.exact)
+						for (let i = s.t[0]; i <= s.t[1]; i++) exactWord.add(a.tokens[i]!.word);
 				for (const c of res.candidates) {
 					expect(['sub', 'merge', 'del', 'join', 'glossary']).toContain(c.kind);
 					expect([...c.asr, ...c.script, ...c.scriptSource].some((x) => /\d/.test(x))).toBe(false);

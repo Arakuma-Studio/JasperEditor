@@ -98,7 +98,12 @@ let delB = new Float64Array(64);
  * Weighted Levenshtein distance of two keys with the SC-012 cost tables, in tenths (`weighted: false`: unit costs,
  * still in tenths). Stops early with +Infinity once every entry of a row exceeds `limit` (the distance can only grow).
  */
-function keyDistanceTenths(a: string, b: string, weighted: boolean, limit = Number.POSITIVE_INFINITY): number {
+function keyDistanceTenths(
+	a: string,
+	b: string,
+	weighted: boolean,
+	limit = Number.POSITIVE_INFINITY,
+): number {
 	const n = a.length;
 	const m = b.length;
 	if (n === 0 || m === 0) {

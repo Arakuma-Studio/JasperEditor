@@ -74,10 +74,14 @@ export function referenceAlign(
 		const ps = psim(s, other, lang);
 		return ps >= p.mergeMinPsim ? ps : null;
 	};
-	const sc = (ps: number, n: number) => ((ps >= 1 ? p.exactContent : p.subScale * ps - p.subOffset) * (n + 1)) / 2;
+	const sc = (ps: number, n: number) =>
+		((ps >= 1 ? p.exactContent : p.subScale * ps - p.subOffset) * (n + 1)) / 2;
 	for (const a of [2, 3])
 		for (let i = a - 1; i < T; i++) {
-			const s = tn.slice(i - a + 1, i + 1).map(sp).join('');
+			const s = tn
+				.slice(i - a + 1, i + 1)
+				.map(sp)
+				.join('');
 			if (s.length < 4) continue;
 			for (let j = 0; j < S; j++) {
 				const ps = cell(s, sp(sn[j]!));
@@ -86,7 +90,10 @@ export function referenceAlign(
 		}
 	for (const b of [2, 3])
 		for (let j = b - 1; j < S; j++) {
-			const s = sn.slice(j - b + 1, j + 1).map(sp).join('');
+			const s = sn
+				.slice(j - b + 1, j + 1)
+				.map(sp)
+				.join('');
 			if (s.length < 4) continue;
 			for (let i = 0; i < T; i++) {
 				const ps = cell(s, sp(tn[i]!));
