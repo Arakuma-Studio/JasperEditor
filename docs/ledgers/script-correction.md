@@ -61,7 +61,8 @@ Started 2026-10-27. Private details (machines, agent ids, item names) live in `.
 ## 5. Costs (estimated from provider rates)
 | Machine | Rate | Since | Note |
 |---|---|---|---|
-| Build VM (Hetzner cpx51) | $0.44/h | 2026-10-26 23:27 UTC | lifetime 36 h |
+| Build VM (Hetzner cpx51) | $0.44/h | 2026-10-26 23:27 UTC | closed by the session restart ≈ 06:10 UTC (≈ $3) |
+| Build VM #2 (Hetzner cpx51) | $0.44/h | 2026-10-27 06:18 UTC | final gate; lifetime 12 h |
 
 ## 6. Open questions / risks
 - Proposal files with per-item `selected` are set aside as unreadable by an older engine (proposal store is engine
@@ -78,3 +79,5 @@ Started 2026-10-27. Private details (machines, agent ids, item names) live in `.
   (false fixes 1/558, 0 audio fixes in cleanup regions, 38/52 recognition errors, 0/55 deviations, 247/430 injected),
   VM long bench 13.62 s per speech minute (22 encoder passes; same 66 decisions); Mac CPU 3.68 s per speech minute;
   muted WebGPU cost not measured (the Mac went onto battery). origin/main has no new commits; final gate next.
+- 2026-10-27 — Orquester session restart closed the build VM mid-gate (no code lost: all work is in local git);
+  replacement VM rented with the user's approval and provisioned; final gate re-run on b5041f1e.
