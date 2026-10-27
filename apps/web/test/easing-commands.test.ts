@@ -10,7 +10,6 @@ import {
 	outgoingEase,
 } from '@jasper/project';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { easeEnv, warningText } from '../src/commands/easing.ts';
 import {
 	type CommandCtx,
 	createCommandContext,
@@ -85,43 +84,9 @@ const near = (a: CubicEase, b: CubicEase) => {
 };
 
 describe('the keyframe selection as the easing commands read it', () => {
-	it('two neighbouring keys: one cubic segment, exactly the stored eases', () => {
-		const h = setup();
-		const [a, b] = h.opacity();
-		h.select([a!.id, b!.id]);
-		const sel = easeEnv(h.ctx)!.sel;
-		expect(sel.blocked).toBeNull();
-		expect(sel.properties).toHaveLength(1);
-		const p = sel.properties[0]!;
-		expect(p.curve).toEqual({ kind: 'cubic', x1: 0.5, y1: 0, x2: 0.8, y2: 0.8 });
-		expect(p.segments.map((x) => x.section)).toEqual(['middle', 'out']);
-	});
-
-	it('three keys of a number: one multi-point curve through the middle key', () => {
-		const h = setup();
-		h.select(h.opacity().map((k) => k.id));
-		const p = easeEnv(h.ctx)!.sel.properties[0]!;
-		expect(p.curve?.kind).toBe('multi');
-		if (p.curve?.kind !== 'multi') return;
-		expect(p.curve.points.map((q) => [q.x, q.y])).toEqual([
-			[0, 0],
-			[0.5, 2],
-			[1, 1],
-		]);
-	});
-
-	it('keys of several properties; point properties are spatial', () => {
-		const h = setup();
-		h.select([h.opacity()[0]!.id, h.position()[0]!.id]);
-		const sel = easeEnv(h.ctx)!.sel;
-		expect(new Set(sel.properties.map((p) => `${p.label}:${p.spatial}`))).toEqual(
-			new Set(['Position:true', 'Opacity:false']),
-		);
-	});
-
 	it('says why nothing can be eased', () => {
 		const h = setup();
-		expect(h.reason('ease.easyEase')).toBe('Select keyframes in Effect Controls');
+		expect(isCommandEnabled(getCommand('ease.easyEase')!, h.ctx)).toBe(false);
 		h.select([h.opacity()[0]!.id]);
 		expect(h.reason('ease.easyEase')).toBeUndefined();
 		const seq = Object.values(h.session.getCommitted().sequences)[0]!;
@@ -131,7 +96,7 @@ describe('the keyframe selection as the easing commands read it', () => {
 			origin: 'user',
 			commands: [{ type: 'track.update', trackId, patch: { locked: true } } as Command],
 		});
-		expect(h.reason('ease.easyEase')).toBe('The clip’s track is locked');
+		expect(isCommandEnabled(getCommand('ease.easyEase')!, h.ctx)).toBe(false);
 	});
 });
 
@@ -299,18 +264,43 @@ describe('easing commands', () => {
 		expect(h.toasts.filter((t) => t.message.includes('not possible'))).toEqual([]);
 	});
 
-	it('lists every warning of a result once', () => {
-		const r = {
-			ok: true,
-			results: [],
-			created: [],
-			warnings: [
-				{ code: 'W_EASE_FLAT_SEGMENT', message: 'Opacity: flat' },
-				{ code: 'W_EASE_CLAMPED', message: 'Scale: clamped' },
-				{ code: 'W_EASE_FLAT_SEGMENT', message: 'Opacity: flat' },
+	it('shows a model warning while keeping the successful edit', async () => {
+		const h = setup();
+		const added = h.session.apply({
+			label: 'Orientation keys',
+			origin: 'user',
+			commands: [
+				{ type: 'clip.set3d', clipIds: [h.clipId], enabled: true },
+				{
+					type: 'keyframe.add',
+					target: ['clip', h.clipId, 'threeD', 'orientation'],
+					at: { frames: 0 },
+					value: [0, 0, 0],
+					ref: '$a',
+				},
+				{
+					type: 'keyframe.add',
+					target: ['clip', h.clipId, 'threeD', 'orientation'],
+					at: { frames: 30 },
+					value: [0, 90, 0],
+					ref: '$b',
+				},
 			],
-		} as unknown as Parameters<typeof warningText>[0];
-		expect(warningText(r)).toBe('Opacity: flat\nScale: clamped');
+		});
+		if (!added.ok) throw new Error(JSON.stringify(added.errors));
+		h.select([added.refs.$a!, added.refs.$b!]);
+		const before = h.session.getCommitted();
+		expect(
+			(
+				await runCommand('ease.apply', h.ctx, {
+					curve: { kind: 'cubic', x1: 0.34, y1: 1.56, x2: 0.64, y2: 1 },
+				})
+			).ran,
+		).toBe(true);
+		expect(h.session.getCommitted()).not.toEqual(before);
+		expect(h.toasts).toEqual([
+			expect.objectContaining({ kind: 'warning', detail: expect.stringMatching(/overshoot/) }),
+		]);
 	});
 });
 

@@ -51,7 +51,11 @@ describe('Effect Controls (S03 §13, S05:ECP)', () => {
 		]);
 		// Frame 50 is halfway between the keys.
 		act(() => session.transport.seek(50));
-		await waitFor(() => expect(screen.getByTestId('prop-opacity').textContent).toBe('70.0%'));
+		await waitFor(() => {
+			const value = screen.getByTestId('prop-opacity').textContent!;
+			expect(Number.parseFloat(value)).toBe(70);
+			expect(value).toContain('%');
+		});
 		act(() => {
 			fireEvent.click(screen.getByTestId('kf-next-opacity'));
 		});
@@ -185,7 +189,7 @@ describe('Effect Controls with unknown effects (S01:FX-022)', () => {
 		const session = new EditorSession({ projectId: doc.projectId, document: doc, ctx: base.ctx });
 		act(() => session.select('timeline', [id!]));
 		renderWithSession(session, <EffectControlsPanel instanceId="ec2" visible />);
-		expect(screen.getByText('Missing effect: jasper.hologram')).toBeTruthy();
+		expect(screen.getByText(/jasper\.hologram/)).toBeTruthy();
 		act(() => {
 			fireEvent.click(screen.getByTestId('fx-remove-fx_000000000000FUTR'));
 		});

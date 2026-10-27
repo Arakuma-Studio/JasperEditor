@@ -138,10 +138,7 @@ export class CleanupController {
 	private previewStartFrame = 0;
 	private readonly offs: Array<() => void> = [];
 
-	constructor(
-		private readonly session: EditorSession,
-		private readonly opts: { pollMs?: number; useWorker?: boolean } = {},
-	) {
+	constructor(private readonly session: EditorSession) {
 		this.store = createStore<CleanupUiState>(initial);
 		this.offs.push(
 			session.on('doc.changed', () => this.onDocChanged()),
@@ -313,7 +310,7 @@ export class CleanupController {
 			if (my !== this.run) return { ok: false, reason: 'superseded' };
 			this.set({ jobId: job.id });
 			while (!TERMINAL_JOB_STATES.has(job.state)) {
-				await new Promise((r) => setTimeout(r, this.opts.pollMs ?? POLL_MS));
+				await new Promise((r) => setTimeout(r, POLL_MS));
 				if (my !== this.run) return { ok: false, reason: 'superseded' };
 				job = await engineClient.getJob(job.id);
 				if (my !== this.run) return { ok: false, reason: 'superseded' };
@@ -352,7 +349,7 @@ export class CleanupController {
 				if (my !== this.run) return { ok: false, reason: 'superseded' };
 			}
 			if (local) {
-				this.planner = new CleanupPlanner(this.opts.useWorker);
+				this.planner = new CleanupPlanner();
 				this.planner.init({
 					doc: { transcripts: doc.transcripts, media: doc.media },
 					seq,
@@ -483,7 +480,7 @@ export class CleanupController {
 				analyzeVoice: false,
 			});
 			while (!TERMINAL_JOB_STATES.has(job.state)) {
-				await new Promise((r) => setTimeout(r, this.opts.pollMs ?? POLL_MS));
+				await new Promise((r) => setTimeout(r, POLL_MS));
 				if (my !== this.run) return;
 				job = await engine.getJob(job.id);
 			}
@@ -763,9 +760,4 @@ export function cleanupFor(session: EditorSession): CleanupController {
 		controllers.set(session, c);
 	}
 	return c;
-}
-
-/** Tests: a controller with options (manual polling interval, no worker). */
-export function setCleanupControllerForTest(session: EditorSession, c: CleanupController): void {
-	controllers.set(session, c);
 }

@@ -22,7 +22,7 @@ function trackLocked(seq: Sequence, trackId: string): boolean {
 }
 
 /** An audio clip Auto Tag may tag now: in the sequence, untyped, on an unlocked track. */
-export function autoTaggable(seq: Sequence | undefined, clipId: string): boolean {
+function autoTaggable(seq: Sequence | undefined, clipId: string): boolean {
 	const c = seq?.clips[clipId];
 	return !!seq && c?.kind === 'audio' && !readEssentialSound(c.essential) && !trackLocked(seq, c.trackId);
 }
@@ -42,7 +42,7 @@ function splitPart(before: Sequence, after: Sequence, c: AudioClip): boolean {
 }
 
 /** The audio clips a transaction added that auto-tagging should listen to, by sequence. */
-export function addedClipsToTag(
+function addedClipsToTag(
 	before: ProjectDocument,
 	after: ProjectDocument,
 	created: readonly string[],
@@ -84,14 +84,9 @@ const FAILURE_TOAST_MS = 60_000;
 
 /**
  * Watches `session` and tags what the user adds while the preference is on. Batches the clips of edits made within
- * `debounceMs`, one engine job at a time. Returns the stop function.
+ * 400 ms, one engine job at a time. Returns the stop function.
  */
-export function watchAutoTagOnAdd(
-	session: EditorSession,
-	engine: EngineClient,
-	opts: { debounceMs?: number; enabled?: () => boolean } = {},
-): () => void {
-	const enabled = opts.enabled ?? (() => audioPrefs.get().autoTagInTimeline);
+export function watchAutoTagOnAdd(session: EditorSession, engine: EngineClient): () => void {
 	let prev = session.getCommitted();
 	const queue = new Map<string, Set<string>>();
 	let timer: ReturnType<typeof setTimeout> | null = null;
@@ -133,7 +128,7 @@ export function watchAutoTagOnAdd(
 		const before = prev;
 		prev = session.getCommitted();
 		if (stopped || ev.isUndo || ev.isRedo || ev.origin !== 'user' || !ev.created.length) return;
-		if (session.getState().readOnly || !enabled()) return;
+		if (session.getState().readOnly || !audioPrefs.get().autoTagInTimeline) return;
 		const added = addedClipsToTag(before, prev, ev.created);
 		if (!added.size) return;
 		for (const [seqId, ids] of added) {
@@ -142,7 +137,7 @@ export function watchAutoTagOnAdd(
 			queue.set(seqId, set);
 		}
 		if (timer) clearTimeout(timer);
-		timer = setTimeout(() => void flush(), opts.debounceMs ?? 400);
+		timer = setTimeout(() => void flush(), 400);
 	});
 	return () => {
 		stopped = true;
