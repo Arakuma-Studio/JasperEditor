@@ -205,7 +205,9 @@ describe('import', () => {
 			updatedAt: LATER,
 		});
 		// importing the export of a glossary into itself changes nothing
-		const self = importGlossaryEntries(m.entries, (parseGlossaryImport(m.entries) as { entries: never[] }).entries, c);
+		const reparsed = parseGlossaryImport(m.entries);
+		if (!reparsed.ok) throw new Error(reparsed.reason);
+		const self = importGlossaryEntries(m.entries, reparsed.entries, c);
 		expect(self).toMatchObject({ added: 0, merged: 0, unchanged: 2 });
 	});
 
