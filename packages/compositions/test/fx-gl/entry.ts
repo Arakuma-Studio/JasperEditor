@@ -327,10 +327,7 @@ const api = {
 			});
 			const transformedProgram = loweredCanvasProgram({
 				clip: transformedClip,
-				props: resolveLayerProps(
-					transformedClip,
-					clipContentTime(transformedClip, 15, { num: 30, den: 1 }),
-				),
+				props: resolveLayerProps(transformedClip, clipContentTime(transformedClip, 15, { num: 30, den: 1 })),
 				frame: 15,
 				fps: 30,
 				layout: { padding: { left: 30, top: 20 }, pxScale: scale, width, height },
