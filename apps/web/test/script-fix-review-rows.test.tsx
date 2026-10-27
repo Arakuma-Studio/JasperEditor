@@ -111,7 +111,7 @@ describe('transcript fixes as Review rows (SC-082)', () => {
 			'Audio',
 			class {
 				src = '';
-				preload = '';
+				preload: HTMLAudioElement['preload'] = '';
 				currentTime = 0;
 				onerror = null;
 				ontimeupdate = null;

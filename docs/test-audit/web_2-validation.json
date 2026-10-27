@@ -1,0 +1,252 @@
+{
+  "scope": {
+    "files": 63,
+    "namedDeclarationInputs": 437,
+    "survivingNamedDeclarations": 423,
+    "passedRuntimeCases": 436,
+    "dispositions": {
+      "KEEP": 407,
+      "REWRITE": 13,
+      "CONSOLIDATE": 5,
+      "DELETE": 11,
+      "OPTIMIZE": 1
+    },
+    "physicalDeclarationsRemoved": 14,
+    "testLocDelta": -332,
+    "productionLocDelta": -40,
+    "counting": "Parameterized declarations are one ledger input; CONSOLIDATE counts three removed scenarios and two surviving owners. Documentation LOC is separate."
+  },
+  "environment": {
+    "node": "v20.19.0",
+    "cpuCount": 8,
+    "cpuModel": "AMD EPYC-Genoa Processor",
+    "loadAtStart": [11.45458984375, 10.10400390625, 8.1611328125],
+    "runner": "Vitest 4.1.11, --maxWorkers=2, happy-dom; Node 20.19.0; general validation lane serialized. Separate web and pure validation lanes can run concurrently; root Node24 exploratory run had ended."
+  },
+  "changes": {
+    "productionSeamsRemoved": [
+      "registerReviewVocabulary internal unused registration API",
+      "genericVocabulary export and ReviewVocabulary type export",
+      "setSourceAudioFactory setter and SourceAudioElement interface"
+    ],
+    "testInfrastructureRemoved": [
+      "social review rowOf helper",
+      "duplicate Maybe proposal fixture",
+      "unused jobFails branch",
+      "Review fixture item-count/output environment knobs and synchronous measurement writer"
+    ],
+    "sharedSeamCleanup": "project-files fixture now acquires a lease through public takeover; core_support owns deleting MemoryProjectStore.expireLease.",
+    "snapshotsFixturesDependenciesConfigurationsRemoved": []
+  },
+  "reviewOptimization": {
+    "baselineCommit": "eb28696c",
+    "baselineItems": 500,
+    "finalItems": 96,
+    "runs": [
+      {
+        "flavor": "baseline",
+        "run": 1,
+        "exitCode": 0,
+        "wallSeconds": 27.207,
+        "testMilliseconds": [1164.6586370000005]
+      },
+      {
+        "flavor": "baseline",
+        "run": 2,
+        "exitCode": 0,
+        "wallSeconds": 27.403,
+        "testMilliseconds": [1413.2724149999995]
+      },
+      {
+        "flavor": "final",
+        "run": 1,
+        "exitCode": 0,
+        "wallSeconds": 22.129,
+        "testMilliseconds": [581.806832000002]
+      },
+      {
+        "flavor": "final",
+        "run": 2,
+        "exitCode": 0,
+        "wallSeconds": 18.884,
+        "testMilliseconds": [643.0138960000004]
+      }
+    ],
+    "medianWallSeconds": {
+      "baseline": 27.305,
+      "final": 20.5065,
+      "saved": 6.7985,
+      "observedPercentReduction": 24.898
+    },
+    "medianTestMilliseconds": {
+      "baseline": 1288.9655,
+      "final": 612.4104,
+      "saved": 676.5552,
+      "percentReduction": 52.488
+    },
+    "interpretation": "Execution portion and observed isolated-file wall cost both fell. The wall difference includes import/caching/shared-host variance: original 27.207–27.403s, final 18.884–22.129s. These are file measurements, not full-suite or CI savings. All four runs use the same worker count/environment and fresh Vitest processes; initial production behavior is unchanged by removed dead hooks."
+  },
+  "validation": [
+    {
+      "command": "pnpm install --frozen-lockfile --offline --ignore-scripts",
+      "exitCode": 0
+    },
+    {
+      "command": "pnpm exec vitest run apps/web/test/mg-add-another-bulk.test.tsx apps/web/test/proposal-features-review.test.ts apps/web/test/script-fix-dialog.test.tsx apps/web/test/script-fix-review-rows.test.tsx apps/web/test/script-fix-review.test.tsx apps/web/test/social-controls.test.tsx apps/web/test/social-params.test.ts apps/web/test/social-review-controls.test.tsx apps/web/test/review-virtual.test.tsx --maxWorkers=2",
+      "exitCode": 0,
+      "cases": 74,
+      "files": 9,
+      "runnerSeconds": 33.69,
+      "note": "First incremental check; later changes covered by full owned batch."
+    },
+    {
+      "command": "pnpm exec vitest run apps/web/test/review-virtual.test.tsx --maxWorkers=2 --reporter=json --outputFile=<per-run file>",
+      "exitCode": 0,
+      "repetitions": 4,
+      "note": "Two original 500-row and two final 96-row runs; owner restored after baseline measurements."
+    },
+    {
+      "command": "pnpm exec vitest run apps/web/test/masks-ui.test.tsx apps/web/test/mg-add-another-bulk.test.tsx apps/web/test/mg-runtime-budget.test.ts apps/web/test/motion-path-effect-points.test.tsx apps/web/test/motion-path-keyframes-blend.test.tsx apps/web/test/motion-path.test.tsx apps/web/test/motion-templates-presets.test.tsx apps/web/test/motion-templates.test.tsx apps/web/test/multicam.test.ts apps/web/test/panel-input-validation.test.ts apps/web/test/playback-audio.test.tsx apps/web/test/polish-i18n.test.tsx apps/web/test/polish-keybindings.test.tsx apps/web/test/polish-media-browser.test.tsx apps/web/test/polish-open.test.tsx apps/web/test/polish-panel-loading.test.tsx apps/web/test/preview-thumb.test.tsx apps/web/test/previews.test.ts apps/web/test/processing.test.tsx apps/web/test/program-layer-menu.test.tsx apps/web/test/program-math.test.ts apps/web/test/program-monitor.test.tsx apps/web/test/project-files.test.tsx apps/web/test/project-sorting.test.ts apps/web/test/properties.test.tsx apps/web/test/proposal-features-review.test.ts apps/web/test/proposal-ghost-layer.test.tsx apps/web/test/proposal-ghosts-model.test.ts apps/web/test/proposal-program.test.tsx apps/web/test/pwa.test.ts apps/web/test/registry.test.tsx apps/web/test/remote-assets.test.tsx apps/web/test/review-model.test.ts apps/web/test/review-sound-check.test.tsx apps/web/test/review-stale-text.test.ts apps/web/test/review-ui.test.tsx apps/web/test/review-virtual.test.tsx apps/web/test/scene3d-overlay.test.tsx apps/web/test/script-fix-commands.test.ts apps/web/test/script-fix-dialog.test.tsx apps/web/test/script-fix-model.test.ts apps/web/test/script-fix-review-rows.test.tsx apps/web/test/script-fix-review.test.tsx apps/web/test/shapes.test.tsx apps/web/test/shell-render.test.tsx apps/web/test/shell.test.tsx apps/web/test/social-controls.test.tsx apps/web/test/social-count-input.test.ts apps/web/test/social-marks-edit.test.ts apps/web/test/social-params.test.ts apps/web/test/social-review-controls.test.tsx apps/web/test/sound-audition.test.ts apps/web/test/sound-beds.test.tsx apps/web/test/sound-check-joint-fix.test.ts apps/web/test/sound-check-listen-keep.test.ts apps/web/test/sound-check-model.test.ts apps/web/test/sound-check-panel.test.tsx apps/web/test/sound-cue-commands.test.tsx apps/web/test/sound-cue-seam-model.test.ts apps/web/test/sound-cue-seam.test.tsx apps/web/test/sound-describe-ui.test.tsx apps/web/test/sound-engine-sources.test.tsx apps/web/test/sound-fill-swap.test.tsx --maxWorkers=2 --reporter=default --reporter=json --outputFile.json=/tmp/jasper-test-audit/web_2-all-results.json",
+      "exitCode": 0,
+      "files": 63,
+      "cases": 436,
+      "wallSeconds": 143.178,
+      "runnerSeconds": 141.69,
+      "aggregateTestsSeconds": 51.48,
+      "aggregateImportSeconds": 195.32,
+      "aggregateEnvironmentSeconds": 22.64
+    },
+    {
+      "command": "pnpm --filter @jasper/web typecheck",
+      "initialExitCode": 2,
+      "finalExitCode": 0,
+      "resolution": "Native HTMLAudioElement.preload union was wider than the inferred mock string. Annotated the mock field with HTMLAudioElement[preload]; no runtime behavior changed."
+    },
+    {
+      "command": "pnpm exec vitest run apps/web/test/script-fix-review-rows.test.tsx --maxWorkers=2",
+      "exitCode": 0,
+      "cases": 6,
+      "runnerSeconds": 11.25,
+      "note": "Retest after type-only mock field fix."
+    },
+    {
+      "command": "pnpm exec biome check <all task-modified source, tests, and audit JSON>; git diff --check",
+      "exitCode": 0
+    }
+  ],
+  "mutationChecks": [
+    {
+      "mutation": "visibleEntries returns the full entry range",
+      "command": "pnpm exec vitest run apps/web/test/review-virtual.test.tsx --maxWorkers=2 -t \"renders only the rows in view\"",
+      "expectedExitCode": 1,
+      "actualExitCode": 1,
+      "failure": "expected 96 to be less than 40",
+      "meaning": "The smaller 96-row fixture still detects loss of virtualization.",
+      "ownerRestored": true
+    },
+    {
+      "mutation": "Source recording context changes from 1s to 2s",
+      "command": "pnpm exec vitest run apps/web/test/script-fix-review-rows.test.tsx --maxWorkers=2 -t \"plays the source recording\"",
+      "expectedExitCode": 1,
+      "actualExitCode": 1,
+      "failure": "source seek 0, independently expected 1.0 seconds",
+      "meaning": "The public Audio-boundary test still detects a wrong contextual audio window after factory seam removal.",
+      "ownerRestored": true
+    }
+  ],
+  "slowestRemainingTests": [
+    {
+      "path": "apps/web/test/sound-check-panel.test.tsx",
+      "test": "a timecode jumps the playhead and selects the clip; the keyboard moves, jumps, fixes and opens the sync strip",
+      "milliseconds": 1934.145
+    },
+    {
+      "path": "apps/web/test/shell-render.test.tsx",
+      "test": "header: mode tabs, workspace tabs and the palette button work through commands",
+      "milliseconds": 1455.278
+    },
+    {
+      "path": "apps/web/test/sound-check-panel.test.tsx",
+      "test": "Fix all safe: commands and the swap in ONE transaction, the ducking job after it, then the check again",
+      "milliseconds": 1453.9
+    },
+    {
+      "path": "apps/web/test/sound-check-panel.test.tsx",
+      "test": "is offered with sound effects; a fail stops with Export anyway / Review issues; a pass exports",
+      "milliseconds": 1243.294
+    },
+    {
+      "path": "apps/web/test/sound-check-panel.test.tsx",
+      "test": "Check for: defaults to the delivery preset’s typical encoding, then to the last export settings; Run passes it, the summary records it, another choice makes it stale",
+      "milliseconds": 1210.58
+    },
+    {
+      "path": "apps/web/test/script-fix-dialog.test.tsx",
+      "test": "Run follows the job with progress and opens the proposal in Review",
+      "milliseconds": 1208.635
+    },
+    {
+      "path": "apps/web/test/sound-check-panel.test.tsx",
+      "test": "is stale after the mix changes (Re-run runs it again); a stored summary without its job shows its chips",
+      "milliseconds": 1087.154
+    },
+    {
+      "path": "apps/web/test/motion-templates.test.tsx",
+      "test": "shows the gallery with static previews and inserts on double-click via clip.addMotionGraphic",
+      "milliseconds": 1021.084
+    }
+  ],
+  "slowestRemainingFilesByAssertionTime": [
+    {
+      "path": "apps/web/test/sound-check-panel.test.tsx",
+      "cases": 18,
+      "assertionMilliseconds": 14318.204
+    },
+    {
+      "path": "apps/web/test/social-controls.test.tsx",
+      "cases": 28,
+      "assertionMilliseconds": 4406.782
+    },
+    {
+      "path": "apps/web/test/script-fix-dialog.test.tsx",
+      "cases": 7,
+      "assertionMilliseconds": 4211.688
+    },
+    {
+      "path": "apps/web/test/shell-render.test.tsx",
+      "cases": 3,
+      "assertionMilliseconds": 2414.835
+    },
+    {
+      "path": "apps/web/test/sound-fill-swap.test.tsx",
+      "cases": 14,
+      "assertionMilliseconds": 1881.787
+    },
+    {
+      "path": "apps/web/test/social-review-controls.test.tsx",
+      "cases": 12,
+      "assertionMilliseconds": 1568.248
+    },
+    {
+      "path": "apps/web/test/review-ui.test.tsx",
+      "cases": 14,
+      "assertionMilliseconds": 1478.894
+    },
+    {
+      "path": "apps/web/test/sound-beds.test.tsx",
+      "cases": 3,
+      "assertionMilliseconds": 1389.871
+    }
+  ],
+  "retainedCostJustification": "Sound Check sync-strip/keyboard, joint fix/recheck and export gates drive distinct critical UI/session/job workflows. Full shell mounts protect live workspace/mode wiring. The panel starvation case retains its 180ms split workload and 4ms ticker because scheduler starvation is the historical failure. Project-open batching requires more than 1000 media keys to cross its public batch cap.",
+  "remainingOpportunities": [
+    "Sound Check nominal fake jobs still repeat 400ms polling while progress/cancel cases uniquely require asynchronous progression; safely optimizing the broad fixture needs separate lifecycle validation.",
+    "Import/startup dominates owned-batch wall time; mutable state/worker isolation was retained."
+  ],
+  "limits": [
+    "Child did not run repository-wide lint/build/test, Playwright, extended fuzz, native/GL/Remotion/desktop suites; parent owns integrated final gates.",
+    "No full 63-file before measurement or measured CI savings; full-suite baseline/final comparison belongs to the parent.",
+    "Global shared-host load/caches varied during isolated-file measurements.",
+    "Integrated validation against core_support method removals is still the parent gate."
+  ]
+}
