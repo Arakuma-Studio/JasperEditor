@@ -13,7 +13,9 @@ import type { EngineClient } from '@jasper/engine-client';
 import { t } from '../i18n/runtime.ts';
 
 /** The settings of a run (the request without its mode and device). */
-export type FixRequest = Required<Pick<TranscriptFixRequest, 'sources' | 'scope' | 'strictness' | 'showRejected'>>;
+export type FixRequest = Required<
+	Pick<TranscriptFixRequest, 'sources' | 'scope' | 'strictness' | 'showRejected'>
+>;
 
 /** The engine calls Fix Transcript makes (the editor's EngineClient; tests pass a fake). */
 export type FixEngine = Pick<EngineClient, 'transcriptFix' | 'getJob' | 'cancelJob'>;
@@ -78,7 +80,8 @@ export async function dryRunFix(
 		if (signal?.aborted) throw new FixRunError('E_CANCELLED', t('Cancelled'));
 		throw asError(e);
 	}
-	if (!job) throw new FixRunError('E_BAD_RESULT', t('The engine returned an unreadable Fix Transcript result'));
+	if (!job)
+		throw new FixRunError('E_BAD_RESULT', t('The engine returned an unreadable Fix Transcript result'));
 	// `wait` answers when the job ended; an engine that returned it still running is followed like a proposal
 	while (!TERMINAL.has(job.state)) {
 		if (signal?.aborted) throw new FixRunError('E_CANCELLED', t('Cancelled'));
@@ -105,12 +108,15 @@ export async function proposeFix(
 ): Promise<FixResult> {
 	let job: EngineJob | null;
 	try {
-		job = jobOf(await engine.transcriptFix(projectId, sequenceId, { ...req, mode: 'propose' }, { signal: opts.signal }));
+		job = jobOf(
+			await engine.transcriptFix(projectId, sequenceId, { ...req, mode: 'propose' }, { signal: opts.signal }),
+		);
 	} catch (e) {
 		if (opts.signal?.aborted) throw new FixRunError('E_CANCELLED', t('Cancelled'));
 		throw asError(e);
 	}
-	if (!job) throw new FixRunError('E_BAD_RESULT', t('The engine returned an unreadable Fix Transcript result'));
+	if (!job)
+		throw new FixRunError('E_BAD_RESULT', t('The engine returned an unreadable Fix Transcript result'));
 	opts.onJob?.(job);
 	let transient = 0;
 	while (!TERMINAL.has(job.state)) {

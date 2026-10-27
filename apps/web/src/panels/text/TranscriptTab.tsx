@@ -120,7 +120,9 @@ export function TranscriptTab({ session, seq, request }: Props) {
 	const speakers = [...new Set(words.map((w) => w.speaker).filter((s): s is string => !!s))];
 	const paras = useMemo(() => paragraphs(words, Math.round(1.5 * S)), [words]);
 	// spec 17 SC-083: the words a fix proposal under review would change
-	const proposal = useProposals(session, (s) => (s.activeId && s.proposal?.feature === FIX_FEATURE ? s.proposal : null));
+	const proposal = useProposals(session, (s) =>
+		s.activeId && s.proposal?.feature === FIX_FEATURE ? s.proposal : null,
+	);
 	const reviewItems = useProposals(session, (s) => s.items);
 	const marks = useMemo(() => {
 		const out = new Map<string, Map<number, FixMark>>();
@@ -384,7 +386,9 @@ export function TranscriptTab({ session, seq, request }: Props) {
 					disabled={readOnly}
 					disabledReason={t('The project is read-only')}
 					onClick={openFix}
-					title={t('Fix recognition errors from the script and your speech glossary; review the fixes before they apply')}
+					title={t(
+						'Fix recognition errors from the script and your speech glossary; review the fixes before they apply',
+					)}
 					data-testid="text.transcript.fix"
 				>
 					{t('Fix Transcript…')}
@@ -561,6 +565,7 @@ export function TranscriptTab({ session, seq, request }: Props) {
 									return (
 										<span key={i}>
 											{/* biome-ignore lint/a11y/noStaticElementInteractions: words are click targets; keyboard search and actions cover the same edits */}
+											{/* biome-ignore lint/a11y/useKeyWithClickEvents: a marked word's click is a shortcut to its Review row, which the Review panel's keys reach too */}
 											<span
 												className={cls}
 												title={

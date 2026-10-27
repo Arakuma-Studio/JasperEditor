@@ -106,7 +106,9 @@ test('Script… → Fix Transcript → Review → Apply fixes the transcript and
 		path: ['media', mediaId],
 	});
 	const key = asset.locators.find((l) => l.type === 'engine-store')!.key!;
-	expectTransaction(await transact(page, [{ type: 'clip.place', source: { projectItemId: item.id }, at: 0 }]));
+	expectTransaction(
+		await transact(page, [{ type: 'clip.place', source: { projectItemId: item.id }, at: 0 }]),
+	);
 
 	// the true words: the engine transcribes the fixture with the real model
 	const started = await page.request.post(`/api/media/${encodeURIComponent(key)}/transcribe`, {
@@ -120,7 +122,12 @@ test('Script… → Fix Transcript → Review → Apply fixes the transcript and
 	expect(truth.length).toBeGreaterThan(100);
 
 	// the transcript with three confusions, attached like a recogniser's
-	const words: Word[] = truth.map((w) => ({ text: w.text, start: w.start, end: w.end, confidence: w.confidence }));
+	const words: Word[] = truth.map((w) => ({
+		text: w.text,
+		start: w.start,
+		end: w.end,
+		confidence: w.confidence,
+	}));
 	const corrupted = new Map<number, [string, string]>();
 	for (const pair of CONFUSIONS) {
 		const i = words.findIndex((w) => norm(w.text) === pair[0]);
@@ -136,7 +143,12 @@ test('Script… → Fix Transcript → Review → Apply fixes the transcript and
 	// styled subtitles made from it (spec 13 text clips, Pixel Pop)
 	expectTransaction(
 		await transact(page, [
-			{ type: 'captions.generate', template: 'builtin:pixel-pop', cutAware: false, rules: { maxWords: 6 } } as never,
+			{
+				type: 'captions.generate',
+				template: 'builtin:pixel-pop',
+				cutAware: false,
+				rules: { maxWords: 6 },
+			} as never,
 		]),
 	);
 	const subs0 = await subtitleClips();
@@ -170,7 +182,9 @@ test('Script… → Fix Transcript → Review → Apply fixes the transcript and
 	const review = page.getByTestId('review-panel');
 	await expect(review.locator('[data-review-row]').first()).toBeVisible({ timeout: 60_000 });
 	for (const [, [right, wrong]] of corrupted) {
-		const row = review.locator('[data-review-row]').filter({ has: page.locator('[data-fix-after]', { hasText: right }) });
+		const row = review
+			.locator('[data-review-row]')
+			.filter({ has: page.locator('[data-fix-after]', { hasText: right }) });
 		await expect(row.first().locator('[data-fix-before]')).toHaveText(new RegExp(wrong, 'i'));
 	}
 	await test.info().attach('review', { body: await review.screenshot(), contentType: 'image/png' });
@@ -179,7 +193,9 @@ test('Script… → Fix Transcript → Review → Apply fixes the transcript and
 	const labels0 = await appliedLabels(page);
 	await review.getByTestId('review-accept-all').click();
 	await review.getByTestId('review-apply').click();
-	await expect.poll(async () => (await appliedLabels(page)).length, { timeout: 60_000 }).toBe(labels0.length + 1);
+	await expect
+		.poll(async () => (await appliedLabels(page)).length, { timeout: 60_000 })
+		.toBe(labels0.length + 1);
 	expect((await appliedLabels(page)).at(-1)).toMatch(/^Fix transcript: \d+ fix(es)?$/);
 	await expect(review.getByTestId('review-fix-report')).toContainText('fixes applied');
 	const fixed = await transcriptWords(transcriptId);

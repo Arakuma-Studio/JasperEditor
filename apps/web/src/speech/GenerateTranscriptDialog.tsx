@@ -171,7 +171,9 @@ export function GenerateTranscriptDialog(props: HostedDialogProps<Props>) {
 	const set = (patch: Partial<GenerateOptions>) => setOpts((o) => (o ? { ...o, ...patch } : o));
 	const hasInOut = !!seq && seq.inPoint !== null && seq.outPoint !== null;
 	// SC-074: the script of the sequence (for media: the active sequence's), the glossary when asked for
-	const scriptSeq = seq ?? (session.getState().activeSequenceId ? doc.sequences[session.getState().activeSequenceId!] : undefined);
+	const scriptSeq =
+		seq ??
+		(session.getState().activeSequenceId ? doc.sequences[session.getState().activeSequenceId!] : undefined);
 	const script = useMemo(() => {
 		try {
 			return scriptSeq ? (readSequenceCleanup(scriptSeq).script ?? null) : null;
@@ -180,7 +182,10 @@ export function GenerateTranscriptDialog(props: HostedDialogProps<Props>) {
 		}
 	}, [scriptSeq]);
 	const namesFrom: NamesFrom = opts?.namesFrom ?? 'off';
-	const [glossary, setGlossary] = useState<{ entries: { to: string; lang?: string; count?: number }[] | null; error: string | null }>({ entries: null, error: null });
+	const [glossary, setGlossary] = useState<{
+		entries: { to: string; lang?: string; count?: number }[] | null;
+		error: string | null;
+	}>({ entries: null, error: null });
 	useEffect(() => {
 		if (namesFrom !== 'script+glossary' || glossary.entries || glossary.error) return;
 		let live = true;
@@ -408,7 +413,10 @@ export function GenerateTranscriptDialog(props: HostedDialogProps<Props>) {
 								{!script && namesFrom === 'script'
 									? t('No script is attached to the sequence: attach one with Script… in Text ▸ Transcript')
 									: glossary.error && namesFrom === 'script+glossary'
-										? t('The speech glossary could not be read ({0}); only the script’s names are carried', glossary.error)
+										? t(
+												'The speech glossary could not be read ({0}); only the script’s names are carried',
+												glossary.error,
+											)
 										: terms.length
 											? t(
 													'{0} names carried into the recognition prompt: {1}',

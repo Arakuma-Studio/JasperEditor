@@ -10,7 +10,10 @@ import { closeAllDialogs, DialogHost, openDialog } from '@jasper/ui';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { fixErrorText } from '../src/script-fix/engine.ts';
-import { FIX_TRANSCRIPT_DIALOG, registerFixTranscriptDialog } from '../src/script-fix/FixTranscriptDialog.tsx';
+import {
+	FIX_TRANSCRIPT_DIALOG,
+	registerFixTranscriptDialog,
+} from '../src/script-fix/FixTranscriptDialog.tsx';
 import { fixSession } from './script-fix-helpers.ts';
 
 const openReview = vi.fn(async () => true);
@@ -45,7 +48,12 @@ function result(mode: 'dryRun' | 'propose', extra: Partial<TranscriptFixResult> 
 		itemCount: mode === 'propose' ? 3 : 0,
 		revision: 3,
 		report: {
-			settings: { sources: ['script', 'glossary'], scope: 'recordings', strictness: 'standard', showRejected: false },
+			settings: {
+				sources: ['script', 'glossary'],
+				scope: 'recordings',
+				strictness: 'standard',
+				showRejected: false,
+			},
 			sourcesUsed: ['script', 'glossary'],
 			perMedia: [
 				{
@@ -141,7 +149,10 @@ function fakeEngine(o: {
 		},
 		async call() {
 			return {
-				models: (o.models ?? [{ id: 'whisper-tiny', installed: true }]).map((m) => ({ ...m, multilingual: true })),
+				models: (o.models ?? [{ id: 'whisper-tiny', installed: true }]).map((m) => ({
+					...m,
+					multilingual: true,
+				})),
 			};
 		},
 		async listGlossary() {
@@ -189,7 +200,9 @@ describe('Fix Transcript dialog (SC-081)', () => {
 	it('is disabled with the reason when there is no script and no glossary', async () => {
 		const e = fakeEngine({ glossary: 0 });
 		const { run } = setup({ engine: e });
-		await waitFor(() => expect(screen.getByTestId('fix-blocker').textContent).toMatch(/Attach the video script/));
+		await waitFor(() =>
+			expect(screen.getByTestId('fix-blocker').textContent).toMatch(/Attach the video script/),
+		);
 		expect(run().disabled).toBe(true);
 		expect(e.requests).toEqual([]);
 	});
@@ -206,13 +219,19 @@ describe('Fix Transcript dialog (SC-081)', () => {
 			mode: 'dryRun',
 		});
 		expect(e.requests[0]!.opts?.wait).toBe(true);
-		expect(screen.getByTestId('fix-dry-alignment').textContent).toContain('80 % of the transcript follows the script');
+		expect(screen.getByTestId('fix-dry-alignment').textContent).toContain(
+			'80 % of the transcript follows the script',
+		);
 		expect(screen.getByTestId('fix-dry-candidates').textContent).toBe(
 			'3 possible fixes: Spelling 1 · To check against the audio 2',
 		);
 		expect(screen.getByTestId('fix-dry-categories').textContent).toBe('Names 2 · Short words 1');
-		expect(screen.getByTestId('fix-dry-estimate').textContent).toMatch(/≈ 42 s .*estimated from a reference machine/);
-		expect(screen.getByTestId('fix-dry-skipped').textContent).toMatch(/1 subtitles? could not be updated.*edited by hand/);
+		expect(screen.getByTestId('fix-dry-estimate').textContent).toMatch(
+			/≈ 42 s .*estimated from a reference machine/,
+		);
+		expect(screen.getByTestId('fix-dry-skipped').textContent).toMatch(
+			/1 subtitles? could not be updated.*edited by hand/,
+		);
 		expect(screen.getByTestId('fix-script-summary').textContent).toMatch(/headings? skipped/);
 		expect(screen.getByTestId('fix-blocker').textContent).toMatch(/No speech model is installed/);
 		expect(run().disabled).toBe(true);
@@ -236,9 +255,12 @@ describe('Fix Transcript dialog (SC-081)', () => {
 			scope: 'recordings',
 		});
 		expect(session.getState().history.entries.length).toBe(entries + 1);
-		await waitFor(() => expect(e.requests.at(-1)!.body).toMatchObject({ strictness: 'careful', sources: ['script'] }), {
-			timeout: 3000,
-		});
+		await waitFor(
+			() => expect(e.requests.at(-1)!.body).toMatchObject({ strictness: 'careful', sources: ['script'] }),
+			{
+				timeout: 3000,
+			},
+		);
 		act(() => session.undo());
 		expect(readSequenceScriptFix(seq()).settings).toBeUndefined();
 	});
@@ -253,7 +275,9 @@ describe('Fix Transcript dialog (SC-081)', () => {
 		});
 		await screen.findByTestId('fix-progress');
 		expect(screen.getByTestId('fix-progress-text').textContent).toMatch(/Checking against the audio/);
-		await waitFor(() => expect(openReview).toHaveBeenCalledWith(expect.anything(), 'prp_1'), { timeout: 3000 });
+		await waitFor(() => expect(openReview).toHaveBeenCalledWith(expect.anything(), 'prp_1'), {
+			timeout: 3000,
+		});
 		expect(e.requests.at(-1)!.body.mode).toBe('propose');
 		await waitFor(() => expect(screen.queryByTestId('fix-transcript-dialog')).toBeNull());
 	});

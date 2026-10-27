@@ -10,8 +10,8 @@ import type { EditorSession, ProposalsController, ReviewItem } from '@jasper/ses
 import { confirmDialog, toast } from '@jasper/ui';
 import { createStore } from 'zustand/vanilla';
 import { t, translateName } from '../i18n/runtime.ts';
-import { inContextStore, playTimelineWindow } from '../sound/in-context.ts';
 import { fixFrameResolver, isFixFeature, noteFixReport, playFixItem } from '../script-fix/review.ts';
+import { inContextStore, playTimelineWindow } from '../sound/in-context.ts';
 import { soundLibraryPrefs } from '../sound/prefs.ts';
 import { buildGhostModel, type GhostItem, type GhostModel } from './ghosts.ts';
 import {
@@ -227,7 +227,11 @@ export function decideGroup(
 		)
 		.map((it) => it.id);
 	if (!ids.length) {
-		announce(d === 'accept' ? t('Nothing left to accept in {0}', group.label) : t('Nothing accepted in {0}', group.label));
+		announce(
+			d === 'accept'
+				? t('Nothing left to accept in {0}', group.label)
+				: t('Nothing accepted in {0}', group.label),
+		);
 		return Promise.resolve(false);
 	}
 	return decide(session, d, ids);
@@ -468,7 +472,9 @@ export async function applyReview(
 	const entryId = entry?.id ?? null;
 	// the feature's sentence (spec 15 EA-002): "Applied n of m sounds" (sound design), "Applied n of m cut kits"…;
 	// a transcript fix says what its patch did (spec 17 SC-053 / SC-084: "142 fixes applied · 3 subtitles not updated")
-	const fixReport = isFixFeature(p.feature) ? noteFixReport(session, proposalId, r.results, appliedNow) : null;
+	const fixReport = isFixFeature(p.feature)
+		? noteFixReport(session, proposalId, r.results, appliedNow)
+		: null;
 	const title = fixReport?.title ?? reviewVocabulary(p.feature).applyToast(appliedNow, total, author);
 	const stillApplied = () => entryId !== null && topEntry(session)?.id === entryId;
 	toast({

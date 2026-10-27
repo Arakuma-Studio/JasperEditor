@@ -74,7 +74,8 @@ export function playSourceWindow(itemId: string, url: string, start: number, end
 		sourcePlayStore.setState((s) => ({ itemId: null, error, epoch: s.epoch + 1 }));
 		return false;
 	};
-	if (!Number.isFinite(start) || !Number.isFinite(end)) return fail(t('The fix has no time in the recording'));
+	if (!Number.isFinite(start) || !Number.isFinite(end))
+		return fail(t('The fix has no time in the recording'));
 	const el = makeElement();
 	if (!el) return fail(t('Audio playback is not available here'));
 	const from = Math.max(0, start / S - SOURCE_CONTEXT_SEC);

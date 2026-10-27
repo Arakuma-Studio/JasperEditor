@@ -43,9 +43,13 @@ describe('Fix Transcript entry points (SC-080)', () => {
 	it('is in Sequence ▸ and in the Text panel menu', () => {
 		const seq = MENUBAR.find((m) => m.id === 'sequence')!;
 		expect(commandsIn(seq.items)).toContain('transcript.fix');
-		const item = seq.items.find((i) => (i as { command?: string }).command === 'transcript.fix') as { label: string };
+		const item = seq.items.find((i) => (i as { command?: string }).command === 'transcript.fix') as {
+			label: string;
+		};
 		expect(item.label).toBe('Fix Transcript from Script…');
-		expect(commandsIn(textPanel.menu ?? [])).toEqual(expect.arrayContaining(['transcript.fix', 'transcript.script']));
+		expect(commandsIn(textPanel.menu ?? [])).toEqual(
+			expect.arrayContaining(['transcript.fix', 'transcript.script']),
+		);
 	});
 
 	it('is disabled with a reason without a sequence, and in a read-only project', () => {

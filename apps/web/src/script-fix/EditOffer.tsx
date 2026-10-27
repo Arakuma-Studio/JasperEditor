@@ -39,7 +39,10 @@ export function EditOfferBar(p: {
 		});
 		if (!r.ok) {
 			setError(
-				t('Not replaced: {0}', r.errors[0]?.message ?? t('the transcript changed since; edit the word again')),
+				t(
+					'Not replaced: {0}',
+					r.errors[0]?.message ?? t('the transcript changed since; edit the word again'),
+				),
 			);
 			return;
 		}
@@ -103,7 +106,11 @@ export function EditOfferBar(p: {
 						disabled={!p.engine}
 						disabledReason={t('The engine is not connected')}
 						onClick={() => void remember()}
-						title={t('Add “{0}” → “{1}” to your speech glossary (Fix Transcript and transcriptions use it)', offer.from, offer.to)}
+						title={t(
+							'Add “{0}” → “{1}” to your speech glossary (Fix Transcript and transcriptions use it)',
+							offer.from,
+							offer.to,
+						)}
 						data-testid="text.transcript.offer.remember"
 					>
 						{t('Remember')}
@@ -116,7 +123,12 @@ export function EditOfferBar(p: {
 				</span>
 			) : null}
 			<span className="flex-1" />
-			<Button variant="quiet" onClick={p.onClose} aria-label={t('Dismiss')} data-testid="text.transcript.offer.dismiss">
+			<Button
+				variant="quiet"
+				onClick={p.onClose}
+				aria-label={t('Dismiss')}
+				data-testid="text.transcript.offer.dismiss"
+			>
 				×
 			</Button>
 		</div>

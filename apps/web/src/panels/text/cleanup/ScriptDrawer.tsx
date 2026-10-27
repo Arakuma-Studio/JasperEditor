@@ -4,7 +4,12 @@
 // and Fix Transcript (recognition errors fixed from it). Opened from Text ▸ Transcript ("Script…") and from Clean Up.
 // Shows what the parser reads (SC-002: sections found, directions and headings skipped) and, after a Clean Up
 // analysis, the lines never said.
-import { CLEANUP_SCRIPT_MAX_BYTES, readSequenceCleanup, type Sequence, transcriptForMedia } from '@jasper/project';
+import {
+	CLEANUP_SCRIPT_MAX_BYTES,
+	readSequenceCleanup,
+	type Sequence,
+	transcriptForMedia,
+} from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
 import { Button, TextField, toast } from '@jasper/ui';
@@ -50,7 +55,9 @@ export function ScriptDrawer({ session, seq }: { session: EditorSession; seq: Se
 			sequenceId: seq.id,
 			commands: [{ type: 'cleanup.configure', sequenceId: seq.id, ...fields }] as never[],
 		});
-		return r.ok ? { ok: true as const } : { ok: false as const, reason: r.errors[0]?.message ?? t('The change was refused') };
+		return r.ok
+			? { ok: true as const }
+			: { ok: false as const, reason: r.errors[0]?.message ?? t('The change was refused') };
 	};
 	const attach = () => {
 		const r = configure(
@@ -115,7 +122,8 @@ export function ScriptDrawer({ session, seq }: { session: EditorSession; seq: Se
 						variant="quiet"
 						onClick={() => {
 							const r = configure({ script: null }, t('Detach Script'));
-							if (!r.ok) toast({ kind: 'warning', title: t('The script was not detached'), detail: r.reason });
+							if (!r.ok)
+								toast({ kind: 'warning', title: t('The script was not detached'), detail: r.reason });
 						}}
 						data-testid="text.cleanup.script.detach"
 					>

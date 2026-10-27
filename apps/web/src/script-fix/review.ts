@@ -10,7 +10,14 @@ import { toast } from '@jasper/ui';
 import { createStore } from 'zustand/vanilla';
 import { t } from '../i18n/runtime.ts';
 import { mediaKeyOf } from '../import/assets.ts';
-import { FIX_FEATURE, type FixPatchReport, fixFrame, fixMetaOf, patchReportOf, patchReportText } from './model.ts';
+import {
+	FIX_FEATURE,
+	type FixPatchReport,
+	fixFrame,
+	fixMetaOf,
+	patchReportOf,
+	patchReportText,
+} from './model.ts';
 import { playSourceWindow, sourcePlayStore } from './source-audio.ts';
 
 /** Whether a proposal feature is Fix Transcript's. */
@@ -29,7 +36,10 @@ export function fixFrameResolver(
 }
 
 /** ▶ a fix: its source recording from 1 s before to 1 s after the fixed words. */
-export function playFixItem(session: EditorSession, item: Pick<ReviewItem, 'id' | 'meta' | 'label'>): boolean {
+export function playFixItem(
+	session: EditorSession,
+	item: Pick<ReviewItem, 'id' | 'meta' | 'label'>,
+): boolean {
 	const m = fixMetaOf(item.meta);
 	const doc = session.getCommitted() as ProjectDocument;
 	const engine = session.engine as EngineClient | undefined;

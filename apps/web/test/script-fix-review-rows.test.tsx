@@ -11,7 +11,11 @@ import { FakeEngine } from '../../../packages/session/test/fake-proposals-engine
 import { ReviewPanel } from '../src/panels/review/ReviewPanel.tsx';
 import { acceptAll, applyReview, decideGroup, playReviewItem } from '../src/proposals/actions.ts';
 import { dismissFixReport, fixReportStore } from '../src/script-fix/review.ts';
-import { type SourceAudioElement, setSourceAudioFactory, sourcePlayStore } from '../src/script-fix/source-audio.ts';
+import {
+	type SourceAudioElement,
+	setSourceAudioFactory,
+	sourcePlayStore,
+} from '../src/script-fix/source-audio.ts';
 import { fixItems, fixSession } from './script-fix-helpers.ts';
 
 afterEach(() => {
@@ -197,7 +201,9 @@ describe('the patch report after Apply (SC-084)', () => {
 		expect(doc().transcripts[transcriptId]!.words.map((w) => w.text)).toContain('NovaPlay');
 		act(() => session.undo());
 		expect((seq().clips[glim.id] as TextClip).content.text).toBe(glim.content.text);
-		expect((doc() as ProjectDocument).transcripts[transcriptId]!.words.map((w) => w.text)).toContain('Glimer');
+		expect((doc() as ProjectDocument).transcripts[transcriptId]!.words.map((w) => w.text)).toContain(
+			'Glimer',
+		);
 	});
 
 	it('names the subtitles left unchanged, and “Show skipped subtitles” selects them', async () => {

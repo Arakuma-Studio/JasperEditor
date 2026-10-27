@@ -22,15 +22,6 @@ import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useMemo, us
 import { createCommandContext } from '../../commands/context.ts';
 import type { CommandCtx } from '../../commands/types.ts';
 import { t } from '../../i18n/runtime.ts';
-import { FixDiff, FixFacts, fixAriaText } from '../../script-fix/FixRow.tsx';
-import { type FixMeta, fixMetaOf } from '../../script-fix/model.ts';
-import {
-	dismissFixReport,
-	fixFrameResolver,
-	fixReportStore,
-	isFixFeature,
-	showSkippedSubtitles,
-} from '../../script-fix/review.ts';
 import {
 	acceptAll,
 	applyReview,
@@ -71,6 +62,15 @@ import {
 } from '../../proposals/sound-check.ts';
 import { problemText } from '../../proposals/stale-text.ts';
 import { useGhostModel, useProposals, useProposalsController } from '../../proposals/state.ts';
+import { FixDiff, FixFacts, fixAriaText } from '../../script-fix/FixRow.tsx';
+import { type FixMeta, fixMetaOf } from '../../script-fix/model.ts';
+import {
+	dismissFixReport,
+	fixFrameResolver,
+	fixReportStore,
+	isFixFeature,
+	showSkippedSubtitles,
+} from '../../script-fix/review.ts';
 import { useShellRuntimeOrNull } from '../../shell/context.tsx';
 import { messageText, SEVERITY_ICON, SEVERITY_LABELS, SEVERITY_TONE } from '../../sound/check-model.ts';
 import { glyphPath, KIND_GLYPH } from '../../sound/cues/model.ts';
@@ -718,7 +718,12 @@ function GroupButtons(p: { id: string; label: string; accept(): void; clear(): v
 	return (
 		<>
 			{b('accept', `✓ ${t('All')}`, t('Accept every item in {0} (Shift+Enter)', p.label), p.accept)}
-			{b('clear', `· ${t('None')}`, t('Back to pending: every accepted item in {0} (Shift+U)', p.label), p.clear)}
+			{b(
+				'clear',
+				`· ${t('None')}`,
+				t('Back to pending: every accepted item in {0} (Shift+U)', p.label),
+				p.clear,
+			)}
 		</>
 	);
 }

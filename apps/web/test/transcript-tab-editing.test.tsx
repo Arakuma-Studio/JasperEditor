@@ -6,8 +6,8 @@
 // words are marked and a click selects its Review row.
 import { EngineClient } from '@jasper/engine-client';
 import type { ProjectDocument, Sequence } from '@jasper/project';
-import { proposalsFor } from '@jasper/session';
 import type { EditorSession } from '@jasper/session';
+import { proposalsFor } from '@jasper/session';
 import { SessionProvider, useStoreSelector } from '@jasper/session/react';
 import { closeAllDialogs, DialogHost } from '@jasper/ui';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -191,7 +191,9 @@ describe('toolbar entries (SC-080)', () => {
 		const text = screen.getByTestId('text.cleanup.script.text');
 		act(() => {
 			fireEvent.change(text, {
-				target: { value: 'INTRO\nHoy probamos Glimmerbox (mostrar la caja).\nOutro:\nY la demo de NovaPlay.' },
+				target: {
+					value: 'INTRO\nHoy probamos Glimmerbox (mostrar la caja).\nOutro:\nY la demo de NovaPlay.',
+				},
 			});
 		});
 		expect(screen.getByTestId('text.cleanup.script.summary').textContent).toMatch(

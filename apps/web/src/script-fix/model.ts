@@ -111,7 +111,9 @@ export function fixBlocker(
 	if (!usable)
 		return sources.includes('script')
 			? t('No script is attached: attach one (Script…) or use the personal glossary')
-			: t('Your speech glossary is empty: add names in Preferences ▸ Transcription ▸ Glossary or use the script');
+			: t(
+					'Your speech glossary is empty: add names in Preferences ▸ Transcription ▸ Glossary or use the script',
+				);
 	if (opts.forRun && models && !models.some((m) => m.installed))
 		return t('No speech model is installed: download one in Preferences ▸ Transcription');
 	return null;
@@ -164,7 +166,12 @@ export type FixReportLite = {
 	}>;
 	candidates: { total: number; byGroup: Record<string, number>; byCategory: Record<string, number> };
 	skipped: Record<string, number>;
-	patch: { edits: number; patched: number; skipped: Array<{ clipId: string; reason: string }>; stale: number };
+	patch: {
+		edits: number;
+		patched: number;
+		skipped: Array<{ clipId: string; reason: string }>;
+		stale: number;
+	};
 	speech: { model: string | null; problem?: string };
 	estimate?: { seconds: number; basis: 'measured' | 'reference' };
 	warnings: Array<{ code: string; message: string }>;
@@ -204,7 +211,12 @@ const CATEGORY_TEXT: Record<string, string> = {
 /** "Fixes 4 · Spelling 1 · To check against the audio 12" in a stable order (zero counts left out). */
 export function groupCountsText(byGroup: Record<string, number>): string {
 	const order = ['fix', 'spelling', 'maybe', 'pending', 'keep'];
-	const keys = [...order, ...Object.keys(byGroup).filter((k) => !order.includes(k)).sort()];
+	const keys = [
+		...order,
+		...Object.keys(byGroup)
+			.filter((k) => !order.includes(k))
+			.sort(),
+	];
 	return keys
 		.filter((k) => finite(byGroup[k]) && byGroup[k]! > 0)
 		.map((k) => `${GROUP_TEXT[k] ?? k} ${byGroup[k]}`)
@@ -214,7 +226,12 @@ export function groupCountsText(byGroup: Record<string, number>): string {
 /** "Names 3 · English words 1 · Other words 9". */
 export function categoryCountsText(byCategory: Record<string, number>): string {
 	const order = ['proper', 'english', 'function', 'other'];
-	const keys = [...order, ...Object.keys(byCategory).filter((k) => !order.includes(k)).sort()];
+	const keys = [
+		...order,
+		...Object.keys(byCategory)
+			.filter((k) => !order.includes(k))
+			.sort(),
+	];
 	return keys
 		.filter((k) => finite(byCategory[k]) && byCategory[k]! > 0)
 		.map((k) => `${CATEGORY_TEXT[k] ?? k} ${byCategory[k]}`)
@@ -222,7 +239,9 @@ export function categoryCountsText(byCategory: Record<string, number>): string {
 }
 
 /** "≈ 42 s on this computer (measured)" / "≈ 1 min 10 s (estimated from a reference machine)". */
-export function estimateText(e: { seconds: number; basis: 'measured' | 'reference' } | undefined): string | null {
+export function estimateText(
+	e: { seconds: number; basis: 'measured' | 'reference' } | undefined,
+): string | null {
 	if (!e || !finite(e.seconds) || e.seconds < 0) return null;
 	const s = Math.max(1, Math.round(e.seconds));
 	const time = s < 60 ? t('{0} s', s) : t('{0} min {1} s', Math.floor(s / 60), s % 60);
@@ -330,7 +349,11 @@ export function deltaText(deltaTok: number | null): string | null {
 }
 
 /** The rule line of a row: "High confidence · Audio check · Δ +2.3 per token". */
-export function ruleLine(m: Pick<FixMeta, 'deltaTok' | 'rule'>): { confidence: string; rule: string; tooltip: string } {
+export function ruleLine(m: Pick<FixMeta, 'deltaTok' | 'rule'>): {
+	confidence: string;
+	rule: string;
+	tooltip: string;
+} {
 	const c = confidenceOf(m.deltaTok);
 	const rule = FIX_RULE_LABELS[m.rule] ?? (m.rule || FIX_RULE_LABELS.audio!);
 	const d = deltaText(m.deltaTok);
@@ -362,7 +385,10 @@ export function rowDiff(m: FixMeta): {
  * The sequence frame where a fix is heard (its media time through the audio clip that plays it, the first such clip
  * in timeline order), or null when the sequence does not play that part of the recording (scope "Whole recordings").
  */
-export function fixFrame(seq: Sequence | undefined, m: Pick<FixMeta, 'mediaId' | 'start' | 'end'>): number | null {
+export function fixFrame(
+	seq: Sequence | undefined,
+	m: Pick<FixMeta, 'mediaId' | 'start' | 'end'>,
+): number | null {
 	if (!seq || !finite(m.start) || !m.mediaId) return null;
 	const F = flicksPerFrame(seq.settings.frameRate);
 	if (!finite(F) || F <= 0) return null;
@@ -411,10 +437,13 @@ export function fixMarks(items: readonly ItemLike[], states: Record<string, stri
 		if (state !== 'pending' && state !== 'accepted' && state !== 'stale') continue;
 		const m = fixMetaOf(it.meta);
 		const cmd = it.commands?.[0] as { type?: unknown; transcriptId?: unknown; edits?: unknown } | undefined;
-		if (!m || !cmd || cmd.type !== 'transcript.replaceWords' || typeof cmd.transcriptId !== 'string') continue;
-		const edit = (Array.isArray(cmd.edits) ? cmd.edits[0] : null) as
-			| { start?: unknown; end?: unknown; expect?: unknown }
-			| null;
+		if (!m || !cmd || cmd.type !== 'transcript.replaceWords' || typeof cmd.transcriptId !== 'string')
+			continue;
+		const edit = (Array.isArray(cmd.edits) ? cmd.edits[0] : null) as {
+			start?: unknown;
+			end?: unknown;
+			expect?: unknown;
+		} | null;
 		const start = finite(edit?.start) ? edit.start : m.start;
 		const end = finite(edit?.end) ? edit.end : m.end;
 		if (!finite(start) || !finite(end)) continue;
@@ -469,7 +498,8 @@ export function markedWords(
 		for (let i = firstEndingAfter(m.start); i < words.length; i++) {
 			const w = words[i]!;
 			if (w.start >= m.end) break;
-			const hit = w.end <= w.start ? w.start >= m.start && w.start < m.end : w.start < m.end && w.end > m.start;
+			const hit =
+				w.end <= w.start ? w.start >= m.start && w.start < m.end : w.start < m.end && w.end > m.start;
 			if (hit && !out.has(i)) out.set(i, m);
 		}
 	}
@@ -480,9 +510,19 @@ export function markedWords(
 
 const PatchResultSchema = z.object({
 	edits: z.number().int().min(0).catch(0),
-	patched: z.array(z.looseObject({ clipId: z.string(), sequenceId: z.string() })).max(100_000).catch([]),
+	patched: z
+		.array(z.looseObject({ clipId: z.string(), sequenceId: z.string() }))
+		.max(100_000)
+		.catch([]),
 	skipped: z
-		.array(z.looseObject({ clipId: z.string(), sequenceId: z.string(), reason: z.string(), kind: z.string().catch('subtitle') }))
+		.array(
+			z.looseObject({
+				clipId: z.string(),
+				sequenceId: z.string(),
+				reason: z.string(),
+				kind: z.string().catch('subtitle'),
+			}),
+		)
 		.max(100_000)
 		.catch([]),
 });
@@ -523,7 +563,10 @@ export function patchReportText(r: FixPatchReport): string {
 	const fixes = r.fixes === 1 ? t('1 fix applied') : t('{0} fixes applied', r.fixes);
 	if (!r.skipped.length) return fixes;
 	const n = r.skipped.length;
-	const subs = n === 1 ? t('1 subtitle not updated: {0}', skipReasonsText(r.skipped)) : t('{0} subtitles not updated: {1}', n, skipReasonsText(r.skipped));
+	const subs =
+		n === 1
+			? t('1 subtitle not updated: {0}', skipReasonsText(r.skipped))
+			: t('{0} subtitles not updated: {1}', n, skipReasonsText(r.skipped));
 	return `${fixes} · ${subs}`;
 }
 

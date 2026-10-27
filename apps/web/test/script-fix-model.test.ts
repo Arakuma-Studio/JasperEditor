@@ -44,11 +44,15 @@ describe('when Fix Transcript can run (SC-081)', () => {
 	it('names the first thing to do', () => {
 		const ok = [{ id: 'm', installed: true }];
 		expect(fixBlocker(inputs({ transcripts: 0 }), ['script'], 3, ok)).toMatch(/no transcript/);
-		expect(fixBlocker(inputs({ script: null }), ['script', 'glossary'], 0, ok)).toMatch(/Attach the video script/);
+		expect(fixBlocker(inputs({ script: null }), ['script', 'glossary'], 0, ok)).toMatch(
+			/Attach the video script/,
+		);
 		expect(fixBlocker(inputs({ script: null }), ['script'], 4, ok)).toMatch(/No script is attached/);
 		expect(fixBlocker(inputs(), ['glossary'], 0, ok)).toMatch(/glossary is empty/);
 		expect(fixBlocker(inputs(), ['script'], 0, [{ id: 'm', installed: false }])).toMatch(/No speech model/);
-		expect(fixBlocker(inputs(), ['script'], 0, [{ id: 'm', installed: false }], { forRun: false })).toBeNull();
+		expect(
+			fixBlocker(inputs(), ['script'], 0, [{ id: 'm', installed: false }], { forRun: false }),
+		).toBeNull();
 		expect(fixBlocker(inputs(), ['script'], 0, null)).toBeNull();
 		expect(fixBlocker(inputs({ script: null }), ['glossary'], 2, ok)).toBeNull();
 	});
@@ -57,14 +61,20 @@ describe('when Fix Transcript can run (SC-081)', () => {
 		const f = fixSession();
 		const i = fixInputs(f.doc(), f.seq());
 		expect(i).toMatchObject({ transcripts: 1, words: 10, languages: ['es'], script: null, rejected: 0 });
-		expect(i.settings).toEqual({ strictness: 'standard', sources: ['script', 'glossary'], scope: 'recordings' });
+		expect(i.settings).toEqual({
+			strictness: 'standard',
+			sources: ['script', 'glossary'],
+			scope: 'recordings',
+		});
 	});
 });
 
 describe('texts', () => {
 	it('the Script drawer summary (SC-002)', () => {
 		const s = scriptSummary('INTRO\nHola Glimmerbox (risas) y más.\nOutro:\nAdiós.', 'es')!;
-		expect(scriptSummaryText(s)).toMatch(/sections? · \d+ words read · 1 direction \(1 words\) and 2 headings skipped/);
+		expect(scriptSummaryText(s)).toMatch(
+			/sections? · \d+ words read · 1 direction \(1 words\) and 2 headings skipped/,
+		);
 		expect(scriptSummary('   ', 'es')).toBeNull();
 	});
 
@@ -80,8 +90,18 @@ describe('texts', () => {
 		);
 		const shares = alignmentShares({
 			perMedia: [
-				{ name: 'a', words: 1, wordsInScope: 1, alignment: { transcriptTokens: 100, alignedShare: 0.9, offScriptShare: 0.1 } },
-				{ name: 'b', words: 1, wordsInScope: 1, alignment: { transcriptTokens: 300, alignedShare: 0.5, offScriptShare: 0.3 } },
+				{
+					name: 'a',
+					words: 1,
+					wordsInScope: 1,
+					alignment: { transcriptTokens: 100, alignedShare: 0.9, offScriptShare: 0.1 },
+				},
+				{
+					name: 'b',
+					words: 1,
+					wordsInScope: 1,
+					alignment: { transcriptTokens: 300, alignedShare: 0.5, offScriptShare: 0.3 },
+				},
 				{ name: 'c', words: 1, wordsInScope: 1, alignment: null },
 			],
 		} as never)!;
@@ -107,7 +127,12 @@ describe('rows and marks (SC-082 / SC-083)', () => {
 		const f = fixSession();
 		const [fix] = fixItems(f.transcriptId, f.mediaId);
 		const m = fixMetaOf(fix!.meta)!;
-		expect(m).toMatchObject({ asr: ['Glimer', 'box'], script: ['Glimmerbox'], category: 'proper', deltaTok: 2.3 });
+		expect(m).toMatchObject({
+			asr: ['Glimer', 'box'],
+			script: ['Glimmerbox'],
+			category: 'proper',
+			deltaTok: 2.3,
+		});
 		expect(fixFrame(f.seq(), m)).toBe(30);
 		expect(fixFrame(f.seq(), { ...m, start: sec(30) })).toBeNull(); // beyond the clip
 		expect(fixFrame(f.seq(), { ...m, mediaId: 'other' })).toBeNull();
@@ -148,9 +173,12 @@ describe('rows and marks (SC-082 / SC-083)', () => {
 			fc.property(
 				fc.array(word, { maxLength: 60 }),
 				fc.array(fc.anything(), { maxLength: 20 }),
-				fc.array(fc.tuple(fc.integer({ min: -10, max: 1.2e6 }), fc.integer({ min: 0, max: 2e5 }), fc.boolean()), {
-					maxLength: 20,
-				}),
+				fc.array(
+					fc.tuple(fc.integer({ min: -10, max: 1.2e6 }), fc.integer({ min: 0, max: 2e5 }), fc.boolean()),
+					{
+						maxLength: 20,
+					},
+				),
 				(raw, junk, spans) => {
 					let t = 0;
 					const words = raw.map(([gap, len]) => {
@@ -163,7 +191,13 @@ describe('rows and marks (SC-082 / SC-083)', () => {
 						...spans.map(([s, l, ins], i) => ({
 							id: `s${i}`,
 							meta: { asr: ins ? [] : ['x'], script: ['y'], start: s, end: s + l },
-							commands: [{ type: 'transcript.replaceWords', transcriptId: 't', edits: [{ start: s, end: s + l, expect: ins ? [] : ['x'] }] }],
+							commands: [
+								{
+									type: 'transcript.replaceWords',
+									transcriptId: 't',
+									edits: [{ start: s, end: s + l, expect: ins ? [] : ['x'] }],
+								},
+							],
 						})),
 					];
 					const marks = fixMarks(items as never, {});
@@ -205,12 +239,16 @@ describe('the patch report (SC-053 / SC-084)', () => {
 
 	it('property: any results array gives a bounded, well-formed report', () => {
 		fc.assert(
-			fc.property(fc.array(fc.anything(), { maxLength: 30 }), fc.integer({ min: -5, max: 500 }), (results, n) => {
-				const r = patchReportOf(results, n);
-				expect(r.fixes).toBeGreaterThanOrEqual(0);
-				expect(r.edits).toBeGreaterThanOrEqual(0);
-				expect(typeof patchReportText(r)).toBe('string');
-			}),
+			fc.property(
+				fc.array(fc.anything(), { maxLength: 30 }),
+				fc.integer({ min: -5, max: 500 }),
+				(results, n) => {
+					const r = patchReportOf(results, n);
+					expect(r.fixes).toBeGreaterThanOrEqual(0);
+					expect(r.edits).toBeGreaterThanOrEqual(0);
+					expect(typeof patchReportText(r)).toBe('string');
+				},
+			),
 			{ numRuns: 200 },
 		);
 	});
@@ -247,7 +285,14 @@ describe('the manual-edit offer (SC-071)', () => {
 		});
 		expect(edited).toBeNull();
 		expect(
-			editOffer(f.doc(), f.seqId, { oldWords: ['fin'], newText: '', transcriptId: f.transcriptId, start: 0, end: 1, language: null }),
+			editOffer(f.doc(), f.seqId, {
+				oldWords: ['fin'],
+				newText: '',
+				transcriptId: f.transcriptId,
+				start: 0,
+				end: 1,
+				language: null,
+			}),
 		).toBeNull();
 	});
 });

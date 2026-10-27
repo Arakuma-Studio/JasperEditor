@@ -16,7 +16,14 @@ import { useDialogClose } from '../extensions/dialog.ts';
 import { t } from '../i18n/runtime.ts';
 import { openReview } from '../proposals/actions.ts';
 import { sequenceName } from '../speech/model.ts';
-import { dryRunFix, type FixEngine, type FixResult, FixRunError, fixErrorText, proposeFix } from './engine.ts';
+import {
+	dryRunFix,
+	type FixEngine,
+	type FixResult,
+	FixRunError,
+	fixErrorText,
+	proposeFix,
+} from './engine.ts';
 import {
 	alignmentShares,
 	categoryCountsText,
@@ -69,7 +76,10 @@ const SCOPE_LABELS: Record<FixScope, string> = {
 
 function Row(p: { label: string; children: React.ReactNode; testId?: string }) {
 	return (
-		<div className="grid min-h-[28px] grid-cols-[120px_minmax(0,1fr)] items-center gap-3" data-testid={p.testId}>
+		<div
+			className="grid min-h-[28px] grid-cols-[120px_minmax(0,1fr)] items-center gap-3"
+			data-testid={p.testId}
+		>
 			<span className="text-pr-muted">{p.label}</span>
 			<div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">{p.children}</div>
 		</div>
@@ -122,7 +132,9 @@ function useGlossarySize(engine: FixDialogEngine | null): { entries: number | nu
 		}
 		engine
 			.listGlossary()
-			.then((r) => live && setState({ entries: Array.isArray(r?.entries) ? r.entries.length : 0, error: null }))
+			.then(
+				(r) => live && setState({ entries: Array.isArray(r?.entries) ? r.entries.length : 0, error: null }),
+			)
 			.catch((e) => live && setState({ entries: null, error: fixErrorText(e) }));
 		return () => {
 			live = false;
@@ -218,15 +230,14 @@ export function FixTranscriptDialog(props: HostedDialogProps<FixTranscriptDialog
 
 	const sources = settings?.sources ?? [];
 	const blocker = inputs ? fixBlocker(inputs, sources, glossary.entries, models, { forRun: false }) : null;
-	const runBlocker =
-		!engine
-			? t('The engine is not connected')
-			: readOnly
-				? t('The project is read-only')
-				: inputs
-					? (fixBlocker(inputs, sources, glossary.entries, models, { forRun: true }) ??
-						(dry?.report.speech.problem ? dry.report.speech.problem : null))
-					: t('Open a sequence first');
+	const runBlocker = !engine
+		? t('The engine is not connected')
+		: readOnly
+			? t('The project is read-only')
+			: inputs
+				? (fixBlocker(inputs, sources, glossary.entries, models, { forRun: true }) ??
+					(dry?.report.speech.problem ? dry.report.speech.problem : null))
+				: t('Open a sequence first');
 	const request = useMemo(
 		() =>
 			settings && inputs

@@ -409,9 +409,12 @@ describe('Generate Transcript dialog', () => {
 
 	it('Names from is off by default: no glossary is sent', () => {
 		expect(defaultOptions('whisper-base').namesFrom).toBe('off');
-		expect(requestOptions(defaultOptions('whisper-base'), true, ['Glimmerbox'])).not.toHaveProperty('glossary');
+		expect(requestOptions(defaultOptions('whisper-base'), true, ['Glimmerbox'])).not.toHaveProperty(
+			'glossary',
+		);
 		expect(
-			requestOptions({ ...defaultOptions('whisper-base'), namesFrom: 'script' }, true, ['Glimmerbox']).glossary,
+			requestOptions({ ...defaultOptions('whisper-base'), namesFrom: 'script' }, true, ['Glimmerbox'])
+				.glossary,
 		).toEqual(['Glimmerbox']);
 	});
 
