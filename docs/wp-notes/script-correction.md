@@ -125,8 +125,9 @@ difference is listed below.
 ### Windows, scores, decisions, edits (SC-030 … SC-034, SC-040 … SC-042; F§2.5–2.6)
 - **Windows.**
   - Split at gaps ≥ 1 s. Stretches longer than 28 s split at their largest gap; ties go to the middle (`sfjobs.windows`).
-  - Packing consecutive stretches into windows of ≤ 28 s (spec addition) is an option, off by default since the
-    SC-105 harness (see "Accuracy on real recordings").
+  - Consecutive stretches are packed into windows of ≤ 28 s (spec addition) with their gaps muted: `ScoreWindow.mute`
+    lists the media ranges between the stretches' padded ranges, heard as silence by the scorer (SC-105 harness, see
+    "Accuracy on real recordings"). `pack: false` (unpacked) and `muteGaps: false` (unmuted packing) are options.
   - A stretch with more than 100 words is split at its largest gap too (`maxWords`; only loops reach it).
   - Every window satisfies the SC-092 request limits (`SCORE_REQUEST_LIMITS`): reading ids are `r1`, `r2`… (regions
     map them to candidates), a window with more than 63 candidates is repeated over the same audio, words the scorer
@@ -187,7 +188,7 @@ difference is listed below.
 | | live cells per token | 1,024 (≤ 30,000,000 stored) |
 | | merge cells per token | 512 |
 | Windows (`SCORE_WINDOW_DEFAULTS`) | split | gaps ≥ 1 s |
-| | length | ≤ 28 s and ≤ 100 words, not packed |
+| | length | ≤ 28 s and ≤ 100 words, packed with muted gaps |
 | | pads | 0.25 s / 0.35 s, ≤ ½ gap, 20 ms clear |
 | Decisions (`DECISION_PRESETS`) | careful | audio −1.0, spelling −4 (psim ≥ 0.8), del 0, Maybe −3 |
 | | standard | audio −1.5, spelling −5, del 0, Maybe −4 |
@@ -231,7 +232,7 @@ difference is listed below.
   - Synthetic input (`test/script-fix-synth.ts`): 20,000 transcript words (133 min) against 6,004 script tokens.
     Retakes, chatter, misrecognitions, drops and insertions; the script is read about 3 times.
 - Result: aligned 85.6 %, off-script 9.1 %, 214 retake jumps, 740,887 merge cells, 791 candidates, 307 windows
-  (measured with window packing, the default then; windows are unpacked by default since the SC-105 harness).
+  (measured with window packing; the default packs with muted gaps since the SC-105 follow-up).
 - Time (median of 5 runs):
 
   | Step | Median |
@@ -430,6 +431,16 @@ Research behind it: the private scriptfix spike (FINDINGS §2.5, §2.6, §6, §7
   frame of `start` and zero-padded to 3000 frames — the same window construction as transcription (whole-file
   normalisation, OpenAI `transcribe()` slicing). Windows sharing a range (several candidates of the same audio) are
   processed together and encoded once; the job reports `encoderPasses`.
+- **Muted gaps (SC-030)**: a window's optional `mute` (request: media flicks, rounded inwards to whole samples by
+  `SpeechService.score`; worker spec: samples inside the window, ≤ 64 ranges, refused otherwise) is heard as silence:
+  the window's frames are those of its audio with those samples set to zero. Frames whose 25 ms window lies inside a
+  range are digital silence (`log10(1e-10)`); frames straddling a range edge are recomputed from the samples
+  (`MelFrameComputer`, the stream's own arithmetic) — the worker keeps ± 400 samples around every edge while decoding
+  (`keepRanges`, no whole-file sample array); all other frames are the streamed ones. Frames are never dropped, so word
+  times stay absolute; normalisation keeps the whole file's maximum; the encoder cache key includes the ranges. Tests:
+  `speech-score.test.ts` (the encoder input equals that of the same window with the samples zeroed, untouched frames
+  unchanged, refusals, `MelFrameComputer` = the stream), `speech-score-service.test.ts` (flicks → samples),
+  `packages/api/test/speech-score-schema.test.ts`.
 - **Tokens**: `[sot, lang, transcribe, notimestamps] + Σ encode(' ' + word) + [eot]` (English-only models:
   `[sot, notimestamps] + …`, as their alignment pass). Per-word `encode(' ' + word)` concatenated = GPT-2
   pre-tokenisation of the words joined by spaces, so token spans map to words (not `splitToWordTokens`, which splits
@@ -838,7 +849,9 @@ proposal), median:
 | alignment, candidates, decisions, patch report, proposal | < 0.01 s per speech minute (36 ms + 2 ms + …) |
 
 Decisions: 22 fix (every injected error), 11 Maybe (offered unselected; script deviations whose Δ_tok fell in the
-Standard Maybe band), 33 kept; 0 spelling. The encoder is 72 % of the job (zero-padded 30 s windows, one pass per
+Standard Maybe band), 33 kept; 0 spelling. (Measured with unmuted packed windows. Unpacked windows, the default for a
+while, took 23.4–24.7 s per speech minute; the default since is packing with muted gaps: 13.62 s per speech minute,
+the same 66 decisions — "Accuracy on real recordings (SC-105)", "Muted packed windows".) The encoder is 72 % of the job (zero-padded 30 s windows, one pass per
 window with a candidate: 2.07 passes per speech minute); reading 0 is already scored once per window and each
 distinct window encoded once, so the optimisations listed for SC-037 (reused model across jobs, batch / thread
 tuning) were not needed and not made. The report now carries this split (`timings.speech`: load, decode, encoder,
@@ -1015,7 +1028,11 @@ only aggregates and text-only derived rows left it. Aggregates only below; no tr
 - Decisions with the Standard preset unless named; "fix" = the Fixes and Spelling groups (Maybe items are offered
   unselected and are not counted as fixes).
 
-### Results (Standard; CPU and WebGPU give identical decisions)
+### Results with unpacked windows (Standard; CPU and WebGPU give identical decisions)
+
+The first harness run, with unpacked windows; the shipped default is muted packing, measured against these numbers
+in "Muted packed windows" below.
+
 
 | SC-105 target | Measured | Met |
 |---|---|---|
@@ -1036,6 +1053,48 @@ only aggregates and text-only derived rows left it. Aggregates only below; no tr
 - Margin sweep (same runs): Careful 0 false fixes, 32 / 52 A, 0 R + N; Generous 2 false fixes, 42 / 52 A, 1 R + N
   fixed. Audio margin −2 with the spelling rule: 2 false fixes, 1 real deviation fixed; spelling margin −8: 2 false
   fixes. The spike's margins (−1.5, spelling −5, `del` 0) stay.
+
+### Muted packed windows (the shipped default)
+
+Unpacked windows met every accuracy target but cost 23.4–24.7 s per speech minute on the VM's long benchmark (SC-037:
+≤ 20 s). The default is now packed windows (≤ 28 s, one encoder pass) whose gaps are muted: everything between the
+padded ranges of the packed stretches is zeroed before the log-mel of that window (`ScoreWindow.mute` → the SC-092
+request's optional `mute` → the worker), so the decoder can't hear speech the transcript doesn't hold, and the frames
+stay where they are. Same harness, same conditions (CPU, 8 threads, Standard):
+
+| SC-105 target | Unpacked (previous default) | Muted packing (default) | Met |
+|---|---|---|---|
+| Corrupted-script false fixes ≤ 0.5 % | 1 / 558 (0.18 %) | 1 / 558 (0.18 %): phonetic 1 / 194, same category 0 / 174, random 0 / 190 | yes |
+| 0 audio fixes in the cleanup's off-script / head-tail / hallucination regions | 0 (+ the head-tail join) | 0 (hallucination: 1 Maybe, 1 kept; + the same head-tail join) | yes |
+| Recognition errors fixed ≥ 70 % | 38 / 52 (73 %) | 38 / 52 (73 %); 5 Maybe, 9 kept | yes |
+| … with 0 real deviations fixed | 0 / 55 | 0 / 55 (unclear: 15 / 56 fixed) | yes |
+| Injected errors restored ≥ 50 % | 245 / 430 (57 %) | 247 / 430 (57 %; 257 with a candidate) | yes |
+| Proper-noun splits / glues ≥ 50 % | 5 / 10 | 5 / 10 (spike list 3 / 4) | yes (at the limit) |
+| Natural fixes per speech minute | 2.49 | 2.44 (190: 91 audio, 39 spelling, 9 `del`, 51 joins); Maybe 0.95 | — |
+| Encoder passes (natural run) | 249 | 204 (2.6 per speech minute; 294 muted ranges) | — |
+| Mac CPU cost per speech minute | 4.27 s (encoder 3.95) | 3.68 s: encoder 3.19 (1.22 s per pass), decoder 0.23, rest 0.25, alignment 0.005; + load 0.26, decode 0.92 per job | measured |
+
+- The one false fix differs: muted packing fixes a corrupted function word that replaces a hallucinated "Gracias." and
+  the next word (a 2 → 1 `sub`, Δ_tok −0.84) instead of the unpacked run's corrupted English word (spelling rule,
+  −4.91). The corrupted-word tail is closer to the margin: phonetic neighbours p50 / p99 / max −10.08 / −2.20 / −0.84
+  (unpacked −10.29 / −2.34 / −1.80); adjudicated A p50 −1.75, R p50 −5.54; paired with the spike's mlx fp16 on the same
+  corrupted word, median −0.14 (p10 −2.20, p90 +1.60).
+- Sweep: Careful 1 false fix, 31 / 52 A, 0 R + N; Generous 2 false fixes, 41 / 52 A, 0 R + N.
+- Mac conditions: the natural (cost) run on AC power with Low Power Mode off, load average 2.8–3.1 before the run;
+  the Mac went onto battery with Low Power Mode on during the injected-error run (accuracy unaffected: the same
+  computation), so the muted WebGPU run was stopped and not measured. Basis for an estimate [≈]: the unmuted packed
+  WebGPU run (same 204 passes) took 2.40 s per speech minute; muting only recomputes the frames at the range edges.
+
+**VM long benchmark** (`apps/engine/test/transcript-fix.bench.test.ts`, `TRANSCRIPT_FIX_BENCH=1`, turbo fp32, CPU,
+8 speech threads, 10.631 speech minutes, 66 candidates; three full jobs each, median; bench lock held for both, run
+back to back on the same VM; load average before → after each run from the bench's own log):
+
+| Windows | Job per speech minute | Encoder (passes) | Decoder | Runs (s) | Load average 1 min | Decisions |
+|---|---|---|---|---|---|---|
+| Muted packing (default) | **13.62 s** (target ≤ 20 s: met) | 9.85 s (22) | 1.37 s | 138.7 / 144.8 / 144.8 | 2.3 → 7.2 | 22 fix, 11 Maybe, 33 keep |
+| Unpacked (366b4885) | 23.38 s (not met) | 20.38 s (48) | 1.30 s | 245.1 / 253.1 / 248.6 | 5.6 → 7.4 | the same 66 decisions (Δ_tok within 0.85) |
+
+The load rises from the job itself (8 threads) and other agents' work; the VM was shared, not quiet.
 
 ### Δ_tok: ONNX fp32 (editor) vs mlx fp16 (spike)
 
@@ -1068,7 +1127,7 @@ ones. WebGPU vs CPU: every decision of every preset equal (2,070 candidates), |�
    over 128 characters) are left out with their candidates `unplaced`, and no window exceeds 30 s
    (`test/script-fix-windows.test.ts`, fails before the fix; fast-check property). Ordinary speech has ≤ 89 words and
    ≤ 117 tokens per 28 s window here, so nothing else changed.
-2. **Windows are not packed by default.** The two real deviations, the hallucination-region fix and both corrupted
+2. **Windows are not packed by default** (superseded by muted packing, below). The two real deviations, the hallucination-region fix and both corrupted
    words fixed by the merged code sat in packed windows with few words for their length (4–32 words over 12–25 s,
    largest gaps between stretches 3.6–17.6 s): speech the transcript missed in those gaps let a reading take that
    audio (one candidate's forced times landed 15 s after its words, Δ_tok +0.80 where the spike had −3.59). Unpacked
@@ -1081,6 +1140,9 @@ ones. WebGPU vs CPU: every decision of every preset equal (2,070 candidates), |�
    It gave a misrecognised channel name the spelling rule: recognition errors fixed 35 → 38, no new false fix, natural
    fixes 2.43 → 2.49 per speech minute.
 
+4. **Packed windows with muted gaps (the default now).** Unpacked windows missed SC-037 on the VM (23.4 s per speech
+   minute); packing again with the gaps muted keeps every accuracy target (table above) at 13.6 s. `pack: false`
+   (unpacked) and `muteGaps: false` (the old unmuted packing) stay options.
 ### Limitations
 
 - Labels are text-only (the spike agent's blind judgement without listening); "unclear" cases are not counted either
@@ -1092,10 +1154,10 @@ ones. WebGPU vs CPU: every decision of every preset equal (2,070 candidates), |�
 - Corrupted and injected errors are synthetic and easier than natural ones.
 - One join changed the spelling of a name in a head-tail slate: joins are decided without audio and cannot know about
   cleanup regions (it did not rewrite what was said).
-- SC-030 / SC-037: the spec's packing is off by default now; the VM cost on real recordings is estimated at ≈ 17.5 s
-  per speech minute unpacked (basis: the VM's measured 5.05 s per window and 0.17 s per reading × this corpus's 3.2
-  windows and 7.7 readings per speech minute), under the 20 s target; the lj-composite VM figure (19.0 s packed,
-  49.6 s unpacked) is for dense read speech with a pause every sentence.
+- Muted gaps protect against speech the transcript missed in the gaps between stretches, not inside a stretch (gaps
+  under 1 s are heard, as in the spike's own windows). The muted run's single false fix sits closer to the margin than
+  the unpacked one's.
+- The muted WebGPU cost was not measured (the Mac left AC power during the run).
 - Audio came from 16 kHz extractions, not the original media containers; no voice analysis was available to the
   re-timing.
 - Rerun: harness in the private research folder `sccalib` (`mkinputs.py`, `sccalib.ts`, `run.sh`, `scfinal.py`).
