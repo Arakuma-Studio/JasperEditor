@@ -169,6 +169,37 @@ function syntheticLibrary(n: number, seed = 1): SoundEntry[] {
 	return out.sort((a, b) => (a.id < b.id ? -1 : 1));
 }
 
+describe('disjunctive search facets', () => {
+	it('ignores only each facet’s own source or licence filter', () => {
+		const base: SoundEntry = {
+			...syntheticLibrary(1)[0]!,
+			title: 'Hit',
+			types: ['hit'],
+			tags: [],
+			materials: [],
+			takes: undefined,
+			judge: null,
+		};
+		const starter = { type: 'starter' as const, file: 'hit.wav' };
+		const pack = { type: 'pack' as const, packId: 'hits', file: 'hit.wav' };
+		const all: SoundEntry[] = [
+			{ ...base, id: 'snd_0000000000000001', source: starter, license: 'CC0-1.0' },
+			{ ...base, id: 'snd_0000000000000002', source: starter, license: 'CC-BY-SA-4.0' },
+			{ ...base, id: 'snd_0000000000000003', source: pack, license: 'CC0-1.0' },
+			{ ...base, id: 'snd_0000000000000004', source: pack, license: 'CC-BY-SA-4.0' },
+		];
+		const result = searchSoundEntries(
+			all,
+			SoundSearchQuerySchema.parse({ sources: 'starter', license: 'commercial-safe' }),
+			{ lookup: (id) => all.find((entry) => entry.id === id), includeFolders: true },
+		);
+		expect(result.total).toBe(1);
+		expect(result.results.map((row) => row.sound.id)).toEqual(['snd_0000000000000001']);
+		expect(result.facets.sources).toEqual({ starter: 1, pack: 1 });
+		expect(result.facets.licenses).toEqual({ cc0: 1, 'cc-by-sa': 1 });
+	});
+});
+
 /**
  * The budget of one search: 50 ms of CPU time, whatever the host's load. Wall time on an oversubscribed shared host
  * mostly measures the wait for a core (the old check scaled its budget with the load average: 100 ms at load 64 on 16
