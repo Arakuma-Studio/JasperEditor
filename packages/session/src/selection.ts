@@ -48,13 +48,22 @@ export function expandClipSelection(
 ): string[] {
 	const out = new Set<string>();
 	const sequences = Object.values(doc.sequences);
+	// Bulk selections can contain every member of a large group. Once its
+	// members have been inserted, visiting the same array again cannot add IDs
+	// or change their order. Keep this local so later selections see current groups.
+	let expanded: Set<readonly string[]> | undefined;
+	const addMembers = (members: readonly string[] | undefined) => {
+		if (!members || expanded?.has(members)) return;
+		(expanded ??= new Set()).add(members);
+		for (const member of members) out.add(member);
+	};
 	for (const id of clipIds) {
 		out.add(id);
 		for (const seq of sequences) {
 			const c = seq.clips[id];
 			if (!c) continue;
-			if (linked && c.linkId) for (const m of seq.links[c.linkId]?.members ?? []) out.add(m);
-			if (groups && c.groupId) for (const m of seq.groups[c.groupId]?.members ?? []) out.add(m);
+			if (linked && c.linkId) addMembers(seq.links[c.linkId]?.members);
+			if (groups && c.groupId) addMembers(seq.groups[c.groupId]?.members);
 		}
 	}
 	return [...out];
