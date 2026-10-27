@@ -248,7 +248,7 @@ describe('SpeechService.score (spec 17 SC-092)', () => {
 			{ start: sec(5), end: sec(5) + 10 },
 		];
 		await speech.score(r, new AbortController().signal);
-		const spec = logged()[0]!.spec as { windows: Array<{ id: string; mute?: unknown }> };
+		const spec = logged()[0]!.spec as unknown as { windows: Array<{ id: string; mute?: unknown }> };
 		// the second range is shorter than a sample: dropped
 		expect(spec.windows[0]!.mute).toEqual([{ start: 32_001, end: 71_999 }]);
 		expect('mute' in spec.windows[1]!).toBe(false);
