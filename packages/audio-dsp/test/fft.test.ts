@@ -3,6 +3,37 @@ import { describe, expect, it } from 'vitest';
 import { Fft, fft } from '../src/fft.ts';
 
 describe('complex FFT', () => {
+	it.each([
+		[2, 1],
+		[4, 3],
+		[32, 13],
+		[2048, 1003],
+		[1 << 19, 123_457],
+	])('transforms a complex impulse with a fresh plan (size %i, sample %i)', (size, at) => {
+		const plan = new Fft(size);
+		const re = new Float64Array(size);
+		const im = new Float64Array(size);
+		re[at] = 1.25;
+		im[at] = -0.75;
+		plan.forward(re, im);
+		let error = 0;
+		for (let k = 0; k < size; k++) {
+			const phase = (-2 * Math.PI * ((k * at) % size)) / size;
+			const cs = Math.cos(phase);
+			const sn = Math.sin(phase);
+			error = Math.max(error, Math.abs(re[k]! - (1.25 * cs + 0.75 * sn)));
+			error = Math.max(error, Math.abs(im[k]! - (1.25 * sn - 0.75 * cs)));
+		}
+		expect(error).toBeLessThan(1e-12);
+		plan.inverse(re, im);
+		let inverseError = 0;
+		for (let k = 0; k < size; k++) {
+			inverseError = Math.max(inverseError, Math.abs(re[k]! / size - (k === at ? 1.25 : 0)));
+			inverseError = Math.max(inverseError, Math.abs(im[k]! / size - (k === at ? -0.75 : 0)));
+		}
+		expect(inverseError).toBeLessThan(1e-12);
+	});
+
 	it('agrees with the discrete Fourier transform for complex input', () => {
 		fc.assert(
 			fc.property(
