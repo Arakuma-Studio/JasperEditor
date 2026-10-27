@@ -51,11 +51,8 @@ import { localHandle, mediaKeyOf } from '../export/planner.ts';
 import type { MediaRegistry } from '../media/registry.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import {
-	ACTIVE_RANGE_DB,
-	activeSpan,
 	type BedBands,
 	MAX_WINDOW_SEC,
-	MIN_WINDOW_SEC,
 	type Pcm,
 	type RenderEnv,
 	type RenderRequest,
@@ -66,7 +63,7 @@ import {
 import { type SoundDesignMeasurer, soundDesignMeasurer } from './measure-pool.ts';
 import { type VoiceActivityService, type VoiceEntry, voiceServiceFor } from './voice.ts';
 
-export { ACTIVE_RANGE_DB, activeSpan, MAX_WINDOW_SEC, MIN_WINDOW_SEC, type Weight };
+export type { Weight };
 
 /** Seconds of bed rendered before a window beyond its margin: K-weighting warm-up (0.5 s) + half a momentary window. */
 export const BED_PREROLL_SEC = 0.7;
@@ -175,7 +172,7 @@ export class MeasureCache {
 	};
 	/** A clip's own integrated loudness (delivery Auto-Match), null for silence. */
 	getLoudness(key: string): number | null | undefined {
-		return this.loudness.has(key) ? lru(this.loudness, key) : undefined;
+		return lru(this.loudness, key);
 	}
 	putLoudness(key: string, v: number | null): void {
 		bounded(this.loudness, key, v, this.maxSounds);
@@ -189,7 +186,7 @@ export class MeasureCache {
 	}
 	/** A whole mix's converged delivery for a target (the stored analysis's `delivery`), by mix key and target. */
 	getMixDelivery(key: string): Record<string, unknown> | null | undefined {
-		return this.deliveries.has(key) ? lru(this.deliveries, key) : undefined;
+		return lru(this.deliveries, key);
 	}
 	putMixDelivery(key: string, v: Record<string, unknown> | null): void {
 		bounded(this.deliveries, key, v, 64);
@@ -650,12 +647,6 @@ const renderEnv = (deps: MeasureDeps): RenderEnv => ({
 	...(deps.signal ? { signal: deps.signal } : {}),
 	...(deps.onSpawn ? { onSpawn: deps.onSpawn } : {}),
 });
-
-/** The sound's active window (absolute seconds) from its solo render, or null when it is silent. */
-export function activeWindow(pcm: Pcm, sr: number): TimeWindow | null {
-	const span = activeSpan(pcm, sr);
-	return span ? { start: (pcm.startSample + span[0]) / sr, end: (pcm.startSample + span[1]) / sr } : null;
-}
 
 const relative = (w: TimeWindow, pcm: Pcm, sr: number): TimeWindow => ({
 	start: w.start - pcm.startSample / sr,

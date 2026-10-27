@@ -31,7 +31,6 @@ import {
 	resolveLayerProps,
 	transitionSpec,
 } from '@jasper/project';
-import { quoteFilterPath } from '../color/extension.ts';
 import { colorRunFilters, fadeFilters, SWS_FLAGS } from '../export/native.ts';
 import type { NativeExtension } from '../export/native-ext.ts';
 import { mediaKeyOf, type PlannedExport } from '../export/planner.ts';
@@ -42,6 +41,7 @@ import { JobError } from '../jobs/types.ts';
 import type { MediaRecord } from '../media/registry.ts';
 import { REMOTION_VERSION, type SharedRenderBrowser } from '../remotion/service.ts';
 import { Ffmpeg, sec } from '../tools/ffmpeg.ts';
+import { filterPath } from '../tools/filter-text.ts';
 import { atomicWriteJson, readJsonOrNull } from '../tools/fs.ts';
 import { binaryNames } from '../tools/lgpl.ts';
 import type { CoreServices } from '../tools/services.ts';
@@ -1505,7 +1505,7 @@ export class LayerBakeService {
 				'format=gray',
 				crop,
 				'signalstats',
-				`metadata=mode=print:key=lavfi.signalstats.YMAX:file=${quoteFilterPath(stats)}`,
+				`metadata=mode=print:key=lavfi.signalstats.YMAX:file=${filterPath(stats)}`,
 			].join(',');
 			await ff.run(['-i', file, '-vf', vf, '-f', 'null', '-'], {
 				signal: ctx.signal,

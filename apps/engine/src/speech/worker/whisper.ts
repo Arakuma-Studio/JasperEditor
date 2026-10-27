@@ -32,12 +32,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
-import {
-	loadOrt as loadSharedOrt,
-	type Ort,
-	type ProviderId,
-	type OrtTensor as Tensor,
-} from '../../tools/ort.ts';
+import { loadOrt, type Ort, type ProviderId, type OrtTensor as Tensor } from '../../tools/ort.ts';
 import {
 	addWordTimestamps,
 	alignTokens,
@@ -67,11 +62,6 @@ import { CancelledError, inputFromSamples, type SpeechInput } from './audio.ts';
 import { createPartSession, type PartSession, type SessionFallback } from './sessions.ts';
 
 export { CancelledError };
-
-/** Loads onnxruntime-node (from `JASPER_ORT_DIR` when the engine set it). */
-export function loadOrt(): Ort {
-	return loadSharedOrt();
-}
 
 /** Mel frames per window (30 s). */
 export const N_FRAMES = 3000;

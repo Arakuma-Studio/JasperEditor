@@ -1387,8 +1387,3 @@ async function finish(
 		plan,
 	} as never;
 }
-
-/** Validates a request's sequence and refuses an early mistake before a job starts (the routes' check). */
-export function bedRequestSequence(doc: ProjectDocument, sequenceId: string | undefined): Sequence {
-	return planSequence(doc, sequenceId);
-}

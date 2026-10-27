@@ -14,15 +14,12 @@ import { knownPhraseRuns, phraseOverNonSpeech } from '../core/hallucination.ts';
 import { SAMPLE_RATE } from '../core/mel.ts';
 import {
 	extendWordsIntoSpeech,
-	frameDb,
 	type SpeechMask,
 	splitAtPauses,
 	tightenWords,
 	unvoicedWords,
 	VAD_FRAME,
-	vadThreshold,
 	voicedFraction,
-	voicedMask,
 } from '../core/vad.ts';
 import { CancelledError, decodeToInput, inputFromSamples, type SpeechInput } from './audio.ts';
 import {
@@ -249,19 +246,6 @@ export function refineWords<W extends RefinableWord>(
 		prev = w.end;
 	}
 	return { words: kept, dropped: drop.size, removed };
-}
-
-/** Word-bound refinement of an in-memory clip, in place (the benchmark harness and older callers). */
-export function refineWordBounds(
-	audio: Float32Array,
-	words: Array<{ start: number; end: number; text?: string }>,
-): void {
-	const db = frameDb(audio);
-	const kept = refineWords(
-		{ samples: audio.length, db, mask: voicedMask(db, vadThreshold(db)) },
-		words,
-	).words;
-	words.splice(0, words.length, ...kept);
 }
 
 export type RunOptions = {

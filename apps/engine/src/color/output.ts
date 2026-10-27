@@ -16,7 +16,7 @@ import {
 	type SequenceColorInfo,
 	serializeCube,
 } from '@jasper/project';
-import { quoteFilterPath } from './extension.ts';
+import { filterPath } from '../tools/filter-text.ts';
 
 export type ExportHdrMetadata = {
 	/** Mastering display: primaries, peak and black (cd/m²). */
@@ -219,7 +219,7 @@ async function writeCubeFilter(lut: ReturnType<typeof bakeLut>, dir: string): Pr
 	const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.partial`;
 	await writeFile(tmp, text);
 	await rename(tmp, file);
-	return `lut3d=file=${quoteFilterPath(file)}:interp=tetrahedral`;
+	return `lut3d=file=${filterPath(file)}:interp=tetrahedral`;
 }
 
 /** Whether an export output is plain 8-bit BT.709 SDR (what every path wrote before colour management). */
