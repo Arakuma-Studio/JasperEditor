@@ -1048,12 +1048,21 @@ export class SpeechService {
 				...(opts.batch ? { batch: Math.max(1, Math.min(32, Math.floor(opts.batch))) } : {}),
 				windows: req.windows.map((w) => {
 					const start = Math.floor(w.start / FLICKS_PER_SAMPLE);
+					// ≤ 30 s after rounding too (the request allows exactly 30 s of flicks)
+					const end = Math.min(start + 30 * 16_000, Math.max(start + 1, Math.ceil(w.end / FLICKS_PER_SAMPLE)));
+					// SC-030 muted gaps, rounded inwards (never into the audio around them), inside the window
+					const mute = (w.mute ?? [])
+						.map((m) => ({
+							start: Math.max(start, Math.ceil(m.start / FLICKS_PER_SAMPLE)),
+							end: Math.min(end, Math.floor(m.end / FLICKS_PER_SAMPLE)),
+						}))
+						.filter((m) => m.end > m.start);
 					return {
 						id: w.id,
 						start,
-						// ≤ 30 s after rounding too (the request allows exactly 30 s of flicks)
-						end: Math.min(start + 30 * 16_000, Math.max(start + 1, Math.ceil(w.end / FLICKS_PER_SAMPLE))),
+						end,
 						readings: w.readings.map((r) => ({ id: r.id, words: r.words })),
+						...(mute.length ? { mute } : {}),
 					};
 				}),
 			};

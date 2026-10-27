@@ -367,6 +367,8 @@ export async function openInput(
 	opts: Pick<RunOptions, 'audio' | 'signal' | 'onSpawn' | 'onProgress'>,
 	keepAudio = false,
 	span = 0.02,
+	/** Sample ranges to keep (`SpeechInput.samplesIn`; scoring's muted gaps). */
+	keepRanges?: ReadonlyArray<readonly [number, number]>,
 ): Promise<SpeechInput> {
 	if (opts.audio) return inputFromSamples(opts.audio, nMels);
 	if ('f32' in spec.input) {
@@ -381,6 +383,7 @@ export async function openInput(
 		signal: opts.signal,
 		...(spec.scratch ? { scratch: spec.scratch } : {}),
 		keepAudio,
+		...(keepRanges?.length ? { keepRanges } : {}),
 		...(opts.onSpawn ? { onSpawn: opts.onSpawn } : {}),
 		onSamples: (n) => {
 			if (expected > 0) opts.onProgress?.(Math.min(span, (span * n) / expected), 'Decoding audio');

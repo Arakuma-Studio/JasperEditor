@@ -88,6 +88,8 @@ export type FakeOrtOptions = {
 	decoderDelayMs?(provider: string): number;
 	/** Delay per encoder run (ms; cancellation tests). */
 	encoderDelayMs?(): number;
+	/** Sees every encoder input (`input_features`, band-major nMels × 3000; spec 17 muted-gap tests). */
+	onEncoderInput?(features: Float32Array, dims: readonly number[]): void;
 	/**
 	 * Decoder logits of one position (spec 17 tests): `history` = the row's tokens up to and including this position
 	 * (cached steps included); `row` holds the default logits and may be changed.
@@ -167,6 +169,9 @@ export function fakeOrt(opts: FakeOrtOptions = {}) {
 						const rerr = opts.runError?.(part, provider, rec.runs.length);
 						if (rerr) throw new Error(rerr);
 						if (part === 'encoder') {
+							const feat = Object.values(feeds)[0];
+							if (opts.onEncoderInput && feat)
+								opts.onEncoderInput(Float32Array.from(feat.data as ArrayLike<number>), feat.dims);
 							const ed = opts.encoderDelayMs?.() ?? 0;
 							if (ed) await new Promise((r) => setTimeout(r, ed));
 							return {

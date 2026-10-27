@@ -9,7 +9,7 @@
 // transcription (`withDeviceFallback`); cancellation is checked between windows and batches.
 import { z } from 'zod';
 import type { ProviderId } from '../../tools/ort.ts';
-import { SAMPLE_RATE } from '../core/mel.ts';
+import { FRAME_HALF, SAMPLE_RATE } from '../core/mel.ts';
 import { CancelledError, type SpeechInput } from './audio.ts';
 import {
 	type FrameSource,
@@ -31,6 +31,8 @@ export const SCORE_LIMITS = {
 	idChars: 128,
 	/** Longest window (samples): 30 s, Whisper's input. */
 	windowSamples: 30 * SAMPLE_RATE,
+	/** Muted ranges per window (SC-030: the gaps of a packed window). */
+	muteRanges: 64,
 } as const;
 
 const ProviderSchema = z.enum(['cpu', 'cuda', 'webgpu', 'dml', 'coreml']);
@@ -81,9 +83,20 @@ export const ScoreJobSpecSchema = z.object({
 						)
 						.min(1)
 						.max(SCORE_LIMITS.readingsPerWindow),
+					/**
+					 * SC-030: sample ranges inside the window heard as silence (the gaps between the parts of a packed
+					 * window, so a reading cannot take speech the transcript does not hold).
+					 */
+					mute: z
+						.array(z.object({ start: z.number().int().min(0), end: z.number().int().min(1) }))
+						.max(SCORE_LIMITS.muteRanges)
+						.optional(),
 				})
 				.refine((w) => w.end > w.start && w.end - w.start <= SCORE_LIMITS.windowSamples, {
 					message: 'a window must have end > start and last at most 30 s',
+				})
+				.refine((w) => (w.mute ?? []).every((m) => m.end > m.start && m.start >= w.start && m.end <= w.end), {
+					message: 'a muted range must lie inside its window and have end > start',
 				}),
 		)
 		.min(1)
@@ -131,12 +144,22 @@ export function parseScoreSpec(raw: unknown): ScoreJobSpec {
 	return r.data;
 }
 
+/** The samples kept while decoding: ± two frame windows around every edge of a muted range (`muteWindow`). */
+function muteEdges(spec: ScoreJobSpec): Array<[number, number]> {
+	const out: Array<[number, number]> = [];
+	const r = 2 * FRAME_HALF;
+	for (const w of spec.windows)
+		for (const m of w.mute ?? [])
+			for (const x of [m.start, m.end]) out.push([Math.max(0, x - r), x + r]);
+	return out;
+}
+
 export async function runScoreJob(raw: unknown, opts: RunOptions = {}): Promise<ScoreJobOutput> {
 	const spec = parseScoreSpec(raw);
 	const t0 = Date.now();
 	opts.onProgress?.(0, 'Decoding audio');
 	const cfg = WhisperModel.readConfig(spec.modelDir);
-	const input = await openInput(spec, cfg.num_mel_bins, opts, false, 0.05);
+	const input = await openInput(spec, cfg.num_mel_bins, opts, false, 0.05, muteEdges(spec));
 	try {
 		return await score(spec, input, opts, t0);
 	} finally {
@@ -154,7 +177,9 @@ async function score(
 	if (opts.signal?.aborted) throw new CancelledError();
 	// one encoder pass per distinct range: windows sharing a range are processed together
 	const key = (w: ScoreJobSpec['windows'][number]) =>
-		`${Math.floor(w.start / 160)}:${Math.ceil(Math.min(w.end, input.samples) / 160)}`;
+		`${Math.floor(w.start / 160)}:${Math.ceil(Math.min(w.end, input.samples) / 160)}:${(w.mute ?? [])
+			.map((m) => `${m.start}-${m.end}`)
+			.join(',')}`;
 	const order = spec.windows
 		.map((_, i) => i)
 		.sort((a, b) => {
@@ -193,7 +218,7 @@ async function score(
 				const end = Math.min(w.end, input.samples);
 				const k = key(w);
 				if (cached?.key !== k) {
-					cached = { key: k, enc: await model.encodeRange(input, w.start, end) };
+					cached = { key: k, enc: await model.encodeRange(input, w.start, end, w.mute ?? []) };
 					encoderPasses++;
 					windowSec += cached.enc.frames / 100;
 				}

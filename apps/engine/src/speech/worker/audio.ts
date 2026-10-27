@@ -119,8 +119,28 @@ export type SpeechInput = {
 	mel: MelFrames;
 	/** The samples (speaker labelling); throws when they were not kept. */
 	audio(): Promise<Float32Array>;
+	/**
+	 * Samples [start, end) when they were kept (an in-memory clip, or ranges named by `keepRanges` while decoding:
+	 * spec 17 SC-030 muted gaps), else null.
+	 */
+	samplesIn?(start: number, end: number): Float32Array | null;
 	dispose(): void;
 };
+
+/** Sorted, merged, non-empty sample ranges [a, b). */
+export function mergeRanges(ranges: ReadonlyArray<readonly [number, number]>): Array<[number, number]> {
+	const sorted = ranges
+		.map(([a, b]) => [Math.max(0, Math.floor(a)), Math.floor(b)] as [number, number])
+		.filter(([a, b]) => b > a)
+		.sort((x, y) => x[0] - y[0]);
+	const out: Array<[number, number]> = [];
+	for (const r of sorted) {
+		const last = out[out.length - 1];
+		if (last && r[0] <= last[1]) last[1] = Math.max(last[1], r[1]);
+		else out.push([r[0], r[1]]);
+	}
+	return out;
+}
 
 /** Accumulates the input chunk by chunk. */
 export class InputBuilder {
@@ -139,13 +159,45 @@ export class InputBuilder {
 	private audioFile: string | null = null;
 	private dir: string | null = null;
 	private kept: Float32Array | null = null;
+	/** Kept sample ranges (`keepRanges`) and their samples, filled while decoding. */
+	private readonly snippets: Array<{ start: number; data: Float32Array }>;
+	private snippetAt = 0;
 
 	constructor(
 		readonly nMels: number,
-		private readonly opts: { scratch?: string; keepAudio?: boolean; memoryBytes?: number } = {},
+		private readonly opts: {
+			scratch?: string;
+			keepAudio?: boolean;
+			memoryBytes?: number;
+			keepRanges?: ReadonlyArray<readonly [number, number]>;
+		} = {},
 	) {
 		this.mel = new MelFrames(nMels, () => this.scratchDir(), opts.memoryBytes);
 		this.stream = new LogMelStream(nMels, (row) => this.mel.append(row));
+		this.snippets = mergeRanges(opts.keepRanges ?? []).map(([a, b]) => ({
+			start: a,
+			data: new Float32Array(b - a),
+		}));
+	}
+
+	/** Copies the parts of the chunk [at, at + n) that kept ranges cover. */
+	private keepSnippets(chunk: Float32Array, at: number): void {
+		const end = at + chunk.length;
+		while (this.snippetAt < this.snippets.length) {
+			const sn = this.snippets[this.snippetAt]!;
+			if (sn.start + sn.data.length <= at) {
+				this.snippetAt++;
+				continue;
+			}
+			break;
+		}
+		for (let k = this.snippetAt; k < this.snippets.length; k++) {
+			const sn = this.snippets[k]!;
+			if (sn.start >= end) break;
+			const a = Math.max(at, sn.start);
+			const b = Math.min(end, sn.start + sn.data.length);
+			if (b > a) sn.data.set(chunk.subarray(a - at, b - at), a - sn.start);
+		}
 	}
 
 	private scratchDir(): string {
@@ -157,6 +209,7 @@ export class InputBuilder {
 	push(chunk: Float32Array): void {
 		if (!chunk.length) return;
 		this.stream.push(chunk);
+		if (this.snippets.length) this.keepSnippets(chunk, this.samples);
 		for (let i = 0; i < chunk.length; i++) {
 			const v = chunk[i];
 			this.acc += v * v;
@@ -207,6 +260,14 @@ export class InputBuilder {
 			threshold,
 			mask,
 			mel,
+			samplesIn: (start, end) => {
+				if (!(end > start) || start < 0) return null;
+				if (this.kept) return end <= this.kept.length ? this.kept.subarray(start, end) : null;
+				for (const sn of this.snippets)
+					if (start >= sn.start && end <= sn.start + sn.data.length)
+						return sn.data.subarray(start - sn.start, end - sn.start);
+				return null;
+			},
 			audio: async () => {
 				if (this.kept) return this.kept;
 				if (!audioFile) throw new Error('the audio samples were not kept');
@@ -245,6 +306,8 @@ export async function decodeToInput(
 		signal?: AbortSignal;
 		scratch?: string;
 		keepAudio?: boolean;
+		/** Sample ranges whose samples the input keeps (`SpeechInput.samplesIn`). */
+		keepRanges?: ReadonlyArray<readonly [number, number]>;
 		onSamples?(samples: number): void;
 		onSpawn?(child: import('node:child_process').ChildProcess): void;
 	} = {},
@@ -252,7 +315,11 @@ export async function decodeToInput(
 	const args = ['-v', 'error', '-nostdin', '-i', input.path];
 	args.push('-map', input.stream !== undefined ? `0:${input.stream}` : '0:a:0');
 	args.push('-vn', '-ac', '1', '-ar', String(SAMPLE_RATE), '-f', 'f32le', 'pipe:1');
-	const builder = new InputBuilder(nMels, { scratch: opts.scratch, keepAudio: opts.keepAudio });
+	const builder = new InputBuilder(nMels, {
+		scratch: opts.scratch,
+		keepAudio: opts.keepAudio,
+		...(opts.keepRanges ? { keepRanges: opts.keepRanges } : {}),
+	});
 	await new Promise<void>((resolve, reject) => {
 		const child = spawn(input.ffmpeg, args, { stdio: ['ignore', 'pipe', 'pipe'] });
 		opts.onSpawn?.(child);
