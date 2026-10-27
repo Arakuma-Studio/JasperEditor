@@ -1,13 +1,16 @@
-// Clean Up script (spec 14 TC-012, TC-030, TC-040): paste or load the video script (plain text, ≤ 256 KB) and attach it
-// to the sequence (`cleanup.configure`, undoable); detach it. With a script, off-script talk and head / tail chatter
-// are found, retake groups are named by their line and an earlier take that covers more of a line wins. After an
-// analysis the lines never said are listed.
-import { CLEANUP_SCRIPT_MAX_BYTES, readSequenceCleanup, type Sequence } from '@jasper/project';
+// The video script of a sequence (spec 14 TC-012, TC-030, TC-040; spec 17 SC-001 / SC-002): paste or load it (plain
+// text or Markdown, ≤ 256 KB), attach it to the sequence (`cleanup.configure`, undoable), replace or detach it. One
+// script per sequence, shared by Clean Up (off-script talk, head / tail chatter, retake groups named by their line)
+// and Fix Transcript (recognition errors fixed from it). Opened from Text ▸ Transcript ("Script…") and from Clean Up.
+// Shows what the parser reads (SC-002: sections found, directions and headings skipped) and, after a Clean Up
+// analysis, the lines never said.
+import { CLEANUP_SCRIPT_MAX_BYTES, readSequenceCleanup, type Sequence, transcriptForMedia } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
 import { Button, TextField, toast } from '@jasper/ui';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { t } from '../../../i18n/runtime.ts';
+import { scriptSummary, scriptSummaryText } from '../../../script-fix/model.ts';
 import { cleanupFor } from './controller.ts';
 
 /** Largest file read (the attach validates the 256 KB of text; a bigger file is refused before reading). */
@@ -29,10 +32,30 @@ export function ScriptDrawer({ session, seq }: { session: EditorSession; seq: Se
 	const bytes = utf8Length(text);
 	const tooLong = bytes > CLEANUP_SCRIPT_MAX_BYTES;
 	const changed = text !== (stored?.text ?? '') || name !== (stored?.name ?? '');
+	// the language of the sequence's speech (the first transcribed audio clip's), for "&" and English words
+	const language = useStoreSelector(session.store, (s) => {
+		for (const clip of Object.values(seq.clips))
+			if (clip.kind === 'audio') {
+				const tr = transcriptForMedia(s.document, clip.mediaId);
+				if (tr?.language) return tr.language;
+			}
+		return null;
+	});
+	const summary = useMemo(() => (tooLong ? null : scriptSummary(text, language)), [text, language, tooLong]);
+	// always this sequence's script (the Clean Up controller may be on another sequence)
+	const configure = (fields: { script: { name: string; text: string } | null }, label: string) => {
+		const r = session.apply({
+			label,
+			origin: 'user',
+			sequenceId: seq.id,
+			commands: [{ type: 'cleanup.configure', sequenceId: seq.id, ...fields }] as never[],
+		});
+		return r.ok ? { ok: true as const } : { ok: false as const, reason: r.errors[0]?.message ?? t('The change was refused') };
+	};
 	const attach = () => {
-		const r = c.configure(
+		const r = configure(
 			{ script: { name: name.trim() || t('Script'), text } },
-			stored ? t('Update Clean Up Script') : t('Attach Clean Up Script'),
+			stored ? t('Replace Script') : t('Attach Script'),
 		);
 		if (!r.ok) toast({ kind: 'warning', title: t('The script was not attached'), detail: r.reason });
 	};
@@ -85,12 +108,15 @@ export function ScriptDrawer({ session, seq }: { session: EditorSession; seq: Se
 					onClick={attach}
 					data-testid="text.cleanup.script.attach"
 				>
-					{stored ? t('Update') : t('Attach')}
+					{stored ? t('Replace') : t('Attach')}
 				</Button>
 				{stored ? (
 					<Button
 						variant="quiet"
-						onClick={() => c.configure({ script: null }, t('Detach Clean Up Script'))}
+						onClick={() => {
+							const r = configure({ script: null }, t('Detach Script'));
+							if (!r.ok) toast({ kind: 'warning', title: t('The script was not detached'), detail: r.reason });
+						}}
 						data-testid="text.cleanup.script.detach"
 					>
 						Detach
@@ -109,6 +135,11 @@ export function ScriptDrawer({ session, seq }: { session: EditorSession; seq: Se
 				{t('{0} KB of 256 KB', Math.ceil(bytes / 1024))}
 				{stored ? ` · ${t('Attached: {0}', stored.name)}` : ''}
 			</p>
+			{summary ? (
+				<p className="m-0 text-pr-muted" data-testid="text.cleanup.script.summary">
+					{scriptSummaryText(summary)}
+				</p>
+			) : null}
 			{analysis?.script ? (
 				<div className="mt-1" data-testid="text.cleanup.script.report">
 					<p className="m-0 text-pr-text">

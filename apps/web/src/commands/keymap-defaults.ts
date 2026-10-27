@@ -356,6 +356,9 @@ export const DEFAULT_KEYMAP: readonly KeyBinding[] = [
 	b('proposals.rejectItem', 'Backspace', 'review'),
 	b('proposals.rejectItem', 'Delete', 'review'),
 	b('proposals.clearItem', 'KeyU', 'review'),
+	// spec 17 SC-082: the whole group of the current item (Fixes, Spelling, Maybe…)
+	b('proposals.acceptGroup', 'Shift+Enter', 'review'),
+	b('proposals.clearGroup', 'Shift+KeyU', 'review'),
 	b('proposals.toggleHear', 'KeyA', 'review'),
 	b('proposals.playItem', 'Space', 'review'),
 	b('proposals.playRange', 'Shift+Space', 'review'),

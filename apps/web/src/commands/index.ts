@@ -40,6 +40,7 @@ import { projectFileCommands } from './project-files.ts';
 import { proposalCommands } from './proposals.ts';
 import { registerCommands } from './registry.ts';
 import { rotoCommands } from './roto.ts';
+import { scriptFixCommands } from './script-fix.ts';
 import { shapeCommands } from './shapes.ts';
 import { soundCommands } from './sound.ts';
 import { soundBedCommands } from './sound-beds.ts';
@@ -98,6 +99,8 @@ const COMMAND_MODULES: UiCommand[][] = [
 	speechCommands,
 	// spec 14: Clean Up Voice (Text panel ▸ Transcript ▸ Clean Up)
 	cleanupCommands,
+	// spec 17: Fix Transcript, Script…
+	scriptFixCommands,
 	rotoCommands,
 	multicamCommands,
 	interchangeCommands,

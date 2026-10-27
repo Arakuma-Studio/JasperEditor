@@ -154,6 +154,11 @@ export type ApplyResult =
 			/** The History label of the one transaction ("Accept <title> (n of m)"). */
 			label: string | null;
 			revision: number | null;
+			/**
+			 * The per-command results of the accept transaction, in order (empty when nothing was applied): a producer's
+			 * report after Apply (spec 17 SC-053: the subtitles a transcript fix patched or skipped).
+			 */
+			results: unknown[];
 	  }
 	| { ok: false; code: string; message: string; stale?: { itemId: string; reason: string }[] };
 
@@ -735,7 +740,14 @@ export class ProposalsController {
 		});
 		this.adopt(r.proposal);
 		this.followHistory();
-		return { ok: true, applied: r.applied, stale: r.stale, label, revision: r.revision };
+		return {
+			ok: true,
+			applied: r.applied,
+			stale: r.stale,
+			label,
+			revision: r.revision,
+			results: r.result?.ok ? [...r.result.results] : [],
+		};
 	}
 
 	/** Leaves the review rejecting every undecided item (the proposal stays, with its notes, for agents to read). */

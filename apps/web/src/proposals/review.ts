@@ -111,10 +111,23 @@ function soundName(item: ReviewItem): string | null {
 	return text(m.title, 120) ?? null;
 }
 
-function rowOf(item: ReviewItem, ghost: GhostModel | null, gainOf: (id: string) => number | null): ReviewRow {
+function rowOf(
+	item: ReviewItem,
+	ghost: GhostModel | null,
+	gainOf: (id: string) => number | null,
+	frameOf?: (item: ReviewItem) => number | null,
+): ReviewRow {
 	const m = metaOf(item.meta);
 	const g = ghost?.byItem[item.id];
-	const frame = finite(m.frame) ? Math.max(0, Math.floor(m.frame)) : g ? g.start : null;
+	// a producer's own anchor (a transcript fix: where its words are heard) wins over where its ghost starts
+	const own = frameOf?.(item) ?? null;
+	const frame = finite(m.frame)
+		? Math.max(0, Math.floor(m.frame))
+		: own !== null && finite(own)
+			? Math.max(0, Math.floor(own))
+			: g
+				? g.start
+				: null;
 	// a producer may say the gain of what an item changes is not what it is about (a voice cleanup's cut sound clips)
 	const gain =
 		m.showGain === false ? null : (gainOf(item.id) ?? (finite(m.gainOffsetDb) ? m.gainOffsetDb : null));
@@ -136,12 +149,14 @@ function rowOf(item: ReviewItem, ghost: GhostModel | null, gainOf: (id: string) 
 
 /**
  * The rows of the proposal under review. `ghost`: its ghosts in the drawn sequence (frames and gains), if any;
- * `feature`: the proposal's feature, whose vocabulary groups the rows (default sound design, the first producer).
+ * `feature`: the proposal's feature, whose vocabulary groups the rows (default sound design, the first producer);
+ * `frameOf`: the feature's own anchor of an item (spec 17: where a transcript fix is heard), else meta / ghost.
  */
 export function buildReviewModel(
 	items: readonly ReviewItem[],
 	ghost: GhostModel | null,
 	feature: string = SOUND_DESIGN_FEATURE,
+	frameOf?: (item: ReviewItem) => number | null,
 ): ReviewModel {
 	const vocab = reviewVocabulary(feature);
 	const declared = featureGroups(feature).order;
@@ -166,7 +181,12 @@ export function buildReviewModel(
 	const groups = new Map<string, ReviewRow[]>();
 	for (const it of items) {
 		if (it.setup) continue;
-		const row = rowOf(it, ghost, gainOf);
+		let row: ReviewRow;
+		try {
+			row = rowOf(it, ghost, gainOf, frameOf);
+		} catch {
+			row = rowOf(it, ghost, gainOf);
+		}
 		byId[it.id] = row;
 		const k = groupKey(it);
 		groups.set(k, [...(groups.get(k) ?? []), row]);

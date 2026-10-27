@@ -14,6 +14,7 @@ import {
 	currentItemId,
 	cycleAlternative,
 	decide,
+	decideGroup,
 	discardReview,
 	exitReview,
 	isRerollable,
@@ -53,6 +54,14 @@ const ItemArgs = z
 	.object({
 		/** The item (default: the one the review is on, i.e. the last selected). */
 		itemId: z.string().min(1).max(64).optional(),
+	})
+	.strict()
+	.optional();
+
+const GroupArgs = z
+	.object({
+		/** The group (as listed in the Review panel, e.g. `fix`, `maybe`); default: the current item's. */
+		groupId: z.string().min(1).max(64).optional(),
 	})
 	.strict()
 	.optional();
@@ -209,6 +218,34 @@ export const proposalCommands: UiCommand[] = [
 		run: async (ctx, args) => {
 			const id = (args as z.infer<typeof ItemArgs>)?.itemId;
 			if (ctx.session) await decide(ctx.session, 'clear', id ? [id] : undefined);
+		},
+	},
+	{
+		id: 'proposals.acceptGroup',
+		label: 'Accept Proposal Group',
+		description:
+			'Accept every pending or stale item of a group of the proposal under review (default: the current item’s group), items offered unselected included',
+		scope: 'review',
+		agentExposed: true,
+		argsSchema: GroupArgs,
+		when: (ctx) => writableReview(ctx),
+		disabledReason: notReviewing,
+		run: async (ctx, args) => {
+			if (ctx.session) await decideGroup(ctx.session, 'accept', GroupArgs.parse(args)?.groupId);
+		},
+	},
+	{
+		id: 'proposals.clearGroup',
+		label: 'Clear Proposal Group',
+		description:
+			'Put every accepted item of a group of the proposal under review back to pending (default: the current item’s group)',
+		scope: 'review',
+		agentExposed: true,
+		argsSchema: GroupArgs,
+		when: (ctx) => writableReview(ctx),
+		disabledReason: notReviewing,
+		run: async (ctx, args) => {
+			if (ctx.session) await decideGroup(ctx.session, 'clear', GroupArgs.parse(args)?.groupId);
 		},
 	},
 	{
