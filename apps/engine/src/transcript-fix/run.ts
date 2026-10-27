@@ -68,6 +68,7 @@ import { type JobContext, JobError } from '../jobs/types.ts';
 import type { ProposalService, Requester } from '../proposals/service.ts';
 import { liveDocument } from '../sound-design/plan.ts';
 import { engineMediaKey } from '../sound-design/voice.ts';
+import type { SpeechGlossary } from '../speech/glossary.ts';
 import type { SpeechScoreOptions } from '../speech/service.ts';
 import { HttpError } from '../tools/reply.ts';
 import { type FixCostStore, REFERENCE_COST } from './costs.ts';
@@ -93,10 +94,8 @@ export type FixSpeech = {
 		opts?: SpeechScoreOptions,
 	): Promise<SpeechScoreResult>;
 };
-/** The personal glossary library (`SpeechGlossary.list`). */
-export type FixGlossary = {
-	list(): Promise<{ entries: ReadonlyArray<{ from: readonly string[]; to: string; lang?: string | null }> }>;
-};
+/** The personal glossary library (SC-070, `speech/glossary.ts`; its entries are the SC-073 source). */
+export type FixGlossary = Pick<SpeechGlossary, 'list'>;
 
 export type TranscriptFixDeps = {
 	agent: () => AgentService | undefined;
