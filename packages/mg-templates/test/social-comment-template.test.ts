@@ -23,7 +23,6 @@ import {
 	socialCommentRequiredAssets,
 	socialCommentSchedule,
 	socialCommentSegments,
-	socialCommentUnavailableVariant,
 	socialDefaults,
 	socialLikesTick,
 	socialTickCount,
@@ -275,8 +274,6 @@ describe('social-comment@1 presets and fill hook', () => {
 			likes: 114,
 			replies: 5,
 		});
-		expect(socialCommentUnavailableVariant({ variant: 'instagram-post' })).toBeNull();
-		expect(socialCommentUnavailableVariant({ variant: 'instagram-reel-reply' })).toBeNull();
 		expect(SOCIAL_VARIANT_FONTS['instagram-post']).toEqual({ family: 'SF Pro Text', weights: [400, 600] });
 		expect(SOCIAL_VARIANT_FONTS['instagram-reel-reply']).toEqual({ family: 'SF Pro Text', weights: [400] });
 		// the YouTube presets carry tokcomment's YouTube defaults ("Username", 10 months ago, 72 likes, 2 replies)
@@ -289,8 +286,6 @@ describe('social-comment@1 presets and fill hook', () => {
 			likes: 72,
 			replies: 2,
 		});
-		expect(socialCommentUnavailableVariant({ variant: 'youtube-comment' })).toBeNull();
-		expect(socialCommentUnavailableVariant({ variant: 'youtube-shorts-reply' })).toBeNull();
 		// the YouTube default avatar is a remote image the clip declares (snapshot, planner) only while it is drawn
 		const req = (p: Record<string, unknown>) =>
 			socialComment.requiredAssets!(socialComment.paramsSchema.parse({ ...socialComment.defaults, ...p }));
@@ -319,7 +314,6 @@ describe('social-comment@1 presets and fill hook', () => {
 			likes: 1200,
 			views: 12_000,
 		});
-		expect(socialCommentUnavailableVariant({ variant: 'x-post' })).toBeNull();
 		expect(SOCIAL_VARIANT_FONTS['x-post']).toEqual({ family: 'Chirp', weights: [400, 700] });
 		// the store presets carry what differs from the schema defaults: the variant, its neutral name and review text
 		const play = socialComment.presets!.find((p) => p.id === 'play-store-review')!;

@@ -639,15 +639,16 @@ and passes the extras through `anim`:
 Never add timelines, timers or animation inside a card. The output must be a pure function of the props.
 
 **Wiring a variant:**
-1. Create `instagram.tsx` / `youtube.tsx` / `x.tsx` next to `tiktok.tsx`, exporting one `SocialVariantImpl` per
+1. Add the variant to `SOCIAL_VARIANTS` in `packages/mg-templates/src/social/variants.ts` (this adds its gallery
+   preset).
+2. Create `instagram.tsx` / `youtube.tsx` / `x.tsx` next to `tiktok.tsx`, exporting one `SocialVariantImpl` per
    variant.
-2. Add its card to the exhaustive `SOCIAL_VARIANT_IMPLS` map in `variants.ts`.
-3. In `packages/mg-templates/src/templates/anime/social-comment.ts`:
-   - add the variant to `SOCIAL_COMMENT_READY_VARIANTS` (this adds its gallery preset and lifts the export blocker);
+3. Add its card to the exhaustive `SOCIAL_VARIANT_IMPLS` map in `variants.ts`.
+4. In `packages/mg-templates/src/templates/anime/social-comment.ts`:
    - fill its `SOCIAL_VARIANT_FONTS` entry (family and weights; the font must exist in the bundled catalogue or the
      remote manifest);
    - check its `PRESET_NAMES` entry.
-4. Update the preset expectations in `packages/mg-templates/test/social-comment-template.test.ts`; the all-variant
+5. Update the preset expectations in `packages/mg-templates/test/social-comment-template.test.ts`; the all-variant
    card loop in `packages/motion/test/social-comment.test.tsx` checks the new card in both themes.
 
 **Theme tokens:** one `const <VARIANT>_THEME = { light: {…}, dark: {…} }` per card in its own file, with hex colours
@@ -697,7 +698,7 @@ manual screenshot matrices is outside the regression suite.
 
 **Assets and determinism rules** (added with the WP2 wiring):
 - **Fonts and images:** don't declare them yourself. `requiredAssets` derives them from `SOCIAL_VARIANT_FONTS`,
-  `SOCIAL_COMMENT_READY_VARIANTS`, `SOCIAL_DEFAULT_AVATAR_IMAGES` and `VARIANT_CAPABILITIES`. A raster default avatar
+  `SOCIAL_DEFAULT_AVATAR_IMAGES` and `VARIANT_CAPABILITIES`. A raster default avatar
   is `assets.imageUrls[SOCIAL_DEFAULT_AVATAR_IMAGES[platform]]`.
 - **Emoji:** draw every emoji through `CommentText`, `TextWithEmoji` or `EmojiGlyph`, which use `EmojiImage`. Never
   render an emoji grapheme as text: it would be a host-font glyph.
@@ -751,7 +752,7 @@ cues with the rendered card, not with the model's own values.
 
 ### Presets, Properties hints, avatar and fill
 
-- **Presets:** `socialCommentPresets(SOCIAL_COMMENT_READY_VARIANTS)` gives one preset per variant with a card, id =
+- **Presets:** `socialCommentPresets(SOCIAL_VARIANTS)` gives one preset per variant with a card, id =
   variant, named "TikTok · Comment reply" and "TikTok · Comment". Its params are the variant's tokcomment defaults
   (`socialDefaults`) that differ from the schema's. Agents use `"social-comment:tiktok-reply"`.
 - **Groups:** Look (variant, theme, emojiStyle), Author (displayName, handle, avatar, showProfile, verified), Stats
@@ -815,8 +816,6 @@ export planner and the bake key:
   (`VARIANT_CAPABILITIES`), in the clip's pack.
 - **Images:** the platform's raster default avatar (`SOCIAL_DEFAULT_AVATAR_IMAGES`: X, YouTube) when the avatar is
   shown and is the default. `SocialAvatar` draws `assets.imageUrls[id]`, else a silhouette.
-- **Unbuilt variants:** a variant not in `SOCIAL_COMMENT_READY_VARIANTS` declares nothing; it draws only its "not
-  available" card, and exports refuse it.
 
 ### Paint determinism
 

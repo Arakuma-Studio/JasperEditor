@@ -1,13 +1,7 @@
 // Motion-graphic templates in the engine (wp-m2-anime-templates, S11:ATP-008/010, FIX-008): which clips are anime
 // templates (drawn by Remotion, baked by the layer-bake extension, never rendered by jasper-mg) and which reference
 // templates this build does not have (they block every export path instead of exporting the placeholder card).
-import {
-	isAnimeTemplate,
-	type MgRegistry,
-	mgRegistry,
-	socialCommentUnavailableVariant,
-	VARIANT_LABELS,
-} from '@jasper/mg-templates';
+import { isAnimeTemplate, type MgRegistry, mgRegistry } from '@jasper/mg-templates';
 import type { RenderSnapshot, RenderVisualClip } from '@jasper/project';
 
 type MgClip = Pick<RenderVisualClip, 'source'>;
@@ -29,7 +23,7 @@ export function isAnimeTemplateClip(c: MgClip, registry: MgRegistry = mgRegistry
 
 export type MissingTemplate = { clipId: string; name: string; template: string };
 
-/** Motion-graphic clips of a snapshot whose template (or social-comment card style) is not installed (S11:ATP-010). */
+/** Motion-graphic clips of a snapshot whose template is not installed (S11:ATP-010). */
 export function missingTemplates(
 	snapshot: RenderSnapshot,
 	registry: MgRegistry = mgRegistry,
@@ -41,12 +35,6 @@ export function missingTemplates(
 		const key = `${mg.template.id}@${mg.template.version}`;
 		if (!registry.getDefinition(mg.template.id, mg.template.version))
 			out.push({ clipId: c.clipId, name: c.name, template: key });
-		else if (key === 'social-comment@1') {
-			// a social-comment card style this build does not draw yet (its preview is a "not available" card)
-			const variant = socialCommentUnavailableVariant(mg.params);
-			if (variant)
-				out.push({ clipId: c.clipId, name: c.name, template: `${key} (${VARIANT_LABELS[variant]} card)` });
-		}
 	}
 	return out;
 }

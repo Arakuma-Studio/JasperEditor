@@ -440,12 +440,10 @@ export const SOCIAL_DEFAULT_AVATAR_IMAGES: Readonly<Partial<Record<SocialPlatfor
 /**
  * What a clip draws (social-comment design §7.8, `requiredAssets`): the variant's font faces
  * (`SOCIAL_VARIANT_FONTS`), the emoji of the comment and of the names the variant shows, in the clip's emoji pack,
- * and the platform's default-avatar image when the avatar is shown and is the default. Only registered card
- * variants declare assets. Pure; never throws.
+ * and the platform's default-avatar image when the avatar is shown and is the default. Pure; never throws.
  */
 export function socialCommentRequiredAssets(params: SocialCommentParams): TemplateRequiredAssets {
 	const p = socialCommentParamsSchema.safeParse(params).data ?? DEFAULTS;
-	if (!SOCIAL_COMMENT_READY_VARIANTS.includes(p.variant)) return { fonts: [] };
 	const font = SOCIAL_VARIANT_FONTS[p.variant];
 	const caps = VARIANT_CAPABILITIES[p.variant];
 	const out: TemplateRequiredAssets = {
@@ -488,30 +486,6 @@ export function fillSocialCommentParams(
 }
 
 const DEFAULTS = socialCommentParamsSchema.parse({});
-
-/** Registered card variants available for presets and exports. */
-export const SOCIAL_COMMENT_READY_VARIANTS: readonly SocialVariant[] = [
-	'tiktok-reply',
-	'tiktok-comment',
-	'instagram-post',
-	'instagram-reel-reply',
-	'youtube-comment',
-	'youtube-shorts-reply',
-	'x-post',
-	'play-store-review',
-	'app-store-review',
-	'app-store-review-ios',
-];
-
-/**
- * The variant absent from this build's ready-card catalogue; exports refuse it like an uninstalled template.
- * Returns null when the variant is ready.
- */
-export function socialCommentUnavailableVariant(params: unknown): SocialVariant | null {
-	const v = (params as { variant?: unknown } | null)?.variant;
-	const variant = (SOCIAL_VARIANTS as readonly unknown[]).includes(v) ? (v as SocialVariant) : 'tiktok-reply';
-	return SOCIAL_COMMENT_READY_VARIANTS.includes(variant) ? null : variant;
-}
 
 /** Gallery card names of the variant presets ("<platform> · <card>"). */
 const PRESET_NAMES: Readonly<Record<SocialVariant, { name: string; description: string }>> = {
@@ -605,7 +579,7 @@ export const socialComment: MgAnimeTemplateDefinition<SocialCommentParams> = {
 	outroFrames: SOCIAL_COMMENT_OUTRO_FRAMES,
 	defaultDurationSeconds: 5,
 	canvases: [...CANVASES],
-	presets: socialCommentPresets(SOCIAL_COMMENT_READY_VARIANTS),
+	presets: socialCommentPresets(SOCIAL_VARIANTS),
 	fill: fillSocialCommentParams,
 	clipName: socialClipName,
 	requiredAssets: socialCommentRequiredAssets,
