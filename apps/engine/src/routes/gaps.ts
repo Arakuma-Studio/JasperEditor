@@ -35,7 +35,7 @@ type K = { Params: { mediaKey: string } };
 type P = { Params: { projectId: string } };
 
 /** Exists / writable / free space of a folder (the nearest existing parent for the space of a missing one). */
-export async function describeFolder(path: string, expose: boolean): Promise<ScratchLocation> {
+async function describeFolder(path: string, expose: boolean): Promise<ScratchLocation> {
 	let exists = false;
 	let writable = false;
 	try {
@@ -57,7 +57,7 @@ export async function describeFolder(path: string, expose: boolean): Promise<Scr
 }
 
 /** How the opener is spawned (`launch`). */
-export type OpenerCommand = {
+type OpenerCommand = {
 	cmd: string;
 	args: string[];
 	env?: Record<string, string>;

@@ -119,7 +119,7 @@ function queryError(code: string, message: string): AgentApiError {
 const RELAYED_SESSION_EVENTS = new Set(['doc.changed', 'selection.changed', 'playhead.changed']);
 
 /** The user's answer, or `no-editor`: no editor window that could show the card is connected. */
-export type UserApprovalOutcome = ApprovalDecision | 'no-editor';
+type UserApprovalOutcome = ApprovalDecision | 'no-editor';
 
 export class AgentService {
 	readonly sessions: SessionRegistry;

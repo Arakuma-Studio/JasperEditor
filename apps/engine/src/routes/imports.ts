@@ -8,7 +8,7 @@ import {
 	MediaVariantRequestSchema,
 	type VectorPagesResponse,
 } from '@jasper/api';
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import { isLoopbackHost } from '../context.ts';
 import { createImportsExtension } from '../imports/extension.ts';
 import { LayeredService } from '../imports/layered.ts';
@@ -18,6 +18,7 @@ import { lottieProber, psdProber, vectorProber } from '../imports/probers.ts';
 import { detectResponse, detectSequence, ImageSequenceService } from '../imports/sequence.ts';
 import { VariantService } from '../imports/variants.ts';
 import { pdfPages, svgText } from '../imports/vector.ts';
+import { replyWithJob } from '../jobs/reply.ts';
 import { fingerprintHex, MEDIA_KEY_RE } from '../media/fingerprint.ts';
 import { probeWithFfprobe, registerAssetProber } from '../media/probe.ts';
 import type { MediaRecord } from '../media/registry.ts';
@@ -28,7 +29,7 @@ import { coreServices } from '../tools/services.ts';
 type K = { Params: { mediaKey: string } };
 type Wait = { Querystring: { wait?: string } };
 
-export type ImportsServices = {
+type ImportsServices = {
 	variants: VariantService;
 	sequences: ImageSequenceService;
 	layers: LayeredService;
@@ -84,14 +85,6 @@ export default async function importsRoutes(app: FastifyInstance): Promise<void>
 		const p = await registry.resolvePath(r.mediaKey);
 		if (!p) throw new HttpError(404, 'ASSET_NOT_FOUND', 'Media is offline');
 		return p;
-	};
-	const waitJob = async (reply: FastifyReply, jobId: string, failCode: string) => {
-		const done = await queue.wait(jobId);
-		if (done.state !== 'succeeded')
-			throw new HttpError(422, done.error?.code ?? failCode, done.error?.message ?? done.state, {
-				jobId: done.id,
-			});
-		return reply.send(done);
 	};
 
 	app.post<K>(
@@ -207,8 +200,7 @@ export default async function importsRoutes(app: FastifyInstance): Promise<void>
 			const body = parseOr400(ImageSequenceRequestSchema, req.body);
 			if (body.path || body.paths) localOnly();
 			const job = await sequences.submit(body);
-			if (req.query.wait !== '1') return reply.code(202).send(job);
-			return waitJob(reply, job.id, 'IMAGE_SEQUENCE_FAILED');
+			return replyWithJob(queue, job, req.query.wait, reply, 'IMAGE_SEQUENCE_FAILED');
 		}),
 	);
 
@@ -218,8 +210,7 @@ export default async function importsRoutes(app: FastifyInstance): Promise<void>
 			const body = parseOr400(LayeredExtractRequestSchema, req.body);
 			record(body.mediaKey);
 			const job = layers.submit(body.mediaKey, body.projectId, body.merge);
-			if (req.query.wait !== '1') return reply.code(202).send(job);
-			return waitJob(reply, job.id, 'LAYERS_FAILED');
+			return replyWithJob(queue, job, req.query.wait, reply, 'LAYERS_FAILED');
 		}),
 	);
 

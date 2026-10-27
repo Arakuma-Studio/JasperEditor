@@ -64,7 +64,7 @@ type ProjectStoreOptions = {
 };
 
 /** What changed in the store: a saved or restored document (the new one), a deleted project. */
-export type ProjectStoreChange =
+type ProjectStoreChange =
 	| { projectId: string; kind: 'saved' | 'restored'; document: Record<string, unknown> }
 	| { projectId: string; kind: 'deleted' };
 
