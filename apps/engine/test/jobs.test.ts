@@ -85,6 +85,100 @@ describe('scheduling (S04:JB-011/012/014)', () => {
 		expect(external[0]?.title).toBe('a');
 	});
 
+	it('keeps filtered history, stable timestamp ties and repeated keys through completion and retry', () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date('2026-10-27T00:00:00Z'));
+		try {
+			const q = makeQueue({ journal: null });
+			q.registerRunner('analysis', hang);
+			const first = q.submit({
+				kind: 'analysis',
+				title: 'first',
+				priority: 'user',
+				cpuSlots: 1,
+				dedupeKey: 'a',
+				projectId: 'p1',
+			});
+			q.submit({
+				kind: 'analysis',
+				title: 'second',
+				priority: 'user',
+				cpuSlots: 1,
+				dedupeKey: 'b',
+				projectId: 'p2',
+			});
+			q.cancel(first.id);
+			const retried = q.retry(first.id);
+			const dedupeKeys = new Set(['b', 'missing', 'a']);
+			for (const filter of [
+				{},
+				{ active: true },
+				{ projectId: 'p1' },
+				{ kind: 'analysis' as const },
+				{ since: '2099-01-01T00:00:00Z' },
+				{ since: 'not-a-date' },
+			]) {
+				expect(q.list({ ...filter, dedupeKeys })).toEqual(
+					q.list(filter).filter((j) => !!j.dedupeKey && dedupeKeys.has(j.dedupeKey)),
+				);
+			}
+			expect(q.list({ dedupeKeys: new Set(['a']) }).map((j) => j.id)).toEqual([first.id, retried.id]);
+			expect(q.list({ active: true, dedupeKeys: new Set(['a']) }).map((j) => j.id)).toEqual([retried.id]);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('keeps key lookups identical to full listing after journal replacement, duplicate-key recovery and pruning', async () => {
+		const dir = tempAppdir('jasper-lookup-journal-');
+		const journal = join(dir, 'jobs.jsonl');
+		let time = Date.parse('2026-09-01T00:00:00Z');
+		const q = new JobQueue({
+			journalPath: journal,
+			tmpDir: join(dir, 'tmp'),
+			now: () => new Date(time),
+			totalSlots: 1,
+		});
+		queues.push(q);
+		q.registerRunner('analysis', hang);
+		const beforeStart = q.submit({
+			kind: 'analysis',
+			title: 'before start',
+			priority: 'user',
+			cpuSlots: 1,
+			dedupeKey: 'same',
+		});
+		// A valid restored journal can hold several jobs under a key; lookups must retain all of them.
+		writeFileSync(
+			journal,
+			[beforeStart, { ...beforeStart, id: 'job_duplicate_key' }]
+				.map((job) => JSON.stringify({ job }))
+				.join('\n'),
+		);
+		q.start();
+		const dedupeKeys = new Set(['same']);
+		const full = q.list().filter((j) => j.dedupeKey === 'same');
+		const found = q.list({ dedupeKeys });
+		q.cancel(beforeStart.id);
+		q.cancel('job_duplicate_key');
+		expect(found).toEqual(full);
+		expect(found).toHaveLength(2);
+		await Promise.all(found.map((j) => q.wait(j.id)));
+		for (let i = 0; i < 501; i++)
+			q.submit({
+				kind: 'probe',
+				title: `finished-${i}`,
+				priority: 'user',
+				cpuSlots: 1,
+				dedupeKey: `finished:${i}`,
+			});
+		time += 8 * 24 * 3600 * 1000;
+		expect(q.prune()).toBeGreaterThan(0);
+		expect(q.list({ dedupeKeys: new Set(['same', 'finished:0', 'finished:500']) })).toEqual(
+			q.list().filter((j) => ['same', 'finished:0', 'finished:500'].includes(j.dedupeKey ?? '')),
+		);
+	});
+
 	it('runs lanes in priority order within the CPU slots and dedupes by key', async () => {
 		const q = makeQueue({ slots: 2 });
 		const order: string[] = [];
