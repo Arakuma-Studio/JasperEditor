@@ -99,7 +99,8 @@ portability is no longer claimed. No synthesis recipe or version changed.
 
 The two TreeList `KEEP` records in `docs/test-audit/core_support.json` describe the incoming checkpoint.
 This audit supersedes them: the unused component and its exclusive tests were removed together as recorded
-above. Existing application tree implementations remain covered.
+above. The `clamps to whole stars 1–5` record in `motion_templates.json` is likewise superseded by removal
+of its unused helper and exclusive test. Existing application tree and rating implementations remain covered.
 
 Review also identified incoming coverage gaps in cleanup-list scrolling, absolute-size GPU passes,
 voice-analysis wiring and disjunctive source/licence facets. Focused independent witnesses are restored
@@ -116,6 +117,8 @@ before the merged gate; their fault-injection evidence is recorded with the inte
 No production mutation is retained. The suspected reverse-text-preset coverage gap was ruled out:
 the deleted case requested unsupported text speed, received a clamp warning and never reversed the clip.
 Its weak success-only test remains removed; the inaccurate documentation claim was deleted.
+The restored viewport property supersedes its incoming `web_1.json` deletion record; the compact facet
+witness supersedes the claim in `engine_3.json` that the deleted oracle had no unique filtering protection.
 
 ## Verification
 
