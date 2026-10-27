@@ -21,7 +21,6 @@ export * from './primitives/Slider.tsx';
 export * from './primitives/TimecodeField.tsx';
 export * from './primitives/TimecodeText.tsx';
 export * from './primitives/Tooltip.tsx';
-export * from './primitives/TreeList.tsx';
 export * from './toast/placement.ts';
 export * from './toast/ToastHost.tsx';
 export * from './toast/toast-store.ts';

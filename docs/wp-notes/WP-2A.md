@@ -7,7 +7,7 @@ passes without chunk-size warnings.
 
 | Area | Where | Notes |
 |---|---|---|
-| Design-system primitives | `packages/ui/src/primitives/*`, `menu/`, `dialog/`, `toast/` | IconButton, TextButton (`Button`), TextField, SearchField, Select, Checkbox, Toggle, ColorSwatch + ColorPicker (HSV, hue, alpha, hex, eyedropper, recent/project swatches), ScrubbyNumber, Slider, Menu/ContextMenu/Dropdown/MenuBar, Tooltip (+ `TooltipHost`), Dialog (+ `DialogHost`, `openDialog`, `confirmDialog`), Toast store + `ToastHost` + notification log, Tabs, ScrollArea, virtualized TreeList, TimecodeField, EmptyState, PanelErrorBoundary, Linear/CircularProgress, FxBadge, Kbd |
+| Design-system primitives | `packages/ui/src/primitives/*`, `menu/`, `dialog/`, `toast/` | IconButton, TextButton (`Button`), TextField, SearchField, Select, Checkbox, Toggle, ColorSwatch + ColorPicker (HSV, hue, alpha, hex, eyedropper, recent/project swatches), ScrubbyNumber, Slider, Menu/ContextMenu/Dropdown/MenuBar, Tooltip (+ `TooltipHost`), Dialog (+ `DialogHost`, `openDialog`, `confirmDialog`), Toast store + `ToastHost` + notification log, Tabs, TimecodeField, EmptyState, PanelErrorBoundary, Linear/CircularProgress, FxBadge, Kbd |
 | Icons and cursors | `packages/ui/src/icons/registry.ts`, `packages/ui/src/cursors/` | Custom NLE glyphs for tools, transport/monitor buttons, track headers, engines (R/F/N in a rounded square), agent, fx badge; 20 SVG cursors with hotspots and 2× variants (`cursorCss(id)`); `forceCursor()` + `ForcedCursorLayer` (z 300) |
 | Shell | `apps/web/src/shell/EditorShell.tsx` | Row A menubar + centered title; Row B header (Home, Import/Edit/Export, workspace tabs with drag reorder, right-click menu and » overflow, Workspaces menu, engine chip + popover, jobs button with badge from `useJobs`, Quick Export → `export.quick`, Agent → `panel.focus.agent`, palette, full screen) |
 | Dock | `shell/dock/DockHost.tsx`, `shell/dock/controller.ts` | dockview-react 8.3 themed by `packages/ui/src/theme/dockview.css`; 3 px gutters (4 px high contrast); Program/Timeline `renderer: 'always'`; per-panel error boundary; custom tabs (context title, ≡ panel menu on the active tab, × on hover, middle-click close, attention dot via `setPanelAttention(kind)`); maximize with Restore button; floating groups; empty-workspace state |
@@ -87,7 +87,7 @@ let gesture: Gesture | null = null;
 onCommit={(f) => transport.seek(f)} size="timeline" />`. Pass `source` ({get, subscribe}) so the playhead text updates by
 direct DOM writes (PERF-004).
 
-**Keyboard in widgets.** Mark widgets that handle their own keys with `data-keymap-local` (TreeList and ScrubbyNumber already
+**Keyboard in widgets.** Mark widgets that handle their own keys with `data-keymap-local` (ScrubbyNumber and SegmentedControl already
 do). The dispatcher lets them handle the key first and runs the command only if they did not call `preventDefault()`.
 Put `data-panel-autofocus` on the element that should receive focus when the panel is focused (for example the Agent
 prompt for `Shift+0`).
@@ -131,8 +131,8 @@ Aliases are marked `hidden` so the palette lists only the canonical ids.
 
 - Unit/component tests: `packages/ui/test/primitives.test.tsx` covers ScrubbyNumber (one commit per drag, Esc restores,
   Shift 10×, math entry, mixed values), TimecodeField (`1510` → 00:00:15:10, `+15`, invalid keeps the value, drop-frame, live
-  source), toasts (×5 merge, max 3, sticky error with action, dedupe/progress, pause), menu disabled reasons, TreeList
-  virtualization and keyboard, cursors, tooltip fallback.
+  source), toasts (×5 merge, max 3, sticky error with action, dedupe/progress, pause), menu disabled reasons,
+  cursors, tooltip fallback.
 - `apps/web/test/shell.test.tsx` covers workspace data (every panel exists, no duplicates), Editing proportions, the
   layout sanitizer, store fallback on corrupt/newer JSON, snapshots/save-as/reorder/import/export, dispatcher AC-KB-1,
   AC-KB-2, widget-first handling, repeat/keyup, fall-through, AC-KB-4 (no duplicate bindings per scope on every platform

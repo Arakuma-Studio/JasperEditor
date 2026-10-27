@@ -14,8 +14,6 @@ import {
 	Select,
 	TimecodeField,
 	ToastStore,
-	TreeList,
-	type TreeNode,
 } from '../src/index.ts';
 
 afterEach(cleanup);
@@ -334,48 +332,6 @@ describe('menus (S05:MN-002, SH-031)', () => {
 		).toBe('true');
 		fireEvent.click(undo);
 		expect(run).toHaveBeenCalledOnce();
-	});
-});
-
-describe('TreeList (S05:CT-040…045)', () => {
-	const many: TreeNode[] = Array.from({ length: 1000 }, (_, i) => ({ id: `n${i}`, label: `Clip ${i}` }));
-	it('reports the complete tree size to assistive technology', () => {
-		render(
-			<TreeList
-				label="Items"
-				nodes={many}
-				expanded={new Set()}
-				onExpandedChange={() => {}}
-				selected={[]}
-				onSelectionChange={() => {}}
-			/>,
-		);
-		const rows = screen.getAllByRole('treeitem');
-		expect(rows[0]?.getAttribute('aria-setsize')).toBe('1000');
-	});
-	it('keyboard: arrows move, Shift extends, → expands', () => {
-		const tree: TreeNode[] = [
-			{ id: 'bin', label: 'Bin', children: [{ id: 'a', label: 'A' }] },
-			{ id: 'b', label: 'B' },
-		];
-		const onSel = vi.fn();
-		const onExp = vi.fn();
-		render(
-			<TreeList
-				label="Items"
-				nodes={tree}
-				expanded={new Set()}
-				onExpandedChange={onExp}
-				selected={['bin']}
-				primary="bin"
-				onSelectionChange={onSel}
-			/>,
-		);
-		const root = screen.getByRole('tree');
-		fireEvent.keyDown(root, { key: 'ArrowRight' });
-		expect([...(onExp.mock.calls[0]?.[0] ?? [])]).toEqual(['bin']);
-		fireEvent.keyDown(root, { key: 'ArrowDown', shiftKey: true });
-		expect(onSel).toHaveBeenLastCalledWith(['bin', 'b'], 'b');
 	});
 });
 
