@@ -690,9 +690,18 @@ export function alignCore(
 				}
 			}
 		const land = landingsOf(t);
-		for (let q = 0; q < land.length; q++) touch(land[q]!);
+		let rowCapped = false;
+		if (land.length <= capRow) for (let q = 0; q < land.length; q++) touch(land[q]!);
+		else {
+			// a word that occurs more often than the cap: the positions nearest the previous best cell, and the first best
+			rowCapped = true;
+			const at = lowerBound(land, i > 0 ? rowArg[i - 1]! + 1 : 0);
+			const from = Math.max(0, Math.min(at - (capRow >> 1), land.length - capRow));
+			for (let q = from; q < from + capRow; q++) touch(land[q]!);
+			touch(sim.firstPos);
+		}
 		const rm = rowMerges_(i);
-		if (rm.capped) cappedRows++;
+		if (rm.capped) rowCapped = true;
 		for (let q = 0; q < rm.n; q++) touch(rJ.arr[rm.keep[q]!]!);
 		for (let q = 0; q < nTouched; q++) {
 			const j = touched[q]!;
@@ -798,7 +807,7 @@ export function alignCore(
 		}
 		let keep = touched.subarray(0, nKeep);
 		if (nKeep > capRow) {
-			cappedRows++;
+			rowCapped = true;
 			const order = Array.from(keep).sort((x, y) => {
 				const vx = Math.max(wH[x]!, wI[x]!);
 				const vy = Math.max(wH[y]!, wI[y]!);
@@ -808,6 +817,7 @@ export function alignCore(
 			keep = Int32Array.from(order.slice(0, capRow));
 		}
 		keep.sort();
+		if (rowCapped) cappedRows++;
 		const slot = slots[i & 3]!;
 		slot.row = i;
 		slot.n = keep.length;
