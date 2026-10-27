@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { clipElement, createProject, enableAgentBridge, expectTransaction, transact } from './support.ts';
 
 test.describe('editor download recovery', () => {
 	// Request interception must bypass service workers to exercise an actual failed chunk download.
@@ -11,6 +12,52 @@ test.describe('editor download recovery', () => {
 		await page.unroute('**/assets/*.js');
 		await page.getByRole('button', { name: 'Reload editor' }).click();
 		await expect(page.getByTestId('editor-shell')).toBeVisible();
+	});
+
+	test('expression editing loads on demand and a failed download leaves the document usable', async ({
+		page,
+	}) => {
+		const scripts = new Set<string>();
+		const errors: string[] = [];
+		page.on('request', (request) => {
+			if (request.resourceType() === 'script') scripts.add(request.url());
+		});
+		page.on('pageerror', (error) => errors.push(error.message));
+		await enableAgentBridge(page);
+		await createProject(page, 'Expression download recovery');
+		const result = await transact(page, [
+			{ type: 'clip.addSolid', at: 0, duration: 150, track: 'V1', color: [0.9, 0.3, 0.1, 1], ref: '$clip' },
+		]);
+		expectTransaction(result);
+		const clipId = result.refs.$clip!;
+		await clipElement(page, clipId).click();
+		await page.getByTestId('tab-effectControls').click();
+		const ec = page.getByTestId('ec-content');
+		await expect(ec.getByTestId('stopwatch-transform.rotation')).toBeVisible();
+		expect([...scripts].filter((url) => /\/(vendor-codemirror|ExpressionRowEditor)-/.test(url))).toEqual([]);
+
+		await page.route('**/assets/ExpressionRowEditor-*.js', (route) => route.abort());
+		await ec.getByTestId('stopwatch-transform.rotation').click({ modifiers: ['Alt'] });
+		const error = ec.getByRole('alert').filter({ hasText: 'Could not load the expression editor.' });
+		await expect(error).toBeVisible();
+		await expect(page.getByTestId('timeline-panel')).toBeVisible();
+		await expect(ec.getByTestId('prop-transform.rotation')).toBeVisible();
+		await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', { timeout: 20_000 });
+		await test
+			.info()
+			.attach('expression-download-error', { body: await page.screenshot(), contentType: 'image/png' });
+
+		// Chromium retains failed module imports for the document. Reload uses a fresh module map and the saved edit.
+		await page.unroute('**/assets/ExpressionRowEditor-*.js');
+		await error.getByRole('button', { name: 'Reload editor' }).click();
+		await expect(page.getByTestId('editor-shell')).toBeVisible();
+		await clipElement(page, clipId).click();
+		await page.getByTestId('tab-effectControls').click();
+		await expect(
+			page.getByTestId(`expr-row-clip-${clipId}-transform-rotation`).locator('[contenteditable="true"]'),
+		).toBeVisible();
+		expect([...scripts].some((url) => /\/vendor-codemirror-/.test(url))).toBe(true);
+		expect(errors).toEqual([]);
 	});
 });
 
@@ -49,6 +96,8 @@ test('visited editor reloads online and offline', async ({ page, context }) => {
 				.replace(/;$/, ''),
 		) as string[];
 	});
+	expect(optional.some((url) => /\/ExpressionRowEditor-/.test(url))).toBe(true);
+	expect(optional.some((url) => /\/vendor-codemirror-/.test(url))).toBe(true);
 	await expect
 		.poll(() =>
 			page.evaluate(
@@ -95,6 +144,12 @@ test('visited editor reloads online and offline', async ({ page, context }) => {
 			}, clipId),
 		)
 		.toBe(90.09);
+	// This is the first actual expression-field mount in this page, after the connection has gone away.
+	await clipElement(page, clipId).click();
+	await page.getByTestId('tab-effectControls').click();
+	await expect(
+		page.getByTestId(`expr-row-clip-${clipId}-transform-rotation`).locator('[contenteditable="true"]'),
+	).toBeVisible();
 	expect(errors).toEqual([]);
 });
 
