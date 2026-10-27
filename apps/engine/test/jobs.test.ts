@@ -85,51 +85,34 @@ describe('scheduling (S04:JB-011/012/014)', () => {
 		expect(external[0]?.title).toBe('a');
 	});
 
-	it('keeps filtered history, stable timestamp ties and repeated keys through completion and retry', () => {
-		vi.useFakeTimers();
+	it('lists retained attempts in insertion order and applies filters to keyed history', () => {
+		vi.useFakeTimers({ toFake: ['Date'] });
 		vi.setSystemTime(new Date('2026-10-27T00:00:00Z'));
 		try {
 			const q = makeQueue({ journal: null });
 			q.registerRunner('analysis', hang);
-			const first = q.submit({
-				kind: 'analysis',
-				title: 'first',
-				priority: 'user',
-				cpuSlots: 1,
-				dedupeKey: 'a',
-				projectId: 'p1',
-			});
-			q.submit({
-				kind: 'analysis',
-				title: 'second',
-				priority: 'user',
-				cpuSlots: 1,
-				dedupeKey: 'b',
-				projectId: 'p2',
-			});
+			const spec = { kind: 'analysis' as const, priority: 'user' as const, cpuSlots: 1 };
+			const first = q.submit({ ...spec, title: 'first', dedupeKey: 'a', projectId: 'p1' });
+			const second = q.submit({ ...spec, title: 'second', dedupeKey: 'b', projectId: 'p2' });
 			q.cancel(first.id);
 			const retried = q.retry(first.id);
 			const dedupeKeys = new Set(['b', 'missing', 'a']);
-			for (const filter of [
-				{},
-				{ active: true },
-				{ projectId: 'p1' },
-				{ kind: 'analysis' as const },
-				{ since: '2099-01-01T00:00:00Z' },
-				{ since: 'not-a-date' },
-			]) {
-				expect(q.list({ ...filter, dedupeKeys })).toEqual(
-					q.list(filter).filter((j) => !!j.dedupeKey && dedupeKeys.has(j.dedupeKey)),
-				);
-			}
-			expect(q.list({ dedupeKeys: new Set(['a']) }).map((j) => j.id)).toEqual([first.id, retried.id]);
-			expect(q.list({ active: true, dedupeKeys: new Set(['a']) }).map((j) => j.id)).toEqual([retried.id]);
+			for (const [filter, ids] of [
+				[{ dedupeKeys }, [first.id, second.id, retried.id]],
+				[{ dedupeKeys, active: true }, [second.id, retried.id]],
+				[{ dedupeKeys, projectId: 'p1' }, [first.id, retried.id]],
+				[{ dedupeKeys, kind: 'export' }, []],
+				[{ dedupeKeys, since: '2099-01-01T00:00:00Z' }, [second.id, retried.id]],
+				[{ dedupeKeys: new Set(['a']) }, [first.id, retried.id]],
+				[{ dedupeKeys: new Set(['a']), active: true }, [retried.id]],
+			] as const)
+				expect(q.list(filter).map((job) => job.id)).toEqual(ids);
 		} finally {
 			vi.useRealTimers();
 		}
 	});
 
-	it('keeps key lookups identical to full listing after journal replacement, duplicate-key recovery and pruning', async () => {
+	it('restores keyed journal history in stable order and drops pruned keys from lookups', async () => {
 		const dir = tempAppdir('jasper-lookup-journal-');
 		const journal = join(dir, 'jobs.jsonl');
 		let time = Date.parse('2026-09-01T00:00:00Z');
@@ -141,42 +124,35 @@ describe('scheduling (S04:JB-011/012/014)', () => {
 		});
 		queues.push(q);
 		q.registerRunner('analysis', hang);
-		const beforeStart = q.submit({
-			kind: 'analysis',
-			title: 'before start',
-			priority: 'user',
-			cpuSlots: 1,
-			dedupeKey: 'same',
-		});
-		// A valid restored journal can hold several jobs under a key; lookups must retain all of them.
+		const spec = { kind: 'analysis' as const, priority: 'user' as const, cpuSlots: 1 };
+		const first = q.submit({ ...spec, title: 'before start', dedupeKey: 'same' });
+		const other = q.submit({ ...spec, title: 'other', dedupeKey: 'other' });
+		const duplicate = { ...first, id: 'job_duplicate_key' };
+		// Fresh terminal records survive recovery; eight days later only the newest 500 remain (S04 CA-020).
+		const finished = Array.from({ length: 501 }, (_, i) => ({
+			...first,
+			id: `job_finished_${i}`,
+			title: `finished-${i}`,
+			dedupeKey: `finished:${i}`,
+			state: 'succeeded',
+			progress: 1,
+			finishedAt: first.createdAt,
+		}));
 		writeFileSync(
 			journal,
-			[beforeStart, { ...beforeStart, id: 'job_duplicate_key' }]
-				.map((job) => JSON.stringify({ job }))
-				.join('\n'),
+			`${[first, duplicate, other, ...finished].map((job) => JSON.stringify({ job })).join('\n')}\n`,
 		);
 		q.start();
-		const dedupeKeys = new Set(['same']);
-		const full = q.list().filter((j) => j.dedupeKey === 'same');
-		const found = q.list({ dedupeKeys });
-		q.cancel(beforeStart.id);
-		q.cancel('job_duplicate_key');
-		expect(found).toEqual(full);
-		expect(found).toHaveLength(2);
-		await Promise.all(found.map((j) => q.wait(j.id)));
-		for (let i = 0; i < 501; i++)
-			q.submit({
-				kind: 'probe',
-				title: `finished-${i}`,
-				priority: 'user',
-				cpuSlots: 1,
-				dedupeKey: `finished:${i}`,
-			});
+		const restored = [first.id, other.id, duplicate.id];
+		expect(q.list({ dedupeKeys: new Set(['other', 'same']) }).map((job) => job.id)).toEqual(restored);
+		for (const id of restored) q.cancel(id);
+		await Promise.all(restored.map((id) => q.wait(id)));
 		time += 8 * 24 * 3600 * 1000;
-		expect(q.prune()).toBeGreaterThan(0);
-		expect(q.list({ dedupeKeys: new Set(['same', 'finished:0', 'finished:500']) })).toEqual(
-			q.list().filter((j) => ['same', 'finished:0', 'finished:500'].includes(j.dedupeKey ?? '')),
-		);
+		expect(q.prune()).toBe(4);
+		expect(q.list({ dedupeKeys: new Set(['same', 'other', 'finished:0']) })).toEqual([]);
+		expect(q.list({ dedupeKeys: new Set(['finished:500']) }).map((job) => job.id)).toEqual([
+			'job_finished_500',
+		]);
 	});
 
 	it('runs lanes in priority order within the CPU slots and dedupes by key', async () => {

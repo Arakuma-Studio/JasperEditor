@@ -67,4 +67,7 @@ are scanned. No persistent cache or filesystem-readiness check is skipped.
 - `pnpm --filter @jasper/engine typecheck`: passed.
 - Biome checks for changed engine source, tests and benchmarks: passed.
 
+Keyed-list assertions use explicit submitted and restored job IDs. Recovery fixtures cover pre-start entries
+and duplicate keys; the retention boundary uses 501 serialized completed records in one fixture write.
+
 The parent integration run records the complete workspace and browser checks.
