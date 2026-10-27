@@ -314,6 +314,7 @@ import {
 } from './subtitle-templates.ts';
 import { SyncAudioRequestSchema, SyncAudioResponseSchema } from './sync.ts';
 import { TrackRequestSchema } from './tracking.ts';
+import { TranscriptFixRequestSchema } from './transcript-fix.ts';
 import { VoiceAnalysisQuerySchema, VoiceAnalyzeRequestSchema } from './voice.ts';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'DELETE';
@@ -1800,6 +1801,18 @@ export const ROUTES = {
 		path: '/api/projects/:projectId/style/apply',
 		body: ApplyStyleRequestSchema,
 		response: z.union([ApplyStyleResultSchema, EngineJobSchema]),
+	},
+	/**
+	 * Spec 17 SC-090: Fix Transcript — a `transcript-fix` job (`dryRun`: the fast pre-run; `propose`: the audio check and
+	 * one `transcript-correction` proposal); the job result is `TranscriptFixResult`.
+	 */
+	transcriptFix: {
+		method: 'POST',
+		path: '/api/projects/:projectId/sequences/:sequenceId/transcript-fix',
+		body: TranscriptFixRequestSchema,
+		/** `wait=1`: answer when the job ends (the finished job; a failed job is a 422 with its code). */
+		query: z.object({ wait: z.enum(['1']).optional() }),
+		response: EngineJobSchema,
 	},
 	/** Spec 15 EA-013: Style Check of a sequence against a recipe's targets. */
 	styleCheck: {

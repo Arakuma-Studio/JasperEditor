@@ -45,4 +45,5 @@ export * from './style.ts';
 export * from './subtitle-templates.ts';
 export * from './sync.ts';
 export * from './tracking.ts';
+export * from './transcript-fix.ts';
 export * from './voice.ts';

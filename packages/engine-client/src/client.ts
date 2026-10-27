@@ -92,6 +92,7 @@ import {
 	type StyleRecipeDuplicateRequest,
 	type StyleRecipeUpdateRequest,
 	soundSearchParams,
+	type TranscriptFixRequest,
 	type UploadCreateRequest,
 	type UploadCreateResponse,
 	UploadOffsetMismatchSchema,
@@ -651,6 +652,24 @@ export class EngineClient {
 			body: req,
 			...(signal ? { signal } : {}),
 		}) as Promise<ApplyStyleResult | EngineJob>;
+	}
+	/**
+	 * Fix Transcript (spec 17 SC-090): a `transcript-fix` job (202). Its result (`TranscriptFixResultSchema`) names the
+	 * stored `transcript-correction` proposal (`propose`) or carries the pre-run report (`dryRun`). `wait: true` waits for
+	 * the job (a failed job is an EngineError with its code).
+	 */
+	transcriptFix(
+		projectId: string,
+		sequenceId: string,
+		req: TranscriptFixRequest,
+		opts: { wait?: boolean; signal?: AbortSignal } = {},
+	) {
+		return this.call('transcriptFix', {
+			params: { projectId, sequenceId },
+			body: req,
+			...(opts.wait ? { query: { wait: '1' as const } } : {}),
+			...(opts.signal ? { signal: opts.signal } : {}),
+		});
 	}
 	/** Style Check (spec 15 EA-013) of a sequence against a recipe's targets. */
 	styleCheck(projectId: string, req: StyleCheckRequest, signal?: AbortSignal) {

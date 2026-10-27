@@ -651,9 +651,9 @@ export function registerCleanupTools(ctx: ToolContext): void {
 		ctx,
 		'attach_script',
 		{
-			title: 'Attach a script for clean up',
+			title: 'Attach a script',
 			description:
-				'Attaches the video script (plain text, ≤ 256 KB; one sentence or line per take) to a sequence for Clean Up: retake groups are named by line, off-script talk and head / tail chatter are found, an earlier take that covers more of a line wins, and lines never said are reported. text or path (an absolute .txt / .md file); detach: true removes it. One undoable edit.',
+				'Attaches the video script (plain text, ≤ 256 KB; one sentence or line per take) to a sequence: the script serves cleanup and transcript fixing. fix_transcript fixes the recognition errors of the transcript from it (names, loanwords, split words; each checked against the audio). For Clean Up: retake groups are named by line, off-script talk and head / tail chatter are found, an earlier take that covers more of a line wins, and lines never said are reported. text or path (an absolute .txt / .md file); detach: true removes it. One undoable edit.',
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
