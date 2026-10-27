@@ -1066,7 +1066,11 @@ export class SpeechService {
 					reason: plan.unavailableReason,
 				});
 			const refused = (run: WorkerRun<ScoreJobOutput>) =>
-				new JobError(run.code ?? 'SPEECH_REFUSED', run.error ?? 'The speech worker refused the request', false);
+				new JobError(
+					run.code ?? 'SPEECH_REFUSED',
+					run.error ?? 'The speech worker refused the request',
+					false,
+				);
 			let run = await this.runWorker<ScoreJobOutput>(host, 'score', spec, scratch, [0, 1], env, gpuName);
 			if (!run.out) {
 				if (run.code) throw refused(run);
@@ -1074,13 +1078,22 @@ export class SpeechService {
 				const from = gpuOfFailedRun(run, spec.device ?? plan);
 				if (!from || signal.aborted) throw original;
 				host.log(`GPU attempt failed (${run.error}); scoring again on the CPU`);
-				const cpuSpec: ScoreJobSpec = { ...spec, device: { encoder: 'cpu', decoder: 'cpu', calibrate: null } };
+				const cpuSpec: ScoreJobSpec = {
+					...spec,
+					device: { encoder: 'cpu', decoder: 'cpu', calibrate: null },
+				};
 				run = await this.runWorker<ScoreJobOutput>(host, 'score', cpuSpec, scratch, [0, 1], {}, gpuName);
 				if (!run.out) {
 					if (run.code) throw refused(run);
 					throw original;
 				}
-				fallbacks.push({ stage: 'job', part: 'both', from, to: 'cpu', reason: original.message.slice(0, 300) });
+				fallbacks.push({
+					stage: 'job',
+					part: 'both',
+					from,
+					to: 'cpu',
+					reason: original.message.slice(0, 300),
+				});
 			}
 			const out = run.out;
 			if (!validScoreOutput(out, spec))
@@ -1185,10 +1198,14 @@ export class SpeechService {
 		const outPath = join(scratch, `${tag}-out.json`);
 		await writeFile(specPath, JSON.stringify(spec));
 		const cmd = speechCommand(this.env);
-		const child = spawn(cmd.command, [...cmd.args, ...(mode === 'score' ? ['score'] : []), specPath, outPath], {
-			stdio: ['ignore', 'pipe', 'pipe'],
-			env: { ...process.env, ...extraEnv, OMP_NUM_THREADS: String(spec.threads ?? 1) },
-		});
+		const child = spawn(
+			cmd.command,
+			[...cmd.args, ...(mode === 'score' ? ['score'] : []), specPath, outPath],
+			{
+				stdio: ['ignore', 'pipe', 'pipe'],
+				env: { ...process.env, ...extraEnv, OMP_NUM_THREADS: String(spec.threads ?? 1) },
+			},
+		);
 		host.trackChild?.(child);
 		const onAbort = () => void terminateTree(child, host.killGraceMs);
 		if (host.killGraceMs !== undefined) {
@@ -1300,7 +1317,8 @@ function validScoreOutput(out: ScoreJobOutput, spec: ScoreJobSpec): boolean {
 	if (!out.device || !Array.isArray(out.device.fallbacks) || !out.profile || !out.timings) return false;
 	return out.windows.every((w, i) => {
 		const sw = spec.windows[i]!;
-		if (!w || w.id !== sw.id || !Array.isArray(w.readings) || w.readings.length !== sw.readings.length) return false;
+		if (!w || w.id !== sw.id || !Array.isArray(w.readings) || w.readings.length !== sw.readings.length)
+			return false;
 		return w.readings.every((r, j) => {
 			const sr = sw.readings[j]!;
 			return (

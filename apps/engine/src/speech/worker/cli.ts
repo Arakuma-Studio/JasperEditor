@@ -51,7 +51,9 @@ if (!specPath || !outPath) {
 }
 if (scoring)
 	// SC-036: a cancelled scoring job ends within 1 s, even while an encoder pass is running
-	ac.signal.addEventListener('abort', () => setTimeout(() => process.exit(130), 1000).unref(), { once: true });
+	ac.signal.addEventListener('abort', () => setTimeout(() => process.exit(130), 1000).unref(), {
+		once: true,
+	});
 
 let last = -1;
 let lastStage = '';

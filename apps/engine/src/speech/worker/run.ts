@@ -371,7 +371,10 @@ export async function openInput(
 	if (opts.audio) return inputFromSamples(opts.audio, nMels);
 	if ('f32' in spec.input) {
 		const b = await readFile(spec.input.f32);
-		return inputFromSamples(new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)), nMels);
+		return inputFromSamples(
+			new Float32Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength)),
+			nMels,
+		);
 	}
 	const expected = (spec.durationSec ?? 0) * SAMPLE_RATE;
 	return decodeToInput(spec.input, nMels, {

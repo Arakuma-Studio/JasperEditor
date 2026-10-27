@@ -81,7 +81,7 @@ const OptionsShape = {
 		.max(40)
 		.optional()
 		.describe(
-			'Names and terms (≤ 40, script spelling, most frequent first) carried into every window\'s prompt; a window where one repeats ≥ 3 times within 10 s is decoded again without them',
+			"Names and terms (≤ 40, script spelling, most frequent first) carried into every window's prompt; a window where one repeats ≥ 3 times within 10 s is decoded again without them",
 		),
 };
 

@@ -25,7 +25,12 @@ const LSE = 5 + Math.log((VOCAB - 2) * Math.exp(-10) + Math.exp(-3) + 1);
 
 function spec(
 	dir: string,
-	windows: Array<{ id: string; start: number; end: number; readings: Array<{ id: string; words: string[] }> }>,
+	windows: Array<{
+		id: string;
+		start: number;
+		end: number;
+		readings: Array<{ id: string; words: string[] }>;
+	}>,
 	extra: Record<string, unknown> = {},
 ) {
 	return { modelDir: dir, modelId: 'fake', input: { f32: '' }, language: 'en', windows, ...extra };
@@ -168,7 +173,8 @@ describe('scoring readings (SC-032)', () => {
 		);
 		const [w0, w1] = out.windows[0]!.readings[0]!.words;
 		// word 0 = tokens 0..2 → rows 0..2 → 0–3 s of the window; word 1 = tokens 3..6 → 3–7 s
-		const near = (samples: number, sec: number) => expect(Math.abs(samples / SR - sec)).toBeLessThanOrEqual(0.05);
+		const near = (samples: number, sec: number) =>
+			expect(Math.abs(samples / SR - sec)).toBeLessThanOrEqual(0.05);
 		near(w0!.start, 2);
 		near(w0!.end, 5);
 		near(w1!.start, 5);
@@ -189,11 +195,17 @@ describe('refusals, cancellation and devices (SC-032, SC-035, SC-036)', () => {
 			expect((e as SpeechRefusal).code).toBe(code);
 		};
 		const plain = fakeModelDir();
-		await refusal(runScoreJob(spec(plain, one), { ort: fakeOrt().ort, audio }), 'SPEECH_TOKENIZER_CANNOT_ENCODE');
+		await refusal(
+			runScoreJob(spec(plain, one), { ort: fakeOrt().ort, audio }),
+			'SPEECH_TOKENIZER_CANNOT_ENCODE',
+		);
 		const dir = fakeModelDir({ encodable: true });
 		const long = Array.from({ length: 60 }, () => 'abcdefgh');
 		await refusal(
-			runScoreJob(spec(dir, [{ ...one[0]!, readings: [{ id: 'r', words: long }] }]), { ort: fakeOrt().ort, audio }),
+			runScoreJob(spec(dir, [{ ...one[0]!, readings: [{ id: 'r', words: long }] }]), {
+				ort: fakeOrt().ort,
+				audio,
+			}),
 			'SPEECH_READING_TOO_LONG',
 		);
 		await refusal(
@@ -212,9 +224,12 @@ describe('refusals, cancellation and devices (SC-032, SC-035, SC-036)', () => {
 		// a refusal on the GPU is not retried on the CPU
 		const f = fakeOrt();
 		await refusal(
-			runScoreJob(spec(dir, [{ ...one[0]!, readings: [{ id: 'r', words: long }] }], {
-				device: { encoder: 'cuda', decoder: 'cpu' },
-			}), { ort: f.ort, audio }),
+			runScoreJob(
+				spec(dir, [{ ...one[0]!, readings: [{ id: 'r', words: long }] }], {
+					device: { encoder: 'cuda', decoder: 'cpu' },
+				}),
+				{ ort: f.ort, audio },
+			),
 			'SPEECH_READING_TOO_LONG',
 		);
 		expect(f.sessions.filter((s) => s.path.includes('encoder'))).toHaveLength(1);
@@ -257,7 +272,9 @@ describe('refusals, cancellation and devices (SC-032, SC-035, SC-036)', () => {
 			{ stage: 'job', part: 'both', from: 'cuda', to: 'cpu', reason: 'device lost' },
 		]);
 		expect(out.windows[0]!.readings[0]!.tokens).toBe(4);
-		const g = fakeOrt({ createError: (part, p) => (part === 'encoder' && p === 'webgpu' ? 'no adapter' : null) });
+		const g = fakeOrt({
+			createError: (part, p) => (part === 'encoder' && p === 'webgpu' ? 'no adapter' : null),
+		});
 		const out2 = await runScoreJob(spec(dir, one, { device: { encoder: 'webgpu', decoder: 'cpu' } }), {
 			ort: g.ort,
 			audio,
@@ -284,11 +301,9 @@ describe('refusals, cancellation and devices (SC-032, SC-035, SC-036)', () => {
 
 describe('glossary prompts (SC-074) and the prompt guard (SC-075)', () => {
 	it('normalises, caps and composes: glossary after the initial prompt, oldest previous text dropped first', () => {
-		expect(normalizeGlossary([' NovaPlay  Studio ', 'novaplay studio', '', 'Glimmerbox', 'x'.repeat(80)])).toEqual([
-			'NovaPlay Studio',
-			'Glimmerbox',
-			'x'.repeat(64),
-		]);
+		expect(
+			normalizeGlossary([' NovaPlay  Studio ', 'novaplay studio', '', 'Glimmerbox', 'x'.repeat(80)]),
+		).toEqual(['NovaPlay Studio', 'Glimmerbox', 'x'.repeat(64)]);
 		expect(normalizeGlossary(Array.from({ length: 50 }, (_, i) => `Term${i}`))).toHaveLength(40);
 		expect(glossaryText(['NovaPlay Studio', 'Glimmerbox'])).toBe('NovaPlay Studio, Glimmerbox.');
 		// running = [initial 1 2 3 | previous 10 11 12 13], glossary [90 91]
@@ -328,11 +343,14 @@ describe('glossary prompts (SC-074) and the prompt guard (SC-075)', () => {
 	it('the guard finds a term repeated 3 times within 10 s (split or glued spellings too)', () => {
 		const w = (word: string, start: number) => ({ word, start });
 		expect(
-			repeatedGlossaryTerm([w(' Nova', 1), w(' Play', 1.3), w(' NovaPlay', 4), w(',', 4.2), w(' nova-play', 9)], [
-				'NovaPlay',
-			]),
+			repeatedGlossaryTerm(
+				[w(' Nova', 1), w(' Play', 1.3), w(' NovaPlay', 4), w(',', 4.2), w(' nova-play', 9)],
+				['NovaPlay'],
+			),
 		).toBe('NovaPlay');
-		expect(repeatedGlossaryTerm([w(' NovaPlay', 1), w(' NovaPlay', 4), w(' NovaPlay', 12)], ['NovaPlay'])).toBeNull();
+		expect(
+			repeatedGlossaryTerm([w(' NovaPlay', 1), w(' NovaPlay', 4), w(' NovaPlay', 12)], ['NovaPlay']),
+		).toBeNull();
 		expect(repeatedGlossaryTerm([w(' NovaPlay', 1), w(' NovaPlay', 4)], ['NovaPlay'])).toBeNull();
 		expect(repeatedGlossaryTerm([w(' Nova', 1), w(' Nova', 2), w(' Nova', 3)], ['NovaPlay'])).toBeNull();
 	});
@@ -360,11 +378,14 @@ describe('glossary prompts (SC-074) and the prompt guard (SC-075)', () => {
 		const model = await WhisperModel.load(dir, { ort: fakeOrt({ logits }).ort });
 		try {
 			// one 8 s window (the silence-threshold heuristic off: it would re-decode the scripted window from later on)
-			return await model.transcribe(noiseAudio(8, (t) => t % 1 < 0.7), {
-				language: 'en',
-				hallucinationSilence: 0,
-				...(glossary ? { glossary } : {}),
-			});
+			return await model.transcribe(
+				noiseAudio(8, (t) => t % 1 < 0.7),
+				{
+					language: 'en',
+					hallucinationSilence: 0,
+					...(glossary ? { glossary } : {}),
+				},
+			);
 		} finally {
 			await model.release();
 		}

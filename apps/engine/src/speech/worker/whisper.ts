@@ -888,7 +888,10 @@ export class WhisperModel {
 		return words.map((w) => {
 			const ids = this.tok.encode(` ${w.trim()}`);
 			if (!ids.length)
-				throw new SpeechRefusal('SPEECH_TOKENIZER_CANNOT_ENCODE', `The word "${w.slice(0, 64)}" encodes to no tokens`);
+				throw new SpeechRefusal(
+					'SPEECH_TOKENIZER_CANNOT_ENCODE',
+					`The word "${w.slice(0, 64)}" encodes to no tokens`,
+				);
 			return ids;
 		});
 	}
@@ -897,7 +900,10 @@ export class WhisperModel {
 	scoreSot(language: string): number[] {
 		if (this.tok.multilingual) {
 			if (this.tok.languageToken(language) === null)
-				throw new SpeechRefusal('SPEECH_LANGUAGE_UNKNOWN', `The model does not know the language "${language}"`);
+				throw new SpeechRefusal(
+					'SPEECH_LANGUAGE_UNKNOWN',
+					`The model does not know the language "${language}"`,
+				);
 		} else if (language !== 'en')
 			throw new SpeechRefusal(
 				'SPEECH_LANGUAGE_UNSUPPORTED',
@@ -919,7 +925,10 @@ export class WhisperModel {
 		const frame0 = Math.max(0, Math.floor(start / HOP));
 		const wanted = Math.ceil(end / HOP) - frame0;
 		if (wanted > N_FRAMES)
-			throw new SpeechRefusal('SPEECH_WINDOW_TOO_LONG', `A scoring window is at most 30 s (got ${(end - start) / SAMPLE_RATE} s)`);
+			throw new SpeechRefusal(
+				'SPEECH_WINDOW_TOO_LONG',
+				`A scoring window is at most 30 s (got ${(end - start) / SAMPLE_RATE} s)`,
+			);
 		const frames = Math.min(wanted, content - frame0);
 		if (!(frames > 0))
 			throw new SpeechRefusal(
@@ -1211,7 +1220,9 @@ export class WhisperModel {
 				seek += segmentFrames;
 				continue;
 			}
-			removed.push(...a.removedRuns.map((x) => ({ ...x, start: timeOffset + x.start, end: timeOffset + x.end })));
+			removed.push(
+				...a.removedRuns.map((x) => ({ ...x, start: timeOffset + x.start, end: timeOffset + x.end })),
+			);
 			const { parsed, segs, segTokens } = a;
 			let nextSeek = seek + parsed.seekFrames;
 			const text = segs.flatMap((s) => s.textTokens);

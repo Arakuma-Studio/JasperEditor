@@ -39,13 +39,21 @@ export const ScoreJobSpecSchema = z.object({
 	modelDir: z.string().min(1),
 	modelId: z.string().min(1),
 	input: z.union([
-		z.object({ path: z.string().min(1), stream: z.number().int().min(0).optional(), ffmpeg: z.string().min(1) }),
+		z.object({
+			path: z.string().min(1),
+			stream: z.number().int().min(0).optional(),
+			ffmpeg: z.string().min(1),
+		}),
 		z.object({ f32: z.string() }),
 	]),
 	language: z.string().min(1).max(16),
 	threads: z.number().int().min(1).max(256).optional(),
 	device: z
-		.object({ encoder: ProviderSchema, decoder: ProviderSchema, calibrate: ProviderSchema.nullable().optional() })
+		.object({
+			encoder: ProviderSchema,
+			decoder: ProviderSchema,
+			calibrate: ProviderSchema.nullable().optional(),
+		})
 		.optional(),
 	files: z.object({ encoder: z.string().optional(), decoder: z.string().optional() }).optional(),
 	scratch: z.string().optional(),
@@ -147,11 +155,13 @@ async function score(
 	// one encoder pass per distinct range: windows sharing a range are processed together
 	const key = (w: ScoreJobSpec['windows'][number]) =>
 		`${Math.floor(w.start / 160)}:${Math.ceil(Math.min(w.end, input.samples) / 160)}`;
-	const order = spec.windows.map((_, i) => i).sort((a, b) => {
-		const wa = spec.windows[a]!;
-		const wb = spec.windows[b]!;
-		return wa.start - wb.start || wa.end - wb.end || a - b;
-	});
+	const order = spec.windows
+		.map((_, i) => i)
+		.sort((a, b) => {
+			const wa = spec.windows[a]!;
+			const wb = spec.windows[b]!;
+			return wa.start - wb.start || wa.end - wb.end || a - b;
+		});
 	const totalReadings = spec.windows.reduce((s, w) => s + w.readings.length, 0);
 	let profile: ScoreJobOutput['profile'] = {
 		encoderPasses: 0,
@@ -194,7 +204,10 @@ async function score(
 				);
 				results[i] = scored.map((s, j) => ({ id: w.readings[j]!.id, ...s }));
 				done += w.readings.length;
-				opts.onProgress?.(0.05 + (0.9 * done) / Math.max(1, totalReadings), `Scoring ${done}/${totalReadings}`);
+				opts.onProgress?.(
+					0.05 + (0.9 * done) / Math.max(1, totalReadings),
+					`Scoring ${done}/${totalReadings}`,
+				);
 			}
 			profile = { ...profile, encoderPasses, windowSec: Math.round(windowSec * 100) / 100, ...model.timing };
 			return results;

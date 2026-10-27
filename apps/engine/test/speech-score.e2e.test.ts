@@ -16,8 +16,8 @@ import type { EngineJob, SpeechScoreRequest, SpeechScoreResult, TranscriptionRes
 import { cleanupNorm, FLICKS_PER_SECOND } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadCatalog } from '../src/processing/models.ts';
-import type { SpeechService } from '../src/speech/service.ts';
 import { SpeechModelStore } from '../src/speech/models.ts';
+import type { SpeechService } from '../src/speech/service.ts';
 import { closeApps, JSON_H, makeApp, ROOT, register, type TestApp, until } from './helpers.ts';
 
 const CACHE = process.env.JASPER_SPEECH_MODELS_DIR ?? join(ROOT, 'target', 'speech-models');
@@ -123,7 +123,9 @@ function windows(words: Word[]): Array<{ from: number; to: number; start: number
 
 /** The word with its letters replaced (punctuation and an initial capital kept). */
 function swapWord(text: string, to: string): string {
-	return text.replace(/[A-Za-z']+/, (m) => (m[0] === m[0]!.toUpperCase() ? to[0]!.toUpperCase() + to.slice(1) : to));
+	return text.replace(/[A-Za-z']+/, (m) =>
+		m[0] === m[0]!.toUpperCase() ? to[0]!.toUpperCase() + to.slice(1) : to,
+	);
 }
 
 type Case = { pair: [string, string]; index: number; window: ReturnType<typeof windows>[number] };
@@ -149,7 +151,12 @@ function deltaTok(res: SpeechScoreResult, id: string, index: number, from: numbe
 	return (script.logprob - asr.logprob) / Math.max(script.words[k]!.tokens, asr.words[k]!.tokens, 1);
 }
 
-function request(model: string, words: Word[], list: Case[], corrupt: 'transcript' | 'script'): SpeechScoreRequest {
+function request(
+	model: string,
+	words: Word[],
+	list: Case[],
+	corrupt: 'transcript' | 'script',
+): SpeechScoreRequest {
 	return {
 		mediaId: mediaKey,
 		language: 'en',
@@ -233,63 +240,70 @@ describe.skipIf(!enabled)('speech scoring with real Whisper models (spec 17 SC-1
 			for (const r of report) console.log(`SCORE_MARGIN ${JSON.stringify(r)}`);
 		}, 1_800_000);
 
-	it.skipIf(!BENCH)('SC-037: scoring cost per speech minute (and transcription for comparison)', async () => {
-		const model = turboPresent ? TURBO : REQUIRED[0]!;
-		const speechMin = truth.utterances.reduce((s, u) => s + u.end - u.start, 0) / 60;
-		const audioMin = truth.durationSeconds / 60;
-		const t0 = Date.now();
-		const plain = await transcribe(model, { conditionOnPreviousText: false });
-		const plainMs = Date.now() - t0;
-		const t1 = Date.now();
-		await transcribe(model, {});
-		const condMs = Date.now() - t1;
-		const words = plain.words;
-		const ws = windows(words);
-		// the research's rate: 6.3 candidate readings per speech minute + the ASR reading of each window
-		const candidates = Math.max(ws.length, Math.round(6.3 * speechMin));
-		const req: SpeechScoreRequest = {
-			mediaId: mediaKey,
-			language: 'en',
-			model,
-			device: 'cpu',
-			windows: ws.map((w, i) => {
-				const base = words.slice(w.from, w.to).map((x) => x.text);
-				const n = Math.floor(candidates / ws.length) + (i < candidates % ws.length ? 1 : 0);
-				const readings = [{ id: 'asr', words: base }];
-				for (let k = 0; k < n; k++) {
-					const at = Math.floor(((k + 0.5) * base.length) / n);
-					readings.push({ id: `c${k}`, words: base.map((t, j) => (j === at ? swapWord(t, 'novaplay') : t)) });
-				}
-				return { id: `w${i}`, start: w.start, end: w.end, readings };
-			}),
-		};
-		const runs: Array<{ wallMs: number; timings: NonNullable<SpeechScoreResult['timings']> }> = [];
-		for (let r = 0; r < 3; r++) {
-			const t = Date.now();
-			const res = await speech.score(req, new AbortController().signal, { threads: 8 });
-			runs.push({ wallMs: Date.now() - t, timings: res.timings! });
-		}
-		const med = [...runs].sort((a, b) => a.wallMs - b.wallMs)[1]!;
-		// per speech minute of a long recording: the one-time model load and audio decode excluded
-		const steady = med.timings.scoreMs / 1000 / speechMin;
-		console.log(
-			`SCORE_BENCH ${JSON.stringify({
+	it.skipIf(!BENCH)(
+		'SC-037: scoring cost per speech minute (and transcription for comparison)',
+		async () => {
+			const model = turboPresent ? TURBO : REQUIRED[0]!;
+			const speechMin = truth.utterances.reduce((s, u) => s + u.end - u.start, 0) / 60;
+			const audioMin = truth.durationSeconds / 60;
+			const t0 = Date.now();
+			const plain = await transcribe(model, { conditionOnPreviousText: false });
+			const plainMs = Date.now() - t0;
+			const t1 = Date.now();
+			await transcribe(model, {});
+			const condMs = Date.now() - t1;
+			const words = plain.words;
+			const ws = windows(words);
+			// the research's rate: 6.3 candidate readings per speech minute + the ASR reading of each window
+			const candidates = Math.max(ws.length, Math.round(6.3 * speechMin));
+			const req: SpeechScoreRequest = {
+				mediaId: mediaKey,
+				language: 'en',
 				model,
-				speechMin: Math.round(speechMin * 1000) / 1000,
-				audioMin: Math.round(audioMin * 1000) / 1000,
-				windows: ws.length,
-				readings: req.windows.reduce((s, w) => s + w.readings.length, 0),
-				scoreWallMs: runs.map((r) => r.wallMs),
-				median: med,
-				scoreSecPerSpeechMin: Math.round((med.wallMs / 1000 / speechMin) * 100) / 100,
-				scoreSteadySecPerSpeechMin: Math.round(steady * 100) / 100,
-				transcribeNoPrevMs: plainMs,
-				transcribeNoPrevSecPerSpeechMin: Math.round((plainMs / 1000 / speechMin) * 100) / 100,
-				transcribeNoPrevRtf: plain.timings.rtf,
-				transcribeConditionedMs: condMs,
-			})}`,
-		);
-		// SC-037 target: ≤ 20 s per speech minute on the build VM CPU (load and decode are once per job)
-		expect(steady).toBeLessThanOrEqual(20);
-	}, 1_800_000);
+				device: 'cpu',
+				windows: ws.map((w, i) => {
+					const base = words.slice(w.from, w.to).map((x) => x.text);
+					const n = Math.floor(candidates / ws.length) + (i < candidates % ws.length ? 1 : 0);
+					const readings = [{ id: 'asr', words: base }];
+					for (let k = 0; k < n; k++) {
+						const at = Math.floor(((k + 0.5) * base.length) / n);
+						readings.push({
+							id: `c${k}`,
+							words: base.map((t, j) => (j === at ? swapWord(t, 'novaplay') : t)),
+						});
+					}
+					return { id: `w${i}`, start: w.start, end: w.end, readings };
+				}),
+			};
+			const runs: Array<{ wallMs: number; timings: NonNullable<SpeechScoreResult['timings']> }> = [];
+			for (let r = 0; r < 3; r++) {
+				const t = Date.now();
+				const res = await speech.score(req, new AbortController().signal, { threads: 8 });
+				runs.push({ wallMs: Date.now() - t, timings: res.timings! });
+			}
+			const med = [...runs].sort((a, b) => a.wallMs - b.wallMs)[1]!;
+			// per speech minute of a long recording: the one-time model load and audio decode excluded
+			const steady = med.timings.scoreMs / 1000 / speechMin;
+			console.log(
+				`SCORE_BENCH ${JSON.stringify({
+					model,
+					speechMin: Math.round(speechMin * 1000) / 1000,
+					audioMin: Math.round(audioMin * 1000) / 1000,
+					windows: ws.length,
+					readings: req.windows.reduce((s, w) => s + w.readings.length, 0),
+					scoreWallMs: runs.map((r) => r.wallMs),
+					median: med,
+					scoreSecPerSpeechMin: Math.round((med.wallMs / 1000 / speechMin) * 100) / 100,
+					scoreSteadySecPerSpeechMin: Math.round(steady * 100) / 100,
+					transcribeNoPrevMs: plainMs,
+					transcribeNoPrevSecPerSpeechMin: Math.round((plainMs / 1000 / speechMin) * 100) / 100,
+					transcribeNoPrevRtf: plain.timings.rtf,
+					transcribeConditionedMs: condMs,
+				})}`,
+			);
+			// SC-037 target: ≤ 20 s per speech minute on the build VM CPU (load and decode are once per job)
+			expect(steady).toBeLessThanOrEqual(20);
+		},
+		1_800_000,
+	);
 });

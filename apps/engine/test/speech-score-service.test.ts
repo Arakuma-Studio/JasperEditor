@@ -250,7 +250,9 @@ describe('SpeechService.score (spec 17 SC-092)', () => {
 			(await failure(speech.score({ ...req('w1'), extra: 1 } as unknown as SpeechScoreRequest, signal))).code,
 		).toBe('INVALID_SPEC');
 		expect((await failure(speech.score(req('w1', { language: 'auto' }), signal))).code).toBe('INVALID_SPEC');
-		expect((await failure(speech.score(req('w1', { mediaId: 'nope' }), signal))).code).toBe('ASSET_NOT_FOUND');
+		expect((await failure(speech.score(req('w1', { mediaId: 'nope' }), signal))).code).toBe(
+			'ASSET_NOT_FOUND',
+		);
 		expect((await failure(speech.score(req('w1', { streamIndex: 9 }), signal))).code).toBe('NO_AUDIO');
 		expect((await failure(speech.score(req('w1', { model: 'whisper-huge' }), signal))).code).toBe(
 			'SPEECH_MODEL_UNKNOWN',
@@ -279,14 +281,23 @@ describe('SpeechService.score (spec 17 SC-092)', () => {
 		expect(logged()).toHaveLength(1);
 		writeFileSync(specLog, '');
 		const failed = await failure(speech.score(req('fail', { device: 'cpu' }), new AbortController().signal));
-		expect(failed).toMatchObject({ code: 'SPEECH_SCORE_FAILED', retryable: false, message: 'broken decoder' });
+		expect(failed).toMatchObject({
+			code: 'SPEECH_SCORE_FAILED',
+			retryable: false,
+			message: 'broken decoder',
+		});
 		expect(logged()).toHaveLength(1);
 	});
 
 	it('cancellation ends the call within ≈ 1 s, even when the worker ignores SIGTERM (SC-036)', async () => {
 		const ac = new AbortController();
 		const p = speech.score(req('hang', { device: 'cpu' }), ac.signal);
-		await until(async () => (logged().some((r) => (r.spec.windows as Array<{ id: string }>)[0]!.id === 'hang') ? true : null), 20_000, 20);
+		await until(
+			async () =>
+				logged().some((r) => (r.spec.windows as Array<{ id: string }>)[0]!.id === 'hang') ? true : null,
+			20_000,
+			20,
+		);
 		const t = Date.now();
 		ac.abort();
 		const e = await failure(p);
