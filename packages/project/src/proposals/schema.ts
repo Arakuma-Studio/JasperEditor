@@ -88,6 +88,11 @@ export const ProposalItemInputSchema = z.strictObject({
 	/** Alternative command sets; `selectedAlternative` k ≥ 1 picks `alternatives[k − 1]`. */
 	alternatives: z.array(ProposalAlternativeSchema).max(PROPOSAL_LIMITS.maxAlternatives).optional(),
 	selectedAlternative: z.number().int().min(0).max(PROPOSAL_LIMITS.maxAlternatives).optional(),
+	/**
+	 * Spec 17 SC-061: whether the item starts selected (absent = true). An accept of "all" takes only selected items
+	 * (explicit item ids take any); the Review shows unselected items unchecked (Accept all leaves them out).
+	 */
+	selected: z.boolean().optional(),
 });
 export type ProposalItemInput = z.infer<typeof ProposalItemInputSchema>;
 

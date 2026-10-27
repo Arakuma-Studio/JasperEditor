@@ -12,6 +12,7 @@ import {
 import {
 	activeCaptionTrack,
 	CAPTION_CONTENT_ORIGIN,
+	captionClipName,
 	captionClipsOf,
 	captionClipWords,
 	clipContentRange,
@@ -136,13 +137,7 @@ function speakerKeyFor(speakers: Record<string, { name: string }>, name: string)
 	return key;
 }
 
-function plainName(text: string): string {
-	const s = decodeCaptionText(text)
-		.replace(/<[^>]*>/g, '')
-		.replace(/\s+/g, ' ')
-		.trim();
-	return s.slice(0, 40) || 'Caption';
-}
+const plainName = captionClipName;
 
 /** A block to place as one caption clip: sequence frames and words in sequence time (flicks). */
 export type PlacedBlock = {

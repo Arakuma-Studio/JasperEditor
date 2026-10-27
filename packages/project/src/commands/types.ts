@@ -42,6 +42,11 @@ export const ERROR_CODES = [
 	'E_INTERNAL',
 	/** The edit cannot work on this material (spec 14: a cleanup source range on a reversed / remapped clip). */
 	'E_UNSUPPORTED',
+	/**
+	 * Spec 17 SC-050: what the command was planned against changed (the words in a `transcript.replaceWords` span are not
+	 * the expected ones any more). Re-plan on the current document; never retry as is.
+	 */
+	'E_STALE',
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
@@ -92,6 +97,8 @@ export const WARNING_CODES = [
 	'W_SUBTITLES_NESTED',
 	/** spec 13 AS-005: what a conversion could not carry over (effects, animations… on a caption track). */
 	'W_SUBTITLES_CONVERT',
+	/** spec 17 SC-051: a subtitle or caption clip showing replaced words was left unchanged (edited by hand, locked…). */
+	'W_TRANSCRIPT_PATCH_SKIPPED',
 ] as const;
 
 /** A problem report. `commandIndex` is -1 for transaction-level issues (invariants, revision). */

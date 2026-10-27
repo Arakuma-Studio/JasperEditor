@@ -20,6 +20,7 @@ import {
 } from './anchors.ts';
 import { proposalBudget, tooLargeIssue } from './budget.ts';
 import { type ComposedAccept, composeAcceptTx, itemOfCommand } from './compose.ts';
+import { acceptAllItemIds } from './features.ts';
 import {
 	PROPOSAL_LIMITS,
 	type Proposal,
@@ -396,6 +397,7 @@ export function prepareItems(
 			...(it.meta !== undefined ? { meta: it.meta } : {}),
 			...(alternatives?.length ? { alternatives } : {}),
 			...(it.selectedAlternative ? { selectedAlternative: it.selectedAlternative } : {}),
+			...(it.selected === false ? { selected: false } : {}),
 			state: 'pending' as const,
 		};
 	});
@@ -571,7 +573,7 @@ export type AcceptPlan =
 
 /**
  * Plans an accept on the current document: re-validates, takes the dependency closure of the requested items
- * ('all' = every pending or stale one), and dry-runs the composed transaction. All-or-nothing unless `partial`:
+ * ('all' = every pending or stale one that is selected, spec 17 SC-061), and dry-runs the composed transaction. All-or-nothing unless `partial`:
  * a stale (or newly conflicting) item then drops out with everything that requires it, and the rest is composed.
  */
 export function planAccept(
@@ -617,10 +619,7 @@ function planAcceptUnchecked(
 			proposal: p,
 			stale: rv.stale,
 		};
-	let requested =
-		itemIds === 'all'
-			? p.items.filter((it) => it.state === 'pending' || it.state === 'stale').map((it) => it.id)
-			: [...new Set(itemIds)];
+	let requested = itemIds === 'all' ? acceptAllItemIds(p) : [...new Set(itemIds)];
 	const problemOf = new Map(rv.stale.flatMap((x) => (x.problem ? [[x.itemId, x.problem] as const] : [])));
 	const staleList = (): StaleItem[] =>
 		p.items

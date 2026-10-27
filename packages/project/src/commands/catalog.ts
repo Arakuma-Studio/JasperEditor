@@ -29,6 +29,7 @@ import { processHandlers } from './handlers/process.ts';
 import { projectHandlers } from './handlers/project.ts';
 import { ROTO_OWNER, rotoHandlers } from './handlers/roto.ts';
 import { rovingHandlers } from './handlers/roving.ts';
+import { SCRIPT_FIX_OWNER, scriptFixHandlers } from './handlers/script-fix.ts';
 import { sequenceHandlers } from './handlers/sequence.ts';
 import { keepShapesCentred, SHAPE_BOX_COMMANDS, SHAPE_OWNER, shapeHandlers } from './handlers/shape.ts';
 import { shapeTracerHandlers } from './handlers/shape-tracer.ts';
@@ -91,7 +92,8 @@ export type CommandOwner =
 	| 'subtitles'
 	| 'edit-automation'
 	| 'transcript-cleanup'
-	| 'style-recipes';
+	| 'style-recipes'
+	| 'script-correction';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -429,6 +431,8 @@ const LABELS: Record<CommandType, string> = {
 	'styleRecipe.add': 'Add Style Recipe',
 	'styleRecipe.remove': 'Remove Style Recipe',
 	'styleRecipe.setActive': 'Set Active Style Recipe',
+	'transcript.replaceWords': 'Fix Transcript Words',
+	'scriptFix.configure': 'Fix Transcript Settings',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -481,6 +485,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[batchHandlers, BATCH_OWNER],
 	[cleanupHandlers, CLEANUP_OWNER],
 	[styleRecipeHandlers, STYLE_RECIPES_OWNER],
+	[scriptFixHandlers, SCRIPT_FIX_OWNER],
 ];
 
 function buildCatalog(): Record<CommandType, CatalogEntry> {
@@ -522,7 +527,8 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === SUBTITLES_OWNER ||
 				owner === BATCH_OWNER ||
 				owner === CLEANUP_OWNER ||
-				owner === STYLE_RECIPES_OWNER
+				owner === STYLE_RECIPES_OWNER ||
+				owner === SCRIPT_FIX_OWNER
 					? 'M3'
 					: owner === 'M2' ||
 							owner.startsWith('wp-m2-') ||

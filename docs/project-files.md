@@ -164,6 +164,24 @@ v9 builds open v10 files read-only (the v10 bump above), so they never drop them
 | `TextStyle.shadow.spreadPx` (text clip styles, runs, paragraphs, Source Text keys; caption clip styles, caption track defaults, caption style presets) — spec 13 SH-004 | v10 | absent = 0; any number is read (invariant INV-012 wants 0…10 000 px) | out of range clamped to 0…10 000, unreadable removed (`repair-text-style`) |
 | `TextStyle.strokes[]` drawn in full (every entry, inside / centre / outside) — spec 13 SH-004; no new field, v9 and older builds drew only `strokes[0]` | v10 | every entry is read | lists longer than 16 strokes (INV-012) are cut to the first 16 (`repair-text-style`) |
 
+### Optional fields added since v10 (no bump)
+
+Fields added after v10 was published, without a schema bump. A bump is needed when an older build would drop or misread
+the data (AGENTS §0); these fields are safe because a v10 build that predates them keeps them through load, edit and
+save. Verified in the code: `SequenceSchema` is a `z.looseObject` (`packages/project/src/schema/sequence.ts`), so
+unknown Sequence keys survive parsing; `loadProject` (`packages/project/src/migrations.ts`) continues with the parsed
+data (`parsed.data`, unknown keys included) and `repairDocument` works on a JSON copy of the whole document without
+rebuilding sequences; commands edit Immer drafts, which keep keys they do not touch; the engine store writes the
+document the session sends (`apps/engine/src/projects/store.ts` `saveLocked`). An older build neither checks nor
+repairs the field (its invariants do not know it), and its edits never write it, so the value stays as the newer
+build wrote it. Contrast: a new key inside `Sequence.cleanup` would be stripped by an older build's strict
+`SequenceCleanupSchema` repair, and new word-level transcript fields are dropped by older edit handlers — those need a
+bump.
+
+| Field | Since | Read leniently | Repair |
+|---|---|---|---|
+| `Sequence.scriptFix` (`{rejected?: fingerprint[], settings?: {strictness?: 'careful' \| 'standard' \| 'generous', sources?: ('script' \| 'glossary')[], scope?: 'recordings' \| 'used' \| 'inOut'}}`) | script-guided transcript correction (spec 17 SC-055, [wp-notes/script-correction.md](wp-notes/script-correction.md) "Applying fixes") | any value accepted (`z.custom`); absent = Standard, script + glossary, whole recordings, nothing rejected. `readSequenceScriptFix` reads the readable parts; INV-SCRIPTFIX checks `SequenceScriptFixSchema` (strict: fingerprints 1–512 characters without control characters, distinct, ≤ 10 000; settings keys and values from the lists above, sources distinct and non-empty). Written only by `scriptFix.configure` (settings merged field by field, `null` clears them; `reject` / `unreject` / `clearRejected`; more than 10 000 → `E_LIMIT`), one undo step | `repair-script-fix` (`repairSequenceScriptFix`): malformed and repeated fingerprints dropped, the first 10 000 kept; each readable setting kept, unknown keys and bad values dropped; removed when nothing readable is left. Idempotent |
+
 ## Saving
 
 - **Atomic writes** (S01:PER-016): every project, version, view and journal file is written to a hidden temp
