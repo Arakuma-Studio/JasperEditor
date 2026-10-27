@@ -574,7 +574,12 @@ const followups = {
 					{
 						output: 'one',
 						size: { width: 1, height: 1 },
-						frag: 'void main() { fragColor = texture(u_source, vec2(0.25, 0.5)); }',
+						// Only the first texel is red; an incorrectly enlarged lookup has blue texels too.
+						frag: `void main() {
+  fragColor = gl_FragCoord.x < 1.0 && gl_FragCoord.y < 1.0
+    ? texture(u_source, vec2(0.25, 0.5))
+    : vec4(0.0, 0.0, 1.0, 1.0);
+}`,
 					},
 					{ frag: 'void main() { fragColor = texture(u_one, v_uv); }' },
 				],
@@ -584,6 +589,8 @@ const followups = {
 		return {
 			left: px(out, 1, 1),
 			right: px(out, 6, 1),
+			top: px(out, 4, 0),
+			bottom: px(out, 4, 3),
 		};
 	},
 	mipmaps() {

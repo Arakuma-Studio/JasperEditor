@@ -168,9 +168,11 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			});
 
 			it('absolute pass sizes (a 1×1 lookup pass)', async () => {
-				const r = await call<{ left: Px; right: Px }>('absoluteSize');
+				const r = await call<{ left: Px; right: Px; top: Px; bottom: Px }>('absoluteSize');
 				expect(near(r.left, [255, 0, 0, 255])).toBe(true);
 				expect(near(r.right, [255, 0, 0, 255])).toBe(true);
+				expect(near(r.top, [255, 0, 0, 255])).toBe(true);
+				expect(near(r.bottom, [255, 0, 0, 255])).toBe(true);
 			});
 
 			it('mipmapped outputs and source: textureLod at a coarse level averages', async () => {
