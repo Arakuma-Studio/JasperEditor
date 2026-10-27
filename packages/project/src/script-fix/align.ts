@@ -68,8 +68,8 @@ export const ALIGN_DEFAULTS = Object.freeze({
 	maxActivePerRow: 1024,
 	/** Cells stored for the backtrace over the whole run (≈ 7 bytes each); the per-row cap shrinks to fit. */
 	maxStoredCells: 30_000_000,
-	/** Merge cells over the whole run; more is refused with E_LIMIT. */
-	maxMergeCells: 2_000_000,
+	/** Merge cells evaluated per transcript token (degenerate input only: the best-scoring ones are kept). */
+	maxMergeCellsPerRow: 512,
 });
 
 /** Weights and bounds of one alignment (see `ALIGN_DEFAULTS`). */
@@ -134,7 +134,7 @@ export type AlignmentReport = {
 	usedLines: number[];
 	/** Script lines with spoken words none of which was aligned. */
 	unusedLines: number[];
-	/** Rows where the live-cell cap dropped cells that could have mattered (0 on ordinary input). */
+	/** Rows where the live-cell or merge-cell cap dropped cells that could have mattered (0 on ordinary input). */
 	cappedRows: number;
 	mergeCells: number;
 	storedCells: number;
@@ -154,7 +154,7 @@ export type AlignmentResult =
 			ok: false;
 			code: 'E_LIMIT';
 			message: string;
-			detail: { transcriptWords: number; scriptTokens: number; mergeCells?: number };
+			detail: { transcriptWords: number; scriptTokens: number };
 	  };
 
 /** Words of a transcript as alignment tokens (SC-010): normalised, empties skipped, word indices kept. */
@@ -236,6 +236,33 @@ function keyIndex(keys: readonly string[]): KeyIndex {
 	return { postings, sizes };
 }
 
+/** The k-th largest value of `a` (1-based; quickselect, reorders `a`). */
+function kthLargest(a: Float64Array, k: number): number {
+	let lo = 0;
+	let hi = a.length - 1;
+	const target = k - 1;
+	while (lo < hi) {
+		const pivot = a[(lo + hi) >> 1]!;
+		let i = lo;
+		let j = hi;
+		while (i <= j) {
+			while (a[i]! > pivot) i++;
+			while (a[j]! < pivot) j--;
+			if (i <= j) {
+				const t = a[i]!;
+				a[i] = a[j]!;
+				a[j] = t;
+				i++;
+				j--;
+			}
+		}
+		if (target <= j) hi = j;
+		else if (target >= i) lo = i;
+		else return a[target]!;
+	}
+	return a[target]!;
+}
+
 /** First index in sorted `a` with a[i] ≥ v. */
 function lowerBound(a: Int32Array, v: number): number {
 	let lo = 0;
@@ -290,13 +317,6 @@ export function alignTranscript(input: AlignInput): AlignmentResult {
 	const sn = sTokens.map((t) => t.norm);
 	const direction = sTokens.map((t) => t.kind !== 'word');
 	const core = alignCore(tn, sn, direction, lang, opt);
-	if (!core.ok)
-		return {
-			ok: false,
-			code: 'E_LIMIT',
-			message: `The script and transcript produce ${core.mergeCells} merge cells (limit ${opt.maxMergeCells})`,
-			detail: { transcriptWords: words.length, scriptTokens: sTokens.length, mergeCells: core.mergeCells },
-		};
 	return {
 		ok: true,
 		language: lang,
@@ -316,9 +336,14 @@ export function alignTranscripts<T extends Omit<AlignInput, 'script' | 'options'
 	return items.map((item) => ({ item, result: alignTranscript({ ...item, script, options }) }));
 }
 
-type CoreResult =
-	| { ok: true; steps: AlignStep[]; score: number; mergeCells: number; storedCells: number; cappedRows: number }
-	| { ok: false; mergeCells: number };
+type CoreResult = {
+	ok: true;
+	steps: AlignStep[];
+	score: number;
+	mergeCells: number;
+	storedCells: number;
+	cappedRows: number;
+};
 
 /** The aligner on normalised tokens (exported for tests and benchmarks). */
 export function alignCore(
@@ -427,12 +452,8 @@ export function alignCore(
 	}
 
 	// ---------------------------------------------------------------- merge cells (2:1, 3:1, 1:2, 1:3)
-	const mI = new Grow((n) => new Int32Array(n));
-	const mA = new Grow((n) => new Uint8Array(n));
-	const mB = new Grow((n) => new Uint8Array(n));
-	const mJ = new Grow((n) => new Int32Array(n));
-	const mSc = new Grow((n) => new Float64Array(n));
-	const mPs = new Grow((n) => new Float64Array(n));
+	// Generated row by row (no storage over the whole run): a:1 cells from the concatenation of the a transcript tokens
+	// ending at the row, 1:b cells from script b-grams matched to the row's word (grouped by transcript vocabulary).
 	const tKeys = tv.words.map((w) => cachedKey(w, lang));
 	const tIndex = keyIndex(tKeys);
 	const sCounts = new Int32Array(sv.words.length);
@@ -480,51 +501,70 @@ export function alignCore(
 			if (ps >= opt.mergeMinPsim) hit.push([id, ps]);
 		}
 		hit.sort((a, b) => a[0] - b[0]);
+		if (cache.size >= 100_000) cache.clear();
 		cache.set(s, hit);
 		return hit;
 	}
 	const tSp = Array.from(tv.ids, (id) => tSpoken[id]!);
 	const sSp = Array.from(sv.ids, (id) => sSpoken[id]!);
-	let mergeOverflow = false;
-	const addMerge = (i: number, a: number, b: number, j: number, ps: number) => {
-		if (mI.n >= opt.maxMergeCells) {
-			mergeOverflow = true;
-			return;
-		}
-		const n = Math.max(a, b);
-		mI.push(i);
-		mA.push(a);
-		mB.push(b);
-		mJ.push(j);
-		mSc.push(((ps >= 1 ? opt.exactContent : opt.subScale * ps - opt.subOffset) * (n + 1)) / 2);
-		mPs.push(ps);
-	};
 	const sCache = new Map<string, Array<[number, number]>>();
-	for (const a of [2, 3])
-		for (let i = a - 1; i < T && !mergeOverflow; i++) {
+	const tCache = new Map<string, Array<[number, number]>>();
+	const bByVocab: Array<Array<[number, number, number]> | undefined> = new Array(tv.words.length);
+	for (const b of [2, 3])
+		for (let j = b - 1; j < S; j++) {
+			const s = sSp.slice(j - b + 1, j + 1).join('');
+			if (s.length < 4) continue;
+			for (const [id, ps] of lookup(s, tIndex, tSpoken, tCache, tCounts)) {
+				let l = bByVocab[id];
+				if (!l) bByVocab[id] = l = [];
+				l.push([b, j, ps]);
+			}
+		}
+	const mergeScore = (ps: number, n: number) =>
+		((ps >= 1 ? opt.exactContent : opt.subScale * ps - opt.subOffset) * (n + 1)) / 2;
+	// the row's merge cells
+	const rA = new Grow((n) => new Uint8Array(n));
+	const rB = new Grow((n) => new Uint8Array(n));
+	const rJ = new Grow((n) => new Int32Array(n));
+	const rSc = new Grow((n) => new Float64Array(n));
+	const rPs = new Grow((n) => new Float64Array(n));
+	const rKeep = new Grow((n) => new Int32Array(n));
+	let mergeCells = 0;
+	const capMerges = Math.max(16, Math.floor(opt.maxMergeCellsPerRow));
+	/** Fills the row's merge cells (generation order) and returns the indices to evaluate (all, or the best capMerges). */
+	function rowMerges_(i: number): { keep: Int32Array; n: number; capped: boolean } {
+		rA.n = rB.n = rJ.n = rSc.n = rPs.n = rKeep.n = 0;
+		const add = (a: number, b: number, j: number, ps: number) => {
+			rA.push(a);
+			rB.push(b);
+			rJ.push(j);
+			rSc.push(mergeScore(ps, Math.max(a, b)));
+			rPs.push(ps);
+		};
+		for (const a of [2, 3]) {
+			if (i < a - 1) continue;
 			const s = tSp.slice(i - a + 1, i + 1).join('');
 			if (s.length < 4) continue;
 			for (const [id, ps] of lookup(s, sIndex, sSpoken, sCache, sCounts))
-				for (const j of sv.positions[id]!) addMerge(i, a, 1, j, ps);
+				for (const j of sv.positions[id]!) add(a, 1, j, ps);
 		}
-	const tCache = new Map<string, Array<[number, number]>>();
-	for (const b of [2, 3])
-		for (let j = b - 1; j < S && !mergeOverflow; j++) {
-			const s = sSp.slice(j - b + 1, j + 1).join('');
-			if (s.length < 4) continue;
-			for (const [id, ps] of lookup(s, tIndex, tSpoken, tCache, tCounts))
-				for (const i of tv.positions[id]!) addMerge(i, 1, b, j, ps);
+		for (const [b, j, ps] of bByVocab[tv.ids[i]!] ?? []) add(1, b, j, ps);
+		const n = rA.n;
+		mergeCells += n;
+		if (n <= capMerges) {
+			for (let q = 0; q < n; q++) rKeep.push(q);
+			return { keep: rKeep.arr, n, capped: false };
 		}
-	if (mergeOverflow) return { ok: false, mergeCells: mI.n };
-	const M = mI.n;
-	// bucket merge cells by row, keeping generation order inside a row
-	const mRowStart = new Int32Array(T + 1);
-	for (let k = 0; k < M; k++) mRowStart[mI.arr[k]! + 1]!++;
-	for (let i = 0; i < T; i++) mRowStart[i + 1]! += mRowStart[i]!;
-	const mOrder = new Int32Array(M);
-	{
-		const fill = mRowStart.slice(0, T);
-		for (let k = 0; k < M; k++) mOrder[fill[mI.arr[k]!]!++] = k;
+		// degenerate rows: the capMerges best scores (ties: generation order), evaluated in generation order
+		const thr = kthLargest(rSc.arr.slice(0, n), capMerges);
+		let above = 0;
+		for (let q = 0; q < n; q++) if (rSc.arr[q]! > thr) above++;
+		let ties = capMerges - above;
+		for (let q = 0; q < n; q++) {
+			const v = rSc.arr[q]!;
+			if (v > thr || (v === thr && ties-- > 0)) rKeep.push(q);
+		}
+		return { keep: rKeep.arr, n: rKeep.n, capped: true };
 	}
 
 	// ---------------------------------------------------------------- skip costs
@@ -651,18 +691,20 @@ export function alignCore(
 			}
 		const land = landingsOf(t);
 		for (let q = 0; q < land.length; q++) touch(land[q]!);
-		for (let q = mRowStart[i]!; q < mRowStart[i + 1]!; q++) touch(mJ.arr[mOrder[q]!]!);
+		const rm = rowMerges_(i);
+		if (rm.capped) cappedRows++;
+		for (let q = 0; q < rm.n; q++) touch(rJ.arr[rm.keep[q]!]!);
 		for (let q = 0; q < nTouched; q++) {
 			const j = touched[q]!;
 			wH[j] = wBest[j]! + vRow[sv.ids[j]!]!;
 		}
 		// merges ending at token i
 		rowMerges.length = 0;
-		for (let q = mRowStart[i]!; q < mRowStart[i + 1]!; q++) {
-			const m = mOrder[q]!;
-			const a = mA.arr[m]!;
-			const b = mB.arr[m]!;
-			const j = mJ.arr[m]!;
+		for (let q = 0; q < rm.n; q++) {
+			const m = rm.keep[q]!;
+			const a = rA.arr[m]!;
+			const b = rB.arr[m]!;
+			const j = rJ.arr[m]!;
 			const i0 = i - a;
 			const j0 = j - b;
 			let base: number;
@@ -700,12 +742,12 @@ export function alignCore(
 					how = HOW_OFF;
 				}
 			}
-			const v = base + mSc.arr[m]!;
+			const v = base + rSc.arr[m]!;
 			if (v > wH[j]!) {
 				wH[j] = v;
 				wCode[j] = C_MERGE;
 				wMerge[j] = rowMerges.length;
-				rowMerges.push({ a, b, how, k: hk, state: hs, ps: mPs.arr[m]! });
+				rowMerges.push({ a, b, how, k: hk, state: hs, ps: rPs.arr[m]! });
 			}
 		}
 		for (let k = 0; k < sim.sv.length; k++) vRow[sim.sv[k]!] = opt.subFloor;
@@ -892,11 +934,11 @@ export function alignCore(
 		} else break;
 	}
 	steps.reverse();
-	return { ok: true, steps, score, mergeCells: M, storedCells: cJ.n, cappedRows };
+	return { ok: true, steps, score, mergeCells, storedCells: cJ.n, cappedRows };
 }
 
 function alignmentReport(
-	core: Extract<CoreResult, { ok: true }>,
+	core: CoreResult,
 	transcriptCount: number,
 	script: ParsedScript,
 	mediaId: string | null,

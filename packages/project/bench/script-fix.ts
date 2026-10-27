@@ -35,6 +35,12 @@ const rssBefore = process.resourceUsage().maxRSS * 1024;
 const first = once();
 const rssAfter = process.resourceUsage().maxRSS * 1024;
 const runs = Array.from({ length: 5 }, () => once().ms);
+// degenerate input: one word repeated (20,000 × 6,000), bounded by the per-row caps
+const degScript = parseScript(Array.from({ length: 6000 }, () => 'la').join(' '), { language: 'es' });
+const degWords = Array.from({ length: 20_000 }, (_, k) => ({ text: 'la', start: k * 1000, end: k * 1000 + 900 }));
+const d0 = performance.now();
+const deg = alignTranscript({ words: degWords, script: degScript, language: 'es' });
+const degMs = performance.now() - d0;
 const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]!;
 const r = first.a.report;
 console.log(
@@ -63,6 +69,12 @@ console.log(
 				(['parse', 'align', 'candidates', 'windows', 'total'] as const).map((k) => [k, Math.round(median(runs.map((x) => x[k])))]),
 			),
 			samplesTotalMs: runs.map((x) => Math.round(x.total)),
+			degenerate: {
+				case: '20,000 × "la" against 6,000 × "la"',
+				ms: Math.round(degMs),
+				cappedRows: deg.ok ? deg.report.cappedRows : null,
+				storedCells: deg.ok ? deg.report.storedCells : null,
+			},
 			targetExtraMemoryBytes: 300 * 1024 * 1024,
 			extraPeakRssBytes: rssAfter - rssBefore,
 		},
