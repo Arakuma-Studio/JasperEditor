@@ -148,7 +148,7 @@ describe('editor boot script (preload + early project fetch)', () => {
 				codemirror: { type: 'chunk', fileName: 'assets/vendor-codemirror-d.js' },
 				panel: { type: 'chunk', fileName: 'assets/panel.js' },
 				asset: { type: 'asset', fileName: 'assets/vendor-screenshot-c.js' },
-			}),
+			}).sort(),
 		).toEqual([
 			'/assets/ExpressionRowEditor-c.js',
 			'/assets/shared.js',

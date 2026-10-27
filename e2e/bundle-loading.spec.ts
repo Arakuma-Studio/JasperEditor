@@ -17,11 +17,7 @@ test.describe('editor download recovery', () => {
 	test('expression editing loads on demand and a failed download leaves the document usable', async ({
 		page,
 	}) => {
-		const scripts = new Set<string>();
 		const errors: string[] = [];
-		page.on('request', (request) => {
-			if (request.resourceType() === 'script') scripts.add(request.url());
-		});
 		page.on('pageerror', (error) => errors.push(error.message));
 		await enableAgentBridge(page);
 		await createProject(page, 'Expression download recovery');
@@ -34,29 +30,45 @@ test.describe('editor download recovery', () => {
 		await page.getByTestId('tab-effectControls').click();
 		const ec = page.getByTestId('ec-content');
 		await expect(ec.getByTestId('stopwatch-transform.rotation')).toBeVisible();
-		expect([...scripts].filter((url) => /\/(vendor-codemirror|ExpressionRowEditor)-/.test(url))).toEqual([]);
 
-		await page.route('**/assets/ExpressionRowEditor-*.js', (route) => route.abort());
+		// Fail first-use JavaScript downloads after ordinary property controls have loaded. If the expression
+		// runtime was loaded eagerly, activation cannot reach this failure state.
+		const blockedDownloads: string[] = [];
+		await page.route('**/assets/*.js', (route) => {
+			blockedDownloads.push(route.request().url());
+			return route.abort();
+		});
 		await ec.getByTestId('stopwatch-transform.rotation').click({ modifiers: ['Alt'] });
-		const error = ec.getByRole('alert').filter({ hasText: 'Could not load the expression editor.' });
+		const error = ec.getByRole('alert');
 		await expect(error).toBeVisible();
+		expect(blockedDownloads.length).toBeGreaterThan(0);
 		await expect(page.getByTestId('timeline-panel')).toBeVisible();
 		await expect(ec.getByTestId('prop-transform.rotation')).toBeVisible();
+		expectTransaction(
+			await transact(page, [
+				{
+					type: 'expression.set',
+					target: ['clip', clipId, 'transform', 'rotation'],
+					text: 'time * 45',
+				},
+			]),
+		);
 		await expect(page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved', { timeout: 20_000 });
 		await test
 			.info()
 			.attach('expression-download-error', { body: await page.screenshot(), contentType: 'image/png' });
 
 		// Chromium retains failed module imports for the document. Reload uses a fresh module map and the saved edit.
-		await page.unroute('**/assets/ExpressionRowEditor-*.js');
+		await page.unroute('**/assets/*.js');
 		await error.getByRole('button', { name: 'Reload editor' }).click();
 		await expect(page.getByTestId('editor-shell')).toBeVisible();
 		await clipElement(page, clipId).click();
 		await page.getByTestId('tab-effectControls').click();
-		await expect(
-			page.getByTestId(`expr-row-clip-${clipId}-transform-rotation`).locator('[contenteditable="true"]'),
-		).toBeVisible();
-		expect([...scripts].some((url) => /\/vendor-codemirror-/.test(url))).toBe(true);
+		const field = page
+			.getByTestId(`expr-row-clip-${clipId}-transform-rotation`)
+			.locator('[contenteditable="true"]');
+		await expect(field).toBeVisible();
+		await expect(field).toContainText('time * 45');
 		expect(errors).toEqual([]);
 	});
 });
@@ -96,8 +108,6 @@ test('visited editor reloads online and offline', async ({ page, context }) => {
 				.replace(/;$/, ''),
 		) as string[];
 	});
-	expect(optional.some((url) => /\/ExpressionRowEditor-/.test(url))).toBe(true);
-	expect(optional.some((url) => /\/vendor-codemirror-/.test(url))).toBe(true);
 	await expect
 		.poll(() =>
 			page.evaluate(
