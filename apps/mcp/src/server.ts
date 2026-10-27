@@ -63,6 +63,7 @@ import { registerTextStyleTools, TEXT_STYLES_GUIDE } from './tools/text-styles.t
 import { registerThreeDTools, THREE_D_GUIDE } from './tools/three-d.ts';
 import { registerTimeTools, TIME_GUIDE } from './tools/time.ts';
 import { registerTrackingTools, TRACKING_GUIDE } from './tools/tracking.ts';
+import { registerTranscriptFixTools, TRANSCRIPT_FIX_GUIDE } from './tools/transcript-fix.ts';
 import { registerTransitionTools, TRANSITION_GUIDE } from './tools/transitions.ts';
 import { registerTrimPathTools, TRIM_PATHS_GUIDE } from './tools/trim-paths.ts';
 import { registerUiTools, UI_GUIDE } from './tools/ui.ts';
@@ -135,6 +136,7 @@ const FULL_GUIDE = [
 	TEXT_STYLES_GUIDE,
 	SPEECH_GUIDE,
 	GLOSSARY_GUIDE,
+	TRANSCRIPT_FIX_GUIDE,
 	VOICE_GUIDE,
 	CLEANUP_GUIDE,
 	ROTO_GUIDE,
@@ -218,6 +220,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerGlossaryTools(ctx);
 	registerVoiceTools(ctx);
 	registerCleanupTools(ctx);
+	registerTranscriptFixTools(ctx);
 	registerRotoTools(ctx);
 	registerSimWarpTools(ctx);
 	registerInterchangeTools(ctx);
@@ -304,12 +307,31 @@ function registerResources(ctx: ToolContext): void {
 		}),
 	);
 	ctx.server.registerResource(
+		'transcript-fix-guide',
+		'jasper://guide/transcript-fix',
+		{
+			title: 'Fixing transcripts from a script',
+			description:
+				"How to fix a transcript's recognition errors from the video's script and the personal glossary: attach_script → fix_transcript (dryRun, then propose) → the user reviews → accept_proposal (subtitles are patched in place) → plan_cleanup.",
+			mimeType: 'text/markdown',
+		},
+		async (uri) => ({
+			contents: [
+				{
+					uri: uri.href,
+					mimeType: 'text/markdown',
+					text: `# Fixing transcripts from a script\n\n${TRANSCRIPT_FIX_GUIDE}\n\n## Personal glossary\n\n${GLOSSARY_GUIDE}`,
+				},
+			],
+		}),
+	);
+	ctx.server.registerResource(
 		'automation-guide',
 		'jasper://guide/editing-automation',
 		{
 			title: 'Editing automation',
 			description:
-				'How to decorate an edit with the spec 15 passes (cut kits, punch-ins, Ken Burns, reactions, slides, music beds, stingers), style recipes, apply_style and style_check, with the recommended agent workflow: cleanup → subtitles → apply_style → review → accept → style_check.',
+				'How to decorate an edit with the spec 15 passes (cut kits, punch-ins, Ken Burns, reactions, slides, music beds, stingers), style recipes, apply_style and style_check, with the recommended agent workflow: fix the transcript from the script → cleanup → subtitles → apply_style → review → accept → style_check.',
 			mimeType: 'text/markdown',
 		},
 		async (uri) => ({

@@ -676,3 +676,141 @@ tokens only; English and Spanish strings.
   `scalign`'s; glossary prompting (SC-074) is `scscore`'s. Until they land the glossary is maintained in Preferences
   and through MCP only.
 - Repair messages come from the engine in English (as for the font library).
+
+## Fix job, API and MCP
+
+Package `scengine` (spec 17 SC-014, SC-016, SC-035/036, SC-053, SC-055, SC-061…063, SC-073, SC-090, SC-091 without
+the glossary tools, SC-092 use). Code: `apps/engine/src/transcript-fix/run.ts` (pre-flight, pipeline, job, refresher,
+accept / reject hooks), `transcript-fix/costs.ts` (measured cost for the estimate), `routes/transcript-fix.ts`,
+`packages/api/src/transcript-fix.ts` (request / result schemas, job kind `transcript-fix`, route `transcriptFix`),
+engine-client `transcriptFix`, MCP `apps/mcp/src/tools/transcript-fix.ts`.
+
+### Route and job (SC-090)
+
+- `POST /api/projects/:projectId/sequences/:sequenceId/transcript-fix[?wait=1]` body `{sources?, scope?, strictness?,
+  showRejected?, mode?: 'propose' | 'dryRun', device?}` (strict zod; unset fields = the sequence's
+  `Sequence.scriptFix.settings`, else script + glossary / whole recordings / Standard; `mode` default propose) → 202 a
+  `transcript-fix` job. The same request (same settings, mode, device, requester kind) on the same document revision
+  while its job is queued or running returns that job (queue dedupe key). Authenticated like every route; an agent's
+  job has an agent origin and its proposal is the agent's.
+- Refused at once (the job repeats the checks on the document it reads): unknown sequence 404 `E_NOT_FOUND`; nothing to
+  fix from (no script attached / script source off, and no glossary entry / glossary off) 409 `E_NO_SOURCE`; no
+  transcribed words in scope 409 `E_NO_TRANSCRIPT`; scope In–Out without marks 400 `E_INVALID_PARAM`; to propose, no
+  installed speech model that fits the transcripts' language 409 `E_NO_SPEECH_MODEL` (the dry run still answers and
+  reports `speech.problem`). A translated transcript (`task: translate`) is left out with `W_TRANSLATED`.
+- Steps per media, one at a time (bounded memory: the alignment path is dropped after candidates; ≤ 20,000 candidates
+  per job, the rest counted in `guard.candidatesCapped`): `parseScript` per language (cached) → `alignTranscript`
+  (SC-014: each media transcript against the whole script; `E_LIMIT` from the aligner = the job error `E_LIMIT` with
+  its detail) → `findFixCandidates` with the personal glossary (SC-073, `SpeechGlossary.list`) and
+  `Sequence.scriptFix.rejected` (skipped unless `showRejected`; re-offered ones unselected) → the scope filter →
+  `decideFix` without audio for joins / glossary spellings → `buildScoreWindows`.
+- Scope (SC-063): `recordings` = every media transcript (`transcriptForMedia`) of the sequence's audio clips on audio
+  tracks, in the order the sequence first plays them; `used` = the words `sequenceWords` maps into the sequence (top
+  track first, midpoint rule); `inOut` = those whose sequence-time midpoint is in [In, Out) (In default 0, Out default
+  the end, the export's rule). The whole recording is still aligned (anchors and the report stay meaningful); only
+  candidates whose words — for `del`, both neighbours — are in scope are kept (`skipped.scope`). Nested sequences are
+  not descended (assumption: the speech is on the sequence's own audio clips).
+- Audio check (`propose`, SC-035/036/092): one `SpeechService.score` call per media with all its windows: request
+  `mediaId` = the asset's engine-store key (not the project media id), `language` = the transcript's, `model` = the
+  transcript's model when installed and fitting, else the default, else any installed model fitting the language;
+  `device` from the request. Windows with more than 64 readings are split into windows of the same range (still one
+  encoder pass); a window over 30 s or with a reading over 224 words / a word over 128 characters is not sent (its
+  candidates are kept, `skipped.unscorable`, `W_UNSCORABLE`). Progress = the worker's per-reading progress weighted by
+  each media's windows (0.15…0.9 of the job); the job's signal cancels the worker (≤ 1 s). `ASSET_NOT_FOUND`,
+  `MEDIA_OFFLINE`, `NO_AUDIO`, `SPEECH_LANGUAGE_*` (and no engine-store key, a transcript language that is not a code)
+  leave that media unscored (`perMedia[].unscored`, `W_UNSCORED`; its audio candidates are kept); any other scoring
+  failure is the job error with the worker's code (`SPEECH_SCORE_FAILED`, `SPEECH_MODEL_*`, refusals…), retryable as
+  reported. `candidateScores` → `decideFix` with the strictness preset → `replaceWordsEdit` → `transcriptFixItem(c, d,
+  edit, {id})` (item id from the candidate id, so repeated takes get distinct ids; Maybe and re-offered rejected
+  fixes `selected: false`; a malformed edit is a producer bug: left out with `W_FIX_MALFORMED`, never a crash).
+- Patch report (SC-053): one `planReplaceWords` per transcript over all its edits (each edit alone if they do not
+  compose) → `{edits, patched (distinct clips), skipped [{clipId, sequenceId, kind, reason}] (≤ 200), stale}`.
+- Proposal (SC-061): ONE `transcript-correction` proposal "Fix transcript" (items in time order per media; over 2,000
+  items Maybe ones are dropped first, then the latest: `guard.itemsCapped`), summary "N fixes · N spelling · N maybe
+  (unselected) in N recordings · N % aligned", `report = {format: 'jasper-transcript-fix', version: 1, settings,
+  device?, mediaIds, counts, perMedia}` (what refresh needs). Nothing to fix → no proposal (`proposalId: null`).
+- Result `{mode, projectId, sequenceId, proposalId, itemCount, revision, report}` with `report = {settings,
+  sourcesUsed, perMedia: [{mediaId, transcriptId, name, language, words, wordsInScope, alignment (the aligner's
+  AlignmentReport, SC-016), candidates, windows, readings, unscored?}], candidates: {total, byGroup (fix, spelling,
+  maybe, keep; dry run: pending), byCategory, byKind}, decisions (≤ 2,000, `decisionsTruncated`), skipped (counts by
+  reason), unusedLines (all media together), patch, speech {model, problem?}, device, fallback?, estimate? (dry run),
+  timings {readMs, alignMs, scoreMs, decideMs, totalMs, speechSeconds}, guard?, warnings}`.
+- `dryRun` (agreed with the coordinator): steps 1–6 and 9 only — no audio check, nothing stored. `estimate` =
+  Σ per media (load + windows × per-window + readings × per-reading) seconds with `basis: 'measured'` when every
+  scored media's model has a measurement on this machine (`<appdir>/engine/transcript-fix-costs.json`, written
+  atomically after each audio check from the worker's timings; unreadable → ignored and rewritten), else `reference`
+  (the build-VM SC-037 figures of the scoring section: 6.4 s load, 5.05 s per window, 0.17 s per reading). Labelled
+  "≈" with its basis.
+
+### Refresh, accept, rejections (SC-055, SC-062)
+
+- Refresher of `transcript-correction` (Refresh proposal / `refresh_proposal`): the proposal's settings are re-read
+  from its report; only the media of the requested items are re-aligned, and only windows holding candidates whose item
+  ids were requested are scored. A requested item comes back re-planned (same id: fingerprint-based, so it survives a
+  changed `expect`), or dropped ("no longer disagree", "the audio check now keeps the transcript", "could not be
+  checked again"); a source that disappeared drops them all with the refusal's message.
+- Accept: `ProposalService.registerAcceptExtension` (new, generic) appends to the accept transaction of a
+  `transcript-correction` proposal one `scriptFix.configure {reject, unreject}` — the fingerprints of the proposal's
+  rejected items not yet remembered (capped so the list stays ≤ 10,000) and the remembered ones of items accepted now
+  (re-offered with "Show rejected") — and sets the History label "Fix transcript: N fixes". One undo step. Mirrors
+  Clean Up, whose Apply remembers explicit rejections in the same transaction (`cleanupApplyCommands`).
+- `registerRejectListener` (new, generic): when the editor's rejection leaves nothing pending or stale, the rejected
+  fixes are remembered in their own step ("Fix transcript: remember N rejected fixes", as the user, never asking
+  approval). An agent withdrawing its own items is not the user's rejection and records nothing. Rejections of a
+  proposal that is deleted while items are still open are not remembered (limitation).
+
+### MCP (SC-091)
+
+- `fix_transcript {projectId, sequenceId?, mode (required), sources?, scope?, strictness?, showRejected?, device?,
+  timeoutSeconds?}`: strict schema, hints `EDIT` (not read-only: it stores a proposal; not destructive: nothing
+  changes until accepted), waits for the job with progress notifications, cancelling the request cancels the job;
+  failures are tool errors with the job's `E_*` code; the result is the report compacted (100 decisions shown).
+- `attach_script` now says the script serves cleanup and transcript fixing. Guide resource
+  `jasper://guide/transcript-fix` "Fixing transcripts from a script" (with the glossary guide) and `TRANSCRIPT_FIX_GUIDE`
+  in the server instructions; the editing-automation guide's workflows start with fixing the transcript.
+
+### Tests (build VM)
+
+- `apps/engine/test/transcript-fix.test.ts` (16, fake scorer at the `SpeechService` boundary): zod refusals, no
+  source / no transcript / In–Out / no model (and the dry run without a model), the dry run (no scoring, groups
+  `spelling` / `pending`, reference estimate, nothing stored), the proposal (fix + spelling selected, Maybe unselected,
+  kept candidate absent, engine media key and language in the request, patch report), accept "all" + a rejected item
+  (transcript fixed, Maybe left, `scriptFix.rejected` = the fingerprint; re-run skips it; `showRejected` re-offers it
+  unselected), an agent's "all" without Maybe, reject-all remembering three, refresh of a stale item (one score call,
+  one window, new `expect`), scope `used` / `inOut`, the glossary source without a script, worker failure → job error,
+  offline media → unscored, cancellation < 1 s, dedupe, `E_LIMIT`, measured estimate, the accept extension.
+- `apps/mcp/test/transcript-fix.test.ts` (6): annotations and strict schema, the request body, dry run and propose
+  results, progress notifications, cancellation → `cancelJob`, a refused job's `E_*` code, the guide resources.
+- `apps/engine/test/transcript-fix.e2e.test.ts` (real model, gated like `speech-model.e2e`): the LJ fixture
+  transcribed by whisper-tiny.en, 10 words corrupted with the confusions of `speech-score.e2e`, the true text as the
+  script → exactly 10 items, all `fix`, each restoring its word with start / end within 100 ms of the true word; accept
+  restores the transcript; the same accept transaction in an `EditorSession` is one undo step back to the exact
+  document. The true transcript with a corrupted script → 0 fix / 0 spelling (measured: 8 kept, 2 Maybe — offered
+  unselected: tiny.en's corrupted-script Δ_tok reaches −2.86, inside the Standard Maybe band, scoring section).
+
+### Measurements (SC-037 integration, build VM, 2026-10-27)
+
+`JASPER_SPEECH_MODELS_DIR=<dir> TRANSCRIPT_FIX_BENCH=1 pnpm exec vitest run apps/engine/test/transcript-fix.e2e.test.ts
+-t "cost per speech minute" --maxWorkers=1` (`FIX_BENCH` line), under the bench lock; 16 shared EPYC-Rome vCPU, load
+average 6.4 → 9.0 from other agents; whisper-large-v3-turbo fp32, CPU, 8 threads; the LJ fixture (0.966 speech
+minutes by its utterance bounds), 10 candidates (≈ 10 per speech minute, the research's rate is 6.3), 3 packed windows,
+13 readings; whole job from the request to the stored proposal, median of 3:
+
+| Measure | Value |
+|---|---|
+| Job (read, align, score incl. model load and media decode, decide, patch report, proposal) | 30.2 s (29.8 / 30.2 / 31.0) = **31.2 s per speech minute** |
+| of which the audio check (`scoreMs`) / everything else | 29.9 s / 0.06 s |
+| Without the once-per-job load + decode (≈ 6.4 s, the scoring section's measurement) | ≈ 24.6 s per speech minute (estimate) |
+
+The SC-037 target (≤ 20 s per speech minute on the build VM CPU) is not met on this 1-minute clip: the model load
+dominates a short job, and this clip has ≈ 1.6× the research's candidate density. On long recordings the load is paid
+once per media; the scoring section's estimate for them is ≈ 13 s per speech minute. whisper-tiny.en (functional e2e)
+took 7.2 s for the same job. Mac and NVIDIA: not measured (SC-105 harness / a GPU box).
+
+### Limitations
+
+- No web UI in this package (Fix dialog, Review rows: `scweb`). The engine and MCP paths are complete.
+- The refresh runs inside the proposal's lock and is not cancellable (the request waits for the audio check of the
+  stale items' windows).
+- The estimate's per-model measurement does not tell devices apart (the last measured run of the model wins).
+- Nested sequences are not descended for the scope; only the sequence's own audio clips count.

@@ -55,7 +55,7 @@ nobody outside has used it, only Linux was checked — is [`docs/gaps.md`](docs/
 - **Export and interchange.** A planner routes each sequence to the native FFmpeg path, a hybrid layer bake or
   Remotion and refuses by name what a path cannot render; H.264, HEVC, VP9, AV1, ProRes, alpha; render previews and
   smart rendering; FCP 7 XML, FCPXML, EDL, AAF, OMF, ALE and OTIO in both directions.
-- **Agents.** `jasper-mcp` exposes 433 tools and the whole command catalogue; every edit is an undoable
+- **Agents.** `jasper-mcp` exposes 434 tools and the whole command catalogue; every edit is an undoable
   transaction, destructive ones need the user's approval in the editor; a `jasper` CLI; tools that look at and
   operate the live window.
 - **Safety net.** Atomic saves, single-writer leases (a reloaded tab keeps its own), crash-recovery journal, saved
@@ -676,6 +676,11 @@ Tools (use MCP `listTools` for the current catalog and schemas):
 - Clean Up Voice (retakes, restarts, fillers, off-script talk, pauses and breaths found in transcribed speech and cut
   at the audio level in one undo step; guide resource `jasper://guide/cleanup` "Cleaning up speech"): `analyze_voice`
   `plan_cleanup` `apply_cleanup` `set_cleanup_settings` `attach_script` (`docs/wp-notes/transcript-cleanup.md`).
+- Fix Transcript from a script (recognition errors fixed from the sequence's script and the personal glossary, each
+  checked against the audio, into one reviewable `transcript-correction` proposal whose accept also patches the
+  subtitles in place; guide resource `jasper://guide/transcript-fix` "Fixing transcripts from a script"):
+  `attach_script` (the script serves cleanup and fixing) `fix_transcript` (`dryRun` / `propose`)
+  (`docs/wp-notes/script-correction.md`).
 - Timeline interchange (Final Cut Pro 7 XML, FCPXML, OpenTimelineIO, CMX 3600 EDL, AAF, OMF, Avid ALE) and Link Media:
   `import_timeline` `export_timeline` `list_offline_media` `link_media` (`docs/wp-notes/interchange.md`).
 - Imports and Interpret Footage (Lottie, SVG, PDF/AI, PSD, image sequences, EXR/TIFF/TGA/BMP/DPX/HEIC/JPEG XL through

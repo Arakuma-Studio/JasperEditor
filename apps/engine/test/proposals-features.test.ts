@@ -244,8 +244,12 @@ describe('workflow features: agent accept (EA-001)', { timeout: TIMEOUT }, () =>
 			explicit: true,
 		});
 		expect(by['transcript-cleanup']!.groups.map((g) => g.id)).toContain('retakes');
-		// editing automation's producer (spec 15 EA-020…EA-022) refreshes; the others do not (yet)
-		expect(features.filter((f) => f.refreshable).map((f) => f.id)).toEqual(['edit-automation']);
+		// editing automation's producer (spec 15 EA-020…EA-022) and Fix Transcript's (spec 17 SC-062) refresh; the others
+		// do not (yet)
+		expect(features.filter((f) => f.refreshable).map((f) => f.id)).toEqual([
+			'edit-automation',
+			'transcript-correction',
+		]);
 		const svc = app.jasper.services.proposals as ProposalService;
 		// without its refresher the feature is not refreshable
 		svc.registerRefresher('edit-automation', () => ({ items: [] }))();
@@ -258,7 +262,7 @@ describe('workflow features: agent accept (EA-001)', { timeout: TIMEOUT }, () =>
 				})
 			).json(),
 		);
-		expect(none.features.every((f) => f.refreshable === false)).toBe(true);
+		expect(none.features.filter((f) => f.refreshable).map((f) => f.id)).toEqual(['transcript-correction']);
 		const off = svc.registerRefresher('edit-automation', () => ({ items: [] }));
 		const again = ProposalFeaturesResponseSchema.parse(
 			(
