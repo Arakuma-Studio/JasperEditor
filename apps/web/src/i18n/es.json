@@ -10987,7 +10987,6 @@
   "The selected properties take no expression": "Las propiedades seleccionadas no admiten expresiones",
   "The selection could not be read: {0}": "No se pudo leer la selección: {0}",
   "The track is locked": "La pista está bloqueada",
-  "This build has no {0} command yet": "Esta versión aún no tiene el comando {0}",
   "This build has no such expression preset": "Esta versión no tiene ese ajuste de expresión",
   "This curve cannot be saved: {0}": "Esta curva no se puede guardar: {0}",
   "Track keyframes cannot be eased here; select clip keyframes": "Aquí no se pueden suavizar fotogramas clave de pista; seleccione fotogramas clave de un clip",
