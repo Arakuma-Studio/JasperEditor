@@ -10,7 +10,7 @@
 // - Sapphire blur widths keep Sapphire's numbers: 1.0 = a Gaussian sigma of 3 % of the layer width
 //   (`sapphireBlurPx`), so the documented defaults (0.088, 0.112…) give the documented look at any resolution.
 import type { ParamValue } from '../../../schema/common.ts';
-import type { EffectParams, ParamSpec } from '../../effects.ts';
+import type { ParamSpec } from '../../effects.ts';
 import { clamp, numberParam as num } from '../../param-values.ts';
 
 import { GLSL_BLUR } from '../glsl/blur.ts';
@@ -185,11 +185,6 @@ void main() {
 			uniforms: { u_blurDir: [0, 1], u_blurSigma: sy * scale },
 		},
 	];
-}
-
-/** Default values of a param list (tests, previews). */
-export function defaultsOf(params: readonly ParamSpec[]): EffectParams {
-	return Object.fromEntries(params.map((p) => [p.name, p.default])) as EffectParams;
 }
 
 export { clamp, num };

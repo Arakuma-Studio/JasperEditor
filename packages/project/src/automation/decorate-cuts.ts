@@ -7,9 +7,8 @@
 // next seed. Pure: the engine adds the SFX (sound-design cues and placement) and builds the proposal.
 
 import type { BatchEffect, BatchItemKey } from '../commands/schemas/batch.ts';
-import { clipsInRange } from '../derive/index.ts';
 import type { ProjectDocument } from '../schema/document.ts';
-import type { Clip, Sequence } from '../schema/sequence.ts';
+import type { Sequence } from '../schema/sequence.ts';
 import { CutMapError, type PictureCut, pictureCuts } from '../structure/cuts.ts';
 import {
 	AutomationInputError,
@@ -588,19 +587,4 @@ export function replanKits(
 		out.push({ itemId: t.itemId, ok: true, kit });
 	}
 	return out;
-}
-
-/** The incoming clip of a cut when it is on the sequence's own tracks (for anchors). */
-export function cutClips(seq: Sequence, k: Pick<KitPlacement, 'cut'>): Clip[] {
-	const out: Clip[] = [];
-	for (const id of [k.cut.outgoingClipId, k.cut.incomingClipId]) {
-		const c = id ? seq.clips[id] : undefined;
-		if (c) out.push(c);
-	}
-	return out;
-}
-
-/** Adjustment clips on `trackId` overlapping [a, b) (used by tests and the engine's checks). */
-export function adjustmentsIn(seq: Sequence, trackId: string, a: number, b: number): Clip[] {
-	return clipsInRange(seq, trackId, a, b).filter((c) => c.kind === 'adjustment');
 }

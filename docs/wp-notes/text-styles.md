@@ -18,8 +18,8 @@ caption graphic one by one.
   colours 0…1 (`textStyleProblem`).
 - `diffStyle(a, b)` is the inverse: `applyStylePatch(a, diffStyle(a, b))` equals `b` (property test, 300 random style
   pairs). Equality ignores key order (`sameValue`).
-- `mergeStyleFields` is `clip.update`'s merge: fields replace as before, except a shadow / background object given
-  over an existing one, which merges into it. Existing callers pass whole objects, so their result is unchanged except
+- `writeTextStyle` in `commands/handlers/clip-core.ts` owns `clip.update`'s merge: fields replace, except a shadow /
+  background object given over an existing one, which merges into it. Existing callers pass whole objects, so their result is unchanged except
   that fields they do not name (the shadow's `spreadPx`, fields of newer builds) survive instead of being dropped
   (the old `Object.assign` replaced the object). Paste Attributes ▸ Text Style keeps copying the source's objects
   exactly (`styleMode: 'objects'`).

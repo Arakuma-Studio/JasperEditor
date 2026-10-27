@@ -19,7 +19,7 @@ import { layerMatrix, layerQuad, quadBounds, type Rect } from '../render/transfo
 import type { Animatable, Vec2 } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Clip, Sequence } from '../schema/sequence.ts';
-import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../time.ts';
+import { flicksPerFrame, type Rational } from '../time.ts';
 
 export * from './graphics-schema.ts';
 
@@ -387,8 +387,3 @@ export function graphicTemplateOf(
 		payload: build(doc, [itemId]) as Record<string, unknown>,
 	};
 }
-
-/** Seconds → frames at a rate. */
-export const framesOf = (seconds: number, rate: Rational): number =>
-	Math.round((seconds * rate.num) / rate.den);
-export const FLICKS = FLICKS_PER_SECOND;

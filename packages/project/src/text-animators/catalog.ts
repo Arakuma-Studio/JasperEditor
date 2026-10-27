@@ -405,9 +405,6 @@ export function addAnimatorProperties(
 	return added;
 }
 
-/** Variable font axis tag (4 printable ASCII characters, e.g. `wght`). */
-export const AXIS_TAG = /^[\x20-\x7e]{4}$/;
-
 export function newRangeSelector(id: string, name = 'Range Selector 1'): TextRangeSelector {
 	return {
 		id,

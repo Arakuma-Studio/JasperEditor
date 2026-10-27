@@ -288,21 +288,6 @@ export function diffStyle(base: TextStyle, style: TextStyle): TextStyleOverrides
 	return out as TextStyleOverrides;
 }
 
-/**
- * clip.update's text style merge (schema `TextStyleSchema.partial()`): fields replace, except a shadow or background
- * object given over an existing one, which merges into it so fields the caller did not name (a shadow's `spreadPx`,
- * fields of newer builds) survive. Callers pass whole objects there, so their result is unchanged otherwise.
- */
-export function mergeStyleFields(base: TextStyle, fields: Partial<TextStyle>): TextStyle {
-	const out = { ...base } as Record<string, unknown>;
-	for (const [k, v] of Object.entries(fields as Record<string, unknown>)) {
-		if (v === undefined) continue;
-		const cur = out[k];
-		out[k] = NULLABLE_OBJECTS.has(k) && isPlain(v) && isPlain(cur) ? { ...cur, ...v } : v;
-	}
-	return out as TextStyle;
-}
-
 /** Why `style` is not a storable text style (schema, stroke count, colour range), or null. */
 export function textStyleProblem(style: unknown): string | null {
 	const r = TextStyleSchema.safeParse(style);

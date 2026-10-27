@@ -6,7 +6,6 @@
 // exactly as long as the kit and centred on the cut (the user's whooshes: same length, 100 % paired). The span is
 // computed with the placement's own function (`planSoundInsert`), so the trims are exact. Pure.
 import { mediaDurationFlicks } from '../interpret/model.ts';
-import type { ProjectDocument } from '../schema/document.ts';
 import type { Sequence } from '../schema/sequence.ts';
 import { planSoundInsert, resolveSoundAlign, soundTimingOf } from '../sound/insert.ts';
 import { type LibraryProvenance, readLibraryProvenance } from '../sound/provenance.ts';
@@ -226,13 +225,4 @@ export function sfxCommands(o: {
 			cmds.push({ type: 'clip.trim', clipId: o.clipRef, edge: 'out', deltaFrames: -tail, linked: false });
 	}
 	return cmds;
-}
-
-/** The project media of a sound when the document has it already (same library id), else null. */
-export function projectMediaOfSound(doc: ProjectDocument, soundId: string): string | null {
-	for (const m of Object.values(doc.media ?? {})) {
-		const p = readLibraryProvenance((m as { library?: unknown }).library);
-		if (p?.soundId === soundId && !m.derivation) return m.id;
-	}
-	return null;
 }
