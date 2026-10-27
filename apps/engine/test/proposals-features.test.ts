@@ -379,3 +379,48 @@ describe('Refresh proposal (EA-003)', { timeout: TIMEOUT }, () => {
 		expect(bad.statusCode).toBe(400);
 	});
 });
+
+describe('per-item default selection (spec 17 SC-060 / SC-061)', { timeout: TIMEOUT }, () => {
+	const fix = (id: string, frame: number, group: string, selected?: boolean) => ({
+		id,
+		label: `Fix ${id}`,
+		meta: { group },
+		...(selected !== undefined ? { selected } : {}),
+		commands: [{ type: 'marker.add', frame, name: id }],
+	});
+	const markers = (file: string, seqId: string) =>
+		saved(file)
+			.doc.sequences[seqId]!.markers.map((m) => m.name)
+			.sort();
+
+	it('"all" takes selected items; an agent never takes the maybe group; named ids take any', async () => {
+		const app = await secured();
+		const { projectId, seqId, file } = seed(app);
+		const draft = {
+			feature: 'transcript-correction',
+			title: 'Fix transcript',
+			sequenceId: seqId,
+			items: [
+				fix('f1', 10, 'fix'),
+				fix('s1', 20, 'spelling'),
+				fix('m1', 30, 'maybe', false),
+				// a maybe item a caller re-selected: still not in an agent's "all"
+				fix('m2', 40, 'maybe', true),
+			],
+		};
+		const p = await create(app, projectId, draft, AGENT_H);
+		expect(p.items.map((it) => it.selected)).toEqual([undefined, undefined, false, true]);
+		const r = await post(app, `${base(projectId)}/${p.id}/accept`, { itemIds: 'all' }, AGENT_H);
+		expect(r.statusCode, r.body).toBe(200);
+		expect(r.json().applied).toEqual(['f1', 's1']);
+		expect(markers(file, seqId)).toEqual(['f1', 's1']);
+		// the agent names a Maybe item: applied
+		const named = await post(app, `${base(projectId)}/${p.id}/accept`, { itemIds: ['m1'] }, AGENT_H);
+		expect(named.json().applied).toEqual(['m1']);
+		// the editor's "all" takes the selected ones (m2), not the unselected
+		const q = await create(app, projectId, { ...draft, items: draft.items.map((x) => ({ ...x, id: `q${x.id}` })) }, AGENT_H);
+		const ed = await post(app, `${base(projectId)}/${q.id}/accept`, { itemIds: 'all' }, EDITOR_H);
+		expect(ed.statusCode, ed.body).toBe(200);
+		expect(ed.json().applied).toEqual(['qf1', 'qs1', 'qm2']);
+	});
+});

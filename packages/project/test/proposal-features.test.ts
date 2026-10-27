@@ -127,6 +127,7 @@ describe('proposal features', () => {
 			subtitles: false,
 			'edit-automation': true,
 			'transcript-cleanup': false,
+			'transcript-correction': false,
 		});
 		expect(r.report.some((e) => e.action === 'reset-project-settings')).toBe(true);
 		expect(checkInvariants(r.document)).toEqual([]);
