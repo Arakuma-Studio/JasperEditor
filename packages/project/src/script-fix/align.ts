@@ -9,12 +9,11 @@
 // moves out of a cell add the same amounts to both), so it is dropped. Dropped cells of the next row then only differ
 // from the landing value by their similarity, so only positions with a similarity worth more than −1 can survive a
 // landing: those come from an exact-match / phonetic index of the script vocabulary. The DP therefore touches the band
-// of live cells around the current alignment plus the positions of the current word in the script. A per-row cap on
-// live cells (`maxActivePerRow`, only reached by degenerate input such as one word repeated thousands of times) is the
-// sole approximation; rows where it bit are counted in the report. Deterministic: ties resolve like the spike (first
-// move in the order diagonal, skip 1…8, jump, OFF; lowest script index).
-
-import { cachedKey, PSIM_MIN_INDEL, psim, psimAtLeast } from './phonetic.ts';
+// of live cells around the current alignment plus the positions of the current word in the script; merge cells are
+// generated row by row from length-sorted bigram postings. Per-row caps on live cells, landing positions and merge
+// cells (only reached by degenerate input such as one word repeated thousands of times; the cells nearest the previous
+// best cell are kept) are the sole approximation; rows where a cap bit are counted in the report. Deterministic: ties
+// resolve like the spike (first move in the order diagonal, skip 1…8, jump, OFF; lowest script index).
 import type { ParsedScript } from './script.ts';
 import {
 	exactMatch,
@@ -558,7 +557,7 @@ export function alignCore(
 	let mergeCells = 0;
 	const capMerges = Math.max(16, Math.floor(opt.maxMergeCellsPerRow));
 	/** Fills the row's merge cells (generation order) and returns the indices to evaluate (all, or the best capMerges). */
-	function rowMerges_(i: number): { keep: Int32Array; n: number; capped: boolean } {
+	function rowMergeCells(i: number): { keep: Int32Array; n: number; capped: boolean } {
 		rA.n = rB.n = rJ.n = rSc.n = rPs.n = rKeep.n = 0;
 		const add = (a: number, b: number, j: number, ps: number) => {
 			rA.push(a);
@@ -747,7 +746,7 @@ export function alignCore(
 			for (let q = from; q < to; q++) touch(land[q]!);
 			touch(sim.firstPos);
 		}
-		const rm = rowMerges_(i);
+		const rm = rowMergeCells(i);
 		if (rm.capped) rowCapped = true;
 		for (let q = 0; q < rm.n; q++) touch(rJ.arr[rm.keep[q]!]!);
 		for (let q = 0; q < nTouched; q++) {

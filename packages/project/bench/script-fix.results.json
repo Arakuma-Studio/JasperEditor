@@ -5,16 +5,8 @@
     "memoryBytes": 32859287552,
     "node": "v24.22.1"
   },
-  "loadAtStart": [
-    7.52,
-    7.15,
-    4.87
-  ],
-  "loadAtEnd": [
-    7.68,
-    7.19,
-    4.94
-  ],
+  "loadAtStart": [7.52, 7.15, 4.87],
+  "loadAtEnd": [7.68, 7.19, 4.94],
   "input": {
     "transcriptWords": 20000,
     "scriptTokens": 6004,
@@ -38,13 +30,7 @@
     "windows": 9,
     "total": 2455
   },
-  "samplesTotalMs": [
-    2201,
-    2472,
-    2523,
-    2455,
-    2047
-  ],
+  "samplesTotalMs": [2201, 2472, 2523, 2455, 2047],
   "degenerate": {
     "case": "20,000 × \"la\" against 6,000 × \"la\"",
     "ms": 7794,

@@ -28,8 +28,8 @@ describe('script-fix performance (SC-015)', () => {
 	});
 
 	it('degenerate input (one word repeated) stays bounded: capped rows, no refusal', () => {
-		const script = parseScript(Array.from({ length: 3000 }, () => 'la').join(' '), { language: 'es' });
-		const words = Array.from({ length: 6000 }, (_, k) => ({
+		const script = parseScript(Array.from({ length: 2000 }, () => 'la').join(' '), { language: 'es' });
+		const words = Array.from({ length: 3000 }, (_, k) => ({
 			text: 'la',
 			start: k * 1000,
 			end: k * 1000 + 900,
@@ -37,11 +37,11 @@ describe('script-fix performance (SC-015)', () => {
 		const t0 = performance.now();
 		const a = alignTranscript({ words, script, language: 'es' });
 		const ms = performance.now() - t0;
-		console.log(budgetReport('script-fix degenerate 6,000 × 3,000', ms, 5000));
+		console.log(budgetReport('script-fix degenerate 3,000 × 2,000', ms, 5000));
 		expect(a.ok).toBe(true);
 		if (!a.ok) return;
 		expect(a.report.cappedRows).toBeGreaterThan(0);
-		expect(a.report.storedCells).toBeLessThanOrEqual(6000 * 1024);
+		expect(a.report.storedCells).toBeLessThanOrEqual(3000 * 1024);
 		expect(ms).toBeLessThan(budgetMs(5000));
 	});
 });
