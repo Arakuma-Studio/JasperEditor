@@ -20,6 +20,9 @@ export {
 } from './align.ts';
 export {
 	type CandidateResult,
+	DEL_MIN_GAP_SECONDS,
+	type DelAnchor,
+	delAnchorOf,
 	displayWords,
 	type FindCandidatesInput,
 	type FixCandidate,

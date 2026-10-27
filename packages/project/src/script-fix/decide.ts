@@ -44,6 +44,9 @@ export type CandidateScore = {
 	asrTokens: number;
 	/** Reading k's results for the replacement words (forced timing and probabilities). */
 	words: ScoreWordResult[];
+	/** Reading k's results for the words just before / after them (a `del` anchor's forced timing), if any. */
+	before: ScoreWordResult | null;
+	after: ScoreWordResult | null;
 };
 
 const finite = (x: unknown): x is number => typeof x === 'number' && Number.isFinite(x);
@@ -101,6 +104,8 @@ export function candidateScores(
 				scriptTokens,
 				asrTokens,
 				words: rk.words.slice(reg.from, reg.scriptTo),
+				before: rk.words[reg.from - 1] ?? null,
+				after: rk.words[reg.scriptTo] ?? null,
 			});
 		}
 	}
@@ -159,15 +164,26 @@ function thresholdsOf(s: StrictnessPreset | DecisionThresholds | undefined): Dec
 	};
 }
 
-/** Clamps words into [lo, hi] in order: each starts at or after the previous word's end. */
+/**
+ * Clamps words into [lo, hi] in order: each starts at or after the previous word's end, and each lasts at least one
+ * flick while the span leaves one flick for every word still to come.
+ */
 function clampWords(words: FixedWord[], lo: number, hi: number): FixedWord[] {
 	let cursor = lo;
-	return words.map((w) => {
-		const start = Math.min(hi, Math.max(cursor, Math.round(w.start)));
-		const end = Math.min(hi, Math.max(start, Math.round(w.end)));
+	const n = words.length;
+	return words.map((w, k) => {
+		const lastStart = Math.max(cursor, hi - (n - k)); // room for one flick per remaining word
+		const start = Math.min(lastStart, Math.max(cursor, Math.round(w.start)));
+		const lastEnd = Math.max(start, hi - (n - k - 1));
+		const end = Math.min(lastEnd, Math.max(Math.min(start + 1, lastEnd), Math.round(w.end)));
 		cursor = end;
 		return { ...w, start, end };
 	});
+}
+
+/** The candidate's new words in order, with a `del` anchor placed where it reads (before or after the inserted words). */
+function withAnchor<T>(candidate: FixCandidate, inserted: T[], anchor: T): T[] {
+	return candidate.anchor?.side === 'before' ? [anchor, ...inserted] : [...inserted, anchor];
 }
 
 /**
@@ -175,40 +191,58 @@ function clampWords(words: FixedWord[], lo: number, hi: number): FixedWord[] {
  * `transcript.editText`); no confidence (they were not re-scored).
  */
 export function splitByCharacters(candidate: FixCandidate): FixedWord[] {
+	const a = candidate.anchor;
+	const texts = a ? withAnchor(candidate, candidate.script, a.text) : candidate.script;
+	const lo = a ? candidate.bounds.start : candidate.start;
+	const hi = a
+		? Math.max(candidate.bounds.start, a.side === 'after' ? a.end : candidate.bounds.end)
+		: candidate.end;
 	const spread = spreadTokens(
-		candidate.script.map((text) => ({ text, breakBefore: 'none' as const })),
-		candidate.start,
-		candidate.end,
+		texts.map((text) => ({ text, breakBefore: 'none' as const })),
+		lo,
+		hi,
 	);
-	return clampWords(
-		spread.map((w) => ({ text: w.text, start: w.start, end: w.end, confidence: null })),
-		candidate.start,
-		candidate.end,
-	);
+	const out = spread.map((w) => ({
+		text: w.text,
+		start: w.start,
+		end: w.end,
+		confidence: null as number | null,
+	}));
+	if (a) out[a.side === 'before' ? 0 : out.length - 1]!.confidence = a.confidence;
+	return clampWords(out, lo, hi);
 }
 
 /**
  * SC-040 / SC-041: the display words with the forced alignment's times of reading k, clamped into the candidate's
- * bounds (previous word's end … next word's start), confidence = the forced mean token probability. Falls back to
- * the character split when the score's word times are unusable.
+ * bounds (previous word's end … next word's start), confidence = the forced mean token probability. A `del` anchor
+ * word is re-timed with them (its text and confidence kept). Falls back to the character split when the score's word
+ * times are unusable.
  */
 export function retimedWords(candidate: FixCandidate, score: CandidateScore): FixedWord[] {
+	const a = candidate.anchor;
+	const anchorScore = a ? (a.side === 'before' ? score.before : score.after) : null;
 	const ws = score.words;
-	if (ws.length !== candidate.script.length || ws.some((w) => !finite(w?.start) || !finite(w?.end)))
+	const usable = (w: ScoreWordResult | null | undefined) => !!w && finite(w.start) && finite(w.end);
+	if (ws.length !== candidate.script.length || !ws.every(usable) || (a && !usable(anchorScore)))
 		return splitByCharacters(candidate);
-	return clampWords(
-		candidate.script.map((text, k) => {
-			const p = ws[k]!.probability;
-			return {
-				text,
-				start: ws[k]!.start,
-				end: ws[k]!.end,
-				confidence: finite(p) ? Math.min(1, Math.max(0, p)) : null,
-			};
-		}),
-		candidate.bounds.start,
-		candidate.bounds.end,
-	);
+	const fresh = candidate.script.map((text, k) => {
+		const p = ws[k]!.probability;
+		return {
+			text,
+			start: ws[k]!.start,
+			end: ws[k]!.end,
+			confidence: finite(p) ? Math.min(1, Math.max(0, p)) : null,
+		};
+	});
+	const all = a
+		? withAnchor(candidate, fresh, {
+				text: a.text,
+				start: anchorScore!.start,
+				end: anchorScore!.end,
+				confidence: a.confidence,
+			})
+		: fresh;
+	return clampWords(all, candidate.bounds.start, candidate.bounds.end);
 }
 
 /**
@@ -296,14 +330,15 @@ export function decideFixes(
 
 /**
  * The SC-050 edit of a decided fix: the span its new words lie in, the exact texts of the transcript words in that
- * span (`[]` for `del`), the new words. Null when the decision keeps the transcript.
+ * span (`[]` for `del`; the anchor word's text for a widened `del`), the new words. Null when the decision keeps the
+ * transcript.
  */
 export function replaceWordsEdit(candidate: FixCandidate, decision: FixDecision): ReplaceWordsEdit | null {
 	if (decision.group === null || !decision.words.length) return null;
 	return {
 		start: decision.start,
 		end: decision.end,
-		expect: [...candidate.asr],
+		expect: candidate.anchor ? [candidate.anchor.text] : [...candidate.asr],
 		words: decision.words.map((w) => ({ ...w })),
 	};
 }

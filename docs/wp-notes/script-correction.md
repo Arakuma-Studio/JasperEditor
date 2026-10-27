@@ -144,11 +144,22 @@ difference is listed below.
 - **Edits.**
   - Audio-decided words take reading k's forced times, clamped in order into `bounds`: from the previous word's end
     to the next word's start, with zero-length neighbours excluded (SC-040).
+  - Clamping keeps every word at least 1 flick long while the span leaves 1 flick for each word still to come.
   - Confidence = the word's forced `probability` (SC-041).
+  - **`del` into a gap under 60 ms (`DEL_MIN_GAP_SECONDS`)** — the one exception to SC-041's "words outside the
+    fixed region keep their times exactly":
+    - The edit takes in the following word (`candidate.anchor`, side `after`); its exact text goes in `expect`.
+    - The inserted words and that word take reading k's forced times, clamped within [previous word's end,
+      following word's end].
+    - With no following word, the previous word is taken in the same way (side `before`): clamped within [its start,
+      its end + 0.35 s].
+    - The taken-in word keeps its text and confidence.
+    - A zero-length neighbour is never taken in, because a span cannot name it; such a `del` stays in the gap.
+    - With a gap ≥ 60 ms the inserted words go inside the gap and both neighbours keep their times.
   - No-audio fixes spread the words over the region's span by character count (`spreadTokens`, SC-042), with no
     confidence.
-  - `replaceWordsEdit` returns `{start, end, expect, words}`: the span the words lie in, the exact old texts (`[]`
-    for `del`) and the new words.
+  - `replaceWordsEdit` returns `{start, end, expect, words}`: the span the words lie in, the exact old texts
+    (`[]` for `del`; the taken-in word for a widened `del`) and the new words.
 
 ### Defaults
 
@@ -188,13 +199,18 @@ difference is listed below.
   - directions, headings, `&`, numbers, stylised spellings, mixed regions, display form;
   - fingerprints, rejections, glossary;
   - the decision table and the Maybe band;
-  - windows → fake scores → Δ_tok → edit, and malformed results.
+  - windows → fake scores → Δ_tok → edit, and malformed results;
+  - `del` edits for a < 60 ms gap (following word taken in), a ≥ 60 ms gap (inside the gap) and the end of the
+    transcript (previous word taken in).
 - **`test/script-fix-property.test.ts`** (SC-100, fast-check):
   - parser and aligner never throw and are deterministic;
   - every transcript token is covered once, in order;
   - E_LIMIT is returned at the bounds;
   - the aligner equals the dense port;
   - candidates sit between exact anchors, are never `ins` and contain no digits;
+  - for `del` / `sub` edits with arbitrary forced times and gaps of 0–0.9 s: `expect` equals the words overlapping the
+    span, the edited transcript stays sorted and non-overlapping, and every new word lies inside the span and lasts
+    ≥ 1 flick when the span allows it;
   - psim is symmetric and in [0, 1].
 - **`test/script-fix-perf.test.ts`** (SC-015). A load-scaled 5 s budget on the 2 h case, plus a bounded degenerate
   case.
@@ -238,8 +254,9 @@ difference is listed below.
   digit test.
 - **Glossary and the number rule.** The number rule also applies to glossary entries: an entry with digits is never
   offered.
-- **`del` with no gap.** A `del` between words that touch (no gap) gets zero-length inserted words, because the edit
-  must stay inside the gap and its neighbours keep their times exactly (SC-041).
+- **`del` next to a zero-length word.** When the gap is under 60 ms and the following word is zero-length (or there
+  is no following word and the previous word is zero-length), nothing is taken in. The inserted words then share
+  the gap and can be shorter than 1 flick each when the gap is narrower than the number of words.
 - **Glued words.** Splits and glued words that are not exact concatenations are still missed at alignment
   (F§4.3: 2 of 96).
 - **Homophones.** Undecidable by audio; the script wins ties (F§5.2).

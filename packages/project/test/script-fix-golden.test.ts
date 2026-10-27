@@ -9,6 +9,7 @@ import {
 	candidateScores,
 	DECISION_PRESETS,
 	decideFix,
+	delAnchorOf,
 	type FixCandidate,
 	type FixWord,
 	findFixCandidates,
@@ -23,8 +24,8 @@ import { FLICKS_PER_SECOND } from '../src/time.ts';
 
 const F = FLICKS_PER_SECOND;
 
-/** Transcript words 0.3 s long with 0.05 s gaps (`|` in the text = a 1.5 s pause). */
-function say(text: string): FixWord[] {
+/** Transcript words 0.3 s long with `gap` s between them (default 0.05 s; `|` in the text = a 1.5 s pause). */
+function say(text: string, gap = 0.05): FixWord[] {
 	const out: FixWord[] = [];
 	let t = 0.5;
 	for (const w of text.split(/\s+/)) {
@@ -33,14 +34,20 @@ function say(text: string): FixWord[] {
 			continue;
 		}
 		out.push({ text: w, start: Math.round(t * F), end: Math.round((t + 0.3) * F), confidence: 0.9 });
-		t += 0.35;
+		t += 0.3 + gap;
 	}
 	return out;
 }
 
-function run(scriptText: string, transcript: string, lang = 'es', glossary?: GlossaryEntryInput[]) {
+function run(
+	scriptText: string,
+	transcript: string,
+	lang = 'es',
+	glossary?: GlossaryEntryInput[],
+	gap?: number,
+) {
 	const script = parseScript(scriptText, { language: lang });
-	const words = say(transcript);
+	const words = say(transcript, gap);
 	const alignment = alignTranscript({
 		words,
 		script,
@@ -147,6 +154,14 @@ describe('alignment and candidates, Spanish (SC-010 … SC-026)', () => {
 		expect(c.start).toBe(r.words[1]!.end);
 		expect(c.end).toBe(r.words[2]!.start);
 		expect(c.fromWord).toBe(2);
+		// the 50 ms gap is under DEL_MIN_GAP_SECONDS: the following word is taken in
+		expect(c.anchor).toMatchObject({
+			side: 'after',
+			text: 'guardar',
+			start: r.words[2]!.start,
+			end: r.words[2]!.end,
+		});
+		expect(c.bounds).toEqual({ start: r.words[1]!.end, end: r.words[2]!.end });
 	});
 
 	it('ins: words said but not in the script are never offered', () => {
@@ -385,6 +400,8 @@ function score(c: FixCandidate, deltaTok: number): CandidateScore {
 			start: c.start + k * 1000,
 			end: c.start + (k + 1) * 1000,
 		})),
+		before: null,
+		after: null,
 	};
 }
 
@@ -500,16 +517,119 @@ describe('windows, scores, edits (SC-030 … SC-042)', () => {
 		expect(edit.end).toBe(r.words[6]!.start);
 		expect(edit.words[0]!.start).toBeGreaterThanOrEqual(edit.start);
 		expect(edit.words[0]!.end).toBeLessThanOrEqual(edit.end);
+		// 50 ms between "vamos" and "guardar": the edit takes "guardar" in and re-times it with the inserted "a"
 		const dd = decideFix(del, scores.get(del.id));
 		const delEdit = replaceWordsEdit(del, dd)!;
-		expect(delEdit.expect).toEqual([]);
-		expect(delEdit.start).toBe(del.start);
-		expect(delEdit.end).toBe(del.end);
-		expect(delEdit.words.map((x) => x.text)).toEqual(['a']);
+		const guardar = r.words[12]!;
+		expect(guardar.text).toBe('guardar');
+		expect(delEdit.expect).toEqual(['guardar']);
+		expect(delEdit.start).toBe(r.words[11]!.end);
+		expect(delEdit.end).toBe(guardar.end);
+		expect(delEdit.words.map((x) => x.text)).toEqual(['a', 'guardar']);
+		expect(delEdit.words[1]!.confidence).toBe(guardar.confidence);
+		let cursor = delEdit.start;
 		for (const x of delEdit.words) {
-			expect(x.start).toBeGreaterThanOrEqual(del.start);
-			expect(x.end).toBeLessThanOrEqual(del.end);
+			expect(x.start).toBeGreaterThanOrEqual(cursor);
+			expect(x.end - x.start).toBeGreaterThanOrEqual(1);
+			cursor = x.end;
 		}
+		expect(cursor).toBeLessThanOrEqual(delEdit.end);
+	});
+
+	it('del into a gap of ≥ 60 ms stays inside the gap; neighbours keep their times', () => {
+		const r = run(
+			'Ahora vamos a guardar el proyecto en la carpeta.',
+			'ahora vamos guardar el proyecto en la carpeta',
+			'es',
+			undefined,
+			0.2,
+		);
+		const del = r.candidates[0]!;
+		expect(del.kind).toBe('del');
+		expect(del.anchor).toBeNull();
+		expect(del.bounds).toEqual({ start: r.words[1]!.end, end: r.words[2]!.start });
+		const { windows } = buildScoreWindows(r.words, [del]);
+		const w = windows[0]!;
+		const reading = w.readings.find((x) => x.id === del.id)!;
+		// forced times that spill over both neighbours: clamped into the gap
+		const results: ScoreWindowResult[] = [
+			{
+				id: w.id,
+				readings: w.readings.map((rd) => ({
+					id: rd.id,
+					logprob: rd.id === del.id ? -10 : -11,
+					tokens: rd.words.length,
+					words: rd.words.map((text, i) => ({
+						text,
+						tokens: 1,
+						logprob: -1,
+						probability: 0.7,
+						start: rd === reading && i === 2 ? r.words[1]!.start : r.words[0]!.start,
+						end: rd === reading && i === 2 ? r.words[2]!.end : r.words[0]!.end,
+					})),
+				})),
+			},
+		];
+		const s = candidateScores(windows, results).get(del.id)!;
+		const edit = replaceWordsEdit(del, decideFix(del, s))!;
+		expect(edit.expect).toEqual([]);
+		expect(edit).toMatchObject({ start: r.words[1]!.end, end: r.words[2]!.start });
+		expect(edit.words).toEqual([
+			{ text: 'a', start: r.words[1]!.end, end: r.words[2]!.start, confidence: 0.7 },
+		]);
+	});
+
+	it('del after the last word takes the previous word in (no following word)', () => {
+		const words = say('vamos a guardar el proyecto');
+		const last = words[4]!;
+		const widened = delAnchorOf(words, 5)!;
+		expect(widened.anchor).toMatchObject({
+			side: 'before',
+			text: 'proyecto',
+			start: last.start,
+			end: last.end,
+		});
+		expect(widened.bounds).toEqual({ start: last.start, end: last.end + Math.round(0.35 * F) });
+		expect(delAnchorOf(say('vamos guardar', 0.2), 1)).toBeNull();
+		const del = {
+			...run('Vamos a guardar el proyecto.', 'vamos guardar el proyecto').candidates[0]!,
+			fromWord: 5,
+			toWord: 5,
+			start: last.end,
+			end: last.end,
+			script: ['ahora'],
+			...widened,
+		};
+		const { windows, unplaced } = buildScoreWindows(words, [del]);
+		expect(unplaced).toEqual([]);
+		expect(windows[0]!.readings[1]!.words).toEqual(['vamos', 'a', 'guardar', 'el', 'proyecto', 'ahora']);
+		const t = (s: number) => Math.round(s * F);
+		const results: ScoreWindowResult[] = [
+			{
+				id: windows[0]!.id,
+				readings: windows[0]!.readings.map((rd) => ({
+					id: rd.id,
+					logprob: rd.id === del.id ? -5 : -6,
+					tokens: rd.words.length,
+					words: rd.words.map((text, i) => ({
+						text,
+						tokens: 1,
+						logprob: -1,
+						probability: 0.6,
+						start: i === 4 ? t(1.9) : i === 5 ? t(2.0) : (words[i]?.start ?? 0),
+						end: i === 4 ? t(2.0) : i === 5 ? t(9) : (words[i]?.end ?? 0),
+					})),
+				})),
+			},
+		];
+		const edit = replaceWordsEdit(del, decideFix(del, candidateScores(windows, results).get(del.id)))!;
+		expect(edit.expect).toEqual(['proyecto']);
+		expect(edit.start).toBe(last.start);
+		expect(edit.end).toBe(widened.bounds.end);
+		expect(edit.words).toEqual([
+			{ text: 'proyecto', start: last.start, end: t(2.0), confidence: 0.9 },
+			{ text: 'ahora', start: t(2.0), end: widened.bounds.end, confidence: 0.6 },
+		]);
 	});
 
 	it('a malformed score result gives no score (kept, never a crash)', () => {
