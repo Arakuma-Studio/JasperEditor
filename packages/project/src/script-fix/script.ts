@@ -185,15 +185,24 @@ export function parseScript(text: string, options: { language?: string | null } 
 function properNorms(tokens: readonly ScriptToken[], lang: ScriptFixLanguage): string[] {
 	const stop = functionWords(lang);
 	const votes = new Map<string, number>();
+	const titleMid = new Map<string, number>();
+	const lower = new Map<string, number>();
 	const brand = new Set<string>();
+	const bump = (m: Map<string, number>, n: string, d: number) => m.set(n, (m.get(n) ?? 0) + d);
 	for (const t of tokens) {
 		if (t.kind !== 'word' || stop.has(t.norm)) continue;
 		if (t.brandLike) brand.add(t.norm);
+		if (t.letterCase === 'lower') bump(lower, t.norm, 1);
 		if (!t.midSentence) continue;
-		if (t.letterCase === 'title' || t.letterCase === 'mixed') votes.set(t.norm, (votes.get(t.norm) ?? 0) + 1);
-		else if (t.letterCase === 'lower') votes.set(t.norm, (votes.get(t.norm) ?? 0) - 1);
+		if (t.letterCase === 'title' || t.letterCase === 'mixed') {
+			bump(votes, t.norm, 1);
+			bump(titleMid, t.norm, 1);
+		} else if (t.letterCase === 'lower') bump(votes, t.norm, -1);
 	}
 	const out = new Set(brand);
 	for (const [n, v] of votes) if (v > 0) out.add(n);
+	// names written inconsistently ("Nova" twice mid-sentence, "nova" three times): capitalised mid-sentence in at
+	// least a third of their occurrences (SC-105 harness: a channel name the script writes both ways)
+	for (const [n, k] of titleMid) if (2 * k >= (lower.get(n) ?? 0)) out.add(n);
 	return [...out].sort();
 }
