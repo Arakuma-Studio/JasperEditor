@@ -248,7 +248,7 @@
     "seam": "Two real Electron apps and OS clipboard with user copy/menu/keyboard actions.",
     "refactor": "Clipboard transport, React layout and command internals may change; pasted document content/media and placement remain stable.",
     "unique": "Single browser-window tests share memory or simulated clipboard and cannot prove cross-process OS format interoperability.",
-    "reason": "Unique OS custom-MIME workflow. Destination document attachment and screenshot make the result inspectable. Destination project is now created per test while Electron processes are reused. This removes document-state order dependence and serial fail-fast skipping without mocking the OS clipboard or changing assertions.",
+    "reason": "Unique OS custom-MIME workflow. Destination document attachment and screenshot make the result inspectable. Destination project is now created per test while Electron processes are reused. This removes document-state order dependence and serial fail-fast skipping without mocking the OS clipboard or changing assertions. Between cases the test saves through Ctrl+S, waits for the public saved state, and uses the Home button for SPA navigation; hard navigation is avoided because the genuine dirty/saving guard correctly refuses it.",
     "validation": "pnpm e2e:desktop-clipboard"
   },
   {
@@ -262,7 +262,7 @@
     "seam": "Independent external Electron clipboard owner and real app keyboard paste.",
     "refactor": "Clipboard transport, React layout and command internals may change; pasted document content/media and placement remain stable.",
     "unique": "Custom Jasper MIME scenario does not exercise foreign text precedence/route.",
-    "reason": "Real external helper supplies OS clipboard bytes, not an implementation mock. Destination project is now created per test while Electron processes are reused. This removes document-state order dependence and serial fail-fast skipping without mocking the OS clipboard or changing assertions.",
+    "reason": "Real external helper supplies OS clipboard bytes, not an implementation mock. Destination project is now created per test while Electron processes are reused. This removes document-state order dependence and serial fail-fast skipping without mocking the OS clipboard or changing assertions. Between cases the test saves through Ctrl+S, waits for the public saved state, and uses the Home button for SPA navigation; hard navigation is avoided because the genuine dirty/saving guard correctly refuses it.",
     "validation": "pnpm e2e:desktop-clipboard"
   },
   {
@@ -276,7 +276,7 @@
     "seam": "OS image clipboard plus actual desktop import/session document.",
     "refactor": "Clipboard transport, React layout and command internals may change; pasted document content/media and placement remain stable.",
     "unique": "Foreign text/files and custom MIME do not test native image-data extraction/import.",
-    "reason": "Two small different images avoid duplicate-import prompt and cover distinct menu/event clipboard routes. Destination project is now created per test while Electron processes are reused. This removes document-state order dependence and serial fail-fast skipping without mocking the OS clipboard or changing assertions.",
+    "reason": "Two small different images avoid duplicate-import prompt and cover distinct menu/event clipboard routes. Destination project is now created per test while Electron processes are reused. This removes document-state order dependence and serial fail-fast skipping without mocking the OS clipboard or changing assertions. Between cases the test saves through Ctrl+S, waits for the public saved state, and uses the Home button for SPA navigation; hard navigation is avoided because the genuine dirty/saving guard correctly refuses it.",
     "validation": "pnpm e2e:desktop-clipboard"
   },
   {
@@ -290,7 +290,7 @@
     "seam": "Real OS file-list helper, native readFiles and app paste/import.",
     "refactor": "Clipboard transport, React layout and command internals may change; pasted document content/media and placement remain stable.",
     "unique": "Image-data paste tests have no filesystem locator; browser clipboard tests cannot verify platform file-list formats.",
-    "reason": "Unique desktop file-manager integration; uses audio/video to exercise both native read routes. Destination project is now created per test while Electron processes are reused. This removes document-state order dependence and serial fail-fast skipping without mocking the OS clipboard or changing assertions.",
+    "reason": "Unique desktop file-manager integration; uses audio/video to exercise both native read routes. Destination project is now created per test while Electron processes are reused. This removes document-state order dependence and serial fail-fast skipping without mocking the OS clipboard or changing assertions. Between cases the test saves through Ctrl+S, waits for the public saved state, and uses the Home button for SPA navigation; hard navigation is avoided because the genuine dirty/saving guard correctly refuses it.",
     "validation": "pnpm e2e:desktop-clipboard"
   }
 ]

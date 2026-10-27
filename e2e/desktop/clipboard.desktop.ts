@@ -164,7 +164,11 @@ test.beforeAll(async () => {
 });
 
 test.beforeEach(async () => {
-	if (new URL(B.page.url()).pathname !== '/') await B.page.goto(new URL('/', B.page.url()).href);
+	if (new URL(B.page.url()).pathname !== '/') {
+		await B.page.keyboard.press('Control+KeyS');
+		await expect(B.page.getByTestId('save-status')).toHaveAttribute('data-state', 'saved');
+		await B.page.getByTestId('home-button').click();
+	}
 	await newProject(B.page, 'Desktop B');
 });
 

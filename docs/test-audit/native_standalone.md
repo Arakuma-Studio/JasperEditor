@@ -19,7 +19,9 @@ The desktop clipboard tests reuse two Electron processes, but every case now cre
 a fresh destination project. Previously their shared document made the first case's
 one-clip expectation depend on declaration order. Removing serial mode also stops
 one failure from skipping unrelated clipboard contracts. The OS clipboard and
-external Electron clipboard-owner helper remain real.
+external Electron clipboard-owner helper remain real. Before leaving a case, the
+next setup saves through Ctrl+S, waits for the visible saved state, then clicks the
+Home button to navigate through the app router.
 
 ## Native measurements
 
@@ -53,9 +55,12 @@ No timing claim is made for removing the empty harness's cold link work.
   cold compile was interrupted to release the shared JavaScript-validation lock;
   the retry after the missing-libclang failure completed in 5m41s. Those cold stages
   are not before/after performance comparisons.
-- Electron, Xvfb and its missing system libraries are available. Desktop clipboard
-  runtime validation must run against the integrated current builds; no standalone
-  desktop, fallback or packaged execution is claimed by this shard's native checks.
+- The integrated desktop run passed the custom-format and image workflows but
+  exposed setup failures for text/files: hard navigation triggered the correct
+  dirty/saving unload guard. The setup now saves and uses the Home button; its
+  browser rerun remains pending until the shared validation lane is available.
+- Root integration passed both desktop smoke modes and the native-capability
+  fallback check. Those are separate from the native measurements above.
 
 Native command (local toolchain paths are environment setup, not repository pins):
 
