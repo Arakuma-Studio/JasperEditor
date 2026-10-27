@@ -7048,6 +7048,8 @@
   "Specular Reflection": "Reflexión especular",
   "Specular Shininess": "Brillo especular",
   "Speech models": "Modelos de voz",
+  "Speech Glossary…": "Glosario de voz…",
+  "Preferences ▸ Transcription ▸ Glossary: names and words the recogniser gets wrong": "Preferencias ▸ Transcripción ▸ Glosario: nombres y palabras que el reconocimiento de voz escribe mal",
   "“{0}” already had these spellings: nothing changed.": "«{0}» ya tenía estas grafías: no cambió nada.",
   "“{0}” was already in the glossary: the spellings were added to it.": "«{0}» ya estaba en el glosario: se le añadieron las grafías.",
   "Any language": "Cualquier idioma",
