@@ -62,7 +62,6 @@ export function isReviewVariant(variant: unknown): variant is SocialReviewVarian
 }
 
 export const SOCIAL_THEMES = ['light', 'dark'] as const;
-export type SocialTheme = (typeof SOCIAL_THEMES)[number];
 
 /** Emoji image packs plus `auto` (the platform's own set). Same ids as the remote-asset emoji packs. */
 export const SOCIAL_EMOJI_STYLES = ['auto', 'apple', 'twemoji', 'noto'] as const;

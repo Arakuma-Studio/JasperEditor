@@ -4,7 +4,6 @@
 import {
 	animeTemplateTiming,
 	generatedAvatar,
-	isReviewVariant,
 	REMOTE_IMAGE_IDS,
 	SOCIAL_VARIANTS,
 	socialComment,
@@ -26,7 +25,6 @@ import type { SocialCardAssets } from '../src/templates/social-comment/contract.
 import { INSTAGRAM_DEFAULT_AVATAR } from '../src/templates/social-comment/instagram.tsx';
 import { CommentText, Glyph, SocialAvatar } from '../src/templates/social-comment/parts.tsx';
 import { socialFitZoom } from '../src/templates/social-comment/stage.tsx';
-import { socialVariantAvailable } from '../src/templates/social-comment/variants.ts';
 import { vectorMarkupOf } from '../src/templates/social-comment/vector.tsx';
 import { xActionLayout, xActionsWidth } from '../src/templates/social-comment/x.tsx';
 
@@ -92,25 +90,12 @@ const ASSETS: SocialCardAssets = {
 };
 
 describe('social-comment@1 cards', () => {
-	it('draws every variant\'s card in both themes (a variant without one would draw a visible "not available" card)', () => {
+	it("draws every variant's card in both themes", () => {
 		for (const variant of SOCIAL_VARIANTS)
 			for (const theme of ['light', 'dark']) {
 				const r = render(at({ ...socialDefaults(variant), theme }, 100));
 				const card = r.container.querySelector('[data-social-variant]')!;
 				expect(card.getAttribute('data-social-variant')).toBe(variant);
-				if (
-					variant.startsWith('tiktok') ||
-					variant.startsWith('instagram') ||
-					variant.startsWith('youtube') ||
-					variant === 'x-post' ||
-					isReviewVariant(variant)
-				) {
-					expect(socialVariantAvailable(variant)).toBe(true);
-					expect(card.hasAttribute('data-social-unavailable')).toBe(false);
-				} else {
-					expect(socialVariantAvailable(variant)).toBe(false);
-					expect(r.container.textContent).toMatch(/not available yet/);
-				}
 				r.unmount();
 			}
 	});

@@ -1,5 +1,4 @@
-// The cards of social-comment@1 per variant (contract.ts). A variant without its card draws a visible "not available"
-// card (never a blank or a wrong platform), see unavailable.tsx; every variant has its card now.
+// The cards of social-comment@1 per variant (contract.ts).
 import type { SocialVariant } from '@jasper/mg-templates';
 import type { SocialVariantImpl } from './contract.ts';
 import { INSTAGRAM_POST, INSTAGRAM_REEL_REPLY } from './instagram.tsx';
@@ -20,8 +19,3 @@ export const SOCIAL_VARIANT_IMPLS: Readonly<Record<SocialVariant, SocialVariantI
 	'app-store-review': APP_STORE_REVIEW,
 	'app-store-review-ios': APP_STORE_REVIEW_IOS,
 };
-
-/** Whether a variant has its real card (false: the "not available" card is drawn). */
-export function socialVariantAvailable(variant: SocialVariant): boolean {
-	return !SOCIAL_VARIANT_IMPLS[variant]?.unavailable;
-}

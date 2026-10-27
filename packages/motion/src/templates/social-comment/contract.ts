@@ -75,6 +75,4 @@ export type SocialVariantImpl = {
 	 * Absent: none.
 	 */
 	bleed?: Readonly<{ top: number; right: number; bottom: number; left: number }>;
-	/** Set on the stand-in of a variant whose card is not built yet (unavailable.tsx). */
-	unavailable?: boolean;
 };

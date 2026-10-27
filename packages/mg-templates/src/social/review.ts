@@ -85,12 +85,6 @@ export function formatReviewDate(style: 'play-store' | 'app-store', iso: unknown
 	return `${pad2(d.month)}/${pad2(d.day)}/${d.year}`;
 }
 
-/** A rating clamped to 1–5 whole stars (non-numbers read as 5: a missing value never shows an empty card). */
-export function clampRating(rating: unknown): number {
-	if (typeof rating !== 'number' || !Number.isFinite(rating)) return SOCIAL_RATING_MAX;
-	return Math.min(SOCIAL_RATING_MAX, Math.max(SOCIAL_RATING_MIN, Math.round(rating)));
-}
-
 /** Days an age spans: minutes and hours are the same day; weeks 7, months 30 and years 365 days. Never negative. */
 export function reviewAgeDays(value: number, unit: string): number {
 	const v = typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
