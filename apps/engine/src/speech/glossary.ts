@@ -7,8 +7,8 @@
 // conservatively and reports every repair (`repairs`, shown in Preferences): an unreadable file (not JSON, not an
 // object, another format) is renamed `glossary.json.corrupt-<time>` before starting empty; entries that no longer
 // validate, duplicates and entries over the 2,000 cap are kept aside in `invalid` and written back, never dropped. A
-// file written by a newer version (version > 1) is listed (known fields only) but never rewritten: every write is
-// refused with 409 GLOSSARY_READ_ONLY. Entry rules (texts, caps, merge by target) are @jasper/project's.
+// file written by a newer version (version > 1) is listed (known fields only, `readOnly`) but never rewritten: every
+// write is refused with 409 GLOSSARY_READ_ONLY. Entry rules (texts, caps, merge by target) are @jasper/project's.
 import { randomBytes } from 'node:crypto';
 import { rename } from 'node:fs/promises';
 import { basename } from 'node:path';
@@ -117,9 +117,10 @@ export class SpeechGlossary {
 			return empty;
 		}
 		const readOnly = version > GLOSSARY_VERSION;
+		// Reported as `readOnly` (not a repair: nothing was changed).
 		if (readOnly)
-			this.note(
-				`the glossary was written by a newer JasperEditor (version ${version}); it is read-only here`,
+			this.opts.log?.(
+				`speech glossary: written by a newer JasperEditor (version ${version}); read-only here`,
 			);
 		const schema = readOnly ? GlossaryEntryReadSchema : GlossaryEntrySchema;
 		const entries: GlossaryEntry[] = [];

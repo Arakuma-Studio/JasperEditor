@@ -31,9 +31,7 @@ function fakeEngine() {
 			return {
 				revision: state.revision,
 				readOnly: state.readOnly,
-				repairs: state.readOnly
-					? ['the glossary was written by a newer JasperEditor (version 2); it is read-only here']
-					: [],
+				repairs: state.readOnly ? ['1 glossary entry could not be read'] : [],
 				limits: { maxEntries: 2000, maxSpellings: 20, maxChars: 64 },
 				entries: structuredClone(state.entries),
 			};
@@ -193,6 +191,6 @@ describe('glossary MCP tools (spec 17 SC-091)', () => {
 		const ro = await call('save_glossary_entry', { to: 'Glimmerbox', from: [] });
 		expect(ro.json.error.code).toBe('E_READ_ONLY');
 		const list = await call('list_glossary');
-		expect(list.json).toMatchObject({ readOnly: true, repairs: [expect.stringContaining('read-only')] });
+		expect(list.json).toMatchObject({ readOnly: true, repairs: ['1 glossary entry could not be read'] });
 	});
 });

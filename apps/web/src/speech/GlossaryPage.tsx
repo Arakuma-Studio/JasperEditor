@@ -148,7 +148,7 @@ function EntryRow(props: { entry: GlossaryEntry; readOnly: boolean; onEdit(): vo
 				aria-label={t('Edit {0}', e.to)}
 				data-testid="glossary-entry-edit"
 			>
-				Edit
+				Edit…
 			</Button>
 			<Button
 				variant="quiet"

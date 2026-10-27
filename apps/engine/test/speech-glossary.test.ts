@@ -153,7 +153,7 @@ describe('SpeechGlossary (library)', () => {
 		expect(l.readOnly).toBe(true);
 		expect(l.entries.map((e) => e.to)).toEqual(['Name 1']);
 		expect(l.entries[0]).not.toHaveProperty('future');
-		expect(l.repairs[0]).toMatch(/newer JasperEditor \(version 2\); it is read-only here/);
+		expect(l.repairs).toEqual(['1 glossary entry could not be read']);
 		for (const write of [
 			() => g.save({ from: [], to: 'X1' }),
 			() => g.save({ from: [], to: 'X1' }, true),
