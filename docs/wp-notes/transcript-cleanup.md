@@ -66,11 +66,10 @@ recomputed.
 
 ### TC-002: one floor / threshold rule
 
-`apps/engine/src/speech/core/vad.ts` `vadThreshold` now calls `levelStats` + `speechThresholdDb` from
-`@jasper/audio-dsp`; its body was the same computation. `apps/engine/test/voice-vad-shared.test.ts` compares it with
-the previous implementation (kept verbatim in the test) on 2000 random level arrays (plain arrays and Float32Array,
-digital silence, the −100 boundary): bit-identical (`Object.is`). The speech worker's 10 ms non-overlapping `frameDb`
-is a different measurement (word-bound repair) and stays.
+`apps/engine/src/speech/core/vad.ts` `vadThreshold` calls `levelStats` + `speechThresholdDb` from
+`@jasper/audio-dsp`. Independent floor/threshold vectors in `apps/engine/test/speech-core.test.ts` and
+`packages/audio-dsp/test/voice.test.ts` protect the 30 % rule, the 6 dB minimum and digital-silence behavior.
+The speech worker's 10 ms non-overlapping `frameDb` is a different measurement (word-bound repair) and stays.
 
 ### The job (`voice-analysis`)
 
@@ -154,7 +153,7 @@ voicing / flatness and majority class per point, class runs in seconds, `nextFro
 | Any block split = one pass (fast-check) | same | pass |
 | Synthetic classes: voiced tones at 140/220 Hz and a quiet voiced tone → speech; loud unvoiced noise → speech; 400 ms noise burst → breath-like; 60 ms and 1.5 s bursts → silence; floor → silence; 50 ms dip closed; 5 ms click dropped; digital silence → silence, null levels | same | pass |
 | Build / encode / decode round trip; reader fuzz (random bytes, random bytes behind a valid magic, every single-byte change, truncations, extensions, schema-invalid headers with valid CRC); CRC = zlib | `packages/project/test/voice-analysis.test.ts` | pass |
-| VAD threshold bit-identical to the speech worker's previous code (2000 cases) | `apps/engine/test/voice-vad-shared.test.ts` | pass |
+| VAD threshold follows independently specified floor / speech vectors | `apps/engine/test/speech-core.test.ts`, `packages/audio-dsp/test/voice.test.ts` | pass |
 | Job = pure analysis of the same samples, byte for byte (in-thread, bundled worker threads over 65 s / 7 blocks, missing-worker fallback); cache hit; damaged cache file replaced; stream choice in a 2-stream 48 kHz Matroska file (silent stream → null levels); request validation; cancel (no file, next job fine); decoder failure `TOOL_FAILED`; offline `ASSET_NOT_FOUND`; crashing worker `VOICE_ANALYSIS_FAILED` retryable, engine still serving; cache entry kind `media-cache` | `apps/engine/test/voice-analysis.test.ts` | pass |
 | Real speech (LJ Speech, public domain, `fixtures/speech/lj-composite.flac`): > 70 % of utterance-core frames speech, < 2 % speech between utterances | same | pass |
 | Client fetch / validation / errors | `packages/engine-client/test/voice.test.ts` | pass |

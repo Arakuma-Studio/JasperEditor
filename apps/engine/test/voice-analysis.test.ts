@@ -24,8 +24,6 @@ import { build } from 'esbuild';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { entryOfPath } from '../src/cache/layout.ts';
 import { fingerprintHex } from '../src/media/fingerprint.ts';
-import { VoiceActivityService } from '../src/sound-design/voice.ts';
-import { VoiceAnalysisService } from '../src/voice/service.ts';
 import {
 	closeApps,
 	H,
@@ -127,14 +125,6 @@ describe.skipIf(!HAVE_FFMPEG)('voice-analysis job and routes', () => {
 	let app: TestApp;
 	beforeAll(async () => {
 		app = await makeApp();
-	});
-
-	it('registers under services.voiceAnalysis without replacing the sound-design voice-activity service', () => {
-		// Regression: routes/voice.ts and routes/sound-design.ts both wrote `services.voice`, so the analysis service
-		// was silently replaced by the sound-design one registered after it.
-		const services = app.jasper.services as Record<string, unknown>;
-		expect(services.voiceAnalysis).toBeInstanceOf(VoiceAnalysisService);
-		expect(services.voice).toBeInstanceOf(VoiceActivityService);
 	});
 
 	it('analyses a stream exactly like the pure analysis of its samples and caches it', async () => {

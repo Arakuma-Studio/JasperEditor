@@ -2,7 +2,7 @@
 // runtime and cuDNN 9 on the loader path, and JASPER_SPEECH_MODELS_DIR holding whisper-tiny.en and
 // whisper-large-v3-turbo; whisper-large-v3-turbo-fp16 is used when present): "Enable NVIDIA GPU" downloads the
 // provider through the engine, the probe finds CUDA, the encoder runs on CUDA with the decoder calibrated (greedy),
-// CPU and GPU transcripts of the LJ fixture agree, a GPU fault mid-job reruns on the CPU, and WER/RTF are logged.
+// CPU and GPU transcripts of the LJ fixture agree, and WER/RTF are logged.
 import { existsSync, mkdirSync, readFileSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import type { EngineJob, SpeechProbe, TranscriptionResult } from '@jasper/api';
@@ -107,21 +107,6 @@ describe.skipIf(!enabled)('speech on a real NVIDIA GPU (spec 16 SG-040)', () => 
 		// the second greedy job uses the stored decision (no new calibration)
 		const again = await transcribe({ model: 'whisper-tiny.en', device: 'gpu' });
 		expect(again.device?.decoder).toBe(cal!.decoder);
-	}, 1_200_000);
-
-	it('a GPU fault mid-job reruns the job on the CPU and the result says so', async () => {
-		process.env.JASPER_SPEECH_GPU_FAULT_AFTER = '2';
-		try {
-			const r = await transcribe({ model: 'whisper-tiny.en', device: 'gpu' });
-			console.log(`fault: ${JSON.stringify(r.device)}`);
-			expect(r.device).toMatchObject({ encoder: 'cpu', decoder: 'cpu' });
-			expect(r.device?.fallbacks).toContainEqual(
-				expect.objectContaining({ stage: 'job', from: 'cuda', to: 'cpu' }),
-			);
-			expect(wordErrorRate(reference, text(r))).toBeLessThanOrEqual(0.04);
-		} finally {
-			delete process.env.JASPER_SPEECH_GPU_FAULT_AFTER;
-		}
 	}, 1_200_000);
 
 	it('large-v3-turbo on CUDA (greedy, beam 5, fp16) vs the CPU: WER, RTF and text parity', async () => {

@@ -1,0 +1,247 @@
+{
+  "scope": {
+    "assignedFiles": 73,
+    "directTestDeclarations": 447,
+    "fuzzTargets": 2,
+    "dispositions": {
+      "KEEP": 433,
+      "CONSOLIDATE": 2,
+      "DELETE": 5,
+      "REWRITE": 3,
+      "OPTIMIZE": 6
+    },
+    "granularity": "Named declarations including parameterized templates; runtime matrix expansions are not counted as separate audit records. Every declaration received contract/assertion and owner-interface review; changed contracts received full test/body and production-owner review."
+  },
+  "baselineCommit": "eb28696cfe6d0fccde45b6bbf3e216fe9226fe25",
+  "testLoc": {
+    "added": 144,
+    "deleted": 409,
+    "net": -265
+  },
+  "removedInfrastructure": {
+    "testFiles": ["apps/engine/test/voice-vad-shared.test.ts"],
+    "helperFunctions": [
+      "legacyVadThreshold",
+      "old four-pass search oracle",
+      "randomQuery for old oracle",
+      "PNG ffDecode"
+    ],
+    "snapshots": 0,
+    "assetFixtures": 0,
+    "dependencies": 0,
+    "configurationFiles": 0
+  },
+  "removedProductionSeams": [
+    "JASPER_SPEECH_GPU_FAULT_AFTER",
+    "soundDesignApplyHooks.afterMeasure/beforeApply",
+    "logSoftmax allocation wrapper",
+    "fromHalf test-only wrapper",
+    "toHalf exported only for tests (now private)",
+    "rankRequestOf exported only for old oracle (now private)",
+    "measuredMixKey unused export (now private)"
+  ],
+  "performanceEnvironment": {
+    "node": "20.19.0",
+    "pnpm": "10.34.5",
+    "vitest": "4.1.11",
+    "ffmpeg": "6.1.1-3ubuntu5",
+    "cpus": 8,
+    "cpuModel": "AMD EPYC-Genoa Processor",
+    "maxWorkers": 2,
+    "caveat": "Shared host. Other web/pure/render validation ran concurrently; background load differs and before timing varies. These are observed targeted results, not a controlled CI speedup. PNG baseline ran in integration checkout, post runs in isolated worktree with same dependencies and fixture bytes; parity before/after ran in the same worktree. No overall-suite or CI wall-clock claim is made by this shard."
+  },
+  "performance": {
+    "pngAndStreamTargetsWallClock": {
+      "beforeSeconds": [24.27, 22.68, 23.65],
+      "afterSeconds": [18.767, 18.251, 17.993],
+      "beforeMedianSeconds": 23.65,
+      "afterMedianSeconds": 18.251,
+      "savedSeconds": 5.399,
+      "observedReductionPercent": 22.83
+    },
+    "pngAndStreamBeforeFileSeconds": {
+      "subtitle-png.test.ts": [8.163, 8.0387, 8.5416],
+      "subtitle-taps-failure.test.ts": [4.2498, 4.0793, 4.2479]
+    },
+    "pngAndStreamAfterFileSeconds": {
+      "subtitle-png.test.ts": [1.4608, 1.1818, 1.2165],
+      "subtitle-taps-failure.test.ts": [0.7993, 0.5789, 0.6639]
+    },
+    "nativeParityTargetsWallClock": {
+      "beforeSeconds": [50.051, 60.348],
+      "afterSeconds": [32.05, 32.849],
+      "beforeMedianSeconds": 55.1995,
+      "afterMedianSeconds": 32.4495,
+      "savedSeconds": 22.75,
+      "observedReductionPercent": 41.21
+    },
+    "parityBeforeFileSeconds": {
+      "subtitle-export.test.ts": [30.7734, 37.042]
+    },
+    "parityAfterFileSeconds": {
+      "subtitle-export.test.ts": [13.2372, 12.7678]
+    },
+    "deterministicWorkReduction": {
+      "pngPrimaryTestFfmpegLaunchesBefore": 125,
+      "pngPrimaryTestFfmpegLaunchesAfter": 12,
+      "pngFilterModesExplicitlyExercised": 6,
+      "pngChannelFormatsExplicitlyExercised": 2,
+      "unchangedOwnPngRandomCases": 25,
+      "firstParityClipRepetitions": [12, 3],
+      "secondParityClipRepetitions": [6, 3],
+      "unchangedOutputSize": [1920, 1080],
+      "unchangedFramesPerClip": 8,
+      "largestDecodedFramePairBytesCalculated": [1194393600, 298598400],
+      "memoryNote": "Decoded frame bytes calculated from frames×width×height×3RGB bytes×two outputs; not measured peakRSS.300-clip graph and1080-caption memory cases remain unchanged."
+    }
+  },
+  "validation": {
+    "affectedFixed": {
+      "passed": 118,
+      "failed": 0,
+      "skipped": 4
+    },
+    "parityFull": {
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0
+    },
+    "pngAndStreamFinalRepeats": 3,
+    "finalChecks": [
+      {
+        "tag": "final-perf-1",
+        "command": "pnpm exec vitest run apps/engine/test/subtitle-png.test.ts apps/engine/test/subtitle-taps-failure.test.ts --maxWorkers=2 --reporter=json --outputFile=/tmp/jasper-test-audit/engine_3-final-perf-1.json",
+        "exit": 0,
+        "seconds": 18.767
+      },
+      {
+        "tag": "final-perf-2",
+        "command": "pnpm exec vitest run apps/engine/test/subtitle-png.test.ts apps/engine/test/subtitle-taps-failure.test.ts --maxWorkers=2 --reporter=json --outputFile=/tmp/jasper-test-audit/engine_3-final-perf-2.json",
+        "exit": 0,
+        "seconds": 18.251
+      },
+      {
+        "tag": "final-perf-3",
+        "command": "pnpm exec vitest run apps/engine/test/subtitle-png.test.ts apps/engine/test/subtitle-taps-failure.test.ts --maxWorkers=2 --reporter=json --outputFile=/tmp/jasper-test-audit/engine_3-final-perf-3.json",
+        "exit": 0,
+        "seconds": 17.993
+      },
+      {
+        "tag": "affected-fixed",
+        "command": "pnpm exec vitest run apps/engine/test/speech-core.test.ts packages/audio-dsp/test/voice.test.ts apps/engine/test/sound-design-rebalance.test.ts apps/engine/test/sound-design-plan.test.ts apps/engine/test/sounds-search.test.ts apps/engine/test/speech-gpu.e2e.test.ts apps/engine/test/speech-gpu.test.ts apps/engine/test/speech-guards.test.ts apps/engine/test/voice-analysis.test.ts apps/engine/test/speech-service.test.ts apps/engine/test/speech-score.test.ts --maxWorkers=2 --reporter=json --outputFile=/tmp/jasper-test-audit/engine_3-affected-fixed.json",
+        "exit": 0,
+        "seconds": 40.659
+      },
+      {
+        "tag": "typecheck-integrated-delivery",
+        "command": "pnpm --filter @jasper/engine typecheck",
+        "exit": 0,
+        "seconds": 2.52
+      },
+      {
+        "tag": "biome-final",
+        "command": "pnpm exec biome check apps/engine/test/speech-core.test.ts packages/audio-dsp/test/voice.test.ts apps/engine/test/sound-design-rebalance.test.ts apps/engine/test/sound-design-plan.test.ts apps/engine/test/sounds-search.test.ts apps/engine/test/speech-gpu.e2e.test.ts apps/engine/test/speech-gpu.test.ts apps/engine/test/speech-guards.test.ts apps/engine/test/voice-analysis.test.ts apps/engine/test/speech-service.test.ts apps/engine/test/speech-score.test.ts apps/engine/test/subtitle-png.test.ts apps/engine/test/subtitle-taps-failure.test.ts apps/engine/src/sound-design/apply-guard.ts apps/engine/src/sounds/search.ts apps/engine/src/speech/core/decode.ts apps/engine/src/speech/worker/sessions.ts docs/test-audit/engine_3.json",
+        "exit": 0,
+        "seconds": 0.538
+      },
+      {
+        "tag": "whitespace-final",
+        "command": "git diff --check",
+        "exit": 0,
+        "seconds": 0.02
+      }
+    ],
+    "parityChecks": [
+      {
+        "tag": "parity-before-1",
+        "command": "pnpm exec vitest run apps/engine/test/subtitle-export.test.ts -t stills with sub-pixel Motion|an opaque full-frame video --maxWorkers=2 --reporter=json --outputFile=/tmp/jasper-test-audit/engine_3-parity-before-1.json",
+        "exit": 0,
+        "seconds": 50.051
+      },
+      {
+        "tag": "parity-before-2",
+        "command": "pnpm exec vitest run apps/engine/test/subtitle-export.test.ts -t stills with sub-pixel Motion|an opaque full-frame video --maxWorkers=2 --reporter=json --outputFile=/tmp/jasper-test-audit/engine_3-parity-before-2.json",
+        "exit": 0,
+        "seconds": 60.348
+      },
+      {
+        "tag": "parity-after-1",
+        "command": "pnpm exec vitest run apps/engine/test/subtitle-export.test.ts -t stills with sub-pixel Motion|an opaque full-frame video --maxWorkers=2 --reporter=json --outputFile=/tmp/jasper-test-audit/engine_3-parity-after-1.json",
+        "exit": 0,
+        "seconds": 32.05
+      },
+      {
+        "tag": "parity-after-2",
+        "command": "pnpm exec vitest run apps/engine/test/subtitle-export.test.ts -t stills with sub-pixel Motion|an opaque full-frame video --maxWorkers=2 --reporter=json --outputFile=/tmp/jasper-test-audit/engine_3-parity-after-2.json",
+        "exit": 0,
+        "seconds": 32.849
+      },
+      {
+        "tag": "parity-full",
+        "command": "pnpm exec vitest run apps/engine/test/subtitle-export.test.ts --maxWorkers=2 --reporter=json --outputFile=/tmp/jasper-test-audit/engine_3-parity-full.json",
+        "exit": 0,
+        "seconds": 34.468
+      },
+      {
+        "tag": "parity-biome",
+        "command": "pnpm exec biome check apps/engine/test/subtitle-export.test.ts",
+        "exit": 0,
+        "seconds": 0.518
+      }
+    ],
+    "mutations": [
+      {
+        "tag": "mix-mutant",
+        "command": "pnpm exec vitest run apps/engine/test/sound-design-rebalance.test.ts -t an edit while the job runs --maxWorkers=2",
+        "exit": 1,
+        "seconds": 27.566,
+        "expectedFailure": true
+      },
+      {
+        "tag": "timestamp-mutant",
+        "command": "pnpm exec vitest run apps/engine/test/speech-guards.test.ts -t timestamp probability summed --maxWorkers=2",
+        "exit": 1,
+        "seconds": 13.656,
+        "expectedFailure": true
+      },
+      {
+        "tag": "half-mutant",
+        "command": "pnpm exec vitest run apps/engine/test/speech-gpu.test.ts -t converts float32 feeds --maxWorkers=2",
+        "exit": 1,
+        "seconds": 14.703,
+        "expectedFailure": true
+      },
+      {
+        "tag": "png-mutant",
+        "command": "pnpm exec vitest run apps/engine/test/subtitle-png.test.ts -t authored pixels --maxWorkers=2",
+        "exit": 1,
+        "seconds": 26.057,
+        "expectedFailure": true
+      },
+      {
+        "tag": "stream-mutant",
+        "command": "pnpm exec vitest run apps/engine/test/subtitle-taps-failure.test.ts -t sink that fails mid-stream --maxWorkers=2",
+        "exit": 1,
+        "seconds": 22.796,
+        "expectedFailure": true
+      }
+    ],
+    "introducedFailureFixed": "Missing fast-check import in speech-gpu thread-count property was restored; final affected run passes118 with4 real-GPU cases skipped.",
+    "integrationDependency": {
+      "commit": "baa55756d4eda380859ab98600e88e26bc101c93",
+      "owner": "engine_2",
+      "reason": "Delivery test rewrite removes old soundDesignApplyHooks import. Standalone branch typecheck sees the old delivery test until both commits integrate. The recorded successful typecheck temporarily applied the agreed delivery test source, then restored it; this commit does not include engine2 files."
+    },
+    "notExecutedHere": [
+      "Full repository lint/typecheck/test/build gates (parent owns integrated gate)",
+      "NVIDIA GPU/CUDA runtime/model suites",
+      "Other real-model Whisper/Remotion opt-in suites"
+    ]
+  },
+  "retainedExpensiveContracts": [
+    "Real sound grammar/music exports measure actual pitch, level, timing and musical downbeats; pure plan tests cannot prove rendered audio.",
+    "125-second lossy sound exceeds historical120-second boundary and proves sample-exact registration/seek/placement; shrinking below120seconds would lose the regression.",
+    "Real tracking fixtures compare output against authored motion, including bidirectional tracking and cancellation.",
+    "Native export memory/child failure cases retain named blockers and prove the engine survives killed/failed compositors; modified parity fixtures retain1080p and every pixel assertion."
+  ]
+}

@@ -461,7 +461,7 @@ CUDA 12 only. Fixture: the LJ composite (71.6 s, English); 8 threads. Rerunnable
 | large-v3-turbo, beam 5 ("Best") | encoder CUDA, decoder CPU (beam search): RTF 0.209, WER 1.92 % |
 | large-v3-turbo-fp16, CUDA | decoder calibrated 151.7 (CPU, fp16) vs 15.1 ms/token → CUDA; RTF 0.134, WER 1.92 % (fp32 is faster on this GPU) |
 | WebGPU (NVIDIA GPU support off) | encoder WebGPU; tiny.en: calibration 7.49 vs 19.7 ms/token → CPU decoder, RTF 0.049; turbo: 31.3 vs **9.9 ms/token → device-resident WebGPU decoder** (SG-004 two-session path), RTF **0.079**; both **identical to the CPU text**; turbo beam 5 on WebGPU encoder 0.22 |
-| GPU error mid-job (`JASPER_SPEECH_GPU_FAULT_AFTER=2`, a test hook that fails the 2nd run of a GPU session) | job reran on the CPU; result `fallbacks: [{stage: job, from: cuda, to: cpu, reason: "injected GPU fault (cuda, run 2)"}]`, WER 1.92 % |
+| GPU error mid-job (historical injected-fault run) | job reran on the CPU, WER 1.92 %. The production fault hook and duplicate E2E were removed in the test audit; `speech-gpu.test.ts` still drives the real worker retry with a failing ONNX session, and `speech-service.test.ts` covers a killed worker and service retry. |
 | Speech suites on the box (CPU real-model e2e included) | 108 tests pass; the e2e "unconditioned job" asserted a CPU device and failed where `auto` picks the GPU — fixed by asking for the CPU |
 
 Observations: the WebGPU-resident decoder beat both the CPU and the CUDA decoder for turbo here (9.9 vs 15.5 ms/token:

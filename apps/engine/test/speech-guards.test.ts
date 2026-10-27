@@ -1,12 +1,12 @@
 // Spec 16 SG-011/SG-012/SG-013/SG-014 and spec 14 TC-003/TC-004: hallucination guards, word bounds against speech
-// frames, the BPE encoder for initial prompts, the optimised decoding hot spots (equal to straightforward
-// references) and the streaming log-mel front end (equal to the batch one).
+// frames, the BPE encoder for initial prompts, decoding math against direct definitions and the timestamp
+// probability rule, and the streaming log-mel front end (equal to the batch one).
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { applyFilters, logSoftmax, logSoftmaxInto, logSumExp, topK } from '../src/speech/core/decode.ts';
+import { applyFilters, logSoftmaxInto, logSumExp, topK } from '../src/speech/core/decode.ts';
 import {
 	dropRepeatedTokenRuns,
 	isSegmentAnomaly,
@@ -302,14 +302,17 @@ describe('decoding hot spots equal their references (SG-013)', () => {
 		fc.assert(
 			fc.property(logits, fc.integer({ min: 1, max: 8 }), (xs, k) => {
 				const x = Float32Array.from(xs);
-				const ref = logSoftmax(x);
 				const into = logSoftmaxInto(x, new Float32Array(x.length));
-				for (let i = 0; i < x.length; i++)
-					if (!(ref[i] === into[i] || Math.abs(ref[i]! - into[i]!) < 1e-6)) return false;
 				const lse = logSumExp(x);
-				const m = Math.max(...xs);
-				const naive = Number.isFinite(m) ? m + Math.log(xs.reduce((a, v) => a + Math.exp(v - m), 0)) : NEG;
+				const m = Math.max(...x);
+				const naive = Number.isFinite(m)
+					? m + Math.log(Array.from(x).reduce((a, v) => a + Math.exp(v - m), 0))
+					: NEG;
 				if (Number.isFinite(naive) ? Math.abs(lse - naive) > 1e-6 : lse !== NEG) return false;
+				for (let i = 0; i < x.length; i++) {
+					const want = Number.isFinite(naive) ? x[i]! - naive : NEG;
+					if (!(into[i] === want || Math.abs(into[i]! - want) < 4e-6)) return false;
+				}
 				const want = [...x.keys()]
 					.filter((i) => Number.isFinite(x[i]!))
 					.sort((p, q) => x[q]! - x[p]! || p - q)
@@ -321,80 +324,34 @@ describe('decoding hot spots equal their references (SG-013)', () => {
 		);
 	});
 
-	it('applyFilters gives the same logits as the original implementation (full log-softmax timestamp rule)', () => {
-		const vocab: Record<string, number> = { a: 0, b: 1, c: 2 };
+	it('timestamp probability summed over tokens beats text even when no timestamp alone does', () => {
+		const vocab = { a: 0, b: 1, c: 2 };
 		const specials = ['<|endoftext|>', '<|startoftranscript|>', '<|transcribe|>', '<|notimestamps|>'];
 		const added = specials.map((content, i) => ({ id: 3 + i, content }));
-		for (let k = 0; k < 12; k++) added.push({ id: 7 + k, content: `<|${(k * 0.02).toFixed(2)}|>` });
+		for (let k = 0; k < 3; k++) added.push({ id: 7 + k, content: `<|${(k * 0.02).toFixed(2)}|>` });
 		const tok = new WhisperTokenizer({ model: { vocab }, added_tokens: added } as TokenizerJson, false);
 		const cfg = { suppress: [4, 5], beginSuppress: [3], maxInitialTimestampIndex: 3, timestamps: true };
-		/** The filters as they were before SG-013 (loops instead of fill, the whole row normalised). */
-		const reference = (logits: Float32Array, seq: readonly number[], finalRule = true) => {
-			const tb = tok.timestampBegin;
-			if (seq.length === 0) for (const x of cfg.beginSuppress) if (x < logits.length) logits[x] = NEG;
-			for (const x of cfg.suppress) if (x < logits.length) logits[x] = NEG;
-			logits[tok.noTimestamps] = NEG;
-			const lastTs = seq.length >= 1 && seq[seq.length - 1]! >= tb;
-			const penultTs = seq.length < 2 || seq[seq.length - 2]! >= tb;
-			if (lastTs) {
-				if (penultTs) for (let i = tb; i < logits.length; i++) logits[i] = NEG;
-				else for (let i = 0; i < tok.eot; i++) logits[i] = NEG;
-			}
-			let lastTimestamp = -1;
-			for (let k = seq.length - 1; k >= 0; k--)
-				if (seq[k]! >= tb) {
-					lastTimestamp = seq[k]!;
-					break;
-				}
-			if (lastTimestamp >= 0) {
-				const lim = Math.min(logits.length, lastTs && !penultTs ? lastTimestamp : lastTimestamp + 1);
-				for (let i = tb; i < lim; i++) logits[i] = NEG;
-			}
-			if (seq.length === 0) {
-				for (let i = 0; i < tb; i++) logits[i] = NEG;
-				for (let i = tb + cfg.maxInitialTimestampIndex + 1; i < logits.length; i++) logits[i] = NEG;
-			}
-			if (!finalRule) return;
-			const lp = logSoftmax(logits);
-			let m = NEG;
-			for (let i = tb; i < lp.length; i++) if (lp[i]! > m) m = lp[i]!;
-			if (Number.isFinite(m)) {
-				let sum = 0;
-				for (let i = tb; i < lp.length; i++) sum += Math.exp(lp[i]! - m);
-				const ts = m + Math.log(sum);
-				let maxText = NEG;
-				for (let i = 0; i < tb; i++) if (lp[i]! > maxText) maxText = lp[i]!;
-				if (ts > maxText) for (let i = 0; i < tb; i++) logits[i] = NEG;
-			}
-		};
-		/** Both sides of the timestamp rule in float64: the old code compared float32 log-softmax values. */
-		const margin = (xs: number[], seq: readonly number[]) => {
-			const l = Float32Array.from(xs);
-			reference(l, seq, false);
-			const tb = tok.timestampBegin;
-			const ts = logSumExp(l, tb, l.length);
-			let maxText = NEG;
-			for (let i = 0; i < tb; i++) if (l[i]! > maxText) maxText = l[i]!;
-			return Number.isFinite(ts) && Number.isFinite(maxText)
-				? Math.abs(ts - maxText)
-				: Number.POSITIVE_INFINITY;
-		};
-		fc.assert(
-			fc.property(
-				fc.array(fc.double({ min: -10, max: 10, noNaN: true }), { minLength: 19, maxLength: 19 }),
-				fc.array(fc.integer({ min: 0, max: 18 }), { maxLength: 6 }),
-				(xs, seq) => {
-					// float32 rounding of the old normalised row may flip an exact-to-1e-5 tie: not a behaviour change
-					fc.pre(margin(xs, seq) > 1e-4);
-					const a = Float32Array.from(xs);
-					const c = Float32Array.from(xs);
-					applyFilters(a, seq, tok, cfg);
-					reference(c, seq);
-					return a.every((v, i) => v === c[i]);
-				},
-			),
-			{ numRuns: 500 },
-		);
+		for (const [timestampLogit, suppressText] of [
+			[1.5, true],
+			[0.5, false],
+		] as const) {
+			// Text weighs exp(2); the two legal timestamps weigh 2*exp(1.5) > exp(2), or 2*exp(0.5) < exp(2).
+			const logits = Float32Array.from([
+				2,
+				NEG,
+				NEG,
+				NEG,
+				NEG,
+				NEG,
+				NEG,
+				NEG,
+				timestampLogit,
+				timestampLogit,
+			]);
+			applyFilters(logits, [7, 0], tok, cfg);
+			expect(logits[0]).toBe(suppressText ? NEG : 2);
+			expect(Array.from(logits.subarray(8))).toEqual([timestampLogit, timestampLogit]);
+		}
 	});
 });
 

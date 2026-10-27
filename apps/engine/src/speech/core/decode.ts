@@ -27,10 +27,6 @@ export function logSoftmaxInto(x: Float32Array, out: Float32Array): Float32Array
 	return out;
 }
 
-export function logSoftmax(x: Float32Array): Float32Array {
-	return logSoftmaxInto(x, new Float32Array(x.length));
-}
-
 /**
  * The `k` largest finite values of `x` (indices, best first) in one pass with an insertion buffer (SG-013: no sort
  * of the vocabulary, no allocation besides the result).

@@ -17,8 +17,8 @@ import {
 	type Proposal,
 } from '@jasper/project';
 import { describeFuzz, jsonTarget } from '@jasper/testkit/fuzz';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { soundDesignApplyHooks } from '../src/sound-design/apply-guard.ts';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import type { AgentService } from '../src/agent/service.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, DocBuilder, makeApp, register, type TestApp } from './helpers.ts';
 import { provenance, writeBedFixture } from './sound-bed-fixture.ts';
@@ -237,61 +237,26 @@ describe('POST /api/sound-design/rebalance (real engine)', { timeout: 300_000 },
 				]),
 			);
 		};
+		const projectId = seed(base.doc);
+		const before = await saved(projectId);
+		const agent = app.jasper.services.agent as AgentService;
+		const transact = agent.transact.bind(agent);
+		// The job has measured and checked the old bed when its real transaction reaches the agent boundary.
+		// The user's edit touches only music; optimistic fast-forward alone would allow stale SFX gains through.
+		const race = vi.spyOn(agent, 'transact').mockImplementationOnce(async (...args) => {
+			race.mockRestore();
+			await edit(projectId, [{ type: 'audio.setGain', clipIds: [ids.music], mode: 'adjust', db: 6 }]);
+			return transact(...args);
+		});
 		try {
-			// 1. the user raises the music (the bed) while the sounds are measured: the gains were solved against the old
-			// bed; the transaction alone would fast-forward (it touches only the sound effects)
-			const p1 = seed(base.doc);
-			const before1 = await saved(p1);
-			soundDesignApplyHooks.afterMeasure = async (projectId) => {
-				if (projectId === p1)
-					await edit(p1, [{ type: 'audio.setGain', clipIds: [ids.music], mode: 'adjust', db: 6 }]);
-			};
-			const job1 = await failed(p1);
-			expect(job1.state).toBe('failed');
-			expect(job1.error).toMatchObject({ code: 'CONFLICT', retryable: true });
-			const after1 = await saved(p1);
-			expect(after1.revision).toBe(before1.revision + 1); // the user's edit only
-			expect(sfxGains(after1.doc)).toEqual(sfxGains(before1.doc));
-			soundDesignApplyHooks.afterMeasure = undefined;
-			// 2. an edit of a clip the transaction touches lands between the check and the apply: the stale revision
-			// (E_REVISION_MISMATCH) is the same retryable CONFLICT
-			const p2 = seed(base.doc);
-			const before2 = await saved(p2);
-			soundDesignApplyHooks.beforeApply = async (projectId) => {
-				if (projectId === p2)
-					await edit(p2, [{ type: 'audio.setGain', clipIds: [ids.hero], mode: 'adjust', db: -1 }]);
-			};
-			const job2 = await failed(p2);
-			expect(job2.state).toBe('failed');
-			expect(job2.error).toMatchObject({ code: 'CONFLICT', retryable: true });
-			expect(job2.error?.message).toMatch(/changed before it could be applied/);
-			const after2 = await saved(p2);
-			expect(after2.revision).toBe(before2.revision + 1);
-			const g2 = sfxGains(after2.doc);
-			const g0 = sfxGains(before2.doc);
-			expect(g2[ids.hero!]).toBeCloseTo(g0[ids.hero!]! - 1, 6);
-			for (const id of [ids.shadowed, ids.inSpeech, ids.userGain]) expect(g2[id!]).toBe(g0[id!]);
-			soundDesignApplyHooks.beforeApply = undefined;
-			// 3. (WP6.5b) the race the re-read could not close: the user raises the BED between the check and the apply.
-			// The job's transaction touches only the sound effects, so the fast-forward rule (S01:AGT-010) let it through
-			// and the gains solved against the old bed were applied; the transaction now carries the measured mix
-			// (`soundDesign.expectMix`), checked atomically where it applies
-			const p3 = seed(base.doc);
-			const before3 = await saved(p3);
-			soundDesignApplyHooks.beforeApply = async (projectId) => {
-				if (projectId === p3)
-					await edit(p3, [{ type: 'audio.setGain', clipIds: [ids.music], mode: 'adjust', db: 6 }]);
-			};
-			const job3 = await failed(p3);
-			expect(job3.state, JSON.stringify(job3.result)).toBe('failed');
-			expect(job3.error).toMatchObject({ code: 'CONFLICT', retryable: true });
-			expect(job3.error?.message).toMatch(/changed before it could be applied/);
-			const after3 = await saved(p3);
-			expect(after3.revision).toBe(before3.revision + 1); // the user's edit only
-			expect(sfxGains(after3.doc)).toEqual(sfxGains(before3.doc));
+			const job = await failed(projectId);
+			expect(job.state, JSON.stringify(job.result)).toBe('failed');
+			expect(job.error).toMatchObject({ code: 'CONFLICT', retryable: true });
+			const after = await saved(projectId);
+			expect(after.revision).toBe(before.revision + 1);
+			expect(sfxGains(after.doc)).toEqual(sfxGains(before.doc));
 		} finally {
-			soundDesignApplyHooks.afterMeasure = undefined;
-			soundDesignApplyHooks.beforeApply = undefined;
+			race.mockRestore();
 		}
 	});
 
