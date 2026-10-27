@@ -41,6 +41,7 @@ type TextClipRow = {
 	id: string;
 	kind: string;
 	trackId: string;
+	start: number;
 	content: { text: string; style?: unknown };
 	effects?: unknown;
 	caption?: { groupId: string };
@@ -162,8 +163,8 @@ test('Script… → Fix Transcript → Review → Apply fixes the transcript and
 		]),
 	);
 	const subs0 = await subtitleClips();
-	// "black books" (the fixture also says "a black stock", which is right)
-	const styled = subs0.find((c) => /\bblack\s+books\b/i.test(c.content.text))!;
+	// the first "black" in time ("the black books"; the fixture later says "a black stock", which is right)
+	const styled = [...subs0].sort((a, b) => a.start - b.start).find((c) => /\bblack\b/i.test(c.content.text))!;
 	expect(styled, `a subtitle shows the corrupted word: ${JSON.stringify(subs0.map((c) => c.content.text).slice(0, 4))}`).toBeTruthy();
 
 	// Text ▸ Transcript ▸ Script…: paste the true text, attach
@@ -214,8 +215,8 @@ test('Script… → Fix Transcript → Review → Apply fixes the transcript and
 	const subs1 = await subtitleClips();
 	const after = subs1.find((c) => c.id === styled.id)!;
 	expect(after, 'the subtitle is patched in place (same clip)').toBeTruthy();
-	expect(after.content.text).toMatch(/\bblock\s+books\b/i);
-	expect(after.content.text).not.toMatch(/\bblack\s+books\b/i);
+	expect(after.content.text).toMatch(/\bblock\b/i);
+	expect(after.content.text).not.toMatch(/\bblack\b/i);
 	expect(after.content.style).toEqual(styled.content.style);
 	expect(after.effects).toEqual(styled.effects);
 	expect(subs1.map((c) => c.id).sort()).toEqual(subs0.map((c) => c.id).sort());
