@@ -81,11 +81,6 @@ export class CurveMeter {
 		this.accC = new Float64Array(this.channels);
 	}
 
-	/** Hops recorded so far. */
-	get hops(): number {
-		return this.n;
-	}
-
 	private grow(): void {
 		const size = Math.min(this.cap, this.kE.length * 2);
 		const k = new Float64Array(size);

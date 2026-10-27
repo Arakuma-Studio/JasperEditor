@@ -34,13 +34,6 @@ function gcd(a: number, b: number): number {
 	return a;
 }
 
-/** Kaiser β for a stop-band attenuation (dB). */
-function kaiserBeta(a: number): number {
-	if (a > 50) return 0.1102 * (a - 8.7);
-	if (a >= 21) return 0.5842 * (a - 21) ** 0.4 + 0.07886 * (a - 21);
-	return 0;
-}
-
 type Kernel = {
 	/** Half width (input samples) of the window. */
 	hw: number;
@@ -98,7 +91,7 @@ function buildKernel(
 	const fcN = (2 * fc) / from; // cycles per input sample × 2
 	const dw = (2 * Math.PI * (spec.stop - spec.pass) * minRate) / from;
 	const hw = (spec.atten - 7.95) / (2.285 * dw) / 2;
-	const beta = kaiserBeta(spec.atten);
+	const beta = 0.1102 * (spec.atten - 8.7); // Both qualities use attenuation > 50 dB.
 	const i0b = besselI0(beta);
 	const k = Math.ceil(hw) + 1;
 	const taps = 2 * k;

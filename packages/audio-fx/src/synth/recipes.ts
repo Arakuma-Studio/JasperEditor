@@ -284,12 +284,7 @@ const ui: SynthRecipe = {
 		const x = buffer(sr, T);
 		const e1 = attackDecay(0.002, tau);
 		const e2 = attackDecay(0.002, tau, gap);
-		addSine(
-			x,
-			sr,
-			() => f1,
-			(t) => e1(t),
-		);
+		addSine(x, sr, () => f1, e1);
 		addSine(
 			x,
 			sr,

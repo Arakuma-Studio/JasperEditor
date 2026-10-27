@@ -1,13 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createProcessor } from '../src/registry.ts';
+import { fx } from './processor.ts';
 import { db, noise, rms, SR, sine, toneAmplitude } from './util.ts';
-
-function fx(id: string, params: Record<string, number | boolean | string> = {}, ch = 2) {
-	const e = createProcessor(`jasper.audio.${id}`, SR, ch)!;
-	for (const [k, v] of Object.entries(params)) expect(e.setParam(k, v), `${id}.${k}`).toBe(true);
-	e.reset();
-	return e;
-}
 
 /** RT60 (s) from an impulse response: Schroeder integration, line fit of the −5 … −25 dB range (T20 × 3). */
 function rt60(ir: ArrayLike<number>, sr: number): number {
