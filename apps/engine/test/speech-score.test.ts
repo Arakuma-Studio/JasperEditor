@@ -386,8 +386,9 @@ describe('glossary prompts (SC-074) and the prompt guard (SC-075)', () => {
 		const r = await transcribe(s.logits, ['nova']);
 		expect(r.guard.glossary).toEqual({ terms: 1, tokens: 5, events: 1, replaced: 1 });
 		expect(r.words.map((w) => w.text)).toEqual(['hello']);
-		// the re-decode had no glossary in its prompt
-		expect(s.prompts).toEqual([[...ids('nova')], []]);
+		// only the first decode had the glossary in its prompt (the re-decode and the alignment passes have none)
+		expect(s.prompts.filter((p) => p.length)).toEqual([[...ids('nova')]]);
+		expect(s.prompts.length).toBeGreaterThanOrEqual(3);
 		// the same text without the glossary: kept as decoded, counted as an event only
 		const same = await transcribe(scripted(term, 'nova nova nova', 'nova nova nova').logits, ['nova']);
 		expect(same.guard.glossary).toEqual({ terms: 1, tokens: 5, events: 1, replaced: 0 });
