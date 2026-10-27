@@ -76,21 +76,23 @@ export const PSIM_INDEL_COSTS: Readonly<Record<string, number>> = {
 	r: 0.7,
 };
 
-// Costs are kept in integer tenths so the distance is exact (and exactly symmetric) in floating point.
-const SUB = new Map<string, number>();
+// Costs are kept in integer tenths so the distance is exact (and exactly symmetric) in floating point, in tables by
+// character code (keys are ASCII: a-z, 0-9 and X).
+const SUB_TENTHS = new Uint8Array(128 * 128).fill(10);
+for (let c = 0; c < 128; c++) SUB_TENTHS[c * 128 + c] = 0;
 for (const [a, b, c] of PSIM_SUBSTITUTION_COSTS) {
-	SUB.set(a + b, Math.round(c * 10));
-	SUB.set(b + a, Math.round(c * 10));
+	SUB_TENTHS[a.charCodeAt(0) * 128 + b.charCodeAt(0)] = Math.round(c * 10);
+	SUB_TENTHS[b.charCodeAt(0) * 128 + a.charCodeAt(0)] = Math.round(c * 10);
 }
-const INDEL_TENTHS = new Map(Object.entries(PSIM_INDEL_COSTS).map(([k, v]) => [k, Math.round(v * 10)]));
-const indel = (c: string) => INDEL_TENTHS.get(c) ?? 10;
+const INDEL_TENTHS = new Uint8Array(128).fill(10);
+for (const [k, v] of Object.entries(PSIM_INDEL_COSTS)) INDEL_TENTHS[k.charCodeAt(0)] = Math.round(v * 10);
+const subCost = (a: number, b: number) => (a === b ? 0 : a < 128 && b < 128 ? SUB_TENTHS[a * 128 + b]! : 10);
+const indelCost = (c: number) => (c < 128 ? INDEL_TENTHS[c]! : 10);
 
-/**
- * Weighted Levenshtein distance of two keys with the SC-012 cost tables, in tenths (`weighted: false`: unit costs,
- * still in tenths).
- */
 let rowA = new Float64Array(64);
 let rowB = new Float64Array(64);
+let codesB = new Int32Array(64);
+let delB = new Float64Array(64);
 
 /**
  * Weighted Levenshtein distance of two keys with the SC-012 cost tables, in tenths (`weighted: false`: unit costs,
@@ -99,36 +101,38 @@ let rowB = new Float64Array(64);
 function keyDistanceTenths(a: string, b: string, weighted: boolean, limit = Number.POSITIVE_INFINITY): number {
 	const n = a.length;
 	const m = b.length;
-	const del = weighted ? indel : () => 10;
-	if (n === 0) {
+	if (n === 0 || m === 0) {
+		const r = n === 0 ? b : a;
 		let s = 0;
-		for (const c of b) s += del(c);
-		return s;
-	}
-	if (m === 0) {
-		let s = 0;
-		for (const c of a) s += del(c);
+		for (let k = 0; k < r.length; k++) s += weighted ? indelCost(r.charCodeAt(k)) : 10;
 		return s;
 	}
 	if (rowA.length < m + 1) {
 		rowA = new Float64Array(2 * (m + 1));
 		rowB = new Float64Array(2 * (m + 1));
+		codesB = new Int32Array(2 * (m + 1));
+		delB = new Float64Array(2 * (m + 1));
 	}
 	let prev = rowA;
 	let cur = rowB;
 	prev[0] = 0;
-	for (let j = 1; j <= m; j++) prev[j] = prev[j - 1]! + del(b[j - 1]!);
+	for (let j = 1; j <= m; j++) {
+		const c = b.charCodeAt(j - 1);
+		codesB[j] = c;
+		delB[j] = weighted ? indelCost(c) : 10;
+		prev[j] = prev[j - 1]! + delB[j]!;
+	}
 	for (let i = 1; i <= n; i++) {
-		const ca = a[i - 1]!;
-		const da = del(ca);
+		const ca = a.charCodeAt(i - 1);
+		const da = weighted ? indelCost(ca) : 10;
 		cur[0] = prev[0]! + da;
 		let rowMin = cur[0]!;
 		for (let j = 1; j <= m; j++) {
-			const cb = b[j - 1]!;
-			const sub = ca === cb ? 0 : weighted ? (SUB.get(ca + cb) ?? 10) : 10;
+			const cb = codesB[j]!;
+			const sub = ca === cb ? 0 : weighted ? subCost(ca, cb) : 10;
 			const x = prev[j - 1]! + sub;
 			const y = prev[j]! + da;
-			const z = cur[j - 1]! + del(cb);
+			const z = cur[j - 1]! + delB[j]!;
 			const v = x < y ? (x < z ? x : z) : y < z ? y : z;
 			cur[j] = v;
 			if (v < rowMin) rowMin = v;
