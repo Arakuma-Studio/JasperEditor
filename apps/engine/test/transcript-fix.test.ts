@@ -29,6 +29,7 @@ import {
 } from '@jasper/project';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { JobError } from '../src/jobs/types.ts';
+import { transcriptFixAcceptExtension } from '../src/transcript-fix/run.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, makeApp } from './helpers.ts';
 
@@ -227,11 +228,11 @@ const fakeSpeech = {
 
 // ---------------------------------------------------------------------------------------------------------------
 
-const post = (url: string, payload: unknown, headers: Record<string, string> = EDITOR_H) =>
+const post = (url: string, payload: unknown, headers: Record<string, string> = EDITOR_H as Record<string, string>) =>
 	app.inject({ method: 'POST', url, headers: json(headers), payload: payload as object });
 const fixUrl = (s: Seeded) => `/api/projects/${s.projectId}/sequences/${s.seqId}/transcript-fix`;
 
-async function runFix(s: Seeded, body: object, headers = EDITOR_H): Promise<{ job: EngineJob; result: TranscriptFixResult }> {
+async function runFix(s: Seeded, body: object, headers: Record<string, string> = EDITOR_H): Promise<{ job: EngineJob; result: TranscriptFixResult }> {
 	const r = await post(fixUrl(s), body, headers);
 	expect(r.statusCode, r.body).toBe(202);
 	const job = await coreServices(app).queue.wait((r.json() as EngineJob).id);
@@ -403,7 +404,7 @@ describe('propose, review, accept', () => {
 		const { result } = await runFix(s, { mode: 'propose' });
 		const p = await proposal(s, result.proposalId!);
 		const demo = byLabel(p, 'demon')!;
-		// the user re-times the region by hand: same words, the span moved → the item goes stale on its `expect`
+		// the user capitalises the word by hand: same normalised words (same fingerprint), but `expect` no longer matches
 		const env = JSON.parse(readFileSync(s.file, 'utf8')) as EnvelopeJson;
 		const { document: doc } = loadProject(env);
 		const t = Object.values(doc.transcripts)[0]!;
@@ -413,21 +414,35 @@ describe('propose, review, accept', () => {
 			{
 				label: 'user edit',
 				origin: 'user',
-				commands: [{ type: 'transcript.editText', transcriptId: t.id, fromWord: k, toWord: k, text: 'deemon' }],
+				commands: [{ type: 'transcript.editText', transcriptId: t.id, fromWord: k, toWord: k, text: 'Demon' }],
 			},
-			{ ids: createCounterIdSource(900), now: () => '2026-10-27T01:00:00.000Z', revision: 3, registries: defaultRegistries() },
+			{
+				ids: createCounterIdSource(900),
+				now: () => '2026-10-27T01:00:00.000Z',
+				revision: 3,
+				registries: defaultRegistries(),
+			},
 		);
 		expect(edited.result.ok).toBe(true);
-		writeFileSync(s.file, JSON.stringify(makeEnvelope(edited.document, { revision: 4, savedAt: '2026-10-27T01:00:00.000Z', platform: 'test' })));
-		LP.deemon = -6;
+		writeFileSync(
+			s.file,
+			JSON.stringify(
+				makeEnvelope(edited.document, { revision: 4, savedAt: '2026-10-27T01:00:00.000Z', platform: 'test' }),
+			),
+		);
 		fake.calls = [];
 		const r = await post(`/api/projects/${s.projectId}/proposals/${p.id}/refresh`, { itemIds: 'stale' });
 		expect(r.statusCode, r.body).toBe(200);
-		const out = r.json() as { refreshed: string[]; dropped: { itemId: string }[] };
-		// the fingerprint includes the ASR words, so "deemon" is a new disagreement: the old item no longer applies
-		expect([...out.refreshed, ...out.dropped.map((d) => d.itemId)]).toContain(demo.id);
-		expect(fake.calls.length).toBeLessThanOrEqual(1);
-		delete LP.deemon;
+		const out = r.json() as { refreshed: string[]; dropped: string[]; proposal: Proposal };
+		expect(out.refreshed).toEqual([demo.id]);
+		// one audio check, of that recording's windows holding the item only
+		expect(fake.calls).toHaveLength(1);
+		expect(fake.calls[0]!.windows).toHaveLength(1);
+		const again = out.proposal.items.find((it) => it.id === demo.id)!;
+		expect(again.state).toBe('pending');
+		const cmd = again.commands[0] as { edits: { expect: string[]; words: { text: string }[] }[] };
+		expect(cmd.edits[0]!.expect).toEqual(['Demon']);
+		expect(cmd.edits[0]!.words.map((w) => w.text)).toEqual(['Demo']);
 	});
 });
 
@@ -510,5 +525,22 @@ describe('scope, sources, failures', () => {
 		await runFix(seed(), { mode: 'propose' });
 		const { result } = await runFix(seed(), { mode: 'dryRun' });
 		expect(result.report.estimate?.basis).toBe('measured');
+	});
+});
+
+describe('accept extension', () => {
+	it('labels the step "Fix transcript: N fixes" and remembers rejected fixes not remembered yet', async () => {
+		const s = seed();
+		const { result } = await runFix(s, { mode: 'propose' });
+		const p = await proposal(s, result.proposalId!);
+		const [a, b, c] = p.items;
+		const states = { ...p, items: [{ ...a!, state: 'rejected' as const }, b!, c!] };
+		const out = transcriptFixAcceptExtension({ doc: s.doc, proposal: states, itemIds: [b!.id] });
+		expect(out.label).toBe('Fix transcript: 1 fix');
+		expect(out.commands).toEqual([
+			{ type: 'scriptFix.configure', sequenceId: s.seqId, reject: [(a!.meta as { fingerprint: string }).fingerprint] },
+		]);
+		const two = transcriptFixAcceptExtension({ doc: s.doc, proposal: p, itemIds: [b!.id, c!.id] });
+		expect(two).toEqual({ label: 'Fix transcript: 2 fixes', commands: [] });
 	});
 });

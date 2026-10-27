@@ -464,7 +464,7 @@ function itemOf(c: FixCandidate, d: FixDecision, edit: ReplaceWordsEdit): Propos
 			contextAfter: c.contextAfter,
 			fingerprint: c.fingerprint,
 		},
-		{ group: d.group!, rule: d.rule, deltaTok: d.deltaTok, words: d.words },
+		{ group: d.group!, rule: d.rule, deltaTok: d.deltaTok },
 		edit,
 		{ id: itemIdOf(c) },
 	);
