@@ -41,6 +41,7 @@ import subtitleTemplateRoutes from './subtitle-templates.ts';
 import syncRoutes from './sync.ts';
 import timeRoutes from './time.ts';
 import trackingRoutes from './tracking.ts';
+import transcriptFixRoutes from './transcript-fix.ts';
 import uploadsRoutes from './uploads.ts';
 import voiceRoutes from './voice.ts';
 
@@ -101,6 +102,8 @@ const ROUTE_PLUGINS = [
 	automationRoutes,
 	// Style recipes, Apply Style and Style Check (spec 15 EA-010…EA-013) use the automation, cleanup and template services.
 	styleRoutes,
+	// Fix Transcript (spec 17 SC-090) scores through the speech service and stores proposals (refresher, accept hooks).
+	transcriptFixRoutes,
 ] as const;
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {

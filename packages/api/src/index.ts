@@ -41,6 +41,7 @@ export * from './sound-semantic.ts';
 export * from './sounds.ts';
 export * from './speech.ts';
 export * from './style.ts';
+export * from './transcript-fix.ts';
 export * from './subtitle-templates.ts';
 export * from './sync.ts';
 export * from './tracking.ts';

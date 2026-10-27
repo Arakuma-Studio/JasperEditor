@@ -95,6 +95,29 @@ export type ProposalRefresher = (input: {
 	| Promise<{ items: ProposalItemInput[]; dropped?: { itemId: string; reason: string }[]; report?: unknown }>
 	| { items: ProposalItemInput[]; dropped?: { itemId: string; reason: string }[]; report?: unknown };
 
+/**
+ * A feature's additions to the accept transaction of its proposals (spec 17 SC-055 / SC-062: transcript fixes remember
+ * the rejected items in the same undo step and label it "Fix transcript: N fixes"). Called with the document the accept
+ * applies to, the proposal after re-validation and the items being applied; commands are appended after the items'.
+ * A throw or malformed answer is ignored (the accept runs without the additions; logged).
+ */
+export type ProposalAcceptExtension = (input: {
+	doc: ProjectDocument;
+	proposal: Proposal;
+	itemIds: readonly string[];
+}) => { label?: string; commands?: Record<string, unknown>[] } | null | undefined;
+
+/**
+ * Called after the editor rejected items of a feature's proposal (outside the proposal's lock; never fatal): spec 17
+ * remembers the user's rejections when nothing is left to decide. `who` is the editor window.
+ */
+export type ProposalRejectListener = (input: {
+	projectId: string;
+	proposal: Proposal;
+	itemIds: readonly string[];
+	who: Requester;
+}) => Promise<void> | void;
+
 const ID_BYTES = 10;
 function newAcceptId(): string {
 	return `acc_${newProposalId().slice(4)}`;
@@ -128,6 +151,8 @@ export class ProposalService {
 	readonly store: ProposalStore;
 	private readonly policies = new Map<string, ProposalPolicy>([[SOUND_DESIGN_FEATURE, soundDesignPolicy]]);
 	private readonly refreshers = new Map<string, ProposalRefresher>();
+	private readonly acceptExtensions = new Map<string, ProposalAcceptExtension>();
+	private readonly rejectListeners = new Map<string, ProposalRejectListener>();
 	/** Serializes read-modify-write of one proposal (accept holds it across the transaction). */
 	private readonly locks = new KeyedMutex();
 	private readonly registries: Registries;
@@ -172,6 +197,45 @@ export class ProposalService {
 		return () => {
 			if (this.refreshers.get(feature) === refresher) this.refreshers.delete(feature);
 		};
+	}
+
+	/** Lets a feature add commands (and its History label) to the accept transaction of its proposals. */
+	registerAcceptExtension(feature: string, ext: ProposalAcceptExtension): () => void {
+		this.acceptExtensions.set(feature, ext);
+		return () => {
+			if (this.acceptExtensions.get(feature) === ext) this.acceptExtensions.delete(feature);
+		};
+	}
+
+	/** Lets a feature react to the editor's rejections of its items (after they are stored). */
+	registerRejectListener(feature: string, listener: ProposalRejectListener): () => void {
+		this.rejectListeners.set(feature, listener);
+		return () => {
+			if (this.rejectListeners.get(feature) === listener) this.rejectListeners.delete(feature);
+		};
+	}
+
+	/** The composed accept transaction with the feature's additions (never throws). */
+	private extendAccept<T extends { label: string; commands: Record<string, unknown>[] }>(
+		doc: ProjectDocument,
+		p: Proposal,
+		tx: T,
+		itemIds: readonly string[],
+	): T {
+		const ext = this.acceptExtensions.get(p.feature);
+		if (!ext) return tx;
+		try {
+			const add = ext({ doc, proposal: p, itemIds });
+			if (!add) return tx;
+			const commands = Array.isArray(add.commands)
+				? add.commands.filter((c) => !!c && typeof c === 'object')
+				: [];
+			const label = typeof add.label === 'string' && add.label.trim() ? add.label.slice(0, 200) : tx.label;
+			return { ...tx, label, commands: [...tx.commands, ...commands] };
+		} catch (e) {
+			this.log(`[proposals] the accept extension of "${p.feature}" failed: ${(e as Error).message}`);
+			return tx;
+		}
 	}
 
 	/** The proposal features with this project's agent-accept state and whether their producer refreshes. */
@@ -496,10 +560,11 @@ export class ProposalService {
 				};
 			}
 			const composed = plan.composed;
+			const tx = this.extendAccept(doc, p, composed.tx, composed.itemIds);
 			const agent = this.agent();
 			// The journal: the intent (with the ids the transaction will create its entities with) is on disk before the
 			// transaction runs, and removed after the states are written (`reconcile` settles one left behind).
-			const intent: AcceptIntent = prepareIntent(doc, composed.tx as Record<string, unknown>, {
+			const intent: AcceptIntent = prepareIntent(doc, tx as Record<string, unknown>, {
 				acceptId: newAcceptId(),
 				projectId,
 				proposalId,
@@ -510,7 +575,7 @@ export class ProposalService {
 				registries: this.registries,
 			});
 			await this.store.writeIntent(projectId, intent);
-			const out = await agent.transact(projectId, composed.tx, {
+			const out = await agent.transact(projectId, tx, {
 				fallbackAgent: who.agent,
 				ids: intent.ids,
 				...(who.editor ? { preApproved: true, asUser: true } : {}),
@@ -579,6 +644,26 @@ export class ProposalService {
 				{ code: 'E_APPROVAL_REQUIRED' },
 			);
 		await this.ensureProject(projectId);
+		const out = await this.decideLocked(projectId, proposalId, decision);
+		const listener = this.rejectListeners.get(out.proposal.feature);
+		if (listener && decision.kind === 'reject' && who.editor && out.changed.length)
+			try {
+				await listener({ projectId, proposal: out.proposal, itemIds: out.changed, who });
+			} catch (e) {
+				this.log(`[proposals] the reject listener of "${out.proposal.feature}" failed: ${(e as Error).message}`);
+			}
+		return out;
+	}
+
+	private decideLocked(
+		projectId: string,
+		proposalId: string,
+		decision:
+			| { kind: 'reject'; itemIds: string[] | 'all' }
+			| { kind: 'reopen'; itemIds: string[] | 'all' }
+			| { kind: 'note'; itemId: string; note: string | null }
+			| { kind: 'select'; itemId: string; alternative: number },
+	): Promise<{ proposal: Proposal; changed: string[] }> {
 		return this.locks.run(`${projectId}/${proposalId}`, async () => {
 			const p = await this.load(projectId, proposalId);
 			const now = this.now().toISOString();

@@ -65,6 +65,8 @@ export const JOB_KINDS = [
 	'edit-automation',
 	/** spec 15 EA-012: Apply Style (a recipe's passes into one proposal). */
 	'apply-style',
+	/** spec 17 SC-090: Fix Transcript (script / glossary candidates checked against the audio → one proposal). */
+	'transcript-fix',
 ] as const;
 export const JobKindSchema = z.enum(JOB_KINDS);
 export type JobKind = z.infer<typeof JobKindSchema>;
