@@ -151,7 +151,7 @@ describe('Preferences ▸ Transcription ▸ Glossary (spec 17 SC-072)', () => {
 		await screen.findByTestId('glossary-empty');
 		fireEvent.click(screen.getByTestId('glossary-new'));
 		const form = screen.getByTestId('glossary-editor-new');
-		expect((within(form).getByTestId('glossary-edit-save') as HTMLButtonElement).disabled).toBe(true);
+		expect(within(form).getByTestId('glossary-edit-save').getAttribute('aria-disabled')).toBe('true');
 		fireEvent.change(within(form).getByTestId('glossary-edit-to'), { target: { value: 'NovaPlay Studio' } });
 		fireEvent.change(within(form).getByTestId('glossary-edit-from'), {
 			target: { value: 'nova play studio\n\n novaplei estudio ' },
@@ -268,11 +268,9 @@ describe('Preferences ▸ Transcription ▸ Glossary (spec 17 SC-072)', () => {
 		const engine = fakeEngine({ entries: [entry(1, 'Glimmerbox', [])], readOnly: true });
 		renderPage(engine);
 		await screen.findByTestId('glossary-read-only');
-		expect((screen.getByTestId('glossary-new') as HTMLButtonElement).disabled).toBe(true);
-		expect((screen.getByTestId('glossary-import') as HTMLButtonElement).disabled).toBe(true);
-		expect((screen.getByTestId('glossary-entry-edit') as HTMLButtonElement).disabled).toBe(true);
-		expect((screen.getByTestId('glossary-entry-delete') as HTMLButtonElement).disabled).toBe(true);
-		expect((screen.getByTestId('glossary-export') as HTMLButtonElement).disabled).toBe(false);
+		for (const id of ['glossary-new', 'glossary-import', 'glossary-entry-edit', 'glossary-entry-delete'])
+			expect(screen.getByTestId(id).getAttribute('aria-disabled'), id).toBe('true');
+		expect(screen.getByTestId('glossary-export').getAttribute('aria-disabled')).toBeNull();
 		expect(screen.getByTestId('glossary-entry-from').textContent).toBe('No misspellings yet');
 		cleanup();
 		renderPage(fakeEngine({ entries: [], failList: true }));
