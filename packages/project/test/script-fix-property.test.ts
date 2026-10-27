@@ -8,9 +8,9 @@ import { cleanupNorm } from '../src/cleanup/lists.ts';
 import { ALIGN_DEFAULTS, type AlignStep, alignCore, alignTranscript } from '../src/script-fix/align.ts';
 import { findFixCandidates } from '../src/script-fix/candidates.ts';
 import { candidateScores, decideFix, replaceWordsEdit } from '../src/script-fix/decide.ts';
-import { buildScoreWindows, type ScoreWindowResult } from '../src/script-fix/windows.ts';
 import { psim } from '../src/script-fix/phonetic.ts';
 import { parseScript } from '../src/script-fix/script.ts';
+import { buildScoreWindows, type ScoreWindowResult } from '../src/script-fix/windows.ts';
 import { referenceAlign } from './script-fix-reference.ts';
 
 const VOCAB = [
@@ -214,11 +214,17 @@ describe('script-fix properties (SC-100)', () => {
 
 	it('fix edits leave the transcript sorted and non-overlapping; new words last ≥ 1 flick when the span allows', () => {
 		const NAMES = 'casa perro gato mesa silla libro arbol nube fuego agua tierra viento luna'.split(' ');
+		let widened = 0;
+		let inGap = 0;
 		fc.assert(
 			fc.property(
 				fc.array(
 					fc.record({
-						gap: fc.oneof(fc.constant(0), fc.integer({ min: 0, max: 60_000_000 }), fc.integer({ max: 900_000_000, min: 0 })),
+						gap: fc.oneof(
+							fc.constant(0),
+							fc.integer({ min: 0, max: 60_000_000 }),
+							fc.integer({ max: 900_000_000, min: 0 }),
+						),
 						dur: fc.integer({ min: 1, max: 400_000_000 }),
 					}),
 					{ minLength: 6, maxLength: 13 },
@@ -246,7 +252,13 @@ describe('script-fix properties (SC-100)', () => {
 					if (mode === 'sub') words[p]!.text = 'zorro';
 					const a = alignTranscript({ words, script, language: 'es' });
 					if (!a.ok) return;
-					const { candidates } = findFixCandidates({ mediaId: 'm', transcriptId: 't', words, script, alignment: a });
+					const { candidates } = findFixCandidates({
+						mediaId: 'm',
+						transcriptId: 't',
+						words,
+						script,
+						alignment: a,
+					});
 					const { windows } = buildScoreWindows(words, candidates);
 					// fake scores: every candidate reading wins; forced times arbitrary (overlapping, outside, reversed)
 					const results: ScoreWindowResult[] = windows.map((w) => ({
@@ -276,7 +288,8 @@ describe('script-fix properties (SC-100)', () => {
 						const after = [...words.filter((w) => !hit.includes(w)), ...edit.words].sort(
 							(x, y) => x.start - y.start || x.end - y.end,
 						);
-						for (let k = 1; k < after.length; k++) expect(after[k]!.start).toBeGreaterThanOrEqual(after[k - 1]!.end);
+						for (let k = 1; k < after.length; k++)
+							expect(after[k]!.start).toBeGreaterThanOrEqual(after[k - 1]!.end);
 						const room = edit.end - edit.start >= edit.words.length;
 						for (const w of edit.words) {
 							expect(w.text).not.toMatch(/\s/);
@@ -286,10 +299,17 @@ describe('script-fix properties (SC-100)', () => {
 							if (room) expect(w.end - w.start).toBeGreaterThanOrEqual(1);
 						}
 						if (c.anchor) expect(edit.words.map((w) => w.text)).toContain(c.anchor.text);
+						if (c.kind === 'del') {
+							if (c.anchor) widened++;
+							else inGap++;
+						}
 					}
 				},
 			),
 			{ numRuns: 300 },
 		);
+		// both del paths were exercised
+		expect(widened).toBeGreaterThan(0);
+		expect(inGap).toBeGreaterThan(0);
 	});
 });

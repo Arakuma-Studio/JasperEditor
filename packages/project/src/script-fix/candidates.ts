@@ -96,7 +96,13 @@ export const DEL_MIN_GAP_SECONDS = 0.06;
  * within [previous word's end, its end]), `before` = the previous word when nothing follows (inserted words go after it;
  * within [its start, its end + 0.35 s]). Its text and confidence are kept exactly.
  */
-export type DelAnchor = { side: 'after' | 'before'; text: string; start: number; end: number; confidence: number | null };
+export type DelAnchor = {
+	side: 'after' | 'before';
+	text: string;
+	start: number;
+	end: number;
+	confidence: number | null;
+};
 
 /** The anchor of a `del` inserted before word `at` (null when the gap is wide enough or there is no neighbour). */
 export function delAnchorOf(

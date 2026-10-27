@@ -194,13 +194,20 @@ export function splitByCharacters(candidate: FixCandidate): FixedWord[] {
 	const a = candidate.anchor;
 	const texts = a ? withAnchor(candidate, candidate.script, a.text) : candidate.script;
 	const lo = a ? candidate.bounds.start : candidate.start;
-	const hi = a ? Math.max(candidate.bounds.start, a.side === 'after' ? a.end : candidate.bounds.end) : candidate.end;
+	const hi = a
+		? Math.max(candidate.bounds.start, a.side === 'after' ? a.end : candidate.bounds.end)
+		: candidate.end;
 	const spread = spreadTokens(
 		texts.map((text) => ({ text, breakBefore: 'none' as const })),
 		lo,
 		hi,
 	);
-	const out = spread.map((w) => ({ text: w.text, start: w.start, end: w.end, confidence: null as number | null }));
+	const out = spread.map((w) => ({
+		text: w.text,
+		start: w.start,
+		end: w.end,
+		confidence: null as number | null,
+	}));
 	if (a) out[a.side === 'before' ? 0 : out.length - 1]!.confidence = a.confidence;
 	return clampWords(out, lo, hi);
 }
@@ -228,7 +235,12 @@ export function retimedWords(candidate: FixCandidate, score: CandidateScore): Fi
 		};
 	});
 	const all = a
-		? withAnchor(candidate, fresh, { text: a.text, start: anchorScore!.start, end: anchorScore!.end, confidence: a.confidence })
+		? withAnchor(candidate, fresh, {
+				text: a.text,
+				start: anchorScore!.start,
+				end: anchorScore!.end,
+				confidence: a.confidence,
+			})
 		: fresh;
 	return clampWords(all, candidate.bounds.start, candidate.bounds.end);
 }

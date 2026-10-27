@@ -39,7 +39,13 @@ function say(text: string, gap = 0.05): FixWord[] {
 	return out;
 }
 
-function run(scriptText: string, transcript: string, lang = 'es', glossary?: GlossaryEntryInput[], gap?: number) {
+function run(
+	scriptText: string,
+	transcript: string,
+	lang = 'es',
+	glossary?: GlossaryEntryInput[],
+	gap?: number,
+) {
 	const script = parseScript(scriptText, { language: lang });
 	const words = say(transcript, gap);
 	const alignment = alignTranscript({
@@ -149,7 +155,12 @@ describe('alignment and candidates, Spanish (SC-010 … SC-026)', () => {
 		expect(c.end).toBe(r.words[2]!.start);
 		expect(c.fromWord).toBe(2);
 		// the 50 ms gap is under DEL_MIN_GAP_SECONDS: the following word is taken in
-		expect(c.anchor).toMatchObject({ side: 'after', text: 'guardar', start: r.words[2]!.start, end: r.words[2]!.end });
+		expect(c.anchor).toMatchObject({
+			side: 'after',
+			text: 'guardar',
+			start: r.words[2]!.start,
+			end: r.words[2]!.end,
+		});
 		expect(c.bounds).toEqual({ start: r.words[1]!.end, end: r.words[2]!.end });
 	});
 
@@ -563,14 +574,21 @@ describe('windows, scores, edits (SC-030 … SC-042)', () => {
 		const edit = replaceWordsEdit(del, decideFix(del, s))!;
 		expect(edit.expect).toEqual([]);
 		expect(edit).toMatchObject({ start: r.words[1]!.end, end: r.words[2]!.start });
-		expect(edit.words).toEqual([{ text: 'a', start: r.words[1]!.end, end: r.words[2]!.start, confidence: 0.7 }]);
+		expect(edit.words).toEqual([
+			{ text: 'a', start: r.words[1]!.end, end: r.words[2]!.start, confidence: 0.7 },
+		]);
 	});
 
 	it('del after the last word takes the previous word in (no following word)', () => {
 		const words = say('vamos a guardar el proyecto');
 		const last = words[4]!;
 		const widened = delAnchorOf(words, 5)!;
-		expect(widened.anchor).toMatchObject({ side: 'before', text: 'proyecto', start: last.start, end: last.end });
+		expect(widened.anchor).toMatchObject({
+			side: 'before',
+			text: 'proyecto',
+			start: last.start,
+			end: last.end,
+		});
 		expect(widened.bounds).toEqual({ start: last.start, end: last.end + Math.round(0.35 * F) });
 		expect(delAnchorOf(say('vamos guardar', 0.2), 1)).toBeNull();
 		const del = {
@@ -598,8 +616,8 @@ describe('windows, scores, edits (SC-030 … SC-042)', () => {
 						tokens: 1,
 						logprob: -1,
 						probability: 0.6,
-						start: i === 4 ? t(1.9) : i === 5 ? t(2.0) : words[i]?.start ?? 0,
-						end: i === 4 ? t(2.0) : i === 5 ? t(9) : words[i]?.end ?? 0,
+						start: i === 4 ? t(1.9) : i === 5 ? t(2.0) : (words[i]?.start ?? 0),
+						end: i === 4 ? t(2.0) : i === 5 ? t(9) : (words[i]?.end ?? 0),
 					})),
 				})),
 			},
