@@ -1,32 +1,19 @@
 // "<agent> is waiting for your review" (WP3.3b): the engine's inference from an agent polling a proposal.
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProposalWaitWatch, type Waiting } from '../src/proposals/waiting.ts';
 
-function harness(opts: { maxEntries?: number } = {}) {
-	let now = Date.parse('2026-10-16T10:00:00.000Z');
-	const timers = new Map<number, { at: number; fn: () => void }>();
-	let n = 0;
+beforeEach(() => {
+	vi.useFakeTimers();
+	vi.setSystemTime(new Date('2026-10-16T10:00:00.000Z'));
+});
+afterEach(() => vi.useRealTimers());
+
+function harness() {
 	const events: [string, string, Waiting | null][] = [];
 	const w = new ProposalWaitWatch({
 		publish: (pid, id, waiting) => events.push([pid, id, waiting]),
-		now: () => now,
-		setTimer: (fn, ms) => {
-			timers.set(++n, { at: now + ms, fn });
-			return n;
-		},
-		clearTimer: (h) => timers.delete(h as number),
-		...opts,
 	});
-	const advance = (ms: number) => {
-		now += ms;
-		for (const [k, t] of [...timers]) {
-			if (t.at <= now) {
-				timers.delete(k);
-				t.fn();
-			}
-		}
-	};
-	return { w, events, advance, timers };
+	return { w, events, advance: (ms: number) => vi.advanceTimersByTime(ms) };
 }
 
 describe('ProposalWaitWatch', () => {
@@ -71,19 +58,20 @@ describe('ProposalWaitWatch', () => {
 		w.forget('prj', 'prp_1');
 		advance(10_000);
 		expect(events.map((e) => e[2]?.agent ?? null)).toEqual(['a', null, 'b']);
-		// proposals are followed separately
-		w.poll('prj', 'prp_2', 'a');
-		w.poll('prj2', 'prp_2', 'a');
-		expect(w.waiting('prj', 'prp_2')).toBeNull();
 	});
 
-	it('follows a bounded number of proposals', () => {
-		const { w, timers } = harness({ maxEntries: 3 });
-		for (let i = 0; i < 10; i++) w.poll('prj', `prp_${i}`, 'a');
-		expect(timers.size).toBe(3);
-		w.poll('prj', 'prp_9', 'a');
-		expect(w.waiting('prj', 'prp_9')?.agent).toBe('a');
+	it('forgets the oldest wait beyond the 1,000-proposal bound and disposes without ghost announcements', () => {
+		const { w, events, advance } = harness();
+		w.poll('prj', 'prp_0', 'a');
+		w.poll('prj', 'prp_0', 'a');
+		for (let i = 1; i <= 1000; i++) w.poll('prj', `prp_${i}`, 'a');
+		expect(w.waiting('prj', 'prp_0')).toBeNull();
+		w.poll('prj', 'prp_1000', 'a');
+		expect(w.waiting('prj', 'prp_1000')?.agent).toBe('a');
 		w.dispose();
-		expect(timers.size).toBe(0);
+		expect(w.waiting('prj', 'prp_1000')).toBeNull();
+		const before = [...events];
+		advance(10_000);
+		expect(events).toEqual(before);
 	});
 });

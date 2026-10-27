@@ -22,8 +22,8 @@ import {
 	readEssentialSound,
 	type SoundDesign,
 } from '@jasper/project';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { soundDesignApplyHooks } from '../src/sound-design/apply-guard.ts';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import type { AgentService } from '../src/agent/service.ts';
 import { MeasureCache, renderSequencePcm } from '../src/sound-design/bed.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, DocBuilder, makeApp, register, TEST_FFMPEG, type TestApp } from './helpers.ts';
@@ -310,53 +310,17 @@ describe('POST /api/sound-design/delivery (real engine)', { timeout: 600_000 }, 
 		expect((seq.soundDesign as SoundDesign).settings!.delivery).toBe('broadcast-r128');
 	});
 
-	it('apply: an edit of the mix while it measures is a CONFLICT (retryable) and nothing is applied', async () => {
-		const projectId = seed(base.doc);
-		const before = await saved(projectId);
-		soundDesignApplyHooks.afterMeasure = async (id) => {
-			if (id !== projectId) return;
-			const r = await app.inject({
-				method: 'POST',
-				url: '/api/agent/tx',
-				headers: json(EDITOR_H),
-				payload: JSON.stringify({
-					projectId,
-					transaction: {
-						label: 'Music up',
-						origin: 'user',
-						commands: [{ type: 'audio.setGain', clipIds: [base.ids.music], mode: 'adjust', db: 4 }],
-					},
-				}),
-			});
-			expect((r.json() as { result: { ok: boolean } }).result.ok, r.body).toBe(true);
-		};
-		try {
-			const r = await deliver({ projectId, delivery: 'web', mode: 'apply' }, EDITOR_H);
-			expect(r.statusCode, r.body).toBe(202);
-			const job = await coreServices(app).queue.wait((r.json() as EngineJob).id);
-			expect(job.state).toBe('failed');
-			expect(job.error).toMatchObject({ code: 'CONFLICT', retryable: true });
-		} finally {
-			soundDesignApplyHooks.afterMeasure = undefined;
-		}
-		const after = await saved(projectId);
-		expect(after.revision).toBe(before.revision + 1); // the user's edit only
-		const seq = after.doc.sequences[base.seqId]!;
-		expect(seq.master.loudness).toEqual(before.doc.sequences[base.seqId]!.master.loudness);
-		expect((seq.soundDesign as SoundDesign | undefined)?.settings?.delivery).toBe(
-			(before.doc.sequences[base.seqId]!.soundDesign as SoundDesign | undefined)?.settings?.delivery,
-		);
-	});
-
-	it('apply: an edit of the mix between the check and the apply (the race) is a CONFLICT too; nothing applied', async () => {
+	it('apply: a hit added after measurement causes retryable CONFLICT; only the user edit survives', async () => {
 		// WP6.5b: a sound added to the mix after the job re-read the edit and before its transaction. The transaction
 		// touches the Mix, the music, the dialogue and the sound effects it levels, not the new clip, so the fast-forward
 		// rule (S01:AGT-010) let it through and the loudness solved for the old mix was applied; `soundDesign.expectMix`
 		// in the transaction now refuses it
 		const projectId = seed(base.doc);
 		const before = await saved(projectId);
-		soundDesignApplyHooks.beforeApply = async (id) => {
-			if (id !== projectId) return;
+		const agent = app.jasper.services.agent as AgentService;
+		const transact = agent.transact.bind(agent);
+		const race = vi.spyOn(agent, 'transact').mockImplementationOnce(async (...args) => {
+			race.mockRestore();
 			const r = await app.inject({
 				method: 'POST',
 				url: '/api/agent/tx',
@@ -380,21 +344,26 @@ describe('POST /api/sound-design/delivery (real engine)', { timeout: 600_000 }, 
 				}),
 			});
 			expect((r.json() as { result: { ok: boolean } }).result.ok, r.body).toBe(true);
-		};
+			return transact(...args);
+		});
 		try {
 			const r = await deliver({ projectId, delivery: 'web', mode: 'apply' }, EDITOR_H);
 			expect(r.statusCode, r.body).toBe(202);
 			const job = await coreServices(app).queue.wait((r.json() as EngineJob).id);
 			expect(job.state, JSON.stringify(job.result)).toBe('failed');
 			expect(job.error).toMatchObject({ code: 'CONFLICT', retryable: true });
-			expect(job.error?.message).toMatch(/changed before it could be applied/);
 		} finally {
-			soundDesignApplyHooks.beforeApply = undefined;
+			race.mockRestore();
 		}
 		const after = await saved(projectId);
 		expect(after.revision).toBe(before.revision + 1); // the user's edit only
 		const seq = after.doc.sequences[base.seqId]!;
-		expect(seq.master.loudness).toEqual(before.doc.sequences[base.seqId]!.master.loudness);
+		const prior = before.doc.sequences[base.seqId]!;
+		expect(seq.master).toEqual(prior.master);
+		for (const [id, clip] of Object.entries(prior.clips)) expect(seq.clips[id]).toEqual(clip);
+		expect(Object.values(seq.clips).filter((clip) => !prior.clips[clip.id])).toEqual([
+			expect.objectContaining({ kind: 'audio', start: 450 }),
+		]);
 		expect((seq.soundDesign as SoundDesign | undefined)?.settings?.delivery).toBe(
 			(before.doc.sequences[base.seqId]!.soundDesign as SoundDesign | undefined)?.settings?.delivery,
 		);

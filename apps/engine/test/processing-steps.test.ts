@@ -264,11 +264,36 @@ describe('LGPL filters only (D-13)', () => {
 });
 
 describe('every step keeps frame count, rate and audio (S07 §8 test 2)', () => {
-	const source = fixture('clip-b.mp4');
+	let source: string;
 	let vin: ReturnType<typeof probe>[number];
 	let sourceAudioHash: string;
 	beforeAll(() => {
+		// Conservation needs multiple frames beyond the 9-frame temporal denoise window,
+		// not six seconds of 720p inference. Keep the original AAC packets unchanged.
+		source = join(dir, 'conservation.mp4');
+		const made = spawnSync(FFMPEG, [
+			'-v',
+			'error',
+			'-i',
+			fixture('clip-b.mp4'),
+			'-vf',
+			'scale=320:180',
+			'-frames:v',
+			'18',
+			'-t',
+			'0.72',
+			'-c:v',
+			'mpeg4',
+			'-q:v',
+			'2',
+			'-c:a',
+			'copy',
+			source,
+		]);
+		if (made.status !== 0) throw new Error(made.stderr.toString());
 		vin = probe(source).find((s) => s.codec_type === 'video')!;
+		if (Number(vin.nb_read_packets) !== 18 || vin.r_frame_rate !== '25/1')
+			throw new Error('Invalid conservation fixture');
 		sourceAudioHash = audioHash(source);
 	});
 	const cases: Array<[string, ProcessStep[]]> = [
@@ -299,7 +324,7 @@ describe('every step keeps frame count, rate and audio (S07 §8 test 2)', () => 
 			expect(vout.color_space).toBe('bt709');
 			const up = steps.some((s) => s.op === 'upscale');
 			expect(Number(vout.width)).toBe(Number(vin.width) * (up ? 2 : 1));
-			expect(audioHash(output)).toBe(sourceAudioHash);
+			expect(audioHash(output), 'original encoded audio packets').toBe(sourceAudioHash);
 		}, 600_000);
 });
 
