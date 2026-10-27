@@ -34,8 +34,6 @@ const MAX_SNAPSHOT_BYTES = 256 * 1024 * 1024;
 
 type RecoveryInfo = Omit<RecoveryCandidate, 'projectRevision'>;
 
-export type { RecoveryCandidate };
-export type RecoveryWrite = RecoveryPutRequest;
 const JournalInfoSchema = RecoveryInfoSchema.omit({ projectRevision: true });
 type Lock = { pid: number; instance: string };
 
@@ -105,7 +103,7 @@ export class RecoveryJournal {
 	}
 
 	/** Writes (replaces) a session's snapshot. */
-	write(projectId: string, sessionId: string, w: RecoveryWrite): Promise<{ savedAt: string }> {
+	write(projectId: string, sessionId: string, w: RecoveryPutRequest): Promise<{ savedAt: string }> {
 		const dir = this.dir(projectId, sessionId);
 		return this.mutex.run(`${projectId}/${sessionId}`, () => this.writeLocked(projectId, sessionId, dir, w));
 	}
@@ -114,7 +112,7 @@ export class RecoveryJournal {
 		projectId: string,
 		sessionId: string,
 		dir: string,
-		w: RecoveryWrite,
+		w: RecoveryPutRequest,
 	): Promise<{ savedAt: string }> {
 		this.assertLease(projectId, sessionId, w.leaseId);
 		const doc = w.envelope?.document;

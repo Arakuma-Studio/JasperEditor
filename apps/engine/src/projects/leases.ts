@@ -18,7 +18,7 @@ class LeaseError extends Error {
 }
 
 /** A session started editing a project (a new lease, not a renewal), or stopped (released, expired, forgotten). */
-export type LeaseChange = { projectId: string; kind: 'acquired' | 'released' };
+type LeaseChange = { projectId: string; kind: 'acquired' | 'released' };
 
 export class LeaseManager {
 	private readonly leases = new Map<string, Lease>();

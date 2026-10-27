@@ -39,7 +39,7 @@ async function readCapped(body: Readable, max: number): Promise<Uint8Array> {
 }
 
 /** Saved projects whose fonts render with the face (or its family). */
-export async function fontUsage(core: CoreServices, face: LibraryFont): Promise<FontUsageResponse> {
+async function fontUsage(core: CoreServices, face: LibraryFont): Promise<FontUsageResponse> {
 	const projects = await core.projects.list();
 	const out: FontUsageResponse['projects'] = [];
 	let scanned = 0;
@@ -63,7 +63,7 @@ export async function fontUsage(core: CoreServices, face: LibraryFont): Promise<
 }
 
 /** HTTP status of a remote-asset failure (social-comment §7.8). */
-export function remoteAssetStatus(e: RemoteAssetError): number {
+function remoteAssetStatus(e: RemoteAssetError): number {
 	switch (e.code) {
 		case 'REMOTE_ASSET_UNKNOWN':
 		case 'DOWNLOAD_NOT_FOUND':

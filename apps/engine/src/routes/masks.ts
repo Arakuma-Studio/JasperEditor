@@ -7,7 +7,7 @@ import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
 
 /** Decodes source frame `frame` of `file` to straight RGBA at `w×h` (display orientation). */
-export async function decodeRgbaFrame(
+async function decodeRgbaFrame(
 	ff: Ffmpeg,
 	file: string,
 	frame: number,
