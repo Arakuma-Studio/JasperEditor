@@ -60,7 +60,7 @@ import {
 } from '../core/decode.ts';
 import { composePrompt, glossaryTokens, normalizeGlossary, repeatedGlossaryTerm } from '../core/glossary.ts';
 import { dropRepeatedTokenRuns, silenceThresholdCut } from '../core/hallucination.ts';
-import { HOP, SAMPLE_RATE } from '../core/mel.ts';
+import { FRAME_HALF, HOP, MelFrameComputer, SAMPLE_RATE } from '../core/mel.ts';
 import { type TokenizerJson, WhisperTokenizer } from '../core/tokenizer.ts';
 import { countVoiced, endOfVoice } from '../core/vad.ts';
 import { CancelledError, inputFromSamples, type SpeechInput } from './audio.ts';
@@ -237,6 +237,7 @@ export class WhisperModel {
 	calibration: DecoderCalibration | null = null;
 	private gpuDecoder: PartSession | null = null;
 	private profile = { encoderMs: 0, decoderMs: 0, decoderRuns: 0 };
+	private melFrames: MelFrameComputer | null = null;
 
 	private constructor(
 		private readonly ort: Pick<Ort, 'InferenceSession' | 'Tensor'>,
@@ -920,6 +921,8 @@ export class WhisperModel {
 		input: SpeechInput,
 		start: number,
 		end: number,
+		/** Sample ranges [start, end) heard as silence (spec 17 SC-030: the gaps of a packed window). */
+		mute: ReadonlyArray<{ start: number; end: number }> = [],
 	): Promise<{ xa: Tensor; frame0: number; frames: number }> {
 		const content = Math.max(0, input.mel.frames - N_FRAMES);
 		const frame0 = Math.max(0, Math.floor(start / HOP));
@@ -938,7 +941,54 @@ export class WhisperModel {
 			);
 		const win = new Float32Array(this.cfg.num_mel_bins * N_FRAMES);
 		input.mel.window(frame0, frames, win, N_FRAMES);
+		if (mute.length) this.muteWindow(input, frame0, frames, win, mute);
 		return { xa: await this.encode(win), frame0, frames };
+	}
+
+	/**
+	 * SC-030 muted gaps: the window's frames computed as if the samples of `mute` were zero (the frames stay where
+	 * they are, so times stay absolute). Frames whose 25 ms window lies inside a muted range are digital silence;
+	 * frames straddling a range edge are recomputed from the kept samples around the edge (`samplesIn`); the rest
+	 * are the streamed frames. Normalised with the whole file's maximum like every window.
+	 */
+	private muteWindow(
+		input: SpeechInput,
+		frame0: number,
+		frames: number,
+		win: Float32Array,
+		mute: ReadonlyArray<{ start: number; end: number }>,
+	): void {
+		const nMels = this.cfg.num_mel_bins;
+		const floor = input.mel.max - 8;
+		const norm = (v: number) => ((v > floor ? v : floor) + 4) / 4;
+		const row = new Float32Array(nMels);
+		this.melFrames ??= new MelFrameComputer(nMels);
+		for (let f = frame0; f < frame0 + frames; f++) {
+			const a = f * HOP - FRAME_HALF;
+			const b = f * HOP + FRAME_HALF;
+			const hits = mute.filter((m) => m.start < b && m.end > a && m.end > m.start);
+			if (!hits.length) continue;
+			const col = f - frame0;
+			if (hits.some((m) => m.start <= a && m.end >= b && a >= 0)) {
+				// all-zero samples: log10(max(0, 1e-10)) = −10, as the stream computes for silence
+				const v = norm(-10);
+				for (let m = 0; m < nMels; m++) win[m * N_FRAMES + col] = v;
+				continue;
+			}
+			// the samples this frame reads: [a, b), reflected at 0 (index −i reads sample i), zeros after the audio
+			const from = Math.max(0, a);
+			const to = Math.min(input.samples, Math.max(b, a < 0 ? -a + 1 : 0));
+			const got = to > from ? (input.samplesIn?.(from, to) ?? null) : new Float32Array(0);
+			if (got === null) throw new Error('scoring: the samples around a muted range were not kept');
+			const sampleAt = (i: number) => {
+				const j = i < 0 ? -i : i;
+				if (j >= input.samples || j < from || j >= to) return 0;
+				for (const m of mute) if (j >= m.start && j < m.end) return 0;
+				return got[j - from]!;
+			};
+			this.melFrames.frame(f, sampleAt, row);
+			for (let m = 0; m < nMels; m++) win[m * N_FRAMES + col] = norm(row[m]!);
+		}
 	}
 
 	/**

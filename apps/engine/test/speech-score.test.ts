@@ -10,6 +10,7 @@ import {
 	normalizeGlossary,
 	repeatedGlossaryTerm,
 } from '../src/speech/core/glossary.ts';
+import { LogMelStream, MelFrameComputer } from '../src/speech/core/mel.ts';
 import { runScoreJob } from '../src/speech/worker/score.ts';
 import { SpeechRefusal, WhisperModel } from '../src/speech/worker/whisper.ts';
 import { EOT, fakeModelDir, fakeOrt, noiseAudio, SPACE, TS_BEGIN, VOCAB } from './speech-fake-ort.ts';
@@ -30,6 +31,7 @@ function spec(
 		start: number;
 		end: number;
 		readings: Array<{ id: string; words: string[] }>;
+		mute?: Array<{ start: number; end: number }>;
 	}>,
 	extra: Record<string, unknown> = {},
 ) {
@@ -179,6 +181,95 @@ describe('scoring readings (SC-032)', () => {
 		near(w0!.end, 5);
 		near(w1!.start, 5);
 		near(w1!.end, 9);
+	});
+});
+
+describe('muted gaps of a packed window (SC-030)', () => {
+	// loud speech outside 2.5–6.5 s, faint noise inside it (above Whisper's max − 8 floor, so muting changes frames)
+	const loud = noiseAudio(20, (t) => t < 2.5 || t > 6.5, 7);
+	// off the 160-sample frame grid on both edges, so frames straddling an edge are recomputed from samples
+	const mute = [{ start: 3 * SR + 37, end: 6 * SR + 11 }];
+	const win = (m?: typeof mute) => [
+		{
+			id: 'w',
+			start: SR,
+			end: 9 * SR,
+			readings: [{ id: 'r', words: ['ab', 'cd'] }],
+			...(m ? { mute: m } : {}),
+		},
+	];
+	const encoderInput = async (audio: Float32Array, m?: typeof mute) => {
+		const dir = fakeModelDir({ encodable: true });
+		let seen: Float32Array | null = null;
+		const f = fakeOrt({ onEncoderInput: (x) => (seen = x) });
+		const out = await runScoreJob(spec(dir, win(m)), { ort: f.ort, audio });
+		return { x: seen! as Float32Array, out };
+	};
+
+	it('the encoder input equals that of the same window with the muted samples set to zero', async () => {
+		const zeroed = loud.slice();
+		zeroed.fill(0, mute[0]!.start, mute[0]!.end);
+		const muted = await encoderInput(loud, mute);
+		const reference = await encoderInput(zeroed);
+		const plain = await encoderInput(loud);
+		const nMels = muted.x.length / 3000;
+		let maxDiff = 0;
+		let changed = 0;
+		for (let i = 0; i < muted.x.length; i++) {
+			maxDiff = Math.max(maxDiff, Math.abs(muted.x[i]! - reference.x[i]!));
+			if (muted.x[i] !== plain.x[i]) changed++;
+		}
+		expect(maxDiff).toBeLessThan(1e-6);
+		// the muted frames (3.0–6.0 s of a window from 1 s: columns ≈ 200–500) differ from the unmuted window …
+		expect(changed).toBeGreaterThan(250 * nMels);
+		// … and nothing else does: frames whose 25 ms window does not reach the muted samples are the streamed ones
+		const col = (i: number) => i % 3000;
+		for (let i = 0; i < muted.x.length; i++) {
+			const c = col(i);
+			if (c < 197 || (c > 503 && c < 800)) expect(muted.x[i]).toBe(plain.x[i]);
+		}
+		// frames inside the range are digital silence: every band at the window floor
+		const floor = muted.x[350]!;
+		for (let m = 0; m < nMels; m++) expect(muted.x[m * 3000 + 350]).toBe(floor);
+		// times stay absolute (frames are muted, not dropped): the same word times as the unmuted window of the same
+		// audio (the fake cross-attention does not depend on the encoder input; refinement reads the same levels)
+		expect(muted.out.windows[0]!.readings[0]!.words.map((w) => [w.start, w.end])).toEqual(
+			plain.out.windows[0]!.readings[0]!.words.map((w) => [w.start, w.end]),
+		);
+		// one encoder pass per window, as without muting
+		expect(muted.out.profile.encoderPasses).toBe(1);
+	});
+
+	it('refuses a muted range outside its window or empty', async () => {
+		const dir = fakeModelDir({ encodable: true });
+		for (const bad of [
+			[{ start: 0, end: 2 * SR }],
+			[{ start: 5 * SR, end: 5 * SR }],
+			[{ start: 8 * SR, end: 10 * SR }],
+		]) {
+			const e = await runScoreJob(spec(dir, win(bad)), { ort: fakeOrt().ort, audio: loud }).then(
+				() => null,
+				(x: unknown) => x,
+			);
+			expect(e).toBeInstanceOf(SpeechRefusal);
+			expect((e as SpeechRefusal).code).toBe('INVALID_SPEC');
+		}
+	});
+
+	it('MelFrameComputer gives exactly the streamed frames', () => {
+		const nMels = 80;
+		const rows: Float32Array[] = [];
+		const stream = new LogMelStream(nMels, (r) => rows.push(Float32Array.from(r)));
+		stream.push(loud.subarray(0, 5 * SR));
+		stream.end(0);
+		const comp = new MelFrameComputer(nMels);
+		const row = new Float32Array(nMels);
+		const n = 5 * SR;
+		const at = (i: number) => (i < 0 ? loud[-i]! : i < n ? loud[i]! : loud[2 * (n - 1) - i]!);
+		for (const f of [0, 1, 2, 137, 250, 401, rows.length - 1]) {
+			comp.frame(f, at, row);
+			expect(Array.from(row)).toEqual(Array.from(rows[f]!));
+		}
 	});
 });
 

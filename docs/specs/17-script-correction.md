@@ -97,12 +97,15 @@ the accuracy harness (SC-105) re-measures them with the editor's own code.
 
 ### 2.4 Audio verification
 - SC-030 Windows: the transcript is split at gaps ≥ 1 s and windows longer than 28 s are split at their largest gap;
-  each window is padded 0.25 s before and 0.35 s after its words (≤ half the gap to the neighbours). Windows are NOT
-  packed together by default: the SC-105 harness measured that packed windows let a reading use untranscribed speech
-  in the gaps (both real deviations, the hallucination-region fix and both corrupted-word fixes came from packing);
-  packing stays an option. Windows always fit the scoring request limits (split at 100 words, repeated over the same
-  audio above 63 candidates, short reading ids); candidates that cannot be scored are reported, never sent. Only
-  windows containing candidates are decoded; one encoder pass per window per job.
+  each window is padded 0.25 s before and 0.35 s after its words (≤ half the gap to the neighbours). Consecutive
+  windows are packed into windows of ≤ 28 s whose gaps are MUTED: the media ranges between the parts' padded ranges
+  (`mute`, optional in the SC-092 request) are zeroed before the log-mel of that window (samples, never dropped
+  frames, so times stay absolute). Unmuted packing let a reading use untranscribed speech in the gaps (SC-105 harness:
+  both real deviations, the hallucination-region fix and both corrupted-word fixes); muted packing keeps every SC-105
+  target and meets SC-037 (13.6 s per speech minute on the VM vs 23.4 s unpacked). Unpacked windows and unmuted
+  packing stay options. Windows always fit the scoring request limits (split at 100 words, repeated over the same
+  audio above 63 candidates, short reading ids, ≤ 64 muted ranges); candidates that cannot be scored are reported,
+  never sent. Only windows containing candidates are decoded; one encoder pass per window per job.
 - SC-031 Readings: reading 0 = the window's ASR words; reading k = the same words with candidate k replaced by its
   script words (script spelling; script casing only for `proper`; ASR punctuation: a region's leading ¿¡ and trailing
   .,?! are carried; first word capitalised when the ASR one was). Several candidates in one window are scored
@@ -225,8 +228,9 @@ the accuracy harness (SC-105) re-measures them with the editor's own code.
   "Fixing transcripts from a script" (attach script → fix_transcript → review/accept → subtitles → cleanup) and the
   automation guide's workflow updated.
 - SC-092 Speech service API (engine-internal): `score(req, signal)` with `req = {mediaId, language, model?, device?,
-  windows: [{id, start, end (media flicks), readings: [{id, words: string[]}]}]}` → `{device, model, fallback?,
-  windows: [{id, readings: [{id, logprob, tokens, words: [{text, tokens, logprob, probability, start, end}]}]}]}`.
+  windows: [{id, start, end (media flicks), readings: [{id, words: string[]}], mute?: [{start, end}] (SC-030)}]}` →
+  `{device, model, fallback?, windows: [{id, readings: [{id, logprob, tokens, words: [{text, tokens, logprob,
+  probability, start, end}]}]}]}`.
 
 ### 2.11 Validation
 - SC-100 Property/fuzz tests (fast-check): parser and aligner never throw on arbitrary text, are deterministic, stay

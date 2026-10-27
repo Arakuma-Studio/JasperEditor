@@ -80,6 +80,7 @@ export {
 export {
 	ASR_READING_ID,
 	buildScoreWindows,
+	type MutedRange,
 	SCORE_REQUEST_LIMITS,
 	SCORE_WINDOW_DEFAULTS,
 	type ScoreReading,

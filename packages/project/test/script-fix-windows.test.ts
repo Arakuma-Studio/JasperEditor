@@ -52,6 +52,27 @@ function expectValidRequest(windows: readonly ScoreWindow[]) {
 		}
 	}
 	expect(new Set(windows.map((w) => w.id)).size).toBe(windows.length);
+	// SC-030 muted gaps: sorted, disjoint, inside the window, never over a word of the window
+	for (const w of windows) {
+		expect(w.mute.length).toBeLessThanOrEqual(L.muteRanges);
+		let at = w.start;
+		for (const m of w.mute) {
+			expect(m.start).toBeGreaterThanOrEqual(at);
+			expect(m.end).toBeGreaterThan(m.start);
+			expect(m.end).toBeLessThanOrEqual(w.end);
+			at = m.end;
+		}
+	}
+}
+
+/** No word of a window lies in one of its muted ranges. */
+function expectWordsAudible(words: readonly FixWord[], windows: readonly ScoreWindow[]) {
+	for (const w of windows)
+		for (let k = w.fromWord; k < w.toWord; k++)
+			for (const m of w.mute) {
+				const x = words[k]!;
+				expect(x.end <= m.start || x.start >= m.end).toBe(true);
+			}
 }
 
 describe('score windows respect the SC-092 request limits', () => {
@@ -85,6 +106,35 @@ describe('score windows respect the SC-092 request limits', () => {
 		expect(placed).toHaveLength(80);
 		expect(new Set(placed).size).toBe(80);
 		expectValidRequest(windows);
+	});
+
+	it('a packed window mutes the gaps between its stretches (SC-030); unpacked and unmuted stay options', () => {
+		const F2 = (x: number) => Math.round(x * F);
+		// three stretches 0.5–2.0 s, 6.0–7.5 s (4 s gap), 9.0–10.0 s (1.5 s gap)
+		const at = (t0: number, n: number, d = 0.3, g = 0.0) =>
+			Array.from({ length: n }, (_, k) => ({
+				text: `p${t0}_${k}`,
+				start: F2(t0 + k * (d + g)),
+				end: F2(t0 + k * (d + g) + d),
+			}));
+		const words: FixWord[] = [...at(0.5, 5), ...at(6, 5), ...at(9, 3, 0.3, 0.05)];
+		const cs = [cand('a', 1, 2, ['x']), cand('b', 7, 8, ['y']), cand('c', 11, 12, ['z'])];
+		const packed = buildScoreWindows(words, cs);
+		expect(packed.windows).toHaveLength(1);
+		const w = packed.windows[0]!;
+		const parts = buildScoreWindows(words, cs, { pack: false }).windows;
+		expect(parts).toHaveLength(3);
+		expect(w.start).toBe(parts[0]!.start);
+		expect(w.end).toBe(parts[2]!.end);
+		expect(w.mute).toEqual([
+			{ start: parts[0]!.end, end: parts[1]!.start },
+			{ start: parts[1]!.end, end: parts[2]!.start },
+		]);
+		// pads: 0.35 s after a stretch, 0.25 s before the next (gaps ≥ 1 s are wider than both)
+		expect(w.mute[0]).toEqual({ start: words[4]!.end + F2(0.35), end: words[5]!.start - F2(0.25) });
+		expect(buildScoreWindows(words, cs, { muteGaps: false }).windows[0]!.mute).toEqual([]);
+		expectValidRequest(packed.windows);
+		expectWordsAudible(words, packed.windows);
 	});
 
 	it('reading ids stay short whatever the candidate ids (long media ids)', () => {
@@ -165,6 +215,7 @@ describe('score windows respect the SC-092 request limits', () => {
 					});
 					const { windows, unplaced } = buildScoreWindows(words, cs);
 					expectValidRequest(windows);
+					expectWordsAudible(words, windows);
 					const seen = [
 						...windows.flatMap((w) => w.regions.map((g) => g.candidateId)),
 						...unplaced.map((u) => u.candidateId),

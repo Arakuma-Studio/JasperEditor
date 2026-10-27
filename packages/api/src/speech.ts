@@ -271,9 +271,21 @@ export const SpeechScoreRequestSchema = z.strictObject({
 						)
 						.min(1)
 						.max(64),
+					/**
+					 * Flicks ranges inside the window heard as silence (SC-030: the gaps between the parts of a packed
+					 * window, so a reading cannot take speech the transcript does not hold). Optional.
+					 */
+					mute: z
+						.array(z.strictObject({ start: z.number().int().min(0), end: z.number().int().min(1) }))
+						.max(64)
+						.optional(),
 				})
 				.refine((w) => w.end > w.start && w.end - w.start <= 30 * 705_600_000, {
 					message: 'end must be after start and the window at most 30 s long',
+				})
+				.refine((w) => (w.mute ?? []).every((m) => m.end > m.start && m.start >= w.start && m.end <= w.end), {
+					message: 'a muted range must lie inside its window and have end > start',
+					path: ['mute'],
 				}),
 		)
 		.min(1)

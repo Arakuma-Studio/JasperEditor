@@ -1,12 +1,13 @@
 // Audio score windows and readings (spec 17 SC-030, SC-031; request / result shapes of SC-092). Ported from the
 // scriptfix spike (`sfjobs.py` `windows`, `bounds`, `add_readings`; FINDINGS §2.5): the transcript is split at gaps
 // ≥ 1 s, a stretch longer than 28 s is split at its largest gap, and each window is padded 0.25 s before / 0.35 s
-// after its words (at most half the gap to the neighbouring words, and 20 ms clear of them). Packing consecutive
-// stretches into windows of ≤ 28 s (the spec's cost measure) is an option, off by default: on real recordings a gap
-// between stretches can hold speech the transcript missed, and teacher forcing then lets a reading borrow that audio
-// (SC-105 harness: 2 real deviations, a hallucination and a corrupted word fixed with packing, none without). Only windows holding candidates are returned. Reading 0 is
-// the window's ASR words; reading k replaces candidate k's region by its display words; each candidate is scored
-// against reading 0 on its own. Pure; times are integer media flicks.
+// after its words (at most half the gap to the neighbouring words, and 20 ms clear of them). Consecutive stretches are
+// packed into windows of ≤ 28 s (one encoder pass for several stretches, the spec's cost measure) with their gaps
+// MUTED: everything between the padded ranges of the stretches is heard as silence (`mute`), because on real
+// recordings a gap can hold speech the transcript missed, and teacher forcing would let a reading take that audio
+// (SC-105 harness). Unpacked windows (`pack: false`) and unmuted packing (`muteGaps: false`) stay options. Only windows
+// holding candidates are returned. Reading 0 is the window's ASR words; reading k replaces candidate k's region by its
+// display words; each candidate is scored against reading 0 on its own. Pure; times are integer media flicks.
 import { FLICKS_PER_SECOND } from '../time.ts';
 import type { FixCandidate, FixWord } from './candidates.ts';
 
@@ -19,12 +20,14 @@ export const SCORE_WINDOW_DEFAULTS = Object.freeze({
 	padAfterSeconds: 0.35,
 	/** Pads stop this far from the neighbouring words. */
 	edgeMarginSeconds: 0.02,
+	/** Pack consecutive stretches into one window up to `maxSeconds` (one encoder pass for several stretches). */
+	pack: true,
 	/**
-	 * Pack consecutive stretches into one window up to `maxSeconds` (one encoder pass for several stretches). Off: the
-	 * SC-105 harness measured false fixes from packed windows and only 23 % more encoder passes without packing
-	 * (docs/wp-notes/script-correction.md "Accuracy on real recordings").
+	 * Mute the gaps of a packed window: the audio outside every stretch's padded range is heard as silence (SC-105:
+	 * unmuted packing let readings take untranscribed speech in the gaps; docs/wp-notes/script-correction.md
+	 * "Accuracy on real recordings").
 	 */
-	pack: false,
+	muteGaps: true,
 	/**
 	 * Most transcript words in one window (longer stretches are split at their largest gap, like `maxSeconds`). Ordinary
 	 * speech has ≤ 90 words in 28 s (SC-105 harness); only loops such as "cab cab cab …" reach it. Keeps every reading
@@ -45,6 +48,8 @@ export const SCORE_REQUEST_LIMITS = Object.freeze({
 	idChars: 128,
 	/** Longest window (flicks). */
 	windowFlicks: 30 * FLICKS_PER_SECOND,
+	/** Muted ranges per window. */
+	muteRanges: 64,
 });
 /** Most script words a candidate brings into a reading (glossary targets: 8; script regions: 4). */
 const MAX_REPLACEMENT_WORDS = 8;
@@ -56,8 +61,12 @@ export type ScoreWindowOptions = {
 	padAfterSeconds: number;
 	edgeMarginSeconds: number;
 	pack: boolean;
+	muteGaps: boolean;
 	maxWords: number;
 };
+
+/** A media range [start, end) (flicks) of a window heard as silence. */
+export type MutedRange = { start: number; end: number };
 
 /** Id of reading 0 (the ASR words) in every window. */
 export const ASR_READING_ID = 'asr';
@@ -88,10 +97,18 @@ export type ScoreWindow = {
 	fromWord: number;
 	toWord: number;
 	regions: ScoreRegion[];
+	/** The gaps of a packed window heard as silence (sorted, disjoint, inside [start, end]; [] when none). */
+	mute: MutedRange[];
 };
 
-/** The exact SC-092 request window. */
-export type ScoreRequestWindow = { id: string; start: number; end: number; readings: ScoreReading[] };
+/** The exact SC-092 request window (`mute` only when there is something to mute). */
+export type ScoreRequestWindow = {
+	id: string;
+	start: number;
+	end: number;
+	readings: ScoreReading[];
+	mute?: MutedRange[];
+};
 
 /** SC-092 result of one word of a reading (times in media flicks, like the request window). */
 export type ScoreWordResult = {
@@ -122,8 +139,8 @@ function windowOptions(o: Partial<ScoreWindowOptions> | undefined): ScoreWindowO
 	if (!o) return out;
 	for (const k of Object.keys(SCORE_WINDOW_DEFAULTS) as Array<keyof ScoreWindowOptions>) {
 		const v = o[k];
-		if (k === 'pack') {
-			if (typeof v === 'boolean') out.pack = v;
+		if (k === 'pack' || k === 'muteGaps') {
+			if (typeof v === 'boolean') out[k] = v;
 		} else if (typeof v === 'number' && Number.isFinite(v) && v >= 0)
 			(out as Record<string, number | boolean>)[k] = v;
 	}
@@ -154,6 +171,14 @@ export function windowRanges(
 	words: readonly FixWord[],
 	options?: Partial<ScoreWindowOptions>,
 ): Array<[number, number]> {
+	return windowGroups(words, options).map((g) => [g[0]![0], g[g.length - 1]![1]]);
+}
+
+/** The windows as their stretches: each window is one or more consecutive word ranges [a, b) (packed). */
+function windowGroups(
+	words: readonly FixWord[],
+	options?: Partial<ScoreWindowOptions>,
+): Array<Array<[number, number]>> {
 	const o = windowOptions(options);
 	const n = words.length;
 	if (!n) return [];
@@ -194,12 +219,21 @@ export function windowRanges(
 			stack.push([best, y], [x, best]); // left half first
 		}
 	}
-	if (!o.pack) return split;
-	const packed: Array<[number, number]> = [];
+	if (!o.pack) return split.map((r) => [r]);
+	const packed: Array<Array<[number, number]>> = [];
 	for (const r of split) {
 		const cur = packed[packed.length - 1];
-		if (cur && cur[1] === r[0] && e(r[1] - 1) - s(cur[0]) <= maxF && r[1] - cur[0] <= maxW) cur[1] = r[1];
-		else packed.push([r[0], r[1]]);
+		const a0 = cur?.[0]?.[0] ?? 0;
+		const b0 = cur?.[cur.length - 1]?.[1] ?? -1;
+		if (
+			cur &&
+			b0 === r[0] &&
+			e(r[1] - 1) - s(a0) <= maxF &&
+			r[1] - a0 <= maxW &&
+			cur.length <= SCORE_REQUEST_LIMITS.muteRanges
+		)
+			cur.push([r[0], r[1]]);
+		else packed.push([[r[0], r[1]]]);
 	}
 	return packed;
 }
@@ -244,7 +278,9 @@ export function buildScoreWindows(
 	candidates: readonly FixCandidate[],
 	options?: Partial<ScoreWindowOptions>,
 ): { windows: ScoreWindow[]; unplaced: UnplacedCandidate[] } {
-	const ranges = windowRanges(words, options);
+	const o = windowOptions(options);
+	const groups = windowGroups(words, options);
+	const ranges = groups.map((g) => [g[0]![0], g[g.length - 1]![1]] as const);
 	const winOf = new Int32Array(words.length).fill(-1);
 	ranges.forEach(([a, b], k) => {
 		winOf.fill(k, a, b);
@@ -291,6 +327,16 @@ export function buildScoreWindows(
 			for (const c of list) unplaced.push({ candidateId: c.id, reason: 'tooLong' });
 			continue;
 		}
+		// the gaps between the stretches' padded ranges are heard as silence
+		const mute: MutedRange[] = [];
+		const parts = groups[k]!;
+		if (o.muteGaps && parts.length > 1) {
+			const padded = parts.map(([x, y]) => windowBounds(words, x, y, options));
+			for (let i = 1; i < padded.length; i++) {
+				const m = { start: Math.max(start, padded[i - 1]!.end), end: Math.min(end, padded[i]!.start) };
+				if (m.end > m.start) mute.push(m);
+			}
+		}
 		for (let p = 0; p < list.length; p += perWindow) {
 			const readings: ScoreReading[] = [{ id: ASR_READING_ID, words: base }];
 			const regions: ScoreRegion[] = [];
@@ -309,7 +355,16 @@ export function buildScoreWindows(
 				});
 			});
 			const id = p === 0 ? `w${a}` : `w${a}.${p / perWindow + 1}`;
-			windows.push({ id, start, end, readings, fromWord: a, toWord: b, regions });
+			windows.push({
+				id,
+				start,
+				end,
+				readings,
+				fromWord: a,
+				toWord: b,
+				regions,
+				mute: mute.map((m) => ({ ...m })),
+			});
 		}
 	}
 	return { windows, unplaced };
@@ -322,5 +377,6 @@ export function scoreRequestWindows(windows: readonly ScoreWindow[]): ScoreReque
 		start: w.start,
 		end: w.end,
 		readings: w.readings.map((r) => ({ id: r.id, words: [...r.words] })),
+		...(w.mute?.length ? { mute: w.mute.map((m) => ({ start: m.start, end: m.end })) } : {}),
 	}));
 }

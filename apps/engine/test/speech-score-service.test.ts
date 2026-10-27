@@ -239,6 +239,24 @@ describe('SpeechService.score (spec 17 SC-092)', () => {
 		expect(logged()[0]!.spec.device).toEqual({ encoder: 'cpu', decoder: 'cpu', calibrate: null });
 	});
 
+	it('passes muted gaps to the worker in samples, rounded inwards; windows without them carry none (SC-030)', async () => {
+		writeFileSync(specLog, '');
+		const r = req('w1');
+		// 2.0 s + 1 flick … 4.5 s − 1 flick: the first whole sample after the start, the last whole one before the end
+		r.windows[0]!.mute = [
+			{ start: sec(2) + 1, end: sec(4.5) - 1 },
+			{ start: sec(5), end: sec(5) + 10 },
+		];
+		await speech.score(r, new AbortController().signal);
+		const spec = logged()[0]!.spec as unknown as { windows: Array<{ id: string; mute?: unknown }> };
+		// the second range is shorter than a sample: dropped
+		expect(spec.windows[0]!.mute).toEqual([{ start: 32_001, end: 71_999 }]);
+		expect('mute' in spec.windows[1]!).toBe(false);
+		const outside = req('w1');
+		outside.windows[0]!.mute = [{ start: sec(1), end: sec(2) }];
+		expect((await failure(speech.score(outside, new AbortController().signal))).code).toBe('INVALID_SPEC');
+	});
+
 	it('validates the request and the media: INVALID_SPEC, ASSET_NOT_FOUND, NO_AUDIO, SPEECH_MODEL_UNKNOWN', async () => {
 		const signal = new AbortController().signal;
 		const bad = await failure(speech.score({ ...req('w1'), windows: [] }, signal));

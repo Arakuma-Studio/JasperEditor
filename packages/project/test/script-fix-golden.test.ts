@@ -479,18 +479,23 @@ describe('windows, scores, edits (SC-030 … SC-042)', () => {
 			'hoy probamos el motor de pixelforch con un nivel nuevo | ahora vamos guardar el proyecto en la carpeta',
 		);
 		expect(r.candidates.map((c) => c.kind)).toEqual(['sub', 'del']);
-		// the 1.5 s pause splits the stretches: one window each by default (no packing)
-		const unpacked = buildScoreWindows(r.words, r.candidates);
+		// the 1.5 s pause splits the stretches; unpacked (an option) they are one window each
+		const unpacked = buildScoreWindows(r.words, r.candidates, { pack: false });
 		expect(unpacked.unplaced).toEqual([]);
-		expect(unpacked.windows.map((w) => [w.fromWord, w.toWord])).toEqual([
-			[0, 10],
-			[10, 18],
+		expect(unpacked.windows.map((w) => [w.fromWord, w.toWord, w.mute])).toEqual([
+			[0, 10, []],
+			[10, 18, []],
 		]);
-		// with packing on, both fit one window of ≤ 28 s
-		const { windows, unplaced } = buildScoreWindows(r.words, r.candidates, { pack: true });
+		// by default both fit one packed window of ≤ 28 s whose gap between the padded stretches is muted
+		const { windows, unplaced } = buildScoreWindows(r.words, r.candidates);
 		expect(unplaced).toEqual([]);
 		expect(windows).toHaveLength(1);
 		const w = windows[0]!;
+		expect(w.mute).toEqual([{ start: unpacked.windows[0]!.end, end: unpacked.windows[1]!.start }]);
+		expect(w.mute[0]!.start).toBe(r.words[9]!.end + Math.round(0.35 * F));
+		expect(w.mute[0]!.end).toBe(r.words[10]!.start - Math.round(0.25 * F));
+		expect(scoreRequestWindows(windows)[0]!.mute).toEqual(w.mute);
+		expect(buildScoreWindows(r.words, r.candidates, { muteGaps: false }).windows[0]!.mute).toEqual([]);
 		expect(w.readings.map((x) => x.words.join(' '))).toEqual([
 			'hoy probamos el motor de pixelforch con un nivel nuevo ahora vamos guardar el proyecto en la carpeta',
 			'hoy probamos el motor de Pixelforge con un nivel nuevo ahora vamos guardar el proyecto en la carpeta',
@@ -498,7 +503,19 @@ describe('windows, scores, edits (SC-030 … SC-042)', () => {
 		]);
 		expect(w.start).toBe(r.words[0]!.start - Math.round(0.25 * F));
 		expect(w.end).toBe(r.words[r.words.length - 1]!.end + Math.round(0.35 * F));
-		expect(Object.keys(scoreRequestWindows(windows)[0]!).sort()).toEqual(['end', 'id', 'readings', 'start']);
+		expect(Object.keys(scoreRequestWindows(windows)[0]!).sort()).toEqual([
+			'end',
+			'id',
+			'mute',
+			'readings',
+			'start',
+		]);
+		expect(Object.keys(scoreRequestWindows(unpacked.windows)[0]!).sort()).toEqual([
+			'end',
+			'id',
+			'readings',
+			'start',
+		]);
 		// fake SC-092 result: per-word tokens 1 (pixelforch 3, Pixelforge 2), LLs chosen for the test
 		const results: ScoreWindowResult[] = [
 			{
