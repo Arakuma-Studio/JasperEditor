@@ -158,7 +158,7 @@ function editsProblem(edits: readonly ReplaceWordsEdit[]): string | null {
 		if (!isInt(e.start) || !isInt(e.end) || e.start < 0 || e.end < e.start)
 			return `Edit ${i}: start and end are non-negative integer flicks with start ≤ end`;
 		if (!Array.isArray(e.expect) || !Array.isArray(e.words)) return `Edit ${i}: expect and words are lists`;
-		if (e.expect.some((x) => typeof x !== 'string')) return `Edit ${i}: expect lists the old words' texts`;
+		if ((e.expect as readonly unknown[]).some((x) => typeof x !== "string")) return `Edit ${i}: expect lists the old words' texts`;
 		if (!e.expect.length && !e.words.length) return `Edit ${i} replaces nothing with nothing`;
 		if (e.expect.length > REPLACE_WORDS_LIMITS.maxWordsPerEdit || e.words.length > REPLACE_WORDS_LIMITS.maxWordsPerEdit)
 			return `Edit ${i}: at most ${REPLACE_WORDS_LIMITS.maxWordsPerEdit} old and new words`;
