@@ -129,6 +129,9 @@ describe('manual fixes and their offers (SC-071 / SC-085)', () => {
 		});
 		act(() => {
 			fireEvent.pointerDown(word(5), { button: 0 });
+			fireEvent.pointerUp(word(5));
+		});
+		act(() => {
 			fireEvent.pointerDown(word(6), { button: 0, shiftKey: true });
 		});
 		act(() => {
