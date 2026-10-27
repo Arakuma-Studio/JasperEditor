@@ -7,7 +7,7 @@ import { BUILTIN_STYLE_RECIPES, builtinStyleRecipe, projectStyleRecipes } from '
 import { proposalsFor } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, createEvent, fireEvent, render, screen, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FakeEngine } from '../../../packages/session/test/fake-proposals-engine.ts';
 import { ApplyStyleDialog } from '../src/automation/ApplyStyleDialog.tsx';
 import { StyleCheckDialog } from '../src/automation/StyleCheckDialog.tsx';
@@ -17,12 +17,14 @@ import { automationCommands } from '../src/commands/automation.ts';
 import type { CommandCtx } from '../src/commands/types.ts';
 import { makeSession } from './timeline-helpers.ts';
 
+beforeEach(() => vi.useFakeTimers());
 afterEach(() => {
 	cleanup();
 	connectStyleLibrary(null);
+	vi.useRealTimers();
 });
 
-const settle = (ms = 400) => act(async () => new Promise((r) => setTimeout(r, ms)));
+const settle = (ms = 400) => act(async () => vi.advanceTimersByTimeAsync(ms));
 
 function dryResult(seqId: string, o: Partial<ApplyStyleResult> = {}): ApplyStyleResult {
 	return {
@@ -221,7 +223,7 @@ function setupApply(initial?: (seqId: string) => ApplyStyleResult) {
 describe('Apply Style…', () => {
 	it('starts from the built-in for the aspect, shows every step of the dry run with the reasons, sends switched steps', async () => {
 		const t = setupApply();
-		const dialog = await screen.findByTestId('apply-style-dialog');
+		const dialog = screen.getByTestId('apply-style-dialog');
 		await settle();
 		expect(t.calls[0]).toEqual({
 			sequenceId: t.seqId,
@@ -251,18 +253,13 @@ describe('Apply Style…', () => {
 
 	it('Propose runs the job, opens review on the proposal and applies nothing', async () => {
 		const t = setupApply();
-		const dialog = await screen.findByTestId('apply-style-dialog');
+		const dialog = screen.getByTestId('apply-style-dialog');
 		await settle();
 		const rev = t.session.revision;
-		vi.useFakeTimers();
-		try {
-			await act(async () => {
-				fireEvent.click(within(dialog).getByRole('button', { name: 'Propose' }));
-			});
-			await act(async () => vi.runAllTimersAsync());
-		} finally {
-			vi.useRealTimers();
-		}
+		await act(async () => {
+			fireEvent.click(within(dialog).getByRole('button', { name: 'Propose' }));
+		});
+		await act(async () => vi.runAllTimersAsync());
 		expect(t.calls.some((c) => c.mode === 'propose')).toBe(true);
 		expect(t.reviewed).toEqual([1]);
 		expect(t.session.revision).toBe(rev);
@@ -287,7 +284,7 @@ describe('Apply Style…', () => {
 				warnings: [],
 			}),
 		);
-		const dialog = await screen.findByTestId('apply-style-dialog');
+		const dialog = screen.getByTestId('apply-style-dialog');
 		await settle();
 		expect(within(dialog).getByTestId('apply-style-cost').textContent).toBe(
 			'Nothing to propose with this recipe here',
@@ -365,7 +362,7 @@ describe('Style Check', () => {
 				<StyleCheckDialog session={session} engine={engine as never} sequenceId={seqId} close={() => {}} />
 			</SessionProvider>,
 		);
-		const dialog = await screen.findByTestId('style-check-dialog');
+		const dialog = screen.getByTestId('style-check-dialog');
 		await settle(50);
 		expect(calls[0]).toEqual({ sequenceId: seqId, recipeId: 'builtin:fast-long-form' });
 		expect(within(dialog).getByTestId('style-check-kitCoverage').getAttribute('data-status')).toBe('off');
@@ -392,7 +389,7 @@ describe('Style Recipes…', () => {
 				<StyleRecipesDialog session={session} sequenceId={seqId} close={() => {}} />
 			</SessionProvider>,
 		);
-		const dialog = await screen.findByTestId('style-recipes-dialog');
+		const dialog = screen.getByTestId('style-recipes-dialog');
 		await settle(50);
 		expect(within(dialog).getByTestId('style-recipes-repairs').textContent).toContain('added back');
 		const row = within(dialog).getByTestId('style-recipe-builtin:clean');
@@ -421,7 +418,7 @@ describe('Style Recipes…', () => {
 				<StyleRecipesDialog session={session} sequenceId={seqId} close={(x) => closed.push(x)} />
 			</SessionProvider>,
 		);
-		const dialog = await screen.findByTestId('style-recipes-dialog');
+		const dialog = screen.getByTestId('style-recipes-dialog');
 		await settle(50);
 		const row = within(dialog).getByTestId('style-recipe-rcp_0000000000000011');
 		await act(async () => {
@@ -456,7 +453,7 @@ describe('Style Recipes…', () => {
 				<StyleRecipesDialog session={session} sequenceId={seqId} close={() => {}} />
 			</SessionProvider>,
 		);
-		const dialog = await screen.findByTestId('style-recipes-dialog');
+		const dialog = screen.getByTestId('style-recipes-dialog');
 		await settle(50);
 		await act(async () => {
 			fireEvent.click(within(dialog).getByTestId('style-recipes-save-current'));

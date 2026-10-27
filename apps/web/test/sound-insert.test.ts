@@ -7,6 +7,7 @@ import {
 	defaultRegistries,
 	FLICKS_PER_SECOND,
 	flicksPerFrame,
+	readEssentialSound,
 	type Sequence,
 } from '@jasper/project';
 import { EditorSession } from '@jasper/session';
@@ -53,8 +54,7 @@ describe('insertLibrarySound', () => {
 		expect((media as { library?: { soundId: string } }).library?.soundId).toBe(s.entries[0]!.id);
 		const bin = Object.values(doc.items).find((i) => i.kind === 'bin' && i.name === 'Sound Effects');
 		expect(bin && 'children' in bin && bin.children.length).toBe(1);
-		expect((clip as { essentialSound?: { audioType?: string } }).essentialSound ?? clip).toBeTruthy();
-		expect(JSON.stringify(clip)).toContain('"sfx"');
+		expect(readEssentialSound((clip as { essential?: unknown }).essential)?.type).toBe('sfx');
 		// committed through soundDesign.place (spec 12 §2.9): the clip records what placed it
 		expect((clip as { sfx?: unknown }).sfx).toMatchObject({
 			cueId: null,

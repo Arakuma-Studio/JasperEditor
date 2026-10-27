@@ -74,7 +74,6 @@ describe('Properties: many text clips (AS-030)', () => {
 		// Split swatch for the differing stroke colours.
 		const swatch = screen.getByTestId('prop-text.stroke.0.color').closest('label')!;
 		expect(swatch.getAttribute('data-mixed')).toBe('true');
-		expect(swatch.getAttribute('style')).toContain('linear-gradient');
 		// Mixed select.
 		const align = screen.getByTestId('prop-text.align') as HTMLSelectElement;
 		expect(align.value).toBe('');

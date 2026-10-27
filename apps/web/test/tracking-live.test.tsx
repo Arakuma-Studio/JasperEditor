@@ -125,11 +125,10 @@ describe('timeline strip during a track job', () => {
 		expect(live.confidence[12]).toBe(0);
 		expect(session.getState().document).toBe(doc);
 		expect(labels(session)).toEqual(historyBefore);
-		vi.useRealTimers();
 		await act(async () => {
 			commitTrackResult(session, id, { step: F30, merge: 'replace' }, planarResult(0, 60, REF, id));
 			patchRunning(id, null);
-			await new Promise((r) => setTimeout(r, 200));
+			await vi.advanceTimersByTimeAsync(100);
 		});
 		const after = document.querySelector(`[data-tracker-strip="${id}"]`) as HTMLElement;
 		expect(after.hasAttribute('data-live')).toBe(false);
