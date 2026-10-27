@@ -167,7 +167,8 @@ async function score(
 		opts,
 		async (model) => {
 			const results: Array<Array<{ id: string } & ScoredReading>> = new Array(spec.windows.length);
-			let cached: { key: string; enc: Awaited<ReturnType<WhisperModel['encodeRange']>> } | null = null;
+			type Encoded = { key: string; enc: Awaited<ReturnType<WhisperModel['encodeRange']>> };
+			let cached = null as Encoded | null;
 			let encoderPasses = 0;
 			let windowSec = 0;
 			let done = 0;
