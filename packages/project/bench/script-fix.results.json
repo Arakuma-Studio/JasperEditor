@@ -1,0 +1,42 @@
+{
+  "machine": {
+    "cpu": "AMD EPYC-Rome Processor",
+    "cores": 16,
+    "memoryBytes": 32859287552,
+    "node": "v24.22.1"
+  },
+  "loadAtStart": [7.52, 7.15, 4.87],
+  "loadAtEnd": [7.68, 7.19, 4.94],
+  "input": {
+    "transcriptWords": 20000,
+    "scriptTokens": 6004,
+    "audioMinutes": 133.5
+  },
+  "alignment": {
+    "alignedShare": 0.856,
+    "offScriptShare": 0.091,
+    "retakeJumps": 214,
+    "mergeCells": 740887,
+    "storedCells": 1257899,
+    "cappedRows": 0,
+    "candidates": 791,
+    "windows": 307
+  },
+  "targetMs": 5000,
+  "medianMs": {
+    "parse": 43,
+    "align": 2362,
+    "candidates": 37,
+    "windows": 9,
+    "total": 2455
+  },
+  "samplesTotalMs": [2201, 2472, 2523, 2455, 2047],
+  "degenerate": {
+    "case": "20,000 × \"la\" against 6,000 × \"la\"",
+    "ms": 7794,
+    "cappedRows": 20000,
+    "storedCells": 20480000
+  },
+  "targetExtraMemoryBytes": 314572800,
+  "extraPeakRssBytes": 115757056
+}

@@ -9,7 +9,8 @@
     "./audio": "./src/audio-light.ts",
     "./sound": "./src/sound/index.ts",
     "./sound/cues": "./src/sound/cues/index.ts",
-    "./proposals": "./src/proposals/index.ts"
+    "./proposals": "./src/proposals/index.ts",
+    "./script-fix": "./src/script-fix/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
