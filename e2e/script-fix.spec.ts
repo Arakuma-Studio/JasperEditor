@@ -164,7 +164,7 @@ test('Script… → Fix Transcript → Review → Apply fixes the transcript and
 	const subs0 = await subtitleClips();
 	// "black books" (the fixture also says "a black stock", which is right)
 	const styled = subs0.find((c) => /\bblack\s+books\b/i.test(c.content.text))!;
-	expect(styled, 'a subtitle shows the corrupted word').toBeTruthy();
+	expect(styled, `a subtitle shows the corrupted word: ${JSON.stringify(subs0.map((c) => c.content.text).slice(0, 4))}`).toBeTruthy();
 
 	// Text ▸ Transcript ▸ Script…: paste the true text, attach
 	await focusTimeline(page);
