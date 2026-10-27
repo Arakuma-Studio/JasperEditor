@@ -108,7 +108,6 @@ leaving a Linear key was linear whatever the next key stored, so an Ease In afte
   - `segmentProgress` / `shapeProgress` wrap it.
   - Spatial arc-length paths, roving, hold-only values and clamping are unchanged; the progress feeds them as before.
 - `outgoingEase` / `incomingEase` return the per-side ease when the segment is read per side, else the legacy one.
-- `effectiveInInterpolation` gives the type that actually shapes the arriving segment.
 - `reversedKeyTiming` mirrors each segment's actual shape. The mirrored keys are legacy Bezier keys, so callers drop
   `inInterpolation`.
 

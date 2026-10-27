@@ -432,13 +432,6 @@ export function normalizePath(p: BezPath): BezPath {
 	return out;
 }
 
-/** On-curve vertex count (closing duplicates excluded). */
-export function vertexCount(p: BezPath): number {
-	let n = 0;
-	for (const sp of normalizePath(p)) n += sp.segs.length + (sp.closed ? 0 : 1);
-	return n;
-}
-
 /** Flattened polylines of a path (closed ones repeat their first point at the end). */
 export function flattenPath(p: BezPath, tol: number): { pts: [number, number][]; closed: boolean }[] {
 	const out: { pts: [number, number][]; closed: boolean }[] = [];

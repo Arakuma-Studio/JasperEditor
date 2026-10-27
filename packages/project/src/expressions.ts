@@ -282,17 +282,6 @@ export function expressionOf(loc: Pick<AnimLocation, 'target'>): Expression | un
 	return (loc.target as { expression?: Expression }).expression;
 }
 
-/** Every stored expression of a document (enabled or not). */
-export function* documentExpressions(
-	doc: Pick<ProjectDocument, 'sequences'>,
-): Generator<AnimLocation & { expression: Expression }> {
-	for (const [seqId, seq] of Object.entries(doc.sequences))
-		for (const loc of sequenceAnimatables(seqId, seq)) {
-			const expression = expressionOf(loc);
-			if (expression) yield { ...loc, expression };
-		}
-}
-
 /** Whether a set of locations stores any expression / an active (enabled, non-empty) one. */
 type ExpressionFlags = { any: boolean; active: boolean };
 const NO_EXPRESSIONS: ExpressionFlags = { any: false, active: false };

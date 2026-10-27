@@ -1321,8 +1321,3 @@ export async function refreshStyleItems(
 	}
 	return { ok: true, items: out, dropped };
 }
-
-/** The stage names of a style report (for the dialog and MCP). */
-export function styleStageNames(): Record<StyleStage, string> {
-	return { ...STYLE_STAGE_NAMES };
-}

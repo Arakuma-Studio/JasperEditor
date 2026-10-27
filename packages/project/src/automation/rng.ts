@@ -4,9 +4,6 @@
 // changing any other item. Pure.
 import { hash32 } from '../sound/variant.ts';
 
-/** Seeds are unsigned 32-bit integers. */
-export const MAX_AUTOMATION_SEED = 0xffff_ffff;
-
 /** The seed of one item: a hash of the pass seed, the pass and the item's stable key (cut frame, clip id). */
 export function itemSeed(passSeed: number, pass: string, key: string | number): number {
 	const s = Number.isFinite(passSeed) ? Math.trunc(passSeed) >>> 0 : 0;

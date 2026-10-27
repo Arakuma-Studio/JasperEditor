@@ -11,7 +11,6 @@
 // own seed and offers other pictures as alternatives. Pure.
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Sequence, Track } from '../schema/sequence.ts';
-import { flicksPerFrame } from '../time.ts';
 import { type FolderAsset, type PassAsset, resolveAssets } from './assets.ts';
 import {
 	AutomationInputError,
@@ -89,9 +88,6 @@ const ASSET_HINTS: Record<string, readonly string[]> = {
 		'sorpres',
 	],
 };
-
-/** Why a trigger got no reaction. */
-export const REACTION_SKIP_CODES = ['overlap', 'rate', 'edge', 'subtitles', 'range'] as const;
 
 export type ReactionTrigger = {
 	kind: 'marker' | 'cta' | 'exclamation' | 'hidden';
@@ -655,9 +651,4 @@ export function replanReactions(
 			},
 		};
 	});
-}
-
-/** Flicks of `frames` sequence frames (a still's source range for a reaction of that length). */
-export function reactionSourceFlicks(seq: Sequence, frames: number): number {
-	return frames * flicksPerFrame(frameGeometry(seq).fps);
 }

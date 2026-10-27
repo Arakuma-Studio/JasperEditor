@@ -139,14 +139,6 @@ export function skew4(skewDeg: number, axisDeg: number): Mat4 {
 	return mul4(mul4(rotateZ4(axisDeg), [1, k, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]), rotateZ4(-axisDeg));
 }
 
-/** Applies a row-major 4×4 to a 2D point (z = 0), with the perspective divide when w ≠ 1. */
-export function apply4(m: Mat4, p: [number, number]): [number, number] {
-	const x = m[0]! * p[0] + m[1]! * p[1] + m[3]!;
-	const y = m[4]! * p[0] + m[5]! * p[1] + m[7]!;
-	const w = m[12]! * p[0] + m[13]! * p[1] + m[15]!;
-	return w !== 1 && w !== 0 ? [x / w, y / w] : [x, y];
-}
-
 /**
  * CSS `matrix3d(…)` of an AE-space matrix: CSS has Z toward the viewer, so the matrix is conjugated by
  * `diag(1, 1, −1, 1)`; CSS lists the matrix column-major.

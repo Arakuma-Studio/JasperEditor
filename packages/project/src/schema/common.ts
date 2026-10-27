@@ -71,8 +71,6 @@ export type Interpolation = DeepStrip<z.infer<typeof InterpolationSchema>>;
 export const IN_INTERPOLATIONS = ['linear', 'bezier', 'auto-bezier', 'continuous-bezier'] as const;
 export const InInterpolationSchema = z.enum(IN_INTERPOLATIONS);
 export type InInterpolation = (typeof IN_INTERPOLATIONS)[number];
-/** Interpolations that shape both sides of a key (a key whose sides differ cannot use them). */
-export const BOTH_SIDED_INTERPOLATIONS = ['auto-bezier', 'continuous-bezier'] as const;
 /** The side(s) of a key a temporal interpolation edit applies to. */
 export const INTERPOLATION_SIDES = ['both', 'in', 'out'] as const;
 export const InterpolationSideSchema = z.enum(INTERPOLATION_SIDES);

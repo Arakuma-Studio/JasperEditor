@@ -11,7 +11,6 @@ import { ID_PREFIXES, idPrefixOf, isValidId } from '../ids.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import { type Clip, type TextStyle, TextStyleSchema } from '../schema/sequence.ts';
 import {
-	applyStylePatch,
 	diffStyle,
 	MAX_TEXT_STYLE_NAME,
 	MAX_TEXT_STYLES,
@@ -80,23 +79,10 @@ export function linkedTextStyle(
 	return typeof id === 'string' ? textStyleById(doc, id) : null;
 }
 
-/** A clip's stored overrides when readable (an unreadable value reads as none). */
-export function styleOverridesOf(clip: Clip): TextStyleOverrides {
-	const v = (clip as StyleLinkFields).styleOverrides;
-	if (v === undefined) return {};
-	const r = TextStyleOverridesSchema.safeParse(v);
-	return r.success ? r.data : {};
-}
-
 /** The fields a linked clip deviates in: its effective style compared with its style (exact, from the clip). */
 export function clipDeviations(style: ProjectTextStyle, clip: Clip): TextStyleOverrides {
 	if (clip.kind !== 'text') return {};
 	return diffStyle(style.style, clip.content.style as TextStyle);
-}
-
-/** The effective style of a clip linked to `style` with `overrides`. */
-export function linkedEffectiveStyle(style: ProjectTextStyle, overrides: TextStyleOverrides): TextStyle {
-	return applyStylePatch(style.style, overrides);
 }
 
 /** Style id → ids of the text clips linked to it (every sequence; dangling links skipped). */

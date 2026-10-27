@@ -177,7 +177,7 @@ export function autoSlope<T>(
 /**
  * keyframe-sides: the incoming temporal type of key `k` — its `inInterpolation`, else (documents written before) its
  * `interpolation`. Note that without `inInterpolation` a segment leaving a Linear key is linear whatever this says
- * (`segmentShape`); `effectiveInInterpolation` gives the type that actually shapes the arriving segment.
+ * (`segmentShape`).
  */
 export function inInterpolationOf<T>(k: Keyframe<T>): Interpolation {
 	return k.inInterpolation ?? k.interpolation;
@@ -293,20 +293,6 @@ export function shapeProgress(shape: SegmentShape, u: number): number {
 /** Progress of the segment leaving key i at normalised time u (`segmentShape` + `shapeProgress`). */
 export function segmentProgress<T>(kfs: readonly Keyframe<T>[], i: number, u: number): number {
 	return shapeProgress(segmentShape(kfs, i), u);
-}
-
-/**
- * The incoming type that actually shapes the segment arriving at key `i` — what the UI shows on the key's left
- * half: `hold` after a Hold key (After Effects draws it overridden), `linear` after a Linear key when the key is read
- * the legacy way, else `inInterpolationOf`. Null for the first key.
- */
-export function effectiveInInterpolation<T>(kfs: readonly Keyframe<T>[], i: number): Interpolation | null {
-	const prev = kfs[i - 1];
-	if (!prev) return null;
-	if (prev.interpolation === 'hold') return 'hold';
-	const k = kfs[i]!;
-	if (k.inInterpolation === undefined && prev.interpolation === 'linear') return 'linear';
-	return inInterpolationOf(k);
 }
 
 /**
@@ -842,11 +828,6 @@ export function isAnimated(
 	anim: { keyframes: readonly unknown[]; expression?: { text: string; enabled: boolean } } | undefined | null,
 ): boolean {
 	return !!anim && (anim.keyframes.length > 0 || hasActiveExpression(anim));
-}
-
-/** True when the property has at least one keyframe (the stopwatch state; expressions ignored). */
-export function hasKeyframes(anim: { keyframes: readonly unknown[] } | undefined | null): boolean {
-	return !!anim && anim.keyframes.length > 0;
 }
 
 export const EASE_PRESETS = {

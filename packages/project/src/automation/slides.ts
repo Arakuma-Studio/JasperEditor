@@ -7,7 +7,7 @@
 // one-sided transition (from / to transparent over the clip's own frames). Each edge draws whether it slides, its
 // direction and easing from its own seed. GPU transitions export through the span bake (hybrid) or the Remotion
 // path. Pure.
-import { clipsOnTrack, trackLabel } from '../derive/index.ts';
+import { clipsOnTrack } from '../derive/index.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Clip, Sequence, Track } from '../schema/sequence.ts';
 import {
@@ -289,6 +289,3 @@ export function replanSlides(
 		};
 	});
 }
-
-/** Label of an overlay's track (why-lines). */
-export const slideTrackLabel = (seq: Sequence, trackId: string) => trackLabel(seq, trackId) ?? trackId;
