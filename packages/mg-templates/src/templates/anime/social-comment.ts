@@ -445,7 +445,6 @@ export const SOCIAL_DEFAULT_AVATAR_IMAGES: Readonly<Partial<Record<SocialPlatfor
  */
 export function socialCommentRequiredAssets(params: SocialCommentParams): TemplateRequiredAssets {
 	const p = socialCommentParamsSchema.safeParse(params).data ?? DEFAULTS;
-	// Asset requirements apply only to variants in this build's ready-card catalogue.
 	if (!SOCIAL_COMMENT_READY_VARIANTS.includes(p.variant)) return { fonts: [] };
 	const font = SOCIAL_VARIANT_FONTS[p.variant];
 	const caps = VARIANT_CAPABILITIES[p.variant];

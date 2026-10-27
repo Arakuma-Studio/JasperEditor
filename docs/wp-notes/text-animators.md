@@ -156,7 +156,7 @@ have been removed during cleanup; the counts are not current suite totals.
 - `packages/project/test/text-animators.test.ts` — 19: commands, companions, 3D companions, selectors (static fields,
   clamping, reorder), keyframes via generic commands (move, interpolation, remove), duplicate with fresh ids, axes,
   registry/JSON schema, every preset applied (Out ends on the last frame, In starts at frame 0, loops cover the clip),
-  reversed clips, conversion of every shipped In/Out preset, Path Options on a mask (keyframed margins, mask removal
+  conversion of every shipped In/Out preset, Path Options on a mask (keyframed margins, mask removal
   → None), More Options, Source Text keys (validation, snapshot, fonts of keyed contents, removal), invariants + repair,
   typewriter evaluation, typography param writes, `font.add`.
 - `packages/compositions/test/text-animators.e2e.test.ts` (`REMOTION_E2E=1`, headless Chrome) — 10: typewriter

@@ -105,6 +105,18 @@ Review also identified incoming coverage gaps in cleanup-list scrolling, absolut
 voice-analysis wiring and disjunctive source/licence facets. Focused independent witnesses are restored
 before the merged gate; their fault-injection evidence is recorded with the integrated results.
 
+| Retained or restored contract | Why it remains necessary | Verification |
+| --- | --- | --- |
+| Cleanup viewport coverage | Initial-row UI checks and another review virtualizer do not protect this list's scrolling implementation. | Restored 200-case independent overlap property; empty-range mutation failed with seed `20261027`, counterexample `[0, 1]`; all five focused tests passed after restoration. |
+| Absolute framebuffer dimensions | The former constant-red lookup painted the same result at the wrong size. | Extra lookup texels now paint blue; independent final pixels on both axes reject separately ignored width and height. Eight focused GL checks passed with the original source restored. |
+| Voice data reaches cleanup planning | Job bookkeeping and response/file consistency do not establish that planning consumed the computed voice analysis. | Requested media must have `voice: true` and level edges. Dropping the lookup failed; the affected engine suites passed eight tests after restoration. |
+| Disjunctive source/licence facets | Unfiltered counts and type/material cases do not check these dimensions under active filters. | Four authored source/licence combinations have literal result/facet expectations. Both own-filter mutations failed; source restored before the positive engine run. |
+| Float16 NaN and overflow | The rewritten session-boundary case had dropped these vectors. | Literal overflow words and semantic NaN exponent/payload checks extend the existing test; NaN-to-infinity and overflow-to-finite mutations fail. The complete 18-case session suite passes after restoration. |
+
+No production mutation is retained. The suspected reverse-text-preset coverage gap was ruled out:
+the deleted case requested unsupported text speed, received a clamp warning and never reversed the clip.
+Its weak success-only test remains removed; the inaccurate documentation claim was deleted.
+
 ## Verification
 
 Before remote integration, the settled full run passed 940 files / 9,363 tests, with 52 files / 301 tests

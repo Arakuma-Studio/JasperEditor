@@ -272,9 +272,20 @@ describe('sessions on a fake binding (SG-003, SG-004, fp16)', () => {
 	});
 
 	it('converts float32 feeds and float16 outputs at the ONNX session boundary', async () => {
-		// IEEE 754 binary16 words: normal values, the smallest subnormal, signed infinities and ties-to-even.
-		const values = [1, -2, 2 ** -24, Number.POSITIVE_INFINITY, 1 + 2 ** -11, 1 + 3 * 2 ** -11, 2 ** -25];
-		const half = [0x3c00, 0xc000, 0x0001, 0x7c00, 0x3c00, 0x3c02, 0x0000];
+		// IEEE 754 binary16: normal/subnormal values, infinities, ties-to-even, overflow and NaN.
+		const values = [
+			1,
+			-2,
+			2 ** -24,
+			Number.POSITIVE_INFINITY,
+			1 + 2 ** -11,
+			1 + 3 * 2 ** -11,
+			2 ** -25,
+			65536,
+			-65536,
+			Number.NaN,
+		];
+		const half = [0x3c00, 0xc000, 0x0001, 0x7c00, 0x3c00, 0x3c02, 0x0000, 0x7c00, 0xfc00];
 		const binding = {
 			Tensor: FakeTensor,
 			InferenceSession: {
@@ -283,9 +294,16 @@ describe('sessions on a fake binding (SG-003, SG-004, fp16)', () => {
 						inputMetadata: [{ name: 'input', type: 'float16' }],
 						async run(feeds: Record<string, FakeTensor>) {
 							expect(feeds.input!.type).toBe('float16');
-							expect(Array.from(feeds.input!.data)).toEqual(half);
+							const bits = Array.from(feeds.input!.data) as number[];
+							expect(bits.slice(0, -1)).toEqual(half);
+							expect(bits.at(-1)! & 0x7c00).toBe(0x7c00);
+							expect(bits.at(-1)! & 0x03ff).not.toBe(0);
 							return {
-								output: new FakeTensor('float16', Uint16Array.from([0x3c00, 0xc000, 0x0001, 0xfc00]), [4]),
+								output: new FakeTensor(
+									'float16',
+									Uint16Array.from([0x3c00, 0xc000, 0x0001, 0xfc00, 0x7e00]),
+									[5],
+								),
 							};
 						},
 						async release() {},
@@ -304,6 +322,7 @@ describe('sessions on a fake binding (SG-003, SG-004, fp16)', () => {
 				-2,
 				2 ** -24,
 				Number.NEGATIVE_INFINITY,
+				Number.NaN,
 			]);
 		} finally {
 			await session.release();
