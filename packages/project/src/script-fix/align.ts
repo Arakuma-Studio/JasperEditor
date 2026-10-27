@@ -14,7 +14,7 @@
 // sole approximation; rows where it bit are counted in the report. Deterministic: ties resolve like the spike (first
 // move in the order diagonal, skip 1…8, jump, OFF; lowest script index).
 import type { ParsedScript } from './script.ts';
-import { cachedKey, psim } from './phonetic.ts';
+import { cachedKey, psim, psimAtLeast } from './phonetic.ts';
 import {
 	exactMatch,
 	functionWords,
@@ -405,22 +405,37 @@ export function alignCore(
 	const mPs = new Grow((n) => new Float64Array(n));
 	const tKeys = tv.words.map((w) => cachedKey(w, lang));
 	const tIndex = keyIndex(tKeys);
+	const sCounts = new Int32Array(sv.words.length);
+	const tCounts = new Int32Array(tv.words.length);
+	const found: number[] = [];
 	function lookup(
 		s: string,
 		index: { postings: Map<string, number[]>; sizes: Int32Array },
 		spoken: readonly string[],
 		cache: Map<string, Array<[number, number]>>,
+		cnt: Int32Array,
 	): Array<[number, number]> {
 		let hit = cache.get(s);
 		if (hit) return hit;
 		const g = bigrams(cachedKey(s, lang));
-		const cnt = new Map<number, number>();
-		for (const x of g) for (const id of index.postings.get(x) ?? []) cnt.set(id, (cnt.get(id) ?? 0) + 1);
+		found.length = 0;
+		for (const x of g) {
+			const post = index.postings.get(x);
+			if (post)
+				for (let q = 0; q < post.length; q++) {
+					const id = post[q]!;
+					if (cnt[id] === 0) found.push(id);
+					cnt[id]!++;
+				}
+		}
 		const need = Math.max(1, Math.floor(0.5 * g.length));
+		found.sort((a, b) => a - b);
 		hit = [];
-		for (const [id, c] of [...cnt].sort((a, b) => a[0] - b[0])) {
+		for (const id of found) {
+			const c = cnt[id]!;
+			cnt[id] = 0;
 			if (c < need) continue;
-			const ps = psim(s, spoken[id]!, lang);
+			const ps = psimAtLeast(s, spoken[id]!, lang, opt.mergeMinPsim);
 			if (ps >= opt.mergeMinPsim) hit.push([id, ps]);
 		}
 		cache.set(s, hit);
@@ -447,7 +462,7 @@ export function alignCore(
 		for (let i = a - 1; i < T && !mergeOverflow; i++) {
 			const s = tSp.slice(i - a + 1, i + 1).join('');
 			if (s.length < 4) continue;
-			for (const [id, ps] of lookup(s, sIndex, sSpoken, sCache))
+			for (const [id, ps] of lookup(s, sIndex, sSpoken, sCache, sCounts))
 				for (const j of sv.positions[id]!) addMerge(i, a, 1, j, ps);
 		}
 	const tCache = new Map<string, Array<[number, number]>>();
@@ -455,7 +470,7 @@ export function alignCore(
 		for (let j = b - 1; j < S && !mergeOverflow; j++) {
 			const s = sSp.slice(j - b + 1, j + 1).join('');
 			if (s.length < 4) continue;
-			for (const [id, ps] of lookup(s, tIndex, tSpoken, tCache))
+			for (const [id, ps] of lookup(s, tIndex, tSpoken, tCache, tCounts))
 				for (const i of tv.positions[id]!) addMerge(i, 1, b, j, ps);
 		}
 	if (mergeOverflow) return { ok: false, mergeCells: mI.n };
@@ -529,6 +544,21 @@ export function alignCore(
 	const HOW_JUMP = 3;
 	const HOW_OFF = 4;
 	const vRow = new Float64Array(sv.words.length).fill(opt.subFloor);
+	let curRow = -1;
+	let curLandBase = 0;
+	let curLandCode = 0;
+	/** Adds script position j to the working row with its landing value. */
+	function touch(j: number): void {
+		if (wStamp[j] === curRow) return;
+		wStamp[j] = curRow;
+		wBest[j] = curLandBase;
+		wCode[j] = curLandCode;
+		wPst[j] = 0;
+		wI[j] = NEG;
+		wIb[j] = 0;
+		wMerge[j] = -1;
+		touched[nTouched++] = j;
+	}
 
 	for (let i = 0; i < T; i++) {
 		const t = tv.ids[i]!;
@@ -551,17 +581,9 @@ export function alignCore(
 			}
 		}
 		nTouched = 0;
-		const touch = (j: number) => {
-			if (wStamp[j] === i) return;
-			wStamp[j] = i;
-			wBest[j] = landBase;
-			wCode[j] = landCode;
-			wPst[j] = 0;
-			wI[j] = NEG;
-			wIb[j] = 0;
-			wMerge[j] = -1;
-			touched[nTouched++] = j;
-		};
+		curRow = i;
+		curLandBase = landBase;
+		curLandCode = landCode;
 		const prev = i > 0 ? slots[(i - 1) & 3]! : null;
 		if (prev)
 			for (let q = 0; q < prev.n; q++) {
@@ -609,14 +631,6 @@ export function alignCore(
 			else {
 				const slot = slots[i0 & 3]!;
 				base = NEG;
-				const consider = (v: number, h: number, k: number, s: number) => {
-					if (v > base) {
-						base = v;
-						how = h;
-						hk = k;
-						hs = s;
-					}
-				};
 				for (let k = 0; k <= K; k++) {
 					const jj = j0 - k;
 					if (jj < 0) break;
@@ -625,10 +639,24 @@ export function alignCore(
 					const h = slot.H[x]!;
 					const iv = slot.I[x]!;
 					const c = iv > h ? iv : h;
-					consider(k === 0 ? c : c - skipCost(jj + 1, j0), k === 0 ? HOW_CONT : HOW_SKIP, k, iv > h ? 1 : 0);
+					const v = k === 0 ? c : c - skipCost(jj + 1, j0);
+					if (v > base) {
+						base = v;
+						how = k === 0 ? HOW_CONT : HOW_SKIP;
+						hk = k;
+						hs = iv > h ? 1 : 0;
+					}
 				}
-				consider(rowBest[i0]! - opt.jump, HOW_JUMP, 0, 0);
-				consider(off[i0]! - opt.offEnter, HOW_OFF, 0, 0);
+				const vj = rowBest[i0]! - opt.jump;
+				if (vj > base) {
+					base = vj;
+					how = HOW_JUMP;
+				}
+				const vo = off[i0]! - opt.offEnter;
+				if (vo > base) {
+					base = vo;
+					how = HOW_OFF;
+				}
 			}
 			const v = base + mSc.arr[m]!;
 			if (v > wH[j]!) {

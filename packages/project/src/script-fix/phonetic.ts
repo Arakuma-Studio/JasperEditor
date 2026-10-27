@@ -161,3 +161,19 @@ export function psim(a: string, b: string, lang: ScriptFixLanguage): number {
 	const s = 1 - keyDistanceTenths(ka, kb, lang !== null) / (10 * len);
 	return s > 0 ? s : 0;
 }
+
+/** Cheapest insertion / deletion in the tables: a lower bound of the distance per letter of length difference. */
+const MIN_INDEL = Math.min(1, ...Object.values(PSIM_INDEL_COSTS));
+
+/**
+ * `psim(a, b)` when it can reach `min`, else 0 without computing the distance: a key length difference d costs at
+ * least d × the cheapest insertion, so psim ≤ 1 − d · MIN_INDEL / longest key (exact pruning, same result as psim).
+ */
+export function psimAtLeast(a: string, b: string, lang: ScriptFixLanguage, min: number): number {
+	if (a === b) return 1;
+	const ka = cachedKey(a, lang);
+	const kb = cachedKey(b, lang);
+	const len = Math.max(ka.length, kb.length);
+	if (len > 0 && 1 - (Math.abs(ka.length - kb.length) * MIN_INDEL) / len < min) return 0;
+	return psim(a, b, lang);
+}

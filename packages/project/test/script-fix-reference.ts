@@ -45,15 +45,19 @@ export function referenceAlign(
 			const gs = bigrams(cachedKey(b, lang));
 			const shared = gt.filter((x) => gs.includes(x)).length;
 			const dice = (2 * shared) / (gt.length + gs.length + 1e-9);
+			// sim_matrix order: prefiltered pairs, then identical words, then numbers (digits on either side, +3 even
+			// for identical digit tokens)
+			if (dice >= p.prefilterDice && a !== b && !numberEqual(a, b)) {
+				ps = psim(sp(a), sp(b), lang);
+				v = Math.max(p.subFloor, p.subScale * ps - p.subOffset);
+			}
 			if (a === b) {
 				v = isContentWord(b, stop) ? p.exactContent : p.exactFunction;
 				ps = 1;
-			} else if (numberEqual(a, b)) {
+			}
+			if (numberEqual(a, b)) {
 				v = p.exactContent;
 				ps = 1;
-			} else if (dice >= p.prefilterDice) {
-				ps = psim(sp(a), sp(b), lang);
-				v = Math.max(p.subFloor, p.subScale * ps - p.subOffset);
 			}
 			V[i]!.push(v);
 			PS[i]!.push(ps);
