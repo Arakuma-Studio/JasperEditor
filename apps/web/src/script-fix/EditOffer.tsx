@@ -71,8 +71,7 @@ export function EditOfferBar(p: {
 			role="status"
 			data-testid="text.transcript.offer"
 		>
-			<span className="min-w-0 truncate text-pr-text" title={`${offer.from} → ${offer.to}`}
-				data-no-i18n>
+			<span className="min-w-0 truncate text-pr-text" title={`${offer.from} → ${offer.to}`} data-no-i18n>
 				“{offer.from}” → “{offer.to}”
 			</span>
 			{n > 0 ? (
