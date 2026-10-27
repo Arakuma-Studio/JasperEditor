@@ -649,6 +649,33 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		script: { name: 'Guion', text: 'Hoy vamos a crear un juego de carreras.' },
 		lists: { es: { markers: ['bueno', 'o sea', 'a ver'] } },
 	},
+	// Spec 17 SC-050: index-free transcript fixes (media-time flicks; `expect` = the exact texts of the words in the
+	// span now, else E_STALE); the subtitles and caption tracks showing the words are patched in place, one undo step.
+	// The second edit inserts a word into the gap between two words (expect []).
+	'transcript.replaceWords': {
+		type: 'transcript.replaceWords',
+		transcriptId: 'trs_00000000000000EX',
+		edits: [
+			{
+				start: 705_600_000,
+				end: 1_058_400_000,
+				expect: ['Glimer', 'box'],
+				words: [{ text: 'Glimmerbox', start: 705_600_000, end: 1_051_344_000, confidence: 0.91 }],
+			},
+			{
+				start: 2_116_800_000,
+				end: 2_187_360_000,
+				expect: [],
+				words: [{ text: 'de', start: 2_123_856_000, end: 2_180_304_000, confidence: null }],
+			},
+		],
+	},
+	// …and the sequence's Fix Transcript settings and rejected fixes (fingerprints are the aligner's).
+	'scriptFix.configure': {
+		type: 'scriptFix.configure',
+		settings: { strictness: 'careful', sources: ['script'], scope: 'used' },
+		reject: ['med_00000000000000EX~glimer box~glimmerbox~0'],
+	},
 	// Spec 12 P6-R3 (Auto Tag): the classified type per clip id, marked "auto" until the user confirms it (auto_tag_audio
 	// measures the clips with POST /api/audio/classify and applies this command; a type the user set is kept unless force).
 	'essentialSound.autoTag': {

@@ -183,11 +183,14 @@ export async function decide(
 	return true;
 }
 
-/** Accept all: every pending or stale item (rejected ones stay rejected; setup items come with them). */
+/**
+ * Accept all: every pending or stale item that is selected (rejected ones stay rejected; setup items come with them;
+ * items offered unselected — spec 17 SC-061, Maybe transcript fixes — stay pending until accepted one by one).
+ */
 export function acceptAll(session: EditorSession): Promise<boolean> {
 	const ids = proposalsFor(session)
 		.getState()
-		.items.filter((it) => !it.setup && (it.state === 'pending' || it.state === 'stale'))
+		.items.filter((it) => !it.setup && it.selected && (it.state === 'pending' || it.state === 'stale'))
 		.map((it) => it.id);
 	return ids.length ? decide(session, 'accept', ids) : Promise.resolve(false);
 }

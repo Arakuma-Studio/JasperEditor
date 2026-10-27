@@ -12,6 +12,7 @@ import {
 } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
 import {
+	acceptAllItemIds,
 	defaultRegistries,
 	isSetupItem,
 	mixFingerprint,
@@ -45,8 +46,8 @@ export const PROPOSALS_GUIDE = `Proposals (spec 12 §2.5): a reviewable set of e
 - Propose, don't apply: plan_sound_design, place_sound, rebalance_sfx, apply_delivery, lay_ambience_bed and fill_room_tone (mode "propose", their default) store a proposal and change nothing. Tell the user it is waiting in the editor's Review panel, where they hear it in context, keep or reject each item, cycle its alternates, leave notes and apply. Never accept your own proposal unless the user asked you to apply it.
 - Read: list_proposals {projectId} lists them (counts per state); get_proposal {projectId, proposalId} gives every item with its state, reason (why it is stale or invalid), selected alternative, the user's note, and a text table of what the undecided items would create (ghosts: track, start, end, sound).
 - Wait: wait_for_proposal {projectId, proposalId} returns when the user changed something (or the proposal was applied or discarded; until: "decided" waits until nothing is left to decide), at most 900 s: per item accepted | rejected | pending | stale | invalid, "swapped" when they chose an alternative, and their notes. Read the notes and act on them (a new proposal for what they asked); call it again to keep waiting.
-- Features: list_proposal_features {projectId} lists the proposal features (sound-design, edit-automation, subtitles, transcript-cleanup), their producing tools, Review groups (items name theirs in meta.group), whether you may apply them here and whether their producer refreshes stale items.
-- Apply: accept_proposal {projectId, proposalId, itemIds: "all" | [ids]} works for an agent only where the feature allows it: sound design when the user turned on "Allow agents to apply sound proposals" for the sequence (off by default); editing automation, subtitles and transcript cleanup while Project Settings ▸ Agent Proposals allows them (on by default; the user may turn them off). Refused → E_APPROVAL_REQUIRED: do not retry, ask the user to apply it in the Review panel. Accepting is still one undoable "Agent: …" step, and destructive commands inside still ask the user. Stale items (the edit changed under them) refuse the whole accept unless partial: true. reject_proposal {itemIds} marks items rejected (the document is untouched).
+- Features: list_proposal_features {projectId} lists the proposal features (sound-design, edit-automation, subtitles, transcript-cleanup, transcript-correction), their producing tools, Review groups (items name theirs in meta.group), whether you may apply them here and whether their producer refreshes stale items.
+- Apply: accept_proposal {projectId, proposalId, itemIds: "all" | [ids]} works for an agent only where the feature allows it: sound design when the user turned on "Allow agents to apply sound proposals" for the sequence (off by default); editing automation, subtitles and transcript cleanup while Project Settings ▸ Agent Proposals allows them (on by default; the user may turn them off). Refused → E_APPROVAL_REQUIRED: do not retry, ask the user to apply it in the Review panel. Accepting is still one undoable "Agent: …" step, and destructive commands inside still ask the user. Stale items (the edit changed under them) refuse the whole accept unless partial: true. "all" takes only the items that are selected (an item with selected: false — e.g. a Maybe transcript fix — is offered unchecked) and, for transcript fixes, never the maybe group: name such items' ids to apply them, and only when the user asked. reject_proposal {itemIds} marks items rejected (the document is untouched).
 - Stale items: refresh_proposal {projectId, proposalId} asks the feature's producer to re-plan them on the current edit (they come back pending; nothing is applied) — never accept a stale item as it was planned. Refused with E_NOT_REFRESHABLE when the producer cannot re-plan: propose the changed part again.
 - Producers of new features: a proposal whose accept would exceed one transaction (5 000 commands / 20 MB; 2 000 items) is refused with E_TOO_LARGE and details.suggestedRange (frames that fit): run the pass on that range, then the rest. Batch commands keep passes small: clip.addAdjustmentBatch (adjustment clips with effects and keys relative to each item) and keyframe.addBatch (keys on many clips) — one command per item. Anchor decorations with meta.anchorOn {clips: [decorated clip ids], cuts: [{trackId, frame}]} so they go stale when the cut moves.
 - Check before you hand it over: sound_check {projectId, proposalId} runs Sound Check on the proposal's preview (the current edit with its items applied; nothing changes) and says what it fixes and introduces, per item ("fixes 3 · introduces 1"). plan_sound_design {check: true} does it for you. The result is kept on the proposal: get_proposal shows it (soundCheck), and so does the user's Review panel, next to each item.
@@ -130,6 +131,8 @@ function decisionOf(it: ProposalItem) {
 		...(it.reason ? { reason: it.reason } : {}),
 		...(alt ? { swapped: { alternative: k, label: alt.label } } : {}),
 		...(it.note ? { note: it.note } : {}),
+		// spec 17 SC-061: offered unselected (an "all" accept leaves it out)
+		...(it.selected === false ? { selected: false } : {}),
 	};
 }
 
@@ -276,7 +279,7 @@ export function registerProposalTools(ctx: ToolContext): void {
 		{
 			title: 'List proposal features',
 			description:
-				'The proposal features of a project (sound-design, edit-automation, subtitles, transcript-cleanup): what their proposals are, the tools that produce them, their Review groups (put the group id in an item’s meta.group), the item noun, whether YOU may apply them here (agentAccept: setting "project" → allowed (Project Settings ▸ Agent Proposals, default on); setting "sound-sequence" → per sequence id, default off) and whether their producer re-plans stale items (refreshable, refresh_proposal).',
+				'The proposal features of a project (sound-design, edit-automation, subtitles, transcript-cleanup, transcript-correction): what their proposals are, the tools that produce them, their Review groups (put the group id in an item’s meta.group), the item noun, whether YOU may apply them here (agentAccept: setting "project" → allowed (Project Settings ▸ Agent Proposals, default on); setting "sound-sequence" → per sequence id, default off) and whether their producer re-plans stale items (refreshable, refresh_proposal).',
 			input: { projectId: ProjectIdArg },
 			annotations: READ_ONLY,
 		},
@@ -348,7 +351,7 @@ export function registerProposalTools(ctx: ToolContext): void {
 					.max(64)
 					.optional()
 					.describe(
-						'Only this feature ("sound-design", "edit-automation", "subtitles", "transcript-cleanup")',
+						'Only this feature ("sound-design", "edit-automation", "subtitles", "transcript-cleanup", "transcript-correction")',
 					),
 				undecided: z.boolean().optional().describe('Only proposals with items still to review'),
 			},
@@ -388,7 +391,7 @@ export function registerProposalTools(ctx: ToolContext): void {
 		{
 			title: 'Get proposal',
 			description:
-				'One proposal with every item: state (pending, accepted, rejected, stale = the edit changed under it, invalid = it never applied), reason, the alternative the user selected (swapped), the user’s note, what it requires (setup items: bin, imported sounds, new cues), its why-line, plus `ghosts`: a text table (item | state | ghost | track | start | end | what) of what the undecided items would create, change or delete if applied — like get_timeline for the proposal — and `soundCheck`: its last Sound Check (sound_check {proposalId}: fixes · introduces, per item; stale when the mix changed since; null when it was never checked). revalidate (default true) re-checks undecided items against the current edit first (stale items). `updatedAt` is the token for wait_for_proposal {since}. includeCommands: true adds each item’s commands.',
+				'One proposal with every item: state (pending, accepted, rejected, stale = the edit changed under it, invalid = it never applied), reason, the alternative the user selected (swapped), the user’s note, selected: false when it is offered unselected (an "all" accept leaves it out), what it requires (setup items: bin, imported sounds, new cues), its why-line, plus `ghosts`: a text table (item | state | ghost | track | start | end | what) of what the undecided items would create, change or delete if applied — like get_timeline for the proposal — and `soundCheck`: its last Sound Check (sound_check {proposalId}: fixes · introduces, per item; stale when the mix changed since; null when it was never checked). revalidate (default true) re-checks undecided items against the current edit first (stale items). `updatedAt` is the token for wait_for_proposal {since}. includeCommands: true adds each item’s commands.',
 			input: {
 				projectId: ProjectIdArg,
 				proposalId: ProposalIdArg,
@@ -561,7 +564,7 @@ export function registerProposalTools(ctx: ToolContext): void {
 		{
 			title: 'Accept proposal items',
 			description:
-				'Applies proposal items as ONE transaction (one undo step; what each requires — bin, imported sounds, new cues — comes along). itemIds "all" = every pending or stale item (setup items only as requirements). Policy per feature (list_proposal_features): sound design only when the user turned on "Allow agents to apply sound proposals" for the sequence; editing automation, subtitles and transcript cleanup while Project Settings ▸ Agent Proposals allows them (default on); otherwise it is refused with E_APPROVAL_REQUIRED — then ask the user to apply it in the editor’s Review panel, never retry. Do not accept a proposal the user has not asked you to apply. All-or-nothing unless partial: true (stale items are then skipped and listed). Destructive commands inside still ask the user in the editor.',
+				'Applies proposal items as ONE transaction (one undo step; what each requires — bin, imported sounds, new cues — comes along). itemIds "all" = every pending or stale item that is selected (setup items only as requirements; items with selected: false and transcript fixes of the maybe group are left out and listed in notSelected — name their ids to apply them). Policy per feature (list_proposal_features): sound design only when the user turned on "Allow agents to apply sound proposals" for the sequence; editing automation, subtitles and transcript cleanup while Project Settings ▸ Agent Proposals allows them (default on); otherwise it is refused with E_APPROVAL_REQUIRED — then ask the user to apply it in the editor’s Review panel, never retry. Do not accept a proposal the user has not asked you to apply. All-or-nothing unless partial: true (stale items are then skipped and listed). Destructive commands inside still ask the user in the editor.',
 			input: {
 				projectId: ProjectIdArg,
 				proposalId: ProposalIdArg,
@@ -575,15 +578,24 @@ export function registerProposalTools(ctx: ToolContext): void {
 		},
 		async ({ projectId, proposalId, itemIds, partial }) => {
 			let ids: string[] | 'all' = itemIds;
+			let notSelected: string[] = [];
 			if (itemIds === 'all') {
 				const cur = await proposalCall<ProposalResponse>(ctx, (c) => c.getProposal(projectId, proposalId));
-				if (cur.proposal.items.some(isSetupItem)) {
-					ids = allSelection(cur.proposal, ['pending', 'stale']);
+				// spec 17 SC-061: what an agent's "all" takes (selected items; never a feature's agent-excluded groups)
+				const take = new Set(acceptAllItemIds(cur.proposal, { agent: true }));
+				const open = allSelection(cur.proposal, ['pending', 'stale']);
+				notSelected = open.filter((id) => !take.has(id));
+				if (cur.proposal.items.some(isSetupItem) || notSelected.length) {
+					ids = open.filter((id) => take.has(id));
 					if (ids.length === 0)
 						throw new ToolError(
 							'E_INVALID_PARAM',
-							'Nothing left to accept: every item is accepted, rejected or invalid',
-							'get_proposal shows the item states.',
+							notSelected.length
+								? `Nothing selected to accept: ${notSelected.length} item(s) are offered unselected`
+								: 'Nothing left to accept: every item is accepted, rejected or invalid',
+							notSelected.length
+								? 'Unselected items (selected: false, transcript fixes of the maybe group) are applied only by naming their ids, and only when the user asked; get_proposal lists them.'
+								: 'get_proposal shows the item states.',
 						);
 				}
 			}
@@ -604,6 +616,7 @@ export function registerProposalTools(ctx: ToolContext): void {
 				applied: r.applied,
 				addedRequirements: r.added,
 				alreadyAccepted: r.skipped,
+				...(notSelected.length ? { notSelected } : {}),
 				stale: r.stale,
 				appliedBy: r.appliedBy,
 				revision: r.revision,

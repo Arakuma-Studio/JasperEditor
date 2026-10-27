@@ -68,8 +68,16 @@ function firstEndingAfter(words: Transcript['words'], t: number): number {
 	return lo;
 }
 
-/** The sequence transcript: words of every transcribed audio clip, in sequence time order. */
-export function sequenceWords(doc: Pick<ProjectDocument, 'transcripts'>, seq: Sequence): SeqWord[] {
+/**
+ * The sequence transcript: words of every transcribed audio clip, in sequence time order. `only` restricts the words
+ * returned to word indices `[from, to)` of one transcript (the same mapping and claims: spec 17 SC-051 patches the
+ * subtitles of exactly the words an edit replaced).
+ */
+export function sequenceWords(
+	doc: Pick<ProjectDocument, 'transcripts'>,
+	seq: Sequence,
+	only?: { transcriptId: string; from: number; to: number },
+): SeqWord[] {
 	const rate = seq.settings.frameRate;
 	const F = tickOf(1, rate);
 	const out: SeqWord[] = [];
@@ -94,7 +102,9 @@ export function sequenceWords(doc: Pick<ProjectDocument, 'transcripts'>, seq: Se
 			mine.push([clipStart, clipEnd]);
 			const mediaEnd = c.sourceIn + Math.round(c.duration * F * speed);
 			const toTl = (m: number) => clipStart + Math.round((m - c.sourceIn) / speed);
-			for (let wi = firstEndingAfter(tr.words, c.sourceIn); wi < tr.words.length; wi++) {
+			if (only && only.transcriptId !== tr.id) continue;
+			const last = only ? Math.min(only.to, tr.words.length) : tr.words.length;
+			for (let wi = Math.max(firstEndingAfter(tr.words, c.sourceIn), only?.from ?? 0); wi < last; wi++) {
 				const w = tr.words[wi]!;
 				if (w.start >= mediaEnd) break;
 				const a = toTl(w.start);

@@ -31,6 +31,7 @@ function item(id: string, o: Partial<ReviewItem> = {}): ReviewItem {
 		selectedAlternative: 0,
 		alternativeLabels: [o.label ?? id],
 		meta: o.meta,
+		selected: o.selected ?? true,
 	};
 }
 

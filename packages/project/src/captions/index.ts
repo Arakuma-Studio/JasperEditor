@@ -2,6 +2,7 @@
 // text-based editing, caption layout and caption export.
 export * from './formats/index.ts';
 export * from './model.ts';
+export * from './replace-words.ts';
 export * from './retime.ts';
 export * from './sequence-transcript.ts';
 export * from './subtitles/index.ts';

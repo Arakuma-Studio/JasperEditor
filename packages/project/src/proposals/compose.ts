@@ -3,6 +3,7 @@
 import { DEFAULT_MAX_COMMANDS } from '../commands/apply.ts';
 import { substituteKnownRefs } from '../commands/context.ts';
 import { type Origin, TX_PROTOCOL } from '../commands/types.ts';
+import { acceptAllItemIds } from './features.ts';
 import { type Proposal, type ProposalIssue, type ProposalItem, selectedCommands } from './schema.ts';
 import { appliedRefs, dependencyClosure, itemMap } from './structure.ts';
 
@@ -44,7 +45,7 @@ export function acceptLabel(p: Pick<Proposal, 'title' | 'items'>, n: number): st
 }
 
 /**
- * Composes the transaction that accepts `itemIds` ('all' = every pending or stale item). Already accepted items are
+ * Composes the transaction that accepts `itemIds` ('all' = every pending or stale item that is selected, SC-061). Already accepted items are
  * skipped (their refs are substituted with what they created). Refused, never thrown: unknown items, invalid items or
  * items that require one, excluded items, more commands than one transaction may hold.
  */
@@ -55,10 +56,7 @@ export function composeAcceptTx(
 	opts: ComposeOptions = {},
 ): ComposedAccept | { ok: false; errors: ProposalIssue[] } {
 	const byId = itemMap(p);
-	const requested =
-		itemIds === 'all'
-			? p.items.filter((it) => it.state === 'pending' || it.state === 'stale').map((it) => it.id)
-			: [...new Set(itemIds)];
+	const requested = itemIds === 'all' ? acceptAllItemIds(p) : [...new Set(itemIds)];
 	const errors: ProposalIssue[] = [];
 	for (const id of requested)
 		if (!byId.has(id))
