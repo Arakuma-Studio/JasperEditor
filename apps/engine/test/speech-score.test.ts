@@ -359,7 +359,7 @@ describe('glossary prompts (SC-074) and the prompt guard (SC-075)', () => {
 		const dir = fakeModelDir({ encodable: true });
 		const model = await WhisperModel.load(dir, { ort: fakeOrt({ logits }).ort });
 		try {
-			return await model.transcribe(noiseAudio(8), { language: 'en', ...(glossary ? { glossary } : {}) });
+			return await model.transcribe(noiseAudio(8, (t) => t % 1 < 0.7), { language: 'en', ...(glossary ? { glossary } : {}) });
 		} finally {
 			await model.release();
 		}
