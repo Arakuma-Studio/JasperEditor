@@ -2320,7 +2320,7 @@
     "seam": "actual Remotion still/frame/media renders and paused Player screenshots",
     "refactor": "Uses public return values, protocol/config bytes, rendered output or equal-input lifecycle properties; equivalent algorithms and private identifier renames preserve the expected result.",
     "unique": "Only encoded-media concurrency and real Player/render frame equality owner; value-level tests cannot catch Chrome paint-history bugs.",
-    "reason": "Reference stills are generated lazily and cached as a single promise, so Player parity can run alone and the full suite renders each reference only once. Pixel/control assertions remain unchanged.",
+    "reason": "Reference stills are generated lazily and cached as a single promise, so Player parity can run alone and the full suite renders each reference only once. Pixel/control assertions remain unchanged; each Player case starts from an injected bundle in a fresh about:blank document, avoiding both cross-case browser state and Snap-isolated file:// temporary paths.",
     "validation": "pnpm exec vitest run packages/motion/test/determinism-render.e2e.test.ts --maxWorkers=2 (REMOTION_E2E=1 required)"
   },
   {
@@ -2362,7 +2362,7 @@
     "seam": "actual Remotion still/frame/media renders and paused Player screenshots",
     "refactor": "Uses public return values, protocol/config bytes, rendered output or equal-input lifecycle properties; equivalent algorithms and private identifier renames preserve the expected result.",
     "unique": "Only encoded-media concurrency and real Player/render frame equality owner; value-level tests cannot catch Chrome paint-history bugs.",
-    "reason": "Reference stills are generated lazily and cached as a single promise, so Player parity can run alone and the full suite renders each reference only once. Pixel/control assertions remain unchanged.",
+    "reason": "Reference stills are generated lazily and cached as a single promise, so Player parity can run alone and the full suite renders each reference only once. Pixel/control assertions remain unchanged; each Player case starts from an injected bundle in a fresh about:blank document, avoiding both cross-case browser state and Snap-isolated file:// temporary paths.",
     "validation": "pnpm exec vitest run packages/motion/test/determinism-render.e2e.test.ts --maxWorkers=2 (REMOTION_E2E=1 required)"
   },
   {
@@ -3828,11 +3828,11 @@
     "contract": "longest counts in each column and in all four keep the gap to the next icon, unclipped",
     "source": "docs/wp-notes/social-comments.md X action bar spacing, App QA N6 (≥6px gap, 0.5px measurement tolerance)",
     "bug": "Caller-visible failure of: longest counts in each column and in all four keep the gap to the next icon, unclipped",
-    "oracle": "literal independently documented 5.5px lower bound and no-clipping on all 27 count scenarios; optional real Chirp/fallback font",
+    "oracle": "literal independently documented 5.5px lower bound and no-clipping on all 27 count scenarios; optional real Chirp/fallback font Documented minimum count size is10px, measured through computed browser style.",
     "seam": "public X card rendered by real Chrome, measured count clipping and adjacent icon edges",
     "refactor": "Uses public return values, protocol/config bytes, rendered output or equal-input lifecycle properties; equivalent algorithms and private identifier renames preserve the expected result.",
     "unique": "Only direct real-layout regression for reported touching-count bug; private width arithmetic and whole-card painted bounds do not prove inter-column spacing.",
-    "reason": "Same27 count scenarios/faces and clipping assertions; setContent replaces the complete script-free document between measurements in one page. Independent literal5.5px tolerance replaces production X_COUNT_GAP-derived expectation.",
+    "reason": "Same27 count scenarios/faces and clipping assertions; setContent replaces the complete script-free document between measurements in one page. Independent literal5.5px tolerance replaces production X_COUNT_GAP-derived expectation. Existing browser discovery now includes Chromium paths, so this default test is not skipped on hosts with usable Chromium. Fixes the independently observed DejaVu fallback spacing regression in the production owner; social-comment renderVersion2 invalidates cached drawings. Actual rendered count size also retains the documented10px readability minimum.",
     "validation": "pnpm exec vitest run packages/motion/test/social-x-fit.test.tsx --maxWorkers=2"
   },
   {

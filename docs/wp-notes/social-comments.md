@@ -2333,11 +2333,11 @@ See § Bulk import ▸ Age cells (`ui.import.age`, `parseAgeCell`).
 
 - The four engagement columns still share the bar equally (x.com's `flex-1`), but each has a minimum width
   (`xActionLayout` in `x.tsx`): icon 15 + icon → count 8 + the count + `X_COUNT_GAP` (6 px) before the next icon.
-  The count's width is bounded by `xCountEm` (em advances measured in Chrome for Chirp 400: digits 0.62, "." 0.27,
-  "," 0.28, K / B 0.66, M 0.87; bounds 0.63 / 0.3 / 0.68 / 0.88; DejaVu Sans fallback within them).
+  The count's width is bounded by `xCountEm`: digits 0.64em, punctuation 0.32em, K/B0.70em and M0.88em.
+  These conservative bounds include Chirp and the DejaVu Sans generic fallback.
 - The bar is 280 px with the avatar (420 − 2 border − 32 padding − 64 avatar column − 42 bookmark / share). One
   six-character count ("321.3K", "999.9M") in any column keeps x.com's 13 px counts and 8 px inset; when all four are
-  long the inset tightens to 4 px, then the counts shrink uniformly (≥ 10 px; four "999.9M" → 12.2 px).
+  long the inset tightens to 4 px, then the counts shrink uniformly (≥ 10 px).
 - The likes column is sized for the widest count its tick passes ("999.9M" on the way to "1,000B"), so the bar does
   not move while the count ticks; every frame stays a pure function of params and time.
 - Tests: `packages/motion/test/social-x-fit.test.tsx` measures the laid-out card in Chrome (when a Chrome is found):
@@ -2345,6 +2345,17 @@ See § Bulk import ▸ Age cells (`ui.import.age`, `parseAgeCell`).
   the next icon (0.5 px measurement tolerance), with the fallback face and
   with Chirp when `SOCIAL_CHIRP_DIR` holds its Regular woff2. The test fails on the previous layout (3.9 px
   between "999.9M" replies and the repost icon in the fallback face).
+
+The real-browser regression also caught an underestimated generic fallback advance. Chromium 156.0.8078.47 on
+Linux selected DejaVu Sans: digits 0.636234375em, punctuation 0.317875em and B 0.686046875em (100px samples,
+tabular numerals; CDP confirmed the font). With 999.9B replies the old bounds left 5.346073px before the repost icon;
+the corrected bounds leave 6.462882px, with no clipping. The existing ≥6px contract and 0.5px measurement tolerance
+are unchanged. A real paused Player and Remotion still at frame 100 were pixel-identical before and after the fix;
+inspected frames and action-bar crops are under ignored `test-results/test-audit/x-count-gap/`.
+
+`social-comment.renderVersion` is 2 so cached layer bakes do not reuse the older drawing. The bake key includes this
+version and the Remotion bundle id; the bundle source hash also includes motion/template sources
+(`apps/engine/src/layer-bake/key.ts`, `apps/engine/src/remotion/service.ts`). No stored project data changes.
 
 ### Gallery previews frame the card (N7)
 

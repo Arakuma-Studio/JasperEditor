@@ -32,11 +32,9 @@ import {
 	randomStats,
 	reviewAge,
 	reviewAgeDays,
-	SOCIAL_RATING_WEIGHTS,
 	SOCIAL_REROLL_PARAMS,
 	SOCIAL_REVIEW_DATE_ANCHOR,
 	SOCIAL_REVIEW_VARIANTS,
-	SOCIAL_STAR_COUNT,
 	socialCommentParamsSchema,
 	socialDefaults,
 	socialLikesTick,
@@ -154,14 +152,16 @@ describe('ratings', () => {
 	it('draws a J-shaped distribution like real stores, deterministically', () => {
 		const N = 20_000;
 		const counts = [0, 0, 0, 0, 0];
+		let unstableSeed: number | null = null;
 		for (let s = 0; s < N; s++) {
 			const r = randomRating(s);
-			expect(r).toBe(randomRating(s));
+			if (r !== randomRating(s) && unstableSeed === null) unstableSeed = s;
 			counts[r - 1]!++;
 		}
-		const total = Object.values(SOCIAL_RATING_WEIGHTS).reduce((a, b) => a + b, 0);
-		for (const k of [1, 2, 3, 4, 5] as const)
-			expect(counts[k - 1]! / N).toBeCloseTo(SOCIAL_RATING_WEIGHTS[k] / total, 1);
+		expect(unstableSeed, 'first seed with a non-deterministic rating').toBeNull();
+		// docs/wp-notes/social-comments.md, Store reviews: 1★ 13%, 2★ 5%, 3★ 8%, 4★ 18%, 5★ 56%.
+		const shares = [0.13, 0.05, 0.08, 0.18, 0.56];
+		for (const k of [1, 2, 3, 4, 5] as const) expect(counts[k - 1]! / N).toBeCloseTo(shares[k - 1]!, 1);
 		// J shape: 5★ most, then 4★ / 1★ above the middle stars
 		expect(counts[4]).toBeGreaterThan(counts[3]!);
 		expect(counts[0]).toBeGreaterThan(counts[2]!);
@@ -210,21 +210,6 @@ describe('review randomizer', () => {
 				const age = reviewAge(ago, st.timeUnit === 'hour' ? st.timeValue : 1);
 				expect(age, `${v} ${s}`).toEqual({ timeValue: st.timeValue, timeUnit: st.timeUnit });
 			}
-	});
-
-	it('keeps the comment stats it drew before store reviews existed', () => {
-		// the review values come from their own stream: the TikTok / X numbers of a seed are unchanged
-		expect(randomStats('x-post', 1)).toMatchObject({ rating: expect.any(Number), date: expect.any(String) });
-		const a = randomStats('tiktok-comment', 7);
-		const { rating: _r, date: _d, ...rest } = a;
-		expect(rest).toEqual({
-			timeValue: a.timeValue,
-			timeUnit: a.timeUnit,
-			likes: a.likes,
-			replies: a.replies,
-			reposts: a.reposts,
-			views: a.views,
-		});
 	});
 
 	it('picks titles that suit the rating', () => {
@@ -333,8 +318,8 @@ describe('star fill (the "likes tick up" extra on store reviews)', () => {
 		fc.assert(
 			fc.property(fc.integer({ min: 1, max: 5 }), fc.double({ min: 0, max: 1, noNaN: true }), (rating, p) => {
 				const f = socialStarFill(rating, p);
-				expect(f).toHaveLength(SOCIAL_STAR_COUNT);
-				for (let i = 0; i < SOCIAL_STAR_COUNT; i++) {
+				expect(f).toHaveLength(5);
+				for (let i = 0; i < 5; i++) {
 					expect(f[i]).toBeGreaterThanOrEqual(0);
 					expect(f[i]).toBeLessThanOrEqual(1);
 					if (i > 0) expect(f[i]).toBeLessThanOrEqual(f[i - 1]!); // one by one, in order

@@ -6,9 +6,9 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import type { HeadlessBrowser } from '@remotion/renderer';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { renderPagesInOwnWindows } from '../../compositions/src/render-host.ts';
 import { parityDoc, PARITY_SCENE as SCENE } from './determinism-render/doc.ts';
 import { reversedOrder, shuffledOrder } from './determinism-render/order.ts';
@@ -259,23 +259,20 @@ describe.runIf(enabled)('render parity (REMOTION_E2E=1, S11:ANM-014/015)', { tim
 
 	describe('Player (Chrome)', () => {
 		let page: import('@playwright/test').Page;
+		let playerScript = '';
 		let close: () => Promise<void> = async () => {};
 		beforeAll(async () => {
 			const { build } = await import('esbuild');
-			const dir = mkdtempSync(join(tmpdir(), 'jasper-anm014-player-'));
-			await build({
+			const bundled = await build({
 				entryPoints: [join(here, 'determinism-render', 'player.tsx')],
 				bundle: true,
 				format: 'iife',
-				outfile: join(dir, 'player.js'),
+				write: false,
 				jsx: 'automatic',
 				define: { 'process.env.NODE_ENV': '"production"' },
 				logLevel: 'silent',
 			});
-			writeFileSync(
-				join(dir, 'index.html'),
-				'<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#000"><div id="root"></div><script src="player.js"></script></body></html>',
-			);
+			playerScript = bundled.outputFiles[0]!.text;
 			const { chromium } = await import('@playwright/test');
 			const b = await chromium.launch({ executablePath: CHROME, headless: true });
 			close = () => b.close();
@@ -283,8 +280,15 @@ describe.runIf(enabled)('render parity (REMOTION_E2E=1, S11:ANM-014/015)', { tim
 				viewport: { width: SCENE.width, height: SCENE.height },
 				deviceScaleFactor: 1,
 			});
-			await page.goto(pathToFileURL(join(dir, 'index.html')).href);
 		}, 300_000);
+		beforeEach(async () => {
+			// A fresh document avoids state carried between cases and works with browsers whose /tmp is isolated.
+			await page.goto('about:blank');
+			await page.setContent(
+				'<!doctype html><html><body style="margin:0;background:#000"><div id="root"></div></body></html>',
+			);
+			await page.addScriptTag({ content: playerScript });
+		});
 		afterAll(() => close());
 
 		for (const id of ['Sequence'])
@@ -294,7 +298,6 @@ describe.runIf(enabled)('render parity (REMOTION_E2E=1, S11:ANM-014/015)', { tim
 					doc,
 					options: { isPreview: true, useProxies: false, transparentBackground: false },
 				};
-				await page.reload();
 				await page.evaluate((p) => window.__parity.mount(p), props);
 				const report: Record<number, number> = {};
 				let control = 0;
@@ -323,7 +326,6 @@ describe.runIf(enabled)('render parity (REMOTION_E2E=1, S11:ANM-014/015)', { tim
 					doc,
 					options: { isPreview: true, useProxies: false, transparentBackground: false },
 				};
-				await page.reload();
 				await page.evaluate((p) => window.__parity.mount(p), props);
 				const visits = [...Array.from({ length: N }, (_, i) => i), ...shuffledOrder(N), ...reversedOrder(N)];
 				const first = new Map<number, Buffer>();

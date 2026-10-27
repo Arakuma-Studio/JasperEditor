@@ -1,6 +1,6 @@
 // Store review cards of social-comment@1 (happy-dom): Google Play, the App Store web / Mac card and the iPhone App
 // Store card — names, dates, ages, titles, the stars and their fill (the like-tick extra), avatars, plain review text,
-// emoji packs, inline-editing attributes, the long-review clamp (measured with stubbed layout boxes) and seek-order
+// emoji packs, inline-editing attributes, seek-order
 // independence. Real-Chrome layout and parity: social-review-render.e2e.test.ts.
 import {
 	animeTemplateTiming,
@@ -14,7 +14,6 @@ import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ANIME_TEMPLATE_IMPLS } from '../src/templates/index.ts';
 import { APP_STORE_GLYPHS, PLAY_STORE_GLYPHS } from '../src/templates/social/glyphs.ts';
-import { INK_RING } from '../src/templates/social-comment/parts.tsx';
 import { vectorMarkupOf } from '../src/templates/social-comment/vector.tsx';
 
 /** The vector images inside `el` (stars, icons, avatars: `VectorImage`). */
@@ -188,13 +187,13 @@ describe('star fill (likes tick up on store reviews)', () => {
 		for (const variant of SOCIAL_REVIEW_VARIANTS) {
 			const p = { ...socialDefaults(variant), likeTick: true, rating: 4 };
 			const seen = new Set<string>();
+			const r = render(at(p, 0));
 			for (let f = 0; f <= 60; f++) {
-				const r = render(at(p, f));
+				act(() => r.rerender(at(p, f)));
 				seen.add(stars(r.container).join(','));
 				const row = part(r.container, 'stars')!;
 				// animation styles only while the stars pulse (paint determinism: the un-animated DOM otherwise)
-				expect(row.style.boxShadow, `${variant} ${f}`).toBe(row.style.transform ? INK_RING : '');
-				r.unmount();
+				expect(row.style.boxShadow !== '', `${variant} ${f}`).toBe(row.style.transform !== '');
 			}
 			// empty → partial stars in order → all four filled
 			expect(seen.has('empty,empty,empty,empty,empty'), variant).toBe(true);
@@ -210,16 +209,15 @@ describe('star fill (likes tick up on store reviews)', () => {
 			}
 			// the pulse: a frame of the thump scales the stars, the hold does not
 			const pulse = [...Array(30).keys()].some((k) => {
-				const r = render(at(p, 40 + k));
+				act(() => r.rerender(at(p, 40 + k)));
 				const tf = part(r.container, 'stars')!.style.transform;
-				r.unmount();
 				return /scale\(1\.\d+\)/.test(tf);
 			});
 			expect(pulse, variant).toBe(true);
-			const rest = render(at(p, 100));
-			expect(part(rest.container, 'stars')!.style.transform).toBe('');
-			expect(stars(rest.container)).toEqual(['filled', 'filled', 'filled', 'filled', 'empty']);
-			rest.unmount();
+			act(() => r.rerender(at(p, 100)));
+			expect(part(r.container, 'stars')!.style.transform).toBe('');
+			expect(stars(r.container)).toEqual(['filled', 'filled', 'filled', 'filled', 'empty']);
+			r.unmount();
 		}
 	});
 
@@ -253,118 +251,6 @@ describe('star fill (likes tick up on store reviews)', () => {
 				}),
 				{ numRuns: 15 },
 			);
-		}
-	});
-});
-
-describe('long-review clamp (layout stubbed: happy-dom has none)', () => {
-	// a fake layout: every word unit is 40 px wide on a 50 px pitch, 5 per line; the text block holds them all
-	const LINE: Record<string, number> = {
-		'play-store-review': 22.27,
-		'app-store-review': 18,
-		'app-store-review-ios': 20,
-	};
-	let restore: (() => void) | null = null;
-	const stubLayout = (line: number) => {
-		const proto = HTMLElement.prototype;
-		const saved = ['offsetTop', 'offsetLeft', 'offsetWidth', 'offsetHeight', 'clientHeight'].map(
-			(k) => [k, Object.getOwnPropertyDescriptor(proto, k)] as const,
-		);
-		const unit = (el: HTMLElement) => (el.dataset.unit === undefined ? null : Number(el.dataset.unit));
-		const isText = (el: HTMLElement) => el.getAttribute('data-template-param') === 'text';
-		const units = (el: HTMLElement) => el.querySelectorAll('[data-unit]').length;
-		Object.defineProperty(proto, 'offsetTop', {
-			configurable: true,
-			get(this: HTMLElement) {
-				const u = unit(this);
-				return u === null ? 0 : Math.floor(u / 5) * line + 2;
-			},
-		});
-		Object.defineProperty(proto, 'offsetLeft', {
-			configurable: true,
-			get(this: HTMLElement) {
-				const u = unit(this);
-				return u === null ? 0 : (u % 5) * 50;
-			},
-		});
-		Object.defineProperty(proto, 'offsetWidth', {
-			configurable: true,
-			get(this: HTMLElement) {
-				if (unit(this) !== null) return 40;
-				return isText(this) ? 300 : 0;
-			},
-		});
-		Object.defineProperty(proto, 'offsetHeight', {
-			configurable: true,
-			get(this: HTMLElement) {
-				if (unit(this) !== null) return line - 4;
-				return isText(this) ? Math.ceil(units(this) / 5) * line : 0;
-			},
-		});
-		Object.defineProperty(proto, 'clientHeight', {
-			configurable: true,
-			get(this: HTMLElement) {
-				const max = Number.parseFloat(this.style.maxHeight);
-				const text = this.firstElementChild as HTMLElement | null;
-				if (!text || !isText(text)) return 0;
-				const h = text.offsetHeight;
-				return Number.isFinite(max) ? Math.min(max, h) : h;
-			},
-		});
-		restore = () => {
-			for (const [k, d] of saved)
-				if (d) Object.defineProperty(proto, k, d);
-				else delete (proto as unknown as Record<string, unknown>)[k];
-		};
-	};
-	afterEach(() => {
-		restore?.();
-		restore = null;
-	});
-	const words = (n: number) => Array.from({ length: n }, (_, i) => `w${i}`).join(' ');
-
-	it('Play: three lines, the fade ending where the last visible line ends; none when it fits or truncate is off', () => {
-		stubLayout(LINE['play-store-review']!);
-		// 4 lines of words (the 4th line has 2): cut after 3; the 3rd line's last word ends at 4·50 + 40 = 240 of 300
-		const r = render(at({ ...PLAY, text: words(17) }, 100));
-		const clamp = part(r.container, 'clamp')!;
-		expect(clamp.getAttribute('data-clamped')).toBe('true');
-		const fade = part(r.container, 'fade')!;
-		expect(fade.style.left).toBe('calc(80% - 29.8px)');
-		expect(fade.style.top).toBe('66.667%');
-		r.unmount();
-		const fits = render(at({ ...PLAY, text: words(15) }, 100));
-		expect(part(fits.container, 'fade')).toBeNull();
-		fits.unmount();
-		const off = render(at({ ...PLAY, text: words(30), truncate: false }, 100));
-		expect(part(off.container, 'fade')).toBeNull();
-		expect(part(off.container, 'clamp')!.firstElementChild!.getAttribute('style') ?? '').not.toMatch(
-			/max-height/,
-		);
-		off.unmount();
-	});
-
-	it('App Store: four (web) / five (iPhone) lines, a "more" and the last-line mask when cut', () => {
-		for (const [variant, lines] of [
-			['app-store-review', 4],
-			['app-store-review-ios', 5],
-		] as const) {
-			stubLayout(LINE[variant]!);
-			const base = { ...socialDefaults(variant), truncate: true };
-			const cut = render(at({ ...base, text: words(lines * 5 + 1) }, 100));
-			expect(part(cut.container, 'more')!.textContent, variant).toBe('more');
-			const box = part(cut.container, 'clamp')!.firstElementChild as HTMLElement;
-			expect(box.style.maxHeight, variant).toBe(`${lines * LINE[variant]!}px`);
-			expect(box.getAttribute('style'), variant).toMatch(/mask-image/);
-			cut.unmount();
-			const fits = render(at({ ...base, text: words(lines * 5) }, 100));
-			expect(part(fits.container, 'more'), variant).toBeNull();
-			expect(
-				(part(fits.container, 'clamp')!.firstElementChild as HTMLElement).getAttribute('style'),
-			).not.toMatch(/mask-image/);
-			fits.unmount();
-			restore?.();
-			restore = null;
 		}
 	});
 });

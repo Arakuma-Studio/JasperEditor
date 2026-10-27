@@ -223,7 +223,7 @@ function LikeHeart({ heart, color }: { heart: SocialCardProps['anim']['heart']; 
 }
 
 /** Least space between a count and the next icon (App QA N6: a six-character repost count touched the heart). */
-export const X_COUNT_GAP = 6;
+const X_COUNT_GAP = 6;
 /** Icon → count space: 8 px (tokcomment's `p-[0.5em]` icon box), 4 px when long counts need the room. */
 const COUNT_INSET = 8;
 const COUNT_INSET_TIGHT = 4;
@@ -236,30 +236,31 @@ const CARD_INSET = 2 * 1 + 2 * 16;
 const END_GROUP_GAP = 12;
 
 /** Width of the four engagement columns: the text column minus the bookmark and share group. */
-export function xActionsWidth(showProfile: boolean): number {
+function xActionsWidth(showProfile: boolean): number {
 	return CARD_W - CARD_INSET - (showProfile ? AVATAR + AVATAR_GAP : 0) - (2 * ICON + END_GROUP_GAP);
 }
 
 /**
- * Upper bound of a count's advance in em: Chirp 400 measured in Chrome (digits 0.62 — tabular, "." 0.27, "," 0.28,
- * K 0.66, B 0.66, M 0.87) and the fallback face within the same bounds (test/social-x-fit.test.tsx measures both).
+ * Upper bounds for Chirp and the generic sans-serif fallback. Chromium's DejaVu Sans fallback measures digits
+ * at 0.6363 em, punctuation at 0.3179 em and B at 0.6861 em; rounding these bounds down let long counts touch
+ * the next icon. The public card spacing test covers the final layout, including 999.9B.
  */
-export function xCountEm(text: string): number {
+function xCountEm(text: string): number {
 	let em = 0;
 	for (const ch of text)
 		em += /[0-9]/.test(ch)
-			? 0.63
+			? 0.64
 			: ch === '.' || ch === ','
-				? 0.3
+				? 0.32
 				: ch === 'M'
 					? 0.88
 					: ch === 'K' || ch === 'B'
-						? 0.68
+						? 0.7
 						: 0.9;
 	return em;
 }
 
-export type XActionLayout = { countPx: number; inset: number; minWidths: number[] };
+type XActionLayout = { countPx: number; inset: number; minWidths: number[] };
 
 /**
  * Room of the four engagement columns for the widest count each can show (`''` = none): every column keeps its
@@ -267,7 +268,7 @@ export type XActionLayout = { countPx: number; inset: number; minWidths: number[
  * still share the bar equally when that is wider, as on x.com). When the counts need more than the bar, the
  * icon → count space tightens to 4 px, then the counts get smaller (never below 10 px) until they fit.
  */
-export function xActionLayout(counts: readonly string[], showProfile: boolean): XActionLayout {
+function xActionLayout(counts: readonly string[], showProfile: boolean): XActionLayout {
 	const width = xActionsWidth(showProfile);
 	const ems = counts.map(xCountEm);
 	const totalEm = ems.reduce((a, b) => a + b, 0);
@@ -426,12 +427,7 @@ function XPostCard({ params: p, text, anim, assets }: SocialCardProps) {
 							<TextWithEmoji text={p.displayName} fontSize={NAME_PX} emoji={EMOJI} assets={assets} />
 						</span>
 						{p.verified ? (
-							<Glyph
-								glyph={X_GLYPHS.verifiedBlue}
-								size={BADGE}
-								scope={assets.idScope}
-								style={{ margin: '0 1px' }}
-							/>
+							<Glyph glyph={X_GLYPHS.verifiedBlue} size={BADGE} style={{ margin: '0 1px' }} />
 						) : null}
 						<span
 							data-part="handle"
