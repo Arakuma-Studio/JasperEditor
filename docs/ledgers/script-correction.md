@@ -38,11 +38,11 @@ Started 2026-10-27. Private details (machines, agent ids, item names) live in `.
 
 | WP | Scope | Depends on | State |
 |---|---|---|---|
-| scalign | parser, aligner, candidates, windows, Δ, decisions (`packages/project/src/script-fix/`) | — | 🔄 |
+| scalign | parser, aligner, candidates, windows, Δ, decisions (`packages/project/src/script-fix/`) | — | ✅ merged (2ac215fc; 2 h transcript vs 6,000-token script aligned in 2.27–2.46 s, +116 MB, measured on the VM under load; prototype parity on invented text) |
 | scapply | `transcript.replaceWords`, subtitle + caption-track patch, `planReplaceWords`, `Sequence.scriptFix`, proposal feature + per-item default selection | — | 🔄 |
 | scscore | worker scoring + forced DTW, `SpeechService.score`, glossary prompt carry + guard | — | ✅ merged (8afeb29e; VM CPU scoring 19.0 s per speech minute ≤ 20 s target, measured; real-model LJ test 10/10 confusions on tiny.en and turbo, word times ≤ 50 ms) |
-| scglossary | personal glossary library, routes, client, MCP tools, replace-all finder, Preferences page | — | 🔄 |
-| scengine | `transcript-fix` job, route, MCP `fix_transcript`, guide | scalign, scapply, scscore | ⏳ |
+| scglossary | personal glossary library, routes, client, MCP tools, replace-all finder, Preferences page | — | ✅ merged (2fd86bf9; 518 tests in the touched suites, page exercised in the VM dev stack) |
+| scengine | `transcript-fix` job, route, MCP `fix_transcript`, guide | scalign, scapply, scscore | 🔄 (dryRun = fast pre-run without audio, with an estimated time) |
 | scweb | Script drawer, Fix dialog, Review diff rows, Transcript marks, edit offers, Transcribe option | scengine, scglossary | ⏳ |
 | sccalib | accuracy harness on the Mac with the editor's own code (SC-105) | scengine | ⏳ |
 - ⏳ Integration: fetch/merge `origin/main`, full gate + e2e + render suites on the VM, merge to `main`.
@@ -66,4 +66,4 @@ Started 2026-10-27. Private details (machines, agent ids, item names) live in `.
 - Prompting Whisper with script text can make it output script words that were not said; the spike measures it.
 
 ## 7. Log
-- 2026-10-27 — programme started; VM rented; spike and code-map research launched; code map done; spike done; spec 17 written; scalign, scapply, scscore, scglossary launched; scscore merged.
+- 2026-10-27 — programme started; VM rented; spike and code-map research launched; code map done; spike done; spec 17 written; scalign, scapply, scscore, scglossary launched; scscore, scalign, scglossary merged; scengine launched.
