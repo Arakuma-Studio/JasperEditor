@@ -69,7 +69,7 @@ function headlessDoc(): { doc: ProjectDocument; clipId: string } {
 	return { doc: document, clipId: result.refs.$t! };
 }
 
-const tick = () => vi.advanceTimersByTimeAsync(0);
+const tick = () => vi.runOnlyPendingTimersAsync();
 const clipOf = (s: EditorSession, id: string) =>
 	Object.values(s.getCommitted().sequences)[0]!.clips[id] as TextClip;
 

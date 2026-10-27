@@ -149,8 +149,15 @@ describe('subtitle commands in the session history', () => {
 		]);
 		const res = gen.results[0] as { clipIds: string[]; stats: { crossing: number } };
 		expect(res.clipIds.length).toBeGreaterThan(1);
+		// The first B-roll cut is at frame 120 (2 s at 60000/1001 fps).
+		const crossesFirstCut = () =>
+			Object.values(Object.values(s.getCommitted().sequences)[0]!.clips).some(
+				(c) => c.kind === 'text' && c.start < 120 && c.start + c.duration > 120,
+			);
+		expect(crossesFirstCut()).toBe(true);
 		const al = step((d) => [{ type: 'captions.alignToCuts', groupId: groupOf(d) } as CommandInput]);
 		expect((al.results[0] as { crossing: number; splitAtCuts: number }).crossing).toBe(0);
+		expect(crossesFirstCut()).toBe(false);
 		step((d) => [
 			{
 				type: 'captions.regenerate',

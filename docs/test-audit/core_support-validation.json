@@ -1,0 +1,222 @@
+{
+  "scope": {
+    "assignedFiles": 42,
+    "originalDeclarationsAndGeneratedTargets": 196,
+    "originalCollectedCases": 213,
+    "dispositions": {
+      "KEEP": 178,
+      "REWRITE": 9,
+      "CONSOLIDATE": 2,
+      "OPTIMIZE": 6,
+      "DELETE": 1
+    },
+    "testLocDelta": 1,
+    "removedFiles": ["packages/ui/test/scrubby-math.test.ts"],
+    "removedProductionHooks": ["MemoryProjectStore.expireLease", "MemoryProjectStore.journalOf"],
+    "externalIntegrationDependency": "apps/web/test/project-files.test.tsx public lease-transfer fixture in web_2 commit 00e1ff82"
+  },
+  "environment": {
+    "node": "20.19.0",
+    "pnpm": "10.34.5",
+    "cpu": "AMD EPYC-Genoa Processor, 8 exposed vCPUs",
+    "memory": "15 GiB",
+    "workers": 2,
+    "coordination": "exclusive /tmp/jasper-validation.lock, then /tmp/jasper-validation-pure.lock; other rendering/native work existed",
+    "measurementLimit": "Focused wall times are not a comparable whole-suite benchmark: final target adds recovery.test.ts and host load/cache state changed."
+  },
+  "install": {
+    "command": "pnpm install --frozen-lockfile --offline --ignore-scripts",
+    "exitCode": 0
+  },
+  "baseline": {
+    "command": "pnpm exec vitest run packages/config/test/config.test.ts packages/engine-client/test/cleanup.test.ts packages/session/test/derived-preview.test.ts packages/session/test/proposals.test.ts packages/session/test/subtitles-history.test.ts packages/session/test/text-relayout.test.ts packages/session/test/text-styles-history.test.ts packages/ui/test/primitives.test.tsx packages/ui/test/scrubby-math.test.ts --maxWorkers=2 --reporter=json --outputFile=/tmp/jasper-test-audit/core-support-baseline.json",
+    "passedCases": 60,
+    "failedCases": 0,
+    "wallSeconds": 27.41
+  },
+  "initialAfterFailure": {
+    "passedCases": 59,
+    "failedCases": 2,
+    "resolution": [
+      "Drain pending scheduled relayout tasks instead of advancing 0 virtual milliseconds; nested tasks can be deferred to the next turn.",
+      "Generation with cutAware:false does not calculate crossing statistics. Verify actual subtitle spans cross the known first cut before alignment and cease crossing afterward."
+    ],
+    "productionBug": false
+  },
+  "finalFocused": {
+    "command": "pnpm exec vitest run packages/config/test/config.test.ts packages/engine-client/test/cleanup.test.ts packages/session/test/derived-preview.test.ts packages/session/test/proposals.test.ts packages/session/test/subtitles-history.test.ts packages/session/test/text-relayout.test.ts packages/session/test/text-styles-history.test.ts packages/session/test/persistence/recovery.test.ts packages/ui/test/primitives.test.tsx --maxWorkers=2 --reporter=json --outputFile=/tmp/jasper-test-audit/core-support-final-pass.json",
+    "passedCases": 66,
+    "failedCases": 0,
+    "wallSeconds": 35.47
+  },
+  "repeat": {
+    "command": "pnpm exec vitest run packages/session/test/subtitles-history.test.ts packages/session/test/text-relayout.test.ts packages/session/test/text-styles-history.test.ts packages/session/test/persistence/recovery.test.ts --maxWorkers=2 --reporter=json --outputFile=/tmp/jasper-test-audit/core-support-repeat.json",
+    "passedCases": 11,
+    "failedCases": 0,
+    "wallSeconds": 19.29
+  },
+  "additionalPublicControlValidation": {
+    "command": "pnpm exec vitest run packages/ui/test/primitives.test.tsx --maxWorkers=2 --reporter=json --outputFile=/tmp/jasper-test-audit/core-support-public-number.json",
+    "passedCases": 32,
+    "failedCases": 0,
+    "reason": "Added the negative-precision boundary after the nine-file run; latest focused case union is 67 cases, all verified by the focused commands.",
+    "caseUnionExplanation": "The nine-file run passed66 cases before the added lower-bound precision case; the latest primitives file passed32 cases. Together the focused commands validated67 distinct surviving cases."
+  },
+  "perFileDurationMs": {
+    "baseline": {
+      "packages/config/test/config.test.ts": 29.424,
+      "packages/engine-client/test/cleanup.test.ts": 36.097,
+      "packages/ui/test/primitives.test.tsx": 307.945,
+      "packages/ui/test/scrubby-math.test.ts": 9.706,
+      "packages/session/test/derived-preview.test.ts": 66.97,
+      "packages/session/test/proposals.test.ts": 155.176,
+      "packages/session/test/subtitles-history.test.ts": 1889.191,
+      "packages/session/test/text-relayout.test.ts": 1810.646,
+      "packages/session/test/text-styles-history.test.ts": 302.303
+    },
+    "after": {
+      "packages/config/test/config.test.ts": 33.062,
+      "packages/engine-client/test/cleanup.test.ts": 65.44,
+      "packages/ui/test/primitives.test.tsx": 377.423,
+      "packages/session/test/derived-preview.test.ts": 59.858,
+      "packages/session/test/proposals.test.ts": 155.19,
+      "packages/session/test/subtitles-history.test.ts": 609.646,
+      "packages/session/test/text-relayout.test.ts": 74.171,
+      "packages/session/test/text-styles-history.test.ts": 75.906,
+      "packages/session/test/persistence/recovery.test.ts": 105.812
+    },
+    "repeat": {
+      "packages/session/test/subtitles-history.test.ts": 525.033,
+      "packages/session/test/text-relayout.test.ts": 83.073,
+      "packages/session/test/text-styles-history.test.ts": 137.486,
+      "packages/session/test/persistence/recovery.test.ts": 150.016
+    }
+  },
+  "wholeSuiteSpeedupClaim": null,
+  "typechecks": [
+    {
+      "command": "pnpm --filter @jasper/config typecheck",
+      "exitCode": 0
+    },
+    {
+      "command": "pnpm --filter @jasper/engine-client typecheck",
+      "exitCode": 0
+    },
+    {
+      "command": "pnpm --filter @jasper/session typecheck",
+      "exitCode": 0
+    },
+    {
+      "command": "pnpm --filter @jasper/ui typecheck",
+      "exitCode": 0
+    }
+  ],
+  "mutations": [
+    {
+      "fault": "scrubby-negative-precision",
+      "temporaryOwner": "packages/ui/src/primitives/scrubby-math.ts",
+      "mutation": {
+        "before": "Math.trunc(Math.max(0, Math.min(10, precision)))",
+        "after": "Math.trunc(Math.min(10, precision))"
+      },
+      "command": "pnpm exec vitest run packages/ui/test/primitives.test.tsx --maxWorkers=2 -t 'renders safely with precision' --reporter=json --outputFile=/tmp/jasper-test-audit/core-support-mutation-scrubby-negative-precision.json",
+      "expectedFailureObserved": true,
+      "failedCases": 1,
+      "restored": true
+    },
+    {
+      "fault": "recovery-discard-isolation",
+      "temporaryOwner": "packages/session/src/persistence/memory.ts",
+      "mutation": {
+        "before": "e.journals.delete(sessionId);",
+        "after": "e.journals.clear();"
+      },
+      "command": "pnpm exec vitest run packages/session/test/persistence/recovery.test.ts --maxWorkers=2 -t 'survives a crash' --reporter=json --outputFile=/tmp/jasper-test-audit/core-support-mutation-recovery-discard-isolation.json",
+      "expectedFailureObserved": true,
+      "failedCases": 1,
+      "restored": true
+    },
+    {
+      "fault": "preview-error",
+      "temporaryOwner": "packages/session/src/derived-preview.ts",
+      "mutation": {
+        "before": "code: first?.code ?? 'E_INTERNAL',",
+        "after": "code: 'E_INTERNAL',"
+      },
+      "command": "pnpm exec vitest run packages/session/test/derived-preview.test.ts --maxWorkers=2 -t 'refuses commands' --reporter=json --outputFile=/tmp/jasper-test-audit/core-support-mutation-preview-error.json",
+      "expectedFailureObserved": true,
+      "failedCases": 1,
+      "restored": true
+    },
+    {
+      "fault": "cleanup-error",
+      "temporaryOwner": "packages/engine-client/src/client.ts",
+      "mutation": {
+        "before": "'INVALID_RESPONSE',\n\t\t\t\t`Invalid response from",
+        "after": "'HTTP_ERROR',\n\t\t\t\t`Invalid response from"
+      },
+      "command": "pnpm exec vitest run packages/engine-client/test/cleanup.test.ts --maxWorkers=2 -t 'an evicted analysis' --reporter=json --outputFile=/tmp/jasper-test-audit/core-support-mutation-cleanup-error.json",
+      "expectedFailureObserved": true,
+      "failedCases": 1,
+      "restored": true
+    },
+    {
+      "fault": "scrubby-precision",
+      "temporaryOwner": "packages/ui/src/primitives/scrubby-math.ts",
+      "mutation": {
+        "before": "const digits = decimalPrecision(precision);",
+        "after": "const digits = precision;"
+      },
+      "command": "pnpm exec vitest run packages/ui/test/primitives.test.tsx --maxWorkers=2 -t 'renders safely with precision' --reporter=json --outputFile=/tmp/jasper-test-audit/core-support-mutation-scrubby-precision.json",
+      "expectedFailureObserved": true,
+      "failedCases": 2,
+      "restored": true
+    },
+    {
+      "fault": "measured-autosave",
+      "temporaryOwner": "packages/session/src/persistence/autosave.ts",
+      "mutation": {
+        "before": "let savedBase = Math.min(session.openedRevision, session.store.getState().revision);",
+        "after": "let savedBase = session.store.getState().revision;"
+      },
+      "command": "pnpm exec vitest run packages/session/test/text-relayout.test.ts --maxWorkers=2 -t 'measured boxes are saved' --reporter=json --outputFile=/tmp/jasper-test-audit/core-support-mutation-measured-autosave.json",
+      "expectedFailureObserved": true,
+      "failedCases": 1,
+      "restored": true
+    }
+  ],
+  "exploratoryRootBaseline": {
+    "node": "24.22.1",
+    "command": "pnpm test --maxWorkers=2 --reporter=default --reporter=json --outputFile=/tmp/jasper-test-audit/baseline.json",
+    "assignedFilesPassed": 42,
+    "assignedCasesPassed": 213,
+    "rootGateStatus": "Failed outside assigned scope; this is exploratory baseline evidence, not final CI-equivalent validation."
+  },
+  "remainingGateOwners": [
+    "Root integrated lint/typecheck/test/build",
+    "Root comparable Node20 whole-suite before/after profiling",
+    "Root browser execution after integrating web_2 fixture"
+  ],
+  "expensiveRetained": [
+    "perf-budgets.test.ts fixed scale of 1,000 clips and 50 clips is the documented performance contract",
+    "integrity-property.test.ts preserves persistence/immutability under mixed commands",
+    "proposals-state-machine.test.ts protects historical undo/redo/reapply duplication and racing follow-ups",
+    "testkit/oracle.test.ts independently calibrates shared ffmpeg loudness/video/frame oracles"
+  ],
+  "cleanupLimits": "No unused snapshots, fixtures or dependencies became orphaned. Public MemoryProjectStore creation/loading remains used by the web fallback; only explicit test hooks were removed.",
+  "staticChecks": [
+    {
+      "command": "pnpm exec biome check packages/config/test/config.test.ts packages/engine-client/test/cleanup.test.ts packages/session/src/persistence/memory.ts packages/session/test/derived-preview.test.ts packages/session/test/proposals.test.ts packages/session/test/subtitles-history.test.ts packages/session/test/text-relayout.test.ts packages/session/test/text-styles-history.test.ts packages/session/test/persistence/recovery.test.ts packages/ui/test/primitives.test.tsx docs/test-audit/core_support.json docs/test-audit/core_support-validation.json",
+      "result": "Passed;12 files checked, no fixes"
+    },
+    {
+      "command": "git diff --check",
+      "result": "Passed"
+    }
+  ],
+  "validationCorrections": [
+    "Removed unused projectId after deleting the private journal observer.",
+    "Formatted the expanded public precision table after an earlier format check ran before its owning formatter.",
+    "Mutation verifier initially searched for an actual HTTP_ERROR code that Vitest abbreviates in diagnostics; inspected the correct target assertion failure and verified the expected INVALID_RESPONSE mismatch instead."
+  ]
+}

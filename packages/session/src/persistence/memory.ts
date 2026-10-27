@@ -1,6 +1,6 @@
 // In-memory ProjectStore (tests, headless tools). Same semantics as the engine store: envelopes,
 // revisions with If-Match style conflicts, versions, single-writer leases and crash-recovery journals (a journal
-// is held while its session holds the lease; `expireLease` simulates a crashed editor).
+// is held while its session holds the lease).
 import type { Lease, ProjectSummary, RecoveryInfo, RecoveryListResponse, VersionInfo } from '@jasper/api';
 import {
 	createEmptyProject,
@@ -209,15 +209,6 @@ export class MemoryProjectStore implements ProjectStore, RecoveryStore {
 		const own = !!leaseId && e.lease?.leaseId === leaseId;
 		if (!own && this.held(e, sessionId)) throw new Error('That session is still editing');
 		e.journals.delete(sessionId);
-	}
-	/** Tests: the editor holding the lease crashed (its lease expired without a release). */
-	expireLease(projectId: string): void {
-		this.entry(projectId).lease = null;
-	}
-	/** Tests: the journal a session wrote, if any. */
-	journalOf(projectId: string, sessionId: string): { changes: string[]; document: ProjectDocument } | null {
-		const j = this.entry(projectId).journals.get(sessionId);
-		return j ? { changes: j.info.changes, document: j.document } : null;
 	}
 
 	async duplicate(projectId: string, name: string): Promise<string> {

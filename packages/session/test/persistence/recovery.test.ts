@@ -33,7 +33,7 @@ describe('crash-recovery journal (S01:PER-021, AC-18)', () => {
 	afterEach(() => vi.useRealTimers());
 
 	it('journals about 1 s after an edit, and at most every 5 s while edits keep coming', async () => {
-		const { store, open, projectId } = await setup();
+		const { store, open } = await setup();
 		vi.spyOn(store, 'save').mockRejectedValue(new Error('disk full'));
 		const write = vi.spyOn(store, 'writeRecovery');
 		const s = await open('s1');
@@ -43,14 +43,14 @@ describe('crash-recovery journal (S01:PER-021, AC-18)', () => {
 		expect(write).not.toHaveBeenCalled();
 		await vi.advanceTimersByTimeAsync(200);
 		expect(write).toHaveBeenCalledTimes(1);
-		expect(store.journalOf(projectId, 's1')?.changes).toEqual(['Add Solid']);
+		expect(write.mock.calls.at(-1)?.[2].changes).toEqual(['Add Solid']);
 
 		for (let i = 1; i <= 12; i++) {
 			s.apply({ label: `Add ${i}`, origin: 'user', commands: [solid(20 * i)] });
 			await vi.advanceTimersByTimeAsync(500);
 		}
 		expect(write.mock.calls.length).toBeGreaterThanOrEqual(2);
-		expect(clipCount(store.journalOf(projectId, 's1')!.document)).toBeGreaterThan(1);
+		expect(clipCount(write.mock.calls.at(-1)![2].document)).toBeGreaterThan(1);
 		p.journal?.dispose();
 		p.autosaver.dispose();
 	});
@@ -58,18 +58,18 @@ describe('crash-recovery journal (S01:PER-021, AC-18)', () => {
 	it('is deleted when autosave catches up and when the session closes cleanly', async () => {
 		const { store, open, projectId } = await setup();
 		const discard = vi.spyOn(store, 'discardRecovery');
+		const write = vi.spyOn(store, 'writeRecovery');
 		const s = await open('s1');
 		const p = attachPersistence(s, noLifecycle);
 		s.apply({ label: 'Add Solid', origin: 'user', commands: [solid(0)] });
 		await vi.advanceTimersByTimeAsync(1100);
-		expect(store.journalOf(projectId, 's1')).not.toBeNull();
+		expect(write).toHaveBeenCalledOnce();
 		await vi.advanceTimersByTimeAsync(600);
 		expect(s.getState().dirty).toBe(false);
-		expect(store.journalOf(projectId, 's1')).toBeNull();
-		expect(discard).toHaveBeenCalledTimes(1);
+		expect(discard).toHaveBeenCalledOnce();
 		await p.dispose();
 		await s.close();
-		expect(store.journalOf(projectId, 's1')).toBeNull();
+		expect(await store.listRecovery(projectId)).toEqual({ candidates: [], warnings: [] });
 	});
 
 	it('survives a crash and is recovered into a new session as one undoable step', async () => {
@@ -81,7 +81,7 @@ describe('crash-recovery journal (S01:PER-021, AC-18)', () => {
 		s1.apply({ label: 'Add Solid', origin: 'user', commands: [solid(50)] });
 		await vi.advanceTimersByTimeAsync(1100);
 		// the tab dies: no close, no release; its lease runs out
-		store.expireLease(projectId);
+		vi.setSystemTime(Date.now() + 31_000);
 		save.mockRestore();
 
 		const s2 = await open('s2');
@@ -101,9 +101,11 @@ describe('crash-recovery journal (S01:PER-021, AC-18)', () => {
 		expect(s2.getState().history.entries.at(-1)?.label).toBe('Recover Unsaved Changes');
 		// the recovered state goes into this session's journal before the old one is deleted
 		await p2.journal!.flush();
-		expect(clipCount(store.journalOf(projectId, 's2')!.document)).toBe(2);
 		await store.discardRecovery(projectId, 's1');
 		expect(await store.listRecovery(projectId)).toEqual({ candidates: [], warnings: [] });
+		// A second expired session can recover the durable replacement through the public reader.
+		vi.setSystemTime(Date.now() + 31_000);
+		expect(clipCount((await store.readRecovery(projectId, 's2')).document)).toBe(2);
 		s2.undo();
 		expect(s2.getCommitted()).toBe(before);
 		await p2.dispose();
@@ -113,12 +115,13 @@ describe('crash-recovery journal (S01:PER-021, AC-18)', () => {
 	it('a clean close with unsaved changes keeps them journalled; Revert discards them', async () => {
 		const { store, open, projectId } = await setup();
 		vi.spyOn(store, 'save').mockRejectedValue(new Error('engine gone'));
+		const write = vi.spyOn(store, 'writeRecovery');
 		const s = await open('s1');
 		const p = attachPersistence(s, { ...noLifecycle, onError: () => undefined });
 		s.apply({ label: 'Add Solid', origin: 'user', commands: [solid(0)] });
 		await p.dispose(); // the save on close fails: the journal keeps the change
 		await s.close();
-		expect(store.journalOf(projectId, 's1')?.changes).toEqual(['Add Solid']);
+		expect((await store.readRecovery(projectId, 's1')).info.changes).toEqual(['Add Solid']);
 		expect((await store.listRecovery(projectId)).candidates.map((c) => c.sessionId)).toEqual(['s1']);
 		await store.discardRecovery(projectId, 's1');
 
@@ -126,9 +129,13 @@ describe('crash-recovery journal (S01:PER-021, AC-18)', () => {
 		attachPersistence(s2, { ...noLifecycle, onError: () => undefined });
 		s2.apply({ label: 'Add Solid', origin: 'user', commands: [solid(0)] });
 		await vi.advanceTimersByTimeAsync(1100);
-		expect(store.journalOf(projectId, 's2')).not.toBeNull();
+		expect(write).toHaveBeenLastCalledWith(
+			projectId,
+			's2',
+			expect.objectContaining({ changes: ['Add Solid'] }),
+		);
 		const s3 = await reopenSession(s2, { discardUnsaved: true });
-		expect(store.journalOf(projectId, 's2')).toBeNull();
+		expect(await store.listRecovery(projectId)).toEqual({ candidates: [], warnings: [] });
 		expect(clipCount(s3.getCommitted())).toBe(0);
 		await s3.close();
 	});
@@ -140,11 +147,17 @@ describe('crash-recovery journal (S01:PER-021, AC-18)', () => {
 		const ro = await open('reader');
 		expect(ro.getState().readOnly).toBe(true);
 		const p = attachPersistence(ro, noLifecycle);
-		expect(ro.apply({ label: 'x', origin: 'user', commands: [solid(0)] }).ok).toBe(false);
+		expect(ro.apply({ label: 'x', origin: 'user', commands: [solid(0)] })).toMatchObject({
+			ok: false,
+			errors: [{ code: 'E_NOT_OWNER' }],
+		});
 		await vi.advanceTimersByTimeAsync(6000);
 		expect(write).not.toHaveBeenCalled();
 		const other = createEmptyProject({ ids: createCounterIdSource(900), name: 'B', preset: 'hd-1080p-30' });
-		expect(holder.replaceDocument(other, 'x')).toMatchObject({ ok: false });
+		expect(holder.replaceDocument(other, 'x')).toMatchObject({
+			ok: false,
+			errors: [{ code: 'E_INVALID_PARAM' }],
+		});
 		expect(holder.getCommitted().projectId).toBe(projectId);
 		await p.dispose();
 	});
