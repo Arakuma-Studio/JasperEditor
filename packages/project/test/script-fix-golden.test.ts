@@ -66,7 +66,7 @@ const brief = (c: FixCandidate) => `${c.kind}:${c.category}:${c.asr.join(' ')}�
 describe('script parsing (SC-002)', () => {
 	it('keeps lines, marks directions and headings, counts sections, reads "&"', () => {
 		const s: ParsedScript = parseScript(
-			'INTRO\nHola a todos (sonrisa a cámara) y bienvenidos.\n\nEscena dos:\nFireblob & Waterblob es un juego (mostrar\nla portada) de plataformas.\nVídeo largo\nFin.',
+			'INTRO\nHola a todos (sonrisa a cámara) y bienvenidos.\n\nEscena dos:\nSunblob & Moonblob es un juego (mostrar\nla portada) de plataformas.\nVídeo largo\nFin.',
 			{ language: 'es' },
 		);
 		expect(s.summary.sections.map((x) => x.heading)).toEqual([null, 'INTRO', 'Escena dos:', 'Vídeo largo']);
@@ -215,12 +215,12 @@ describe('alignment and candidates, Spanish (SC-010 … SC-026)', () => {
 
 	it('"&" reads as "y": the spoken "y" matches; a misheard "en" is offered as "y"', () => {
 		expect(
-			run('Hoy jugamos a Fireblob & Waterblob otra vez.', 'hoy jugamos a fireblob y waterblob otra vez')
+			run('Hoy jugamos a Sunblob & Moonblob otra vez.', 'hoy jugamos a sunblob y moonblob otra vez')
 				.candidates,
 		).toEqual([]);
 		const r = run(
-			'Hoy jugamos a Fireblob & Waterblob otra vez.',
-			'hoy jugamos a fireblob en waterblob otra vez',
+			'Hoy jugamos a Sunblob & Moonblob otra vez.',
+			'hoy jugamos a sunblob en moonblob otra vez',
 		);
 		expect(r.candidates.map(brief)).toEqual(['sub:function:en→y']);
 	});

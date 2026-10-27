@@ -1737,14 +1737,14 @@
     { "a": "glimmerbox", "b": "glimerbox", "psim": 0.95, "keyA": "glimerboks", "keyB": "glimerboks" },
     { "a": "fisica", "b": "fisicas", "psim": 0.9285714285714286, "keyA": "fisika", "keyB": "fisikas" },
     {
-      "a": "jasperdevarcade",
-      "b": "jasperdebarcade",
+      "a": "novadevarcade",
+      "b": "novadebarcade",
       "psim": 0.95,
-      "keyA": "jasperdebarkade",
-      "keyB": "jasperdebarkade"
+      "keyA": "nobadebarkade",
+      "keyB": "nobadebarkade"
     },
     { "a": "hice", "b": "dice", "psim": 0.875, "keyA": "ise", "keyB": "dise" },
-    { "a": "awita", "b": "aguita", "psim": 0.8, "keyA": "auita", "keyB": "ajita" },
+    { "a": "wapo", "b": "guapo", "psim": 0.8, "keyA": "uapo", "keyB": "guapo" },
     { "a": "vamos", "b": "bamos", "psim": 0.95, "keyA": "bamos", "keyB": "bamos" },
     { "a": "queso", "b": "keso", "psim": 0.95, "keyA": "keso", "keyB": "keso" },
     { "a": "gente", "b": "jente", "psim": 0.95, "keyA": "jente", "keyB": "jente" },
