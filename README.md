@@ -50,11 +50,12 @@ nobody outside has used it, only Linux was checked — is [`docs/gaps.md`](docs/
   cannot hear: they get descriptors, pictures and a written listening log ([`docs/specs/12-sound-design.md`](docs/specs/12-sound-design.md),
   [`docs/wp-notes/sound-design.md`](docs/wp-notes/sound-design.md)).
 - **Captions and speech.** Caption tracks (SRT, VTT, SCC, MCC, STL, TTML), burn-in, local speech to text with
-  word timings and diarization, text-based editing.
+  word timings and diarization, text-based editing, a personal glossary of names the recogniser gets wrong
+  (Edit ▸ Preferences ▸ Transcription ▸ Glossary: search, edit, import and export JSON).
 - **Export and interchange.** A planner routes each sequence to the native FFmpeg path, a hybrid layer bake or
   Remotion and refuses by name what a path cannot render; H.264, HEVC, VP9, AV1, ProRes, alpha; render previews and
   smart rendering; FCP 7 XML, FCPXML, EDL, AAF, OMF, ALE and OTIO in both directions.
-- **Agents.** `jasper-mcp` exposes 378 tools and the whole command catalogue; every edit is an undoable
+- **Agents.** `jasper-mcp` exposes 381 tools and the whole command catalogue; every edit is an undoable
   transaction, destructive ones need the user's approval in the editor; a `jasper` CLI; tools that look at and
   operate the live window.
 - **Safety net.** Atomic saves, single-writer leases (a reloaded tab keeps its own), crash-recovery journal, saved
@@ -666,7 +667,9 @@ Tools (use MCP `listTools` for the current catalog and schemas):
   (`docs/wp-notes/text-styles.md`).
 - Speech to text (local Whisper; GPU when it helps — `engine_status` shows the provider probe, `transcribe`
   takes `device` and `accuracy`): `list_speech_models` `install_speech_model` `remove_speech_model` `transcribe`
-  `get_transcript` (`docs/wp-notes/speech.md`).
+  `get_transcript` (`docs/wp-notes/speech.md`) · personal glossary (names and words the recogniser gets wrong, the
+  same list as Edit ▸ Preferences ▸ Transcription ▸ Glossary, shared by every project): `list_glossary`
+  `save_glossary_entry` `remove_glossary_entry` (approval card) (`docs/wp-notes/script-correction.md`).
 - Voice analysis (10 ms levels, voicing, speech / breath / silence frames of a media's audio stream; a cached engine
   job): `get_voice_analysis` (`docs/wp-notes/transcript-cleanup.md`).
 - Clean Up Voice (retakes, restarts, fillers, off-script talk, pauses and breaths found in transcribed speech and cut

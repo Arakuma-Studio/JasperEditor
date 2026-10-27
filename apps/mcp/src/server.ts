@@ -25,6 +25,7 @@ import { registerEditingTools } from './tools/editing.ts';
 import { EXPRESSIONS_GUIDE, registerExpressionTools } from './tools/expressions.ts';
 import { FONTS_GUIDE, registerFontTools } from './tools/fonts.ts';
 import { GAPS_GUIDE, registerGapsTools } from './tools/gaps.ts';
+import { GLOSSARY_GUIDE, registerGlossaryTools } from './tools/glossary.ts';
 import { registerGradingTools } from './tools/grading.ts';
 import { IMPORTS_GUIDE, registerImportsTools } from './tools/imports.ts';
 import { INSPECT_GUIDE, registerInspectTools } from './tools/inspect.ts';
@@ -133,6 +134,7 @@ const FULL_GUIDE = [
 	SUBTITLES_GUIDE,
 	TEXT_STYLES_GUIDE,
 	SPEECH_GUIDE,
+	GLOSSARY_GUIDE,
 	VOICE_GUIDE,
 	CLEANUP_GUIDE,
 	ROTO_GUIDE,
@@ -213,6 +215,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerSubtitleTools(ctx);
 	registerTextStyleTools(ctx);
 	registerSpeechTools(ctx);
+	registerGlossaryTools(ctx);
 	registerVoiceTools(ctx);
 	registerCleanupTools(ctx);
 	registerRotoTools(ctx);
