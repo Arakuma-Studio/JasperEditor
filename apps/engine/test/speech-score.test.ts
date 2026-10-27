@@ -225,9 +225,10 @@ describe('muted gaps of a packed window (SC-030)', () => {
 		// frames inside the range are digital silence: every band at the window floor
 		const floor = muted.x[350]!;
 		for (let m = 0; m < nMels; m++) expect(muted.x[m * 3000 + 350]).toBe(floor);
-		// times stay absolute (frames are muted, not dropped): same word times as the zeroed audio
+		// times stay absolute (frames are muted, not dropped): the same word times as the unmuted window of the same
+		// audio (the fake cross-attention does not depend on the encoder input; refinement reads the same levels)
 		expect(muted.out.windows[0]!.readings[0]!.words.map((w) => [w.start, w.end])).toEqual(
-			reference.out.windows[0]!.readings[0]!.words.map((w) => [w.start, w.end]),
+			plain.out.windows[0]!.readings[0]!.words.map((w) => [w.start, w.end]),
 		);
 		// one encoder pass per window, as without muting
 		expect(muted.out.profile.encoderPasses).toBe(1);
