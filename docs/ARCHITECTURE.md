@@ -799,7 +799,12 @@ transitions. The editing-automation passes (spec 15 EA-020…EA-022: Decorate Cu
 planners in `packages/project/src/automation/` (deterministic per seed, kit packs as data, plain-data parameters for
 style recipes); the engine's `edit-automation` job (`POST /api/projects/:projectId/automation/:pass`, dry run or
 propose) adds what needs I/O — the live document, sounds from the library through sound design's cues and placement,
-the Reframe subject analysis — and registers the feature's refresher (Refresh proposal, Reroll).
+the Reframe subject analysis — and registers the feature's refresher (Refresh proposal, Reroll). Fix Transcript
+(spec 17 SC-090) follows the same shape: the pure aligner and decisions in `@jasper/project/script-fix`, the engine's
+`transcript-fix` job (`POST /api/projects/:projectId/sequences/:sequenceId/transcript-fix`, dry run or propose; audio
+windows scored through `SpeechService.score`) and its refresher; a feature may also extend its accept transaction
+(`ProposalService.registerAcceptExtension`: History label and extra commands, here the remembered rejections) and react
+to the editor's rejections (`registerRejectListener`).
 
 **Sound design (built, D-50…D-53; spec 12).** Agents cannot hear, so every audible property has a
 measured or visual proxy, and every surface the editor has has an MCP twin (spec 12 §1): the library (`sound_library_status`,

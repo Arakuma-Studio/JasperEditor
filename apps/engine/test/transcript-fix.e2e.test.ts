@@ -137,7 +137,10 @@ function seed(words: Word[], script: string, model = MODEL) {
 	if (!r.result.ok) throw new Error(JSON.stringify(r.result.errors));
 	doc = r.document;
 	// the model that made the transcript scores it (transcript.create takes no model: set as transcription does)
-	for (const t of Object.values(doc.transcripts)) t.model = model;
+	doc = {
+		...doc,
+		transcripts: Object.fromEntries(Object.entries(doc.transcripts).map(([k, t]) => [k, { ...t, model }])),
+	};
 	const file = appdirPaths(app.appdir).projectFile(doc.projectId);
 	mkdirSync(join(file, '..'), { recursive: true });
 	writeFileSync(
