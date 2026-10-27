@@ -283,9 +283,14 @@ describe('Expression Controls', () => {
 		expect(num(d, 'effect("Slider Control 2")("Slider")')).toBe(7);
 	});
 	it('renamed instances are found by their name', () => {
-		d.tx([{ type: 'effect.rename', effectInstanceId: d.refs.$s2, name: 'Speed' }]);
-		expect(num(d, 'effect("Speed")("Slider")')).toBe(7);
-		expect(ev(d, '$a', 'transform.rotation', 'effect("Slider Control 2")("Slider")').error).toMatch(
+		const renamed = basicDoc();
+		renamed.tx([
+			{ type: 'effect.add', target: { clipId: '$a' }, effectId: 'jasper.slider-control', ref: '$s2' },
+			{ type: 'param.set', target: ['effect', '$s2', 'slider'], value: 7 },
+			{ type: 'effect.rename', effectInstanceId: '$s2', name: 'Speed' },
+		]);
+		expect(num(renamed, 'effect("Speed")("Slider")')).toBe(7);
+		expect(ev(renamed, '$a', 'transform.rotation', 'effect("Slider Control 2")("Slider")').error).toMatch(
 			/not found/,
 		);
 	});
@@ -293,7 +298,7 @@ describe('Expression Controls', () => {
 		const r = val(d, '$a', `effects.${d.refs.$lc}.layer`, 'thisComp.layer("Bg")');
 		expect(r).toBe(d.refs.$bg);
 	});
-	it('menus take an index or an item name', () => {
+	it('numeric dropdown and checkbox results use their control types', () => {
 		expect(val(d, '$a', `effects.${d.refs.$dd}.menu`, '3')).toBe(3);
 		expect(val(d, '$a', `effects.${d.refs.$cb}.checkbox`, '0')).toBe(false);
 	});

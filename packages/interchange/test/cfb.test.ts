@@ -2,7 +2,11 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { CfbError, CfbWriter, CompoundFile, NOSTREAM } from '../src/cfb.ts';
 
-const pattern = (n: number, seed: number) => Uint8Array.from({ length: n }, (_, i) => (i * 31 + seed) & 0xff);
+function pattern(n: number, seed: number): Uint8Array {
+	const data = new Uint8Array(n);
+	for (let i = 0; i < n; i++) data[i] = (i * 31 + seed) & 0xff;
+	return data;
+}
 
 function sample(version: 3 | 4, siblings: number) {
 	const w = new CfbWriter(version);
@@ -28,7 +32,7 @@ function sample(version: 3 | 4, siblings: number) {
 function check(bytes: Uint8Array, expected: [string, Uint8Array][]) {
 	const cf = CompoundFile.open(bytes);
 	expect([...cf.root().clsid]).toEqual(new Array(16).fill(7));
-	for (const [path, data] of expected) expect(cf.readPath(path)).toEqual(data);
+	for (const [path, data] of expected) expect(Buffer.compare(cf.readPath(path), data), path).toBe(0);
 }
 
 /** Every path from a node to a nil leaf has the same number of black nodes; no red node has a red child. */
@@ -68,12 +72,7 @@ describe('MS-CFB', () => {
 		const big = pattern(8 * 1024 * 1024, 5);
 		w.stream(CfbWriter.ROOT, 'big', big);
 		const cf = CompoundFile.open(w.finish());
-		// Native byte comparison avoids the per-element overhead of deep equality on 8 MiB buffers.
-		const read = cf.readPath('big');
-		expect(read.length).toBe(big.length);
-		expect(Buffer.compare(Buffer.from(read.buffer, read.byteOffset, read.byteLength), Buffer.from(big))).toBe(
-			0,
-		);
+		expect(Buffer.compare(cf.readPath('big'), big)).toBe(0);
 	});
 
 	it('rejects bad names and duplicates', () => {
