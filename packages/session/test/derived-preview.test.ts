@@ -109,7 +109,7 @@ describe('derived preview', () => {
 			omitted: [],
 		});
 		expect(bad.ok).toBe(false);
-		if (!bad.ok) expect(bad.code).toMatch(/^E_/);
+		if (!bad.ok) expect(bad.code).toBe('E_NOT_FOUND');
 		const none = c.start({ label: 'R', kind: 'k', sequenceId: 'seq_nope', commands: [], omitted: [] });
 		expect(none).toMatchObject({ ok: false, code: 'E_NOT_FOUND' });
 		expect(c.getState().active).toBeNull();

@@ -9,7 +9,7 @@ import {
 	type ProjectDocument,
 	type TextMeasurer,
 } from '@jasper/project';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createAutosaver, EditorSession, MemoryProjectStore } from '../src/index.ts';
 
 type TextClip = Extract<Clip, { kind: 'text' }>;
@@ -69,11 +69,14 @@ function headlessDoc(): { doc: ProjectDocument; clipId: string } {
 	return { doc: document, clipId: result.refs.$t! };
 }
 
-const tick = () => new Promise((r) => setTimeout(r, 5));
+const tick = () => vi.advanceTimersByTimeAsync(0);
 const clipOf = (s: EditorSession, id: string) =>
 	Object.values(s.getCommitted().sequences)[0]!.clips[id] as TextClip;
 
 describe('pending text relayout (spec 13 SH-004)', () => {
+	beforeEach(() => vi.useFakeTimers());
+	afterEach(() => vi.useRealTimers());
+
 	it('measures pending clips when the measurer becomes able to, without a History entry', async () => {
 		const { doc, clipId } = headlessDoc();
 		const { m, ready } = loadingMeasurer();
@@ -182,7 +185,7 @@ describe('pending text relayout (spec 13 SH-004)', () => {
 		expect(clipOf(s, clipId).layoutPending).toBeUndefined();
 		// autosave attaches after the session measured: the measured document is still unsaved
 		const a = createAutosaver(s, store);
-		await new Promise((r) => setTimeout(r, 1700));
+		await vi.advanceTimersByTimeAsync(1500);
 		const saved = (await store.open(doc.projectId, { readOnly: true })).document;
 		const c = Object.values(saved.sequences)[0]!.clips[clipId] as TextClip;
 		expect(c.layoutPending).toBeUndefined();
