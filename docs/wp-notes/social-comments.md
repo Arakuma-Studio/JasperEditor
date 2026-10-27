@@ -2410,5 +2410,6 @@ See § Bulk import ▸ Age cells (`ui.import.age`, `parseAgeCell`).
 - Generic: no template contract change; any card-like template gets it.
 - So at Program zoom ≥ 100 % the banner is where the card is (before: off screen at the canvas corner).
 - Tests: `packages/compositions/test/template-marker-anchor.test.tsx` (box measurement with scale, no-layout
-  fallback, a social card with a missing font anchored and sized on the card).
+  fallback); `packages/compositions/test/fx-gl.test.ts` renders the gallery card in Chromium and verifies its
+  width relative to the poster and that the warning’s bounds stay inside the visible card.
 

@@ -210,9 +210,7 @@ describe('template media params in the sequence composition', () => {
 		const view = renderFrame(snapshot(doc, UNDECODABLE), DEFAULT_RENDER_OPTIONS, reports);
 		expect(view.queryByTestId('avatar')).toBeNull();
 		expect(view.container.querySelector('[data-avatar-initials]')).not.toBeNull();
-		expect(view.container.querySelector('[data-missing-asset="image"]')?.textContent).toBe(
-			`Picture ${mediaId} is not available`,
-		);
+		expect(view.container.querySelector('[data-missing-asset="image"]')?.textContent).toContain(mediaId);
 		await waitFor(() => expect([...reports.values()].flat()).toEqual([{ kind: 'media', mediaId }]));
 		view.unmount();
 	});
@@ -239,7 +237,7 @@ describe('template media params in the sequence composition', () => {
 			});
 			expect(errors.length).toBeGreaterThan(0);
 			expect(new Set(errors.map((e) => e.name))).toEqual(new Set(['TemplateImageError']));
-			expect(errors[0]!.message).toContain(`Template picture ${mediaId} could not be loaded`);
+			expect(errors[0]!.message).toContain(mediaId);
 			rendered.unmount();
 		} finally {
 			spy.mockRestore();

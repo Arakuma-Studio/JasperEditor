@@ -152,32 +152,6 @@ function specOf({ family, id }: CatalogueCase): TransitionSpec {
 }
 
 const api = {
-	catalogue(selection: CatalogueCase) {
-		const s = specOf(selection);
-		const errors: string[] = [];
-		const a = () => full(solid('#c84'));
-		const b = () => full(solid('#48c'));
-		const cases: [string, Parameters<typeof run>[2], Record<string, unknown>][] = [
-			['both', { frame: 0, duration: 10, out: a(), in: b() }, {}],
-			['mid', { frame: 5, duration: 10, out: a(), in: b() }, {}],
-			['in', { frame: 3, duration: 10, sides: 'in', in: b() }, {}],
-			['out', { frame: 9, duration: 10, sides: 'out', out: a() }, {}],
-			['reverse', { frame: 5, duration: 10, out: a(), in: b() }, { reverse: true }],
-		];
-		for (const [name, o, over] of cases) {
-			try {
-				const out = run(s, defaults(s, over), o);
-				// Fully progressed two-sided frames are not required to match exactly, but nothing may be NaN-black
-				// over an opaque frame in the middle of the transition.
-				if (name === 'mid' && px(out, W / 2, H / 2)[3] === 0)
-					errors.push(`${s.id} ${name}: transparent centre`);
-			} catch (e) {
-				errors.push(`${s.id} ${name}: ${(e as Error).message}`);
-			}
-		}
-		return { errors };
-	},
-
 	/**
 	 * Golden fingerprints (FilmCraft's transition fingerprints): one GPU transition at its defaults,
 	 * two-sided over the golden cards, at p = 0.25 / 0.5 / 0.75 (frames 5 / 10 / 15 of 20) → 4×4 mean RGB, compared

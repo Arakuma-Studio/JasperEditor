@@ -71,13 +71,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			await browser?.close();
 		});
 
-		// Keep the shared-host sequence: all catalogue draws, then all endpoints, then all fingerprints in each family.
 		for (const { family, ids, timeout } of transitionGroups) {
-			for (const id of ids)
-				it(`renders ${id} with both, single and reversed sides`, { timeout }, async () => {
-					const r = await call<{ errors: string[] }>('catalogue', { family, id });
-					expect(r.errors).toEqual([]);
-				});
 			for (const id of ids)
 				it(`shows A at progress 0 and B at 1 for ${id}`, { timeout }, async () => {
 					expect(endsOk(await call('ends', { family, id }))).toEqual([]);

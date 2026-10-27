@@ -120,11 +120,11 @@ describe('host agent + remote over a MessagePort (MG-1)', () => {
 	});
 
 	it('reports page failures as typed errors, one line, never a stack', async () => {
-		fakeRemotionPage({ failOn: 'Nope' });
+		fakeRemotionPage({ failOn: 'Title' });
 		const { remote } = await connect();
-		const e = await remote.configure({ compositionId: 'Nope', props: {} }).catch((x: unknown) => x);
+		const e = await remote.configure({ compositionId: 'Title', props: {} }).catch((x: unknown) => x);
 		expect(e).toBeInstanceOf(MgHostProtocolError);
-		expect(e).toMatchObject({ code: 'MG_HOST_NO_COMPOSITION', message: 'No composition "Nope"' });
+		expect(e).toMatchObject({ code: 'MG_HOST_NO_COMPOSITION', message: 'No composition "Title"' });
 
 		for (const k of REMOTION_GLOBALS) if (k !== '__jasperMgAgent' && k !== '__jasperTexts') delete W[k];
 		fakeRemotionPage({ version: '5.0.0' });
@@ -158,10 +158,9 @@ describe('host agent + remote over a MessagePort (MG-1)', () => {
 		fakeRemotionPage();
 		// A message from another window (a frame the bundle made, a window it opened) hands over nothing.
 		const stranger = new MessageChannel();
-		let answered = false;
-		stranger.port1.onmessage = () => {
-			answered = true;
-		};
+		const firstReply = new Promise<unknown>((resolve) => {
+			stranger.port1.onmessage = (event) => resolve(event.data);
+		});
 		window.dispatchEvent(
 			new MessageEvent('message', {
 				data: { jasperMgHost: MG_HOST_CONNECT },
@@ -172,8 +171,11 @@ describe('host agent + remote over a MessagePort (MG-1)', () => {
 		window.dispatchEvent(
 			new MessageEvent('message', { data: { jasperMgHost: 'other' }, source: window.parent }),
 		);
-		await new Promise((r) => setTimeout(r, 30));
-		expect(answered).toBe(false);
+		// The sentinel follows any unsolicited greeting on this same port, so no wall-clock wait is needed.
+		stranger.port2.postMessage('barrier');
+		expect(await firstReply).toBe('barrier');
+		stranger.port1.close();
+		stranger.port2.close();
 
 		const { port } = await connect();
 		const reply = (msg: unknown) =>
@@ -435,9 +437,11 @@ describe('the editor trusts nothing a bundle page says (MG-1)', () => {
 		expect(sanitizeFonts('nope', origin)).toEqual([]);
 		const many = Array.from({ length: 5000 }, (_, i) => ({ family: `F${i}`, source: 'url("data:x")' }));
 		expect(sanitizeFonts(many, origin).length).toBe(512);
+		// Sanitizing reads buffers without mutating them; one immutable allocation suffices for the total-byte limit.
+		const buffer = new ArrayBuffer(30 * 1024 * 1024);
 		const big = Array.from({ length: 10 }, (_, i) => ({
 			family: `B${i}`,
-			buffer: new ArrayBuffer(30 * 1024 * 1024),
+			buffer,
 		}));
 		expect(sanitizeFonts(big, origin).length).toBe(4); // 128 MiB in total
 	});

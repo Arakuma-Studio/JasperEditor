@@ -60,14 +60,6 @@ export {
 	measureTextBox,
 	type TextMeasureJob,
 } from './text/box-measure.ts';
-export {
-	type PaintBand,
-	type PaintMode,
-	paintCss,
-	planTextPaint,
-	shadowKey,
-	type TextPaintPlan,
-} from './text/paint.tsx';
 export { lottieThumbnail, pdfThumbnail } from './thumbnails.ts';
 export { drawPdfPage, pdfPagePicture } from './VectorLayer.tsx';
 export {

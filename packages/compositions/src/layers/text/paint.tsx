@@ -63,7 +63,7 @@ const NONE: CSSProperties = { color: 'transparent', WebkitTextStroke: '0px trans
 const opaque = (c: readonly number[]) => rgbaCss([c[0]!, c[1]!, c[2]!, 1]);
 
 /** Identity of a resolved shadow (spans with equal keys share a shadow layer). */
-export function shadowKey(sh: ResolvedTextShadow): string {
+function shadowKey(sh: ResolvedTextShadow): string {
 	return JSON.stringify([sh.dx, sh.dy, sh.sigma, sh.spreadPx, sh.color]);
 }
 

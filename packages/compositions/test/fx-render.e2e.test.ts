@@ -19,6 +19,7 @@ describe.runIf(enabled)(
 		let media: FxMedia;
 		let serveUrl: string;
 		let renderer: typeof import('@remotion/renderer');
+		let puppeteerInstance: Awaited<ReturnType<typeof renderer.openBrowser>> | undefined;
 		const browserExecutable =
 			process.env.JASPER_BROWSER_EXECUTABLE ??
 			(existsSync('/usr/bin/google-chrome') ? '/usr/bin/google-chrome' : null);
@@ -29,11 +30,16 @@ describe.runIf(enabled)(
 			const { bundle } = await import('@remotion/bundler');
 			serveUrl = await bundle({ entryPoint: join(here, 'fx-render', 'entry.ts') });
 			renderer = await import('@remotion/renderer');
+			puppeteerInstance = await renderer.openBrowser('chrome', browser);
 			console.info(`[fx-render] stills in ${media.dir}`);
 		}, 300_000);
 
-		afterAll(() => {
-			media?.close();
+		afterAll(async () => {
+			try {
+				await puppeteerInstance?.close({ silent: true });
+			} finally {
+				media?.close();
+			}
 		});
 
 		async function still(doc: ReturnType<typeof fxSnapshot>, frame: number, name: string): Promise<Buffer> {
@@ -45,10 +51,19 @@ describe.runIf(enabled)(
 				serveUrl,
 				id: SEQUENCE_COMPOSITION_ID,
 				inputProps,
+				puppeteerInstance,
 				...browser,
 			});
 			const output = join(media.dir, `${name}.png`);
-			await renderer.renderStill({ composition, serveUrl, inputProps, frame, output, ...browser });
+			await renderer.renderStill({
+				composition,
+				serveUrl,
+				inputProps,
+				frame,
+				output,
+				puppeteerInstance,
+				...browser,
+			});
 			return execFileSync(
 				'ffmpeg',
 				['-v', 'error', '-i', output, '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'],

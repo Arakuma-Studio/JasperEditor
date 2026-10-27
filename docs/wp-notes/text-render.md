@@ -142,7 +142,6 @@ deterministic; textperf measured 1080 × 760 with its own box) — ≈ 2 × fewe
 - Unit: `packages/project/test/text-style.test.ts` (geometry, invariants, repair property test, load repair, measurer
   contract, `text.relayout` refusals / no-op / warnings, the stroke-row regression), `packages/session/test/
   text-relayout.test.ts` (system relayout without History entries, redo back to an estimate, read-only),
-  `packages/compositions/test/text-paint.test.tsx` (plan decisions, paint CSS, layer structure),
   `apps/engine/test/text-bake-crop.test.ts`.
 - In the running app (build VM dev stack, engine 47923 / vite 5193, Chromium via agent-browser): a project made by
   an agent transaction while the dev bundle was still building (boxes estimated, `layoutPending`) opened in the editor;
@@ -170,3 +169,11 @@ deterministic; textperf measured 1080 × 760 with its own box) — ≈ 2 × fewe
 - Performance: the fast path adds one DOM text copy per stroke and per shadow; the filter path one filter per text
   block (per animated unit / typeset glyph). Not benchmarked here (AS-050 / AS-075 measure subtitle playback).
 - Caption clips are not cropped tighter (their layer box is the frame; the bake renders full frame as before).
+
+## Test ownership
+
+Text paint is protected by the independent glyph/ring/alpha/Gaussian pixel witnesses and preview/export comparisons
+in `packages/compositions/test/text-paint.e2e.test.ts`. Paint-plan branch decisions, CSS strings, tile counts and DOM
+copy counts are implementation choices; their redundant unit and browser assertions were removed. The paint helpers
+remain internal to the rendering layers rather than being exposed by the package barrel. Per-case dispositions are
+recorded in `docs/test-audit/rendering.json`.
