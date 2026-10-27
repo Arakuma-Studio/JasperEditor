@@ -245,7 +245,7 @@ export function GlossaryPreferencesPage() {
 	const remove = async (entry: GlossaryEntry) => {
 		const ok = await confirmDialog({
 			title: t('Delete “{0}”?', entry.to),
-			body: 'The entry is removed from your glossary in every project. This cannot be undone.',
+			body: t('The entry is removed from your glossary in every project. This cannot be undone.'),
 			confirmLabel: 'Delete Entry',
 			danger: true,
 		});
