@@ -69,4 +69,5 @@ Started 2026-10-27. Private details (machines, agent ids, item names) live in `.
 - Prompting Whisper with script text can make it output script words that were not said; the spike measures it.
 
 ## 7. Log
-- 2026-10-27 — programme started; VM rented; spike and code-map research launched; code map done; spike done; spec 17 written; scalign, scapply, scscore, scglossary launched; scscore, scalign, scglossary merged; scengine launched; scapply merged; scweb launched; integrated suite on 2ac215fc: 9,237 passed, only the 7 known failures; sccalib launched; scengine merged; scweb merged; integrated suite running.
+- 2026-10-27 — programme started; VM rented; spike and code-map research launched; code map done; spike done; spec 17 written; scalign, scapply, scscore, scglossary launched; scscore, scalign, scglossary merged; scengine launched; scapply merged; scweb launched; integrated suite on 2ac215fc: 9,237 passed, only the 7 known failures; sccalib launched; scengine merged; scweb merged; integrated suite on 4bdd7fe3: typecheck passes, 9,341 tests passed, only the 7 known failures; lint
+  failed on the new e2e spec's formatting only (fixed in c008b648); waiting for sccalib before the final gate.
