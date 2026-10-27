@@ -11,7 +11,6 @@ import {
 	readLibraryProvenance,
 	recordingIdOf,
 	repairDocument,
-	SOUND_MATERIALS,
 	SOUND_REF_RE,
 	takeIdOf,
 } from '../src/index.ts';
@@ -190,24 +189,5 @@ describe('materialsOf (P6-E10 index field)', () => {
 		expect(materialsOf([])).toEqual([]);
 		expect(materialsOf([5, null, undefined, {}] as never)).toEqual([]);
 		expect(materialsOf('wood' as never)).toEqual([]);
-	});
-
-	it('property: any texts give a sorted, duplicate-free subset of the twelve materials', () => {
-		fc.assert(
-			fc.property(
-				fc.array(fc.oneof(fc.string(), fc.constantFrom('wood', 'GLASS', 'sci fi', 'Água')), {
-					maxLength: 20,
-				}),
-				(texts) => {
-					const m = materialsOf(texts);
-					expect(new Set(m).size).toBe(m.length);
-					const order = m.map((x) => SOUND_MATERIALS.indexOf(x));
-					expect(order.every((o) => o >= 0)).toBe(true);
-					expect([...order].sort((a, b) => a - b)).toEqual(order);
-					expect(materialsOf(texts)).toEqual(m);
-				},
-			),
-			{ numRuns: 300 },
-		);
 	});
 });

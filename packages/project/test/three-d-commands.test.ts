@@ -279,8 +279,13 @@ describe('lights', () => {
 		const h = new Harness();
 		const id = (h.ok([{ type: 'clip.addLight', at: 0, lightType: 'point' }]).results[0] as { clipId: string })
 			.clipId;
+		expect(snap(h).scene3d?.lights.map((light) => light.clipId)).toEqual([id]);
 		h.ok([{ type: 'clip.update', clipId: id, patch: { enabled: false } }]);
-		expect(snap(h).scene3d).toBeUndefined();
+		expect(snap(h).scene3d?.lights ?? []).toEqual([]);
+		h.ok([{ type: 'clip.update', clipId: id, patch: { enabled: true } }]);
+		expect(snap(h).scene3d?.lights.map((light) => light.clipId)).toEqual([id]);
+		h.ok([{ type: 'track.update', trackId: h.seq.clips[id]!.trackId, patch: { output: false } }]);
+		expect(snap(h).scene3d?.lights ?? []).toEqual([]);
 	});
 });
 

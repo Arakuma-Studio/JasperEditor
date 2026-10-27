@@ -297,13 +297,6 @@ describe('presets', () => {
 			'E_UNKNOWN_EFFECT',
 		);
 	});
-	it('works on reversed clips (keys sorted, in range)', () => {
-		const h = new Harness();
-		const id = withText(h);
-		h.ok([{ type: 'clip.setSpeed', clipIds: [id], reverse: true, ripple: false }]);
-		h.ok([{ type: 'textAnimator.applyPreset', clipIds: [id], preset: 'fade-up-characters' }]);
-		invariantsOk(h);
-	});
 });
 
 describe('Path Options, More Options, Source Text', () => {

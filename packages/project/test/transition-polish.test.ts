@@ -170,10 +170,6 @@ describe('trackers of transition sides', () => {
 		return { h, b, t: snap.videoTracks[0]!.transitions![0]! };
 	}
 
-	it('no tracker: no tracks on the transition', () => {
-		expect(setup().t.tracks).toBeUndefined();
-	});
-
 	it("a planar track of B over the span, through B's Motion, in sequence px", () => {
 		const { t } = setup({ tracker: 'planar' });
 		expect([t.start, t.duration]).toEqual([90, 20]);

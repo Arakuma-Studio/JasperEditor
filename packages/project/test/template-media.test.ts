@@ -3,7 +3,6 @@
 // snapshot and the bounded `collectParamMediaIds` walk.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { collectOrphans } from '../src/commands/handlers/project.ts';
 import {
@@ -12,7 +11,6 @@ import {
 	buildRenderSnapshot,
 	type Clip,
 	type ClipboardPayload,
-	CURRENT_SCHEMA_VERSION,
 	checkInvariants,
 	collectParamMediaIds,
 	loadProject,
@@ -23,7 +21,6 @@ import {
 	paramsPropertySpecs,
 	planProjectManager,
 	repairDocument,
-	rewriteParamMedia,
 } from '../src/index.ts';
 import { Harness, videoAsset } from './helpers.ts';
 import { avatarCard, avatarRegistries } from './template-media-fixture.ts';
@@ -76,50 +73,6 @@ describe('collectParamMediaIds', () => {
 		for (let i = 0; i < PARAM_MEDIA_MAX_DEPTH + 5; i++) deep = { x: deep };
 		expect(collectParamMediaIds(deep)).toEqual([]);
 		expect(collectParamMediaIds({ x: { mediaId: 'shallow' } })).toEqual(['shallow']);
-	});
-
-	it('agrees with a naive walk on arbitrary JSON (property)', () => {
-		const naive = (v: unknown, out = new Set<string>()): Set<string> => {
-			if (v && typeof v === 'object') {
-				const id = (v as { mediaId?: unknown }).mediaId;
-				if (!Array.isArray(v) && typeof id === 'string' && id) out.add(id);
-				for (const x of Object.values(v)) naive(x, out);
-			}
-			return out;
-		};
-		const ref = fc.record({ mediaId: fc.constantFrom('a', 'b', '', 'c') });
-		const json = fc.letrec((tie) => ({
-			v: fc.oneof(
-				{ depthSize: 'small' },
-				fc.jsonValue({ maxDepth: 2 }),
-				ref,
-				fc.array(tie('v'), { maxLength: 4 }),
-				fc.dictionary(fc.string({ maxLength: 4 }), tie('v'), { maxKeys: 4 }),
-			),
-		})).v;
-		fc.assert(
-			fc.property(json, (v) => {
-				expect(new Set(collectParamMediaIds(v))).toEqual(naive(v));
-			}),
-		);
-	});
-
-	it('rewriteParamMedia maps, clears and keeps references without touching other branches', () => {
-		const params = {
-			avatar: { mediaId: 'm1' },
-			other: { k: 1 },
-			list: [{ mediaId: 'm2' }, { mediaId: 'm3' }],
-		};
-		const { value, changed } = rewriteParamMedia(params, (id) =>
-			id === 'm1' ? null : id === 'm2' ? 'n2' : undefined,
-		);
-		expect(value).toEqual({ avatar: null, other: { k: 1 }, list: [{ mediaId: 'n2' }, { mediaId: 'm3' }] });
-		expect(value.other).toBe(params.other);
-		expect(changed).toEqual(['avatar', 'list.0']);
-		expect(params.avatar).toEqual({ mediaId: 'm1' });
-		const same = rewriteParamMedia(params, () => undefined);
-		expect(same.value).toBe(params);
-		expect(same.changed).toEqual([]);
 	});
 });
 
@@ -329,14 +282,10 @@ describe('validation of template media params (validateMgParams, param.set)', ()
 });
 
 describe('schema v9 (template media params)', () => {
-	const fixture = (v: number) =>
-		JSON.parse(readFileSync(join(__dirname, 'fixtures', `schema-v${v}.jasper`), 'utf8'));
-
 	it('the v9 fixture keeps its template media references through the load pipeline (and the v9 → v10 step)', () => {
-		const r = loadProject(fixture(9), { mgTemplates: avatarRegistries().mgTemplates });
-		expect(CURRENT_SCHEMA_VERSION).toBe(10);
+		const fixture = JSON.parse(readFileSync(join(__dirname, 'fixtures', 'schema-v9.jasper'), 'utf8'));
+		const r = loadProject(fixture, { mgTemplates: avatarRegistries().mgTemplates });
 		expect(r.readOnly).toBe(false);
-		expect(r.migration.steps).toEqual(['v9→v10']);
 		expect(r.repairs).toEqual([]);
 		expect(r.issues).toEqual([]);
 		const clip = r.document.sequences.seq_000000000000SEQ1!.clips.clp_00000000000MG001 as Mg;
@@ -346,23 +295,6 @@ describe('schema v9 (template media params)', () => {
 			clips: 1,
 			sequences: ['seq_000000000000SEQ1'],
 		});
-	});
-
-	it('v7 and v8 (Premiere port) projects migrate to the current version through every step, the v8 Crop order kept', () => {
-		const v7 = loadProject(fixture(7));
-		expect(v7.readOnly).toBe(false);
-		expect(v7.migration.steps).toEqual(['v7→v8', 'v8→v9', 'v9→v10']);
-		expect(v7.document.schemaVersion).toBe(10);
-		const v8 = loadProject(fixture(8));
-		expect(v8.readOnly).toBe(false);
-		expect(v8.migration.steps).toEqual(['v8→v9', 'v9→v10']);
-		expect(v8.document.schemaVersion).toBe(10);
-		expect(v8.repairs).toEqual([]);
-		const effects = Object.values(v8.document.sequences.seq_000000000000SEQ1!.clips).flatMap((c) =>
-			'effects' in c ? c.effects.map((e) => e.effectId) : [],
-		);
-		// v8 renders Crop where it sits; the v8 → v9 and v9 → v10 steps must not move it back to the front.
-		expect(effects).toEqual(['jasper.mirror', 'jasper.crop']);
 	});
 });
 

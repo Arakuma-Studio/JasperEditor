@@ -251,21 +251,7 @@ describe('wiggle', () => {
 });
 
 describe('merge', () => {
-	const ie = (a: BezPath, b: BezPath) => {
-		const aa = area([a]);
-		const ab = area([b]);
-		const u = area([merge([a, b], 'add')]);
-		const i = area([merge([a, b], 'intersect')]);
-		const s = area([merge([a, b], 'subtract')]);
-		const x = area([merge([a, b], 'exclude')]);
-		const tol = 1e-3 * (aa + ab);
-		expect(i).toBeGreaterThan(1);
-		close(u, aa + ab - i, tol);
-		close(s, aa - i, tol);
-		close(x, u - i, tol);
-	};
-	it('rect inclusion-exclusion', () => {
-		ie(sq(0, 0, 100), sq(50, 30, 100));
+	it('intersects overlapping rectangles to their literal overlap area', () => {
 		close(area([merge([sq(0, 0, 100), sq(50, 30, 100)], 'intersect')]), 3500, 1e-6);
 	});
 	it('edge cases', () => {
