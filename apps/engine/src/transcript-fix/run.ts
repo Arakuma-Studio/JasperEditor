@@ -466,8 +466,9 @@ function itemOf(c: FixCandidate, d: FixDecision, edit: ReplaceWordsEdit): Propos
 		},
 		{ group: d.group!, rule: d.rule, deltaTok: d.deltaTok, words: d.words },
 		edit,
+		{ id: itemIdOf(c) },
 	);
-	return { ...item, id: itemIdOf(c), ...(d.selected ? {} : { selected: false }) };
+	return d.selected ? item : { ...item, selected: false };
 }
 
 /** Runs steps 3–4 for every media of `p` (one at a time). */
@@ -716,8 +717,17 @@ export async function runPipeline(deps: TranscriptFixDeps, p: Prepared, o: Pipel
 			if (!x.decision || x.decision.group === null) continue;
 			const edit = replaceWordsEdit(x.candidate, x.decision);
 			if (!edit) continue;
-			x.edit = edit;
-			x.item = itemOf(x.candidate, x.decision, edit);
+			try {
+				x.item = itemOf(x.candidate, x.decision, edit);
+				x.edit = edit;
+			} catch (e) {
+				// a malformed edit is a producer bug, never the document's: the fix is left out and reported
+				bump(skipped, 'malformed');
+				warnings.push({
+					code: 'W_FIX_MALFORMED',
+					message: `A fix was left out: ${(e as Error).message}`.slice(0, 300),
+				});
+			}
 		}
 	timings.decideMs += Date.now() - d0;
 	const anyScript = [...scripts.values()][0] ?? null;
