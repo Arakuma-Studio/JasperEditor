@@ -1,8 +1,10 @@
 // Audio score windows and readings (spec 17 SC-030, SC-031; request / result shapes of SC-092). Ported from the
-// scriptfix spike (`sfjobs.py` `windows`, `bounds`, `add_readings`; FINDINGS §2.5) with the spec's packing: the
-// transcript is split at gaps ≥ 1 s, a stretch longer than 28 s is split at its largest gap, consecutive stretches are
-// packed into windows of ≤ 28 s, and each window is padded 0.25 s before / 0.35 s after its words (at most half the
-// gap to the neighbouring words, and 20 ms clear of them). Only windows holding candidates are returned. Reading 0 is
+// scriptfix spike (`sfjobs.py` `windows`, `bounds`, `add_readings`; FINDINGS §2.5): the transcript is split at gaps
+// ≥ 1 s, a stretch longer than 28 s is split at its largest gap, and each window is padded 0.25 s before / 0.35 s
+// after its words (at most half the gap to the neighbouring words, and 20 ms clear of them). Packing consecutive
+// stretches into windows of ≤ 28 s (the spec's cost measure) is an option, off by default: on real recordings a gap
+// between stretches can hold speech the transcript missed, and teacher forcing then lets a reading borrow that audio
+// (SC-105 harness: 2 real deviations, a hallucination and a corrupted word fixed with packing, none without). Only windows holding candidates are returned. Reading 0 is
 // the window's ASR words; reading k replaces candidate k's region by its display words; each candidate is scored
 // against reading 0 on its own. Pure; times are integer media flicks.
 import { FLICKS_PER_SECOND } from '../time.ts';
@@ -17,8 +19,12 @@ export const SCORE_WINDOW_DEFAULTS = Object.freeze({
 	padAfterSeconds: 0.35,
 	/** Pads stop this far from the neighbouring words. */
 	edgeMarginSeconds: 0.02,
-	/** Pack consecutive stretches into one window up to `maxSeconds` (one encoder pass for several stretches). */
-	pack: true,
+	/**
+	 * Pack consecutive stretches into one window up to `maxSeconds` (one encoder pass for several stretches). Off: the
+	 * SC-105 harness measured false fixes from packed windows and only 23 % more encoder passes without packing
+	 * (docs/wp-notes/script-correction.md "Accuracy on real recordings").
+	 */
+	pack: false,
 	/**
 	 * Most transcript words in one window (longer stretches are split at their largest gap, like `maxSeconds`). Ordinary
 	 * speech has ≤ 90 words in 28 s (SC-105 harness); only loops such as "cab cab cab …" reach it. Keeps every reading

@@ -106,6 +106,16 @@ describe('script parsing (SC-002)', () => {
 		);
 		expect(s.properNorms).toEqual(['glimmerbox', 'ios']);
 	});
+
+	it('a name the script writes both ways is proper when capitalised mid-sentence in a third of its uses', () => {
+		const s = parseScript(
+			'Hoy llega Nova al juego. Con nova todo cambia. Ya ves, nova gana. Y luego Nova pierde. ' +
+				'El mapa es enorme. Un mapa nuevo, otro mapa y el Mapa final. Miramos el mapa otra vez.',
+			{ language: 'es' },
+		);
+		// nova: 2 capitalised mid-sentence, 2 lower case → proper; mapa: 1 capitalised, 4 lower case → not
+		expect(s.properNorms).toEqual(['nova']);
+	});
 });
 
 describe('alignment and candidates, Spanish (SC-010 … SC-026)', () => {
@@ -469,9 +479,16 @@ describe('windows, scores, edits (SC-030 … SC-042)', () => {
 			'hoy probamos el motor de pixelforch con un nivel nuevo | ahora vamos guardar el proyecto en la carpeta',
 		);
 		expect(r.candidates.map((c) => c.kind)).toEqual(['sub', 'del']);
-		const { windows, unplaced } = buildScoreWindows(r.words, r.candidates);
+		// the 1.5 s pause splits the stretches: one window each by default (no packing)
+		const unpacked = buildScoreWindows(r.words, r.candidates);
+		expect(unpacked.unplaced).toEqual([]);
+		expect(unpacked.windows.map((w) => [w.fromWord, w.toWord])).toEqual([
+			[0, 10],
+			[10, 18],
+		]);
+		// with packing on, both fit one window of ≤ 28 s
+		const { windows, unplaced } = buildScoreWindows(r.words, r.candidates, { pack: true });
 		expect(unplaced).toEqual([]);
-		// the 1.5 s pause splits the stretches; both fit one packed window of ≤ 28 s
 		expect(windows).toHaveLength(1);
 		const w = windows[0]!;
 		expect(w.readings.map((x) => x.words.join(' '))).toEqual([
