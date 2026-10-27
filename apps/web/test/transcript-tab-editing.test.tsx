@@ -11,7 +11,7 @@ import type { EditorSession } from '@jasper/session';
 import { SessionProvider, useStoreSelector } from '@jasper/session/react';
 import { closeAllDialogs, DialogHost } from '@jasper/ui';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { FakeEngine } from '../../../packages/session/test/fake-proposals-engine.ts';
 import { registerAllCommands } from '../src/commands/index.ts';
 import { TranscriptTab } from '../src/panels/text/TranscriptTab.tsx';
@@ -122,7 +122,11 @@ describe('manual fixes and their offers (SC-071 / SC-085)', () => {
 
 	it('Correct… over two words offers the other occurrence, keeping its punctuation', () => {
 		const { texts } = setup();
-		vi.spyOn(window, 'prompt').mockReturnValue('NovaPlay');
+		const prompt = window.prompt;
+		window.prompt = vi.fn(() => 'NovaPlay');
+		onTestFinished(() => {
+			window.prompt = prompt;
+		});
 		act(() => {
 			fireEvent.pointerDown(word(5), { button: 0 });
 			fireEvent.pointerDown(word(6), { button: 0, shiftKey: true });
@@ -222,9 +226,11 @@ describe('proposed fixes in the transcript (SC-083)', () => {
 			{ agent: 'jasper' },
 		);
 		render(
-			<SessionProvider session={f.session}>
-				<Host session={f.session} seqId={f.seqId} />
-			</SessionProvider>,
+			<EngineProvider client={fakeClient().client}>
+				<SessionProvider session={f.session}>
+					<Host session={f.session} seqId={f.seqId} />
+				</SessionProvider>
+			</EngineProvider>,
 		);
 		expect(word(2).getAttribute('data-fix-item')).toBeNull();
 		await act(async () => {

@@ -235,10 +235,8 @@ describe('the manual-edit offer (SC-071)', () => {
 			language: 'es-ES',
 		})!;
 		expect(o).toMatchObject({ from: 'Glimer', to: 'Glimmer', lang: 'es', canRemember: true });
-		expect(o.plan.occurrences.map((x) => x.edit.words.map((w) => w.text))).toEqual([
-			['Glimmer'],
-			['Glimmer,'],
-		]);
+		// the edited span itself is never offered again; the other keeps its own comma
+		expect(o.plan.occurrences.map((x) => x.edit.words.map((w) => w.text))).toEqual([['Glimmer,']]);
 		const edited = editOffer(f.doc(), f.seqId, {
 			oldWords: ['fin'],
 			newText: 'fin.',
