@@ -39,9 +39,11 @@ const LITTLE_ENDIAN = endianness() === 'LE';
 
 /** The deliverable's audio encoding (what the export's mux writes). */
 export type DeliveryCodec = {
-	/** ffmpeg audio encoder: `aac`, `libopus`, `pcm_s16le`, `pcm_s24le`. */
+	/** ffmpeg audio encoder: `aac`, `libopus`, `pcm_s16le`, `pcm_s24le`, `flac`. */
 	codec: string;
 	bitrateKbps: number;
+	/** FLAC bits per sample (spec 18 AF-EXP-002; default 24). */
+	bits?: 16 | 24;
 	/** Delivered sample rate (the mix is resampled with the export's resampler when it differs). */
 	sampleRate: number;
 	channels: number;
@@ -120,7 +122,15 @@ export function codecLoudnessLossLu(c: Pick<DeliveryCodec, 'codec' | 'bitrateKbp
 }
 
 export function isLossyCodec(codec: string): boolean {
-	return !codec.startsWith('pcm_');
+	return !codec.startsWith('pcm_') && codec !== 'flac';
+}
+
+/** The muxer and file extension of an encode of `codec` (the decoded check's encodes, as the deliverable holds it). */
+export function deliveryContainerOf(codec: string): { format: string; ext: string } {
+	if (codec === 'libopus') return { format: 'webm', ext: 'webm' };
+	if (codec === 'flac') return { format: 'flac', ext: 'flac' };
+	if (isLossyCodec(codec)) return { format: 'mp4', ext: 'm4a' };
+	return { format: 'wav', ext: 'wav' };
 }
 
 /** Bit rate per channel pair (kb/s): the table's unit (5.1 at 384 kb/s ≈ stereo at 128). */
@@ -349,7 +359,6 @@ export function verifyEncodeArgs(o: {
 		...(c.sampleRate !== o.mixRate ? [`aresample=${c.sampleRate}:${resamplerArgs(o.soxr)}`] : []),
 		`aformat=sample_fmts=fltp:channel_layouts=${layout}`,
 	];
-	const lossy = isLossyCodec(c.codec);
 	return [
 		'-i',
 		o.input,
@@ -357,13 +366,13 @@ export function verifyEncodeArgs(o: {
 		'0:a:0',
 		'-af',
 		af.join(','),
-		...audioEncodeArgs(c.codec, c.bitrateKbps, c.channels),
+		...audioEncodeArgs(c.codec, c.bitrateKbps, c.channels, c.bits),
 		'-ar',
 		String(c.sampleRate),
 		'-ac',
 		String(c.channels),
 		'-f',
-		!lossy ? 'wav' : c.codec === 'libopus' ? 'webm' : 'mp4',
+		deliveryContainerOf(c.codec).format,
 		o.output,
 	];
 }
@@ -437,7 +446,7 @@ function deliveryCacheKey(o: {
 		o.total,
 		o.targetLufs,
 		o.truePeakDb,
-		c ? `${c.codec}/${c.bitrateKbps}/${c.sampleRate}/${c.channels}` : 'none',
+		c ? `${c.codec}/${c.bitrateKbps}/${c.sampleRate}/${c.channels}${c.bits ? `/${c.bits}` : ''}` : 'none',
 		o.soxr ? 'soxr' : 'swr',
 	].join('|');
 }
@@ -646,7 +655,7 @@ export async function solveDelivery(o: {
 	if (verify && o.codec && o.outPath && o.write) {
 		const codec = o.codec;
 		const outPath = o.outPath;
-		const ext = isLossyCodec(codec.codec) ? (codec.codec === 'libopus' ? 'webm' : 'm4a') : 'wav';
+		const ext = deliveryContainerOf(codec.codec).ext;
 		/** One encode of the decoded check: its parameters, the WAV it encodes and the encoded file. */
 		type Cand = {
 			params: DeliveryParams;

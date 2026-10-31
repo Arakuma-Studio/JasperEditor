@@ -37,6 +37,55 @@ export const ExportCreditsSchema = z.object({
 });
 export type ExportCredits = z.infer<typeof ExportCreditsSchema>;
 
+/**
+ * spec 18 AF-EXP: what an export writes. Video containers hold the picture (and the mix unless `videoOnly`); `gif` is
+ * an animated GIF of the rendered picture (no sound); `wav` / `flac` / `m4a` hold the sequence mix only.
+ */
+export const VIDEO_CONTAINERS = ['mp4', 'webm', 'mov'] as const;
+export const AUDIO_ONLY_CONTAINERS = ['wav', 'flac', 'm4a'] as const;
+export const EXPORT_CONTAINERS = [...VIDEO_CONTAINERS, 'gif', ...AUDIO_ONLY_CONTAINERS] as const;
+export type ExportContainer = (typeof EXPORT_CONTAINERS)[number];
+export type AudioOnlyContainer = (typeof AUDIO_ONLY_CONTAINERS)[number];
+export function isAudioOnlyContainer(c: string): c is AudioOnlyContainer {
+	return (AUDIO_ONLY_CONTAINERS as readonly string[]).includes(c);
+}
+
+/** GIF dithering (`paletteuse` `dither`): error diffusion (Sierra-2-4A, Sierra-2, Floyd–Steinberg), ordered, none. */
+export const GIF_DITHERS = ['sierra2_4a', 'sierra2', 'floyd_steinberg', 'bayer', 'none'] as const;
+/**
+ * GIF palettes (`palettegen` `stats_mode`): `full` = one palette from every frame, `diff` = one palette weighted to what
+ * moves (static backgrounds get fewer colours), `single` = a new palette per frame (largest files, best colour).
+ */
+export const GIF_PALETTES = ['full', 'diff', 'single'] as const;
+/** GIF limits (spec 18 AF-EXP-001): browsers clamp frame delays under 2 cs (50 fps) to 10 cs. */
+export const GIF_LIMITS = {
+	defaultFps: 15,
+	maxFps: 50,
+	minFps: 1,
+	/** Default width: the sequence width capped at this. */
+	defaultMaxWidth: 1080,
+	minWidth: 16,
+	maxWidth: 4096,
+	/** Plays of a loop count (`loop`): 0 = forever, else 1…this. */
+	maxPlays: 65536,
+} as const;
+
+export const ExportGifSchema = z.object({
+	/** Frames per second (default 15, at most 50). Frames are the sequence frames nearest each GIF frame time. */
+	fps: z.number().min(GIF_LIMITS.minFps).max(GIF_LIMITS.maxFps).optional(),
+	/** Width in pixels (default: the sequence width capped at 1080); the height keeps the sequence aspect (even). */
+	width: z.number().int().min(GIF_LIMITS.minWidth).max(GIF_LIMITS.maxWidth).optional(),
+	/** How many times the animation plays: 0 = forever (default), 1 = once, n = n times. */
+	loop: z.number().int().min(0).max(GIF_LIMITS.maxPlays).optional(),
+	/** Dithering (default `sierra2_4a`). */
+	dither: z.enum(GIF_DITHERS).optional(),
+	/** Bayer pattern scale 0–5 (`bayer` only; default 2: higher = less visible pattern, more banding). */
+	bayerScale: z.number().int().min(0).max(5).optional(),
+	/** Palette statistics (default `full`). */
+	palette: z.enum(GIF_PALETTES).optional(),
+});
+export type ExportGif = z.infer<typeof ExportGifSchema>;
+
 /** If H.264 is unavailable, the render plan names the codec and container the engine will use. */
 export const ExportSettingsSchema = z.object({
 	sequenceId: z.string(),
@@ -51,7 +100,14 @@ export const ExportSettingsSchema = z.object({
 		}),
 	]),
 	presetId: z.string().optional(),
-	container: z.enum(['mp4', 'webm', 'mov']),
+	/**
+	 * `mp4` / `webm` / `mov`: video (`video` + `audio`); `gif`: an animated GIF (`gif`; no `video`, no `audio`: the plan
+	 * warns that the sound is left out); `wav` / `flac` / `m4a`: the sequence mix only (`audio` with codec `pcm`, `flac`,
+	 * `aac`; no `video`).
+	 */
+	container: z.enum(EXPORT_CONTAINERS),
+	/** spec 18 AF-EXP-001: the GIF's rate, width, loop count, dithering and palette (`container: 'gif'`). */
+	gif: ExportGifSchema.optional(),
 	video: z
 		.object({
 			codec: VideoCodecSchema,
@@ -115,8 +171,13 @@ export const ExportSettingsSchema = z.object({
 		.optional(),
 	audio: z
 		.object({
-			/** `pcm` is 24-bit and requires MOV. */
-			codec: z.enum(['aac', 'opus', 'pcm']),
+			/**
+			 * `pcm` is 24-bit and requires MOV in a video export; WAV exports write 16 or 24 bits (`bitDepth`). `flac` is for
+			 * FLAC files only, `aac` in M4A files.
+			 */
+			codec: z.enum(['aac', 'opus', 'pcm', 'flac']),
+			/** spec 18 AF-EXP-002: bits per sample of a WAV or FLAC file (default 24). */
+			bitDepth: z.union([z.literal(16), z.literal(24)]).optional(),
 			/** 44.1 / 48 / 96 kHz (default: the sequence rate). AAC and Opus encode at 48 kHz max 96. */
 			sampleRate: z.union([z.literal(44100), z.literal(48000), z.literal(96000)]),
 			/** 6 = discrete 5.1 (L R C LFE Ls Rs); a 5.1 Mix exported as 2/1 channels is folded (BS.775). */
@@ -189,7 +250,11 @@ export type ExportWarningParams = z.infer<typeof ExportWarningParamsSchema>;
 export const RenderPlanSchema = z.object({
 	planId: z.string().optional(),
 	documentRevision: z.number().int().optional(),
-	path: z.union([z.enum(['copy', 'native', 'hybrid', 'remotion', 'browser']), z.string().regex(/^cloud:/)]),
+	/** `audio` = an audio-only export: the mixdown alone, no picture path. */
+	path: z.union([
+		z.enum(['copy', 'native', 'hybrid', 'remotion', 'browser', 'audio']),
+		z.string().regex(/^cloud:/),
+	]),
 	segments: z.array(
 		z.object({
 			startFrame: z.number().int(),
@@ -245,6 +310,37 @@ export const RenderPlanSchema = z.object({
 		.optional(),
 	/** Encoder that will write the file (D-13); absent when the engine cannot encode at all. */
 	encoder: EncoderChoiceSchema.optional(),
+	/**
+	 * spec 18 AF-EXP: the file of a GIF or audio-only export. A GIF renders the picture on `path` into a ProRes
+	 * intermediate (`encoder`) and converts it (palette + dither) to `frames` GIF frames; an audio-only export writes the
+	 * mix with `codec`.
+	 */
+	deliverable: z
+		.discriminatedUnion('kind', [
+			z.object({
+				kind: z.literal('gif'),
+				fps: z.number(),
+				width: z.number().int(),
+				height: z.number().int(),
+				frames: z.number().int(),
+				/** 0 = forever, else how many times it plays. */
+				loop: z.number().int(),
+				dither: z.enum(GIF_DITHERS),
+				bayerScale: z.number().int().optional(),
+				palette: z.enum(GIF_PALETTES),
+			}),
+			z.object({
+				kind: z.literal('audio'),
+				container: z.enum(AUDIO_ONLY_CONTAINERS),
+				/** ffmpeg encoder: `pcm_s16le`, `pcm_s24le`, `flac` or `aac`. */
+				codec: z.string(),
+				sampleRate: z.number().int(),
+				channels: z.number().int(),
+				bitDepth: z.number().int().optional(),
+				bitrateKbps: z.number().int().optional(),
+			}),
+		])
+		.optional(),
 });
 export type RenderPlan = z.infer<typeof RenderPlanSchema>;
 
@@ -265,16 +361,26 @@ export const ExportResultSchema = z.object({
 	path: z.string().optional(),
 	/** FFmpeg video encoder and container actually used (D-13). */
 	encoder: z.string().optional(),
-	container: z.enum(['mp4', 'webm', 'mov']).optional(),
-	/** FFmpeg audio encoder actually used (`aac`, `libopus`, `pcm_s16le`, `pcm_s24le`); absent without audio. */
+	container: z.enum(EXPORT_CONTAINERS).optional(),
+	/** FFmpeg audio encoder actually used (`aac`, `libopus`, `pcm_s16le`, `pcm_s24le`, `flac`); absent without audio. */
 	audioCodec: z.string().optional(),
 	/**
 	 * Remotion path only (D-13): `intermediate` = Remotion rendered ProRes and the engine encoded the
 	 * deliverable; `direct` = Remotion encoded it (VP9/Opus, or H.264 in a GPL dev setup).
 	 */
 	remotionOutput: z.enum(['direct', 'intermediate']).optional(),
-	/** The path that produced the file (`hybrid` = native with baked layers). */
-	renderPath: z.enum(['copy', 'native', 'hybrid', 'remotion']).optional(),
+	/** The path that produced the file (`hybrid` = native with baked layers; `audio` = audio-only, no picture). */
+	renderPath: z.enum(['copy', 'native', 'hybrid', 'remotion', 'audio']).optional(),
+	/** spec 18 AF-EXP-001: a GIF's rate, size, frame count and loop count as written. */
+	gif: z
+		.object({
+			fps: z.number(),
+			width: z.number().int(),
+			height: z.number().int(),
+			frames: z.number().int(),
+			loop: z.number().int(),
+		})
+		.optional(),
 	/**
 	 * run-time warnings, e.g. `NATIVE_FALLBACK` when a native preparation step failed
 	 * and an `auto` export was rendered on the Remotion path instead; also the plan's sound warnings

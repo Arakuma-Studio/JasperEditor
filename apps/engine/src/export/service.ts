@@ -58,9 +58,11 @@ import type { FontCatalogService } from '../fonts/catalog.ts';
 import type { JobQueue } from '../jobs/queue.ts';
 import { type JobContext, JobError } from '../jobs/types.ts';
 import type { MediaRegistry } from '../media/registry.ts';
+import { assertLgplFilters } from '../processing/proc/filters.ts';
 import { engineTemplateAssets } from '../remote-assets/plan.ts';
 import { appendEncoderArgs, planRemotionExport } from '../remotion/export-plan.ts';
 import type { RemotionService } from '../remotion/service.ts';
+import { LOCAL_PROTOCOLS } from '../sounds/decode.ts';
 import { audioEncodeArgs, type EncoderService, videoEncodeArgs } from '../tools/encoders.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { exists, randomId } from '../tools/fs.ts';
@@ -74,6 +76,7 @@ import {
 	sidecarTracks,
 	subtitleCodecFor,
 } from './captions.ts';
+import { audioOnlyMuxArgs, gifGraphs, gifMuxLoop, gifToRgb } from './deliverables.ts';
 import { BT709_FRAME_TAGS, buildNativeGraph, SWS_FLAGS } from './native.ts';
 import {
 	layerOverride,
@@ -281,8 +284,22 @@ export class ExportService {
 			},
 			this.planDeps(caps),
 		);
-		if (req.settings.usePreviews) await this.attachPreviews(planned, req.settings);
-		if (!planned.previews) await this.attachSmart(planned, req.settings);
+		const kind = planned.deliverable?.kind;
+		// spec 18 AF-EXP: an audio-only file has no picture (the planner says previews are unused); a GIF's picture is
+		// rendered and converted, never stream-copied
+		if (req.settings.usePreviews && kind !== 'audio') await this.attachPreviews(planned, req.settings);
+		if (kind) {
+			if (req.settings.smartRender === true)
+				planned.plan.smart = {
+					used: false,
+					copiedFrames: 0,
+					reasons: [
+						kind === 'gif'
+							? 'GIF frames are always rendered and converted'
+							: 'Audio-only exports have no picture to copy',
+					],
+				};
+		} else if (!planned.previews) await this.attachSmart(planned, req.settings);
 		return planned;
 	}
 
@@ -1372,7 +1389,7 @@ export class ExportService {
 	private async renderAudio(
 		planned: PlannedExport,
 		ctx: JobContext,
-		opts: { deliver?: boolean } = { deliver: true },
+		opts: { deliver?: boolean; onProgress?: (fraction: number, stage: string) => void } = { deliver: true },
 	): Promise<MixdownResult> {
 		ctx.progress(0, { stage: 'Mixing audio' });
 		const o = planned.output;
@@ -1401,7 +1418,7 @@ export class ExportService {
 			scratchDir: await ctx.scratchDir(),
 			signal: ctx.signal,
 			onSpawn: ctx.trackChild,
-			onProgress: (_f, stage) => ctx.progress(0, { stage }),
+			onProgress: (f, stage) => (opts.onProgress ? opts.onProgress(f, stage) : ctx.progress(0, { stage })),
 		});
 		const d = mix.normalized?.delivery;
 		const t = (ms: number) => `${Math.round(ms)} ms`;
@@ -1837,14 +1854,19 @@ export class ExportService {
 			throw e;
 		}
 		const dir = await this.outDir(ctx);
-		const encoder = planned.output.encoder;
-		const output = join(dir, `output.${encoder?.container ?? 'mp4'}`);
+		const output = join(dir, `output.${outputExtension(planned)}`);
 		ctx.addPartial(dir);
-		const rendered = planned.previews?.some((r) => r.kind === 'preview')
-			? await this.renderWithPreviews(ctx, req, planned, output, planned.previews)
-			: planned.smart
-				? await this.renderSmart(ctx, req, planned, output, planned.smart)
-				: await this.renderPlanned(ctx, req, planned, output);
+		const del = planned.deliverable;
+		const rendered =
+			del?.kind === 'audio'
+				? await this.renderAudioOnly(ctx, planned, output)
+				: del?.kind === 'gif'
+					? await this.renderGif(ctx, req, planned, output)
+					: planned.previews?.some((r) => r.kind === 'preview')
+						? await this.renderWithPreviews(ctx, req, planned, output, planned.previews)
+						: planned.smart
+							? await this.renderSmart(ctx, req, planned, output, planned.smart)
+							: await this.renderPlanned(ctx, req, planned, output);
 		planned = rendered.planned;
 		const { frames, path, remotionOutput, warnings, audio } = rendered;
 		return this.finishExport(ctx, req, planned, output, dir, {
@@ -2023,6 +2045,187 @@ export class ExportService {
 		};
 	}
 
+	/**
+	 * spec 18 AF-EXP-001: a GIF — the picture rendered on the plan's path (native, hybrid or Remotion, with their
+	 * fallbacks and Use Previews) into a ProRes 4444 intermediate in the scratch directory, then converted at the GIF rate and
+	 * size in the display rendition (palette pass + dithered mapping). Progress spans both phases; the intermediate is
+	 * deleted after the conversion (and with the scratch directory when the job ends any other way).
+	 */
+	private async renderGif(
+		ctx: JobContext,
+		req: ExportStartRequest,
+		planned: PlannedExport,
+		output: string,
+	): Promise<{
+		planned: PlannedExport;
+		frames: number;
+		path: 'copy' | 'native' | 'hybrid' | 'remotion';
+		remotionOutput: 'direct' | 'intermediate' | undefined;
+		warnings: { code: string; message: string }[];
+		audio: MixdownResult | null;
+	}> {
+		const del = planned.deliverable;
+		if (del?.kind !== 'gif') throw new JobError('BAD_REQUEST', 'Not a GIF export', false);
+		const gif = del.gif;
+		const scratch = await ctx.scratchDir();
+		const source = join(scratch, 'gif-source.mov');
+		// phase 1 (render) 0–80 %, palette 80–86 %, frames 86–99 %
+		const RENDER = 0.8;
+		const PALETTE = 0.86;
+		const sub: JobContext = {
+			...ctx,
+			progress: (v, extra) =>
+				ctx.progress((v ?? 0) * RENDER, { ...extra, stage: `GIF 1/2 · ${extra?.stage ?? 'Rendering'}` }),
+		};
+		// the render paths and their fallbacks plan the intermediate's own settings
+		const renderReq: ExportStartRequest = { ...req, settings: del.render };
+		const rendered = planned.previews?.some((r) => r.kind === 'preview')
+			? await this.renderWithPreviews(sub, renderReq, planned, source, planned.previews)
+			: await this.renderPlanned(sub, renderReq, planned, source);
+		const color = rendered.planned.output.color;
+		const matrix = color?.swsMatrix === 'bt2020' ? 'bt2020' : 'bt709';
+		const lut = await displayLutFilter(planned.snapshot.settings.color, scratch);
+		const graphs = gifGraphs(gif, gifToRgb(gif, matrix, lut, SWS_FLAGS));
+		for (const g of [graphs.palette, graphs.encode]) if (g) assertLgplFilters(g);
+		const input = [...LOCAL_PROTOCOLS, '-i', source];
+		let palette: string | null = null;
+		if (graphs.palette) {
+			palette = join(scratch, 'gif-palette.png');
+			ctx.progress(RENDER, { stage: 'GIF 2/2 · Building the palette' });
+			const args = [...input, '-filter_complex', graphs.palette, '-map', '[out]', '-frames:v', '1', palette];
+			ctx.log(`ffmpeg ${args.join(' ')}`);
+			await this.deps.ff.run(args, { signal: ctx.signal, onSpawn: ctx.trackChild });
+		}
+		const loop = gifMuxLoop(gif.loop);
+		const args = [
+			...input,
+			...(palette ? [...LOCAL_PROTOCOLS, '-i', palette] : []),
+			'-filter_complex',
+			graphs.encode,
+			'-map',
+			'[out]',
+			'-loop',
+			String(loop),
+			'-f',
+			'gif',
+			output,
+		];
+		ctx.log(`ffmpeg ${args.join(' ')}`);
+		const total = planned.output.durationSec;
+		ctx.progress(PALETTE, { stage: 'GIF 2/2 · Writing frames' });
+		await this.deps.ff.run(args, {
+			signal: ctx.signal,
+			onSpawn: ctx.trackChild,
+			onProgress: (p) => {
+				if (total <= 0) return;
+				const t = Math.min(total, p.outTimeUs / 1e6);
+				ctx.progress(PALETTE + (t / total) * (0.99 - PALETTE), { stage: 'GIF 2/2 · Writing frames' });
+			},
+		});
+		await rm(source, { force: true });
+		if (palette) await rm(palette, { force: true });
+		const count = await this.deps.ff.countVideoFrames(output, { signal: ctx.signal });
+		if (count !== gif.frames)
+			throw new JobError(
+				'FRAME_COUNT_MISMATCH',
+				`Expected ${gif.frames} GIF frames, the file has ${count}`,
+				true,
+				{
+					expected: gif.frames,
+					actual: count,
+				},
+			);
+		ctx.log(
+			`gif: ${count} frames at ${gif.fps} fps, ${gif.width}×${gif.height}, loop ${gif.loop} (muxer ${loop})`,
+		);
+		// a Remotion fallback re-planned the intermediate: the file is still this GIF
+		return { ...rendered, planned: { ...rendered.planned, deliverable: del }, frames: count };
+	}
+
+	/**
+	 * spec 18 AF-EXP-002: an audio-only file — the offline mix of the range (the DSP of the preview and every export path,
+	 * with the export's rate, channels and loudness delivery) written as WAV, FLAC or M4A; the file's duration is checked
+	 * against the range.
+	 */
+	private async renderAudioOnly(
+		ctx: JobContext,
+		planned: PlannedExport,
+		output: string,
+	): Promise<{
+		planned: PlannedExport;
+		frames: number;
+		path: 'audio';
+		remotionOutput: undefined;
+		warnings: { code: string; message: string }[];
+		audio: MixdownResult | null;
+	}> {
+		const del = planned.deliverable;
+		if (del?.kind !== 'audio') throw new JobError('BAD_REQUEST', 'Not an audio-only export', false);
+		const MIX = 0.9;
+		const audio = await this.renderAudio(planned, ctx, {
+			deliver: true,
+			onProgress: (f, stage) => ctx.progress(Math.min(1, Math.max(0, f)) * MIX, { stage }),
+		});
+		const a = audioStream(planned, audio, await hasSoxr(this.deps.ff));
+		if (!a) throw new JobError('MIXDOWN_FAILED', 'The mixer wrote no audio', true);
+		const name = del.audio.container.toUpperCase();
+		const args = [
+			...LOCAL_PROTOCOLS,
+			'-i',
+			a.file,
+			'-map',
+			'0:a:0',
+			...a.args,
+			...audioOnlyMuxArgs(del.audio.container),
+			output,
+		];
+		ctx.log(`ffmpeg ${args.join(' ')}`);
+		const total = planned.output.durationSec;
+		ctx.progress(MIX, { stage: `Writing ${name}` });
+		await this.deps.ff.run(args, {
+			signal: ctx.signal,
+			onSpawn: ctx.trackChild,
+			onProgress: (p) => {
+				if (total <= 0) return;
+				const t = Math.min(total, p.outTimeUs / 1e6);
+				ctx.progress(MIX + (t / total) * (0.99 - MIX), { stage: `Writing ${name}` });
+			},
+		});
+		// the file holds the range: |file − range| ≤ max(1 frame, 50 ms)
+		const j = await this.deps.ff.probeJson(
+			[
+				...LOCAL_PROTOCOLS,
+				'-select_streams',
+				'a:0',
+				'-show_entries',
+				'stream=duration:format=duration',
+				output,
+			],
+			{ signal: ctx.signal },
+		);
+		const dur = Number(
+			(j.streams as { duration?: string }[] | undefined)?.[0]?.duration ??
+				(j.format as { duration?: string } | undefined)?.duration,
+		);
+		const fps = planned.output.fps;
+		const tol = Math.max(fps.den / fps.num, 0.05);
+		if (!Number.isFinite(dur) || Math.abs(dur - total) > tol)
+			throw new JobError(
+				'DURATION_MISMATCH',
+				`Expected ${total.toFixed(3)} s of audio, the ${name} file holds ${Number.isFinite(dur) ? dur.toFixed(3) : 'none'}`,
+				true,
+				{ expectedSec: total, actualSec: Number.isFinite(dur) ? dur : null },
+			);
+		return {
+			planned,
+			frames: planned.output.frames,
+			path: 'audio',
+			remotionOutput: undefined,
+			warnings: [],
+			audio,
+		};
+	}
+
 	private async finishExport(
 		ctx: JobContext,
 		req: ExportStartRequest,
@@ -2031,7 +2234,7 @@ export class ExportService {
 		dir: string,
 		r: {
 			frames: number;
-			path: 'copy' | 'native' | 'hybrid' | 'remotion';
+			path: 'copy' | 'native' | 'hybrid' | 'remotion' | 'audio';
 			remotionOutput: 'direct' | 'intermediate' | undefined;
 			warnings: { code: string; message: string }[];
 			audio: MixdownResult | null;
@@ -2039,10 +2242,13 @@ export class ExportService {
 	): Promise<unknown> {
 		const { frames, path, remotionOutput, warnings, audio } = r;
 		const encoder = planned.output.encoder;
-		// gaps: the sequence's pixel aspect ratio and field order signalled in the file.
-		await this.writeSequenceFormat(planned, output, ctx);
-		// color-mgmt: HDR static metadata boxes (`mdcv` / `clli`) in MP4 / MOV outputs.
-		await this.writeHdrMetadata(planned, output, ctx);
+		const del = planned.deliverable;
+		if (!del) {
+			// gaps: the sequence's pixel aspect ratio and field order signalled in the file.
+			await this.writeSequenceFormat(planned, output, ctx);
+			// color-mgmt: HDR static metadata boxes (`mdcv` / `clli`) in MP4 / MOV outputs.
+			await this.writeHdrMetadata(planned, output, ctx);
+		}
 		// wp captions: embedded caption streams (remux) and sidecar files.
 		const captionResult = await this.writeCaptionOutputs(planned, output, dir, ctx);
 		// spec 12 §2.11: the sound credits sidecar.
@@ -2110,7 +2316,24 @@ export class ExportService {
 		const result = {
 			downloadUrl,
 			byteSize,
-			...(encoder ? { encoder: encoder.encoder, container: encoder.container } : {}),
+			// spec 18 AF-EXP: the GIF / audio-only file's own format (the picture intermediate's encoder is not the file's)
+			...(del?.kind === 'gif'
+				? {
+						encoder: 'gif',
+						container: 'gif',
+						gif: {
+							fps: del.gif.fps,
+							width: del.gif.width,
+							height: del.gif.height,
+							frames,
+							loop: del.gif.loop,
+						},
+					}
+				: del?.kind === 'audio'
+					? { container: del.audio.container }
+					: encoder
+						? { encoder: encoder.encoder, container: encoder.container }
+						: {}),
 			...(audio ? { audioCodec: audioCodecOf(encoder ?? null, planned.output) } : {}),
 			durationSec: planned.output.durationSec,
 			frames,
@@ -2304,6 +2527,7 @@ function deliveredEncode(p: PlannedExport, audio: MixdownResult | null): string 
 	const want = deliveryCodecOf(p);
 	const c = n.codec;
 	return want.codec === c.codec &&
+		want.bits === c.bits &&
 		want.bitrateKbps === c.bitrateKbps &&
 		want.sampleRate === c.sampleRate &&
 		want.channels === c.channels
@@ -2330,13 +2554,21 @@ function audioStream(
 			...(audio.sampleRate !== o.audioSampleRate
 				? ['-af', `aresample=${o.audioSampleRate}:${resamplerArgs(soxr)}`]
 				: []),
-			...audioEncodeArgs(audioCodecOf(o.encoder, o), o.audioBitrateKbps, o.audioChannels),
+			...audioEncodeArgs(audioCodecOf(o.encoder, o), o.audioBitrateKbps, o.audioChannels, o.audioBits),
 			'-ar',
 			String(o.audioSampleRate),
 			'-ac',
 			String(o.audioChannels),
 		],
 	};
+}
+
+/** The output file's extension: the GIF / audio-only container, else the video encoder's container. */
+function outputExtension(p: PlannedExport): string {
+	const d = p.deliverable;
+	if (d?.kind === 'gif') return 'gif';
+	if (d?.kind === 'audio') return d.audio.container;
+	return p.output.encoder?.container ?? 'mp4';
 }
 
 /** The deliverable's audio encoding (what every path's mux writes: `audioEncodeArgs` with these). */
@@ -2347,6 +2579,7 @@ function deliveryCodecOf(p: PlannedExport): DeliveryCodec {
 		bitrateKbps: o.audioBitrateKbps,
 		sampleRate: o.audioSampleRate,
 		channels: o.audioChannels,
+		...(o.audioBits ? { bits: o.audioBits } : {}),
 	};
 }
 
@@ -2435,7 +2668,9 @@ function sequenceName(p: PlannedExport): string {
 function withExtension(dest: string, ext: string): string {
 	const cur = extname(dest);
 	if (cur.toLowerCase() === ext.toLowerCase()) return dest;
-	return /^\.(mp4|webm|mov|m4v|mkv)$/i.test(cur) ? dest.slice(0, -cur.length) + ext : dest + ext;
+	return /^\.(mp4|webm|mov|m4v|mkv|gif|wav|flac|m4a)$/i.test(cur)
+		? dest.slice(0, -cur.length) + ext
+		: dest + ext;
 }
 
 /**
