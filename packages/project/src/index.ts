@@ -139,10 +139,10 @@ export {
 	type EaseSegmentInfo,
 	type EaseSideInfo,
 } from './commands/handlers/ease-read.ts';
+export * from './delivery/targets.ts';
 export * from './ease/curve.ts';
 export * from './ease/fit.ts';
 export { applyMultiEase, MultiEaseError, type MultiEaseInput, type MultiEaseResult } from './ease/multi.ts';
 export { type PathFitPlan, planPathCleanup } from './ease/path-fit.ts';
 export * from './ease/presets.ts';
 export * from './vector/index.ts';
-export * from './delivery/targets.ts';
