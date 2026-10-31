@@ -2,6 +2,7 @@ import type { z } from 'zod';
 import type { HandlerContext } from './context.ts';
 import { AUDIO_MIX_OWNER, audioHandlers } from './handlers/audio.ts';
 import { BATCH_OWNER, batchHandlers } from './handlers/batch.ts';
+import { BRIEF_OWNER, briefHandlers } from './handlers/brief.ts';
 import { cameraTrackerHandlers } from './handlers/camtrack.ts';
 import { CAPTIONS_OWNER, captionHandlers } from './handlers/captions.ts';
 import { CLEANUP_OWNER, cleanupHandlers } from './handlers/cleanup.ts';
@@ -93,7 +94,8 @@ export type CommandOwner =
 	| 'edit-automation'
 	| 'transcript-cleanup'
 	| 'style-recipes'
-	| 'script-correction';
+	| 'script-correction'
+	| 'agent-brief';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -433,6 +435,10 @@ const LABELS: Record<CommandType, string> = {
 	'styleRecipe.setActive': 'Set Active Style Recipe',
 	'transcript.replaceWords': 'Fix Transcript Words',
 	'scriptFix.configure': 'Fix Transcript Settings',
+	// spec 18 AF-BRF: the sequence brief and agent notes.
+	'sequence.setBrief': 'Edit Brief',
+	'project.addAgentNote': 'Add Agent Note',
+	'project.removeAgentNote': 'Remove Agent Note',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -486,6 +492,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[cleanupHandlers, CLEANUP_OWNER],
 	[styleRecipeHandlers, STYLE_RECIPES_OWNER],
 	[scriptFixHandlers, SCRIPT_FIX_OWNER],
+	[briefHandlers, BRIEF_OWNER],
 ];
 
 function buildCatalog(): Record<CommandType, CatalogEntry> {
@@ -528,7 +535,8 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === BATCH_OWNER ||
 				owner === CLEANUP_OWNER ||
 				owner === STYLE_RECIPES_OWNER ||
-				owner === SCRIPT_FIX_OWNER
+				owner === SCRIPT_FIX_OWNER ||
+				owner === BRIEF_OWNER
 					? 'M3'
 					: owner === 'M2' ||
 							owner.startsWith('wp-m2-') ||
@@ -554,6 +562,8 @@ export const APPROVAL_COMMANDS: readonly CommandType[] = [
 	'sequence.delete',
 	'track.remove',
 	'media.removeUnused',
+	// spec 18 AF-BRF-002: agent notes are removed by the user (Sequence ▸ Brief…); an agent needs approval.
+	'project.removeAgentNote',
 ];
 
 export type { Command, HandlerContext };

@@ -2,6 +2,7 @@
 
 import { z } from 'zod';
 import type { AudioEdgeFades } from '../audio-fade.ts';
+import type { SequenceBrief } from '../brief/model.ts';
 import type { CaptionGroup, TextClipCaption } from '../captions/subtitles/model.ts';
 import type { SequenceCleanup } from '../cleanup/schema.ts';
 import { ColorInterpretationSchema, SequenceColorSchema } from '../color/model.ts';
@@ -1137,6 +1138,12 @@ export const SequenceSchema = z.looseObject({
 	 * value; INV-SCRIPTFIX checks it (`sequenceScriptFixIssue`) and `repairDocument` keeps its readable parts.
 	 */
 	scriptFix: z.custom<SequenceScriptFix>(() => true).optional(),
+	/**
+	 * spec 18 AF-BRF-001 (schema v11): what the video should be (text, platform, target length, aspect), for agents to
+	 * read. Accepted as any value so a malformed one never fails a load; INV-BRIEF checks it (`sequenceBriefIssue`) and
+	 * `repairDocument` keeps its readable parts (`repairSequenceBrief`). Written only by `sequence.setBrief`.
+	 */
+	brief: z.custom<SequenceBrief>(() => true).optional(),
 });
 export type Sequence = Omit<DeepStrip<z.infer<typeof SequenceSchema>>, 'clips'> & {
 	clips: Record<string, Clip>;

@@ -6,6 +6,7 @@ import type { Draft } from 'immer';
 import { audioMixIssues, repairAudioMix } from './audio/invariants.ts';
 import { edgeFadesProblem, readEdgeFades } from './audio-fade.ts';
 import { repairStyleRecipes, styleRecipesIssues } from './automation/recipes.ts';
+import { agentNotesIssue, repairAgentNotes, repairSequenceBrief, sequenceBriefIssue } from './brief/model.ts';
 import { normalizeCaptionOwnership } from './captions/model.ts';
 import { mergeRanges } from './captions/sequence-transcript.ts';
 import {
@@ -1399,6 +1400,9 @@ export function runInvariants(
 	for (const [message, path] of subtitleTemplatesIssues(doc)) issues.push(inv('INV-SUBTITLE', message, path));
 	// spec 15 EA-010: style recipes copied into the project.
 	for (const [message, path] of styleRecipesIssues(doc)) issues.push(inv('INV-STYLE-RECIPE', message, path));
+	// spec 18 AF-BRF-002: agent notes must be readable (INV-AGENT-NOTES).
+	const notesBad = agentNotesIssue((doc as { agentNotes?: unknown }).agentNotes);
+	if (notesBad) issues.push(inv('INV-AGENT-NOTES', `Agent notes: ${notesBad}`, ['agentNotes']));
 	for (const m of Object.values(doc.media)) {
 		if (m.derivation && !doc.media[m.derivation.fromMediaId])
 			issues.push(inv('INV-006', `Derived media ${m.id} references missing source`, ['media', m.id]));
@@ -1562,6 +1566,9 @@ export function runInvariants(
 			issues.push(
 				inv('INV-SCRIPTFIX', `Sequence ${seq.id} scriptFix: ${scriptFixBad}`, [...where, 'scriptFix']),
 			);
+		// spec 18 AF-BRF-001: the brief must be readable (INV-BRIEF).
+		const briefBad = sequenceBriefIssue((seq as { brief?: unknown }).brief);
+		if (briefBad) issues.push(inv('INV-BRIEF', `Sequence ${seq.id} brief: ${briefBad}`, [...where, 'brief']));
 		// wp-multicam: a multi-camera source's angles reference its own tracks.
 		const mcSource = (seq as Sequence).multicam;
 		if (mcSource)
@@ -1788,6 +1795,18 @@ export function repairDocument(
 	repairSubtitleTemplates(doc, note);
 	// spec 15 EA-010: project style recipes.
 	repairStyleRecipes(doc, note);
+	// spec 18 AF-BRF-002: keep the readable agent notes.
+	const notes = doc as { agentNotes?: unknown };
+	if (agentNotesIssue(notes.agentNotes)) {
+		const fixed = repairAgentNotes(notes.agentNotes, () => ids.next('agn'));
+		if (fixed) notes.agentNotes = fixed;
+		else delete notes.agentNotes;
+		note(
+			'repair-agent-notes',
+			doc.projectId,
+			fixed ? 'unreadable agent notes dropped or shortened, the rest kept' : 'unreadable agent notes removed',
+		);
+	}
 	for (const seq of Object.values(doc.sequences) as Sequence[])
 		repairSubtitleSequence(seq, () => ids.next('cgp'), note);
 	repairTextStyles(
@@ -1836,6 +1855,18 @@ export function repairDocument(
 				fixed
 					? 'unreadable Fix Transcript settings or rejected fixes dropped, the rest kept'
 					: 'unreadable Fix Transcript state removed',
+			);
+		}
+		// spec 18 AF-BRF-001: keep the readable parts of the brief.
+		const sb = seq as { brief?: unknown };
+		if (sequenceBriefIssue(sb.brief)) {
+			const fixed = repairSequenceBrief(sb.brief);
+			if (fixed) sb.brief = fixed;
+			else delete sb.brief;
+			note(
+				'repair-brief',
+				seq.id,
+				fixed ? 'unreadable brief fields dropped, the rest kept' : 'unreadable brief removed',
 			);
 		}
 		for (const c of Object.values(seq.clips)) {
