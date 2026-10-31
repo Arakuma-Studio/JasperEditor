@@ -13,6 +13,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { AgentApiError, createAgentService } from '../agent/index.ts';
 import { findMcpEntry } from '../agent/mcp-entry.ts';
+import { AgentPresenceTracker } from '../agent/presence.ts';
 
 const TxBodySchema = z.object({
 	projectId: z.string().min(1),
@@ -29,6 +30,11 @@ export default async function agentRoutes(app: FastifyInstance): Promise<void> {
 		await app.register(fastifyWebsocket, { options: { maxPayload: AGENT_TX_LIMITS.maxBytes + 1024 * 1024 } });
 	const service = createAgentService(app);
 	app.addHook('onClose', async () => service.close());
+	// Spec 18 AF-BRF-005: an agent that calls the engine (jasper-mcp names it on every request) counts as connected. Route
+	// plugins share the root instance (routes/index.ts), so this hook sees every request after the auth hook.
+	const presence = new AgentPresenceTracker();
+	app.addHook('onRequest', async (req) => presence.noteRequest(req));
+	app.get('/api/agent/presence', async () => presence.list());
 
 	app.get('/api/agent/schema', async () => service.schema());
 
