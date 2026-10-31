@@ -14,17 +14,26 @@ export function useStartBrief(session: EditorSession): void {
 	const engine = useEngine();
 	const client = engine.client;
 	useEffect(() => {
-		const start = takeStart(session.projectId);
-		if (!start) return;
-		void runStart(session, start, {
-			importFiles: (input) =>
-				new EngineImportService({ engine: client, session }).importFiles(input, { kind: 'bin', binId: null }),
-			presence: () => client.agentPresence(),
-			openConnectAgent: () => {
-				registerConnectAgentDialog();
-				void openDialog(CONNECT_AGENT_DIALOG, { engine: client });
-			},
-			notify: (n) => notices.push({ ...n, durationMs: n.kind === 'error' ? 10_000 : 8000 }),
-		});
+		// After this commit's other effects (autosave attaches in ProjectLifecycle) and after React's development
+		// double-run of effects: an edit made while persistence attaches, detaches and attaches again would be saved
+		// twice from the same base revision (a false "saved from somewhere else" conflict).
+		const timer = setTimeout(() => {
+			const start = takeStart(session.projectId);
+			if (!start) return;
+			void runStart(session, start, {
+				importFiles: (input) =>
+					new EngineImportService({ engine: client, session }).importFiles(input, {
+						kind: 'bin',
+						binId: null,
+					}),
+				presence: () => client.agentPresence(),
+				openConnectAgent: () => {
+					registerConnectAgentDialog();
+					void openDialog(CONNECT_AGENT_DIALOG, { engine: client });
+				},
+				notify: (n) => notices.push({ ...n, durationMs: n.kind === 'error' ? 10_000 : 8000 }),
+			});
+		}, 0);
+		return () => clearTimeout(timer);
 	}, [session, client]);
 }

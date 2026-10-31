@@ -12376,7 +12376,6 @@
   "{0} files to import": "{0} archivos para importar",
   "1 file to import": "1 archivo para importar",
   "Add Agent Note": "Añadir nota de agente",
-  "Agent note removed": "Nota de agente eliminada",
   "Agent notes": "Notas de agentes",
   "Agent notes ({0})": "Notas de agentes ({0})",
   "Ask your agent to read the brief (get_brief) and propose a cut.": "Pida a su agente que lea el brief (get_brief) y proponga un montaje.",
@@ -12419,5 +12418,7 @@
   "Untitled Project": "Proyecto sin título",
   "Vertical 9:16": "Vertical 9:16",
   "What is it for, who is it for, the tone, what must stay in… e.g. \"A 45-second Reel teasing the interview: open on the strongest line, end on the laugh.\"": "Para qué es, para quién, el tono, qué debe quedarse… p. ej. «Un Reel de 45 segundos que anticipe la entrevista: abrir con la mejor frase, terminar con la risa.»",
-  "What this video should be. AI agents connected to JasperEditor read it (get_brief) before they cut; it is saved with the sequence.": "Lo que debe ser este vídeo. Los agentes de IA conectados a JasperEditor lo leen (get_brief) antes de montar; se guarda con la secuencia."
+  "What this video should be. AI agents connected to JasperEditor read it (get_brief) before they cut; it is saved with the sequence.": "Lo que debe ser este vídeo. Los agentes de IA conectados a JasperEditor lo leen (get_brief) antes de montar; se guarda con la secuencia.",
+  "Note removed: {0}": "Nota eliminada: {0}",
+  "Undo failed ({0})": "No se pudo deshacer ({0})"
 }

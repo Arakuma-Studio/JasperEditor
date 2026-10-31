@@ -1,7 +1,7 @@
 // Spec 18 AF-BRF-005 / AF-BRF-006 in the editor: the brief form model (target length parsing, the sequence a brief
 // implies, project names), Home ▸ Describe your video's start (brief + custom frame in one undo step, files imported,
 // Connect an AI Agent… only without a connected agent, failures notified), the Describe dialog, and Sequence ▸ Brief…
-// (save = one undo step, notes listed newest first, Remove undoable from the toast, read-only).
+// (save = one undo step, notes listed newest first, Remove undoable in the dialog, read-only).
 import type { AgentPresence } from '@jasper/api';
 import {
 	createCounterIdSource,
@@ -237,7 +237,7 @@ describe('Sequence ▸ Brief… (AF-BRF-006)', () => {
 		act(() => void openDialog(BRIEF_DIALOG, { session: s, sequenceId: seqId }));
 	}
 
-	it('saves the brief in one undo step and removes notes, newest first, with Undo in the toast', async () => {
+	it('saves the brief in one undo step and removes notes, newest first, with Undo in the dialog', async () => {
 		const { s, seqId } = session();
 		const add = (text: string) =>
 			s.apply({
@@ -259,7 +259,8 @@ describe('Sequence ▸ Brief… (AF-BRF-006)', () => {
 		await waitFor(() => expect(within(dialog).getAllByTestId('brief-note')).toHaveLength(1));
 		expect(readAgentNotes(s.getCommitted()).map((n) => n.text)).toEqual(['first note']);
 		expect(s.getState().history.entries.at(s.getState().history.index - 1)?.label).toBe('Remove Agent Note');
-		expect(s.undo().ok).toBe(true);
+		fireEvent.click(within(dialog).getByTestId('brief-note-undo'));
+		expect(within(dialog).queryByTestId('brief-note-removed')).toBeNull();
 		await waitFor(() => expect(within(dialog).getAllByTestId('brief-note')).toHaveLength(2));
 		fireEvent.change(within(dialog).getByTestId('brief-text'), { target: { value: 'A launch video' } });
 		fireEvent.change(within(dialog).getByTestId('brief-platform'), { target: { value: 'youtube-shorts' } });

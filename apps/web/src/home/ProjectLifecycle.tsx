@@ -93,8 +93,6 @@ function LifecycleBody(props: {
 	useAgentBridge(session);
 	// spec 12 §2.5: the session's proposals follow the engine (list, proposal.changed)
 	useProposalsSync(session);
-	// spec 18 AF-BRF-005: finish Home ▸ Describe your video (brief, files, Connect an AI Agent…)
-	useStartBrief(session);
 	const engine = useEngine();
 	useLanguageEpoch(); // banners and notices follow a language change (the editor below remounts)
 	const exportState = useExportMode();
@@ -116,6 +114,9 @@ function LifecycleBody(props: {
 			void c.dispose();
 		};
 	}, [session]);
+
+	// spec 18 AF-BRF-005: finish Home ▸ Describe your video (brief, files, Connect an AI Agent…) once autosave is attached
+	useStartBrief(session);
 
 	const navigate = useNavigate();
 	const { onReplace } = props;

@@ -1,10 +1,10 @@
 // Spec 18 AF-BRF-006: Sequence ▸ Brief… — edit the sequence's brief (Save = one "Edit Brief" undo step) and see the
-// notes agents kept about the project; Remove deletes a note in one undoable step ("Remove Agent Note", Undo in the
-// toast and Edit ▸ Undo). Read-only projects show both without editing. Failures are shown in the dialog.
+// notes agents kept about the project; Remove deletes a note in one undoable step ("Remove Agent Note"; Undo right in
+// the dialog, or Edit ▸ Undo / History later). Read-only projects show both without editing. Failures are shown in the dialog.
 import { type AgentNote, readAgentNotes, readSequenceBrief } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
-import { Button, Dialog, type HostedDialogProps, registerDialog, toast } from '@jasper/ui';
+import { Button, Dialog, type HostedDialogProps, registerDialog } from '@jasper/ui';
 import { useMemo, useState } from 'react';
 import { useDialogClose } from '../extensions/dialog.ts';
 import { t } from '../i18n/runtime.ts';
@@ -50,6 +50,7 @@ export function BriefDialog(props: HostedDialogProps<BriefDialogProps>) {
 	const stored = useMemo(() => formOfBrief(readSequenceBrief(seq)), [seq]);
 	const [form, setForm] = useState<BriefForm>(stored);
 	const [error, setError] = useState<string | null>(null);
+	const [removed, setRemoved] = useState<{ note: AgentNote; revision: number } | null>(null);
 	const notes = useMemo(() => [...readAgentNotes(doc)].reverse(), [doc]);
 	const problem = briefFormProblem(form);
 	const changed = !sameForm(form, stored);
@@ -83,21 +84,20 @@ export function BriefDialog(props: HostedDialogProps<BriefDialogProps>) {
 			return;
 		}
 		setError(null);
-		const revision = r.revision;
-		toast({
-			kind: 'info',
-			title: t('Agent note removed'),
-			detail: n.text.slice(0, 80),
-			actions: [
-				{
-					label: t('Undo'),
-					run: () => {
-						if (session.getState().revision === revision) session.undo();
-						else toast({ kind: 'info', title: t('Newer edits came after it; use the History panel') });
-					},
-				},
-			],
-		});
+		setRemoved({ note: n, revision: r.revision });
+	};
+
+	// Undo of the last removal, while nothing else changed the project since (else History has it).
+	const undoRemove = () => {
+		if (!removed) return;
+		if (session.getState().revision !== removed.revision) {
+			setError(t('Newer edits came after it; use the History panel'));
+			setRemoved(null);
+			return;
+		}
+		const r = session.undo();
+		if (!r.ok) setError(t('Undo failed ({0})', r.code ?? 'unknown'));
+		setRemoved(null);
 	};
 
 	return (
@@ -146,6 +146,20 @@ export function BriefDialog(props: HostedDialogProps<BriefDialogProps>) {
 								wanted,
 							)}
 						</p>
+					) : null}
+					{removed ? (
+						<div
+							className="flex items-center gap-2 text-pr-small"
+							role="status"
+							data-testid="brief-note-removed"
+						>
+							<span className="min-w-0 flex-1 truncate text-pr-muted">
+								{t('Note removed: {0}', removed.note.text)}
+							</span>
+							<Button variant="quiet" onClick={undoRemove} data-testid="brief-note-undo">
+								Undo
+							</Button>
+						</div>
 					) : null}
 					{error ? (
 						<p className="text-pr-small text-pr-warning" role="alert" data-testid="brief-error">
