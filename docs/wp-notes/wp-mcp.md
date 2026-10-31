@@ -186,8 +186,11 @@ gained `mcpInfo()` and `focusWindow()` (IPC `jasper:mcp-info`, window action `fo
 - **HTTP `/mcp`:** tools call the engine over loopback HTTP from inside the engine. No resumability/event
   store; sessions are in memory. The desktop engine's token changes per launch, so URL-based clients are only
   practical with a dev/standalone engine.
-- **Specs:** S05 §17 and related items are marked superseded, not rewritten. Proposals/ghosts (S02 TL-955,
-  S05 AG-030…) and the agent-driven UI command surface (S05 AG-050/051) are not implemented in any form.
+- **Specs:** S05 §17 and related items are marked superseded, not rewritten. Proposals and their timeline ghosts
+  (S02 TL-955, S05 AG-030…) were implemented later by spec 12 §2.5 (model `packages/project/src/proposals/`, store
+  and routes `apps/engine/src/proposals/`, Review bar and `GhostLayer.tsx` in `apps/web/src/proposals/`, MCP tools
+  `apps/mcp/src/tools/proposals.ts`); agents drive the window's UI commands through the `ui_*` tools
+  (`apps/mcp/src/tools/ui.ts`: `ui_commands`, `ui_command`, `ui_click`…).
 - **Activity feed:** the panel's scrollable activity list is gone; History (with `Agent:` entries) and the
   toast replace it. The bridge still keeps the last 200 entries in memory (`window.jasper` consumers).
 - The desktop smoke's packaged-like mode forks its engine on a random port (`--port 0`), outside the

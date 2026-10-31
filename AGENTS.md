@@ -45,8 +45,12 @@
 1. Never require or ship FFmpeg configured with `--enable-gpl` or `--enable-nonfree`,
    or using x264, x265, fdk-aac or another GPL/nonfree library. A GPL system FFmpeg is
    allowed for development only; features must work with `JASPER_FFMPEG_LGPL_ONLY=1`.
-2. Never generate GPL-only filters: `eq`, `hqdn3d`, `perspective`, `boxblur`, `smartblur`,
-   `delogo`, `frei0r`, `spp`, `pp7`, `uspp`, `fspp`, `mpdecimate`, `pullup` or `vidstab*`.
+2. Never generate GPL-only filters: `blackframe`, `boxblur`, `boxblur_opencl`, `colormatrix`,
+   `cover_rect`, `cropdetect`, `delogo`, `eq`, `find_rect`, `frei0r`, `frei0r_src`, `fspp`,
+   `histeq`, `hqdn3d`, `interlace`, `kerndeint`, `mcdeint`, `mpdecimate`, `mptestsrc`, `nnedi`,
+   `owdenoise`, `perspective`, `phase`, `pp`, `pp7`, `pullup`, `repeatfields`, `rubberband`,
+   `sab`, `signature`, `smartblur`, `spp`, `stereo3d`, `super2xsai`, `tinterlace`, `uspp`,
+   `vaguedenoiser`, `vidstabdetect` or `vidstabtransform`.
    The sole `vidstab*` exception is our manifest-pinned LGPL source build with provenance
    accepted by `scripts/ffmpeg/check-lgpl.mjs`.
 3. Never ship Remotion's bundled GPL FFmpeg or `@remotion/compositor-*` packages.

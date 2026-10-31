@@ -67,9 +67,10 @@ import {
 	transitionSpan,
 } from '@jasper/project';
 import { JobError } from '../jobs/types.ts';
-import { LOCAL_PROTOCOLS, readPlanar } from '../sounds/decode.ts';
+import { readPlanar } from '../sounds/decode.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { sec } from '../tools/ffmpeg.ts';
+import { LOCAL_PROTOCOLS } from '../tools/protocols.ts';
 import type { AudioWorld, MeasureDeps } from './bed.ts';
 import { renderSequencePcm } from './bed.ts';
 import type { SfxInfo } from './levels.ts';

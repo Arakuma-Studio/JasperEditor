@@ -58,6 +58,7 @@ import type { FontCatalogService } from '../fonts/catalog.ts';
 import type { JobQueue } from '../jobs/queue.ts';
 import { type JobContext, JobError } from '../jobs/types.ts';
 import type { MediaRegistry } from '../media/registry.ts';
+import { assertLgplFilters } from '../processing/proc/filters.ts';
 import { engineTemplateAssets } from '../remote-assets/plan.ts';
 import { appendEncoderArgs, planRemotionExport } from '../remotion/export-plan.ts';
 import type { RemotionService } from '../remotion/service.ts';
@@ -1219,6 +1220,10 @@ export class ExportService {
 					: {}),
 				nested,
 			});
+			// AF-SEC-003: no GPL-only filter in the composite's or a blend segment's graph, before anything starts (a
+			// long graph goes to a -filter_complex_script file, which Ffmpeg.run's own argument check cannot see).
+			assertLgplFilters(graph.filter);
+			for (const seg of graph.blend?.segments ?? []) assertLgplFilters(seg.filter);
 		} catch (e) {
 			await abandon();
 			throw e;

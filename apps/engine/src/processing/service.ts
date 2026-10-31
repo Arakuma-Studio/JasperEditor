@@ -24,6 +24,7 @@ import { SpeechModelError, SpeechModelStore, speechModelsDir } from '../speech/m
 import { safeFileName, sha256File } from '../tools/fs.ts';
 import { nodeExecPath } from '../tools/node-runtime.ts';
 import { ortPackageDir } from '../tools/ort.ts';
+import { restrictProbeArgs } from '../tools/protocols.ts';
 import type { CoreServices } from '../tools/services.ts';
 import { createEventParser, ProgressTracker } from './events.ts';
 import { loadCatalog, ModelError, ModelStore } from './models.ts';
@@ -829,7 +830,7 @@ function countPackets(ffprobe: string, file: string): Promise<number> {
 	return new Promise((resolve) => {
 		const c = spawn(
 			ffprobe,
-			[
+			restrictProbeArgs([
 				'-v',
 				'error',
 				'-select_streams',
@@ -840,7 +841,7 @@ function countPackets(ffprobe: string, file: string): Promise<number> {
 				'-of',
 				'csv=p=0',
 				file,
-			],
+			]),
 			{
 				stdio: ['ignore', 'pipe', 'ignore'],
 			},

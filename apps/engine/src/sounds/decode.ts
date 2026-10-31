@@ -8,8 +8,8 @@ import { SOUND_ANALYSIS_SECONDS, SOUND_TAKES_MAX_FILE_SECONDS } from '@jasper/ap
 import { JobError } from '../jobs/types.ts';
 import { mapProbe } from '../media/probe.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
+import { LOCAL_PROTOCOLS } from '../tools/protocols.ts';
 
-export const LOCAL_PROTOCOLS = ['-protocol_whitelist', 'file,crypto,data'] as const;
 /** Highest analysis rate; descriptors are perceptual (≤ 20 kHz), so higher rates are resampled. */
 export const MAX_ANALYSIS_RATE = 48_000;
 export const MAX_ANALYSIS_CHANNELS = 6;

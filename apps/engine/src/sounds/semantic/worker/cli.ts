@@ -14,6 +14,7 @@
 // argument (2), or on SIGTERM / SIGINT (130).
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
+import { restrictInputs } from '../../../tools/protocols.ts';
 import { CLAP_RATE, CLAP_WINDOW_SEC } from '../frontend.ts';
 import { edgeLevels, trimToSound } from '../levels.ts';
 import { ClapModel } from './clap.ts';
@@ -41,7 +42,7 @@ function decode(input: Input, startSec: number, durSec: number): Promise<Float32
 	args.push('-map', input.stream !== undefined ? `0:${input.stream}` : '0:a:0');
 	args.push('-vn', '-ac', '1', '-ar', String(CLAP_RATE), '-f', 'f32le', 'pipe:1');
 	return new Promise((resolve, reject) => {
-		const child = spawn(input.ffmpeg, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+		const child = spawn(input.ffmpeg, restrictInputs(args), { stdio: ['ignore', 'pipe', 'pipe'] });
 		const chunks: Buffer[] = [];
 		let err = '';
 		child.stdout.on('data', (c: Buffer) => chunks.push(c));

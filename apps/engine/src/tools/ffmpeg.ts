@@ -1,12 +1,23 @@
 // ffmpeg/ffprobe: binary resolution (ARCHITECTURE D-13, S04:ENG-011), a `-progress pipe:1` runner with
 // AbortSignal (R-NVL §4.1) and the startup self-check that lists versions, encoders and filters.
+// Every run, raw spawn and probe reads local inputs only (spec 18 AF-SEC-001, tools/protocols.ts) and every filter
+// argument is checked for GPL-only filters before FFmpeg starts (AF-SEC-003).
 import type { ChildProcess } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { ENV } from '@jasper/config';
+import { assertLgplFilters } from '../processing/proc/filters.ts';
 import { parseBuildLicense, parseHwaccels } from './encoders.ts';
 import { RESOURCES_LGPL_DIR } from './lgpl.ts';
 import { runTool, type SpawnOptions, spawnTool, ToolError } from './process.ts';
+import {
+	blockedReference,
+	blockedReferenceMessage,
+	probeFormatWhitelist,
+	REMOTE_REFERENCE_BLOCKED,
+	restrictInputs,
+	restrictProbeArgs,
+} from './protocols.ts';
 
 type BinaryPaths = { ffmpeg: string | null; ffprobe: string | null };
 
@@ -103,8 +114,71 @@ function createProgressParser(onProgress: (p: FfmpegProgress) => void): (chunk: 
 	};
 }
 
+/** Options whose value is filter text (`-filter:v`, `-af`, …); `-filter_complex_script` files are checked by their writer. */
+const FILTER_OPTIONS = /^-(filter_complex|lavfi|vf|af|filter(:[av](:\d+)?)?)$/;
+
+/**
+ * Throws an LgplFilterError (`GPL_FILTER_REFUSED`) when a filter argument of an ffmpeg argument list — or a
+ * `-f lavfi` input — names a GPL-only filter (AF-SEC-003: engine-generated graphs are checked before FFmpeg starts).
+ */
+export function assertLgplGraphArgs(args: readonly string[]): void {
+	for (let i = 0; i + 1 < args.length; i++) {
+		const a = args[i]!;
+		if (FILTER_OPTIONS.test(a)) assertLgplFilters(args[i + 1]!);
+		else if (a === '-f' && args[i + 1] === 'lavfi') {
+			const k = args.indexOf('-i', i + 2);
+			if (k >= 0 && k + 1 < args.length) assertLgplFilters(args[k + 1]!);
+		}
+	}
+}
+
+/** A ToolError for a network reference FFmpeg refused (stderr of a failed or finished run), else null. */
+function blockedError(stderr: string, exitCode: number | null): ToolError | null {
+	const b = blockedReference(stderr);
+	return b ? new ToolError(REMOTE_REFERENCE_BLOCKED, blockedReferenceMessage(b), { exitCode, stderr }) : null;
+}
+
+/**
+ * `-format_whitelist` of probes per ffprobe binary (tools/protocols.ts); null when it cannot list its demuxers (the probe
+ * then has the protocol whitelist only).
+ */
+const probeFormats = new Map<string, Promise<string | null>>();
+
 export class Ffmpeg {
 	constructor(readonly bins: BinaryPaths) {}
+
+	/** ffprobe arguments restricted to local protocols and non-network demuxers. */
+	private async probeArgs(bin: string, args: readonly string[]): Promise<string[]> {
+		let formats = probeFormats.get(bin);
+		if (!formats) {
+			formats = runTool(bin, ['-hide_banner', '-demuxers'], { signal: AbortSignal.timeout(20_000) }).then(
+				(r) => probeFormatWhitelist(r.stdout),
+				() => {
+					probeFormats.delete(bin); // asked again by the next probe
+					return null;
+				},
+			);
+			probeFormats.set(bin, formats);
+		}
+		return restrictProbeArgs(args, await formats);
+	}
+
+	/** runTool for ffprobe with REMOTE_REFERENCE_BLOCKED for refused network references. */
+	private async probe(args: readonly string[], opts: SpawnOptions): Promise<string> {
+		const bin = this.need('ffprobe');
+		const full = await this.probeArgs(bin, args);
+		let r: { stdout: string; stderr: string };
+		try {
+			r = await runTool(bin, ['-v', 'error', ...full], opts);
+		} catch (e) {
+			if (e instanceof ToolError && e.code === 'TOOL_FAILED' && e.detail?.stderr)
+				throw blockedError(e.detail.stderr, e.detail.exitCode ?? null) ?? e;
+			throw e;
+		}
+		const blocked = blockedError(r.stderr, 0);
+		if (blocked) throw blocked;
+		return r.stdout;
+	}
 
 	private need(name: 'ffmpeg' | 'ffprobe'): string {
 		const b = this.bins[name];
@@ -123,6 +197,13 @@ export class Ffmpeg {
 	run(args: readonly string[], opts: FfmpegRunOptions = {}): Promise<{ stderr: string }> {
 		const bin = this.need('ffmpeg');
 		return new Promise((resolve, reject) => {
+			const full = restrictInputs(args);
+			try {
+				assertLgplGraphArgs(full);
+			} catch (e) {
+				reject(e);
+				return;
+			}
 			let child: ChildProcess;
 			try {
 				child = spawnTool(
@@ -136,7 +217,7 @@ export class Ffmpeg {
 						'-progress',
 						'pipe:1',
 						'-nostats',
-						...args,
+						...full,
 					],
 					opts,
 				);
@@ -152,7 +233,11 @@ export class Ffmpeg {
 			});
 			child.on('error', (e) => reject(new ToolError('BINARY_MISSING', `Cannot run ffmpeg: ${e.message}`)));
 			child.on('close', (code, sig) => {
+				// A refused reference fails the run even when FFmpeg went on without it (an HLS playlist skips the
+				// segment it may not open): the output would silently miss media.
+				const blocked = opts.signal?.aborted ? null : blockedError(stderr, code);
 				if (opts.signal?.aborted) reject(new ToolError('JOB_CANCELLED', 'ffmpeg cancelled', { stderr }));
+				else if (blocked) reject(blocked);
 				else if (code === 0) resolve({ stderr });
 				else
 					reject(
@@ -165,18 +250,19 @@ export class Ffmpeg {
 		});
 	}
 
-	/** Spawns ffmpeg with raw stdout (e.g. `-f f32le pipe:1`); the caller consumes `child.stdout`. */
+	/**
+	 * Spawns ffmpeg with raw stdout (e.g. `-f f32le pipe:1`); the caller consumes `child.stdout`. Throws an
+	 * LgplFilterError for a GPL-only filter argument.
+	 */
 	spawnRaw(args: readonly string[], opts: SpawnOptions = {}): ChildProcess {
-		return spawnTool(this.need('ffmpeg'), ['-hide_banner', '-nostdin', '-loglevel', 'error', ...args], opts);
+		const full = restrictInputs(args);
+		assertLgplGraphArgs(full);
+		return spawnTool(this.need('ffmpeg'), ['-hide_banner', '-nostdin', '-loglevel', 'error', ...full], opts);
 	}
 
 	/** `ffprobe -v error -print_format json …` parsed. */
 	async probeJson(args: readonly string[], opts: SpawnOptions = {}): Promise<Record<string, unknown>> {
-		const { stdout } = await runTool(
-			this.need('ffprobe'),
-			['-v', 'error', '-print_format', 'json', ...args],
-			opts,
-		);
+		const stdout = await this.probe(['-print_format', 'json', ...args], opts);
 		try {
 			return JSON.parse(stdout) as Record<string, unknown>;
 		} catch {
@@ -186,7 +272,7 @@ export class Ffmpeg {
 
 	/** Raw ffprobe run (text output). */
 	async probeText(args: readonly string[], opts: SpawnOptions = {}): Promise<string> {
-		return (await runTool(this.need('ffprobe'), ['-v', 'error', ...args], opts)).stdout;
+		return this.probe(args, opts);
 	}
 
 	/** Number of decoded-packet video frames (fast packet count, no decode) of the first video stream. */

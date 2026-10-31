@@ -9,6 +9,7 @@ import type { ChildProcess } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { decodeVoiceAnalysis, VOICE_ANALYSIS_VERSION, VOICE_CLASSES } from '@jasper/project';
 import type { ProviderId } from '../../tools/ort.ts';
+import { restrictInputs } from '../../tools/protocols.ts';
 import { DEFAULT_DIARIZE, diarize } from '../core/diarize.ts';
 import { knownPhraseRuns, phraseOverNonSpeech } from '../core/hallucination.ts';
 import { SAMPLE_RATE } from '../core/mel.ts';
@@ -157,7 +158,7 @@ export async function decodeAudio(
 	args.push('-map', input.stream !== undefined ? `0:${input.stream}` : '0:a:0');
 	args.push('-vn', '-ac', '1', '-ar', String(SAMPLE_RATE), '-f', 'f32le', 'pipe:1');
 	return new Promise((resolve, reject) => {
-		const child = spawn(input.ffmpeg, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+		const child = spawn(input.ffmpeg, restrictInputs(args), { stdio: ['ignore', 'pipe', 'pipe'] });
 		const chunks: Buffer[] = [];
 		let err = '';
 		const onAbort = () => child.kill('SIGKILL');

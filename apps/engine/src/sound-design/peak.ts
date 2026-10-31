@@ -17,8 +17,9 @@ import {
 	type Rational,
 } from '@jasper/project';
 import { JobError } from '../jobs/types.ts';
-import { LOCAL_PROTOCOLS, readPlanar } from '../sounds/decode.ts';
+import { readPlanar } from '../sounds/decode.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
+import { LOCAL_PROTOCOLS } from '../tools/protocols.ts';
 import { HttpError } from '../tools/reply.ts';
 import { engineMediaKey } from './voice.ts';
 

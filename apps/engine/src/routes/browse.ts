@@ -38,6 +38,7 @@ import { isLoopbackHost } from '../context.ts';
 import { mapProbe } from '../media/probe.ts';
 import { randomId } from '../tools/fs.ts';
 import { contentTypeFor, serveFile } from '../tools/http.ts';
+import { LOCAL_PROTOCOLS } from '../tools/protocols.ts';
 import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
 
@@ -50,8 +51,6 @@ const THUMB_TIMEOUT_MS = 20_000;
 const THUMB_CACHE_MAX = 1500;
 /** ffmpeg thumbnail renders at once (a folder of videos must not spawn one ffmpeg per tile). */
 const THUMB_CONCURRENCY = 2;
-/** FFmpeg may read the named file (and data it embeds), nothing it points at over the network. */
-const LOCAL_PROTOCOLS = ['-protocol_whitelist', 'file,crypto,data'] as const;
 
 /** Validates an absolute host path from a query (no NUL, absolute) and normalises it (`..` resolved). */
 function checkBrowsePath(p: string): string {

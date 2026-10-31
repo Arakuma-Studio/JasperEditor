@@ -17,7 +17,7 @@ import { mkdir, rm } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 import { JobError } from '../jobs/types.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
-import { LOCAL_PROTOCOLS } from './decode.ts';
+import { LOCAL_PROTOCOLS } from '../tools/protocols.ts';
 
 const PAD_TIMEOUT_MS = 120_000;
 /** Extra time a long sound gets to be written (ffmpeg decodes and writes far faster than real time). */

@@ -82,6 +82,10 @@ export const ENGINE_ERROR_CODES = [
 	'PROPOSAL_TOO_LARGE',
 	/** "Refresh proposal": the feature's producer does not re-plan items (detail.code E_NOT_REFRESHABLE). */
 	'PROPOSAL_NOT_REFRESHABLE',
+	/** Spec 18 AF-SEC-001/002: a media file names a network resource FFmpeg may not open (local files only). */
+	'REMOTE_REFERENCE_BLOCKED',
+	/** Spec 18 AF-SEC-003: a generated filtergraph names a GPL-only FFmpeg filter (AGENTS.md §2). */
+	'GPL_FILTER_REFUSED',
 ] as const;
 export const EngineErrorCodeSchema = z.enum(ENGINE_ERROR_CODES);
 export type EngineErrorCode = z.infer<typeof EngineErrorCodeSchema>;
