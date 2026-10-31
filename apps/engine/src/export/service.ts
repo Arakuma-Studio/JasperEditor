@@ -777,6 +777,7 @@ export class ExportService {
 			output: o,
 			encoderFilters: enc.filters,
 		});
+		assertLgplFilters(filter); // AF-SEC-003: the script file is not an argument Ffmpeg.run can check
 		const script = join(await ctx.scratchDir(), 'previews-graph.txt');
 		await writeFile(script, filter);
 		const soxr = await hasSoxr(this.deps.ff);
