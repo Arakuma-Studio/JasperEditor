@@ -1,8 +1,12 @@
 // wp speech: "Automatically transcribe media on import" (Premiere: Preferences ▸ Transcription / Auto-transcribe on
-// import). When on, media with sound that the user adds to the project (File ▸ Import, drops; not undo/redo, not
-// agents) are transcribed in the background with the chosen model and language, if that model is downloaded. Mounted
-// invisibly through the Program monitor overlay registry, like the other session runtimes.
-import type { SpeechModel } from '@jasper/api';
+// import). When on, media with sound added to the project — by the user (File ▸ Import, drops) or, spec 18
+// AF-DIG-003, by an agent while the editor is open — are transcribed in the background with the chosen model and
+// language, if that model is downloaded. Not on undo/redo, and not media that already have a transcript or a
+// transcription job queued or running on the engine (an agent's `import_media {transcribe}` queues its jobs before the
+// import transaction, so they are seen here). Mounted invisibly through the Program monitor overlay registry, like
+// the other session runtimes.
+import { type SpeechModel, TERMINAL_JOB_STATES } from '@jasper/api';
+import type { EngineClient } from '@jasper/engine-client';
 import type { MediaAsset } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { toast } from '@jasper/ui';
@@ -55,19 +59,49 @@ export function autoTargets(session: EditorSession, created: readonly string[]):
 	});
 }
 
+/**
+ * Media keys with a transcription job queued or running on the engine for this project (empty when the engine cannot
+ * list jobs: the job's own dedupe key still prevents an identical second job).
+ */
+export async function pendingTranscriptionKeys(
+	client: EngineClient,
+	projectId: string,
+): Promise<Set<string>> {
+	try {
+		const { jobs } = await client.listJobs({ active: '1', projectId });
+		return new Set(
+			jobs
+				.filter((j) => j.kind === 'transcription' && j.assetId && !TERMINAL_JOB_STATES.has(j.state))
+				.map((j) => j.assetId as string),
+		);
+	} catch {
+		return new Set();
+	}
+}
+
+const byAgent = (origin: unknown) => typeof origin === 'object' && origin !== null && 'agent' in origin;
+
 export function AutoTranscribeHost({ session }: Pick<ProgramOverlayHostProps, 'session'>) {
 	const engine = useEngineOrNull();
 	const client = engine?.status === 'connected' ? engine.client : null;
 	useEffect(() => {
 		if (!session || !client) return;
 		return session.on('doc.changed', (ev) => {
-			if (ev.isUndo || ev.isRedo || ev.origin !== 'user' || session.getState().readOnly) return;
+			if (ev.isUndo || ev.isRedo || session.getState().readOnly) return;
+			if (ev.origin !== 'user' && !byAgent(ev.origin)) return;
 			if (!ev.created.some((id) => id.startsWith('med_'))) return;
 			const auto = loadAuto();
 			if (!auto.enabled) return;
-			const ids = autoTargets(session, ev.created);
-			if (!ids.length) return;
+			const created = autoTargets(session, ev.created);
+			if (!created.length) return;
 			void (async () => {
+				const pending = await pendingTranscriptionKeys(client, session.projectId);
+				const doc = session.getCommitted();
+				const ids = created.filter((id) => {
+					const key = mediaKeyOf(doc.media[id] as MediaAsset | undefined);
+					return !!key && !pending.has(key);
+				});
+				if (!ids.length) return;
 				const models = ((await client.call('speechModels')) as { models: SpeechModel[] }).models;
 				const m = models.find((x) => x.id === auto.model);
 				if (!m?.installed) {
