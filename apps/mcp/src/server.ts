@@ -4,6 +4,14 @@
 import { expressionReferenceMarkdown } from '@jasper/expressions';
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import {
+	buildInstructions,
+	editVideoPrompt,
+	fullGuide,
+	type GuideSource,
+	guideTopics,
+	registerGuides,
+} from './agent-guide.ts';
 import { loadDoc, makeContext, type ToolContext } from './context.ts';
 import { pickSequence, timelineTable } from './format.ts';
 import type { EngineConnection } from './link.ts';
@@ -69,11 +77,12 @@ import { registerTrimPathTools, TRIM_PATHS_GUIDE } from './tools/trim-paths.ts';
 import { registerUiTools, UI_GUIDE } from './tools/ui.ts';
 import { registerVersionTools, VERSIONS_GUIDE } from './tools/versions.ts';
 import { registerVoiceTools, VOICE_GUIDE } from './tools/voice.ts';
+import { installToolsets, parseToolsets, registerToolsetTools } from './toolsets.ts';
 import { MCP_SERVER_VERSION } from './version.ts';
 
 const MCP_SERVER_NAME = 'jasper-editor';
 
-/** How to drive JasperEditor; sent as the server's `instructions` and by the `edit-video` prompt. */
+/** How to drive JasperEditor with the editing tools: the `editing` guide topic (the instructions are agent-guide.ts). */
 export const EDITING_GUIDE = `JasperEditor is a Premiere-style video editor. These tools edit its projects through the local engine.
 
 Workflow:
@@ -97,70 +106,116 @@ Rules:
 - Every tool carries readOnlyHint / destructiveHint / idempotentHint / openWorldHint, so read-only tools can run without asking.
 - The same tools run from a shell: \`jasper\` (pnpm jasper --help), e.g. \`jasper exec marker.add frame=30 name=Intro\`, \`jasper props <clipId>\`, \`jasper render-frame --at 2s --out f.png\`, \`jasper export --out cut.mp4\`.`;
 
-const FULL_GUIDE = [
-	EDITING_GUIDE,
-	COLOR_GUIDE,
-	PROCESSING_GUIDE,
-	COMPOSITION_GUIDE,
-	TRACKING_GUIDE,
-	TRANSITION_GUIDE,
-	ANIMATION_GUIDE,
-	TEXT_ANIMATORS_GUIDE,
-	MOTION_PATH_GUIDE,
-	KEYFRAMES_BLEND_GUIDE,
-	EASE_GUIDE,
-	THREE_D_GUIDE,
-	MASKS_GUIDE,
-	SHAPES_GUIDE,
-	TRIM_PATHS_GUIDE,
-	TEMPLATES_GUIDE,
-	CLIPBOARD_GUIDE,
-	PRESETS_GUIDE,
-	FONTS_GUIDE,
-	CACHE_GUIDE,
-	PREVIEWS_GUIDE,
-	STRUCTURE_GUIDE,
-	TIME_GUIDE,
-	COLOR_MGMT_GUIDE,
-	EDIT_UX_GUIDE,
-	MULTICAM_GUIDE,
-	VERSIONS_GUIDE,
-	AUDIO_GUIDE,
-	AUDIO_FX_GUIDE,
-	SOUND_GUIDE,
-	PROPOSALS_GUIDE,
-	AUTOMATION_GUIDE,
-	STYLE_GUIDE,
-	CAPTIONS_GUIDE,
-	SUBTITLES_GUIDE,
-	TEXT_STYLES_GUIDE,
-	SPEECH_GUIDE,
-	GLOSSARY_GUIDE,
-	TRANSCRIPT_FIX_GUIDE,
-	VOICE_GUIDE,
-	CLEANUP_GUIDE,
-	ROTO_GUIDE,
-	SIM_WARP_GUIDE,
-	INTERCHANGE_GUIDE,
-	IMPORTS_GUIDE,
-	INSPECT_GUIDE,
-	UI_GUIDE,
-	EXPRESSIONS_GUIDE,
-	GAPS_GUIDE,
-	POLISH_GUIDE,
-].join('\n\n');
+/**
+ * Every domain guide by topic (spec 18 AF-CTX-003): the resource `jasper://guide/<topic>` and core `get_guide {topic}`;
+ * all of them once, in this order, are `jasper://guide`. Adding a guide is one line here.
+ */
+const GUIDES: Record<string, GuideSource> = {
+	editing: {
+		title: 'Editing with the core tools',
+		description:
+			'Projects, media, timeline edits, transactions, frames and exports with the core tools, and the rules.',
+		sections: [EDITING_GUIDE],
+	},
+	color: COLOR_GUIDE,
+	processing: PROCESSING_GUIDE,
+	compositions: COMPOSITION_GUIDE,
+	tracking: TRACKING_GUIDE,
+	transitions: TRANSITION_GUIDE,
+	'text-animation': ANIMATION_GUIDE,
+	'text-animators': TEXT_ANIMATORS_GUIDE,
+	'motion-path': MOTION_PATH_GUIDE,
+	'keyframes-blend': KEYFRAMES_BLEND_GUIDE,
+	ease: EASE_GUIDE,
+	'3d': THREE_D_GUIDE,
+	masks: MASKS_GUIDE,
+	shapes: SHAPES_GUIDE,
+	'trim-paths': TRIM_PATHS_GUIDE,
+	templates: TEMPLATES_GUIDE,
+	clipboard: CLIPBOARD_GUIDE,
+	presets: PRESETS_GUIDE,
+	fonts: FONTS_GUIDE,
+	cache: CACHE_GUIDE,
+	previews: PREVIEWS_GUIDE,
+	structure: STRUCTURE_GUIDE,
+	time: TIME_GUIDE,
+	'color-management': COLOR_MGMT_GUIDE,
+	'edit-ux': EDIT_UX_GUIDE,
+	multicam: MULTICAM_GUIDE,
+	versions: VERSIONS_GUIDE,
+	audio: AUDIO_GUIDE,
+	'audio-fx': AUDIO_FX_GUIDE,
+	sound: SOUND_GUIDE,
+	proposals: PROPOSALS_GUIDE,
+	'editing-automation': {
+		title: 'Editing automation',
+		description:
+			'How to decorate an edit with the spec 15 passes (cut kits, punch-ins, Ken Burns, reactions, slides, music beds, stingers), style recipes, apply_style and style_check, with the recommended agent workflow: fix the transcript from the script → cleanup → subtitles → apply_style → review → accept → style_check.',
+		sections: [AUTOMATION_GUIDE, { heading: 'Style recipes', text: STYLE_GUIDE }],
+	},
+	style: STYLE_GUIDE,
+	captions: CAPTIONS_GUIDE,
+	subtitles: SUBTITLES_GUIDE,
+	'text-styles': TEXT_STYLES_GUIDE,
+	speech: SPEECH_GUIDE,
+	glossary: GLOSSARY_GUIDE,
+	'transcript-fix': {
+		title: 'Fixing transcripts from a script',
+		description:
+			"How to fix a transcript's recognition errors from the video's script and the personal glossary: attach_script → fix_transcript (dryRun, then propose) → the user reviews → accept_proposal (subtitles are patched in place) → plan_cleanup.",
+		sections: [TRANSCRIPT_FIX_GUIDE, { heading: 'Personal glossary', text: GLOSSARY_GUIDE }],
+	},
+	voice: VOICE_GUIDE,
+	cleanup: {
+		title: 'Cleaning up speech',
+		description:
+			'How to remove retakes, fillers, pauses and breaths from recorded speech with analyze_voice / plan_cleanup / apply_cleanup, and the recommended agent policy.',
+		sections: [CLEANUP_GUIDE, VOICE_GUIDE],
+	},
+	roto: ROTO_GUIDE,
+	'sim-warp': SIM_WARP_GUIDE,
+	interchange: INTERCHANGE_GUIDE,
+	imports: IMPORTS_GUIDE,
+	inspect: INSPECT_GUIDE,
+	ui: UI_GUIDE,
+	expressions: {
+		title: 'Expressions',
+		description: 'Expressions on animatable properties, with the full expression language reference.',
+		sections: [
+			EXPRESSIONS_GUIDE,
+			{ heading: 'Expression language reference', text: expressionReferenceMarkdown() },
+		],
+	},
+	'project-settings': {
+		title:
+			'Find, tracks, settings, proxies, audio channels, stills, Project Manager, stabilizer, Auto Reframe, graphics',
+		description:
+			'Find and Edit Original, tracks, project and sequence settings, proxies, audio channels, Export Frame, Project Manager, Warp Stabilizer, Auto Reframe, Essential Graphics templates.',
+		sections: [GAPS_GUIDE],
+	},
+	'browse-media': POLISH_GUIDE,
+};
+const GUIDE_TOPICS = guideTopics(GUIDES);
+const FULL_GUIDE = fullGuide(GUIDES);
+const INSTRUCTIONS = buildInstructions(GUIDE_TOPICS);
 
 type JasperMcpOptions = {
 	link: EngineConnection;
 	/** Name recorded in History origins; default = the MCP client's name (e.g. "claude-code"). */
 	agentName?: string;
+	/**
+	 * Toolsets advertised at start (`all` or names; `core` is always on). Default: `JASPER_MCP_TOOLSETS`, else core.
+	 * Every tool stays callable through `call_tool` (toolsets.ts).
+	 */
+	toolsets?: string | readonly string[];
 };
 
 export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServer } {
+	const initialToolsets = parseToolsets(opts.toolsets ?? process.env.JASPER_MCP_TOOLSETS);
 	const server = new McpServer(
 		{ name: MCP_SERVER_NAME, title: 'JasperEditor', version: MCP_SERVER_VERSION },
 		{
-			instructions: FULL_GUIDE,
+			instructions: INSTRUCTIONS,
 			capabilities: { tools: {}, resources: {}, prompts: {}, logging: {} },
 		},
 	);
@@ -231,6 +286,8 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerPolishTools(ctx);
 	registerResources(ctx);
 	registerPrompts(ctx);
+	registerGuides(ctx, GUIDE_TOPICS, FULL_GUIDE);
+	registerToolsetTools(ctx, installToolsets(server, initialToolsets));
 	return { server };
 }
 
@@ -287,82 +344,6 @@ function registerResources(ctx: ToolContext): void {
 			};
 		},
 	);
-	ctx.server.registerResource(
-		'cleanup-guide',
-		'jasper://guide/cleanup',
-		{
-			title: 'Cleaning up speech',
-			description:
-				'How to remove retakes, fillers, pauses and breaths from recorded speech with analyze_voice / plan_cleanup / apply_cleanup, and the recommended agent policy.',
-			mimeType: 'text/markdown',
-		},
-		async (uri) => ({
-			contents: [
-				{
-					uri: uri.href,
-					mimeType: 'text/markdown',
-					text: `# Cleaning up speech\n\n${CLEANUP_GUIDE}\n\n${VOICE_GUIDE}`,
-				},
-			],
-		}),
-	);
-	ctx.server.registerResource(
-		'transcript-fix-guide',
-		'jasper://guide/transcript-fix',
-		{
-			title: 'Fixing transcripts from a script',
-			description:
-				"How to fix a transcript's recognition errors from the video's script and the personal glossary: attach_script → fix_transcript (dryRun, then propose) → the user reviews → accept_proposal (subtitles are patched in place) → plan_cleanup.",
-			mimeType: 'text/markdown',
-		},
-		async (uri) => ({
-			contents: [
-				{
-					uri: uri.href,
-					mimeType: 'text/markdown',
-					text: `# Fixing transcripts from a script\n\n${TRANSCRIPT_FIX_GUIDE}\n\n## Personal glossary\n\n${GLOSSARY_GUIDE}`,
-				},
-			],
-		}),
-	);
-	ctx.server.registerResource(
-		'automation-guide',
-		'jasper://guide/editing-automation',
-		{
-			title: 'Editing automation',
-			description:
-				'How to decorate an edit with the spec 15 passes (cut kits, punch-ins, Ken Burns, reactions, slides, music beds, stingers), style recipes, apply_style and style_check, with the recommended agent workflow: fix the transcript from the script → cleanup → subtitles → apply_style → review → accept → style_check.',
-			mimeType: 'text/markdown',
-		},
-		async (uri) => ({
-			contents: [
-				{
-					uri: uri.href,
-					mimeType: 'text/markdown',
-					text: `# Editing automation\n\n${AUTOMATION_GUIDE}\n\n## Style recipes\n\n${STYLE_GUIDE}`,
-				},
-			],
-		}),
-	);
-	ctx.server.registerResource(
-		'editing-guide',
-		'jasper://guide',
-		{
-			title: 'JasperEditor editing guide',
-			description: 'How to drive JasperEditor with these tools.',
-			mimeType: 'text/markdown',
-		},
-		// Wave expressions: the guide resource carries the full expression language reference.
-		async (uri) => ({
-			contents: [
-				{
-					uri: uri.href,
-					mimeType: 'text/markdown',
-					text: `${FULL_GUIDE}\n\n${expressionReferenceMarkdown()}`,
-				},
-			],
-		}),
-	);
 }
 
 function registerPrompts(ctx: ToolContext): void {
@@ -370,7 +351,8 @@ function registerPrompts(ctx: ToolContext): void {
 		'edit-video',
 		{
 			title: 'Edit a video with JasperEditor',
-			description: 'Guidance and a plan template for editing a video project with the JasperEditor tools.',
+			description:
+				'The JasperEditor workflow for one editing goal: brief → footage digest and takes → view → propose → wait for review → export and verify, ending with a Done / Checked / Not checked report.',
 			argsSchema: {
 				goal: z.string().describe('What the edit should achieve, e.g. "a 30 s teaser from interview.mp4"'),
 				projectId: z.string().optional().describe('Existing project to edit (default: create one)'),
@@ -382,11 +364,7 @@ function registerPrompts(ctx: ToolContext): void {
 					role: 'user',
 					content: {
 						type: 'text',
-						text: `${FULL_GUIDE}
-
-Task: ${goal}
-${projectId ? `Work in project ${projectId} (start with get_project).` : 'Create a project for it (create_project), or ask which existing project to use (list_projects).'}
-Plan the cut first (shots, order, timings), apply it in a few well-labelled transactions, check key frames with render_frame, then tell me what you did and offer to export.`,
+						text: editVideoPrompt(goal, projectId),
 					},
 				},
 			],

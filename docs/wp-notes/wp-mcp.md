@@ -45,7 +45,7 @@ one executable ESM file, 1.7 MB, everything inlined). `pnpm build` builds it too
 | File | Role |
 |---|---|
 | `src/cli.ts` | stdio entry: flags, `StdioServerTransport`, shutdown on SIGINT/SIGTERM/stdin end (6 s force exit), stdout guard |
-| `src/server.ts` | `createJasperMcpServer({link, agentName})`: tools, resources, prompts, `instructions` (the editing guide) |
+| `src/server.ts` | `createJasperMcpServer({link, agentName, toolsets?})`: tools, resources, prompts, short `instructions`; toolsets and guides: `src/toolsets.ts`, `src/agent-guide.ts` (`docs/wp-notes/agent-footage-context.md`) |
 | `src/discovery.ts` | engine discovery, health probe, `--start-engine` (fork a headless engine) |
 | `src/link.ts` | `EngineLink` (lazy discovery, re-discovery), `FixedEngineLink` (for `/mcp`), `guardedFetch`, `withEngine` |
 | `src/context.ts` | `defineTool` (exceptions → tool errors), `loadDoc`, `transact` (approval progress), `waitJob` |

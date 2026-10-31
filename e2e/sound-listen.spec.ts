@@ -42,7 +42,7 @@ test.beforeAll(async ({ browser }) => {
 		if (v !== undefined && !k.startsWith('JASPER_')) env[k] = v;
 	const transport = new StdioClientTransport({
 		command: process.execPath,
-		args: [MCP_BUNDLE, '--appdir', serverInfo().appdir],
+		args: [MCP_BUNDLE, '--appdir', serverInfo().appdir, '--toolsets', 'all'],
 		env,
 		stderr: 'pipe',
 	});

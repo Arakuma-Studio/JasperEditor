@@ -223,7 +223,8 @@ export async function openSession(
 	err: Out['stderr'],
 	signal?: AbortSignal,
 ): Promise<CliSession> {
-	const { server } = createJasperMcpServer({ link, agentName });
+	// The CLI reaches every tool by name: all toolsets are advertised (spec 18 AF-CTX-002).
+	const { server } = createJasperMcpServer({ link, agentName, toolsets: 'all' });
 	const [a, b] = InMemoryTransport.createLinkedPair();
 	const client = new Client({ name: 'jasper-cli', version: MCP_SERVER_VERSION });
 	await Promise.all([server.connect(a), client.connect(b)]);
@@ -584,7 +585,7 @@ let toolCache: { name: string; title?: string; inputSchema: unknown }[] | null =
 async function listTools(c: Ctx) {
 	if (toolCache) return toolCache;
 	// The in-process server lists without touching the engine.
-	const { server } = createJasperMcpServer({ link: c.s.link, agentName: 'jasper-cli' });
+	const { server } = createJasperMcpServer({ link: c.s.link, agentName: 'jasper-cli', toolsets: 'all' });
 	const [a, b] = InMemoryTransport.createLinkedPair();
 	const client = new Client({ name: 'jasper-cli-list', version: MCP_SERVER_VERSION });
 	await Promise.all([server.connect(a), client.connect(b)]);

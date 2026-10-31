@@ -40,6 +40,16 @@ describe('POST/GET/DELETE /mcp (Streamable HTTP)', () => {
 		})) as CallToolResult;
 		expect(created.isError, text(created)).toBeFalsy();
 		const { projectId } = JSON.parse(text(created));
+		// A session advertises the core toolset; add_marker is in "editing" (spec 18 AF-CTX-001/002).
+		const listed = (await client.listTools()).tools.map((t) => t.name);
+		expect(listed).toContain('enable_toolsets');
+		expect(listed).not.toContain('add_marker');
+		const enabled = (await client.callTool({
+			name: 'enable_toolsets',
+			arguments: { names: ['editing'] },
+		})) as CallToolResult;
+		expect(JSON.parse(text(enabled))).toMatchObject({ changed: true });
+		expect((await client.listTools()).tools.map((t) => t.name)).toContain('add_marker');
 		const marker = (await client.callTool({
 			name: 'add_marker',
 			arguments: { projectId, at: 15, name: 'HTTP marker' },
