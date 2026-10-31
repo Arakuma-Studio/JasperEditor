@@ -215,6 +215,13 @@ import {
 	ProposalSelectRequestSchema,
 } from './proposals.ts';
 import {
+	MediaFramesRequestSchema,
+	MediaFramesResponseSchema,
+	MediaRangeAudioRequestSchema,
+	RangeAudioResponseSchema,
+	SequenceRangeAudioRequestSchema,
+} from './range-view.ts';
+import {
 	NetworkSettingsSchema,
 	RemoteAssetPrefetchRequestSchema,
 	RemoteAssetPrefetchResponseSchema,
@@ -1349,6 +1356,34 @@ export const ROUTES = {
 		path: '/api/media/:mediaKey/open',
 		body: MediaOpenRequestSchema,
 		response: MediaOpenResponseSchema,
+	},
+	/**
+	 * Spec 18 AF-VIEW-002: frames of a registered media at file times (≤ 16), each a PNG scaled during decode to fit
+	 * `width × height`; a frame that cannot be decoded is listed with its error. 404 ASSET_NOT_FOUND, 409 MEDIA_OFFLINE,
+	 * 422 NO_VIDEO / NO_DURATION.
+	 */
+	mediaFrames: {
+		method: 'POST',
+		path: '/api/media/:mediaKey/frames',
+		body: MediaFramesRequestSchema,
+		response: MediaFramesResponseSchema,
+	},
+	/**
+	 * Spec 18 AF-VIEW: 10 ms levels and voice classes of a media range (file seconds): the cached voice analysis when
+	 * there is one, else analysed now. 422 NO_AUDIO.
+	 */
+	mediaRangeAudio: {
+		method: 'POST',
+		path: '/api/media/:mediaKey/range-audio',
+		body: MediaRangeAudioRequestSchema,
+		response: RangeAudioResponseSchema,
+	},
+	/** Spec 18 AF-VIEW: the same of a sequence's mix over a range of frames (≤ 600 s; before loudness normalisation). */
+	sequenceRangeAudio: {
+		method: 'POST',
+		path: '/api/sequence-range-audio',
+		body: SequenceRangeAudioRequestSchema,
+		response: RangeAudioResponseSchema,
 	},
 
 	projectScratch: {
