@@ -285,6 +285,7 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 		editOnly: true,
 		items: [
 			c('sequence.settings', 'Sequence Settings…'),
+			c('sequence.brief', 'Brief…'),
 			c('timeline.renderInToOut', 'Render Effects In to Out'),
 			c('timeline.renderAllInToOut', 'Render In to Out'),
 			c('timeline.renderSelection', 'Render Selection'),

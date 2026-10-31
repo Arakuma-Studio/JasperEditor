@@ -9,6 +9,7 @@ import { strokeAnimationCommands } from '../stroke-animation/commands.ts';
 import { appCommands } from './app.ts';
 import { audioCommands } from './audio.ts';
 import { automationCommands } from './automation.ts';
+import { briefCommands } from './brief.ts';
 import { cacheCommands } from './cache.ts';
 import { captionCommands } from './captions.ts';
 import { cleanupCommands } from './cleanup.ts';
@@ -101,6 +102,8 @@ const COMMAND_MODULES: UiCommand[][] = [
 	cleanupCommands,
 	// spec 17: Fix Transcript, Script…
 	scriptFixCommands,
+	// spec 18 AF-BRF-006: Sequence ▸ Brief…
+	briefCommands,
 	rotoCommands,
 	multicamCommands,
 	interchangeCommands,

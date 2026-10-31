@@ -37,6 +37,7 @@ import {
 	PROJECT_FILE_DIALOGS,
 	registerProjectFileActions,
 } from './project-files.tsx';
+import { useStartBrief } from './use-start-brief.ts';
 
 const IDLE_STATUS: AutosaveStatus = {
 	saving: false,
@@ -92,6 +93,8 @@ function LifecycleBody(props: {
 	useAgentBridge(session);
 	// spec 12 §2.5: the session's proposals follow the engine (list, proposal.changed)
 	useProposalsSync(session);
+	// spec 18 AF-BRF-005: finish Home ▸ Describe your video (brief, files, Connect an AI Agent…)
+	useStartBrief(session);
 	const engine = useEngine();
 	useLanguageEpoch(); // banners and notices follow a language change (the editor below remounts)
 	const exportState = useExportMode();
