@@ -84,17 +84,15 @@ Workstream AF-EXP of [spec 18](../specs/18-agent-footage-editing.md) §2.7. No c
 | MCP GIF (480×270, 10 fps, 20 frames, loop 2 plays), WAV 16-bit mono 44.1 kHz, M4A 128 kb/s, refusals | pass | `apps/mcp/test/export-gif-audio.test.ts` |
 | Export dialog rows, settings reaching plan / export, extension, remembered choice | pass | `apps/web/test/export-gif-audio.test.tsx` |
 | Running dev engine (port 48080, vendor LGPL FFmpeg 7.1.5): 1280×720 30 fps footage, `start_export {format: gif, fps 15, width 640}` → native path, progress through "GIF 1/2 · Encoding (native)" 0–71 %, "GIF 2/2 · Building the palette" 80 %, "Writing frames" 86–99 %; 60 frames 640×360; GIF frame 30 vs `render_frame` at sequence frame 60 (640 px): SSIM 0.987, burned-in source timecode 00:00:02.000 / 60 identical (inspected side by side) | pass | §5 commands in this note |
-| Same sequence with a text layer: the GIF is routed to the Remotion path ("GIF 1/2 · Step 1/2 · Remotion → ProRes"), which failed here only because the host's Chromium lacks `libnspr4.so` (RENDER_FAILED with the browser hint) | routed, not rendered | — |
+| Same sequence with a text layer, from Export mode ▸ Export As ▸ Animated GIF in headless Chromium (Playwright): plan "Auto → Hybrid (1 layer pre-rendered by Remotion)", job done, 60 frames; GIF frame 30 vs `render_frame` at frame 60: SSIM 0.986, text identical side by side. Forced `engine: remotion` (MCP): `renderPath: remotion`, SSIM 0.954 against the native still | pass | — |
+| Export mode screenshots (Playwright, 1600×1000): GIF rows (Frame Rate, Width with automatic placeholder, Loop + plays, Dither, Palette, note, Engine / Previews / Proxies; codec, colour, sound and smart-render rows hidden), WAV rows (Bit Depth, channels, rate, loudness; picture rows and Engine hidden), M4A (Bit Rate), Spanish catalogue | pass | — |
 | Running dev engine: `start_export {format: flac, audioBitDepth 16, normalizeLufs −16}` → FLAC 16-bit 48 kHz stereo, 4.000 s; `ebur128` of the file −16.0 LUFS | pass | — |
 
 ## 6. Limits
 
-- The GIF tests exercise the native path; the hybrid and Remotion paths are reached through the same
-  `renderPlanned` (and its fallback) but were not rendered in this environment: the host's headless Chromium cannot
-  start (`libnspr4.so` missing).
-- The Export dialog was verified with component tests only, not inspected in a running browser: the shared
-  agent-browser cannot reach this host's loopback dev server (ERR_CONNECTION_REFUSED) and the local Playwright
-  Chromium fails on the same missing library. A visual check of Export mode ▸ Export As is still owed.
+- The automated GIF tests exercise the native path; the hybrid and Remotion paths were verified by hand in the running
+  app (§5), not by a test in the default gate (they need a headless browser).
+- The Summary line (`outputDescription`) is English in every language, as it was before this work.
 - GIF estimates (≈ 0.25 byte per pixel and frame) and FLAC (≈ 60 % of PCM) are assumptions, labelled in the code.
 - The intermediate renders every sequence frame of the range at the GIF size; long GIFs at high sequence rates cost
   render time and scratch space (ProRes 4444 ≈ 330 Mbit/s at 1080p30).
