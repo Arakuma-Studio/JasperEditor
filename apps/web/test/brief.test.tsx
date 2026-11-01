@@ -17,10 +17,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { BRIEF_DIALOG, registerBriefDialog } from '../src/brief/BriefDialog.tsx';
 import {
 	EMPTY_BRIEF_FORM,
+	editedBriefPatch,
 	formatDuration,
 	formOfBrief,
 	parseDuration,
 	projectNameFrom,
+	rebaseBriefForm,
 	sequenceShapeFor,
 } from '../src/brief/model.ts';
 import { DescribeVideoDialog } from '../src/home/DescribeVideoDialog.tsx';
@@ -84,6 +86,17 @@ describe('brief form model', () => {
 		);
 		expect(long.length).toBeLessThanOrEqual(61);
 		expect(long.endsWith('…')).toBe(true);
+	});
+
+	it('rebases an open form on a changed brief and saves only the edited fields', () => {
+		const base = { text: 'A', platform: 'youtube' as const, aspect: null, duration: '30 s' };
+		const next = { text: 'B', platform: 'tiktok' as const, aspect: null, duration: '30 s' };
+		const mine = { ...base, text: 'Mine', duration: '' };
+		const r = rebaseBriefForm(mine, base, next);
+		expect(r.form).toEqual({ text: 'Mine', platform: 'tiktok', aspect: null, duration: '' });
+		expect(r.conflicts).toEqual(['text']);
+		expect(editedBriefPatch(r.form, next)).toEqual({ text: 'Mine', targetDurationSec: null });
+		expect(editedBriefPatch(next, next)).toBeNull();
 	});
 
 	it('round-trips a stored brief through the form', () => {
@@ -274,6 +287,67 @@ describe('Sequence ▸ Brief… (AF-BRF-006)', () => {
 			}),
 		);
 		expect(s.getState().history.index).toBe(depth + 1);
+	});
+
+	it('an agent changing the brief while the dialog is open: untouched fields follow, Save never reverts it', async () => {
+		const { s, seqId } = session();
+		const agentSets = (brief: Record<string, unknown>) =>
+			act(() => {
+				const r = s.apply({
+					label: 'Edit Brief',
+					origin: { agent: 'claude-code' },
+					sequenceId: seqId,
+					commands: [{ type: 'sequence.setBrief', sequenceId: seqId, brief }] as never[],
+				});
+				expect(r.ok).toBe(true);
+			});
+		agentSets({ text: 'Original', platform: 'youtube' });
+		openBrief(s, seqId);
+		const dialog = await screen.findByTestId('brief-dialog');
+		// the user does not type; the agent changes the brief
+		agentSets({ platform: 'tiktok', targetDurationSec: 30 });
+		await waitFor(() =>
+			expect((within(dialog).getByTestId('brief-platform') as HTMLSelectElement).value).toBe('tiktok'),
+		);
+		expect(within(dialog).getByTestId('brief-changed').textContent).toContain('claude-code');
+		const depth = s.getState().history.index;
+		fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+		await waitFor(() => expect(screen.queryByTestId('brief-dialog')).toBeNull());
+		expect(readSequenceBrief(s.getCommitted().sequences[seqId])).toEqual({
+			text: 'Original',
+			platform: 'tiktok',
+			targetDurationSec: 30,
+		});
+		expect(s.getState().history.index).toBe(depth);
+	});
+
+	it('the user edits one field, the agent another and the same one: both kept, the conflict shown', async () => {
+		const { s, seqId } = session();
+		const agentSets = (brief: Record<string, unknown>) =>
+			act(() => {
+				s.apply({
+					label: 'Edit Brief',
+					origin: { agent: 'codex' },
+					sequenceId: seqId,
+					commands: [{ type: 'sequence.setBrief', sequenceId: seqId, brief }] as never[],
+				});
+			});
+		agentSets({ text: 'Original' });
+		openBrief(s, seqId);
+		const dialog = await screen.findByTestId('brief-dialog');
+		fireEvent.change(within(dialog).getByTestId('brief-text'), { target: { value: 'Mine' } });
+		agentSets({ text: 'Agent text', aspect: '9:16' });
+		await waitFor(() =>
+			expect((within(dialog).getByTestId('brief-aspect') as HTMLSelectElement).value).toBe('9:16'),
+		);
+		expect((within(dialog).getByTestId('brief-text') as HTMLTextAreaElement).value).toBe('Mine');
+		const notice = within(dialog).getByTestId('brief-changed').textContent ?? '';
+		expect(notice).toContain('codex');
+		expect(notice).toContain('Agent text');
+		fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+		await waitFor(() =>
+			expect(readSequenceBrief(s.getCommitted().sequences[seqId])).toEqual({ text: 'Mine', aspect: '9:16' }),
+		);
 	});
 
 	it('read-only: shows the brief and notes without editing', async () => {
