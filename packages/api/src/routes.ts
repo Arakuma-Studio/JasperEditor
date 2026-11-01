@@ -170,6 +170,7 @@ import {
 	PreviewStatusSchema,
 } from './previews.ts';
 import {
+	DeriveRequestSchema,
 	ProcessingModelsResponseSchema,
 	ProcessingSettingsSchema,
 	ProcessRequestSchema,
@@ -697,6 +698,14 @@ export const ROUTES = {
 		method: 'POST',
 		path: '/api/media/:key/process',
 		body: ProcessRequestSchema,
+		response: EngineJobSchema,
+	},
+	/** spec 18 AF-OPS-001: a derivation op (conform-cfr, reverse, denoise-audio, extract-audio, time-stretch, range). */
+	mediaDerive: {
+		method: 'POST',
+		path: '/api/media/:key/derive',
+		body: DeriveRequestSchema,
+		query: z.object({ wait: z.enum(['1']).optional() }),
 		response: EngineJobSchema,
 	},
 	processingModels: {

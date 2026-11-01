@@ -67,6 +67,8 @@ export const JOB_KINDS = [
 	'apply-style',
 	/** spec 17 SC-090: Fix Transcript (script / glossary candidates checked against the audio → one proposal). */
 	'transcript-fix',
+	/** spec 18 AF-OPS-001: a media derivation op (conform-cfr, reverse, denoise-audio, extract-audio, time-stretch, range). */
+	'derive',
 ] as const;
 export const JobKindSchema = z.enum(JOB_KINDS);
 export type JobKind = z.infer<typeof JobKindSchema>;
