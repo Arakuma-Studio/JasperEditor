@@ -32,7 +32,7 @@ import { useProposalsSync } from '../proposals/state.ts';
 import { autoSavePolicy } from '../runtime/save.ts';
 import { useEngine } from '../state/engine.tsx';
 import { registerImportService } from '../state/services.ts';
-import { NoticeHost, notices } from './notices.tsx';
+import { NoticeHost, notices, useSessionNotices } from './notices.tsx';
 import {
 	createProjectFileActions,
 	PROJECT_FILE_DIALOGS,
@@ -176,6 +176,7 @@ function LifecycleBody(props: {
 	// Link Media when the project opened with offline media (Premiere shows it on open).
 	useLinkMediaOnOpen(session, engine.client, engineConnected);
 
+	const sessionNotices = useSessionNotices(session);
 	useEffect(
 		() =>
 			engine.subscribe((e) => {
@@ -186,7 +187,8 @@ function LifecycleBody(props: {
 				if (fileName === null) return;
 				if (job.state === 'succeeded') {
 					const detail = exportResultDetail(job.result);
-					notices.push({
+					// spec 18 AF-VER-005: the toast (its Verify) belongs to this project and goes when it closes
+					sessionNotices.push({
 						kind: 'success',
 						message: `Export finished: ${fileName}`,
 						...(detail ? { detail } : {}),
@@ -206,7 +208,7 @@ function LifecycleBody(props: {
 						detail: job.error?.message,
 					});
 			}),
-		[engine.subscribe, engine.client, session],
+		[engine.subscribe, engine.client, session, sessionNotices],
 	);
 
 	const onDrop = (e: React.DragEvent) => {

@@ -1,7 +1,8 @@
 // Generated-media location belongs to the project. Preview, cache, and autosave locations are engine-owned;
 // the dialog displays them without persisting them as project settings. General ▸ Agent Proposals (spec 15 EA-001):
-// "Allow agents to apply <feature> proposals" per workflow feature (default on), saved with the project; sound design
-// keeps its per-sequence setting (Preferences ▸ Sound Library).
+// "Allow agents to apply <feature> proposals" per workflow feature, each with its feature's default
+// (`PROPOSAL_FEATURES[].agentAccept.default`: on for the editing passes, off for rough-cut — spec 18 AF-PROP), saved with
+// the project; sound design keeps its per-sequence setting (Preferences ▸ Sound Library).
 import type { ScratchInfo, ScratchLocation } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {

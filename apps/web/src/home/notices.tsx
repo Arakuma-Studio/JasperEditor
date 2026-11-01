@@ -1,5 +1,6 @@
+import type { EditorSession } from '@jasper/session';
 import { Button, cx, IconButton, useToastPlacement, Z } from '@jasper/ui';
-import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import type { ToastRequest } from '../commands/types.ts';
 
 type Notice = {
@@ -40,6 +41,33 @@ class NoticeStore {
 }
 
 export const notices = new NoticeStore();
+
+/**
+ * Notices that belong to a session's project (spec 18 AF-VER-005: the export toast's Verify and its Go to act on that
+ * session): dismissed when the session closes (another project opens, or the editor unmounts), so their actions never
+ * run against a closed session.
+ */
+export function useSessionNotices(session: EditorSession | null): { push(n: Omit<Notice, 'id'>): number } {
+	const owned = useRef<Set<number>>(new Set());
+	useEffect(() => {
+		void session;
+		const ids = new Set<number>();
+		owned.current = ids;
+		return () => {
+			for (const id of ids) notices.dismiss(id);
+		};
+	}, [session]);
+	return useMemo(
+		() => ({
+			push: (n: Omit<Notice, 'id'>) => {
+				const id = notices.push(n);
+				owned.current.add(id);
+				return id;
+			},
+		}),
+		[],
+	);
+}
 
 export function toastFromRequest(r: ToastRequest): void {
 	notices.push({ kind: r.kind, message: r.message, detail: r.detail, durationMs: r.durationMs });
