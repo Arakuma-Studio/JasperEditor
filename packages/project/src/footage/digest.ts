@@ -276,7 +276,9 @@ export function packFootageDigest(
 			};
 		// own properties only: an id such as "constructor" names no sequence
 		const seq =
-			doc.sequences && Object.hasOwn(doc.sequences, opts.sequenceId) ? doc.sequences[opts.sequenceId] : undefined;
+			doc.sequences && Object.hasOwn(doc.sequences, opts.sequenceId)
+				? doc.sequences[opts.sequenceId]
+				: undefined;
 		if (!seq)
 			return {
 				ok: false,
