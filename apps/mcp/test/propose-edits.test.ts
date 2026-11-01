@@ -59,6 +59,11 @@ function fakeEngine(doc: ProjectDocument, revision = 5) {
 	const stored: Proposal[] = [];
 	const client = {
 		agentQuery: async () => ({ result: doc, revision, via: 'headless' }),
+		getProposal: async (_projectId: string, proposalId: string) => {
+			const proposal = stored.find((x) => x.id === proposalId);
+			if (!proposal) throw new EngineError('PROPOSAL_NOT_FOUND', 'gone', { status: 404 });
+			return { proposal, revision, expiresAt: '2026-11-30T10:00:00.000Z' };
+		},
 		createProposal: async (projectId: string, req: Record<string, unknown>) => {
 			calls.push({ name: 'createProposal', args: [projectId, req] });
 			const { allOrNothing, expectedRevision, author: _a, ...draft } = req;
@@ -119,10 +124,12 @@ async function connect(revision?: number) {
 	const client = new Client({ name: 'cut-test', version: '1' });
 	await client.connect(y);
 	open.push(client);
-	const call = async (args: Record<string, unknown>) => {
-		const r = (await client.callTool({ name: 'propose_edits', arguments: args })) as CallToolResult;
+	const call = async (args: Record<string, unknown>, name = 'propose_edits') => {
+		const r = (await client.callTool({ name, arguments: args })) as CallToolResult;
 		const text = (r.content[0] as { text: string }).text;
-		let json: Record<string, unknown> & { error?: { code: string; message: string; hint?: string; details?: unknown } };
+		let json: Record<string, unknown> & {
+			error?: { code: string; message: string; hint?: string; details?: unknown };
+		};
 		try {
 			json = JSON.parse(text);
 		} catch {
@@ -159,7 +166,9 @@ describe('propose_edits (AF-PROP-002)', () => {
 				{
 					group: 'reorder',
 					reason: 'The ending reads better above the B-roll',
-					commands: [{ type: 'clip.move', clipIds: [t.c], deltaFrames: 0, deltaTracks: 1, createTracks: true }],
+					commands: [
+						{ type: 'clip.move', clipIds: [t.c], deltaFrames: 0, deltaTracks: 1, createTracks: true },
+					],
 				},
 				{
 					group: 'b-roll',
@@ -205,6 +214,18 @@ describe('propose_edits (AF-PROP-002)', () => {
 		expect(table).toMatch(/e3 \| pending \| create clip \| V1 \| 00:00:06:20/);
 		expect(json.next).toMatch(/wait_for_proposal/);
 		expect(json.next).toMatch(/Review panel/);
+		// get_proposal reads the rows back with their reason, beat and quote
+		const got = await t.call({ projectId: t.doc.projectId, proposalId: json.proposalId }, 'get_proposal');
+		expect(got.r.isError, JSON.stringify(got.json)).toBeFalsy();
+		expect((got.json.items as unknown[])[0]).toMatchObject({
+			itemId: 'e0',
+			group: 'removed',
+			why: 'Weaker read than the ending',
+			beat: 'Middle take',
+			quote: 'and then, uh, the thing',
+		});
+		expect(got.json.summary).toBe(STRATEGY);
+		expect(got.json.next).not.toMatch(/sound_check/);
 	});
 
 	it('one failing item refuses the whole cut, listing each failing index with its command error', async () => {
@@ -284,7 +305,9 @@ describe('propose_edits (AF-PROP-002)', () => {
 		const full = { ...item, commands: Array(100).fill(item.commands[0]) };
 		expect(await refused({ items: Array(21).fill(full) })).toMatch(/^E_INVALID_PARAM: .*2000 commands/);
 		expect(await refused({ strategy: 'x'.repeat(2001) })).toMatch(/strategy/);
-		expect(await refused({ strategy: 'A. B. C. D. E. F. G. H. I.' })).toMatch(/^E_INVALID_PARAM: .*sentences/);
+		expect(await refused({ strategy: 'A. B. C. D. E. F. G. H. I.' })).toMatch(
+			/^E_INVALID_PARAM: .*sentences/,
+		);
 		expect(t.engine.calls).toEqual([]);
 	});
 
