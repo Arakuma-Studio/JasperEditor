@@ -11224,7 +11224,7 @@
   "No item changed since it was proposed": "Ningún elemento cambió desde que se propuso",
   "Nothing to refresh": "Nada que actualizar",
   "Off-script": "Fuera de guion",
-  "On (the default): an agent may apply these proposals itself, each as one undoable History step; edits that need your approval still ask. Off: agents only propose and you apply in the Review panel. An agent cannot turn these on by itself. Sound design proposals have their own setting per sequence (Preferences ▸ Sound Library).": "Activado (por defecto): un agente puede aplicar estas propuestas por sí mismo, cada una como un paso del Historial que se puede deshacer; las ediciones que necesitan tu aprobación siguen preguntando. Desactivado: los agentes solo proponen y tú aplicas en el panel Revisión. Un agente no puede activarlas por sí mismo. Las propuestas de diseño de sonido tienen su propio ajuste por secuencia (Preferencias ▸ Biblioteca de sonidos).",
+  "On: an agent may apply these proposals itself, each as one undoable History step; edits that need your approval still ask. Off: agents only propose and you apply in the Review panel. Rough cuts (an agent’s own cut of your footage) are off by default; the others are on. An agent cannot turn these on by itself. Sound design proposals have their own setting per sequence (Preferences ▸ Sound Library).": "Activado: un agente puede aplicar estas propuestas por sí mismo, cada una como un paso del Historial que se puede deshacer; las ediciones que necesitan tu aprobación siguen preguntando. Desactivado: los agentes solo proponen y tú aplicas en el panel Revisión. Los primeros montajes (el montaje que un agente hace de tu material) están desactivados por defecto; los demás, activados. Un agente no puede activarlas por sí mismo. Las propuestas de diseño de sonido tienen su propio ajuste por secuencia (Preferencias ▸ Biblioteca de sonidos).",
   "Overlay slides": "Deslizamientos de superposición",
   "Pauses": "Pausas",
   "Punch-ins": "Zooms de énfasis",
@@ -12370,5 +12370,13 @@
   "Δ {0} per token": "Δ {0} por token",
   "Play the recording": "Reproducir la grabación",
   "Sequence ▸ Fix Transcript from Script…: the Fix Transcript dialog for the active sequence (the same as Text ▸ Fix Transcript…)": "Secuencia ▸ Corregir transcripción con el guion…: el cuadro Corregir transcripción de la secuencia activa (lo mismo que Texto ▸ Corregir transcripción…)",
-  "Personal glossary (1 entry)": "Glosario personal (1 entrada)"
+  "Personal glossary (1 entry)": "Glosario personal (1 entrada)",
+  "B-roll": "Planos de recurso",
+  "beat {0}": "momento {0}",
+  "Beat: {0}": "Momento: {0}",
+  "Removed": "Eliminados",
+  "Reorder": "Reordenar",
+  "Rough cut": "Primer montaje",
+  "Selects": "Seleccionados",
+  "Strategy": "Estrategia"
 }

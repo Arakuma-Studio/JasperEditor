@@ -14,7 +14,7 @@
 // proposal shows the same; stale when the mix or the decisions changed since.
 import type { ProposalSummary, SoundCheckDeltaFinding, SoundCheckProposalSummary } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
-import type { Sequence } from '@jasper/project';
+import { ROUGH_CUT_FEATURE, type RoughCutMeta, type Sequence } from '@jasper/project';
 import type { EditorSession, ReviewItem } from '@jasper/session';
 import { useSessionOrNull, useSessionState, useStoreSelector } from '@jasper/session/react';
 import { Button, Icon, Select } from '@jasper/ui';
@@ -47,6 +47,15 @@ import {
 	type ReviewRow,
 	reviewCounts,
 } from '../../proposals/review.ts';
+import {
+	CutBeat,
+	CutQuote,
+	CutReason,
+	cutAriaText,
+	cutMetaFor,
+	quoted,
+	RoughCutStrategy,
+} from '../../proposals/rough-cut.tsx';
 import {
 	cancelProposalCheck,
 	checkProposal,
@@ -383,6 +392,10 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 							</div>
 						) : null}
 					</div>
+					{/* spec 18 AF-PROP-003: an agent's rough cut says its plan above the items */}
+					{feature === ROUGH_CUT_FEATURE && proposal.summary.trim() ? (
+						<RoughCutStrategy text={proposal.summary} />
+					) : null}
 					{fixRows ? <FixReportBar session={session} proposalId={proposal.id} /> : null}
 					{/* a transcript fix changes words, not the mix: no Sound Check bar for it */}
 					{fixRows ? null : (
@@ -441,6 +454,7 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 								<Row
 									key={row.item.id}
 									fix={fixRows ? fixMetaOf(row.item.meta) : null}
+									cut={cutMetaFor(feature, row.item.meta)}
 									checkText={itemCheckText(check, row.item.id)}
 									introduces={itemCheck(check, row.item.id).introduces.length}
 									id={`${idPrefix}${row.item.id}`}
@@ -510,6 +524,7 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 							idPrefix={idPrefix}
 							refreshable={!!featureInfo?.refreshable}
 							playLabel={fixRows ? t('Play the recording') : undefined}
+							cut={cutMetaFor(feature, currentRow.item.meta)}
 						/>
 					) : null}
 					<div className="flex shrink-0 flex-wrap items-center gap-1.5 border-t border-pr-border px-2 py-1.5">
@@ -737,6 +752,8 @@ function Row(p: {
 	row: ReviewRow;
 	/** A transcript fix's meta (spec 17 SC-082): the row shows its text diff. */
 	fix?: FixMeta | null;
+	/** A rough-cut item's meta (spec 18 AF-PROP-003): the row shows its beat, reason and quote. */
+	cut?: RoughCutMeta | null;
 	/** The proposal check's badge for this item ("fixes 2 · introduces 1"), null when it says nothing about it. */
 	checkText: string | null;
 	introduces: number;
@@ -764,6 +781,7 @@ function Row(p: {
 	// spec 17 SC-061: offered unselected (a Maybe transcript fix): Accept all leaves it out until accepted here
 	const unselected = !it.selected && (it.state === 'pending' || it.state === 'stale');
 	const fix = p.fix ?? null;
+	const cut = fix ? null : (p.cut ?? null);
 	const seg = (d: 'accept' | 'reject' | 'clear', glyph: string, label: string, on: boolean) => (
 		<button
 			type="button"
@@ -810,7 +828,7 @@ function Row(p: {
 			id={p.id}
 			role="option"
 			aria-selected={p.selected}
-			aria-label={`${rowAriaLabel(row, p.seq)}${fix ? `. ${fixAriaText(fix)}` : ''}${unselected ? `. ${t('Not selected')}` : ''}${p.checkText ? `. ${t('Sound Check: {0}', p.checkText)}` : ''}`}
+			aria-label={`${rowAriaLabel(row, p.seq)}${fix ? `. ${fixAriaText(fix)}` : ''}${cut && (cut.beat || cut.quote) ? `. ${cutAriaText(cut)}` : ''}${unselected ? `. ${t('Not selected')}` : ''}${p.checkText ? `. ${t('Sound Check: {0}', p.checkText)}` : ''}`}
 			aria-posinset={p.position.kind === 'row' ? p.position.position + 1 : undefined}
 			aria-setsize={p.setSize}
 			onPointerDown={(e) => {
@@ -842,6 +860,11 @@ function Row(p: {
 				<KindGlyph kind={row.kind} />
 				{fix ? (
 					<FixDiff meta={fix} label={it.label} />
+				) : cut ? (
+					<>
+						{cut.beat ? <CutBeat beat={cut.beat} /> : null}
+						<CutReason reason={cut.reason} />
+					</>
 				) : (
 					<span className="min-w-0 flex-1 truncate" title={row.sound ?? it.label}>
 						{row.sound ?? it.label}
@@ -905,6 +928,10 @@ function Row(p: {
 					<span className="min-w-0 truncate text-pr-warning" title={problem} data-review-problem>
 						! {problem}
 					</span>
+				) : cut ? (
+					cut.quote ? (
+						<CutQuote quote={cut.quote} />
+					) : null
 				) : row.reason && !fix ? (
 					<span className="min-w-0 truncate" title={row.reason}>
 						{row.reason}
@@ -954,6 +981,8 @@ function Details(p: {
 	refreshable: boolean;
 	/** The ▶ button's words (a transcript fix plays its recording, not the timeline). */
 	playLabel?: string;
+	/** A rough-cut item's meta: its beat and quote (the why-line is its reason). */
+	cut?: RoughCutMeta | null;
 }) {
 	const it = p.row.item;
 	const c = useProposalsController(p.session);
@@ -981,6 +1010,12 @@ function Details(p: {
 			data-testid="review-details"
 		>
 			<div className="font-semibold text-pr-strong">{it.label}</div>
+			{p.cut?.beat || p.cut?.quote ? (
+				<div className="flex min-w-0 items-center gap-1.5" data-review-detail-cut>
+					{p.cut.beat ? <CutBeat beat={p.cut.beat} /> : null}
+					{p.cut.quote ? <span className="min-w-0 italic">{quoted(p.cut.quote)}</span> : null}
+				</div>
+			) : null}
 			{p.why?.why ? <div data-review-why>{p.why.why}</div> : null}
 			{p.why?.facts.length ? (
 				<ul className="list-none text-pr-muted">
