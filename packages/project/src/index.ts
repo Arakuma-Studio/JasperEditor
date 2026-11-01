@@ -142,6 +142,7 @@ export {
 	type EaseSegmentInfo,
 	type EaseSideInfo,
 } from './commands/handlers/ease-read.ts';
+export * from './delivery/export.ts';
 export * from './delivery/targets.ts';
 export * from './ease/curve.ts';
 export * from './ease/fit.ts';

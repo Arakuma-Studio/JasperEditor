@@ -540,8 +540,12 @@ export const vp9Crf = (crf: number) => clamp(crf * 1.25 + 9.5, 4, 63);
 /** x264 CRF → AV1 CRF (SVT-AV1/libaom 0–63): 18 → 28, 23 → 35, 26 → 39. */
 const av1Crf = (crf: number) => clamp(crf * 1.35 + 3.7, 1, 63);
 
-/** Pixel format the encoder receives from the filter graph (color-mgmt: 10/12-bit 4:2:0 for AV1/VP9). */
-function pixFmtFor(encoder: string, proresProfile: 'hq' | '4444' = 'hq', bitDepth: 8 | 10 | 12 = 8): string {
+/** Pixel format the encoder receives from the filter graph (color-mgmt: 10/12-bit 4:2:0 for AV1/VP9; export verification). */
+export function pixFmtFor(
+	encoder: string,
+	proresProfile: 'hq' | '4444' = 'hq',
+	bitDepth: 8 | 10 | 12 = 8,
+): string {
 	if (encoder === 'prores_ks') return proresProfile === '4444' ? 'yuv444p10le' : 'yuv422p10le';
 	if (bitDepth > 8 && (encoder === 'libsvtav1' || encoder === 'libaom-av1' || encoder === 'libvpx-vp9'))
 		return bitDepth === 12 && encoder !== 'libsvtav1' ? 'yuv420p12le' : 'yuv420p10le';

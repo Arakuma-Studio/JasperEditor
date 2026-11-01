@@ -1,7 +1,21 @@
 // Export presets for agents: a few named recipes turned into the engine's ExportSettings (S04 §10.2 M1
-// subset). "match-sequence-h264" is the same recipe as Export mode's default preset in the web app.
+// subset). "match-sequence-h264" is the same recipe as Export mode's default preset in the web app. The
+// "delivery-<target>" presets (spec 18 AF-VER-004) export for a platform (`DELIVERY_TARGETS`): H.264 + AAC in MP4 through
+// the engine's LGPL encoder selector, the platform's frame size, rate and loudness (`deliveryExportFormat`); a sequence
+// of the wrong shape is refused with a hint to auto_reframe_sequence, never cropped.
 import type { ExportSettings, VideoCodec } from '@jasper/api';
-import type { Sequence } from '@jasper/project';
+import {
+	DELIVERY_AUDIO_KBPS,
+	DELIVERY_CRF,
+	DELIVERY_TARGETS,
+	type DeliveryExportRefusal,
+	type DeliveryTarget,
+	type DeliveryTargetId,
+	deliveryExportFormat,
+	deliveryPresetId,
+	deliveryTarget,
+	type Sequence,
+} from '@jasper/project';
 
 type ExportPreset = {
 	id: string;
@@ -20,7 +34,29 @@ type ExportPreset = {
 	bitDepth?: 10;
 	/** social-comment §7.11: a transparent background — straight-alpha ProRes 4444, no audio (Remotion path). */
 	alpha?: true;
+	/** spec 18 AF-VER-004: a platform delivery preset (frame size, rate and loudness from the target). */
+	target?: DeliveryTargetId;
 };
+
+const mb = (b: number) => (b >= 1e9 ? `${b / 1e9} GB` : `${b / 1e6} MB`);
+const minutes = (s: number) => (s >= 3600 ? `${s / 3600} h` : s >= 60 ? `${s / 60} min` : `${s} s`);
+
+function deliveryPreset(t: DeliveryTarget): ExportPreset {
+	const l = t.limits;
+	return {
+		id: deliveryPresetId(t),
+		label: `${t.name} – H.264`,
+		description:
+			`${t.name} delivery: H.264 + AAC ${DELIVERY_AUDIO_KBPS} kb/s in MP4 at up to ${l.recommendedSize.width}×${l.recommendedSize.height} (${t.aspect}; other shapes the platform takes keep theirs, fitted inside), the sequence rate when ${t.name} takes it (${l.minFrameRate ?? 0}–${l.maxFrameRate} fps, else the nearest of ${l.frameRates.join(', ')}), loudness normalised to ${l.loudnessLufs ?? -14} LUFS${l.loudnessLufs === null ? ' (the platform publishes no level)' : ''} with a ${l.truePeakDbtp} dBTP ceiling. ${t.name} takes up to ${minutes(l.maxDurationSec)} and ${mb(l.maxFileSizeBytes)}; verify_export {target: "${t.id}"} checks the file. ${t.aspect === '9:16' ? 'A horizontal sequence is refused: make a vertical copy with auto_reframe_sequence first.' : ''}`.trim(),
+		container: 'mp4',
+		codec: 'h264',
+		crf: DELIVERY_CRF,
+		speed: 'balanced',
+		maxWidth: null,
+		audioKbps: DELIVERY_AUDIO_KBPS,
+		target: t.id,
+	};
+}
 
 export const EXPORT_PRESETS: readonly ExportPreset[] = [
 	{
@@ -130,6 +166,7 @@ export const EXPORT_PRESETS: readonly ExportPreset[] = [
 		maxWidth: null,
 		audioKbps: 160,
 	},
+	...DELIVERY_TARGETS.map(deliveryPreset),
 ];
 
 export const DEFAULT_EXPORT_PRESET = 'match-sequence-h264';
@@ -139,6 +176,13 @@ export function findExportPreset(id: string | undefined): ExportPreset | undefin
 }
 
 const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
+
+/** Why a delivery preset cannot export this sequence (wrong shape: Auto Reframe first), or null. */
+export function deliveryPresetRefusal(seq: Sequence, preset: ExportPreset): DeliveryExportRefusal | null {
+	if (!preset.target) return null;
+	const f = deliveryExportFormat(deliveryTarget(preset.target), seq.settings);
+	return f.ok ? null : f.refusal;
+}
 
 export function buildExportSettings(
 	seq: Sequence,
@@ -159,6 +203,11 @@ export function buildExportSettings(
 	const videoKbps = opts.videoBitrateKbps ?? preset.videoKbps;
 	const s = seq.settings;
 	const scale = preset.maxWidth && s.width > preset.maxWidth ? preset.maxWidth / s.width : 1;
+	// a delivery preset: the target's size, rate and loudness (a refused shape keeps the sequence's: callers that export
+	// check deliveryPresetRefusal first; Sound Check reads the audio only)
+	const delivery = preset.target ? deliveryExportFormat(deliveryTarget(preset.target), s) : null;
+	const format = delivery?.ok ? delivery.format : null;
+	const normalize = opts.normalize !== undefined ? opts.normalize : format ? format.normalize : undefined;
 	return {
 		sequenceId: seq.id,
 		range: opts.range,
@@ -166,9 +215,9 @@ export function buildExportSettings(
 		container: preset.container,
 		video: {
 			codec: preset.codec,
-			width: even(s.width * scale),
-			height: even(s.height * scale),
-			frameRate: { num: s.frameRate.num, den: s.frameRate.den },
+			width: format ? format.width : even(s.width * scale),
+			height: format ? format.height : even(s.height * scale),
+			frameRate: format ? format.frameRate : { num: s.frameRate.num, den: s.frameRate.den },
 			scaling: 'fit',
 			quality: { mode: 'crf', value: opts.crf ?? preset.crf },
 			encoderSpeed: preset.speed,
@@ -188,7 +237,7 @@ export function buildExportSettings(
 			...(opts.audioChannels === 6 || (opts.audioChannels === undefined && s.masterLayout === '5.1')
 				? { bitrateKbps: Math.max(preset.audioKbps ?? 0, 384) }
 				: { bitrateKbps: preset.audioKbps }),
-			...(opts.normalize !== undefined ? { normalize: opts.normalize } : {}),
+			...(normalize !== undefined ? { normalize } : {}),
 		},
 		engine: opts.engine,
 		destination: opts.outputPath ? { type: 'path', path: opts.outputPath } : { type: 'download' },

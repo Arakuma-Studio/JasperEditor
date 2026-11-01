@@ -69,6 +69,8 @@ export const JOB_KINDS = [
 	'transcript-fix',
 	/** spec 18 AF-OPS-001: a media derivation op (conform-cfr, reverse, denoise-audio, extract-audio, time-stretch, range). */
 	'derive',
+	/** spec 18 AF-VER-001: measures a finished export against the sequence range it rendered (and a delivery target). */
+	'export-verify',
 ] as const;
 export const JobKindSchema = z.enum(JOB_KINDS);
 export type JobKind = z.infer<typeof JobKindSchema>;

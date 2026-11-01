@@ -18,6 +18,7 @@ import { useNavigate } from 'react-router';
 import { useAgentBridge } from '../agent-bridge/index.ts';
 import { ExportMode } from '../export/ExportMode.tsx';
 import { takeTrackedExport, useExportMode, useExportModeHostedByShell } from '../export/mode.ts';
+import { openVerifyExport } from '../export/VerifyDialog.tsx';
 import { exportWarningText } from '../export/warning-text.ts';
 import { useLanguageEpoch } from '../i18n/react.ts';
 import { t } from '../i18n/runtime.ts';
@@ -190,6 +191,12 @@ function LifecycleBody(props: {
 						message: `Export finished: ${fileName}`,
 						...(detail ? { detail } : {}),
 						action: { label: 'Download', href: engine.client.renderOutputUrl(job.id) },
+						// spec 18 AF-VER-005
+						secondary: {
+							label: 'Verify',
+							onClick: () =>
+								openVerifyExport({ engine: engine.client, session, exportJobId: job.id, title: fileName }),
+						},
 						durationMs: null,
 					});
 				} else if (job.state !== 'cancelled')
@@ -199,7 +206,7 @@ function LifecycleBody(props: {
 						detail: job.error?.message,
 					});
 			}),
-		[engine.subscribe, engine.client],
+		[engine.subscribe, engine.client, session],
 	);
 
 	const onDrop = (e: React.DragEvent) => {

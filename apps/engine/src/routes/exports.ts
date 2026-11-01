@@ -1,5 +1,6 @@
-import { ExportPlanRequestSchema, ExportStartRequestSchema } from '@jasper/api';
+import { ExportPlanRequestSchema, ExportStartRequestSchema, ExportVerifyRequestSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
+import { agentNameOf } from '../agent/user-approval.ts';
 import { serveFile } from '../tools/http.ts';
 import { fail, guarded, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
@@ -20,6 +21,23 @@ export default async function exportsRoutes(app: FastifyInstance): Promise<void>
 		guarded(async (req, reply) => {
 			const body = parseOr400(ExportStartRequestSchema, req.body);
 			return reply.code(202).send(await exports.start(body));
+		}),
+	);
+
+	// spec 18 AF-VER-001: verify a finished export (an `export-verify` job).
+	app.post<{ Params: { jobId: string } }>(
+		'/api/exports/:jobId/verify',
+		guarded<{ Params: { jobId: string } }>(async (req, reply) => {
+			const body = parseOr400(ExportVerifyRequestSchema, req.body ?? {});
+			return reply
+				.code(202)
+				.send(
+					exports.verify(
+						req.params.jobId,
+						body,
+						req.jasperEditor === true ? { type: 'user' } : { type: 'agent', agentRunId: agentNameOf(req) },
+					),
+				);
 		}),
 	);
 

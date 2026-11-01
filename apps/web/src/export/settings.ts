@@ -15,6 +15,9 @@ import {
 import {
 	captionGroupsOf,
 	colorSpace,
+	type DeliveryTargetId,
+	deliveryExportFormat,
+	deliveryTarget,
 	fpsOf,
 	makeEnvelope,
 	OUTPUT_SPACE_IDS,
@@ -792,4 +795,60 @@ export function sanitizeFileName(name: string, ext?: string): string {
 	if (ext && /^[a-z0-9]+$/i.test(ext) && cleaned.toLowerCase().endsWith(`.${ext.toLowerCase()}`))
 		cleaned = cleaned.slice(0, -(ext.length + 1)).trim();
 	return cleaned || 'Export';
+}
+
+/**
+ * spec 18 AF-VER-004: a platform delivery preset over the dialog's settings — H.264 + AAC 48 kHz in MP4 (the engine's
+ * LGPL encoder selector picks or substitutes the H.264 encoder), the platform's frame size, rate and loudness
+ * normalisation (`deliveryExportFormat`). A sequence of another shape (a horizontal sequence for a vertical platform)
+ * is refused with the reason: the dialog never crops; Sequence ▸ Auto Reframe Sequence makes a copy of the right shape.
+ */
+export function applyDeliveryPreset(
+	settings: ExportSettings,
+	seq: Sequence,
+	targetId: DeliveryTargetId,
+): { ok: true; settings: ExportSettings } | { ok: false; message: string } {
+	const t = deliveryTarget(targetId);
+	const f = deliveryExportFormat(t, seq.settings);
+	if (!f.ok)
+		return {
+			ok: false,
+			message: `${t.name} takes ${t.aspect} pictures and this sequence is ${seq.settings.width} × ${seq.settings.height}: it would have to be cropped. Make a ${t.aspect} copy with Sequence ▸ Auto Reframe Sequence… and export that.`,
+		};
+	const p = f.format;
+	const {
+		codec: _codec,
+		encoder: _encoder,
+		bitDepth: _depth,
+		hdrMetadata: _hdr,
+		alpha: _alpha,
+		proresProfile: _prores,
+		...video
+	} = settings.video ?? ({} as NonNullable<ExportSettings['video']>);
+	const { videoOnly: _videoOnly, ...rest } = settings;
+	return {
+		ok: true,
+		settings: {
+			...rest,
+			presetId: p.presetId,
+			container: p.container,
+			video: {
+				...video,
+				codec: p.videoCodec,
+				width: p.width,
+				height: p.height,
+				frameRate: p.frameRate,
+				scaling: 'fit',
+				quality: { mode: 'crf', value: p.crf },
+				encoderSpeed: video.encoderSpeed ?? 'balanced',
+			},
+			audio: {
+				codec: p.audio.codec,
+				sampleRate: p.audio.sampleRate,
+				channels: 2,
+				bitrateKbps: p.audio.bitrateKbps,
+				normalize: p.normalize,
+			},
+		},
+	};
 }

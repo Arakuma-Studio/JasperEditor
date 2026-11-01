@@ -5,6 +5,7 @@ import { EngineError } from '@jasper/engine-client';
 import { useSessionOrNull } from '@jasper/session/react';
 import { Button, cx, Icon, IconButton } from '@jasper/ui';
 import { useEffect, useMemo, useState } from 'react';
+import { openVerifyExport } from '../../export/VerifyDialog.tsx';
 import { notices } from '../../home/notices.tsx';
 import { clientJobs, useClientJobs } from '../../import/client-jobs.ts';
 import { useEngine, useJobs } from '../../state/engine.tsx';
@@ -51,6 +52,7 @@ function useNow(active: boolean) {
 
 export function JobsPanel(_props: PanelProps) {
 	const engine = useEngine();
+	const session = useSessionOrNull();
 	const { jobs, error } = useAllJobs();
 	const connected = engine.status === 'connected';
 	const [hidden, setHidden] = useState<Set<string>>(() => new Set());
@@ -164,6 +166,9 @@ export function JobsPanel(_props: PanelProps) {
 												onRetry={() => retry(j)}
 												onDismiss={() => dismiss(j)}
 												downloadUrl={isDownloadable(j) ? engine.client.renderOutputUrl(j.id) : null}
+												onVerify={verifyActionOf(j, connected, (p) =>
+													openVerifyExport({ engine: engine.client, session, ...p }),
+												)}
 												sidecars={
 													isDownloadable(j)
 														? [
@@ -198,6 +203,22 @@ export function JobsPanel(_props: PanelProps) {
 	);
 }
 
+/**
+ * spec 18 AF-VER-005: Verify on a finished export (runs the full check), Results on a finished verification (shows it).
+ */
+function verifyActionOf(
+	j: AnyJob,
+	connected: boolean,
+	open: (p: { exportJobId: string; verifyJobId?: string; title?: string }) => void,
+): { label: string; run(): void } | undefined {
+	if (j.client || !connected || j.state !== 'succeeded') return undefined;
+	const title = j.title.replace(/^(Export|Verify) – /, '');
+	if (j.kind === 'export') return { label: 'Verify', run: () => open({ exportJobId: j.id, title }) };
+	if (j.kind === 'export-verify' && j.parentId)
+		return { label: 'Results', run: () => open({ exportJobId: j.parentId!, verifyJobId: j.id, title }) };
+	return undefined;
+}
+
 /** sidecar caption files listed in an export job's result. */
 function sidecarsOf(j: AnyJob): { name: string }[] {
 	const r = (j as { result?: unknown }).result as { captions?: { sidecars?: unknown } } | undefined;
@@ -224,6 +245,8 @@ function JobRow(props: {
 	onRetry(): void;
 	onDismiss(): void;
 	downloadUrl: string | null;
+	/** spec 18 AF-VER-005: Verify (a finished export) / Results (a finished verification). */
+	onVerify?: { label: string; run(): void } | undefined;
 	/** sidecar caption files of an export. */
 	sidecars?: { label: string; url: string }[];
 }) {
@@ -277,6 +300,11 @@ function JobRow(props: {
 					{canRetry(job) && props.connected ? (
 						<Button variant="quiet" data-testid="job-retry" onClick={props.onRetry}>
 							Retry
+						</Button>
+					) : null}
+					{props.onVerify ? (
+						<Button variant="quiet" data-testid="job-verify" onClick={props.onVerify.run}>
+							{props.onVerify.label}
 						</Button>
 					) : null}
 					{props.downloadUrl ? (
