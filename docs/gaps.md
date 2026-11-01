@@ -838,8 +838,16 @@ Add another has no keyboard shortcut (the free chord collides with macOS's Dock 
 Agents edit raw footage the way [spec 18](specs/18-agent-footage-editing.md) describes: read it as text first, look at
 a range only when deciding, propose the cut for the user's review, verify the export. **Done when:** every AF-*
 requirement has a test or a rerunnable measurement in its wp-note and the integrated branch passes the gate.
-**Status:** built in ten workstreams merged through `feat/agent-footage-editing`; behaviour, sources and limits per
-area are in [wp-notes/agent-footage.md](wp-notes/agent-footage.md). Limits that stay open:
+**Status (merged 2026-11-01):** done — built in ten workstreams merged through `feat/agent-footage-editing`, then an
+independent review of the integrated diff (engine; model, API and MCP; web) whose 17 findings were fixed with
+regression tests. Gate on the integrated branch (4-core / 7 GB Linux host, LGPL FFmpeg 7.1, `JASPER_FFMPEG_LGPL_ONLY=1`):
+`pnpm lint` clean, `pnpm typecheck` clean, `pnpm test --maxWorkers=2` 926 files passed and 3 failed — two fixed
+afterwards (`scripts/fixture-gpl-encoders.test.mjs` allows the LGPL guard tests to name GPL filters,
+`THIRD_PARTY_NOTICES.md` regenerated) and `packages/compositions/test/audio-worklet-limiter.test.ts` timing out its
+10 s setup under that load (passes alone; the package is unchanged) — then `apps/web` 199/199 after the last web
+fixes, `pnpm build` (with `NODE_OPTIONS=--max-old-space-size=5120`, as on earlier runs on this host) and `pnpm e2e`
+137 passed, 2 skipped (native motion graphics without cargo; the opt-in CLAP model). Behaviour, sources and limits
+per area are in [wp-notes/agent-footage.md](wp-notes/agent-footage.md). Limits that stay open:
 - No visual or semantic search over footage and no in-app model (non-goals of spec 18); agents judge pictures through
   `view_media_range` and `render_frame(s)` only.
 - `call_tool` carries a generic destructive hint, so clients ask before every call through it; clients that ignore
