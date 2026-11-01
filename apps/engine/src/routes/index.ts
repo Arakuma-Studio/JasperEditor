@@ -31,6 +31,7 @@ import previewsRoutes from './previews.ts';
 import processingRoutes from './processing.ts';
 import projectsRoutes from './projects.ts';
 import proposalRoutes from './proposals.ts';
+import rangeViewRoutes from './range-view.ts';
 import remoteAssetRoutes from './remote-assets.ts';
 import rotoRoutes from './roto.ts';
 import soundDesignRoutes from './sound-design.ts';
@@ -107,6 +108,8 @@ const ROUTE_PLUGINS = [
 	styleRoutes,
 	// Fix Transcript (spec 17 SC-090) scores through the speech service and stores proposals (refresher, accept hooks).
 	transcriptFixRoutes,
+	// Spec 18 AF-VIEW: media frames and range audio for view_media_range (reads the cached voice analysis).
+	rangeViewRoutes,
 ] as const;
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {

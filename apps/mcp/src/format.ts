@@ -27,7 +27,7 @@ import { ToolError } from './errors.ts';
 
 const round3 = (x: number) => Math.round(x * 1000) / 1000;
 
-function sequenceName(doc: ProjectDocument, seqId: string): string {
+export function sequenceName(doc: ProjectDocument, seqId: string): string {
 	for (const item of Object.values(doc.items))
 		if (item.kind === 'sequence' && item.sequenceId === seqId) return item.name;
 	return seqId;

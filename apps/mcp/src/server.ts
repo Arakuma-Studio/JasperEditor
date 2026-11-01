@@ -35,6 +35,7 @@ import { registerEditingTools } from './tools/editing.ts';
 import { EXPRESSIONS_GUIDE, registerExpressionTools } from './tools/expressions.ts';
 import { FONTS_GUIDE, registerFontTools } from './tools/fonts.ts';
 import { FOOTAGE_GUIDE, registerFootageTools } from './tools/footage.ts';
+import { registerFootageViewTools } from './tools/footage-view.ts';
 import { GAPS_GUIDE, registerGapsTools } from './tools/gaps.ts';
 import { GLOSSARY_GUIDE, registerGlossaryTools } from './tools/glossary.ts';
 import { registerGradingTools } from './tools/grading.ts';
@@ -292,6 +293,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerGapsTools(ctx);
 	registerPolishTools(ctx);
 	registerBriefTools(ctx);
+	registerFootageViewTools(ctx);
 	registerResources(ctx);
 	registerPrompts(ctx);
 	registerGuides(ctx, GUIDE_TOPICS, FULL_GUIDE);

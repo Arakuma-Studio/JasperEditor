@@ -28,11 +28,7 @@ const SKILL_DIR = join(ROOT, 'skills', 'jasper-editor');
  * in TOOLSETS and named by the instructions, prompt, routing table and skill before their register lines land.
  * Remove each name here when its tool is registered: the test below fails while a pending name is registered.
  */
-const PENDING_TOOLS = new Set([
-	'view_media_range',
-	'propose_edits',
-	'verify_export',
-]);
+const PENDING_TOOLS = new Set(['propose_edits', 'verify_export']);
 
 type FakeEngine = { jobs: Map<string, EngineJob>; cancelled: string[]; tx: unknown[] };
 

@@ -23,26 +23,42 @@ const MAX_POINTS = 200_000;
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
-function fillRect(img: RgbaImage, x: number, y: number, w: number, h: number, c: Rgb, a = 1): void {
+export function fillRect(img: RgbaImage, x: number, y: number, w: number, h: number, c: Rgb, a = 1): void {
 	for (let yy = Math.max(0, Math.round(y)); yy < Math.min(img.height, Math.round(y + h)); yy++)
 		for (let xx = Math.max(0, Math.round(x)); xx < Math.min(img.width, Math.round(x + w)); xx++)
 			blend(img, xx, yy, c, a);
 }
-function vline(img: RgbaImage, x: number, y0: number, y1: number, c: Rgb, dashed = false, a = 1): void {
+export function vline(
+	img: RgbaImage,
+	x: number,
+	y0: number,
+	y1: number,
+	c: Rgb,
+	dashed = false,
+	a = 1,
+): void {
 	const xi = Math.round(x);
 	for (let y = Math.round(Math.min(y0, y1)); y <= Math.round(Math.max(y0, y1)); y++) {
 		if (dashed && Math.floor(y / 3) % 2 === 1) continue;
 		blend(img, xi, y, c, a);
 	}
 }
-function hline(img: RgbaImage, x0: number, x1: number, y: number, c: Rgb, dashed = false, a = 1): void {
+export function hline(
+	img: RgbaImage,
+	x0: number,
+	x1: number,
+	y: number,
+	c: Rgb,
+	dashed = false,
+	a = 1,
+): void {
 	for (let x = Math.round(x0); x <= Math.round(x1); x++) {
 		if (dashed && Math.floor(x / 4) % 2 === 1) continue;
 		blend(img, x, Math.round(y), c, a);
 	}
 }
 /** Copies `src` scaled (nearest) into `dst` at (x, y) with size w × h. */
-function blit(dst: RgbaImage, src: RgbaImage, x: number, y: number, w: number, h: number): void {
+export function blit(dst: RgbaImage, src: RgbaImage, x: number, y: number, w: number, h: number): void {
 	for (let yy = 0; yy < h; yy++)
 		for (let xx = 0; xx < w; xx++) {
 			const sx = Math.min(src.width - 1, Math.floor((xx * src.width) / w));
