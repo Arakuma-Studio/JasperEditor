@@ -67,6 +67,7 @@ import { registerTranscriptFixTools, TRANSCRIPT_FIX_GUIDE } from './tools/transc
 import { registerTransitionTools, TRANSITION_GUIDE } from './tools/transitions.ts';
 import { registerTrimPathTools, TRIM_PATHS_GUIDE } from './tools/trim-paths.ts';
 import { registerUiTools, UI_GUIDE } from './tools/ui.ts';
+import { registerVerifyTools } from './tools/verify.ts';
 import { registerVersionTools, VERSIONS_GUIDE } from './tools/versions.ts';
 import { registerVoiceTools, VOICE_GUIDE } from './tools/voice.ts';
 import { MCP_SERVER_VERSION } from './version.ts';
@@ -170,6 +171,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerProjectTools(ctx);
 	registerEditingTools(ctx);
 	registerRenderTools(ctx);
+	registerVerifyTools(ctx);
 	registerColorTools(ctx);
 	registerGradingTools(ctx);
 	registerProcessingTools(ctx);

@@ -23,11 +23,11 @@ import { jsonResult, ToolError } from '../errors.ts';
 import {
 	buildExportSettings,
 	DEFAULT_EXPORT_PRESET,
+	deliveryPresetRefusal,
 	EXPORT_PRESETS,
 	findExportPreset,
 } from '../export-presets.ts';
 import { pickSequence, timelineTable } from '../format.ts';
-
 import {
 	failedJobError,
 	renderErrorHint,
@@ -36,6 +36,7 @@ import {
 	templatePreview,
 	templateSummary,
 } from './templates.ts';
+import { fastVerification } from './verify.ts';
 
 const JobIdArg = z.string().min(1).describe('Job id from start_export / render tools');
 
@@ -242,7 +243,12 @@ export function registerRenderTools(ctx: ToolContext): void {
 			const caps = await ctx.engine((c) => c.capabilities());
 			return jsonResult({
 				default: DEFAULT_EXPORT_PRESET,
-				presets: EXPORT_PRESETS.map((p) => ({ id: p.id, label: p.label, description: p.description })),
+				presets: EXPORT_PRESETS.map((p) => ({
+					id: p.id,
+					label: p.label,
+					description: p.description,
+					...(p.target ? { target: p.target } : {}),
+				})),
 				engine: {
 					defaultEncoder: caps.media.encoding?.export?.label ?? null,
 					...(caps.media.encoding?.message ? { note: caps.media.encoding.message } : {}),
@@ -260,7 +266,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 		{
 			title: 'Start export',
 			description:
-				'Starts rendering a sequence to a video file and returns a job id at once; follow it with wait_for_job (or get_job), or pass wait: true to block until it is written. Cancelling the MCP request (notifications/cancelled) during wait cancels the export and deletes the partial file. The engine picks the fastest path that can render everything (native ffmpeg for footage-only cuts, Remotion when there are text/effects). Uses the live editor state when the project is open. With outputPath the file is written there (existing files are never overwritten: the engine then writes "name (2).mp4" and the job result gives the real path); otherwise it is downloadable from the job result URL. Sound credits: a credits file goes next to the output (credits; result.credits {format, count, url, path}); soundWarnings (and result.warnings) name W_SOUND_CREDITS when a sound heard in the export needs a credit and no credits file is written, W_SOUND_LICENSE_NC for non-commercial sounds, W_SOUND_SHARE_ALIKE for CC BY-SA sounds (the video must then be shared under CC BY-SA), and W_SOUND_CHECK_STALE (level info) when the stored Sound Check is out of date or failed — tell the user. result.container / result.audioCodec are what the file holds; OUTPUT_CONTAINER_CHANGED / AUDIO_CODEC_CHANGED (plan and result warnings) say when that is not what was requested (e.g. PCM needs MOV, ProRes masters carry PCM) — tell the user. Loudness normalisation (the Mix\'s, or normalizeLufs): plan.loudness gives the target and the true-peak limiter ceiling in front of the encoder (target less the codec\'s headroom: 0 for PCM, 0.5–2 dB for AAC / Opus by bit rate); the engine encodes the audio, decodes it and turns the moments the codec still pushes over the target down, then result.audioLoudness reports the delivered file\'s own audio decoded (measuredOn "decoded-file"; pcm = the mix it encoded): integratedLufs, truePeakDbtp, limiterCeilingDbtp, codecHeadroomDb, loudnessPasses, encodePasses, localCorrections, ceilingLimited, truePeakMet. AUDIO_TRUE_PEAK_OVER / AUDIO_LOUDNESS_CEILING (result warnings) say when the delivered file misses the target — tell the user.',
+				'Starts rendering a sequence to a video file and returns a job id at once; follow it with wait_for_job (or get_job), or pass wait: true to block until it is written. Cancelling the MCP request (notifications/cancelled) during wait cancels the export and deletes the partial file. The engine picks the fastest path that can render everything (native ffmpeg for footage-only cuts, Remotion when there are text/effects). Uses the live editor state when the project is open. With outputPath the file is written there (existing files are never overwritten: the engine then writes "name (2).mp4" and the job result gives the real path); otherwise it is downloadable from the job result URL. Sound credits: a credits file goes next to the output (credits; result.credits {format, count, url, path}); soundWarnings (and result.warnings) name W_SOUND_CREDITS when a sound heard in the export needs a credit and no credits file is written, W_SOUND_LICENSE_NC for non-commercial sounds, W_SOUND_SHARE_ALIKE for CC BY-SA sounds (the video must then be shared under CC BY-SA), and W_SOUND_CHECK_STALE (level info) when the stored Sound Check is out of date or failed — tell the user. result.container / result.audioCodec are what the file holds; OUTPUT_CONTAINER_CHANGED / AUDIO_CODEC_CHANGED (plan and result warnings) say when that is not what was requested (e.g. PCM needs MOV, ProRes masters carry PCM) — tell the user. Loudness normalisation (the Mix\'s, or normalizeLufs): plan.loudness gives the target and the true-peak limiter ceiling in front of the encoder (target less the codec\'s headroom: 0 for PCM, 0.5–2 dB for AAC / Opus by bit rate); the engine encodes the audio, decodes it and turns the moments the codec still pushes over the target down, then result.audioLoudness reports the delivered file\'s own audio decoded (measuredOn "decoded-file"; pcm = the mix it encoded): integratedLufs, truePeakDbtp, limiterCeilingDbtp, codecHeadroomDb, loudnessPasses, encodePasses, localCorrections, ceilingLimited, truePeakMet. AUDIO_TRUE_PEAK_OVER / AUDIO_LOUDNESS_CEILING (result warnings) say when the delivered file misses the target — tell the user. A finished export (wait: true, or wait_for_job) also returns output (container, duration, streams, size) and the fast verification rows (streams, duration, av-skew) with verified; run verify_export {exportId: jobId} for the full checks (black / flash frames and clicks at cuts, loudness, true peak, silences) and verify_export {target} for a platform. Platform presets (delivery-youtube, delivery-youtube-shorts, delivery-instagram-reels, delivery-tiktok, delivery-x, delivery-linkedin; list_export_presets) export at the platform\'s size, rate and loudness; a sequence of another shape (a horizontal sequence for a vertical platform) is refused with a hint to auto_reframe_sequence — it is never cropped.',
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -449,6 +455,18 @@ export function registerRenderTools(ctx: ToolContext): void {
 				if (endFrame <= startFrame) throw new ToolError('E_INVALID_PARAM', '`to` must be after `from`');
 				r = { type: 'custom', startFrame, endFrame };
 			}
+			// spec 18 AF-VER-004: a platform preset never crops a sequence of another shape
+			const refusal = deliveryPresetRefusal(seq, p);
+			if (refusal)
+				throw new ToolError(
+					refusal.code,
+					refusal.message,
+					`Run ${refusal.hint} {projectId, sequenceId, aspect: "${refusal.aspect}"} and export the new sequence with preset "${p.id}".`,
+					{
+						hint: refusal.hint,
+						aspect: refusal.aspect,
+					},
+				);
 			const settings = buildExportSettings(seq, p, {
 				range: r,
 				engine: engine ?? 'auto',
@@ -531,8 +549,11 @@ export function registerRenderTools(ctx: ToolContext): void {
 				const body = jobBody(done, ctx.link.target?.url ?? '');
 				if (isTerminal(done) && done.state !== 'succeeded')
 					throw await failedJobError(ctx, done, 'Check the job error; engine_status may help.', body);
+				// spec 18 AF-VER-002: the output's probe and the fast rows
+				const verification = done.state === 'succeeded' ? await fastVerification(ctx, done.id, extra) : null;
 				return jsonResult({
 					...body,
+					...(verification ?? {}),
 					preset: p.id,
 					plan: planBody,
 					...creditsBody,
@@ -589,7 +610,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 		{
 			title: 'Wait for job',
 			description:
-				'Waits until a job finishes (or timeoutSeconds passes, default 120, max 900) and returns its final state and result: for exports the output file path (when outputPath was given), download URL, frame count and duration, the sound credits file (result.credits) and warnings (result.warnings: W_SOUND_CREDITS, W_SOUND_CHECK_STALE…). Sends progress notifications (at most one every 100 ms) while waiting. On timeout returns the current state with timedOut: true; call it again to keep waiting. Cancelling this request (notifications/cancelled) cancels the job itself and the engine deletes its partial output.',
+				'Waits until a job finishes (or timeoutSeconds passes, default 120, max 900) and returns its final state and result: for exports the output file path (when outputPath was given), download URL, frame count and duration, the sound credits file (result.credits) and warnings (result.warnings: W_SOUND_CREDITS, W_SOUND_CHECK_STALE…). Sends progress notifications (at most one every 100 ms) while waiting. On timeout returns the current state with timedOut: true; call it again to keep waiting. Cancelling this request (notifications/cancelled) cancels the job itself and the engine deletes its partial output. A finished export also returns output (container, duration, streams, size) and the fast verification rows (streams, duration, av-skew) with verified; verify_export runs the full checks.',
 			input: {
 				jobId: JobIdArg,
 				timeoutSeconds: z
@@ -613,7 +634,12 @@ export function registerRenderTools(ctx: ToolContext): void {
 					'Check the job error; get_project / engine_status may help.',
 					body,
 				);
-			return jsonResult({ ...body, ...(timedOut ? { timedOut: true } : {}) });
+			// spec 18 AF-VER-002: a finished export returns the output's probe and the fast rows
+			const verification =
+				job.kind === 'export' && job.state === 'succeeded'
+					? await fastVerification(ctx, job.id, extra)
+					: null;
+			return jsonResult({ ...body, ...(verification ?? {}), ...(timedOut ? { timedOut: true } : {}) });
 		},
 	);
 }
