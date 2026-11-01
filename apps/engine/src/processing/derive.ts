@@ -25,9 +25,9 @@ import { inColor } from '../export/native.ts';
 import { type JobContext, JobError } from '../jobs/types.ts';
 import { fingerprintHex } from '../media/fingerprint.ts';
 import type { MediaRecord } from '../media/registry.ts';
-import { LOCAL_PROTOCOLS } from '../sounds/decode.ts';
 import { atomicWriteJson, fsyncDir, safeFileName } from '../tools/fs.ts';
 import { ToolError } from '../tools/process.ts';
+import { LOCAL_PROTOCOLS } from '../tools/protocols.ts';
 import type { CoreServices } from '../tools/services.ts';
 import {
 	concatArgs,

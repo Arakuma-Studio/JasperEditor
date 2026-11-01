@@ -8,7 +8,7 @@
 import { createHash } from 'node:crypto';
 import type { AudioStream, DeriveRecipe, VideoStream } from '@jasper/project';
 import { FLICKS_PER_SECOND, rangeFrames } from '@jasper/project';
-import { LOCAL_PROTOCOLS } from '../sounds/decode.ts';
+import { LOCAL_PROTOCOLS } from '../tools/protocols.ts';
 import { assertLgplFilters } from './proc/filters.ts';
 
 /** Bump when an op's output changes for the same recipe (old outputs are then not reused). */
