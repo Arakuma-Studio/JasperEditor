@@ -7,8 +7,6 @@ import { type MenuItemSpec, projectItemMenuExtensions } from '../extensions/inde
 import { DeriveMediaDialog, type DeriveMediaDialogProps } from './DeriveMediaDialog.tsx';
 import { DERIVE_MEDIA_DIALOG, DERIVE_MENU_LABELS } from './model.ts';
 
-const DERIVE_SUBMENU_LABEL = 'Derive Media';
-
 /** The ops that apply to a media of this kind (video: all six; audio: the audio and timing ops). */
 export function deriveOpsFor(asset: Pick<MediaAsset, 'kind'> | undefined): DeriveOp[] {
 	if (!asset) return [];
@@ -36,7 +34,7 @@ export function registerDeriveUi(): void {
 			if (!ops.length) return [];
 			const sub: MenuItemSpec = {
 				kind: 'submenu',
-				label: DERIVE_SUBMENU_LABEL,
+				label: 'Derive Media',
 				items: ops.map((op) => ({
 					kind: 'item' as const,
 					label: DERIVE_MENU_LABELS[op],
