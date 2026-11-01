@@ -189,6 +189,13 @@ beforeAll(async () => {
 	media.silent = join(dir, 'silent.mkv');
 	ff(['-f', 'lavfi', '-i', 'color=c=gray:s=64x48:r=25:d=1', '-c:v', 'ffv1', media.silent]);
 	// a longer, larger video for cancellation (60 s 640×360)
+	// audio starting 0.2 s after the video (a stream start offset, not silence)
+	media.offset = join(dir, 'offset.mov');
+	ff([
+		...['-f', 'lavfi', '-i', 'testsrc=s=64x48:r=25:d=4'],
+		...['-itsoffset', '0.2', '-f', 'lavfi', '-i', 'sine=f=440:r=48000:d=3.8'],
+		...['-map', '0', '-map', '1', '-c:v', 'ffv1', '-c:a', 'pcm_s16le', '-f', 'mov', media.offset],
+	]);
 	media.long = join(dir, 'long.mkv');
 	ff(['-f', 'lavfi', '-i', 'testsrc=s=640x360:r=25:d=60', '-c:v', 'ffv1', '-level', '1', media.long]);
 	app = await makeApp({ totalSlots: 4, env: { JASPER_FFMPEG_LGPL_ONLY: '1' } });
@@ -428,6 +435,22 @@ describe('derive jobs (AF-OPS-001)', { timeout: 240_000 }, () => {
 		expect(zc).toBeGreaterThan(215);
 		expect(zc).toBeLessThan(225);
 	});
+
+	it.each([true, false])(
+		'time-stretch keeps the audio start offset scaled by the rate (preservePitch %s)',
+		async (preservePitch) => {
+			const { file } = await deriveOk(keys.offset!.mediaKey, { op: 'time-stretch', rate: 2, preservePitch });
+			// When the sound starts relative to the picture: the stream start difference plus leading silence.
+			const starts = probe(file, 'stream=codec_type,start_time');
+			const vStart = Number(starts.find((s) => s.codec_type === 'video')!.start_time);
+			const aStart = Number(starts.find((s) => s.codec_type === 'audio')!.start_time);
+			const s = samples(file);
+			const firstSound = s.findIndex((x) => Math.abs(x) > 0.01);
+			const offset = aStart + firstSound / 48000 - vStart;
+			// resampling is sample-exact; atempo's overlap-add window blurs the onset by ~10 ms (half a 25 fps frame max)
+			expect(Math.abs(offset - 0.1)).toBeLessThan(preservePitch ? 0.02 : 0.002);
+		},
+	);
 
 	it('time-stretch 0.25× keeping pitch (atempo chain)', async () => {
 		const { file } = await deriveOk(keys.tone!.mediaKey, {

@@ -7,7 +7,7 @@ import type { EngineClient } from '@jasper/engine-client';
 import type { DeriveOp, MediaAsset } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { Checkbox, Dialog, type HostedDialogProps, ScrubbyNumber, Select, toast } from '@jasper/ui';
-import { type ReactNode, useId, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { t } from '../i18n/runtime.ts';
 import { useEngineOrNull } from '../state/engine.tsx';
 import {
@@ -85,6 +85,14 @@ export function DeriveMediaDialog(props: HostedDialogProps<DeriveMediaDialogProp
 	const [job, setJob] = useState<EngineJob | null>(null);
 	const [failure, setFailure] = useState<DeriveProblem | null>(null);
 	const open = useRef(true);
+	// Unmounted without `close` (project switched, dialog host reset): a job still running reports through toasts.
+	// (Set on mount too: React's dev StrictMode runs effect cleanups once on mount.)
+	useEffect(() => {
+		open.current = true;
+		return () => {
+			open.current = false;
+		};
+	}, []);
 	const ids = { a: useId(), b: useId() };
 	const problems = useMemo(
 		() => (asset && form ? deriveFormProblems(asset, op, form) : []),

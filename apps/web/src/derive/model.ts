@@ -70,6 +70,8 @@ export const DERIVE_ERROR_HINTS: Record<string, string> = {
 	DERIVE_FAILED: 'The operation failed on the engine.',
 	DISK_FULL: 'The disk is full.',
 	JOB_CANCELLED: 'The operation was cancelled.',
+	PROJECT_CLOSED:
+		'The project was closed before the result could be added: open it and run Derive Media again.',
 };
 
 export const FPS_PRESETS: readonly { value: string; label: string }[] = [
@@ -286,6 +288,13 @@ export async function runDerive(
 	});
 	if (!r.ok) {
 		const err = r.errors[0];
+		// The project was closed (or switched) while the job ran: its session takes no more edits and the saved project
+		// is not this session's to change. Say so; re-running reuses the finished file (same source + recipe).
+		if (err?.code === 'E_NO_SESSION')
+			throw new DeriveError(
+				'PROJECT_CLOSED',
+				`${parsed.data.registered.originalName} was made, but its project was closed before it could be added: open the project and run Derive Media again (the finished file is reused)`,
+			);
 		throw new DeriveError(err?.code ?? 'E_INTERNAL', err?.message ?? 'The derived media could not be added');
 	}
 	const value = r.results[0] as { mediaId: string; itemId?: string };
