@@ -19,6 +19,7 @@ import {
 	lastExportAudio,
 	loadExportChoice,
 	outputDescription,
+	parseGifNumber,
 	sanitizeFileName,
 	saveExportChoice,
 	validateExport,
@@ -308,5 +309,69 @@ describe('Export mode ▸ Export As (AF-EXP-003)', () => {
 		});
 		expect(started.at(-1)!.settings.container).toBe('m4a');
 		expect(takeTrackedExport('exp1')).toMatch(/\.m4a$/);
+	});
+
+	it('GIF numbers are typed freely, one keystroke at a time; invalid text shows a message and blocks the export', async () => {
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+		const { planned } = await setup();
+		fireEvent.change(screen.getByTestId('export-format'), { target: { value: 'gif' } });
+		await settle();
+		/**
+		 * Types `text` into a field as keystrokes after clearing it: each key appends to what the field shows now (as a
+		 * browser does), so a field that rewrites its text per keystroke ("4" → "16") ends with something else.
+		 */
+		const type = (id: string, text: string) => {
+			fireEvent.change(screen.getByTestId(id), { target: { value: '' } });
+			for (const ch of text) {
+				const el = screen.getByTestId(id) as HTMLInputElement;
+				fireEvent.change(el, { target: { value: el.value + ch } });
+			}
+		};
+		const value = (id: string) => (screen.getByTestId(id) as HTMLInputElement).value;
+		const start = () => screen.getByTestId('export-start') as HTMLButtonElement;
+		// width: "4" and "48" are under 16 / not yet the width; the text is kept, "480" is committed
+		type('export-gif-width', '480');
+		expect(value('export-gif-width')).toBe('480');
+		expect(screen.queryByTestId('export-gif-width-error')).toBeNull();
+		await settle();
+		expect(planned.at(-1)!.settings.gif?.width).toBe(480);
+		// empty = automatic
+		type('export-gif-width', '');
+		await settle();
+		expect(planned.at(-1)!.settings.gif?.width).toBeUndefined();
+		type('export-gif-width', '8');
+		fireEvent.blur(screen.getByTestId('export-gif-width'));
+		expect(value('export-gif-width')).toBe('8');
+		expect(screen.getByTestId('export-gif-width-error').textContent).toMatch(/between 16 and 4096/);
+		expect(start().disabled).toBe(true);
+		type('export-gif-width', '1000');
+		expect(screen.queryByTestId('export-gif-width-error')).toBeNull();
+		// plays: 10–19 can be typed (the "1" on the way is not rewritten to 2)
+		fireEvent.change(screen.getByTestId('export-gif-loop'), { target: { value: 'count' } });
+		type('export-gif-plays', '12');
+		expect(value('export-gif-plays')).toBe('12');
+		// fps: "60" is over the limit — kept as typed with the message, the plan keeps 6
+		type('export-gif-fps', '60');
+		expect(value('export-gif-fps')).toBe('60');
+		expect(screen.getByTestId('export-gif-fps-error').textContent).toMatch(/between 1 and 50/);
+		expect(start().disabled).toBe(true);
+		await settle();
+		type('export-gif-fps', '12.5');
+		expect(screen.queryByTestId('export-gif-fps-error')).toBeNull();
+		await settle();
+		expect(planned.at(-1)!.settings.gif).toMatchObject({ width: 1000, loop: 12, fps: 12.5 });
+		expect(start().disabled).toBe(false);
+	});
+});
+
+describe('parseGifNumber', () => {
+	it('validates without rewriting', () => {
+		expect(parseGifNumber('', 'width')).toEqual({ ok: true, value: null });
+		expect(parseGifNumber('', 'fps')).toMatchObject({ ok: false });
+		expect(parseGifNumber('480', 'width')).toEqual({ ok: true, value: 480 });
+		expect(parseGifNumber('48.5', 'width')).toMatchObject({ ok: false, message: /whole number/ });
+		expect(parseGifNumber('1', 'plays')).toMatchObject({ ok: false, message: /between 2 and 65536/ });
+		expect(parseGifNumber('7.5', 'fps')).toEqual({ ok: true, value: 7.5 });
+		expect(parseGifNumber('1e3', 'width')).toMatchObject({ ok: false });
 	});
 });

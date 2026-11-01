@@ -77,6 +77,43 @@ export const GIF_PALETTE_OPTIONS: { value: GifChoice['palette']; label: string }
 	{ value: 'single', label: 'A palette per frame (larger files)' },
 ];
 
+/**
+ * A GIF number field's text while it is typed (rate, width, plays): its value when valid, else the message shown under
+ * the field (the text is never rewritten while typing; the settings keep the last valid value). `allowEmpty`: an empty
+ * field means automatic (`null`).
+ */
+export function parseGifNumber(
+	text: string,
+	field: 'fps' | 'width' | 'plays',
+): { ok: true; value: number | null } | { ok: false; message: string } {
+	const t = text.trim();
+	const { minFps, maxFps, minWidth, maxWidth, maxPlays } = GIF_LIMITS;
+	// whole sentences per field, so each is translated as one string
+	if (t === '') {
+		if (field === 'width') return { ok: true, value: null };
+		return field === 'fps'
+			? { ok: false, message: 'Enter a frame rate' }
+			: { ok: false, message: 'Enter how many times the GIF plays' };
+	}
+	const v = Number(t);
+	const numeric = /^\d+(\.\d+)?$/.test(t) && Number.isFinite(v);
+	if (field === 'fps') {
+		if (!numeric) return { ok: false, message: 'The frame rate must be a number' };
+		if (v < minFps || v > maxFps)
+			return { ok: false, message: `The frame rate must be between ${minFps} and ${maxFps}` };
+	} else if (field === 'width') {
+		if (!numeric || !Number.isInteger(v)) return { ok: false, message: 'The width must be a whole number' };
+		if (v < minWidth || v > maxWidth)
+			return { ok: false, message: `The width must be between ${minWidth} and ${maxWidth}` };
+	} else {
+		if (!numeric || !Number.isInteger(v))
+			return { ok: false, message: 'The number of plays must be a whole number' };
+		if (v < 2 || v > maxPlays)
+			return { ok: false, message: `The number of plays must be between 2 and ${maxPlays}` };
+	}
+	return { ok: true, value: v };
+}
+
 /** The GIF's width: the chosen one, else the sequence width capped at 1080 (even, as the engine writes it). */
 export function gifWidthOf(seq: Pick<Sequence, 'settings'>, c: GifChoice): number {
 	const w = c.width === 'auto' ? Math.min(seq.settings.width, GIF_LIMITS.defaultMaxWidth) : c.width;

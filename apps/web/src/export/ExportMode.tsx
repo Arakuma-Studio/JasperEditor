@@ -62,6 +62,7 @@ import {
 	MATCH_SEQUENCE_PRESET,
 	outputDescription,
 	PRORES_ALPHA_LABEL,
+	parseGifNumber,
 	sanitizeFileName,
 	saveExportChoice,
 	validateExport,
@@ -143,6 +144,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 	const [audioFileChoice, setAudioFileChoice] = useState<AudioFileChoice>(
 		remembered?.audioFile ?? DEFAULT_AUDIO_FILE_CHOICE,
 	);
+	const [gifErrors, setGifErrors] = useState<string[]>([]);
 	const isVideo = format === 'video';
 	const isGif = format === 'gif';
 	const isAudioOnly = isAudioOnlyFormat(format);
@@ -259,8 +261,13 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 		[seq, baseSettings, platform],
 	);
 	const settings = deliveryApplied ? (deliveryApplied.ok ? deliveryApplied.settings : null) : baseSettings;
-	const validation =
-		deliveryApplied && !deliveryApplied.ok ? [...baseValidation, deliveryApplied.message] : baseValidation;
+	const validation = [
+		...(deliveryApplied && !deliveryApplied.ok
+			? [...baseValidation, deliveryApplied.message]
+			: baseValidation),
+		// a GIF field whose text is not a valid value yet blocks the export (the plan keeps the last valid value)
+		...(isGif ? gifErrors : []),
+	];
 	const chosenEncoder = plan.status === 'ok' ? (plan.plan.encoder ?? null) : (encoding?.export ?? null);
 	const encoderMessage = plan.status === 'ok' ? plan.plan.encoder?.message : encoding?.message;
 	// D-13: a dev engine without the LGPL directory renders through Remotion's bundled GPL FFmpeg; a
@@ -514,7 +521,9 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 							))}
 						</select>
 					</Field>
-					{isGif ? <GifFields seq={seq} value={gifChoice} onChange={setGifChoice} /> : null}
+					{isGif ? (
+						<GifFields seq={seq} value={gifChoice} onChange={setGifChoice} onErrors={setGifErrors} />
+					) : null}
 					{isAudioOnly ? (
 						<AudioFileFields format={format} value={audioFileChoice} onChange={setAudioFileChoice} />
 					) : null}
@@ -983,57 +992,127 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 	);
 }
 
+const shown = (v: number | null) => (v === null ? '' : String(v));
+
+/**
+ * A GIF number field: the text is the user's while typing (never rewritten or clamped per keystroke); a valid value is
+ * committed as it is typed, an invalid one shows its message under the field and blocks the export until fixed. On blur
+ * a valid text is normalised to the committed value.
+ */
+function GifNumber(props: {
+	field: 'fps' | 'width' | 'plays';
+	value: number | null;
+	testId: string;
+	label: string;
+	placeholder?: string;
+	className: string;
+	onCommit: (v: number | null) => void;
+	onError: (message: string | null) => void;
+}) {
+	const [text, setText] = useState(shown(props.value));
+	const [error, setError] = useState<string | null>(null);
+	const { value, field, onError } = props;
+	// another value from outside (a remembered choice, the sequence switch): show it unless the text already means it
+	useEffect(() => {
+		setText((t) => {
+			const r = parseGifNumber(t, field);
+			return r.ok && r.value === value ? t : shown(value);
+		});
+		setError(null);
+		onError(null);
+	}, [value, field, onError]);
+	return (
+		<span className="flex flex-col">
+			<input
+				data-testid={props.testId}
+				type="text"
+				inputMode={props.field === 'fps' ? 'decimal' : 'numeric'}
+				className={props.className}
+				value={text}
+				placeholder={props.placeholder}
+				aria-label={props.label}
+				aria-invalid={error ? true : undefined}
+				onChange={(e) => {
+					const t = e.target.value;
+					setText(t);
+					const r = parseGifNumber(t, props.field);
+					const message = r.ok ? null : r.message;
+					setError(message);
+					props.onError(message);
+					if (r.ok && r.value !== props.value) props.onCommit(r.value);
+				}}
+				onBlur={() => {
+					const r = parseGifNumber(text, props.field);
+					if (r.ok) setText(shown(r.value));
+				}}
+			/>
+			{error ? (
+				<span role="alert" data-testid={`${props.testId}-error`} className="text-pr-small text-pr-danger">
+					{error}
+				</span>
+			) : null}
+		</span>
+	);
+}
+
 /** spec 18 AF-EXP-001: the GIF's rate, width, loop count, dithering and palette. */
-function GifFields(props: { seq: Sequence | undefined; value: GifChoice; onChange: (v: GifChoice) => void }) {
+function GifFields(props: {
+	seq: Sequence | undefined;
+	value: GifChoice;
+	onChange: (v: GifChoice) => void;
+	/** The messages of fields whose text is not a valid value (empty = all valid). */
+	onErrors: (messages: string[]) => void;
+}) {
 	const g = props.value;
 	const set = (patch: Partial<GifChoice>) => props.onChange({ ...g, ...patch });
 	const autoWidth = props.seq ? gifWidthOf(props.seq, { ...g, width: 'auto' }) : GIF_LIMITS.defaultMaxWidth;
 	const control = 'h-[var(--pr-control-h)] rounded-pr-control bg-pr-field px-2 text-pr-text';
 	const loopKind = g.loop === 0 ? 'forever' : g.loop === 1 ? 'once' : 'count';
+	const [errors, setErrors] = useState<Record<string, string | null>>({});
+	const { onErrors } = props;
+	useEffect(() => {
+		onErrors(Object.values(errors).filter((m): m is string => !!m));
+	}, [errors, onErrors]);
+	// a field that leaves (Loop no longer "a number of times", the GIF rows closed) takes its message with it
+	useEffect(() => () => onErrors([]), [onErrors]);
+	const errorOf = useMemo(
+		() => ({
+			fps: (m: string | null) => setErrors((e) => (e.fps === m ? e : { ...e, fps: m })),
+			width: (m: string | null) => setErrors((e) => (e.width === m ? e : { ...e, width: m })),
+			plays: (m: string | null) => setErrors((e) => (e.plays === m ? e : { ...e, plays: m })),
+		}),
+		[],
+	);
+	useEffect(() => {
+		if (loopKind !== 'count') errorOf.plays(null);
+	}, [loopKind, errorOf]);
 	return (
 		<div className="flex flex-col gap-3" data-testid="export-gif">
 			<Field label="Frame Rate">
 				<span className="flex items-center gap-1">
-					<input
-						data-testid="export-gif-fps"
-						type="number"
-						min={GIF_LIMITS.minFps}
-						max={GIF_LIMITS.maxFps}
-						step={1}
+					<GifNumber
+						field="fps"
+						testId="export-gif-fps"
+						label="GIF frames per second"
 						className={`${control} w-[80px]`}
 						value={g.fps}
-						aria-label="GIF frames per second"
-						onChange={(e) => {
-							const v = Number(e.target.value);
-							if (Number.isFinite(v))
-								set({ fps: Math.min(GIF_LIMITS.maxFps, Math.max(GIF_LIMITS.minFps, v)) });
-						}}
+						onCommit={(v) => v !== null && set({ fps: v })}
+						onError={errorOf.fps}
 					/>
 					<span className="text-pr-muted">{`fps (at most ${GIF_LIMITS.maxFps})`}</span>
 				</span>
 			</Field>
 			<Field label="Width">
 				<span className="flex items-center gap-1">
-					<input
-						data-testid="export-gif-width"
-						type="number"
-						min={GIF_LIMITS.minWidth}
-						max={GIF_LIMITS.maxWidth}
-						step={2}
+					<GifNumber
+						field="width"
+						testId="export-gif-width"
+						label="GIF width in pixels"
 						className={`${control} w-[80px]`}
-						value={g.width === 'auto' ? '' : g.width}
+						value={g.width === 'auto' ? null : g.width}
 						placeholder={String(autoWidth)}
-						aria-label="GIF width in pixels"
-						onChange={(e) => {
-							const raw = e.target.value.trim();
-							const v = Math.round(Number(raw));
-							set({
-								width:
-									raw === '' || !Number.isFinite(v)
-										? 'auto'
-										: Math.min(GIF_LIMITS.maxWidth, Math.max(GIF_LIMITS.minWidth, v)),
-							});
-						}}
+						onCommit={(v) => set({ width: v === null ? 'auto' : v })}
+						onError={errorOf.width}
 					/>
 					<span className="text-pr-muted">{`px (empty: ${autoWidth}; the height follows the sequence)`}</span>
 				</span>
@@ -1053,18 +1132,14 @@ function GifFields(props: { seq: Sequence | undefined; value: GifChoice; onChang
 						<option value="count">Play a number of times</option>
 					</select>
 					{loopKind === 'count' ? (
-						<input
-							data-testid="export-gif-plays"
-							type="number"
-							min={2}
-							max={GIF_LIMITS.maxPlays}
+						<GifNumber
+							field="plays"
+							testId="export-gif-plays"
+							label="How many times the GIF plays"
 							className={`${control} w-[64px]`}
 							value={g.loop}
-							aria-label="How many times the GIF plays"
-							onChange={(e) => {
-								const v = Math.round(Number(e.target.value));
-								if (Number.isFinite(v)) set({ loop: Math.min(GIF_LIMITS.maxPlays, Math.max(2, v)) });
-							}}
+							onCommit={(v) => v !== null && set({ loop: v })}
+							onError={errorOf.plays}
 						/>
 					) : null}
 				</span>
