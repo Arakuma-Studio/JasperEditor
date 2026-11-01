@@ -495,224 +495,213 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 							))}
 						</select>
 					</Field>
-					{isGif ? (
-						<GifFields seq={seq} value={gifChoice} onChange={setGifChoice} />
-					) : isAudioOnly ? (
+					{isGif ? <GifFields seq={seq} value={gifChoice} onChange={setGifChoice} /> : null}
+					{isAudioOnly ? (
 						<AudioFileFields format={format} value={audioFileChoice} onChange={setAudioFileChoice} />
 					) : null}
-					{isVideo ? (
-						<>
-							<Field label="Preset">
-								<span>
-									{effectiveCodec === 'h264'
-										? MATCH_SEQUENCE_PRESET.label
-										: `Match Sequence – ${effectiveCodec === 'prores' && alpha ? PRORES_ALPHA_LABEL : CODEC_LABELS[effectiveCodec]}`}
-								</span>
-							</Field>
-							<Field label="Format">
-								<select
-									data-testid="export-codec"
-									className="h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text"
-									value={effectiveCodec}
-									onChange={(e) => {
-										setCodec(e.target.value as VideoCodec);
-										setEncoderChoice('');
-									}}
-								>
-									{codecs.map((o) => (
-										<option key={o.value} value={o.value} disabled={!o.available} title={o.reason}>
-											{o.label}
-											{o.available ? '' : ' — unavailable'}
-										</option>
-									))}
-								</select>
-							</Field>
-							{effectiveCodec === 'prores' ? (
-								<Field label="Background">
-									<label
-										className="flex items-center gap-2 text-pr-small"
-										title="ProRes 4444 with straight alpha and no audio: graphics such as comments, titles or lower thirds to place over footage in another editor. Disable the footage tracks you do not want in it."
-									>
-										<input
-											type="checkbox"
-											data-testid="export-alpha"
-											checked={alpha}
-											onChange={(e) => setAlpha(e.target.checked)}
-										/>
-										Transparent (ProRes 4444 with alpha, no audio)
-									</label>
-								</Field>
-							) : null}
-							<Field label="Encoder">
-								<select
-									data-testid="export-encoder-select"
-									className="h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text"
-									value={effectiveEncoder}
-									onChange={(e) => setEncoderChoice(e.target.value)}
-								>
-									{encoders.map((o) => (
-										<option key={o.value || 'auto'} value={o.value} disabled={!o.available} title={o.reason}>
-											{o.label}
-											{o.available ? '' : ` — ${o.reason ?? 'unavailable'}`}
-										</option>
-									))}
-								</select>
-							</Field>
-							{/* color-mgmt: written colour space, bit depth, HDR metadata */}
-							<Field label="Colour Space">
-								<select
-									data-testid="export-color-space"
-									className="h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text"
-									value={colorChoice.colorSpace}
+					<Field label="Preset" hidden={!isVideo}>
+						<span>
+							{effectiveCodec === 'h264'
+								? MATCH_SEQUENCE_PRESET.label
+								: `Match Sequence – ${effectiveCodec === 'prores' && alpha ? PRORES_ALPHA_LABEL : CODEC_LABELS[effectiveCodec]}`}
+						</span>
+					</Field>
+					<Field label="Format" hidden={!isVideo}>
+						<select
+							data-testid="export-codec"
+							className="h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text"
+							value={effectiveCodec}
+							onChange={(e) => {
+								setCodec(e.target.value as VideoCodec);
+								setEncoderChoice('');
+							}}
+						>
+							{codecs.map((o) => (
+								<option key={o.value} value={o.value} disabled={!o.available} title={o.reason}>
+									{o.label}
+									{o.available ? '' : ' — unavailable'}
+								</option>
+							))}
+						</select>
+					</Field>
+					{isVideo && effectiveCodec === 'prores' ? (
+						<Field label="Background">
+							<label
+								className="flex items-center gap-2 text-pr-small"
+								title="ProRes 4444 with straight alpha and no audio: graphics such as comments, titles or lower thirds to place over footage in another editor. Disable the footage tracks you do not want in it."
+							>
+								<input
+									type="checkbox"
+									data-testid="export-alpha"
+									checked={alpha}
+									onChange={(e) => setAlpha(e.target.checked)}
+								/>
+								Transparent (ProRes 4444 with alpha, no audio)
+							</label>
+						</Field>
+					) : null}
+					<Field label="Encoder" hidden={!isVideo}>
+						<select
+							data-testid="export-encoder-select"
+							className="h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text"
+							value={effectiveEncoder}
+							onChange={(e) => setEncoderChoice(e.target.value)}
+						>
+							{encoders.map((o) => (
+								<option key={o.value || 'auto'} value={o.value} disabled={!o.available} title={o.reason}>
+									{o.label}
+									{o.available ? '' : ` — ${o.reason ?? 'unavailable'}`}
+								</option>
+							))}
+						</select>
+					</Field>
+					{/* color-mgmt: written colour space, bit depth, HDR metadata */}
+					<Field label="Colour Space" hidden={!isVideo}>
+						<select
+							data-testid="export-color-space"
+							className="h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text"
+							value={colorChoice.colorSpace}
+							onChange={(e) =>
+								setColorChoice((c) => ({
+									...c,
+									colorSpace: e.target.value as ExportColorChoice['colorSpace'],
+								}))
+							}
+						>
+							{exportColorSpaceOptions(seq ?? null).map((o) => (
+								<option key={o.value} value={o.value}>
+									{o.label}
+								</option>
+							))}
+						</select>
+					</Field>
+					<Field label="Bit Depth" hidden={!isVideo}>
+						<select
+							data-testid="export-bit-depth"
+							className="h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text"
+							value={String(colorChoice.bitDepth)}
+							onChange={(e) =>
+								setColorChoice((c) => ({
+									...c,
+									bitDepth: e.target.value === 'auto' ? 'auto' : (Number(e.target.value) as 8 | 10 | 12),
+								}))
+							}
+						>
+							<option value="auto">Automatic (10-bit for HDR and ProRes)</option>
+							<option value="8">8 bits per channel</option>
+							<option value="10">10 bits (ProRes, AV1, VP9)</option>
+							<option value="12">12 bits (AV1 libaom, VP9)</option>
+						</select>
+					</Field>
+					{isVideo && hdrOutput(seq ?? null, colorChoice) ? (
+						<Field label="MaxCLL / MaxFALL">
+							<span className="flex items-center gap-1">
+								<input
+									data-testid="export-maxcll"
+									type="number"
+									min={0}
+									max={10000}
+									className="h-[var(--pr-control-h)] w-[80px] rounded-pr-control bg-pr-field px-2 text-pr-text"
+									value={colorChoice.maxCll || ''}
+									placeholder="unknown"
 									onChange={(e) =>
 										setColorChoice((c) => ({
 											...c,
-											colorSpace: e.target.value as ExportColorChoice['colorSpace'],
+											maxCll: Math.max(0, Math.round(Number(e.target.value) || 0)),
 										}))
 									}
-								>
-									{exportColorSpaceOptions(seq ?? null).map((o) => (
-										<option key={o.value} value={o.value}>
-											{o.label}
-										</option>
-									))}
-								</select>
-							</Field>
-							<Field label="Bit Depth">
-								<select
-									data-testid="export-bit-depth"
-									className="h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text"
-									value={String(colorChoice.bitDepth)}
+									aria-label="MaxCLL in nits"
+								/>
+								<input
+									data-testid="export-maxfall"
+									type="number"
+									min={0}
+									max={10000}
+									className="h-[var(--pr-control-h)] w-[80px] rounded-pr-control bg-pr-field px-2 text-pr-text"
+									value={colorChoice.maxFall || ''}
+									placeholder="unknown"
 									onChange={(e) =>
 										setColorChoice((c) => ({
 											...c,
-											bitDepth: e.target.value === 'auto' ? 'auto' : (Number(e.target.value) as 8 | 10 | 12),
+											maxFall: Math.max(0, Math.round(Number(e.target.value) || 0)),
 										}))
 									}
-								>
-									<option value="auto">Automatic (10-bit for HDR and ProRes)</option>
-									<option value="8">8 bits per channel</option>
-									<option value="10">10 bits (ProRes, AV1, VP9)</option>
-									<option value="12">12 bits (AV1 libaom, VP9)</option>
-								</select>
-							</Field>
-							{hdrOutput(seq ?? null, colorChoice) ? (
-								<Field label="MaxCLL / MaxFALL">
-									<span className="flex items-center gap-1">
-										<input
-											data-testid="export-maxcll"
-											type="number"
-											min={0}
-											max={10000}
-											className="h-[var(--pr-control-h)] w-[80px] rounded-pr-control bg-pr-field px-2 text-pr-text"
-											value={colorChoice.maxCll || ''}
-											placeholder="unknown"
-											onChange={(e) =>
-												setColorChoice((c) => ({
-													...c,
-													maxCll: Math.max(0, Math.round(Number(e.target.value) || 0)),
-												}))
-											}
-											aria-label="MaxCLL in nits"
-										/>
-										<input
-											data-testid="export-maxfall"
-											type="number"
-											min={0}
-											max={10000}
-											className="h-[var(--pr-control-h)] w-[80px] rounded-pr-control bg-pr-field px-2 text-pr-text"
-											value={colorChoice.maxFall || ''}
-											placeholder="unknown"
-											onChange={(e) =>
-												setColorChoice((c) => ({
-													...c,
-													maxFall: Math.max(0, Math.round(Number(e.target.value) || 0)),
-												}))
-											}
-											aria-label="MaxFALL in nits"
-										/>
-										<span className="text-pr-muted">nits</span>
-									</span>
-								</Field>
-							) : null}
-						</>
+									aria-label="MaxFALL in nits"
+								/>
+								<span className="text-pr-muted">nits</span>
+							</span>
+						</Field>
 					) : null}
-					{/* audio-mix: delivered audio (a GIF has none) */}
-					{!isGif ? (
-						<>
-							<Field label="Audio Channels">
-								<select
-									data-testid="export-audio-channels"
-									className="h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text"
-									value={String(audioChoice.channels ?? 'auto')}
-									onChange={(e) =>
-										setAudioChoice((a) => ({
-											...a,
-											channels: e.target.value === 'auto' ? 'auto' : (Number(e.target.value) as 1 | 2 | 6),
-										}))
-									}
-								>
-									<option value="auto">
-										Match Mix ({seq?.settings.masterLayout === '5.1' ? '5.1' : 'Stereo'})
-									</option>
-									<option value="2">
-										Stereo{seq?.settings.masterLayout === '5.1' ? ' (5.1 mixdown)' : ''}
-									</option>
-									<option value="1">Mono</option>
-									<option value="6">5.1</option>
-								</select>
-							</Field>
-							<Field label="Sample Rate">
-								<select
-									data-testid="export-audio-rate"
-									className="h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text"
-									value={String(audioChoice.sampleRate ?? 'sequence')}
-									onChange={(e) =>
-										setAudioChoice((a) => ({
-											...a,
-											sampleRate:
-												e.target.value === 'sequence'
-													? 'sequence'
-													: (Number(e.target.value) as 44100 | 48000 | 96000),
-										}))
-									}
-								>
-									<option value="sequence">
-										Match Sequence ({((seq?.settings.audioSampleRate as number) ?? 48000) / 1000} kHz)
-									</option>
-									<option value="44100">44.1 kHz</option>
-									<option value="48000">48 kHz</option>
-									<option value="96000">96 kHz</option>
-								</select>
-							</Field>
-							<Field label="Loudness">
-								<select
-									data-testid="export-audio-loudness"
-									className="h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text"
-									value={String(audioChoice.loudness ?? 'sequence')}
-									onChange={(e) =>
-										setAudioChoice((a) => ({
-											...a,
-											loudness:
-												e.target.value === 'sequence' || e.target.value === 'off'
-													? e.target.value
-													: Number(e.target.value),
-										}))
-									}
-								>
-									<option value="sequence">
-										Sequence setting
-										{seq?.master.loudness?.enabled ? ` (${seq.master.loudness.targetLufs} LUFS)` : ' (off)'}
-									</option>
-									<option value="off">Off</option>
-									<option value="-14">Normalize to −14 LUFS (streaming)</option>
-									<option value="-16">Normalize to −16 LUFS (podcast)</option>
-									<option value="-23">Normalize to −23 LUFS (EBU R128)</option>
-									<option value="-24">Normalize to −24 LKFS (ATSC A/85)</option>
-								</select>
-							</Field>
-						</>
-					) : null}
+					{/* audio-mix: delivered audio */}
+					<Field label="Audio Channels" hidden={isGif}>
+						<select
+							data-testid="export-audio-channels"
+							className="h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text"
+							value={String(audioChoice.channels ?? 'auto')}
+							onChange={(e) =>
+								setAudioChoice((a) => ({
+									...a,
+									channels: e.target.value === 'auto' ? 'auto' : (Number(e.target.value) as 1 | 2 | 6),
+								}))
+							}
+						>
+							<option value="auto">
+								Match Mix ({seq?.settings.masterLayout === '5.1' ? '5.1' : 'Stereo'})
+							</option>
+							<option value="2">Stereo{seq?.settings.masterLayout === '5.1' ? ' (5.1 mixdown)' : ''}</option>
+							<option value="1">Mono</option>
+							<option value="6">5.1</option>
+						</select>
+					</Field>
+					<Field label="Sample Rate" hidden={isGif}>
+						<select
+							data-testid="export-audio-rate"
+							className="h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text"
+							value={String(audioChoice.sampleRate ?? 'sequence')}
+							onChange={(e) =>
+								setAudioChoice((a) => ({
+									...a,
+									sampleRate:
+										e.target.value === 'sequence'
+											? 'sequence'
+											: (Number(e.target.value) as 44100 | 48000 | 96000),
+								}))
+							}
+						>
+							<option value="sequence">
+								Match Sequence ({((seq?.settings.audioSampleRate as number) ?? 48000) / 1000} kHz)
+							</option>
+							<option value="44100">44.1 kHz</option>
+							<option value="48000">48 kHz</option>
+							<option value="96000">96 kHz</option>
+						</select>
+					</Field>
+					<Field label="Loudness" hidden={isGif}>
+						<select
+							data-testid="export-audio-loudness"
+							className="h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text"
+							value={String(audioChoice.loudness ?? 'sequence')}
+							onChange={(e) =>
+								setAudioChoice((a) => ({
+									...a,
+									loudness:
+										e.target.value === 'sequence' || e.target.value === 'off'
+											? e.target.value
+											: Number(e.target.value),
+								}))
+							}
+						>
+							<option value="sequence">
+								Sequence setting
+								{seq?.master.loudness?.enabled ? ` (${seq.master.loudness.targetLufs} LUFS)` : ' (off)'}
+							</option>
+							<option value="off">Off</option>
+							<option value="-14">Normalize to −14 LUFS (streaming)</option>
+							<option value="-16">Normalize to −16 LUFS (podcast)</option>
+							<option value="-23">Normalize to −23 LUFS (EBU R128)</option>
+							<option value="-24">Normalize to −24 LKFS (ATSC A/85)</option>
+						</select>
+					</Field>
 					<Field label="Output">
 						<span data-testid="export-encoder" className="text-pr-muted">
 							{isGif
@@ -734,101 +723,91 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 							{remotionFfmpegWarning}
 						</p>
 					) : null}
-					{!isAudioOnly ? (
-						<>
-							<Field label="Engine">
-								<select
-									data-testid="export-engine"
-									className="h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text"
-									value={engineChoice}
-									onChange={(e) => setEngineChoice(e.target.value as ExportEngineChoice)}
-								>
-									{ENGINE_OPTIONS.map((o) => (
-										<option key={o.value} value={o.value} title={o.hint}>
-											{o.label}
-										</option>
-									))}
-								</select>
-							</Field>
-							<Field label="Previews">
-								<label
-									className="flex items-center gap-2 text-pr-small"
-									title="Take the frames of rendered segments from their preview files (they are encoded once more)"
-								>
-									<input
-										type="checkbox"
-										data-testid="export-use-previews"
-										checked={usePreviews}
-										onChange={(e) => setUsePreviews(e.target.checked)}
-									/>
-									Use Previews
-								</label>
-							</Field>
-							<Field label="Proxies">
-								<label
-									className="flex items-center gap-2 text-pr-small"
-									title="Render the attached proxies instead of the full-resolution media (a quick draft; the plan lists them)"
-								>
-									<input
-										type="checkbox"
-										data-testid="export-use-proxies"
-										checked={useProxies}
-										onChange={(e) => setUseProxies(e.target.checked)}
-									/>
-									Use Proxies
-								</label>
-							</Field>
-						</>
-					) : null}
-					{isVideo ? (
-						<Field label="Smart Render">
-							<label
-								className="flex items-center gap-2 text-pr-small"
-								title="Copy untouched stretches of H.264 sources without re-encoding (ProRes sources are always copied)"
-							>
-								<input
-									type="checkbox"
-									data-testid="export-smart-render"
-									checked={smartRender}
-									onChange={(e) => setSmartRender(e.target.checked)}
-								/>
-								Copy untouched H.264 sources
-							</label>
-						</Field>
-					) : null}
+					<Field label="Engine" hidden={isAudioOnly}>
+						<select
+							data-testid="export-engine"
+							className="h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text"
+							value={engineChoice}
+							onChange={(e) => setEngineChoice(e.target.value as ExportEngineChoice)}
+						>
+							{ENGINE_OPTIONS.map((o) => (
+								<option key={o.value} value={o.value} title={o.hint}>
+									{o.label}
+								</option>
+							))}
+						</select>
+					</Field>
+					<Field label="Previews" hidden={isAudioOnly}>
+						<label
+							className="flex items-center gap-2 text-pr-small"
+							title="Take the frames of rendered segments from their preview files (they are encoded once more)"
+						>
+							<input
+								type="checkbox"
+								data-testid="export-use-previews"
+								checked={usePreviews}
+								onChange={(e) => setUsePreviews(e.target.checked)}
+							/>
+							Use Previews
+						</label>
+					</Field>
+					<Field label="Proxies" hidden={isAudioOnly}>
+						<label
+							className="flex items-center gap-2 text-pr-small"
+							title="Render the attached proxies instead of the full-resolution media (a quick draft; the plan lists them)"
+						>
+							<input
+								type="checkbox"
+								data-testid="export-use-proxies"
+								checked={useProxies}
+								onChange={(e) => setUseProxies(e.target.checked)}
+							/>
+							Use Proxies
+						</label>
+					</Field>
+					<Field label="Smart Render" hidden={!isVideo}>
+						<label
+							className="flex items-center gap-2 text-pr-small"
+							title="Copy untouched stretches of H.264 sources without re-encoding (ProRes sources are always copied)"
+						>
+							<input
+								type="checkbox"
+								data-testid="export-smart-render"
+								checked={smartRender}
+								onChange={(e) => setSmartRender(e.target.checked)}
+							/>
+							Copy untouched H.264 sources
+						</label>
+					</Field>
 					{seq?.captionTracks.length || subtitleGroups.length ? (
 						<div
 							className="flex flex-col gap-2 border-t border-pr-border-subtle pt-2"
 							data-testid="export-captions"
 						>
 							<h3 className="text-pr-small text-pr-muted">CAPTIONS</h3>
-							{!isAudioOnly ? (
-								<Field label="Burn In">
-									<label className="flex items-center gap-2 text-pr-small">
-										<input
-											type="checkbox"
-											checked={captionChoice.burnIn}
-											onChange={(e) => setCaptionChoice({ ...captionChoice, burnIn: e.target.checked })}
-											data-testid="export-captions-burn"
-										/>
-										Burn the visible caption tracks into the video
-									</label>
-								</Field>
-							) : null}
-							{isVideo ? (
-								<Field label="Embed">
-									<label className="flex items-center gap-2 text-pr-small">
-										<input
-											type="checkbox"
-											checked={captionChoice.embed}
-											onChange={(e) => setCaptionChoice({ ...captionChoice, embed: e.target.checked })}
-											data-testid="export-captions-embed"
-										/>
-										{chosenEncoder?.container === 'webm' ? 'WebVTT' : 'mov_text'} subtitle streams (every
-										caption track and subtitle group)
-									</label>
-								</Field>
-							) : null}
+							<Field label="Burn In" hidden={isAudioOnly}>
+								<label className="flex items-center gap-2 text-pr-small">
+									<input
+										type="checkbox"
+										checked={captionChoice.burnIn}
+										onChange={(e) => setCaptionChoice({ ...captionChoice, burnIn: e.target.checked })}
+										data-testid="export-captions-burn"
+									/>
+									Burn the visible caption tracks into the video
+								</label>
+							</Field>
+							<Field label="Embed" hidden={!isVideo}>
+								<label className="flex items-center gap-2 text-pr-small">
+									<input
+										type="checkbox"
+										checked={captionChoice.embed}
+										onChange={(e) => setCaptionChoice({ ...captionChoice, embed: e.target.checked })}
+										data-testid="export-captions-embed"
+									/>
+									{chosenEncoder?.container === 'webm' ? 'WebVTT' : 'mov_text'} subtitle streams (every
+									caption track and subtitle group)
+								</label>
+							</Field>
 							<Field label="Sidecar">
 								<div className="flex gap-1">
 									<select
@@ -1118,7 +1097,9 @@ function AudioFileFields(props: {
 	);
 }
 
-function Field(props: { label: string; children: React.ReactNode }) {
+/** A settings row; `hidden` rows (another Export As choice's) are not rendered. */
+function Field(props: { label: string; hidden?: boolean; children: React.ReactNode }) {
+	if (props.hidden) return null;
 	return (
 		<div className="flex items-center gap-2 text-pr-ui">
 			<span className="w-20 shrink-0 text-pr-small text-pr-muted">{props.label}</span>
