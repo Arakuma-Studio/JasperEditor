@@ -28,7 +28,8 @@ function activityToast(entry: ActivityEntry, bursts: AgentBurstTracker, session:
 		detail,
 		source: 'agent',
 		dedupeKey,
-		actions: [{ label: t('Undo'), run: () => undoBurst(burst, session, dedupeKey) }],
+		// The toast host dismisses the burst toast after its action runs: the result gets a key of its own.
+		actions: [{ label: t('Undo'), run: () => undoBurst(burst, session, `agent-burst-undo:${burst.id}`) }],
 	});
 }
 

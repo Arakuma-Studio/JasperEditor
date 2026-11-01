@@ -160,7 +160,7 @@ export function AgentActivityView(props: {
 					value={filter.agent ?? ALL}
 					onValueChange={(v) => setFilter((f) => ({ ...f, agent: v === ALL ? null : v }))}
 					options={agentOptions}
-					className="min-w-0 flex-1"
+					className="min-w-0 max-w-[220px] flex-1"
 				/>
 				<Select
 					label={t('Outcome')}
@@ -172,7 +172,7 @@ export function AgentActivityView(props: {
 						}))
 					}
 					options={outcomeOptions}
-					className="min-w-0 flex-1"
+					className="min-w-0 max-w-[220px] flex-1"
 				/>
 			</div>
 			{rows.length === 0 ? (

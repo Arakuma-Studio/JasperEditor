@@ -4,7 +4,7 @@
 // own edits.
 import { createCounterIdSource, createEmptyProject, defaultRegistries } from '@jasper/project';
 import { EditorSession } from '@jasper/session';
-import { toasts } from '@jasper/ui';
+import { ToastHost, toasts } from '@jasper/ui';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PresenceSummary } from '../src/agent-activity/presence.ts';
@@ -273,6 +273,8 @@ describe('header agent status chip (AF-ACT-002)', () => {
 
 describe('burst toasts (AF-ACT-003)', () => {
 	const agentToasts = () => toasts.getState().toasts.filter((x) => x.dedupeKey?.startsWith('agent-burst:'));
+	const resultToast = () =>
+		toasts.getState().toasts.find((x) => x.dedupeKey?.startsWith('agent-burst-undo:'));
 	const undoAction = () =>
 		agentToasts()
 			.at(-1)!
@@ -316,8 +318,24 @@ describe('burst toasts (AF-ACT-003)', () => {
 		undoAction().run!();
 		expect(markerCount(session)).toBe(1);
 		expect(session.getState().history.index).toBe(1); // the user's marker stays
-		expect(agentToasts().at(-1)!.title).toBe('Undid 3 agent edits');
-		expect(agentToasts().at(-1)!.actions).toBeUndefined();
+		expect(resultToast()!.title).toBe('Undid 3 agent edits');
+		expect(resultToast()!.actions).toBeUndefined();
+		off();
+	});
+
+	it('the result of Undo stays visible after the toast host closes the burst toast', async () => {
+		const { session, bridge } = setup();
+		const off = wireActivityToasts(bridge, session);
+		await bridge.transact(marker(1), { via: 'relay' });
+		await bridge.transact(marker(2), { via: 'relay' });
+		render(<ToastHost />);
+		await act(async () => {
+			fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+		});
+		expect(markerCount(session)).toBe(0);
+		expect(screen.queryByText('Agent: 2 edits')).toBeNull();
+		expect(screen.getAllByText('Undid 2 agent edits').length).toBeGreaterThan(0);
+		expect(resultToast()!.title).toBe('Undid 2 agent edits');
 		off();
 	});
 
@@ -334,7 +352,7 @@ describe('burst toasts (AF-ACT-003)', () => {
 		userMarker(session, 60);
 		undoAction().run!();
 		expect(markerCount(session)).toBe(4);
-		const refused = agentToasts().at(-1)!;
+		const refused = resultToast()!;
 		expect(refused.kind).toBe('warning');
 		expect(refused.title).toBe('The agent’s edits were not undone');
 		expect(refused.detail).toBe('Newer edits came after it; use the History panel');
