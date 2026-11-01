@@ -18,7 +18,11 @@ const GPL_FILTER =
 /** The one place a GPL encoder may be named as an argument: the selector that refuses it in LGPL-only mode. */
 const ALLOWED = new Set(['scripts/fixture-encoding.mjs']);
 /** Tests of the engine's own LGPL filter guard (they feed it GPL filter text on purpose). */
-const FILTER_GUARD_TESTS = new Set(['apps/engine/test/processing-steps.test.ts']);
+const FILTER_GUARD_TESTS = new Set([
+	'apps/engine/test/processing-steps.test.ts',
+	'apps/engine/test/lgpl-filters.test.ts',
+	'apps/engine/test/export-lgpl-guard.test.ts',
+]);
 
 /** Files that make test media: tests, specs, test helpers, benches and the fixture scripts. */
 function fixtureSources() {
