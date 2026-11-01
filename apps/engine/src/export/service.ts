@@ -62,11 +62,11 @@ import { assertLgplFilters } from '../processing/proc/filters.ts';
 import { engineTemplateAssets } from '../remote-assets/plan.ts';
 import { appendEncoderArgs, planRemotionExport } from '../remotion/export-plan.ts';
 import type { RemotionService } from '../remotion/service.ts';
-import { LOCAL_PROTOCOLS } from '../sounds/decode.ts';
 import { audioEncodeArgs, type EncoderService, videoEncodeArgs } from '../tools/encoders.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { exists, randomId } from '../tools/fs.ts';
 import { terminateTree } from '../tools/process.ts';
+import { LOCAL_PROTOCOLS } from '../tools/protocols.ts';
 import { runBlendPipeline } from './blend/run.ts';
 import {
 	embedArgs,
