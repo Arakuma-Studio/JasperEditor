@@ -5,7 +5,7 @@
 import type { ChildProcess } from 'node:child_process';
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { ExportVerifyResult } from '@jasper/api';
+import { type ExportVerifyResult, isAudioOnlyContainer } from '@jasper/api';
 import { type DeliveryTargetId, deliveryTarget, isDeliveryTargetId } from '@jasper/project';
 import { z } from 'zod';
 import type { JobQueue } from '../jobs/queue.ts';
@@ -45,13 +45,28 @@ export async function exportOutputPath(rendersDir: string, exportId: string): Pr
 	}
 }
 
+/** What a container holds (exports of builds without a recorded kind): a GIF, an audio-only file or a video file. */
+export function deliverableOfContainer(container: unknown): 'video' | 'gif' | 'audio' {
+	if (container === 'gif') return 'gif';
+	return typeof container === 'string' && isAudioOnlyContainer(container) ? 'audio' : 'video';
+}
+
+/** Why a delivery target does not apply to a GIF or an audio-only export (TARGET_NOT_APPLICABLE). */
+export function targetRefusal(container: unknown): string {
+	const name = typeof container === 'string' ? container.toUpperCase() : 'This';
+	return `${name} exports are not platform videos: delivery targets check video files (MP4, MOV, WebM). Verify without a target, or export with a platform preset and verify that.`;
+}
+
 /** File frames whose luma the cut checks read: every cut's window and the black-run reach beyond it. */
 export function framesAroundCuts(ctx: ExportVerifyContext): Set<number> {
-	const fps = ctx.fps.num / ctx.fps.den;
+	const seqFps = ctx.fps.num / ctx.fps.den;
+	const rate = ctx.expected.video?.frameRate ?? ctx.fps;
+	const fps = rate.num / rate.den;
 	const reach = VERIFY_THRESHOLDS.cutWindowFrames + Math.ceil(VERIFY_THRESHOLDS.blackMinSec * fps) + 1;
 	const keep = new Set<number>();
 	for (const c of ctx.cuts) {
-		const f = c.frame - ctx.range.start;
+		// the file frame of the cut (the file's rate may differ from the sequence's: a GIF, a platform preset)
+		const f = Math.round(((c.frame - ctx.range.start) / seqFps) * fps);
 		for (let i = Math.max(0, f - reach); i <= f + reach; i++) keep.add(i);
 	}
 	return keep;
@@ -73,6 +88,9 @@ export async function runExportVerify(ctx: JobContext, deps: ExportVerifyDeps): 
 		);
 	const context = await readVerifyContext(join(deps.rendersDir, input.exportId));
 	const result = (exportJob?.result ?? {}) as { container?: unknown; durationSec?: unknown };
+	const kind = context?.deliverable ?? deliverableOfContainer(result.container);
+	if (input.target && kind !== 'video')
+		throw new JobError('TARGET_NOT_APPLICABLE', targetRefusal(result.container), false);
 	const v = await verifyExportFile({
 		ff: deps.ff,
 		file,
@@ -92,6 +110,7 @@ export async function runExportVerify(ctx: JobContext, deps: ExportVerifyDeps): 
 		checks: input.checks,
 		...(input.target ? { target: input.target } : {}),
 		...(context ? { sequenceId: context.sequenceId, range: context.range } : {}),
+		deliverable: kind,
 		...v,
 	};
 }
@@ -131,7 +150,7 @@ export async function verifyExportFile(o: {
 		if (v) {
 			o.progress?.(0.1, 'Decoding the picture');
 			const keep = context ? framesAroundCuts(context) : new Set<number>();
-			const m = await measureVideo(o.ff, o.file, keep, probed.fullRangeVideo, run);
+			const m = await measureVideo(o.ff, o.file, keep, probed.fullRangeVideo, run, probed.rgbVideo);
 			luma = m.luma;
 			videoFrames = m.frames;
 			errors.push(...m.errors);

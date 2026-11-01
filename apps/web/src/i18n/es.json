@@ -12590,5 +12590,7 @@
   "Verify Export – {0}": "Verificar exportación – {0}",
   "Warn": "Aviso",
   "Platform preset: {0} LUFS, {1} dBTP": "Ajuste de plataforma: {0} LUFS, {1} dBTP",
-  "Set by the platform preset (stereo, 48 kHz)": "Lo fija el ajuste preestablecido de plataforma (estéreo, 48 kHz)"
+  "Set by the platform preset (stereo, 48 kHz)": "Lo fija el ajuste preestablecido de plataforma (estéreo, 48 kHz)",
+  "A GIF has no platform checks (platform presets are video files).": "Un GIF no tiene comprobaciones de plataforma (los ajustes de plataforma son archivos de vídeo).",
+  "An audio file has no platform checks (platform presets are video files).": "Un archivo de audio no tiene comprobaciones de plataforma (los ajustes de plataforma son archivos de vídeo)."
 }

@@ -84,6 +84,29 @@ tolerances and pinning documented thresholds to code by a test — [`licenses/po
   seeks the Program monitor to the row's frame, then closes the dialog. The Delivery target select re-runs the check with
   a platform's rows. Engine errors appear in the dialog.
 
+## GIF and audio-only exports (AF-EXP)
+
+- The record says what the export wrote (`deliverable`: `video`, `gif`, `audio`; records without one are video). A GIF
+  records the GIF itself — codec `gif`, the GIF size, its rate (`fps` as an exact rational) and its frame count — not
+  the ProRes intermediate it was converted from; an audio-only file records its container (`wav`, `flac`, `m4a`), its
+  codec, rate, channels and WAV / FLAC bit depth, and the loudness normalisation. `fps` in the record is the sequence
+  rate (range, cut frames, timecodes); the file's own rate is `expected.video.frameRate`, and cuts map to file frames
+  as round((cut − start) / sequence fps × file fps) (a GIF, a platform preset at another rate).
+- Rows that fit the file: a GIF gets `decode` (every frame decodes; decoded frames = frames written), `streams` (gif,
+  size, rate: ffprobe's base rate `r_frame_rate` — its average is estimated from centisecond delays, 15 fps reads
+  50/3 —, no audio), `duration` as the exact frame count (`-count_packets`), `cut-black`, `cut-flash`; no `av-skew`,
+  `cut-click`, `loudness`, `true-peak` or `silence`. An audio file gets `decode`, `streams` (codec, rate, channels, bit
+  depth from `bits_per_raw_sample` / `bits_per_sample`), `duration`, `cut-click`, `loudness`, `true-peak`, `silence`;
+  no `av-skew`, `cut-black`, `cut-flash`.
+- GIF luma: GIF frames are RGB / palette, which `extractplanes=y` cannot read; RGB pictures are reduced with
+  `scale=64:36:flags=area,format=gray` and read as full range (measured: black 0, white 252).
+- A delivery target on a GIF or an audio export is refused: `400 TARGET_NOT_APPLICABLE` at the route (and the job, for
+  records), an MCP tool error; the editor's Verify dialog disables its Delivery target select for them and says why.
+- Tests: `apps/engine/test/export-verify-deliverables.test.ts` (engine GIF, WAV 16 / 24, FLAC 16 mono 44.1 kHz, M4A:
+  the record, the exact rows, `verified: true`; the refusals), `apps/mcp/test/export-verify.test.ts` (`start_export
+  {format: "gif", wait: true}` fast rows and `output`, `verify_export` on GIF and M4A, a target on a GIF refused).
+  Exercised in the editor: GIF and WAV exports from the Export dialog, Verify from the toast and the Jobs panel.
+
 ## How it measures
 
 `apps/engine/src/export/verify-measure.ts`; every input with `-protocol_whitelist file,crypto,data`.

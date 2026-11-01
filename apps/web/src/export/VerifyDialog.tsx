@@ -199,6 +199,12 @@ function VerifyDialog(props: HostedDialogProps<VerifyDialogProps>) {
 		[],
 	);
 	const result = state.kind === 'done' ? state.result : null;
+	// AF-EXP: platform checks are for video files; a GIF or an audio-only export has none
+	const [kind, setKind] = useState<ExportVerifyResult['deliverable']>(undefined);
+	useEffect(() => {
+		if (result?.deliverable) setKind(result.deliverable);
+	}, [result]);
+	const notVideo = kind === 'gif' || kind === 'audio';
 	const seqId = result?.sequenceId;
 	const canGoTo = !!session && !!seqId && !!session.getState().document.sequences[seqId];
 	const goTo = (frame: number) => {
@@ -222,13 +228,20 @@ function VerifyDialog(props: HostedDialogProps<VerifyDialogProps>) {
 						label="Delivery target"
 						value={target}
 						options={targetOptions}
-						disabled={state.kind === 'running'}
+						disabled={state.kind === 'running' || notVideo}
 						onValueChange={(v) => {
 							setGiven(null);
 							setTarget(v);
 						}}
 						className="w-[200px]"
 					/>
+					{notVideo ? (
+						<span className="text-pr-small text-pr-muted" data-testid="verify-no-target">
+							{kind === 'gif'
+								? 'A GIF has no platform checks (platform presets are video files).'
+								: 'An audio file has no platform checks (platform presets are video files).'}
+						</span>
+					) : null}
 					{result ? (
 						<span
 							data-testid="verify-summary"
