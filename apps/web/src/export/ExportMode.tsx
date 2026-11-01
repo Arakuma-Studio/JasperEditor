@@ -156,7 +156,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 	};
 	const [creditsChoice, setCreditsChoice] = useState<CreditsChoice>(() => creditsDefault(sequenceId));
 	// spec 18 AF-VER-004: a platform delivery preset ('' = Match Sequence)
-	const [delivery, setDelivery] = useState<DeliveryTargetId | ''>('');
+	const [delivery, setDelivery] = useState<DeliveryTargetId | ''>(remembered?.platform ?? '');
 	// the preset applies to video files only: a GIF or an audio-only file keeps its own settings
 	const platform: DeliveryTargetId | '' = isVideo ? delivery : '';
 	const usesLibrarySounds = useMemo(
@@ -197,13 +197,17 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 		setFormat(r?.format ?? 'video');
 		setGifChoice(r?.gif ?? DEFAULT_GIF_CHOICE);
 		setAudioFileChoice(r?.audioFile ?? DEFAULT_AUDIO_FILE_CHOICE);
+		// spec 18 AF-VER-004: the sequence's own platform preset, else Match Sequence
+		setDelivery(r?.platform ?? '');
 		setCreditsChoice(r?.credits ?? (defaultCreditsSidecar(session.getCommitted(), sequenceId) || 'off'));
 		setFileName(r?.fileName ?? sequenceName(session.getCommitted(), sequenceId));
 	}, [sequenceId, session]);
 
 	const effectiveRange: ExportRangeChoice = range === 'in-out' && seq && hasInOut(seq) ? 'in-out' : 'entire';
 	const frames = seq ? exportRange(seq, effectiveRange) : { start: 0, end: 0 };
-	const baseValidation = seq ? validateExport(seq, frames, format) : ['No sequence to export.'];
+	const baseValidation = seq
+		? validateExport(seq, frames, format, isVideo ? delivery : '')
+		: ['No sequence to export.'];
 	// Encoder availability from the engine (ARCHITECTURE D-13): unavailable codecs/encoders are disabled.
 	const encoding = engine.capabilities?.media.encoding;
 	const buildEncoders = engine.capabilities?.media.encoders ?? [];
@@ -366,6 +370,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 				format,
 				gif: gifChoice,
 				audioFile: audioFileChoice,
+				...(delivery ? { platform: delivery } : {}),
 			});
 			close();
 			const focused = await runIfRegistered('panel.open.jobs', ctx);

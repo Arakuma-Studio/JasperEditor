@@ -77,7 +77,9 @@ tolerances and pinning documented thresholds to code by a test — [`licenses/po
   Sequence (the Format, Audio Channels and Sample Rate selects are then fixed, Loudness shows the platform's level;
   a refused shape shows the reason in the footer and disables Export).
 - **Editor (AF-VER-005).** Jobs panel: a finished export row has **Verify** (runs the full check), a finished
-  verification row **Results**; the export-finished toast has **Verify** beside Download. The Verify Export dialog
+  verification row **Results**; the export-finished toast has **Verify** beside Download; the toast belongs to its
+  project (`useSessionNotices`) and is dismissed when that project closes, so Verify / Go to never act on a closed
+  session. The Verify Export dialog
   (`apps/web/src/export/VerifyDialog.tsx`) runs the job, shows its stage, then the summary (Verified / Not verified with
   counts) and the rows grouped Fail / Warn / Pass / Not checked, each with its check name, Format / Judgement chip,
   timecode, message and measured / expected / tolerance; **Go to** opens the exported sequence if another is active and
@@ -168,8 +170,9 @@ Tests (run with `JASPER_FFMPEG_LGPL_ONLY=1`):
   Sound Check's CLICK finding covers clip edges of the mix before export.
 - Platform limits change; the table records what the official pages said on 2026-10-31. YouTube's level (−14 LUFS) is
   community measurement, not published. X's in-app (140 s) and Instagram's in-app (3 min) limits could not be confirmed
-  from official pages; the API limits are used. The Export dialog does not remember the platform preset per sequence
-  (the remembered choices keep the Match Sequence settings).
+  from official pages; the API limits are used. The Export dialog remembers the platform preset per sequence with the
+  other export choices (validated on load; a sequence without one gets Match Sequence); with a preset the odd-size
+  check judges the preset's (even) output size.
 - Row messages are English (as other engine-composed messages for agents); the editor translates its own labels, group
   names and chips.
 

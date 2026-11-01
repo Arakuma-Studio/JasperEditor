@@ -19,6 +19,7 @@ import {
 	deliveryExportFormat,
 	deliveryTarget,
 	fpsOf,
+	isDeliveryTargetId,
 	makeEnvelope,
 	OUTPUT_SPACE_IDS,
 	type ProjectDocument,
@@ -360,11 +361,13 @@ export function validateExport(
 	seq: Sequence,
 	range: { start: number; end: number },
 	format: ExportFormatChoice = 'video',
+	/** spec 18 AF-VER-004: a platform preset writes its own (even) frame size, or refuses the shape itself. */
+	platform?: DeliveryTargetId | '',
 ): string[] {
 	const errors: string[] = [];
 	if (range.end <= range.start) errors.push('The sequence is empty: there is nothing to export.');
-	// GIF sizes are made even by the engine; audio-only files have no picture
-	if (format === 'video' && (seq.settings.width % 2 || seq.settings.height % 2))
+	// GIF sizes are made even by the engine; audio-only files have no picture; a platform preset rescales the picture
+	if (format === 'video' && !platform && (seq.settings.width % 2 || seq.settings.height % 2))
 		errors.push(
 			`H.264 requires an even width and height (${seq.settings.width} × ${seq.settings.height}); change the sequence frame size.`,
 		);
@@ -657,6 +660,8 @@ type Remembered = {
 	format?: ExportFormatChoice;
 	gif?: GifChoice;
 	audioFile?: AudioFileChoice;
+	/** spec 18 AF-VER-004: the platform delivery preset (absent = Match Sequence) */
+	platform?: DeliveryTargetId;
 };
 const keyOf = (projectId: string, sequenceId: string) => `jasper.export.${projectId}.${sequenceId}`;
 
@@ -757,6 +762,7 @@ export function loadExportChoice(projectId: string, sequenceId: string): Remembe
 			...(v.audioFile && typeof v.audioFile === 'object'
 				? { audioFile: sanitizeAudioFileChoice(v.audioFile) }
 				: {}),
+			...(isDeliveryTargetId(v.platform) ? { platform: v.platform } : {}),
 		};
 	} catch {
 		return null;
