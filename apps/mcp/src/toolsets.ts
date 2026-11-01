@@ -106,7 +106,7 @@ export const TOOLSETS = [
 		name: 'media',
 		description:
 			'Media info, browsing and relinking, footage interpretation, image sequences, layered/PDF imports, proxies, derived media.',
-		guides: ['imports', 'browse-media', 'project-settings'],
+		guides: ['imports', 'browse-media', 'project-settings', 'derive'],
 		tools: [
 			'list_media',
 			'get_media_info',

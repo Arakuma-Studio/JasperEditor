@@ -34,7 +34,6 @@ const PENDING_TOOLS = new Set([
 	'view_media_range',
 	'propose_edits',
 	'verify_export',
-	'derive_media',
 	'get_brief',
 	'set_brief',
 	'list_agent_notes',

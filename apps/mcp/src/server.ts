@@ -27,7 +27,7 @@ import { CLIPBOARD_GUIDE, registerClipboardTools } from './tools/clipboard.ts';
 import { COLOR_GUIDE, registerColorTools } from './tools/color.ts';
 import { COLOR_MGMT_GUIDE, registerColorMgmtTools } from './tools/color-mgmt.ts';
 import { COMPOSITION_GUIDE, registerCompositionTools } from './tools/compositions.ts';
-import { registerDeriveTools } from './tools/derive.ts';
+import { DERIVE_GUIDE, registerDeriveTools } from './tools/derive.ts';
 import { EASE_GUIDE, registerEaseTools } from './tools/ease.ts';
 import { EDIT_UX_GUIDE, registerEditUxTools } from './tools/edit-ux.ts';
 import { registerEditingTools } from './tools/editing.ts';
@@ -120,6 +120,7 @@ const GUIDES: Record<string, GuideSource> = {
 	},
 	color: COLOR_GUIDE,
 	processing: PROCESSING_GUIDE,
+	derive: DERIVE_GUIDE,
 	compositions: COMPOSITION_GUIDE,
 	tracking: TRACKING_GUIDE,
 	transitions: TRANSITION_GUIDE,
