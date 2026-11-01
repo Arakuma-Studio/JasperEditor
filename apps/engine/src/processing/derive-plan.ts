@@ -305,15 +305,31 @@ export function planDerive(
 			const factors = atempoFactors(r);
 			// With pitch: `atempo` (WSOLA) chained within 0.5…2, after padding so its flush keeps the last samples,
 			// cut to the exact new length. Without: the samples played at rate·sr and resampled back (pitch follows).
+			// Every stream starts at the earliest stream start (T0): a later start becomes leading silence (audio) or a
+			// later first timestamp (video) before the retime, so an offset of o seconds comes out as o/r.
+			const t0 = Math.min(
+				...(src.kind === 'video' && src.video ? [startOf(src, src.video.index)] : []),
+				...src.audio.map((a) => startOf(src, a.index)),
+			);
+			const lead = (a: AudioStream) => {
+				const n = Math.round(Math.max(0, startOf(src, a.index) - t0) * a.sampleRate);
+				return n > 0 ? [`adelay=delays=${n}S:all=1`] : [];
+			};
 			const audioChain = (a: AudioStream) =>
 				(recipe.preservePitch
 					? [
 							'asetpts=PTS-STARTPTS',
+							...lead(a),
 							`apad=pad_dur=${ATEMPO_PAD_SEC}`,
 							...factors.map((f) => `atempo=${r6(f)}`),
 							`atrim=end=${r6(outSec)}`,
 						]
-					: ['asetpts=PTS-STARTPTS', `asetrate=${Math.round(a.sampleRate * r)}`, `aresample=${a.sampleRate}`]
+					: [
+							'asetpts=PTS-STARTPTS',
+							...lead(a),
+							`asetrate=${Math.round(a.sampleRate * r)}`,
+							`aresample=${a.sampleRate}`,
+						]
 				).join(',');
 			const notes = [
 				recipe.preservePitch
@@ -334,7 +350,7 @@ export function planDerive(
 			const enc = videoEncode(src);
 			// The picture is retimed and put back on the source's frame grid (frames dropped or repeated).
 			const graph = [
-				`[0:${v.index}]setpts=(PTS-STARTPTS)/${r6(r)},fps=fps=${num}/${den},${enc.tail}[v]`,
+				`[0:${v.index}]setpts=(PTS-STARTPTS)/${r6(r)}+${r6((startOf(src, v.index) - t0) / r)}/TB,fps=fps=${num}/${den},${enc.tail}[v]`,
 				...src.audio.map((a, i) => `[0:${a.index}]${audioChain(a)}[a${i}]`),
 			].join(';');
 			return {
