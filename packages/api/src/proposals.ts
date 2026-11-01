@@ -74,10 +74,18 @@ export type ProposalResponse = z.infer<typeof ProposalResponseSchema>;
 
 /**
  * `POST /api/projects/:projectId/proposals`: a draft (feature, title, items with commands, requires, alternatives,
- * meta). Validated by dry runs against the live document; failing items are stored `invalid` with the reason.
+ * meta). Validated by dry runs against the live document; failing items are stored `invalid` with the reason, unless
+ * `allOrNothing` (spec 18 AF-PROP-002, MCP `propose_edits`): then any failing item — or alternative command set —
+ * refuses the whole draft with 422 PROPOSAL_INVALID (`detail.items`: `ProposalItemFailure` per failure) and nothing is
+ * stored. `expectedRevision`: the revision the creator planned against; items touching an entity changed since are
+ * failures (E_REVISION_MISMATCH, the fast-forward rule S01:AGT-010); ahead of the document → 409 REVISION_CONFLICT.
  * `author` is taken from the editor window only (default "user"); an agent is always `{agent: <its name>}`.
  */
-export const ProposalCreateRequestSchema = ProposalDraftSchema.extend({ author: AuthorSchema.optional() });
+export const ProposalCreateRequestSchema = ProposalDraftSchema.extend({
+	author: AuthorSchema.optional(),
+	allOrNothing: z.boolean().optional(),
+	expectedRevision: z.number().int().min(0).optional(),
+});
 export type ProposalCreateRequest = z.infer<typeof ProposalCreateRequestSchema>;
 
 export const ProposalCreateResponseSchema = z.object({
@@ -88,6 +96,23 @@ export const ProposalCreateResponseSchema = z.object({
 	evicted: z.array(z.string()),
 });
 export type ProposalCreateResponse = z.infer<typeof ProposalCreateResponseSchema>;
+
+/** One failure of an `allOrNothing` draft (`@jasper/project` `ProposalItemFailure`). */
+export const ProposalItemFailureSchema = z.object({
+	index: z.number().int().min(0),
+	itemId: z.string(),
+	alternative: z.number().int().min(0).optional(),
+	code: z.string(),
+	message: z.string(),
+	commandIndex: z.number().int().min(0).nullable(),
+});
+/** `detail` of 422 PROPOSAL_INVALID: every failing item of the draft (nothing was stored). */
+export const ProposalInvalidDetailSchema = z.object({
+	code: z.literal('E_PROPOSAL_INVALID'),
+	items: z.array(ProposalItemFailureSchema),
+	revision: z.number().int().optional(),
+});
+export type ProposalInvalidDetail = z.infer<typeof ProposalInvalidDetailSchema>;
 
 /** Items a decision applies to: ids, or `'all'` (accept/reject: every pending or stale item). */
 export const ProposalItemSelectionSchema = z.union([
