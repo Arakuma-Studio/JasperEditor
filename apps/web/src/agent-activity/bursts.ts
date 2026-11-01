@@ -75,9 +75,14 @@ export class AgentBurstTracker {
 	}
 }
 
-/** The toast of a burst: "Agent: <label>" for one transaction, "Agent: N edits" for more. */
+/**
+ * The toast of a burst: "Agent: <label>" for one transaction, "Agent: N edits" for more. The item count is left out
+ * when the burst changed no items (an agent note or a brief changes the project or a sequence, not an item).
+ */
 export function burstToastText(b: AgentBurst): { title: string; detail: string } {
 	const title = b.count === 1 ? t('Agent: {0}', b.label) : t('Agent: {0} edits', b.count);
+	const agents = b.agents.join(', ');
+	if (b.items === 0) return { title: title.slice(0, 80), detail: agents };
 	const items = b.items === 1 ? t('1 item changed') : t('{0} items changed', b.items);
-	return { title: title.slice(0, 80), detail: `${b.agents.join(', ')} · ${items}` };
+	return { title: title.slice(0, 80), detail: `${agents} · ${items}` };
 }

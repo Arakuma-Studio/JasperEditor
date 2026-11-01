@@ -194,6 +194,16 @@ describe('burst grouping (AF-ACT-003)', () => {
 		expect(two.agents).toEqual(['bot', 'codex']);
 		expect(burstToastText(two)).toEqual({ title: 'Agent: 2 edits', detail: 'bot, codex · 3 items changed' });
 	});
+
+	it('names no item count for a transaction that changes no items (an agent note, a brief)', () => {
+		const tracker = new AgentBurstTracker();
+		const h = history(['bot']);
+		const note = tracker.add(
+			entry({ time: 0, historyEntryId: 1, label: 'Add agent note', created: [], changed: [], deleted: [] }),
+			h,
+		);
+		expect(burstToastText(note)).toEqual({ title: 'Agent: Add agent note', detail: 'bot' });
+	});
 });
 
 const job = (p: Partial<PresenceJob> & { agent?: string }): PresenceJob => ({
