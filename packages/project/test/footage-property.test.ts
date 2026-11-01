@@ -9,6 +9,9 @@ import {
 	DIGEST_MAX_CHARS_LIMIT,
 	DIGEST_MIN_MAX_CHARS,
 	findTakes,
+	footageMedia,
+	footagePhrases,
+	normaliseTakeTokens,
 	type ProjectDocument,
 	packFootageDigest,
 	type Transcript,
@@ -71,11 +74,53 @@ const speech = fc
 		});
 	});
 
+const LINES = [
+	'welcome to the show everybody',
+	'today we cook fresh pasta',
+	'the quick brown fox jumps over',
+	'thanks for being here with us tonight',
+];
+/** Takes: lines said again with words dropped, fillers and repeats, 0.6…2 s apart. */
+const takes = fc
+	.array(
+		fc.record({
+			line: fc.constantFrom(...LINES),
+			drop: fc.array(fc.boolean(), { minLength: 8, maxLength: 8 }),
+			filler: fc.boolean(),
+			end: fc.constantFrom('', '.', '?'),
+			pause: fc.integer({ min: 600, max: 2000 }),
+		}),
+		{ maxLength: 12 },
+	)
+	.map((xs) => {
+		let t = 0;
+		const out: Array<Record<string, unknown>> = [];
+		for (const x of xs) {
+			const ws = x.line.split(' ').filter((_, k) => !(x.drop[k] && k % 3 === 1));
+			if (x.filler) ws.splice(1, 0, 'um');
+			t += Math.round((x.pause / 1000) * S);
+			ws.forEach((w, k) => {
+				const start = t;
+				t += Math.round(0.3 * S);
+				out.push({
+					text: k === ws.length - 1 ? `${w}${x.end}` : w,
+					start,
+					end: t,
+					confidence: 0.9,
+					speaker: null,
+					breakBefore: 'none',
+				});
+				t += Math.round(0.1 * S);
+			});
+		}
+		return out;
+	});
+
 const media = fc.array(
 	fc.record({
 		seconds: fc.oneof(fc.constant(0), fc.integer({ min: 1, max: 60 })),
 		audio: fc.boolean(),
-		words: fc.oneof(fc.array(word, { maxLength: 40 }), speech),
+		words: fc.oneof(fc.array(word, { maxLength: 40 }), speech, takes),
 		transcribed: fc.boolean(),
 		language: fc.constantFrom('en', 'es', 'und', ''),
 	}),
@@ -158,6 +203,59 @@ describe('footage digest properties', () => {
 		);
 	});
 
+	it('holds maxChars on long footage and cuts only between media (or a first media at a phrase line)', () => {
+		const long = fc.array(
+			fc.record({
+				seconds: fc.constant(600),
+				audio: fc.constant(true),
+				words: fc
+					.array(fc.record({ w: fc.constantFrom(...VOCAB), gap: fc.integer({ min: 0, max: 900 }) }), {
+						minLength: 50,
+						maxLength: 400,
+					})
+					.map((xs) => {
+						let t = 0;
+						return xs.map(({ w, gap }) => {
+							const start = t + Math.round((gap / 1000) * S);
+							t = start + Math.round(0.3 * S);
+							return {
+								text: `${w}x`,
+								start,
+								end: t,
+								confidence: 0.9,
+								speaker: null,
+								breakBefore: 'none' as const,
+							};
+						});
+					}),
+				transcribed: fc.constant(true),
+				language: fc.constant('en'),
+			}),
+			{ minLength: 1, maxLength: 6 },
+		);
+		fc.assert(
+			fc.property(long, fc.integer({ min: 1000, max: 6000 }), (spec, maxChars) => {
+				const { doc } = build(spec);
+				const full = packFootageDigest(doc, { maxChars: DIGEST_MAX_CHARS_LIMIT });
+				const r = packFootageDigest(doc, { maxChars });
+				if (!r.ok || !full.ok) throw new Error('refused');
+				expect(r.text.length).toBeLessThanOrEqual(maxChars);
+				expect(r.shown.length + r.notShown.length).toBe(spec.length);
+				// every shown media but a cut first one has exactly the phrases of the full digest
+				r.sections.forEach((sec, i) => {
+					const whole = full.sections.find((x) => x.id === sec.id)!;
+					if (i === 0 && r.cutPhrases) expect(sec.phrases.length + r.cutPhrases).toBe(whole.phrases.length);
+					else expect(sec.phrases).toEqual(whole.phrases);
+				});
+				if (r.notShown.length)
+					expect(
+						r.text.trimEnd().endsWith(`… ${r.notShown.length} more media not shown: pass mediaIds`),
+					).toBe(true);
+			}),
+			{ numRuns: 150 },
+		);
+	});
+
 	it('the sequence digest never throws on arbitrary transcripts', () => {
 		fc.assert(
 			fc.property(media, (spec) => {
@@ -211,6 +309,37 @@ describe('take properties', () => {
 						expect(near).toBe(true);
 					});
 				}
+			}),
+			{ numRuns: 200 },
+		);
+	});
+
+	it('is complete: any two comparable phrases at least minSimilarity alike share a group (brute force)', () => {
+		fc.assert(
+			fc.property(media, fc.double({ min: 0.3, max: 1, noNaN: true }), (spec, minSimilarity) => {
+				const { doc } = build(spec);
+				const r = findTakes(doc, { minSimilarity });
+				if (!r.ok) throw new Error(r.message);
+				const groupOf = new Map<string, string>();
+				for (const g of r.groups) for (const m of g.members) groupOf.set(`${m.mediaId}@${m.start}`, g.id);
+				const all: Array<{ key: string; toks: string[] }> = [];
+				for (const m of footageMedia(doc, null, 'transcribed').media) {
+					const end = m.asset.probe.durationFlicks;
+					for (const p of footagePhrases(m.transcript!.words, { end })) {
+						const toks = normaliseTakeTokens(
+							p.words.map((w) => w.text),
+							m.transcript!.language,
+						).slice(0, 200);
+						if (toks.length >= 2) all.push({ key: `${m.id}@${p.start}`, toks });
+					}
+				}
+				expect(r.phrasesCompared).toBe(all.length);
+				for (let i = 0; i < all.length; i++)
+					for (let j = i + 1; j < all.length; j++)
+						if (takeSimilarity(all[i]!.toks, all[j]!.toks) >= minSimilarity) {
+							expect(groupOf.get(all[i]!.key)).toBeDefined();
+							expect(groupOf.get(all[i]!.key)).toBe(groupOf.get(all[j]!.key));
+						}
 			}),
 			{ numRuns: 200 },
 		);
