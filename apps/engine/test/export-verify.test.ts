@@ -140,7 +140,7 @@ describe('verify_export on fixture exports with known defects', () => {
 				status: 'fail',
 				measured: 133,
 				expected: 0,
-				tolerance: 'luma < 0.0627 for ≥ 100 ms',
+				tolerance: 'luma < 0.0627 in every 4×4 cell for ≥ 100 ms',
 				at: { sec: 1.5, frame: 45, timecode: '00:00:01:15' },
 				message: expect.stringContaining('4 black frames (133 ms) at the cut'),
 			},
@@ -328,7 +328,8 @@ describe('detectors', () => {
 	});
 
 	it('black runs are counted only where the timeline intends a picture, flashes against both neighbours', () => {
-		const luma = (dark: number[]) => (f: number) => (dark.includes(f) ? 0 : 0.5);
+		const luma = (dark: number[]) => (f: number) =>
+			dark.includes(f) ? { mean: 0, peakCell: 0 } : { mean: 0.5, peakCell: 0.5 };
 		const cut = { fileFrame: 45, blackBefore: false, blackAfter: false };
 		expect(cutPictureFindings(luma([45, 46, 47]), cut, 30, 90)).toEqual([
 			{ kind: 'black', startFrame: 45, frames: 3 },
@@ -338,6 +339,9 @@ describe('detectors', () => {
 		expect(cutPictureFindings(luma([45]), cut, 30, 90)).toEqual([{ kind: 'flash', frame: 45, jump: 0.5 }]);
 		expect(cutPictureFindings(luma([42, 43, 44]), { ...cut, blackBefore: true }, 30, 90)).toEqual([]);
 		expect(cutPictureFindings(luma([45, 46, 47]), { ...cut, blackAfter: true }, 30, 90)).toEqual([]);
+		// a small picture on black: dark on average, one bright cell — not black
+		const small = () => ({ mean: 0.04, peakCell: 0.45 });
+		expect(cutPictureFindings(small, cut, 30, 90)).toEqual([]);
 	});
 
 	it('pixel formats match by subsampling, depth and alpha', () => {

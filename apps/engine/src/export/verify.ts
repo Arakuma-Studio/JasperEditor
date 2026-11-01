@@ -18,8 +18,13 @@ export const VERIFY_THRESHOLDS = {
 	frameRateToleranceFps: 0.01,
 	/** `cut-black` / `cut-flash`: frames on each side of a cut whose picture is judged. */
 	cutWindowFrames: 2,
-	/** `cut-black`: normalised mean luma (0 = black level, 1 = white level) under which a frame is black. */
+	/**
+	 * `cut-black`: normalised mean luma (0 = black level, 1 = white level) under which a frame is black — in every cell
+	 * of a `blackGrid` × `blackGrid` grid, so a picture smaller than the frame on black is not black.
+	 */
 	blackLuma: 16 / 255,
+	/** `cut-black`: cells per side of the grid each of which must be under `blackLuma`. */
+	blackGrid: 4,
 	/** `cut-black`: shortest black run that counts. */
 	blackMinSec: 0.1,
 	/** `cut-flash`: normalised mean luma step against both neighbours of a single frame. */
@@ -86,15 +91,18 @@ export type CutPictureFinding =
 	| { kind: 'black'; startFrame: number; frames: number }
 	| { kind: 'flash'; frame: number; jump: number };
 
+/** Normalised luma of one frame: its mean, and the brightest cell of the `blackGrid` grid. */
+export type FrameLuma = { mean: number; peakCell: number };
+
 /**
- * Black and flash frames around one cut. `luma(i)` = normalised mean luma of file frame `i` (undefined = not decoded).
- * A black run counts when it touches the ±`cutWindowFrames` frames of the cut, lasts ≥ `blackMinSec` and lies where the
+ * Black and flash frames around one cut. `luma(i)` = the luma of file frame `i` (undefined = not decoded). A frame is
+ * black when even its brightest grid cell is under `blackLuma`. A black run counts when it touches the ±`cutWindowFrames` frames of the cut, lasts ≥ `blackMinSec` and lies where the
  * timeline intends no black (frames before the cut unless `blackBefore`, from it unless `blackAfter`); its length is
  * followed into the analysed frames around the window. A flash is one frame of the window whose luma differs by more
  * than `flashJump` from both neighbours in the same direction.
  */
 export function cutPictureFindings(
-	luma: (frame: number) => number | undefined,
+	luma: (frame: number) => FrameLuma | undefined,
 	cut: Pick<VerifyCut, 'blackBefore' | 'blackAfter'> & { fileFrame: number },
 	fps: number,
 	frames: number,
@@ -105,7 +113,7 @@ export function cutPictureFindings(
 	const lo = Math.max(0, c - T.cutWindowFrames);
 	const hi = Math.min(frames - 1, c + T.cutWindowFrames);
 	const unintendedBlack = (i: number) => {
-		const v = luma(i);
+		const v = luma(i)?.peakCell;
 		if (v === undefined || !(v < T.blackLuma)) return false;
 		return i < c ? !cut.blackBefore : !cut.blackAfter;
 	};
@@ -122,9 +130,9 @@ export function cutPictureFindings(
 		i = e;
 	}
 	for (let i = Math.max(1, lo); i <= Math.min(frames - 2, hi); i++) {
-		const v = luma(i);
-		const a = luma(i - 1);
-		const b = luma(i + 1);
+		const v = luma(i)?.mean;
+		const a = luma(i - 1)?.mean;
+		const b = luma(i + 1)?.mean;
 		if (v === undefined || a === undefined || b === undefined) continue;
 		const da = v - a;
 		const db = v - b;
@@ -211,8 +219,8 @@ export type VerifyChecks = 'fast' | 'full';
 export type FullMeasurements = {
 	/** Decoder error lines (empty = the streams decoded cleanly). */
 	decodeErrors: string[];
-	/** Normalised mean luma per file frame (only frames around cuts). */
-	luma: ReadonlyMap<number, number>;
+	/** Normalised luma per file frame (only frames around cuts). */
+	luma: ReadonlyMap<number, FrameLuma>;
 	/** Decoded video frames (0 without a video stream). */
 	videoFrames: number;
 	/** Per context cut (same order): the click found, or null. Null when the file has no audio. */
@@ -464,7 +472,7 @@ function cutRows(input: JudgeInput, full: FullMeasurements): VerifyRow[] {
 						status: 'fail',
 						measured: r2((f.frames / fps) * 1000, 0),
 						expected: 0,
-						tolerance: `luma < ${r2(T.blackLuma, 4)} for ≥ ${T.blackMinSec * 1000} ms`,
+						tolerance: `luma < ${r2(T.blackLuma, 4)} in every ${T.blackGrid}×${T.blackGrid} cell for ≥ ${T.blackMinSec * 1000} ms`,
 						at: atOf(ctx, fps, f.startFrame / fps),
 						message: `${f.frames} black frame${f.frames === 1 ? '' : 's'} (${r2((f.frames / fps) * 1000, 0)} ms) at the cut where the timeline shows a picture: a gap or a missing frame in the render. Look at it and ask the user before re-cutting.`,
 					});

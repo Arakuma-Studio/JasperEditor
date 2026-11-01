@@ -12,6 +12,7 @@ import type { JobQueue } from '../jobs/queue.ts';
 import { type JobContext, JobError } from '../jobs/types.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import {
+	type FrameLuma,
 	type FullMeasurements,
 	type JudgeInput,
 	judgeExport,
@@ -125,7 +126,7 @@ export async function verifyExportFile(o: {
 		const v = output.streams.find((s) => s.type === 'video');
 		const a = output.streams.find((s) => s.type === 'audio');
 		const errors: string[] = [];
-		let luma = new Map<number, number>();
+		let luma = new Map<number, FrameLuma>();
 		let videoFrames = 0;
 		if (v) {
 			o.progress?.(0.1, 'Decoding the picture');

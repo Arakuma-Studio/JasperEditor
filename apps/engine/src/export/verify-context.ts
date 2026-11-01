@@ -18,6 +18,8 @@ import { atomicWriteJson, readJsonOrNull } from '../tools/fs.ts';
 export const VERIFY_CONTEXT_FILE = 'verify.json';
 /** Most cuts recorded per export (a longer cut list is truncated and the cut rows say so). */
 export const MAX_VERIFY_CUTS = 5000;
+/** Least frame coverage of a picture layer the verification cut list follows (the cut map's minimum). */
+export const VERIFY_CUT_COVERAGE = 0.01;
 /** Frames on each side of a cut searched for an effect (transition, graphic or adjustment layer) over it. */
 const EFFECT_WINDOW_FRAMES = 3;
 /** A solid at most this bright (Rec. 709 luma of its colour × its alpha) is intended black. */
@@ -153,7 +155,12 @@ export function verifyCutsOf(
 	if (!seq) return { cuts: [], note: `Sequence ${sequenceId} is not in the exported document` };
 	let analysed: ReturnType<typeof analyzePictureCuts>;
 	try {
-		analysed = analyzePictureCuts(doc, sequenceId, { range: { start: range.start, end: range.end } });
+		// every picture layer counts, however small (a 640 × 360 clip in a 1080p frame covers 11 %): the cut map's
+		// default 50 % overlay coverage would hide the cuts of footage that does not fill the frame
+		analysed = analyzePictureCuts(doc, sequenceId, {
+			range: { start: range.start, end: range.end },
+			overlayCoverage: VERIFY_CUT_COVERAGE,
+		});
 	} catch (e) {
 		return { cuts: [], note: `The cut map could not be computed: ${(e as Error).message}`.slice(0, 500) };
 	}

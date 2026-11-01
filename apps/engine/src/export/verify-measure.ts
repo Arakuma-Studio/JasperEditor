@@ -12,7 +12,7 @@ import { z } from 'zod';
 import { PcmStreamReader } from '../audio/decode.ts';
 import { LOCAL_PROTOCOLS } from '../sounds/decode.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
-import { type CutClick, detectCutClick, VERIFY_THRESHOLDS } from './verify.ts';
+import { type CutClick, detectCutClick, type FrameLuma, VERIFY_THRESHOLDS } from './verify.ts';
 
 type RunOpts = { signal?: AbortSignal | undefined; onSpawn?: ((c: ChildProcess) => void) | undefined };
 const spawnOpts = (o: RunOpts) => ({
@@ -98,27 +98,52 @@ export async function probeOutput(ff: Ffmpeg, file: string, o: RunOpts = {}): Pr
 			...(type === 'audio' && s.channels !== undefined ? { channels: s.channels } : {}),
 		};
 	});
-	// stream ends: the last packets of each stream (pts + duration), read from near the end only
+	// stream ends: the last packets of each stream (pts + duration), read from near the end only; FFmpeg 7.1's ffprobe
+	// lists no packets for -read_intervals together with -protocol_whitelist, so a stream without an end there is read
+	// whole (compact CSV, bounded by the tool's 64 MB stdout cap: ≈ 8 h of 30 fps video with audio)
 	const ends = new Map<number, number>();
-	const packets = PacketsSchema.safeParse(
-		await ff.probeJson(
-			[
-				...LOCAL_PROTOCOLS,
-				...(durationSec !== null
-					? ['-read_intervals', `${Math.max(0, durationSec - TAIL_SEC).toFixed(3)}%`]
-					: []),
-				'-show_entries',
-				'packet=stream_index,pts_time,duration_time',
-				file,
-			],
-			spawnOpts(o),
-		),
-	);
-	for (const p of packets.success ? (packets.data.packets ?? []) : []) {
-		const pts = num(p.pts_time);
-		if (pts === undefined) continue;
-		const end = pts + (num(p.duration_time) ?? 0);
-		if (end > (ends.get(p.stream_index) ?? Number.NEGATIVE_INFINITY)) ends.set(p.stream_index, end);
+	const note = (index: unknown, ptsV: unknown, durV: unknown) => {
+		const pts = num(ptsV);
+		const i = typeof index === 'number' ? index : num(index);
+		if (pts === undefined || i === undefined) return;
+		const end = pts + (num(durV) ?? 0);
+		if (end > (ends.get(i) ?? Number.NEGATIVE_INFINITY)) ends.set(i, end);
+	};
+	if (durationSec !== null) {
+		const packets = PacketsSchema.safeParse(
+			await ff.probeJson(
+				[
+					...LOCAL_PROTOCOLS,
+					'-read_intervals',
+					`${Math.max(0, durationSec - TAIL_SEC).toFixed(3)}%`,
+					'-show_entries',
+					'packet=stream_index,pts_time,duration_time',
+					file,
+				],
+				spawnOpts(o),
+			),
+		);
+		for (const p of packets.success ? (packets.data.packets ?? []) : [])
+			note(p.stream_index, p.pts_time, p.duration_time);
+	}
+	if (streams.some((s) => (s.type === 'video' || s.type === 'audio') && !ends.has(s.index))) {
+		const csv = await ff
+			.probeText(
+				[
+					...LOCAL_PROTOCOLS,
+					'-show_entries',
+					'packet=stream_index,pts_time,duration_time',
+					'-of',
+					'csv=p=0',
+					file,
+				],
+				spawnOpts(o),
+			)
+			.catch(() => '');
+		for (const line of csv.split('\n')) {
+			const [i, pts, dur] = line.split(',');
+			note(i, pts, dur);
+		}
 	}
 	for (const s of streams) {
 		const e = ends.get(s.index);
@@ -149,8 +174,8 @@ const errorLines = (s: string) =>
 		.slice(0, MAX_ERROR_LINES);
 
 /**
- * Decodes the first video stream once: normalised mean luma (0 = black level, 1 = white level; limited-range video
- * maps Y 16…235) of the frames in `keep`, the decoded frame count and the decoder's error lines.
+ * Decodes the first video stream once: normalised luma (0 = black level, 1 = white level; limited-range video maps
+ * Y 16…235) of the frames in `keep` — the frame's mean and its brightest cell of the `blackGrid` grid —, the decoded frame count and the decoder's error lines.
  */
 export async function measureVideo(
 	ff: Ffmpeg,
@@ -158,7 +183,7 @@ export async function measureVideo(
 	keep: ReadonlySet<number>,
 	fullRange: boolean,
 	o: RunOpts = {},
-): Promise<{ luma: Map<number, number>; frames: number; errors: string[] }> {
+): Promise<{ luma: Map<number, FrameLuma>; frames: number; errors: string[] }> {
 	const child = ff.spawnRaw(
 		[
 			...LOCAL_PROTOCOLS,
@@ -185,7 +210,12 @@ export async function measureVideo(
 		child.once('error', () => resolve(-1));
 	});
 	const frameBytes = LUMA_W * LUMA_H;
-	const luma = new Map<number, number>();
+	const luma = new Map<number, FrameLuma>();
+	const grid = VERIFY_THRESHOLDS.blackGrid;
+	const cellW = LUMA_W / grid;
+	const cellH = LUMA_H / grid;
+	const norm = (y: number) => Math.min(1, Math.max(0, fullRange ? y / 255 : (y - 16) / 219));
+	const cells = new Float64Array(grid * grid);
 	let frames = 0;
 	let pending: Buffer = Buffer.alloc(0);
 	for await (const chunk of child.stdout as AsyncIterable<Buffer>) {
@@ -194,10 +224,16 @@ export async function measureVideo(
 		while (pending.length - off >= frameBytes) {
 			if (keep.has(frames)) {
 				let sum = 0;
-				for (let i = off; i < off + frameBytes; i++) sum += pending[i]!;
-				const mean = sum / frameBytes;
-				const v = fullRange ? mean / 255 : (mean - 16) / 219;
-				luma.set(frames, Math.min(1, Math.max(0, v)));
+				cells.fill(0);
+				for (let y = 0; y < LUMA_H; y++)
+					for (let x = 0; x < LUMA_W; x++) {
+						const p = pending[off + y * LUMA_W + x]!;
+						sum += p;
+						cells[Math.floor(y / cellH) * grid + Math.floor(x / cellW)]! += p;
+					}
+				let peak = 0;
+				for (const c of cells) peak = Math.max(peak, c / (cellW * cellH));
+				luma.set(frames, { mean: norm(sum / frameBytes), peakCell: norm(peak) });
 			}
 			frames++;
 			off += frameBytes;
