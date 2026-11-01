@@ -103,7 +103,7 @@ describe('derive_media (AF-OPS-002)', { timeout: 300_000 }, () => {
 		expect(JSON.stringify(t?.inputSchema)).toContain('time-stretch');
 	});
 
-	it('reverses a media into the bin "Processed" as one undoable step', async () => {
+	it('reverses a media into the bin "Processed" (one transaction; reused when asked again)', async () => {
 		projectId = (await ok<{ projectId: string }>('create_project', { name: 'MCP derive' })).projectId;
 		const imp = await ok<{ imported: { mediaId: string }[] }>('import_media', {
 			projectId,
@@ -129,14 +129,14 @@ describe('derive_media (AF-OPS-002)', { timeout: 300_000 }, () => {
 			{ projectId, mediaId: r.derivedMediaId },
 		);
 		expect(info.derivation).toMatchObject({ fromMediaId: mediaId, recipe: { op: 'reverse' } });
-		await ok('undo', { projectId });
-		await fails('get_media_info', { projectId, mediaId: r.derivedMediaId });
-		// again: the finished file is reused
-		const again = await ok<{ reused: boolean }>('derive_media', {
+		// Undo needs an editor session (history is per session; covered by the web dialog test). Again: the finished
+		// file is reused and the derivation is not added twice.
+		const again = await ok<{ reused: boolean; derivedMediaId: string }>('derive_media', {
 			projectId,
 			mediaId,
 			recipe: { op: 'reverse' },
 		});
+		expect(again.derivedMediaId).toBe(r.derivedMediaId);
 		expect(again.reused).toBe(true);
 	});
 

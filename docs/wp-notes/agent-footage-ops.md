@@ -73,7 +73,7 @@ it the last frame has duration 0 and FFmpeg 7.1's mov muxer leaves it outside th
   disabled; Subclip Range 3–4.5 s and Time Stretch 2× each added a media in a new "Processed" bin with a success
   toast; the document then held `take [Range 3.000–4.500 s].mov` (sourceRange firstFrame 75, 38 frames, item
   "take.mov [Range · frames 75–112]") and `take [Time-stretched 2×].mov`.
-- `apps/mcp/test/derive.test.ts`: `derive_media` reverse (+ undo, + reuse), extract-audio, range frames, refusals.
+- `apps/mcp/test/derive.test.ts`: `derive_media` reverse (+ reuse: same media id; undo needs an editor session and is covered by the web test), extract-audio, range frames, refusals.
 - `apps/web/test/derive-media.test.tsx`: menu entries per kind, form defaults, NO_AUDIO / EMPTY_RANGE shown and
   Derive disabled, engine 422 code shown in the dialog, job → one "Derive Media" undo step, failed job code shown.
 
