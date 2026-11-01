@@ -281,7 +281,9 @@ export function drawRangeView(input: RangeViewInput): { image: RgbaImage; layout
 			if (hh < 0.5) continue;
 			vline(img, plotX + px, mid - hh, mid + hh, WAVE_COLOUR, false, 0.85);
 		}
-		drawText(img, `RMS dB ${WAVE_FLOOR_DB}..0`, plotX + 2, rows.wave.y + 1, DIM, 1);
+		const legend = `RMS dB ${WAVE_FLOOR_DB}..0`;
+		fillRect(img, plotX, rows.wave.y, textWidth(legend, 1) + 4, LINE_HEIGHT + 1, BG, 0.75);
+		drawText(img, legend, plotX + 2, rows.wave.y + 1, DIM, 1);
 	}
 	// words: greedy lanes, each word at its start time
 	let wordsDrawn = 0;

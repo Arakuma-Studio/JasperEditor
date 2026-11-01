@@ -57,8 +57,11 @@ async function fails(args: Record<string, unknown>) {
 	return (JSON.parse(textOf(r)) as { error: { code: string; message: string; hint?: string } }).error;
 }
 
-/** A mono 16-bit WAV of a 440 Hz tone (unique content per `seed`). */
-function wav(path: string, seconds: number, seed: number): void {
+/**
+ * A mono 16-bit WAV: a 440 Hz tone (pitch offset by `seed`, so every file is new media) where `on(t)`, a −70 dBFS noise
+ * floor elsewhere.
+ */
+function wav(path: string, seconds: number, seed: number, on: (t: number) => boolean = () => true): void {
 	const sr = 16_000;
 	const n = sr * seconds;
 	const b = Buffer.alloc(44 + n * 2);
@@ -74,8 +77,13 @@ function wav(path: string, seconds: number, seed: number): void {
 	b.writeUInt16LE(16, 34);
 	b.write('data', 36, 'ascii');
 	b.writeUInt32LE(n * 2, 40);
-	for (let i = 0; i < n; i++)
-		b.writeInt16LE(Math.round(8000 * Math.sin((2 * Math.PI * (440 + seed) * i) / sr)), 44 + i * 2);
+	let r = 12345 + seed;
+	for (let i = 0; i < n; i++) {
+		r = (r * 1103515245 + 12345) % 2147483648;
+		const noise = (r / 2147483648 - 0.5) * 2 * 32768 * 10 ** (-70 / 20) * Math.sqrt(3);
+		const tone = on(i / sr) ? 8000 * Math.sin((2 * Math.PI * (440 + seed) * i) / sr) : 0;
+		b.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(tone + noise))), 44 + i * 2);
+	}
 	writeFileSync(path, b);
 }
 
@@ -195,6 +203,28 @@ describe('view_media_range', () => {
 		const img = imageOf(r);
 		expect(img.width).toBe(480);
 		expect(img.height).toBeLessThan(200);
+	});
+
+	it('lists and shades the silences of at least 0.4 s', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'jasper-mcp-view-gap-'));
+		try {
+			const file = join(dir, 'gaps.wav');
+			// sound 0–1 s, a 1 s pause, sound 2–3 s, a 0.2 s pause (too short), sound 3.2–4 s
+			wav(file, 4, 3, (t) => t < 1 || (t >= 2 && t < 3) || t >= 3.2);
+			const imp = await ok<{ imported: { mediaId: string }[] }>('import_media', { projectId, paths: [file] });
+			const r = await view({ projectId, mediaId: imp.imported[0]!.mediaId, start: 0, end: 4, width: 480 });
+			const m = /silences >= 0.4 s \((\d+)\): (\S+)-(\S+) /.exec(textOf(r));
+			expect(m, textOf(r)).not.toBeNull();
+			expect(Number(m![1])).toBe(1);
+			expect(Number(m![2])).toBeCloseTo(1, 1);
+			expect(Number(m![3])).toBeCloseTo(2, 1);
+			const img = imageOf(r);
+			// the band's top edge over the waveform row at t = 1.5 s (x = 8 + 1.5 / 4 · 464 = 182; header 17 px)
+			const o = (17 * img.width + 182) * 4;
+			expect([img.data[o], img.data[o + 1], img.data[o + 2]]).toEqual([255, 170, 60]);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 
 	it('shows a sequence range: Program frames, the mix and the sequence transcript', async () => {

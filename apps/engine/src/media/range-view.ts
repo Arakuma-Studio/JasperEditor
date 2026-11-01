@@ -321,7 +321,9 @@ function decodeMono16k(
 		}
 		let carry = Buffer.alloc(0);
 		let stderr = '';
-		child.stdout!.on('data', (c: Buffer) => {
+		const out = child.stdout!;
+		out.on('data', (c: Buffer) => {
+			if (sig.aborted) return;
 			const data = carry.length ? Buffer.concat([carry, c]) : c;
 			const usable = data.length - (data.length % 4);
 			if (usable > 0) {
@@ -330,6 +332,10 @@ function decodeMono16k(
 				onSamples(s);
 			}
 			carry = Buffer.from(data.subarray(usable));
+			// the analysis is CPU work on the engine's event loop: let other requests (and the client's hang-up) in
+			// between chunks
+			out.pause();
+			setImmediate(() => out.resume());
 		});
 		child.stderr?.setEncoding('utf8').on('data', (c: string) => {
 			stderr = (stderr + c).slice(-2000);

@@ -6,6 +6,8 @@
 // bodies and unauthenticated requests are coded errors; a cancelled decode stops at once.
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { request } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -107,7 +109,7 @@ beforeAll(async () => {
 afterAll(async () => {
 	await closeApps();
 	if (dir) rmSync(dir, { recursive: true, force: true });
-});
+}, 30_000);
 
 describe('POST /api/media/:mediaKey/frames', () => {
 	it('returns the exact frame at each time, scaled to the box during decode', async () => {
@@ -290,7 +292,30 @@ describe('range audio', () => {
 			}),
 		).rejects.toMatchObject({ code: 'CANCELLED' });
 		expect(Date.now() - t0).toBeLessThan(5000);
-	});
+		// over a real connection: the decoder runs while the client waits and is gone soon after it hangs up
+		await app.listen({ host: '127.0.0.1', port: 0 });
+		const port = (app.server.address() as AddressInfo).port;
+		const decoders = () =>
+			spawnSync('pgrep', ['-f', '--', long], { encoding: 'utf8' }).stdout.trim().split('\n').filter(Boolean);
+		const req = request({
+			host: '127.0.0.1',
+			port,
+			method: 'POST',
+			path: `/api/media/${reg.mediaKey}/range-audio`,
+			headers: JSON_H,
+		});
+		req.on('error', () => {});
+		req.end(JSON.stringify({ start: 0, end: 1500 }));
+		const until = async (cond: () => boolean, ms: number) => {
+			const end = Date.now() + ms;
+			while (!cond() && Date.now() < end) await new Promise((r) => setTimeout(r, 25));
+			return cond();
+		};
+		expect(await until(() => decoders().length > 0, 10_000)).toBe(true);
+		req.destroy();
+		// the whole range takes ≈ 12 s to analyse; the decoder must be gone long before (measured 0.3–0.9 s)
+		expect(await until(() => decoders().length === 0, 2000)).toBe(true);
+	}, 60_000);
 
 	it('describes the bytes with the voice analysis constants', () => {
 		expect([RANGE_AUDIO_LEVEL_MIN_DB, RANGE_AUDIO_LEVEL_STEP_DB]).toEqual([
@@ -353,5 +378,5 @@ describe('range audio', () => {
 			endFrame: 30 * 601,
 		});
 		expect([tooLong.statusCode, tooLong.json().code]).toEqual([400, 'RANGE_TOO_LONG']);
-	});
+	}, 60_000);
 });
