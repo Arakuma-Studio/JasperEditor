@@ -5,6 +5,7 @@
 // a graphic / adjustment layer over the cut). `verify_export` judges the file against it later, whatever the document
 // has become since. Pure except for the file helpers at the end.
 import { join } from 'node:path';
+import { EXPORT_CONTAINERS } from '@jasper/api';
 import {
 	analyzePictureCuts,
 	type Clip,
@@ -45,22 +46,27 @@ export const ExportVerifyContextSchema = z.object({
 	version: z.literal(1),
 	projectId: z.string().max(200).optional(),
 	sequenceId: z.string().max(200),
+	/** What the export wrote (AF-EXP): a video file, a GIF (picture only) or an audio-only file. Absent = video. */
+	deliverable: z.enum(['video', 'gif', 'audio']).optional(),
 	/** Sequence frames `[start, end)` the export rendered. */
 	range: z
 		.object({ start: z.number().int().min(0), end: z.number().int().min(1) })
 		.refine((r) => r.end > r.start, 'empty range'),
+	/** The sequence rate (range, cut frames and timecodes); the file's own rate is `expected.video.frameRate`. */
 	fps: RationalSchema,
 	dropFrame: z.boolean(),
 	startTimecodeFrames: z.number().int().min(0),
 	expected: z.object({
-		container: z.enum(['mp4', 'webm', 'mov']),
+		container: z.enum(EXPORT_CONTAINERS),
 		video: z
 			.object({
-				/** ffprobe codec name (`h264`, `hevc`, `vp9`, `av1`, `prores`). */
+				/** ffprobe codec name (`h264`, `hevc`, `vp9`, `av1`, `prores`, `gif`). */
 				codec: z.string().max(40),
 				width: z.number().int().positive(),
 				height: z.number().int().positive(),
 				frameRate: RationalSchema,
+				/** Frames written (a GIF's frame count is exact: `gifFrames`). */
+				frames: z.number().int().min(1).optional(),
 				/** The pixel format the encoder was given (null = not known). */
 				pixFmt: z.string().max(40).nullable(),
 				alpha: z.boolean(),
@@ -72,6 +78,8 @@ export const ExportVerifyContextSchema = z.object({
 				codec: z.string().max(40),
 				sampleRate: z.number().int().positive(),
 				channels: z.number().int().min(1).max(64),
+				/** Bits per sample of a WAV / FLAC (16 or 24). */
+				bitDepth: z.number().int().min(8).max(32).optional(),
 			})
 			.nullable(),
 	}),
@@ -231,6 +239,13 @@ export type VerifyContextSource = {
 		alpha?: boolean | undefined;
 		encoder: { container: 'mp4' | 'webm' | 'mov'; codec: string } | null;
 	};
+	/**
+	 * AF-EXP: a GIF (its rate, size and frames as written) or an audio-only file (container, ffmpeg encoder, bit depth);
+	 * absent = the video file `output` describes.
+	 */
+	deliverable?:
+		| { kind: 'gif'; fps: number; width: number; height: number; frames: number }
+		| { kind: 'audio'; container: 'wav' | 'flac' | 'm4a'; codec: string; bitDepth?: number | undefined };
 	/** The encoder's input pixel format (`pixFmtFor`), null when not known. */
 	pixFmt: string | null;
 	/** The ffmpeg audio encoder written (`aac`, `libopus`, `pcm_s24le`…), null without audio. */
@@ -242,14 +257,58 @@ export function buildVerifyContext(s: VerifyContextSource): ExportVerifyContext 
 	const seq = s.document.sequences?.[s.sequenceId];
 	const { cuts, note } = verifyCutsOf(s.document, s.sequenceId, s.range);
 	const o = s.output;
-	return {
-		version: 1,
+	const seqFps = seq?.settings.frameRate;
+	const fps = seqFps && seqFps.num > 0 && seqFps.den > 0 ? seqFps : o.fps;
+	const common = {
+		version: 1 as const,
 		...(typeof s.document.projectId === 'string' ? { projectId: s.document.projectId } : {}),
 		sequenceId: s.sequenceId,
 		range: { start: s.range.start, end: s.range.end },
-		fps: { num: o.fps.num, den: o.fps.den },
+		fps: { num: fps.num, den: fps.den },
 		dropFrame: seq?.settings.dropFrame === true,
 		startTimecodeFrames: Math.max(0, Math.trunc(seq?.settings.startTimecodeFrames ?? 0)),
+		cuts,
+		...(note ? { cutsNote: note } : {}),
+	};
+	const d = s.deliverable;
+	if (d?.kind === 'gif')
+		return {
+			...common,
+			deliverable: 'gif',
+			expected: {
+				container: 'gif',
+				video: {
+					codec: 'gif',
+					width: d.width,
+					height: d.height,
+					frameRate: rationalOf(d.fps),
+					frames: d.frames,
+					pixFmt: null,
+					alpha: false,
+				},
+				audio: null,
+			},
+			normalize: null,
+		};
+	if (d?.kind === 'audio')
+		return {
+			...common,
+			deliverable: 'audio',
+			expected: {
+				container: d.container,
+				video: null,
+				audio: {
+					codec: probeAudioCodecName(d.codec),
+					sampleRate: o.audioSampleRate,
+					channels: o.audioChannels,
+					...(d.bitDepth ? { bitDepth: d.bitDepth } : {}),
+				},
+			},
+			normalize: o.normalize,
+		};
+	return {
+		...common,
+		deliverable: 'video',
 		expected: {
 			container: o.encoder?.container ?? 'mp4',
 			video: o.encoder
@@ -272,7 +331,16 @@ export function buildVerifyContext(s: VerifyContextSource): ExportVerifyContext 
 					: null,
 		},
 		normalize: o.videoOnly || o.alpha ? null : o.normalize,
-		cuts,
-		...(note ? { cutsNote: note } : {}),
 	};
+}
+
+/** A frame rate as an exact rational (12.5 → 25/2, 15 → 15/1; millesimal precision). */
+export function rationalOf(fps: number): { num: number; den: number } {
+	let num = Math.round(fps * 1000);
+	let den = 1000;
+	const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a);
+	const g = gcd(num, den) || 1;
+	num /= g;
+	den /= g;
+	return num > 0 ? { num, den } : { num: 30, den: 1 };
 }

@@ -121,7 +121,7 @@ import { BakeChangedError, streamTaps } from './stream/taps.ts';
 import { createSyntheticExtension } from './synthetic.ts';
 import { concatFilter, type ExportRun, exportRuns, type PreviewPiece } from './use-previews.ts';
 import { buildVerifyContext, writeVerifyContext } from './verify-context.ts';
-import { EXPORT_JOB_ID_RE, runExportVerify } from './verify-job.ts';
+import { deliverableOfContainer, EXPORT_JOB_ID_RE, runExportVerify, targetRefusal } from './verify-job.ts';
 
 /**
  * A native extension's `prepare` failed (S11:LBK-023): an `auto` export or still falls back to the Remotion path
@@ -246,13 +246,17 @@ export class ExportService {
 		origin: EngineJob['origin'] = { type: 'user' },
 	): EngineJob {
 		const job = EXPORT_JOB_ID_RE.test(exportId) ? this.deps.queue.get(exportId) : null;
-		if (!job || job.kind !== 'export') throw new PlanError('NOT_FOUND', 404, `No export job ${exportId}`);
+		if (job?.kind !== 'export') throw new PlanError('NOT_FOUND', 404, `No export job ${exportId}`);
 		if (job.state !== 'succeeded')
 			throw new PlanError(
 				'EXPORT_NOT_FINISHED',
 				409,
 				`Export ${exportId} is ${job.state}: only a finished export can be verified`,
 			);
+		// AF-EXP: platform delivery checks are for video files; a GIF or an audio-only file is refused by code
+		const container = (job.result as { container?: unknown } | undefined)?.container;
+		if (req.target && deliverableOfContainer(container) !== 'video')
+			throw new PlanError('TARGET_NOT_APPLICABLE', 400, targetRefusal(container));
 		const checks = req.checks ?? 'full';
 		return this.deps.queue.submit({
 			kind: 'export-verify',
@@ -1054,8 +1058,10 @@ export class ExportService {
 		planned: PlannedExport,
 		dir: string,
 		hasAudio: boolean,
+		frames: number,
 		ctx: JobContext,
 	): Promise<void> {
+		const del = planned.deliverable;
 		try {
 			const o = planned.output;
 			const enc = o.encoder;
@@ -1072,6 +1078,26 @@ export class ExportService {
 							: pixFmtFor(enc.encoder, o.proresProfile, o.color?.bitDepth ?? 8)
 						: null,
 					audioEncoder: hasAudio ? audioCodecOf(enc ?? null, o) : null,
+					...(del?.kind === 'gif'
+						? {
+								deliverable: {
+									kind: 'gif' as const,
+									fps: del.gif.fps,
+									width: del.gif.width,
+									height: del.gif.height,
+									frames,
+								},
+							}
+						: del?.kind === 'audio'
+							? {
+									deliverable: {
+										kind: 'audio' as const,
+										container: del.audio.container,
+										codec: del.audio.codec,
+										bitDepth: del.audio.bitDepth,
+									},
+								}
+							: {}),
 				}),
 			);
 		} catch (e) {
@@ -2332,7 +2358,7 @@ export class ExportService {
 		// spec 12 §2.11: the sound credits sidecar.
 		const creditsResult = await this.writeCreditsSidecar(planned, req.settings, dir, ctx);
 		// spec 18 AF-VER-001: what was asked and the cuts of the range, for verify_export
-		await this.writeVerifyContext(planned, dir, !!audio, ctx);
+		await this.writeVerifyContext(planned, dir, !!audio, frames, ctx);
 		const byteSize = (await stat(output)).size;
 		const downloadUrl = `/renders/${ctx.job.id}/output`;
 		let finalPath: string | undefined;

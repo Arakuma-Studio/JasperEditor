@@ -227,6 +227,49 @@ describe('export verification through MCP', { timeout: 900_000 }, () => {
 		expect(byId['target-aspect']!.status).toBe('pass');
 		expect(ytCheck.verified).toBe(true);
 
+		// AF-EXP deliverables: a GIF verifies with its picture rows only, an M4A with its sound rows only
+		const gif = await ok<Fast & { jobId: string }>('start_export', {
+			projectId,
+			format: 'gif',
+			gif: { fps: 10, width: 320 },
+			wait: true,
+		});
+		expect(gif.state).toBe('succeeded');
+		expect(gif.rows.map((r) => [r.id, r.status])).toEqual([
+			['streams', 'pass'],
+			['duration', 'pass'],
+		]);
+		expect(gif.verified).toBe(true);
+		expect(gif.output.streams.map((s) => [s.type, s.codec, s.frames])).toEqual([['video', 'gif', 65]]);
+		const gifFull = await ok<ExportVerifyResult>('verify_export', { projectId, exportId: gif.jobId });
+		expect(gifFull.deliverable).toBe('gif');
+		expect(gifFull.rows.map((r) => r.id)).toEqual([
+			'decode',
+			'streams',
+			'duration',
+			'cut-black',
+			'cut-flash',
+		]);
+		expect(gifFull.verified).toBe(true);
+		const m4a = await ok<Fast & { jobId: string }>('start_export', { projectId, format: 'm4a', wait: true });
+		expect(m4a.rows.map((r) => [r.id, r.status])).toEqual([
+			['streams', 'pass'],
+			['duration', 'pass'],
+		]);
+		const m4aFull = await ok<ExportVerifyResult>('verify_export', { projectId, exportId: m4a.jobId });
+		expect(m4aFull.rows.map((r) => r.id)).toEqual([
+			'decode',
+			'streams',
+			'duration',
+			'cut-click',
+			'loudness',
+			'true-peak',
+			'silence',
+		]);
+		const gifTarget = await call('verify_export', { projectId, exportId: gif.jobId, target: 'youtube' });
+		expect(gifTarget.isError).toBe(true);
+		expect(textOf(gifTarget)).toMatch(/TARGET_NOT_APPLICABLE|not platform videos/);
+
 		const strict = await call('verify_export', { projectId, exportId: started.jobId, bogus: 1 });
 		expect(strict.isError).toBe(true);
 		const notExport = await call('verify_export', { projectId, exportId: 'job_0000000000000000' });

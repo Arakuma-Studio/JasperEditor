@@ -266,8 +266,13 @@ function describeVideo(s: ExportOutputStream | undefined): string {
 }
 function describeAudio(s: ExportOutputStream | undefined): string {
 	if (!s) return 'no audio';
-	return `${s.codec} ${s.sampleRate ?? '?'} Hz ${s.channels ?? '?'} ch`;
+	return `${s.codec} ${s.sampleRate ?? '?'} Hz ${s.channels ?? '?'} ch${s.bitDepth ? ` ${s.bitDepth}-bit` : ''}`;
 }
+
+/** What the export wrote (AF-EXP): exports of older builds recorded no kind and are video files. */
+const deliverableOf = (ctx: ExportVerifyContext | null) => ctx?.deliverable ?? 'video';
+/** The file's own picture rate (a GIF's rate, a video's export rate), else the sequence rate. */
+const fileFpsOf = (ctx: ExportVerifyContext) => fpsOf(ctx.expected.video?.frameRate ?? ctx.fps);
 
 function streamsRow(input: JudgeInput): VerifyRow {
 	const { context: ctx, output } = input;
@@ -312,28 +317,58 @@ function streamsRow(input: JudgeInput): VerifyRow {
 				bad.push(`sample rate ${a.sampleRate ?? 'unknown'} Hz, expected ${e.audio.sampleRate} Hz`);
 			if (a.channels !== e.audio.channels)
 				bad.push(`${a.channels ?? 'unknown'} channels, expected ${e.audio.channels}`);
+			if (e.audio.bitDepth && a.bitDepth !== e.audio.bitDepth)
+				bad.push(`${a.bitDepth ?? 'unknown'}-bit samples, expected ${e.audio.bitDepth}-bit`);
 		}
 	} else if (a) bad.push('the file has an audio stream; the export was picture only');
+	const what = deliverableOf(ctx);
 	const expected = `${
 		e.video
 			? `${e.video.codec} ${e.video.width}×${e.video.height} ${r2(fpsOf(e.video.frameRate), 3)} fps${e.video.pixFmt ? ` ${e.video.pixFmt}` : ''}`
 			: 'no video'
-	}; ${e.audio ? `${e.audio.codec} ${e.audio.sampleRate} Hz ${e.audio.channels} ch` : 'no audio'}`;
+	}; ${e.audio ? `${e.audio.codec} ${e.audio.sampleRate} Hz ${e.audio.channels} ch${e.audio.bitDepth ? ` ${e.audio.bitDepth}-bit` : ''}` : 'no audio'}`;
 	return {
 		id: 'streams',
 		kind: 'format',
 		status: bad.length ? 'fail' : 'pass',
 		measured,
 		expected,
-		tolerance: `frame rate ±${T.frameRateToleranceFps} fps; pixel format: same subsampling, at least the bit depth`,
+		tolerance:
+			what === 'audio'
+				? null
+				: `frame rate ±${T.frameRateToleranceFps} fps${what === 'video' ? '; pixel format: same subsampling, at least the bit depth' : ''}`,
 		message: bad.length
 			? `The file is not what the export settings asked for: ${bad.join('; ')}.`
-			: 'Codec, frame size, frame rate, pixel format, sample rate and channels match the export settings.',
+			: what === 'gif'
+				? 'A GIF of the frame size and rate asked for, with no sound.'
+				: what === 'audio'
+					? 'Codec, sample rate, channels and bit depth match the export settings; no picture.'
+					: 'Codec, frame size, frame rate, pixel format, sample rate and channels match the export settings.',
 	};
 }
 
 function durationRow(input: JudgeInput): VerifyRow {
 	const { context: ctx, output } = input;
+	const gifFrames = deliverableOf(ctx) === 'gif' ? ctx?.expected.video?.frames : undefined;
+	if (gifFrames !== undefined) {
+		// a GIF holds whole frames at centisecond delays: its frame count is exact, its seconds are not
+		const got = output.streams.find((s) => s.type === 'video')?.frames;
+		const ok = got === gifFrames;
+		return {
+			id: 'duration',
+			kind: 'format',
+			status: got === undefined ? 'unverified' : ok ? 'pass' : 'fail',
+			measured: got ?? null,
+			expected: gifFrames,
+			tolerance: 0,
+			message:
+				got === undefined
+					? 'The GIF frame count could not be read.'
+					: ok
+						? `${got} GIF frames, the range at the GIF rate (${output.durationSec === null ? '?' : r2(output.durationSec, 2)} s).`
+						: `The GIF has ${got} frames; the range at the GIF rate is ${gifFrames}.`,
+		};
+	}
 	const file = output.durationSec;
 	const want = ctx
 		? ((ctx.range.end - ctx.range.start) * ctx.fps.den) / ctx.fps.num
@@ -405,7 +440,18 @@ function skewRow(input: JudgeInput): VerifyRow {
 	};
 }
 
-function decodeRow(full: FullMeasurements): VerifyRow {
+function decodeRow(full: FullMeasurements, ctx: ExportVerifyContext | null): VerifyRow {
+	const gifFrames = deliverableOf(ctx) === 'gif' ? ctx?.expected.video?.frames : undefined;
+	if (gifFrames !== undefined && full.videoFrames !== gifFrames)
+		return {
+			id: 'decode',
+			kind: 'format',
+			status: 'fail',
+			measured: full.videoFrames,
+			expected: gifFrames,
+			tolerance: 0,
+			message: `${full.videoFrames} GIF frames decode; ${gifFrames} were written${full.decodeErrors.length ? `: ${full.decodeErrors.slice(0, 3).join(' | ').slice(0, 600)}` : ''}.`,
+		};
 	const ok = full.decodeErrors.length === 0;
 	return {
 		id: 'decode',
@@ -415,7 +461,11 @@ function decodeRow(full: FullMeasurements): VerifyRow {
 		expected: 0,
 		tolerance: 0,
 		message: ok
-			? 'The video and audio streams decode without errors.'
+			? deliverableOf(ctx) === 'gif'
+				? `All ${full.videoFrames} GIF frames decode without errors.`
+				: deliverableOf(ctx) === 'audio'
+					? 'The audio decodes without errors.'
+					: 'The video and audio streams decode without errors.'
 			: `The file does not decode cleanly (${full.decodeErrors.length} error line${full.decodeErrors.length === 1 ? '' : 's'}): ${full.decodeErrors.slice(0, 3).join(' | ').slice(0, 600)}`,
 	};
 }
@@ -455,13 +505,15 @@ function cutRows(input: JudgeInput, full: FullMeasurements): VerifyRow[] {
 			});
 		return rows;
 	}
-	const fps = fpsOf(ctx.fps);
+	const seqFps = fpsOf(ctx.fps);
+	const fps = fileFpsOf(ctx);
 	const black: VerifyRow[] = [];
 	const flash: VerifyRow[] = [];
 	const click: VerifyRow[] = [];
 	const hasVideo = full.videoFrames > 0;
 	for (const [i, cut] of ctx.cuts.entries()) {
-		const fileFrame = cut.frame - ctx.range.start;
+		// the cut's first frame in the file (the file may run at another rate: a GIF, a platform preset)
+		const fileFrame = Math.round(((cut.frame - ctx.range.start) / seqFps) * fps);
 		if (hasVideo) {
 			const found = cutPictureFindings((f) => full.luma.get(f), { ...cut, fileFrame }, fps, full.videoFrames);
 			for (const f of found) {
@@ -524,7 +576,10 @@ function cutRows(input: JudgeInput, full: FullMeasurements): VerifyRow[] {
 		tolerance: null,
 		message: why,
 	});
-	if (!hasVideo) {
+	const what = deliverableOf(ctx);
+	if (what === 'audio') {
+		// an audio-only file has no picture rows
+	} else if (!hasVideo) {
 		rows.push(unverified('cut-black', 'The file has no picture to check.'));
 		rows.push(unverified('cut-flash', 'The file has no picture to check.'));
 	} else {
@@ -539,7 +594,9 @@ function cutRows(input: JudgeInput, full: FullMeasurements): VerifyRow[] {
 				: [passRow('cut-flash', 'single-frame flash')]),
 		);
 	}
-	if (full.clicks === null) rows.push(unverified('cut-click', 'The file has no audio to check.'));
+	if (what === 'gif') {
+		// a GIF has no sound rows
+	} else if (full.clicks === null) rows.push(unverified('cut-click', 'The file has no audio to check.'));
 	else
 		rows.push(
 			...(click.length ? capped(click, 'cut-click', 'judgement', 'clicks') : [passRow('cut-click', 'click')]),
@@ -867,14 +924,20 @@ function targetRows(input: JudgeInput, t: DeliveryTarget): VerifyRow[] {
 /** The rows of a verification (see the file comment), in check order. */
 export function judgeExport(input: JudgeInput): VerifyRow[] {
 	const rows: VerifyRow[] = [];
-	if (input.full) rows.push(decodeRow(input.full));
-	rows.push(streamsRow(input), durationRow(input), skewRow(input));
+	// AF-EXP: a GIF has no sound and an audio file no picture — only the rows that fit the file
+	const what = deliverableOf(input.context);
+	if (input.full) rows.push(decodeRow(input.full, input.context));
+	rows.push(streamsRow(input), durationRow(input));
+	if (what === 'video') rows.push(skewRow(input));
 	if (input.full) {
 		rows.push(...cutRows(input, input.full));
-		rows.push(...loudnessRows(input, input.full));
-		rows.push(...silenceRows(input, input.full));
+		if (what !== 'gif') {
+			rows.push(...loudnessRows(input, input.full));
+			rows.push(...silenceRows(input, input.full));
+		}
 	}
-	if (input.target) rows.push(...targetRows(input, input.target));
+	// platform delivery checks are for video files (the job refuses a target on the others: TARGET_NOT_APPLICABLE)
+	if (input.target && what === 'video') rows.push(...targetRows(input, input.target));
 	return rows;
 }
 

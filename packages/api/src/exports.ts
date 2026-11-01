@@ -586,6 +586,10 @@ export const ExportOutputStreamSchema = z.object({
 	pixFmt: z.string().optional(),
 	sampleRate: z.number().int().optional(),
 	channels: z.number().int().optional(),
+	/** Audio bits per sample (PCM, FLAC) when the file says. */
+	bitDepth: z.number().int().optional(),
+	/** Frames (packets) of a GIF. */
+	frames: z.number().int().optional(),
 	/** Stream end (s): the last packet's end time. */
 	endSec: z.number().optional(),
 });
@@ -616,6 +620,8 @@ export const ExportVerifyResultSchema = z.object({
 	checks: z.enum(VERIFY_CHECK_SETS),
 	target: z.enum(DELIVERY_TARGET_IDS).optional(),
 	sequenceId: z.string().optional(),
+	/** What the export wrote: a video file, a GIF (picture only) or an audio-only file (AF-EXP); absent = not known. */
+	deliverable: z.enum(['video', 'gif', 'audio']).optional(),
 	/** The sequence range the export rendered (frames `[start, end)`), when known. */
 	range: z.object({ start: z.number().int(), end: z.number().int() }).optional(),
 	output: ExportOutputInfoSchema,

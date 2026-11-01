@@ -47,6 +47,9 @@ const ProbeSchema = z.object({
 				color_range: z.string().optional(),
 				sample_rate: z.unknown().optional(),
 				channels: z.number().int().optional(),
+				bits_per_raw_sample: z.unknown().optional(),
+				bits_per_sample: z.unknown().optional(),
+				nb_read_packets: z.unknown().optional(),
 			}),
 		)
 		.max(1000)
@@ -69,14 +72,24 @@ const TAIL_SEC = 10;
 
 const STREAM_TYPES = new Set(['video', 'audio', 'subtitle', 'data', 'attachment']);
 
-export type ProbedOutput = { info: ExportOutputInfo; fullRangeVideo: boolean };
+/** `rgbVideo`: the picture is RGB or palette (a GIF): luma is computed from RGB, full range. */
+export type ProbedOutput = { info: ExportOutputInfo; fullRangeVideo: boolean; rgbVideo: boolean };
 
 /** Format, streams and stream ends of a file (the `fast` checks' measurements). */
 export async function probeOutput(ff: Ffmpeg, file: string, o: RunOpts = {}): Promise<ProbedOutput> {
 	const sizeBytes = (await stat(file)).size;
-	const raw = ProbeSchema.safeParse(
+	let raw = ProbeSchema.safeParse(
 		await ff.probeJson([...LOCAL_PROTOCOLS, '-show_format', '-show_streams', file], spawnOpts(o)),
 	);
+	if (!raw.success) throw new Error('ffprobe returned an unexpected shape');
+	// a GIF's frame count (its packets; a demux of the file, no decode) is what the export promises
+	if (raw.data.format?.format_name === 'gif')
+		raw = ProbeSchema.safeParse(
+			await ff.probeJson(
+				[...LOCAL_PROTOCOLS, '-count_packets', '-show_format', '-show_streams', file],
+				spawnOpts(o),
+			),
+		);
 	if (!raw.success) throw new Error('ffprobe returned an unexpected shape');
 	const fmt = raw.data.format;
 	const durationSec = num(fmt?.duration) ?? null;
@@ -84,8 +97,16 @@ export async function probeOutput(ff: Ffmpeg, file: string, o: RunOpts = {}): Pr
 		const type = (
 			STREAM_TYPES.has(s.codec_type ?? '') ? s.codec_type : 'unknown'
 		) as ExportOutputStream['type'];
-		const fr = type === 'video' ? (rate(s.avg_frame_rate) ?? rate(s.r_frame_rate)) : undefined;
+		// a GIF's average rate is estimated from its centisecond delays (15 fps reads 50/3): its base rate is the written one
+		const fr =
+			type === 'video'
+				? s.codec_name === 'gif'
+					? (rate(s.r_frame_rate) ?? rate(s.avg_frame_rate))
+					: (rate(s.avg_frame_rate) ?? rate(s.r_frame_rate))
+				: undefined;
 		const sr = num(s.sample_rate);
+		const bits = num(s.bits_per_raw_sample) || num(s.bits_per_sample) || undefined;
+		const packets = num(s.nb_read_packets);
 		return {
 			index: s.index,
 			type,
@@ -96,6 +117,8 @@ export async function probeOutput(ff: Ffmpeg, file: string, o: RunOpts = {}): Pr
 			...(s.pix_fmt ? { pixFmt: s.pix_fmt } : {}),
 			...(type === 'audio' && sr !== undefined ? { sampleRate: Math.round(sr) } : {}),
 			...(type === 'audio' && s.channels !== undefined ? { channels: s.channels } : {}),
+			...(type === 'audio' && bits ? { bitDepth: Math.round(bits) } : {}),
+			...(packets !== undefined ? { frames: Math.round(packets) } : {}),
 		};
 	});
 	// stream ends: the last packets of each stream (pts + duration), read from near the end only; FFmpeg 7.1's ffprobe
@@ -151,6 +174,9 @@ export async function probeOutput(ff: Ffmpeg, file: string, o: RunOpts = {}): Pr
 	}
 	const v = raw.data.streams?.find((s) => s.codec_type === 'video');
 	return {
+		rgbVideo:
+			/^(gif|png|apng)$/.test(v?.codec_name ?? '') ||
+			/^(rgb|bgr|argb|abgr|rgba|bgra|pal8|gbr)/.test(v?.pix_fmt ?? ''),
 		info: {
 			container: (fmt?.format_name ?? 'unknown').slice(0, 100),
 			durationSec,
@@ -183,6 +209,8 @@ export async function measureVideo(
 	keep: ReadonlySet<number>,
 	fullRange: boolean,
 	o: RunOpts = {},
+	/** RGB / palette pictures (GIF): luma from RGB (BT.601 weights of swscale), full range. */
+	rgb = false,
 ): Promise<{ luma: Map<number, FrameLuma>; frames: number; errors: string[] }> {
 	const child = ff.spawnRaw(
 		[
@@ -194,7 +222,9 @@ export async function measureVideo(
 			'-fps_mode',
 			'passthrough',
 			'-vf',
-			`extractplanes=y,scale=${LUMA_W}:${LUMA_H}:flags=area,format=gray`,
+			rgb
+				? `scale=${LUMA_W}:${LUMA_H}:flags=area,format=gray`
+				: `extractplanes=y,scale=${LUMA_W}:${LUMA_H}:flags=area,format=gray`,
 			'-f',
 			'rawvideo',
 			'pipe:1',
@@ -214,7 +244,8 @@ export async function measureVideo(
 	const grid = VERIFY_THRESHOLDS.blackGrid;
 	const cellW = LUMA_W / grid;
 	const cellH = LUMA_H / grid;
-	const norm = (y: number) => Math.min(1, Math.max(0, fullRange ? y / 255 : (y - 16) / 219));
+	const full = fullRange || rgb;
+	const norm = (y: number) => Math.min(1, Math.max(0, full ? y / 255 : (y - 16) / 219));
 	const cells = new Float64Array(grid * grid);
 	let frames = 0;
 	let pending: Buffer = Buffer.alloc(0);
