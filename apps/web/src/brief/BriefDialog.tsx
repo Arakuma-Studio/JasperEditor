@@ -1,22 +1,28 @@
 // Spec 18 AF-BRF-006: Sequence ▸ Brief… — edit the sequence's brief (Save = one "Edit Brief" undo step) and see the
 // notes agents kept about the project; Remove deletes a note in one undoable step ("Remove Agent Note"; Undo right in
 // the dialog, or Edit ▸ Undo / History later). Read-only projects show both without editing. Failures are shown in the dialog.
-import { type AgentNote, readAgentNotes, readSequenceBrief } from '@jasper/project';
+// When the brief changes while the dialog is open (an agent's set_brief, an undo), fields the user has not edited follow
+// it, a notice names who changed it (and the agent's value of any field both edited), and Save writes only the fields the
+// user edited: neither side is ever silently discarded.
+import { type AgentNote, DELIVERY_TARGETS, readAgentNotes, readSequenceBrief } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
 import { Button, Dialog, type HostedDialogProps, registerDialog } from '@jasper/ui';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useDialogClose } from '../extensions/dialog.ts';
 import { t } from '../i18n/runtime.ts';
 import { sequenceName } from '../speech/model.ts';
 import { BriefFields } from './BriefFields.tsx';
 import {
+	ASPECT_NAMES,
 	type BriefForm,
+	type BriefFormKey,
 	briefFormProblem,
-	briefPatch,
+	editedBriefPatch,
 	formAspect,
 	formOfBrief,
 	frameAspectOf,
+	rebaseBriefForm,
 } from './model.ts';
 
 export const BRIEF_DIALOG = 'brief.edit';
@@ -29,6 +35,33 @@ export function registerBriefDialog(): void {
 }
 
 export type BriefDialogProps = { session: EditorSession; sequenceId: string };
+
+function fieldValue(k: BriefFormKey, f: BriefForm): string {
+	if (k === 'text')
+		return f.text ? `“${f.text.length > 80 ? `${f.text.slice(0, 80)}…` : f.text}”` : t('(empty)');
+	if (k === 'platform')
+		return f.platform
+			? (DELIVERY_TARGETS.find((x) => x.id === f.platform)?.name ?? f.platform)
+			: t('Not decided');
+	if (k === 'aspect') return f.aspect ? ASPECT_NAMES[f.aspect] : t("Platform's");
+	return f.duration.trim() || t('none');
+}
+
+const FIELD_NAMES: Record<BriefFormKey, string> = {
+	text: 'Description',
+	platform: 'Platform',
+	aspect: 'Frame',
+	duration: 'Target length',
+};
+
+/** Who made the newest History entry: the agent's name, else null (the user, an undo or redo). */
+function lastAgent(session: EditorSession): string | null {
+	const h = session.getState().history;
+	const top = h.entries[h.index - 1];
+	return top && typeof top.origin === 'object' ? top.origin.agent : null;
+}
+
+type ChangedNotice = { by: string | null; conflicts: { key: BriefFormKey; theirs: string }[] };
 
 const sameForm = (a: BriefForm, b: BriefForm) =>
 	a.text === b.text &&
@@ -49,22 +82,36 @@ export function BriefDialog(props: HostedDialogProps<BriefDialogProps>) {
 	const seq = doc.sequences[sequenceId];
 	const stored = useMemo(() => formOfBrief(readSequenceBrief(seq)), [seq]);
 	const [form, setForm] = useState<BriefForm>(stored);
+	// the stored brief the form is based on (what Save compares the user's edits with)
+	const [base, setBase] = useState<BriefForm>(stored);
+	const [changedBy, setChangedBy] = useState<ChangedNotice | null>(null);
+	useEffect(() => {
+		if (sameForm(stored, base)) return;
+		const r = rebaseBriefForm(form, base, stored);
+		setForm(r.form);
+		setBase(stored);
+		setChangedBy({
+			by: lastAgent(session),
+			conflicts: r.conflicts.map((key) => ({ key, theirs: fieldValue(key, stored) })),
+		});
+	}, [stored, base, form, session]);
 	const [error, setError] = useState<string | null>(null);
 	const [removed, setRemoved] = useState<{ note: AgentNote; revision: number } | null>(null);
 	const notes = useMemo(() => [...readAgentNotes(doc)].reverse(), [doc]);
 	const problem = briefFormProblem(form);
-	const changed = !sameForm(form, stored);
 	const wanted = formAspect(form);
 	const frame = seq ? frameAspectOf(seq.settings.width, seq.settings.height) : '?';
 
 	const save = (): boolean => {
 		if (!seq || readOnly || problem) return false;
-		if (!changed) return true;
+		// only the fields the user edited: a brief an agent changed meanwhile keeps the agent's other fields
+		const patch = editedBriefPatch(form, base);
+		if (!patch) return true;
 		const r = session.apply({
 			label: t('Edit Brief'),
 			origin: 'user',
 			sequenceId,
-			commands: [{ type: 'sequence.setBrief', sequenceId, brief: briefPatch(form) }] as never[],
+			commands: [{ type: 'sequence.setBrief', sequenceId, brief: patch }] as never[],
 		});
 		if (!r.ok) {
 			setError(r.errors.map((e) => `${e.code}: ${e.message}`).join('; '));
@@ -146,6 +193,29 @@ export function BriefDialog(props: HostedDialogProps<BriefDialogProps>) {
 								wanted,
 							)}
 						</p>
+					) : null}
+					{changedBy ? (
+						<div className="flex flex-col gap-1 text-pr-small" role="status" data-testid="brief-changed">
+							<p className="text-pr-warning">
+								{changedBy.by
+									? t(
+											'{0} changed the brief while this dialog was open; the fields you did not edit now show the new brief.',
+											changedBy.by,
+										)
+									: t(
+											'The brief changed while this dialog was open; the fields you did not edit now show the new brief.',
+										)}
+							</p>
+							{changedBy.conflicts.map((c) => (
+								<p key={c.key} className="text-pr-muted">
+									{t(
+										'{0}: you edited it, so your value stays; Save replaces the new value {1}.',
+										FIELD_NAMES[c.key],
+										c.theirs,
+									)}
+								</p>
+							))}
+						</div>
 					) : null}
 					{removed ? (
 						<div

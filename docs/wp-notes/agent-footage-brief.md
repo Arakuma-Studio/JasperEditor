@@ -49,6 +49,12 @@ it needs approval.
 - **Sequence ▸ Brief…** (`sequence.brief`, `brief/BriefDialog.tsx`): edits the brief (Save = one "Edit Brief" step;
   a note when the sequence frame differs from the asked aspect) and lists agent notes newest first with Remove (one
   "Remove Agent Note" step, Undo in the dialog, or Edit ▸ Undo / History). Read-only projects show both disabled.
+- **The brief changing under an open Brief… dialog** (an agent's `set_brief`, an undo): the form remembers the brief it
+  is based on. Fields the user has not edited follow the new brief; edited fields keep the user's value; a notice names
+  the agent (the newest History entry's origin) and, for a field both changed, shows the agent's value. Save writes only
+  the fields the user edited (`editedBriefPatch`), so the agent's other changes stay; for a field both edited, the
+  user's Save replaces the agent's value they were shown (one "Edit Brief" step, undoable). Nothing edited = Save writes
+  nothing (`rebaseBriefForm`, `apps/web/test/brief.test.tsx`).
 
 ## Validation (2026-10-31)
 

@@ -12590,5 +12590,9 @@
   "Verify Export – {0}": "Verificar exportación – {0}",
   "Warn": "Aviso",
   "Platform preset: {0} LUFS, {1} dBTP": "Ajuste de plataforma: {0} LUFS, {1} dBTP",
-  "Set by the platform preset (stereo, 48 kHz)": "Lo fija el ajuste preestablecido de plataforma (estéreo, 48 kHz)"
+  "Set by the platform preset (stereo, 48 kHz)": "Lo fija el ajuste preestablecido de plataforma (estéreo, 48 kHz)",
+  "{0} changed the brief while this dialog was open; the fields you did not edit now show the new brief.": "{0} cambió el brief mientras este cuadro estaba abierto; los campos que no editó muestran ahora el brief nuevo.",
+  "{0}: you edited it, so your value stays; Save replaces the new value {1}.": "{0}: lo editó usted, así que se conserva su valor; Guardar sustituye el valor nuevo {1}.",
+  "Platform's": "La de la plataforma",
+  "The brief changed while this dialog was open; the fields you did not edit now show the new brief.": "El brief cambió mientras este cuadro estaba abierto; los campos que no editó muestran ahora el brief nuevo."
 }

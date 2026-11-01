@@ -162,3 +162,49 @@ export function frameAspectOf(width: number, height: number): string {
 	const g = gcd(Math.round(width), Math.round(height)) || 1;
 	return `${Math.round(width) / g}:${Math.round(height) / g}`;
 }
+
+export const BRIEF_FORM_KEYS = ['text', 'platform', 'aspect', 'duration'] as const;
+export type BriefFormKey = (typeof BRIEF_FORM_KEYS)[number];
+
+const sameField = (k: BriefFormKey, a: BriefForm, b: BriefForm) =>
+	k === 'duration' ? a.duration.trim() === b.duration.trim() : a[k] === b[k];
+
+/** The fields of `form` the user changed from the brief it was opened from (`base`). */
+export function editedFields(form: BriefForm, base: BriefForm): BriefFormKey[] {
+	return BRIEF_FORM_KEYS.filter((k) => !sameField(k, form, base));
+}
+
+/**
+ * The stored brief changed under an open form (an agent's `set_brief`, an undo): fields the user has not edited follow
+ * `next`; edited fields keep the user's value. `conflicts` = edited fields whose stored value changed too (shown to the
+ * user, who decides on Save). The new base is `next`.
+ */
+export function rebaseBriefForm(
+	form: BriefForm,
+	base: BriefForm,
+	next: BriefForm,
+): { form: BriefForm; conflicts: BriefFormKey[] } {
+	const out = { ...form };
+	const conflicts: BriefFormKey[] = [];
+	for (const k of BRIEF_FORM_KEYS) {
+		if (sameField(k, form, base)) (out as Record<BriefFormKey, unknown>)[k] = next[k];
+		else if (!sameField(k, base, next) && !sameField(k, form, next)) conflicts.push(k);
+	}
+	return { form: out, conflicts };
+}
+
+/** The `sequence.setBrief` patch of only the fields the user edited (null clears one); null when nothing was edited. */
+export function editedBriefPatch(
+	form: BriefForm,
+	base: BriefForm,
+): Partial<ReturnType<typeof briefPatch>> | null {
+	const edited = editedFields(form, base);
+	if (!edited.length) return null;
+	const all = briefPatch(form);
+	const out: Partial<ReturnType<typeof briefPatch>> = {};
+	for (const k of edited) {
+		if (k === 'duration') out.targetDurationSec = all.targetDurationSec;
+		else (out as Record<string, unknown>)[k] = all[k];
+	}
+	return out;
+}
