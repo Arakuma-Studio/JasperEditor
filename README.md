@@ -513,8 +513,10 @@ copied and the token is never shown to the agent.
 | `--engine-url <url>` `--token <t>` | skip discovery |
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
+| `--toolsets <list>` | toolsets advertised from the start: `all` or a comma list (env `JASPER_MCP_TOOLSETS`; default `core`) |
 
-Tools (use MCP `listTools` for the current catalog and schemas):
+Tools (`list_toolsets`, `describe_tool`, or MCP `listTools` with `--toolsets all`, give the current catalog and
+schemas):
 
 - Core: `engine_status` · `list_projects` `create_project` `get_project` `open_project_in_editor` ·
   `browse_media_files` (folders and importable files on the engine's computer) `import_media` `list_media` `get_media_info` · `describe_commands` `apply_commands` `undo` `redo` ·
@@ -706,7 +708,7 @@ Tools (use MCP `listTools` for the current catalog and schemas):
   `import_graphic_template`.
 
 Resources: `jasper://projects/{projectId}/document`, `jasper://projects/{projectId}/timeline`,
-`jasper://guide`. Prompt: `edit-video`.
+`jasper://guide`, `jasper://guide/<topic>`, `jasper://guide/routing`. Prompt: `edit-video`.
 
 The engine also serves the same tools over MCP Streamable HTTP at `/mcp`, for clients that connect by URL.
 Every engine has a token (it is in `<appdir>/engine/runtime.json`, readable by you only, and changes on every
@@ -721,6 +723,55 @@ working *on* the editor. It runs the server from source (`node --import tsx apps
 with `--start-engine --appdir .stage`: it uses the `pnpm dev` engine when one is running, and otherwise starts a
 headless engine on the same dev appdir (that needs `pnpm --filter @jasper/engine build` once). Claude Code asks
 once before enabling a project-scoped server; start it from the repository root so the relative paths resolve.
+
+### Toolsets and the agent skill
+
+The server has over 400 tools. To keep an agent's context small, a session advertises only the **`core`**
+toolset (≤ 32 tools: projects, the timeline, `describe_commands` / `apply_commands`, the main edits, footage digest
+and takes, range views, proposals, the brief, export and verification, guides) and short instructions (≤ 8 KB:
+the read → propose → verify workflow, the rules, the toolset index). Every other tool belongs to one named
+toolset (`project`, `media`, `editing`, `color`, `audio`, `sound`, `captions`, `transcript`, `ui`… —
+`list_toolsets` lists them with counts):
+
+- `enable_toolsets {"names": ["color"]}` / `disable_toolsets` change what `tools/list` shows and send
+  `notifications/tools/list_changed`;
+- `call_tool {"name", "arguments"}` runs any tool even when its toolset is off, with the same strict arguments,
+  approvals, progress and errors as a direct call (`describe_tool {name}` gives its schema) — for clients that
+  ignore `list_changed`; calling an unadvertised tool by name returns `E_TOOLSET_NOT_ENABLED` naming its toolset;
+- `--toolsets all` (or `JASPER_MCP_TOOLSETS=all`) advertises everything, as before; the `jasper` CLI always
+  reaches every tool;
+- guides: `get_guide {topic}` or the resources `jasper://guide/<topic>` (one per domain guide);
+  `jasper://guide/routing` maps over 80 requests, in English and Spanish, to their tool and toolset;
+  `jasper://guide` is every guide in one text. The `edit-video` prompt walks through the workflow.
+
+The agent skill [`skills/jasper-editor`](skills/jasper-editor/SKILL.md) teaches an agent the workflow (brief →
+footage digest and takes → look at ranges → propose one reviewable cut → wait for the review → export and
+verify), when to ask and when to assume, the Done / Checked / Not checked report, and the gotchas (it cannot
+hear, inspect the output rather than the plan, at most three self-review passes). Install it next to the MCP
+server:
+
+```bash
+# Claude Code: personal skills (all projects), or .claude/skills/ inside one project
+mkdir -p ~/.claude/skills && ln -s /abs/path/to/JasperEditor/skills/jasper-editor ~/.claude/skills/jasper-editor
+# Codex CLI: personal skills folder (Codex releases with Agent Skills support)
+mkdir -p ~/.codex/skills && ln -s /abs/path/to/JasperEditor/skills/jasper-editor ~/.codex/skills/jasper-editor
+```
+
+**Cursor**: add a project rule `.cursor/rules/jasper-editor.mdc` that points at the skill (Cursor reads rules,
+not skill folders):
+
+```markdown
+---
+description: Editing video with JasperEditor (jasper MCP server)
+alwaysApply: false
+---
+When editing video with the jasper MCP tools, follow /abs/path/to/JasperEditor/skills/jasper-editor/SKILL.md
+and its references/ files.
+```
+
+Any other agent that reads `AGENTS.md` can get the same line there. Claude Code's skill format (a folder with
+`SKILL.md` frontmatter `name` / `description`) is what the files follow; the Codex folder and the Cursor rule are
+taken from those tools' documentation and were not run here (no Codex or Cursor on the build machine).
 
 ### Conventions every tool follows
 

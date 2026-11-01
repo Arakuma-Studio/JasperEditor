@@ -2,11 +2,12 @@
 // clients. stdout carries the protocol only; logs go to stderr.
 //
 //   jasper-mcp [--engine-url <url>] [--token <token>] [--appdir <dir>] [--start-engine]
-//              [--engine-entry <engine.mjs>] [--engine-port <port>] [--agent-name <name>]
+//              [--engine-entry <engine.mjs>] [--engine-port <port>] [--agent-name <name>] [--toolsets <list>]
 import { ENV, readFlag } from '@jasper/config';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { EngineLink } from './link.ts';
 import { createJasperMcpServer } from './server.ts';
+import { parseToolsets, TOOLSET_NAMES } from './toolsets.ts';
 import { MCP_SERVER_VERSION } from './version.ts';
 
 const HELP = `jasper-mcp ${MCP_SERVER_VERSION} — JasperEditor MCP server (stdio)
@@ -20,6 +21,9 @@ Options:
   --engine-port <port>   Port for --start-engine (default: random)
   --agent-name <name>    Name shown in the editor History (default: the MCP client's name)
   --request-timeout <s>  Deadline for one engine request in seconds (default 180)
+  --toolsets <list>      Toolsets to advertise: "all" or a comma list (env JASPER_MCP_TOOLSETS; default core,
+                         which is always on). Every tool stays reachable with call_tool. Toolsets:
+                         ${TOOLSET_NAMES.join(', ')}
   --help, --version
 
 Discovery order: --engine-url/env, then <appdir>/engine/runtime.json for --appdir, ${ENV.APPDIR}, the
@@ -50,6 +54,13 @@ async function main(): Promise<void> {
 	}
 	keepStdoutClean();
 	const env = process.env;
+	let toolsets: string[];
+	try {
+		toolsets = [...parseToolsets(readFlag(argv, 'toolsets') ?? env.JASPER_MCP_TOOLSETS)];
+	} catch (e) {
+		log((e as Error).message);
+		process.exit(2);
+	}
 	const timeoutSec = Number(readFlag(argv, 'request-timeout'));
 	const truthy = (v: string | undefined) => !!v && v !== '0' && v.toLowerCase() !== 'false';
 	const link = new EngineLink({
@@ -63,7 +74,7 @@ async function main(): Promise<void> {
 		env,
 		log,
 	});
-	const { server } = createJasperMcpServer({ link, agentName: readFlag(argv, 'agent-name') });
+	const { server } = createJasperMcpServer({ link, agentName: readFlag(argv, 'agent-name'), toolsets });
 	const transport = new StdioServerTransport();
 
 	let closing = false;

@@ -1,11 +1,15 @@
 import type { ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
 
+/**
+ * The environment of a spawned engine or jasper-mcp: none of the caller's JASPER_* settings, cache GC off, and
+ * every toolset advertised (the suites call tools of every toolset; toolsets.test.ts covers the core default).
+ */
 export function cleanEnv(extra: Record<string, string> = {}): Record<string, string> {
 	const env: Record<string, string> = {};
 	for (const [key, value] of Object.entries(process.env))
 		if (value !== undefined && !key.startsWith('JASPER_')) env[key] = value;
-	return { ...env, JASPER_CACHE_AUTO_GC: '0', ...extra };
+	return { ...env, JASPER_CACHE_AUTO_GC: '0', JASPER_MCP_TOOLSETS: 'all', ...extra };
 }
 
 export async function waitFor(

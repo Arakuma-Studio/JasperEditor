@@ -30,7 +30,7 @@ test.beforeAll(async ({ browser }) => {
 	await mcp.connect(
 		new StdioClientTransport({
 			command: process.execPath,
-			args: [MCP_BUNDLE, '--appdir', serverInfo().appdir],
+			args: [MCP_BUNDLE, '--appdir', serverInfo().appdir, '--toolsets', 'all'],
 			env,
 			stderr: 'pipe',
 		}),
