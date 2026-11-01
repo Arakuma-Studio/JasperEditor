@@ -6,7 +6,9 @@
 // automation, subtitles and transcript cleanup: Project Settings ▸ Agent Proposals (default on, EA-001); any other
 // feature: refused. Destructive commands inside the accepted items still need the user's approval card when an agent
 // accepts (the transaction goes through the usual classification). A draft over the transaction caps is refused with
-// 413 PROPOSAL_TOO_LARGE (E_TOO_LARGE, with the range that fits; EA-004).
+// 413 PROPOSAL_TOO_LARGE (E_TOO_LARGE, with the range that fits; EA-004). An `allOrNothing` draft (spec 18 AF-PROP-002,
+// an agent's rough cut) with any failing item is refused with 422 PROPOSAL_INVALID listing each failure; its
+// `expectedRevision` applies the fast-forward rule to every item's dry run. Rough cuts: agent accept default off.
 import { randomBytes } from 'node:crypto';
 import type { ProposalChangedEvent, ProposalCountsJson, ProposalFeature } from '@jasper/api';
 import { mgRegistry } from '@jasper/mg-templates';
@@ -33,6 +35,7 @@ import {
 	projectFeaturePolicy,
 	projectSettingFeatures,
 	proposalCounts,
+	proposalItemFailures,
 	REFRESHABLE_STATES,
 	type Registries,
 	readAgentProposals,
@@ -275,6 +278,15 @@ export class ProposalService {
 		};
 	}
 
+	/** The engine's per-entity revisions when they reach back to `since` (else undefined: every change conflicts). */
+	private entityRevisions(projectId: string, since: number): ReadonlyMap<string, number> | undefined {
+		try {
+			return this.opts.agent()?.revisions.mapFor(projectId, since);
+		} catch {
+			return undefined;
+		}
+	}
+
 	private agent(): AgentService {
 		const a = this.opts.agent();
 		if (!a) throw new HttpError(503, 'NOT_AVAILABLE', 'The agent service is not running');
@@ -444,15 +456,35 @@ export class ProposalService {
 
 	async create(projectId: string, body: Record<string, unknown>, who: Requester) {
 		await this.ensureProject(projectId);
-		const { author: requestedAuthor, ...draft } = body as { author?: Author };
+		const {
+			author: requestedAuthor,
+			allOrNothing,
+			expectedRevision,
+			...draft
+		} = body as { author?: Author; allOrNothing?: unknown; expectedRevision?: unknown };
 		// Only the editor window may say who wrote it; an agent is always itself.
 		const author: Author = who.editor ? (requestedAuthor ?? 'user') : { agent: who.agent };
 		const { doc, revision } = await this.liveDocument(projectId);
+		const planned = typeof expectedRevision === 'number' ? expectedRevision : undefined;
+		if (planned !== undefined && planned > revision)
+			throw new HttpError(
+				409,
+				'REVISION_CONFLICT',
+				`Revision ${planned} is ahead of the document (${revision})`,
+				{ code: 'E_REVISION_MISMATCH', revision },
+			);
+		// spec 18 AF-PROP-002: dry runs apply the fast-forward rule against the revision the creator planned on
+		const ctx: ProposalContext = this.ctx(revision);
+		if (planned !== undefined && planned < revision) {
+			ctx.expectedRevision = planned;
+			const known = this.entityRevisions(projectId, planned);
+			if (known) ctx.entityRevisions = known;
+		}
 		const r = createProposal(
 			doc,
 			draft,
 			{ id: newProposalId(), projectId, author, now: this.now().toISOString(), revision },
-			this.ctx(revision),
+			ctx,
 		);
 		if (!r.ok) {
 			const first = r.errors[0];
@@ -467,6 +499,26 @@ export class ProposalService {
 				`The proposal is malformed: ${first?.message ?? 'invalid'}`,
 				issuesDetail(first?.code ?? 'E_SCHEMA', r.errors),
 			);
+		}
+		if (allOrNothing === true) {
+			// spec 18 AF-PROP-002: every item (and alternative) applies, or nothing is stored
+			const failures = proposalItemFailures(doc, r.proposal, ctx);
+			if (failures.length) {
+				const head = failures
+					.slice(0, 5)
+					.map(
+						(f) =>
+							`item ${f.index}${f.alternative !== undefined ? ` (alternative ${f.alternative})` : ''}: ${f.code}: ${f.message}`,
+					)
+					.join('; ');
+				const failing = new Set(failures.map((f) => f.index)).size;
+				throw new HttpError(
+					422,
+					'PROPOSAL_INVALID',
+					`Nothing was stored: ${failing} of ${r.proposal.items.length} items do not apply to the current document — ${head}${failures.length > 5 ? '; …' : ''}`,
+					{ code: 'E_PROPOSAL_INVALID', items: failures, revision },
+				);
+			}
 		}
 		// Setup items only invalid items need are settled at once (nothing would ever apply them).
 		const proposal = settleSetupItems(r.proposal, r.proposal.updatedAt).proposal;

@@ -45,6 +45,14 @@ export type ProposalContext = {
 	invariants?: 'full' | 'incremental' | 'verify';
 	/** Run the invariant checker in dry runs (default true). */
 	checkInvariants?: boolean;
+	/**
+	 * The revision the creator planned against (spec 18 AF-PROP-002 `expectedRevision`): dry runs refuse an item that
+	 * touches an entity changed since, with E_REVISION_MISMATCH (the fast-forward rule of S01:AGT-010, as
+	 * `apply_commands`). Without `entityRevisions` every change since counts as a conflict.
+	 */
+	expectedRevision?: number;
+	/** Per entity, the revision it last changed at (the engine's tracker), for `expectedRevision`. */
+	entityRevisions?: ReadonlyMap<string, number>;
 };
 
 const VALIDATE_ORIGIN: Origin = { agent: 'proposal-validation' };
@@ -76,6 +84,7 @@ export function dryRunCommands(
 			origin: VALIDATE_ORIGIN,
 			dryRun: true,
 			...(sequenceId ? { sequenceId } : {}),
+			...(ctx.expectedRevision !== undefined ? { expectedRevision: ctx.expectedRevision } : {}),
 			commands,
 		},
 		{
@@ -83,6 +92,7 @@ export function dryRunCommands(
 			now: ctx.now ?? (() => new Date().toISOString()),
 			revision: ctx.revision ?? 0,
 			registries: ctx.registries,
+			...(ctx.entityRevisions ? { entityRevisions: ctx.entityRevisions } : {}),
 			...(ctx.invariants ? { invariants: ctx.invariants } : {}),
 			...(ctx.checkInvariants === false ? { checkInvariants: false } : {}),
 		},
@@ -216,6 +226,98 @@ function conflictingItem(
 		else hi = mid;
 	}
 	return order[lo - 1] ?? null;
+}
+
+/**
+ * A failing item of a validated proposal (spec 18 AF-PROP-002): its index in the proposal, its id, the command set
+ * that fails (`alternative` absent: the one it applies; k ≥ 1: `alternatives[k − 1]`; 0: its own while an alternative
+ * is selected) and the first error, with the failing command's index inside that set (null when the failure is the
+ * transaction's, or the item only fails together with the items before it: code E_CONFLICT).
+ */
+export type ProposalItemFailure = {
+	index: number;
+	itemId: string;
+	alternative?: number;
+	code: string;
+	message: string;
+	commandIndex: number | null;
+};
+
+/**
+ * Every failing item of a proposal `createProposal` / `validateProposal` checked on `doc`: each invalid item with its
+ * command error (dry-run alone, with what it requires, to name the failing command), and each alternative command set
+ * of an undecided item that does not apply on its own. Never throws; at most `PROPOSAL_LIMITS.maxItems` rows.
+ */
+export function proposalItemFailures(
+	doc: ProjectDocument,
+	p: Proposal,
+	ctx: ProposalContext,
+): ProposalItemFailure[] {
+	const out: ProposalItemFailure[] = [];
+	/** The first error of `it` (with `alternative` selected) applied alone with what it requires, or null. */
+	const failureOf = (
+		it: ProposalItem,
+		alternative: number,
+	): Omit<ProposalItemFailure, 'index' | 'itemId' | 'alternative'> | null => {
+		try {
+			const mine = { ...it, state: 'pending' as const, selectedAlternative: alternative };
+			const view: Proposal = { ...p, items: p.items.map((x) => (x.id === it.id ? mine : x)) };
+			const composed = composeForCheck(view, [it.id]);
+			if (!composed.ok) {
+				const e = composed.errors[0];
+				return { code: e?.code ?? 'E_SCHEMA', message: e?.message ?? 'invalid', commandIndex: null };
+			}
+			const r = dryRunCommands(doc, composed.tx.commands, ctx, p.sequenceId);
+			if (r.ok) return null;
+			const e = r.errors[0];
+			const at = e?.commandIndex ?? -1;
+			const range = composed.ranges.find((x) => x.itemId === it.id);
+			const own = range && at >= range.start && at < range.end ? at - range.start : null;
+			// a failing command of a required item: say which
+			const owner = at >= 0 ? itemOfCommand(composed.ranges, at) : null;
+			const message = e?.message ?? 'the commands fail';
+			return {
+				code: e?.code ?? 'E_INTERNAL',
+				message: owner && owner !== it.id ? `with item ${owner}: ${message}` : message,
+				commandIndex: own,
+			};
+		} catch (err) {
+			return {
+				code: 'E_INTERNAL',
+				message: err instanceof Error ? err.message : String(err),
+				commandIndex: null,
+			};
+		}
+	};
+	p.items.forEach((it, index) => {
+		if (it.state !== 'pending' && it.state !== 'stale' && it.state !== 'invalid') return;
+		const selected = it.selectedAlternative ?? 0;
+		for (let k = 0; k <= (it.alternatives?.length ?? 0); k++) {
+			if (out.length >= PROPOSAL_LIMITS.maxItems) return;
+			const which = k === 0 ? {} : { alternative: k };
+			if (k === selected) {
+				// the selected set was validated: an invalid item failed alone or together with the items before it
+				if (it.state !== 'invalid') continue;
+				const f = failureOf(it, k);
+				out.push(
+					f
+						? { index, itemId: it.id, ...which, ...f }
+						: {
+								index,
+								itemId: it.id,
+								...which,
+								code: 'E_CONFLICT',
+								message: it.reason ?? 'does not apply together with the items before it',
+								commandIndex: null,
+							},
+				);
+				continue;
+			}
+			const f = failureOf(it, k);
+			if (f) out.push({ index, itemId: it.id, ...(k === 0 ? { alternative: 0 } : which), ...f });
+		}
+	});
+	return out;
 }
 
 export type CreateProposalMeta = {

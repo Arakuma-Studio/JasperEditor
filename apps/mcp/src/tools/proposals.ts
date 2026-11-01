@@ -4,7 +4,9 @@
 // refresh (the producer re-plans stale items). Proposals are stored by the engine per project, outside the document
 // and its undo history; accepting items is ONE transaction (one undo step).
 import {
+	type ProposalCreateResponse,
 	type ProposalFeature,
+	ProposalInvalidDetailSchema,
 	type ProposalRefreshResponse,
 	type ProposalResponse,
 	type ProposalSummary,
@@ -13,15 +15,24 @@ import {
 import { EngineError } from '@jasper/engine-client';
 import {
 	acceptAllItemIds,
+	COMMAND_CATALOG,
 	defaultRegistries,
 	isSetupItem,
 	mixFingerprint,
+	OPEN_OBJECT,
 	type ProjectDocument,
 	type Proposal,
 	type ProposalItem,
+	type ProposalItemFailure,
 	previewProposal,
 	proposalCounts,
 	proposalDecided,
+	proposalItemGroup,
+	ROUGH_CUT_FEATURE,
+	ROUGH_CUT_GROUPS,
+	ROUGH_CUT_LIMITS,
+	RoughCutInputSchema,
+	roughCutDraft,
 	type Sequence,
 	sequenceTimecode,
 	soundCuesOf,
@@ -46,8 +57,9 @@ export const PROPOSALS_GUIDE = `Proposals (spec 12 §2.5): a reviewable set of e
 - Propose, don't apply: plan_sound_design, place_sound, rebalance_sfx, apply_delivery, lay_ambience_bed and fill_room_tone (mode "propose", their default) store a proposal and change nothing. Tell the user it is waiting in the editor's Review panel, where they hear it in context, keep or reject each item, cycle its alternates, leave notes and apply. Never accept your own proposal unless the user asked you to apply it.
 - Read: list_proposals {projectId} lists them (counts per state); get_proposal {projectId, proposalId} gives every item with its state, reason (why it is stale or invalid), selected alternative, the user's note, and a text table of what the undecided items would create (ghosts: track, start, end, sound).
 - Wait: wait_for_proposal {projectId, proposalId} returns when the user changed something (or the proposal was applied or discarded; until: "decided" waits until nothing is left to decide), at most 900 s: per item accepted | rejected | pending | stale | invalid, "swapped" when they chose an alternative, and their notes. Read the notes and act on them (a new proposal for what they asked); call it again to keep waiting.
-- Features: list_proposal_features {projectId} lists the proposal features (sound-design, edit-automation, subtitles, transcript-cleanup, transcript-correction), their producing tools, Review groups (items name theirs in meta.group), whether you may apply them here and whether their producer refreshes stale items.
-- Apply: accept_proposal {projectId, proposalId, itemIds: "all" | [ids]} works for an agent only where the feature allows it: sound design when the user turned on "Allow agents to apply sound proposals" for the sequence (off by default); editing automation, subtitles and transcript cleanup while Project Settings ▸ Agent Proposals allows them (on by default; the user may turn them off). Refused → E_APPROVAL_REQUIRED: do not retry, ask the user to apply it in the Review panel. Accepting is still one undoable "Agent: …" step, and destructive commands inside still ask the user. Stale items (the edit changed under them) refuse the whole accept unless partial: true. "all" takes only the items that are selected (an item with selected: false — e.g. a Maybe transcript fix — is offered unchecked) and, for transcript fixes, never the maybe group: name such items' ids to apply them, and only when the user asked. reject_proposal {itemIds} marks items rejected (the document is untouched).
+- Your own cut: propose_edits {projectId, sequenceId, title, strategy, items} turns a multi-step edit (selects, removals, retakes, reorders, B-roll) into ONE "Rough cut" proposal the user reviews instead of a pile of apply_commands History entries: the strategy (1–8 sentences) shows above the items, each item carries its reason, beat and quote. Every item is dry-run first; any failure stores nothing and lists the failing item indices. Agents may not apply rough cuts unless Project Settings ▸ Agent Proposals allows it (off by default): hand it over and wait_for_proposal.
+- Features: list_proposal_features {projectId} lists the proposal features (sound-design, edit-automation, subtitles, transcript-cleanup, transcript-correction, rough-cut), their producing tools, Review groups (items name theirs in meta.group), whether you may apply them here and whether their producer refreshes stale items.
+- Apply: accept_proposal {projectId, proposalId, itemIds: "all" | [ids]} works for an agent only where the feature allows it: sound design when the user turned on "Allow agents to apply sound proposals" for the sequence (off by default); editing automation, subtitles and transcript cleanup while Project Settings ▸ Agent Proposals allows them (on by default; the user may turn them off); rough cuts only when the user turned them on there (off by default). Refused → E_APPROVAL_REQUIRED: do not retry, ask the user to apply it in the Review panel. Accepting is still one undoable "Agent: …" step, and destructive commands inside still ask the user. Stale items (the edit changed under them) refuse the whole accept unless partial: true. "all" takes only the items that are selected (an item with selected: false — e.g. a Maybe transcript fix — is offered unchecked) and, for transcript fixes, never the maybe group: name such items' ids to apply them, and only when the user asked. reject_proposal {itemIds} marks items rejected (the document is untouched).
 - Stale items: refresh_proposal {projectId, proposalId} asks the feature's producer to re-plan them on the current edit (they come back pending; nothing is applied) — never accept a stale item as it was planned. Refused with E_NOT_REFRESHABLE when the producer cannot re-plan: propose the changed part again.
 - Producers of new features: a proposal whose accept would exceed one transaction (5 000 commands / 20 MB; 2 000 items) is refused with E_TOO_LARGE and details.suggestedRange (frames that fit): run the pass on that range, then the rest. Batch commands keep passes small: clip.addAdjustmentBatch (adjustment clips with effects and keys relative to each item) and keyframe.addBatch (keys on many clips) — one command per item. Anchor decorations with meta.anchorOn {clips: [decorated clip ids], cuts: [{trackId, frame}]} so they go stale when the cut moves.
 - Check before you hand it over: sound_check {projectId, proposalId} runs Sound Check on the proposal's preview (the current edit with its items applied; nothing changes) and says what it fixes and introduces, per item ("fixes 3 · introduces 1"). plan_sound_design {check: true} does it for you. The result is kept on the proposal: get_proposal shows it (soundCheck), and so does the user's Review panel, next to each item.
@@ -63,7 +75,7 @@ const ItemSelectionArg = z
 
 /** Hint when an agent may not apply a proposal (the policy gate). */
 export const APPROVAL_REQUIRED_HINT =
-	'Only the user can apply this proposal: ask them to review it in the editor (Review panel: ✓ / ✕ per item, alternates, notes) and apply it there, or to allow agents — sound design: "Allow agents to apply sound proposals" for this sequence (Preferences ▸ Sound Library); editing automation, subtitles, transcript cleanup: "Allow agents to apply <feature> proposals" (Project Settings ▸ General ▸ Agent Proposals). Do not retry; call wait_for_proposal to learn their decisions.';
+	'Only the user can apply this proposal: ask them to review it in the editor (Review panel: ✓ / ✕ per item, alternates, notes) and apply it there, or to allow agents — sound design: "Allow agents to apply sound proposals" for this sequence (Preferences ▸ Sound Library); editing automation, subtitles, transcript cleanup, rough cuts: "Allow agents to apply <feature> proposals" (Project Settings ▸ General ▸ Agent Proposals; rough cuts are off by default). Do not retry; call wait_for_proposal to learn their decisions.';
 
 /** Proposal calls with the proposal codes' hints. */
 async function proposalCall<T>(ctx: ToolContext, fn: Parameters<ToolContext['engine']>[0]): Promise<T> {
@@ -153,7 +165,10 @@ function itemView(it: ProposalItem, withCommands: boolean) {
 					],
 				}
 			: {}),
-		...(typeof m.why === 'string' ? { why: m.why } : {}),
+		...(typeof m.why === 'string' ? { why: m.why } : typeof m.reason === 'string' ? { why: m.reason } : {}),
+		// a rough-cut item (propose_edits): the beat and the words it is about
+		...(typeof m.beat === 'string' ? { beat: m.beat } : {}),
+		...(typeof m.quote === 'string' ? { quote: m.quote } : {}),
 		...(typeof m.timecode === 'string' ? { timecode: m.timecode } : {}),
 		...(typeof m.soundId === 'string' ? { soundId: m.soundId } : {}),
 		...(typeof m.role === 'string' ? { role: m.role } : {}),
@@ -251,6 +266,130 @@ export function ghostTable(doc: ProjectDocument, p: Proposal): { table: string; 
 	};
 }
 
+/** What the undecided items of a proposal would do to clips and tracks, counted once per entity (spec 18 AF-PROP-002). */
+export type GhostSummary = {
+	clips: { created: number; removed: number; moved: number; trimmed: number; changed: number };
+	tracks: { created: number; removed: number };
+};
+
+/**
+ * Counts what applying every undecided item would do (one preview on a copy of `doc`): clips created and removed,
+ * clips moved (start or track changed, length kept), trimmed (length or source in changed) or otherwise changed
+ * (effects, keys, properties), tracks created and removed. Never throws (null when it cannot be previewed).
+ */
+export function ghostSummary(doc: ProjectDocument, p: Proposal): GhostSummary | null {
+	try {
+		const preview = previewProposal(doc, p, 'undecided', {
+			registries: defaultRegistries(),
+			invariants: 'incremental',
+			checkInvariants: false,
+		});
+		const after = preview.document;
+		type C = { trackId: string; start: number; duration: number; sourceIn?: number };
+		const clipIn = (d: ProjectDocument, id: string): C | null => {
+			for (const seq of Object.values(d.sequences) as Sequence[]) {
+				const c = seq.clips[id] as C | undefined;
+				if (c) return c;
+			}
+			return null;
+		};
+		const trackIn = (d: ProjectDocument, id: string) =>
+			(Object.values(d.sequences) as Sequence[]).some((seq) =>
+				[...seq.videoTracks, ...seq.audioTracks].some((t) => t.id === id),
+			);
+		const out: GhostSummary = {
+			clips: { created: 0, removed: 0, moved: 0, trimmed: 0, changed: 0 },
+			tracks: { created: 0, removed: 0 },
+		};
+		for (const id of new Set(preview.ghost.created)) {
+			if (clipIn(after, id)) out.clips.created++;
+			else if (trackIn(after, id)) out.tracks.created++;
+		}
+		for (const id of new Set(preview.ghost.deleted)) {
+			if (clipIn(doc, id)) out.clips.removed++;
+			else if (trackIn(doc, id)) out.tracks.removed++;
+		}
+		for (const id of new Set(preview.ghost.changed)) {
+			const a = clipIn(doc, id);
+			const b = a ? clipIn(after, id) : null;
+			if (!a || !b) continue;
+			if (a.duration !== b.duration || (a.sourceIn ?? 0) !== (b.sourceIn ?? 0)) out.clips.trimmed++;
+			else if (a.start !== b.start || a.trackId !== b.trackId) out.clips.moved++;
+			else out.clips.changed++;
+		}
+		return out;
+	} catch {
+		return null;
+	}
+}
+
+/** Engine refusals of a rough cut as one tool error listing each failing item (nothing was stored). */
+function proposeEditsError(e: unknown): unknown {
+	if (!(e instanceof EngineError)) return e;
+	const status = e.status ? { httpStatus: e.status } : {};
+	const stored =
+		'Nothing was stored. Fix or drop the failing items (index = their place in items; commandIndex = the command inside the item; alternative = which alternative set) and call propose_edits again with the whole cut.';
+	if (e.code === 'PROPOSAL_INVALID') {
+		const d = ProposalInvalidDetailSchema.safeParse(e.detail);
+		return new ToolError('E_PROPOSAL_INVALID', e.message, stored, {
+			...status,
+			failures: d.success ? d.data.items : [],
+		});
+	}
+	if (e.code === 'VALIDATION_FAILED') {
+		// a malformed command (unknown type or keys, bad arguments): the engine names its place in the draft
+		const errors = (e.detail as { errors?: unknown } | undefined)?.errors;
+		const failures: ProposalItemFailure[] = [];
+		for (const x of Array.isArray(errors) ? errors.slice(0, ROUGH_CUT_LIMITS.maxItems) : []) {
+			const issue = x as { code?: unknown; message?: unknown; path?: unknown; itemId?: unknown };
+			const path = Array.isArray(issue.path) ? issue.path : [];
+			const index = path[0] === 'items' && typeof path[1] === 'number' ? path[1] : null;
+			if (index === null) continue;
+			const alt = path[2] === 'alternatives' && typeof path[3] === 'number' ? path[3] + 1 : undefined;
+			const ci = alt !== undefined ? path[5] : path[2] === 'commands' ? path[3] : undefined;
+			failures.push({
+				index,
+				itemId: typeof issue.itemId === 'string' ? issue.itemId : `e${index}`,
+				...(alt !== undefined ? { alternative: alt } : {}),
+				code: typeof issue.code === 'string' ? issue.code : 'E_SCHEMA',
+				message: typeof issue.message === 'string' ? issue.message : e.message,
+				commandIndex: typeof ci === 'number' ? ci : null,
+			});
+		}
+		if (failures.length)
+			return new ToolError(
+				'E_PROPOSAL_INVALID',
+				e.message,
+				`${stored} describe_commands gives each command's arguments.`,
+				{
+					...status,
+					failures,
+				},
+			);
+	}
+	if (e.code === 'REVISION_CONFLICT')
+		return new ToolError(
+			'E_REVISION_MISMATCH',
+			e.message,
+			'expectedRevision is ahead of the document: read it again (get_project / get_timeline) and pass the revision you planned on.',
+			status,
+		);
+	return e;
+}
+
+const ROUGH_CUT_COMMAND_TYPES = Object.keys(COMMAND_CATALOG) as [string, ...string[]];
+const RoughCutCommandsArg = z
+	.array(
+		z
+			.looseObject({ type: z.enum(ROUGH_CUT_COMMAND_TYPES).describe('Command type (describe_commands)') })
+			.meta(OPEN_OBJECT),
+	)
+	.min(1)
+	.max(ROUGH_CUT_LIMITS.maxItemCommands)
+	.describe(
+		`1–${ROUGH_CUT_LIMITS.maxItemCommands} commands as apply_commands takes them ({"type": "...", ...})`,
+	);
+
 /** Sleeps `ms`, or less when `signal` aborts. */
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
 	return new Promise((resolve) => {
@@ -279,7 +418,7 @@ export function registerProposalTools(ctx: ToolContext): void {
 		{
 			title: 'List proposal features',
 			description:
-				'The proposal features of a project (sound-design, edit-automation, subtitles, transcript-cleanup, transcript-correction): what their proposals are, the tools that produce them, their Review groups (put the group id in an item’s meta.group), the item noun, whether YOU may apply them here (agentAccept: setting "project" → allowed (Project Settings ▸ Agent Proposals, default on); setting "sound-sequence" → per sequence id, default off) and whether their producer re-plans stale items (refreshable, refresh_proposal).',
+				'The proposal features of a project (sound-design, edit-automation, subtitles, transcript-cleanup, transcript-correction, rough-cut): what their proposals are, the tools that produce them, their Review groups (put the group id in an item’s meta.group), the item noun, whether YOU may apply them here (agentAccept: setting "project" → allowed (Project Settings ▸ Agent Proposals; default on, rough-cut off); setting "sound-sequence" → per sequence id, default off) and whether their producer re-plans stale items (refreshable, refresh_proposal).',
 			input: { projectId: ProjectIdArg },
 			annotations: READ_ONLY,
 		},
@@ -351,7 +490,7 @@ export function registerProposalTools(ctx: ToolContext): void {
 					.max(64)
 					.optional()
 					.describe(
-						'Only this feature ("sound-design", "edit-automation", "subtitles", "transcript-cleanup", "transcript-correction")',
+						'Only this feature ("sound-design", "edit-automation", "subtitles", "transcript-cleanup", "transcript-correction", "rough-cut")',
 					),
 				undecided: z.boolean().optional().describe('Only proposals with items still to review'),
 			},
@@ -462,7 +601,7 @@ export function registerProposalTools(ctx: ToolContext): void {
 				soundCheck,
 				next: proposalDecided(p)
 					? 'Nothing left to review.'
-					: soundCheck
+					: soundCheck || p.feature === ROUGH_CUT_FEATURE
 						? 'The user reviews it in the editor’s Review panel; call wait_for_proposal {projectId, proposalId, since: updatedAt} to learn their decisions and notes.'
 						: 'Run sound_check {projectId, proposalId} first (what it fixes and introduces), then ask the user to review it in the Review panel and call wait_for_proposal {projectId, proposalId, since: updatedAt}.',
 			});
@@ -564,7 +703,7 @@ export function registerProposalTools(ctx: ToolContext): void {
 		{
 			title: 'Accept proposal items',
 			description:
-				'Applies proposal items as ONE transaction (one undo step; what each requires — bin, imported sounds, new cues — comes along). itemIds "all" = every pending or stale item that is selected (setup items only as requirements; items with selected: false and transcript fixes of the maybe group are left out and listed in notSelected — name their ids to apply them). Policy per feature (list_proposal_features): sound design only when the user turned on "Allow agents to apply sound proposals" for the sequence; editing automation, subtitles and transcript cleanup while Project Settings ▸ Agent Proposals allows them (default on); otherwise it is refused with E_APPROVAL_REQUIRED — then ask the user to apply it in the editor’s Review panel, never retry. Do not accept a proposal the user has not asked you to apply. All-or-nothing unless partial: true (stale items are then skipped and listed). Destructive commands inside still ask the user in the editor.',
+				'Applies proposal items as ONE transaction (one undo step; what each requires — bin, imported sounds, new cues — comes along). itemIds "all" = every pending or stale item that is selected (setup items only as requirements; items with selected: false and transcript fixes of the maybe group are left out and listed in notSelected — name their ids to apply them). Policy per feature (list_proposal_features): sound design only when the user turned on "Allow agents to apply sound proposals" for the sequence; editing automation, subtitles and transcript cleanup while Project Settings ▸ Agent Proposals allows them (default on); rough cuts only when it allows them (default off); otherwise it is refused with E_APPROVAL_REQUIRED — then ask the user to apply it in the editor’s Review panel, never retry. Do not accept a proposal the user has not asked you to apply. All-or-nothing unless partial: true (stale items are then skipped and listed). Destructive commands inside still ask the user in the editor.',
 			input: {
 				projectId: ProjectIdArg,
 				proposalId: ProposalIdArg,
@@ -647,6 +786,121 @@ export function registerProposalTools(ctx: ToolContext): void {
 				changed: r.changed,
 				counts: proposalCounts(r.proposal),
 				decided: proposalDecided(r.proposal),
+			});
+		},
+	);
+
+	defineTool(
+		ctx,
+		'propose_edits',
+		{
+			title: 'Propose edits (rough cut)',
+			description: `Proposes YOUR multi-step cut for the user's review instead of applying it: one "Rough cut" proposal (feature rough-cut) in the editor's Review panel, with timeline ghosts, A/B, per-item ✓ / ✕ and one-undo Apply. strategy: the plan in 1–${ROUGH_CUT_LIMITS.maxStrategySentences} sentences (≤ ${ROUGH_CUT_LIMITS.maxStrategy} characters), shown above the items. Each item: group (${ROUGH_CUT_GROUPS.join(', ')}), reason (why, 1–${ROUGH_CUT_LIMITS.maxReason} characters), beat (the story beat, ≤ ${ROUGH_CUT_LIMITS.maxBeat}) and quote (the words it is about, ≤ ${ROUGH_CUT_LIMITS.maxQuote}) when it has them, commands (1–${ROUGH_CUT_LIMITS.maxItemCommands}, exactly as apply_commands takes them) and alternatives (other command sets the user can swap to). At most ${ROUGH_CUT_LIMITS.maxItems} items and ${ROUGH_CUT_LIMITS.maxCommands} commands in all. Every item (and alternative) is dry-run on the current document first: if any fails, the error lists each failing item index with its command error and NOTHING is stored. Items apply in order as one transaction: address clips by id, and list ripple edits from the end of the timeline to the start so the frames of earlier items stay valid whichever items the user keeps. expectedRevision: the revision you planned on (items touching what changed since are refused). Agents may not apply rough cuts unless the user allowed it (Project Settings ▸ Agent Proposals, off by default): hand it to the user and wait_for_proposal.`,
+			input: {
+				projectId: ProjectIdArg,
+				sequenceId: z.string().min(1).max(128).describe('Sequence the edits are in ("seq_…")'),
+				title: z.string().min(1).max(200).describe('Short title, e.g. "60 s cut"'),
+				strategy: z
+					.string()
+					.min(1)
+					.max(ROUGH_CUT_LIMITS.maxStrategy)
+					.describe(`The plan in 1–${ROUGH_CUT_LIMITS.maxStrategySentences} sentences`),
+				expectedRevision: z
+					.number()
+					.int()
+					.min(0)
+					.optional()
+					.describe(
+						'The revision you planned on (get_project); items touching what changed since are refused',
+					),
+				items: z
+					.array(
+						z.strictObject({
+							group: z.enum(ROUGH_CUT_GROUPS).describe('Review group'),
+							reason: z.string().min(1).max(ROUGH_CUT_LIMITS.maxReason).describe('Why this edit'),
+							beat: z
+								.string()
+								.min(1)
+								.max(ROUGH_CUT_LIMITS.maxBeat)
+								.optional()
+								.describe('The story beat, e.g. "Hook"'),
+							quote: z
+								.string()
+								.min(1)
+								.max(ROUGH_CUT_LIMITS.maxQuote)
+								.optional()
+								.describe('The words it keeps or cuts'),
+							commands: RoughCutCommandsArg,
+							alternatives: z
+								.array(
+									z.strictObject({
+										label: z.string().min(1).max(200).describe('What this alternative does'),
+										reason: z.string().min(1).max(ROUGH_CUT_LIMITS.maxReason).optional(),
+										commands: RoughCutCommandsArg,
+									}),
+								)
+								.max(ROUGH_CUT_LIMITS.maxAlternatives)
+								.optional()
+								.describe('Other command sets the user can swap to'),
+						}),
+					)
+					.min(1)
+					.max(ROUGH_CUT_LIMITS.maxItems)
+					.describe('The edits, in the order they apply'),
+			},
+			annotations: EDIT,
+		},
+		async ({ projectId, sequenceId, title, strategy, expectedRevision, items }) => {
+			const parsed = RoughCutInputSchema.safeParse({ sequenceId, title, strategy, items });
+			if (!parsed.success)
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					parsed.error.issues
+						.slice(0, 10)
+						.map((i) => `${i.path.join('.') || 'arguments'}: ${i.message}`)
+						.join('; '),
+					'Nothing was stored. A rough cut is at most 200 items and 2000 commands; propose a long cut in parts (one proposal per section).',
+				);
+			let r: ProposalCreateResponse;
+			try {
+				r = await ctx.engine((c) =>
+					c.createProposal(projectId, {
+						...roughCutDraft(parsed.data),
+						allOrNothing: true,
+						...(expectedRevision !== undefined ? { expectedRevision } : {}),
+					}),
+				);
+			} catch (e) {
+				throw proposeEditsError(e);
+			}
+			const p = r.proposal;
+			let summary: GhostSummary | null = null;
+			let ghost: { table: string; note?: string } = { table: '' };
+			try {
+				const doc = (await loadDoc(ctx, projectId)).doc;
+				summary = ghostSummary(doc, p);
+				ghost = ghostTable(doc, p);
+			} catch (e) {
+				ghost = { table: '', note: `no preview: ${e instanceof Error ? e.message : String(e)}` };
+			}
+			const groups: Record<string, number> = {};
+			for (const it of p.items) groups[proposalItemGroup(it)] = (groups[proposalItemGroup(it)] ?? 0) + 1;
+			return jsonResult({
+				proposalId: p.id,
+				feature: p.feature,
+				title: p.title,
+				sequenceId: p.sequenceId,
+				revision: r.revision,
+				updatedAt: p.updatedAt,
+				expiresAt: r.expiresAt,
+				itemCount: p.items.length,
+				counts: proposalCounts(p),
+				groups,
+				ghostSummary: summary,
+				ghosts: ghost.table,
+				...(ghost.note ? { ghostsNote: ghost.note } : {}),
+				...(r.evicted.length ? { evicted: r.evicted } : {}),
+				next: 'Nothing was applied. Tell the user the cut is waiting in the editor’s Review panel (strategy, ghosts, A/B, ✓ / ✕ per item, Apply), then call wait_for_proposal {projectId, proposalId, since: updatedAt} for their decisions and notes. Do not accept it yourself unless the user asked and Project Settings ▸ Agent Proposals allows rough cuts.',
 			});
 		},
 	);

@@ -11283,7 +11283,7 @@
   "No item changed since it was proposed": "Ningún elemento cambió desde que se propuso",
   "Nothing to refresh": "Nada que actualizar",
   "Off-script": "Fuera de guion",
-  "On (the default): an agent may apply these proposals itself, each as one undoable History step; edits that need your approval still ask. Off: agents only propose and you apply in the Review panel. An agent cannot turn these on by itself. Sound design proposals have their own setting per sequence (Preferences ▸ Sound Library).": "Activado (por defecto): un agente puede aplicar estas propuestas por sí mismo, cada una como un paso del Historial que se puede deshacer; las ediciones que necesitan tu aprobación siguen preguntando. Desactivado: los agentes solo proponen y tú aplicas en el panel Revisión. Un agente no puede activarlas por sí mismo. Las propuestas de diseño de sonido tienen su propio ajuste por secuencia (Preferencias ▸ Biblioteca de sonidos).",
+  "On: an agent may apply these proposals itself, each as one undoable History step; edits that need your approval still ask. Off: agents only propose and you apply in the Review panel. Rough cuts (an agent’s own cut of your footage) are off by default; the others are on. An agent cannot turn these on by itself. Sound design proposals have their own setting per sequence (Preferences ▸ Sound Library).": "Activado: un agente puede aplicar estas propuestas por sí mismo, cada una como un paso del Historial que se puede deshacer; las ediciones que necesitan tu aprobación siguen preguntando. Desactivado: los agentes solo proponen y tú aplicas en el panel Revisión. Los primeros montajes (el montaje que un agente hace de tu material) están desactivados por defecto; los demás, activados. Un agente no puede activarlas por sí mismo. Las propuestas de diseño de sonido tienen su propio ajuste por secuencia (Preferencias ▸ Biblioteca de sonidos).",
   "Overlay slides": "Deslizamientos de superposición",
   "Pauses": "Pausas",
   "Punch-ins": "Zooms de énfasis",
@@ -12519,5 +12519,13 @@
   "What is it for, who is it for, the tone, what must stay in… e.g. \"A 45-second Reel teasing the interview: open on the strongest line, end on the laugh.\"": "Para qué es, para quién, el tono, qué debe quedarse… p. ej. «Un Reel de 45 segundos que anticipe la entrevista: abrir con la mejor frase, terminar con la risa.»",
   "What this video should be. AI agents connected to JasperEditor read it (get_brief) before they cut; it is saved with the sequence.": "Lo que debe ser este vídeo. Los agentes de IA conectados a JasperEditor lo leen (get_brief) antes de montar; se guarda con la secuencia.",
   "Note removed: {0}": "Nota eliminada: {0}",
-  "Undo failed ({0})": "No se pudo deshacer ({0})"
+  "Undo failed ({0})": "No se pudo deshacer ({0})",
+  "B-roll": "Planos de recurso",
+  "beat {0}": "momento {0}",
+  "Beat: {0}": "Momento: {0}",
+  "Removed": "Eliminados",
+  "Reorder": "Reordenar",
+  "Rough cut": "Primer montaje",
+  "Selects": "Seleccionados",
+  "Strategy": "Estrategia"
 }

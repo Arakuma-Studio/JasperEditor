@@ -231,10 +231,11 @@ function ProjectSettingsDialog(props: HostedDialogProps<Props>) {
 					/>
 				))}
 				<p className="text-pr-small text-pr-dim">
-					On (the default): an agent may apply these proposals itself, each as one undoable History step;
-					edits that need your approval still ask. Off: agents only propose and you apply in the Review panel.
-					An agent cannot turn these on by itself. Sound design proposals have their own setting per sequence
-					(Preferences ▸ Sound Library).
+					On: an agent may apply these proposals itself, each as one undoable History step; edits that need
+					your approval still ask. Off: agents only propose and you apply in the Review panel. Rough cuts (an
+					agent’s own cut of your footage) are off by default; the others are on. An agent cannot turn these
+					on by itself. Sound design proposals have their own setting per sequence (Preferences ▸ Sound
+					Library).
 				</p>
 			</Group>
 		</div>

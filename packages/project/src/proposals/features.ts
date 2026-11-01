@@ -3,8 +3,9 @@
 // "Allow agents to apply sound proposals" (`soundDesign.settings.agentsMayApply`, default off); the workflow
 // features are governed per project by Project Settings ▸ Agent Proposals (`settings.agentProposals`, default on: the
 // user asked for agent-driven automation; every accept is one undoable "Agent: …" History entry and destructive
-// commands inside still need the user's approval card). Pure data and readers: the engine registers the policies
-// (`ProposalService.registerPolicy`), the editor and MCP read the same table.
+// commands inside still need the user's approval card). An agent's own rough cut (spec 18 AF-PROP-001) is the same kind
+// of setting but default off: the user reviews an agent's cut. Pure data and readers: the engine registers the
+// policies (`ProposalService.registerPolicy`), the editor and MCP read the same table.
 import {
 	type ProjectAgentProposals,
 	ProjectAgentProposalsSchema,
@@ -21,6 +22,8 @@ export const EDIT_AUTOMATION_FEATURE = 'edit-automation';
 export const SUBTITLES_FEATURE = 'subtitles';
 export const TRANSCRIPT_CLEANUP_FEATURE = 'transcript-cleanup';
 export const TRANSCRIPT_CORRECTION_FEATURE = 'transcript-correction';
+/** Spec 18 AF-PROP-001: an agent's own multi-step cut (`propose_edits`), reviewed by the user before it lands. */
+export const ROUGH_CUT_FEATURE = 'rough-cut';
 
 /** A Review group a producer declares: items carry its id in `meta.group` (or `group`); order = declaration order. */
 export type ProposalFeatureGroup = { id: string; label: string };
@@ -154,6 +157,23 @@ export const PROPOSAL_FEATURES: readonly ProposalFeatureInfo[] = [
 		],
 		producers: ['fix_transcript', 'Text ▸ Fix Transcript…', 'Sequence ▸ Fix Transcript from Script…'],
 		agentAllExcludes: ['maybe'],
+	},
+	{
+		id: ROUGH_CUT_FEATURE,
+		name: 'Rough cut',
+		description:
+			'An agent’s own cut of the footage (spec 18 AF-PROP): selects, removals, retakes, reorders and B-roll as ordinary edit commands, each item with its reason (and the beat and quote it is about), under a stated strategy. Off by default for agents: the user reviews an agent’s cut in the Review panel; Project Settings ▸ Agent Proposals can allow agents to apply it.',
+		itemNoun: { one: '1 edit', other: '{0} edits' },
+		agentAccept: { setting: 'project', default: false },
+		groups: [
+			{ id: 'selects', label: 'Selects' },
+			{ id: 'removed', label: 'Removed' },
+			{ id: 'retakes', label: 'Retakes' },
+			{ id: 'reorder', label: 'Reorder' },
+			{ id: 'b-roll', label: 'B-roll' },
+			{ id: 'other', label: 'Other' },
+		],
+		producers: ['propose_edits'],
 	},
 ];
 
