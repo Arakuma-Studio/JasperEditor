@@ -57,11 +57,17 @@ nobody outside has used it, only Linux was checked — is [`docs/gaps.md`](docs/
   one undo step; after a manual word fix the editor offers "Replace all N" and "Remember"; Transcribe can carry the
   script's and the glossary's names into the recogniser ("Names from").
 - **Export and interchange.** A planner routes each sequence to the native FFmpeg path, a hybrid layer bake or
-  Remotion and refuses by name what a path cannot render; H.264, HEVC, VP9, AV1, ProRes, alpha; render previews and
-  smart rendering; FCP 7 XML, FCPXML, EDL, AAF, OMF, ALE and OTIO in both directions.
-- **Agents.** `jasper-mcp` exposes 434 tools and the whole command catalogue; every edit is an undoable
-  transaction, destructive ones need the user's approval in the editor; a `jasper` CLI; tools that look at and
-  operate the live window.
+  Remotion and refuses by name what a path cannot render; H.264, HEVC, VP9, AV1, ProRes, alpha, animated GIF and
+  audio-only WAV / FLAC / M4A; platform delivery presets; render previews and smart rendering; FCP 7 XML, FCPXML,
+  EDL, AAF, OMF, ALE and OTIO in both directions.
+- **Agents.** `jasper-mcp` exposes 450 tools and the whole command catalogue, advertised as a 32-tool core with the
+  rest in toolsets loaded on demand; every edit is an undoable transaction, destructive ones need the user's approval
+  in the editor; a `jasper` CLI; tools that look at and operate the live window. Agents read footage as text (a packed
+  phrase digest of every take, takes of the same line grouped across files) and look at any media or sequence range
+  in one picture (filmstrip, waveform, words, silences); their rough cut arrives as a reviewable proposal whose edits
+  carry beat, quote and reason; exports report measured verification and platform delivery checks
+  ([spec 18](docs/specs/18-agent-footage-editing.md)). The user states the video's goal once (Home ▸ Describe your
+  video, Sequence ▸ Brief…) and watches agents in the Agent Activity panel and the header status chip.
 - **Safety net.** Atomic saves, single-writer leases (a reloaded tab keeps its own), crash-recovery journal, saved
   versions, schema migrations; golden frames, fuzzed loaders and a security review
   ([`docs/security-review.md`](docs/security-review.md)).

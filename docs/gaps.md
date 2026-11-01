@@ -499,8 +499,8 @@ demotion plus a safe gain on one hero can overload (the check runs again after F
 renderer offset shows less clearly (sync prefers the document among near-equal matches); `soundCheckInputsHash` ignores
 media licences, transcripts and picture edits; a kept report is not removed when its sequence is deleted (it is never
 shown for another sequence). Export credits (Phase 6 WP6.4): the Export dialog's SOUND ▸ Credits writes
-`<name>.credits.<txt|md|csv>` with the sounds heard in the range (W_SOUND_CREDITS without it); there is no audio-only or
-image-sequence export destination to attach it to yet, the header is English, and a cue's window and kind do not survive
+`<name>.credits.<txt|md|csv>` with the sounds heard in the range (W_SOUND_CREDITS without it), also next to an
+audio-only export (spec 18 AF-EXP); there is no image-sequence export destination to attach it to yet, the header is English, and a cue's window and kind do not survive
 an interchange round trip (point markers `SFX: <type> (<weight>)`, re-imported as `manual` cues).
 Phase 6 → WP6.5a carry-over polish (UI / editing; [wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 6 → WP6.5a"):
 the Razor / Add Edit / an insert edit inside a transition's span cuts the clips and shortens the transition to the part it
@@ -833,6 +833,31 @@ first (`2025-09-24`, `2025/9/24`), as month-first and day-first dates are ambigu
 Add another and bulk import (CSV / pasted TSV, MCP `import_motion_graphics_csv`) are built — "Add another & bulk
 import". Their gaps: an `Image URL` column is reported as ignored (no remote picture import), XLSX is not read, and
 Add another has no keyboard shortcut (the free chord collides with macOS's Dock toggle).
+
+### agent-footage (spec 18)
+Agents edit raw footage the way [spec 18](specs/18-agent-footage-editing.md) describes: read it as text first, look at
+a range only when deciding, propose the cut for the user's review, verify the export. **Done when:** every AF-*
+requirement has a test or a rerunnable measurement in its wp-note and the integrated branch passes the gate.
+**Status:** built in ten workstreams merged through `feat/agent-footage-editing`; behaviour, sources and limits per
+area are in [wp-notes/agent-footage.md](wp-notes/agent-footage.md). Limits that stay open:
+- No visual or semantic search over footage and no in-app model (non-goals of spec 18); agents judge pictures through
+  `view_media_range` and `render_frame(s)` only.
+- `call_tool` carries a generic destructive hint, so clients ask before every call through it; clients that ignore
+  `notifications/tools/list_changed` see only the starting toolset until they use it.
+- Connected agents are the ones that called the engine in the last 15 minutes (`x-jasper-agent`); the activity log
+  and bursts live in the window and start empty after a reload.
+- Platform limits in `DELIVERY_TARGETS` are cited with access date 2026-10-31; the playback loudness (−14 LUFS) and
+  several recommendations are labelled assumptions, and platforms change limits without notice.
+- Export verification decodes the first video and audio streams only; dark limited-range footage can raise a
+  `cut-black` judgement row; row messages are English.
+- Derived media: variable-frame-rate sources come out constant-rate after range or reverse, time-stretch drops or
+  repeats frames (no blending), and MKV reverse joins can drift under 1 ms of audio.
+- The protocol whitelist blocks network references everywhere; the demuxer whitelist (FFmpeg 6.1's DASH demuxer
+  ignores the protocol whitelist) is applied to probes only, so a file swapped to a DASH manifest after registration
+  with the same size and time could still be fetched by an export on a 6.1-style build (the shipped LGPL 7.1 build
+  refuses it).
+- Hybrid and Remotion GIF exports were checked by hand (SSIM 0.986 / 0.954 against Program); the automated GIF tests
+  cover the native path.
 
 ## For agents choosing work
 
