@@ -23,11 +23,18 @@ import {
 	clipFileFrames,
 	coverageTolerance,
 	coveredClipFrames,
+	type DeriveRecipe,
+	derivedKind,
+	deriveMakesAudio,
+	deriveProblems,
+	deriveSourceKinds,
+	isDeriveOp,
 	isVersionDerivation,
 	mediaFrameCount,
 	mediaIntrinsicSize,
 	PROCESSED_BIN_NAME,
 	processedItemName,
+	rangeFrames,
 	rescaleClipForSource,
 	rootFrameSpan,
 	rootPlacement,
@@ -492,6 +499,29 @@ function processedSourceRange(
 	};
 }
 
+/**
+ * The `sourceRange` of a `range` derivation (spec 18 AF-OPS-001): the source frames whose start lies in
+ * `[inFlicks, outFlicks)` (`rangeFrames`), so the trimmed file is a version of its source and clips can switch to
+ * it keeping their source frames. None for audio and variable-frame-rate sources (no frame index to map).
+ */
+function rangeSourceRange(
+	source: MediaAsset,
+	recipe: { inFlicks: number; outFlicks: number },
+	probe: MediaAsset['probe'],
+	range: { startFrame: number; endFrame: number } | undefined,
+	h: HandlerContext,
+): SourceRange | undefined {
+	const rate = mediaFrameRate(source);
+	if (source.kind !== 'video' || source.probe.variableFrameRate || !rate) return undefined;
+	const frames = rangeFrames(recipe, rate);
+	if (range && (range.startFrame !== frames.startFrame || range.endFrame !== frames.endFrame))
+		h.fail(
+			'E_INVALID_PARAM',
+			`The range ${range.startFrame}..${range.endFrame} is not the recipe's frames ${frames.startFrame}..${frames.endFrame}`,
+		);
+	return processedSourceRange(source, { probe }, frames, h);
+}
+
 function mediaDerive(doc: DDoc, cmd: CommandOf<'media.derive'>, h: HandlerContext) {
 	const source = mediaOf(doc, cmd.fromMediaId, h);
 	const asset = cmd.asset;
@@ -500,12 +530,23 @@ function mediaDerive(doc: DDoc, cmd: CommandOf<'media.derive'>, h: HandlerContex
 			'E_INVALID_PARAM',
 			'media.derive needs `asset`: the engine produces the processed file (POST /api/media/:key/process) and its result is committed here',
 		);
-	// a loudness-normalised version is an audio file made from the audio stream of a video or audio media.
-	const loudness = cmd.recipe.op === 'loudness-normalize';
-	if (loudness && source.kind !== 'video' && source.kind !== 'audio')
-		h.fail('E_INVALID_PARAM', `Media ${source.id} is ${source.kind}; loudness normalisation needs audio`);
-	if (!loudness && source.kind !== 'video')
-		h.fail('E_INVALID_PARAM', `Media ${source.id} is ${source.kind}; only video can be processed`);
+	// Audio ops (loudness-normalize, denoise-audio, extract-audio) make an audio file from the audio of a video or
+	// audio media; the timing ops (reverse, time-stretch, range) keep the source's kind; the picture ops need video.
+	const op = cmd.recipe.op;
+	const kinds = deriveSourceKinds(op);
+	if (!kinds.includes(source.kind))
+		h.fail(
+			'E_INVALID_PARAM',
+			op === 'process' || op === 'transcode' || op === 'stabilize'
+				? `Media ${source.id} is ${source.kind}; only video can be processed`
+				: `Media ${source.id} is ${source.kind}; ${op} needs ${kinds.join(' or ')} media`,
+		);
+	const audioOp = deriveMakesAudio(op);
+	if (isDeriveOp(op)) {
+		const problem = deriveProblems(source, cmd.recipe as DeriveRecipe)[0];
+		if (problem)
+			h.fail(problem.code === 'OUT_OF_RANGE' ? 'E_OUT_OF_MEDIA' : 'E_INVALID_PARAM', problem.message);
+	}
 	if (cmd.binId) assertBin(doc, cmd.binId, h);
 	if (asset.fingerprint === source.fingerprint)
 		h.fail('E_INVALID_PARAM', 'The processed file has the fingerprint of its source');
@@ -522,13 +563,15 @@ function mediaDerive(doc: DDoc, cmd: CommandOf<'media.derive'>, h: HandlerContex
 		h.warn('W_DEDUPED', `This processed version is already in the project (${existing.id})`);
 	} else {
 		mediaId = h.ids.next('med');
-		const isVersion = cmd.recipe.op === 'process' || cmd.recipe.op === 'transcode';
+		const isVersion = op === 'process' || op === 'transcode';
 		const sourceRange = isVersion
 			? processedSourceRange(source, { probe: asset.probe }, cmd.range, h)
-			: undefined;
+			: op === 'range'
+				? rangeSourceRange(source, cmd.recipe, asset.probe, cmd.range, h)
+				: undefined;
 		doc.media[mediaId] = {
 			id: mediaId,
-			kind: loudness ? 'audio' : source.kind,
+			kind: derivedKind(op, source.kind),
 			fingerprint: asset.fingerprint,
 			originalName: asset.originalName,
 			sizeBytes: asset.sizeBytes,
@@ -546,7 +589,12 @@ function mediaDerive(doc: DDoc, cmd: CommandOf<'media.derive'>, h: HandlerContex
 		} as MediaAsset;
 	}
 	const media = doc.media[mediaId] as MediaAsset;
-	if (loudness && cmd.replaceInClips?.length) {
+	if (audioOp && cmd.replaceInClips?.length) {
+		if (op === 'extract-audio')
+			h.fail(
+				'E_INVALID_PARAM',
+				'An extracted audio stream is added to the project only; place it like any audio media',
+			);
 		const out = useNormalizedAudio(doc, media, source.id, cmd.replaceInClips, h);
 		let item0 = mediaItemOf(doc, mediaId);
 		if (!item0) {
@@ -567,7 +615,7 @@ function mediaDerive(doc: DDoc, cmd: CommandOf<'media.derive'>, h: HandlerContex
 		h.defineRef(cmd.ref, mediaId);
 		return { mediaId, itemId: item0.id, deduped: !!existing, clipIds: out };
 	}
-	if (!isVersionDerivation(media.derivation) && cmd.replaceInClips?.length)
+	if (!isVersionDerivation(media.derivation) && !media.sourceRange && cmd.replaceInClips?.length)
 		h.fail('E_INVALID_PARAM', `Media ${mediaId} is not a processed version; clips cannot switch to it`);
 
 	let item = mediaItemOf(doc, mediaId);
@@ -580,7 +628,17 @@ function mediaDerive(doc: DDoc, cmd: CommandOf<'media.derive'>, h: HandlerContex
 		item = {
 			id: itemId,
 			kind: 'media',
-			name: processedItemName(originalItem?.name ?? source.originalName, cmd.recipe, cmd.range ?? null),
+			name: processedItemName(
+				originalItem?.name ?? source.originalName,
+				cmd.recipe,
+				cmd.range ??
+					(op === 'range' && media.sourceRange
+						? {
+								startFrame: media.sourceRange.firstFrame,
+								endFrame: media.sourceRange.firstFrame + media.sourceRange.frames,
+							}
+						: null),
+			),
 			mediaId,
 			label: defaultLabelForMedia(media),
 			marks: { in: null, out: null },
