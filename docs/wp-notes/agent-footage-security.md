@@ -40,6 +40,16 @@ before FFmpeg starts.
   `NETWORK_DEMUXERS`: `dash`, plus `rtsp`, `rtp`, `sdp` and `sap`, which exist only to open network sessions.
   Nested demuxers inherit the format whitelist (`ff_copy_whiteblacklists`), so the nested cases are refused too
   (measured on both builds).
+- **Few-input FFmpeg runs get the demuxer whitelist too (review fix).** Some files are read without a probe first,
+  such as a Media Browser thumbnail of any file in a browsed folder. On 6.1, a DASH manifest saved as `x.mp4` had its
+  `http://` segments fetched just by browsing. `Ffmpeg.run` now adds `-format_whitelist` to every file input when a
+  run has at most `FORMAT_WHITELIST_MAX_INPUTS` (4) file inputs. That covers thumbnails, imports (PNG, variants,
+  sequences), derivatives and audio decodes. The list comes from `<ffmpeg> -demuxers`, cached per binary. `spawnRaw`
+  is synchronous and adds the list once this binary's list is known (after any earlier run or probe).
+  - `apps/engine/test/browse.test.ts`: a DASH thumbnail with the default build and the system `/usr/bin/ffmpeg` 6.1.
+    It fetched `/segment0.ts` twice on 6.1 before the fix; now there are 0 requests.
+  - `apps/engine/test/local-inputs.test.ts`: with a fake ffmpeg that records its arguments, a single-input run
+    carries `-format_whitelist` and a 5-input run does not.
 - HLS with an `http://` segment: FFmpeg 6.1 already refuses it when the playlist is opened through `file` (the
   `file` protocol's default whitelist is `file,crypto,data`). The explicit whitelist does not depend on that default
   or on how the input is named.
@@ -102,11 +112,13 @@ The machine is a shared 4-core host. Commands ran under `flock`:
 
 ## Limits
 
-- `-format_whitelist` is passed to probes only. One input's list is about 2 KB, which would exceed Windows'
-  32 K command line on exports with many inputs. Every file is probed when it is registered, browsed or added to the
-  sound library, so a DASH manifest never becomes media. A registered file whose content is replaced by a DASH
-  manifest while its size and modification time stay the same would still be fetched by a later export, derivative
-  or worker run on a 6.1-style build, where the protocol whitelist does not stop DASH.
+- `-format_whitelist` is passed to probes, to `Ffmpeg.run` calls with at most 4 file inputs, and to `spawnRaw` calls
+  with at most 4 once the list is known. One input's list is about 2 KB, so exports with many inputs would exceed
+  Windows' 32 K command line.
+  - Registration, browsing and the sound library probe first, so a DASH manifest never becomes media.
+  - A registered file whose content is replaced by a DASH manifest, while its size and modification time stay the
+    same, could still be fetched on a 6.1-style build by a composite with more than 4 inputs or by a worker
+    (jasper-proc, roto, speech, CLAP). The protocol whitelist does not stop DASH there.
 - The DASH bypass was measured on 6.1.1 only. The vendor 7.1.5 build refuses it through the protocol whitelist.
   Its `-demuxers` listing format is covered by a unit test from `fftools/opt_common.c` (n7.1).
 - Errors of `spawnRaw` callers, jasper-proc and the workers stay generic: they read stderr themselves. The network

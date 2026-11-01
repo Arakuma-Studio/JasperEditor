@@ -5,11 +5,11 @@
 //
 // The whitelist does not cover every demuxer of every build: FFmpeg 6.1's DASH demuxer opens its http(s) segments
 // itself and ignores the context's whitelist (measured on 6.1.1: a local .mpd whose BaseURL is http://127.0.0.1/…
-// is fetched even with -protocol_whitelist file,crypto,data; the vendor LGPL 7.1.5 build refuses it). Probes — which
-// every file goes through before the engine uses it — therefore also get `-format_whitelist` with every demuxer of
-// the binary except NETWORK_DEMUXERS; nested demuxers inherit it (a DASH manifest named by a local concat list or
-// playlist is refused too). FFmpeg runs with many inputs do not get the demuxer list (2 KB per input would exceed
-// Windows' 32 K command line), see docs/wp-notes/agent-footage-security.md.
+// is fetched even with -protocol_whitelist file,crypto,data; the vendor LGPL 7.1.5 build refuses it). Probes
+// therefore also get `-format_whitelist` with every demuxer of the binary except NETWORK_DEMUXERS; nested demuxers
+// inherit it (a DASH manifest named by a local concat list or playlist is refused too). FFmpeg runs with up to FORMAT_WHITELIST_MAX_INPUTS file inputs get it as well (a Media
+// Browser thumbnail reads a file nobody probed); runs with more inputs do not (2 KB per input would exceed Windows'
+// 32 K command line), see docs/wp-notes/agent-footage-security.md.
 //
 // Pure (no Node imports): the jasper-proc, roto, speech and CLAP workers import it too.
 
@@ -30,11 +30,33 @@ export const REMOTE_REFERENCE_BLOCKED = 'REMOTE_REFERENCE_BLOCKED';
 const isPipe = (src: string) => src === '-' || src.startsWith('pipe:');
 
 /**
- * An ffmpeg argument list with a protocol whitelist in front of every `-i` whose option group has none: the local
- * one for files, `pipe,fd` for `pipe:N` / `-`; `-f lavfi` inputs are left alone. A whitelist the caller put in an
- * input's group is kept. Idempotent.
+ * Runs with at most this many file inputs also get the demuxer whitelist (about 2 KB per input: a Media Browser
+ * thumbnail, an import, a derivative); export composites with more inputs would outgrow Windows' 32 K command line.
  */
-export function restrictInputs(args: readonly string[]): string[] {
+export const FORMAT_WHITELIST_MAX_INPUTS = 4;
+
+/** Number of `-i` inputs of an ffmpeg argument list that are files (not pipes, not `-f lavfi`). */
+export function fileInputCount(args: readonly string[]): number {
+	let n = 0;
+	let groupStart = 0;
+	for (let i = 0; i + 1 < args.length; i++) {
+		if (args[i] !== '-i') continue;
+		const group = args.slice(groupStart, i);
+		const f = group.lastIndexOf('-f');
+		if (!(f >= 0 && group[f + 1] === 'lavfi') && !isPipe(args[i + 1]!)) n++;
+		groupStart = i + 2;
+		i++;
+	}
+	return n;
+}
+
+/**
+ * An ffmpeg argument list with a protocol whitelist in front of every `-i` whose option group has none: the local
+ * one for files, `pipe,fd` for `pipe:N` / `-`; `-f lavfi` inputs are left alone. With `formatWhitelist`, file inputs
+ * also get `-format_whitelist` (demuxers that open the network themselves are refused, see above). What the caller
+ * put in an input's group is kept. Idempotent.
+ */
+export function restrictInputs(args: readonly string[], formatWhitelist?: string | null): string[] {
 	const out: string[] = [];
 	let groupStart = 0;
 	for (let i = 0; i < args.length; i++) {
@@ -49,6 +71,8 @@ export function restrictInputs(args: readonly string[]): string[] {
 		const lavfi = f >= 0 && group[f + 1] === 'lavfi';
 		if (!lavfi && !group.includes('-protocol_whitelist'))
 			out.push(...(isPipe(src) ? PIPE_PROTOCOLS : LOCAL_PROTOCOLS));
+		if (formatWhitelist && !lavfi && !isPipe(src) && !group.includes('-format_whitelist'))
+			out.push('-format_whitelist', formatWhitelist);
 		out.push('-i', src);
 		i++;
 		groupStart = out.length;

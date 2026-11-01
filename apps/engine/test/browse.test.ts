@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createServer as createHttpServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -277,6 +277,42 @@ describe('Media Browser routes', () => {
 			});
 			expect(thumb.statusCode).toBe(404);
 			expect(hits).toEqual([]);
+		} finally {
+			await new Promise((r) => server.close(r));
+		}
+	});
+
+	it('does not fetch the segments of a DASH manifest named like a video for its thumbnail (AF-SEC-001)', async () => {
+		// FFmpeg 6.1's DASH demuxer opens http:// itself despite -protocol_whitelist: the thumbnail run must refuse the
+		// demuxer (-format_whitelist). Checked with the engine's default build and, when present, the system 6.1 build.
+		const builds: Record<string, string>[] = [{}];
+		if (existsSync('/usr/bin/ffmpeg') && existsSync('/usr/bin/ffprobe'))
+			builds.push({ JASPER_FFMPEG: '/usr/bin/ffmpeg', JASPER_FFPROBE: '/usr/bin/ffprobe' });
+		const hits: string[] = [];
+		const server = createHttpServer((req, res) => {
+			hits.push(req.url ?? '');
+			res.statusCode = 404;
+			res.end();
+		});
+		await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+		const port = (server.address() as { port: number }).port;
+		try {
+			for (const env of builds) {
+				const app = await makeApp({ env });
+				const dir = mkdtempSync(join(tmpdir(), 'jasper-browse-dash-'));
+				const file = join(dir, 'trailer.mp4');
+				writeFileSync(
+					file,
+					`<?xml version="1.0"?>\n<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT2S" minBufferTime="PT1S" profiles="urn:mpeg:dash:profile:isoff-on-demand:2011">\n<Period><AdaptationSet mimeType="video/mp2t"><Representation id="1" bandwidth="1000"><BaseURL>http://127.0.0.1:${port}/segment0.ts</BaseURL></Representation></AdaptationSet></Period></MPD>\n`,
+				);
+				const thumb = await app.inject({
+					method: 'GET',
+					url: `/api/browse/thumbnail?path=${q(file)}`,
+					headers: H,
+				});
+				expect(thumb.statusCode, JSON.stringify(env)).toBe(404);
+				expect(hits, JSON.stringify(env)).toEqual([]);
+			}
 		} finally {
 			await new Promise((r) => server.close(r));
 		}
