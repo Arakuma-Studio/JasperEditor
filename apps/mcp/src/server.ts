@@ -19,6 +19,7 @@ import { CLIPBOARD_GUIDE, registerClipboardTools } from './tools/clipboard.ts';
 import { COLOR_GUIDE, registerColorTools } from './tools/color.ts';
 import { COLOR_MGMT_GUIDE, registerColorMgmtTools } from './tools/color-mgmt.ts';
 import { COMPOSITION_GUIDE, registerCompositionTools } from './tools/compositions.ts';
+import { registerDeriveTools } from './tools/derive.ts';
 import { EASE_GUIDE, registerEaseTools } from './tools/ease.ts';
 import { EDIT_UX_GUIDE, registerEditUxTools } from './tools/edit-ux.ts';
 import { registerEditingTools } from './tools/editing.ts';
@@ -173,6 +174,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerColorTools(ctx);
 	registerGradingTools(ctx);
 	registerProcessingTools(ctx);
+	registerDeriveTools(ctx);
 	registerCompositionTools(ctx);
 	registerTrackingTools(ctx);
 	registerTransitionTools(ctx);
