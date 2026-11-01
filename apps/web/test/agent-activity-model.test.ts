@@ -353,3 +353,33 @@ describe('header chip state machine (AF-ACT-002)', () => {
 		expect(p.nextChangeAt).toBeNull();
 	});
 });
+
+describe('agents the engine reports as present (AF-ACT-002, GET /api/agent/presence)', () => {
+	const now = 10 * 60_000 + 5_000;
+	const base = { activity: [], approvals: [], proposals: [], jobs: [], now };
+	const seen = (name: string, ago = 60_000) => ({ name, lastSeenAt: new Date(now - ago).toISOString() });
+
+	it('an agent that only reads is shown as connected, idle', () => {
+		const p = agentPresence({ ...base, connected: [seen('reader')] });
+		expect(p.agents).toEqual([
+			{ agent: 'reader', phase: 'idle', approvals: 0, reviews: 0, runningJobs: 0, step: null, error: null },
+		]);
+		expect(p.phase).toBe('idle');
+		// the engine's list decides while it lists the agent (its own window), not the editor's presence window
+		expect(agentPresence({ ...base, connected: [seen('reader', PRESENCE_MS + 60_000)] }).agents).toHaveLength(
+			1,
+		);
+	});
+
+	it('the editor’s own signals still decide the state; names are merged', () => {
+		const p = agentPresence({
+			...base,
+			activity: [entry({ agent: 'bot', time: now - 1000 })],
+			connected: [seen('bot'), seen('reader')],
+		});
+		expect(p.agents.map((a) => [a.agent, a.phase])).toEqual([
+			['bot', 'working'],
+			['reader', 'idle'],
+		]);
+	});
+});

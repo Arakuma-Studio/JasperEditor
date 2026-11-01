@@ -12,9 +12,10 @@ and burst toasts (AF-ACT-003). Web only (`apps/web`); no engine, MCP or schema c
 | Burst grouping, toast text | `apps/web/src/agent-activity/bursts.ts` |
 | Burst toasts | `apps/web/src/agent-activity/toasts.ts` (wired by `shell/AgentApprovals.tsx`) |
 | Agent presence (chip state machine) | `apps/web/src/agent-activity/presence.ts`, `hooks.ts`, `text.ts` |
+| Engine-reported agents (poller) | `apps/web/src/agent-activity/engine-presence.ts` (`GET /api/agent/presence`, AF-BRF-005) |
 | Header chip | `apps/web/src/agent-activity/StatusChip.tsx`, mounted in `shell/header/HeaderBar.tsx` |
 | Panel | `apps/web/src/panels/agentActivity/` (kind `agentActivity`) |
-| Tests | `apps/web/test/agent-activity-model.test.ts`, `apps/web/test/agent-activity-ui.test.tsx` |
+| Tests | `apps/web/test/agent-activity-model.test.ts`, `agent-activity-ui.test.tsx`, `agent-activity-engine-presence.test.ts` |
 
 ## Behaviour
 
@@ -46,10 +47,14 @@ list is not virtualised.
 
 ### Chip (AF-ACT-002)
 
-Neither the engine nor the relay keeps a list of MCP clients (stdio `jasper-mcp` makes plain HTTP requests named by
-`x-jasper-agent`), so "connected" is inferred in the window from what an agent does in this project — an assumption,
-not an engine fact. An agent is shown while it has a pending approval, a proposal it waits on or a running / queued
-job, or did something within `PRESENCE_MS` = 10 min. State, most urgent first:
+An agent is shown while the engine lists it as present (`GET /api/agent/presence`: jasper-mcp names its agent on every
+engine request with `x-jasper-agent`; the engine lists the names seen in the last 15 min, so an agent that only reads
+is shown too), or while it has a pending approval, a proposal it waits on or a running / queued job in this window, or
+did something here within `PRESENCE_MS` = 10 min. The engine's list only makes an agent appear: its state comes from
+the window's signals, idle without any. The list is polled every `PRESENCE_POLL_MS` = 15 s, one poller per engine
+client, only while the chip or the panel is mounted and the engine is connected; the answer is validated with
+`AgentPresenceSchema`, and a failed or malformed answer empties the list quietly (the window's own inference stands,
+the next poll retries; no console error). State, most urgent first:
 
 | State | When | Chip |
 |---|---|---|
@@ -76,9 +81,11 @@ because the toast host closes the toast whose action ran.
 ## Validation
 
 - `pnpm exec vitest run apps/web/test/agent-activity-model.test.ts apps/web/test/agent-activity-ui.test.tsx
-  --maxWorkers=1`: 29 tests (outcomes, filters, undo plans incl. interleaved / newer user edits, burst grouping with
+  --maxWorkers=1`: 32 tests (outcomes, filters, undo plans incl. interleaved / newer user edits, burst grouping with
   explicit times and fake `Date`, chip state machine and timers, panel rows / filters / keyboard / Undo availability,
   chip states and accessible names, toast collapse and Undo through `ToastHost`).
+- `apps/web/test/agent-activity-engine-presence.test.ts`: 3 tests (polls only while subscribed, unchanged lists do not
+  re-render, failures and malformed answers empty the list quietly and polling goes on, late answers dropped).
 - Existing: `agent-bridge`, `agent-ui-guard`, `agent-ui`, `shell`, `shell-render`, `polish-open`,
   `workspace-migration` tests pass.
 - Running dev stack (engine 48100, Vite 5300), agents driven with `apps/mcp/src/jasper.ts run -` as `claude-code` and
@@ -89,7 +96,10 @@ because the toast host closes the toast whose action ran.
 
 ## Limits
 
-- Presence is inferred (above); an agent that only reads (queries, MCP resources) is not shown.
+- Presence relies on the agent naming itself: the engine lists only jasper-mcp clients (the `x-jasper-agent`
+  header), by name, for 15 min after their last request; an agent that stopped stays listed (idle) until then, and an
+  engine without the presence route (older build) leaves only the window's inference. Engine names and transaction
+  origins come from the same jasper-mcp name, so they merge into one row.
 - The log and bursts live in the window: a reload starts empty (History keeps the entries and their agent markers).
 - In-page (`window.jasper`) and console transactions are logged in the panel but get no toast (as before).
 - The "review" state needs proposals by agents (spec 18 AF-PROP); verified by tests, not in the running app.

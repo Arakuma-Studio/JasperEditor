@@ -1,8 +1,11 @@
 // Agent presence for the header status chip (spec 18 AF-ACT-002, spec 05 AG-010). External agents reach the editor
 // through the engine (MCP → HTTP → WS /agent relay); neither the engine nor the relay keeps a list of MCP clients, so
 // the editor knows an agent by what it does in this project: its transactions (the bridge's activity log), its
-// approval requests, its proposals and its engine jobs. An agent counts as connected while any of those is recent
-// (PRESENCE_MS) or still open (a pending approval, a proposal it waits on, a running job).
+// approval requests, its proposals and its engine jobs — and by the engine's list of agents that called it recently
+// (`GET /api/agent/presence`, `connected`; also agents that only read). An agent counts as connected while the engine
+// lists it, or while any of the window's signals is recent (PRESENCE_MS) or still open (a pending approval, a
+// proposal it waits on, a running job). The engine's list only makes an agent appear; its state comes from the
+// window's signals (idle without any).
 //
 // State per agent, most urgent first:
 //   approval  — one of its requests waits for Approve / Deny;
@@ -30,6 +33,8 @@ export type PresenceInput = {
 	approvals: readonly { agent: string }[];
 	proposals: readonly Pick<ProposalSummary, 'author' | 'decided' | 'updatedAt' | 'waiting' | 'title'>[];
 	jobs: readonly PresenceJob[];
+	/** Agents the engine reports as present (`GET /api/agent/presence`); empty when unknown. */
+	connected?: readonly { name: string }[];
 	now: number;
 };
 
@@ -78,6 +83,8 @@ type Acc = {
 	outcome: { at: number; failed: boolean; message: string | null } | null;
 	/** Latest moment the agent was seen (presence). */
 	seen: number | null;
+	/** Listed by the engine as present. */
+	connected: boolean;
 };
 
 const newAcc = (): Acc => ({
@@ -90,6 +97,7 @@ const newAcc = (): Acc => ({
 	lastLabel: null,
 	outcome: null,
 	seen: null,
+	connected: false,
 });
 
 const later = (a: number | null, b: number) => (a === null || b > a ? b : a);
@@ -152,13 +160,15 @@ export function agentPresence(input: PresenceInput): PresenceSummary {
 				a.outcome = { at, failed: j.state === 'failed', message: j.error?.message ?? null };
 	}
 
+	for (const c of input.connected ?? []) acc(c.name).connected = true;
+
 	const agents: AgentPresence[] = [];
 	const changes: number[] = [];
 	const pending = (at: number) => {
 		if (at > now) changes.push(at);
 	};
 	for (const [agent, a] of accs) {
-		const open = a.approvals > 0 || a.reviews > 0 || a.runningJobs > 0;
+		const open = a.connected || a.approvals > 0 || a.reviews > 0 || a.runningJobs > 0;
 		const recent = a.seen !== null && now - a.seen < PRESENCE_MS;
 		if (!open && !recent) continue;
 		if (a.seen !== null) pending(a.seen + PRESENCE_MS);
