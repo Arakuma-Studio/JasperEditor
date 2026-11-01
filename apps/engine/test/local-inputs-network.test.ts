@@ -3,8 +3,9 @@
 // a local HTTP listener that counts requests.
 //
 // Variants: an HLS playlist with an http:// segment (refused by -protocol_whitelist), a DASH manifest with an
-// http:// BaseURL and an HLS playlist whose local "segment" is such a DASH manifest (FFmpeg's DASH demuxer opens
-// http:// itself, ignoring -protocol_whitelist; probes refuse the demuxer with -format_whitelist).
+// http:// BaseURL and a local ffconcat list naming such a manifest (FFmpeg 6.1's DASH demuxer opens http:// itself,
+// ignoring -protocol_whitelist; probes refuse the demuxer with -format_whitelist, which nested demuxers inherit).
+// FFmpeg 7.1's HLS demuxer refuses a DASH "segment" by itself (extension_picky), hence the concat list.
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
@@ -99,11 +100,11 @@ describe('AF-SEC-002: network references in media files are refused without cont
 		expect(requests).toEqual([]);
 	});
 
-	it('probe: a DASH manifest, alone or as the "segment" of a local playlist, is refused the same way', async () => {
+	it('probe: a DASH manifest, alone or named by a local concat list, is refused the same way', async () => {
 		requests.length = 0;
 		const top = await registerErrors(write('remote.mpd', dash(`${base}/seg0.ts`)));
-		write('dash-segment.ts', dash(`${base}/seg1.ts`));
-		const nested = await registerErrors(write('nested.m3u8', hls('dash-segment.ts')));
+		write('nested.mpd', dash(`${base}/seg1.ts`));
+		const nested = await registerErrors(write('nested.ffconcat', 'ffconcat version 1.0\nfile nested.mpd\n'));
 		expect(requests).toEqual([]);
 		expect(top.errors.map((e) => e.code)).toEqual(['REMOTE_REFERENCE_BLOCKED']);
 		expect(nested.errors.map((e) => e.code)).toEqual(['REMOTE_REFERENCE_BLOCKED']);

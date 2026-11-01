@@ -3,13 +3,13 @@
 // playlist embeds), so a playlist or reference file that names http://, tcp://, rtmp://… is refused instead of
 // fetched. Pipes from the engine get `pipe,fd` only; lavfi sources open no protocol.
 //
-// The whitelist does not cover every demuxer: FFmpeg's DASH demuxer (6.1 and 7.1, libavformat/dashdec.c `open_url`)
-// opens its http(s) segments with avio_open2 and ignores the context's whitelist (measured: a local .mpd whose
-// BaseURL is http://127.0.0.1/… is fetched even with -protocol_whitelist file,crypto,data). Probes — which every file
-// goes through before the engine uses it — therefore also get `-format_whitelist` with every demuxer of the binary
-// except NETWORK_DEMUXERS; the whitelist is inherited by nested demuxers (a DASH manifest posing as an HLS segment
-// is refused too). FFmpeg runs with many inputs do not get the demuxer list (2 KB per input would exceed Windows'
-// 32 K command line), see docs/wp-notes/agent-footage-security.md.
+// The whitelist does not cover every demuxer of every build: FFmpeg 6.1's DASH demuxer opens its http(s) segments
+// itself and ignores the context's whitelist (measured on 6.1.1: a local .mpd whose BaseURL is http://127.0.0.1/…
+// is fetched even with -protocol_whitelist file,crypto,data; the vendor LGPL 7.1.5 build refuses it). Probes — which
+// every file goes through before the engine uses it — therefore also get `-format_whitelist` with every demuxer of
+// the binary except NETWORK_DEMUXERS; nested demuxers inherit it (a DASH manifest named by a local concat list or
+// playlist is refused too). FFmpeg runs with many inputs do not get the demuxer list (2 KB per input would exceed
+// Windows' 32 K command line), see docs/wp-notes/agent-footage-security.md.
 //
 // Pure (no Node imports): the jasper-proc, roto, speech and CLAP workers import it too.
 
@@ -19,8 +19,8 @@ export const LOCAL_PROTOCOLS = ['-protocol_whitelist', 'file,crypto,data'] as co
 const PIPE_PROTOCOLS = ['-protocol_whitelist', 'pipe,fd'] as const;
 
 /**
- * Demuxers a probe never opens: `dash` fetches its segments itself (see above); `rtsp`, `rtp`, `sdp` and `sap` exist
- * only to open network sessions.
+ * Demuxers a probe never opens: `dash` fetches its segments itself on FFmpeg 6.1 (see above); `rtsp`, `rtp`, `sdp`
+ * and `sap` exist only to open network sessions.
  */
 export const NETWORK_DEMUXERS: readonly string[] = ['dash', 'rtsp', 'rtp', 'sdp', 'sap'];
 

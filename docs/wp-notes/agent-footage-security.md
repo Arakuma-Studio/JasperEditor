@@ -29,14 +29,17 @@ before FFmpeg starts.
   `node:child_process` value or calls `runTool` / `spawnTool` must be either listed as an FFmpeg spawner that calls
   `restrictInputs` / `restrictProbeArgs`, or listed with the program it starts instead. An unclassified new spawn site
   fails the test. No source may name a protocol outside `file,crypto,data,pipe,fd` in a whitelist.
-- **DASH bypass (measured).** FFmpeg's DASH demuxer opens its segments with `avio_open2` and ignores the
-  context's protocol whitelist. Source: `libavformat/dashdec.c` `open_url`, n7.1 line 449, also in n6.1. On the
-  system FFmpeg 6.1.1, a local `.mpd` whose `BaseURL` is `http://127.0.0.1:<port>/seg.ts` was fetched by `ffprobe`
-  and by `ffmpeg -i` with and without `-protocol_whitelist file,crypto,data`. So was a local HLS playlist whose local
-  "segment" is such a manifest. Probes therefore also pass `-format_whitelist` with every demuxer the binary lists
-  (`ffprobe -demuxers`, cached per binary; a failed listing is retried at the next probe) except `NETWORK_DEMUXERS`:
-  `dash`, plus `rtsp`, `rtp`, `sdp` and `sap`, which exist only to open network sessions. Nested demuxers inherit
-  the format whitelist (`ff_copy_whiteblacklists`), so the nested case is refused too (measured).
+- **DASH bypass on FFmpeg 6.1 (measured).** On the system FFmpeg 6.1.1, a local `.mpd` whose `BaseURL` is
+  `http://127.0.0.1:<port>/seg.ts` was fetched by `ffprobe` and by `ffmpeg -i` with and without
+  `-protocol_whitelist file,crypto,data`. So was a manifest named by a local `ffconcat` list or used as a local HLS
+  "segment". The vendor LGPL 7.1.5 build (`vendor/ffmpeg-lgpl/linux-x64`) refuses the same manifest under the
+  protocol whitelist (`Protocol 'http' not on whitelist`). Its HLS demuxer also refuses a DASH "segment" by itself:
+  `extension_picky` reports "detected format dash … mismatches allowed extensions". A dev or system build can still
+  have the 6.1 behaviour, so probes also pass `-format_whitelist`. It holds every demuxer the binary lists
+  (`ffprobe -demuxers`, cached per binary; a failed listing is retried at the next probe) except
+  `NETWORK_DEMUXERS`: `dash`, plus `rtsp`, `rtp`, `sdp` and `sap`, which exist only to open network sessions.
+  Nested demuxers inherit the format whitelist (`ff_copy_whiteblacklists`), so the nested cases are refused too
+  (measured on both builds).
 - HLS with an `http://` segment: FFmpeg 6.1 already refuses it when the playlist is opened through `file` (the
   `file` protocol's default whitelist is `file,crypto,data`). The explicit whitelist does not depend on that default
   or on how the input is named.
@@ -70,12 +73,13 @@ before FFmpeg starts.
 The machine is a shared 4-core host. Commands ran under `flock`:
 
 - `pnpm exec vitest run apps/engine/test/local-inputs.test.ts apps/engine/test/lgpl-filters.test.ts --maxWorkers=1`:
-  19 passed. Unit and property tests of the argument builders, the demuxer parsing for the 6.1 and 7.1 listing
+  all passed. Unit and property tests of the argument builders, the demuxer parsing for the 6.1 and 7.1 listing
   formats, the stderr classification, the source scan and the AGENTS.md comparison.
 - `JASPER_FFMPEG_LGPL_ONLY=1 pnpm exec vitest run apps/engine/test/local-inputs-network.test.ts
-  apps/engine/test/export-lgpl-guard.test.ts --maxWorkers=1`: 5 passed.
+  apps/engine/test/export-lgpl-guard.test.ts --maxWorkers=1`: 5 passed. The engine used the vendor LGPL 7.1.5
+  build. The 6.1.1 refusals of the DASH cases were checked by hand with the same arguments.
   - AF-SEC-002: a local listener counts requests. Probe/registration of an HLS playlist with an http segment, of a
-    DASH manifest and of a DASH manifest nested in a local HLS playlist each return `REMOTE_REFERENCE_BLOCKED`.
+    DASH manifest and of a DASH manifest named by a local `ffconcat` list each return `REMOTE_REFERENCE_BLOCKED`.
   - A poster derivative and a native export of a playlist swapped to an http segment after registration (same size
     and mtime) also fail with `REMOTE_REFERENCE_BLOCKED`.
   - The listener got zero requests in every case.
@@ -85,7 +89,16 @@ The machine is a shared 4-core host. Commands ran under `flock`:
   - before the change, probes returned `UNSUPPORTED_MEDIA` and the derivative and export returned `TOOL_FAILED`;
   - the lgpl-filters tests failed;
   - without the export's explicit check, the export guard test failed with `TOOL_FAILED`.
-- `pnpm --filter @jasper/engine typecheck` passed.
+- Regression sweep, all passed under `JASPER_FFMPEG_LGPL_ONLY=1`, run in three batches:
+  - media, imports, browse, encoders, processing-steps, processing-cli, audio-decode, sounds-unit, tracking-unit,
+    color and unit;
+  - export, processing, roto, mg, jobs, subtitle-taps-failure, audio-deliver, sound-copy-codec,
+    sound-design-measure-worker, tracking, gaps-media-jobs, gaps-reframe, sync-audio, previews,
+    sound-semantic-unit, speech-core, camtrack-job and sounds-index (136 passed, 4 skipped by their own gates);
+  - processing-steps again after the `fd` fix.
+
+  processing-steps first failed because FFmpeg opens `-i -` with the `fd` protocol; pipe inputs now get `pipe,fd`.
+- `pnpm --filter @jasper/api typecheck` and `pnpm --filter @jasper/engine typecheck` passed.
 
 ## Limits
 
@@ -93,10 +106,9 @@ The machine is a shared 4-core host. Commands ran under `flock`:
   32 K command line on exports with many inputs. Every file is probed when it is registered, browsed or added to the
   sound library, so a DASH manifest never becomes media. A registered file whose content is replaced by a DASH
   manifest while its size and modification time stay the same would still be fetched by a later export, derivative
-  or worker run. The protocol whitelist does not stop DASH.
-- Measured on FFmpeg 6.1.1 only; the vendor LGPL 7.1 build is not on this host. FFmpeg 7.1 has the same
-  `dashdec.c` `avio_open2` call, and its `-demuxers` listing format is covered by a unit test from
-  `fftools/opt_common.c` (n7.1).
+  or worker run on a 6.1-style build, where the protocol whitelist does not stop DASH.
+- The DASH bypass was measured on 6.1.1 only. The vendor 7.1.5 build refuses it through the protocol whitelist.
+  Its `-demuxers` listing format is covered by a unit test from `fftools/opt_common.c` (n7.1).
 - Errors of `spawnRaw` callers, jasper-proc and the workers stay generic: they read stderr themselves. The network
   access is refused all the same.
 - Filters that open files themselves (`movie`, `amovie`, `subtitles`) are not covered by input whitelists. The engine
