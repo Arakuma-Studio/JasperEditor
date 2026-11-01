@@ -1,5 +1,6 @@
 import { type MediaAsset, originalMediaId } from '@jasper/project';
 import { z } from 'zod';
+import { registerDeriveUi } from '../derive/register.ts';
 import {
 	openProcessForClips,
 	openProcessForMedia,
@@ -13,6 +14,7 @@ import { PREFERENCES_DIALOG, registerPreferencesDialog } from '../shell/preferen
 import type { CommandCtx, UiCommand } from './types.ts';
 
 registerProcessingUi();
+registerDeriveUi();
 
 function selectedVideoMedia(ctx: CommandCtx): string | null {
 	const s = ctx.session?.getState();

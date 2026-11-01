@@ -1,7 +1,10 @@
-import { ProcessingSettingsSchema, ProcessRequestSchema } from '@jasper/api';
+import { DeriveRequestSchema, ProcessingSettingsSchema, ProcessRequestSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
 import { requireUserApproval } from '../agent/user-approval.ts';
+import { replyWithJob } from '../jobs/reply.ts';
+import { JobError } from '../jobs/types.ts';
 import { MEDIA_KEY_RE } from '../media/fingerprint.ts';
+import { DeriveService } from '../processing/derive.ts';
 import { processingLicenses } from '../processing/licenses.ts';
 import { ProcessingService } from '../processing/service.ts';
 import { SettingsError } from '../processing/settings.ts';
@@ -27,6 +30,27 @@ export default async function processingRoutes(app: FastifyInstance): Promise<vo
 				throw new HttpError(404, 'ASSET_NOT_FOUND', 'Unknown media key');
 			const body = parseOr400(ProcessRequestSchema, req.body ?? {});
 			return svc.submitProcess(req.params.key, body);
+		}),
+	);
+
+	// spec 18 AF-OPS-001: derivation ops (conform-cfr, reverse, denoise-audio, extract-audio, time-stretch, range).
+	const derive = new DeriveService(core);
+	derive.registerRunner();
+	type DeriveParams = { Params: { key: string }; Querystring: { wait?: string } };
+	app.post<DeriveParams>(
+		'/api/media/:key/derive',
+		guarded<DeriveParams>(async (req, reply) => {
+			if (!MEDIA_KEY_RE.test(req.params.key) || !core.registry.get(req.params.key))
+				throw new HttpError(404, 'ASSET_NOT_FOUND', 'Unknown media key');
+			const body = parseOr400(DeriveRequestSchema, req.body ?? {});
+			let job: Awaited<ReturnType<DeriveService['submit']>>;
+			try {
+				job = await derive.submit(req.params.key, body);
+			} catch (e) {
+				if (e instanceof JobError) throw new HttpError(422, e.code, e.message, e.detail);
+				throw e;
+			}
+			return replyWithJob(core.queue, job, req.query.wait, reply, 'DERIVE_FAILED');
 		}),
 	);
 

@@ -22,6 +22,7 @@ import {
 	type CleanupAnalyzeRequest,
 	type ColorMatchRequest,
 	type DerivativeKind,
+	type DeriveRequest,
 	decodeVoiceAnalysis,
 	type EngineJob,
 	type EnvelopeJson,
@@ -759,6 +760,18 @@ export class EngineClient {
 			params: { key: mediaKey },
 			body: req,
 			...(wait ? { query: { wait: '1' as const } } : {}),
+		});
+	}
+
+	/**
+	 * spec 18 AF-OPS-001: a derivation op on a media (job `derive`, result DeriveResult; commit it with `media.derive`).
+	 * Refusals (`NO_AUDIO`, `UNSUPPORTED_RATE`, `OUT_OF_RANGE`…) reject with that code; `wait` answers the finished job.
+	 */
+	deriveMedia(mediaKey: string, req: DeriveRequest, opts: { wait?: boolean } = {}): Promise<EngineJob> {
+		return this.call('mediaDerive', {
+			params: { key: mediaKey },
+			body: req,
+			...(opts.wait ? { query: { wait: '1' as const } } : {}),
 		});
 	}
 

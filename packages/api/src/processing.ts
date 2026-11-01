@@ -1,4 +1,4 @@
-import { ProcessStepSchema } from '@jasper/project';
+import { type DeriveRecipe, ProcessStepSchema } from '@jasper/project';
 import { z } from 'zod';
 import { RegisteredMediaSchema } from './media.ts';
 
@@ -38,6 +38,57 @@ export const ProcessResultSchema = z.object({
 	range: SourceFrameRangeSchema.optional(),
 });
 export type ProcessResult = z.infer<typeof ProcessResultSchema>;
+
+/**
+ * spec 18 AF-OPS-001: one derivation op (`POST /api/media/:key/derive`) — the `NativeRecipe` ops conform-cfr,
+ * reverse, denoise-audio, extract-audio, time-stretch and range with their field bounds. Unknown keys are refused so
+ * the recipe hash covers exactly what ran. Rates and ranges outside the media are refused by the engine with coded
+ * errors (`UNSUPPORTED_RATE`, `OUT_OF_RANGE`, `EMPTY_RANGE`, `NO_AUDIO`, `NO_VIDEO`; `deriveProblems`).
+ */
+const DeriveRateSchema = z.strictObject({
+	num: z.number().int().min(1).max(1_000_000),
+	den: z.number().int().min(1).max(1_000_000),
+});
+const FlicksSchema = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
+export const DeriveRecipeSchema = z.discriminatedUnion('op', [
+	z.strictObject({ op: z.literal('conform-cfr'), frameRate: DeriveRateSchema }),
+	z.strictObject({ op: z.literal('reverse') }),
+	z.strictObject({ op: z.literal('denoise-audio'), strength: z.number().min(0).max(1) }),
+	z.strictObject({
+		op: z.literal('extract-audio'),
+		streamIndex: z.number().int().min(0).max(4096),
+		format: z.enum(['wav', 'flac']),
+	}),
+	z.strictObject({ op: z.literal('time-stretch'), rate: z.number().positive(), preservePitch: z.boolean() }),
+	z.strictObject({ op: z.literal('range'), inFlicks: FlicksSchema, outFlicks: FlicksSchema }),
+]);
+// Every derive recipe is a NativeRecipe the project stores as the derivation (compile-time check).
+const _deriveRecipeIsNative = (r: z.infer<typeof DeriveRecipeSchema>): DeriveRecipe => r;
+void _deriveRecipeIsNative;
+
+/** `POST /api/media/:key/derive` → EngineJob (kind `derive`). */
+export const DeriveRequestSchema = z.object({
+	projectId: z.string().optional(),
+	recipe: DeriveRecipeSchema,
+});
+export type DeriveRequest = z.infer<typeof DeriveRequestSchema>;
+
+/** `EngineJob.result` of a `derive` job: the derived file, ready for `media.derive`. */
+export const DeriveResultSchema = z.object({
+	registered: RegisteredMediaSchema,
+	fromMediaKey: z.string(),
+	/** The recipe as run (commit it as `media.derive.recipe`). */
+	recipe: DeriveRecipeSchema,
+	recipeVersion: z.number().int(),
+	recipeHash: z.string(),
+	/** True when an existing output of the same source and recipe was reused (content-addressed). */
+	reused: z.boolean(),
+	/** `range` of a constant-frame-rate video: the source frames `[startFrame, endFrame)` the file holds. */
+	range: SourceFrameRangeSchema.optional(),
+	/** What the op did, e.g. `reversed in 4 segments of ≤ 61 frames`. */
+	notes: z.array(z.string()),
+});
+export type DeriveResult = z.infer<typeof DeriveResultSchema>;
 
 /** One super-resolution model the engine can run (catalogue + install state). */
 export const ProcessingModelSchema = z.object({
