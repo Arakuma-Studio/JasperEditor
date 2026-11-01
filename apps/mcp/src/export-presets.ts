@@ -195,3 +195,55 @@ export function buildExportSettings(
 		...(preset.alpha ? { videoOnly: true } : {}),
 	};
 }
+
+/**
+ * spec 18 AF-EXP: what start_export writes (`format`): a video file from a preset (default), an animated GIF of the
+ * picture (no sound), or the sequence mix alone as WAV, FLAC or M4A (AAC).
+ */
+export const EXPORT_FORMATS = ['video', 'gif', 'wav', 'flac', 'm4a'] as const;
+export type ExportFormat = (typeof EXPORT_FORMATS)[number];
+
+/** The settings of a GIF or audio-only export (no preset: their own fields). */
+export function buildDeliverableSettings(
+	seq: Sequence,
+	format: Exclude<ExportFormat, 'video'>,
+	opts: {
+		range: ExportSettings['range'];
+		engine: ExportSettings['engine'];
+		outputPath?: string;
+		gif?: ExportSettings['gif'];
+		audioChannels?: 1 | 2 | 6;
+		audioSampleRate?: 44100 | 48000 | 96000;
+		/** WAV / FLAC bits per sample (default 24). */
+		audioBitDepth?: 16 | 24;
+		/** M4A (AAC) bit rate (default 192 kb/s stereo, 384 for 5.1). */
+		audioBitrateKbps?: number;
+		normalize?: { targetLufs: number; truePeakDb: number } | null;
+	},
+): ExportSettings {
+	const s = seq.settings;
+	const base = {
+		sequenceId: seq.id,
+		range: opts.range,
+		presetId: format === 'gif' ? 'animated-gif' : `audio-${format}`,
+		engine: opts.engine,
+		destination: opts.outputPath
+			? { type: 'path' as const, path: opts.outputPath }
+			: { type: 'download' as const },
+	};
+	if (format === 'gif') return { ...base, container: 'gif', ...(opts.gif ? { gif: opts.gif } : {}) };
+	const channels = opts.audioChannels ?? (s.masterLayout === '5.1' ? 6 : 2);
+	return {
+		...base,
+		container: format,
+		audio: {
+			codec: format === 'wav' ? 'pcm' : format === 'flac' ? 'flac' : 'aac',
+			sampleRate: opts.audioSampleRate ?? (s.audioSampleRate as 44100 | 48000 | 96000 | undefined) ?? 48000,
+			channels,
+			...(format === 'm4a'
+				? { bitrateKbps: opts.audioBitrateKbps ?? (channels === 6 ? 384 : 192) }
+				: { bitDepth: opts.audioBitDepth ?? 24 }),
+			...(opts.normalize !== undefined ? { normalize: opts.normalize } : {}),
+		},
+	};
+}

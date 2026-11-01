@@ -796,7 +796,9 @@ export function videoEncodeArgs(choice: Pick<EncoderChoice, 'encoder'>, p: Encod
 }
 
 /** Audio encoder arguments for a container (`aac` in MP4, `libopus` in WebM). */
-export function audioEncodeArgs(audioEncoder: string, kbps: number, channels = 2): string[] {
+export function audioEncodeArgs(audioEncoder: string, kbps: number, channels = 2, bits?: 16 | 24): string[] {
+	// spec 18 AF-EXP-002: FLAC files at 16 or 24 bits (the encoder writes 24-bit from s32 samples)
+	if (audioEncoder === 'flac') return ['-c:a', 'flac', '-sample_fmt', bits === 16 ? 's16' : 's32'];
 	// audio-mix: Opus needs the Vorbis channel mapping (family 1) above two channels (discrete 5.1).
 	if (audioEncoder === 'libopus')
 		return [

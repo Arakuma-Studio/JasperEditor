@@ -66,6 +66,16 @@ import {
 	outputFormatChanges,
 } from '../tools/encoders.ts';
 import { CaptionExportError, captionBurnMode, captionPlanWarnings } from './captions.ts';
+import {
+	type AudioOnlySpec,
+	audioOnlyBytes,
+	type Deliverable,
+	DeliverableError,
+	deliverableOf,
+	type GifSpec,
+	gifBytes,
+	gifFrames,
+} from './deliverables.ts';
 import { bakeRecipeOf, compositeMemoryBlocker, compositeMemoryBudget, estimateComposite } from './memory.ts';
 import { BUILTIN_NATIVE_EFFECTS, type NativeExtension } from './native-ext.ts';
 import { soundPlanWarnings } from './sound-credits.ts';
@@ -162,6 +172,10 @@ export type OutputSpec = {
 	noBFrames?: boolean;
 	/** color-mgmt: the colour space, tags, bit depth and HDR metadata written (absent = 8-bit BT.709 SDR). */
 	color?: ExportColor;
+	/** spec 18 AF-EXP-002: the audio encoder of an audio-only file (`pcm_s16le`, `pcm_s24le`, `flac`, `aac`). */
+	audioCodec?: string;
+	/** spec 18 AF-EXP-002: bits per sample of a FLAC file. */
+	audioBits?: 16 | 24;
 };
 
 export type LocalMedia = {
@@ -195,6 +209,18 @@ export type PlannedExport = {
 	previews?: import('./use-previews.ts').ExportRun[];
 	/** gaps (`draftUseProxies`): media rendered from their attached proxies (draft exports only). */
 	draftProxies?: string[];
+	/**
+	 * spec 18 AF-EXP: a GIF (the plan renders its ProRes intermediate; the service converts it) or an audio-only file
+	 * (the mixdown alone). Absent = a video file.
+	 */
+	deliverable?:
+		| {
+				kind: 'gif';
+				gif: GifSpec;
+				/** The settings of the picture intermediate (what the render paths and their fallbacks plan). */
+				render: ExportSettings;
+		  }
+		| { kind: 'audio'; audio: AudioOnlySpec };
 };
 
 /** The engine media key of an asset (engine-store locator), or null. */
@@ -308,7 +334,22 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	}
 	const seq = document.sequences[input.sequenceId];
 	if (!seq) throw new PlanError('NOT_FOUND', 404, `Sequence ${input.sequenceId} not found`);
-	const settings = input.settings;
+	// spec 18 AF-EXP: a GIF is planned as its picture intermediate (`deliverable.render`); an audio-only file plans the
+	// mix alone (`planAudioOnly`). The plan id stays over the requested settings.
+	const requested = input.settings;
+	let deliverable: Deliverable = { kind: 'video' };
+	if (!input.still)
+		try {
+			deliverable = deliverableOf(requested, {
+				width: seq.settings.width,
+				height: seq.settings.height,
+				frameRate: seq.settings.frameRate,
+			});
+		} catch (e) {
+			if (e instanceof DeliverableError) throw new PlanError('VALIDATION_FAILED', 400, e.message);
+			throw e;
+		}
+	const settings = deliverable.kind === 'gif' ? deliverable.render : requested;
 	const range = input.rangeOverride ?? exportRange(document, input.sequenceId, settings);
 
 	// Resolve engine-store keys only; client path locators are untrusted.
@@ -362,6 +403,20 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		},
 		templateAssets: engineTemplateAssets(deps.fonts),
 	});
+	if (deliverable.kind === 'audio')
+		return planAudioOnly({
+			input,
+			deps,
+			document,
+			seq,
+			range,
+			snapshot,
+			media,
+			draftProxies,
+			proxiesOffline,
+			captionWarnings,
+			spec: deliverable.audio,
+		});
 
 	// Frame buffers are sized by these numbers (`width × height × 4` per layer in the
 	// compositing kernels and in ffmpeg). Commands keep sequences within 8192 px; a hostile document or request is
@@ -534,9 +589,13 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	const video0 = settings.video;
 	// The requested container and audio codec are written where they fit the codec (WP6.5a); what does not fit is
 	// reported below (OUTPUT_CONTAINER_CHANGED / AUDIO_CODEC_CHANGED), never changed silently (AGENTS §4).
+	// (a video container here: an audio-only file returned above, a GIF plans its MOV intermediate; `deliverableOf`
+	// refused FLAC audio in a video file)
 	const want = {
-		container: settings.container,
-		...(settings.audio && !settings.videoOnly ? { audio: settings.audio.codec } : {}),
+		container: settings.container as 'mp4' | 'webm' | 'mov',
+		...(settings.audio && !settings.videoOnly
+			? { audio: settings.audio.codec as Exclude<typeof settings.audio.codec, 'flac'> }
+			: {}),
 	};
 	const encoder = deps.selectEncoder
 		? deps.selectEncoder({
@@ -678,7 +737,9 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		!video ||
 		(video.width === seq.settings.width && video.height === seq.settings.height) ||
 		(video.width === fmt.storageWidth && video.height === fmt.height);
-	const anamorphic = fmt.par.num !== fmt.par.den && matchesSequence && !input.still;
+	// (a GIF is square-pixel: its size is the display aspect)
+	const anamorphic =
+		fmt.par.num !== fmt.par.den && matchesSequence && !input.still && deliverable.kind !== 'gif';
 	const _interlaced =
 		fmt.fieldOrder !== 'progressive' && matchesSequence && !settings.videoOnly && !input.still;
 	const output: OutputSpec = {
@@ -858,7 +919,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		documentRevision,
 		doc: createHash('sha256').update(JSON.stringify(document)).digest('hex'),
 		sequenceId: input.sequenceId,
-		settings,
+		settings: requested,
 		caps: deps.capabilities,
 		encoder: encoder?.encoder ?? null,
 		range,
@@ -902,6 +963,35 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		estimate: { seconds: Math.round(estimateSeconds * 10) / 10, bytes: Math.max(0, estimateBytes) },
 		...(encoder ? { encoder } : {}),
 	};
+	if (deliverable.kind === 'gif') {
+		const gif: GifSpec = { ...deliverable.gif, frames: gifFrames(durationSec, deliverable.gif.fps) };
+		plan.deliverable = { kind: 'gif', ...gif };
+		// GIF has no sound: the picture is the file (AGENTS §4: said, never silent; first, so short lists keep it)
+		plan.audio = { mode: 'native-mix' };
+		plan.warnings.unshift({
+			code: 'GIF_NO_AUDIO',
+			message: `GIF files have no sound: the sequence's audio is not exported${requested.credits?.sidecar ? ' (and no sound credits file is written)' : ''}`,
+			params: { credits: !!requested.credits?.sidecar },
+		});
+		// rendering the intermediate, then two passes over it at the GIF size
+		plan.estimate = {
+			seconds: Math.round((plan.estimate.seconds + (gif.frames * gif.width * gif.height) / 2e7) * 10) / 10,
+			bytes: gifBytes(gif),
+		};
+		return {
+			plan,
+			document,
+			sequenceId: input.sequenceId,
+			range,
+			snapshot,
+			media,
+			output,
+			captions: captionBurnMode(settings),
+			captionSettings: settings.captions,
+			...(draftProxies.length ? { draftProxies } : {}),
+			deliverable: { kind: 'gif', gif, render: settings },
+		};
+	}
 	return {
 		plan,
 		document,
@@ -913,6 +1003,153 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		captions: captionBurnMode(settings),
 		captionSettings: settings.captions,
 		...(draftProxies.length ? { draftProxies } : {}),
+	};
+}
+
+/**
+ * spec 18 AF-EXP-002: the plan of an audio-only file — the offline mixer over the range (the DSP of the preview and every
+ * export path) with the export's rate, channels and loudness normalisation, written as WAV, FLAC or M4A. Nothing visual
+ * is planned, so nothing visual blocks it; audio effects the mixer cannot run still refuse it (as on every path).
+ */
+function planAudioOnly(o: {
+	input: PlanInput;
+	deps: PlanDeps;
+	document: ProjectDocument;
+	seq: ProjectDocument['sequences'][string];
+	range: { start: number; end: number };
+	snapshot: RenderSnapshot;
+	media: Record<string, LocalMedia>;
+	draftProxies: string[];
+	proxiesOffline: string[];
+	captionWarnings: RenderPlan['warnings'];
+	spec: AudioOnlySpec;
+}): PlannedExport {
+	const { input, deps, document, seq, range, snapshot, spec } = o;
+	const settings = input.settings;
+	if (!deps.capabilities.native)
+		throw new PlanError('PATH_NOT_ELIGIBLE', 409, 'Audio-only exports need ffmpeg, which is not available', {
+			blockers: [{ path: 'native', reason: 'ffmpeg is not available' }],
+		});
+	const unrenderable = unrenderableAudioEffects(snapshot);
+	if (unrenderable.length > 0)
+		throw new PlanError(
+			'AUDIO_EFFECT_UNSUPPORTED',
+			409,
+			`Audio effects without an export processor: ${[...new Set(unrenderable.map((u) => u.effectId))].join(', ')}`,
+			{ effects: unrenderable },
+		);
+	const warnings: RenderPlan['warnings'] = [
+		...soundPlanWarnings(document, input.sequenceId, snapshot, settings),
+	];
+	if (o.draftProxies.length)
+		warnings.push({
+			code: 'DRAFT_PROXIES',
+			message: `${o.draftProxies.length} media render from their proxies (Use Proxies: a draft, not full resolution)`,
+			itemIds: o.draftProxies,
+		});
+	if (o.proxiesOffline.length)
+		warnings.push({
+			code: 'PROXY_OFFLINE',
+			message: `${o.proxiesOffline.length} proxies are offline: those media render at full resolution`,
+			itemIds: o.proxiesOffline,
+		});
+	const offline = snapshot.audioClips.filter((a) => snapshot.media[a.mediaId] === null).map((a) => a.clipId);
+	if (offline.length)
+		warnings.push({
+			code: 'OFFLINE_MEDIA',
+			message: `${offline.length} clip(s) use offline media and are silent in the mix`,
+			itemIds: offline,
+		});
+	// caption sidecars may go with the sound; burned-in captions have no picture to go into
+	warnings.push(...o.captionWarnings);
+	if (settings.usePreviews)
+		warnings.push({ code: 'PREVIEWS_UNUSED', message: 'Audio-only exports render no picture' });
+	const audioOut = audioOutputOf(seq, settings);
+	const seqFps = seq.settings.frameRate;
+	const durationSec = ((range.end - range.start) * seqFps.den) / seqFps.num;
+	const bitrateKbps = settings.audio?.bitrateKbps ?? (audioOut.channels === 6 ? 384 : 192);
+	const output: OutputSpec = {
+		width: seq.settings.width,
+		height: seq.settings.height,
+		fps: { num: seqFps.num, den: seqFps.den },
+		frames: range.end - range.start,
+		durationSec,
+		scaling: 'fit',
+		crf: 18,
+		x264Preset: 'medium',
+		speed: 'balanced',
+		encoder: null,
+		audioChannels: audioOut.channels,
+		audioBitrateKbps: bitrateKbps,
+		audioSampleRate: audioOut.sampleRate,
+		normalize: audioOut.normalize,
+		audioCodec: spec.codec,
+		...(spec.codec === 'flac' && spec.bitDepth ? { audioBits: spec.bitDepth } : {}),
+	};
+	const headroom = codecHeadroomDb({ codec: spec.codec, bitrateKbps, channels: audioOut.channels });
+	const planId = planIdOf({
+		documentRevision: input.envelope.revision,
+		doc: createHash('sha256').update(JSON.stringify(document)).digest('hex'),
+		sequenceId: input.sequenceId,
+		settings,
+		caps: deps.capabilities,
+		encoder: spec.codec,
+		range,
+	});
+	const plan: PlannedExport['plan'] = {
+		planId,
+		documentRevision: input.envelope.revision,
+		path: 'audio',
+		segments: [],
+		audio: {
+			mode: 'native-mix',
+			...(audioOut.normalize
+				? {
+						normalize: {
+							...audioOut.normalize,
+							limiterCeilingDb: audioOut.normalize.truePeakDb - headroom,
+							codecHeadroomDb: headroom,
+						},
+					}
+				: {}),
+			sampleRate: audioOut.sampleRate,
+			channels: audioOut.channels,
+			codec: spec.codec,
+		},
+		blockers: [],
+		warnings,
+		// the offline mixer runs well faster than real time (an assumption; the normalised delivery adds passes)
+		estimate: {
+			seconds: Math.round((1 + durationSec / 20) * (audioOut.normalize ? 2 : 1) * 10) / 10,
+			bytes: audioOnlyBytes(spec, {
+				sampleRate: audioOut.sampleRate,
+				channels: audioOut.channels,
+				bitrateKbps,
+				durationSec,
+			}),
+		},
+		deliverable: {
+			kind: 'audio',
+			container: spec.container,
+			codec: spec.codec,
+			sampleRate: audioOut.sampleRate,
+			channels: audioOut.channels,
+			...(spec.bitDepth ? { bitDepth: spec.bitDepth } : {}),
+			...(spec.container === 'm4a' ? { bitrateKbps } : {}),
+		},
+	};
+	return {
+		plan,
+		document,
+		sequenceId: input.sequenceId,
+		range,
+		snapshot,
+		media: o.media,
+		output,
+		captions: 'none',
+		captionSettings: settings.captions,
+		...(o.draftProxies.length ? { draftProxies: o.draftProxies } : {}),
+		deliverable: { kind: 'audio', audio: spec },
 	};
 }
 
@@ -957,7 +1194,12 @@ function audioOutputOf(
 }
 
 /** The audio codec of the deliverable (ffmpeg encoder name). */
-export function audioCodecOf(encoder: EncoderChoice | null, output: Pick<OutputSpec, 'audioPcm'>): string {
+export function audioCodecOf(
+	encoder: EncoderChoice | null,
+	output: Pick<OutputSpec, 'audioPcm' | 'audioCodec'>,
+): string {
+	// spec 18 AF-EXP-002: an audio-only file's own encoder
+	if (output.audioCodec) return output.audioCodec;
 	const base = encoder?.audioEncoder ?? 'aac';
 	if (base.startsWith('pcm_')) return output.audioPcm ? 'pcm_s24le' : base;
 	return base;

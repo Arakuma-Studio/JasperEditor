@@ -1,5 +1,6 @@
 import { isAbsolute } from 'node:path';
 import type { ExportSettings } from '@jasper/api';
+import { GIF_DITHERS, GIF_LIMITS, GIF_PALETTES } from '@jasper/api';
 import { defaultCreditsSidecar, sequenceTimecode } from '@jasper/project';
 import { z } from 'zod';
 import { ProjectIdArg, SequenceIdArg, timeArg } from '../arguments.ts';
@@ -21,8 +22,10 @@ import {
 import { toolEnvelope } from '../envelope.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import {
+	buildDeliverableSettings,
 	buildExportSettings,
 	DEFAULT_EXPORT_PRESET,
+	EXPORT_FORMATS,
 	EXPORT_PRESETS,
 	findExportPreset,
 } from '../export-presets.ts';
@@ -260,14 +263,77 @@ export function registerRenderTools(ctx: ToolContext): void {
 		{
 			title: 'Start export',
 			description:
-				'Starts rendering a sequence to a video file and returns a job id at once; follow it with wait_for_job (or get_job), or pass wait: true to block until it is written. Cancelling the MCP request (notifications/cancelled) during wait cancels the export and deletes the partial file. The engine picks the fastest path that can render everything (native ffmpeg for footage-only cuts, Remotion when there are text/effects). Uses the live editor state when the project is open. With outputPath the file is written there (existing files are never overwritten: the engine then writes "name (2).mp4" and the job result gives the real path); otherwise it is downloadable from the job result URL. Sound credits: a credits file goes next to the output (credits; result.credits {format, count, url, path}); soundWarnings (and result.warnings) name W_SOUND_CREDITS when a sound heard in the export needs a credit and no credits file is written, W_SOUND_LICENSE_NC for non-commercial sounds, W_SOUND_SHARE_ALIKE for CC BY-SA sounds (the video must then be shared under CC BY-SA), and W_SOUND_CHECK_STALE (level info) when the stored Sound Check is out of date or failed — tell the user. result.container / result.audioCodec are what the file holds; OUTPUT_CONTAINER_CHANGED / AUDIO_CODEC_CHANGED (plan and result warnings) say when that is not what was requested (e.g. PCM needs MOV, ProRes masters carry PCM) — tell the user. Loudness normalisation (the Mix\'s, or normalizeLufs): plan.loudness gives the target and the true-peak limiter ceiling in front of the encoder (target less the codec\'s headroom: 0 for PCM, 0.5–2 dB for AAC / Opus by bit rate); the engine encodes the audio, decodes it and turns the moments the codec still pushes over the target down, then result.audioLoudness reports the delivered file\'s own audio decoded (measuredOn "decoded-file"; pcm = the mix it encoded): integratedLufs, truePeakDbtp, limiterCeilingDbtp, codecHeadroomDb, loudnessPasses, encodePasses, localCorrections, ceilingLimited, truePeakMet. AUDIO_TRUE_PEAK_OVER / AUDIO_LOUDNESS_CEILING (result warnings) say when the delivered file misses the target — tell the user.',
+				'Starts rendering a sequence to a video file (or, with format, an animated GIF or an audio-only WAV / FLAC / M4A file) and returns a job id at once; format "gif" renders the picture on the same path as a video (nothing the timeline shows is dropped) and converts it with a palette and dithering (gif: fps default 15 max 50, width default the sequence width capped at 1080, loop 0 = forever / 1 = once / n plays, dither, palette); a GIF has no sound and the plan warns GIF_NO_AUDIO; result.gif gives the frames written. Formats "wav" (16/24-bit PCM, audioBitDepth), "flac" (16/24-bit) and "m4a" (AAC, audioBitrateKbps) write the sequence mix through the same mixer as every export (range, audioChannels, audioSampleRate, normalizeLufs apply); plan.deliverable says what the file will be. Video: follow it with wait_for_job (or get_job), or pass wait: true to block until it is written. Cancelling the MCP request (notifications/cancelled) during wait cancels the export and deletes the partial file. The engine picks the fastest path that can render everything (native ffmpeg for footage-only cuts, Remotion when there are text/effects). Uses the live editor state when the project is open. With outputPath the file is written there (existing files are never overwritten: the engine then writes "name (2).mp4" and the job result gives the real path); otherwise it is downloadable from the job result URL. Sound credits: a credits file goes next to the output (credits; result.credits {format, count, url, path}); soundWarnings (and result.warnings) name W_SOUND_CREDITS when a sound heard in the export needs a credit and no credits file is written, W_SOUND_LICENSE_NC for non-commercial sounds, W_SOUND_SHARE_ALIKE for CC BY-SA sounds (the video must then be shared under CC BY-SA), and W_SOUND_CHECK_STALE (level info) when the stored Sound Check is out of date or failed — tell the user. result.container / result.audioCodec are what the file holds; OUTPUT_CONTAINER_CHANGED / AUDIO_CODEC_CHANGED (plan and result warnings) say when that is not what was requested (e.g. PCM needs MOV, ProRes masters carry PCM) — tell the user. Loudness normalisation (the Mix\'s, or normalizeLufs): plan.loudness gives the target and the true-peak limiter ceiling in front of the encoder (target less the codec\'s headroom: 0 for PCM, 0.5–2 dB for AAC / Opus by bit rate); the engine encodes the audio, decodes it and turns the moments the codec still pushes over the target down, then result.audioLoudness reports the delivered file\'s own audio decoded (measuredOn "decoded-file"; pcm = the mix it encoded): integratedLufs, truePeakDbtp, limiterCeilingDbtp, codecHeadroomDb, loudnessPasses, encodePasses, localCorrections, ceilingLimited, truePeakMet. AUDIO_TRUE_PEAK_OVER / AUDIO_LOUDNESS_CEILING (result warnings) say when the delivered file misses the target — tell the user.',
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
+				format: z
+					.enum(EXPORT_FORMATS)
+					.optional()
+					.describe(
+						'What to write: "video" (default: a preset), "gif" (animated GIF, no sound), "wav", "flac" or "m4a" (the mix only)',
+					),
 				preset: z
 					.string()
 					.optional()
-					.describe(`Preset id from list_export_presets (default ${DEFAULT_EXPORT_PRESET})`),
+					.describe(
+						`Video preset id from list_export_presets (default ${DEFAULT_EXPORT_PRESET}); only with format "video"`,
+					),
+				gif: z
+					.strictObject({
+						fps: z
+							.number()
+							.min(GIF_LIMITS.minFps)
+							.max(GIF_LIMITS.maxFps)
+							.optional()
+							.describe(`Frames per second (default ${GIF_LIMITS.defaultFps}, at most ${GIF_LIMITS.maxFps})`),
+						width: z
+							.number()
+							.int()
+							.min(GIF_LIMITS.minWidth)
+							.max(GIF_LIMITS.maxWidth)
+							.optional()
+							.describe(
+								`Width in pixels (default: the sequence width capped at ${GIF_LIMITS.defaultMaxWidth}); the height keeps the aspect`,
+							),
+						loop: z
+							.number()
+							.int()
+							.min(0)
+							.max(GIF_LIMITS.maxPlays)
+							.optional()
+							.describe('How many times it plays: 0 = forever (default), 1 = once, n = n times'),
+						dither: z
+							.enum(GIF_DITHERS)
+							.optional()
+							.describe('Dithering (default sierra2_4a; bayer = ordered pattern; none = banding)'),
+						bayerScale: z
+							.number()
+							.int()
+							.min(0)
+							.max(5)
+							.optional()
+							.describe('Bayer pattern scale 0–5 (default 2)'),
+						palette: z
+							.enum(GIF_PALETTES)
+							.optional()
+							.describe(
+								'Palette: full (one for the clip, default), diff (weighted to what moves), single (one per frame, larger)',
+							),
+					})
+					.optional()
+					.describe('GIF options (format "gif")'),
+				audioBitDepth: z
+					.union([z.literal(16), z.literal(24)])
+					.optional()
+					.describe('Bits per sample of a WAV or FLAC file (default 24)'),
+				audioBitrateKbps: z
+					.number()
+					.int()
+					.min(32)
+					.max(512)
+					.optional()
+					.describe('AAC bit rate of an M4A file in kb/s (default 192 stereo, 384 for 5.1)'),
 				range: z
 					.union([
 						z.enum(['entire', 'in-out']),
@@ -299,7 +365,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 					.string()
 					.optional()
 					.describe(
-						"Absolute path of the output file; the extension is replaced by the container's (.mp4 / .webm / .mov). Never overwrites: see result.path",
+						"Absolute path of the output file; the extension is replaced by the container's (.mp4 / .webm / .mov / .gif / .wav / .flac / .m4a). Never overwrites: see result.path",
 					),
 				wait: z
 					.boolean()
@@ -399,7 +465,11 @@ export function registerRenderTools(ctx: ToolContext): void {
 			{
 				projectId,
 				sequenceId,
+				format,
 				preset,
+				gif,
+				audioBitDepth,
+				audioBitrateKbps,
 				range,
 				engine,
 				outputPath,
@@ -419,7 +489,26 @@ export function registerRenderTools(ctx: ToolContext): void {
 			},
 			extra,
 		) => {
-			const p = findExportPreset(preset);
+			const kind = format ?? 'video';
+			// options of another format are refused by name, never ignored
+			const misplaced = [
+				...(kind !== 'video' && preset !== undefined ? ['preset'] : []),
+				...(kind !== 'video' && crf !== undefined ? ['crf'] : []),
+				...(kind !== 'video' && videoBitrateKbps !== undefined ? ['videoBitrateKbps'] : []),
+				...(kind !== 'gif' && gif !== undefined ? ['gif'] : []),
+				...(kind === 'gif' && audioChannels !== undefined ? ['audioChannels'] : []),
+				...(kind === 'gif' && audioSampleRate !== undefined ? ['audioSampleRate'] : []),
+				...(kind === 'gif' && normalizeLufs !== undefined ? ['normalizeLufs'] : []),
+				...(kind !== 'wav' && kind !== 'flac' && audioBitDepth !== undefined ? ['audioBitDepth'] : []),
+				...(kind !== 'm4a' && audioBitrateKbps !== undefined ? ['audioBitrateKbps'] : []),
+			];
+			if (misplaced.length)
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					`${misplaced.join(', ')} ${misplaced.length === 1 ? 'does' : 'do'} not apply to format "${kind}"`,
+					'preset / crf / videoBitrateKbps are for "video", gif for "gif", audioBitDepth for "wav" / "flac", audioBitrateKbps for "m4a"; a GIF has no sound.',
+				);
+			const p = findExportPreset(kind === 'video' ? preset : undefined);
 			if (!p)
 				throw new ToolError(
 					'E_NOT_FOUND',
@@ -449,21 +538,36 @@ export function registerRenderTools(ctx: ToolContext): void {
 				if (endFrame <= startFrame) throw new ToolError('E_INVALID_PARAM', '`to` must be after `from`');
 				r = { type: 'custom', startFrame, endFrame };
 			}
-			const settings = buildExportSettings(seq, p, {
-				range: r,
-				engine: engine ?? 'auto',
-				outputPath,
-				...(crf !== undefined ? { crf } : {}),
-				...(videoBitrateKbps !== undefined ? { videoBitrateKbps } : {}),
-				...(audioChannels !== undefined ? { audioChannels } : {}),
-				...(audioSampleRate !== undefined ? { audioSampleRate } : {}),
-				...(normalizeLufs !== undefined
+			const normalize =
+				normalizeLufs !== undefined
 					? {
 							normalize:
 								normalizeLufs === null ? null : { targetLufs: normalizeLufs, truePeakDb: truePeakDb ?? -1 },
 						}
-					: {}),
-			});
+					: {};
+			const settings =
+				kind === 'video'
+					? buildExportSettings(seq, p, {
+							range: r,
+							engine: engine ?? 'auto',
+							outputPath,
+							...(crf !== undefined ? { crf } : {}),
+							...(videoBitrateKbps !== undefined ? { videoBitrateKbps } : {}),
+							...(audioChannels !== undefined ? { audioChannels } : {}),
+							...(audioSampleRate !== undefined ? { audioSampleRate } : {}),
+							...normalize,
+						})
+					: buildDeliverableSettings(seq, kind, {
+							range: r,
+							engine: engine ?? 'auto',
+							outputPath,
+							...(gif ? { gif } : {}),
+							...(audioChannels !== undefined ? { audioChannels } : {}),
+							...(audioSampleRate !== undefined ? { audioSampleRate } : {}),
+							...(audioBitDepth !== undefined ? { audioBitDepth } : {}),
+							...(audioBitrateKbps !== undefined ? { audioBitrateKbps } : {}),
+							...normalize,
+						});
 			if (captions) settings.captions = captions;
 			if (usePreviews) settings.usePreviews = true;
 			if (smartRender !== undefined) settings.smartRender = smartRender;
@@ -513,6 +617,8 @@ export function registerRenderTools(ctx: ToolContext): void {
 				...(plan.smart ? { smartRender: plan.smart } : {}),
 				// loudness normalisation: the target and the limiter ceiling in front of the encoder (the codec's headroom)
 				...(plan.audio.normalize ? { loudness: plan.audio.normalize } : {}),
+				// spec 18 AF-EXP: the GIF (rate, size, frames, loop, dither) or audio-only file (codec, rate, channels)
+				...(plan.deliverable ? { deliverable: plan.deliverable } : {}),
 			};
 			// spec 12 §2.11: W_SOUND_CREDITS / W_SOUND_CHECK_STALE (info) / W_SOUND_LICENSE_NC, with their codes
 			const soundWarnings = plan.warnings
@@ -533,7 +639,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 					throw await failedJobError(ctx, done, 'Check the job error; engine_status may help.', body);
 				return jsonResult({
 					...body,
-					preset: p.id,
+					...(kind === 'video' ? { preset: p.id } : { format: kind }),
 					plan: planBody,
 					...creditsBody,
 					...(hint ? { hint } : {}),
@@ -543,7 +649,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 			return jsonResult({
 				jobId: job.id,
 				state: job.state,
-				preset: p.id,
+				...(kind === 'video' ? { preset: p.id } : { format: kind }),
 				plan: planBody,
 				...creditsBody,
 				...(hint ? { hint } : {}),

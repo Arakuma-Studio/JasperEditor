@@ -1,13 +1,16 @@
 // Export settings for Export mode (S05 §15, S04 §10.2 M1 subset): the "Match Sequence – H.264" preset,
 // ranges, per-sequence remembered choices (S05:EX-014), plan-path names (S04:EX-005) and size estimates
 // (S05:EX-023).
-import type {
-	EncoderChoice,
-	EncodingCapabilities,
-	ExportSettings,
-	RenderPlan,
-	SoundCheckExportAudio,
-	VideoCodec,
+import {
+	type EncoderChoice,
+	type EncodingCapabilities,
+	type ExportSettings,
+	GIF_DITHERS,
+	GIF_LIMITS,
+	GIF_PALETTES,
+	type RenderPlan,
+	type SoundCheckExportAudio,
+	type VideoCodec,
 } from '@jasper/api';
 import {
 	captionGroupsOf,
@@ -27,6 +30,60 @@ const AUDIO_KBPS = 256;
 
 export type ExportEngineChoice = ExportSettings['engine'];
 export type ExportRangeChoice = 'entire' | 'in-out';
+
+/** spec 18 AF-EXP: what the export writes — a video file, an animated GIF, or the mix as WAV / FLAC / M4A. */
+export type ExportFormatChoice = 'video' | 'gif' | 'wav' | 'flac' | 'm4a';
+export const FORMAT_OPTIONS: { value: ExportFormatChoice; label: string }[] = [
+	{ value: 'video', label: 'Video' },
+	{ value: 'gif', label: 'Animated GIF (no sound)' },
+	{ value: 'wav', label: 'Audio Only – WAV' },
+	{ value: 'flac', label: 'Audio Only – FLAC' },
+	{ value: 'm4a', label: 'Audio Only – M4A (AAC)' },
+];
+const isFormatChoice = (v: unknown): v is ExportFormatChoice =>
+	v === 'video' || v === 'gif' || v === 'wav' || v === 'flac' || v === 'm4a';
+export const isAudioOnlyFormat = (f: ExportFormatChoice): f is 'wav' | 'flac' | 'm4a' =>
+	f === 'wav' || f === 'flac' || f === 'm4a';
+
+/** spec 18 AF-EXP-001: the GIF's rate, width (`auto` = the sequence width capped at 1080), plays, dither, palette. */
+export type GifChoice = {
+	fps: number;
+	width: 'auto' | number;
+	/** 0 = forever, 1 = once, n = n times. */
+	loop: number;
+	dither: (typeof GIF_DITHERS)[number];
+	palette: (typeof GIF_PALETTES)[number];
+};
+export const DEFAULT_GIF_CHOICE: GifChoice = {
+	fps: GIF_LIMITS.defaultFps,
+	width: 'auto',
+	loop: 0,
+	dither: 'sierra2_4a',
+	palette: 'full',
+};
+export const GIF_DITHER_OPTIONS: { value: GifChoice['dither']; label: string }[] = [
+	{ value: 'sierra2_4a', label: 'Sierra 2-4A (smooth, default)' },
+	{ value: 'sierra2', label: 'Sierra 2 (smoother, slower)' },
+	{ value: 'floyd_steinberg', label: 'Floyd–Steinberg' },
+	{ value: 'bayer', label: 'Bayer (ordered pattern, smaller files)' },
+	{ value: 'none', label: 'None (banding, smallest files)' },
+];
+export const GIF_PALETTE_OPTIONS: { value: GifChoice['palette']; label: string }[] = [
+	{ value: 'full', label: 'One palette for the whole GIF' },
+	{ value: 'diff', label: 'One palette, weighted to what moves' },
+	{ value: 'single', label: 'A palette per frame (larger files)' },
+];
+
+/** The GIF's width: the chosen one, else the sequence width capped at 1080 (even, as the engine writes it). */
+export function gifWidthOf(seq: Pick<Sequence, 'settings'>, c: GifChoice): number {
+	const w = c.width === 'auto' ? Math.min(seq.settings.width, GIF_LIMITS.defaultMaxWidth) : c.width;
+	return Math.max(2, Math.round(w / 2) * 2);
+}
+
+/** spec 18 AF-EXP-002: WAV / FLAC bits per sample and the M4A (AAC) bit rate. */
+export type AudioFileChoice = { bitDepth: 16 | 24; bitrateKbps: number };
+export const DEFAULT_AUDIO_FILE_CHOICE: AudioFileChoice = { bitDepth: 24, bitrateKbps: 256 };
+export const AAC_BITRATES = [128, 192, 256, 320] as const;
 
 export const ENGINE_OPTIONS: { value: ExportEngineChoice; label: string; hint: string }[] = [
 	{ value: 'auto', label: 'Auto', hint: 'Fastest path that can render everything' },
@@ -78,6 +135,10 @@ export function buildExportSettings(
 		 * comments to place over footage in another editor; the engine renders it on the Remotion path).
 		 */
 		alpha?: boolean;
+		/** spec 18 AF-EXP: a video file (default), an animated GIF, or an audio-only file. */
+		format?: ExportFormatChoice;
+		gif?: GifChoice;
+		audioFile?: AudioFileChoice;
 	},
 ): ExportSettings {
 	const col = choice.color ?? DEFAULT_COLOR_CHOICE;
@@ -86,13 +147,74 @@ export function buildExportSettings(
 	const channels = a.channels && a.channels !== 'auto' ? a.channels : s.masterLayout === '5.1' ? 6 : 2;
 	const rate =
 		a.sampleRate && a.sampleRate !== 'sequence' ? a.sampleRate : (s.audioSampleRate as 44100 | 48000 | 96000);
-	const format = exportFormatOf(choice.codec ?? 'h264', choice.opus ?? true);
+	const format = choice.format ?? 'video';
+	const range: ExportSettings['range'] =
+		choice.range === 'in-out' && hasInOut(seq) ? { type: 'in-out' } : { type: 'entire' };
+	const normalize =
+		a.loudness === 'off'
+			? { normalize: null }
+			: typeof a.loudness === 'number'
+				? { normalize: { targetLufs: a.loudness, truePeakDb: a.truePeakDb ?? -1 } }
+				: {};
+	const hasCaptions = seq.captionTracks.length > 0 || Object.keys(captionGroupsOf(seq)).length > 0;
+	if (format === 'gif') {
+		// the picture as a GIF: burned-in captions and sidecars, no caption streams, no sound (and no credits file)
+		const g = choice.gif ?? DEFAULT_GIF_CHOICE;
+		const gifCaptions =
+			hasCaptions && choice.captions ? captionSettings({ ...choice.captions, embed: false }, seq) : null;
+		return {
+			sequenceId: seq.id,
+			range,
+			presetId: 'animated-gif',
+			container: 'gif',
+			gif: {
+				fps: g.fps,
+				...(g.width !== 'auto' ? { width: g.width } : {}),
+				loop: g.loop,
+				dither: g.dither,
+				palette: g.palette,
+			},
+			engine: choice.engine,
+			destination: { type: 'download' },
+			...(gifCaptions ? { captions: gifCaptions } : {}),
+			...(choice.usePreviews ? { usePreviews: true } : {}),
+			...(choice.useProxies ? { draftUseProxies: true } : {}),
+		};
+	}
+	if (isAudioOnlyFormat(format)) {
+		// the mix alone: caption sidecars may go with it (nothing to burn in or embed)
+		const f = choice.audioFile ?? DEFAULT_AUDIO_FILE_CHOICE;
+		const sidecars =
+			hasCaptions && choice.captions && choice.captions.sidecar !== 'none'
+				? captionSettings({ ...choice.captions, burnIn: false, embed: false }, seq)
+				: null;
+		return {
+			sequenceId: seq.id,
+			range,
+			presetId: `audio-${format}`,
+			container: format,
+			audio: {
+				codec: format === 'wav' ? 'pcm' : format === 'flac' ? 'flac' : 'aac',
+				sampleRate: rate ?? 48000,
+				channels,
+				...(format === 'm4a'
+					? { bitrateKbps: channels === 6 ? Math.max(384, f.bitrateKbps) : f.bitrateKbps }
+					: { bitDepth: f.bitDepth }),
+				...normalize,
+			},
+			engine: 'auto',
+			destination: { type: 'download' },
+			...(sidecars ? { captions: sidecars } : {}),
+			...(choice.credits && choice.credits !== 'off' ? { credits: { sidecar: choice.credits } } : {}),
+		};
+	}
+	const video = exportFormatOf(choice.codec ?? 'h264', choice.opus ?? true);
 	const alpha = choice.alpha === true && choice.codec === 'prores';
 	return {
 		sequenceId: seq.id,
-		range: choice.range === 'in-out' && hasInOut(seq) ? { type: 'in-out' } : { type: 'entire' },
+		range,
 		presetId: MATCH_SEQUENCE_PRESET.id,
-		container: format.container,
+		container: video.container,
 		video: {
 			codec: choice.codec ?? 'h264',
 			...(choice.encoder ? { encoder: choice.encoder } : {}),
@@ -117,21 +239,15 @@ export function buildExportSettings(
 			...(alpha ? { proresProfile: '4444' as const, alpha: true } : {}),
 		},
 		audio: {
-			codec: format.audio,
+			codec: video.audio,
 			sampleRate: rate ?? 48000,
 			channels,
 			bitrateKbps: channels === 6 ? 384 : AUDIO_KBPS,
-			...(a.loudness === 'off'
-				? { normalize: null }
-				: typeof a.loudness === 'number'
-					? { normalize: { targetLufs: a.loudness, truePeakDb: a.truePeakDb ?? -1 } }
-					: {}),
+			...normalize,
 		},
 		engine: choice.engine,
 		destination: { type: 'download' },
-		...((seq.captionTracks.length || Object.keys(captionGroupsOf(seq)).length) && choice.captions
-			? { captions: captionSettings(choice.captions, seq) }
-			: {}),
+		...(hasCaptions && choice.captions ? { captions: captionSettings(choice.captions, seq) } : {}),
 		...(choice.usePreviews ? { usePreviews: true } : {}),
 		...(choice.smartRender ? { smartRender: true } : {}),
 		...(choice.useProxies ? { draftUseProxies: true } : {}),
@@ -148,7 +264,7 @@ export function buildExportSettings(
 function exportFormatOf(
 	codec: VideoCodec,
 	opus: boolean,
-): { container: ExportSettings['container']; audio: 'aac' | 'opus' | 'pcm' } {
+): { container: 'mp4' | 'webm' | 'mov'; audio: 'aac' | 'opus' | 'pcm' } {
 	if (codec === 'prores') return { container: 'mov', audio: 'pcm' };
 	if (codec === 'vp9' && opus) return { container: 'webm', audio: 'opus' };
 	return { container: 'mp4', audio: 'aac' };
@@ -200,10 +316,15 @@ export function captionSettings(
 }
 
 /** Blocking validation errors shown above the footer (S05:EX-022). */
-export function validateExport(seq: Sequence, range: { start: number; end: number }): string[] {
+export function validateExport(
+	seq: Sequence,
+	range: { start: number; end: number },
+	format: ExportFormatChoice = 'video',
+): string[] {
 	const errors: string[] = [];
 	if (range.end <= range.start) errors.push('The sequence is empty: there is nothing to export.');
-	if (seq.settings.width % 2 || seq.settings.height % 2)
+	// GIF sizes are made even by the engine; audio-only files have no picture
+	if (format === 'video' && (seq.settings.width % 2 || seq.settings.height % 2))
 		errors.push(
 			`H.264 requires an even width and height (${seq.settings.width} × ${seq.settings.height}); change the sequence frame size.`,
 		);
@@ -216,6 +337,7 @@ export function exportEnvelope(doc: ProjectDocument, revision: number, platform 
 }
 
 const PATH_NAMES: Record<string, string> = {
+	audio: 'Audio mixdown (no picture)',
 	copy: 'Smart render (lossless copy)',
 	native: 'Native (ffmpeg)',
 	hybrid: 'Hybrid (native + graphics)',
@@ -277,10 +399,32 @@ export function outputDescription(
 	frames: number,
 	encoder?: EncoderChoice | null,
 	alpha = false,
+	deliverable?: { settings: ExportSettings; plan?: RenderPlan['deliverable'] },
 ): string {
 	const fps = fpsOf(seq.settings.frameRate);
 	const fpsText = Number.isInteger(fps) ? String(fps) : fps.toFixed(2);
 	const duration = formatDuration(frames / fps);
+	const st = deliverable?.settings;
+	if (st?.container === 'gif') {
+		const p = deliverable?.plan?.kind === 'gif' ? deliverable.plan : null;
+		const g = st.gif ?? {};
+		const w = p?.width ?? g.width ?? Math.min(seq.settings.width, GIF_LIMITS.defaultMaxWidth);
+		const h = p?.height ?? Math.max(2, Math.round((w * seq.settings.height) / seq.settings.width / 2) * 2);
+		const gfps = p?.fps ?? g.fps ?? GIF_LIMITS.defaultFps;
+		const loop = p?.loop ?? g.loop ?? 0;
+		const plays = loop === 0 ? 'loops forever' : loop === 1 ? 'plays once' : `plays ${loop} times`;
+		return `${w}×${h} · ${gfps} fps · GIF${p ? ` · ${p.frames} frames` : ''} · ${plays} · no audio · ${duration}`;
+	}
+	if (st && (st.container === 'wav' || st.container === 'flac' || st.container === 'm4a')) {
+		const a = st.audio;
+		const ch = a?.channels === 1 ? 'mono' : a?.channels === 6 ? '5.1' : 'stereo';
+		const rate = `${(a?.sampleRate ?? 48000) / 1000} kHz`;
+		const what =
+			st.container === 'm4a'
+				? `M4A · AAC ${a?.bitrateKbps ?? 192} kb/s`
+				: `${st.container.toUpperCase()} · ${st.container === 'wav' ? 'PCM' : 'FLAC'} ${a?.bitDepth ?? 24}-bit`;
+		return `${what} · ${rate} ${ch} · no picture · ${duration}`;
+	}
 	if (alpha && encoder?.codec === 'prores')
 		return `${seq.settings.width}×${seq.settings.height} · ${fpsText} fps · ${PRORES_ALPHA_LABEL} · no audio · ${duration}`;
 	const video = encoder ? CODEC_LABELS[encoder.codec] : 'H.264';
@@ -383,8 +527,16 @@ export function encoderSummary(encoder: EncoderChoice | null | undefined): strin
 	return `${encoder.label} → ${encoder.container.toUpperCase()}`;
 }
 
-/** File extension of the export (the engine may write WebM for VP9). */
-export function exportExtension(encoder: EncoderChoice | null | undefined): string {
+/**
+ * File extension of the export (the engine may write WebM for VP9). A GIF or audio-only export's file is its own
+ * container (its plan's encoder is the GIF's picture intermediate).
+ */
+export function exportExtension(
+	encoder: EncoderChoice | null | undefined,
+	container?: ExportSettings['container'],
+): string {
+	if (container === 'gif' || container === 'wav' || container === 'flac' || container === 'm4a')
+		return container;
 	return encoder?.container === 'webm' ? 'webm' : encoder?.container === 'mov' ? 'mov' : 'mp4';
 }
 
@@ -461,6 +613,10 @@ type Remembered = {
 	credits?: CreditsChoice;
 	/** ProRes with a transparent background (4444 + alpha) */
 	alpha?: boolean;
+	/** spec 18 AF-EXP: video, GIF or audio only, and their options */
+	format?: ExportFormatChoice;
+	gif?: GifChoice;
+	audioFile?: AudioFileChoice;
 };
 const keyOf = (projectId: string, sequenceId: string) => `jasper.export.${projectId}.${sequenceId}`;
 
@@ -476,11 +632,26 @@ export function lastExportAudio(
 ): { audio: SoundCheckExportAudio | null } | null {
 	const r = loadExportChoice(projectId, seq.id);
 	if (!r) return null;
-	const format = exportFormatOf(r.codec ?? 'h264', opus);
+	// spec 18 AF-EXP: a GIF has no sound to check; WAV / FLAC are lossless (as the master), M4A is AAC
+	if (r.format === 'gif') return null;
 	const a = r.audio ?? {};
 	const channels =
 		a.channels && a.channels !== 'auto' ? a.channels : seq.settings.masterLayout === '5.1' ? 6 : 2;
 	const rate = typeof a.sampleRate === 'number' ? a.sampleRate : undefined;
+	const format =
+		r.format === 'wav' || r.format === 'flac'
+			? { audio: 'pcm' as const }
+			: r.format === 'm4a'
+				? { audio: 'aac' as const }
+				: exportFormatOf(r.codec ?? 'h264', opus);
+	const kbps =
+		r.format === 'm4a'
+			? channels === 6
+				? Math.max(384, r.audioFile?.bitrateKbps ?? 0)
+				: (r.audioFile?.bitrateKbps ?? DEFAULT_AUDIO_FILE_CHOICE.bitrateKbps)
+			: channels === 6
+				? 384
+				: AUDIO_KBPS;
 	if (format.audio === 'pcm')
 		return {
 			audio: rate && rate !== seq.settings.audioSampleRate ? { codec: 'pcm', sampleRate: rate } : null,
@@ -488,7 +659,7 @@ export function lastExportAudio(
 	return {
 		audio: {
 			codec: format.audio,
-			bitrateKbps: channels === 6 ? 384 : AUDIO_KBPS,
+			bitrateKbps: kbps,
 			...(rate && format.audio === 'aac' ? { sampleRate: rate } : {}),
 		},
 	};
@@ -541,10 +712,47 @@ export function loadExportChoice(projectId: string, sequenceId: string): Remembe
 			...(v.useProxies === true ? { useProxies: true } : {}),
 			...(isCreditsChoice(v.credits) ? { credits: v.credits } : {}),
 			...(v.alpha === true ? { alpha: true } : {}),
+			...(isFormatChoice(v.format) ? { format: v.format } : {}),
+			...(v.gif && typeof v.gif === 'object' ? { gif: sanitizeGifChoice(v.gif) } : {}),
+			...(v.audioFile && typeof v.audioFile === 'object'
+				? { audioFile: sanitizeAudioFileChoice(v.audioFile) }
+				: {}),
 		};
 	} catch {
 		return null;
 	}
+}
+
+function sanitizeGifChoice(g: Partial<GifChoice>): GifChoice {
+	const d = DEFAULT_GIF_CHOICE;
+	const int = (v: unknown, min: number, max: number) =>
+		typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max ? v : null;
+	return {
+		fps:
+			typeof g.fps === 'number' &&
+			Number.isFinite(g.fps) &&
+			g.fps >= GIF_LIMITS.minFps &&
+			g.fps <= GIF_LIMITS.maxFps
+				? g.fps
+				: d.fps,
+		width: int(g.width, GIF_LIMITS.minWidth, GIF_LIMITS.maxWidth) ?? 'auto',
+		loop: int(g.loop, 0, GIF_LIMITS.maxPlays) ?? d.loop,
+		dither: (GIF_DITHERS as readonly string[]).includes(g.dither as string)
+			? (g.dither as GifChoice['dither'])
+			: d.dither,
+		palette: (GIF_PALETTES as readonly string[]).includes(g.palette as string)
+			? (g.palette as GifChoice['palette'])
+			: d.palette,
+	};
+}
+
+function sanitizeAudioFileChoice(f: Partial<AudioFileChoice>): AudioFileChoice {
+	return {
+		bitDepth: f.bitDepth === 16 ? 16 : 24,
+		bitrateKbps: (AAC_BITRATES as readonly number[]).includes(f.bitrateKbps as number)
+			? (f.bitrateKbps as number)
+			: DEFAULT_AUDIO_FILE_CHOICE.bitrateKbps,
+	};
 }
 
 function sanitizeAudioChoice(a: ExportAudioChoice): ExportAudioChoice {
@@ -570,8 +778,8 @@ export function saveExportChoice(projectId: string, sequenceId: string, v: Remem
 }
 
 /** File names must not contain characters that are illegal on common file systems (S05:EX-012). */
-export function sanitizeFileName(name: string): string {
-	const cleaned = name
+export function sanitizeFileName(name: string, ext?: string): string {
+	let cleaned = name
 		.replace(/[<>:"/\\|?*]/g, '_')
 		.split('')
 		.filter((ch) => ch.charCodeAt(0) >= 32)
@@ -580,5 +788,8 @@ export function sanitizeFileName(name: string): string {
 		// The container extension is added by the export (users often type "name.mp4").
 		.replace(/\.mp4$/i, '')
 		.trim();
+	// …and the extension of the file being written ("loop.gif" for a GIF is "loop")
+	if (ext && /^[a-z0-9]+$/i.test(ext) && cleaned.toLowerCase().endsWith(`.${ext.toLowerCase()}`))
+		cleaned = cleaned.slice(0, -(ext.length + 1)).trim();
 	return cleaned || 'Export';
 }

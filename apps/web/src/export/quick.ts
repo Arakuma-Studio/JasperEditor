@@ -37,7 +37,8 @@ export async function startQuickExport(
 	const remembered = loadExportChoice(session.projectId, seq.id);
 	const range = remembered?.range ?? 'entire';
 	const engineChoice = remembered?.engine ?? 'auto';
-	const errors = validateExport(seq, exportRange(seq, range));
+	const format = remembered?.format ?? 'video';
+	const errors = validateExport(seq, exportRange(seq, range), format);
 	if (errors.length) throw new QuickExportError(errors[0]!, errors);
 	const settings = buildExportSettings(seq, {
 		range,
@@ -47,6 +48,10 @@ export async function startQuickExport(
 		...(remembered?.audio ? { audio: remembered.audio } : {}),
 		...(remembered?.color ? { color: remembered.color } : {}),
 		...(remembered?.alpha ? { alpha: true } : {}),
+		// spec 18 AF-EXP: the last format (GIF / audio only) and its options
+		format,
+		...(remembered?.gif ? { gif: remembered.gif } : {}),
+		...(remembered?.audioFile ? { audioFile: remembered.audioFile } : {}),
 	});
 	const envelope = exportEnvelope(doc, session.revision);
 	const plan = await engine.planExport({ envelope, sequenceId: seq.id, settings });
@@ -64,9 +69,7 @@ export async function startQuickExport(
 	});
 	const itemName =
 		Object.values(doc.items).find((i) => i.kind === 'sequence' && i.sequenceId === seq.id)?.name ?? 'Export';
-	trackExportJob(
-		job,
-		`${sanitizeFileName(remembered?.fileName ?? itemName)}.${exportExtension(plan.encoder)}`,
-	);
+	const ext = exportExtension(plan.encoder, settings.container);
+	trackExportJob(job, `${sanitizeFileName(remembered?.fileName ?? itemName, ext)}.${ext}`);
 	return job;
 }

@@ -258,7 +258,8 @@ export function exportAudioOfPreset(
 ): SoundCheckExportAudio {
 	const audio = buildExportSettings(seq, p, { range: { type: 'entire' }, engine: 'auto' }).audio!;
 	return {
-		codec: audio.codec,
+		// (video presets carry AAC, Opus or PCM; FLAC is an audio-only file's, lossless as PCM)
+		codec: audio.codec === 'flac' ? 'pcm' : audio.codec,
 		...(audio.codec !== 'pcm' && audio.bitrateKbps ? { bitrateKbps: audio.bitrateKbps } : {}),
 		sampleRate: audio.sampleRate,
 	};

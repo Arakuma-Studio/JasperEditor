@@ -46,7 +46,9 @@ export function exportAudioOf(
 	audio: { bitrateKbps?: number; sampleRate?: number } | undefined,
 ): SoundCheckExportAudio | undefined {
 	if (!planCodec) return undefined;
-	const codec = planCodec === 'libopus' ? 'opus' : planCodec.startsWith('pcm_') ? 'pcm' : 'aac';
+	// FLAC (an audio-only file) is lossless: checked as PCM
+	const codec =
+		planCodec === 'libopus' ? 'opus' : planCodec.startsWith('pcm_') || planCodec === 'flac' ? 'pcm' : 'aac';
 	const rate = audio?.sampleRate;
 	return {
 		codec,
