@@ -492,7 +492,7 @@ describe('instructions, guides and prompt (AF-CTX-003)', () => {
 			'get_brief',
 			'get_footage_digest',
 			'view_media_range',
-					'wait_for_proposal',
+			'wait_for_proposal',
 			'verify_export',
 		];
 		const at = order.map((t) => text.indexOf(`\`${t}\``));
