@@ -95,7 +95,7 @@ function shownVideoTrackIds(seq: Seq): Set<string> {
 }
 
 function solidLuma(doc: ProjectDocument, clip: Clip | undefined): number | null {
-	if (!clip || clip.kind !== 'solid') return null;
+	if (clip?.kind !== 'solid') return null;
 	const syn = doc.synthetics?.[(clip as { syntheticId?: string }).syntheticId ?? ''] as
 		| SyntheticSource
 		| undefined;
