@@ -3,6 +3,7 @@
 // seek half a frame before frame n makes n the first output frame; `-frames:v` bounds the span and `-fps_mode
 // passthrough` keeps ffmpeg from duplicating or dropping frames. LGPL filters only (scale, format).
 import { type ChildProcess, spawn } from 'node:child_process';
+import { restrictInputs } from '../../tools/protocols.ts';
 
 export type FrameSource = {
 	ffmpeg: string;
@@ -47,7 +48,9 @@ export async function* decodeFrames(
 	signal?: AbortSignal,
 ): AsyncGenerator<Uint8Array> {
 	const bytes = s.width * s.height * 3;
-	const child: ChildProcess = spawn(s.ffmpeg, args(s, start, count), { stdio: ['ignore', 'pipe', 'pipe'] });
+	const child: ChildProcess = spawn(s.ffmpeg, restrictInputs(args(s, start, count)), {
+		stdio: ['ignore', 'pipe', 'pipe'],
+	});
 	let err = '';
 	child.stderr?.on('data', (c: Buffer) => {
 		if (err.length < 4000) err += c.toString();

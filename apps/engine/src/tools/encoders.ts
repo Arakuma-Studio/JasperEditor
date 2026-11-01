@@ -6,6 +6,7 @@
 import { existsSync } from 'node:fs';
 import type { EncoderChoice, EncodingCapabilities, VideoCodec } from '@jasper/api';
 import { runTool } from './process.ts';
+import { restrictInputs } from './protocols.ts';
 
 /** Env switch: ignore GPL/nonfree encoders even when the build has them (tests, license audits). */
 const LGPL_ONLY_ENV = 'JASPER_FFMPEG_LGPL_ONLY';
@@ -875,7 +876,7 @@ async function testOne(
 	const ac = new AbortController();
 	const t = setTimeout(() => ac.abort(), timeoutMs);
 	try {
-		await runTool(ffmpeg, hwTestArgs(spec), { signal: ac.signal });
+		await runTool(ffmpeg, restrictInputs(hwTestArgs(spec)), { signal: ac.signal });
 		return { encoder: spec.encoder, usable: true };
 	} catch (e) {
 		const msg = ac.signal.aborted ? 'test encode timed out' : hwFailureReason((e as Error).message);

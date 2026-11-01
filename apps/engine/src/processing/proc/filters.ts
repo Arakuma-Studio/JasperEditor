@@ -4,63 +4,87 @@ import type { ProcessStep } from '@jasper/project';
 import type { FilterStep, StepContext } from './types.ts';
 
 /**
- * Filters that exist only in GPL builds and must never appear in generated filter text (D-13 M2 note). Checked
- * against the LGPL FFmpeg 7.1 build: none of these is present there (apps/engine/test/processing-steps.test.ts).
+ * Filters that exist only in GPL builds and must never appear in generated filter text (D-13 M2 note; AGENTS.md §2
+ * rule 2 names the same list, apps/engine/test/lgpl-filters.test.ts compares them). Source: FFmpeg's `configure`
+ * (n6.1 and n7.1 agree): every `<name>_filter_deps` that contains `gpl`, plus the filters of GPL-only external
+ * libraries (EXTERNAL_LIBRARY_GPL_LIST: frei0r, librubberband, libvidstab). An LGPL build has none of them, except
+ * `vidstab*` in our pinned relicensed source build (S07:PST-003).
  */
-const GPL_FILTERS = [
-	'eq',
-	'hqdn3d',
-	'perspective',
+export const GPL_FILTERS: readonly string[] = [
+	'blackframe',
 	'boxblur',
-	'smartblur',
+	'boxblur_opencl',
+	'colormatrix',
+	'cover_rect',
+	'cropdetect',
 	'delogo',
+	'eq',
+	'find_rect',
 	'frei0r',
-	'spp',
-	'pp7',
-	'uspp',
+	'frei0r_src',
 	'fspp',
-	'mpdecimate',
-	'pullup',
-	'vidstabdetect',
-	'vidstabtransform',
-	'pp',
-	'owdenoise',
-	'mcdeint',
-	'sab',
-	'repeatfields',
-	'phase',
+	'histeq',
+	'hqdn3d',
+	'interlace',
 	'kerndeint',
-	'ocr',
+	'mcdeint',
+	'mpdecimate',
+	'mptestsrc',
+	'nnedi',
+	'owdenoise',
+	'perspective',
+	'phase',
+	'pp',
+	'pp7',
+	'pullup',
+	'repeatfields',
+	'rubberband',
+	'sab',
+	'signature',
+	'smartblur',
+	'spp',
 	'stereo3d',
 	'super2xsai',
 	'tinterlace',
-	'interlace',
-	'cropdetect',
-	'blackframe',
-	'colormatrix',
-	'histeq',
-	'mptestsrc',
+	'uspp',
+	'vaguedenoiser',
+	'vidstabdetect',
+	'vidstabtransform',
 ];
 
-/** Filter names used in a filtergraph text (the token before `=` / `,` / `;` / `[`). */
+/** A generated filter text names a GPL-only filter (engine error code `GPL_FILTER_REFUSED`, not retryable). */
+export class LgplFilterError extends Error {
+	readonly code = 'GPL_FILTER_REFUSED';
+	readonly retryable = false;
+	constructor(readonly filter: string) {
+		super(`GPL-only filter "${filter}" in generated filter text`);
+		this.name = 'LgplFilterError';
+	}
+}
+
+/**
+ * Filter names used in a filtergraph text: the token after the input labels of every filter (filters are separated
+ * by `,` and chains by `;`; commas inside option values are quoted or escaped as `\,`, so neither separates).
+ */
 function filterNames(graph: string): string[] {
 	const out: string[] = [];
 	// Quoted option values (geq expressions) may contain commas: drop them before splitting.
-	for (const part of graph.replace(/'[^']*'/g, "''").split(/[,;]/)) {
+	const text = graph.replace(/\\./g, '__').replace(/'[^']*'/g, "''");
+	for (const part of text.split(/[,;]/)) {
 		const m = /^\s*(?:\[[^\]]*\]\s*)*([a-z0-9_]+)/i.exec(part);
-		if (m) out.push(m[1]);
+		if (m) out.push(m[1]!);
 	}
 	return out;
 }
 
 /**
- * Throws when a filter text uses a GPL-only filter. `vidstab*` filters are allowed only when `allowVidstab`
- * (the engine's FFmpeg is our LGPL build with the pinned relicensed vid.stab, S07:PST-003).
+ * Throws an LgplFilterError when a filter text uses a GPL-only filter. `vidstab*` filters are allowed only when
+ * `allowVidstab` (the engine's FFmpeg is our LGPL build with the pinned relicensed vid.stab, S07:PST-003).
  */
 export function assertLgplFilters(graph: string, opts: { allowVidstab?: boolean } = {}): void {
 	for (const name of filterNames(graph)) {
 		if (opts.allowVidstab && /^vidstab(detect|transform)$/.test(name)) continue;
-		if (GPL_FILTERS.includes(name)) throw new Error(`GPL-only filter "${name}" in generated filter text`);
+		if (GPL_FILTERS.includes(name)) throw new LgplFilterError(name);
 	}
 }
 

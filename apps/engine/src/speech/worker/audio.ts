@@ -8,6 +8,7 @@ import { closeSync, mkdtempSync, openSync, readSync, rmSync, writeSync } from 'n
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { restrictInputs } from '../../tools/protocols.ts';
 import { LogMelStream, SAMPLE_RATE, windowFromRaw } from '../core/mel.ts';
 import { VAD_FRAME, vadThreshold, voicedMask } from '../core/vad.ts';
 
@@ -321,7 +322,7 @@ export async function decodeToInput(
 		...(opts.keepRanges ? { keepRanges: opts.keepRanges } : {}),
 	});
 	await new Promise<void>((resolve, reject) => {
-		const child = spawn(input.ffmpeg, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+		const child = spawn(input.ffmpeg, restrictInputs(args), { stdio: ['ignore', 'pipe', 'pipe'] });
 		opts.onSpawn?.(child);
 		let err = '';
 		let carry: Buffer | null = null;

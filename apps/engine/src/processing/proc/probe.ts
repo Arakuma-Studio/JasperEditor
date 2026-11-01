@@ -1,5 +1,6 @@
 // Minimal ffprobe for jasper-proc: geometry, rate, frame count, alpha, colour matrix and audio streams.
 import { spawn } from 'node:child_process';
+import { restrictProbeArgs } from '../../tools/protocols.ts';
 import type { Rational } from './types.ts';
 
 type ProcProbe = {
@@ -18,7 +19,7 @@ type ProcProbe = {
 
 function run(bin: string, args: string[]): Promise<string> {
 	return new Promise((resolve, reject) => {
-		const c = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+		const c = spawn(bin, restrictProbeArgs(args), { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
 		let out = '';
 		let err = '';
 		c.stdout.on('data', (d: Buffer) => {

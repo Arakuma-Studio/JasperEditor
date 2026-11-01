@@ -5,6 +5,7 @@
 import { type ChildProcess, execFile, spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import type { MgSpecInput } from '@jasper/mg-templates';
+import { restrictInputs, restrictProbeArgs } from '../tools/protocols.ts';
 
 export type MgQuality = 'preview' | 'master';
 
@@ -127,7 +128,7 @@ function countFrames(ffprobe: string, file: string): Promise<number> {
 	return new Promise((resolve, reject) => {
 		execFile(
 			ffprobe,
-			[
+			restrictProbeArgs([
 				'-v',
 				'error',
 				'-select_streams',
@@ -138,7 +139,7 @@ function countFrames(ffprobe: string, file: string): Promise<number> {
 				'-of',
 				'csv=p=0',
 				file,
-			],
+			]),
 			{ timeout: 60_000 },
 			(err, stdout, stderr) => {
 				if (err) reject(new Error(`ffprobe ${file}: ${stderr?.trim() || err.message}`));
@@ -165,7 +166,9 @@ export async function runMgPipe(opts: RunPipeOptions): Promise<void> {
 	const mg = spawn(tools.mg, ['render', '--spec', '-', '--raw-rgba', '--threads', String(threads)], {
 		stdio: ['pipe', 'pipe', 'pipe'],
 	});
-	const ff = spawn(tools.ffmpeg, ffmpegArgs(spec, outputs, threads), { stdio: ['pipe', 'ignore', 'pipe'] });
+	const ff = spawn(tools.ffmpeg, restrictInputs(ffmpegArgs(spec, outputs, threads)), {
+		stdio: ['pipe', 'ignore', 'pipe'],
+	});
 	const spawnErrors: Error[] = [];
 	mg.on('error', (e) => spawnErrors.push(e));
 	ff.on('error', (e) => spawnErrors.push(e));

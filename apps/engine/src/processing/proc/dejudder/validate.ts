@@ -14,6 +14,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
+import { restrictInputs, restrictProbeArgs } from '../../../tools/protocols.ts';
 import { analyseMotion, type CadenceResult, cadenceEvenness, measureMotion } from './cadence.ts';
 import { ffv1Writer, fileSpec, makeStepContext, runFrameStep } from './harness.ts';
 import { CvPool } from './pool.ts';
@@ -53,7 +54,7 @@ const FFPROBE = FFMPEG.replace(/ffmpeg$/, 'ffprobe');
 function probe(file: string): { width: number; height: number; fps: { num: number; den: number } } {
 	const r = spawnSync(
 		FFPROBE,
-		[
+		restrictProbeArgs([
 			'-v',
 			'error',
 			'-select_streams',
@@ -63,7 +64,7 @@ function probe(file: string): { width: number; height: number; fps: { num: numbe
 			'-of',
 			'json',
 			file,
-		],
+		]),
 		{ encoding: 'utf8' },
 	);
 	const s = JSON.parse(r.stdout).streams[0];
@@ -72,7 +73,9 @@ function probe(file: string): { width: number; height: number; fps: { num: numbe
 }
 
 function ff(args: string[]): void {
-	const r = spawnSync(FFMPEG, ['-hide_banner', '-v', 'error', '-y', ...args], { encoding: 'utf8' });
+	const r = spawnSync(FFMPEG, ['-hide_banner', '-v', 'error', '-y', ...restrictInputs(args)], {
+		encoding: 'utf8',
+	});
 	if (r.status !== 0) throw new Error(`ffmpeg failed: ${r.stderr}`);
 }
 

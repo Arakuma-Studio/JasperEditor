@@ -82,4 +82,6 @@ export const NON_RETRYABLE_CODES: ReadonlySet<string> = new Set([
 	'ASSET_NOT_FOUND',
 	'MG_UNAVAILABLE',
 	'INVALID_SPEC',
+	'REMOTE_REFERENCE_BLOCKED',
+	'GPL_FILTER_REFUSED',
 ]);

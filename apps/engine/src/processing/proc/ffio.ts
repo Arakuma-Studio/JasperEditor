@@ -1,6 +1,7 @@
 // Raw frame I/O through ffmpeg pipes for jasper-proc steps (S07:PRC-012). Argument arrays only; every child
 // runs in its own process group so a cancel (SIGTERM to jasper-proc) takes the whole tree down.
 import { type ChildProcess, spawn } from 'node:child_process';
+import { restrictInputs } from '../../tools/protocols.ts';
 import type { DecodeSpec } from './types.ts';
 
 type RawPixFmt = 'rgb48le' | 'gray';
@@ -33,7 +34,7 @@ export function spawnFfmpeg(
 	args: string[],
 	stdin: 'pipe' | 'ignore' = 'ignore',
 ): ChildProcess {
-	const child = spawn(ffmpeg, ['-hide_banner', '-nostdin', '-v', 'error', ...args], {
+	const child = spawn(ffmpeg, ['-hide_banner', '-nostdin', '-v', 'error', ...restrictInputs(args)], {
 		stdio: [stdin, 'pipe', 'pipe'],
 		detached: process.platform !== 'win32',
 		windowsHide: true,
