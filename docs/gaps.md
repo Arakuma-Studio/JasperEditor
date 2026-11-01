@@ -853,9 +853,9 @@ area are in [wp-notes/agent-footage.md](wp-notes/agent-footage.md). Limits that 
 - Derived media: variable-frame-rate sources come out constant-rate after range or reverse, time-stretch drops or
   repeats frames (no blending), and MKV reverse joins can drift under 1 ms of audio.
 - The protocol whitelist blocks network references everywhere; the demuxer whitelist (FFmpeg 6.1's DASH demuxer
-  ignores the protocol whitelist) is applied to probes only, so a file swapped to a DASH manifest after registration
-  with the same size and time could still be fetched by an export on a 6.1-style build (the shipped LGPL 7.1 build
-  refuses it).
+  ignores the protocol whitelist) is applied to probes and to every FFmpeg run of at most 4 file inputs, so on a
+  6.1-style build a registered file swapped to a DASH manifest with the same size and time could still be fetched by
+  an export of more inputs or by a worker (jasper-proc, roto, speech, CLAP); the shipped LGPL 7.1 build refuses it.
 - Hybrid and Remotion GIF exports were checked by hand (SSIM 0.986 / 0.954 against Program); the automated GIF tests
   cover the native path.
 
