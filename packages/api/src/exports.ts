@@ -1,4 +1,4 @@
-import { OUTPUT_SPACE_IDS } from '@jasper/project';
+import { DELIVERY_TARGET_IDS, OUTPUT_SPACE_IDS } from '@jasper/project';
 import { z } from 'zod';
 import { EncoderChoiceSchema, VideoCodecSchema } from './capabilities.ts';
 import { RationalSchema } from './common.ts';
@@ -414,3 +414,113 @@ export const StillResultSchema = z.object({
 	path: z.string().optional(),
 	format: z.enum(STILL_FORMATS).optional(),
 });
+
+// ---------------------------------------------------------------------------------------------------------------
+// Export verification (spec 18 §2.5 AF-VER-001…003; docs/wp-notes/agent-footage-verify.md).
+
+/**
+ * `format` rows check what a file is (codec, size, duration, peaks a platform rejects): an agent may fix them unasked
+ * by exporting again. `judgement` rows check what the cut does (black or flash frames and clicks at cuts, loudness,
+ * silences, platform recommendations): ask the user.
+ */
+export const VERIFY_ROW_KINDS = ['format', 'judgement'] as const;
+export const VERIFY_ROW_STATUSES = ['pass', 'warn', 'fail', 'unverified'] as const;
+export const VERIFY_CHECK_IDS = [
+	'decode',
+	'streams',
+	'duration',
+	'av-skew',
+	'cut-black',
+	'cut-flash',
+	'cut-click',
+	'loudness',
+	'true-peak',
+	'silence',
+	'target-container',
+	'target-aspect',
+	'target-duration',
+	'target-resolution',
+	'target-frame-rate',
+	'target-size',
+	'target-loudness',
+] as const;
+export type VerifyCheckId = (typeof VERIFY_CHECK_IDS)[number];
+
+const VerifyValueSchema = z.union([z.number(), z.string().max(400), z.null()]);
+
+/** Where a row points: file time, the sequence frame it shows and that frame's timecode. */
+export const VerifyAtSchema = z.object({
+	sec: z.number(),
+	frame: z.number().int(),
+	timecode: z.string().max(32),
+});
+export type VerifyAt = z.infer<typeof VerifyAtSchema>;
+
+export const VerifyRowSchema = z.object({
+	id: z.enum(VERIFY_CHECK_IDS),
+	kind: z.enum(VERIFY_ROW_KINDS),
+	status: z.enum(VERIFY_ROW_STATUSES),
+	measured: VerifyValueSchema,
+	expected: VerifyValueSchema,
+	tolerance: VerifyValueSchema,
+	at: VerifyAtSchema.optional(),
+	message: z.string().max(2000),
+});
+export type VerifyRow = z.infer<typeof VerifyRowSchema>;
+
+/** One stream of the exported file as ffprobe reports it. */
+export const ExportOutputStreamSchema = z.object({
+	index: z.number().int(),
+	type: z.enum(['video', 'audio', 'subtitle', 'data', 'attachment', 'unknown']),
+	codec: z.string(),
+	width: z.number().int().optional(),
+	height: z.number().int().optional(),
+	/** Average frame rate (frames per second). */
+	frameRate: z.number().optional(),
+	pixFmt: z.string().optional(),
+	sampleRate: z.number().int().optional(),
+	channels: z.number().int().optional(),
+	/** Stream end (s): the last packet's end time. */
+	endSec: z.number().optional(),
+});
+export type ExportOutputStream = z.infer<typeof ExportOutputStreamSchema>;
+
+/** What the exported file is (AF-VER-002 `output`). */
+export const ExportOutputInfoSchema = z.object({
+	container: z.string(),
+	durationSec: z.number().nullable(),
+	sizeBytes: z.number().int(),
+	streams: z.array(ExportOutputStreamSchema),
+});
+export type ExportOutputInfo = z.infer<typeof ExportOutputInfoSchema>;
+
+/** `fast` = streams, duration and A/V skew (probe only); `full` = every check (decodes the whole file). */
+export const VERIFY_CHECK_SETS = ['fast', 'full'] as const;
+
+export const ExportVerifyRequestSchema = z.strictObject({
+	/** A delivery target (`DELIVERY_TARGETS` id): adds the `target-*` rows. */
+	target: z.enum(DELIVERY_TARGET_IDS).optional(),
+	checks: z.enum(VERIFY_CHECK_SETS).optional(),
+});
+export type ExportVerifyRequest = z.infer<typeof ExportVerifyRequestSchema>;
+
+/** `EngineJob.result` of an `export-verify` job. */
+export const ExportVerifyResultSchema = z.object({
+	exportId: z.string(),
+	checks: z.enum(VERIFY_CHECK_SETS),
+	target: z.enum(DELIVERY_TARGET_IDS).optional(),
+	sequenceId: z.string().optional(),
+	/** The sequence range the export rendered (frames `[start, end)`), when known. */
+	range: z.object({ start: z.number().int(), end: z.number().int() }).optional(),
+	output: ExportOutputInfoSchema,
+	rows: z.array(VerifyRowSchema),
+	/** No `fail` row and no `unverified` format row. */
+	verified: z.boolean(),
+	counts: z.object({
+		pass: z.number().int(),
+		warn: z.number().int(),
+		fail: z.number().int(),
+		unverified: z.number().int(),
+	}),
+});
+export type ExportVerifyResult = z.infer<typeof ExportVerifyResultSchema>;

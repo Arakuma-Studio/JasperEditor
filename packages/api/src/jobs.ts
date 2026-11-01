@@ -67,6 +67,8 @@ export const JOB_KINDS = [
 	'apply-style',
 	/** spec 17 SC-090: Fix Transcript (script / glossary candidates checked against the audio → one proposal). */
 	'transcript-fix',
+	/** spec 18 AF-VER-001: measures a finished export against the sequence range it rendered (and a delivery target). */
+	'export-verify',
 ] as const;
 export const JobKindSchema = z.enum(JOB_KINDS);
 export type JobKind = z.infer<typeof JobKindSchema>;

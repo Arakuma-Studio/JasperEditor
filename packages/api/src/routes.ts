@@ -61,6 +61,7 @@ import {
 import {
 	ExportPlanRequestSchema,
 	ExportStartRequestSchema,
+	ExportVerifyRequestSchema,
 	RenderPlanSchema,
 	StillRequestSchema,
 } from './exports.ts';
@@ -539,6 +540,13 @@ export const ROUTES = {
 		method: 'POST',
 		path: '/api/exports',
 		body: ExportStartRequestSchema,
+		response: EngineJobSchema,
+	},
+	/** spec 18 AF-VER-001: an `export-verify` job measuring a finished export (`:jobId` = the export job). */
+	exportVerify: {
+		method: 'POST',
+		path: '/api/exports/:jobId/verify',
+		body: ExportVerifyRequestSchema,
 		response: EngineJobSchema,
 	},
 	renderOutput: { method: 'GET', path: '/renders/:jobId/output', response: 'binary' },

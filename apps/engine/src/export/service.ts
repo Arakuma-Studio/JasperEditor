@@ -26,6 +26,7 @@ import {
 	type ExportResult,
 	type ExportSettings,
 	type ExportStartRequest,
+	type ExportVerifyRequest,
 	STILL_FORMAT_EXTENSIONS,
 	type StillRequest,
 } from '@jasper/api';
@@ -61,7 +62,7 @@ import type { MediaRegistry } from '../media/registry.ts';
 import { engineTemplateAssets } from '../remote-assets/plan.ts';
 import { appendEncoderArgs, planRemotionExport } from '../remotion/export-plan.ts';
 import type { RemotionService } from '../remotion/service.ts';
-import { audioEncodeArgs, type EncoderService, videoEncodeArgs } from '../tools/encoders.ts';
+import { audioEncodeArgs, type EncoderService, pixFmtFor, videoEncodeArgs } from '../tools/encoders.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { exists, randomId } from '../tools/fs.ts';
 import { terminateTree } from '../tools/process.ts';
@@ -116,6 +117,8 @@ import { streamLayer } from './stream/run.ts';
 import { BakeChangedError, streamTaps } from './stream/taps.ts';
 import { createSyntheticExtension } from './synthetic.ts';
 import { concatFilter, type ExportRun, exportRuns, type PreviewPiece } from './use-previews.ts';
+import { buildVerifyContext, writeVerifyContext } from './verify-context.ts';
+import { EXPORT_JOB_ID_RE, runExportVerify } from './verify-job.ts';
 
 /**
  * A native extension's `prepare` failed (S11:LBK-023): an `auto` export or still falls back to the Remotion path
@@ -224,6 +227,43 @@ export class ExportService {
 			this.withRequestCleanup(ctx, () => this.runExport(ctx)),
 		);
 		this.deps.queue.registerRunner('still', (ctx) => this.withRequestCleanup(ctx, () => this.runStill(ctx)));
+		// spec 18 AF-VER-001: verification of a finished export
+		this.deps.queue.registerRunner('export-verify', (ctx) =>
+			runExportVerify(ctx, { ff: this.deps.ff, rendersDir: this.deps.rendersDir, queue: this.deps.queue }),
+		);
+	}
+
+	/**
+	 * `POST /api/exports/:jobId/verify` (spec 18 AF-VER-001): an `export-verify` job measuring a finished export (`fast`
+	 * = streams, duration, A/V skew; `full`, the default, = every check) and, with a delivery target, its `target-*` rows.
+	 */
+	verify(
+		exportId: string,
+		req: ExportVerifyRequest,
+		origin: EngineJob['origin'] = { type: 'user' },
+	): EngineJob {
+		const job = EXPORT_JOB_ID_RE.test(exportId) ? this.deps.queue.get(exportId) : null;
+		if (!job || job.kind !== 'export') throw new PlanError('NOT_FOUND', 404, `No export job ${exportId}`);
+		if (job.state !== 'succeeded')
+			throw new PlanError(
+				'EXPORT_NOT_FINISHED',
+				409,
+				`Export ${exportId} is ${job.state}: only a finished export can be verified`,
+			);
+		const checks = req.checks ?? 'full';
+		return this.deps.queue.submit({
+			kind: 'export-verify',
+			title: `Verify – ${job.title.replace(/^Export – /, '')}${req.target ? ` (${req.target})` : ''}`,
+			priority: checks === 'fast' ? 'interactive' : 'user',
+			cpuSlots: checks === 'fast' ? 1 : 2,
+			minSlots: 1,
+			origin,
+			...(job.projectId ? { projectId: job.projectId } : {}),
+			parentId: exportId,
+			dedupeKey: `export-verify:${exportId}:${checks}:${req.target ?? ''}`,
+			stage: 'Queued',
+			input: { exportId, checks, ...(req.target ? { target: req.target } : {}) },
+		});
 	}
 
 	/**
@@ -986,6 +1026,39 @@ export class ExportService {
 			name,
 			url: `/renders/${ctx.job.id}/${CREDITS_DIR}/${encodeURIComponent(name)}`,
 		};
+	}
+
+	/**
+	 * spec 18 AF-VER-001: `verify.json` in the job directory (the export settings and the range's cuts with what the
+	 * timeline intends at each). A failure only costs the later verification its context (rows say `unverified`).
+	 */
+	private async writeVerifyContext(
+		planned: PlannedExport,
+		dir: string,
+		hasAudio: boolean,
+		ctx: JobContext,
+	): Promise<void> {
+		try {
+			const o = planned.output;
+			const enc = o.encoder;
+			await writeVerifyContext(
+				dir,
+				buildVerifyContext({
+					document: planned.document,
+					sequenceId: planned.sequenceId,
+					range: planned.range,
+					output: { ...o, encoder: enc ? { container: enc.container, codec: enc.codec } : null },
+					pixFmt: enc
+						? o.alpha
+							? 'yuva444p10le'
+							: pixFmtFor(enc.encoder, o.proresProfile, o.color?.bitDepth ?? 8)
+						: null,
+					audioEncoder: hasAudio ? audioCodecOf(enc ?? null, o) : null,
+				}),
+			);
+		} catch (e) {
+			ctx.log(`verify context not written: ${(e as Error).message}`);
+		}
 	}
 
 	/** The sound credits sidecar of a finished render job (`/renders/:jobId/credits/:name`). */
@@ -2047,6 +2120,8 @@ export class ExportService {
 		const captionResult = await this.writeCaptionOutputs(planned, output, dir, ctx);
 		// spec 12 §2.11: the sound credits sidecar.
 		const creditsResult = await this.writeCreditsSidecar(planned, req.settings, dir, ctx);
+		// spec 18 AF-VER-001: what was asked and the cuts of the range, for verify_export
+		await this.writeVerifyContext(planned, dir, !!audio, ctx);
 		const byteSize = (await stat(output)).size;
 		const downloadUrl = `/renders/${ctx.job.id}/output`;
 		let finalPath: string | undefined;

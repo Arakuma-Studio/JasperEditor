@@ -28,6 +28,7 @@ import {
 	ErrorShapeSchema,
 	type ExportPlanRequest,
 	type ExportStartRequest,
+	type ExportVerifyRequest,
 	type GlossaryImportRequest,
 	type GlossarySaveRequest,
 	type GlossaryUpdateRequest,
@@ -726,6 +727,10 @@ export class EngineClient {
 	}
 	startExport(req: ExportStartRequest): Promise<EngineJob> {
 		return this.call('exportStart', { body: req });
+	}
+	/** spec 18 AF-VER-001: verifies a finished export (an `export-verify` job; result `ExportVerifyResult`). */
+	verifyExport(exportJobId: string, req: ExportVerifyRequest = {}): Promise<EngineJob> {
+		return this.call('exportVerify', { params: { jobId: exportJobId }, body: req });
 	}
 	/** Loudness / peaks / activity analysis job (`wait` answers the finished job). */
 	analyzeAudio(req: AudioAnalyzeRequest, wait = false): Promise<EngineJob> {
