@@ -234,6 +234,11 @@ function seekFor(src: DeriveSource, t: number): number {
 	return Math.max(0, t - src.start.format - PREROLL_SEC);
 }
 
+/*
+ * Trimmed and reversed pictures end with `fps=fps=<rate>` after `setpts`: it gives every frame its duration. Without it
+ * the last frame has duration 0 and FFmpeg 7.1's mov muxer leaves it outside the edit list, so players and decoders
+ * drop it (measured: 99 of 100 frames after `reverse`, 49 of 50 after `trim`).
+ */
 const startOf = (src: DeriveSource, index: number) => src.start.streams[index] ?? src.start.format;
 
 /**
@@ -395,7 +400,7 @@ export function planDerive(
 				// No frame grid: the frames whose timestamps lie in [In, Out).
 				t0 = a0 = vs + inSec;
 				t1 = a1 = vs + outSecAbs;
-				vf = `trim=start=${r6(t0)}:end=${r6(t1)},setpts=PTS-STARTPTS`;
+				vf = `trim=start=${r6(t0)}:end=${r6(t1)},setpts=PTS-STARTPTS,fps=fps=${num}/${den}`;
 			} else {
 				// Frame n starts at vs + n/fps: trim at half-frame offsets so float rounding never moves a boundary frame.
 				range = rangeFrames(recipe, { num, den });
@@ -403,7 +408,7 @@ export function planDerive(
 				t1 = vs + (range.endFrame - 0.5) / fps;
 				a0 = vs + range.startFrame / fps;
 				a1 = vs + range.endFrame / fps;
-				vf = `${range.startFrame > 0 ? `trim=start=${r6(t0)}:end=${r6(t1)}` : `trim=end=${r6(t1)}`},setpts=PTS-STARTPTS`;
+				vf = `${range.startFrame > 0 ? `trim=start=${r6(t0)}:end=${r6(t1)}` : `trim=end=${r6(t1)}`},setpts=PTS-STARTPTS,fps=fps=${num}/${den}`;
 			}
 			return {
 				output,
@@ -422,7 +427,7 @@ export function planDerive(
 				notes: [
 					range
 						? `frames ${range.startFrame}–${range.endFrame - 1} (${range.endFrame - range.startFrame} frames)`
-						: `${r6(inSec)}–${r6(outSecAbs)} s (variable frame rate: frames by timestamp)`,
+						: `${r6(inSec)}–${r6(outSecAbs)} s (variable frame rate: frames by timestamp, made constant at ${r6(fps)} fps)`,
 				],
 			};
 		}
@@ -503,7 +508,7 @@ function planReverse(
 			.filter(Boolean)
 			.join(':');
 		const graph = [
-			`[0:${v.index}]fps=fps=${num}/${den}:start_time=${r6(vs)},${vb ? `trim=${vb},` : ''}reverse,setpts=PTS-STARTPTS,${enc.tail}[v]`,
+			`[0:${v.index}]fps=fps=${num}/${den}:start_time=${r6(vs)},${vb ? `trim=${vb},` : ''}reverse,setpts=PTS-STARTPTS,fps=fps=${num}/${den},${enc.tail}[v]`,
 			...src.audio.map(
 				(a, i) => `[0:${a.index}]${ab ? `atrim=${ab},` : ''}areverse,asetpts=PTS-STARTPTS[a${i}]`,
 			),
