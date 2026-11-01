@@ -45,3 +45,15 @@ valid whichever subset the user keeps.
   `E_NOT_REFRESHABLE`, as for any feature without a producer re-plan).
 - Without the engine's revision map reaching back to `expectedRevision` (an engine restart, edits it did not see),
   every item touching anything is refused as stale — the same rule as `apply_commands`.
+
+## Exercised in the running app (2026-11-01)
+
+Dev stack (engine 48040, Vite 5240, appdir `/tmp/af-prop-appdir`), project of four solid "takes"; the in-repo MCP
+server (stdio) called `propose_edits`: a draft with an unknown clip was refused (`E_PROPOSAL_INVALID`, item 0,
+commandIndex 0, nothing stored); a three-item cut (outro trim, B-roll on V2, ripple-remove of the stumbled intro
+take) was stored with ghost summary created 1 / removed 1 / moved 2 / trimmed 1. In headless Chromium (Playwright)
+the card read "Claude proposes Tight 10 s cut: 3 edits" with the strategy; the Review panel showed the strategy, the
+Selects / Retakes / B-roll groups, beat chips, quotes and reasons, the details (beat, quote, reason, ghost facts) and
+the timeline ghosts; Accept all → Apply asked "Apply 3 of 3? Also removes 1 of your clips: “Intro take 1”", applied
+("Applied 3 of 3 edits from Claude") and the saved revision went 1 → 2 (one transaction). Narrow panels truncate a long
+reason after the beat chip (full text in its tooltip and the details).
