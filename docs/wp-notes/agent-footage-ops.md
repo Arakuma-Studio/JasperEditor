@@ -47,12 +47,24 @@ Refusal codes: `UNSUPPORTED_MEDIA`, `NO_VIDEO`, `NO_AUDIO`, `UNSUPPORTED_RATE`, 
 | reverse | per segment: `-copyts -ss <t−2 s>`; video `fps=fps=R:start_time=<vs>,trim=…,reverse,setpts=PTS-STARTPTS`; audio `atrim=…,areverse,asetpts=PTS-STARTPTS`; segments joined last-first with the concat demuxer (`-c copy`) | **Memory:** `reverse`/`areverse` buffer a whole segment. A video segment holds ≤ `REVERSE_VIDEO_BUDGET_BYTES` = 512 MB of decoded frames, estimated at 4 B/pixel (≤ 8-bit) or 8 B/pixel (deeper) — 64 frames of 1080p 8-bit, 8 frames of 4K 10-bit — and at most `REVERSE_MAX_SEGMENT_SEC` = 10 s. Audio-only: ≤ 64 MB of samples at 8 B/sample, at most 60 s (≈ 87 s of 48 kHz stereo → 60 s). Boundaries sit half a frame before a frame start on the `fps` grid anchored at the stream start (no float rounding at the edge; variable-rate sources come out constant-rate at their average rate). Each pass seeks 2 s before its segment so `trim` sees the boundary frame |
 | denoise-audio | `afftdn=nr=<6+30·s>:nf=<−50+20·s>:tn=0` on the first audio stream | Strength s 0…1: noise reduction 6…36 dB (FFmpeg's default 12 dB ≈ s 0.2), noise floor −50…−30 dB. The floor is fixed (`tn=0`) — measured on white hiss + a 440 Hz tone: `tn=1` left −45 dBFS hiss nearly untouched (0.00578 → 0.00468 RMS at nr 21 / nf −40) while `tn=0` removed it (→ 0.00052) with the tone's level within 0.1 %; at −25 dBFS hiss `tn=1` did nothing measurable. Result: 24-bit WAV |
 | extract-audio | `-map 0:<streamIndex> -vn` → `pcm_s24le` WAV or FLAC | The stream index must be an audio stream of the probe (`NO_AUDIO` names the audio streams) |
-| time-stretch | video `setpts=(PTS-STARTPTS)/r,fps=fps=<source rate>`; audio with pitch `apad=pad_dur=0.25,atempo…,atrim=end=D/r`; without `asetrate=round(sr·r),aresample=sr` | `rate` 0.25…4 (2 = twice as fast). `atempo` instances are chained with every factor in 0.5…2 (`atempoFactors`: 0.25 → 0.5·0.5, 3 → 2·1.5): one instance outside that range skips or repeats samples rather than overlapping them. Each `atempo` drops ≈ 23 ms at end of stream when flushing (measured: 0.5 → 7.977 s instead of 8 s), so the input is padded with 0.25 s of silence and the output cut to exactly D/r. The picture is put back on the source's frame grid (frames repeated or dropped) |
+| time-stretch | video `setpts=(PTS-STARTPTS)/r,fps=fps=<source rate>`; audio with pitch `apad=pad_dur=0.25,atempo…,atrim=end=D/r`; without `asetrate=round(sr·r),aresample=sr` | `rate` 0.25…4 (2 = twice as fast). `atempo` instances are chained with every factor in 0.5…2 (`atempoFactors`: 0.25 → 0.5·0.5, 3 → 2·1.5): one instance outside that range skips or repeats samples rather than overlapping them. Each `atempo` drops ≈ 23 ms at end of stream when flushing (measured: 0.5 → 7.977 s instead of 8 s), so the input is padded with 0.25 s of silence and the output cut to exactly D/r. The picture is put back on the source's frame grid (frames repeated or dropped). Stream start offsets are kept, scaled by 1/r: every stream is measured from the earliest stream start, a later audio start becomes leading silence (`adelay`) and a later video start a later first timestamp, before the retime (measured: audio starting 0.2 s after the picture comes out 0.100 s after at 2×; ±0.002 s resampled, ≈ 0.011 s with `atempo`, whose overlap-add window blurs the onset) |
 | range | `-copyts -ss <t0−2 s>`; video `trim=start=vs+(S−½)/R:end=vs+(E−½)/R,setpts=PTS-STARTPTS`; audio `atrim=start=vs+S/R:end=vs+E/R` | `[inFlicks, outFlicks)` → the frames whose start lies in it (`rangeFrames`, `ceil(in·R)` … `ceil(out·R)`, exact BigInt). Constant-rate video records `range {startFrame, endFrame}` → `sourceRange`; variable-rate video trims by timestamp, comes out constant-rate at its average rate and records none; audio is sample-exact |
 
 Trimmed and reversed pictures end with `fps=fps=<rate>` after `setpts`, which gives every frame its duration: without
 it the last frame has duration 0 and FFmpeg 7.1's mov muxer leaves it outside the edit list, so decoders drop it
 (measured with the vendored LGPL 7.1: 99 of 100 frames after `reverse`, 49 of 50 after `trim`; FFmpeg 6.1 kept them).
+
+## Editor and command rules
+
+- Derived media are not imports: "Transcribe on import" (`speech/auto.tsx` `autoTargets`) skips media with a
+  `derivation` (Derive Media results, processed and loudness versions).
+- A derive job that finishes after its project was closed or switched is not committed to the closed session: the
+  dialog (or, once it is gone, a toast) shows `PROJECT_CLOSED` telling the user to open the project and run Derive
+  Media again — the finished file is reused by recipe hash, so it is instant.
+- `replaceInClips` of an audio version (denoise-audio, and loudness-normalize — the same helper,
+  `useNormalizedAudio`) is refused (`E_INVALID_PARAM`, naming each clip and its stream) when a clip plays another
+  audio stream than the processed one (the source's first): before, a clip on stream 2 of a two-stream camera file
+  silently switched to the processed stream 1. The loudness path had this bug on main before spec 18.
 
 ## Validation (measured)
 
