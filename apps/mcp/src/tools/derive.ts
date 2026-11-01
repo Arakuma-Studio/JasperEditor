@@ -51,7 +51,7 @@ const HINTS: Record<string, string> = {
 	OUT_OF_RANGE:
 		'The range must lie inside the media: get_media_info gives its duration (flicks = seconds × 705600000).',
 	EMPTY_RANGE: 'outFlicks must be after inFlicks and the range must hold at least one frame start.',
-	MEDIA_OFFLINE: 'Relink the media (relink_media) and try again.',
+	MEDIA_OFFLINE: 'Relink the media (list_offline_media, then link_media) and try again.',
 	UNSUPPORTED_MEDIA: 'Pick a video or audio media with a known duration (conform-cfr needs video).',
 };
 

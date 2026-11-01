@@ -33,8 +33,8 @@ one directly with `describe_tool` + `call_tool`. `get_guide` (topic "routing") m
    waveform, word labels, shaded silences, ruler, plus a text summary. `render_frame` shows the Program output.
    Look at the openings and endings you are unsure of, not at everything.
 4. **Propose the cut.** `propose_edits` with a strategy (1–8 sentences) and items, each with `group`
-   (Selects, Removed, Retakes, Reorder, B-roll, Other), a `reason`, a `beat` and the `quote` it keeps or cuts, and
-   the commands. Everything is dry-run first; a failure lists the failing items and stores nothing. Details:
+   (`selects`, `removed`, `retakes`, `reorder`, `b-roll`, `other`), a `reason`, a `beat` and the `quote` it keeps or
+   cuts, and the commands. Everything is dry-run first; a failure lists the failing items and stores nothing. Details:
    [proposals](references/proposals.md).
 5. **Wait.** Tell the user what you proposed in two or three lines, then `wait_for_proposal`. Rework what was
    rejected; never re-propose applied items.

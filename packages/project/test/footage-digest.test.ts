@@ -262,6 +262,9 @@ describe('packFootageDigest', () => {
 			ok: false,
 			code: 'E_NOT_FOUND',
 		});
+		// an id that names an inherited Object property is not a sequence either
+		for (const sequenceId of ['constructor', 'toString', '__proto__'])
+			expect(packFootageDigest(doc, { sequenceId })).toMatchObject({ ok: false, code: 'E_NOT_FOUND' });
 		expect(packFootageDigest(doc, { sequenceId: h.seqId, mediaIds: [id] })).toMatchObject({
 			ok: false,
 			code: 'E_INVALID_PARAM',

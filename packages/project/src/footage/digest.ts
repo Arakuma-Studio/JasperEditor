@@ -274,13 +274,15 @@ export function packFootageDigest(
 				message: 'Give mediaIds or sequenceId, not both',
 				hint: 'sequenceId renders one sequence in sequence time; mediaIds renders media in media time.',
 			};
-		const seq = doc.sequences?.[opts.sequenceId];
+		// own properties only: an id such as "constructor" names no sequence
+		const seq =
+			doc.sequences && Object.hasOwn(doc.sequences, opts.sequenceId) ? doc.sequences[opts.sequenceId] : undefined;
 		if (!seq)
 			return {
 				ok: false,
 				code: 'E_NOT_FOUND',
 				message: `No sequence ${opts.sequenceId}`,
-				hint: 'list_sequences / get_project list sequence ids.',
+				hint: 'get_project lists the sequence ids.',
 			};
 		drafts = [sequenceDraft(doc, seq)];
 	} else {

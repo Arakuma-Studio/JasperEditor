@@ -10,14 +10,15 @@ beat, quote and reason, Apply n of m, and one undo step for everything applied. 
 - `strategy`: the plan in 1–8 sentences (≤ 2 000 characters): the story order, what goes, which takes win and why.
   The user reads it above the items, so write it for them.
 - `items` (≤ 200, ≤ 2 000 commands in total), one per editorial decision:
-  - `group`: Selects, Removed, Retakes, Reorder, B-roll or Other.
+  - `group`: one of `selects`, `removed`, `retakes`, `reorder`, `b-roll`, `other` (the Review panel shows them as
+    Selects, Removed, Retakes, Reorder, B-roll and Other).
   - `reason` (≤ 280 characters): why, in the user's terms ("second take is complete; first one restarts").
   - `beat` (≤ 40): the story beat ("Hook", "Problem", "Demo", "Call to action").
   - `quote` (≤ 280): the words kept or cut, copied from the digest.
   - `commands`: 1–100 commands as `apply_commands` takes them (`describe_commands` for schemas).
   - `alternatives` (optional): other command sets the user can cycle (another take of the same line).
-- `expectedRevision` (optional): the revision you planned against; a changed project is refused instead of
-  half-applied.
+- `expectedRevision` (optional): the revision you planned against; an item whose clips or tracks changed since then
+  is refused (every item, when the engine no longer knows that revision), so nothing is planned on stale clips.
 
 Every item is dry-run against the current document before anything is stored. One failure returns an error
 listing each failing item index with its command error, and nothing is stored: fix those items and send the

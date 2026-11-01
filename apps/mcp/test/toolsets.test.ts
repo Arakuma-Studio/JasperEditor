@@ -5,6 +5,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { EngineJob } from '@jasper/api';
+import { ROUGH_CUT_GROUPS } from '@jasper/project/proposals';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import {
@@ -538,6 +539,18 @@ describe('agent skill (AF-CTX-005)', () => {
 		readdirSync(join(SKILL_DIR, 'references'))
 			.filter((f) => f.endsWith('.md'))
 			.map((f) => ({ file: f, text: readFileSync(join(SKILL_DIR, 'references', f), 'utf8') }));
+
+	it('names the rough-cut group ids propose_edits accepts, in the skill and its proposals reference', () => {
+		const ids = ROUGH_CUT_GROUPS.map((g) => `\`${g}\``).join(', ');
+		const texts = [
+			skill(),
+			...references()
+				.filter((r) => r.file === 'proposals.md')
+				.map((r) => r.text),
+		];
+		expect(texts).toHaveLength(2);
+		for (const text of texts) expect(text).toContain(ids);
+	});
 
 	it('has valid frontmatter with trigger phrases and the required sections, and stays concise', () => {
 		const text = skill();
