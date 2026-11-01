@@ -9,9 +9,13 @@ before FFmpeg starts.
 
 - `apps/engine/src/tools/protocols.ts` owns `LOCAL_PROTOCOLS` (`-protocol_whitelist file,crypto,data`); the sound
   code and the Media Browser import it from there (their private copies are gone).
-- `restrictInputs(args)` puts a whitelist in front of every `-i` whose option group has none: `file,crypto,data` for
-  files, `pipe` for `pipe:N` / `-`, nothing for `-f lavfi` (no protocol is opened). A caller's own whitelist is kept.
-  `restrictProbeArgs(args, formats)` does the same for ffprobe and adds `-format_whitelist`.
+- `restrictInputs(args)` puts a whitelist in front of every `-i` whose option group has none:
+  - `file,crypto,data` for files;
+  - `pipe,fd` for `pipe:N` / `-` (FFmpeg 6.1 opens `-` with the `fd` protocol, measured);
+  - nothing for `-f lavfi`, which opens no protocol.
+
+  A caller's own whitelist is kept. `restrictProbeArgs(args, formats)` does the same for ffprobe and adds
+  `-format_whitelist`.
 - Applied at the choke points rather than at about 120 `-i` sites:
   - `Ffmpeg.run`, `Ffmpeg.spawnRaw`, `probeJson`, `probeText` and `countVideoFrames` (`tools/ffmpeg.ts`). Every runner
     that goes through the `Ffmpeg` class is covered, including runners added later (export, derivatives,
@@ -24,7 +28,7 @@ before FFmpeg starts.
 - `apps/engine/test/local-inputs.test.ts` scans `apps/engine/src` with a source scan. Every file that imports a
   `node:child_process` value or calls `runTool` / `spawnTool` must be either listed as an FFmpeg spawner that calls
   `restrictInputs` / `restrictProbeArgs`, or listed with the program it starts instead. An unclassified new spawn site
-  fails the test. No source may name a protocol outside `file,crypto,data,pipe` in a whitelist.
+  fails the test. No source may name a protocol outside `file,crypto,data,pipe,fd` in a whitelist.
 - **DASH bypass (measured).** FFmpeg's DASH demuxer opens its segments with `avio_open2` and ignores the
   context's protocol whitelist. Source: `libavformat/dashdec.c` `open_url`, n7.1 line 449, also in n6.1. On the
   system FFmpeg 6.1.1, a local `.mpd` whose `BaseURL` is `http://127.0.0.1:<port>/seg.ts` was fetched by `ffprobe`

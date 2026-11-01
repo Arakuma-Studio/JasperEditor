@@ -37,7 +37,7 @@ describe('restrictInputs (ffmpeg argument lists)', () => {
 		]);
 	});
 
-	it('pipes may use the pipe protocol only; lavfi sources open no protocol and are left alone', () => {
+	it('pipes may use the pipe protocols only (`-` opens fd: in FFmpeg 6.1+); lavfi sources open no protocol and are left alone', () => {
 		expect(
 			restrictInputs([
 				...['-f', 'rawvideo', '-s', '2x2', '-i', 'pipe:3'],
@@ -46,8 +46,8 @@ describe('restrictInputs (ffmpeg argument lists)', () => {
 				'pipe:1',
 			]),
 		).toEqual([
-			...['-f', 'rawvideo', '-s', '2x2', '-protocol_whitelist', 'pipe', '-i', 'pipe:3'],
-			...['-f', 'f32le', '-protocol_whitelist', 'pipe', '-i', '-'],
+			...['-f', 'rawvideo', '-s', '2x2', '-protocol_whitelist', 'pipe,fd', '-i', 'pipe:3'],
+			...['-f', 'f32le', '-protocol_whitelist', 'pipe,fd', '-i', '-'],
 			...['-f', 'lavfi', '-i', 'color=c=black:s=2x2'],
 			'pipe:1',
 		]);
@@ -75,6 +75,7 @@ describe('restrictInputs (ffmpeg argument lists)', () => {
 			fc.constant(['-ss', '2', '-i', '/media/y.mov']),
 			fc.constant(['-f', 'lavfi', '-i', 'anullsrc']),
 			fc.constant(['-f', 'rawvideo', '-i', 'pipe:0']),
+			fc.constant(['-f', 'f32le', '-i', '-']),
 			fc.constant([...LOCAL, '-i', '/media/z.wav']),
 		);
 		fc.assert(
@@ -89,7 +90,7 @@ describe('restrictInputs (ffmpeg argument lists)', () => {
 						if (group.includes('-f') && f === 'lavfi') expect(group).not.toContain('-protocol_whitelist');
 						else expect(group).toContain('-protocol_whitelist');
 						const wl = group[group.lastIndexOf('-protocol_whitelist') + 1];
-						if (src.startsWith('pipe:')) expect(wl).toBe('pipe');
+						if (src.startsWith('pipe:') || src === '-') expect(wl).toBe('pipe,fd');
 						else if (f !== 'lavfi') expect(wl).toBe('file,crypto,data');
 						group = [];
 						i++;
@@ -281,11 +282,11 @@ describe('every FFmpeg spawn site restricts its inputs (source scan)', () => {
 		}
 	});
 
-	it('no engine source names a network protocol whitelist of its own', () => {
+	it('no engine source names a protocol beyond file, crypto, data, pipe and fd in a whitelist', () => {
 		for (const f of files) {
 			for (const m of f.text.matchAll(/protocol_whitelist['"`,\s]+['"`]([^'"`]+)['"`]/g)) {
 				expect(
-					m[1]!.split(',').every((p) => ['file', 'crypto', 'data', 'pipe'].includes(p)),
+					m[1]!.split(',').every((p) => ['file', 'crypto', 'data', 'pipe', 'fd'].includes(p)),
 					`${f.rel}: ${m[1]}`,
 				).toBe(true);
 			}

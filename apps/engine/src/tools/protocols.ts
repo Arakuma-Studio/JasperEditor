@@ -1,7 +1,7 @@
 // FFmpeg may read local files only (spec 18 AF-SEC-001, the Media Browser's rule D-47): every input of a media
 // file gets `-protocol_whitelist file,crypto,data` (`crypto` for AES-encrypted local HLS, `data` for data: URIs a
 // playlist embeds), so a playlist or reference file that names http://, tcp://, rtmp://… is refused instead of
-// fetched. Pipes from the engine get `pipe` only; lavfi sources open no protocol.
+// fetched. Pipes from the engine get `pipe,fd` only; lavfi sources open no protocol.
 //
 // The whitelist does not cover every demuxer: FFmpeg's DASH demuxer (6.1 and 7.1, libavformat/dashdec.c `open_url`)
 // opens its http(s) segments with avio_open2 and ignores the context's whitelist (measured: a local .mpd whose
@@ -15,7 +15,8 @@
 
 /** The protocols a media file input may use. */
 export const LOCAL_PROTOCOLS = ['-protocol_whitelist', 'file,crypto,data'] as const;
-const PIPE_PROTOCOLS = ['-protocol_whitelist', 'pipe'] as const;
+/** `pipe:N` opens the `pipe` protocol; FFmpeg 6.1+ opens `-` (stdin) with the `fd` protocol (measured). */
+const PIPE_PROTOCOLS = ['-protocol_whitelist', 'pipe,fd'] as const;
 
 /**
  * Demuxers a probe never opens: `dash` fetches its segments itself (see above); `rtsp`, `rtp`, `sdp` and `sap` exist
@@ -30,7 +31,7 @@ const isPipe = (src: string) => src === '-' || src.startsWith('pipe:');
 
 /**
  * An ffmpeg argument list with a protocol whitelist in front of every `-i` whose option group has none: the local
- * one for files, `pipe` for `pipe:N` / `-`; `-f lavfi` inputs are left alone. A whitelist the caller put in an
+ * one for files, `pipe,fd` for `pipe:N` / `-`; `-f lavfi` inputs are left alone. A whitelist the caller put in an
  * input's group is kept. Idempotent.
  */
 export function restrictInputs(args: readonly string[]): string[] {
