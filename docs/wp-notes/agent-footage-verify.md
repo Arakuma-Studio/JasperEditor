@@ -10,7 +10,8 @@ tolerances and pinning documented thresholds to code by a test — [`licenses/po
   (`apps/engine/src/export/verify-context.ts`, written atomically by `ExportService.finishExport`): the sequence, the
   frame range and rate, the timecode start, what was asked (container; video codec, size, rate, the encoder's pixel
   format, alpha; audio codec, rate, channels), the loudness normalisation, and the picture cuts of the range from the
-  cut map (`analyzePictureCuts`, ≤ 5 000) with what the timeline intends at each: black before / after (no picture on
+  cut map (`analyzePictureCuts` with `overlayCoverage` 0.01 — every picture layer counts, so footage smaller than the
+  frame still has its cuts; the cut map's default 50 % found no cut in a 1280 × 720 cut in a 1080p sequence —, ≤ 5 000) with what the timeline intends at each: black before / after (no picture on
   that side — a gap or a cut to / from nothing —, a solid darker than 16/255, a one-sided transition (fade) on either
   clip, or a dip / fade-to-black transition) and an effect over it (a two-sided transition, or a graphic / adjustment
   layer within ±3 frames). Verification judges the file against this record, whatever the document has become since.
@@ -33,7 +34,9 @@ tolerances and pinning documented thresholds to code by a test — [`licenses/po
   - `duration` (format): |format duration − range| ≤ max(1 frame, 50 ms).
   - `av-skew` (format): |audio end − video end| ≤ 250 ms; ends are the last packets' pts + duration, read from the last
     10 s of the file only. A file with one kind of stream passes ("nothing to compare").
-  - `cut-black` (judgement, fail): a run of frames with normalised mean luma < 16/255 lasting ≥ 100 ms that touches the
+  - `cut-black` (judgement, fail): a run of black frames (the normalised mean luma of every cell of a 4 × 4 grid
+    < 16/255: a picture smaller than the frame, on black, is not black — measured: a 640 × 360 shot in a 1080p frame
+    has a whole-frame mean of ≈ 0.05, under 16/255) lasting ≥ 100 ms that touches the
     ±2 frames of a cut, counted only on the sides where the timeline intends a picture; its length is followed past the
     window (up to the run length needed).
   - `cut-flash` (judgement): one frame within ±2 of a cut whose luma differs by > 0.25 from both neighbours in the same
@@ -71,8 +74,8 @@ tolerances and pinning documented thresholds to code by a test — [`licenses/po
   target for a horizontal sequence, or a shape outside the accepted range, is refused (`E_INVALID_PARAM`, hint
   `auto_reframe_sequence`) — never cropped. MCP presets `delivery-<target id>` (`list_export_presets` names their
   `target`; `start_export` refuses with the hint); Export dialog ▸ Preset lists "<platform> – H.264" beside Match
-  Sequence (the Format select is then fixed to H.264; a refused shape shows the reason in the footer and disables
-  Export).
+  Sequence (the Format, Audio Channels and Sample Rate selects are then fixed, Loudness shows the platform's level;
+  a refused shape shows the reason in the footer and disables Export).
 - **Editor (AF-VER-005).** Jobs panel: a finished export row has **Verify** (runs the full check), a finished
   verification row **Results**; the export-finished toast has **Verify** beside Download. The Verify Export dialog
   (`apps/web/src/export/VerifyDialog.tsx`) runs the job, shows its stage, then the summary (Verified / Not verified with
@@ -86,9 +89,12 @@ tolerances and pinning documented thresholds to code by a test — [`licenses/po
 `apps/engine/src/export/verify-measure.ts`; every input with `-protocol_whitelist file,crypto,data`.
 
 - ffprobe `-show_format -show_streams` (validated with zod) and `-read_intervals <duration − 10 s>% -show_entries
-  packet=…` for the stream ends.
+  packet=…` for the stream ends. FFmpeg 7.1's ffprobe (the pinned LGPL build) lists no packets when `-read_intervals`
+  and `-protocol_whitelist` are combined (measured on an engine export: 0 packets, 500 without the whitelist); a stream
+  with no end from that read is then read whole as compact CSV (bounded by the 64 MB stdout cap of `runTool`, ≈ 8 h of
+  30 fps video with audio; longer files get `av-skew` `unverified`).
 - Picture: one decode of the first video stream through `extractplanes=y,scale=64:36:flags=area,format=gray` (the luma
-  plane area-averaged; LGPL filters), raw to a pipe; each frame becomes one mean, kept only for the frames around cuts.
+  plane area-averaged; LGPL filters), raw to a pipe; each frame becomes its mean and its brightest 4 × 4 cell mean, kept only for the frames around cuts.
   Normalised luma = (Y − 16) / 219 for limited-range video, Y / 255 for full range (`color_range` pc / jpeg, `yuvj*`).
   "Mean luma < 16/255" in the spec is read on this normalised scale: limited-range black is Y = 16, so a raw reading
   would never find black (assumption, labelled).
@@ -120,6 +126,9 @@ Tests (run with `JASPER_FFMPEG_LGPL_ONLY=1`):
 - `packages/project/test/delivery-targets.test.ts`: the delivery targets table below pinned to `DELIVERY_TARGETS`
   (value and official / assumption label per limit), `deliveryExportFormat` (fit, refusal with the Auto Reframe hint,
   rate choice, default loudness).
+- `apps/engine/test/export-verify-route.test.ts`: an engine export of 640 × 360 shots in a 1080p sequence records the
+  three cuts with intended black around a gap; `POST /api/exports/:jobId/verify` (full with the YouTube target, and fast)
+  verifies; unknown job 404, bad target / unknown key 400.
 - `apps/mcp/test/export-verify.test.ts`: jasper-mcp over stdio against a real LGPL-only engine: `start_export {wait}`
   returns the fast rows and `output`; `verify_export` on a jump cut and a cut to a gap (intended black) verifies;
   `target: youtube-shorts` fails `target-aspect`; `delivery-youtube-shorts` on a 16:9 sequence is refused with
@@ -153,7 +162,8 @@ A/V end skew are adapted from kajisho5/ffmpeg-skill (MIT, `licenses/ported/ffmpe
 | `avSkewMaxSec` | 0.25 | s | `av-skew`: \|audio end − video end\| |
 | `frameRateToleranceFps` | 0.01 | fps | `streams` / `target-frame-rate`: rates this close are the same |
 | `cutWindowFrames` | 2 | frames | `cut-black` / `cut-flash`: frames each side of a cut judged |
-| `blackLuma` | 0.062745 | normalised luma | `cut-black`: 16/255; a frame whose mean luma is under it is black |
+| `blackLuma` | 0.062745 | normalised luma | `cut-black`: 16/255; a frame is black when the mean luma of every grid cell is under it |
+| `blackGrid` | 4 | cells per side | `cut-black`: the grid (4 × 4) whose every cell must be black |
 | `blackMinSec` | 0.1 | s | `cut-black`: shortest black run reported |
 | `flashJump` | 0.25 | normalised luma | `cut-flash`: step against both neighbours |
 | `clickWindowSec` | 0.01 | s | `cut-click`: ± search window around the cut |

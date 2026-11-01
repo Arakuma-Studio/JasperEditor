@@ -12404,5 +12404,7 @@
   "Verify": "Verificar",
   "Verify Export": "Verificar exportación",
   "Verify Export – {0}": "Verificar exportación – {0}",
-  "Warn": "Aviso"
+  "Warn": "Aviso",
+  "Platform preset: {0} LUFS, {1} dBTP": "Ajuste de plataforma: {0} LUFS, {1} dBTP",
+  "Set by the platform preset (stereo, 48 kHz)": "Lo fija el ajuste preestablecido de plataforma (estéreo, 48 kHz)"
 }

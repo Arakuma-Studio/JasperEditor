@@ -233,7 +233,7 @@ function VerifyDialog(props: HostedDialogProps<VerifyDialogProps>) {
 						<span
 							data-testid="verify-summary"
 							data-verified={result.verified ? 'true' : 'false'}
-							className={cx('text-pr-strong', result.verified ? 'text-pr-success' : 'text-pr-danger')}
+							className={cx('font-medium', result.verified ? 'text-pr-success' : 'text-pr-danger')}
 						>
 							{result.verified
 								? `Verified · ${result.counts.pass} passed, ${result.counts.warn} to review`

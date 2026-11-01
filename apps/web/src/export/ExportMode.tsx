@@ -617,6 +617,8 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 						<select
 							data-testid="export-audio-channels"
 							className="h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text"
+							disabled={!!delivery}
+							title={delivery ? 'Set by the platform preset (stereo, 48 kHz)' : undefined}
 							value={String(audioChoice.channels ?? 'auto')}
 							onChange={(e) =>
 								setAudioChoice((a) => ({
@@ -637,6 +639,8 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 						<select
 							data-testid="export-audio-rate"
 							className="h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text"
+							disabled={!!delivery}
+							title={delivery ? 'Set by the platform preset (stereo, 48 kHz)' : undefined}
 							value={String(audioChoice.sampleRate ?? 'sequence')}
 							onChange={(e) =>
 								setAudioChoice((a) => ({
@@ -660,7 +664,9 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 						<select
 							data-testid="export-audio-loudness"
 							className="h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text"
-							value={String(audioChoice.loudness ?? 'sequence')}
+							value={delivery ? 'platform' : String(audioChoice.loudness ?? 'sequence')}
+							disabled={!!delivery}
+							title={delivery ? 'Set by the platform preset' : undefined}
 							onChange={(e) =>
 								setAudioChoice((a) => ({
 									...a,
@@ -675,6 +681,11 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 								Sequence setting
 								{seq?.master.loudness?.enabled ? ` (${seq.master.loudness.targetLufs} LUFS)` : ' (off)'}
 							</option>
+							{deliveryApplied?.ok && deliveryApplied.settings.audio?.normalize ? (
+								<option value="platform">
+									{`Platform preset: ${deliveryApplied.settings.audio.normalize.targetLufs} LUFS, ${deliveryApplied.settings.audio.normalize.truePeakDb} dBTP`}
+								</option>
+							) : null}
 							<option value="off">Off</option>
 							<option value="-14">Normalize to −14 LUFS (streaming)</option>
 							<option value="-16">Normalize to −16 LUFS (podcast)</option>
