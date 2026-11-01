@@ -678,6 +678,26 @@ function useNormalizedAudio(
 ): string[] {
 	const stream = media.probe.streams.find((s) => s.type === 'audio');
 	if (stream?.type !== 'audio') return h.fail('E_INVALID_PARAM', 'The normalised file has no audio stream');
+	// The engine processes the source's first audio stream (loudness-normalize, denoise-audio): a clip playing another
+	// stream of a multi-stream file (e.g. the lav on stream 2) would silently switch to the wrong sound.
+	const source = doc.media[sourceId] as MediaAsset | undefined;
+	const processed = source?.probe.streams.find((s) => s.type === 'audio')?.index;
+	const others = [...new Set(clipIds)].filter((id) => {
+		const c = h.clip(doc, id).clip as Draft<AudioClip>;
+		return c.kind === 'audio' && c.mediaId === sourceId && c.channels.streamIndex !== processed;
+	});
+	if (others.length)
+		h.fail(
+			'E_INVALID_PARAM',
+			`Clip${others.length > 1 ? 's' : ''} ${others
+				.map((id) => {
+					const c = h.clip(doc, id).clip as Draft<AudioClip>;
+					return `${id} (stream ${c.channels.streamIndex})`;
+				})
+				.join(
+					', ',
+				)} play${others.length > 1 ? '' : 's'} another audio stream than the processed one (stream ${processed}); only clips playing stream ${processed} can switch to this version`,
+		);
 	const changed: string[] = [];
 	for (const id of new Set(clipIds)) {
 		const { seq, clip } = h.clip(doc, id);

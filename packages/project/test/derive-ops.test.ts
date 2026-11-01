@@ -255,3 +255,66 @@ describe('media.derive with derivation ops (AF-OPS-001)', () => {
 		if (!rev.ok) expect(rev.errors[0]!.message).toContain('not a processed version');
 	});
 });
+
+describe('audio versions replace only clips that play the processed stream', () => {
+	/** A camera file with two audio streams (1: camera mic, 2: lav); A1's clip plays stream `clipStream`. */
+	function twoStreams(clipStream: number) {
+		const h = new Harness();
+		const asset = videoAsset({ seconds: 10 });
+		asset.probe.streams.push({
+			index: 2,
+			type: 'audio',
+			codec: 'aac',
+			sampleRate: 48000,
+			channels: 1,
+			channelLayout: 'mono',
+		});
+		const r = h.ok([{ type: 'media.register', asset, ref: '$m' }]);
+		h.ok([{ type: 'clip.place', source: { mediaId: r.refs.$m }, at: 0 }]);
+		const audioId = h.clips('A1')[0]!.id;
+		const copy = JSON.parse(JSON.stringify(h.doc)) as typeof h.doc;
+		const clip = copy.sequences[h.seqId]!.clips[audioId] as {
+			channels: { streamIndex: number; map: number[] };
+		};
+		clip.channels = { streamIndex: clipStream, map: [0] };
+		h.doc = copy;
+		return { h, mediaId: r.refs.$m!, audioId };
+	}
+
+	it.each([
+		['denoise-audio', { op: 'denoise-audio', strength: 0.5 }],
+		['loudness-normalize', { op: 'loudness-normalize', targetLufs: -16, truePeakDb: -1 }],
+	] as const)('%s refuses a clip that plays another audio stream, naming it', (_op, recipe) => {
+		const { h, mediaId, audioId } = twoStreams(2);
+		const r = h.tx([
+			{
+				type: 'media.derive',
+				fromMediaId: mediaId,
+				recipe,
+				asset: derivedAsset({ seconds: 10, kind: 'audio' }),
+				replaceInClips: [audioId],
+			},
+		]);
+		expect(r.ok).toBe(false);
+		if (!r.ok) {
+			expect(r.errors[0]!.code).toBe('E_INVALID_PARAM');
+			expect(r.errors[0]!.message).toContain(audioId);
+			expect(r.errors[0]!.message).toContain('stream 2');
+		}
+		expect((h.seq.clips[audioId] as { mediaId: string }).mediaId).toBe(mediaId);
+	});
+
+	it('a clip playing the processed (first) audio stream switches', () => {
+		const { h, mediaId, audioId } = twoStreams(1);
+		const r = h.ok([
+			{
+				type: 'media.derive',
+				fromMediaId: mediaId,
+				recipe: { op: 'denoise-audio', strength: 0.5 },
+				asset: derivedAsset({ seconds: 10, kind: 'audio' }),
+				replaceInClips: [audioId],
+			},
+		]);
+		expect((r.results[0] as { clipIds: string[] }).clipIds).toEqual([audioId]);
+	});
+});
