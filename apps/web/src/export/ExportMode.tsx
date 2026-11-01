@@ -4,7 +4,14 @@
 // view returns to Edit and the Jobs panel shows progress (completion toast with Download: ProjectLifecycle).
 import type { RenderPlan, VideoCodec } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
-import { captionGroupsOf, defaultCreditsSidecar, type Sequence, soundCredits } from '@jasper/project';
+import {
+	captionGroupsOf,
+	DELIVERY_TARGETS,
+	type DeliveryTargetId,
+	defaultCreditsSidecar,
+	type Sequence,
+	soundCredits,
+} from '@jasper/project';
 import { useSession, useSessionState } from '@jasper/session/react';
 import { Button, IconButton, registerModal, TimecodeText } from '@jasper/ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -18,6 +25,7 @@ import { exportMode, trackExportJob } from './mode.ts';
 import { blockingForEngine, type PlanState, PlanSummary, soundWarningsOf } from './PlanSummary.tsx';
 import { exportAudioOf, useExportSoundCheck } from './SoundCheckGate.tsx';
 import {
+	applyDeliveryPreset,
 	buildExportSettings,
 	type CaptionExportChoice,
 	CODEC_LABELS,
@@ -125,6 +133,8 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 		return r?.credits ?? ((id ? defaultCreditsSidecar(session.getCommitted(), id) : null) || 'off');
 	};
 	const [creditsChoice, setCreditsChoice] = useState<CreditsChoice>(() => creditsDefault(sequenceId));
+	// spec 18 AF-VER-004: a platform delivery preset ('' = Match Sequence)
+	const [delivery, setDelivery] = useState<DeliveryTargetId | ''>('');
 	const usesLibrarySounds = useMemo(
 		() => (seq ? soundCredits(doc, seq.id).rows.length > 0 : false),
 		[doc, seq],
@@ -166,7 +176,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 
 	const effectiveRange: ExportRangeChoice = range === 'in-out' && seq && hasInOut(seq) ? 'in-out' : 'entire';
 	const frames = seq ? exportRange(seq, effectiveRange) : { start: 0, end: 0 };
-	const validation = seq ? validateExport(seq, frames) : ['No sequence to export.'];
+	const baseValidation = seq ? validateExport(seq, frames) : ['No sequence to export.'];
 	// Encoder availability from the engine (ARCHITECTURE D-13): unavailable codecs/encoders are disabled.
 	const encoding = engine.capabilities?.media.encoding;
 	const buildEncoders = engine.capabilities?.media.encoders ?? [];
@@ -177,7 +187,7 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 	const encoders = encoderOptions(encoding, buildEncoders, effectiveCodec);
 	const effectiveEncoder = encoders.find((e) => e.value === encoderChoice)?.available ? encoderChoice : '';
 	const opus = encoding?.audio.opus ?? true;
-	const settings = useMemo(
+	const baseSettings = useMemo(
 		() =>
 			seq
 				? buildExportSettings(seq, {
@@ -213,6 +223,13 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 			alpha,
 		],
 	);
+	const deliveryApplied = useMemo(
+		() => (seq && baseSettings && delivery ? applyDeliveryPreset(baseSettings, seq, delivery) : null),
+		[seq, baseSettings, delivery],
+	);
+	const settings = deliveryApplied ? (deliveryApplied.ok ? deliveryApplied.settings : null) : baseSettings;
+	const validation =
+		deliveryApplied && !deliveryApplied.ok ? [...baseValidation, deliveryApplied.message] : baseValidation;
 	const chosenEncoder = plan.status === 'ok' ? (plan.plan.encoder ?? null) : (encoding?.export ?? null);
 	const encoderMessage = plan.status === 'ok' ? plan.plan.encoder?.message : encoding?.message;
 	// D-13: a dev engine without the LGPL directory renders through Remotion's bundled GPL FFmpeg; a
@@ -448,17 +465,32 @@ export function ExportMode(props: { sequenceId?: string | null; onClose?: () => 
 						<span className="text-pr-muted">Download from the engine</span>
 					</Field>
 					<Field label="Preset">
-						<span>
-							{effectiveCodec === 'h264'
-								? MATCH_SEQUENCE_PRESET.label
-								: `Match Sequence – ${effectiveCodec === 'prores' && alpha ? PRORES_ALPHA_LABEL : CODEC_LABELS[effectiveCodec]}`}
-						</span>
+						<select
+							data-testid="export-preset"
+							className="h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text"
+							value={delivery}
+							title="A platform preset exports H.264 at the platform's frame size, frame rate and loudness"
+							onChange={(e) => setDelivery(e.target.value as DeliveryTargetId | '')}
+						>
+							<option value="">
+								{effectiveCodec === 'h264'
+									? MATCH_SEQUENCE_PRESET.label
+									: `Match Sequence – ${effectiveCodec === 'prores' && alpha ? PRORES_ALPHA_LABEL : CODEC_LABELS[effectiveCodec]}`}
+							</option>
+							{DELIVERY_TARGETS.map((t) => (
+								<option key={t.id} value={t.id}>
+									{`${t.name} – H.264`}
+								</option>
+							))}
+						</select>
 					</Field>
 					<Field label="Format">
 						<select
 							data-testid="export-codec"
 							className="h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text"
-							value={effectiveCodec}
+							value={delivery ? 'h264' : effectiveCodec}
+							disabled={!!delivery}
+							title={delivery ? 'Set by the platform preset' : undefined}
 							onChange={(e) => {
 								setCodec(e.target.value as VideoCodec);
 								setEncoderChoice('');

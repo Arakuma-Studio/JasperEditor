@@ -9,6 +9,8 @@ type Notice = {
 	detail?: string;
 	/** Action button; `href` renders a download/open link. */
 	action?: { label: string; href?: string; onClick?: () => void };
+	/** A second action button (spec 18 AF-VER-005: the export toast's Verify). */
+	secondary?: { label: string; onClick: () => void };
 	/** Auto-dismiss (ms); errors stay until dismissed. */
 	durationMs?: number | null;
 };
@@ -67,9 +69,9 @@ function NoticeView({ n }: { n: Notice }) {
 			<div className="min-w-0 flex-1">
 				<p className="text-pr-strong">{n.message}</p>
 				{n.detail ? <p className="mt-1 break-words text-pr-small text-pr-muted">{n.detail}</p> : null}
-				{n.action ? (
-					<div className="mt-2">
-						{n.action.href ? (
+				{n.action || n.secondary ? (
+					<div className="mt-2 flex items-center gap-3">
+						{n.action?.href ? (
 							<a
 								href={n.action.href}
 								download
@@ -78,7 +80,7 @@ function NoticeView({ n }: { n: Notice }) {
 							>
 								{n.action.label}
 							</a>
-						) : (
+						) : n.action ? (
 							<Button
 								variant="quiet"
 								onClick={() => {
@@ -88,7 +90,19 @@ function NoticeView({ n }: { n: Notice }) {
 							>
 								{n.action.label}
 							</Button>
-						)}
+						) : null}
+						{n.secondary ? (
+							<Button
+								variant="quiet"
+								data-testid="notice-secondary"
+								onClick={() => {
+									n.secondary?.onClick();
+									notices.dismiss(n.id);
+								}}
+							>
+								{n.secondary.label}
+							</Button>
+						) : null}
 					</div>
 				) : null}
 			</div>
