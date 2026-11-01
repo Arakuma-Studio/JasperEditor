@@ -11,6 +11,7 @@ import {
 	AgentMcpInfoSchema,
 	AgentOpenProjectRequestSchema,
 	AgentOpenProjectResponseSchema,
+	AgentPresenceSchema,
 	AgentQueryRequestSchema,
 	AgentQueryResponseSchema,
 	AgentSchemaResponseSchema,
@@ -683,6 +684,12 @@ export const ROUTES = {
 		method: 'GET',
 		path: '/api/agent/mcp-info',
 		response: AgentMcpInfoSchema,
+	},
+	/** Spec 18 AF-BRF-005: agents that called the engine recently (Home ▸ Describe your video). */
+	agentPresence: {
+		method: 'GET',
+		path: '/api/agent/presence',
+		response: AgentPresenceSchema,
 	},
 	/** Live-UI automation of an open editor window (mcp-cli): elements, input, screenshots, coordinate mapping. */
 	agentUi: {

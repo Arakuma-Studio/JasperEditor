@@ -5,19 +5,19 @@ import { EngineProjectStore } from '@jasper/session';
 import { Button, cx, Icon, IconButton } from '@jasper/ui';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router';
+import { HOME_DEFAULT_PRESET, projectNameFrom } from '../brief/model.ts';
 import { HOME_NEW_PROJECT_FLAG } from '../commands/integration.ts';
 import { Dialog } from '../import/ImportPromptHost.tsx';
 import { useEngine } from '../state/engine.tsx';
 import { DEMO_PROJECT_ID } from '../state/session-host.tsx';
+import { DescribeVideoDialog, type DescribeVideoResult } from './DescribeVideoDialog.tsx';
 import { NoticeHost, notices } from './notices.tsx';
+import { startShape, stashStart } from './start-brief.ts';
 
 type ListState =
 	| { status: 'loading' }
 	| { status: 'ok'; projects: ProjectSummary[] }
 	| { status: 'error'; code: string; message: string };
-
-/** M1 default preset (ARCHITECTURE §15: "New Project (1080p 29.97 preset)"). */
-const HOME_DEFAULT_PRESET = 'hd-1080p-29.97';
 
 function errorOf(e: unknown): { code: string; message: string } {
 	return {
@@ -52,9 +52,9 @@ export function Home() {
 	const navigate = useNavigate();
 	const store = useMemo(() => new EngineProjectStore(engine.client), [engine.client]);
 	const [list, setList] = useState<ListState>({ status: 'loading' });
-	const [dialog, setDialog] = useState<null | { kind: 'new' } | { kind: 'delete'; project: ProjectSummary }>(
-		null,
-	);
+	const [dialog, setDialog] = useState<
+		null | { kind: 'new' } | { kind: 'describe' } | { kind: 'delete'; project: ProjectSummary }
+	>(null);
 	const [busy, setBusy] = useState(false);
 
 	const load = useCallback(() => {
@@ -93,6 +93,15 @@ export function Home() {
 	const create = (name: string, preset: string) =>
 		run('Creating the project', async () => {
 			const id = await store.create({ name: name.trim() || 'Untitled Project', preset });
+			setDialog(null);
+			navigate(`/project/${id}`);
+		});
+	// spec 18 AF-BRF-005: the project gets the sequence the brief implies; the editor sets the brief and imports the files.
+	const describe = (r: DescribeVideoResult) =>
+		run('Creating the project', async () => {
+			const shape = startShape(r.form);
+			const id = await store.create({ name: projectNameFrom(r.form.text), preset: shape.preset });
+			stashStart(id, { form: r.form, settings: shape.settings, files: r.files, paths: r.paths });
 			setDialog(null);
 			navigate(`/project/${id}`);
 		});
@@ -144,6 +153,14 @@ export function Home() {
 				>
 					New Project
 				</Button>
+				<Button
+					disabled={!connected || busy}
+					onClick={() => setDialog({ kind: 'describe' })}
+					data-testid="home-describe"
+					title="Start a project from a description of the video, for an AI agent to cut"
+				>
+					Describe your video
+				</Button>
 				<Button disabled={!connected || busy} onClick={() => void openFile()}>
 					Open Project…
 				</Button>
@@ -174,7 +191,11 @@ export function Home() {
 					</p>
 				) : null}
 				{list.status === 'ok' && list.projects.length === 0 ? (
-					<EmptyState onCreate={() => setDialog({ kind: 'new' })} disabled={!connected} />
+					<EmptyState
+						onCreate={() => setDialog({ kind: 'new' })}
+						onDescribe={() => setDialog({ kind: 'describe' })}
+						disabled={!connected}
+					/>
 				) : null}
 				{list.status === 'ok' && list.projects.length > 0 ? (
 					<ul
@@ -245,6 +266,13 @@ export function Home() {
 					onCreate={(n, preset) => void create(n, preset)}
 				/>
 			) : null}
+			{dialog?.kind === 'describe' ? (
+				<DescribeVideoDialog
+					busy={busy}
+					onCancel={() => setDialog(null)}
+					onCreate={(r) => void describe(r)}
+				/>
+			) : null}
 			{dialog?.kind === 'delete' ? (
 				<Dialog
 					title="Delete project?"
@@ -275,7 +303,7 @@ export function Home() {
 	);
 }
 
-function EmptyState(props: { onCreate(): void; disabled: boolean }) {
+function EmptyState(props: { onCreate(): void; onDescribe(): void; disabled: boolean }) {
 	const steps = [
 		{ n: 1, title: 'Create', text: 'Start a project with a sequence preset.' },
 		{ n: 2, title: 'Import', text: 'Drop clips, audio and stills into the Project panel.' },
@@ -292,9 +320,14 @@ function EmptyState(props: { onCreate(): void; disabled: boolean }) {
 					</li>
 				))}
 			</ol>
-			<Button variant="primary" pill disabled={props.disabled} onClick={props.onCreate}>
-				Create your first project
-			</Button>
+			<div className="flex items-center gap-2">
+				<Button variant="primary" pill disabled={props.disabled} onClick={props.onCreate}>
+					Create your first project
+				</Button>
+				<Button pill disabled={props.disabled} onClick={props.onDescribe} data-testid="home-empty-describe">
+					Start with the agent: describe your video
+				</Button>
+			</div>
 		</div>
 	);
 }

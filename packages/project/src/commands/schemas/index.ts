@@ -1,6 +1,7 @@
 import type { z } from 'zod';
 import { AUDIO_COMMANDS } from './audio.ts';
 import { BATCH_COMMANDS } from './batch.ts';
+import { BRIEF_COMMANDS } from './brief.ts';
 import { CAPTION_COMMANDS } from './captions.ts';
 import { CLEANUP_COMMANDS } from './cleanup.ts';
 import { CLIP_COMMANDS } from './clip.ts';
@@ -42,6 +43,7 @@ import { TRACKER_COMMANDS } from './tracker.ts';
 
 export * from './audio.ts';
 export * from './batch.ts';
+export * from './brief.ts';
 export * from './captions.ts';
 export * from './cleanup.ts';
 export * from './clip.ts';
@@ -123,6 +125,7 @@ export const ALL_COMMAND_SCHEMAS = [
 	...CLEANUP_COMMANDS,
 	...STYLE_RECIPE_COMMANDS,
 	...SCRIPT_FIX_COMMANDS,
+	...BRIEF_COMMANDS,
 ] as const;
 
 export type CommandInput = z.input<(typeof ALL_COMMAND_SCHEMAS)[number]>;

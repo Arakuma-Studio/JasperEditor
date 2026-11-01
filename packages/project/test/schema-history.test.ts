@@ -58,6 +58,9 @@ const STEP_CHANGES: Record<string, (from: Rec) => Record<string, unknown>> = {
 	'8→9': () => ({}),
 	// v9 → v10 (workflow automation): version bump only; v9 builds open the files read-only.
 	'9→10': () => ({}),
+	// v10 → v11 (agent footage editing: sequence brief, agent notes): version bump only; v10 builds open the files
+	// read-only.
+	'10→11': () => ({}),
 };
 
 describe('schema history fixtures (S01:MIG-002)', () => {

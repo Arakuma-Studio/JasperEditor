@@ -143,6 +143,10 @@ export const MIGRATIONS: readonly MigrationStep[] = [
 	// shadow spread. Existing data needs no changes; the bump makes v9 builds open v10 files read-only instead of
 	// dropping or misreading the new fields on their next save.
 	{ from: 9, to: 10, migrate: (doc) => doc },
+	// v11 (agent footage editing, spec 18 AF-BRF): sequence briefs (`Sequence.brief`) and project agent notes
+	// (`ProjectDocument.agentNotes`). Existing data needs no changes; the bump makes v10 builds open v11 files
+	// read-only, so a build that cannot show, check or repair the brief and notes never edits a project that has them.
+	{ from: 10, to: 11, migrate: (doc) => doc },
 ];
 
 /** Data that is not a loadable project (not an object, an unknown format, no migration path, schema mismatch). */

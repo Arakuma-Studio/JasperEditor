@@ -12,6 +12,8 @@ export * from './audio/index.ts';
 export * from './audio-fade.ts';
 export * from './automation/index.ts';
 export * from './blend-modes.ts';
+// spec 18 AF-BRF: the sequence brief and the project's agent notes (schema v11).
+export * from './brief/model.ts';
 export * from './captions/index.ts';
 export * from './cleanup/index.ts';
 export * from './cleanup/voice-analysis.ts';

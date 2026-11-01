@@ -20,6 +20,7 @@ import { ANIMATION_GUIDE, registerAnimationTools } from './tools/animation.ts';
 import { AUDIO_GUIDE, registerAudioTools } from './tools/audio.ts';
 import { AUDIO_FX_GUIDE, registerAudioFxTools } from './tools/audio-fx.ts';
 import { AUTOMATION_GUIDE, registerAutomationTools } from './tools/automation.ts';
+import { registerBriefTools } from './tools/brief.ts';
 import { CACHE_GUIDE, registerCacheTools } from './tools/cache.ts';
 import { CAPTIONS_GUIDE, registerCaptionTools } from './tools/captions.ts';
 import { CLEANUP_GUIDE, registerCleanupTools } from './tools/cleanup.ts';
@@ -287,6 +288,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerExpressionTools(ctx);
 	registerGapsTools(ctx);
 	registerPolishTools(ctx);
+	registerBriefTools(ctx);
 	registerResources(ctx);
 	registerPrompts(ctx);
 	registerGuides(ctx, GUIDE_TOPICS, FULL_GUIDE);

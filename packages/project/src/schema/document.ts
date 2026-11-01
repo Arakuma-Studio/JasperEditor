@@ -1,6 +1,7 @@
 // Project document root, project items and the persistence envelope (S01 §4, §5, PER-002).
 import { z } from 'zod';
 import type { ProjectStyleRecipes } from '../automation/recipes.ts';
+import type { ProjectAgentNotes } from '../brief/model.ts';
 import type { SubtitleTemplate } from '../captions/subtitles/templates.ts';
 import type { ProjectTextStyle } from '../text-styles/model.ts';
 import type { DeepStrip } from './common.ts';
@@ -34,8 +35,11 @@ import { CaptionStyleSchema, ClipMarkerSchema, type Sequence, SequenceSchema } f
  * drop the media — open v9 files read-only (docs/project-files.md).
  * v10 (workflow automation, specs 13–16): subtitle text clips, linked text styles and subtitle templates, voice-cleanup
  * settings and scripts, style recipes, automation provenance and text shadow spread; version bump only, so v9 builds
- * open v10 files read-only (docs/project-files.md). */
-export const CURRENT_SCHEMA_VERSION = 10;
+ * open v10 files read-only (docs/project-files.md).
+ * v11 (agent footage editing, spec 18 AF-BRF): `Sequence.brief` and `ProjectDocument.agentNotes`; version bump only,
+ * so v10 builds — which neither show, check nor repair them, and whose agents cannot read them — open v11 files
+ * read-only (docs/project-files.md). */
+export const CURRENT_SCHEMA_VERSION = 11;
 
 const markSchema = z.looseObject({ flicks: nonNegInt() });
 export const SourceMarksSchema = z.looseObject({
@@ -254,6 +258,11 @@ export const ProjectDocumentSchema = z.looseObject({
 	 * as they are); absent = none.
 	 */
 	styleRecipes: z.custom<ProjectStyleRecipes>(() => true).optional(),
+	/**
+	 * spec 18 AF-BRF-002 (schema v11): notes agents keep about the project (`{entries: [{id, at, author, text}]}`).
+	 * Read leniently (INV-AGENT-NOTES checks it, `repairAgentNotes` keeps the readable entries on load); absent = none.
+	 */
+	agentNotes: z.custom<ProjectAgentNotes>(() => true).optional(),
 });
 
 export type ProjectDocument = {
@@ -275,6 +284,8 @@ export type ProjectDocument = {
 	subtitleTemplates?: Record<string, SubtitleTemplate>;
 	/** spec 15 EA-010: style recipes used in the project and the active one (absent = none; `automation/recipes.ts`). */
 	styleRecipes?: ProjectStyleRecipes;
+	/** spec 18 AF-BRF-002: agent notes (absent = none; see `brief/model.ts`). */
+	agentNotes?: ProjectAgentNotes;
 };
 
 export type ProjectEnvelope = {

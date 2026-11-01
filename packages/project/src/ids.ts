@@ -46,6 +46,8 @@ export const ID_PREFIXES = {
 	captionGroup: 'cgp',
 	/** spec 13 AS-020: subtitle templates saved in a project (`ProjectDocument.subtitleTemplates`). */
 	subtitleTemplate: 'stm',
+	/** spec 18 AF-BRF-002: agent notes of a project (`ProjectDocument.agentNotes`). */
+	agentNote: 'agn',
 } as const;
 export type IdPrefix = (typeof ID_PREFIXES)[keyof typeof ID_PREFIXES];
 export const ALL_ID_PREFIXES: readonly IdPrefix[] = Object.values(ID_PREFIXES);

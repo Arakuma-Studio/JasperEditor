@@ -1011,6 +1011,11 @@ export class EngineClient {
 		return this.call('agentMcpInfo');
 	}
 
+	/** Agents that called the engine recently (spec 18 AF-BRF-005). */
+	agentPresence() {
+		return this.call('agentPresence');
+	}
+
 	/**
 	 * GETs an engine-relative URL (e.g. a still's `/renders/<jobId>/output`) as bytes with the client's
 	 * auth. Throws EngineError on HTTP errors.

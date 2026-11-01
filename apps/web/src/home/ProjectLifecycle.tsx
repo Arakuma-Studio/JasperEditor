@@ -37,6 +37,7 @@ import {
 	PROJECT_FILE_DIALOGS,
 	registerProjectFileActions,
 } from './project-files.tsx';
+import { useStartBrief } from './use-start-brief.ts';
 
 const IDLE_STATUS: AutosaveStatus = {
 	saving: false,
@@ -113,6 +114,9 @@ function LifecycleBody(props: {
 			void c.dispose();
 		};
 	}, [session]);
+
+	// spec 18 AF-BRF-005: finish Home ▸ Describe your video (brief, files, Connect an AI Agent…) once autosave is attached
+	useStartBrief(session);
 
 	const navigate = useNavigate();
 	const { onReplace } = props;

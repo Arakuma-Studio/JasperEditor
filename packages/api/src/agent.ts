@@ -227,6 +227,22 @@ export const AgentMcpInfoSchema = z.object({
 });
 export type AgentMcpInfo = z.infer<typeof AgentMcpInfoSchema>;
 
+/** At most this many agent names are remembered by `GET /api/agent/presence`. */
+export const AGENT_PRESENCE_MAX = 32;
+/** An agent counts as connected when it called the engine within this many seconds. */
+export const AGENT_PRESENCE_WINDOW_SEC = 15 * 60;
+
+/**
+ * `GET /api/agent/presence` (spec 18 AF-BRF-005): the agents — jasper-mcp clients, named by the `x-jasper-agent` header
+ * of their requests — that called this engine within `windowSec`, most recent first. An agent that is
+ * configured but has not called the engine since it started is not listed.
+ */
+export const AgentPresenceSchema = z.object({
+	agents: z.array(z.object({ name: z.string().max(64), lastSeenAt: z.string() })).max(AGENT_PRESENCE_MAX),
+	windowSec: z.number(),
+});
+export type AgentPresence = z.infer<typeof AgentPresenceSchema>;
+
 /**
  * What `POST /api/agent/ui` can ask an open editor window to do (docs/wp-notes/mcp-cli.md §4). Coordinates are
  * CSS pixels of the window's content area, origin top-left; elements are addressed by automation id.

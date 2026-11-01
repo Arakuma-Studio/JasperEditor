@@ -34,10 +34,6 @@ const PENDING_TOOLS = new Set([
 	'view_media_range',
 	'propose_edits',
 	'verify_export',
-	'get_brief',
-	'set_brief',
-	'list_agent_notes',
-	'add_agent_note',
 ]);
 
 type FakeEngine = { jobs: Map<string, EngineJob>; cancelled: string[]; tx: unknown[] };
