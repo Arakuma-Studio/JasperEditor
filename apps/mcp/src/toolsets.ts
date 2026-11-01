@@ -40,7 +40,7 @@ export const TOOLSETS = [
 		name: 'core',
 		description:
 			'Always on: projects, reading the timeline, commands, the main edits, footage digest/takes/view, proposals, brief, export and verification, guides and these toolset tools.',
-		guides: ['editing', 'proposals'],
+		guides: ['editing', 'footage', 'proposals'],
 		tools: [
 			'list_toolsets',
 			'enable_toolsets',

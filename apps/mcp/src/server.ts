@@ -34,6 +34,7 @@ import { EDIT_UX_GUIDE, registerEditUxTools } from './tools/edit-ux.ts';
 import { registerEditingTools } from './tools/editing.ts';
 import { EXPRESSIONS_GUIDE, registerExpressionTools } from './tools/expressions.ts';
 import { FONTS_GUIDE, registerFontTools } from './tools/fonts.ts';
+import { FOOTAGE_GUIDE, registerFootageTools } from './tools/footage.ts';
 import { GAPS_GUIDE, registerGapsTools } from './tools/gaps.ts';
 import { GLOSSARY_GUIDE, registerGlossaryTools } from './tools/glossary.ts';
 import { registerGradingTools } from './tools/grading.ts';
@@ -119,6 +120,7 @@ const GUIDES: Record<string, GuideSource> = {
 			'Projects, media, timeline edits, transactions, frames and exports with the core tools, and the rules.',
 		sections: [EDITING_GUIDE],
 	},
+	footage: FOOTAGE_GUIDE,
 	color: COLOR_GUIDE,
 	processing: PROCESSING_GUIDE,
 	derive: DERIVE_GUIDE,
@@ -228,6 +230,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerProjectTools(ctx);
 	registerEditingTools(ctx);
 	registerRenderTools(ctx);
+	registerFootageTools(ctx);
 	registerColorTools(ctx);
 	registerGradingTools(ctx);
 	registerProcessingTools(ctx);

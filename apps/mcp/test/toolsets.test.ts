@@ -29,8 +29,6 @@ const SKILL_DIR = join(ROOT, 'skills', 'jasper-editor');
  * Remove each name here when its tool is registered: the test below fails while a pending name is registered.
  */
 const PENDING_TOOLS = new Set([
-	'get_footage_digest',
-	'find_takes',
 	'view_media_range',
 	'propose_edits',
 	'verify_export',

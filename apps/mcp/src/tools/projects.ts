@@ -27,6 +27,7 @@ import {
 } from '../context.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { mediaSummary, projectSummary } from '../format.ts';
+import { ImportTranscribeArg, type ImportTranscription, queueImportTranscriptions } from './speech.ts';
 
 const PRESET_IDS = BUILTIN_PRESETS.map((p) => p.id) as [string, ...string[]];
 
@@ -247,10 +248,11 @@ export function registerProjectTools(ctx: ToolContext): void {
 					.boolean()
 					.optional()
 					.describe('Copy the files into the engine media store instead of referencing them in place'),
+				transcribe: ImportTranscribeArg,
 			},
 			annotations: EDIT,
 		},
-		async ({ projectId, paths, copyIntoProject }, extra) => {
+		async ({ projectId, paths, copyIntoProject, transcribe }, extra) => {
 			const problems: { path: string; code: string; message: string }[] = [];
 			const ok: string[] = [];
 			for (const p of paths) {
@@ -274,7 +276,13 @@ export function registerProjectTools(ctx: ToolContext): void {
 			problems.push(...reg.errors);
 			const registeredPaths = ok.filter((p) => !reg.errors.some((e) => e.path === p));
 			const imported: Record<string, unknown>[] = [];
+			const jobs: Array<{ jobId: string; mediaId: string }> = [];
 			if (reg.items.length) {
+				// AF-DIG-003: queued before the import transaction (see queueImportTranscriptions)
+				const queued: ImportTranscription[] | null = transcribe
+					? await queueImportTranscriptions(ctx, projectId, reg.items, transcribe)
+					: null;
+				const queuedIds = (queued ?? []).flatMap((q) => ('jobId' in q ? [q.jobId] : []));
 				const commands: Record<string, unknown>[] = reg.items.map((item, i) =>
 					mediaRegisterCommand(item, `$m${i}`, `$i${i}`),
 				);
@@ -297,13 +305,20 @@ export function registerProjectTools(ctx: ToolContext): void {
 						if (sourceRange) commands.push({ type: 'media.setSourceRange', mediaId: `$m${i}`, sourceRange });
 					});
 				}
-				const res = await transact(
-					ctx,
-					projectId,
-					{ label: `Import ${reg.items.length} file${reg.items.length === 1 ? '' : 's'}`, commands },
-					extra,
-				);
-				const r = requireOk(res);
+				let r: ReturnType<typeof requireOk>;
+				try {
+					const res = await transact(
+						ctx,
+						projectId,
+						{ label: `Import ${reg.items.length} file${reg.items.length === 1 ? '' : 's'}`, commands },
+						extra,
+					);
+					r = requireOk(res);
+				} catch (e) {
+					// nothing was imported: the transcriptions queued for it would have no media to land on
+					await Promise.all(queuedIds.map((id) => ctx.engine((c) => c.cancelJob(id)).catch(() => undefined)));
+					throw e;
+				}
 				const { doc } = await loadDoc(ctx, projectId);
 				reg.items.forEach((item, i) => {
 					const range = (doc.media[r.refs[`$m${i}`] ?? ''] as { sourceRange?: unknown } | undefined)
@@ -311,12 +326,16 @@ export function registerProjectTools(ctx: ToolContext): void {
 					const out = r.results[i] as { mediaId?: string; itemId?: string; deduped?: boolean } | undefined;
 					const mediaId = out?.mediaId ?? r.refs[`$m${i}`];
 					const asset = mediaId ? doc.media[mediaId] : undefined;
+					const transcription = queued?.[i];
+					if (transcription && 'jobId' in transcription && mediaId)
+						jobs.push({ jobId: transcription.jobId, mediaId });
 					imported.push({
 						path: registeredPaths[i],
 						...(asset ? mediaSummary(doc, asset) : { name: item.originalName, kind: item.kind }),
 						mediaId,
 						itemId: out?.itemId ?? r.refs[`$i${i}`],
 						...(out?.deduped ? { deduped: true } : {}),
+						...(transcription ? { transcription } : {}),
 						...(range ? { sourceRange: range, sidecar: item.sourceHint?.sidecar } : {}),
 						...((note) => (note ? { note } : {}))(
 							[
@@ -336,6 +355,12 @@ export function registerProjectTools(ctx: ToolContext): void {
 			return jsonResult({
 				imported,
 				...(problems.length ? { errors: problems } : {}),
+				...(jobs.length
+					? {
+							transcriptionJobs: jobs,
+							next: `Call wait_for_job for each job, then transcribe {projectId, jobIds: [${jobs.map((j) => `"${j.jobId}"`).join(', ')}]} to add the transcripts (one undo step); then get_footage_digest.`,
+						}
+					: {}),
 			});
 		},
 	);

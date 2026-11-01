@@ -48,6 +48,7 @@ export * from './expressions.ts';
 export * from './factories.ts';
 export * from './find/index.ts';
 export * from './font-usage.ts';
+export * from './footage/index.ts';
 export * from './gaps/index.ts';
 export * from './glossary/index.ts';
 export * from './ids.ts';

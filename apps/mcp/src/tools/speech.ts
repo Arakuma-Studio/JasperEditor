@@ -171,6 +171,80 @@ async function speechCall<T>(
 	}
 }
 
+/** AF-DIG-003: `import_media`'s `transcribe` option. */
+export const ImportTranscribeArg = z
+	.union([
+		z.boolean(),
+		z.object({
+			model: z
+				.string()
+				.min(1)
+				.optional()
+				.describe('Speech model id from list_speech_models (default: the recommended model)'),
+			language: z.string().min(1).optional().describe('ISO 639-1 code, or "auto" (default)'),
+		}),
+	])
+	.optional()
+	.describe(
+		'Queue a transcription job for every imported media with sound (true, or {model, language}). The result lists the job ids: wait_for_job, then transcribe {projectId, jobIds} commits the transcripts. Media that already have a transcript are skipped.',
+	);
+
+export type ImportTranscription =
+	| { jobId: string }
+	| { skipped: string }
+	| { error: { code: string; message: string } };
+
+/**
+ * AF-DIG-003: queues one transcription job per registered media with sound, before the import transaction (an open
+ * editor's "Transcribe on import" then sees the job and does not transcribe the media again). One entry per item.
+ */
+export async function queueImportTranscriptions(
+	ctx: ToolContext,
+	projectId: string,
+	items: ReadonlyArray<{
+		mediaKey: string;
+		kind: string;
+		probe: { streams: ReadonlyArray<{ type: string }> };
+	}>,
+	options: true | { model?: string; language?: string },
+): Promise<ImportTranscription[]> {
+	const { doc } = await loadDoc(ctx, projectId);
+	const transcribed = new Set<string>();
+	for (const m of Object.values(doc.media) as MediaAsset[])
+		if (transcriptForMedia(doc, m.id))
+			for (const l of m.locators) if (l.type === 'engine-store') transcribed.add((l as { key: string }).key);
+	const body = { ...requestOf(options === true ? {} : options), projectId };
+	const out: ImportTranscription[] = [];
+	for (const item of items) {
+		if (
+			(item.kind !== 'video' && item.kind !== 'audio') ||
+			!item.probe.streams.some((s) => s.type === 'audio')
+		) {
+			out.push({ skipped: 'no audio stream' });
+			continue;
+		}
+		if (transcribed.has(item.mediaKey)) {
+			out.push({ skipped: 'already has a transcript' });
+			continue;
+		}
+		try {
+			const job = (await speechCall(ctx, (c) =>
+				c.call('mediaTranscribe', { params: { key: item.mediaKey }, body }),
+			)) as EngineJob;
+			out.push({ jobId: job.id });
+		} catch (e) {
+			if (!(e instanceof ToolError)) {
+				// the engine is unreachable: the import fails, so the jobs queued so far go too
+				for (const q of out)
+					if ('jobId' in q) await ctx.engine((c) => c.cancelJob(q.jobId)).catch(() => undefined);
+				throw e;
+			}
+			out.push({ error: { code: e.code, message: e.message } });
+		}
+	}
+	return out;
+}
+
 type Pending = { jobId: string; mediaId?: string };
 
 /** Commits finished transcription jobs (one transaction). */

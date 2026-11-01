@@ -137,6 +137,8 @@ function fakeEngine(state: {
 	models: SpeechModel[];
 	job?: () => EngineJob;
 	settings?: Record<string, unknown>;
+	/** Jobs `GET /api/jobs` lists (spec 18 AF-DIG-003). */
+	jobs?: EngineJob[];
 }) {
 	state.settings ??= { processor: 'auto', accuracy: 'standard', nvidiaGpu: false };
 	const calls: Call[] = [];
@@ -210,6 +212,17 @@ function fakeEngine(state: {
 			return json(jobOf('job_dl', 'model-download'));
 		}
 
+		if (url.startsWith('/api/jobs?') || url === '/api/jobs') {
+			const q = new URL(url, 'http://x').searchParams;
+			const terminal = new Set(['succeeded', 'failed', 'cancelled', 'interrupted']);
+			return json({
+				jobs: (state.jobs ?? []).filter(
+					(j) =>
+						(q.get('active') !== '1' || !terminal.has(j.state)) &&
+						(!q.get('projectId') || j.projectId === q.get('projectId')),
+				),
+			});
+		}
 		if (url === `/api/media/${KEY}/transcribe`) return json(jobOf('job_tr', 'transcription'), 202);
 		if (url === '/api/speech/transcribe-sequence') return json(jobOf('job_mix', 'transcription'), 202);
 		if (url === '/api/jobs/job_dl')
@@ -553,6 +566,66 @@ describe('automatic transcription on import', () => {
 			session.redo();
 		});
 		expect(calls.filter((c) => c.url === `/api/media/${KEY}/transcribe`)).toHaveLength(1);
+		saveAuto({ enabled: false, model: 'whisper-base', language: 'auto' });
+	});
+});
+
+describe('automatic transcription of media an agent imports (spec 18 AF-DIG-003)', () => {
+	async function agentImport(jobs: EngineJob[]) {
+		const { session, seqId } = makeSession();
+		const { client, calls } = fakeEngine({ models: [model('whisper-base', true)], jobs });
+		saveAuto({ enabled: true, model: 'whisper-base', language: 'auto' });
+		await act(async () => {
+			render(
+				<EngineProvider client={client}>
+					<AutoTranscribeHost session={session} />
+				</EngineProvider>,
+			);
+		});
+		const asset = JSON.parse(JSON.stringify(Object.values(session.getCommitted().media)[0])) as Record<
+			string,
+			unknown
+		>;
+		delete asset.id;
+		asset.fingerprint = `q1:${'ef'.repeat(32)}`;
+		const r = session.apply({
+			label: 'Import 1 file',
+			origin: { agent: 'claude-code' },
+			sequenceId: seqId,
+			commands: [{ type: 'media.register', asset }] as never[],
+		});
+		expect(r.ok).toBe(true);
+		return { calls };
+	}
+	const queued = (state: EngineJob['state'], projectId = 'prj_speech'): EngineJob => ({
+		id: 'job_agent',
+		kind: 'transcription',
+		title: 'Transcribe',
+		origin: { type: 'user' },
+		projectId,
+		assetId: KEY,
+		state,
+		progress: 0,
+		createdAt: '2026-10-07T10:00:00.000Z',
+		priority: 'user',
+		cpuSlots: 4,
+	});
+	const posts = (calls: Call[]) =>
+		calls.filter((c) => c.method === 'POST' && c.url === `/api/media/${KEY}/transcribe`);
+
+	it('transcribes media an agent imported while the editor is open', async () => {
+		const { calls } = await agentImport([queued('failed'), queued('running', 'prj_other')]);
+		await waitFor(() => expect(posts(calls)).toHaveLength(1));
+		saveAuto({ enabled: false, model: 'whisper-base', language: 'auto' });
+	});
+
+	it('leaves media alone when the agent already queued its transcription', async () => {
+		const { calls } = await agentImport([queued('queued')]);
+		await waitFor(() => expect(calls.some((c) => c.url.startsWith('/api/jobs?'))).toBe(true));
+		await act(async () => {
+			await new Promise((r) => setTimeout(r, 50));
+		});
+		expect(posts(calls)).toHaveLength(0);
 		saveAuto({ enabled: false, model: 'whisper-base', language: 'auto' });
 	});
 });
