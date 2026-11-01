@@ -11,14 +11,16 @@ import {
 	type MediaAsset,
 } from '@jasper/project';
 import { EditorSession } from '@jasper/session';
+import { toasts } from '@jasper/ui';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import '../src/commands/process.ts';
 import { DeriveMediaDialog } from '../src/derive/DeriveMediaDialog.tsx';
-import { defaultDeriveForm, recipeFromForm } from '../src/derive/model.ts';
+import { defaultDeriveForm, recipeFromForm, runDerive } from '../src/derive/model.ts';
 import { deriveOpsFor } from '../src/derive/register.ts';
 import type { MenuItemSpec } from '../src/extensions/index.ts';
 import { projectItemMenuExtensions } from '../src/extensions/index.ts';
+import { autoTargets } from '../src/speech/auto.tsx';
 
 const KEY = 'mk_source_1';
 
@@ -311,6 +313,59 @@ describe('Derive Media dialog (AF-OPS-002)', () => {
 		expect(session.getCommitted().media[derived.id]).toBeUndefined();
 		session.redo();
 		expect(session.getCommitted().media[derived.id]).toBeDefined();
+	});
+
+	it('a derived media is not a candidate for Transcribe on import', async () => {
+		const { session, mediaId } = makeSession();
+		const { client } = fakeEngine(
+			() => jsonResponse(job('queued'), 202),
+			() => job('succeeded', { result: reversedResult() }),
+		);
+		const r = await runDerive(session, client, mediaId, { op: 'reverse' }, { pollMs: 5 });
+		expect(autoTargets(session, [r.mediaId])).toEqual([]);
+		// an imported media with audio still is
+		expect(autoTargets(session, [mediaId])).toEqual([mediaId]);
+	});
+
+	it('a job finishing after its project was closed is refused with a visible notice, not dropped', async () => {
+		const { session, mediaId } = makeSession();
+		let polls = 0;
+		const { client } = fakeEngine(
+			() => jsonResponse(job('queued'), 202),
+			() => (++polls < 3 ? job('running') : job('succeeded', { result: reversedResult() })),
+		);
+		// runDerive alone: a coded refusal naming the remedy
+		const pending = runDerive(session, client, mediaId, { op: 'reverse' }, { pollMs: 5 });
+		await session.close();
+		await expect(pending).rejects.toMatchObject({ code: 'PROJECT_CLOSED' });
+		await expect(pending).rejects.toThrow(/Derive Media again/);
+
+		// through the dialog, unmounted by the project switch while the job runs
+		toasts.dismissAll();
+		toasts.clearLog();
+		const second = makeSession();
+		polls = 0;
+		const view = render(
+			<DeriveMediaDialog
+				session={second.session}
+				mediaId={second.mediaId}
+				op="reverse"
+				engine={client}
+				pollMs={5}
+				close={() => {}}
+			/>,
+		);
+		await act(async () => {
+			fireEvent.click(screen.getByRole('button', { name: 'Derive' }));
+		});
+		view.unmount();
+		await second.session.close();
+		await waitFor(() =>
+			expect(toasts.getState().log.at(-1)).toMatchObject({
+				kind: 'error',
+				detail: expect.stringContaining('PROJECT_CLOSED'),
+			}),
+		);
 	});
 
 	it('a failed job shows its code in the dialog', async () => {

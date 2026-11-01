@@ -11236,6 +11236,7 @@
   "The project is read-only. ",
   "The project opened read-only.",
   "The project refused the transcript",
+  "The project was closed before the result could be added: open it and run Derive Media again.",
   "The project was saved again afterwards (revision",
   "The proposal could not be applied",
   "The proposal could not be discarded",

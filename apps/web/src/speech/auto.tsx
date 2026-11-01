@@ -54,7 +54,12 @@ export function autoTargets(session: EditorSession, created: readonly string[]):
 	return created.filter((id) => {
 		const m = doc.media[id] as MediaAsset | undefined;
 		return (
-			!!m && hasAudio(m) && !!mediaKeyOf(m) && !Object.values(doc.transcripts).some((t) => t.mediaId === id)
+			!!m &&
+			// derived media (processed versions, Derive Media results) are not imports
+			!m.derivation &&
+			hasAudio(m) &&
+			!!mediaKeyOf(m) &&
+			!Object.values(doc.transcripts).some((t) => t.mediaId === id)
 		);
 	});
 }

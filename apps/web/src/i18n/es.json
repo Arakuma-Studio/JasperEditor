@@ -67,6 +67,7 @@
   "The media is offline: relink it first.": "El medio está sin conexión: vuelva a vincularlo primero.",
   "The operation failed on the engine.": "La operación falló en el motor.",
   "The operation was cancelled.": "La operación se canceló.",
+  "The project was closed before the result could be added: open it and run Derive Media again.": "El proyecto se cerró antes de poder añadir el resultado: ábralo y vuelva a ejecutar Derivar medios.",
   "The range holds no frame: Out must be after In.": "El rango no contiene ningún fotograma: la salida debe ir después de la entrada.",
   "The range lies outside the media.": "El rango está fuera del medio.",
   "The rate is outside what this operation supports.": "La velocidad está fuera de lo que admite esta operación.",
