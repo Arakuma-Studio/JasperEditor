@@ -2,8 +2,8 @@
 // (there is no Agent panel), so the two things the user must see live here, above every panel:
 //  - approval requests: a destructive agent transaction (track.remove, item.delete, force: true…) waits
 //    for Approve / Deny on a sticky card with a human summary, the reasons and a countdown;
-//  - activity: a toast for every transaction an external agent applied, with Undo while it is the top
-//    History entry.
+//  - activity: a toast per burst of transactions an external agent applied (spec 18 AF-ACT-003), with an Undo of
+//    exactly that burst; the full log is the Agent Activity panel.
 // Cards look like toasts (same frame, agent accent) but never time out on their own and never steal focus.
 // The stack also holds the proposal cards (spec 12 §2.7 "Review": an agent's proposal to review, no countdown, Review /
 // Dismiss; `proposals/ProposalCards.tsx`) and the review's aria-live region.
@@ -11,8 +11,8 @@ import type { EditorSession } from '@jasper/session';
 import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import { Button, Icon, toast } from '@jasper/ui';
 import { type ReactNode, useEffect, useState } from 'react';
+import { wireActivityToasts } from '../agent-activity/toasts.ts';
 import {
-	type ActivityEntry,
 	type AgentBridge,
 	type PendingApproval,
 	useAgentBridgeFor,
@@ -140,29 +140,6 @@ export function ApprovalCard({ approval: a, bridge }: { approval: PendingApprova
 	);
 }
 
-function activityToast(entry: ActivityEntry, bridge: AgentBridge, session: EditorSession): void {
-	// Only what an external agent changed: dry runs, rejections and in-page calls stay quiet.
-	if (entry.via !== 'relay' || !entry.ok || entry.dryRun) return;
-	const n = entry.created.length + entry.changed.length + entry.deleted.length;
-	toast({
-		kind: 'agent',
-		title: `Agent: ${entry.label}`.slice(0, 80),
-		detail: `${entry.agent} · ${n} item${n === 1 ? '' : 's'} changed`,
-		source: 'agent',
-		// One slot: a burst of transactions replaces the toast instead of stacking.
-		dedupeKey: 'agent-activity',
-		actions: [
-			{
-				label: 'Undo',
-				run: () => {
-					if (bridge.isTopOfHistory(entry)) session.undo();
-					else toast({ kind: 'info', title: 'Newer edits came after it; use the History panel' });
-				},
-			},
-		],
-	});
-}
-
 /** Mounted once by the editor shell. */
 export function AgentApprovals() {
 	const session = useSessionOrNull();
@@ -171,7 +148,7 @@ export function AgentApprovals() {
 
 	useEffect(() => {
 		if (!bridge || !session) return;
-		const offActivity = bridge.on('activity', (e) => activityToast(e as ActivityEntry, bridge, session));
+		const offActivity = wireActivityToasts(bridge, session);
 		const offResolved = bridge.on('approval.resolved', (p) => {
 			if ((p as { decision?: string }).decision === 'timeout')
 				toast({ kind: 'warning', title: 'An agent request timed out and was not applied', source: 'agent' });

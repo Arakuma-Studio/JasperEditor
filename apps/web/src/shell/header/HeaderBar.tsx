@@ -1,6 +1,6 @@
 // Row B — header bar (S05:HD-003/004/010/012): Home, Import/Edit/Export mode tabs, workspace tabs (Edit
 // mode; drag to reorder; right-click menu; » overflow), Workspaces menu, and the right cluster: engine
-// chip, background jobs with a badge, Quick Export (`export.quick`), command palette and full screen.
+// chip, agent status chip (spec 18 AF-ACT-002), background jobs with a badge, Quick Export (`export.quick`), command palette and full screen.
 // Every icon button has a `Name (Shortcut)` tooltip.
 
 import { useSessionOrNull } from '@jasper/session/react';
@@ -15,6 +15,7 @@ import {
 	useState,
 	useSyncExternalStore,
 } from 'react';
+import { AgentStatusChip } from '../../agent-activity/StatusChip.tsx';
 import { subscribeCommands } from '../../commands/registry.ts';
 import { usePersistenceStatus } from '../../home/ProjectLifecycle.tsx';
 import { useJobsSummary } from '../../panels/jobs/JobsPanel.tsx';
@@ -396,6 +397,7 @@ export type HeaderBarProps = {
 
 export function HeaderBar(props: HeaderBarProps) {
 	const getCtx = useCommandCtx();
+	const session = useSessionOrNull();
 	// Re-render on workspace list changes (order, names, visibility).
 	useSyncExternalStore(props.store.subscribe, props.store.getState);
 	const bar = props.store.barList();
@@ -437,6 +439,7 @@ export function HeaderBar(props: HeaderBarProps) {
 			<div className="flex-1">{props.center}</div>
 			<div className="flex shrink-0 items-center gap-0.5">
 				<SaveStatus />
+				<AgentStatusChip session={session} />
 				<EngineChip />
 				<JobsButton projectId={props.projectId} />
 				<CommandIconButton

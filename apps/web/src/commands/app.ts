@@ -66,6 +66,7 @@ const PANEL_LABELS: Record<PanelKind, string> = {
 	soundLibrary: 'Sound Library',
 	review: 'Review',
 	soundCheck: 'Sound Check',
+	agentActivity: 'Agent Activity',
 };
 
 const save: UiCommand = {

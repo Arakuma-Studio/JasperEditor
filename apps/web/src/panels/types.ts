@@ -30,6 +30,7 @@ export const PANEL_KINDS = [
 	'soundLibrary',
 	'review',
 	'soundCheck',
+	'agentActivity',
 ] as const;
 export type PanelKind = (typeof PANEL_KINDS)[number];
 

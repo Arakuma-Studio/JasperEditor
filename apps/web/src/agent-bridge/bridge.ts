@@ -46,6 +46,12 @@ export type ActivityEntry = {
 	ok: boolean;
 	dryRun: boolean;
 	revision: number;
+	/**
+	 * The History entry this transaction made (S01:UND-007: one per agent transaction, never coalesced), or null: it
+	 * failed, was a dry run or a history.undo / history.redo step, or changed nothing. Undo in the Agent Activity panel
+	 * and the burst toast address entries by this id (spec 18 AF-ACT-001/003).
+	 */
+	historyEntryId: number | null;
 	summary: string;
 	commandCount: number;
 	created: string[];
@@ -340,7 +346,7 @@ export class AgentBridge {
 		const pseudo = historyPseudoCommand(tx);
 		if (pseudo) {
 			runBeforeAgentTransaction(this.session);
-			return this.record(tx, via, this.historyStep(pseudo, tx.origin.agent));
+			return this.record(tx, via, this.historyStep(pseudo, tx.origin.agent), { historyStep: true });
 		}
 
 		const addr = resolveAgentAddresses(this.session.getCommitted(), tx.commands, {
@@ -401,6 +407,7 @@ export class AgentBridge {
 		tx: ReturnType<typeof normalizeAgentTransaction>,
 		via: ActivityEntry['via'],
 		result: TransactionResult,
+		opts: { historyStep?: boolean } = {},
 	) {
 		const entry: ActivityEntry = {
 			id: ++activitySeq,
@@ -411,6 +418,10 @@ export class AgentBridge {
 			ok: result.ok,
 			dryRun: !!tx.dryRun,
 			revision: result.revision,
+			historyEntryId:
+				result.ok && !tx.dryRun && !opts.historyStep
+					? this.historyEntryFor(result.revision, tx.origin.agent)
+					: null,
 			summary: summarizeTransaction(tx),
 			commandCount: tx.commands.length,
 			created: result.ok ? result.created : [],
@@ -427,17 +438,18 @@ export class AgentBridge {
 		return result;
 	}
 
-	/** True when the entry's commit is the top of the undo stack (Undo link in the feed). */
-	isTopOfHistory(entry: ActivityEntry): boolean {
-		if (!entry.ok || entry.dryRun) return false;
-		const h = this.session.getState().history;
-		const top = h.entries[h.index - 1];
-		return (
-			!!top &&
-			top.revisionAfter === entry.revision &&
-			typeof top.origin === 'object' &&
-			top.origin.agent === entry.agent
-		);
+	/**
+	 * The History entry a committed agent transaction made: the one that ends at its revision (revisions only grow, so
+	 * at most one does; looked up by revision because queued transactions may all have committed before this runs).
+	 */
+	private historyEntryFor(revision: number, agent: string): number | null {
+		const entries = this.session.getState().history.entries;
+		for (let i = entries.length - 1; i >= 0; i--) {
+			const e = entries[i]!;
+			if (e.revisionAfter !== revision) continue;
+			return typeof e.origin === 'object' && e.origin.agent === agent ? e.id : null;
+		}
+		return null;
 	}
 
 	private requestLocalApproval(
