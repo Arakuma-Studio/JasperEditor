@@ -13,6 +13,8 @@ import { runTool, type SpawnOptions, spawnTool, ToolError } from './process.ts';
 import {
 	blockedReference,
 	blockedReferenceMessage,
+	FORMAT_WHITELIST_MAX_INPUTS,
+	fileInputCount,
 	probeFormatWhitelist,
 	REMOTE_REFERENCE_BLOCKED,
 	restrictInputs,
@@ -139,28 +141,38 @@ function blockedError(stderr: string, exitCode: number | null): ToolError | null
 }
 
 /**
- * `-format_whitelist` of probes per ffprobe binary (tools/protocols.ts); null when it cannot list its demuxers (the probe
- * then has the protocol whitelist only).
+ * `-format_whitelist` per ffmpeg / ffprobe binary (tools/protocols.ts, from `<bin> -demuxers`); null when the binary
+ * cannot list its demuxers (the run then has the protocol whitelist only; the next run asks again).
  */
-const probeFormats = new Map<string, Promise<string | null>>();
+const demuxerLists = new Map<string, Promise<string | null>>();
+/** The lists already known, for the synchronous `spawnRaw`. */
+const knownDemuxerLists = new Map<string, string | null>();
+
+function demuxerWhitelist(bin: string): Promise<string | null> {
+	let list = demuxerLists.get(bin);
+	if (!list) {
+		list = runTool(bin, ['-hide_banner', '-demuxers'], { signal: AbortSignal.timeout(20_000) }).then(
+			(r) => {
+				const wl = probeFormatWhitelist(r.stdout);
+				knownDemuxerLists.set(bin, wl);
+				return wl;
+			},
+			() => {
+				demuxerLists.delete(bin);
+				return null;
+			},
+		);
+		demuxerLists.set(bin, list);
+	}
+	return list;
+}
 
 export class Ffmpeg {
 	constructor(readonly bins: BinaryPaths) {}
 
 	/** ffprobe arguments restricted to local protocols and non-network demuxers. */
 	private async probeArgs(bin: string, args: readonly string[]): Promise<string[]> {
-		let formats = probeFormats.get(bin);
-		if (!formats) {
-			formats = runTool(bin, ['-hide_banner', '-demuxers'], { signal: AbortSignal.timeout(20_000) }).then(
-				(r) => probeFormatWhitelist(r.stdout),
-				() => {
-					probeFormats.delete(bin); // asked again by the next probe
-					return null;
-				},
-			);
-			probeFormats.set(bin, formats);
-		}
-		return restrictProbeArgs(args, await formats);
+		return restrictProbeArgs(args, await demuxerWhitelist(bin));
 	}
 
 	/** runTool for ffprobe with REMOTE_REFERENCE_BLOCKED for refused network references. */
@@ -196,8 +208,16 @@ export class Ffmpeg {
 	 */
 	run(args: readonly string[], opts: FfmpegRunOptions = {}): Promise<{ stderr: string }> {
 		const bin = this.need('ffmpeg');
+		// A run with few file inputs also refuses network demuxers: it may read a file nobody probed (a Media Browser
+		// thumbnail of a DASH manifest named like a video, AF-SEC-001).
+		const inputs = fileInputCount(args);
+		const formats =
+			inputs > 0 && inputs <= FORMAT_WHITELIST_MAX_INPUTS ? demuxerWhitelist(bin) : Promise.resolve(null);
+		return formats.then((wl) => this.runRestricted(bin, restrictInputs(args, wl), opts));
+	}
+
+	private runRestricted(bin: string, full: string[], opts: FfmpegRunOptions): Promise<{ stderr: string }> {
 		return new Promise((resolve, reject) => {
-			const full = restrictInputs(args);
 			try {
 				assertLgplGraphArgs(full);
 			} catch (e) {
@@ -255,9 +275,14 @@ export class Ffmpeg {
 	 * LgplFilterError for a GPL-only filter argument.
 	 */
 	spawnRaw(args: readonly string[], opts: SpawnOptions = {}): ChildProcess {
-		const full = restrictInputs(args);
+		const bin = this.need('ffmpeg');
+		// Synchronous: the demuxer whitelist when this binary's list is already known (any earlier run or probe).
+		const inputs = fileInputCount(args);
+		const few = inputs > 0 && inputs <= FORMAT_WHITELIST_MAX_INPUTS;
+		if (few && !knownDemuxerLists.has(bin)) void demuxerWhitelist(bin);
+		const full = restrictInputs(args, few ? knownDemuxerLists.get(bin) : null);
 		assertLgplGraphArgs(full);
-		return spawnTool(this.need('ffmpeg'), ['-hide_banner', '-nostdin', '-loglevel', 'error', ...full], opts);
+		return spawnTool(bin, ['-hide_banner', '-nostdin', '-loglevel', 'error', ...full], opts);
 	}
 
 	/** `ffprobe -v error -print_format json …` parsed. */

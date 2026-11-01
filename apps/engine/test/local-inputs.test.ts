@@ -1,10 +1,12 @@
 // AF-SEC-001 (spec 18 §2.1): every FFmpeg / ffprobe input of a media file is restricted to local protocols, and
 // every place that starts the binaries directly applies the restriction (a source scan, so a new spawn site cannot
 // forget it). The network refusal end to end is local-inputs-network.test.ts.
-import { readdirSync, readFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { Ffmpeg } from '../src/tools/ffmpeg.ts';
 import {
 	blockedReference,
 	LOCAL_PROTOCOLS,
@@ -110,6 +112,62 @@ describe('restrictInputs (ffmpeg argument lists)', () => {
 				expect(stripped).toEqual(original);
 			}),
 		);
+	});
+});
+
+describe('restrictInputs with a demuxer whitelist', () => {
+	it('adds -format_whitelist to file inputs only (pipes and lavfi keep their forced formats)', () => {
+		expect(
+			restrictInputs(
+				['-ss', '1', '-i', '/m/a.mp4', '-f', 'rawvideo', '-i', 'pipe:3', '-f', 'lavfi', '-i', 'anullsrc'],
+				'mov,wav',
+			),
+		).toEqual([
+			...['-ss', '1', ...LOCAL, '-format_whitelist', 'mov,wav', '-i', '/m/a.mp4'],
+			...['-f', 'rawvideo', '-protocol_whitelist', 'pipe,fd', '-i', 'pipe:3'],
+			...['-f', 'lavfi', '-i', 'anullsrc'],
+		]);
+	});
+});
+
+/** A fake ffmpeg that lists two demuxers and records the arguments of every other run. */
+function fakeFfmpeg(): { bin: string; calls: () => string[][] } {
+	const dir = mkdtempSync(join(tmpdir(), 'jasper-fakeff-'));
+	const bin = join(dir, 'ffmpeg');
+	const log = join(dir, 'calls.jsonl');
+	writeFileSync(
+		bin,
+		`#!${process.execPath}\nconst a = process.argv.slice(2);\nif (a.includes('-demuxers')) { process.stdout.write(${JSON.stringify(DEMUXERS_71)}); process.exit(0); }\nrequire('node:fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify(a) + '\\n');\n`,
+	);
+	chmodSync(bin, 0o755);
+	return {
+		bin,
+		calls: () =>
+			existsSync(log)
+				? readFileSync(log, 'utf8')
+						.trim()
+						.split('\n')
+						.map((l) => JSON.parse(l) as string[])
+				: [],
+	};
+}
+
+describe('Ffmpeg.run passes the demuxer whitelist to runs with few file inputs', () => {
+	it('a single-file run (a Media Browser thumbnail, an import) gets -format_whitelist without network demuxers', async () => {
+		if (process.platform === 'win32') return;
+		const fake = fakeFfmpeg();
+		const ff = new Ffmpeg({ ffmpeg: fake.bin, ffprobe: fake.bin });
+		await ff.run(['-i', '/m/x.mp4', '-frames:v', '1', '/tmp/out.jpg']);
+		const [args] = fake.calls();
+		const k = args!.indexOf('-format_whitelist');
+		expect(k).toBeGreaterThan(-1);
+		expect(args![k + 1]).toBe('aac,alsa,matroska,webm,wav');
+		expect(args!.indexOf('-format_whitelist')).toBeLessThan(args!.indexOf('/m/x.mp4'));
+		// Many inputs (an export composite): the protocol whitelist only, the command line stays short.
+		await ff.run([...Array.from({ length: 5 }, (_, i) => ['-i', `/m/${i}.mp4`]).flat(), 'out.mp4']);
+		const many = fake.calls()[1]!;
+		expect(many).not.toContain('-format_whitelist');
+		expect(many.filter((a) => a === '-protocol_whitelist')).toHaveLength(5);
 	});
 });
 
