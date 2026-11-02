@@ -17,6 +17,8 @@ export type LookPage = {
 	render(req: LookRequest): Promise<LookImage>;
 	reach(recipe: LookRecipe): Promise<{ left: number; top: number; right: number; bottom: number }>;
 	float(): Promise<boolean>;
+	/** What `render` throws on a GPU without float targets, or null. */
+	withoutFloat(req: LookRequest): Promise<string | null>;
 	renderer(): Promise<string | null>;
 };
 
@@ -36,6 +38,7 @@ export async function openLookPage(dir: string): Promise<LookPage> {
 		},
 		reach: (recipe) => call('reach', recipe),
 		float: () => call('float'),
+		withoutFloat: (req) => call('withoutFloat', req),
 		renderer: () => call('renderer'),
 	};
 }

@@ -24,10 +24,14 @@ struct TlSurface {
   float base;     // canvas px: growth of the silhouette by the layers above this one
   float alpha;    // the input's alpha here
 };
-// 1 inside the band a..b of distances, antialiased over one canvas pixel.
-float tl_band(float d, float a, float b) { return clamp(b - d + 0.5, 0.0, 1.0) * clamp(d - a + 0.5, 0.0, 1.0); }
-// 1 where d < edge, antialiased over one canvas pixel.
-float tl_inside(float d, float edge) { return clamp(edge - d + 0.5, 0.0, 1.0); }
+// Antialiasing width in canvas px: one pixel of the pass being drawn (a mask at reduced resolution sets it wider).
+float tl_aa = 1.0;
+// 1 inside the band a..b of distances, antialiased.
+float tl_band(float d, float a, float b) {
+  return clamp((b - d) / tl_aa + 0.5, 0.0, 1.0) * clamp((d - a) / tl_aa + 0.5, 0.0, 1.0);
+}
+// 1 where d < edge, antialiased.
+float tl_inside(float d, float edge) { return clamp((edge - d) / tl_aa + 0.5, 0.0, 1.0); }
 vec4 tl_over(vec4 under, vec4 top) { return top + under * (1.0 - top.a); }
 vec3 tl_linear(vec3 srgb) { return fx_srgbToLinear(clamp(srgb, 0.0, 1.0)); }
 `,
@@ -254,44 +258,26 @@ void main() {
 export const FRAG_TL_CLEAR = /* glsl */ `
 void main() { fragColor = vec4(0.0); }`;
 
-/** Horizontal then vertical Gaussian of `tlMask` (`u_tlBlurDir`): `u_tlBlurLod` picks the mip that keeps it cheap. */
-export const FRAG_TL_BLUR_H = /* glsl */ `
+/** One axis of the blur of `tlMask` (`u_tlBlurDir`): sigma in percent of the unit, at the resolution of the pass. */
+const blurAxis = (tex: string) => /* glsl */ `
 void main() {
-  float lod = u_tlBlurLod;
-  vec2 sz = vec2(textureSize(u_tlMask, 0)) / pow(2.0, lod);
-  float sigma = tl_px(u_tlBlurSigma) / pow(2.0, lod);
-  if (sigma < 0.05) { fragColor = textureLod(u_tlMask, v_uv, lod); return; }
+  vec2 size = vec2(textureSize(${tex}, 0));
+  float sigma = tl_px(u_tlBlurSigma) * size.x / u_canvasSize.x;
+  if (sigma < 0.05) { fragColor = texture(${tex}, v_uv); return; }
   float radius = ceil(sigma * 3.0);
-  float stride = max(1.0, radius / 48.0);
-  vec4 sum = textureLod(u_tlMask, v_uv, lod);
+  float stride = max(1.0, radius / 32.0);
+  vec4 sum = texture(${tex}, v_uv);
   float wsum = 1.0;
-  for (int i = 1; i <= 48; i++) {
+  for (int i = 1; i <= 32; i++) {
     float x = float(i) * stride;
     if (x > radius) break;
     float w = exp(-0.5 * x * x / (sigma * sigma));
-    vec2 o = vec2(x / sz.x, 0.0);
-    sum += (textureLod(u_tlMask, v_uv + o, lod) + textureLod(u_tlMask, v_uv - o, lod)) * w;
+    vec2 o = u_tlBlurDir * x / size;
+    sum += (texture(${tex}, v_uv + o) + texture(${tex}, v_uv - o)) * w;
     wsum += 2.0 * w;
   }
   fragColor = sum / wsum;
 }`;
 
-export const FRAG_TL_BLUR_V = /* glsl */ `
-void main() {
-  float res = float(textureSize(u_tlBlurH, 0).y);
-  float sigma = tl_px(u_tlBlurSigma) * res / u_canvasSize.y;
-  if (sigma < 0.05) { fragColor = texture(u_tlBlurH, v_uv); return; }
-  float radius = ceil(sigma * 3.0);
-  float stride = max(1.0, radius / 48.0);
-  vec4 sum = texture(u_tlBlurH, v_uv);
-  float wsum = 1.0;
-  for (int i = 1; i <= 48; i++) {
-    float y = float(i) * stride;
-    if (y > radius) break;
-    float w = exp(-0.5 * y * y / (sigma * sigma));
-    vec2 o = vec2(0.0, y / res);
-    sum += (texture(u_tlBlurH, v_uv + o) + texture(u_tlBlurH, v_uv - o)) * w;
-    wsum += 2.0 * w;
-  }
-  fragColor = sum / wsum;
-}`;
+export const FRAG_TL_BLUR_H = blurAxis('u_tlMask');
+export const FRAG_TL_BLUR_V = blurAxis('u_tlBlurH');

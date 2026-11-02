@@ -37,6 +37,10 @@ export type LookRequest = {
 	contentSeconds?: number;
 	/** Extra padding in layer px beyond the look's own. */
 	pad?: number;
+	/** Timings only: no pixels back (a 1080p frame through `page.evaluate` costs more than drawing it). */
+	timingOnly?: boolean;
+	/** With `timingOnly`: time every pass (each ends in a read-back, so the total is higher). */
+	perPass?: boolean;
 };
 
 export type LookResult = {
@@ -48,7 +52,11 @@ export type LookResult = {
 	passes: number;
 	/** The layer box inside the canvas, canvas px. */
 	box: { x: number; y: number; w: number; h: number };
+	/** Upload, every pass and the copy out, until the GPU has finished (read-back as the sync point). */
 	ms: number;
+	/** With the pixels read back into JavaScript. */
+	totalMs: number;
+	passLog?: string[];
 };
 
 function paintInput(ctx: CanvasRenderingContext2D, input: LookInput, b: { x: number; y: number; w: number; h: number }, s: number) {
@@ -148,6 +156,23 @@ function render(req: LookRequest): LookResult {
 	out.width = layout.width;
 	out.height = layout.height;
 	const ctx = out.getContext('2d', { willReadFrequently: true })!;
+	// The harness measures a warm draw: the first run of a program includes its compile.
+	const gl = h.gl;
+	const realDraw = gl.drawArrays;
+	const passMs: number[] = [];
+	if (req.perPass) {
+		let tp = performance.now();
+		gl.drawArrays = function (...a: Parameters<typeof realDraw>) {
+			realDraw.apply(gl, a);
+			const type = gl.getParameter(gl.IMPLEMENTATION_COLOR_READ_TYPE) as number;
+			const fmt = gl.getParameter(gl.IMPLEMENTATION_COLOR_READ_FORMAT) as number;
+			const buf = type === gl.UNSIGNED_BYTE ? new Uint8Array(4) : type === gl.FLOAT ? new Float32Array(4) : new Uint16Array(4);
+			gl.readPixels(0, 0, 1, 1, fmt, type, buf);
+			const now = performance.now();
+			passMs.push(now - tp);
+			tp = now;
+		};
+	}
 	const t0 = performance.now();
 	runShaderPlan(
 		h,
@@ -171,9 +196,30 @@ function render(req: LookRequest): LookResult {
 		},
 		ctx,
 	);
-	h.gl.finish();
-	const data = ctx.getImageData(0, 0, out.width, out.height).data;
+	if (req.perPass) (gl as { drawArrays: unknown }).drawArrays = realDraw;
+	// `finish` does not wait on ANGLE: a read-back is the sync point. Without it the work lands in the next call.
+	h.gl.readPixels(0, 0, 1, 1, h.gl.RGBA, h.gl.UNSIGNED_BYTE, new Uint8Array(4));
 	const ms = performance.now() - t0;
+	const data = ctx.getImageData(0, 0, out.width, out.height).data;
+	const totalMs = performance.now() - t0;
+	if (req.timingOnly)
+		return {
+			width: out.width,
+			height: out.height,
+			rgba: '',
+			padding,
+			passes: plan.passes.length,
+			box: layout.box,
+			ms,
+			totalMs,
+			...(req.perPass
+				? {
+						passLog: plan.passes.map(
+							(p, i) => `${(p.output ?? 'out').padEnd(8)} ${p.width}×${p.height} ${(passMs[i] ?? 0).toFixed(0)} ms`,
+						),
+					}
+				: {}),
+		};
 	return {
 		width: out.width,
 		height: out.height,
@@ -182,6 +228,7 @@ function render(req: LookRequest): LookResult {
 		passes: plan.passes.length,
 		box: layout.box,
 		ms,
+		totalMs,
 	};
 }
 
@@ -192,6 +239,20 @@ function render(req: LookRequest): LookResult {
 		return appearanceClipReach(appearanceFromRecipe(recipe, () => `apl_${String(++n).padStart(16, '0')}`));
 	},
 	float: () => !!fxHost()?.floatTargets,
+	/** Pretends this GPU has no float targets (TL-032); returns what `render` then throws. */
+	withoutFloat: (req: LookRequest) => {
+		const h = fxHost()!;
+		const was = h.floatTargets;
+		h.floatTargets = false;
+		try {
+			render(req);
+			return null;
+		} catch (e) {
+			return (e as Error).message;
+		} finally {
+			h.floatTargets = was;
+		}
+	},
 	renderer: () => {
 		const h = fxHost();
 		if (!h) return null;

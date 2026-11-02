@@ -552,6 +552,13 @@ export function runShaderPlan(
 ): void {
 	const { gl } = h;
 	if (h.lost || gl.isContextLost()) throw new Error('WEBGL_UNAVAILABLE: the fx GPU context is lost');
+	// spec 19 TL-032: an FxShaderError, so the preview shows a chip and a render fails; never 8-bit passes instead.
+	if (plan.requiresFloat && !h.floatTargets)
+		throw new FxShaderError(
+			plan.effectId,
+			0,
+			`${plan.requiresFloat}: this GPU cannot render to floating-point targets`,
+		);
 	const W = plan.canvas.width;
 	const H = plan.canvas.height;
 	ensureCanvas(h, W, H);

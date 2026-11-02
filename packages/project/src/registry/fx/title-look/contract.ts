@@ -46,7 +46,7 @@ export type LayerShader = {
 	include?: readonly GlslChunk[];
 };
 
-/** A blur the framework runs for a layer: `tlMask` (with mips) → horizontal and vertical passes → `u_tlBlur`. */
+/** A blur the framework runs for a layer: `tlMask` → horizontal and vertical passes → `u_tlBlur`, all at reduced size. */
 export type LayerBlur = {
 	/** Gaussian sigma in percent of the unit (0 = no blur passes; read `u_tlBlur` only when this is above 0). */
 	sigma: number;

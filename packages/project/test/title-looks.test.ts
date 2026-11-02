@@ -31,6 +31,7 @@ import {
 	resolvePropertySpec,
 	sequenceAnimatables,
 	TITLE_LOOK_EFFECT_ID,
+	titleLookBleed,
 	titleLookOf,
 	titleLooksOf,
 } from '../src/index.ts';
@@ -830,7 +831,29 @@ describe('media references of a look (TL-021)', () => {
 	});
 });
 
+describe('a damaged keyframe never stops a load (regression: the generic walker read `k.id` of null)', () => {
+	it('repairs a null key inside an appearance before the invariants run', () => {
+		const { h, t } = applied();
+		const doc = JSON.parse(JSON.stringify(h.doc));
+		const c = (Object.values(doc.sequences)[0] as { clips: Record<string, { effects: EffectInstance[] }> }).clips[t]!;
+		(clipLook(c.effects)!.appearance as Appearance).light.angle.keyframes = [null as never];
+		const r = loadProject({ format: 'jasper-project', document: doc }, { effects: defaultEffectRegistry });
+		expect(r.issues).toEqual([]);
+		expect(r.repairs.some((x) => x.action === 'repair-appearance')).toBe(true);
+	});
+});
+
 describe('padding (TL-033)', () => {
+	it('the bake crop knows a look reach, and refuses to guess when an expression drives it', () => {
+		const { h, t, fx } = applied();
+		const clip = { source: { text: { style: { sizePx: 100 } } }, intrinsicBox: { width: 400, height: 100 } };
+		// Rim 5 % + shadow 8 % at 60°: more than the rim alone, in px of the 100 px text.
+		expect(titleLookBleed(lookOf(h, t), clip)).toBeGreaterThan(5);
+		const rim = layerOf(h, t, 'rim').id;
+		h.ok([{ type: 'expression.set', target: ['appearance', fx, rim, 'width'], text: '3' }]);
+		expect(titleLookBleed(lookOf(h, t), clip)).toBeNull();
+	});
+
 	it('covers every enabled layer across the clip, sides by direction, and ignores disabled layers', () => {
 		const { h, t, fx } = applied();
 		const a = lookOf(h, t);

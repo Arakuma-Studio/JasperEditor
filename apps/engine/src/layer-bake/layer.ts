@@ -2,6 +2,7 @@
 // are rendered from. Pure functions over the render snapshot (no I/O), shared by the native extension, the
 // preview route and the tests.
 import {
+	type Appearance,
 	applyMat3,
 	contentTimeAt,
 	defaultEffectRegistry,
@@ -16,6 +17,8 @@ import {
 	type RenderSnapshot,
 	type RenderVisualClip,
 	resolveLayerProps,
+	TITLE_LOOK_EFFECT_ID,
+	titleLookBleed,
 	type Transform,
 	templateFontId,
 	textAnimatorsTimeVarying,
@@ -586,6 +589,13 @@ export function contentBleed(
 			for (const a of [fx.params.radius?.value, ...(fx.params.radius?.keyframes ?? []).map((k) => k.value)])
 				if (typeof a === 'number') r = Math.max(r, a);
 			px += 3 * r;
+			continue;
+		}
+		// spec 19 TL-033: a look's reach is known from its layers across the clip.
+		if (fx.effectId === TITLE_LOOK_EFFECT_ID) {
+			const look = titleLookBleed(fx.appearance as Appearance | undefined, c);
+			if (look === null) return null;
+			px += look;
 			continue;
 		}
 		return null;

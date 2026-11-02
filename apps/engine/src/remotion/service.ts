@@ -1062,7 +1062,7 @@ function mapRenderError(e: unknown, signal: AbortSignal): Error {
 	if (/WEBGL_UNAVAILABLE/.test(msg)) return new JobError('WEBGL_UNAVAILABLE', msg.slice(0, 1500), false);
 	// Wave 1 (fx framework): a GPU effect whose shader does not compile, or that a layer kind cannot run.
 	// color-mgmt: a scope drawn through HTML-in-Canvas inside another one (the browser cannot nest them).
-	const fx = /\b(FX_SHADER_ERROR|FX_LAYER_UNSUPPORTED|CANVAS_NESTED)\b/.exec(msg)?.[1];
+	const fx = /\b(TITLE_LOOK_NEEDS_FLOAT|FX_SHADER_ERROR|FX_LAYER_UNSUPPORTED|CANVAS_NESTED)\b/.exec(msg)?.[1];
 	if (fx) return new JobError(fx, msg.slice(0, 1500), false);
 	const frame = /frame[^\d]{0,12}(\d+)/i.exec(msg)?.[1];
 	if (/delayRender|timeout|timed out/i.test(msg)) {

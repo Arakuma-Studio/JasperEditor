@@ -338,6 +338,11 @@ export type GpuEffect = {
 	 */
 	timeInvariant?: boolean | ((instance: { appearance?: unknown } | undefined) => boolean);
 	/**
+	 * spec 19 TL-032: this effect is wrong in 8 bits. Without float targets it refuses with this error code (a chip in
+	 * the preview, a failed render) instead of degrading its `rgba16f` passes to `rgba8`.
+	 */
+	requiresFloat?: string;
+	/**
 	 * spec 19 (TL-021): media pictures that are not params of the spec (a look layer's pattern tile or reflection
 	 * image): each binds `uniform sampler2D <uniform>` + `vec2 <uniform>_size` like a `media` param.
 	 */
@@ -402,6 +407,8 @@ export type FxEffectPlan = {
 	}[];
 	/** `u_source` has mipmaps in every pass (`GpuEffect.sourceMipmaps`). */
 	sourceMipmaps?: boolean;
+	/** spec 19: the code to refuse with where float targets are missing (`GpuEffect.requiresFloat`). */
+	requiresFloat?: string;
 	/** Identity of programs and sizes (not of uniform values): changes force no re-plan, only a re-key. */
 	key: string;
 };
@@ -870,6 +877,7 @@ export function planGpuEffect(
 		textures,
 		key,
 		...(gpu.sourceMipmaps ? { sourceMipmaps: true } : {}),
+		...(gpu.requiresFloat ? { requiresFloat: gpu.requiresFloat } : {}),
 	};
 }
 

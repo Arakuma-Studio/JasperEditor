@@ -249,3 +249,49 @@ project was ≈ 2.3 s: downloading and evaluating ≈ 9 MB of JavaScript and the
 Tried and dropped: mounting background-tab panels in idle periods after the shell is up — alternating runs showed
 no gain (median 2.85 s deferred against 2.64 s eager at load ≈ 18), so the panels mount with the shell as before.
 
+## 7. Title Looks (spec 19 TL-037)
+
+Per-frame cost of a look, measured with a read-back as the sync point (`gl.finish` does not wait on ANGLE: without the
+read-back the work lands in the next call, and a first attempt reported a false 94 ms). Rerun:
+`TL_PERF=1 pnpm exec vitest run packages/compositions/test/title-look-gl.test.ts --reporter=verbose -t "per-frame cost"`.
+
+Machine: shared 8-vCPU AMD EPYC-Rome VM, 15 GB, no GPU. Chrome 156.0.8078.79 with ANGLE over SwiftShader (Vulkan, Subzero).
+Load average 0.5–6 during the runs (other agents' work); figures are the median of 7 warm frames, 2026-11-02. They bound a
+software renderer and say nothing about a real GPU, which nothing here has measured.
+
+The look: shadow (blur), glow (soft), three rims, face; text 200 px.
+
+| Program resolution | Box | Canvas | Passes | Six layers, median | Min – max |
+|---|---|---|---|---|---|
+| Full | title-sized, 1200 × 280 | 1360 × 440 | 23 | **1 303 ms** | 1 293 – 1 495 ms |
+| 1/2 | title-sized | 680 × 220 | 22 | 587 ms | 501 – 621 ms |
+| 1/4 | title-sized | 340 × 110 | 21 | 115 ms | 111 – 193 ms |
+| Full | frame-sized, 1920 × 1080 (worst case) | 2080 × 1240 | 23 | **5 796 ms** | 5 477 – 6 580 ms |
+| 1/2 | frame-sized | 1040 × 620 | 22 | 1 985 ms | 1 894 – 2 095 ms |
+| 1/4 | frame-sized | 520 × 310 | 21 | 512 ms | 501 – 688 ms |
+
+Field and a flat face alone, frame-sized box, 9 passes: 2 010 ms full, 522 ms at 1/2, 196 ms at 1/4. A first draw adds
+≈ 100–600 ms of shader compilation at most (one program per layer type, paint kind and finish, shared by every look).
+
+Where a frame goes at full size, frame-sized box (per-pass profile, each pass timed with its own read-back):
+
+| Passes | Time | Note |
+|---|---|---|
+| Seed + 7 flood steps (`rgba32f`) | ≈ 3 000 ms | The largest cost: proportional to the canvas area, and ≈ log₂ of the reach |
+| Field (`rgba16f`) | 104 ms | |
+| Shadow mask + blur at 1/2 | 777 ms | |
+| Glow mask + blur at 1/8 | 20 ms | |
+| Six composite passes | ≈ 1 300 ms | ≈ 200–300 ms each |
+| Output | 106 ms | |
+
+One change came out of this table: blurs read a full-resolution mask through mips, and the shadow's horizontal pass alone took
+7.1 s of a 14.0 s frame. The mask now renders directly at the blur's own reduced size (sigma ≈ 2–4 texels): the frame went
+from 13 989 ms to 5 796 ms under the same conditions, with SSIM against the other resolutions unchanged to the fourth decimal.
+
+**Reading it.** A frame is proportional to the canvas area, so the box matters more than the layer count: a title-sized box
+costs a fifth of a frame-sized one. On a software renderer a look does not play in real time at Full; Program stays responsive
+through `fxPreviewScale`, and a still look with unchanged input and params is not redrawn at all (0 GL draws across seeks,
+`title-look.e2e.test.ts`). Export of a static title bakes one frame. Animated text or params redraw the whole stack every
+frame, field included: on this host ≈ 1.3 s per 1080p frame for a title-sized box, so one minute of animated title takes
+≈ 39 minutes on the CPU. The field could be kept across frames when only layer params change (static text with a keyed rim);
+that is not done yet.

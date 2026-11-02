@@ -7,6 +7,7 @@
 // Padding (TL-033) is computed from the enabled layers across all frames of the clip by `appearanceClipReach`.
 import { FLICKS_PER_SECOND } from '../../../time.ts';
 import type { Appearance, LayerParamValue, Paint } from '../../../title-looks/model.ts';
+import { mediaParamId } from '../../param-values.ts';
 import {
 	appearanceAnimatables,
 	appearanceAnimated,
@@ -73,8 +74,12 @@ const PASS_THROUGH: readonly ShaderPass[] = [
 
 /** Padding around the reach (an antialiased edge and a sampled blur tail), layer px. */
 const PADDING_GUARD = 4;
-/** Texels a blur may span after picking its mip: keeps the taps of any radius cheap at any size. */
-const BLUR_TARGET_SIGMA = 4;
+/**
+ * Sigma in texels a blur runs at. Blurs run at the lowest power-of-two resolution that keeps this much: about 12 taps per
+ * side for any radius at any size, and because the level follows the sigma, 200 % draws what 100 % drew. Measured
+ * (docs/performance.md §7): a full-resolution blur was two thirds of a 1080p frame.
+ */
+const BLUR_TARGET_SIGMA = 2;
 
 type PlannedLayer = {
 	def: TitleLayerType;
@@ -177,6 +182,21 @@ export function titleLookPadding(ctx: FxPlanContext): Partial<FxPadding> {
 	return { left: px(r.left), top: px(r.top), right: px(r.right), bottom: px(r.bottom) };
 }
 
+/**
+ * TL-033: how far a look draws outside the layer box across the clip (largest side, layer px), for the layer bake's
+ * crop. Null = not known ahead (an expression drives something, so the bake keeps the full frame).
+ */
+export function titleLookBleed(
+	a: Appearance | undefined,
+	clip: { source?: unknown; intrinsicBox: { width: number; height: number } },
+): number | null {
+	if (!a) return 0;
+	for (const anim of appearanceAnimatables(a)) if (anim.expression?.enabled) return null;
+	const r = appearanceClipReach(a);
+	const k = (clipLookUnit(clip) ?? Math.min(clip.intrinsicBox.width, clip.intrinsicBox.height)) * 0.01;
+	return Math.ceil(Math.max(r.left, r.top, r.right, r.bottom) * k) + PADDING_GUARD;
+}
+
 /** The input's alpha bounds as one texel `u_tlBounds`, canvas px. Fixed steps: 8⁵ covers the largest canvas. */
 function boundsPasses(): ShaderPass[] {
 	const fmt = { format: 'rgba32f', filter: 'nearest' } as const;
@@ -227,6 +247,9 @@ function paramUniform(p: TitleParamSpec, v: LayerParamValue): FxUniformValue | n
 }
 
 type LayerPieces = {
+	/** Media params: `#define`s from `u_<name>` to this layer's own sampler (two layers may use one param name). */
+	defines: string;
+	textures: { uniform: string; mediaId: string }[];
 	glsl: string;
 	uniforms: Record<string, FxUniformValue>;
 	include: GlslChunk[];
@@ -235,10 +258,12 @@ type LayerPieces = {
 };
 
 /** Uniforms and GLSL of one layer's params, paints and finish. */
-function layerPieces(l: PlannedLayer, look: ResolvedAppearance): LayerPieces {
+function layerPieces(l: PlannedLayer, look: ResolvedAppearance, index: number): LayerPieces {
 	const finishId = String(l.params.finish ?? 'flat');
 	const uniforms: Record<string, FxUniformValue> = { u_tlBase: l.base };
 	let glsl = '';
+	let defines = '';
+	const textures: LayerPieces['textures'] = [];
 	const include: GlslChunk[] = [];
 	let usesBounds = false;
 	let fieldInside = 0;
@@ -258,6 +283,12 @@ function layerPieces(l: PlannedLayer, look: ResolvedAppearance): LayerPieces {
 			fieldInside = Math.max(fieldInside, parts.fieldInside);
 			continue;
 		}
+		if (p.type === 'media') {
+			const uniform = `u_tlm${index}_${p.name}`;
+			defines += `#define u_${p.name} ${uniform}\n#define u_${p.name}_size ${uniform}_size\n`;
+			textures.push({ uniform, mediaId: mediaParamId(v as never) });
+			continue;
+		}
 		const u = v === undefined ? null : paramUniform(p, v);
 		if (u !== null) uniforms[`u_${p.name}`] = u;
 	}
@@ -266,7 +297,7 @@ function layerPieces(l: PlannedLayer, look: ResolvedAppearance): LayerPieces {
 		glsl += `${finish.glsl}\n`;
 		include.push(...(finish.include ?? []));
 	}
-	return { glsl, uniforms, include, usesBounds, fieldInside };
+	return { defines, textures, glsl, uniforms, include, usesBounds, fieldInside };
 }
 
 /** Passes of a look instance at a frame. */
@@ -279,7 +310,7 @@ export function planTitleLook(ctx: FxPlanContext): readonly ShaderPass[] {
 	const pxPerPercent = layerPxPerPercent(tl, ctx) * ctx.pxScale;
 	const unit: GlslChunk = tl.unitPx !== null ? GLSL_TL_UNIT_KNOWN : GLSL_TL_UNIT_BOUNDS;
 	const reach = lookReach(look);
-	const pieces = layers.map((l) => layerPieces(l, look));
+	const pieces = layers.map((l, i) => layerPieces(l, look, i));
 	const fieldInside = Math.max(reach.inside, ...pieces.map((p) => p.fieldInside));
 	const reachPx = Math.min(
 		(ctx.width + ctx.height) * ctx.pxScale,
@@ -314,38 +345,32 @@ export function planTitleLook(ctx: FxPlanContext): readonly ShaderPass[] {
 		if (blur && blur.sigma > 0) {
 			const again = blurDone ? { update: true } : {};
 			const sigmaPx = blur.sigma * pxPerPercent;
-			const lod = Math.max(0, Math.floor(Math.log2(Math.max(1, sigmaPx / BLUR_TARGET_SIGMA))));
+			const level = Math.max(0, Math.floor(Math.log2(Math.max(1, sigmaPx / BLUR_TARGET_SIGMA))));
 			// Without a known unit `sigmaPx` is an upper bound: three levels finer keep small alpha bounds sharp.
-			const outLod = tl.unitPx !== null ? lod : Math.max(0, lod - 3);
-			const scale = 1 / 2 ** outLod;
-			const blurUniforms = { u_tlBlurSigma: blur.sigma, u_tlBlurLod: outLod };
+			const scale = 1 / 2 ** (tl.unitPx !== null ? level : Math.max(0, level - 3));
 			passes.push({
 				output: 'tlMask',
 				format: 'rgba16f',
-				mipmaps: true,
+				scale,
 				include: [...include, ...(blur.include ?? [])],
-				uniforms: piece.uniforms,
-				frag: `${piece.glsl}${blur.mask}\nvoid main() { fragColor = tl_mask(tl_surface()); }`,
+				uniforms: { ...piece.uniforms, u_tlMaskAA: 1 / scale },
+				frag: `${piece.defines}${piece.glsl}${blur.mask}
+void main() { tl_aa = u_tlMaskAA; fragColor = tl_mask(tl_surface()); }`,
 				...again,
 			});
-			passes.push({
-				output: 'tlBlurH',
-				format: 'rgba16f',
-				scale,
-				include: [unit],
-				uniforms: blurUniforms,
-				frag: FRAG_TL_BLUR_H,
-				...again,
-			});
-			passes.push({
-				output: 'tlBlur',
-				format: 'rgba16f',
-				scale,
-				include: [unit],
-				uniforms: blurUniforms,
-				frag: FRAG_TL_BLUR_V,
-				...again,
-			});
+			for (const [output, frag, dir] of [
+				['tlBlurH', FRAG_TL_BLUR_H, [1, 0]],
+				['tlBlur', FRAG_TL_BLUR_V, [0, 1]],
+			] as const)
+				passes.push({
+					output,
+					format: 'rgba16f',
+					scale,
+					include: [unit],
+					uniforms: { u_tlBlurSigma: blur.sigma, u_tlBlurDir: dir },
+					frag,
+					...again,
+				});
 			blurDone = true;
 		}
 		const shader = shaders[i]!;
@@ -355,12 +380,19 @@ export function planTitleLook(ctx: FxPlanContext): readonly ShaderPass[] {
 			format: 'rgba16f',
 			include: [...include, ...(shader.include ?? [])],
 			uniforms: piece.uniforms,
-			frag: `${piece.glsl}${shader.glsl}
+			frag: `${piece.defines}${piece.glsl}${shader.glsl}
 void main() { fragColor = tl_over(texture(u_tlComp, v_uv), tl_layer(tl_surface())); }`,
 		});
 	});
 	passes.push({ include: [GLSL_TL_SURFACE], frag: FRAG_TL_OUTPUT });
 	return passes;
+}
+
+/** Media pictures of a look's layers (`gpu.textures`, TL-021). */
+export function titleLookTextures(ctx: FxPlanContext): readonly { uniform: string; mediaId: string }[] {
+	const tl = ctx.structures?.titleLook;
+	if (!tl) return [];
+	return plannedLayers(tl.appearance).flatMap((l, i) => layerPieces(l, tl.appearance, i).textures);
 }
 
 /** Instance-wide uniforms of a look (`gpu.uniforms`). */
@@ -373,7 +405,8 @@ export function titleLookUniforms(ctx: FxFrameContext): Record<string, FxUniform
 	return {
 		...(tl.unitPx !== null ? { u_tlUnit: tl.unitPx * ctx.pxScale } : {}),
 		u_tlSeed: (tl.appearance.seed >>> 0) / 4294967296,
-		u_tlTime: tl.contentSeconds,
+		// Only what moves on its own reads the time: a still look keeps one key and is not redrawn (TL-037).
+		u_tlTime: appearanceTimeInvariant(tl.appearance) ? 0 : tl.contentSeconds,
 		u_tlLight: [Math.cos(az) * Math.cos(el), Math.sin(az) * Math.cos(el), Math.sin(el)],
 		u_tlLightDir: [Math.cos(az), Math.sin(az)],
 	};

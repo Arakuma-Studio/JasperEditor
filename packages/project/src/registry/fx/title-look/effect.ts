@@ -4,7 +4,16 @@
 import { TITLE_LOOK_EFFECT_ID } from '../../../title-looks/model.ts';
 import type { EffectSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
-import { appearanceTimeInvariant, planTitleLook, titleLookPadding, titleLookUniforms } from './plan.ts';
+import {
+	appearanceTimeInvariant,
+	planTitleLook,
+	titleLookPadding,
+	titleLookTextures,
+	titleLookUniforms,
+} from './plan.ts';
+
+/** TL-032: compositing in linear light needs float targets; a look never falls back to 8 bits. */
+export const TITLE_LOOK_NEEDS_FLOAT = 'TITLE_LOOK_NEEDS_FLOAT';
 
 export const TITLE_LOOK_EFFECT: EffectSpec = {
 	...defineShaderEffect({
@@ -17,6 +26,8 @@ export const TITLE_LOOK_EFFECT: EffectSpec = {
 			passes: (_p, ctx) => planTitleLook(ctx),
 			padding: (_p, ctx) => titleLookPadding(ctx),
 			uniforms: (_p, ctx) => titleLookUniforms(ctx),
+			textures: (_p, ctx) => titleLookTextures(ctx),
+			requiresFloat: TITLE_LOOK_NEEDS_FLOAT,
 			timeInvariant: (instance) => appearanceTimeInvariant(instance?.appearance),
 		},
 	}),
