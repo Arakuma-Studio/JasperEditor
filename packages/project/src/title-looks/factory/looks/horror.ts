@@ -17,7 +17,7 @@ export const HORROR_LOOKS = [
 		layers: [
 			shadow({ angle: 90, distance: 3, blur: 10, opacity: 80 }),
 			glow(34, 38),
-			rim(1.8, role('base')),
+			rim(2, role('base')),
 			face(gradient(90, [0, 'face'], [1, 'faceAlt'])),
 		],
 	}),

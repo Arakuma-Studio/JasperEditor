@@ -17,7 +17,7 @@ export const CINEMATIC_LOOKS = [
 		layers: [
 			shadow({ angle: 90, distance: 2.5, blur: 16, opacity: 72 }),
 			glow(34, 30),
-			rim(1.5, role('keyline')),
+			rim(2, role('keyline')),
 			face(gradient(90, [0, 'accent3'], [0.44, 'face'], [0.5, 'faceAlt'], [0.58, 'face'], [1, 'accent3'])),
 		],
 	}),
@@ -33,7 +33,7 @@ export const CINEMATIC_LOOKS = [
 		layers: [
 			shadow({ angle: 90, distance: 3, blur: 14, opacity: 76 }),
 			glow(40, 72),
-			rim(1.8, role('keyline')),
+			rim(2, role('keyline')),
 			face(gradient(90, [0, 'accent3'], [0.42, 'face'], [1, 'faceAlt'])),
 		],
 	}),

@@ -1,5 +1,8 @@
 // Spec 19: Title Looks in the pure model. Rendering is in `registry/fx/title-look/`.
 export * from './factory/index.ts';
+export * from './factory/templates/index.ts';
+export * from './font.ts';
+export * from './lint.ts';
 export * from './model.ts';
 export * from './normalize.ts';
 export * from './overrides.ts';

@@ -6,12 +6,14 @@
 // takes the deviations from the clip itself against the look as it was, and re-applies them to the new look: each
 // override keeps its value, keyframes and expression.
 import { evaluate } from '../keyframes.ts';
-import type { Animatable } from '../schema/common.ts';
+import type { Animatable, RGBA } from '../schema/common.ts';
 import {
 	type Appearance,
 	type AppearanceLayer,
 	type Colorway,
 	type LayerParamValue,
+	type Paint,
+	PaintSchema,
 	type Role,
 	staticAnim,
 	type TitleLook,
@@ -198,4 +200,23 @@ export function applyColorway(
 	if (colorway.id !== undefined) a.colorwayId = colorway.id;
 	else delete a.colorwayId;
 	return { keptAnimated };
+}
+
+/** The roles a value reads, when it is a paint (TL-051: a fixed layer reads none). */
+export function paintRoles(v: unknown): Role[] {
+	const p = PaintSchema.safeParse(v);
+	if (!p.success) return [];
+	if (p.data.kind === 'role') return [p.data.role];
+	if (p.data.kind !== 'gradient') return [];
+	return p.data.gradient.stops.flatMap((s) => ('role' in s.paint ? [s.paint.role] : []));
+}
+
+/** A paint with its roles replaced by their colours under `palette`: what `fixedColor` stores. */
+export function paintWithoutRoles(p: Paint, palette: Record<Role, RGBA>): Paint {
+	if (p.kind === 'role') return { kind: 'color', color: [...palette[p.role]] };
+	if (p.kind !== 'gradient') return p;
+	const stops = p.gradient.stops.map((s) =>
+		'role' in s.paint ? { ...s, paint: { color: [...palette[s.paint.role]] as RGBA } } : s,
+	);
+	return { kind: 'gradient', gradient: { ...p.gradient, stops } };
 }

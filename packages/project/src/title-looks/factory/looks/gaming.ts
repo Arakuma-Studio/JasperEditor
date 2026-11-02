@@ -17,7 +17,7 @@ export const GAMING_LOOKS = [
 		layers: [
 			glow(52, 60),
 			glow(16, 150, { technique: 'precise' }),
-			rim(1.8, role('keyline')),
+			rim(2, role('keyline')),
 			face(gradient(90, [0, 'accent3'], [0.5, 'face'], [1, 'faceAlt'])),
 		],
 	}),

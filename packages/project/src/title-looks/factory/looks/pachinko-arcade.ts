@@ -35,6 +35,6 @@ export const PACHINKO_ARCADE_LOOKS = [
 		sampleText: 'INSERT COIN',
 		colorways: ['gold', 'emerald', 'electric', 'crimson'],
 		font: font('Press Start 2P', 400, 'Bungee', ...JA.pixel),
-		layers: [hardShadow(6, 45, role('accent2')), hardShadow(3, 45), face()],
+		layers: [hardShadow(6, 45, role('accent2')), hardShadow(3, 45, role('faceAlt')), face()],
 	}),
 ];
