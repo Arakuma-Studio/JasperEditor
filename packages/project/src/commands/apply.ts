@@ -5,6 +5,7 @@ import { normalizeSubtitleClips } from '../captions/subtitles/normalize.ts';
 import { looksLikeId } from '../ids.ts';
 import { checkTransactionInvariants } from '../invariants-incremental.ts';
 import type { ProjectDocument } from '../schema/document.ts';
+import { normalizeLookLinks } from '../title-looks/normalize.ts';
 import { COMMAND_CATALOG, isCommandType } from './catalog.ts';
 import { HandlerContext, substituteRefs } from './context.ts';
 import { diffDocuments } from './diff.ts';
@@ -174,6 +175,8 @@ function applyTransactionUnchecked(
 			normalizeSubtitleClips(draft, () => ctx.ids.next('kf'));
 			// A caption transcript belongs to one clip (splits, duplicates and pastes get copies).
 			normalizeCaptionData(draft, () => ctx.ids.next('trs'));
+			// spec 19 TL-011: linked clips' `lookOverrides` follow whatever command changed them.
+			normalizeLookLinks(draft);
 			// Sources whose last reference disappeared (e.g. a solid's color matte) are collected (INV-014).
 			collectOrphans(draft);
 		});

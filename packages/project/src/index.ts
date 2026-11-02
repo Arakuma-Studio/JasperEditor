@@ -115,6 +115,7 @@ export * from './three-d/index.ts';
 export * from './time.ts';
 export * from './time-remap/index.ts';
 export * from './timecode.ts';
+export * from './title-looks/index.ts';
 export * from './tracking/index.ts';
 export * from './transitions.ts';
 

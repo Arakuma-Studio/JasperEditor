@@ -9,6 +9,7 @@ import { ColorInterpretationSchema, SequenceColorSchema } from '../color/model.t
 import { GraphicSettingsSchema, LayerPinsSchema } from '../gaps/graphics-schema.ts';
 import { WarpAnalysisDataSchema } from '../gaps/warp/analysis.ts';
 import type { SequenceScriptFix } from '../script-fix/sequence-state.ts';
+import type { Appearance, GlobalLight } from '../title-looks/model.ts';
 import {
 	AudioChannelFormatSchema,
 	LoudnessNormalizeSchema,
@@ -79,6 +80,11 @@ export const EffectInstanceSchema = z.looseObject({
 	 * analysed). See `gaps/warp/analysis.ts`.
 	 */
 	warpAnalysis: WarpAnalysisDataSchema.optional(),
+	/**
+	 * spec 19 (schema v12): a look's structured data, on a `jasper.title-look` instance (TL-010). Read leniently:
+	 * INV-APPEARANCE checks it, `repairAppearance` fixes it on load.
+	 */
+	appearance: z.custom<Appearance>(() => true).optional(),
 	/**
 	 * spec 19 TL-121: where this instance's seeded pattern comes from. A razor cut, a duplicate and a paste give the
 	 * new instance new ids; this keeps the pattern: `u_seed` hashes `clipId` / `effectId` of the origin instead of the
@@ -1023,6 +1029,11 @@ export const SequenceSettingsSchema = z.looseObject({
 	storageWidth: z.number().nullable().optional(),
 	/** Fields: progressive (absent), upper or lower field first. */
 	fieldOrder: z.string().nullable().optional(),
+	/**
+	 * spec 19 TL-017 (schema v12): the light looks with `light.source: 'sequence'` follow; keys in sequence time. Read
+	 * leniently: INV-APPEARANCE checks it, repair drops what is unreadable. Absent = the default light.
+	 */
+	globalLight: z.custom<GlobalLight>(() => true).optional(),
 });
 export type SequenceSettings = DeepStrip<z.infer<typeof SequenceSettingsSchema>>;
 

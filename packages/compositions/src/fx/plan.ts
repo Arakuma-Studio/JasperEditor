@@ -22,6 +22,7 @@ import {
 	type FxPadding,
 	type FxParamsAt,
 	type FxPlanContext,
+	type FxStructures,
 	gpuIsTimeDependent,
 	gpuPadding,
 	lumetriSpatialInstanceId,
@@ -94,6 +95,8 @@ export type PlanLayerFxOptions = {
 	ctx: FxPlanContext;
 	/** Params of an effect instance at other frames (`FxPlanContext.paramsAt` of its padding hook). */
 	paramsAt?: (fx: ResolvedEffect) => FxParamsAt | undefined;
+	/** spec 19: structured data the padding hook of an instance reads beyond Puppet's (a look's clip-wide reach). */
+	structures?: (fx: ResolvedEffect) => FxStructures | undefined;
 	/** Kind of a project media (a `media` param bound to a video makes its effect time dependent). */
 	mediaKind?: (mediaId: string) => string | null | undefined;
 	clip?: FxClipInfo;
@@ -217,13 +220,15 @@ export function planLayerFx(
 				: null;
 		if (gpuSpec) {
 			const paramsAt = opts.paramsAt?.(fx);
+			const extra = opts.structures?.(fx);
 			const pad = gpuPadding(gpuSpec, fx.params, {
 				...opts.ctx,
 				...(paramsAt ? { paramsAt } : {}),
 				...(opts.clip ? { clip: opts.clip } : {}),
-				...(fx.puppet || fx.warpAnalysis
+				...(fx.puppet || fx.warpAnalysis || extra
 					? {
 							structures: {
+								...extra,
 								...(fx.puppet ? { puppet: fx.puppet } : {}),
 								...(fx.warpAnalysis ? { warpAnalysis: fx.warpAnalysis } : {}),
 							},
@@ -231,7 +236,7 @@ export function planLayerFx(
 					: {}),
 			});
 			padding = addPadding(padding, pad);
-			timeDependent ||= gpuIsTimeDependent(gpuSpec, fx.params, opts.mediaKind);
+			timeDependent ||= gpuIsTimeDependent(gpuSpec, fx.params, opts.mediaKind, fx);
 			steps.push(withMasks({ kind: 'gpu', fx, spec: gpuSpec, padding: pad }));
 			return;
 		}

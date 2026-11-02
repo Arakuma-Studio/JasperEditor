@@ -19,6 +19,8 @@ import { PUPPET_PIN_PROPS } from './schema/puppet.ts';
 import type { EffectInstance, Sequence, TextContent } from './schema/sequence.ts';
 import type { ShapeItem } from './schema/shapes.ts';
 import type { TextAnimatorGroup } from './schema/text-animators.ts';
+import { type Appearance, globalLightOf } from './title-looks/model.ts';
+import { appearanceSlots, GLOBAL_LIGHT_PATH, LIGHT_PROPS } from './title-looks/properties.ts';
 import { shapeItemAnimatables } from './vector/properties.ts';
 
 export type ExpressionRef = { seq: string; owner: string; path: string };
@@ -161,6 +163,18 @@ function* clipAnimatables(
 	const fxs = (c.effects as (EffectInstance & { masks?: MaskLike[] })[] | undefined) ?? [];
 	for (let i = 0; i < fxs.length; i++)
 		yield* maskAnims(seqId, id, fxs[i]!.masks, [...at, 'effects', i, 'masks']);
+	// spec 19 TL-014: everything an appearance animates (`appearance.<fxId>.<slot>.<name>`).
+	for (let i = 0; i < fxs.length; i++) {
+		const look = fxs[i]!.appearance as Appearance | undefined;
+		if (!look) continue;
+		for (const s of appearanceSlots(fxs[i]!.id, look))
+			yield {
+				ref: { seq: seqId, owner: id, path: s.key },
+				at: [...at, 'effects', i, ...s.at],
+				kind: 'anim',
+				target: s.anim,
+			};
+	}
 	// sim-warp: Puppet pin properties (`puppet.<pinId>.<prop>`).
 	for (let i = 0; i < fxs.length; i++) {
 		const pins = fxs[i]!.puppet?.pins ?? [];
@@ -200,6 +214,16 @@ function* sequenceOwnAnimatables(seqId: string, seq: Sequence): Generator<AnimLo
 		target: seq.master.volumeDb,
 	};
 	yield* effectAnims(seqId, 'master', seq.master.effects, ['master', 'effects']);
+	// spec 19 TL-017: the sequence's light.
+	const light = globalLightOf(seq);
+	if (light)
+		for (const k of LIGHT_PROPS)
+			yield {
+				ref: { seq: seqId, owner: 'master', path: `${GLOBAL_LIGHT_PATH}.${k}` },
+				at: ['settings', 'globalLight', k],
+				kind: 'anim',
+				target: light[k],
+			};
 	for (const [id, t] of Object.entries(seq.transitions))
 		for (const [name, a] of Object.entries(t.params ?? {}))
 			yield {
@@ -361,7 +385,10 @@ export function documentHasAnyExpressions(doc: Pick<ProjectDocument, 'sequences'
 
 /** Command address (S01:CMD-010 ParamPath) of an expression location. */
 export function expressionRefToParamPath(ref: ExpressionRef): string[] {
+	if (ref.path.startsWith(`${GLOBAL_LIGHT_PATH}.`))
+		return [GLOBAL_LIGHT_PATH, ref.seq, ref.path.slice(GLOBAL_LIGHT_PATH.length + 1)];
 	if (ref.owner === 'master') return ['master', ref.seq, ref.path];
+	if (ref.path.startsWith('appearance.')) return ref.path.split('.');
 	if (ref.path.startsWith('masks.')) {
 		const [, maskId, prop] = ref.path.split('.');
 		return ['mask', maskId!, prop!];
@@ -444,6 +471,18 @@ export function paramPathToExpressionRef(
 			if (owner !== undefined) return { seq: seqId, owner, path: `masks.${a}.${rest.join('.')}` };
 		}
 		return null;
+	}
+	if (head === 'appearance') {
+		const path = `appearance.${a}.${rest.join('.')}`;
+		for (const [seqId, seq] of Object.entries(doc.sequences)) {
+			const owner = ownersOf(seq).effects.get(a);
+			if (owner !== undefined) return { seq: seqId, owner, path };
+		}
+		return null;
+	}
+	if (head === GLOBAL_LIGHT_PATH) {
+		if (!doc.sequences[a]) return null;
+		return { seq: a, owner: 'master', path: `${GLOBAL_LIGHT_PATH}.${rest.join('.')}` };
 	}
 	if (head === 'puppetPin') {
 		for (const [seqId, seq] of Object.entries(doc.sequences)) {

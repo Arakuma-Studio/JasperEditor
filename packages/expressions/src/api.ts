@@ -206,7 +206,7 @@ export function pickWhipExpression(
 	} else if (info.kind !== 'clip' && info.kind !== 'track' && info.kind !== 'master') return null;
 	if (to.owner === from.owner && to.seq === from.seq && to.path === from.path) return 'value';
 	const path = to.path;
-	if (path.startsWith('effects.')) {
+	if (path.startsWith('effects.') || path.startsWith('appearance.')) {
 		const [, fxId, ...rest] = path.split('.');
 		const fxNode = world.children(info, 'effects').find((n) => n.path === `effects.${fxId}`);
 		if (!fxNode) return null;

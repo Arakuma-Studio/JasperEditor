@@ -39,6 +39,7 @@ import { TEXT_ANIMATOR_COMMANDS } from './text-animators.ts';
 import { TEXT_STYLE_COMMANDS } from './text-style.ts';
 import { THREE_D_COMMANDS } from './three-d.ts';
 import { TIME_COMMANDS } from './time.ts';
+import { TITLE_LOOK_COMMANDS } from './title-look.ts';
 import { TRACKER_COMMANDS } from './tracker.ts';
 
 export * from './audio.ts';
@@ -81,6 +82,7 @@ export * from './text-animators.ts';
 export * from './text-style.ts';
 export * from './three-d.ts';
 export * from './time.ts';
+export * from './title-look.ts';
 export * from './tracker.ts';
 
 /** Every document command schema (M1 + M2), keyed by nothing: see `catalog.ts` for registration. */
@@ -112,6 +114,7 @@ export const ALL_COMMAND_SCHEMAS = [
 	...EDIT_UX_COMMANDS,
 	...COLOR_MGMT_COMMANDS,
 	...THREE_D_COMMANDS,
+	...TITLE_LOOK_COMMANDS,
 	...INTERPRET_COMMANDS,
 	...PREVIEWS_COMMANDS,
 	...GAPS_COMMANDS,

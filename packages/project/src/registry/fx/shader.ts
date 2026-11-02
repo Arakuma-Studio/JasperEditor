@@ -15,6 +15,7 @@ import type { PatternOrigin } from '../../schema/sequence.ts';
 import { FLICKS_PER_SECOND } from '../../time.ts';
 import type { EffectParams, EffectSpec, ParamSpec } from '../effects.ts';
 import { numberParam as finite, mediaParamId } from '../param-values.ts';
+import type { FxTitleLook } from './title-look/plan.ts';
 import { FORBIDDEN_GLSL_SYNTAX, hookErrorMessage } from './validation.ts';
 
 /** A reusable piece of GLSL (functions/constants) prepended once per program, after its `deps`. */
@@ -207,6 +208,8 @@ export type FxStructures = {
 	 * Wall, Liquify's Freeze Area Mask), in stack order, flattened to polylines in layer px.
 	 */
 	masks?: readonly FxLayerMask[];
+	/** spec 19: a look's appearance at the frame (`EffectInstance.appearance`), see `registry/fx/title-look/plan.ts`. */
+	titleLook?: FxTitleLook;
 };
 export type FxLayerMask = {
 	id: string;
@@ -337,9 +340,15 @@ export type GpuEffect = {
 	cpuPixels?: readonly string[];
 	/**
 	 * True when the output depends only on the params and the input picture (no `u_frame`/`u_time`/`u_progress`,
-	 * no time hooks): a still layer then is not redrawn on every frame. Default false (redraw every frame).
+	 * no time hooks): a still layer then is not redrawn on every frame. Default false (redraw every frame). spec 19: a
+	 * function decides per instance from its structured data (a look with a generator layer redraws, one without not).
 	 */
-	timeInvariant?: boolean;
+	timeInvariant?: boolean | ((instance: { appearance?: unknown } | undefined) => boolean);
+	/**
+	 * spec 19 (TL-021): media pictures that are not params of the spec (a look layer's pattern tile or reflection
+	 * image): each binds `uniform sampler2D <uniform>` + `vec2 <uniform>_size` like a `media` param.
+	 */
+	textures?(p: EffectParams, ctx: FxFrameContext): readonly { uniform: string; mediaId: string }[];
 	/**
 	 * TL-123: the effect cannot run correctly on 8-bit targets (linear-light compositing, distance fields, HDR
 	 * intermediates). The host otherwise falls back from `rgba16f` / `rgba32f` to `rgba8` when the browser lacks
@@ -848,6 +857,8 @@ export function planGpuEffect(
 			mediaId: mediaParamId(p[ps.name]),
 			...(isLutMediaParam(ps) ? { kind: 'lut' as const } : {}),
 		}));
+	for (const t of gpu.textures?.(p, ctx) ?? [])
+		textures.push({ param: t.uniform, uniform: t.uniform, mediaId: t.mediaId });
 	// parity (roto): object mattes (state 0 until the host resolves them).
 	for (const m of gpu.mattes ?? []) {
 		const v = p[m.param];
@@ -1214,10 +1225,13 @@ export function gpuIsTimeDependent(
 	spec: Pick<EffectSpec, 'gpu' | 'params'> | Pick<EffectSpec, 'gpu'>,
 	params?: EffectParams,
 	mediaKind?: (mediaId: string) => string | null | undefined,
+	/** spec 19: the instance, for `timeInvariant` hooks that read its structured data. */
+	instance?: { appearance?: unknown },
 ): boolean {
 	const g = spec.gpu;
 	if (!g) return false;
-	if (!g.timeInvariant || g.time?.remap || g.time?.samples) return true;
+	const invariant = typeof g.timeInvariant === 'function' ? g.timeInvariant(instance) : g.timeInvariant;
+	if (!invariant || g.time?.remap || g.time?.samples) return true;
 	if (!params || !('params' in spec)) return false;
 	for (const ps of spec.params) {
 		if (ps.type !== 'media' || isLutMediaParam(ps)) continue;

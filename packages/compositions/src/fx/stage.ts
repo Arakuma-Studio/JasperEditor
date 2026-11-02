@@ -21,6 +21,7 @@ import {
 	type FxLayerMask,
 	type FxParamsAt,
 	type FxStepTime,
+	type FxStructures,
 	type FxTimeStep,
 	type FxUniform,
 	flattenPath,
@@ -49,6 +50,7 @@ import {
 	sideCompToCanvas,
 	TRACK_MATTE_EFFECT_ID,
 	textContentPad,
+	titleLookStructure,
 	workingKey,
 } from '@jasper/project';
 import { useContext, useMemo } from 'react';
@@ -85,6 +87,8 @@ export type FxPreparedStep =
 			key: string;
 			plan: FxEffectPlan;
 			seed: number;
+			/** spec 19 TL-037: identity of the step's input when it cannot change between frames (`FxShaderParams`). */
+			inputKey?: string;
 			/** TL-121: frames added to `u_frame` / `u_time` (the instance continues a razor-cut pattern); 0 = none. */
 			frameOffset: number;
 			/** Requested offsets (`u_sampleOffsets`), request order. */
@@ -190,6 +194,53 @@ export type LayerFx =
 
 const NONE: LayerFx = { mode: 'none' };
 
+/**
+ * spec 19 TL-037: the DOM picture of a clip does not depend on the frame: text or a shape with nothing moving in it.
+ * Conservative: any animation, animator, Source Text key, stored key or active expression says no.
+ */
+const stillPictures = new WeakMap<object, boolean>();
+function domPictureIsStill(clip: LayerProps['clip']): boolean {
+	const hit = stillPictures.get(clip);
+	if (hit !== undefined) return hit;
+	const moves = (v: unknown): boolean => {
+		if (!v || typeof v !== 'object') return false;
+		if (Array.isArray(v)) return v.some(moves);
+		const o = v as Record<string, unknown>;
+		if (Array.isArray(o.keyframes) && o.keyframes.length > 0) return true;
+		const e = o.expression as { enabled?: boolean } | undefined;
+		if (e?.enabled) return true;
+		return Object.values(o).some(moves);
+	};
+	const s = clip.source as {
+		text?: unknown;
+		shape?: unknown;
+		animation?: { in?: unknown; out?: unknown };
+		animators?: unknown[];
+		sourceTextKeyframes?: unknown[];
+	};
+	const still =
+		(s.text !== undefined || s.shape !== undefined) &&
+		!s.animation?.in &&
+		!s.animation?.out &&
+		!s.animators?.length &&
+		!s.sourceTextKeyframes?.length &&
+		!moves(s);
+	stillPictures.set(clip, still);
+	return still;
+}
+
+/** Clips are immutable: an edit makes a new object, so its identity identifies its picture. */
+const clipIds = new WeakMap<object, number>();
+let nextClipIdentity = 1;
+function clipIdentity(clip: object): number {
+	let id = clipIds.get(clip);
+	if (id === undefined) {
+		id = nextClipIdentity++;
+		clipIds.set(clip, id);
+	}
+	return id;
+}
+
 function chipText(bypassed: readonly FxBypass[], gpu: string): string | null {
 	if (bypassed.length === 0) return null;
 	if (bypassed.some((b) => b.reason === 'layer-unsupported'))
@@ -281,7 +332,7 @@ export function useLayerFx(
 			const hit = cache.get(fxId);
 			if (hit !== undefined) return hit;
 			const inst = byId.get(fxId);
-			const k = `${timing}|${fxId}|${hashString(JSON.stringify(inst?.params ?? null))}|${hashString(JSON.stringify(inst?.puppet ?? null))}|${inst?.warpAnalysis?.key ?? ''}`;
+			const k = `${timing}|${fxId}|${hashString(JSON.stringify(inst?.params ?? null))}|${hashString(JSON.stringify(inst?.puppet ?? null))}|${inst?.warpAnalysis?.key ?? ''}|${hashString(JSON.stringify(inst?.appearance ?? null))}`;
 			cache.set(fxId, k);
 			return k;
 		};
@@ -300,6 +351,21 @@ export function useLayerFx(
 		() => ('text' in clip.source ? textContentPad(clip.source.text) : 0),
 		[clip],
 	);
+	// spec 19: a look's appearance at this frame, its stored form and its unit (what the planner and padding read).
+	const structuresOf = useMemo(() => {
+		const byId = new Map(clip.effects.map((e) => [e.id, e]));
+		return (fx: ResolvedEffect): FxStructures | undefined => {
+			if (!fx.appearance) return undefined;
+			const titleLook = titleLookStructure(
+				fx.appearance,
+				byId.get(fx.id)?.appearance,
+				clip,
+				fps,
+				contentTime,
+			);
+			return { titleLook };
+		};
+	}, [clip, fps, contentTime]);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `failures` re-plans when a shader fails
 	const plan = useMemo(
 		() =>
@@ -313,6 +379,7 @@ export function useLayerFx(
 						colorBypass,
 						ctx: { width: box.width, height: box.height, pxScale: 1, fps, frame: realFrame },
 						paramsAt: paramsAtOf,
+						structures: structuresOf,
 						mediaKind,
 						clip: clipInfo,
 						capture,
@@ -333,6 +400,7 @@ export function useLayerFx(
 			failures,
 			capture,
 			paramsAtOf,
+			structuresOf,
 			mediaKind,
 			clipInfo,
 			props.masks,
@@ -524,6 +592,7 @@ export function useLayerFx(
 							return h?.kind === 'image' ? fxPixelsOf(h.url) : null;
 						},
 						structures: {
+							...structuresOf(s.fx),
 							...(s.fx.puppet ? { puppet: s.fx.puppet } : {}),
 							...(s.fx.warpAnalysis ? { warpAnalysis: s.fx.warpAnalysis } : {}),
 							...(layerMasks.length ? { masks: layerMasks } : {}),
@@ -598,9 +667,11 @@ export function useLayerFx(
 						} else if (h.kind === 'image' || h.kind === 'video')
 							media.set(t.mediaId, { mediaId: t.mediaId, url: h.url, kind: h.kind });
 					}
+					// Pass uniforms too: a look's layer values and blur sizes live there, and they change the picture.
+					const passKey = gp.passes.map((pp) => fxUniformsKey(pp.uniforms)).join('|');
 					return {
 						kind: 'gpu',
-						key: `${gp.key}|${fxUniformsKey(gp.uniforms)}|${seed}|${frameOffset}|${frames.join(',')}/${st?.valid ?? 0}`,
+						key: `${gp.key}|${fxUniformsKey(gp.uniforms)}|${passKey}|${seed}|${frameOffset}|${frames.join(',')}/${st?.valid ?? 0}`,
 						plan: gp,
 						seed,
 						frameOffset,
@@ -668,6 +739,14 @@ export function useLayerFx(
 			layerToComp: map,
 			compSize: { width: compW, height: compH },
 		});
+		// spec 19 TL-037: a still DOM picture under time-invariant steps has one input whatever the frame.
+		if (doc.isPreview && !plan.timeDependent && domPictureIsStill(clip)) {
+			let upstream = `${clipIdentity(clip)}`;
+			for (const st of steps) {
+				if (st.kind === 'gpu') st.inputKey = upstream;
+				upstream += `|${st.key}`;
+			}
+		}
 		const key = [
 			`${layout.width}x${layout.height}`,
 			`f${realFrame}/${sourceFrame}`,
@@ -715,6 +794,7 @@ export function useLayerFx(
 		pixelsVersion,
 		layerMasks,
 		doc.working,
+		structuresOf,
 	]);
 
 	// spec 13 AS-075: the Program preview draws lowered layers with Canvas 2D (no WebGL passes or read-back per frame).

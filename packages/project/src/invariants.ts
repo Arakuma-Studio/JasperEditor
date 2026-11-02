@@ -92,6 +92,17 @@ import {
 } from './time.ts';
 import { remapIssues, repairRemap } from './time-remap/invariants.ts';
 import { isRemapped } from './time-remap/model.ts';
+import { clipLook, globalLightOf, TITLE_LOOK_EFFECT_ID } from './title-looks/model.ts';
+import {
+	appearanceProblem,
+	clipLookProblem,
+	globalLightProblem,
+	repairAppearance,
+	repairTitleLooks,
+	sanitizeAppearances,
+	titleLookOf,
+	titleLooksRecordIssues,
+} from './title-looks/validate.ts';
 import { CUSTOM_FADE, transitionSpec } from './transitions.ts';
 import { walkItems } from './vector/defaults.ts';
 import { checkShapeItem, duplicateItemIds } from './vector/input.ts';
@@ -689,6 +700,17 @@ export function invariantCheckers(
 				if (!problem)
 					for (const pin of fx.puppet.pins) claim(pin.id, 'ppn', [...where, fx.id, 'puppet', pin.id]);
 			}
+			// spec 19 TL-010: a look is a clip effect with a valid appearance, and only a look has one.
+			if (fx.appearance !== undefined || fx.effectId === TITLE_LOOK_EFFECT_ID) {
+				const look =
+					fx.effectId !== TITLE_LOOK_EFFECT_ID
+						? 'appearance data on another effect'
+						: !onClip
+							? 'a look on a track or master effect'
+							: appearanceProblem(fx.appearance);
+				if (look)
+					issues.push(inv('INV-APPEARANCE', `Effect ${fx.id}: ${look}`, [...where, fx.id, 'appearance']));
+			}
 			if (fx.masks?.length) {
 				if (!onClip)
 					issues.push(inv('INV-012', `Effect ${fx.id}: masks apply to clip effects only`, [...where, fx.id]));
@@ -912,6 +934,9 @@ export function invariantCheckers(
 		// spec 13 SH-002: link fields to a project text style (a link to a missing style is soft).
 		const styleLink = clipTextStyleIssue(c);
 		if (styleLink) issues.push(inv('INV-TEXTSTYLE', `Clip ${c.id}: ${styleLink}`, [...cw, 'styleId']));
+		// spec 19 TL-010: at most one look, on a clip kind that takes one.
+		const lookBad = clipLookProblem(c as never);
+		if (lookBad) issues.push(inv('INV-APPEARANCE', `Clip ${c.id}: ${lookBad}`, [...cw, 'effects']));
 		// spec 13 AS-003: a subtitle's words and group reference (only on text clips).
 		const captionBad = clipCaptionProblem(c);
 		if (captionBad) issues.push(inv('INV-SUBTITLE', `Clip ${c.id}: ${captionBad}`, [...cw, 'caption']));
@@ -1399,6 +1424,9 @@ export function runInvariants(
 	for (const [message, path] of textStylesRecordIssues(doc)) issues.push(inv('INV-TEXTSTYLE', message, path));
 	// spec 13 AS-020: subtitle templates copied into the project.
 	for (const [message, path] of subtitleTemplatesIssues(doc)) issues.push(inv('INV-SUBTITLE', message, path));
+	// spec 19 TL-015: looks of the project.
+	for (const [message, path] of titleLooksRecordIssues(doc))
+		issues.push(inv('INV-APPEARANCE', message, path));
 	// spec 15 EA-010: style recipes copied into the project.
 	for (const [message, path] of styleRecipesIssues(doc)) issues.push(inv('INV-STYLE-RECIPE', message, path));
 	// spec 18 AF-BRF-002: agent notes must be readable (INV-AGENT-NOTES).
@@ -1567,6 +1595,10 @@ export function runInvariants(
 			issues.push(
 				inv('INV-SCRIPTFIX', `Sequence ${seq.id} scriptFix: ${scriptFixBad}`, [...where, 'scriptFix']),
 			);
+		// spec 19 TL-017: the sequence's light must be readable.
+		const lightBad = globalLightProblem(seq.settings.globalLight);
+		if (lightBad)
+			issues.push(inv('INV-APPEARANCE', `Sequence ${seq.id}: ${lightBad}`, [...where, 'settings']));
 		// spec 18 AF-BRF-001: the brief must be readable (INV-BRIEF).
 		const briefBad = sequenceBriefIssue((seq as { brief?: unknown }).brief);
 		if (briefBad) issues.push(inv('INV-BRIEF', `Sequence ${seq.id} brief: ${briefBad}`, [...where, 'brief']));
@@ -1777,6 +1809,78 @@ function repairMaskList(list: Mask[] | undefined): string[] {
 export type RepairEntry = { action: string; entity: string; detail: string };
 
 /**
+ * spec 19 TL-020: the looks of a sequence's clips. A look that cannot be read is removed and the clip shows its own
+ * picture again; other effects keep their stack. A missing project look only unlinks the clip (TL-015).
+ */
+function repairLooksOfSequence(
+	doc: ProjectDocument,
+	seq: Sequence,
+	ids: IdSource,
+	note: (action: string, entity: string, detail: string) => void,
+): void {
+	for (const c of Object.values(seq.clips)) {
+		const r = c as { effects?: EffectInstance[] };
+		if (!r.effects?.length) continue;
+		const bad = (fx: EffectInstance, why: string) => {
+			note('drop-look', fx.id, why);
+			return false;
+		};
+		let seen = false;
+		r.effects = r.effects.filter((fx) => {
+			if (fx.effectId !== TITLE_LOOK_EFFECT_ID) {
+				if (fx.appearance === undefined) return true;
+				delete fx.appearance;
+				note('drop-look', fx.id, 'appearance data on another effect removed');
+				return true;
+			}
+			if (seen) return bad(fx, 'a clip holds at most one look: a second one removed');
+			const kindBad = clipLookProblem({ kind: c.kind, effects: [fx] });
+			if (kindBad) return bad(fx, kindBad);
+			const fixed = repairAppearance(fx.appearance, () => ids.next('apl'), fx.id, note);
+			if (!fixed) return bad(fx, 'unreadable look removed');
+			fx.appearance = fixed as never;
+			seen = true;
+			if (fixed.lookId !== undefined && !titleLookOf(doc, fixed.lookId)) {
+				delete fixed.lookId;
+				delete fixed.lookOverrides;
+				note('unlink-look', fx.id, 'the look is gone: the clip keeps its values');
+			}
+			return true;
+		});
+	}
+	for (const fx of [
+		...[...seq.videoTracks, ...seq.audioTracks].flatMap((t) => t.effects ?? []),
+		...seq.master.effects,
+	])
+		if (fx.appearance !== undefined) {
+			delete fx.appearance;
+			note('drop-look', fx.id, 'a look on a track or master effect removed');
+		}
+	for (const t of [...seq.videoTracks, ...seq.audioTracks])
+		if (t.effects?.some((fx) => fx.effectId === TITLE_LOOK_EFFECT_ID)) {
+			t.effects = t.effects.filter((fx) => fx.effectId !== TITLE_LOOK_EFFECT_ID);
+			note('drop-look', t.id, 'a look on a track removed');
+		}
+	const light = seq.settings as { globalLight?: unknown };
+	if (light.globalLight !== undefined && !globalLightOf(seq)) {
+		delete light.globalLight;
+		note('repair-global-light', seq.id, 'unreadable global light removed');
+	}
+}
+
+/** spec 19 TL-015: a clip links to a look that is gone (soft: `loadProject` tidies it). */
+export function titleLooksNeedRepair(doc: ProjectDocument): boolean {
+	for (const seq of Object.values(doc.sequences))
+		for (const c of Object.values(seq.clips)) {
+			const look = clipLook((c as { effects?: EffectInstance[] }).effects)?.appearance as
+				| { lookId?: string }
+				| undefined;
+			if (look?.lookId !== undefined && !titleLookOf(doc, look.lookId)) return true;
+		}
+	return false;
+}
+
+/**
  * Conservative repairs for loaded documents: drops dangling references, moves the later of two
  * overlapping clips to a new track, dissolves link/clip groups with fewer than two members, puts
  * unparented items back at the root, and re-adds missing tracks. Returns a new document and a report.
@@ -1789,6 +1893,7 @@ export function repairDocument(
 	const doc = nullPrototypeRecords(JSON.parse(JSON.stringify(input)) as ProjectDocument);
 	const report: RepairEntry[] = [];
 	const note = (action: string, entity: string, detail: string) => report.push({ action, entity, detail });
+	sanitizeAppearances(doc, () => ids.next('apl'), note);
 	repairIds(doc, ids, note);
 	repairStructure(doc, ids, note);
 	// spec 13 SH-002: project text styles and the clips' links to them.
@@ -1810,6 +1915,14 @@ export function repairDocument(
 	}
 	for (const seq of Object.values(doc.sequences) as Sequence[])
 		repairSubtitleSequence(seq, () => ids.next('cgp'), note);
+	// spec 19 TL-020: project looks, then what clips hold and link to.
+	repairTitleLooks(
+		doc,
+		() => ids.next('apl'),
+		() => ids.next('tlk'),
+		note,
+	);
+	for (const seq of Object.values(doc.sequences) as Sequence[]) repairLooksOfSequence(doc, seq, ids, note);
 	repairTextStyles(
 		doc,
 		{

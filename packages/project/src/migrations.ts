@@ -4,13 +4,20 @@
 import { subtitlesNeedRepair } from './captions/subtitles/model.ts';
 import type { Issue } from './commands/types.ts';
 import { createRandomIdSource, type IdSource } from './ids.ts';
-import { checkInvariants, nullPrototypeRecords, type RepairEntry, repairDocument } from './invariants.ts';
+import {
+	checkInvariants,
+	nullPrototypeRecords,
+	type RepairEntry,
+	repairDocument,
+	titleLooksNeedRepair,
+} from './invariants.ts';
 import { dropUnreadableKeySides } from './keyframes.ts';
 import type { EffectRegistry } from './registry/effects.ts';
 import type { MgTemplateRegistry } from './registry/mg.ts';
 import { CURRENT_SCHEMA_VERSION, type ProjectDocument, ProjectDocumentSchema } from './schema/document.ts';
 import { soundDesignNeedsRepair } from './sound/repair.ts';
 import { textStylesNeedRepair } from './text-styles/model.ts';
+import { sanitizeAppearances } from './title-looks/validate.ts';
 
 export type MigrationStep = {
 	from: number;
@@ -147,6 +154,11 @@ export const MIGRATIONS: readonly MigrationStep[] = [
 	// (`ProjectDocument.agentNotes`). Existing data needs no changes; the bump makes v10 builds open v11 files
 	// read-only, so a build that cannot show, check or repair the brief and notes never edits a project that has them.
 	{ from: 10, to: 11, migrate: (doc) => doc },
+	// v12 (Title Looks, spec 19): looks on clips (`EffectInstance.appearance`), project looks
+	// (`ProjectDocument.titleLooks`) and the sequence's light (`Sequence.settings.globalLight`). Existing data needs no
+	// changes; the bump makes v11 builds open v12 files read-only: they would draw a look's clip without it (an unknown
+	// effect is bypassed), and their orphan collection would drop media only a look layer references.
+	{ from: 11, to: 12, migrate: (doc) => doc },
 ];
 
 /** Data that is not a loadable project (not an object, an unknown format, no migration path, schema mismatch). */
@@ -238,6 +250,14 @@ export function loadProject(
 		detail:
 			'unreadable incoming interpolation removed (the key is read with its interpolation on both sides)',
 	}));
+	// spec 19 TL-020: looks are read leniently; nothing downstream sees a damaged one.
+	const lookRepairs: RepairEntry[] = [];
+	const lookIds = opts.ids ?? createRandomIdSource();
+	sanitizeAppearances(
+		m.document,
+		() => lookIds.next('apl'),
+		(action, entity, detail) => lookRepairs.push({ action, entity, detail }),
+	);
 	const parsed = ProjectDocumentSchema.safeParse(m.document);
 	if (!parsed.success) {
 		const msg = parsed.error.issues
@@ -256,12 +276,19 @@ export function loadProject(
 		issues.length > 0 ||
 		soundDesignNeedsRepair(document) ||
 		textStylesNeedRepair(document) ||
-		subtitlesNeedRepair(document)
+		subtitlesNeedRepair(document) ||
+		titleLooksNeedRepair(document)
 	) {
 		const r = repairDocument(document, opts.ids ?? createRandomIdSource(), { mgTemplates: opts.mgTemplates });
 		document = r.document;
 		repairs = r.report;
 		issues = checkInvariants(document, invOpts);
 	}
-	return { document, readOnly: false, migration: m.report, repairs: [...sideRepairs, ...repairs], issues };
+	return {
+		document,
+		readOnly: false,
+		migration: m.report,
+		repairs: [...sideRepairs, ...lookRepairs, ...repairs],
+		issues,
+	};
 }

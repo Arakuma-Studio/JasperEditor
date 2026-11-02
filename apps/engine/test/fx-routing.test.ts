@@ -5,10 +5,11 @@ import {
 	defaultEffectRegistry,
 	defineShaderEffect,
 	type RenderVisualClip,
+	TITLE_LOOK_EFFECT_ID,
 } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import { nativeBlockers } from '../src/export/planner.ts';
-import { isStaticLayer } from '../src/layer-bake/layer.ts';
+import { contentBleed, isStaticLayer } from '../src/layer-bake/layer.ts';
 
 const frag = 'void main() { fragColor = texture(u_source, v_uv); }';
 const noise = defineShaderEffect({
@@ -68,6 +69,61 @@ describe('GPU shader effects in the export planner and layer bakes', () => {
 	it('a shader effect blocks the native path (the clip renders through Remotion)', () => {
 		expect(nativeBlockers(clip('video', ['test.noise']), caps, [], registry).join()).toContain('test.noise');
 		expect(nativeBlockers(clip('video', []), caps, [], registry)).toEqual([]);
+	});
+
+	it('a look routes like any GPU effect: not native, a still bake unless something in it moves (spec 19)', () => {
+		const look = (appearance: unknown, kind = 'shape'): RenderVisualClip => {
+			const c = clip(kind, []);
+			return { ...c, effects: [{ ...fx(TITLE_LOOK_EFFECT_ID), appearance }] as never };
+		};
+		const rim = (keyframes: unknown[]) => ({
+			v: 1,
+			palette: {},
+			light: { source: 'look', angle: { value: 0, keyframes: [] }, altitude: { value: 0, keyframes: [] } },
+			seed: 1,
+			layers: [
+				{
+					id: 'apl_0000000000000001',
+					type: 'rim',
+					enabled: true,
+					params: { width: { value: 5, keyframes } },
+				},
+			],
+		});
+		expect(nativeBlockers(look(rim([]), 'video'), caps, [], registry).join()).toContain(TITLE_LOOK_EFFECT_ID);
+		expect(isStaticLayer(look(rim([])), registry)).toBe(true);
+		const key = { id: 'kf_1', time: 0, value: 1, interpolation: 'linear' };
+		expect(isStaticLayer(look(rim([key])), registry)).toBe(false);
+		// A keyed global light moves a look that follows it.
+		const lit = { ...look(rim([])), sequenceLight: { angle: { value: 0, keyframes: [key] } } };
+		expect(isStaticLayer(lit as never, registry)).toBe(false);
+	});
+
+	it('the bake crop grows by a look reach instead of baking the full frame or clipping its glow (TL-033)', () => {
+		const c = clip('shape', []);
+		const appearance = {
+			v: 1,
+			palette: {},
+			light: { source: 'look', angle: { value: 0, keyframes: [] }, altitude: { value: 0, keyframes: [] } },
+			seed: 1,
+			layers: [
+				{
+					id: 'apl_0000000000000001',
+					type: 'glow',
+					enabled: true,
+					params: { radius: { value: 30, keyframes: [] } },
+				},
+			],
+		};
+		const withLook = {
+			...c,
+			effects: [{ ...fx(TITLE_LOOK_EFFECT_ID), appearance }],
+			intrinsicBox: { width: 400, height: 200 },
+		};
+		const bleed = contentBleed(withLook as never, registry);
+		// 30 % of the shorter side of the box, 60 px, and the guard.
+		expect(bleed).toBeGreaterThanOrEqual(60);
+		expect(bleed).toBeLessThan(80);
 	});
 
 	it('time-dependent shader effects make a DOM layer non-static (rendered per frame, not a still)', () => {

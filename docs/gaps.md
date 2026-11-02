@@ -867,6 +867,23 @@ per area are in [wp-notes/agent-footage.md](wp-notes/agent-footage.md). Limits t
 - Hybrid and Remotion GIF exports were checked by hand (SSIM 0.986 / 0.954 against Program); the automated GIF tests
   cover the native path.
 
+### Title Looks (spec 19): limits
+
+Status of the foundation; streams still in progress update this list. Evidence: [wp-notes/title-looks.md](wp-notes/title-looks.md).
+
+- **`line` and `glyph` gradient spans render as `block`** until TL-036 passes text layout boxes; the UI must say so meanwhile.
+- **`block` gradients on animated text follow the frame's alpha bounds**: with per-character position animators the gradient
+  moves with the letters. Stable once TL-036 gives layout boxes.
+- **Fades.** A rim reaches full strength when its glyph is half visible, not at the end of the fade (a fixed threshold would
+  pop instead).
+- **Requires HTML-in-Canvas for text** (TL-039): without it (a Chrome without `--enable-features=CanvasDrawElement`) a look on a
+  DOM layer is not drawn, the preview shows the chip "GPU effects need HTML-in-Canvas here" and a render fails
+  `FX_LAYER_UNSUPPORTED`. Nothing is silently dropped.
+- **Requires float targets** (TL-032, TL-123): without them the preview bypasses the look with a chip, a render fails with
+  `TITLE_LOOK_NEEDS_FLOAT` and the export plan refuses when the probe answered (TL-124).
+- **Software rendering is slow**: ≈ 1.3 s per 1080p frame for a six-layer look on a title-sized box on SwiftShader, and an
+  animated title redraws its whole stack every frame ([performance.md](performance.md) §7). Nothing has been measured on a GPU.
+
 ### title-looks fixes (spec 19 §13)
 Fixes the Title Looks feature depends on, each with a regression test that failed before it; details, decisions and
 evidence in [wp-notes/title-looks-fixes.md](wp-notes/title-looks-fixes.md). **Done:** TL-120 (media use-counting for

@@ -5,6 +5,8 @@
 // version's evaluator.
 import {
 	type AnimLocation,
+	type Appearance,
+	appearanceSlots,
 	buildExpressionWorldData,
 	documentHasActiveExpressions,
 	type EffectInstance,
@@ -188,15 +190,38 @@ export function bindSnapshotExpressions(snap: RenderSnapshot): RenderSnapshot {
 				});
 				if (pins.some((q, i) => q !== pup.pins[i])) puppet = { ...pup, pins };
 			}
-			return params === fx.params && masks === fx.masks && puppet === pup
+			// spec 19: what an appearance animates.
+			let appearance = fx.appearance as Appearance | undefined;
+			if (appearance)
+				for (const s of appearanceSlots(fx.id, appearance)) {
+					const b = bind(s.anim, owner, s.key);
+					if (b !== s.anim) appearance = setIn(appearance, s.at.slice(1), b) as Appearance;
+				}
+			return params === fx.params &&
+				masks === fx.masks &&
+				puppet === pup &&
+				appearance === (fx.appearance as Appearance | undefined)
 				? fx
-				: { ...fx, params, ...(masks ? { masks } : {}), ...(puppet ? { puppet } : {}) };
+				: {
+						...fx,
+						params,
+						...(masks ? { masks } : {}),
+						...(puppet ? { puppet } : {}),
+						...(appearance ? { appearance } : {}),
+					};
 		});
 	const videoTracks = snap.videoTracks.map((track) => ({
 		...track,
 		clips: track.clips.map((c) => {
 			const o = c.clipId;
 			let out = c;
+			// spec 19 TL-017: the sequence's light a look follows.
+			if (c.sequenceLight) {
+				const angle = bind(c.sequenceLight.angle, 'master', 'globalLight.angle');
+				const altitude = bind(c.sequenceLight.altitude, 'master', 'globalLight.altitude');
+				if (angle !== c.sequenceLight.angle || altitude !== c.sequenceLight.altitude)
+					out = { ...out, sequenceLight: { ...c.sequenceLight, angle, altitude } };
+			}
 			if (c.transform) {
 				let tr = c.transform;
 				for (const k of ['position', 'anchor', 'scale', 'scaleWidth', 'rotation'] as const) {

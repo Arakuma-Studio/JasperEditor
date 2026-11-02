@@ -11,6 +11,7 @@ import {
 	type MaskProp,
 } from '../../masks/model.ts';
 import { type ParamSpec, paramSpatialMetric } from '../../registry/effects.ts';
+import { isPaintParam } from '../../registry/fx/title-look/contract.ts';
 import { intrinsicBoxOf, type PropertySpec, resolvePropertySpec } from '../../registry/properties.ts';
 import {
 	type Animatable,
@@ -21,6 +22,15 @@ import {
 import { PUPPET_PIN_LABELS } from '../../schema/puppet.ts';
 import type { Clip, EffectInstance, Sequence, Track } from '../../schema/sequence.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
+import {
+	type Appearance,
+	DEFAULT_PALETTE,
+	globalLightOf,
+	type Role,
+	TITLE_LOOK_EFFECT_ID,
+} from '../../title-looks/model.ts';
+import { appearanceAnimAt, LIGHT_SPECS, PALETTE_SLOT, slotParamSpec } from '../../title-looks/properties.ts';
+import { paintLimitProblem, paintProblem } from '../../title-looks/validate.ts';
 import { transitionSpec, transitionStartFrame } from '../../transitions.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';
@@ -316,6 +326,64 @@ export function resolveTarget(
 			time,
 			label: `${found.fx.effectId}.${p.name}`,
 			...(metric ? { metric } : {}),
+		};
+	}
+	// spec 19 TL-014: `["appearance", fxId, layerId | "palette" | "light", name]` (content time of the owning clip).
+	if (head === 'appearance' && a && rest.length === 2) {
+		const found = locateEffect(doc, a);
+		if (!found) return h.fail('E_NOT_FOUND', `Effect instance not found: ${a}`);
+		const look = found.fx.appearance as Draft<Appearance> | undefined;
+		if (found.fx.effectId !== TITLE_LOOK_EFFECT_ID || !look || !found.clip) return bad();
+		const clip = found.clip;
+		assertUnlocked(findTrackIn(found.seq, clip.trackId)!.track, h);
+		const [slot, name] = rest as [string, string];
+		const s = slotParamSpec(look as Appearance, slot, name);
+		if (!s) return h.fail('E_NOT_FOUND', `No appearance property ${slot}.${name}`);
+		if (s.layer) {
+			const layer = look.layers.find((l) => l.id === slot)!;
+			layer.params[name] ??= { value: JSON.parse(JSON.stringify(s.spec.default)), keyframes: [] } as never;
+		} else if (slot === PALETTE_SLOT)
+			look.palette[name as Role] ??= { value: [...DEFAULT_PALETTE[name as Role]], keyframes: [] } as never;
+		const anim = appearanceAnimAt(look as Appearance, slot, name) as Draft<Animatable<unknown>>;
+		const spec = s.spec;
+		const rule: ValueRule = isPaintParam(spec)
+			? {
+					kind: 'json',
+					holdOnly: true,
+					parse: (v) => {
+						const bad = paintProblem(v);
+						if (bad && v && paintLimitProblem(v as never)) h.fail('E_LIMIT', bad);
+						if (bad) throw new Error(bad);
+						return v;
+					},
+				}
+			: ruleFromParam(spec);
+		return {
+			type: 'anim',
+			anim,
+			rule,
+			time: (at) => h.clipContentTime(found.seq, clip, at),
+			label: `${slot}.${name}`,
+		};
+	}
+	// spec 19 TL-017: `["globalLight", sequenceId, "angle" | "altitude"]` (sequence time, like the master's params).
+	if (head === 'globalLight' && a && rest.length === 1) {
+		const seq = h.sequence(doc, a);
+		const prop = rest[0] as keyof typeof LIGHT_SPECS;
+		const spec = LIGHT_SPECS[prop];
+		if (!spec) return bad();
+		const settings = seq.settings as unknown as { globalLight?: Record<string, Animatable<number>> };
+		if (!globalLightOf(seq as never))
+			settings.globalLight = {
+				angle: { value: Number(LIGHT_SPECS.angle.default), keyframes: [] },
+				altitude: { value: Number(LIGHT_SPECS.altitude.default), keyframes: [] },
+			};
+		return {
+			type: 'anim',
+			anim: settings.globalLight![prop] as Draft<Animatable<unknown>>,
+			rule: ruleFromParam(spec as ParamSpec),
+			time: (at) => h.sequenceContentTime(seq, at),
+			label: `globalLight.${prop}`,
 		};
 	}
 	// `["mask", maskId, "path" | "feather" | "opacity" | "expansion"]` (content time of the owning clip).

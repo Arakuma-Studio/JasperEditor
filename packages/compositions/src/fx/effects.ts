@@ -21,7 +21,42 @@ export type FxShaderParams = {
 	 * draw passes the picture through. Renders (false): the error propagates and fails the render.
 	 */
 	preview: boolean;
+	/**
+	 * spec 19 TL-037 (preview): identity of the input picture when it is known not to depend on the frame. A DOM layer's
+	 * chain also runs on paints that change nothing (the Player's Suspense hides and restores the layer on a seek): with
+	 * this set, the same key and input reuse the last output instead of running every pass again.
+	 */
+	inputKey?: string;
 };
+
+/** spec 19 TL-037: last outputs of chains whose input cannot have changed (preview only; LRU). */
+const outputs = new Map<string, HTMLCanvasElement>();
+const MAX_OUTPUTS = 6;
+
+/** Which web fonts have loaded: a font arriving late changes a DOM picture with no change to its clip. */
+function fontsEpoch(): string | null {
+	const fonts = globalThis.document?.fonts;
+	if (fonts?.status !== 'loaded') return null;
+	let n = 0;
+	for (const f of fonts) if (f.status === 'loaded') n++;
+	return String(n);
+}
+
+function reusableKey(p: FxShaderParams): string | null {
+	if (!p.preview || !p.inputKey) return null;
+	const epoch = fontsEpoch();
+	return epoch === null ? null : `${p.key}\u0000${p.inputKey}\u0000${epoch}`;
+}
+
+function keepOutput(key: string, source: HTMLCanvasElement | OffscreenCanvas): void {
+	const copy = document.createElement('canvas');
+	copy.width = source.width;
+	copy.height = source.height;
+	copy.getContext('2d')?.drawImage(source, 0, 0);
+	outputs.delete(key);
+	outputs.set(key, copy);
+	while (outputs.size > MAX_OUTPUTS) outputs.delete(outputs.keys().next().value!);
+}
 
 const ctx2d = (c: HTMLCanvasElement) => {
 	const ctx = c.getContext('2d');
@@ -37,7 +72,8 @@ export const fxShader = createEffect<FxShaderParams, null>({
 	label: 'GPU shader effect',
 	documentationLink: null,
 	backend: '2d',
-	calculateKey: (p) => p.key,
+	// The input identity counts: Remotion keeps the memoized params of an unchanged key, and they carry `inputKey`.
+	calculateKey: (p) => (p.inputKey ? `${p.key}|${p.inputKey}` : p.key),
 	schema: {},
 	validateParams: (p) => {
 		if (!p || typeof p.key !== 'string' || !p.plan) throw new Error('fxShader needs {key, plan, inputs}');
@@ -51,8 +87,17 @@ export const fxShader = createEffect<FxShaderParams, null>({
 				`fx: chain is ${width}×${height} but ${params.plan.effectId} was planned for ${params.plan.canvas.width}×${params.plan.canvas.height}`,
 			);
 		const out = ctx2d(target);
+		const reuse = reusableKey(params);
+		const kept = reuse ? outputs.get(reuse) : undefined;
+		if (kept) {
+			out.globalCompositeOperation = 'copy';
+			out.drawImage(kept, 0, 0, width, height);
+			out.globalCompositeOperation = 'source-over';
+			return;
+		}
 		try {
 			runShaderPlan(host, params.plan, source as TexImageSource, params.inputs, out);
+			if (reuse) keepOutput(reuse, target as HTMLCanvasElement);
 		} catch (e) {
 			if (!params.preview) throw e;
 			if (e instanceof FxShaderError) fxStatus.shaderFailed(e.effectId, e.message);

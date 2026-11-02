@@ -48,6 +48,10 @@ export const ID_PREFIXES = {
 	subtitleTemplate: 'stm',
 	/** spec 18 AF-BRF-002: agent notes of a project (`ProjectDocument.agentNotes`). */
 	agentNote: 'agn',
+	/** spec 19 TL-011: layers of an appearance (unique inside it; they key `lookOverrides`). */
+	appearanceLayer: 'apl',
+	/** spec 19 TL-015: looks of a project (`ProjectDocument.titleLooks`). */
+	titleLook: 'tlk',
 } as const;
 export type IdPrefix = (typeof ID_PREFIXES)[keyof typeof ID_PREFIXES];
 export const ALL_ID_PREFIXES: readonly IdPrefix[] = Object.values(ID_PREFIXES);

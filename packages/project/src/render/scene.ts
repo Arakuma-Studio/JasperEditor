@@ -11,6 +11,13 @@ import type { ParamValue, Vec2 } from '../schema/common.ts';
 import { PUPPET_PIN_PROPS } from '../schema/puppet.ts';
 import { type PatternOrigin, readPatternOrigin } from '../schema/sequence.ts';
 import { activeCameraAt, type CameraState, project3dProps } from '../three-d/scene.ts';
+import { TITLE_LOOK_EFFECT_ID } from '../title-looks/model.ts';
+import {
+	appearanceAnimated,
+	type ResolvedAppearance,
+	resolveAppearance,
+	resolveGlobalLight,
+} from '../title-looks/resolve.ts';
 import { cropWindow } from './crop.ts';
 import {
 	applyMat3,
@@ -51,6 +58,8 @@ export type ResolvedEffect = {
 	puppet?: ResolvedPuppet;
 	/** gaps (FX-6): the Warp Stabilizer's stored analysis (not time-dependent). */
 	warpAnalysis?: WarpAnalysisData;
+	/** spec 19: a look's appearance at the frame (`jasper.title-look`). */
+	appearance?: ResolvedAppearance;
 	/** TL-121: the seeded pattern this instance continues (a razor cut, duplicate or paste of another instance). */
 	patternOrigin?: PatternOrigin;
 };
@@ -127,6 +136,9 @@ function isStaticClip(c: RenderVisualClip): boolean {
 	if (masksAnimated(c.masks) || c.effects.some((fx) => masksAnimated(fx.masks))) return false;
 	if (c.effects.some((fx) => fx.puppet?.pins.some((pin) => PUPPET_PIN_PROPS.some((k) => isAnimated(pin[k])))))
 		return false; // sim-warp: animated Puppet pins
+	const light = c.sequenceLight;
+	if (light && (isAnimated(light.angle) || isAnimated(light.altitude))) return false; // spec 19 TL-017
+	if (c.effects.some((fx) => fx.appearance && appearanceAnimated(fx.appearance))) return false; // spec 19
 	return c.effects.every((fx) => Object.values(fx.params).every((p) => !isAnimated(p)));
 }
 
@@ -160,12 +172,21 @@ export function clipPictureTime(
 	return contentTimeAt(clip, frame, rate);
 }
 
-export type LayerPropertySource = Pick<
-	RenderVisualClip,
-	'transform' | 'opacity' | 'intrinsicBox' | 'masks'
-> & {
-	effects: Readonly<RenderVisualClip['effects']>;
-};
+export type LayerPropertySource = Pick<RenderVisualClip, 'transform' | 'opacity' | 'intrinsicBox' | 'masks'> &
+	Partial<Pick<RenderVisualClip, 'sequenceLight' | 'start' | 'duration' | 'sourceIn' | 'speed'>> & {
+		effects: Readonly<RenderVisualClip['effects']>;
+	};
+
+/** spec 19 TL-017: the sequence's light at a clip's content time `t` (its keys are in sequence time). */
+function sequenceLightAt(c: LayerPropertySource, t: number): { angle: number; altitude: number } | null {
+	const g = c.sequenceLight;
+	if (!g) return null;
+	const F = g.flicksPerFrame;
+	const rate = c.speed?.rate ?? 1;
+	const i = rate > 0 && F > 0 ? (t - (c.sourceIn ?? 0)) / (F * rate) : 0;
+	const local = c.speed?.reverse ? (c.duration ?? 1) - 1 - i : i;
+	return resolveGlobalLight(g, ((c.start ?? 0) + local) * F);
+}
 
 /** Evaluated props of a clip at content time `t` (no caching). */
 export function resolveLayerProps(c: LayerPropertySource, t: number): ResolvedLayerProps {
@@ -194,6 +215,9 @@ export function resolveLayerProps(c: LayerPropertySource, t: number): ResolvedLa
 		...(fx.masks?.length ? { masks: resolveMasks(fx.masks, t) } : {}),
 		...(fx.puppet ? { puppet: resolvePuppet(fx.puppet, t) } : {}),
 		...(fx.warpAnalysis ? { warpAnalysis: fx.warpAnalysis } : {}),
+		...(fx.appearance && fx.effectId === TITLE_LOOK_EFFECT_ID
+			? { appearance: resolveAppearance(fx.appearance, t, sequenceLightAt(c, t)) }
+			: {}),
 		...patternOriginField(fx.patternOrigin),
 	}));
 	// crop-order: the window the stack's crops leave visible (flips after a crop mirror it; several intersect).

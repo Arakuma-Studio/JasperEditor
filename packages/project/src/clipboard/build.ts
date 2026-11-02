@@ -3,13 +3,16 @@
 // reference (media closed over derivation sources and font files, synthetics, transcripts, fonts).
 // Pure: callers pass the committed document; nothing here reads session state.
 
-import { clipParamMediaIds, effectMediaRefs } from '../param-media.ts';
+import { clipParamMediaIds, collectParamMediaIds, effectMediaRefs } from '../param-media.ts';
 import { PROPERTY_SPECS } from '../registry/properties.ts';
 import type { Animatable, Keyframe } from '../schema/common.ts';
 import type { ProjectDocument, ProjectItem } from '../schema/document.ts';
 import type { FontRef, MediaAsset, SyntheticSource, Transcript } from '../schema/media.ts';
 import type { Clip, EffectInstance, Sequence, TrackKind } from '../schema/sequence.ts';
 import { isKnownClipKind } from '../schema/sequence.ts';
+import { type Appearance, clipLook, type TitleLook } from '../title-looks/model.ts';
+import { appearanceSlots } from '../title-looks/properties.ts';
+import { titleLookOf } from '../title-looks/validate.ts';
 import {
 	CLIPBOARD_FORMAT,
 	CLIPBOARD_VERSION,
@@ -37,6 +40,8 @@ type References = {
 	fonts: Set<string>;
 	/** Sequences referenced by nest clips. */
 	sequences: Set<string>;
+	/** spec 19: project looks linked clips and effects name. */
+	titleLooks: Set<string>;
 };
 
 const emptyReferences = (): References => ({
@@ -45,11 +50,18 @@ const emptyReferences = (): References => ({
 	transcripts: new Set(),
 	fonts: new Set(),
 	sequences: new Set(),
+	titleLooks: new Set(),
 });
 
 /** `{mediaId}` param values (LUTs, image refs; `''` = None) of an effect stack, keyframes included. */
 const effectMediaIds = (effects: readonly EffectInstance[] | undefined): string[] =>
 	effectMediaRefs(effects).map((r) => r.mediaId);
+
+/** spec 19 TL-015: the project look an effect stack links to. */
+function effectLookIds(effects: readonly EffectInstance[] | undefined): string[] {
+	const id = (clipLook(effects)?.appearance as { lookId?: string } | undefined)?.lookId;
+	return id ? [id] : [];
+}
 
 /** Font ids of a text style (and its runs) or a caption style. */
 function styleFonts(r: Record<string, unknown>): string[] {
@@ -74,6 +86,7 @@ function collectClipReferences(clip: Clip, refs: References): void {
 	if (typeof r.transcriptId === 'string') refs.transcripts.add(r.transcriptId);
 	if (typeof r.sequenceId === 'string' && isKnownClipKind(clip.kind)) refs.sequences.add(r.sequenceId);
 	for (const f of styleFonts(r)) refs.fonts.add(f);
+	for (const l of effectLookIds(r.effects as EffectInstance[] | undefined)) refs.titleLooks.add(l);
 	// template media params (avatars), a light's environment and effect params travel with the clip like its source.
 	for (const m of clipParamMediaIds(clip)) refs.media.add(m);
 }
@@ -94,7 +107,7 @@ function collectSequenceReferences(seq: Sequence, refs: References): void {
 function packReferences(
 	doc: ProjectDocument,
 	refs: References,
-): Pick<ClipboardPayload, 'media' | 'synthetics' | 'transcripts' | 'fonts' | 'mediaItems'> {
+): Pick<ClipboardPayload, 'media' | 'synthetics' | 'transcripts' | 'fonts' | 'titleLooks' | 'mediaItems'> {
 	const fonts: FontRef[] = [];
 	for (const id of refs.fonts) {
 		const f = doc.fonts[id];
@@ -112,6 +125,13 @@ function packReferences(
 		const s = doc.synthetics[id];
 		if (s) synthetics.push(clone(s));
 	}
+	const titleLooks: TitleLook[] = [];
+	for (const id of refs.titleLooks) {
+		const l = titleLookOf(doc, id);
+		if (!l) continue;
+		titleLooks.push(clone(l));
+		for (const m of collectParamMediaIds(l.appearance.layers)) refs.media.add(m);
+	}
 	const media: MediaAsset[] = [];
 	const done = new Set<string>();
 	const add = (id: string) => {
@@ -126,7 +146,14 @@ function packReferences(
 	for (const it of Object.values(doc.items))
 		if (it.kind === 'media' && done.has(it.mediaId) && !mediaItems[it.mediaId])
 			mediaItems[it.mediaId] = { name: it.name, label: it.label };
-	return { media, synthetics, transcripts, fonts, ...(Object.keys(mediaItems).length ? { mediaItems } : {}) };
+	return {
+		media,
+		synthetics,
+		transcripts,
+		fonts,
+		...(titleLooks.length ? { titleLooks } : {}),
+		...(Object.keys(mediaItems).length ? { mediaItems } : {}),
+	};
 }
 
 function header(
@@ -250,6 +277,7 @@ export function buildEffectsPayload(
 	const effects = (opts.effectIds ? all.filter((fx) => opts.effectIds!.includes(fx.id)) : all).map(clone);
 	const refs = emptyReferences();
 	for (const m of effectMediaIds(effects)) refs.media.add(m);
+	for (const l of effectLookIds(effects)) refs.titleLooks.add(l);
 	return {
 		...header(doc, 'effects', seq.id, opts.now),
 		effects: {
@@ -302,6 +330,14 @@ function clipKeyframeTracks(clip: Clip): { address: KeyframeAddress; anim: Anima
 		for (const [param, a] of Object.entries(fx.params))
 			if (a.keyframes.length)
 				out.push({ address: { effectId: fx.effectId, occurrence, param }, anim: a as Animatable<unknown> });
+		// spec 19 TL-014: an appearance's params, addressed by slot (the same look on the target has the same layers).
+		if (fx.appearance)
+			for (const s of appearanceSlots(fx.id, fx.appearance as Appearance))
+				if (s.anim.keyframes.length)
+					out.push({
+						address: { effectId: fx.effectId, occurrence, param: s.path.slice(2).join('.') },
+						anim: s.anim,
+					});
 	}
 	if (clip.kind === 'motion-graphic') {
 		const mg = clip as {
