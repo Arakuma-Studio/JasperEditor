@@ -80,6 +80,7 @@ import { isNestClip } from './structure/nest.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
 import { repairTextAnimators, textAnimatorIssues } from './text-animators/validate.ts';
 import { clipTextStyles, repairTextStyle, storedTextStyles, textStyleIssues } from './text-style.ts';
+import { clipTextContents, repairTextWriting, textWritingIssues } from './text-writing.ts';
 import { clipTextStyleIssue, repairTextStyles, textStylesRecordIssues } from './text-styles/model.ts';
 import { canBe3d, newLayer3D } from './three-d/model.ts';
 import {
@@ -931,6 +932,9 @@ export function invariantCheckers(
 		for (const st of clipTextStyles(c, cw))
 			for (const m of textStyleIssues(st.style))
 				issues.push(inv('INV-012', `Clip ${c.id} text style ${m}`, st.path));
+		// spec 19 TL-111, TL-093: the writing fields are read leniently.
+		for (const ct of clipTextContents(c))
+			for (const m of textWritingIssues(ct)) issues.push(inv('INV-012', `Clip ${c.id}: ${m}`, cw));
 		// spec 13 SH-002: link fields to a project text style (a link to a missing style is soft).
 		const styleLink = clipTextStyleIssue(c);
 		if (styleLink) issues.push(inv('INV-TEXTSTYLE', `Clip ${c.id}: ${styleLink}`, [...cw, 'styleId']));
@@ -2143,6 +2147,11 @@ export function repairDocument(
 	for (const st of storedTextStyles(doc))
 		for (const n of repairTextStyle(st.style))
 			note('repair-text-style', st.entity, `${st.path.join('.')}: ${n}`);
+	// spec 19 TL-111, TL-093: unreadable writing fields are removed (the text reads as horizontal).
+	for (const seq of Object.values(doc.sequences) as Sequence[])
+		for (const c of Object.values(seq.clips))
+			for (const ct of clipTextContents(c))
+				for (const n of repairTextWriting(ct)) note('repair-text-writing', c.id, n);
 	// malformed animator data is dropped, out-of-range values clamped.
 	for (const seq of Object.values(doc.sequences) as Sequence[])
 		for (const c of Object.values(seq.clips))

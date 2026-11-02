@@ -1080,7 +1080,19 @@
 								"background": null,
 								"shadow": null,
 								"allCaps": false
-							}
+							},
+							"runs": [
+								{
+									"from": 0,
+									"to": 8,
+									"style": {
+										"weight": 700
+									},
+									"finish": "flat"
+								}
+							],
+							"writingMode": "vertical",
+							"tateChuYoko": false
 						},
 						"box": {
 							"width": 1200,

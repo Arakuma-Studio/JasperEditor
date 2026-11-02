@@ -11,7 +11,7 @@
 import { createHash } from 'node:crypto';
 import { extname } from 'node:path';
 import type { MeasuredBox, MeasureFace, TextMeasureJob } from '@jasper/compositions';
-import type { FontRef, TextBox, TextContent, TextMeasurer } from '@jasper/project';
+import { type FontRef, isVerticalText, type TextBox, type TextContent, type TextMeasurer } from '@jasper/project';
 import { z } from 'zod';
 import { serveBundleForMeasuring } from '../mg-bundles/text-measure.ts';
 import type { RemotionService, SharedRenderBrowser } from '../remotion/service.ts';
@@ -105,7 +105,13 @@ export class HeadlessTextMeasurer {
 
 	private request(content: TextContent, box: TextBox, fonts: Readonly<Record<string, FontRef>>): Request {
 		const faces = this.facesOf(content, fonts);
-		const b = { width: box.autoSize === 'width' ? 0 : box.width, autoSize: box.autoSize };
+		const vertical = isVerticalText(content);
+		const b = {
+			width: box.autoSize === 'width' ? 0 : box.width,
+			// Columns wrap at the box height (spec 19 TL-111).
+			...(vertical ? { height: box.height } : {}),
+			autoSize: box.autoSize,
+		};
 		// Font ids are not part of the key: a transaction that creates its font gets a new id every round.
 		const family = (id: unknown) => (typeof id === 'string' ? (fonts[id]?.family ?? id) : id);
 		const unId = (st: Record<string, unknown>) =>
@@ -115,6 +121,7 @@ export class HeadlessTextMeasurer {
 			unId(content.style as unknown as Record<string, unknown>),
 			(content.runs ?? []).map((r) => ({ ...r, style: unId(r.style as Record<string, unknown>) })),
 			content.paragraphs ?? [],
+			vertical ? { writingMode: 'vertical', tateChuYoko: content.tateChuYoko } : null,
 			b,
 			faces.map((f) => [f.family, f.weight, f.style, f.path]),
 		]);
@@ -126,8 +133,9 @@ export class HeadlessTextMeasurer {
 					style: content.style,
 					runs: content.runs,
 					paragraphs: content.paragraphs,
+					...(vertical ? { writingMode: 'vertical' as const, tateChuYoko: content.tateChuYoko } : {}),
 				},
-				box: { width: box.width, autoSize: box.autoSize },
+				box: { width: box.width, height: box.height, autoSize: box.autoSize },
 				faces: faces.map(({ path: _p, ...f }) => f),
 			},
 		};

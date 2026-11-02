@@ -16,6 +16,7 @@ import {
 	TextBoxSchema,
 	TextStyleSchema,
 } from '../../schema/sequence.ts';
+import { TEXT_WRITING_MODES } from '../../text-writing.ts';
 import { ShapeItemInputSchema } from '../../vector/input.ts';
 import { CaptionRulesSchema } from './captions.ts';
 import {
@@ -56,6 +57,8 @@ const TextContentInput = z.strictObject({
 				from: z.number().int().min(0),
 				to: z.number().int().min(0),
 				style: TextStyleSchema.partial(),
+				/** A finish id for these letters of the clip's look (spec 19 TL-093). */
+				finish: z.string().min(1).max(64).optional(),
 			}),
 		)
 		.optional(),
@@ -63,6 +66,10 @@ const TextContentInput = z.strictObject({
 	paragraphs: z
 		.array(z.strictObject({ index: z.number().int().min(0), style: TextStyleSchema.partial() }))
 		.optional(),
+	/** `vertical`: right-to-left columns (spec 19 TL-111). */
+	writingMode: z.enum(TEXT_WRITING_MODES).optional(),
+	/** Short half-width runs stand upright in a column (default on). */
+	tateChuYoko: z.boolean().optional(),
 });
 
 /** A new animator side: `preset` (+ `version`, default the newest), window and params over the preset defaults. */
@@ -374,6 +381,8 @@ export const ClipPatchSchema = z.strictObject({
 			style: TextStyleSchema.partial().optional(),
 			runs: TextContentInput.shape.runs,
 			paragraphs: TextContentInput.shape.paragraphs,
+			writingMode: TextContentInput.shape.writingMode,
+			tateChuYoko: TextContentInput.shape.tateChuYoko,
 		})
 		.optional(),
 	box: TextBoxSchema.partial().optional(),

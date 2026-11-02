@@ -223,6 +223,7 @@ export function planLayerFx(
 			const extra = opts.structures?.(fx);
 			const pad = gpuPadding(gpuSpec, fx.params, {
 				...opts.ctx,
+				inputPadding: padding,
 				...(paramsAt ? { paramsAt } : {}),
 				...(opts.clip ? { clip: opts.clip } : {}),
 				...(fx.puppet || fx.warpAnalysis || extra
