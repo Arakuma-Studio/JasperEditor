@@ -9350,7 +9350,7 @@ SOFTWARE.
 
 # Ported source code
 
-JasperEditor contains code and algorithms ported from these open-source projects (records in `licenses/ported/`,
+JasperEditor contains code and algorithms ported from these projects (records in `licenses/ported/`,
 licence texts below).
 
 | Record | Upstream | Licence | Copyright |
