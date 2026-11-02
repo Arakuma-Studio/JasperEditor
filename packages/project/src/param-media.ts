@@ -64,14 +64,96 @@ export function templateMediaRefs(value: unknown): { path: string; mediaId: stri
 }
 
 /**
- * Media ids a clip's params reference: motion-graphic template params, and (spec 19 TL-021) the pattern tiles and
- * reflection images of a look's layers.
+ * The animatable params of an effect instance by name: its own, and (spec 19 TL-021) those of a look's layers, named
+ * `appearance.<layerId>.<param>`: pattern tiles and reflection images are media uses like any effect param.
+ */
+function effectParamEntries(fx: { params?: unknown; appearance?: unknown }): [string, unknown][] {
+	const own = isObject(fx.params) ? Object.entries(fx.params as Record<string, unknown>) : [];
+	const layers = isObject(fx.appearance) ? (fx.appearance as { layers?: unknown }).layers : undefined;
+	if (!Array.isArray(layers)) return own;
+	const looks: [string, unknown][] = [];
+	for (const l of layers) {
+		if (!isObject(l) || !isObject((l as { params?: unknown }).params)) continue;
+		const { id, params } = l as { id?: unknown; params: Record<string, unknown> };
+		for (const [name, a] of Object.entries(params)) looks.push([`appearance.${String(id)}.${name}`, a]);
+	}
+	return [...own, ...looks];
+}
+
+/**
+ * `{mediaId}` values of effect parameters (LUTs, depth maps, reflection images, mattes) and of a look's layers,
+ * keyframes included (`''` = None is skipped). Bounded by {@link PARAM_MEDIA_MAX_NODES}.
+ */
+export function effectMediaRefs(
+	effects: readonly { id?: unknown; params?: unknown; appearance?: unknown }[] | undefined,
+): { effectId: string; param: string; mediaId: string }[] {
+	const out: { effectId: string; param: string; mediaId: string }[] = [];
+	if (!Array.isArray(effects)) return out;
+	let nodes = 0;
+	for (const fx of effects) {
+		if (!isObject(fx)) continue;
+		for (const [param, a] of effectParamEntries(fx)) {
+			if (!isObject(a) || ++nodes > PARAM_MEDIA_MAX_NODES) continue;
+			const { value, keyframes } = a as { value?: unknown; keyframes?: unknown };
+			const values = [value];
+			if (Array.isArray(keyframes))
+				for (const k of keyframes) values.push(isObject(k) ? (k as { value?: unknown }).value : undefined);
+			for (const v of values) {
+				const mediaId = paramMediaRef(v);
+				if (mediaId !== null) out.push({ effectId: String(fx.id ?? ''), param, mediaId });
+			}
+		}
+	}
+	return out;
+}
+
+/**
+ * Media ids a clip references besides its own source, each once: motion-graphic template params, a light's
+ * environment image (`light.environmentMediaId`) and the `{mediaId}` params of its effects (any clip kind). Every
+ * reference-integrity path counts these as uses (orphans, item delete, usage, Project Manager, invariants).
  */
 export function clipParamMediaIds(clip: Pick<Clip, 'kind'>): string[] {
-	const fxs = (clip as { effects?: { appearance?: { layers?: unknown } }[] }).effects;
-	const looks = fxs?.flatMap((fx) => (fx.appearance ? collectParamMediaIds(fx.appearance.layers) : [])) ?? [];
-	if (clip.kind !== 'motion-graphic') return looks;
-	return [...new Set([...collectParamMediaIds((clip as { params?: unknown }).params), ...looks])];
+	const r = clip as { params?: unknown; light?: unknown; effects?: unknown };
+	const out = new Set<string>();
+	if (clip.kind === 'motion-graphic') for (const id of collectParamMediaIds(r.params)) out.add(id);
+	if (clip.kind === 'light' && isObject(r.light)) {
+		const env = (r.light as { environmentMediaId?: unknown }).environmentMediaId;
+		if (typeof env === 'string' && env !== '') out.add(env);
+	}
+	for (const ref of effectMediaRefs(r.effects as never)) out.add(ref.mediaId);
+	return [...out];
+}
+
+/**
+ * Sets every effect `{mediaId}` value (and key) naming a medium in `gone` to None (`{mediaId: ''}`: effect params
+ * have no null), in place. Returns the cleared `effects.<effect id>.<param>` paths. Works on drafts.
+ */
+export function clearEffectMedia(
+	effects: readonly { id?: unknown; params?: unknown; appearance?: unknown }[] | undefined,
+	gone: (mediaId: string) => boolean,
+): string[] {
+	const cleared: string[] = [];
+	if (!Array.isArray(effects)) return cleared;
+	for (const fx of effects) {
+		if (!isObject(fx)) continue;
+		for (const [param, a] of effectParamEntries(fx)) {
+			if (!isObject(a)) continue;
+			const holder = a as { value?: unknown; keyframes?: unknown };
+			let hit = false;
+			const fix = (v: unknown): unknown => {
+				const id = paramMediaRef(v);
+				if (id === null || !gone(id)) return v;
+				hit = true;
+				return { ...(v as object), mediaId: '' };
+			};
+			holder.value = fix(holder.value);
+			if (Array.isArray(holder.keyframes))
+				for (const k of holder.keyframes)
+					if (isObject(k)) (k as { value?: unknown }).value = fix((k as { value?: unknown }).value);
+			if (hit) cleared.push(`effects.${String(fx.id)}.${param}`);
+		}
+	}
+	return cleared;
 }
 
 /**

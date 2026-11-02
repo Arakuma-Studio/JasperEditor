@@ -8,7 +8,7 @@ import { defineShaderEffect, SAPPHIRE_BINS } from '../define.ts';
 import { GLSL_UV } from '../glsl/sample.ts';
 import { fxParam } from '../params.ts';
 import { gaussianBlurPasses } from '../passes.ts';
-import type { ShaderPass } from '../shader.ts';
+import { fxPatternFrame, type ShaderPass } from '../shader.ts';
 import {
 	check,
 	color,
@@ -357,7 +357,7 @@ export const S_GRAIN = defineShaderEffect({
 				u_gBw: g.bw,
 				u_gBwFreq: g.bwFreq,
 				u_gBwOct: { int: Math.max(1, Math.min(10, g.bwOct)) },
-				u_grainFrame: jit === 0 ? 0 : Math.floor(ctx.frame / jit),
+				u_grainFrame: jit === 0 ? 0 : Math.floor(fxPatternFrame(ctx) / jit),
 			};
 		},
 		passes: [{ include: [GLSL_FILM], frag: GRAIN_FRAG }],

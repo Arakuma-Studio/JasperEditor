@@ -13,6 +13,7 @@ import {
 	buildRenderSnapshot,
 	type Clip,
 	checkInvariants,
+	clearEffectMedia,
 	clipContentTime,
 	clipLook,
 	clipParamMediaIds,
@@ -846,6 +847,19 @@ describe('persistence (TL-020)', () => {
 		expect(resolveAppearance(a, 0).layers).toHaveLength(4);
 	});
 
+	it('the v12 fixture carries a pattern origin (TL-121) through the load', () => {
+		const raw = JSON.parse(readFileSync(join(__dirname, 'fixtures', 'schema-v12.jasper'), 'utf8'));
+		const r = loadProject(raw, { effects: defaultEffectRegistry });
+		const fxs = Object.values(Object.values(r.document.sequences)[0]!.clips).flatMap(
+			(c) => (c as unknown as { effects?: EffectInstance[] }).effects ?? [],
+		);
+		expect(fxs.find((fx) => fx.patternOrigin)?.patternOrigin).toEqual({
+			clipId: 'clp_00000000000TX001',
+			effectId: 'fx_0000000000000TK2',
+			frame: 12,
+		});
+	});
+
 	it('a newer schema opens read-only, untouched', () => {
 		const { h } = applied();
 		const r = loadProject({ ...JSON.parse(JSON.stringify(h.doc)), schemaVersion: 99 });
@@ -881,6 +895,15 @@ describe('media references of a look (TL-021)', () => {
 			],
 		};
 		expect(clipParamMediaIds(clip as never).sort()).toEqual(['med_0000000000000001', 'med_0000000000000002']);
+	});
+
+	it('force-deleting a medium clears it from a look layer, keys included (TL-120 path)', () => {
+		const anim = { value: { mediaId: 'med_0000000000000001' }, keyframes: [{ value: { mediaId: 'med_0000000000000002' } }] };
+		const effects = [{ id: 'fx_1', params: {}, appearance: { layers: [{ id: 'apl_1', params: { tile: anim } }] } }];
+		const cleared = clearEffectMedia(effects, () => true);
+		expect(cleared).toEqual(['effects.fx_1.appearance.apl_1.tile']);
+		expect(anim.value).toEqual({ mediaId: '' });
+		expect(anim.keyframes[0]!.value).toEqual({ mediaId: '' });
 	});
 });
 

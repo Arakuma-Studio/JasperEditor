@@ -4,7 +4,7 @@
 // bands, MPEG-style flowing blocks). Parameter names, order and defaults follow Boris FX's public Sapphire reference.
 import type { EffectParams, EffectSpec } from '../../effects.ts';
 import { defineShaderEffect, SAPPHIRE_BINS } from '../define.ts';
-import type { FxUniformValue, ShaderPass } from '../shader.ts';
+import { type FxUniformValue, fxPatternFrame, type ShaderPass } from '../shader.ts';
 import { check, grp, intSlider, mixParam, num, sapphireSeed, slider, stepNoise1 } from './common.ts';
 import { GLSL_FILM } from './glsl.ts';
 
@@ -170,7 +170,7 @@ export const S_JPEG_DAMAGE = defineShaderEffect({
 				u_lumaQ: { floats: steps.luma },
 				u_chromaQ: { floats: steps.chroma },
 				u_errorP: 1 - Math.exp(-rate * 0.15),
-				u_errFrame: jit === 0 ? 0 : Math.floor(ctx.frame / jit),
+				u_errFrame: jit === 0 ? 0 : Math.floor(fxPatternFrame(ctx) / jit),
 			};
 		},
 		passes: () => {

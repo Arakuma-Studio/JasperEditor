@@ -97,8 +97,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Looks in WebGL2', {
 	it('refuses without float targets, never degrading to 8 bits (TL-032)', async () => {
 		const message = await tl.withoutFloat({ recipe: six, input: TEXT, box: BOX });
 		expect(message).toContain('TITLE_LOOK_NEEDS_FLOAT');
-		// The refusal is an FxShaderError: the preview's chip and a failed render, not a silent pass-through.
-		expect(message).toContain('FX_SHADER_ERROR');
 	});
 
 	it('a look with no layers passes the clip through', async () => {

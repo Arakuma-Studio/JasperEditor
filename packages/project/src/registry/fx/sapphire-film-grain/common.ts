@@ -7,7 +7,7 @@ import type { EffectParams, ParamSpec } from '../../effects.ts';
 import { booleanParam as bool, clamp, numberParam as num } from '../../param-values.ts';
 import { GLSL_BLUR } from '../glsl/blur.ts';
 import { fxParam, mixWithOriginalParam, seedParam } from '../params.ts';
-import { type FxUniformValue, fxRandom, type ShaderPass } from '../shader.ts';
+import { type FxUniformValue, fxPatternFrame, fxRandom, type ShaderPass } from '../shader.ts';
 
 export const rgb = (v: ParamValue | undefined, d: [number, number, number]): [number, number, number] =>
 	Array.isArray(v) && v.length >= 3 && v.slice(0, 3).every((x) => typeof x === 'number' && Number.isFinite(x))
@@ -181,7 +181,7 @@ export function filmGrainUniforms(
 			size(num(p.grainBlurGreen, 0.9)),
 			size(num(p.grainBlurBlue, 1.2)),
 		],
-		u_grainFrame: grainFrame(p.grainHold, ctx.frame),
+		u_grainFrame: grainFrame(p.grainHold, fxPatternFrame(ctx)),
 	};
 }
 

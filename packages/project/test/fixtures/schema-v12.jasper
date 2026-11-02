@@ -1379,6 +1379,23 @@
 										]
 									}
 								}
+							},
+							{
+								"id": "fx_0000000000000TK3",
+								"effectId": "jasper.gaussian-blur",
+								"effectVersion": 1,
+								"enabled": true,
+								"params": {
+									"radius": {
+										"value": 2,
+										"keyframes": []
+									}
+								},
+								"patternOrigin": {
+									"clipId": "clp_00000000000TX001",
+									"effectId": "fx_0000000000000TK2",
+									"frame": 12
+								}
 							}
 						],
 						"textAnimation": {

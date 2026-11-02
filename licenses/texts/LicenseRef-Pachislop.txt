@@ -1,0 +1,18 @@
+LicenseRef-Pachislop
+
+Pachislop (https://github.com/SafEight/pachislop), Copyright (c) 2026 SafEight.
+
+The Pachislop repository has no licence file. It carries no open-source licence, so its code, shaders and data are not
+available to the public under any stated terms.
+
+SafEight, the author, gave the JasperEditor project permission by direct message on 2026-11-02 to use, copy, modify and
+distribute the Pachislop code, shaders and data that JasperEditor ports, as part of JasperEditor. That permission is the
+only basis for the use. It was not given as a licence document, it is not an open-source licence, and it covers only
+what is recorded in `licenses/ported/pachislop-*.md`, pinned to the commit named in each record.
+
+Anyone who receives JasperEditor should not assume the same permission extends to the rest of Pachislop, or to any
+other use of the ported files outside JasperEditor, unless they have their own permission from the author.
+
+The ported material is provided "AS IS", without warranty of any kind, express or implied, including the warranties of
+merchantability, fitness for a particular purpose and non-infringement. In no event shall the author be liable for any
+claim, damages or other liability arising from, out of or in connection with the material or its use.

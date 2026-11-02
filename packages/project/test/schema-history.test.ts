@@ -61,7 +61,8 @@ const STEP_CHANGES: Record<string, (from: Rec) => Record<string, unknown>> = {
 	// v10 → v11 (agent footage editing: sequence brief, agent notes): version bump only; v10 builds open the files
 	// read-only.
 	'10→11': () => ({}),
-	// v11 → v12 (Title Looks, spec 19): version bump only; v11 builds open the files read-only.
+	// v11 → v12 (Title Looks, spec 19, with `EffectInstance.patternOrigin`, TL-121): version bump only; v11 builds open
+	// the files read-only.
 	'11→12': () => ({}),
 };
 

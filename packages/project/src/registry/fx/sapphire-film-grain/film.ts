@@ -10,7 +10,7 @@ import { GLSL_MB } from '../glsl/motion-blur.ts';
 import { GLSL_UV } from '../glsl/sample.ts';
 import { fxParam } from '../params.ts';
 import { bloomPyramidPasses } from '../passes.ts';
-import type { FxFrameContext, FxUniformValue, ShaderPass } from '../shader.ts';
+import { type FxFrameContext, type FxUniformValue, fxPatternFrame, type ShaderPass } from '../shader.ts';
 import {
 	bool,
 	check,
@@ -423,11 +423,13 @@ export const S_FILM_DAMAGE = defineShaderEffect({
 			// dust and stain counts vary per frame
 			const vd = num(p.varyDustDensity, 0.2);
 			const dustN =
-				num(p.dustDensity, 30) * Math.max(0, 1 + vd * (stepNoise1(ctx.seed, 21, ctx.frame) * 2 - 1));
+				num(p.dustDensity, 30) *
+				Math.max(0, 1 + vd * (stepNoise1(ctx.seed, 21, fxPatternFrame(ctx)) * 2 - 1));
 			const dust = DUST_UNIFORMS(dustN, ctx.width, ctx.height);
 			const vs = num(p.varyStainDensity, 0.2);
 			const stains =
-				num(p.stainDensity, 0.2) * Math.max(0, 1 + vs * (stepNoise1(ctx.seed, 22, ctx.frame) * 2 - 1));
+				num(p.stainDensity, 0.2) *
+				Math.max(0, 1 + vs * (stepNoise1(ctx.seed, 22, fxPatternFrame(ctx)) * 2 - 1));
 			return {
 				...filmGrainUniforms(p, ctx),
 				u_flickerGain: sig.flicker,
@@ -845,8 +847,8 @@ export const S_FILM_BURN = defineShaderEffect({
 			const dust = DUST_UNIFORMS(num(p.dustDensity, 140), ctx.width, ctx.height);
 			const vary = Array.isArray(p.varyEdgesPos) ? (p.varyEdgesPos as number[]) : [0, 0.01];
 			out.u_edgesJitter = [
-				num(vary[0]) * (stepNoise1(ctx.seed, 41, ctx.frame) * 2 - 1),
-				num(vary[1]) * (stepNoise1(ctx.seed, 42, ctx.frame) * 2 - 1),
+				num(vary[0]) * (stepNoise1(ctx.seed, 41, fxPatternFrame(ctx)) * 2 - 1),
+				num(vary[1]) * (stepNoise1(ctx.seed, 42, fxPatternFrame(ctx)) * 2 - 1),
 			];
 			out.u_dustCellPx = dust.cell;
 			out.u_dustProb = bool(p.dust, true) ? dust.prob : 0;

@@ -6,7 +6,7 @@ import type { EffectParams, EffectSpec } from '../../effects.ts';
 import { defineShaderEffect, SAPPHIRE_BINS } from '../define.ts';
 import { GLSL_COMPOSITE } from '../glsl/composite.ts';
 import { fxParam, sapphireCommonParams } from '../params.ts';
-import type { FxFrameContext } from '../shader.ts';
+import { type FxFrameContext, fxPatternFrame } from '../shader.ts';
 import {
 	blurXYPasses,
 	combineParam,
@@ -375,7 +375,7 @@ export const S_MUZZLE_FLASH = defineShaderEffect({
 			const variant = (VARIANTS as readonly string[]).indexOf(String(p.variant));
 			let k = variant < 0 ? 1 : variant;
 			if (variant === 3) k = 3 + t.index;
-			if (flag(p.animateSeed)) k += ctx.frame * 7;
+			if (flag(p.animateSeed)) k += fxPatternFrame(ctx) * 7;
 			const s = ctx.seed + k * 0.6180339887;
 			return {
 				...combineUniforms(p, FLASH_COMBINE, 'screen'),

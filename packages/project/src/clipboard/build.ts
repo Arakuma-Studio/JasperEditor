@@ -3,7 +3,7 @@
 // reference (media closed over derivation sources and font files, synthetics, transcripts, fonts).
 // Pure: callers pass the committed document; nothing here reads session state.
 
-import { clipParamMediaIds, collectParamMediaIds } from '../param-media.ts';
+import { clipParamMediaIds, collectParamMediaIds, effectMediaRefs } from '../param-media.ts';
 import { PROPERTY_SPECS } from '../registry/properties.ts';
 import type { Animatable, Keyframe } from '../schema/common.ts';
 import type { ProjectDocument, ProjectItem } from '../schema/document.ts';
@@ -54,22 +54,8 @@ const emptyReferences = (): References => ({
 });
 
 /** `{mediaId}` param values (LUTs, image refs; `''` = None) of an effect stack, keyframes included. */
-function effectMediaIds(effects: readonly EffectInstance[] | undefined): string[] {
-	const out: string[] = [];
-	const visit = (v: unknown) => {
-		const m = (v as { mediaId?: unknown } | null)?.mediaId;
-		if (v && typeof v === 'object' && !Array.isArray(v) && typeof m === 'string' && m) out.push(m);
-	};
-	for (const fx of effects ?? []) {
-		for (const a of Object.values(fx.params)) {
-			visit(a.value);
-			for (const k of a.keyframes) visit(k.value);
-		}
-		// spec 19 TL-021: pattern tiles and reflection images of a look's layers.
-		out.push(...collectParamMediaIds((fx.appearance as { layers?: unknown } | undefined)?.layers));
-	}
-	return out;
-}
+const effectMediaIds = (effects: readonly EffectInstance[] | undefined): string[] =>
+	effectMediaRefs(effects).map((r) => r.mediaId);
 
 /** spec 19 TL-015: the project look an effect stack links to. */
 function effectLookIds(effects: readonly EffectInstance[] | undefined): string[] {
@@ -100,9 +86,8 @@ function collectClipReferences(clip: Clip, refs: References): void {
 	if (typeof r.transcriptId === 'string') refs.transcripts.add(r.transcriptId);
 	if (typeof r.sequenceId === 'string' && isKnownClipKind(clip.kind)) refs.sequences.add(r.sequenceId);
 	for (const f of styleFonts(r)) refs.fonts.add(f);
-	for (const m of effectMediaIds(r.effects as EffectInstance[] | undefined)) refs.media.add(m);
 	for (const l of effectLookIds(r.effects as EffectInstance[] | undefined)) refs.titleLooks.add(l);
-	// template media params (avatars) travel with the clip like its own source.
+	// template media params (avatars), a light's environment and effect params travel with the clip like its source.
 	for (const m of clipParamMediaIds(clip)) refs.media.add(m);
 }
 

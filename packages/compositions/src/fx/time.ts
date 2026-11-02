@@ -73,7 +73,7 @@ export function fxRemapFrame(
 		steps.push({
 			spec,
 			params: fx.params,
-			seed: fxSeed(clip.clipId, fx.id, fx.params),
+			seed: fxSeed(clip.clipId, fx.id, fx.params, fx.patternOrigin),
 			...(inst && clip.sourceIn !== undefined && clip.speed
 				? {
 						paramsAt: fxParamsAtFn(

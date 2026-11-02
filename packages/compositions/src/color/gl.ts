@@ -237,6 +237,7 @@ export function sourceSize(src: CanvasImageSource): { width: number; height: num
 
 let webgl2Support: boolean | null = null;
 let webgl2Renderer: string | null = null;
+let webgl2Float = false;
 /** True when this browser can create a WebGL2 context (cached; false outside the DOM). */
 export function canUseWebGl2(): boolean {
 	if (webgl2Support !== null) return webgl2Support;
@@ -248,12 +249,21 @@ export function canUseWebGl2(): boolean {
 		if (gl) {
 			const dbg = gl.getExtension('WEBGL_debug_renderer_info');
 			webgl2Renderer = String(gl.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : gl.RENDERER));
+			webgl2Float = !!gl.getExtension('EXT_color_buffer_float');
 		}
 		(gl?.getExtension('WEBGL_lose_context') as { loseContext(): void } | null)?.loseContext();
 	} catch {
 		webgl2Support = false;
 	}
 	return webgl2Support;
+}
+
+/**
+ * True when WebGL2 can render to float textures (`EXT_color_buffer_float`; cached with the WebGL2 probe, false without
+ * WebGL2). The fx host falls back to 8-bit targets without it; effects that `requiresFloat` are bypassed (TL-123).
+ */
+export function canUseFloatTargets(): boolean {
+	return canUseWebGl2() && webgl2Float;
 }
 
 /** The WebGL2 renderer string (e.g. "ANGLE (…SwiftShader…)"), or null. */

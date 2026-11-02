@@ -1,6 +1,6 @@
 import { current, type Draft, isDraft } from 'immer';
 import { mediaDurationFlicks } from '../../interpret/model.ts';
-import { clipParamMediaIds, rewriteParamMedia } from '../../param-media.ts';
+import { clearEffectMedia, clipParamMediaIds, rewriteParamMedia } from '../../param-media.ts';
 import { frameShiftFlicks, sourceTimingShift } from '../../process/source-range.ts';
 import { defaultLabelForMedia } from '../../registry/kinds.ts';
 import {
@@ -11,7 +11,7 @@ import {
 	type SourceMarks,
 } from '../../schema/document.ts';
 import type { MediaAsset, Transcript } from '../../schema/media.ts';
-import type { Clip, Sequence } from '../../schema/sequence.ts';
+import type { Clip, EffectInstance, Sequence } from '../../schema/sequence.ts';
 import type { LibraryProvenance } from '../../sound/provenance.ts';
 import { libraryDescriptorIssue } from '../../sound/provenance.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
@@ -151,7 +151,7 @@ export const projectHandlers = {
 				(it) => !toDelete.has(it.id) && (it as Record<string, unknown>)[field] === value,
 			);
 		const clipRemovals: { seqId: string; clipId: string }[] = [];
-		/** Media whose last item goes away: template params referencing them are cleared (the clip stays). */
+		/** Media whose last item goes away: template, light and effect references to them are cleared (the clip stays). */
 		const goneMedia = new Set<string>();
 		const deletedSequences = new Set<string>();
 		for (const id of toDelete) {
@@ -200,19 +200,27 @@ export const projectHandlers = {
 			});
 		}
 		const clearedParams: { clipId: string; params: string[]; mediaIds: string[] }[] = [];
+		const isGone = (m: string) => goneMedia.has(m);
 		for (const u of paramUsers) {
 			const seq = doc.sequences[u.seqId]!;
-			const c = seq.clips[u.clipId] as Draft<Extract<Clip, { kind: 'motion-graphic' }>>;
+			const c = seq.clips[u.clipId] as Draft<Clip>;
 			const track = seq.videoTracks.find((t) => t.id === c.trackId);
 			if (track?.locked)
 				h.fail('E_TRACK_LOCKED', `Clip ${u.clipId} is on a locked track`, { blocking: [track.id] });
-			const plain = (isDraft(c.params) ? current(c.params) : c.params) as Record<string, unknown>;
-			const mediaIds = clipParamMediaIds({ kind: 'motion-graphic', params: plain } as Clip).filter((m) =>
-				goneMedia.has(m),
-			);
-			const next = rewriteParamMedia(plain, (m) => (goneMedia.has(m) ? null : undefined));
-			c.params = next.value as typeof c.params;
-			clearedParams.push({ clipId: u.clipId, params: next.changed, mediaIds });
+			const mediaIds = clipParamMediaIds(c).filter(isGone);
+			const paths: string[] = [];
+			if (c.kind === 'motion-graphic') {
+				const plain = (isDraft(c.params) ? current(c.params) : c.params) as Record<string, unknown>;
+				const next = rewriteParamMedia(plain, (m) => (goneMedia.has(m) ? null : undefined));
+				c.params = next.value as typeof c.params;
+				paths.push(...next.changed);
+			}
+			if (c.kind === 'light' && c.light.environmentMediaId && goneMedia.has(c.light.environmentMediaId)) {
+				c.light.environmentMediaId = null;
+				paths.push('light.environmentMediaId');
+			}
+			paths.push(...clearEffectMedia((c as { effects?: Draft<EffectInstance>[] }).effects, isGone));
+			clearedParams.push({ clipId: u.clipId, params: paths, mediaIds });
 		}
 		for (const r of clipRemovals) {
 			const seq = doc.sequences[r.seqId]!;

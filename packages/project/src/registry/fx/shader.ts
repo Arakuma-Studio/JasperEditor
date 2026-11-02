@@ -11,6 +11,7 @@ import { evaluate, expressionBindingOf } from '../../keyframes.ts';
 import type { SpatialMetric } from '../../keyframes-spatial.ts';
 import type { ResolvedPuppet } from '../../puppet/model.ts';
 import type { Animatable, ParamValue } from '../../schema/common.ts';
+import type { PatternOrigin } from '../../schema/sequence.ts';
 import { FLICKS_PER_SECOND } from '../../time.ts';
 import type { EffectParams, EffectSpec, ParamSpec } from '../effects.ts';
 import { numberParam as finite, mediaParamId } from '../param-values.ts';
@@ -161,6 +162,12 @@ export type FxFrameContext = FxPlanContext & {
 	frame: number;
 	/** Clip duration in frames. */
 	duration: number;
+	/**
+	 * TL-121: `frame` plus the instance's `patternOrigin.frame` — the frame to hash for per-frame noise, so a pattern
+	 * continues across a razor cut. Hooks that only need a per-frame random number read `fxPatternFrame(ctx)`; clip
+	 * relative uses (progress, durations, keyframes, source time) keep reading `frame`. Absent = `frame`.
+	 */
+	patternFrame?: number;
 	/** `u_seed`: deterministic 0..1 per clip + effect instance (+ the `seed` param), see `fxSeed`. */
 	seed: number;
 	/** `u_progress`: transition progress when a transition drives the layer, else the clip progress (0..1). */
@@ -338,15 +345,18 @@ export type GpuEffect = {
 	 */
 	timeInvariant?: boolean | ((instance: { appearance?: unknown } | undefined) => boolean);
 	/**
-	 * spec 19 TL-032: this effect is wrong in 8 bits. Without float targets it refuses with this error code (a chip in
-	 * the preview, a failed render) instead of degrading its `rgba16f` passes to `rgba8`.
-	 */
-	requiresFloat?: string;
-	/**
 	 * spec 19 (TL-021): media pictures that are not params of the spec (a look layer's pattern tile or reflection
 	 * image): each binds `uniform sampler2D <uniform>` + `vec2 <uniform>_size` like a `media` param.
 	 */
 	textures?(p: EffectParams, ctx: FxFrameContext): readonly { uniform: string; mediaId: string }[];
+	/**
+	 * TL-123: the effect cannot run correctly on 8-bit targets (linear-light compositing, distance fields, HDR
+	 * intermediates). The host otherwise falls back from `rgba16f` / `rgba32f` to `rgba8` when the browser lacks
+	 * `EXT_color_buffer_float`; an effect that declares this is refused instead: the preview bypasses it with a chip,
+	 * and a plan names it as a blocker (`FX_NEEDS_FLOAT`, or the string given here, e.g. `TITLE_LOOK_NEEDS_FLOAT`).
+	 * Absent = the effect accepts the 8-bit fallback.
+	 */
+	requiresFloat?: boolean | string;
 	/**
 	 * parity (roto): object mattes of the clip's roto objects as inputs. Each entry binds `uniform sampler2D
 	 * u_<name>` to the 8-bit matte (in the red channel, 1 = object) of the roto named by the string param `param`
@@ -407,7 +417,7 @@ export type FxEffectPlan = {
 	}[];
 	/** `u_source` has mipmaps in every pass (`GpuEffect.sourceMipmaps`). */
 	sourceMipmaps?: boolean;
-	/** spec 19: the code to refuse with where float targets are missing (`GpuEffect.requiresFloat`). */
+	/** `GpuEffect.requiresFloat`: the refusal code the host throws when it has no float render targets (TL-123). */
 	requiresFloat?: string;
 	/** Identity of programs and sizes (not of uniform values): changes force no re-plan, only a re-key. */
 	key: string;
@@ -877,7 +887,7 @@ export function planGpuEffect(
 		textures,
 		key,
 		...(gpu.sourceMipmaps ? { sourceMipmaps: true } : {}),
-		...(gpu.requiresFloat ? { requiresFloat: gpu.requiresFloat } : {}),
+		...(gpu.requiresFloat ? { requiresFloat: fxFloatRefusal(spec)!.code } : {}),
 	};
 }
 
@@ -1038,11 +1048,39 @@ export function hashString(s: string): number {
  * `u_seed` of an effect instance: a 0..1 hash of the clip id and the effect instance id, mixed with the value of a
  * numeric `seed` param when the effect has one (Sapphire "Seed"). Deterministic: the same clip and settings draw the
  * same pattern in the Player, in parallel render pages and after a reload (S11 §2 determinism rules: no
- * `Math.random`, no clocks).
+ * `Math.random`, no clocks). An instance with a `patternOrigin` (it came from a razor cut, a duplicate or a paste,
+ * TL-121) hashes the origin's ids instead, so the copy draws the pattern of the instance it came from; an instance
+ * without one hashes its own ids, exactly as before.
  */
-export function fxSeed(clipId: string, fxId: string, params?: EffectParams): number {
+export function fxSeed(
+	clipId: string,
+	fxId: string,
+	params?: EffectParams,
+	origin?: PatternOrigin | null,
+): number {
 	const s = params && typeof params.seed === 'number' && Number.isFinite(params.seed) ? params.seed : 0;
-	return hashString(`${clipId}\u0000${fxId}\u0000${s}`) / 4294967296;
+	return hashString(`${origin?.clipId ?? clipId}\u0000${origin?.effectId ?? fxId}\u0000${s}`) / 4294967296;
+}
+
+/** The frame per-frame noise hashes (`ctx.patternFrame`, else the clip-local `ctx.frame`). */
+export function fxPatternFrame(ctx: Pick<FxFrameContext, 'frame' | 'patternFrame'>): number {
+	return ctx.patternFrame ?? ctx.frame;
+}
+
+/** Frames added to the clip-local frame for `u_frame` / `u_time` of an instance with a `patternOrigin` (TL-121). */
+export function fxFrameOffset(origin?: PatternOrigin | null): number {
+	return origin?.frame ?? 0;
+}
+
+/** `builtins` with `u_frame` / `u_time` advanced by `offset` frames (the same list for offset 0). */
+export function fxOffsetBuiltins(builtins: readonly FxUniform[], offset: number): readonly FxUniform[] {
+	if (!offset) return builtins;
+	const fps = builtins.find((u) => u.name === 'u_fps')?.value[0] ?? 0;
+	return builtins.map((u) => {
+		if (u.name === 'u_frame') return { ...u, value: [(u.value[0] ?? 0) + offset] };
+		if (u.name === 'u_time') return { ...u, value: [(u.value[0] ?? 0) + offset / (fps > 0 ? fps : 1)] };
+		return u;
+	});
 }
 
 /** A deterministic 0..1 random number for (`seed`, `n`) — e.g. per frame in time hooks: `fxRandom(ctx.seed, frame)`. */
@@ -1314,6 +1352,21 @@ const FORBIDDEN_GLSL: readonly (readonly [RegExp, string])[] = [
  * Structural problems of a GPU effect spec (empty = valid). The catalogue test runs this over every registered
  * effect; it cannot compile GLSL (see the GL test in packages/compositions/test for that).
  */
+/** The refusal an effect that `requiresFloat` gets without float render targets: its code and message, else null. */
+export function fxFloatRefusal(
+	spec: Pick<EffectSpec, 'id' | 'label' | 'gpu'>,
+): { code: string; message: string } | null {
+	const r = spec.gpu?.requiresFloat;
+	if (!r) return null;
+	return {
+		code: typeof r === 'string' ? r : FX_NEEDS_FLOAT,
+		message: `"${spec.label}" needs float render targets (EXT_color_buffer_float), which this browser lacks; it is never drawn on 8-bit targets`,
+	};
+}
+
+/** Code of the refusal of a `requiresFloat` effect that names no code of its own. */
+export const FX_NEEDS_FLOAT = 'FX_NEEDS_FLOAT';
+
 export function validateGpuEffect(spec: EffectSpec): string[] {
 	const out: string[] = [];
 	const gpu = spec.gpu;
@@ -1324,6 +1377,8 @@ export function validateGpuEffect(spec: EffectSpec): string[] {
 	if (!spec.capabilities.export.includes('remotion')) at(`capabilities.export must include 'remotion'`);
 	if (spec.color) at('a gpu effect cannot also be a colour op (pick one realization)');
 	if (spec.appliesTo !== 'video') at('gpu effects apply to video');
+	if (typeof gpu.requiresFloat === 'string' && !/^[A-Z][A-Z0-9_]{2,63}$/.test(gpu.requiresFloat))
+		at('requiresFloat names its refusal code in capitals and underscores (e.g. TITLE_LOOK_NEEDS_FLOAT)');
 	const names = new Set<string>();
 	for (const p of spec.params) {
 		if (!NAME_RE.test(p.name)) at(`param "${p.name}": names are letters and digits, starting with a letter`);

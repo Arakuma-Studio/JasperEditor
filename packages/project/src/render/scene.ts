@@ -9,6 +9,8 @@ import { type ResolvedPuppet, resolvePuppet } from '../puppet/model.ts';
 import { evaluateEffectParam } from '../registry/effects.ts';
 import type { ParamValue, Vec2 } from '../schema/common.ts';
 import { PUPPET_PIN_PROPS } from '../schema/puppet.ts';
+import { type PatternOrigin, readPatternOrigin } from '../schema/sequence.ts';
+import { activeCameraAt, type CameraState, project3dProps } from '../three-d/scene.ts';
 import { TITLE_LOOK_EFFECT_ID } from '../title-looks/model.ts';
 import {
 	appearanceAnimated,
@@ -16,7 +18,6 @@ import {
 	resolveAppearance,
 	resolveGlobalLight,
 } from '../title-looks/resolve.ts';
-import { activeCameraAt, type CameraState, project3dProps } from '../three-d/scene.ts';
 import { cropWindow } from './crop.ts';
 import {
 	applyMat3,
@@ -40,6 +41,11 @@ import {
 	visibleRect,
 } from './transform.ts';
 
+const patternOriginField = (v: unknown): { patternOrigin?: PatternOrigin } => {
+	const o = readPatternOrigin(v);
+	return o ? { patternOrigin: o } : {};
+};
+
 export type ResolvedEffect = {
 	id: string;
 	effectId: string;
@@ -54,6 +60,8 @@ export type ResolvedEffect = {
 	warpAnalysis?: WarpAnalysisData;
 	/** spec 19: a look's appearance at the frame (`jasper.title-look`). */
 	appearance?: ResolvedAppearance;
+	/** TL-121: the seeded pattern this instance continues (a razor cut, duplicate or paste of another instance). */
+	patternOrigin?: PatternOrigin;
 };
 
 /** Effect id of the corner pin (M2, S09:TRK-050). Params: TL/TR/BR/BL as vec2 normalized to the layer box. */
@@ -213,6 +221,7 @@ export function resolveLayerProps(c: LayerPropertySource, t: number): ResolvedLa
 		...(fx.appearance && fx.effectId === TITLE_LOOK_EFFECT_ID
 			? { appearance: resolveAppearance(fx.appearance, t, sequenceLightAt(c, t)) }
 			: {}),
+		...patternOriginField(fx.patternOrigin),
 	}));
 	// crop-order: the window the stack's crops leave visible (flips after a crop mirror it; several intersect).
 	const crop: Crop | null = cropWindow(effects);

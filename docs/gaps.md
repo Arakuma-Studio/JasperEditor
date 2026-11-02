@@ -879,11 +879,33 @@ Status of the foundation; streams still in progress update this list. Evidence: 
 - **Requires HTML-in-Canvas for text** (TL-039): without it (a Chrome without `--enable-features=CanvasDrawElement`) a look on a
   DOM layer is not drawn, the preview shows the chip "GPU effects need HTML-in-Canvas here" and a render fails
   `FX_LAYER_UNSUPPORTED`. Nothing is silently dropped.
-- **Requires float targets** (TL-032): without them the preview shows the effect-failed chip and a render fails with
-  `TITLE_LOOK_NEEDS_FLOAT`. A plan-time blocker waits on `PlanCapabilities` reporting WebGL (TL-124): today the refusal comes
-  when the frame is drawn.
+- **Requires float targets** (TL-032, TL-123): without them the preview bypasses the look with a chip, a render fails with
+  `TITLE_LOOK_NEEDS_FLOAT` and the export plan refuses when the probe answered (TL-124).
 - **Software rendering is slow**: ≈ 1.3 s per 1080p frame for a six-layer look on a title-sized box on SwiftShader, and an
   animated title redraws its whole stack every frame ([performance.md](performance.md) §7). Nothing has been measured on a GPU.
+
+### title-looks fixes (spec 19 §13)
+Fixes the Title Looks feature depends on, each with a regression test that failed before it; details, decisions and
+evidence in [wp-notes/title-looks-fixes.md](wp-notes/title-looks-fixes.md). **Done:** TL-120 (media use-counting for
+light environments and effect `{mediaId}` params, including force-delete clearing and a repair for dangling effect
+media), TL-121 (persisted `EffectInstance.patternOrigin`: seed and `u_frame` / `u_time` continue across a razor cut;
+duplicate and paste keep the pattern), TL-122 (`contentBleed` honours `gpu.padding`), TL-123 (`GpuEffect.requiresFloat`),
+TL-124 (`PlanCapabilities.webgl`, plan refusal), TL-125 (`snapshotGlNeeds`), TL-002 licence text, TL-004 wording.
+Limits that stay open:
+- Transition params with `{mediaId}` (e.g. a gradient wipe image) are not counted by `item.delete`, `collectOrphans`,
+  INV-014 or Project Manager; only `media.removeUnused` reads them.
+- Razor-cut continuity covers `u_seed`, `u_frame`, `u_time` and the hooks that hash a frame number (film grain frame
+  index, dust and stain counts, lightning zap seed, strobe randomness). Effects that build their own clock from
+  `ctx.frame` in a `uniforms` hook (wiggle, weather, wave world, flicker) and stepped simulations restart at the cut;
+  `u_clipProgress` and `u_duration` stay clip-relative on purpose.
+- Two stacked duplicates of a seeded effect draw the same pattern; change the effect's `seed` param to tell them apart.
+- `contentBleed` sums the largest side of each effect's padding (conservative: never smaller than the stacked
+  per-side padding) and keeps the full-frame bake for an animated span of more than 20 000 frames.
+- The export plan refuses for missing WebGL2 or float targets only when the probe answered; an unprobed browser (Remotion
+  not ready) is left to the render. The host's own float refusal and the preview chip have no automated test (SwiftShader
+  has float targets).
+- `schema v12` has to carry `EffectInstance.patternOrigin` (the Title Looks bump); this work adds the field and its
+  fields-table row but not the version step.
 
 ## For agents choosing work
 

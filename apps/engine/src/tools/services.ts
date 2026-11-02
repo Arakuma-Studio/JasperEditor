@@ -214,6 +214,8 @@ export async function createCoreServices(
 				fframes: caps.render.fframes,
 				mgMasters: exportsSvc.hasMgMasterProvider,
 				...(check.decoders.length ? { decoders: check.decoders } : {}),
+				// TL-124: probed once by the Remotion service and cached; awaited only when the browser must draw GL.
+				webgl: () => remotion.probeWebgl(),
 			};
 		},
 	});
