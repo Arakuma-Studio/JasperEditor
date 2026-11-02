@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -206,6 +206,35 @@ describe('ported source records (licenses/ported, AGENTS.md §3.4)', () => {
 		])
 			expect(section).toContain(required);
 		expect(text).not.toContain('How to write a record');
+	});
+
+	it('introduces the records as "these projects": a record may name a source without an open-source licence (TL-004)', () => {
+		const root = tree({ 'blur.md': RECORD });
+		const records = collectPorted(root);
+		const text = renderNotices([], records, portedLicenseTexts(root, records));
+		expect(text).toContain('ported from these projects');
+		expect(text).not.toContain('open-source projects');
+	});
+
+	it('ships the LicenseRef-Pachislop text: permission by direct message on 2026-11-02, no licence file in the repository (TL-002)', () => {
+		const shipped = readFileSync(join(repo, 'licenses', 'texts', 'LicenseRef-Pachislop.txt'), 'utf8');
+		expect(shipped).toMatch(/permission by direct message on 2026-11-02/);
+		expect(shipped).toMatch(/repository has no licence file/);
+		expect(shipped).toContain('Copyright (c) 2026 SafEight');
+		const root = tree({
+			'pachislop-x.md': [
+				'# Pachislop X',
+				'',
+				'- **Upstream:** https://github.com/SafEight/pachislop (commit `dd952d0`)',
+				'- **Licence:** LicenseRef-Pachislop',
+				'- **Copyright:** Copyright (c) 2026 SafEight',
+			].join('\n'),
+		});
+		writeFileSync(join(root, 'licenses', 'texts', 'LicenseRef-Pachislop.txt'), shipped);
+		const records = collectPorted(root);
+		expect(records[0].licenseIds).toEqual(['LicenseRef-Pachislop']);
+		const text = renderNotices([], records, portedLicenseTexts(root, records));
+		expect(text).toContain('permission by direct message on 2026-11-02');
 	});
 
 	it('accepts the plain forms other records use', () => {

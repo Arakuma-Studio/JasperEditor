@@ -5,7 +5,7 @@ import { defineShaderEffect } from '../define.ts';
 import { GLSL_COLOR } from '../glsl/color.ts';
 import { fxParam } from '../params.ts';
 import { gaussianBlurPasses } from '../passes.ts';
-import { type FxFrameContext, fxRandom } from '../shader.ts';
+import { type FxFrameContext, fxPatternFrame, fxRandom } from '../shader.ts';
 import {
 	blendWithOriginalParam,
 	evolutionParams,
@@ -200,7 +200,7 @@ export function strobeOn(p: EffectParams, ctx: Pick<FxFrameContext, 'frame' | 'f
 	// A strobe of at least one frame when Duration > 0 (sub-frame durations still flash once per period).
 	const periodic = duration > 0 && phase < Math.max(duration, 1 / fps - 1e-9);
 	const prob = Math.min(1, Math.max(0, num(p.probability, 0) / 100));
-	const random = prob > 0 && fxRandom(ctx.seed, ctx.frame) < prob;
+	const random = prob > 0 && fxRandom(ctx.seed, fxPatternFrame(ctx)) < prob;
 	return periodic || random;
 }
 

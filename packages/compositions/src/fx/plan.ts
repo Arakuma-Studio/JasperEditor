@@ -58,7 +58,8 @@ export const MASKS_BYPASS_ID = 'jasper.masks';
 export type FxBypass = {
 	fxId: string;
 	effectId: string;
-	reason: 'gpu-unavailable' | 'shader-failed' | 'layer-unsupported';
+	/** `needs-float` (TL-123): the effect `requiresFloat` and this browser has no float render targets. */
+	reason: 'gpu-unavailable' | 'shader-failed' | 'layer-unsupported' | 'needs-float';
 };
 
 export type LayerFxPlan = {
@@ -82,6 +83,11 @@ export type PlanLayerFxOptions = {
 	gpu: 'ok' | 'lost' | 'unavailable';
 	/** Effects whose shader failed (preview bypass). */
 	failed?: (effectId: string) => boolean;
+	/**
+	 * Whether float render targets exist (`EXT_color_buffer_float`, default true). Without them an effect with
+	 * `gpu.requiresFloat` is bypassed (reason `needs-float`) instead of running on 8-bit targets (TL-123).
+	 */
+	floatTargets?: boolean;
 	/** Preview before/after: colour effects of the layer are bypassed (S06:CGU-005). */
 	colorBypass?: boolean;
 	/** Plan context for the padding hooks (layer box, scale, fps; frame and clip when known). */
@@ -161,6 +167,10 @@ export function planLayerFx(
 	const runnable = ordered.filter((fx) => {
 		const spec = specOf(fx)!;
 		if ((spec.color || spec.gradeBypass) && opts.colorBypass) return false;
+		if (spec.gpu?.requiresFloat && opts.floatTargets === false) {
+			bypassed.push({ fxId: fx.id, effectId: fx.effectId, reason: 'needs-float' });
+			return false;
+		}
 		if (spec.gpu && opts.failed?.(fx.effectId)) {
 			bypassed.push({ fxId: fx.id, effectId: fx.effectId, reason: 'shader-failed' });
 			return false;

@@ -24,6 +24,7 @@ import {
 	FX_MAX_PADDING,
 	type FxFrameContext,
 	fxClipProgress,
+	fxFrameOffset,
 	fxParamsAtFn,
 	fxSeed,
 	gpuPadding,
@@ -212,8 +213,9 @@ export function loweredLayerTaps(o: {
 			pxScale: 1,
 			fps,
 			frame: lf,
+			patternFrame: lf + fxFrameOffset(fx.patternOrigin),
 			duration: c.duration,
-			seed: fxSeed(c.clipId, fx.id, fx.params as EffectParams),
+			seed: fxSeed(c.clipId, fx.id, fx.params as EffectParams, fx.patternOrigin),
 			progress: fxClipProgress(lf, c.duration),
 			...(at ? { paramsAt: at } : {}),
 		};

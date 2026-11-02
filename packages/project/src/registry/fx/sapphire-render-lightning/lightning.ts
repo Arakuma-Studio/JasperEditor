@@ -12,7 +12,7 @@ import { GLSL_COLOR } from '../glsl/color.ts';
 import { GLSL_COMPOSITE } from '../glsl/composite.ts';
 import { fxParam, sapphireCommonParams } from '../params.ts';
 import { gaussianBlurPasses } from '../passes.ts';
-import type { FxFrameContext, FxPlanContext, ShaderPass } from '../shader.ts';
+import { type FxFrameContext, type FxPlanContext, fxPatternFrame, type ShaderPass } from '../shader.ts';
 import {
 	clamp,
 	combineParam,
@@ -128,7 +128,7 @@ void main() {
 
 const commonZapUniforms = (p: EffectParams, ctx: FxFrameContext) => ({
 	u_tau: zapTau(p, ctx),
-	u_zseed: zapSeed(ctx.seed, ctx.frame, num(p.jitterFrames)),
+	u_zseed: zapSeed(ctx.seed, fxPatternFrame(ctx), num(p.jitterFrames)),
 	u_glowGain: glowGain(num(p.glowWidth, 0.224), num(p.boltWidth, 0.07)),
 	...combineUniforms(p, ZAP_COMBINE, 'screen'),
 });
@@ -349,7 +349,7 @@ export const S_ULTRA_ZAP = defineShaderEffect({
 		kind: 'generator',
 		uniforms: (p, ctx) => ({
 			u_tau: zapTau(p, ctx),
-			u_zseed: zapSeed(ctx.seed, ctx.frame, num(p.jitterFrames)),
+			u_zseed: zapSeed(ctx.seed, fxPatternFrame(ctx), num(p.jitterFrames)),
 			u_glowGain: glowGain(num(p.glowWidth, 0.3), num(p.boltWidth, 0.06)),
 			u_loop: num(p.loopStart) + (ctx.frame / Math.max(1, ctx.fps)) * num(p.loopSpeed),
 			...combineUniforms(p, ZAP_COMBINE, 'screen'),

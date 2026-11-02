@@ -552,6 +552,11 @@ export function runShaderPlan(
 ): void {
 	const { gl } = h;
 	if (h.lost || gl.isContextLost()) throw new Error('WEBGL_UNAVAILABLE: the fx GPU context is lost');
+	// TL-123: never the silent 8-bit fallback of `target()` for an effect that declared it needs float targets.
+	if (plan.requiresFloat && !h.floatTargets)
+		throw new Error(
+			`${plan.requiresFloat}: effect ${plan.effectId} needs float render targets (EXT_color_buffer_float)`,
+		);
 	const W = plan.canvas.width;
 	const H = plan.canvas.height;
 	ensureCanvas(h, W, H);

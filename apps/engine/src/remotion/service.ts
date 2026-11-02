@@ -11,13 +11,14 @@ import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderPagesInOwnWindows } from '@jasper/compositions/render-host';
 import { ENV } from '@jasper/config';
-import { defaultEffectRegistry } from '@jasper/project';
+import { snapshotGlNeeds } from '@jasper/project';
 import { animejsVersion } from '../anime/index.ts';
 import { renderParallelism } from '../gaps/render-budget.ts';
 import { JobError } from '../jobs/types.ts';
 import { selfCheck } from '../tools/ffmpeg.ts';
 import { binaryNames, type RemotionBinaries } from '../tools/lgpl.ts';
 import type { RemotionFfmpegInfo } from './export-plan.ts';
+import { webglRefusal } from './webgl-refusal.ts';
 
 const COMPOSITION_ID = 'JasperSequence';
 export const REMOTION_VERSION = '4.0.499';
@@ -122,6 +123,8 @@ export type RemotionWebglStatus = {
 	gl: RemotionGl | null;
 	/** `gl.RENDERER` of the probe context, e.g. "ANGLE (Google, Vulkan 1.3.0 (SwiftShader …))". */
 	renderer?: string;
+	/** TL-123: whether the probe context has `EXT_color_buffer_float` (float render targets); absent = not probed. */
+	floatTargets?: boolean;
 	message?: string;
 };
 
@@ -621,14 +624,17 @@ export class RemotionService {
 					onBrowserLog: null,
 					onLog: () => undefined,
 				});
-				const renderer = (await page.evaluate(() => {
+				const probe = (await page.evaluate(() => {
 					const c = document.createElement('canvas');
 					const ctx = c.getContext('webgl2');
 					if (!ctx) return null;
 					const dbg = ctx.getExtension('WEBGL_debug_renderer_info');
-					return String(ctx.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : ctx.RENDERER));
-				})) as string | null;
-				if (renderer) return { state: 'ok', gl, renderer };
+					return {
+						renderer: String(ctx.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : ctx.RENDERER)),
+						floatTargets: !!ctx.getExtension('EXT_color_buffer_float'),
+					};
+				})) as { renderer: string; floatTargets: boolean } | null;
+				if (probe) return { state: 'ok', gl, renderer: probe.renderer, floatTargets: probe.floatTargets };
 				errors.push(`${gl ?? 'default'}: no WebGL2 context`);
 			} catch (e) {
 				errors.push(`${gl ?? 'default'}: ${(e as Error).message.slice(0, 200)}`);
@@ -650,14 +656,12 @@ export class RemotionService {
 	 * fails with `WEBGL_UNAVAILABLE` (never silently ungraded). Wave 1 (fx framework): GPU shader effects too.
 	 */
 	private async assertWebglFor(inputProps: Record<string, unknown>): Promise<void> {
-		if (!docHasColorEffects(inputProps.doc)) return;
+		// TL-125: nested sequences, GPU transitions, masked effects, blend modes and 3D layers need it too.
+		const needs = snapshotGlNeeds(inputProps.doc);
+		if (needs.length === 0) return;
 		const s = await this.probeWebgl();
-		if (s.state === 'unavailable')
-			throw new JobError(
-				'WEBGL_UNAVAILABLE',
-				`Colour grading and GPU effects on the Remotion path need WebGL2 in the render browser, which is unavailable here${s.message ? ` (${s.message})` : ''}`,
-				false,
-			);
+		const refusal = webglRefusal(needs, s);
+		if (refusal) throw new JobError(refusal.code, refusal.message, false);
 	}
 
 	/**
@@ -1013,23 +1017,6 @@ export class RemotionService {
 	}
 }
 
-/** True when a render doc (RenderSnapshot) has an enabled colour effect (registry `color` op). */
-function docHasColorEffects(doc: unknown): boolean {
-	const tracks = (
-		doc as { videoTracks?: { clips?: { effects?: { effectId: string; enabled: boolean }[] }[] }[] }
-	)?.videoTracks;
-	if (!Array.isArray(tracks)) return false;
-	for (const t of tracks)
-		for (const c of t.clips ?? [])
-			for (const fx of c.effects ?? [])
-				if (
-					fx.enabled &&
-					(defaultEffectRegistry.get(fx.effectId)?.color || defaultEffectRegistry.get(fx.effectId)?.gpu)
-				)
-					return true;
-	return false;
-}
-
 /**
  * Concurrent heavy compositions can time out under software GL or host contention even when one page
  * succeeds. Retry RENDER_TIMEOUT once on a single page; a repeated timeout retains the typed error.
@@ -1062,7 +1049,11 @@ function mapRenderError(e: unknown, signal: AbortSignal): Error {
 	if (/WEBGL_UNAVAILABLE/.test(msg)) return new JobError('WEBGL_UNAVAILABLE', msg.slice(0, 1500), false);
 	// Wave 1 (fx framework): a GPU effect whose shader does not compile, or that a layer kind cannot run.
 	// color-mgmt: a scope drawn through HTML-in-Canvas inside another one (the browser cannot nest them).
-	const fx = /\b(FX_SHADER_ERROR|FX_LAYER_UNSUPPORTED|CANVAS_NESTED)\b/.exec(msg)?.[1];
+	// TL-123: an effect that requires float render targets (FX_NEEDS_FLOAT, TITLE_LOOK_NEEDS_FLOAT…) is refused.
+	const fx =
+		/\b(FX_SHADER_ERROR|FX_LAYER_UNSUPPORTED|CANVAS_NESTED|[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*_NEEDS_FLOAT)\b/.exec(
+			msg,
+		)?.[1];
 	if (fx) return new JobError(fx, msg.slice(0, 1500), false);
 	const frame = /frame[^\d]{0,12}(\d+)/i.exec(msg)?.[1];
 	if (/delayRender|timeout|timed out/i.test(msg)) {

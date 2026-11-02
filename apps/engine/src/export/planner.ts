@@ -35,6 +35,7 @@ import {
 	rotoExportIssues,
 	type SnapshotOptions,
 	sequenceFormatOf,
+	snapshotGlNeeds,
 	transitionSpec,
 	warpExportIssues,
 } from '@jasper/project';
@@ -59,6 +60,7 @@ import {
 	TEMPLATE_ASSETS_UNAVAILABLE,
 	templateAssetsMessage,
 } from '../remote-assets/plan.ts';
+import { type WebglStatus, webglRefusal } from '../remotion/webgl-refusal.ts';
 import {
 	type EncoderRequest,
 	fitOutputFormat,
@@ -93,6 +95,12 @@ export type PlanCapabilities = {
 	mgMasters: boolean;
 	/** `ffmpeg -decoders` of the engine's build; absent = unknown (assume the usual decoders exist). */
 	decoders?: readonly string[];
+	/**
+	 * TL-124: WebGL2 of the render browser (and whether it has float render targets). The Remotion service probes once
+	 * and caches the answer; the planner awaits it only when a part drawn by the browser needs WebGL2. Absent =
+	 * unknown (nothing is refused; the render decides).
+	 */
+	webgl?: () => Promise<WebglStatus>;
 };
 
 /** Largest frame side any path renders (16K). */
@@ -842,6 +850,32 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		}
 		path = 'remotion';
 	} else path = nativeEligible ? nativePath : 'remotion';
+
+	// TL-124 / TL-125 / TL-123: what the browser draws and needs WebGL2 for (colour and GPU effects, also in nested
+	// sequences; GPU transitions; masked effects; blend modes; 3D layers) is refused here when the render browser has
+	// none (or lacks the float targets an effect requires), naming the causes, not as a failure in the middle of a render.
+	if ((path === 'remotion' || path === 'hybrid') && deps.capabilities.webgl) {
+		const all = snapshotGlNeeds(snapshot, deps.effects);
+		const bakedIds = new Set(baked.map((b) => b.clipId));
+		const needs =
+			path === 'remotion'
+				? all
+				: all.filter(
+						(n) => (n.clipId && bakedIds.has(n.clipId)) || (n.transitionId && bakedIds.has(n.transitionId)),
+					);
+		if (needs.length > 0) {
+			const refusal = webglRefusal(needs, await deps.capabilities.webgl());
+			if (refusal)
+				throw new PlanError(refusal.code, 409, refusal.message, {
+					path,
+					blockers: refusal.needs.map((n) => ({
+						path,
+						reason: `${n.label}: ${refusal.code === 'WEBGL_UNAVAILABLE' ? 'needs WebGL2' : refusal.message}`,
+						...(n.clipId ? { itemId: n.clipId } : n.transitionId ? { itemId: n.transitionId } : {}),
+					})),
+				});
+		}
+	}
 
 	// S11:LBK-024: baking needs the browser too; a pending download is not a blocker.
 	if (path === 'hybrid' && deps.capabilities.remotionLocal === 'needs-browser-download')
