@@ -29,6 +29,8 @@ export type Checks = {
 	order?: string[];
 	maxCalls?: number;
 	maxCallsOf?: Record<string, number>;
+	/** Calls of a tool that went through: refused ones and `dryRun: true` do not count. */
+	maxAppliedOf?: Record<string, number>;
 	/** The last call is this tool (or none of the tools after it were called). */
 	endsAfter?: string | string[];
 	/** No call was refused with these codes; "*" is any error. */
@@ -78,6 +80,10 @@ export function grade(sample: SampleRecord, checks: Checks): Grade {
 	for (const [tool, max] of Object.entries(checks.maxCallsOf ?? {})) {
 		const n = sample.calls.filter((c) => c.tool === tool).length;
 		if (n > max) failures.push(`${tool} called ${n} times, at most ${max}`);
+	}
+	for (const [tool, max] of Object.entries(checks.maxAppliedOf ?? {})) {
+		const n = sample.calls.filter((c) => c.tool === tool && !c.isError && c.args.dryRun !== true).length;
+		if (n > max) failures.push(`${tool} applied ${n} times, at most ${max}`);
 	}
 	if (checks.endsAfter) {
 		const last = sample.calls.at(-1)?.tool;

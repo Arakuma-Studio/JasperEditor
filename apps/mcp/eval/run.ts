@@ -153,6 +153,7 @@ async function runSample(input: {
 			...(testCase.setup?.faults ? { faults: testCase.setup.faults } : {}),
 			...(testCase.setup?.review ? { review: testCase.setup.review } : {}),
 			...(testCase.setup?.brief ? { brief: testCase.setup.brief } : {}),
+			...(testCase.setup?.seed ? { seed: testCase.setup.seed } : {}),
 			...(testCase.setup?.exportPolls ? { exportPolls: testCase.setup.exportPolls } : {}),
 			...(testCase.setup?.verify ? { verify: testCase.setup.verify } : {}),
 		};

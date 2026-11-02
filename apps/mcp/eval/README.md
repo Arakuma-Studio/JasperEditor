@@ -46,6 +46,7 @@ copy strands the real login, and two processes spending one token can log it out
 cd apps/mcp
 pnpm eval --dry-run                                    # build every case, no model calls
 pnpm eval:measure                                      # what the model receives, per context
+pnpm eval:measure --write-budget                       # after a real reduction: lower budget.json
 pnpm eval --account <label> --case <id> --samples 1 --out /tmp/mcpeval/check
 pnpm eval --account <a>,<b> --source-root <base checkout> --out /tmp/mcpeval/base
 pnpm eval --account <a>,<b> --out /tmp/mcpeval/after --baseline /tmp/mcpeval/base/results.jsonl

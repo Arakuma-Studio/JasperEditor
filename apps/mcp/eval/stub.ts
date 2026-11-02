@@ -34,7 +34,10 @@ export async function buildStub(config: StubConfig) {
 	const { createJasperMcpServer } = (await import(
 		join(config.sourceRoot, 'apps/mcp/src/server.ts')
 	)) as typeof import('../src/server.ts');
-	const engine = createFakeEngine(config.engine);
+	const { EngineError } = (await import(
+		join(config.sourceRoot, 'packages/engine-client/src/index.ts')
+	)) as typeof import('@jasper/engine-client');
+	const engine = createFakeEngine(config.engine, EngineError);
 	const link = {
 		target: { url: 'http://engine.eval', token: null, source: 'explicit' as const },
 		client: async () => engine.client,

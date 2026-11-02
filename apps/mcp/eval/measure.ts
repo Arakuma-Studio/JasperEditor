@@ -1,6 +1,7 @@
 // What the model actually receives from this server, per context, from a real `tools/list`: name, description, input
 // schema and instructions. Titles and annotations stay out: harnesses keep them from the model.
 //   pnpm --filter @jasper/mcp eval:measure
+import { writeFileSync } from 'node:fs';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createJasperMcpServer } from '../src/server.ts';
@@ -85,6 +86,14 @@ export async function measureContexts(): Promise<{ contexts: ContextWeight[]; to
 
 if (process.argv[1]?.endsWith('measure.ts')) {
 	const { contexts, tools } = await measureContexts();
+	if (process.argv.includes('--write-budget')) {
+		const headroom = (n: number) => Math.ceil(n * 1.02);
+		const budget = {
+			contexts: Object.fromEntries(contexts.map((c) => [c.context, headroom(c.total)])),
+			tool: headroom(tools[0]?.total ?? 0),
+		};
+		writeFileSync(new URL('./budget.json', import.meta.url), `${JSON.stringify(budget, null, '\t')}\n`);
+	}
 	console.table(contexts.map((c) => ({ ...c, tokens: Math.round(c.total / 4) })));
 	console.table(tools.slice(0, 10));
 	process.exit(0);

@@ -3,7 +3,7 @@
 // (`applyTransaction`, `runAgentQuery`), so an edit changes the project and a bad command gets its real `E_*`. Anything
 // not modelled here fails loudly and marks the sample invalid: a gap in the fake is an eval bug, not agent behaviour.
 import { AudioAnalyzeResultSchema, ExportVerifyResultSchema, TranscriptionResultSchema } from '@jasper/api';
-import { EngineError } from '@jasper/engine-client';
+import { EngineError as DefaultEngineError } from '@jasper/engine-client';
 import {
 	applyTransaction,
 	createCounterIdSource,
@@ -57,6 +57,8 @@ export type EngineSetup = {
 	review?: 'accept' | 'reject';
 	/** A brief stored on the sequence. */
 	brief?: Record<string, unknown>;
+	/** Commands already in the project, for a history that claims them. */
+	seed?: Record<string, unknown>[];
 	/** Polls an export takes to finish; default 1. */
 	exportPolls?: number;
 	/** What an export's verification finds. */
@@ -147,7 +149,14 @@ export type FakeEngine = {
 	takeUnmodelled(): string[];
 };
 
-export function createFakeEngine(setup: EngineSetup = {}): FakeEngine {
+/**
+ * `EngineError` is the class of the checkout under test: its handlers test `instanceof`, and a second copy of the class
+ * would turn every engine error into `INTERNAL`, a worse text than real agents get.
+ */
+export function createFakeEngine(
+	setup: EngineSetup = {},
+	EngineError: typeof DefaultEngineError = DefaultEngineError,
+): FakeEngine {
 	const registries = defaultRegistries();
 	const ids = createCounterIdSource(41);
 	const mode = setup.project ?? 'interview';
@@ -265,6 +274,16 @@ export function createFakeEngine(setup: EngineSetup = {}): FakeEngine {
 			const clips = Object.values(p.doc.sequences[seqId]!.clips).sort((x, y) => x.start - y.start);
 			if (clips[0]) vars.clip = clips[0].id;
 			if (clips[1]) vars.linkedClip = clips[1].id;
+		}
+		if (setup.seed) {
+			const r = applyTo(projectId, {
+				protocol: 'jasper.tx/1',
+				label: 'seed',
+				origin: { agent: 'eval' },
+				sequenceId: seqId,
+				commands: setup.seed,
+			});
+			if (!r.ok) throw new Error(`eval seed failed: ${JSON.stringify(r.errors)}`);
 		}
 		if (setup.brief) {
 			const r = applyTo(projectId, {
@@ -411,31 +430,6 @@ export function createFakeEngine(setup: EngineSetup = {}): FakeEngine {
 				levels: { floorDb: -60, speechDb: -20, speechThresholdDb: -40 },
 			};
 		},
-		mediaDerive: ({ params, body }) => {
-			const { recipe } = body as unknown as { recipe: { op: string; format?: string } };
-			const name = `derived-${recipe.op}.${recipe.format ?? 'wav'}`;
-			return jobView(
-				newJob('derive', 'Derive media', 1, {
-					registered: {
-						mediaKey: `mk_${recipe.op}`,
-						kind: 'audio',
-						fingerprint: `q1:${recipe.op.padStart(64, '0')}`,
-						originalName: name,
-						sizeBytes: 1,
-						container: 'wav',
-						probe: probe(40, true, false),
-						locators: [{ type: 'path', path: `/home/user/derived/${name}`, relativeToProject: null }],
-						browserPlayable: 'yes',
-					},
-					fromMediaKey: params?.key ?? '',
-					recipe,
-					recipeVersion: 1,
-					recipeHash: `hash_${recipe.op}`,
-					reused: false,
-					notes: [],
-				}),
-			);
-		},
 		mediaFrames: ({ params, body }) => {
 			const { times, width } = body as unknown as { times: number[]; width: number };
 			const height = Math.max(16, Math.round((width * 9) / 16));
@@ -577,6 +571,31 @@ export function createFakeEngine(setup: EngineSetup = {}): FakeEngine {
 					sizeBytes: 48_000_000,
 				}),
 			),
+		deriveMedia: (key: string, req: { recipe: { op: string; format?: string } }) => {
+			const { recipe } = req;
+			const name = `derived-${recipe.op}.${recipe.format ?? 'wav'}`;
+			return jobView(
+				newJob('derive', 'Derive media', 1, {
+					registered: {
+						mediaKey: `mk_${recipe.op}`,
+						kind: 'audio',
+						fingerprint: `q1:${recipe.op.padStart(64, '0')}`,
+						originalName: name,
+						sizeBytes: 1,
+						container: 'wav',
+						probe: probe(40, true, false),
+						locators: [{ type: 'path', path: `/home/user/derived/${name}`, relativeToProject: null }],
+						browserPlayable: 'yes',
+					},
+					fromMediaKey: key,
+					recipe,
+					recipeVersion: 1,
+					recipeHash: `hash_${recipe.op}`,
+					reused: false,
+					notes: [],
+				}),
+			);
+		},
 		analyzeAudio: () =>
 			jobView(
 				newJob(

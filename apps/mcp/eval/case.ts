@@ -17,6 +17,7 @@ export const ChecksSchema = z.strictObject({
 	order: z.array(z.string()).optional(),
 	maxCalls: z.number().int().optional(),
 	maxCallsOf: z.record(z.string(), z.number().int()).optional(),
+	maxAppliedOf: z.record(z.string(), z.number().int()).optional(),
 	endsAfter: z.union([z.string(), z.array(z.string())]).optional(),
 	noErrors: z.array(z.string()).optional(),
 	shellMustNot: z.array(z.string()).optional(),
@@ -79,6 +80,7 @@ export const CaseSchema = z.strictObject({
 			faults: z.record(z.string(), EngineFault).optional(),
 			review: z.enum(['accept', 'reject']).optional(),
 			brief: z.record(z.string(), z.unknown()).optional(),
+			seed: z.array(z.record(z.string(), z.unknown())).optional(),
 			exportPolls: z.number().int().optional(),
 			verify: z.strictObject({ failRow: z.string().optional() }).optional(),
 		})

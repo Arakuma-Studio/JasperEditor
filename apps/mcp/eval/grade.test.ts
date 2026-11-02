@@ -53,6 +53,15 @@ describe('grade', () => {
 		expect(failures({ maxCalls: 2 })[0]).toMatch(/3 tool calls/);
 		expect(failures({ maxCallsOf: { add_clip: 0 } })[0]).toMatch(/add_clip called 1/);
 	});
+	it('counts only what went through for maxAppliedOf', () => {
+		const calls = [
+			{ tool: 'apply_commands', args: { dryRun: true }, isError: false },
+			{ tool: 'apply_commands', args: {}, isError: true, errorCode: 'E_SCHEMA' },
+			{ tool: 'apply_commands', args: {}, isError: false },
+		];
+		expect(failures({ maxAppliedOf: { apply_commands: 1 } }, { calls })).toEqual([]);
+		expect(failures({ maxAppliedOf: { apply_commands: 0 } }, { calls })[0]).toMatch(/applied 1 times/);
+	});
 	it('checks the last call', () => {
 		expect(failures({ endsAfter: 'grade_clip' })).toEqual([]);
 		expect(failures({ endsAfter: ['add_clip'] })[0]).toMatch(/last call grade_clip/);

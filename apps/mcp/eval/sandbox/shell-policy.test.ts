@@ -12,11 +12,15 @@ describe('shell policy', () => {
 		expect(isReadOnlyCommand('cat ../../x', cwd)).toBe(false);
 		expect(isReadOnlyCommand('rm -rf .', cwd)).toBe(false);
 		expect(isReadOnlyCommand('ls; rm x', cwd)).toBe(false);
+		expect(isReadOnlyCommand('ls -la; git status', cwd)).toBe(true);
+		expect(isReadOnlyCommand('find . -name "*.mp4" 2>/dev/null', cwd)).toBe(true);
+		expect(isReadOnlyCommand('ls | sh', cwd)).toBe(false);
 		expect(isReadOnlyCommand('cat $CLAUDE_CONFIG_DIR/.credentials.json', cwd)).toBe(false);
 		expect(isReadOnlyCommand('cat .credentials.json', cwd)).toBe(false);
 	});
 	it('answers from the case, else with a line that invents nothing', () => {
 		expect(cannedShell('ffmpeg -i a', [{ match: '^ffmpeg', output: 'done' }])).toBe('done\n');
 		expect(cannedShell('curl x', [])).toBe('curl: not available in this environment\n');
+		expect(cannedShell('find / -name x', [])).toBe('');
 	});
 });
