@@ -95,6 +95,7 @@ describe('proposal features', () => {
 			'transcript-cleanup': false,
 			'transcript-correction': false,
 			'rough-cut': false,
+			'title-art': false,
 		});
 		expect(r.report.some((e) => e.action === 'reset-project-settings')).toBe(true);
 		expect(checkInvariants(r.document)).toEqual([]);

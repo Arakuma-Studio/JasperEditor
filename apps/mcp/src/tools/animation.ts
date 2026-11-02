@@ -1,45 +1,59 @@
+import type { ProposalResponse } from '@jasper/api';
 import {
+	defaultRegistries,
 	fpsOf,
+	isSetupItem,
 	LATEST_TEXT_ANIMATION_SPECS,
 	latestTextAnimationSpec,
 	type MgCompositionInfo,
 	type ProjectDocument,
+	type Proposal,
+	previewProposal,
 	type Sequence,
 	sequenceDuration,
 	sequenceTimecode,
 	TEXT_ANIMATION_REFERENCE_FPS,
 	TEXT_ANIMATION_SIDES,
 	type TextAnimationSide,
+	titleTiming,
 	toJsonSchema,
 } from '@jasper/project';
 import { z } from 'zod';
 import { ProjectIdArg, TIME_FORMATS, TimeArgSchema } from '../arguments.ts';
 import {
-	captureStill,
 	defineTool,
 	EDIT_IDEMPOTENT,
 	frameOf,
+	type LoadedDoc,
 	loadDoc,
-	progressReporter,
 	READ_ONLY,
 	requireOk,
 	type ToolContext,
 	transact,
 	txBody,
 } from '../context.ts';
+import { toolEnvelope } from '../envelope.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { clipSummary, pickSequence } from '../format.ts';
-import { composeGrid, decodePng, encodePng } from '../png.ts';
+import {
+	awaitSheet,
+	composeSheet,
+	DEFAULT_SHEET_TIMEOUT_SEC,
+	MAX_SHEET_TIMEOUT_SEC,
+	type SheetMeta,
+	type SheetOutcome,
+	sheetNext,
+	sheetOfJob,
+	submitSheet,
+} from '../still-sheet.ts';
 import { propsSummary } from './compositions.ts';
-
-import { failedJobError } from './templates.ts';
 
 export const ANIMATION_GUIDE = `Text animation:
 - Text clips can have an In and an Out animator (list_text_animations: fade, slide-*, pop, blur, typewriter, tracking, mask-reveal, rotate-in, drop). Set them with add_text animateIn/animateOut or set_text_animation {clipId(s), in, out}; null removes a side, an object without preset only changes the current side's length or params.
 - In plays over the clip's first visible frames, Out over its last ones (Out is the mirrored In motion), whatever the clip's trims. Lengths default to the preset's (at the sequence rate); give durationFrames or durationSeconds. When In + Out do not fit the clip with one frame left at rest both are scaled to fit (warning W_ANIMATION_COMPRESSED): lengthen the clip or shorten them.
 - Params: unit (char | word | line) is the animated piece, stagger (0…1) the fraction of the window spread across units (0 = all together), order (forward, backward, center, edges, random) who starts first, ease the per-unit easing; distance/blur/scale/angle are preset-specific.
 - Splitting an animated clip keeps In on the left part and Out on the right part. get_timeline shows the animators as in:<preset> out:<preset>.
-- Check the motion with render_frames {clipId, count}: one contact-sheet PNG of evenly spread frames.`;
+- Check the motion with render_frames {clipId, count}: one contact-sheet PNG of evenly spread frames, rendered as one engine job. overlay: "safe-area" draws the Program monitor's safe margins on it; proposalId shows a proposal's items and their alternatives before anything is applied.`;
 
 /** Every argument describing one animator side, as add_text and set_text_animation take it. */
 const animatorShape = {
@@ -262,6 +276,104 @@ function sheetCellWidth(width: number, columns: number, rows: number, aspect: nu
 
 const TIMES = TIME_FORMATS;
 
+/** The sequence of a finished sheet (its first cell's). */
+const sheetSequence = (out: Extract<SheetOutcome, { done: true }>) => ({
+	sequenceId: out.result.cells[0]?.sequenceId,
+});
+
+/** A proposal's undecided items and alternatives as one row of frames each, on previews of the document. */
+async function proposalSheetPlan(
+	ctx: ToolContext,
+	projectId: string,
+	loaded: LoadedDoc,
+	a: { proposalId: string; itemIds?: string[]; times?: unknown[]; count?: number; sequenceId?: string },
+) {
+	const r = (await ctx.engine((c) => c.getProposal(projectId, a.proposalId))) as ProposalResponse;
+	const p: Proposal = r.proposal;
+	const seq = pickSequenceOf(loaded.doc, a.sequenceId ?? p.sequenceId ?? undefined);
+	const items = a.itemIds
+		? a.itemIds.map((id) => {
+				const it = p.items.find((x) => x.id === id);
+				if (!it)
+					throw new ToolError('E_NOT_FOUND', `Proposal ${p.id} has no item ${id}`, 'get_proposal lists them.');
+				return it;
+			})
+		: p.items.filter((i) => !isSetupItem(i) && (i.state === 'pending' || i.state === 'stale'));
+	if (!items.length)
+		throw new ToolError(
+			'E_INVALID_PARAM',
+			`Proposal ${p.id} has nothing left to show`,
+			'Name itemIds, or get_proposal to read what was decided.',
+		);
+	const documents: ReturnType<typeof toolEnvelope>[] = [];
+	const cells: { document: number; sequenceId: string; frame: number }[] = [];
+	const shown: SheetMeta['shown'] = [];
+	let columns = 1;
+	for (const item of items)
+		for (let k = 0; k <= (item.alternatives?.length ?? 0); k++) {
+			const variant = {
+				...p,
+				items: p.items.map((i) => (i.id === item.id ? { ...i, selectedAlternative: k } : i)),
+			};
+			const preview = previewProposal(loaded.doc, variant, [item.id], {
+				registries: defaultRegistries(),
+				invariants: 'incremental',
+				checkInvariants: false,
+			});
+			if (preview.failed[item.id]?.length)
+				throw new ToolError(
+					'E_PROPOSAL_STALE',
+					`Item ${item.id} does not apply to the current edit: ${preview.failed[item.id]![0]?.message ?? ''}`,
+					'refresh_proposal re-plans it, or propose again.',
+				);
+			const after = preview.document.sequences[seq.id];
+			const ghost = preview.items[item.id];
+			const clip = [...(ghost?.created ?? []), ...(ghost?.changed ?? [])]
+				.map((id) => after?.clips[id])
+				.find((c) => c !== undefined);
+			const frames = a.times
+				? a.times.map((t) => frameOf(seq, t))
+				: clip
+					? framesOfClip(clip, a.count)
+					: [0];
+			columns = Math.max(columns, frames.length);
+			documents.push(toolEnvelope(preview.document, r.revision ?? 0));
+			const label = k === 0 ? item.label : (item.alternatives?.[k - 1]?.label ?? item.label);
+			for (const frame of frames) {
+				shown.push({
+					cell: cells.length,
+					timecode: sequenceTimecode(seq, frame),
+					label: `${item.id} ${k}: ${label}`.slice(0, 80),
+				});
+				cells.push({ document: documents.length - 1, sequenceId: seq.id, frame });
+			}
+		}
+	if (cells.length > MAX_SHEET_FRAMES)
+		throw new ToolError(
+			'E_LIMIT',
+			`${cells.length} frames of alternatives: a sheet holds at most ${MAX_SHEET_FRAMES}`,
+			'Name fewer itemIds, or fewer frames with count or times.',
+		);
+	return { seq, documents, cells, shown, columns };
+}
+
+/** The sequence, as a tool error when missing. */
+function pickSequenceOf(doc: ProjectDocument, sequenceId: string | undefined): Sequence {
+	return sequenceFor(doc, { ...(sequenceId ? { sequenceId } : {}) });
+}
+
+/** Frames of a proposed clip: intro, hold and outro for a title, else `count` spread over it (default 3). */
+function framesOfClip(
+	clip: { start: number; duration: number; kind: string; textAnimation?: unknown },
+	count: number | undefined,
+): number[] {
+	if (count === undefined && clip.kind === 'text') {
+		const t = titleTiming(clip as never);
+		return [...new Set([t.intro, t.hold, t.outro])];
+	}
+	return spreadFrames(clip.start, clip.start + clip.duration, count ?? 3);
+}
+
 export function registerAnimationTools(ctx: ToolContext): void {
 	defineTool(
 		ctx,
@@ -361,7 +473,7 @@ export function registerAnimationTools(ctx: ToolContext): void {
 		'render_frames',
 		{
 			title: 'Render frames (contact sheet)',
-			description: `Renders several Program frames (like render_frame) and returns ONE PNG contact sheet: cells left to right, top to bottom, plus a JSON list of each cell's frame and timecode. Give times (up to ${MAX_SHEET_FRAMES}) or count (default 6) frames spread evenly from \`from\` to \`to\` (default: the clip given by clipId, else the whole sequence; first and last frame included). Use it to see motion: text animations, transitions, motion graphics. Cells are \`width\` px wide (default 320; reduced so the sheet stays within ${MAX_SHEET_SIZE} px). Uses the live editor state when the project is open; each frame is a separate render, so prefer few frames.`,
+			description: `Renders several Program frames (like render_frame) as ONE engine job and returns ONE PNG contact sheet: cells left to right, top to bottom, plus a JSON list of each cell's frame and timecode. Give times (up to ${MAX_SHEET_FRAMES}) or count (default 6) frames spread evenly from \`from\` to \`to\` (default: the clip given by clipId, else the whole sequence; first and last frame included). Use it to see motion: text animations, transitions, motion graphics. proposalId shows a proposal before anything is applied: one row per undecided item (or itemIds) and alternative, composited over the real edit (titles: intro, hold, outro). overlay "safe-area" draws the Program monitor's action-safe and title-safe margins. Cells are \`width\` px wide (default 320; reduced so the sheet stays within ${MAX_SHEET_SIZE} px). Uses the live editor state when the project is open. wait (default true) waits up to timeoutSeconds (default ${DEFAULT_SHEET_TIMEOUT_SEC}, max ${MAX_SHEET_TIMEOUT_SEC}); past that, or with wait: false, it returns {jobId, timedOut, next} with no image and the job keeps rendering: render_frames {jobId} returns the sheet when it is done. Cancelling the request cancels the job and deletes its frames.`,
 			input: {
 				projectId: ProjectIdArg,
 				times: z
@@ -390,74 +502,128 @@ export function registerAnimationTools(ctx: ToolContext): void {
 					.string()
 					.optional()
 					.describe('Sequence id ("seq_…"); default: the sequence of clipId, else the first one'),
+				proposalId: z.string().min(1).max(64).optional().describe('Show this proposal (get_proposal)'),
+				itemIds: z
+					.array(z.string().min(1).max(64))
+					.min(1)
+					.max(MAX_SHEET_FRAMES)
+					.optional()
+					.describe('With proposalId: these items (default every undecided item)'),
+				overlay: z.enum(['safe-area']).optional().describe('Draw these guides on every cell'),
+				wait: z.boolean().optional().describe('Wait for the sheet (default true); false returns the job id'),
+				timeoutSeconds: z
+					.number()
+					.int()
+					.min(1)
+					.max(MAX_SHEET_TIMEOUT_SEC)
+					.optional()
+					.describe(`How long to wait (default ${DEFAULT_SHEET_TIMEOUT_SEC})`),
+				jobId: z.string().min(1).max(64).optional().describe('Return the sheet of this earlier call'),
 			},
 			annotations: READ_ONLY,
 		},
 		async (a, extra) => {
+			const reply = async (out: SheetOutcome) => {
+				if (!out.done)
+					return jsonResult({
+						jobId: out.jobId,
+						state: out.state,
+						timedOut: true,
+						next: sheetNext(out.jobId),
+					});
+				const { body, image } = await composeSheet(ctx, out.result);
+				return jsonResult(
+					{ jobId: out.jobId, timedOut: false, ...sheetSequence(out), ...body },
+					[image],
+				);
+			};
+			if (a.jobId) {
+				if (a.times || a.clipId || a.proposalId || a.count !== undefined)
+					throw new ToolError(
+						'E_INVALID_PARAM',
+						'jobId returns an earlier sheet: give it alone',
+						'Call render_frames {projectId, jobId}.',
+					);
+				return reply(await sheetOfJob(ctx, a.jobId));
+			}
 			if (a.times && (a.count !== undefined || a.from !== undefined || a.to !== undefined || a.clipId))
 				throw new ToolError(
 					'E_INVALID_PARAM',
 					'Give times, or count with an optional range (from/to or clipId), not both',
 				);
+			if (a.itemIds && !a.proposalId)
+				throw new ToolError('E_INVALID_PARAM', 'itemIds needs proposalId', 'Pass the proposal they belong to.');
+			if (a.proposalId && (a.clipId || a.from !== undefined || a.to !== undefined))
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'A proposal sheet takes its frames from the proposal: give times or count, not clipId, from or to',
+				);
 			const loaded = await loadDoc(ctx, a.projectId);
 			const { doc } = loaded;
-			const seq = sequenceFor(doc, { sequenceId: a.sequenceId, clipId: a.clipId });
-			let frames: number[];
-			if (a.times) frames = a.times.map((t) => frameOf(seq, t));
-			else {
-				const clip = a.clipId ? seq.clips[a.clipId] : undefined;
-				if (a.clipId && !clip)
-					throw new ToolError('E_NOT_FOUND', `Clip not found: ${a.clipId}`, 'get_timeline lists clip ids.');
-				const from = a.from !== undefined ? frameOf(seq, a.from) : (clip?.start ?? 0);
-				const to =
-					a.to !== undefined
-						? frameOf(seq, a.to)
-						: clip
-							? clip.start + clip.duration
-							: Math.max(1, sequenceDuration(seq));
-				if (to <= from) throw new ToolError('E_INVALID_PARAM', '`to` must be after `from`');
-				frames = spreadFrames(from, to, a.count ?? 6);
+			let plan: {
+				seq: Sequence;
+				documents: ReturnType<typeof toolEnvelope>[];
+				cells: { document: number; sequenceId: string; frame: number }[];
+				shown: SheetMeta['shown'];
+				columns: number;
+			};
+			if (a.proposalId) {
+				const { proposalId, itemIds, times, count, sequenceId } = a;
+				plan = await proposalSheetPlan(ctx, a.projectId, loaded, {
+					proposalId,
+					...(itemIds ? { itemIds } : {}),
+					...(times ? { times } : {}),
+					...(count !== undefined ? { count } : {}),
+					...(sequenceId ? { sequenceId } : {}),
+				});
+			} else {
+				const seq = sequenceFor(doc, { sequenceId: a.sequenceId, clipId: a.clipId });
+				let frames: number[];
+				if (a.times) frames = a.times.map((t) => frameOf(seq, t));
+				else {
+					const clip = a.clipId ? seq.clips[a.clipId] : undefined;
+					if (a.clipId && !clip)
+						throw new ToolError('E_NOT_FOUND', `Clip not found: ${a.clipId}`, 'get_timeline lists clip ids.');
+					const from = a.from !== undefined ? frameOf(seq, a.from) : (clip?.start ?? 0);
+					const to =
+						a.to !== undefined
+							? frameOf(seq, a.to)
+							: clip
+								? clip.start + clip.duration
+								: Math.max(1, sequenceDuration(seq));
+					if (to <= from) throw new ToolError('E_INVALID_PARAM', '`to` must be after `from`');
+					frames = spreadFrames(from, to, a.count ?? 6);
+				}
+				plan = {
+					seq,
+					documents: [toolEnvelope(doc, loaded.revision)],
+					cells: frames.map((frame) => ({ document: 0, sequenceId: seq.id, frame })),
+					shown: frames.map((frame, cell) => ({ cell, timecode: sequenceTimecode(seq, frame) })),
+					columns: a.columns ?? 4,
+				};
 			}
-			const columns = Math.min(a.columns ?? 4, frames.length);
-			const rows = Math.ceil(frames.length / columns);
+			const { seq } = plan;
+			const columns = Math.min(a.columns ?? plan.columns, plan.cells.length);
+			const rows = Math.ceil(plan.cells.length / columns);
 			const width = sheetCellWidth(a.width ?? 320, columns, rows, seq.settings.width / seq.settings.height);
-			const report = progressReporter(extra);
-			const images = [];
-			const renderedBy = new Set<string>();
-			for (const [i, frame] of frames.entries()) {
-				report(i, frames.length, `Rendering frame ${frame} (${i + 1}/${frames.length})`);
-				const r = await captureStill(
-					ctx,
-					{ projectId: a.projectId, frame, width, sequenceId: seq.id },
-					extra,
-					loaded,
-					(job) => failedJobError(ctx, job, 'Check get_timeline; engine_status shows the render setup.'),
-				);
-				const bytes = r.bytes;
-				images.push(decodePng(bytes));
-				if (r.renderPath) renderedBy.add(r.renderPath);
-			}
-			report(frames.length, frames.length, 'Composing the contact sheet');
-			const sheet = composeGrid(images, columns, SHEET_GAP);
-			return jsonResult(
-				{
-					sequenceId: seq.id,
-					columns,
-					rows: sheet.rows,
-					cellWidth: sheet.cellWidth,
-					cellHeight: sheet.cellHeight,
-					sheet: { width: sheet.width, height: sheet.height },
-					cells: frames.map((frame, i) => ({
-						cell: i + 1,
-						row: Math.floor(i / columns) + 1,
-						column: (i % columns) + 1,
-						frame,
-						timecode: sequenceTimecode(seq, frame),
-					})),
-					...(renderedBy.size ? { renderedBy: [...renderedBy] } : {}),
-				},
-				[{ type: 'image', data: encodePng(sheet).toString('base64'), mimeType: 'image/png' }],
+			const meta: SheetMeta = {
+				columns,
+				shown: plan.shown,
+				...(a.overlay ? { overlay: a.overlay } : {}),
+			};
+			const jobId = await submitSheet(
+				ctx,
+				{ documents: plan.documents, cells: plan.cells, width, meta: meta as never },
+				extra,
 			);
+			if (a.wait === false)
+				return jsonResult({
+					jobId,
+					state: 'queued',
+					timedOut: false,
+					next: sheetNext(jobId),
+				});
+			return reply(await awaitSheet(ctx, jobId, a.timeoutSeconds ?? DEFAULT_SHEET_TIMEOUT_SEC, extra));
 		},
 	);
 }

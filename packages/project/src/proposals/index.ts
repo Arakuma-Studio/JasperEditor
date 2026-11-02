@@ -10,4 +10,5 @@ export * from './refresh.ts';
 export * from './rough-cut.ts';
 export * from './schema.ts';
 export * from './structure.ts';
+export * from './title-art.ts';
 export * from './validate.ts';

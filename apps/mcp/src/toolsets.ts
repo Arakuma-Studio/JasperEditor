@@ -278,9 +278,12 @@ export const TOOLSETS = [
 	},
 	{
 		name: 'effects',
-		description: 'Effect presets, blend modes, masks and track mattes, puppet / liquify / mesh warps.',
-		guides: ['presets', 'keyframes-blend', 'masks', 'sim-warp'],
+		description: 'Video effects and presets, blend modes, masks and track mattes, puppet / liquify / mesh warps.',
+		guides: ['effects', 'presets', 'keyframes-blend', 'masks', 'sim-warp'],
 		tools: [
+			'list_effects',
+			'add_effect',
+			'set_effect_param',
 			'list_effect_presets',
 			'get_effect_preset',
 			'apply_effect_preset',
@@ -353,6 +356,21 @@ export const TOOLSETS = [
 			'apply_text_style',
 			'update_text_style',
 			'delete_text_style',
+		],
+	},
+	{
+		name: 'titles',
+		description:
+			'Stylized titles: find looks, propose a title on the footage, measured title checks, recipes, generators, global light.',
+		guides: ['title-art'],
+		tools: [
+			'find_title_looks',
+			'propose_title',
+			'title_check',
+			'get_title_recipe',
+			'save_title_look',
+			'add_title_generator',
+			'set_global_light',
 		],
 	},
 	{
