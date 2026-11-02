@@ -29,6 +29,8 @@ import {
 	type ExportVerifyRequest,
 	STILL_FORMAT_EXTENSIONS,
 	type StillRequest,
+	type StillSheetRequest,
+	type StillSheetResult,
 } from '@jasper/api';
 import {
 	buildRenderSnapshot,
@@ -165,7 +167,8 @@ export type PreviewSource = (
 
 type StoredRequest =
 	| { kind: 'export'; request: ExportStartRequest }
-	| { kind: 'still'; request: StillRequest };
+	| { kind: 'still'; request: StillRequest }
+	| { kind: 'still-sheet'; request: StillSheetRequest };
 
 const JOB_ID_RE = /^job_[0-9a-f]{16}$/;
 
@@ -230,6 +233,9 @@ export class ExportService {
 			this.withRequestCleanup(ctx, () => this.runExport(ctx)),
 		);
 		this.deps.queue.registerRunner('still', (ctx) => this.withRequestCleanup(ctx, () => this.runStill(ctx)));
+		this.deps.queue.registerRunner('still-sheet', (ctx) =>
+			this.withRequestCleanup(ctx, () => this.runStillSheet(ctx)),
+		);
 		// spec 18 AF-VER-001: verification of a finished export
 		this.deps.queue.registerRunner('export-verify', (ctx) =>
 			runExportVerify(ctx, { ff: this.deps.ff, rendersDir: this.deps.rendersDir, queue: this.deps.queue }),
@@ -960,6 +966,25 @@ export class ExportService {
 		});
 	}
 
+	/** `POST /api/stills/sheet` (spec 19 TL-103): several stills as one job, cancelled and waited on as one. */
+	async stillSheet(
+		req: StillSheetRequest,
+		origin: EngineJob['origin'] = { type: 'user' },
+	): Promise<EngineJob> {
+		const file = await this.storeRequest({ kind: 'still-sheet', request: req });
+		const doc = req.documents[0]!.document as { projectId?: string };
+		return this.deps.queue.submit({
+			kind: 'still-sheet',
+			title: `${req.cells.length} frames`,
+			priority: 'interactive',
+			cpuSlots: 2,
+			minSlots: 1,
+			origin,
+			...(typeof doc.projectId === 'string' ? { projectId: doc.projectId } : {}),
+			input: { request: file },
+		});
+	}
+
 	/**
 	 * wp captions (S04:TR-061/062): embeds the selected caption tracks as subtitle streams (`mov_text` in MP4/MOV,
 	 * WebVTT in WebM; stream copy for picture and sound) and writes the sidecar files into the job directory.
@@ -1121,6 +1146,15 @@ export class ExportService {
 		const job = this.deps.queue.get(jobId);
 		if (job && job.state !== 'succeeded') return null;
 		const file = join(this.deps.rendersDir, jobId, 'captions', name);
+		return (await exists(file)) ? file : null;
+	}
+
+	/** A cell of a finished `still-sheet` job (`/renders/:jobId/cells/:index`). */
+	async sheetCellFile(jobId: string, index: string): Promise<string | null> {
+		if (!JOB_ID_RE.test(jobId) || !/^\d{1,3}$/.test(index)) return null;
+		const job = this.deps.queue.get(jobId);
+		if (job && job.state !== 'succeeded') return null;
+		const file = join(this.deps.rendersDir, jobId, `cell-${Number(index)}.png`);
 		return (await exists(file)) ? file : null;
 	}
 
@@ -2468,10 +2502,16 @@ export class ExportService {
 		return result;
 	}
 
-	private async runStill(ctx: JobContext): Promise<unknown> {
-		const stored = await this.loadRequest(ctx);
-		if (stored.kind !== 'still') throw new JobError('BAD_REQUEST', 'Not a still request', false);
-		const req = stored.request;
+	/** One Program still as a PNG at `output`, on the export's path (S11:LBK-025). */
+	private async renderStillPng(
+		ctx: JobContext,
+		req: Pick<StillRequest, 'envelope' | 'sequenceId' | 'frame' | 'width'>,
+		output: string,
+	): Promise<{
+		planned: PlannedExport;
+		path: PlannedExport['plan']['path'];
+		warnings: { code: string; message: string }[];
+	}> {
 		const settings: ExportSettings = {
 			sequenceId: req.sequenceId,
 			range: { type: 'entire' },
@@ -2511,9 +2551,6 @@ export class ExportService {
 			planned.output.height = Math.max(2, Math.round((req.width * seqH) / seqW / 2) * 2);
 			planned.output.scaling = 'stretch';
 		}
-		const dir = await this.outDir(ctx);
-		const output = join(dir, 'output.png');
-		ctx.addPartial(dir);
 		let path = planned.plan.path;
 		let masters = new Map<string, string>();
 		const warnings: { code: string; message: string }[] = [];
@@ -2554,6 +2591,17 @@ export class ExportService {
 				await rename(tmp, output);
 			}
 		}
+		return { planned, path, warnings };
+	}
+
+	private async runStill(ctx: JobContext): Promise<unknown> {
+		const stored = await this.loadRequest(ctx);
+		if (stored.kind !== 'still') throw new JobError('BAD_REQUEST', 'Not a still request', false);
+		const req = stored.request;
+		const dir = await this.outDir(ctx);
+		const output = join(dir, 'output.png');
+		ctx.addPartial(dir);
+		const { planned, path, warnings } = await this.renderStillPng(ctx, req, output);
 		// gaps (File ▸ Export ▸ Frame): the chosen file format and destination folder.
 		const format = req.format ?? 'png';
 		const ext = STILL_FORMAT_EXTENSIONS[format];
@@ -2605,6 +2653,84 @@ export class ExportService {
 			...(warnings.length ? { warnings } : {}),
 		};
 	}
+
+	/** Spec 19 TL-103: `cell-<n>.png` per cell, in order, as one job. A failed cell fails the job and names itself. */
+	private async runStillSheet(ctx: JobContext): Promise<StillSheetResult> {
+		const stored = await this.loadRequest(ctx);
+		if (stored.kind !== 'still-sheet') throw new JobError('BAD_REQUEST', 'Not a sheet request', false);
+		const req = stored.request;
+		const dir = await this.outDir(ctx);
+		ctx.addPartial(dir);
+		const total = req.cells.length;
+		const cells: StillSheetResult['cells'] = [];
+		const warnings: { code: string; message: string }[] = [];
+		let first: PlannedExport | null = null;
+		for (const [i, cell] of req.cells.entries()) {
+			if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
+			ctx.progress(i / total, { stage: `Frame ${i + 1} of ${total}` });
+			const part: JobContext = {
+				...ctx,
+				job: ctx.job,
+				progress: (p, extra) => ctx.progress(p === null ? null : (i + Math.min(1, p)) / total, extra),
+			};
+			try {
+				const r = await this.renderStillPng(
+					part,
+					{
+						envelope: withHiddenClips(req.documents[cell.document]!, cell.sequenceId, cell.hide),
+						sequenceId: cell.sequenceId,
+						frame: cell.frame,
+						...(req.width ? { width: req.width } : {}),
+					},
+					join(dir, `cell-${i}.png`),
+				);
+				first ??= r.planned;
+				warnings.push(...r.warnings);
+				cells.push({
+					index: i,
+					url: `/renders/${ctx.job.id}/cells/${i}`,
+					document: cell.document,
+					sequenceId: cell.sequenceId,
+					frame: cell.frame,
+					...(cell.tag ? { tag: cell.tag } : {}),
+					renderPath: r.path,
+				});
+			} catch (e) {
+				if (ctx.signal.aborted || !(e instanceof JobError)) throw e;
+				throw new JobError(e.code, `Frame ${cell.frame} (cell ${i + 1} of ${total}): ${e.message}`, e.retryable, {
+					...(e.detail && typeof e.detail === 'object' ? e.detail : {}),
+					cell: i,
+				});
+			}
+		}
+		if (first) this.commitRefs(ctx, first, 'still');
+		await rm((ctx.input as { request: string }).request, { force: true });
+		return {
+			cells,
+			...(req.meta ? { meta: req.meta } : {}),
+			...(warnings.length ? { warnings: dedupeWarnings(warnings) } : {}),
+		};
+	}
+}
+
+/** A still of `envelope` with `hide`'s clips off (the document given is not changed). */
+function withHiddenClips(
+	envelope: StillSheetRequest['documents'][number],
+	sequenceId: string,
+	hide: readonly string[] | undefined,
+): StillSheetRequest['documents'][number] {
+	if (!hide?.length) return envelope;
+	const document = structuredClone(envelope.document) as {
+		sequences?: Record<string, { clips?: Record<string, { enabled?: boolean }> }>;
+	};
+	const clips = document.sequences?.[sequenceId]?.clips;
+	if (clips) for (const id of hide) if (clips[id]) clips[id].enabled = false;
+	return { ...envelope, document };
+}
+
+function dedupeWarnings(w: readonly { code: string; message: string }[]) {
+	const seen = new Set<string>();
+	return w.filter((x) => !seen.has(`${x.code}\n${x.message}`) && !!seen.add(`${x.code}\n${x.message}`));
 }
 
 /**

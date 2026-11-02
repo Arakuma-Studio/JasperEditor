@@ -18,6 +18,7 @@ function groupOf(job: Pick<EngineJob, 'kind'>): JobGroupId {
 	switch (job.kind) {
 		case 'export':
 		case 'still':
+		case 'still-sheet':
 			return 'exports';
 		case 'preview':
 			return 'previews';
@@ -74,7 +75,7 @@ export function statusOf(job: AnyJob, engineConnected: boolean): JobStatus {
 export function engineBadge(job: AnyJob): string {
 	if (job.client) return 'Browser';
 	if (job.kind === 'mg-render') return 'F';
-	if (job.kind === 'still') return 'R';
+	if (job.kind === 'still' || job.kind === 'still-sheet') return 'R';
 	if (job.kind === 'export') {
 		const path = (job.result as { path?: string } | undefined)?.path ?? job.stage ?? '';
 		if (/remotion/i.test(path)) return 'R';

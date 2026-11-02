@@ -54,6 +54,16 @@ export default async function exportsRoutes(app: FastifyInstance): Promise<void>
 		}),
 	);
 
+	// spec 19 TL-103: one cell of a finished `still-sheet` job.
+	app.get<{ Params: { jobId: string; index: string } }>(
+		'/renders/:jobId/cells/:index',
+		guarded<{ Params: { jobId: string; index: string } }>(async (req, reply) => {
+			const file = await exports.sheetCellFile(req.params.jobId, req.params.index);
+			if (!file) return fail(reply, 404, 'NOT_FOUND', 'No such cell for this job');
+			return serveFile(req, reply, file, { cache: 'revalidate' });
+		}),
+	);
+
 	// wp captions: sidecar caption files of a finished export.
 	app.get<{ Params: { jobId: string; name: string } }>(
 		'/renders/:jobId/captions/:name',
