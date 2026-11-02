@@ -444,13 +444,15 @@ Routes: `GET`, `POST /api/title-looks`, `PUT`, `DELETE /api/title-looks/:lookId`
 
 | Library | Is | Holds | Home | Stored |
 |---|---|---|---|---|
-| Text Style | Typography and basic paint | `TextStyle`, linked per clip | Essential Graphics | `doc.textStyles` |
+| Text Style | Typography and basic paint | `TextStyle`, linked per clip | Properties ▸ Text Style | `doc.textStyles` |
 | Look | An appearance | Layers, palette, light, font | Looks tab | Factory data, user library, and `doc.titleLooks` once used |
 | Effect Preset | A stack of ordinary effects | Effects and keyframes | Effects ▸ Presets | `effect-presets.json` |
 | Title Template | Clips | Text with a look, shapes, generators, timing | Looks tab links to it | Factory data |
 
 How they meet: a look brings a font when applied and never links to a Text Style, and a Text Style edit does not touch a look. A look never
-holds ordinary effects, and an Effect Preset never holds an appearance: `jasper.title-look` is internal and `effect.add` refuses it. A
+holds ordinary effects, and an Effect Preset never holds an appearance: `jasper.title-look` is internal, `effect.add` refuses it,
+`buildEffectPreset` leaves it out (and refuses a preset of nothing else), and `effect.applyPreset` skips one in an older file with a
+warning. Before that, saving a clip's stack stored the look without its appearance and applying added an empty instance. A
 template refers to looks by id and expands; once expanded it has no link back. Each has one home, and the Looks tab links to the others
 rather than listing them twice.
 

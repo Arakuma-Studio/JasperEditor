@@ -4,8 +4,11 @@ import { describe, expect, it } from 'vitest';
 import {
 	type Appearance,
 	appearanceFromRecipe,
+	buildEffectPreset,
 	buildLookBundle,
+	checkInvariants,
 	clipLook,
+	defaultEffectRegistry,
 	type EffectInstance,
 	FACTORY_LOOKS,
 	type LookRecipe,
@@ -13,6 +16,7 @@ import {
 	parseUserLook,
 	recipeFromAppearance,
 	recipeProblem,
+	TITLE_LOOK_EFFECT_ID,
 	USER_LOOK_LIBRARY_FORMAT,
 	USER_LOOK_VERSION,
 	type UserLook,
@@ -118,6 +122,54 @@ describe('user looks (TL-054)', () => {
 			}),
 			{ numRuns: 300 },
 		);
+	});
+});
+
+describe('libraries stay apart (TL-055)', () => {
+	function withEffectAndLook() {
+		const h = new Harness();
+		const r = h.ok([
+			{ type: 'clip.addText', at: 0, duration: 60, track: 'V2', content: { text: 'Title' }, ref: '$t' },
+			{ type: 'effect.add', target: { clipId: '$t' }, effectId: 'jasper.gaussian-blur' },
+			{ type: 'look.apply', clipIds: ['$t'], lookId: 'look.clean-sans' },
+		]);
+		const id = r.refs.$t!;
+		const stack = () => (h.seq.clips[id] as unknown as { effects: EffectInstance[] }).effects;
+		return { h, id, stack };
+	}
+
+	it('never stores a look in an effect preset', () => {
+		const { h, id, stack } = withEffectAndLook();
+		const p = buildEffectPreset(h.doc, id, {
+			name: 'P',
+			type: 'scale',
+			sections: { effectIds: stack().map((fx) => fx.id) },
+		});
+		expect(p.effects?.map((e) => e.effectId)).toEqual(['jasper.gaussian-blur']);
+	});
+
+	it('refuses a preset of nothing but a look, and says what to do', () => {
+		const { h, id, stack } = withEffectAndLook();
+		const look = clipLook(stack())!;
+		expect(() =>
+			buildEffectPreset(h.doc, id, { name: 'P', type: 'scale', sections: { effectIds: [look.id] } }),
+		).toThrow(/save it as a look/);
+	});
+
+	it('skips a look in an older preset file: the clip gets no empty instance', () => {
+		const { h, id, stack } = withEffectAndLook();
+		const before = stack().length;
+		const old = buildEffectPreset(h.doc, id, {
+			name: 'Old',
+			type: 'scale',
+			sections: { effectIds: stack().map((fx) => fx.id) },
+		});
+		old.effects = [...(old.effects ?? []), { effectId: TITLE_LOOK_EFFECT_ID, params: {} }];
+		const r = h.ok([{ type: 'effect.applyPreset', preset: old, clipIds: [id] }]);
+		expect(r.warnings.map((w) => w.code)).toContain('W_PRESET_UNKNOWN_EFFECT');
+		expect(stack().filter((fx) => fx.effectId === TITLE_LOOK_EFFECT_ID)).toHaveLength(1);
+		expect(stack()).toHaveLength(before + 1);
+		expect(checkInvariants(h.doc, { effects: defaultEffectRegistry })).toEqual([]);
 	});
 });
 
