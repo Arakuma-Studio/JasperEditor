@@ -51,6 +51,20 @@ export function normalizeTextRuns(
 	return out;
 }
 
+/** What the runs set on the character at `offset` (later runs win), or null. */
+export function textRunAt(runs: readonly TextRun[] | undefined, offset: number): TextRun | null {
+	const covering = (runs ?? []).filter((r) => r.from <= offset && r.to > offset);
+	if (!covering.length) return null;
+	let finish: string | undefined;
+	for (const r of covering) if (typeof r.finish === 'string') finish = r.finish;
+	return {
+		from: offset,
+		to: offset + 1,
+		style: Object.assign({}, ...covering.map((r) => r.style)),
+		...(finish !== undefined ? { finish } : {}),
+	};
+}
+
 /** `runs` with `patch` set on `[from, to)`; fields equal to `base` read as no override. */
 export function applyRunPatch(
 	text: string,

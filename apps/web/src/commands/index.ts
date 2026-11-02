@@ -3,6 +3,7 @@ import '../fx/register.ts';
 import '../simwarp/register.ts';
 import '../audio-fx/register.ts';
 import '../template-edit/register.ts';
+import '../text-edit/register.ts';
 import '../remote-assets/register.ts';
 import { audioFxCommands } from '../audio-fx/commands.ts';
 import { strokeAnimationCommands } from '../stroke-animation/commands.ts';
@@ -53,6 +54,7 @@ import { speechCommands } from './speech.ts';
 import { structureCommands } from './structure.ts';
 import { subtitleCommands } from './subtitles.ts';
 import { textAnimationCommands } from './text-animation.ts';
+import { textLayoutCommands } from './text-layout.ts';
 import { textStyleCommands } from './text-styles.ts';
 import { threeDCommands } from './three-d.ts';
 import { timeCommands } from './time.ts';
@@ -113,6 +115,7 @@ const COMMAND_MODULES: UiCommand[][] = [
 	importsCommands,
 	monitorViewCommands,
 	threeDCommands,
+	textLayoutCommands,
 	gapsCommands,
 	polishCommands,
 	easingCommands,
