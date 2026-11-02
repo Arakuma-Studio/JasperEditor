@@ -71,6 +71,19 @@ looks and compile once. A six-layer look with a blur plans about 25 passes. Meas
 - **Time.** Layers read `u_tlTime`: content seconds, continuous across a razor cut, unlike `u_frame`. It is 0 for looks with
   nothing time dependent, so a still look has one step key and is not redrawn (TL-037). `seed` comes from the appearance,
   never from ids (TL-035). `FORBIDDEN_TITLE_GLSL` rejects `u_seed`, `u_frame`, `u_pxScale`, `gl_FragCoord` and float hashes.
+- **Still looks and spurious paints (TL-037).** The step key of a still look does not change between frames, but that is not
+  enough: on every Player seek React's Suspense hides and restores the composition (`display: none !important`), Chrome fires
+  `paint` on the `<HtmlInCanvas>` and the chain runs with an unchanged input. For a still DOM picture under time-invariant
+  steps the stage sets `inputKey` (the immutable clip object's identity plus the steps before), and `fxShader` keeps the output
+  in a small LRU keyed by it and the loaded-fonts count (a late font changes the picture with no change to the clip). Preview
+  only; renders never reuse. `calculateKey` includes `inputKey`: Remotion keeps the memoized params of an unchanged key, so
+  without it a text edit would show the old look (the E2E test checks an edit redraws).
+- **Float refusal** is TL-123's: `requiresFloat: 'TITLE_LOOK_NEEDS_FLOAT'` gives a chip in preview, `cancelRender` in a render and
+  a plan blocker once the probe answered; the host guard is a backstop.
+- **Media.** `{mediaId}` values in layer params go through `effectMediaRefs` and `clearEffectMedia` (named
+  `appearance.<layerId>.<param>`), so orphans, item delete, usage, Project Manager and force delete all see them (TL-021).
+- **`contentBleed`.** `gpu.padding` needs `FxStructures.titleLook`, which only the composition has, so the bake takes a look's
+  reach from `titleLookBleed` directly: the keyed reach, or null (full-frame bake) when an expression drives a param.
 - **Unit (TL-012).** Text: the text size, one uniform. Other clips: the shorter side of the alpha bounds, read from the
   reduction in the shader. Plan-time decisions there (flood steps, blur scale) use the layer box as an upper bound and three
   mip levels of margin, so a small logo in a huge transparent still blurs slightly coarser, never wrongly sized.
@@ -301,6 +314,37 @@ first shape field drew translucent wedges.
 Addresses: `["appearance", fxId, layerId, param]`, `["appearance", fxId, "palette", role]`, `["appearance", fxId, "light",
 "angle"]`, `["globalLight", sequenceId, "angle"]`. Property keys join the first with dots. Slot names have no `$`: `$` starts
 a temp ref in commands.
+
+## Formulas and sources
+
+- Jump flooding: Rong and Tan, "Jump flooding in GPU with applications to Voronoi diagram and distance transform" (I3D 2006);
+  the extra step of 1 is their JFA+1. Steps start at the power of two covering the reach, so they sum to at least it.
+- Sub-pixel seeds: the pixel centre moved along the Sobel gradient of alpha by `(a − threshold) / slope`, as Pachislop's
+  `seedFrag` does; slope is the steeper one-sided difference along the normal, because edges arrive 1 to 2 px wide.
+- sRGB: IEC 61966-2-1, the piecewise transfer of `fx_srgbToLinear` / `fx_linearToSrgb`.
+- Composite: Porter and Duff "over" on premultiplied linear light.
+- Blur: separable Gaussian, reach 3σ (a layer's `blur` and `radius` are the visible radius ≈ 3σ, Pachislop's convention).
+- SSIM in tests: Wang et al. 2004, 8 × 8 windows, `C1 = (0.01·255)²`, `C2 = (0.03·255)²`.
+- Assumption, not documented anywhere: a rim's opacity rule (full from 50 % local alpha) was chosen by looking at fades.
+
+Port map: `licenses/ported/pachislop-rendering.md`.
+
+## Measured
+
+| What | Result | Rerun |
+|---|---|---|
+| Program against a Remotion still, animated text and a keyed look param, frames 0, 30, 60 | SSIM 1.0000, max difference 0 | `REMOTION_E2E=1 pnpm exec vitest run packages/compositions/test/title-look.e2e.test.ts` |
+| Razor cut at frame 20 against the uncut clip, frames 10, 19, 20, 21, 45 | max difference 0 | same |
+| Double build with fresh ids | byte-identical | same |
+| Still look across 4 seeks in the Player | 0 GL draws; a text edit redraws | same |
+| Resolution, real text through Remotion: 100 % against 50 %, 200 % against 100 % | SSIM 0.969, 0.997 (text hints per size) | same |
+| Resolution, exact shapes, six layers: 100/50, 200/50, 200/100 | SSIM 0.986, 0.983, 0.998 | `pnpm exec vitest run packages/compositions/test/title-look-gl.test.ts` |
+| `fxPreviewScale` 0.5 against full | SSIM 0.964 | same |
+| Frame cost, six layers, 1080p, SwiftShader | 1.3 s title-sized box, 5.8 s frame-sized | [performance.md](../performance.md) §7 |
+
+The extension contract was exercised by copying this note's three worked examples verbatim into their own files with their
+one-line registrations: they typechecked with no change to the core, and the registry and GL tests picked them up (and failed
+for the missing fingerprints, and for a generator example that was clipped by its own padding, now fixed above).
 
 ## Limits
 
