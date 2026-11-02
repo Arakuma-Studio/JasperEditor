@@ -9,6 +9,7 @@ import {
 	type TitleParamSpec,
 } from '../registry/fx/title-look/contract.ts';
 import { paramSpec, titleLayerType } from '../registry/fx/title-look/registry.ts';
+import { CurveValueSchema } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import { isKeyframedParamValid } from './keyframes.ts';
 import {
@@ -76,6 +77,8 @@ export function paramValueProblem(p: TitleParamSpec, v: unknown): string | null 
 			return LookColorSchema.safeParse(v).success ? null : 'not a colour';
 		case 'media':
 			return isPlainObject(v) && typeof v.mediaId === 'string' ? null : 'not a media reference';
+		case 'curve':
+			return CurveValueSchema.safeParse(v).success ? null : 'not a curve';
 		default:
 			return null;
 	}

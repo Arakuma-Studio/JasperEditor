@@ -26,9 +26,19 @@ vec4 tl_layer(TlSurface s) {
   return tl_finish(tlPaint_paint(s), s) * cov * s.opacity * (u_opacity * 0.01);
 }`,
 	}),
+	depth: {
+		ring: true,
+		glsl: /* glsl */ `
+float tl_depth(TlSurface s) { return s.base + tl_px(u_offset) + tl_px(u_width) - s.d; }
+float tl_bandPx(TlSurface s) { return tl_px(u_width); }
+`,
+	},
 	grows: (p) => num(p.offset) + num(p.width),
 	reach: (p) => num(p.offset) + num(p.width),
-	handles: [{ kind: 'distance', params: ['width'] }],
+	handles: [
+		{ kind: 'distance', params: ['width'] },
+		{ kind: 'angle', params: ['paintAngle'] },
+	],
 	summary(p) {
 		return {
 			swatch: layerSwatch(RIM_LAYER, p),

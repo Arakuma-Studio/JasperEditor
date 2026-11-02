@@ -7,11 +7,13 @@ import {
 	type FxPadding,
 	fxBuiltinUniforms,
 	type LookRecipe,
+	buildTextSpans,
 	planGpuEffect,
 	resolveAppearance,
+	type SpanGlyph,
 	TITLE_LOOK_EFFECT,
 } from '@jasper/project';
-import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
+import { type FxTextureInput, fxHost, runShaderPlan } from '../../src/fx/host.ts';
 import { fxCanvasLayout } from '../../src/fx/plan.ts';
 
 export type LookInput =
@@ -41,7 +43,32 @@ export type LookRequest = {
 	timingOnly?: boolean;
 	/** With `timingOnly`: time every pass (each ends in a read-back, so the total is higher). */
 	perPass?: boolean;
+	/** TL-036: the text layer's glyphs at this frame. */
+	glyphs?: readonly SpanGlyph[];
+	/** Pictures of `{mediaId}` params, painted on a canvas: bound as the real path binds media (`inputs.textures`). */
+	images?: Readonly<Record<string, LookImageInput>>;
 };
+
+/** A picture for a media param: horizontal bands top to bottom, or a checker of two colours. */
+export type LookImageInput = { width: number; height: number; bands?: readonly string[]; checker?: readonly [string, string] };
+
+function paintImage(i: LookImageInput): HTMLCanvasElement {
+	const c = document.createElement('canvas');
+	c.width = i.width;
+	c.height = i.height;
+	const g = c.getContext('2d')!;
+	(i.bands ?? []).forEach((color, k, all) => {
+		g.fillStyle = color;
+		g.fillRect(0, (k * i.height) / all.length, i.width, Math.ceil(i.height / all.length));
+	});
+	if (i.checker)
+		for (let y = 0; y < 4; y++)
+			for (let x = 0; x < 4; x++) {
+				g.fillStyle = i.checker[(x + y) % 2]!;
+				g.fillRect((x * i.width) / 4, (y * i.height) / 4, i.width / 4, i.height / 4);
+			}
+	return c;
+}
 
 export type LookResult = {
 	width: number;
@@ -131,7 +158,13 @@ function render(req: LookRequest): LookResult {
 	const appearance = resolveAppearance(stored, 0);
 	const unitPx =
 		req.unitPx !== undefined ? req.unitPx : req.input.kind === 'text' ? (req.input.size ?? 96) : null;
-	const titleLook = { appearance, source: stored, unitPx, contentSeconds: req.contentSeconds ?? 0 };
+	const titleLook = {
+		appearance,
+		source: stored,
+		unitPx,
+		contentSeconds: req.contentSeconds ?? 0,
+		...(req.glyphs ? { textSpans: buildTextSpans(req.glyphs) } : {}),
+	};
 	const pxScale = req.pxScale ?? 1;
 	const base = {
 		width: req.box.width,
@@ -193,6 +226,17 @@ function render(req: LookRequest): LookResult {
 			tp = now;
 		};
 	}
+	const textures: Record<string, FxTextureInput | null> = {};
+	for (const t of plan.textures) {
+		const img = t.mediaId ? req.images?.[t.mediaId] : undefined;
+		if (img)
+			textures[t.uniform] = {
+				source: paintImage(img),
+				width: img.width,
+				height: img.height,
+				version: JSON.stringify(img),
+			};
+	}
 	const t0 = performance.now();
 	runShaderPlan(
 		h,
@@ -211,7 +255,7 @@ function render(req: LookRequest): LookResult {
 				}),
 				{ name: 'u_seed', type: 'float', value: [0.25] },
 			],
-			textures: {},
+			textures,
 			samples: { sources: [], offsets: [] },
 		},
 		ctx,
@@ -273,6 +317,20 @@ function render(req: LookRequest): LookResult {
 		} finally {
 			h.floatTargets = was;
 		}
+	},
+	/** A caption as RGBA8 for a contact sheet. */
+	label: ([text, width, height]: [string, number, number]) => {
+		const c = document.createElement('canvas');
+		c.width = width;
+		c.height = height;
+		const g = c.getContext('2d', { willReadFrequently: true })!;
+		g.fillStyle = '#20232a';
+		g.fillRect(0, 0, width, height);
+		g.fillStyle = '#e8e8e8';
+		g.font = '13px "Liberation Sans", Arial, sans-serif';
+		g.textBaseline = 'middle';
+		g.fillText(text, 6, height / 2);
+		return base64(g.getImageData(0, 0, width, height).data);
 	},
 	renderer: () => {
 		const h = fxHost();

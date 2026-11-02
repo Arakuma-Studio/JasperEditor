@@ -11,7 +11,7 @@ import type { LayerParamValue, Paint, Role } from '../../../title-looks/model.ts
 import type { ResolvedAppearance } from '../../../title-looks/resolve.ts';
 import type { EffectCategory, ParamSpec } from '../../effects.ts';
 import { fxParam } from '../params.ts';
-import type { GlslChunk, ShaderPass } from '../shader.ts';
+import type { FxUniformValue, GlslChunk, ShaderPass } from '../shader.ts';
 
 /** Evaluated params of a layer at a frame: stored values over the type's defaults. */
 export type LayerParams = Record<string, LayerParamValue>;
@@ -31,8 +31,14 @@ export type TitleParamSpec = (ParamSpec & { distance?: boolean }) | PaintParamSp
 
 export const isPaintParam = (p: TitleParamSpec): p is PaintParamSpec => p.type === 'paint';
 
-/** Padding reach of one layer, in percent of the unit, per side, beyond the silhouette the layer starts from. */
-export type LayerReach = number | { left: number; top: number; right: number; bottom: number };
+/**
+ * Padding reach of one layer, in percent of the unit, per side, beyond the silhouette the layer starts from.
+ * `boxHeight`: more on the left and right as a fraction of the layer box's height (a leaning plate reaches further the
+ * taller the shape is, which percent of the unit cannot say).
+ */
+export type LayerReach =
+	| number
+	| { left: number; top: number; right: number; bottom: number; boxHeight?: number };
 
 export type LayerShader = {
 	/**
@@ -56,7 +62,7 @@ export type LayerBlur = {
 };
 
 /** Passes a layer runs before its own (shared intermediates beyond the blur). See "How to extend". */
-export type LayerPrepass = (p: LayerParams, ctx: LayerPlanContext) => readonly ShaderPass[];
+export type LayerPrepass = (p: LayerParams, ctx: PrepassContext) => readonly ShaderPass[];
 
 export type LayerPlanContext = {
 	look: ResolvedAppearance;
@@ -64,6 +70,37 @@ export type LayerPlanContext = {
 	pxPerPercent: number;
 	/** Silhouette growth of the layers above this one, percent of the unit (TL §5.1 rim: cumulative). */
 	base: number;
+};
+
+/** What a prepass needs on top of `LayerPlanContext`: a prepass draws with the same surface as the layer's own pass. */
+export type PrepassContext = LayerPlanContext & {
+	/** Chunks that give a prepass `tl_surface()`, `tl_px()` and `tl_bounds()` (when planned). */
+	include: readonly GlslChunk[];
+	/** This layer's uniforms (`u_tlBase`, every param): spread them into each prepass. */
+	uniforms: Readonly<Record<string, FxUniformValue>>;
+	/** This layer's `#define`s (media params, finish variants): start each prepass's `frag` with them. */
+	defines: string;
+	/** The layer's own shape (`TitleLayerType.depth`). */
+	depth: LayerDepth;
+	/** Growth of the whole stack, percent of the unit: the silhouette of everything is at `s.d` = this. */
+	outer: number;
+	/** The `update` flag of a write to output `name`: true from its second write in this plan on. */
+	write(name: string): { update?: true };
+};
+
+/**
+ * The layer's own shape for its finish. `glsl` defines `float tl_depth(TlSurface s)`: how deep `s` lies inside it (canvas
+ * px, 0 at its outer edge, negative outside), and `float tl_bandPx(TlSurface s)`: the width of a ring, 0 for a filled
+ * shape. `ring`: a ring knows its thickness, a filled shape must measure it (Fit to stroke width).
+ */
+export type LayerDepth = { glsl: string; ring: boolean };
+
+export const FILLED_DEPTH: LayerDepth = {
+	glsl: /* glsl */ `
+float tl_depth(TlSurface s) { return -s.d; }
+float tl_bandPx(TlSurface s) { return 0.0; }
+`,
+	ring: false,
 };
 
 /** What the shape field must get right for a layer: distance from the shape edge, percent of the unit. */
@@ -95,8 +132,14 @@ export type TitleLayerType = {
 	fieldReach?: (p: LayerParams) => Partial<LayerFieldReach>;
 	/** A blur the layer reads through `u_tlBlur`, or null. */
 	blur?: (p: LayerParams, ctx: LayerPlanContext) => LayerBlur | null;
-	/** Extra passes before this layer's own. */
+	/** Extra passes before this layer's own; they run before the finish's. */
 	prepass?: LayerPrepass;
+	/** A prepass reads `tl_bounds()`: the planner cannot see into it, so it says so. */
+	prepassReadsBounds?: (p: LayerParams) => boolean;
+	/** Default `FILLED_DEPTH`. Layers that take a finish and are not the filled shape say what their shape is. */
+	depth?: LayerDepth;
+	/** Uniforms beyond one per param: data textures, values derived from several params. */
+	uniforms?: (p: LayerParams) => Readonly<Record<string, FxUniformValue>>;
 	/** The layer's picture changes with time on its own (generators, grain): the clip then redraws every frame. */
 	timeDependent?: (p: LayerParams) => boolean;
 	summary: (p: LayerParams, ctx: SummaryContext) => LayerSummary;
@@ -120,6 +163,10 @@ export type TitleFinish = {
 	fieldReach?: (p: LayerParams) => Partial<LayerFieldReach>;
 	/** Extra passes before the layer's own (height fields, satin blurs). */
 	prepass?: LayerPrepass;
+	/** Uniforms beyond one per param: data textures, values derived from several params. */
+	uniforms?: (p: LayerParams) => Readonly<Record<string, FxUniformValue>>;
+	/** `#define` lines before `glsl` and in prepasses: one program per variant instead of every variant in one. */
+	defines?: (p: LayerParams) => string;
 	summary?: (p: LayerParams) => string;
 };
 
