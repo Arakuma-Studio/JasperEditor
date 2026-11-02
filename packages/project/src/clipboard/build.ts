@@ -291,6 +291,7 @@ export function buildEffectsPayload(
 	const effects = (opts.effectIds ? all.filter((fx) => opts.effectIds!.includes(fx.id)) : all).map(clone);
 	const refs = emptyReferences();
 	for (const m of effectMediaIds(effects)) refs.media.add(m);
+	for (const l of effectLookIds(effects)) refs.titleLooks.add(l);
 	return {
 		...header(doc, 'effects', seq.id, opts.now),
 		effects: {

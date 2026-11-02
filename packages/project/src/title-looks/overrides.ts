@@ -131,6 +131,19 @@ export function rebaseAppearance(base: Appearance, next: Appearance, a: Appearan
 	};
 }
 
+/**
+ * Keeps layer identity across a redefinition of a look: a layer of `next` takes the id of the look's layer of the same
+ * type at the same position among that type, because linked clips' overrides are keyed by layer id (TL-016).
+ */
+export function adoptLayerIds(old: Appearance, next: Appearance): void {
+	const free = new Map<string, string[]>();
+	for (const l of old.layers) free.set(l.type, [...(free.get(l.type) ?? []), l.id]);
+	for (const l of next.layers) {
+		const id = free.get(l.type)?.shift();
+		if (id) l.id = id;
+	}
+}
+
 /** How many keyframes an appearance holds on the params `next` replaces (TL-019). */
 export function countKeyframes(a: Appearance): number {
 	let n = 0;

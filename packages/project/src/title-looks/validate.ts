@@ -305,6 +305,33 @@ export function repairAppearance(
 	return appearanceProblem(a) ? null : (a as unknown as Appearance);
 }
 
+/**
+ * First step of a load, before anything walks the document: every generic walker (invariants, ids, keyframes) assumes
+ * well-formed Animatables, and a look is read leniently, so a damaged appearance is made readable here. What cannot
+ * be read at all is removed: the effect is then a look without an appearance, which `repairDocument` drops.
+ */
+export function sanitizeAppearances(doc: unknown, newLayerId: () => string, note: Note): void {
+	if (!isPlainObject(doc) || !isPlainObject(doc.sequences)) return;
+	const instance = (fx: unknown) => {
+		if (!isPlainObject(fx) || fx.appearance === undefined || !appearanceProblem(fx.appearance)) return;
+		const id = typeof fx.id === 'string' ? fx.id : 'look';
+		const fixed = repairAppearance(fx.appearance, newLayerId, id, note);
+		if (fixed) fx.appearance = fixed;
+		else delete fx.appearance;
+	};
+	const list = (v: unknown) => {
+		if (Array.isArray(v)) v.forEach(instance);
+	};
+	for (const seq of Object.values(doc.sequences)) {
+		if (!isPlainObject(seq)) continue;
+		if (isPlainObject(seq.clips))
+			for (const c of Object.values(seq.clips)) if (isPlainObject(c)) list(c.effects);
+		for (const k of ['videoTracks', 'audioTracks', 'submixTracks'])
+			if (Array.isArray(seq[k])) for (const t of seq[k] as unknown[]) if (isPlainObject(t)) list(t.effects);
+		if (isPlainObject(seq.master)) list(seq.master.effects);
+	}
+}
+
 /** Why one stored project look is unreadable (key = record key), or null. */
 export function titleLookProblem(key: string, v: unknown): string | null {
 	const r = TitleLookSchema.safeParse(v);

@@ -17,6 +17,7 @@ import type { MgTemplateRegistry } from './registry/mg.ts';
 import { CURRENT_SCHEMA_VERSION, type ProjectDocument, ProjectDocumentSchema } from './schema/document.ts';
 import { soundDesignNeedsRepair } from './sound/repair.ts';
 import { textStylesNeedRepair } from './text-styles/model.ts';
+import { sanitizeAppearances } from './title-looks/validate.ts';
 
 export type MigrationStep = {
 	from: number;
@@ -249,6 +250,14 @@ export function loadProject(
 		detail:
 			'unreadable incoming interpolation removed (the key is read with its interpolation on both sides)',
 	}));
+	// spec 19 TL-020: looks are read leniently; nothing downstream sees a damaged one.
+	const lookRepairs: RepairEntry[] = [];
+	const lookIds = opts.ids ?? createRandomIdSource();
+	sanitizeAppearances(
+		m.document,
+		() => lookIds.next('apl'),
+		(action, entity, detail) => lookRepairs.push({ action, entity, detail }),
+	);
 	const parsed = ProjectDocumentSchema.safeParse(m.document);
 	if (!parsed.success) {
 		const msg = parsed.error.issues
@@ -275,5 +284,11 @@ export function loadProject(
 		repairs = r.report;
 		issues = checkInvariants(document, invOpts);
 	}
-	return { document, readOnly: false, migration: m.report, repairs: [...sideRepairs, ...repairs], issues };
+	return {
+		document,
+		readOnly: false,
+		migration: m.report,
+		repairs: [...sideRepairs, ...lookRepairs, ...repairs],
+		issues,
+	};
 }

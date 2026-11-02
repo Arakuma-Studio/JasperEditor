@@ -191,7 +191,15 @@ export const lp = {
 	},
 };
 
-export const NAME_RE = /^[A-Za-z][A-Za-z0-9]*$/;
+/** What a look's GLSL must not do (TL-034, TL-035); the registry test scans every layer, finish and generator. */
+export const FORBIDDEN_TITLE_GLSL: readonly (readonly [RegExp, string])[] = [
+	[/\bfract\s*\(\s*sin\b/, 'float hash: use the integer hashes of GLSL_HASH'],
+	[/\bMath\.random\b/, 'not deterministic'],
+	[/\bgl_FragCoord\b/, 'flipped on the last pass: use s.px'],
+	[/\bu_seed\b/, 'id-based: looks use u_tlSeed from the appearance'],
+	[/\bu_frame\b/, 'restarts at a razor cut: use u_tlTime'],
+	[/\bu_pxScale\b/, 'distances are tl_px(percent), never canvas pixels'],
+];
 
 const percent = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 export const fmtNumber = (v: unknown, digits = 1): string => {

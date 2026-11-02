@@ -120,14 +120,21 @@ export const GLSL_TL_ALPHA: GlslChunk = {
 	source: /* glsl */ `
 const float TL_FLOOR = ${FLOOR};
 float tl_a(ivec2 q, ivec2 sz) { return texelFetch(u_source, clamp(q, ivec2(0), sz - 1), 0).a; }
-// The brightest alpha of the 3×3 around q: glyphs fading in at 30 % have their edge at 15 %, so their rims fade in
-// with them instead of popping when they cross a fixed threshold (per-character opacity animators, TL-039).
+// The brightest alpha of the 5×5 around q. A glyph fading in at 30 % has its edge at 20 %, not at a fixed 50 %, so its
+// rim fades in with it instead of popping when it crosses a threshold (per-character opacity animators). Two pixels of
+// reach: the outer pixels of a 2 px antialiased ramp must see the solid interior, else they read as a faint shape of
+// their own and seed a false edge outside the true one.
 float tl_peak(ivec2 p, ivec2 sz) {
   float m = 0.0;
-  for (int y = -1; y <= 1; y++)
-    for (int x = -1; x <= 1; x++) m = max(m, tl_a(p + ivec2(x, y), sz));
+  for (int y = -2; y <= 2; y++)
+    for (int x = -2; x <= 2; x++) m = max(m, tl_a(p + ivec2(x, y), sz));
   return m;
 }
+// Antialiased edges are up to 2 px wide and thin strokes never reach full alpha: from 75 % up a part of the picture
+// counts as solid, so its edge sits at the usual 50 % and solid text has one threshold everywhere.
+float tl_threshold(float peak) { return 0.5 * min(peak / 0.75, 1.0); }
+// What a rim around this part of the picture inherits: full from 50 % local alpha up, so thin strokes keep solid rims.
+float tl_opacity(float peak) { return clamp(peak * 2.0, 0.0, 1.0); }
 `,
 };
 
@@ -139,13 +146,16 @@ void main() {
   ivec2 sz = textureSize(u_source, 0);
   tl_size = vec2(sz);
   ivec2 ip = ivec2(floor(v_uv * tl_size));
-  float peak = tl_peak(ip, sz);
-  if (peak < TL_FLOOR) { fragColor = vec4(0.0); return; }
-  float th = 0.5 * peak;
   float a = tl_a(ip, sz);
-  bool inside = a >= th;
   float l = tl_a(ip + ivec2(-1, 0), sz), r = tl_a(ip + ivec2(1, 0), sz);
   float t = tl_a(ip + ivec2(0, -1), sz), b = tl_a(ip + ivec2(0, 1), sz);
+  // Flat alpha, inside or out: no edge here, and most of the canvas stops at these five reads.
+  float hi = max(a, max(max(l, r), max(t, b)));
+  float lo = min(a, min(min(l, r), min(t, b)));
+  if (hi < TL_FLOOR || hi - lo < 0.002) { fragColor = vec4(0.0); return; }
+  float peak = tl_peak(ip, sz);
+  float th = tl_threshold(peak);
+  bool inside = a >= th;
   if ((l >= th) == inside && (r >= th) == inside && (t >= th) == inside && (b >= th) == inside) {
     fragColor = vec4(0.0);
     return;
@@ -155,17 +165,17 @@ void main() {
   float bl = tl_a(ip + ivec2(-1, 1), sz), br = tl_a(ip + ivec2(1, 1), sz);
   // Sobel gradient of alpha: the normal pointing into the shape.
   vec2 g = vec2(tr + 2.0 * r + br - tl - 2.0 * l - bl, bl + 2.0 * b + br - tl - 2.0 * t - tr);
-  if (dot(g, g) < 1.0e-8) { fragColor = vec4(p, peak, 1.0); return; }
+  if (dot(g, g) < 1.0e-8) { fragColor = vec4(p, tl_opacity(peak), 1.0); return; }
   vec2 n = normalize(g);
   // Alpha slope per px along n, the steeper one-sided difference: edges arrive 1 to 2 px wide.
   float slope = max(max(tl_aBilinear(p + n) - a, a - tl_aBilinear(p - n)), 1.0e-3);
-  fragColor = vec4(p - n * clamp((a - th) / slope, -1.0, 1.0), peak, 1.0);
+  fragColor = vec4(p - n * clamp((a - th) / slope, -1.0, 1.0), tl_opacity(peak), 1.0);
 }`;
 
 /** One jump-flood step (`u_tlStep` px). The same text for every step: one program. */
 export const FRAG_TL_FLOOD = /* glsl */ `
 void main() {
-  ivec2 res = textureSize(u_tlSeed, 0);
+  ivec2 res = textureSize(u_tlFlood, 0);
   ivec2 ip = ivec2(floor(v_uv * vec2(res)));
   vec2 p = vec2(ip) + 0.5;
   int stride = int(u_tlStep);
@@ -175,7 +185,7 @@ void main() {
     for (int x = -1; x <= 1; x++) {
       ivec2 q = ip + ivec2(x, y) * stride;
       if (q.x < 0 || q.y < 0 || q.x >= res.x || q.y >= res.y) continue;
-      vec4 s = texelFetch(u_tlSeed, q, 0);
+      vec4 s = texelFetch(u_tlFlood, q, 0);
       if (s.w < 0.5) continue;
       vec2 v = s.xy - p;
       float d = dot(v, v);
@@ -190,13 +200,15 @@ void main() {
   ivec2 sz = textureSize(u_source, 0);
   ivec2 ip = ivec2(floor(v_uv * vec2(sz)));
   vec2 p = vec2(ip) + 0.5;
-  vec4 s = texelFetch(u_tlSeed, ip, 0);
-  float peak = tl_peak(ip, sz);
-  bool inside = peak >= TL_FLOOR && tl_a(ip, sz) >= 0.5 * peak;
+  vec4 s = texelFetch(u_tlFlood, ip, 0);
+  float a = tl_a(ip, sz);
+  // Only partial alpha needs its surroundings: solid and empty pixels answer at once.
+  float peak = (a <= 0.0 || a >= 0.75) ? a : tl_peak(ip, sz);
+  bool inside = peak >= TL_FLOOR && a >= tl_threshold(peak);
   bool seeded = s.w > 0.5;
   vec2 toEdge = seeded ? s.xy - p : vec2(0.0);
   float d = seeded ? length(toEdge) : u_tlReach;
-  fragColor = vec4(inside ? -d : d, seeded ? s.z : (inside ? peak : 0.0), toEdge);
+  fragColor = vec4(inside ? -d : d, seeded ? s.z : (inside ? tl_opacity(peak) : 0.0), toEdge);
 }`;
 
 /** First bounds reduction: 8×8 blocks of the input to (−x0, −y0, x1, y1), −1e9 where empty. */

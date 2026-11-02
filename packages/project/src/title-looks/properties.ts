@@ -1,8 +1,8 @@
 // Spec 19 TL-014: how the rest of the app addresses what an appearance stores. Every number and colour is an
 // animatable property, reached by `param.set`, `keyframe.*` and `expression.*`:
 //   ParamPath     ["appearance", fxId, layerId, param]     a layer param
-//                 ["appearance", fxId, "$palette", role]   a palette colour
-//                 ["appearance", fxId, "$light", prop]     light angle or altitude
+//                 ["appearance", fxId, "palette", role]    a palette colour
+//                 ["appearance", fxId, "light", prop]      light angle or altitude
 //   property key  appearance.<fxId>.<layerId>.<param>      (the ParamPath joined with dots)
 // Global light: ParamPath ["globalLight", sequenceId, prop], keys in sequence time.
 import { titleLayerType, paramSpec, activeParamSpecs } from '../registry/fx/title-look/registry.ts';
@@ -14,8 +14,8 @@ import { paramValueProblem } from './validate.ts';
 import { type Appearance, type AppearanceLayer, COLOR_ROLES, type Role } from './model.ts';
 
 export const APPEARANCE_PATH = 'appearance';
-export const PALETTE_SLOT = '$palette';
-export const LIGHT_SLOT = '$light';
+export const PALETTE_SLOT = 'palette';
+export const LIGHT_SLOT = 'light';
 export const GLOBAL_LIGHT_PATH = 'globalLight';
 export const LIGHT_PROPS = ['angle', 'altitude'] as const;
 export type LightProp = (typeof LIGHT_PROPS)[number];
@@ -104,7 +104,7 @@ export function appearanceSlots(fxId: string, a: Appearance): AppearanceSlot[] {
 	return out;
 }
 
-/** The param spec of an appearance slot: `paintSlot = $palette` gives a colour, `$light` a light prop. */
+/** The param spec of an appearance slot: `palette` gives a colour, `light` a light prop, a layer id its param. */
 export function slotParamSpec(
 	a: Appearance,
 	slot: string,

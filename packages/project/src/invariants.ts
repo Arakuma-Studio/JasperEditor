@@ -88,6 +88,7 @@ import {
 	globalLightProblem,
 	repairAppearance,
 	repairTitleLooks,
+	sanitizeAppearances,
 	titleLookOf,
 	titleLooksRecordIssues,
 } from './title-looks/validate.ts';
@@ -1888,6 +1889,7 @@ export function repairDocument(
 	const doc = nullPrototypeRecords(JSON.parse(JSON.stringify(input)) as ProjectDocument);
 	const report: RepairEntry[] = [];
 	const note = (action: string, entity: string, detail: string) => report.push({ action, entity, detail });
+	sanitizeAppearances(doc, () => ids.next('apl'), note);
 	repairIds(doc, ids, note);
 	repairStructure(doc, ids, note);
 	// spec 13 SH-002: project text styles and the clips' links to them.

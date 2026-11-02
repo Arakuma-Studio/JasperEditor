@@ -327,7 +327,7 @@ export function resolveTarget(
 			...(metric ? { metric } : {}),
 		};
 	}
-	// spec 19 TL-014: `["appearance", fxId, layerId | "$palette" | "$light", name]` (content time of the owning clip).
+	// spec 19 TL-014: `["appearance", fxId, layerId | "palette" | "light", name]` (content time of the owning clip).
 	if (head === 'appearance' && a && rest.length === 2) {
 		const found = locateEffect(doc, a);
 		if (!found) return h.fail('E_NOT_FOUND', `Effect instance not found: ${a}`);

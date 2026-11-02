@@ -32,6 +32,7 @@ import {
 	type Role,
 } from '../../title-looks/model.ts';
 import {
+	adoptLayerIds,
 	appearanceOfLook,
 	applyColorway,
 	countKeyframes,
@@ -404,6 +405,7 @@ export const titleLookHandlers = {
 			body = lookBodyOf(clone(fx.appearance) as Appearance, clipFirstTime(seq, clip));
 		} else body = appearanceOfRecipe(cmd.recipe, h, old.name);
 		const prior = clone(old.appearance);
+		adoptLayerIds(prior, body);
 		(looksOf(doc)[cmd.lookId] as Draft<TitleLook>).appearance = body as never;
 		const skipped: string[] = [];
 		let updated = 0;

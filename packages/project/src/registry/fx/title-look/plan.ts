@@ -195,17 +195,17 @@ function boundsPasses(): ShaderPass[] {
  */
 function fieldPasses(reachPx: number): ShaderPass[] {
 	const fmt = { format: 'rgba32f', filter: 'nearest' } as const;
-	const out: ShaderPass[] = [{ output: 'tlSeed', frag: FRAG_TL_SEED, include: [GLSL_TL_ALPHA], ...fmt }];
+	const out: ShaderPass[] = [{ output: 'tlFlood', frag: FRAG_TL_SEED, include: [GLSL_TL_ALPHA], ...fmt }];
 	const top = 2 ** Math.max(0, Math.ceil(Math.log2(Math.max(2, reachPx + 1))) - 1);
 	for (let s = top; s >= 1; s /= 2)
 		out.push({
-			output: 'tlSeed',
+			output: 'tlFlood',
 			update: true,
 			frag: FRAG_TL_FLOOD,
 			uniforms: { u_tlStep: s },
 			...fmt,
 		});
-	out.push({ output: 'tlSeed', update: true, frag: FRAG_TL_FLOOD, uniforms: { u_tlStep: 1 }, ...fmt });
+	out.push({ output: 'tlFlood', update: true, frag: FRAG_TL_FLOOD, uniforms: { u_tlStep: 1 }, ...fmt });
 	out.push({
 		output: 'tlField',
 		frag: FRAG_TL_FIELD,
