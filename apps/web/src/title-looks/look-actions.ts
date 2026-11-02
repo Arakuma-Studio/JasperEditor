@@ -44,7 +44,11 @@ export function removeLook(session: EditorSession): boolean {
 
 export function detachLook(session: EditorSession): boolean {
 	const l = linked(lookedTargets(session));
-	return run(session, 'Detach from Look', l.length ? [{ type: 'look.detach', clipIds: ids(l) } as Command] : []);
+	return run(
+		session,
+		'Detach from Look',
+		l.length ? [{ type: 'look.detach', clipIds: ids(l) } as Command] : [],
+	);
 }
 
 /** Back to the look: overrides, removed layers and Intensity. Keys on replaced params go, and the count is announced. */
@@ -54,7 +58,9 @@ export function resetLook(session: EditorSession, layerIds?: readonly string[]):
 	const r = session.apply({
 		label: layerIds ? 'Reset Look Layer' : 'Reset Look',
 		origin: 'user',
-		commands: [{ type: 'look.reset', clipIds: ids(l), ...(layerIds ? { layerIds: [...layerIds] } : {}) } as Command],
+		commands: [
+			{ type: 'look.reset', clipIds: ids(l), ...(layerIds ? { layerIds: [...layerIds] } : {}) } as Command,
+		],
 	});
 	if (!r.ok) {
 		toast({ kind: 'error', title: t('Reset refused'), detail: r.errors.map((e) => e.message).join('; ') });
@@ -147,7 +153,9 @@ export async function deleteProjectLook(session: EditorSession, lookId: string):
 }
 
 /** Colourways a selection can cycle through: the look's own, then the library's. */
-export function colorwaysFor(look: TitleLook | null): readonly { id: string; name: string; palette: object }[] {
+export function colorwaysFor(
+	look: TitleLook | null,
+): readonly { id: string; name: string; palette: object }[] {
 	const seen = new Set<string>();
 	const out: { id: string; name: string; palette: object }[] = [];
 	for (const c of [...(look?.colorways ?? []), ...FACTORY_COLORWAYS]) {

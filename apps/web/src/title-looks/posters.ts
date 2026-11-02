@@ -1,10 +1,7 @@
 // Spec 19 TL-087: posters on the client. Cards ask only while they are on screen and stop asking when they leave; a short
 // wait before the request lets a fast scroll pass without asking at all. Bytes travel off the main thread and are decoded
 // by the `<img>`; the store keeps a bounded number of object URLs.
-import {
-	type LookPosterRequest,
-	LOOK_POSTER_WIDTHS,
-} from '@jasper/api';
+import { type LookPosterRequest, LOOK_POSTER_WIDTHS } from '@jasper/api';
 import type { Colorway, LookRecipe } from '@jasper/project';
 import type { EngineClient } from '@jasper/engine-client';
 import { useEffect, useState } from 'react';

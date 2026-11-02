@@ -144,7 +144,9 @@ export function applyLookToClips(
 /** First unlocked video track free over the range, else a new track above the top. */
 function freeTrack(seq: Sequence, at: number, duration: number, preferred?: readonly string[]): string {
 	const busy = (id: string) =>
-		Object.values(seq.clips).some((c) => c.trackId === id && c.start < at + duration && c.start + c.duration > at);
+		Object.values(seq.clips).some(
+			(c) => c.trackId === id && c.start < at + duration && c.start + c.duration > at,
+		);
 	const open = seq.videoTracks.filter((tr) => !tr.locked);
 	for (const id of preferred ?? []) if (open.some((tr) => tr.id === id) && !busy(id)) return id;
 	for (const tr of open) if (!busy(tr.id)) return tr.id;
@@ -230,7 +232,12 @@ export function setColorway(
 		label: t('Colourway: {0}', colorway.name),
 		origin: 'user',
 		commands: [
-			{ type: 'look.setColorway', clipIds: [...clipIds], colorwayId: colorway.id, palette: colorway.palette } as Command,
+			{
+				type: 'look.setColorway',
+				clipIds: [...clipIds],
+				colorwayId: colorway.id,
+				palette: colorway.palette,
+			} as Command,
 		],
 		coalesceKey: `look.colorway:${clipIds.join(',')}`,
 	});
@@ -257,7 +264,6 @@ export function playheadOnClip(clip: Pick<Clip, 'start' | 'duration'>, frame: nu
 export function clipsLinkedTo(doc: ProjectDocument, lookId: string): number {
 	let n = 0;
 	for (const seq of Object.values(doc.sequences))
-		for (const c of Object.values(seq.clips))
-			if (lookedClip(c as Clip)?.appearance.lookId === lookId) n++;
+		for (const c of Object.values(seq.clips)) if (lookedClip(c as Clip)?.appearance.lookId === lookId) n++;
 	return n;
 }

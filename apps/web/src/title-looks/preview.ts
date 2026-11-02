@@ -74,6 +74,11 @@ export function colorwayPreviewCommands(
 	colorway: { id: string; palette: unknown },
 ): Command[] {
 	return [
-		{ type: 'look.setColorway', clipIds: [...clipIds], colorwayId: colorway.id, palette: colorway.palette } as Command,
+		{
+			type: 'look.setColorway',
+			clipIds: [...clipIds],
+			colorwayId: colorway.id,
+			palette: colorway.palette,
+		} as Command,
 	];
 }

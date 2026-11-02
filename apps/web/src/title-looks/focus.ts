@@ -13,11 +13,7 @@ const listeners = new Set<() => void>();
 export const lookFocus = {
 	get: (): LookFocus => state,
 	set(next: LookFocus): void {
-		if (
-			state?.clipId === next?.clipId &&
-			state?.fxId === next?.fxId &&
-			state?.target === next?.target
-		)
+		if (state?.clipId === next?.clipId && state?.fxId === next?.fxId && state?.target === next?.target)
 			return;
 		state = next;
 		for (const l of [...listeners]) l();

@@ -15,7 +15,15 @@ import { cx, Icon } from '@jasper/ui';
 import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
 import { ColorField, MiniButton, SelectField } from '../panels/properties/controls/fields.tsx';
 import { ScrubbyNumber } from '../panels/properties/controls/ScrubbyNumber.tsx';
-import { addStop, gradientRampCss, type Palette, removeStop, rgbaCss, stopColor, updateStop } from './paint.ts';
+import {
+	addStop,
+	gradientRampCss,
+	type Palette,
+	removeStop,
+	rgbaCss,
+	stopColor,
+	updateStop,
+} from './paint.ts';
 
 const TYPE_LABELS = ['Linear', 'Radial', 'Sweep', 'Shape'];
 const SPAN_LABELS = ['Block', 'Line', 'Glyph'];
@@ -202,8 +210,7 @@ export function GradientField(props: {
 					onChange={(v) =>
 						props.onChange(
 							updateStop(g, index, {
-								paint:
-									v === CUSTOM ? { color: [...stopColor(stop, palette)] as RGBA } : { role: v as Role },
+								paint: v === CUSTOM ? { color: [...stopColor(stop, palette)] as RGBA } : { role: v as Role },
 							}),
 						)
 					}

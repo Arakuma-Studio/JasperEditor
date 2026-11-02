@@ -74,7 +74,12 @@ describe('scrub (TL-096)', () => {
 
 describe('label scrub (TL-096)', () => {
 	function Label(props: { onScrub(d: number): void; onEnd(c: boolean): void; onStart(): void }) {
-		const down = useScrubLabel({ step: 2, onStart: props.onStart, onScrub: props.onScrub, onEnd: props.onEnd });
+		const down = useScrubLabel({
+			step: 2,
+			onStart: props.onStart,
+			onScrub: props.onScrub,
+			onEnd: props.onEnd,
+		});
 		return (
 			<span data-testid="l" onPointerDown={down}>
 				Width

@@ -48,7 +48,11 @@ function initialTile(): TileSize {
 export function posterSample(doc: ProjectDocument, clips: readonly Clip[]): PosterSample | null {
 	const text = clips.find((c): c is Extract<Clip, { kind: 'text' }> => c.kind === 'text');
 	if (!text) return null;
-	const line = text.content.text.split('\n').find((l) => l.trim())?.trim() ?? '';
+	const line =
+		text.content.text
+			.split('\n')
+			.find((l) => l.trim())
+			?.trim() ?? '';
 	if (!line) return null;
 	const style = text.content.style;
 	const family = doc.fonts[style.fontId]?.family;
@@ -67,7 +71,8 @@ function wears(doc: ProjectDocument, clip: Clip, entry: LookEntry): boolean {
 
 function statusLine(selected: number, targets: number): string {
 	if (selected === 0) return 'Click a look to add a title at the playhead.';
-	if (targets === 0) return 'The selected clips cannot take a look. Select a title, shape, still, solid or video.';
+	if (targets === 0)
+		return 'The selected clips cannot take a look. Select a title, shape, still, solid or video.';
 	if (targets === 1) return 'Click a look to apply it to the selected clip.';
 	return t('Click a look to apply it to the {0} selected clips.', targets);
 }
@@ -254,7 +259,10 @@ export function LooksBrowser(props: {
 	);
 
 	return (
-		<div className="flex h-full min-h-0 flex-col gap-1 p-1 text-pr-ui text-pr-text" data-testid="looks-browser">
+		<div
+			className="flex h-full min-h-0 flex-col gap-1 p-1 text-pr-ui text-pr-text"
+			data-testid="looks-browser"
+		>
 			<div className="flex items-center gap-1">
 				<label className="flex min-w-0 flex-1 items-center gap-1 rounded-pr-control bg-pr-field px-1">
 					<Icon id="app.search" size={14} />
@@ -341,7 +349,9 @@ export function LooksBrowser(props: {
 					{outside ? (
 						<span className="text-pr-warning">Move the playhead over the clip to see the preview.</span>
 					) : message ? (
-						<span className={message.kind === 'error' ? 'text-pr-danger' : 'text-pr-muted'}>{message.text}</span>
+						<span className={message.kind === 'error' ? 'text-pr-danger' : 'text-pr-muted'}>
+							{message.text}
+						</span>
 					) : !seqId ? (
 						'Open a sequence to use looks.'
 					) : readOnly ? (

@@ -42,7 +42,11 @@ export function StyleCheckBadge(props: {
 		if (!i.fix) return;
 		const r = session.apply({ label: t(i.fix.label), origin: 'user', commands: i.fix.commands });
 		if (!r.ok)
-			toast({ kind: 'error', title: t('The fix was refused'), detail: r.errors.map((e) => e.message).join('; ') });
+			toast({
+				kind: 'error',
+				title: t('The fix was refused'),
+				detail: r.errors.map((e) => e.message).join('; '),
+			});
 	};
 	return (
 		<>
@@ -67,7 +71,12 @@ export function StyleCheckBadge(props: {
 					) : (
 						<ul className="flex flex-col gap-1">
 							{report.issues.map((i) => (
-								<li key={i.id} className="flex items-start gap-1" data-issue={i.code} data-severity={i.severity}>
+								<li
+									key={i.id}
+									className="flex items-start gap-1"
+									data-issue={i.code}
+									data-severity={i.severity}
+								>
 									<div className="min-w-0 flex-1">
 										<p className={cx('text-pr-small', TONE[i.severity])}>{t(i.message)}</p>
 										<p className="text-pr-small text-pr-dim">{t(i.rule)}</p>

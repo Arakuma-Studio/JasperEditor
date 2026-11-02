@@ -71,6 +71,8 @@ import {
 	transitionDragId,
 } from '../effects/drag.ts';
 import { setDefaultTransition, TRANSITION_ALIGNMENTS } from '../effects/transition-prefs.ts';
+import { announce } from '../../title-looks/actions.ts';
+import { dropLookAsTitle, dropLookOnClip, isLookDrag, readLookDrag } from '../../title-looks/drag.ts';
 import { insertMotionTemplate, MG_TEMPLATE_MIME, readMgTemplateDrag } from '../motionTemplates/insert.ts';
 import { projectItemOf } from '../program/layer-ops.ts';
 import { CleanupTimelineOverlay } from '../text/cleanup/TimelineOverlay.tsx';
@@ -1435,7 +1437,13 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			e.dataTransfer.dropEffect = 'copy';
 			return;
 		}
-		if (
+		// spec 19 TL-086: on a clip it applies, on an empty place it adds a title.
+		if (isLookDrag(e.dataTransfer)) {
+			e.preventDefault();
+			e.dataTransfer.dropEffect = 'copy';
+			return;
+		}
+if (
 			!types.includes(PROJECT_ITEMS_MIME) &&
 			!types.includes(MG_TEMPLATE_MIME) &&
 			!types.includes('Files') &&
@@ -1485,6 +1493,18 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			const side = dropSide(hit.clip, t.frame);
 			const m = applyMessage(applyTextAnimation(session, [hit.clip.id], { side, ...textAnim }));
 			if (m) toast(m.kind, m.text);
+			return;
+		}
+		const look = readLookDrag(e.dataTransfer);
+		if (look) {
+			const p = local(e);
+			const hit = hitTest(committedSeq, geomRef.current.layout, geomRef.current.viewport, p.x, p.y);
+			const trackId = (t.region === 'video' ? committedSeq.videoTracks : [])[t.index]?.id;
+			announce(
+				hit.kind === 'clip'
+					? dropLookOnClip(session, look, hit.clip.id)
+					: dropLookAsTitle(session, look, { at: t.frame, ...(trackId ? { trackId } : {}) }),
+			);
 			return;
 		}
 		const mg = readMgTemplateDrag(e.dataTransfer);

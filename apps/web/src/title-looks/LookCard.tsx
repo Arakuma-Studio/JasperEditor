@@ -99,7 +99,12 @@ function LookCardBody(p: CardProps) {
 					data-poster={poster.state}
 				>
 					{poster.state === 'ready' ? (
-						<img src={poster.url} alt="" draggable={false} className="absolute inset-0 h-full w-full object-cover" />
+						<img
+							src={poster.url}
+							alt=""
+							draggable={false}
+							className="absolute inset-0 h-full w-full object-cover"
+						/>
 					) : poster.state === 'error' ? (
 						<span
 							className="absolute inset-0 flex items-center justify-center p-1 text-center text-pr-small text-pr-muted"

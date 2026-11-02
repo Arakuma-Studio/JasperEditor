@@ -84,9 +84,7 @@ export function lookEntries(
 			cardColorways: wanted.size ? all.filter((c) => wanted.has(c.id)) : all,
 			recipe: l.recipe,
 			...(extra.sampleText ? { sampleText: extra.sampleText } : {}),
-			searchText: fold(
-				[l.name, extra.nameEs ?? '', category, ...tags, extra.description ?? ''].join(' '),
-			),
+			searchText: fold([l.name, extra.nameEs ?? '', category, ...tags, extra.description ?? ''].join(' ')),
 		};
 	});
 	const known = new Set(library.map((l) => l.libraryId));

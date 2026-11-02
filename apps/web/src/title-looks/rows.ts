@@ -26,8 +26,7 @@ import {
 import { bindProperty, makeRow, type Row } from '../panels/properties/lib/model.ts';
 import type { LookedClip, SharedLayer } from './selection.ts';
 
-const paintValue = (l: SharedLayer, name: string) =>
-	l.layers[0]!.params[name]?.value as Paint | undefined;
+const paintValue = (l: SharedLayer, name: string) => l.layers[0]!.params[name]?.value as Paint | undefined;
 
 /** One param of a shared layer as a row across its clips. */
 function layerRow(
@@ -46,12 +45,7 @@ function layerRow(
 }
 
 /** The rows a layer shows: every active param; a paint's angle only while the paint is a gradient. */
-export function layerRows(
-	doc: ProjectDocument,
-	seq: Sequence,
-	shared: SharedLayer,
-	frame: number,
-): Row[] {
+export function layerRows(doc: ProjectDocument, seq: Sequence, shared: SharedLayer, frame: number): Row[] {
 	const first = shared.looked[0]!;
 	const out: Row[] = [];
 	for (const spec of layerPropertySpecs(first.fx, shared.layers[0]!)) {
@@ -80,25 +74,39 @@ export function usedRoles(a: Appearance): Role[] {
 }
 
 /** Palette colours, across the clips. */
-export function paletteRows(doc: ProjectDocument, seq: Sequence, looked: readonly LookedClip[], frame: number): Row[] {
+export function paletteRows(
+	doc: ProjectDocument,
+	seq: Sequence,
+	looked: readonly LookedClip[],
+	frame: number,
+): Row[] {
 	const roles = looked[0] ? usedRoles(looked[0].appearance) : [];
 	return roles
 		.map((role) =>
 			makeRow(
 				`appearance.palette.${role}`,
-				looked.map((l) => bindProperty(doc, seq, l.clip, appearancePropertyKey(l.fx.id, PALETTE_SLOT, role), frame)),
+				looked.map((l) =>
+					bindProperty(doc, seq, l.clip, appearancePropertyKey(l.fx.id, PALETTE_SLOT, role), frame),
+				),
 			),
 		)
 		.filter((r): r is Row => r !== null);
 }
 
 /** Light angle and altitude, across the clips. */
-export function lightRows(doc: ProjectDocument, seq: Sequence, looked: readonly LookedClip[], frame: number): Row[] {
+export function lightRows(
+	doc: ProjectDocument,
+	seq: Sequence,
+	looked: readonly LookedClip[],
+	frame: number,
+): Row[] {
 	return ['angle', 'altitude']
 		.map((p) =>
 			makeRow(
 				`appearance.light.${p}`,
-				looked.map((l) => bindProperty(doc, seq, l.clip, appearancePropertyKey(l.fx.id, LIGHT_SLOT, p), frame)),
+				looked.map((l) =>
+					bindProperty(doc, seq, l.clip, appearancePropertyKey(l.fx.id, LIGHT_SLOT, p), frame),
+				),
 			),
 		)
 		.filter((r): r is Row => r !== null);

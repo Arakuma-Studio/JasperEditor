@@ -3,14 +3,20 @@
 // workspaces and project items; prefixes `>` commands, `@` project items, `#` markers, `:` go to
 // timecode, `?` help. Recent commands come first when the query is empty. (There is no in-app agent row:
 // agents drive the editor over MCP.)
-import type { Sequence } from '@jasper/project';
+import { mgRegistry } from '@jasper/mg-templates';
+import { type Sequence, TITLE_LAYER_TYPES } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
-import { cx, Dialog, Icon, type IconId, Kbd } from '@jasper/ui';
+import { cx, Dialog, Icon, type IconId, Kbd, toast } from '@jasper/ui';
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { listCommands } from '../../commands/registry.ts';
 import { formatTimecode, parseTimecodeEntry } from '../../gaps/time-display.ts';
 import { t } from '../../i18n/runtime.ts';
+import { applyEffectToClips, clipsAccepting } from '../../panels/effects/drag.ts';
+import { insertMotionTemplate } from '../../panels/motionTemplates/insert.ts';
 import type { PanelDefinition } from '../../panels/types.ts';
+import { announce, pickLook } from '../../title-looks/actions.ts';
+import { lookEntries } from '../../title-looks/library.ts';
+import { lookedTargets } from '../../title-looks/look-actions.ts';
 import { recentCommands, useCommandCtx, useShellRuntime } from '../context.tsx';
 import { commandState } from '../menus/resolve.ts';
 import { workspaceName } from '../workspaces/definitions.ts';
@@ -157,6 +163,83 @@ function buildPaletteRows(
 		return out.sort((a, b) => b.score - a.score).slice(0, limit);
 	};
 
+	/** TL-097: effects, templates, looks and look layers answer a search like commands do. */
+	const contentRows = (limit: number): PaletteRow[] => {
+		const session = src.session;
+		if (!session || !text) return [];
+		const out: PaletteRow[] = [];
+		const add = (row: Omit<PaletteRow, 'score'>, haystack: string) => {
+			const score = fuzzyScore(text, haystack);
+			if (score !== null) out.push({ ...row, score });
+		};
+		const selected = session.getState().selection.timeline.clips;
+		for (const e of session.ctx.registries.effects.list()) {
+			if (e.internal) continue;
+			const targets = clipsAccepting(session, e.id, selected);
+			add(
+				{
+					key: `effect:${e.id}`,
+					group: 'Effects',
+					label: e.label,
+					detail: e.category,
+					disabled: targets.length === 0,
+					reason: 'Select a clip that can take this effect first.',
+					run: exec(() => void applyEffectToClips(session, e.id, targets)),
+				},
+				[e.label, ...(e.keywords ?? [])].join(' '),
+			);
+		}
+		const hasSequence = !!session.getState().activeSequenceId;
+		for (const def of mgRegistry.definitions())
+			add(
+				{
+					key: `template:${def.id}@${def.version}`,
+					group: 'Templates',
+					label: def.name,
+					detail: def.category,
+					disabled: !hasSequence,
+					reason: 'Open a sequence first',
+					run: exec(() => {
+						try {
+							insertMotionTemplate(session, { id: def.id, version: def.version });
+						} catch (e) {
+							toast({ kind: 'error', title: e instanceof Error ? e.message : String(e) });
+						}
+					}),
+				},
+				`${def.name} ${def.category}`,
+			);
+		for (const look of lookEntries(session.getCommitted()))
+			add(
+				{
+					key: `look:${look.lookId}`,
+					group: 'Looks',
+					label: look.name,
+					detail: look.category,
+					disabled: !hasSequence,
+					reason: 'Open a sequence first',
+					run: exec(() => announce(pickLook(session, look))),
+				},
+				look.searchText,
+			);
+		for (const l of TITLE_LAYER_TYPES) {
+			const label = t('Add Layer: {0}', l.label);
+			add(
+				{
+					key: `look-layer:${l.type}`,
+					group: 'Look layers',
+					label,
+					detail: l.description,
+					disabled: lookedTargets(session).length === 0,
+					reason: 'Select a clip with a look first.',
+					run: exec(() => void env.run('graphics.addLookLayer', { layerType: l.type })),
+				},
+				label,
+			);
+		}
+		return out.sort((a, b) => b.score - a.score).slice(0, limit);
+	};
+
 	if (prefix === '?') {
 		const help: [string, string][] = [
 			['>', 'Commands only'],
@@ -246,7 +329,7 @@ function buildPaletteRows(
 	else {
 		rows.push(...commandRows(text ? 20 : 8));
 		if (text) {
-			rows.push(...panelRows(6), ...workspaceRows(6), ...itemRows(8));
+			rows.push(...contentRows(12), ...panelRows(6), ...workspaceRows(6), ...itemRows(8));
 		} else rows.push(...panelRows(20));
 	}
 	return rows;

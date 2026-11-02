@@ -14,7 +14,8 @@ import {
 
 export type LookedClip = { clip: Clip; fx: EffectInstance; appearance: Appearance };
 
-export const takesLook = (c: Pick<Clip, 'kind'>) => (TITLE_LOOK_CLIP_KINDS as readonly string[]).includes(c.kind);
+export const takesLook = (c: Pick<Clip, 'kind'>) =>
+	(TITLE_LOOK_CLIP_KINDS as readonly string[]).includes(c.kind);
 
 /** The clip's look, or null. */
 export function lookedClip(clip: Clip): LookedClip | null {

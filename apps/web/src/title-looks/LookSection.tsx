@@ -69,7 +69,11 @@ export function LookSections(props: {
 			<Section id="properties.look" title="Look">
 				<div data-testid="look-header">
 					<div className="flex min-h-[var(--pr-row-h)] flex-wrap items-center gap-1 pr-1 pl-2">
-						<span className="min-w-0 flex-1 truncate text-pr-ui text-pr-strong" data-testid="look-name" title={name}>
+						<span
+							className="min-w-0 flex-1 truncate text-pr-ui text-pr-strong"
+							data-testid="look-name"
+							title={name}
+						>
 							{name}
 						</span>
 						<StyleCheckBadge session={session} looked={sel.looked} readOnly={readOnly} />

@@ -105,42 +105,56 @@ export function AppearanceList(props: {
 		select(target);
 	};
 	const setEnabled = (s: SharedLayer, enabled: boolean) =>
-		apply(enabled ? 'Show Layer' : 'Hide Layer', (l, i) => ({
-			type: 'appearance.setLayerEnabled',
-			effectInstanceId: l.fx.id,
-			layerId: layerOf(s, i).id,
-			enabled,
-		}) as Command);
+		apply(
+			enabled ? 'Show Layer' : 'Hide Layer',
+			(l, i) =>
+				({
+					type: 'appearance.setLayerEnabled',
+					effectInstanceId: l.fx.id,
+					layerId: layerOf(s, i).id,
+					enabled,
+				}) as Command,
+		);
 	/** `listIndex`: the place in the list, top first; the stack is bottom-first. */
 	const move = (s: SharedLayer, listIndex: number) => {
 		const index = Math.max(0, Math.min(stack.length - 1, stack.length - 1 - listIndex));
-		apply('Reorder Layers', (l, i) => ({
-			type: 'appearance.reorderLayer',
-			effectInstanceId: l.fx.id,
-			layerId: layerOf(s, i).id,
-			index,
-		}) as Command);
+		apply(
+			'Reorder Layers',
+			(l, i) =>
+				({
+					type: 'appearance.reorderLayer',
+					effectInstanceId: l.fx.id,
+					layerId: layerOf(s, i).id,
+					index,
+				}) as Command,
+		);
 	};
 	const remove = (s: SharedLayer) =>
-		apply('Remove Layer', (l, i) => ({
-			type: 'appearance.removeLayer',
-			effectInstanceId: l.fx.id,
-			layerId: layerOf(s, i).id,
-		}) as Command);
+		apply(
+			'Remove Layer',
+			(l, i) =>
+				({
+					type: 'appearance.removeLayer',
+					effectInstanceId: l.fx.id,
+					layerId: layerOf(s, i).id,
+				}) as Command,
+		);
 	const add = (type: string) =>
-		apply('Add Layer', (l) => ({
-			type: 'appearance.addLayer',
-			effectInstanceId: l.fx.id,
-			layerType: type,
-			index: newLayerIndex(type, l.appearance),
-		}) as Command);
+		apply(
+			'Add Layer',
+			(l) =>
+				({
+					type: 'appearance.addLayer',
+					effectInstanceId: l.fx.id,
+					layerType: type,
+					index: newLayerIndex(type, l.appearance),
+				}) as Command,
+		);
 	const resetLayer = (s: SharedLayer) => {
 		const lids = looked.map((_, i) => layerOf(s, i).id);
 		ctx.ops.apply(
 			'Reset Look Layer',
-			looked.map(
-				(l, i) => ({ type: 'look.reset', clipIds: [l.clip.id], layerIds: [lids[i]!] }) as Command,
-			),
+			looked.map((l, i) => ({ type: 'look.reset', clipIds: [l.clip.id], layerIds: [lids[i]!] }) as Command),
 		);
 	};
 
@@ -248,7 +262,12 @@ export function AppearanceList(props: {
 								</MiniButton>
 								<span
 									className="h-[14px] w-[18px] shrink-0 rounded-[2px] border border-pr-border-strong"
-									style={{ background: paintCss(info?.summary.swatch as Paint, info?.palette ?? flatPalette(undefined)) }}
+									style={{
+										background: paintCss(
+											info?.summary.swatch as Paint,
+											info?.palette ?? flatPalette(undefined),
+										),
+									}}
 								/>
 								<button
 									type="button"
@@ -311,7 +330,12 @@ export function AppearanceList(props: {
 					);
 				})}
 			</div>
-			{groupRow('palette', 'Colours', 'palette', open === 'palette' ? paletteRows(doc, seq, looked, frame) : [])}
+			{groupRow(
+				'palette',
+				'Colours',
+				'palette',
+				open === 'palette' ? paletteRows(doc, seq, looked, frame) : [],
+			)}
 			{groupRow(
 				'light',
 				'Light',
@@ -330,11 +354,15 @@ export function AppearanceList(props: {
 						label="Light source"
 						disabled={readOnly}
 						onChange={(v) =>
-							apply('Light Source', (l) => ({
-								type: 'appearance.setLightSource',
-								effectInstanceId: l.fx.id,
-								source: v,
-							}) as Command)
+							apply(
+								'Light Source',
+								(l) =>
+									({
+										type: 'appearance.setLightSource',
+										effectInstanceId: l.fx.id,
+										source: v,
+									}) as Command,
+							)
 						}
 						data-testid="look-light-source"
 					/>

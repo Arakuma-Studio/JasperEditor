@@ -98,12 +98,20 @@ export function withDefaults(
 	return out;
 }
 
-/** A layer's Program handles (TL-092): the type's own, and the angle of every gradient paint (`lp.paint`'s `<name>Angle`). */
+/**
+ * A layer's Program handles (TL-092): the type's own, and the angle of every gradient paint (`lp.paint`'s `<name>Angle`).
+ * A paint's angle turns nothing while the paint is not a gradient, so it has no handle then.
+ */
 export function layerHandles(t: TitleLayerType, p: LayerParams): NonNullable<TitleLayerType['handles']> {
-	const gradients = t.params
-		.filter((s) => isPaintParam(s) && (p[s.name] as Paint | undefined)?.kind === 'gradient')
+	const paints = t.params.filter(isPaintParam);
+	const isGradient = (name: string) => (p[name] as Paint | undefined)?.kind === 'gradient';
+	const flat = new Set(paints.filter((s) => !isGradient(s.name)).map((s) => `${s.name}Angle`));
+	const own = (t.handles ?? []).filter((h) => !(h.kind === 'angle' && flat.has(h.params[0]!)));
+	const named = new Set(own.flatMap((h) => h.params));
+	const gradients = paints
+		.filter((s) => isGradient(s.name) && !named.has(`${s.name}Angle`))
 		.map((s) => ({ kind: 'angle' as const, params: [`${s.name}Angle`] }));
-	return [...(t.handles ?? []), ...gradients];
+	return [...own, ...gradients];
 }
 
 /** The effect of one generator (`Generate` category, TL-060): on a clip it draws over the clip's picture. */

@@ -1,3 +1,4 @@
+import { GENERATOR_LAYER_PREFIX, TITLE_GENERATORS, TITLE_LAYER_TYPES } from '@jasper/project';
 import { AUTOMATE_MENU } from '../../automation/menu.ts';
 import { defineLazyLabel, type LazyLabel } from '../../i18n/lazy.ts';
 import { TIMELINE_FORMATS } from '../../interchange/formats.ts';
@@ -449,6 +450,35 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			c('mg.insertTemplate', 'Insert Motion Template…'),
 			c('mg.addAnother', 'Add Another'),
 			c('mg.bulkImport', 'Import Motion Graphics from Spreadsheet…'),
+			sep,
+			c('graphics.applyLook', 'Apply Look…'),
+			sub('Look', [
+				c('graphics.nextColorway', 'Next Colourway'),
+				c('graphics.previousColorway', 'Previous Colourway'),
+				sep,
+				c('graphics.saveLook', 'Save Look…'),
+				c('graphics.updateLook', 'Update Look from Clip'),
+				sep,
+				c('graphics.resetLook', 'Reset Look'),
+				c('graphics.detachLook', 'Detach from Look'),
+				c('graphics.removeLook', 'Remove Look'),
+				sep,
+				sub(
+					'Add Layer',
+					TITLE_LAYER_TYPES.filter((l) => !l.type.startsWith(GENERATOR_LAYER_PREFIX)).map((l) =>
+						c('graphics.addLookLayer', () => l.label, { layerType: l.type }),
+					),
+				),
+			]),
+			...(TITLE_GENERATORS.length
+				? [
+						sub(
+							'Add Generator',
+							TITLE_GENERATORS.map((g) => c('graphics.addGenerator', () => g.label, { generatorId: g.id })),
+						),
+					]
+				: []),
+			sep,
 			sub('Arrange', ARRANGE_MENU),
 			sub('Stroke Animation', [
 				c('strokeAnimation.drawIn', 'Draw In'),

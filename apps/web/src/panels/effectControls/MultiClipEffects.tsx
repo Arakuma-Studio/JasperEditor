@@ -4,7 +4,15 @@
 // instance in one History entry (mixed values show –, a scrub moves each by the same amount); keyed parameters are
 // edited "relative to each clip's In": the playhead's offset from the primary clip's In is the key time in every clip.
 // Add an effect to all (drop it here), bypass or remove it on all. No mini-timeline in this mode.
-import type { Clip, Command, EffectInstance, EffectSpec, ProjectDocument, Sequence } from '@jasper/project';
+import {
+	type Clip,
+	type Command,
+	type EffectInstance,
+	type EffectSpec,
+	type ProjectDocument,
+	type Sequence,
+	TITLE_LOOK_EFFECT_ID,
+} from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { cx } from '@jasper/ui';
 import { type DragEvent, useMemo, useState } from 'react';
@@ -51,6 +59,8 @@ export function sharedEffects(
 	};
 	const maps = clips.map((c) => new Map(keyed(c).map((k) => [k.key, k.fx])));
 	return keyed(anchor)
+		// spec 19 TL-089: several clips' looks are edited in Properties, row by row across the clips.
+		.filter((k) => k.fx.effectId !== TITLE_LOOK_EFFECT_ID)
 		.filter((k) => maps.every((m) => m.has(k.key)))
 		.map((k) => ({
 			key: k.key,

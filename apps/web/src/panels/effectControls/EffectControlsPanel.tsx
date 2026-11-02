@@ -48,6 +48,10 @@ import { TextAnimationBars } from '../../text-animation/TextAnimationBars.tsx';
 import { TextAnimationSection } from '../../text-animation/TextAnimationSection.tsx';
 import { TextAnimatorList } from '../../text-animators/AnimatorList.tsx';
 import { TimeRemapSection } from '../../time/TimeRemapSection.tsx';
+import { announce } from '../../title-looks/actions.ts';
+import { AppearanceBlock } from '../../title-looks/AppearanceBlock.tsx';
+import { dropLookOnClip, isLookDrag, readLookDrag } from '../../title-looks/drag.ts';
+import { lookedClip } from '../../title-looks/selection.ts';
 import { openSimplify } from '../../tracking/simplify-actions.ts';
 import { EaseKeyMenuItems } from '../easing/KeyMenu.tsx';
 import {
@@ -73,8 +77,9 @@ import { ContextMenu } from '../timeline/components/Chrome.tsx';
 import type { ContextMenuItem } from '../timeline/state/ui-store.ts';
 import type { PanelProps } from '../types.ts';
 import { GRAPH_HEIGHT, type GraphView, PropertyGraphs } from './GraphEditor.tsx';
+import { SettingsSearch } from './SettingsSearch.tsx';
 import { graphKindOf } from './graph.ts';
-import { buildGroups, type FxSection, type RowFilter, rowVisible, shownClips } from './items.ts';
+import { buildGroups, type FxSection, type RowFilter, rowVisible, sectionRows, shownClips } from './items.ts';
 import {
 	clipRange,
 	commonPreset,
@@ -174,6 +179,8 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 		{},
 	);
 	const [filter, setFilter] = useState<RowFilter>('all');
+	/** The row a search just revealed. */
+	const [flash, setFlash] = useState<string | null>(null);
 	const [selectedFx, setSelectedFx] = useState<string | null>(null);
 	const [menu, setMenu] = useState<{ x: number; y: number; ids: string[] } | null>(null);
 	// Selected effect headers (section ids) for Save Preset… and the header menu.
@@ -329,7 +336,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 		const out = new Map<string, string[]>();
 		for (const g of groups)
 			for (const s of g.sections)
-				for (const r of s.rows)
+				for (const r of sectionRows(s))
 					for (const b of r.bindings)
 						if (b.path && (b.resolved.anim?.keyframes ?? []).some((k) => want.has(k.id)))
 							out.set(b.path.join('/'), [...b.path]);
@@ -342,7 +349,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 		const out = new Map<string, Keyframe<unknown>>();
 		for (const g of groups)
 			for (const s of g.sections)
-				for (const r of s.rows)
+				for (const r of sectionRows(s))
 					for (const b of r.bindings)
 						for (const k of b.resolved.anim?.keyframes ?? []) if (want.has(k.id)) out.set(k.id, k);
 		return [...out.values()];
@@ -352,7 +359,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 		const out: number[] = [];
 		for (const g of groups)
 			for (const s of g.sections)
-				for (const r of s.rows) {
+				for (const r of sectionRows(s)) {
 					const b = r.bindings[0]!;
 					if (b.clip.id !== clipId) continue;
 					for (const k of b.resolved.anim?.keyframes ?? [])
@@ -495,6 +502,12 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 			e.dataTransfer.dropEffect = 'copy';
 			return;
 		}
+		// spec 19 TL-086: a look applies to the shown clip.
+		if (isLookDrag(e.dataTransfer)) {
+			e.preventDefault();
+			e.dataTransfer.dropEffect = 'copy';
+			return;
+		}
 		if (!isEffectDrag(e.dataTransfer) && !types.includes(JASPER_EFFECT_INSTANCE_MIME)) return;
 		e.preventDefault();
 		e.dataTransfer.dropEffect = types.includes(JASPER_EFFECT_INSTANCE_MIME) ? 'move' : 'copy';
@@ -503,6 +516,14 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 	const onDrop = (e: DragEvent) => {
 		const slot = slotOf(e);
 		setDropSlot(null);
+		const look = readLookDrag(e.dataTransfer);
+		if (look) {
+			e.preventDefault();
+			const o = dropLookOnClip(session, look, primary.id);
+			announce(o);
+			if (!o.ok) notices.hint(o.message);
+			return;
+		}
 		// M2 (wp-m2-text-anim): over the mini-timeline the drop position picks the side, elsewhere In.
 		const textAnim = readTextAnimationDrag(e.dataTransfer);
 		if (textAnim) {
@@ -563,6 +584,12 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 		if (!r?.ok) notices.hint('This effect cannot be applied to the selected clip.');
 	};
 	const resetSection = (s: FxSection) => {
+		// spec 19 TL-090: a linked look resets to the look, its stack too.
+		const look = s.appearance ? lookedClip(s.clip) : null;
+		if (look?.appearance.lookId) {
+			ops.apply(`Reset ${s.title}`, [{ type: 'look.reset', clipIds: [s.clip.id] } as Command]);
+			return;
+		}
 		const cmds = s.rows.flatMap((r: Row) => planReset(r, data.doc, seq, frame).commands);
 		ops.apply(`Reset ${s.title}`, cmds);
 	};
@@ -627,6 +654,26 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 		setHeaderMenu({ x: e.clientX, y: e.clientY, items });
 	};
 
+	/** TL-095: opens what hides a row and brings it into view; the selection stays. */
+	const revealRow = (s: FxSection, rowId: string) => {
+		const next = { ...collapsed, [s.id]: false };
+		const stack = s.appearance;
+		if (stack) {
+			const group = stack.palette.some((r) => r.id === rowId)
+				? 'palette'
+				: stack.light.some((r) => r.id === rowId)
+					? 'light'
+					: stack.layers.find((l) => l.rows.some((r) => r.id === rowId))?.layer.id;
+			if (group) next[`${stack.fxId}:appearance:${group}`] = false;
+		}
+		setCollapsed(next);
+		setFlash(rowId);
+		requestAnimationFrame(() => {
+			const el = contentRef.current?.querySelector<HTMLElement>(`[data-row="${CSS.escape(rowId)}"]`);
+			el?.scrollIntoView?.({ block: 'center' });
+		});
+	};
+
 	const onPanelKeyDown = (e: ReactKeyboardEvent) => {
 		if (e.defaultPrevented) return;
 		const t = e.target as HTMLElement;
@@ -649,7 +696,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 		return (
 			<div key={r.id}>
 				<div className="flex items-stretch">
-					<div style={left} className="min-w-0 shrink-0">
+					<div style={left} className={cx('min-w-0 shrink-0', flash === r.id && 'bg-pr-selected')}>
 						<PropertyRow
 							row={r}
 							ctx={ctx}
@@ -801,6 +848,16 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 					</span>
 				) : null}
 				<span className="ml-auto" />
+				<SettingsSearch
+					groups={groups}
+					effects={registries.effects.list()}
+					audio={isAudioClip(primary)}
+					onAdd={(effect) => {
+						const r = applyEffectToClips(session, effect.id, [primary.id]);
+						if (!r?.ok) notices.hint(`${effect.label} cannot be applied to this clip.`);
+					}}
+					onReveal={revealRow}
+				/>
 				<MiniButton
 					label={showTimeline ? 'Hide Timeline View' : 'Show Timeline View'}
 					active={showTimeline}
@@ -849,7 +906,8 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 										rowVisible(data.doc, seq, r, filter) &&
 										!(s.fx && hidden.has(r.spec.key.slice(`effects.${s.fx.id}.`.length))),
 								);
-								if (filter !== 'all' && rows.length === 0) return null;
+								if (filter !== 'all' && !sectionRows(s).some((r) => rowVisible(data.doc, seq, r, filter)))
+									return null;
 								// crop-order: the pinned Crop (stack index 0) is an effect header too: drag it down the stack,
 								// or drop an effect on it to place that effect before the crop.
 								const fxIndex =
@@ -989,7 +1047,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 													</MiniButton>
 												) : null}
 											</div>
-											{lane(<SummaryLane rows={s.rows} seq={seq} range={range} />)}
+											{lane(<SummaryLane rows={sectionRows(s)} seq={seq} range={range} />)}
 										</div>
 										{open && s.id.endsWith(':timeRemap') ? (
 											<div style={left} data-testid="ec-time-remap">
@@ -1035,6 +1093,20 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 											<PuppetList
 												session={session}
 												model={s.puppet}
+												readOnly={readOnly}
+												layout={{ left, lane }}
+												collapsed={collapsed}
+												setCollapsed={setCollapsed}
+												renderRow={renderRow}
+												filter={(r) => rowVisible(data.doc, seq, r, filter)}
+											/>
+										) : null}
+										{open && s.appearance ? (
+											<AppearanceBlock
+												model={s.appearance}
+												ops={ops}
+												seq={seq}
+												range={range}
 												readOnly={readOnly}
 												layout={{ left, lane }}
 												collapsed={collapsed}

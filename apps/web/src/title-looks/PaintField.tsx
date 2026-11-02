@@ -34,7 +34,12 @@ function paletteOf(row: Row): Palette {
 	return flatPalette(looked?.appearance);
 }
 
-function write(row: Row, ctx: RowContext, command: (b: Row['bindings'][number]) => Command, key?: string): void {
+function write(
+	row: Row,
+	ctx: RowContext,
+	command: (b: Row['bindings'][number]) => Command,
+	key?: string,
+): void {
 	const commands = row.bindings.map(command);
 	const r = ctx.ops.apply(row.label, commands, key ? { coalesceKey: key } : undefined);
 	if (r && !r.ok) ctx.hint(r.errors[0]?.message ?? 'That paint cannot be used here.');
@@ -79,7 +84,11 @@ export function PaintField(props: { row: Row; ctx: RowContext }) {
 	const palette = paletteOf(row);
 	const coalesce = `paint:${row.id}:${row.bindings.map((b) => b.clip.id).join(',')}`;
 	return (
-		<span className="flex min-w-0 items-center gap-1" data-testid={`prop-${row.id}`} data-mixed={mixed || undefined}>
+		<span
+			className="flex min-w-0 items-center gap-1"
+			data-testid={`prop-${row.id}`}
+			data-mixed={mixed || undefined}
+		>
 			<SelectField<PaintKind>
 				value={mixed ? null : (paint?.kind ?? null)}
 				options={PAINT_KINDS}

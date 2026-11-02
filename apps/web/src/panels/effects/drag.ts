@@ -7,7 +7,7 @@
 // `applyEffectToClips(session, effectId, clipIds, index?)`, which commits ONE transaction for N clips.
 // M3 (wp-m3-presets, S03:FX-030): an effect preset travels the same way as the effect ref `preset:<presetId>`
 // (`writePresetDragPayload`); `clipsAccepting` / `applyEffectToClips` resolve it to `effect.applyPreset`.
-import type { Command, EffectRegistry, TransactionResult } from '@jasper/project';
+import type { Clip, Command, EffectRegistry, TransactionResult } from '@jasper/project';
 import { effectBadges, effectIsGpu, isKnownClipKind, kindCapabilities } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { applyPresetToClips, clipsAcceptingPreset, presetOfRef, presetRef } from './presets/apply.ts';
@@ -77,6 +77,33 @@ export function clipsAccepting(
 	return out;
 }
 
+/** Effect ids of generators (TL-060). */
+export const GENERATOR_EFFECT_PREFIX = 'jasper.generator.';
+
+function titleOf(session: EditorSession, clipIds: readonly string[]): Clip | null {
+	const doc = session.getCommitted();
+	for (const seq of Object.values(doc.sequences))
+		for (const id of clipIds) if (seq.clips[id]?.kind === 'text') return seq.clips[id]!;
+	return null;
+}
+
+/** A generator for the length of a title, on a free track below it. */
+export function addGeneratorBelow(session: EditorSession, effectId: string, title: Clip): TransactionResult {
+	return session.apply({
+		label: 'Add Generator',
+		origin: 'user',
+		commands: [
+			{
+				type: 'clip.addGenerator',
+				effectId,
+				at: title.start,
+				duration: title.duration,
+				belowClipId: title.id,
+			} as Command,
+		],
+	});
+}
+
 /** Applies an effect to clips as one undo step ("Apply <Effect>"), appended or at `index`. */
 export function applyEffectToClips(
 	session: EditorSession,
@@ -88,6 +115,11 @@ export function applyEffectToClips(
 	if (preset) return applyPresetToClips(session, preset, clipIds, index);
 	const targets = clipsAccepting(session, effectId, clipIds);
 	if (targets.length === 0) return null;
+	// spec 19 TL-064: a generator never lands on top of a title; it goes on a free track below.
+	if (effectId.startsWith(GENERATOR_EFFECT_PREFIX)) {
+		const title = titleOf(session, targets);
+		if (title) return addGeneratorBelow(session, effectId, title);
+	}
 	const spec = session.ctx.registries.effects.get(effectId)!;
 	// spec 13 SH-003: one effect.addMany for any number of clips (one command, one undo step).
 	return session.apply({

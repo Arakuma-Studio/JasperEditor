@@ -41,7 +41,11 @@ export function LooksTab(props: { onShowTemplates(): void }) {
 						title="Stacks of ordinary effects, in the Effects panel"
 						onClick={() => focus('panel.focus.effects')}
 					/>
-					<Link label="Templates" title="Motion templates that create clips" onClick={props.onShowTemplates} />
+					<Link
+						label="Templates"
+						title="Motion templates that create clips"
+						onClick={props.onShowTemplates}
+					/>
 				</>
 			}
 		/>

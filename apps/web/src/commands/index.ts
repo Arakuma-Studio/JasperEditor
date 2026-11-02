@@ -4,6 +4,7 @@ import '../simwarp/register.ts';
 import '../audio-fx/register.ts';
 import '../template-edit/register.ts';
 import '../remote-assets/register.ts';
+import '../title-looks/register.ts';
 import { audioFxCommands } from '../audio-fx/commands.ts';
 import { strokeAnimationCommands } from '../stroke-animation/commands.ts';
 import { appCommands } from './app.ts';
@@ -57,6 +58,7 @@ import { textStyleCommands } from './text-styles.ts';
 import { threeDCommands } from './three-d.ts';
 import { timeCommands } from './time.ts';
 import { timelineCommands } from './timeline.ts';
+import { titleLookCommands } from './title-looks.ts';
 import { trackingCommands } from './tracking.ts';
 import { transitionCommands } from './transitions.ts';
 import { transportCommands } from './transport.ts';
@@ -88,6 +90,7 @@ const COMMAND_MODULES: UiCommand[][] = [
 	trackingCommands,
 	transitionCommands,
 	textAnimationCommands,
+	titleLookCommands,
 	shapeCommands,
 	strokeAnimationCommands,
 	clipboardCommands,

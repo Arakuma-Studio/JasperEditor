@@ -42,7 +42,7 @@ function applied(extra: Record<string, unknown> = {}) {
 }
 
 describe('Intensity (TL-089)', () => {
-	it('is the look effect\'s one param: it animates like any effect param, and Reset clears it', () => {
+	it("is the look effect's one param: it animates like any effect param, and Reset clears it", () => {
 		const spec = defaultEffectRegistry.get(TITLE_LOOK_EFFECT_ID)!;
 		expect(spec.params.map((p) => p.name)).toEqual([TITLE_LOOK_INTENSITY]);
 		expect(spec.params[0]!.default).toBe(100);
@@ -93,7 +93,9 @@ describe('quick controls (TL-089)', () => {
 
 	it('refuses unreadable ones in a command', () => {
 		const h = new Harness();
-		const r = h.ok([{ type: 'clip.addText', at: 0, duration: 60, track: 'V2', content: { text: 'T' }, ref: '$t' }]);
+		const r = h.ok([
+			{ type: 'clip.addText', at: 0, duration: 60, track: 'V2', content: { text: 'T' }, ref: '$t' },
+		]);
 		const out = h.tx([
 			{
 				type: 'look.apply',
@@ -127,7 +129,9 @@ describe('recipeOfAppearance (TL-087)', () => {
 		const a = clipLook((h.seq.clips[t] as unknown as { effects: EffectInstance[] }).effects)!
 			.appearance as Appearance;
 		const again = applied();
-		again.h.ok([{ type: 'look.apply', clipIds: [again.t], look: { name: 'Again', recipe: recipeOfAppearance(a) } }]);
+		again.h.ok([
+			{ type: 'look.apply', clipIds: [again.t], look: { name: 'Again', recipe: recipeOfAppearance(a) } },
+		]);
 		const b = again.fx().appearance as Appearance;
 		expect(recipeOfAppearance(b)).toEqual(recipeOfAppearance(a));
 	});
@@ -162,8 +166,11 @@ describe('light source (TL-017)', () => {
 		expect(
 			(
 				clipLook(
-					(Object.values(Object.values(before.sequences)[0]!.clips)[0] as unknown as { effects: EffectInstance[] })
-						.effects,
+					(
+						Object.values(Object.values(before.sequences)[0]!.clips)[0] as unknown as {
+							effects: EffectInstance[];
+						}
+					).effects,
 				)!.appearance as Appearance
 			).light.source,
 		).toBe('look');
@@ -171,9 +178,9 @@ describe('light source (TL-017)', () => {
 
 	it('refuses an instance that is not a look', () => {
 		const { h } = applied();
-		expect(h.tx([{ type: 'appearance.setLightSource', effectInstanceId: 'fx_none', source: 'look' }]).ok).toBe(
-			false,
-		);
+		expect(
+			h.tx([{ type: 'appearance.setLightSource', effectInstanceId: 'fx_none', source: 'look' }]).ok,
+		).toBe(false);
 	});
 });
 
