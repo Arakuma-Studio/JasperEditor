@@ -1113,14 +1113,14 @@ function duplicateSequence(src: Sequence, h: HandlerContext): Sequence {
 }
 
 /** Media ids anything still uses: clips (any `mediaId` inside them, incl. effect and transition params), derived
- * media sources, font assets, transcripts. */
+ * media sources, font assets, transcripts. A light's `environmentMediaId` counts like a `mediaId`. */
 function usedMediaIds(doc: DDoc): Set<string> {
 	const used = new Set<string>();
 	const walk = (v: unknown): void => {
 		if (Array.isArray(v)) v.forEach(walk);
 		else if (v && typeof v === 'object')
 			for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
-				if (k === 'mediaId' && typeof x === 'string') used.add(x);
+				if ((k === 'mediaId' || k === 'environmentMediaId') && typeof x === 'string') used.add(x);
 				else walk(x);
 			}
 	};

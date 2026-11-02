@@ -43,7 +43,7 @@ import {
 	multicamSourceOf,
 	pruneMulticamAngles,
 } from './multicam/model.ts';
-import { clipParamMediaIds, rewriteParamMedia, templateMediaRefs } from './param-media.ts';
+import { clearEffectMedia, clipParamMediaIds, rewriteParamMedia, templateMediaRefs } from './param-media.ts';
 import { type BezierPath, isBezierPath, segmentCount } from './path/model.ts';
 import type { EffectRegistry, ParamSpec } from './registry/effects.ts';
 import { defaultEffectRegistry } from './registry/effects.ts';
@@ -795,6 +795,8 @@ export function invariantCheckers(
 		// INV-006 references
 		if (c.subclipId !== undefined && doc.items[c.subclipId]?.kind !== 'subclip')
 			issues.push(inv('INV-006', `Clip ${c.id} references missing subclip ${c.subclipId}`, cw));
+		// Template params, a light's environment and effect params use their media like the clip's source (INV-014).
+		for (const id of clipParamMediaIds(c)) usedMedia.add(id);
 		if (typeof r.mediaId === 'string') {
 			usedMedia.add(r.mediaId);
 			const asset = doc.media[r.mediaId];
@@ -1024,9 +1026,8 @@ export function invariantCheckers(
 		if (c.kind === 'motion-graphic') {
 			const stamp = templateStampIssue(c, opts.mgTemplates);
 			if (stamp) issues.push(inv('INV-012', `Clip ${c.id} ${stamp}`, [...cw, 'template']));
-			// Template media params (avatars): uses of their media (INV-014) that must exist (INV-006).
+			// Template media params (avatars): their media must exist (INV-006); uses are counted above (INV-014).
 			for (const ref of templateMediaRefs(c.params)) {
-				usedMedia.add(ref.mediaId);
 				if (!doc.media[ref.mediaId])
 					issues.push(
 						inv('INV-006', `Clip ${c.id} params.${ref.path} references missing media ${ref.mediaId}`, [
@@ -1938,6 +1939,9 @@ export function repairDocument(
 				c.light.environmentMediaId = null;
 				note('reset-environment', c.id, 'environment media is missing: neutral studio light');
 			}
+			// Effect `{mediaId}` params (LUTs, maps, reflection images) naming missing media become None.
+			for (const path of clearEffectMedia(r.effects as EffectInstance[] | undefined, (m) => !doc.media[m]))
+				note('clear-effect-media', c.id, `${path} referenced missing media: cleared`);
 			if (c.kind === 'model' && (r.threeD as { enabled?: boolean } | undefined)?.enabled !== true) {
 				r.threeD = {
 					...newLayer3D(true, 'model'),

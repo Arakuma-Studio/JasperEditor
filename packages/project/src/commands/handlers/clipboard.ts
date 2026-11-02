@@ -272,6 +272,9 @@ class Resolver {
 		const style = c.style as { fontId?: string } | undefined;
 		if (c.kind === 'captions' && style?.fontId) style.fontId = this.fontId(style.fontId);
 		this.remapEffectMedia(c.effects as EffectInstance[] | undefined);
+		const light = c.kind === 'light' ? (c.light as { environmentMediaId?: unknown } | undefined) : undefined;
+		if (light && typeof light.environmentMediaId === 'string' && light.environmentMediaId)
+			light.environmentMediaId = this.mediaId(light.environmentMediaId);
 		// template media params (avatars) follow their media like the clip's own source.
 		if (c.kind === 'motion-graphic' && c.params && typeof c.params === 'object') {
 			const next = rewriteParamMedia(c.params, (id) => this.mediaId(id));
