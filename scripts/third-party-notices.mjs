@@ -19,7 +19,7 @@
 // licence the records name (`licenses/texts/<SPDX id>.txt`). An incomplete record (no upstream URL, licence or
 // copyright line) or a licence without its text fails generation and `--check`.
 //
-// Platform assets (AGENTS.md §3 items 1 and 5): `licenses/platform-assets.md`, the provenance of the platform icons,
+// Platform assets (AGENTS.md §3 item 1): `licenses/platform-assets.md`, the provenance of the platform icons,
 // fonts and emoji the social-comment templates use (with the Twemoji CC-BY attribution), is copied last, between
 // `<!-- platform-assets:start -->` and `<!-- platform-assets:end -->`.
 import { existsSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';

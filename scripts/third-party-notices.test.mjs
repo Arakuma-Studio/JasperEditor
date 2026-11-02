@@ -264,7 +264,7 @@ describe('ported source records (licenses/ported, AGENTS.md §3.4)', () => {
 	});
 });
 
-describe('platform-asset record (licenses/platform-assets.md, AGENTS.md §3 items 1 and 5)', () => {
+describe('platform-asset record (licenses/platform-assets.md, AGENTS.md §3 item 1)', () => {
 	function tree(text) {
 		const root = tempDir('jasper-platform-assets-');
 		mkdirSync(join(root, 'licenses'), { recursive: true });

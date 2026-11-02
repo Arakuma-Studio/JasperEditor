@@ -69,10 +69,7 @@
    Templates that replicate a platform's UI may use that platform's names, logos, icons and fonts.
 2. Record every port of code or algorithms: source URLs, upstream-to-local paths, licence and
    copyright in `licenses/ported/<name>.md` using the [record format](licenses/ported/README.md).
-3. Commit screenshots only of JasperEditor or other open projects, with generated or openly
-   licensed media.
-4. Never commit generated `fixtures/media/`; add fixture recipes under `scripts/fixtures/`.
-5. Leave out assets whose provenance cannot be established.
+3. Never commit generated `fixtures/media/`; add fixture recipes under `scripts/fixtures/`.
 
 ## 4. Preview and export fidelity
 

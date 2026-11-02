@@ -4,7 +4,7 @@ The social-comment templates replicate TikTok, Instagram, YouTube and X comment 
 review cards. They use those platforms'
 own icons, badges, logos, fonts and emoji artwork under the platform-template exception of
 AGENTS.md §3 item 1 ("Templates that replicate a platform's UI may use that platform's names,
-logos, icons and fonts"). This record gives the provenance of every such asset (§3 item 5).
+logos, icons and fonts"). This record gives the provenance of every such asset.
 
 - **Licence of every platform glyph below:** proprietary; used under AGENTS.md §3 item 1 platform-template
   exception. The marks belong to their owners: TikTok (ByteDance Ltd.), Instagram (Meta Platforms, Inc.),
