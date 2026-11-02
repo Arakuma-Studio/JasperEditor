@@ -10,7 +10,8 @@ import type { ProjectDocument, ProjectItem } from '../schema/document.ts';
 import type { FontRef, MediaAsset, SyntheticSource, Transcript } from '../schema/media.ts';
 import type { Clip, EffectInstance, Sequence, TrackKind } from '../schema/sequence.ts';
 import { isKnownClipKind } from '../schema/sequence.ts';
-import { clipLook, type TitleLook } from '../title-looks/model.ts';
+import { type Appearance, clipLook, type TitleLook } from '../title-looks/model.ts';
+import { appearanceSlots } from '../title-looks/properties.ts';
 import { titleLookOf } from '../title-looks/validate.ts';
 import {
 	CLIPBOARD_FORMAT,
@@ -344,6 +345,14 @@ function clipKeyframeTracks(clip: Clip): { address: KeyframeAddress; anim: Anima
 		for (const [param, a] of Object.entries(fx.params))
 			if (a.keyframes.length)
 				out.push({ address: { effectId: fx.effectId, occurrence, param }, anim: a as Animatable<unknown> });
+		// spec 19 TL-014: an appearance's params, addressed by slot (the same look on the target has the same layers).
+		if (fx.appearance)
+			for (const s of appearanceSlots(fx.id, fx.appearance as Appearance))
+				if (s.anim.keyframes.length)
+					out.push({
+						address: { effectId: fx.effectId, occurrence, param: s.path.slice(2).join('.') },
+						anim: s.anim,
+					});
 	}
 	if (clip.kind === 'motion-graphic') {
 		const mg = clip as {

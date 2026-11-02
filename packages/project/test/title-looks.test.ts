@@ -9,8 +9,11 @@ import {
 	appearancePropertySpecs,
 	buildClipsPayload,
 	buildEffectsPayload,
+	buildKeyframesPayload,
+	buildRenderSnapshot,
 	type Clip,
 	checkInvariants,
+	clipContentTime,
 	clipLook,
 	clipParamMediaIds,
 	createCounterIdSource,
@@ -27,6 +30,7 @@ import {
 	propertyKeyToParamPath,
 	repairDocument,
 	resolveAppearance,
+	resolveCachedLayerProps,
 	resolveLayerProps,
 	resolvePropertySpec,
 	sequenceAnimatables,
@@ -632,7 +636,56 @@ describe('the look survives editing (TL-014)', () => {
 	});
 });
 
+describe('keyframe copy and paste reach appearance params (TL-014)', () => {
+	it('copies keys of a layer param and pastes them onto another clip with the same look', () => {
+		const { h, t, u, fx } = applied();
+		h.ok([{ type: 'look.apply', clipIds: [u], lookId: lookOf(h, t).lookId }]);
+		const rim = layerOf(h, t, 'rim').id;
+		const add = h.ok([
+			{ type: 'keyframe.add', target: ['appearance', fx, rim, 'width'], at: { frames: 0 }, value: 2 },
+			{ type: 'keyframe.add', target: ['appearance', fx, rim, 'width'], at: { frames: 10 }, value: 8 },
+		]);
+		const ids = add.results.map((r) => (r as { keyframeId: string }).keyframeId);
+		const payload = buildKeyframesPayload(h.doc, t, ids);
+		h.ok([{ type: 'keyframe.paste', payload, clipId: u, at: { frames: 5 } }]);
+		const keys = layerOf(h, u, 'rim').params.width!.keyframes;
+		expect(keys.map((k) => k.value)).toEqual([2, 8]);
+		expect(keys[1]!.time - keys[0]!.time).toBe(10 * F);
+		ok(h);
+	});
+
+	it('refuses a clip whose look has no such layer', () => {
+		const { h, t, u, fx } = applied();
+		h.ok([{ type: 'look.apply', clipIds: [u], look: { name: 'Other', recipe: { layers: [{ type: 'face' }] } } }]);
+		const rim = layerOf(h, t, 'rim').id;
+		const add = h.ok([{ type: 'keyframe.add', target: ['appearance', fx, rim, 'width'], at: { frames: 0 }, value: 2 }]);
+		const payload = buildKeyframesPayload(h.doc, t, [(add.results[0] as { keyframeId: string }).keyframeId]);
+		expect(code(h.tx([{ type: 'keyframe.paste', payload, clipId: u, at: { frames: 0 } }]))).toBe('E_INVALID_PARAM');
+	});
+});
+
 describe('global light (TL-017)', () => {
+	it('a look following the sequence light reads its keys in sequence time, on a clip that starts later', () => {
+		const { h, u } = project();
+		h.ok([
+			{
+				type: 'look.apply',
+				clipIds: [u],
+				look: { name: 'Lit', recipe: { light: { source: 'sequence', angle: 10 }, layers: [{ type: 'face' }] } },
+			},
+			{ type: 'sequence.setGlobalLight', angle: 0 },
+			{ type: 'keyframe.add', target: ['globalLight', h.seqId, 'angle'], at: { sequenceFrame: 0 }, value: 0 },
+			{ type: 'keyframe.add', target: ['globalLight', h.seqId, 'angle'], at: { sequenceFrame: 200 }, value: 200 },
+		]);
+		const snap = buildRenderSnapshot(h.doc, h.seqId, { resolveMedia: () => null, resolveFont: () => null });
+		const clip = snap.videoTracks.flatMap((v) => v.clips).find((c) => c.clipId === u)!;
+		expect(clip.sequenceLight).toBeTruthy();
+		// Clip u starts at sequence frame 80: frame 10 of the clip is sequence frame 90, whatever its source in-point.
+		const t = clipContentTime(clip, 90, { num: 30, den: 1 });
+		const look = resolveCachedLayerProps(clip, t).effects[0]!.appearance!;
+		expect(look.light.angle).toBeCloseTo(90, 5);
+	});
+
 	it('sets and clears it, animates in sequence time, refuses a keyed direct write', () => {
 		const { h } = project();
 		h.ok([{ type: 'sequence.setGlobalLight', angle: 90, altitude: 30 }]);

@@ -164,6 +164,7 @@ export function isStaticLayer(
 	// Wiggly / Expression selectors vary with time without keyframes.
 	if ('text' in c.source && textAnimatorsTimeVarying(c.source)) return false;
 	if (hasKeyframesDeep(c.transform) || hasKeyframesDeep(c.opacity)) return false;
+	if (hasKeyframesDeep(c.sequenceLight)) return false; // spec 19 TL-017
 	if (hasKeyframesDeep(c.masks) || c.effects.some((fx) => fx.enabled && hasKeyframesDeep(fx.masks)))
 		return false;
 	for (const fx of c.effects) {

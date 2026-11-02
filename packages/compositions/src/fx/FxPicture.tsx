@@ -115,6 +115,7 @@ export function fxDescriptors(stage: FxStage, inputs: DescriptorInputs): EffectD
 						key: `${s.key}|${versions.join(',')}|${sampleKey ?? (complete ? 'samples' : 'none')}`,
 						plan: s.plan,
 						preview: inputs.preview,
+						...(s.inputKey ? { inputKey: s.inputKey } : {}),
 						inputs: {
 							builtins: [...stage.builtins, { name: 'u_seed', type: 'float', value: [s.seed] }],
 							textures,

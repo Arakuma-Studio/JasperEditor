@@ -65,7 +65,7 @@ const recipe: LookRecipe = {
 	],
 };
 
-type Opts = { idSeed?: number; split?: number; scale?: number; still?: boolean };
+type Opts = { idSeed?: number; split?: number; scale?: number; still?: boolean; text?: string };
 
 /** A sequence with a dark gradient-free background, the animated title and a keyed look param. */
 function build(o: Opts = {}) {
@@ -94,13 +94,14 @@ function build(o: Opts = {}) {
 			at: 0,
 			duration: 90,
 			track: 'V2',
-			content: { text: 'LOOK', style: { sizePx: 120 * k, fill: [1, 1, 1, 1], align: 'center', weight: 700 } },
+			content: { text: o.text ?? 'LOOK', style: { sizePx: 120 * k, fill: [1, 1, 1, 1], align: 'center', weight: 700 } },
 			box: { width: 520 * k, height: 180 * k, autoSize: 'none' },
 			ref: '$t',
 		},
 		{ type: 'look.apply', clipIds: ['$t'], look: { name: 'E2E', recipe }, seed: 4242 },
-		{ type: 'textAnimator.add', clipId: '$t', properties: ['position'], ref: '$a' },
+		...(o.still ? [] : [{ type: 'textAnimator.add', clipId: '$t', properties: ['position'], ref: '$a' }]),
 	]);
+	if (o.still) return buildRenderSnapshot(doc, seqId, { resolveMedia: () => null, resolveFont: () => null });
 	const t = result.refs.$t!;
 	const a = result.refs.$a!;
 	const fx = (result.results[3] as { effectInstanceIds: string[] }).effectInstanceIds[0]!;
@@ -110,7 +111,6 @@ function build(o: Opts = {}) {
 	const outer = clip.effects[0]!.appearance.layers.find((l) => l.name === 'Outer')!.id;
 	const pos = ['clip', t, 'textAnimators', a, 'properties', 'position'];
 	const rim = ['appearance', fx, outer, 'width'];
-	if (o.still) return buildRenderSnapshot(doc, seqId, { resolveMedia: () => null, resolveFont: () => null });
 	({ document: doc } = step(doc, [
 		// The text animator lifts the characters; a look param keys over the same span.
 		{ type: 'keyframe.add', target: pos, at: { frames: 0 }, value: [0, -50 * k] },
@@ -259,12 +259,20 @@ describe.runIf(enabled && !!CHROME)('Title Looks in real Chrome (REMOTION_E2E=1)
 		const after = await draws();
 		console.info(`[title-look] still look: ${after - settled} GL draws across 4 seeks`);
 		expect(after - settled).toBe(0);
+		// The input changed: a text edit makes a new clip, and the cache must not hide it.
+		await page.evaluate(
+			(doc) => (window as never as { __fxPlayer: { setDoc(a: string, b: unknown): void } }).__fxPlayer.setDoc('still', doc),
+			build({ still: true, text: 'EDIT' }),
+		);
+		await page.waitForTimeout(3000);
+		const edited = await draws();
+		expect(edited).toBeGreaterThan(after);
 		// The animated clip does redraw: the counter is live.
 		await seek('animated', 11);
 		await page.waitForTimeout(1500);
 		await seek('animated', 12);
 		await page.waitForTimeout(1500);
-		expect(await draws()).toBeGreaterThan(after);
+		expect(await draws()).toBeGreaterThan(edited);
 	});
 
 	it('Program and export agree on an animated look, frame by frame', async () => {

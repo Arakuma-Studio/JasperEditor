@@ -875,7 +875,10 @@ function pathOn(clip: Clip, address: KeyframeAddress): string[] | null {
 		(fx) => fx.effectId === address.effectId,
 	);
 	const fx = same[address.occurrence] ?? same[0];
-	return fx ? ['effect', fx.id, address.param] : null;
+	if (!fx) return null;
+	// spec 19 TL-014: `<slot>.<name>` of an appearance.
+	if (fx.effectId === TITLE_LOOK_EFFECT_ID) return ['appearance', fx.id, ...address.param.split('.')];
+	return ['effect', fx.id, address.param];
 }
 
 const normKind = (k: string) => (k === 'enum' ? 'string' : k);
@@ -898,7 +901,7 @@ function pasteKeyframes(doc: DDoc, cmd: CommandOf<'keyframe.paste'>, h: HandlerC
 			// The path must name a parameter of this clip (or one of its effects) with the copied value kind.
 			if (cand[0] === 'clip' && cand[1] !== clip.id) continue;
 			if (
-				cand[0] === 'effect' &&
+				(cand[0] === 'effect' || cand[0] === 'appearance') &&
 				!((clip as { effects?: EffectInstance[] }).effects ?? []).some((f) => f.id === cand[1])
 			)
 				continue;

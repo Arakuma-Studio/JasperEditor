@@ -83,6 +83,8 @@ export type FxPreparedStep =
 			key: string;
 			plan: FxEffectPlan;
 			seed: number;
+			/** spec 19 TL-037: identity of the step's input when it cannot change between frames (`FxShaderParams`). */
+			inputKey?: string;
 			/** Requested offsets (`u_sampleOffsets`), request order. */
 			sampleOffsets: number[];
 			/** Source frame of each sample (absolute clip-local frame; null = transparent). */
@@ -185,6 +187,53 @@ export type LayerFx =
 	| { mode: 'active'; stage: FxStage; cssEffects: ResolvedEffect[]; chip: string | null };
 
 const NONE: LayerFx = { mode: 'none' };
+
+/**
+ * spec 19 TL-037: the DOM picture of a clip does not depend on the frame: text or a shape with nothing moving in it.
+ * Conservative: any animation, animator, Source Text key, stored key or active expression says no.
+ */
+const stillPictures = new WeakMap<object, boolean>();
+function domPictureIsStill(clip: LayerProps['clip']): boolean {
+	const hit = stillPictures.get(clip);
+	if (hit !== undefined) return hit;
+	const moves = (v: unknown): boolean => {
+		if (!v || typeof v !== 'object') return false;
+		if (Array.isArray(v)) return v.some(moves);
+		const o = v as Record<string, unknown>;
+		if (Array.isArray(o.keyframes) && o.keyframes.length > 0) return true;
+		const e = o.expression as { enabled?: boolean } | undefined;
+		if (e?.enabled) return true;
+		return Object.values(o).some(moves);
+	};
+	const s = clip.source as {
+		text?: unknown;
+		shape?: unknown;
+		animation?: { in?: unknown; out?: unknown };
+		animators?: unknown[];
+		sourceTextKeyframes?: unknown[];
+	};
+	const still =
+		(s.text !== undefined || s.shape !== undefined) &&
+		!s.animation?.in &&
+		!s.animation?.out &&
+		!s.animators?.length &&
+		!s.sourceTextKeyframes?.length &&
+		!moves(s);
+	stillPictures.set(clip, still);
+	return still;
+}
+
+/** Clips are immutable: an edit makes a new object, so its identity identifies its picture. */
+const clipIds = new WeakMap<object, number>();
+let nextClipIdentity = 1;
+function clipIdentity(clip: object): number {
+	let id = clipIds.get(clip);
+	if (id === undefined) {
+		id = nextClipIdentity++;
+		clipIds.set(clip, id);
+	}
+	return id;
+}
 
 function chipText(bypassed: readonly FxBypass[], gpu: string): string | null {
 	if (bypassed.length === 0) return null;
@@ -665,6 +714,14 @@ export function useLayerFx(
 			layerToComp: map,
 			compSize: { width: compW, height: compH },
 		});
+		// spec 19 TL-037: a still DOM picture under time-invariant steps has one input whatever the frame.
+		if (doc.isPreview && !plan.timeDependent && domPictureIsStill(clip)) {
+			let upstream = `${clipIdentity(clip)}`;
+			for (const st of steps) {
+				if (st.kind === 'gpu') st.inputKey = upstream;
+				upstream += `|${st.key}`;
+			}
+		}
 		const key = [
 			`${layout.width}x${layout.height}`,
 			`f${realFrame}/${sourceFrame}`,
