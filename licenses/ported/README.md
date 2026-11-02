@@ -1,8 +1,8 @@
 # Ported source code records
 
 Code or algorithms ported into JasperEditor from another project need one record here
-([AGENTS.md](../../AGENTS.md) §3.3, [ARCHITECTURE](../../docs/ARCHITECTURE.md) D-36). Only permissive licences
-(MIT, Apache-2.0, BSD, ISC, Zlib…) may be ported. Never port anything from `.reference/` or `editor-starter.zip`.
+([AGENTS.md](../../AGENTS.md) §3, [ARCHITECTURE](../../docs/ARCHITECTURE.md) D-36). Never port anything from
+`.reference/` or `editor-starter.zip`.
 
 `pnpm notices` copies every record in this folder (all `*.md` files except this README) into
 `THIRD_PARTY_NOTICES.md`, which ships with the app and is shown in Help ▸ About ▸ Licenses ▸ Ported source code,
@@ -33,7 +33,8 @@ Notes: what changed in the port (language, behaviour, fixes), anything not porte
 
 - **Upstream** is the repository URL (the first `http(s)://` URL in the record).
 - **Licence** is an SPDX expression (`MIT`, `Apache-2.0`, `MIT OR Apache-2.0`, `BSD-3-Clause`…). Each licence id
-  needs its text in `licenses/texts/<id>.txt` (MIT and Apache-2.0 are there).
+  needs its text in `licenses/texts/<id>.txt` (MIT and Apache-2.0 are there). A source without an SPDX licence uses
+  `LicenseRef-<name>`, with the terms it was used under in `licenses/texts/LicenseRef-<name>.txt`.
 - **Copyright** is the upstream copyright line, exactly as in its licence file. For EffectCraft and FilmCraft:
   `Copyright (c) 2026 ArtCraft Team and the EffectCraft contributors` / `… and the FilmCraft contributors`.
 - The path table maps every upstream file you ported from to the file it went into. Keep it current when files move.

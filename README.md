@@ -12,7 +12,7 @@ notes and known gaps are in `docs/wp-notes/`.
 
 **Rules first:** [`AGENTS.md`](AGENTS.md) is the operating manual for contributors and coding agents. Never
 open, read, grep or copy anything from `.reference/` or `editor-starter.zip` (a paid licence; ARCHITECTURE §0,
-D-36). Code ported from permissively licensed projects is welcome, recorded in [`licenses/ported/`](licenses/ported/)
+D-36). Code ported from other projects is welcome, recorded in [`licenses/ported/`](licenses/ported/)
 and shipped in `THIRD_PARTY_NOTICES.md`. Where JasperEditor stands against Premiere Pro: [`docs/gaps.md`](docs/gaps.md)
 and [`docs/parity.md`](docs/parity.md). Project files, migrations and crash recovery: [`docs/project-files.md`](docs/project-files.md).
 

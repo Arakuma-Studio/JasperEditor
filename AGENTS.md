@@ -66,9 +66,8 @@
 1. Use only openly licensed assets, public-domain/CC0 assets, CC BY/BY-SA assets, or original
    work licensed `LicenseRef-JasperEditor`. Never add assets with unknown licences or NC/ND terms.
    Templates that replicate a platform's UI may use that platform's names, logos, icons and fonts.
-2. Port code or algorithms only from permissive licences; record source URLs, upstream-to-local
-   paths, licence and copyright in `licenses/ported/<name>.md` using the
-   [record format](licenses/ported/README.md).
+2. Record every port of code or algorithms: source URLs, upstream-to-local paths, licence and
+   copyright in `licenses/ported/<name>.md` using the [record format](licenses/ported/README.md).
 3. Commit screenshots only of JasperEditor or other open projects, with generated or openly
    licensed media.
 4. Never commit generated `fixtures/media/`; add fixture recipes under `scripts/fixtures/`.
