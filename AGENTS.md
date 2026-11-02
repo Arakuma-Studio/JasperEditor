@@ -63,8 +63,9 @@
 
 ## 3. Assets and ported code
 
-1. Use only openly licensed assets, public-domain/CC0 assets, CC BY/BY-SA assets, or original
-   work licensed `LicenseRef-JasperEditor`. Never add assets with unknown licences or NC/ND terms.
+1. Prefer openly licensed assets, public-domain/CC0 assets, CC BY/BY-SA assets, or original
+   work licensed `LicenseRef-JasperEditor`. Assets with unknown licences are allowed.
+   Never add assets with NC/ND terms.
    Templates that replicate a platform's UI may use that platform's names, logos, icons and fonts.
 2. Record every port of code or algorithms: source URLs, upstream-to-local paths, licence and
    copyright in `licenses/ported/<name>.md` using the [record format](licenses/ported/README.md).

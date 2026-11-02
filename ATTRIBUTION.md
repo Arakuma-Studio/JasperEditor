@@ -1,8 +1,7 @@
 # Attribution
 
 Non-code assets in JasperEditor, with their author, source and licence (kept for the third-party assets whose
-licences ask for credit). The asset rules are in [AGENTS.md](AGENTS.md) §3: no Adobe or other product artwork; open
-licences only.
+licences ask for credit). The asset rules are in [AGENTS.md](AGENTS.md) §3: no Adobe or other product artwork.
 
 `LicenseRef-JasperEditor` marks original work made for this project, under the project's own licence (the
 repository has no public licence yet). Third-party JavaScript packages are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md);
