@@ -491,7 +491,7 @@ for the missing fingerprints, and for a generator example that was clipped by it
 
 - The library is part of TL-050 and TL-052: 30 of 60 looks, 14 of 16 templates, none in Brush and 3D. Recorded in `docs/gaps.md`.
 - A colourway on a template's standalone generator is applied once, at insertion: `look.setColorway` does not reach it later.
-- A shape's look in a template is shared by role, so changing its look changes every template shape of that role in the project.
+- A template shape's look is shared by role and palette, so `look.update` on it changes every such shape in the project.
 - `block` gradients on animated text follow the frame's bounds until TL-036 brings layout boxes.
 - `line` and `glyph` spans render as `block` until TL-036 (`docs/gaps.md`).
 - The field is rebuilt whenever a frame is redrawn: an animated param on static text pays for it, though the input did not

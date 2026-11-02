@@ -173,6 +173,22 @@ describe('title templates (TL-052)', () => {
 		expect(a.palette.accent2!.value).toEqual(way.palette.accent2);
 	});
 
+	it('gives templates of different palettes their own shape colours in one project', () => {
+		const h = new Harness();
+		const accent = (r: { results: unknown[] }) => {
+			const { clipIds } = r.results[0] as { clipIds: string[] };
+			return (fxOf(h.seq.clips[clipIds[0]!]!)!.appearance as Appearance).palette.accent2!.value;
+		};
+		const clean = accent(
+			h.ok([{ type: 'title.insertTemplate', templateId: 'template.lower-third-clean', at: 0 }]),
+		);
+		const strap = accent(
+			h.ok([{ type: 'title.insertTemplate', templateId: 'template.lower-third-broadcast', at: 0 }]),
+		);
+		expect(clean).toEqual(factoryColorway('colorway.pure-white')!.palette.accent2);
+		expect(strap).toEqual(factoryColorway('colorway.corporate-navy')!.palette.accent2);
+	});
+
 	it('animates a shape with ordinary keyframes that start and end at nothing', () => {
 		const h = new Harness();
 		const r = h.ok([{ type: 'title.insertTemplate', templateId: 'template.lower-third-broadcast', at: 0 }]);

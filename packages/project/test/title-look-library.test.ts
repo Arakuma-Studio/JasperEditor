@@ -34,6 +34,7 @@ import {
 	recolorLuma,
 	recolorRamp,
 	recolorStops,
+	repairAppearance,
 	searchLooks,
 	searchTemplates,
 } from '../src/index.ts';
@@ -446,6 +447,52 @@ describe('fixed colours (TL-051)', () => {
 		]);
 		expect(a().layers.find((l) => l.id === rim.id)!.fixedColor).toBe(true);
 		expect(id).toBeTruthy();
+	});
+});
+
+describe('repair of the new fields', () => {
+	const stored = () => appearanceOf(FACTORY_LOOKS[0]!.recipe) as unknown as Record<string, unknown>;
+	const repair = (raw: unknown) => {
+		const notes: string[] = [];
+		let n = 100;
+		const fixed = repairAppearance(
+			raw,
+			() => `apl_${String(++n).padStart(16, '0')}`,
+			'fx',
+			(_a, _e, d) => notes.push(d),
+		);
+		return { fixed, notes };
+	};
+
+	it('removes an unreadable fixed mark and says so, keeping the layer', () => {
+		const a = stored();
+		(a.layers as Record<string, unknown>[])[0]!.fixedColor = 'yes';
+		expect(appearanceProblem(a)).not.toBeNull();
+		const { fixed, notes } = repair(a);
+		expect(fixed?.layers[0]?.fixedColor).toBeUndefined();
+		expect(fixed?.layers).toHaveLength((a.layers as unknown[]).length);
+		expect(notes.join()).toContain('fixed colour');
+	});
+
+	it('keeps a valid fixed mark', () => {
+		const a = stored();
+		(a.layers as Record<string, unknown>[])[0]!.fixedColor = true;
+		const { fixed } = repair({ ...a, seed: -1 });
+		expect(fixed?.layers[0]?.fixedColor).toBe(true);
+	});
+
+	it('removes unreadable font settings and keeps the family', () => {
+		const a = { ...stored(), font: { family: 'Anton', weight: 'heavy' } };
+		const { fixed, notes } = repair(a);
+		expect(fixed?.font).toEqual({ family: 'Anton' });
+		expect(notes.join()).toContain('font settings');
+	});
+
+	it('never loses the look over an unreadable family', () => {
+		const a = { ...stored(), font: { family: 'x'.repeat(300) } };
+		const { fixed } = repair(a);
+		expect(fixed).not.toBeNull();
+		expect(fixed?.font).toBeUndefined();
 	});
 });
 

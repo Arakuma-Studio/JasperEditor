@@ -195,8 +195,9 @@ function shapeClip(
 			type: 'look.apply',
 			clipIds: [clipId],
 			look: {
-				name: `Template ${c.role}`,
-				sourceId: `template-shape.${c.role}`,
+				name: `Template Shape (${c.role})`,
+				// One project copy per role and palette: a template of another colourway must not reuse this one.
+				sourceId: `template-shape.${c.role}.${ctx.colorway}`,
 				recipe: { ...shapeLookRecipe(c.role), palette: ctx.palette },
 			},
 			...(cmd.colorwayId ? { colorwayId: cmd.colorwayId } : {}),
@@ -217,15 +218,17 @@ type Ctx = {
 	H: number;
 	short: number;
 	palette: Record<string, unknown>;
+	/** The colourway of `palette`. */
+	colorway: string;
 	/** The lowest track the next clip may take. */
 	track(): string;
 	placed(clipId: string): void;
 };
 
-/** The palette a template's shapes start from: the one of its first text clip's look. */
-function firstPalette(t: TitleTemplate): Record<string, unknown> {
+/** The look a template's shapes take their palette from: its first text clip's. */
+function paletteLook(t: TitleTemplate) {
 	const text = t.clips.find((c): c is TemplateText => c.kind === 'text');
-	return (text ? factoryLook(text.look)?.recipe.palette : undefined) ?? {};
+	return text ? factoryLook(text.look) : undefined;
 }
 
 function clipOf(
@@ -284,6 +287,7 @@ export const titleTemplateHandlers = {
 			cmd.duration !== undefined
 				? h.durationFrames(seq, cmd.duration)
 				: Math.max(1, Math.round(template.seconds * fps));
+		const own = paletteLook(template);
 		const clipIds: string[] = [];
 		const slotsOut: Record<string, string> = {};
 		let floor = trackSlotOf(seq, cmd.track ?? 'V2', h).index;
@@ -295,7 +299,8 @@ export const titleTemplateHandlers = {
 			W,
 			H,
 			short: Math.min(W, H),
-			palette: firstPalette(template),
+			palette: own?.recipe.palette ?? {},
+			colorway: own?.colorwayId ?? 'none',
 			track: () => `V${floor + 1}`,
 			placed: (id) => {
 				clipIds.push(id);
