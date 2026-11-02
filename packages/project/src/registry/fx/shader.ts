@@ -210,6 +210,11 @@ export type FxStructures = {
 	masks?: readonly FxLayerMask[];
 	/** spec 19: a look's appearance at the frame (`EffectInstance.appearance`), see `registry/fx/title-look/plan.ts`. */
 	titleLook?: FxTitleLook;
+	/**
+	 * spec 19 TL-017: the sequence's light at the frame, for an effect with `useGlobalLight` on (degrees, as
+	 * `Sequence.settings.globalLight`). Absent = the sequence has none: the default light.
+	 */
+	globalLight?: { angle: number; altitude: number };
 };
 export type FxLayerMask = {
 	id: string;
@@ -357,6 +362,11 @@ export type GpuEffect = {
 	 * Absent = the effect accepts the 8-bit fallback.
 	 */
 	requiresFloat?: boolean | string;
+	/**
+	 * False: the params drive the plan through the hooks and no `u_<param>` exists, so pass uniforms may reuse their
+	 * names (spec 19: a look effect's params become its layers' pass uniforms). A function decides per instance.
+	 */
+	paramUniforms?: boolean | ((p: EffectParams) => boolean);
 	/**
 	 * parity (roto): object mattes of the clip's roto objects as inputs. Each entry binds `uniform sampler2D
 	 * u_<name>` to the 8-bit matte (in the red channel, 1 = object) of the roto named by the string param `param`
@@ -542,6 +552,10 @@ export function paramUniforms(
 	}
 	return out;
 }
+
+/** Whether an instance's params are `u_<param>` uniforms (`GpuEffect.paramUniforms`). */
+const gpuParamUniforms = (gpu: GpuEffect, p: EffectParams) =>
+	typeof gpu.paramUniforms === 'function' ? gpu.paramUniforms(p) : gpu.paramUniforms !== false;
 
 /** A custom uniform value → its GLSL type and flattened numbers. Throws for malformed values. */
 export function toUniform(name: string, v: FxUniformValue): FxUniform {
@@ -846,7 +860,7 @@ export function planGpuEffect(
 	const p = fx.params;
 	const passes = gpuPasses(gpu, p, ctx);
 	if (passes.length === 0) throw new Error(`effect ${spec.id}: no passes`);
-	const uniforms = paramUniforms(spec, p);
+	const uniforms = gpuParamUniforms(gpu, p) ? paramUniforms(spec, p) : [];
 	const custom = gpu.uniforms?.(p, ctx) ?? {};
 	for (const [k, v] of Object.entries(custom)) uniforms.push(toUniform(k, v));
 	const textures: FxEffectPlan['textures'] = spec.params
@@ -1463,7 +1477,7 @@ export function validateGpuEffect(spec: EffectSpec): string[] {
 			if (!/^u_[A-Za-z][A-Za-z0-9_]*$/.test(k)) at(`uniform "${k}" must be named u_<name>`);
 		for (const m of uniformCollisions({
 			reserved: RESERVED,
-			params: spec.params,
+			params: gpuParamUniforms(gpu, defaults) ? spec.params : [],
 			outputs,
 			globals,
 			passes: passes.map((pass) => Object.keys(pass.uniforms ?? {})),

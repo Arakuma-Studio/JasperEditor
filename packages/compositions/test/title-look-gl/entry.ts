@@ -3,8 +3,11 @@
 import {
 	appearanceClipReach,
 	appearanceFromRecipe,
+	defaultEffectRegistry,
+	type EffectParams,
 	type EffectSpec,
 	type FxPadding,
+	type FxStructures,
 	fxBuiltinUniforms,
 	type LookRecipe,
 	planGpuEffect,
@@ -41,6 +44,14 @@ export type LookRequest = {
 	timingOnly?: boolean;
 	/** With `timingOnly`: time every pass (each ends in a read-back, so the total is higher). */
 	perPass?: boolean;
+};
+
+/** One standalone effect instead of a look: `params` over its defaults, on the same inputs. */
+export type EffectRequest = Omit<LookRequest, 'recipe' | 'unitPx' | 'seed'> & {
+	id: string;
+	params?: Record<string, unknown>;
+	/** TL-017: the sequence's light at the frame, as the stage passes it. */
+	globalLight?: { angle: number; altitude: number };
 };
 
 export type LookResult = {
@@ -119,9 +130,6 @@ function base64(bytes: Uint8ClampedArray): string {
 }
 
 function render(req: LookRequest): LookResult {
-	const h = fxHost();
-	if (!h) throw new Error('no WebGL2');
-	const spec = TITLE_LOOK_EFFECT as EffectSpec;
 	let n = 0;
 	const stored = appearanceFromRecipe(
 		req.recipe,
@@ -132,15 +140,38 @@ function render(req: LookRequest): LookResult {
 	const unitPx =
 		req.unitPx !== undefined ? req.unitPx : req.input.kind === 'text' ? (req.input.size ?? 96) : null;
 	const titleLook = { appearance, source: stored, unitPx, contentSeconds: req.contentSeconds ?? 0 };
+	return draw(TITLE_LOOK_EFFECT as EffectSpec, {}, req, { titleLook });
+}
+
+function renderEffect(req: EffectRequest): LookResult {
+	const spec = defaultEffectRegistry.get(req.id);
+	if (!spec?.gpu) throw new Error(`no GPU effect ${req.id}`);
+	const params = {
+		...Object.fromEntries(spec.params.map((p) => [p.name, p.default])),
+		...req.params,
+	} as EffectParams;
+	return draw(spec, params, req, req.globalLight ? { globalLight: req.globalLight } : {});
+}
+
+function draw(
+	spec: EffectSpec,
+	params: EffectParams,
+	req: Omit<EffectRequest, 'id' | 'params' | 'globalLight'>,
+	structures: FxStructures,
+): LookResult {
+	const h = fxHost();
+	if (!h) throw new Error('no WebGL2');
 	const pxScale = req.pxScale ?? 1;
 	const base = {
 		width: req.box.width,
 		height: req.box.height,
 		pxScale: 1,
 		fps: 30,
-		structures: { titleLook },
+		structures,
 	};
-	const pad = spec.gpu!.padding!({}, base) as Partial<FxPadding>;
+	const raw = spec.gpu!.padding?.(params, base) ?? 0;
+	const pad: Partial<FxPadding> =
+		typeof raw === 'number' ? { left: raw, top: raw, right: raw, bottom: raw } : raw;
 	const extra = req.pad ?? 0;
 	const padding: FxPadding = {
 		left: (pad.left ?? 0) + extra,
@@ -152,7 +183,7 @@ function render(req: LookRequest): LookResult {
 	const seconds = req.contentSeconds ?? 0;
 	const plan = planGpuEffect(
 		spec,
-		{ id: 'fx1', params: {} },
+		{ id: 'fx1', params },
 		{
 			...base,
 			pxScale: layout.pxScale,
@@ -255,6 +286,7 @@ function render(req: LookRequest): LookResult {
 
 (window as unknown as { __tl: unknown }).__tl = {
 	render,
+	renderEffect,
 	reach: (recipe: LookRecipe) => {
 		let n = 0;
 		return appearanceClipReach(appearanceFromRecipe(recipe, () => `apl_${String(++n).padStart(16, '0')}`));

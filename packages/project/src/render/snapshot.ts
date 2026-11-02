@@ -1618,13 +1618,17 @@ function colorEffectOf(c: Clip, doc: ProjectDocument, info: SequenceColorInfo): 
  * The effects renderers see: Expression Controls and other `passthrough` effects draw nothing and are left out
  * (expressions read them from the document). Returns the stored array when nothing is dropped.
  */
-/** spec 19 TL-017: what a clip needs to follow the sequence's light; nothing unless its look does. */
+/** spec 19 TL-017: what a clip needs to follow the sequence's light; nothing unless its look or an effect does. */
 function sequenceLightOf(
 	effects: readonly EffectInstance[],
 	seq: Sequence,
 ): { sequenceLight?: RenderVisualClip['sequenceLight'] } {
 	// The clip first: this runs for every clip of a snapshot, and most have no look.
-	if (clipLook(effects)?.appearance?.light?.source !== 'sequence') return {};
+	if (
+		clipLook(effects)?.appearance?.light?.source !== 'sequence' &&
+		!effects.some((fx) => fx.params.useGlobalLight?.value === true)
+	)
+		return {};
 	const light = globalLightOf(seq);
 	if (!light) return {};
 	return {

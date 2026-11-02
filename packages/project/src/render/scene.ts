@@ -60,6 +60,8 @@ export type ResolvedEffect = {
 	warpAnalysis?: WarpAnalysisData;
 	/** spec 19: a look's appearance at the frame (`jasper.title-look`). */
 	appearance?: ResolvedAppearance;
+	/** spec 19 TL-017: the sequence's light at the frame, on an effect with `useGlobalLight` on. */
+	globalLight?: { angle: number; altitude: number };
 	/** TL-121: the seeded pattern this instance continues (a razor cut, duplicate or paste of another instance). */
 	patternOrigin?: PatternOrigin;
 };
@@ -188,6 +190,17 @@ function sequenceLightAt(c: LayerPropertySource, t: number): { angle: number; al
 	return resolveGlobalLight(g, ((c.start ?? 0) + local) * F);
 }
 
+/** spec 19 TL-017: an effect following the sequence's light reads it at the frame through `FxStructures`. */
+function globalLightField(
+	fx: LayerPropertySource['effects'][number],
+	c: LayerPropertySource,
+	t: number,
+): { globalLight?: { angle: number; altitude: number } } {
+	if (fx.params.useGlobalLight?.value !== true) return {};
+	const globalLight = sequenceLightAt(c, t);
+	return globalLight ? { globalLight } : {};
+}
+
 /** Evaluated props of a clip at content time `t` (no caching). */
 export function resolveLayerProps(c: LayerPropertySource, t: number): ResolvedLayerProps {
 	const tr = c.transform;
@@ -218,6 +231,7 @@ export function resolveLayerProps(c: LayerPropertySource, t: number): ResolvedLa
 		...(fx.appearance && fx.effectId === TITLE_LOOK_EFFECT_ID
 			? { appearance: resolveAppearance(fx.appearance, t, sequenceLightAt(c, t)) }
 			: {}),
+		...globalLightField(fx, c, t),
 		...patternOriginField(fx.patternOrigin),
 	}));
 	// crop-order: the window the stack's crops leave visible (flips after a crop mirror it; several intersect).

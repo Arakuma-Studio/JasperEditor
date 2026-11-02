@@ -4,9 +4,9 @@ import { join } from 'node:path';
 import type { LookRecipe } from '@jasper/project';
 import type { Browser, Page } from '@playwright/test';
 import { CHROME, openGlPage } from './gl-browser.ts';
-import type { LookRequest, LookResult } from './title-look-gl/entry.ts';
+import type { EffectRequest, LookRequest, LookResult } from './title-look-gl/entry.ts';
 
-export type { LookRequest };
+export type { EffectRequest, LookRequest };
 export { CHROME };
 
 export type LookImage = Omit<LookResult, 'rgba'> & { data: Uint8Array };
@@ -15,6 +15,8 @@ export type LookPage = {
 	browser: Browser;
 	page: Page;
 	render(req: LookRequest): Promise<LookImage>;
+	/** One standalone effect on the same inputs. */
+	effect(req: EffectRequest): Promise<LookImage>;
 	reach(recipe: LookRecipe): Promise<{ left: number; top: number; right: number; bottom: number }>;
 	float(): Promise<boolean>;
 	/** What `render` throws on a GPU without float targets, or null. */
@@ -30,13 +32,15 @@ export async function openLookPage(dir: string): Promise<LookPage> {
 				(window as unknown as { __tl: Record<string, (a?: unknown) => unknown> }).__tl[n as string]!(a),
 			[name, arg] as const,
 		) as Promise<T>;
+	const image = ({ rgba, ...rest }: LookResult): LookImage => ({
+		...rest,
+		data: new Uint8Array(Buffer.from(rgba, 'base64')),
+	});
 	return {
 		browser,
 		page,
-		render: async (req) => {
-			const { rgba, ...rest } = await call<LookResult>('render', req);
-			return { ...rest, data: new Uint8Array(Buffer.from(rgba, 'base64')) };
-		},
+		render: async (req) => image(await call<LookResult>('render', req)),
+		effect: async (req) => image(await call<LookResult>('renderEffect', req)),
 		reach: (recipe) => call('reach', recipe),
 		float: () => call('float'),
 		withoutFloat: (req) => call('withoutFloat', req),

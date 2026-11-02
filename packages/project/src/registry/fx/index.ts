@@ -21,6 +21,7 @@ import { SAPPHIRE_TEXTURES_CLOUDS_EFFECTS } from './sapphire-textures-clouds.ts'
 import { SAPPHIRE_TIME_FLICKER_EFFECTS } from './sapphire-time-flicker.ts';
 import { SIMULATION_WARP_EFFECTS } from './simulation-warp.ts';
 import { TITLE_LOOK_EFFECT } from './title-look/effect.ts';
+import { TITLE_LOOK_EFFECTS } from './title-look/effects/index.ts';
 import { TITLE_GENERATOR_EFFECTS } from './title-look/registry.ts';
 import { WARP_STABILIZER_EFFECTS } from './warp-stabilizer.ts';
 
@@ -64,6 +65,7 @@ export const FX_FAMILIES: readonly { file: string; idPrefix: string; effects: re
 	{ file: 'simulation-warp', idPrefix: 'jasper.', effects: SIMULATION_WARP_EFFECTS },
 	{ file: 'warp-stabilizer', idPrefix: 'jasper.', effects: WARP_STABILIZER_EFFECTS },
 	{ file: 'title-look', idPrefix: 'jasper.', effects: [TITLE_LOOK_EFFECT, ...TITLE_GENERATOR_EFFECTS] },
+	{ file: 'title-look-effects', idPrefix: 'jasper.', effects: TITLE_LOOK_EFFECTS },
 ];
 
 /** Every fx-catalogue effect (registered by default). */

@@ -355,6 +355,7 @@ export function useLayerFx(
 	const structuresOf = useMemo(() => {
 		const byId = new Map(clip.effects.map((e) => [e.id, e]));
 		return (fx: ResolvedEffect): FxStructures | undefined => {
+			if (fx.globalLight) return { globalLight: fx.globalLight };
 			if (!fx.appearance) return undefined;
 			const titleLook = titleLookStructure(
 				fx.appearance,
