@@ -53,6 +53,12 @@ function title(extra: Command[] = []): RenderVisualClip {
 const addGlow = (params: Record<string, unknown> = {}): Command =>
 	({ type: 'effect.add', target: { clipId: '$t' }, effectId: GLOW, params }) as unknown as Command;
 
+/** The paint the title itself reaches beyond its box. */
+function textPad(c: RenderVisualClip): number {
+	if (!('text' in c.source)) throw new Error('not a text clip');
+	return textContentPad(c.source.text);
+}
+
 /** The glow's own padding (largest side) at the given width, as the effect canvas planner computes it. */
 function glowPad(c: RenderVisualClip, glowWidth: number): number {
 	const spec = defaultEffectRegistry.get(GLOW)!;
@@ -80,7 +86,7 @@ function withWidthKeys(c: RenderVisualClip, keys: { time: number; value: number 
 describe('contentBleed with GPU effects (TL-122)', () => {
 	it('adds the effect’s gpu.padding to the text paint when the frames are known', () => {
 		const c = title([addGlow({ glowWidth: 0.4 })]);
-		const text = textContentPad((c.source as { text: never }).text);
+		const text = textPad(c);
 		const pad = glowPad(c, 0.4);
 		expect(pad).toBeGreaterThan(20);
 		const bleed = contentBleed(c, defaultEffectRegistry, { f0: 0, f1: 90, fps: SEQ.fps });
@@ -99,7 +105,7 @@ describe('contentBleed with GPU effects (TL-122)', () => {
 			{ time: 0, value: 0.1 },
 			{ time: 60 * (705_600_000 / 30), value: 0.6 },
 		]);
-		const text = textContentPad((c.source as { text: never }).text);
+		const text = textPad(c);
 		const full = contentBleed(c, defaultEffectRegistry, { f0: 0, f1: 90, fps: SEQ.fps })!;
 		const early = contentBleed(c, defaultEffectRegistry, { f0: 0, f1: 1, fps: SEQ.fps })!;
 		expect(early).toBeCloseTo(text + glowPad(c, 0.1), 3);
@@ -159,7 +165,7 @@ describe('contentBleed with GPU effects (TL-122)', () => {
 		const c = title([
 			{ type: 'effect.add', target: { clipId: '$t' }, effectId: spec!.id } as unknown as Command,
 		]);
-		const text = textContentPad((c.source as { text: never }).text);
+		const text = textPad(c);
 		expect(contentBleed(c, defaultEffectRegistry, { f0: 0, f1: 90, fps: SEQ.fps })).toBeCloseTo(text, 5);
 	});
 });

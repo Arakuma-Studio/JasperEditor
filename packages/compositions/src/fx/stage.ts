@@ -14,6 +14,7 @@ import {
 	type EffectSpec,
 	effectParamMetric,
 	FX_MAX_CANVAS,
+	FX_NEEDS_FLOAT,
 	type FxClipInfo,
 	type FxEffectPlan,
 	type FxFrameContext,
@@ -25,6 +26,7 @@ import {
 	flattenPath,
 	fxBuiltinUniforms,
 	fxClipProgress,
+	fxFloatRefusal,
 	fxFrameOffset,
 	fxParamsAtFn,
 	fxSeed,
@@ -52,6 +54,7 @@ import {
 import { useContext, useMemo } from 'react';
 import { cancelRender, Internals } from 'remotion';
 import { ColorDocContext, colorOpsContext, referencedMedia, useLutAssets } from '../color/chain.ts';
+import { canUseFloatTargets } from '../color/gl.ts';
 import { bakedRunLut, loadedLutAsset, lutUrlKey } from '../color/luts.ts';
 import { NestCompSizeContext } from '../layers/nest-context.ts';
 import type { LayerProps, LayerTap } from '../types.ts';
@@ -193,6 +196,10 @@ function chipText(bypassed: readonly FxBypass[], gpu: string): string | null {
 		return 'GPU effects need HTML-in-Canvas here (chrome://flags/#canvas-draw-element)';
 	if (bypassed.some((b) => b.reason === 'gpu-unavailable'))
 		return gpu === 'lost' ? 'GPU effects paused (context lost)' : 'GPU effects unavailable (no WebGL2)';
+	if (bypassed.some((b) => b.reason === 'needs-float'))
+		return `Needs float render targets (EXT_color_buffer_float): ${[
+			...new Set(bypassed.filter((b) => b.reason === 'needs-float').map((b) => b.effectId)),
+		].join(', ')} not drawn`;
 	return `Effect failed: ${[...new Set(bypassed.map((b) => b.effectId))].join(', ')}`;
 }
 
@@ -302,6 +309,7 @@ export function useLayerFx(
 						registry: fxEffectRegistry(),
 						gpu: canRun ? gpu : 'unavailable',
 						failed: (id) => doc.isPreview && fxStatus.failure(id) !== undefined,
+						floatTargets: canUseFloatTargets(),
 						colorBypass,
 						ctx: { width: box.width, height: box.height, pxScale: 1, fps, frame: realFrame },
 						paramsAt: paramsAtOf,
@@ -332,6 +340,11 @@ export function useLayerFx(
 			contentPadding,
 		],
 	);
+	const needsFloat = plan?.bypassed.find((b) => b.reason === 'needs-float');
+	if (plan && !doc.isPreview && needsFloat) {
+		const refusal = fxFloatRefusal(fxEffectRegistry().get(needsFloat.effectId)!);
+		cancelRender(new Error(`${refusal?.code ?? FX_NEEDS_FLOAT}: ${refusal?.message ?? needsFloat.effectId}`));
+	}
 	if (plan && !doc.isPreview && (!plan.active || plan.bypassed.length > 0))
 		cancelRender(
 			new Error(

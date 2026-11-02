@@ -341,6 +341,14 @@ export type GpuEffect = {
 	 */
 	timeInvariant?: boolean;
 	/**
+	 * TL-123: the effect cannot run correctly on 8-bit targets (linear-light compositing, distance fields, HDR
+	 * intermediates). The host otherwise falls back from `rgba16f` / `rgba32f` to `rgba8` when the browser lacks
+	 * `EXT_color_buffer_float`; an effect that declares this is refused instead: the preview bypasses it with a chip,
+	 * and a plan names it as a blocker (`FX_NEEDS_FLOAT`, or the string given here, e.g. `TITLE_LOOK_NEEDS_FLOAT`).
+	 * Absent = the effect accepts the 8-bit fallback.
+	 */
+	requiresFloat?: boolean | string;
+	/**
 	 * parity (roto): object mattes of the clip's roto objects as inputs. Each entry binds `uniform sampler2D
 	 * u_<name>` to the 8-bit matte (in the red channel, 1 = object) of the roto named by the string param `param`
 	 * (a `roto-object` param) at the layer's media frame + `offset` (neighbouring frames for temporal filters),
@@ -400,6 +408,8 @@ export type FxEffectPlan = {
 	}[];
 	/** `u_source` has mipmaps in every pass (`GpuEffect.sourceMipmaps`). */
 	sourceMipmaps?: boolean;
+	/** `GpuEffect.requiresFloat`: the refusal code the host throws when it has no float render targets (TL-123). */
+	requiresFloat?: string;
 	/** Identity of programs and sizes (not of uniform values): changes force no re-plan, only a re-key. */
 	key: string;
 };
@@ -866,6 +876,7 @@ export function planGpuEffect(
 		textures,
 		key,
 		...(gpu.sourceMipmaps ? { sourceMipmaps: true } : {}),
+		...(gpu.requiresFloat ? { requiresFloat: fxFloatRefusal(spec)!.code } : {}),
 	};
 }
 
@@ -1327,6 +1338,21 @@ const FORBIDDEN_GLSL: readonly (readonly [RegExp, string])[] = [
  * Structural problems of a GPU effect spec (empty = valid). The catalogue test runs this over every registered
  * effect; it cannot compile GLSL (see the GL test in packages/compositions/test for that).
  */
+/** The refusal an effect that `requiresFloat` gets without float render targets: its code and message, else null. */
+export function fxFloatRefusal(
+	spec: Pick<EffectSpec, 'id' | 'label' | 'gpu'>,
+): { code: string; message: string } | null {
+	const r = spec.gpu?.requiresFloat;
+	if (!r) return null;
+	return {
+		code: typeof r === 'string' ? r : FX_NEEDS_FLOAT,
+		message: `"${spec.label}" needs float render targets (EXT_color_buffer_float), which this browser lacks; it is never drawn on 8-bit targets`,
+	};
+}
+
+/** Code of the refusal of a `requiresFloat` effect that names no code of its own. */
+export const FX_NEEDS_FLOAT = 'FX_NEEDS_FLOAT';
+
 export function validateGpuEffect(spec: EffectSpec): string[] {
 	const out: string[] = [];
 	const gpu = spec.gpu;
@@ -1337,6 +1363,8 @@ export function validateGpuEffect(spec: EffectSpec): string[] {
 	if (!spec.capabilities.export.includes('remotion')) at(`capabilities.export must include 'remotion'`);
 	if (spec.color) at('a gpu effect cannot also be a colour op (pick one realization)');
 	if (spec.appliesTo !== 'video') at('gpu effects apply to video');
+	if (typeof gpu.requiresFloat === 'string' && !/^[A-Z][A-Z0-9_]{2,63}$/.test(gpu.requiresFloat))
+		at('requiresFloat names its refusal code in capitals and underscores (e.g. TITLE_LOOK_NEEDS_FLOAT)');
 	const names = new Set<string>();
 	for (const p of spec.params) {
 		if (!NAME_RE.test(p.name)) at(`param "${p.name}": names are letters and digits, starting with a letter`);

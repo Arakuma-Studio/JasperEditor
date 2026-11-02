@@ -1,4 +1,5 @@
 export * from './crop.ts';
+export * from './gl-needs.ts';
 export * from './homography.ts';
 export * from './lowered.ts';
 export * from './plan.ts';
