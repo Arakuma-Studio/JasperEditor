@@ -839,6 +839,69 @@ describe('clip.addGenerator (TL-060, TL-064)', () => {
 		ok(h);
 	});
 
+	it('never hides the title: with nothing free below it, a new track goes under it (TL-064)', () => {
+		const h = new Harness();
+		const r = h.ok([
+			{ type: 'clip.addText', at: 0, duration: 60, track: 'V1', content: { text: 'T' }, ref: '$t' },
+		]);
+		const a = h.ok([
+			{
+				type: 'clip.addGenerator',
+				effectId: 'generator:sunburst',
+				at: 0,
+				duration: 60,
+				belowClipId: r.refs.$t,
+			},
+		]);
+		const c = h.seq.clips[(a.results[0] as { clipId: string }).clipId]!;
+		const idx = (id: string) => h.seq.videoTracks.findIndex((x) => x.id === id);
+		expect(idx(c.trackId)).toBeLessThan(idx(h.seq.clips[r.refs.$t!]!.trackId));
+		ok(h);
+	});
+
+	it('skips a busy or a locked track below the title', () => {
+		const h = new Harness();
+		const r = h.ok([
+			{ type: 'clip.addText', at: 0, duration: 60, track: 'V3', content: { text: 'T' }, ref: '$t' },
+			{ type: 'clip.addText', at: 0, duration: 60, track: 'V2', content: { text: 'B' }, ref: '$b' },
+		]);
+		const a = h.ok([
+			{ type: 'clip.addGenerator', effectId: 'jasper.generator.fire', at: 0, duration: 60, belowClipId: r.refs.$t },
+		]);
+		const c = h.seq.clips[(a.results[0] as { clipId: string }).clipId]!;
+		expect(h.seq.videoTracks.findIndex((x) => x.id === c.trackId)).toBe(0);
+		ok(h);
+	});
+
+	it('takes a generator by its look name, with a preset under its params (TL-063)', () => {
+		const { h } = project();
+		const r = h.ok([
+			{
+				type: 'clip.addGenerator',
+				effectId: 'generator:fire',
+				preset: 'blaze',
+				params: { intensity: 50 },
+				at: 300,
+				duration: 30,
+			},
+		]);
+		const { clipId } = r.results[0] as { clipId: string };
+		const fx = (h.seq.clips[clipId] as unknown as { effects: EffectInstance[] }).effects[0]!;
+		expect(fx.effectId).toBe('jasper.generator.fire');
+		const value = (k: string) => (fx.params[k] as { value: unknown } | undefined)?.value ?? fx.params[k];
+		expect(value('height')).toBe(130);
+		expect(value('intensity')).toBe(50);
+		expect(code(h.tx([{ type: 'clip.addGenerator', effectId: 'fire', at: 0, duration: 10 }]))).toBe(
+			'E_UNKNOWN_EFFECT',
+		);
+		expect(
+			code(
+				h.tx([{ type: 'clip.addGenerator', effectId: 'generator:fire', preset: 'nope', at: 400, duration: 10 }]),
+			),
+		).toBe('E_INVALID_PARAM');
+		ok(h);
+	});
+
 	it('refuses effects that are not generators and unknown ones', () => {
 		const { h } = project();
 		expect(code(h.tx([{ type: 'clip.addGenerator', effectId: 'nonsense', at: 0, duration: 10 }]))).toBe(
@@ -847,6 +910,51 @@ describe('clip.addGenerator (TL-060, TL-064)', () => {
 		expect(
 			code(h.tx([{ type: 'clip.addGenerator', effectId: 'jasper.gaussian-blur', at: 0, duration: 10 }])),
 		).toBe('E_INVALID_PARAM');
+	});
+});
+
+describe('generator layers (TL-060, TL-064)', () => {
+	const types = (h: Harness, t: string) => lookOf(h, t).layers.map((l) => l.type);
+
+	it('a generator goes behind the title by its own default, or in front when it says so', () => {
+		const { h, t, fx } = applied();
+		const before = types(h, t).length;
+		h.ok([{ type: 'appearance.addLayer', effectInstanceId: fx, layerType: 'generator:fire' }]);
+		expect(types(h, t)[0]).toBe('generator:fire');
+		h.ok([{ type: 'appearance.addLayer', effectInstanceId: fx, layerType: 'generator:smoke' }]);
+		// A second one stays above the first and below the title.
+		expect(types(h, t).slice(0, 2)).toEqual(['generator:fire', 'generator:smoke']);
+		h.ok([{ type: 'appearance.addLayer', effectInstanceId: fx, layerType: 'generator:lightning' }]);
+		expect(types(h, t).at(-1)).toBe('generator:lightning');
+		expect(types(h, t).length).toBe(before + 3);
+		ok(h);
+	});
+
+	it('an explicit index wins, and a preset fills the layer', () => {
+		const { h, t, fx } = applied();
+		const r = h.ok([
+			{
+				type: 'appearance.addLayer',
+				effectInstanceId: fx,
+				layerType: 'generator:glints',
+				preset: 'stars',
+				index: 0,
+			},
+		]);
+		expect((r.results[0] as { index: number }).index).toBe(0);
+		expect(lookOf(h, t).layers[0]!.params.stars!.value).toBe(4);
+		ok(h);
+	});
+
+	it('keeps its own seed and survives a split with the rest of the look', () => {
+		const { h, t, fx } = applied();
+		h.ok([{ type: 'appearance.addLayer', effectInstanceId: fx, layerType: 'generator:particles' }]);
+		const seed = lookOf(h, t).seed;
+		h.ok([{ type: 'clip.split', clipIds: [t], at: 30 }]);
+		const right = Object.values(h.seq.clips).find((c) => c.id !== t && c.start === 30 && c.kind === 'text')!;
+		expect(lookOf(h, right.id).seed).toBe(seed);
+		expect(types(h, right.id)).toEqual(types(h, t));
+		ok(h);
 	});
 });
 

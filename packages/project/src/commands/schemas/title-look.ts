@@ -69,9 +69,11 @@ export const LookDeleteCmd = cmd('look.delete', { lookId: IdRefSchema });
 export const AppearanceAddLayerCmd = cmd('appearance.addLayer', {
 	...FxRef,
 	layerType: z.string().min(1).max(64),
-	/** Stack position, bottom-first (default: the top). */
+	/** Stack position, bottom-first (default: the top; generators go behind the title unless they say `front`, TL-064). */
 	index: z.number().int().min(0).optional(),
 	name: z.string().max(MAX_TITLE_LOOK_NAME).optional(),
+	/** TL-063: a preset of the generator, under `params`. */
+	preset: z.string().min(1).max(64).optional(),
 	params: z.record(z.string(), z.unknown()).optional(),
 	ref: RefDeclSchema.optional(),
 });
@@ -114,8 +116,10 @@ export const ClipAddGeneratorCmd = cmd('clip.addGenerator', {
 	duration: TimeInputSchema,
 	/** Where it goes: the lowest track to consider (default V1). */
 	track: TrackRefSchema.optional(),
-	/** TL-064: a free track below this title, when one exists; else above it. */
+	/** TL-064: a free track below this title; with none free, a new track under it. */
 	belowClipId: IdRefSchema.optional(),
+	/** TL-063: a preset of the generator, under `params`. */
+	preset: z.string().min(1).max(64).optional(),
 	params: z.record(z.string(), z.unknown()).optional(),
 	name: z.string().min(1).max(MAX_TITLE_LOOK_NAME).optional(),
 	id: z.string().optional(),

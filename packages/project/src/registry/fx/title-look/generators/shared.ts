@@ -122,6 +122,8 @@ export const GLSL_TLG_LOOK_SHAPE: GlslChunk = {
 	name: 'title-look/generator-shape',
 	source: /* glsl */ `
 float tlg_d(vec2 uv) { return texture(u_tlField, uv).x; }
+// Where layout-anchored sites live: the layer box, which holds the title's layout whatever its letters do.
+vec4 tlg_layout() { return vec4(u_box.xy, u_box.xy + u_box.zw); }
 vec4 tlg_field(vec2 px) {
   ivec2 q = clamp(ivec2(floor(px)), ivec2(0), textureSize(u_tlField, 0) - 1);
   return texelFetch(u_tlField, q, 0);
@@ -171,6 +173,8 @@ export function standInChunk(kind: GeneratorStandIn): GlslChunk {
 		source: /* glsl */ `${STAND_IN[kind]}
 vec4 tlg_field(vec2 px) { return tlg_standIn(px); }
 float tlg_d(vec2 uv) { return tlg_standIn(uv * u_canvasSize).x; }
+// A frame-sized box would leave most sites far from a title-sized stand-in.
+vec4 tlg_layout() { return tl_bounds(); }
 TlSurface tl_surfaceAt(vec2 uv) {
   vec4 f = tlg_standIn(uv * u_canvasSize);
   TlSurface s;
@@ -202,8 +206,8 @@ export const GLSL_TLG_SITES: GlslChunk = {
 	name: 'title-look/generator-sites',
 	source: /* glsl */ `
 vec2 tlg_anchor(vec2 n) {
-  if (u_anchor == 1) { vec4 b = tl_bounds(); return mix(b.xy, b.zw, n); }
-  return u_box.xy + n * u_box.zw;
+  vec4 b = u_anchor == 1 ? tl_bounds() : tlg_layout();
+  return mix(b.xy, b.zw, n);
 }
 struct TlgSite {
   vec2 px;      // the emitting point, canvas px

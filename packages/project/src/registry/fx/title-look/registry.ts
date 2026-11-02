@@ -11,6 +11,7 @@ import {
 } from '../shader.ts';
 import {
 	type GeneratorColor,
+	type GeneratorPreset,
 	isPaintParam,
 	type LayerParams,
 	type LayerPassContext,
@@ -274,6 +275,11 @@ void main() {
 			},
 		},
 	});
+}
+
+/** A preset chip of a generator by ids (TL-063). */
+export function generatorPreset(generator: string, preset: string): GeneratorPreset | undefined {
+	return TITLE_GENERATORS.find((g) => g.id === generator)?.presets?.find((x) => x.id === preset);
 }
 
 /** TL-064: where a layer of this type goes when no index is given: generators behind the title unless they say front. */
