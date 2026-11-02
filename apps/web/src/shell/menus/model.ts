@@ -492,6 +492,11 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 		items: [
 			c('program.showRulers', 'Show Rulers'),
 			c('program.gamutOverlay', 'Gamut Warning'),
+			sub('Gamut Warning Output', [
+				c('program.gamutOutput.rec709', 'Rec. 709'),
+				c('program.gamutOutput.rec2020', 'Rec. 2020'),
+				c('program.gamutOutput.p3d65', 'P3-D65'),
+			]),
 			c('program.showGuides', 'Show Guides'),
 			c('program.lockGuides', 'Lock Guides'),
 			c('program.addGuide', 'Add Guide…'),

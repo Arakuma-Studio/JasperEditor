@@ -210,7 +210,7 @@ export class SplitImageService {
 				if (seen.has(i)) throw new JobError('E_INVALID_PARAM', `Island ${i} is in two parts`, false);
 				seen.add(i);
 			}
-		// Islands nobody chose stay with their nearest part? No: a split keeps every visible pixel, so the rest joins the first.
+		// A split keeps every visible pixel: islands left out of every group go with the first part.
 		const rest = map.islands.map((_, i) => i).filter((i) => !seen.has(i));
 		const full = rest.length ? groups.map((g, i) => (i === 0 ? [...g, ...rest] : g)) : groups;
 		const parts = partsOf(map.islands, full);

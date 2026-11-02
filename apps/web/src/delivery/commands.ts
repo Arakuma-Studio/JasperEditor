@@ -2,7 +2,7 @@
 import { type Clip, TITLE_LOOK_CLIP_KINDS } from '@jasper/project';
 import { selectedSequenceClips, sequenceContext } from '../commands/sequence-context.ts';
 import type { CommandCtx, UiCommand } from '../commands/types.ts';
-import { programOverlays } from '../extensions/index.ts';
+import { clipMenuExtensions, programOverlays } from '../extensions/index.ts';
 import { mediaKeyOf } from '../import/assets.ts';
 import { errorText } from '../processing/engine-jobs.ts';
 import { ALPHA_DIALOG, registerAlphaDialog } from './AlphaDialog.tsx';
@@ -21,6 +21,20 @@ programOverlays.register({
 	active: () => gamutOverlay.getState().enabled,
 	component: GamutOverlay,
 	order: 40,
+});
+
+clipMenuExtensions.register({
+	id: 'delivery',
+	order: 50,
+	items: ({ clip, runCommand: run }) => {
+		if (!run) return [];
+		const out: ReturnType<Parameters<typeof clipMenuExtensions.register>[0]['items']> = [];
+		if (clip.kind === 'still')
+			out.push({ kind: 'item', label: 'Split Image…', run: () => run('delivery.splitImage') });
+		if ((TITLE_LOOK_CLIP_KINDS as readonly string[]).includes(clip.kind))
+			out.push({ kind: 'item', label: 'Export Title…', run: () => run('delivery.exportTitle') });
+		return out;
+	},
 });
 
 const hasSequence = (ctx: CommandCtx) => !!sequenceContext(ctx);

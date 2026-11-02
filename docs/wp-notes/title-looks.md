@@ -375,8 +375,8 @@ for the missing fingerprints, and for a generator example that was clipped by it
 - **Memory.** `writePsd` takes every layer in RAM and returns one buffer. So each layer goes through ag-psd alone as a one-layer
   document (ag-psd still writes every byte: records, RLE, blend keys), its channel data goes to a scratch file, and the records
   are kept. The final file is head + records + streamed channels + tail + composite, the head and tail from one more ag-psd
-  document with empty layers. Peak memory is one frame's RGBA plus ag-psd's scratch buffer, 12 bytes per pixel, so
-  `MAX_PSD_PIXELS` is ≈ 1 GiB; the layer count does not matter. Cancellation is checked between layers and every step takes the
+  document with empty layers. Peak memory is one layer's RGBA, the composite and ag-psd's scratch buffer, 16 bytes per
+  pixel, so `MAX_PSD_PIXELS` caps it at ≈ 1 GiB; the layer count does not matter. Cancellation is checked between layers and every step takes the
   job's signal. The file is a same-directory temp file, fsync, rename, directory fsync.
 - **Split titles.** A part keeps every other layer of the look at zero opacity, not removed: rims grow from what is above them,
   so removing a layer would move the ones below it. Layers that do not grow the silhouette are just disabled. Parts are hidden,

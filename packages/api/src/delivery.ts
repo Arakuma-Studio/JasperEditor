@@ -1,6 +1,6 @@
 // Spec 19 §12 (TL-112…TL-116): layered PSD, layer-style import, alpha delivery, image split and the gamut overlay. Bodies
 // are zod-validated at the routes; sizes and counts are capped here so a hostile body is refused before it costs anything.
-import { OUTPUT_SPACE_IDS } from '@jasper/project';
+import { MAX_SPLIT_CLIPS, OUTPUT_SPACE_IDS } from '@jasper/project';
 import { z } from 'zod';
 import { EnvelopeSchema } from './projects.ts';
 
@@ -23,10 +23,10 @@ export const MAX_PSD_LAYERS = 256;
 /** Photoshop's PSD limits: 30 000 px per side, under 2 GiB (the writer refuses more). */
 export const MAX_PSD_SIDE = 30_000;
 /**
- * Most pixels of a PSD frame: one layer's RGBA plus ag-psd's scratch buffer stay in memory (12 bytes per pixel), so this
- * caps the job at ≈ 1 GiB of RAM.
+ * Most pixels of a PSD frame. One layer's RGBA, the composite and ag-psd's scratch buffer are in memory at the peak,
+ * 16 bytes per pixel, so this caps the job at ≈ 1 GiB of RAM whatever the layer count.
  */
-export const MAX_PSD_PIXELS = 89_000_000;
+export const MAX_PSD_PIXELS = 67_000_000;
 
 export const PsdRequestSchema = z.object({
 	envelope: EnvelopeSchema,
@@ -177,7 +177,7 @@ export type AlphaDeliveryResult = z.infer<typeof AlphaDeliveryResultSchema>;
 // TL-115 Split image
 
 /** Most parts one split makes: each is a media item and a clip on its own track. */
-export const MAX_SPLIT_PARTS = 64;
+export const MAX_SPLIT_PARTS = MAX_SPLIT_CLIPS;
 /** Largest picture the split decodes (RGBA held in memory). */
 export const MAX_SPLIT_PIXELS = 268_435_456;
 

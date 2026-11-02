@@ -18,6 +18,8 @@ function groupOf(job: Pick<EngineJob, 'kind'>): JobGroupId {
 	switch (job.kind) {
 		case 'export':
 		case 'still':
+		case 'psd-export':
+		case 'alpha-delivery':
 			return 'exports';
 		case 'preview':
 			return 'previews';

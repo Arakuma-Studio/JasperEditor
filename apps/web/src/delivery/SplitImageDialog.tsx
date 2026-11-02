@@ -3,6 +3,7 @@
 // it or splits a merged part back into its islands. The engine decodes and cuts, so no canvas ever touches the pixels that
 // are kept; the canvases here only draw the preview.
 import {
+	MAX_SPLIT_PARTS,
 	mediaRegisterCommand,
 	type RegisteredMedia,
 	type SplitImageAnalysis,
@@ -214,7 +215,7 @@ function SplitImageDialog(props: Props & HostedDialogProps) {
 			title={`Split Image · ${clipName}`}
 			size="large"
 			primaryLabel={progress ? 'Splitting…' : n === 1 ? 'Split' : `Split into ${n} parts`}
-			primaryDisabled={!analysis || n < 2 || !!progress}
+			primaryDisabled={!analysis || n < 2 || n > MAX_SPLIT_PARTS || !!progress}
 			{...(progress?.id
 				? {
 						secondaryLabel: 'Cancel split',
@@ -286,6 +287,11 @@ function SplitImageDialog(props: Props & HostedDialogProps) {
 				Click a part to select it. Shift-click another part to merge it in, or a merged part to split it into
 				its islands. Each part becomes a clip of its own, grouped, in one undo step.
 			</p>
+			{n > MAX_SPLIT_PARTS ? (
+				<p role="alert" className="mt-2 text-pr-small text-pr-danger" data-testid="split-too-many">
+					{`At most ${MAX_SPLIT_PARTS} parts: raise the merge distance.`}
+				</p>
+			) : null}
 			{progress ? (
 				<p className="mt-2 text-pr-small text-pr-muted" aria-live="polite" data-testid="split-progress">
 					{progress.stage}
