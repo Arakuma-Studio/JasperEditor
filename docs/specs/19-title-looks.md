@@ -97,7 +97,8 @@ placement, render routing and bake support without per-kind code, and lets it ap
   type Paint =
     | { kind: 'role'; role: Role }
     | { kind: 'color'; color: RGBA }
-    | { kind: 'gradient'; gradient: Gradient };
+    | { kind: 'gradient'; gradient: Gradient }
+    | { kind: 'source' };            // the clip's own picture, so a look does not flatten a still or video
   type Gradient = {
     type: 'linear' | 'radial' | 'sweep' | 'shape';
     span: 'block' | 'line' | 'glyph';
