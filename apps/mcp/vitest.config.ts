@@ -4,7 +4,7 @@ import { defineProject } from 'vitest/config';
 export default defineProject({
 	test: {
 		setupFiles: ['../../packages/testkit/src/fast-check-setup.ts'],
-		include: ['test/**/*.test.ts'],
+		include: ['test/**/*.test.ts', 'eval/**/*.test.ts'],
 		environment: 'node',
 		testTimeout: 300_000,
 		// The suites exercise every toolset; a session advertises only core by default (spec 18 AF-CTX-001), so the

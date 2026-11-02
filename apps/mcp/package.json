@@ -16,7 +16,9 @@
     "build": "node scripts/build.mjs",
     "start": "node dist/jasper-mcp.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "eval": "tsx eval/run.ts",
+    "eval:measure": "tsx eval/measure.ts"
   },
   "dependencies": {
     "@jasper/api": "workspace:*",
