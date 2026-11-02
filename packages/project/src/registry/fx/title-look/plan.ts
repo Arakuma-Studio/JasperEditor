@@ -26,7 +26,7 @@ import {
 	isPaintParam,
 	type LayerFieldReach,
 	type LayerParams,
-	type LayerPlanContext,
+	type LayerPassContext,
 	type LayerReach,
 	type TitleLayerType,
 	type TitleParamSpec,
@@ -320,7 +320,7 @@ export function planTitleLook(ctx: FxPlanContext): readonly ShaderPass[] {
 	const usesBounds =
 		tl.unitPx === null ||
 		pieces.some((p) => p.usesBounds) ||
-		shaders.some((s) => readsBounds(s.glsl)) ||
+		shaders.some((s) => s.usesBounds === true || readsBounds(s.glsl)) ||
 		blurred.some((b) => !!b && readsBounds(b.mask));
 	const passes: ShaderPass[] = [];
 	if (usesBounds) passes.push(...boundsPasses());
@@ -334,8 +334,15 @@ export function planTitleLook(ctx: FxPlanContext): readonly ShaderPass[] {
 	const baseInclude = [unit, GLSL_TL_FIELD, ...(usesBounds ? [GLSL_TL_BOUNDS] : [])];
 	let blurDone = false;
 	layers.forEach((l, i) => {
-		const c: LayerPlanContext = { look, pxPerPercent, base: l.base };
 		const piece = pieces[i]!;
+		const c: LayerPassContext = {
+			look,
+			pxPerPercent,
+			base: l.base,
+			include: [...baseInclude, ...piece.include],
+			uniforms: piece.uniforms,
+			defines: piece.defines,
+		};
 		const blur = blurred[i];
 		const finish = l.def.finish ? titleFinish(String(l.params.finish ?? 'flat')) : undefined;
 		passes.push(...(finish?.prepass?.(l.params, c) ?? []), ...(l.def.prepass?.(l.params, c) ?? []));

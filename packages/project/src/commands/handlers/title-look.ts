@@ -5,7 +5,7 @@ import type { Draft } from 'immer';
 import { contentTimeAt } from '../../derive/index.ts';
 import { createFontRef, defaultTransform } from '../../factories.ts';
 import { isPaintParam } from '../../registry/fx/title-look/contract.ts';
-import { paramSpec, titleLayerType } from '../../registry/fx/title-look/registry.ts';
+import { defaultLayerIndex, paramSpec, titleLayerType } from '../../registry/fx/title-look/registry.ts';
 import { intrinsicBoxOf } from '../../registry/properties.ts';
 import type { Clip, EffectInstance } from '../../schema/sequence.ts';
 import type { Rational } from '../../time.ts';
@@ -488,7 +488,7 @@ export const titleLookHandlers = {
 				(e as Error).message,
 			);
 		}
-		const index = Math.min(cmd.index ?? a.layers.length, a.layers.length);
+		const index = Math.min(cmd.index ?? defaultLayerIndex(a.layers, cmd.layerType), a.layers.length);
 		a.layers.splice(index, 0, layer as never);
 		assertAppearance(a, 'appearance.addLayer', h);
 		h.defineRef(cmd.ref, layer.id);

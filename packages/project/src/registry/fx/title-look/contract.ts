@@ -11,7 +11,7 @@ import type { LayerParamValue, Paint, Role } from '../../../title-looks/model.ts
 import type { ResolvedAppearance } from '../../../title-looks/resolve.ts';
 import type { EffectCategory, ParamSpec } from '../../effects.ts';
 import { fxParam } from '../params.ts';
-import type { GlslChunk, ShaderPass } from '../shader.ts';
+import type { FxUniformValue, GlslChunk, ShaderPass } from '../shader.ts';
 
 /** Evaluated params of a layer at a frame: stored values over the type's defaults. */
 export type LayerParams = Record<string, LayerParamValue>;
@@ -44,6 +44,8 @@ export type LayerShader = {
 	 */
 	glsl: string;
 	include?: readonly GlslChunk[];
+	/** The shader or its includes read `tl_bounds()` where `plan.ts` cannot see it (chunks, prepasses). */
+	usesBounds?: boolean;
 };
 
 /** A blur the framework runs for a layer: `tlMask` → horizontal and vertical passes → `u_tlBlur`, all at reduced size. */
@@ -56,7 +58,7 @@ export type LayerBlur = {
 };
 
 /** Passes a layer runs before its own (shared intermediates beyond the blur). See "How to extend". */
-export type LayerPrepass = (p: LayerParams, ctx: LayerPlanContext) => readonly ShaderPass[];
+export type LayerPrepass = (p: LayerParams, ctx: LayerPassContext) => readonly ShaderPass[];
 
 export type LayerPlanContext = {
 	look: ResolvedAppearance;
@@ -64,6 +66,16 @@ export type LayerPlanContext = {
 	pxPerPercent: number;
 	/** Silhouette growth of the layers above this one, percent of the unit (TL §5.1 rim: cumulative). */
 	base: number;
+};
+
+/** What a prepass needs to be a pass of this layer: the chunks and uniforms of the layer's own pass. */
+export type LayerPassContext = LayerPlanContext & {
+	/** The unit, the field and (when the look runs the reduction) the bounds chunks. */
+	include: readonly GlslChunk[];
+	/** The layer's params, paints and `u_tlBase`. */
+	uniforms: Readonly<Record<string, FxUniformValue>>;
+	/** `#define`s of the layer's media params. */
+	defines: string;
 };
 
 /** What the shape field must get right for a layer: distance from the shape edge, percent of the unit. */
@@ -102,6 +114,8 @@ export type TitleLayerType = {
 	summary: (p: LayerParams, ctx: SummaryContext) => LayerSummary;
 	/** Program-monitor handles (TL-092): param names by handle kind. Read by the UI. */
 	handles?: readonly { kind: 'distance' | 'offset' | 'angle' | 'position'; params: readonly string[] }[];
+	/** Generators: this layer goes above the face when it is added without an index (TL-064). */
+	front?: boolean;
 };
 
 export type TitleLayerInit = Omit<TitleLayerType, 'finish'> & { finish?: boolean };
@@ -123,20 +137,76 @@ export type TitleFinish = {
 	summary?: (p: LayerParams) => string;
 };
 
+/** One preset chip of a generator (TL-063): values over the defaults, usable in a recipe or in `clip.addGenerator`. */
+export type GeneratorPreset = {
+	id: string;
+	label: string;
+	params: Readonly<Record<string, LayerParamValue>>;
+};
+
+/** How a look recolours a generator (TL-051). Colours of a generator's own params stay its "own colours". */
+export type GeneratorColor = {
+	/** The role of the layer's default paint. */
+	role: Role;
+	/**
+	 * `light`: brightness through the luma gradient map, hot cores white (premultiplied light, alpha = brightest channel).
+	 * `luma`: the same on a picture with real transparency (smoke). `flat`: the paint, by the generator's alpha (ink).
+	 */
+	mode: 'light' | 'luma' | 'flat';
+	/** A new layer keeps its own colours until it is told otherwise (fire, TL-051). */
+	fixed?: boolean;
+};
+
+/** A virtual shape for a standalone instance, which has no title to read (TL-060). */
+export type GeneratorStandIn = 'none' | 'ground' | 'disc';
+
+/** What a generator's prepass gets, the same for a look layer and for its standalone effect (TL-060). */
+export type GeneratorPassContext = {
+	/** Canvas px per 1 % of the unit: exact for text and standalone, an upper bound otherwise. */
+	pxPerPercent: number;
+	/** Canvas size in px. */
+	canvas: { width: number; height: number };
+	/** True in the standalone effect: there is no `tlComp`, and `tl_surfaceAt` is the stand-in shape. */
+	standalone: boolean;
+	/**
+	 * A pass of this generator: the output name (`tlGenA`…`tlGenC`, scratch, shared by every generator of a look) as a
+	 * ping-pong write, the unit and field chunks, the generator's `include`, its `defines` and its params as uniforms.
+	 */
+	pass(pass: ShaderPass): ShaderPass;
+};
+
 /** Spec 19 §7: a generator is one GLSL function, shared by its standalone effect and its look layer (TL-060). */
 export type TitleGenerator = {
 	id: string;
 	label: string;
+	/** Effects-panel name when `label` is taken by another effect of the panel. */
+	effectLabel?: string;
 	description: string;
 	params: readonly TitleParamSpec[];
 	/** GLSL defining `vec4 tl_generate(TlSurface s)`, closed-form in `u_tlTime` and `u_tlSeed` (TL-061). */
 	glsl: string;
 	include?: readonly GlslChunk[];
+	/** `#define`s per hold-only param value, so a program holds only the branch it runs. */
+	defines?: (p: LayerParams) => string;
 	/** Whether a look layer sits in front of the title by default (TL-064). */
 	front?: boolean;
-	/** Reads the shape (`s.d`); standalone instances then see an empty shape. */
+	/** Reads the shape (`s.d`, `tl_surfaceAt`, `tlg_d`). Standalone instances see `standIn`. */
 	shapeAware?: boolean;
+	/** The shape a standalone instance reads (default `none`: `s.d` large, `s.opacity` 0). */
+	standIn?: GeneratorStandIn;
+	/** Reads `tl_bounds()`, or may at these params. */
+	usesBounds?: (p: LayerParams) => boolean;
+	/** Passes before `tl_generate`: draw passes, analysis. Build each with `ctx.pass`. */
+	prepass?: (p: LayerParams, ctx: GeneratorPassContext) => readonly ShaderPass[];
+	/** Soft pictures are drawn at 1 / `lowRes` of the canvas side and upsampled: it is the same in preview and export. */
+	lowRes?: number;
+	/** Palette role and recolour mode in a look; default the `glow` role, `light`. */
+	color?: GeneratorColor;
+	/** At least three (TL-063); the registry test checks them. */
+	presets?: readonly GeneratorPreset[];
 	reach?: (p: LayerParams) => LayerReach;
+	/** What the shape field must reach. Default: `reach`'s largest side outside, nothing inside. */
+	fieldReach?: (p: LayerParams) => Partial<LayerFieldReach>;
 	timeDependent?: (p: LayerParams) => boolean;
 	summary?: (p: LayerParams) => string;
 	category?: EffectCategory;

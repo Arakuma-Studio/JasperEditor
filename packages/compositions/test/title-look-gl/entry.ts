@@ -3,9 +3,12 @@
 import {
 	appearanceClipReach,
 	appearanceFromRecipe,
+	defaultEffectRegistry,
+	type EffectParams,
 	type EffectSpec,
 	type FxPadding,
 	fxBuiltinUniforms,
+	fxOffsetBuiltins,
 	type LookRecipe,
 	planGpuEffect,
 	resolveAppearance,
@@ -18,7 +21,15 @@ export type LookInput =
 	/** Bold text on transparent, `size` layer px (default 96). */
 	| { kind: 'text'; text?: string; size?: number; opacity?: number }
 	/** Letter-like vector shapes: the same geometry at every size, for resolution tests (text hints per size). */
-	| { kind: 'shapes' }
+	| { kind: 'shapes'; dx?: number; dy?: number }
+	/**
+	 * Rectangular "letters" placed one by one (fractions of the box, like per-character animators): exact geometry,
+	 * each with its own offset and opacity, and a brighter corner so highlights have a place to be.
+	 */
+	| {
+			kind: 'letters';
+			letters: { x: number; y: number; w: number; h: number; opacity?: number; color?: string }[];
+	  }
 	/** A rectangle inside the box (fractions), for exact edges. */
 	| { kind: 'rect'; x: number; y: number; w: number; h: number; color?: string }
 	/** The golden test card. */
@@ -73,9 +84,27 @@ function paintInput(
 		ctx.fillText(input.text ?? 'Title', b.x + b.w / 2, b.y + b.h / 2);
 		return;
 	}
+	if (input.kind === 'letters') {
+		for (const l of input.letters) {
+			const x = b.x + b.w * l.x;
+			const y = b.y + b.h * l.y;
+			const w = b.w * l.w;
+			const h = b.h * l.h;
+			ctx.globalAlpha = l.opacity ?? 1;
+			ctx.fillStyle = l.color ?? '#808080';
+			ctx.fillRect(x, y, w, h);
+			const hot = ctx.createRadialGradient(x + w * 0.3, y + h * 0.3, 0, x + w * 0.3, y + h * 0.3, h * 0.3);
+			hot.addColorStop(0, '#ffffff');
+			hot.addColorStop(1, 'rgba(255,255,255,0)');
+			ctx.fillStyle = hot;
+			ctx.fillRect(x, y, w, h);
+			ctx.globalAlpha = 1;
+		}
+		return;
+	}
 	if (input.kind === 'shapes') {
-		const X = (u: number) => b.x + b.w * u;
-		const Y = (v: number) => b.y + b.h * v;
+		const X = (u: number) => b.x + b.w * (u + (input.dx ?? 0));
+		const Y = (v: number) => b.y + b.h * (v + (input.dy ?? 0));
 		ctx.fillStyle = '#fff';
 		ctx.beginPath();
 		// A slanted, pointed stem, a ring and a dot: straight edges, curves, thin parts, a counter and a sharp corner.
@@ -253,8 +282,99 @@ function render(req: LookRequest): LookResult {
 	};
 }
 
+export type EffectRequest = {
+	effectId: string;
+	params?: EffectParams;
+	/** Layer box in layer px. */
+	box: { width: number; height: number };
+	/** Clip-local frame, at 30 fps. */
+	frame: number;
+	/** `patternOrigin.frame`: where this part of a razor cut started in the uncut clip (TL-121). */
+	frameOffset?: number;
+	seed?: number;
+	pxScale?: number;
+	/** What the effect draws over. */
+	input?: LookInput;
+};
+
+/** One standalone generator effect through the real planner and host, as the Player and Remotion run it. */
+function renderEffect(req: EffectRequest): LookResult {
+	const h = fxHost();
+	if (!h) throw new Error('no WebGL2');
+	const spec = defaultEffectRegistry.get(req.effectId) as EffectSpec | undefined;
+	if (!spec?.gpu) throw new Error(`no gpu effect ${req.effectId}`);
+	const params: EffectParams = { ...Object.fromEntries(spec.params.map((p) => [p.name, p.default])), ...req.params };
+	const layout = fxCanvasLayout(req.box, { left: 0, top: 0, right: 0, bottom: 0 }, 8192, req.pxScale ?? 1);
+	const offset = req.frameOffset ?? 0;
+	const seed = req.seed ?? 0.25;
+	const plan = planGpuEffect(
+		spec,
+		{ id: 'fx1', params },
+		{
+			width: req.box.width,
+			height: req.box.height,
+			pxScale: layout.pxScale,
+			fps: 30,
+			frame: req.frame,
+			patternFrame: req.frame + offset,
+			duration: 300,
+			seed,
+			progress: 0,
+		},
+		{ width: layout.width, height: layout.height },
+	);
+	const input = document.createElement('canvas');
+	input.width = layout.width;
+	input.height = layout.height;
+	if (req.input) paintInput(input.getContext('2d')!, req.input, layout.box, layout.pxScale);
+	const out = document.createElement('canvas');
+	out.width = layout.width;
+	out.height = layout.height;
+	const ctx = out.getContext('2d', { willReadFrequently: true })!;
+	const t0 = performance.now();
+	runShaderPlan(
+		h,
+		plan,
+		input,
+		{
+			builtins: [
+				...fxOffsetBuiltins(
+					fxBuiltinUniforms({
+						canvas: layout,
+						box: layout.box,
+						pxScale: layout.pxScale,
+						frame: req.frame,
+						fps: 30,
+						duration: 300,
+						compSize: { width: 1920, height: 1080 },
+					}),
+					offset,
+				),
+				{ name: 'u_seed', type: 'float', value: [seed] },
+			],
+			textures: {},
+			samples: { sources: [], offsets: [] },
+		},
+		ctx,
+	);
+	h.gl.readPixels(0, 0, 1, 1, h.gl.RGBA, h.gl.UNSIGNED_BYTE, new Uint8Array(4));
+	const ms = performance.now() - t0;
+	const data = ctx.getImageData(0, 0, out.width, out.height).data;
+	return {
+		width: out.width,
+		height: out.height,
+		rgba: base64(data),
+		padding: { left: 0, top: 0, right: 0, bottom: 0 },
+		passes: plan.passes.length,
+		box: layout.box,
+		ms,
+		totalMs: performance.now() - t0,
+	};
+}
+
 (window as unknown as { __tl: unknown }).__tl = {
 	render,
+	renderEffect,
 	reach: (recipe: LookRecipe) => {
 		let n = 0;
 		return appearanceClipReach(appearanceFromRecipe(recipe, () => `apl_${String(++n).padStart(16, '0')}`));
