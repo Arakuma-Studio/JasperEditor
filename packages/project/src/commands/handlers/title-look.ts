@@ -546,6 +546,12 @@ export const titleLookHandlers = {
 		return { layerId: cmd.layerId, param: spec.name };
 	},
 
+	'appearance.setLightSource': (doc, cmd: CommandOf<'appearance.setLightSource'>, h: HandlerContext) => {
+		const { fx } = lookInstance(doc, cmd.effectInstanceId, h);
+		(fx.appearance as Draft<Appearance>).light.source = cmd.source;
+		return { source: cmd.source };
+	},
+
 	'sequence.setGlobalLight': (doc, cmd: CommandOf<'sequence.setGlobalLight'>, h: HandlerContext) => {
 		const seq = h.sequence(doc, cmd.sequenceId);
 		const s = seq.settings as Draft<{ globalLight?: GlobalLight }>;

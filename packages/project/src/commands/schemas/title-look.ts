@@ -2,6 +2,7 @@
 // by the handlers, so a limit overflow is refused with `E_LIMIT` (TL-013) rather than a schema error.
 import { z } from 'zod';
 import {
+	LIGHT_SOURCES,
 	LookColorSchema,
 	LookQuickControlSchema,
 	MAX_QUICK_CONTROLS,
@@ -106,6 +107,11 @@ export const AppearanceSetGradientCmd = cmd('appearance.setGradient', {
 	param: z.string().min(1).max(64).optional(),
 	gradient: z.unknown(),
 });
+/** TL-017: whether the look keeps its own light or follows the sequence's. */
+export const AppearanceSetLightSourceCmd = cmd('appearance.setLightSource', {
+	...FxRef,
+	source: z.enum(LIGHT_SOURCES),
+});
 export const SequenceSetGlobalLightCmd = cmd('sequence.setGlobalLight', {
 	sequenceId: IdRefSchema.optional(),
 	angle: z.number().min(-3600).max(3600).optional(),
@@ -145,6 +151,7 @@ export const TITLE_LOOK_COMMANDS = [
 	AppearanceSetLayerEnabledCmd,
 	AppearanceSetPaintCmd,
 	AppearanceSetGradientCmd,
+	AppearanceSetLightSourceCmd,
 	SequenceSetGlobalLightCmd,
 	ClipAddGeneratorCmd,
 ] as const;

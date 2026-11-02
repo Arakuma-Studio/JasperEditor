@@ -119,6 +119,8 @@ export function SelectField<T extends string | number>(props: {
 	onChange(v: T): void;
 	disabled?: boolean;
 	className?: string;
+	/** What a mixed value reads as (default "Mixed"). */
+	mixedLabel?: string;
 	'data-testid'?: string;
 }) {
 	return (
@@ -137,7 +139,7 @@ export function SelectField<T extends string | number>(props: {
 			}}
 			data-testid={props['data-testid']}
 		>
-			{props.value === null ? <option value="">Mixed</option> : null}
+			{props.value === null ? <option value="">{props.mixedLabel ?? 'Mixed'}</option> : null}
 			{props.groups
 				? optionRuns(props.groups, props.options.length).map((run) => (
 						<optgroup key={`${run.label}:${run.start}`} label={run.label}>

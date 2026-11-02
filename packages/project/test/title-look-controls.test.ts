@@ -151,6 +151,32 @@ describe('recipeOfAppearance (TL-087)', () => {
 	});
 });
 
+describe('light source (TL-017)', () => {
+	it('follows the sequence or keeps its own light, one undo step, and shows as an override', () => {
+		const { h, fx } = applied();
+		const before = h.doc;
+		h.ok([{ type: 'appearance.setLightSource', effectInstanceId: fx().id, source: 'sequence' }]);
+		const a = fx().appearance as Appearance;
+		expect(a.light.source).toBe('sequence');
+		expect(a.lookOverrides?.$light).toEqual(['source']);
+		expect(
+			(
+				clipLook(
+					(Object.values(Object.values(before.sequences)[0]!.clips)[0] as unknown as { effects: EffectInstance[] })
+						.effects,
+				)!.appearance as Appearance
+			).light.source,
+		).toBe('look');
+	});
+
+	it('refuses an instance that is not a look', () => {
+		const { h } = applied();
+		expect(h.tx([{ type: 'appearance.setLightSource', effectInstanceId: 'fx_none', source: 'look' }]).ok).toBe(
+			false,
+		);
+	});
+});
+
 describe('paint control (TL-091)', () => {
 	it('paint params reach the inspector as the paint control, hold-only', () => {
 		const { fx } = applied();

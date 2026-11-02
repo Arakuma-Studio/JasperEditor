@@ -14,6 +14,7 @@ import {
 	type Sequence,
 	templateParamSections,
 	templateParamVisible,
+	TITLE_LOOK_EFFECT_ID,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { cx, TimecodeText } from '@jasper/ui';
@@ -24,6 +25,8 @@ import { openFontPreferences, openResolveFonts } from '../../fonts/actions.ts';
 import { FontPicker } from '../../fonts/FontPicker.tsx';
 import { formatTimecode } from '../../gaps/time-display.ts';
 import { TextStyleSection } from '../../text-styles/TextStyleSection.tsx';
+import { LookSections } from '../../title-looks/LookSection.tsx';
+import { lookedClip } from '../../title-looks/selection.ts';
 import { MiniButton, SelectField } from './controls/fields.tsx';
 import { FxGlyph, TrashGlyph } from './controls/glyphs.tsx';
 import { PropertyRow, type RowContext } from './controls/PropertyRow.tsx';
@@ -78,6 +81,7 @@ export function ClipProperties(props: { session: EditorSession; clips: Clip[]; c
 		(c) => (c as { transform?: { uniformScale: boolean } }).transform?.uniformScale === false,
 	);
 	const title = clips.length === 1 ? clips[0]!.name || clips[0]!.kind : `${clips.length} clips selected`;
+	const lookFirst = visual.some((c) => !!lookedClip(c));
 
 	return (
 		<div data-testid="clip-properties">
@@ -91,6 +95,10 @@ export function ClipProperties(props: { session: EditorSession; clips: Clip[]; c
 					</span>
 				) : null}
 			</header>
+			{/* spec 19 TL-089: first when there is a look, or on titles, where one is the usual next step. */}
+			{visual.length && (lookFirst || visual.every((c) => c.kind === 'text')) ? (
+				<LookSections session={session} clips={visual} ctx={ctx} readOnly={session.getState().readOnly} />
+			) : null}
 			{visual.length ? (
 				<>
 					<Section id="properties.transform" title="Transform">
@@ -170,6 +178,9 @@ export function ClipProperties(props: { session: EditorSession; clips: Clip[]; c
 					) : null}
 					{allKind('motion-graphic') ? <TemplateSection visual={visual} ctx={ctx} session={session} /> : null}
 					{visual.length === 1 ? <EffectsSummary clip={visual[0]!} ctx={ctx} effects={effects} /> : null}
+					{lookFirst || visual.every((c) => c.kind === 'text') ? null : (
+						<LookSections session={session} clips={visual} ctx={ctx} readOnly={session.getState().readOnly} />
+					)}
 				</>
 			) : null}
 			{/* M2 sections registered by feature packages (ARCHITECTURE §19.10). */}
@@ -510,7 +521,10 @@ function EffectsSummary(props: {
 	ctx: RowContext;
 	effects: { get(id: string, v?: number): { label: string } | undefined };
 }) {
-	const list = (props.clip as { effects?: EffectInstance[] }).effects ?? [];
+	// spec 19 TL-089: a look has its own section.
+	const list = ((props.clip as { effects?: EffectInstance[] }).effects ?? []).filter(
+		(fx) => fx.effectId !== TITLE_LOOK_EFFECT_ID,
+	);
 	if (!list.length) return null;
 	const apply = (label: string, cmd: Command) => props.ctx.ops.apply(label, [cmd]);
 	return (
