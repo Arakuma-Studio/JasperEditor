@@ -96,33 +96,34 @@ async function measure(ctx: JobContext, dir: string, total: number, w: number, h
 	return all;
 }
 
-/** Applies `filters` to the whole numbered sequence with one ffmpeg, keeping straight alpha. */
+/** ffmpeg arguments that apply `filters` to a numbered sequence, keeping straight alpha. */
+export function frameFilterArgs(from: string, to: string, filters: readonly string[]): string[] {
+	return [
+		'-f',
+		'image2',
+		'-framerate',
+		'25',
+		'-start_number',
+		'0',
+		'-i',
+		join(from, '%06d.png'),
+		'-vf',
+		['format=rgba', ...filters].join(','),
+		'-c:v',
+		'png',
+		'-pix_fmt',
+		'rgba',
+		'-start_number',
+		'0',
+		'-f',
+		'image2',
+		join(to, '%06d.png'),
+	];
+}
+
 async function filterFrames(ctx: JobContext, d: DeliveryDeps, from: string, to: string, filters: string[]): Promise<void> {
 	await mkdir(to, { recursive: true });
-	await d.ff.run(
-		[
-			'-f',
-			'image2',
-			'-framerate',
-			'25',
-			'-start_number',
-			'0',
-			'-i',
-			join(from, '%06d.png'),
-			'-vf',
-			['format=rgba', ...filters].join(','),
-			'-c:v',
-			'png',
-			'-pix_fmt',
-			'rgba',
-			'-start_number',
-			'0',
-			'-f',
-			'image2',
-			join(to, '%06d.png'),
-		],
-		{ signal: ctx.signal, onSpawn: ctx.trackChild },
-	);
+	await d.ff.run(frameFilterArgs(from, to, filters), { signal: ctx.signal, onSpawn: ctx.trackChild });
 }
 
 /** `alpha-delivery` job. */

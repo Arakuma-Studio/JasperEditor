@@ -62,6 +62,7 @@ import {
 import {
 	AlphaDeliveryRequestSchema,
 	GamutCheckRequestSchema,
+	LayerStyleFileSchema,
 	PsdPlanSchema,
 	PsdRequestSchema,
 	SplitImageRequestSchema,
@@ -611,6 +612,13 @@ export const ROUTES = {
 		path: '/api/gamut-check',
 		body: GamutCheckRequestSchema,
 		response: EngineJobSchema,
+	},
+	/** spec 19 TL-113: the layer styles of a `.asl` or `.psd`, sent as the raw body. `?name=` is the file name. */
+	layerStylesRead: {
+		method: 'POST',
+		path: '/api/title-looks/layer-styles/read',
+		body: 'binary',
+		response: LayerStyleFileSchema,
 	},
 	/** spec 19 TL-115: the alpha islands of a still (`split-image` job, result `SplitImageAnalysis`). */
 	splitImageAnalyze: {

@@ -258,8 +258,9 @@ export const TOOLSETS = [
 		name: 'color',
 		description:
 			'Lumetri grading, LUTs, scopes, colour match, looks, colour management (working spaces, HDR, log, OCIO).',
-		guides: ['color', 'color-management'],
+		guides: ['color', 'color-management', 'delivery'],
 		tools: [
+			'check_gamut',
 			'import_lut',
 			'grade_clip',
 			'get_grade',
@@ -359,8 +360,10 @@ export const TOOLSETS = [
 		name: 'graphics',
 		description:
 			'Motion-graphic templates (social comments, lower thirds…), Remotion compositions, Essential Graphics templates.',
-		guides: ['templates', 'compositions'],
+		guides: ['templates', 'compositions', 'delivery'],
 		tools: [
+			'import_layer_styles',
+			'split_image',
 			'add_motion_graphic',
 			'duplicate_motion_graphic',
 			'import_motion_graphics_csv',
@@ -646,9 +649,11 @@ export const TOOLSETS = [
 	{
 		name: 'export',
 		description:
-			'Export presets and jobs, frame sequences and stills, timeline interchange (EDL, FCP XML, AAF, OTIO), Lottie, render previews.',
-		guides: ['previews', 'interchange'],
+			'Export presets and jobs, frames, stills, PNGs with alpha, layered PSD, timeline interchange (EDL, FCP XML, AAF, OTIO), Lottie, render previews.',
+		guides: ['previews', 'interchange', 'delivery'],
 		tools: [
+			'send_to_photoshop',
+			'export_alpha',
 			'list_export_presets',
 			'get_job',
 			'cancel_job',

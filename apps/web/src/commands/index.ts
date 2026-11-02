@@ -16,6 +16,7 @@ import { cleanupCommands } from './cleanup.ts';
 import { clipboardCommands } from './clipboard.ts';
 import { colorCommands } from './color.ts';
 import { colorMgmtCommands } from './color-mgmt.ts';
+import { deliveryCommands } from '../delivery/commands.ts';
 import { compositionCommands } from './composition.ts';
 import { easingCommands } from './easing.ts';
 import { editCommands } from './edit.ts';
@@ -83,6 +84,7 @@ const COMMAND_MODULES: UiCommand[][] = [
 	helpCommands,
 	colorCommands,
 	colorMgmtCommands,
+	deliveryCommands,
 	processCommands,
 	compositionCommands,
 	trackingCommands,

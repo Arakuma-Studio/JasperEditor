@@ -881,6 +881,17 @@ Status of the foundation; streams still in progress update this list. Evidence: 
   `FX_LAYER_UNSUPPORTED`. Nothing is silently dropped.
 - **Requires float targets** (TL-032, TL-123): without them the preview bypasses the look with a chip, a render fails with
   `TITLE_LOOK_NEEDS_FLOAT` and the export plan refuses when the probe answered (TL-124).
+- **Send to Photoshop** (TL-112) rasterises everything: text arrives as pixels, and adjustment layers, blend modes Photoshop lacks,
+  track mattes and 3D scenes are baked into a layer named so (the dialog lists them). 8-bit only: ag-psd writes no other depth.
+- **Layer styles** (TL-113): reported, not mapped: pattern overlays and pattern strokes (a style file has no bitmaps), noise
+  gradients, contours, Knockout, noise; blend modes other than Normal are drawn Normal and say so. A face has one finish, so Satin is
+  left out under a Bevel. Tested on files written with ag-psd, not on files from Photoshop. Imported looks are project looks until
+  the user store of TL-054 lands (`saveImportedLooks`).
+- **Export Title** (TL-114): a 3D scene is trimmed inside the sequence frame, since it projects through it. Transparent stills are
+  PNG, TIFF or Targa; JPEG, DPX, BMP and OpenEXR are refused.
+- **Split Image** (TL-115) refuses clips with masks or trackers: they are shaped to the whole picture. Remove them first.
+- **Gamut Warning** (TL-116) measures on the engine per paused frame, not during playback: the Program picture is DOM. Legal range
+  assumes 4:2:0 delivery and nearest-neighbour chroma.
 - **Software rendering is slow**: ≈ 1.3 s per 1080p frame for a six-layer look on a title-sized box on SwiftShader, and an
   animated title redraws its whole stack every frame ([performance.md](performance.md) §7). Nothing has been measured on a GPU.
 

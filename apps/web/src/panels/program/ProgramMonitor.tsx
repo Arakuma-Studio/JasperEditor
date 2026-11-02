@@ -35,6 +35,7 @@ import { registerUiLocator } from '../../agent-bridge/ui-automation.ts';
 import { useAudioStartWait, useMixGraph } from '../../audio/runtime.ts';
 import { useAudioSessionServices } from '../../audio/session.ts';
 import { useColorBypass } from '../../color/actions.ts';
+import { gamutOverlay } from '../../delivery/GamutOverlay.tsx';
 import { runCommand } from '../../commands/index.ts';
 import { registerFullscreenTarget } from '../../commands/monitor-view.ts';
 import { useExpressionsFor } from '../../expressions/engine.ts';
@@ -137,6 +138,7 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 	// automation passes and audio scrubbing follow this session's transport.
 	useAudioSessionServices(session);
 	const overlays = useRegistry(programOverlays);
+	const gamutEnabled = useStoreSelector(gamutOverlay, (s) => s.enabled);
 	const seqId = useSessionState((s) => s.activeSequenceId);
 	// gesture frames reach the Player as often as it can afford (useGestureFrameDocument); commits at once.
 	const gestureDrawn = useGestureFrameDocument();
@@ -671,6 +673,12 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 							label: 'Safe Margins',
 							checked: monitor.safeMargins,
 							onToggle: () => monitorStores.program.setState((s) => ({ safeMargins: !s.safeMargins })),
+						},
+						{
+							type: 'toggle',
+							label: 'Gamut Warning',
+							checked: gamutEnabled,
+							onToggle: () => gamutOverlay.setState((s) => ({ enabled: !s.enabled })),
 						},
 						{
 							type: 'toggle',

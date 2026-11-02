@@ -177,7 +177,7 @@ describe('reading styles (TL-113)', () => {
 		const patched = GrdT.decode;
 		const upstream = Object.getOwnPropertyDescriptor(GrdT, 'upstreamDecode')?.value as ((v: string) => string) | undefined;
 		if (upstream) {
-			GrdT.decode = upstream;
+			GrdT.decode = upstream as typeof GrdT.decode;
 			try {
 				const without = readLayerStyles(bytes, 's.asl');
 				expect(without.styles).toHaveLength(0);

@@ -346,8 +346,95 @@ The extension contract was exercised by copying this note's three worked example
 one-line registrations: they typechecked with no change to the core, and the registry and GL tests picked them up (and failed
 for the missing fingerprints, and for a generator example that was clipped by its own padding, now fixed above).
 
+## Interchange and delivery (§12)
+
+| Piece | File |
+|---|---|
+| Plan of a PSD: layers, what is baked, blockers | `apps/engine/src/export/delivery/psd-plan.ts` |
+| PSD on disk, one layer at a time | `apps/engine/src/export/delivery/psd-writer.ts`, `psd-job.ts` |
+| Style files to `PsStyleSchema` values | `apps/engine/src/title-looks/ps-styles.ts` |
+| Style to look, with its report | `packages/project/src/title-looks/ps-style.ts` |
+| PNG frames with alpha, Export Title | `apps/engine/src/export/delivery/alpha.ts`, `frames.ts`, `trim.ts`, `zip-writer.ts` |
+| Alpha islands and the cut | `packages/project/src/image-split/`, `apps/engine/src/export/delivery/split-image.ts` |
+| `clip.splitImage` | `packages/project/src/commands/{schemas,handlers}/image-split.ts` |
+| Gamut and legal check | `packages/project/src/color/gamut-check.ts`, `apps/engine/src/export/delivery/gamut.ts` |
+| Dialogs, overlay, commands | `apps/web/src/delivery/` |
+| MCP tools | `apps/mcp/src/tools/delivery.ts`; guide topic `delivery` |
+| Routes | `apps/engine/src/routes/delivery.ts` |
+
+### TL-112 Send to Photoshop
+
+- **Plan first.** `POST /api/psd/plan` runs nothing: it lists the layers, what is baked and the blockers, so the dialog can
+  show them before writing (Pachislop's warnings arrive after the download).
+- **One render per layer, alone, in the full frame.** That is what makes them register. A clip draws in Normal at 100 %, and
+  its blend mode and opacity go on the PSD layer. An opacity expression stays in the pixels and the plan says so.
+- **Baked with a name.** An adjustment layer or a blend mode without a Photoshop equal needs the picture below it, so a layer
+  `<name> (baked)` holds the composite up to there, and what it stands in for stays below, hidden. A transition at the frame is
+  one layer: its sides do not exist apart. A track matte or a 3D scene flattens the whole stack, because its sources can sit
+  above the clip.
+- **Memory.** `writePsd` takes every layer in RAM and returns one buffer. So each layer goes through ag-psd alone as a one-layer
+  document (ag-psd still writes every byte: records, RLE, blend keys), its channel data goes to a scratch file, and the records
+  are kept. The final file is head + records + streamed channels + tail + composite, the head and tail from one more ag-psd
+  document with empty layers. Peak memory is one frame's RGBA plus ag-psd's scratch buffer, 12 bytes per pixel, so
+  `MAX_PSD_PIXELS` is ≈ 1 GiB; the layer count does not matter. Cancellation is checked between layers and every step takes the
+  job's signal. The file is a same-directory temp file, fsync, rename, directory fsync.
+- **Split titles.** A part keeps every other layer of the look at zero opacity, not removed: rims grow from what is above them,
+  so removing a layer would move the ones below it. Layers that do not grow the silhouette are just disabled. Parts are hidden,
+  `fx` is shown: a look composites in linear light and Photoshop in gamma, so the parts recombine close to `fx`, not exactly.
+- **Colour.** Layers are the display rendition (the same LUT as stills). The flattened picture in the file is the render.
+
+### TL-113 Layer styles
+
+- **Written against the catalogue.** The mapper looks up each layer type and param in the registry. On this stream's base only
+  `face`, `rim`, `shadow` and `glow` exist, so Inner Shadow, Inner Glow, Bevel and Satin report `this build has no …` and are
+  left out. They use the names of spec §5.1 (`innerShadow`, `innerGlow`, `bevelSize`, `satinSize`…), so they map once the
+  streams that ship those types land; a param named differently shows up in the report rather than being lost.
+- **Store.** TL-054's user store is not on this base. `saveImportedLooks` (`apps/web/src/delivery/LayerStyleDialog.tsx`) is the one
+  place to change: today it writes project looks with `look.create`, undoable.
+- **Overlays stack.** Pachislop mixes overlays into one colour. Here each is a `face` layer over the base at its opacity, which is
+  exact for normal blending and stays editable.
+- **Shape Burst.** ag-psd's enum lacks `GrdT.shapeburst` and throws, which loses the whole style in an `.asl` and the whole file in
+  a `.psd`. Confirmed on ag-psd 31.0.2: `ps-styles.test.ts` swaps the decoder back and sees the style go. `ps-styles.ts` extends it.
+- **No file from Photoshop was available.** Tests build `.asl` and `.psd` files with ag-psd's writers: the real layouts, but not
+  Photoshop's own bytes. The `.asl` layout follows Pachislop's reader.
+
+### TL-114 Alpha
+
+- A transparent still and a PNG sequence are drawn by the compositions on a transparent page (the layer bake's path), since the
+  native composite is RGB. ProRes 4444 is unchanged.
+- Export Title renders on a canvas a quarter of the long side larger on each edge, measures every frame (alpha ≥ 1, so a glow's
+  tail counts), crops all frames to the union plus the margin, and doubles the canvas once if something still touches its edge.
+  The result's `origin` says where its corner sits in the sequence, which can be negative.
+- `crop`, `lut3d`, `format` and the PNG encoder are LGPL: no GPL filter is involved (`alpha-delivery.test.ts` runs the graph
+  through `assertLgplGraphArgs`). A 3D scene projects through the frame, so it is trimmed inside the frame, with a warning.
+
+### TL-115 Split image
+
+- The engine decodes and cuts, so no canvas touches kept pixels. 8- and 16-bit pictures stay as they are; a 16-bit island's alpha
+  is judged by its high byte. The dialog's canvases only draw the preview.
+- Static Motion gives each part an anchor at its centre, which is what logo animation wants. With keyframes the anchor moves
+  instead, so every key stays valid and the parts follow the whole. Masks and trackers are refused: they are shaped to the whole
+  picture.
+- Parts are grouped. Each is on a free track above, or a new one.
+
+### TL-116 Gamut overlay
+
+- **The Program picture cannot be read back** in general: it is DOM, and only some stacks pass through a canvas. So the frame is
+  measured by the engine, as `frame.capture` is: a job per paused frame, debounced, the previous one cancelled. The mask is hidden
+  while playing or until the current frame's result is in, since a stale mask would mark the wrong pixels.
+- **Gamut** is the working signal in the output's linear light with nothing mapped: a channel below 0 or above the output's peak
+  (`unmappedOutputFn`). Against the working space itself that is 0 by construction.
+- **Legal range.** Full-range RGB cannot break legal limits by itself: every 8-bit value maps inside the narrow range. What breaks
+  them is 4:2:0, where a pixel gets its neighbours' chroma. So each pixel is rebuilt from its own Y′ and its block's chroma and
+  held to EBU R 103 (RGB −5 % … +105 %, luma −1 % … +103 %). R 103 tolerates under 1 % of the picture.
+- Assumption, not from a standard: nearest-neighbour chroma. A real decoder interpolates, so the check is a little stricter than a
+  scope.
+- Sources: EBU R 103 v3.0 (2020); ITU-R BT.709-6 and BT.2020-2 luma weights.
+
 ## Limits
 
+- A PSD holds text as pixels, not type (TL-112), and the dialog says so.
+- Layer styles have not met a file written by Photoshop itself (see TL-113 above).
 - `block` gradients on animated text follow the frame's bounds until TL-036 brings layout boxes.
 - `line` and `glyph` spans render as `block` until TL-036 (`docs/gaps.md`).
 - The field is rebuilt whenever a frame is redrawn: an animated param on static text pays for it, though the input did not
