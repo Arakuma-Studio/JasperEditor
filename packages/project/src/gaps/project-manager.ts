@@ -20,7 +20,7 @@ export type ProjectManagerMode = 'collect' | 'consolidate';
 export type MediaUse = { lo: number; hi: number; whole: boolean };
 
 /** Media kinds Project Manager never drops (referenced by effects, text and clips by id, not by placement). */
-const ALWAYS_KEPT = new Set(['lut', 'font', 'mg-bundle', 'color-config', 'model']);
+const ALWAYS_KEPT = new Set(['lut', 'font', 'mg-bundle', 'color-config', 'model', 'hdri']);
 /** Media consolidation can trim (timed). */
 const TRIMMABLE = new Set(['video', 'audio']);
 

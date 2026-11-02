@@ -24,6 +24,7 @@
 // keyframes-blend: a track holding a layer whose blend mode CSS cannot draw exactly wraps everything below it in a
 // `BlendScope` (fx/composite.tsx): the composite below is captured and the track's layers are composited onto it on
 // the GPU at the frames where such a layer is drawn (its clips and GPU transition stages hand over their pictures).
+import { canUseFloatTargets } from './color/gl.ts';
 import {
 	clipContentTime,
 	clipPictureTime,
@@ -128,6 +129,7 @@ import { ShowFrame } from './show-frame.tsx';
 import {
 	FlatRun3D,
 	fallbackProjective,
+	advancedNeedsFloat,
 	makeScene3D,
 	runBottomTracks,
 	Scene3DContext,
@@ -781,7 +783,12 @@ export function VideoTracks({
 		const v = options.isPreview && !nested ? options.view3d : undefined;
 		return makeScene3D(
 			doc,
-			scene3dRunMode({ gpu, htmlInCanvas }),
+			scene3dRunMode({
+				gpu,
+				htmlInCanvas,
+				needsFloat: advancedNeedsFloat(doc),
+				floatTargets: canUseFloatTargets(),
+			}),
 			hubs,
 			options.layerFilter,
 			v ? lookAtCamera(v.eye, v.poi, v.zoom, v.ortho, v.down) : null,

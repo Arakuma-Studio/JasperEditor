@@ -3,6 +3,8 @@
 // - in views other than the active camera: wireframes of the cameras (frustum to the image plane) and lights;
 // - the 3D axis gizmo of one selected 3D layer (X red, Y green, Z blue): drag an arrow to move along that world axis
 //   (one undo step);
+// - the rotation gizmo of that layer (spec 19 TL-079): one arc per axis and a free-rotate ring, sized to the layer as
+//   seen (gizmo.ts): drag an arc to turn about that axis, the ring to turn freely (one undo step, keys when animated);
 // - the Camera tool (After Effects' Unified Camera Tool): left drag orbits, middle (or Shift+left) drag pans, right (or
 //   Alt+left) drag dollies, the wheel dollies — the active camera clip in the Active Camera view (one undo step per
 //   drag, keys when animated), else the view's own camera (view state, not undoable).
@@ -31,6 +33,15 @@ import { type PointerEvent as ReactPointerEvent, useRef, useState } from 'react'
 import type { ProgramOverlayHostProps } from '../extensions/index.ts';
 import { useOverlayFrame } from '../panels/program/TransformOverlay.tsx';
 import { toScreen } from '../panels/program/viewport.ts';
+import {
+	arcDelta,
+	FREE_RING,
+	freeDelta,
+	gizmoRadius,
+	polylinePath,
+	tangentAt,
+	worldCircle,
+} from './gizmo.ts';
 import { programCamera, resolveProgramScene } from './scene.ts';
 import { setViewCam, switchView, threeDViews, viewCamOf } from './view-store.ts';
 
@@ -51,7 +62,21 @@ export function Scene3DOverlay(props: ProgramOverlayHostProps) {
 	return <Scene3DSurface {...props} />;
 }
 
+type Rotation0 = { x: number; y: number; z: number };
+
 type Drag =
+	| {
+			kind: 'rotate';
+			g: Gesture;
+			clipId: string;
+			/** Null: the free-rotate ring. */
+			axis: 0 | 1 | 2 | null;
+			start: Vec2;
+			tangent: Vec2;
+			radius: number;
+			r0: Rotation0;
+			moved: boolean;
+	  }
 	| {
 			kind: 'axis';
 			g: Gesture;
@@ -124,6 +149,50 @@ function Scene3DSurface(props: ProgramOverlayHostProps) {
 			gizmo = { origin: o, tips, p0 };
 		}
 	}
+
+	// Rotation gizmo: arcs around the anchor in world planes, the free ring outside them, sized to the layer as seen.
+	let arcs: { axis: 0 | 1 | 2; pts: (Vec2 | null)[]; d: string }[] = [];
+	let ring: { c: Vec2; r: number } | null = null;
+	if (sel && gizmo) {
+		const screen = sel.props.quad.map((q) => toScreen(view, q as Vec2));
+		const R = gizmoRadius(screen);
+		const depth = mat4Apply(cam.view, gizmo.p0)[2];
+		const unit = cam.ortho ? 1 / cam.zoom : Math.max(1, depth) / cam.zoom;
+		const worldR = (R / Math.max(1e-6, view.scale)) * unit;
+		arcs = AXES.map(({ axis }) => {
+			const pts = worldCircle(gizmo!.p0, axis, worldR).map(scr);
+			return { axis, pts, d: polylinePath(pts) };
+		});
+		ring = { c: gizmo.origin, r: R * FREE_RING };
+	}
+	const rotationOf = (clip: NonNullable<typeof sel>['clip']): Rotation0 => {
+		const t = clipContentTime(clip, frame, doc.settings.fps);
+		return {
+			x: Number(evaluate(clip.threeD!.rotationX, t)) || 0,
+			y: Number(evaluate(clip.threeD!.rotationY, t)) || 0,
+			z: Number(evaluate(clip.transform!.rotation, t)) || 0,
+		};
+	};
+	const startRotate = (e: ReactPointerEvent, axis: 0 | 1 | 2 | null) => {
+		if (!sel || e.button !== 0) return;
+		const at0 = local(e);
+		const arc = axis === null ? null : arcs.find((a) => a.axis === axis);
+		const near = arc ? tangentAt(arc.pts, at0) : null;
+		if (axis !== null && !near) return;
+		e.stopPropagation();
+		svgRef.current?.setPointerCapture?.(e.pointerId);
+		dragRef.current = {
+			kind: 'rotate',
+			g: session.beginGesture(axis === null ? 'Rotate' : `Rotate ${AXES[axis]!.label}`),
+			clipId: sel.clip.clipId,
+			axis,
+			start: at0,
+			tangent: near?.tangent ?? [1, 0],
+			radius: near?.radius ?? 1,
+			r0: rotationOf(sel.clip),
+			moved: false,
+		};
+	};
 
 	const startAxis = (e: ReactPointerEvent, axis: 0 | 1 | 2) => {
 		if (!sel || !gizmo || e.button !== 0) return;
@@ -210,6 +279,28 @@ function Scene3DSurface(props: ProgramOverlayHostProps) {
 		const dy = p[1] - d.start[1];
 		if (Math.hypot(dx, dy) >= 2) d.moved = true;
 		if (!d.moved) return;
+		if (d.kind === 'rotate') {
+			const set = (name: 'rotationX' | 'rotationY' | 'rotation', value: number) =>
+				({
+					type: 'param.set',
+					target:
+						name === 'rotation'
+							? ['clip', d.clipId, 'transform', 'rotation']
+							: ['clip', d.clipId, 'threeD', name],
+					value,
+					at,
+				}) as never;
+			if (d.axis === null) {
+				const f = freeDelta(d.start, p);
+				d.g.update([set('rotationX', d.r0.x + f.x), set('rotationY', d.r0.y + f.y)]);
+				return;
+			}
+			const delta = arcDelta(d.start, p, d.tangent, d.radius);
+			if (d.axis === 0) d.g.update([set('rotationX', d.r0.x + delta)]);
+			else if (d.axis === 1) d.g.update([set('rotationY', d.r0.y + delta)]);
+			else d.g.update([set('rotation', d.r0.z + delta)]);
+			return;
+		}
 		if (d.kind === 'axis') {
 			const along = dx * d.dir[0] + dy * d.dir[1];
 			const delta = along / d.perUnit;
@@ -319,6 +410,34 @@ function Scene3DSurface(props: ProgramOverlayHostProps) {
 						strokeWidth={1}
 						data-testid={`scene3d-wire-${w.key}`}
 					/>
+				))}
+				{ring ? (
+					<circle
+						cx={ring.c[0]}
+						cy={ring.c[1]}
+						r={ring.r}
+						fill="none"
+						stroke="var(--pr-text)"
+						strokeOpacity={0.55}
+						strokeWidth={1.5}
+						style={{ pointerEvents: 'stroke', cursor: 'grab' }}
+						data-testid="scene3d-free-ring"
+						onPointerDown={(e) => startRotate(e, null)}
+					/>
+				) : null}
+				{arcs.map((a) => (
+					<g key={a.axis} data-testid={`scene3d-arc-${AXES[a.axis]!.label}`}>
+						<path d={a.d} fill="none" stroke={AXES[a.axis]!.color} strokeOpacity={0.8} strokeWidth={1.5} />
+						{/* A wider, invisible stroke to grab. */}
+						<path
+							d={a.d}
+							fill="none"
+							stroke="transparent"
+							strokeWidth={9}
+							style={{ pointerEvents: 'stroke', cursor: 'grab' }}
+							onPointerDown={(e) => startRotate(e, a.axis)}
+						/>
+					</g>
 				))}
 				{gizmo ? (
 					<g data-testid="scene3d-gizmo">

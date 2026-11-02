@@ -117,6 +117,22 @@ describe('three-d MCP tools', () => {
 			(await call('add_light', { at: 0, lightType: 'spot', castsShadows: true, coneAngle: 60 })).isError,
 		).toBe(false);
 		expect((await call('set_3d_renderer', { draft: true })).isError).toBe(false);
+		// spec 19 §9: a 3D title by tools.
+		expect(
+			(
+				await call('set_3d_renderer', {
+					renderer: 'advanced',
+					toneMapping: 'aces',
+					exposure: 0.5,
+					glint: { enabled: true, rays: 4 },
+				})
+			).isError,
+		).toBe(false);
+		expect((await call('set_3d_surface', { clipIds: [engine.b], preset: 'gold' })).isError).toBe(false);
+		expect((await call('set_3d_surface', { clipIds: [engine.b], preset: 'mithril' })).isError).toBe(true);
+		expect((await call('add_light', { at: 0, lightType: 'environment', environmentPreset: 'chromeBands' })).isError).toBe(false);
+		const cost = await call('get_3d_scene', { frame: 10 });
+		expect((cost.body as { layers: { costClass: string }[] }).layers.some((l) => l.costClass === '3d-heavy')).toBe(true);
 		const scene = await call('get_3d_scene', { frame: 10 });
 		expect(scene.isError).toBe(false);
 		const s = scene.body as {

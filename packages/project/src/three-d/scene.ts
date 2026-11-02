@@ -14,7 +14,12 @@ import type {
 	RenderVisualClip,
 } from '../render/snapshot.ts';
 import type { Animatable, RGBA, Vec2, Vec3 } from '../schema/common.ts';
-import type { LightType, MaterialOptions, RigTransform } from '../schema/three-d.ts';
+import {
+	ENVIRONMENT_PRESETS,
+	type LightType,
+	type MaterialOptions,
+	type RigTransform,
+} from '../schema/three-d.ts';
 import { FLICKS_PER_SECOND, type Rational } from '../time.ts';
 import {
 	basisRotation,
@@ -267,7 +272,13 @@ export type LightState = {
 	/** Pixels. */
 	shadowDiffusion: number;
 	/** Environment lights: the media and rotation (radians). */
-	environment?: { mediaId: string | null; rotation: number; background: boolean };
+	environment?: {
+		mediaId: string | null;
+		rotation: number;
+		background: boolean;
+		/** Index in `ENVIRONMENT_PRESETS`: what lights the scene without media. */
+		preset: number;
+	};
 };
 
 const FALLOFF = { none: 0, smooth: 1, 'inverse-square': 2 } as const;
@@ -303,6 +314,7 @@ export function lightStateOf(c: RenderLightClip, frame: number, fps: Rational): 
 						mediaId: l.environmentMediaId ?? null,
 						rotation: (num(l.environmentRotation, t, 0) * Math.PI) / 180,
 						background: !!l.environmentBackground,
+						preset: Math.max(0, ENVIRONMENT_PRESETS.indexOf(l.environmentPreset ?? 'studio')),
 					},
 				}
 			: {}),

@@ -2280,6 +2280,8 @@ export function clipPropertiesJsonSchema(
 export type PropertyOwner = { clipId: string } | { trackId: string } | { master: true; sequenceId?: string };
 
 /** Property key + owner → ParamPath (S01:CMD-010). */
+export { threeDDynamicSpecs } from './three-d-properties.ts';
+
 export function propertyKeyToParamPath(owner: PropertyOwner, key: string): ParamPath {
 	// wp masks: `masks.<maskId>.<prop>` → `["mask", maskId, prop]`.
 	if (key.startsWith('masks.')) {

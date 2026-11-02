@@ -1,16 +1,42 @@
 import type { Command } from '@jasper/project';
 import { type Clip, canBe3d, type Sequence, VIEW_3D_LABELS, VIEWS_3D, type View3D } from '@jasper/project';
-import { programOverlays } from '../extensions/index.ts';
+import { openDialog } from '@jasper/ui';
+import { clipSections, programOverlays } from '../extensions/index.ts';
 import { camtrackEngine, trackCamera } from '../three-d/camtrack/actions.ts';
 import { registerCamTrackUi } from '../three-d/camtrack/register.ts';
 import { CAMERA_DIALOG, LIGHT_DIALOG, registerThreeDDialogs } from '../three-d/dialogs.tsx';
+import { COST_3D_DIALOG, cost3dAcknowledged, registerCost3DDialog } from '../three-d/Cost3DDialog.tsx';
 import { Scene3DOverlay } from '../three-d/Scene3DOverlay.tsx';
+import { Environment3DSection, Title3DSection } from '../three-d/Title3DSection.tsx';
 import { resetView, switchView, viewCamOf, viewsOf } from '../three-d/view-store.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
 
 registerThreeDDialogs();
+registerCost3DDialog();
 registerCamTrackUi();
 programOverlays.register({ id: 'three-d', active: () => true, component: Scene3DOverlay, order: 95 });
+clipSections.register({
+	id: 'environment-3d',
+	title: 'Environment',
+	appliesTo: (clips) =>
+		clips.length === 1 &&
+		clips[0]!.kind === 'light' &&
+		(clips[0] as { light: { type: string } }).light.type === 'environment',
+	component: Environment3DSection,
+	defaultOpen: true,
+	order: 62,
+});
+clipSections.register({
+	id: 'title-3d',
+	title: '3D Title',
+	appliesTo: (clips) =>
+		clips.length === 1 &&
+		clips[0]!.kind !== 'model' &&
+		(clips[0] as { threeD?: { enabled?: boolean } }).threeD?.enabled === true,
+	component: Title3DSection,
+	defaultOpen: true,
+	order: 62,
+});
 
 function seqOf(ctx: CommandCtx): Sequence | null {
 	const s = ctx.session?.getState();
@@ -122,12 +148,16 @@ export const threeDCommands: UiCommand[] = [
 			const c = selectedClips(ctx).filter(can3d);
 			return c.length > 0 && c.every(is3d);
 		},
-		run: (ctx) => {
+		run: async (ctx) => {
 			const c = selectedClips(ctx).filter(can3d);
-			if (c.length)
-				apply(ctx, '3D Layer', [
-					{ type: 'clip.set3d', clipIds: c.map((x) => x.id), enabled: !c.every(is3d) },
-				]);
+			if (!c.length) return;
+			const enabled = !c.every(is3d);
+			// TL-078: the cost of 3D is said before it is taken on.
+			if (enabled && !cost3dAcknowledged()) {
+				const ok = await openDialog<boolean>(COST_3D_DIALOG, {});
+				if (!ok) return;
+			}
+			apply(ctx, '3D Layer', [{ type: 'clip.set3d', clipIds: c.map((x) => x.id), enabled }]);
 		},
 	},
 	{

@@ -15,6 +15,8 @@ export const SCENE_3D_PATH = 'scene3d';
 
 /** Refusal of a run that needs a floating-point scene target where the browser has none (TL-076). */
 export const THREE_D_NEEDS_FLOAT = 'THREE_D_NEEDS_FLOAT';
+/** Refusal of an export whose HDR environment or 3D model is gone: never a scene without it (TL-075). */
+export const THREE_D_ASSET_MISSING = 'THREE_D_ASSET_MISSING';
 export const THREE_D_FLOAT_MESSAGE =
 	'Physical 3D materials, HDR environments, tone mapping and glints need float render targets (EXT_color_buffer_float), which this browser does not have';
 
@@ -138,17 +140,24 @@ export function sceneLookAt(scene3d: RenderScene3D | undefined, frame: number, f
 type Doc3D = {
 	scene3d?: Partial<RenderScene3D> | null;
 	videoTracks?: readonly { clips?: readonly { kind?: unknown; threeD?: unknown }[] }[];
+	media?: Record<string, { kind?: unknown } | null | undefined>;
 };
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
-function hasEnvironment(scene: Partial<RenderScene3D>): boolean {
-	return (scene.lights ?? []).some((l) => isObj(l?.light) && l.light.type === 'environment');
+/** Environment lights drawn from a preset or an HDR; an 8-bit picture stays on the 8-bit path. */
+function hasFloatEnvironment(doc: Doc3D): boolean {
+	return (doc.scene3d?.lights ?? []).some((l) => {
+		if (!isObj(l?.light) || l.light.type !== 'environment') return false;
+		const id = l.light.environmentMediaId;
+		return !id || doc.media?.[id]?.kind === 'hdri';
+	});
 }
 
 /** Whether the scene's settings alone (no layer) ask for the float pipeline. */
 function sceneSettingsHdr(scene: Partial<RenderScene3D>): boolean {
 	if ((scene.toneMapping ?? 'none') !== 'none' || scene.glint?.enabled) return true;
+	if ((scene.supersampling ?? 1) > 1) return true;
 	const e = scene.exposure as Animatable<number> | undefined;
 	return !!e && (e.keyframes?.length > 0 || !!e.expression || e.value !== 0);
 }
@@ -166,8 +175,31 @@ function layerNeedsHdr(c: { kind?: unknown; threeD?: unknown }): boolean {
 export function advancedNeedsFloat(doc: Doc3D): boolean {
 	const scene = doc.scene3d;
 	if (scene?.renderer !== 'advanced') return false;
-	if (sceneSettingsHdr(scene) || hasEnvironment(scene)) return true;
+	if (sceneSettingsHdr(scene) || hasFloatEnvironment(doc)) return true;
 	return (doc.videoTracks ?? []).some((t) => (t.clips ?? []).some(layerNeedsHdr));
+}
+
+/**
+ * The 3D media a render document needs and does not have: environment lights' media and model layers' models, offline
+ * or gone. Environment lights only light Advanced 3D, so a Classic 3D scene needs none of them.
+ */
+export function missing3dAssets(doc: Doc3D & { videoTracks?: unknown }): { clipId: string; label: string }[] {
+	const out: { clipId: string; label: string }[] = [];
+	const scene = doc.scene3d;
+	if (scene?.renderer !== 'advanced') return out;
+	for (const l of scene.lights ?? []) {
+		if (!isObj(l?.light) || l.light.type !== 'environment') continue;
+		const id = l.light.environmentMediaId;
+		if (id && !doc.media?.[id]) out.push({ clipId: l.clipId, label: `Environment of "${l.name}"` });
+	}
+	for (const t of (doc.videoTracks ?? []) as readonly { clips?: readonly Record<string, unknown>[] }[])
+		for (const c of t.clips ?? []) {
+			if (c.kind !== 'model' || !isObj(c.source)) continue;
+			const id = c.source.mediaId;
+			if (typeof id === 'string' && !doc.media?.[id])
+				out.push({ clipId: String(c.clipId), label: `3D model "${String(c.name)}"` });
+		}
+	return out;
 }
 
 /** What a title costs to export (TL-078): `fast` needs no 3D at all. */

@@ -73,6 +73,7 @@ const TYPE_ICON: Record<ProjectRow['type'], IconId> = {
 	'mg-bundle': 'panel.motionTemplates',
 	'color-config': 'media.lut',
 	model: 'tool.camera',
+	hdri: 'media.image',
 };
 
 const labelVar = (l: LabelColor) => `var(--pr-label-${l})`;
