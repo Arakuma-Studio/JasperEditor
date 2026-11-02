@@ -19,6 +19,7 @@ import { TITLE_FINISHES } from './finishes/index.ts';
 import { TITLE_GENERATORS } from './generators/index.ts';
 import { GLSL_TL_SURFACE, GLSL_TL_UNIT_KNOWN } from './glsl.ts';
 import { TITLE_LAYER_INITS } from './layers/index.ts';
+import { GLSL_TL_RECOLOR } from './recolor.ts';
 
 export const GENERATOR_LAYER_PREFIX = 'generator:';
 
@@ -40,9 +41,10 @@ function generatorLayer(g: TitleGenerator): TitleLayerType {
 		description: g.description,
 		finish: false,
 		params: [...g.params, lp.percent('opacity', 'Opacity', 100)],
+		recolors: true,
 		shader: (): LayerShader => ({
-			glsl: `${g.glsl}\nvec4 tl_layer(TlSurface s) { return tl_generate(s) * (u_opacity * 0.01); }`,
-			...(g.include ? { include: g.include } : {}),
+			glsl: `${g.glsl}\nvec4 tl_layer(TlSurface s) { return tl_recolor(tl_generate(s)) * (u_opacity * 0.01); }`,
+			include: [GLSL_TL_RECOLOR, ...(g.include ?? [])],
 		}),
 		...(g.reach ? { reach: g.reach } : {}),
 		...(g.timeDependent ? { timeDependent: g.timeDependent } : {}),

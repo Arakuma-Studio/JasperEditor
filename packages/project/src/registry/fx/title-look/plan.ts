@@ -22,6 +22,7 @@ import type {
 	GlslChunk,
 	ShaderPass,
 } from '../shader.ts';
+import { hashFloats } from '../shader.ts';
 import {
 	isPaintParam,
 	type LayerFieldReach,
@@ -49,6 +50,7 @@ import {
 	GLSL_TL_UNIT_KNOWN,
 } from './glsl.ts';
 import { paintOf, paintParts } from './paint.ts';
+import { recolorRamp } from './recolor.ts';
 import { activeParamSpecs, titleFinish, titleLayerType, withDefaults } from './registry.ts';
 
 /** `FxStructures.titleLook`: what a look instance needs at a frame. */
@@ -87,6 +89,8 @@ type PlannedLayer = {
 	params: LayerParams;
 	/** Silhouette growth of the layers above, percent of the unit. */
 	base: number;
+	/** TL-051: colourways leave this layer alone. */
+	fixedColor: boolean;
 };
 
 /** The enabled layers of known types, bottom-first, with the growth above each. */
@@ -98,7 +102,7 @@ function plannedLayers(look: ResolvedAppearance): PlannedLayer[] {
 		const def = titleLayerType(l.type);
 		if (!def) continue; // INV-APPEARANCE: repair removes unknown types when a project loads.
 		const params = withDefaults(def, l.params);
-		out.unshift({ def, id: l.id, params, base });
+		out.unshift({ def, id: l.id, params, base, fixedColor: l.fixedColor === true });
 		base += Math.max(0, num(def.grows?.(params)));
 	}
 	return out;
@@ -294,6 +298,13 @@ function layerPieces(l: PlannedLayer, look: ResolvedAppearance, index: number): 
 	if (finish) {
 		glsl += `${finish.glsl}\n`;
 		include.push(...(finish.include ?? []));
+	}
+	if (l.def.recolors) {
+		const ramp = recolorRamp(look.palette);
+		uniforms.u_tlRecolor = !l.fixedColor;
+		uniforms.u_tlRecolorRamp = { texels: ramp, key: hashFloats(ramp) };
+		// `tl_recolor` comes with the gradient chunk, which reads the bounds.
+		usesBounds = true;
 	}
 	return { defines, textures, glsl, uniforms, include, usesBounds, fieldInside };
 }

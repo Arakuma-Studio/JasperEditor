@@ -106,6 +106,8 @@ export const AppearanceLayerSchema = z.looseObject({
 	type: z.string(),
 	enabled: z.boolean(),
 	name: z.string().max(MAX_TITLE_LOOK_NAME).optional(),
+	/** TL-051: colourways leave this layer alone. It reads no role, and a generator keeps its own colours. */
+	fixedColor: z.boolean().optional(),
 	params: z.record(z.string(), LayerParamSchema),
 });
 export type AppearanceLayer = {
@@ -113,6 +115,7 @@ export type AppearanceLayer = {
 	type: string;
 	enabled: boolean;
 	name?: string;
+	fixedColor?: boolean;
 	params: Record<string, AnimLayerParam>;
 };
 
@@ -128,6 +131,27 @@ export type AppearanceLight = {
 	angle: Animatable<number>;
 	altitude: Animatable<number>;
 };
+
+/**
+ * TL-053: the typography a look brings, applied to a text clip when the look is applied and not read again. A display
+ * family has one or two weights, so the look names the weight: a text left at another one would be synthesised.
+ */
+export const LookFontSchema = z.strictObject({
+	family: z.string().min(1).max(256),
+	weight: z.number().int().min(1).max(1000).optional(),
+	italic: z.boolean().optional(),
+	trackingEm: z.number().min(-1).max(2).optional(),
+	/** The family to use where `family` is not installed (a shared look); see `chooseLookFont`. */
+	fallback: z.string().min(1).max(256).optional(),
+	/** The face for text in Japanese: Latin display families have no kana. */
+	ja: z
+		.strictObject({
+			family: z.string().min(1).max(256),
+			weight: z.number().int().min(1).max(1000).optional(),
+		})
+		.optional(),
+});
+export type LookFont = z.infer<typeof LookFontSchema>;
 
 /** Default light: from the upper left, 45° above the horizon. */
 export const DEFAULT_LIGHT_ANGLE = 225;
@@ -145,7 +169,7 @@ export const AppearanceSchema = z.looseObject({
 	/** Bottom-first. */
 	layers: z.array(AppearanceLayerSchema),
 	/** Applied to the text when the look is applied, then not read again. */
-	font: z.looseObject({ family: z.string().min(1) }).optional(),
+	font: LookFontSchema.loose().optional(),
 });
 export type Appearance = {
 	v: 1;
@@ -156,7 +180,7 @@ export type Appearance = {
 	light: AppearanceLight;
 	seed: number;
 	layers: AppearanceLayer[];
-	font?: FontRef | { family: string };
+	font?: FontRef | LookFont;
 };
 
 /** A named palette (§3): role values only, never structure (TL-051). */

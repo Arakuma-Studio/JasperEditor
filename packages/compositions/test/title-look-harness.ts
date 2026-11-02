@@ -16,6 +16,15 @@ export type LookPage = {
 	page: Page;
 	render(req: LookRequest): Promise<LookImage>;
 	reach(recipe: LookRecipe): Promise<{ left: number; top: number; right: number; bottom: number }>;
+	/** Loads a font file for `{kind: 'text', font}` inputs. */
+	loadFont(family: string, weight: number, file: Uint8Array): Promise<void>;
+	/** The size at which `text` fits `width` px, at most `size`. */
+	fitSize(arg: {
+		text: string;
+		size: number;
+		width: number;
+		font: { family: string; weight: number };
+	}): Promise<number>;
 	float(): Promise<boolean>;
 	/** What `render` throws on a GPU without float targets, or null. */
 	withoutFloat(req: LookRequest): Promise<string | null>;
@@ -38,6 +47,9 @@ export async function openLookPage(dir: string): Promise<LookPage> {
 			return { ...rest, data: new Uint8Array(Buffer.from(rgba, 'base64')) };
 		},
 		reach: (recipe) => call('reach', recipe),
+		loadFont: (family, weight, file) =>
+			call('loadFont', { family, weight, base64: Buffer.from(file).toString('base64') }),
+		fitSize: (arg) => call('fitSize', arg),
 		float: () => call('float'),
 		withoutFloat: (req) => call('withoutFloat', req),
 		renderer: () => call('renderer'),

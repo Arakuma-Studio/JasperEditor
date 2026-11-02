@@ -17,7 +17,7 @@ import {
 	type TitleLook,
 } from './model.ts';
 
-/** `lookOverrides`: `<layerId>` → changed params (`$enabled`, `$name` for those fields), and the `$` entries below. */
+/** `lookOverrides`: `<layerId>` → changed params (`$enabled`, `$name`, `$fixedColor` for those fields), and the `$` entries below. */
 export type LookOverrides = {
 	[layerId: string]: unknown;
 	/** Layers the clip added. */
@@ -55,6 +55,7 @@ export function diffAppearance(base: Appearance, a: Appearance): LookOverrides {
 		const changed = Object.keys(l.params).filter((k) => animDiffers(l.params[k], b.params[k]));
 		if (l.enabled !== b.enabled) changed.push('$enabled');
 		if (l.name !== b.name) changed.push('$name');
+		if ((l.fixedColor === true) !== (b.fixedColor === true)) changed.push('$fixedColor');
 		if (changed.length) out[l.id] = changed;
 	}
 	for (const b of base.layers) if (!mine.has(b.id)) (out.$removed ??= []).push(b.id);
@@ -91,6 +92,9 @@ export function rebaseAppearance(base: Appearance, next: Appearance, a: Appearan
 			else if (name === '$name') {
 				if (own?.name !== undefined) out.name = own.name;
 				else delete out.name;
+			} else if (name === '$fixedColor') {
+				if (own?.fixedColor) out.fixedColor = true;
+				else delete out.fixedColor;
 			} else if (own?.params[name]) out.params[name] = clone(own.params[name]);
 		}
 		layers.push(out);

@@ -18,6 +18,8 @@ import {
 export type ResolvedTitleLayer = {
 	id: string;
 	type: string;
+	/** TL-051: colourways leave it alone. */
+	fixedColor?: true;
 	params: Record<string, LayerParamValue>;
 };
 
@@ -48,7 +50,7 @@ export function resolveAppearance(
 		if (!l.enabled) continue;
 		const params: Record<string, LayerParamValue> = {};
 		for (const k of Object.keys(l.params)) params[k] = evaluate(l.params[k]!, t);
-		layers.push({ id: l.id, type: l.type, params });
+		layers.push({ id: l.id, type: l.type, ...(l.fixedColor ? { fixedColor: true as const } : {}), params });
 	}
 	const light =
 		a.light?.source === 'sequence' && global

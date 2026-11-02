@@ -23,6 +23,7 @@ import {
 	isPlainObject,
 	type LayerParamValue,
 	LookColorSchema,
+	LookFontSchema,
 	MAX_APPEARANCE_BYTES,
 	MAX_APPEARANCE_LAYERS,
 	MAX_GRADIENT_STOPS,
@@ -197,6 +198,7 @@ function repairLayer(raw: unknown, def: TitleLayerType, id: string, note: Note):
 		type: def.type,
 		enabled: r.enabled !== false,
 		...(name ? { name } : {}),
+		...(r.fixedColor === true ? { fixedColor: true } : {}),
 		params: params as AppearanceLayer['params'],
 	};
 }
@@ -238,6 +240,9 @@ export function repairAppearance(
 	) {
 		delete a.font;
 		note('repair-appearance', who, 'unreadable font removed');
+	} else if (a.font !== undefined && !LookFontSchema.loose().safeParse(a.font).success) {
+		a.font = { family: (a.font as { family: string }).family };
+		note('repair-appearance', who, 'unreadable font settings removed');
 	}
 	const seed = Number.isSafeInteger(a.seed) && (a.seed as number) >= 0 ? (a.seed as number) : null;
 	if (seed === null || seed > 0xffff_ffff) {

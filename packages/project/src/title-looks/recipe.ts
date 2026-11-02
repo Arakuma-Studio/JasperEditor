@@ -13,6 +13,7 @@ import {
 	type LayerParamValue,
 	LIGHT_SOURCES,
 	LookColorSchema,
+	LookFontSchema,
 	MAX_APPEARANCE_LAYERS,
 	MAX_TITLE_LOOK_NAME,
 	type Role,
@@ -27,6 +28,8 @@ export const RecipeLayerSchema = z.strictObject({
 	type: z.string().min(1).max(64),
 	name: z.string().max(MAX_TITLE_LOOK_NAME).optional(),
 	enabled: z.boolean().optional(),
+	/** TL-051: colourways leave this layer alone (it uses `color` paints, a generator keeps its own colours). */
+	fixedColor: z.boolean().optional(),
 	params: z.record(z.string(), z.unknown()).optional(),
 });
 export type RecipeLayer = z.infer<typeof RecipeLayerSchema>;
@@ -42,7 +45,7 @@ export const LookRecipeSchema = z.strictObject({
 		.optional(),
 	/** Bottom-first. Limits are the commands' to refuse (TL-013: `E_LIMIT`), so a schema cap here is only a sanity bound. */
 	layers: z.array(RecipeLayerSchema).max(MAX_APPEARANCE_LAYERS * 8),
-	font: z.strictObject({ family: z.string().min(1).max(256) }).optional(),
+	font: LookFontSchema.optional(),
 });
 export type LookRecipe = z.infer<typeof LookRecipeSchema>;
 
@@ -69,6 +72,7 @@ export function layerFromRecipe(l: RecipeLayer, id: string): AppearanceLayer {
 		type: l.type,
 		enabled: l.enabled !== false,
 		...(l.name ? { name: l.name } : {}),
+		...(l.fixedColor ? { fixedColor: true } : {}),
 		params,
 	};
 }
@@ -88,6 +92,6 @@ export function appearanceFromRecipe(r: LookRecipe, newLayerId: () => string, se
 		},
 		seed,
 		layers: r.layers.map((l) => layerFromRecipe(l, newLayerId())),
-		...(r.font ? { font: { family: r.font.family } } : {}),
+		...(r.font ? { font: { ...r.font } } : {}),
 	};
 }

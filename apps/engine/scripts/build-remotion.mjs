@@ -127,4 +127,6 @@ for (const id of ['inter']) {
 			!src.endsWith('.woff') && (/-(latin|latin-ext)-standard-/.test(src) || !src.includes('.woff')),
 	});
 }
+// Spec 19 TL-053: the display families looks name, committed unmodified from google/fonts (`fonts/display/manifest.json`).
+cpSync(join(root, 'fonts', 'display'), join(fontsOut, 'display'), { recursive: true });
 console.log(`[build:remotion] fonts copied to ${fontsOut}`);
