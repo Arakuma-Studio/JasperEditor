@@ -26,13 +26,21 @@ import {
 	textAnimationUnit,
 	type UnitValues,
 } from '@jasper/motion/text';
-import { sourceTextAt, type TextStyle } from '@jasper/project';
+import { isVerticalText, sourceTextAt, type TextStyle } from '@jasper/project';
 import { type CSSProperties, type ReactNode, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { fontFaceFor, useFontsReady } from '../fonts.ts';
 import { rgbaCss } from '../metadata.ts';
 import type { LayerProps } from '../types.ts';
 import { LayerBox } from './LayerBox.tsx';
-import { blockStyles, type RunStyle, runLayoutCss, styledSpans, textBlockStyle } from './text/block.ts';
+import { useTemplateEditHold } from './template-edit-hold.ts';
+import {
+	blockStyles,
+	contentSpans,
+	type RunStyle,
+	runLayoutCss,
+	textBlockStyle,
+	UPRIGHT_TEXT_CSS,
+} from './text/block.ts';
 import { PaintedText, type PaintMode, paintCss, planTextPaint } from './text/paint.tsx';
 import { type TypesetSourceProps, TypesetText } from './text/TypesetText.tsx';
 import { needsTypeset } from './text/typography.ts';
@@ -57,7 +65,7 @@ function RestText({ source, fonts, hidden }: { source: TextSource; fonts: Fonts;
 	const block = textBlockStyle(source, fonts);
 	const styles = useMemo(() => blockStyles(source.text), [source.text]);
 	const plan = useMemo(() => planTextPaint(styles), [styles]);
-	const spans = runs?.length ? styledSpans(text, runs) : null;
+	const spans = runs?.length || isVerticalText(source.text) ? contentSpans(source.text) : null;
 	const render = (mode: PaintMode) => (
 		<p
 			{...copyAttrs(mode, 'data-text-block')}
@@ -65,12 +73,17 @@ function RestText({ source, fonts, hidden }: { source: TextSource; fonts: Fonts;
 		>
 			{spans
 				? spans.map((s) =>
-						s.style ? (
+						s.style || s.upright ? (
 							<span
 								key={s.from}
 								style={{
-									...runLayoutCss(s.style, style, fonts),
-									...paintCss({ ...style, ...s.style } as TextStyle, mode),
+									...(s.style
+										? {
+												...runLayoutCss(s.style, style, fonts),
+												...paintCss({ ...style, ...s.style } as TextStyle, mode),
+											}
+										: {}),
+									...(s.upright ? UPRIGHT_TEXT_CSS : {}),
 								}}
 							>
 								{text.slice(s.from, s.to)}
@@ -108,6 +121,8 @@ type FlowPiece = {
 	first: boolean;
 	/** Base direction of its bidi paragraph: the overlay draws every piece as its own box, so it is explicit. */
 	rtl: boolean;
+	/** spec 19 TL-111: tate-chu-yoko. */
+	upright: boolean;
 };
 
 type Flow = {
@@ -145,23 +160,48 @@ function paragraphDirections(text: string): { end: number; rtl: boolean }[] {
 	return out;
 }
 
+/** spec 19 TL-111: a tate-chu-yoko run is one unit, or it would stop being one upright box. */
+function mergeUprightUnits(segments: TextSegment[], ranges: { from: number; to: number }[]): TextSegment[] {
+	if (!ranges.length) return segments;
+	const out: TextSegment[] = [];
+	let pos = 0;
+	let units = 0;
+	for (const seg of segments) {
+		const at = pos;
+		pos += seg.text.length;
+		const last = out[out.length - 1];
+		if (last && ranges.some((r) => at > r.from && at < r.to)) last.text += seg.text;
+		else out.push(seg.space ? { ...seg } : { ...seg, unitIndex: units++ });
+	}
+	return out;
+}
+
 /** Segments the caps-applied text into units and cuts them at style boundaries (S11:TXA-010). */
 function buildFlow(source: TextSource, impl: TextAnimationImpl, params: Record<string, unknown>): Flow {
 	const { text, style: base, runs } = source.text;
 	const styles: RunStyle[] = [];
 	// Caps are applied before segmentation (ß → SS counts as two characters).
-	const parts = styledSpans(text, runs).map((s) => {
+	const parts = contentSpans(source.text).map((s) => {
 		const caps = s.style?.allCaps ?? base.allCaps;
 		const slice = text.slice(s.from, s.to);
 		if (s.style) styles.push(s.style);
-		return { text: caps ? slice.toUpperCase() : slice, style: s.style ? styles.length - 1 : -1 };
+		return {
+			text: caps ? slice.toUpperCase() : slice,
+			style: s.style ? styles.length - 1 : -1,
+			upright: !!s.upright,
+		};
 	});
 	const full = parts.map((p) => p.text).join('');
 	const paragraphs = base.direction === 'auto' ? paragraphDirections(full) : [];
 	const rtlAt = (at: number) =>
 		base.direction === 'auto' ? !!paragraphs.find((p) => at < p.end)?.rtl : base.direction === 'rtl';
 	const unit = textAnimationUnit(impl, params, full);
-	const segments: TextSegment[] = segmentText(full, unit === 'line' ? 'word' : unit);
+	const uprightRanges: { from: number; to: number }[] = [];
+	parts.reduce((at, p) => {
+		if (p.upright) uprightRanges.push({ from: at, to: at + p.text.length });
+		return at + p.text.length;
+	}, 0);
+	const segments = mergeUprightUnits(segmentText(full, unit === 'line' ? 'word' : unit), uprightRanges);
 	const pieces: FlowPiece[] = [];
 	let partIndex = 0;
 	let partEnd = parts[0]?.text.length ?? 0;
@@ -181,6 +221,7 @@ function buildFlow(source: TextSource, impl: TextAnimationImpl, params: Record<s
 				unit: seg.unitIndex,
 				first,
 				rtl: rtlAt(pos),
+				upright: parts[partIndex]!.upright,
 			});
 			first = false;
 			rest = rest.slice(take);
@@ -203,7 +244,23 @@ type Measured = {
 	lines: number;
 };
 
-function measureFlow(p: HTMLElement, flow: Flow, key: string): Measured {
+/** `groupLines` for columns (spec 19 TL-111): a unit starts a new one when its centre lies left of the current one. */
+function groupColumns(container: HTMLElement, selector: string): number[] {
+	const out: number[] = [];
+	let line = -1;
+	let left = Number.POSITIVE_INFINITY;
+	for (const el of container.querySelectorAll<HTMLElement>(selector)) {
+		const x = el.offsetLeft;
+		if (line < 0 || x + el.offsetWidth / 2 < left) {
+			line++;
+			left = x;
+		} else left = Math.min(left, x);
+		out.push(line);
+	}
+	return out;
+}
+
+function measureFlow(p: HTMLElement, flow: Flow, key: string, vertical: boolean): Measured {
 	const boxes: (Box | null)[] = flow.pieces.map(() => null);
 	for (const el of p.querySelectorAll<HTMLElement>('[data-text-piece]')) {
 		boxes[Number(el.dataset.textPiece)] = {
@@ -213,7 +270,7 @@ function measureFlow(p: HTMLElement, flow: Flow, key: string): Measured {
 			height: el.offsetHeight,
 		};
 	}
-	const lineOf = groupLines(p, '[data-text-unit]');
+	const lineOf = (vertical ? groupColumns : groupLines)(p, '[data-text-unit]');
 	return { key, boxes, lineOf, lines: lineOf.length ? Math.max(...lineOf) + 1 : 0 };
 }
 
@@ -265,6 +322,7 @@ function AnimatedText({
 	const params = active.animator.params;
 	const flow = useMemo(() => buildFlow(source, impl, params), [source, impl, params]);
 	const block = textBlockStyle(source, fonts);
+	const vertical = isVerticalText(source.text);
 	const layoutKey = JSON.stringify([source.text, source.box, flow.unit, fonts]);
 	const [measured, setMeasured] = useState<Measured | null>(null);
 	const m = measured?.key === layoutKey ? measured : null;
@@ -276,7 +334,7 @@ function AnimatedText({
 		const p = pRef.current;
 		if (m || !p) return;
 		if (p.offsetParent !== null) {
-			setMeasured(measureFlow(p, flow, layoutKey));
+			setMeasured(measureFlow(p, flow, layoutKey, vertical));
 			return;
 		}
 		if (typeof ResizeObserver === 'undefined') return;
@@ -315,13 +373,16 @@ function AnimatedText({
 		active.ms,
 	);
 
-	const cssOf = (i: number) => (i < 0 ? undefined : runLayoutCss(flow.styles[i]!, source.text.style, fonts));
+	const cssOf = (pc: FlowPiece) => ({
+		...(pc.style < 0 ? {} : runLayoutCss(flow.styles[pc.style]!, source.text.style, fonts)),
+		...(pc.upright ? UPRIGHT_TEXT_CSS : {}),
+	});
 	const flowNodes = flow.pieces.map((pc, i) =>
 		pc.unit < 0 ? (
 			pc.style < 0 ? (
 				pc.text
 			) : (
-				<span key={pc.at} style={cssOf(pc.style)}>
+				<span key={pc.at} style={cssOf(pc)}>
 					{pc.text}
 				</span>
 			)
@@ -330,7 +391,7 @@ function AnimatedText({
 				key={pc.at}
 				data-text-piece={i}
 				{...(pc.first ? { 'data-text-unit': '' } : {})}
-				style={cssOf(pc.style)}
+				style={cssOf(pc)}
 			>
 				{pc.text}
 			</span>
@@ -404,6 +465,7 @@ function TextOverlay({
 	caretLit: (shown: number) => boolean;
 }) {
 	const base = source.text.style;
+	const vertical = isVerticalText(source.text);
 	const lineMode = flow.unit === 'line';
 	const masks = !!impl.lineMasks;
 	const styleOf = (i: number) => (i < 0 ? base : ({ ...base, ...flow.styles[i] } as TextStyle));
@@ -432,11 +494,12 @@ function TextOverlay({
 				key={p.piece.at}
 				style={{
 					...(p.piece.style < 0 ? {} : runLayoutCss(flow.styles[p.piece.style]!, base, fonts)),
+					...(p.piece.upright ? UPRIGHT_TEXT_CSS : {}),
 					...paintCss(st, mode),
 					position: 'absolute',
 					left: p.box.left - origin.left,
 					top: p.box.top - origin.top,
-					lineHeight: `${p.box.height}px`,
+					lineHeight: `${vertical ? p.box.width : p.box.height}px`,
 					whiteSpace: 'pre',
 					direction: p.piece.rtl ? 'rtl' : 'ltr',
 					...(em !== 0 ? { letterSpacing: `${st.trackingEm + em}em` } : {}),
@@ -456,6 +519,9 @@ function TextOverlay({
 			maxSizePx={sizeMax}
 		/>
 	);
+	/** The animated box's shift for a letter-spacing growth: along the line, which runs down a column. */
+	const animatedCss = (v: Readonly<UnitValues>, spread: number, lift: number) =>
+		vertical ? valuesCss(v, 0, spread + lift, !masks) : valuesCss(v, spread, lift, !masks);
 	const strokeW = plan.strokeExtent;
 	const out: ReactNode[] = [];
 	lines.forEach((units, line) => {
@@ -488,7 +554,7 @@ function TextOverlay({
 						top: lineBox.top - origin.top,
 						width: lineBox.width,
 						height: lineBox.height,
-						...valuesCss(v, spacingShift(all, v.letterSpacing), rise(v), !masks),
+						...animatedCss(v, spacingShift(all, v.letterSpacing), rise(v)),
 					}}
 				>
 					{painted(all, lineBox, v.letterSpacing)}
@@ -509,7 +575,7 @@ function TextOverlay({
 							top: ub.top - origin.top,
 							width: ub.width,
 							height: ub.height,
-							...valuesCss(v, spacingShift(pieces, v.letterSpacing), rise(v), !masks),
+							...animatedCss(v, spacingShift(pieces, v.letterSpacing), rise(v)),
 						}}
 					>
 						{painted(pieces, ub, v.letterSpacing)}
@@ -549,16 +615,16 @@ function TextOverlay({
 		const after = shown.length > 0;
 		const width = Math.max(2, Math.round(base.sizePx * 0.06));
 		const x = after !== rtl ? anchor.left + anchor.width : anchor.left - width;
+		const y = after ? anchor.top + anchor.height : anchor.top - width;
 		out.push(
 			<div
 				key="caret"
 				data-text-caret=""
 				style={{
 					position: 'absolute',
-					left: x,
-					top: anchor.top,
-					width,
-					height: anchor.height,
+					...(vertical
+						? { left: anchor.left, top: y, width: anchor.width, height: width }
+						: { left: x, top: anchor.top, width, height: anchor.height }),
 					background: rgbaCss(base.fill),
 				}}
 			/>,
@@ -607,7 +673,13 @@ export function TextLayer(layer: LayerProps) {
 	);
 }
 
-function TextBody({ layer, source }: { layer: LayerProps; source: TextSource }) {
+function TextBody({ layer, source: drawn }: { layer: LayerProps; source: TextSource }) {
+	// spec 19 TL-085: while text is edited in place it rests, so the caret sits over the settled layout. Previews only.
+	const held = useTemplateEditHold(layer.clip.clipId) && layer.options.isPreview;
+	const source = useMemo(
+		() => (held ? ({ ...drawn, animators: undefined, animation: undefined } as TextSource) : drawn),
+		[held, drawn],
+	);
 	const keyed = (source as TypesetSourceProps).sourceTextKeyframes;
 	const families = useMemo(
 		() =>

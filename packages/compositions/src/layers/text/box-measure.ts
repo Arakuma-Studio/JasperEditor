@@ -8,10 +8,24 @@
 // Box semantics: point text (`autoSize: 'width'`) = the widest line × the block height (no wrapping); paragraph text
 // (`'height'`) = the block height at `box.width`. Sizes are whole pixels (rounded up), so a re-measure of the same
 // text gives the same box and the box covers the line boxes it lays out.
-import type { FontRef, TextBox, TextContent, TextMeasurer, TextStyle } from '@jasper/project';
+import {
+	type FontRef,
+	isVerticalText,
+	type TextBox,
+	type TextContent,
+	type TextMeasurer,
+	type TextStyle,
+} from '@jasper/project';
 import { fontFaceFor, isFontFaceSettled, loadFontFace } from '../../fonts.ts';
 import type { RenderDoc } from '../../types.ts';
-import { blockStyles, runLayoutCss, styledSpans, textBlockStyle, textFontFamily } from './block.ts';
+import {
+	blockStyles,
+	contentSpans,
+	runLayoutCss,
+	textBlockStyle,
+	textFontFamily,
+	UPRIGHT_TEXT_CSS,
+} from './block.ts';
 import { applyCss, measureTypeset, textMeasureHost } from './measure.ts';
 import { needsTypeset } from './typography.ts';
 
@@ -37,7 +51,7 @@ export function contentFaces(content: TextContent, faces: readonly MeasureFace[]
  */
 export function measureTextBox(
 	content: TextContent,
-	box: Pick<TextBox, 'width' | 'autoSize'>,
+	box: Pick<TextBox, 'width' | 'autoSize'> & Partial<Pick<TextBox, 'height'>>,
 	faces: readonly MeasureFace[],
 ): MeasuredBox | null {
 	if (typeof document === 'undefined' || !document.body) return null;
@@ -51,37 +65,48 @@ export function measureTextBox(
 	if (pending) return null;
 	const pointText = box.autoSize === 'width';
 	const width = Math.max(1, Number.isFinite(box.width) ? box.width : 1);
+	// spec 19 TL-111: columns wrap at the box height and the width follows them.
+	const vertical = isVerticalText(content);
+	const height = Math.max(1, Number.isFinite(box.height) ? (box.height as number) : 1);
 	if (needsTypeset({ text: content })) {
 		const family = (s: Pick<TextStyle, 'fontId' | 'weight' | 'italic'>) =>
 			textFontFamily(s.fontId, faces, s.weight, s.italic);
-		const key = JSON.stringify(['box', content, pointText ? 0 : width, faces.map((f) => [f.family, f.url])]);
-		const lay = measureTypeset({ content, width, pointText, family }, key);
+		const across = vertical ? height : width;
+		const key = JSON.stringify(['box', content, pointText ? 0 : across, faces.map((f) => [f.family, f.url])]);
+		const lay = measureTypeset({ content, width, height, pointText, family }, key);
+		let left = Number.POSITIVE_INFINITY;
 		let right = 0;
 		let bottom = 0;
 		for (const g of lay.glyphs) {
 			if (!g.rect) continue;
+			left = Math.min(left, g.rect.left);
 			right = Math.max(right, g.rect.left + g.rect.width);
 			bottom = Math.max(bottom, g.rect.top + g.rect.height);
 		}
+		if (vertical)
+			return { width: up(Number.isFinite(left) ? right - left : 0), height: up(pointText ? bottom : height) };
 		return { width: up(pointText ? right : width), height: up(bottom) };
 	}
 	const p = document.createElement('p');
 	applyCss(p, {
 		...textBlockStyle({ text: content, box: { autoSize: box.autoSize } }, faces),
-		width: pointText ? 'max-content' : `${width}px`,
-		minHeight: 0,
-		height: 'auto',
+		...(vertical
+			? { left: 0, right: 'auto', width: 'max-content', minWidth: 0, height: pointText ? 'max-content' : height }
+			: { width: pointText ? 'max-content' : `${width}px`, minHeight: 0, height: 'auto' }),
 		contain: 'layout style',
 	});
-	const spans = content.runs?.length ? styledSpans(content.text, content.runs) : null;
+	const spans = content.runs?.length || vertical ? contentSpans(content) : null;
 	if (!spans) p.textContent = content.text;
 	else
 		for (const s of spans) {
 			const piece = content.text.slice(s.from, s.to);
-			if (!s.style) p.append(document.createTextNode(piece));
+			if (!s.style && !s.upright) p.append(document.createTextNode(piece));
 			else {
 				const span = document.createElement('span');
-				applyCss(span, runLayoutCss(s.style, content.style, faces));
+				applyCss(span, {
+					...(s.style ? runLayoutCss(s.style, content.style, faces) : {}),
+					...(s.upright ? UPRIGHT_TEXT_CSS : {}),
+				});
 				span.textContent = piece;
 				p.append(span);
 			}
@@ -89,6 +114,7 @@ export function measureTextBox(
 	textMeasureHost().append(p);
 	const r = p.getBoundingClientRect();
 	p.remove();
+	if (vertical) return { width: up(r.width), height: up(pointText ? r.height : height) };
 	return { width: up(pointText ? r.width : width), height: up(r.height) };
 }
 
@@ -167,7 +193,7 @@ export function createDomTextMeasurer(faceUrl: FaceUrlResolver): DomTextMeasurer
 /** One measurement of the engine's batch (`__jasperTextMeasure.measure`). */
 export type TextMeasureJob = {
 	content: TextContent;
-	box: Pick<TextBox, 'width' | 'autoSize'>;
+	box: Pick<TextBox, 'width' | 'autoSize'> & Partial<Pick<TextBox, 'height'>>;
 	faces: MeasureFace[];
 };
 

@@ -14,6 +14,7 @@ import {
 	evaluate,
 	FLICKS_PER_SECOND,
 	invertMatrix,
+	isVerticalText,
 	type Keyframe,
 	type LaidGlyph,
 	type Mask,
@@ -39,6 +40,7 @@ import { type ReactNode, useContext, useId, useMemo } from 'react';
 import { useVideoConfig } from 'remotion';
 import { FALLBACK_FONT_STACK, fontFaceFor } from '../../fonts.ts';
 import type { LayerProps } from '../../types.ts';
+import { UPRIGHT_TEXT_CSS, VERTICAL_TEXT_CSS } from './block.ts';
 import { TextExpressionContext } from './expression-context.ts';
 import { drawnBaseline, measureAdvance, measureTypeset, type TypesetLayout } from './measure.ts';
 import {
@@ -144,9 +146,17 @@ export function TypesetText({
 	const fonts = layer.fonts;
 	const pointText = source.box.autoSize === 'width';
 	const family = (s: Pick<TextStyle, 'fontId' | 'weight' | 'italic'>) => fontFamilyFor(s, fonts);
-	const baseKey = JSON.stringify([content, source.box.width, pointText, fonts?.map((f) => f.family)]);
+	const vertical = isVerticalText(content);
+	const { width: boxWidth, height: boxHeight } = source.box;
+	const baseKey = JSON.stringify([
+		content,
+		boxWidth,
+		vertical ? boxHeight : 0,
+		pointText,
+		fonts?.map((f) => f.family),
+	]);
 	// Cached by key inside measureTypeset (content, box, fonts).
-	const layout = measureTypeset({ content, width: source.box.width, pointText, family }, baseKey);
+	const layout = measureTypeset({ content, width: boxWidth, height: boxHeight, pointText, family }, baseKey);
 	const expressions: TextSelectorExpressionHost | undefined =
 		expressionsFor?.(layer.clip.clipId) ?? undefined;
 	const threeD = !!source.perCharacter3d;
@@ -166,7 +176,7 @@ export function TypesetText({
 		});
 		const key = `${baseKey}|${JSON.stringify([...map])}`;
 		const relaid = measureTypeset(
-			{ content, width: source.box.width, pointText, family, substitutions: map },
+			{ content, width: boxWidth, height: boxHeight, pointText, family, substitutions: map },
 			key,
 		);
 		const prev = xfs;
@@ -175,7 +185,7 @@ export function TypesetText({
 		subs = lay.glyphs.map(() => null);
 	}
 	const styleOf = (i: number) => lay.styles[lay.glyphs[i]!.style]!;
-	const cssOf = lay.styles.map((s) => charFlowCss(s, family(s)));
+	const cssOf = lay.styles.map((s) => charFlowCss(s, family(s), vertical));
 	// Variable font axes: the animated advance moves the characters after it.
 	const vadv = lay.glyphs.map((g, i) => {
 		const axes = xfs[i]!.axes;
@@ -242,6 +252,7 @@ export function TypesetText({
 				}
 			: {}),
 		threeD,
+		vertical,
 		...(path ? { path } : {}),
 		lineBoxes: lay.lineBoxes,
 		align: align0 === 'center' ? 1 : align0 === 'right' ? 2 : 0,
@@ -376,7 +387,9 @@ export function TypesetText({
 			}
 		}
 		const { style: ps, plan, fauxBold } = infoOf(g);
-		const baseline = drawnBaseline({ ...css, position: 'absolute', top: 0 }, height);
+		// In a column a glyph is placed by the middle of its cell, and its line box runs across the column.
+		const across = lg.rect?.width ?? glyphSize(s);
+		const baseline = vertical ? height / 2 : drawnBaseline({ ...css, position: 'absolute', top: 0 }, height);
 		const left = g.local[0] + dx;
 		const top = g.local[1] - baseline;
 		const span = (mode: PaintMode, at: { left: number; top: number }) => (
@@ -387,7 +400,9 @@ export function TypesetText({
 					left: at.left,
 					top: at.top,
 					height,
-					lineHeight: `${height}px`,
+					lineHeight: `${vertical ? across : height}px`,
+					...(vertical ? { ...VERTICAL_TEXT_CSS, width: across } : {}),
+					...(lg.upright ? UPRIGHT_TEXT_CSS : {}),
 					whiteSpace: 'pre',
 					letterSpacing: 'normal',
 					fontKerning: 'none',
