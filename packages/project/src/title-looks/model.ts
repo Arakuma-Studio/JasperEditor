@@ -10,6 +10,9 @@ import type { FontRef } from '../schema/media.ts';
 /** Effect id of a look (`EffectInstance.appearance`). Internal: never listed in the Effects panel. */
 export const TITLE_LOOK_EFFECT_ID = 'jasper.title-look';
 
+/** TL-089: the look effect's own param (`u_lookIntensity`), named not to meet a layer param in a pass. */
+export const TITLE_LOOK_INTENSITY = 'lookIntensity';
+
 /** TL-010: the clip kinds a look applies to. */
 export const TITLE_LOOK_CLIP_KINDS = ['text', 'shape', 'still', 'solid', 'video'] as const;
 
@@ -167,6 +170,19 @@ export const ColorwaySchema = z.looseObject({
 });
 export type Colorway = { id: string; name: string; palette: Partial<Record<Role, RGBA>> };
 
+/**
+ * TL-089: a control a look offers in its header: a layer param, found by type and position among that type (`nth`), so
+ * it survives overrides and needs no ids in a recipe. Most looks need none: the header then offers each layer's primary.
+ */
+export const LookQuickControlSchema = z.strictObject({
+	label: z.string().min(1).max(MAX_TITLE_LOOK_NAME),
+	layerType: z.string().min(1).max(64),
+	nth: z.number().int().min(0).max(MAX_APPEARANCE_LAYERS).optional(),
+	param: z.string().min(1).max(64),
+});
+export type LookQuickControl = z.infer<typeof LookQuickControlSchema>;
+export const MAX_QUICK_CONTROLS = 6;
+
 /** A look stored in the project (TL-015): an appearance without keyframes or a link, plus its name and colourways. */
 export const TitleLookSchema = z.looseObject({
 	id: z.string(),
@@ -176,6 +192,8 @@ export const TitleLookSchema = z.looseObject({
 	/** The library id this copy came from (absent = made in this project). */
 	sourceId: z.string().max(128).optional(),
 	colorways: z.array(ColorwaySchema).max(MAX_LOOK_COLORWAYS).optional(),
+	/** Unreadable controls are dropped: the header falls back to the layers' primaries. */
+	quickControls: z.array(LookQuickControlSchema).max(MAX_QUICK_CONTROLS).optional().catch(undefined),
 	appearance: AppearanceSchema,
 });
 export type TitleLook = {
@@ -185,6 +203,7 @@ export type TitleLook = {
 	category?: string;
 	sourceId?: string;
 	colorways?: Colorway[];
+	quickControls?: LookQuickControl[];
 	appearance: Appearance;
 };
 

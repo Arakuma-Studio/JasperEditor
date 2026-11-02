@@ -1,6 +1,6 @@
 // The Title Looks catalogue: every layer type, finish and generator, normalised for the planner, validation, the UI
 // and the tests. Nothing else in the codebase lists them.
-import type { LayerParamValue } from '../../../title-looks/model.ts';
+import type { LayerParamValue, Paint } from '../../../title-looks/model.ts';
 import type { EffectSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
 import {
@@ -96,6 +96,14 @@ export function withDefaults(
 	const out: LayerParams = {};
 	for (const p of layerParamSpecs(t)) out[p.name] = stored[p.name] ?? p.default;
 	return out;
+}
+
+/** A layer's Program handles (TL-092): the type's own, and the angle of every gradient paint (`lp.paint`'s `<name>Angle`). */
+export function layerHandles(t: TitleLayerType, p: LayerParams): NonNullable<TitleLayerType['handles']> {
+	const gradients = t.params
+		.filter((s) => isPaintParam(s) && (p[s.name] as Paint | undefined)?.kind === 'gradient')
+		.map((s) => ({ kind: 'angle' as const, params: [`${s.name}Angle`] }));
+	return [...(t.handles ?? []), ...gradients];
 }
 
 /** The effect of one generator (`Generate` category, TL-060): on a clip it draws over the clip's picture. */

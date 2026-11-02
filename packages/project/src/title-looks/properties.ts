@@ -146,7 +146,7 @@ function propertySpecOf(key: string, p: TitleParamSpec, storagePath: string[], l
 			animatable: 'hold-only',
 			storagePath,
 			appliesTo,
-			ui: { control: 'json' },
+			ui: { control: 'paint' },
 			defaultValue: p.default,
 			validate: (v) => !paramValueProblem(p, v),
 		};

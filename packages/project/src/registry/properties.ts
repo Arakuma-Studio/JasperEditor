@@ -144,6 +144,8 @@ export type PropertySpec = {
 			| 'media'
 			/** M2 (S08): a JSON editor (arrays, free-form objects). */
 			| 'json'
+			/** Spec 19 TL-091: a look's paint: role, colour, gradient or the clip's picture. */
+			| 'paint'
 			/** wp masks: a video-track picker (value = track id, '' = none). */
 			| 'track'
 			/** Wave expressions: x, y, z fields (3D Point Control). */
