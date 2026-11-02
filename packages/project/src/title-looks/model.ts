@@ -232,6 +232,7 @@ export function emptyAppearance(seed = 0): Appearance {
 
 /** A sequence's readable global light, or null (TL-017: absent = looks with `sequence` light use their own values). */
 export function globalLightOf(seq: { settings: { globalLight?: unknown } }): GlobalLight | null {
+	if (seq.settings.globalLight === undefined) return null;
 	const r = GlobalLightSchema.safeParse(seq.settings.globalLight);
 	return r.success ? (r.data as GlobalLight) : null;
 }

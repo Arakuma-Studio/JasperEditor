@@ -1623,8 +1623,10 @@ function sequenceLightOf(
 	effects: readonly EffectInstance[],
 	seq: Sequence,
 ): { sequenceLight?: RenderVisualClip['sequenceLight'] } {
+	// The clip first: this runs for every clip of a snapshot, and most have no look.
+	if (clipLook(effects)?.appearance?.light?.source !== 'sequence') return {};
 	const light = globalLightOf(seq);
-	if (!light || clipLook(effects)?.appearance?.light?.source !== 'sequence') return {};
+	if (!light) return {};
 	return {
 		sequenceLight: { ...light, flicksPerFrame: flicksPerFrame(seq.settings.frameRate as Rational) },
 	};
