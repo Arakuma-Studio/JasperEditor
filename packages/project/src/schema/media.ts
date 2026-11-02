@@ -7,7 +7,8 @@ import { int, nonNegInt, RationalSchema, RGBASchema } from './common.ts';
 
 /** `mg-bundle` (M2, ARCHITECTURE §19.3): an imported Remotion bundle whose compositions become clips. */
 /** color-mgmt: `color-config` = a custom OpenColorIO configuration (`.ocio`), bundled with the files it references. */
-// three-d: 'model' = a glTF (.glb / .gltf) or OBJ 3D model (Advanced 3D model layers).
+// three-d: 'model' = a glTF (.glb / .gltf) or OBJ 3D model (Advanced 3D model layers). 'hdri' = a Radiance `.hdr`
+// environment panorama (spec 19 TL-075): float data for environment lights, not a picture a browser can show.
 export const MEDIA_KINDS = [
 	'video',
 	'audio',
@@ -18,6 +19,7 @@ export const MEDIA_KINDS = [
 	'mg-bundle',
 	'color-config',
 	'model',
+	'hdri',
 ] as const;
 export const MediaKindSchema = z.enum(MEDIA_KINDS);
 export type MediaKind = DeepStrip<z.infer<typeof MediaKindSchema>>;

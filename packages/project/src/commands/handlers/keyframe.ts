@@ -22,6 +22,8 @@ import {
 import { MASK_PROPS } from '../../masks/model.ts';
 import { PROPERTY_SPECS } from '../../registry/properties.ts';
 import { textAnimatorPropertySpecs } from '../../registry/text-animator-properties.ts';
+import { threeDDynamicSpecs } from '../../registry/three-d-properties.ts';
+import { SCENE_3D_PATH, scene3dAnims } from '../../three-d/scene-look.ts';
 import type {
 	Animatable,
 	Ease,
@@ -85,6 +87,13 @@ export function clipAnimatables(seq: DSeq, clip: DClip): AnimLocation[] {
 	// every item property of a vector shape (dynamic `shape.items.<id>.<field>` keys).
 	if (clip.kind === 'shape')
 		for (const s of shapeItemPropertySpecs(clip as never)) {
+			if (s.animatable === 'no') continue;
+			const a = getAt(clip, s.storagePath);
+			if (isAnim(a)) out.push({ anim: a, path: ['clip', clip.id, ...s.key.split('.')], seq, clip });
+		}
+	// spec 19 §9: a 3D layer's surfaces, bevel bands and backplates (dynamic `threeD.*` keys).
+	if ((clip as { threeD?: unknown }).threeD)
+		for (const s of threeDDynamicSpecs(clip as never)) {
 			if (s.animatable === 'no') continue;
 			const a = getAt(clip, s.storagePath);
 			if (isAnim(a)) out.push({ anim: a, path: ['clip', clip.id, ...s.key.split('.')], seq, clip });
@@ -174,6 +183,10 @@ export function allAnimatables(doc: DDoc): AnimLocation[] {
 			for (const k of LIGHT_PROPS)
 				if (isAnim(light[k]))
 					out.push({ anim: light[k] as DAnim, path: [GLOBAL_LIGHT_PATH, seq.id, k], seq, clip: null });
+		// spec 19 TL-076, TL-077: the sequence's exposure and glint (sequence time).
+		for (const s of scene3dAnims(seq.threeD as never))
+			if (isAnim(s.anim))
+				out.push({ anim: s.anim as DAnim, path: [SCENE_3D_PATH, seq.id, s.prop], seq, clip: null });
 		for (const fx of seq.master.effects)
 			for (const [name, a] of Object.entries(fx.params))
 				if (isAnim(a)) out.push({ anim: a, path: ['effect', fx.id, name], seq, clip: null });

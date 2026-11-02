@@ -82,6 +82,7 @@ import { repairTextAnimators, textAnimatorIssues } from './text-animators/valida
 import { clipTextStyles, repairTextStyle, storedTextStyles, textStyleIssues } from './text-style.ts';
 import { clipTextStyleIssue, repairTextStyles, textStylesRecordIssues } from './text-styles/model.ts';
 import { canBe3d, newLayer3D } from './three-d/model.ts';
+import { sanitizeThreeD, threeDProblem } from './three-d/validate.ts';
 import {
 	contentSpanFlicks,
 	FLICKS_PER_SECOND,
@@ -996,6 +997,10 @@ export function invariantCheckers(
 		// three-d: only visual clips with Motion are 3D layers; environment lights reference existing media.
 		if (r.threeD !== undefined && !canBe3d(c.kind))
 			issues.push(inv('INV-012', `Clip ${c.id}: a ${c.kind} clip cannot be a 3D layer`, [...cw, 'threeD']));
+		if (r.threeD !== undefined) {
+			const bad = threeDProblem(r.threeD);
+			if (bad) issues.push(inv('INV-012', `Clip ${c.id}: 3D layer ${bad}`, [...cw, 'threeD']));
+		}
 		if (c.kind === 'light') {
 			const env = (r.light as { environmentMediaId?: string | null } | undefined)?.environmentMediaId;
 			if (env && !doc.media[env])
@@ -1894,6 +1899,7 @@ export function repairDocument(
 	const report: RepairEntry[] = [];
 	const note = (action: string, entity: string, detail: string) => report.push({ action, entity, detail });
 	sanitizeAppearances(doc, () => ids.next('apl'), note);
+	sanitizeThreeD(doc, note);
 	repairIds(doc, ids, note);
 	repairStructure(doc, ids, note);
 	// spec 13 SH-002: project text styles and the clips' links to them.

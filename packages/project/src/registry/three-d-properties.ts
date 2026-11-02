@@ -2,15 +2,26 @@
 // rows, param.set / keyframes / expressions and the agent schemas (After Effects names, units, ranges, defaults).
 import type { Clip } from '../schema/sequence.ts';
 import {
+	type Backplate,
+	BEVEL_POSITIONS,
+	BEVEL_PROFILES,
 	BEVEL_STYLES,
+	type BevelBand,
+	ENVIRONMENT_PRESETS,
+	GEOMETRY_MODES,
 	IRIS_SHAPES,
 	LAYER_AUTO_ORIENT,
 	type Layer3D,
 	LIGHT_FALLOFFS,
 	LIGHT_TYPES,
 	type LightData,
+	MAX_BEVEL_SEGMENTS,
+	PLATE_SHAPES,
 	SHADOW_MODES,
+	SURFACE_BASES,
+	SURFACE_RELIEFS,
 } from '../schema/three-d.ts';
+import { layerSurfaces, SURFACE_COLORS, SURFACE_NUMBERS } from '../three-d/surfaces.ts';
 import {
 	defaultAperture,
 	defaultCameraZoom,
@@ -24,6 +35,7 @@ type LayerProperties = Pick<Clip, 'kind'> & { threeD?: Layer3D; light?: LightDat
 const has3d = (c: LayerProperties) => !!c.threeD && c.kind !== 'adjustment';
 const hasGeometry = (c: LayerProperties) =>
 	has3d(c) && (c.kind === 'text' || c.kind === 'shape') && !!c.threeD?.geometry;
+const isInflated = (c: LayerProperties) => hasGeometry(c) && c.threeD?.geometry?.mode === 'inflate';
 const isCamera = (c: Pick<Clip, 'kind'>) => c.kind === 'camera';
 const isLight = (c: Pick<Clip, 'kind'>) => c.kind === 'light';
 const lightType = (c: LayerProperties) => c.light?.type;
@@ -309,7 +321,163 @@ export const LAYER_3D_SPECS: readonly PropertySpec[] = [
 		def: 0,
 		group: 'geometry',
 	}),
+	// spec 19 §9.
+	sel(
+		'threeD.geometry.mode',
+		'Solid',
+		G('mode'),
+		hasGeometry,
+		GEOMETRY_MODES,
+		['Extrude', 'Inflate'],
+		'extrude',
+		'geometry',
+		'Extrude with bevels, or inflate the outline along a height curve.',
+	),
+	sel(
+		'threeD.geometry.bevelPosition',
+		'Bevel Position',
+		G('bevelPosition'),
+		hasGeometry,
+		BEVEL_POSITIONS,
+		['Inside', 'Center', 'Outside'],
+		'inside',
+		'geometry',
+		'Where the bevel bands sit against the outline. Inside keeps the silhouette of the picture.',
+	),
+	num('threeD.geometry.inflate.height', 'Inflate Height', ['threeD', 'geometry', 'inflate', 'height'], isInflated, {
+		unit: 'px',
+		range: { min: 0, max: 2000, softMax: 200, step: 0.1 },
+		def: 30,
+		group: 'geometry',
+	}),
+	num(
+		'threeD.geometry.inflate.smoothness',
+		'Inflate Smoothness',
+		['threeD', 'geometry', 'inflate', 'smoothness'],
+		isInflated,
+		{ unit: '%', range: PCT, control: 'slider', def: 60, group: 'geometry' },
+	),
 ];
+
+/** Key prefixes of a layer's dynamic 3D properties (`threeDDynamicSpecs`). */
+export const THREE_D_SURFACE_KEY = 'threeD.surface.';
+export const THREE_D_BAND_KEY = 'threeD.band.';
+export const THREE_D_PLATE_KEY = 'threeD.plate.';
+export const isThreeDDynamicKey = (key: string) =>
+	key.startsWith(THREE_D_SURFACE_KEY) || key.startsWith(THREE_D_BAND_KEY) || key.startsWith(THREE_D_PLATE_KEY);
+
+const PROFILE_LABELS = ['Flat', 'Chamfer', 'Round', 'Cove', 'Step', 'Inset', 'Tube'];
+
+/**
+ * The properties a layer's surfaces, bevel bands and backplates add (spec 19 TL-070 to TL-074): every number and colour
+ * is animatable, addressed `threeD.surface.<surface>.<field>`, `threeD.band.<id>.<field>`, `threeD.plate.<id>.<field>`.
+ */
+export function threeDDynamicSpecs(clip: LayerProperties): PropertySpec[] {
+	const td = clip.threeD;
+	if (!td || !has3d(clip)) return [];
+	const yes = () => true;
+	const out: PropertySpec[] = [];
+	const px = { unit: 'px' as const, range: { min: 0, max: 2000, softMax: 200, step: 0.1 } };
+	for (const s of layerSurfaces(td)) {
+		if (!s.surface) continue;
+		// `.` splits a key: a plate's two surfaces are `<id>-face` and `<id>-side`.
+		const sid = s.id.replace('.', '-');
+		const prefix = `${THREE_D_SURFACE_KEY}${sid}`;
+		const at = (k: string) => ['threeD', ...s.path.map(String), k];
+		const row = (label: string) => `${s.label} ${label}`;
+		out.push(
+			sel(`${prefix}.base`, row('Color From'), at('base'), yes, SURFACE_BASES, ['Layer Picture', 'Base Color'], 'picture', 'material'),
+		);
+		for (const c of SURFACE_COLORS)
+			out.push({
+				key: `${prefix}.${c.key}`,
+				label: row(c.label),
+				group: 'material',
+				kind: 'color',
+				animatable: 'continuous',
+				storagePath: at(c.key),
+				appliesTo: yes,
+				ui: { control: 'color' },
+				defaultValue: c.def,
+			});
+		for (const n of SURFACE_NUMBERS)
+			out.push(
+				num(`${prefix}.${n.key}`, row(n.label), at(n.key), yes, {
+					...('unit' in n ? { unit: n.unit as PropertySpec['unit'] } : {}),
+					range: { min: n.min, max: n.max, step: 0.1 },
+					control: n.max === 100 ? 'slider' : 'scrub',
+					def: n.def,
+					group: 'material',
+					precision: n.key === 'ior' ? 3 : 1,
+				}),
+			);
+		out.push(
+			sel(
+				`${prefix}.relief`,
+				row('Relief'),
+				at('relief'),
+				yes,
+				SURFACE_RELIEFS,
+				['None', 'Crumple', 'Hammered', 'Liquid'],
+				'none',
+				'material',
+			),
+		);
+	}
+	const g = td.geometry;
+	if (!g || !hasGeometry(clip)) return out;
+	((g.bands ?? []) as BevelBand[]).forEach((b, i) => {
+		const k = `${THREE_D_BAND_KEY}${b.id}`;
+		const at = (f: string) => ['threeD', 'geometry', 'bands', String(i), f];
+		const label = (f: string) => `Band ${i + 1} ${f}`;
+		out.push(
+			num(`${k}.width`, label('Width'), at('width'), yes, { ...px, def: 6, group: 'geometry' }),
+			num(`${k}.depth`, label('Depth'), at('depth'), yes, { ...px, def: 6, group: 'geometry' }),
+			sel(`${k}.profile`, label('Profile'), at('profile'), yes, BEVEL_PROFILES, PROFILE_LABELS, 'round', 'geometry'),
+			num(`${k}.curve`, label('Curve'), at('curve'), yes, {
+				range: { min: -100, max: 100, step: 1 },
+				def: 0,
+				group: 'geometry',
+				precision: 0,
+			}),
+			{
+				key: `${k}.segments`,
+				label: label('Segments'),
+				group: 'geometry',
+				kind: 'number',
+				range: { min: 1, max: MAX_BEVEL_SEGMENTS, step: 1 },
+				animatable: 'no',
+				storagePath: at('segments'),
+				appliesTo: yes,
+				ui: { control: 'scrub', precision: 0 },
+				defaultValue: 6,
+			},
+		);
+	});
+	((g.backplates ?? []) as Backplate[]).forEach((p, i) => {
+		const k = `${THREE_D_PLATE_KEY}${p.id}`;
+		const at = (f: string) => ['threeD', 'geometry', 'backplates', String(i), f];
+		const label = (f: string) => `Plate ${i + 1} ${f}`;
+		out.push(
+			toggle(`${k}.enabled`, label('On'), at('enabled'), yes, true, 'geometry'),
+			sel(`${k}.shape`, label('Shape'), at('shape'), yes, PLATE_SHAPES, ['Contour', 'Hull', 'Box'], 'contour', 'geometry'),
+			num(`${k}.grow`, label('Grow'), at('grow'), yes, { ...px, def: 12, group: 'geometry' }),
+			num(`${k}.depth`, label('Depth'), at('depth'), yes, { ...px, def: 20, group: 'geometry' }),
+			num(`${k}.gap`, label('Gap'), at('gap'), yes, {
+				unit: 'px',
+				range: { min: -2000, max: 2000, softMin: -100, softMax: 100, step: 0.1 },
+				def: 0,
+				group: 'geometry',
+			}),
+			num(`${k}.corner`, label('Corner'), at('corner'), yes, { ...px, def: 0, group: 'geometry' }),
+			toggle(`${k}.fillCounters`, label('Fill Counters'), at('fillCounters'), yes, true, 'geometry'),
+			num(`${k}.bevelWidth`, label('Bevel Width'), at('bevelWidth'), yes, { ...px, def: 3, group: 'geometry' }),
+			num(`${k}.bevelDepth`, label('Bevel Depth'), at('bevelDepth'), yes, { ...px, def: 3, group: 'geometry' }),
+			sel(`${k}.bevelProfile`, label('Bevel Profile'), at('bevelProfile'), yes, BEVEL_PROFILES, PROFILE_LABELS, 'round', 'geometry'),
+		);
+	});
+	return out;
+}
 
 const C = (k: string) => ['camera', k];
 const CT = (k: string) => ['camera', 'transform', k];
@@ -583,6 +751,17 @@ export const LIGHT_SPECS: readonly PropertySpec[] = [
 			def: 0,
 			group: 'light',
 		},
+	),
+	sel(
+		'light.environmentPreset',
+		'Environment',
+		LO('environmentPreset'),
+		isLightOf('environment'),
+		ENVIRONMENT_PRESETS,
+		['Studio', 'Sky', 'City', 'Sunset', 'Chrome Bands', 'Neon'],
+		'studio',
+		'light',
+		'Procedural environment, shared with the reflection presets of looks. An environment image or HDR replaces it.',
 	),
 	toggle(
 		'light.environmentBackground',

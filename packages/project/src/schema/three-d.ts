@@ -6,11 +6,13 @@
 // camera is exactly where its 2D Motion puts it. Angles are degrees, clockwise on screen (as the 2D Rotation).
 import { z } from 'zod';
 import {
+	type Animatable,
 	AnimNumberSchema,
 	AnimRGBASchema,
 	animatable,
 	type DeepStrip,
 	nonNegInt,
+	type RGBA,
 	Vec3Schema,
 } from './common.ts';
 
@@ -44,12 +46,134 @@ export const MaterialOptionsSchema = z.looseObject({
 	reflectionIntensity: AnimNumberSchema.optional(),
 	/** Reflection sharpness, percent (100 = mirror; lower = rougher). Default 100. */
 	reflectionSharpness: AnimNumberSchema.optional(),
+	/**
+	 * Physically based surface of the whole layer (spec 19 TL-071, TL-074, Advanced 3D). Absent = After Effects' model
+	 * above. Read leniently: checked by INV-012 (`threeDProblem`), repaired by `repairThreeD`.
+	 */
+	pbr: z.custom<SurfaceMaterial>(() => true).optional(),
 });
 export type MaterialOptions = DeepStrip<z.infer<typeof MaterialOptionsSchema>>;
+
+/** Procedural normal maps of a surface (TL-074). */
+export const SURFACE_RELIEFS = ['none', 'crumple', 'hammered', 'liquid'] as const;
+export type SurfaceRelief = (typeof SURFACE_RELIEFS)[number];
+/** Where a surface's base colour comes from: the layer's picture, or `baseColor`. */
+export const SURFACE_BASES = ['picture', 'color'] as const;
+export type SurfaceBase = (typeof SURFACE_BASES)[number];
+
+/** A tint ramp across a surface (Pachislop's metal banding): stops in the signal, hold-only like appearance gradients. */
+export type SurfaceRamp = {
+	/** Degrees, 90 = top to bottom on the layer. */
+	angle: number;
+	stops: { at: number; color: RGBA }[];
+};
+
+/**
+ * A physically based surface (TL-071, TL-074). Percentages are 0…100 unless noted; `flakeScale`, `reliefScale` and
+ * `thickness` are layer pixels. Numbers and colours are animatable: a change never rebuilds geometry.
+ */
+export type SurfaceMaterial = {
+	base: SurfaceBase;
+	baseColor: Animatable<RGBA>;
+	ramp?: SurfaceRamp;
+	metalness: Animatable<number>;
+	roughness: Animatable<number>;
+	/** Image-based reflections × this (100 = physical, up to 400). */
+	reflectivity: Animatable<number>;
+	/** Direct highlights × this (100 = physical, up to 400). */
+	specularBoost: Animatable<number>;
+	clearcoat: Animatable<number>;
+	clearcoatRoughness: Animatable<number>;
+	flakes: Animatable<number>;
+	flakeScale: Animatable<number>;
+	relief: SurfaceRelief;
+	reliefAmount: Animatable<number>;
+	reliefScale: Animatable<number>;
+	reliefSeed: number;
+	iridescence: Animatable<number>;
+	/** Thin film thickness, nanometres. */
+	iridescenceThickness: Animatable<number>;
+	transmission: Animatable<number>;
+	/** Index of refraction, 1…2.5. */
+	ior: Animatable<number>;
+	thickness: Animatable<number>;
+	dispersion: Animatable<number>;
+	/** Light kept per `thickness` of glass, as a colour (Beer-Lambert). */
+	attenuationColor: Animatable<RGBA>;
+	emissive: Animatable<RGBA>;
+	/** Percent of white; 100 = 1.0 scene-linear. */
+	emissiveIntensity: Animatable<number>;
+};
 
 export const BEVEL_STYLES = ['none', 'angular', 'concave', 'convex'] as const;
 export const BevelStyleSchema = z.enum(BEVEL_STYLES);
 export type BevelStyle = DeepStrip<z.infer<typeof BevelStyleSchema>>;
+
+/** Cross-section of a bevel band (TL-070; Pachislop `bevel.ts`). */
+export const BEVEL_PROFILES = ['flat', 'chamfer', 'round', 'cove', 'step', 'inset', 'tube'] as const;
+export type BevelProfile = (typeof BEVEL_PROFILES)[number];
+/** Where the band stack sits against the traced outline: cut inside it, half each way, or grown outside it. */
+export const BEVEL_POSITIONS = ['inside', 'center', 'outside'] as const;
+export type BevelPosition = (typeof BEVEL_POSITIONS)[number];
+export const GEOMETRY_MODES = ['extrude', 'inflate'] as const;
+export type GeometryMode = (typeof GEOMETRY_MODES)[number];
+export const PLATE_SHAPES = ['contour', 'hull', 'box'] as const;
+export type PlateShape = (typeof PLATE_SHAPES)[number];
+
+/** At most this many bevel bands per solid (TL-070). */
+export const MAX_BEVEL_BANDS = 6;
+/** At most this many backplates per layer (TL-073). */
+export const MAX_BACKPLATES = 3;
+/** Facets of a curved bevel profile. */
+export const MAX_BEVEL_SEGMENTS = 24;
+
+/** One ring of the bevel, from the face edge outwards (TL-070). `width` and `depth` are layer pixels. */
+export type BevelBand = {
+	id: string;
+	width: Animatable<number>;
+	depth: Animatable<number>;
+	profile: BevelProfile;
+	/** −100…100: exponent bend of the profile; above 0 fuller, below 0 pinched. */
+	curve: Animatable<number>;
+	segments: number;
+	/** Absent = the layer's base surface. */
+	material?: SurfaceMaterial;
+};
+
+/** A point of an inflate height curve: x = distance from the edge / largest inset, y = height, both 0…1. */
+export type InflateCurvePoint = { x: number; y: number; corner?: boolean };
+
+/** Inflate mode (TL-072): the front is a height field over the outline's distance field. */
+export type InflateOptions = {
+	/** Layer pixels. */
+	height: Animatable<number>;
+	/** Sorted by x, 2…16 points. */
+	curve: InflateCurvePoint[];
+	/** 0…100: 0 shades the mesh's facets, above that exact slopes with rounder ridges. */
+	smoothness: Animatable<number>;
+	/** 1…4: density of the height grid. */
+	detail: number;
+};
+
+/** A solid stacked behind the title (TL-073). Lengths are layer pixels; plate k grows by the sum of grows 0…k. */
+export type Backplate = {
+	id: string;
+	enabled: boolean;
+	shape: PlateShape;
+	grow: Animatable<number>;
+	depth: Animatable<number>;
+	/** Gap behind the previous solid. */
+	gap: Animatable<number>;
+	/** Corner radius of a box plate. */
+	corner: Animatable<number>;
+	/** Contour plates: fill the counters of letters. */
+	fillCounters: boolean;
+	bevelWidth: Animatable<number>;
+	bevelDepth: Animatable<number>;
+	bevelProfile: BevelProfile;
+	face?: SurfaceMaterial;
+	side?: SurfaceMaterial;
+};
 
 /** Geometry Options of a text or shape layer in an Advanced 3D sequence (AE's extrusion and bevels). */
 export const GeometryOptionsSchema = z.looseObject({
@@ -60,6 +184,19 @@ export const GeometryOptionsSchema = z.looseObject({
 	holeBevelDepth: AnimNumberSchema,
 	/** Pixels; 0 = flat (a card). */
 	extrusionDepth: AnimNumberSchema,
+	// spec 19 §9. Read leniently: checked by INV-012 (`threeDProblem`), repaired by `repairThreeD`.
+	/** Absent = `extrude`. */
+	mode: z.enum(GEOMETRY_MODES).optional(),
+	/** With bands: where they sit against the outline. Absent = `inside` (the silhouette stays the picture). */
+	bevelPosition: z.enum(BEVEL_POSITIONS).optional(),
+	/** Bevel bands, face edge outwards (TL-070). Non-empty, they replace Bevel Style and Bevel Depth. */
+	bands: z.custom<BevelBand[]>(() => true).optional(),
+	inflate: z.custom<InflateOptions>(() => true).optional(),
+	backplates: z.custom<Backplate[]>(() => true).optional(),
+	/** Materials per surface (TL-071). An absent surface shows the layer's base surface (`material.pbr`). */
+	surfaces: z
+		.custom<{ face?: SurfaceMaterial; side?: SurfaceMaterial; back?: SurfaceMaterial }>(() => true)
+		.optional(),
 });
 export type GeometryOptions = DeepStrip<z.infer<typeof GeometryOptionsSchema>>;
 
@@ -148,6 +285,10 @@ export const CameraDataSchema = z.looseObject({
 });
 export type CameraData = DeepStrip<z.infer<typeof CameraDataSchema>>;
 
+/** The reflection environments of spec 19 TL-038, by the names looks store. */
+export const ENVIRONMENT_PRESETS = ['studio', 'sky', 'city', 'sunset', 'chromeBands', 'neon'] as const;
+export type EnvironmentPreset = (typeof ENVIRONMENT_PRESETS)[number];
+
 export const LIGHT_TYPES = ['parallel', 'spot', 'point', 'ambient', 'environment'] as const;
 export const LightTypeSchema = z.enum(LIGHT_TYPES);
 export type LightType = DeepStrip<z.infer<typeof LightTypeSchema>>;
@@ -182,12 +323,43 @@ export const LightDataSchema = z.looseObject({
 	environmentRotation: AnimNumberSchema.optional(),
 	/** Draw the environment as the background of the 3D run (AE "Environment Light ▸ Background"). */
 	environmentBackground: z.boolean().optional(),
+	/**
+	 * A procedural environment (TL-075), shared by name with the reflection presets of looks (TL-038). Used when
+	 * `environmentMediaId` is null; absent = the neutral studio.
+	 */
+	environmentPreset: z.enum(ENVIRONMENT_PRESETS).optional(),
 });
 export type LightData = DeepStrip<z.infer<typeof LightDataSchema>>;
 
 export const RENDERERS_3D = ['classic', 'advanced'] as const;
 export const Renderer3DSchema = z.enum(RENDERERS_3D);
 export type Renderer3D = DeepStrip<z.infer<typeof Renderer3DSchema>>;
+
+/** Tone mapping of Advanced 3D before the 8-bit output (TL-076). `hue` keeps hue and saturation. */
+export const TONE_MAPPINGS = ['none', 'aces', 'agx', 'neutral', 'hue'] as const;
+export const ToneMappingSchema = z.enum(TONE_MAPPINGS);
+export type ToneMapping = DeepStrip<z.infer<typeof ToneMappingSchema>>;
+
+/** Rays of a glint: 0 = bloom only. */
+export const GLINT_RAYS = [0, 2, 4, 6, 8] as const;
+
+/** Glints of the sequence's Advanced 3D (TL-077): bloom and star rays from highlights above the threshold. */
+export const Glint3DSchema = z.looseObject({
+	enabled: z.boolean(),
+	/** Scene-linear luminance above which a pixel glints (1 = brighter than white). */
+	threshold: AnimNumberSchema,
+	/** Percent. */
+	intensity: AnimNumberSchema,
+	/** Bloom radius, sequence pixels. */
+	radius: AnimNumberSchema,
+	rays: z.number().int().min(0).max(8),
+	/** Ray length, sequence pixels. */
+	length: AnimNumberSchema,
+	/** Degrees. */
+	angle: AnimNumberSchema,
+	tint: AnimRGBASchema,
+});
+export type Glint3D = DeepStrip<z.infer<typeof Glint3DSchema>>;
 
 /** Sequence 3D settings (AE Composition Settings ▸ 3D Renderer). Absent = Classic 3D, full quality. */
 export const Sequence3DSchema = z.looseObject({
@@ -196,8 +368,13 @@ export const Sequence3DSchema = z.looseObject({
 	draft: z.boolean().optional(),
 	/** Advanced 3D: shadow map resolution (pixels per side). Default 2048. */
 	shadowMapSize: z.number().int().min(256).max(8192).optional(),
-	/** Advanced 3D: supersampling per axis (1…4). Default 2. */
+	/** Advanced 3D: supersampling per axis (1…4). Absent = 1, the 4× multisampling alone. */
 	supersampling: z.number().int().min(1).max(4).optional(),
+	/** Tone mapping (TL-076). Absent = `none`. */
+	toneMapping: ToneMappingSchema.optional(),
+	/** Stops of exposure before tone mapping. Keys in sequence time; absent = 0. */
+	exposure: AnimNumberSchema.optional(),
+	glint: Glint3DSchema.optional(),
 });
 export type Sequence3D = DeepStrip<z.infer<typeof Sequence3DSchema>>;
 

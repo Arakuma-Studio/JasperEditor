@@ -59,7 +59,14 @@ import {
 	type Transform,
 } from '../schema/sequence.ts';
 import type { TextAnimatorGroup, TextMoreOptions, TextPathOptions } from '../schema/text-animators.ts';
-import type { CameraData, Layer3D, LightData, Renderer3D } from '../schema/three-d.ts';
+import type {
+	CameraData,
+	Layer3D,
+	LightData,
+	Renderer3D,
+	Sequence3D,
+	ToneMapping,
+} from '../schema/three-d.ts';
 import { conformSequenceRate, MAX_NEST_DEPTH, nestContentKey } from '../structure/nest.ts';
 import {
 	type CountingLeaderStyle,
@@ -428,6 +435,10 @@ export type RenderScene3D = {
 	draft?: boolean;
 	shadowMapSize?: number;
 	supersampling?: number;
+	/** spec 19 TL-076, TL-077: unevaluated; keys in sequence time (`sceneLookAt`). */
+	toneMapping?: ToneMapping;
+	exposure?: Sequence3D['exposure'];
+	glint?: Sequence3D['glint'];
 	cameras: RenderCameraClip[];
 	lights: RenderLightClip[];
 };
@@ -1455,6 +1466,9 @@ export function buildRenderSnapshot(
 						...(seq.threeD?.draft ? { draft: true } : {}),
 						...(seq.threeD?.shadowMapSize ? { shadowMapSize: seq.threeD.shadowMapSize } : {}),
 						...(seq.threeD?.supersampling ? { supersampling: seq.threeD.supersampling } : {}),
+						...(seq.threeD?.toneMapping ? { toneMapping: seq.threeD.toneMapping } : {}),
+						...(seq.threeD?.exposure ? { exposure: seq.threeD.exposure } : {}),
+						...(seq.threeD?.glint ? { glint: seq.threeD.glint } : {}),
 						cameras,
 						lights,
 					},

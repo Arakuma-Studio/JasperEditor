@@ -19,6 +19,8 @@ import { PUPPET_PIN_PROPS } from './schema/puppet.ts';
 import type { EffectInstance, Sequence, TextContent } from './schema/sequence.ts';
 import type { ShapeItem } from './schema/shapes.ts';
 import type { TextAnimatorGroup } from './schema/text-animators.ts';
+import { threeDDynamicSpecs } from './registry/three-d-properties.ts';
+import { SCENE_3D_PATH, scene3dAnims } from './three-d/scene-look.ts';
 import { type Appearance, globalLightOf } from './title-looks/model.ts';
 import { appearanceSlots, GLOBAL_LIGHT_PATH, LIGHT_PROPS } from './title-looks/properties.ts';
 import { shapeItemAnimatables } from './vector/properties.ts';
@@ -175,6 +177,14 @@ function* clipAnimatables(
 				target: s.anim,
 			};
 	}
+	// spec 19 §9: a 3D layer's surfaces, bevel bands and backplates.
+	if (c.threeD)
+		for (const s of threeDDynamicSpecs(clip as never)) {
+			if (s.animatable === 'no') continue;
+			const path = s.storagePath;
+			const a = path.reduce<unknown>((o, k) => (o as Record<string, unknown> | undefined)?.[k], c);
+			if (isAnimObj(a)) yield { ref: { seq: seqId, owner: id, path: s.key }, at: [...at, ...path], kind: 'anim', target: a };
+		}
 	// sim-warp: Puppet pin properties (`puppet.<pinId>.<prop>`).
 	for (let i = 0; i < fxs.length; i++) {
 		const pins = fxs[i]!.puppet?.pins ?? [];
@@ -224,6 +234,14 @@ function* sequenceOwnAnimatables(seqId: string, seq: Sequence): Generator<AnimLo
 				kind: 'anim',
 				target: light[k],
 			};
+	// spec 19 TL-076, TL-077: the sequence's exposure and glint.
+	for (const s of scene3dAnims(seq.threeD))
+		yield {
+			ref: { seq: seqId, owner: 'master', path: `${SCENE_3D_PATH}.${s.prop}` },
+			at: s.at,
+			kind: 'anim',
+			target: s.anim,
+		};
 	for (const [id, t] of Object.entries(seq.transitions))
 		for (const [name, a] of Object.entries(t.params ?? {}))
 			yield {
@@ -387,6 +405,8 @@ export function documentHasAnyExpressions(doc: Pick<ProjectDocument, 'sequences'
 export function expressionRefToParamPath(ref: ExpressionRef): string[] {
 	if (ref.path.startsWith(`${GLOBAL_LIGHT_PATH}.`))
 		return [GLOBAL_LIGHT_PATH, ref.seq, ref.path.slice(GLOBAL_LIGHT_PATH.length + 1)];
+	if (ref.path.startsWith(`${SCENE_3D_PATH}.`))
+		return [SCENE_3D_PATH, ref.seq, ref.path.slice(SCENE_3D_PATH.length + 1)];
 	if (ref.owner === 'master') return ['master', ref.seq, ref.path];
 	if (ref.path.startsWith('appearance.')) return ref.path.split('.');
 	if (ref.path.startsWith('masks.')) {
@@ -483,6 +503,10 @@ export function paramPathToExpressionRef(
 	if (head === GLOBAL_LIGHT_PATH) {
 		if (!doc.sequences[a]) return null;
 		return { seq: a, owner: 'master', path: `${GLOBAL_LIGHT_PATH}.${rest.join('.')}` };
+	}
+	if (head === SCENE_3D_PATH) {
+		if (!doc.sequences[a]) return null;
+		return { seq: a, owner: 'master', path: `${SCENE_3D_PATH}.${rest.join('.')}` };
 	}
 	if (head === 'puppetPin') {
 		for (const [seqId, seq] of Object.entries(doc.sequences)) {

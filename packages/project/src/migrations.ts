@@ -17,6 +17,7 @@ import type { MgTemplateRegistry } from './registry/mg.ts';
 import { CURRENT_SCHEMA_VERSION, type ProjectDocument, ProjectDocumentSchema } from './schema/document.ts';
 import { soundDesignNeedsRepair } from './sound/repair.ts';
 import { textStylesNeedRepair } from './text-styles/model.ts';
+import { sanitizeThreeD } from './three-d/validate.ts';
 import { sanitizeAppearances } from './title-looks/validate.ts';
 
 export type MigrationStep = {
@@ -155,9 +156,12 @@ export const MIGRATIONS: readonly MigrationStep[] = [
 	// read-only, so a build that cannot show, check or repair the brief and notes never edits a project that has them.
 	{ from: 10, to: 11, migrate: (doc) => doc },
 	// v12 (Title Looks, spec 19): looks on clips (`EffectInstance.appearance`), project looks
-	// (`ProjectDocument.titleLooks`) and the sequence's light (`Sequence.settings.globalLight`). Existing data needs no
-	// changes; the bump makes v11 builds open v12 files read-only: they would draw a look's clip without it (an unknown
-	// effect is bypassed), and their orphan collection would drop media only a look layer references.
+	// (`ProjectDocument.titleLooks`), the sequence's light (`Sequence.settings.globalLight`), and 3D titles: surfaces,
+	// bevel bands, inflate and backplates (`threeD.material.pbr`, `threeD.geometry.*`), tone mapping and glints
+	// (`Sequence.threeD`), procedural environments (`LightData.environmentPreset`) and `hdri` media. Existing data needs
+	// no changes; the bump makes v11 builds open v12 files read-only: they would draw a look's clip without it (an
+	// unknown effect is bypassed), their orphan collection would drop media only a look layer references, and they
+	// would flatten a title's bands and materials.
 	{ from: 11, to: 12, migrate: (doc) => doc },
 ];
 
@@ -258,6 +262,7 @@ export function loadProject(
 		() => lookIds.next('apl'),
 		(action, entity, detail) => lookRepairs.push({ action, entity, detail }),
 	);
+	sanitizeThreeD(m.document, (action, entity, detail) => lookRepairs.push({ action, entity, detail }));
 	const parsed = ProjectDocumentSchema.safeParse(m.document);
 	if (!parsed.success) {
 		const msg = parsed.error.issues

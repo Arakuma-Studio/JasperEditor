@@ -31,6 +31,8 @@ import {
 } from '../../title-looks/model.ts';
 import { appearanceAnimAt, LIGHT_SPECS, PALETTE_SLOT, slotParamSpec } from '../../title-looks/properties.ts';
 import { paintLimitProblem, paintProblem } from '../../title-looks/validate.ts';
+import { ensureScene3dAnim, SCENE_3D_PATH, SCENE_3D_SPECS } from '../../three-d/scene-look.ts';
+import { newInflate } from '../../three-d/title-solid.ts';
 import { transitionSpec, transitionStartFrame } from '../../transitions.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';
@@ -71,6 +73,11 @@ type ValueRule = {
 	/** `media` values of template params: `null` is "none". */
 	nullable?: boolean;
 };
+
+function ensureInflate(clip: DClip): void {
+	const g = (clip as { threeD?: { geometry?: { inflate?: unknown } } }).threeD?.geometry;
+	if (g && g.inflate === undefined) g.inflate = newInflate();
+}
 
 /** A resolved parameter target: either an Animatable (keyframable) or a static setter. */
 export type Target =
@@ -284,6 +291,8 @@ export function resolveTarget(
 		}
 		const parentPath = spec.storagePath.slice(0, -1);
 		const field = spec.storagePath[spec.storagePath.length - 1]!;
+		// spec 19 TL-072: choosing Inflate creates its options.
+		if (key === 'threeD.geometry.mode') ensureInflate(clip);
 		const parent = getAt(clip, parentPath) as Record<string, unknown> | undefined;
 		if (!parent) return bad();
 		return {
@@ -384,6 +393,23 @@ export function resolveTarget(
 			rule: ruleFromParam(spec as ParamSpec),
 			time: (at) => h.sequenceContentTime(seq, at),
 			label: `globalLight.${prop}`,
+		};
+	}
+	// spec 19 TL-076, TL-077: `["scene3d", sequenceId, prop]`, exposure and glint (sequence time).
+	if (head === SCENE_3D_PATH && a && rest.length === 1) {
+		const seq = h.sequence(doc, a);
+		const prop = rest[0]!;
+		const spec = SCENE_3D_SPECS[prop];
+		if (!spec) return bad();
+		seq.threeD ??= { renderer: 'advanced' } as never;
+		const anim = ensureScene3dAnim(seq.threeD as never, prop);
+		if (!anim) return bad();
+		return {
+			type: 'anim',
+			anim: anim as Draft<Animatable<unknown>>,
+			rule: ruleFromParam(spec),
+			time: (at) => h.sequenceContentTime(seq, at),
+			label: `scene3d.${prop}`,
 		};
 	}
 	// `["mask", maskId, "path" | "feather" | "opacity" | "expansion"]` (content time of the owning clip).

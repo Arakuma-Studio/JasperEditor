@@ -55,6 +55,7 @@ import {
 import { flicksPerFrame, type Rational } from '../time.ts';
 import type { Appearance } from '../title-looks/model.ts';
 import { appearanceAnimAt, appearancePropertySpecs } from '../title-looks/properties.ts';
+import { isThreeDDynamicKey, threeDDynamicSpecs } from './three-d-properties.ts';
 import { SHAPE_ITEM_KEY_PREFIX, shapeItemPropertySpecs } from '../vector/properties.ts';
 import type { EffectRegistry, EffectSpec, ParamSpec } from './effects.ts';
 import { kindCapabilities } from './kinds.ts';
@@ -1937,7 +1938,8 @@ export function propertiesForClip(
 ): PropertySpec[] {
 	const base = PROPERTY_SPECS.filter((s) => s.appliesTo(clip));
 	// wp shapes: per-item keys of vector shapes.
-	if (clip.kind === 'shape') return [...base, ...shapeItemPropertySpecs(clip)];
+	const threeD = threeDDynamicSpecs(clip as never);
+	if (clip.kind === 'shape') return [...base, ...shapeItemPropertySpecs(clip), ...threeD];
 	if (clip.kind === 'text')
 		return [
 			...base,
@@ -1945,11 +1947,12 @@ export function propertiesForClip(
 			// animators, selectors, Path / More Options, Source Text.
 			SOURCE_TEXT_SPEC,
 			...textAnimatorPropertySpecs(clip as Parameters<typeof textAnimatorPropertySpecs>[0]),
+			...threeD,
 		];
 	if (template && clip.kind === 'motion-graphic') return [...base, ...paramsPropertySpecs(template)];
 	if (composition && clip.kind === 'composition')
 		return [...base, ...compositionPropsPropertySpecs(composition)];
-	return base;
+	return [...base, ...threeD];
 }
 
 /**
@@ -1972,6 +1975,9 @@ export function resolvePropertySpec(
 			? appearancePropertySpecs(fx, fx.appearance as Appearance).find((s) => s.key === key)
 			: undefined;
 	}
+	// spec 19 §9: a 3D layer's surfaces, bevel bands and backplates (given the clip).
+	if (isThreeDDynamicKey(key))
+		return clip ? threeDDynamicSpecs(clip as never).find((s) => s.key === key) : undefined;
 	// wp shapes: `shape.items.<itemId>.<field…>` of vector shapes (given the clip).
 	if (key.startsWith(SHAPE_ITEM_KEY_PREFIX))
 		return clip ? shapeItemPropertySpecs(clip as Pick<Clip, 'kind'>).find((s) => s.key === key) : undefined;

@@ -238,8 +238,9 @@ export type ExtrudeOptions = {
 };
 
 /**
- * A triangle mesh: per vertex position (3), normal (3), uv (2, layer px of the colour to show) and kind (1: 0 = a
- * face, textured by the picture at `uv`; 1 = a wall or bevel, the opaque colour at `uv`). Indices, three per triangle.
+ * A triangle mesh: per vertex position (3), normal (3), uv (2, layer px of the colour to show) and kind (1: the surface
+ * slot of surfaces.ts: 0 = the front face, textured by the picture at `uv`; 1 = a wall or a bevel, 2 = the back, and
+ * bands and plates after them, the opaque colour at `uv`). Indices, three per triangle.
  */
 export type Mesh = { vertices: Float32Array; indices: Uint32Array; stride: 9 };
 
@@ -333,7 +334,7 @@ export function extrudeShapes(shapes: readonly Shape2D[], o: ExtrudeOptions): Me
 		for (let t = 0; t < tris.length; t += 3)
 			idx.push(front[tris[t]!]!, front[tris[t + 1]!]!, front[tris[t + 2]!]!);
 		if (D <= 0) continue;
-		const back = faceRing.map((p) => push(p[0], p[1], D, 0, 0, 1, p[0], p[1], 0));
+		const back = faceRing.map((p) => push(p[0], p[1], D, 0, 0, 1, p[0], p[1], 2));
 		for (let t = 0; t < tris.length; t += 3)
 			idx.push(back[tris[t]!]!, back[tris[t + 2]!]!, back[tris[t + 1]!]!);
 		// Walls: profile stations from the front edge to the back edge.
