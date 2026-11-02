@@ -1,6 +1,6 @@
 // `deepGlow` (§5.1): scattered light with a power-law falloff and an over-exposure response (`../deep-glow.ts`). `Shape`
-// emits from the silhouette at this layer in the layer's paint, so it works behind a face; `Layers Below` makes everything
-// under it the light source, in its own colours, burning towards white where it is over-bright.
+// emits from the title's silhouette in the layer's paint, so it works behind a face; `Layers Below` makes everything under
+// it the light source, in its own colours, burning towards white where it is over-bright.
 import type { Paint } from '../../../../title-looks/model.ts';
 import {
 	fmtDistance,
@@ -39,6 +39,8 @@ export const DEEP_GLOW_LAYER: TitleLayerInit = {
 	description:
 		'Physically scaled light: it scatters like lens bloom and burns towards white where it is over-bright.',
 	finish: false,
+	// Light comes from the whole title, rims included, wherever the layer sits; its reach starts there too.
+	outermost: true,
 	params: [
 		lp.choice('from', 'From', ['shape', 'stack'], ['Shape', 'Layers Below'], 'shape'),
 		lp.number('exposure', 'Exposure', 1, { min: -10, max: 10, softMin: -4, softMax: 6, step: 0.01 }),

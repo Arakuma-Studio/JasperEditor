@@ -1124,20 +1124,17 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Looks: glows', { ti
 			describe(id, () => {
 				const s = () => defaultEffectRegistry.get(id) as EffectSpec;
 
-				it('changes the picture, moves with its params, and is deterministic', async () => {
-					const off = await fx(
-						id,
-						{ ...on(id), intensity: 0, opacity: 0, amount: 0, exposure: 0 },
-						{ pad: 40 },
-					);
-					const a = await fx(id, on(id), { pad: 40 });
-					const b = await fx(id, on(id), { pad: 40 });
+				it('moves with its params, and draws the same pixels every time', async () => {
+					const request = { input: TEXT, box: BOX };
+					const a = await tl.effect({ id, params: on(id), ...request });
+					const b = await tl.effect({ id, params: on(id), ...request });
 					expect(meanDiff(a, b)).toBe(0);
-					const p = await tl.effect({ id, params: perturbed(s()), input: TEXT, box: BOX, pad: 40 });
-					const d = await tl.effect({ id, params: on(id), input: TEXT, box: BOX, pad: 40 });
-					expect(p.width === d.width && meanDiff(p, d) < 0.01).toBe(false);
-					if (off.width === a.width && id !== 'jasper.perspective-shadow')
-						expect(meanDiff(off, a)).toBeGreaterThanOrEqual(0);
+					const p = await tl.effect({ id, params: perturbed(s()), ...request });
+					const ca = layerCrop(a, lumaOver(a, 128));
+					const cp = layerCrop(p, lumaOver(p, 128));
+					let d = 0;
+					for (let i = 0; i < ca.data.length; i++) d += Math.abs(ca.data[i]! - cp.data[i]!);
+					expect(d / ca.data.length).toBeGreaterThan(0.5);
 				});
 
 				it('stays inside its padding at any params: nothing clipped at the canvas edge', async () => {
@@ -1297,6 +1294,38 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Looks: glows', { ti
 				Math.abs(pixel(soft, x(soft), y(soft))[3] - pixel(look, x(look), y(look))[3]),
 			).toBeLessThanOrEqual(2);
 		});
+	});
+
+	// Cost on this host (docs/performance.md §7): TL_PERF=1. Reports; the budget is on a real GPU.
+	it.runIf(process.env.TL_PERF === '1')('per-frame cost of Deep Glow at 1080p', { timeout: 600_000 }, async () => {
+		const text = { kind: 'text', text: 'Title Look', size: 200 } as const;
+		const median = async (run: () => Promise<LookImage>) => {
+			const first = await run();
+			const times: number[] = [];
+			for (let i = 0; i < 5; i++) times.push((await run()).ms);
+			times.sort((a, b) => a - b);
+			return `canvas ${first.width}×${first.height}, ${first.passes} passes, median ${times[2]!.toFixed(0)} ms`;
+		};
+		const box = { width: 1200, height: 280 };
+		const frame = { width: 1920, height: 1080 };
+		for (const pxScale of [1, 0.5]) {
+			const fx = (b: { width: number; height: number }, input: LookRequest['input']) =>
+				median(() =>
+					tl.effect({ id: 'jasper.deep-glow', params: { radius: 200 }, input, box: b, pxScale, timingOnly: true }),
+				);
+			console.info(`[glows-perf] ${pxScale} effect, title box: ${await fx(box, text)}`);
+			console.info(`[glows-perf] ${pxScale} effect, full frame: ${await fx(frame, { kind: 'card' })}`);
+			const layer = median(() =>
+				tl.render({
+					recipe: { layers: [face(), { type: 'deepGlow', params: { from: 'stack', radius: 100 } }] },
+					input: text,
+					box,
+					pxScale,
+					timingOnly: true,
+				}),
+			);
+			console.info(`[glows-perf] ${pxScale} look layer, title box: ${await layer}`);
+		}
 	});
 
 	it.runIf(!!process.env.TL_SHEET)('contact sheet', async () => {

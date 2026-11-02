@@ -883,6 +883,12 @@ Status of the foundation; streams still in progress update this list. Evidence: 
   `TITLE_LOOK_NEEDS_FLOAT` and the export plan refuses when the probe answered (TL-124).
 - **Software rendering is slow**: ≈ 1.3 s per 1080p frame for a six-layer look on a title-sized box on SwiftShader, and an
   animated title redraws its whole stack every frame ([performance.md](performance.md) §7). Nothing has been measured on a GPU.
+- **Look effects on full-frame clips pay for the shape field** (every §8 effect but Deep Glow, which has its own passes): six
+  full-size passes that Gradient Overlay, Floor Reflection and Perspective Shadow do not read. Nothing on a GPU, measurable on software.
+- **Gradient Overlay and Contour Lines as effects take two or three colours, not a gradient**: an effect param has no gradient type
+  (TL-091 is a look's control). In a look they take any gradient.
+- **Handles (TL-092) are declared, not drawn**: shadow offset and light angle are in each layer's `handles`; the Program monitor
+  overlay that reads them belongs to the UI stream. Standalone effects have no handles beyond `point` params.
 
 ### title-looks fixes (spec 19 §13)
 Fixes the Title Looks feature depends on, each with a regression test that failed before it; details, decisions and

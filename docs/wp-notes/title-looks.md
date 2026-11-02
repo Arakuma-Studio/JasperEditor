@@ -125,7 +125,7 @@ controls would do; a name in common did not count.
 
 | §8 effect | Candidates | Decision |
 |---|---|---|
-| Outer Glow | `jasper.alpha-glow` | **Extended.** Same job: a coloured glow around alpha. Technique Soft and Precise are the `glow` layer; Classic, the default, draws what it always did. Its keyword `outer glow` already finds it. Added: From, Intensity, Spread, Blend, Glow Over Layer; Glow's upper limit is 2000 |
+| Outer Glow | `jasper.alpha-glow` | **Extended.** Same job: a coloured glow around alpha. Technique Soft and Precise are the `glow` layer; Classic, the default, draws what it always did. Its keyword `outer glow` already finds it. Added: From, Intensity, Spread, Blend, Glow Over Layer; Glow's upper limit is 1700 px |
 | Deep Glow | `jasper.glow`, `jasper.s.glow`, `jasper.s.ultra-glow` | **New** (`jasper.deep-glow`). Those are threshold blooms on the signal with a Gaussian or a look of their own; none is linear, energy-normalised or has this response, and each mirrors another product's parameter sheet, so a mode inside one would share nothing with it |
 | Inner Glow | none: `jasper.s.edge-colorize`, `jasper.s.glow-edges` work from image edges, not alpha | **New** (`jasper.inner-glow`) |
 | Inner Shadow | none | **New** (`jasper.inner-shadow`) |
@@ -429,6 +429,9 @@ for the missing fingerprints, and for a generator example that was clipped by it
 
 ## Limits
 
+- Reach stops at the framework's `FX_MAX_PADDING`, 2048 layer px per side. Deep Glow's radius stops at 1700 px, its reach at full
+  scatter. An effect whose params add up past it (a 2000 px cast shadow with a 2000 px blur) clips there: that is a canvas limit, not
+  a sampling error. A look's reach is in percent of its unit and meets the same limit.
 - `block` gradients on animated text follow the frame's bounds until TL-036 brings layout boxes.
 - `line` and `glyph` spans render as `block` until TL-036 (`docs/gaps.md`).
 - The field is rebuilt whenever a frame is redrawn: an animated param on static text pays for it, though the input did not

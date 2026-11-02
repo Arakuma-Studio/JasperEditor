@@ -62,7 +62,7 @@ export const ALPHA_GLOW = defineShaderEffect({
 	keywords: ['outer glow', 'halo', 'edge', 'aura', 'alpha', 'title'],
 	expensive: true,
 	params: [
-		fxParam.number('glow', 'Glow', 10, { min: 0, max: 2000, softMax: 100, step: 1 }),
+		fxParam.number('glow', 'Glow', 10, { min: 0, max: 1700, softMax: 100, step: 1 }),
 		fxParam.number('brightness', 'Brightness', 255, { min: 0, max: 255, step: 1 }),
 		fxParam.color('startColor', 'Start Color', [1, 1, 1, 1]),
 		fxParam.color('endColor', 'End Color', [0, 0, 0, 1]),

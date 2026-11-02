@@ -25,6 +25,7 @@ export const EXTRUDE_LAYER: TitleLayerInit = {
 	description:
 		'The shape stacked along a direction, with shaded sides. Flat and one colour, it is a long shadow.',
 	finish: false,
+	outermost: true,
 	params: [
 		lp.angle('angle', 'Direction', 75),
 		lp.distance('depth', 'Depth', 14, { softMax: 100 }),
