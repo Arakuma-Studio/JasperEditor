@@ -42,6 +42,8 @@ export type ToolContext = {
 	/** The agent name recorded in History ("Agent: <label>", origin {agent}). */
 	agentName(): string;
 	engine<T>(fn: (c: EngineClient) => Promise<T>): Promise<T>;
+	/** The long reference text of a tool, by name: read on demand (`describe_tool` with `full`), never advertised. */
+	details: Map<string, string>;
 };
 
 export function makeContext(server: McpServer, link: EngineConnection, agentName?: string): ToolContext {
@@ -57,6 +59,7 @@ export function makeContext(server: McpServer, link: EngineConnection, agentName
 		link,
 		agentName: name,
 		engine: (fn) => withEngine(link, fn),
+		details: new Map(),
 	};
 }
 
@@ -84,9 +87,17 @@ export type FullToolAnnotations = Required<
 export function defineTool<S extends Shape>(
 	ctx: ToolContext,
 	name: string,
-	config: { title: string; description: string; input: S; annotations: FullToolAnnotations },
+	config: {
+		title: string;
+		description: string;
+		/** Reference a call rarely needs: how it works and what it returns, beyond `description`. */
+		details?: string;
+		input: S;
+		annotations: FullToolAnnotations;
+	},
 	run: (args: z.infer<z.ZodObject<S>>, extra: Extra) => Promise<CallToolResult>,
 ): void {
+	if (config.details) ctx.details.set(name, config.details);
 	ctx.server.registerTool<z.ZodType, z.ZodObject<S>>(
 		name,
 		{

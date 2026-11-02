@@ -382,6 +382,8 @@ export function registerInterchangeTools(ctx: ToolContext): void {
 		{
 			title: 'Link media',
 			description:
+				'Relink offline media: a located file, or `folder` to search one. Ambiguous matches are listed, never guessed.',
+			details:
 				"Relinks offline media like Premiere's Link Media (S04:AS-011). mediaId + path: the located file (absolute path on the engine's computer) is verified against match (selected Match File Properties) and linked; with relinkOthers (default true) the engine then finds the other offline media from it — its old → new folder mapping (D:\\Media\\… → /Volumes/Mac/Media/…), project-relative paths, the same folder, then a bounded search under that folder — and links every verified file in the same transaction. folder: searches a folder for every offline asset (or mediaIds). Without either: tries each asset's last known path. Ambiguous matches (several files fit) are listed, never guessed. A file whose content, length or kind differs, or that fails a match property, needs force: true. dryRun reports what would be linked. One undo step.",
 			input: {
 				projectId: ProjectIdArg,

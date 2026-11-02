@@ -52,7 +52,7 @@ import { PREVIEWS_GUIDE, registerPreviewTools } from './tools/previews.ts';
 import { PROCESSING_GUIDE, registerProcessingTools } from './tools/processing.ts';
 import { registerProjectTools } from './tools/projects.ts';
 import { PROPOSALS_GUIDE, registerProposalTools } from './tools/proposals.ts';
-import { registerRenderTools } from './tools/render.ts';
+import { EXPORT_GUIDE, registerRenderTools } from './tools/render.ts';
 import { ROTO_GUIDE, registerRotoTools } from './tools/roto.ts';
 import { registerShapeTools, registerVectorShapeTools, SHAPES_GUIDE } from './tools/shapes.ts';
 import { registerSimWarpTools, SIM_WARP_GUIDE } from './tools/sim-warp.ts';
@@ -79,7 +79,7 @@ import { registerTranscriptFixTools, TRANSCRIPT_FIX_GUIDE } from './tools/transc
 import { registerTransitionTools, TRANSITION_GUIDE } from './tools/transitions.ts';
 import { registerTrimPathTools, TRIM_PATHS_GUIDE } from './tools/trim-paths.ts';
 import { registerUiTools, UI_GUIDE } from './tools/ui.ts';
-import { registerVerifyTools } from './tools/verify.ts';
+import { registerVerifyTools, VERIFY_GUIDE } from './tools/verify.ts';
 import { registerVersionTools, VERSIONS_GUIDE } from './tools/versions.ts';
 import { registerVoiceTools, VOICE_GUIDE } from './tools/voice.ts';
 import { installToolsets, parseToolsets, registerToolsetTools } from './toolsets.ts';
@@ -123,6 +123,11 @@ const GUIDES: Record<string, GuideSource> = {
 		sections: [EDITING_GUIDE],
 	},
 	footage: FOOTAGE_GUIDE,
+	export: {
+		title: 'Exporting and verifying',
+		description: 'What an export writes and reports, and what each verification row measures.',
+		sections: [EXPORT_GUIDE, VERIFY_GUIDE],
+	},
 	color: COLOR_GUIDE,
 	processing: PROCESSING_GUIDE,
 	derive: DERIVE_GUIDE,
@@ -204,7 +209,7 @@ const GUIDES: Record<string, GuideSource> = {
 };
 const GUIDE_TOPICS = guideTopics(GUIDES);
 const FULL_GUIDE = fullGuide(GUIDES);
-const INSTRUCTIONS = buildInstructions(GUIDE_TOPICS);
+const INSTRUCTIONS = buildInstructions();
 
 type JasperMcpOptions = {
 	link: EngineConnection;

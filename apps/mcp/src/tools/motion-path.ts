@@ -101,7 +101,7 @@ export function registerMotionPathTools(ctx: ToolContext): void {
 				"A clip's position (or, with property: 'anchor', Anchor Point) animation as a motion path: every position key (id, sequence frame, timecode, value, temporal and spatial interpolation, effective in/out tangents in sequence pixels) and the evaluated position sampled across the clip (at most `samples` points, evenly spaced in time; spacing encodes speed), plus the path length. Values are exactly what the preview and export draw.",
 			input: {
 				projectId: ProjectIdArg,
-				clipId: z.string().min(1).describe('Clip id ("clp_…")'),
+				clipId: z.string().min(1),
 				samples: z.number().int().min(2).max(1000).optional().describe('Sampled points (default 60)'),
 				property: z
 					.enum(['position', 'anchor'])
@@ -172,7 +172,8 @@ export function registerMotionPathTools(ctx: ToolContext): void {
 		'set_spatial_interpolation',
 		{
 			title: 'Set spatial interpolation',
-			description:
+			description: 'Set the spatial interpolation of point keys.',
+			details:
 				"Sets the spatial interpolation of point keys (Effect Controls ▸ right-click ▸ Spatial Interpolation): linear = straight segments, bezier / continuous-bezier = editable tangents (a linear key starts from its auto tangents), auto-bezier = smooth automatic curve. Give keyframeIds (any point property: position, anchor, effect points such as the Transform effect's Position, corner pin corners) or clipId (all of the clip's position keys, or with effect all keys of that effect point param). One undoable step; check with get_motion_path or render_frame.",
 			input: {
 				projectId: ProjectIdArg,

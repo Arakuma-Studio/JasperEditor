@@ -127,7 +127,7 @@ export function registerMaskTools(ctx: ToolContext): void {
 				"A clip's Opacity masks and effect masks evaluated at a time (default: the clip's first frame): id, name, owner (opacity or effect id), mode, inverted, feather / opacity / expansion, keyframe counts and the path (normalised vertices with tangent handles, plus px). Also the clip's box size (px) for unit conversions and its Track Matte Keys.",
 			input: {
 				projectId: ProjectIdArg,
-				clipId: z.string().min(1).describe('Clip id ("clp_…")'),
+				clipId: z.string().min(1),
 				at: timeArg('Sequence time to evaluate at').optional(),
 			},
 			annotations: READ_ONLY,
@@ -175,7 +175,7 @@ export function registerMaskTools(ctx: ToolContext): void {
 				'Creates a mask on a clip\'s Opacity (default) or on one of its effects (effectId). shape "ellipse" / "polygon" without points = a centred default shape (Premiere\'s tools); "bezier" needs points or path (a pen path; closed by default). Defaults: feather 10 px, opacity 100 %, expansion 0, mode add. One History entry; returns the mask id.',
 			input: {
 				projectId: ProjectIdArg,
-				clipId: z.string().min(1).describe('Clip id ("clp_…")'),
+				clipId: z.string().min(1),
 				effectId: z.string().min(1).optional().describe('Effect instance id ("fx_…"): a per-effect mask'),
 				shape: z.enum(['ellipse', 'polygon', 'bezier']),
 				points: z.array(Pt).min(3).optional().describe('Corner vertices (polygon / pen) in `units`'),

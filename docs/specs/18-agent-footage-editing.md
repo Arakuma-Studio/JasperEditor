@@ -192,13 +192,14 @@ retryable}` errors. Every user-visible string is translated (`es.json`).
   tool). The server advertises the `core` toolset (≤ 32 tools: project/sequence reading, `describe_commands`,
   `apply_commands`, the main edit tools, digest, view, takes, proposals, verify, brief, guide and toolset tools) by
   default; `JASPER_MCP_TOOLSETS` / `--toolsets` (`all` or a comma list) choose others.
-- **AF-CTX-002** Core tools `list_toolsets` (name, description, tool count, enabled) and `enable_toolsets {names}` /
-  `disable_toolsets {names}` change the advertised set and emit `notifications/tools/list_changed`. For clients that
+- **AF-CTX-002** Core tools `list_toolsets` (name, description, tool count, enabled) and `enable_toolsets {names}`
+  and `disable_toolsets {names}` (in the `project` toolset) change the advertised set and emit
+  `notifications/tools/list_changed`. For clients that
   ignore that notification, core `call_tool {name, arguments}` runs any registered tool with the same strict
   validation, approvals and hints semantics, and `describe_tool {name}` returns its input schema. Calling a tool that
   is registered but not advertised by name returns an error naming its toolset. The `jasper` CLI reaches every tool.
-- **AF-CTX-003** Server `instructions` ≤ 8 KB: workflow (brief → digest/takes → view → propose → wait → verify),
-  core rules, the toolset index and pointers to guides. Every existing domain guide stays available as
+- **AF-CTX-003** Server `instructions` ≤ 4 KB, what survives Claude Code's 4096-character cut: when to use each route,
+  core rules, a one-line toolset map and a pointer to guides. Every existing domain guide stays available as
   `jasper://guide/<topic>` and through core `get_guide {topic}`; `jasper://guide` keeps the full text. The `edit-video`
   prompt teaches the workflow instead of embedding the full guide.
 - **AF-CTX-004** Resource `jasper://guide/routing`: a request → tool table (≥ 60 rows, English and Spanish phrasings);

@@ -281,7 +281,8 @@ export function registerAnimationTools(ctx: ToolContext): void {
 		'set_text_animation',
 		{
 			title: 'Set text animation',
-			description:
+			description: 'Set or remove the In and Out animation of text clips. Presets: `list_text_animations`.',
+			details:
 				"Sets, changes or removes the In and/or Out animator of text clips in one undoable step (clip.update textAnimation). Each side: null removes it; a preset id or {preset, durationFrames | durationSeconds, params} replaces it (params start from the preset defaults); {durationFrames | durationSeconds, params} without preset changes the current side (params merged). Sides you omit stay as they are. In covers the clip's first frames, Out its last ones; when they overlap both are scaled to fit (warning W_ANIMATION_COMPRESSED). Returns the clips with their animators.",
 			input: {
 				projectId: ProjectIdArg,
@@ -361,7 +362,8 @@ export function registerAnimationTools(ctx: ToolContext): void {
 		'render_frames',
 		{
 			title: 'Render frames (contact sheet)',
-			description: `Renders several Program frames (like render_frame) and returns ONE PNG contact sheet: cells left to right, top to bottom, plus a JSON list of each cell's frame and timecode. Give times (up to ${MAX_SHEET_FRAMES}) or count (default 6) frames spread evenly from \`from\` to \`to\` (default: the clip given by clipId, else the whole sequence; first and last frame included). Use it to see motion: text animations, transitions, motion graphics. Cells are \`width\` px wide (default 320; reduced so the sheet stays within ${MAX_SHEET_SIZE} px). Uses the live editor state when the project is open; each frame is a separate render, so prefer few frames.`,
+			description: 'Render several Program frames as one PNG contact sheet.',
+			details: `Renders several Program frames (like render_frame) and returns ONE PNG contact sheet: cells left to right, top to bottom, plus a JSON list of each cell's frame and timecode. Give times (up to ${MAX_SHEET_FRAMES}) or count (default 6) frames spread evenly from \`from\` to \`to\` (default: the clip given by clipId, else the whole sequence; first and last frame included). Use it to see motion: text animations, transitions, motion graphics. Cells are \`width\` px wide (default 320; reduced so the sheet stays within ${MAX_SHEET_SIZE} px). Uses the live editor state when the project is open; each frame is a separate render, so prefer few frames.`,
 			input: {
 				projectId: ProjectIdArg,
 				times: z

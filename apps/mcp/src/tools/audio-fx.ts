@@ -669,7 +669,8 @@ export function registerAudioFxTools(ctx: ToolContext): void {
 		'set_essential_sound',
 		{
 			title: 'Set Essential Sound',
-			description:
+			description: 'Set Essential Sound type, preset and loudness on audio clips.',
+			details:
 				'Essential Sound on audio clips, in order: audioType (dialogue | music | sfx | ambience; a new type starts from its defaults), preset (a built-in preset name of that type, get_essential_sound), values (options by dotted key, e.g. {"repair.noise.on": true, "repair.noise.amount": 6}; keyframed effect parameters get a key at `at`). Clip Volume (volume.on / volume.levelDb) and Pan (pan.enabled / pan.value, SFX) are offsets on the clip\'s own Volume and pan, every keyframe included (clamped to −∞…+15 dB and ±100; switching them off gives the clip\'s own levels back). One undo step.',
 			input: {
 				projectId: ProjectIdArg,
@@ -794,7 +795,8 @@ export function registerAudioFxTools(ctx: ToolContext): void {
 		'auto_tag_audio',
 		{
 			title: 'Auto Tag audio types',
-			description:
+			description: 'Classify audio clips as dialogue, music, sfx or ambience (Essential Sound Auto Tag).',
+			details:
 				'Essential Sound ▸ Auto Tag (Premiere\'s "Auto Tag Audio Types"): listens to each audio clip (the media range it plays; long clips are sampled) and classifies it as dialogue, music, sfx or ambience from measured features (voice activity and syllabic modulation, pitch over time, onsets and their periodicity, sustained tones, stationarity, duration) — deterministic rules, not a trained model. mode "apply" (default) gives the clips that type in ONE undoable transaction, marked "auto" (the clip badge is dotted until the user confirms it in Essential Sound); "propose" only returns the results. A type the user set is never replaced unless force. clipIds default: every audio clip of the sequence without an audio type. Returns a table with each clip\'s tag, confidence and why. Report tags under 60 % confidence (low) to the user instead of trusting them; silent clips are left untyped.',
 			input: {
 				projectId: ProjectIdArg,
@@ -985,6 +987,8 @@ export function registerAudioFxTools(ctx: ToolContext): void {
 		{
 			title: 'Remix music to a duration',
 			description:
+				'Re-cut a music clip on beats to `targetDuration`, or land its drop at `landDropAt`. One undo step.',
+			details:
 				'Music Remix (Essential Sound ▸ Duration ▸ Remix, the Remix tool): beat-tracks the music clip on the engine and re-cuts it on beats to targetDuration (frames, {"seconds": x} or timecode; the result lands within about a beat). The clip becomes grouped pieces joined by short constant-power crossfades that end just before a beat\'s attack (one undo step). segments (0…100, default 50) favours longer or shorter pieces, variations (0…100, default 50) how freely sections are reordered. A remixed clip is remixed again from its original, keeping a drop it landed earlier where it is. landDropAt (a frame, {"seconds": x}, timecode, {"cueId": …} or "hero": the first hero cue under the music) lands the music\'s drop there within 1 ms instead (spec 12 P6-E11): joints only at bar lines, the outro still ending the clip — without targetDuration its length moves by at most half a bar (never over the next clip); with targetDuration an exact length no plan reaches is refused (E_INVALID_PARAM) naming the lengths that work. dropSec picks the moment to land (media seconds; default the top drop of find_music_drops). The music range analysed is limited to 30 minutes.',
 			input: {
 				projectId: ProjectIdArg,
@@ -1110,7 +1114,8 @@ export function registerAudioFxTools(ctx: ToolContext): void {
 		'find_music_drops',
 		{
 			title: 'Find the drops of a music clip',
-			description:
+			description: 'Find drop candidates in a music clip.',
+			details:
 				'Listens to a music clip on the engine (cached) and returns its drop candidates — bars where the music lifts into a loud section (spec 12 P6-E11; adapted from earshot): bar number, score (lift / 3 + 2 × novelty), lift in dB, the media second of the drop\'s downbeat and the frame / timecode where it plays now (null when the clip does not play it) — best first; plus the music\'s key ("C major", confidence 0…1: ≥ 0.6 is clear), tempo, beats per bar and how many bar lines. Land one with remix_audio {landDropAt, dropSec} or fit_music_to_picture.',
 			input: {
 				projectId: ProjectIdArg,
@@ -1160,7 +1165,8 @@ export function registerAudioFxTools(ctx: ToolContext): void {
 		'fit_music_to_picture',
 		{
 			title: 'Fit music to the picture',
-			description:
+			description: "Land a music clip's drop on a time, or end it on a bar line, in one undo step.",
+			details:
 				'Music to picture (spec 12 P6-E11), one undo step: mode "land-drop" lands the music clip\'s drop (the top candidate, or dropSec in media seconds) on `at` (a frame, {"seconds": x}, timecode, {"cueId": …} or "hero"; default "hero") within 1 ms — the same as remix_audio {landDropAt}; mode "end-on-bar" ends the music on a bar line: just before a downbeat\'s attack (within a frame), with a constant-power fade-out of fadeSeconds (default one beat) ending there; direction "earlier" (default: the last bar line inside the clip) or "nearest" (up to half a bar later when the media and the track have room). The bar lines come from the engine\'s beat analysis (refused when the music has no clear downbeat: give timeSignature).',
 			input: {
 				projectId: ProjectIdArg,

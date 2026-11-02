@@ -105,7 +105,8 @@ export function registerSoundSemanticTools(ctx: ToolContext): void {
 		'install_describe_search_model',
 		{
 			title: 'Install Describe-it search model',
-			description:
+			description: 'Download the Describe-it search model. Tell the user its size first.',
+			details:
 				"Downloads the Describe-it search model (LAION CLAP larger_clap_general: weights and tokenizer from LAION's own repository at a pinned revision, every file checked against its SHA-256; Apache-2.0; ≈ 780 MB) through a model-download job; afterwards the library is embedded in the background. Analysis only: it never makes sounds. TELL THE USER the download size and licence first and install only when they want it. Refused with MODEL_DOWNLOAD_PENDING while the model's download location is not settled. wait (default false) waits for the download.",
 			input: {
 				modelId: z.string().min(1).max(64).optional().describe('Model id (default: the catalogue’s first)'),
@@ -239,7 +240,8 @@ export function registerSoundSemanticTools(ctx: ToolContext): void {
 		'find_sound_moment',
 		{
 			title: 'Find a moment in a recording',
-			description:
+			description: 'Find the moments of a long library recording that match a description.',
+			details:
 				'Finds the moments of a library sound (a long recording: a field recording, a typing session, a foley take) that best match a description, with the Describe-it search model. Returns up to count non-overlapping moments, best first: startSec / endSec in the sound (shrunk to where the sound is unless trim: false), match {z, verdict, cosine} and headDb / tailDb (a loud head or tail means the moment is cut inside a sound). Windows are cached per recording: a second description of the same recording is fast. Place one with insert_sound_moment. Needs the model (describe_search_status).',
 			input: {
 				soundId: SoundIdArg.describe(

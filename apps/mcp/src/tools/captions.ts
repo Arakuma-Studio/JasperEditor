@@ -972,7 +972,8 @@ export function registerCaptionTools(ctx: ToolContext): void {
 		'captions_from_transcript',
 		{
 			title: 'Create subtitles / captions from the transcript',
-			description:
+			description: 'Lay the transcript out as subtitles in one undo step. `dryRun` shows the result first.',
+			details:
 				'Lays the transcript out as subtitles in ONE undo step. With any of output, template, rules, text, cutAware, dryRun, source, range, trackName or nest it runs Create Subtitles (spec 13): subtitles as editable text clips on a new top video track "Subtitles" (output "text-clips", the default) in a subtitle group, or a caption track (output "caption-track"); a template ("builtin:pixel-pop", "builtin:bold-pop", "builtin:subtitles"… or a project / library template, see list_subtitle_templates) brings the style, animation and default rules; cut-aware timing (default on) never runs a subtitle across a picture cut; dryRun returns the statistics and the first subtitles. Otherwise (only the original arguments) it makes a caption track with the Premiere rules as before: maxChars per line (42), lines (2), minSeconds (1), maxSeconds (7), gapFrames (0), breakPauseSeconds (1), fromWord..toWord, preset.',
 			input: {
 				projectId: ProjectIdArg,

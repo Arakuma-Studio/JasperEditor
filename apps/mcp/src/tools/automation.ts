@@ -253,6 +253,8 @@ export function registerAutomationTools(ctx: ToolContext): void {
 		{
 			title: 'Decorate cuts with kits (propose)',
 			description:
+				'Propose a cut kit on every picture cut: adjustment clips with eased effects and a whoosh. Nothing changes until it is accepted.',
+			details:
 				'Spec 15 Decorate Cuts: a cut kit centred on every picture cut (adjustment clips with eased effect keys on an "FX" track above the picture) plus a whoosh of the kit\'s length with its peak on the cut (sound design cue + placement), as a PROPOSAL for review — nothing changes until it is accepted. Vertical sequences default to the shorts shake kit (S_Shake 10 + 10 frames), others to the long-form pack (Jolt / Whip / Zoom blur / Zoom through / Spin with their measured shares and a repeat penalty). Kits never overlap: a cut too close to the previous kit takes a shorter family or is skipped (listed with its reason). mode "dryRun" returns the counts, coverage, families, skips, export cost (kits render through the Remotion path) and the sounds available without storing anything. Each item keeps its seed: refresh_proposal {reroll: true} draws another kit for it.',
 			input: {
 				projectId: ProjectIdArg,
@@ -337,7 +339,8 @@ export function registerAutomationTools(ctx: ToolContext): void {
 		'add_punch_ins',
 		{
 			title: 'Add punch-in zooms (propose)',
-			description:
+			description: 'Add zooms on A-roll clips, phrases ending in ! or ? first.',
+			details:
 				'Spec 15 punch-ins: on the A-roll clips of at least minClipSeconds (1.5 s) whose Motion is not keyed, density (0.7) of them get a zoom — clips whose phrases end in "!" or "?" first — from the clip midpoint (or the nearest word start with start "word"), rampFrames (7) linear from 100 % to scale (180 %) of the clip\'s own scale, held to the cut, toward the centre, a point {x, y} (0…1 of the frame) or the subject (a faces roto on the clip, else the engine\'s face / saliency analysis). method "motion" (default) writes Motion keys on the clip (native export); "adjustment" puts a Transform adjustment clip on a ZOOM track right above the A-roll. Optional whoosh at the zoom (sfx). As a PROPOSAL (mode "propose") or a dry run.',
 			input: {
 				projectId: ProjectIdArg,
@@ -463,6 +466,8 @@ export function registerAutomationTools(ctx: ToolContext): void {
 		{
 			title: 'Place reaction pictures (propose)',
 			description:
+				"Place the user's reaction pictures where the edit asks for one: markers, calls to action, exclamations. Ask the user which pictures.",
+			details:
 				'Spec 15 reactions: the user\'s reaction pictures (images from a bin, a folder or media — ask the user which; nothing is shipped) over the picture where the edit asks for one: markers whose name contains markerMatch ("reaction") or names a picture, calls to action and exclamations in the transcript (built-in Spanish / English lists, editable; words with "!"), and optionally stretches where face tracking sees no face on the A-roll. Each starts on a cut within snapSeconds (0.5) of its trigger, lasts durationSeconds (2.1 vertical / 2.6 landscape), sits at a slot (default the measured ones; left slots flipped), Motion scale 60–65 % capped at maxHeight (0.45) of the frame, S_Shake wobble (Amplitude 0.8, Frequency 2), never over subtitles, never overlapping another, at most maxPerMinute (12 vertical / 1 landscape; markers first, then calls to action, exclamations, hidden speaker). Up to 3 other pictures per item (⇄). As a PROPOSAL (mode "propose") or a dry run.',
 			input: {
 				projectId: ProjectIdArg,
@@ -581,7 +586,8 @@ export function registerAutomationTools(ctx: ToolContext): void {
 		'slide_overlays',
 		{
 			title: 'Slide overlays in and out (propose)',
-			description:
+			description: 'Add one-sided slides at the heads and tails of overlay clips.',
+			details:
 				'Spec 15 overlay slides: one-sided Smooth Slide transitions (frames, default 30) at the free heads (share heads, 0.53) and tails (tails, 0.18) of overlay clips — pictures on the video tracks above the A-roll (or overlayTracks). An edge is free when no clip of its track touches it and it has no transition. Directions (weights, default down 47 / up 33 / left 13 / right 8) and easings (easeInOutQuad 68 / easeInOutCubic 32) drawn per edge from its seed; motion blur high over a 360° shutter. Each edge offers the other directions (⇄). As a PROPOSAL (mode "propose") or a dry run.',
 			input: {
 				projectId: ProjectIdArg,
@@ -650,7 +656,8 @@ export function registerAutomationTools(ctx: ToolContext): void {
 		'lay_music_bed',
 		{
 			title: 'Lay a music bed from a playlist (propose)',
-			description:
+			description: "Lay the user's songs end to end on a music track. Ask the user which songs.",
+			details:
 				'Spec 15 music bed: the user\'s songs (a bin, a folder or media — ask the user which; nothing is shipped) laid end to end on a "Music" audio track at gainDb (−33) clip gain; a bed switches at the first picture cut at least bedSeconds (52; vertical sequences: null = one bed per song) after it starts, waiting at most maxSwitchDelaySeconds (15) for a cut; a song that ends earlier hands over at its last cut. Vertical sequences start at intro.gainDb (−25) until the first cut. duck.enabled ducks the beds under dialogue with the Essential Sound ducking (18 dB, 800 ms fades). order "playlist" or "shuffle". Each bed offers 3 other songs (⇄). As a PROPOSAL (mode "propose") or a dry run.',
 			input: {
 				projectId: ProjectIdArg,
@@ -718,7 +725,8 @@ export function registerAutomationTools(ctx: ToolContext): void {
 		'add_stingers',
 		{
 			title: 'Add TV-static stingers after punchlines (propose)',
-			description:
+			description: 'Propose short TV-static stingers after shouted punchlines. Only when the user asks.',
+			details:
 				'Spec 15 stingers (assistive; only when the user asks): frames (29) of generated TV static — a grey colour matte under Noise 100 % monochrome, never a file — on a "Stingers" track at the top, with generated static noise at gainDb (−18 dB; sound "generated" = Jasper Synth TV static, "library" = library sounds of sfx.type, "none"), after shouted punchlines: a peak of the dialogue\'s momentary loudness at least thresholdLu (6) over the median of medianWindowSeconds (10), and / or a "!" phrase in the transcript or subtitles (match "both" default, "either", "loudness", "exclamation"). A stinger starts on a cut within snapSeconds (0.5) after the punchline; at most maxPerMinute (1), minGapSeconds (10) apart, loudest first. Loudness is measured when proposing (the dry run counts "!" phrases unless a measurement of the same mix exists). As a PROPOSAL (mode "propose") or a dry run.',
 			input: {
 				projectId: ProjectIdArg,

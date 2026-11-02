@@ -158,6 +158,8 @@ export function registerTranscriptFixTools(ctx: ToolContext): void {
 		{
 			title: 'Fix the transcript from the script (propose)',
 			description:
+				'Find transcript errors by aligning it with the attached script and the glossary. `dryRun`, then propose.',
+			details:
 				'Spec 17 Fix Transcript: aligns each recording\'s transcript with the sequence\'s script (attach_script) and finds the disagreements between exact anchors, plus the personal glossary\'s known misspellings; each candidate is checked against the audio (the script reading vs the transcript reading of the same words) and decided with the strictness, so real ad-libs are kept. mode "propose" stores ONE proposal of feature transcript-correction (groups fix, spelling, maybe — maybe items unselected); each item is one transcript.replaceWords that also patches the subtitles and caption tracks in place. mode "dryRun" is the fast pre-run (alignment report, candidates, spelling fixes, patch report, estimated audio-check time; nothing stored). Nothing changes until the proposal is accepted (one undo step). Progress per scored window; cancelling cancels the job.',
 			input: {
 				projectId: ProjectIdArg,

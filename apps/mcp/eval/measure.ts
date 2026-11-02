@@ -92,7 +92,7 @@ if (process.argv[1]?.endsWith('measure.ts')) {
 			contexts: Object.fromEntries(contexts.map((c) => [c.context, headroom(c.total)])),
 			tool: headroom(tools[0]?.total ?? 0),
 		};
-		writeFileSync(new URL('./budget.json', import.meta.url), `${JSON.stringify(budget, null, '\t')}\n`);
+		writeFileSync(new URL('./budget.json', import.meta.url), `${JSON.stringify(budget, null, 2)}\n`);
 	}
 	console.table(contexts.map((c) => ({ ...c, tokens: Math.round(c.total / 4) })));
 	console.table(tools.slice(0, 10));

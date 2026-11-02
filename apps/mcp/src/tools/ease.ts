@@ -401,7 +401,8 @@ export function registerEaseTools(ctx: ToolContext): void {
 		'get_keyframe_eases',
 		{
 			title: 'Get keyframe eases',
-			description: `The eases of keyframes, per property, exactly as they evaluate (each segment uses its first key's outgoing side and its last key's incoming side): each selected key (id, sequence frame, timecode, value, interpolation = outgoing type, inInterpolation = its own incoming type when it has one, roving) with in / out side type, influence %, speed (property units per second; sequence px/s along the path for Motion points, layer px/s for effect points; signed for numbers) and slope (1 = the segment's average speed); the segments into, between and out of the selection (fromId → toId, section, ease "hold" | "linear" | "cubic-bezier(…)", outInterpolation / inInterpolation = the two side types shaping it, the matched built-in preset id, average speed); and for 3+ keys of one property span.preset when the whole run matches a multi-point preset. Select by keyframeIds or clipId (+ properties, from, to). At most ${MAX_VIEW_KEYS} keys.`,
+			description: 'Read the eases of keyframes, per property, as they evaluate.',
+			details: `The eases of keyframes, per property, exactly as they evaluate (each segment uses its first key's outgoing side and its last key's incoming side): each selected key (id, sequence frame, timecode, value, interpolation = outgoing type, inInterpolation = its own incoming type when it has one, roving) with in / out side type, influence %, speed (property units per second; sequence px/s along the path for Motion points, layer px/s for effect points; signed for numbers) and slope (1 = the segment's average speed); the segments into, between and out of the selection (fromId → toId, section, ease "hold" | "linear" | "cubic-bezier(…)", outInterpolation / inInterpolation = the two side types shaping it, the matched built-in preset id, average speed); and for 3+ keys of one property span.preset when the whole run matches a multi-point preset. Select by keyframeIds or clipId (+ properties, from, to). At most ${MAX_VIEW_KEYS} keys.`,
 			input: { projectId: ProjectIdArg, ...selectionShape('every keyframed property') },
 			annotations: READ_ONLY,
 		},
@@ -423,7 +424,8 @@ export function registerEaseTools(ctx: ToolContext): void {
 		'apply_ease',
 		{
 			title: 'Apply ease',
-			description:
+			description: 'Apply an ease curve to keyframe segments. Presets: `list_ease_presets`.',
+			details:
 				'Applies an ease curve to keyframe segments (keyframe.applyEase, one undoable step). curve: a preset id ("basic.easy-ease", "penner.cubic-out", "bounce.out-3"; list_ease_presets), "cubic-bezier(x1, y1, x2, y2)", a CSS keyword, {x1, y1, x2, y2} or {points}. A cubic curve shapes every chosen segment exactly and keeps the others; a multi-point curve deletes the keys strictly between the first and last selected key of each property and creates keys at its points (needs 2+ keys with different end values). sections: middle (default for 2+ keys) | in | out. Returns {affected, created, removed} and the resulting eases (get_keyframe_eases view); warnings W_EASE_* say what was skipped or flattened.',
 			input: {
 				projectId: ProjectIdArg,
@@ -459,7 +461,8 @@ export function registerEaseTools(ctx: ToolContext): void {
 		'transfer_ease',
 		{
 			title: 'Copy ease to keyframes',
-			description:
+			description: 'Copy the ease of source keyframes onto target keyframes.',
+			details:
 				'Copies the ease of source keyframes and pastes it onto target keyframes in one undoable step (copy + keyframe.pasteEase). One source key → both of its sides (incoming and outgoing type and ease) onto every target key, as keyframe.setInterpolation would set them (the neighbours keep their own sides). 2+ source keys → the segment curves between them, pasted onto the target segments in order (property, then time; one curve → every target segment; a count mismatch pastes the first ones with W_EASE_COUNT_MISMATCH). 3+ source keys of one property also carry their whole run as a curve, applied like a multi-point apply_ease (the target keys between are rebuilt) unless mode is "segments". Returns what was copied and the resulting eases.',
 			input: {
 				projectId: ProjectIdArg,
@@ -583,7 +586,8 @@ export function registerEaseTools(ctx: ToolContext): void {
 		'create_path_controller',
 		{
 			title: 'Create path controller',
-			description:
+			description: 'Make a point property follow its motion path at a new Path Progress slider.',
+			details:
 				'Makes a point property (Position by default) between its first and last selected key follow its drawn motion path at the progress of a new "Path Progress" Slider Control (keyframe.createPathController, one undoable step): the keys between rove (constant speed), the slider is keyed 0 → 100 with Easy Ease over the span, and an expression places the layer on the path at the slider\'s value. Retime or re-ease the motion by editing the slider keys (param.set / apply_ease on the returned slider target). Refused for non-point properties, several properties, or an existing expression without replaceExpression.',
 			input: {
 				projectId: ProjectIdArg,

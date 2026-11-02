@@ -27,7 +27,8 @@ export function registerVoiceTools(ctx: ToolContext): void {
 		'get_voice_analysis',
 		{
 			title: 'Get voice analysis',
-			description: `Voice analysis of a media's audio stream (10 ms frames): noise floor, speech level and speech threshold (dBFS) of the file and of each 60 s window, and the seconds, runs and longest run of speech / breath / silence frames. Computed by the engine on first use (a job: progress notifications; cancelling the request cancels it) and cached by the file's content. summary: false (default true) adds one page of frames (fromSeconds, seconds ≤ ${MAX_PAGE_SECONDS}, stepMs): times, loudest levelDb, voicing, flatness and class per point, and the class runs (start/end seconds). analyze: false only reads a cached analysis (E_NOT_FOUND otherwise). Changes nothing in the project.`,
+			description: "Noise floor, speech level and speech runs of a media's audio.",
+			details: `Voice analysis of a media's audio stream (10 ms frames): noise floor, speech level and speech threshold (dBFS) of the file and of each 60 s window, and the seconds, runs and longest run of speech / breath / silence frames. Computed by the engine on first use (a job: progress notifications; cancelling the request cancels it) and cached by the file's content. summary: false (default true) adds one page of frames (fromSeconds, seconds ≤ ${MAX_PAGE_SECONDS}, stepMs): times, loudest levelDb, voicing, flatness and class per point, and the class runs (start/end seconds). analyze: false only reads a cached analysis (E_NOT_FOUND otherwise). Changes nothing in the project.`,
 			input: {
 				projectId: ProjectIdArg,
 				mediaId: z.string().min(1).describe('Media id ("med_…") from list_media or import_media'),

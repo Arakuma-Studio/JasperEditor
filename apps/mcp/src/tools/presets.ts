@@ -132,7 +132,7 @@ export function registerPresetTools(ctx: ToolContext): void {
 				'Applies an effect preset (by id, or inline JSON) to clips of one sequence as one undo step: intrinsic properties are overwritten, effects appended (or inserted at index) with new ids; key times map per the preset type.',
 			input: {
 				projectId: ProjectIdArg,
-				clipIds: z.array(z.string().min(1)).min(1).describe('Clip ids ("clp_…") from get_timeline'),
+				clipIds: z.array(z.string().min(1)).min(1),
 				presetId: z.string().optional().describe('Preset id from list_effect_presets'),
 				preset: z
 					.record(z.string(), z.unknown())

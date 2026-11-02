@@ -13,6 +13,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
+import { compactInputSchema } from './advertise.ts';
 import {
 	DESTRUCTIVE,
 	defineTool,
@@ -40,11 +41,10 @@ export const TOOLSETS = [
 		name: 'core',
 		description:
 			'Always on: projects, reading the timeline, commands, the main edits, footage digest/takes/view, proposals, brief, export and verification, guides and these toolset tools.',
-		guides: ['editing', 'footage', 'proposals'],
+		guides: ['editing', 'footage', 'proposals', 'export'],
 		tools: [
 			'list_toolsets',
 			'enable_toolsets',
-			'disable_toolsets',
 			'call_tool',
 			'describe_tool',
 			'get_guide',
@@ -81,6 +81,7 @@ export const TOOLSETS = [
 		description: 'Engine status, opening the editor, project and sequence settings, versions, cache, fonts.',
 		guides: ['versions', 'cache', 'fonts', 'project-settings'],
 		tools: [
+			'disable_toolsets',
 			'engine_status',
 			'open_project_in_editor',
 			'find',
@@ -772,7 +773,12 @@ export function installToolsets(server: McpServer, initial: ReadonlySet<ToolsetN
 	};
 	handlers.set('tools/list', async (request, extra) => {
 		const r = (await list(request, extra)) as { tools: Tool[] };
-		return { ...r, tools: r.tools.filter((t) => advertised(t.name)) };
+		return {
+			...r,
+			tools: r.tools
+				.filter((t) => advertised(t.name))
+				.map((t) => ({ ...t, inputSchema: compactInputSchema(t.inputSchema) })),
+		};
 	});
 	handlers.set('tools/call', async (request, extra) => {
 		const name = (request as { params?: { name?: unknown } }).params?.name;
@@ -822,7 +828,7 @@ function notEnabledError(name: string, toolset: ToolsetName): ToolError {
 	return new ToolError(
 		'E_TOOLSET_NOT_ENABLED',
 		`${name} is in the "${toolset}" toolset, which this session does not advertise`,
-		`Call enable_toolsets {"names": ["${toolset}"]} and then use ${name}, or run it now with call_tool {"name": "${name}", "arguments": {…}} (describe_tool {"name": "${name}"} shows its arguments).`,
+		`Run it with call_tool {"name": "${name}", "arguments": {…}}. Its arguments: describe_tool {"name": "${name}"}.`,
 		{ tool: name, toolset },
 	);
 }
@@ -831,8 +837,7 @@ const TOOLSET_ENUM = z.enum(TOOLSET_NAMES as [ToolsetName, ...ToolsetName[]]);
 const NAMES_ARG = z
 	.array(z.union([TOOLSET_ENUM, z.literal('all')]))
 	.min(1)
-	.max(TOOLSET_NAMES.length + 1)
-	.describe(`Toolset names (${TOOLSET_NAMES.join(', ')}) or "all"`);
+	.max(TOOLSET_NAMES.length + 1);
 
 /** Core tools that read and change the advertised toolsets, and run or describe any registered tool. */
 export function registerToolsetTools(ctx: ToolContext, toolsets: ToolsetController): void {
@@ -843,17 +848,18 @@ export function registerToolsetTools(ctx: ToolContext, toolsets: ToolsetControll
 			const ts = toolsetOf(t.name);
 			if (ts) byToolset.set(ts, [...(byToolset.get(ts) ?? []), t]);
 		}
-		return TOOLSETS.map((ts) => {
-			const members = byToolset.get(ts.name) ?? [];
-			return {
+		if (only?.size)
+			return TOOLSETS.filter((ts) => only.has(ts.name)).map((ts) => ({
 				name: ts.name,
-				description: ts.description,
-				tools: members.length,
-				enabled: toolsets.enabled().has(ts.name),
 				guides: ts.guides,
-				...(only?.has(ts.name) ? { toolList: members.map((t) => ({ name: t.name, title: t.title })) } : {}),
-			};
-		});
+				tools: (byToolset.get(ts.name) ?? []).map((t) => t.name),
+			}));
+		return TOOLSETS.map((ts) => ({
+			name: ts.name,
+			description: ts.description,
+			tools: byToolset.get(ts.name)?.length ?? 0,
+			enabled: toolsets.enabled().has(ts.name),
+		}));
 	};
 	const advertisedCount = async () =>
 		(await toolsets.allTools()).filter((t) => toolsets.advertised(t.name)).length;
@@ -866,13 +872,9 @@ export function registerToolsetTools(ctx: ToolContext, toolsets: ToolsetControll
 		{
 			title: 'List toolsets',
 			description:
-				'Every toolset with its description, tool count, whether this session advertises it, and its guide topics (get_guide). `names` adds the tool names and titles of those toolsets. Tools of a toolset that is not enabled: enable_toolsets, or run one directly with call_tool.',
+				'Every toolset and whether it is on. With `names`: the tools and guides of those toolsets.',
 			input: {
-				names: z
-					.array(TOOLSET_ENUM)
-					.max(TOOLSET_NAMES.length)
-					.optional()
-					.describe('Toolsets whose tools to list'),
+				names: z.array(TOOLSET_ENUM).max(TOOLSET_NAMES.length).optional(),
 			},
 			annotations: READ_ONLY,
 		},
@@ -884,8 +886,7 @@ export function registerToolsetTools(ctx: ToolContext, toolsets: ToolsetControll
 		'enable_toolsets',
 		{
 			title: 'Enable toolsets',
-			description:
-				'Advertises more toolsets in this session ("all" for every one) and sends notifications/tools/list_changed; re-read tools/list afterwards. If your client ignores that notification, run their tools with call_tool.',
+			description: 'Advertise more toolsets. If their tools do not appear, run them with `call_tool`.',
 			input: { names: NAMES_ARG },
 			annotations: EDIT_IDEMPOTENT,
 		},
@@ -906,8 +907,7 @@ export function registerToolsetTools(ctx: ToolContext, toolsets: ToolsetControll
 		'disable_toolsets',
 		{
 			title: 'Disable toolsets',
-			description:
-				'Stops advertising toolsets in this session ("all" = every one except core, which is always on) and sends notifications/tools/list_changed. Their tools stay reachable through call_tool.',
+			description: 'Stop advertising toolsets. Their tools stay reachable through `call_tool`.',
 			input: { names: NAMES_ARG },
 			annotations: EDIT_IDEMPOTENT,
 		},
@@ -931,19 +931,28 @@ export function registerToolsetTools(ctx: ToolContext, toolsets: ToolsetControll
 		'describe_tool',
 		{
 			title: 'Describe a tool',
-			description:
-				'The definition of any registered tool, advertised or not: title, description, annotations, input schema (JSON Schema, as tools/list gives it) and toolset. Use before call_tool.',
-			input: { name: z.string().min(1).max(128).describe('Tool name, e.g. "grade_clip"') },
+			description: "A tool's description and arguments, advertised or not. Use before `call_tool`.",
+			input: {
+				name: z.string().min(1).max(128),
+				full: z.boolean().optional().describe('Every nested field and the reference text.'),
+			},
 			annotations: READ_ONLY,
 		},
-		async ({ name }) => {
+		async ({ name, full }) => {
 			const def = (await toolsets.allTools()).find((t) => t.name === name);
 			if (!def) throw unknownToolError(name);
-			return jsonResult({
-				...def,
-				toolset: toolsetOf(name) ?? null,
-				advertised: toolsets.advertised(name),
-			});
+			const toolset = toolsetOf(name) ?? null;
+			const details = ctx.details.get(name);
+			return jsonResult(
+				full
+					? { ...def, ...(details ? { details } : {}), toolset, advertised: toolsets.advertised(name) }
+					: {
+							name: def.name,
+							description: def.description,
+							inputSchema: compactInputSchema(def.inputSchema),
+							toolset,
+						},
+			);
 		},
 	);
 	defineTool(
@@ -952,13 +961,10 @@ export function registerToolsetTools(ctx: ToolContext, toolsets: ToolsetControll
 		{
 			title: 'Call any tool',
 			description:
-				'Runs any registered tool by name, also one whose toolset is not advertised, exactly as a direct call: the same strict argument validation, approvals in the editor, progress, cancellation and error results. The client sees call_tool itself as destructive and open-world because it can run any tool; the tool it runs keeps its own hints (describe_tool shows them).',
+				'Run any tool by name, also one outside the advertised toolsets. Its arguments: `describe_tool`.',
 			input: {
-				name: z.string().min(1).max(128).describe('Tool name (describe_tool shows its arguments)'),
-				arguments: z
-					.record(z.string(), z.unknown())
-					.optional()
-					.describe('The tool arguments, as for a direct call (default {})'),
+				name: z.string().min(1).max(128),
+				arguments: z.record(z.string(), z.unknown()).optional(),
 			},
 			annotations: { ...DESTRUCTIVE, openWorldHint: true },
 		},
@@ -979,7 +985,7 @@ function unknownToolError(name: string): ToolError {
 	return new ToolError(
 		'E_NOT_FOUND',
 		`No tool named "${name}"`,
-		'list_toolsets {"names": [...]} lists the tools of each toolset; jasper://guide/routing maps requests to tools.',
+		'list_toolsets {"names": [...]} lists the tools of a toolset; get_guide {"topic": "routing"} maps requests to tools.',
 		{ tool: name },
 	);
 }

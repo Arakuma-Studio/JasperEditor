@@ -11,9 +11,10 @@ recorded in `licenses/ported/mcp-cli-effectcraft.md` and `licenses/ported/mcp-cl
 **Design.** `apps/mcp/src/strict.ts` + `packages/project/src/agent/strict.ts`.
 
 - `defineTool` turns each input shape into a *deep-strict* zod schema (`deepStrict`): every fixed-shape object,
-  nested ones and union members included, rejects unknown keys, so `tools/list` advertises
-  `additionalProperties: false` everywhere (`looseObject`s too, unless marked `OPEN_OBJECT`; records and typed
-  catchalls stay open).
+  nested ones and union members included, rejects unknown keys (`looseObject`s too, unless marked `OPEN_OBJECT`;
+  records and typed catchalls stay open). `describe_tool {full: true}` shows that schema, `additionalProperties:
+  false` included; `tools/list` advertises the compact form of `apps/mcp/src/advertise.ts`, and validation does not
+  use it.
 - `installStrictValidation(server)` replaces the SDK's argument validation for **every tool on the server**, also
   tools registered with `server.registerTool` directly (tested with such a tool). It walks the arguments against
   the schema (`findUnknownKeys`: wrappers, arrays, tuples, records, lazy, pipes; in a union the option the caller

@@ -735,7 +735,8 @@ export function registerTemplateTools(ctx: ToolContext): void {
 		'set_motion_graphic_params',
 		{
 			title: 'Set motion-graphic params',
-			description:
+			description: "Change a motion-graphic clip's params, statically or at a keyframe.",
+			details:
 				'Changes params of a motion-graphic template clip (from add_motion_graphic) in one undoable step. Without keyframe the values become the static params (merged into the current ones, validated by the template schema: wrong types or ranges fail with E_INVALID_PARAM). Numeric and colour params of anime templates are keyframable (list_motion_templates: keyframable): pass at and keyframe: true to animate a param and set its keyframe at that time; call again with another at for the next keyframe. Params already animated need at (their value at that time). Returns the clip with its template, renderer, params and keyframed params.',
 			input: {
 				projectId: ProjectIdArg,

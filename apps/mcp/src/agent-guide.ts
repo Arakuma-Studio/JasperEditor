@@ -5,7 +5,7 @@
 import { z } from 'zod';
 import { defineTool, READ_ONLY, type ToolContext } from './context.ts';
 import { jsonResult, ToolError } from './errors.ts';
-import { TOOLSETS, toolsetOf } from './toolsets.ts';
+import { toolsetOf } from './toolsets.ts';
 
 /** A guide topic: one `*_GUIDE` string, or a titled bundle of sections (the older composite guide resources). */
 export type GuideSource =
@@ -18,8 +18,12 @@ export type GuideSource =
 
 export type GuideTopic = { topic: string; title: string; description: string; text: string };
 
-/** Upper bound of the server `instructions` in UTF-8 bytes (AF-CTX-003). */
-export const INSTRUCTIONS_MAX_BYTES = 8192;
+/** Upper bound of the server `instructions`: Claude Code keeps only the first 4096 characters of them. */
+export const INSTRUCTIONS_MAX_BYTES = 4096;
+
+/** Trigger words per toolset: a model that sees only core tools has to learn here that the others exist. */
+const TOOLSET_MAP =
+	'Toolsets: project (open in the editor, settings, versions), media (info, `derive_media`: extract audio, convert, denoise a file), processing (restore, upscale, stabilize), editing (move, markers, tracks, paste), structure (nests, frame holds), time (speed, remap), multicam, transitions, color (`grade_clip`, LUTs), effects (masks, presets), keyframes, text (titles), graphics, shapes, 3d, vfx (tracking, roto), audio (mixer, `measure_loudness`), sound (effects library), sound-design, transcript (`remove_fillers`, cleanup), captions (`captions_from_transcript`, subtitles), review, automation, export, ui.';
 
 /** A guide's title: its first line up to the first ": " or ". " outside parentheses (the guides open that way). */
 export function guideTitle(text: string): string {
@@ -70,41 +74,23 @@ export function fullGuide(sources: Readonly<Record<string, GuideSource>>): strin
 	return out.join('\n\n');
 }
 
-const WORKFLOW = `JasperEditor is a Premiere-style video editor; these tools edit its projects through the local engine. With the project open in an editor window (\`open_project_in_editor\`) edits appear live, each one undoable "Agent: <label>" History entry; otherwise they apply to the saved project.
+/** Only what an agent must know before it picks a tool; each tool, result and error carries the rest. */
+const INSTRUCTIONS = `JasperEditor edits video projects through a local engine. Ordinary coding work needs none of these tools.
 
-## Workflow: brief → digest/takes → view → propose → wait → verify
-1. Brief. \`get_brief\` (goal, platform, target length, aspect of a sequence) and \`list_agent_notes\`. No brief: propose one bundle of defaults (below), then \`set_brief\`. \`add_agent_note\` records decisions for the next agent.
-2. Read the footage as text. \`get_footage_digest\` (every take as timed phrases; "~" marks unsure words) and \`find_takes\` (the same line said several times, with a suggested take). No transcript yet: \`transcribe\` + \`wait_for_job\`; new files: \`import_media\` with transcribe.
-3. Look only at decision points. \`view_media_range\` (filmstrip, waveform, words, silences of a media or sequence range in one image) and \`render_frame\` (the Program output).
-4. Propose the cut. \`propose_edits\`: a strategy in a few sentences and items {group, reason, beat, quote, commands}. The user reviews ghosts in the Review panel and applies with one undo. Do not land a multi-step cut through \`apply_commands\`.
-5. Wait. \`wait_for_proposal\` returns the user's decisions; rework what was rejected, never re-propose what was applied.
-6. Verify. \`start_export\` (wait: true), then \`verify_export\` (decode, streams, duration, A/V skew, black/flash frames and clicks at cuts, loudness; a delivery target adds platform rows). Fix "format" rows yourself; ask about "judgement" rows. Inspect the output, not the plan; at most three self-review passes.
+One edit the user named: do it directly with \`add_clip\`, \`trim_clip\`, \`split_at\`, \`delete_clips\` or \`apply_commands\`, without the brief or the footage.
+A multi-step cut: \`get_brief\`, read the footage (\`get_footage_digest\`, \`find_takes\`), look at decision points (\`view_media_range\`), \`propose_edits\`, tell the user, \`wait_for_proposal\`. Never land it with \`apply_commands\`.
+Offer one bundle of defaults instead of a list of questions, and never ask what a tool can measure.
+You cannot hear: answer about sound with measurements (\`measure_loudness\`).
+An export is done after \`verify_export\`.
 
-Small direct fixes: \`add_clip\`, \`trim_clip\`, \`split_at\`, \`delete_clips\`, or \`apply_commands\` (\`describe_commands\` lists every command with schema and example; related changes in one transaction = one undo step; dryRun to test). \`get_timeline\` reads a sequence, \`get_project\` the project, \`undo\` reverts your own last entry.
+Times: frames, "3s", "00:03" or timecode. Tracks: "V1", "A1". When a call is refused, follow its \`hint\`.
 
-## Asking vs assuming
-Offer one bundle of defaults ("30 s, 9:16 for Reels, best take of each line, music ducked under speech: OK?") instead of a list of questions. Never ask what a tool can measure. You cannot hear: report measured numbers (loudness, verify rows), not impressions.
+Use the specific tool for a job, not hand-written commands. To extract, convert or trim a media file use \`derive_media\`, never ffmpeg in a shell. Outside your list: \`list_toolsets\` {"names"} names them, \`describe_tool\` shows the arguments, \`call_tool\` runs them. How-to: \`get_guide\`.
+${TOOLSET_MAP}`;
 
-## Rules
-- Tool time arguments take frames, {"seconds": x}, "3s", "250ms", a clock "00:03" / "1:02:03" or timecode "HH:MM:SS:FF"; commands inside apply_commands take frames, {"frames": n}, {"seconds": x} or timecode. Results give frames and timecode.
-- Tracks are "V1", "V2"… (V1 lowest) and "A1", "A2"…; a video file placed with add_clip makes a linked video+audio pair.
-- Arguments are strict: an unknown key at any depth is an error naming it (E_UNKNOWN_ARGUMENT). Errors are tool results {error: {code, message, hint, details}}: follow the hint.
-- Deleting tracks or items, force: true and other destructive operations need the user's approval in an open editor window; only the user can approve. After E_APPROVAL_DENIED do not retry without asking.
-- Undo/redo only touch your own History entries.
-- Long calls send progress when you pass a progressToken; cancelling the request cancels the engine job and deletes its partial output.
-- Every tool carries readOnly/destructive/idempotent/openWorld hints.`;
-
-/** The server `instructions`: workflow, rules, the toolset index and pointers to the guides (≤ 8 KB). */
-export function buildInstructions(topics: readonly GuideTopic[]): string {
-	const index = TOOLSETS.map((ts) => `- ${ts.name}: ${ts.description}`).join('\n');
-	return `${WORKFLOW}
-
-## Toolsets
-This session advertises the core toolset (plus any chosen with JASPER_MCP_TOOLSETS or --toolsets). For anything else: \`list_toolsets\`, then \`enable_toolsets\` {"names": [...]} (tools/list changes), or \`describe_tool\` + \`call_tool\` {"name", "arguments"} to run any tool directly. Calling a tool whose toolset is off returns E_TOOLSET_NOT_ENABLED naming the toolset.
-${index}
-
-## Guides
-\`get_guide\` {"topic"} or the resource jasper://guide/<topic>, topics: ${topics.map((t) => t.topic).join(', ')}, routing. jasper://guide/routing maps requests (English and Spanish) to tools; jasper://guide is every guide in one text. The \`jasper\` CLI runs the same tools from a shell (jasper call <tool> k=v).`;
+/** The server `instructions` (at most INSTRUCTIONS_MAX_BYTES). */
+export function buildInstructions(): string {
+	return INSTRUCTIONS;
 }
 
 /** The `edit-video` prompt: the workflow for one goal, not the whole guide. */
@@ -357,22 +343,14 @@ export function registerGuides(ctx: ToolContext, topics: readonly GuideTopic[], 
 		'get_guide',
 		{
 			title: 'Read a guide',
-			description: `A domain guide by topic (the same text as the resource jasper://guide/<topic>); "routing" maps requests to tools. Without a topic: the list of topics. Topics: ${names.join(', ')}.`,
-			input: {
-				topic: z
-					.string()
-					.min(1)
-					.max(64)
-					.optional()
-					.describe('Guide topic, e.g. "color" or "routing"; omit for the list'),
-			},
+			description: 'Read one guide. Without `topic`: the topics. `routing` maps requests to tools.',
+			input: { topic: z.string().min(1).max(64).optional() },
 			annotations: READ_ONLY,
 		},
 		async ({ topic }) => {
 			if (topic === undefined)
 				return jsonResult({
-					topics: all.map((t) => ({ topic: t.topic, title: t.title, chars: t.text.length })),
-					hint: 'get_guide {topic}; the toolsets name their guides (list_toolsets).',
+					topics: all.map((t) => t.topic),
 				});
 			const t = byTopic.get(topic);
 			if (!t)

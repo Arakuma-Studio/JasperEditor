@@ -449,7 +449,8 @@ export function registerGapsTools(ctx: ToolContext): void {
 		'create_proxies',
 		{
 			title: 'Create proxies',
-			description: `Clip ▸ Proxy ▸ Create Proxies: transcodes video media to a smaller browser-playable proxy (presets ${PROXY_PRESETS.filter(
+			description: 'Transcode video media to smaller proxies as one background job.',
+			details: `Clip ▸ Proxy ▸ Create Proxies: transcodes video media to a smaller browser-playable proxy (presets ${PROXY_PRESETS.filter(
 				(p) => p.kind === 'proxy',
 			)
 				.map((p) => p.id)
@@ -988,7 +989,8 @@ export function registerGapsTools(ctx: ToolContext): void {
 		'stabilize_clip',
 		{
 			title: 'Warp Stabilizer',
-			description:
+			description: 'Apply Warp Stabilizer to a video clip and analyse it.',
+			details:
 				"Effect ▸ Distort ▸ Warp Stabilizer on a video clip, end to end: adds the effect when the clip has none (with params: result smoothMotion / noMotion, smoothness %, method position / positionScaleRotation / perspective / subspaceWarp, preserveScale, framing stabilizeOnly / stabilizeCrop / stabilizeCropAutoScale / synthesizeEdges, maxScale %, actionSafe %, additionalScale %, detailedAnalysis, rollingShutterRipple automatic / enhanced, cropLessSmoothMore 0-100, synthesisInputRange s, synthesisEdgeFeather, edgeCropLeft/Top/Right/Bottom px, hideWarningBanner; existing instances are updated with param.set), runs the engine analysis of the clip's media range (+15 frames handles) and stores it with the effect (no undo step). An analysed effect is reused while it covers the clip. Exports refuse an un-analysed stabiliser (WARP_NOT_ANALYZED).",
 			input: {
 				projectId: ProjectIdArg,
@@ -1161,7 +1163,8 @@ export function registerGapsTools(ctx: ToolContext): void {
 		'create_graphic',
 		{
 			title: 'New graphic (Essential Graphics)',
-			description:
+			description: 'Create a graphic clip whose first layer is a text, rectangle or ellipse.',
+			details:
 				'Essential Graphics ▸ New Layer with nothing selected: a graphic clip at `at` on `track` (default: a new top track) whose first layer is a text (text), rectangle or ellipse. A graphic is a nested sequence flagged as graphic: its tracks are the layers. Then use apply_commands with graphic.addLayer, graphic.align (left/center/right/top/middle/bottom/distributeHorizontal/distributeVertical to the frame or the selection), graphic.setPins (Responsive Design – Position) and set_graphic. Returns the graphic sequence id and the graphic clip id.',
 			input: {
 				projectId: ProjectIdArg,

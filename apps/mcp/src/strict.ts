@@ -121,6 +121,10 @@ function unknownArgumentsError(tool: string, found: UnknownKeys[]): ArgumentErro
 	};
 }
 
+/** Whether a refused value looks like a time, so the hint about times is about this call. */
+const isTimeIssue = (issues: readonly { path: string; message: string }[]): boolean =>
+	issues.some((i) => /\b(at|time|start|end|from|to|duration|frame)s?\b/i.test(i.path));
+
 /** The error for arguments that do not match a tool's schema. */
 function invalidArgumentsError(tool: string, schema: AnySchema, error: z.ZodError): ArgumentError {
 	const issues = error.issues.slice(0, 8).map((i) => ({
@@ -135,9 +139,9 @@ function invalidArgumentsError(tool: string, schema: AnySchema, error: z.ZodErro
 	return {
 		code: 'E_INVALID_ARGUMENT',
 		message: `${tool}: ${issues.map((i) => (i.path ? `${i.path}: ${i.message}` : i.message)).join('; ')}`,
-		hint: `Check the tool's input schema (tools/list). ${tool} accepts: ${shape.join(', ') || '(no arguments)'}${
+		hint: `${tool} accepts: ${shape.join(', ') || '(no arguments)'}${
 			required.length ? `; required: ${required.join(', ')}` : ''
-		}. ${TIME_HINT}`,
+		}.${isTimeIssue(issues) ? ` ${TIME_HINT}` : ''}`,
 		details: { issues },
 	};
 }

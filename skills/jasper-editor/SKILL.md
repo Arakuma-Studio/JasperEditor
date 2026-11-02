@@ -20,8 +20,8 @@ If the `jasper` tools are missing, the server is not connected: see [setup](refe
 
 ## Workflow
 
-The core toolset covers the whole loop. Tools of other toolsets: `list_toolsets`, then `enable_toolsets`, or run
-one directly with `describe_tool` + `call_tool`. `get_guide` (topic "routing") maps requests to tools.
+The core toolset covers the whole loop. Tools of other toolsets: `list_toolsets` names them, `describe_tool` shows
+the arguments, `call_tool` runs them. `get_guide` (topic "routing") maps requests to tools.
 
 1. **Brief.** `get_brief` for the sequence and `list_agent_notes`. If goal, platform, length or aspect is
    missing, propose one bundle of defaults (see below) and store the agreed brief with `set_brief`.
@@ -76,6 +76,6 @@ End every task with three short lists:
   timecode. Commands in `apply_commands` take frames, `{"frames"}`, `{"seconds"}` or timecode.
 - Arguments are strict: an unknown key is an error naming it. Errors carry a code and a hint; follow the hint
   instead of guessing.
-- A tool "not enabled" error names its toolset: `enable_toolsets` it or use `call_tool`.
+- A tool "not enabled" error means run it with `call_tool`.
 - `undo` only touches your own History entries; the user's edits are theirs.
 - Keep decisions for the next agent (and for yourself after a context reset) in `add_agent_note`.

@@ -513,7 +513,8 @@ export function registerTrackingTools(ctx: ToolContext): void {
 		'simplify_keyframes',
 		{
 			title: 'Simplify keyframes',
-			description:
+			description: 'Reduce dense keyframes to the fewest that stay within `tolerance` of the original.',
+			details:
 				'Reduces dense keyframes (tracking output: corner pins and Motion baked one key per frame; recorded animation) to the fewest keys whose animation stays within `tolerance` of the original at EVERY frame — sequence pixels for Motion (position/scale/rotation/anchor) and corner pins (largest displacement of the drawn picture), the parameter\'s own units otherwise (e.g. % for opacity). Kept keys keep their times and values; segments become linear or fitted Bezier eases. Pick what to simplify with exactly one of: clipId (every keyframed parameter of the clip; trackedOnly = only what apply_tracking wrote), trackerId (the clips that tracker drives), targets (parameter paths) or keyframeIds (only those keys may go). Use dryRun to preview the counts and the measured maximum deviation; one History entry "Simplify Keyframes" otherwise.',
 			input: {
 				projectId: ProjectIdArg,

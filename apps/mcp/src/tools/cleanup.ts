@@ -459,6 +459,8 @@ export function registerCleanupTools(ctx: ToolContext): void {
 		{
 			title: 'Analyze voice for clean up',
 			description:
+				'Find what to cut in transcribed speech: retakes, false starts, fillers, pauses. Then `plan_cleanup`.',
+			details:
 				'Finds what to cut in transcribed speech (retakes with take groups, restarts, false starts, fillers in the transcript\'s language, discourse markers, off-script talk and head / tail chatter with a script, pauses, breaths, voice without words, transcription suspects and hallucinations) and plans the cut with edit points from the audio level: findings, retake groups, removed ranges with reasons and statistics (output length, cuts per minute, dead air per minute, longest silence left). Target: a sequence (default the first), one clip, or a whole media. Paged (offset / limit / include / kinds). Changes nothing; see the "Cleaning up speech" guide for the recommended policy.',
 			input: { ...TargetShape, ...PageShape },
 			annotations: READ_ONLY,
@@ -494,6 +496,8 @@ export function registerCleanupTools(ctx: ToolContext): void {
 		{
 			title: 'Apply clean up',
 			description:
+				'Plan like `plan_cleanup` and cut the removed ranges in one undo step. `mode`: extract (default, ripple), lift, mute or markers.',
+			details:
 				'Plans like plan_cleanup on the current document and cuts the removed ranges in ONE undo step ("Agent: Clean Up Voice: N cuts"): the speech clips, their linked picture and clip groups, rippled per sync lock (locked tracks never change), equal-power micro-fades at every join; the findings you rejected are remembered for later analyses (rememberRejections: false skips that). mode: extract (default, ripple) | lift (gaps) | mute (volume to −∞ over the ranges) | markers (range markers only). analysisId: the analysis your decision ids refer to — refused with E_STALE when the document changed since.',
 			input: {
 				...TargetShape,
@@ -591,6 +595,8 @@ export function registerCleanupTools(ctx: ToolContext): void {
 		{
 			title: 'Set clean up settings',
 			description:
+				"Store a sequence's Clean Up settings: preset and what `analyze_voice` removes by default.",
+			details:
 				"Stores a sequence's Clean Up settings (Sequence.cleanup; what analyze_voice and the editor's Clean Up mode use by default), one undoable edit: preset (fast / natural / a user preset id), settings overrides {rules: {retake, restart, falseStart, stutter, fillerVocalic, fillerPhrase, fillerLexical, offScript, headTail, pause, breath, untranscribed, asrSuspect, hallucination: remove|review|off}, thresholds {…}, edges {mode level|speech|word, reference floor|speech, outDb, inDb, padBeforeS, padAfterS, snapWindowS}, gaps {maxGapS, keepGapS, keepGapSentenceS, breath remove|keep, breathKeepMaxS}, guards {minPieceS, minCutFrames, minSliverFrames, avoidHarshCuts, harshWindowS}, joins {fadeMs 0–30, jlFrames}} merged into the stored ones (merge: false replaces them; reset: true drops them), word lists per language {es|en: {fillers, markers, allow} | null}, clearRejected / unreject (remembered rejections).",
 			input: {
 				projectId: ProjectIdArg,
@@ -652,7 +658,8 @@ export function registerCleanupTools(ctx: ToolContext): void {
 		'attach_script',
 		{
 			title: 'Attach a script',
-			description:
+			description: "Attach the video's script to a sequence, for cleanup and `fix_transcript`.",
+			details:
 				'Attaches the video script (plain text, ≤ 256 KB; one sentence or line per take) to a sequence: the script serves cleanup and transcript fixing. fix_transcript fixes the recognition errors of the transcript from it (names, loanwords, split words; each checked against the audio). For Clean Up: retake groups are named by line, off-script talk and head / tail chatter are found, an earlier take that covers more of a line wins, and lines never said are reported. text or path (an absolute .txt / .md file); detach: true removes it. One undoable edit.',
 			input: {
 				projectId: ProjectIdArg,

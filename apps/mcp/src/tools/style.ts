@@ -371,6 +371,8 @@ export function registerStyleTools(ctx: ToolContext): void {
 		{
 			title: 'Apply a style recipe (propose)',
 			description:
+				"Run a style recipe's stages into one proposal for review: voice cleanup, subtitles, cut kits, punch-ins, music.",
+			details:
 				'Spec 15 Apply Style: runs a style recipe\'s stages — Clean Up Voice, subtitles, cut kits, punch-ins, Ken Burns, reactions, overlay slides, music beds, stingers — into ONE proposal for review, each stage planned on what the earlier ones planned (the cleaned-up timeline with its subtitles: kits on the new cuts, never overlapping, punch-ins never on a Ken Burns clip, reactions clear of the subtitles). recipeId (built-in, library or project copy; default the project\'s active recipe) or a whole recipe; passes turns stages on / off for this run; seed and range as in the single passes. mode "dryRun" reports per stage (count, coverage, skips with reasons, missing asset roles, export cost class, budget) without storing anything. Nothing changes until the proposal is accepted (one undo step).',
 			input: {
 				projectId: ProjectIdArg,

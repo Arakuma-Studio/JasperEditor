@@ -1,15 +1,9 @@
 import { TimeInputSchema } from '@jasper/project';
 import { z } from 'zod';
 
-export const ProjectIdArg = z
-	.string()
-	.min(1)
-	.describe('Project id ("prj_…") from list_projects or create_project');
+export const ProjectIdArg = z.string().min(1);
 
-export const SequenceIdArg = z
-	.string()
-	.optional()
-	.describe('Sequence id ("seq_…"); default: the project\'s first sequence');
+export const SequenceIdArg = z.string().optional().describe('Default: the first sequence.');
 
 /**
  * Friendly times (social-comments design §7.10), on top of the command forms (frames, {frames}, {seconds},
@@ -50,8 +44,7 @@ const FriendlyTimeSchema = z
 	.regex(FRIENDLY_TIME, 'a time like "3s", "1.5s", "250ms", "00:03" (M:SS) or "1:02:03" (H:MM:SS)')
 	.transform((s) => ({ seconds: parseFriendlyTime(s) ?? 0 }));
 
-export const TIME_FORMATS =
-	'Sequence time as frames (integer), {"frames": n}, {"seconds": x}, seconds "3s" / "1.5s", milliseconds "250ms", a clock "M:SS" ("00:03") or "H:MM:SS" ("1:02:03"), or timecode "HH:MM:SS:FF" (";" before FF for drop-frame; four fields are always timecode, clocks take no fraction)';
+export const TIME_FORMATS = 'Frames, "3s", "00:03" or timecode.';
 
 /** Hint for a time argument that did not parse. */
 export const TIME_HINT =

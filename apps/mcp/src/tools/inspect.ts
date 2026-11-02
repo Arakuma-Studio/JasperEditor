@@ -14,7 +14,8 @@ export function registerInspectTools(ctx: ToolContext): void {
 		'get_clip_properties',
 		{
 			title: 'Get clip properties',
-			description:
+			description: 'Every property of a clip at a time, with its value.',
+			details:
 				"Every property of a clip at a time: key, label, group, kind, unit, animatable, value (the keyframed value at that time, as Effect Controls shows it), evaluated (the value the renderer draws at that frame), animated, keyframes [{id, frame, timecode, value, interpolation, ease (the segment leaving the key: hold | linear | cubic-bezier(…); absent on the last key), easePreset?, roving?}] in sequence frames, and the param.set `target` path. rendered: false with why when that frame draws nothing (outside the clip, bypassed effect, disabled clip, track output off). Also lists the clip's effects (id, effectId, enabled).",
 			input: {
 				projectId: ProjectIdArg,

@@ -65,10 +65,7 @@ export const PROPOSALS_GUIDE = `Proposals (spec 12 §2.5): a reviewable set of e
 - Check before you hand it over: sound_check {projectId, proposalId} runs Sound Check on the proposal's preview (the current edit with its items applied; nothing changes) and says what it fixes and introduces, per item ("fixes 3 · introduces 1"). plan_sound_design {check: true} does it for you. The result is kept on the proposal: get_proposal shows it (soundCheck), and so does the user's Review panel, next to each item.
 - One writer, one proposal per pass: when you weigh alternatives (another sound, another level, a different cue), test them yourself and merge the best into ONE proposal — its items' alternatives carry the other sounds — rather than handing the user several competing proposals. Run sound_check {proposalId} on it before asking for review, and never hand over a proposal that introduces errors without saying so (say which item and what). Review it through the lenses in SOUND_GUIDE ("Review lenses").`;
 
-const ProposalIdArg = z
-	.string()
-	.regex(/^prp_[0-9A-HJKMNP-TV-Z]{16}$/, 'a proposal id: prp_ + 16 characters')
-	.describe('Proposal id (plan_sound_design, place_sound, list_proposals)');
+const ProposalIdArg = z.string().regex(/^prp_[0-9A-HJKMNP-TV-Z]{16}$/, 'a proposal id: prp_ + 16 characters');
 const ItemSelectionArg = z
 	.union([z.literal('all'), z.array(z.string().min(1).max(64)).min(1).max(2000)])
 	.describe('"all", or item ids (get_proposal)');
@@ -417,7 +414,8 @@ export function registerProposalTools(ctx: ToolContext): void {
 		'list_proposal_features',
 		{
 			title: 'List proposal features',
-			description:
+			description: 'The proposal features of a project and whether agents may apply each.',
+			details:
 				'The proposal features of a project (sound-design, edit-automation, subtitles, transcript-cleanup, transcript-correction, rough-cut): what their proposals are, the tools that produce them, their Review groups (put the group id in an item’s meta.group), the item noun, whether YOU may apply them here (agentAccept: setting "project" → allowed (Project Settings ▸ Agent Proposals; default on, rough-cut off); setting "sound-sequence" → per sequence id, default off) and whether their producer re-plans stale items (refreshable, refresh_proposal).',
 			input: { projectId: ProjectIdArg },
 			annotations: READ_ONLY,
@@ -439,7 +437,8 @@ export function registerProposalTools(ctx: ToolContext): void {
 		'refresh_proposal',
 		{
 			title: 'Refresh proposal',
-			description:
+			description: "Re-plan a proposal's stale items on the current edit; nothing is applied.",
+			details:
 				'Asks the proposal’s producer to re-plan its stale items (the clips or cuts they decorate moved) on the current edit: they come back pending for review with fresh anchors; nothing is applied, accepted and rejected items stay. itemIds "stale" (default) = every stale item, or ids of pending, stale or invalid items. reroll: true = "Reroll": re-plan the items with the next seed of each (another draw of the same pass, e.g. another kit family for a Decorate Cuts item; items whose meta.rerollable is true). Refused with E_NOT_REFRESHABLE when the feature’s producer cannot re-plan (propose again instead).',
 			input: {
 				projectId: ProjectIdArg,
@@ -529,7 +528,8 @@ export function registerProposalTools(ctx: ToolContext): void {
 		'get_proposal',
 		{
 			title: 'Get proposal',
-			description:
+			description: "Read one proposal with every item's state, reason, the user's notes and swaps.",
+			details:
 				'One proposal with every item: state (pending, accepted, rejected, stale = the edit changed under it, invalid = it never applied), reason, the alternative the user selected (swapped), the user’s note, selected: false when it is offered unselected (an "all" accept leaves it out), what it requires (setup items: bin, imported sounds, new cues), its why-line, plus `ghosts`: a text table (item | state | ghost | track | start | end | what) of what the undecided items would create, change or delete if applied — like get_timeline for the proposal — and `soundCheck`: its last Sound Check (sound_check {proposalId}: fixes · introduces, per item; stale when the mix changed since; null when it was never checked). revalidate (default true) re-checks undecided items against the current edit first (stale items). `updatedAt` is the token for wait_for_proposal {since}. includeCommands: true adds each item’s commands.',
 			input: {
 				projectId: ProjectIdArg,
@@ -614,16 +614,16 @@ export function registerProposalTools(ctx: ToolContext): void {
 		{
 			title: 'Wait for proposal review',
 			description:
-				'Waits (at most timeoutSeconds, default 300, max 900) until the user changes the proposal in the editor — keeps or rejects an item, swaps to an alternative, writes a note, applies it — or deletes it; until: "decided" waits until nothing is left to review. since: the updatedAt you last saw (get_proposal; default: now). Returns status (changed | decided | applied | deleted | timeout), counts, and per item (setup items left out) its state: accepted | rejected | pending | stale | invalid, swapped → the alternative they chose, and their note — read the notes and act on them. Sends progress notifications while waiting; call it again after a timeout to keep waiting.',
+				"Wait for the user's review of a proposal. Read each item's state and note. On `timeout` call again.",
 			input: {
 				projectId: ProjectIdArg,
 				proposalId: ProposalIdArg,
-				since: z.string().max(64).optional().describe('updatedAt you last saw (default: the current one)'),
+				since: z.string().max(64).optional().describe('Last `updatedAt` you saw.'),
 				until: z
 					.enum(['change', 'decided'])
 					.optional()
-					.describe('"change" (default): any decision; "decided": nothing left to review'),
-				timeoutSeconds: z.number().int().min(1).max(900).optional().describe('Default 300, max 900'),
+					.describe('Default change; decided waits until nothing is left.'),
+				timeoutSeconds: z.number().int().min(1).max(900).optional().describe('Default 300, max 900.'),
 			},
 			annotations: READ_ONLY,
 		},
@@ -703,6 +703,8 @@ export function registerProposalTools(ctx: ToolContext): void {
 		{
 			title: 'Accept proposal items',
 			description:
+				'Apply proposal items in one undo step. Only when the user asked; agents may be refused by policy (`E_APPROVAL_REQUIRED`): then ask them to apply it, never retry.',
+			details:
 				'Applies proposal items as ONE transaction (one undo step; what each requires — bin, imported sounds, new cues — comes along). itemIds "all" = every pending or stale item that is selected (setup items only as requirements; items with selected: false and transcript fixes of the maybe group are left out and listed in notSelected — name their ids to apply them). Policy per feature (list_proposal_features): sound design only when the user turned on "Allow agents to apply sound proposals" for the sequence; editing automation, subtitles and transcript cleanup while Project Settings ▸ Agent Proposals allows them (default on); rough cuts only when it allows them (default off); otherwise it is refused with E_APPROVAL_REQUIRED — then ask the user to apply it in the editor’s Review panel, never retry. Do not accept a proposal the user has not asked you to apply. All-or-nothing unless partial: true (stale items are then skipped and listed). Destructive commands inside still ask the user in the editor.',
 			input: {
 				projectId: ProjectIdArg,
@@ -795,11 +797,12 @@ export function registerProposalTools(ctx: ToolContext): void {
 		'propose_edits',
 		{
 			title: 'Propose edits (rough cut)',
-			description: `Proposes YOUR multi-step cut for the user's review instead of applying it: one "Rough cut" proposal (feature rough-cut) in the editor's Review panel, with timeline ghosts, A/B, per-item ✓ / ✕ and one-undo Apply. strategy: the plan in 1–${ROUGH_CUT_LIMITS.maxStrategySentences} sentences (≤ ${ROUGH_CUT_LIMITS.maxStrategy} characters), shown above the items. Each item: group (${ROUGH_CUT_GROUPS.join(', ')}), reason (why, 1–${ROUGH_CUT_LIMITS.maxReason} characters), beat (the story beat, ≤ ${ROUGH_CUT_LIMITS.maxBeat}) and quote (the words it is about, ≤ ${ROUGH_CUT_LIMITS.maxQuote}) when it has them, commands (1–${ROUGH_CUT_LIMITS.maxItemCommands}, exactly as apply_commands takes them) and alternatives (other command sets the user can swap to). At most ${ROUGH_CUT_LIMITS.maxItems} items and ${ROUGH_CUT_LIMITS.maxCommands} commands in all. Every item (and alternative) is dry-run on the current document first: if any fails, the error lists each failing item index with its command error and NOTHING is stored. Items apply in order as one transaction: address clips by id, and list ripple edits from the end of the timeline to the start so the frames of earlier items stay valid whichever items the user keeps. expectedRevision: the revision you planned on (items touching what changed since are refused). Agents may not apply rough cuts unless the user allowed it (Project Settings ▸ Agent Proposals, off by default): hand it to the user and wait_for_proposal.`,
+			description:
+				"Propose a multi-step cut for the user's review; nothing changes until they apply it. Each item has a `group`, a `reason` and `commands` as in `apply_commands`. Every item is dry-run: if one fails, nothing is stored. Address clips by id and list ripple edits from the end of the timeline to the start. Then tell the user and call `wait_for_proposal`; agents may not apply it themselves.",
 			input: {
 				projectId: ProjectIdArg,
-				sequenceId: z.string().min(1).max(128).describe('Sequence the edits are in ("seq_…")'),
-				title: z.string().min(1).max(200).describe('Short title, e.g. "60 s cut"'),
+				sequenceId: z.string().min(1).max(128),
+				title: z.string().min(1).max(200),
 				strategy: z
 					.string()
 					.min(1)
@@ -810,9 +813,7 @@ export function registerProposalTools(ctx: ToolContext): void {
 					.int()
 					.min(0)
 					.optional()
-					.describe(
-						'The revision you planned on (get_project); items touching what changed since are refused',
-					),
+					.describe('The revision you planned on; items touching later changes are refused.'),
 				items: z
 					.array(
 						z.strictObject({

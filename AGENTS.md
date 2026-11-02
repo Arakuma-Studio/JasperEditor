@@ -175,7 +175,20 @@
   credential disclosure or destructive shared-state changes; existing authorization is sufficient.
 - Recheck changed agent instructions after remote integration against this file's maintenance rules.
 
-## 10. Standing Don'ts
+## 10. MCP surface
+
+- New tool text needs a case in `apps/mcp/eval` that fails without it; text no case needs stays out.
+- Put a rule in the strongest place: server behavior, result or error, description, parameter, instructions.
+- Name new tools `<area>_<noun>[_<verb>]`, one prefix per area, one word per concept.
+- Descriptions give what it does, the key limit, the one misuse and the sibling; reference text goes in `details`.
+- Use observable triggers, no escape hatches and one route per intent.
+- Merge into an existing tool before adding a near-duplicate.
+- Advertise lean schemas through `apps/mcp/src/advertise.ts`; validate in full through `strict.ts`.
+- Make errors name the one step that fixes them.
+- Keep model-visible bytes within `apps/mcp/eval/budget.json`; lower it when they shrink.
+- Run the eval on an Orquester-managed account, never an API key: [README](apps/mcp/eval/README.md).
+
+## 11. Standing Don'ts
 
 - Don't expand scope into unrelated fixes, refactors, dependency upgrades or product redesigns.
 - Don't add redundant wrappers, speculative abstractions or parallel implementations of existing helpers.

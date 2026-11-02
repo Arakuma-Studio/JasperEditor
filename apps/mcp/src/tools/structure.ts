@@ -40,7 +40,7 @@ export const STRUCTURE_GUIDE = `Nests, adjustment layers, groups, synthetics, th
 - list_through_edits / join_through_edits: cuts between pieces that continue the same source (left by split_at / Add Edit). list_cuts is the picture cut map: every frame where the picture the viewer sees changes — kind 'cut' (another source, or to / from black), 'jump' (same source, discontinuous) or 'overlay' (a picture covering ≥ overlayCoverage, default 50 %, of the frame comes or goes) — looking inside nests (speed, reverse, remap, 8 levels), ignoring through edits, hidden tracks, disabled clips, text / shape / caption / adjustment / graphic clips and fades to / from black; a two-sided transition adds transitionId and its span as zone. outputTrackId (e.g. the subtitles' track) keeps only the tracks below it. find_gaps lists empty time in the sequence or on tracks. make_subsequence copies clips (or In–Out on tracks) into a new sequence.
 - add_frame_hold (Premiere Add Frame Hold: split at a time, the right part holds that frame), insert_frame_hold_segment (a held segment pushed in, 2 s by default), frame_hold_options (hold on in / out / sequence-time / source-time / playhead, holdFilters freezes effects and keyframes too; enabled: false removes it).`;
 
-const ClipIdsArg = z.array(z.string().min(1)).min(1).describe('Clip ids ("clp_…") from get_timeline');
+const ClipIdsArg = z.array(z.string().min(1)).min(1);
 const RgbaArg = z.tuple([z.number(), z.number(), z.number(), z.number()]).describe('RGBA, each 0..1');
 
 async function sequenceOf(ctx: ToolContext, projectId: string, sequenceId?: string) {
@@ -432,7 +432,8 @@ export function registerStructureTools(ctx: ToolContext): void {
 		'list_cuts',
 		{
 			title: 'List picture cuts',
-			description:
+			description: "The sequence's picture cuts: every frame where the picture changes, with its kind.",
+			details:
 				"The sequence's picture cut map (spec 13 SH-001): every frame where the picture changes, as frame + timecode, kind ('cut': another source or to/from black; 'jump': same source, discontinuous; 'overlay': a picture covering ≥ overlayCoverage of the frame comes or goes), track, outgoing/incoming clip ids of this sequence (nested: the nest clip, with nested.outgoing/incoming naming the clips inside), and for two-sided transitions transitionId + zone (the transition's span). Nests are followed (speed, reverse, time remap, multi-camera angle, ≤ 8 levels); through edits, hidden tracks, disabled clips, text, shape, caption, adjustment and graphic clips and fades to/from black are not cuts. Coverage comes from Motion, Crop and corner pin. Read-only; paged with offset/limit (total = every cut).",
 			input: {
 				projectId: ProjectIdArg,

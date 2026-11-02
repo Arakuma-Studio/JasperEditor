@@ -1,0 +1,32 @@
+{
+  "contexts": {
+    "core": 25884,
+    "+project": 12140,
+    "+media": 16236,
+    "+processing": 6403,
+    "+editing": 21547,
+    "+structure": 13351,
+    "+time": 7136,
+    "+multicam": 11726,
+    "+transitions": 7214,
+    "+color": 16928,
+    "+effects": 19663,
+    "+keyframes": 21074,
+    "+text": 30103,
+    "+graphics": 18957,
+    "+shapes": 35333,
+    "+3d": 14883,
+    "+vfx": 18770,
+    "+audio": 19286,
+    "+sound": 21287,
+    "+sound-design": 41036,
+    "+transcript": 35807,
+    "+captions": 25861,
+    "+review": 3237,
+    "+automation": 28141,
+    "+export": 11113,
+    "+ui": 14220,
+    "all": 497324
+  },
+  "tool": 10493
+}

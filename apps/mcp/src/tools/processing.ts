@@ -339,7 +339,8 @@ export function registerProcessingTools(ctx: ToolContext): void {
 		'use_media_version',
 		{
 			title: 'Use media version',
-			description:
+			description: 'Switch clips to another version of the same media.',
+			details:
 				"Switches video clips to another version of the same media: the original, any processed version or a render declaring a source range of it (media ids from get_media_info → versions, with the source frames each holds). The clips keep showing exactly the same source frames at the same timeline place: the in-point (and keyframes, markers, tracker data) is remapped from the versions' source ranges; timing, effects and keyframes stay; Motion is compensated when the pixel size differs; handles become what the new file holds. A version that does not cover a clip is refused unless fit says otherwise. One undoable step.",
 			input: {
 				projectId: ProjectIdArg,
@@ -472,7 +473,8 @@ export function registerProcessingTools(ctx: ToolContext): void {
 		'replace_footage',
 		{
 			title: 'Replace footage',
-			description:
+			description: 'Replace the file behind a media item for every clip that uses it.',
+			details:
 				'Replaces the file behind a media item for every clip that uses it (Project panel ▸ Replace Footage…), e.g. the raw camera file by a graded render of part of it, or back. keepSourceTiming (default true): every clip keeps showing the same source frames at the same timeline place — the in-points (keyframes, markers, source marks) move by the offset between the two files, taken from source ranges (a sidecar next to the new file such as <name>.json with "first_src_frame", or the range the media already records) or else from the files\' start timecodes; refused when neither says where the files sit (pass keepSourceTiming: false to keep the in-points as they are). Clips the new file does not hold are refused unless fit: "trim". The new file is registered in place (absolute path on this machine). One undoable step "Replace Footage".',
 			input: {
 				projectId: ProjectIdArg,

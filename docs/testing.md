@@ -47,6 +47,9 @@ Opt-in switches: `REMOTION_E2E=1` (Remotion renders), `FUZZ=1` (long fuzz), `PER
 and `JASPER_REQUIRE_ORACLES=1`, no GPU (SwiftShader), no LGPL FFmpeg and none of the opt-in suites; it uploads
 `test-results/` (golden and fuzz failure artefacts) when a step fails.
 
+MCP text and behaviour have their own eval, on real agents: [`apps/mcp/eval`](../apps/mcp/eval/README.md). It calls paid
+models on Orquester-managed accounts, so the gate runs only its unit tests and the byte budget.
+
 ## 2. Golden frames
 
 A golden test renders a frame and compares it with a committed PNG:
