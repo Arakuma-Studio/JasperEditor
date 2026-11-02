@@ -7,9 +7,13 @@ import { closeAllDialogs, DialogHost, openDialog } from '@jasper/ui';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { getCommand, registerAllCommands } from '../src/commands/index.ts';
-import { registerAlphaDialog, ALPHA_DIALOG } from '../src/delivery/AlphaDialog.tsx';
+import { ALPHA_DIALOG, registerAlphaDialog } from '../src/delivery/AlphaDialog.tsx';
 import { gamutOverlay } from '../src/delivery/GamutOverlay.tsx';
-import { LAYER_STYLE_DIALOG, registerLayerStyleDialog, saveImportedLooks } from '../src/delivery/LayerStyleDialog.tsx';
+import {
+	LAYER_STYLE_DIALOG,
+	registerLayerStyleDialog,
+	saveImportedLooks,
+} from '../src/delivery/LayerStyleDialog.tsx';
 import { PSD_DIALOG, registerPsdDialog } from '../src/delivery/PsdDialog.tsx';
 import { MENUBAR } from '../src/shell/menus/model.ts';
 import { makeSession } from './timeline-helpers.ts';
@@ -92,7 +96,10 @@ describe('Send to Photoshop (TL-112)', () => {
 	const open = (plan: PsdPlan) => {
 		const { session, seqId } = makeSession();
 		registerPsdDialog();
-		const engine = engineWith({ '/api/psd/plan': plan, '/scratch': { local: false, projectMedia: { path: '' } } });
+		const engine = engineWith({
+			'/api/psd/plan': plan,
+			'/scratch': { local: false, projectMedia: { path: '' } },
+		});
 		render(<DialogHost />);
 		act(() => {
 			void openDialog(PSD_DIALOG, { session, engine, sequenceId: seqId, frame: 0, baseName: 'Seq' });
@@ -101,15 +108,23 @@ describe('Send to Photoshop (TL-112)', () => {
 
 	it('lists the layers and what is baked before writing', async () => {
 		open(PLAN);
-		await waitFor(() => expect(screen.getByTestId('psd-baked').textContent).toContain('Title: text rasterised'));
+		await waitFor(() =>
+			expect(screen.getByTestId('psd-baked').textContent).toContain('Title: text rasterised'),
+		);
 		expect(screen.getByTestId('psd-layers').textContent).toContain('Background');
 		expect(screen.getByTestId('psd-warnings').textContent).toContain('rasterised');
 		expect((screen.getByRole('button', { name: 'Write PSD' }) as HTMLButtonElement).disabled).toBe(false);
 	});
 
 	it('a blocker stops it, with its reason, before anything runs', async () => {
-		open({ ...PLAN, layers: [], blockers: [{ code: 'PSD_EMPTY', message: 'Nothing is visible at this frame' }] });
-		await waitFor(() => expect(screen.getByTestId('psd-blockers').textContent).toContain('Nothing is visible'));
+		open({
+			...PLAN,
+			layers: [],
+			blockers: [{ code: 'PSD_EMPTY', message: 'Nothing is visible at this frame' }],
+		});
+		await waitFor(() =>
+			expect(screen.getByTestId('psd-blockers').textContent).toContain('Nothing is visible'),
+		);
 		expect((screen.getByRole('button', { name: 'Write PSD' }) as HTMLButtonElement).disabled).toBe(true);
 	});
 });
@@ -148,7 +163,9 @@ describe('Import Layer Styles (TL-113)', () => {
 				refNote: 'unknown size',
 				style: {
 					effects: {
-						stroke: [{ enabled: true, size: { units: 'Pixels', value: 6 }, position: 'center', fillType: 'color' }],
+						stroke: [
+							{ enabled: true, size: { units: 'Pixels', value: 6 }, position: 'center', fillType: 'color' },
+						],
 						patternOverlay: { enabled: true, pattern: { name: 'Bricks' } },
 					},
 					baseColor: null,
@@ -181,10 +198,16 @@ describe('Import Layer Styles (TL-113)', () => {
 
 	it('saving refuses cleanly', () => {
 		const { session } = makeSession();
-		const spy = vi.spyOn(session, 'apply').mockReturnValue({ ok: false, errors: [{ message: 'read-only' }] } as never);
-		const r = saveImportedLooks(session, [{ name: 'x', look: { recipe: { layers: [] }, report: { mapped: [], approximated: [], unsupported: [] } } }]);
+		const spy = vi
+			.spyOn(session, 'apply')
+			.mockReturnValue({ ok: false, errors: [{ message: 'read-only' }] } as never);
+		const r = saveImportedLooks(session, [
+			{
+				name: 'x',
+				look: { recipe: { layers: [] }, report: { mapped: [], approximated: [], unsupported: [] } },
+			},
+		]);
 		expect(r).toEqual({ ok: false, message: 'read-only' });
 		spy.mockRestore();
 	});
 });
-

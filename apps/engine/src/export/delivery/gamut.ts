@@ -32,13 +32,17 @@ export async function runGamutCheck(
 		purpose: 'still',
 	});
 	const rgba = await decodePngRgba(await readFile(png), width, height);
-	if (!rgba) throw new JobError('RENDER_FAILED', 'The frame did not render as an 8-bit PNG of its size', true);
+	if (!rgba)
+		throw new JobError('RENDER_FAILED', 'The frame did not render as an 8-bit PNG of its size', true);
 	ctx.signal.throwIfAborted();
 	ctx.progress(0.8, { stage: 'Measuring' });
 	const check = checkGamut(rgba, width, height, working, output);
 	const out = await d.outDir(ctx);
 	ctx.addPartial(out);
-	await writeFile(join(out, 'output.png'), await encodePngAsync(gamutMask(check, width, height), width, height));
+	await writeFile(
+		join(out, 'output.png'),
+		await encodePngAsync(gamutMask(check, width, height), width, height),
+	);
 	return {
 		frame: req.frame,
 		output,

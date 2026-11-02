@@ -42,7 +42,10 @@ const layer = (r: ReturnType<typeof mapped>, type: string) => r.recipe.layers.fi
 
 describe('layer styles (TL-113)', () => {
 	it('stroke becomes a rim in percent of the size', () => {
-		const r = mapped(style({ stroke: [{ enabled: true, size: px(8), color: red, position: 'outside', fillType: 'color' }] }), 200);
+		const r = mapped(
+			style({ stroke: [{ enabled: true, size: px(8), color: red, position: 'outside', fillType: 'color' }] }),
+			200,
+		);
 		expect(layer(r, 'rim')!.params!.width).toBe(4);
 		expect(r.report.mapped).toContain('Stroke');
 		expect(r.recipe.palette?.keyline?.slice(0, 3)).toEqual([1, 0, 0]);
@@ -67,10 +70,14 @@ describe('layer styles (TL-113)', () => {
 	});
 
 	it('centre and inside strokes say what they became', () => {
-		const r = mapped(style({ stroke: [{ enabled: true, size: px(10), position: 'center', fillType: 'color' }] }));
+		const r = mapped(
+			style({ stroke: [{ enabled: true, size: px(10), position: 'center', fillType: 'color' }] }),
+		);
 		expect(layer(r, 'rim')!.params!.width).toBe(5);
 		expect(r.report.approximated.join()).toContain('centre stroke');
-		const inside = mapped(style({ stroke: [{ enabled: true, size: px(10), position: 'inside', fillType: 'color' }] }));
+		const inside = mapped(
+			style({ stroke: [{ enabled: true, size: px(10), position: 'inside', fillType: 'color' }] }),
+		);
 		if (!titleLayerType('inline')) expect(inside.report.approximated.join()).toContain('inside stroke');
 	});
 
@@ -116,7 +123,9 @@ describe('layer styles (TL-113)', () => {
 				{ opacity: 0, location: 1 },
 			],
 		};
-		const linear = mapped(style({ gradientOverlay: [{ enabled: true, gradient, type: 'linear', angle: 90 }] }));
+		const linear = mapped(
+			style({ gradientOverlay: [{ enabled: true, gradient, type: 'linear', angle: 90 }] }),
+		);
 		const paint = layer(linear, 'face')!.params!.paint as {
 			gradient: { angle: number; stops: { at: number; alpha?: number }[] };
 		};
@@ -124,7 +133,9 @@ describe('layer styles (TL-113)', () => {
 		expect(paint.gradient.stops.map((s) => s.at)).toEqual([0, 0.25, 1]);
 		expect(paint.gradient.stops[2]!.alpha).toBe(0);
 		const reflected = mapped(style({ gradientOverlay: [{ enabled: true, gradient, type: 'reflected' }] }));
-		const rs = (layer(reflected, 'face')!.params!.paint as { gradient: { type: string; stops: { at: number }[] } }).gradient;
+		const rs = (
+			layer(reflected, 'face')!.params!.paint as { gradient: { type: string; stops: { at: number }[] } }
+		).gradient;
 		expect(rs.type).toBe('linear');
 		expect(rs.stops[0]!.at).toBe(0);
 		expect(rs.stops.at(-1)!.at).toBe(1);
@@ -133,7 +144,9 @@ describe('layer styles (TL-113)', () => {
 	});
 
 	it('a noise gradient is named, never dropped silently', () => {
-		const r = mapped(style({ gradientOverlay: [{ enabled: true, gradient: { name: 'Spectrum', type: 'noise' } }] }));
+		const r = mapped(
+			style({ gradientOverlay: [{ enabled: true, gradient: { name: 'Spectrum', type: 'noise' } }] }),
+		);
 		expect(r.report.unsupported.join()).toContain('noise gradient "Spectrum"');
 	});
 
@@ -158,7 +171,15 @@ describe('layer styles (TL-113)', () => {
 		const r = mapped(
 			style({
 				dropShadow: [
-					{ enabled: true, angle: 120, distance: px(10), size: px(20), choke: px(50), color: red, opacity: 0.5 },
+					{
+						enabled: true,
+						angle: 120,
+						distance: px(10),
+						size: px(20),
+						choke: px(50),
+						color: red,
+						opacity: 0.5,
+					},
 				],
 			}),
 		);
@@ -168,14 +189,28 @@ describe('layer styles (TL-113)', () => {
 		expect(s.blur).toBe(10);
 		expect(s.spread).toBe(10);
 		expect(s.opacity).toBe(50);
-		const g = mapped(style({ dropShadow: [{ enabled: true, useGlobalLight: true }] }, { globalAngle: 90, globalAltitude: 40 }));
+		const g = mapped(
+			style(
+				{ dropShadow: [{ enabled: true, useGlobalLight: true }] },
+				{ globalAngle: 90, globalAltitude: 40 },
+			),
+		);
 		expect(layer(g, 'shadow')!.params!.useLight).toBe(true);
 		expect(g.recipe.light).toEqual({ source: 'look', angle: 270, altitude: 40 });
 	});
 
 	it('outer glow: radius and intensity, spread and blend noted', () => {
 		const r = mapped(
-			style({ outerGlow: { enabled: true, size: px(30), opacity: 0.6, color: blue, choke: px(20), blendMode: 'multiply' } }),
+			style({
+				outerGlow: {
+					enabled: true,
+					size: px(30),
+					opacity: 0.6,
+					color: blue,
+					choke: px(20),
+					blendMode: 'multiply',
+				},
+			}),
 		);
 		expect(layer(r, 'glow')!.params!.radius).toBe(30);
 		expect(layer(r, 'glow')!.params!.intensity).toBe(60);
@@ -197,7 +232,14 @@ describe('layer styles (TL-113)', () => {
 			),
 		);
 		const all = [...r.report.mapped, ...r.report.approximated, ...r.report.unsupported].join('\n');
-		for (const word of ['Bevel', 'Satin', 'Inner Glow', 'Inner Shadow', 'Pattern Overlay: "Bricks"', 'Knockout'])
+		for (const word of [
+			'Bevel',
+			'Satin',
+			'Inner Glow',
+			'Inner Shadow',
+			'Pattern Overlay: "Bricks"',
+			'Knockout',
+		])
 			expect(all).toContain(word);
 	});
 
@@ -221,7 +263,12 @@ describe('layer styles (TL-113)', () => {
 	it('physical units and Scale Effects scale sizes', () => {
 		const r = mapped(
 			style(
-				{ scale: 2, stroke: [{ enabled: true, position: 'outside', fillType: 'color', size: { units: 'Points', value: 3 } }] },
+				{
+					scale: 2,
+					stroke: [
+						{ enabled: true, position: 'outside', fillType: 'color', size: { units: 'Points', value: 3 } },
+					],
+				},
 				{ ppi: 144 },
 			),
 		);
@@ -246,18 +293,32 @@ describe('layer styles (TL-113)', () => {
 
 	it('fuzz: any style that passes the schema maps to a storable recipe', () => {
 		const color = fc.oneof(
-			fc.record({ r: fc.double({ noNaN: true, noDefaultInfinity: true }), g: fc.double({ noNaN: true, noDefaultInfinity: true }), b: fc.double({ noNaN: true, noDefaultInfinity: true }) }),
+			fc.record({
+				r: fc.double({ noNaN: true, noDefaultInfinity: true }),
+				g: fc.double({ noNaN: true, noDefaultInfinity: true }),
+				b: fc.double({ noNaN: true, noDefaultInfinity: true }),
+			}),
 			fc.record({ k: fc.double({ noNaN: true, noDefaultInfinity: true }) }),
 		);
-		const units = fc.record({ units: fc.constantFrom('Pixels', 'Points', 'Inches', 'junk'), value: fc.double({ noNaN: true, noDefaultInfinity: true, min: -1e6, max: 1e6 }) });
-		const stop = fc.record({ color, location: fc.double({ noNaN: true, noDefaultInfinity: true }), midpoint: fc.double({ noNaN: true, noDefaultInfinity: true }) });
+		const units = fc.record({
+			units: fc.constantFrom('Pixels', 'Points', 'Inches', 'junk'),
+			value: fc.double({ noNaN: true, noDefaultInfinity: true, min: -1e6, max: 1e6 }),
+		});
+		const stop = fc.record({
+			color,
+			location: fc.double({ noNaN: true, noDefaultInfinity: true }),
+			midpoint: fc.double({ noNaN: true, noDefaultInfinity: true }),
+		});
 		const gradient = fc.record(
 			{
 				name: fc.string({ maxLength: 8 }),
 				type: fc.constantFrom('solid', 'noise', 'x'),
 				colorStops: fc.array(stop, { maxLength: 40 }),
 				opacityStops: fc.array(
-					fc.record({ opacity: fc.double({ noNaN: true, noDefaultInfinity: true }), location: fc.double({ noNaN: true, noDefaultInfinity: true }) }),
+					fc.record({
+						opacity: fc.double({ noNaN: true, noDefaultInfinity: true }),
+						location: fc.double({ noNaN: true, noDefaultInfinity: true }),
+					}),
 					{ maxLength: 8 },
 				),
 			},

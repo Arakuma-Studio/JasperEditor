@@ -11,7 +11,7 @@ import { createReadStream, createWriteStream } from 'node:fs';
 import { type FileHandle, open, rename, rm } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
-import type { ImageResources, Layer as AgLayer, Psd } from 'ag-psd';
+import type { Layer as AgLayer, ImageResources, Psd } from 'ag-psd';
 import { writePsdUint8Array } from 'ag-psd';
 import { fromBlendMode } from 'ag-psd/dist/helpers.js';
 import { fsyncDir } from '../../tools/fs.ts';
@@ -21,14 +21,17 @@ export const MAX_PSD_FILE_BYTES = 0x7fff_ffff;
 
 export class PsdTooLargeError extends Error {
 	constructor() {
-		super('The PSD would pass the format\'s 2 GiB limit');
+		super("The PSD would pass the format's 2 GiB limit");
 		this.name = 'PsdTooLargeError';
 	}
 }
 
-const u32 = (b: Uint8Array, o: number) => new DataView(b.buffer, b.byteOffset, b.byteLength).getUint32(o, false);
-const u16 = (b: Uint8Array, o: number) => new DataView(b.buffer, b.byteOffset, b.byteLength).getUint16(o, false);
-const i16 = (b: Uint8Array, o: number) => new DataView(b.buffer, b.byteOffset, b.byteLength).getInt16(o, false);
+const u32 = (b: Uint8Array, o: number) =>
+	new DataView(b.buffer, b.byteOffset, b.byteLength).getUint32(o, false);
+const u16 = (b: Uint8Array, o: number) =>
+	new DataView(b.buffer, b.byteOffset, b.byteLength).getUint16(o, false);
+const i16 = (b: Uint8Array, o: number) =>
+	new DataView(b.buffer, b.byteOffset, b.byteLength).getInt16(o, false);
 
 /** Offsets of the layer and mask section of an ag-psd document. */
 function sections(psd: Uint8Array) {
@@ -89,7 +92,11 @@ const asLayer = (l: PsdLayerInput, id: number): AgLayer => ({
 				left: l.pixels.left,
 				top: l.pixels.top,
 				imageData: {
-					data: new Uint8ClampedArray(l.pixels.data.buffer, l.pixels.data.byteOffset, l.pixels.data.byteLength),
+					data: new Uint8ClampedArray(
+						l.pixels.data.buffer,
+						l.pixels.data.byteOffset,
+						l.pixels.data.byteLength,
+					),
 					width: l.pixels.width,
 					height: l.pixels.height,
 				} as never,
@@ -122,7 +129,10 @@ export class PsdAssembler {
 		this.records.push(record.slice());
 		this.recordBytes += record.length;
 		this.channelBytes += channels.length;
-		if (this.recordBytes + this.channelBytes + (this.doc.width * this.doc.height * 4 + 4096) > MAX_PSD_FILE_BYTES)
+		if (
+			this.recordBytes + this.channelBytes + (this.doc.width * this.doc.height * 4 + 4096) >
+			MAX_PSD_FILE_BYTES
+		)
 			throw new PsdTooLargeError();
 		if (!this.channels.write(channels))
 			await new Promise<void>((resolve) => this.channels.once('drain', () => resolve()));
@@ -133,12 +143,16 @@ export class PsdAssembler {
 		const w = (layer.pixels?.left ?? 0) + (layer.pixels?.width ?? 1);
 		const h = (layer.pixels?.top ?? 0) + (layer.pixels?.height ?? 1);
 		// The document only bounds the layer here; `left`/`top` are kept by the record.
-		await this.append(oneLayer(asLayer(layer, this.nextId++), layer.pixels?.width ?? w, layer.pixels?.height ?? h));
+		await this.append(
+			oneLayer(asLayer(layer, this.nextId++), layer.pixels?.width ?? w, layer.pixels?.height ?? h),
+		);
 	}
 
 	/** `</Layer group>`: what precedes a group's members in the file. */
 	async openGroup(): Promise<void> {
-		await this.append(oneLayer({ id: this.nextId++, name: '</Layer group>', sectionDivider: { type: 3 } }, 1, 1));
+		await this.append(
+			oneLayer({ id: this.nextId++, name: '</Layer group>', sectionDivider: { type: 3 } }, 1, 1),
+		);
 	}
 
 	/** The group's own record, after its members. */

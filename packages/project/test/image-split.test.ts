@@ -3,6 +3,8 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
+	applyMatrix,
+	type Clip,
 	checkInvariants,
 	clusterIslands,
 	cutParts,
@@ -10,16 +12,17 @@ import {
 	labelIslands,
 	layerMatrix,
 	partsOf,
-	applyMatrix,
-	type Clip,
 	type SplitPicture,
 } from '../src/index.ts';
 import { Harness, videoAsset } from './helpers.ts';
 
-function picture(w: number, h: number, paint: (x: number, y: number) => [number, number, number, number]): SplitPicture {
+function picture(
+	w: number,
+	h: number,
+	paint: (x: number, y: number) => [number, number, number, number],
+): SplitPicture {
 	const data = new Uint8Array(w * h * 4);
-	for (let y = 0; y < h; y++)
-		for (let x = 0; x < w; x++) data.set(paint(x, y), (y * w + x) * 4);
+	for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) data.set(paint(x, y), (y * w + x) * 4);
 	return { width: w, height: h, depth: 8, data };
 }
 
@@ -68,7 +71,9 @@ describe('islands (TL-115)', () => {
 	});
 
 	it('refuses a picture smaller than its size says', () => {
-		expect(() => labelIslands({ width: 10, height: 10, depth: 8, data: new Uint8Array(4) })).toThrow(RangeError);
+		expect(() => labelIslands({ width: 10, height: 10, depth: 8, data: new Uint8Array(4) })).toThrow(
+			RangeError,
+		);
 	});
 
 	it('every visible pixel lands in exactly one part, colour untouched at low alpha', () => {
@@ -115,7 +120,12 @@ describe('islands (TL-115)', () => {
 				(w, h, seed) => {
 					const img = picture(w, h, (x, y) => {
 						const a = seed[(x * 7 + y * 13) % 64]!;
-						return [seed[(x + y) % 64]!, seed[(x * 3) % 64]!, seed[(y * 5) % 64]!, a > 128 ? a : a > 96 ? 3 : 0];
+						return [
+							seed[(x + y) % 64]!,
+							seed[(x * 3) % 64]!,
+							seed[(y * 5) % 64]!,
+							a > 128 ? a : a > 96 ? 3 : 0,
+						];
 					});
 					const map = labelIslands(img);
 					const parts = cutParts(
@@ -163,7 +173,11 @@ function stillProject(w = 400, h = 100) {
 	const media = (name: string, width: number, height: number, ref: string) => ({
 		type: 'media.register',
 		ref,
-		asset: { ...videoAsset({ kind: 'image', width, height }), originalName: name, fingerprint: `sha256:${name}` },
+		asset: {
+			...videoAsset({ kind: 'image', width, height }),
+			originalName: name,
+			fingerprint: `sha256:${name}`,
+		},
 	});
 	return { t, media, w, h };
 }
@@ -174,13 +188,15 @@ describe('clip.splitImage (TL-115)', () => {
 		const r = t.tx([media('logo.png', w, h, '$m')]);
 		if (!r.ok) throw new Error(JSON.stringify(r.errors));
 		const mediaId = r.refs.$m!;
-		const placed = t.ok([{ type: 'clip.place', source: { mediaId }, at: 10, tracks: { video: 'V1' }, ref: '$c' }]);
+		const placed = t.ok([
+			{ type: 'clip.place', source: { mediaId }, at: 10, tracks: { video: 'V1' }, ref: '$c' },
+		]);
 		const clipId = placed.refs.$c!;
 		if (transform) t.ok([{ type: 'clip.update', clipId, patch: transform }]);
 		const parts = t.ok([media('a.png', 64, 64, '$a'), media('b.png', 128, 64, '$b')]);
 		return { t, clipId, a: parts.refs.$a!, b: parts.refs.$b! };
 	}
-	const split = (t: Harness, clipId: string, a: string, b: string) => ({
+	const split = (_t: Harness, clipId: string, a: string, b: string) => ({
 		type: 'clip.splitImage',
 		clipId,
 		parts: [
@@ -202,7 +218,12 @@ describe('clip.splitImage (TL-115)', () => {
 		const [one, two] = clipIds.map((id) => t.seq.clips[id]! as Extract<Clip, { kind: 'still' }>);
 		expect(one!.mediaId).toBe(a);
 		expect(two!.mediaId).toBe(b);
-		expect([one!.start, one!.duration, two!.start, two!.duration]).toEqual([start, duration, start, duration]);
+		expect([one!.start, one!.duration, two!.start, two!.duration]).toEqual([
+			start,
+			duration,
+			start,
+			duration,
+		]);
 		expect(one!.trackId).not.toBe(two!.trackId);
 		expect(t.seq.groups[groupId]?.members).toEqual(clipIds);
 		ok(t);
@@ -252,7 +273,10 @@ describe('clip.splitImage (TL-115)', () => {
 		const anchor = c0.transform.anchor.value;
 		t.ok([{ type: 'param.setAnimated', target: scalePath(clipId), animated: true, at: { frames: 10 } }]);
 		const r = t.ok([split(t, clipId, a, b)]);
-		const p = t.seq.clips[(r.results[0] as { clipIds: string[] }).clipIds[1]!]! as Extract<Clip, { kind: 'still' }>;
+		const p = t.seq.clips[(r.results[0] as { clipIds: string[] }).clipIds[1]!]! as Extract<
+			Clip,
+			{ kind: 'still' }
+		>;
 		expect(p.transform.scale.keyframes).toHaveLength(1);
 		expect(p.transform.anchor.value).toEqual([anchor[0] - 272, anchor[1] - 16]);
 		expect(p.transform.position.value).toEqual(c0.transform.position.value);
@@ -283,7 +307,9 @@ describe('clip.splitImage (TL-115)', () => {
 
 	it('refuses: not a still, locked track, too many parts, a box outside, unknown media, masks', () => {
 		const { t, clipId, a, b } = setup();
-		const text = t.ok([{ type: 'clip.addText', at: 0, duration: 10, track: 'V4', content: { text: 'x' }, ref: '$t' }]).refs.$t!;
+		const text = t.ok([
+			{ type: 'clip.addText', at: 0, duration: 10, track: 'V4', content: { text: 'x' }, ref: '$t' },
+		]).refs.$t!;
 		expect(code(t.tx([split(t, text, a, b)]))).toBe('E_INVALID_PARAM');
 		const outside = {
 			type: 'clip.splitImage',

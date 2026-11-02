@@ -10,13 +10,7 @@
 // - `splitTitles`: a title with a look becomes a group, bottom → top, of each rim and the face (hidden) and `fx`, the
 //   whole clip (shown). A part keeps every other layer of the look at zero opacity, so rims keep growing from what is
 //   above them and register exactly.
-import {
-	MAX_PSD_LAYERS,
-	MAX_PSD_PIXELS,
-	MAX_PSD_SIDE,
-	type PsdPlan,
-	type PsdPlanLayer,
-} from '@jasper/api';
+import { MAX_PSD_LAYERS, MAX_PSD_PIXELS, MAX_PSD_SIDE, type PsdPlan, type PsdPlanLayer } from '@jasper/api';
 import {
 	type Appearance,
 	type AppearanceLayer,
@@ -74,6 +68,8 @@ export type PsdRender = {
 	clips: string[];
 	/** The sequence background under them. */
 	background: boolean;
+	/** With the tracks' transition mattes. */
+	mattes?: boolean;
 	/** Drawn in Normal at 100 %: the PSD layer carries blend mode and opacity. */
 	neutral?: string[];
 	/** Of the clip's look, only these layers paint; the others are at zero opacity. */
@@ -91,8 +87,11 @@ export type PsdLayout = {
 	plan: PsdPlan;
 };
 
-const activeAt = (c: Pick<RenderVisualClip, 'start' | 'duration'>, frame: number) =>
-	frame >= c.start && frame < c.start + c.duration;
+/** Drawn at `frame`: a transition's handles draw a clip past its own span, so a dissolve's other side counts. */
+const activeAt = (
+	c: Pick<RenderVisualClip, 'start' | 'duration' | 'headHandle' | 'tailHandle'>,
+	frame: number,
+) => frame >= c.start - (c.headHandle ?? 0) && frame < c.start + c.duration + (c.tailHandle ?? 0);
 
 const KIND_WORD: Record<string, string> = {
 	text: 'text rasterised',
@@ -132,7 +131,6 @@ function bakedOf(c: RenderVisualClip, registry: EffectRegistry, frame: number): 
 const hasFlattenCause = (c: RenderVisualClip): string | null => {
 	if (c.kind === 'adjustment') return 'adjustment layer';
 	if (PSD_BLEND[c.blendMode] === undefined) return `blend mode ${c.blendMode}`;
-	if (trackMatteTracksOf(c).length) return 'track matte';
 	return null;
 };
 
@@ -143,7 +141,8 @@ function lookParts(a: Appearance): { layer: AppearanceLayer; name: string }[] {
 	rims.forEach((l, i) => {
 		out.push({ layer: l, name: l.name || `rim ${rims.length - i}` });
 	});
-	for (const l of a.layers) if (l.enabled && l.type === 'face') out.push({ layer: l, name: l.name || 'face' });
+	for (const l of a.layers)
+		if (l.enabled && l.type === 'face') out.push({ layer: l, name: l.name || 'face' });
 	return out;
 }
 
@@ -213,18 +212,17 @@ export function planPsd(
 			opacity: 1,
 			hidden: false,
 			baked: [`${why}: flattened with what is below it`],
-			render: { clips: [...drawn], background: hasBackground },
+			render: { clips: [...drawn], background: hasBackground, mattes: true },
 		});
 		baked.push(`${name}: ${why}, flattened with what is below it`);
 	};
 
 	const clip3d: RenderVisualClip[] = [];
+	const matted2d: RenderVisualClip[] = [];
 	for (const track of doc.videoTracks) {
 		const clips = track.clips.filter((c) => activeAt(c, frame));
 		// A transition's two sides are one picture.
-		const live = (track.transitions ?? []).filter(
-			(t) => frame >= t.start && frame < t.start + t.duration,
-		);
+		const live = (track.transitions ?? []).filter((t) => frame >= t.start && frame < t.start + t.duration);
 		const inTransition = new Set<string>();
 		for (const t of live) {
 			const ids = [t.outgoingClipId, t.incomingClipId].filter((x): x is string => !!x);
@@ -251,6 +249,10 @@ export function planPsd(
 			drawn.push(c.clipId);
 			if (c.threeD) {
 				clip3d.push(c);
+				continue;
+			}
+			if (trackMatteTracksOf(c).length) {
+				matted2d.push(c);
 				continue;
 			}
 			const flat = hasFlattenCause(c);
@@ -300,10 +302,9 @@ export function planPsd(
 			nodes.push({ kind: 'pixels', name: c.name, blend, opacity, hidden: false, baked: here, render });
 		}
 	}
-	// One 3D scene: its layers intersect, so they are one picture, on top of the 2D stack the way a run is drawn.
-	if (clip3d.length) {
-		flatten(clip3d.map((c) => c.name).join(' / '), '3D scene');
-	}
+	// A 3D scene's layers intersect, and a track matte's source may sit above its clip: only the whole stack is right.
+	if (clip3d.length) flatten(clip3d.map((c) => c.name).join(' / '), '3D scene');
+	if (matted2d.length) flatten(matted2d.map((c) => c.name).join(' / '), 'track matte');
 
 	const color = doc.settings.color;
 	const space = color ? colorSpace(color.space) : undefined;
@@ -337,7 +338,10 @@ export function planPsd(
 			message: `A frame of ${width} × ${height} needs more memory than a PSD job may use (at most ${MAX_PSD_PIXELS / 1_000_000} megapixels)`,
 		});
 	if (!nodes.length)
-		blockers.push({ code: 'PSD_EMPTY', message: 'Nothing is visible at this frame on a transparent background' });
+		blockers.push({
+			code: 'PSD_EMPTY',
+			message: 'Nothing is visible at this frame on a transparent background',
+		});
 	const { records, renders } = countNodes(nodes);
 	if (records > MAX_PSD_LAYERS)
 		blockers.push({
@@ -345,7 +349,7 @@ export function planPsd(
 			message: `This frame needs ${records} PSD layers; the limit is ${MAX_PSD_LAYERS}`,
 		});
 
-	const composite: PsdRender = { clips: drawn, background: hasBackground };
+	const composite: PsdRender = { clips: drawn, background: hasBackground, mattes: true };
 	return {
 		nodes,
 		composite,
@@ -382,7 +386,7 @@ function soloAppearance(a: Appearance, layerId: string): Appearance {
 
 /** The render document of one PSD layer. */
 export function psdRenderDoc(doc: RenderSnapshot, render: PsdRender): RenderSnapshot {
-	const narrowed = onlyClips(doc, new Set(render.clips));
+	const narrowed = onlyClips(doc, new Set(render.clips), { mattes: render.mattes === true });
 	const neutral = new Set(render.neutral ?? []);
 	const videoTracks = narrowed.videoTracks.map((t) => ({
 		...t,

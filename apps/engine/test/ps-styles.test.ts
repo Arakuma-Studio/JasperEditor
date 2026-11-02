@@ -50,8 +50,12 @@ function asl(styles: { name: string; desc: Record<string, unknown> }[]): Uint8Ar
 	for (const s of styles) {
 		const body = new Uint8Array(aslBlock(s.name, s.desc)).subarray(4);
 		writeUint32(w, body.length);
-		for (const b of body) w.view.setUint8(w.offset++, b), ensure(w);
-		while (w.offset % 4) w.view.setUint8(w.offset++, 0), ensure(w);
+		const put = (b: number) => {
+			w.view.setUint8(w.offset++, b);
+			ensure(w);
+		};
+		for (const b of body) put(b);
+		while (w.offset % 4) put(0);
 	}
 	return new Uint8Array(getWriterBuffer(w) as ArrayBuffer);
 }
@@ -65,7 +69,8 @@ function ensure(w: ReturnType<typeof createWriter>): void {
 	w.view = new DataView(bigger);
 }
 
-const effectsDesc = (e: LayerEffectsInfo) => serializeEffects(e, false, true) as unknown as Record<string, unknown>;
+const effectsDesc = (e: LayerEffectsInfo) =>
+	serializeEffects(e, false, true) as unknown as Record<string, unknown>;
 
 function psdWith(effects: LayerEffectsInfo, extra: Record<string, unknown> = {}) {
 	return writePsdUint8Array(
@@ -106,7 +111,10 @@ describe('reading styles (TL-113)', () => {
 	});
 
 	it('a PSD without effects says so', () => {
-		const bytes = writePsdUint8Array({ width: 8, height: 8, children: [{ name: 'plain' }] }, { noBackground: true });
+		const bytes = writePsdUint8Array(
+			{ width: 8, height: 8, children: [{ name: 'plain' }] },
+			{ noBackground: true },
+		);
 		expect(() => readLayerStyles(bytes, 'a.psd')).toThrow(/No layer in this PSD has layer effects/);
 	});
 
@@ -162,7 +170,9 @@ describe('reading styles (TL-113)', () => {
 		};
 		const desc = effectsDesc(stroke);
 		// Photoshop writes the long enum value for this type; there is no 4-character code for it.
-		const type = (desc as { FrFX?: { Type?: unknown }; frameFXMulti?: { Type?: unknown }[] }).frameFXMulti?.[0] ?? (desc as { FrFX: { Type?: unknown } }).FrFX;
+		const type =
+			(desc as { FrFX?: { Type?: unknown }; frameFXMulti?: { Type?: unknown }[] }).frameFXMulti?.[0] ??
+			(desc as { FrFX: { Type?: unknown } }).FrFX;
 		type.Type = 'GrdT.shapeburst';
 		const bytes = asl([{ name: 'Burst', desc }]);
 		const r = readLayerStyles(bytes, 's.asl');
@@ -170,12 +180,16 @@ describe('reading styles (TL-113)', () => {
 		const parsed = PsStyleSchema.parse(r.styles[0]!.style);
 		expect(parsed.effects.stroke?.[0]?.gradient?.style).toBe('shapeburst');
 		const look = mapPsStyle(parsed, 100);
-		const paint = look.recipe.layers.find((l) => l.type === 'rim')!.params!.paint as { gradient: { type: string } };
+		const paint = look.recipe.layers.find((l) => l.type === 'rim')!.params!.paint as {
+			gradient: { type: string };
+		};
 		expect(paint.gradient.type).toBe('shape');
 
 		// The upstream decoder, as it ships: the regression this patch answers.
 		const patched = GrdT.decode;
-		const upstream = Object.getOwnPropertyDescriptor(GrdT, 'upstreamDecode')?.value as ((v: string) => string) | undefined;
+		const upstream = Object.getOwnPropertyDescriptor(GrdT, 'upstreamDecode')?.value as
+			| ((v: string) => string)
+			| undefined;
 		if (upstream) {
 			GrdT.decode = upstream as typeof GrdT.decode;
 			try {

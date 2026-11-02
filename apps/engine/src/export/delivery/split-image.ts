@@ -81,7 +81,12 @@ function labelPixels(map: IslandMap): Uint8Array {
 	return px;
 }
 
-async function encodePart(ctx: JobContext, core: CoreServices, part: SplitPicture, file: string): Promise<void> {
+async function encodePart(
+	ctx: JobContext,
+	core: CoreServices,
+	part: SplitPicture,
+	file: string,
+): Promise<void> {
 	const raw = join(await ctx.scratchDir(), 'part.raw');
 	await writeFile(raw, part.data);
 	const tmp = `${file}.partial.png`;
@@ -131,7 +136,11 @@ export class SplitImageService {
 		return r;
 	}
 
-	async submit(key: string, req: SplitImageRequest | null, origin: EngineJob['origin'] = { type: 'user' }): Promise<EngineJob> {
+	async submit(
+		key: string,
+		req: SplitImageRequest | null,
+		origin: EngineJob['origin'] = { type: 'user' },
+	): Promise<EngineJob> {
 		const r = this.recordOf(key);
 		if ((await this.core.registry.availability(key)) !== 'online')
 			throw new JobError('MEDIA_OFFLINE', `${r.originalName} is offline; relink it first`, false);
@@ -207,7 +216,12 @@ export class SplitImageService {
 		const parts = partsOf(map.islands, full);
 		const cut = cutParts(img, map, parts);
 		const hash = createHash('sha256').update(JSON.stringify(full)).digest('hex').slice(0, 16);
-		const dir = join(this.core.config.paths.mediaDir, 'processed', fingerprintHex(r.fingerprint), `split-${hash}`);
+		const dir = join(
+			this.core.config.paths.mediaDir,
+			'processed',
+			fingerprintHex(r.fingerprint),
+			`split-${hash}`,
+		);
 		await mkdir(dir, { recursive: true });
 		const stem = safeFileName(r.originalName.replace(/\.[^.]+$/, '')) || 'part';
 		const out: SplitImageResult['parts'] = [];
@@ -228,7 +242,8 @@ export class SplitImageService {
 			});
 		}
 		await fsyncDir(dir);
-		if (out.length < 2) throw new JobError('SPLIT_ONE_PART', 'The choice leaves one part: nothing to split', false);
+		if (out.length < 2)
+			throw new JobError('SPLIT_ONE_PART', 'The choice leaves one part: nothing to split', false);
 		return { parts: out };
 	}
 }

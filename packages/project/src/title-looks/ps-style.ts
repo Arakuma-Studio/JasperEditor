@@ -16,7 +16,7 @@ import { z } from 'zod';
 import { activeParamSpecs, titleLayerType } from '../registry/fx/title-look/registry.ts';
 import type { RGBA } from '../schema/common.ts';
 import {
-	GRADIENT_TYPES,
+	type GRADIENT_TYPES,
 	type Gradient,
 	MAX_APPEARANCE_LAYERS,
 	MAX_GRADIENT_STOPS,
@@ -69,7 +69,11 @@ const Common = {
 };
 
 const Shadow = z.looseObject(Common);
-const Glow = z.looseObject({ ...Common, gradient: PsGradient.optional(), source: z.string().max(32).optional() });
+const Glow = z.looseObject({
+	...Common,
+	gradient: PsGradient.optional(),
+	source: z.string().max(32).optional(),
+});
 const Overlay = z.looseObject({
 	...Common,
 	gradient: PsGradient.optional(),
@@ -142,7 +146,10 @@ export const PsStyleSchema = z.object({
 		solidFill: z.array(Overlay).max(64).optional(),
 		gradientOverlay: z.array(Overlay).max(64).optional(),
 		patternOverlay: z
-			.looseObject({ enabled: z.boolean().optional(), pattern: z.looseObject({ name: z.string().max(256).optional() }).optional() })
+			.looseObject({
+				enabled: z.boolean().optional(),
+				pattern: z.looseObject({ name: z.string().max(256).optional() }).optional(),
+			})
 			.optional(),
 		stroke: z.array(Stroke).max(64).optional(),
 	}),
@@ -162,7 +169,8 @@ export type PsStyleLook = { recipe: LookRecipe; report: PsStyleReport };
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const round = (v: number) => Math.round(v * 100) / 100;
 const mod360 = (v: number) => ((v % 360) + 360) % 360;
-const on = <T extends { enabled?: boolean | undefined }>(e: T | undefined): e is T => !!e && e.enabled !== false;
+const on = <T extends { enabled?: boolean | undefined }>(e: T | undefined): e is T =>
+	!!e && e.enabled !== false;
 
 /** `v` in px: styles store px, but points and physical units occur in hand-made files. */
 function toPx(u: z.infer<typeof Units> | undefined, ppi: number, fallback: number): number {
@@ -353,7 +361,11 @@ class Roles {
 const noteBlend = (r: PsStyleReport, label: string, mode: string | undefined) => {
 	if (mode && mode !== 'normal') r.approximated.push(`${label}: blend mode ${mode} drawn as normal`);
 };
-const noteContour = (r: PsStyleReport, label: string, c: { name?: string | undefined; curve: { x: number; y: number }[] } | undefined) => {
+const noteContour = (
+	r: PsStyleReport,
+	label: string,
+	c: { name?: string | undefined; curve: { x: number; y: number }[] } | undefined,
+) => {
 	if (!isLinearContour(c)) r.unsupported.push(`${label}: contour "${c?.name ?? ''}"`);
 };
 
@@ -369,13 +381,17 @@ function fit(layer: RecipeLayer, label: string, report: PsStyleReport): RecipeLa
 	}
 	const params = { ...layer.params };
 	const finish = typeof params.finish === 'string' ? params.finish : 'flat';
-	const finishSpec = def.params.find((p) => p.name === 'finish') as { options?: readonly string[] } | undefined;
+	const finishSpec = def.params.find((p) => p.name === 'finish') as
+		| { options?: readonly string[] }
+		| undefined;
 	if (finish !== 'flat' && !finishSpec?.options?.includes(finish)) {
 		report.unsupported.push(`${label}: this build has no ${finish} finish`);
 		delete params.finish;
 		for (const k of Object.keys(params)) if (k.startsWith(finish)) delete params[k];
 	}
-	const names = new Set(activeParamSpecs(def, typeof params.finish === 'string' ? params.finish : 'flat').map((p) => p.name));
+	const names = new Set(
+		activeParamSpecs(def, typeof params.finish === 'string' ? params.finish : 'flat').map((p) => p.name),
+	);
 	for (const k of Object.keys(params))
 		if (!names.has(k)) {
 			report.approximated.push(`${label}: ${k} is not a setting of ${layer.type}`);
@@ -386,7 +402,8 @@ function fit(layer: RecipeLayer, label: string, report: PsStyleReport): RecipeLa
 
 /** One Photoshop style as a look for a source of `sizePx` px: style px become percent of it. */
 export function mapPsStyle(src: PsStyle, sizePx: number): PsStyleLook {
-	if (!(sizePx > 0) || !Number.isFinite(sizePx)) throw new RangeError('The reference size must be above 0 px');
+	if (!(sizePx > 0) || !Number.isFinite(sizePx))
+		throw new RangeError('The reference size must be above 0 px');
 	const e = src.effects;
 	const report: PsStyleReport = { mapped: [], approximated: [], unsupported: [] };
 	const roles = new Roles();
@@ -437,7 +454,8 @@ export function mapPsStyle(src: PsStyle, sizePx: number): PsStyleLook {
 		noteContour(report, 'Outer Glow', og.contour);
 		noteBlend(report, 'Outer Glow', og.blendMode === 'screen' ? undefined : og.blendMode);
 		if (og.noise) report.unsupported.push(`Outer Glow: noise ${Math.round(og.noise * 100)} %`);
-		if (og.choke?.value) report.approximated.push(`Outer Glow: spread ${Math.round(og.choke.value)} % ignored`);
+		if (og.choke?.value)
+			report.approximated.push(`Outer Glow: spread ${Math.round(og.choke.value)} % ignored`);
 		const grad = og.gradient?.type === 'solid' ? og.gradient.colorStops?.[0]?.color : undefined;
 		if (og.gradient && !og.color && og.gradient.type !== 'solid')
 			report.unsupported.push(`Outer Glow: noise gradient "${og.gradient.name ?? ''}"`);
@@ -474,7 +492,9 @@ export function mapPsStyle(src: PsStyle, sizePx: number): PsStyleLook {
 	const strokePaint = (s: z.infer<typeof Stroke>, label: string): Paint => {
 		const solid = roles.paint(strokeRoles, rgba(s.color, [0, 0, 0]));
 		if (s.fillType === 'pattern') {
-			report.unsupported.push(`${label}: pattern "${s.pattern?.name ?? ''}" (bitmap patterns are not in the style file)`);
+			report.unsupported.push(
+				`${label}: pattern "${s.pattern?.name ?? ''}" (bitmap patterns are not in the style file)`,
+			);
 			return solid;
 		}
 		if (s.fillType === 'gradient' && s.gradient)
@@ -519,7 +539,9 @@ export function mapPsStyle(src: PsStyle, sizePx: number): PsStyleLook {
 	let opaqueFrom = overlays.length - 1;
 	while (opaqueFrom >= 0 && overlays[opaqueFrom]!.opacity < 0.995) opaqueFrom--;
 	const visible = opaqueFrom >= 0 ? overlays.slice(opaqueFrom) : overlays;
-	const base: Paint = src.baseColor ? { kind: 'color', color: rgba(src.baseColor, [1, 1, 1]) } : { kind: 'source' };
+	const base: Paint = src.baseColor
+		? { kind: 'color', color: rgba(src.baseColor, [1, 1, 1]) }
+		: { kind: 'source' };
 
 	// Finish of the top face: bevel, else satin; one finish per layer.
 	const finishParams: Record<string, unknown> = {};
@@ -527,7 +549,12 @@ export function mapPsStyle(src: PsStyle, sizePx: number): PsStyleLook {
 	let bevelUsed = false;
 	if (on(bv)) {
 		const style = bv.style ?? 'inner bevel';
-		if (style === 'stroke emboss' || style === 'pillow emboss' || style === 'emboss' || style === 'outer bevel')
+		if (
+			style === 'stroke emboss' ||
+			style === 'pillow emboss' ||
+			style === 'emboss' ||
+			style === 'outer bevel'
+		)
 			report.approximated.push(`Bevel: ${style} drawn as an inner bevel of the face`);
 		if (bv.technique === 'chisel soft') report.approximated.push('Bevel: Chisel Soft drawn as a chamfer');
 		noteContour(report, 'Bevel gloss', bv.contour);
@@ -565,9 +592,7 @@ export function mapPsStyle(src: PsStyle, sizePx: number): PsStyleLook {
 	const finishName = finishParams.finish as string | undefined;
 
 	const faces: { paint: Paint; opacity: number; label: string }[] =
-		opaqueFrom >= 0
-			? visible
-			: [{ paint: base, opacity: 1, label: 'Base fill' }, ...visible];
+		opaqueFrom >= 0 ? visible : [{ paint: base, opacity: 1, label: 'Base fill' }, ...visible];
 	faces.forEach((f, i) => {
 		const top = i === faces.length - 1;
 		const opacity = i === 0 ? f.opacity * (opaqueFrom >= 0 ? 1 : src.fillOpacity) : f.opacity;
@@ -588,7 +613,10 @@ export function mapPsStyle(src: PsStyle, sizePx: number): PsStyleLook {
 	if (finishName === 'satin') report.mapped.push('Satin');
 
 	const po = e.patternOverlay;
-	if (on(po)) report.unsupported.push(`Pattern Overlay: "${po.pattern?.name ?? ''}" (bitmap patterns are not in the style file)`);
+	if (on(po))
+		report.unsupported.push(
+			`Pattern Overlay: "${po.pattern?.name ?? ''}" (bitmap patterns are not in the style file)`,
+		);
 	if (src.knockout) report.unsupported.push('Knockout');
 
 	for (const s of [...(e.innerShadow ?? [])].reverse().filter(on)) {
@@ -636,7 +664,10 @@ export function mapPsStyle(src: PsStyle, sizePx: number): PsStyleLook {
 		if (s.position !== 'inside' || !titleLayerType('inline')) continue;
 		noteBlend(report, 'Inside Stroke', s.blendMode);
 		add(
-			{ type: 'inline', params: { width: pct(px(s.size, 3)), inset: 0, paint: strokePaint(s, 'Inside Stroke') } },
+			{
+				type: 'inline',
+				params: { width: pct(px(s.size, 3)), inset: 0, paint: strokePaint(s, 'Inside Stroke') },
+			},
 			'Inside Stroke',
 			'Inside Stroke',
 		);
@@ -651,7 +682,11 @@ export function mapPsStyle(src: PsStyle, sizePx: number): PsStyleLook {
 	return {
 		recipe: {
 			palette: roles.palette,
-			light: { source: 'look', angle: round(mod360(360 - light.angle)), altitude: round(clamp(light.altitude, 0, 90)) },
+			light: {
+				source: 'look',
+				angle: round(mod360(360 - light.angle)),
+				altitude: round(clamp(light.altitude, 0, 90)),
+			},
 			layers,
 		},
 		report: {

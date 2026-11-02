@@ -6,7 +6,15 @@ import type { EditorSession } from '@jasper/session';
 import { Checkbox, Dialog, type HostedDialogProps, registerDialog, Select, TextField } from '@jasper/ui';
 import { useEffect, useState } from 'react';
 import { errorText } from '../processing/engine-jobs.ts';
-import { cancelJob, downloadFile, envelopeOf, type JobProgress, localFolder, runToEnd, safeName } from './shared.ts';
+import {
+	cancelJob,
+	downloadFile,
+	envelopeOf,
+	type JobProgress,
+	localFolder,
+	runToEnd,
+	safeName,
+} from './shared.ts';
 
 export const ALPHA_DIALOG = 'delivery.alpha';
 
@@ -107,7 +115,10 @@ function AlphaDialog(props: Props & HostedDialogProps) {
 					value={what}
 					onValueChange={(v) => setWhat(v as 'sequence' | 'frame')}
 					options={[
-						{ value: 'sequence', label: `${isTitle ? 'Clip range' : 'Sequence range'} (${range.end - range.start})` },
+						{
+							value: 'sequence',
+							label: `${isTitle ? 'Clip range' : 'Sequence range'} (${range.end - range.start})`,
+						},
 						{ value: 'frame', label: 'Frame at the playhead' },
 					]}
 				/>
@@ -133,13 +144,21 @@ function AlphaDialog(props: Props & HostedDialogProps) {
 				{local ? (
 					<>
 						<span className="text-pr-muted">Folder</span>
-						<TextField aria-label="Export folder" value={folder} onChange={(e) => setFolder(e.target.value)} />
+						<TextField
+							aria-label="Export folder"
+							value={folder}
+							onChange={(e) => setFolder(e.target.value)}
+						/>
 					</>
 				) : null}
 			</div>
 			<p className="mt-2 text-pr-small text-pr-muted">
-				{frames === 1 ? 'One transparent PNG.' : `${frames} transparent PNGs, straight alpha, in a folder or a ZIP.`}
-				{trim ? ' Trimming measures every frame and renders past the sequence frame, so glows do not clip.' : ''}
+				{frames === 1
+					? 'One transparent PNG.'
+					: `${frames} transparent PNGs, straight alpha, in a folder or a ZIP.`}
+				{trim
+					? ' Trimming measures every frame and renders past the sequence frame, so glows do not clip.'
+					: ''}
 			</p>
 			{progress ? (
 				<p className="mt-2 text-pr-small text-pr-muted" aria-live="polite" data-testid="alpha-progress">

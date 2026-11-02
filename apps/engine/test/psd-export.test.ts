@@ -3,7 +3,7 @@
 import { mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { initializeCanvas, type Layer, readPsd } from 'ag-psd';
+import { MAX_PSD_LAYERS } from '@jasper/api';
 import {
 	buildRenderSnapshot,
 	type LookRecipe,
@@ -11,14 +11,13 @@ import {
 	type RenderSnapshot,
 	titleLookOf,
 } from '@jasper/project';
-import { MAX_PSD_LAYERS } from '@jasper/api';
+import { initializeCanvas, type Layer, readPsd, writePsdUint8Array } from 'ag-psd';
 import fc from 'fast-check';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { neutralClip, onLargerCanvas, onlyClips } from '../src/export/delivery/frames.ts';
 import { assertWritable, trimmedPixels, writePsdFile } from '../src/export/delivery/psd-job.ts';
-import { planPsd, type PsdRender, psdRenderDoc } from '../src/export/delivery/psd-plan.ts';
+import { type PsdRender, planPsd, psdRenderDoc } from '../src/export/delivery/psd-plan.ts';
 import { layerSlices, PsdAssembler, PsdTooLargeError } from '../src/export/delivery/psd-writer.ts';
-import { writePsdUint8Array } from 'ag-psd';
 import { DocBuilder } from './helpers.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'jasper-psd-'));
@@ -29,7 +28,12 @@ beforeAll(() => {
 			throw new Error('no canvas');
 		},
 		(width: number, height: number) =>
-			({ width, height, data: new Uint8ClampedArray(width * height * 4), colorSpace: 'srgb' }) as unknown as ImageData,
+			({
+				width,
+				height,
+				data: new Uint8ClampedArray(width * height * 4),
+				colorSpace: 'srgb',
+			}) as unknown as ImageData,
 	);
 });
 
@@ -62,13 +66,22 @@ function painter(boxes: Record<string, { x: number; y: number; w: number; h: num
 function twoClips(preset = 'hd-720p-30') {
 	const d = new DocBuilder(preset);
 	const r = d.tx([
-		{ type: 'clip.addText', at: 0, duration: 30, track: 'V2', content: { text: 'Title' }, name: 'Headline', ref: '$t' },
+		{
+			type: 'clip.addText',
+			at: 0,
+			duration: 30,
+			track: 'V2',
+			content: { text: 'Title' },
+			name: 'Headline',
+			ref: '$t',
+		},
 		{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V1', color: [0.1, 0.2, 0.3, 1], ref: '$s' },
 	]);
 	return { d, t: r.refs.$t!, s: r.refs.$s! };
 }
 
-const flat = (layers: Layer[] | undefined): Layer[] => (layers ?? []).flatMap((l) => [l, ...flat(l.children)]);
+const flat = (layers: Layer[] | undefined): Layer[] =>
+	(layers ?? []).flatMap((l) => [l, ...flat(l.children)]);
 
 describe('plan (TL-112)', () => {
 	it('one layer per visible clip, bottom first, and says what is rasterised', () => {
@@ -85,7 +98,10 @@ describe('plan (TL-112)', () => {
 	it('a clip not at the frame is not a layer', () => {
 		const { d } = twoClips();
 		const snap = snapshotOf(d, 40);
-		const clear = { ...snap, settings: { ...snap.settings, backgroundColor: [0, 0, 0, 0] as [number, number, number, number] } };
+		const clear = {
+			...snap,
+			settings: { ...snap.settings, backgroundColor: [0, 0, 0, 0] as [number, number, number, number] },
+		};
 		expect(planPsd(clear, 40).plan.blockers.map((b) => b.code)).toEqual(['PSD_EMPTY']);
 		expect(planPsd(snap, 40).plan.layers.map((l) => l.name)).toEqual(['Background']);
 	});
@@ -124,6 +140,61 @@ describe('plan (TL-112)', () => {
 		if (top.kind !== 'pixels') throw new Error('expected pixels');
 		expect(top.render.clips).toHaveLength(3);
 		expect(top.render.background).toBe(true);
+	});
+
+	it('a dissolve keeps both sides, the outgoing clip drawn on its handle', () => {
+		const { d, s } = twoClips();
+		const snap = snapshotOf(d, 40);
+		const outgoing = { ...snap.videoTracks[0]!.clips[0]!, tailHandle: 15 };
+		const doc = { ...snap, videoTracks: [{ ...snap.videoTracks[0]!, clips: [outgoing] }] };
+		const { plan } = planPsd(doc, 40);
+		expect(plan.layers.map((l) => l.name)).toContain(outgoing.name);
+		expect(outgoing.clipId).toBe(s);
+	});
+
+	it('a dip to black keeps its matte: one baked layer, and the composite has it too', () => {
+		const { d } = twoClips();
+		const snap = snapshotOf(d);
+		const track = snap.videoTracks[0]!;
+		const matte = {
+			id: 'm',
+			start: 0,
+			duration: 10,
+			color: [0, 0, 0, 1] as [number, number, number, number],
+		};
+		const doc = { ...snap, videoTracks: [{ ...track, mattes: [matte] }, ...snap.videoTracks.slice(1)] };
+		const { nodes, composite, plan } = planPsd(doc, 0);
+		const baked = nodes.find((n) => n.name.endsWith('(baked)'))!;
+		if (baked.kind !== 'pixels') throw new Error('expected pixels');
+		expect(psdRenderDoc(doc, baked.render).videoTracks[0]!.mattes).toEqual([matte]);
+		expect(psdRenderDoc(doc, composite).videoTracks[0]!.mattes).toEqual([matte]);
+		expect(plan.baked.join()).toContain('transition baked');
+		const other = nodes.find((n) => n.name === 'Headline')!;
+		if (other.kind !== 'pixels') throw new Error('expected pixels');
+		expect(psdRenderDoc(doc, other.render).videoTracks[0]!.mattes ?? []).toEqual([]);
+	});
+
+	it('a track matte flattens the whole stack, whatever track its source is on', () => {
+		const { d, s } = twoClips();
+		const snap = snapshotOf(d);
+		const fx = {
+			id: 'fx',
+			effectId: 'jasper.track-matte-key',
+			effectVersion: 1,
+			enabled: true,
+			params: { matteTrack: { value: 't', keyframes: [] } },
+		};
+		const clip = { ...snap.videoTracks[0]!.clips[0]!, effects: [fx as never] };
+		const doc = {
+			...snap,
+			videoTracks: [{ ...snap.videoTracks[0]!, clips: [clip] }, ...snap.videoTracks.slice(1)],
+		};
+		const { plan, nodes } = planPsd(doc, 0);
+		expect(plan.baked.join()).toContain('track matte');
+		const top = nodes.at(-1)!;
+		if (top.kind !== 'pixels') throw new Error('expected pixels');
+		expect(top.render.clips).toContain(s);
+		expect(top.render.clips.length).toBeGreaterThan(1);
 	});
 
 	it('names blockers before anything runs', () => {
@@ -176,8 +247,12 @@ describe('plan (TL-112)', () => {
 		// The inner rim alone: the outer rim stays above zero growth, unpainted, and the face is off.
 		const inner = group.children[1]!;
 		if (inner.kind !== 'pixels') throw new Error('expected pixels');
-		const clip = psdRenderDoc(snap, inner.render).videoTracks.flatMap((v) => v.clips).find((c) => c.clipId === t)!;
-		const a = clip.effects[0]!.appearance as { layers: { type: string; enabled: boolean; params: Record<string, { value: unknown }> }[] };
+		const clip = psdRenderDoc(snap, inner.render)
+			.videoTracks.flatMap((v) => v.clips)
+			.find((c) => c.clipId === t)!;
+		const a = clip.effects[0]!.appearance as {
+			layers: { type: string; enabled: boolean; params: Record<string, { value: unknown }> }[];
+		};
 		expect(a.layers).toHaveLength(MAX_APPEARANCE_LAYERS === 24 ? 3 : 3);
 		const [outer, kept, face] = a.layers;
 		expect(outer!.enabled).toBe(true);
@@ -238,7 +313,10 @@ describe('writer (TL-112)', () => {
 			{
 				type: 'look.apply',
 				clipIds: [t],
-				look: { name: 'One rim', recipe: { layers: [{ type: 'rim', params: { width: 5 } }, { type: 'face' }] } },
+				look: {
+					name: 'One rim',
+					recipe: { layers: [{ type: 'rim', params: { width: 5 } }, { type: 'face' }] },
+				},
 			},
 		]);
 		const layout = planPsd(snapshotOf(d), 0, { splitTitles: true });
@@ -377,7 +455,13 @@ describe('writer (TL-112)', () => {
 							blend: 'normal',
 							opacity: 1,
 							hidden: false,
-							pixels: { data: new Uint8Array(b.w * b.h * 4).fill(i + 1), width: b.w, height: b.h, left: b.x, top: b.y },
+							pixels: {
+								data: new Uint8Array(b.w * b.h * 4).fill(i + 1),
+								width: b.w,
+								height: b.h,
+								left: b.x,
+								top: b.y,
+							},
 						});
 					const dest = join(dir, 'p.psd');
 					await a.finish(new Uint8Array(64 * 64 * 4), dest);

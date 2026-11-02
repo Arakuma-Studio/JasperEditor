@@ -5,17 +5,25 @@ import { shiftedClip } from '../../layer-bake/layer.ts';
 
 type Tracks = RenderSnapshot['videoTracks'];
 
-/** The clips of `ids` only; a transition stays when its sides do. Tracks left empty go. */
-export function onlyClips(doc: RenderSnapshot, ids: ReadonlySet<string>): RenderSnapshot {
+/**
+ * The clips of `ids` only; a transition stays when its sides do. Tracks left empty go. `mattes`: keep the tracks'
+ * transition mattes (the black of a dip to black), which belong to the sequence's picture, not to one clip.
+ */
+export function onlyClips(
+	doc: RenderSnapshot,
+	ids: ReadonlySet<string>,
+	opts: { mattes?: boolean } = {},
+): RenderSnapshot {
 	const videoTracks: Tracks = [];
 	for (const t of doc.videoTracks) {
 		const clips = t.clips.filter((c) => ids.has(c.clipId));
 		if (!clips.length) continue;
 		const transitions = (t.transitions ?? []).filter(
 			(tr) =>
-				(!tr.outgoingClipId || ids.has(tr.outgoingClipId)) && (!tr.incomingClipId || ids.has(tr.incomingClipId)),
+				(!tr.outgoingClipId || ids.has(tr.outgoingClipId)) &&
+				(!tr.incomingClipId || ids.has(tr.incomingClipId)),
 		);
-		videoTracks.push({ ...t, clips, transitions, ...(t.mattes ? { mattes: [] } : {}) });
+		videoTracks.push({ ...t, clips, transitions, ...(t.mattes && !opts.mattes ? { mattes: [] } : {}) });
 	}
 	return { ...doc, videoTracks };
 }

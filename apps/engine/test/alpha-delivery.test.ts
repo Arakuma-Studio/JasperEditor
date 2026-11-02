@@ -10,9 +10,9 @@ import { describe, expect, it } from 'vitest';
 import { canvasPads, frameFilterArgs } from '../src/export/delivery/alpha.ts';
 import { alphaBounds, grownBox, touchesEdge, unionBounds } from '../src/export/delivery/trim.ts';
 import { StoredZipWriter, ZipTooLargeError } from '../src/export/delivery/zip-writer.ts';
+import { stillEncodeArgs } from '../src/export/still-formats.ts';
 import { listZip, readZipEntry } from '../src/imports/zip.ts';
 import { assertLgplGraphArgs } from '../src/tools/ffmpeg.ts';
-import { stillEncodeArgs } from '../src/export/still-formats.ts';
 import { DocBuilder, TEST_FFMPEG, TEST_FFPROBE } from './helpers.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'jasper-alpha-'));
@@ -57,9 +57,12 @@ describe('trim (TL-114)', () => {
 	});
 
 	it('the union of frames is what a moving title needs', () => {
-		expect(
-			unionBounds({ x0: 10, y0: 10, x1: 20, y1: 20 }, { x0: 5, y0: 15, x1: 12, y1: 30 }),
-		).toEqual({ x0: 5, y0: 10, x1: 20, y1: 30 });
+		expect(unionBounds({ x0: 10, y0: 10, x1: 20, y1: 20 }, { x0: 5, y0: 15, x1: 12, y1: 30 })).toEqual({
+			x0: 5,
+			y0: 10,
+			x1: 20,
+			y1: 30,
+		});
 	});
 
 	it('a margin stays inside the canvas; touching an edge is seen', () => {
@@ -142,13 +145,46 @@ describe('LGPL (AGENTS §2)', () => {
 		spawnSync('mkdir', ['-p', src]);
 		const dst = join(dir, 'crop-out');
 		spawnSync('mkdir', ['-p', dst]);
-		const made = spawnSync(TEST_FFMPEG, ['-y', '-v', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${w}x${w}`, '-i', raw, '-frames:v', '1', '-c:v', 'png', '-pix_fmt', 'rgba', join(src, '000000.png')]);
+		const made = spawnSync(TEST_FFMPEG, [
+			'-y',
+			'-v',
+			'error',
+			'-f',
+			'rawvideo',
+			'-pix_fmt',
+			'rgba',
+			'-s',
+			`${w}x${w}`,
+			'-i',
+			raw,
+			'-frames:v',
+			'1',
+			'-c:v',
+			'png',
+			'-pix_fmt',
+			'rgba',
+			join(src, '000000.png'),
+		]);
 		expect(made.status, String(made.stderr)).toBe(0);
 		const run = spawnSync(TEST_FFMPEG, ['-y', '-v', 'error', ...frameFilterArgs(src, dst, ['crop=4:4:2:2'])]);
 		expect(run.status, String(run.stderr)).toBe(0);
-		const back = spawnSync(TEST_FFMPEG, ['-v', 'error', '-i', join(dst, '000000.png'), '-f', 'rawvideo', '-pix_fmt', 'rgba', 'pipe:1']);
+		const back = spawnSync(TEST_FFMPEG, [
+			'-v',
+			'error',
+			'-i',
+			join(dst, '000000.png'),
+			'-f',
+			'rawvideo',
+			'-pix_fmt',
+			'rgba',
+			'pipe:1',
+		]);
 		expect([...back.stdout.subarray(0, 4)]).toEqual([91, 173, 37, 1]);
-		const probe = spawnSync(TEST_FFPROBE, ['-v', 'error', '-show_entries', 'stream=pix_fmt,width', '-of', 'csv=p=0', join(dst, '000000.png')], { encoding: 'utf8' });
+		const probe = spawnSync(
+			TEST_FFPROBE,
+			['-v', 'error', '-show_entries', 'stream=pix_fmt,width', '-of', 'csv=p=0', join(dst, '000000.png')],
+			{ encoding: 'utf8' },
+		);
 		expect(probe.stdout.trim()).toBe('4,rgba');
 	});
 

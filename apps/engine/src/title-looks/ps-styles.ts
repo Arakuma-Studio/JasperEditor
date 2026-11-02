@@ -5,11 +5,17 @@
 // ag-psd rejects the Stroke effect's Shape Burst gradient ('GrdT.shapeburst' is missing from Photoshop's published
 // terminology, so its enum lacks it) and then the whole file fails. The decoder is extended here: `apps/engine/test/
 // ps-styles.test.ts` has a stroke of that type, and fails without this.
+
+import {
+	type LayerStyleFile,
+	type LayerStyleSource,
+	MAX_STYLE_FILE_BYTES,
+	MAX_STYLES_PER_FILE,
+} from '@jasper/api';
+import { type PsStyle, PsStyleSchema } from '@jasper/project';
 import { type Layer, type LayerEffectsInfo, readPsd } from 'ag-psd';
 import { GrdT, parseEffects, readVersionAndDescriptor } from 'ag-psd/dist/descriptor.js';
 import { createReader, readSignature, readUint16, readUint32, skipBytes } from 'ag-psd/dist/psdReader.js';
-import { type LayerStyleFile, type LayerStyleSource, MAX_STYLE_FILE_BYTES, MAX_STYLES_PER_FILE } from '@jasper/api';
-import { type PsStyle, PsStyleSchema } from '@jasper/project';
 
 export class StyleFileError extends Error {
 	constructor(
@@ -45,7 +51,12 @@ function checked(name: string, style: unknown, skipped: string[]): PsStyle | nul
 	return null;
 }
 
-function layerSource(l: Layer, effects: LayerEffectsInfo, doc: Doc, skipped: string[]): LayerStyleSource | null {
+function layerSource(
+	l: Layer,
+	effects: LayerEffectsInfo,
+	doc: Doc,
+	skipped: string[],
+): LayerStyleSource | null {
 	const name = l.name?.trim() || 'Layer style';
 	const height = Math.max(0, (l.bottom ?? 0) - (l.top ?? 0));
 	const text = l.text;
@@ -124,7 +135,8 @@ export function psdStyles(bytes: Uint8Array, fileName: string): LayerStyleFile {
 		}
 	};
 	walk(psd.children, 0);
-	if (!styles.length && !skipped.length) throw new StyleFileError('STYLE_FILE_EMPTY', 'No layer in this PSD has layer effects');
+	if (!styles.length && !skipped.length)
+		throw new StyleFileError('STYLE_FILE_EMPTY', 'No layer in this PSD has layer effects');
 	return { fileName, styles, skipped: [...new Set(skipped)] };
 }
 
@@ -191,14 +203,18 @@ export function aslStyles(bytes: Uint8Array, fileName: string): LayerStyleFile {
 		// Style blocks are padded to 4 bytes.
 		r.offset = start + Math.ceil(length / 4) * 4;
 	}
-	if (!styles.length && !skipped.length) throw new StyleFileError('STYLE_FILE_EMPTY', 'The style library is empty');
+	if (!styles.length && !skipped.length)
+		throw new StyleFileError('STYLE_FILE_EMPTY', 'The style library is empty');
 	return { fileName, styles, skipped };
 }
 
 /** The styles of a `.psd` or `.asl`, whichever it is by its signature. Never throws anything but `StyleFileError`. */
 export function readLayerStyles(bytes: Uint8Array, fileName: string): LayerStyleFile {
 	if (bytes.byteLength > MAX_STYLE_FILE_BYTES)
-		throw new StyleFileError('STYLE_FILE_TOO_LARGE', `Style files are read up to ${MAX_STYLE_FILE_BYTES / 1024 ** 2} MiB`);
+		throw new StyleFileError(
+			'STYLE_FILE_TOO_LARGE',
+			`Style files are read up to ${MAX_STYLE_FILE_BYTES / 1024 ** 2} MiB`,
+		);
 	const sig = String.fromCharCode(...bytes.subarray(0, 6));
 	try {
 		if (sig.startsWith('8BPS')) return psdStyles(bytes, fileName);
@@ -207,5 +223,8 @@ export function readLayerStyles(bytes: Uint8Array, fileName: string): LayerStyle
 		if (e instanceof StyleFileError) throw e;
 		throw new StyleFileError('STYLE_FILE_INVALID', `This file cannot be read: ${(e as Error).message}`);
 	}
-	throw new StyleFileError('STYLE_FILE_INVALID', 'Not a Photoshop file: choose a .psd or an .asl style library');
+	throw new StyleFileError(
+		'STYLE_FILE_INVALID',
+		'Not a Photoshop file: choose a .psd or an .asl style library',
+	);
 }

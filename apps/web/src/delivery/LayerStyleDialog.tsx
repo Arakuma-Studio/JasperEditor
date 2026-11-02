@@ -3,7 +3,13 @@
 // made for is confirmed here, since a style holds pixels and a look holds percentages (TL-012).
 import type { LayerStyleFile } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
-import { mapPsStyle, MAX_TITLE_LOOK_NAME, type PsStyle, type PsStyleLook, PsStyleSchema } from '@jasper/project';
+import {
+	MAX_TITLE_LOOK_NAME,
+	mapPsStyle,
+	type PsStyle,
+	type PsStyleLook,
+	PsStyleSchema,
+} from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { Checkbox, Dialog, type HostedDialogProps, registerDialog, TextField } from '@jasper/ui';
 import { useMemo, useState } from 'react';
@@ -46,7 +52,9 @@ function Lines(props: { title: string; items: string[]; tone: string; testId: st
 }
 
 function LayerStyleDialog({ session, file, close }: Props & HostedDialogProps) {
-	const [choices, setChoices] = useState<Choice[]>(() => file.styles.map((s) => ({ on: true, size: s.refPx })));
+	const [choices, setChoices] = useState<Choice[]>(() =>
+		file.styles.map((s) => ({ on: true, size: s.refPx })),
+	);
 	const [error, setError] = useState<string | null>(null);
 	const converted = useMemo(
 		() =>
@@ -87,14 +95,18 @@ function LayerStyleDialog({ session, file, close }: Props & HostedDialogProps) {
 			data-testid="layer-style-dialog"
 		>
 			<p className="mb-2 text-pr-small text-pr-muted">
-				Styles hold pixels; looks hold percentages of the text size. Check the size each style was made for: the font
-				size when the file has it, otherwise confirm it.
+				Styles hold pixels; looks hold percentages of the text size. Check the size each style was made for:
+				the font size when the file has it, otherwise confirm it.
 			</p>
 			<div className="flex max-h-[50vh] flex-col gap-2 overflow-auto">
 				{file.styles.map((s, i) => {
 					const c = converted[i]!;
 					return (
-						<div key={`${i}-${s.name}`} className="border-pr-border border-b pb-2" data-testid="layer-style-row">
+						<div
+							key={file.styles.indexOf(s)}
+							className="border-pr-border border-b pb-2"
+							data-testid="layer-style-row"
+						>
 							<div className="flex items-center gap-2">
 								<Checkbox
 									checked={choices[i]!.on}

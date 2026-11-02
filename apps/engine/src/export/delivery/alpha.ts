@@ -26,7 +26,12 @@ export type DeliveryFrames = {
 };
 
 export type DeliveryDeps = {
-	frames(ctx: JobContext, envelope: unknown, sequenceId: string, range: { start: number; end: number }): Promise<DeliveryFrames>;
+	frames(
+		ctx: JobContext,
+		envelope: unknown,
+		sequenceId: string,
+		range: { start: number; end: number },
+	): Promise<DeliveryFrames>;
 	remotion: RemotionService;
 	ff: Ffmpeg;
 	outDir(ctx: JobContext): Promise<string>;
@@ -71,27 +76,38 @@ async function renderFrames(
 				stage: `Rendering ${p.renderedFrames}/${p.totalFrames} frames`,
 			}),
 	});
-	const files = (await readdir(dir)).filter((f) => /^\d+\.png$/.test(f)).sort((a, b) => Number.parseInt(a, 10) - Number.parseInt(b, 10));
+	const files = (await readdir(dir))
+		.filter((f) => /^\d+\.png$/.test(f))
+		.sort((a, b) => Number.parseInt(a, 10) - Number.parseInt(b, 10));
 	if (files.length !== total)
 		throw new JobError('FRAME_COUNT_MISMATCH', `Rendered ${files.length} frames, expected ${total}`, true, {
 			expected: total,
 			actual: files.length,
 		});
 	for (const [i, f] of files.entries()) await rename(join(dir, f), join(dir, `${pad6(i)}.tmp`));
-	for (let i = 0; i < files.length; i++) await rename(join(dir, `${pad6(i)}.tmp`), join(dir, `${pad6(i)}.png`));
+	for (let i = 0; i < files.length; i++)
+		await rename(join(dir, `${pad6(i)}.tmp`), join(dir, `${pad6(i)}.png`));
 }
 
 const pad6 = (i: number) => String(i).padStart(6, '0');
 
 /** The union over every frame of what it paints. */
-async function measure(ctx: JobContext, dir: string, total: number, w: number, h: number): Promise<Bounds | null> {
+async function measure(
+	ctx: JobContext,
+	dir: string,
+	total: number,
+	w: number,
+	h: number,
+): Promise<Bounds | null> {
 	let all: Bounds | null = null;
 	for (let i = 0; i < total; i++) {
 		ctx.signal.throwIfAborted();
 		const rgba = await decodePngRgba(await readFile(join(dir, `${pad6(i)}.png`)), w, h);
-		if (!rgba) throw new JobError('RENDER_FAILED', 'A rendered frame is not an 8-bit PNG of the canvas size', true);
+		if (!rgba)
+			throw new JobError('RENDER_FAILED', 'A rendered frame is not an 8-bit PNG of the canvas size', true);
 		all = unionBounds(all, alphaBounds(rgba, w, h));
-		if ((i & 15) === 0) ctx.progress(0.8 + (0.1 * i) / total, { stage: `Measuring ${i + 1}/${total} frames` });
+		if ((i & 15) === 0)
+			ctx.progress(0.8 + (0.1 * i) / total, { stage: `Measuring ${i + 1}/${total} frames` });
 	}
 	return all;
 }
@@ -121,7 +137,13 @@ export function frameFilterArgs(from: string, to: string, filters: readonly stri
 	];
 }
 
-async function filterFrames(ctx: JobContext, d: DeliveryDeps, from: string, to: string, filters: string[]): Promise<void> {
+async function filterFrames(
+	ctx: JobContext,
+	d: DeliveryDeps,
+	from: string,
+	to: string,
+	filters: string[],
+): Promise<void> {
 	await mkdir(to, { recursive: true });
 	await d.ff.run(frameFilterArgs(from, to, filters), { signal: ctx.signal, onSpawn: ctx.trackChild });
 }
@@ -135,8 +157,16 @@ export async function runAlphaDelivery(
 	const { doc: full, displayLut } = await d.frames(ctx, req.envelope, req.sequenceId, req.range);
 	const warnings: AlphaDeliveryResult['warnings'] = [];
 	const doc = req.clipIds ? onlyClips(full, new Set(req.clipIds)) : full;
-	if (!doc.videoTracks.some((t) => t.clips.some((c) => c.start < req.range.end && c.start + c.duration > req.range.start)))
-		throw new JobError('NOTHING_TO_EXPORT', 'No clip of the selection is on the timeline in this range', false);
+	if (
+		!doc.videoTracks.some((t) =>
+			t.clips.some((c) => c.start < req.range.end && c.start + c.duration > req.range.start),
+		)
+	)
+		throw new JobError(
+			'NOTHING_TO_EXPORT',
+			'No clip of the selection is on the timeline in this range',
+			false,
+		);
 	const scratch = await ctx.scratchDir();
 	const total = req.range.end - req.range.start;
 	const seqW = doc.settings.width;
@@ -159,7 +189,8 @@ export async function runAlphaDelivery(
 			dir = join(scratch, `frames-${p}`);
 			await renderFrames(ctx, d, onLargerCanvas(doc, p), dir, total);
 			bounds = await measure(ctx, dir, total, seqW + 2 * p, seqH + 2 * p);
-			if (!bounds) throw new JobError('NOTHING_TO_EXPORT', 'The selection paints nothing in this range', false);
+			if (!bounds)
+				throw new JobError('NOTHING_TO_EXPORT', 'The selection paints nothing in this range', false);
 			if (!touchesEdge(bounds, seqW + 2 * p, seqH + 2 * p)) break;
 			if (i === pads.length - 1 || !p)
 				warnings.push({
@@ -205,7 +236,8 @@ export async function runAlphaDelivery(
 			await zip.finish();
 		} catch (e) {
 			await zip.abort();
-			if (e instanceof ZipTooLargeError && !req.destination) throw new JobError('ZIP_TOO_LARGE', e.message, false);
+			if (e instanceof ZipTooLargeError && !req.destination)
+				throw new JobError('ZIP_TOO_LARGE', e.message, false);
 			if (!(e instanceof ZipTooLargeError)) throw e;
 			warnings.push({ code: 'ZIP_TOO_LARGE', message: e.message });
 		}

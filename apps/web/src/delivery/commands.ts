@@ -1,12 +1,12 @@
 // Spec 19 §12: the commands of interchange and delivery. Dialogs register on first use, like Export Frame's.
 import { type Clip, TITLE_LOOK_CLIP_KINDS } from '@jasper/project';
-import type { UiCommand, CommandCtx } from '../commands/types.ts';
 import { selectedSequenceClips, sequenceContext } from '../commands/sequence-context.ts';
+import type { CommandCtx, UiCommand } from '../commands/types.ts';
 import { programOverlays } from '../extensions/index.ts';
 import { mediaKeyOf } from '../import/assets.ts';
 import { errorText } from '../processing/engine-jobs.ts';
 import { ALPHA_DIALOG, registerAlphaDialog } from './AlphaDialog.tsx';
-import { GamutOverlay, gamutOverlay, type GamutOutput } from './GamutOverlay.tsx';
+import { type GamutOutput, GamutOverlay, gamutOverlay } from './GamutOverlay.tsx';
 import {
 	LAYER_STYLE_DIALOG,
 	pickStyleFile,
@@ -27,7 +27,8 @@ const hasSequence = (ctx: CommandCtx) => !!sequenceContext(ctx);
 
 function sequenceName(ctx: CommandCtx): string {
 	const e = sequenceContext(ctx);
-	const item = e && Object.values(e.doc.items).find((i) => i.kind === 'sequence' && i.sequenceId === e.seq.id);
+	const item =
+		e && Object.values(e.doc.items).find((i) => i.kind === 'sequence' && i.sequenceId === e.seq.id);
 	return item?.name ?? 'Sequence';
 }
 
@@ -51,7 +52,8 @@ function selectedStill(ctx: CommandCtx): Extract<Clip, { kind: 'still' }> | null
 const sendToPhotoshop: UiCommand = {
 	id: 'delivery.sendToPhotoshop',
 	label: 'Send to Photoshop…',
-	description: 'The frame at the playhead as a layered, registered, rasterised 8-bit PSD. Lists what is baked first.',
+	description:
+		'The frame at the playhead as a layered, registered, rasterised 8-bit PSD. Lists what is baked first.',
 	icon: 'app.export',
 	scope: 'global',
 	agentExposed: true,
@@ -101,7 +103,8 @@ const pngSequence: UiCommand = {
 const exportTitle: UiCommand = {
 	id: 'delivery.exportTitle',
 	label: 'Export Title…',
-	description: 'The selected clips alone, on transparency, trimmed to what they paint with a margin, so glows do not clip.',
+	description:
+		'The selected clips alone, on transparency, trimmed to what they paint with a margin, so glows do not clip.',
 	icon: 'app.export',
 	scope: 'global',
 	agentExposed: true,
@@ -131,7 +134,8 @@ const exportTitle: UiCommand = {
 const importLayerStyles: UiCommand = {
 	id: 'delivery.importLayerStyles',
 	label: 'Import Layer Styles…',
-	description: 'The layer styles of a Photoshop .asl or .psd as looks, with a report of what was mapped and approximated.',
+	description:
+		'The layer styles of a Photoshop .asl or .psd as looks, with a report of what was mapped and approximated.',
 	scope: 'global',
 	agentExposed: true,
 	capability: 'engine',

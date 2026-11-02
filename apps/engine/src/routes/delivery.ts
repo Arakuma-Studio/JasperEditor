@@ -1,5 +1,7 @@
 // Spec 19 §12 routes (TL-112…TL-116). Behind the engine's authentication like every `/api` route; bodies are parsed with
 // zod. Jobs run through the queue, so they are cancellable with `POST /api/jobs/:id/cancel`.
+
+import type { Readable } from 'node:stream';
 import {
 	AlphaDeliveryRequestSchema,
 	type EngineJob,
@@ -10,15 +12,14 @@ import {
 	SplitImageRequestSchema,
 } from '@jasper/api';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import type { Readable } from 'node:stream';
 import { agentNameOf } from '../agent/user-approval.ts';
 import { SplitImageService } from '../export/delivery/split-image.ts';
 import { replyWithJob } from '../jobs/reply.ts';
 import { JobError } from '../jobs/types.ts';
 import { MEDIA_KEY_RE } from '../media/fingerprint.ts';
+import { readLayerStyles, StyleFileError } from '../title-looks/ps-styles.ts';
 import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
-import { readLayerStyles, StyleFileError } from '../title-looks/ps-styles.ts';
 
 type WaitQuery = { Querystring: { wait?: string } };
 type KeyParams = { Params: { key: string }; Querystring: { wait?: string } };
@@ -51,7 +52,13 @@ export default async function deliveryRoutes(app: FastifyInstance): Promise<void
 		'/api/alpha-delivery',
 		guarded<WaitQuery>(async (req, reply) => {
 			const body = parseOr400(AlphaDeliveryRequestSchema, req.body);
-			return replyWithJob(queue, await exports.alphaDelivery(body, originOf(req)), req.query.wait, reply, 'EXPORT_FAILED');
+			return replyWithJob(
+				queue,
+				await exports.alphaDelivery(body, originOf(req)),
+				req.query.wait,
+				reply,
+				'EXPORT_FAILED',
+			);
 		}),
 	);
 
@@ -71,7 +78,13 @@ export default async function deliveryRoutes(app: FastifyInstance): Promise<void
 		'/api/gamut-check',
 		guarded<WaitQuery>(async (req, reply) => {
 			const body = parseOr400(GamutCheckRequestSchema, req.body);
-			return replyWithJob(queue, await exports.gamutCheck(body, originOf(req)), req.query.wait, reply, 'GAMUT_CHECK_FAILED');
+			return replyWithJob(
+				queue,
+				await exports.gamutCheck(body, originOf(req)),
+				req.query.wait,
+				reply,
+				'GAMUT_CHECK_FAILED',
+			);
 		}),
 	);
 
@@ -79,7 +92,11 @@ export default async function deliveryRoutes(app: FastifyInstance): Promise<void
 		if (!MEDIA_KEY_RE.test(key) || !core.registry.get(key))
 			throw new HttpError(404, 'ASSET_NOT_FOUND', 'Unknown media key');
 	};
-	const submitSplit = async (key: string, body: Parameters<SplitImageService['submit']>[1], req: FastifyRequest) => {
+	const submitSplit = async (
+		key: string,
+		body: Parameters<SplitImageService['submit']>[1],
+		req: FastifyRequest,
+	) => {
 		try {
 			return await split.submit(key, body, originOf(req));
 		} catch (e) {
@@ -91,7 +108,13 @@ export default async function deliveryRoutes(app: FastifyInstance): Promise<void
 		'/api/media/:key/split-image/analyze',
 		guarded<KeyParams>(async (req, reply) => {
 			known(req.params.key);
-			return replyWithJob(queue, await submitSplit(req.params.key, null, req), req.query.wait, reply, 'SPLIT_FAILED');
+			return replyWithJob(
+				queue,
+				await submitSplit(req.params.key, null, req),
+				req.query.wait,
+				reply,
+				'SPLIT_FAILED',
+			);
 		}),
 	);
 	app.post<KeyParams>(
@@ -99,7 +122,13 @@ export default async function deliveryRoutes(app: FastifyInstance): Promise<void
 		guarded<KeyParams>(async (req, reply) => {
 			known(req.params.key);
 			const body = parseOr400(SplitImageRequestSchema, req.body);
-			return replyWithJob(queue, await submitSplit(req.params.key, body, req), req.query.wait, reply, 'SPLIT_FAILED');
+			return replyWithJob(
+				queue,
+				await submitSplit(req.params.key, body, req),
+				req.query.wait,
+				reply,
+				'SPLIT_FAILED',
+			);
 		}),
 	);
 

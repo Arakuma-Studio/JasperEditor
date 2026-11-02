@@ -100,7 +100,8 @@ export function GamutOverlay({ session, view, viewport: _v, transport }: Program
 					<span className="text-pr-muted">Gamut check pauses during playback</span>
 				) : current ? (
 					<span>
-						{current.outputLabel}: {f(current.gamutPercent)} % out of gamut, {f(current.legalPercent)} % out of legal range
+						{current.outputLabel}: {f(current.gamutPercent)} % out of gamut, {f(current.legalPercent)} % out
+						of legal range
 					</span>
 				) : (
 					<span className="text-pr-muted">Measuring…</span>

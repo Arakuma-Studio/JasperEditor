@@ -7,15 +7,15 @@
 // spin a letter about itself); with keyframes the anchor is moved instead of the position, so the keys stay valid and
 // every part follows the same path as the whole.
 import type { Draft } from 'immer';
-import { layerMatrix, applyMatrix } from '../../render/transform.ts';
+import { createTrack } from '../../factories.ts';
 import { evaluate } from '../../keyframes.ts';
 import { intrinsicBoxOf } from '../../registry/properties.ts';
+import { applyMatrix, layerMatrix } from '../../render/transform.ts';
 import type { Clip, Transform } from '../../schema/sequence.ts';
-import { createTrack } from '../../factories.ts';
 import type { DClip, DSeq, DTrack, HandlerContext } from '../context.ts';
 import { assertUnlocked, cleanupSequence, findTrackIn, reidentifyClipChildren } from '../placement.ts';
-import type { CommandOf } from '../schemas/index.ts';
 import { MAX_SPLIT_CLIPS } from '../schemas/image-split.ts';
+import type { CommandOf } from '../schemas/index.ts';
 import { clone, type HandlerMap } from './util.ts';
 
 const isFree = (seq: DSeq, trackId: string, start: number, end: number, except: string) =>
@@ -24,7 +24,14 @@ const isFree = (seq: DSeq, trackId: string, start: number, end: number, except: 
 	);
 
 /** A free unlocked video track above `from`, or a new one on top. */
-function trackAbove(seq: DSeq, from: number, start: number, end: number, except: string, h: HandlerContext): DTrack {
+function trackAbove(
+	seq: DSeq,
+	from: number,
+	start: number,
+	end: number,
+	except: string,
+	h: HandlerContext,
+): DTrack {
 	for (let i = from + 1; i < seq.videoTracks.length; i++) {
 		const t = seq.videoTracks[i]!;
 		if (!t.locked && isFree(seq, t.id, start, end, except)) return t;
@@ -56,7 +63,10 @@ export const imageSplitHandlers = {
 		assertUnlocked(found.track, h);
 		// A mask or a tracker is drawn in the whole picture's coordinates: each part would need its own, so ask first.
 		if ((src as { masks?: unknown[] }).masks?.length)
-			h.fail('E_INVALID_PARAM', 'Remove the masks of this clip before splitting it: they are shaped to the whole picture');
+			h.fail(
+				'E_INVALID_PARAM',
+				'Remove the masks of this clip before splitting it: they are shaped to the whole picture',
+			);
 		if ((src as { trackers?: unknown[] }).trackers?.length)
 			h.fail('E_INVALID_PARAM', 'Remove the trackers of this clip before splitting it');
 		const box = intrinsicBoxOf({ doc: doc as never, seq: seq as never, clip: src as Clip });
@@ -64,7 +74,10 @@ export const imageSplitHandlers = {
 			if (!doc.media[p.mediaId]) h.fail('E_NOT_FOUND', `Media not found: ${p.mediaId}`);
 			if (doc.media[p.mediaId]!.kind !== 'image') h.fail('E_INVALID_PARAM', `${p.mediaId} is not an image`);
 			if (p.box.x + p.box.w > box.width || p.box.y + p.box.h > box.height)
-				h.fail('E_INVALID_PARAM', `Part box ${p.box.x},${p.box.y} ${p.box.w}×${p.box.h} is outside the picture`);
+				h.fail(
+					'E_INVALID_PARAM',
+					`Part box ${p.box.x},${p.box.y} ${p.box.w}×${p.box.h} is outside the picture`,
+				);
 		}
 		const original = clone(src) as unknown as Extract<Clip, { kind: 'still' }>;
 		const end = src.start + src.duration;
@@ -103,7 +116,10 @@ export const imageSplitHandlers = {
 			} else {
 				const a = tr.anchor;
 				a.value = [a.value[0] - part.box.x, a.value[1] - part.box.y];
-				a.keyframes = a.keyframes.map((k) => ({ ...k, value: [k.value[0] - part.box.x, k.value[1] - part.box.y] }));
+				a.keyframes = a.keyframes.map((k) => ({
+					...k,
+					value: [k.value[0] - part.box.x, k.value[1] - part.box.y],
+				}));
 			}
 			seq.clips[id] = copy as unknown as DClip;
 			ids.push(id);

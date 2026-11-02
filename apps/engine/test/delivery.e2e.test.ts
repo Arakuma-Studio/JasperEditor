@@ -14,7 +14,7 @@ import { initializeCanvas, type Layer, readPsd } from 'ag-psd';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { listZip } from '../src/imports/zip.ts';
 import { type RunningEngine, startEngine } from '../src/index.ts';
-import { DocBuilder, JSON_H, register, tempAppdir, TEST_FFMPEG, TEST_FFPROBE, until } from './helpers.ts';
+import { DocBuilder, JSON_H, register, TEST_FFMPEG, TEST_FFPROBE, tempAppdir, until } from './helpers.ts';
 
 const enabled = process.env.REMOTION_E2E === '1';
 const out = mkdtempSync(join(tmpdir(), 'jasper-delivery-'));
@@ -22,14 +22,28 @@ const out = mkdtempSync(join(tmpdir(), 'jasper-delivery-'));
 function rawRgba(file: string): { px: Buffer; w: number; h: number } {
 	const probe = spawnSync(
 		TEST_FFPROBE,
-		['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height,pix_fmt', '-of', 'json', file],
+		[
+			'-v',
+			'error',
+			'-select_streams',
+			'v:0',
+			'-show_entries',
+			'stream=width,height,pix_fmt',
+			'-of',
+			'json',
+			file,
+		],
 		{ encoding: 'utf8' },
 	);
 	const s = JSON.parse(probe.stdout).streams[0] as { width: number; height: number; pix_fmt: string };
 	expect(s.pix_fmt).toBe('rgba');
-	const r = spawnSync(TEST_FFMPEG, ['-v', 'error', '-i', file, '-f', 'rawvideo', '-pix_fmt', 'rgba', 'pipe:1'], {
-		maxBuffer: 1 << 29,
-	});
+	const r = spawnSync(
+		TEST_FFMPEG,
+		['-v', 'error', '-i', file, '-f', 'rawvideo', '-pix_fmt', 'rgba', 'pipe:1'],
+		{
+			maxBuffer: 1 << 29,
+		},
+	);
 	return { px: r.stdout, w: s.width, h: s.height };
 }
 
@@ -43,7 +57,12 @@ describe.runIf(enabled)('delivery end to end (REMOTION_E2E=1)', () => {
 				throw new Error('no canvas');
 			},
 			(width: number, height: number) =>
-				({ width, height, data: new Uint8ClampedArray(width * height * 4), colorSpace: 'srgb' }) as unknown as ImageData,
+				({
+					width,
+					height,
+					data: new Uint8ClampedArray(width * height * 4),
+					colorSpace: 'srgb',
+				}) as unknown as ImageData,
 		);
 		engine = await startEngine({
 			appdir: tempAppdir('jasper-delivery-e2e-'),
@@ -63,7 +82,12 @@ describe.runIf(enabled)('delivery end to end (REMOTION_E2E=1)', () => {
 	});
 
 	const post = async (url: string, payload: unknown) =>
-		engine.app.inject({ method: 'POST', url, headers: { ...base(), ...JSON_H, host: base().host }, payload: payload as never });
+		engine.app.inject({
+			method: 'POST',
+			url,
+			headers: { ...base(), ...JSON_H, host: base().host },
+			payload: payload as never,
+		});
 	const job = async (url: string, payload: unknown): Promise<EngineJob> => {
 		const r = await post(url, payload);
 		expect(r.statusCode, r.body).toBe(202);
@@ -92,14 +116,26 @@ describe.runIf(enabled)('delivery end to end (REMOTION_E2E=1)', () => {
 
 	const glow: LookRecipe = {
 		palette: { face: [1, 1, 1, 1], glow: [1, 0.2, 0.1, 1] },
-		layers: [{ type: 'glow', params: { radius: 30 } }, { type: 'rim', name: 'Edge', params: { width: 4 } }, { type: 'face' }],
+		layers: [
+			{ type: 'glow', params: { radius: 30 } },
+			{ type: 'rim', name: 'Edge', params: { width: 4 } },
+			{ type: 'face' },
+		],
 	};
 
 	function title() {
 		const d = new DocBuilder('hd-720p-30');
 		const r = d.tx([
 			{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V1', color: [0.1, 0.3, 0.6, 1], ref: '$s' },
-			{ type: 'clip.addText', at: 0, duration: 30, track: 'V2', content: { text: 'Delivery' }, name: 'Headline', ref: '$t' },
+			{
+				type: 'clip.addText',
+				at: 0,
+				duration: 30,
+				track: 'V2',
+				content: { text: 'Delivery' },
+				name: 'Headline',
+				ref: '$t',
+			},
 		]);
 		d.tx([{ type: 'look.apply', clipIds: [r.refs.$t!], look: { name: 'Hot', recipe: glow } }]);
 		return { d, t: r.refs.$t!, s: r.refs.$s! };
@@ -108,7 +144,12 @@ describe.runIf(enabled)('delivery end to end (REMOTION_E2E=1)', () => {
 	it('TL-114: a transparent still has real alpha, in PNG, TIFF and Targa', async () => {
 		const { d, t, s } = title();
 		d.tx([{ type: 'clip.lift', clipIds: [s] }]);
-		const j = await job('/api/stills', { envelope: d.envelope(), sequenceId: d.seqId, frame: 10, alpha: true });
+		const j = await job('/api/stills', {
+			envelope: d.envelope(),
+			sequenceId: d.seqId,
+			frame: 10,
+			alpha: true,
+		});
 		const file = await fetchTo((j.result as { url: string }).url, 'still.png');
 		const { px, w, h } = rawRgba(file);
 		expect([w, h]).toEqual([1280, 720]);
@@ -123,11 +164,21 @@ describe.runIf(enabled)('delivery end to end (REMOTION_E2E=1)', () => {
 		expect(partial).toBeGreaterThan(500); // the glow
 		void t;
 		for (const format of ['tiff', 'tga'] as const) {
-			const a = await job('/api/stills', { envelope: d.envelope(), sequenceId: d.seqId, frame: 10, alpha: true, format });
-			const f = await fetchTo((a.result as { url: string }).url, `still.${format}`);
-			const p = spawnSync(TEST_FFPROBE, ['-v', 'error', '-show_entries', 'stream=pix_fmt', '-of', 'csv=p=0', f], {
-				encoding: 'utf8',
+			const a = await job('/api/stills', {
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				frame: 10,
+				alpha: true,
+				format,
 			});
+			const f = await fetchTo((a.result as { url: string }).url, `still.${format}`);
+			const p = spawnSync(
+				TEST_FFPROBE,
+				['-v', 'error', '-show_entries', 'stream=pix_fmt', '-of', 'csv=p=0', f],
+				{
+					encoding: 'utf8',
+				},
+			);
 			expect(p.stdout.trim()).toMatch(/^(rgba|bgra)$/);
 		}
 		const refused = await post('/api/stills', {
@@ -167,7 +218,14 @@ describe.runIf(enabled)('delivery end to end (REMOTION_E2E=1)', () => {
 			clipIds: [t],
 			trim: { marginPx: margin },
 		});
-		const r = j.result as { url: string; width: number; height: number; origin: { x: number; y: number }; format: string; warnings: unknown[] };
+		const r = j.result as {
+			url: string;
+			width: number;
+			height: number;
+			origin: { x: number; y: number };
+			format: string;
+			warnings: unknown[];
+		};
 		expect(r.format).toBe('png');
 		expect(r.warnings).toEqual([]);
 		expect(r.width).toBeLessThan(1280);
@@ -239,17 +297,35 @@ describe.runIf(enabled)('delivery end to end (REMOTION_E2E=1)', () => {
 		const h = 80;
 		const px = new Uint8Array(w * h * 4);
 		const put = (x: number, y: number, c: number[]) => px.set(c, (y * w + x) * 4);
-		for (let y = 20; y < 60; y++)
-			for (let x = 20; x < 60; x++) put(x, y, [200, 40, 40, 255]);
+		for (let y = 20; y < 60; y++) for (let x = 20; x < 60; x++) put(x, y, [200, 40, 40, 255]);
 		// A glow with colours a canvas would destroy (premultiplied at alpha 2, 91 becomes 89 or 102).
 		for (let y = 10; y < 70; y++)
-			for (let x = 10; x < 70; x++) if (!(y >= 20 && y < 60 && x >= 20 && x < 60)) put(x, y, [91, 173, 37, 2]);
-		for (let y = 20; y < 60; y++)
-			for (let x = 220; x < 280; x++) put(x, y, [10, 200, 90, 255]);
+			for (let x = 10; x < 70; x++)
+				if (!(y >= 20 && y < 60 && x >= 20 && x < 60)) put(x, y, [91, 173, 37, 2]);
+		for (let y = 20; y < 60; y++) for (let x = 220; x < 280; x++) put(x, y, [10, 200, 90, 255]);
 		const png = join(out, 'logo.png');
 		const raw = join(out, 'logo.rgba');
 		writeFileSync(raw, px);
-		const e = spawnSync(TEST_FFMPEG, ['-y', '-v', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${w}x${h}`, '-i', raw, '-frames:v', '1', '-c:v', 'png', '-pix_fmt', 'rgba', png]);
+		const e = spawnSync(TEST_FFMPEG, [
+			'-y',
+			'-v',
+			'error',
+			'-f',
+			'rawvideo',
+			'-pix_fmt',
+			'rgba',
+			'-s',
+			`${w}x${h}`,
+			'-i',
+			raw,
+			'-frames:v',
+			'1',
+			'-c:v',
+			'png',
+			'-pix_fmt',
+			'rgba',
+			png,
+		]);
 		expect(e.status, String(e.stderr)).toBe(0);
 		const media = await register(engine.app as never, png, base());
 		const a = await job(`/api/media/${media.mediaKey}/split-image/analyze`, {});
@@ -258,11 +334,17 @@ describe.runIf(enabled)('delivery end to end (REMOTION_E2E=1)', () => {
 		const map = decodePng(readFileSync(await fetchTo(analysis.labelMapUrl, 'labels.png')));
 		expect(map.width).toBe(analysis.cols);
 		const j = await job(`/api/media/${media.mediaKey}/split-image`, { groups: [[0], [1]] });
-		const parts = (j.result as { parts: { media: { mediaKey: string }; box: { x: number; y: number; w: number; h: number } }[] }).parts;
+		const parts = (
+			j.result as {
+				parts: { media: { mediaKey: string }; box: { x: number; y: number; w: number; h: number } }[];
+			}
+		).parts;
 		expect(parts).toHaveLength(2);
 		const back = Buffer.alloc(px.length);
 		for (const p of parts) {
-			const got = rawRgba(await fetchTo(`/media/${encodeURIComponent(p.media.mediaKey)}`, `${p.media.mediaKey}.png`));
+			const got = rawRgba(
+				await fetchTo(`/media/${encodeURIComponent(p.media.mediaKey)}`, `${p.media.mediaKey}.png`),
+			);
 			expect([got.w, got.h]).toEqual([p.box.w, p.box.h]);
 			for (let y = 0; y < got.h; y++)
 				for (let x = 0; x < got.w; x++) {
@@ -279,7 +361,22 @@ describe.runIf(enabled)('delivery end to end (REMOTION_E2E=1)', () => {
 		const raw = join(out, 'red.rgba');
 		writeFileSync(raw, Buffer.alloc(64 * 64 * 4, Buffer.from([255, 0, 0, 255])));
 		const png = join(out, 'red.png');
-		const e = spawnSync(TEST_FFMPEG, ['-y', '-v', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', '64x64', '-i', raw, '-frames:v', '1', png]);
+		const e = spawnSync(TEST_FFMPEG, [
+			'-y',
+			'-v',
+			'error',
+			'-f',
+			'rawvideo',
+			'-pix_fmt',
+			'rgba',
+			'-s',
+			'64x64',
+			'-i',
+			raw,
+			'-frames:v',
+			'1',
+			png,
+		]);
 		expect(e.status, String(e.stderr)).toBe(0);
 		const media = await register(engine.app as never, png, base());
 		const d = new DocBuilder('hd-720p-30');
@@ -291,12 +388,22 @@ describe.runIf(enabled)('delivery end to end (REMOTION_E2E=1)', () => {
 		]);
 		const seq = d.doc.sequences[d.seqId]!;
 		expect(sequenceColorInfo(seq.settings).space).toBe('rec2020');
-		const j = await job('/api/gamut-check', { envelope: d.envelope(), sequenceId: d.seqId, frame: 0, output: 'rec709' });
+		const j = await job('/api/gamut-check', {
+			envelope: d.envelope(),
+			sequenceId: d.seqId,
+			frame: 0,
+			output: 'rec709',
+		});
 		const r = j.result as { gamutPercent: number; outputLabel: string; maskUrl: string };
 		expect(r.gamutPercent).toBeGreaterThan(90);
 		const mask = rawRgba(await fetchTo(r.maskUrl, 'mask.png'));
 		expect(mask.px[3]).toBe(255);
-		const inside = await job('/api/gamut-check', { envelope: d.envelope(), sequenceId: d.seqId, frame: 0, output: 'rec2020' });
+		const inside = await job('/api/gamut-check', {
+			envelope: d.envelope(),
+			sequenceId: d.seqId,
+			frame: 0,
+			output: 'rec2020',
+		});
 		expect((inside.result as { gamutPercent: number }).gamutPercent).toBe(0);
 	}, 600_000);
 });

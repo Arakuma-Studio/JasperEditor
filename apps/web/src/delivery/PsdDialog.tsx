@@ -6,11 +6,25 @@ import type { EditorSession } from '@jasper/session';
 import { Checkbox, Dialog, type HostedDialogProps, registerDialog, TextField } from '@jasper/ui';
 import { useEffect, useRef, useState } from 'react';
 import { errorText } from '../processing/engine-jobs.ts';
-import { cancelJob, downloadFile, envelopeOf, type JobProgress, localFolder, runToEnd, safeName } from './shared.ts';
+import {
+	cancelJob,
+	downloadFile,
+	envelopeOf,
+	type JobProgress,
+	localFolder,
+	runToEnd,
+	safeName,
+} from './shared.ts';
 
 export const PSD_DIALOG = 'delivery.psd';
 
-type Props = { session: EditorSession; engine: EngineClient; sequenceId: string; frame: number; baseName: string };
+type Props = {
+	session: EditorSession;
+	engine: EngineClient;
+	sequenceId: string;
+	frame: number;
+	baseName: string;
+};
 
 function PsdDialog(props: Props & HostedDialogProps) {
 	const { session, engine, sequenceId, frame, baseName } = props;
@@ -94,8 +108,8 @@ function PsdDialog(props: Props & HostedDialogProps) {
 			data-testid="psd-dialog"
 		>
 			<p className="mb-2 text-pr-small text-pr-muted">
-				The frame at the playhead as a layered 8-bit PSD. Every layer is rasterised and registered to the frame: text
-				becomes pixels, not editable type.
+				The frame at the playhead as a layered 8-bit PSD. Every layer is rasterised and registered to the
+				frame: text becomes pixels, not editable type.
 			</p>
 			<Checkbox
 				checked={split}
@@ -124,8 +138,8 @@ function PsdDialog(props: Props & HostedDialogProps) {
 				<div className="mt-2">
 					<p className="font-semibold">Layers, top first</p>
 					<ul className="max-h-32 overflow-auto text-pr-small" data-testid="psd-layers">
-						{[...plan.layers].reverse().map((l, i) => (
-							<li key={`${i}-${l.name}`} className={l.hidden ? 'text-pr-muted' : ''}>
+						{[...plan.layers].reverse().map((l) => (
+							<li key={plan.layers.indexOf(l)} className={l.hidden ? 'text-pr-muted' : ''}>
 								{l.name}
 								{l.kind === 'group' ? ' (group)' : ''}
 								{l.hidden ? ' (hidden)' : ''}

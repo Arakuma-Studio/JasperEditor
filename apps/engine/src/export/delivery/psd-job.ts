@@ -5,8 +5,8 @@ import { readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { PsdPlan, PsdRequest, PsdResult } from '@jasper/api';
 import type { RenderSnapshot } from '@jasper/project';
-import type { SharedRenderBrowser } from '../../remotion/service.ts';
 import { type JobContext, JobError } from '../../jobs/types.ts';
+import type { SharedRenderBrowser } from '../../remotion/service.ts';
 import { decodePngRgba } from '../stream/png.ts';
 import type { DeliveryDeps } from './alpha.ts';
 import { renderOptions } from './alpha.ts';
@@ -134,7 +134,8 @@ export async function runPsdExport(ctx: JobContext, req: PsdRequest, d: Delivery
 			});
 		}
 		const rgba = await decodePngRgba(await readFile(png), width, height);
-		if (!rgba) throw new JobError('RENDER_FAILED', 'A layer did not render as an 8-bit PNG of the frame size', true);
+		if (!rgba)
+			throw new JobError('RENDER_FAILED', 'A layer did not render as an 8-bit PNG of the frame size', true);
 		return rgba;
 	};
 	let bytes: number;
@@ -145,7 +146,8 @@ export async function runPsdExport(ctx: JobContext, req: PsdRequest, d: Delivery
 			dest,
 			scratch,
 			signal: ctx.signal,
-			onLayer: (done, total, name) => ctx.progress(done / total, { stage: `Layer ${done + 1}/${total}: ${name}` }),
+			onLayer: (done, total, name) =>
+				ctx.progress(done / total, { stage: `Layer ${done + 1}/${total}: ${name}` }),
 		});
 	} catch (e) {
 		if (e instanceof PsdTooLargeError)

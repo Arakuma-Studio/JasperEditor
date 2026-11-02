@@ -9,7 +9,7 @@ import {
 	type SplitImageResult,
 } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
-import { clusterIslands, DEFAULT_MERGE, type ImagePart, partsOf, type PxBox } from '@jasper/project';
+import { clusterIslands, DEFAULT_MERGE, type ImagePart, type PxBox, partsOf } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { Dialog, type HostedDialogProps, registerDialog, TextField } from '@jasper/ui';
 import { type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from 'react';
@@ -20,7 +20,9 @@ export const SPLIT_IMAGE_DIALOG = 'delivery.splitImage';
 
 // Part tints are data on a preview canvas, not interface colour. tokens-allow
 const PALETTE = ['#ff6b3d', '#2f9bff', '#3fd17a', '#ffc233', '#b26bff', '#18c8c8', '#ff4f9a', '#a3d13b']; // tokens-allow
-const RGB = PALETTE.map((h) => [1, 3, 5].map((k) => Number.parseInt(h.slice(k, k + 2), 16)) as [number, number, number]);
+const RGB = PALETTE.map(
+	(h) => [1, 3, 5].map((k) => Number.parseInt(h.slice(k, k + 2), 16)) as [number, number, number],
+);
 const colorOf = (i: number) => PALETTE[i % PALETTE.length]!;
 
 const pct = (v: number, of: number) => `${(v / of) * 100}%`;
@@ -36,9 +38,18 @@ type Props = {
 };
 
 /** Reads the label map exactly: an opaque PNG, so no alpha rounding or colour conversion touches the indices. */
-async function readLabels(engine: EngineClient, url: string): Promise<{ data: Uint8ClampedArray; w: number; h: number }> {
-	const res = await fetch(engine.url(url), { credentials: 'include', headers: engine.authorizationHeaders() });
-	const bmp = await createImageBitmap(await res.blob(), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+async function readLabels(
+	engine: EngineClient,
+	url: string,
+): Promise<{ data: Uint8ClampedArray; w: number; h: number }> {
+	const res = await fetch(engine.url(url), {
+		credentials: 'include',
+		headers: engine.authorizationHeaders(),
+	});
+	const bmp = await createImageBitmap(await res.blob(), {
+		colorSpaceConversion: 'none',
+		premultiplyAlpha: 'none',
+	});
 	const c = new OffscreenCanvas(bmp.width, bmp.height).getContext('2d', { willReadFrequently: true })!;
 	c.drawImage(bmp, 0, 0);
 	const img = c.getImageData(0, 0, bmp.width, bmp.height);
@@ -134,7 +145,10 @@ function SplitImageDialog(props: Props & HostedDialogProps) {
 	const onStage = (e: ReactPointerEvent<HTMLDivElement>) => {
 		if (!analysis) return;
 		const r = e.currentTarget.getBoundingClientRect();
-		const p = hit(((e.clientX - r.left) / r.width) * analysis.width, ((e.clientY - r.top) / r.height) * analysis.height);
+		const p = hit(
+			((e.clientX - r.left) / r.width) * analysis.width,
+			((e.clientY - r.top) / r.height) * analysis.height,
+		);
 		if (p === null) {
 			if (!e.shiftKey) setSel(null);
 			return;
@@ -172,7 +186,11 @@ function SplitImageDialog(props: Props & HostedDialogProps) {
 					{
 						type: 'clip.splitImage' as const,
 						clipId,
-						parts: done.parts.map((p, i) => ({ mediaId: `$m${i}`, box: p.box, name: `${clipName} ${i + 1}` })),
+						parts: done.parts.map((p, i) => ({
+							mediaId: `$m${i}`,
+							box: p.box,
+							name: `${clipName} ${i + 1}`,
+						})),
 					},
 				],
 			});
@@ -265,8 +283,8 @@ function SplitImageDialog(props: Props & HostedDialogProps) {
 				<p className="text-pr-muted">Finding the parts…</p>
 			)}
 			<p className="mt-2 text-pr-small text-pr-muted">
-				Click a part to select it. Shift-click another part to merge it in, or a merged part to split it into its islands.
-				Each part becomes a clip of its own, grouped, in one undo step.
+				Click a part to select it. Shift-click another part to merge it in, or a merged part to split it into
+				its islands. Each part becomes a clip of its own, grouped, in one undo step.
 			</p>
 			{progress ? (
 				<p className="mt-2 text-pr-small text-pr-muted" aria-live="polite" data-testid="split-progress">

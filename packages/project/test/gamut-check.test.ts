@@ -43,7 +43,13 @@ describe('gamut check (TL-116)', () => {
 			[0, 0, 255],
 			[255, 255, 0],
 		] as [number, number, number][]) {
-			const r = checkGamut(frame(8, 8, () => c), 8, 8, defaultWorkingSettings('rec709'), 'rec709');
+			const r = checkGamut(
+				frame(8, 8, () => c),
+				8,
+				8,
+				defaultWorkingSettings('rec709'),
+				'rec709',
+			);
 			expect(r.legalPercent).toBe(0);
 		}
 	});
@@ -68,8 +74,18 @@ describe('gamut check (TL-116)', () => {
 		const px = frame(5, 3, (x, y) => (x === 4 && y === 2 ? [0, 0, 255] : [0, 0, 0]));
 		const r = checkGamut(px, 5, 3, defaultWorkingSettings('rec709'), 'rec709');
 		expect(Number.isFinite(r.legalPercent)).toBe(true);
-		expect(checkGamut(frame(1, 1, () => [9, 9, 9]), 1, 1, defaultWorkingSettings('rec709'), 'rec709').anyPercent).toBe(0);
-		expect(checkGamut(new Uint8Array(0), 0, 0, defaultWorkingSettings('rec709'), 'rec709').anyPercent).toBe(0);
+		expect(
+			checkGamut(
+				frame(1, 1, () => [9, 9, 9]),
+				1,
+				1,
+				defaultWorkingSettings('rec709'),
+				'rec709',
+			).anyPercent,
+		).toBe(0);
+		expect(checkGamut(new Uint8Array(0), 0, 0, defaultWorkingSettings('rec709'), 'rec709').anyPercent).toBe(
+			0,
+		);
 	});
 
 	it('the mask is transparent where a pixel passes, and colours the two kinds apart', () => {
@@ -82,6 +98,8 @@ describe('gamut check (TL-116)', () => {
 	});
 
 	it('refuses an unknown space', () => {
-		expect(() => checkGamut(new Uint8Array(4), 1, 1, defaultWorkingSettings('rec709'), 'cmyk')).toThrow(RangeError);
+		expect(() => checkGamut(new Uint8Array(4), 1, 1, defaultWorkingSettings('rec709'), 'cmyk')).toThrow(
+			RangeError,
+		);
 	});
 });

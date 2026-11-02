@@ -26,14 +26,19 @@ export async function runToEnd<T>(
 	const done = await followJob(engine, started.id, {
 		intervalMs: 300,
 		onUpdate: (j) =>
-			onProgress({ id: j.id, stage: j.stage ?? '', fraction: typeof j.progress === 'number' ? j.progress : null }),
+			onProgress({
+				id: j.id,
+				stage: j.stage ?? '',
+				fraction: typeof j.progress === 'number' ? j.progress : null,
+			}),
 	});
 	if (done.state === 'cancelled') return null;
 	if (done.state !== 'succeeded') throw new Error(done.error?.message ?? `The job ${done.state}`);
 	return done.result as T;
 }
 
-export const cancelJob = (engine: EngineClient, id: string) => engine.call('jobCancel', { params: { jobId: id } });
+export const cancelJob = (engine: EngineClient, id: string) =>
+	engine.call('jobCancel', { params: { jobId: id } });
 
 export function downloadFile(engine: EngineClient, url: string, name: string): void {
 	const a = document.createElement('a');
@@ -45,10 +50,16 @@ export function downloadFile(engine: EngineClient, url: string, name: string): v
 }
 
 /** The folder suggested for delivered files, when the engine runs on this computer. */
-export async function localFolder(engine: EngineClient, session: EditorSession): Promise<{ local: boolean; folder: string }> {
+export async function localFolder(
+	engine: EngineClient,
+	session: EditorSession,
+): Promise<{ local: boolean; folder: string }> {
 	try {
 		const i = await engine.call('projectScratch', { params: { projectId: session.projectId } });
-		return { local: i.local, folder: i.projectMedia.path ? `${i.projectMedia.path.replace(/[\\/]+$/, '')}/Delivery` : '' };
+		return {
+			local: i.local,
+			folder: i.projectMedia.path ? `${i.projectMedia.path.replace(/[\\/]+$/, '')}/Delivery` : '',
+		};
 	} catch {
 		return { local: false, folder: '' };
 	}
