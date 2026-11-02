@@ -303,7 +303,10 @@ function renderEffect(req: EffectRequest): LookResult {
 	if (!h) throw new Error('no WebGL2');
 	const spec = defaultEffectRegistry.get(req.effectId) as EffectSpec | undefined;
 	if (!spec?.gpu) throw new Error(`no gpu effect ${req.effectId}`);
-	const params: EffectParams = { ...Object.fromEntries(spec.params.map((p) => [p.name, p.default])), ...req.params };
+	const params: EffectParams = {
+		...Object.fromEntries(spec.params.map((p) => [p.name, p.default])),
+		...req.params,
+	};
 	const layout = fxCanvasLayout(req.box, { left: 0, top: 0, right: 0, bottom: 0 }, 8192, req.pxScale ?? 1);
 	const offset = req.frameOffset ?? 0;
 	const seed = req.seed ?? 0.25;

@@ -2,7 +2,7 @@
 // with a centre glow, or wedges, focus lines and speed rings around a cleared centre. Rotation and twist are closed forms
 // of time. In a look the rays end at Extent, because a look's canvas ends at its padding; standalone they fill the frame.
 import { GLSL_UV } from '../../glsl/sample.ts';
-import { defineGenerator, type LayerParams, lp } from '../contract.ts';
+import { defineGenerator, lp } from '../contract.ts';
 import { GLSL_TLG, hex, num, pct, variationParam } from './shared.ts';
 
 const STYLES = ['sunburst', 'wedges', 'focus', 'rings'];
@@ -19,12 +19,30 @@ export const GENERATOR_SUNBURST = defineGenerator({
 		lp.toggle('clip', 'Clip to Title', false),
 		lp.number('rays', 'Rays', 24, { min: 2, max: 300, softMax: 120, step: 1 }),
 		lp.angle('rotation', 'Rotation', 0),
-		lp.number('spin', 'Spin', 12, { min: -720, max: 720, softMin: -90, softMax: 90, step: 0.1 }, { unit: 'deg' }),
+		lp.number(
+			'spin',
+			'Spin',
+			12,
+			{ min: -720, max: 720, softMin: -90, softMax: 90, step: 0.1 },
+			{ unit: 'deg' },
+		),
 		lp.percent('rayWidth', 'Ray Width', 50),
 		lp.percent('widthVariation', 'Width Variation', 40),
 		lp.percent('lengthVariation', 'Length Variation', 60),
-		lp.number('twist', 'Twist', 0, { min: -3600, max: 3600, softMin: -360, softMax: 360, step: 0.1 }, { unit: 'deg' }),
-		lp.number('twistRate', 'Twist Speed', 0, { min: -720, max: 720, softMin: -90, softMax: 90, step: 0.1 }, { unit: 'deg' }),
+		lp.number(
+			'twist',
+			'Twist',
+			0,
+			{ min: -3600, max: 3600, softMin: -360, softMax: 360, step: 0.1 },
+			{ unit: 'deg' },
+		),
+		lp.number(
+			'twistRate',
+			'Twist Speed',
+			0,
+			{ min: -720, max: 720, softMin: -90, softMax: 90, step: 0.1 },
+			{ unit: 'deg' },
+		),
 		lp.distance('inner', 'Inner Radius', 70, { softMax: 300 }),
 		lp.percent('softness', 'Softness', 10),
 		lp.percent('innerSoftness', 'Inner Softness', 60),

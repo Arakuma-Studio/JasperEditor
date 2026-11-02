@@ -164,10 +164,6 @@ export type GeneratorStandIn = 'none' | 'ground' | 'disc';
 export type GeneratorPassContext = {
 	/** Canvas px per 1 % of the unit: exact for text and standalone, an upper bound otherwise. */
 	pxPerPercent: number;
-	/** Canvas size in px. */
-	canvas: { width: number; height: number };
-	/** True in the standalone effect: there is no `tlComp`, and `tl_surfaceAt` is the stand-in shape. */
-	standalone: boolean;
 	/**
 	 * A pass of this generator: the output name (`tlGenA`…`tlGenC`, scratch, shared by every generator of a look) as a
 	 * ping-pong write, the unit and field chunks, the generator's `include`, its `defines` and its params as uniforms.

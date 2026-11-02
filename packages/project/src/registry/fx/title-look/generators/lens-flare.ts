@@ -20,7 +20,8 @@ export const GENERATOR_LENS_FLARE = defineGenerator({
 	id: 'lensFlare',
 	label: 'Lens Flare',
 	effectLabel: 'Title Flare',
-	description: 'An anamorphic flare as light: core, streak, starburst, halo ring and ghosts, on the title or a point.',
+	description:
+		'An anamorphic flare as light: core, streak, starburst, halo ring and ghosts, on the title or a point.',
 	keywords: ['flare', 'anamorphic', 'streak', 'ghosts', 'light'],
 	params: [
 		lp.choice('centre', 'Centre', ['point', 'title'], ['Point', 'Title'], 'point'),
@@ -51,7 +52,15 @@ export const GENERATOR_LENS_FLARE = defineGenerator({
 		{
 			id: 'streak',
 			label: 'Long Streak',
-			params: { centre: 'title', size: 20, streak: 240, rays: 20, ghosts: false, color: hex('#5ab0ff'), intensity: 120 },
+			params: {
+				centre: 'title',
+				size: 20,
+				streak: 240,
+				rays: 20,
+				ghosts: false,
+				color: hex('#5ab0ff'),
+				intensity: 120,
+			},
 		},
 	],
 	reach: (p) => num(p.extent),

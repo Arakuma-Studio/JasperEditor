@@ -7,7 +7,16 @@
 import { GLSL_UV } from '../../glsl/sample.ts';
 import { defineGenerator, type LayerParams, lp } from '../contract.ts';
 import { GLSL_TLG_QUAD } from './light-streaks.ts';
-import { anchorParam, boilParams, GLSL_TLG, GLSL_TLG_SITES, hex, num, pct, variationParam } from './shared.ts';
+import {
+	anchorParam,
+	boilParams,
+	GLSL_TLG,
+	GLSL_TLG_SITES,
+	hex,
+	num,
+	pct,
+	variationParam,
+} from './shared.ts';
 
 const MODES = ['mixed', 'outward', 'crawl', 'edge'];
 /** Segments of one path. */
@@ -29,7 +38,8 @@ export const GENERATOR_LIGHTNING = defineGenerator({
 	id: 'lightning',
 	label: 'Lightning',
 	effectLabel: 'Title Lightning',
-	description: 'Electric arcs shooting from the edges of the title and crawling over them, boiling or crawling.',
+	description:
+		'Electric arcs shooting from the edges of the title and crawling over them, boiling or crawling.',
 	keywords: ['electric', 'arc', 'bolt', 'plasma', 'energy', 'electrify'],
 	params: [
 		lp.choice('mode', 'Arcs', MODES, ['Mixed', 'Shoot Outward', 'Crawl Along Edge', 'Along Edge'], 'mixed'),
@@ -156,10 +166,9 @@ void main() {
   float gain = 1.0;
   if (u_motion == 0) {
     // Hold-frame boil: the jag re-rolls every held frame; each bolt re-strikes on its own beat.
-    float x = time * rate;
-    tlg_step = int(floor(x));
-    float beat = x / 4.0 + tlg_h(b, 30) * 4.0;
-    tlg_strike = int(floor(beat));
+    float x = floor(time * rate);
+    tlg_step = int(x);
+    tlg_strike = int(floor(x / 4.0 + tlg_h(b, 30) * 4.0));
     tlg_phase = 0.0;
     gain = 0.75 + 0.25 * tlg_h3(b, tlg_step, 31);
   } else {

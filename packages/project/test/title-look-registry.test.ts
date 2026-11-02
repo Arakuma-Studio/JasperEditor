@@ -185,7 +185,10 @@ describe('generators', () => {
 				for (const preset of g.presets!) {
 					expect(preset.label).toBeTruthy();
 					for (const name of Object.keys(preset.params))
-						expect(specs.map((p) => p.name), `${preset.id}.${name}`).toContain(name);
+						expect(
+							specs.map((p) => p.name),
+							`${preset.id}.${name}`,
+						).toContain(name);
 					let n = 0;
 					const a = appearanceFromRecipe(
 						{ layers: [{ type: layer.type, params: preset.params as Record<string, unknown> }] },
@@ -195,17 +198,17 @@ describe('generators', () => {
 					const passes = fx.gpu!.passes as (p: unknown, c: unknown) => unknown[];
 					const defaults = Object.fromEntries(fx.params.map((p) => [p.name, p.default]));
 					expect(
-						passes({ ...defaults, ...preset.params }, { width: 640, height: 360, pxScale: 1, fps: 30 }).length,
+						passes({ ...defaults, ...preset.params }, { width: 640, height: 360, pxScale: 1, fps: 30 })
+							.length,
 					).toBeGreaterThan(0);
 				}
 			});
 
 			it('never reads time from a frame counter or a seed from ids, in any of its passes', () => {
 				const ctx = { width: 640, height: 360, pxScale: 1, fps: 30 };
-				const passes = (fx.gpu!.passes as (p: unknown, c: unknown) => { frag: string; draw?: { vert: string } }[])(
-					Object.fromEntries(fx.params.map((p) => [p.name, p.default])),
-					ctx,
-				);
+				const passes = (
+					fx.gpu!.passes as (p: unknown, c: unknown) => { frag: string; draw?: { vert: string } }[]
+				)(Object.fromEntries(fx.params.map((p) => [p.name, p.default])), ctx);
 				for (const pass of passes)
 					for (const src of [pass.frag, pass.draw?.vert ?? ''])
 						for (const [re, why] of FORBIDDEN_TITLE_GLSL) expect(re.test(src), `${g.id}: ${why}`).toBe(false);
@@ -219,7 +222,8 @@ describe('generators', () => {
 				for (const preset of g.presets ?? []) {
 					const values = withDefaults(layer, preset.params as never);
 					const r = g.reach?.(values) ?? 0;
-					for (const v of typeof r === 'number' ? [r] : Object.values(r)) expect(Number.isFinite(v)).toBe(true);
+					for (const v of typeof r === 'number' ? [r] : Object.values(r))
+						expect(Number.isFinite(v)).toBe(true);
 				}
 			});
 		});

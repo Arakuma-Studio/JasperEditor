@@ -40,6 +40,21 @@ function meanDiff(a: LookImage, b: LookImage): number {
 	return s / a.data.length;
 }
 
+/**
+ * Mean difference of alpha over 12 px cells. Particles a pixel or two wide that moved by one pixel differ per pixel about as
+ * much as new ones do; over cells, what moved a little barely shows and what was re-rolled does.
+ */
+function cellDiff(a: LookImage, b: LookImage, cell = 12): number {
+	let s = 0;
+	let n = 0;
+	for (let y = 0; y + cell <= a.height; y += cell)
+		for (let x = 0; x + cell <= a.width; x += cell) {
+			s += Math.abs(energy(a, x, y, x + cell, y + cell) - energy(b, x, y, x + cell, y + cell));
+			n++;
+		}
+	return s / (n * cell * cell);
+}
+
 /** Sum of alpha over a rectangle of canvas px: how much light is there. */
 function energy(img: LookImage, x0 = 0, y0 = 0, x1 = img.width, y1 = img.height): number {
 	let e = 0;
@@ -49,7 +64,15 @@ function energy(img: LookImage, x0 = 0, y0 = 0, x1 = img.width, y1 = img.height)
 }
 
 /** Largest difference over a rectangle of canvas px, with `b` read `dx` px to the right of `a`. */
-function maxDiffShifted(a: LookImage, b: LookImage, dx: number, x0: number, y0: number, x1: number, y1: number) {
+function maxDiffShifted(
+	a: LookImage,
+	b: LookImage,
+	dx: number,
+	x0: number,
+	y0: number,
+	x1: number,
+	y1: number,
+) {
 	let m = 0;
 	for (let y = y0; y < y1; y++)
 		for (let x = x0; x < x1; x++) {
@@ -84,7 +107,12 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('generators in WebGL2', { 
 		await tl?.browser.close();
 	});
 
-	const look = (id: string, contentSeconds: number, params: Record<string, unknown> = {}, over: Partial<LookRequest> = {}) => {
+	const look = (
+		id: string,
+		contentSeconds: number,
+		params: Record<string, unknown> = {},
+		over: Partial<LookRequest> = {},
+	) => {
 		const g = TITLE_GENERATORS.find((x) => x.id === id)!;
 		return tl.render({
 			recipe: layer(id, { ...MOVING[id], ...params }, g.front === true),
@@ -165,12 +193,34 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('generators in WebGL2', { 
 
 	describe('Particles: 7 emitters, 11 shapes, wrapped age, ballistic position', () => {
 		const emitters = ['point', 'ellipse', 'rect', 'ring', 'line', 'full', 'layer'];
-		const shapes = ['dot', 'glint4', 'glint6', 'ember', 'square', 'confetti', 'petal', 'star', 'heart', 'bokeh', 'rain'];
+		const shapes = [
+			'dot',
+			'glint4',
+			'glint6',
+			'ember',
+			'square',
+			'confetti',
+			'petal',
+			'star',
+			'heart',
+			'bokeh',
+			'rain',
+		];
 
 		for (const emitter of emitters)
 			it(`emitter ${emitter} draws`, async () => {
-				const off = await tl.render({ recipe: { layers: [FACE] } as LookRecipe, input: TEXT, box: BOX, pad: 80 });
-				const img = await look('particles', 0.8, { emitter, rx: 40, ry: 30, travel: 30, count: 300 }, { pad: 80 });
+				const off = await tl.render({
+					recipe: { layers: [FACE] } as LookRecipe,
+					input: TEXT,
+					box: BOX,
+					pad: 80,
+				});
+				const img = await look(
+					'particles',
+					0.8,
+					{ emitter, rx: 40, ry: 30, travel: 30, count: 300 },
+					{ pad: 80 },
+				);
 				const a = lumaOver(off, 0);
 				const b = lumaOver(img, 0);
 				let lit = 0;
@@ -180,7 +230,16 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('generators in WebGL2', { 
 
 		for (const shape of shapes)
 			it(`shape ${shape} draws and moves`, async () => {
-				const params = { shape, emitter: 'ellipse', rx: 50, ry: 30, size: 8, count: 60, distribution: 'scatter', travel: 40 };
+				const params = {
+					shape,
+					emitter: 'ellipse',
+					rx: 50,
+					ry: 30,
+					size: 8,
+					count: 60,
+					distribution: 'scatter',
+					travel: 40,
+				};
 				const a = await look('particles', 0.4, params);
 				const b = await look('particles', 0.5, params);
 				expect(energy(a)).toBeGreaterThan(0);
@@ -188,8 +247,19 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('generators in WebGL2', { 
 			});
 
 		it('scatter moves: Pachislop has no motion, here a particle drifts through its life', async () => {
-			const params = { emitter: 'rect', rx: 60, ry: 30, distribution: 'scatter', count: 40, size: 6, travel: 60, glow: 0 };
-			expect(meanDiff(await look('particles', 0.4, params), await look('particles', 0.6, params))).toBeGreaterThan(0.01);
+			const params = {
+				emitter: 'rect',
+				rx: 60,
+				ry: 30,
+				distribution: 'scatter',
+				count: 40,
+				size: 6,
+				travel: 60,
+				glow: 0,
+			};
+			expect(
+				meanDiff(await look('particles', 0.4, params), await look('particles', 0.6, params)),
+			).toBeGreaterThan(0.01);
 		});
 
 		it('position is ballistic: one particle lands where start + v·t + g·t²/2 says, at any age, in any order', async () => {
@@ -234,7 +304,13 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('generators in WebGL2', { 
 				layers: [{ type: 'generator:particles', params: { ownColors: true, ...params } }],
 			} as LookRecipe;
 			const at = async (t: number) =>
-				tl.render({ recipe, input: { kind: 'rect', x: 0, y: 0, w: 0, h: 0 }, box: BOX, unitPx: 64, contentSeconds: t });
+				tl.render({
+					recipe,
+					input: { kind: 'rect', x: 0, y: 0, w: 0, h: 0 },
+					box: BOX,
+					unitPx: 64,
+					contentSeconds: t,
+				});
 			const speed = (200 / 4) * unit * 0.8; // the stream's own pace at this seed is read from two ages below
 			const [x0, y0] = centroid(await at(0.5));
 			const [x1, y1] = centroid(await at(2.5));
@@ -260,7 +336,9 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('generators in WebGL2', { 
 				travel: 0,
 				lifetime: 60,
 			};
-			expect(meanDiff(await look('particles', 10, params), await look('particles', 10.2, params))).toBeGreaterThan(0.02);
+			expect(
+				meanDiff(await look('particles', 10, params), await look('particles', 10.2, params)),
+			).toBeGreaterThan(0.02);
 		});
 	});
 
@@ -277,7 +355,16 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('generators in WebGL2', { 
 		const px = (n: number) => n / box.width;
 		const parts = (params: Record<string, unknown>) =>
 			({ layers: [{ type: 'generator:particles', params: { ownColors: true, ...params } }] }) as LookRecipe;
-		const edge = { emitFrom: 'edge', count: 500, travel: 12, size: 2.5, capture: 12, depth: 0, glow: 0, sway: 0 };
+		const edge = {
+			emitFrom: 'edge',
+			count: 500,
+			travel: 12,
+			size: 2.5,
+			capture: 12,
+			depth: 0,
+			glow: 0,
+			sway: 0,
+		};
 		const draw = (recipe: LookRecipe, input: LookRequest['input'], t = 0.8) =>
 			tl.render({ recipe, input, box, unitPx: 64, contentSeconds: t, pad: 30 });
 
@@ -296,7 +383,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('generators in WebGL2', { 
 			const a = await draw(parts(edge), letters(0, 0));
 			const b = await draw(parts(edge), letters(0, px(1)));
 			const rerolled = await draw(parts({ ...edge, variation: 9 }), letters(0, 0));
-			expect(meanDiff(a, b)).toBeLessThan(0.4 * meanDiff(a, rerolled));
+			expect(cellDiff(a, b)).toBeLessThan(0.4 * cellDiff(a, rerolled));
 		});
 
 		it('with the alpha bounds as anchor, a title moving whole inside its box carries every particle exactly', async () => {
@@ -336,14 +423,17 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('generators in WebGL2', { 
 			const a = await draw(parts(edge), wave(0));
 			const b = await draw(parts(edge), wave(1 / 30));
 			const rerolled = await draw(parts({ ...edge, variation: 9 }), wave(0));
-			expect(meanDiff(a, b)).toBeLessThan(0.4 * meanDiff(a, rerolled));
+			expect(cellDiff(a, b)).toBeLessThan(0.4 * cellDiff(a, rerolled));
 		});
 
 		const stars = (params: Record<string, unknown> = {}) =>
 			({
 				layers: [
 					{ type: 'face', params: { paint: { kind: 'source' } } },
-					{ type: 'generator:glints', params: { ownColors: true, twinkle: 0, size: 30, large: 3, small: 4, ...params } },
+					{
+						type: 'generator:glints',
+						params: { ownColors: true, twinkle: 0, size: 30, large: 3, small: 4, ...params },
+					},
 				],
 			}) as LookRecipe;
 
@@ -432,13 +522,15 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('generators in WebGL2', { 
 		it('ink: a moved letter does not re-roll the drops', async () => {
 			const ink = (params: Record<string, unknown> = {}) =>
 				({
-					layers: [{ type: 'generator:inkSplatter', params: { ownColors: true, color: [1, 1, 1, 1], ...params } }],
+					layers: [
+						{ type: 'generator:inkSplatter', params: { ownColors: true, color: [1, 1, 1, 1], ...params } },
+					],
 				}) as LookRecipe;
 			const a = await draw(ink(), letters(0, 0));
 			const b = await draw(ink(), letters(0, px(1)));
 			const rerolled = await draw(ink({ variation: 9 }), letters(0, 0));
-			expect(meanDiff(a, rerolled)).toBeGreaterThan(0);
-			expect(meanDiff(a, b)).toBeLessThan(0.5 * meanDiff(a, rerolled));
+			expect(cellDiff(a, rerolled)).toBeGreaterThan(0);
+			expect(cellDiff(a, b)).toBeLessThan(0.5 * cellDiff(a, rerolled));
 		});
 
 		it('ink: each drop lands at its own moment', async () => {
@@ -475,7 +567,10 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('generators in WebGL2', { 
 				// The strongest light across the band at this angle.
 				let m = 0;
 				for (let r = -12; r <= 12; r += 2)
-					m = Math.max(m, pixel(img, cx + Math.cos(a) * (radiusPx + r), cy + Math.sin(a) * (radiusPx + r))[3]);
+					m = Math.max(
+						m,
+						pixel(img, cx + Math.cos(a) * (radiusPx + r), cy + Math.sin(a) * (radiusPx + r))[3],
+					);
 				out.push(m);
 			}
 			return out;
@@ -495,7 +590,9 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('generators in WebGL2', { 
 		};
 		const render = (p: number) =>
 			tl.render({
-				recipe: { layers: [{ type: 'generator:shockwave', params: { ownColors: true, ...ring(p) } }] } as LookRecipe,
+				recipe: {
+					layers: [{ type: 'generator:shockwave', params: { ownColors: true, ...ring(p) } }],
+				} as LookRecipe,
 				input: { kind: 'rect', x: 0.4, y: 0.4, w: 0.2, h: 0.2 },
 				box: { width: 320, height: 320 },
 				unitPx: 100,
@@ -528,9 +625,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('generators in WebGL2', { 
 			const on = (t: number, p: number, cycle: number) =>
 				tl.render({
 					recipe: {
-						layers: [
-							{ type: 'generator:shockwave', params: { ownColors: true, ...ring(p), cycle } },
-						],
+						layers: [{ type: 'generator:shockwave', params: { ownColors: true, ...ring(p), cycle } }],
 					} as LookRecipe,
 					input: { kind: 'rect', x: 0.4, y: 0.4, w: 0.2, h: 0.2 },
 					box: { width: 320, height: 320 },
@@ -642,7 +737,12 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('generators in WebGL2', { 
 				['jasper.generator.fire', {}],
 				['jasper.generator.particles', params],
 			] as const) {
-				const full = await tl.renderEffect({ effectId, box: { width: 480, height: 270 }, frame: 12, params: p });
+				const full = await tl.renderEffect({
+					effectId,
+					box: { width: 480, height: 270 },
+					frame: 12,
+					params: p,
+				});
 				const half = await tl.renderEffect({
 					effectId,
 					box: { width: 480, height: 270 },
@@ -652,22 +752,69 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('generators in WebGL2', { 
 				});
 				const f = layerCrop(full, lumaOver(full, 0));
 				const h = layerCrop(half, lumaOver(half, 0));
-				expect(ssim(resampleLuma(f.data, f.w, f.h, h.w, h.h), h.data, h.w, h.h), effectId).toBeGreaterThan(0.8);
+				expect(ssim(resampleLuma(f.data, f.w, f.h, h.w, h.h), h.data, h.w, h.h), effectId).toBeGreaterThan(
+					0.8,
+				);
 			}
 		});
 	});
+
+	// Cost on this host (docs/performance.md §7): TL_PERF=1. Reports; the budget is on a real GPU.
+	it.runIf(process.env.TL_PERF === '1')(
+		'per-frame cost of each generator at 1080p',
+		{ timeout: 900_000 },
+		async () => {
+			for (const g of TITLE_GENERATORS) {
+				const req: LookRequest = {
+					recipe: layer(g.id, MOVING[g.id] ?? {}, g.front === true),
+					input: { kind: 'text', text: 'Title Look', size: 200 },
+					box: { width: 1200, height: 280 },
+					contentSeconds: 0.5,
+					timingOnly: true,
+				};
+				const first = await tl.render(req);
+				const runs: number[] = [];
+				for (let i = 0; i < 3; i++) runs.push((await tl.render(req)).ms);
+				runs.sort((a, b) => a - b);
+				const half = (await tl.render({ ...req, pxScale: 0.5 })).ms;
+				console.info(
+					`[generator-perf] ${g.id}: canvas ${first.width}×${first.height}, ${first.passes} passes, median ${runs[1]!.toFixed(0)} ms, at 1/2 ${half.toFixed(0)} ms`,
+				);
+			}
+			const base = await tl.render({
+				recipe: { layers: [FACE] } as LookRecipe,
+				input: { kind: 'text', text: 'Title Look', size: 200 },
+				box: { width: 1200, height: 280 },
+				timingOnly: true,
+			});
+			console.info(`[generator-perf] face only: ${base.ms.toFixed(0)} ms`);
+		},
+	);
 
 	it('Speed Lines: the title focus keeps the lines off the shape, as it changes', async () => {
 		const recipe = {
 			layers: [
 				{
 					type: 'generator:speedLines',
-					params: { ownColors: true, motion: 'still', padding: 10, jitter: 0, extent: 120, lineWidth: 8, count: 200 },
+					params: {
+						ownColors: true,
+						motion: 'still',
+						padding: 10,
+						jitter: 0,
+						extent: 120,
+						lineWidth: 8,
+						count: 200,
+					},
 				},
 			],
 		} as LookRecipe;
 		const at = (x: number) =>
-			tl.render({ recipe, input: { kind: 'rect', x, y: 0.4, w: 0.2, h: 0.2 }, box: { width: 200, height: 100 }, unitPx: 64 });
+			tl.render({
+				recipe,
+				input: { kind: 'rect', x, y: 0.4, w: 0.2, h: 0.2 },
+				box: { width: 200, height: 100 },
+				unitPx: 64,
+			});
 		const a = await at(0.2);
 		const b = await at(0.6);
 		const hole = (img: LookImage, x: number) => pixel(img, img.box.x + x, img.box.y + 50)[3];

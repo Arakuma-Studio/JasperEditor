@@ -34,7 +34,13 @@ export const GENERATOR_LIGHT_STREAKS = defineGenerator({
 	description: 'White-cored lines of light flying past: anamorphic streaks, a bundle of beams, or spears.',
 	keywords: ['streak', 'anamorphic', 'beam', 'light', 'whoosh'],
 	params: [
-		lp.choice('mode', 'Mode', ['anamorphic', 'bundle', 'spears'], ['Anamorphic', 'Bundle', 'Spears'], 'anamorphic'),
+		lp.choice(
+			'mode',
+			'Mode',
+			['anamorphic', 'bundle', 'spears'],
+			['Anamorphic', 'Bundle', 'Spears'],
+			'anamorphic',
+		),
 		lp.point('center', 'Origin', [0.5, 0.5]),
 		lp.angle('angle', 'Angle', 0),
 		lp.number('spread', 'Spread', 3, { min: 0, max: 360, step: 0.1 }, { unit: 'deg' }),

@@ -345,7 +345,8 @@ export const GENERATOR_PATTERN = defineGenerator({
 	id: 'pattern',
 	label: 'Pattern',
 	effectLabel: 'Pattern Fill',
-	description: 'Animal prints, racing and hazard fills, and traditional patterns, scrolling, flat or on a floor plane.',
+	description:
+		'Animal prints, racing and hazard fills, and traditional patterns, scrolling, flat or on a floor plane.',
 	keywords: ['zebra', 'leopard', 'checker', 'hazard', 'waves', 'floor', 'scroll', 'texture'],
 	params: [
 		lp.choice('kind', 'Pattern', [...KINDS], LABELS, 'zebra'),

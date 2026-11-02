@@ -866,7 +866,13 @@ describe('clip.addGenerator (TL-060, TL-064)', () => {
 			{ type: 'clip.addText', at: 0, duration: 60, track: 'V2', content: { text: 'B' }, ref: '$b' },
 		]);
 		const a = h.ok([
-			{ type: 'clip.addGenerator', effectId: 'jasper.generator.fire', at: 0, duration: 60, belowClipId: r.refs.$t },
+			{
+				type: 'clip.addGenerator',
+				effectId: 'jasper.generator.fire',
+				at: 0,
+				duration: 60,
+				belowClipId: r.refs.$t,
+			},
 		]);
 		const c = h.seq.clips[(a.results[0] as { clipId: string }).clipId]!;
 		expect(h.seq.videoTracks.findIndex((x) => x.id === c.trackId)).toBe(0);
@@ -896,7 +902,9 @@ describe('clip.addGenerator (TL-060, TL-064)', () => {
 		);
 		expect(
 			code(
-				h.tx([{ type: 'clip.addGenerator', effectId: 'generator:fire', preset: 'nope', at: 400, duration: 10 }]),
+				h.tx([
+					{ type: 'clip.addGenerator', effectId: 'generator:fire', preset: 'nope', at: 400, duration: 10 },
+				]),
 			),
 		).toBe('E_INVALID_PARAM');
 		ok(h);

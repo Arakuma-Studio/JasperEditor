@@ -5,8 +5,8 @@
 // lands each drop at its own moment, a closed form of Reveal (or of time, with Reveal Time).
 import { GLSL_UV } from '../../glsl/sample.ts';
 import { defineGenerator, type LayerParams, lp } from '../contract.ts';
-import { anchorParam, GLSL_TLG, GLSL_TLG_SITES, hex, num, variationParam } from './shared.ts';
 import { GLSL_TLG_QUAD } from './light-streaks.ts';
+import { anchorParam, GLSL_TLG, GLSL_TLG_SITES, hex, num, variationParam } from './shared.ts';
 
 /** Most main drops at Amount 100 %. */
 const MAX_DROPS = 80;
@@ -30,7 +30,13 @@ export const GENERATOR_INK_SPLATTER = defineGenerator({
 		lp.number('satellites', 'Satellite Droplets', 60, { min: 0, max: 200, step: 1 }, { unit: '%' }),
 		lp.percent('streaks', 'Streaks', 35),
 		lp.distance('streakLength', 'Streak Length', 55, { softMax: 400 }),
-		lp.choice('streakDirection', 'Streak Direction', ['radial', 'directional'], ['Away from the Centre', 'One Direction'], 'radial'),
+		lp.choice(
+			'streakDirection',
+			'Streak Direction',
+			['radial', 'directional'],
+			['Away from the Centre', 'One Direction'],
+			'radial',
+		),
 		lp.angle('angle', 'Streak Angle', 10),
 		lp.percent('reveal', 'Reveal', 100),
 		lp.number('revealTime', 'Reveal Time', 0, { min: 0, max: 60, softMax: 5, step: 0.01 }, { unit: 's' }),

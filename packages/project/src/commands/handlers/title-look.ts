@@ -496,11 +496,7 @@ export const titleLookHandlers = {
 					...(cmd.params || cmd.preset
 						? {
 								params: {
-									...presetParams(
-										cmd.layerType.slice(GENERATOR_LAYER_PREFIX.length),
-										cmd.preset,
-										h,
-									),
+									...presetParams(cmd.layerType.slice(GENERATOR_LAYER_PREFIX.length), cmd.preset, h),
 									...cmd.params,
 								},
 							}
@@ -622,7 +618,12 @@ export const titleLookHandlers = {
 				(
 					sequenceHandlers['track.add'](
 						doc,
-						{ type: 'track.add', sequenceId: seq.id, kind: 'video', index: slot.index } as CommandOf<'track.add'>,
+						{
+							type: 'track.add',
+							sequenceId: seq.id,
+							kind: 'video',
+							index: slot.index,
+						} as CommandOf<'track.add'>,
 						h,
 					) as { trackIds: string[] }
 				).trackIds[0]!;

@@ -3,12 +3,7 @@
 import type { LayerParamValue } from '../../../title-looks/model.ts';
 import type { EffectSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
-import {
-	type FxUniformValue,
-	fxPatternFrame,
-	type GlslChunk,
-	type ShaderPass,
-} from '../shader.ts';
+import { type FxUniformValue, fxPatternFrame, type GlslChunk, type ShaderPass } from '../shader.ts';
 import {
 	type GeneratorColor,
 	type GeneratorPreset,
@@ -120,9 +115,7 @@ function generatorLayer(g: TitleGenerator): TitleLayerType {
 		],
 		shader: (p): LayerShader => {
 			const gradient = paintOf(p.paint, { kind: 'color', color: [1, 1, 1, 1] }).kind === 'gradient';
-			const body = g.lowRes
-				? `texture(u_${LOW_RES_OUTPUT}, s.uv)`
-				: /* glsl */ `tl_generate(s)`;
+			const body = g.lowRes ? `texture(u_${LOW_RES_OUTPUT}, s.uv)` : /* glsl */ `tl_generate(s)`;
 			return {
 				glsl: `${generatorDefines(g, p, false)}${g.lowRes ? '' : g.glsl}
 ${recolorGlsl(color.mode, gradient)}
@@ -148,12 +141,7 @@ vec4 tl_layer(TlSurface s) {
 						const written = new Set<string>();
 						const pass = (x: ShaderPass) => generatorPass(x, defines, include, c.uniforms, written, false);
 						return [
-							...(g.prepass?.(p, {
-								pxPerPercent: c.pxPerPercent,
-								canvas: { width: 0, height: 0 },
-								standalone: false,
-								pass,
-							}) ?? []),
+							...(g.prepass?.(p, { pxPerPercent: c.pxPerPercent, pass }) ?? []),
 							...(g.lowRes ? [pass(lowResPass(g))] : []),
 						];
 					},
@@ -229,7 +217,12 @@ export const STANDALONE_UNIT = 0.2;
 
 /** The effect of one generator (`Generate` category, TL-060): on a clip it draws over the clip's picture. */
 export function generatorEffect(g: TitleGenerator): EffectSpec {
-	const include = [GLSL_TL_UNIT_KNOWN, GLSL_TL_SURFACE, standInChunk(g.standIn ?? 'none'), ...(g.include ?? [])];
+	const include = [
+		GLSL_TL_UNIT_KNOWN,
+		GLSL_TL_SURFACE,
+		standInChunk(g.standIn ?? 'none'),
+		...(g.include ?? []),
+	];
 	return defineShaderEffect({
 		id: `jasper.generator.${g.id}`,
 		label: g.effectLabel ?? g.label,
@@ -252,12 +245,7 @@ export function generatorEffect(g: TitleGenerator): EffectSpec {
 				const written = new Set<string>();
 				const pass = (x: ShaderPass) => generatorPass(x, defines, include, {}, written, true);
 				const unit = Math.min(ctx.width, ctx.height) * STANDALONE_UNIT * ctx.pxScale;
-				const pre = g.prepass?.(p, {
-					pxPerPercent: unit * 0.01,
-					canvas: { width: ctx.width, height: ctx.height },
-					standalone: true,
-					pass,
-				});
+				const pre = g.prepass?.(p, { pxPerPercent: unit * 0.01, pass });
 				return [
 					...(pre ?? []),
 					...(g.lowRes ? [pass(lowResPass(g))] : []),

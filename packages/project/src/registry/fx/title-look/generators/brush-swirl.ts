@@ -5,8 +5,8 @@
 // the path so far); this one is a designed stroke that scrubs exactly.
 import { GLSL_UV } from '../../glsl/sample.ts';
 import { defineGenerator, type LayerParams, lp } from '../contract.ts';
-import { clamp, GLSL_TLG, hex, num, pct, variationParam } from './shared.ts';
 import { GLSL_TLG_QUAD } from './light-streaks.ts';
+import { clamp, GLSL_TLG, hex, num, pct, variationParam } from './shared.ts';
 
 const PATHS = ['arc', 'spiral', 'slash', 'ring'];
 /** Samples along a stroke: smooth to the largest radius a title needs. */
@@ -105,7 +105,8 @@ const reachOf = (p: LayerParams) => {
 export const GENERATOR_BRUSH_SWIRL = defineGenerator({
 	id: 'brushSwirl',
 	label: 'Brush Swirl',
-	description: 'Dry-brush strokes writing on along an arc, a spiral, a ring or a slash, with bristle gaps and droplets.',
+	description:
+		'Dry-brush strokes writing on along an arc, a spiral, a ring or a slash, with bristle gaps and droplets.',
 	keywords: ['brush', 'ink', 'stroke', 'calligraphy', 'write on', 'swirl'],
 	params: [
 		lp.choice('path', 'Path', PATHS, ['Arc', 'Spiral', 'Slash', 'Ring'], 'arc'),

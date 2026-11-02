@@ -60,7 +60,12 @@ describe.runIf(!!CHROME && process.env.GEN_SHEETS === '1')('generator sheets', {
 	afterAll(() => tl?.browser.close());
 
 	const FACE = { type: 'face', params: { paint: { kind: 'color', color: [0.95, 0.95, 0.98, 1] } } };
-	const palette = { glow: [0.2, 0.75, 1, 1], accent1: [1, 0.25, 0.5, 1], shadow: [0.1, 0.08, 0.2, 1], base: [0.75, 0.7, 0.9, 1] };
+	const palette = {
+		glow: [0.2, 0.75, 1, 1],
+		accent1: [1, 0.25, 0.5, 1],
+		shadow: [0.1, 0.08, 0.2, 1],
+		base: [0.75, 0.7, 0.9, 1],
+	};
 
 	for (const g of TITLE_GENERATORS) {
 		if (ONLY && !ONLY.includes(g.id)) continue;

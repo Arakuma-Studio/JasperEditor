@@ -393,10 +393,17 @@ const QUAD: readonly GlslChunk[] = [GLSL_UV, GLSL_TLG_QUAD];
 export const GENERATOR_GLINTS = defineGenerator({
 	id: 'glints',
 	label: 'Glints',
-	description: 'Star sparkles that hold on to the highlights of the title as it moves, each with its own twinkle.',
+	description:
+		'Star sparkles that hold on to the highlights of the title as it moves, each with its own twinkle.',
 	keywords: ['sparkle', 'star', 'twinkle', 'shine', 'glitter', 'cross filter'],
 	params: [
-		lp.choice('placement', 'Placement', PLACEMENTS, ['On Highlights', 'Hottest Peaks', 'Hero Glint', 'Scatter', 'Fixed Point'], 'highlights'),
+		lp.choice(
+			'placement',
+			'Placement',
+			PLACEMENTS,
+			['On Highlights', 'Hottest Peaks', 'Hero Glint', 'Scatter', 'Fixed Point'],
+			'highlights',
+		),
 		lp.number('large', 'Large Glints', 5, { min: 0, max: 20, step: 1 }),
 		lp.number('small', 'Small Glints', 6, { min: 0, max: 40, step: 1 }),
 		lp.number('stars', 'Star Count', 5, { min: 1, max: 40, step: 1 }),
@@ -416,9 +423,21 @@ export const GENERATOR_GLINTS = defineGenerator({
 		lp.percent('faceBias', 'Face Priority', 70),
 		lp.percent('jitter', 'Size and Angle Jitter', 50),
 		lp.percent('twinkle', 'Twinkle', 70),
-		lp.number('twinkleRate', 'Twinkle Rate', 0.9, { min: 0, max: 20, softMax: 5, step: 0.01 }, { unit: 'Hz' }),
+		lp.number(
+			'twinkleRate',
+			'Twinkle Rate',
+			0.9,
+			{ min: 0, max: 20, softMax: 5, step: 0.01 },
+			{ unit: 'Hz' },
+		),
 		anchorParam(),
-		lp.choice('rays', 'Shape', ['four', 'snow', 'eight'], ['4-Ray Cross', '6-Ray Snow Cross', '8-Ray Star'], 'four'),
+		lp.choice(
+			'rays',
+			'Shape',
+			['four', 'snow', 'eight'],
+			['4-Ray Cross', '6-Ray Snow Cross', '8-Ray Star'],
+			'four',
+		),
 		lp.toggle('spectral', 'Rainbow Rays', false),
 		lp.percent('thickness', 'Ray Thickness', 100, { range: { max: 400 } }),
 		lp.color('color', 'Colour', hex('#fff4c0')),
@@ -436,7 +455,11 @@ export const GENERATOR_GLINTS = defineGenerator({
 	defines: (p) => `#define TLG_PLACEMENT ${Math.max(0, PLACEMENTS.indexOf(String(p.placement)))}\n`,
 	presets: [
 		{ id: 'highlights', label: 'Highlight Glints', params: {} },
-		{ id: 'hero', label: 'Hero Glint', params: { placement: 'hero', size: 26, color: hex('#fff6dc'), intensity: 140 } },
+		{
+			id: 'hero',
+			label: 'Hero Glint',
+			params: { placement: 'hero', size: 26, color: hex('#fff6dc'), intensity: 140 },
+		},
 		{
 			id: 'stars',
 			label: 'Star Glints',
@@ -454,7 +477,15 @@ export const GENERATOR_GLINTS = defineGenerator({
 		{
 			id: 'rainbow',
 			label: 'Rainbow Glints',
-			params: { large: 4, small: 6, size: 32, threshold: 40, spectral: true, color: hex('#ffffff'), intensity: 140 },
+			params: {
+				large: 4,
+				small: 6,
+				size: 32,
+				threshold: 40,
+				spectral: true,
+				color: hex('#ffffff'),
+				intensity: 140,
+			},
 		},
 		{
 			id: 'scatter',
@@ -475,7 +506,8 @@ export const GENERATOR_GLINTS = defineGenerator({
 		if (p.placement === 'scatter') return num(p.scatterSpread) + num(p.size) * 1.3 + 2;
 		return num(p.size) * 1.4 + 2;
 	},
-	fieldReach: (p) => (p.placement === 'scatter' ? { outside: num(p.scatterSpread) + 2 } : { outside: 1, inside: 30 }),
+	fieldReach: (p) =>
+		p.placement === 'scatter' ? { outside: num(p.scatterSpread) + 2 } : { outside: 1, inside: 30 },
 	timeDependent: (p) => num(p.twinkle) > 0 && num(p.twinkleRate) > 0,
 	summary: (p) => `${String(p.placement)}, ${pct(p.size)}`,
 	prepass: (p, c) => {

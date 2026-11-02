@@ -6,7 +6,18 @@ import { GLSL_UV } from '../../glsl/sample.ts';
 import { defineGenerator, type LayerParams, lp, type TitleParamSpec } from '../contract.ts';
 import { GLSL_TLG, hex, num, pct, variationParam } from './shared.ts';
 
-const ROW_TYPES = ['ring', 'dashed', 'ticks', 'glyphs', 'polygon', 'star2', 'star3', 'chevrons', 'arcs', 'hex'];
+const ROW_TYPES = [
+	'ring',
+	'dashed',
+	'ticks',
+	'glyphs',
+	'polygon',
+	'star2',
+	'star3',
+	'chevrons',
+	'arcs',
+	'hex',
+];
 const ROW_LABELS = [
 	'Ring',
 	'Dashed Ring',
@@ -72,7 +83,8 @@ function outer(p: LayerParams): number {
 	const R = Math.max(1, num(p.radius));
 	const rows = Math.min(MAX_ROWS, Math.max(1, Math.round(num(p.rows, MAX_ROWS))));
 	let E = R;
-	for (let i = 1; i <= rows; i++) E = Math.max(E, (R * num(p[`row${i}Radius`])) / 100 + num(p[`row${i}Size`]));
+	for (let i = 1; i <= rows; i++)
+		E = Math.max(E, (R * num(p[`row${i}Radius`])) / 100 + num(p[`row${i}Size`]));
 	return E + 2;
 }
 
@@ -86,18 +98,31 @@ const uniformRows = Array.from({ length: MAX_ROWS }, (_, i) => {
 export const GENERATOR_MAGIC_CIRCLE = defineGenerator({
 	id: 'magicCircle',
 	label: 'Magic Circle',
-	description: 'Rings, dashes, ticks, glyphs, stars and hex bands, each row turning at its own speed, flat or on a floor.',
+	description:
+		'Rings, dashes, ticks, glyphs, stars and hex bands, each row turning at its own speed, flat or on a floor.',
 	keywords: ['hud', 'ring', 'rune', 'hologram', 'radar', 'circle', 'spell'],
 	params: [
 		lp.point('center', 'Centre', [0.5, 0.5]),
 		lp.distance('radius', 'Radius', 160, { min: 1, softMax: 600 }),
 		lp.angle('rotation', 'Rotation', 0),
-		lp.number('spin', 'Spin', 10, { min: -720, max: 720, softMin: -90, softMax: 90, step: 0.1 }, { unit: 'deg' }),
+		lp.number(
+			'spin',
+			'Spin',
+			10,
+			{ min: -720, max: 720, softMin: -90, softMax: 90, step: 0.1 },
+			{ unit: 'deg' },
+		),
 		lp.number('tilt', 'Tilt', 0, { min: 0, max: 80, step: 0.1 }, { unit: 'deg' }),
 		lp.color('colorIn', 'Centre Colour', hex('#fff6d0')),
 		lp.color('colorOut', 'Edge Colour', hex('#f0b030')),
 		lp.percent('fill', 'Inner Fill', 6),
-		lp.choice('glyphs', 'Glyphs', ['runes', 'trigrams', 'digits'], ['Runes', 'Trigrams', 'Segment Digits'], 'runes'),
+		lp.choice(
+			'glyphs',
+			'Glyphs',
+			['runes', 'trigrams', 'digits'],
+			['Runes', 'Trigrams', 'Segment Digits'],
+			'runes',
+		),
 		lp.number('rows', 'Rows', MAX_ROWS, { min: 1, max: MAX_ROWS, step: 1 }),
 		...Array.from({ length: MAX_ROWS }, (_, i) => rowParams(i)).flat(),
 		variationParam(),
@@ -118,7 +143,14 @@ export const GENERATOR_MAGIC_CIRCLE = defineGenerator({
 					{ type: 'chevrons', radius: 50, size: 17, count: 4, angle: 45, spin: -40 },
 					{ type: 'dashed', radius: 22, size: 1.5, count: 12, spin: 60 },
 				],
-				{ radius: 150, colorIn: hex('#d8ffff'), colorOut: hex('#29c4ff'), fill: 0, glyphs: 'digits', spin: 0 },
+				{
+					radius: 150,
+					colorIn: hex('#d8ffff'),
+					colorOut: hex('#29c4ff'),
+					fill: 0,
+					glyphs: 'digits',
+					spin: 0,
+				},
 			),
 		},
 		{
@@ -133,7 +165,15 @@ export const GENERATOR_MAGIC_CIRCLE = defineGenerator({
 					{ type: 'ring', radius: 50, size: 1.5, count: 1 },
 					{ type: 'dashed', radius: 34, size: 4, count: 16, spin: 30 },
 				],
-				{ radius: 180, colorIn: hex('#e6ffff'), colorOut: hex('#00b8ff'), fill: 18, glyphs: 'digits', tilt: 68, spin: 4 },
+				{
+					radius: 180,
+					colorIn: hex('#e6ffff'),
+					colorOut: hex('#00b8ff'),
+					fill: 18,
+					glyphs: 'digits',
+					tilt: 68,
+					spin: 4,
+				},
 			),
 		},
 		{

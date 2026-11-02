@@ -883,6 +883,17 @@ Status of the foundation; streams still in progress update this list. Evidence: 
   `TITLE_LOOK_NEEDS_FLOAT` and the export plan refuses when the probe answered (TL-124).
 - **Software rendering is slow**: ≈ 1.3 s per 1080p frame for a six-layer look on a title-sized box on SwiftShader, and an
   animated title redraws its whole stack every frame ([performance.md](performance.md) §7). Nothing has been measured on a GPU.
+- **Generators (§7): a particle in flight reads the shape of this frame**, not of its birth frame, because no generator keeps
+  history (TL-061). Per-letter animation carries a letter's particles with it. A title moved whole by a text animator, not by
+  clip Motion, leaves `Layout`-anchored sites behind: `Alpha Bounds` follows it, at the price of locality.
+- **Generators: Count is a density on the Title emitter.** Sites are spread over the anchor box and the share near the shape
+  emits, so a small logo in a wide box emits fewer than Count.
+- **Generators: a standalone instance reads a stand-in shape** (the bottom of the frame or a disc), not the clip it sits on.
+  To follow a title, add the generator as a layer of its look.
+- **Magic Circle glyph rows are procedural** (runes, trigrams, segment digits): a plan cannot draw a font atlas, so Pachislop's
+  kanji rows and its readable HUD string were not ported.
+- **Generator preset chips have no UI of their own here:** the presets exist and `clip.addGenerator` and `appearance.addLayer`
+  take them; the chips belong to the UI streams.
 
 ### title-looks fixes (spec 19 §13)
 Fixes the Title Looks feature depends on, each with a regression test that failed before it; details, decisions and
