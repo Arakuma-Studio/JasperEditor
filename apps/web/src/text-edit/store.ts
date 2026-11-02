@@ -1,9 +1,8 @@
 // In-place text entry on the Program monitor (spec 19 TL-085): which entry is open. One at a time; the overlay
 // (TextEntryEditor.tsx) renders it on the Program monitor of `session`. Opening a second one finishes the first.
-import type { Vec2 } from '@jasper/project';
+import type { TextRun, Vec2 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { createStore } from 'zustand/vanilla';
-import type { TextRun } from '@jasper/project';
 
 export type TextEntry = {
 	session: EditorSession;

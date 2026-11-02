@@ -111,7 +111,19 @@ export const TEXT_WARP = defineShaderEffect({
 	category: 'Distort',
 	description:
 		'Bends the layer with the 15 Warp Text styles of Photoshop. Placed after a look, its rims, glows and shadows bend with the letters.',
-	keywords: ['warp', 'text', 'arc', 'arch', 'bulge', 'flag', 'wave', 'fisheye', 'inflate', 'squeeze', 'twist'],
+	keywords: [
+		'warp',
+		'text',
+		'arc',
+		'arch',
+		'bulge',
+		'flag',
+		'wave',
+		'fisheye',
+		'inflate',
+		'squeeze',
+		'twist',
+	],
 	params: [
 		fxParam.choice(
 			'style',
@@ -120,7 +132,13 @@ export const TEXT_WARP = defineShaderEffect({
 			WARP_STYLES.map((s) => WARP_STYLE_LABELS[s]),
 			'arc',
 		),
-		fxParam.choice('orientation', 'Orientation', ['horizontal', 'vertical'], ['Horizontal', 'Vertical'], 'horizontal'),
+		fxParam.choice(
+			'orientation',
+			'Orientation',
+			['horizontal', 'vertical'],
+			['Horizontal', 'Vertical'],
+			'horizontal',
+		),
 		fxParam.number('bend', 'Bend', 50, { min: -100, max: 100, step: 1 }, { unit: '%' }),
 		fxParam.number(
 			'horizontalDistortion',

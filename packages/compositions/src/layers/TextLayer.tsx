@@ -178,7 +178,7 @@ function mergeUprightUnits(segments: TextSegment[], ranges: { from: number; to: 
 
 /** Segments the caps-applied text into units and cuts them at style boundaries (S11:TXA-010). */
 function buildFlow(source: TextSource, impl: TextAnimationImpl, params: Record<string, unknown>): Flow {
-	const { text, style: base, runs } = source.text;
+	const { text, style: base } = source.text;
 	const styles: RunStyle[] = [];
 	// Caps are applied before segmentation (ß → SS counts as two characters).
 	const parts = contentSpans(source.text).map((s) => {
@@ -387,12 +387,7 @@ function AnimatedText({
 				</span>
 			)
 		) : (
-			<span
-				key={pc.at}
-				data-text-piece={i}
-				{...(pc.first ? { 'data-text-unit': '' } : {})}
-				style={cssOf(pc)}
-			>
+			<span key={pc.at} data-text-piece={i} {...(pc.first ? { 'data-text-unit': '' } : {})} style={cssOf(pc)}>
 				{pc.text}
 			</span>
 		),

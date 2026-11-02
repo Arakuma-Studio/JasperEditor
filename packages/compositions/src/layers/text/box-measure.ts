@@ -91,7 +91,13 @@ export function measureTextBox(
 	applyCss(p, {
 		...textBlockStyle({ text: content, box: { autoSize: box.autoSize } }, faces),
 		...(vertical
-			? { left: 0, right: 'auto', width: 'max-content', minWidth: 0, height: pointText ? 'max-content' : height }
+			? {
+					left: 0,
+					right: 'auto',
+					width: 'max-content',
+					minWidth: 0,
+					height: pointText ? 'max-content' : height,
+				}
 			: { width: pointText ? 'max-content' : `${width}px`, minHeight: 0, height: 'auto' }),
 		contain: 'layout style',
 	});

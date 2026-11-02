@@ -57,7 +57,13 @@ describe('warp meshes (spec 19 TL-110)', () => {
 	it.each(GOLDEN.map((g) => [`${g.style} ${g.bend} ${g.rotate ? 'V' : 'H'} ${g.h}/${g.v}`, g] as const))(
 		'reproduces Patchy: %s',
 		(_, g) => {
-			const m = styleWarpMesh(lowerFirst(g.style) as (typeof WARP_STYLES)[number], g.bend, g.rotate, 300, 100);
+			const m = styleWarpMesh(
+				lowerFirst(g.style) as (typeof WARP_STYLES)[number],
+				g.bend,
+				g.rotate,
+				300,
+				100,
+			);
 			applyWarpDistortion(m, g.h, g.v);
 			expect([m.uOrder, m.vOrder]).toEqual([g.uOrder, g.vOrder]);
 			m.xs.forEach((x, i) => {

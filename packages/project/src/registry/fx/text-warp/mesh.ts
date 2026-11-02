@@ -328,7 +328,11 @@ export function styleWarpMesh(
  * Photoshop's distortion: the vertical first (each row scales about the midpoint of its two edge points by
  * 1 + (2v − 1)·vertical), then the horizontal (each column likewise, by 1 + (2u − 1)·horizontal). In place.
  */
-export function applyWarpDistortion(mesh: WarpMeshGrid, horizontalPercent: number, verticalPercent: number): void {
+export function applyWarpDistortion(
+	mesh: WarpMeshGrid,
+	horizontalPercent: number,
+	verticalPercent: number,
+): void {
 	const vertical = clamp(verticalPercent, -100, 100);
 	const horizontal = clamp(horizontalPercent, -100, 100);
 	const scale = (points: number[], k: number) => {
@@ -436,7 +440,8 @@ export function warpMapPoint(surface: WarpSurface, u: number, v: number): [numbe
 	for (let row = 0; row < 4; row++)
 		for (let column = 0; column < 4; column++) {
 			const i = (row * 4 + column) * 2;
-			const w = a.b[column]! * b.b[row]! + (u - cu) * a.d[column]! * b.b[row]! + (v - cv) * a.b[column]! * b.d[row]!;
+			const w =
+				a.b[column]! * b.b[row]! + (u - cu) * a.d[column]! * b.b[row]! + (v - cv) * a.b[column]! * b.d[row]!;
 			x += w * surface[i]!;
 			y += w * surface[i + 1]!;
 		}

@@ -15,8 +15,7 @@ function refusal(c: TextClip, trackLocked: boolean): string | null {
 	if (trackLocked) return t('The clip’s track is locked');
 	if ((c.content as { expression?: { enabled?: boolean } }).expression?.enabled)
 		return t('An expression drives this text: edit it in Effect Controls');
-	if ((c as { threeD?: unknown }).threeD)
-		return t('This text is a 3D layer: edit it in Properties');
+	if ((c as { threeD?: unknown }).threeD) return t('This text is a 3D layer: edit it in Properties');
 	return null;
 }
 

@@ -224,6 +224,8 @@ test('the Type tool creates a title at the Program monitor click', async () => {
 	await page.getByRole('button', { name: 'Type Tool', exact: true }).click();
 	const vp = (await page.getByTestId('program-viewport').boundingBox())!;
 	await page.mouse.click(vp.x + vp.width / 2, vp.y + vp.height * 0.3);
+	await expect(page.getByTestId('text-entry-input')).toBeFocused();
+	await page.keyboard.type('Title');
 	await page.keyboard.press('Escape');
 	await expect.poll(async () => (await clips(page)).filter((c) => c.kind === 'text').length).toBe(1);
 	const title = (await clips(page)).find((c) => c.kind === 'text')!;

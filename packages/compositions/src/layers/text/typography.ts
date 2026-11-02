@@ -197,7 +197,11 @@ export function charFlowCss(s: TextStyle, family: string, vertical = false): CSS
 		...(features ? { fontFeatureSettings: features } : { fontFeatureSettings: 'normal' }),
 		...(variations ? { fontVariationSettings: variations } : { fontVariationSettings: 'normal' }),
 		// In a column the baseline runs down the page and "up" is to the right.
-		...(r !== 0 ? (vertical ? { position: 'relative', left: css(r) } : { position: 'relative', top: css(-r) }) : {}),
+		...(r !== 0
+			? vertical
+				? { position: 'relative', left: css(r) }
+				: { position: 'relative', top: css(-r) }
+			: {}),
 	};
 }
 

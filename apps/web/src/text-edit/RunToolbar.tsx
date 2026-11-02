@@ -5,9 +5,9 @@
 // look's face paints the clip's own picture (`source`), and a finish is the look's own, per letter.
 import {
 	type RunPatch,
-	TITLE_FINISHES,
 	type TextContent,
 	type TextStyle,
+	TITLE_FINISHES,
 	textRunAt,
 	type Vec2,
 } from '@jasper/project';

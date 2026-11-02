@@ -49,8 +49,7 @@ export function warpStyleCommands(clips: readonly Clip[], style: WarpStyle | nul
 	return clips.flatMap((c): Command[] => {
 		const fx = warpEffectOf(c);
 		if (style === null) return fx ? [{ type: 'effect.remove', effectInstanceId: fx.id } as Command] : [];
-		if (fx)
-			return [{ type: 'param.set', target: ['effect', fx.id, 'style'], value: style } as Command];
+		if (fx) return [{ type: 'param.set', target: ['effect', fx.id, 'style'], value: style } as Command];
 		const list = (c as Effects).effects ?? [];
 		const look = list.findIndex((e) => e.effectId === TITLE_LOOK_EFFECT_ID);
 		return [

@@ -27,8 +27,10 @@ export type DraftValue = { text: string; runs: TextRun[] };
 export type DraftState = DraftValue & { undo: DraftValue[]; redo: DraftValue[]; error: string | null };
 export type CommitResult = { ok: true; clipId: string | null } | { ok: false; error: string };
 
+/** The clip in the committed document: a transient one is this entry's own drawing. */
 function clipOf(session: EditorSession, id: string | null): TextClip | null {
-	const c = id ? activeSequence(session)?.clips[id] : undefined;
+	const st = session.getState();
+	const c = id && st.activeSequenceId ? st.document.sequences[st.activeSequenceId]?.clips[id] : undefined;
 	return c?.kind === 'text' ? (c as TextClip) : null;
 }
 
@@ -69,7 +71,6 @@ export class EntryDraft {
 		const first = entry.recovered ?? this.base;
 		this.state = { ...first, undo: [], redo: [], error: null };
 		if (!entry.clipId) this.placement = textPlacement(entry.session, entry.frame);
-		if (entry.recovered) this.push();
 	}
 
 	/** The clip the Program monitor draws for this entry, if any. */
@@ -159,7 +160,6 @@ export class EntryDraft {
 			{
 				type: 'clip.update',
 				clipId: clip.id,
-				sequenceId: seq.id,
 				patch: {
 					content: {
 						text,
@@ -190,9 +190,9 @@ export class EntryDraft {
 	}
 
 	/** Draws the entry as it stands, as a transient document. A refusal shows when the entry is committed. */
-	private push(): void {
+	push(): void {
 		const { session } = this.entry;
-		if (session.getState().readOnly) return;
+		if (this.closed || session.getState().readOnly) return;
 		const commands = this.commands(false);
 		try {
 			if (commands.length === 0) {
@@ -237,8 +237,7 @@ export class EntryDraft {
 				if (!u.ok) return fail(u.errors.map((x) => x.message).join('; '));
 				r = this.gesture.commit();
 				this.gesture = null;
-			} else
-				r = session.apply({ label: this.label(), origin: 'user', commands: commands as never });
+			} else r = session.apply({ label: this.label(), origin: 'user', commands: commands as never });
 		} catch (e) {
 			return fail(e instanceof Error ? e.message : String(e));
 		}

@@ -1,12 +1,6 @@
 // Properties rows of a text selection (spec 19 TL-110, TL-111): orientation, upright short runs, and Warp Text. The
 // warp's numbers are the effect's own rows, so stopwatches and keyframes work here as in Effect Controls.
-import {
-	type Clip,
-	isVerticalText,
-	WARP_STYLE_LABELS,
-	WARP_STYLES,
-	type WarpStyle,
-} from '@jasper/project';
+import { type Clip, isVerticalText, WARP_STYLE_LABELS, WARP_STYLES, type WarpStyle } from '@jasper/project';
 import type { ReactNode } from 'react';
 import { CheckboxField, SelectField } from '../panels/properties/controls/fields.tsx';
 import type { RowContext } from '../panels/properties/controls/PropertyRow.tsx';
@@ -67,13 +61,14 @@ export function TextLayoutRows(props: {
 					data-testid="text-orientation"
 					disabled={!!blocked && vertical !== true}
 					onChange={(v) =>
-						ctx.ops.apply(v === 'vertical' ? 'Vertical Text' : 'Horizontal Text', writingModeCommands(clips, v === 'vertical'))
+						ctx.ops.apply(
+							v === 'vertical' ? 'Vertical Text' : 'Horizontal Text',
+							writingModeCommands(clips, v === 'vertical'),
+						)
 					}
 				/>
 			</FieldRow>
-			{blocked && vertical !== true ? (
-				<p className="px-2 text-pr-small text-pr-muted">{blocked}</p>
-			) : null}
+			{blocked && vertical !== true ? <p className="px-2 text-pr-small text-pr-muted">{blocked}</p> : null}
 			{vertical !== false ? (
 				<FieldRow label="Short runs">
 					<CheckboxField

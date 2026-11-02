@@ -27,9 +27,9 @@ import {
 	matrixToCss,
 	type ResolvedLayer,
 	type RunPatch,
-	TITLE_LOOK_EFFECT_ID,
 	type TextContent,
 	type TextStyle,
+	TITLE_LOOK_EFFECT_ID,
 	type Vec2,
 } from '@jasper/project';
 import {
@@ -149,6 +149,7 @@ function TextEntryEditor({
 	const hostRef = useRef<HTMLDivElement>(null);
 	const ref = useRef<HTMLDivElement>(null);
 	const composingRef = useRef(false);
+	const mounted = useRef(false);
 	const [composing, setComposing] = useState(false);
 	const pendingSel = useRef<TextRange | null>(null);
 	const [sel, setSel] = useState<TextRange | null>(null);
@@ -180,10 +181,12 @@ function TextEntryEditor({
 
 	useEffect(() => {
 		setLiveDraft(draft);
+		// A recovered entry draws at once.
+		if (entry.recovered) draft.push();
 		return () => {
 			if (liveDraft() === draft) setLiveDraft(null);
 		};
-	}, [draft]);
+	}, [draft, entry.recovered]);
 
 	// Rest at the playhead, paused, with animators and a warp out of the way of the caret.
 	useEffect(() => {
@@ -212,10 +215,15 @@ function TextEntryEditor({
 		const onHide = () => {
 			if (!draft.closed) finish();
 		};
+		mounted.current = true;
 		window.addEventListener('pagehide', onHide);
 		return () => {
 			window.removeEventListener('pagehide', onHide);
-			if (!draft.closed) draft.commit();
+			mounted.current = false;
+			// After the commit phase: an effect that is only being replayed (React's StrictMode) is back by then.
+			queueMicrotask(() => {
+				if (!mounted.current && !draft.closed) draft.commit();
+			});
 		};
 	}, [draft, finish]);
 
@@ -226,8 +234,8 @@ function TextEntryEditor({
 	const wasDrawn = useRef(false);
 	useEffect(() => {
 		if (drawn) wasDrawn.current = true;
-		else if (wasDrawn.current && !gestureHidden(session) && !draft.closed) finish();
-	}, [drawn, draft, finish, session]);
+		else if (entry.clipId && wasDrawn.current && !draft.closed) finish();
+	}, [drawn, entry.clipId, draft, finish]);
 
 	useEffect(() => {
 		const el = ref.current;
@@ -288,9 +296,7 @@ function TextEntryEditor({
 		if (!selection.isCollapsed) {
 			setCaret(null);
 			const b = range.getBoundingClientRect?.();
-			setToolbarAt(
-				b && b.width + b.height > 0 ? [b.left + b.width / 2 - host.left, b.top - host.top] : null,
-			);
+			setToolbarAt(b && b.width + b.height > 0 ? [b.left + b.width / 2 - host.left, b.top - host.top] : null);
 			return;
 		}
 		setToolbarAt(null);
@@ -365,9 +371,7 @@ function TextEntryEditor({
 		if (!sel || sel.start === sel.end) return;
 		const now = runStateOf(content, sel);
 		patchRuns(
-			field === 'bold'
-				? { style: { weight: now.bold ? 400 : 700 } }
-				: { style: { italic: !now.italic } },
+			field === 'bold' ? { style: { weight: now.bold ? 400 : 700 } } : { style: { italic: !now.italic } },
 		);
 	};
 
@@ -439,7 +443,11 @@ function TextEntryEditor({
 		: t('Esc or a click away to finish · Enter for a new line');
 	const tip = toTip(view, layer, entry.point);
 	return (
-		<div ref={hostRef} className="pointer-events-none absolute inset-0 overflow-hidden" data-testid="text-entry">
+		<div
+			ref={hostRef}
+			className="pointer-events-none absolute inset-0 overflow-hidden"
+			data-testid="text-entry"
+		>
 			<style>{`[data-testid="text-entry-input"]::selection,[data-testid="text-entry-input"] *::selection{background:color-mix(in srgb,var(--pr-accent) 40%,transparent);color:${ghost ? 'transparent' : 'inherit'}}@keyframes text-entry-blink{0%,55%{opacity:1}56%,100%{opacity:0}}`}</style>
 			<div
 				style={{
@@ -564,11 +572,6 @@ function TextEntryEditor({
 	);
 }
 
-/** While a gesture draws its own transient, a clip that is not in the published frame yet has not left the monitor. */
-function gestureHidden(session: TextEntry['session']): boolean {
-	return session.gestureActive;
-}
-
 /** Overlay px under the text: the lowest corner of the box. */
 function toTip(view: View, layer: ResolvedLayer | undefined, point: readonly number[]): Vec2 {
 	const toScreen = (p: readonly number[]): Vec2 => [view.x + p[0]! * view.scale, view.y + p[1]! * view.scale];
@@ -583,4 +586,3 @@ function toTip(view: View, layer: ResolvedLayer | undefined, point: readonly num
 	].map(([x, y]) => toScreen([m.a * x! + m.c * y! + m.e, m.b * x! + m.d * y! + m.f]));
 	return [Math.min(...corners.map((c) => c[0])), Math.max(...corners.map((c) => c[1]))];
 }
-

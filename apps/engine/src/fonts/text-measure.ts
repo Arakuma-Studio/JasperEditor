@@ -11,7 +11,13 @@
 import { createHash } from 'node:crypto';
 import { extname } from 'node:path';
 import type { MeasuredBox, MeasureFace, TextMeasureJob } from '@jasper/compositions';
-import { type FontRef, isVerticalText, type TextBox, type TextContent, type TextMeasurer } from '@jasper/project';
+import {
+	type FontRef,
+	isVerticalText,
+	type TextBox,
+	type TextContent,
+	type TextMeasurer,
+} from '@jasper/project';
 import { z } from 'zod';
 import { serveBundleForMeasuring } from '../mg-bundles/text-measure.ts';
 import type { RemotionService, SharedRenderBrowser } from '../remotion/service.ts';
