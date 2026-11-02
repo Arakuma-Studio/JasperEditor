@@ -39,6 +39,7 @@ import {
 	type InterchangeImportRequest,
 	type InterchangePrerenderPlanRequestSchema,
 	type JobListQuery,
+	type LookPosterRequest,
 	type LottieExportRequest,
 	type LoudnessNormalizeRequest,
 	type MediaRegisterRequest,
@@ -1044,6 +1045,29 @@ export class EngineClient {
 			bytes: new Uint8Array(await res.arrayBuffer()),
 			contentType: res.headers.get('content-type') ?? 'application/octet-stream',
 		};
+	}
+
+	/**
+	 * Spec 19 TL-087: a look's poster as PNG bytes, from the engine's render path. Aborting stops waiting; the engine
+	 * stops rendering once nobody waits. Refusals throw EngineError with the engine's code.
+	 */
+	async titleLookPoster(req: LookPosterRequest, signal?: AbortSignal): Promise<Uint8Array> {
+		const res = await this.fetchResponse(this.url('/api/title-looks/poster'), {
+			method: 'POST',
+			headers: { ...this.authorizationHeaders(), 'content-type': 'application/json' },
+			body: JSON.stringify(req),
+			signal,
+			credentials: 'include',
+		});
+		if (!res.ok) {
+			const shape = ErrorShapeSchema.safeParse(await res.json().catch(() => null));
+			if (shape.success) throw EngineError.fromShape(shape.data, res.status);
+			throw new EngineError('HTTP_ERROR', `HTTP ${res.status}`, {
+				status: res.status,
+				retryable: res.status >= 500,
+			});
+		}
+		return new Uint8Array(await res.arrayBuffer());
 	}
 
 	/** Same-origin media URL (ARCHITECTURE §8, S04:MS-001). */
