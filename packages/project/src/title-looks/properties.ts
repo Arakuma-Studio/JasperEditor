@@ -5,13 +5,14 @@
 //                 ["appearance", fxId, "light", prop]      light angle or altitude
 //   property key  appearance.<fxId>.<layerId>.<param>      (the ParamPath joined with dots)
 // Global light: ParamPath ["globalLight", sequenceId, prop], keys in sequence time.
-import { titleLayerType, paramSpec, activeParamSpecs } from '../registry/fx/title-look/registry.ts';
+
 import { isPaintParam, type TitleParamSpec } from '../registry/fx/title-look/contract.ts';
+import { activeParamSpecs, paramSpec, titleLayerType } from '../registry/fx/title-look/registry.ts';
 import type { PropertySpec } from '../registry/properties.ts';
 import type { Animatable } from '../schema/common.ts';
 import type { EffectInstance } from '../schema/sequence.ts';
-import { paramValueProblem } from './validate.ts';
 import { type Appearance, type AppearanceLayer, COLOR_ROLES, type Role } from './model.ts';
+import { paramValueProblem } from './validate.ts';
 
 export const APPEARANCE_PATH = 'appearance';
 export const PALETTE_SLOT = 'palette';
@@ -171,7 +172,12 @@ export function layerPropertySpecs(fx: Pick<EffectInstance, 'id'>, layer: Appear
 	if (!def) return [];
 	const finish = layer.params.finish?.value;
 	return activeParamSpecs(def, typeof finish === 'string' ? finish : 'flat').map((p) =>
-		propertySpecOf(appearancePropertyKey(fx.id, layer.id, p.name), p, ['$appearance', fx.id, layer.id, p.name], p.label),
+		propertySpecOf(
+			appearancePropertyKey(fx.id, layer.id, p.name),
+			p,
+			['$appearance', fx.id, layer.id, p.name],
+			p.label,
+		),
 	);
 }
 

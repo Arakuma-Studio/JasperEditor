@@ -23,12 +23,12 @@ import {
 	type RenderVisualClip,
 	resolveLayerProps,
 	TITLE_LOOK_EFFECT_ID,
-	titleLookBleed,
 	type Transform,
 	templateFontId,
 	textAnimatorsTimeVarying,
 	textContentPad,
 	textInkPad,
+	titleLookBleed,
 	vectorShapeBounds,
 	vectorShapeIsTimeDependent,
 } from '@jasper/project';

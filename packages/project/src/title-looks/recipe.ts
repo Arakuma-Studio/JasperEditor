@@ -5,12 +5,12 @@ import { z } from 'zod';
 import { isPaintParam } from '../registry/fx/title-look/contract.ts';
 import { activeParamSpecs, titleLayerType } from '../registry/fx/title-look/registry.ts';
 import {
+	type AnimLayerParam,
 	type Appearance,
 	type AppearanceLayer,
-	type AnimLayerParam,
-	type LayerParamValue,
 	DEFAULT_LIGHT_ALTITUDE,
 	DEFAULT_LIGHT_ANGLE,
+	type LayerParamValue,
 	LIGHT_SOURCES,
 	LookColorSchema,
 	MAX_APPEARANCE_LAYERS,
@@ -76,7 +76,8 @@ export function layerFromRecipe(l: RecipeLayer, id: string): AppearanceLayer {
 /** The stored form of a recipe (TL-015: no keyframes). Throws a message for unknown types or params. */
 export function appearanceFromRecipe(r: LookRecipe, newLayerId: () => string, seed = 0): Appearance {
 	const palette: Appearance['palette'] = {};
-	for (const [role, c] of Object.entries(r.palette ?? {})) palette[role as Role] = staticAnim([...c] as never);
+	for (const [role, c] of Object.entries(r.palette ?? {}))
+		palette[role as Role] = staticAnim([...c] as never);
 	return {
 		v: 1,
 		palette,

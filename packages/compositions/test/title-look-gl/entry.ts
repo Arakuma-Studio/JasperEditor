@@ -59,7 +59,12 @@ export type LookResult = {
 	passLog?: string[];
 };
 
-function paintInput(ctx: CanvasRenderingContext2D, input: LookInput, b: { x: number; y: number; w: number; h: number }, s: number) {
+function paintInput(
+	ctx: CanvasRenderingContext2D,
+	input: LookInput,
+	b: { x: number; y: number; w: number; h: number },
+	s: number,
+) {
 	if (input.kind === 'text') {
 		ctx.fillStyle = `rgba(255, 255, 255, ${input.opacity ?? 1})`;
 		ctx.font = `bold ${(input.size ?? 96) * s}px "Liberation Sans", Arial, sans-serif`;
@@ -118,13 +123,23 @@ function render(req: LookRequest): LookResult {
 	if (!h) throw new Error('no WebGL2');
 	const spec = TITLE_LOOK_EFFECT as EffectSpec;
 	let n = 0;
-	const stored = appearanceFromRecipe(req.recipe, () => `apl_${String(++n).padStart(16, '0')}`, req.seed ?? 7);
+	const stored = appearanceFromRecipe(
+		req.recipe,
+		() => `apl_${String(++n).padStart(16, '0')}`,
+		req.seed ?? 7,
+	);
 	const appearance = resolveAppearance(stored, 0);
 	const unitPx =
 		req.unitPx !== undefined ? req.unitPx : req.input.kind === 'text' ? (req.input.size ?? 96) : null;
 	const titleLook = { appearance, source: stored, unitPx, contentSeconds: req.contentSeconds ?? 0 };
 	const pxScale = req.pxScale ?? 1;
-	const base = { width: req.box.width, height: req.box.height, pxScale: 1, fps: 30, structures: { titleLook } };
+	const base = {
+		width: req.box.width,
+		height: req.box.height,
+		pxScale: 1,
+		fps: 30,
+		structures: { titleLook },
+	};
 	const pad = spec.gpu!.padding!({}, base) as Partial<FxPadding>;
 	const extra = req.pad ?? 0;
 	const padding: FxPadding = {
@@ -162,11 +177,16 @@ function render(req: LookRequest): LookResult {
 	const passMs: number[] = [];
 	if (req.perPass) {
 		let tp = performance.now();
-		gl.drawArrays = function (...a: Parameters<typeof realDraw>) {
+		gl.drawArrays = (...a: Parameters<typeof realDraw>) => {
 			realDraw.apply(gl, a);
 			const type = gl.getParameter(gl.IMPLEMENTATION_COLOR_READ_TYPE) as number;
 			const fmt = gl.getParameter(gl.IMPLEMENTATION_COLOR_READ_FORMAT) as number;
-			const buf = type === gl.UNSIGNED_BYTE ? new Uint8Array(4) : type === gl.FLOAT ? new Float32Array(4) : new Uint16Array(4);
+			const buf =
+				type === gl.UNSIGNED_BYTE
+					? new Uint8Array(4)
+					: type === gl.FLOAT
+						? new Float32Array(4)
+						: new Uint16Array(4);
 			gl.readPixels(0, 0, 1, 1, fmt, type, buf);
 			const now = performance.now();
 			passMs.push(now - tp);
@@ -215,7 +235,8 @@ function render(req: LookRequest): LookResult {
 			...(req.perPass
 				? {
 						passLog: plan.passes.map(
-							(p, i) => `${(p.output ?? 'out').padEnd(8)} ${p.width}×${p.height} ${(passMs[i] ?? 0).toFixed(0)} ms`,
+							(p, i) =>
+								`${(p.output ?? 'out').padEnd(8)} ${p.width}×${p.height} ${(passMs[i] ?? 0).toFixed(0)} ms`,
 						),
 					}
 				: {}),

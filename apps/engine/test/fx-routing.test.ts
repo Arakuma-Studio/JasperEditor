@@ -82,7 +82,12 @@ describe('GPU shader effects in the export planner and layer bakes', () => {
 			light: { source: 'look', angle: { value: 0, keyframes: [] }, altitude: { value: 0, keyframes: [] } },
 			seed: 1,
 			layers: [
-				{ id: 'apl_0000000000000001', type: 'rim', enabled: true, params: { width: { value: 5, keyframes } } },
+				{
+					id: 'apl_0000000000000001',
+					type: 'rim',
+					enabled: true,
+					params: { width: { value: 5, keyframes } },
+				},
 			],
 		});
 		expect(nativeBlockers(look(rim([]), 'video'), caps, [], registry).join()).toContain(TITLE_LOOK_EFFECT_ID);
@@ -102,10 +107,19 @@ describe('GPU shader effects in the export planner and layer bakes', () => {
 			light: { source: 'look', angle: { value: 0, keyframes: [] }, altitude: { value: 0, keyframes: [] } },
 			seed: 1,
 			layers: [
-				{ id: 'apl_0000000000000001', type: 'glow', enabled: true, params: { radius: { value: 30, keyframes: [] } } },
+				{
+					id: 'apl_0000000000000001',
+					type: 'glow',
+					enabled: true,
+					params: { radius: { value: 30, keyframes: [] } },
+				},
 			],
 		};
-		const withLook = { ...c, effects: [{ ...fx(TITLE_LOOK_EFFECT_ID), appearance }], intrinsicBox: { width: 400, height: 200 } };
+		const withLook = {
+			...c,
+			effects: [{ ...fx(TITLE_LOOK_EFFECT_ID), appearance }],
+			intrinsicBox: { width: 400, height: 200 },
+		};
 		const bleed = contentBleed(withLook as never, registry);
 		// 30 % of the shorter side of the box, 60 px, and the guard.
 		expect(bleed).toBeGreaterThanOrEqual(60);

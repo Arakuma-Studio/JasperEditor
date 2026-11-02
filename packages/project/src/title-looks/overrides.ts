@@ -6,7 +6,7 @@
 // takes the deviations from the clip itself against the look as it was, and re-applies them to the new look: each
 // override keeps its value, keyframes and expression.
 import { evaluate } from '../keyframes.ts';
-import { type Animatable } from '../schema/common.ts';
+import type { Animatable } from '../schema/common.ts';
 import {
 	type Appearance,
 	type AppearanceLayer,

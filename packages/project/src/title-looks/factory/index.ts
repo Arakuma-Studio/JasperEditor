@@ -13,5 +13,7 @@ export type FactoryLook = Omit<TitleLook, 'id' | 'appearance' | 'sourceId'> & {
 export const FACTORY_LOOKS: readonly FactoryLook[] = [];
 export const FACTORY_COLORWAYS: readonly Colorway[] = [];
 
-export const factoryLook = (id: string): FactoryLook | undefined => FACTORY_LOOKS.find((l) => l.libraryId === id);
-export const factoryColorway = (id: string): Colorway | undefined => FACTORY_COLORWAYS.find((c) => c.id === id);
+export const factoryLook = (id: string): FactoryLook | undefined =>
+	FACTORY_LOOKS.find((l) => l.libraryId === id);
+export const factoryColorway = (id: string): Colorway | undefined =>
+	FACTORY_COLORWAYS.find((c) => c.id === id);

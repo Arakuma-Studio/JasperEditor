@@ -31,8 +31,6 @@ import type { ProjectDocument } from '../schema/document.ts';
 import type { Mask } from '../schema/mask.ts';
 import type { MgCompositionInfo } from '../schema/media.ts';
 import { PUPPET_PIN_LABELS, type PuppetPinKind, type PuppetPinProp } from '../schema/puppet.ts';
-import type { Appearance } from '../title-looks/model.ts';
-import { appearanceAnimAt, appearancePropertySpecs } from '../title-looks/properties.ts';
 import {
 	BLEND_MODES,
 	type Clip,
@@ -55,6 +53,8 @@ import {
 	MAX_TEXT_STROKES,
 } from '../text-styles/patch.ts';
 import { flicksPerFrame, type Rational } from '../time.ts';
+import type { Appearance } from '../title-looks/model.ts';
+import { appearanceAnimAt, appearancePropertySpecs } from '../title-looks/properties.ts';
 import { SHAPE_ITEM_KEY_PREFIX, shapeItemPropertySpecs } from '../vector/properties.ts';
 import type { EffectRegistry, EffectSpec, ParamSpec } from './effects.ts';
 import { kindCapabilities } from './kinds.ts';
@@ -2051,9 +2051,7 @@ function readStoredProperty(ctx: PropertyContext, s: PropertySpec): unknown {
 	// spec 19 TL-014: `['$appearance', fxId, slot, name]`.
 	if (head === '$appearance') {
 		const fx = ((ctx.clip as { effects?: EffectInstance[] }).effects ?? []).find((e) => e.id === a);
-		return fx?.appearance
-			? appearanceAnimAt(fx.appearance as Appearance, b!, s.storagePath[3]!)
-			: undefined;
+		return fx?.appearance ? appearanceAnimAt(fx.appearance as Appearance, b!, s.storagePath[3]!) : undefined;
 	}
 	// wp-m2-anime-templates (S11:ATP-006): keyframable template params read as an Animatable view.
 	if (s.group === 'params' && s.animatable !== 'no') {

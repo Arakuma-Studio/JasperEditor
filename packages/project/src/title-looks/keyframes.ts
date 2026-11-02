@@ -1,6 +1,7 @@
 // A stored keyframe's fields other than its value (the value is the param spec's to judge).
-import { keyframeSchema } from '../schema/common.ts';
+
 import { z } from 'zod';
+import { keyframeSchema } from '../schema/common.ts';
 
 const KeySchema = keyframeSchema(z.unknown());
 

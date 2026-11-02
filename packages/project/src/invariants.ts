@@ -81,17 +81,6 @@ import { getTextAnimationSpec } from './text-animations.ts';
 import { repairTextAnimators, textAnimatorIssues } from './text-animators/validate.ts';
 import { clipTextStyles, repairTextStyle, storedTextStyles, textStyleIssues } from './text-style.ts';
 import { clipTextStyleIssue, repairTextStyles, textStylesRecordIssues } from './text-styles/model.ts';
-import { clipLook, globalLightOf, TITLE_LOOK_EFFECT_ID } from './title-looks/model.ts';
-import {
-	appearanceProblem,
-	clipLookProblem,
-	globalLightProblem,
-	repairAppearance,
-	repairTitleLooks,
-	sanitizeAppearances,
-	titleLookOf,
-	titleLooksRecordIssues,
-} from './title-looks/validate.ts';
 import { canBe3d, newLayer3D } from './three-d/model.ts';
 import {
 	contentSpanFlicks,
@@ -103,6 +92,17 @@ import {
 } from './time.ts';
 import { remapIssues, repairRemap } from './time-remap/invariants.ts';
 import { isRemapped } from './time-remap/model.ts';
+import { clipLook, globalLightOf, TITLE_LOOK_EFFECT_ID } from './title-looks/model.ts';
+import {
+	appearanceProblem,
+	clipLookProblem,
+	globalLightProblem,
+	repairAppearance,
+	repairTitleLooks,
+	sanitizeAppearances,
+	titleLookOf,
+	titleLooksRecordIssues,
+} from './title-looks/validate.ts';
 import { CUSTOM_FADE, transitionSpec } from './transitions.ts';
 import { walkItems } from './vector/defaults.ts';
 import { checkShapeItem, duplicateItemIds } from './vector/input.ts';
@@ -702,11 +702,12 @@ export function invariantCheckers(
 			}
 			// spec 19 TL-010: a look is a clip effect with a valid appearance, and only a look has one.
 			if (fx.appearance !== undefined || fx.effectId === TITLE_LOOK_EFFECT_ID) {
-				const look = fx.effectId !== TITLE_LOOK_EFFECT_ID
-					? 'appearance data on another effect'
-					: !onClip
-						? 'a look on a track or master effect'
-						: appearanceProblem(fx.appearance);
+				const look =
+					fx.effectId !== TITLE_LOOK_EFFECT_ID
+						? 'appearance data on another effect'
+						: !onClip
+							? 'a look on a track or master effect'
+							: appearanceProblem(fx.appearance);
 				if (look)
 					issues.push(inv('INV-APPEARANCE', `Effect ${fx.id}: ${look}`, [...where, fx.id, 'appearance']));
 			}
@@ -1424,7 +1425,8 @@ export function runInvariants(
 	// spec 13 AS-020: subtitle templates copied into the project.
 	for (const [message, path] of subtitleTemplatesIssues(doc)) issues.push(inv('INV-SUBTITLE', message, path));
 	// spec 19 TL-015: looks of the project.
-	for (const [message, path] of titleLooksRecordIssues(doc)) issues.push(inv('INV-APPEARANCE', message, path));
+	for (const [message, path] of titleLooksRecordIssues(doc))
+		issues.push(inv('INV-APPEARANCE', message, path));
 	// spec 15 EA-010: style recipes copied into the project.
 	for (const [message, path] of styleRecipesIssues(doc)) issues.push(inv('INV-STYLE-RECIPE', message, path));
 	// spec 18 AF-BRF-002: agent notes must be readable (INV-AGENT-NOTES).
@@ -1595,7 +1597,8 @@ export function runInvariants(
 			);
 		// spec 19 TL-017: the sequence's light must be readable.
 		const lightBad = globalLightProblem(seq.settings.globalLight);
-		if (lightBad) issues.push(inv('INV-APPEARANCE', `Sequence ${seq.id}: ${lightBad}`, [...where, 'settings']));
+		if (lightBad)
+			issues.push(inv('INV-APPEARANCE', `Sequence ${seq.id}: ${lightBad}`, [...where, 'settings']));
 		// spec 18 AF-BRF-001: the brief must be readable (INV-BRIEF).
 		const briefBad = sequenceBriefIssue((seq as { brief?: unknown }).brief);
 		if (briefBad) issues.push(inv('INV-BRIEF', `Sequence ${seq.id} brief: ${briefBad}`, [...where, 'brief']));

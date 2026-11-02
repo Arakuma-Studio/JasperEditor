@@ -172,10 +172,7 @@ export function clipPictureTime(
 	return contentTimeAt(clip, frame, rate);
 }
 
-export type LayerPropertySource = Pick<
-	RenderVisualClip,
-	'transform' | 'opacity' | 'intrinsicBox' | 'masks'
-> &
+export type LayerPropertySource = Pick<RenderVisualClip, 'transform' | 'opacity' | 'intrinsicBox' | 'masks'> &
 	Partial<Pick<RenderVisualClip, 'sequenceLight' | 'start' | 'duration' | 'sourceIn' | 'speed'>> & {
 		effects: Readonly<RenderVisualClip['effects']>;
 	};

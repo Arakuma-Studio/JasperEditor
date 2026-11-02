@@ -128,9 +128,13 @@ describe('look.apply (TL-018, TL-019)', () => {
 
 	it('refuses clips that take no look, locked tracks, and looks it cannot read', () => {
 		const { h, t, s } = project();
-		const a = h.ok([{ type: 'clip.addSolid', at: 300, duration: 10, track: 'V1', color: [0, 0, 0, 1], ref: '$x' }]);
+		const a = h.ok([
+			{ type: 'clip.addSolid', at: 300, duration: 10, track: 'V1', color: [0, 0, 0, 1], ref: '$x' },
+		]);
 		expect(a.refs.$x).toBeTruthy();
-		expect(code(h.tx([{ type: 'look.apply', clipIds: [t], lookId: 'tlk_0000000000000000' }]))).toBe('E_NOT_FOUND');
+		expect(code(h.tx([{ type: 'look.apply', clipIds: [t], lookId: 'tlk_0000000000000000' }]))).toBe(
+			'E_NOT_FOUND',
+		);
 		expect(code(h.tx([{ type: 'look.apply', clipIds: [t] }]))).toBe('E_INVALID_PARAM');
 		expect(
 			code(
@@ -161,9 +165,9 @@ describe('look.apply (TL-018, TL-019)', () => {
 	it('refuses more layers than a look holds, with E_LIMIT (TL-013)', () => {
 		const { h, t } = project();
 		const layers = Array.from({ length: MAX_APPEARANCE_LAYERS + 1 }, () => ({ type: 'rim' }));
-		expect(code(h.tx([{ type: 'look.apply', clipIds: [t], look: { name: 'Big', recipe: { layers } } }]))).toBe(
-			'E_LIMIT',
-		);
+		expect(
+			code(h.tx([{ type: 'look.apply', clipIds: [t], look: { name: 'Big', recipe: { layers } } }])),
+		).toBe('E_LIMIT');
 	});
 
 	it('applies a font once: the text changes, later edits of the look do not read it again', () => {
@@ -259,7 +263,12 @@ describe('look.setColorway (TL-019)', () => {
 		]);
 		const id = fxOf(h, t).id;
 		h.ok([
-			{ type: 'keyframe.add', target: ['appearance', id, 'palette', 'face'], at: { frames: 0 }, value: [1, 1, 1, 1] },
+			{
+				type: 'keyframe.add',
+				target: ['appearance', id, 'palette', 'face'],
+				at: { frames: 0 },
+				value: [1, 1, 1, 1],
+			},
 		]);
 		const r = h.ok([{ type: 'look.setColorway', clipIds: [t], colorwayId: 'cool' }]);
 		expect((r.results[0] as { keptAnimated: Record<string, string[]> }).keptAnimated[t]).toEqual(['face']);
@@ -290,7 +299,9 @@ describe('project looks: create, update, rename, delete (TL-015, TL-016)', () =>
 		expect(code(h.tx([{ type: 'look.create', name: 'one', recipe }]))).toBe('E_INVALID_PARAM');
 		expect(code(h.tx([{ type: 'look.create', name: 'Two' }]))).toBe('E_INVALID_PARAM');
 		expect(code(h.tx([{ type: 'look.create', name: 'Two', recipe, fromClipId: t }]))).toBe('E_INVALID_PARAM');
-		expect(code(h.tx([{ type: 'look.create', name: 'Two', recipe: { layers: 'no' } }]))).toBe('E_INVALID_PARAM');
+		expect(code(h.tx([{ type: 'look.create', name: 'Two', recipe: { layers: 'no' } }]))).toBe(
+			'E_INVALID_PARAM',
+		);
 	});
 
 	it('update rewrites linked clips, keeps overrides and keyframes, and skips locked tracks with a warning', () => {
@@ -384,16 +395,23 @@ describe('appearance.* (TL-018)', () => {
 
 	it('refuses unknown types, ids, params and the 25th layer', () => {
 		const { h, t, fx } = applied();
-		const add = (o: object) => ({ type: 'appearance.addLayer', effectInstanceId: fx, layerType: 'rim', ...o });
+		const add = (o: object) => ({
+			type: 'appearance.addLayer',
+			effectInstanceId: fx,
+			layerType: 'rim',
+			...o,
+		});
 		expect(code(h.tx([add({ layerType: 'nonsense' })]))).toBe('E_UNKNOWN_EFFECT');
 		expect(code(h.tx([add({ params: { nonsense: 1 } })]))).toBe('E_INVALID_PARAM');
 		expect(code(h.tx([add({ params: { width: -5 } })]))).toBe('E_INVALID_PARAM');
-		expect(code(h.tx([{ type: 'appearance.addLayer', effectInstanceId: 'fx_0000000000000000', layerType: 'rim' }]))).toBe(
-			'E_NOT_FOUND',
-		);
-		expect(code(h.tx([{ type: 'appearance.removeLayer', effectInstanceId: fx, layerId: 'apl_0000000000000000' }]))).toBe(
-			'E_NOT_FOUND',
-		);
+		expect(
+			code(
+				h.tx([{ type: 'appearance.addLayer', effectInstanceId: 'fx_0000000000000000', layerType: 'rim' }]),
+			),
+		).toBe('E_NOT_FOUND');
+		expect(
+			code(h.tx([{ type: 'appearance.removeLayer', effectInstanceId: fx, layerId: 'apl_0000000000000000' }])),
+		).toBe('E_NOT_FOUND');
 		h.ok(Array.from({ length: MAX_APPEARANCE_LAYERS - 3 }, () => add({})));
 		expect(lookOf(h, t).layers).toHaveLength(MAX_APPEARANCE_LAYERS);
 		expect(code(h.tx([add({})]))).toBe('E_LIMIT');
@@ -416,17 +434,54 @@ describe('appearance.* (TL-018)', () => {
 			Array.from({ length: n }, (_, i) => ({ at: i / Math.max(1, n - 1), paint: { role: 'face' } }));
 		const gradient = (n: number) => ({ type: 'linear', span: 'block', angle: 90, stops: stops(n) });
 		h.ok([{ type: 'appearance.setGradient', effectInstanceId: fx, layerId: face, gradient: gradient(32) }]);
-		expect(code(h.tx([{ type: 'appearance.setGradient', effectInstanceId: fx, layerId: face, gradient: gradient(MAX_GRADIENT_STOPS + 1) }]))).toBe('E_LIMIT');
-		expect(code(h.tx([{ type: 'appearance.setGradient', effectInstanceId: fx, layerId: face, gradient: gradient(1) }]))).toBe('E_INVALID_PARAM');
-		expect(code(h.tx([{ type: 'appearance.setPaint', effectInstanceId: fx, layerId: face, paint: { kind: 'plaid' } }]))).toBe('E_INVALID_PARAM');
-		expect(code(h.tx([{ type: 'appearance.setPaint', effectInstanceId: fx, layerId: face, param: 'opacity', paint: { kind: 'source' } }]))).toBe('E_INVALID_PARAM');
+		expect(
+			code(
+				h.tx([
+					{
+						type: 'appearance.setGradient',
+						effectInstanceId: fx,
+						layerId: face,
+						gradient: gradient(MAX_GRADIENT_STOPS + 1),
+					},
+				]),
+			),
+		).toBe('E_LIMIT');
+		expect(
+			code(
+				h.tx([
+					{ type: 'appearance.setGradient', effectInstanceId: fx, layerId: face, gradient: gradient(1) },
+				]),
+			),
+		).toBe('E_INVALID_PARAM');
+		expect(
+			code(
+				h.tx([
+					{ type: 'appearance.setPaint', effectInstanceId: fx, layerId: face, paint: { kind: 'plaid' } },
+				]),
+			),
+		).toBe('E_INVALID_PARAM');
+		expect(
+			code(
+				h.tx([
+					{
+						type: 'appearance.setPaint',
+						effectInstanceId: fx,
+						layerId: face,
+						param: 'opacity',
+						paint: { kind: 'source' },
+					},
+				]),
+			),
+		).toBe('E_INVALID_PARAM');
 		ok(h);
 	});
 
 	it('refuses edits on a locked track', () => {
 		const { h, t, fx } = applied();
 		h.ok([{ type: 'track.update', trackId: h.seq.clips[t]!.trackId, patch: { locked: true } }]);
-		expect(code(h.tx([{ type: 'appearance.addLayer', effectInstanceId: fx, layerType: 'rim' }]))).toBe('E_TRACK_LOCKED');
+		expect(code(h.tx([{ type: 'appearance.addLayer', effectInstanceId: fx, layerType: 'rim' }]))).toBe(
+			'E_TRACK_LOCKED',
+		);
 	});
 });
 
@@ -436,8 +491,12 @@ describe('animation reaches every number (TL-014)', () => {
 		const rim = layerOf(h, t, 'rim').id;
 		const r = h.ok([{ type: 'param.set', target: ['appearance', fx, rim, 'width'], value: 99_999 }]);
 		expect(r.warnings.map((w) => w.code)).toContain('W_VALUE_CLAMPED');
-		expect(code(h.tx([{ type: 'param.set', target: ['appearance', fx, rim, 'width'], value: 'wide' }]))).toBe('E_INVALID_PARAM');
-		expect(code(h.tx([{ type: 'param.set', target: ['appearance', fx, rim, 'nonsense'], value: 1 }]))).toBe('E_NOT_FOUND');
+		expect(code(h.tx([{ type: 'param.set', target: ['appearance', fx, rim, 'width'], value: 'wide' }]))).toBe(
+			'E_INVALID_PARAM',
+		);
+		expect(code(h.tx([{ type: 'param.set', target: ['appearance', fx, rim, 'nonsense'], value: 1 }]))).toBe(
+			'E_NOT_FOUND',
+		);
 		h.ok([
 			{ type: 'keyframe.add', target: ['appearance', fx, rim, 'finish'], at: { frames: 0 }, value: 'flat' },
 			{
@@ -450,15 +509,27 @@ describe('animation reaches every number (TL-014)', () => {
 		const keys = layerOf(h, t, 'rim').params;
 		expect(keys.finish!.keyframes[0]!.interpolation).toBe('hold');
 		expect(keys.paint!.keyframes[0]!.interpolation).toBe('hold');
-		expect(code(h.tx([{ type: 'param.set', target: ['appearance', fx, rim, 'paint'], value: { kind: 'plaid' } }]))).toBe('E_INVALID_PARAM');
+		expect(
+			code(h.tx([{ type: 'param.set', target: ['appearance', fx, rim, 'paint'], value: { kind: 'plaid' } }])),
+		).toBe('E_INVALID_PARAM');
 		ok(h);
 	});
 
 	it('palette colours and light animate, with keys in content time', () => {
 		const { h, t, fx } = applied();
 		h.ok([
-			{ type: 'keyframe.add', target: ['appearance', fx, 'palette', 'face'], at: { frames: 0 }, value: [0, 0, 0, 1] },
-			{ type: 'keyframe.add', target: ['appearance', fx, 'palette', 'face'], at: { frames: 30 }, value: [1, 1, 1, 1] },
+			{
+				type: 'keyframe.add',
+				target: ['appearance', fx, 'palette', 'face'],
+				at: { frames: 0 },
+				value: [0, 0, 0, 1],
+			},
+			{
+				type: 'keyframe.add',
+				target: ['appearance', fx, 'palette', 'face'],
+				at: { frames: 30 },
+				value: [1, 1, 1, 1],
+			},
 			{ type: 'keyframe.add', target: ['appearance', fx, 'light', 'angle'], at: { frames: 0 }, value: 0 },
 			{ type: 'keyframe.add', target: ['appearance', fx, 'light', 'angle'], at: { frames: 30 }, value: 90 },
 		]);
@@ -472,7 +543,9 @@ describe('animation reaches every number (TL-014)', () => {
 	it('every walker sees appearance params: keyframes commands, expressions, property keys', () => {
 		const { h, t, fx } = applied();
 		const rim = layerOf(h, t, 'rim').id;
-		const add = h.ok([{ type: 'keyframe.add', target: ['appearance', fx, rim, 'width'], at: { frames: 5 }, value: 7 }]);
+		const add = h.ok([
+			{ type: 'keyframe.add', target: ['appearance', fx, rim, 'width'], at: { frames: 5 }, value: 7 },
+		]);
 		const key = (add.results[0] as { keyframeId: string }).keyframeId;
 		// keyframe.* locates keys by id through the shared walker.
 		h.ok([{ type: 'keyframe.remove', keyframeIds: [key] }]);
@@ -510,7 +583,8 @@ describe('animation reaches every number (TL-014)', () => {
 			effects: [fxOf(h, t)],
 		};
 		const at = (t2: number) =>
-			resolveLayerProps(c as never, t2).effects[0]!.appearance!.layers.find((l) => l.type === 'rim')!.params.width;
+			resolveLayerProps(c as never, t2).effects[0]!.appearance!.layers.find((l) => l.type === 'rim')!.params
+				.width;
 		expect(at(0)).toBe(2);
 		expect(at(30 * F)).toBe(8);
 		expect(evaluate(fxLook.layers[1]!.params.width as never, 15 * F)).toBeCloseTo(5, 5);
@@ -524,7 +598,12 @@ describe('the look survives editing (TL-014)', () => {
 		p.h.ok([
 			{ type: 'keyframe.add', target: ['appearance', p.fx, rim, 'width'], at: { frames: 0 }, value: 2 },
 			{ type: 'keyframe.add', target: ['appearance', p.fx, rim, 'width'], at: { frames: 40 }, value: 10 },
-			{ type: 'keyframe.add', target: ['appearance', p.fx, 'palette', 'face'], at: { frames: 0 }, value: [1, 0, 0, 1] },
+			{
+				type: 'keyframe.add',
+				target: ['appearance', p.fx, 'palette', 'face'],
+				at: { frames: 0 },
+				value: [1, 0, 0, 1],
+			},
 		]);
 		return { ...p, rim };
 	};
@@ -547,7 +626,10 @@ describe('the look survives editing (TL-014)', () => {
 		const wb = lb.layers.find((l) => l.id === rim)!.params.width!;
 		expect(wa.keyframes.map((k) => k.id)).not.toEqual(wb.keyframes.map((k) => k.id));
 		// Content time is continuous across the cut: the right part reads the same curve.
-		expect(evaluate(wb as never, b!.sourceIn)).toBeCloseTo(evaluate(wa as never, a!.sourceIn + 20 * F) as number, 6);
+		expect(evaluate(wb as never, b!.sourceIn)).toBeCloseTo(
+			evaluate(wa as never, a!.sourceIn + 20 * F) as number,
+			6,
+		);
 		expect(fxOf(h, b!.id).id).not.toBe(fxOf(h, a!.id).id);
 		ok(h);
 	});
@@ -629,7 +711,9 @@ describe('the look survives editing (TL-014)', () => {
 		const payload = JSON.parse(JSON.stringify(buildEffectsPayload(h.doc, t)));
 		expect(payload.titleLooks).toHaveLength(1);
 		const other = new Harness({ seed: 902 });
-		const r = other.ok([{ type: 'clip.addText', at: 0, duration: 60, track: 'V1', content: { text: 'X' }, ref: '$x' }]);
+		const r = other.ok([
+			{ type: 'clip.addText', at: 0, duration: 60, track: 'V1', content: { text: 'X' }, ref: '$x' },
+		]);
 		const id = r.refs.$x!;
 		other.ok([{ type: 'clip.pasteAttributes', payload, clipIds: [id], attributes: { effects: 'all' } }]);
 		expect(titleLookOf(other.doc, lookOf(other, id).lookId!)!.name).toBe('Gold');
@@ -657,11 +741,17 @@ describe('keyframe copy and paste reach appearance params (TL-014)', () => {
 
 	it('refuses a clip whose look has no such layer', () => {
 		const { h, t, u, fx } = applied();
-		h.ok([{ type: 'look.apply', clipIds: [u], look: { name: 'Other', recipe: { layers: [{ type: 'face' }] } } }]);
+		h.ok([
+			{ type: 'look.apply', clipIds: [u], look: { name: 'Other', recipe: { layers: [{ type: 'face' }] } } },
+		]);
 		const rim = layerOf(h, t, 'rim').id;
-		const add = h.ok([{ type: 'keyframe.add', target: ['appearance', fx, rim, 'width'], at: { frames: 0 }, value: 2 }]);
+		const add = h.ok([
+			{ type: 'keyframe.add', target: ['appearance', fx, rim, 'width'], at: { frames: 0 }, value: 2 },
+		]);
 		const payload = buildKeyframesPayload(h.doc, t, [(add.results[0] as { keyframeId: string }).keyframeId]);
-		expect(code(h.tx([{ type: 'keyframe.paste', payload, clipId: u, at: { frames: 0 } }]))).toBe('E_INVALID_PARAM');
+		expect(code(h.tx([{ type: 'keyframe.paste', payload, clipId: u, at: { frames: 0 } }]))).toBe(
+			'E_INVALID_PARAM',
+		);
 	});
 });
 
@@ -672,11 +762,19 @@ describe('global light (TL-017)', () => {
 			{
 				type: 'look.apply',
 				clipIds: [u],
-				look: { name: 'Lit', recipe: { light: { source: 'sequence', angle: 10 }, layers: [{ type: 'face' }] } },
+				look: {
+					name: 'Lit',
+					recipe: { light: { source: 'sequence', angle: 10 }, layers: [{ type: 'face' }] },
+				},
 			},
 			{ type: 'sequence.setGlobalLight', angle: 0 },
 			{ type: 'keyframe.add', target: ['globalLight', h.seqId, 'angle'], at: { sequenceFrame: 0 }, value: 0 },
-			{ type: 'keyframe.add', target: ['globalLight', h.seqId, 'angle'], at: { sequenceFrame: 200 }, value: 200 },
+			{
+				type: 'keyframe.add',
+				target: ['globalLight', h.seqId, 'angle'],
+				at: { sequenceFrame: 200 },
+				value: 200,
+			},
 		]);
 		const snap = buildRenderSnapshot(h.doc, h.seqId, { resolveMedia: () => null, resolveFont: () => null });
 		const clip = snap.videoTracks.flatMap((v) => v.clips).find((c) => c.clipId === u)!;
@@ -692,7 +790,14 @@ describe('global light (TL-017)', () => {
 		h.ok([{ type: 'sequence.setGlobalLight', angle: 90, altitude: 30 }]);
 		const light = () => (h.seq.settings as { globalLight?: { angle: { value: number } } }).globalLight;
 		expect(light()!.angle.value).toBe(90);
-		h.ok([{ type: 'keyframe.add', target: ['globalLight', h.seqId, 'angle'], at: { sequenceFrame: 0 }, value: 10 }]);
+		h.ok([
+			{
+				type: 'keyframe.add',
+				target: ['globalLight', h.seqId, 'angle'],
+				at: { sequenceFrame: 0 },
+				value: 10,
+			},
+		]);
 		expect(code(h.tx([{ type: 'sequence.setGlobalLight', angle: 5 }]))).toBe('E_INVALID_PARAM');
 		ok(h);
 		h.ok([{ type: 'sequence.setGlobalLight', clear: true }]);
@@ -709,7 +814,11 @@ describe('clip.addGenerator (TL-060, TL-064)', () => {
 		const { h } = project();
 		const r = h.ok([{ type: 'clip.addGenerator', effectId: gen(), at: 300, duration: 30 }]);
 		const { clipId } = r.results[0] as { clipId: string };
-		const c = h.seq.clips[clipId] as unknown as { kind: string; syntheticId: string; effects: EffectInstance[] };
+		const c = h.seq.clips[clipId] as unknown as {
+			kind: string;
+			syntheticId: string;
+			effects: EffectInstance[];
+		};
 		expect(c.kind).toBe('solid');
 		expect(h.doc.synthetics[c.syntheticId]?.kind).toBe('transparent');
 		expect(c.effects.map((e) => e.effectId)).toEqual([gen()]);
@@ -718,8 +827,12 @@ describe('clip.addGenerator (TL-060, TL-064)', () => {
 
 	it('goes on a free track below a title', () => {
 		const h = new Harness();
-		const r = h.ok([{ type: 'clip.addText', at: 0, duration: 60, track: 'V3', content: { text: 'T' }, ref: '$t' }]);
-		const a = h.ok([{ type: 'clip.addGenerator', effectId: gen(), at: 0, duration: 60, belowClipId: r.refs.$t }]);
+		const r = h.ok([
+			{ type: 'clip.addText', at: 0, duration: 60, track: 'V3', content: { text: 'T' }, ref: '$t' },
+		]);
+		const a = h.ok([
+			{ type: 'clip.addGenerator', effectId: gen(), at: 0, duration: 60, belowClipId: r.refs.$t },
+		]);
 		const c = h.seq.clips[(a.results[0] as { clipId: string }).clipId]!;
 		const idx = (id: string) => h.seq.videoTracks.findIndex((x) => x.id === id);
 		expect(idx(c.trackId)).toBeLessThan(idx(h.seq.clips[r.refs.$t!]!.trackId));
@@ -728,16 +841,24 @@ describe('clip.addGenerator (TL-060, TL-064)', () => {
 
 	it('refuses effects that are not generators and unknown ones', () => {
 		const { h } = project();
-		expect(code(h.tx([{ type: 'clip.addGenerator', effectId: 'nonsense', at: 0, duration: 10 }]))).toBe('E_UNKNOWN_EFFECT');
-		expect(code(h.tx([{ type: 'clip.addGenerator', effectId: 'jasper.gaussian-blur', at: 0, duration: 10 }]))).toBe('E_INVALID_PARAM');
+		expect(code(h.tx([{ type: 'clip.addGenerator', effectId: 'nonsense', at: 0, duration: 10 }]))).toBe(
+			'E_UNKNOWN_EFFECT',
+		);
+		expect(
+			code(h.tx([{ type: 'clip.addGenerator', effectId: 'jasper.gaussian-blur', at: 0, duration: 10 }])),
+		).toBe('E_INVALID_PARAM');
 	});
 });
 
 describe('invariants and repair (INV-APPEARANCE, TL-020)', () => {
 	const mutate = (h: Harness, f: (fx: EffectInstance, doc: Record<string, unknown>) => void) => {
 		const doc = JSON.parse(JSON.stringify(h.doc));
-		const seq = Object.values(doc.sequences as Record<string, { clips: Record<string, { effects: EffectInstance[] }> }>)[0]!;
-		const c = Object.values(seq.clips).find((x) => x.effects?.some((e) => e.effectId === TITLE_LOOK_EFFECT_ID))!;
+		const seq = Object.values(
+			doc.sequences as Record<string, { clips: Record<string, { effects: EffectInstance[] }> }>,
+		)[0]!;
+		const c = Object.values(seq.clips).find((x) =>
+			x.effects?.some((e) => e.effectId === TITLE_LOOK_EFFECT_ID),
+		)!;
 		f(c.effects.find((e) => e.effectId === TITLE_LOOK_EFFECT_ID)!, doc);
 		return doc;
 	};
@@ -746,20 +867,52 @@ describe('invariants and repair (INV-APPEARANCE, TL-020)', () => {
 
 	it('reports unreadable appearances, a second look, a look on a wrong kind or track', () => {
 		const { h } = applied();
-		expect(issue(mutate(h, (fx) => { (fx.appearance as Appearance).seed = -1; }))).toContain('INV-APPEARANCE');
-		expect(issue(mutate(h, (fx) => { (fx.appearance as Appearance).layers[0]!.type = 'nonsense'; }))).toContain('INV-APPEARANCE');
-		expect(issue(mutate(h, (fx) => { (fx.appearance as Appearance).layers[1]!.id = 'nonsense'; }))).toContain('INV-APPEARANCE');
-		expect(issue(mutate(h, (fx) => { delete (fx as { appearance?: unknown }).appearance; }))).toContain('INV-APPEARANCE');
+		expect(
+			issue(
+				mutate(h, (fx) => {
+					(fx.appearance as Appearance).seed = -1;
+				}),
+			),
+		).toContain('INV-APPEARANCE');
+		expect(
+			issue(
+				mutate(h, (fx) => {
+					(fx.appearance as Appearance).layers[0]!.type = 'nonsense';
+				}),
+			),
+		).toContain('INV-APPEARANCE');
+		expect(
+			issue(
+				mutate(h, (fx) => {
+					(fx.appearance as Appearance).layers[1]!.id = 'nonsense';
+				}),
+			),
+		).toContain('INV-APPEARANCE');
+		expect(
+			issue(
+				mutate(h, (fx) => {
+					delete (fx as { appearance?: unknown }).appearance;
+				}),
+			),
+		).toContain('INV-APPEARANCE');
 		expect(
 			issue(
 				mutate(h, (fx, doc) => {
-					const seq = Object.values(doc.sequences as Record<string, { clips: Record<string, { effects: unknown[] }> }>)[0]!;
+					const seq = Object.values(
+						doc.sequences as Record<string, { clips: Record<string, { effects: unknown[] }> }>,
+					)[0]!;
 					const c = Object.values(seq.clips).find((x) => x.effects?.length)!;
 					c.effects.push({ ...fx, id: 'fx_00000000000DUP01' });
 				}),
 			),
 		).toContain('INV-APPEARANCE');
-		expect(issue(mutate(h, (fx) => { fx.effectId = 'jasper.gaussian-blur'; }))).toContain('INV-APPEARANCE');
+		expect(
+			issue(
+				mutate(h, (fx) => {
+					fx.effectId = 'jasper.gaussian-blur';
+				}),
+			),
+		).toContain('INV-APPEARANCE');
 	});
 
 	it('loads a damaged look, repairs what it can and reports it; a project never fails to open over one', () => {
@@ -775,8 +928,12 @@ describe('invariants and repair (INV-APPEARANCE, TL-020)', () => {
 		});
 		const r = loadProject({ format: 'jasper-project', document: doc }, { effects: defaultEffectRegistry });
 		expect(r.issues).toEqual([]);
-		expect(r.repairs.map((x) => x.action)).toEqual(expect.arrayContaining(['repair-appearance', 'drop-appearance-layer']));
-		const loaded = Object.values(r.document.sequences)[0]!.clips[t] as unknown as { effects: EffectInstance[] };
+		expect(r.repairs.map((x) => x.action)).toEqual(
+			expect.arrayContaining(['repair-appearance', 'drop-appearance-layer']),
+		);
+		const loaded = Object.values(r.document.sequences)[0]!.clips[t] as unknown as {
+			effects: EffectInstance[];
+		};
 		const a = clipLook(loaded.effects)!.appearance as Appearance;
 		expect(a.layers).toHaveLength(3);
 		expect(a.layers[1]!.params.width!.value).toBe(1000);
@@ -784,7 +941,9 @@ describe('invariants and repair (INV-APPEARANCE, TL-020)', () => {
 
 	it('an appearance it cannot read at all goes, and the clip shows its own picture', () => {
 		const { h, t } = applied();
-		const doc = mutate(h, (fx) => { (fx as unknown as { appearance: unknown }).appearance = 'garbage'; });
+		const doc = mutate(h, (fx) => {
+			(fx as unknown as { appearance: unknown }).appearance = 'garbage';
+		});
 		const r = loadProject({ format: 'jasper-project', document: doc }, { effects: defaultEffectRegistry });
 		expect(r.issues).toEqual([]);
 		expect(r.repairs.some((x) => x.action === 'drop-look')).toBe(true);
@@ -823,7 +982,8 @@ describe('invariants and repair (INV-APPEARANCE, TL-020)', () => {
 		const doc = JSON.parse(JSON.stringify(h.doc));
 		doc.titleLooks.bad = 7;
 		doc.titleLooks.tlk_0000000000000BAD = { id: 'wrong', name: '', appearance: { v: 9 } };
-		(Object.values(doc.sequences)[0] as { settings: { globalLight?: unknown } }).settings.globalLight = 'bright';
+		(Object.values(doc.sequences)[0] as { settings: { globalLight?: unknown } }).settings.globalLight =
+			'bright';
 		const r = repairDocument(doc, createCounterIdSource(50));
 		expect(checkInvariants(r.document, { effects: defaultEffectRegistry })).toEqual([]);
 		expect(titleLooksOf(r.document)).toHaveLength(1);
@@ -868,11 +1028,16 @@ describe('persistence (TL-020)', () => {
 
 	it('survives a JSON round trip through the loader unchanged', () => {
 		const { h } = applied();
-		const r = loadProject({ format: 'jasper-project', document: JSON.parse(JSON.stringify(h.doc)) }, {
-			effects: defaultEffectRegistry,
-		});
+		const r = loadProject(
+			{ format: 'jasper-project', document: JSON.parse(JSON.stringify(h.doc)) },
+			{
+				effects: defaultEffectRegistry,
+			},
+		);
 		expect(r.repairs).toEqual([]);
-		expect(JSON.parse(JSON.stringify(r.document.titleLooks))).toEqual(JSON.parse(JSON.stringify(h.doc.titleLooks)));
+		expect(JSON.parse(JSON.stringify(r.document.titleLooks))).toEqual(
+			JSON.parse(JSON.stringify(h.doc.titleLooks)),
+		);
 	});
 });
 
@@ -886,7 +1051,10 @@ describe('media references of a look (TL-021)', () => {
 						layers: [
 							{
 								params: {
-									tile: { value: { mediaId: 'med_0000000000000001' }, keyframes: [{ value: { mediaId: 'med_0000000000000002' } }] },
+									tile: {
+										value: { mediaId: 'med_0000000000000001' },
+										keyframes: [{ value: { mediaId: 'med_0000000000000002' } }],
+									},
 								},
 							},
 						],
@@ -898,8 +1066,13 @@ describe('media references of a look (TL-021)', () => {
 	});
 
 	it('force-deleting a medium clears it from a look layer, keys included (TL-120 path)', () => {
-		const anim = { value: { mediaId: 'med_0000000000000001' }, keyframes: [{ value: { mediaId: 'med_0000000000000002' } }] };
-		const effects = [{ id: 'fx_1', params: {}, appearance: { layers: [{ id: 'apl_1', params: { tile: anim } }] } }];
+		const anim = {
+			value: { mediaId: 'med_0000000000000001' },
+			keyframes: [{ value: { mediaId: 'med_0000000000000002' } }],
+		};
+		const effects = [
+			{ id: 'fx_1', params: {}, appearance: { layers: [{ id: 'apl_1', params: { tile: anim } }] } },
+		];
 		const cleared = clearEffectMedia(effects, () => true);
 		expect(cleared).toEqual(['effects.fx_1.appearance.apl_1.tile']);
 		expect(anim.value).toEqual({ mediaId: '' });
@@ -911,7 +1084,8 @@ describe('a damaged keyframe never stops a load (regression: the generic walker 
 	it('repairs a null key inside an appearance before the invariants run', () => {
 		const { h, t } = applied();
 		const doc = JSON.parse(JSON.stringify(h.doc));
-		const c = (Object.values(doc.sequences)[0] as { clips: Record<string, { effects: EffectInstance[] }> }).clips[t]!;
+		const c = (Object.values(doc.sequences)[0] as { clips: Record<string, { effects: EffectInstance[] }> })
+			.clips[t]!;
 		(clipLook(c.effects)!.appearance as Appearance).light.angle.keyframes = [null as never];
 		const r = loadProject({ format: 'jasper-project', document: doc }, { effects: defaultEffectRegistry });
 		expect(r.issues).toEqual([]);
@@ -945,8 +1119,12 @@ describe('padding (TL-033)', () => {
 		// The peak is at frame 30, not at the first or the last frame.
 		const atFirst = lookReach(resolveAppearance(moved, 0));
 		expect(reach.left).toBeGreaterThan(atFirst.left);
-		const down = h.ok([{ type: 'appearance.setLayerEnabled', effectInstanceId: fx, layerId: rim, enabled: false }]);
+		const down = h.ok([
+			{ type: 'appearance.setLayerEnabled', effectInstanceId: fx, layerId: rim, enabled: false },
+		]);
 		expect(down.ok).toBe(true);
-		expect(appearanceClipReach(lookOf(h, t), { from: 0, to: 59 * F, frames: 60 }).left).toBeLessThan(reach.left);
+		expect(appearanceClipReach(lookOf(h, t), { from: 0, to: 59 * F, frames: 60 }).left).toBeLessThan(
+			reach.left,
+		);
 	});
 });

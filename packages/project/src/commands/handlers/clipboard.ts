@@ -43,9 +43,15 @@ import { nestedEntityIds, remapSoundDesign } from '../../sound/repair.ts';
 import { scaleAnimationFrames } from '../../text-animations.ts';
 import { flicksPerFrame, fpsOf, type Rational } from '../../time.ts';
 import { isRemapped, type TimedClip } from '../../time-remap/model.ts';
-import { reidItems } from '../../vector/defaults.ts';
-import { type Appearance, MAX_TITLE_LOOKS, TITLE_LOOK_CLIP_KINDS, TITLE_LOOK_EFFECT_ID, type TitleLook } from '../../title-looks/model.ts';
+import {
+	type Appearance,
+	MAX_TITLE_LOOKS,
+	TITLE_LOOK_CLIP_KINDS,
+	TITLE_LOOK_EFFECT_ID,
+	type TitleLook,
+} from '../../title-looks/model.ts';
 import { titleLookProblem } from '../../title-looks/validate.ts';
+import { reidItems } from '../../vector/defaults.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { peekIn, valuesOf } from '../draft-read.ts';
 import {

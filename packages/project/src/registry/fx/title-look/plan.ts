@@ -7,13 +7,13 @@
 // Padding (TL-033) is computed from the enabled layers across all frames of the clip by `appearanceClipReach`.
 import { FLICKS_PER_SECOND } from '../../../time.ts';
 import type { Appearance, LayerParamValue, Paint } from '../../../title-looks/model.ts';
-import { mediaParamId } from '../../param-values.ts';
 import {
 	appearanceAnimatables,
 	appearanceAnimated,
 	type ResolvedAppearance,
 	resolveAppearance,
 } from '../../../title-looks/resolve.ts';
+import { mediaParamId } from '../../param-values.ts';
 import type {
 	FxFrameContext,
 	FxPadding,
@@ -105,9 +105,7 @@ function plannedLayers(look: ResolvedAppearance): PlannedLayer[] {
 }
 
 const sides = (r: LayerReach | undefined) =>
-	typeof r === 'number' || r === undefined
-		? { left: r ?? 0, top: r ?? 0, right: r ?? 0, bottom: r ?? 0 }
-		: r;
+	typeof r === 'number' || r === undefined ? { left: r ?? 0, top: r ?? 0, right: r ?? 0, bottom: r ?? 0 } : r;
 
 /** Everything a resolved look reaches, percent of the unit: per side, and how far the field must be right. */
 export function lookReach(look: ResolvedAppearance): FxPadding & LayerFieldReach {
@@ -414,7 +412,8 @@ export function titleLookUniforms(ctx: FxFrameContext): Record<string, FxUniform
 
 /** Any enabled layer changes with time on its own (`gpu.timeInvariant`). */
 export function appearanceTimeInvariant(a: unknown): boolean {
-	const layers = (a as { layers?: { type: string; enabled?: boolean; params: unknown }[] } | undefined)?.layers;
+	const layers = (a as { layers?: { type: string; enabled?: boolean; params: unknown }[] } | undefined)
+		?.layers;
 	for (const l of layers ?? []) {
 		if (l.enabled === false) continue;
 		const def = titleLayerType(l.type);
@@ -429,7 +428,10 @@ function heldParams(params: unknown): Record<string, LayerParamValue> {
 	const out: Record<string, LayerParamValue> = {};
 	for (const [k, v] of Object.entries((params ?? {}) as Record<string, unknown>)) {
 		const anim = v as { value?: LayerParamValue; keyframes?: unknown[] } | null;
-		out[k] = anim && typeof anim === 'object' && 'keyframes' in anim ? (anim.value as LayerParamValue) : (v as LayerParamValue);
+		out[k] =
+			anim && typeof anim === 'object' && 'keyframes' in anim
+				? (anim.value as LayerParamValue)
+				: (v as LayerParamValue);
 	}
 	return out;
 }

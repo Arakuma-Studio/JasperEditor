@@ -47,9 +47,9 @@ import { STYLE_RECIPES_OWNER, styleRecipeHandlers } from './handlers/style-recip
 import { SUBTITLES_OWNER, subtitleHandlers } from './handlers/subtitles.ts';
 import { TEXT_ANIMATOR_OWNER, textAnimatorHandlers } from './handlers/text-animators.ts';
 import { TEXT_STYLE_OWNER, textStyleHandlers } from './handlers/text-style.ts';
-import { TITLE_LOOK_OWNER, titleLookHandlers } from './handlers/title-look.ts';
 import { THREE_D_OWNER, threeDHandlers } from './handlers/three-d.ts';
 import { timeHandlers } from './handlers/time.ts';
+import { TITLE_LOOK_OWNER, titleLookHandlers } from './handlers/title-look.ts';
 import { trackerHandlers } from './handlers/tracker.ts';
 import { transitionHandlers } from './handlers/transition.ts';
 import type { Handler, HandlerMap } from './handlers/util.ts';

@@ -7,7 +7,10 @@ export const FACE_LAYER: TitleLayerInit = {
 	label: 'Face',
 	description: 'The fill of the shape.',
 	finish: true,
-	params: [...lp.paint('paint', 'Paint', { kind: 'role', role: 'face' }), lp.percent('opacity', 'Opacity', 100)],
+	params: [
+		...lp.paint('paint', 'Paint', { kind: 'role', role: 'face' }),
+		lp.percent('opacity', 'Opacity', 100),
+	],
 	shader: () => ({
 		glsl: /* glsl */ `
 vec4 tl_layer(TlSurface s) {

@@ -36,7 +36,7 @@ const MAX_OUTPUTS = 6;
 /** Which web fonts have loaded: a font arriving late changes a DOM picture with no change to its clip. */
 function fontsEpoch(): string | null {
 	const fonts = globalThis.document?.fonts;
-	if (!fonts || fonts.status !== 'loaded') return null;
+	if (fonts?.status !== 'loaded') return null;
 	let n = 0;
 	for (const f of fonts) if (f.status === 'loaded') n++;
 	return String(n);

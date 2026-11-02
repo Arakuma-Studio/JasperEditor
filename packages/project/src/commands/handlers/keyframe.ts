@@ -167,7 +167,9 @@ export function allAnimatables(doc: DDoc): AnimLocation[] {
 		if (isAnim(seq.master.volumeDb))
 			out.push({ anim: seq.master.volumeDb as DAnim, path: ['master', seq.id, 'volumeDb'], seq, clip: null });
 		// spec 19 TL-017: the sequence's light (sequence time).
-		const light = globalLightOf(seq as never) ? (seq.settings as { globalLight?: Record<string, unknown> }).globalLight : null;
+		const light = globalLightOf(seq as never)
+			? (seq.settings as { globalLight?: Record<string, unknown> }).globalLight
+			: null;
 		if (light)
 			for (const k of LIGHT_PROPS)
 				if (isAnim(light[k]))

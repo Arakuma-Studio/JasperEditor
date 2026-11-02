@@ -15,7 +15,6 @@ import {
 	type RationalT,
 } from '../schema/common.ts';
 import { type ProjectItem, ProjectItemSchema } from '../schema/document.ts';
-import type { TitleLook } from '../title-looks/model.ts';
 import {
 	type FontRef,
 	FontRefSchema,
@@ -41,6 +40,7 @@ import {
 	type Transition,
 	TransitionSchema,
 } from '../schema/sequence.ts';
+import type { TitleLook } from '../title-looks/model.ts';
 
 export const CLIPBOARD_FORMAT = 'jasper-clipboard';
 export const CLIPBOARD_VERSION = 1;

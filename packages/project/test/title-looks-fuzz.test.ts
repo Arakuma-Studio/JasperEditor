@@ -21,14 +21,14 @@ import {
 	lookBodyOf,
 	lookReach,
 	MAX_APPEARANCE_LAYERS,
-	PaintSchema,
 	type Paint,
+	PaintSchema,
 	planTitleLook,
+	type Role,
 	rebaseAppearance,
 	repairAppearance,
 	repairDocument,
 	resolveAppearance,
-	type Role,
 	staticAnim,
 	TITLE_LAYER_TYPES,
 	titleLookPadding,
@@ -40,7 +40,17 @@ const RUNS = Number(process.env.JASPER_FUZZ_RUNS ?? 150);
 
 const unit = fc.double({ min: 0, max: 1, noNaN: true });
 const color = fc.tuple(unit, unit, unit, unit);
-const role = fc.constantFrom<Role>('face', 'faceAlt', 'keyline', 'accent1', 'accent2', 'accent3', 'base', 'glow', 'shadow');
+const role = fc.constantFrom<Role>(
+	'face',
+	'faceAlt',
+	'keyline',
+	'accent1',
+	'accent2',
+	'accent3',
+	'base',
+	'glow',
+	'shadow',
+);
 const stop = fc.record({
 	at: unit,
 	paint: fc.oneof(fc.record({ role }), fc.record({ color })),
@@ -59,7 +69,7 @@ const paint: fc.Arbitrary<Paint> = fc.oneof(
 );
 
 /** A valid value for a param of a layer type. */
-function valueOf(p: (typeof TITLE_LAYER_TYPES)[number]['params'][number]): fc.Arbitrary<unknown> {
+function arbitraryValue(p: (typeof TITLE_LAYER_TYPES)[number]['params'][number]): fc.Arbitrary<unknown> {
 	if (p.type === 'paint') return paint;
 	if (p.type === 'number') {
 		const min = p.range?.min ?? -3600;
@@ -74,7 +84,9 @@ function valueOf(p: (typeof TITLE_LAYER_TYPES)[number]['params'][number]): fc.Ar
 const layer = fc.constantFrom(...TITLE_LAYER_TYPES).chain((t) =>
 	fc.record({
 		type: fc.constant(t.type),
-		params: fc.record(Object.fromEntries(t.params.map((p) => [p.name, valueOf(p)])), { requiredKeys: [] }),
+		params: fc.record(Object.fromEntries(t.params.map((p) => [p.name, arbitraryValue(p)])), {
+			requiredKeys: [],
+		}),
 		enabled: fc.boolean(),
 	}),
 );
@@ -91,8 +103,12 @@ const appearance = recipe.map((r) => appearanceFromRecipe(r, fresh(), 5));
 
 /** Arbitrary damage to a JSON value at random paths. */
 const damage = (a: Appearance) =>
-	fc.tuple(fc.array(fc.nat(10_000), { minLength: 1, maxLength: 5 }), fc.array(fc.jsonValue(), { minLength: 5, maxLength: 5 })).map(
-		([spots, junk]) => {
+	fc
+		.tuple(
+			fc.array(fc.nat(10_000), { minLength: 1, maxLength: 5 }),
+			fc.array(fc.jsonValue(), { minLength: 5, maxLength: 5 }),
+		)
+		.map(([spots, junk]) => {
 			const root = JSON.parse(JSON.stringify(a)) as Record<string, unknown>;
 			const nodes: [Record<string, unknown>, string][] = [];
 			const walk = (o: unknown) => {
@@ -108,8 +124,7 @@ const damage = (a: Appearance) =>
 				o[k] = junk[i];
 			});
 			return root;
-		},
-	);
+		});
 
 const quiet = () => {};
 
@@ -156,7 +171,11 @@ describe('the loader', () => {
 		const h = new Harness();
 		const r = h.ok([
 			{ type: 'clip.addText', at: 0, duration: 30, track: 'V1', content: { text: 'T' }, ref: '$t' },
-			{ type: 'look.apply', clipIds: ['$t'], look: { name: 'L', recipe: { layers: [{ type: 'rim' }, { type: 'face' }] } } },
+			{
+				type: 'look.apply',
+				clipIds: ['$t'],
+				look: { name: 'L', recipe: { layers: [{ type: 'rim' }, { type: 'face' }] } },
+			},
 		]);
 		return { doc: JSON.parse(JSON.stringify(h.doc)), t: r.refs.$t! };
 	};
@@ -199,7 +218,10 @@ describe('appearance diff and apply (TL-016)', () => {
 		drop: fc.boolean(),
 		face: color,
 	});
-	const edited = (base: Appearance, e: { i: number; width: number; enabled: boolean; drop: boolean; face: never }) => {
+	const edited = (
+		base: Appearance,
+		e: { i: number; width: number; enabled: boolean; drop: boolean; face: never },
+	) => {
 		const a = JSON.parse(JSON.stringify(base)) as Appearance;
 		a.seed = 99;
 		a.palette.face = staticAnim(e.face);
@@ -212,7 +234,7 @@ describe('appearance diff and apply (TL-016)', () => {
 		return a;
 	};
 
-	it('with an unchanged look, re-applying a clip\'s deviations gives the clip back', () => {
+	it("with an unchanged look, re-applying a clip's deviations gives the clip back", () => {
 		fc.assert(
 			fc.property(appearance, edit, (base, e) => {
 				const a = edited(base, e as never);
@@ -270,7 +292,10 @@ describe('paints', () => {
 	});
 
 	it('any JSON through the paint schema never throws', () => {
-		fc.assert(fc.property(fc.jsonValue(), (v) => void PaintSchema.safeParse(v)), { numRuns: RUNS });
+		fc.assert(
+			fc.property(fc.jsonValue(), (v) => void PaintSchema.safeParse(v)),
+			{ numRuns: RUNS },
+		);
 	});
 });
 
@@ -307,10 +332,16 @@ describe('the planner on any look', () => {
 	});
 
 	it('recipes parse or are refused; they never throw from the schema', () => {
-		fc.assert(fc.property(fc.jsonValue(), (v) => void LookRecipeSchema.safeParse(v)), { numRuns: RUNS });
+		fc.assert(
+			fc.property(fc.jsonValue(), (v) => void LookRecipeSchema.safeParse(v)),
+			{ numRuns: RUNS },
+		);
 	});
 
 	it('a stored look record with arbitrary junk is reported, never thrown on', () => {
-		fc.assert(fc.property(fc.jsonValue(), (v) => void titleLookProblem('tlk_0000000000000001', v)), { numRuns: RUNS });
+		fc.assert(
+			fc.property(fc.jsonValue(), (v) => void titleLookProblem('tlk_0000000000000001', v)),
+			{ numRuns: RUNS },
+		);
 	});
 });

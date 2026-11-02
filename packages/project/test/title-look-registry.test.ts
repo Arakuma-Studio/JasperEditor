@@ -85,7 +85,14 @@ for (const t of TITLE_LAYER_TYPES)
 		});
 
 		it('its shader never uses forbidden constructs (determinism, TL-035)', () => {
-			const ctx = { look: resolveAppearance(appearanceFromRecipe({ layers: [] }, () => ''), 0), pxPerPercent: 1, base: 0 };
+			const ctx = {
+				look: resolveAppearance(
+					appearanceFromRecipe({ layers: [] }, () => ''),
+					0,
+				),
+				pxPerPercent: 1,
+				base: 0,
+			};
 			const src = [glslOf(t.shader(defaults, ctx)), t.blur?.(defaults, ctx)?.mask ?? ''].join('\n');
 			for (const [re, why] of FORBIDDEN_TITLE_GLSL) expect(re.test(src), `${t.type}: ${why}`).toBe(false);
 			expect(src).toMatch(/\bvec4\s+tl_layer\s*\(\s*TlSurface\s+\w+\s*\)/);
@@ -100,7 +107,9 @@ for (const t of TITLE_LAYER_TYPES)
 		});
 
 		it('has recorded fingerprints: a registered type without a picture test fails here', () => {
-			expect(Object.keys(goldens)).toEqual(expect.arrayContaining([`${t.type}@default`, `${t.type}@perturbed`]));
+			expect(Object.keys(goldens)).toEqual(
+				expect.arrayContaining([`${t.type}@default`, `${t.type}@perturbed`]),
+			);
 		});
 	});
 

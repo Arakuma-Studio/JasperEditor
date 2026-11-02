@@ -9,7 +9,6 @@ import { fileURLToPath } from 'node:url';
 import {
 	applyTransaction,
 	buildRenderSnapshot,
-	type Command,
 	createCounterIdSource,
 	createEmptyProject,
 	defaultRegistries,
@@ -80,9 +79,13 @@ function build(o: Opts = {}) {
 		registries: defaultRegistries(),
 	};
 	const step = (doc: typeof project, commands: unknown[]) => {
-		const { document, result } = applyTransaction(doc, { label: 't', origin: 'user', sequenceId: seqId, commands }, {
-			...ctx,
-		});
+		const { document, result } = applyTransaction(
+			doc,
+			{ label: 't', origin: 'user', sequenceId: seqId, commands },
+			{
+				...ctx,
+			},
+		);
 		if (!result.ok) throw new Error(JSON.stringify(result.errors));
 		return { document, result };
 	};
@@ -94,7 +97,10 @@ function build(o: Opts = {}) {
 			at: 0,
 			duration: 90,
 			track: 'V2',
-			content: { text: o.text ?? 'LOOK', style: { sizePx: 120 * k, fill: [1, 1, 1, 1], align: 'center', weight: 700 } },
+			content: {
+				text: o.text ?? 'LOOK',
+				style: { sizePx: 120 * k, fill: [1, 1, 1, 1], align: 'center', weight: 700 },
+			},
 			box: { width: 520 * k, height: 180 * k, autoSize: 'none' },
 			ref: '$t',
 		},
@@ -118,17 +124,32 @@ function build(o: Opts = {}) {
 		{ type: 'keyframe.add', target: rim, at: { frames: 0 }, value: 2 },
 		{ type: 'keyframe.add', target: rim, at: { frames: 60 }, value: 14 },
 	]));
-	if (o.split !== undefined) ({ document: doc } = step(doc, [{ type: 'clip.split', at: o.split, clipIds: [t] }]));
+	if (o.split !== undefined)
+		({ document: doc } = step(doc, [{ type: 'clip.split', at: o.split, clipIds: [t] }]));
 	return buildRenderSnapshot(doc, seqId, { resolveMedia: () => null, resolveFont: () => null });
 }
 
 type Raw = { data: Buffer; w: number; h: number };
 
 const decode = (png: Buffer | string, w: number, h: number): Raw => ({
-	data: execFileSync('ffmpeg', ['-v', 'error', '-i', typeof png === 'string' ? png : 'pipe:0', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], {
-		maxBuffer: 1 << 27,
-		...(typeof png === 'string' ? {} : { input: png }),
-	}),
+	data: execFileSync(
+		'ffmpeg',
+		[
+			'-v',
+			'error',
+			'-i',
+			typeof png === 'string' ? png : 'pipe:0',
+			'-f',
+			'rawvideo',
+			'-pix_fmt',
+			'rgb24',
+			'-',
+		],
+		{
+			maxBuffer: 1 << 27,
+			...(typeof png === 'string' ? {} : { input: png }),
+		},
+	),
 	w,
 	h,
 });
@@ -144,181 +165,202 @@ const maxDiff = (a: Raw, b: Raw) => {
 	return m;
 };
 
-describe.runIf(enabled && !!CHROME)('Title Looks in real Chrome (REMOTION_E2E=1)', { timeout: 300_000 }, () => {
-	let media: FxMedia;
-	let serveUrl: string;
-	let renderer: typeof import('@remotion/renderer');
-	let puppeteerInstance: Awaited<ReturnType<typeof renderer.openBrowser>> | undefined;
-	let browser: Browser;
-	let page: Page;
-	const remotionBrowser = { browserExecutable: CHROME, chromeMode: 'chrome-for-testing' as const };
+describe.runIf(enabled && !!CHROME)(
+	'Title Looks in real Chrome (REMOTION_E2E=1)',
+	{ timeout: 300_000 },
+	() => {
+		let media: FxMedia;
+		let serveUrl: string;
+		let renderer: typeof import('@remotion/renderer');
+		let puppeteerInstance: Awaited<ReturnType<typeof renderer.openBrowser>> | undefined;
+		let browser: Browser;
+		let page: Page;
+		const remotionBrowser = { browserExecutable: CHROME, chromeMode: 'chrome-for-testing' as const };
 
-	beforeAll(async () => {
-		mkdirSync(OUT, { recursive: true });
-		media = await startFxMedia('title-look-');
-		const { bundle } = await import('@remotion/bundler');
-		serveUrl = await bundle({ entryPoint: join(here, 'fx-render', 'entry.ts') });
-		renderer = await import('@remotion/renderer');
-		puppeteerInstance = await renderer.openBrowser('chrome', {
-			...remotionBrowser,
-			chromiumOptions: { gl: 'swangle' },
-		});
-		const code = await bundleForBrowser(join(here, 'fx-player', 'entry.tsx'));
-		media.page('bundle.js', 'text/javascript', code);
-		media.page(
-			'index.html',
-			'text/html',
-			`<!doctype html><html><body style="margin:0;background:#000"><script>window.__tlDraws = 0; const d = WebGL2RenderingContext.prototype.drawArrays; WebGL2RenderingContext.prototype.drawArrays = function (...a) { window.__tlDraws++; return d.apply(this, a); }; window.__docs = ${JSON.stringify({ animated: build(), still: build({ still: true }) })};</script><script src="/bundle.js"></script></body></html>`,
-		);
-		browser = await chromium.launch({
-			executablePath: CHROME!,
-			args: ['--enable-features=CanvasDrawElement', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
-		});
-		page = await browser.newPage({ viewport: { width: W, height: H * 2 } });
-		page.on('pageerror', (e) => console.error(`[title-look] page error: ${e.message}`));
-		await page.goto(`${media.base}/index.html`);
-	}, 300_000);
-
-	afterAll(async () => {
-		await browser?.close();
-		await puppeteerInstance?.close({ silent: true });
-		media?.close();
-	});
-
-	async function still(doc: ReturnType<typeof build>, frame: number, name: string): Promise<Raw> {
-		const inputProps = {
-			doc,
-			options: { isPreview: false, useProxies: false, transparentBackground: false },
-		};
-		const composition = await renderer.selectComposition({
-			serveUrl,
-			id: SEQUENCE_COMPOSITION_ID,
-			inputProps,
-			puppeteerInstance,
-			...remotionBrowser,
-		});
-		const output = join(OUT, `${name}.png`);
-		await renderer.renderStill({
-			composition,
-			serveUrl,
-			inputProps,
-			frame,
-			output,
-			puppeteerInstance,
-			...remotionBrowser,
-		});
-		return decode(output, doc.settings.width, doc.settings.height);
-	}
-
-	async function programFrame(frame: number, name: string): Promise<Raw> {
-		await page.evaluate((f) => {
-			(window as never as { __fxPlayer: { seek(a: string, b: number): void } }).__fxPlayer.seek('animated', f);
-		}, frame);
-		// Settle: the Player redraws asynchronously; two identical screenshots in a row end the wait.
-		let prev: Buffer | null = null;
-		for (let i = 0; i < 40; i++) {
-			await page.waitForTimeout(150);
-			const shot = await page.locator('#animated').screenshot();
-			if (prev && prev.equals(shot) && i > 2) break;
-			prev = shot;
-		}
-		writeFileSync(join(OUT, `${name}.png`), prev!);
-		return decode(prev!, W, H);
-	}
-
-	it('HTML-in-Canvas is available in the test Chrome', async () => {
-		const supported = await page.evaluate(() => {
-			const c = document.createElement('canvas');
-			return (
-				typeof (c.getContext('2d') as unknown as { drawElementImage?: unknown }).drawElementImage === 'function'
+		beforeAll(async () => {
+			mkdirSync(OUT, { recursive: true });
+			media = await startFxMedia('title-look-');
+			const { bundle } = await import('@remotion/bundler');
+			serveUrl = await bundle({ entryPoint: join(here, 'fx-render', 'entry.ts') });
+			renderer = await import('@remotion/renderer');
+			puppeteerInstance = await renderer.openBrowser('chrome', {
+				...remotionBrowser,
+				chromiumOptions: { gl: 'swangle' },
+			});
+			const code = await bundleForBrowser(join(here, 'fx-player', 'entry.tsx'));
+			media.page('bundle.js', 'text/javascript', code);
+			media.page(
+				'index.html',
+				'text/html',
+				`<!doctype html><html><body style="margin:0;background:#000"><script>window.__tlDraws = 0; const d = WebGL2RenderingContext.prototype.drawArrays; WebGL2RenderingContext.prototype.drawArrays = function (...a) { window.__tlDraws++; return d.apply(this, a); }; window.__docs = ${JSON.stringify({ animated: build(), still: build({ still: true }) })};</script><script src="/bundle.js"></script></body></html>`,
 			);
-		});
-		console.info(`[title-look] Chrome ${browser.version()} drawElementImage: ${supported}`);
-		expect(supported).toBe(true);
-	});
+			browser = await chromium.launch({
+				executablePath: CHROME!,
+				args: [
+					'--enable-features=CanvasDrawElement',
+					'--use-angle=swiftshader',
+					'--enable-unsafe-swiftshader',
+				],
+			});
+			page = await browser.newPage({ viewport: { width: W, height: H * 2 } });
+			page.on('pageerror', (e) => console.error(`[title-look] page error: ${e.message}`));
+			await page.goto(`${media.base}/index.html`);
+		}, 300_000);
 
-	it('a still look is not recomputed between frames in the Player (TL-037)', async () => {
-		const seek = (name: string, f: number) =>
-			page.evaluate(
-				([n, frame]) =>
-					(window as never as { __fxPlayer: { seek(a: string, b: number): void } }).__fxPlayer.seek(
-						n as string,
-						frame as number,
+		afterAll(async () => {
+			await browser?.close();
+			await puppeteerInstance?.close({ silent: true });
+			media?.close();
+		});
+
+		async function still(doc: ReturnType<typeof build>, frame: number, name: string): Promise<Raw> {
+			const inputProps = {
+				doc,
+				options: { isPreview: false, useProxies: false, transparentBackground: false },
+			};
+			const composition = await renderer.selectComposition({
+				serveUrl,
+				id: SEQUENCE_COMPOSITION_ID,
+				inputProps,
+				puppeteerInstance,
+				...remotionBrowser,
+			});
+			const output = join(OUT, `${name}.png`);
+			await renderer.renderStill({
+				composition,
+				serveUrl,
+				inputProps,
+				frame,
+				output,
+				puppeteerInstance,
+				...remotionBrowser,
+			});
+			return decode(output, doc.settings.width, doc.settings.height);
+		}
+
+		async function programFrame(frame: number, name: string): Promise<Raw> {
+			await page.evaluate((f) => {
+				(window as never as { __fxPlayer: { seek(a: string, b: number): void } }).__fxPlayer.seek(
+					'animated',
+					f,
+				);
+			}, frame);
+			// Settle: the Player redraws asynchronously; two identical screenshots in a row end the wait.
+			let prev = null as Buffer | null;
+			for (let i = 0; i < 40; i++) {
+				await page.waitForTimeout(150);
+				const shot = await page.locator('#animated').screenshot();
+				if (prev?.equals(shot) && i > 2) break;
+				prev = shot;
+			}
+			writeFileSync(join(OUT, `${name}.png`), prev!);
+			return decode(prev!, W, H);
+		}
+
+		it('HTML-in-Canvas is available in the test Chrome', async () => {
+			const supported = await page.evaluate(() => {
+				const c = document.createElement('canvas');
+				return (
+					typeof (c.getContext('2d') as unknown as { drawElementImage?: unknown }).drawElementImage ===
+					'function'
+				);
+			});
+			console.info(`[title-look] Chrome ${browser.version()} drawElementImage: ${supported}`);
+			expect(supported).toBe(true);
+		});
+
+		it('a still look is not recomputed between frames in the Player (TL-037)', async () => {
+			const seek = (name: string, f: number) =>
+				page.evaluate(
+					([n, frame]) =>
+						(window as never as { __fxPlayer: { seek(a: string, b: number): void } }).__fxPlayer.seek(
+							n as string,
+							frame as number,
+						),
+					[name, f] as const,
+				);
+			const draws = () => page.evaluate(() => (window as never as { __tlDraws: number }).__tlDraws);
+			await seek('still', 5);
+			await page.waitForTimeout(3000);
+			const settled = await draws();
+			for (const f of [10, 20, 30, 40]) {
+				await seek('still', f);
+				await page.waitForTimeout(400);
+			}
+			const after = await draws();
+			console.info(`[title-look] still look: ${after - settled} GL draws across 4 seeks`);
+			expect(after - settled).toBe(0);
+			// The input changed: a text edit makes a new clip, and the cache must not hide it.
+			await page.evaluate(
+				(doc) =>
+					(window as never as { __fxPlayer: { setDoc(a: string, b: unknown): void } }).__fxPlayer.setDoc(
+						'still',
+						doc,
 					),
-				[name, f] as const,
+				build({ still: true, text: 'EDIT' }),
 			);
-		const draws = () =>
-			page.evaluate(() => (window as never as { __tlDraws: number }).__tlDraws);
-		await seek('still', 5);
-		await page.waitForTimeout(3000);
-		const settled = await draws();
-		for (const f of [10, 20, 30, 40]) {
-			await seek('still', f);
-			await page.waitForTimeout(400);
-		}
-		const after = await draws();
-		console.info(`[title-look] still look: ${after - settled} GL draws across 4 seeks`);
-		expect(after - settled).toBe(0);
-		// The input changed: a text edit makes a new clip, and the cache must not hide it.
-		await page.evaluate(
-			(doc) => (window as never as { __fxPlayer: { setDoc(a: string, b: unknown): void } }).__fxPlayer.setDoc('still', doc),
-			build({ still: true, text: 'EDIT' }),
-		);
-		await page.waitForTimeout(3000);
-		const edited = await draws();
-		expect(edited).toBeGreaterThan(after);
-		// The animated clip does redraw: the counter is live.
-		await seek('animated', 11);
-		await page.waitForTimeout(1500);
-		await seek('animated', 12);
-		await page.waitForTimeout(1500);
-		expect(await draws()).toBeGreaterThan(edited);
-	});
+			await page.waitForTimeout(3000);
+			const edited = await draws();
+			expect(edited).toBeGreaterThan(after);
+			// The animated clip does redraw: the counter is live.
+			await seek('animated', 11);
+			await page.waitForTimeout(1500);
+			await seek('animated', 12);
+			await page.waitForTimeout(1500);
+			expect(await draws()).toBeGreaterThan(edited);
+		});
 
-	it('Program and export agree on an animated look, frame by frame', async () => {
-		const doc = build();
-		for (const frame of [0, 30, 60]) {
-			const exported = await still(doc, frame, `export-${frame}`);
-			const program = await programFrame(frame, `program-${frame}`);
-			const score = ssim(luma(program), luma(exported), W, H);
-			console.info(`[title-look] frame ${frame}: Program vs export SSIM ${score.toFixed(4)}, max ${maxDiff(program, exported)}`);
-			expect(score).toBeGreaterThan(0.98);
-		}
-		// The animation is real: frames differ.
-		const a = await still(doc, 0, 'export-a');
-		const b = await still(doc, 60, 'export-b');
-		expect(maxDiff(a, b)).toBeGreaterThan(50);
-		expect(await page.evaluate(() => document.querySelector('[data-grade-chip]')?.textContent ?? null)).toBeNull();
-	});
+		it('Program and export agree on an animated look, frame by frame', async () => {
+			const doc = build();
+			for (const frame of [0, 30, 60]) {
+				const exported = await still(doc, frame, `export-${frame}`);
+				const program = await programFrame(frame, `program-${frame}`);
+				const score = ssim(luma(program), luma(exported), W, H);
+				console.info(
+					`[title-look] frame ${frame}: Program vs export SSIM ${score.toFixed(4)}, max ${maxDiff(program, exported)}`,
+				);
+				expect(score).toBeGreaterThan(0.98);
+			}
+			// The animation is real: frames differ.
+			const a = await still(doc, 0, 'export-a');
+			const b = await still(doc, 60, 'export-b');
+			expect(maxDiff(a, b)).toBeGreaterThan(50);
+			expect(
+				await page.evaluate(() => document.querySelector('[data-grade-chip]')?.textContent ?? null),
+			).toBeNull();
+		});
 
-	it('a double build with fresh ids is byte-identical (TL-035)', async () => {
-		const a = await still(build({ idSeed: 1 }), 30, 'double-a');
-		const b = await still(build({ idSeed: 5000 }), 30, 'double-b');
-		expect(Buffer.compare(a.data, b.data)).toBe(0);
-	});
+		it('a double build with fresh ids is byte-identical (TL-035)', async () => {
+			const a = await still(build({ idSeed: 1 }), 30, 'double-a');
+			const b = await still(build({ idSeed: 5000 }), 30, 'double-b');
+			expect(Buffer.compare(a.data, b.data)).toBe(0);
+		});
 
-	it('a razor cut leaves every frame of the look unchanged (TL-035)', async () => {
-		const whole = build();
-		const cut = build({ split: 20 });
-		for (const frame of [10, 19, 20, 21, 45]) {
-			const a = await still(whole, frame, `whole-${frame}`);
-			const b = await still(cut, frame, `cut-${frame}`);
-			console.info(`[title-look] razor frame ${frame}: max difference ${maxDiff(a, b)}`);
-			expect(maxDiff(a, b)).toBeLessThanOrEqual(2);
-		}
-	});
+		it('a razor cut leaves every frame of the look unchanged (TL-035)', async () => {
+			const whole = build();
+			const cut = build({ split: 20 });
+			for (const frame of [10, 19, 20, 21, 45]) {
+				const a = await still(whole, frame, `whole-${frame}`);
+				const b = await still(cut, frame, `cut-${frame}`);
+				console.info(`[title-look] razor frame ${frame}: max difference ${maxDiff(a, b)}`);
+				expect(maxDiff(a, b)).toBeLessThanOrEqual(2);
+			}
+		});
 
-	it('resolution independence through real text (TL-034)', async () => {
-		const half = await still(build({ scale: 0.5 }), 30, 'res-50');
-		const full = await still(build({ scale: 1 }), 30, 'res-100');
-		const twice = await still(build({ scale: 2 }), 30, 'res-200');
-		const fl = luma(full);
-		const small = resampleLuma(fl, full.w, full.h, half.w, half.h);
-		const big = resampleLuma(luma(twice), twice.w, twice.h, half.w, half.h);
-		const s1 = ssim(small, luma(half), half.w, half.h);
-		const s2 = ssim(big, small, half.w, half.h);
-		console.info(`[title-look] resolution through Remotion: 100 vs 50 ${s1.toFixed(4)}, 200 vs 100 ${s2.toFixed(4)}`);
-		expect(s1).toBeGreaterThan(0.95);
-		expect(s2).toBeGreaterThan(0.95);
-	});
-});
+		it('resolution independence through real text (TL-034)', async () => {
+			const half = await still(build({ scale: 0.5 }), 30, 'res-50');
+			const full = await still(build({ scale: 1 }), 30, 'res-100');
+			const twice = await still(build({ scale: 2 }), 30, 'res-200');
+			const fl = luma(full);
+			const small = resampleLuma(fl, full.w, full.h, half.w, half.h);
+			const big = resampleLuma(luma(twice), twice.w, twice.h, half.w, half.h);
+			const s1 = ssim(small, luma(half), half.w, half.h);
+			const s2 = ssim(big, small, half.w, half.h);
+			console.info(
+				`[title-look] resolution through Remotion: 100 vs 50 ${s1.toFixed(4)}, 200 vs 100 ${s2.toFixed(4)}`,
+			);
+			expect(s1).toBeGreaterThan(0.95);
+			expect(s2).toBeGreaterThan(0.95);
+		});
+	},
+);

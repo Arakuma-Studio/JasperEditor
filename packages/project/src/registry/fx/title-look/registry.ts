@@ -89,7 +89,10 @@ export function paramSpec(t: TitleLayerType, name: string): TitleParamSpec | und
 }
 
 /** Stored values over the defaults of every param of the layer. */
-export function withDefaults(t: TitleLayerType, stored: Readonly<Record<string, LayerParamValue>>): LayerParams {
+export function withDefaults(
+	t: TitleLayerType,
+	stored: Readonly<Record<string, LayerParamValue>>,
+): LayerParams {
 	const out: LayerParams = {};
 	for (const p of layerParamSpecs(t)) out[p.name] = stored[p.name] ?? p.default;
 	return out;

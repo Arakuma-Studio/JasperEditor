@@ -67,7 +67,8 @@ export function* appearanceAnimatables(a: Appearance): Generator<Animatable<unkn
 		yield a.light.angle as Animatable<unknown>;
 		yield a.light.altitude as Animatable<unknown>;
 	}
-	for (const l of a.layers ?? []) for (const anim of Object.values(l.params)) yield anim as Animatable<unknown>;
+	for (const l of a.layers ?? [])
+		for (const anim of Object.values(l.params)) yield anim as Animatable<unknown>;
 }
 
 /** The appearance changes with time on its own (keys or expressions; the sequence's light is the caller's check). */

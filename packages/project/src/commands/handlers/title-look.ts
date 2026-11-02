@@ -2,20 +2,21 @@
 // refuses with `E_*` codes: `E_LIMIT` over TL-013's limits, `E_TRACK_LOCKED` on locked tracks (except `look.update`,
 // which skips them with `W_CLIP_SKIPPED`), `E_NOT_FOUND`, `E_INVALID_PARAM`.
 import type { Draft } from 'immer';
+import { contentTimeAt } from '../../derive/index.ts';
 import { createFontRef, defaultTransform } from '../../factories.ts';
 import { isPaintParam } from '../../registry/fx/title-look/contract.ts';
 import { paramSpec, titleLayerType } from '../../registry/fx/title-look/registry.ts';
 import { intrinsicBoxOf } from '../../registry/properties.ts';
 import type { Clip, EffectInstance } from '../../schema/sequence.ts';
-import { contentTimeAt } from '../../derive/index.ts';
+import type { Rational } from '../../time.ts';
 import { factoryColorway, factoryLook } from '../../title-looks/factory/index.ts';
 import {
 	type Appearance,
 	type AppearanceLayer,
 	appearanceBytes,
-	clipLook,
 	type Colorway,
 	ColorwaySchema,
+	clipLook,
 	emptyAppearance,
 	type GlobalLight,
 	GradientSchema,
@@ -24,12 +25,12 @@ import {
 	MAX_TITLE_LOOK_NAME,
 	MAX_TITLE_LOOKS,
 	type Paint,
+	type Role,
 	seedFromId,
 	staticAnim,
 	TITLE_LOOK_CLIP_KINDS,
 	TITLE_LOOK_EFFECT_ID,
 	type TitleLook,
-	type Role,
 } from '../../title-looks/model.ts';
 import {
 	adoptLayerIds,
@@ -39,19 +40,23 @@ import {
 	lookBodyOf,
 	rebaseAppearance,
 } from '../../title-looks/overrides.ts';
-import { appearanceFromRecipe, layerFromRecipe, LookRecipeSchema, MAX_RECIPE_BYTES } from '../../title-looks/recipe.ts';
+import {
+	appearanceFromRecipe,
+	LookRecipeSchema,
+	layerFromRecipe,
+	MAX_RECIPE_BYTES,
+} from '../../title-looks/recipe.ts';
 import {
 	appearanceProblem,
 	paintLimitProblem,
 	paintProblem,
 	titleLookOf,
 } from '../../title-looks/validate.ts';
-import type { Rational } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { assertUnlocked, cleanupSequence, findTrackIn, trackSlotOf } from '../placement.ts';
 import type { CommandOf } from '../schemas/index.ts';
-import { applyClipPatch } from './clip-core.ts';
 import { commonFields, frameBox, newGeneratorClip, visualFields } from './clip-common.ts';
+import { applyClipPatch } from './clip-core.ts';
 import { buildParams } from './effect.ts';
 import { locateEffect } from './param.ts';
 import { clone, type HandlerMap, idList, peek, peekKeys } from './util.ts';
@@ -123,7 +128,10 @@ function appearanceOfRecipe(raw: unknown, h: HandlerContext, who: string): Appea
 		return h.fail('E_INVALID_PARAM', `${who}: ${i.path.join('.')}: ${i.message}`);
 	}
 	if (r.data.layers.length > MAX_APPEARANCE_LAYERS)
-		h.fail('E_LIMIT', `${who}: a look holds at most ${MAX_APPEARANCE_LAYERS} layers (${r.data.layers.length} asked)`);
+		h.fail(
+			'E_LIMIT',
+			`${who}: a look holds at most ${MAX_APPEARANCE_LAYERS} layers (${r.data.layers.length} asked)`,
+		);
 	let a: Appearance;
 	try {
 		a = appearanceFromRecipe(r.data, () => h.ids.next('apl'));
@@ -159,8 +167,7 @@ function lookForApply(doc: DDoc, cmd: CommandOf<'look.apply'>, h: HandlerContext
 	if (cmd.lookId && cmd.look) h.fail('E_INVALID_PARAM', 'Give lookId or look, not both');
 	const rec = (doc as { titleLooks?: Record<string, TitleLook> }).titleLooks;
 	if (cmd.lookId && rec && Object.hasOwn(rec, cmd.lookId)) {
-		if (!titleLookOf(doc as never, cmd.lookId))
-			h.fail('E_INVALID_PARAM', `Look ${cmd.lookId} is unreadable`);
+		if (!titleLookOf(doc as never, cmd.lookId)) h.fail('E_INVALID_PARAM', `Look ${cmd.lookId} is unreadable`);
 		return looksOf(doc)[cmd.lookId]!;
 	}
 	const source = cmd.lookId ? factoryLook(cmd.lookId) : undefined;
@@ -244,7 +251,8 @@ const paintParamOf = (layer: AppearanceLayer, name: string | undefined, h: Handl
 	const def = titleLayerType(layer.type);
 	if (!def) return h.fail('E_UNKNOWN_EFFECT', `Unknown layer type ${layer.type}`);
 	const spec = paramSpec(def, name ?? 'paint');
-	if (!spec || !isPaintParam(spec)) return h.fail('E_INVALID_PARAM', `${layer.type} has no paint "${name ?? 'paint'}"`);
+	if (!spec || !isPaintParam(spec))
+		return h.fail('E_INVALID_PARAM', `${layer.type} has no paint "${name ?? 'paint'}"`);
 	return spec;
 };
 
@@ -276,9 +284,7 @@ export const titleLookHandlers = {
 		for (const { seq, clip } of targets) {
 			const prev = clipLook(effectsOf(clip));
 			const seed =
-				cmd.seed ??
-				(prev?.appearance as Appearance | undefined)?.seed ??
-				seedFromId(h.ids.next('apl'));
+				cmd.seed ?? (prev?.appearance as Appearance | undefined)?.seed ?? seedFromId(h.ids.next('apl'));
 			const next = appearanceOfLook(lookPlain, seed);
 			if (colorway) applyColorway(next, colorway);
 			assertAppearance(next, lookPlain.name, h);
@@ -346,7 +352,8 @@ export const titleLookHandlers = {
 	},
 
 	'look.setColorway': (doc, cmd: CommandOf<'look.setColorway'>, h: HandlerContext) => {
-		if (!cmd.palette && !cmd.colorwayId) h.fail('E_INVALID_PARAM', 'look.setColorway needs colorwayId or palette');
+		if (!cmd.palette && !cmd.colorwayId)
+			h.fail('E_INVALID_PARAM', 'look.setColorway needs colorwayId or palette');
 		const out: string[] = [];
 		const keptAnimated: Record<string, Role[]> = {};
 		for (const id of idList(cmd.clipIds)) {
@@ -426,7 +433,10 @@ export const titleLookHandlers = {
 				updated++;
 			}
 		if (skipped.length)
-			h.warn('W_CLIP_SKIPPED', `${skipped.length} linked clip(s) on locked tracks keep their look: ${skipped.join(', ')}`);
+			h.warn(
+				'W_CLIP_SKIPPED',
+				`${skipped.length} linked clip(s) on locked tracks keep their look: ${skipped.join(', ')}`,
+			);
 		return { lookId: cmd.lookId, updated, skipped };
 	},
 
@@ -585,7 +595,13 @@ export const titleLookHandlers = {
 			}
 			if (slot.index === 0) track = clip.trackId;
 		}
-		const { seq, track: t, at, duration, id } = newGeneratorClip(
+		const {
+			seq,
+			track: t,
+			at,
+			duration,
+			id,
+		} = newGeneratorClip(
 			doc,
 			{
 				sequenceId: cmd.sequenceId,
@@ -612,7 +628,12 @@ export const titleLookHandlers = {
 			effectId: spec.id,
 			effectVersion: spec.version,
 			enabled: true,
-			params: buildParams(spec, cmd.params, h, intrinsicBoxOf({ doc: doc as never, seq: seq as never, clip: seq.clips[id] as Clip })),
+			params: buildParams(
+				spec,
+				cmd.params,
+				h,
+				intrinsicBoxOf({ doc: doc as never, seq: seq as never, clip: seq.clips[id] as Clip }),
+			),
 		};
 		(seq.clips[id] as unknown as { effects: unknown[] }).effects.push(fx);
 		cleanupSequence(seq, h);

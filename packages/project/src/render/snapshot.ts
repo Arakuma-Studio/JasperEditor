@@ -68,9 +68,9 @@ import {
 	syntheticSound,
 } from '../structure/synthetic.ts';
 import { type ResolvedTextAnimator, resolveTextAnimationWindows } from '../text-animations.ts';
-import { clipLook, type GlobalLight, globalLightOf } from '../title-looks/model.ts';
 import { flicksPerFrame, type Rational, rationalEquals } from '../time.ts';
 import { activeRemap, needsRetime, timeInterpolationOf } from '../time-remap/model.ts';
+import { clipLook, type GlobalLight, globalLightOf } from '../title-looks/model.ts';
 import { transitionSideTrack, transitionTrackerOf } from '../tracking/transition.ts';
 import {
 	type AudioClipTransitionRender,

@@ -3,7 +3,7 @@
 // resolution independence and determinism. Fingerprints: `goldens/title-look-fingerprints.json` (JASPER_BLESS=1).
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { type LookRecipe, type Paint, TITLE_LAYER_TYPES, TITLE_FINISHES } from '@jasper/project';
+import { type LookRecipe, type Paint, TITLE_FINISHES, TITLE_LAYER_TYPES } from '@jasper/project';
 import { expectFingerprints } from '@jasper/testkit/golden';
 import { meanGrid } from '@jasper/testkit/image';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -256,7 +256,10 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Looks in WebGL2', {
 		const img = await render(
 			{
 				layers: [
-					{ type: 'shadow', params: { distance: 20, blur: 0, angle: 0, opacity: 100, paint: flat([0, 0, 1, 1]) } },
+					{
+						type: 'shadow',
+						params: { distance: 20, blur: 0, angle: 0, opacity: 100, paint: flat([0, 0, 1, 1]) },
+					},
 					{ type: 'face', params: { paint: flat([1, 0, 0, 1]) } },
 				],
 			},
@@ -285,7 +288,14 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Looks in WebGL2', {
 				layers: [
 					{
 						type: 'shadow',
-						params: { kind: 'long', distance: 60, blur: 0, angle: 0, opacity: 100, paint: flat([0, 0, 1, 1]) },
+						params: {
+							kind: 'long',
+							distance: 60,
+							blur: 0,
+							angle: 0,
+							opacity: 100,
+							paint: flat([0, 0, 1, 1]),
+						},
 					},
 				],
 			},
@@ -369,39 +379,50 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Looks in WebGL2', {
 	});
 
 	// Cost on this host (docs/performance.md §7): TL_PERF=1. Reports; the budget is on a real GPU.
-	it.runIf(process.env.TL_PERF === '1')('per-frame cost of a six-layer look at 1080p', { timeout: 300_000 }, async () => {
-		const req = (pxScale: number): LookRequest => ({
-			recipe: six,
-			input: { kind: 'text', text: 'Title Look', size: 200 },
-			box: { width: 1920, height: 1080 },
-			pxScale,
-			timingOnly: true,
-		});
-		await tl.render(req(1));
-		const profile = await tl.render({ ...req(1), perPass: true });
-		console.info(`[title-look-perf] passes:\n${(profile as { passLog?: string[] }).passLog?.join('\n')}`);
-		const face = (pxScale: number): LookRequest => ({
-			...req(pxScale),
-			recipe: { palette, layers: [{ type: 'face' }] },
-		});
-		// A title's real box: the text and the look's padding, not the whole frame.
-		const tight = (pxScale: number): LookRequest => ({ ...req(pxScale), box: { width: 1200, height: 280 } });
-		for (const [name, pxScale] of [['full', 1], ['1/2', 0.5], ['1/4', 0.25]] as const) {
-			for (const [what, r] of [
-				['six layers, frame-sized box', req(pxScale)],
-				['six layers, title-sized box', tight(pxScale)],
-				['field + face, frame-sized box', face(pxScale)],
+	it.runIf(process.env.TL_PERF === '1')(
+		'per-frame cost of a six-layer look at 1080p',
+		{ timeout: 300_000 },
+		async () => {
+			const req = (pxScale: number): LookRequest => ({
+				recipe: six,
+				input: { kind: 'text', text: 'Title Look', size: 200 },
+				box: { width: 1920, height: 1080 },
+				pxScale,
+				timingOnly: true,
+			});
+			await tl.render(req(1));
+			const profile = await tl.render({ ...req(1), perPass: true });
+			console.info(`[title-look-perf] passes:\n${(profile as { passLog?: string[] }).passLog?.join('\n')}`);
+			const face = (pxScale: number): LookRequest => ({
+				...req(pxScale),
+				recipe: { palette, layers: [{ type: 'face' }] },
+			});
+			// A title's real box: the text and the look's padding, not the whole frame.
+			const tight = (pxScale: number): LookRequest => ({
+				...req(pxScale),
+				box: { width: 1200, height: 280 },
+			});
+			for (const [name, pxScale] of [
+				['full', 1],
+				['1/2', 0.5],
+				['1/4', 0.25],
 			] as const) {
-				const first = await tl.render(r);
-				const runs: number[] = [];
-				for (let i = 0; i < 7; i++) runs.push((await tl.render(r)).ms);
-				runs.sort((a, b) => a - b);
-				console.info(
-					`[title-look-perf] ${name}, ${what}: canvas ${first.width}×${first.height}, ${first.passes} passes, first ${first.ms.toFixed(0)} ms, median ${runs[3]!.toFixed(0)} ms, min ${runs[0]!.toFixed(0)} ms, max ${runs[6]!.toFixed(0)} ms`,
-				);
+				for (const [what, r] of [
+					['six layers, frame-sized box', req(pxScale)],
+					['six layers, title-sized box', tight(pxScale)],
+					['field + face, frame-sized box', face(pxScale)],
+				] as const) {
+					const first = await tl.render(r);
+					const runs: number[] = [];
+					for (let i = 0; i < 7; i++) runs.push((await tl.render(r)).ms);
+					runs.sort((a, b) => a - b);
+					console.info(
+						`[title-look-perf] ${name}, ${what}: canvas ${first.width}×${first.height}, ${first.passes} passes, first ${first.ms.toFixed(0)} ms, median ${runs[3]!.toFixed(0)} ms, min ${runs[0]!.toFixed(0)} ms, max ${runs[6]!.toFixed(0)} ms`,
+					);
+				}
 			}
-		}
-	});
+		},
+	);
 
 	// Every registered layer type: this is the registry completeness check (a new type has no fingerprints until it is
 	// blessed, and fails until then), plus the checks a type gets for free.
@@ -414,12 +435,19 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Looks in WebGL2', {
 					{ type: type.type, params },
 				],
 			});
-			const base: LookRecipe = { palette, layers: [{ type: 'face', params: { paint: flat([0.3, 0.3, 0.3, 1]) } }] };
+			const base: LookRecipe = {
+				palette,
+				layers: [{ type: 'face', params: { paint: flat([0.3, 0.3, 0.3, 1]) } }],
+			};
 
 			it('compiles, draws and matches its fingerprints at default and perturbed params', async () => {
 				const d = await render(recipeOf());
 				const p = await render(recipeOf(perturbedParams(type)), { pad: 40 });
-				expectFingerprints(GOLDENS, { [`${type.type}@default`]: grid(d), [`${type.type}@perturbed`]: grid(p) }, 4);
+				expectFingerprints(
+					GOLDENS,
+					{ [`${type.type}@default`]: grid(d), [`${type.type}@perturbed`]: grid(p) },
+					4,
+				);
 				// A deliberate perturbation changes the picture.
 				const dg = grid(d);
 				expect(grid(p).some((v, i) => Math.abs(v - dg[i]!) > 0.5)).toBe(true);

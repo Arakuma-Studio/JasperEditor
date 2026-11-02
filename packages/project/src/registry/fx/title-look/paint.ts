@@ -4,8 +4,8 @@
 // white ramp reads even), and each ramp entry is then linearised; compositing stays linear.
 import type { RGBA } from '../../../schema/common.ts';
 import type { Gradient, LayerParamValue, Paint, Role } from '../../../title-looks/model.ts';
-import { GLSL_TL_PAINT } from './glsl.ts';
 import { type FxUniformValue, type GlslChunk, hashFloats } from '../shader.ts';
+import { GLSL_TL_PAINT } from './glsl.ts';
 
 const DEG = Math.PI / 180;
 export const RAMP_SIZE = 256;
@@ -113,9 +113,7 @@ export function paintParts(
 			return {
 				glsl: `vec4 ${fn}(TlSurface s) { return ${color}; }\n`,
 				uniforms: {
-					[color]: linearPremultiplied(
-						paint.kind === 'role' ? palette[paint.role] : (paint.color as RGBA),
-					),
+					[color]: linearPremultiplied(paint.kind === 'role' ? palette[paint.role] : (paint.color as RGBA)),
 				},
 				include: [],
 				usesBounds: false,

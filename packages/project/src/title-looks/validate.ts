@@ -137,12 +137,20 @@ function repairedValue(p: TitleParamSpec, v: unknown): LayerParamValue | null {
 		return null;
 	}
 	if (p.type === 'number' && NUM(v))
-		return Math.min(p.range?.max ?? Number.POSITIVE_INFINITY, Math.max(p.range?.min ?? Number.NEGATIVE_INFINITY, v));
+		return Math.min(
+			p.range?.max ?? Number.POSITIVE_INFINITY,
+			Math.max(p.range?.min ?? Number.NEGATIVE_INFINITY, v),
+		);
 	return null;
 }
 
 /** One stored param made legal: keys that cannot be kept go, a value with no reading takes the default. */
-function repairParam(p: TitleParamSpec, raw: unknown, who: string, note: Note): LayerParamValue | undefined | object {
+function repairParam(
+	p: TitleParamSpec,
+	raw: unknown,
+	who: string,
+	note: Note,
+): LayerParamValue | undefined | object {
 	if (!animValid(raw)) {
 		note('repair-appearance', who, `${p.name}: unreadable value reset`);
 		return undefined;
@@ -224,7 +232,10 @@ export function repairAppearance(
 		delete a.colorwayId;
 		note('repair-appearance', who, 'unreadable colourway removed');
 	}
-	if (a.font !== undefined && !(isPlainObject(a.font) && typeof a.font.family === 'string' && a.font.family)) {
+	if (
+		a.font !== undefined &&
+		!(isPlainObject(a.font) && typeof a.font.family === 'string' && a.font.family)
+	) {
 		delete a.font;
 		note('repair-appearance', who, 'unreadable font removed');
 	}
@@ -377,7 +388,12 @@ export function titleLooksRecordIssues(doc: ProjectDocument): [string, string[]]
 }
 
 /** The readable project looks, keyed by id (TL-020). Idempotent. */
-export function repairTitleLooks(doc: ProjectDocument, newLayerId: () => string, newLookId: () => string, note: Note): void {
+export function repairTitleLooks(
+	doc: ProjectDocument,
+	newLayerId: () => string,
+	newLookId: () => string,
+	note: Note,
+): void {
 	const d = doc as { titleLooks?: unknown };
 	if (d.titleLooks === undefined) return;
 	if (!isPlainObject(d.titleLooks)) {
@@ -432,11 +448,15 @@ export function repairTitleLooks(doc: ProjectDocument, newLayerId: () => string,
 }
 
 /** Why a clip's look instances fail INV-APPEARANCE (TL-010), or null. */
-export function clipLookProblem(clip: { kind: string; effects?: readonly { effectId: string }[] }): string | null {
+export function clipLookProblem(clip: {
+	kind: string;
+	effects?: readonly { effectId: string }[];
+}): string | null {
 	const n = (clip.effects ?? []).filter((fx) => fx.effectId === TITLE_LOOK_EFFECT_ID).length;
 	if (n === 0) return null;
 	if (n > 1) return 'a clip holds at most one look';
-	if (!(TITLE_LOOK_CLIP_KINDS as readonly string[]).includes(clip.kind)) return `${clip.kind} clips take no look`;
+	if (!(TITLE_LOOK_CLIP_KINDS as readonly string[]).includes(clip.kind))
+		return `${clip.kind} clips take no look`;
 	return null;
 }
 

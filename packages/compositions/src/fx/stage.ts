@@ -21,8 +21,8 @@ import {
 	type FxLayerMask,
 	type FxParamsAt,
 	type FxStepTime,
-	type FxTimeStep,
 	type FxStructures,
+	type FxTimeStep,
 	type FxUniform,
 	flattenPath,
 	fxBuiltinUniforms,
@@ -45,12 +45,12 @@ import {
 	type ResolvedEffect,
 	type ResolvedMask,
 	remapSourceAt,
-	titleLookStructure,
 	rotoFrameState,
 	rotoFrameUrl,
 	sideCompToCanvas,
 	TRACK_MATTE_EFFECT_ID,
 	textContentPad,
+	titleLookStructure,
 	workingKey,
 } from '@jasper/project';
 import { useContext, useMemo } from 'react';
@@ -356,7 +356,13 @@ export function useLayerFx(
 		const byId = new Map(clip.effects.map((e) => [e.id, e]));
 		return (fx: ResolvedEffect): FxStructures | undefined => {
 			if (!fx.appearance) return undefined;
-			const titleLook = titleLookStructure(fx.appearance, byId.get(fx.id)?.appearance, clip, fps, contentTime);
+			const titleLook = titleLookStructure(
+				fx.appearance,
+				byId.get(fx.id)?.appearance,
+				clip,
+				fps,
+				contentTime,
+			);
 			return { titleLook };
 		};
 	}, [clip, fps, contentTime]);

@@ -111,11 +111,11 @@ export * from './text-animations.ts';
 export * from './text-animators/index.ts';
 export * from './text-style.ts';
 export * from './text-styles/index.ts';
-export * from './title-looks/index.ts';
 export * from './three-d/index.ts';
 export * from './time.ts';
 export * from './time-remap/index.ts';
 export * from './timecode.ts';
+export * from './title-looks/index.ts';
 export * from './tracking/index.ts';
 export * from './transitions.ts';
 

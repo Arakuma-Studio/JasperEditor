@@ -11,6 +11,7 @@ import {
 	type MaskProp,
 } from '../../masks/model.ts';
 import { type ParamSpec, paramSpatialMetric } from '../../registry/effects.ts';
+import { isPaintParam } from '../../registry/fx/title-look/contract.ts';
 import { intrinsicBoxOf, type PropertySpec, resolvePropertySpec } from '../../registry/properties.ts';
 import {
 	type Animatable,
@@ -20,16 +21,16 @@ import {
 } from '../../schema/common.ts';
 import { PUPPET_PIN_LABELS } from '../../schema/puppet.ts';
 import type { Clip, EffectInstance, Sequence, Track } from '../../schema/sequence.ts';
-import { isPaintParam } from '../../registry/fx/title-look/contract.ts';
-import { type Appearance, DEFAULT_PALETTE, globalLightOf, type Role, TITLE_LOOK_EFFECT_ID } from '../../title-looks/model.ts';
-import {
-	appearanceAnimAt,
-	LIGHT_SPECS,
-	PALETTE_SLOT,
-	slotParamSpec,
-} from '../../title-looks/properties.ts';
-import { paintLimitProblem, paintProblem } from '../../title-looks/validate.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
+import {
+	type Appearance,
+	DEFAULT_PALETTE,
+	globalLightOf,
+	type Role,
+	TITLE_LOOK_EFFECT_ID,
+} from '../../title-looks/model.ts';
+import { appearanceAnimAt, LIGHT_SPECS, PALETTE_SLOT, slotParamSpec } from '../../title-looks/properties.ts';
+import { paintLimitProblem, paintProblem } from '../../title-looks/validate.ts';
 import { transitionSpec, transitionStartFrame } from '../../transitions.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';

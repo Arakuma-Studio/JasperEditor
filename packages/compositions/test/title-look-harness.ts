@@ -6,8 +6,8 @@ import type { Browser, Page } from '@playwright/test';
 import { CHROME, openGlPage } from './gl-browser.ts';
 import type { LookRequest, LookResult } from './title-look-gl/entry.ts';
 
-export { CHROME };
 export type { LookRequest };
+export { CHROME };
 
 export type LookImage = Omit<LookResult, 'rgba'> & { data: Uint8Array };
 
@@ -26,7 +26,8 @@ export async function openLookPage(dir: string): Promise<LookPage> {
 	const { browser, page } = await openGlPage(join(dir, 'title-look-gl', 'entry.ts'));
 	const call = <T>(name: string, arg?: unknown): Promise<T> =>
 		page.evaluate(
-			([n, a]) => (window as unknown as { __tl: Record<string, (a?: unknown) => unknown> }).__tl[n as string]!(a),
+			([n, a]) =>
+				(window as unknown as { __tl: Record<string, (a?: unknown) => unknown> }).__tl[n as string]!(a),
 			[name, arg] as const,
 		) as Promise<T>;
 	return {
@@ -109,13 +110,7 @@ export function ssim(a: Float64Array, b: Float64Array, w: number, h: number): nu
 }
 
 /** `img` resampled to `w`×`h` by box filtering (a resolution test's "after scaling"). */
-export function resampleLuma(
-	src: Float64Array,
-	sw: number,
-	sh: number,
-	w: number,
-	h: number,
-): Float64Array {
+export function resampleLuma(src: Float64Array, sw: number, sh: number, w: number, h: number): Float64Array {
 	const out = new Float64Array(w * h);
 	for (let y = 0; y < h; y++)
 		for (let x = 0; x < w; x++) {
@@ -139,7 +134,11 @@ export function resampleLuma(
 }
 
 /** The crop of the layer box in layer proportions: pictures of different resolutions compare over the same area. */
-export function layerCrop(img: LookImage, luma: Float64Array, margin = 0): { data: Float64Array; w: number; h: number } {
+export function layerCrop(
+	img: LookImage,
+	luma: Float64Array,
+	margin = 0,
+): { data: Float64Array; w: number; h: number } {
 	// The box may sit between canvas pixels (preview scale × odd padding): sample bilinearly.
 	const x0 = img.box.x - margin;
 	const y0 = img.box.y - margin;
