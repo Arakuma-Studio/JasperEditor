@@ -19,7 +19,14 @@ routing and the layer bake need no per-kind code.
 | Diff and rebase of overrides, colourways, look bodies | `packages/project/src/title-looks/overrides.ts` |
 | `lookOverrides` upkeep at the end of a transaction | `packages/project/src/title-looks/normalize.ts` |
 | Paths, property keys, property specs | `packages/project/src/title-looks/properties.ts` |
-| Factory library (data) | `packages/project/src/title-looks/factory/` |
+| Factory library (data): looks per category, colourways, categories, search, templates | `packages/project/src/title-looks/factory/` |
+| Which face a look gives a text clip (TL-053) | `packages/project/src/title-looks/font.ts` |
+| Style check (TL-056) | `packages/project/src/title-looks/lint.ts` |
+| User look format (TL-054) | `packages/project/src/title-looks/user-looks.ts` |
+| User look library and routes | `apps/engine/src/title-looks/library.ts`, `apps/engine/src/routes/title-looks.ts` |
+| Display fonts (TL-053) | `apps/engine/fonts/display/` (`manifest.json` pins commit and hashes) |
+| Generator recolour rule (TL-051) | `packages/project/src/registry/fx/title-look/recolor.ts` |
+| Template expansion (TL-052) | `packages/project/src/commands/handlers/title-template.ts` |
 | Commands (TL-018) | `packages/project/src/commands/{schemas,handlers}/title-look.ts` |
 | Extension contract, `lp` builders, summaries | `packages/project/src/registry/fx/title-look/contract.ts` |
 | Catalogue (nothing else lists types) | `packages/project/src/registry/fx/title-look/registry.ts` |
@@ -310,10 +317,142 @@ first shape field drew translucent wedges.
 | `appearance.setPaint {…, param?, paint}`, `appearance.setGradient {…, param?, gradient}` | 33 stops → `E_LIMIT` |
 | `sequence.setGlobalLight {angle?, altitude?, clear?}` | |
 | `clip.addGenerator {effectId, at, duration, track?, belowClipId?, params?}` | A `transparent` solid with the effect |
+| `appearance.setLayerFixedColor {effectInstanceId, layerId, fixed}` | TL-051. Fixing turns the roles the layer reads into their current colours; unfixing keeps them |
+| `title.insertTemplate {templateId, at, duration?, track?, texts?, colorwayId?, seed?, availableFonts?}` | TL-052. Ordinary clips in one transaction, grouped. Returns `{clipIds, slots}` |
+
+`look.apply` also takes `availableFonts`: see "Fonts" below.
 
 Addresses: `["appearance", fxId, layerId, param]`, `["appearance", fxId, "palette", role]`, `["appearance", fxId, "light",
 "angle"]`, `["globalLight", sequenceId, "angle"]`. Property keys join the first with dots. Slot names have no `$`: `$` starts
 a temp ref in commands.
+
+## The library
+
+Everything below is the library stream's. It reads as a general tool on purpose: categories run from Clean to 3D, pachinko is one
+of fifteen, and no code path knows about it. A test keeps that category at 15 % of the looks at most, and keeps the first look
+general.
+
+Current content: 30 looks in 13 categories, 15 colourways, 14 templates. Brush and 3D have no looks yet: they need `texture`
+and the 3D work to be worth shipping. The pass after the finishes and generators exist authors the rest (TL-050 asks for 60).
+
+### Adding to it
+
+- A look: an entry in `factory/looks/<category>.ts` through `defineLook`. It needs a font with a weight, a fallback and a Japanese
+  face, a colourway as its own palette, tags in English and Spanish, and generic sample text. Add its strings to `es.json`.
+- Every colour goes through a role. A colour that must not follow a colourway goes on a layer marked `fixedColor`; the library test
+  fails on a free colour otherwise.
+- A colourway: an entry in `factory/colorways.ts` with all nine roles.
+- A template: an entry under `factory/templates/`. Positions are fractions of the frame, sizes fractions of its shorter side.
+
+The UI and agents read `FACTORY_LOOKS`, `FACTORY_COLORWAYS`, `FACTORY_TEMPLATES`, `LOOK_CATEGORIES`, `searchLooks`, `searchTemplates`
+and `lookSearchEntry` from `factory/index.ts`.
+
+### Roles are a contract
+
+A look only stays good under every colourway if roles mean the same thing everywhere. The library test checks these on every
+colourway, and that every look passes the lint at error level under every colourway:
+
+| Role | Promise |
+|---|---|
+| `face`, `faceAlt`, `accent3` | Main fill, deep end of a face gradient, highlight of a face gradient |
+| `keyline` | The line touching the face: ΔL* ≥ 25 from `face` |
+| `accent1` | Next ring: ΔL* ≥ 25 from `keyline` |
+| `accent2` | Outer frame: ΔL* ≥ 15 from `accent1` |
+| `base` | Backing |
+| `glow` | Light: L* ≥ 60 |
+| `shadow` | A dark tint, never pure black: L* ≤ 25 |
+
+`accent3` as the highlight is a decision, not in the spec: a gradient needs a highlight stop, and a free white stop would escape the
+colourway.
+
+### Fixed colours and the generator recolour rule (TL-051)
+
+`AppearanceLayer.fixedColor` means colourways leave the layer alone. A fixed layer reads no role: `appearance.setLayerFixedColor` turns
+the roles it reads into their current colours, and the lint flags one that still reads a role (an imported recipe). A generator's
+colours come from its shader, so a role cannot reach them: unless the layer is fixed, each pixel is gradient-mapped by its Rec. 601 luma
+onto black, `shadow`, `glow`, `accent3`, white, each stop placed at its own luma, so a mapped pixel keeps its brightness. Pixels whose
+channels are all at least 0.92 are left alone, which keeps hot cores white. `recolors: true` on a layer type makes the planner bind the
+ramp; every generator layer has it. A standalone generator has no palette and draws its own colours; a template gives it colours
+through `roles`.
+
+No generator shipped when this was written. The rule was tried with a temporary generator, since removed: blue and red colourways
+kept the white core and the alpha, a fixed layer kept its own colours, and the pictures were inspected. The test in
+`title-look-library-gl.test.ts` runs for every generator as soon as one is registered.
+
+### Fonts (TL-053)
+
+Decision: display fonts are committed files, unmodified, from `google/fonts` at the commit in `apps/engine/fonts/display/manifest.json`.
+The text fonts stay on `@fontsource`. Reading the catalogue decided it: fontsource subsets and converts its files (TL-003 asks for
+upstream bytes), the catalogue only reads its `latin` and `latin-ext` subsets, and Japanese families there come as about a hundred
+pieces. Display families use the same `<id>/files/*` layout, so `filePath` and the `/fonts` route barely changed; `build-remotion.mjs`
+copies the folder to `dist/fonts`, and `apps/desktop/scripts/package.mjs` already ships that.
+
+To add one: put the file and its `OFL.txt` under `<id>/`, add the entry with its SHA-256, and a row in `ATTRIBUTION.md`. The engine test
+checks hashes, licence texts and attribution. Only families with an `OFL.txt` in their upstream folder were taken: M PLUS Rounded 1c
+has none there, so Zen Maru Gothic replaced it (AGENTS §3).
+
+The faces: Anton, Bebas Neue, Cinzel, Abril Fatface, Russo One, Bungee, Black Ops One, Monoton, Audiowide, Orbitron, Press Start 2P,
+Bangers, Creepster, Pacifico, Righteous, Fredoka, Lilita One, Titan One, Archivo Black (Latin); Dela Gothic One, Reggae One, RocknRoll
+One, DotGothic16, Yuji Boku, Kaisei Tokumin, Zen Maru Gothic, Zen Kaku Gothic New (Japanese).
+
+Size: 27 families, **30.4 MB** uncompressed, of which 1.9 MB Latin and 28.5 MB Japanese (17.8 MB gzipped, measured with gzip over
+the files). The text fonts already shipped are 7.0 MB, so `dist/fonts` grows about 5.4 times. The repository grows by the same 30.4 MB. A
+full installer was not built, so its total is not known. Yuji Boku alone is 8.3 MB: drop it first if size matters.
+
+The rule, `chooseLookFont`: Japanese text takes the look's `ja` face, because Latin display families have no kana. If the caller
+passed `availableFonts` and the family is missing, `fallback` takes over. Otherwise the family stands as named and a missing one follows
+`FONT_FALLBACK`. A look's weight and tracking come with its font: a display family has few weights, and any other would be synthesised.
+
+### The style check (TL-056)
+
+`lintAppearance(appearance, ctx)` is pure and deterministic. It returns `{issues, unmeasured}`; each issue has a code, a severity, a
+stable id, an English message, an i18n template with arguments, the rule it breaks, and `fix: {label, commands}` when the context
+names the effect instance. Fixes are one transaction, so one undo.
+
+Thresholds, and why they differ from Pachislop's, are at the top of `lint.ts`. Errors are what makes a title fail outright: nothing
+draws, rims at 30 % of the size or more, or a title whose outside matches the measured backdrop. All of these are judgement chosen for
+video, not measured against viewers.
+
+The seam for rendered checks: the caller measures the picture and passes `ctx.rendered = {backdropL, frames}`, where `backdropL` is
+the mean L* just outside the title at its worst sampled frame. Without it, `unmeasured` lists `backdrop-contrast`: `title_check` must
+report that as not measured, never as passed. A halo or a soft shadow counts as separation. Add further rendered checks to
+`RENDERED_CHECKS` the same way.
+
+Practice behind the rules: Pachislop's lint credits Japanese telop and title tutorials; chroma subsampling is why lightness carries
+edges on video (ITU-R BT.601 and BT.709 4:2:0). Assumption, not documented: 2 px at 1080p as the smallest rim that survives a streaming
+encode.
+
+### Templates (TL-052)
+
+A template is JSON-safe data. `title.insertTemplate` runs the ordinary handlers inside one command, as the batch commands do, so the
+rules are the single commands', a refusal applies nothing, and one undo removes everything. Text clips carry a look and in and out
+animators; shapes carry a one-role look so a colourway reaches them, and keyframes for their motion; generators are `transparent`
+solids. Each clip takes the first free track above the one before, so nothing is overwritten, and the clips are grouped.
+
+### User looks (TL-054)
+
+`<appdir>/presets/title-looks.json`, its own file like the other preset libraries, so a build that does not know looks never rewrites it.
+Writes are serialized and atomic. Entries that no longer validate go to `invalid` and are written back; an unreadable file moves
+aside; a newer file is read-only (`readOnly` in the list, 409 on writes). Export writes `jasper-title-looks` version 1, which Import reads
+back with new ids and free names. Save takes `recipeFromAppearance(appearance, t)`. Deleting asks the user when an agent calls it, as
+effect presets do. To apply one, pass it to `look.apply` as `look: {name, recipe, sourceId, tags, category, colorways}`.
+
+Routes: `GET`, `POST /api/title-looks`, `PUT`, `DELETE /api/title-looks/:lookId`, `POST /api/title-looks/import`, `POST
+/api/title-looks/export`. Event: `titleLooks.changed`.
+
+### Four libraries (TL-055)
+
+| Library | Is | Holds | Home | Stored |
+|---|---|---|---|---|
+| Text Style | Typography and basic paint | `TextStyle`, linked per clip | Essential Graphics | `doc.textStyles` |
+| Look | An appearance | Layers, palette, light, font | Looks tab | Factory data, user library, and `doc.titleLooks` once used |
+| Effect Preset | A stack of ordinary effects | Effects and keyframes | Effects ▸ Presets | `effect-presets.json` |
+| Title Template | Clips | Text with a look, shapes, generators, timing | Looks tab links to it | Factory data |
+
+How they meet: a look brings a font when applied and never links to a Text Style, and a Text Style edit does not touch a look. A look never
+holds ordinary effects, and an Effect Preset never holds an appearance: `jasper.title-look` is internal and `effect.add` refuses it. A
+template refers to looks by id and expands; once expanded it has no link back. Each has one home, and the Looks tab links to the others
+rather than listing them twice.
 
 ## Formulas and sources
 
@@ -326,8 +465,10 @@ a temp ref in commands.
 - Blur: separable Gaussian, reach 3σ (a layer's `blur` and `radius` are the visible radius ≈ 3σ, Pachislop's convention).
 - SSIM in tests: Wang et al. 2004, 8 × 8 windows, `C1 = (0.01·255)²`, `C2 = (0.03·255)²`.
 - Assumption, not documented anywhere: a rim's opacity rule (full from 50 % local alpha) was chosen by looking at fades.
+- CIE L*a*b* (D65) from sRGB, IEC 61966-2-1 primaries, as in Pachislop's `toLab`. Rec. 601 luma for the recolour ramp, as design tools'
+  gradient maps do.
 
-Port map: `licenses/ported/pachislop-rendering.md`.
+Port map: `licenses/ported/pachislop-rendering.md`, `licenses/ported/pachislop-looks.md`.
 
 ## Measured
 
@@ -348,6 +489,9 @@ for the missing fingerprints, and for a generator example that was clipped by it
 
 ## Limits
 
+- The library is part of TL-050 and TL-052: 30 of 60 looks, 14 of 16 templates, none in Brush and 3D. Recorded in `docs/gaps.md`.
+- A colourway on a template's standalone generator is applied once, at insertion: `look.setColorway` does not reach it later.
+- A shape's look in a template is shared by role, so changing its look changes every template shape of that role in the project.
 - `block` gradients on animated text follow the frame's bounds until TL-036 brings layout boxes.
 - `line` and `glyph` spans render as `block` until TL-036 (`docs/gaps.md`).
 - The field is rebuilt whenever a frame is redrawn: an animated param on static text pays for it, though the input did not

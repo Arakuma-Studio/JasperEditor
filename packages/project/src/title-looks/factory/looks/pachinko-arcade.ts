@@ -4,6 +4,9 @@
 import { face, font, glow, gradient, hardShadow, JA, rim, role, shadow } from '../build.ts';
 import { defineLook } from './define.ts';
 
+/** One pixel of an 8×8 font on the diagonal, percent of the size. */
+const PIXEL_DIAGONAL = 12.5 * Math.SQRT2;
+
 const arcade = (l: Parameters<typeof defineLook>[1]) => defineLook('pachinko-arcade', l);
 
 export const PACHINKO_ARCADE_LOOKS = [
@@ -35,6 +38,11 @@ export const PACHINKO_ARCADE_LOOKS = [
 		sampleText: 'INSERT COIN',
 		colorways: ['gold', 'emerald', 'electric', 'crimson'],
 		font: font('Press Start 2P', 400, 'Bungee', ...JA.pixel),
-		layers: [hardShadow(6, 45, role('accent2')), hardShadow(3, 45, role('faceAlt')), face()],
+		// One and two font pixels (an eighth of the size) to the lower right, so the shadow stays on the font's grid.
+		layers: [
+			hardShadow(PIXEL_DIAGONAL * 2, 45, role('accent2')),
+			hardShadow(PIXEL_DIAGONAL, 45, role('faceAlt')),
+			face(),
+		],
 	}),
 ];

@@ -18,7 +18,7 @@ export const CINEMATIC_LOOKS = [
 			shadow({ angle: 90, distance: 2.5, blur: 16, opacity: 72 }),
 			glow(34, 30),
 			rim(2, role('keyline')),
-			face(gradient(90, [0, 'accent3'], [0.44, 'face'], [0.5, 'faceAlt'], [0.58, 'face'], [1, 'accent3'])),
+			face(gradient(90, [0, 'accent3'], [0.4, 'face'], [0.5, 'faceAlt'], [0.62, 'face'], [1, 'accent3'])),
 		],
 	}),
 	cinematic({
@@ -47,8 +47,9 @@ export const CINEMATIC_LOOKS = [
 		colorways: ['graphite', 'silver', 'rose', 'crimson'],
 		font: font('Abril Fatface', 400, 'Playfair Display', ...JA.mincho, 0.01),
 		layers: [
+			glow(16, 48, { paint: role('shadow') }),
 			shadow({ angle: 75, distance: 4, blur: 12, opacity: 80 }),
-			face(radial([0, 'accent3'], [0.55, 'face'], [1.0, 'faceAlt'])),
+			face(radial([0, 'accent3'], [0.72, 'face'], [1, 'faceAlt'])),
 		],
 	}),
 ];

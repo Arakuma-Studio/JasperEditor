@@ -881,6 +881,10 @@ Status of the foundation; streams still in progress update this list. Evidence: 
   `FX_LAYER_UNSUPPORTED`. Nothing is silently dropped.
 - **Requires float targets** (TL-032, TL-123): without them the preview bypasses the look with a chip, a render fails with
   `TITLE_LOOK_NEEDS_FLOAT` and the export plan refuses when the probe answered (TL-124).
+- **The library is partial** (TL-050, TL-052): 30 of the 60 looks and 14 of the 16 templates; Brush and 3D hold no looks yet. They wait for
+  the finishes and generators; `pnpm exec vitest run packages/project/test/title-look-library.test.ts` holds its checks.
+- **Rendered style checks are not in the lint** (TL-056): backdrop contrast needs a measurement from the caller. Without one it is reported
+  as unmeasured, never as passed. `title_check` provides it (TL-102).
 - **Software rendering is slow**: ≈ 1.3 s per 1080p frame for a six-layer look on a title-sized box on SwiftShader, and an
   animated title redraws its whole stack every frame ([performance.md](performance.md) §7). Nothing has been measured on a GPU.
 

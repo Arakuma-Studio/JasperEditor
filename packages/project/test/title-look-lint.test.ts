@@ -9,6 +9,7 @@ import {
 	clipLook,
 	type EffectInstance,
 	LINT_CODES,
+	LINT_STRINGS,
 	type LintCode,
 	type LintContext,
 	type LookRecipe,
@@ -461,6 +462,17 @@ describe('the lint (TL-056)', () => {
 	describe('the rendered backdrop seam', () => {
 		const plain: LookRecipe = { palette: { face: c(0.5, 0.5, 0.5) }, layers: [{ type: 'face' }] };
 
+		it('gives a template and arguments the UI can translate', () => {
+			const i = lint(plain, { rendered: { backdropL: 54, frames: 5 } }).issues[0]!;
+			expect(LINT_STRINGS).toContain(i.template);
+			expect(i.template.replace(/\{(\d+)\}/g, (_, n) => i.args[Number(n)]!)).toBe(i.message);
+			expect(i.fix).toBeUndefined();
+			expect(LINT_STRINGS).toContain(
+				lint(plain, { rendered: { backdropL: 54, frames: 5 }, effectInstanceId: 'fx_1' }).issues[0]!.fix!
+					.label,
+			);
+		});
+
 		it('reports what was not measured, and never passes it', () => {
 			const r = lint(plain);
 			expect(r.unmeasured).toEqual([...RENDERED_CHECKS]);
@@ -473,7 +485,7 @@ describe('the lint (TL-056)', () => {
 			const i = near.issues.find((x) => x.code === 'LOOK_BACKDROP_CONTRAST')!;
 			expect(i.severity).toBe('error');
 			expect(i.measured).toBeLessThan(6);
-			expect(i.message).toContain('5 frames');
+			expect(i.message).toContain('frames sampled: 5');
 			expect(lint(plain, { rendered: { backdropL: 5, frames: 5 } }).issues).toEqual([]);
 		});
 

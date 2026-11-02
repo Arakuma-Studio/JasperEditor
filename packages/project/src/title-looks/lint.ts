@@ -16,7 +16,7 @@
 // caller measures, this file compares, and a check with no measurement is listed in `unmeasured`, never passed.
 import type { Command } from '../commands/schemas/index.ts';
 import type { RGBA } from '../schema/common.ts';
-import type { Appearance, Gradient, Paint, Role } from './model.ts';
+import { type Appearance, type Gradient, MAX_APPEARANCE_LAYERS, type Paint, type Role } from './model.ts';
 import { paintRoles } from './overrides.ts';
 import { type ResolvedTitleLayer, resolveAppearance } from './resolve.ts';
 
@@ -52,7 +52,11 @@ export type LintIssue = {
 	id: string;
 	code: LintCode;
 	severity: LintSeverity;
+	/** English, rendered. */
 	message: string;
+	/** `message` as an i18n key with `{0}` placeholders, and their values: what the UI translates. */
+	template: string;
+	args: string[];
 	/** The practice it breaks. */
 	rule: string;
 	/** The layers it is about, topmost first. */
@@ -136,6 +140,39 @@ export const MIN_BACKDROP_DELTA_L = 20;
 /** Under this the outside is gone: the title's edge cannot be seen at all. */
 const LOST_BACKDROP_DELTA_L = 6;
 
+const MESSAGES = {
+	invisible: 'Nothing in this look draws: the title is invisible.',
+	rimZero: 'Rim of width 0: this layer draws nothing.',
+	rimClear: 'Rim at 0 % opacity: this layer draws nothing.',
+	shadowClear: 'Shadow at 0 % opacity: this layer draws nothing.',
+	shadowBehind: 'Shadow with no distance, blur or spread: it sits behind the title and draws nothing.',
+	glowZero: 'Glow with no radius or intensity: this layer draws nothing.',
+	hiddenFace: 'A face under an opaque face cannot be seen.',
+	flatGradient: 'This gradient has one colour under the current palette.',
+	merge: '{0} and {1} are close in lightness (ΔL {2}): they merge into one band.',
+	hues: '{0} chromatic hues ({1}): the eye cannot find the face.',
+	thin: 'Rims total {0} % of the size: too thin to survive on video.',
+	thick: 'Rims total {0} % of the size: thicker than the letter strokes.',
+	flood: 'Rims total {0} % of the size: counters fill and the word is lost.',
+	hardShadow: 'Hard black drop shadow: opaque, with almost no blur.',
+	span: 'A spectrum spans the whole block: each line only gets part of it.',
+	fixedReads: 'This layer is marked fixed but reads {0}: colourways change it.',
+	backdrop: '{0} is close to the picture behind it (ΔL {1}, frames sampled: {2}).',
+} as const;
+
+const FIX_LABELS = [
+	'Remove the layer',
+	'Show the face',
+	'Insert a light line',
+	'Insert a dark line',
+	'Scale the rims up',
+	'Scale the rims down',
+	'Soften it',
+	'Span each line',
+	'Fix its colours',
+	'Add a soft halo',
+] as const;
+
 const RULES: Record<string, string> = {
 	invisible: 'A look must draw something.',
 	noop: 'A setting that is on but changes nothing hides why a look does not work.',
@@ -151,6 +188,15 @@ const RULES: Record<string, string> = {
 	fixed: 'A layer marked fixed must not read a role, or colourways change it.',
 	backdrop: 'A title’s outside must stand apart from the picture behind it, or carry a halo that does.',
 };
+
+/** Every string the check shows, for the catalogues. */
+export const LINT_STRINGS: readonly string[] = [
+	...Object.values(MESSAGES),
+	...Object.values(RULES),
+	...FIX_LABELS,
+	'Face',
+	...Array.from({ length: MAX_APPEARANCE_LAYERS }, (_, i) => `Rim ${i + 1}`),
+];
 
 // ---------- colour ----------
 
@@ -202,6 +248,7 @@ function samplesOf(p: Paint, palette: Record<Role, RGBA>): RGBA[] | null {
 
 type Element = {
 	layer: ResolvedTitleLayer;
+	/** English; `Face` or `Rim n`. */
 	label: string;
 	/** Mean L*. */
 	L: number;
@@ -273,37 +320,43 @@ const removeLayer = (fx: string, layerId: string): Command =>
 
 type Draft = Omit<LintIssue, 'fixable' | 'fix'> & { build?: (fx: string) => LintFix };
 
+/** A message: its template, its arguments and the English text. */
+function say(template: string, ...args: (string | number)[]) {
+	const list = args.map(String);
+	return { template, args: list, message: template.replace(/\{(\d+)\}/g, (_, i) => list[Number(i)] ?? '') };
+}
+
 /** Every rim's width × `k`. */
 const scaleRims = (rims: readonly ResolvedTitleLayer[], k: number) => (fx: string) =>
 	rims.map((r) => setParam(fx, r.id, 'width', Math.round(num(r.params.width) * k * 100) / 100));
 
 function noopIssues(layers: readonly ResolvedTitleLayer[], palette: Record<Role, RGBA>): Draft[] {
 	const out: Draft[] = [];
-	const noop = (l: ResolvedTitleLayer, what: string) => {
+	const noop = (l: ResolvedTitleLayer, template: string) => {
 		out.push({
 			id: `noop-${l.id}`,
 			code: 'LOOK_NOOP_LAYER',
 			severity: 'warning',
-			message: `${what}: this layer draws nothing.`,
+			...say(template),
 			rule: RULES.noop!,
 			layerIds: [l.id],
 			build: (fx) => ({ label: 'Remove the layer', commands: [removeLayer(fx, l.id)] }),
 		});
 	};
 	layers.forEach((l, i) => {
-		if (isRim(l) && num(l.params.width) <= 0) noop(l, 'Rim of width 0');
-		else if (isRim(l) && pctOf(l) <= 0) noop(l, 'Rim at 0 % opacity');
+		if (isRim(l) && num(l.params.width) <= 0) noop(l, MESSAGES.rimZero);
+		else if (isRim(l) && pctOf(l) <= 0) noop(l, MESSAGES.rimClear);
 		else if (l.type === 'shadow') {
-			if (pctOf(l) <= 0) noop(l, 'Shadow at 0 % opacity');
+			if (pctOf(l) <= 0) noop(l, MESSAGES.shadowClear);
 			else if (
 				l.params.kind !== 'perspective' &&
 				num(l.params.distance) <= 0 &&
 				num(l.params.blur) <= 0 &&
 				num(l.params.spread) <= 0
 			)
-				noop(l, 'Shadow with no distance, blur or spread sits behind the title');
+				noop(l, MESSAGES.shadowBehind);
 		} else if (l.type === 'glow' && (num(l.params.intensity) <= 0 || num(l.params.radius) <= 0))
-			noop(l, 'Glow with no radius or intensity');
+			noop(l, MESSAGES.glowZero);
 		// A face under an opaque flat face with the same outline cannot be seen.
 		if (isFace(l)) {
 			const above = layers.slice(i + 1).find((x) => isFace(x) && pctOf(x) >= 100);
@@ -312,7 +365,7 @@ function noopIssues(layers: readonly ResolvedTitleLayer[], palette: Record<Role,
 					id: `hidden-${l.id}`,
 					code: 'LOOK_HIDDEN_LAYER',
 					severity: 'warning',
-					message: 'A face under an opaque face cannot be seen.',
+					...say(MESSAGES.hiddenFace),
 					rule: RULES.noop!,
 					layerIds: [l.id, above.id],
 					build: (fx) => ({ label: 'Remove the layer', commands: [removeLayer(fx, l.id)] }),
@@ -327,7 +380,7 @@ function noopIssues(layers: readonly ResolvedTitleLayer[], palette: Record<Role,
 					id: `flat-gradient-${l.id}`,
 					code: 'LOOK_FLAT_GRADIENT',
 					severity: 'info',
-					message: 'This gradient has one colour under the current palette.',
+					...say(MESSAGES.flatGradient),
 					rule: RULES.noop!,
 					layerIds: [l.id],
 				});
@@ -350,7 +403,7 @@ function visibleIssues(layers: readonly ResolvedTitleLayer[]): Draft[] {
 			id: 'invisible',
 			code: 'LOOK_INVISIBLE',
 			severity: 'error',
-			message: 'Nothing in this look draws: the title is invisible.',
+			...say(MESSAGES.invisible),
 			rule: RULES.invisible!,
 			layerIds: layers.map((l) => l.id).reverse(),
 			...(layers.find(isFace)
@@ -393,7 +446,7 @@ function contrastIssues(
 				id: `contrast-${b.layer.id}`,
 				code: 'LOOK_RINGS_MERGE',
 				severity: 'warning',
-				message: `${a.label} and ${b.label.toLowerCase()} are close in lightness (ΔL ${dL.toFixed(0)}): they merge into one band.`,
+				...say(MESSAGES.merge, a.label, b.label, dL.toFixed(0)),
 				rule: RULES.contrast!,
 				layerIds: [a.layer.id, b.layer.id],
 				measured: Math.round(dL * 10) / 10,
@@ -435,7 +488,7 @@ function hueIssues(runs: readonly Element[][]): Draft[] {
 			id: 'hues',
 			code: 'LOOK_TOO_MANY_HUES',
 			severity: 'warning',
-			message: `${families.length} chromatic hues (${list}): the eye cannot find the face.`,
+			...say(MESSAGES.hues, families.length, list),
 			rule: RULES.hues!,
 			layerIds: families.flatMap((f) => f.els.map((e) => e.layer.id)),
 			measured: families.length,
@@ -464,7 +517,7 @@ function thicknessIssues(layers: readonly ResolvedTitleLayer[], ctx: LintContext
 				id: 'rims-thin',
 				code: 'LOOK_RIMS_THIN',
 				severity: 'warning',
-				message: `Rims total ${total.toFixed(1)} % of the size: too thin to survive on video.`,
+				...say(MESSAGES.thin, total.toFixed(1)),
 				rule: RULES.thin!,
 				layerIds: ids,
 				...stat,
@@ -472,7 +525,7 @@ function thicknessIssues(layers: readonly ResolvedTitleLayer[], ctx: LintContext
 				build: (fx) => {
 					const to = Math.max(RIM_FIX_THIN, min);
 					return {
-						label: `Scale rims to ${to.toFixed(1)} %`,
+						label: 'Scale the rims up',
 						commands: scaleRims(rims, to / total)(fx),
 					};
 				},
@@ -485,15 +538,13 @@ function thicknessIssues(layers: readonly ResolvedTitleLayer[], ctx: LintContext
 				id: flood ? 'rims-flood' : 'rims-thick',
 				code: flood ? 'LOOK_RIMS_FLOOD' : 'LOOK_RIMS_THICK',
 				severity: flood ? 'error' : 'warning',
-				message: flood
-					? `Rims total ${total.toFixed(1)} % of the size: counters fill and the word is lost.`
-					: `Rims total ${total.toFixed(1)} % of the size: thicker than the letter strokes.`,
+				...say(flood ? MESSAGES.flood : MESSAGES.thick, total.toFixed(1)),
 				rule: RULES.thick!,
 				layerIds: ids,
 				...stat,
 				expected: `at most ${MAX_RIM_PERCENT} %`,
 				build: (fx) => ({
-					label: `Scale rims to ${RIM_FIX_THICK} %`,
+					label: 'Scale the rims down',
 					commands: scaleRims(rims, RIM_FIX_THICK / total)(fx),
 				}),
 			},
@@ -515,7 +566,7 @@ function shadowIssues(layers: readonly ResolvedTitleLayer[], palette: Record<Rol
 			id: `hard-shadow-${l.id}`,
 			code: 'LOOK_HARD_SHADOW',
 			severity: 'warning',
-			message: 'Hard black drop shadow: opaque, with almost no blur.',
+			...say(MESSAGES.hardShadow),
 			rule: RULES.shadow!,
 			layerIds: [l.id],
 			build: (fx) => ({
@@ -543,7 +594,7 @@ function spanIssues(
 			id: `span-${l.id}`,
 			code: 'LOOK_SPECTRUM_SPAN',
 			severity: 'warning',
-			message: 'A spectrum spans the whole block: each line only gets part of it.',
+			...say(MESSAGES.span),
 			rule: RULES.span!,
 			layerIds: [l.id],
 			build: (fx) => ({
@@ -572,7 +623,7 @@ function fixedIssues(layers: readonly ResolvedTitleLayer[]): Draft[] {
 			id: `fixed-${l.id}`,
 			code: 'LOOK_FIXED_READS_ROLE',
 			severity: 'warning',
-			message: `This layer is marked fixed but reads ${[...roles].join(', ')}: colourways change it.`,
+			...say(MESSAGES.fixedReads, [...roles].join(', ')),
 			rule: RULES.fixed!,
 			layerIds: [l.id],
 			build: (fx) => ({
@@ -619,7 +670,7 @@ function backdropIssues(
 			id: 'backdrop',
 			code: 'LOOK_BACKDROP_CONTRAST',
 			severity: lost ? 'error' : 'warning',
-			message: `${edge.label} is close to the picture behind it (ΔL ${dL.toFixed(0)}, over ${rendered.frames} frame${rendered.frames === 1 ? '' : 's'}).`,
+			...say(MESSAGES.backdrop, edge.label, dL.toFixed(0), rendered.frames),
 			rule: RULES.backdrop!,
 			layerIds: [edge.layer.id],
 			measured: Math.round(dL * 10) / 10,

@@ -13,10 +13,11 @@ import {
 	factoryColorway,
 	type LookRecipe,
 	lookCategory,
+	TITLE_GENERATORS,
 } from '@jasper/project';
 import { encodePng } from '@jasper/testkit/png';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { CHROME, type LookImage, type LookPage, openLookPage } from './title-look-harness.ts';
+import { CHROME, type LookImage, type LookPage, openLookPage, over } from './title-look-harness.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ENGINE = join(here, '..', '..', '..', 'apps', 'engine');
@@ -109,6 +110,56 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 		afterAll(async () => {
 			await tl?.browser.close();
 		});
+
+		// TL-051: runs for every registered generator; with none registered there is nothing to recolour.
+		it.runIf(TITLE_GENERATORS.length > 0)(
+			'recolours generators by luma, keeps alpha, and leaves a fixed layer alone',
+			async () => {
+				const palette = (id: string) => factoryColorway(id)!.palette;
+				for (const g of TITLE_GENERATORS) {
+					const shot = (colorway: string, fixedColor: boolean) =>
+						tl.render({
+							recipe: {
+								palette: palette(colorway),
+								layers: [{ type: `generator:${g.id}`, ...(fixedColor ? { fixedColor } : {}) }],
+							},
+							input: { kind: 'rect', x: 0.25, y: 0.25, w: 0.5, h: 0.5 },
+							box: { width: 320, height: 200 },
+							unitPx: 100,
+							contentSeconds: 1,
+						});
+					const blue = await shot('colorway.cobalt', false);
+					const red = await shot('colorway.crimson', false);
+					const fixedA = await shot('colorway.cobalt', true);
+					const fixedB = await shot('colorway.crimson', true);
+					const rgbDiff = (a: LookImage, b: LookImage) => {
+						let n = 0;
+						for (let i = 0; i < a.data.length; i += 4)
+							n += Math.abs(a.data[i]! - b.data[i]!) + Math.abs(a.data[i + 2]! - b.data[i + 2]!);
+						return n / a.data.length;
+					};
+					const alphaDiff = (a: LookImage, b: LookImage) => {
+						let n = 0;
+						for (let i = 3; i < a.data.length; i += 4) n = Math.max(n, Math.abs(a.data[i]! - b.data[i]!));
+						return n;
+					};
+					expect(rgbDiff(blue, red), `${g.id} follows the colourway`).toBeGreaterThan(0.5);
+					expect(rgbDiff(fixedA, fixedB), `${g.id} fixed`).toBe(0);
+					expect(alphaDiff(blue, fixedA), `${g.id} keeps alpha`).toBeLessThanOrEqual(2);
+					const out = process.env.TITLE_LOOKS_RECOLOR_DIR;
+					if (out)
+						for (const [name, img] of [
+							['blue', blue],
+							['red', red],
+							['fixed', fixedA],
+						] as const)
+							writeFileSync(
+								join(out, `${g.id}-${name}.png`),
+								encodePng({ width: img.width, height: img.height, data: over(img, 40) }),
+							);
+				}
+			},
+		);
 
 		it('draws every look without clipping, and the sheet can be written', async () => {
 			const way = process.env.TITLE_LOOKS_COLORWAY

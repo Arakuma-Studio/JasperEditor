@@ -11,7 +11,7 @@ export const LUXURY_LOOKS = [
 		nameEs: 'Oro grabado',
 		tags: ['gold', 'oro', 'award', 'premio', 'gala', 'jewellery', 'joyería', '金'],
 		description: 'Fine capitals in a banded gold with no outline at all.',
-		sampleText: 'GRAND RESERVE',
+		sampleText: 'GALA NIGHT',
 		colorways: ['gold', 'silver', 'rose', 'graphite'],
 		font: font('Cinzel', 600, 'Playfair Display', ...JA.mincho, 0.09),
 		layers: [

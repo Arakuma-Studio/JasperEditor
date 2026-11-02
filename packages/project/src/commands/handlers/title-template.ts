@@ -2,7 +2,7 @@
 // (`clip.addText`, `clip.addShape`, `clip.addGenerator`, `look.apply`, `keyframe.add`) inside one command, like the batch
 // commands do, so the rules of each are the ones of the single commands, the result is plain clips, and one undo removes it.
 import { nominalFps, type Rational } from '../../time.ts';
-import { factoryLook } from '../../title-looks/factory/index.ts';
+import { factoryColorway, factoryLook } from '../../title-looks/factory/index.ts';
 import { factoryTemplate } from '../../title-looks/factory/templates/index.ts';
 import {
 	shapeLookRecipe,
@@ -13,6 +13,7 @@ import {
 	type TemplateTiming,
 	type TitleTemplate,
 } from '../../title-looks/factory/templates/types.ts';
+import { DEFAULT_PALETTE } from '../../title-looks/model.ts';
 import type { DDoc, DSeq, HandlerContext } from '../context.ts';
 import { trackSlotOf } from '../placement.ts';
 import type { CommandOf } from '../schemas/index.ts';
@@ -237,6 +238,14 @@ function clipOf(
 	if (c.kind === 'text') return textClip(doc, c, cmd, ctx, h);
 	if (c.kind === 'shape') return shapeClip(doc, c, cmd, ctx, h);
 	const { start, length } = spanOf(c, ctx.at, ctx.length, ctx.fps);
+	// A standalone generator has no palette: the colours it takes are the ones a look would show now.
+	const way = cmd.colorwayId ? factoryColorway(cmd.colorwayId) : undefined;
+	if (cmd.colorwayId && !way) h.fail('E_NOT_FOUND', `Colourway not found: ${cmd.colorwayId}`);
+	const palette = (way?.palette ?? ctx.palette) as Record<string, unknown>;
+	const roles = Object.fromEntries(
+		Object.entries(c.roles ?? {}).map(([param, role]) => [param, palette[role] ?? DEFAULT_PALETTE[role]]),
+	);
+	const params = { ...(c.params ?? {}), ...roles };
 	const { clipId } = addGenerator(
 		doc,
 		{
@@ -247,7 +256,7 @@ function clipOf(
 			duration: length,
 			track: ctx.track(),
 			name: c.name,
-			...(c.params ? { params: c.params } : {}),
+			...(Object.keys(params).length ? { params } : {}),
 		},
 		h,
 	);

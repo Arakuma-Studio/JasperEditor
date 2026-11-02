@@ -194,6 +194,23 @@ describe('title templates (TL-052)', () => {
 		expect(edge.opacity.keyframes.map((k) => k.value)).toEqual([0, 100, 100, 0]);
 	});
 
+	it('places a generator under the title as a clip, with its colours from the colourway', () => {
+		const h = new Harness();
+		const way = factoryColorway('colorway.emerald')!;
+		const r = h.ok([
+			{ type: 'title.insertTemplate', templateId: 'template.end-card-gradient', at: 0, colorwayId: way.id },
+		]);
+		const { clipIds } = r.results[0] as { clipIds: string[] };
+		const bg = h.seq.clips[clipIds[0]!]! as Clip & { effects: EffectInstance[] };
+		expect(bg.kind).toBe('solid');
+		const fx = bg.effects[0]!;
+		expect(fx.effectId).toBe('jasper.4-color-gradient');
+		expect((fx.params.color2 as { value: unknown }).value).toEqual(way.palette.accent2);
+		const track = (id: string) => h.seq.videoTracks.findIndex((t) => t.id === h.seq.clips[id]!.trackId);
+		expect(track(clipIds[0]!)).toBeLessThan(track(clipIds[1]!));
+		ok(h);
+	});
+
 	it('never overwrites: clips already on the tracks stay, and the template goes above them', () => {
 		const h = new Harness();
 		const r = h.ok([

@@ -60,6 +60,8 @@ export type TemplateGenerator = TemplateTiming & {
 	/** An effect of the `Generate` category, or `generator:<id>`. */
 	effectId: string;
 	params?: Record<string, unknown>;
+	/** Colour params that follow a role, so a colourway reaches the generator (a standalone one has no look). */
+	roles?: Record<string, Role>;
 };
 
 /** Bottom-first: each clip goes on a track above the one before. */
