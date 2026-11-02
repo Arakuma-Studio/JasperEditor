@@ -13,6 +13,7 @@ export * from './effect-presets.ts';
 export * from './events.ts';
 export * from './exports.ts';
 export * from './fonts.ts';
+export * from './title-looks.ts';
 export * from './gaps.ts';
 export * from './glossary.ts';
 export * from './grading.ts';

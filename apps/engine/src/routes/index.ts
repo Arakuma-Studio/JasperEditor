@@ -42,6 +42,7 @@ import styleRoutes from './style.ts';
 import subtitleTemplateRoutes from './subtitle-templates.ts';
 import syncRoutes from './sync.ts';
 import timeRoutes from './time.ts';
+import titleLookRoutes from './title-looks.ts';
 import trackingRoutes from './tracking.ts';
 import transcriptFixRoutes from './transcript-fix.ts';
 import uploadsRoutes from './uploads.ts';
@@ -64,6 +65,7 @@ const ROUTE_PLUGINS = [
 	// The agent relay supplies references to open projects for cache protection.
 	cacheRoutes,
 	effectPresetRoutes,
+	titleLookRoutes,
 	subtitleTemplateRoutes,
 	colorRoutes,
 	processingRoutes,

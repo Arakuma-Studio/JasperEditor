@@ -5,6 +5,7 @@ import {
 	GlossaryEntrySchema,
 	GlossaryFileSchema,
 	SubtitleTemplateSchema,
+	UserLookSchema,
 } from '@jasper/project';
 import { z } from 'zod';
 import {
@@ -323,6 +324,16 @@ import {
 	SubtitleTemplateSaveRequestSchema,
 } from './subtitle-templates.ts';
 import { SyncAudioRequestSchema, SyncAudioResponseSchema } from './sync.ts';
+import {
+	TitleLookCreateRequestSchema,
+	TitleLookDeleteResponseSchema,
+	TitleLookExportRequestSchema,
+	TitleLookExportResponseSchema,
+	TitleLookImportRequestSchema,
+	TitleLookImportResponseSchema,
+	TitleLookLibraryResponseSchema,
+	TitleLookUpdateRequestSchema,
+} from './title-looks.ts';
 import { TrackRequestSchema } from './tracking.ts';
 import { TranscriptFixRequestSchema } from './transcript-fix.ts';
 import { VoiceAnalysisQuerySchema, VoiceAnalyzeRequestSchema } from './voice.ts';
@@ -1170,6 +1181,41 @@ export const ROUTES = {
 		method: 'DELETE',
 		path: '/api/effect-presets/folders/:folderId',
 		response: EffectPresetDeleteResponseSchema,
+	},
+	/** Spec 19 TL-054: the user look library. */
+	titleLooksList: {
+		method: 'GET',
+		path: '/api/title-looks',
+		response: TitleLookLibraryResponseSchema,
+	},
+	titleLookSave: {
+		method: 'POST',
+		path: '/api/title-looks',
+		body: TitleLookCreateRequestSchema,
+		response: UserLookSchema,
+	},
+	titleLookUpdate: {
+		method: 'PUT',
+		path: '/api/title-looks/:lookId',
+		body: TitleLookUpdateRequestSchema,
+		response: UserLookSchema,
+	},
+	titleLookDelete: {
+		method: 'DELETE',
+		path: '/api/title-looks/:lookId',
+		response: TitleLookDeleteResponseSchema,
+	},
+	titleLooksImport: {
+		method: 'POST',
+		path: '/api/title-looks/import',
+		body: TitleLookImportRequestSchema,
+		response: TitleLookImportResponseSchema,
+	},
+	titleLooksExport: {
+		method: 'POST',
+		path: '/api/title-looks/export',
+		body: TitleLookExportRequestSchema,
+		response: TitleLookExportResponseSchema,
 	},
 	effectPresetsImport: {
 		method: 'POST',

@@ -2,6 +2,7 @@
 // imports and agent recipes are recipes; `appearanceFromRecipe` turns one into a stored appearance, filling every param
 // of each layer type with its default, so a layer type added later stays editable on old looks.
 import { z } from 'zod';
+import { evaluate } from '../keyframes.ts';
 import { isPaintParam } from '../registry/fx/title-look/contract.ts';
 import { activeParamSpecs, titleLayerType } from '../registry/fx/title-look/registry.ts';
 import {
@@ -13,6 +14,7 @@ import {
 	type LayerParamValue,
 	LIGHT_SOURCES,
 	LookColorSchema,
+	type LookFont,
 	LookFontSchema,
 	MAX_APPEARANCE_LAYERS,
 	MAX_TITLE_LOOK_NAME,
@@ -94,4 +96,35 @@ export function appearanceFromRecipe(r: LookRecipe, newLayerId: () => string, se
 		layers: r.layers.map((l) => layerFromRecipe(l, newLayerId())),
 		...(r.font ? { font: { ...r.font } } : {}),
 	};
+}
+
+/** A clip's appearance as a recipe: values at content time `t`, no ids, keys, link or seed (TL-054, TL-104). */
+export function recipeFromAppearance(a: Appearance, t = 0): LookRecipe {
+	const palette: NonNullable<LookRecipe['palette']> = {};
+	for (const [role, anim] of Object.entries(a.palette))
+		if (anim) palette[role as Role] = [...evaluate(anim, t)] as never;
+	return {
+		palette,
+		light: {
+			source: a.light.source,
+			angle: evaluate(a.light.angle, t),
+			altitude: evaluate(a.light.altitude, t),
+		},
+		layers: a.layers.map((l) => ({
+			type: l.type,
+			...(l.name ? { name: l.name } : {}),
+			...(l.enabled ? {} : { enabled: false }),
+			...(l.fixedColor ? { fixedColor: true } : {}),
+			params: Object.fromEntries(
+				Object.entries(l.params).map(([k, v]) => [k, JSON.parse(JSON.stringify(evaluate(v, t)))]),
+			),
+		})),
+		...(a.font ? { font: lookFontOf(a.font) } : {}),
+	};
+}
+
+/** The look's typography, without what a project's `FontRef` adds. */
+function lookFontOf(font: NonNullable<Appearance['font']>): LookFont {
+	const r = LookFontSchema.safeParse(font);
+	return r.success ? r.data : { family: font.family };
 }
