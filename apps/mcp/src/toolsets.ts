@@ -278,7 +278,8 @@ export const TOOLSETS = [
 	},
 	{
 		name: 'effects',
-		description: 'Video effects and presets, blend modes, masks and track mattes, puppet / liquify / mesh warps.',
+		description:
+			'Video effects and presets, blend modes, masks and track mattes, puppet / liquify / mesh warps.',
 		guides: ['effects', 'presets', 'keyframes-blend', 'masks', 'sim-warp'],
 		tools: [
 			'list_effects',

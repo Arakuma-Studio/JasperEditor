@@ -608,8 +608,8 @@ export function registerProposalTools(ctx: ToolContext): void {
 					: p.feature === TITLE_ART_FEATURE
 						? 'Run title_check {projectId, proposalId} if the edit changed, then the user reviews it in the Review panel; call wait_for_proposal {projectId, proposalId, since: updatedAt}.'
 						: soundCheck || p.feature === ROUGH_CUT_FEATURE
-						? 'The user reviews it in the editor’s Review panel; call wait_for_proposal {projectId, proposalId, since: updatedAt} to learn their decisions and notes.'
-						: 'Run sound_check {projectId, proposalId} first (what it fixes and introduces), then ask the user to review it in the Review panel and call wait_for_proposal {projectId, proposalId, since: updatedAt}.',
+							? 'The user reviews it in the editor’s Review panel; call wait_for_proposal {projectId, proposalId, since: updatedAt} to learn their decisions and notes.'
+							: 'Run sound_check {projectId, proposalId} first (what it fixes and introduces), then ask the user to review it in the Review panel and call wait_for_proposal {projectId, proposalId, since: updatedAt}.',
 			});
 		},
 	);

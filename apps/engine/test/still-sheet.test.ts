@@ -23,7 +23,9 @@ function doc(): { d: DocBuilder; top: string } {
 	d.tx([{ type: 'sequence.updateSettings', settings: { width: W, height: HH } }]);
 	d.tx([{ type: 'clip.addSolid', at: 0, duration: 60, track: 'V1', color: [1, 0, 0, 1] }]);
 	d.tx([{ type: 'track.add', kind: 'video', count: 1 }]);
-	const r = d.tx([{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V2', color: [0, 1, 0, 1], ref: '$g' }]);
+	const r = d.tx([
+		{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V2', color: [0, 1, 0, 1], ref: '$g' },
+	]);
 	return { d, top: r.refs.$g! };
 }
 
@@ -116,9 +118,9 @@ describe('still-sheet job (TL-103)', () => {
 		expect(done.state).toBe('failed');
 		expect(done.error?.message).toMatch(/cell 2 of 2/);
 		expect(existsSync(join(app.jasper.config.paths.rendersDir, r.json().id))).toBe(false);
-		expect((await app.inject({ method: 'GET', url: `/renders/${r.json().id}/cells/0`, headers: H })).statusCode).toBe(
-			404,
-		);
+		expect(
+			(await app.inject({ method: 'GET', url: `/renders/${r.json().id}/cells/0`, headers: H })).statusCode,
+		).toBe(404);
 	});
 
 	it('cancelling the job stops the rest and deletes what it wrote', async () => {
@@ -137,16 +139,22 @@ describe('still-sheet job (TL-103)', () => {
 		const done = await queue.wait(id);
 		expect(done.state).toBe('cancelled');
 		expect(existsSync(join(app.jasper.config.paths.rendersDir, id))).toBe(false);
-		expect((await app.inject({ method: 'GET', url: `/renders/${id}/cells/0`, headers: H })).statusCode).toBe(404);
+		expect((await app.inject({ method: 'GET', url: `/renders/${id}/cells/0`, headers: H })).statusCode).toBe(
+			404,
+		);
 	});
 
 	it('does not serve an index that is not a number', async () => {
 		const { d } = doc();
-		const r = await submit({ documents: [d.envelope()], cells: [{ document: 0, sequenceId: d.seqId, frame: 0 }] });
+		const r = await submit({
+			documents: [d.envelope()],
+			cells: [{ document: 0, sequenceId: d.seqId, frame: 0 }],
+		});
 		await coreServices(app).queue.wait(r.json().id);
 		for (const bad of ['..%2Foutput', '1e3', '-1', '9999'])
 			expect(
-				(await app.inject({ method: 'GET', url: `/renders/${r.json().id}/cells/${bad}`, headers: H })).statusCode,
+				(await app.inject({ method: 'GET', url: `/renders/${r.json().id}/cells/${bad}`, headers: H }))
+					.statusCode,
 				bad,
 			).toBe(404);
 	});

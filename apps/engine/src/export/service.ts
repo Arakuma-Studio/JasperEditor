@@ -2697,10 +2697,15 @@ export class ExportService {
 				});
 			} catch (e) {
 				if (ctx.signal.aborted || !(e instanceof JobError)) throw e;
-				throw new JobError(e.code, `Frame ${cell.frame} (cell ${i + 1} of ${total}): ${e.message}`, e.retryable, {
-					...(e.detail && typeof e.detail === 'object' ? e.detail : {}),
-					cell: i,
-				});
+				throw new JobError(
+					e.code,
+					`Frame ${cell.frame} (cell ${i + 1} of ${total}): ${e.message}`,
+					e.retryable,
+					{
+						...(e.detail && typeof e.detail === 'object' ? e.detail : {}),
+						cell: i,
+					},
+				);
 			}
 		}
 		if (first) this.commitRefs(ctx, first, 'still');

@@ -554,6 +554,12 @@ schemas):
   `update_shape_item` `remove_shape_items` `move_shape_item` `group_shape_items` `duplicate_shape_item`
   `edit_shape_path` `convert_shape_to_vector`; Trim Paths animations: `animate_trim_paths` (with an optional tracer
   in the same undo step) `reverse_path_direction` `add_line` `add_trim_tracer`.
+- Titles (`titles` toolset, guide `title-art`): `find_title_looks` `propose_title` `title_check` `get_title_recipe`
+  `save_title_look` `add_title_generator` `set_global_light`; the resource `jasper://title-looks/{id}`. `propose_title`
+  needs an open editor to propose; with `mode: "apply"` on a headless engine it returns `revert`, because there is no
+  Undo there. `render_frames` runs as one engine job and takes `proposalId`, `itemIds`, `overlay: "safe-area"`, `wait`,
+  `timeoutSeconds` and `jobId`.
+- Effects: `list_effects` `add_effect` `set_effect_param`.
 - Text animators: `list_text_animator_presets` `apply_text_animator_preset` `add_text_animator` `add_text_selector`
   `get_text_animators` `remove_text_animators` `set_text_path` `convert_text_animation`.
 - Effect presets: `list_effect_presets` `get_effect_preset` `apply_effect_preset` `save_effect_preset`

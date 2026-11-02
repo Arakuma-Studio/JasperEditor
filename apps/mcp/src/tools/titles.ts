@@ -32,18 +32,18 @@ import {
 	factoryLook,
 	fpsOf,
 	GENERATOR_LAYER_PREFIX,
-	LookRecipeSchema,
 	type LookRecipe,
+	LookRecipeSchema,
 	latestTextAnimationSpec,
 	makeSequenceSettings,
 	measureTitleFrame,
 	type ProjectDocument,
 	type Proposal,
 	previewProposal,
+	type Rational,
 	RECIPE_BOUNDS,
 	recipeBoundsProblem,
 	recipeOfAppearance,
-	type Rational,
 	type Sequence,
 	scaleAnimationFrames,
 	sequenceTimecode,
@@ -53,11 +53,11 @@ import {
 	TITLE_LAYER_TYPES,
 	TITLE_LOOK_CLIP_KINDS,
 	TITLE_NOT_CHECKED,
+	type TitleArtMeta,
 	type TitleCheckAt,
 	type TitleCheckRow,
 	type TitleFrameMeasure,
 	type TitleLook,
-	type TitleArtMeta,
 	titleArtDraft,
 	titleCheckFrames,
 	titleLayerType,
@@ -499,7 +499,9 @@ async function plainRows(ctx: ToolContext, t: CheckTarget): Promise<TitleCheckRo
 /** Every style lint issue of the clip's look, compared with the measured backdrops when they are in. */
 function lintRows(t: CheckTarget, measures: readonly TitleFrameMeasure[]): TitleCheckRow[] {
 	const { seq, clip } = t;
-	const fx = clipLook((clip as { effects?: { effectId: string; appearance?: unknown; id: string }[] }).effects);
+	const fx = clipLook(
+		(clip as { effects?: { effectId: string; appearance?: unknown; id: string }[] }).effects,
+	);
 	if (!fx?.appearance) return [];
 	const rate = seq.settings.frameRate as Rational;
 	const timing = titleTiming(clip as never);
@@ -522,8 +524,8 @@ async function fontRow(
 	clip: Clip,
 	at: TitleCheckAt,
 ): Promise<TitleCheckRow> {
-	const style = (clip as { content?: { style?: { fontId?: string; weight?: number; italic?: boolean } } }).content
-		?.style;
+	const style = (clip as { content?: { style?: { fontId?: string; weight?: number; italic?: boolean } } })
+		.content?.style;
 	const family = style?.fontId ? doc.fonts[style.fontId]?.family : undefined;
 	const row = { id: 'font-available', kind: 'format' as const, at };
 	if (!family)
@@ -555,7 +557,9 @@ async function fontRow(
 		message: found
 			? `${family} is available.`
 			: `${family} is not installed: the title renders in the default family and exports warn FONT_FALLBACK.`,
-		...(found ? {} : { fix: { label: `Install ${family} (install_font), or pick a family from list_fonts` } }),
+		...(found
+			? {}
+			: { fix: { label: `Install ${family} (install_font), or pick a family from list_fonts` } }),
 	};
 }
 
@@ -608,7 +612,11 @@ async function exportPathRow(ctx: ToolContext, t: CheckTarget): Promise<TitleChe
 	}
 }
 
-function renderedRowsOf(t: CheckTarget, measures: readonly TitleFrameMeasure[], target: DeliveryTargetId | null) {
+function renderedRowsOf(
+	t: CheckTarget,
+	measures: readonly TitleFrameMeasure[],
+	target: DeliveryTargetId | null,
+) {
 	const { seq, clip } = t;
 	const rate = seq.settings.frameRate as Rational;
 	const timing = titleTiming(clip as never);
@@ -624,7 +632,9 @@ function renderedRowsOf(t: CheckTarget, measures: readonly TitleFrameMeasure[], 
 	const pos = transform?.position;
 	const scale = transform?.scale;
 	const movable = t.real && pos && !pos.keyframes.length && scale && !scale.keyframes.length;
-	const fx = clipLook((clip as { effects?: { effectId: string; appearance?: unknown; id: string }[] }).effects);
+	const fx = clipLook(
+		(clip as { effects?: { effectId: string; appearance?: unknown; id: string }[] }).effects,
+	);
 	const layers = (fx?.appearance as Appearance | undefined)?.layers;
 	const face = layers?.findIndex((l) => l.type === 'face') ?? -1;
 	return titleRenderedRows({
@@ -708,7 +718,11 @@ function proposalTarget(
 	const undecided = p.items.filter((i) => i.state === 'pending' || i.state === 'stale');
 	const item = itemId ? p.items.find((i) => i.id === itemId) : (undecided[0] ?? p.items[0]);
 	if (!item)
-		throw new ToolError('E_NOT_FOUND', `Proposal ${p.id} has no item ${itemId ?? ''}`, 'get_proposal lists them.');
+		throw new ToolError(
+			'E_NOT_FOUND',
+			`Proposal ${p.id} has no item ${itemId ?? ''}`,
+			'get_proposal lists them.',
+		);
 	const k = alternative ?? item.selectedAlternative ?? 0;
 	if (k > (item.alternatives?.length ?? 0))
 		throw new ToolError(
@@ -736,8 +750,7 @@ function proposalTarget(
 	for (const seq of Object.values(preview.document.sequences) as Sequence[]) {
 		const clips = ids.map((id) => seq.clips[id]).filter((c): c is Clip => !!c);
 		const clip = clips.find((c) => c.kind === 'text') ?? clips[0];
-		if (clip)
-			return { doc: preview.document, revision: loaded.revision, seq, clip, real: false };
+		if (clip) return { doc: preview.document, revision: loaded.revision, seq, clip, real: false };
 	}
 	throw new ToolError(
 		'E_INVALID_PARAM',
@@ -923,7 +936,8 @@ export function registerTitleTools(ctx: ToolContext): void {
 		}),
 		{
 			title: 'Title look',
-			description: 'A library look as JSON: its tags, colourways and recipe (get_title_recipe gives the same).',
+			description:
+				'A library look as JSON: its tags, colourways and recipe (get_title_recipe gives the same).',
 			mimeType: 'application/json',
 		},
 		async (uri, { id }) => {
@@ -951,7 +965,10 @@ export function registerTitleTools(ctx: ToolContext): void {
 			input: {
 				query: z.string().max(200).describe('Words to look for, e.g. "chrome trailer"; "" lists everything'),
 				tags: z.array(z.string().min(1).max(64)).max(16).optional().describe('Only looks with all of these'),
-				aspect: z.enum(['16:9', '9:16', '1:1', '4:5']).optional().describe('Frame of the sheet (default 16:9)'),
+				aspect: z
+					.enum(['16:9', '9:16', '1:1', '4:5'])
+					.optional()
+					.describe('Frame of the sheet (default 16:9)'),
 				sampleText: z
 					.string()
 					.min(1)
@@ -1005,11 +1022,7 @@ export function registerTitleTools(ctx: ToolContext): void {
 						: 'The library of this build holds no looks. Write a recipe for propose_title (get_guide {"topic": "title-art"}).',
 				});
 			const aspect = a.aspect ?? '16:9';
-			const { document, sequenceId } = lookSheetDocument(
-				page,
-				a.sampleText ?? DEFAULT_SAMPLE_TEXT,
-				aspect,
-			);
+			const { document, sequenceId } = lookSheetDocument(page, a.sampleText ?? DEFAULT_SAMPLE_TEXT, aspect);
 			const envelope = toolEnvelope(document);
 			const plan = await ctx
 				.engine((c) =>
@@ -1054,8 +1067,7 @@ export function registerTitleTools(ctx: ToolContext): void {
 				extra,
 			);
 			const out = await awaitSheet(ctx, jobId, a.timeoutSeconds ?? DEFAULT_SHEET_TIMEOUT_SEC, extra);
-			if (!out.done)
-				return jsonResult({ rows, ...base, jobId, timedOut: true, next: sheetNext(jobId) });
+			if (!out.done) return jsonResult({ rows, ...base, jobId, timedOut: true, next: sheetNext(jobId) });
 			const { body, image } = await composeSheet(ctx, out.result);
 			return jsonResult(
 				{
@@ -1085,7 +1097,12 @@ export function registerTitleTools(ctx: ToolContext): void {
 				duration: timeArg('Length (default: the time the text needs, with its animations)').optional(),
 				lookId: LookIdArg.optional(),
 				recipe: RecipeArg.optional(),
-				name: z.string().min(1).max(120).optional().describe('Name of a recipe look (default "Custom title")'),
+				name: z
+					.string()
+					.min(1)
+					.max(120)
+					.optional()
+					.describe('Name of a recipe look (default "Custom title")'),
 				colorway: z.string().min(1).max(128).optional().describe('Colourway id or name'),
 				energy: z.enum(['low', 'medium', 'high']).optional().describe('Default medium'),
 				alternatives: z
@@ -1103,7 +1120,10 @@ export function registerTitleTools(ctx: ToolContext): void {
 					.min(0)
 					.optional()
 					.describe('The revision you planned on: anything else is refused'),
-				position: z.tuple([z.number(), z.number()]).optional().describe('[x, y] in sequence px (default centre)'),
+				position: z
+					.tuple([z.number(), z.number()])
+					.optional()
+					.describe('[x, y] in sequence px (default centre)'),
 				sizePx: z.number().positive().max(2000).optional().describe('Text size (default: fits the frame)'),
 				width: SheetWidthArg,
 				timeoutSeconds: TimeoutArg,
@@ -1269,9 +1289,8 @@ export function registerTitleTools(ctx: ToolContext): void {
 				const afterClip = after.doc.sequences[seq.id]?.clips[clipId];
 				if (!afterClip)
 					throw new ToolError('E_INTERNAL', `The title ${clipId} is not in the document after applying it`);
-				const lookResult = (r.results.find(
-					(x) => typeof x === 'object' && x !== null && 'lookId' in x,
-				) ?? {}) as { lookId?: string };
+				const lookResult = (r.results.find((x) => typeof x === 'object' && x !== null && 'lookId' in x) ??
+					{}) as { lookId?: string };
 				check = { doc: after.doc, revision: after.revision, seq, clip: afterClip, real: true };
 				options[0] = { ...options[0]!, doc: after.doc, clip: afterClip };
 				stored = {
@@ -1317,7 +1336,8 @@ export function registerTitleTools(ctx: ToolContext): void {
 			const measures = measuresOf(out.result, images, seq.settings.width);
 			const rows = [...renderedRowsOf(check, measures, target), ...plain, ...lintRows(check, measures)];
 			const { image, body } = await composeSheet(ctx, out.result, images);
-			const renderPath = (rows.find((x) => x.id === 'export-path')?.measured as { path?: string } | null)?.path;
+			const renderPath = (rows.find((x) => x.id === 'export-path')?.measured as { path?: string } | null)
+				?.path;
 			return jsonResult(
 				{
 					...stored,
@@ -1344,7 +1364,12 @@ export function registerTitleTools(ctx: ToolContext): void {
 				projectId: ProjectIdArg,
 				clipId: z.string().min(1).max(64).optional().describe('The title clip (get_timeline)'),
 				proposalId: z.string().min(1).max(64).optional().describe('A proposal (propose_title)'),
-				itemId: z.string().min(1).max(64).optional().describe('With proposalId: the item (default the first undecided)'),
+				itemId: z
+					.string()
+					.min(1)
+					.max(64)
+					.optional()
+					.describe('With proposalId: the item (default the first undecided)'),
 				alternative: z
 					.number()
 					.int()
@@ -1391,7 +1416,9 @@ export function registerTitleTools(ctx: ToolContext): void {
 			let out: Awaited<ReturnType<typeof awaitSheet>>;
 			if (a.jobId) {
 				out = await sheetOfJob(ctx, a.jobId);
-				const madeAt = out.done ? (out.result.meta as { revision?: unknown } | undefined)?.revision : undefined;
+				const madeAt = out.done
+					? (out.result.meta as { revision?: unknown } | undefined)?.revision
+					: undefined;
 				if (out.done && madeAt !== (loaded.revision ?? null))
 					throw new ToolError(
 						'E_STALE',

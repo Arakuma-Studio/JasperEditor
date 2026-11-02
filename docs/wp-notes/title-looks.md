@@ -297,6 +297,8 @@ hints differently per size, so text scores low before your layer does anything).
 Dump a PNG and look at it (`over()` + `encodePng` of `@jasper/testkit/png`). Assertions on a few pixels passed while the
 first shape field drew translucent wedges.
 
+Agent tools (§11): [title-looks-agents.md](title-looks-agents.md).
+
 ## Commands (TL-018)
 
 | Command | Notes |

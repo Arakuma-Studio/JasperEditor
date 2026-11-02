@@ -1,7 +1,12 @@
 // Spec 19 TL-103: a sheet of stills as one engine job (`still-sheet`): one progress, one timeout, one cancel. Tools submit
 // documents and cells here and get `{jobId, timedOut}` back; a sheet that outlives the wait stays a job the agent can pick
 // up (`render_frames {jobId}`). The drawing the engine does not do (safe-area guides, cell numbers, downscaling) is here.
-import { STILL_SHEET_LIMITS, type StillSheetRequest, type StillSheetResult, StillSheetResultSchema } from '@jasper/api';
+import {
+	STILL_SHEET_LIMITS,
+	type StillSheetRequest,
+	type StillSheetResult,
+	StillSheetResultSchema,
+} from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
 import { TITLE_SAFE_MARGINS } from '@jasper/project';
 import { cancelIfAborted, type Extra, isTerminal, type ToolContext, waitJob } from './context.ts';
@@ -60,7 +65,8 @@ export async function awaitSheet(
 			jobId,
 		});
 	const r = StillSheetResultSchema.safeParse(job.result);
-	if (!r.success) throw new ToolError('E_INTERNAL', 'The engine returned an unreadable sheet', undefined, { jobId });
+	if (!r.success)
+		throw new ToolError('E_INTERNAL', 'The engine returned an unreadable sheet', undefined, { jobId });
 	return { done: true, jobId, result: r.data };
 }
 
@@ -70,7 +76,11 @@ export async function sheetOfJob(ctx: ToolContext, jobId: string): Promise<Sheet
 		.engine((c) => c.getJob(jobId))
 		.catch((e) => {
 			if (e instanceof EngineError && (e.code === 'JOB_NOT_FOUND' || e.status === 404))
-				throw new ToolError('E_NOT_FOUND', `No job ${jobId}`, 'The sheet may have been cleaned up: render it again.');
+				throw new ToolError(
+					'E_NOT_FOUND',
+					`No job ${jobId}`,
+					'The sheet may have been cleaned up: render it again.',
+				);
 			throw e;
 		});
 	if (job.kind !== 'still-sheet')

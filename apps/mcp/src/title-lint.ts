@@ -1,8 +1,9 @@
 // Spec 19 TL-102 / TL-056: the style lint as `title_check` rows. `lintAppearance` (`title-looks/lint.ts`) compares what the
 // caller measured (`rendered`); this seam feeds it each measured frame and keeps the worst answer per issue. A build
 // without the lint says so in an unverified row: a look that was not linted never reads as a clean one.
-import * as project from '@jasper/project';
+
 import type { Appearance, Clip, TitleCheckAt, TitleCheckRow } from '@jasper/project';
+import * as project from '@jasper/project';
 
 type Severity = 'error' | 'warning' | 'info';
 type LintIssue = {

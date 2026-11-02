@@ -7,9 +7,9 @@ import {
 	defaultRegistries,
 	PROPOSAL_LIMITS,
 	type ProposalContext,
-	proposalFeatureInfo,
 	previewProposal,
 	projectSettingFeatures,
+	proposalFeatureInfo,
 	TITLE_ART_FEATURE,
 	TITLE_ART_GROUP,
 	TITLE_ART_ITEM_ID,
@@ -50,7 +50,10 @@ function draft(sequenceId: string) {
 describe('title-art feature', () => {
 	it('is a project-setting feature, on by default, produced by propose_title', () => {
 		const f = proposalFeatureInfo(TITLE_ART_FEATURE)!;
-		expect(f).toMatchObject({ producers: ['propose_title'], agentAccept: { setting: 'project', default: true } });
+		expect(f).toMatchObject({
+			producers: ['propose_title'],
+			agentAccept: { setting: 'project', default: true },
+		});
 		expect(f.groups.map((g) => g.id)).toEqual([TITLE_ART_GROUP]);
 		expect(projectSettingFeatures().map((x) => x.id)).toContain(TITLE_ART_FEATURE);
 		expect(agentProposalsAllowed(new Harness().doc, TITLE_ART_FEATURE)).toBe(true);
@@ -75,7 +78,11 @@ describe('title-art draft', () => {
 		const d = titleArtDraft({
 			sequenceId: 'seq_1',
 			title: long,
-			option: { label: 'y'.repeat(PROPOSAL_LIMITS.maxLabel + 50), commands: commands([1, 0, 0, 1]), meta: meta() },
+			option: {
+				label: 'y'.repeat(PROPOSAL_LIMITS.maxLabel + 50),
+				commands: commands([1, 0, 0, 1]),
+				meta: meta(),
+			},
 			alternatives: [],
 		});
 		expect(d.title.length).toBe(PROPOSAL_LIMITS.maxTitle);

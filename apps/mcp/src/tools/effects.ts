@@ -67,9 +67,14 @@ export function registerEffectTools(ctx: ToolContext): void {
 			if (effectId !== undefined) {
 				const e = all.find((x) => x.id === effectId);
 				if (!e)
-					throw new ToolError('E_NOT_FOUND', `No effect ${effectId}`, 'list_effects {query} finds effect ids.', {
-						effectId,
-					});
+					throw new ToolError(
+						'E_NOT_FOUND',
+						`No effect ${effectId}`,
+						'list_effects {query} finds effect ids.',
+						{
+							effectId,
+						},
+					);
 				return jsonResult({
 					id: e.id,
 					version: e.version,
@@ -150,7 +155,10 @@ export function registerEffectTools(ctx: ToolContext): void {
 				extra,
 			);
 			const r = requireOk(res);
-			return jsonResult({ ...txBody(res, r), next: 'set_effect_param {effectInstanceId, param, value} changes it.' });
+			return jsonResult({
+				...txBody(res, r),
+				next: 'set_effect_param {effectInstanceId, param, value} changes it.',
+			});
 		},
 	);
 

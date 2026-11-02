@@ -7,12 +7,12 @@ import {
 	contrastRatio,
 	createRandomIdSource,
 	defaultRegistries,
+	type LookRecipe,
 	matteAlpha,
 	measureBackdropL,
 	measureContrast,
 	measureTitleFrame,
 	RECIPE_BOUNDS,
-	type LookRecipe,
 	recipeBoundsProblem,
 	recipeOfAppearance,
 	relativeLuminance,
@@ -51,9 +51,7 @@ const inBox = (x: number, y: number) => x >= 60 && x < 140 && y >= 40 && y < 60;
 /** A flat box of `face` composited at `a` over the three backgrounds, the four renders of a frame. */
 function renders(face: RGB, back: (x: number, y: number) => RGB, a = 1, box = inBox) {
 	const over = (bg: RGB, x: number, y: number): RGB =>
-		box(x, y)
-			? ([0, 1, 2].map((k) => Math.round(face[k]! * a + bg[k]! * (1 - a))) as unknown as RGB)
-			: bg;
+		box(x, y) ? ([0, 1, 2].map((k) => Math.round(face[k]! * a + bg[k]! * (1 - a))) as unknown as RGB) : bg;
 	return {
 		with: image(W, H, (x, y) => over(back(x, y), x, y)),
 		behind: image(W, H, back),
@@ -78,7 +76,11 @@ describe('difference matting', () => {
 	it('recovers alpha for any colour', () => {
 		fc.assert(
 			fc.property(
-				fc.tuple(fc.integer({ min: 0, max: 255 }), fc.integer({ min: 0, max: 255 }), fc.integer({ min: 0, max: 255 })),
+				fc.tuple(
+					fc.integer({ min: 0, max: 255 }),
+					fc.integer({ min: 0, max: 255 }),
+					fc.integer({ min: 0, max: 255 }),
+				),
 				fc.integer({ min: 0, max: 255 }),
 				(face, a255) => {
 					const a = a255 / 255;
@@ -152,19 +154,27 @@ describe('contrast against the rendered background', () => {
 
 	it('never throws and stays in range on arbitrary pictures', () => {
 		fc.assert(
-			fc.property(fc.uint8Array({ minLength: 4 * 64 * 4, maxLength: 4 * 64 * 4 }), fc.integer(), (bytes, seed) => {
-				const noise = (s: number): TitleImage => ({
-					width: 16,
-					height: 16,
-					data: bytes.map((b, i) => (b + s * i) & 255),
-				});
-				const m = measureTitleFrame(3, { with: noise(1), behind: noise(2), black: noise(seed), white: noise(5) }, 1920);
-				if (m.contrast) {
-					expect(m.contrast.ratio).toBeGreaterThanOrEqual(1);
-					expect(m.contrast.ratio).toBeLessThanOrEqual(21);
-				}
-				if (m.backdropL !== null) expect(Number.isFinite(m.backdropL)).toBe(true);
-			}),
+			fc.property(
+				fc.uint8Array({ minLength: 4 * 64 * 4, maxLength: 4 * 64 * 4 }),
+				fc.integer(),
+				(bytes, seed) => {
+					const noise = (s: number): TitleImage => ({
+						width: 16,
+						height: 16,
+						data: bytes.map((b, i) => (b + s * i) & 255),
+					});
+					const m = measureTitleFrame(
+						3,
+						{ with: noise(1), behind: noise(2), black: noise(seed), white: noise(5) },
+						1920,
+					);
+					if (m.contrast) {
+						expect(m.contrast.ratio).toBeGreaterThanOrEqual(1);
+						expect(m.contrast.ratio).toBeLessThanOrEqual(21);
+					}
+					if (m.backdropL !== null) expect(Number.isFinite(m.backdropL)).toBe(true);
+				},
+			),
 		);
 	});
 });
@@ -183,9 +193,9 @@ describe('one frame', () => {
 
 	it('refuses renders of different sizes', () => {
 		const r = renders([255, 255, 255], flat([0, 0, 0]));
-		expect(() =>
-			measureTitleFrame(1, { ...r, white: image(4, 4, flat([255, 255, 255])) }, 1920),
-		).toThrow(/differ in size/);
+		expect(() => measureTitleFrame(1, { ...r, white: image(4, 4, flat([255, 255, 255])) }, 1920)).toThrow(
+			/differ in size/,
+		);
 	});
 });
 
@@ -312,7 +322,10 @@ describe('text rows', () => {
 				duration: 60,
 				track: 'V2',
 				content: { text: 'A title of some length', style: { sizePx: 20 } },
-				textAnimation: { in: { preset: 'fade', durationFrames: 10 }, out: { preset: 'fade', durationFrames: 10 } },
+				textAnimation: {
+					in: { preset: 'fade', durationFrames: 10 },
+					out: { preset: 'fade', durationFrames: 10 },
+				},
 				ref: '$t',
 			},
 			...commands,
@@ -325,7 +338,14 @@ describe('text rows', () => {
 	it('finds when the title is at rest', () => {
 		const { clip } = title();
 		const t = titleTiming(clip as never);
-		expect(t).toMatchObject({ inFrames: 10, outFrames: 10, intro: 35, holdStart: 40, holdEnd: 79, outro: 84 });
+		expect(t).toMatchObject({
+			inFrames: 10,
+			outFrames: 10,
+			intro: 35,
+			holdStart: 40,
+			holdEnd: 79,
+			outro: 84,
+		});
 		expect(titleCheckFrames(t)).toEqual([40, 59, 79]);
 		// no animation: the whole clip, without repeats on a one-frame clip
 		expect(titleCheckFrames(titleTiming({ start: 5, duration: 1 }))).toEqual([5]);
@@ -381,7 +401,12 @@ describe('text rows', () => {
 
 	it('safe-area and rim fixes are real commands', () => {
 		const { h, id } = title([
-			{ type: 'look.apply', clipIds: ['$t'], look: { name: 'L', recipe: { layers: [{ type: 'face' }] } }, seed: 1 },
+			{
+				type: 'look.apply',
+				clipIds: ['$t'],
+				look: { name: 'L', recipe: { layers: [{ type: 'face' }] } },
+				seed: 1,
+			},
 		]);
 		const fx = (h.seq.clips[id] as never as { effects: { id: string }[] }).effects[0]!.id;
 		h.tx([
@@ -396,8 +421,8 @@ describe('text rows', () => {
 				params: { width: 6, paint: { kind: 'color', color: [1, 1, 1, 1] } },
 			},
 		]);
-		const a = (h.seq.clips[id] as never as { effects: { appearance: { layers: { type: string }[] } }[] }).effects[0]!
-			.appearance;
+		const a = (h.seq.clips[id] as never as { effects: { appearance: { layers: { type: string }[] } }[] })
+			.effects[0]!.appearance;
 		expect(a.layers.map((l) => l.type)).toEqual(['rim', 'face']);
 	});
 });
@@ -442,7 +467,9 @@ describe('recipe bounds (TL-106)', () => {
 	});
 
 	it('caps bytes, values and depth, deep and cyclic input included, without recursion', () => {
-		expect(recipeBoundsProblem({ layers: [], name: 'x'.repeat(RECIPE_BOUNDS.maxBytes + 1) })?.cap).toBe('bytes');
+		expect(recipeBoundsProblem({ layers: [], name: 'x'.repeat(RECIPE_BOUNDS.maxBytes + 1) })?.cap).toBe(
+			'bytes',
+		);
 		expect(recipeBoundsProblem({ layers: new Array(RECIPE_BOUNDS.maxNodes + 1).fill(0) })?.cap).toBe('nodes');
 		let deep: unknown = {};
 		for (let i = 0; i < 200_000; i++) deep = { deep };
@@ -486,7 +513,9 @@ describe('recipe bounds (TL-106)', () => {
 		);
 		fc.assert(
 			fc.property(
-				fc.record({ layers: fc.array(fc.record({ type: fc.string(), params: fc.jsonValue() }), { maxLength: 40 }) }),
+				fc.record({
+					layers: fc.array(fc.record({ type: fc.string(), params: fc.jsonValue() }), { maxLength: 40 }),
+				}),
 				(v) => {
 					const p = recipeBoundsProblem(v);
 					if (p === null) expect(v.layers.length).toBeLessThanOrEqual(RECIPE_BOUNDS.layers);
@@ -536,7 +565,10 @@ describe('appearance targets of clip.properties (TL-104)', () => {
 			{
 				type: 'look.apply',
 				clipIds: ['$t'],
-				look: { name: 'L', recipe: { palette: { face: [1, 0, 0, 1] }, layers: [{ type: 'rim', params: { width: 7 } }] } },
+				look: {
+					name: 'L',
+					recipe: { palette: { face: [1, 0, 0, 1] }, layers: [{ type: 'rim', params: { width: 7 } }] },
+				},
 				seed: 1,
 			},
 		]);

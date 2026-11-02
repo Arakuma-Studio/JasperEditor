@@ -4,8 +4,9 @@
 //   behind  the same frame with the title off     the real background
 //   black, white  the title alone over each       difference matting: its real alpha, on any render path
 // Formulas, sources and the assumptions among the thresholds: docs/wp-notes/title-looks-agents.md.
-import { contentTimeAt } from '../derive/index.ts';
+
 import type { DeliveryTargetId } from '../delivery/targets.ts';
+import { contentTimeAt } from '../derive/index.ts';
 import { evaluate, isAnimated } from '../keyframes.ts';
 import type { Animatable } from '../schema/common.ts';
 import type { Clip, TextAnimation } from '../schema/sequence.ts';
@@ -90,7 +91,12 @@ export type TitleFrameMeasure = {
 	backdropL: number | null;
 };
 
-export type TitleFrameRenders = { with: TitleImage; behind: TitleImage; black: TitleImage; white: TitleImage };
+export type TitleFrameRenders = {
+	with: TitleImage;
+	behind: TitleImage;
+	black: TitleImage;
+	white: TitleImage;
+};
 
 const round = (v: number, d = 2) => Math.round(v * 10 ** d) / 10 ** d;
 
@@ -160,7 +166,11 @@ function percentile(sorted: readonly number[], q: number): number {
 	return sorted[Math.min(sorted.length - 1, Math.max(0, Math.floor(q * (sorted.length - 1))))] ?? 0;
 }
 
-const medianOf = (v: number[]) => percentile(v.sort((a, b) => a - b), 0.5);
+const medianOf = (v: number[]) =>
+	percentile(
+		v.sort((a, b) => a - b),
+		0.5,
+	);
 
 /** Per-channel median colour of the pixels `at`, as hex. */
 function medianColor(img: TitleImage, at: readonly number[]): string {
@@ -174,7 +184,11 @@ function medianColor(img: TitleImage, at: readonly number[]): string {
  * averaged into a pass. A tile counts as readable by whichever carries it: the face against the background, the outer
  * edge against it (a dark rim on a light picture), or the title's own contrast (letters on their plate).
  */
-export function measureContrast(withImg: TitleImage, behind: TitleImage, alpha: Float32Array): TitleContrast | null {
+export function measureContrast(
+	withImg: TitleImage,
+	behind: TitleImage,
+	alpha: Float32Array,
+): TitleContrast | null {
 	const w = withImg.width;
 	const h = withImg.height;
 	const box = alphaBox(alpha, w, h, TITLE_CHECK_THRESHOLDS.inkAlpha);
@@ -225,10 +239,22 @@ export function measureContrast(withImg: TitleImage, behind: TitleImage, alpha: 
 	tiles.sort((a, b) => a.ratio - b.ratio);
 	const count = { face: 0, edge: 0, 'own-contrast': 0 };
 	for (const t of tiles) count[t.by]++;
-	const carriedBy = (Object.keys(count) as TitleContrast['carriedBy'][]).sort((a, b) => count[b] - count[a])[0]!;
+	const carriedBy = (Object.keys(count) as TitleContrast['carriedBy'][]).sort(
+		(a, b) => count[b] - count[a],
+	)[0]!;
 	return {
-		ratio: round(percentile(tiles.map((t) => t.ratio), 0.5)),
-		worst: round(percentile(tiles.map((t) => t.ratio), 0.1)),
+		ratio: round(
+			percentile(
+				tiles.map((t) => t.ratio),
+				0.5,
+			),
+		),
+		worst: round(
+			percentile(
+				tiles.map((t) => t.ratio),
+				0.1,
+			),
+		),
 		carriedBy,
 		face: medianColor(withImg, inkAt),
 		background: medianColor(behind, behindAt),
@@ -379,7 +405,8 @@ export function titleRenderedRows(o: {
 	const seen = frames.filter((f) => f.ink);
 	if (!seen.length) {
 		const at = frames[0] ? atOf(frames[0].frame) : null;
-		const nothing = 'Nothing of the title is drawn at the frames it should be at rest: it is off, covered or empty.';
+		const nothing =
+			'Nothing of the title is drawn at the frames it should be at rest: it is off, covered or empty.';
 		return ['safe-area', 'off-frame', 'contrast'].map((id) => ({
 			id,
 			kind: 'format' as const,
@@ -421,7 +448,8 @@ export function titleRenderedRows(o: {
 		const dx = Math.min(titleRect.x1 - halfW, Math.max(titleRect.x0 + halfW, cx)) - cx;
 		const dy = Math.min(titleRect.y1 - halfH, Math.max(titleRect.y0 + halfH, cy)) - cy;
 		safe.fix = {
-			label: scale < 1 ? 'Scale the title into the title-safe area' : 'Move the title into the title-safe area',
+			label:
+				scale < 1 ? 'Scale the title into the title-safe area' : 'Move the title into the title-safe area',
 			commands: o.moveFix(Math.round(dx), Math.round(dy), scale),
 		};
 	}
@@ -474,7 +502,8 @@ export function titleRenderedRows(o: {
 	});
 
 	const t = TITLE_CHECK_THRESHOLDS;
-	const large = o.sizePx !== null && (o.sizePx * 1080) / Math.min(size.width, size.height) >= t.largeSizeAt1080;
+	const large =
+		o.sizePx !== null && (o.sizePx * 1080) / Math.min(size.width, size.height) >= t.largeSizeAt1080;
 	const min = large ? t.contrastLarge : t.contrastNormal;
 	const measured = seen.filter((f) => f.contrast);
 	if (!measured.length)
@@ -515,7 +544,9 @@ export function titleRenderedRows(o: {
 			const color: [number, number, number, number] = light ? [0, 0, 0, 1] : [1, 1, 1, 1];
 			row.fix = o.rimFix
 				? { label: `Add a ${light ? 'dark' : 'light'} rim`, commands: o.rimFix(color) }
-				: { label: `Use a colourway with more contrast, or add a ${light ? 'dark' : 'light'} rim to the look` };
+				: {
+						label: `Use a colourway with more contrast, or add a ${light ? 'dark' : 'light'} rim to the look`,
+					};
 		}
 		rows.push(row);
 	}
@@ -561,7 +592,8 @@ export function titleTextRows(o: {
 		measured: { sizePx: round(px, 1) },
 		expected: { minSizePx: min, basis: 'one thirtieth of the shorter frame side' },
 		at: o.atOf(timing.hold),
-		message: px >= min ? `The text is ${round(px, 1)} px.` : `The text is ${round(px, 1)} px, under ${min} px.`,
+		message:
+			px >= min ? `The text is ${round(px, 1)} px.` : `The text is ${round(px, 1)} px, under ${min} px.`,
 	};
 	if (px < min)
 		small.fix = {
@@ -592,7 +624,10 @@ export function titleTextRows(o: {
 		id: 'read-time',
 		kind: 'judgement',
 		status: readable >= need ? 'pass' : 'warn',
-		measured: { readableSec: round(readable), characters: [...clip.content.text.replace(/\s+/gu, '')].length },
+		measured: {
+			readableSec: round(readable),
+			characters: [...clip.content.text.replace(/\s+/gu, '')].length,
+		},
 		expected: { minSec: round(need) },
 		at: o.atOf(clip.start),
 		message:

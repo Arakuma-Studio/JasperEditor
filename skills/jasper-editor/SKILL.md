@@ -1,6 +1,6 @@
 ---
 name: jasper-editor
-description: Edit videos in JasperEditor through its MCP server (jasper-mcp): read the footage as text, look at chosen ranges, propose a reviewable cut, export and verify the file with measurements. Use when the user wants to edit, cut, trim, subtitle, clean up, grade, mix or export a video or a JasperEditor project, or says "make a rough cut", "cut a teaser", "edit my footage", "find the best takes", "remove the ums", "add subtitles", "export for TikTok / Reels / YouTube", "haz un primer montaje", "monta el vídeo", "edita mi vídeo", "quita las muletillas", "añade subtítulos".
+description: Edit videos in JasperEditor through its MCP server (jasper-mcp): read the footage as text, look at chosen ranges, propose a reviewable cut, export and verify the file with measurements. Use when the user wants to edit, cut, trim, subtitle, clean up, grade, mix or export a video or a JasperEditor project, or says "make a rough cut", "cut a teaser", "edit my footage", "find the best takes", "remove the ums", "add subtitles", "export for TikTok / Reels / YouTube", "make a stylish title", "haz un primer montaje", "monta el vídeo", "edita mi vídeo", "quita las muletillas", "añade subtítulos".
 ---
 
 # Editing video with JasperEditor
@@ -40,6 +40,9 @@ one directly with `describe_tool` + `call_tool`. `get_guide` (topic "routing") m
    rejected; never re-propose applied items.
 6. **Verify.** `start_export` (wait: true), then `verify_export` with the brief's platform as target. Fix
    format rows yourself; ask about judgement rows. Details: [verification](references/verification.md).
+
+A designed title has its own short loop in the `titles` toolset: `find_title_looks`, `propose_title`, `title_check`.
+Details, including what changes without an editor window: [title art](references/title-art.md).
 
 Small direct fixes the user asked for by name (one trim, one marker, a title) can go straight through `add_clip`,
 `trim_clip`, `split_at`, `delete_clips` or one `apply_commands` transaction (`describe_commands` has every schema

@@ -295,7 +295,11 @@ async function proposalSheetPlan(
 		? a.itemIds.map((id) => {
 				const it = p.items.find((x) => x.id === id);
 				if (!it)
-					throw new ToolError('E_NOT_FOUND', `Proposal ${p.id} has no item ${id}`, 'get_proposal lists them.');
+					throw new ToolError(
+						'E_NOT_FOUND',
+						`Proposal ${p.id} has no item ${id}`,
+						'get_proposal lists them.',
+					);
 				return it;
 			})
 		: p.items.filter((i) => !isSetupItem(i) && (i.state === 'pending' || i.state === 'stale'));
@@ -331,11 +335,7 @@ async function proposalSheetPlan(
 			const clip = [...(ghost?.created ?? []), ...(ghost?.changed ?? [])]
 				.map((id) => after?.clips[id])
 				.find((c) => c !== undefined);
-			const frames = a.times
-				? a.times.map((t) => frameOf(seq, t))
-				: clip
-					? framesOfClip(clip, a.count)
-					: [0];
+			const frames = a.times ? a.times.map((t) => frameOf(seq, t)) : clip ? framesOfClip(clip, a.count) : [0];
 			columns = Math.max(columns, frames.length);
 			documents.push(toolEnvelope(preview.document, r.revision ?? 0));
 			const label = k === 0 ? item.label : (item.alternatives?.[k - 1]?.label ?? item.label);
@@ -532,10 +532,7 @@ export function registerAnimationTools(ctx: ToolContext): void {
 						next: sheetNext(out.jobId),
 					});
 				const { body, image } = await composeSheet(ctx, out.result);
-				return jsonResult(
-					{ jobId: out.jobId, timedOut: false, ...sheetSequence(out), ...body },
-					[image],
-				);
+				return jsonResult({ jobId: out.jobId, timedOut: false, ...sheetSequence(out), ...body }, [image]);
 			};
 			if (a.jobId) {
 				if (a.times || a.clipId || a.proposalId || a.count !== undefined)
@@ -552,7 +549,11 @@ export function registerAnimationTools(ctx: ToolContext): void {
 					'Give times, or count with an optional range (from/to or clipId), not both',
 				);
 			if (a.itemIds && !a.proposalId)
-				throw new ToolError('E_INVALID_PARAM', 'itemIds needs proposalId', 'Pass the proposal they belong to.');
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'itemIds needs proposalId',
+					'Pass the proposal they belong to.',
+				);
 			if (a.proposalId && (a.clipId || a.from !== undefined || a.to !== undefined))
 				throw new ToolError(
 					'E_INVALID_PARAM',

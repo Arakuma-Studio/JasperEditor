@@ -1,6 +1,9 @@
 // Spec 19 §11: the titles toolset against an in-process engine stand-in: real commands, real agent queries, real proposal
 // validation, and a small rasteriser for `still-sheet` jobs (a title is a box at a place the test chooses), so every row is
 // computed from pixels with a known answer. Real rendering is in test/qa/titles.test.ts.
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	applyTransaction,
@@ -13,11 +16,12 @@ import {
 	FACTORY_LOOKS,
 	type FactoryLook,
 	type LookRecipe,
-	type Proposal,
 	type ProjectDocument,
+	type Proposal,
 	RECIPE_BOUNDS,
 	runAgentQuery,
 	TITLE_ART_FEATURE,
+	TITLE_SAFE_MARGINS,
 	titleArtMetaOf,
 } from '@jasper/project';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -104,7 +108,16 @@ function fakeEngine(opts: { live?: boolean; paint?: Painted; stuck?: boolean } =
 				};
 			doc = undo.pop()!;
 			revision++;
-			return { ok: true, revision, refs: {}, created: [], changed: [], deleted: [], warnings: [], results: [{}] };
+			return {
+				ok: true,
+				revision,
+				refs: {},
+				created: [],
+				changed: [],
+				deleted: [],
+				warnings: [],
+				results: [{}],
+			};
 		}
 		const r = applyTransaction(doc, { protocol: 'jasper.tx/1', ...t, origin: 'user' } as never, {
 			ids,
@@ -146,7 +159,11 @@ function fakeEngine(opts: { live?: boolean; paint?: Painted; stuck?: boolean } =
 			meta?: unknown;
 		}) => {
 			const id = `job_${String(++n).padStart(16, '0')}`;
-			sheets.push({ cells: req.cells, documents: req.documents.length, ...(req.width ? { width: req.width } : {}) });
+			sheets.push({
+				cells: req.cells,
+				documents: req.documents.length,
+				...(req.width ? { width: req.width } : {}),
+			});
 			if (opts.stuck) {
 				const job = { id, kind: 'still-sheet', title: 'x', state: 'running', progress: 0.5 };
 				jobs.set(id, job);
@@ -250,7 +267,12 @@ async function connect(opts: Parameters<typeof fakeEngine>[0] = {}) {
 		try {
 			json = JSON.parse(text);
 		} catch {}
-		return { r, text, json, image: r.content.find((c) => c.type === 'image') as { data: string } | undefined };
+		return {
+			r,
+			text,
+			json,
+			image: r.content.find((c) => c.type === 'image') as { data: string } | undefined,
+		};
 	};
 	const ok = async (name: string, args: Record<string, unknown> = {}) => {
 		const out = await call(name, args);
@@ -290,7 +312,13 @@ beforeAll(() => {
 			category: 'Neon & Retro',
 			recipe: { ...RECIPE, layers: Array.from({ length: 9 }, () => ({ type: 'glow' })).slice(0, 8) },
 		},
-		{ libraryId: 'look.test-plain', name: 'Plain Caption', tags: ['clean'], category: 'Clean', recipe: RECIPE },
+		{
+			libraryId: 'look.test-plain',
+			name: 'Plain Caption',
+			tags: ['clean'],
+			category: 'Clean',
+			recipe: RECIPE,
+		},
 	);
 	ways.push(
 		{ id: 'cw.a', name: 'Alpha', palette: dark(0.3) },
@@ -349,7 +377,12 @@ describe('find_title_looks (TL-100)', () => {
 
 	it('finds a project’s own looks, and says plainly when nothing matches', async () => {
 		const s = await connect();
-		const saved = await s.ok('save_title_look', { projectId: P, recipe: RECIPE, name: 'House Style', tags: ['house'] });
+		const saved = await s.ok('save_title_look', {
+			projectId: P,
+			recipe: RECIPE,
+			name: 'House Style',
+			tags: ['house'],
+		});
 		const hit = await s.ok('find_title_looks', { query: 'house', projectId: P });
 		expect(hit.json.rows[0]).toMatchObject({ lookId: saved.json.lookId, source: 'project' });
 		const none = await s.ok('find_title_looks', { query: 'zzz' });
@@ -438,7 +471,15 @@ describe('propose_title (TL-101)', () => {
 		expect(r.r.content.filter((c) => c.type === 'image')).toHaveLength(1);
 		expect(r.json.next).toContain('wait_for_proposal');
 		expect(r.json.check.rows.map((x: Json) => x.id)).toEqual(
-			expect.arrayContaining(['safe-area', 'off-frame', 'contrast', 'min-size', 'read-time', 'font-available', 'export-path']),
+			expect.arrayContaining([
+				'safe-area',
+				'off-frame',
+				'contrast',
+				'min-size',
+				'read-time',
+				'font-available',
+				'export-path',
+			]),
 		);
 	});
 
@@ -537,7 +578,9 @@ describe('propose_title (TL-101)', () => {
 		expect(
 			(await s.fail('propose_title', { projectId: P, text: 'x', at: 0, lookId: 'a', recipe: RECIPE })).code,
 		).toBe('E_INVALID_PARAM');
-		expect((await s.fail('propose_title', { ...BASE, lookId: 'look.none', mode: 'dryRun' })).code).toBe('E_NOT_FOUND');
+		expect((await s.fail('propose_title', { ...BASE, lookId: 'look.none', mode: 'dryRun' })).code).toBe(
+			'E_NOT_FOUND',
+		);
 		const cw = await s.fail('propose_title', { ...BASE, colorway: 'nope', mode: 'dryRun' });
 		expect(cw.code).toBe('E_NOT_FOUND');
 		expect(cw.hint).toContain('cw.a');
@@ -588,10 +631,17 @@ describe('recipe bounds (TL-106)', () => {
 			['bytes', { layers: [], padding: 'x'.repeat(RECIPE_BOUNDS.maxBytes + 1) }],
 			['layers', { layers: Array.from({ length: RECIPE_BOUNDS.layers + 1 }, () => ({ type: 'face' })) }],
 			['nests', { layers: [{ type: 'face', params: deep }] }],
-			['of one type', { layers: Array.from({ length: RECIPE_BOUNDS.maxTypeInstances + 1 }, () => ({ type: 'rim' })) }],
+			[
+				'of one type',
+				{ layers: Array.from({ length: RECIPE_BOUNDS.maxTypeInstances + 1 }, () => ({ type: 'rim' })) },
+			],
 			[
 				'generator',
-				{ layers: Array.from({ length: RECIPE_BOUNDS.maxGeneratorInstances + 1 }, (_, i) => ({ type: `generator:g${i}` })) },
+				{
+					layers: Array.from({ length: RECIPE_BOUNDS.maxGeneratorInstances + 1 }, (_, i) => ({
+						type: `generator:g${i}`,
+					})),
+				},
 			],
 		];
 		for (const [word, recipe] of hostile) {
@@ -606,10 +656,13 @@ describe('recipe bounds (TL-106)', () => {
 	it('any JSON as a recipe is a refusal or a dry run, never a crash', async () => {
 		const s = await connect();
 		await fc.assert(
-			fc.asyncProperty(fc.dictionary(fc.string({ maxLength: 8 }), fc.jsonValue({ maxDepth: 4 })), async (recipe) => {
-				const r = await propose(s, recipe);
-				if (r.r.isError) expect(typeof r.json.error.code).toBe('string');
-			}),
+			fc.asyncProperty(
+				fc.dictionary(fc.string({ maxLength: 8 }), fc.jsonValue({ maxDepth: 4 })),
+				async (recipe) => {
+					const r = await propose(s, recipe);
+					if (r.r.isError) expect(typeof r.json.error.code).toBe('string');
+				},
+			),
 			{ numRuns: 15 },
 		);
 		await fc.assert(
@@ -617,7 +670,10 @@ describe('recipe bounds (TL-106)', () => {
 				fc.array(
 					fc.record({
 						type: fc.constantFrom('face', 'rim', 'glow', 'shadow', 'bogus'),
-						params: fc.dictionary(fc.constantFrom('width', 'radius', 'paint', 'x'), fc.jsonValue({ maxDepth: 2 })),
+						params: fc.dictionary(
+							fc.constantFrom('width', 'radius', 'paint', 'x'),
+							fc.jsonValue({ maxDepth: 2 }),
+						),
 					}),
 					{ maxLength: 6 },
 				),
@@ -674,7 +730,10 @@ describe('title_check (TL-102)', () => {
 	it('finds a title off the frame and outside safe areas, with a move that applies', async () => {
 		const { s, clipId } = await titled({ ...CENTRED, x: 0, w: 0.5 }, [0.05, 0.1, 0.3, 1]);
 		const r = await s.ok('title_check', { projectId: P, clipId });
-		expect(rowOf(r.json.rows, 'off-frame')).toMatchObject({ status: 'fail', measured: { inkTouches: ['left'] } });
+		expect(rowOf(r.json.rows, 'off-frame')).toMatchObject({
+			status: 'fail',
+			measured: { inkTouches: ['left'] },
+		});
 		const safe = rowOf(r.json.rows, 'safe-area');
 		expect(safe.status).toBe('fail');
 		await s.ok('apply_commands', { projectId: P, label: 'fix', commands: safe.fix.commands });
@@ -735,7 +794,9 @@ describe('title_check (TL-102)', () => {
 		const job = s.engine.jobs.get(r.json.jobId)!;
 		job.state = 'failed';
 		job.error = { code: 'RENDER_FAILED', message: 'boom' };
-		expect((await s.fail('title_check', { projectId: P, clipId, jobId: r.json.jobId })).code).toBe('RENDER_FAILED');
+		expect((await s.fail('title_check', { projectId: P, clipId, jobId: r.json.jobId })).code).toBe(
+			'RENDER_FAILED',
+		);
 	});
 });
 
@@ -777,7 +838,13 @@ describe('style lint rows (TL-056 through TL-102)', () => {
 			{ backdropL: 20, frames: 2 },
 			{ backdropL: 80, frames: 2 },
 		]);
-		expect(seen[0]).toMatchObject({ effectInstanceId: 'fx_1', clipKind: 'text', text: 'Hi', sizePx: 100, frameHeight: 1080 });
+		expect(seen[0]).toMatchObject({
+			effectInstanceId: 'fx_1',
+			clipKind: 'text',
+			text: 'Hi',
+			sizePx: 100,
+			frameHeight: 1080,
+		});
 		expect(rows[0]).toMatchObject({
 			id: 'lint-backdrop',
 			kind: 'format',
@@ -786,7 +853,12 @@ describe('style lint rows (TL-056 through TL-102)', () => {
 			expected: 'ΔL ≥ 20',
 			fix: { label: 'Add a soft halo' },
 		});
-		expect(rows[1]).toMatchObject({ id: 'lint-flat', kind: 'judgement', status: 'pass', expected: 'keep it simple' });
+		expect(rows[1]).toMatchObject({
+			id: 'lint-flat',
+			kind: 'judgement',
+			status: 'pass',
+			expected: 'keep it simple',
+		});
 	});
 
 	it('a rendered check that did not run is unverified, and a proposal gets no commands', () => {
@@ -807,6 +879,14 @@ describe('style lint rows (TL-056 through TL-102)', () => {
 });
 
 describe('render_frames extensions (TL-103)', () => {
+	it('draws the margins the Program monitor draws', () => {
+		const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+		const monitor = readFileSync(join(root, 'apps/web/src/panels/program/TransformOverlay.tsx'), 'utf8');
+		expect(monitor).toContain(
+			`SAFE_MARGINS = { action: ${TITLE_SAFE_MARGINS.action}, title: ${TITLE_SAFE_MARGINS.title} }`,
+		);
+	});
+
 	it('runs a sheet as one job, draws the safe area, and returns one image', async () => {
 		const s = await connect();
 		await s.ok('apply_commands', footage([0, 0, 0, 1]));
@@ -863,19 +943,29 @@ describe('render_frames extensions (TL-103)', () => {
 		expect(r.json.columns).toBe(3);
 		expect(r.json.cells[3].label).toContain('title 1:');
 		expect(s.engine.sheets.at(-1)!.documents).toBe(3);
-		const one = await s.ok('render_frames', { projectId: P, proposalId: made.json.proposalId, itemIds: ['title'], count: 1 });
+		const one = await s.ok('render_frames', {
+			projectId: P,
+			proposalId: made.json.proposalId,
+			itemIds: ['title'],
+			count: 1,
+		});
 		expect(one.json.cells).toHaveLength(3);
-		expect((await s.fail('render_frames', { projectId: P, proposalId: made.json.proposalId, itemIds: ['nope'] })).code).toBe(
-			'E_NOT_FOUND',
-		);
+		expect(
+			(await s.fail('render_frames', { projectId: P, proposalId: made.json.proposalId, itemIds: ['nope'] }))
+				.code,
+		).toBe('E_NOT_FOUND');
 	});
 
 	it('refuses mixed arguments, and caps alternatives × frames', async () => {
 		const s = await connect({ live: true });
 		await s.ok('apply_commands', footage([0, 0, 0, 1]));
 		expect((await s.fail('render_frames', { projectId: P, itemIds: ['a'] })).code).toBe('E_INVALID_PARAM');
-		expect((await s.fail('render_frames', { projectId: P, proposalId: 'p', clipId: 'c' })).code).toBe('E_INVALID_PARAM');
-		expect((await s.fail('render_frames', { projectId: P, jobId: 'j', count: 3 })).code).toBe('E_INVALID_PARAM');
+		expect((await s.fail('render_frames', { projectId: P, proposalId: 'p', clipId: 'c' })).code).toBe(
+			'E_INVALID_PARAM',
+		);
+		expect((await s.fail('render_frames', { projectId: P, jobId: 'j', count: 3 })).code).toBe(
+			'E_INVALID_PARAM',
+		);
 		const made = await s.ok('propose_title', { ...BASE, alternatives: 3, seed: 2 });
 		expect(
 			(await s.fail('render_frames', { projectId: P, proposalId: made.json.proposalId, count: 7 })).code,
@@ -890,14 +980,21 @@ describe('escape hatch (TL-104)', () => {
 		expect(r.json.recipe).toEqual(RECIPE);
 		expect(r.json.colorways[0].id).toBe('cw.own');
 		expect(r.json.layerParams.rim.map((p: Json) => p.name)).toContain('width');
-		expect(r.json.layerTypes.map((t: Json) => t.type)).toEqual(expect.arrayContaining(['face', 'rim', 'shadow', 'glow']));
+		expect(r.json.layerTypes.map((t: Json) => t.type)).toEqual(
+			expect.arrayContaining(['face', 'rim', 'shadow', 'glow']),
+		);
 		expect(r.text).not.toContain('additionalProperties');
 		expect((await s.fail('get_title_recipe', { lookId: 'look.none' })).code).toBe('E_NOT_FOUND');
 	});
 
 	it('save_title_look saves a recipe and a clip’s look; both apply and read back', async () => {
 		const s = await connect();
-		const saved = await s.ok('save_title_look', { projectId: P, recipe: RECIPE, name: 'Saved', tags: ['house'] });
+		const saved = await s.ok('save_title_look', {
+			projectId: P,
+			recipe: RECIPE,
+			name: 'Saved',
+			tags: ['house'],
+		});
 		expect(saved.json.lookId).toMatch(/^tlk_/);
 		const back = await s.ok('get_title_recipe', { lookId: saved.json.lookId, projectId: P });
 		expect(back.json.recipe.layers.map((l: Json) => l.type)).toEqual(['rim', 'face']);
@@ -938,7 +1035,9 @@ describe('escape hatch (TL-104)', () => {
 			mode: 'apply',
 		});
 		expect(r.json.look).toMatchObject({ lookId: null, name: 'One Off', source: 'recipe' });
-		const looksInDoc = Object.values((s.engine.doc() as { titleLooks?: Record<string, { name: string }> }).titleLooks!);
+		const looksInDoc = Object.values(
+			(s.engine.doc() as { titleLooks?: Record<string, { name: string }> }).titleLooks!,
+		);
 		expect(looksInDoc.map((l) => l.name)).toEqual(['One Off']);
 	});
 
@@ -953,9 +1052,17 @@ describe('escape hatch (TL-104)', () => {
 		});
 		expect(r.json.ok).toBe(true);
 		expect(r.json.refs.$generator).toMatch(/^clp_/);
-		expect((await s.fail('add_title_generator', { projectId: P, generator: generate.id })).code).toBe('E_INVALID_PARAM');
+		expect((await s.fail('add_title_generator', { projectId: P, generator: generate.id })).code).toBe(
+			'E_INVALID_PARAM',
+		);
 		expect(
-			(await s.fail('add_title_generator', { projectId: P, generator: generate.id, clipId: r.json.refs.$generator })).code,
+			(
+				await s.fail('add_title_generator', {
+					projectId: P,
+					generator: generate.id,
+					clipId: r.json.refs.$generator,
+				})
+			).code,
 		).toBe('E_INVALID_PARAM');
 		expect(
 			(await s.fail('add_title_generator', { projectId: P, generator: 'x', clipId: 'c', at: 0 })).code,
@@ -966,11 +1073,15 @@ describe('escape hatch (TL-104)', () => {
 		const s = await connect();
 		await s.ok('set_global_light', { projectId: P, angle: 120, altitude: 30 });
 		const seq = () => s.engine.doc().sequences[s.engine.seqId]!;
-		expect((seq().settings as { globalLight?: { angle: { value: number } } }).globalLight?.angle.value).toBe(120);
+		expect((seq().settings as { globalLight?: { angle: { value: number } } }).globalLight?.angle.value).toBe(
+			120,
+		);
 		await s.ok('set_global_light', { projectId: P, clear: true });
 		expect((seq().settings as { globalLight?: unknown }).globalLight).toBeUndefined();
 		expect((await s.fail('set_global_light', { projectId: P })).code).toBe('E_INVALID_PARAM');
-		expect((await s.fail('set_global_light', { projectId: P, altitude: 91 })).code).toBe('E_INVALID_ARGUMENT');
+		expect((await s.fail('set_global_light', { projectId: P, altitude: 91 })).code).toBe(
+			'E_INVALID_ARGUMENT',
+		);
 	});
 
 	it('get_clip_properties lists a look’s targets', async () => {
@@ -1019,14 +1130,23 @@ describe('effects discovery (TL-105)', () => {
 			commands: [{ type: 'clip.addSolid', at: 0, duration: 60, track: 'V1', color: [1, 0, 0, 1], ref: '$s' }],
 		});
 		const clipId = placed.json.refs.$s;
-		const add = await s.ok('add_effect', { projectId: P, clipId, effectId: 'jasper.gaussian-blur', params: { radius: 4 } });
+		const add = await s.ok('add_effect', {
+			projectId: P,
+			clipId,
+			effectId: 'jasper.gaussian-blur',
+			params: { radius: 4 },
+		});
 		expect(add.json.next).toContain('set_effect_param');
-		const fx = (s.engine.doc().sequences[s.engine.seqId]!.clips[clipId] as never as { effects: { id: string; params: Json }[] })
-			.effects[0]!;
+		const fx = (
+			s.engine.doc().sequences[s.engine.seqId]!.clips[clipId] as never as {
+				effects: { id: string; params: Json }[];
+			}
+		).effects[0]!;
 		expect(fx.params.radius.value).toBe(4);
 		await s.ok('set_effect_param', { projectId: P, effectInstanceId: fx.id, param: 'radius', value: 9 });
 		const read = () =>
-			(s.engine.doc().sequences[s.engine.seqId]!.clips[clipId] as never as { effects: { params: Json }[] }).effects[0]!;
+			(s.engine.doc().sequences[s.engine.seqId]!.clips[clipId] as never as { effects: { params: Json }[] })
+				.effects[0]!;
 		expect(read().params.radius.value).toBe(9);
 		await s.ok('set_effect_param', {
 			projectId: P,
@@ -1037,10 +1157,20 @@ describe('effects discovery (TL-105)', () => {
 			keyframe: true,
 		});
 		expect(read().params.radius.keyframes.length).toBeGreaterThan(0);
-		expect((await s.fail('set_effect_param', { projectId: P, effectInstanceId: fx.id, param: 'radius', value: 1, keyframe: true })).code).toBe(
-			'E_INVALID_PARAM',
-		);
+		expect(
+			(
+				await s.fail('set_effect_param', {
+					projectId: P,
+					effectInstanceId: fx.id,
+					param: 'radius',
+					value: 1,
+					keyframe: true,
+				})
+			).code,
+		).toBe('E_INVALID_PARAM');
 		expect((await s.fail('add_effect', { projectId: P, effectId: 'x' })).code).toBe('E_INVALID_PARAM');
-		expect((await s.fail('add_effect', { projectId: P, clipId, effectId: 'jasper.title-look' })).code).toMatch(/^E_/);
+		expect(
+			(await s.fail('add_effect', { projectId: P, clipId, effectId: 'jasper.title-look' })).code,
+		).toMatch(/^E_/);
 	});
 });

@@ -56,13 +56,11 @@ export function titleArtDraft(input: TitleArtInput): ProposalDraft {
 				meta: { ...option.meta, group: TITLE_ART_GROUP },
 				...(input.alternatives.length
 					? {
-							alternatives: input.alternatives
-								.slice(0, PROPOSAL_LIMITS.maxAlternatives)
-								.map((a) => ({
-									label: clip(a.label, PROPOSAL_LIMITS.maxLabel),
-									commands: a.commands,
-									meta: a.meta,
-								})),
+							alternatives: input.alternatives.slice(0, PROPOSAL_LIMITS.maxAlternatives).map((a) => ({
+								label: clip(a.label, PROPOSAL_LIMITS.maxLabel),
+								commands: a.commands,
+								meta: a.meta,
+							})),
 						}
 					: {}),
 			},

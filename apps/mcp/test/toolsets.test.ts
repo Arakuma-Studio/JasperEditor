@@ -613,9 +613,7 @@ describe('tool names in agent-facing text (AF-CTX-003/004/005)', () => {
 		const sources: [string, string][] = [
 			...Object.entries(await guideConstants()),
 			...tools.map((t) => [`tool ${t.name}`, t.description ?? ''] as [string, string]),
-			...PROPOSAL_FEATURES.map(
-				(f) => [`feature ${f.id}`, f.producers.join(' ')] as [string, string],
-			),
+			...PROPOSAL_FEATURES.map((f) => [`feature ${f.id}`, f.producers.join(' ')] as [string, string]),
 		];
 		const missing: string[] = [];
 		let total = 0;
@@ -626,7 +624,8 @@ describe('tool names in agent-facing text (AF-CTX-003/004/005)', () => {
 			}
 		expect([...new Set(missing)]).toEqual([]);
 		expect(total).toBeGreaterThan(500);
-		for (const t of ['list_effects', 'add_effect', 'set_effect_param']) expect(registered.has(t), t).toBe(true);
+		for (const t of ['list_effects', 'add_effect', 'set_effect_param'])
+			expect(registered.has(t), t).toBe(true);
 	});
 
 	it('the scan finds an unknown tool name, in plain text and in backticks', () => {
