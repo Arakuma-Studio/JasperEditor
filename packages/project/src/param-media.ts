@@ -63,10 +63,15 @@ export function templateMediaRefs(value: unknown): { path: string; mediaId: stri
 	return out;
 }
 
-/** Media ids a clip's template params reference (motion-graphic clips; empty for every other kind). */
+/**
+ * Media ids a clip's params reference: motion-graphic template params, and (spec 19 TL-021) the pattern tiles and
+ * reflection images of a look's layers.
+ */
 export function clipParamMediaIds(clip: Pick<Clip, 'kind'>): string[] {
-	if (clip.kind !== 'motion-graphic') return [];
-	return collectParamMediaIds((clip as { params?: unknown }).params);
+	const fxs = (clip as { effects?: { appearance?: { layers?: unknown } }[] }).effects;
+	const looks = fxs?.flatMap((fx) => (fx.appearance ? collectParamMediaIds(fx.appearance.layers) : [])) ?? [];
+	if (clip.kind !== 'motion-graphic') return looks;
+	return [...new Set([...collectParamMediaIds((clip as { params?: unknown }).params), ...looks])];
 }
 
 /**

@@ -169,10 +169,11 @@ export function isStaticLayer(
 		if (!spec) return false;
 		if (hasKeyframesDeep(fx.params)) return false;
 		if (hasKeyframesDeep(fx.puppet)) return false;
+		if (hasKeyframesDeep(fx.appearance)) return false; // spec 19
 		// A GPU shader effect that draws differently every frame (noise, flicker, time hooks,
 		// a media param bound to a video — conservative here: any bound media param that accepts videos).
 		const held = Object.fromEntries(Object.entries(fx.params).map(([k, a]) => [k, a.value]));
-		if (gpuIsTimeDependent(spec, held)) return false;
+		if (gpuIsTimeDependent(spec, held, undefined, fx)) return false;
 	}
 	// A vector shape with a self-animating Wiggle Paths (or keys / expressions in its contents).
 	const shape = 'shape' in c.source ? c.source.shape : undefined;

@@ -200,6 +200,8 @@ function idExists(doc: DDoc | ProjectDocument, id: string): boolean {
 	if (doc.fonts[id] || doc.sequences[id]) return true;
 	const styles = peek<Record<string, unknown>>(doc, 'textStyles');
 	if (styles && typeof styles === 'object' && peek(styles, id)) return true;
+	const looks = peek<Record<string, unknown>>(doc, 'titleLooks');
+	if (looks && typeof looks === 'object' && peek(looks, id)) return true;
 	const sequences = peek<Record<string, Sequence>>(doc, 'sequences')!;
 	for (const sid of peekKeys(sequences)) {
 		const seq = peek<Sequence>(sequences, sid)!;

@@ -34,6 +34,8 @@ import type { Mask } from '../../schema/mask.ts';
 import { PUPPET_PIN_PROPS } from '../../schema/puppet.ts';
 import { type EffectInstance, isKnownClipKind, type Track } from '../../schema/sequence.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
+import { type Appearance, globalLightOf } from '../../title-looks/model.ts';
+import { appearanceSlots, GLOBAL_LIGHT_PATH, LIGHT_PROPS } from '../../title-looks/properties.ts';
 import { shapeItemPropertySpecs } from '../../vector/properties.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import type { CommandOf, ParamPath } from '../schemas/index.ts';
@@ -122,6 +124,11 @@ export function clipAnimatables(seq: DSeq, clip: DClip): AnimLocation[] {
 				const a = pin[prop];
 				if (isAnim(a)) out.push({ anim: a as DAnim, path: ['puppetPin', pin.id, prop], seq, clip });
 			}
+	// spec 19 TL-014: everything an appearance animates.
+	for (const fx of (clip as { effects?: Draft<EffectInstance>[] }).effects ?? [])
+		if (fx.appearance)
+			for (const s of appearanceSlots(fx.id, fx.appearance as Appearance))
+				if (isAnim(s.anim)) out.push({ anim: s.anim as DAnim, path: s.path, seq, clip });
 	// S11:ATP-006: keyframed params of anime templates (dynamic `params.<name>` keys; edits validate through
 	// param.ts target resolution, which needs the template to be installed).
 	if (clip.kind === 'motion-graphic') {
@@ -159,6 +166,12 @@ export function allAnimatables(doc: DDoc): AnimLocation[] {
 		for (const t of [...seq.videoTracks, ...seq.audioTracks]) out.push(...trackAnimatables(seq, t));
 		if (isAnim(seq.master.volumeDb))
 			out.push({ anim: seq.master.volumeDb as DAnim, path: ['master', seq.id, 'volumeDb'], seq, clip: null });
+		// spec 19 TL-017: the sequence's light (sequence time).
+		const light = globalLightOf(seq as never) ? (seq.settings as { globalLight?: Record<string, unknown> }).globalLight : null;
+		if (light)
+			for (const k of LIGHT_PROPS)
+				if (isAnim(light[k]))
+					out.push({ anim: light[k] as DAnim, path: [GLOBAL_LIGHT_PATH, seq.id, k], seq, clip: null });
 		for (const fx of seq.master.effects)
 			for (const [name, a] of Object.entries(fx.params))
 				if (isAnim(a)) out.push({ anim: a, path: ['effect', fx.id, name], seq, clip: null });

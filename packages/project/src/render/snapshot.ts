@@ -49,6 +49,7 @@ import {
 	type EffectInstance,
 	isKnownClipKind,
 	type MgRenderer,
+	type Sequence,
 	type ShapeData,
 	type Speed,
 	type TextBox,
@@ -67,6 +68,7 @@ import {
 	syntheticSound,
 } from '../structure/synthetic.ts';
 import { type ResolvedTextAnimator, resolveTextAnimationWindows } from '../text-animations.ts';
+import { clipLook, type GlobalLight, globalLightOf } from '../title-looks/model.ts';
 import { flicksPerFrame, type Rational, rationalEquals } from '../time.ts';
 import { activeRemap, needsRetime, timeInterpolationOf } from '../time-remap/model.ts';
 import { transitionSideTrack, transitionTrackerOf } from '../tracking/transition.ts';
@@ -320,6 +322,11 @@ export type RenderVisualClip = {
 	opacity: Animatable<number>;
 	blendMode: BlendMode;
 	effects: EffectInstance[];
+	/**
+	 * spec 19 TL-017: the sequence's light with its keys in sequence time, on clips whose look follows it (the frame's
+	 * flicks convert a clip's content time back to sequence time).
+	 */
+	sequenceLight?: GlobalLight & { flicksPerFrame: number };
 	intrinsicBox: { width: number; height: number };
 	/** Layer Opacity masks; effect masks travel in effects[].masks. */
 	masks?: Mask[];
@@ -1173,6 +1180,7 @@ export function buildRenderSnapshot(
 				opacity: (r.opacity as Animatable<number> | undefined) ?? { value: 100, keyframes: [] },
 				blendMode: (r.blendMode as BlendMode | undefined) ?? 'normal',
 				effects: colorFx ? [colorFx, ...visibleEffects(effects)] : visibleEffects(effects),
+				...sequenceLightOf(effects, seq),
 				intrinsicBox: box,
 				...((r.masks as Mask[] | undefined)?.length ? { masks: r.masks as Mask[] } : {}),
 				// edit-structure: a nest renders with the engines its nested layers need. three-d: a 3D layer is drawn by
@@ -1610,6 +1618,18 @@ function colorEffectOf(c: Clip, doc: ProjectDocument, info: SequenceColorInfo): 
  * The effects renderers see: Expression Controls and other `passthrough` effects draw nothing and are left out
  * (expressions read them from the document). Returns the stored array when nothing is dropped.
  */
+/** spec 19 TL-017: what a clip needs to follow the sequence's light; nothing unless its look does. */
+function sequenceLightOf(
+	effects: readonly EffectInstance[],
+	seq: Sequence,
+): { sequenceLight?: RenderVisualClip['sequenceLight'] } {
+	const light = globalLightOf(seq);
+	if (!light || clipLook(effects)?.appearance?.light?.source !== 'sequence') return {};
+	return {
+		sequenceLight: { ...light, flicksPerFrame: flicksPerFrame(seq.settings.frameRate as Rational) },
+	};
+}
+
 function visibleEffects(effects: EffectInstance[] | undefined): EffectInstance[] {
 	if (!effects?.length) return [];
 	// color-grade: Lumetri instances with spatial steps get their GPU companion stage (registry/lumetri-spatial.ts).

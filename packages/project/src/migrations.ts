@@ -4,7 +4,13 @@
 import { subtitlesNeedRepair } from './captions/subtitles/model.ts';
 import type { Issue } from './commands/types.ts';
 import { createRandomIdSource, type IdSource } from './ids.ts';
-import { checkInvariants, nullPrototypeRecords, type RepairEntry, repairDocument } from './invariants.ts';
+import {
+	checkInvariants,
+	nullPrototypeRecords,
+	type RepairEntry,
+	repairDocument,
+	titleLooksNeedRepair,
+} from './invariants.ts';
 import { dropUnreadableKeySides } from './keyframes.ts';
 import type { EffectRegistry } from './registry/effects.ts';
 import type { MgTemplateRegistry } from './registry/mg.ts';
@@ -147,6 +153,11 @@ export const MIGRATIONS: readonly MigrationStep[] = [
 	// (`ProjectDocument.agentNotes`). Existing data needs no changes; the bump makes v10 builds open v11 files
 	// read-only, so a build that cannot show, check or repair the brief and notes never edits a project that has them.
 	{ from: 10, to: 11, migrate: (doc) => doc },
+	// v12 (Title Looks, spec 19): looks on clips (`EffectInstance.appearance`), project looks
+	// (`ProjectDocument.titleLooks`) and the sequence's light (`Sequence.settings.globalLight`). Existing data needs no
+	// changes; the bump makes v11 builds open v12 files read-only: they would draw a look's clip without it (an unknown
+	// effect is bypassed), and their orphan collection would drop media only a look layer references.
+	{ from: 11, to: 12, migrate: (doc) => doc },
 ];
 
 /** Data that is not a loadable project (not an object, an unknown format, no migration path, schema mismatch). */
@@ -256,7 +267,8 @@ export function loadProject(
 		issues.length > 0 ||
 		soundDesignNeedsRepair(document) ||
 		textStylesNeedRepair(document) ||
-		subtitlesNeedRepair(document)
+		subtitlesNeedRepair(document) ||
+		titleLooksNeedRepair(document)
 	) {
 		const r = repairDocument(document, opts.ids ?? createRandomIdSource(), { mgTemplates: opts.mgTemplates });
 		document = r.document;

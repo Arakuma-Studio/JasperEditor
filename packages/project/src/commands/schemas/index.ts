@@ -38,6 +38,7 @@ import { SUBTITLE_COMMANDS } from './subtitles.ts';
 import { TEXT_ANIMATOR_COMMANDS } from './text-animators.ts';
 import { TEXT_STYLE_COMMANDS } from './text-style.ts';
 import { THREE_D_COMMANDS } from './three-d.ts';
+import { TITLE_LOOK_COMMANDS } from './title-look.ts';
 import { TIME_COMMANDS } from './time.ts';
 import { TRACKER_COMMANDS } from './tracker.ts';
 
@@ -80,6 +81,7 @@ export * from './subtitles.ts';
 export * from './text-animators.ts';
 export * from './text-style.ts';
 export * from './three-d.ts';
+export * from './title-look.ts';
 export * from './time.ts';
 export * from './tracker.ts';
 
@@ -112,6 +114,7 @@ export const ALL_COMMAND_SCHEMAS = [
 	...EDIT_UX_COMMANDS,
 	...COLOR_MGMT_COMMANDS,
 	...THREE_D_COMMANDS,
+	...TITLE_LOOK_COMMANDS,
 	...INTERPRET_COMMANDS,
 	...PREVIEWS_COMMANDS,
 	...GAPS_COMMANDS,

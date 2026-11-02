@@ -116,6 +116,6 @@ export function hasTimeDependentFx(
 	return clip.effects.some((fx) => {
 		if (!fx.enabled) return false;
 		const spec = registry.get(fx.effectId, fx.effectVersion);
-		return !!spec && gpuIsTimeDependent(spec, heldParams(fx), mediaKind);
+		return !!spec && gpuIsTimeDependent(spec, heldParams(fx), mediaKind, fx);
 	});
 }

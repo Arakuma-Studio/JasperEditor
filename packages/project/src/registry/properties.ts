@@ -31,6 +31,8 @@ import type { ProjectDocument } from '../schema/document.ts';
 import type { Mask } from '../schema/mask.ts';
 import type { MgCompositionInfo } from '../schema/media.ts';
 import { PUPPET_PIN_LABELS, type PuppetPinKind, type PuppetPinProp } from '../schema/puppet.ts';
+import type { Appearance } from '../title-looks/model.ts';
+import { appearanceAnimAt, appearancePropertySpecs } from '../title-looks/properties.ts';
 import {
 	BLEND_MODES,
 	type Clip,
@@ -1962,6 +1964,14 @@ export function resolvePropertySpec(
 	composition?: Pick<MgCompositionInfo, 'propsSchema' | 'defaultProps' | 'ui'> | null,
 	clip?: TextAnimated,
 ): PropertySpec | undefined {
+	// spec 19 TL-014: `appearance.<fxId>.<slot>.<name>` (given the clip).
+	if (key.startsWith('appearance.')) {
+		const fxs = (clip as { effects?: EffectInstance[] } | undefined)?.effects ?? [];
+		const fx = fxs.find((e) => e.id === key.split('.')[1]);
+		return fx?.appearance
+			? appearancePropertySpecs(fx, fx.appearance as Appearance).find((s) => s.key === key)
+			: undefined;
+	}
 	// wp shapes: `shape.items.<itemId>.<field…>` of vector shapes (given the clip).
 	if (key.startsWith(SHAPE_ITEM_KEY_PREFIX))
 		return clip ? shapeItemPropertySpecs(clip as Pick<Clip, 'kind'>).find((s) => s.key === key) : undefined;
@@ -2037,6 +2047,13 @@ function readStoredProperty(ctx: PropertyContext, s: PropertySpec): unknown {
 		const c = ctx.clip as { effects?: EffectInstance[] };
 		const pin = c.effects?.flatMap((fx) => fx.puppet?.pins ?? []).find((x) => x.id === a);
 		return pin ? (pin as Record<string, unknown>)[b!] : undefined;
+	}
+	// spec 19 TL-014: `['$appearance', fxId, slot, name]`.
+	if (head === '$appearance') {
+		const fx = ((ctx.clip as { effects?: EffectInstance[] }).effects ?? []).find((e) => e.id === a);
+		return fx?.appearance
+			? appearanceAnimAt(fx.appearance as Appearance, b!, s.storagePath[3]!)
+			: undefined;
 	}
 	// wp-m2-anime-templates (S11:ATP-006): keyframable template params read as an Animatable view.
 	if (s.group === 'params' && s.animatable !== 'no') {
@@ -2269,6 +2286,8 @@ export function propertyKeyToParamPath(owner: PropertyOwner, key: string): Param
 		const [, fxId, ...param] = key.split('.');
 		return ['effect', fxId!, param.join('.')];
 	}
+	// spec 19 TL-014: `appearance.<fxId>.<slot>.<name>` → `["appearance", fxId, slot, name]`.
+	if (key.startsWith('appearance.')) return key.split('.');
 	// sim-warp: `puppet.<pinId>.<prop>` → `["puppetPin", pinId, prop]`.
 	if (key.startsWith('puppet.')) {
 		const [, pinId, prop] = key.split('.');

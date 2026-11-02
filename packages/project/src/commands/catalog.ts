@@ -47,6 +47,7 @@ import { STYLE_RECIPES_OWNER, styleRecipeHandlers } from './handlers/style-recip
 import { SUBTITLES_OWNER, subtitleHandlers } from './handlers/subtitles.ts';
 import { TEXT_ANIMATOR_OWNER, textAnimatorHandlers } from './handlers/text-animators.ts';
 import { TEXT_STYLE_OWNER, textStyleHandlers } from './handlers/text-style.ts';
+import { TITLE_LOOK_OWNER, titleLookHandlers } from './handlers/title-look.ts';
 import { THREE_D_OWNER, threeDHandlers } from './handlers/three-d.ts';
 import { timeHandlers } from './handlers/time.ts';
 import { trackerHandlers } from './handlers/tracker.ts';
@@ -90,6 +91,7 @@ export type CommandOwner =
 	| 'keyframe-ease'
 	| 'sound-design'
 	| 'text-styles'
+	| 'title-looks'
 	| 'subtitles'
 	| 'edit-automation'
 	| 'transcript-cleanup'
@@ -415,6 +417,24 @@ const LABELS: Record<CommandType, string> = {
 	'textStyle.apply': 'Apply Text Style',
 	'textStyle.detach': 'Detach From Text Style',
 	'textStyle.reset': 'Reset to Text Style',
+	// spec 19 TL-018: Title Looks.
+	'look.apply': 'Apply Look',
+	'look.remove': 'Remove Look',
+	'look.detach': 'Detach From Look',
+	'look.reset': 'Reset to Look',
+	'look.setColorway': 'Change Colourway',
+	'look.create': 'New Look',
+	'look.update': 'Update Look',
+	'look.rename': 'Rename Look',
+	'look.delete': 'Delete Look',
+	'appearance.addLayer': 'Add Layer',
+	'appearance.removeLayer': 'Remove Layer',
+	'appearance.reorderLayer': 'Reorder Layers',
+	'appearance.setLayerEnabled': 'Show or Hide Layer',
+	'appearance.setPaint': 'Change Paint',
+	'appearance.setGradient': 'Change Gradient',
+	'sequence.setGlobalLight': 'Global Light',
+	'clip.addGenerator': 'Add Generator',
 	// spec 13 AS-001…AS-020: automatic subtitles and subtitle templates.
 	'captions.generate': 'Create Subtitles',
 	'captions.regenerate': 'Regenerate Subtitles',
@@ -487,6 +507,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[soundMixHandlers, SOUND_DESIGN_OWNER],
 	[soundBedHandlers, SOUND_DESIGN_OWNER],
 	[textStyleHandlers, TEXT_STYLE_OWNER],
+	[titleLookHandlers, TITLE_LOOK_OWNER],
 	[subtitleHandlers, SUBTITLES_OWNER],
 	[batchHandlers, BATCH_OWNER],
 	[cleanupHandlers, CLEANUP_OWNER],
@@ -531,6 +552,7 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === EASE_OWNER ||
 				owner === SOUND_DESIGN_OWNER ||
 				owner === TEXT_STYLE_OWNER ||
+				owner === TITLE_LOOK_OWNER ||
 				owner === SUBTITLES_OWNER ||
 				owner === BATCH_OWNER ||
 				owner === CLEANUP_OWNER ||

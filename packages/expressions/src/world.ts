@@ -14,6 +14,9 @@
 // `value`, `thisProperty` and every global function work.
 import {
 	type Animatable,
+	type Appearance,
+	appearanceAnimAt,
+	appearanceSlots,
 	type CameraClip,
 	type CameraState,
 	type Clip,
@@ -34,11 +37,14 @@ import {
 	findItem,
 	flicksPerFrame,
 	getPropertySpec,
+	globalLightOf,
 	hasActiveExpression,
 	invertMat3,
 	isShapeOutlineItem,
 	type Keyframe,
 	kindCapabilities,
+	LIGHT_SPECS,
+	type LightProp,
 	type Layer3D,
 	layerMapOf,
 	layerWorldMatrix,
@@ -58,6 +64,8 @@ import {
 	type RenderVisualClip,
 	resolveLayerProps,
 	resolvePropertySpec,
+	slotLabel,
+	slotParamSpec,
 	resolveTextAnimatorSpec,
 	type Sequence,
 	type ShapeItem,
@@ -401,8 +409,13 @@ export class World {
 			if (!spec) return Object.keys(fx.params).map((n) => leaf(`${group}.${n}`, n, n));
 			// a Puppet effect lists its pins (effect("Puppet")("Puppet Pin 1").position).
 			const pins = fx.puppet?.pins ?? [];
+			// spec 19: a look lists what its appearance animates (effect("Title Look")("Rim Width")).
+			const look = fx.appearance as Appearance | undefined;
 			return [
 				...spec.params.map((p) => leaf(`${group}.${p.name}`, p.label, p.name)),
+				...(look
+					? appearanceSlots(fx.id, look).map((s) => leaf(s.key, slotLabel(look, s.key), s.key.split('.')[3]!))
+					: []),
 				...pins.map((pin) => ({
 					path: `puppet.${pin.id}`,
 					group: true,
@@ -591,6 +604,43 @@ export class World {
 		const base = { ref, time };
 		const indexIn = (group: string) =>
 			Math.max(1, this.children(info, group).findIndex((n) => n.path === ref.path) + 1);
+		// spec 19 TL-014: `appearance.<fxId>.<slot>.<name>`.
+		if (ref.path.startsWith('appearance.') && info.kind === 'clip') {
+			const [, fxId, slot, name] = ref.path.split('.');
+			const fx = this.effectsOf(info).find((e) => e.id === fxId);
+			const look = fx?.appearance as Appearance | undefined;
+			const anim = look ? appearanceAnimAt(look, slot!, name!) : undefined;
+			const s = look ? slotParamSpec(look, slot!, name!) : null;
+			if (!look || !anim || !s || s.spec.type === 'paint') return null;
+			return {
+				...base,
+				name: slotLabel(look, ref.path),
+				matchName: name!,
+				kind: propKind(s.spec.type, s.spec.ui?.control),
+				options: s.spec.options,
+				opts: s.spec.animatable ? {} : { holdOnly: true },
+				anim,
+				expression: anim.expression,
+				propertyIndex: indexIn(`effects.${fxId}`),
+			};
+		}
+		// spec 19 TL-017: the sequence's light.
+		if (ref.path.startsWith('globalLight.') && info.kind === 'master') {
+			const prop = ref.path.slice('globalLight.'.length) as LightProp;
+			const light = globalLightOf(info.seq);
+			const spec = LIGHT_SPECS[prop];
+			if (!light || !spec) return null;
+			return {
+				...base,
+				name: spec.label,
+				matchName: prop,
+				kind: 'number',
+				opts: {},
+				anim: light[prop],
+				expression: light[prop].expression,
+				propertyIndex: 1,
+			};
+		}
 		if (ref.path.startsWith('effects.') && info.kind !== 'transition') {
 			const [, fxId, ...rest] = ref.path.split('.');
 			const name = rest.join('.');

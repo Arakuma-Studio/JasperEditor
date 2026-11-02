@@ -4,6 +4,7 @@ import type { ProjectStyleRecipes } from '../automation/recipes.ts';
 import type { ProjectAgentNotes } from '../brief/model.ts';
 import type { SubtitleTemplate } from '../captions/subtitles/templates.ts';
 import type { ProjectTextStyle } from '../text-styles/model.ts';
+import type { TitleLook } from '../title-looks/model.ts';
 import type { DeepStrip } from './common.ts';
 import { int, LabelColorSchema, nonNegInt } from './common.ts';
 import {
@@ -39,7 +40,7 @@ import { CaptionStyleSchema, ClipMarkerSchema, type Sequence, SequenceSchema } f
  * v11 (agent footage editing, spec 18 AF-BRF): `Sequence.brief` and `ProjectDocument.agentNotes`; version bump only,
  * so v10 builds — which neither show, check nor repair them, and whose agents cannot read them — open v11 files
  * read-only (docs/project-files.md). */
-export const CURRENT_SCHEMA_VERSION = 11;
+export const CURRENT_SCHEMA_VERSION = 12;
 
 const markSchema = z.looseObject({ flicks: nonNegInt() });
 export const SourceMarksSchema = z.looseObject({
@@ -263,6 +264,11 @@ export const ProjectDocumentSchema = z.looseObject({
 	 * Read leniently (INV-AGENT-NOTES checks it, `repairAgentNotes` keeps the readable entries on load); absent = none.
 	 */
 	agentNotes: z.custom<ProjectAgentNotes>(() => true).optional(),
+	/**
+	 * spec 19 TL-015 (schema v12): looks used by this project, by id (`tlk_…`), copied in on first use. Read leniently
+	 * (INV-APPEARANCE checks it, `repairTitleLooks` keeps the readable entries on load); absent = none.
+	 */
+	titleLooks: z.custom<Record<string, TitleLook>>(() => true).optional(),
 });
 
 export type ProjectDocument = {
@@ -286,6 +292,8 @@ export type ProjectDocument = {
 	styleRecipes?: ProjectStyleRecipes;
 	/** spec 18 AF-BRF-002: agent notes (absent = none; see `brief/model.ts`). */
 	agentNotes?: ProjectAgentNotes;
+	/** spec 19 TL-015: looks used by this project (absent = none; see `title-looks/model.ts`). */
+	titleLooks?: Record<string, TitleLook>;
 };
 
 export type ProjectEnvelope = {

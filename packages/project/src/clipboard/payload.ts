@@ -15,6 +15,7 @@ import {
 	type RationalT,
 } from '../schema/common.ts';
 import { type ProjectItem, ProjectItemSchema } from '../schema/document.ts';
+import type { TitleLook } from '../title-looks/model.ts';
 import {
 	type FontRef,
 	FontRefSchema,
@@ -137,6 +138,8 @@ export const ClipboardPayloadSchema = z
 		synthetics: z.array(SyntheticSourceSchema),
 		transcripts: z.array(TranscriptSchema),
 		fonts: z.array(FontRefSchema),
+		/** spec 19 TL-015: project looks the copied clips link to (absent = none; read leniently at paste). */
+		titleLooks: z.array(z.custom<TitleLook>(() => true)).optional(),
 		/** Name and label of a copied media's project item (used when a paste adds the asset to a project). */
 		mediaItems: z.record(z.string(), z.looseObject({ name: z.string(), label: LabelColorSchema })).optional(),
 	})
@@ -193,6 +196,7 @@ export type ClipboardPayload = {
 	synthetics: SyntheticSource[];
 	transcripts: Transcript[];
 	fonts: FontRef[];
+	titleLooks?: TitleLook[];
 	mediaItems?: Record<string, { name: string; label: LabelColor }>;
 };
 

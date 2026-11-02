@@ -44,6 +44,8 @@ import { scaleAnimationFrames } from '../../text-animations.ts';
 import { flicksPerFrame, fpsOf, type Rational } from '../../time.ts';
 import { isRemapped, type TimedClip } from '../../time-remap/model.ts';
 import { reidItems } from '../../vector/defaults.ts';
+import { type Appearance, MAX_TITLE_LOOKS, TITLE_LOOK_CLIP_KINDS, TITLE_LOOK_EFFECT_ID, type TitleLook } from '../../title-looks/model.ts';
+import { titleLookProblem } from '../../title-looks/validate.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { peekIn, valuesOf } from '../draft-read.ts';
 import {
@@ -94,6 +96,7 @@ class Resolver {
 	private readonly synthetics = new Map<string, string>();
 	private readonly transcripts = new Map<string, string>();
 	private readonly fonts = new Map<string, string>();
+	private readonly titleLooks = new Map<string, string | null>();
 	readonly createdMedia: string[] = [];
 	readonly reusedMedia: string[] = [];
 	private readonly same: boolean;
@@ -237,6 +240,69 @@ class Resolver {
 		return newId;
 	}
 
+	/**
+	 * spec 19 TL-015: a look named by copied content, in this project. The same look keeps its id; another project's
+	 * copy comes along under a new id, reusing one with the same library source; a look the payload does not hold only
+	 * unlinks the clip (null), which keeps its values.
+	 */
+	titleLookId(id: string): string | null {
+		const known = this.titleLooks.get(id);
+		if (known !== undefined) return known;
+		const rec = (this.doc as { titleLooks?: Record<string, TitleLook> }).titleLooks;
+		const here = this.same && rec && Object.hasOwn(rec, id) ? id : null;
+		const raw = (this.p.titleLooks ?? []).find((l) => (l as { id?: unknown })?.id === id);
+		let out: string | null = here;
+		if (!out && raw && !titleLookProblem(id, raw)) {
+			const twin = raw.sourceId
+				? Object.values(rec ?? {}).find((l) => l.sourceId === raw.sourceId)
+				: undefined;
+			if (twin) out = twin.id;
+			else if (Object.keys(rec ?? {}).length < MAX_TITLE_LOOKS) {
+				const newId = this.h.ids.next('tlk');
+				const d = this.doc as { titleLooks?: Record<string, TitleLook> };
+				d.titleLooks ??= {};
+				const taken = new Set(Object.values(d.titleLooks).map((l) => l.name));
+				let name = raw.name;
+				for (let i = 2; taken.has(name); i++) name = `${raw.name.slice(0, 100)} ${i}`;
+				const copy = { ...clone(raw), id: newId, name };
+				this.remapLayerMedia(copy.appearance.layers);
+				d.titleLooks[newId] = copy;
+				out = newId;
+			}
+		}
+		this.titleLooks.set(id, out);
+		return out;
+	}
+
+	/** `{mediaId}` values of a look's layers, keyframes included. */
+	private remapLayerMedia(layers: readonly { params: Record<string, unknown> }[] | undefined): void {
+		const visit = (v: unknown): void => {
+			if (!v || typeof v !== 'object') return;
+			if (Array.isArray(v)) {
+				v.forEach(visit);
+				return;
+			}
+			const o = v as { mediaId?: unknown };
+			if (typeof o.mediaId === 'string' && o.mediaId) o.mediaId = this.mediaId(o.mediaId);
+			else Object.values(v).forEach(visit);
+		};
+		for (const l of layers ?? []) visit(l.params);
+	}
+
+	/** spec 19: a copied look's link and media, in this project. */
+	remapEffectLook(fx: Draft<EffectInstance> | EffectInstance): void {
+		const a = fx.appearance as Appearance | undefined;
+		if (!a) return;
+		this.remapLayerMedia(a.layers);
+		if (a.lookId === undefined) return;
+		const id = this.titleLookId(a.lookId);
+		if (id) a.lookId = id;
+		else {
+			delete a.lookId;
+			delete a.lookOverrides;
+		}
+	}
+
 	/** `{mediaId}` param values (LUTs) of effects, keyframes included. */
 	remapEffectMedia(effects: Draft<EffectInstance>[] | EffectInstance[] | undefined): void {
 		const fix = (v: unknown) => {
@@ -244,11 +310,13 @@ class Resolver {
 			if (o && typeof o === 'object' && !Array.isArray(o) && typeof o.mediaId === 'string' && o.mediaId)
 				(o as { mediaId: string }).mediaId = this.mediaId(o.mediaId);
 		};
-		for (const fx of effects ?? [])
+		for (const fx of effects ?? []) {
 			for (const a of Object.values(fx.params)) {
 				fix(a.value);
 				for (const k of a.keyframes) fix(k.value);
 			}
+			this.remapEffectLook(fx);
+		}
 	}
 
 	/** Remaps every entity reference of a copied clip; false when its nested sequence cannot be resolved. */
@@ -640,6 +708,19 @@ function applyAttributes(
 				resolver.remapEffectMedia([copy]);
 				for (const a of Object.values(copy.params))
 					a.keyframes = retimeKeys(a.keyframes, src, to, h, !!opts.scale);
+				// spec 19 TL-010: a pasted look replaces the clip's look (at most one), and its keys follow the clip.
+				if (fx.effectId === TITLE_LOOK_EFFECT_ID) {
+					if (!(TITLE_LOOK_CLIP_KINDS as readonly string[]).includes(t.kind)) continue;
+					retimeAll(copy.appearance, src, to, h, !!opts.scale);
+					const had = list.findIndex((e) => e.effectId === TITLE_LOOK_EFFECT_ID);
+					if (had >= 0) {
+						(list[had] as { appearance?: unknown }).appearance = copy.appearance;
+						list[had]!.enabled = copy.enabled;
+					} else list.splice(0, 0, { ...copy, params: {}, id: h.ids.next('fx') } as never);
+					if (had < 0) at++;
+					done.push(`effect:${fx.id}`);
+					continue;
+				}
 				const instance: EffectInstance = spec
 					? {
 							id: h.ids.next('fx'),

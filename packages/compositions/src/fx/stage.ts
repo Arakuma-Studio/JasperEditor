@@ -21,6 +21,7 @@ import {
 	type FxParamsAt,
 	type FxStepTime,
 	type FxTimeStep,
+	type FxStructures,
 	type FxUniform,
 	flattenPath,
 	fxBuiltinUniforms,
@@ -41,6 +42,7 @@ import {
 	type ResolvedEffect,
 	type ResolvedMask,
 	remapSourceAt,
+	titleLookStructure,
 	rotoFrameState,
 	rotoFrameUrl,
 	sideCompToCanvas,
@@ -271,7 +273,7 @@ export function useLayerFx(
 			const hit = cache.get(fxId);
 			if (hit !== undefined) return hit;
 			const inst = byId.get(fxId);
-			const k = `${timing}|${fxId}|${hashString(JSON.stringify(inst?.params ?? null))}|${hashString(JSON.stringify(inst?.puppet ?? null))}|${inst?.warpAnalysis?.key ?? ''}`;
+			const k = `${timing}|${fxId}|${hashString(JSON.stringify(inst?.params ?? null))}|${hashString(JSON.stringify(inst?.puppet ?? null))}|${inst?.warpAnalysis?.key ?? ''}|${hashString(JSON.stringify(inst?.appearance ?? null))}`;
 			cache.set(fxId, k);
 			return k;
 		};
@@ -290,6 +292,15 @@ export function useLayerFx(
 		() => ('text' in clip.source ? textContentPad(clip.source.text) : 0),
 		[clip],
 	);
+	// spec 19: a look's appearance at this frame, its stored form and its unit (what the planner and padding read).
+	const structuresOf = useMemo(() => {
+		const byId = new Map(clip.effects.map((e) => [e.id, e]));
+		return (fx: ResolvedEffect): FxStructures | undefined => {
+			if (!fx.appearance) return undefined;
+			const titleLook = titleLookStructure(fx.appearance, byId.get(fx.id)?.appearance, clip, fps, contentTime);
+			return { titleLook };
+		};
+	}, [clip, fps, contentTime]);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `failures` re-plans when a shader fails
 	const plan = useMemo(
 		() =>
@@ -302,6 +313,7 @@ export function useLayerFx(
 						colorBypass,
 						ctx: { width: box.width, height: box.height, pxScale: 1, fps, frame: realFrame },
 						paramsAt: paramsAtOf,
+						structures: structuresOf,
 						mediaKind,
 						clip: clipInfo,
 						capture,
@@ -322,6 +334,7 @@ export function useLayerFx(
 			failures,
 			capture,
 			paramsAtOf,
+			structuresOf,
 			mediaKind,
 			clipInfo,
 			props.masks,
@@ -506,6 +519,7 @@ export function useLayerFx(
 							return h?.kind === 'image' ? fxPixelsOf(h.url) : null;
 						},
 						structures: {
+							...structuresOf(s.fx),
 							...(s.fx.puppet ? { puppet: s.fx.puppet } : {}),
 							...(s.fx.warpAnalysis ? { warpAnalysis: s.fx.warpAnalysis } : {}),
 							...(layerMasks.length ? { masks: layerMasks } : {}),
@@ -580,9 +594,11 @@ export function useLayerFx(
 						} else if (h.kind === 'image' || h.kind === 'video')
 							media.set(t.mediaId, { mediaId: t.mediaId, url: h.url, kind: h.kind });
 					}
+					// Pass uniforms too: a look's layer values and blur sizes live there, and they change the picture.
+					const passKey = gp.passes.map((pp) => fxUniformsKey(pp.uniforms)).join('|');
 					return {
 						kind: 'gpu',
-						key: `${gp.key}|${fxUniformsKey(gp.uniforms)}|${seed}|${frames.join(',')}/${st?.valid ?? 0}`,
+						key: `${gp.key}|${fxUniformsKey(gp.uniforms)}|${passKey}|${seed}|${frames.join(',')}/${st?.valid ?? 0}`,
 						plan: gp,
 						seed,
 						sampleOffsets: offsets,
@@ -696,6 +712,7 @@ export function useLayerFx(
 		pixelsVersion,
 		layerMasks,
 		doc.working,
+		structuresOf,
 	]);
 
 	// spec 13 AS-075: the Program preview draws lowered layers with Canvas 2D (no WebGL passes or read-back per frame).
