@@ -79,8 +79,31 @@ export const EffectInstanceSchema = z.looseObject({
 	 * analysed). See `gaps/warp/analysis.ts`.
 	 */
 	warpAnalysis: WarpAnalysisDataSchema.optional(),
+	/**
+	 * spec 19 TL-121: where this instance's seeded pattern comes from. A razor cut, a duplicate and a paste give the
+	 * new instance new ids; this keeps the pattern: `u_seed` hashes `clipId` / `effectId` of the origin instead of the
+	 * instance's own ids, and `u_frame` / `u_time` continue from `frame` (the clip-local frame the instance started
+	 * at in the original clip). Absent = the instance is its own origin at frame 0. Read leniently
+	 * (`readPatternOrigin`).
+	 */
+	patternOrigin: z.custom<PatternOrigin>(() => true).optional(),
 });
 export type EffectInstance = DeepStrip<z.infer<typeof EffectInstanceSchema>>;
+
+/** Persisted identity of a seeded effect pattern (`EffectInstance.patternOrigin`). */
+export type PatternOrigin = { clipId: string; effectId: string; frame: number };
+/** Largest frame offset a stored origin may carry (a day of 60 fps video; anything beyond is damaged data). */
+export const PATTERN_ORIGIN_MAX_FRAME = 5_184_000;
+
+/** A stored `patternOrigin`, or null when it is absent or unreadable (the instance is then its own origin). */
+export function readPatternOrigin(v: unknown): PatternOrigin | null {
+	if (!v || typeof v !== 'object') return null;
+	const { clipId, effectId, frame } = v as Record<string, unknown>;
+	if (typeof clipId !== 'string' || clipId === '' || typeof effectId !== 'string' || effectId === '')
+		return null;
+	const f = typeof frame === 'number' && Number.isFinite(frame) ? Math.round(frame) : 0;
+	return { clipId, effectId, frame: Math.min(PATTERN_ORIGIN_MAX_FRAME, Math.max(0, f)) };
+}
 
 // typography value schemas.
 export const TEXT_SCRIPTS = ['normal', 'superscript', 'subscript'] as const;

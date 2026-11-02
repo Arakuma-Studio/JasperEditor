@@ -9,6 +9,7 @@ import { type ResolvedPuppet, resolvePuppet } from '../puppet/model.ts';
 import { evaluateEffectParam } from '../registry/effects.ts';
 import type { ParamValue, Vec2 } from '../schema/common.ts';
 import { PUPPET_PIN_PROPS } from '../schema/puppet.ts';
+import { type PatternOrigin, readPatternOrigin } from '../schema/sequence.ts';
 import { activeCameraAt, type CameraState, project3dProps } from '../three-d/scene.ts';
 import { cropWindow } from './crop.ts';
 import {
@@ -33,6 +34,11 @@ import {
 	visibleRect,
 } from './transform.ts';
 
+const patternOriginField = (v: unknown): { patternOrigin?: PatternOrigin } => {
+	const o = readPatternOrigin(v);
+	return o ? { patternOrigin: o } : {};
+};
+
 export type ResolvedEffect = {
 	id: string;
 	effectId: string;
@@ -45,6 +51,8 @@ export type ResolvedEffect = {
 	puppet?: ResolvedPuppet;
 	/** gaps (FX-6): the Warp Stabilizer's stored analysis (not time-dependent). */
 	warpAnalysis?: WarpAnalysisData;
+	/** TL-121: the seeded pattern this instance continues (a razor cut, duplicate or paste of another instance). */
+	patternOrigin?: PatternOrigin;
 };
 
 /** Effect id of the corner pin (M2, S09:TRK-050). Params: TL/TR/BR/BL as vec2 normalized to the layer box. */
@@ -186,6 +194,7 @@ export function resolveLayerProps(c: LayerPropertySource, t: number): ResolvedLa
 		...(fx.masks?.length ? { masks: resolveMasks(fx.masks, t) } : {}),
 		...(fx.puppet ? { puppet: resolvePuppet(fx.puppet, t) } : {}),
 		...(fx.warpAnalysis ? { warpAnalysis: fx.warpAnalysis } : {}),
+		...patternOriginField(fx.patternOrigin),
 	}));
 	// crop-order: the window the stack's crops leave visible (flips after a crop mirror it; several intersect).
 	const crop: Crop | null = cropWindow(effects);

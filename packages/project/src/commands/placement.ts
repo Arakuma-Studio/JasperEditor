@@ -10,7 +10,14 @@ import { createTrack } from '../factories.ts';
 import { trackKindFor } from '../registry/kinds.ts';
 import { ROTO_OBJECT_PARAMS } from '../roto/index.ts';
 import type { Animatable } from '../schema/common.ts';
-import type { Clip, Sequence, TrackKind } from '../schema/sequence.ts';
+import {
+	type Clip,
+	type EffectInstance,
+	PATTERN_ORIGIN_MAX_FRAME,
+	readPatternOrigin,
+	type Sequence,
+	type TrackKind,
+} from '../schema/sequence.ts';
 import { followMixSplit, followSfxSplit, mixNamesClip, nestedEntityIds } from '../sound/repair.ts';
 import { contentSpanFlicks } from '../time.ts';
 import type { DClip, DSeq, DTrack, HandlerContext } from './context.ts';
@@ -177,8 +184,37 @@ export function setClipRange(seq: DSeq, clip: DClip, newStart: number, newEnd: n
 	clip.duration = newEnd - newStart;
 }
 
-/** Gives every nested entity (keyframes, effects, clip markers) a fresh id (S01:ID-005). */
-export function reidentifyClipChildren(clip: Clip, h: HandlerContext): void {
+/**
+ * TL-121: before a clip's effects get new ids, records where each GPU effect's seeded pattern comes from
+ * (`patternOrigin`), so a razor cut, duplicate or paste draws the pattern of the instance it copies. A split passes the
+ * frames the new part starts into the original clip (`u_frame` / `u_time` continue there); a duplicate or paste starts
+ * its own timeline at frame 0 of the copied instance, so it is an identical copy.
+ */
+function keepPatternOrigin(clip: Clip, h: HandlerContext, from: { clipId: string; frame: number }): void {
+	const c = clip as { trackId?: unknown; effects?: EffectInstance[] };
+	if (typeof c.trackId !== 'string' || !Array.isArray(c.effects)) return; // clips only (not tracks / master)
+	for (const fx of c.effects) {
+		if (!h.registries.effects.get(fx.effectId, fx.effectVersion)?.gpu) continue;
+		const was = readPatternOrigin(fx.patternOrigin);
+		fx.patternOrigin = {
+			clipId: was?.clipId ?? from.clipId,
+			effectId: was?.effectId ?? fx.id,
+			frame: Math.min(PATTERN_ORIGIN_MAX_FRAME, (was?.frame ?? 0) + from.frame),
+		};
+	}
+}
+
+/**
+ * Gives every nested entity (keyframes, effects, clip markers) a fresh id (S01:ID-005). GPU effects keep the identity
+ * of their seeded pattern (`patternOrigin`, TL-121); `from` names the original clip when the caller has already
+ * replaced `clip.id`, and the frames this copy starts into it (a razor cut's right part).
+ */
+export function reidentifyClipChildren(
+	clip: Clip,
+	h: HandlerContext,
+	from: { clipId?: string; frame?: number } = {},
+): void {
+	keepPatternOrigin(clip, h, { clipId: from.clipId ?? clip.id, frame: from.frame ?? 0 });
 	// trackers travel with the copy under new ids; a target's `trackedBy` follows its own
 	// corner-pin instance to the copy's new effect id.
 	const c = clip as {
@@ -298,7 +334,8 @@ export function splitClipAt(seq: DSeq, clip: DClip, at: number, h: HandlerContex
 	// sound design: a music clip the mix records write into keeps both parts in them (old → new child ids)
 	const followMix = mixNamesClip(seq as Sequence, clip.id);
 	const childIds = followMix ? nestedEntityIds(right) : [];
-	reidentifyClipChildren(right, h);
+	// the right part continues the pattern of the left (same seed, `u_frame` counting on from the cut).
+	reidentifyClipChildren(right, h, { clipId: clip.id, frame: at - clip.start });
 	right.linkId = null;
 	const oldEnd = end(clip);
 	right.start = at;

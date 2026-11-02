@@ -10,7 +10,7 @@
 // Player: draws on delivery and coalesces stage-driven redraws to one per animation frame (smooth paused scrubbing).
 // `FxDomPicture` is the DOM-layer variant: the layer's DOM content inside Remotion's `<HtmlInCanvas>`.
 
-import type { Lut } from '@jasper/project';
+import { fxOffsetBuiltins, type Lut } from '@jasper/project';
 import {
 	type CSSProperties,
 	createContext,
@@ -116,7 +116,10 @@ export function fxDescriptors(stage: FxStage, inputs: DescriptorInputs): EffectD
 						plan: s.plan,
 						preview: inputs.preview,
 						inputs: {
-							builtins: [...stage.builtins, { name: 'u_seed', type: 'float', value: [s.seed] }],
+							builtins: [
+								...fxOffsetBuiltins(stage.builtins, s.frameOffset),
+								{ name: 'u_seed', type: 'float', value: [s.seed] },
+							],
 							textures,
 							samples: {
 								sources: complete ? sources : [],

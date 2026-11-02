@@ -25,6 +25,7 @@ import {
 	flattenPath,
 	fxBuiltinUniforms,
 	fxClipProgress,
+	fxFrameOffset,
 	fxParamsAtFn,
 	fxSeed,
 	fxStackTime,
@@ -81,6 +82,8 @@ export type FxPreparedStep =
 			key: string;
 			plan: FxEffectPlan;
 			seed: number;
+			/** TL-121: frames added to `u_frame` / `u_time` (the instance continues a razor-cut pattern); 0 = none. */
+			frameOffset: number;
 			/** Requested offsets (`u_sampleOffsets`), request order. */
 			sampleOffsets: number[];
 			/** Source frame of each sample (absolute clip-local frame; null = transparent). */
@@ -419,7 +422,7 @@ export function useLayerFx(
 				id: fx.id,
 				spec,
 				params: fx.params,
-				seed: fxSeed(clip.clipId, fx.id, fx.params),
+				seed: fxSeed(clip.clipId, fx.id, fx.params, fx.patternOrigin),
 				clip: clipInfo,
 				...(paramsAt ? { paramsAt } : {}),
 			});
@@ -486,7 +489,8 @@ export function useLayerFx(
 		function prepareStep(s: Exclude<FxStep, { kind: 'mask' }>, i: number): FxPreparedStep {
 			switch (s.kind) {
 				case 'gpu': {
-					const seed = fxSeed(clip.clipId, s.fx.id, s.fx.params);
+					const seed = fxSeed(clip.clipId, s.fx.id, s.fx.params, s.fx.patternOrigin);
+					const frameOffset = fxFrameOffset(s.fx.patternOrigin);
 					const paramsAt = paramsAtOf(s.fx);
 					const ctx: FxFrameContext = {
 						width: box.width,
@@ -494,6 +498,7 @@ export function useLayerFx(
 						pxScale: L.pxScale,
 						fps,
 						frame: realFrame,
+						patternFrame: realFrame + frameOffset,
 						duration,
 						seed,
 						progress,
@@ -582,9 +587,10 @@ export function useLayerFx(
 					}
 					return {
 						kind: 'gpu',
-						key: `${gp.key}|${fxUniformsKey(gp.uniforms)}|${seed}|${frames.join(',')}/${st?.valid ?? 0}`,
+						key: `${gp.key}|${fxUniformsKey(gp.uniforms)}|${seed}|${frameOffset}|${frames.join(',')}/${st?.valid ?? 0}`,
 						plan: gp,
 						seed,
+						frameOffset,
 						sampleOffsets: offsets,
 						sampleFrames: frames,
 						sampleValid: st?.valid ?? 0,
