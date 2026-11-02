@@ -6,13 +6,18 @@ import {
 	contentTimeAt,
 	defaultEffectRegistry,
 	type EffectRegistry,
+	type EffectSpec,
+	effectParamMetric,
 	emojiTableKey,
 	evaluateVectorShape,
+	fxParamsAtFn,
 	gpuIsTimeDependent,
+	gpuPadding,
 	hasActiveExpression,
 	hasEffectMasks,
 	layerMapOf,
 	maskExportRoute,
+	type Rational,
 	type RenderSnapshot,
 	type RenderVisualClip,
 	resolveLayerProps,
@@ -546,13 +551,17 @@ const RECT_MAX_AREA_SHARE = 0.85;
 const RECT_BLEED_SHARE = 0.1;
 /**
  * Extra margin (layer px) around the layer box for what may draw outside it: text stroke, shadow and background
- * padding, text-animator travel (`distance`, `blur`, `scale` params), blur effects. Null = unknown (do not crop).
- * Motion graphics add none: both renderers clip to their canvas, which is the layer box (the fframes SVG, the anime
- * templates' `DesignStage`), so the Player shows exactly what the cropped bake renders.
+ * padding, text-animator travel (`distance`, `blur`, `scale` params), blur effects, and the `gpu.padding` of GPU effects
+ * (TL-122: the largest side any enabled GPU effect asks for over the clip's frames `span`, params evaluated at each
+ * frame, so a moving glow does not bake the full frame). Null = unknown (do not crop): an effect whose padding is not
+ * known (no `span`, a hook that throws, more than {@link MAX_PADDING_FRAMES} animated frames, an effect without a GPU
+ * realisation). Motion graphics add none: both renderers clip to their canvas, which is the layer box (the fframes
+ * SVG, the anime templates' `DesignStage`), so the Player shows exactly what the cropped bake renders.
  */
 export function contentBleed(
 	c: RenderVisualClip,
 	registry: EffectRegistry = defaultEffectRegistry,
+	span?: { f0: number; f1: number; fps: Rational },
 ): number | null {
 	let px = 0;
 	// spec 13 SH-004: the paint of every style (strokes, shadow offset + spread + 3 σ), glyph ink beyond the line
@@ -587,9 +596,57 @@ export function contentBleed(
 			px += 3 * r;
 			continue;
 		}
-		return null;
+		const spec = registry.get(fx.effectId, fx.effectVersion);
+		if (!spec?.gpu || !span) return null;
+		const pad = gpuBleed(c, fx, spec, span);
+		if (pad === null) return null;
+		px += pad;
 	}
 	return px;
+}
+
+/** Most frames whose padding is evaluated one by one; a longer animated span keeps the full-frame bake. */
+export const MAX_PADDING_FRAMES = 20_000;
+
+/**
+ * The largest side (layer px) of a GPU effect's `gpu.padding` over the frames `[f0, f1)`: params evaluated per frame
+ * when they animate (keyframes, expressions) or the effect is time dependent, else at the first frame. Null when it
+ * cannot be known.
+ */
+function gpuBleed(
+	c: RenderVisualClip,
+	fx: RenderVisualClip['effects'][number],
+	spec: EffectSpec,
+	span: { f0: number; f1: number; fps: Rational },
+): number | null {
+	const fps = span.fps.num / span.fps.den;
+	if (!(fps > 0) || !Number.isFinite(fps)) return null;
+	if (!spec.gpu?.padding) return 0;
+	const varies = hasKeyframesDeep(fx) || gpuIsTimeDependent(spec);
+	const last = varies ? span.f1 : Math.min(span.f1, span.f0 + 1);
+	if (last - span.f0 > MAX_PADDING_FRAMES) return null;
+	const metric = (name: string) => effectParamMetric(fx, name, c.intrinsicBox);
+	const paramsAt = fxParamsAtFn(fx, c, fps, undefined, metric);
+	let max = 0;
+	for (let f = span.f0; f < last; f++) {
+		const local = f - c.start;
+		try {
+			const p = paramsAt(local);
+			const pad = gpuPadding(spec, p, {
+				width: c.intrinsicBox.width,
+				height: c.intrinsicBox.height,
+				pxScale: 1,
+				fps,
+				frame: local,
+				paramsAt,
+			});
+			max = Math.max(max, pad.left, pad.top, pad.right, pad.bottom);
+		} catch {
+			return null;
+		}
+		if (!Number.isFinite(max)) return null;
+	}
+	return max;
 }
 
 /**
@@ -604,7 +661,7 @@ export function cropRect(
 	registry: EffectRegistry = defaultEffectRegistry,
 ): Rect | null {
 	if (!c.transform) return null;
-	const extra = contentBleed(c, registry);
+	const extra = contentBleed(c, registry, { ...frames, fps: seq.fps });
 	if (extra === null) return null;
 	const b = c.intrinsicBox;
 	const corners: [number, number][] = [
