@@ -86,16 +86,14 @@ const Stroke = z.looseObject({
 	position: z.string().max(32).optional(),
 	fillType: z.string().max(32).optional(),
 	size: Units.optional(),
-	gradient: z
-		.looseObject({
-			gradient: PsGradient.optional(),
-			style: z.string().max(32).optional(),
-			angle: finite.optional(),
-			scale: finite.optional(),
-			reverse: z.boolean().optional(),
-			offset: z.looseObject({ x: finite, y: finite }).optional(),
-		})
-		.optional(),
+	/** ag-psd keeps a stroke's gradient flat: stops and geometry in one object. */
+	gradient: PsGradient.extend({
+		style: z.string().max(32).optional(),
+		angle: finite.optional(),
+		scale: finite.optional(),
+		reverse: z.boolean().optional(),
+		offset: z.looseObject({ x: finite, y: finite }).optional(),
+	}).optional(),
 	pattern: z.looseObject({ name: z.string().max(256).optional() }).optional(),
 });
 const Bevel = z.looseObject({
@@ -480,7 +478,7 @@ export function mapPsStyle(src: PsStyle, sizePx: number): PsStyleLook {
 			return solid;
 		}
 		if (s.fillType === 'gradient' && s.gradient)
-			return gradientPaint({ ...s.gradient, gradient: s.gradient.gradient }, report, label) ?? solid;
+			return gradientPaint({ ...s.gradient, gradient: s.gradient }, report, label) ?? solid;
 		return solid;
 	};
 	shown.forEach(({ stroke: s, reach: r }, i) => {

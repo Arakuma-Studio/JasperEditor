@@ -23,6 +23,8 @@ export class StyleFileError extends Error {
 
 const decodeGrdT = GrdT.decode;
 GrdT.decode = (v: string) => (v === 'GrdT.shapeburst' ? ('shapeburst' as never) : decodeGrdT(v));
+// The regression test swaps the decoder back to show what this answers.
+Object.defineProperty(GrdT, 'upstreamDecode', { value: decodeGrdT, enumerable: false });
 
 const DEFAULT_PX = 100;
 
