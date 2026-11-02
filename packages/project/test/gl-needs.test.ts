@@ -64,9 +64,27 @@ describe('snapshotGlNeeds', () => {
 		expect(ids(snap([clip('a')], { transitions: [{ id: 't1', effectId: 'jasper.push' }] }))).toEqual([
 			'transition:jasper.push',
 		]);
-		expect(ids(snap([clip('a', { effects: [fx('jasper.crop', { masks: [{}] })] })]))).toEqual([
+		const mask = (mode = 'add') => ({
+			mode,
+			path: { value: { closed: true, vertices: [{}, {}, {}] }, keyframes: [] },
+		});
+		expect(ids(snap([clip('a', { effects: [fx('jasper.crop', { masks: [mask()] })] })]))).toEqual([
 			'effect-masks:jasper.crop',
 		]);
+		expect(ids(snap([clip('a', { masks: [mask()] })]))).toEqual(['masks:masks']);
+		// a mask that draws nothing (mode none, an open path) needs no WebGL
+		expect(
+			ids(
+				snap([
+					clip('a', {
+						masks: [
+							mask('none'),
+							{ mode: 'add', path: { value: { closed: false, vertices: [{}, {}] }, keyframes: [] } },
+						],
+					}),
+				]),
+			),
+		).toEqual([]);
 		expect(ids(snap([clip('a', { blendMode: hard })]))).toEqual([`blend:${hard}`]);
 		expect(ids(snap([clip('a', { blendMode: 'normal' })]))).toEqual([]);
 		expect(ids(snap([clip('a', { threeD: { enabled: true } })]))).toEqual(['3d:3d']);

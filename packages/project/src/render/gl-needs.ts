@@ -1,5 +1,5 @@
 // What of a render document needs WebGL2 in the render browser (spec 19 TL-125, TL-124, TL-123). The Remotion path
-// draws colour effects, GPU shader effects, masked effects, GPU transitions, GL-composited blend modes and 3D layers
+// draws colour effects, GPU shader effects, masks, GPU transitions, GL-composited blend modes and 3D layers
 // with WebGL2 and cancels a render with WEBGL_UNAVAILABLE (or the effect's float refusal) when it is missing. The
 // engine asks this before a render starts, so the plan names the cause (`planner.ts`) and the Remotion service
 // refuses before it opens a browser (`assertWebglFor`) instead of failing mid-render.
@@ -13,7 +13,7 @@ import { transitionSpec } from '../transitions.ts';
 
 /** One thing in a document that needs WebGL2. */
 export type GlNeed = {
-	kind: 'effect' | 'effect-masks' | 'transition' | 'blend' | '3d';
+	kind: 'effect' | 'effect-masks' | 'masks' | 'transition' | 'blend' | '3d';
 	/** The effect, transition or blend mode id (`3d` for 3D layers). */
 	id: string;
 	/** Human name for plan blockers and errors. */
@@ -31,10 +31,23 @@ export const GL_NEEDS_MAX_NODES = 200_000;
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
+/** Some mask draws something (`activeMasks`: a mode other than none and a closed path of 2+ vertices, keys count). */
+function hasActiveMask(masks: unknown): boolean {
+	if (!Array.isArray(masks)) return false;
+	return masks.some((m) => {
+		if (!isObj(m) || m.mode === 'none') return false;
+		const path = isObj(m.path) ? m.path : null;
+		if (!path) return false;
+		if (Array.isArray(path.keyframes) && path.keyframes.length > 0) return true;
+		const v = isObj(path.value) ? path.value : null;
+		return !!v && v.closed === true && Array.isArray(v.vertices) && v.vertices.length >= 2;
+	});
+}
+
 /**
  * Everything in render document `doc` (a `RenderSnapshot`, its nested snapshots and matte tracks included) that needs
  * WebGL2: enabled colour and GPU shader effects (also on adjustment layers and nested sequences), enabled effects with
- * masks, GPU transitions, blend modes CSS cannot draw, and 3D layers. Empty for a document that needs none.
+ * masks, layers with Opacity masks, GPU transitions, blend modes CSS cannot draw, and 3D layers. Empty for a document that needs none.
  */
 export function snapshotGlNeeds(doc: unknown, registry: EffectRegistry = defaultEffectRegistry): GlNeed[] {
 	const out: GlNeed[] = [];
@@ -55,9 +68,10 @@ export function snapshotGlNeeds(doc: unknown, registry: EffectRegistry = default
 				const float = fxFloatRefusal(spec);
 				if (spec.color || spec.gpu)
 					out.push({ kind: 'effect', id: spec.id, label: spec.label, ...at, ...(float ? { float } : {}) });
-				else if (Array.isArray(fx.masks) && fx.masks.length > 0)
+				else if (hasActiveMask(fx.masks))
 					out.push({ kind: 'effect-masks', id: spec.id, label: `${spec.label} (masked)`, ...at });
 			}
+		if (hasActiveMask(c.masks)) out.push({ kind: 'masks', id: 'masks', label: 'layer mask', ...at });
 		if (typeof c.blendMode === 'string' && !isCssBlend(c.blendMode))
 			out.push({ kind: 'blend', id: c.blendMode, label: `blend mode ${c.blendMode}`, ...at });
 		if (isObj(c.threeD)) out.push({ kind: '3d', id: '3d', label: '3D layer', ...at });

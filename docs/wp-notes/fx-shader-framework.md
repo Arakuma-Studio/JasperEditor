@@ -540,6 +540,16 @@ pnpm vitest run packages/compositions/test/fx-compile-budget.test.ts
   or from time samples, never from the previous output.
 - **Motion blur.** Do not average a fixed handful of shutter samples (8 ghost copies of a fast move): use the
   adaptive shutter of §19.
+- **Razor cuts (spec 19 TL-121).** A split gives the right part new ids, but its GPU effects keep
+  `EffectInstance.patternOrigin`: `u_seed` hashes the origin's ids and `u_frame` / `u_time` continue from the cut. A hook
+  that hashes a frame number for per-frame noise reads `fxPatternFrame(ctx)` (= `ctx.frame` + the origin's frame), not
+  `ctx.frame`; progress, durations, keyframes (`paramsAt`) and source time keep `ctx.frame`. Details:
+  [title-looks-fixes.md](title-looks-fixes.md).
+- **Float targets (TL-123).** The host falls back from `rgba16f` / `rgba32f` to 8 bits without `EXT_color_buffer_float`.
+  An effect that is wrong on 8 bits (linear-light compositing, distance fields) sets `gpu.requiresFloat` (`true`, or a
+  refusal code string): the preview bypasses it with a chip, the export plan and the render refuse by name.
+- **Padding is read by the bake (TL-122).** `gpu.padding` also sizes the layer bake's crop (`contentBleed`), evaluated
+  per frame for animated params: a padding that is too small clips the glow in exports, too large only costs pixels.
 
 ## 19. Adaptive shutter motion blur (wave 5, `wave5/adaptive-motion-blur`)
 
