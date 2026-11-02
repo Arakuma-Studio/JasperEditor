@@ -21,6 +21,8 @@ export * from './clipboard/index.ts';
 export * from './color/analysis.ts';
 export * from './color/auto-tone.ts';
 export * from './color/cms/index.ts';
+export * from './color/gamut-check.ts';
+export * from './image-split/index.ts';
 export * from './color/curves.ts';
 export * from './color/grade-math.ts';
 export * from './color/hue-curves.ts';

@@ -298,6 +298,39 @@ export function outputTransformFn(
 }
 
 /** Default HDR White / curve HDR Range (cd/m²). */
+/**
+ * spec 19 TL-116: a working signal in the output space's linear light with nothing mapped: no tone mapping, no gamut
+ * compression, so a colour the output cannot hold stays outside `[0, peak]`. `peak` is the output's top in the same
+ * unit (1 = SDR white; `Infinity` when the output tone maps what is above it, which is range, not gamut).
+ */
+export function unmappedOutputFn(
+	working: WorkingColorSettings,
+	out: string | ColorSpaceDef,
+): { fn: ColorFnRgb; peak: number } {
+	const w = spaceOrThrow(working.space);
+	const o = typeof out === 'string' ? spaceOrThrow(out) : out;
+	const dec = channelDecoder(w, 'pc');
+	const m = gamutMatrix(w.gamut, o.gamut);
+	const wLuma = gamutLuma(w.gamut);
+	const wHdr = w.kind === 'pq' || w.kind === 'hlg';
+	const oHdr = o.kind === 'pq' || o.kind === 'hlg';
+	const sdrScale = !wHdr && oHdr ? Math.max(1, working.sdrWhiteNits) / RW : 1;
+	const peak = o.kind === 'pq' ? Math.min(10000, Math.max(RW, working.hdrPeakNits)) / RW : oHdr ? HLG_PEAK / RW : wHdr ? Number.POSITIVE_INFINITY : 1;
+	return {
+		peak,
+		fn: (c) => {
+			c[0] = dec(c[0]);
+			c[1] = dec(c[1]);
+			c[2] = dec(c[2]);
+			if (w.kind === 'hlg') hlgOotf(c, wLuma);
+			apply3InPlace(m, c);
+			c[0] *= sdrScale;
+			c[1] *= sdrScale;
+			c[2] *= sdrScale;
+		},
+	};
+}
+
 export const DEFAULT_HDR_WHITE_NITS = 1000;
 
 /**

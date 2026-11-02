@@ -10,6 +10,7 @@ import camtrackRoutes from './camtrack.ts';
 import capabilitiesRoutes from './capabilities.ts';
 import captionRoutes from './captions.ts';
 import cleanupRoutes from './cleanup.ts';
+import deliveryRoutes from './delivery.ts';
 import colorRoutes from './color.ts';
 import effectPresetRoutes from './effect-presets.ts';
 import eventsRoutes from './events.ts';
@@ -56,6 +57,7 @@ const ROUTE_PLUGINS = [
 	jobsRoutes,
 	exportsRoutes,
 	stillsRoutes,
+	deliveryRoutes,
 	fontsRoutes,
 	remoteAssetRoutes,
 	mgRoutes,

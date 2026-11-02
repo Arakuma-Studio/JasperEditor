@@ -12,6 +12,7 @@ import { EDIT_UX_COMMANDS } from './edit-ux.ts';
 import { ESSENTIAL_COMMANDS } from './essential.ts';
 import { EXPRESSION_COMMANDS } from './expression.ts';
 import { GAPS_COMMANDS } from './gaps.ts';
+import { IMAGE_SPLIT_COMMANDS } from './image-split.ts';
 import { INTERCHANGE_COMMANDS } from './interchange.ts';
 import { INTERPRET_COMMANDS } from './interpret.ts';
 import { MASK_COMMANDS } from './mask.ts';
@@ -56,6 +57,7 @@ export * from './edit-ux.ts';
 export * from './essential.ts';
 export * from './expression.ts';
 export * from './gaps.ts';
+export * from './image-split.ts';
 export * from './interchange.ts';
 export * from './interpret.ts';
 export * from './mask.ts';
@@ -115,6 +117,7 @@ export const ALL_COMMAND_SCHEMAS = [
 	...COLOR_MGMT_COMMANDS,
 	...THREE_D_COMMANDS,
 	...TITLE_LOOK_COMMANDS,
+	...IMAGE_SPLIT_COMMANDS,
 	...INTERPRET_COMMANDS,
 	...PREVIEWS_COMMANDS,
 	...GAPS_COMMANDS,

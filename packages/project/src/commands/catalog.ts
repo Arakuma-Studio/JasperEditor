@@ -17,6 +17,7 @@ import { effectHandlers } from './handlers/effect.ts';
 import { ESSENTIAL_OWNER, essentialHandlers } from './handlers/essential.ts';
 import { EXPRESSION_OWNER, expressionHandlers } from './handlers/expression.ts';
 import { GAPS_OWNER, gapsHandlers } from './handlers/gaps.ts';
+import { imageSplitHandlers } from './handlers/image-split.ts';
 import { INTERCHANGE_OWNER, interchangeHandlers } from './handlers/interchange.ts';
 import { INTERPRET_OWNER, interpretHandlers } from './handlers/interpret.ts';
 import { keyframeHandlers } from './handlers/keyframe.ts';
@@ -435,6 +436,7 @@ const LABELS: Record<CommandType, string> = {
 	'appearance.setGradient': 'Change Gradient',
 	'sequence.setGlobalLight': 'Global Light',
 	'clip.addGenerator': 'Add Generator',
+	'clip.splitImage': 'Split Image',
 	// spec 13 AS-001…AS-020: automatic subtitles and subtitle templates.
 	'captions.generate': 'Create Subtitles',
 	'captions.regenerate': 'Regenerate Subtitles',
@@ -508,6 +510,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[soundBedHandlers, SOUND_DESIGN_OWNER],
 	[textStyleHandlers, TEXT_STYLE_OWNER],
 	[titleLookHandlers, TITLE_LOOK_OWNER],
+	[imageSplitHandlers, TITLE_LOOK_OWNER],
 	[subtitleHandlers, SUBTITLES_OWNER],
 	[batchHandlers, BATCH_OWNER],
 	[cleanupHandlers, CLEANUP_OWNER],

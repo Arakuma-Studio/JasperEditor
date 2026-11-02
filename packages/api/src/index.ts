@@ -8,6 +8,7 @@ export * from './capabilities.ts';
 export * from './captions.ts';
 export * from './cleanup.ts';
 export * from './common.ts';
+export * from './delivery.ts';
 export type * from './desktop.ts';
 export * from './effect-presets.ts';
 export * from './events.ts';

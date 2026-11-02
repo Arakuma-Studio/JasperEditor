@@ -7,3 +7,4 @@ export * from './properties.ts';
 export * from './recipe.ts';
 export * from './resolve.ts';
 export * from './validate.ts';
+export * from './ps-style.ts';

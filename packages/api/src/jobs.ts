@@ -71,6 +71,14 @@ export const JOB_KINDS = [
 	'derive',
 	/** spec 18 AF-VER-001: measures a finished export against the sequence range it rendered (and a delivery target). */
 	'export-verify',
+	/** spec 19 TL-112: a frame as a layered, rasterised PSD. */
+	'psd-export',
+	/** spec 19 TL-114: PNG frames with alpha, optionally trimmed to their content. */
+	'alpha-delivery',
+	/** spec 19 TL-115: a still cut into its connected parts. */
+	'split-image',
+	/** spec 19 TL-116: a frame measured against an output gamut and the legal range. */
+	'gamut-check',
 ] as const;
 export const JobKindSchema = z.enum(JOB_KINDS);
 export type JobKind = z.infer<typeof JobKindSchema>;

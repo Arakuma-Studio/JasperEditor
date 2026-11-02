@@ -489,7 +489,11 @@ export const STILL_FORMAT_EXTENSIONS: Record<StillFormat, string> = {
 	tga: 'tga',
 };
 
-export const StillRequestSchema = z.object({
+/** spec 19 TL-114: still formats that hold an alpha channel. */
+export const ALPHA_STILL_FORMATS: readonly StillFormat[] = ['png', 'tiff', 'tga'];
+
+export const StillRequestSchema = z
+	.object({
 	envelope: EnvelopeSchema,
 	sequenceId: z.string(),
 	frame: z.number().int().min(0),
@@ -512,7 +516,16 @@ export const StillRequestSchema = z.object({
 				.refine((n) => !/[\\/\0]/.test(n) && n !== '.' && n !== '..', 'A file name, not a path'),
 		})
 		.optional(),
-});
+	/**
+	 * spec 19 TL-114: a transparent still: no sequence background, straight alpha, on the Remotion path. PNG, TIFF or
+	 * Targa; other formats have no alpha and are refused.
+	 */
+	alpha: z.boolean().optional(),
+})
+	.refine((r) => !r.alpha || ALPHA_STILL_FORMATS.includes(r.format ?? 'png'), {
+		message: 'A transparent still needs PNG, TIFF or Targa',
+		path: ['format'],
+	});
 export type StillRequest = z.infer<typeof StillRequestSchema>;
 export const StillResultSchema = z.object({
 	url: z.string(),

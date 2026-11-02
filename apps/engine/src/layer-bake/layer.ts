@@ -247,15 +247,17 @@ export function bakeClip(
 			...(tailHandle ? { tailHandle } : {}),
 			...(fades?.length ? { fades: fades.map((f) => ({ ...f, start: f.start - span.start })) } : {}),
 		};
-	if (o.shift && (o.shift.x || o.shift.y) && out.transform) {
-		out = { ...out, transform: shifted(out.transform, o.shift) };
-		// Wave expressions: a Position expression's result is shifted by the binding (bindSnapshotExpressions).
-		if (hasActiveExpression(out.transform!.position)) {
-			const prev = c.expressionPositionShift ?? [0, 0];
-			out = { ...out, expressionPositionShift: [prev[0] - o.shift.x, prev[1] - o.shift.y] };
-		}
-	}
-	return out;
+	return o.shift ? shiftedClip(out, o.shift) : out;
+}
+
+/** The clip moved by `-s` whole pixels: its Motion position, value and keyframes (the layer map follows). */
+export function shiftedClip(c: RenderVisualClip, s: { x: number; y: number }): RenderVisualClip {
+	if ((!s.x && !s.y) || !c.transform) return c;
+	const out: RenderVisualClip = { ...c, transform: shifted(c.transform, s) };
+	// Wave expressions: a Position expression's result is shifted by the binding (bindSnapshotExpressions).
+	if (!hasActiveExpression(out.transform!.position)) return out;
+	const prev = c.expressionPositionShift ?? [0, 0];
+	return { ...out, expressionPositionShift: [prev[0] - s.x, prev[1] - s.y] };
 }
 
 function shifted(t: Transform, s: { x: number; y: number }): Transform {
