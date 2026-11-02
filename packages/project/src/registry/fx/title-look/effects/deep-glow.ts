@@ -65,9 +65,15 @@ export const DEEP_GLOW = defineShaderEffect({
 	expensive: true,
 	params: [
 		fxParam.number('exposure', 'Exposure', 1, { min: -10, max: 10, softMin: -4, softMax: 6, step: 0.01 }),
-		fxParam.number('threshold', 'Threshold', 0, { min: 0, max: 10, softMax: 2, step: 0.01 }),
+		fxParam.number('threshold', 'Threshold', 0, { min: 0, max: 10, softMax: 1, step: 0.01 }),
 		fxParam.number('knee', 'Threshold Knee', 0.25, { min: 0, max: 1, step: 0.01 }),
-		fxParam.number('radius', 'Radius', 200, { min: 0, max: MAX_RADIUS, softMax: 1000, step: 0.1 }, { unit: 'px' }),
+		fxParam.number(
+			'radius',
+			'Radius',
+			200,
+			{ min: 0, max: MAX_RADIUS, softMax: 1000, step: 0.1 },
+			{ unit: 'px' },
+		),
 		fxParam.percent('falloff', 'Falloff', 50),
 		fxParam.number('intensity', 'Intensity', 1, { min: 0, max: 100, softMax: 8, step: 0.01 }),
 		fxParam.number('chroma', 'Chromatic Scatter', 0, { min: -100, max: 100, step: 1 }, { unit: '%' }),
@@ -96,7 +102,8 @@ export const DEEP_GLOW = defineShaderEffect({
 					chroma: num(p.chroma),
 					intensity: num(p.intensity),
 					tintAmount: Math.min(1, Math.max(0, num(p.tintAmount) / 100)),
-					tintAt: (t) => [0, 1, 2].map((k) => inner[k]! + (outer[k]! - inner[k]!) * t) as [number, number, number],
+					tintAt: (t) =>
+						[0, 1, 2].map((k) => inner[k]! + (outer[k]! - inner[k]!) * t) as [number, number, number],
 					pxPerPercent: ctx.pxScale,
 					unitKnown: true,
 					unit: GLSL_TL_UNIT_KNOWN,

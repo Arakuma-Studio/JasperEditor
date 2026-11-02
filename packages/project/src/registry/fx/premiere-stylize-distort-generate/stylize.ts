@@ -38,7 +38,7 @@ const alphaGlowLook = lookEffectGpu((p) => {
 				radius: Math.max(0, num(p.glow, 10)),
 				intensity: num(p.intensity, 100) * (Math.max(0, num(p.brightness, 255)) / 255),
 				// Fade Out off: the glow keeps its strength to the end of its radius.
-				spread: p.fadeOut === false ? 95 : num(p.spread),
+				spread: p.fadeOut === false ? 95 : num(p.glowSpread),
 				paint: end
 					? gradientPaint('shape', 0, [
 							[0, p.startColor],
@@ -68,10 +68,22 @@ export const ALPHA_GLOW = defineShaderEffect({
 		fxParam.color('endColor', 'End Color', [0, 0, 0, 1]),
 		fxParam.toggle('useEndColor', 'Use End Color', false),
 		fxParam.toggle('fadeOut', 'Fade Out', true),
-		fxParam.choice('technique', 'Technique', ['classic', 'soft', 'precise'], ['Classic', 'Soft', 'Precise'], 'classic'),
+		fxParam.choice(
+			'technique',
+			'Technique',
+			['classic', 'soft', 'precise'],
+			['Classic', 'Soft', 'Precise'],
+			'classic',
+		),
 		fxParam.choice('from', 'From', ['edge', 'layer'], ['Edge', 'Layer'], 'edge'),
-		fxParam.number('intensity', 'Intensity', 100, { min: 0, max: 1000, softMax: 300, step: 1 }, { unit: '%' }),
-		fxParam.percent('spread', 'Spread', 0),
+		fxParam.number(
+			'intensity',
+			'Intensity',
+			100,
+			{ min: 0, max: 1000, softMax: 300, step: 1 },
+			{ unit: '%' },
+		),
+		fxParam.percent('glowSpread', 'Spread', 0),
 		fxParam.choice('blend', 'Blend', ['behind', 'add'], ['Behind', 'Add as Light'], 'behind'),
 		fxParam.percent('onFace', 'Glow Over Layer', 15),
 	],

@@ -3,8 +3,10 @@
 //
 // Pachislop walks up to 1024 copies per pixel at a step of 0.75 px. Here the field says how far is safe, so a ray takes few
 // steps at any depth and any size, and normals come from the field, not from a blurred alpha clamped in pixels. A ray
-// keeps its closest approach to the shape, whose distance antialiases the sides' outline.
+// keeps its closest approach to the shape, whose distance antialiases the sides' outline. Like Pachislop's, it draws behind
+// what is below it in the stack, so it works above or below the face.
 import { fmtDistance, layerSwatch, lp, type TitleLayerInit } from '../contract.ts';
+import { GLSL_TL_LIGHT } from '../light.ts';
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 const DEG = Math.PI / 180;
@@ -14,12 +16,14 @@ const STEPS = 96;
 /** The field's reach as a share of the depth: a miss crosses the depth in at most this many steps. */
 const REACH_STEPS = 32;
 
-const gradientPaint = (p: Record<string, unknown>) => (p.paint as { kind?: string } | undefined)?.kind === 'gradient';
+const gradientPaint = (p: Record<string, unknown>) =>
+	(p.paint as { kind?: string } | undefined)?.kind === 'gradient';
 
 export const EXTRUDE_LAYER: TitleLayerInit = {
 	type: 'extrude',
 	label: 'Extrude',
-	description: 'The shape stacked along a direction, with shaded sides. Flat and one colour, it is a long shadow.',
+	description:
+		'The shape stacked along a direction, with shaded sides. Flat and one colour, it is a long shadow.',
 	finish: false,
 	params: [
 		lp.angle('angle', 'Direction', 75),
@@ -47,6 +51,7 @@ export const EXTRUDE_LAYER: TitleLayerInit = {
 		return {
 			glsl: /* glsl */ `
 vec4 tl_layer(TlSurface s) {
+  vec4 under = texture(u_tlComp, s.uv);
   vec2 dir = fx_dir(u_angle);
   float len = max(tl_px(u_depth), 1.0);
   float least = max(1.0, len / 256.0);
@@ -55,7 +60,7 @@ vec4 tl_layer(TlSurface s) {
   float bestT = 0.0;
   float bestOpacity = 0.0;
   vec2 bestUv = s.uv;
-  for (int i = 0; i < ${STEPS}; i++) {
+  for (int i = 0; i < ${STEPS} + int(min(0.0, u_resolution.x)); i++) { // an opaque bound: SwiftShader does not unroll it
     vec2 uv = s.uv - dir * t / u_canvasSize;
     TlSurface q = tl_surfaceAt(uv);
     float d = q.d - s.base;
@@ -81,15 +86,22 @@ vec4 tl_layer(TlSurface s) {
   float edge = u_edge * 0.01;
   rgb *= 1.0 - edge * (1.0 - smoothstep(0.0, line, bestT));
   rgb *= 1.0 - 0.6 * edge * smoothstep(len - line, len, bestT);
-  return vec4(rgb, c.a) * cov * (1.0 - u_fade * 0.01 * x) * (u_opacity * 0.01);
+  vec4 side = vec4(rgb, c.a) * cov * (1.0 - u_fade * 0.01 * x) * (u_opacity * 0.01);
+  return tl_result(under, under + side * (1.0 - under.a));
 }`,
+			include: [GLSL_TL_LIGHT],
 		};
 	},
 	reach(p) {
 		const a = num(p.angle) * DEG;
 		const d = num(p.depth);
 		const side = (v: number) => Math.max(0, v) * d;
-		return { left: side(-Math.cos(a)), top: side(-Math.sin(a)), right: side(Math.cos(a)), bottom: side(Math.sin(a)) };
+		return {
+			left: side(-Math.cos(a)),
+			top: side(-Math.sin(a)),
+			right: side(Math.cos(a)),
+			bottom: side(Math.sin(a)),
+		};
 	},
 	fieldReach: (p) => ({ outside: num(p.depth) / REACH_STEPS + 1, inside: 2 }),
 	handles: [

@@ -1,7 +1,7 @@
 // `reflection` (§5.1): a mirrored fade below the title, as on a glossy floor, ported from Pachislop's floorReflection
 // (effects/a/shadow.ts). It mirrors the layers below it in the stack, so it goes on top of them, and it draws behind them.
 // The mirror line sits under the outermost rim wherever the layer is (`outermost`), and it blurs and fades with distance.
-import { fmtDistance, fmtNumber, type TitleLayerInit, lp } from '../contract.ts';
+import { fmtDistance, fmtNumber, lp, type TitleLayerInit } from '../contract.ts';
 import { GLSL_TL_LIGHT } from '../light.ts';
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
@@ -52,7 +52,10 @@ vec4 tl_layer(TlSurface s) {
 	blur(p) {
 		const sigma = num(p.blur) / SIGMAS;
 		if (sigma <= 0) return null;
-		return { sigma, mask: /* glsl */ `${picture(p)}\nvec4 tl_mask(TlSurface s) { return tl_picture(s.uv); }` };
+		return {
+			sigma,
+			mask: /* glsl */ `${picture(p)}\nvec4 tl_mask(TlSurface s) { return tl_picture(s.uv); }`,
+		};
 	},
 	reach(p) {
 		const blur = num(p.blur);

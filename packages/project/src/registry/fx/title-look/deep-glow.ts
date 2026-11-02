@@ -30,8 +30,8 @@ export const DG_OCTAVES = 9;
 export const DG_CHROMA_SPREAD = 0.2;
 /** Canvas px: a Gaussian this narrow leaves a pixel where it was. */
 const DG_MERGE_SIGMA = 0.35;
-/** Texels an octave's narrowest channel keeps at its pyramid level. */
-const DG_LEVEL_SIGMA = 2;
+/** Texels an octave's narrowest channel keeps at its pyramid level: a Gaussian this wide survives a bilinear read. */
+const DG_LEVEL_SIGMA = 1.25;
 
 export type GlowOctave = {
 	/** σ per channel, in the unit of the radius. */
@@ -51,7 +51,7 @@ export const dgExponent = (falloff: number) =>
 /** The PSF: narrowest first. `radius` in any unit, `falloff` and `chroma` percentages. */
 export function dgOctaves(radius: number, falloff: number, chroma: number): GlowOctave[] {
 	const p = dgExponent(falloff);
-	const top = Math.max(0, radius) / 3;
+	const top = Math.max(0, Number.isFinite(radius) ? radius : 0) / 3;
 	const k = DG_CHROMA_SPREAD * clamp(Number.isFinite(chroma) ? chroma / 100 : 0, -1, 1);
 	const out: GlowOctave[] = [];
 	let sum = 0;
@@ -68,7 +68,8 @@ export function dgOctaves(radius: number, falloff: number, chroma: number): Glow
 
 /** How far the PSF reaches beyond its emitter, in the unit of the radius: 3σ of the widest channel. */
 export const dgReach = (radius: number, chroma: number) =>
-	Math.max(0, radius) * (1 + DG_CHROMA_SPREAD * Math.abs(clamp(Number.isFinite(chroma) ? chroma / 100 : 0, -1, 1)));
+	Math.max(0, radius) *
+	(1 + DG_CHROMA_SPREAD * Math.abs(clamp(Number.isFinite(chroma) ? chroma / 100 : 0, -1, 1)));
 
 export const GLSL_TL_DEEP_GLOW: GlslChunk = {
 	name: 'title-look/deep-glow',
@@ -137,8 +138,8 @@ void main() {
   int taps = int(min(48.0, ceil(3.0 * max(st.r, max(st.g, st.b)))));
   vec3 acc = vec3(0.0);
   vec3 ws = vec3(0.0);
-  for (int i = -48; i <= 48; i++) {
-    if (i < -taps || i > taps) continue;
+  // A bound the compiler cannot prove constant: SwiftShader would unroll this loop for its largest kernel.
+  for (int i = -taps; i <= taps; i++) {
     float f = float(i);
     vec3 w = exp(-f * f * k);
     ws += w;
@@ -164,6 +165,9 @@ void main() {
 
 const FRAG_DG_FIRST = accum('');
 const FRAG_DG_ACCUM = accum('texture(u_tlDgAcc, v_uv).rgb + ');
+const FRAG_DG_FAR = accum('texture(u_tlDgFar, v_uv).rgb + ');
+const FRAG_DG_MERGE = /* glsl */ `
+void main() { fragColor = vec4(texture(u_tlDgAcc, v_uv).rgb + texture(u_tlDgFar, v_uv).rgb, 0.0); }`;
 
 export type DeepGlowPlan = {
 	/** The PSF's radius in percent of the unit (standalone: layer px, a unit of 100 px). */
@@ -186,7 +190,8 @@ export type DeepGlowPlan = {
 
 /**
  * The scatter, after a pass that wrote the emitter to `tlDgPyr` (full size, `rgba16f`, alpha unused): the glow ends in
- * `tlDgAcc`, RGB only, at full size. One program per pass kind: only uniforms differ per octave and per frame.
+ * `tlDgAcc`, RGB only, at full size. One program per pass kind: only uniforms differ per octave and per frame. Octaves
+ * at a reduced level sum in `tlDgFar` at half size, so a wide radius costs few full-size passes.
  */
 export function deepGlowPasses(o: DeepGlowPlan): ShaderPass[] {
 	const fmt = { format: 'rgba16f' as const };
@@ -195,25 +200,27 @@ export function deepGlowPasses(o: DeepGlowPlan): ShaderPass[] {
 	const active = octaves.filter((c) => pxOf(Math.max(...c.sigma)) >= DG_MERGE_SIGMA);
 	const merged = octaves.filter((c) => !active.includes(c));
 	const direct = merged.reduce((s, c) => s + c.weight, 0);
-	const tint = (t: number) => ({ u_dgTint: [...o.tintAt(t)] as [number, number, number] });
+	const term = (weight: number, t: number) => ({
+		u_dgWeight: weight * o.intensity,
+		u_dgTintAmount: o.tintAmount,
+		u_dgTint: [...o.tintAt(t)] as [number, number, number],
+	});
 	const passes: ShaderPass[] = [
 		{
 			output: 'tlDgAcc',
 			...(o.again ? { update: true } : {}),
 			...fmt,
 			frag: FRAG_DG_FIRST,
-			uniforms: {
-				u_dgWeight: direct * o.intensity,
-				u_dgTintAmount: o.tintAmount,
-				...tint(merged.at(-1)?.t ?? 0),
-			},
+			uniforms: term(direct, merged.at(-1)?.t ?? 0),
 		},
 	];
 	let level = 0;
 	let prev: [number, number, number] = [0, 0, 0];
-	/** Canvas px²: the bilinear read the previous octave's blur already counted on. */
+	/** Canvas px²: the bilinear reads the previous octave's blur already counted on. */
 	let upPrev = 0;
-	active.forEach((c, i) => {
+	let blurs = 0;
+	let far = 0;
+	for (const c of active) {
 		// Without a known unit the plan's σ is an upper bound: three levels finer keep small alpha bounds right.
 		const narrow = pxOf(Math.min(...c.sigma)) / DG_LEVEL_SIGMA;
 		const fit = Math.max(0, Math.floor(Math.log2(Math.max(1, narrow))));
@@ -225,13 +232,13 @@ export function deepGlowPasses(o: DeepGlowPlan): ShaderPass[] {
 			passes.push({ output: 'tlDgPyr', update: true, ...fmt, scale: 1 / 2 ** level, frag: FRAG_DG_DOWN });
 		}
 		const scale = 1 / 2 ** level;
-		// The accumulation reads this level bilinearly: a tent, 1/6 texel² per axis.
-		const up = level > 0 ? 4 ** level / 6 : 0;
+		// Read bilinearly: a tent, 1/6 texel² per axis, into the half-size sum (none from its own level) and out of it.
+		const up = level > 0 ? (level > 1 ? 4 ** level / 6 : 0) + 4 / 6 : 0;
 		const uniforms = { u_dgSigma: c.sigma, u_dgPrev: prev, u_dgVar: down + up - upPrev };
 		passes.push(
 			{
 				output: 'tlDgH',
-				...(o.again || i > 0 ? { update: true } : {}),
+				...(o.again || blurs > 0 ? { update: true } : {}),
 				...fmt,
 				scale,
 				include: [o.unit],
@@ -247,17 +254,29 @@ export function deepGlowPasses(o: DeepGlowPlan): ShaderPass[] {
 				frag: FRAG_DG_BLUR_V,
 				uniforms: { ...uniforms, u_dgDir: [0, 1] },
 			},
-			{
-				output: 'tlDgAcc',
-				update: true,
-				...fmt,
-				frag: FRAG_DG_ACCUM,
-				uniforms: { u_dgWeight: c.weight * o.intensity, u_dgTintAmount: o.tintAmount, ...tint(c.t) },
-			},
+			level === 0
+				? {
+						output: 'tlDgAcc',
+						update: true,
+						...fmt,
+						frag: FRAG_DG_ACCUM,
+						uniforms: term(c.weight, c.t),
+					}
+				: {
+						output: 'tlDgFar',
+						...(o.again || far > 0 ? { update: true } : {}),
+						...fmt,
+						scale: 0.5,
+						frag: far > 0 ? FRAG_DG_FAR : FRAG_DG_FIRST,
+						uniforms: term(c.weight, c.t),
+					},
 		);
+		blurs++;
+		if (level > 0) far++;
 		prev = c.sigma;
 		upPrev = up;
-	});
+	}
+	if (far > 0) passes.push({ output: 'tlDgAcc', update: true, ...fmt, frag: FRAG_DG_MERGE });
 	return passes;
 }
 

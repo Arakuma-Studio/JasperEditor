@@ -29,7 +29,9 @@ const px = (name: string, label: string, def: number, softMax: number, min = 0) 
 
 /** The params of a layer an effect passes on as they are. */
 const pick = (p: EffectParams, names: readonly string[]) =>
-	Object.fromEntries(names.filter((n) => p[n] !== undefined).map((n) => [n, p[n]!])) as LookEffectLayer['params'];
+	Object.fromEntries(
+		names.filter((n) => p[n] !== undefined).map((n) => [n, p[n]!]),
+	) as LookEffectLayer['params'];
 
 const INTENSITY = () =>
 	fxParam.number('intensity', 'Intensity', 100, { min: 0, max: 1000, softMax: 300, step: 1 }, { unit: '%' });
@@ -44,7 +46,7 @@ export const INNER_GLOW = defineLookEffect({
 	keywords: ['glow', 'inner', 'edge', 'light', 'title', 'alpha'],
 	params: [
 		fxParam.choice('technique', 'Technique', ['soft', 'precise'], ['Soft', 'Precise'], 'soft'),
-		fxParam.choice('source', 'Source', ['edge', 'center'], ['Edge', 'Center'], 'edge'),
+		fxParam.choice('origin', 'Source', ['edge', 'center'], ['Edge', 'Center'], 'edge'),
 		px('radius', 'Radius', 18, 200),
 		INTENSITY(),
 		fxParam.percent('choke', 'Choke', 0),
@@ -57,7 +59,7 @@ export const INNER_GLOW = defineLookEffect({
 		{
 			type: 'innerGlow',
 			params: {
-				...pick(p, ['technique', 'source', 'radius', 'intensity', 'choke', 'blend', 'opacity']),
+				...pick(p, ['technique', 'origin', 'radius', 'intensity', 'choke', 'blend', 'opacity']),
 				paint: colorPaint(p.color),
 			},
 		},
@@ -68,7 +70,8 @@ export const INNER_SHADOW = defineLookEffect({
 	id: 'jasper.inner-shadow',
 	label: 'Inner Shadow',
 	category: 'Perspective',
-	description: 'A shadow inside the clip’s alpha, cast inward by the edge facing the light (0° = right, clockwise).',
+	description:
+		'A shadow inside the clip’s alpha, cast inward by the edge facing the light (0° = right, clockwise).',
 	keywords: ['shadow', 'inner', 'inset', 'depth', 'title', 'alpha'],
 	params: [
 		fxParam.angle('angle', 'Direction', 60),
@@ -110,7 +113,13 @@ export const CONTOUR_LINES = defineLookEffect({
 		'Glowing lines that follow the clip’s alpha at even spacing, inside it or around it, coloured across the clip or by line, like an edge-lit panel.',
 	keywords: ['lines', 'outline', 'neon', 'light guide', 'edge lit', 'rings', 'title'],
 	params: [
-		fxParam.choice('mode', 'Lines', ['inside', 'outside', 'both'], ['Inside', 'Around', 'Inside and Around'], 'inside'),
+		fxParam.choice(
+			'mode',
+			'Lines',
+			['inside', 'outside', 'both'],
+			['Inside', 'Around', 'Inside and Around'],
+			'inside',
+		),
 		fxParam.number('count', 'Line Count', 6, { min: 1, max: 40, step: 1 }),
 		px('spacing', 'Spacing', 9, 100, 0.1),
 		px('lineWidth', 'Line Width', 2.5, 40),
@@ -199,7 +208,8 @@ export const FLOOR_REFLECTION = defineLookEffect({
 	id: 'jasper.floor-reflection',
 	label: 'Floor Reflection',
 	category: 'Perspective',
-	description: 'A mirrored copy below the clip’s alpha, as on a glossy floor, fading and blurring with distance.',
+	description:
+		'A mirrored copy below the clip’s alpha, as on a glossy floor, fading and blurring with distance.',
 	keywords: ['reflection', 'mirror', 'floor', 'glossy', 'title'],
 	params: [
 		px('gap', 'Gap', 4, 100, -MAX_REACH),

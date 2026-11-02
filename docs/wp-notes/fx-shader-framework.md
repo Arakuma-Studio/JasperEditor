@@ -131,6 +131,7 @@ More examples in `fx-examples.ts`: a generator (`TEST_GRADIENT`), a padded drop 
 | `padding(params, ctx)` | Extra layer pixels the effect may draw outside its input's bounds: a number (all sides) or `{left, top, right, bottom}`. Clamped to 0…2048. |
 | `uniforms(params, ctx: FxFrameContext)` | Derived uniforms for every pass, e.g. `{u_offsetPx: [dx, dy]}` (types from values, §5). `ctx` adds `frame`, `duration`, `seed`, `progress`, and (when the host has them) `paramsAt`, `clip`. |
 | `sourceMipmaps` | `true`: `u_source` has a mip chain in every pass of the effect (`textureLod`/`textureGrad` for strongly shrinking warps, §17.4). |
+| `paramUniforms` | `false` (or a function of the params): no `u_<param>` uniforms; the hooks turn params into pass uniforms that may reuse their names. Spec 19's look effects (`title-look/look-effect.ts`). |
 | `time.remap(params, ctx)` | Source-frame remap (§9). |
 | `time.samples(params, ctx)` | Extra source pictures at frame offsets (§9). |
 | `time.sampleEdge` | Samples outside the clip's drawn span: `'drop'` (default: none that frame), `'transparent'`, `'clamp'` (§17.3). |

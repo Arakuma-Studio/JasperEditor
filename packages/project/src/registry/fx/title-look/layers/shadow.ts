@@ -126,7 +126,12 @@ export const SHADOW_LAYER: TitleLayerInit = {
 		lp.percent('convergence', 'Perspective', 35, { group: 'perspective' }),
 		lp.distance('blurNear', 'Blur Near', 1, { softMax: 30, group: 'perspective' }),
 		lp.percent('fade', 'Fade', 75, { group: 'perspective' }),
-		lp.distance('floorOffset', 'Floor Offset', 0, { min: -300, softMin: -50, softMax: 50, group: 'perspective' }),
+		lp.distance('floorOffset', 'Floor Offset', 0, {
+			min: -300,
+			softMin: -50,
+			softMax: 50,
+			group: 'perspective',
+		}),
 		...lp.paint('paint', 'Paint', { kind: 'role', role: 'shadow' }),
 		lp.percent('opacity', 'Opacity', 75),
 	],

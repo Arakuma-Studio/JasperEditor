@@ -10,7 +10,8 @@ const SIGMAS = 3;
 
 const DEPTH: Record<string, string> = { inside: '-s.d', outside: 's.d', both: 'abs(s.d)' };
 
-const gradientPaint = (p: Record<string, unknown>) => (p.paint as { kind?: string } | undefined)?.kind === 'gradient';
+const gradientPaint = (p: Record<string, unknown>) =>
+	(p.paint as { kind?: string } | undefined)?.kind === 'gradient';
 
 const lines = (p: Record<string, unknown>) => /* glsl */ `
 vec4 tl_lines(TlSurface s) {
@@ -34,7 +35,13 @@ export const CONTOUR_LINES_LAYER: TitleLayerInit = {
 	description: 'Glowing lines that follow the silhouette at even spacing, inside it or around it.',
 	finish: false,
 	params: [
-		lp.choice('mode', 'Lines', ['inside', 'outside', 'both'], ['Inside', 'Around', 'Inside and Around'], 'inside'),
+		lp.choice(
+			'mode',
+			'Lines',
+			['inside', 'outside', 'both'],
+			['Inside', 'Around', 'Inside and Around'],
+			'inside',
+		),
 		lp.number('count', 'Line Count', 6, { min: 1, max: 40, step: 1 }),
 		lp.distance('spacing', 'Spacing', 4.5, { min: 0.1, softMax: 30 }),
 		lp.distance('lineWidth', 'Line Width', 1.2, { softMax: 10 }),
@@ -87,7 +94,10 @@ vec4 tl_layer(TlSurface s) {
 	fieldReach(p) {
 		const lastLine =
 			num(p.offset) + (Math.max(1, Math.round(num(p.count))) - 1) * num(p.spacing) + num(p.lineWidth);
-		return { inside: p.mode === 'outside' ? 1 : lastLine + 1, outside: p.mode === 'inside' ? 1 : lastLine + 1 };
+		return {
+			inside: p.mode === 'outside' ? 1 : lastLine + 1,
+			outside: p.mode === 'inside' ? 1 : lastLine + 1,
+		};
 	},
 	handles: [{ kind: 'distance', params: ['spacing'] }],
 	summary(p) {

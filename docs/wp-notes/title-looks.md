@@ -27,6 +27,9 @@ routing and the layer bake need no per-kind code.
 | Shared GLSL (surface, field, blur) | `packages/project/src/registry/fx/title-look/glsl.ts` |
 | Paints and gradients | `packages/project/src/registry/fx/title-look/paint.ts` |
 | Layer types, finishes, generators | `packages/project/src/registry/fx/title-look/{layers,finishes,generators}/` |
+| Light on a premultiplied picture (`tl_veil`, `tl_lit`, `tl_result`) | `packages/project/src/registry/fx/title-look/light.ts` |
+| Deep Glow's PSF, passes and response, shared by layer and effect | `packages/project/src/registry/fx/title-look/deep-glow.ts` |
+| Standalone effects of §8 | `packages/project/src/registry/fx/title-look/effects/`, built by `look-effect.ts` |
 | Test harness | `packages/compositions/test/title-look-harness.ts`, `title-look-gl/entry.ts` |
 | Registry completeness, GL, fuzz, E2E | `packages/project/test/title-look*.test.ts`, `packages/compositions/test/title-look*.test.ts` |
 
@@ -91,6 +94,54 @@ looks and compile once. A six-layer look with a blur plans about 25 passes. Meas
   animators the bounds follow the letters. TL-036 replaces this with layout boxes for text.
 - **Sequence light** travels on the render clip (`sequenceLight`, keys in sequence time) only when a look follows it.
 
+- **Light on nothing.** A premultiplied picture cannot show additive light where it has no alpha, and the framework's signal is
+  sRGB-encoded, composited in the signal by the sequence. The usual alpha, the brightest linear channel, encodes a 2 % tail as
+  0.02 where light of 2 % looks like 0.15, and a glow loses its haze: it reads as a blurred shape. `tl_veil` picks the colour and
+  alpha whose encoded form over black is exactly the encoded light. Assumption, not a documented formula, chosen by looking.
+- **A layer can say what the pixel should be.** `tl_over` cannot express additive light or a blend. `tl_result(under, D)` returns
+  what makes the composite exactly `D`, and a layer reads what is below it from `u_tlComp`. Extrude and reflection draw behind
+  what is below them this way, so they work on either side of the face.
+- **Deep Glow's emitter.** `Shape` is the silhouette at this layer in the layer's paint, so a look can put it behind a face and
+  colourways reach it. `Layers Below` makes the stack the light source, in its own colours, as Pachislop's effect does on the
+  layer's picture; the exposure then lifts the picture itself and the response burns it. Reflection and Gradient Overlay read
+  the stack the same way, which is why they go on top of it.
+- **Glow Over Face defaults to 100 %**, Pachislop's default is 0. On footage alpha is 1 everywhere, so 0 would draw no glow at all;
+  on titles light over the glyphs is what makes them read as lit. The look's `glow` layer keeps Pachislop's 15 %: it is a halo.
+- **Mirror line.** A reflection sits under the outermost rim whatever its place in the stack (`outermost`).
+- **Global light on effects.** `useGlobalLight` on an effect reads `Sequence.settings.globalLight` at the frame:
+  `sequenceLightOf` takes it onto the render clip, `resolveLayerProps` evaluates it to `ResolvedEffect.globalLight` in sequence
+  time, and the stage hands it over as `FxStructures.globalLight`. The default is off, unlike Pachislop's, so an effect's own
+  angle works when it is added; a look's `useLight` is the same rule. Padding pads every side by the distance while a light
+  decides the direction, so a moving light never clips.
+- **Layers beyond §5.1.** `contourLines`, `extrude` and `gradientOverlay` are not in the §5.1 table. Their effects are in §8 and §5.1
+  says an effect shares GLSL with its layer, so they are registered like any type, and Add Layer offers them.
+- **Keyline's threshold and `follow` are not ported.** The field's edge is its local threshold, tuned for fading glyphs, and an
+  effect reads the stack before it by definition.
+
+### Standalone effects: the audit (AGENTS §10)
+
+Each was checked against `registry/fx/` before writing anything. "Same job" means same input, same output and the same
+controls would do; a name in common did not count.
+
+| §8 effect | Candidates | Decision |
+|---|---|---|
+| Outer Glow | `jasper.alpha-glow` | **Extended.** Same job: a coloured glow around alpha. Technique Soft and Precise are the `glow` layer; Classic, the default, draws what it always did. Its keyword `outer glow` already finds it. Added: From, Intensity, Spread, Blend, Glow Over Layer; Glow's upper limit is 2000 |
+| Deep Glow | `jasper.glow`, `jasper.s.glow`, `jasper.s.ultra-glow` | **New** (`jasper.deep-glow`). Those are threshold blooms on the signal with a Gaussian or a look of their own; none is linear, energy-normalised or has this response, and each mirrors another product's parameter sheet, so a mode inside one would share nothing with it |
+| Inner Glow | none: `jasper.s.edge-colorize`, `jasper.s.glow-edges` work from image edges, not alpha | **New** (`jasper.inner-glow`) |
+| Inner Shadow | none | **New** (`jasper.inner-shadow`) |
+| Contour Lines | `jasper.s.glow-rings` (one ring per bright area), `jasper.s.zebra`-style isolines of luma | **New** (`jasper.contour-lines`): lines at even distances from alpha |
+| Perspective Shadow | `jasper.radial-shadow` (scales about a point on a wall behind), `jasper.drop-shadow` | **New** (`jasper.perspective-shadow`): a floor projection is another geometry |
+| Floor Reflection | `jasper.mirror` (folds one half of the box onto the other, no fade, draws no further) | **New** (`jasper.floor-reflection`) |
+| Gradient Overlay | `jasper.ramp`, `jasper.s.gradient`, `jasper.4-color-gradient` | **New** (`jasper.gradient-overlay`): those are generators that fill the box from points; this recolours within alpha from its bounds, in linear light |
+| Shaded Extrude | none | **New** (`jasper.shaded-extrude`) |
+| Keyline | none outside: `jasper.find-edges` and `jasper.s.edge-detect` find edges inside the picture | **New** (`jasper.keyline`), the `rim` layer |
+| Title Material | | Another stream |
+
+A look effect (`look-effect.ts`) is a small look: `[face(source), layer]` or `[layer, face(source)]` through the planner, unit 100 px, so
+1 % is one layer px and px params reach the layer unchanged. Deep Glow alone has its own passes, because it needs no field and is the
+one that runs on full-frame footage. Cost of the wrapper: every other effect pays for the field on a full-frame clip. That is
+6 passes at 1080p, nothing on a GPU, and ≈ 1 s per frame on this host's SwiftShader.
+
 ### A note on a false alarm worth keeping
 
 `getImageData` returns **straight** alpha. The harness's `over()` and `lumaOver()` handle that; comparing raw `data` to a
@@ -101,6 +152,8 @@ premultiplied expectation looks like a shader bug. Look at the dumped picture be
 Three rules: put your code in your own file, add one line to the list next to it, and never edit `plan.ts`, `glsl.ts`,
 `registry.ts`, `validate.ts` or the commands. If you think you must, the contract is missing something: say so in your
 report. Types in `contract.ts` are the normative reference.
+
+A param must not be named after a built-in: `source` is `u_source`. The registry test catches it.
 
 Units: every distance is `lp.distance` (percent of the unit); convert in GLSL with `tl_px(u_x)`. Colours are linear,
 premultiplied. Use `s.px`, never `gl_FragCoord`. Times are `u_tlTime`; randomness is `u_tlSeed` with `GLSL_HASH`.
@@ -126,6 +179,7 @@ struct TlSurface {
 | `tl_over(under, top)`, `tl_linear(srgb)` | premultiplied over, signal → linear |
 | `tl_surfaceAt(uv)`, `tl_sourceLinear(uv)` | the surface elsewhere (offsets), the input as straight linear colour |
 | `tl_bounds()` | alpha bounds, canvas px `(x0, y0, x1, y1)`; mentioning it makes the planner run the reduction |
+| `texture(u_tlComp, uv)` | what is below this layer, premultiplied linear; with `GLSL_TL_LIGHT` (`include`), `tl_result(under, D)` makes the composite exactly `D`, and `tl_lit(under, covered, empty)` adds light |
 | `tlPaint_<param>(s)` | the value of paint param `<param>` here, premultiplied linear |
 | `tl_finish(paint, s)` | the layer's finish (types with `finish: true`) |
 | `u_<param>` | each param: number `float`, boolean `bool`, enum `int` (option index), vec2, colour `vec4`, media `sampler2D` + `u_<param>_size` |
@@ -135,17 +189,17 @@ struct TlSurface {
 
 ### Worked example: a layer type
 
-`packages/project/src/registry/fx/title-look/layers/inner-glow.ts`:
+`packages/project/src/registry/fx/title-look/layers/edge-tint.ts`, a reduced `layers/inner-glow.ts`:
 
 ```ts
 import { fmtDistance, layerSwatch, lp, paintText, type TitleLayerInit } from '../contract.ts';
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
-export const INNER_GLOW_LAYER: TitleLayerInit = {
-	type: 'innerGlow',
-	label: 'Inner Glow',
-	description: 'Light inside the shape, from its edge inward.',
+export const EDGE_TINT_LAYER: TitleLayerInit = {
+	type: 'edgeTint',
+	label: 'Edge Tint',
+	description: 'Colour inside the shape, from its edge inward.',
 	finish: false,
 	params: [
 		lp.distance('radius', 'Radius', 12, { softMax: 60 }),
@@ -159,12 +213,13 @@ vec4 tl_layer(TlSurface s) {
   return tlPaint_paint(s) * (1.0 - x) * s.alpha * clamp(u_intensity * 0.01, 0.0, 1.0);
 }`,
 	}),
-	// Inside the shape: it needs the field, but no padding.
+	// Inside the shape: it needs the field, and a sliver of padding so a clip filling its box has an edge to start from.
+	reach: () => 0.01,
 	fieldReach: (p) => ({ inside: num(p.radius) + 1, outside: 0 }),
 	handles: [{ kind: 'distance', params: ['radius'] }],
 	summary(p) {
 		return {
-			swatch: layerSwatch(INNER_GLOW_LAYER, p),
+			swatch: layerSwatch(EDGE_TINT_LAYER, p),
 			text: `${fmtDistance(p.radius)}, ${paintText(p.paint)}`,
 			primary: 'radius',
 		};
@@ -172,11 +227,7 @@ vec4 tl_layer(TlSurface s) {
 };
 ```
 
-One line in `layers/index.ts`:
-
-```ts
-export const TITLE_LAYER_INITS = [FACE_LAYER, RIM_LAYER, SHADOW_LAYER, GLOW_LAYER, INNER_GLOW_LAYER];
-```
+One line in `layers/index.ts`, in `TITLE_LAYER_INITS`.
 
 That gives you: params and defaults in every command and recipe, validation (INV-APPEARANCE, `param.set`, repair), padding,
 the field reach, property specs for Effect Controls, the summary row, keyframes and expressions on every number, and the
@@ -190,10 +241,27 @@ Fields you may need:
 | `grows(p)` | Layers below start from a larger silhouette (rims) |
 | `fieldReach(p)` | The field must be right this far outside or inside. Default: outside as far as `reach`. Reads past it see `d` = the reach, a lower bound of the true distance |
 | `blur(p, ctx)` | Return `{sigma, mask}`: `sigma` in percent of the unit, `mask` GLSL `vec4 tl_mask(TlSurface s)`. The framework runs mask → horizontal → vertical at the lowest resolution that holds the sigma and your pass reads `u_tlBlur`. Every radius is cheap at every size; use `tl_inside`/`tl_band` in the mask, which widen their antialiasing to fit |
-| `prepass(p, ctx)` | Your own `ShaderPass[]` before the layer's pass. Budget: `FX_MAX_TEXTURES` names per plan; the framework uses `tlBounds`, `tlFlood`, `tlField`, `tlComp`, `tlMask`, `tlBlurH`, `tlBlur`. Reuse names with `update: true` |
+| `outermost` | `s.base` and padding count every layer's growth, not only that of the layers above (a reflection on top of the stack) |
+| `prepass(p, ctx)` | Your own `ShaderPass[]` before the layer's pass. `ctx.surfacePass(pass)` gives a pass what the layer's own has (`tl_surface()`, `tl_px`, paints, the layer's uniforms); `ctx.unit` is the `tl_px` chunk alone; `ctx.unitKnown` says `pxPerPercent` is exact. Each pass mentions few textures, so the real budget is 12 per pass: the framework's names are `tlBounds`, `tlFlood`, `tlField`, `tlComp`, `tlMask`, `tlBlurH`, `tlBlur`. A look can hold a type twice: mark your outputs `update: true`, on the first pass too |
 | `timeDependent(p)` | The layer moves on its own: the clip then redraws every frame and `u_tlTime` is live |
-| `handles` | On-canvas handles for TL-092 |
+| `handles` | On-canvas handles for TL-092: `{kind, params}`, `target: 'light'` for the look's light, `when: {param, value}` when it only applies in one state |
 | `shader(p, ctx)` | It is a function: return different GLSL per enum to keep programs small (`shadow.ts`, `glow.ts`) |
+
+### Worked example: a standalone effect
+
+`defineLookEffect` in `title-look/effects/index.ts`, one line in `TITLE_LOOK_EFFECTS`: ordinary `fxParam`s (px for distances), and the
+layers they become. Padding across the clip, linear light and `requiresFloat` follow. The GL tests are in `title-look-glows-gl.test.ts`.
+
+```ts
+export const KEYLINE = defineLookEffect({
+	id: 'jasper.keyline',
+	label: 'Keyline',
+	category: 'Stylize',
+	description: 'An outline traced from the clip’s alpha.',
+	params: [px('width', 'Width', 2, 100), fxParam.color('color', 'Color', [0, 0, 0, 1])],
+	layers: (p) => [{ type: 'rim', params: { width: num(p.width), paint: colorPaint(p.color) } }, SOURCE_FACE],
+});
+```
 
 ### Worked example: a finish
 
@@ -327,7 +395,20 @@ a temp ref in commands.
 - SSIM in tests: Wang et al. 2004, 8 × 8 windows, `C1 = (0.01·255)²`, `C2 = (0.03·255)²`.
 - Assumption, not documented anywhere: a rim's opacity rule (full from 50 % local alpha) was chosen by looking at fades.
 
-Port map: `licenses/ported/pachislop-rendering.md`.
+- Deep Glow's PSF: an inverse power law as a scale mixture of Gaussians, `w(σ) ∝ σ^(2-p)` per log-σ step, because
+  `∫ σ^(2-p) · σ^-2 exp(-r²/2σ²) dlog σ ∝ r^-p`. p from 1.6 to 3.2 (Pachislop). Veiling glare's power law is from its comment; I did
+  not check it against a measurement.
+- Pyramid variance, per axis, in level-0 px²: a 2×2 box at level j adds 4^j / 4; a bilinear read from level l, a tent, averages
+  4^l / 6 (exact samples at the texel centres add none). Gaussians compose by adding variances, so each octave blurs by what is left.
+- Soft knee: `e = max(x, q² / 4k)`, `q = clamp(x + k, 0, 2k)`, `x = luma − threshold` (Pachislop, the usual bloom knee).
+- Over-exposure response: Pachislop's `bleed` and `shoulder`, written out in `deep-glow.ts`. An assumption of Pachislop's, not a camera
+  measurement; it is the identity at or below 1 (tested).
+- Floor projection: for a floor pixel, height on the object `h = (y − base) / ratio`, `ratio = tip.y / H`, `shear = tip.x / H`, width
+  narrowed by `1 − perspective · h / H`. Pachislop's; the 10° guard against a horizontal direction is too.
+- Gradient blends: `fx_blendRgb` on linear colours. Blending in linear light is §8's requirement. Photoshop blends on sRGB values, so a
+  Multiply here is darker than Photoshop's.
+
+Port map: `licenses/ported/pachislop-rendering.md`, `licenses/ported/pachislop-effects.md`.
 
 ## Measured
 

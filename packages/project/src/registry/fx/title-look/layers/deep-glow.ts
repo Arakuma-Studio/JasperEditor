@@ -36,12 +36,13 @@ void main() {
 export const DEEP_GLOW_LAYER: TitleLayerInit = {
 	type: 'deepGlow',
 	label: 'Deep Glow',
-	description: 'Physically scaled light: it scatters like lens bloom and burns towards white where it is over-bright.',
+	description:
+		'Physically scaled light: it scatters like lens bloom and burns towards white where it is over-bright.',
 	finish: false,
 	params: [
 		lp.choice('from', 'From', ['shape', 'stack'], ['Shape', 'Layers Below'], 'shape'),
 		lp.number('exposure', 'Exposure', 1, { min: -10, max: 10, softMin: -4, softMax: 6, step: 0.01 }),
-		lp.number('threshold', 'Threshold', 0, { min: 0, max: 10, softMax: 2, step: 0.01 }),
+		lp.number('threshold', 'Threshold', 0, { min: 0, max: 10, softMax: 1, step: 0.01 }),
 		lp.number('knee', 'Threshold Knee', 0.25, { min: 0, max: 1, step: 0.01 }),
 		lp.distance('radius', 'Radius', 120, { softMax: 400 }),
 		lp.percent('falloff', 'Falloff', 50),

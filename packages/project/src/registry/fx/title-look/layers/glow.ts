@@ -24,7 +24,8 @@ vec4 tl_mask(TlSurface s) {
 const precise = (p: Record<string, unknown>) => p.technique === 'precise';
 const fromLayer = (p: Record<string, unknown>) => p.from === 'layer';
 const fromDistance = (p: Record<string, unknown>) => p.from === 'distance';
-const gradientPaint = (p: Record<string, unknown>) => (p.paint as { kind?: string } | undefined)?.kind === 'gradient';
+const gradientPaint = (p: Record<string, unknown>) =>
+	(p.paint as { kind?: string } | undefined)?.kind === 'gradient';
 
 /** How much glow reaches this pixel, before Intensity. */
 const AMOUNT: Record<string, string> = {

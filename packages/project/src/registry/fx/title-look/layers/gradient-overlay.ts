@@ -11,7 +11,8 @@ import { SHAPE_GRADIENT_DEPTH } from '../paint.ts';
 export const OVERLAY_BLENDS = FX_BLEND_MODES.slice(0, 16);
 export const OVERLAY_BLEND_LABELS = FX_BLEND_MODE_LABELS.slice(0, 16);
 
-const gradientPaint = (p: Record<string, unknown>) => (p.paint as { kind?: string } | undefined)?.kind === 'gradient';
+const gradientPaint = (p: Record<string, unknown>) =>
+	(p.paint as { kind?: string } | undefined)?.kind === 'gradient';
 
 const POSITION = /* glsl */ `
 float tl_overlayPos(TlSurface s) {
@@ -36,7 +37,8 @@ float tl_overlayPos(TlSurface s) {
 export const GRADIENT_OVERLAY_LAYER: TitleLayerInit = {
 	type: 'gradientOverlay',
 	label: 'Gradient Overlay',
-	description: 'Recolours what is below it with a gradient, keeping its alpha; a band of it can sweep across the title.',
+	description:
+		'Recolours what is below it with a gradient, keeping its alpha; a band of it can sweep across the title.',
 	finish: false,
 	params: [
 		...lp.paint('paint', 'Paint', {

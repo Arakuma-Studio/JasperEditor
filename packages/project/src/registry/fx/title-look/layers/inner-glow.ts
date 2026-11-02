@@ -46,16 +46,16 @@ export const INNER_GLOW_LAYER: TitleLayerInit = {
 	finish: false,
 	params: [
 		lp.choice('technique', 'Technique', ['soft', 'precise'], ['Soft', 'Precise'], 'soft'),
-		lp.choice('source', 'Source', ['edge', 'center'], ['Edge', 'Center'], 'edge'),
-		lp.distance('radius', 'Radius', 12, { softMax: 60 }),
+		lp.choice('origin', 'Source', ['edge', 'center'], ['Edge', 'Center'], 'edge'),
+		lp.distance('radius', 'Radius', 12, { softMax: 20 }),
 		lp.number('intensity', 'Intensity', 100, { min: 0, max: 1000, softMax: 300, step: 1 }, { unit: '%' }),
-		lp.percent('choke', 'Choke', 0),
+		lp.percent('choke', 'Choke', 0, { range: { softMax: 50 } }),
 		...lp.paint('paint', 'Paint', { kind: 'role', role: 'glow' }),
 		lp.choice('blend', 'Blend', ['normal', 'screen', 'add'], ['Normal', 'Screen', 'Add'], 'screen'),
 		lp.percent('opacity', 'Opacity', 100),
 	],
 	shader(p) {
-		const key = `${precise(p) ? 'precise' : 'soft'}-${p.source === 'center' ? 'center' : 'edge'}`;
+		const key = `${precise(p) ? 'precise' : 'soft'}-${p.origin === 'center' ? 'center' : 'edge'}`;
 		return {
 			glsl: /* glsl */ `${AMOUNT[key]}
 vec4 tl_layer(TlSurface s) {
