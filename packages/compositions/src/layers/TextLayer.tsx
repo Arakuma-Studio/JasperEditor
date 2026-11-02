@@ -26,15 +26,38 @@ import {
 	textAnimationUnit,
 	type UnitValues,
 } from '@jasper/motion/text';
-import { sourceTextAt, type TextStyle } from '@jasper/project';
-import { type CSSProperties, type ReactNode, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+	appearanceWantsTextSpans,
+	type FxTextSpans,
+	sourceTextAt,
+	TITLE_LOOK_EFFECT_ID,
+	type TextStyle,
+} from '@jasper/project';
+import {
+	type CSSProperties,
+	type ReactNode,
+	useCallback,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from 'react';
 import { fontFaceFor, useFontsReady } from '../fonts.ts';
 import { rgbaCss } from '../metadata.ts';
 import type { LayerProps } from '../types.ts';
 import { LayerBox } from './LayerBox.tsx';
 import { blockStyles, type RunStyle, runLayoutCss, styledSpans, textBlockStyle } from './text/block.ts';
+import { measureTypeset, type TypesetLayout } from './text/measure.ts';
 import { PaintedText, type PaintMode, paintCss, planTextPaint } from './text/paint.tsx';
-import { type TypesetSourceProps, TypesetText } from './text/TypesetText.tsx';
+import {
+	type ReportSpans,
+	restSpans,
+	type UnitPlacement,
+	unitSpans,
+	unitTransform,
+	useReportSpans,
+} from './text/spans.ts';
+import { fontFamilyFor, type TypesetSourceProps, TypesetText } from './text/TypesetText.tsx';
 import { needsTypeset } from './text/typography.ts';
 
 type TextSource = Extract<LayerProps['clip']['source'], { text: unknown }>;
@@ -51,6 +74,25 @@ function copyAttrs(mode: PaintMode, block: string): Record<string, string | bool
 }
 
 const maxSize = (styles: readonly TextStyle[]) => Math.max(1, ...styles.map((s) => s.sizePx));
+
+/** The layout of the text at rest, as the typeset path measures it (spec 19 TL-036: the boxes a look's gradients span). */
+function restLayout(source: TextSource, fonts: Fonts): TypesetLayout {
+	const pointText = source.box.autoSize === 'width';
+	const key = JSON.stringify([source.text, source.box.width, pointText, fonts?.map((f) => f.family)]);
+	return measureTypeset(
+		{ content: source.text, width: source.box.width, pointText, family: (s) => fontFamilyFor(s, fonts) },
+		key,
+	);
+}
+
+/** TL-036: reports the glyphs of the plain block. */
+function RestSpans({ source, fonts, report }: { source: TextSource; fonts: Fonts; report: ReportSpans }) {
+	useReportSpans(
+		report,
+		restSpans(restLayout(source, fonts), (s) => fontFamilyFor(s, fonts)),
+	);
+	return null;
+}
 
 function RestText({ source, fonts, hidden }: { source: TextSource; fonts: Fonts; hidden: boolean }) {
 	const { text, style, runs } = source.text;
@@ -253,6 +295,7 @@ function AnimatedText({
 	impl,
 	seed,
 	fps,
+	reportSpans,
 }: {
 	source: TextSource;
 	fonts: Fonts;
@@ -260,6 +303,7 @@ function AnimatedText({
 	impl: TextAnimationImpl;
 	seed: number;
 	fps: number;
+	reportSpans: ReportSpans | undefined;
 }) {
 	const pRef = useRef<HTMLParagraphElement>(null);
 	const params = active.animator.params;
@@ -364,6 +408,7 @@ function AnimatedText({
 				values={values}
 				impl={impl}
 				params={params}
+				reportSpans={reportSpans}
 				caretLit={(shown) =>
 					impl.caretVisible?.({
 						params,
@@ -391,6 +436,7 @@ function TextOverlay({
 	values,
 	impl,
 	params,
+	reportSpans,
 	caretLit,
 }: {
 	source: TextSource;
@@ -400,6 +446,7 @@ function TextOverlay({
 	values: readonly Readonly<UnitValues>[];
 	impl: TextAnimationImpl;
 	params: Record<string, unknown>;
+	reportSpans: ReportSpans | undefined;
 	/** Whether the caret is lit with `shown` units fully shown (blink; a pure function of the frame). */
 	caretLit: (shown: number) => boolean;
 }) {
@@ -458,6 +505,15 @@ function TextOverlay({
 	);
 	const strokeW = plan.strokeExtent;
 	const out: ReactNode[] = [];
+	// TL-036: every animated box with what its CSS transform does.
+	const placements: UnitPlacement[] = [];
+	const place = (box: Box, v: Readonly<UnitValues>, shiftX: number, shiftY: number) => {
+		const hidden = v.opacity <= 0 || (!masks && v.reveal < 1);
+		placements.push({
+			box,
+			toDrawn: hidden ? null : unitTransform(box, v.x + shiftX, v.y + shiftY, v.scale, v.rotate),
+		});
+	};
 	lines.forEach((units, line) => {
 		if (!units.length) return;
 		const all = units.flatMap((u) => unitPieces[u]!);
@@ -479,6 +535,7 @@ function TextOverlay({
 		let content: ReactNode[];
 		if (lineMode) {
 			const v = unitValues(units[0]!);
+			place(lineBox, v, spacingShift(all, v.letterSpacing), rise(v));
 			content = [
 				<div
 					key="line"
@@ -499,6 +556,7 @@ function TextOverlay({
 				const pieces = unitPieces[unit]!;
 				const ub = union(pieces.map((p) => p.box));
 				const v = unitValues(unit);
+				place(ub, v, spacingShift(pieces, v.letterSpacing), rise(v));
 				return (
 					<div
 						key={unit}
@@ -540,6 +598,12 @@ function TextOverlay({
 			),
 		);
 	});
+	useReportSpans(
+		reportSpans,
+		reportSpans
+			? unitSpans(restLayout(source, fonts), (s) => fontFamilyFor(s, fonts), placements)
+			: null,
+	);
 	const caretShown = impl.caret?.(params) && placedUnits.length > 0 && !lineMode;
 	if (caretShown && caretLit(values.filter((v) => v.reveal >= 1).length)) {
 		const shown = placedUnits.filter((u) => unitValues(u).reveal >= 1);
@@ -584,10 +648,22 @@ export function TextLayer(layer: LayerProps) {
 				: { ...raw, text: { ...raw.text, text, runs: undefined } },
 		[raw, text],
 	);
+	// TL-036: a look's gradients span what the text below draws, and the chain around it runs after it has reported.
+	const wantsSpans = useMemo(
+		() =>
+			appearanceWantsTextSpans(
+				layer.clip.effects.find((fx) => fx.effectId === TITLE_LOOK_EFFECT_ID)?.appearance,
+			),
+		[layer.clip],
+	);
+	const [spans, setSpans] = useState<FxTextSpans | null>(null);
+	const report = useCallback<ReportSpans>((next) => {
+		setSpans((was) => (was?.key === next?.key ? was : next));
+	}, []);
 	if (!('text' in source)) return null;
 	const bg = source.text.style.background;
 	return (
-		<LayerBox layer={layer}>
+		<LayerBox layer={wantsSpans && spans ? { ...layer, textSpans: spans } : layer}>
 			{bg ? (
 				<div
 					data-text-background=""
@@ -602,12 +678,20 @@ export function TextLayer(layer: LayerProps) {
 					}}
 				/>
 			) : null}
-			<TextBody layer={layer} source={source} />
+			<TextBody layer={layer} source={source} reportSpans={wantsSpans ? report : undefined} />
 		</LayerBox>
 	);
 }
 
-function TextBody({ layer, source }: { layer: LayerProps; source: TextSource }) {
+function TextBody({
+	layer,
+	source,
+	reportSpans,
+}: {
+	layer: LayerProps;
+	source: TextSource;
+	reportSpans: ReportSpans | undefined;
+}) {
 	const keyed = (source as TypesetSourceProps).sourceTextKeyframes;
 	const families = useMemo(
 		() =>
@@ -624,14 +708,26 @@ function TextBody({ layer, source }: { layer: LayerProps; source: TextSource }) 
 	const fontsReady = useFontsReady(families);
 	if (needsTypeset(source as TypesetSourceProps) || keyed?.length)
 		return fontsReady ? (
-			<TypesetText layer={layer} source={source as TypesetSourceProps} hidden={false} />
+			<TypesetText
+				layer={layer}
+				source={source as TypesetSourceProps}
+				hidden={false}
+				reportSpans={reportSpans}
+			/>
 		) : (
 			<RestText source={source} fonts={layer.fonts} hidden />
 		);
 	const active = activeTextAnimation(source.animation, layer.localFrame, layer.clip.duration, layer.fps);
 	const impl = active ? textAnimationImpl(active.animator) : undefined;
 	if (!fontsReady || !active || !impl)
-		return <RestText source={source} fonts={layer.fonts} hidden={!fontsReady} />;
+		return (
+			<>
+				<RestText source={source} fonts={layer.fonts} hidden={!fontsReady} />
+				{fontsReady && reportSpans ? (
+					<RestSpans source={source} fonts={layer.fonts} report={reportSpans} />
+				) : null}
+			</>
+		);
 	return (
 		<AnimatedText
 			source={source}
@@ -640,6 +736,7 @@ function TextBody({ layer, source }: { layer: LayerProps; source: TextSource }) 
 			impl={impl}
 			seed={hash32(layer.clip.clipId, 'text-anim', active.side)}
 			fps={layer.fps}
+			reportSpans={reportSpans}
 		/>
 	);
 }

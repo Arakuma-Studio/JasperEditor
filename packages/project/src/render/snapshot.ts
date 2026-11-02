@@ -31,7 +31,7 @@ import {
 import { evaluate } from '../keyframes.ts';
 import { trackMatteTracksOf } from '../masks/track-matte.ts';
 import { multicamView } from '../multicam/model.ts';
-import { clipParamMediaIds } from '../param-media.ts';
+import { clipParamMediaIds, effectMediaRefs } from '../param-media.ts';
 import { defaultEffectRegistry } from '../registry/effects.ts';
 import { clipEngines, type EngineId, isBoundedContent, kindCapabilities } from '../registry/kinds.ts';
 import { expandLumetriSpatial } from '../registry/lumetri-spatial.ts';
@@ -1166,6 +1166,9 @@ export function buildRenderSnapshot(
 			const colorFx = colorEffectOf(c, doc, colorInfo);
 			// LUT assets referenced by effect params need media handles too.
 			for (const fx of colorFx ? [colorFx, ...effects] : effects) if (fx.enabled) useParamMedia(fx.params);
+			// spec 19 TL-021: a look's reflection images and pattern tiles live in its layers, not in the effect's params.
+			for (const ref of effectMediaRefs(effects.filter((fx) => fx.enabled)))
+				if (doc.media[ref.mediaId]) useMedia(ref.mediaId);
 			clips.push({
 				clipId: c.id,
 				kind: c.kind,

@@ -66,7 +66,7 @@ vec4 tl_finish(vec4 paint, TlSurface s) {
   q.px = q.uv * u_canvasSize;
   vec4 seen = tlPaint_paint(q);
   // A read off the shape keeps the colour here.
-  if (seen.a <= 1.0e-4) seen = paint;
+  if (texture(u_source, q.uv).a <= 0.02) seen = paint;
   return tl_glass(tl_straight(seen), paint.a, s, n, k);
 }`,
 	fieldReach: (p) => reliefReach(num(p.glassSize), p.glassFit === true),

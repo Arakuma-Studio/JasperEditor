@@ -10,8 +10,8 @@ export const INLINE_LAYER: TitleLayerInit = {
 	description: 'A ring inside the shape.',
 	finish: true,
 	params: [
-		lp.distance('inset', 'Inset', 3, { softMax: 30 }),
-		lp.distance('width', 'Width', 2, { softMax: 20 }),
+		lp.distance('inset', 'Inset', 3, { softMax: 9 }),
+		lp.distance('width', 'Width', 2, { softMax: 8 }),
 		...lp.paint('paint', 'Paint', { kind: 'role', role: 'accent1' }),
 		lp.percent('opacity', 'Opacity', 100),
 	],

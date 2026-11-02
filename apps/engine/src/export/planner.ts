@@ -12,6 +12,7 @@ import {
 	buildRenderSnapshot,
 	clipContentTime,
 	collectParamMediaIds,
+	effectMediaRefs,
 	defaultEffectRegistry,
 	type EffectRegistry,
 	hasAudioProcessor,
@@ -681,6 +682,17 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			code: 'LUT_OFFLINE',
 			message: `${lutOffline.size} clip(s) use an offline LUT or colour config; the colour steps using it are skipped`,
 			itemIds: [...lutOffline],
+		});
+	// spec 19 TL-021: a look's picture that is offline: the layer draws without it, so the export says which clips.
+	const lookMediaOffline = new Set<string>();
+	for (const c of visual)
+		for (const ref of effectMediaRefs(c.effects))
+			if (ref.param.startsWith('appearance.') && !snapshot.media[ref.mediaId]) lookMediaOffline.add(c.clipId);
+	if (lookMediaOffline.size > 0)
+		warnings.push({
+			code: 'LOOK_MEDIA_OFFLINE',
+			message: `${lookMediaOffline.size} clip(s) use an offline picture in a look: a reflection uses its preset environment, a pattern tile draws no marks`,
+			itemIds: [...lookMediaOffline],
 		});
 	// VFR media are mapped by their real timestamps by the retime stage (native) and the preview
 	// decoder (Remotion); only an engine without the retime stage still conforms them.

@@ -6,7 +6,7 @@ import type { RGBA } from '../../../schema/common.ts';
 import type { Gradient, LayerParamValue, Paint, Role } from '../../../title-looks/model.ts';
 import { type FxUniformValue, type GlslChunk, hashFloats } from '../shader.ts';
 import { GLSL_TL_PAINT } from './glsl.ts';
-import { type FxTextSpans, GLSL_TL_SPAN_PAINT } from './spans.ts';
+import { type FxTextSpans, GLSL_TL_SPAN_BLOCK, GLSL_TL_SPAN_OWNED } from './spans.ts';
 
 const DEG = Math.PI / 180;
 export const RAMP_SIZE = 256;
@@ -124,7 +124,7 @@ export function paintParts(
 					[`u_${name}Dir`]: [Math.cos(rad), Math.sin(rad)],
 					[`u_${name}Rad`]: rad,
 				},
-				include: spans ? [GLSL_TL_SPAN_PAINT] : [GLSL_TL_PAINT],
+				include: spans ? [span > 0 ? GLSL_TL_SPAN_OWNED : GLSL_TL_SPAN_BLOCK] : [GLSL_TL_PAINT],
 				usesBounds: true,
 				usesSpans: !!spans && span > 0,
 				fieldInside: g.type === 'shape' ? SHAPE_GRADIENT_DEPTH : 0,

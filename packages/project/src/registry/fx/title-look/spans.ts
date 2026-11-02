@@ -94,6 +94,21 @@ export function buildTextSpans(input: readonly SpanGlyph[]): FxTextSpans | null 
 	return { texels, key: hashFloats(texels), glyphs: glyphs.length, lines: lines.length, block };
 }
 
+/** A stored appearance has a gradient paint on an enabled layer, so its text layer should report its glyphs. */
+export function appearanceWantsTextSpans(appearance: unknown): boolean {
+	const layers = (appearance as { layers?: unknown } | undefined)?.layers;
+	if (!Array.isArray(layers)) return false;
+	const gradient = (v: unknown) => (v as { kind?: unknown } | null | undefined)?.kind === 'gradient';
+	for (const l of layers as { enabled?: boolean; params?: Record<string, unknown> }[]) {
+		if (l?.enabled === false) continue;
+		for (const a of Object.values(l?.params ?? {})) {
+			const { value, keyframes } = (a ?? {}) as { value?: unknown; keyframes?: { value?: unknown }[] };
+			if (gradient(value) || (Array.isArray(keyframes) && keyframes.some((k) => gradient(k?.value)))) return true;
+		}
+	}
+	return false;
+}
+
 /** The look's uniforms of the records (`gpu.uniforms`). */
 export function textSpanUniforms(s: FxTextSpans | null | undefined): Record<string, FxUniformValue> {
 	if (!s) return {};
@@ -118,21 +133,29 @@ vec2 tl_spanRest(int i, vec2 p) {
 `,
 };
 
-/** Paints over the records: `mode` 0 block, 1 line, 2 glyph. */
-export const GLSL_TL_SPAN_PAINT: GlslChunk = {
-	name: 'title-look/span-paint',
-	deps: [GLSL_TL_SPAN_RECORDS, GLSL_TL_PAINT],
+/** A `block` gradient over the text at rest: a box in a uniform, no owner pass. */
+export const GLSL_TL_SPAN_BLOCK: GlslChunk = {
+	name: 'title-look/span-block',
+	deps: [GLSL_TL_PAINT],
 	source: /* glsl */ `
 vec2 tl_spanLayerPx(TlSurface s) { return (s.px - u_box.xy) / u_pxScale; }
+vec4 tl_spanRamp(highp sampler2D ramp, int kind, vec2 dir, float angle, float depth, TlSurface s) {
+  vec2 q = tl_spanLayerPx(s) - (u_tlSpanBlock.xy + u_tlSpanBlock.zw) * 0.5;
+  return tl_ramp(ramp, tl_gradientIn(kind, dir, angle, depth, s, q, max(u_tlSpanBlock.zw - u_tlSpanBlock.xy, vec2(1.0))));
+}
+`,
+};
+
+/** `line` and `glyph` gradients through each pixel's owner: `mode` 1 line, 2 glyph. Needs `textSpanPass`. */
+export const GLSL_TL_SPAN_OWNED: GlslChunk = {
+	name: 'title-look/span-owned',
+	deps: [GLSL_TL_SPAN_RECORDS, GLSL_TL_SPAN_BLOCK],
+	source: /* glsl */ `
 float tl_spanPos(int i, int mode, int kind, vec2 dir, float angle, float depth, TlSurface s, vec2 p) {
   vec4 box = mode == 2
     ? fx_texel(u_tlSpans, i * ${RECORD_TEXELS} + 2)
     : fx_texel(u_tlSpans, u_tlSpanGlyphs * ${RECORD_TEXELS} + int(fx_texel(u_tlSpans, i * ${RECORD_TEXELS} + 3).x));
   return tl_gradientIn(kind, dir, angle, depth, s, tl_spanRest(i, p) - (box.xy + box.zw) * 0.5, max(box.zw - box.xy, vec2(1.0)));
-}
-vec4 tl_spanRamp(highp sampler2D ramp, int kind, vec2 dir, float angle, float depth, TlSurface s) {
-  vec2 q = tl_spanLayerPx(s) - (u_tlSpanBlock.xy + u_tlSpanBlock.zw) * 0.5;
-  return tl_ramp(ramp, tl_gradientIn(kind, dir, angle, depth, s, q, max(u_tlSpanBlock.zw - u_tlSpanBlock.xy, vec2(1.0))));
 }
 vec4 tl_spanRamp(highp sampler2D ramp, int mode, int kind, vec2 dir, float angle, float depth, TlSurface s) {
   ivec2 size = textureSize(u_tlSpan, 0);

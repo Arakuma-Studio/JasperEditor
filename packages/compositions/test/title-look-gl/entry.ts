@@ -8,10 +8,12 @@ import {
 	fxBuiltinUniforms,
 	type LookRecipe,
 	buildTextSpans,
+	type EffectParams,
 	planGpuEffect,
 	resolveAppearance,
 	type SpanGlyph,
 	TITLE_LOOK_EFFECT,
+	TITLE_MATERIAL_EFFECT,
 } from '@jasper/project';
 import { type FxTextureInput, fxHost, runShaderPlan } from '../../src/fx/host.ts';
 import { fxCanvasLayout } from '../../src/fx/plan.ts';
@@ -23,6 +25,8 @@ export type LookInput =
 	| { kind: 'shapes' }
 	/** A rectangle inside the box (fractions), for exact edges. */
 	| { kind: 'rect'; x: number; y: number; w: number; h: number; color?: string }
+	/** White bars (fractions of the box), for exact gradient spans. */
+	| { kind: 'bars'; bars: readonly { x: number; y: number; w: number; h: number }[] }
 	/** The golden test card. */
 	| { kind: 'card' };
 
@@ -43,6 +47,8 @@ export type LookRequest = {
 	timingOnly?: boolean;
 	/** With `timingOnly`: time every pass (each ends in a read-back, so the total is higher). */
 	perPass?: boolean;
+	/** Run Title Material with these params instead of `recipe` (`recipe` is then ignored). */
+	material?: Record<string, unknown>;
 	/** TL-036: the text layer's glyphs at this frame. */
 	glyphs?: readonly SpanGlyph[];
 	/** Pictures of `{mediaId}` params, painted on a canvas: bound as the real path binds media (`inputs.textures`). */
@@ -124,6 +130,11 @@ function paintInput(
 		ctx.fill();
 		return;
 	}
+	if (input.kind === 'bars') {
+		ctx.fillStyle = '#fff';
+		for (const r of input.bars) ctx.fillRect(b.x + b.w * r.x, b.y + b.h * r.y, b.w * r.w, b.h * r.h);
+		return;
+	}
 	if (input.kind === 'rect') {
 		ctx.fillStyle = input.color ?? '#fff';
 		ctx.fillRect(b.x + b.w * input.x, b.y + b.h * input.y, b.w * input.w, b.h * input.h);
@@ -148,7 +159,8 @@ function base64(bytes: Uint8ClampedArray): string {
 function render(req: LookRequest): LookResult {
 	const h = fxHost();
 	if (!h) throw new Error('no WebGL2');
-	const spec = TITLE_LOOK_EFFECT as EffectSpec;
+	const spec = (req.material ? TITLE_MATERIAL_EFFECT : TITLE_LOOK_EFFECT) as EffectSpec;
+	const fxParams = (req.material ?? {}) as EffectParams;
 	let n = 0;
 	const stored = appearanceFromRecipe(
 		req.recipe,
@@ -173,7 +185,7 @@ function render(req: LookRequest): LookResult {
 		fps: 30,
 		structures: { titleLook },
 	};
-	const pad = spec.gpu!.padding!({}, base) as Partial<FxPadding>;
+	const pad = (spec.gpu!.padding?.(fxParams, base) ?? {}) as Partial<FxPadding>;
 	const extra = req.pad ?? 0;
 	const padding: FxPadding = {
 		left: (pad.left ?? 0) + extra,
@@ -185,7 +197,7 @@ function render(req: LookRequest): LookResult {
 	const seconds = req.contentSeconds ?? 0;
 	const plan = planGpuEffect(
 		spec,
-		{ id: 'fx1', params: {} },
+		{ id: 'fx1', params: fxParams },
 		{
 			...base,
 			pxScale: layout.pxScale,

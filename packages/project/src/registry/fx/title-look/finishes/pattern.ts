@@ -21,7 +21,7 @@ export const FINISH_PATTERN = defineFinish({
 	params: [
 		lp.choice('patternKind', 'Motif', TL_PATTERN_KINDS, TL_PATTERN_LABELS, 'hazard'),
 		lp.media('patternImage', 'Tile', ['image']),
-		lp.distance('patternScale', 'Scale', 22, { softMax: 100 }),
+		lp.distance('patternScale', 'Scale', 12, { softMax: 60 }),
 		lp.angle('patternAngle', 'Angle', 0),
 		lp.number('patternSeed', 'Seed', 0, { min: 0, max: 100000, softMax: 1000, step: 1 }),
 		...lp.paint('patternInk', 'Marks', { kind: 'role', role: 'accent1' }),

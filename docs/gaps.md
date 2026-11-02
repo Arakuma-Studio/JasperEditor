@@ -871,9 +871,15 @@ per area are in [wp-notes/agent-footage.md](wp-notes/agent-footage.md). Limits t
 
 Status of the foundation; streams still in progress update this list. Evidence: [wp-notes/title-looks.md](wp-notes/title-looks.md).
 
-- **`line` and `glyph` gradient spans render as `block`** until TL-036 passes text layout boxes; the UI must say so meanwhile.
-- **`block` gradients on animated text follow the frame's alpha bounds**: with per-character position animators the gradient
-  moves with the letters. Stable once TL-036 gives layout boxes.
+- **`line` and `glyph` gradient spans act as `block` on clips without text** (TL-036); `gradientSpanOn(span, clip.kind)` gives the
+  UI the fact (`spanNote: 'needs-text'`). The Appearance UI still has to show it.
+- **A title of more than 4096 drawn glyphs** gets span records for its first 4096 (`MAX_SPAN_GLYPHS`); the owner pass is linear
+  in the glyphs. Nobody sets a gradient per glyph on that much text, but it is a hard cap, not a soft one.
+- **Lights and reflections are in layer space**: a rotated title's bevel light and environment turn with it. Pachislop undoes the
+  layer's rotation so lights stay fixed on screen; a look's stage has no such input yet, and shadows behave the same.
+- **A box or pill plate does not grow rims below it** (`grows` is 0 except on `contour`): rims follow the shape field, not the plate.
+  A second, larger plate underneath gives an outline.
+- **Glass refracts only its own fill** by design (§5.1); footage behind a title is §9.
 - **Fades.** A rim reaches full strength when its glyph is half visible, not at the end of the fade (a fixed threshold would
   pop instead).
 - **Requires HTML-in-Canvas for text** (TL-039): without it (a Chrome without `--enable-features=CanvasDrawElement`) a look on a

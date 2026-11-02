@@ -44,14 +44,14 @@ vec4 tl_metal(vec4 paint, TlSurface s, int kind, vec2 slope, int env, float rota
   vec3 f0 = TL_METAL_F0[kind];
   f0 = mix(f0, tl_straight(paint) * dot(f0, vec3(0.333)) * 1.3, tint);
   float fresnel = pow(1.0 - clamp(n.z, 0.0, 1.0), 5.0);
-  vec3 c = tl_env(env, r, rotation, spread);
+  vec3 c = tl_envAA(env, r, rotation, spread);
   if (kind == 4) {
     // Brushed metal smears a light across the grain.
     vec2 grain = fx_dir(u_metalGrainAngle);
     vec3 side = vec3(-grain.y, grain.x, 0.0) * 0.32;
-    c = (c + tl_env(env, normalize(r + side), rotation, spread) + tl_env(env, normalize(r - side), rotation, spread)) / 3.0;
+    c = (c + tl_envAA(env, normalize(r + side), rotation, spread) + tl_envAA(env, normalize(r - side), rotation, spread)) / 3.0;
   }
-  c *= f0 + (1.0 - f0) * fresnel;
+  c = tl_envTone(c) * (f0 + (1.0 - f0) * fresnel);
   // The look's light as a tight highlight on what faces it.
   vec3 h = normalize(u_tlLight + vec3(0.0, 0.0, 1.0));
   float gloss = mix(240.0, 24.0, clamp(spread * 2.0, 0.0, 1.0));

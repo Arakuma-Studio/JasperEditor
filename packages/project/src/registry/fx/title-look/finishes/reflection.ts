@@ -31,7 +31,7 @@ vec4 tl_finish(vec4 paint, TlSurface s) {
   float rot = radians(u_reflectionRotation);
   float blur = u_reflectionBlur * 0.01 * 0.6;
   // No picture bound (none chosen, or offline: the chip and the export warning say so): the preset.
-  vec3 e = u_reflectionImage_size.x > 0.0 ? tl_envImage(u_reflectionImage, r, rot, blur) : tl_env(u_reflectionEnv, r, rot, blur);
+  vec3 e = u_reflectionImage_size.x > 0.0 ? tl_envImage(u_reflectionImage, r, rot, blur) : tl_envTone(tl_envAA(u_reflectionEnv, r, rot, blur));
   float l = clamp(fx_luma(e), 0.0, 1.0);
   float w = max(2.0 * l - 1.0, 0.0);
   vec3 tinted = l < 0.5 ? 2.0 * c * l : mix(c, vec3(1.0), w * w);
@@ -41,7 +41,7 @@ vec4 tl_finish(vec4 paint, TlSurface s) {
 	prepass: (p, ctx) =>
 		reliefPasses(ctx, {
 			size: num(p.reflectionSize),
-			softness: 2,
+			softness: 3,
 			profile: 0,
 			fit: p.reflectionFit === true,
 		}),

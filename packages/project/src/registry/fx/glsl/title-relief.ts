@@ -150,7 +150,7 @@ void main() {
   fragColor = best;
 }`,
 		});
-	const sigma = 1.2;
+	const sigma = 2.5;
 	const blur = { format: 'rgba16f', scale } as const;
 	out.push(
 		{
