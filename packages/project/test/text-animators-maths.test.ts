@@ -214,6 +214,13 @@ describe('character substitution and colour', () => {
 		expect(substituteCharacter(' ', xf(5))).toBeNull();
 		expect(substituteCharacter('a', xf(26))).toBeNull();
 	});
+	it('leaves a unit of several code points whole (a tate-chu-yoko run, a mark, a ZWJ sequence)', () => {
+		// Regression: the first code point alone was compared with the unit, so no animator at all cut it short.
+		for (const unit of ['12', 'e\u0301', '\u{1F469}\u200D\u{1F4BB}'])
+			expect(substituteCharacter(unit, xf(0))).toBeNull();
+		expect(substituteCharacter('12', xf(1))).toBe('22');
+		expect(substituteCharacter('e\u0301', xf(1))).toBe('f\u0301');
+	});
 	it('Full Unicode moves through code points; Character Value blends towards a code point', () => {
 		expect(substituteCharacter('a', xf(1, 'fullUnicode'))).toBe('b');
 		expect(substituteCharacter('z', xf(1, 'fullUnicode'))).toBe('{');

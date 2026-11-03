@@ -83,6 +83,66 @@ function withWidthKeys(c: RenderVisualClip, keys: { time: number; value: number 
 	} as unknown as RenderVisualClip;
 }
 
+describe('contentBleed with Warp Text (spec 19 TL-110)', () => {
+	const SPAN = { f0: 0, f1: 90, fps: SEQ.fps };
+	const warp = (extra: Command[] = []) =>
+		title([
+			{
+				type: 'effect.add',
+				target: { clipId: '$t' },
+				effectId: 'jasper.warp-text',
+				params: { style: 'arc', bend: 80 },
+				ref: '$w',
+			} as Command,
+			...extra,
+		]);
+
+	it('adds what the warp reaches, and keeps the bake cropped', () => {
+		const c = warp();
+		const text = textPad(c);
+		const bleed = contentBleed(c, defaultEffectRegistry, SPAN);
+		expect(bleed).not.toBeNull();
+		expect(bleed!).toBeGreaterThan(text + 10);
+		expect(cropRect(c, { f0: 0, f1: 90 }, SEQ)).not.toBeNull();
+	});
+
+	it('takes the largest bend of a keyed warp', () => {
+		const still = contentBleed(warp(), defaultEffectRegistry, SPAN)!;
+		const keyed = contentBleed(
+			warp([
+				{ type: 'keyframe.add', target: ['effect', '$w', 'bend'], at: { frames: 0 }, value: 10 } as Command,
+				{ type: 'keyframe.add', target: ['effect', '$w', 'bend'], at: { frames: 89 }, value: 100 } as Command,
+			]),
+			defaultEffectRegistry,
+			SPAN,
+		)!;
+		expect(keyed).toBeGreaterThan(still);
+	});
+
+	it('a warp after a glow reaches past what the glow alone asks for', () => {
+		const glow = {
+			type: 'effect.add',
+			target: { clipId: '$t' },
+			effectId: GLOW,
+		} as Command;
+		const alone = contentBleed(title([glow]), defaultEffectRegistry, SPAN)!;
+		const both = contentBleed(
+			title([
+				glow,
+				{
+					type: 'effect.add',
+					target: { clipId: '$t' },
+					effectId: 'jasper.warp-text',
+					params: { style: 'bulge', bend: 100 },
+				} as Command,
+			]),
+			defaultEffectRegistry,
+			SPAN,
+		)!;
+		expect(both).toBeGreaterThan(alone);
+	});
+});
+
 describe('contentBleed with GPU effects (TL-122)', () => {
 	it('adds the effect’s gpu.padding to the text paint when the frames are known', () => {
 		const c = title([addGlow({ glowWidth: 0.4 })]);

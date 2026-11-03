@@ -134,7 +134,7 @@ function EditMessage({ message, view }: { message: TemplateEditMessage; view: Vi
 }
 
 /** Playhead frame and play state (one React update per animation frame at most). */
-function usePlayhead(transport: TransportStore): { frame: number; playing: boolean } {
+export function usePlayhead(transport: TransportStore): { frame: number; playing: boolean } {
 	const [state, setState] = useState(() => {
 		const s = transport.getState();
 		return { frame: s.frame, playing: s.playing };
@@ -317,7 +317,7 @@ function cssString(s: string): string {
 }
 
 /** Screen px per layer px of a layer map (the square root of its area scale). */
-function layerScale(l: ResolvedLayer): number {
+export function layerScale(l: ResolvedLayer): number {
 	const m = l.props.matrix;
 	const det = Math.abs(m.a * m.d - m.b * m.c);
 	return Number.isFinite(det) && det > 0 ? Math.sqrt(det) : 1;

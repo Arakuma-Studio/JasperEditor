@@ -178,7 +178,7 @@ export function rise(s: Pick<TextStyle, 'sizePx' | 'script' | 'baselineShiftPx'>
 }
 
 /** Character CSS of a run in the (hidden) flow: font, size, spacing, features — no paint. */
-export function charFlowCss(s: TextStyle, family: string): CSSProperties {
+export function charFlowCss(s: TextStyle, family: string, vertical = false): CSSProperties {
 	const r = rise(s);
 	const features = featureSettings(s);
 	const variations = variationSettings(s);
@@ -196,7 +196,12 @@ export function charFlowCss(s: TextStyle, family: string): CSSProperties {
 		fontVariantCaps: allSmall ? 'all-small-caps' : s.smallCaps ? 'small-caps' : 'normal',
 		...(features ? { fontFeatureSettings: features } : { fontFeatureSettings: 'normal' }),
 		...(variations ? { fontVariationSettings: variations } : { fontVariationSettings: 'normal' }),
-		...(r !== 0 ? { position: 'relative', top: css(-r) } : {}),
+		// In a column the baseline runs down the page and "up" is to the right.
+		...(r !== 0
+			? vertical
+				? { position: 'relative', left: css(r) }
+				: { position: 'relative', top: css(-r) }
+			: {}),
 	};
 }
 
@@ -208,8 +213,8 @@ export function paragraphCss(s: TextStyle, pointText: boolean, first: boolean, l
 	if (pointText && justify) lastAlign = lastAlign === 'justify' ? 'left' : lastAlign;
 	return {
 		margin: 0,
-		paddingTop: first ? 0 : css(s.spaceBeforePx ?? 0),
-		paddingBottom: last ? 0 : css(s.spaceAfterPx ?? 0),
+		paddingBlockStart: first ? 0 : css(s.spaceBeforePx ?? 0),
+		paddingBlockEnd: last ? 0 : css(s.spaceAfterPx ?? 0),
 		paddingInlineStart: css(s.indentLeftPx ?? 0),
 		paddingInlineEnd: css(s.indentRightPx ?? 0),
 		textIndent: css(s.indentFirstLinePx ?? 0),
@@ -219,6 +224,6 @@ export function paragraphCss(s: TextStyle, pointText: boolean, first: boolean, l
 		unicodeBidi: s.direction === 'auto' ? 'plaintext' : 'normal',
 		whiteSpace: pointText ? 'pre' : 'pre-wrap',
 		overflowWrap: pointText ? 'normal' : 'break-word',
-		minHeight: '1lh',
+		minBlockSize: '1lh',
 	};
 }

@@ -611,7 +611,7 @@ export function contentBleed(
 		}
 		const spec = registry.get(fx.effectId, fx.effectVersion);
 		if (!spec?.gpu || !span) return null;
-		const pad = gpuBleed(c, fx, spec, span);
+		const pad = gpuBleed(c, fx, spec, span, px);
 		if (pad === null) return null;
 		px += pad;
 	}
@@ -631,6 +631,8 @@ function gpuBleed(
 	fx: RenderVisualClip['effects'][number],
 	spec: EffectSpec,
 	span: { f0: number; f1: number; fps: Rational },
+	/** What the steps before this effect already reach (spec 19 TL-110: a warp moves that too). */
+	before = 0,
 ): number | null {
 	const fps = span.fps.num / span.fps.den;
 	if (!(fps > 0) || !Number.isFinite(fps)) return null;
@@ -652,6 +654,7 @@ function gpuBleed(
 				fps,
 				frame: local,
 				paramsAt,
+				inputPadding: { left: before, top: before, right: before, bottom: before },
 			});
 			max = Math.max(max, pad.left, pad.top, pad.right, pad.bottom);
 		} catch {

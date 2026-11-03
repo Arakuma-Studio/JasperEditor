@@ -51,6 +51,8 @@ export type PlaceOptions = {
 	};
 	/** Per-character 3D on (else Z, X and Y rotation are ignored). */
 	threeD: boolean;
+	/** spec 19 TL-111: lines are columns, so tracking moves characters down. */
+	vertical?: boolean;
 	/** Path Options, evaluated. */
 	path?: {
 		measure: PathMeasure;
@@ -205,9 +207,10 @@ export function placeGlyphs(
 	const origin = (gi: number): [number, number] => {
 		const g = glyphs[gi]!;
 		const x = xfs[gi]!;
+		// spec 19 TL-111: tracking runs down a column.
 		return [
-			g.origin[0] + shift[gi]! + x.lineSpacing[0] * g.lineIndex,
-			g.origin[1] + x.lineSpacing[1] * g.lineIndex,
+			g.origin[0] + (o.vertical ? 0 : shift[gi]!) + x.lineSpacing[0] * g.lineIndex,
+			g.origin[1] + (o.vertical ? shift[gi]! : 0) + x.lineSpacing[1] * g.lineIndex,
 		];
 	};
 	const grouping = o.moreOptions?.anchorPointGrouping ?? 'character';

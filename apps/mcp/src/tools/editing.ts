@@ -449,7 +449,7 @@ export function registerEditingTools(ctx: ToolContext): void {
 		{
 			title: 'Add text',
 			description:
-				"Adds a text (title) clip (clip.addText) on a video track above the footage. Position is in sequence pixels (0,0 = top left; default: centred). animateIn/animateOut add text animations (list_text_animations). strokes: every entry is drawn, the first on top (outside / center / inside of the glyph outline); shadow: the glyphs and their strokes grown by spreadPx, blurred (blurPx = CSS blur radius, Gaussian σ = blurPx / 2), offset by distancePx at angleDeg (0 = right, 90 = down), opacity = the colour's alpha. The box follows the glyph metrics of the font (measured in the editor or the engine's render browser; `layoutPending` marks an estimate). Preview and every export draw the same.",
+				"Adds a text (title) clip (clip.addText) on a video track above the footage. Position is in sequence pixels (0,0 = top left; default: centred). animateIn/animateOut add text animations (list_text_animations). strokes: every entry is drawn, the first on top (outside / center / inside of the glyph outline); shadow: the glyphs and their strokes grown by spreadPx, blurred (blurPx = CSS blur radius, Gaussian σ = blurPx / 2), offset by distancePx at angleDeg (0 = right, 90 = down), opacity = the colour's alpha. The box follows the glyph metrics of the font (measured in the editor or the engine's render browser; `layoutPending` marks an estimate). vertical: right-to-left columns, with 1 to 3 half-width characters upright (tate-chu-yoko). Preview and every export draw the same.",
 			input: {
 				projectId: ProjectIdArg,
 				text: z.string().min(1).max(2000).describe('The text to show (line breaks allowed)'),
@@ -494,6 +494,7 @@ export function registerEditingTools(ctx: ToolContext): void {
 					.describe('Drop shadow of the glyphs and strokes'),
 				position: z.tuple([z.number(), z.number()]).optional().describe('[x, y] in sequence pixels'),
 				// M2 (wp-m2-text-anim, S11:ANA-002): text animators of the new clip (see list_text_animations).
+				vertical: z.boolean().optional().describe('Set the text in right-to-left columns'),
 				animateIn: AnimateArg.optional().describe(
 					'In animation over the first frames: a preset id ("slide-up") or {preset, durationFrames | durationSeconds, params}',
 				),
@@ -541,7 +542,11 @@ export function registerEditingTools(ctx: ToolContext): void {
 						at: a.at,
 						duration: a.duration,
 						track: a.track ?? 'V2',
-						content: { text: a.text, ...(Object.keys(style).length ? { style } : {}) },
+						content: {
+							text: a.text,
+							...(Object.keys(style).length ? { style } : {}),
+							...(a.vertical ? { writingMode: 'vertical' } : {}),
+						},
 						...(a.position ? { transform: { position: a.position } } : {}),
 						...(textAnimation ? { textAnimation } : {}),
 						...(a.sequenceId ? { sequenceId: a.sequenceId } : {}),

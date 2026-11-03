@@ -137,23 +137,38 @@ export function freeVideoTrack(seq: Sequence, at: number, duration: number, pref
 
 const DEFAULT_TEXT_SECONDS = 5;
 
-/** Type tool click: a point-text clip at the playhead centered on `point` (XF-060). */
-export function addTextAt(session: EditorSession, point: Vec2, frame: number): string | null {
+/** Where a new text clip goes: at `frame`, for the default length, on a free video track (XF-060). */
+export function textPlacement(
+	session: EditorSession,
+	frame: number,
+): { sequenceId: string; at: number; duration: number; track: string } | null {
 	const seq = activeSequence(session);
 	if (!seq) return null;
 	const fps = seq.settings.frameRate.num / seq.settings.frameRate.den;
 	const duration = Math.max(1, Math.round(DEFAULT_TEXT_SECONDS * fps));
 	const view = session.getState().views[seq.id];
-	const track = freeVideoTrack(seq, frame, duration, view?.targeting.video);
+	return {
+		sequenceId: seq.id,
+		at: frame,
+		duration,
+		track: freeVideoTrack(seq, frame, duration, view?.targeting.video),
+	};
+}
+
+/** Graphics ▸ New Layer ▸ Text: a point-text clip at the playhead centered on `point`. */
+export function addTextAt(session: EditorSession, point: Vec2, frame: number): string | null {
+	const place = textPlacement(session, frame);
+	if (!place) return null;
+	const { sequenceId, at, duration, track } = place;
 	const r = session.apply({
 		label: 'Add Text',
 		origin: 'user',
-		sequenceId: seq.id,
+		sequenceId,
 		commands: [
 			{
 				type: 'clip.addText',
 				ref: '$text',
-				at: frame,
+				at,
 				duration,
 				track,
 				content: { text: 'Text' },

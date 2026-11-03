@@ -881,6 +881,19 @@ Status of the foundation; streams still in progress update this list. Evidence: 
   `FX_LAYER_UNSUPPORTED`. Nothing is silently dropped.
 - **Requires float targets** (TL-032, TL-123): without them the preview bypasses the look with a chip, a render fails with
   `TITLE_LOOK_NEEDS_FLOAT` and the export plan refuses when the probe answered (TL-124).
+- **Per-letter finish overrides are not drawn (TL-093).** `content.runs[].finish` persists, repairs and survives edits, and the rule is
+  in [wp-notes/title-looks.md](wp-notes/title-looks.md) "Runs". Drawing it needs a planner change in the finishes stream. Until then
+  the toolbar's Finish control is disabled with that reason (`RUN_FINISHES_DRAWN`).
+- **Vertical text on a path is refused** (TL-111): `clip.update` and `text.setPathOptions` return `E_INVALID_PARAM`, and Properties and
+  the Graphics menu disable it with the reason. A path has one direction and a column has none on it.
+- **A run's colour under a look** shows only where the face paints the clip's own picture (`source`); a role, colour or gradient face
+  paints over it (TL-093: the look applies over the runs). The toolbar's tooltip says so.
+- **Text entry under some typography** (tsume, optical or manual kerning, per-paragraph settings, text on a path) shows the editor's own
+  text on a scrim, not the look, until it is committed. During an IME composition too.
+- **A killed renderer loses an uncommitted text entry**: `pagehide`, an error boundary and unmounting all commit it, and a crashed tab
+  has no such moment. The entry is not in the crash-recovery journal, which holds transactions.
+- **`graphics.newTextLayer` still inserts the word "Text"** at the centre: it runs from menus and for agents, with no pointer. The Type
+  tool types in place.
 - **Software rendering is slow**: ≈ 1.3 s per 1080p frame for a six-layer look on a title-sized box on SwiftShader, and an
   animated title redraws its whole stack every frame ([performance.md](performance.md) §7). Nothing has been measured on a GPU.
 

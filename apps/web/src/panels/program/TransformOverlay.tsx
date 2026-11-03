@@ -59,7 +59,8 @@ import { threeDViews } from '../../three-d/view-store.ts';
 import { applyEffectToClips, isEffectDrag, readEffectDragPayload } from '../effects/drag.ts';
 import { insertMotionTemplate, MG_TEMPLATE_MIME, readMgTemplateDrag } from '../motionTemplates/insert.ts';
 import { inspectorFocus } from '../properties/lib/focus.ts';
-import { activeSequence, addTextAt, transformAt, transformCommands } from './edits.ts';
+import { beginTextEntry } from '../../text-edit/begin.ts';
+import { activeSequence, transformAt, transformCommands } from './edits.ts';
 import { MotionPathLayer } from './MotionPathLayer.tsx';
 import { MONITOR_COLORS } from './monitor.tokens.ts';
 import type { MonitorViewState } from './monitor-store.ts';
@@ -488,8 +489,17 @@ export function TransformOverlay({
 		if (e.button !== 0) return;
 		const f = live.current.frame;
 		if (tool === 'type') {
-			addTextAt(session, p, f);
-			session.setToggles({ activeTool: 'selection' });
+			// spec 19 TL-085: on release, or the press would take the focus back from the caret it opened.
+			const clipId = layerAt(p);
+			const client: [number, number] = [e.clientX, e.clientY];
+			window.addEventListener(
+				'pointerup',
+				() => {
+					session.setToggles({ activeTool: 'selection' });
+					beginTextEntry(session, { point: p, frame: f, clipId, client });
+				},
+				{ once: true },
+			);
 			return;
 		}
 		const sel = live.current.selLayers;
@@ -1044,6 +1054,7 @@ export function TransformOverlay({
 							scene: live.current.scene,
 							viewScale: live.current.view.scale,
 							surface,
+							client: [e.clientX, e.clientY] as [number, number],
 						};
 						if (h.run(ctx)) break;
 					} catch (err) {

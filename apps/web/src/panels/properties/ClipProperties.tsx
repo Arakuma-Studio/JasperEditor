@@ -23,6 +23,7 @@ import { useRegistry } from '../../extensions/react.ts';
 import { openFontPreferences, openResolveFonts } from '../../fonts/actions.ts';
 import { FontPicker } from '../../fonts/FontPicker.tsx';
 import { formatTimecode } from '../../gaps/time-display.ts';
+import { TextLayoutRows } from '../../text-edit/TextLayoutRows.tsx';
 import { TextStyleSection } from '../../text-styles/TextStyleSection.tsx';
 import { MiniButton, SelectField } from './controls/fields.tsx';
 import { FxGlyph, TrashGlyph } from './controls/glyphs.tsx';
@@ -375,6 +376,10 @@ function TextSections(props: {
 				{rest.map((r) => render(r))}
 			</Section>
 			{/* spec 13 AS-030: every stroke (not only the first) and the shadow with its spread. */}
+			{/* spec 19 TL-110, TL-111: orientation and Warp Text. */}
+			<Section id="properties.textLayout" title="Orientation and Warp">
+				<TextLayoutRows clips={visual} ctx={ctx} render={render} />
+			</Section>
 			<Section id="properties.textStrokes" title="Strokes">
 				<StrokeList clips={textClips} ctx={ctx} rowFor={rowFor} render={render} />
 			</Section>

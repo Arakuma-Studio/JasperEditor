@@ -5,8 +5,9 @@
 // Baselines come from each font's ascent, measured once per font with a zero-size inline-block on the baseline.
 // Optical kerning, manual kerning and tsume become per-character margins computed from the glyphs' side
 // bearings (canvas `measureText` ink bounds), as EffectCraft's `space_item` does with the outlines.
-import type { TextContent, TextStyle } from '@jasper/project';
+import { isVerticalText, type TextContent, type TextStyle, tateChuYokoRanges } from '@jasper/project';
 import type { CSSProperties } from 'react';
+import { UPRIGHT_TEXT_CSS, VERTICAL_TEXT_CSS } from './block.ts';
 import { charFlowCss, glyphSize, PARAGRAPH_FIELDS, paragraphCss, rise } from './typography.ts';
 
 export type Rect = { left: number; top: number; width: number; height: number };
@@ -25,6 +26,8 @@ export type TypesetGlyph = {
 	isSpace: boolean;
 	/** Index into `TypesetLayout.styles`. */
 	style: number;
+	/** spec 19 TL-111: tate-chu-yoko, one unit standing across the column. */
+	upright?: boolean;
 	/** Range rect in the text box (null: not laid out, e.g. a line break). */
 	rect: Rect | null;
 	/** Baseline y (text box space; includes baseline shift / script rise). */
@@ -228,6 +231,8 @@ export type FlowInput = {
 	content: TextContent;
 	/** Text box width; point text (`autoSize: 'width'`) never wraps. */
 	width: number;
+	/** Text box height: where vertical text wraps (spec 19 TL-111). */
+	height?: number;
 	pointText: boolean;
 	family: FontResolver;
 	/** Graphemes replaced by another string (Character Offset / Value with Adjust Kerning), by grapheme index. */
@@ -265,7 +270,14 @@ function buildFlow(
 	}
 	paras.push({ start: from, end: text.length, sepEnd: text.length });
 	const paraStyles = paragraphStyles(content, paras.length);
-	const gs = graphemes(text);
+	const vertical = isVerticalText(content);
+	const upright = tateChuYokoRanges(content);
+	// spec 19 TL-111: a tate-chu-yoko run is one unit, for the animators too.
+	const gs = graphemes(text).flatMap((g): { text: string; offset: number; upright?: boolean }[] => {
+		const r = upright.find((x) => g.offset >= x.from && g.offset < x.to);
+		if (!r) return [g];
+		return g.offset === r.from ? [{ text: text.slice(r.from, r.to), offset: r.from, upright: true }] : [];
+	});
 	// Logical indices.
 	let words = 0;
 	let inWord = false;
@@ -288,6 +300,7 @@ function buildFlow(
 			paragraph: p,
 			isSpace: space,
 			style: styleAt(g.offset),
+			...(g.upright ? { upright: true } : {}),
 			rect: null,
 			baseline: 0,
 			ascent: 0,
@@ -309,7 +322,13 @@ function buildFlow(
 		position: 'absolute',
 		left: 0,
 		top: 0,
-		width: input.width,
+		...(vertical
+			? {
+					...VERTICAL_TEXT_CSS,
+					width: 'max-content',
+					height: input.pointText ? 'max-content' : (input.height ?? 1),
+				}
+			: { width: input.width }),
 		margin: 0,
 		padding: 0,
 		boxSizing: 'border-box',
@@ -320,7 +339,7 @@ function buildFlow(
 	paras.forEach((pr, pi) => {
 		const block = document.createElement('div');
 		// The block's own font sets the strut of every line (as the plain text block's <p> does).
-		const strut = charFlowCss(content.style, input.family(content.style));
+		const strut = charFlowCss(content.style, input.family(content.style), vertical);
 		applyCss(block, {
 			...paragraphCss(paraStyles[pi]!, input.pointText, pi === 0, pi === paras.length - 1),
 			fontFamily: strut.fontFamily,
@@ -335,19 +354,23 @@ function buildFlow(
 		while (k < inPara.length) {
 			const st = inPara[k]!.style;
 			const span = document.createElement('span');
-			applyCss(span, charFlowCss(styles[st]!, input.family(styles[st]!)));
+			applyCss(span, charFlowCss(styles[st]!, input.family(styles[st]!), vertical));
 			let textNode: Text | null = null;
 			let buf = '';
 			while (k < inPara.length && inPara[k]!.style === st) {
 				const g = inPara[k]!;
 				const adj = adjust[g.charIndex]!;
 				const sub = input.substitutions?.get(g.charIndex);
-				const own = adj.before !== 0 || adj.after !== 0 || sub !== undefined;
+				const own = adj.before !== 0 || adj.after !== 0 || sub !== undefined || !!g.upright;
 				const shown = sub ?? g.text;
 				if (own) {
 					textNode = null;
 					const inner = document.createElement('span');
-					applyCss(inner, { marginLeft: adj.before, marginRight: adj.after });
+					applyCss(inner, {
+						marginInlineStart: adj.before,
+						marginInlineEnd: adj.after,
+						...(g.upright ? UPRIGHT_TEXT_CSS : {}),
+					});
 					const t = document.createTextNode(shown);
 					inner.append(t);
 					span.append(inner);
@@ -407,18 +430,21 @@ export function measureTypeset(input: FlowInput, cacheKey: string): TypesetLayou
 	if (hit) return hit;
 	const h = textMeasureHost();
 	const inner = document.createElement('div');
+	const vertical = isVerticalText(input.content);
 	applyCss(inner, {
 		position: 'absolute',
 		left: 0,
 		top: 0,
-		width: Math.max(1, input.width),
+		width: vertical ? 'max-content' : Math.max(1, input.width),
 		contain: 'layout style',
 	} as CSSProperties);
 	h.append(inner);
 	const { root, layoutGlyphs, nodes, styles, paragraphs } = buildFlow(input, inner);
 	const origin = root.getBoundingClientRect();
 	const range = document.createRange();
-	const fonts = styles.map((s) => charFlowCss(s, input.family(s)));
+	const fonts = styles.map((s) => charFlowCss(s, input.family(s), vertical));
+	// spec 19 TL-111: columns start at the right edge of the box, whatever it leaves on the left.
+	const shiftX = vertical ? Math.max(0, input.width - origin.width) : 0;
 	for (const g of layoutGlyphs) {
 		const n = nodes[g.charIndex];
 		g.ascent = ascentOf(fonts[g.style]!, inner);
@@ -427,8 +453,14 @@ export function measureTypeset(input: FlowInput, cacheKey: string): TypesetLayou
 		range.setEnd(n.node, n.end);
 		const r = range.getBoundingClientRect();
 		if (r.width === 0 && r.height === 0) continue;
-		g.rect = { left: r.left - origin.left, top: r.top - origin.top, width: r.width, height: r.height };
-		g.baseline = g.rect.top + g.ascent;
+		g.rect = {
+			left: r.left - origin.left + shiftX,
+			top: r.top - origin.top,
+			width: r.width,
+			height: r.height,
+		};
+		// In a column glyphs are placed by the middle of their cell.
+		g.baseline = vertical ? g.rect.top + g.rect.height / 2 : g.rect.top + g.ascent;
 	}
 	inner.remove();
 	// Lines: the unshifted baseline moves down in logical order at every line break.
@@ -438,6 +470,17 @@ export function measureTypeset(input: FlowInput, cacheKey: string): TypesetLayou
 	for (const g of layoutGlyphs) {
 		if (!g.rect) {
 			g.lineIndex = Math.max(0, line);
+			continue;
+		}
+		if (vertical) {
+			// Columns move left in logical order.
+			const mid = g.rect.left + g.rect.width / 2;
+			if (line < 0 || mid < current - g.rect.width / 2 || g.paragraph !== lastPara) {
+				line++;
+				current = mid;
+			} else current = Math.min(current, mid);
+			lastPara = g.paragraph;
+			g.lineIndex = line;
 			continue;
 		}
 		const b0 = g.baseline + rise(styles[g.style]!);

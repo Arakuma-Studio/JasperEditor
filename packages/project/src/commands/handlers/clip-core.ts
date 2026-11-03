@@ -16,6 +16,7 @@ import type { Clip, Sequence, TextBox, TextContent, TextStyle, Track } from '../
 import { SYNTHETIC_INFO, syntheticDefaultFlicks } from '../../structure/synthetic.ts';
 import type { ProjectTextStyle } from '../../text-styles/model.ts';
 import { diffStyle } from '../../text-styles/patch.ts';
+import { isVerticalText } from '../../text-writing.ts';
 import { newLayer3D } from '../../three-d/model.ts';
 import { FRAME_EPS, flicksPerFrame, supportsDropFrame } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
@@ -446,8 +447,11 @@ export function estimateTextBox(content: TextContent, frameW: number): { width: 
 	const s = content.style;
 	const lines = content.text.split('\n');
 	const longest = Math.max(1, ...lines.map((l) => l.length));
+	const across = Math.ceil(lines.length * s.sizePx * s.lineHeight);
+	// spec 19 TL-111: lines are columns, and a character in a column takes about a full em.
+	if (isVerticalText(content)) return { width: across, height: Math.ceil(longest * s.sizePx) };
 	const width = Math.min(frameW, Math.ceil(longest * s.sizePx * 0.55));
-	return { width, height: Math.ceil(lines.length * s.sizePx * s.lineHeight) };
+	return { width, height: across };
 }
 
 /** Largest measured box side kept (px); a measurer reporting more (or a non-finite size) counts as unmeasured. */
@@ -485,7 +489,8 @@ export function layoutText(
 		if (box.autoSize === 'width') {
 			clip.box.width = m.width;
 			clip.box.height = m.height;
-		} else clip.box.height = m.height;
+		} else if (isVerticalText(content)) clip.box.width = m.width;
+		else clip.box.height = m.height;
 		delete clip.layoutPending;
 	} else {
 		const e = estimateTextBox(content, frameW);
@@ -642,6 +647,8 @@ export const clipCoreHandlers = {
 			...(cmd.content.paragraphs?.length
 				? { paragraphs: cmd.content.paragraphs as TextContent['paragraphs'] }
 				: {}),
+			...(cmd.content.writingMode === 'vertical' ? { writingMode: 'vertical' as const } : {}),
+			...(cmd.content.tateChuYoko === false ? { tateChuYoko: false } : {}),
 		};
 		const { seq, track, at, duration, id } = newGeneratorClip(doc, cmd, h, 'text');
 		const est = estimateTextBox(content, seq.settings.width);
@@ -984,6 +991,16 @@ export function applyClipPatch(
 			if (p.content.paragraphs.length) clip.content.paragraphs = p.content.paragraphs;
 			else delete clip.content.paragraphs;
 		}
+		if (p.content?.writingMode === 'vertical') {
+			// Text on a path runs along the path; a column has no direction on it (docs/gaps.md).
+			if (clip.pathOptions)
+				h.fail('E_INVALID_PARAM', `${clip.id} is text on a path: remove the path to set it vertically`, {
+					path: ['content', 'writingMode'],
+				});
+			clip.content.writingMode = 'vertical';
+		} else if (p.content?.writingMode === 'horizontal') delete clip.content.writingMode;
+		if (p.content?.tateChuYoko === false) clip.content.tateChuYoko = false;
+		else if (p.content?.tateChuYoko === true) delete clip.content.tateChuYoko;
 		if (p.content && clip.sourceTextKeyframes?.length)
 			h.warn(
 				'W_SOURCE_TEXT_ANIMATED',

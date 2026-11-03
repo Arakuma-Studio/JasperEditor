@@ -480,8 +480,10 @@ export function substituteCharacter(
 		else if (isDigit(base)) out = 0x30 + mod(base - 0x30 + off, 10);
 		else out = base;
 	}
+	// The first code point of a unit changes: marks, ZWJ sequences and a tate-chu-yoko run keep the rest of it.
+	const first = String.fromCodePoint(ch.codePointAt(0) ?? 0);
 	const s = String.fromCodePoint(out);
-	return s !== ch ? s : null;
+	return s !== first ? s + ch.slice(first.length) : null;
 }
 
 /** RGB (0…1) → HSV (h 0…1). */

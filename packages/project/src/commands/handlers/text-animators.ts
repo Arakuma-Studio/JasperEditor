@@ -21,6 +21,7 @@ import {
 	presetForLegacy,
 	type TextAnimatorPreset,
 } from '../../text-animators/presets.ts';
+import { isVerticalText } from '../../text-writing.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';
@@ -432,6 +433,10 @@ export const textAnimatorHandlers = {
 				delete clip.pathOptions;
 				continue;
 			}
+			if (isVerticalText(clip.content))
+				return h.fail('E_INVALID_PARAM', `${clip.id} is vertical text: a text path needs horizontal text`, {
+					path: ['maskId'],
+				});
 			const prev = clip.pathOptions;
 			const maskId = cmd.maskId ?? prev?.maskId;
 			if (!maskId)

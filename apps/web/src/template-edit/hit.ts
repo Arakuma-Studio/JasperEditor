@@ -29,7 +29,7 @@ export type TemplateParamHit = {
 };
 
 /** Layer px of a sequence point (null when the layer map is degenerate). */
-function sequenceToLayer(l: ResolvedLayer, p: Vec2): Vec2 | null {
+export function sequenceToLayer(l: ResolvedLayer, p: Vec2): Vec2 | null {
 	if (l.props.projective) {
 		const inv = invertMat3(l.props.projective);
 		if (!inv) return null;

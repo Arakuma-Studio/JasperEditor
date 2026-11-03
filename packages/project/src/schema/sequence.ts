@@ -203,7 +203,18 @@ export const TextContentSchema = z.looseObject({
 	text: z.string(),
 	style: TextStyleSchema,
 	runs: z
-		.array(z.looseObject({ from: nonNegInt(), to: nonNegInt(), style: TextStyleSchema.partial() }))
+		.array(
+			z.looseObject({
+				from: nonNegInt(),
+				to: nonNegInt(),
+				style: TextStyleSchema.partial(),
+				/**
+				 * spec 19 TL-093 (schema v12): the look's finish on these letters instead of the one its layers name (a
+				 * finish id of the title-look catalogue). Read leniently: an unknown id draws the layer's own finish.
+				 */
+				finish: z.custom<string>(() => true).optional(),
+			}),
+		)
 		.optional(),
 	/**
 	 * per-paragraph overrides of the paragraph settings (`align`, `justifyLast`, indents,
@@ -212,6 +223,13 @@ export const TextContentSchema = z.looseObject({
 	paragraphs: z.array(z.looseObject({ index: nonNegInt(), style: TextStyleSchema.partial() })).optional(),
 	/** Wave expressions (optional): a Source Text expression; its result (a string) replaces `text` per frame. */
 	expression: ExpressionSchema.optional(),
+	/**
+	 * spec 19 TL-111 (schema v12): `vertical` sets the text in right-to-left columns; absent = horizontal. Read
+	 * leniently: any value loads, anything else reads as horizontal and repair removes it (`text-writing.ts`).
+	 */
+	writingMode: z.custom<'horizontal' | 'vertical'>(() => true).optional(),
+	/** spec 19 TL-111 (schema v12): short half-width runs stand upright in a column (absent = on; vertical text only). */
+	tateChuYoko: z.custom<boolean>(() => true).optional(),
 });
 export type TextContent = DeepStrip<z.infer<typeof TextContentSchema>>;
 

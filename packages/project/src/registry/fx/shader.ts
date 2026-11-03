@@ -154,6 +154,11 @@ export type FxPlanContext = {
 	clip?: FxClipInfo;
 	/** sim-warp: structured data of the instance at this frame (Puppet; the layer's masks), see `FxStructures`. */
 	structures?: FxStructures;
+	/**
+	 * Padding of the steps before this effect (layer px): `gpu.padding` of an effect that moves the whole picture
+	 * (spec 19 TL-110: a warp) needs to know how far the picture it receives reaches. Absent = none known.
+	 */
+	inputPadding?: FxPadding;
 };
 
 /** Per-frame context of `GpuEffect.uniforms` (also the values behind the built-in uniforms). */

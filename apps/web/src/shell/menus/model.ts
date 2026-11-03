@@ -446,6 +446,8 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('threeD.newCamera', 'Camera…'),
 				c('threeD.newLight', 'Light…'),
 			]),
+			c('graphics.verticalText', 'Vertical Text'),
+			c('graphics.warpText', 'Warp Text'),
 			c('mg.insertTemplate', 'Insert Motion Template…'),
 			c('mg.addAnother', 'Add Another'),
 			c('mg.bulkImport', 'Import Motion Graphics from Spreadsheet…'),

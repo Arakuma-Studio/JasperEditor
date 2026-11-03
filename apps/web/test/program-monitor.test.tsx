@@ -15,6 +15,7 @@ import { monitorStores } from '../src/panels/program/monitor-store.ts';
 import { ProgramMonitor } from '../src/panels/program/ProgramMonitor.tsx';
 import { playerDurationFrames, resolveMediaHandle } from '../src/panels/program/render-doc.ts';
 import { TransformOverlay } from '../src/panels/program/TransformOverlay.tsx';
+import { textEntryStore } from '../src/text-edit/store.ts';
 
 function makeSession() {
 	const ids = createCounterIdSource(1);
@@ -145,10 +146,11 @@ describe('Program monitor', () => {
 		expect(session.getState().transient).toBeNull();
 	});
 
-	it('Type tool click creates a text clip at the playhead and selects it (XF-060)', () => {
+	it('Type tool click places a caret at the point, with no clip until text is typed (spec 19 TL-085)', () => {
 		const { session, seqId } = makeSession();
 		session.setToggles({ activeTool: 'type' });
 		session.transport.seek(20);
+		const before = Object.keys(session.getCommitted().sequences[seqId]!.clips);
 		const { getByTestId } = render(
 			<TransformOverlay
 				session={session}
@@ -166,12 +168,13 @@ describe('Program monitor', () => {
 			button: 0,
 			pointerId: 1,
 		});
-		const created = session.getState().selection.timeline.clips[0]!;
-		const clip = session.getCommitted().sequences[seqId]!.clips[created]!;
-		expect(clip.kind).toBe('text');
-		expect(clip.start).toBe(20);
-		expect(position(session, seqId, created)).toEqual([200, 100]);
+		// On release: the press would take the focus back from the caret.
+		expect(textEntryStore.getState().current).toBeNull();
+		fireEvent.pointerUp(window, { clientX: 100, clientY: 50, button: 0, pointerId: 1 });
+		expect(textEntryStore.getState().current).toMatchObject({ clipId: null, frame: 20, point: [200, 100] });
+		expect(Object.keys(session.getCommitted().sequences[seqId]!.clips)).toEqual(before);
 		expect(session.getState().toggles.activeTool).toBe('selection');
+		textEntryStore.setState({ current: null });
 	});
 });
 

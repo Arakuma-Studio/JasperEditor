@@ -196,6 +196,8 @@ export type LayerDoubleClickContext = {
 	viewScale?: number;
 	/** The Program overlay surface that received the double-click (scopes DOM lookups to this monitor). */
 	surface?: Element | null;
+	/** Client pixel of the double-click. */
+	client?: [number, number];
 };
 export type LayerDoubleClickHandler = {
 	id: string;

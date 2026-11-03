@@ -48,6 +48,7 @@ import {
 	rotoFrameState,
 	rotoFrameUrl,
 	sideCompToCanvas,
+	TEXT_WARP_EFFECT_ID,
 	TRACK_MATTE_EFFECT_ID,
 	textContentPad,
 	titleLookStructure,
@@ -59,6 +60,7 @@ import { ColorDocContext, colorOpsContext, referencedMedia, useLutAssets } from 
 import { canUseFloatTargets } from '../color/gl.ts';
 import { bakedRunLut, loadedLutAsset, lutUrlKey } from '../color/luts.ts';
 import { NestCompSizeContext } from '../layers/nest-context.ts';
+import { useTemplateEditHold } from '../layers/template-edit-hold.ts';
 import type { LayerProps, LayerTap } from '../types.ts';
 import { type FxLoweredParams, loweredCanvasProgram } from './lowered.ts';
 import { type FxMaskGeometry, maskGeometryKey } from './mask.ts';
@@ -283,7 +285,12 @@ export function useLayerFx(
 	const compW = nestComp?.width ?? config?.width ?? 0;
 	const compH = nestComp?.height ?? config?.height ?? 0;
 	const { clip, props, fps } = layer;
-	const effects = opts.effects ?? props.effects;
+	// spec 19 TL-085: a warp stands aside while its text is edited in place, so the caret sits on the letters.
+	const editHeld = useTemplateEditHold(clip.clipId) && doc.isPreview;
+	const effects = useMemo(() => {
+		const list = opts.effects ?? props.effects;
+		return editHeld ? list.filter((e) => e.effectId !== TEXT_WARP_EFFECT_ID) : list;
+	}, [opts.effects, props.effects, editHeld]);
 	const box = props.box;
 	// Transition framework: a side of a GPU transition captures its picture for the stage.
 	// keyframes-blend: a layer of the GL compositor's group captures its picture the same way as a transition side.
