@@ -321,7 +321,7 @@ above, 2026-11-03 04:25 UTC, load average ≈ 2–10 (other agents' work, inside
 | Speed Lines | 2168 × 1248 | 19 | 3 507 ms | 1 100 ms |
 | Lightning | 2070 × 1150 | 19 | 3 194 ms | 1 098 ms |
 | Pattern | 1688 × 768 | 10 | 1 984 ms | 664 ms |
-| Face only (reference) | 1208 × 288 | 6 | 303 ms | |
+| Face only (reference) | (not reported) | | 303 ms | |
 
 **Reading it.** The canvas dominates again: a generator that reaches far (Sunburst, Lens Flare, Light Streaks, Brush Swirl at their
 extents) grows the look's canvas, and with it the shape field every layer pays for. Magic Circle is the costliest per pixel (six
