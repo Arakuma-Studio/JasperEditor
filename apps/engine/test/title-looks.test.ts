@@ -231,6 +231,23 @@ describe('user look library (TL-054)', () => {
 	});
 });
 
+describe('the speech worker stays light', () => {
+	// It starts per job, and per request for a forced probe: in development it transpiles what it imports, so the package root
+	// costs about 7 s a start and grows with every feature, which pushed `POST /api/speech/probe` past its 10 s budget.
+	const walk = (d: string): string[] =>
+		readdirSync(d).flatMap((f) => {
+			const p = join(d, f);
+			return statSync(p).isDirectory() ? walk(p) : p.endsWith('.ts') ? [p] : [];
+		});
+
+	it('imports no package root of the model', () => {
+		const speech = join(here, '..', 'src', 'speech');
+		const files = [...walk(join(speech, 'worker')), ...walk(join(speech, 'core'))];
+		expect(files.length).toBeGreaterThan(5);
+		for (const f of files) expect(readFileSync(f, 'utf8'), f).not.toMatch(/from '@jasper\/project'/);
+	});
+});
+
 describe('display fonts (TL-053)', () => {
 	const manifest = DisplayFontManifestSchema.parse(
 		JSON.parse(readFileSync(join(DISPLAY, 'manifest.json'), 'utf8')),
