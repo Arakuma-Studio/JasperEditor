@@ -5,7 +5,9 @@ import {
 	appearanceFromRecipe,
 	appearanceWantsTextSpans,
 	buildTextSpans,
+	clipLookTurns,
 	type LookRecipe,
+	lookOrientation,
 	MAX_RUN_FINISHES,
 	planTitleLook,
 	RUN_FINISHES_DRAWN,
@@ -13,7 +15,10 @@ import {
 	type SpanBox,
 	type SpanGlyph,
 	TITLE_LAYER_TYPES,
+	titleLookPadding,
+	titleLookStructure,
 	titleLookTextures,
+	titleLookUniforms,
 } from '../src/index.ts';
 
 let n = 0;
@@ -145,6 +150,103 @@ describe('per-letter finishes (TL-093)', () => {
 			);
 			expect(pass).toBeDefined();
 			expect(titleLookTextures(ctx(face('flat'), [{ box, line: 0 }]))).toEqual([]);
+		});
+	});
+});
+
+describe('the look’s stage: lights fixed on screen', () => {
+	const close = (a: readonly number[] | null, b: readonly number[]) => {
+		expect(a).not.toBeNull();
+		a!.forEach((v, i) => expect(v).toBeCloseTo(b[i]!, 9));
+	};
+	const turned = (deg: number, sx = 1, sy = 1) => {
+		const t = (deg * Math.PI) / 180;
+		// Scale first, then the turn: the map of a layer with Motion scale and rotation.
+		return { a: Math.cos(t) * sx, b: Math.sin(t) * sx, c: -Math.sin(t) * sy, d: Math.cos(t) * sy };
+	};
+
+	it('an upright layer has no orientation, whatever its scale', () => {
+		expect(lookOrientation({ a: 1, b: 0, c: 0, d: 1 })).toBeNull();
+		expect(lookOrientation({ a: 2.5, b: 0, c: 0, d: 0.5 })).toBeNull();
+		expect(lookOrientation(null)).toBeNull();
+		expect(lookOrientation({ a: Number.NaN, b: 0, c: 0, d: 1 })).toBeNull();
+		expect(lookOrientation({ a: 0, b: 0, c: 0, d: 0 })).toBeNull();
+	});
+
+	it('is the layer’s axes on screen: its rotation, not its scale or skew', () => {
+		close(lookOrientation(turned(90)), [0, 1, -1, 0]);
+		close(lookOrientation(turned(30, 3, 0.5)), [Math.cos(Math.PI / 6), 0.5, -0.5, Math.cos(Math.PI / 6)]);
+		// A small skew leaves the rotation where it is.
+		const skewed = lookOrientation({ a: 1, b: 0.1, c: -0.1, d: 1 })!;
+		expect(Math.atan2(skewed[1], skewed[0])).toBeCloseTo(Math.atan2(0.2, 2), 9);
+	});
+
+	it('a mirrored layer: its x or y axis points the other way', () => {
+		close(lookOrientation({ a: -1, b: 0, c: 0, d: 1 }), [-1, 0, 0, 1]);
+		close(lookOrientation({ a: 1, b: 0, c: 0, d: -1 }), [1, 0, 0, -1]);
+		// Both flips are a half turn.
+		close(lookOrientation({ a: -1, b: 0, c: 0, d: -1 }), [-1, 0, 0, -1]);
+	});
+
+	it('a clip turns when its rotation is not upright, keyed or driven, or it flips', () => {
+		const rot = (value: number, extra: object = {}) => ({ transform: { rotation: { value, ...extra } } });
+		expect(clipLookTurns({})).toBe(false);
+		expect(clipLookTurns(rot(0))).toBe(false);
+		expect(clipLookTurns(rot(360))).toBe(false);
+		expect(clipLookTurns(rot(15))).toBe(true);
+		expect(clipLookTurns(rot(0, { keyframes: [{}] }))).toBe(true);
+		expect(clipLookTurns(rot(0, { expression: { enabled: true } }))).toBe(true);
+		expect(clipLookTurns({ transform: { rotation: { value: 0 }, flipH: true } })).toBe(true);
+	});
+
+	describe('uniforms and padding', () => {
+		const recipe: LookRecipe = {
+			light: { angle: 0, altitude: 30 },
+			layers: [
+				{ type: 'shadow', params: { distance: 20, blur: 0, angle: 0 } },
+				{ type: 'face', params: {} },
+			],
+		};
+		const ctx = (layerMap?: { a: number; b: number; c: number; d: number }) => {
+			const a = appearanceFromRecipe(recipe, ids);
+			const clip = { duration: 30, sourceIn: 0, speed: { rate: 1 } };
+			return {
+				width: 400,
+				height: 200,
+				pxScale: 1,
+				fps: 30,
+				frame: 0,
+				duration: 30,
+				seed: 0,
+				progress: 0,
+				structures: {
+					titleLook: titleLookStructure(resolveAppearance(a, 0), a, clip, 30, 0, null, layerMap),
+				},
+			};
+		};
+
+		it('the light comes into the layer turned back by the layer’s rotation', () => {
+			const up = titleLookUniforms(ctx());
+			expect(up.u_tlLightDir).toEqual([1, 0]);
+			expect(up.u_tlStage).toEqual([1, 0, 0, 1]);
+			// Turned a quarter clockwise: a light from screen right comes from the layer's −y.
+			const q = titleLookUniforms(ctx({ a: 0, b: 1, c: -1, d: 0 }));
+			const dir = q.u_tlLightDir as number[];
+			expect(dir[0]).toBeCloseTo(0, 9);
+			expect(dir[1]).toBeCloseTo(-1, 9);
+			const light = q.u_tlLight as number[];
+			expect(light[2]).toBeCloseTo(0.5, 9);
+			expect(Math.hypot(light[0]!, light[1]!)).toBeCloseTo(Math.cos(Math.PI / 6), 9);
+		});
+
+		it('a turned layer pads every side alike: the shadow may fall any way in it', () => {
+			const up = titleLookPadding(ctx());
+			// The shadow falls right: only that side reaches.
+			expect(up.right!).toBeGreaterThan(up.left!);
+			const turned = titleLookPadding(ctx({ a: 0, b: 1, c: -1, d: 0 }));
+			expect(turned.left).toBe(turned.right);
+			expect(turned.top).toBe(turned.right);
+			expect(turned.right).toBe(up.right);
 		});
 	});
 });

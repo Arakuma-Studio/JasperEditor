@@ -68,7 +68,61 @@ export type FxTitleLook = {
 	span?: { from: number; to: number; frames: number };
 	/** TL-036: the text layer's glyph and line boxes at this frame; absent on other clips (spans act as `block`). */
 	textSpans?: FxTextSpans | null;
+	/**
+	 * The look's stage: the layer's x and y axes on screen at this frame, unit vectors `[xx, xy, yx, yy]`
+	 * (`lookOrientation`). Lights, environments and shadow directions stay fixed on screen. Absent = upright.
+	 */
+	orient?: LookOrientation | null;
+	/** The layer turns or mirrors at some frame of the clip: padding is the same on every side (`clipLookTurns`). */
+	turns?: boolean;
 };
+
+/** The layer's x and y axes on screen, unit vectors: `[xx, xy, yx, yy]`. */
+export type LookOrientation = readonly [number, number, number, number];
+
+/**
+ * The rotation and mirroring of a layer map (`x' = a·x + c·y + e`, `y' = b·x + d·y + f`): the orthogonal part of its
+ * linear part (polar decomposition), so scale and skew do not tilt the light. Null = upright, or no orientation at all.
+ */
+export function lookOrientation(
+	m: { a: number; b: number; c: number; d: number } | null | undefined,
+): LookOrientation | null {
+	if (!m || ![m.a, m.b, m.c, m.d].every(Number.isFinite)) return null;
+	const mirrored = m.a * m.d - m.b * m.c < 0;
+	// Mirrored: the rotation of the map with its y axis flipped, then the flip.
+	const y = mirrored ? m.b + m.c : m.b - m.c;
+	const x = mirrored ? m.a - m.d : m.a + m.d;
+	if (x === 0 && y === 0) return null;
+	if (y === 0 && x > 0 && !mirrored) return null;
+	const t = Math.atan2(y, x);
+	const cos = Math.cos(t);
+	const sin = Math.sin(t);
+	return mirrored ? [cos, sin, sin, -cos] : [cos, sin, -sin, cos];
+}
+
+/**
+ * The layer may turn or mirror somewhere in the clip (rotation keyed, driven, not upright, or a flip): its look's directions
+ * then move in the layer from frame to frame, so its canvas is padded alike on every side and keeps its size.
+ */
+export function clipLookTurns(clip: { transform?: unknown }): boolean {
+	const t = clip.transform as
+		| {
+				rotation?: { value?: unknown; keyframes?: unknown[]; expression?: { enabled?: boolean } };
+				flipH?: boolean;
+				flipV?: boolean;
+		  }
+		| null
+		| undefined;
+	if (!t) return false;
+	const r = t.rotation;
+	return (
+		t.flipH === true ||
+		t.flipV === true ||
+		(r?.keyframes?.length ?? 0) > 0 ||
+		r?.expression?.enabled === true ||
+		num(r?.value) % 360 !== 0
+	);
+}
 
 const DEG = Math.PI / 180;
 const num = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
@@ -207,7 +261,12 @@ function layerPxPerPercent(tl: FxTitleLook, ctx: Pick<FxPlanContext, 'width' | '
 export function titleLookPadding(ctx: FxPlanContext): Partial<FxPadding> {
 	const tl = ctx.structures?.titleLook;
 	if (!tl) return {};
-	const r = tl.source ? appearanceClipReach(tl.source, tl.span) : lookReach(tl.appearance);
+	let r = tl.source ? appearanceClipReach(tl.source, tl.span) : lookReach(tl.appearance);
+	if (tl.turns || tl.orient) {
+		// Directions fixed on screen turn in the layer: every side as far as the farthest.
+		const m = Math.max(r.left, r.top, r.right, r.bottom);
+		r = { ...r, left: m, top: m, right: m, bottom: m };
+	}
 	const k = layerPxPerPercent(tl, ctx);
 	const px = (v: number) => (v > 0 ? Math.ceil(v * k) + PADDING_GUARD : 0);
 	const lean = Math.ceil(r.boxHeight * ctx.height);
@@ -544,13 +603,19 @@ export function titleLookUniforms(ctx: FxFrameContext): Record<string, FxUniform
 	const { angle, altitude } = tl.appearance.light;
 	const az = angle * DEG;
 	const el = altitude * DEG;
+	// The light is on screen; the look shades in the layer: turn it back by the layer's rotation (and mirror).
+	const [xx, xy, yx, yy] = tl.orient ?? [1, 0, 0, 1];
+	const sx = Math.cos(az);
+	const sy = Math.sin(az);
+	const dir = [xx * sx + xy * sy, yx * sx + yy * sy];
 	return {
 		...(tl.unitPx !== null ? { u_tlUnit: tl.unitPx * ctx.pxScale } : {}),
 		u_tlSeed: (tl.appearance.seed >>> 0) / 4294967296,
 		// Only what moves on its own reads the time: a still look keeps one key and is not redrawn (TL-037).
 		u_tlTime: appearanceTimeInvariant(tl.appearance) ? 0 : tl.contentSeconds,
-		u_tlLight: [Math.cos(az) * Math.cos(el), Math.sin(az) * Math.cos(el), Math.sin(el)],
-		u_tlLightDir: [Math.cos(az), Math.sin(az)],
+		u_tlLight: [dir[0]! * Math.cos(el), dir[1]! * Math.cos(el), Math.sin(el)],
+		u_tlLightDir: dir as unknown as readonly [number, number],
+		u_tlStage: [xx, xy, yx, yy],
 		...textSpanUniforms(tl.textSpans),
 	};
 }
@@ -601,7 +666,10 @@ export function clipLookUnit(clip: { source?: unknown }): number | null {
 	return typeof size === 'number' && Number.isFinite(size) && size > 0 ? size : null;
 }
 
-/** What a look's hooks read at a frame (`FxStructures.titleLook`). `contentTime`: flicks at this frame. */
+/**
+ * What a look's hooks read at a frame (`FxStructures.titleLook`). `contentTime`: flicks at this frame; `layerMap`: the
+ * layer's map at this frame (`ResolvedLayerProps.matrix`), whose rotation the look's lights undo.
+ */
 export function titleLookStructure(
 	appearance: ResolvedAppearance,
 	source: unknown,
@@ -609,7 +677,10 @@ export function titleLookStructure(
 	fps: number,
 	contentTime: number,
 	textSpans?: FxTextSpans | null,
+	layerMap?: { a: number; b: number; c: number; d: number } | null,
 ): FxTitleLook {
+	const orient = lookOrientation(layerMap);
+	const turns = clipLookTurns(clip as { transform?: unknown }) || orient !== null;
 	return {
 		appearance,
 		...(source ? { source: source as Appearance } : {}),
@@ -617,5 +688,7 @@ export function titleLookStructure(
 		contentSeconds: contentTime / FLICKS_PER_SECOND,
 		span: clipLookSpan(clip, fps),
 		...(textSpans ? { textSpans } : {}),
+		...(orient ? { orient } : {}),
+		...(turns ? { turns } : {}),
 	};
 }

@@ -12,6 +12,7 @@ import {
 	fxBuiltinUniforms,
 	fxOffsetBuiltins,
 	type LookRecipe,
+	lookOrientation,
 	planGpuEffect,
 	resolveAppearance,
 	type SpanGlyph,
@@ -41,6 +42,8 @@ export type LookInput =
 			kind: 'letters';
 			letters: { x: number; y: number; w: number; h: number; opacity?: number; color?: string }[];
 	  }
+	/** A disc (centre and radius in fractions of the box height): the same picture however the layer turns. */
+	| { kind: 'disc'; x: number; y: number; r: number }
 	/** A rectangle inside the box (fractions), for exact edges. */
 	| { kind: 'rect'; x: number; y: number; w: number; h: number; color?: string }
 	/** White bars (fractions of the box), for exact gradient spans. */
@@ -76,6 +79,8 @@ export type LookRequest = {
 	material?: Record<string, unknown>;
 	/** TL-036: the text layer's glyphs at this frame. */
 	glyphs?: readonly SpanGlyph[];
+	/** The layer's map on screen (its linear part): the look's lights undo its rotation, as the stage passes it. */
+	layerMap?: { a: number; b: number; c: number; d: number };
 	/** Pictures of `{mediaId}` params, painted on a canvas: bound as the real path binds media (`inputs.textures`). */
 	images?: Readonly<Record<string, LookImageInput>>;
 };
@@ -195,6 +200,13 @@ function paintInput(
 		for (const r of input.bars) ctx.fillRect(b.x + b.w * r.x, b.y + b.h * r.y, b.w * r.w, b.h * r.h);
 		return;
 	}
+	if (input.kind === 'disc') {
+		ctx.fillStyle = '#fff';
+		ctx.beginPath();
+		ctx.arc(b.x + b.w * input.x, b.y + b.h * input.y, b.h * input.r, 0, Math.PI * 2);
+		ctx.fill();
+		return;
+	}
 	if (input.kind === 'soft') {
 		const cx = b.x + b.w * input.x;
 		const cy = b.y + b.h * input.y;
@@ -247,6 +259,7 @@ function render(req: LookRequest): LookResult {
 		unitPx,
 		contentSeconds: req.contentSeconds ?? 0,
 		...(req.glyphs ? { textSpans: buildTextSpans(req.glyphs) } : {}),
+		...(req.layerMap ? { orient: lookOrientation(req.layerMap), turns: true } : {}),
 	};
 	if (req.material)
 		return draw(TITLE_MATERIAL_EFFECT as EffectSpec, req.material as EffectParams, req, { titleLook });

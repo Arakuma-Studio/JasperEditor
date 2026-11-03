@@ -9,6 +9,7 @@ import { GLSL_NOISE } from '../../glsl/noise.ts';
 import { GLSL_TL_ENV, TL_ENV_LABELS, TL_ENV_PRESETS } from '../../glsl/title-env.ts';
 import { GLSL_TL_RELIEF, reliefPasses, reliefReach } from '../../glsl/title-relief.ts';
 import { defineFinish, lp } from '../contract.ts';
+import { GLSL_TL_STAGE } from '../glsl.ts';
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
@@ -41,7 +42,8 @@ vec4 tl_metal(vec4 paint, TlSurface s, int kind, vec2 slope, float footprint, in
     spread += 0.1;
   }
   vec3 n = normalize(vec3(-slope - b0, 1.0));
-  vec3 r = tl_mirror(n);
+  // The room is on screen: the mirrored ray goes out of the layer (the title turns, the room does not).
+  vec3 r = tl_toScreen(tl_mirror(n));
   vec3 f0 = TL_METAL_F0[kind];
   f0 = mix(f0, tl_straight(paint) * dot(f0, vec3(0.333)) * 1.3, tint);
   float fresnel = pow(1.0 - clamp(n.z, 0.0, 1.0), 5.0);
@@ -49,7 +51,7 @@ vec4 tl_metal(vec4 paint, TlSurface s, int kind, vec2 slope, float footprint, in
   if (kind == 4) {
     // Brushed metal smears a light across the grain.
     vec2 grain = fx_dir(u_metalGrainAngle);
-    vec3 side = vec3(-grain.y, grain.x, 0.0) * 0.32;
+    vec3 side = tl_toScreen(vec3(-grain.y, grain.x, 0.0)) * 0.32;
     c = (c + tl_envAA(env, normalize(r + side), rotation, spread, footprint) + tl_envAA(env, normalize(r - side), rotation, spread, footprint)) / 3.0;
   }
   c = tl_envTone(c) * (f0 + (1.0 - f0) * fresnel);
@@ -79,7 +81,7 @@ export const FINISH_METAL = defineFinish({
 		lp.distance('metalGrain', 'Grain', 0.6, { softMax: 5 }),
 		lp.angle('metalGrainAngle', 'Grain Angle', 0),
 	],
-	include: [GLSL_TL_RELIEF, GLSL_TL_ENV, GLSL_NOISE],
+	include: [GLSL_TL_RELIEF, GLSL_TL_ENV, GLSL_NOISE, GLSL_TL_STAGE],
 	glsl: /* glsl */ `${METAL_GLSL}
 vec4 tl_finish(vec4 paint, TlSurface s) {
   float k = tl_px(max(u_metalSize, 0.05)) * u_metalDepth * 0.01;

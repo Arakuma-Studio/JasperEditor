@@ -214,4 +214,96 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Look core', { timeo
 			expect(diffIn(img, await render('flat', glyphs(undefined, dy), dy), A)).toBe(0);
 		});
 	});
+	describe('lights fixed on screen when the title turns', () => {
+		const BOX = { width: 240, height: 240 };
+		// A disc is the same picture however its layer turns: what changes is only where the screen is.
+		const DISC = { kind: 'disc', x: 0.5, y: 0.5, r: 0.28 } as const;
+		const look: LookRecipe = {
+			light: { angle: 210, altitude: 35 },
+			layers: [
+				{ type: 'innerShadow', params: { distance: 4, blur: 3, angle: 60 } },
+				{ type: 'rim', params: { width: 5, finish: 'bevel', paint: flat(0.85, 0.6, 0.2) } },
+				{ type: 'face', params: { finish: 'reflection', paint: flat(0.6, 0.65, 0.7) } },
+				{ type: 'extrude', params: { depth: 8, angle: 120 } },
+				{ type: 'shadow', params: { distance: 10, blur: 4, angle: 30 } },
+			],
+		};
+		/** The map of a layer turned `deg` clockwise on screen. */
+		const turned = (deg: number) => {
+			const t = (deg * Math.PI) / 180;
+			return { a: Math.cos(t), b: Math.sin(t), c: -Math.sin(t), d: Math.cos(t) };
+		};
+		/** RGBA at (dx, dy) canvas px from the centre of the layer box, bilinear. */
+		const at = (img: LookImage, dx: number, dy: number) => {
+			const x = img.box.x + img.box.w / 2 + dx - 0.5;
+			const y = img.box.y + img.box.h / 2 + dy - 0.5;
+			const x0 = Math.floor(x);
+			const y0 = Math.floor(y);
+			const fx = x - x0;
+			const fy = y - y0;
+			const px = (i: number, j: number, k: number) => img.data[(j * img.width + i) * 4 + k]!;
+			return [0, 1, 2, 3].map(
+				(k) =>
+					(px(x0, y0, k) * (1 - fx) + px(x0 + 1, y0, k) * fx) * (1 - fy) +
+					(px(x0, y0 + 1, k) * (1 - fx) + px(x0 + 1, y0 + 1, k) * fx) * fy,
+			);
+		};
+		/** Mean |difference| of premultiplied RGB between the upright look and the turned one seen on screen. */
+		const onScreen = (upright: LookImage, layer: LookImage, deg: number) => {
+			const t = (deg * Math.PI) / 180;
+			let sum = 0;
+			let n = 0;
+			for (let y = -100; y <= 100; y += 2)
+				for (let x = -100; x <= 100; x += 2) {
+					// Within the disc of what both canvases hold, however the layer turns.
+					if (x * x + y * y > 100 * 100) continue;
+					// Screen q = R·p: the layer point under it is p = Rᵀ·q.
+					const lx = Math.cos(t) * x + Math.sin(t) * y;
+					const ly = -Math.sin(t) * x + Math.cos(t) * y;
+					const a = at(upright, x, y);
+					const b = at(layer, lx, ly);
+					for (let k = 0; k < 3; k++) sum += Math.abs((a[k]! * a[3]!) / 255 - (b[k]! * b[3]!) / 255);
+					n += 3;
+				}
+			return sum / n;
+		};
+		const render = (layerMap?: ReturnType<typeof turned>) =>
+			tl.render({ recipe: look, input: DISC, box: BOX, unitPx: 100, ...(layerMap ? { layerMap } : {}) });
+
+		it('a turned title shows the light, the room and the shadows where the upright one does', async () => {
+			const upright = await render();
+			for (const deg of [40, 90, 200]) {
+				const layer = await render(turned(deg));
+				keep(`turned-${deg}`, layer);
+				// What a fixed light would not do: the layer's own picture differs from the upright one's.
+				expect(onScreen(upright, layer, 0)).toBeGreaterThan(4);
+				expect(onScreen(upright, layer, deg)).toBeLessThan(1.5);
+			}
+			keep('upright', upright);
+		});
+
+		it('a mirrored title keeps its light on screen too', async () => {
+			const upright = await render();
+			// Flipped horizontally: the layer's x axis points left on screen.
+			const layer = await render({ a: -1, b: 0, c: 0, d: 1 });
+			let sum = 0;
+			let n = 0;
+			for (let y = -100; y <= 100; y += 2)
+				for (let x = -100; x <= 100; x += 2) {
+					// Within the disc of what both canvases hold, however the layer turns.
+					if (x * x + y * y > 100 * 100) continue;
+					const a = at(upright, x, y);
+					const b = at(layer, -x, y);
+					for (let k = 0; k < 3; k++) sum += Math.abs((a[k]! * a[3]!) / 255 - (b[k]! * b[3]!) / 255);
+					n += 3;
+				}
+			expect(sum / n).toBeLessThan(1.5);
+		});
+
+		it('an upright layer map draws exactly what no map draws', async () => {
+			const a = await render();
+			const b = await render({ a: 2, b: 0, c: 0, d: 2 });
+			expect(onScreen(a, b, 0)).toBeLessThan(0.05);
+		});
+	});
 });

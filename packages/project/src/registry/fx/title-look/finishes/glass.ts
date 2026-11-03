@@ -5,6 +5,7 @@
 import { GLSL_TL_ENV, TL_ENV_LABELS, TL_ENV_PRESETS } from '../../glsl/title-env.ts';
 import { GLSL_TL_RELIEF, reliefPasses, reliefReach } from '../../glsl/title-relief.ts';
 import { defineFinish, lp } from '../contract.ts';
+import { GLSL_TL_STAGE } from '../glsl.ts';
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
@@ -24,9 +25,10 @@ vec4 tl_glass(vec3 body, float bodyAlpha, TlSurface s, vec3 n, float widthPx) {
   float caus = clamp(1.0 - back, 0.0, 1.0) * smoothstep(0.05, 0.6, here) * (1.0 - fres * 0.6);
   gc += mix(base, vec3(1.0), 0.3) * caus * caus * caustics * 1.8;
   gc += base * 0.15 * smoothstep(0.5, 1.0, here) * caustics;
-  // The sky on what leans towards it, and the room mirrored by the surface.
-  gc += vec3(0.5) * smoothstep(0.1, 0.8, -n.y) * slope;
-  gc += tl_env(u_glassEnv, tl_mirror(n), 0.0, 0.04) * (0.04 + 0.96 * pow(1.0 - clamp(n.z, 0.0, 1.0), 5.0)) * u_glassReflection * 0.01;
+  // The sky on what leans towards it, and the room mirrored by the surface: both on screen, however the title turns.
+  vec3 ns = tl_toScreen(n);
+  gc += vec3(0.5) * smoothstep(0.1, 0.8, -ns.y) * slope;
+  gc += tl_env(u_glassEnv, tl_mirror(ns), 0.0, 0.04) * (0.04 + 0.96 * pow(1.0 - clamp(n.z, 0.0, 1.0), 5.0)) * u_glassReflection * 0.01;
   float a = clamp(u_glassOpacity * 0.01 + (1.0 - u_glassOpacity * 0.01) * (fres * edge * 0.8 + caus * caustics * 0.6), 0.0, 1.0);
   // The highlight stays visible on clear glass.
   vec2 lit = tl_lit(n);
@@ -56,7 +58,7 @@ export const FINISH_GLASS = defineFinish({
 		lp.choice('glassEnv', 'Environment', TL_ENV_PRESETS, TL_ENV_LABELS, 'studio'),
 		lp.percent('glassReflection', 'Reflection', 45),
 	],
-	include: [GLSL_TL_RELIEF, GLSL_TL_ENV],
+	include: [GLSL_TL_RELIEF, GLSL_TL_ENV, GLSL_TL_STAGE],
 	glsl: /* glsl */ `${GLASS_GLSL}
 vec4 tl_finish(vec4 paint, TlSurface s) {
   float k = tl_px(max(u_glassSize, 0.05));

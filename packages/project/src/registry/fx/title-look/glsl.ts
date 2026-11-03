@@ -46,6 +46,21 @@ float tl_px(float percent) { return percent * 0.01 * u_tlUnit; }
 `,
 };
 
+/**
+ * The look's stage (`u_tlStage`, from `titleLookUniforms`): the layer's x and y axes on screen, unit vectors, its rotation
+ * and mirroring. Lights, environments and shadow directions are given on screen and stay there when the title turns, as
+ * Pachislop's layer styles do (`layerAngle`, `uReflM`): a direction on screen comes into the layer with tl_fromScreen,
+ * one in the layer goes out with tl_toScreen. `u_tlLight` and `u_tlLightDir` arrive in the layer already.
+ */
+export const GLSL_TL_STAGE: GlslChunk = {
+	name: 'title-look/stage',
+	source: /* glsl */ `
+vec2 tl_toScreen(vec2 v) { return u_tlStage.xy * v.x + u_tlStage.zw * v.y; }
+vec2 tl_fromScreen(vec2 v) { return vec2(dot(u_tlStage.xy, v), dot(u_tlStage.zw, v)); }
+vec3 tl_toScreen(vec3 v) { return vec3(tl_toScreen(v.xy), v.z); }
+`,
+};
+
 /** The alpha bounds, canvas px (x0, y0, x1, y1): the reduction's 1×1 result. */
 export const GLSL_TL_BOUNDS: GlslChunk = {
 	name: 'title-look/bounds',

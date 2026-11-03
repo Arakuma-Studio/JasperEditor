@@ -1,8 +1,11 @@
 // `shadow` (§5.1): drop, long or perspective. Ported from Pachislop's drop and perspective shadows (effects/a/shadow.ts:
 // offset, spread, blurred alpha; a floor projection), computed from the shape field, resolution independent and casting
 // from the silhouette at this layer (rims above included). Direction: `angle` degrees, or away from the look's light with
-// `useLight` (a floor shadow recedes: the light is in front of the title, so `away` is mirrored vertically).
+// `useLight` (a floor shadow recedes: the light is in front of the title, so `away` is mirrored vertically). Drop and
+// long shadows fall the same way on screen however the title turns (`GLSL_TL_STAGE`); a floor belongs to its title and
+// turns with it.
 import { fmtDistance, layerSwatch, lp, paintText, type TitleLayerInit } from '../contract.ts';
+import { GLSL_TL_STAGE } from '../glsl.ts';
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 const DEG = Math.PI / 180;
@@ -20,7 +23,7 @@ const FLOOR_MIN_DY = 0.17;
 
 /** The shadow's picture before blurring: the silhouette, moved by the kind's geometry. */
 const COMMON = /* glsl */ `
-vec2 tl_shadowDir() { return u_useLight ? -u_tlLightDir : fx_dir(u_angle); }
+vec2 tl_shadowDir() { return u_useLight ? -u_tlLightDir : tl_fromScreen(fx_dir(u_angle)); }
 float tl_silhouette(TlSurface s) { return tl_inside(s.d, s.base + tl_px(u_spread)) * s.opacity; }
 `;
 
@@ -71,7 +74,8 @@ ${
 const FLOOR = (blurred: boolean) => /* glsl */ `
 vec4 tl_layer(TlSurface s) {
   vec4 b = tl_bounds();
-  vec2 dir = u_useLight ? vec2(-u_tlLightDir.x, u_tlLightDir.y) : fx_dir(u_angle);
+  vec2 light = tl_toScreen(u_tlLightDir);
+  vec2 dir = u_useLight ? vec2(-light.x, light.y) : fx_dir(u_angle);
   if (abs(dir.y) < ${FLOOR_MIN_DY}) dir.y = dir.y < 0.0 ? -${FLOOR_MIN_DY} : ${FLOOR_MIN_DY};
   float len = max(tl_px(u_distance), 1.0);
   float H = max(b.w - b.y, 1.0);
@@ -138,13 +142,14 @@ export const SHADOW_LAYER: TitleLayerInit = {
 	shader(p) {
 		const kind = String(p.kind);
 		const blurred = sigmaOf(p) > 0;
-		if (kind === 'perspective') return { glsl: `${COMMON}${FLOOR(blurred)}` };
-		return { glsl: `${COMMON}${MASK[kind] ?? MASK.drop}${BODY(blurred, kind === 'drop')}` };
+		const include = [GLSL_TL_STAGE];
+		if (kind === 'perspective') return { glsl: `${COMMON}${FLOOR(blurred)}`, include };
+		return { glsl: `${COMMON}${MASK[kind] ?? MASK.drop}${BODY(blurred, kind === 'drop')}`, include };
 	},
 	blur(p) {
 		const sigma = sigmaOf(p);
 		if (sigma <= 0) return null;
-		return { sigma, mask: `${COMMON}${MASK[String(p.kind)] ?? MASK.drop}` };
+		return { sigma, mask: `${COMMON}${MASK[String(p.kind)] ?? MASK.drop}`, include: [GLSL_TL_STAGE] };
 	},
 	reach(p) {
 		const spread = num(p.spread) + num(p.blur);

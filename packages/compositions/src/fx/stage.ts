@@ -373,10 +373,12 @@ export function useLayerFx(
 				fps,
 				contentTime,
 				layer.textSpans,
+				// Its lights stay on screen: the look undoes the layer's rotation.
+				props.matrix,
 			);
 			return { titleLook };
 		};
-	}, [clip, fps, contentTime, layer.textSpans]);
+	}, [clip, fps, contentTime, layer.textSpans, props.matrix]);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `failures` re-plans when a shader fails
 	const plan = useMemo(
 		() =>
