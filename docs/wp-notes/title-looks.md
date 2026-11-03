@@ -128,8 +128,19 @@ looks and compile once. A six-layer look with a blur plans about 25 passes. Meas
   a plan blocker once the probe answered; the host guard is a backstop.
 - **Media.** `{mediaId}` values in layer params go through `effectMediaRefs` and `clearEffectMedia` (named
   `appearance.<layerId>.<param>`), so orphans, item delete, usage, Project Manager and force delete all see them (TL-021).
+  Project looks (`doc.titleLooks`) are read by the same walker (`titleLookMediaRefs`, `projectLookMediaIds`,
+  `clearTitleLookMedia`): a medium only a look shows is in use for `item.delete` (`E_IN_USE` naming the look; with `force`
+  the layer goes to None, reported as `clearedLooks`), Remove Unused, orphan collection, Project Manager, INV-014 and
+  repair; paste carries it. INV-006 checks a clip look's and a project look's layer media; repair sets missing ones to
+  None (`clear-effect-media`, `clear-look-media`); `look.create`, `look.update` and `look.apply` refuse media the project
+  lacks (`E_NOT_FOUND`). Font removal from the user library (`/api/fonts/library/:id/usage`) counts the families a
+  project look names (`projectLookFontFamilies`: family, fallback, Japanese face), which the font table lists only once
+  the look is applied. `mediaUsage` still counts clips only ("used by N clips").
 - **`contentBleed`.** `gpu.padding` needs `FxStructures.titleLook`, which only the composition has, so the bake takes a look's
-  reach from `titleLookBleed` directly: the keyed reach, or null (full-frame bake) when an expression drives a param.
+  reach from `titleLookBleed` directly: the keyed reach, or null (full-frame bake) when an expression drives a param. It is at
+  most `FX_MAX_PADDING`, the padding the look can draw into (a non-finite reach keeps that much).
+- **Paste Attributes** of a look carries the look's own params (Look Intensity, TL-089) with their keys retimed to the target, onto
+  a clip with or without a look.
 - **Unit (TL-012).** Text: the text size, one uniform. Other clips: the shorter side of the alpha bounds, read from the
   reduction in the shader. Plan-time decisions there (flood steps, blur scale) use the layer box as an upper bound and three
   mip levels of margin, so a small logo in a huge transparent still blurs slightly coarser, never wrongly sized.
@@ -614,14 +625,14 @@ Agent tools (§11): [title-looks-agents.md](title-looks-agents.md).
 | `look.apply {clipIds, lookId? \| look?, colorwayId?, seed?}` | A project look, a factory id, or a `{name, recipe, …}` source copied in on first use (TL-015). Reports `droppedKeyframes`. Keeps the seed of a replaced look |
 | `look.remove`, `look.detach`, `look.reset {layerIds?}` | |
 | `look.setColorway {clipIds, colorwayId?, palette?}` | Role values only; reports `keptAnimated` roles (they keep their keys) |
-| `look.create {name, fromClipId? \| recipe?, link?}`, `look.update {lookId, fromClipId? \| recipe?}` | `update` keeps overrides and keys, skips locked tracks with `W_CLIP_SKIPPED` |
-| `look.rename`, `look.delete` | A deleted look only unlinks its clips |
+| `look.create {name, fromClipId? \| recipe?, link?}`, `look.update {lookId, fromClipId? \| recipe?}` | `update` keeps overrides and keys, skips locked tracks with `W_CLIP_SKIPPED`. A layer the source clip added comes into the look once, with the clip's keys |
+| `look.rename`, `look.delete` | A deleted look only unlinks its clips. With a linked clip on a locked track `delete` refuses `E_TRACK_LOCKED` naming the clips: skipping it would leave it linked to a look that is gone, and unlinking it would edit a locked clip |
 | `appearance.addLayer {effectInstanceId, layerType, index?, preset?, params?, name?}`, `removeLayer`, `reorderLayer`, `setLayerEnabled` | Without an index a generator goes behind the title, above other generators, unless it says `front` (TL-064) |
 | `appearance.setPaint {…, param?, paint}`, `appearance.setGradient {…, param?, gradient}` | 33 stops → `E_LIMIT` |
 | `sequence.setGlobalLight {angle?, altitude?, clear?}` | |
 | `clip.addGenerator {effectId, at, duration, track?, belowClipId?, preset?, params?}` | A `transparent` solid with the effect, on a free track below `belowClipId`, or on a new track under it when none is free (TL-064). `effectId` takes `generator:<id>` |
 | `appearance.setLayerFixedColor {effectInstanceId, layerId, fixed}` | TL-051. Fixing turns the roles the layer reads into their current colours; unfixing keeps them. On a generator layer it keeps the generator's own colours, as its Own Colours param does |
-| `title.insertTemplate {templateId, at, duration?, track?, texts?, colorwayId?, seed?, availableFonts?}` | TL-052. Ordinary clips in one transaction, grouped. Returns `{clipIds, slots}` |
+| `title.insertTemplate {templateId, at, duration?, track?, texts?, colorwayId?, seed?, availableFonts?}` | TL-052. Ordinary clips in one transaction, grouped. Returns `{clipIds, slots, scene3d?}`; a 3D template warns `W_SCENE3D_SET` or `W_SCENE3D_KEPT` (see Templates) |
 
 `look.apply` also takes `availableFonts`: see "Fonts" below.
 
@@ -850,7 +861,11 @@ solids. Each clip takes the first free track above the one before, so nothing is
 extrusion depth, bevel bands, backplates or inflate, and a turn. Lengths are fractions of the text size, so the solid is the same
 at any frame size. Its look is a bare face in a font (`TemplateSolidFace`), because the solid is traced from the layer's
 picture and a rim, plate or hard shadow would become part of it; the surfaces paint it. A template with a solid has a `scene3d`:
-`title.insertTemplate` sets the sequence to Advanced 3D with its tone mapping, exposure and glints (`sequence.set3dRenderer`), turns
+`title.insertTemplate` sets the sequence to Advanced 3D (`sequence.set3dRenderer`). Tone mapping, exposure and glints belong to the
+sequence and every 3D layer in it, so the template sets its own only while the sequence is Classic 3D with all three at their
+defaults and unanimated (`userScene3d` is empty), and says so with `W_SCENE3D_SET`; otherwise (already Advanced 3D, or a value the
+user set or animated) it keeps the sequence's values, writes no value and no key, and warns `W_SCENE3D_KEPT` naming what it kept.
+The result's `scene3d` is `{switchedRenderer, set, kept}`, and the Looks tab shows either warning as a toast. It turns
 the text 3D (`clip.set3d`, `threeD.setGeometry`, `threeD.addBand`, `threeD.addBackplate`, `threeD.setSurface`, `param.set` of the
 rotation) and adds an environment light over the template's span, all in the same one undo step. `templateCostClass` says what it
 costs, and a test holds it equal to `costClassOf` of the clip it makes. In and out animations reveal whole shapes (mask reveal,
@@ -870,8 +885,12 @@ dialog, as making a layer 3D does, until Do not show again.
 ### User looks (TL-054)
 
 `<appdir>/presets/title-looks.json`, its own file like the other preset libraries, so a build that does not know looks never rewrites it.
-Writes are serialized and atomic. Entries that no longer validate go to `invalid` and are written back; an unreadable file moves
-aside; a newer file is read-only (`readOnly` in the list, 409 on writes). Export writes `jasper-title-looks` version 1, which Import reads
+Writes are serialized and atomic. Entries that no longer validate go to `invalid` and are written back. A file that is not JSON, or
+JSON that `readLookLibrary` cannot read as a library (another format, `looks` or `invalid` not lists, an unreadable version), moves
+aside to `….corrupt-<time>` before anything is written, is logged and is named in the list as `movedAside`; if it cannot be moved the
+library is read-only (409 `LOOK_LIBRARY_UNREADABLE`). A newer file is read-only (`readOnly` in the list, 409 on writes). Looks files,
+recipes and save bodies nested deeper than 64 levels are refused with 400 `LOOK_TOO_DEEP` (`jsonDepthExceeds`): on Node 20 and 22
+measuring them overflowed the stack into a 500. Export writes `jasper-title-looks` version 1, which Import reads
 back with new ids and free names. Save takes `recipeFromAppearance(appearance, t)`. Deleting asks the user when an agent calls it, as
 effect presets do. To apply one, pass it to `look.apply` as `look: {name, recipe, sourceId, tags, category, colorways}`.
 
@@ -972,7 +991,9 @@ there, and the site fades (0.55 to 0.9), so a flip, between frames or between re
 field is right to its seeds, a tenth or two of a pixel, and that tenth differs between 1× and 2×; a gradient read from the field
 over a few pixels is good to a few degrees, and a site up to Capture away projected along it moves its start by pixels. So no bolt
 reads a direction or a projection from the field's gradient. Each bolt is computed once per frame in a data pass (`tlGenB`, two
-texels a bolt; one texel per point of an arc for Along Edge), not once per vertex:
+texels a bolt; one texel per point of an arc for Along Edge), not once per vertex. Bolt Length and Capture have hard maxima of
+800 % and 160 % of the unit (twice their slider ends): a jagged bolt reaches about 2.8 lengths and a crawling arc looks for its end
+up to twice Capture away, and both are padding:
 
 - *Direction* is the **mass** of the alpha around the site (`tlg_mass`): the Gaussian-weighted first moment of the alpha, summed
   over every pixel within 3σ. Past 64 px of reach the sum runs over 2×2 blocks, each read at its shared corner, which gives their
