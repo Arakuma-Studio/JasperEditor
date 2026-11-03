@@ -96,7 +96,7 @@ import {
 	txBody,
 } from '../context.ts';
 import { toolEnvelope } from '../envelope.ts';
-import { jsonResult, ToolError } from '../errors.ts';
+import { jsonResult, ToolError, TX_ERROR_HINTS } from '../errors.ts';
 import { pickSequence } from '../format.ts';
 import {
 	awaitSheet,
@@ -115,6 +115,7 @@ import { durationFrames } from './trim-paths.ts';
 
 export const TITLE_ART_GUIDE = `Title art: stylized titles from a brief, in three to five calls (spec 19). A look is a reusable appearance on a clip (rims, glows, shadows, finishes, generators); a colourway is a palette that fills a look's colour roles without changing its structure. The tools are in the titles toolset: run them with call_tool (describe_tool shows the arguments).
 - Workflow: title_look_find → title_propose → title_check. title_look_find {query, tags?, aspect?, sampleText?, projectId?} searches the library, the user's own looks (ulk_…, saved in the editor and shared by every project) and the project's, and returns rows (source says which) and one numbered sheet of real renders; any row's lookId works with title_propose and title_look_find {lookId} (its recipe); title_propose {projectId, text, at, lookId, alternatives?} puts the title on the timeline or in Review, and returns one sheet of intro, hold and outro × alternatives over the real footage, plus its check; title_check {projectId, clipId | proposalId, target?} measures it again after any change.
+- Templates. title_look_find also lists the library's title-art templates (lower thirds, full-screen titles, end cards, social hooks, real 3D titles) as rows of kind "template" with a templateId and their text slots. A template makes clips, so insert it with apply_commands title.insertTemplate {templateId, at, texts?} instead of proposing it. Animated lower thirds and social comments from the motion-graphic templates are add_motion_graphic (graphics toolset).
 - Modes of title_propose. "propose" (default) stores a title-art proposal: colourways are the item's alternatives, the user reviews it in the Review panel, wait_for_proposal gives the decision, accept_proposal applies it where Project Settings ▸ Agent Proposals allows it. It needs the project open in an editor window: without one nobody can review it and it is refused with E_NO_EDITOR, nothing stored. "dryRun" changes nothing. "apply" adds the title now: with an editor it is one undoable History entry; on a headless engine there is no History and undo cannot reach it, so the result carries revert, the apply_commands arguments that take it out again. Ask before leaving a headless apply in place when the user did not ask for it.
 - energy (low, medium, high) picks the in and out animations. duration defaults to the time the text needs to be read. colorway names a colourway by id or name; alternatives (0–3) adds others, chosen from seed, which every result returns so a run can be repeated. An empty library is said plainly: pass recipe instead.
 - title_check rows are {id, kind, status, measured, expected, at, message, fix?}, as verify_export's: kind "format" = you may fix it unasked (fix.commands go to apply_commands, then check again), kind "judgement" = tell the user what was measured and ask. safe-area and off-frame use the title's real alpha bounds; contrast compares it with the rendered picture behind it, tile by tile, at the frames it is at rest; min-size, read-time, font-available and export-path (from the planner) follow, then every style lint issue. target adds the platform's interface zones, which are estimates and only warn. verified = no fail row and no unverified format row, at the returned revision: after any edit it says nothing, run it again. notChecked lists what no row measures: taste above all. Report those as not checked, never as fine.
@@ -137,6 +138,35 @@ const RecipeArg = z
 	.describe(
 		'A look as JSON: {layers: [{type, name?, enabled?, params?}], palette?, light?, font?}. title_look_find {lookId} gives examples',
 	);
+
+/** A generator's params are checked by the command, after the engine has read them: bound their size here first. */
+const MAX_GENERATOR_PARAMS = 64;
+const MAX_GENERATOR_PARAM_DEPTH = 6;
+const MAX_GENERATOR_PARAM_VALUES = 1024;
+const MAX_GENERATOR_PARAM_STRING = 1024;
+function generatorParamsProblem(v: Record<string, unknown>): string | null {
+	if (Object.keys(v).length > MAX_GENERATOR_PARAMS) return `at most ${MAX_GENERATOR_PARAMS} params`;
+	const stack: { value: unknown; depth: number }[] = Object.values(v).map((value) => ({ value, depth: 1 }));
+	let values = 0;
+	while (stack.length) {
+		const { value, depth } = stack.pop()!;
+		if (++values > MAX_GENERATOR_PARAM_VALUES) return `at most ${MAX_GENERATOR_PARAM_VALUES} values in all`;
+		if (typeof value === 'string' && value.length > MAX_GENERATOR_PARAM_STRING)
+			return `strings of at most ${MAX_GENERATOR_PARAM_STRING} characters`;
+		if (typeof value !== 'object' || value === null) continue;
+		if (depth >= MAX_GENERATOR_PARAM_DEPTH)
+			return `values nested at most ${MAX_GENERATOR_PARAM_DEPTH} levels`;
+		for (const x of Object.values(value)) stack.push({ value: x, depth: depth + 1 });
+	}
+	return null;
+}
+const GeneratorParamsArg = z
+	.record(z.string().min(1).max(64), z.unknown())
+	.superRefine((v, c) => {
+		const p = generatorParamsProblem(v);
+		if (p) c.addIssue({ code: 'custom', message: p });
+	})
+	.describe('Generator params');
 
 const TimeoutArg = z
 	.number()
@@ -324,7 +354,12 @@ function parseRecipe(raw: unknown): LookRecipe {
 		throw new ToolError('E_INVALID_PARAM', `recipe: ${(e as Error).message}`, layerTypesHint());
 	}
 	const bad = appearanceProblem(a);
-	if (bad) throw new ToolError(/stops/.test(bad) ? 'E_LIMIT' : 'E_INVALID_PARAM', `recipe: ${bad}`);
+	if (bad)
+		throw new ToolError(
+			/stops/.test(bad) ? 'E_LIMIT' : 'E_INVALID_PARAM',
+			`recipe: ${bad}`,
+			layerTypesHint(),
+		);
 	return r.data;
 }
 
@@ -375,6 +410,19 @@ function searchScore(e: Pick<LookEntry, 'name' | 'tags' | 'category'>, words: re
 	return score;
 }
 
+/**
+ * What fixes a title the document refuses. The agent wrote none of these commands, so describe_commands is no help: a
+ * refused value comes from the look (a user or project look an older build stored, say).
+ */
+function localApplyHint(code: string): string {
+	if (code === 'E_INVALID_PARAM' || code === 'E_SCHEMA' || code === 'E_LIMIT')
+		return 'The look is refused: pass recipe instead, title_look_find {lookId}’s recipe with what the message names repaired, or pick another look.';
+	return (
+		TX_ERROR_HINTS[code] ??
+		'Change what the message names (get_timeline shows the sequence), then call again.'
+	);
+}
+
 /** Applies commands to a copy of `doc`, as the engine would. */
 function applyLocally(doc: ProjectDocument, seqId: string | null, commands: unknown[], revision = 0) {
 	const r = applyTransaction(
@@ -395,7 +443,8 @@ function applyLocally(doc: ProjectDocument, seqId: string | null, commands: unkn
 	);
 	if (!r.result.ok) {
 		const e = r.result.errors[0];
-		throw new ToolError(e?.code ?? 'E_INVALID_PARAM', e?.message ?? 'The title does not apply', undefined, {
+		const code = e?.code ?? 'E_INVALID_PARAM';
+		throw new ToolError(code, e?.message ?? 'The title does not apply', localApplyHint(code), {
 			errors: r.result.errors.slice(0, 5),
 		});
 	}
@@ -1138,7 +1187,7 @@ export function registerTitleTools(ctx: ToolContext): void {
 		{
 			title: 'Find title looks',
 			description:
-				'Search title looks and templates by words and tags: rows plus one numbered sheet of real renders. With `lookId`: that look as JSON. Then `title_propose {lookId}`.',
+				'Search title looks and title-art templates by words and tags: rows plus one numbered sheet of real renders. With `lookId`: that look as JSON. Look rows: `title_propose {lookId}`; template rows: apply_commands `title.insertTemplate`. Animated lower thirds: `add_motion_graphic`.',
 			details: `Searches title looks by words and tags: the library, the user's own looks (saved in the editor, shared by every project) and, with projectId, the project's looks. Returns rows {kind: look, lookId, name, tags, colorways, costClass, renderPath, source: library | user | project} with ONE numbered PNG sheet of real renders of sampleText, ${DEFAULT_SHEET_WIDTH} px wide by default. The library's title templates (lower thirds, full-screen titles, end cards, social hooks, real 3D titles) are rows too: {kind: template, templateId, name, tags (its format first), texts (sample text by slot), seconds, costClass, renderPath}, drawn with their own texts; a template makes clips, so it is inserted with apply_commands title.insertTemplate {templateId, at, texts?}, not proposed. A 3D template's costClass is 3d or 3d-heavy: it exports on the Remotion path, every frame. Cell n of the sheet is row n. limit is at most ${MAX_FIND_LIMIT}; cursor continues a list. costClass: light, medium or heavy, how much a look costs to draw; heavy looks move on their own and redraw every frame. renderPath comes from the planner. libraryColorways lists the colourways usable with any look, once. No schemas: lookId gives one look's JSON. An empty result says so; the library may be empty in a development build. The sheet is one engine job: past timeoutSeconds the rows come back with {jobId, timedOut, next}. lookId instead returns that one look as JSON, with no sheet: its recipe (bottom-first layers, palette, light, font), colourways, tags, what each layer type it uses takes (name, kind, default, range, no schemas) and every layer type there is; the starting point for title_propose {recipe} and title_look_save {recipe}. Library and user looks need no project; a project look needs projectId.`,
 			input: {
 				query: z
@@ -1652,7 +1701,11 @@ export function registerTitleTools(ctx: ToolContext): void {
 					'get_timeline lists clips; list_proposals lists proposals.',
 				);
 			if (a.proposalId === undefined && (a.itemId !== undefined || a.alternative !== undefined))
-				throw new ToolError('E_INVALID_PARAM', 'itemId and alternative need proposalId');
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'itemId and alternative need proposalId',
+					'Leave itemId and alternative out to check clipId, or check the proposal: proposalId (list_proposals).',
+				);
 			const loaded = await loadDoc(ctx, a.projectId);
 			let t: CheckTarget;
 			if (a.clipId !== undefined) {
@@ -1809,7 +1862,7 @@ export function registerTitleTools(ctx: ToolContext): void {
 				at: timeArg('Start of a standalone generator').optional(),
 				duration: timeArg('Length of a standalone generator').optional(),
 				belowClipId: z.string().min(1).max(64).optional().describe('Keep it below this title'),
-				params: z.record(z.string(), z.unknown()).optional().describe('Generator params'),
+				params: GeneratorParamsArg.optional(),
 			},
 			annotations: EDIT,
 		},
@@ -1821,6 +1874,7 @@ export function registerTitleTools(ctx: ToolContext): void {
 					throw new ToolError(
 						'E_INVALID_PARAM',
 						'clipId adds a layer to a look: at, duration and belowClipId are for standalone generators',
+						'Leave at, duration and belowClipId out to add it to the look; for a clip of its own, leave clipId out.',
 					);
 				const { clip } = findClip(doc, a.clipId);
 				const fx = clipLook((clip as { effects?: { effectId: string; id: string }[] }).effects);
@@ -1895,7 +1949,11 @@ export function registerTitleTools(ctx: ToolContext): void {
 		},
 		async (a, extra) => {
 			if (!a.clear && a.angle === undefined && a.altitude === undefined)
-				throw new ToolError('E_INVALID_PARAM', 'Give angle, altitude or clear');
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'Give angle, altitude or clear',
+					'Pass angle (degrees, 0 = right) and altitude (0–90), or clear: true to remove the light.',
+				);
 			const res = await transact(
 				ctx,
 				a.projectId,

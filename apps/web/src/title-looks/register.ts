@@ -15,12 +15,14 @@ registerDialog(APPLY_LOOK_DIALOG, (props) => createElement(ApplyLookDialog, prop
 
 programOverlays.register({
 	id: 'title-look-layer',
+	label: 'Look layer outline',
 	active: (session) => !!session.getState().activeSequenceId,
 	component: LookLayerOverlay,
 	order: 72,
 });
 programOverlays.register({
 	id: 'title-look-preview',
+	label: 'Look preview',
 	active: (session) => !!session.getState().activeSequenceId,
 	component: LookPreviewChip,
 	order: 92,

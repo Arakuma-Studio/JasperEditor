@@ -5,15 +5,18 @@ import type { EngineClient } from '@jasper/engine-client';
 import type { EditorSession } from '@jasper/session';
 import { Checkbox, Dialog, type HostedDialogProps, registerDialog, TextField } from '@jasper/ui';
 import { useEffect, useRef, useState } from 'react';
+import { t } from '../i18n/runtime.ts';
 import { errorText } from '../processing/engine-jobs.ts';
 import {
 	cancelJob,
+	cancelQuietly,
 	downloadFile,
 	envelopeOf,
 	type JobProgress,
 	localFolder,
 	runToEnd,
 	safeName,
+	useDialogJob,
 } from './shared.ts';
 
 export const PSD_DIALOG = 'delivery.psd';
@@ -50,6 +53,8 @@ function PsdDialog(props: Props & HostedDialogProps) {
 	const [progress, setProgress] = useState<JobProgress | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const asked = useRef(0);
+	const job = useDialogJob();
+	const signal = useRef<AbortSignal | null>(null);
 
 	useEffect(() => {
 		const ask = ++asked.current;
@@ -77,6 +82,8 @@ function PsdDialog(props: Props & HostedDialogProps) {
 	const name = safeName(`${baseName} frame ${frame}`);
 
 	const write = async () => {
+		const run = job.start();
+		signal.current = run;
 		setError(null);
 		setProgress({ id: '', stage: 'Queued', fraction: null });
 		try {
@@ -89,13 +96,32 @@ function PsdDialog(props: Props & HostedDialogProps) {
 					...(local && folder.trim() ? { destination: { folder: folder.trim(), name } } : {}),
 				},
 			});
-			const done = await runToEnd<PsdResult>(engine, started, setProgress);
+			if (run.aborted) return cancelQuietly(engine, started.id);
+			const done = await runToEnd<PsdResult>(engine, started, setProgress, run);
+			if (run.aborted) return;
 			if (!done) return setProgress(null);
 			if (!done.path) downloadFile(engine, done.url, `${name}.psd`);
 			props.close(done.path ?? done.url);
 		} catch (e) {
+			if (run.aborted) return;
 			setProgress(null);
 			setError(errorText(e));
+		}
+	};
+
+	/**
+	 * Cancel: a running job is cancelled on the engine (the dialog stays until it stops), a refusal is shown; a write still
+	 * queued has no job yet, so the dialog closes and the job is cancelled when it arrives.
+	 */
+	const cancel = () => {
+		if (progress?.id)
+			void cancelJob(engine, progress.id).catch(
+				(e: unknown) =>
+					!signal.current?.aborted && setError(t('The job could not be cancelled: {0}', errorText(e))),
+			);
+		else if (progress) {
+			job.abort();
+			props.close();
 		}
 	};
 
@@ -108,9 +134,7 @@ function PsdDialog(props: Props & HostedDialogProps) {
 			primaryLabel={progress ? 'Writing…' : 'Write PSD'}
 			primaryDisabled={blocked || !!progress}
 			cancelLabel={progress?.id ? 'Cancel writing' : 'Cancel'}
-			onCancel={() => {
-				if (progress?.id) void cancelJob(engine, progress.id);
-			}}
+			onCancel={cancel}
 			onPrimary={() => {
 				void write();
 				return false;

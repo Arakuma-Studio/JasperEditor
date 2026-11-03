@@ -167,6 +167,21 @@ describe('check values as text', () => {
 		expect(checkValueText('x'.repeat(500))).toHaveLength(200);
 	});
 
+	it('reads only the first keys of a wide object, as it does items of a list', () => {
+		let reads = 0;
+		const wide = new Proxy(Object.fromEntries(Array.from({ length: 5000 }, (_, i) => [`k${i}`, i])), {
+			get(target, key) {
+				reads++;
+				return Reflect.get(target, key);
+			},
+		});
+		expect(checkValueText(wide)).toBe('k0 0; k1 1; k2 2; k3 3; k4 4; k5 5; k6 6; k7 7; …');
+		expect(reads).toBeLessThanOrEqual(8);
+		expect(checkValueText({ a: { b: 1, c: 2, d: 3, e: 4, f: 5, g: 6, h: 7, i: 8, j: 9 } })).toBe(
+			'a b 1, c 2, d 3, e 4, f 5, g 6, h 7, i 8, …',
+		);
+	});
+
 	it('never throws and stays short on any JSON an agent stores', () => {
 		fc.assert(
 			fc.property(fc.jsonValue({ maxDepth: 8 }), (v) => {

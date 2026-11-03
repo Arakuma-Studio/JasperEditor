@@ -869,7 +869,7 @@ per area are in [wp-notes/agent-footage.md](wp-notes/agent-footage.md). Limits t
 
 ### Title Looks (spec 19): limits
 
-Status of the foundation; streams still in progress update this list. Evidence: [wp-notes/title-looks.md](wp-notes/title-looks.md).
+What the integrated feature does not do, or does only in part. Evidence: [wp-notes/title-looks.md](wp-notes/title-looks.md).
 
 - **A title of more than 4096 drawn glyphs** gets span records for its first 4096 (`MAX_SPAN_GLYPHS`); the owner pass is linear
   in the glyphs. Nobody sets a gradient per glyph on that much text, but it is a hard cap, not a soft one.
@@ -901,8 +901,12 @@ Status of the foundation; streams still in progress update this list. Evidence: 
   paints over it (TL-093: the look applies over the runs). The toolbar's tooltip says so.
 - **Text entry under some typography** (tsume, optical or manual kerning, per-paragraph settings, text on a path) shows the editor's own
   text on a scrim, not the look, until it is committed. During an IME composition too.
-- **A killed renderer loses an uncommitted text entry**: `pagehide`, an error boundary and unmounting all commit it, and a crashed tab
-  has no such moment. The entry is not in the crash-recovery journal, which holds transactions.
+- **A killed renderer can lose the last moments of a text entry**: `pagehide`, an error boundary and unmounting all commit it (a refused
+  commit opens a new editor on the text), and a crashed tab has no such moment. So the draft is checkpointed to the tab's
+  sessionStorage once typing pauses for 400 ms (`text-edit/checkpoint.ts`), and when the tab is reloaded the Program monitor of that
+  project and sequence offers it back (Restore, Discard). What was typed in the last 400 ms before the crash is lost, and so is
+  the whole draft when the tab or window itself is gone (sessionStorage belongs to it) or the project is opened in another tab.
+  The entry is not in the crash-recovery journal, which holds transactions.
 - **`graphics.newTextLayer` still inserts the word "Text"** at the centre: it runs from menus and for agents, with no pointer. The Type
   tool types in place.
 - **Style check badge** (TL-094): the rendered check (contrast with the picture behind the title) is listed as not measured in the

@@ -330,6 +330,32 @@ describe('the Looks tab (TL-054, TL-086)', () => {
 		});
 		await waitFor(() => expect(screen.getAllByTestId('look-card')[0]!.textContent).toContain('From Clip'));
 	});
+
+	it('an action that throws says so in the status line and frees its button', async () => {
+		await connected();
+		const { session } = titleWithLook();
+		renderWithSession(session, <LooksBrowser session={session} />);
+		fireEvent.click(chip());
+		await waitFor(() => expect(screen.getByTestId('my-looks-save').getAttribute('aria-disabled')).toBeNull());
+		const { promptName } = await import('../src/gaps/SmallDialogs.tsx');
+		vi.mocked(promptName).mockRejectedValueOnce(new Error('the name field did not open'));
+		const rejections: unknown[] = [];
+		const onRejection = (r: unknown) => rejections.push(r);
+		process.on('unhandledRejection', onRejection);
+		try {
+			await act(async () => {
+				fireEvent.click(screen.getByTestId('my-looks-save'));
+			});
+			await waitFor(() =>
+				expect(screen.getByTestId('looks-status').textContent).toContain('the name field did not open'),
+			);
+			await new Promise((r) => setTimeout(r, 0));
+			expect(rejections).toEqual([]);
+			expect(screen.getByTestId('my-looks-save').getAttribute('aria-busy')).not.toBe('true');
+		} finally {
+			process.off('unhandledRejection', onRejection);
+		}
+	});
 });
 
 describe('wiring (TL-097)', () => {

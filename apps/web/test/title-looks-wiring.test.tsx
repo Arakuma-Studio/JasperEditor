@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_KEYMAP } from '../src/commands/keymap-defaults.ts';
 import { getCommand } from '../src/commands/registry.ts';
 import { titleLookCommands } from '../src/commands/title-looks.ts';
+import { setLanguage } from '../src/i18n/runtime.ts';
 import { addGeneratorBelow } from '../src/panels/effects/drag.ts';
 import { isVisualProposal, TitleArtDetails, titleArtOptions } from '../src/proposals/title-art.tsx';
 import { MENUBAR } from '../src/shell/menus/model.ts';
@@ -31,6 +32,23 @@ const item = {
 	...option('Red', [1, 0, 0, 1]),
 	alternatives: [option('Blue', [0, 0, 1, 1]), option('Green', [0, 1, 0, 1])],
 } as unknown as ProposalItem;
+
+describe('disabled reasons in the language of the UI (TL-097)', () => {
+	it('the shared reasons of the look commands are translated when read', async () => {
+		const session = makeSession();
+		const ctx = { session, services: { get: () => null }, ui: { toast: () => {} } } as never;
+		const reason = (id: string) => titleLookCommands.find((c) => c.id === id)!.disabledReason!(ctx);
+		await setLanguage('es');
+		try {
+			expect(reason('graphics.removeLook')).toBe('Selecciona primero un clip con un aspecto.');
+			expect(reason('graphics.resetLook')).not.toBe('Select a clip linked to a look first.');
+			expect(reason('graphics.resetLook')).toMatch(/^Selecciona/);
+		} finally {
+			await setLanguage('en');
+		}
+		expect(reason('graphics.resetLook')).toBe('Select a clip linked to a look first.');
+	});
+});
 
 describe('wiring (TL-097)', () => {
 	const flat = (items: readonly { type: string; items?: unknown; command?: string }[]): string[] =>

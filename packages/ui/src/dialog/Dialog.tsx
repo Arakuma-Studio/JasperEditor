@@ -3,6 +3,7 @@ import { type KeyboardEvent, type ReactNode, useEffect, useState, useSyncExterna
 import { cx } from '../cx.ts';
 import { Icon } from '../icons/Icon.tsx';
 import { Button } from '../primitives/Button.tsx';
+import { PanelErrorBoundary } from '../primitives/ErrorBoundary.tsx';
 import { escapeRevertsField, InDialogContext } from './layer.ts';
 import { registerModal, TOAST_HOST_ATTR } from './modal-registry.ts';
 
@@ -270,6 +271,33 @@ const subscribe = (l: () => void) => {
 };
 const getStack = () => stack;
 
+/**
+ * What a dialog that failed to render leaves (AGENTS §0): the failure, inside a dialog that closes. DialogHost renders
+ * above the editor's own boundaries, so without this one a dialog's error would take the whole window down.
+ */
+function DialogCrashed({ error, close }: { error: Error; close(): void }) {
+	return (
+		<Dialog
+			open
+			onOpenChange={(o) => !o && close()}
+			title="This dialog stopped working"
+			size="small"
+			primaryLabel="Close"
+			hideCancel
+			onPrimary={() => {
+				close();
+				return false;
+			}}
+			data-testid="dialog-crashed"
+		>
+			<p role="alert" className="break-words text-pr-danger">
+				{error.message}
+			</p>
+			<p className="mt-2 text-pr-small text-pr-muted">Close it and open it again to retry.</p>
+		</Dialog>
+	);
+}
+
 /** Mount once per window. */
 export function DialogHost() {
 	const open = useSyncExternalStore(subscribe, getStack, getStack);
@@ -278,7 +306,17 @@ export function DialogHost() {
 			{open.map((o) => {
 				const C = registry.get(o.kind);
 				if (!C) return null;
-				return <C key={o.id} {...o.props} close={(r?: unknown) => closeEntry(o.id, r)} />;
+				const close = (r?: unknown) => closeEntry(o.id, r);
+				return (
+					<PanelErrorBoundary
+						key={o.id}
+						name={o.kind}
+						onError={(error) => console.error(`[dialog] "${o.kind}" failed`, error)}
+						fallback={(error) => <DialogCrashed error={error} close={() => close()} />}
+					>
+						<C {...o.props} close={close} />
+					</PanelErrorBoundary>
+				);
 			})}
 		</>
 	);

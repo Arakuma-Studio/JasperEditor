@@ -16,6 +16,7 @@ import {
 import type { EditorSession, Gesture } from '@jasper/session';
 import { t } from '../i18n/runtime.ts';
 import { activeSequence, textPlacement } from '../panels/program/edits.ts';
+import { CHECKPOINT_IDLE_MS, clearCheckpoint, writeCheckpoint } from './checkpoint.ts';
 import type { TextEntry } from './store.ts';
 
 type TextClip = Extract<Clip, { kind: 'text' }>;
@@ -59,6 +60,7 @@ export class EntryDraft {
 	/** The clip an unfinished new text is drawn as: new ids per gesture update. */
 	private drawnId: string | null;
 	private placement: ReturnType<typeof textPlacement> = null;
+	private checkpointTimer: ReturnType<typeof setTimeout> | null = null;
 	closed = false;
 
 	constructor(entry: TextEntry) {
@@ -89,7 +91,42 @@ export class EntryDraft {
 
 	private set(next: Partial<DraftState>) {
 		this.state = { ...this.state, ...next };
+		if ('text' in next || 'runs' in next) this.scheduleCheckpoint();
 		for (const l of [...this.listeners]) l();
+	}
+
+	/** Checkpoints what was typed to the tab once typing pauses (checkpoint.ts): only a killed renderer needs it. */
+	private scheduleCheckpoint(): void {
+		if (this.checkpointTimer) clearTimeout(this.checkpointTimer);
+		this.checkpointTimer = setTimeout(() => this.checkpointNow(), CHECKPOINT_IDLE_MS);
+	}
+
+	/** Writes the checkpoint now: an unchanged entry has none. */
+	checkpointNow(): void {
+		if (this.checkpointTimer) clearTimeout(this.checkpointTimer);
+		this.checkpointTimer = null;
+		const { session, clipId, point, frame } = this.entry;
+		const sequenceId = session.getState().activeSequenceId;
+		const { text, runs } = this.state;
+		if (!sequenceId || !text.trim() || !this.changed()) {
+			clearCheckpoint(session.projectId);
+			return;
+		}
+		writeCheckpoint(session.projectId, {
+			sequenceId,
+			clipId,
+			point: [point[0], point[1]],
+			frame,
+			text,
+			runs: [...runs],
+		});
+	}
+
+	/** The entry is over: what it wrote is in the document, so its checkpoint goes. */
+	private endCheckpoint(): void {
+		if (this.checkpointTimer) clearTimeout(this.checkpointTimer);
+		this.checkpointTimer = null;
+		clearCheckpoint(this.entry.session.projectId);
 	}
 
 	/** New text and runs (typed, pasted, restyled). `record: false` keeps the local undo stack (composition). */
@@ -227,6 +264,8 @@ export class EntryDraft {
 		}
 		const fail = (error: string): CommitResult => {
 			this.set({ error });
+			// Refused: the text is only here now, so the tab keeps it at once.
+			this.checkpointNow();
 			return { ok: false, error };
 		};
 		if (session.getState().readOnly) return fail(t('The project is read-only'));
@@ -249,12 +288,19 @@ export class EntryDraft {
 					: r.errors.map((x) => x.message).join('; '),
 			);
 		this.closed = true;
+		this.endCheckpoint();
 		const id = r.refs.$text ?? (commands[0]?.type === 'clip.lift' ? null : clipId);
 		if (id) session.select('timeline', [id], 'replace', { primary: id });
 		return { ok: true, clipId: id };
 	}
 
-	cancel(): void {
+	/**
+	 * Ends the entry without writing. `keepText`: what was typed lives on elsewhere (a new editor, the message), so the
+	 * tab's checkpoint stays as the last copy until that ends.
+	 */
+	cancel(opts: { keepText?: boolean } = {}): void {
+		if (opts.keepText) this.checkpointNow();
+		else this.endCheckpoint();
 		this.closed = true;
 		if (this.gesture?.active) this.gesture.cancel();
 		this.gesture = null;

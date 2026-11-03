@@ -13715,5 +13715,18 @@
   "Adds a generator layer on a free track below the selected title, for its length; with no title, at the playhead.": "Añade una capa de generador en una pista libre bajo el título seleccionado, con su duración; sin título, en el cabezal.",
   "New Generator Layer: {0}": "Nueva capa de generador: {0}",
   "New Generator Layer: {0} › {1}": "Nueva capa de generador: {0} › {1}",
-  "Generator": "Generador"
+  "Generator": "Generador",
+  "{0} is hidden: {1}": "{0} está oculto: {1}",
+  "{0} stopped working: {1}": "{0} dejó de funcionar: {1}",
+  "A Program overlay": "Una capa del monitor de programa",
+  "Close it and open it again to retry.": "Ciérralo y vuelve a abrirlo para intentarlo de nuevo.",
+  "Look layer outline": "Contorno de la capa del aspecto",
+  "Look preview": "Vista previa del aspecto",
+  "Select a clip linked to a look first.": "Selecciona primero un clip vinculado a un aspecto.",
+  "Text entry": "Entrada de texto",
+  "Text you were typing was not added: “{0}”": "No se añadió el texto que estabas escribiendo: “{0}”",
+  "The job could not be cancelled: {0}": "No se pudo cancelar el trabajo: {0}",
+  "The text could not be written: {0}. Your text: {1}": "No se pudo escribir el texto: {0}. Tu texto: {1}",
+  "This dialog stopped working": "Este cuadro de diálogo dejó de funcionar",
+  "My Looks: {0}": "Mis aspectos: {0}"
 }

@@ -6,7 +6,7 @@ import { titleLooksOf } from '@jasper/project';
 import { SessionProvider } from '@jasper/session/react';
 import { closeAllDialogs, DialogHost, openDialog } from '@jasper/ui';
 import { act, cleanup, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { getCommand, registerAllCommands } from '../src/commands/index.ts';
 import { ALPHA_DIALOG, registerAlphaDialog } from '../src/delivery/AlphaDialog.tsx';
 import { GamutOverlay, gamutOverlay } from '../src/delivery/GamutOverlay.tsx';
@@ -17,6 +17,7 @@ import {
 	saveImportedLooks,
 } from '../src/delivery/LayerStyleDialog.tsx';
 import { layersTopFirst, PSD_DIALOG, registerPsdDialog } from '../src/delivery/PsdDialog.tsx';
+import { registerSplitImageDialog, SPLIT_IMAGE_DIALOG } from '../src/delivery/SplitImageDialog.tsx';
 import type { ProgramOverlayHostProps } from '../src/extensions/index.ts';
 import { MENUBAR } from '../src/shell/menus/model.ts';
 import { connectUserLooks, refreshUserLooks } from '../src/title-looks/user-library.ts';
@@ -32,10 +33,24 @@ vi.mock('../src/state/engine.tsx', async (load) => ({
 beforeAll(() => registerAllCommands());
 // Dialogs mount on a timer that a loaded host stretches.
 configure({ asyncUtilTimeout: 30_000 });
-afterEach(() => {
+// A job followed past its dialog, or a cancel nobody awaited, surfaced as an unhandled rejection after the test that
+// caused it. Every test here must leave none.
+const unhandled: unknown[] = [];
+const onUnhandled = (reason: unknown) => unhandled.push(reason);
+beforeAll(() => {
+	process.on('unhandledRejection', onUnhandled);
+});
+afterAll(() => {
+	process.off('unhandledRejection', onUnhandled);
+});
+afterEach(async () => {
 	act(() => closeAllDialogs());
 	connectUserLooks(null);
 	cleanup();
+	// Rejections are reported a macrotask after the promise settles.
+	await new Promise((r) => setTimeout(r, 0));
+	expect(unhandled).toEqual([]);
+	unhandled.length = 0;
 });
 
 const PLAN: PsdPlan = {
@@ -105,6 +120,19 @@ describe('wiring (spec 19 §12)', () => {
 		expect(c.checked!({} as never)).toBe(false);
 	});
 });
+
+const RUNNING = {
+	id: 'job_1',
+	kind: 'psd-export',
+	state: 'running',
+	stage: 'Layer 1/2',
+	progress: 0.5,
+	title: 'x',
+	origin: { type: 'user' },
+	cpuSlots: 1,
+	priority: 'user',
+	createdAt: 'x',
+};
 
 describe('Send to Photoshop (TL-112)', () => {
 	const open = (plan: PsdPlan) => {
@@ -180,6 +208,101 @@ describe('Send to Photoshop (TL-112)', () => {
 		fireEvent.click(cancel);
 		await waitFor(() => expect(calls.some((u) => u.includes('/api/jobs/job_1/cancel'))).toBe(true));
 		expect(screen.getByTestId('psd-dialog')).toBeTruthy();
+	});
+
+	it('closing the dialog stops following its job: no polling and no state after it is gone', async () => {
+		const calls: string[] = [];
+		const { session, seqId } = makeSession();
+		registerPsdDialog();
+		const engine = engineWith(
+			{
+				'/api/psd/plan': PLAN,
+				'/api/psd': RUNNING,
+				'/api/jobs/job_1/cancel': RUNNING,
+				'/api/jobs/job_1': RUNNING,
+			},
+			calls,
+		);
+		const errors = vi.spyOn(console, 'error');
+		render(<DialogHost />);
+		act(() => {
+			void openDialog(PSD_DIALOG, { session, engine, sequenceId: seqId, frame: 0, baseName: 'Seq' });
+		});
+		await waitFor(() => expect(screen.getByTestId('psd-baked')).toBeTruthy());
+		fireEvent.click(screen.getByRole('button', { name: 'Write PSD' }));
+		await screen.findByRole('button', { name: 'Cancel writing' });
+		const polls = () => calls.filter((u) => /\/api\/jobs\/job_1(\?|$)/.test(u)).length;
+		await waitFor(() => expect(polls()).toBeGreaterThan(0));
+		act(() => closeAllDialogs());
+		// The job the closed dialog started is cancelled, once.
+		await waitFor(() => expect(calls.filter((u) => u.includes('/api/jobs/job_1/cancel'))).toHaveLength(1));
+		const after = polls();
+		await new Promise((r) => setTimeout(r, 1000));
+		expect(polls()).toBe(after);
+		expect(errors.mock.calls.flat().join(' ')).not.toMatch(/unmounted component/);
+	});
+
+	it('Cancel while the write is still queued closes the dialog, and the job it then gets is cancelled', async () => {
+		const calls: string[] = [];
+		const { session, seqId } = makeSession();
+		registerPsdDialog();
+		let started: (v: Response) => void = () => {};
+		const engine = new EngineClient({
+			baseUrl: 'http://127.0.0.1:9',
+			fetch: async (input) => {
+				const url = String(input);
+				calls.push(url);
+				const json = (v: unknown) =>
+					new Response(JSON.stringify(v), { headers: { 'content-type': 'application/json' } });
+				if (url.includes('/api/psd/plan')) return json(PLAN);
+				if (url.includes('/api/jobs/job_1')) return json(RUNNING);
+				if (url.includes('/api/psd')) return new Promise<Response>((r) => (started = () => r(json(RUNNING))));
+				return new Response('{"code":"NOT_FOUND","message":"no","retryable":false}', { status: 404 });
+			},
+		});
+		render(<DialogHost />);
+		let result: Promise<unknown> | null = null;
+		act(() => {
+			result = openDialog(PSD_DIALOG, { session, engine, sequenceId: seqId, frame: 0, baseName: 'Seq' });
+		});
+		await waitFor(() => expect(screen.getByTestId('psd-baked')).toBeTruthy());
+		fireEvent.click(screen.getByRole('button', { name: 'Write PSD' }));
+		await screen.findByText('Queued');
+		fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+		await waitFor(() => expect(screen.queryByTestId('psd-dialog')).toBeNull());
+		await expect(result).resolves.toBeUndefined();
+		act(() => started(new Response()));
+		await waitFor(() => expect(calls.some((u) => u.includes('/api/jobs/job_1/cancel'))).toBe(true));
+		await new Promise((r) => setTimeout(r, 700));
+		expect(calls.filter((u) => /\/api\/jobs\/job_1(\?|$)/.test(u))).toEqual([]);
+	});
+
+	it('a cancel the engine refuses is shown in the dialog, not thrown', async () => {
+		const { session, seqId } = makeSession();
+		registerPsdDialog();
+		const engine = new EngineClient({
+			baseUrl: 'http://127.0.0.1:9',
+			fetch: async (input) => {
+				const url = String(input);
+				const json = (v: unknown, status = 200) =>
+					new Response(JSON.stringify(v), { status, headers: { 'content-type': 'application/json' } });
+				if (url.includes('/api/psd/plan')) return json(PLAN);
+				if (url.includes('/api/jobs/job_1/cancel'))
+					return json({ code: 'INTERNAL', message: 'the worker did not answer', retryable: false }, 500);
+				if (url.includes('/api/jobs/job_1') || url.includes('/api/psd')) return json(RUNNING);
+				return json({ code: 'NOT_FOUND', message: 'no', retryable: false }, 404);
+			},
+		});
+		render(<DialogHost />);
+		act(() => {
+			void openDialog(PSD_DIALOG, { session, engine, sequenceId: seqId, frame: 0, baseName: 'Seq' });
+		});
+		await waitFor(() => expect(screen.getByTestId('psd-baked')).toBeTruthy());
+		fireEvent.click(screen.getByRole('button', { name: 'Write PSD' }));
+		fireEvent.click(await screen.findByRole('button', { name: 'Cancel writing' }));
+		await waitFor(() =>
+			expect(screen.getByTestId('psd-dialog').textContent).toContain('the worker did not answer'),
+		);
 	});
 
 	it('a blocker stops it, with its reason, before anything runs', async () => {
@@ -299,6 +422,76 @@ describe('Export Title (TL-114)', () => {
 		});
 		await waitFor(() => expect(screen.getByTestId('alpha-margin')).toBeTruthy());
 		expect(screen.getByRole('dialog').textContent).toContain('10 transparent PNGs');
+	});
+});
+
+describe('jobs end with their dialog (AGENTS §0)', () => {
+	it('Export Title: Cancel while queued closes, and the job it then gets is cancelled', async () => {
+		const calls: string[] = [];
+		const { session, seqId } = makeSession();
+		registerAlphaDialog();
+		let started: () => void = () => {};
+		const json = (v: unknown) =>
+			new Response(JSON.stringify(v), { headers: { 'content-type': 'application/json' } });
+		const engine = new EngineClient({
+			baseUrl: 'http://127.0.0.1:9',
+			fetch: async (input) => {
+				const url = String(input);
+				calls.push(url);
+				if (url.includes('/scratch')) return json({ local: false, projectMedia: { path: '' } });
+				if (url.includes('/api/jobs/job_1')) return json(RUNNING);
+				if (url.includes('/api/alpha-delivery'))
+					return new Promise<Response>((r) => (started = () => r(json(RUNNING))));
+				return new Response('{"code":"NOT_FOUND","message":"no","retryable":false}', { status: 404 });
+			},
+		});
+		render(<DialogHost />);
+		act(() => {
+			void openDialog(ALPHA_DIALOG, {
+				session,
+				engine,
+				sequenceId: seqId,
+				clipIds: ['c'],
+				baseName: 'Title',
+				range: { start: 0, end: 10 },
+				playhead: 3,
+			});
+		});
+		fireEvent.click(await screen.findByRole('button', { name: 'Export' }));
+		await screen.findByText('Queued');
+		fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+		await waitFor(() => expect(screen.queryByTestId('alpha-dialog')).toBeNull());
+		act(() => started());
+		await waitFor(() => expect(calls.some((u) => u.includes('/api/jobs/job_1/cancel'))).toBe(true));
+	});
+
+	it('Split Image: closing during the analysis stops polling it and cancels it', async () => {
+		const calls: string[] = [];
+		const { session, seqId } = makeSession();
+		registerSplitImageDialog();
+		const engine = engineWith(
+			{ '/split-image/analyze': RUNNING, '/api/jobs/job_1/cancel': RUNNING, '/api/jobs/job_1': RUNNING },
+			calls,
+		);
+		render(<DialogHost />);
+		act(() => {
+			void openDialog(SPLIT_IMAGE_DIALOG, {
+				session,
+				engine,
+				clipId: 'c',
+				clipName: 'Logo',
+				sequenceId: seqId,
+				mediaKey: 'k1',
+				imageUrl: '/media/k1',
+			});
+		});
+		const polls = () => calls.filter((u) => /\/api\/jobs\/job_1(\?|$)/.test(u)).length;
+		await waitFor(() => expect(polls()).toBeGreaterThan(0));
+		act(() => closeAllDialogs());
+		await waitFor(() => expect(calls.some((u) => u.includes('/api/jobs/job_1/cancel'))).toBe(true));
+		const after = polls();
+		await new Promise((r) => setTimeout(r, 1000));
+		expect(polls()).toBe(after);
 	});
 });
 

@@ -46,6 +46,7 @@ export function textDoubleClick(ctx: LayerDoubleClickContext): boolean {
 
 programOverlays.register({
 	id: 'text-entry',
+	label: 'Text entry',
 	active: () => true,
 	component: TextEntryHost,
 	order: 7,

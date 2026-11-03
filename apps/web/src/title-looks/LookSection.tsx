@@ -2,7 +2,7 @@
 // look's quick controls); Appearance below opens the whole stack, and it stays away until there is a look to show.
 import type { Clip } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
-import { Button, cx, openDialog } from '@jasper/ui';
+import { Button, cx, openDialog, PanelErrorBoundary } from '@jasper/ui';
 import { useEffect, useState } from 'react';
 import { t } from '../i18n/runtime.ts';
 import { PropertyRow, type RowContext } from '../panels/properties/controls/PropertyRow.tsx';
@@ -27,12 +27,23 @@ function linkStatus(sel: ReturnType<typeof lookSelection>): string {
 	return changes === 1 ? t('1 change from the look') : t('{0} changes from the look', changes);
 }
 
-export function LookSections(props: {
+type LookSectionsProps = {
 	session: EditorSession;
 	clips: readonly Clip[];
 	ctx: RowContext;
 	readOnly?: boolean;
-}) {
+};
+
+/** AGENTS §0: a failure here is a line in Properties with Retry, not a crashed panel; another selection retries. */
+export function LookSections(props: LookSectionsProps) {
+	return (
+		<PanelErrorBoundary name={t('Look')} inline resetKey={props.clips.map((c) => c.id).join()}>
+			<LookSectionsBody {...props} />
+		</PanelErrorBoundary>
+	);
+}
+
+function LookSectionsBody(props: LookSectionsProps) {
 	const { session, clips, ctx, readOnly } = props;
 	const { doc, seq, frame } = ctx;
 	const sel = lookSelection(doc, clips);
@@ -166,7 +177,9 @@ export function LookSections(props: {
 				</div>
 			</Section>
 			<Section id="properties.appearance" title="Appearance">
-				<AppearanceList looked={sel.looked} ctx={ctx} readOnly={readOnly} />
+				<PanelErrorBoundary name={t('Appearance')} inline resetKey={ids.join()}>
+					<AppearanceList looked={sel.looked} ctx={ctx} readOnly={readOnly} />
+				</PanelErrorBoundary>
 			</Section>
 		</>
 	);

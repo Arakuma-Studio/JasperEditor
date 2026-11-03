@@ -85,6 +85,7 @@ import {
 	resolutionToProxy,
 } from './monitor-store.ts';
 import { monitorExtras } from './monitor-view.ts';
+import { ProgramOverlayLayers } from './OverlayLayers.tsx';
 import { PlaybackDriver } from './playback-driver.ts';
 import { buildProgramDoc, playerDurationFrames, usesProxies } from './render-doc.ts';
 import { TransformOverlay } from './TransformOverlay.tsx';
@@ -604,19 +605,15 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 					/>
 				)}
 				{/* M2 overlays registered by feature packages (tracker, corner pin handles; ARCHITECTURE §19.10). */}
-				{overlays
-					.filter((o) => !mcView && o.active(session))
-					.map((o) => (
-						<o.component
-							key={o.id}
-							session={session}
-							doc={doc}
-							view={view}
-							viewport={viewport}
-							transport={transport}
-							monitor={monitor}
-						/>
-					))}
+				<ProgramOverlayLayers
+					overlays={mcView ? [] : overlays}
+					session={session}
+					doc={doc}
+					view={view}
+					viewport={viewport}
+					transport={transport}
+					monitor={monitor}
+				/>
 				{/* edit-ux: rulers and guides; the comparison view; the Trim Monitor replaces the picture in trim mode. */}
 				{seqId && !trimVisible && !mcView ? (
 					<GuidesOverlay sequenceId={seqId} view={view} viewport={viewport} frame={frameSize} />
