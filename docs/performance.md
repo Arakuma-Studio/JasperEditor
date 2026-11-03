@@ -348,6 +348,20 @@ above, 2026-11-03 04:25 UTC, load average ≈ 2–10 (other agents' work, inside
 | Pattern | 1688 × 768 | 10 | 1 984 ms | 664 ms |
 | Face only (reference) | (not reported) | | 303 ms | |
 
+**Lightning, after its resolution fix** (`docs/wp-notes/title-looks.md`, "Stable identity"): every bolt now reads area sums of
+the alpha in a data pass. Same request and machine, 2026-11-03, one of the heavy-job slots, before and after measured back to
+back. The "before" runs had a load average of 1.9–4.5 and the "after" runs 0.5–1.5, so the increase is not overstated. Scratch
+harness, not committed (the request of the test below with `timingOnly`):
+
+| Lightning | Canvas | Passes before → after | Full before → after | 1/2 before → after |
+|---|---|---|---|---|
+| Defaults | 2070 × 1150 | 19 → 21 | 5 500 → 6 810 ms | 1 688 → 2 591 ms |
+| Alpha Bounds, Capture 40 %, bolts 2 units | 2668 × 1748 | 20 → 23 | 10 079 → 12 588 ms | 2 576 → 6 098 ms |
+| Along Edge | 1566 × 646 | 19 → 20 | 1 999 → 3 807 ms | 702 → 1 301 ms |
+
+The defaults row is higher than the table above (3 194 ms), because it was measured on a different day and under different
+load. Compare within a table, not across. Along Edge pays most: 41 sites per arc, each with two area sums.
+
 **Reading it.** The canvas dominates again: a generator that reaches far (Sunburst, Lens Flare, Light Streaks, Brush Swirl at their
 extents) grows the look's canvas, and with it the shape field every layer pays for. Magic Circle is the costliest per pixel (six
 rows of distance fields, a polygon loop per row). Soft generators (Fire, Smoke, Corona) draw at half size by design (`lowRes`).

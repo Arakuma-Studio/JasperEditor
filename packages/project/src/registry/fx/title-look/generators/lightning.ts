@@ -267,7 +267,7 @@ TlgSite tlg_boltSite(vec2 q, float capture) {
   s.px = tlg_alphaEdge(q + dir * t, side * dir);
   s.normal = mn.xy;
   float facing = abs(dot(dir, tlg_mass(s.px, max(tl_px(TLG_NORMAL), 1.0)).xy));
-  s.gate = (1.0 - smoothstep(capture * 0.6, capture, t)) * smoothstep(0.01, 0.04, m.z) * smoothstep(0.2, 0.45, facing)
+  s.gate = (1.0 - smoothstep(capture * 0.6, capture, t)) * smoothstep(0.03, 0.09, min(m.z, mn.z)) * smoothstep(0.3, 0.55, facing)
     * keep * tlg_field(s.px).y;
   return s;
 }
