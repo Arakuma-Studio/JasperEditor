@@ -21,10 +21,10 @@ import {
 	type CameraState,
 	type ClassicSetup,
 	circleOfConfusion,
-	type GlintState,
 	GLSL_COLOR,
 	GLSL_HASH,
 	GLSL_UV,
+	type GlintState,
 	type LightState,
 	MAX_DOF_RADIUS,
 	MAX_SLOTS,
@@ -735,7 +735,12 @@ void main() {
 }
 `;
 
-type GpuMesh = { vao: WebGLVertexArrayObject; buffers: WebGLBuffer[]; bounds: [number, number, number, number]; used: number };
+type GpuMesh = {
+	vao: WebGLVertexArrayObject;
+	buffers: WebGLBuffer[];
+	bounds: [number, number, number, number];
+	used: number;
+};
 
 type Progs = {
 	shadow: WebGLProgram;
@@ -884,7 +889,8 @@ function tex2d(
 	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
 	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 	if (fmt === 'rgba16f') gl.texStorage2D(gl.TEXTURE_2D, mips, gl.RGBA16F, w, h);
-	else if (fmt === 'rgba8') gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+	else if (fmt === 'rgba8')
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
 	else if (fmt === 'r32f') gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, w, h, 0, gl.RED, gl.FLOAT, null);
 	else if (fmt === 'rgba32f') gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, w, h, 0, gl.RGBA, gl.FLOAT, null);
 	else
@@ -1122,7 +1128,9 @@ function bakeRamp(s: NonNullable<SurfaceState['ramp']>, o: Uint8Array, at: numbe
 		const b = st[k + 1] ?? a;
 		const f = b.at > a.at ? Math.min(1, Math.max(0, (t - a.at) / (b.at - a.at))) : 0;
 		for (let c = 0; c < 3; c++)
-			o[at + i * 4 + c] = Math.round(Math.min(1, Math.max(0, a.color[c]! + (b.color[c]! - a.color[c]!) * f)) * 255);
+			o[at + i * 4 + c] = Math.round(
+				Math.min(1, Math.max(0, a.color[c]! + (b.color[c]! - a.color[c]!) * f)) * 255,
+			);
 		o[at + i * 4 + 3] = 255;
 	}
 }
@@ -1250,7 +1258,12 @@ export function renderAdvancedGL(h: FxHost, input: AdvancedInput, out: CanvasRen
 	const cam = setup.camera;
 	const draft = !!setup.draft;
 	const lights = draft ? [] : setup.lights.filter((l) => l.type !== 'environment').slice(0, MAX_LIGHTS);
-	const look: AdvancedLook = input.look ?? { toneMapping: 'none', exposure: 1, glint: null, supersampling: 1 };
+	const look: AdvancedLook = input.look ?? {
+		toneMapping: 'none',
+		exposure: 1,
+		glint: null,
+		supersampling: 1,
+	};
 	const physical = input.members.some((m) => m.model || m.surfaces?.some((s) => !!s));
 	const wantHdr =
 		physical ||
@@ -1266,7 +1279,13 @@ export function renderAdvancedGL(h: FxHost, input: AdvancedInput, out: CanvasRen
 		? null
 		: (input.environment ??
 			(physical
-				? { source: { kind: 'preset', preset: 0 }, key: 'preset:0', rotation: 0, color: [1, 1, 1], background: false }
+				? {
+						source: { kind: 'preset', preset: 0 },
+						key: 'preset:0',
+						rotation: 0,
+						color: [1, 1, 1],
+						background: false,
+					}
 				: null));
 	const envSource: EnvSource | null = hdr
 		? (env?.source ?? (env?.image ? { kind: 'image', image: env.image } : null))
@@ -1613,11 +1632,17 @@ export function renderAdvancedGL(h: FxHost, input: AdvancedInput, out: CanvasRen
 		}
 	}
 	const viewProj = cameraClip(cam, setup.frame, near, far);
+	const colorFormat = hdr ? gl.RGBA16F : gl.RGBA8;
+	// A float format may multisample less than the context's maximum.
+	const formatSamples = gl.getInternalformatParameter(
+		gl.RENDERBUFFER,
+		colorFormat,
+		gl.SAMPLES,
+	) as Int32Array | null;
 	const samples = Math.max(
 		1,
-		Math.min(k > 1 ? 2 : 4, gl.getParameter(gl.MAX_SAMPLES) as number),
+		Math.min(k > 1 ? 2 : 4, gl.getParameter(gl.MAX_SAMPLES) as number, formatSamples?.[0] ?? 4),
 	);
-	const colorFormat = hdr ? gl.RGBA16F : gl.RGBA8;
 	const colorRb = renderbuffer(gl, ps, 'color', RW, RH, colorFormat, samples);
 	const depthRb = renderbuffer(gl, ps, 'depth', RW, RH, gl.DEPTH_COMPONENT24, samples);
 	const transRb = transmissive ? renderbuffer(gl, ps, 'colorTrans', RW, RH, gl.RGBA16F, samples) : null;
@@ -1804,7 +1829,20 @@ export function renderAdvancedGL(h: FxHost, input: AdvancedInput, out: CanvasRen
 		const scene = sceneLinear('glassScene');
 		const mips = Math.floor(Math.log2(Math.max(RW, RH))) + 1;
 		const transBack = kit.target('transBack', RW, RH, mips);
-		composite(kit, { scene, trans: null, glint: null, backdrop: back, mode: TONE_MODE[look.toneMapping], exposure: look.exposure }, RW, RH, transBack);
+		composite(
+			kit,
+			{
+				scene,
+				trans: null,
+				glint: null,
+				backdrop: back,
+				mode: TONE_MODE[look.toneMapping],
+				exposure: look.exposure,
+			},
+			RW,
+			RH,
+			transBack,
+		);
 		gl.bindTexture(gl.TEXTURE_2D, transBack);
 		gl.generateMipmap(gl.TEXTURE_2D);
 		gl.bindFramebuffer(gl.FRAMEBUFFER, ps.fbo);
@@ -1915,6 +1953,15 @@ export function renderAdvancedGL(h: FxHost, input: AdvancedInput, out: CanvasRen
 	// bottom-left W × H region, so a plain copy keeps the picture upright.
 	gl.bindVertexArray(ps.quadVao);
 	gl.drawArrays(gl.TRIANGLES, 0, 3);
+	// What glass transmits goes out of focus with the solid it passes through.
+	if (kit && transResolved && dof && depthTex) {
+		const transDof = kit.target('transDof', W, H);
+		gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, transDof, 0);
+		gl.activeTexture(gl.TEXTURE0);
+		gl.bindTexture(gl.TEXTURE_2D, transResolved);
+		gl.drawArrays(gl.TRIANGLES, 0, 3);
+		transResolved = transDof;
+	}
 	gl.bindVertexArray(null);
 	gl.activeTexture(gl.TEXTURE0);
 	if (kit && dofOut) {

@@ -9,18 +9,17 @@ import {
 	layerWorldMatrix,
 	lightStateOf,
 	lookAtCamera,
-	materialAt,
 	type Mesh,
-	mat4Mul,
+	materialAt,
 	newLayer3D,
 	newLightData,
 	newSurface,
 	type SolidGeometry,
 	SURFACE_PRESETS,
 	type SurfaceValues,
-	type Vec3,
 	sceneLookAt,
 	shapesOfAlpha,
+	type Vec3,
 } from '@jasper/project';
 import { fxHost } from '../../src/fx/host.ts';
 import { renderAdvancedGL } from '../../src/three-d/advanced.ts';
@@ -114,7 +113,11 @@ function layerOf(s: TitleScene): Layer3D {
 	const surf = s.surfaces ?? {};
 	if (surf.base) td.material.pbr = surfaceOf(surf.base);
 	const g = td.geometry!;
-	const sv = {} as { face?: ReturnType<typeof newSurface>; side?: ReturnType<typeof newSurface>; back?: ReturnType<typeof newSurface> };
+	const sv = {} as {
+		face?: ReturnType<typeof newSurface>;
+		side?: ReturnType<typeof newSurface>;
+		back?: ReturnType<typeof newSurface>;
+	};
 	if (surf.face) sv.face = surfaceOf(surf.face);
 	if (surf.side) sv.side = surfaceOf(surf.side);
 	if (surf.back) sv.back = surfaceOf(surf.back);
@@ -188,15 +191,14 @@ function draw(s: TitleScene, out: CanvasRenderingContext2D, useCache = true): vo
 	const world = layerWorldMatrix(clip as never, 0, {});
 	const identity = [1, 0, 0, 0, 1, 0, 0, 0, 1];
 	const g = solid(s);
-	const mesh =
-		useCache
-			? extrudedMesh(
-					'title',
-					{ canvas: pic, version: performance.now(), width: pic.width, height: pic.height },
-					identity as never,
-					g,
-				)
-			: buildTitleSolid(traced(pic), g);
+	const mesh = useCache
+		? extrudedMesh(
+				'title',
+				{ canvas: pic, version: performance.now(), width: pic.width, height: pic.height },
+				identity as never,
+				g,
+			)
+		: buildTitleSolid(traced(pic), g);
 	lastMesh = mesh;
 	const lights = (s.lights ?? []).map((l, i) => {
 		const data = newLightData(l.type, { width: s.W, height: s.H }, { intensity: l.intensity ?? 100 });
@@ -204,18 +206,24 @@ function draw(s: TitleScene, out: CanvasRenderingContext2D, useCache = true): vo
 		if (l.poi) data.transform.pointOfInterest = anim(l.poi);
 		return lightStateOf({ clipId: `l${i}`, name: '', trackIndex: 0, ...RIG, light: data } as never, 0, FPS);
 	});
-	const environment =
-		s.noEnv
-			? null
-			: {
-					source: (s.envFloat
-						? { kind: 'float', width: s.envFloat.width, height: s.envFloat.height, data: Float32Array.from(s.envFloat.data) }
-						: { kind: 'preset', preset: s.envPreset ?? 0 }) as EnvSource,
-					key: s.envFloat ? `float:${s.envFloat.data.reduce((a, b) => a + b, 0)}` : `preset:${s.envPreset ?? 0}`,
-					rotation: ((s.envRotation ?? 0) * Math.PI) / 180,
-					color: s.envColor ?? ([1, 1, 1] as Vec3),
-					background: !!s.envBackground,
-				};
+	const environment = s.noEnv
+		? null
+		: {
+				source: (s.envFloat
+					? {
+							kind: 'float',
+							width: s.envFloat.width,
+							height: s.envFloat.height,
+							data: Float32Array.from(s.envFloat.data),
+						}
+					: { kind: 'preset', preset: s.envPreset ?? 0 }) as EnvSource,
+				key: s.envFloat
+					? `float:${s.envFloat.data.reduce((a, b) => a + b, 0)}`
+					: `preset:${s.envPreset ?? 0}`,
+				rotation: ((s.envRotation ?? 0) * Math.PI) / 180,
+				color: s.envColor ?? ([1, 1, 1] as Vec3),
+				background: !!s.envBackground,
+			};
 	const lookAt = sceneLookAt(
 		{
 			renderer: 'advanced',
@@ -244,7 +252,15 @@ function draw(s: TitleScene, out: CanvasRenderingContext2D, useCache = true): vo
 	renderAdvancedGL(
 		h,
 		{
-			setup: { width: s.W, height: s.H, scale: 1, frame: { width: s.W, height: s.H }, camera, lights, draft: false },
+			setup: {
+				width: s.W,
+				height: s.H,
+				scale: 1,
+				frame: { width: s.W, height: s.H },
+				camera,
+				lights,
+				draft: false,
+			},
 			members: [
 				{
 					key: 'title',

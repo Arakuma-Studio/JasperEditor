@@ -331,7 +331,10 @@ export function registerThreeDTools(ctx: ToolContext): void {
 			.optional()
 			.describe('An image, video or Radiance .hdr media id; null uses environmentPreset'),
 		environmentBackground: z.boolean().optional(),
-		environmentPreset: z.enum(ENVIRONMENT_PRESETS).optional().describe('Procedural environment, the look presets'),
+		environmentPreset: z
+			.enum(ENVIRONMENT_PRESETS)
+			.optional()
+			.describe('Procedural environment, the look presets'),
 		environmentRotation: z.number().finite().optional().describe('Degrees'),
 	};
 
@@ -400,7 +403,7 @@ export function registerThreeDTools(ctx: ToolContext): void {
 		{
 			title: 'Set 3D renderer',
 			description:
-				"Sets a sequence's 3D renderer (Composition Settings ▸ 3D Renderer; one undoable edit): renderer classic | advanced, draft (Draft 3D previews: no lights, shadows or depth of field; exports always render in full), and for Advanced 3D shadowMapSize, supersampling, toneMapping (none, aces, agx, neutral, hue), exposure (stops) and glint (HDR bloom and star rays). Values key at `frame` when animated; the same values animate through set_param at [\"scene3d\", sequenceId, prop], props exposure, glintThreshold, glintIntensity, glintRadius, glintLength, glintAngle, glintTint.",
+				'Sets a sequence\'s 3D renderer (Composition Settings ▸ 3D Renderer; one undoable edit): renderer classic | advanced, draft (Draft 3D previews: no lights, shadows or depth of field; exports always render in full), and for Advanced 3D shadowMapSize, supersampling, toneMapping (none, aces, agx, neutral, hue), exposure (stops) and glint (HDR bloom and star rays). Values key at `frame` when animated; the same values animate through set_param at ["scene3d", sequenceId, prop], props exposure, glintThreshold, glintIntensity, glintRadius, glintLength, glintAngle, glintTint.',
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: z.string().optional(),
@@ -442,7 +445,7 @@ export function registerThreeDTools(ctx: ToolContext): void {
 		{
 			title: 'Set 3D surface material',
 			description:
-				"Gives a surface of 3D layers a physically based material (one undoable edit): surface base (default, every surface), face, side, back, a band id, or plateId.face / plateId.side; preset, values (percent 0–100 unless noted: metalness, roughness, clearcoat, flakes, relief crumple | hammered | liquid, iridescence, transmission with ior and thickness in layer px, emissive) or clear. List surfaces and values with get_clip_properties. Numbers animate through set_param at threeD.surface.<surface>.<value>. Physical surfaces need the float scene target and render on the Remotion path.",
+				'Gives a surface of 3D layers a physically based material (one undoable edit): surface base (default, every surface), face, side, back, a band id, or plateId.face / plateId.side; preset, values (percent 0–100 unless noted: metalness, roughness, clearcoat, flakes, relief crumple | hammered | liquid, iridescence, transmission with ior and thickness in layer px, emissive) or clear. List surfaces and values with get_clip_properties. Numbers animate through set_param at threeD.surface.<surface>.<value>. Physical surfaces need the float scene target and render on the Remotion path.',
 			input: {
 				projectId: ProjectIdArg,
 				clipIds: z.array(z.string().min(1)).min(1),
@@ -455,7 +458,13 @@ export function registerThreeDTools(ctx: ToolContext): void {
 			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, frame, ...args }, extra) =>
-			applyHelper(ctx, projectId, '3D Material', [{ type: 'threeD.setSurface', ...args, ...atOf(frame) }], extra),
+			applyHelper(
+				ctx,
+				projectId,
+				'3D Material',
+				[{ type: 'threeD.setSurface', ...args, ...atOf(frame) }],
+				extra,
+			),
 	);
 
 	defineTool(
@@ -477,7 +486,13 @@ export function registerThreeDTools(ctx: ToolContext): void {
 						smoothness: z.number().min(0).max(100).optional(),
 						detail: z.number().min(1).max(4).optional(),
 						curve: z
-							.array(z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1), corner: z.boolean().optional() }))
+							.array(
+								z.object({
+									x: z.number().min(0).max(1),
+									y: z.number().min(0).max(1),
+									corner: z.boolean().optional(),
+								}),
+							)
 							.min(2)
 							.max(16)
 							.optional(),
@@ -488,7 +503,13 @@ export function registerThreeDTools(ctx: ToolContext): void {
 			annotations: EDIT_IDEMPOTENT,
 		},
 		async ({ projectId, frame, ...args }, extra) =>
-			applyHelper(ctx, projectId, '3D Geometry', [{ type: 'threeD.setGeometry', ...args, ...atOf(frame) }], extra),
+			applyHelper(
+				ctx,
+				projectId,
+				'3D Geometry',
+				[{ type: 'threeD.setGeometry', ...args, ...atOf(frame) }],
+				extra,
+			),
 	);
 
 	defineTool(
@@ -514,7 +535,8 @@ export function registerThreeDTools(ctx: ToolContext): void {
 			annotations: EDIT,
 		},
 		async ({ projectId, action, clipId, bandId, index, ...band }, extra) => {
-			if (action !== 'add' && !bandId) throw new ToolError('E_INVALID_PARAM', 'bandId is required to remove or reorder a band');
+			if (action !== 'add' && !bandId)
+				throw new ToolError('E_INVALID_PARAM', 'bandId is required to remove or reorder a band');
 			const cmd =
 				action === 'add'
 					? { type: 'threeD.addBand' as const, clipId, ...band, ...(index !== undefined ? { index } : {}) }
@@ -552,10 +574,16 @@ export function registerThreeDTools(ctx: ToolContext): void {
 			annotations: EDIT,
 		},
 		async ({ projectId, action, clipId, plateId, index, ...plate }, extra) => {
-			if (action !== 'add' && !plateId) throw new ToolError('E_INVALID_PARAM', 'plateId is required to remove or reorder a plate');
+			if (action !== 'add' && !plateId)
+				throw new ToolError('E_INVALID_PARAM', 'plateId is required to remove or reorder a plate');
 			const cmd =
 				action === 'add'
-					? { type: 'threeD.addBackplate' as const, clipId, ...plate, ...(index !== undefined ? { index } : {}) }
+					? {
+							type: 'threeD.addBackplate' as const,
+							clipId,
+							...plate,
+							...(index !== undefined ? { index } : {}),
+						}
 					: action === 'remove'
 						? { type: 'threeD.removeBackplate' as const, clipId, plateId: plateId! }
 						: { type: 'threeD.reorderBackplate' as const, clipId, plateId: plateId!, index: index ?? 0 };

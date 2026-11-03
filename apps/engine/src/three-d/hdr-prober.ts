@@ -3,7 +3,14 @@
 // they are not images. The prober runs the renderer's reader over the file, at a small output size: a file it refuses
 // fails the import with the reason (INVALID_HDR), and nothing the header claims is allocated first.
 import { readFile, stat } from 'node:fs/promises';
-import { decodeHdr, EMPTY_PROBE, HDR_MAX_BYTES, HdrParseError, isHdrFile, parseHdrHeader } from '@jasper/project';
+import {
+	decodeHdr,
+	EMPTY_PROBE,
+	HDR_MAX_BYTES,
+	HdrParseError,
+	isHdrFile,
+	parseHdrHeader,
+} from '@jasper/project';
 import { JobError } from '../jobs/types.ts';
 import type { AssetProber } from '../media/probe.ts';
 

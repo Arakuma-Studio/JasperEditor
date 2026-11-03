@@ -21,13 +21,34 @@ import type {
 import { MAX_BACKPLATES, MAX_BEVEL_BANDS } from '../schema/three-d.ts';
 import { BEVEL_OUTSIDE_SHARE, effectiveSegments } from './bevel.ts';
 import { extrudeShapes, type Mesh, type Shape2D, simplifyLoop } from './extrude.ts';
-import { emitInflate, inflateCurveFn, inflateField, inflateScale, inflateStep, inflateWallTop } from './inflate.ts';
+import {
+	emitInflate,
+	inflateCurveFn,
+	inflateField,
+	inflateScale,
+	inflateStep,
+	inflateWallTop,
+} from './inflate.ts';
 import { finiteOr } from './math.ts';
-import { boxShape, distanceField, hullShape, isoShapes, nearestOutline, offsetShapes, offsetStep } from './offset.ts';
+import {
+	boxShape,
+	distanceField,
+	hullShape,
+	isoShapes,
+	nearestOutline,
+	offsetShapes,
+	offsetStep,
+} from './offset.ts';
 import { bandSpans, extrudeSolid, MeshBuilder, type ProfileSpan } from './solid.ts';
 import { plateFaceSlot, plateSideSlot, SLOT_BACK, SLOT_BAND0, SLOT_FACE, SLOT_SIDE } from './surfaces.ts';
 
-export type SolidBand = { width: number; depth: number; profile: BevelProfile; curve: number; segments: number };
+export type SolidBand = {
+	width: number;
+	depth: number;
+	profile: BevelProfile;
+	curve: number;
+	segments: number;
+};
 export type SolidPlate = {
 	enabled: boolean;
 	shape: PlateShape;
@@ -63,7 +84,12 @@ export const DEFAULT_INFLATE_CURVE: readonly InflateCurvePoint[] = [
 
 /** Inflate options at their defaults. */
 export function newInflate(): InflateOptions {
-	return { height: anim(30), curve: DEFAULT_INFLATE_CURVE.map((p) => ({ ...p })), smoothness: anim(60), detail: 1 };
+	return {
+		height: anim(30),
+		curve: DEFAULT_INFLATE_CURVE.map((p) => ({ ...p })),
+		smoothness: anim(60),
+		detail: 1,
+	};
 }
 
 /** Most ring vertices × profile stations of one solid: keeps a hostile trace from allocating gigabytes. */

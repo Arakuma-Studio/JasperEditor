@@ -21,7 +21,10 @@ afterAll(async () => {
 });
 
 const hdrFile = (w: number, h: number, body: number[]) =>
-	Buffer.concat([Buffer.from(`#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y ${h} +X ${w}\n`, 'latin1'), Buffer.from(body)]);
+	Buffer.concat([
+		Buffer.from(`#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y ${h} +X ${w}\n`, 'latin1'),
+		Buffer.from(body),
+	]);
 
 describe('Radiance media', () => {
 	it('registers a .hdr as kind hdri, with its size', async () => {

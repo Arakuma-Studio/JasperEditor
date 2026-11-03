@@ -60,7 +60,14 @@ function build(o: Opts = {}) {
 			ref: '$t',
 		},
 		{ type: 'clip.set3d', clipIds: ['$t'], enabled: true },
-		{ type: 'clip.addLight', at: 0, duration: 90, track: 'V3', lightType: 'environment', environmentPreset: 'studio' },
+		{
+			type: 'clip.addLight',
+			at: 0,
+			duration: 90,
+			track: 'V3',
+			lightType: 'environment',
+			environmentPreset: 'studio',
+		},
 	]);
 	const t = first.result.refs.$t!;
 	let doc = first.document;
@@ -72,10 +79,21 @@ function build(o: Opts = {}) {
 		{ type: 'param.set', target: ['clip', t, 'threeD', 'rotationY'], value: -24 },
 		{ type: 'param.set', target: ['clip', t, 'threeD', 'rotationX'], value: 10 },
 		// A keyed material and a keyed camera-free rotation: neither depends on anything but the frame.
-		{ type: 'keyframe.add', target: ['clip', t, 'threeD', 'surface', 'base', 'roughness'], at: { frames: 0 }, value: 8 },
-		{ type: 'keyframe.add', target: ['clip', t, 'threeD', 'surface', 'base', 'roughness'], at: { frames: 60 }, value: 40 },
+		{
+			type: 'keyframe.add',
+			target: ['clip', t, 'threeD', 'surface', 'base', 'roughness'],
+			at: { frames: 0 },
+			value: 8,
+		},
+		{
+			type: 'keyframe.add',
+			target: ['clip', t, 'threeD', 'surface', 'base', 'roughness'],
+			at: { frames: 60 },
+			value: 40,
+		},
 	]));
-	if (o.split !== undefined) ({ document: doc } = step(doc, [{ type: 'clip.split', at: o.split, clipIds: [t] }]));
+	if (o.split !== undefined)
+		({ document: doc } = step(doc, [{ type: 'clip.split', at: o.split, clipIds: [t] }]));
 	return buildRenderSnapshot(doc, seqId, { resolveMedia: () => null, resolveFont: () => null });
 }
 
@@ -83,7 +101,17 @@ type Raw = { data: Buffer; w: number; h: number };
 const decode = (png: Buffer | string): Raw => ({
 	data: execFileSync(
 		'ffmpeg',
-		['-v', 'error', '-i', typeof png === 'string' ? png : 'pipe:0', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'],
+		[
+			'-v',
+			'error',
+			'-i',
+			typeof png === 'string' ? png : 'pipe:0',
+			'-f',
+			'rawvideo',
+			'-pix_fmt',
+			'rgb24',
+			'-',
+		],
 		{ maxBuffer: 1 << 27, ...(typeof png === 'string' ? {} : { input: png }) },
 	),
 	w: W,
@@ -143,7 +171,10 @@ describe.runIf(enabled && !!CHROME)('3D titles in real Chrome (REMOTION_E2E=1)',
 	});
 
 	async function still(doc: ReturnType<typeof build>, frame: number, name: string): Promise<Raw> {
-		const inputProps = { doc, options: { isPreview: false, useProxies: false, transparentBackground: false } };
+		const inputProps = {
+			doc,
+			options: { isPreview: false, useProxies: false, transparentBackground: false },
+		};
 		const composition = await renderer.selectComposition({
 			serveUrl,
 			id: SEQUENCE_COMPOSITION_ID,
@@ -152,7 +183,15 @@ describe.runIf(enabled && !!CHROME)('3D titles in real Chrome (REMOTION_E2E=1)',
 			...remotionBrowser,
 		});
 		const output = join(OUT, `${name}.png`);
-		await renderer.renderStill({ composition, serveUrl, inputProps, frame, output, puppeteerInstance, ...remotionBrowser });
+		await renderer.renderStill({
+			composition,
+			serveUrl,
+			inputProps,
+			frame,
+			output,
+			puppeteerInstance,
+			...remotionBrowser,
+		});
 		return decode(output);
 	}
 
@@ -175,7 +214,9 @@ describe.runIf(enabled && !!CHROME)('3D titles in real Chrome (REMOTION_E2E=1)',
 		const exported = await still(build(), frame, `export-${frame}`);
 		const program = await programFrame(frame, `program-${frame}`);
 		const s = ssim(resampleLuma(luma(program), W, H, W, H), resampleLuma(luma(exported), W, H, W, H), W, H);
-		console.info(`[3d-title] frame ${frame}: SSIM ${s.toFixed(4)}, max difference ${maxDiff(program, exported)}`);
+		console.info(
+			`[3d-title] frame ${frame}: SSIM ${s.toFixed(4)}, max difference ${maxDiff(program, exported)}`,
+		);
 		expect(s).toBeGreaterThan(0.98);
 		// It is gold, not a flat fallback: warm, and with highlights.
 		let warm = 0;

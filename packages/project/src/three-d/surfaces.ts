@@ -272,15 +272,36 @@ export const SURFACE_PRESETS: Record<string, { label: string; values: SurfaceVal
 	},
 	'liquid-chrome': {
 		label: 'Liquid Chrome',
-		values: { ...color('#ffffff'), metalness: 100, roughness: 3, relief: 'liquid', reliefAmount: 55, reliefScale: 120 },
+		values: {
+			...color('#ffffff'),
+			metalness: 100,
+			roughness: 3,
+			relief: 'liquid',
+			reliefAmount: 55,
+			reliefScale: 120,
+		},
 	},
 	foil: {
 		label: 'Crumpled Foil',
-		values: { ...color('#dfe3ea'), metalness: 100, roughness: 18, relief: 'crumple', reliefAmount: 55, reliefScale: 50 },
+		values: {
+			...color('#dfe3ea'),
+			metalness: 100,
+			roughness: 18,
+			relief: 'crumple',
+			reliefAmount: 55,
+			reliefScale: 50,
+		},
 	},
 	pearl: {
 		label: 'Pearl',
-		values: { ...color('#f4eee6'), metalness: 0, roughness: 25, clearcoat: 60, iridescence: 90, iridescenceThickness: 320 },
+		values: {
+			...color('#f4eee6'),
+			metalness: 0,
+			roughness: 25,
+			clearcoat: 60,
+			iridescence: 90,
+			iridescenceThickness: 320,
+		},
 	},
 	glass: {
 		label: 'Glass',
@@ -349,12 +370,7 @@ export type SurfaceState = {
 const rgba = (a: Animatable<RGBA> | undefined, t: number, d: RGBA): RGBA => {
 	const v = a ? (evaluate(a, t) as unknown) : d;
 	return Array.isArray(v) && v.length >= 3
-		? [
-				finiteOr(v[0], d[0]),
-				finiteOr(v[1], d[1]),
-				finiteOr(v[2], d[2]),
-				finiteOr(v[3], d[3]),
-			]
+		? [finiteOr(v[0], d[0]), finiteOr(v[1], d[1]), finiteOr(v[2], d[2]), finiteOr(v[3], d[3])]
 		: d;
 };
 
@@ -400,7 +416,9 @@ export function layerSurfacesAt(td: Layer3D, t: number): (SurfaceState | null)[]
 	const base = td.material.pbr ? surfaceAt(td.material.pbr as SurfaceMaterial, t) : null;
 	const of = (m: SurfaceMaterial | undefined) => (m ? surfaceAt(m, t) : base);
 	const out = new Array<SurfaceState | null>(MAX_SLOTS).fill(base);
-	const s = g?.surfaces as { face?: SurfaceMaterial; side?: SurfaceMaterial; back?: SurfaceMaterial } | undefined;
+	const s = g?.surfaces as
+		| { face?: SurfaceMaterial; side?: SurfaceMaterial; back?: SurfaceMaterial }
+		| undefined;
 	out[SLOT_FACE] = of(s?.face);
 	out[SLOT_SIDE] = of(s?.side);
 	out[SLOT_BACK] = of(s?.back);
@@ -415,10 +433,22 @@ export function layerSurfacesAt(td: Layer3D, t: number): (SurfaceState | null)[]
 }
 
 /** Every surface a layer stores, with where it lives. */
-export function layerSurfaces(td: Layer3D): { id: string; label: string; path: (string | number)[]; surface: SurfaceMaterial | undefined }[] {
+export function layerSurfaces(
+	td: Layer3D,
+): { id: string; label: string; path: (string | number)[]; surface: SurfaceMaterial | undefined }[] {
 	const g = td.geometry;
-	const out: { id: string; label: string; path: (string | number)[]; surface: SurfaceMaterial | undefined }[] = [
-		{ id: 'base', label: 'Base', path: ['material', 'pbr'], surface: td.material.pbr as SurfaceMaterial | undefined },
+	const out: {
+		id: string;
+		label: string;
+		path: (string | number)[];
+		surface: SurfaceMaterial | undefined;
+	}[] = [
+		{
+			id: 'base',
+			label: 'Base',
+			path: ['material', 'pbr'],
+			surface: td.material.pbr as SurfaceMaterial | undefined,
+		},
 	];
 	if (!g) return out;
 	const s = (g.surfaces ?? {}) as { face?: SurfaceMaterial; side?: SurfaceMaterial; back?: SurfaceMaterial };

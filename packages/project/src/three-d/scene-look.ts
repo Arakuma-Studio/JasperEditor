@@ -40,7 +40,13 @@ export const SCENE_3D_SPECS: Record<string, ParamSpec> = {
 	glintRadius: num('glintRadius', 'Glint Radius', 24, { min: 0, max: 400, step: 0.1 }, 'px'),
 	glintLength: num('glintLength', 'Glint Length', 120, { min: 0, max: 2000, step: 0.1 }, 'px'),
 	glintAngle: num('glintAngle', 'Glint Angle', 45, { step: 0.1 }, 'deg'),
-	glintTint: { name: 'glintTint', label: 'Glint Tint', type: 'color', default: [1, 1, 1, 1], animatable: true } as ParamSpec,
+	glintTint: {
+		name: 'glintTint',
+		label: 'Glint Tint',
+		type: 'color',
+		default: [1, 1, 1, 1],
+		animatable: true,
+	} as ParamSpec,
 };
 
 const GLINT_FIELDS = {
@@ -82,10 +88,13 @@ export function ensureScene3dAnim(three: Sequence3D, prop: string): Animatable<u
 }
 
 /** Every animatable value a sequence's 3D settings hold. */
-export function scene3dAnims(three: Sequence3D | undefined): { prop: string; anim: Animatable<unknown>; at: string[] }[] {
+export function scene3dAnims(
+	three: Sequence3D | undefined,
+): { prop: string; anim: Animatable<unknown>; at: string[] }[] {
 	const out: { prop: string; anim: Animatable<unknown>; at: string[] }[] = [];
 	if (!three) return out;
-	if (three.exposure) out.push({ prop: 'exposure', anim: three.exposure as never, at: ['threeD', 'exposure'] });
+	if (three.exposure)
+		out.push({ prop: 'exposure', anim: three.exposure as never, at: ['threeD', 'exposure'] });
 	if (three.glint)
 		for (const [prop, k] of Object.entries(GLINT_FIELDS)) {
 			const a = three.glint[k] as Animatable<unknown> | undefined;
@@ -233,7 +242,8 @@ export function costClassOf(
 function hasTransmission(td: Layer3D): boolean {
 	const seen: unknown[] = [td.material.pbr, td.geometry?.surfaces];
 	for (const b of (td.geometry?.bands ?? []) as { material?: unknown }[]) seen.push(b.material);
-	for (const p of (td.geometry?.backplates ?? []) as { face?: unknown; side?: unknown }[]) seen.push(p.face, p.side);
+	for (const p of (td.geometry?.backplates ?? []) as { face?: unknown; side?: unknown }[])
+		seen.push(p.face, p.side);
 	const walk = (v: unknown): boolean => {
 		if (!isObj(v)) return false;
 		const t = v.transmission;

@@ -105,7 +105,9 @@ export function inflateField(shape: Shape2D, step: number): InflateField {
 	let field: InflateField | null = null;
 	// A crossing exactly on a grid node or an outline vertex on a grid line has no well-defined cell: shift and retry.
 	for (let k = 0; k < DEGENERATE_RETRIES && !field; k++) field = buildField(s, step, PHASE + k * 0.1372);
-	return field ?? { xy: [], dist: new Float64Array(0), grad: new Float64Array(0), tris: [], rings: [], maxDist: 0 };
+	return (
+		field ?? { xy: [], dist: new Float64Array(0), grad: new Float64Array(0), tris: [], rings: [], maxDist: 0 }
+	);
 }
 
 /** One outline piece inside a cell: from the crossing it enters by to the one it leaves by. */
@@ -292,8 +294,7 @@ function buildField(shape: Shape2D, h: number, phase: number): InflateField | nu
 	const tri = (a: number, b: number, c: number) => {
 		const ax = xy[2 * a]!;
 		const ay = xy[2 * a + 1]!;
-		const cross =
-			(xy[2 * b]! - ax) * (xy[2 * c + 1]! - ay) - (xy[2 * b + 1]! - ay) * (xy[2 * c]! - ax);
+		const cross = (xy[2 * b]! - ax) * (xy[2 * c + 1]! - ay) - (xy[2 * b + 1]! - ay) * (xy[2 * c]! - ax);
 		if (cross > 0) tris.push(a, b, c);
 		else if (cross < 0) tris.push(a, c, b);
 	};
@@ -639,7 +640,8 @@ export function emitInflate(b: MeshBuilder, f: InflateField, spec: InflateSpec):
 			);
 		return ids[v]!;
 	};
-	for (let t = 0; t < tris.length; t += 3) b.tri(vertexOf(tris[t]!), vertexOf(tris[t + 1]!), vertexOf(tris[t + 2]!));
+	for (let t = 0; t < tris.length; t += 3)
+		b.tri(vertexOf(tris[t]!), vertexOf(tris[t + 1]!), vertexOf(tris[t + 2]!));
 
 	// Wall: through every outline vertex and crossing, smooth across shallow turns.
 	const zb = spec.zBack;
@@ -647,9 +649,7 @@ export function emitInflate(b: MeshBuilder, f: InflateField, spec: InflateSpec):
 		for (const ring of f.rings) {
 			const pts = ring.filter((v, i) => {
 				const w = ring[(i + 1) % ring.length]!;
-				return (
-					Math.abs(xy[2 * v]! - xy[2 * w]!) > 1e-9 || Math.abs(xy[2 * v + 1]! - xy[2 * w + 1]!) > 1e-9
-				);
+				return Math.abs(xy[2 * v]! - xy[2 * w]!) > 1e-9 || Math.abs(xy[2 * v + 1]! - xy[2 * w + 1]!) > 1e-9;
 			});
 			const k = pts.length;
 			if (k < 3) continue;
@@ -707,7 +707,8 @@ export function emitInflate(b: MeshBuilder, f: InflateField, spec: InflateSpec):
 		}
 		return id;
 	};
-	for (let t = 0; t < back.length; t += 3) b.tri(backOf(back[t]!), backOf(back[t + 1]!), backOf(back[t + 2]!));
+	for (let t = 0; t < back.length; t += 3)
+		b.tri(backOf(back[t]!), backOf(back[t + 1]!), backOf(back[t + 2]!));
 }
 
 /** Monotone cubic evaluator of an inflate curve (Fritsch–Butland tangents; a corner point keeps both secants). */

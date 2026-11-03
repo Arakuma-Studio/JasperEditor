@@ -20,9 +20,9 @@
 // Coordinates: layer space (x right, y down); +z is away from the viewer, so the front cap sits at z 0 and bands that
 // drop go towards +z. Unlike Pachislop, whose z points at the viewer, every z and normal z here is negated.
 import type { BevelProfile } from '../schema/three-d.ts';
+import { unitBevel } from './bevel.ts';
 import type { Mesh, Shape2D } from './extrude.ts';
 import { earcut } from './triangulate.ts';
-import { unitBevel } from './bevel.ts';
 
 type P = [number, number];
 
@@ -555,50 +555,10 @@ function emitStrip(
 			const jA = posOf(r, j, A.off);
 			const iB = posOf(r, i, B.off);
 			const jB = posOf(r, j, B.off);
-			const a0 = b.vertex(
-				iA[0],
-				iA[1],
-				A.z,
-				ni[0] * nA[0],
-				ni[1] * nA[0],
-				nA[1],
-				uv[i]![0],
-				uv[i]![1],
-				slot,
-			);
-			const a1 = b.vertex(
-				jA[0],
-				jA[1],
-				A.z,
-				nj[0] * nA[0],
-				nj[1] * nA[0],
-				nA[1],
-				uv[j]![0],
-				uv[j]![1],
-				slot,
-			);
-			const b1 = b.vertex(
-				jB[0],
-				jB[1],
-				B.z,
-				nj[0] * nB[0],
-				nj[1] * nB[0],
-				nB[1],
-				uv[j]![0],
-				uv[j]![1],
-				slot,
-			);
-			const b0 = b.vertex(
-				iB[0],
-				iB[1],
-				B.z,
-				ni[0] * nB[0],
-				ni[1] * nB[0],
-				nB[1],
-				uv[i]![0],
-				uv[i]![1],
-				slot,
-			);
+			const a0 = b.vertex(iA[0], iA[1], A.z, ni[0] * nA[0], ni[1] * nA[0], nA[1], uv[i]![0], uv[i]![1], slot);
+			const a1 = b.vertex(jA[0], jA[1], A.z, nj[0] * nA[0], nj[1] * nA[0], nA[1], uv[j]![0], uv[j]![1], slot);
+			const b1 = b.vertex(jB[0], jB[1], B.z, nj[0] * nB[0], nj[1] * nB[0], nB[1], uv[j]![0], uv[j]![1], slot);
+			const b0 = b.vertex(iB[0], iB[1], B.z, ni[0] * nB[0], ni[1] * nB[0], nB[1], uv[i]![0], uv[i]![1], slot);
 			b.tri(a0, a1, b1);
 			b.tri(a0, b1, b0);
 		}
@@ -657,8 +617,7 @@ export function extrudeSolid(b: MeshBuilder, shapes: readonly Shape2D[], spec: S
 					return [q[0], q[1]];
 				}),
 			);
-		const colourOfCap = (p: P): P =>
-			spec.colourAt && spec.capColour ? spec.colourAt(p[0], p[1], 0, 0) : p;
+		const colourOfCap = (p: P): P => (spec.colourAt && spec.capColour ? spec.colourAt(p[0], p[1], 0, 0) : p);
 		emitCap(b, ringPts(spec.cap.off), spec.cap.slot, spec.cap.z, -1, colourOfCap);
 		emitCap(b, ringPts(last.off), spec.backSlot, spec.zBack, 1, colourOfCap);
 		for (const s of spec.spans) emitStrip(b, rings, uvs, s.slot, s.a, s.b);

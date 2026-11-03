@@ -35,9 +35,9 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('3D titles on the GPU', { 
 	const call = <T>(name: string, ...args: unknown[]): Promise<T> =>
 		page.evaluate(
 			([n, a]) =>
-				(window as unknown as { __title: Record<string, (...x: unknown[]) => unknown> }).__title[n as string]!(
-					...(a as unknown[]),
-				),
+				(window as unknown as { __title: Record<string, (...x: unknown[]) => unknown> }).__title[
+					n as string
+				]!(...(a as unknown[])),
 			[name, args] as const,
 		) as Promise<T>;
 	const render = (s: TitleScene) => call<number[]>('render', s);
@@ -52,7 +52,8 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('3D titles on the GPU', { 
 	const diff = (a: number[], b: number[]) => {
 		let n = 0;
 		for (let i = 0; i < a.length; i += 4)
-			if (Math.abs(a[i]! - b[i]!) + Math.abs(a[i + 1]! - b[i + 1]!) + Math.abs(a[i + 2]! - b[i + 2]!) > 24) n++;
+			if (Math.abs(a[i]! - b[i]!) + Math.abs(a[i + 1]! - b[i + 1]!) + Math.abs(a[i + 2]! - b[i + 2]!) > 24)
+				n++;
 		return n / (a.length / 4);
 	};
 	const opaque = (img: number[]) => {
@@ -67,7 +68,8 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('3D titles on the GPU', { 
 		let lo = 255;
 		let hi = 0;
 		for (let i = 0; i < img.length; i += 4) {
-			const d = Math.abs(img[i]! - back[0]!) + Math.abs(img[i + 1]! - back[1]!) + Math.abs(img[i + 2]! - back[2]!);
+			const d =
+				Math.abs(img[i]! - back[0]!) + Math.abs(img[i + 1]! - back[1]!) + Math.abs(img[i + 2]! - back[2]!);
 			if (d < 12) continue;
 			n++;
 			for (let c = 0; c < 3; c++) sum[c]! += img[i + c]!;
@@ -107,7 +109,10 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('3D titles on the GPU', { 
 		expect(Math.abs(s.mean[0]! - s.mean[2]!)).toBeLessThan(70);
 		expect(s.hi - s.lo).toBeGreaterThan(150);
 		// The perturbation: the same solid in matte grey has no such range.
-		const matte = { ...gold, surfaces: { base: { base: 'color', baseColor: [0.6, 0.6, 0.6, 1], roughness: 90 } } } as TitleScene;
+		const matte = {
+			...gold,
+			surfaces: { base: { base: 'color', baseColor: [0.6, 0.6, 0.6, 1], roughness: 90 } },
+		} as TitleScene;
 		const m = stats(await render(matte));
 		expect(m.hi - m.lo).toBeLessThan(s.hi - s.lo);
 	});
@@ -145,15 +150,84 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('3D titles on the GPU', { 
 	});
 
 	it.each([
-		['clearcoat', { base: { base: 'color', baseColor: [0.6, 0.02, 0.03, 1], roughness: 60, clearcoat: 100 } }],
-		['flakes', { base: { base: 'color', baseColor: [0.6, 0.6, 0.65, 1], metalness: 100, roughness: 25, flakes: 90, flakeScale: 4 } }],
-		['crumple', { base: { base: 'color', baseColor: [0.9, 0.9, 0.9, 1], metalness: 100, roughness: 15, relief: 'crumple', reliefAmount: 70, reliefScale: 40 } }],
-		['hammered', { base: { base: 'color', baseColor: [0.9, 0.7, 0.2, 1], metalness: 100, roughness: 15, relief: 'hammered', reliefAmount: 70, reliefScale: 30 } }],
-		['liquid', { base: { base: 'color', baseColor: [0.9, 0.9, 0.9, 1], metalness: 100, roughness: 5, relief: 'liquid', reliefAmount: 70, reliefScale: 80 } }],
-		['iridescence', { base: { base: 'color', baseColor: [0.2, 0.2, 0.25, 1], metalness: 60, roughness: 20, iridescence: 100, iridescenceThickness: 480 } }],
+		[
+			'clearcoat',
+			{ base: { base: 'color', baseColor: [0.6, 0.02, 0.03, 1], roughness: 60, clearcoat: 100 } },
+		],
+		[
+			'flakes',
+			{
+				base: {
+					base: 'color',
+					baseColor: [0.6, 0.6, 0.65, 1],
+					metalness: 100,
+					roughness: 25,
+					flakes: 90,
+					flakeScale: 4,
+				},
+			},
+		],
+		[
+			'crumple',
+			{
+				base: {
+					base: 'color',
+					baseColor: [0.9, 0.9, 0.9, 1],
+					metalness: 100,
+					roughness: 15,
+					relief: 'crumple',
+					reliefAmount: 70,
+					reliefScale: 40,
+				},
+			},
+		],
+		[
+			'hammered',
+			{
+				base: {
+					base: 'color',
+					baseColor: [0.9, 0.7, 0.2, 1],
+					metalness: 100,
+					roughness: 15,
+					relief: 'hammered',
+					reliefAmount: 70,
+					reliefScale: 30,
+				},
+			},
+		],
+		[
+			'liquid',
+			{
+				base: {
+					base: 'color',
+					baseColor: [0.9, 0.9, 0.9, 1],
+					metalness: 100,
+					roughness: 5,
+					relief: 'liquid',
+					reliefAmount: 70,
+					reliefScale: 80,
+				},
+			},
+		],
+		[
+			'iridescence',
+			{
+				base: {
+					base: 'color',
+					baseColor: [0.2, 0.2, 0.25, 1],
+					metalness: 60,
+					roughness: 20,
+					iridescence: 100,
+					iridescenceThickness: 480,
+				},
+			},
+		],
 	] as const)('%s changes the picture', async (name, surfaces) => {
 		const s = { ...gold, text: 'A8', surfaces } as TitleScene;
-		const plain = { ...s, surfaces: { base: { ...surfaces.base, clearcoat: 0, flakes: 0, relief: 'none', iridescence: 0 } } } as TitleScene;
+		const plain = {
+			...s,
+			surfaces: { base: { ...surfaces.base, clearcoat: 0, flakes: 0, relief: 'none', iridescence: 0 } },
+		} as TitleScene;
 		await dump(`fx-${name}`, s);
 		expect(diff(await render(s), await render(plain))).toBeGreaterThan(0.004);
 	});
@@ -173,7 +247,11 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('3D titles on the GPU', { 
 		const img = await render(glass);
 		const noGlass = await render({ ...glass, geometry: { depth: 0, bands: [] }, surfaces: {} });
 		// Inside the letter's stroke: some red stripes must have moved.
-		const stroke = await render({ ...glass, backdrop: 'none', surfaces: { base: { base: 'color', baseColor: [1, 1, 1, 1] } } });
+		const stroke = await render({
+			...glass,
+			backdrop: 'none',
+			surfaces: { base: { base: 'color', baseColor: [1, 1, 1, 1] } },
+		});
 		let inGlass = 0;
 		let moved = 0;
 		let red = 0;
@@ -187,7 +265,10 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('3D titles on the GPU', { 
 		expect(moved / inGlass).toBeGreaterThan(0.1);
 		expect(red / inGlass).toBeGreaterThan(0.1);
 		// Perturbation: opaque body.
-		const opaqueBody = await render({ ...glass, surfaces: { base: { base: 'color', baseColor: [0.2, 0.2, 0.2, 1] } } });
+		const opaqueBody = await render({
+			...glass,
+			surfaces: { base: { base: 'color', baseColor: [0.2, 0.2, 0.2, 1] } },
+		});
 		let opaqueRed = 0;
 		for (let i = 0; i < img.length; i += 4)
 			if (stroke[i + 3]! >= 200 && opaqueBody[i]! > 120 && opaqueBody[i + 1]! < 110) opaqueRed++;
@@ -202,7 +283,16 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('3D titles on the GPU', { 
 			backdrop: 'gradient',
 			toneMapping: 'aces',
 			geometry: { depth: 2 },
-			surfaces: { base: { base: 'color', baseColor: [1, 1, 1, 1], roughness: 0, transmission: 100, ior: 1, thickness: 0 } },
+			surfaces: {
+				base: {
+					base: 'color',
+					baseColor: [1, 1, 1, 1],
+					roughness: 0,
+					transmission: 100,
+					ior: 1,
+					thickness: 0,
+				},
+			},
 			noEnv: true,
 		} as unknown as TitleScene;
 		const img = await render(pane);
@@ -210,27 +300,37 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('3D titles on the GPU', { 
 		expect(Math.abs(px(img, 160, 80)[0]! - px(back, 160, 80)[0]!)).toBeLessThanOrEqual(3);
 	});
 
-	it.each(['aces', 'agx', 'neutral', 'hue'] as const)('tone mapping %s: HDR values roll off, none clips', async (toneMapping) => {
-		const hot = { ...gold, envColor: [8, 8, 8] } as TitleScene;
-		const on = await render({ ...hot, toneMapping });
-		const off = await render({ ...hot, toneMapping: 'none' });
-		const clipped = (img: number[]) => {
-			let n = 0;
-			for (let i = 0; i < img.length; i += 4) if (img[i]! > 253 || img[i + 1]! > 253 || img[i + 2]! > 253) n++;
-			return n;
-		};
-		await dump(`tone-${toneMapping}`, { ...hot, toneMapping });
-		expect(diff(on, off)).toBeGreaterThan(0.02);
-		expect(clipped(on)).toBeLessThan(clipped(off) + 1);
-	});
+	it.each(['aces', 'agx', 'neutral', 'hue'] as const)(
+		'tone mapping %s: HDR values roll off, none clips',
+		async (toneMapping) => {
+			const hot = { ...gold, envColor: [8, 8, 8] } as TitleScene;
+			const on = await render({ ...hot, toneMapping });
+			const off = await render({ ...hot, toneMapping: 'none' });
+			const clipped = (img: number[]) => {
+				let n = 0;
+				for (let i = 0; i < img.length; i += 4)
+					if (img[i]! > 253 || img[i + 1]! > 253 || img[i + 2]! > 253) n++;
+				return n;
+			};
+			await dump(`tone-${toneMapping}`, { ...hot, toneMapping });
+			expect(diff(on, off)).toBeGreaterThan(0.02);
+			expect(clipped(on)).toBeLessThan(clipped(off) + 1);
+		},
+	);
 
 	it('the hue-preserving mode keeps saturated gold saturated where ACES desaturates it', async () => {
-		const hot = { ...gold, surfaces: { base: { base: 'color', baseColor: [1, 0.6, 0, 1], metalness: 100, roughness: 30 } }, envColor: [4, 4, 4] } as TitleScene;
+		const hot = {
+			...gold,
+			surfaces: { base: { base: 'color', baseColor: [1, 0.6, 0, 1], metalness: 100, roughness: 30 } },
+			envColor: [4, 4, 4],
+		} as TitleScene;
 		const sat = (img: number[]) => {
 			const s = stats(img);
 			return (s.mean[0]! - s.mean[2]!) / Math.max(1, s.mean[0]!);
 		};
-		expect(sat(await render({ ...hot, toneMapping: 'hue' }))).toBeGreaterThan(sat(await render({ ...hot, toneMapping: 'aces' })));
+		expect(sat(await render({ ...hot, toneMapping: 'hue' }))).toBeGreaterThan(
+			sat(await render({ ...hot, toneMapping: 'aces' })),
+		);
 	});
 
 	it('tone mapping leaves the backdrop alone', async () => {
@@ -291,7 +391,9 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('3D titles on the GPU', { 
 						c += Math.abs(px(img, x, y)[1]! - px(img, x, y + 1)[1]!);
 			return c;
 		};
-		const m = (roughness: number) => ({ base: { base: 'color', baseColor: [1, 1, 1, 1], metalness: 100, roughness } });
+		const m = (roughness: number) => ({
+			base: { base: 'color', baseColor: [1, 1, 1, 1], metalness: 100, roughness },
+		});
 		const mirror = contrast(await render({ ...flat, surfaces: m(0) } as TitleScene));
 		const rough = contrast(await render({ ...flat, surfaces: m(60) } as TitleScene));
 		expect(mirror).toBeGreaterThan(rough * 1.3);
@@ -304,7 +406,11 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('3D titles on the GPU', { 
 	});
 
 	it('glints: bloom and rays around highlights, none below the threshold, and alpha rises on transparency', async () => {
-		const g = { ...gold, envColor: [3, 3, 3], glint: { threshold: 2, intensity: 300, radius: 10, rays: 4, length: 50, angle: 45 } } as TitleScene;
+		const g = {
+			...gold,
+			envColor: [3, 3, 3],
+			glint: { threshold: 2, intensity: 300, radius: 10, rays: 4, length: 50, angle: 45 },
+		} as TitleScene;
 		await dump('glint', g);
 		const on = await render(g);
 		const off = await render({ ...g, glint: { ...g.glint, intensity: 0 } });
@@ -335,7 +441,8 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('3D titles on the GPU', { 
 		}
 		const mean = energies.reduce((a, b) => a + b, 0) / energies.length;
 		let jump = 0;
-		for (let i = 1; i < energies.length; i++) jump = Math.max(jump, Math.abs(energies[i]! - energies[i - 1]!));
+		for (let i = 1; i < energies.length; i++)
+			jump = Math.max(jump, Math.abs(energies[i]! - energies[i - 1]!));
 		process.stdout.write(`glint energy mean ${mean.toFixed(0)} largest step ${jump.toFixed(0)}\n`);
 		expect(mean).toBeGreaterThan(50);
 		expect(jump / mean).toBeLessThan(0.2);
@@ -356,10 +463,41 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('3D titles on the GPU', { 
 			geometry: {
 				mode: 'inflate',
 				depth: 8,
-				inflate: { height: 24, curve: [{ x: 0, y: 0 }, { x: 0.4, y: 0.85 }, { x: 1, y: 1 }], smoothness: 60, detail: 1 },
+				inflate: {
+					height: 24,
+					curve: [
+						{ x: 0, y: 0 },
+						{ x: 0.4, y: 0.85 },
+						{ x: 1, y: 1 },
+					],
+					smoothness: 60,
+					detail: 1,
+				},
 				plates: [
-					{ enabled: true, shape: 'contour', grow: 8, depth: 8, gap: 0, corner: 0, fillCounters: true, bevelWidth: 2, bevelDepth: 2, bevelProfile: 'round' },
-					{ enabled: true, shape: 'box', grow: 6, depth: 6, gap: 2, corner: 10, fillCounters: false, bevelWidth: 2, bevelDepth: 2, bevelProfile: 'chamfer' },
+					{
+						enabled: true,
+						shape: 'contour',
+						grow: 8,
+						depth: 8,
+						gap: 0,
+						corner: 0,
+						fillCounters: true,
+						bevelWidth: 2,
+						bevelDepth: 2,
+						bevelProfile: 'round',
+					},
+					{
+						enabled: true,
+						shape: 'box',
+						grow: 6,
+						depth: 6,
+						gap: 2,
+						corner: 10,
+						fillCounters: false,
+						bevelWidth: 2,
+						bevelDepth: 2,
+						bevelProfile: 'chamfer',
+					},
 				],
 			},
 			surfaces: {
@@ -395,16 +533,42 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('3D titles on the GPU', { 
 		const tile = { W: 440, H: 220, backdrop: 'gradient', toneMapping: 'aces', rotY: -22, rotX: 10 };
 		const bands = (w = 7) => ({ depth: 34, bands: [round(w, w)] });
 		const look = (label: string, more: object) => ({ ...tile, label, geometry: bands(), ...more });
-		const plate = { enabled: true, gap: 0, corner: 0, fillCounters: true, bevelWidth: 3, bevelDepth: 3, bevelProfile: 'round' };
+		const plate = {
+			enabled: true,
+			gap: 0,
+			corner: 0,
+			fillCounters: true,
+			bevelWidth: 3,
+			bevelDepth: 3,
+			bevelProfile: 'round',
+		};
 		const scenes = [
 			look('Gold, Studio, ACES', { text: 'GOLD', surfaces: { base: 'gold' }, envPreset: 0 }),
 			look('Chrome, Chrome Bands, ACES', { text: 'CHROME', surfaces: { base: 'chrome' }, envPreset: 4 }),
-			look('Gold, Sunset, Hue Preserving', { text: 'GOLD', surfaces: { base: 'gold' }, envPreset: 3, toneMapping: 'hue' }),
-			look('Chrome, City, AgX', { text: 'CHROME', surfaces: { base: 'chrome' }, envPreset: 2, toneMapping: 'agx' }),
+			look('Gold, Sunset, Hue Preserving', {
+				text: 'GOLD',
+				surfaces: { base: 'gold' },
+				envPreset: 3,
+				toneMapping: 'hue',
+			}),
+			look('Chrome, City, AgX', {
+				text: 'CHROME',
+				surfaces: { base: 'chrome' },
+				envPreset: 2,
+				toneMapping: 'agx',
+			}),
 			look('Three bands, each its own metal', {
 				text: 'BANDS',
 				geometry: { depth: 22, bands: [round(5, 5), round(4, 3, 'chamfer'), round(5, 5, 'tube')] },
-				surfaces: { face: 'white-gloss', band0: 'gold', band1: 'black-gloss', band2: 'chrome', side: 'gold', back: 'gold', base: 'gold' },
+				surfaces: {
+					face: 'white-gloss',
+					band0: 'gold',
+					band1: 'black-gloss',
+					band2: 'chrome',
+					side: 'gold',
+					back: 'gold',
+					base: 'gold',
+				},
 			}),
 			look('Face red paint, gold rim, chrome side', {
 				text: 'MIX',
@@ -430,7 +594,16 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('3D titles on the GPU', { 
 				geometry: {
 					mode: 'inflate',
 					depth: 6,
-					inflate: { height: 30, curve: [{ x: 0, y: 0 }, { x: 0.35, y: 0.75 }, { x: 1, y: 1 }], smoothness: 70, detail: 2 },
+					inflate: {
+						height: 30,
+						curve: [
+							{ x: 0, y: 0 },
+							{ x: 0.35, y: 0.75 },
+							{ x: 1, y: 1 },
+						],
+						smoothness: 70,
+						detail: 2,
+					},
 				},
 				surfaces: { base: 'chrome' },
 				envPreset: 3,
@@ -446,7 +619,13 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('3D titles on the GPU', { 
 						{ ...plate, shape: 'box', grow: 10, depth: 10, gap: 2, corner: 14 },
 					],
 				},
-				surfaces: { base: 'gold', plate0Face: 'black-gloss', plate0Side: 'black-gloss', plate1Face: 'chrome', plate1Side: 'chrome' },
+				surfaces: {
+					base: 'gold',
+					plate0Face: 'black-gloss',
+					plate0Side: 'black-gloss',
+					plate1Face: 'chrome',
+					plate1Side: 'chrome',
+				},
 			}),
 			look('Glass refracting the backdrop', {
 				text: 'GLASS',
@@ -454,10 +633,28 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('3D titles on the GPU', { 
 				surfaces: { base: 'glass' },
 				toneMapping: 'neutral',
 			}),
-			look('Ruby, dispersion', { text: 'RUBY', backdrop: 'stripes', surfaces: { base: 'ruby' }, envPreset: 5 }),
-			look('Candy paint: flakes under clearcoat', { text: 'CANDY', surfaces: { base: 'candy' }, envPreset: 0 }),
-			look('Hammered gold', { text: 'HAMMER', font: '900 80px "Liberation Sans", sans-serif', surfaces: { base: 'hammered-gold' } }),
-			look('Liquid chrome', { text: 'LIQUID', font: '900 90px "Liberation Sans", sans-serif', surfaces: { base: 'liquid-chrome' }, envPreset: 4 }),
+			look('Ruby, dispersion', {
+				text: 'RUBY',
+				backdrop: 'stripes',
+				surfaces: { base: 'ruby' },
+				envPreset: 5,
+			}),
+			look('Candy paint: flakes under clearcoat', {
+				text: 'CANDY',
+				surfaces: { base: 'candy' },
+				envPreset: 0,
+			}),
+			look('Hammered gold', {
+				text: 'HAMMER',
+				font: '900 80px "Liberation Sans", sans-serif',
+				surfaces: { base: 'hammered-gold' },
+			}),
+			look('Liquid chrome', {
+				text: 'LIQUID',
+				font: '900 90px "Liberation Sans", sans-serif',
+				surfaces: { base: 'liquid-chrome' },
+				envPreset: 4,
+			}),
 			look('Crumpled foil', { text: 'FOIL', surfaces: { base: 'foil' } }),
 			look('Pearl: iridescence', { text: 'PEARL', surfaces: { base: 'pearl' } }),
 			look('Glints: stable star rays', {
@@ -474,7 +671,11 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('3D titles on the GPU', { 
 	});
 
 	it('determinism: the same scene twice is byte-identical', async () => {
-		const s = { ...gold, envColor: [2, 2, 2], glint: { threshold: 2, intensity: 200, radius: 8, rays: 4, length: 40, angle: 45 } } as TitleScene;
+		const s = {
+			...gold,
+			envColor: [2, 2, 2],
+			glint: { threshold: 2, intensity: 200, radius: 8, rays: 4, length: 40, angle: 45 },
+		} as TitleScene;
 		expect(await render(s)).toEqual(await render(s));
 	});
 });

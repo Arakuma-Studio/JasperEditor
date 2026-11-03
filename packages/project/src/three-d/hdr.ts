@@ -180,10 +180,7 @@ function readScanline(bytes: Uint8Array, start: number, width: number, row: Uint
 /** Yield point of the cooperative decode: the callback runs every `HDR_YIELD_ROWS` scanlines. */
 export const HDR_YIELD_ROWS = 64;
 
-function* decodeSteps(
-	bytes: Uint8Array,
-	maxSide: number,
-): Generator<void, HdrImage, void> {
+function* decodeSteps(bytes: Uint8Array, maxSide: number): Generator<void, HdrImage, void> {
 	const head = parseHdrHeader(bytes);
 	const { width, height } = head;
 	const f = reductionOf(width, height, Math.max(1, Math.min(maxSide, HDR_MAX_OUTPUT_SIDE)));

@@ -33,7 +33,7 @@ import {
 	templateParamSections,
 	templateParamVisible,
 	textAnimatorPropertySpecs,
-	threeDDynamicSpecs,
+	threeDSpecGroups,
 	walkItems,
 } from '@jasper/project';
 import { shapePropertyKeys } from '../../shapes/keys.ts';
@@ -406,19 +406,15 @@ export function buildGroups(
 						]),
 					});
 				// Spec 19 §9: every number of its surfaces, bevel bands and backplates, keyed like any property.
-				if (seq.threeD?.renderer === 'advanced') {
-					const dynamic = threeDDynamicSpecs(clip as never)
-						.filter((s) => s.animatable !== 'no')
-						.map((s) => s.key);
-					if (dynamic.length)
+				if (seq.threeD?.renderer === 'advanced')
+					for (const g of threeDSpecGroups(clip as never))
 						sections.push({
-							id: `${clip.id}:title3d`,
-							title: '3D Title',
+							id: `${clip.id}:title3d:${g.id}`,
+							title: g.title,
 							clip,
 							intrinsic: true,
-							rows: rows(dynamic),
+							rows: rows(g.keys),
 						});
-				}
 			}
 			sections.push({
 				id: `${clip.id}:opacity`,

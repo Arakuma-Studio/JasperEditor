@@ -55,7 +55,12 @@ export function runPass(
 	gl.bindVertexArray(null);
 }
 
-function bindTexture(gl: WebGL2RenderingContext, unit: number, t: WebGLTexture, loc: WebGLUniformLocation | null): void {
+function bindTexture(
+	gl: WebGL2RenderingContext,
+	unit: number,
+	t: WebGLTexture,
+	loc: WebGLUniformLocation | null,
+): void {
 	gl.activeTexture(gl.TEXTURE0 + unit);
 	gl.bindTexture(gl.TEXTURE_2D, t);
 	gl.uniform1i(loc, unit);
@@ -97,7 +102,14 @@ void main() {
 `;
 
 /** The compressed resolve back to premultiplied linear light. */
-export function expandResolved(kit: HdrKit, src: WebGLTexture, dst: WebGLTexture, w: number, h: number, exposure: number): void {
+export function expandResolved(
+	kit: HdrKit,
+	src: WebGLTexture,
+	dst: WebGLTexture,
+	w: number,
+	h: number,
+	exposure: number,
+): void {
 	const { gl } = kit;
 	runPass(kit, kit.program('expand', EXPAND_FS), dst, w, h, (u) => {
 		bindTexture(gl, 0, src, u('u_src'));
@@ -324,7 +336,13 @@ export type CompositeInput = {
  * Tone maps the scene and composites it over the backdrop: into the bound canvas in the signal (sRGB, premultiplied),
  * or into `dst` in linear light (what transmission refracts). The backdrop never goes through the tone curve.
  */
-export function composite(kit: HdrKit, c: CompositeInput, w: number, h: number, dst: WebGLTexture | null): void {
+export function composite(
+	kit: HdrKit,
+	c: CompositeInput,
+	w: number,
+	h: number,
+	dst: WebGLTexture | null,
+): void {
 	const { gl } = kit;
 	runPass(kit, kit.program('composite', COMPOSITE_FS), dst, w, h, (u) => {
 		bindTexture(gl, 0, c.scene, u('u_scene'));
@@ -494,7 +512,13 @@ void main() { o = vec4(texture(u_src, v_ndc * 0.5 + 0.5).rgb * u_gain, 0.0); }
 `;
 
 /** Glint light of the HDR render `src` (premultiplied linear, W × H), as a texture of the same uv. */
-export function renderGlint(kit: HdrKit, src: WebGLTexture, W: number, H: number, p: GlintParams): WebGLTexture {
+export function renderGlint(
+	kit: HdrKit,
+	src: WebGLTexture,
+	W: number,
+	H: number,
+	p: GlintParams,
+): WebGLTexture {
 	const { gl } = kit;
 	const base = Math.max(0, Math.round(Math.log2(Math.max(1, p.pxScale))));
 	const grid = 2 ** base;
@@ -596,7 +620,7 @@ export function renderGlint(kit: HdrKit, src: WebGLTexture, W: number, H: number
 		const passes = Math.max(1, Math.ceil(Math.log(len + 1) / Math.log(4)));
 		let kernelSum = 1;
 		for (let i = 0; i < passes; i++) {
-			const f = fall ** 4 ** i;
+			const f = fall ** (4 ** i);
 			kernelSum *= 1 + f + f * f + f * f * f;
 		}
 		const ping = [target(sl, 4), target(sl, 5)];
@@ -798,7 +822,17 @@ export function buildEnvMaps(kit: HdrKit, source: EnvSource): EnvMaps {
 		gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
 		gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
 		if (source.kind === 'float') {
-			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, source.width, source.height, 0, gl.RGBA, gl.FLOAT, source.data);
+			gl.texImage2D(
+				gl.TEXTURE_2D,
+				0,
+				gl.RGBA16F,
+				source.width,
+				source.height,
+				0,
+				gl.RGBA,
+				gl.FLOAT,
+				source.data,
+			);
 		} else gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, source.image);
 		gl.generateMipmap(gl.TEXTURE_2D);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);

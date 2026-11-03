@@ -41,7 +41,9 @@ function title3d(renderer: 'classic' | 'advanced' = 'advanced') {
 		label: 'Text',
 		origin: 'user',
 		sequenceId: seqId,
-		commands: [{ type: 'clip.addText', at: 0, duration: 60, track: 'V1', content: { text: 'GOLD' } } as never],
+		commands: [
+			{ type: 'clip.addText', at: 0, duration: 60, track: 'V1', content: { text: 'GOLD' } } as never,
+		],
 	});
 	expect(add.ok).toBe(true);
 	const clipId = (add as { results: { clipId: string }[] }).results[0]!.clipId;
@@ -58,7 +60,8 @@ function title3d(renderer: 'classic' | 'advanced' = 'advanced') {
 	return { session, seqId, clipId };
 }
 
-const clipOf = (session: Session, seqId: string, id: string) => session.getDrawn().sequences[seqId]!.clips[id]!;
+const clipOf = (session: Session, seqId: string, id: string) =>
+	session.getDrawn().sequences[seqId]!.clips[id]!;
 
 function section(session: Session, seqId: string, id: string) {
 	return render(
@@ -97,8 +100,14 @@ describe('gizmo maths (TL-079)', () => {
 		const t = tangentAt(pts, [100, 0])!;
 		expect(t.radius).toBeCloseTo(100, 0);
 		const quarter = (Math.PI / 2) * 100;
-		expect(Math.abs(arcDelta([100, 0], [100 + t.tangent[0] * quarter, t.tangent[1] * quarter], t.tangent, t.radius))).toBeCloseTo(90, 0);
-		expect(arcDelta([100, 0], [100 - t.tangent[1] * 50, t.tangent[0] * 50], t.tangent, t.radius)).toBeCloseTo(0);
+		expect(
+			Math.abs(
+				arcDelta([100, 0], [100 + t.tangent[0] * quarter, t.tangent[1] * quarter], t.tangent, t.radius),
+			),
+		).toBeCloseTo(90, 0);
+		expect(arcDelta([100, 0], [100 - t.tangent[1] * 50, t.tangent[0] * 50], t.tangent, t.radius)).toBeCloseTo(
+			0,
+		);
 	});
 
 	it('free rotation turns about Y across and X along the screen', () => {
@@ -147,7 +156,8 @@ describe('rotation gizmo in the overlay', () => {
 		fireEvent.pointerDown(ring, { button: 0, clientX: 100, clientY: 100, pointerId: 1 });
 		fireEvent.pointerMove(svg, { clientX: 140, clientY: 100, pointerId: 1 });
 		fireEvent.pointerUp(svg, { pointerId: 1 });
-		const td = (clipOf(session, seqId, clipId) as unknown as { threeD: { rotationY: { value: number } } }).threeD;
+		const td = (clipOf(session, seqId, clipId) as unknown as { threeD: { rotationY: { value: number } } })
+			.threeD;
 		expect(td.rotationY.value).toBeCloseTo(20);
 	});
 });
@@ -168,17 +178,28 @@ describe('Properties ▸ 3D Title', () => {
 		const again = () =>
 			rerender(
 				<SessionProvider session={session}>
-					<Title3DSection session={session} clips={[clipOf(session, seqId, clipId)]} frame={0} sequenceId={seqId} />
+					<Title3DSection
+						session={session}
+						clips={[clipOf(session, seqId, clipId)]}
+						frame={0}
+						sequenceId={seqId}
+					/>
 				</SessionProvider>,
 			);
 		again();
-		const td = (clipOf(session, seqId, clipId) as unknown as { threeD: { material: { pbr?: unknown }; geometry: { bands?: unknown[] } } }).threeD;
+		const td = (
+			clipOf(session, seqId, clipId) as unknown as {
+				threeD: { material: { pbr?: unknown }; geometry: { bands?: unknown[] } };
+			}
+		).threeD;
 		expect(td.material.pbr).toBeDefined();
 		for (let i = 0; i < 6; i++) {
 			fireEvent.click(screen.getByTestId('title3d-add-band'));
 			again();
 		}
-		const after = (clipOf(session, seqId, clipId) as unknown as { threeD: { geometry: { bands: unknown[] } } }).threeD;
+		const after = (
+			clipOf(session, seqId, clipId) as unknown as { threeD: { geometry: { bands: unknown[] } } }
+		).threeD;
 		expect(after.geometry.bands).toHaveLength(6);
 		const add = screen.getByTestId('title3d-add-band') as HTMLButtonElement;
 		expect(add.disabled || add.getAttribute('aria-disabled') === 'true').toBe(true);
@@ -204,11 +225,19 @@ describe('Properties ▸ Environment', () => {
 		const id = (r as { results: { clipId: string }[] }).results[0]!.clipId;
 		render(
 			<SessionProvider session={session}>
-				<Environment3DSection session={session} clips={[clipOf(session, seqId, id)]} frame={0} sequenceId={seqId} />
+				<Environment3DSection
+					session={session}
+					clips={[clipOf(session, seqId, id)]}
+					frame={0}
+					sequenceId={seqId}
+				/>
 			</SessionProvider>,
 		);
 		fireEvent.change(screen.getByTestId('environment3d-preset'), { target: { value: 'neon' } });
-		expect((clipOf(session, seqId, id) as unknown as { light: { environmentPreset: string } }).light.environmentPreset).toBe('neon');
+		expect(
+			(clipOf(session, seqId, id) as unknown as { light: { environmentPreset: string } }).light
+				.environmentPreset,
+		).toBe('neon');
 	});
 });
 

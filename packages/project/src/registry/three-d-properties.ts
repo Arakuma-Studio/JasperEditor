@@ -21,13 +21,13 @@ import {
 	SURFACE_BASES,
 	SURFACE_RELIEFS,
 } from '../schema/three-d.ts';
-import { layerSurfaces, SURFACE_COLORS, SURFACE_NUMBERS } from '../three-d/surfaces.ts';
 import {
 	defaultAperture,
 	defaultCameraZoom,
 	IRIS_SHAPE_LABELS,
 	LIGHT_TYPE_LABELS,
 } from '../three-d/model.ts';
+import { layerSurfaces, SURFACE_COLORS, SURFACE_NUMBERS } from '../three-d/surfaces.ts';
 import type { PropertyContext, PropertySpec } from './properties.ts';
 
 type LayerProperties = Pick<Clip, 'kind'> & { threeD?: Layer3D; light?: LightData };
@@ -344,12 +344,18 @@ export const LAYER_3D_SPECS: readonly PropertySpec[] = [
 		'geometry',
 		'Where the bevel bands sit against the outline. Inside keeps the silhouette of the picture.',
 	),
-	num('threeD.geometry.inflate.height', 'Inflate Height', ['threeD', 'geometry', 'inflate', 'height'], isInflated, {
-		unit: 'px',
-		range: { min: 0, max: 2000, softMax: 200, step: 0.1 },
-		def: 30,
-		group: 'geometry',
-	}),
+	num(
+		'threeD.geometry.inflate.height',
+		'Inflate Height',
+		['threeD', 'geometry', 'inflate', 'height'],
+		isInflated,
+		{
+			unit: 'px',
+			range: { min: 0, max: 2000, softMax: 200, step: 0.1 },
+			def: 30,
+			group: 'geometry',
+		},
+	),
 	num(
 		'threeD.geometry.inflate.smoothness',
 		'Inflate Smoothness',
@@ -364,7 +370,9 @@ export const THREE_D_SURFACE_KEY = 'threeD.surface.';
 export const THREE_D_BAND_KEY = 'threeD.band.';
 export const THREE_D_PLATE_KEY = 'threeD.plate.';
 export const isThreeDDynamicKey = (key: string) =>
-	key.startsWith(THREE_D_SURFACE_KEY) || key.startsWith(THREE_D_BAND_KEY) || key.startsWith(THREE_D_PLATE_KEY);
+	key.startsWith(THREE_D_SURFACE_KEY) ||
+	key.startsWith(THREE_D_BAND_KEY) ||
+	key.startsWith(THREE_D_PLATE_KEY);
 
 const PROFILE_LABELS = ['Flat', 'Chamfer', 'Round', 'Cove', 'Step', 'Inset', 'Tube'];
 
@@ -384,9 +392,18 @@ export function threeDDynamicSpecs(clip: LayerProperties): PropertySpec[] {
 		const sid = s.id.replace('.', '-');
 		const prefix = `${THREE_D_SURFACE_KEY}${sid}`;
 		const at = (k: string) => ['threeD', ...s.path.map(String), k];
-		const row = (label: string) => `${s.label} ${label}`;
+		const row = (label: string) => label;
 		out.push(
-			sel(`${prefix}.base`, row('Color From'), at('base'), yes, SURFACE_BASES, ['Layer Picture', 'Base Color'], 'picture', 'material'),
+			sel(
+				`${prefix}.base`,
+				row('Color From'),
+				at('base'),
+				yes,
+				SURFACE_BASES,
+				['Layer Picture', 'Base Color'],
+				'picture',
+				'material',
+			),
 		);
 		for (const c of SURFACE_COLORS)
 			out.push({
@@ -429,11 +446,20 @@ export function threeDDynamicSpecs(clip: LayerProperties): PropertySpec[] {
 	((g.bands ?? []) as BevelBand[]).forEach((b, i) => {
 		const k = `${THREE_D_BAND_KEY}${b.id}`;
 		const at = (f: string) => ['threeD', 'geometry', 'bands', String(i), f];
-		const label = (f: string) => `Band ${i + 1} ${f}`;
+		const label = (f: string) => f;
 		out.push(
 			num(`${k}.width`, label('Width'), at('width'), yes, { ...px, def: 6, group: 'geometry' }),
 			num(`${k}.depth`, label('Depth'), at('depth'), yes, { ...px, def: 6, group: 'geometry' }),
-			sel(`${k}.profile`, label('Profile'), at('profile'), yes, BEVEL_PROFILES, PROFILE_LABELS, 'round', 'geometry'),
+			sel(
+				`${k}.profile`,
+				label('Profile'),
+				at('profile'),
+				yes,
+				BEVEL_PROFILES,
+				PROFILE_LABELS,
+				'round',
+				'geometry',
+			),
 			num(`${k}.curve`, label('Curve'), at('curve'), yes, {
 				range: { min: -100, max: 100, step: 1 },
 				def: 0,
@@ -457,10 +483,19 @@ export function threeDDynamicSpecs(clip: LayerProperties): PropertySpec[] {
 	((g.backplates ?? []) as Backplate[]).forEach((p, i) => {
 		const k = `${THREE_D_PLATE_KEY}${p.id}`;
 		const at = (f: string) => ['threeD', 'geometry', 'backplates', String(i), f];
-		const label = (f: string) => `Plate ${i + 1} ${f}`;
+		const label = (f: string) => f;
 		out.push(
 			toggle(`${k}.enabled`, label('On'), at('enabled'), yes, true, 'geometry'),
-			sel(`${k}.shape`, label('Shape'), at('shape'), yes, PLATE_SHAPES, ['Contour', 'Hull', 'Box'], 'contour', 'geometry'),
+			sel(
+				`${k}.shape`,
+				label('Shape'),
+				at('shape'),
+				yes,
+				PLATE_SHAPES,
+				['Contour', 'Hull', 'Box'],
+				'contour',
+				'geometry',
+			),
 			num(`${k}.grow`, label('Grow'), at('grow'), yes, { ...px, def: 12, group: 'geometry' }),
 			num(`${k}.depth`, label('Depth'), at('depth'), yes, { ...px, def: 20, group: 'geometry' }),
 			num(`${k}.gap`, label('Gap'), at('gap'), yes, {
@@ -471,10 +506,48 @@ export function threeDDynamicSpecs(clip: LayerProperties): PropertySpec[] {
 			}),
 			num(`${k}.corner`, label('Corner'), at('corner'), yes, { ...px, def: 0, group: 'geometry' }),
 			toggle(`${k}.fillCounters`, label('Fill Counters'), at('fillCounters'), yes, true, 'geometry'),
-			num(`${k}.bevelWidth`, label('Bevel Width'), at('bevelWidth'), yes, { ...px, def: 3, group: 'geometry' }),
-			num(`${k}.bevelDepth`, label('Bevel Depth'), at('bevelDepth'), yes, { ...px, def: 3, group: 'geometry' }),
-			sel(`${k}.bevelProfile`, label('Bevel Profile'), at('bevelProfile'), yes, BEVEL_PROFILES, PROFILE_LABELS, 'round', 'geometry'),
+			num(`${k}.bevelWidth`, label('Bevel Width'), at('bevelWidth'), yes, {
+				...px,
+				def: 3,
+				group: 'geometry',
+			}),
+			num(`${k}.bevelDepth`, label('Bevel Depth'), at('bevelDepth'), yes, {
+				...px,
+				def: 3,
+				group: 'geometry',
+			}),
+			sel(
+				`${k}.bevelProfile`,
+				label('Bevel Profile'),
+				at('bevelProfile'),
+				yes,
+				BEVEL_PROFILES,
+				PROFILE_LABELS,
+				'round',
+				'geometry',
+			),
 		);
+	});
+	return out;
+}
+
+/** The dynamic properties of a layer in groups: one per surface, band and plate, for Effect Controls. */
+export function threeDSpecGroups(clip: LayerProperties): { id: string; title: string; keys: string[] }[] {
+	const specs = threeDDynamicSpecs(clip).filter((s) => s.animatable !== 'no');
+	const td = clip.threeD;
+	if (!td) return [];
+	const pick = (prefix: string) => specs.filter((s) => s.key.startsWith(prefix)).map((s) => s.key);
+	const out: { id: string; title: string; keys: string[] }[] = [];
+	for (const s of layerSurfaces(td)) {
+		if (!s.surface) continue;
+		const keys = pick(`${THREE_D_SURFACE_KEY}${s.id.replace('.', '-')}.`);
+		out.push({ id: s.id, title: `Surface: ${s.label}`, keys });
+	}
+	((td.geometry?.bands ?? []) as BevelBand[]).forEach((b, i) => {
+		out.push({ id: b.id, title: `Band ${i + 1}`, keys: pick(`${THREE_D_BAND_KEY}${b.id}.`) });
+	});
+	((td.geometry?.backplates ?? []) as Backplate[]).forEach((p, i) => {
+		out.push({ id: p.id, title: `Plate ${i + 1}`, keys: pick(`${THREE_D_PLATE_KEY}${p.id}.`) });
 	});
 	return out;
 }

@@ -17,8 +17,8 @@ import {
 	SCENE_3D_PATH,
 	SCENE_3D_SPECS,
 	type Sequence,
-	scene3dAnim,
 	SURFACE_PRESETS,
+	scene3dAnim,
 	TONE_MAPPINGS,
 	type ToneMapping,
 } from '@jasper/project';
@@ -27,8 +27,8 @@ import { ArrowDown, ArrowUp, Layers, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import type { ClipSectionProps } from '../extensions/index.ts';
 import { CheckboxField, SelectField } from '../panels/properties/controls/fields.tsx';
-import { PropertyRow, type RowContext } from '../panels/properties/controls/PropertyRow.tsx';
 import { useNotices } from '../panels/properties/controls/Notices.tsx';
+import { PropertyRow, type RowContext } from '../panels/properties/controls/PropertyRow.tsx';
 import { bindProperty, makeRow, type Row as PropertyRowData } from '../panels/properties/lib/model.ts';
 import { useInspectorOps } from '../panels/properties/lib/ops.ts';
 import { Row, SmallButton, ToolButton } from '../tracking/controls.tsx';
@@ -202,7 +202,9 @@ export function Title3DSection({ session, clips, frame, sequenceId }: ClipSectio
 			{current.surface
 				? SURFACE_GROUPS.map((group) => (
 						<details key={group.title} open={group.title === 'Finish'} data-testid={`title3d-${group.title}`}>
-							<summary className="cursor-pointer px-2 py-1 text-pr-small text-pr-muted">{group.title}</summary>
+							<summary className="cursor-pointer px-2 py-1 text-pr-small text-pr-muted">
+								{group.title}
+							</summary>
 							{group.keys.map((k) => row(`threeD.surface.${sid}.${k}`))}
 						</details>
 					))
@@ -260,10 +262,12 @@ export function Title3DSection({ session, clips, frame, sequenceId }: ClipSectio
 								<SmallButton
 									icon={Plus}
 									disabled={bands.length >= MAX_BEVEL_BANDS}
-									title={bands.length >= MAX_BEVEL_BANDS ? `A solid has at most ${MAX_BEVEL_BANDS} bands` : 'Add Band'}
-									onClick={() =>
-										ops.apply('Add Bevel Band', [{ type: 'threeD.addBand', clipId: clip.id }])
+									title={
+										bands.length >= MAX_BEVEL_BANDS
+											? `A solid has at most ${MAX_BEVEL_BANDS} bands`
+											: 'Add Band'
 									}
+									onClick={() => ops.apply('Add Bevel Band', [{ type: 'threeD.addBand', clipId: clip.id }])}
 									data-testid="title3d-add-band"
 								>
 									Add Band
@@ -292,9 +296,13 @@ export function Title3DSection({ session, clips, frame, sequenceId }: ClipSectio
 						<SmallButton
 							icon={Layers}
 							disabled={plates.length >= MAX_BACKPLATES}
-							title={plates.length >= MAX_BACKPLATES ? `A title has at most ${MAX_BACKPLATES} plates` : 'Add Plate'}
+							title={
+								plates.length >= MAX_BACKPLATES ? `A title has at most ${MAX_BACKPLATES} plates` : 'Add Plate'
+							}
 							onClick={() =>
-								ops.apply('Add Backplate', [{ type: 'threeD.addBackplate', clipId: clip.id, preset: 'black-gloss' }])
+								ops.apply('Add Backplate', [
+									{ type: 'threeD.addBackplate', clipId: clip.id, preset: 'black-gloss' },
+								])
 							}
 							data-testid="title3d-add-plate"
 						>
@@ -337,9 +345,9 @@ export function Title3DSection({ session, clips, frame, sequenceId }: ClipSectio
 				) : null}
 			</Row>
 			{glint?.enabled
-				? ['glintThreshold', 'glintIntensity', 'glintRadius', 'glintLength', 'glintAngle', 'glintTint'].map((p) => (
-						<PropertyRow key={p} row={sceneRow(seq, clip, p, frame)} ctx={ctx} />
-					))
+				? ['glintThreshold', 'glintIntensity', 'glintRadius', 'glintLength', 'glintAngle', 'glintTint'].map(
+						(p) => <PropertyRow key={p} row={sceneRow(seq, clip, p, frame)} ctx={ctx} />,
+					)
 				: null}
 		</div>
 	);
@@ -353,8 +361,10 @@ export function Environment3DSection({ session, clips, sequenceId }: ClipSection
 	if (!clip || clip.kind !== 'light' || !doc.sequences[sequenceId]) return null;
 	const light = clip.light;
 	const media = Object.values(doc.media).filter((m) => m.kind === 'hdri' || m.kind === 'image');
-	const set = (patch: { environmentMediaId?: string | null; environmentPreset?: (typeof ENVIRONMENT_PRESETS)[number] }) =>
-		ops.apply('Light Settings', [{ type: 'light.settings', clipId: clip.id, ...patch }]);
+	const set = (patch: {
+		environmentMediaId?: string | null;
+		environmentPreset?: (typeof ENVIRONMENT_PRESETS)[number];
+	}) => ops.apply('Light Settings', [{ type: 'light.settings', clipId: clip.id, ...patch }]);
 	return (
 		<div data-testid="environment3d-section">
 			<Row label="Media">

@@ -220,7 +220,8 @@ function applyLightSettings(doc: DDoc, h: HandlerContext, clip: Draft<LightClip>
 		l.environmentBackground = o.environmentBackground;
 	}
 	if (o.environmentPreset !== undefined) {
-		if (l.type !== 'environment') h.fail('E_INVALID_PARAM', 'Only environment lights take an environment preset');
+		if (l.type !== 'environment')
+			h.fail('E_INVALID_PARAM', 'Only environment lights take an environment preset');
 		l.environmentPreset = o.environmentPreset;
 	}
 	if (o.environmentRotation !== undefined) {
@@ -358,7 +359,10 @@ function layer3dOf(
 	const td = (clip as { threeD?: DLayer3D }).threeD;
 	if (!td) h.fail('E_INVALID_PARAM', `Clip "${clip.name}" is not a 3D layer: turn its 3D switch on first`);
 	if (needsGeometry && !td.geometry)
-		h.fail('E_INVALID_PARAM', `Clip "${clip.name}" has no Geometry Options: only text and shape layers extrude`);
+		h.fail(
+			'E_INVALID_PARAM',
+			`Clip "${clip.name}" has no Geometry Options: only text and shape layers extrude`,
+		);
 	return { seq, clip, td };
 }
 
@@ -389,12 +393,18 @@ function writeSurface(
 	if (v.reliefSeed !== undefined) s.reliefSeed = v.reliefSeed;
 	if (v.ramp === null) delete s.ramp;
 	else if (v.ramp !== undefined) s.ramp = v.ramp as never;
-	for (const n of SURFACE_NUMBERS) if (v[n.key] !== undefined) setParam(doc, h, clipId, key(n.key), v[n.key], at);
-	for (const c of SURFACE_COLORS) if (v[c.key] !== undefined) setParam(doc, h, clipId, key(c.key), v[c.key], at);
+	for (const n of SURFACE_NUMBERS)
+		if (v[n.key] !== undefined) setParam(doc, h, clipId, key(n.key), v[n.key], at);
+	for (const c of SURFACE_COLORS)
+		if (v[c.key] !== undefined) setParam(doc, h, clipId, key(c.key), v[c.key], at);
 }
 
 /** Puts a surface where `path` (from `layerSurfaces`) says, in the 3D block of a clip. */
-function placeSurface(td: DLayer3D, path: readonly (string | number)[], s: SurfaceMaterial | undefined): void {
+function placeSurface(
+	td: DLayer3D,
+	path: readonly (string | number)[],
+	s: SurfaceMaterial | undefined,
+): void {
 	let cur = td as unknown as Record<string | number, unknown>;
 	for (const k of path.slice(0, -1)) {
 		cur[k] ??= {};
@@ -481,44 +491,44 @@ export const threeDHandlers = {
 	'sequence.set3dRenderer': (doc, cmd: CommandOf<'sequence.set3dRenderer'>, h: HandlerContext) => {
 		const seq = h.sequence(doc, cmd.sequenceId);
 		const cur = seq.threeD ?? { renderer: 'classic' as const };
-			const next = {
-				...cur,
-				...(cmd.renderer ? { renderer: cmd.renderer } : {}),
-				...(cmd.draft !== undefined ? { draft: cmd.draft } : {}),
-				...(cmd.shadowMapSize !== undefined ? { shadowMapSize: cmd.shadowMapSize } : {}),
-				...(cmd.supersampling !== undefined ? { supersampling: cmd.supersampling } : {}),
-				...(cmd.toneMapping !== undefined ? { toneMapping: cmd.toneMapping } : {}),
-			};
-			seq.threeD = next as never;
-			const param = (prop: string, value: unknown) =>
-				(paramHandlers['param.set'] as (d: DDoc, c: CommandOf<'param.set'>, x: HandlerContext) => unknown)(
-					doc,
-					{ type: 'param.set', target: ['scene3d', seq.id, prop], value, ...(cmd.at ? { at: cmd.at } : {}) },
-					h,
-				);
-			if (cmd.exposure !== undefined) param('exposure', cmd.exposure);
-			if (cmd.glint) {
-				const three = seq.threeD as unknown as Sequence3D;
-				three.glint ??= newGlint();
-				const g = cmd.glint;
-				if (g.enabled !== undefined) three.glint!.enabled = g.enabled;
-				if (g.rays !== undefined) three.glint!.rays = g.rays;
-				const nums = [
-					['threshold', 'glintThreshold'],
-					['intensity', 'glintIntensity'],
-					['radius', 'glintRadius'],
-					['length', 'glintLength'],
-					['angle', 'glintAngle'],
-					['tint', 'glintTint'],
-				] as const;
-				for (const [k, prop] of nums) {
-					if (g[k] === undefined) continue;
-					ensureScene3dAnim(three as never, prop);
-					param(prop, g[k]);
-				}
+		const next = {
+			...cur,
+			...(cmd.renderer ? { renderer: cmd.renderer } : {}),
+			...(cmd.draft !== undefined ? { draft: cmd.draft } : {}),
+			...(cmd.shadowMapSize !== undefined ? { shadowMapSize: cmd.shadowMapSize } : {}),
+			...(cmd.supersampling !== undefined ? { supersampling: cmd.supersampling } : {}),
+			...(cmd.toneMapping !== undefined ? { toneMapping: cmd.toneMapping } : {}),
+		};
+		seq.threeD = next as never;
+		const param = (prop: string, value: unknown) =>
+			(paramHandlers['param.set'] as (d: DDoc, c: CommandOf<'param.set'>, x: HandlerContext) => unknown)(
+				doc,
+				{ type: 'param.set', target: ['scene3d', seq.id, prop], value, ...(cmd.at ? { at: cmd.at } : {}) },
+				h,
+			);
+		if (cmd.exposure !== undefined) param('exposure', cmd.exposure);
+		if (cmd.glint) {
+			const three = seq.threeD as unknown as Sequence3D;
+			three.glint ??= newGlint();
+			const g = cmd.glint;
+			if (g.enabled !== undefined) three.glint!.enabled = g.enabled;
+			if (g.rays !== undefined) three.glint!.rays = g.rays;
+			const nums = [
+				['threshold', 'glintThreshold'],
+				['intensity', 'glintIntensity'],
+				['radius', 'glintRadius'],
+				['length', 'glintLength'],
+				['angle', 'glintAngle'],
+				['tint', 'glintTint'],
+			] as const;
+			for (const [k, prop] of nums) {
+				if (g[k] === undefined) continue;
+				ensureScene3dAnim(three as never, prop);
+				param(prop, g[k]);
 			}
-			return { threeD: seq.threeD };
-		},
+		}
+		return { threeD: seq.threeD };
+	},
 	'threeD.setSurface': (doc, cmd: CommandOf<'threeD.setSurface'>, h: HandlerContext) => {
 		const ids = idList(cmd.clipIds);
 		const sid = cmd.surface ?? 'base';
@@ -539,10 +549,12 @@ export const threeDHandlers = {
 				continue;
 			}
 			if (!slot.surface) placeSurface(td, slot.path, newSurface({}));
-			const live = layerSurfaces(td as Layer3D).find((s) => s.id === sid)!.path.reduce<unknown>(
-				(o, k) => (o as Record<string | number, unknown>)[k],
-				td,
-			) as Draft<SurfaceMaterial>;
+			const live = layerSurfaces(td as Layer3D)
+				.find((s) => s.id === sid)!
+				.path.reduce<unknown>(
+					(o, k) => (o as Record<string | number, unknown>)[k],
+					td,
+				) as Draft<SurfaceMaterial>;
 			if (cmd.values) writeSurface(doc, h, clip.id, sid, live, cmd.values as SurfaceValues, cmd.at);
 		}
 		return { clipIds: ids };
@@ -559,7 +571,8 @@ export const threeDHandlers = {
 			if (cmd.inflate) {
 				g.inflate ??= newInflate() as never;
 				const inf = g.inflate as Draft<NonNullable<Layer3D['geometry']>>['inflate'] & object;
-				if (cmd.inflate.curve) (inf as { curve: unknown }).curve = [...cmd.inflate.curve].sort((a, b) => a.x - b.x);
+				if (cmd.inflate.curve)
+					(inf as { curve: unknown }).curve = [...cmd.inflate.curve].sort((a, b) => a.x - b.x);
 				if (cmd.inflate.detail !== undefined) (inf as { detail: number }).detail = cmd.inflate.detail;
 				const was = g.mode;
 				g.mode = 'inflate';

@@ -884,6 +884,25 @@ Status of the foundation; streams still in progress update this list. Evidence: 
 - **Software rendering is slow**: ≈ 1.3 s per 1080p frame for a six-layer look on a title-sized box on SwiftShader, and an
   animated title redraws its whole stack every frame ([performance.md](performance.md) §7). Nothing has been measured on a GPU.
 
+### 3D titles (spec 19 §9)
+
+**Done:** TL-070 to TL-080: bevel bands, surfaces, inflate, backplates, clearcoat, flakes, relief, iridescence, transmission of
+the backdrop, Radiance `.hdr` and procedural environments, tone mapping, glints, the cost notice, the rotation gizmo. Evidence
+and rerun commands: [wp-notes/three-d.md](wp-notes/three-d.md) §9. Limits:
+
+- **Software rendering is slow, and 3D never bakes**: every frame goes through Remotion. Figures in the note above; nothing has
+  been measured on a GPU.
+- **Backplates and outside bevels have round joins.** An iso-line of a distance field has no miter; hull and box plates keep
+  straight sides.
+- **Transmission is screen space.** Glass sees what is opaque behind it, not other glass, and rays that leave the frame clamp
+  to its edge.
+- **Iridescence** is two-beam interference at three wavelengths, not a spectral integration.
+- **Models** keep their own materials: metallic-roughness and normal textures are not read, and `threeD.setSurface` refuses them.
+- **Video environments:** `light.settings` accepts a video id, which the loader cannot read, so the render refuses. The
+  Environment section offers images and HDRs only.
+- **Per-character 3D** (Pachislop's glyph rigs) has no equivalent: a solid is traced from the layer's picture.
+- **Ambient occlusion** (Pachislop `ao.ts`) was not ported: no requirement asks for it.
+
 ### title-looks fixes (spec 19 §13)
 Fixes the Title Looks feature depends on, each with a regression test that failed before it; details, decisions and
 evidence in [wp-notes/title-looks-fixes.md](wp-notes/title-looks-fixes.md). **Done:** TL-120 (media use-counting for

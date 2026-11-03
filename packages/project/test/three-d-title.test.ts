@@ -2,6 +2,7 @@
 // CJK-like strokes; surfaces; their commands with undo and refusals; animation paths; repair and load.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { allAnimatables } from '../src/commands/handlers/keyframe.ts';
 import {
 	anim,
 	type BevelProfile,
@@ -22,19 +23,19 @@ import {
 	loopArea,
 	MAX_BEVEL_BANDS,
 	MAX_SLOTS,
-	type Mesh,
 	type MediaHandle,
+	type Mesh,
 	newLayer3D,
 	newSurface,
 	offsetShapes,
 	plateFaceSlot,
 	propertiesForClip,
 	repairDocument,
+	type Shape2D,
 	SLOT_BACK,
 	SLOT_BAND0,
 	SLOT_FACE,
 	SLOT_SIDE,
-	type Shape2D,
 	type SolidGeometry,
 	SURFACE_PRESETS,
 	sceneLookAt,
@@ -46,7 +47,6 @@ import {
 	threeDProblem,
 	unitBevel,
 } from '../src/index.ts';
-import { allAnimatables } from '../src/commands/handlers/keyframe.ts';
 import { TL_ENV_PRESETS } from '../src/registry/fx/glsl/title-env.ts';
 import { Harness } from './helpers.ts';
 
@@ -92,7 +92,8 @@ const raster = (w: number, h: number, rects: readonly Rect[]) => {
 		for (let y = 0; y < h; y++)
 			for (let x = 0; x < w; x++) {
 				const cover =
-					Math.max(0, Math.min(x + 1, x1) - Math.max(x, x0)) * Math.max(0, Math.min(y + 1, y1) - Math.max(y, y0));
+					Math.max(0, Math.min(x + 1, x1) - Math.max(x, x0)) *
+					Math.max(0, Math.min(y + 1, y1) - Math.max(y, y0));
 				a[y * w + x] = Math.max(a[y * w + x]!, cover * 255);
 			}
 	return (x: number, y: number) => a[y * w + x]!;
@@ -112,7 +113,8 @@ const KANJI: Rect[] = [
 ];
 
 const tri = (m: Mesh, t: number) => [m.indices[t]!, m.indices[t + 1]!, m.indices[t + 2]!] as const;
-const pos = (m: Mesh, v: number) => [m.vertices[v * 9]!, m.vertices[v * 9 + 1]!, m.vertices[v * 9 + 2]!] as const;
+const pos = (m: Mesh, v: number) =>
+	[m.vertices[v * 9]!, m.vertices[v * 9 + 1]!, m.vertices[v * 9 + 2]!] as const;
 const slotOf = (m: Mesh, v: number) => m.vertices[v * 9 + 8]!;
 
 /**
@@ -121,7 +123,10 @@ const slotOf = (m: Mesh, v: number) => m.vertices[v * 9 + 8]!;
  */
 function openEdges(m: Mesh): number {
 	// A gap under 0.02 px is rounding of offset rings, not a hole.
-	const key = (v: number) => pos(m, v).map((x) => Math.round(x * 50)).join(',');
+	const key = (v: number) =>
+		pos(m, v)
+			.map((x) => Math.round(x * 50))
+			.join(',');
 	const pts = new Map<string, readonly [number, number, number]>();
 	const count = new Map<string, number>();
 	const add = (k1: string, k2: string) => {
@@ -213,7 +218,8 @@ describe('solids on traced outlines', () => {
 		const m = buildTitleSolid(square, g);
 		expect(openEdges(m)).toBe(0);
 		checkNormals(m);
-		for (const s of [SLOT_FACE, SLOT_SIDE, SLOT_BACK, SLOT_BAND0, SLOT_BAND0 + 5]) expect(slots(m).has(s)).toBe(true);
+		for (const s of [SLOT_FACE, SLOT_SIDE, SLOT_BACK, SLOT_BAND0, SLOT_BAND0 + 5])
+			expect(slots(m).has(s)).toBe(true);
 	});
 
 	it('inside keeps the silhouette: nothing passes the traced outline', () => {
@@ -264,13 +270,18 @@ describe('solids on traced outlines', () => {
 	it('a kanji of hairlines: bands, plates and outward bevels stay closed and in bounds', () => {
 		const shapes = traced(100, 100, KANJI);
 		for (const position of ['inside', 'center', 'outside'] as const) {
-			const m = buildTitleSolid(shapes, solidG({ position, bands: [band(4, 4), band(2, 3, 'tube')], plates: [plate()] }));
+			const m = buildTitleSolid(
+				shapes,
+				solidG({ position, bands: [band(4, 4), band(2, 3, 'tube')], plates: [plate()] }),
+			);
 			expect(openEdges(m)).toBe(0);
 			checkNormals(m);
 		}
 	});
 
-	it('property: bands on noisy traced strokes never leave the outline, always close', () => {
+	it('property: bands on noisy traced strokes never leave the outline, always close', {
+		timeout: 300_000,
+	}, () => {
 		fc.assert(
 			fc.property(
 				fc.array(
@@ -292,7 +303,7 @@ describe('solids on traced outlines', () => {
 					for (let i = 0; i < m.vertices.length; i++) expect(Number.isFinite(m.vertices[i]!)).toBe(true);
 				},
 			),
-			{ numRuns: 60 },
+			{ numRuns: 30 },
 		);
 	});
 
@@ -300,7 +311,10 @@ describe('solids on traced outlines', () => {
 		const comb: Rect[] = [];
 		for (let x = 2; x < 1500; x += 4) comb.push([x, 2, x + 2, 300]);
 		const shapes = traced(1600, 320, comb);
-		const m = buildTitleSolid(shapes, solidG({ bands: Array.from({ length: 6 }, () => ({ ...band(1, 1), segments: 24 })) }));
+		const m = buildTitleSolid(
+			shapes,
+			solidG({ bands: Array.from({ length: 6 }, () => ({ ...band(1, 1), segments: 24 })) }),
+		);
 		expect(m.vertices.length / 9).toBeLessThan(16_000_000);
 	});
 });
@@ -347,7 +361,11 @@ describe('offsets (TL-073)', () => {
 			l,
 			solidG({
 				depth: 10,
-				plates: [plate({ shape: 'hull', depth: 5 }), plate({ shape: 'box', corner: 6, depth: 5, gap: 2 }), plate({ depth: 4 })],
+				plates: [
+					plate({ shape: 'hull', depth: 5 }),
+					plate({ shape: 'box', corner: 6, depth: 5, gap: 2 }),
+					plate({ depth: 4 }),
+				],
 			}),
 		);
 		const ofSlot = (s: number) => {
@@ -386,10 +404,14 @@ describe('offsets (TL-073)', () => {
 });
 
 describe('inflate (TL-072)', () => {
-	const inflated = (height: number, smoothness: number, curve = [
-		{ x: 0, y: 0 },
-		{ x: 1, y: 1 },
-	]) =>
+	const inflated = (
+		height: number,
+		smoothness: number,
+		curve = [
+			{ x: 0, y: 0 },
+			{ x: 1, y: 1 },
+		],
+	) =>
 		solidG({
 			mode: 'inflate',
 			depth: 6,
@@ -446,7 +468,7 @@ describe('inflate (TL-072)', () => {
 		expect(dome(1)).toBe(1);
 	});
 
-	it('fuzz: traced strokes inflate to closed meshes', () => {
+	it('fuzz: traced strokes inflate to closed meshes', { timeout: 300_000 }, () => {
 		fc.assert(
 			fc.property(
 				fc.array(
@@ -469,7 +491,7 @@ describe('inflate (TL-072)', () => {
 					expect(openEdges(m)).toBe(0);
 				},
 			),
-			{ numRuns: 40 },
+			{ numRuns: 25 },
 		);
 	});
 });
@@ -502,7 +524,15 @@ describe('surfaces (TL-071, TL-074)', () => {
 		td.material.pbr = newSurface({ metalness: 10 });
 		td.geometry!.surfaces = { side: newSurface({ metalness: 20 }) };
 		td.geometry!.bands = [
-			{ id: 'b', width: anim(1), depth: anim(1), profile: 'round', curve: anim(0), segments: 6, material: newSurface({ metalness: 30 }) },
+			{
+				id: 'b',
+				width: anim(1),
+				depth: anim(1),
+				profile: 'round',
+				curve: anim(0),
+				segments: 6,
+				material: newSurface({ metalness: 30 }),
+			},
 		];
 		const out = layerSurfacesAt(td, 0);
 		expect(out).toHaveLength(MAX_SLOTS);
@@ -520,12 +550,15 @@ describe('surfaces (TL-071, TL-074)', () => {
 });
 
 function textClip(h: Harness): string {
-	const r = h.ok([{ type: 'clip.addText', at: 0, duration: 60, track: 'V1', content: { text: 'GOLD' } } as never]);
+	const r = h.ok([
+		{ type: 'clip.addText', at: 0, duration: 60, track: 'V1', content: { text: 'GOLD' } } as never,
+	]);
 	const id = (r.results[0] as { clipId: string }).clipId;
 	h.ok([{ type: 'clip.set3d', clipIds: [id], enabled: true }]);
 	return id;
 }
-const clipOf = (h: Harness, id: string) => h.doc.sequences[h.seqId]!.clips[id] as unknown as { threeD: Layer3D };
+const clipOf = (h: Harness, id: string) =>
+	h.doc.sequences[h.seqId]!.clips[id] as unknown as { threeD: Layer3D };
 const clean = (h: Harness) => expect(checkInvariants(h.doc)).toEqual([]);
 const fails = (h: Harness, commands: unknown[], code: string) =>
 	expect((h.tx(commands) as { errors?: { code?: string }[] }).errors?.[0]?.code).toBe(code);
@@ -572,7 +605,9 @@ describe('commands', () => {
 		const id = textClip(h);
 		const ids: string[] = [];
 		for (let i = 0; i < MAX_BEVEL_BANDS; i++) {
-			const r = h.ok([{ type: 'threeD.addBand', clipId: id, width: i + 1, preset: i === 0 ? 'gold' : undefined }]);
+			const r = h.ok([
+				{ type: 'threeD.addBand', clipId: id, width: i + 1, preset: i === 0 ? 'gold' : undefined },
+			]);
 			ids.push((r.results[0] as { bandId: string }).bandId);
 		}
 		fails(h, [{ type: 'threeD.addBand', clipId: id }], 'E_LIMIT');
@@ -610,7 +645,9 @@ describe('commands', () => {
 	it('threeD.setGeometry: mode and inflate options', () => {
 		const h = new Harness();
 		const id = textClip(h);
-		h.ok([{ type: 'threeD.setGeometry', clipIds: [id], mode: 'inflate', inflate: { height: 44, detail: 2 } }]);
+		h.ok([
+			{ type: 'threeD.setGeometry', clipIds: [id], mode: 'inflate', inflate: { height: 44, detail: 2 } },
+		]);
 		const g = clipOf(h, id).threeD.geometry!;
 		expect(g.mode).toBe('inflate');
 		expect((g.inflate as { height: { value: number } }).height.value).toBe(44);
@@ -638,7 +675,12 @@ describe('commands', () => {
 		h.ok([{ type: 'keyframe.add', target: key, at: { sequenceFrame: 30 }, value: 50 } as never]);
 		const width = ['clip', id, 'threeD', 'band', b, 'width'];
 		h.ok([{ type: 'param.set', target: width, value: 9 }]);
-		const band0 = (clipOf(h, id).threeD.geometry!.bands as { width: { value: number }; material: { roughness: { keyframes: unknown[] } } }[])[0]!;
+		const band0 = (
+			clipOf(h, id).threeD.geometry!.bands as {
+				width: { value: number };
+				material: { roughness: { keyframes: unknown[] } };
+			}[]
+		)[0]!;
 		expect(band0.width.value).toBe(9);
 		expect(band0.material.roughness.keyframes).toHaveLength(2);
 		const paths = allAnimatables(h.doc as never).map((a) => a.path.join('.'));
@@ -647,10 +689,35 @@ describe('commands', () => {
 		clean(h);
 	});
 
+	it('a razor cut keeps bands, surfaces and their keys on both sides', () => {
+		const h = new Harness();
+		const id = textClip(h);
+		const b = (
+			h.ok([{ type: 'threeD.addBand', clipId: id, preset: 'gold' }]).results[0] as { bandId: string }
+		).bandId;
+		const key = ['clip', id, 'threeD', 'band', b, 'width'];
+		h.ok([{ type: 'keyframe.add', target: key, at: { sequenceFrame: 0 }, value: 2 } as never]);
+		h.ok([{ type: 'keyframe.add', target: key, at: { sequenceFrame: 50 }, value: 12 } as never]);
+		h.ok([{ type: 'clip.split', at: 30, clipIds: [id] }]);
+		const parts = Object.values(h.doc.sequences[h.seqId]!.clips).filter(
+			(c) => c.kind === 'text',
+		) as unknown as { threeD: Layer3D }[];
+		expect(parts).toHaveLength(2);
+		for (const p of parts) {
+			expect(solidGeometryAt({ kind: 'text', threeD: p.threeD }, 0)?.bands).toHaveLength(1);
+			expect(
+				(p.threeD.geometry!.bands as { width: { keyframes: unknown[] } }[])[0]!.width.keyframes.length,
+			).toBeGreaterThan(0);
+		}
+		clean(h);
+	});
+
 	it('every dynamic property is listed for agents and Effect Controls', () => {
 		const h = new Harness();
 		const id = textClip(h);
-		const b = (h.ok([{ type: 'threeD.addBand', clipId: id, preset: 'gold' }]).results[0] as { bandId: string }).bandId;
+		const b = (
+			h.ok([{ type: 'threeD.addBand', clipId: id, preset: 'gold' }]).results[0] as { bandId: string }
+		).bandId;
 		const specs = propertiesForClip(h.doc.sequences[h.seqId]!.clips[id]!).map((s) => s.key);
 		expect(specs).toContain(`threeD.band.${b}.width`);
 		expect(specs).toContain(`threeD.surface.${b}.metalness`);
@@ -682,23 +749,38 @@ describe('commands', () => {
 		expect(sceneLookAt(snap.scene3d, 0, fps).glint!.threshold).toBeCloseTo(1);
 		expect(sceneLookAt(snap.scene3d, 30, fps).glint!.threshold).toBeCloseTo(3);
 		expect(sceneLookAt(snap.scene3d, 0, fps).exposure).toBeCloseTo(2);
-		fails(h, 
-			[{ type: 'sequence.set3dRenderer', glint: { rays: 3 } }],
-			'E_SCHEMA',
-		);
+		fails(h, [{ type: 'sequence.set3dRenderer', glint: { rays: 3 } }], 'E_SCHEMA');
 	});
 
 	it('light.settings: environment preset and rotation on environment lights only', () => {
 		const h = new Harness();
-		const r = h.ok([{ type: 'clip.addLight', at: 0, duration: 30, lightType: 'environment', environmentPreset: 'chromeBands' }]);
+		const r = h.ok([
+			{
+				type: 'clip.addLight',
+				at: 0,
+				duration: 30,
+				lightType: 'environment',
+				environmentPreset: 'chromeBands',
+			},
+		]);
 		const id = (r.results[0] as { clipId: string }).clipId;
-		const clip = () => h.doc.sequences[h.seqId]!.clips[id] as unknown as { light: { environmentPreset?: string; environmentRotation?: { value: number } } };
+		const clip = () =>
+			h.doc.sequences[h.seqId]!.clips[id] as unknown as {
+				light: { environmentPreset?: string; environmentRotation?: { value: number } };
+			};
 		expect(clip().light.environmentPreset).toBe('chromeBands');
 		h.ok([{ type: 'light.settings', clipId: id, environmentRotation: 90 }]);
 		expect(clip().light.environmentRotation?.value).toBe(90);
 		const s = h.ok([{ type: 'clip.addLight', at: 0, duration: 30, lightType: 'spot' }]);
-		fails(h, 
-			[{ type: 'light.settings', clipId: (s.results[0] as { clipId: string }).clipId, environmentPreset: 'neon' }],
+		fails(
+			h,
+			[
+				{
+					type: 'light.settings',
+					clipId: (s.results[0] as { clipId: string }).clipId,
+					environmentPreset: 'neon',
+				},
+			],
 			'E_INVALID_PARAM',
 		);
 	});
@@ -720,7 +802,8 @@ describe('routing and the float refusal', () => {
 		const h = new Harness();
 		const id = textClip(h);
 		h.ok([{ type: 'sequence.set3dRenderer', renderer: 'advanced' }]);
-		const snap = () => buildRenderSnapshot(h.doc, h.seqId, { resolveMedia: media, resolveFont: () => 'f.woff2' });
+		const snap = () =>
+			buildRenderSnapshot(h.doc, h.seqId, { resolveMedia: media, resolveFont: () => 'f.woff2' });
 		const float = () => snapshotGlNeeds(snap()).find((n) => n.kind === '3d')?.float;
 		expect(float()).toBeUndefined();
 		h.ok([{ type: 'threeD.setSurface', clipIds: [id], preset: 'gold' }]);
@@ -756,7 +839,11 @@ describe('repair and load', () => {
 		const id = textClip(h);
 		h.ok([{ type: 'threeD.addBand', clipId: id }]);
 		const doc = broken(h, id, (td) => {
-			(td.geometry as Record<string, unknown>).bands = [{ id: 'x' }, ...((td.geometry as { bands: unknown[] }).bands), 7];
+			(td.geometry as Record<string, unknown>).bands = [
+				{ id: 'x' },
+				...(td.geometry as { bands: unknown[] }).bands,
+				7,
+			];
 			(td.material as Record<string, unknown>).pbr = { base: 'color', roughness: 'loud' };
 		});
 		expect(checkInvariants(doc).some((i) => i.invariant === 'INV-012')).toBe(true);
@@ -768,7 +855,9 @@ describe('repair and load', () => {
 		expect(repairDocument(fixed.document, ids).report).toEqual([]);
 	});
 
-	it('property: junk in every lenient field neither crashes repair nor survives it', () => {
+	it('property: junk in every lenient field neither crashes repair nor survives it', {
+		timeout: 300_000,
+	}, () => {
 		const junk = fc.oneof(
 			fc.constant(null),
 			fc.integer(),

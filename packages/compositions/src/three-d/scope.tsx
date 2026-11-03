@@ -462,7 +462,10 @@ function sceneFingerprint(
 const envImages = new Map<string, HTMLImageElement | 'error'>();
 
 /** The decoded HDR of a URL (null while loading; renders fail when it cannot be read). */
-function useEnvironmentHdr(url: string | null, rendering: boolean): LoadedHdr | null {
+function useEnvironmentHdr(
+	url: string | null,
+	rendering: boolean,
+): { hdr: LoadedHdr | null; error: string | null } {
 	const [, bump] = useReducer((n: number) => n + 1, 0);
 	const entry = url ? hdrAt(url, bump) : null;
 	const loading = entry?.state === 'loading' ? url : null;
@@ -472,8 +475,13 @@ function useEnvironmentHdr(url: string | null, rendering: boolean): LoadedHdr | 
 		return () => continueRender(handle);
 	}, [loading, rendering]);
 	if (entry?.state === 'error' && rendering)
-		cancelRender(new Error(`${THREE_D_ASSET_MISSING}: the HDR environment could not be read: ${entry.error}`));
-	return entry?.state === 'ready' ? entry.value : null;
+		cancelRender(
+			new Error(`${THREE_D_ASSET_MISSING}: the HDR environment could not be read: ${entry.error}`),
+		);
+	return {
+		hdr: entry?.state === 'ready' ? entry.value : null,
+		error: entry?.state === 'error' ? entry.error : null,
+	};
 }
 
 /** Loaded models by clip id (absent while loading); renders hold until they are loaded and fail when one cannot be. */
@@ -514,7 +522,9 @@ function useEnvironmentImage(url: string | null, rendering: boolean): HTMLImageE
 		img.onerror = () => {
 			envImages.set(url, 'error');
 			if (rendering)
-				cancelRender(new Error(`${THREE_D_ASSET_MISSING}: the environment image could not be loaded (${url})`));
+				cancelRender(
+					new Error(`${THREE_D_ASSET_MISSING}: the environment image could not be loaded (${url})`),
+				);
 			bump();
 		};
 		img.src = url;
@@ -558,7 +568,13 @@ export function useScene3DRun(
 	const envIsHdr = envMedia?.kind === 'hdri';
 	const envUrl = envMedia ? (isPreview && envMedia.proxyUrl ? envMedia.proxyUrl : envMedia.url) : null;
 	const envImage = useEnvironmentImage(envIsHdr ? null : envUrl, rendering);
-	const envHdr = useEnvironmentHdr(envIsHdr ? envUrl : null, rendering);
+	const { hdr: envHdr, error: envHdrError } = useEnvironmentHdr(envIsHdr ? envUrl : null, rendering);
+	/** What preview says it cannot show: exports refuse the same things. */
+	const problem = envHdrError
+		? `The HDR environment could not be read: ${envHdrError}`
+		: envMediaId && !envMedia
+			? 'The environment media is missing'
+			: null;
 	// Advanced 3D: the models of the run's model layers.
 	const modelUrls = new Map<string, string>();
 	if (run && scene.doc.scene3d?.renderer === 'advanced')
@@ -567,7 +583,8 @@ export function useScene3DRun(
 			const mid = c?.kind === 'model' && 'mediaId' in c.source ? c.source.mediaId : null;
 			const h = mid ? scene.doc.media?.[mid] : null;
 			if (h) modelUrls.set(id, h.url);
-			else if (mid && rendering) cancelRender(new Error(`${THREE_D_ASSET_MISSING}: 3D model ${mid} is missing`));
+			else if (mid && rendering)
+				cancelRender(new Error(`${THREE_D_ASSET_MISSING}: 3D model ${mid} is missing`));
 		}
 	const models = useModels(modelUrls, rendering);
 	const pictures = new Map<string, HubPicture>();
@@ -676,7 +693,7 @@ export function useScene3DRun(
 		envHdr,
 		modelKey,
 	]);
-	return { frame, run, complete, effects };
+	return { frame, run, complete, effects, problem };
 }
 
 /**
@@ -700,7 +717,13 @@ export function Scene3DScope({
 }) {
 	const rendering = getRemotionEnvironment().isRendering;
 	const gpu = scene.mode.mode === 'gpu';
-	const { frame, run, complete, effects } = useScene3DRun(scene, trackIndex, comp, offset, isPreview);
+	const { frame, run, complete, effects, problem } = useScene3DRun(
+		scene,
+		trackIndex,
+		comp,
+		offset,
+		isPreview,
+	);
 	const hold = useRef<number | null>(null);
 	if (rendering && run && !complete && hold.current === null)
 		hold.current = delayRender(`3D layers at frame ${frame}`);
@@ -722,23 +745,31 @@ export function Scene3DScope({
 				{children}
 			</div>
 		);
+	const chip = problem ? (
+		<AbsoluteFill style={{ pointerEvents: 'none' }}>
+			<CompositeChip text={problem} />
+		</AbsoluteFill>
+	) : null;
 	return (
-		<ScopedHtmlInCanvas
-			scope="3D layers"
-			width={comp.width}
-			height={comp.height}
-			effects={effects}
-			style={{ ...FILL, display: 'block' }}
-			showInTimeline={false}
-		>
-			<div
-				data-scene3d-scope="canvas"
-				data-track-index={trackIndex}
-				style={{ position: 'absolute', left: 0, top: 0, width: comp.width, height: comp.height }}
+		<>
+			<ScopedHtmlInCanvas
+				scope="3D layers"
+				width={comp.width}
+				height={comp.height}
+				effects={effects}
+				style={{ ...FILL, display: 'block' }}
+				showInTimeline={false}
 			>
-				{children}
-			</div>
-		</ScopedHtmlInCanvas>
+				<div
+					data-scene3d-scope="canvas"
+					data-track-index={trackIndex}
+					style={{ position: 'absolute', left: 0, top: 0, width: comp.width, height: comp.height }}
+				>
+					{children}
+				</div>
+			</ScopedHtmlInCanvas>
+			{chip}
+		</>
 	);
 }
 
@@ -759,7 +790,13 @@ export function FlatRun3D({
 	offset: number;
 	isPreview: boolean;
 }) {
-	const { frame, run, complete, effects } = useScene3DRun(scene, trackIndex, comp, offset, isPreview);
+	const { frame, run, complete, effects, problem } = useScene3DRun(
+		scene,
+		trackIndex,
+		comp,
+		offset,
+		isPreview,
+	);
 	usePublishFlatChain(`run3d:${trackIndex}`, {
 		frame,
 		effects,
@@ -767,7 +804,11 @@ export function FlatRun3D({
 		ready: !run || (complete && effects.length > 0),
 		key: effects.length ? ((effects[0]!.params as { key?: string }).key ?? 'run') : run ? 'pending' : 'idle',
 	});
-	return null;
+	return problem ? (
+		<AbsoluteFill style={{ pointerEvents: 'none' }}>
+			<CompositeChip text={problem} />
+		</AbsoluteFill>
+	) : null;
 }
 
 /** The fallback chip (Player without the GPU scope) at frames where 3D layers are drawn; renders cancel. */

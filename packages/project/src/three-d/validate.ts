@@ -128,7 +128,8 @@ export function threeDProblem(td: unknown): string | null {
 	if (g.backplates !== undefined) {
 		const r = z.array(BackplateSchema).max(MAX_BACKPLATES).safeParse(g.backplates);
 		if (!r.success) return `geometry.backplates ${issue(r.error)}`;
-		if (new Set(r.data.map((b) => b.id)).size !== r.data.length) return 'geometry.backplates: repeated plate id';
+		if (new Set(r.data.map((b) => b.id)).size !== r.data.length)
+			return 'geometry.backplates: repeated plate id';
 	}
 	return null;
 }
@@ -186,7 +187,9 @@ export function repairThreeD(td: Record<string, unknown>, target: string, note: 
 		const seen = new Set<string>();
 		const kept: unknown[] = [];
 		for (const b of list) {
-			const r = isObj(b) ? { ...b, ...(b.material === undefined ? {} : { material: repairSurface(b.material) }) } : b;
+			const r = isObj(b)
+				? { ...b, ...(b.material === undefined ? {} : { material: repairSurface(b.material) }) }
+				: b;
 			if (isObj(r) && r.material === null) delete r.material;
 			const ok = BandSchema.safeParse(r);
 			if (!ok.success || seen.has(ok.data.id) || kept.length >= MAX_BEVEL_BANDS) continue;
@@ -245,4 +248,6 @@ export function sanitizeThreeD(doc: unknown, note: Note): void {
 }
 
 /** Numeric ranges every surface field is clamped to at evaluation, by key. */
-export const SURFACE_RANGES = Object.fromEntries(SURFACE_NUMBERS.map((s) => [s.key, { min: s.min, max: s.max }]));
+export const SURFACE_RANGES = Object.fromEntries(
+	SURFACE_NUMBERS.map((s) => [s.key, { min: s.min, max: s.max }]),
+);
