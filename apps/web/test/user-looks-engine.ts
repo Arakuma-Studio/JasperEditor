@@ -28,7 +28,14 @@ export type Fake = {
 
 /** An engine holding a user look library in memory, answering `/api/title-looks` like the real routes. */
 export function fakeEngine(initial: UserLook[] = []): Fake {
-	const fake: Fake = { looks: [...initial], calls: [], readOnly: false, failSaves: false } as Fake;
+	// The client is set below: its fetch reads this object.
+	const fake: Fake = {
+		looks: [...initial],
+		calls: [],
+		readOnly: false,
+		failSaves: false,
+		client: null as never,
+	};
 	const json = (body: unknown, status = 200) =>
 		new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 	const refuse = (status: number, code: string, message: string) =>
