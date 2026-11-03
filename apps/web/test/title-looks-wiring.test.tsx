@@ -25,7 +25,6 @@ const option = (name: string, face: number[]) => ({
 });
 const item = {
 	id: 'title',
-	label: 'Gold, Red',
 	...option('Red', [1, 0, 0, 1]),
 	alternatives: [option('Blue', [0, 0, 1, 1]), option('Green', [0, 1, 0, 1])],
 } as unknown as ProposalItem;
