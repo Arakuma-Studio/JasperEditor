@@ -92,7 +92,12 @@ const SHOTS = [
 	{ template: 'template.variety-telop', preset: 'hd-720p-30', frame: 45 },
 	{ template: 'template.social-hook', preset: 'vertical-1080x1920-30', frame: 45 },
 	{ template: 'template.brush-title', preset: 'hd-720p-30', frame: 75 },
-	{ template: 'template.block-title-3d', preset: 'hd-720p-30', frame: 60 },
+	{ template: 'template.block-title', preset: 'hd-720p-30', frame: 60 },
+	// Advanced 3D solids (spec 19 §9): settled after their in animation.
+	{ template: 'template.gold-3d-title', preset: 'hd-720p-30', frame: 60 },
+	{ template: 'template.chrome-plate-3d', preset: 'hd-720p-30', frame: 60 },
+	{ template: 'template.puffy-3d-hook', preset: 'hd-720p-30', frame: 45 },
+	{ template: 'template.gold-glint-end-card', preset: 'hd-720p-30', frame: 75 },
 ];
 
 describe.runIf(enabled && !!CHROME)(

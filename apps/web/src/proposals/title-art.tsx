@@ -1,8 +1,9 @@
 // Spec 19 TL-098: an agent's title in Review: a poster of the option under review and of its alternatives, colourways among
-// them, each on the proposal's own words. Choosing one selects that alternative; A/B (Compare) shows it in Program.
+// them, each on the proposal's own words. Choosing one selects that alternative; A/B (Compare) shows it in Program. Under
+// the posters, the rendered check the agent stored with the first option (`title-art-check.tsx`).
 // `meta` is the agent's and is read leniently: what cannot be read shows no picture, never a failure.
 import type { LookPosterRequest } from '@jasper/api';
-import { LookRecipeSchema, type ProjectDocument, type ProposalItem } from '@jasper/project';
+import { LookRecipeSchema, type ProjectDocument, type ProposalItem, titleArtCheckOf } from '@jasper/project';
 import { cx } from '@jasper/ui';
 import { useMemo } from 'react';
 import { z } from 'zod';
@@ -10,6 +11,7 @@ import { t } from '../i18n/runtime.ts';
 import { useEngineOrNull } from '../state/engine.tsx';
 import { lookEntries } from '../title-looks/library.ts';
 import { type PosterStore, posterRequest, posterStoreFor, usePoster } from '../title-looks/posters.ts';
+import { TitleArtAlternateUnchecked, TitleArtCheckView } from './title-art-check.tsx';
 
 export const TITLE_ART_FEATURE = 'title-art';
 
@@ -74,13 +76,31 @@ export function titleArtOptions(doc: ProjectDocument, item: ProposalItem, width 
 	}));
 }
 
-function Poster(props: { store: PosterStore | null; request: LookPosterRequest; label: string }) {
+/** `compact`: the option under review, kept short so its check rows show beside it in a small Review panel. */
+function Poster(props: {
+	store: PosterStore | null;
+	request: LookPosterRequest;
+	label: string;
+	compact?: boolean;
+}) {
 	const poster = usePoster(props.store, props.request);
 	if (poster.state === 'ready')
-		return <img src={poster.url} alt={props.label} className="block w-full rounded-pr-control" />;
+		return (
+			<img
+				src={poster.url}
+				alt={props.label}
+				className={cx(
+					'block rounded-pr-control',
+					props.compact ? 'mx-auto max-h-28 w-auto max-w-full' : 'w-full',
+				)}
+			/>
+		);
 	return (
 		<span
-			className="flex aspect-video w-full items-center justify-center rounded-pr-control bg-pr-field-deep p-1 text-center text-pr-small text-pr-muted"
+			className={cx(
+				'flex w-full items-center justify-center rounded-pr-control bg-pr-field-deep p-1 text-center text-pr-small text-pr-muted',
+				props.compact ? 'h-16' : 'aspect-video',
+			)}
 			title={poster.state === 'error' ? poster.message : undefined}
 		>
 			{poster.state === 'error' ? t('No preview') : t('Rendering…')}
@@ -99,11 +119,19 @@ export function TitleArtDetails(props: {
 	const client = useEngineOrNull()?.client ?? null;
 	const store = useMemo(() => (client ? posterStoreFor(client) : null), [client]);
 	const options = useMemo(() => (item ? titleArtOptions(doc, item) : []), [doc, item]);
+	const check = useMemo(() => (item ? titleArtCheckOf(item) : null), [item]);
 	const shown = options[props.selected];
-	if (!shown?.request) return null;
+	// The rows are the first option's: an alternate says it has none rather than showing another option's.
+	const checkView =
+		props.selected > 0 && shown ? (
+			<TitleArtAlternateUnchecked />
+		) : check ? (
+			<TitleArtCheckView check={check} />
+		) : null;
+	if (!shown?.request && !checkView) return null;
 	return (
 		<div className="flex flex-col gap-1" data-testid="title-art-details">
-			<Poster store={store} request={shown.request} label={shown.label} />
+			{shown?.request ? <Poster store={store} request={shown.request} label={shown.label} compact /> : null}
 			{options.length > 1 ? (
 				<fieldset className="grid grid-cols-4 gap-1" aria-label={t('Alternates')}>
 					{options.map((o, i) =>
@@ -129,6 +157,7 @@ export function TitleArtDetails(props: {
 					)}
 				</fieldset>
 			) : null}
+			{checkView}
 		</div>
 	);
 }

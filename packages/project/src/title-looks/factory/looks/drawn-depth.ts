@@ -1,11 +1,13 @@
-// 3D: depth drawn by the look itself, so it renders on every path a look does. An extrusion from the outermost rim gives the
-// walls, a bevel or a metal dome gives the face its relief, and plates stack behind like solid backings. A look is an
-// appearance (TL-055): the Advanced 3D solid of a clip (spec 19 §9) stays in Properties ▸ 3D Title. Adapted from Pachislop's
-// 3D looks (`赤壁` depth-fade walls, `ぷっくり` inflate candy, slanted box plates; licenses/ported/pachislop-looks.md).
+// Drawn Depth: depth drawn by the look itself, in 2D, so it renders on every path a look does and bakes like any look. An
+// extrusion from the outermost rim gives the walls, a bevel or a metal dome gives the face its relief, and plates stack
+// behind like solid backings. These were the library's first "3D" looks; a look is an appearance (TL-055) and cannot hold
+// the Advanced 3D solid of a clip (spec 19 §9), so real 3D titles are the 3D category's templates
+// (`templates/three-d.ts`), and these four carry the honest name. Adapted from Pachislop's 3D looks (`赤壁` depth-fade
+// walls, `ぷっくり` inflate candy, slanted box plates; licenses/ported/pachislop-looks.md).
 import { face, font, gradient, JA, layer, rim, role, shadow } from '../build.ts';
 import { defineLook } from './define.ts';
 
-const threeD = (l: Parameters<typeof defineLook>[1]) => defineLook('3d', l);
+const drawnDepth = (l: Parameters<typeof defineLook>[1]) => defineLook('drawn-depth', l);
 
 /** Walls that run from a colour at the face to dark at the back. */
 const walls = (depth: number, angle: number, front: 'accent2' | 'faceAlt' | 'keyline', params = {}) =>
@@ -18,8 +20,8 @@ const walls = (depth: number, angle: number, front: 'accent2' | 'faceAlt' | 'key
 		...params,
 	});
 
-export const THREE_D_LOOKS = [
-	threeD({
+export const DRAWN_DEPTH_LOOKS = [
+	drawnDepth({
 		slug: 'gold-walls',
 		name: 'Gold Walls',
 		nameEs: 'Muros de oro',
@@ -39,7 +41,7 @@ export const THREE_D_LOOKS = [
 			walls(16, 70, 'accent2', { fade: 35 }),
 		],
 	}),
-	threeD({
+	drawnDepth({
 		slug: 'puffy-candy',
 		name: 'Puffy Candy',
 		nameEs: 'Caramelo inflado',
@@ -62,7 +64,7 @@ export const THREE_D_LOOKS = [
 			layer('gloss', { height: 42, curve: 55, intensity: 70, paint: role('accent3') }),
 		],
 	}),
-	threeD({
+	drawnDepth({
 		slug: 'chrome-block',
 		name: 'Chrome Block',
 		nameEs: 'Bloque cromado',
@@ -85,7 +87,7 @@ export const THREE_D_LOOKS = [
 			walls(12, 60, 'keyline', { shading: 80 }),
 		],
 	}),
-	threeD({
+	drawnDepth({
 		slug: 'stacked-plates',
 		name: 'Stacked Plates',
 		nameEs: 'Placas apiladas',

@@ -69,6 +69,7 @@ describe('the library (TL-050)', () => {
 			'Japanese Variety',
 			'Pachinko & Arcade',
 			'Brush',
+			'Drawn Depth',
 			'3D',
 		]);
 		for (const c of LOOK_CATEGORIES) expect(c.labelEs.length).toBeGreaterThan(0);
@@ -77,9 +78,15 @@ describe('the library (TL-050)', () => {
 	it('holds at least 60 looks in at least 12 categories, every category filled, and none holds more than a quarter', () => {
 		const counts = lookCategoryCounts();
 		expect(FACTORY_LOOKS.length).toBeGreaterThanOrEqual(60);
-		expect(counts.filter((c) => c.count > 0).length).toBeGreaterThanOrEqual(12);
-		// Brush and 3D were empty in the first library: every category the spec names now has looks.
-		for (const c of counts) expect(c.count, c.id).toBeGreaterThan(0);
+		expect(counts.filter((c) => c.count > 0).length).toBeGreaterThanOrEqual(15);
+		// Every category is filled: with looks, or, for 3D, with templates. A look cannot hold an Advanced 3D solid
+		// (TL-055), so 3D is the category of the solid templates and no look claims it; depth a look draws is Drawn Depth.
+		for (const c of counts)
+			if (c.id === '3d') {
+				expect(c.count, 'no look is called 3D').toBe(0);
+				expect(FACTORY_TEMPLATES.filter((t) => t.category === '3d').length).toBeGreaterThanOrEqual(4);
+			} else expect(c.count, c.id).toBeGreaterThan(0);
+		expect(counts.find((c) => c.id === 'drawn-depth')!.count).toBe(4);
 		for (const c of counts) expect(c.count, c.id).toBeLessThanOrEqual(FACTORY_LOOKS.length / 4);
 	});
 

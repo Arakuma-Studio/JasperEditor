@@ -5,6 +5,7 @@ import {
 	type Clip,
 	checkInvariants,
 	clipLook,
+	costClassOf,
 	defaultEffectRegistry,
 	type EffectInstance,
 	FACTORY_LOOKS,
@@ -12,9 +13,13 @@ import {
 	factoryColorway,
 	factoryLook,
 	factoryTemplate,
+	type Layer3D,
 	LOOK_CATEGORIES,
 	latestTextAnimationSpec,
+	SURFACE_PRESETS,
 	TEMPLATE_KINDS,
+	type TemplateText,
+	templateCostClass,
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
 
@@ -42,7 +47,9 @@ describe('title templates (TL-052)', () => {
 			expect(new Set(slots).size, t.id).toBe(slots.length);
 			for (const c of t.clips) {
 				if (c.kind !== 'text') continue;
-				expect(factoryLook(c.look), `${t.id}: ${c.look}`).toBeTruthy();
+				// A face of its own only under a solid: a 2D title takes a look of the library.
+				if (typeof c.look === 'string') expect(factoryLook(c.look), `${t.id}: ${c.look}`).toBeTruthy();
+				else expect(c.solid, `${t.id}: ${c.slot}`).toBeTruthy();
 				expect(latestTextAnimationSpec(c.in.preset), `${t.id}: ${c.in.preset}`).toBeTruthy();
 				expect(latestTextAnimationSpec(c.out.preset), `${t.id}: ${c.out.preset}`).toBeTruthy();
 				expect(c.labelEs).toBeTruthy();
@@ -52,7 +59,7 @@ describe('title templates (TL-052)', () => {
 
 	it('cover lower thirds, full-screen titles, end cards and social hooks across general categories', () => {
 		expect(FACTORY_TEMPLATES.length).toBeGreaterThanOrEqual(16);
-		for (const c of ['brush', '3d'])
+		for (const c of ['brush', 'drawn-depth', '3d'])
 			expect(
 				FACTORY_TEMPLATES.some((t) => t.category === c),
 				c,
@@ -72,7 +79,8 @@ describe('title templates (TL-052)', () => {
 				const h = new Harness({ preset });
 				const r = h.ok([{ type: 'title.insertTemplate', templateId: t.id, at: 0 }]);
 				const out = r.results[0] as { clipIds: string[]; slots: Record<string, string> };
-				expect(out.clipIds.length, t.id).toBe(t.clips.length);
+				// A 3D template adds its environment light.
+				expect(out.clipIds.length, t.id).toBe(t.clips.length + (t.scene3d ? 1 : 0));
 				ok(h);
 				for (const c of t.clips) {
 					if (c.kind !== 'text') continue;
@@ -83,7 +91,7 @@ describe('title templates (TL-052)', () => {
 					expect(clip.textAnimation?.in?.preset).toBe(c.in.preset);
 					expect(clip.textAnimation?.out?.preset).toBe(c.out.preset);
 					const family = h.doc.fonts[clip.content.style.fontId]!.family;
-					const f = factoryLook(c.look)!.recipe.font!;
+					const f = typeof c.look === 'string' ? factoryLook(c.look)!.recipe.font! : c.look.font;
 					expect([f.family, f.ja?.family], t.id).toContain(family);
 				}
 			}
@@ -280,11 +288,138 @@ describe('title templates (TL-052)', () => {
 		expect(shape()).toEqual(shape());
 	});
 
-	it('uses only looks of the library', () => {
+	it('uses only looks of the library, or a bare face under a solid', () => {
 		const ids = new Set(FACTORY_LOOKS.map((l) => l.libraryId));
 		for (const t of FACTORY_TEMPLATES)
 			for (const c of t.clips)
-				if (c.kind === 'text') expect(ids.has(c.look), `${t.id}: ${c.look}`).toBe(true);
+				if (c.kind === 'text')
+					if (typeof c.look === 'string') expect(ids.has(c.look), `${t.id}: ${c.look}`).toBe(true);
+					else expect(Object.keys(c.look), `${t.id}: ${c.slot}`).toEqual(['font']);
 		expect(factoryTemplate('template.neon-sign')?.clips).toHaveLength(1);
+	});
+});
+
+const solidTexts = (id: string) =>
+	factoryTemplate(id)!.clips.filter((c): c is TemplateText => c.kind === 'text' && !!c.solid);
+const THREE_D = FACTORY_TEMPLATES.filter((t) => t.category === '3d');
+const td = (c: Clip) => (c as unknown as { threeD?: Layer3D }).threeD;
+
+describe('3D title templates (spec 19 §9 through TL-052)', () => {
+	it('fill the 3D category with real solids; the drawn-depth title is not among them', () => {
+		expect(THREE_D.length).toBeGreaterThanOrEqual(4);
+		for (const t of THREE_D) {
+			expect(solidTexts(t.id).length, t.id).toBeGreaterThan(0);
+			expect(t.scene3d, t.id).toBeTruthy();
+		}
+		// Every 3D template is a solid, and every template with a solid is in 3D.
+		for (const t of FACTORY_TEMPLATES)
+			expect(t.category === '3d', t.id).toBe(t.clips.some((c) => c.kind === 'text' && !!c.solid));
+		expect(factoryTemplate('template.block-title')?.category).toBe('drawn-depth');
+		// The model's parts, across the four: bands, plates, inflate, per-surface materials, glints, several environments.
+		const solids = THREE_D.flatMap((t) => solidTexts(t.id).map((c) => c.solid!));
+		expect(solids.some((s) => (s.bands ?? []).length > 1)).toBe(true);
+		expect(solids.some((s) => (s.plates ?? []).length > 0)).toBe(true);
+		expect(solids.some((s) => !!s.inflate)).toBe(true);
+		expect(solids.some((s) => !!s.surfaces)).toBe(true);
+		expect(THREE_D.some((t) => !!t.scene3d?.glint)).toBe(true);
+		expect(new Set(THREE_D.map((t) => t.scene3d!.environment)).size).toBeGreaterThanOrEqual(3);
+		for (const s of solids)
+			for (const m of [
+				s.material,
+				...Object.values(s.surfaces ?? {}),
+				...(s.bands ?? []).map((b) => b.material),
+				...(s.plates ?? []).map((p) => p.material),
+			])
+				if (m !== undefined) expect(SURFACE_PRESETS[m], m).toBeTruthy();
+	});
+
+	for (const t of THREE_D)
+		it(`${t.id} makes Advanced 3D layers with its solid, materials and scene`, () => {
+			const h = new Harness();
+			const r = h.ok([{ type: 'title.insertTemplate', templateId: t.id, at: 0 }]);
+			const out = r.results[0] as { clipIds: string[]; slots: Record<string, string> };
+			ok(h);
+			const seq = h.seq;
+			expect(seq.threeD?.renderer).toBe('advanced');
+			expect(seq.threeD?.toneMapping).toBe(t.scene3d!.toneMapping);
+			expect(!!seq.threeD?.glint?.enabled).toBe(!!t.scene3d!.glint);
+			// The environment light is one of the template's clips, over its span, in its group.
+			const light = out.clipIds.map((id) => seq.clips[id]!).find((c) => c.kind === 'light')!;
+			expect(light, t.id).toBeTruthy();
+			expect((light as unknown as { light: { environmentPreset?: string } }).light.environmentPreset).toBe(
+				t.scene3d!.environment,
+			);
+			expect(out.clipIds).toHaveLength(t.clips.length + 1);
+			for (const c of t.clips) {
+				if (c.kind !== 'text') continue;
+				const clip = seq.clips[out.slots[c.slot]!]!;
+				expect(light.groupId).toBe(clip.groupId);
+				const three = td(clip);
+				if (!c.solid) {
+					expect(three?.enabled ?? false, `${t.id}: ${c.slot} stays flat`).toBe(false);
+					continue;
+				}
+				expect(three?.enabled, `${t.id}: ${c.slot}`).toBe(true);
+				const g = three!.geometry!;
+				expect(g.bands ?? []).toHaveLength(c.solid.bands?.length ?? 0);
+				expect(g.backplates ?? []).toHaveLength(c.solid.plates?.length ?? 0);
+				expect(g.mode ?? 'extrude').toBe(c.solid.inflate ? 'inflate' : 'extrude');
+				// The base material is the preset's: a gold solid has gold's base colour.
+				const base = three!.material.pbr as unknown as { baseColor: { value: number[] } };
+				const want = SURFACE_PRESETS[c.solid.material]!.values.baseColor;
+				if (want) expect(base.baseColor.value).toEqual(want);
+				// The cost the Looks tab states is the one the made clip has (TL-078).
+				expect(templateCostClass(t), t.id).toBe(costClassOf(three, seq.threeD));
+			}
+		});
+
+	it('says what each template costs: flat ones are fast, 3D ones never bake', () => {
+		for (const t of FACTORY_TEMPLATES)
+			if (t.category === '3d') expect(templateCostClass(t), t.id).toMatch(/^3d/);
+			else expect(templateCostClass(t), t.id).toBe('fast');
+		expect(templateCostClass(factoryTemplate('template.gold-3d-title')!)).toBe('3d');
+		expect(templateCostClass(factoryTemplate('template.puffy-3d-hook')!)).toBe('3d-heavy');
+		expect(templateCostClass(factoryTemplate('template.gold-glint-end-card')!)).toBe('3d-heavy');
+	});
+
+	it('sizes the solid with the text, so it is the same solid at any frame size', () => {
+		const depthAt = (preset: string) => {
+			const h = new Harness({ preset });
+			const r = h.ok([{ type: 'title.insertTemplate', templateId: 'template.gold-3d-title', at: 0 }]);
+			const { slots } = r.results[0] as { slots: Record<string, string> };
+			const clip = h.seq.clips[slots.title!] as Extract<Clip, { kind: 'text' }>;
+			const g = td(clip)!.geometry!;
+			return {
+				ratio: (g.extrusionDepth as { value: number }).value / clip.content.style.sizePx,
+				band: (g.bands![0]!.width as { value: number }).value / clip.content.style.sizePx,
+			};
+		};
+		const hd = depthAt('hd-1080p-30');
+		const small = depthAt('hd-720p-30');
+		expect(hd.ratio).toBeCloseTo(0.22, 2);
+		expect(small.ratio).toBeCloseTo(hd.ratio, 2);
+		expect(small.band).toBeCloseTo(hd.band, 2);
+	});
+
+	it('is one undo step: the sequence goes back to its own renderer', () => {
+		const h = new Harness();
+		const before = h.doc;
+		expect(h.seq.threeD?.renderer ?? 'classic').toBe('classic');
+		h.ok([{ type: 'title.insertTemplate', templateId: 'template.gold-glint-end-card', at: 0 }]);
+		expect(h.seq.threeD?.renderer).toBe('advanced');
+		h.doc = before;
+		expect(h.seq.threeD?.renderer ?? 'classic').toBe('classic');
+		ok(h);
+	});
+
+	it('shares one face per font across 3D templates (TL-015)', () => {
+		const h = new Harness();
+		h.ok([{ type: 'title.insertTemplate', templateId: 'template.gold-3d-title', at: 0 }]);
+		h.ok([{ type: 'title.insertTemplate', templateId: 'template.gold-glint-end-card', at: 200 }]);
+		const faces = Object.values(
+			(h.doc as { titleLooks?: Record<string, { name: string }> }).titleLooks ?? {},
+		).filter((l) => l.name.startsWith('3D Title Face'));
+		expect(faces.map((l) => l.name)).toEqual(['3D Title Face (Archivo Black)']);
+		ok(h);
 	});
 });

@@ -1,17 +1,24 @@
 // Spec 19 TL-086: what the Looks tab and `Graphics ▸ Apply Look…` show: one entry per look, from the factory library, the
 // project's own looks and the user's own (TL-054: My Looks, kept by the engine). A project copy of a library or user look
-// (TL-015) is that look, not a second card. Pure.
+// (TL-015) is that look, not a second card. Title templates (TL-052) show in their category beside its looks: the 3D
+// category holds only templates, because a look cannot hold an Advanced 3D solid. Pure.
 import {
 	type Colorway,
+	type CostClass,
 	FACTORY_COLORWAYS,
 	FACTORY_LOOKS,
+	FACTORY_TEMPLATES,
 	type FactoryLook,
 	foldSearchText,
+	LOOK_CATEGORIES,
 	type LookRecipe,
 	lookCategory,
 	type ProjectDocument,
 	recipeFromAppearance,
+	type TemplateKind,
 	type TitleLook,
+	type TitleTemplate,
+	templateCostClass,
 	titleLooksOf,
 	type UserLook,
 	userLookSource,
@@ -163,6 +170,56 @@ export function filterLooks(entries: readonly LookEntry[], f: LookFilter): LookE
 /** Categories in library order. */
 export function lookCategories(entries: readonly LookEntry[]): string[] {
 	return [...new Set(entries.map((e) => e.category))];
+}
+
+/** A title template as the Looks tab lists it. */
+export type TemplateEntry = {
+	templateId: string;
+	name: string;
+	/** The category as shown, as `LookEntry.category`. */
+	category: string;
+	kind: TemplateKind;
+	description: string;
+	/** TL-078: what it costs to export; anything but `fast` never bakes. */
+	cost: CostClass;
+	searchText: string;
+};
+
+export function templateEntries(templates: readonly TitleTemplate[] = FACTORY_TEMPLATES): TemplateEntry[] {
+	return templates.map((t) => {
+		const category = categoryName(t.category);
+		return {
+			templateId: t.id,
+			name: spanish() ? t.nameEs : t.name,
+			category,
+			kind: t.kind,
+			description: t.description,
+			cost: templateCostClass(t),
+			searchText: fold([t.name, t.nameEs, category, t.kind, t.description, ...t.tags].join(' ')),
+		};
+	});
+}
+
+/** The templates matching a search and a category, as `filterLooks`. */
+export function filterTemplates(entries: readonly TemplateEntry[], f: LookFilter): TemplateEntry[] {
+	const words = fold(f.query.trim()).split(/\s+/).filter(Boolean);
+	return entries.filter((e) => {
+		if (f.category && e.category !== f.category) return false;
+		return words.every((w) => e.searchText.includes(w));
+	});
+}
+
+/**
+ * The category chips: the library's categories that hold looks or templates, in library order, then the categories only
+ * looks bring (the project's own, My Looks).
+ */
+export function browserCategories(
+	entries: readonly LookEntry[],
+	templates: readonly TemplateEntry[] = templateEntries(),
+): string[] {
+	const used = new Set([...entries.map((e) => e.category), ...templates.map((t) => t.category)]);
+	const library = LOOK_CATEGORIES.map((c) => categoryName(c.id)).filter((c) => used.has(c));
+	return [...library, ...lookCategories(entries).filter((c) => !library.includes(c))];
 }
 
 /** Recents in the order they were used; looks that are gone are left out. */

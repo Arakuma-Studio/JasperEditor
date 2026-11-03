@@ -1,16 +1,19 @@
 // Spec 19 TL-086: search, categories, recents, tile size and the grid of looks, shared by Motion Templates ▸ Looks and
-// `Graphics ▸ Apply Look…`. The status line always says what a click does, so nothing depends on a tooltip.
+// `Graphics ▸ Apply Look…`. The status line always says what a click does, so nothing depends on a tooltip. A category
+// or a search also lists its title templates (TL-052); the 3D category holds only templates, its solids (spec 19 §9).
 import type { Clip, Colorway, ProjectDocument } from '@jasper/project';
 import { titleLookOf } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useSessionState } from '@jasper/session/react';
-import { cx, Icon, type ResolvedMenuItem } from '@jasper/ui';
+import { cx, Icon, openDialog, type ResolvedMenuItem } from '@jasper/ui';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { t } from '../i18n/runtime.ts';
 import { useEngineOrNull } from '../state/engine.tsx';
+import { COST_3D_DIALOG, cost3dAcknowledged, registerCost3DDialog } from '../three-d/Cost3DDialog.tsx';
 import {
 	announce,
 	applyLookToClips,
+	insertTitleTemplate,
 	insertTitleWithLook,
 	type LookOutcome,
 	pickLook,
@@ -19,25 +22,31 @@ import {
 } from './actions.ts';
 import { LookGrid, type TileSize } from './LookGrid.tsx';
 import {
+	browserCategories,
 	filterLooks,
+	filterTemplates,
 	type LookEntry,
-	lookCategories,
 	lookEntries,
 	myLooksLabel,
 	readRecents,
 	recentLooks,
+	type TemplateEntry,
+	templateEntries,
 } from './library.ts';
 import { deleteProjectLook, renameProjectLook, updateProjectLook } from './look-actions.ts';
 import { MyLooksBar } from './MyLooksBar.tsx';
 import { type PosterSample, posterStoreFor } from './posters.ts';
 import { colorwayPreviewCommands, endPreview, lookPreviewCommands, schedulePreview } from './preview.ts';
 import { lookedClip, takesLook } from './selection.ts';
+import { TemplateList } from './TemplateList.tsx';
 import { userLooksUnavailable, useUserLooks } from './user-library.ts';
 import { deleteMyLook, exportMyLooks, renameMyLook } from './user-look-actions.ts';
 
 const TILE_KEY = 'jasper.titleLooks.tile';
 const RECENT = '$recent';
 const TILES: readonly TileSize[] = ['small', 'medium', 'large'];
+
+registerCost3DDialog();
 
 function initialTile(): TileSize {
 	try {
@@ -107,11 +116,12 @@ export function LooksBrowser(props: {
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `doc` matters to entries only through `titleLooks`
 	const entries = useMemo(() => lookEntries(doc, undefined, undefined, user.looks), [titleLooks, user.looks]);
+	const templates = useMemo(() => templateEntries(), []);
 	// My Looks has a chip even while it is empty: it is where saving and importing start.
 	const categories = useMemo(() => {
-		const list = lookCategories(entries);
+		const list = browserCategories(entries, templates);
 		return list.includes(myLooks) ? list : [...list, myLooks];
-	}, [entries, myLooks]);
+	}, [entries, templates, myLooks]);
 	const recentEntries = useMemo(() => recentLooks(entries, recents), [entries, recents]);
 	const visible = useMemo(
 		() =>
@@ -119,6 +129,14 @@ export function LooksBrowser(props: {
 				? filterLooks(recentEntries, { query, category: null })
 				: filterLooks(entries, { query, category }),
 		[entries, recentEntries, query, category],
+	);
+	// Templates show for a category or a search; All on its own stays the grid of looks.
+	const shownTemplates = useMemo(
+		() =>
+			category === RECENT || category === myLooks || (!category && !query.trim())
+				? []
+				: filterTemplates(templates, { query, category }),
+		[templates, query, category, myLooks],
 	);
 	const selected = useMemo(
 		() => selectedIds.map((id) => seq?.clips[id]).filter((c): c is Clip => !!c),
@@ -162,6 +180,23 @@ export function LooksBrowser(props: {
 				return;
 			}
 			finish(pickLook(session, entry, colorway?.id));
+		},
+		[finish],
+	);
+
+	const onInsertTemplate = useCallback(
+		async (entry: TemplateEntry) => {
+			const { session } = current.current;
+			endPreview(session);
+			// TL-078: a 3D template's cost is said before it is taken on, as making a layer 3D does.
+			if (entry.cost !== 'fast' && !cost3dAcknowledged()) {
+				const ok = await openDialog<boolean>(COST_3D_DIALOG, {
+					title: t('Insert 3D Title Template'),
+					primaryLabel: t('Insert'),
+				});
+				if (!ok) return;
+			}
+			finish(insertTitleTemplate(session, entry));
 		},
 		[finish],
 	);
@@ -356,38 +391,50 @@ export function LooksBrowser(props: {
 			{category === myLooks ? (
 				<MyLooksBar session={session} library={user} onMessage={(kind, text) => setMessage({ kind, text })} />
 			) : null}
+			{shownTemplates.length ? (
+				<TemplateList
+					templates={shownTemplates}
+					fill={visible.length === 0}
+					disabledReason={
+						!seqId ? t('Open a sequence to use looks.') : readOnly ? t('This project is read-only.') : null
+					}
+					onInsert={(e) => void onInsertTemplate(e)}
+				/>
+			) : null}
 			{visible.length === 0 ? (
-				<div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 p-3 text-center">
-					{category === myLooks && !query.trim() ? (
-						<p className="text-pr-small text-pr-muted" data-testid="my-looks-empty">
-							{userLooksUnavailable(user) && user.status !== 'ready'
-								? userLooksUnavailable(user)
-								: t(
-										'No looks of your own yet. Select a clip with a look and choose Save to My Looks…, or import a looks file.',
-									)}
-						</p>
-					) : entries.length === 0 ? (
-						<p className="text-pr-small text-pr-muted" data-testid="looks-empty">
-							No looks yet. Style a title in Properties, then choose Graphics ▸ Save Look… to keep it here.
-						</p>
-					) : (
-						<>
-							<p className="text-pr-small text-pr-muted" data-testid="looks-no-match">
-								No looks match this search.
+				shownTemplates.length ? null : (
+					<div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 p-3 text-center">
+						{category === myLooks && !query.trim() ? (
+							<p className="text-pr-small text-pr-muted" data-testid="my-looks-empty">
+								{userLooksUnavailable(user) && user.status !== 'ready'
+									? userLooksUnavailable(user)
+									: t(
+											'No looks of your own yet. Select a clip with a look and choose Save to My Looks…, or import a looks file.',
+										)}
 							</p>
-							<button
-								type="button"
-								className="text-pr-small text-pr-accent hover:underline"
-								onClick={() => {
-									setQuery('');
-									setCategory(null);
-								}}
-							>
-								Show all looks
-							</button>
-						</>
-					)}
-				</div>
+						) : entries.length === 0 ? (
+							<p className="text-pr-small text-pr-muted" data-testid="looks-empty">
+								No looks yet. Style a title in Properties, then choose Graphics ▸ Save Look… to keep it here.
+							</p>
+						) : (
+							<>
+								<p className="text-pr-small text-pr-muted" data-testid="looks-no-match">
+									No looks match this search.
+								</p>
+								<button
+									type="button"
+									className="text-pr-small text-pr-accent hover:underline"
+									onClick={() => {
+										setQuery('');
+										setCategory(null);
+									}}
+								>
+									Show all looks
+								</button>
+							</>
+						)}
+					</div>
+				)
 			) : (
 				<LookGrid
 					entries={visible}
@@ -412,6 +459,8 @@ export function LooksBrowser(props: {
 						'Open a sequence to use looks.'
 					) : readOnly ? (
 						'This project is read-only.'
+					) : visible.length === 0 && shownTemplates.length ? (
+						t('Click a template to insert it at the playhead.')
 					) : (
 						statusLine(selected.length, targets.length)
 					)}

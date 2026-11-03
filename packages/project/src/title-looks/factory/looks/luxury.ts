@@ -55,7 +55,17 @@ export const LUXURY_LOOKS = [
 		layers: [
 			shadow({ angle: 90, distance: 1.4, blur: 8, opacity: 55 }),
 			face(role('face'), { finish: 'metal', metalKind: 'gold', metalTint: 70, metalSize: 8, metalCurve: 30 }),
-			generator('glints', { placement: 'highlights', large: 2, small: 4, size: 16, twinkle: 60 }),
+			// Judged over time (generator sheet at 0.25, 1.5 and 5 s): glints at 16 % of the text size with a deep twinkle were
+			// a few dark pixels at every time, so the look showed no light. Thin capitals hold one or two highlight peaks (peaks
+			// and scatter placements found no more), so the stars that do land are made large, bright and steady.
+			generator('glints', {
+				placement: 'highlights',
+				large: 3,
+				small: 6,
+				size: 48,
+				twinkle: 30,
+				intensity: 170,
+			}),
 		],
 	}),
 	luxury({
