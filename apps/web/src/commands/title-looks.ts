@@ -143,6 +143,9 @@ export const titleLookCommands: UiCommand[] = [
 		description: 'Adds the looks of a .json looks file to My Looks.',
 		scope: 'global',
 		capability: 'engine',
+		// My Looks are not a project's, but the menus that run these exist in one.
+		when: (ctx) => !!ctx.session,
+		disabledReason: (ctx) => (ctx.session ? undefined : 'Open a project first'),
 		run: async (ctx) => {
 			await ensureUserLooks(ctx.engine);
 			const r = await importMyLooks();
@@ -155,6 +158,9 @@ export const titleLookCommands: UiCommand[] = [
 		description: 'Saves every look of My Looks as one .json file to share or keep.',
 		scope: 'global',
 		capability: 'engine',
+		// My Looks are not a project's, but the menus that run these exist in one.
+		when: (ctx) => !!ctx.session,
+		disabledReason: (ctx) => (ctx.session ? undefined : 'Open a project first'),
 		run: async (ctx) => {
 			await ensureUserLooks(ctx.engine);
 			const s = userLookLibrary().getState();
