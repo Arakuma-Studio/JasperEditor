@@ -937,7 +937,9 @@ Status of the foundation; streams still in progress update this list. Evidence: 
   (TL-091 is a look's control). In a look they take any gradient.
 - **Soft alpha has its edge at half opacity**: a soft picture (a glow's tail reaching a Keyline after it) that is never more than half
   opaque has no edge, and one fading in gets its edge when it passes half. Hard-edged pictures keep the local threshold, so a glyph
-  fading in still has its rim fade in with it.
+  fading in still has its rim fade in with it. A thin part that hovers around half opacity gets a broken outline: in
+  `title-look.e2e.test.ts`'s glows frames, the floor line under the glowing title draws a dotted keyline (the ragged ring the
+  keyline drew far out in the glow's tail is gone).
 - **Deep Glow is slow on software GL**: ≈ 7 s per frame at full resolution for a title, ≈ 17 s for a full frame on this host
   ([performance.md](performance.md) §7).
 - **Handles (TL-092) are declared, not drawn**: shadow offset and light angle are in each layer's `handles`; the Program monitor
