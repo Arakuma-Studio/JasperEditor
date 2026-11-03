@@ -143,6 +143,27 @@ describe('generators', () => {
 		}
 	});
 
+	it("Lightning's bolt length and capture have hard maxima, on the layer and on the effect", () => {
+		const t = titleLayerType('generator:lightning')!;
+		const spec = (n: string) =>
+			layerParamSpecs(t).find((p) => p.name === n) as unknown as { default: number; range: object };
+		expect(spec('boltLength').range).toMatchObject({ min: 1, softMax: 400, max: 800 });
+		expect(spec('capture').range).toMatchObject({ min: 0.5, softMax: 80, max: 160 });
+		// The fingerprints read the default and the slider end only (perturbed = default + (softMax − default) / 3).
+		expect([spec('boltLength').default, spec('capture').default]).toEqual([110, 20]);
+		const fx = TITLE_GENERATOR_EFFECTS.find((e) => e.id === 'jasper.generator.lightning')!;
+		for (const [n, max] of [
+			['boltLength', 800],
+			['capture', 160],
+		] as const)
+			expect(fx.params.find((p) => p.name === n)?.range?.max, n).toBe(max);
+		let n = 0;
+		const id = () => `apl_${String(++n).padStart(16, '0')}`;
+		const over = appearanceFromRecipe({ layers: [{ type: 'generator:lightning' }] }, id);
+		over.layers[0]!.params.boltLength = { value: 900, keyframes: [] };
+		expect(appearanceProblem(over)).toMatch(/boltLength: 900 is out of range/);
+	});
+
 	it('are the sixteen of TL-061', () => {
 		expect(TITLE_GENERATORS.map((g) => g.id).sort()).toEqual(
 			[

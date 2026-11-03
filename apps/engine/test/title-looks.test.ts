@@ -231,6 +231,29 @@ describe('user look library (TL-054)', () => {
 			]);
 		});
 
+	it('answers 400 LOOK_TOO_DEEP to a body nested too deep to measure (a RangeError, a 500, on Node 20 and 22), on import and save', async () => {
+		const app = await makeApp();
+		const depth = 20_000;
+		const deep = `${'['.repeat(depth)}${']'.repeat(depth)}`;
+		const imp = await app.inject({
+			method: 'POST',
+			url: '/api/title-looks/import',
+			headers: JSON_H,
+			payload: `{"file":{"format":"jasper-title-looks","version":1,"looks":[{"name":"Deep","recipe":${deep}}]}}`,
+		});
+		expect([imp.statusCode, imp.json().code]).toEqual([400, 'LOOK_TOO_DEEP']);
+		const save = await app.inject({
+			method: 'POST',
+			url: '/api/title-looks',
+			headers: JSON_H,
+			payload: `{"name":"Deep","recipe":{"layers":${deep}}}`,
+		});
+		expect([save.statusCode, save.json().code]).toEqual([400, 'LOOK_TOO_DEEP']);
+		expect((await app.inject({ method: 'GET', url: '/api/title-looks', headers: H })).json().revision).toBe(
+			0,
+		);
+	});
+
 	it('never writes a newer library: it is read-only here', async () => {
 		const appdir = tempAppdir();
 		const file = appdirPaths(appdir).titleLooksFile;

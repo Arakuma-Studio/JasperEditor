@@ -22,6 +22,7 @@ import {
 	type EffectInstance,
 	evaluate,
 	expressionRefToParamPath,
+	FX_MAX_PADDING,
 	type LookRecipe,
 	loadProject,
 	lookReach,
@@ -1275,6 +1276,20 @@ describe('padding (TL-033)', () => {
 		const rim = layerOf(h, t, 'rim').id;
 		h.ok([{ type: 'expression.set', target: ['appearance', fx, rim, 'width'], text: '3' }]);
 		expect(titleLookBleed(lookOf(h, t), clip)).toBeNull();
+	});
+
+	it('the bake crop never asks for more than FX_MAX_PADDING, and a non-finite reach keeps the most', () => {
+		const { h, t } = applied();
+		const huge = {
+			source: { text: { style: { sizePx: 50_000 } } },
+			intrinsicBox: { width: 200_000, height: 50_000 },
+		};
+		expect(titleLookBleed(lookOf(h, t), huge)).toBe(FX_MAX_PADDING);
+		const broken = {
+			source: { text: { style: { sizePx: Number.NaN } } },
+			intrinsicBox: { width: Number.NaN, height: 1 },
+		};
+		expect(titleLookBleed(lookOf(h, t), broken)).toBe(FX_MAX_PADDING);
 	});
 
 	it('covers every enabled layer across the clip, sides by direction, and ignores disabled layers', () => {

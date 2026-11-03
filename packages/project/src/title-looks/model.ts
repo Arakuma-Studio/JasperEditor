@@ -244,9 +244,39 @@ export const isPlainObject = (v: unknown): v is Record<string, unknown> =>
 /** An unanimated value. */
 export const staticAnim = <T>(value: T): Animatable<T> => ({ value, keyframes: [] });
 
-/** TL-013: serialized size of an appearance in bytes (UTF-8). */
+/**
+ * Deepest nesting a look, recipe or looks file may have. Real ones are about 15 levels deep (file, look, recipe, layer,
+ * param, keys, gradient stops); `JSON.stringify` of much deeper data overflows the stack on the Node versions we support.
+ */
+export const MAX_LOOK_JSON_DEPTH = 64;
+
+/**
+ * Whether `v` nests objects or arrays deeper than `max` levels. Iterative and depth-first, so it never overflows and a
+ * cycle is found too deep as soon as one path around it reaches `max`.
+ */
+export function jsonDepthExceeds(v: unknown, max = MAX_LOOK_JSON_DEPTH): boolean {
+	const stack: [unknown, number][] = [[v, 0]];
+	while (stack.length) {
+		const [x, d] = stack.pop()!;
+		if (typeof x !== 'object' || x === null) continue;
+		if (d >= max) return true;
+		for (const y of Array.isArray(x) ? x : Object.values(x))
+			if (typeof y === 'object' && y !== null) stack.push([y, d + 1]);
+	}
+	return false;
+}
+
+/**
+ * TL-013: serialized size of an appearance in bytes (UTF-8). Never throws: what `JSON.stringify` cannot write (too deep
+ * for the stack, a cycle) measures as infinitely large, so every limit check refuses it.
+ */
 export function appearanceBytes(a: unknown): number {
-	const s = JSON.stringify(a) ?? '';
+	let s: string;
+	try {
+		s = JSON.stringify(a) ?? '';
+	} catch {
+		return Number.POSITIVE_INFINITY;
+	}
 	// UTF-8 length without an encoder: every code unit above 0x7f counts as its worst case of 3 bytes.
 	let n = s.length;
 	for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) > 0x7f) n += 2;

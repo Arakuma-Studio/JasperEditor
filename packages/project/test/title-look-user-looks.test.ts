@@ -3,6 +3,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
 	type Appearance,
+	appearanceBytes,
 	appearanceFromRecipe,
 	buildEffectPreset,
 	buildLookBundle,
@@ -11,6 +12,7 @@ import {
 	defaultEffectRegistry,
 	type EffectInstance,
 	FACTORY_LOOKS,
+	jsonDepthExceeds,
 	type LookRecipe,
 	parseLookFile,
 	parseUserLook,
@@ -106,6 +108,25 @@ describe('user looks (TL-054)', () => {
 			['x'.repeat(9 * 1024 * 1024)],
 		])
 			expect(parseLookFile(file).ok).toBe(false);
+	});
+
+	it('refuses data nested too deep to measure, by name, and never throws on it (regression: RangeError)', () => {
+		let deep: unknown = 1;
+		for (let i = 0; i < 100_000; i++) deep = { a: deep };
+		const file = { format: 'jasper-title-looks', version: 1, looks: [look({ recipe: deep })] };
+		expect(parseLookFile(file)).toMatchObject({ ok: false, code: 'LOOK_TOO_DEEP' });
+		expect(recipeProblem({ layers: [{ type: 'face', params: { x: deep } }] })).toMatch(/nested more than 64/);
+		expect(jsonDepthExceeds(deep)).toBe(true);
+		expect(jsonDepthExceeds(file.looks[0]!.recipe, 100_001)).toBe(false);
+		// What JSON.stringify cannot write measures as infinitely large: every limit refuses it, nothing throws.
+		const cyclic: Record<string, unknown> = { layers: [] };
+		cyclic.self = cyclic;
+		expect(appearanceBytes(cyclic)).toBe(Number.POSITIVE_INFINITY);
+		expect(jsonDepthExceeds(cyclic)).toBe(true);
+		expect(recipeProblem(cyclic)).toMatch(/nested more than/);
+		// A real look is far from the bound.
+		for (const f of FACTORY_LOOKS)
+			expect(jsonDepthExceeds(buildLookBundle([look({ recipe: f.recipe }) as never]), 24)).toBe(false);
 	});
 
 	it('copies the looks it bundles', () => {

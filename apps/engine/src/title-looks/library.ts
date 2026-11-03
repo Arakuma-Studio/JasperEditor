@@ -11,6 +11,8 @@ import { dirname } from 'node:path';
 import {
 	buildLookBundle,
 	CROCKFORD_ALPHABET,
+	jsonDepthExceeds,
+	LOOK_TOO_DEEP_MESSAGE,
 	MAX_TITLE_LOOK_NAME,
 	MAX_USER_LOOKS,
 	parseLookFile,
@@ -199,6 +201,8 @@ export class UserLookLibrary {
 
 	/** Save Look: a new entry, with a fresh id and timestamps. */
 	save(init: LookInit): Promise<UserLook> {
+		if (jsonDepthExceeds(init))
+			return Promise.reject(new HttpError(400, 'LOOK_TOO_DEEP', `The look is ${LOOK_TOO_DEEP_MESSAGE}`));
 		return this.mutate((s) => {
 			this.assertRoom(s);
 			const r = this.entry(init, this.now());
@@ -244,7 +248,7 @@ export class UserLookLibrary {
 	/** Import: every valid look of the file gets a new id, and a name that is free. Bad entries are reported by index. */
 	import(file: unknown): Promise<{ looks: UserLook[]; errors: { index: number; message: string }[] }> {
 		const read = parseLookFile(file);
-		if (!read.ok) return Promise.reject(new HttpError(400, 'LOOK_INVALID', read.message));
+		if (!read.ok) return Promise.reject(new HttpError(400, read.code ?? 'LOOK_INVALID', read.message));
 		return this.mutate((s) => {
 			const now = this.now();
 			const looks: UserLook[] = [];

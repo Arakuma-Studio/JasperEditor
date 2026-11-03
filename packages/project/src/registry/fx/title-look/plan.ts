@@ -22,7 +22,7 @@ import type {
 	GlslChunk,
 	ShaderPass,
 } from '../shader.ts';
-import { resolveIncludes } from '../shader.ts';
+import { FX_MAX_PADDING, resolveIncludes } from '../shader.ts';
 import {
 	FILLED_DEPTH,
 	isPaintParam,
@@ -286,7 +286,10 @@ export function titleLookBleed(
 	const r = appearanceClipReach(a);
 	const k = (clipLookUnit(clip) ?? Math.min(clip.intrinsicBox.width, clip.intrinsicBox.height)) * 0.01;
 	const lean = Math.ceil(r.boxHeight * clip.intrinsicBox.height);
-	return Math.ceil(Math.max(r.left, r.top, r.right, r.bottom) * k) + PADDING_GUARD + lean;
+	const bleed = Math.ceil(Math.max(r.left, r.top, r.right, r.bottom) * k) + PADDING_GUARD + lean;
+	// The padding the look draws into is at most FX_MAX_PADDING (`gpu.padding`): so is the crop that keeps it. A
+	// non-finite reach (a damaged unit) keeps the most.
+	return Number.isFinite(bleed) ? Math.min(FX_MAX_PADDING, Math.max(0, bleed)) : FX_MAX_PADDING;
 }
 
 /** The input's alpha bounds as one texel `u_tlBounds`, canvas px. Fixed steps: 8⁵ covers the largest canvas. */

@@ -9,7 +9,9 @@ import {
 	appearanceBytes,
 	type Colorway,
 	ColorwaySchema,
+	jsonDepthExceeds,
 	MAX_LOOK_COLORWAYS,
+	MAX_LOOK_JSON_DEPTH,
 	MAX_TITLE_LOOK_NAME,
 } from './model.ts';
 import { appearanceFromRecipe, type LookRecipe, LookRecipeSchema, MAX_RECIPE_BYTES } from './recipe.ts';
@@ -46,6 +48,7 @@ export type ParsedUserLook = { ok: true; look: UserLook } | { ok: false; message
 
 /** Why a recipe cannot be stored, or null: it must build a valid appearance within TL-013's limits. */
 export function recipeProblem(recipe: unknown): string | null {
+	if (jsonDepthExceeds(recipe)) return LOOK_TOO_DEEP_MESSAGE;
 	if (appearanceBytes(recipe) > MAX_RECIPE_BYTES) return 'the recipe is too large';
 	const r = LookRecipeSchema.safeParse(recipe);
 	if (!r.success) {
@@ -76,7 +79,12 @@ export function parseUserLook(raw: unknown): ParsedUserLook {
 	return { ok: true, look: r.data };
 }
 
-export type ParsedLookFile = { ok: true; entries: unknown[] } | { ok: false; message: string };
+/** Why a look, recipe or file is refused before it is measured (`code: 'LOOK_TOO_DEEP'` on a file). */
+export const LOOK_TOO_DEEP_MESSAGE = `nested more than ${MAX_LOOK_JSON_DEPTH} levels deep: not a look`;
+
+export type ParsedLookFile =
+	| { ok: true; entries: unknown[] }
+	| { ok: false; message: string; code?: 'LOOK_TOO_DEEP' };
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
 	typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -86,6 +94,8 @@ const isObject = (v: unknown): v is Record<string, unknown> =>
  * importer takes the good ones and reports the others by index.
  */
 export function parseLookFile(raw: unknown): ParsedLookFile {
+	if (jsonDepthExceeds(raw))
+		return { ok: false, code: 'LOOK_TOO_DEEP', message: `The file is ${LOOK_TOO_DEEP_MESSAGE}` };
 	if (appearanceBytes(raw) > MAX_LOOK_FILE_BYTES)
 		return { ok: false, message: `A looks file holds at most ${MAX_LOOK_FILE_BYTES} bytes` };
 	let entries: unknown[];

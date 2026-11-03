@@ -453,7 +453,9 @@ export const GENERATOR_LIGHTNING = defineGenerator({
 		lp.number('crawlSpeed', 'Crawl Speed', 1.2, { min: -20, max: 20, softMin: 0, softMax: 6, step: 0.01 }),
 		lp.number('count', 'Bolt Count', 12, { min: 1, max: 40, step: 1 }),
 		lp.number('arcs', 'Arc Count', 24, { min: 1, max: 60, step: 1 }),
-		lp.distance('boltLength', 'Bolt Length', 110, { min: 1, softMax: 400 }),
+		// Hard maxima at twice the slider's end: a bolt's reach is about 2.8 lengths (jagged), and a site up to Capture away
+		// (twice it for crawling arcs) is reached; both are padding. Default and slider end set the fingerprints.
+		lp.distance('boltLength', 'Bolt Length', 110, { min: 1, softMax: 400, max: 800 }),
 		lp.percent('jaggedness', 'Jaggedness', 55, { range: { max: 150 } }),
 		lp.percent('branches', 'Branching', 60),
 		lp.percent('wrinkle', 'Wrinkle', 60, { range: { max: 150 } }),
@@ -462,7 +464,7 @@ export const GENERATOR_LIGHTNING = defineGenerator({
 		lp.number('glowStrength', 'Glow Strength', 100, { min: 0, max: 300, step: 1 }, { unit: '%' }),
 		lp.color('color', 'Glow Colour', hex('#4fd8ff')),
 		lp.number('intensity', 'Intensity', 100, { min: 0, max: 300, step: 1 }, { unit: '%' }),
-		lp.distance('capture', 'Capture', 20, { min: 0.5, softMax: 80 }),
+		lp.distance('capture', 'Capture', 20, { min: 0.5, softMax: 80, max: 160 }),
 		anchorParam(),
 		variationParam(),
 	],
