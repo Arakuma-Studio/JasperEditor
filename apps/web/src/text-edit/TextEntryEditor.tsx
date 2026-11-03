@@ -8,8 +8,10 @@
 // - Esc, a click away or Ctrl+Enter commit, Enter is a new line, and the whole entry is one History step. Ctrl+Z inside
 //   undoes typing only: the entry holds a gesture, and History is out of reach until it ends.
 // What was typed lives in `EntryDraft`, outside React: a render failure, the page closing and the overlay unmounting all
-// commit it. A refused commit keeps the editor open with the reason. Keys typed here reach no shortcut: the element
-// carries `data-keymap-suspend` and stops propagation.
+// commit it. A refused commit keeps the editor open with the reason; where no editor stays open (a failure, an unmount)
+// a new one opens on the text. While typing pauses the draft is checkpointed to the tab (checkpoint.ts), and a Program
+// monitor with no entry open offers a checkpoint left by a killed renderer back. Keys typed here reach no shortcut: the
+// element carries `data-keymap-suspend` and stops propagation.
 import {
 	contentSpans,
 	rgbaCss,
@@ -32,6 +34,8 @@ import {
 	TITLE_LOOK_EFFECT_ID,
 	type Vec2,
 } from '@jasper/project';
+import { useStoreSelector } from '@jasper/session/react';
+import { Button } from '@jasper/ui';
 import {
 	Component,
 	type CSSProperties,
@@ -57,6 +61,8 @@ import { sequenceToLayer } from '../template-edit/hit.ts';
 import { showTemplateEditMessage } from '../template-edit/store.ts';
 import { layerScale, usePlayhead } from '../template-edit/TemplateTextEditor.tsx';
 import { resolveProgramScene } from '../three-d/scene.ts';
+import { beginTextEntry } from './begin.ts';
+import { checkpointEpoch, clearCheckpoint, readCheckpoint } from './checkpoint.ts';
 import { EntryDraft, liveDraft, setLiveDraft, storedContent } from './draft.ts';
 import { RunToolbar, runStateOf } from './RunToolbar.tsx';
 import { endTextEntry, startTextEntry, type TextEntry, textEntryStore } from './store.ts';
@@ -64,15 +70,70 @@ import { endTextEntry, startTextEntry, type TextEntry, textEntryStore } from './
 /** Marks controls of the entry: focus moving to one of them is not a click away. */
 const ENTRY_UI = 'data-text-entry-ui';
 
-/** Program overlay (always mounted): renders the entry open on this session. */
+/** Program overlay (always mounted): renders the entry open on this session, or offers a checkpoint back. */
 export function TextEntryHost(props: ProgramOverlayHostProps) {
 	const cur = useStore(textEntryStore, (s) => s.current);
-	if (!cur || cur.session !== props.session) return null;
+	if (!cur || cur.session !== props.session) return <RestoreOffer session={props.session} />;
 	return (
 		<EntryBoundary key={cur.seq} entry={cur}>
 			<TextEntryEditor entry={cur} {...props} />
 		</EntryBoundary>
 	);
+}
+
+const SNIPPET_LENGTH = 48;
+
+/** A checkpoint of this project with no entry open: a renderer was killed mid-entry (or a refusal left the text). */
+function RestoreOffer({ session }: { session: ProgramOverlayHostProps['session'] }) {
+	useStore(checkpointEpoch, (s) => s.n);
+	const sequenceId = useStoreSelector(session.store, (s) => s.activeSequenceId);
+	const cp = readCheckpoint(session.projectId);
+	if (!cp || cp.sequenceId !== sequenceId) return null;
+	const flat = cp.text.replace(/\s+/g, ' ').trim();
+	const snippet = flat.length > SNIPPET_LENGTH ? `${flat.slice(0, SNIPPET_LENGTH - 1)}…` : flat;
+	const restore = () =>
+		beginTextEntry(session, {
+			point: cp.point,
+			frame: cp.frame,
+			clipId: cp.clipId,
+			recovered: { text: cp.text, runs: cp.runs },
+		});
+	return (
+		<div
+			role="status"
+			className="pointer-events-auto absolute top-2 left-1/2 z-10 flex max-w-[480px] -translate-x-1/2 items-center gap-2 rounded-pr-control bg-pr-tooltip px-2 py-1 text-pr-small shadow"
+			data-testid="text-entry-restore"
+		>
+			<span className="min-w-0 flex-1 truncate" title={cp.text}>
+				{t('Text you were typing was not added: “{0}”', snippet)}
+			</span>
+			<Button variant="primary" onClick={restore} data-testid="text-entry-restore-button">
+				Restore
+			</Button>
+			<Button variant="quiet" onClick={() => clearCheckpoint(session.projectId)}>
+				Discard
+			</Button>
+		</div>
+	);
+}
+
+/**
+ * A commit refused where no editor stays open to show why (AGENTS §0): the entry's own editor gives way to a new one
+ * on the same text, unless `reopen` is false or a newer entry took its place; then the message carries the text. The
+ * tab's checkpoint keeps it either way until it is written.
+ */
+function keepRefused(
+	entry: TextEntry,
+	draft: EntryDraft,
+	message: (text: string) => string,
+	reopen: boolean,
+) {
+	const { text, runs } = draft.getState();
+	draft.cancel({ keepText: true });
+	const current = textEntryStore.getState().current;
+	if (reopen && (!current || current.seq === entry.seq))
+		startTextEntry({ ...entry, recovered: { text, runs } });
+	else showTemplateEditMessage(entry.session, message(text), entry.point);
 }
 
 /**
@@ -101,14 +162,12 @@ class EntryBoundary extends Component<{ entry: TextEntry; children: ReactNode },
 			);
 			return;
 		}
-		const { text, runs } = draft!.getState();
-		if (entry.recovered)
-			showTemplateEditMessage(
-				entry.session,
-				t('Text entry stopped: {0}. Your text: {1}', errorText(error), text),
-				entry.point,
-			);
-		else startTextEntry({ ...entry, recovered: { text, runs } });
+		keepRefused(
+			entry,
+			draft!,
+			(text) => t('Text entry stopped: {0}. Your text: {1}', errorText(error), text),
+			!entry.recovered,
+		);
 	}
 
 	render() {
@@ -224,12 +283,22 @@ function TextEntryEditor({
 		return () => {
 			window.removeEventListener('pagehide', onHide);
 			mounted.current = false;
-			// After the commit phase: an effect that is only being replayed (React's StrictMode) is back by then.
+			// After the commit phase: an effect that is only being replayed (React's StrictMode) is back by then. A refusal
+			// (a locked track, a removed clip, read-only) must not cost the text when the overlay mounts again, as a change
+			// of language does: a new editor opens on it.
 			queueMicrotask(() => {
-				if (!mounted.current && !draft.closed) draft.commit();
+				if (mounted.current || draft.closed) return;
+				const r = draft.commit();
+				if (!r.ok)
+					keepRefused(
+						entry,
+						draft,
+						(text) => t('The text could not be written: {0}. Your text: {1}', r.error, text),
+						true,
+					);
 			});
 		};
-	}, [draft, finish]);
+	}, [draft, entry, finish]);
 
 	// Playback started, or the clip left the monitor: the entry ends.
 	useEffect(() => {

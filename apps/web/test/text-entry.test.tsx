@@ -14,6 +14,7 @@ import {
 import { EditorSession } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import fc from 'fast-check';
 import { StrictMode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -32,6 +33,7 @@ vi.mock('../src/three-d/scene.ts', async (importOriginal) => {
 
 const { beginTextEntry } = await import('../src/text-edit/begin.ts');
 const { liveDraft } = await import('../src/text-edit/draft.ts');
+const { CHECKPOINT_IDLE_MS, readCheckpoint } = await import('../src/text-edit/checkpoint.ts');
 const { textEntryStore } = await import('../src/text-edit/store.ts');
 const { TextEntryHost } = await import('../src/text-edit/TextEntryEditor.tsx');
 const { textDoubleClick } = await import('../src/text-edit/register.ts');
@@ -143,6 +145,7 @@ const press = (key: string, init: Record<string, unknown> = {}) =>
 
 afterEach(() => {
 	cleanup();
+	sessionStorage.clear();
 	flags.sceneBoom = false;
 	textEntryStore.setState({ current: null });
 	endTemplateEdit();
@@ -451,6 +454,31 @@ describe('typed text survives (AGENTS §0)', () => {
 		expect(s.gestureActive).toBe(false);
 	});
 
+	it('an unmount whose commit is refused opens a new editor on the text, and the remount shows it', async () => {
+		const s = newSession();
+		const r = mount(s);
+		act(() => {
+			beginTextEntry(s, { point: [960, 540], frame: 0 });
+		});
+		type('Keep me');
+		s.store.setState({ readOnly: true });
+		r.unmount();
+		await act(async () => {
+			await Promise.resolve();
+		});
+		expect(committedClips(s)).toHaveLength(0);
+		expect(textEntryStore.getState().current?.recovered?.text).toBe('Keep me');
+		expect(s.gestureActive).toBe(false);
+		// The overlay comes back (a change of language remounts it): the text is there, and commits once allowed.
+		s.store.setState({ readOnly: false });
+		mount(s);
+		expect(value()).toBe('Keep me');
+		press('Escape');
+		expect(committedClips(s).map((c) => (c as { content: { text: string } }).content.text)).toEqual([
+			'Keep me',
+		]);
+	});
+
 	it('the page closing commits', () => {
 		const s = newSession();
 		openNew(s);
@@ -498,6 +526,101 @@ describe('typed text survives (AGENTS §0)', () => {
 		});
 		expect(value()).toBe('日本語');
 		expect(s.getState().transient).not.toBeNull();
+	});
+});
+
+describe('a killed renderer (AGENTS §0)', () => {
+	const idle = () =>
+		act(async () => {
+			await new Promise((r) => setTimeout(r, CHECKPOINT_IDLE_MS + 100));
+		});
+
+	it('checkpoints the draft to the tab when typing pauses; the commit clears it', async () => {
+		const s = newSession();
+		openNew(s);
+		type('Half a ti');
+		expect(readCheckpoint(s.projectId)).toBeNull();
+		await idle();
+		expect(readCheckpoint(s.projectId)).toMatchObject({ text: 'Half a ti', clipId: null, point: [960, 540] });
+		press('Escape');
+		expect(readCheckpoint(s.projectId)).toBeNull();
+	});
+
+	it('offers the checkpoint on the next Program monitor of the project; Restore brings the text back', async () => {
+		const first = newSession();
+		const id = addText(first, 'Old title');
+		const before = first.getCommitted();
+		openEdit(first, id);
+		type('New title, half typed');
+		await idle();
+		const key = `jasper:text-entry:${first.projectId}`;
+		const stored = sessionStorage.getItem(key);
+		expect(stored).toBeTruthy();
+		// The renderer dies: nothing commits. The reloaded tab opens the project as it was saved, and the storage remains.
+		cleanup();
+		textEntryStore.setState({ current: null });
+		sessionStorage.setItem(key, stored!);
+		const s = newSession(before);
+		mount(s);
+		const offer = screen.getByTestId('text-entry-restore');
+		expect(offer.textContent).toContain('New title, half typed');
+		fireEvent.click(screen.getByTestId('text-entry-restore-button'));
+		expect(screen.queryByTestId('text-entry-restore')).toBeNull();
+		expect(value()).toBe('New title, half typed');
+		const entries = s.getState().history.entries.length;
+		press('Escape');
+		expect(clipOf(s, id).content.text).toBe('New title, half typed');
+		expect(s.getState().history.entries.length).toBe(entries + 1);
+		expect(readCheckpoint(s.projectId)).toBeNull();
+	});
+
+	it('Discard drops the checkpoint; one of another sequence or a foreign shape is not offered', () => {
+		const s = newSession();
+		const key = `jasper:text-entry:${s.projectId}`;
+		const cp = {
+			v: 1,
+			sequenceId: s.getState().activeSequenceId,
+			clipId: null,
+			point: [10, 10],
+			frame: 0,
+			text: 'Lost words',
+			runs: [],
+			savedAt: 'x',
+		};
+		sessionStorage.setItem(key, JSON.stringify({ ...cp, sequenceId: 'seq_other' }));
+		mount(s);
+		expect(screen.queryByTestId('text-entry-restore')).toBeNull();
+		cleanup();
+		sessionStorage.setItem(key, JSON.stringify({ ...cp, point: ['x', 1] }));
+		mount(s);
+		expect(screen.queryByTestId('text-entry-restore')).toBeNull();
+		cleanup();
+		sessionStorage.setItem(key, JSON.stringify(cp));
+		mount(s);
+		expect(screen.getByTestId('text-entry-restore').textContent).toContain('Lost words');
+		fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+		expect(screen.queryByTestId('text-entry-restore')).toBeNull();
+		expect(sessionStorage.getItem(key)).toBeNull();
+	});
+
+	it('reads any stored value without throwing (fuzz)', () => {
+		const s = newSession();
+		const key = `jasper:text-entry:${s.projectId}`;
+		fc.assert(
+			fc.property(
+				fc.oneof(
+					fc.string(),
+					fc.json(),
+					fc.jsonValue().map((v) => JSON.stringify(v)),
+				),
+				(raw) => {
+					sessionStorage.setItem(key, raw);
+					const r = readCheckpoint(s.projectId);
+					expect(r === null || (typeof r.text === 'string' && r.text.length > 0)).toBe(true);
+				},
+			),
+			{ numRuns: 300 },
+		);
 	});
 });
 

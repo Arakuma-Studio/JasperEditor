@@ -1,6 +1,6 @@
 // Opening an in-place text entry (spec 19 TL-085): the Type tool's click and a double-click on a text clip. Refusals
 // explain themselves at the pointer, through the same short message as the template text editor.
-import type { Clip, Vec2 } from '@jasper/project';
+import type { Clip, TextRun, Vec2 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { t } from '../i18n/runtime.ts';
 import { activeSequence } from '../panels/program/edits.ts';
@@ -25,6 +25,8 @@ export type BeginTextEntry = {
 	/** The clip under the point, if any: a text clip is edited, anything else gets a new text on top. */
 	clipId?: string | null;
 	client?: Vec2 | null;
+	/** Text to start from instead of the clip's (a checkpoint restored after a killed renderer). */
+	recovered?: { text: string; runs: TextRun[] };
 };
 
 /** Opens an entry; true when it did or explained why not. */
@@ -61,6 +63,7 @@ export function beginTextEntry(session: EditorSession, o: BeginTextEntry): boole
 		point,
 		frame: o.frame,
 		client: o.client ?? null,
+		...(o.recovered ? { recovered: o.recovered } : {}),
 	});
 	return true;
 }
