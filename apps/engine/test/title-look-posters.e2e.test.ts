@@ -11,7 +11,10 @@ import { tempAppdir } from './helpers.ts';
 const enabled = process.env.REMOTION_E2E === '1';
 const recipe = {
 	palette: { face: [1, 0, 0, 1], keyline: [0, 0, 1, 1] },
-	layers: [{ type: 'rim', params: { width: 12 } }, { type: 'face', params: {} }],
+	layers: [
+		{ type: 'rim', params: { width: 12 } },
+		{ type: 'face', params: {} },
+	],
 };
 const body = { recipe, text: 'POSTER', width: 240 };
 

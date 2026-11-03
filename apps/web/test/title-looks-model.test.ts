@@ -1,8 +1,10 @@
 // Spec 19 §10, the pure parts: the library, the virtual grid's window, posters on the client and on-canvas geometry.
-import { renderHook } from '@testing-library/react';
+
 import { createCounterIdSource, emptyAppearance, type FactoryLook, type Gradient } from '@jasper/project';
+import { renderHook } from '@testing-library/react';
 import { act } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { stepColorway } from '../src/title-looks/actions.ts';
 import { gridStep, gridWindow, scrollToCard } from '../src/title-looks/grid-window.ts';
 import { filterLooks, lookCategories, lookEntries, recentLooks } from '../src/title-looks/library.ts';
 import {
@@ -14,16 +16,21 @@ import {
 	outlineQuad,
 	type Quad,
 } from '../src/title-looks/overlay-geometry.ts';
-import { addStop, convertPaint, paintCss, removeStop, stopAt } from '../src/title-looks/paint.ts';
 import {
-	PosterStore,
+	addStop,
+	convertPaint,
+	flatPalette,
+	paintCss,
+	removeStop,
+	stopAt,
+} from '../src/title-looks/paint.ts';
+import {
 	type PosterState,
+	PosterStore,
 	posterRequest,
 	posterWidth,
 	usePoster,
 } from '../src/title-looks/posters.ts';
-import { stepColorway } from '../src/title-looks/actions.ts';
-import { flatPalette } from '../src/title-looks/paint.ts';
 
 const recipe = { layers: [{ type: 'face' }] };
 const library = [

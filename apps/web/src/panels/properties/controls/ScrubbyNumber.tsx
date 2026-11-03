@@ -390,7 +390,6 @@ export function ScrubbyNumber(props: ScrubbyNumberProps) {
 	return (
 		<span className="inline-flex min-w-0 items-center gap-2">
 			{number}
-			{/* biome-ignore lint/a11y/noStaticElementInteractions: the keyboard steps the value through the number */}
 			<span
 				className={cx(
 					'relative h-[12px] w-[56px] shrink-0 touch-none',

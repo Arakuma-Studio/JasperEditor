@@ -1,16 +1,15 @@
 // Spec 19 TL-090: the look's stack in Effect Controls, below its header: Colours, Light and one twirl per layer, top of the
 // stack first. Rows are drawn by the panel's own renderer, so stopwatches, keyframe lanes and graphs are every row's.
-import type { Command } from '@jasper/project';
+import type { Command, Sequence } from '@jasper/project';
 import { cx, Icon } from '@jasper/ui';
 import type { CSSProperties, ReactNode } from 'react';
 import type { AppearanceBlockModel } from '../panels/effectControls/items.ts';
-import { SummaryLane } from '../panels/effectControls/MiniTimeline.tsx';
 import type { Range } from '../panels/effectControls/lib.ts';
+import { SummaryLane } from '../panels/effectControls/MiniTimeline.tsx';
 import { MiniButton } from '../panels/properties/controls/fields.tsx';
 import { CaretGlyph, TrashGlyph } from '../panels/properties/controls/glyphs.tsx';
-import type { InspectorOps } from '../panels/properties/lib/ops.ts';
 import type { Row } from '../panels/properties/lib/model.ts';
-import type { Sequence } from '@jasper/project';
+import type { InspectorOps } from '../panels/properties/lib/ops.ts';
 import { LIGHT_TARGET, lookFocus } from './focus.ts';
 import { layerName } from './selection.ts';
 

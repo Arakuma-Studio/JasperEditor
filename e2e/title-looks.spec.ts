@@ -42,14 +42,25 @@ const neon = {
 	name: 'Neon',
 	recipe: {
 		palette: { face: [1, 1, 1, 1], glow: [0.1, 0.9, 1, 1], keyline: [0.1, 0.9, 1, 1] },
-		layers: [{ type: 'glow', params: { radius: 30 } }, { type: 'rim', params: { width: 3 } }, { type: 'face' }],
+		layers: [
+			{ type: 'glow', params: { radius: 30 } },
+			{ type: 'rim', params: { width: 3 } },
+			{ type: 'face' },
+		],
 	},
 };
 
 let page: Page;
 let projectId = '';
 
-type Stored = { appearance: { lookId?: string; colorwayId?: string; palette: Record<string, { value: number[] }>; layers: { id: string; type: string; params: Record<string, { value: unknown; keyframes: unknown[] }> }[] } };
+type Stored = {
+	appearance: {
+		lookId?: string;
+		colorwayId?: string;
+		palette: Record<string, { value: number[] }>;
+		layers: { id: string; type: string; params: Record<string, { value: unknown; keyframes: unknown[] }> }[];
+	};
+};
 
 async function look(id: string): Promise<Stored['appearance'] | null> {
 	const seq = await query<{ sequenceId: string }>(page, 'sequence.summary');
@@ -86,7 +97,9 @@ test.afterAll(async () => {
 test('the grid mounts cards with their colourways; a poster comes from the engine', async () => {
 	await expect(page.getByTestId('looks-status')).toContainText('add a title at the playhead');
 	await expect(card('Gold').locator('[data-colorway]')).toHaveCount(2);
-	await expect(card('Gold').locator('[data-poster]')).toHaveAttribute('data-poster', 'ready', { timeout: 180_000 });
+	await expect(card('Gold').locator('[data-poster]')).toHaveAttribute('data-poster', 'ready', {
+		timeout: 180_000,
+	});
 	await page.getByTestId('looks-browser').screenshot({ path: join(OUT, 'grid.png') });
 });
 
@@ -157,7 +170,10 @@ test('Effect Controls keyframes a layer param', async () => {
 	await page.getByTestId(`ec-look-toggle-${rim.id}`).click();
 	await page.getByTestId(`stopwatch-appearance.${rim.id}.width`).click();
 	await expect
-		.poll(async () => (await look(title!.id))!.layers.find((l) => l.id === rim.id)!.params.width!.keyframes.length)
+		.poll(
+			async () =>
+				(await look(title!.id))!.layers.find((l) => l.id === rim.id)!.params.width!.keyframes.length,
+		)
 		.toBe(1);
 	await page.screenshot({ path: join(OUT, 'effect-controls.png') });
 });
@@ -167,7 +183,10 @@ test('undo walks back through it, and save and reload keep the look', async () =
 	await focusTimeline(page);
 	await page.keyboard.press('Control+KeyZ');
 	await expect
-		.poll(async () => (await look(title!.id))!.layers.find((l) => l.type === 'rim')!.params.width!.keyframes.length)
+		.poll(
+			async () =>
+				(await look(title!.id))!.layers.find((l) => l.type === 'rim')!.params.width!.keyframes.length,
+		)
 		.toBe(0);
 	await page.keyboard.press('Control+KeyS');
 	await expect(page.getByText('Saved', { exact: true }).first()).toBeVisible();
@@ -181,7 +200,10 @@ test('undo walks back through it, and save and reload keep the look', async () =
 
 test('Graphics ▸ Apply Look… opens the same grid, and Remove Look leaves the clip plain', async () => {
 	const [title] = await clips(page);
-	await page.locator(`[data-testid="timeline-track-area"] [data-clip-id="${title!.id}"]`).first().click({ position: { x: 12, y: 10 } });
+	await page
+		.locator(`[data-testid="timeline-track-area"] [data-clip-id="${title!.id}"]`)
+		.first()
+		.click({ position: { x: 12, y: 10 } });
 	await page.getByRole('menuitem', { name: 'Graphics' }).click();
 	await page.getByRole('menuitem', { name: 'Apply Look…' }).click();
 	const dialog = page.getByTestId('apply-look-dialog');
@@ -194,4 +216,20 @@ test('Graphics ▸ Apply Look… opens the same grid, and Remove Look leaves the
 	await page.getByRole('menuitem', { name: 'Remove Look' }).click();
 	await expect.poll(() => look(title!.id)).toBeNull();
 	await expect(page.getByTestId('look-none')).toBeVisible();
+});
+
+test('a card dragged onto a clip in the Timeline applies there; on an empty place it adds a title', async () => {
+	const [title] = await clips(page);
+	await page.getByText('Motion Templates', { exact: true }).first().click();
+	await page.getByRole('tab', { name: 'Looks' }).click();
+	const area = page.getByTestId('timeline-track-area');
+	await card('Gold').dragTo(area.locator(`[data-clip-id="${title!.id}"]`).first());
+	await expect.poll(async () => (await look(title!.id))?.layers[0]?.type).toBe('shadow');
+	const box = (await area.boundingBox())!;
+	await card('Neon').dragTo(area, { targetPosition: { x: box.width - 60, y: 30 } });
+	await expect.poll(async () => (await clips(page)).length).toBe(2);
+	const added = (await clips(page)).find((c) => c.id !== title!.id)!;
+	expect(added.kind).toBe('text');
+	expect((await look(added.id))?.layers[0]?.type).toBe('glow');
+	expect((await look(title!.id))?.layers[0]?.type).toBe('shadow');
 });

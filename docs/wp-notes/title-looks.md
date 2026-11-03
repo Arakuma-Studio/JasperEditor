@@ -410,7 +410,8 @@ The extension contract was exercised by copying this note's three worked example
 one-line registrations: they typechecked with no change to the core, and the registry and GL tests picked them up (and failed
 for the missing fingerprints, and for a generator example that was clipped by its own padding, now fixed above).
 
-| Poster, first render and cached, 240 × 136, three layers, SwiftShader, load ≈ 60 on 8 vCPU | ≈ 20 to 60 s, then < 500 ms from disk | `REMOTION_E2E=1 pnpm exec vitest run apps/engine/test/title-look-posters.e2e.test.ts` |
+| Poster from disk, 240 × 136, two layers, SwiftShader, load ≈ 60 on 8 vCPU | under 500 ms (asserted) | `REMOTION_E2E=1 pnpm exec vitest run apps/engine/test/title-look-posters.e2e.test.ts` |
+| Poster, first render, same conditions | ≈ 20 s, not timed alone. Basis: the four tests of that file took 58.6 s for three renders, on a bundle already built | same |
 
 ## Limits
 

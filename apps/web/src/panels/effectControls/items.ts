@@ -31,10 +31,10 @@ import {
 	type TextAnimatorGroup,
 	type TextClip,
 	type TextSelector,
+	TITLE_LOOK_EFFECT_ID,
 	templateParamSections,
 	templateParamVisible,
 	textAnimatorPropertySpecs,
-	TITLE_LOOK_EFFECT_ID,
 	walkItems,
 } from '@jasper/project';
 import { shapePropertyKeys } from '../../shapes/keys.ts';

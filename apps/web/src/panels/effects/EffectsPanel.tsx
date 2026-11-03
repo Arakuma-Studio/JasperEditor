@@ -24,8 +24,8 @@ import {
 	applyEffectToClips,
 	clipsAccepting,
 	effectTree,
-	GENERATOR_EFFECT_PREFIX,
 	endTransitionDrag,
+	GENERATOR_EFFECT_PREFIX,
 	writeEffectDragPayload,
 	writeTransitionDragPayload,
 } from './drag.ts';
@@ -140,7 +140,6 @@ function EffectsBody({ session }: { session: EditorSession }) {
 			commands: [{ type: 'effect.addMany', clipIds: targets, effectId: e.id } as Command],
 		});
 	};
-	// biome-ignore lint/correctness/useExhaustiveDependencies: ends with the panel, whatever is highlighted
 	useEffect(() => () => endPreview(session), [session]);
 
 	/** TL-095: Up and Down walk the visible rows, Left and Right close and open folders, Esc leaves the preview. */
@@ -260,7 +259,6 @@ function EffectsBody({ session }: { session: EditorSession }) {
 				<Badge on={native} label="native (ffmpeg)" short="N" onClick={() => setNative(!native)} />
 				<Badge on={gpu} label="GPU-accelerated" short="GPU" onClick={() => setGpu(!gpu)} />
 			</div>
-			{/* biome-ignore lint/a11y/useKeyWithClickEvents: the rows take their own keys */}
 			<div
 				className="min-h-0 flex-1 overflow-y-auto"
 				role="tree"

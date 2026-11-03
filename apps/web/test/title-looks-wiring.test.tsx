@@ -3,11 +3,12 @@
 import type { ProposalItem } from '@jasper/project';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getCommand } from '../src/commands/registry.ts';
 import { DEFAULT_KEYMAP } from '../src/commands/keymap-defaults.ts';
+import { getCommand } from '../src/commands/registry.ts';
 import { titleLookCommands } from '../src/commands/title-looks.ts';
 import { isVisualProposal, TitleArtDetails, titleArtOptions } from '../src/proposals/title-art.tsx';
 import { MENUBAR } from '../src/shell/menus/model.ts';
+import { fuzzyScore, rankByGroup } from '../src/shell/palette/fuzzy.ts';
 import { makeSession } from './inspector-helpers.tsx';
 
 afterEach(() => cleanup());
@@ -38,7 +39,8 @@ describe('wiring (TL-097)', () => {
 
 	it('every look command is in the Graphics menu, and every menu entry is a command', () => {
 		const inMenu = new Set(flat(graphics.items as never));
-		for (const c of titleLookCommands) if (c.id !== 'graphics.addGenerator') expect(inMenu.has(c.id), c.id).toBe(true);
+		for (const c of titleLookCommands)
+			if (c.id !== 'graphics.addGenerator') expect(inMenu.has(c.id), c.id).toBe(true);
 		for (const id of inMenu) if (id.startsWith('graphics.')) expect(!!getCommand(id) || id, id).toBeTruthy();
 	});
 
@@ -72,8 +74,37 @@ describe('wiring (TL-097)', () => {
 		});
 		if (!r.ok) throw new Error(JSON.stringify(r.errors));
 		session.select('timeline', [r.refs.$t!]);
-		await titleLookCommands.find((c) => c.id === 'graphics.nextColorway')!.run({ session, ui: { toast } } as never);
-		expect(toast).toHaveBeenCalledWith(expect.objectContaining({ message: 'This look has no colourways yet.' }));
+		await titleLookCommands
+			.find((c) => c.id === 'graphics.nextColorway')!
+			.run({ session, ui: { toast } } as never);
+		expect(toast).toHaveBeenCalledWith(
+			expect.objectContaining({ message: 'This look has no colourways yet.' }),
+		);
+	});
+});
+
+describe('palette ranking (TL-097)', () => {
+	const row = (group: string, label: string) => ({ group, label, score: fuzzyScore('gold', label) ?? -1 });
+
+	it('puts an exact name before commands that only contain the letters', () => {
+		const rows = rankByGroup([
+			row('Commands', 'Go to Selected Clip End'),
+			row('Commands', 'Lock Guides'),
+			row('Effects', 'Glow'),
+			row('Looks', 'Gold'),
+		]);
+		expect(rows[0]!.label).toBe('Gold');
+		expect(rows.map((r) => r.group)).toEqual(['Looks', 'Commands', 'Commands', 'Effects']);
+	});
+
+	it('keeps each group together, so headers do not repeat', () => {
+		const rows = rankByGroup([
+			{ group: 'a', score: 5 },
+			{ group: 'b', score: 4 },
+			{ group: 'a', score: 3 },
+		]);
+		expect(rows.map((r) => r.group)).toEqual(['a', 'a', 'b']);
+		expect(rankByGroup([])).toEqual([]);
 	});
 });
 
@@ -84,7 +115,7 @@ describe('title-art review (TL-098)', () => {
 		expect(isVisualProposal(undefined)).toBe(false);
 	});
 
-	it('reads each option\'s look, colours and first line of text from its commands', () => {
+	it("reads each option's look, colours and first line of text from its commands", () => {
 		const doc = makeSession().getCommitted();
 		const options = titleArtOptions(doc, item);
 		expect(options.map((o) => o.label)).toEqual(['Gold, Red', 'Gold, Blue', 'Gold, Green']);
@@ -94,7 +125,12 @@ describe('title-art review (TL-098)', () => {
 
 	it('an option it cannot read shows no picture and raises nothing', () => {
 		const doc = makeSession().getCommitted();
-		const broken = { ...item, meta: { nope: 1 }, commands: [{ type: 'x' }], alternatives: [] } as unknown as ProposalItem;
+		const broken = {
+			...item,
+			meta: { nope: 1 },
+			commands: [{ type: 'x' }],
+			alternatives: [],
+		} as unknown as ProposalItem;
 		expect(titleArtOptions(doc, broken)[0]!.request).toBeNull();
 		render(<TitleArtDetails doc={doc} item={broken} selected={0} disabled={false} onSelect={() => {}} />);
 		expect(screen.queryByTestId('title-art-details')).toBeNull();

@@ -1,13 +1,7 @@
 // Spec 19 TL-086: what clicking a look does. With clips selected it applies to them; with nothing selected it inserts a
 // new title at the playhead. Everything is one undo step, and what a person would not expect is said, never hidden:
 // keyframes a replaced look took with it, and pictures a look paints over.
-import {
-	type Clip,
-	type Command,
-	type ProjectDocument,
-	type Sequence,
-	type TransactionResult,
-} from '@jasper/project';
+import type { Clip, Command, ProjectDocument, Sequence, TransactionResult } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { type ToastRequest, toast } from '@jasper/ui';
 import { t } from '../i18n/runtime.ts';

@@ -172,6 +172,10 @@ describe('style check badge (TL-094)', () => {
 		fireEvent.click(screen.getByTestId('look-style-badge'));
 		fireEvent.click(screen.getByTestId('look-style-fix-LOOK_RIMS_THIN'));
 		for (const id of ids) expect(fxOf(id).appearance.layers[0]!.params.width!.value).toBe(3);
-		Object.defineProperty(lint, 'report', { configurable: true, writable: true, value: { issues: [], unmeasured: [] } });
+		Object.defineProperty(lint, 'report', {
+			configurable: true,
+			writable: true,
+			value: { issues: [], unmeasured: [] },
+		});
 	});
 });

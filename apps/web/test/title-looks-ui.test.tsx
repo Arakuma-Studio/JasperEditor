@@ -19,17 +19,17 @@ import { EffectControlsPanel } from '../src/panels/effectControls/EffectControls
 import { settingsHits } from '../src/panels/effectControls/SettingsSearch.tsx';
 import { EffectsPanel } from '../src/panels/effects/EffectsPanel.tsx';
 import { PropertiesPanel } from '../src/panels/properties/PropertiesPanel.tsx';
-import { insertTitleWithLook, pickLook, setColorway } from '../src/title-looks/actions.ts';
-import { ApplyLookDialog } from '../src/title-looks/ApplyLookDialog.tsx';
 import { newLayerIndex } from '../src/title-looks/AppearanceList.tsx';
+import { ApplyLookDialog } from '../src/title-looks/ApplyLookDialog.tsx';
+import { insertTitleWithLook, pickLook, setColorway } from '../src/title-looks/actions.ts';
 import { isLookDrag, readLookDrag, writeLookDrag } from '../src/title-looks/drag.ts';
 import { lookFocus } from '../src/title-looks/focus.ts';
+import { handlesOf } from '../src/title-looks/LayerOverlay.tsx';
 import { LooksBrowser } from '../src/title-looks/LooksBrowser.tsx';
 import { lookEntries } from '../src/title-looks/library.ts';
-import { handlesOf } from '../src/title-looks/LayerOverlay.tsx';
 import { lookFrame } from '../src/title-looks/overlay-geometry.ts';
-import { endPreview, lookPreviewCommands, schedulePreview } from '../src/title-looks/preview.ts';
 import { LookPreviewChip } from '../src/title-looks/PreviewChip.tsx';
+import { endPreview, lookPreviewCommands, schedulePreview } from '../src/title-looks/preview.ts';
 import { clipOf, makeSession, renderWithSession } from './inspector-helpers.tsx';
 
 const recipe: LookRecipe = {

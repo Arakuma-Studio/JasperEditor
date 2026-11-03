@@ -60,7 +60,6 @@ function LookCardBody(p: CardProps) {
 	return (
 		<ContextMenu items={() => p.menu(entry)}>
 			<li
-				// biome-ignore lint/a11y/noNoninteractiveTabindex: grid cells are focusable (Enter uses the look)
 				tabIndex={p.active ? 0 : -1}
 				draggable
 				data-look={entry.lookId}

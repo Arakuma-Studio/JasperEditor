@@ -7,15 +7,15 @@ import { useEffect, useState } from 'react';
 import { t } from '../i18n/runtime.ts';
 import { PropertyRow, type RowContext } from '../panels/properties/controls/PropertyRow.tsx';
 import { Section } from '../panels/properties/controls/Section.tsx';
-import { setColorway } from './actions.ts';
-import { APPLY_LOOK_DIALOG } from './ApplyLookDialog.tsx';
 import { AppearanceList } from './AppearanceList.tsx';
+import { APPLY_LOOK_DIALOG } from './ApplyLookDialog.tsx';
+import { setColorway } from './actions.ts';
 import { colorwayFill } from './LookCard.tsx';
 import { colorwaysFor, detachLook, removeLook, resetLook, saveLook } from './look-actions.ts';
 import { colorwayPreviewCommands, endPreview, schedulePreview } from './preview.ts';
 import { intensityRow, quickRows } from './rows.ts';
-import { lookSelection, overrideCount, sharedStack } from './selection.ts';
 import { StyleCheckBadge } from './StyleCheckBadge.tsx';
+import { lookSelection, overrideCount, sharedStack } from './selection.ts';
 
 /** Words for how the selection relates to its look. */
 function linkStatus(sel: ReturnType<typeof lookSelection>): string {
@@ -82,10 +82,8 @@ export function LookSections(props: {
 						{status ?? linkStatus(sel)}
 					</p>
 					{colorways.length ? (
-						// biome-ignore lint/a11y/noStaticElementInteractions: leaving the strip ends the swatches' preview
-						<div
+						<fieldset
 							className="flex flex-wrap items-center gap-[3px] px-2 py-1"
-							role="group"
 							aria-label="Colourways"
 							data-testid="look-colorways-strip"
 							onPointerLeave={() => {
@@ -120,7 +118,7 @@ export function LookSections(props: {
 									data-colorway={c.id}
 								/>
 							))}
-						</div>
+						</fieldset>
 					) : null}
 					{intensity ? <PropertyRow row={intensity} ctx={ctx} /> : null}
 					{quick.map((q) => (

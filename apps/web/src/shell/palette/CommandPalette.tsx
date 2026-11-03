@@ -21,7 +21,7 @@ import { recentCommands, useCommandCtx, useShellRuntime } from '../context.tsx';
 import { commandState } from '../menus/resolve.ts';
 import { workspaceName } from '../workspaces/definitions.ts';
 import type { WorkspaceStore } from '../workspaces/store.ts';
-import { fuzzyScore, parsePaletteQuery } from './fuzzy.ts';
+import { fuzzyScore, parsePaletteQuery, rankByGroup } from './fuzzy.ts';
 
 export type PaletteRow = {
 	key: string;
@@ -189,7 +189,7 @@ function buildPaletteRows(
 				run: exec(() => void applyEffectToClips(session, e.id, targets)),
 			});
 		}
-const hasSequence = !!session.getState().activeSequenceId;
+		const hasSequence = !!session.getState().activeSequenceId;
 		for (const def of mgRegistry.definitions())
 			add(
 				{
@@ -329,7 +329,9 @@ const hasSequence = !!session.getState().activeSequenceId;
 	else {
 		rows.push(...commandRows(text ? 20 : 8));
 		if (text) {
-			rows.push(...contentRows(12), ...panelRows(6), ...workspaceRows(6), ...itemRows(8));
+			// TL-097: a look or an effect named exactly comes before commands that only happen to contain the letters.
+			rows.splice(0, rows.length, ...rankByGroup([...rows, ...contentRows(12)]));
+			rows.push(...panelRows(6), ...workspaceRows(6), ...itemRows(8));
 		} else rows.push(...panelRows(20));
 	}
 	return rows;

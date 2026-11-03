@@ -5,9 +5,9 @@ import { titleLayerType } from '@jasper/project';
 import { openDialog } from '@jasper/ui';
 import { z } from 'zod';
 import { t } from '../i18n/runtime.ts';
-import { lookTargets, selectedClips, setColorway, stepColorway } from '../title-looks/actions.ts';
-import { APPLY_LOOK_DIALOG } from '../title-looks/ApplyLookDialog.tsx';
 import { newLayerIndex } from '../title-looks/AppearanceList.tsx';
+import { APPLY_LOOK_DIALOG } from '../title-looks/ApplyLookDialog.tsx';
+import { lookTargets, selectedClips, setColorway, stepColorway } from '../title-looks/actions.ts';
 import {
 	colorwaysFor,
 	detachLook,

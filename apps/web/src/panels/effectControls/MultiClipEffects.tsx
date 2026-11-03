@@ -58,17 +58,19 @@ export function sharedEffects(
 		});
 	};
 	const maps = clips.map((c) => new Map(keyed(c).map((k) => [k.key, k.fx])));
-	return keyed(anchor)
-		// spec 19 TL-089: several clips' looks are edited in Properties, row by row across the clips.
-		.filter((k) => k.fx.effectId !== TITLE_LOOK_EFFECT_ID)
-		.filter((k) => maps.every((m) => m.has(k.key)))
-		.map((k) => ({
-			key: k.key,
-			effectId: k.fx.effectId,
-			occurrence: k.occurrence,
-			spec: registry.get(k.fx.effectId, k.fx.effectVersion),
-			instances: clips.map((c, i) => ({ clip: c, fx: maps[i]!.get(k.key)! })),
-		}));
+	return (
+		keyed(anchor)
+			// spec 19 TL-089: several clips' looks are edited in Properties, row by row across the clips.
+			.filter((k) => k.fx.effectId !== TITLE_LOOK_EFFECT_ID)
+			.filter((k) => maps.every((m) => m.has(k.key)))
+			.map((k) => ({
+				key: k.key,
+				effectId: k.fx.effectId,
+				occurrence: k.occurrence,
+				spec: registry.get(k.fx.effectId, k.fx.effectVersion),
+				instances: clips.map((c, i) => ({ clip: c, fx: maps[i]!.get(k.key)! })),
+			}))
+	);
 }
 
 const VISUAL_INTRINSICS: [string, string[]][] = [

@@ -48,8 +48,8 @@ import { TextAnimationBars } from '../../text-animation/TextAnimationBars.tsx';
 import { TextAnimationSection } from '../../text-animation/TextAnimationSection.tsx';
 import { TextAnimatorList } from '../../text-animators/AnimatorList.tsx';
 import { TimeRemapSection } from '../../time/TimeRemapSection.tsx';
-import { announce } from '../../title-looks/actions.ts';
 import { AppearanceBlock } from '../../title-looks/AppearanceBlock.tsx';
+import { announce } from '../../title-looks/actions.ts';
 import { dropLookOnClip, isLookDrag, readLookDrag } from '../../title-looks/drag.ts';
 import { lookedClip } from '../../title-looks/selection.ts';
 import { openSimplify } from '../../tracking/simplify-actions.ts';
@@ -77,7 +77,6 @@ import { ContextMenu } from '../timeline/components/Chrome.tsx';
 import type { ContextMenuItem } from '../timeline/state/ui-store.ts';
 import type { PanelProps } from '../types.ts';
 import { GRAPH_HEIGHT, type GraphView, PropertyGraphs } from './GraphEditor.tsx';
-import { SettingsSearch } from './SettingsSearch.tsx';
 import { graphKindOf } from './graph.ts';
 import { buildGroups, type FxSection, type RowFilter, rowVisible, sectionRows, shownClips } from './items.ts';
 import {
@@ -93,6 +92,7 @@ import { KeyLane, Ruler, SummaryLane, usePlayheadLine } from './MiniTimeline.tsx
 import { MultiClipEffects } from './MultiClipEffects.tsx';
 import { presetSelection } from './presets.ts';
 import { RoveAcrossTimeItem } from './RovingMenu.tsx';
+import { SettingsSearch } from './SettingsSearch.tsx';
 import { SpatialInterpolationSubmenu } from './SpatialMenu.tsx';
 import { TransitionSection } from './TransitionSection.tsx';
 

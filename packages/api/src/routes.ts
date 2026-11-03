@@ -171,7 +171,6 @@ import {
 	PreviewStatusRequestSchema,
 	PreviewStatusSchema,
 } from './previews.ts';
-import { LookPosterRequestSchema } from './title-looks.ts';
 import {
 	DeriveRequestSchema,
 	ProcessingModelsResponseSchema,
@@ -324,6 +323,7 @@ import {
 	SubtitleTemplateSaveRequestSchema,
 } from './subtitle-templates.ts';
 import { SyncAudioRequestSchema, SyncAudioResponseSchema } from './sync.ts';
+import { LookPosterRequestSchema } from './title-looks.ts';
 import { TrackRequestSchema } from './tracking.ts';
 import { TranscriptFixRequestSchema } from './transcript-fix.ts';
 import { VoiceAnalysisQuerySchema, VoiceAnalyzeRequestSchema } from './voice.ts';

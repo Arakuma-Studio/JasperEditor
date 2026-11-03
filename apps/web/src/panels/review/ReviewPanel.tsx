@@ -38,7 +38,6 @@ import {
 	rerollReviewItem,
 } from '../../proposals/actions.ts';
 import { useProposalFeature } from '../../proposals/feature-state.ts';
-import { isVisualProposal, TitleArtDetails } from '../../proposals/title-art.tsx';
 import { whyLines } from '../../proposals/ghosts.ts';
 import { isOwnKey, runScopedKey } from '../../proposals/keys.ts';
 import {
@@ -72,6 +71,7 @@ import {
 } from '../../proposals/sound-check.ts';
 import { problemText } from '../../proposals/stale-text.ts';
 import { useGhostModel, useProposals, useProposalsController } from '../../proposals/state.ts';
+import { isVisualProposal, TitleArtDetails } from '../../proposals/title-art.tsx';
 import { FixDiff, FixFacts, fixAriaText } from '../../script-fix/FixRow.tsx';
 import { type FixMeta, fixMetaOf } from '../../script-fix/model.ts';
 import {

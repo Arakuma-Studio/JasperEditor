@@ -1,8 +1,9 @@
 // Spec 19 TL-094: the badge in the Look header counts what the style check found; it opens the list in place, and a fix is
 // one click and one undo step. Checks that need the rendered picture and were not measured are listed as such, never as
 // passed.
-import { useSessionState } from '@jasper/session/react';
+
 import type { EditorSession } from '@jasper/session';
+import { useSessionState } from '@jasper/session/react';
 import { Button, cx, toast } from '@jasper/ui';
 import { useMemo, useState } from 'react';
 import { t } from '../i18n/runtime.ts';

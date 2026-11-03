@@ -1,8 +1,9 @@
 // Spec 19 TL-094: the style check of the selection: the library's `lintAppearance` (TL-056) on each looked clip, with what
 // only the clip knows (its size and text). The check is read off the package namespace so this file builds on either
 // side of the library's merge; a build without it shows no badge rather than a false all-clear.
-import * as project from '@jasper/project';
+
 import type { Appearance, Command, Sequence } from '@jasper/project';
+import * as project from '@jasper/project';
 import type { LookedClip } from './selection.ts';
 
 export type StyleSeverity = 'error' | 'warning' | 'info';

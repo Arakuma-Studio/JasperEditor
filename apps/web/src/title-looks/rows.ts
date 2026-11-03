@@ -4,8 +4,8 @@ import {
 	type Appearance,
 	appearancePropertyKey,
 	COLOR_ROLES,
-	effectParamPropertySpec,
 	type EffectRegistry,
+	effectParamPropertySpec,
 	LIGHT_SLOT,
 	type LookQuickControl,
 	layerParamSpecs,
@@ -156,7 +156,7 @@ function primaryControls(stack: readonly SharedLayer[]): LookQuickControl[] {
 		const primary = def.summary(withDefaults(def, stored as never), {}).primary;
 		if (!primary) continue;
 		const spec = layerParamSpecs(def).find((p) => p.name === primary);
-		if (!spec || spec.type !== 'number') continue;
+		if (spec?.type !== 'number') continue;
 		out.push({
 			label: `${l.layers[0]!.name ?? def.label} ${spec.label}`,
 			layerType: l.type,

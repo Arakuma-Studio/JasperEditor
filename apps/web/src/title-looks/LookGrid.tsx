@@ -92,7 +92,6 @@ export function LookGrid(props: {
 			onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
 			data-testid="look-grid"
 		>
-			{/* biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: a list with keyboard navigation between its cards */}
 			<ul
 				aria-label="Looks"
 				className="relative"

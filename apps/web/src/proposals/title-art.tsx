@@ -105,7 +105,7 @@ export function TitleArtDetails(props: {
 		<div className="flex flex-col gap-1" data-testid="title-art-details">
 			<Poster store={store} request={shown.request} label={shown.label} />
 			{options.length > 1 ? (
-				<div className="grid grid-cols-4 gap-1" role="group" aria-label={t('Alternates')}>
+				<fieldset className="grid grid-cols-4 gap-1" aria-label={t('Alternates')}>
 					{options.map((o, i) =>
 						o.request ? (
 							<button
@@ -127,7 +127,7 @@ export function TitleArtDetails(props: {
 							</button>
 						) : null,
 					)}
-				</div>
+				</fieldset>
 			) : null}
 		</div>
 	);

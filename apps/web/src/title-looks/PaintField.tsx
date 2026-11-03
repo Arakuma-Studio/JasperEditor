@@ -10,8 +10,8 @@ import {
 	ROLE_LABELS,
 	type Role,
 } from '@jasper/project';
-import type { RowContext } from '../panels/properties/controls/PropertyRow.tsx';
 import { ColorField, SelectField } from '../panels/properties/controls/fields.tsx';
+import type { RowContext } from '../panels/properties/controls/PropertyRow.tsx';
 import type { Row } from '../panels/properties/lib/model.ts';
 import { rowValue } from '../panels/properties/lib/model.ts';
 import { GradientField } from './GradientField.tsx';

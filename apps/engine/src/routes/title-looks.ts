@@ -3,10 +3,10 @@
 import { join } from 'node:path';
 import { LookPosterRequestSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
+import { LookPosterService } from '../title-looks/posters.ts';
 import { serveFile } from '../tools/http.ts';
 import { clientGoneSignal, guarded, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
-import { LookPosterService } from '../title-looks/posters.ts';
 
 export default async function titleLookRoutes(app: FastifyInstance): Promise<void> {
 	const core = coreServices(app);

@@ -20,7 +20,7 @@ import { PLAYHEAD_PLANNER, type Row, rowValue } from '../panels/properties/lib/m
 import { LIGHT_TARGET, lookFocus, useLookFocus } from './focus.ts';
 import { flatPalette, paintCss } from './paint.ts';
 import { layerRows, lightRows, paletteRows } from './rows.ts';
-import { layerName, type LookedClip, type SharedLayer, sharedStack } from './selection.ts';
+import { type LookedClip, layerName, type SharedLayer, sharedStack } from './selection.ts';
 
 const REORDER_MIME = 'application/x-jasper-look-layer';
 const rowCls = 'group flex h-[var(--pr-row-h)] items-center gap-1 pr-1 pl-2 text-pr-ui';
@@ -97,7 +97,7 @@ export function AppearanceList(props: {
 	const layerOf = (s: SharedLayer, i: number) => s.layers[i]!;
 
 	const select = (target: string) => lookFocus.set({ clipId: first.clip.id, fxId: first.fx.id, target });
-const toggle = (key: string, target: string) => {
+	const toggle = (key: string, target: string) => {
 		setOpen(open === key ? null : key);
 		select(target);
 	};

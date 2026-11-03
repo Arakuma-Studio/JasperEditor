@@ -12,9 +12,9 @@ import {
 	type PropertySpec,
 	paramsPropertySpecs,
 	type Sequence,
+	TITLE_LOOK_EFFECT_ID,
 	templateParamSections,
 	templateParamVisible,
-	TITLE_LOOK_EFFECT_ID,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { cx, TimecodeText } from '@jasper/ui';
