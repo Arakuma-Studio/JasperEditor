@@ -32,9 +32,10 @@ const hasSequence = (ctx: CommandCtx) => !!ctx.session?.getState().activeSequenc
 const looked = (ctx: CommandCtx) => (ctx.session ? lookedTargets(ctx.session) : []);
 const linked = (ctx: CommandCtx) => looked(ctx).filter((l) => l.appearance.lookId !== undefined);
 
-const withLook = (ctx: CommandCtx) => (looked(ctx).length ? undefined : 'Select a clip with a look first.');
+// Shared reasons are module-level functions, which the i18n transform does not wrap: they translate with `t()`.
+const withLook = (ctx: CommandCtx) => (looked(ctx).length ? undefined : t('Select a clip with a look first.'));
 const withLink = (ctx: CommandCtx) =>
-	linked(ctx).length ? undefined : 'Select a clip linked to a look first.';
+	linked(ctx).length ? undefined : t('Select a clip linked to a look first.');
 
 function stepColorways(ctx: CommandCtx, dir: 1 | -1): void {
 	const session = ctx.session;
