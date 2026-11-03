@@ -230,8 +230,11 @@ export function generatorEffect(g: TitleGenerator): EffectSpec {
 		description: g.description,
 		keywords: [...(g.keywords ?? []), 'generator', 'title'],
 		params: g.params.filter((p) => !isPaintParam(p)) as EffectSpec['params'],
+		...(g.prepass || g.lowRes ? { expensive: true } : {}),
 		gpu: {
 			kind: 'generator',
+			// TL-123: data in `rgba32f` and light above 1 do not survive 8 bits: refuse, never degrade.
+			...(g.prepass || g.lowRes ? { requiresFloat: true } : {}),
 			// A standalone generator has no look: its unit is title-sized and it reads a stand-in shape (TL-060).
 			// `fxPatternFrame`: the clock of a pattern continues across a razor cut (TL-035, TL-121).
 			uniforms: (_p, ctx) => ({

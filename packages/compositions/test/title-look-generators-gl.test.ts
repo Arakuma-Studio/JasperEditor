@@ -63,24 +63,34 @@ function energy(img: LookImage, x0 = 0, y0 = 0, x1 = img.width, y1 = img.height)
 	return e;
 }
 
+/** A pixel premultiplied: `data` is straight alpha, and the colour of a nearly transparent pixel means nothing. */
+function premultiplied(img: LookImage, x: number, y: number) {
+	const p = pixel(img, x, y);
+	const a = p[3] / 255;
+	return [p[0] * a, p[1] * a, p[2] * a, p[3]];
+}
+
 /** Largest difference over a rectangle of canvas px, with `b` read `dx` px to the right of `a`. */
-function maxDiffShifted(
-	a: LookImage,
-	b: LookImage,
-	dx: number,
-	x0: number,
-	y0: number,
-	x1: number,
-	y1: number,
-) {
+function maxDiffShifted(a: LookImage, b: LookImage, dx: number, x0: number, y0: number, x1: number, y1: number) {
 	let m = 0;
 	for (let y = y0; y < y1; y++)
 		for (let x = x0; x < x1; x++) {
-			const p = pixel(a, x, y);
-			const q = pixel(b, x + dx, y);
+			const p = premultiplied(a, x, y);
+			const q = premultiplied(b, x + dx, y);
 			for (let k = 0; k < 4; k++) m = Math.max(m, Math.abs(p[k]! - q[k]!));
 		}
 	return m;
+}
+
+/** All the light a layer added: the difference from the same picture without it, summed over the premultiplied channels. */
+function lightOf(img: LookImage, bare: LookImage): number {
+	let e = 0;
+	for (let i = 0; i < img.data.length; i += 4) {
+		const a = img.data[i + 3]! / 255;
+		const b = bare.data[i + 3]! / 255;
+		for (let k = 0; k < 3; k++) e += Math.abs(img.data[i + k]! * a - bare.data[i + k]! * b);
+	}
+	return e;
 }
 
 const layer = (id: string, params: Record<string, unknown> = {}, front = false): LookRecipe =>
@@ -402,11 +412,14 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('generators in WebGL2', { 
 			const right = frames.map((f) => energy(f, x1));
 			for (let i = 1; i < steps.length; i++) {
 				expect(maxDiffShifted(frames[0]!, frames[i]!, 0, 0, 0, x1, frames[0]!.height)).toBeLessThanOrEqual(2);
-				expect(right[i]! - right[i - 1]!).toBeGreaterThanOrEqual(-1);
 			}
 			const total = right.at(-1)! - right[0]!;
 			expect(total).toBeGreaterThan(0);
-			for (let i = 1; i < steps.length; i++) expect(right[i]! - right[i - 1]!).toBeLessThan(total * 0.6);
+			for (let i = 1; i < steps.length; i++) {
+				// It only grows (the edge settles by a fraction of a pixel as the local threshold rises) and never jumps.
+				expect(right[i]! - right[i - 1]!).toBeGreaterThanOrEqual(-0.02 * total);
+				expect(right[i]! - right[i - 1]!).toBeLessThan(total * 0.6);
+			}
 		});
 
 		it('per-letter animated text: a wave of offsets keeps the look of every particle', async () => {
@@ -437,7 +450,8 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('generators in WebGL2', { 
 				],
 			}) as LookRecipe;
 
-		const bare = { layers: [{ type: 'face', params: { paint: { kind: 'source' } } }] } as LookRecipe;
+		// The same canvas with no light: reach sets the canvas, so a look without the layer would be another size.
+		const bare = stars({ intensity: 0 });
 
 		it('glints: with the alpha bounds as anchor, stars move with the title exactly', async () => {
 			const params = { anchor: 'bounds' };
@@ -454,7 +468,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('generators in WebGL2', { 
 			for (let i = 0; i <= 14; i++) {
 				const f = await draw(stars(), letters(0, px(i)));
 				frames.push(f);
-				lit.push(energy(f) - energy(await draw(bare, letters(0, px(i)))));
+				lit.push(lightOf(f, await draw(bare, letters(0, px(i)))));
 			}
 			const mean = lit.reduce((a, b) => a + b, 0) / lit.length;
 			expect(mean).toBeGreaterThan(0);
@@ -474,24 +488,23 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('generators in WebGL2', { 
 			}
 		});
 
-		it('glints: a highlight rising past another hands over without a pop (no temporal history needed)', async () => {
+		it('glints: a highlight fading away hands its star over without a pop', async () => {
+			// Fine steps through the transition: a slope shrinks with the step, a pop does not.
 			const e: number[] = [];
-			const steps = 12;
-			for (let i = 0; i <= steps; i++) {
-				const v = Math.round(100 + (i / steps) * 120)
-					.toString(16)
-					.padStart(2, '0');
+			for (let v = 156; v <= 188; v += 2) {
+				const hex = v.toString(16);
 				const input: LookRequest['input'] = {
 					kind: 'letters',
 					letters: [
 						{ x: 0.15, y: 0.3, w: 0.16, h: 0.4, color: '#a0a0a0' },
-						{ x: 0.36, y: 0.3, w: 0.16, h: 0.4, color: `#${v}${v}${v}` },
+						{ x: 0.36, y: 0.3, w: 0.16, h: 0.4, color: `#${hex}${hex}${hex}` },
 					],
 				};
-				e.push(energy(await draw(stars(), input)) - energy(await draw(bare, input)));
+				e.push(lightOf(await draw(stars(), input), await draw(bare, input)));
 			}
 			const mean = e.reduce((a, b) => a + b, 0) / e.length;
-			for (let i = 1; i < e.length; i++) expect(Math.abs(e[i]! - e[i - 1]!) / mean).toBeLessThan(0.12);
+			expect(Math.max(...e) / Math.min(...e)).toBeGreaterThan(1.1);
+			for (let i = 1; i < e.length; i++) expect(Math.abs(e[i]! - e[i - 1]!) / mean).toBeLessThan(0.1);
 		});
 
 		it('glints: each star twinkles on its own beat and stays where it is', async () => {

@@ -9,8 +9,9 @@
 //      phase belong to it. Each home takes the strongest peak under a Gaussian prior around it. The prior is the
 //      hysteresis: a peak has to beat the one a star holds by the prior's margin to take it, whatever else moves;
 //   3. greedy spacing: the strongest homes win, as Pachislop's pickHighlights, in one pass over the 64 candidates.
-//      Nothing here can pop: a star's strength fades with its margin over its runner-up in the window and over the first
-//      home left out, and spacing is a smooth suppression, so a swap happens where both are invisible.
+//      Nothing here pops: a star fades with its margin over its runner-up in the window, over the first home left out and
+//      over any rival it suppresses, spacing is a smooth suppression that follows the score, and homes on one peak share
+//      the star by their priors, so a peak moving between homes crossfades.
 // `jasper.s.glint` puts rays on every highlight of a picture, as a filter, and has no stars to keep; this one is in a look.
 import { GLSL_UV } from '../../glsl/sample.ts';
 import type { GlslChunk } from '../../shader.ts';
@@ -98,7 +99,7 @@ void main() {
   if (p.x < 2 || p.y < 2 || p.x >= sz.x - 2 || p.y >= sz.y - 2) return;
   vec4 c0 = tlg_at(p);
   float c = c0.x;
-  if (c0.y < 0.5 || c <= 0.0) return;
+  if (c0.y < 0.4 || c <= 0.0) return;
   // Non-maximum suppression: strict against the cells before this one in scan order, so a plateau yields one peak.
   if (tlg_at(p + ivec2(-1, -1)).x >= c || tlg_at(p + ivec2(0, -1)).x >= c || tlg_at(p + ivec2(1, -1)).x >= c) return;
   if (tlg_at(p + ivec2(-1, 0)).x >= c) return;
@@ -119,7 +120,9 @@ void main() {
     }
   bg /= bgN;
   float ref = max(region, 1.0e-6);
-  if (c < ref * u_threshold * 0.01) return;
+  // Soft: a peak that crosses the threshold or the shape's edge fades, it does not pop.
+  float gate = smoothstep(0.8, 1.2, c / max(ref * u_threshold * 0.01, 1.0e-6)) * smoothstep(0.4, 0.6, c0.y);
+  if (gate <= 0.0) return;
   float wDepth = 1.0;
   if (u_faceBias > 0.0 && deep > 0.0)
     wDepth = 1.0 - u_faceBias * 0.01 * (1.0 - smoothstep(0.1, 0.5, -c0.z / deep));
@@ -133,7 +136,7 @@ void main() {
   float strong = min(0.0, m - q), weak = min(0.0, m + q);
   float iso = strong < 0.0 ? weak / strong : 0.0;
   float wRidge = 1.0 - ${RIDGE.toFixed(2)} * (1.0 - sqrt(iso));
-  float score = ((c - bg + 0.15 * c) / ref) * wDepth * wRidge;
+  float score = ((c - bg + 0.15 * c) / ref) * wDepth * wRidge * gate;
   if (score <= 0.0) return;
   vec2 f = vec2(tlg_vertex(tlg_at(p + ivec2(-1, 0)).x, c, tlg_at(p + ivec2(1, 0)).x),
                 tlg_vertex(tlg_at(p + ivec2(0, -1)).x, c, tlg_at(p + ivec2(0, 1)).x));
@@ -141,7 +144,7 @@ void main() {
   fragColor = vec4((vec2(p) + 0.5 + f) * cell, score, 1.0);
 }`;
 
-/** Pass 4: each home's star: position, score, and how far it stands above the runner-up in its window. */
+/** Pass 4: each home's star: position, score (faded by its margin over the runner-up in its window), and its prior. */
 const FRAG_STARS = /* glsl */ `${HOME}
 void main() {
   tlg_begin();
@@ -174,10 +177,15 @@ void main() {
       } else if (length(t.xy - bestP) > tie) second = max(second, v);
     }
   float margin = best > 0.0 ? smoothstep(0.0, 0.3, (best - second) / best) : 0.0;
-  fragColor = vec4(bestP, bestS, margin);
+  fragColor = vec4(bestP, bestS * margin, bestS > 0.0 ? best / bestS : 0.0);
 }`;
 
-/** Pass 5: greedy spacing over the candidates, in one pass: (size factor, intensity, is hero, _). */
+/**
+ * Pass 5: greedy spacing over the candidates, in one pass: (size factor, intensity, is hero, shown). Homes on one peak are one
+ * star, shared by their priors: a peak moving from one home to the next crossfades their twinkles and never jumps. Everything
+ * that decides a star is continuous in the scores: spacing follows the score, not the rank, and a star fades with its margin
+ * over the first home left out and over any rival it suppresses, so two close near-ties swap where both are invisible.
+ */
 const FRAG_PICK = /* glsl */ `
 float tlg_sizeOf(float score, float top, float variation) {
   float t = clamp((top - score) / (0.3 * top), 0.0, 1.0);
@@ -186,44 +194,43 @@ float tlg_sizeOf(float score, float top, float variation) {
 void main() {
   int me = int(floor(v_uv.x * u_resolution.x));
   vec4 cand[${HOMES}];
-  float score[${HOMES}], supp[${HOMES}];
-  bool taken[${HOMES}];
+  float supp[${HOMES}];
+  int leader[${HOMES}];
   float top = 0.0;
   for (int i = 0; i < ${HOMES}; i++) {
     cand[i] = texelFetch(u_tlGenA, ivec2(i, 0), 0);
-    score[i] = cand[i].z * cand[i].w;
     supp[i] = 1.0;
-    taken[i] = false;
-    top = max(top, score[i]);
+    leader[i] = -1;
+    top = max(top, cand[i].z);
   }
   fragColor = vec4(0.0);
-  if (top <= 0.0 || score[me] <= 0.0) return;
+  if (top <= 0.0 || cand[me].z <= 0.0) return;
   vec4 b = tl_bounds();
   float size = tl_px(u_size);
   float sv = u_sizeVariation * 0.01, bv = u_brightnessVariation * 0.01;
   float spacing = tl_px(u_spacing);
+  float tie = tl_px(4.0);
 #if TLG_PLACEMENT == 0
   int nLarge = int(floor(u_large + 0.5)), total = nLarge + int(floor(u_small + 0.5));
   float span = 0.7 * length(b.zw - b.xy) / max(1.0, float(nLarge));
-  float sep0 = max(spacing, span), sep1 = 0.5 * spacing;
+  float sepLarge = nLarge > 0 ? max(spacing, span) : 0.5 * spacing, sepSmall = 0.5 * spacing;
 #elif TLG_PLACEMENT == 1
   int nLarge = 0, total = int(floor(u_stars + 0.5));
-  float sep0 = 0.9 * size, sep1 = 0.9 * size;
+  float sepLarge = 0.9 * size, sepSmall = 0.9 * size;
 #else
   int nLarge = 1, total = 1 + int(floor(u_heroStars + 0.5));
-  float sep0 = spacing, sep1 = spacing;
+  float sepLarge = spacing, sepSmall = spacing;
 #endif
   total = min(total, ${HOMES} - 1);
   float margin = 0.08 * top;
-  float cutLarge = -1.0, runner = 0.0;
-  bool picked = false;
-  int rank = 0;
+  float cutLarge = -1.0, runner = 0.0, rival = 0.0;
+  int rank = -1, chief = -1;
   for (int pick = 0; pick <= total; pick++) {
     int best = -1;
     float bs = 0.0;
     for (int i = 0; i < ${HOMES}; i++) {
-      if (taken[i]) continue;
-      float s = score[i] * supp[i];
+      if (leader[i] >= 0) continue;
+      float s = cand[i].z * supp[i];
 #if TLG_PLACEMENT == 2
       // The hero's core sits inside the central band, so its streak fits the title.
       if (pick == 0 && abs(cand[i].x - 0.5 * (b.x + b.z)) > 0.35 * (b.z - b.x)) continue;
@@ -233,30 +240,39 @@ void main() {
     if (best < 0) break;
     if (pick == nLarge) cutLarge = bs;
     if (pick == total) { runner = bs; break; }
-    taken[best] = true;
-    if (best == me) { picked = true; rank = pick; }
-    float sep = pick < nLarge ? sep0 : sep1;
+    // Every home on this peak is this star.
+    for (int i = 0; i < ${HOMES}; i++)
+      if (leader[i] < 0 && length(cand[i].xy - cand[best].xy) < tie) leader[i] = best;
+    bool mine = leader[me] == best;
+    if (mine) { rank = pick; chief = best; }
+    float sep = mix(sepSmall, sepLarge, smoothstep(0.6, 0.9, bs / top));
     for (int i = 0; i < ${HOMES}; i++) {
-      if (taken[i]) continue;
-      supp[i] *= smoothstep(0.75 * sep, 1.05 * sep, length(cand[i].xy - cand[best].xy));
+      if (leader[i] >= 0) continue;
+      float f = smoothstep(0.75 * sep, 1.05 * sep, length(cand[i].xy - cand[best].xy));
+      if (mine) rival = max(rival, cand[i].z * supp[i] * (1.0 - f));
+      supp[i] *= f;
     }
   }
-  if (!picked) return;
-  float s = score[me];
-  float fade = clamp((s - runner) / margin, 0.0, 1.0);
+  if (rank < 0) return;
+  float s = cand[chief].z * supp[chief];
+  float fade = clamp((s - runner) / margin, 0.0, 1.0) * clamp((s - rival) / margin, 0.0, 1.0);
+  // This home's share of the star.
+  float sum = 0.0;
+  for (int i = 0; i < ${HOMES}; i++) if (leader[i] == chief) sum += pow(cand[i].w, 8.0);
+  float share = sum > 0.0 ? pow(cand[me].w, 8.0) / sum : 0.0;
 #if TLG_PLACEMENT == 0
   // A star's class follows its score, so two near-tied stars swapping rank keep near-equal sizes.
-  float large = nLarge > 0 ? smoothstep(cutLarge - margin, cutLarge + margin, s) : 0.0;
+  float large = nLarge > 0 && cutLarge >= 0.0 ? smoothstep(cutLarge - margin, cutLarge + margin, s) : (nLarge > 0 ? 1.0 : 0.0);
   float big = tlg_sizeOf(s, top, 0.5 * sv);
   float sf = mix(${SMALL.toFixed(2)}, big, large);
   float inten = mix(1.0 - bv * 0.6, 1.0 - bv * (1.0 - big), large);
-  fragColor = vec4(sf * (0.6 + 0.4 * fade), inten * fade, 0.0, 1.0);
+  fragColor = vec4(sf * (0.6 + 0.4 * fade), inten * fade * share, 0.0, 1.0);
 #elif TLG_PLACEMENT == 1
   float sf = tlg_sizeOf(s, top, sv);
-  fragColor = vec4(sf * (0.6 + 0.4 * fade), (0.4 + 0.6 * sf) * fade, 0.0, 1.0);
+  fragColor = vec4(sf * (0.6 + 0.4 * fade), (0.4 + 0.6 * sf) * fade * share, 0.0, 1.0);
 #else
-  if (rank == 0) fragColor = vec4(1.0, 1.0, 1.0, 1.0);
-  else fragColor = vec4(0.45 * (0.6 + 0.4 * fade), (1.0 - bv * 0.4) * fade, 0.0, 1.0);
+  if (rank == 0) fragColor = vec4(1.0, share, 1.0, 1.0);
+  else fragColor = vec4(0.45 * (0.6 + 0.4 * fade), (1.0 - bv * 0.4) * fade * share, 0.0, 1.0);
 #endif
 }`;
 

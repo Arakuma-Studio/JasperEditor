@@ -214,6 +214,10 @@ describe('generators', () => {
 						for (const [re, why] of FORBIDDEN_TITLE_GLSL) expect(re.test(src), `${g.id}: ${why}`).toBe(false);
 			});
 
+			it('refuses without float targets where it needs them (TL-123)', () => {
+				expect(fx.gpu!.requiresFloat === true).toBe(!!g.prepass || !!g.lowRes);
+			});
+
 			it('names no param after a built-in uniform', () => {
 				for (const p of specs) expect(Object.keys(FX_BUILTIN_UNIFORMS)).not.toContain(`u_${p.name}`);
 			});

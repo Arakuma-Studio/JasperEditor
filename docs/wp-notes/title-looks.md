@@ -395,9 +395,11 @@ not change it), luminance of what is below the layer (`tlComp`, so a metal face'
 prominence, regional normalisation, face bias from the field, Hessian ridge rejection. Each of 64 seeded **homes** takes the strongest
 peak under a Gaussian prior around it, in one pass per home; a star's jitter, rotation and twinkle belong to the home. That prior is
 the hysteresis, and it is spatial, because a temporal one needs last frame: a peak must beat the one a star holds by the prior's
-margin to take it. Greedy spacing runs in one pass over the 64 candidates, with smooth suppression. Nothing pops: a star's strength
-fades with its margin over the runner-up in its window, and over the first home left out, so a hand-over happens where both are
-invisible (Pachislop's `fade`, widened). No CPU data was needed, so `FxPixels` is not used.
+margin to take it. Greedy spacing runs in one pass over the 64 candidates, with smooth suppression that follows the score, not the
+rank. Nothing pops: a star fades with its margin over the runner-up in its window, over the first home left out and over any rival it
+suppresses, so a hand-over happens where both are invisible (Pachislop's `fade`, widened); peaks fade through the threshold and the
+shape's edge; and homes on one peak are one star, shared by their priors, so a peak moving from one home to the next crossfades their
+twinkles. No CPU data was needed, so `FxPixels` is not used.
 
 Differences from upstream: normalisation is by the regional maximum only, because a global maximum would need one more reduction and
 the regional one already lets a dim second line compete. Near ties within 4 % of the unit keep the stronger peak instead of blending
