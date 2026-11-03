@@ -320,3 +320,36 @@ floods inscribed circles and needs the shape field to the middle of the stroke, 
 (its second flood); a `glyph` gradient 15; a stack of plate, rim, face, inline, sheen, gloss and erosion, all with finishes, 57.
 No timings: this host ran at a load average of 60 to 80 from other agents' work while these were built, which would have
 measured the queue, not the shaders. Rerun `TL_PERF=1` on a quiet machine. Turning Fit off is the cheap way to lighten a metal.
+
+### Generators (spec 19 §7)
+
+A generator layer under a face, text 200 px, canvas = box 1200 × 280 plus the layer's own reach, `contentSeconds` 0.5 (moving
+params of each generator's sheet), median of 3 warm frames and one frame at `fxPreviewScale` 1/2. Same machine and browser as
+above, 2026-11-03 04:25 UTC, load average ≈ 2–10 (other agents' work, inside one of the host's three heavy-job slots). Rerun:
+`TL_PERF=1 pnpm exec vitest run packages/compositions/test/title-look-generators-gl.test.ts --disable-console-intercept -t "per-frame cost of each"`.
+
+| Generator | Canvas | Passes | Full | 1/2 |
+|---|---|---|---|---|
+| Fire | 1412 × 732 | 17 | 1 800 ms | 582 ms |
+| Smoke | 1528 × 927 | 17 | 2 092 ms | 522 ms |
+| Corona | 1464 × 544 | 16 | 1 188 ms | 477 ms |
+| Sunburst | 2248 × 1328 | 15 | 2 907 ms | 1 083 ms |
+| Magic Circle | 2206 × 1286 | 10 | 6 716 ms | 1 891 ms |
+| Lens Flare | 2248 × 1328 | 15 | 3 812 ms | 1 208 ms |
+| Backlight | 1752 × 832 | 18 | 1 886 ms | 791 ms |
+| Light Streaks | 2248 × 1328 | 11 | 3 192 ms | 1 002 ms |
+| Shockwave | 2016 × 1096 | 10 | 3 794 ms | 1 135 ms |
+| Particles | 1808 × 888 | 19 | 1 983 ms | 585 ms |
+| Glints | 1356 × 436 | 24 | 919 ms | 481 ms |
+| Ink Splatter | 1894 × 974 | 21 | 2 983 ms | 888 ms |
+| Brush Swirl | 2694 × 1774 | 12 | 4 923 ms | 1 696 ms |
+| Speed Lines | 2168 × 1248 | 19 | 3 507 ms | 1 100 ms |
+| Lightning | 2070 × 1150 | 19 | 3 194 ms | 1 098 ms |
+| Pattern | 1688 × 768 | 10 | 1 984 ms | 664 ms |
+| Face only (reference) | (not reported) | | 303 ms | |
+
+**Reading it.** The canvas dominates again: a generator that reaches far (Sunburst, Lens Flare, Light Streaks, Brush Swirl at their
+extents) grows the look's canvas, and with it the shape field every layer pays for. Magic Circle is the costliest per pixel (six
+rows of distance fields, a polygon loop per row). Soft generators (Fire, Smoke, Corona) draw at half size by design (`lowRes`).
+Every generator is time dependent, so an animated look with one redraws every frame: on this host a title-sized look with a
+generator is 1–7 s per 1080p frame. Nothing was measured on a GPU.

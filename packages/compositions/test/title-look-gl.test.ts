@@ -439,32 +439,35 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Looks in WebGL2', {
 				palette,
 				layers: [{ type: 'face', params: { paint: flat([0.3, 0.3, 0.3, 1]) } }],
 			};
+			// A moment into the clip: what moves may legitimately start empty (a one-shot burst, a write-on).
+			const moment = type.timeDependent ? { contentSeconds: 0.7 } : {};
 
 			it('compiles, draws and matches its fingerprints at default and perturbed params', async () => {
-				const d = await render(recipeOf());
-				const p = await render(recipeOf(perturbedParams(type)), { pad: 40 });
+				const d = await render(recipeOf(), moment);
+				const p = await render(recipeOf(perturbedParams(type)), { pad: 40, ...moment });
+				// A deliberate perturbation changes the picture. Before any fingerprint: a blank picture must never be blessed.
+				const dg = grid(d);
+				expect(grid(p).some((v, i) => Math.abs(v - dg[i]!) > 0.5)).toBe(true);
 				expectFingerprints(
 					GOLDENS,
 					{ [`${type.type}@default`]: grid(d), [`${type.type}@perturbed`]: grid(p) },
 					4,
 				);
-				// A deliberate perturbation changes the picture.
-				const dg = grid(d);
-				expect(grid(p).some((v, i) => Math.abs(v - dg[i]!) > 0.5)).toBe(true);
 			});
 
 			it('changes the picture compared with no layer', async () => {
-				const on = await render(recipeOf(perturbedParams(type)), { pad: 60 });
+				const on = await render(recipeOf(perturbedParams(type)), { pad: 60, ...moment });
 				const off = await render(base, { pad: 60 });
-				const a = layerCrop(on, lumaOver(on, 128));
-				const b = layerCrop(off, lumaOver(off, 128));
+				// The box and the 60 px both canvases have: a layer may draw only around the shape (focus lines).
+				const a = layerCrop(on, lumaOver(on, 128), 60);
+				const b = layerCrop(off, lumaOver(off, 128), 60);
 				let d = 0;
 				for (let i = 0; i < a.data.length; i++) d += Math.abs(a.data[i]! - b.data[i]!);
 				expect(d / a.data.length).toBeGreaterThan(0.05);
 			});
 
 			it('stays inside its padding (nothing clipped at the canvas edge)', async () => {
-				const img = await render(recipeOf(perturbedParams(type)));
+				const img = await render(recipeOf(perturbedParams(type)), moment);
 				let edge = 0;
 				for (let x = 0; x < img.width; x++)
 					edge = Math.max(edge, pixel(img, x, 0)[3], pixel(img, x, img.height - 1)[3]);
@@ -479,6 +482,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Looks in WebGL2', {
 						input: { kind: 'shapes' },
 						unitPx: 96 * k,
 						box: { width: BOX.width * k, height: BOX.height * k },
+						...moment,
 					});
 				const [a, b] = [await at(1), await at(2)];
 				const ca = layerCrop(a, lumaOver(a, 128));

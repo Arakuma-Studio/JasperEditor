@@ -4,9 +4,9 @@ import { join } from 'node:path';
 import type { LookRecipe } from '@jasper/project';
 import type { Browser, Page } from '@playwright/test';
 import { CHROME, openGlPage } from './gl-browser.ts';
-import type { EffectRequest, LookRequest, LookResult } from './title-look-gl/entry.ts';
+import type { EffectRequest, GeneratorRequest, LookRequest, LookResult } from './title-look-gl/entry.ts';
 
-export type { EffectRequest, LookRequest };
+export type { EffectRequest, GeneratorRequest, LookRequest };
 export { CHROME };
 
 export type LookImage = Omit<LookResult, 'rgba'> & { data: Uint8Array };
@@ -17,6 +17,8 @@ export type LookPage = {
 	render(req: LookRequest): Promise<LookImage>;
 	/** One standalone effect on the same inputs. */
 	effect(req: EffectRequest): Promise<LookImage>;
+	/** A standalone generator at a clip frame, with a razor offset (`GeneratorRequest`). */
+	renderEffect(req: GeneratorRequest): Promise<LookImage>;
 	reach(recipe: LookRecipe): Promise<{ left: number; top: number; right: number; bottom: number }>;
 	/** Loads a font file for `{kind: 'text', font}` inputs. */
 	loadFont(family: string, weight: number, file: Uint8Array): Promise<void>;
@@ -52,6 +54,7 @@ export async function openLookPage(dir: string): Promise<LookPage> {
 		page,
 		render: async (req) => image(await call<LookResult>('render', req)),
 		effect: async (req) => image(await call<LookResult>('renderEffect', req)),
+		renderEffect: async (req) => image(await call<LookResult>('renderGenerator', req)),
 		reach: (recipe) => call('reach', recipe),
 		loadFont: (family, weight, file) =>
 			call('loadFont', { family, weight, base64: Buffer.from(file).toString('base64') }),

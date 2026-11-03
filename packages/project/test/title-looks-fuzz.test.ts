@@ -301,7 +301,8 @@ describe('paints', () => {
 });
 
 describe('the planner on any look', () => {
-	// The outputs of the framework, the finishes, plates, spans and Deep Glow (wp-notes/title-looks.md, "How to extend").
+	// The outputs of the framework, the finishes, plates, spans, Deep Glow and the generators (wp-notes/title-looks.md, "How to
+	// extend").
 	const LOOK_OUTPUTS = [
 		'tlBounds',
 		'tlFlood',
@@ -323,6 +324,10 @@ describe('the planner on any look', () => {
 		'tlDgAcc',
 		'tlDgH',
 		'tlDgFar',
+		'tlGenA',
+		'tlGenB',
+		'tlGenC',
+		'tlGenD',
 	];
 	/** `MAX_TEXTURE_IMAGE_UNITS` every WebGL 2 implementation has. */
 	const WEBGL2_MIN_TEXTURE_UNITS = 16;

@@ -5,7 +5,13 @@ import type { Draft } from 'immer';
 import { contentTimeAt } from '../../derive/index.ts';
 import { createFontRef, defaultTransform } from '../../factories.ts';
 import { isPaintParam } from '../../registry/fx/title-look/contract.ts';
-import { paramSpec, titleLayerType } from '../../registry/fx/title-look/registry.ts';
+import {
+	defaultLayerIndex,
+	GENERATOR_LAYER_PREFIX,
+	generatorPreset,
+	paramSpec,
+	titleLayerType,
+} from '../../registry/fx/title-look/registry.ts';
 import { intrinsicBoxOf } from '../../registry/properties.ts';
 import type { Clip, EffectInstance } from '../../schema/sequence.ts';
 import type { Rational } from '../../time.ts';
@@ -64,6 +70,7 @@ import { commonFields, frameBox, newGeneratorClip, visualFields } from './clip-c
 import { applyClipPatch } from './clip-core.ts';
 import { buildParams } from './effect.ts';
 import { locateEffect } from './param.ts';
+import { sequenceHandlers } from './sequence.ts';
 import { clone, type HandlerMap, idList, peek, peekKeys } from './util.ts';
 
 export const TITLE_LOOK_OWNER = 'title-looks' as const;
@@ -77,6 +84,14 @@ function looksOf(doc: DDoc): Draft<Record<string, TitleLook>> {
 	const d = doc as { titleLooks?: Record<string, TitleLook> };
 	d.titleLooks ??= {};
 	return d.titleLooks as Draft<Record<string, TitleLook>>;
+}
+
+/** TL-063: the values of a generator's preset chip; `E_INVALID_PARAM` when it has no such preset. */
+function presetParams(generator: string, preset: string | undefined, h: HandlerContext) {
+	if (preset === undefined) return {};
+	const p = generatorPreset(generator, preset);
+	if (!p) return h.fail('E_INVALID_PARAM', `No preset ${preset} on ${generator}`);
+	return p.params;
 }
 
 /** A clip that may take a look (TL-010), on an unlocked track. */
@@ -498,7 +513,14 @@ export const titleLookHandlers = {
 				{
 					type: cmd.layerType,
 					...(cmd.name ? { name: cmd.name } : {}),
-					...(cmd.params ? { params: cmd.params } : {}),
+					...(cmd.params || cmd.preset
+						? {
+								params: {
+									...presetParams(cmd.layerType.slice(GENERATOR_LAYER_PREFIX.length), cmd.preset, h),
+									...cmd.params,
+								},
+							}
+						: {}),
 				},
 				h.ids.next('apl'),
 			);
@@ -508,7 +530,7 @@ export const titleLookHandlers = {
 				(e as Error).message,
 			);
 		}
-		const index = Math.min(cmd.index ?? a.layers.length, a.layers.length);
+		const index = Math.min(cmd.index ?? defaultLayerIndex(a.layers, cmd.layerType), a.layers.length);
 		a.layers.splice(index, 0, layer as never);
 		assertAppearance(a, 'appearance.addLayer', h);
 		h.defineRef(cmd.ref, layer.id);
@@ -619,34 +641,45 @@ export const titleLookHandlers = {
 	},
 
 	'clip.addGenerator': (doc, cmd: CommandOf<'clip.addGenerator'>, h: HandlerContext) => {
-		const effectId = cmd.effectId.startsWith('generator:')
-			? `jasper.generator.${cmd.effectId.slice('generator:'.length)}`
+		const effectId = cmd.effectId.startsWith(GENERATOR_LAYER_PREFIX)
+			? `jasper.generator.${cmd.effectId.slice(GENERATOR_LAYER_PREFIX.length)}`
 			: cmd.effectId;
+		const generatorId = effectId.startsWith('jasper.generator.') ? effectId.slice(17) : '';
 		const spec = h.registries.effects.get(effectId);
 		if (!spec) return h.fail('E_UNKNOWN_EFFECT', `Unknown effect: ${cmd.effectId}`);
 		if (spec.category !== 'Generate' || spec.appliesTo !== 'video')
 			h.fail('E_INVALID_PARAM', `${spec.label} is not a generator`);
 		const seq0 = h.sequence(doc, cmd.sequenceId);
 		let track = cmd.track ?? 'V1';
-		// TL-064: on a free track below the selected title when there is one.
+		// TL-064: on a free track below the title, or on a new one under it: a generator never hides the title.
 		if (cmd.belowClipId !== undefined) {
 			const { seq, clip } = h.clip(doc, cmd.belowClipId);
 			if (seq.id !== seq0.id) h.fail('E_INVALID_PARAM', 'belowClipId is in another sequence');
 			const at = h.frame(seq, cmd.at);
 			const end = at + h.durationFrames(seq, cmd.duration);
 			const slot = trackSlotOf(seq, clip.trackId, h);
-			for (let i = slot.index - 1; i >= 0; i--) {
+			let free: string | null = null;
+			for (let i = slot.index - 1; i >= 0 && free === null; i--) {
 				const t = seq.videoTracks[i]!;
 				const busy = Object.values(seq.clips).some(
 					(c) => c.trackId === t.id && c.start < end && c.start + c.duration > at,
 				);
-				if (!busy && !t.locked) {
-					track = t.id;
-					break;
-				}
-				if (i === 0) track = clip.trackId;
+				if (!busy && !t.locked && t.output !== false) free = t.id;
 			}
-			if (slot.index === 0) track = clip.trackId;
+			track =
+				free ??
+				(
+					sequenceHandlers['track.add'](
+						doc,
+						{
+							type: 'track.add',
+							sequenceId: seq.id,
+							kind: 'video',
+							index: slot.index,
+						} as CommandOf<'track.add'>,
+						h,
+					) as { trackIds: string[] }
+				).trackIds[0]!;
 		}
 		const {
 			seq,
@@ -683,7 +716,7 @@ export const titleLookHandlers = {
 			enabled: true,
 			params: buildParams(
 				spec,
-				cmd.params,
+				{ ...presetParams(generatorId, cmd.preset, h), ...cmd.params },
 				h,
 				intrinsicBoxOf({ doc: doc as never, seq: seq as never, clip: seq.clips[id] as Clip }),
 			),

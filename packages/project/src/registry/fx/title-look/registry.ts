@@ -3,12 +3,16 @@
 import type { LayerParamValue, Paint } from '../../../title-looks/model.ts';
 import type { EffectSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
+import { type FxUniformValue, fxPatternFrame, type GlslChunk, type ShaderPass } from '../shader.ts';
 import {
+	type GeneratorColor,
+	type GeneratorPreset,
 	isPaintParam,
 	type LayerParams,
 	type LayerShader,
 	layerSwatch,
 	lp,
+	type PrepassContext,
 	type TitleFinish,
 	type TitleGenerator,
 	type TitleLayerInit,
@@ -17,9 +21,10 @@ import {
 } from './contract.ts';
 import { TITLE_FINISHES } from './finishes/index.ts';
 import { TITLE_GENERATORS } from './generators/index.ts';
-import { GLSL_TL_SURFACE, GLSL_TL_UNIT_KNOWN } from './glsl.ts';
+import { GLSL_TLG_LOOK_SHAPE, GLSL_TLG_WINDOW, standInChunk } from './generators/shared.ts';
+import { GLSL_TL_PAINT, GLSL_TL_SURFACE, GLSL_TL_UNIT_KNOWN } from './glsl.ts';
 import { TITLE_LAYER_INITS } from './layers/index.ts';
-import { GLSL_TL_RECOLOR } from './recolor.ts';
+import { paintOf } from './paint.ts';
 
 export const GENERATOR_LAYER_PREFIX = 'generator:';
 
@@ -33,29 +38,139 @@ const finishParam = (): TitleParamSpec =>
 		'flat',
 	);
 
-/** A generator as a look layer: its picture, composited like any other layer. */
+/** Output of a generator drawn at reduced size (`TitleGenerator.lowRes`). */
+const LOW_RES_OUTPUT = 'tlGenD';
+
+/** `#define`s of a generator at these params, and the look or standalone marker. */
+const generatorDefines = (g: TitleGenerator, p: LayerParams, standalone: boolean) =>
+	`${standalone ? '#define TLG_STANDALONE 1\n' : ''}${g.defines?.(p) ?? ''}`;
+
+/** A pass of a generator: its program text with `defines`, its chunks and `uniforms`. */
+function generatorPass(
+	pass: ShaderPass,
+	defines: string,
+	include: readonly GlslChunk[],
+	uniforms: Readonly<Record<string, FxUniformValue>>,
+	written: Set<string>,
+	standalone: boolean,
+): ShaderPass {
+	const output = pass.output;
+	const again = output !== undefined && (!standalone || written.has(output));
+	if (output !== undefined) written.add(output);
+	return {
+		...pass,
+		frag: `${defines}${pass.frag}`,
+		include: [...include, ...(pass.include ?? [])],
+		uniforms: { ...uniforms, ...pass.uniforms },
+		...(pass.draw ? { draw: { ...pass.draw, vert: `${defines}${pass.draw.vert}` } } : {}),
+		...(again ? { update: true } : {}),
+	};
+}
+
+const LUMA = 'vec3(0.2126, 0.7152, 0.0722)';
+
+/**
+ * TL-051: a generator in a look recolours through a luma gradient map: its brightness picks along the paint, from black
+ * up to the paint, and the hottest part goes white, so a fire in a blue look is blue with a white core.
+ */
+function recolorGlsl(mode: GeneratorColor['mode'], gradient: boolean): string {
+	const paint = gradient
+		? 'tl_ramp(u_paintRamp, x)'
+		: 'vec4(tlPaint_paint(s).rgb * smoothstep(0.0, 0.55, x), tlPaint_paint(s).a)';
+	const map = /* glsl */ `
+vec3 tl_lumaMap(float x, TlSurface s) {
+  vec4 c = ${paint};
+  return mix(c.rgb, vec3(1.0), smoothstep(0.72, 1.0, x));
+}`;
+	if (mode === 'flat')
+		return /* glsl */ `
+vec4 tl_recolor(vec4 g, TlSurface s) { return tlPaint_paint(s) * g.a; }`;
+	if (mode === 'luma')
+		return /* glsl */ `${map}
+vec4 tl_recolor(vec4 g, TlSurface s) {
+  if (g.a <= 0.0) return vec4(0.0);
+  float x = clamp(dot(g.rgb / g.a, ${LUMA}), 0.0, 1.0);
+  return vec4(tl_lumaMap(x, s) * g.a, g.a);
+}`;
+	return /* glsl */ `${map}
+vec4 tl_recolor(vec4 g, TlSurface s) {
+  vec3 c = tl_lumaMap(clamp(dot(g.rgb, ${LUMA}), 0.0, 1.0), s);
+  return vec4(c, clamp(max(c.r, max(c.g, c.b)), 0.0, 1.0)) * min(g.a * 8.0, 1.0);
+}`;
+}
+
+/** A generator as a look layer: its picture, composited like any other layer, recoloured through the look (TL-051). */
 function generatorLayer(g: TitleGenerator): TitleLayerType {
+	const color: GeneratorColor = g.color ?? { role: 'glow', mode: 'light' };
 	const t: TitleLayerType = {
 		type: `${GENERATOR_LAYER_PREFIX}${g.id}`,
 		label: g.label,
 		description: g.description,
 		finish: false,
-		params: [...g.params, lp.percent('opacity', 'Opacity', 100)],
+		params: [
+			...g.params,
+			lp.toggle('ownColors', 'Own Colours', color.fixed === true),
+			...lp.paint('paint', 'Look Colour', { kind: 'role', role: color.role }),
+			lp.percent('opacity', 'Opacity', 100),
+		],
+		// TL-051: the planner binds `u_tlRecolor` = not `fixedColor`. A look that fixes the layer's colour keeps the
+		// generator's own colours, as Own Colours does (fire defaults to it).
 		recolors: true,
-		shader: (): LayerShader => ({
-			glsl: `${g.glsl}\nvec4 tl_layer(TlSurface s) { return tl_recolor(tl_generate(s)) * (u_opacity * 0.01); }`,
-			include: [GLSL_TL_RECOLOR, ...(g.include ?? [])],
-		}),
+		shader: (p): LayerShader => {
+			const gradient = paintOf(p.paint, { kind: 'color', color: [1, 1, 1, 1] }).kind === 'gradient';
+			const body = g.lowRes ? `texture(u_${LOW_RES_OUTPUT}, s.uv)` : /* glsl */ `tl_generate(s)`;
+			return {
+				glsl: `${generatorDefines(g, p, false)}${g.lowRes ? '' : g.glsl}
+${recolorGlsl(color.mode, gradient)}
+vec4 tl_layer(TlSurface s) {
+  vec4 g = ${body} * tlg_window(s.px);
+  if (!u_ownColors && u_tlRecolor) g = tl_recolor(g, s);
+  return g * (u_opacity * 0.01);
+}`,
+				include: [
+					GLSL_TLG_LOOK_SHAPE,
+					GLSL_TLG_WINDOW,
+					...(gradient ? [GLSL_TL_PAINT] : []),
+					...(g.lowRes ? [] : (g.include ?? [])),
+				],
+				...(g.usesBounds?.(p) ? { usesBounds: true } : {}),
+			};
+		},
+		...(g.prepass || g.lowRes
+			? {
+					prepass: (p: LayerParams, c: PrepassContext) => {
+						const defines = `${c.defines}${generatorDefines(g, p, false)}`;
+						const include = [...c.include, GLSL_TLG_LOOK_SHAPE, ...(g.include ?? [])];
+						const written = new Set<string>();
+						const pass = (x: ShaderPass) => generatorPass(x, defines, include, c.uniforms, written, false);
+						return [
+							...(g.prepass?.(p, { pxPerPercent: c.pxPerPercent, pass }) ?? []),
+							...(g.lowRes ? [pass(lowResPass(g))] : []),
+						];
+					},
+				}
+			: {}),
 		...(g.reach ? { reach: g.reach } : {}),
+		...(g.fieldReach ? { fieldReach: g.fieldReach } : {}),
 		...(g.timeDependent ? { timeDependent: g.timeDependent } : {}),
+		...(g.front ? { front: true } : {}),
 		summary: (p) => ({
-			swatch: layerSwatch({ params: g.params }, p),
+			swatch: p.ownColors === true ? null : layerSwatch(t, p),
 			text: g.summary?.(p) ?? g.label,
 			primary: null,
 		}),
 	};
 	return t;
 }
+
+/** The pass that draws a `lowRes` generator. */
+const lowResPass = (g: TitleGenerator): ShaderPass => ({
+	output: LOW_RES_OUTPUT,
+	format: 'rgba16f',
+	scale: 1 / (g.lowRes ?? 1),
+	frag: `${g.glsl}
+void main() { fragColor = tl_generate(tl_surface()); }`,
+});
 
 function normalize(init: TitleLayerInit): TitleLayerType {
 	return { ...init, finish: init.finish === true, params: init.params };
@@ -120,46 +235,74 @@ export function layerHandles(t: TitleLayerType, p: LayerParams): NonNullable<Tit
 	return [...own, ...gradients];
 }
 
+/** A standalone generator's unit, as a share of the shorter side: a title-sized unit, so a preset reads the same. */
+export const STANDALONE_UNIT = 0.2;
+
 /** The effect of one generator (`Generate` category, TL-060): on a clip it draws over the clip's picture. */
 export function generatorEffect(g: TitleGenerator): EffectSpec {
+	const include = [
+		GLSL_TL_UNIT_KNOWN,
+		GLSL_TL_SURFACE,
+		standInChunk(g.standIn ?? 'none'),
+		...(g.include ?? []),
+	];
 	return defineShaderEffect({
 		id: `jasper.generator.${g.id}`,
-		label: g.label,
+		label: g.effectLabel ?? g.label,
 		category: g.category ?? 'Generate',
 		description: g.description,
 		keywords: [...(g.keywords ?? []), 'generator', 'title'],
 		params: g.params.filter((p) => !isPaintParam(p)) as EffectSpec['params'],
+		...(g.prepass || g.lowRes ? { expensive: true } : {}),
 		gpu: {
 			kind: 'generator',
-			// A standalone generator has no look: its unit is the layer box and it sees an empty shape (TL-060).
+			// TL-123: data in `rgba32f` and light above 1 do not survive 8 bits: refuse, never degrade.
+			...(g.prepass || g.lowRes ? { requiresFloat: true } : {}),
+			// A standalone generator has no look: its unit is title-sized and it reads a stand-in shape (TL-060).
+			// `fxPatternFrame`: the clock of a pattern continues across a razor cut (TL-035, TL-121).
 			uniforms: (_p, ctx) => ({
-				u_tlUnit: Math.min(ctx.width, ctx.height) * ctx.pxScale,
+				u_tlUnit: Math.min(ctx.width, ctx.height) * STANDALONE_UNIT * ctx.pxScale,
 				u_tlSeed: ctx.seed,
-				u_tlTime: ctx.frame / ctx.fps,
+				u_tlTime: fxPatternFrame(ctx) / ctx.fps,
 			}),
-			passes: [
-				{
-					include: [GLSL_TL_UNIT_KNOWN, GLSL_TL_SURFACE, ...(g.include ?? [])],
-					frag: /* glsl */ `
-${g.glsl}
+			passes: (raw, ctx) => {
+				const p = raw as LayerParams;
+				const defines = generatorDefines(g, p, true);
+				const written = new Set<string>();
+				const pass = (x: ShaderPass) => generatorPass(x, defines, include, {}, written, true);
+				const unit = Math.min(ctx.width, ctx.height) * STANDALONE_UNIT * ctx.pxScale;
+				const pre = g.prepass?.(p, { pxPerPercent: unit * 0.01, pass });
+				return [
+					...(pre ?? []),
+					...(g.lowRes ? [pass(lowResPass(g))] : []),
+					{
+						include,
+						frag: /* glsl */ `${defines}${g.lowRes ? '' : g.glsl}
 void main() {
-  TlSurface s;
-  s.uv = v_uv;
-  s.px = v_uv * u_canvasSize;
-  s.d = 1.0e6;
-  s.opacity = 0.0;
-  s.toEdge = vec2(0.0);
-  s.base = 0.0;
-  s.alpha = 0.0;
-  vec4 g = tl_generate(s);
+  ${g.lowRes ? `vec4 g = texture(u_${LOW_RES_OUTPUT}, v_uv);` : 'vec4 g = tl_generate(tl_surface());'}
   vec4 under = texture(u_source, v_uv);
   vec3 c = g.a > 0.0 ? fx_linearToSrgb(clamp(g.rgb / g.a, 0.0, 1.0)) * g.a : vec3(0.0);
-  fragColor = vec4(c, g.a) + under * (1.0 - g.a);
+  fragColor = vec4(c, clamp(g.a, 0.0, 1.0)) + under * (1.0 - clamp(g.a, 0.0, 1.0));
 }`,
-				},
-			],
+					},
+				];
+			},
 		},
 	});
+}
+
+/** A preset chip of a generator by ids (TL-063). */
+export function generatorPreset(generator: string, preset: string): GeneratorPreset | undefined {
+	return TITLE_GENERATORS.find((g) => g.id === generator)?.presets?.find((x) => x.id === preset);
+}
+
+/** TL-064: where a layer of this type goes when no index is given: generators behind the title unless they say front. */
+export function defaultLayerIndex(layers: readonly { type: string }[], type: string): number {
+	const t = titleLayerType(type);
+	if (!t || !type.startsWith(GENERATOR_LAYER_PREFIX) || t.front) return layers.length;
+	let i = 0;
+	while (i < layers.length && layers[i]!.type.startsWith(GENERATOR_LAYER_PREFIX)) i++;
+	return i;
 }
 
 /** The standalone effects of every generator (registered in `FX_FAMILIES`). */

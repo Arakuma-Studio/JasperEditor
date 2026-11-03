@@ -142,4 +142,93 @@ describe('generators', () => {
 			expect(g.glsl).toMatch(/\bvec4\s+tl_generate\s*\(\s*TlSurface\s+\w+\s*\)/);
 		}
 	});
+
+	it('are the sixteen of TL-061', () => {
+		expect(TITLE_GENERATORS.map((g) => g.id).sort()).toEqual(
+			[
+				'backlight',
+				'brushSwirl',
+				'corona',
+				'fire',
+				'glints',
+				'inkSplatter',
+				'lensFlare',
+				'lightStreaks',
+				'lightning',
+				'magicCircle',
+				'particles',
+				'pattern',
+				'shockwave',
+				'smoke',
+				'speedLines',
+				'sunburst',
+			].sort(),
+		);
+	});
+
+	it('have labels the Effects panel can tell from every other effect', () => {
+		const labels = [...defaultEffectRegistry.list()].filter((e) => !e.internal).map((e) => e.label);
+		for (const g of TITLE_GENERATOR_EFFECTS)
+			expect(labels.filter((l) => l === g.label).length, g.label).toBe(1);
+	});
+
+	for (const g of TITLE_GENERATORS)
+		describe(g.id, () => {
+			const specs = g.params;
+			const layer = titleLayerType(`generator:${g.id}`)!;
+			const fx = TITLE_GENERATOR_EFFECTS.find((e) => e.id === `jasper.generator.${g.id}`)!;
+
+			it('has at least three presets of valid params, in a look and as an effect (TL-063)', () => {
+				expect(g.presets?.length ?? 0).toBeGreaterThanOrEqual(3);
+				const ids = g.presets!.map((p) => p.id);
+				expect(new Set(ids).size).toBe(ids.length);
+				for (const preset of g.presets!) {
+					expect(preset.label).toBeTruthy();
+					for (const name of Object.keys(preset.params))
+						expect(
+							specs.map((p) => p.name),
+							`${preset.id}.${name}`,
+						).toContain(name);
+					let n = 0;
+					const a = appearanceFromRecipe(
+						{ layers: [{ type: layer.type, params: preset.params as Record<string, unknown> }] },
+						() => `apl_${String(++n).padStart(16, '0')}`,
+					);
+					expect(appearanceProblem(a), preset.id).toBeNull();
+					const passes = fx.gpu!.passes as (p: unknown, c: unknown) => unknown[];
+					const defaults = Object.fromEntries(fx.params.map((p) => [p.name, p.default]));
+					expect(
+						passes({ ...defaults, ...preset.params }, { width: 640, height: 360, pxScale: 1, fps: 30 })
+							.length,
+					).toBeGreaterThan(0);
+				}
+			});
+
+			it('never reads time from a frame counter or a seed from ids, in any of its passes', () => {
+				const ctx = { width: 640, height: 360, pxScale: 1, fps: 30 };
+				const passes = (
+					fx.gpu!.passes as (p: unknown, c: unknown) => { frag: string; draw?: { vert: string } }[]
+				)(Object.fromEntries(fx.params.map((p) => [p.name, p.default])), ctx);
+				for (const pass of passes)
+					for (const src of [pass.frag, pass.draw?.vert ?? ''])
+						for (const [re, why] of FORBIDDEN_TITLE_GLSL) expect(re.test(src), `${g.id}: ${why}`).toBe(false);
+			});
+
+			it('refuses without float targets where it needs them (TL-123)', () => {
+				expect(fx.gpu!.requiresFloat === true).toBe(!!g.prepass || !!g.lowRes);
+			});
+
+			it('names no param after a built-in uniform', () => {
+				for (const p of specs) expect(Object.keys(FX_BUILTIN_UNIFORMS)).not.toContain(`u_${p.name}`);
+			});
+
+			it('reaches a finite distance at its presets', () => {
+				for (const preset of g.presets ?? []) {
+					const values = withDefaults(layer, preset.params as never);
+					const r = g.reach?.(values) ?? 0;
+					for (const v of typeof r === 'number' ? [r] : Object.values(r))
+						expect(Number.isFinite(v)).toBe(true);
+				}
+			});
+		});
 });

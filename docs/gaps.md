@@ -936,6 +936,27 @@ Status of the foundation; streams still in progress update this list. Evidence: 
   ([performance.md](performance.md) §7).
 - **Handles (TL-092) are declared, not drawn**: shadow offset and light angle are in each layer's `handles`; the Program monitor
   overlay that reads them belongs to the UI stream. Standalone effects have no handles beyond `point` params.
+- **Generators (§7): a particle in flight reads the shape of this frame**, not of its birth frame, because no generator keeps
+  history (TL-061). Per-letter animation carries a letter's particles with it. A title moved whole by a text animator, not by
+  clip Motion, leaves `Layout`-anchored sites behind: `Alpha Bounds` follows it, at the price of locality.
+- **Generators: Count is a density on the Title emitter.** Sites are spread over the anchor box and the share near the shape
+  emits, so a small logo in a wide box emits fewer than Count.
+- **Generators: a standalone instance reads a stand-in shape** (the bottom of the frame or a disc), not the clip it sits on.
+  To follow a title, add the generator as a layer of its look.
+- **Magic Circle glyph rows are procedural** (runes, trigrams, segment digits): a plan cannot draw a font atlas, so Pachislop's
+  kanji rows and its readable HUD string were not ported.
+- **Lightning is not resolution independent to the look threshold at long bolts** (SSIM ≥ 0.97 between 1× and 2×): 0.95 at its
+  defaults, 0.76 at the perturbed params of the GL test (21 bolts two units long). The bolts are the same bolts at both sizes
+  (`docs/wp-notes/title-looks.md`, "Stable identity"); their directions come from a field rebuilt from raster alpha, good to a few
+  degrees, and a long thin bolt turns that into a pixel or two of drift at its tip. Tried and not enough: per-texel sites (0.52),
+  the surface normal at the edge point (0.66), bilinear sites (0.76), the alpha's first moment (0.70). An exact normal needs the
+  text's vector outline.
+- **Two generator recolour rules were written; one runs.** The look library mapped generators through a palette ramp
+  (`recolor.ts`), the generators stream through each generator's own paint and mode. Since integration 2 the generators' rule
+  draws, and the library's `fixedColor` keeps a generator's own colours as its `Own Colours` param does. The library's ramp is still
+  exported and unit-tested but unused: deleting it, or making it a generator colour mode, is a decision left open.
+- **Generator preset chips have no UI of their own here:** the presets exist and `clip.addGenerator` and `appearance.addLayer`
+  take them; the chips belong to the UI streams.
 
 **Agents (TL-100…TL-107):** the `titles` toolset, `title_check`, the `title-art` proposal feature, `still-sheet` jobs and effects
 discovery are in; evidence and thresholds in [wp-notes/title-looks-agents.md](wp-notes/title-looks-agents.md). Limits:

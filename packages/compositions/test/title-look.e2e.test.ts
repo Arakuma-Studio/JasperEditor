@@ -84,6 +84,8 @@ type Opts = {
 	still?: boolean;
 	text?: string;
 	glows?: boolean;
+	/** Spec 19 §7: generator layers on the look, and a standalone generator from `clip.addGenerator`. */
+	generators?: boolean;
 };
 
 /** A sequence with a dark gradient-free background, the animated title and a keyed look param. */
@@ -136,6 +138,35 @@ function build(o: Opts = {}) {
 	const t = result.refs.$t!;
 	const a = result.refs.$a!;
 	const fx = (result.results[3] as { effectInstanceIds: string[] }).effectInstanceIds[0]!;
+	const also: string[] = [];
+	if (o.generators) {
+		const added = step(doc, [
+			{
+				type: 'appearance.addLayer',
+				effectInstanceId: fx,
+				layerType: 'generator:fire',
+				params: { height: 40 },
+			},
+			{ type: 'appearance.addLayer', effectInstanceId: fx, layerType: 'generator:glints' },
+			{
+				type: 'appearance.addLayer',
+				effectInstanceId: fx,
+				layerType: 'generator:particles',
+				params: { count: 300, size: 3 },
+				index: 0,
+			},
+			{
+				type: 'clip.addGenerator',
+				effectId: 'generator:sunburst',
+				at: 0,
+				duration: 90,
+				belowClipId: t,
+				params: { rays: 20 },
+			},
+		]);
+		doc = added.document;
+		also.push((added.result.results[3] as { clipId: string }).clipId);
+	}
 	const clip = doc.sequences[seqId]!.clips[t] as unknown as {
 		effects: { appearance: { layers: { id: string; name?: string }[] } }[];
 	};
@@ -187,7 +218,7 @@ function build(o: Opts = {}) {
 		{ type: 'keyframe.add', target: rim, at: { frames: 60 }, value: 14 },
 	]));
 	if (o.split !== undefined)
-		({ document: doc } = step(doc, [{ type: 'clip.split', at: o.split, clipIds: [t] }]));
+		({ document: doc } = step(doc, [{ type: 'clip.split', at: o.split, clipIds: [t, ...also] }]));
 	return buildRenderSnapshot(doc, seqId, { resolveMedia: () => null, resolveFont: () => null });
 }
 
@@ -441,6 +472,32 @@ describe.runIf(enabled && !!CHROME)(
 				console.info(`[title-look] razor frame ${frame}: max difference ${maxDiff(a, b)}`);
 				expect(maxDiff(a, b)).toBeLessThanOrEqual(2);
 			}
+		});
+
+		it('generators: a look with generators and a generator clip, through a real render, cut and uncut', async () => {
+			const whole = build({ generators: true });
+			const cut = build({ generators: true, split: 20 });
+			for (const frame of [10, 19, 20, 21, 45]) {
+				const a = await still(whole, frame, `gen-whole-${frame}`);
+				const b = await still(cut, frame, `gen-cut-${frame}`);
+				console.info(`[title-look] generators, razor frame ${frame}: max difference ${maxDiff(a, b)}`);
+				expect(maxDiff(a, b)).toBeLessThanOrEqual(2);
+			}
+		});
+
+		it('generators: frame N after a seek, motion, and the title in front of its generator clip', async () => {
+			const whole = build({ generators: true });
+			// Frame N after a seek from either side: a render holds no state to reach it with.
+			await still(whole, 60, 'gen-seek');
+			const again = await still(whole, 45, 'gen-again');
+			expect(maxDiff(await still(whole, 45, 'gen-whole-45b'), again)).toBe(0);
+			// The generators move, and the title stays in front of the sunburst.
+			const a = await still(whole, 10, 'gen-a');
+			const b = await still(whole, 11, 'gen-b');
+			expect(maxDiff(a, b)).toBeGreaterThan(30);
+			const bare = await still(build({ generators: false }), 30, 'gen-bare');
+			const lit = await still(whole, 30, 'gen-lit');
+			expect(maxDiff(bare, lit)).toBeGreaterThan(30);
 		});
 
 		it('resolution independence through real text (TL-034)', async () => {

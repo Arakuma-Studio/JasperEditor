@@ -121,7 +121,15 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 						tl.render({
 							recipe: {
 								palette: palette(colorway),
-								layers: [{ type: `generator:${g.id}`, ...(fixedColor ? { fixedColor } : {}) }],
+								// Own Colours off: a generator that defaults to its own colours (fire) recolours too, so
+								// `fixedColor` alone is what keeps the colours in the fixed shots (integration 2).
+								layers: [
+									{
+										type: `generator:${g.id}`,
+										params: { ownColors: false },
+										...(fixedColor ? { fixedColor } : {}),
+									},
+								],
 							},
 							input: { kind: 'rect', x: 0.25, y: 0.25, w: 0.5, h: 0.5 },
 							box: { width: 320, height: 200 },

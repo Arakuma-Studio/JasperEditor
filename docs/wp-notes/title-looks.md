@@ -25,7 +25,7 @@ routing and the layer bake need no per-kind code.
 | User look format (TL-054) | `packages/project/src/title-looks/user-looks.ts` |
 | User look library and routes | `apps/engine/src/title-looks/library.ts`, `apps/engine/src/routes/title-looks.ts` |
 | Display fonts (TL-053) | `apps/engine/fonts/display/` (`manifest.json` pins commit and hashes) |
-| Generator recolour rule (TL-051) | `packages/project/src/registry/fx/title-look/recolor.ts` |
+| Generator recolour rule (TL-051) | `packages/project/src/registry/fx/title-look/registry.ts` (`recolorGlsl`); the library's earlier ramp in `recolor.ts` |
 | Template expansion (TL-052) | `packages/project/src/commands/handlers/title-template.ts` |
 | Commands (TL-018) | `packages/project/src/commands/{schemas,handlers}/title-look.ts` |
 | Extension contract, `lp` builders, summaries | `packages/project/src/registry/fx/title-look/contract.ts` |
@@ -45,8 +45,10 @@ routing and the layer bake need no per-kind code.
 | Light on a premultiplied picture (`tl_veil`, `tl_lit`, `tl_result`) | `packages/project/src/registry/fx/title-look/light.ts` |
 | Deep Glow's PSF, passes and response, shared by layer and effect | `packages/project/src/registry/fx/title-look/deep-glow.ts` |
 | Standalone effects of §8 | `packages/project/src/registry/fx/title-look/effects/`, built by `look-effect.ts` |
+| What generators share: noise, the shape, stable sites | `packages/project/src/registry/fx/title-look/generators/shared.ts` |
 | Test harness | `packages/compositions/test/title-look-harness.ts`, `title-look-gl/entry.ts` |
 | Registry completeness, GL, fuzz, E2E | `packages/project/test/title-look*.test.ts`, `packages/compositions/test/title-look*.test.ts` |
+| Generator behaviour (time, identity), contact sheets | `packages/compositions/test/title-look-generators-gl.test.ts`, `title-look-generators-sheets.test.ts` |
 
 ## How a frame is drawn
 
@@ -303,7 +305,7 @@ Fields you may need:
 | `fieldReach(p)` | The field must be right this far outside or inside. Default: outside as far as `reach`. Reads past it see `d` = the reach, a lower bound of the true distance |
 | `blur(p, ctx)` | Return `{sigma, mask}`: `sigma` in percent of the unit, `mask` GLSL `vec4 tl_mask(TlSurface s)`. The framework runs mask → horizontal → vertical at the lowest resolution that holds the sigma and your pass reads `u_tlBlur`. Every radius is cheap at every size; use `tl_inside`/`tl_band` in the mask, which widen their antialiasing to fit |
 | `outermost` | `s.base` and padding count every layer's growth, not only that of the layers above (a reflection on top of the stack) |
-| `prepass(p, ctx)` | Your own `ShaderPass[]` before the layer's pass. `ctx.surfacePass(pass)` gives a pass what the layer's own has (`tl_surface()`, `tl_px`, paints, the layer's uniforms and GLSL); without the layer's GLSL, use `include: ctx.include` for the surface, `uniforms: ctx.uniforms` for your params and start `frag` with `ctx.defines`. `ctx.unit` is the `tl_px` chunk alone; `ctx.unitKnown` says `pxPerPercent` is exact. Textures: `FX_MAX_TEXTURES` per plan is the budget of a validated effect; a look is limited by the samplers one pass mentions (16 in WebGL 2; keep to 12). The framework uses `tlBounds`, `tlFlood`, `tlField`, `tlComp`, `tlMask`, `tlBlurH`, `tlBlur`; finishes `tlHeightRaw`, `tlReliefH`, `tlHeight`, `tlCoverFlood`, `tlCover`; plates `tlPlateBlocks`, `tlSupport`, `tlPlate`; spans `tlSpan`; Deep Glow `tlDgPyr`. A look can hold a type twice: mark your outputs `update: true` on the first pass too, or spread `...ctx.write(name)` (it sets `update` from the second write in the plan). The layer's prepass runs before its finish's |
+| `prepass(p, ctx)` | Your own `ShaderPass[]` before the layer's pass. `ctx.surfacePass(pass)` gives a pass what the layer's own has (`tl_surface()`, `tl_px`, paints, the layer's uniforms and GLSL); without the layer's GLSL, use `include: ctx.include` for the surface, `uniforms: ctx.uniforms` for your params and start `frag` with `ctx.defines`. `ctx.unit` is the `tl_px` chunk alone; `ctx.unitKnown` says `pxPerPercent` is exact. Textures: `FX_MAX_TEXTURES` per plan is the budget of a validated effect; a look is limited by the samplers one pass mentions (16 in WebGL 2; keep to 12). The framework uses `tlBounds`, `tlFlood`, `tlField`, `tlComp`, `tlMask`, `tlBlurH`, `tlBlur`; finishes `tlHeightRaw`, `tlReliefH`, `tlHeight`, `tlCoverFlood`, `tlCover`; plates `tlPlateBlocks`, `tlSupport`, `tlPlate`; spans `tlSpan`; Deep Glow `tlDgPyr`, `tlDgAcc`, `tlDgH`, `tlDgFar`; generators `tlGenA` to `tlGenD`. A look can hold a type twice: mark your outputs `update: true` on the first pass too, or spread `...ctx.write(name)` (it sets `update` from the second write in the plan). The layer's prepass runs before its finish's |
 | `prepassReadsBounds(p)` | A prepass calls `tl_bounds()`: the planner only sees layer and finish GLSL |
 | `depth` | The layer's own shape for its finish (`LayerDepth`): `glsl` defines `tl_depth(s)` and `tl_bandPx(s)`, `ring: true` for rings. Default the filled shape |
 | `uniforms(p)` | Uniforms beyond one per param: curves as data textures, derived values. Also on a finish |
@@ -389,8 +391,24 @@ vec4 tl_generate(TlSurface s) {
 });
 ```
 
-Standalone instances see an empty shape (`s.d` large, `s.opacity` 0) and take the layer box as their unit. Everything must be a
-closed form of `u_tlTime` and `u_tlSeed`: no history (TL-061).
+Everything must be a closed form of `u_tlTime` and `u_tlSeed`: no history (TL-061). A standalone instance has no title: its unit
+is a fifth of the shorter side of the box (title-sized, so a preset reads alike), and it reads the shape named by `standIn`:
+`none` (`s.d` large, `s.opacity` 0), `ground` (the bottom of the frame) or `disc` (a title-sized disc in the middle).
+
+Fields a generator may need, beyond those of a layer type:
+
+| Field | When |
+|---|---|
+| `presets` | At least three (TL-063). Values over the defaults; `clip.addGenerator` and `appearance.addLayer` take `preset` |
+| `color` | `{role, mode, fixed?}`: the default paint, `light` / `luma` / `flat`, and whether a new layer keeps its own colours (TL-051) |
+| `prepass(p, c)` | Draw passes and analysis. Build each with `c.pass`, which brings the unit, the shape, `defines`, params as uniforms and the ping-pong write. Scratch outputs are `tlGenA`, `tlGenB`, `tlGenC`, shared by every generator of a look: read them before the next generator draws |
+| `defines(p)` | `#define`s per hold-only value, so a program holds one branch. They reach pass text, not `include` chunks |
+| `lowRes` | Soft pictures drawn at 1/n of the canvas side (`tlGenD`) and upsampled, in preview and export alike |
+| `standIn`, `shapeAware`, `usesBounds(p)`, `fieldReach(p)`, `effectLabel` | The stand-in above; `tl_bounds()` in a chunk or prepass, which the planner cannot see; how far the field must be right; a panel name when `label` is taken |
+
+Shape access: `tl_surfaceAt(uv)`, `tlg_d(uv)` and `tlg_field(px)` work in both worlds and in vertex shaders. `tlg_begin()` first, then
+`tlg_h`, `tlg_vnoise`, `tlg_fbm`. A param must not be named `source`, `progress`, `time`, `side` or `seed`: `u_<name>` is a
+built-in or forbidden; use `variationParam()` for a second pattern of one seed.
 
 ### Media inputs (TL-021)
 
@@ -553,11 +571,11 @@ Agent tools (§11): [title-looks-agents.md](title-looks-agents.md).
 | `look.setColorway {clipIds, colorwayId?, palette?}` | Role values only; reports `keptAnimated` roles (they keep their keys) |
 | `look.create {name, fromClipId? \| recipe?, link?}`, `look.update {lookId, fromClipId? \| recipe?}` | `update` keeps overrides and keys, skips locked tracks with `W_CLIP_SKIPPED` |
 | `look.rename`, `look.delete` | A deleted look only unlinks its clips |
-| `appearance.addLayer {effectInstanceId, layerType, index?, params?, name?}`, `removeLayer`, `reorderLayer`, `setLayerEnabled` | |
+| `appearance.addLayer {effectInstanceId, layerType, index?, preset?, params?, name?}`, `removeLayer`, `reorderLayer`, `setLayerEnabled` | Without an index a generator goes behind the title, above other generators, unless it says `front` (TL-064) |
 | `appearance.setPaint {…, param?, paint}`, `appearance.setGradient {…, param?, gradient}` | 33 stops → `E_LIMIT` |
 | `sequence.setGlobalLight {angle?, altitude?, clear?}` | |
-| `clip.addGenerator {effectId, at, duration, track?, belowClipId?, params?}` | A `transparent` solid with the effect |
-| `appearance.setLayerFixedColor {effectInstanceId, layerId, fixed}` | TL-051. Fixing turns the roles the layer reads into their current colours; unfixing keeps them |
+| `clip.addGenerator {effectId, at, duration, track?, belowClipId?, preset?, params?}` | A `transparent` solid with the effect, on a free track below `belowClipId`, or on a new track under it when none is free (TL-064). `effectId` takes `generator:<id>` |
+| `appearance.setLayerFixedColor {effectInstanceId, layerId, fixed}` | TL-051. Fixing turns the roles the layer reads into their current colours; unfixing keeps them. On a generator layer it keeps the generator's own colours, as its Own Colours param does |
 | `title.insertTemplate {templateId, at, duration?, track?, texts?, colorwayId?, seed?, availableFonts?}` | TL-052. Ordinary clips in one transaction, grouped. Returns `{clipIds, slots}` |
 
 `look.apply` also takes `availableFonts`: see "Fonts" below.
@@ -673,16 +691,19 @@ colourway.
 ### Fixed colours and the generator recolour rule (TL-051)
 
 `AppearanceLayer.fixedColor` means colourways leave the layer alone. A fixed layer reads no role: `appearance.setLayerFixedColor` turns
-the roles it reads into their current colours, and the lint flags one that still reads a role (an imported recipe). A generator's
-colours come from its shader, so a role cannot reach them: unless the layer is fixed, each pixel is gradient-mapped by its Rec. 601 luma
-onto black, `shadow`, `glow`, `accent3`, white, each stop placed at its own luma, so a mapped pixel keeps its brightness. Pixels whose
-channels are all at least 0.92 are left alone, which keeps hot cores white. `recolors: true` on a layer type makes the planner bind the
-ramp; every generator layer has it. A standalone generator has no palette and draws its own colours; a template gives it colours
-through `roles`.
+the roles it reads into their current colours, and the lint flags one that still reads a role (an imported recipe). A standalone
+generator has no palette and draws its own colours; a template gives it colours through `roles`.
 
-No generator shipped when this was written. The rule was tried with a temporary generator, since removed: blue and red colourways
-kept the white core and the alpha, a fixed layer kept its own colours, and the pictures were inspected. The test in
-`title-look-library-gl.test.ts` runs for every generator as soon as one is registered.
+**Since integration 2 the generators stream's recolour is the one that runs** ("Colour (TL-051)" under Generators): a generator layer
+maps its picture by luma onto its own `paint` (a role, so a colourway reaches it) unless its `Own Colours` param is on or the look marks
+the layer `fixedColor`. `recolors: true` on the generator layer type makes the planner bind `u_tlRecolor` = not `fixedColor`, which the
+layer's shader reads beside `u_ownColors`. Before the merge this library mapped every generator through a palette ramp (black,
+`shadow`, `glow`, `accent3`, white at their Rec. 601 lumas, white cores above 0.92 kept); that ramp (`recolor.ts`: `recolorStops`,
+`recolorRamp`, `GLSL_TL_RECOLOR`) is still exported and unit-tested but no layer draws with it now. Two rules for one job were not
+kept at run time; which of the two to keep long term is open (`docs/gaps.md`).
+
+`title-look-library-gl.test.ts` checks every registered generator: with Own Colours off it follows the colourway, keeps its alpha,
+and a `fixedColor` layer stays the same under any colourway.
 
 ### Fonts (TL-053)
 
@@ -761,6 +782,107 @@ warning. Before that, saving a clip's stack stored the look without its appearan
 template refers to looks by id and expands; once expanded it has no link back. Each has one home, and the Looks tab links to the others
 rather than listing them twice.
 
+## Generators (spec 19 §7)
+
+The sixteen of TL-061: Fire, Smoke, Corona, Sunburst, Magic Circle, Lens Flare, Backlight, Light Streaks, Shockwave, Particles,
+Glints, Ink Splatter, Brush Swirl, Speed Lines, Lightning, Pattern. Each is one file, a `generator:<id>` layer and a
+`jasper.generator.<id>` effect from the same GLSL (TL-060). Contact sheets: `GEN_SHEETS=1 pnpm exec vitest run
+packages/compositions/test/title-look-generators-sheets.test.ts --maxWorkers=1` writes `/tmp/title-looks/sheets/generators-*.png`.
+
+### How they relate to the effects already in the registry
+
+None of these replaces an existing effect, and none reuses its name in the panel (`effectLabel`). What they add is the shape and
+the look; where an existing effect already does the job on a picture, it stays the tool for that.
+
+| New | Existing | Relation |
+|---|---|---|
+| Lens Flare (panel: Title Flare) | `jasper.lens-flare`, `jasper.s.lens-flare`, `jasper.s.lens-flare-auto-track` | Those model lenses (element chains, three lens types). This is Pachislop's single anamorphic flare: it centres on the title and recolours with the look. The lens element model was not reused: it needs a dozen Sapphire uniforms and a family-private chunk |
+| Backlight | `jasper.s.rays`, `jasper.s.edge-rays` | Those beam from bright pixels or edges of a picture, as a filter. This one needs only the silhouette, and rotates its mask |
+| Lightning (panel: Title Lightning) | `jasper.lightning`, `jasper.s.zap`, `jasper.s.ultra-zap`, `jasper.s.zap-to`, `jasper.s.zap-from` | Those are bolts between points. These start and end on the title's edge, read from the field |
+| Particles | `jasper.particle-world`, `jasper.particle-systems`, `jasper.particle-playground`, `jasper.s.dust` | Those are stepped simulations with checkpoint caches, or a texture. This is closed form and scrubs exactly, emits from the shape, and sits in a look |
+| Glints | `jasper.s.glint` and its rainbow variant | Those put rays on every highlight, as a filter, with nothing to keep across frames. This one has stars with identity |
+| Brush Swirl | `jasper.write-on` | That paints along a keyframed brush from the clip start. This is a designed stroke with a write-on front |
+| Sunburst, Speed Lines, Shockwave, Magic Circle, Ink Splatter, Fire, Smoke, Corona, Pattern, Light Streaks | none | Nothing in the registry draws these. Clouds and textures are full-frame noise with no shape; S_ streak filters smear a picture's highlights, Light Streaks draws its own |
+
+### Time (TL-061)
+
+No generator keeps state, and the framework has no place for it: `u_tlTime` and the seed are the only inputs besides params and the
+shape, so frame N has one picture. `u_tlTime` is content seconds in a look and `fxPatternFrame(ctx) / fps` in a standalone effect:
+the foundation read `ctx.frame`, which restarts at a razor cut.
+
+- **Noise** scrolls and warps with `evolution + speed · t`. Keyframing `speed` jumps, as in After Effects; keyframe `evolution`
+  for a change of pace.
+- **Particles:** `x = t / life + phase`, age `fract(x)`, cycle `floor(x)`. The cycle re-seeds the birth, and an envelope hides the
+  wrap. Position is exact at any age: `birth + direction · travel · (1 − e^(−k·age)) / (1 − e^(−k)) + g · seconds² / 2 + sway`.
+- **Hold-frame boil:** a step number `floor(t · rate)` enters the hash, so every frame of a step is identical. Lightning re-strikes
+  each bolt on its own beat of four steps. **Continuous:** the same noise slides.
+- **Shockwave:** one Progress. Upstream reads noise at the current radius, which swims. The texture reads a frozen Texture Radius,
+  so fibres keep their angle and scale with the ring. Loop Every only drives the same Progress.
+
+### Stable identity (TL-062)
+
+There is no history, so identity cannot be carried from frame to frame. It has to be a function of the seed and the current shape.
+
+**Sites.** A particle, drop or bolt has a seeded site in the anchor box, and emits from the nearest part of the shape, read from the
+shared field: `site + toEdge` on the outline, the site itself where it is inside for fill. The normal is the same vector. Nothing is
+drawn from a list of the shape's pixels, so nothing re-rolls: Pachislop's rejection sampling changes every later particle when
+one cell flips. A letter that moves disturbs only the sites near it; a typewriter wakes sites where they stand; a site with nothing
+within Capture sleeps behind a smooth gate. Three things follow, and they are limits, not bugs:
+
+- *Anchor.* `Layout` (the layer box, default) gives that locality. A title moved by clip Motion does not change the layer's pixels at
+  all, so this is the common case and it is exact. A title moved whole by a text animator leaves its sites behind and wakes others:
+  `Alpha Bounds` carries every site with it, at the price of locality (a letter that widens the bounds moves all sites).
+- *Birth is read now.* A particle in flight flies from where its site's nearest edge is at this frame, not at its birth frame:
+  that would need the shape's history. Per-letter animation carries a letter's particles with it.
+- *Count.* Sites are spread over the box, so Count is a density: the share near the shape emits. A wide box with a small logo emits
+  fewer. An inverse-CDF mapping of the shape's mass was considered: it gives an exact count and rigid letters, but a letter fading in
+  slides every other particle, which breaks locality.
+
+A site reads the distance bilinearly at its own point and its normal from the distance's gradient over a step of 1.5 % of the unit,
+never per texel: the edge point `q − n·d` is continuous in the site and the same at every resolution. On a medial axis (the middle
+of a stroke, the gap between two letters) the nearest edge flips from one side to the other; the gradient's length falls below 1
+there, and the site fades (0.55 to 0.9), so a flip, between frames or between resolutions, happens where it is invisible.
+
+**Glints** run Pachislop's placement on the GPU every frame, with no read-back: a grid fixed in units of the title (so resolution does
+not change it), luminance of what is below the layer (`tlComp`, so a metal face's highlights count), non-maximum suppression,
+prominence, regional normalisation, face bias from the field, Hessian ridge rejection. Each of 64 seeded **homes** takes the strongest
+peak under a Gaussian prior around it, in one pass per home; a star's jitter, rotation and twinkle belong to the home. That prior is
+the hysteresis, and it is spatial, because a temporal one needs last frame: a peak must beat the one a star holds by the prior's
+margin to take it. Greedy spacing runs in one pass over the 64 candidates, with smooth suppression that follows the score, not the
+rank. Nothing pops: a star fades with its margin over the runner-up in its window, over the first home left out and over any rival it
+suppresses, so a hand-over happens where both are invisible (Pachislop's `fade`, widened); peaks fade through the threshold and the
+shape's edge; and homes on one peak are one star, shared by their priors, so a peak moving from one home to the next crossfades their
+twinkles. No CPU data was needed, so `FxPixels` is not used.
+
+Differences from upstream: normalisation is by the regional maximum only, because a global maximum would need one more reduction and
+the regional one already lets a dim second line compete. Near ties within 4 % of the unit keep the stronger peak instead of blending
+positions.
+
+### Canvas size
+
+A look's canvas is the layer box plus the reach of its layers, every frame, and the shape field is jump-flooded over all of it in
+`rgba32f`. Physics can reach any distance: at a gravity of 70 % of the unit per second² and a life of 4 s, particles fall 5.6 units.
+A canvas grown to that, and drawn at 2× for the resolution test, is about 4 700 px a side, and its flood buffers alone are about 700 MB:
+SwiftShader lost the context there, and every later picture of the run came back blank (which a fingerprint run then blessed; the GL
+test now checks a perturbation before it blesses). So Particles and Light Streaks have an **Extent**, as Sunburst, Lens Flare and
+Pattern do: the reach is the smaller of the physics and the extent, and the picture fades out over the last 8 to 12 % of the unit.
+Standalone they fill the frame.
+
+### Colour (TL-051)
+
+A generator draws its own colours, plain `lp.color` params, the same as a standalone effect. As a look layer it gains `Own Colours`, a
+paint and an opacity. With own colours off, its picture goes through a luma gradient map: brightness picks along the paint from
+black up, and the hottest part goes white, so hot cores stay hot in any colourway. A gradient paint is the map itself. `light` reads
+premultiplied brightness, `luma` the straight colour of a picture with real transparency (smoke, fire), `flat` takes the paint by
+alpha (ink, brushes, which a luma map would leave black). Fire defaults to its own colours.
+
+### Assumptions
+
+Not documented anywhere; chosen by looking at sheets: the luma map's knees (0.55, 0.72), a standalone unit of a fifth of the shorter
+side, Capture defaults, the prior's width (0.75 of a home's share of the box) and the fade margins of Glints (8 % of the top score,
+30 % over the runner-up), the particle glow's shape, and every preset value, converted from Pachislop's px at 2 px per 1 % of a 200 px
+title and tuned.
+
 ## Formulas and sources
 
 - Jump flooding: Rong and Tan, "Jump flooding in GPU with applications to Voronoi diagram and distance transform" (I3D 2006);
@@ -772,8 +894,8 @@ rather than listing them twice.
 - Blur: separable Gaussian, reach 3σ (a layer's `blur` and `radius` are the visible radius ≈ 3σ, Pachislop's convention).
 - SSIM in tests: Wang et al. 2004, 8 × 8 windows, `C1 = (0.01·255)²`, `C2 = (0.03·255)²`.
 - Assumption, not documented anywhere: a rim's opacity rule (full from 50 % local alpha) was chosen by looking at fades.
-- CIE L*a*b* (D65) from sRGB, IEC 61966-2-1 primaries, as in Pachislop's `toLab`. Rec. 601 luma for the recolour ramp, as design tools'
-  gradient maps do.
+- CIE L*a*b* (D65) from sRGB, IEC 61966-2-1 primaries, as in Pachislop's `toLab`. Rec. 601 luma for the library's recolour ramp
+  (`recolor.ts`, no longer drawn with since integration 2), as design tools' gradient maps do.
 - Bevel: Pachislop's `HEIGHT_FRAG` profiles and the highlight screen, shadow multiply of Photoshop's Bevel & Emboss. Satin: the
   absolute difference of two offset blurred copies of the shape, Photoshop's satin recipe as Pachislop writes it.
 - Metal: Schlick's approximation of Fresnel, `F = f0 + (1 − f0)(1 − cos θ)⁵` (Schlick, "An inexpensive BRDF model for
@@ -799,9 +921,13 @@ rather than listing them twice.
   narrowed by `1 − perspective · h / H`. Pachislop's; the 10° guard against a horizontal direction is too.
 - Gradient blends: `fx_blendRgb` on linear colours. Blending in linear light is §8's requirement. Photoshop blends on sRGB values, so a
   Multiply here is darker than Photoshop's.
+- Hessian ridge test: the eigenvalues of the 2×2 Hessian of smoothed luminance, `m ± √(¼(Lxx − Lyy)² + Lxy²)`; a spot curves down
+  both ways, a ridge one way. Homes: the R2 low-discrepancy sequence, Roberts, "The Unreasonable Effectiveness of Quasirandom
+  Sequences" (2018), α = (0.7548776662, 0.5698402910). Star and heart distances: Inigo Quilez, as Pachislop.
+- Exponential drag: `dv/dt = −k·v` integrates to `(1 − e^(−k·t)) / k`, normalised here to 1 at the end of life.
 
-Port map: `licenses/ported/pachislop-rendering.md`, `licenses/ported/pachislop-looks.md`,
-`licenses/ported/pachislop-effects.md`.
+Port maps: `licenses/ported/pachislop-rendering.md`, `licenses/ported/pachislop-looks.md`,
+`licenses/ported/pachislop-effects.md`, `licenses/ported/pachislop-finishes.md`, `licenses/ported/pachislop-generators.md`.
 
 ## Measured
 

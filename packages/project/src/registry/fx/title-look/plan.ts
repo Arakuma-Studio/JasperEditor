@@ -22,7 +22,7 @@ import type {
 	GlslChunk,
 	ShaderPass,
 } from '../shader.ts';
-import { hashFloats, resolveIncludes } from '../shader.ts';
+import { resolveIncludes } from '../shader.ts';
 import {
 	FILLED_DEPTH,
 	isPaintParam,
@@ -51,7 +51,6 @@ import {
 	GLSL_TL_UNIT_KNOWN,
 } from './glsl.ts';
 import { paintOf, paintParts } from './paint.ts';
-import { recolorRamp } from './recolor.ts';
 import { activeParamSpecs, titleFinish, titleLayerType, withDefaults } from './registry.ts';
 import { type FxTextSpans, textSpanPass, textSpanUniforms } from './spans.ts';
 
@@ -325,13 +324,8 @@ function layerPieces(
 		include.push(...(finish.include ?? []));
 		Object.assign(uniforms, finish.uniforms?.(l.params));
 	}
-	if (l.def.recolors) {
-		const ramp = recolorRamp(look.palette);
-		uniforms.u_tlRecolor = !l.fixedColor;
-		uniforms.u_tlRecolorRamp = { texels: ramp, key: hashFloats(ramp) };
-		// `tl_recolor` comes with the gradient chunk, which reads the bounds.
-		usesBounds = true;
-	}
+	// TL-051: a generator recolours through its own paint (`registry.ts`) unless the look fixes the layer's colour.
+	if (l.def.recolors) uniforms.u_tlRecolor = !l.fixedColor;
 	Object.assign(uniforms, l.def.uniforms?.(l.params));
 	return { defines, textures, glsl, uniforms, include, usesBounds, usesSpans, fieldInside };
 }
@@ -360,7 +354,7 @@ export function planTitleLook(ctx: FxPlanContext): readonly ShaderPass[] {
 		layers.some((l) => l.def.prepassReadsBounds?.(l.params)) ||
 		pieces.some((p) => p.usesBounds || readsBounds(p.glsl)) ||
 		pieces.some((p) => resolveIncludes(p.include).some((c) => readsBounds(c.source))) ||
-		shaders.some((s) => readsBounds(s.glsl)) ||
+		shaders.some((s) => s.usesBounds === true || readsBounds(s.glsl)) ||
 		blurred.some((b) => !!b && readsBounds(b.mask));
 	const passes: ShaderPass[] = [];
 	if (usesBounds) passes.push(...boundsPasses());
