@@ -48,6 +48,7 @@ import {
 	isTextAnimationDrag,
 	readTextAnimationDrag,
 } from '../../text-animation/actions.ts';
+import { beginTextEntry } from '../../text-edit/begin.ts';
 import {
 	is3dLayer,
 	type Move3D,
@@ -56,12 +57,11 @@ import {
 	resolveProgramScene,
 } from '../../three-d/scene.ts';
 import { threeDViews } from '../../three-d/view-store.ts';
-import { applyEffectToClips, isEffectDrag, readEffectDragPayload } from '../effects/drag.ts';
 import { announce } from '../../title-looks/actions.ts';
 import { dropLookAsTitle, dropLookOnClip, isLookDrag, readLookDrag } from '../../title-looks/drag.ts';
+import { applyEffectToClips, isEffectDrag, readEffectDragPayload } from '../effects/drag.ts';
 import { insertMotionTemplate, MG_TEMPLATE_MIME, readMgTemplateDrag } from '../motionTemplates/insert.ts';
 import { inspectorFocus } from '../properties/lib/focus.ts';
-import { beginTextEntry } from '../../text-edit/begin.ts';
 import { activeSequence, transformAt, transformCommands } from './edits.ts';
 import { MotionPathLayer } from './MotionPathLayer.tsx';
 import { MONITOR_COLORS } from './monitor.tokens.ts';
@@ -1012,7 +1012,7 @@ export function TransformOverlay({
 			);
 			return;
 		}
-// M2 (wp-m2-text-anim, S11:TXA-020): left half of the text layer = In, right half = Out.
+		// M2 (wp-m2-text-anim, S11:TXA-020): left half of the text layer = In, right half = Out.
 		const textAnim = readTextAnimationDrag(e.dataTransfer);
 		if (textAnim) {
 			e.preventDefault();

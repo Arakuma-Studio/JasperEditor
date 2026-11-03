@@ -20,7 +20,8 @@
       "!**/pnpm-lock.yaml",
       "!**/.stage",
       "!**/*.css",
-      "!**/goldens/**/*.json"
+      "!**/goldens/**/*.json",
+      "!**/packages/project/test/fixtures/patchy-warp-meshes.json"
     ]
   },
   "formatter": {
