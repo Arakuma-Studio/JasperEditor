@@ -46,7 +46,7 @@ const TIME_NOTES = [
 
 let schemaCache: { url: string; schema: Record<string, unknown> } | null = null;
 
-async function engineSchema(ctx: ToolContext): Promise<Record<string, unknown>> {
+export async function engineSchema(ctx: ToolContext): Promise<Record<string, unknown>> {
 	const url = ctx.link.target?.url ?? '';
 	if (schemaCache && schemaCache.url === url) return schemaCache.schema;
 	const schema = (await ctx.engine((c) => c.agentSchema())) as Record<string, unknown>;
@@ -91,7 +91,7 @@ export function registerEditingTools(ctx: ToolContext): void {
 		{
 			title: 'Describe edit commands',
 			description:
-				'The catalog of document commands accepted by apply_commands (protocol jasper.tx/1): without arguments a list of every command type with its label, whether it is implemented and whether it needs user approval, plus addressing and time rules and a sample transaction. With `types`, the full JSON Schema and a worked example for each of those commands. Also lists motion-graphic templates and sequence presets.',
+				'The catalog of document commands accepted by apply_commands (protocol jasper.tx/1): without arguments a list of every command type with its label, whether it is implemented and whether it needs user approval, plus addressing and time rules and a sample transaction. With `types`, the full JSON Schema and a worked example for each of those commands. Also lists motion-graphic templates and sequence presets, and counts the effects (list_effects lists them).',
 			input: {
 				types: z
 					.array(z.string())
@@ -141,6 +141,10 @@ export function registerEditingTools(ctx: ToolContext): void {
 					(t) => `${t.id}@${t.version} (${t.name})`,
 				),
 				presets: (schema.presets as { id: string }[] | undefined)?.map((p) => p.id),
+				effects: {
+					count: (schema.effects as unknown[] | undefined)?.length ?? 0,
+					hint: 'list_effects searches them by words and category; effect.add takes an id.',
+				},
 				properties: (schema.properties as { key: string; animatable: string }[] | undefined)?.map(
 					(p) => p.key,
 				),

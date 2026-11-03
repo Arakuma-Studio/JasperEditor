@@ -32,6 +32,7 @@ import { DERIVE_GUIDE, registerDeriveTools } from './tools/derive.ts';
 import { EASE_GUIDE, registerEaseTools } from './tools/ease.ts';
 import { EDIT_UX_GUIDE, registerEditUxTools } from './tools/edit-ux.ts';
 import { registerEditingTools } from './tools/editing.ts';
+import { EFFECTS_GUIDE, registerEffectTools } from './tools/effects.ts';
 import { EXPRESSIONS_GUIDE, registerExpressionTools } from './tools/expressions.ts';
 import { FONTS_GUIDE, registerFontTools } from './tools/fonts.ts';
 import { FOOTAGE_GUIDE, registerFootageTools } from './tools/footage.ts';
@@ -74,6 +75,7 @@ import { registerTextAnimatorTools, TEXT_ANIMATORS_GUIDE } from './tools/text-an
 import { registerTextStyleTools, TEXT_STYLES_GUIDE } from './tools/text-styles.ts';
 import { registerThreeDTools, THREE_D_GUIDE } from './tools/three-d.ts';
 import { registerTimeTools, TIME_GUIDE } from './tools/time.ts';
+import { registerTitleTools, TITLE_ART_GUIDE } from './tools/titles.ts';
 import { registerTrackingTools, TRACKING_GUIDE } from './tools/tracking.ts';
 import { registerTranscriptFixTools, TRANSCRIPT_FIX_GUIDE } from './tools/transcript-fix.ts';
 import { registerTransitionTools, TRANSITION_GUIDE } from './tools/transitions.ts';
@@ -140,6 +142,7 @@ const GUIDES: Record<string, GuideSource> = {
 	'trim-paths': TRIM_PATHS_GUIDE,
 	templates: TEMPLATES_GUIDE,
 	clipboard: CLIPBOARD_GUIDE,
+	effects: EFFECTS_GUIDE,
 	presets: PRESETS_GUIDE,
 	fonts: FONTS_GUIDE,
 	cache: CACHE_GUIDE,
@@ -164,6 +167,7 @@ const GUIDES: Record<string, GuideSource> = {
 	captions: CAPTIONS_GUIDE,
 	subtitles: SUBTITLES_GUIDE,
 	'text-styles': TEXT_STYLES_GUIDE,
+	'title-art': TITLE_ART_GUIDE,
 	speech: SPEECH_GUIDE,
 	glossary: GLOSSARY_GUIDE,
 	'transcript-fix': {
@@ -242,6 +246,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerTrackingTools(ctx);
 	registerTransitionTools(ctx);
 	registerAnimationTools(ctx);
+	registerTitleTools(ctx);
 	registerTextAnimatorTools(ctx);
 	registerMotionPathTools(ctx);
 	registerKeyframesBlendTools(ctx);
@@ -254,6 +259,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerTemplateTools(ctx);
 	registerClipboardTools(ctx);
 	registerPresetTools(ctx);
+	registerEffectTools(ctx);
 	registerFontTools(ctx);
 	registerCacheTools(ctx);
 	registerPreviewTools(ctx);

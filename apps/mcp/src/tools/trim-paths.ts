@@ -55,7 +55,7 @@ const TracerArg = z
 	.describe("Also add a follower dot riding the moving tip of each clip's trim (same undo step)");
 
 /** A length in sequence frames: frames, {frames}, {seconds} or a timecode counted from 0. */
-function durationFrames(seq: Sequence, input: unknown): number {
+export function durationFrames(seq: Sequence, input: unknown): number {
 	let frames: number;
 	if (typeof input === 'string') {
 		const f = parseTimecode(input, seq.settings.frameRate as Rational, {

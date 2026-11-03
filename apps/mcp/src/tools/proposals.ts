@@ -36,6 +36,7 @@ import {
 	type Sequence,
 	sequenceTimecode,
 	soundCuesOf,
+	TITLE_ART_FEATURE,
 	trackLabel,
 } from '@jasper/project';
 import { z } from 'zod';
@@ -58,7 +59,7 @@ export const PROPOSALS_GUIDE = `Proposals (spec 12 §2.5): a reviewable set of e
 - Read: list_proposals {projectId} lists them (counts per state); get_proposal {projectId, proposalId} gives every item with its state, reason (why it is stale or invalid), selected alternative, the user's note, and a text table of what the undecided items would create (ghosts: track, start, end, sound).
 - Wait: wait_for_proposal {projectId, proposalId} returns when the user changed something (or the proposal was applied or discarded; until: "decided" waits until nothing is left to decide), at most 900 s: per item accepted | rejected | pending | stale | invalid, "swapped" when they chose an alternative, and their notes. Read the notes and act on them (a new proposal for what they asked); call it again to keep waiting.
 - Your own cut: propose_edits {projectId, sequenceId, title, strategy, items} turns a multi-step edit (selects, removals, retakes, reorders, B-roll) into ONE "Rough cut" proposal the user reviews instead of a pile of apply_commands History entries: the strategy (1–8 sentences) shows above the items, each item carries its reason, beat and quote. Every item is dry-run first; any failure stores nothing and lists the failing item indices. Agents may not apply rough cuts unless Project Settings ▸ Agent Proposals allows it (off by default): hand it over and wait_for_proposal.
-- Features: list_proposal_features {projectId} lists the proposal features (sound-design, edit-automation, subtitles, transcript-cleanup, transcript-correction, rough-cut), their producing tools, Review groups (items name theirs in meta.group), whether you may apply them here and whether their producer refreshes stale items.
+- Features: list_proposal_features {projectId} lists the proposal features (sound-design, edit-automation, subtitles, transcript-cleanup, transcript-correction, rough-cut, title-art), their producing tools, Review groups (items name theirs in meta.group), whether you may apply them here and whether their producer refreshes stale items.
 - Apply: accept_proposal {projectId, proposalId, itemIds: "all" | [ids]} works for an agent only where the feature allows it: sound design when the user turned on "Allow agents to apply sound proposals" for the sequence (off by default); editing automation, subtitles and transcript cleanup while Project Settings ▸ Agent Proposals allows them (on by default; the user may turn them off); rough cuts only when the user turned them on there (off by default). Refused → E_APPROVAL_REQUIRED: do not retry, ask the user to apply it in the Review panel. Accepting is still one undoable "Agent: …" step, and destructive commands inside still ask the user. Stale items (the edit changed under them) refuse the whole accept unless partial: true. "all" takes only the items that are selected (an item with selected: false — e.g. a Maybe transcript fix — is offered unchecked) and, for transcript fixes, never the maybe group: name such items' ids to apply them, and only when the user asked. reject_proposal {itemIds} marks items rejected (the document is untouched).
 - Stale items: refresh_proposal {projectId, proposalId} asks the feature's producer to re-plan them on the current edit (they come back pending; nothing is applied) — never accept a stale item as it was planned. Refused with E_NOT_REFRESHABLE when the producer cannot re-plan: propose the changed part again.
 - Producers of new features: a proposal whose accept would exceed one transaction (5 000 commands / 20 MB; 2 000 items) is refused with E_TOO_LARGE and details.suggestedRange (frames that fit): run the pass on that range, then the rest. Batch commands keep passes small: clip.addAdjustmentBatch (adjustment clips with effects and keys relative to each item) and keyframe.addBatch (keys on many clips) — one command per item. Anchor decorations with meta.anchorOn {clips: [decorated clip ids], cuts: [{trackId, frame}]} so they go stale when the cut moves.
@@ -172,6 +173,9 @@ function itemView(it: ProposalItem, withCommands: boolean) {
 		...(typeof m.timecode === 'string' ? { timecode: m.timecode } : {}),
 		...(typeof m.soundId === 'string' ? { soundId: m.soundId } : {}),
 		...(typeof m.role === 'string' ? { role: m.role } : {}),
+		// a title (propose_title): the look and colourway the item applies
+		...(typeof m.lookName === 'string' ? { look: m.lookName } : {}),
+		...(typeof m.colorwayName === 'string' ? { colorway: m.colorwayName } : {}),
 		...(withCommands
 			? {
 					commands: it.commands,
@@ -418,7 +422,7 @@ export function registerProposalTools(ctx: ToolContext): void {
 		{
 			title: 'List proposal features',
 			description:
-				'The proposal features of a project (sound-design, edit-automation, subtitles, transcript-cleanup, transcript-correction, rough-cut): what their proposals are, the tools that produce them, their Review groups (put the group id in an item’s meta.group), the item noun, whether YOU may apply them here (agentAccept: setting "project" → allowed (Project Settings ▸ Agent Proposals; default on, rough-cut off); setting "sound-sequence" → per sequence id, default off) and whether their producer re-plans stale items (refreshable, refresh_proposal).',
+				'The proposal features of a project (sound-design, edit-automation, subtitles, transcript-cleanup, transcript-correction, rough-cut, title-art): what their proposals are, the tools that produce them, their Review groups (put the group id in an item’s meta.group), the item noun, whether YOU may apply them here (agentAccept: setting "project" → allowed (Project Settings ▸ Agent Proposals; default on, rough-cut off); setting "sound-sequence" → per sequence id, default off) and whether their producer re-plans stale items (refreshable, refresh_proposal).',
 			input: { projectId: ProjectIdArg },
 			annotations: READ_ONLY,
 		},
@@ -490,7 +494,7 @@ export function registerProposalTools(ctx: ToolContext): void {
 					.max(64)
 					.optional()
 					.describe(
-						'Only this feature ("sound-design", "edit-automation", "subtitles", "transcript-cleanup", "transcript-correction", "rough-cut")',
+						'Only this feature ("sound-design", "edit-automation", "subtitles", "transcript-cleanup", "transcript-correction", "rough-cut", "title-art")',
 					),
 				undecided: z.boolean().optional().describe('Only proposals with items still to review'),
 			},
@@ -601,9 +605,11 @@ export function registerProposalTools(ctx: ToolContext): void {
 				soundCheck,
 				next: proposalDecided(p)
 					? 'Nothing left to review.'
-					: soundCheck || p.feature === ROUGH_CUT_FEATURE
-						? 'The user reviews it in the editor’s Review panel; call wait_for_proposal {projectId, proposalId, since: updatedAt} to learn their decisions and notes.'
-						: 'Run sound_check {projectId, proposalId} first (what it fixes and introduces), then ask the user to review it in the Review panel and call wait_for_proposal {projectId, proposalId, since: updatedAt}.',
+					: p.feature === TITLE_ART_FEATURE
+						? 'Run title_check {projectId, proposalId} if the edit changed, then the user reviews it in the Review panel; call wait_for_proposal {projectId, proposalId, since: updatedAt}.'
+						: soundCheck || p.feature === ROUGH_CUT_FEATURE
+							? 'The user reviews it in the editor’s Review panel; call wait_for_proposal {projectId, proposalId, since: updatedAt} to learn their decisions and notes.'
+							: 'Run sound_check {projectId, proposalId} first (what it fixes and introduces), then ask the user to review it in the Review panel and call wait_for_proposal {projectId, proposalId, since: updatedAt}.',
 			});
 		},
 	);

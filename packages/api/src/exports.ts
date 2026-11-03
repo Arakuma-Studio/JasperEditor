@@ -514,6 +514,71 @@ export const StillRequestSchema = z.object({
 		.optional(),
 });
 export type StillRequest = z.infer<typeof StillRequestSchema>;
+
+/** Spec 19 TL-103 / TL-106: what one `still-sheet` job may hold. */
+export const STILL_SHEET_LIMITS = {
+	maxCells: 32,
+	maxDocuments: 8,
+	maxMetaBytes: 8192,
+	maxHidden: 64,
+} as const;
+
+export const StillSheetCellSchema = z.strictObject({
+	/** Index into `documents`. */
+	document: z.number().int().min(0),
+	sequenceId: z.string(),
+	frame: z.number().int().min(0),
+	/** The caller's name for the cell, returned as is. */
+	tag: z.string().max(64).optional(),
+	/** Clips of the sequence this cell renders disabled: the picture behind a title, without a second document. */
+	hide: z.array(z.string().max(128)).max(STILL_SHEET_LIMITS.maxHidden).optional(),
+});
+export type StillSheetCell = z.infer<typeof StillSheetCellSchema>;
+
+/** `POST /api/stills/sheet`: several Program stills as ONE job (one progress, one cancel, one result). */
+export const StillSheetRequestSchema = z
+	.strictObject({
+		documents: z.array(EnvelopeSchema).min(1).max(STILL_SHEET_LIMITS.maxDocuments),
+		cells: z.array(StillSheetCellSchema).min(1).max(STILL_SHEET_LIMITS.maxCells),
+		/** Width of every cell (default each sequence's). */
+		width: z.number().int().positive().optional(),
+		/** The caller's data about the sheet (layout, labels), returned as `result.meta`. */
+		meta: z.record(z.string(), z.unknown()).optional(),
+	})
+	.superRefine((v, ctx) => {
+		for (const [i, c] of v.cells.entries())
+			if (c.document >= v.documents.length)
+				ctx.addIssue({
+					code: 'custom',
+					path: ['cells', i, 'document'],
+					message: `cell ${i} names document ${c.document} of ${v.documents.length}`,
+				});
+		if (v.meta && JSON.stringify(v.meta).length > STILL_SHEET_LIMITS.maxMetaBytes)
+			ctx.addIssue({
+				code: 'custom',
+				path: ['meta'],
+				message: `meta is at most ${STILL_SHEET_LIMITS.maxMetaBytes} bytes`,
+			});
+	});
+export type StillSheetRequest = z.infer<typeof StillSheetRequestSchema>;
+
+/** `EngineJob.result` of a finished `still-sheet` job: cell n is served at `url`, in request order. */
+export const StillSheetResultSchema = z.object({
+	cells: z.array(
+		z.object({
+			index: z.number().int().min(0),
+			url: z.string(),
+			document: z.number().int().min(0),
+			sequenceId: z.string(),
+			frame: z.number().int().min(0),
+			tag: z.string().optional(),
+			renderPath: z.string(),
+		}),
+	),
+	meta: z.record(z.string(), z.unknown()).optional(),
+	warnings: z.array(z.object({ code: z.string(), message: z.string() })).optional(),
+});
+export type StillSheetResult = z.infer<typeof StillSheetResultSchema>;
 export const StillResultSchema = z.object({
 	url: z.string(),
 	/** the file written at the destination, its format and pixel size. */

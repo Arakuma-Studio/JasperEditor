@@ -194,6 +194,25 @@ export const ROUTES: readonly Route[] = [
 	{ en: 'Add a title', es: 'Añade un título', tools: ['add_text'] },
 	{ en: 'Animate the title', es: 'Anima el título', tools: ['set_text_animation'] },
 	{
+		en: 'Make a stylish title',
+		es: 'Haz un título con estilo',
+		tools: ['find_title_looks', 'propose_title'],
+	},
+	{ en: 'Can the title be read?', es: '¿Se puede leer el título?', tools: ['title_check'] },
+	{ en: 'Save this title look', es: 'Guarda este aspecto de título', tools: ['save_title_look'] },
+	{
+		en: 'Show a title look as JSON',
+		es: 'Muestra un aspecto de título en JSON',
+		tools: ['get_title_recipe'],
+	},
+	{ en: 'Put fire behind the title', es: 'Pon fuego detrás del título', tools: ['add_title_generator'] },
+	{
+		en: 'Add an effect to this clip',
+		es: 'Añade un efecto a este clip',
+		tools: ['list_effects', 'add_effect'],
+	},
+	{ en: 'Change an effect setting', es: 'Cambia un ajuste de un efecto', tools: ['set_effect_param'] },
+	{
 		en: 'Add a lower third or a social comment',
 		es: 'Añade un rótulo o un comentario social',
 		tools: ['add_motion_graphic'],

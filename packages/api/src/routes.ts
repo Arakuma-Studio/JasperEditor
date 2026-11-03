@@ -65,6 +65,7 @@ import {
 	ExportVerifyRequestSchema,
 	RenderPlanSchema,
 	StillRequestSchema,
+	StillSheetRequestSchema,
 } from './exports.ts';
 import {
 	FontCatalogSchema,
@@ -584,6 +585,12 @@ export const ROUTES = {
 		path: '/api/title-looks/poster',
 		body: LookPosterRequestSchema,
 		response: 'binary',
+	},
+	stillSheet: {
+		method: 'POST',
+		path: '/api/stills/sheet',
+		body: StillSheetRequestSchema,
+		response: EngineJobSchema,
 	},
 	/** Which segment hashes have render preview files. */
 	previewStatus: {

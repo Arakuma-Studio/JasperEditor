@@ -27,6 +27,8 @@ import type { ProjectDocument } from '../schema/document.ts';
 import type { Clip, EffectInstance, Sequence } from '../schema/sequence.ts';
 import { flicksPerFrame, type Rational } from '../time.ts';
 import { formatTimecode } from '../timecode.ts';
+import type { Appearance } from '../title-looks/model.ts';
+import { appearancePropertySpecs } from '../title-looks/properties.ts';
 import { transitionSpec, transitionStartFrame } from '../transitions.ts';
 import { type KeyEaseSummary, keyEaseSummaries } from './keyframe-eases.ts';
 import { queryMediaHandle } from './media.ts';
@@ -212,6 +214,8 @@ function clipSpecs(env: PropertyQueryEnv, clip: Clip) {
 		const spec = env.effects?.get(fx.effectId, fx.effectVersion);
 		effectsOut.push({ id: fx.id, effectId: fx.effectId, enabled: fx.enabled, known: !!spec });
 		if (spec) specs.push(...effectPropertySpecs(fx, spec));
+		// spec 19 TL-104: a look's palette, light and layer params, each with its `param.set` target
+		if (fx.appearance) specs.push(...appearancePropertySpecs(fx, fx.appearance as Appearance));
 	}
 	return { specs, effectsOut };
 }

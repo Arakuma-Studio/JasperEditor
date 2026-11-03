@@ -33,3 +33,29 @@ fails and no format row is unverified.
 - Report the numbers: "-14.1 LUFS integrated (target -14 ± 1), true peak -1.3 dBTP, duration 29.97 s (range
   30.00 s, within 1 frame), no black or flash frames at 12 cuts, 1 click at 00:00:18:04 (fixed with a 2-frame
   audio fade)".
+
+## Checking a title
+
+`title_check` {projectId, clipId | proposalId, target?} measures rendered frames before the export exists. Its rows have
+the same shape as `verify_export`'s: `{id, kind, status, measured, expected, at, message, fix?}`, and `verified` means the
+same. `propose_title` returns the same rows as `check`.
+
+| Row | Measured from |
+|---|---|
+| `safe-area` | the title's real alpha bounds against the Program monitor's action-safe and title-safe margins |
+| `off-frame` | ink on the frame edge fails; a glow or shadow reaching it warns |
+| `contrast` | each part of the title against the picture rendered behind it, at the frames it is at rest |
+| `min-size` | text size with Motion's scale, against one thirtieth of the shorter frame side |
+| `read-time` | characters against the time on screen |
+| `font-available` | the engine's fonts |
+| `export-path` | the planner: the path, or the refusal with its blocker |
+| `lint-*` | every style lint issue |
+| `target-safe-area` | where a vertical platform draws its interface: an estimate that only warns |
+
+- `kind: "format"` rows you may fix unasked: `fix.commands` go to `apply_commands`, then check again. On a proposal
+  `fix` has only a label, because its clip has no id yet.
+- `kind: "judgement"` rows: say what was measured, with the timecode, and ask.
+- Rows hold for the returned `revision` only. After any edit, run it again; `stale: true` means the project changed
+  during the check.
+- `notChecked` lists what no row measures, taste first. Put it under Not checked in your report. Never say a title
+  looks good.

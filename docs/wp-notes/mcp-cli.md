@@ -149,6 +149,9 @@ count, frames vs `render_frame` mean diff < 6–10, re-imported clip renders the
 {wait}` (progress seen, job `cancelled`, no file). Measured 2026-10-07 on the shared 12-core machine: 7/7 pass in
 55 s (`node scripts/mcp-qa.mjs`).
 
+`render_frames` no longer submits one still per frame: since spec 19 TL-103 a sheet is one `still-sheet` job
+([title-looks-agents.md](title-looks-agents.md)).
+
 ## 7. Easing and Trim Paths tools
 
 Branch `feat/mcp-ease-trim`. The agent surface of the easing commands (`docs/wp-notes/easing.md` § Easing commands)

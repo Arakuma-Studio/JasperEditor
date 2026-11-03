@@ -90,6 +90,7 @@ import {
 	type SoundSearchRequest,
 	type SoundVisualRequest,
 	type StillRequest,
+	type StillSheetRequest,
 	type StyleCheckRequest,
 	type StyleRecipeCreateRequest,
 	type StyleRecipeDuplicateRequest,
@@ -902,6 +903,10 @@ export class EngineClient {
 	}
 	requestStill(req: StillRequest): Promise<EngineJob> {
 		return this.call('stills', { body: req });
+	}
+	/** Spec 19 TL-103: several stills as one `still-sheet` job (result `StillSheetResult`). */
+	requestStillSheet(req: StillSheetRequest): Promise<EngineJob> {
+		return this.call('stillSheet', { body: req });
 	}
 
 	/** Which segment hashes have render preview files (video / audio) in a preview format. */

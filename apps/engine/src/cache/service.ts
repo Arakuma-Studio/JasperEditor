@@ -73,7 +73,15 @@ const AUTO_BUDGET_SHARE = 0.15;
 /** Usage answers from a scan at most this old. */
 const SCAN_TTL_MS = 15_000;
 /** Job kinds after which an automatic pass is scheduled (they write cache entries). */
-const RENDER_JOB_KINDS = new Set(['export', 'still', 'proxy', 'mg-prerender', 'layer-bake', 'process']);
+const RENDER_JOB_KINDS = new Set([
+	'export',
+	'still',
+	'still-sheet',
+	'proxy',
+	'mg-prerender',
+	'layer-bake',
+	'process',
+]);
 
 type CacheMode = 'auto' | 'unused' | 'all';
 

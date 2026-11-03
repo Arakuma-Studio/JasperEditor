@@ -902,6 +902,15 @@ Status of the foundation; streams still in progress update this list. Evidence: 
 - **Software rendering is slow**: ≈ 1.3 s per 1080p frame for a six-layer look on a title-sized box on SwiftShader, and an
   animated title redraws its whole stack every frame ([performance.md](performance.md) §7). Nothing has been measured on a GPU.
 
+**Agents (TL-100…TL-107):** the `titles` toolset, `title_check`, the `title-art` proposal feature, `still-sheet` jobs and effects
+discovery are in; evidence and thresholds in [wp-notes/title-looks-agents.md](wp-notes/title-looks-agents.md). Limits:
+
+- `title_check` thresholds for minimum size, CJK reading speed and the platform interface zones are assumptions, listed there.
+  No official platform table was found, so `target-safe-area` only warns.
+- `font-available` answers for the family, not for every character of the text.
+- User looks in the engine-backed store (TL-054) are not searched by `find_title_looks`.
+- The rendered rows of a proposal are returned to the agent, not stored on it, so Review does not show them.
+
 ### title-looks fixes (spec 19 §13)
 Fixes the Title Looks feature depends on, each with a regression test that failed before it; details, decisions and
 evidence in [wp-notes/title-looks-fixes.md](wp-notes/title-looks-fixes.md). **Done:** TL-120 (media use-counting for

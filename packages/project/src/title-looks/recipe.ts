@@ -118,3 +118,23 @@ export function appearanceFromRecipe(r: LookRecipe, newLayerId: () => string, se
 		...(r.font ? { font: { family: r.font.family } } : {}),
 	};
 }
+
+/** A stored appearance as a recipe (TL-104): values at rest, the params its layers show, no ids and no keys. */
+export function recipeOfAppearance(a: Appearance): LookRecipe {
+	const palette: NonNullable<LookRecipe['palette']> = {};
+	for (const [role, anim] of Object.entries(a.palette ?? {}))
+		if (anim) palette[role as Role] = [...anim.value] as never;
+	return {
+		palette,
+		light: { source: a.light.source, angle: a.light.angle.value, altitude: a.light.altitude.value },
+		layers: a.layers.map((l) => {
+			const def = titleLayerType(l.type);
+			const finish = l.params.finish?.value;
+			const shown = def ? activeParamSpecs(def, typeof finish === 'string' ? finish : 'flat') : [];
+			const params: Record<string, unknown> = {};
+			for (const p of shown) if (l.params[p.name]) params[p.name] = l.params[p.name]!.value;
+			return { type: l.type, ...(l.name ? { name: l.name } : {}), enabled: l.enabled, params };
+		}),
+		...(a.font ? { font: { family: a.font.family } } : {}),
+	};
+}

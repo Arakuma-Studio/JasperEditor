@@ -402,6 +402,7 @@ Patchy's control meshes are compared control point by control point with the out
 - **A unit of several code points.** `substituteCharacter` compared the first code point with the whole unit, so on the typeset path
   every multi-code-point grapheme was cut with no animator asking: a tate-chu-yoko "12" drew "1", and a decomposed "é" or a ZWJ emoji
   lost its tail. Program and the render agreed, so SSIM was 1.0; looking at the frame found it. The E2E now checks the drawn text.
+Agent tools (§11): [title-looks-agents.md](title-looks-agents.md).
 
 ## Commands (TL-018)
 

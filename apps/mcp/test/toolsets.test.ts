@@ -5,7 +5,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { EngineJob } from '@jasper/api';
-import { ROUGH_CUT_GROUPS } from '@jasper/project/proposals';
+import { PROPOSAL_FEATURES, ROUGH_CUT_GROUPS } from '@jasper/project/proposals';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import {
@@ -139,6 +139,22 @@ async function allTools(): Promise<Tool[]> {
 /** Tool-like identifiers (snake_case with at least one underscore) at the start of each `code span`. */
 function backtickedToolNames(text: string): string[] {
 	return [...text.matchAll(/`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)\b/g)].map((m) => m[1]!);
+}
+
+/** How tool names start: every registered tool does, or NOT_TOOLS below lists it. */
+const TOOL_VERBS =
+	'accept|acknowledge|add|align|analyze|animate|apply|attach|auto|blur|browse|build|call|camera|caption|captions|clean|cleanup|clear|color|connect|convert|copy|create|decorate|delete|derive|describe|detach|detect|disable|duplicate|edit|enable|export|face|fill|find|fit|fix|flatten|frame|freeze|generate|get|grade|group|import|insert|install|interpret|join|lay|light|link|list|listen|locate|make|match|measure|merge|move|nest|new|normalize|open|paste|perf|place|plan|prepare|prerender|process|project|propagate|propose|rebalance|reconnect|record|refresh|regenerate|reject|remix|remove|rename|render|replace|rescan|restore|reverse|revert|save|scaffold|scopes|search|set|simplify|slide|sound|source|split|stabilize|start|style|svg|swap|switch|synchronize|test|title|track|transcribe|transcript|transfer|trim|ui|undo|ungroup|unnest|update|use|verify|view|wait|write';
+const TOOL_NAME_RE = new RegExp(`\\b(?:${TOOL_VERBS})_[a-z0-9]+(?:_[a-z0-9]+)*\\b`, 'g');
+
+/** Identifiers that read like tools and are not: parameters, fields and values the guides name. */
+const NOT_TOOLS = new Set([
+	'search_path', // an OCIO config key (import_ocio_config)
+	'list_changed', // the MCP notification notifications/tools/list_changed
+]);
+
+/** Tool-like identifiers anywhere in a text, in order, without repeats. */
+function namedTools(text: string): string[] {
+	return [...new Set(text.match(TOOL_NAME_RE) ?? [])];
 }
 
 /** Every exported `*_GUIDE` string of the tool modules. */
@@ -461,7 +477,7 @@ describe('instructions, guides and prompt (AF-CTX-003)', () => {
 		const full = ((await s.client.readResource({ uri: 'jasper://guide' })).contents[0] as { text: string })
 			.text;
 		const guides = await guideConstants();
-		expect(Object.keys(guides).length).toBeGreaterThanOrEqual(51);
+		expect(Object.keys(guides).length).toBeGreaterThanOrEqual(53);
 		for (const [name, text] of Object.entries(guides)) {
 			if (!text.trim()) continue;
 			expect(
@@ -591,6 +607,34 @@ describe('agent skill (AF-CTX-005)', () => {
 });
 
 describe('tool names in agent-facing text (AF-CTX-003/004/005)', () => {
+	it('no guide and no tool description names a tool that does not exist (TL-105, TL-107)', async () => {
+		const tools = await allTools();
+		const registered = new Set(names(tools));
+		const sources: [string, string][] = [
+			...Object.entries(await guideConstants()),
+			...tools.map((t) => [`tool ${t.name}`, t.description ?? ''] as [string, string]),
+			...PROPOSAL_FEATURES.map((f) => [`feature ${f.id}`, f.producers.join(' ')] as [string, string]),
+		];
+		const missing: string[] = [];
+		let total = 0;
+		for (const [where, text] of sources)
+			for (const name of namedTools(text)) {
+				total++;
+				if (!registered.has(name) && !NOT_TOOLS.has(name)) missing.push(`${where}: ${name}`);
+			}
+		expect([...new Set(missing)]).toEqual([]);
+		expect(total).toBeGreaterThan(500);
+		for (const t of ['list_effects', 'add_effect', 'set_effect_param'])
+			expect(registered.has(t), t).toBe(true);
+	});
+
+	it('the scan finds an unknown tool name, in plain text and in backticks', () => {
+		expect(namedTools('then call list_widgets {a} and `get_widget`; snake_case_word stays out')).toEqual([
+			'list_widgets',
+			'get_widget',
+		]);
+	});
+
 	it('every backticked tool name in the instructions, prompt, routing table and skill exists', async () => {
 		const registered = new Set(names(await allTools()));
 		const s = await connect('core');

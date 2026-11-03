@@ -14,6 +14,7 @@ export const JOB_KINDS = [
 	'model-download',
 	'export',
 	'still',
+	'still-sheet',
 	'mg-render',
 	'browser-download',
 	'gc',
