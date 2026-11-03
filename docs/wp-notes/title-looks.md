@@ -1044,6 +1044,7 @@ Port maps: `licenses/ported/pachislop-rendering.md`, `licenses/ported/pachislop-
 | Deep Glow radius across a pyramid level (116 → 124 %) | largest alpha step at most 6 / 255 (test bound) | same, `-t continuous` |
 | Look effects at half resolution against full, perturbed params | SSIM above 0.93 for all ten | same, `-t "half the resolution"` |
 | Deep Glow cost, 1080p, SwiftShader | 7.0 s title box, 17.2 s full frame | [performance.md](../performance.md) §7 |
+| Export parity, both paths: library look `look.plasma-core` on animated text (text animator, keyed rim width and glow radius) over a native solid, 1280 × 720, frames 0, 10, 20, 29 against a Remotion still with the fonts Program loads | hybrid (one moving layer bake, composited natively): SSIM ≥ 0.9981, ≥ 99.92 % of values within 3/255; Remotion path: SSIM ≥ 0.9960, ≥ 98.59 % within 3/255; the look changes 10–19 % of values. Run with `JASPER_FFMPEG_LGPL_ONLY=1` on the vendored LGPL FFmpeg 7.1 | `REMOTION_E2E=1 pnpm exec vitest run apps/engine/test/title-look-export.e2e.test.ts`; figures in `<tmp>/title-look-export.txt` |
 
 Delivery (§12), real renders through the engine's routes, outputs opened and read back:
 
@@ -1055,6 +1056,7 @@ Delivery (§12), real renders through the engine's routes, outputs opened and re
 | PSD from a real frame, opened with ag-psd | Layers and groups in order, parts nested inside `fx`, title recombined over the solid within 6 code values of the composite | same |
 | Split with a glow at alpha 2 | The parts reassemble byte for byte | same |
 | Rec. 2020 still against Rec. 709 and Rec. 2020 | > 90 % and 0 % out of gamut | same |
+| All of the above with `JASPER_FFMPEG_LGPL_ONLY=1` (forwarded to the engine) and the vendored LGPL FFmpeg 7.1 for the engine and the Remotion path | 6 of 6 pass; Send to Photoshop renders each layer as a Remotion still and runs ffmpeg only for a display `lut3d`; the PNG paths use `crop`, `lut3d`, `format` (all LGPL) | `REMOTION_E2E=1 JASPER_FFMPEG_LGPL_ONLY=1 pnpm exec vitest run apps/engine/test/delivery.e2e.test.ts` after `pnpm ffmpeg:lgpl` |
 | Gamut Warning in the running app: a Rec. 2020 logo in a Rec. 2020 sequence, checked against Rec. 709 | 2.6 % flagged; the logo's blocks are 53 000 of 2 073 600 pixels (2.56 %), and the mask sits on them | By hand in the app: Program ▸ wrench ▸ Gamut Warning (no automated browser test) |
 | Shape Burst stroke with ag-psd's own decoder | The style is lost; with ours it maps to a `shape` gradient | `pnpm exec vitest run apps/engine/test/ps-styles.test.ts` |
 
