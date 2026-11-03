@@ -233,7 +233,7 @@ describe('user look library (TL-054)', () => {
 
 describe('the speech worker stays light', () => {
 	// It starts per job, and per request for a forced probe: in development it transpiles what it imports, so the package root
-	// costs about 7 s a start and grows with every feature, which pushed `POST /api/speech/probe` past its 10 s budget.
+	// costs about 7 s a start and grows with every feature, which leaves `POST /api/speech/probe` at the edge of its 10 s budget.
 	const walk = (d: string): string[] =>
 		readdirSync(d).flatMap((f) => {
 			const p = join(d, f);
