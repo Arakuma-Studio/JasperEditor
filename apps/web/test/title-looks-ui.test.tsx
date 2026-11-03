@@ -601,8 +601,68 @@ describe('paint control (TL-091)', () => {
 			target: { value: 'gradient' },
 		});
 		expect(screen.queryByTestId('look-gradient-span-note')).toBeNull();
-		fireEvent.change(screen.getByTestId('look-gradient-span'), { target: { value: 'line' } });
-		expect(screen.getByTestId('look-gradient-span-note')).toBeTruthy();
+		// The options carry the reason before one is chosen (`gradientSpanOn` says `needs-text` on a solid).
+		const span = screen.getByTestId('look-gradient-span') as HTMLSelectElement;
+		expect([...span.options].map((o) => o.textContent)).toEqual([
+			'Block',
+			'Line (needs text)',
+			'Glyph (needs text)',
+		]);
+		fireEvent.change(span, { target: { value: 'line' } });
+		expect(screen.getByTestId('look-gradient-span-note').textContent).toBe(
+			'Line and Glyph follow text. On this clip they draw as Block.',
+		);
+	});
+
+	it('names the clips without text when a selection mixes them, and says nothing on text', () => {
+		const { session, ids } = withLook({ titles: 1 });
+		const r = session.apply({
+			label: 's',
+			origin: 'user',
+			commands: [
+				{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V3', color: [0, 0, 0, 1], ref: '$s' },
+				{ type: 'look.apply', clipIds: ['$s'], lookId: lookOf(session, ids[0]!)!.lookId },
+			] as never,
+		});
+		expect(r.ok).toBe(true);
+		const solid = r.ok ? r.refs.$s! : '';
+		const faceOf = (id: string) => lookOf(session, id)!.layers[2]!;
+		const gradient = {
+			kind: 'gradient',
+			gradient: {
+				type: 'linear',
+				span: 'glyph',
+				angle: 90,
+				stops: [
+					{ at: 0, paint: { role: 'face' } },
+					{ at: 1, paint: { role: 'accent1' } },
+				],
+			},
+		};
+		session.apply({
+			label: 'g',
+			origin: 'user',
+			commands: [ids[0]!, solid].map((id) => ({
+				type: 'appearance.setPaint',
+				effectInstanceId: fxOf(session, id)!.id,
+				layerId: faceOf(id).id,
+				paint: gradient,
+			})) as never,
+		});
+		act(() => session.select('timeline', [ids[0]!]));
+		const view = renderWithSession(session, <PropertiesPanel instanceId="p1" visible />);
+		fireEvent.click(screen.getByTestId('look-layer-open-0'));
+		expect(screen.queryByTestId('look-gradient-span-note')).toBeNull();
+		expect([...(screen.getByTestId('look-gradient-span') as HTMLSelectElement).options].map((o) => o.textContent)).toEqual(
+			['Block', 'Line', 'Glyph'],
+		);
+		view.unmount();
+		act(() => session.select('timeline', [ids[0]!, solid]));
+		renderWithSession(session, <PropertiesPanel instanceId="p2" visible />);
+		fireEvent.click(screen.getByTestId('look-layer-open-0'));
+		expect(screen.getByTestId('look-gradient-span-note').textContent).toBe(
+			'Line and Glyph follow text. On the clips without text they draw as Block.',
+		);
 	});
 
 	it('mixed paints read —', () => {

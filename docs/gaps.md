@@ -871,8 +871,6 @@ per area are in [wp-notes/agent-footage.md](wp-notes/agent-footage.md). Limits t
 
 Status of the foundation; streams still in progress update this list. Evidence: [wp-notes/title-looks.md](wp-notes/title-looks.md).
 
-- **`line` and `glyph` gradient spans act as `block` on clips without text** (TL-036); `gradientSpanOn(span, clip.kind)` gives the
-  UI the fact (`spanNote: 'needs-text'`). The Appearance UI still has to show it.
 - **A title of more than 4096 drawn glyphs** gets span records for its first 4096 (`MAX_SPAN_GLYPHS`); the owner pass is linear
   in the glyphs. Nobody sets a gradient per glyph on that much text, but it is a hard cap, not a soft one.
 - **Lights and reflections are in layer space**: a rotated title's bevel light and environment turn with it. Pachislop undoes the

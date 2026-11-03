@@ -114,7 +114,8 @@ looks and compile once. A six-layer look with a blur plans about 25 passes. Meas
   at rest and stays on the letter as it moves, turns and scales. `block` is the text at rest in a uniform (no pass); `line` and
   `glyph` need `tlSpan`, the owner of each pixel: nearest box with the runner-up and its share, so a seam under a rim
   antialiases. Only clips whose look has a gradient report anything (`appearanceWantsTextSpans`). Without records (`still`,
-  `shape`, `video`…) every span is the frame's alpha bounds; `gradientSpanOn(span, clip.kind)` says so to the UI.
+  `shape`, `video`…) every span is the frame's alpha bounds; `gradientSpanOn(span, clip.kind)` says so to the UI, which marks Line and Glyph
+  "(needs text)" when no selected clip has text and notes under the gradient that they draw as Block there (`GradientField`).
   Vertical text (TL-111, merged with spans at integration 2): the rest layout is measured with the box height, where a column
   wraps, and a glyph's box is its cell, since a column places glyphs by the middle of the cell rather than on a baseline
   (`TypesetLayout.vertical`). `title-look-finishes.e2e.test.ts` "glyph spans on vertical text" failed with either change missing

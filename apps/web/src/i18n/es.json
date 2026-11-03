@@ -13568,5 +13568,8 @@
   "Transmission": "Transmisión",
   "Use Advanced 3D": "Usar 3D avanzado",
   "White Gloss": "Blanco brillante",
-  "Apply Preset…": "Aplicar ajuste…"
+  "Apply Preset…": "Aplicar ajuste…",
+  "{0} (needs text)": "{0} (necesita texto)",
+  "Line and Glyph follow text. On these clips they draw as Block.": "Línea y Glifo siguen al texto. En estos clips se dibujan como Bloque.",
+  "Line and Glyph follow text. On the clips without text they draw as Block.": "Línea y Glifo siguen al texto. En los clips sin texto se dibujan como Bloque."
 }
