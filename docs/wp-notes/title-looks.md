@@ -1173,6 +1173,11 @@ for the missing fingerprints, and for a generator example that was clipped by it
 | `clip.splitImage` | `packages/project/src/commands/{schemas,handlers}/image-split.ts` |
 | Gamut and legal check | `packages/project/src/color/gamut-check.ts`, `apps/engine/src/export/delivery/gamut.ts` |
 | Dialogs, overlay, commands | `apps/web/src/delivery/` |
+
+A dialog's job ends with the dialog (`useDialogJob`, `runToEnd`'s signal): closing it, or another dialog replacing it, stops
+the polling at once and cancels the engine job, and nothing sets state after. Cancel while a write is still queued closes
+the dialog and cancels the job when it arrives; a cancel the engine refuses is shown in the dialog. Every hosted dialog
+renders behind its own error boundary (`DialogHost`): a dialog that throws is a small dialog with the error and Close.
 | MCP tools | `apps/mcp/src/tools/delivery.ts`; guide topic `delivery` |
 | Routes | `apps/engine/src/routes/delivery.ts` |
 
