@@ -1,5 +1,11 @@
 // Composition contract (ARCHITECTURE §8, S03:ARC-003): inputProps = {doc: RenderDoc, options: RenderOptions}.
-import type { MediaHandle, RenderSnapshot, RenderVisualClip, ResolvedLayerProps } from '@jasper/project';
+import type {
+	FxTextSpans,
+	MediaHandle,
+	RenderSnapshot,
+	RenderVisualClip,
+	ResolvedLayerProps,
+} from '@jasper/project';
 import type { MatteTap } from './fx/matte.ts';
 
 export const SEQUENCE_COMPOSITION_ID = 'JasperSequence';
@@ -95,6 +101,8 @@ export type LayerProps = {
 	 * screen, like a transition side's.
 	 */
 	composite?: { tap: LayerTap };
+	/** spec 19 TL-036: the glyphs a text layer drew at this frame, when its look has a gradient (`layers/text/spans.ts`). */
+	textSpans?: FxTextSpans | null;
 };
 
 /** Where a captured layer delivers its picture (the layer's fx canvas) and its placement. */

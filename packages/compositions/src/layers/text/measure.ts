@@ -171,6 +171,22 @@ export function sideBearings(g: string, s: TextStyle, family: string): [number, 
 	return [x0, m.width - x1];
 }
 
+/** Ink of a grapheme around its baseline origin (px), or null when there is no ink / no canvas. */
+export function inkBounds(
+	g: string,
+	s: TextStyle,
+	family: string,
+): { left: number; right: number; ascent: number; descent: number } | null {
+	const c = ctx2d();
+	if (!c || isSpaceGrapheme(g)) return null;
+	c.font = `${s.italic ? 'italic ' : ''}${s.smallCaps ? 'small-caps ' : ''}${s.weight} ${glyphSize(s)}px ${family}`;
+	const m = c.measureText(s.allCaps ? g.toUpperCase() : g);
+	const left = -m.actualBoundingBoxLeft;
+	const right = m.actualBoundingBoxRight;
+	if (!(right > left)) return null;
+	return { left, right, ascent: m.actualBoundingBoxAscent, descent: m.actualBoundingBoxDescent };
+}
+
 /**
  * Per-grapheme extra space before / after (px) from optical kerning, manual kerning and tsume, in logical order
  * (EffectCraft `space_item`): tsume removes `t ·` side bearings; optical pulls each pair's ink gap halfway to the

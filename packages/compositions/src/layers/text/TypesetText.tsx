@@ -52,6 +52,7 @@ import {
 	type TextPaintPlan,
 	TileFilter,
 } from './paint.tsx';
+import { type ReportSpans, typesetSpans, useReportSpans } from './spans.ts';
 import { charFlowCss, FAUX_ITALIC_SLANT, fauxBoldWidth, glyphSize, variationSettings } from './typography.ts';
 
 type Fonts = LayerProps['fonts'];
@@ -133,10 +134,12 @@ export function TypesetText({
 	layer,
 	source,
 	hidden,
+	reportSpans,
 }: {
 	layer: LayerProps;
 	source: TypesetSourceProps;
 	hidden: boolean;
+	reportSpans?: ReportSpans | undefined;
 }) {
 	const uid = useId().replace(/[^\w-]/g, '');
 	const { width: compWidth, height: compHeight } = useVideoConfig();
@@ -324,6 +327,18 @@ export function TypesetText({
 		];
 	};
 	const visible = placed.filter((g) => g.xf.opacity > 0);
+	useReportSpans(
+		reportSpans,
+		reportSpans
+			? typesetSpans(
+					lay,
+					family,
+					visible,
+					laid.map((g) => g.origin),
+					threeD ? { distance: cameraZoom(compWidth), origin: camera as [number, number] } : null,
+				)
+			: null,
+	);
 	let passes: Pass[];
 	if (fillAndStroke === 'allFillsOverAllStrokes')
 		passes = [

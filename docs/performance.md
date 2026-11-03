@@ -312,3 +312,11 @@ through `fxPreviewScale`, and a still look with unchanged input and params is no
 frame, field included: on this host ≈ 1.3 s per 1080p frame for a title-sized box, so one minute of animated title takes
 ≈ 39 minutes on the CPU. The field could be kept across frames when only layer params change (static text with a keyed rim);
 that is not done yet.
+
+### Finishes (pass counts)
+
+Planned passes for a 1200 × 280 canvas with a 200 px unit (`planTitleLook`): face alone 9; a bevel 14; metal, whose default Fit
+floods inscribed circles and needs the shape field to the middle of the stroke, 31; a hull plate 13; a closed contour plate 21
+(its second flood); a `glyph` gradient 15; a stack of plate, rim, face, inline, sheen, gloss and erosion, all with finishes, 57.
+No timings: this host ran at a load average of 60 to 80 from other agents' work while these were built, which would have
+measured the queue, not the shaders. Rerun `TL_PERF=1` on a quiet machine. Turning Fit off is the cheap way to lighten a metal.

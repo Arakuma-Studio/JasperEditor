@@ -17,6 +17,7 @@ vec4 tl_layer(TlSurface s) {
   return tl_finish(tlPaint_paint(s), s) * s.alpha * (u_opacity * 0.01);
 }`,
 	}),
+	handles: [{ kind: 'angle', params: ['paintAngle'] }],
 	summary(p) {
 		return {
 			swatch: layerSwatch(FACE_LAYER, p),

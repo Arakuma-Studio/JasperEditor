@@ -33,6 +33,11 @@ routing and the layer bake need no per-kind code.
 | Pass planner, padding, uniforms | `packages/project/src/registry/fx/title-look/plan.ts` |
 | Shared GLSL (surface, field, blur) | `packages/project/src/registry/fx/title-look/glsl.ts` |
 | Paints and gradients | `packages/project/src/registry/fx/title-look/paint.ts` |
+| Text spans, glyph records (TL-036) | `packages/project/src/registry/fx/title-look/spans.ts`, `packages/compositions/src/layers/text/spans.ts` |
+| Relief, Fit, curves | `packages/project/src/registry/fx/glsl/title-relief.ts` |
+| Reflection environments (TL-038) | `packages/project/src/registry/fx/glsl/title-env.ts` |
+| Motifs | `packages/project/src/registry/fx/glsl/title-pattern.ts` |
+| Title Material (§8) | `packages/project/src/registry/fx/title-look/material.ts` |
 | Layer types, finishes, generators | `packages/project/src/registry/fx/title-look/{layers,finishes,generators}/` |
 | Direct text entry, run toolbar (TL-085, TL-093) | `apps/web/src/text-edit/` |
 | Run operations, vertical text rules (TL-093, TL-111) | `packages/project/src/text-runs.ts`, `text-writing.ts` |
@@ -100,8 +105,31 @@ looks and compile once. A six-layer look with a blur plans about 25 passes. Meas
 - **Unit (TL-012).** Text: the text size, one uniform. Other clips: the shorter side of the alpha bounds, read from the
   reduction in the shader. Plan-time decisions there (flood steps, blur scale) use the layer box as an upper bound and three
   mip levels of margin, so a small logo in a huge transparent still blurs slightly coarser, never wrongly sized.
-- **`block` span uses the alpha bounds of the frame** on every clip kind. It is exact for still text; under position
-  animators the bounds follow the letters. TL-036 replaces this with layout boxes for text.
+- **Spans (TL-036).** A text layer reports its glyphs in a layout effect (`layers/text/spans.ts`), so the chain, which runs on the
+  paint after it, draws with them on the same frame: every path knows where a glyph rests and how it moved (the plain block:
+  not at all; the unit overlay: the CSS transform of its unit; typeset characters: their matrix, with the camera's perspective
+  under per-character 3D). `buildTextSpans` stores, per glyph, drawn → rest as a homography, so a gradient runs in the layout
+  at rest and stays on the letter as it moves, turns and scales. `block` is the text at rest in a uniform (no pass); `line` and
+  `glyph` need `tlSpan`, the owner of each pixel: nearest box with the runner-up and its share, so a seam under a rim
+  antialiases. Only clips whose look has a gradient report anything (`appearanceWantsTextSpans`). Without records (`still`,
+  `shape`, `video`…) every span is the frame's alpha bounds; `gradientSpanOn(span, clip.kind)` says so to the UI.
+- **A finish lights the layer's own shape.** A height field from `s.d` would bevel the text under a rim's band. `TitleLayerType.depth`
+  gives each layer's shape: face the field, rim and inline a ring (`ring: true`: Fit is a tube across the width), plate its
+  own distance. The height, its blur and Fit run in the finish's prepass, against that shape.
+- **Metal is a mirror.** A flat face reflects one direction, one colour: that is what reads as grey. So the surface domes (Fit on by
+  default), `metalCurve` bends the sheet so the horizon crosses the letters, and `tl_envTone` keeps darks dark and rolls lights off
+  before the metal tints them. Linear `f0 × env` with HDR lights clipped gold to cream; the first version looked like that.
+- **Environments are closed forms**, so blur is a width in radians on every edge, not a pass, and a rough surface costs nothing. The
+  edges widen by the surface's own footprint (`tl_envAA`) or a tight curve aliases the horizon into dots. The footprint comes from
+  the slope field, not `fwidth`: screen derivatives are constant over each 2 × 2 quad, and that step drew fine stripes.
+- **Layers over the stack read `u_tlComp`.** `sheen`, `gloss` and `texture` apply to what is below them, with `alpha` 0 in `tl_layer` or a
+  delta, so they add no coverage at an antialiased edge. Dry-brush erosion removes ink, which `over` cannot do: it rewrites `tlComp`
+  in its prepass and draws nothing itself. Its silhouette is the whole stack's (`ctx.outer`), so a rim is cut with the face.
+- **Plates are distances**, one pass each (`tlPlate`): `contour` closes with a second flood from the grown outline, `hull` is a support
+  function of 64 directions over 4 × 4 blocks of ink, `slant` a lean tight on those blocks. A lean carries the plate past the layer
+  box by the box's height, which percent of the unit cannot say: `LayerReach.boxHeight`.
+- **Offline look media.** Rendering falls back to what the finish does without a picture (the preset, no marks), with a chip in the
+  preview and `LOOK_MEDIA_OFFLINE` in the export plan. A deleted one clears to None (`clearEffectMedia`).
 - **Sequence light** travels on the render clip (`sequenceLight`, keys in sequence time) only when a look follows it.
 
 - **Light on nothing.** A premultiplied picture cannot show additive light where it has no alpha, and the framework's signal is
@@ -213,7 +241,8 @@ struct TlSurface {
 | `tl_bounds()` | alpha bounds, canvas px `(x0, y0, x1, y1)`; mentioning it makes the planner run the reduction |
 | `texture(u_tlComp, uv)` | what is below this layer, premultiplied linear; with `GLSL_TL_LIGHT` (`include`), `tl_result(under, D)` makes the composite exactly `D`, and `tl_lit(under, covered, empty)` adds light |
 | `tlPaint_<param>(s)` | the value of paint param `<param>` here, premultiplied linear |
-| `tl_finish(paint, s)` | the layer's finish (types with `finish: true`) |
+| `tlPaintAt_<param>(x, s)` | the paint at position `x` along it: a gradient's ramp by value (gradient maps); other paints ignore `x` |
+| `tl_finish(paint, s)` | the layer's finish (types with `finish: true`, which must have a paint param named `paint`) |
 | `u_<param>` | each param: number `float`, boolean `bool`, enum `int` (option index), vec2, colour `vec4`, media `sampler2D` + `u_<param>_size` |
 | `u_tlLight`, `u_tlLightDir` | `vec3` unit vector to the light, `vec2` screen direction to it |
 | `u_tlSeed`, `u_tlTime` | 0..1 from the appearance; content seconds (0 unless a layer is `timeDependent`) |
@@ -269,12 +298,15 @@ Fields you may need:
 
 | Field | When |
 |---|---|
-| `reach(p)` | The layer paints outside the silhouette: percent of the unit, a number or per side. Padding adds the growth above it and takes the maximum across the clip's frames. Too small clips light; the GL test catches it |
+| `reach(p)` | The layer paints outside the silhouette: percent of the unit, a number or per side, with `boxHeight` for what grows with the layer box's height. Padding adds the growth above it and takes the maximum across the clip's frames. Too small clips light; the GL test catches it |
 | `grows(p)` | Layers below start from a larger silhouette (rims) |
 | `fieldReach(p)` | The field must be right this far outside or inside. Default: outside as far as `reach`. Reads past it see `d` = the reach, a lower bound of the true distance |
 | `blur(p, ctx)` | Return `{sigma, mask}`: `sigma` in percent of the unit, `mask` GLSL `vec4 tl_mask(TlSurface s)`. The framework runs mask → horizontal → vertical at the lowest resolution that holds the sigma and your pass reads `u_tlBlur`. Every radius is cheap at every size; use `tl_inside`/`tl_band` in the mask, which widen their antialiasing to fit |
 | `outermost` | `s.base` and padding count every layer's growth, not only that of the layers above (a reflection on top of the stack) |
-| `prepass(p, ctx)` | Your own `ShaderPass[]` before the layer's pass. `ctx.surfacePass(pass)` gives a pass what the layer's own has (`tl_surface()`, `tl_px`, paints, the layer's uniforms); `ctx.unit` is the `tl_px` chunk alone; `ctx.unitKnown` says `pxPerPercent` is exact. Each pass mentions few textures, so the real budget is 12 per pass: the framework's names are `tlBounds`, `tlFlood`, `tlField`, `tlComp`, `tlMask`, `tlBlurH`, `tlBlur`. A look can hold a type twice: mark your outputs `update: true`, on the first pass too |
+| `prepass(p, ctx)` | Your own `ShaderPass[]` before the layer's pass. `ctx.surfacePass(pass)` gives a pass what the layer's own has (`tl_surface()`, `tl_px`, paints, the layer's uniforms and GLSL); without the layer's GLSL, use `include: ctx.include` for the surface, `uniforms: ctx.uniforms` for your params and start `frag` with `ctx.defines`. `ctx.unit` is the `tl_px` chunk alone; `ctx.unitKnown` says `pxPerPercent` is exact. Textures: `FX_MAX_TEXTURES` per plan is the budget of a validated effect; a look is limited by the samplers one pass mentions (16 in WebGL 2; keep to 12). The framework uses `tlBounds`, `tlFlood`, `tlField`, `tlComp`, `tlMask`, `tlBlurH`, `tlBlur`; finishes `tlHeightRaw`, `tlReliefH`, `tlHeight`, `tlCoverFlood`, `tlCover`; plates `tlPlateBlocks`, `tlSupport`, `tlPlate`; spans `tlSpan`; Deep Glow `tlDgPyr`. A look can hold a type twice: mark your outputs `update: true` on the first pass too, or spread `...ctx.write(name)` (it sets `update` from the second write in the plan). The layer's prepass runs before its finish's |
+| `prepassReadsBounds(p)` | A prepass calls `tl_bounds()`: the planner only sees layer and finish GLSL |
+| `depth` | The layer's own shape for its finish (`LayerDepth`): `glsl` defines `tl_depth(s)` and `tl_bandPx(s)`, `ring: true` for rings. Default the filled shape |
+| `uniforms(p)` | Uniforms beyond one per param: curves as data textures, derived values. Also on a finish |
 | `timeDependent(p)` | The layer moves on its own: the clip then redraws every frame and `u_tlTime` is live |
 | `handles` | On-canvas handles for TL-092: `{kind, params}`, `target: 'light'` for the look's light, `when: {param, value}` when it only applies in one state |
 | `shader(p, ctx)` | It is a function: return different GLSL per enum to keep programs small (`shadow.ts`, `glow.ts`) |
@@ -320,6 +352,15 @@ vec4 tl_finish(vec4 paint, TlSurface s) {
 The `finish` param's options, validation of `satinSize` and `satinIntensity` on `face`, `rim` and any `finish: true` type,
 property specs and the compile test all follow from that line.
 
+The shipped `satin.ts` is the fuller form. A finish that needs the surface's relief calls `reliefPasses(ctx, {...})` from its
+`prepass`, includes `GLSL_TL_RELIEF` and reads `tl_reliefNormal(s, heightPx)`, `tl_height`, `tl_mirror`, `tl_lit`; reflections
+include `GLSL_TL_ENV` and read `tl_envAA`. `defines(p)` puts `#define`s before `glsl` (and in prepasses): one program per
+variant instead of every variant in one, as `pattern` does per motif. `layers/texture.ts` shows the same for a layer through
+`shader(p)`. Remember `include` chunks come before `defines`, so only text in `glsl` can be switched by them.
+
+Param names start with the finish id, and a finish's paint param (`lp.paint`) gives `tlPaint_<name>` too. A finish's params are
+also Title Material's when it is one of its four: `material.ts` lists them, and needs nothing else.
+
 ### Worked example: a generator
 
 `generators/rays.ts` and one line in `generators/index.ts`. It becomes the effect `jasper.generator.rays` in the `Generate`
@@ -359,10 +400,12 @@ use by `clipParamMediaIds`. `u_tile_size` is `(0, 0)` when none is bound: handle
 ### Tests you get, and the one you write
 
 Your type or finish is covered automatically by `packages/project/test/title-look-registry.test.ts` (contract, defaults,
-summary, forbidden GLSL) and `packages/compositions/test/title-look-gl.test.ts`: compile, a fingerprint at default and
-perturbed params, a perturbation check, nothing clipped at the padding, and resolution independence at two scales. **A
-registered type without recorded fingerprints fails**: run the GL test with `JASPER_BLESS=1`, look at the picture, and commit
-`goldens/title-look-fingerprints.json`.
+summary, forbidden GLSL), `packages/compositions/test/title-look-gl.test.ts` (compile, a fingerprint at default and perturbed
+params, a perturbation check, nothing clipped at the padding, and resolution independence at two scales) and, for a finish,
+`title-look-finishes-gl.test.ts` (draws on a face, rim, inline and plate; fingerprints; **every param changes the picture**;
+resolution; determinism). **A registered type without recorded fingerprints fails**: run the GL test with `JASPER_BLESS=1`, look
+at the picture, and commit `goldens/title-look-fingerprints.json`. `TL_SHEET=<png>` on the finishes test writes a contact sheet
+of every finish and type (`TL_SHEET_ONLY=<regex>`, `TL_SHEET_BIG=1`): judge it with your eyes, a metal can pass and read as grey.
 
 Write your own behaviour tests in `packages/compositions/test/title-look-<area>-gl.test.ts`:
 
@@ -731,6 +774,18 @@ rather than listing them twice.
 - Assumption, not documented anywhere: a rim's opacity rule (full from 50 % local alpha) was chosen by looking at fades.
 - CIE L*a*b* (D65) from sRGB, IEC 61966-2-1 primaries, as in Pachislop's `toLab`. Rec. 601 luma for the recolour ramp, as design tools'
   gradient maps do.
+- Bevel: Pachislop's `HEIGHT_FRAG` profiles and the highlight screen, shadow multiply of Photoshop's Bevel & Emboss. Satin: the
+  absolute difference of two offset blurred copies of the shape, Photoshop's satin recipe as Pachislop writes it.
+- Metal: Schlick's approximation of Fresnel, `F = f0 + (1 − f0)(1 − cos θ)⁵` (Schlick, "An inexpensive BRDF model for
+  physically-based rendering", 1994). Reflectances in linear sRGB from Lagarde's table ("Feeding a physically based shading
+  model", 2011): gold (1.00, 0.71, 0.29), silver (0.97, 0.96, 0.91), copper (0.95, 0.64, 0.54). **Assumptions, chosen by
+  looking at the sheet:** copper's green is lowered to 0.54 so it reads apart from gold under white bands; `chrome` uses (0.86,
+  0.87, 0.89) rather than chromium's measured (0.55, 0.55, 0.55), which reads as dull grey on titles; brushed uses (0.74,
+  0.75, 0.77). `tl_envTone` is `e²/(e² + 0.5) × 1.2`, a filmic S chosen by eye.
+- Monotone cubic interpolation: Fritsch and Butland (1984), through Pachislop's `curveFn`.
+- Convex hull as a support function: a convex set is the intersection of its support half-planes, and a dilation by a disc adds
+  the radius to each (Minkowski sum of support functions).
+- Dry-brush lanes, gaps and skips: Pachislop's constants, reparametrised in the unit.
 
 - Deep Glow's PSF: an inverse power law as a scale mixture of Gaussians, `w(σ) ∝ σ^(2-p)` per log-σ step, because
   `∫ σ^(2-p) · σ^-2 exp(-r²/2σ²) dlog σ ∝ r^-p`. p from 1.6 to 3.2 (Pachislop). Veiling glare's power law is from its comment; I did
@@ -789,12 +844,14 @@ for the missing fingerprints, and for a generator example that was clipped by it
 - Reach stops at the framework's `FX_MAX_PADDING`, 2048 layer px per side. Deep Glow's radius stops at 1700 px, its reach at full
   scatter. An effect whose params add up past it (a 2000 px cast shadow with a 2000 px blur) clips there: that is a canvas limit, not
   a sampling error. A look's reach is in percent of its unit and meets the same limit.
-- `block` gradients on animated text follow the frame's bounds until TL-036 brings layout boxes.
 - The layer outline in Program is the layer's reach around the clip box, not its pixels: the box of a text clip is its text box,
   which can be wider than the glyphs.
 - The style check's rendered row (contrast against the picture) needs pixels only the engine has: the badge lists it as not measured,
   never as passed. `title_check` measures it for agents.
-- `line` and `glyph` spans render as `block` until TL-036 (`docs/gaps.md`).
+- Lights and environments are in layer space: a rotated title's bevel light turns with it (`docs/gaps.md`).
+- A pattern tile and a reflection image have no mip chain: the tile spreads 9 taps over the pixel and the image 12 over the blur
+  cone, which holds the look at the sizes titles use, not a 4K tile shown at 20 px.
+- Grain finer than two pixels loses contrast with its share of the pixel, so a resolution comparison keeps tone, not the pattern.
 - The field is rebuilt whenever a frame is redrawn: an animated param on static text pays for it, though the input did not
   change. TL-037 only requires skipping unchanged input and params; `tlField` could be reused across frames when only layer
   uniforms change, by keying the field passes on their own.

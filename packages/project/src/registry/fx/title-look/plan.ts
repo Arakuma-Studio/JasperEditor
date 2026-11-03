@@ -22,13 +22,14 @@ import type {
 	GlslChunk,
 	ShaderPass,
 } from '../shader.ts';
-import { hashFloats } from '../shader.ts';
+import { hashFloats, resolveIncludes } from '../shader.ts';
 import {
+	FILLED_DEPTH,
 	isPaintParam,
 	type LayerFieldReach,
 	type LayerParams,
-	type LayerPrepassContext,
 	type LayerReach,
+	type PrepassContext,
 	type TitleLayerType,
 	type TitleParamSpec,
 } from './contract.ts';
@@ -52,6 +53,7 @@ import {
 import { paintOf, paintParts } from './paint.ts';
 import { recolorRamp } from './recolor.ts';
 import { activeParamSpecs, titleFinish, titleLayerType, withDefaults } from './registry.ts';
+import { type FxTextSpans, textSpanPass, textSpanUniforms } from './spans.ts';
 
 /** `FxStructures.titleLook`: what a look instance needs at a frame. */
 export type FxTitleLook = {
@@ -65,6 +67,8 @@ export type FxTitleLook = {
 	contentSeconds: number;
 	/** The clip's content time span, for padding across every frame (flicks, inclusive; absent = keys only). */
 	span?: { from: number; to: number; frames: number };
+	/** TL-036: the text layer's glyph and line boxes at this frame; absent on other clips (spans act as `block`). */
+	textSpans?: FxTextSpans | null;
 };
 
 const DEG = Math.PI / 180;
@@ -110,17 +114,23 @@ function plannedLayers(look: ResolvedAppearance): PlannedLayer[] {
 }
 
 const sides = (r: LayerReach | undefined) =>
-	typeof r === 'number' || r === undefined ? { left: r ?? 0, top: r ?? 0, right: r ?? 0, bottom: r ?? 0 } : r;
+	typeof r === 'number' || r === undefined
+		? { left: r ?? 0, top: r ?? 0, right: r ?? 0, bottom: r ?? 0, boxHeight: 0 }
+		: r;
+
+/** Padding in percent of the unit, and the fraction of the layer box's height left and right (`LayerReach`). */
+export type LookPadding = FxPadding & { boxHeight: number };
 
 /** Everything a resolved look reaches, percent of the unit: per side, and how far the field must be right. */
-export function lookReach(look: ResolvedAppearance): FxPadding & LayerFieldReach {
-	const r = { left: 0, top: 0, right: 0, bottom: 0, outside: 0, inside: 0 };
+export function lookReach(look: ResolvedAppearance): LookPadding & LayerFieldReach {
+	const r = { left: 0, top: 0, right: 0, bottom: 0, boxHeight: 0, outside: 0, inside: 0 };
 	for (const { def, params, base } of plannedLayers(look)) {
 		const s = sides(def.reach?.(params));
 		r.left = Math.max(r.left, base + num(s.left));
 		r.top = Math.max(r.top, base + num(s.top));
 		r.right = Math.max(r.right, base + num(s.right));
 		r.bottom = Math.max(r.bottom, base + num(s.bottom));
+		r.boxHeight = Math.max(r.boxHeight, num(s.boxHeight));
 		const fr = def.fieldReach?.(params) ?? {};
 		const widest = Math.max(num(s.left), num(s.top), num(s.right), num(s.bottom));
 		r.outside = Math.max(r.outside, base + (fr.outside ?? widest));
@@ -135,13 +145,13 @@ export function lookReach(look: ResolvedAppearance): FxPadding & LayerFieldReach
 
 /** Most frames sampled for padding per clip (key times always count): bounds the work on hour-long clips. */
 const MAX_REACH_SAMPLES = 4096;
-const reachCache = new WeakMap<object, { key: string; reach: FxPadding }>();
+const reachCache = new WeakMap<object, { key: string; reach: LookPadding }>();
 
 /**
  * TL-033: the reach of a look across every frame of its clip (percent of the unit per side), so glows and shadows never
  * clip and the canvas does not change size from frame to frame. Cached per stored appearance.
  */
-export function appearanceClipReach(a: Appearance, span?: FxTitleLook['span']): FxPadding {
+export function appearanceClipReach(a: Appearance, span?: FxTitleLook['span']): LookPadding {
 	const key = span ? `${span.from}:${span.to}:${span.frames}` : '';
 	const hit = reachCache.get(a);
 	if (hit?.key === key) return hit.reach;
@@ -158,13 +168,14 @@ export function appearanceClipReach(a: Appearance, span?: FxTitleLook['span']): 
 		for (let i = 0; i + 1 < sorted.length; i++)
 			for (let k = 1; k < 16; k++) times.add(sorted[i]! + ((sorted[i + 1]! - sorted[i]!) * k) / 16);
 	}
-	const r: FxPadding = { left: 0, top: 0, right: 0, bottom: 0 };
+	const r: LookPadding = { left: 0, top: 0, right: 0, bottom: 0, boxHeight: 0 };
 	for (const t of times) {
 		const x = lookReach(resolveAppearance(a, t));
 		r.left = Math.max(r.left, x.left);
 		r.top = Math.max(r.top, x.top);
 		r.right = Math.max(r.right, x.right);
 		r.bottom = Math.max(r.bottom, x.bottom);
+		r.boxHeight = Math.max(r.boxHeight, x.boxHeight);
 	}
 	reachCache.set(a, { key, reach: r });
 	return r;
@@ -182,7 +193,8 @@ export function titleLookPadding(ctx: FxPlanContext): Partial<FxPadding> {
 	const r = tl.source ? appearanceClipReach(tl.source, tl.span) : lookReach(tl.appearance);
 	const k = layerPxPerPercent(tl, ctx);
 	const px = (v: number) => (v > 0 ? Math.ceil(v * k) + PADDING_GUARD : 0);
-	return { left: px(r.left), top: px(r.top), right: px(r.right), bottom: px(r.bottom) };
+	const lean = Math.ceil(r.boxHeight * ctx.height);
+	return { left: px(r.left) + lean, top: px(r.top), right: px(r.right) + lean, bottom: px(r.bottom) };
 }
 
 /**
@@ -197,7 +209,8 @@ export function titleLookBleed(
 	for (const anim of appearanceAnimatables(a)) if (anim.expression?.enabled) return null;
 	const r = appearanceClipReach(a);
 	const k = (clipLookUnit(clip) ?? Math.min(clip.intrinsicBox.width, clip.intrinsicBox.height)) * 0.01;
-	return Math.ceil(Math.max(r.left, r.top, r.right, r.bottom) * k) + PADDING_GUARD;
+	const lean = Math.ceil(r.boxHeight * clip.intrinsicBox.height);
+	return Math.ceil(Math.max(r.left, r.top, r.right, r.bottom) * k) + PADDING_GUARD + lean;
 }
 
 /** The input's alpha bounds as one texel `u_tlBounds`, canvas px. Fixed steps: 8⁵ covers the largest canvas. */
@@ -257,11 +270,18 @@ type LayerPieces = {
 	uniforms: Record<string, FxUniformValue>;
 	include: GlslChunk[];
 	usesBounds: boolean;
+	/** A paint reads the owner of each pixel (`line` and `glyph` spans). */
+	usesSpans: boolean;
 	fieldInside: number;
 };
 
 /** Uniforms and GLSL of one layer's params, paints and finish. */
-function layerPieces(l: PlannedLayer, look: ResolvedAppearance, index: number): LayerPieces {
+function layerPieces(
+	l: PlannedLayer,
+	look: ResolvedAppearance,
+	index: number,
+	spans?: FxTextSpans | null,
+): LayerPieces {
 	const finishId = String(l.params.finish ?? 'flat');
 	const uniforms: Record<string, FxUniformValue> = { u_tlBase: l.base };
 	let glsl = '';
@@ -269,6 +289,7 @@ function layerPieces(l: PlannedLayer, look: ResolvedAppearance, index: number): 
 	const textures: LayerPieces['textures'] = [];
 	const include: GlslChunk[] = [];
 	let usesBounds = false;
+	let usesSpans = false;
 	let fieldInside = 0;
 	for (const p of activeParamSpecs(l.def, finishId)) {
 		const v = l.params[p.name];
@@ -278,11 +299,13 @@ function layerPieces(l: PlannedLayer, look: ResolvedAppearance, index: number): 
 				paintOf(v as LayerParamValue, p.default as Paint),
 				num(l.params[`${p.name}Angle`]),
 				look.palette,
+				spans,
 			);
 			glsl += parts.glsl;
 			Object.assign(uniforms, parts.uniforms);
 			include.push(...parts.include);
 			usesBounds ||= parts.usesBounds;
+			usesSpans ||= parts.usesSpans;
 			fieldInside = Math.max(fieldInside, parts.fieldInside);
 			continue;
 		}
@@ -297,8 +320,10 @@ function layerPieces(l: PlannedLayer, look: ResolvedAppearance, index: number): 
 	}
 	const finish = l.def.finish ? titleFinish(finishId) : undefined;
 	if (finish) {
+		defines += finish.defines?.(l.params) ?? '';
 		glsl += `${finish.glsl}\n`;
 		include.push(...(finish.include ?? []));
+		Object.assign(uniforms, finish.uniforms?.(l.params));
 	}
 	if (l.def.recolors) {
 		const ramp = recolorRamp(look.palette);
@@ -307,7 +332,8 @@ function layerPieces(l: PlannedLayer, look: ResolvedAppearance, index: number): 
 		// `tl_recolor` comes with the gradient chunk, which reads the bounds.
 		usesBounds = true;
 	}
-	return { defines, textures, glsl, uniforms, include, usesBounds, fieldInside };
+	Object.assign(uniforms, l.def.uniforms?.(l.params));
+	return { defines, textures, glsl, uniforms, include, usesBounds, usesSpans, fieldInside };
 }
 
 /** Passes of a look instance at a frame. */
@@ -320,7 +346,7 @@ export function planTitleLook(ctx: FxPlanContext): readonly ShaderPass[] {
 	const pxPerPercent = layerPxPerPercent(tl, ctx) * ctx.pxScale;
 	const unit: GlslChunk = tl.unitPx !== null ? GLSL_TL_UNIT_KNOWN : GLSL_TL_UNIT_BOUNDS;
 	const reach = lookReach(look);
-	const pieces = layers.map((l, i) => layerPieces(l, look, i));
+	const pieces = layers.map((l, i) => layerPieces(l, look, i, tl.textSpans));
 	const fieldInside = Math.max(reach.inside, ...pieces.map((p) => p.fieldInside));
 	const reachPx = Math.min(
 		(ctx.width + ctx.height) * ctx.pxScale,
@@ -331,12 +357,15 @@ export function planTitleLook(ctx: FxPlanContext): readonly ShaderPass[] {
 	const readsBounds = (s: string) => /\btl_bounds\s*\(/.test(s);
 	const usesBounds =
 		tl.unitPx === null ||
-		pieces.some((p) => p.usesBounds) ||
+		layers.some((l) => l.def.prepassReadsBounds?.(l.params)) ||
+		pieces.some((p) => p.usesBounds || readsBounds(p.glsl)) ||
+		pieces.some((p) => resolveIncludes(p.include).some((c) => readsBounds(c.source))) ||
 		shaders.some((s) => readsBounds(s.glsl)) ||
 		blurred.some((b) => !!b && readsBounds(b.mask));
 	const passes: ShaderPass[] = [];
 	if (usesBounds) passes.push(...boundsPasses());
 	passes.push(...fieldPasses(reachPx));
+	if (tl.textSpans && pieces.some((p) => p.usesSpans)) passes.push(textSpanPass());
 	passes.push({
 		output: 'tlComp',
 		frag: FRAG_TL_CLEAR,
@@ -345,15 +374,25 @@ export function planTitleLook(ctx: FxPlanContext): readonly ShaderPass[] {
 	});
 	const baseInclude = [unit, GLSL_TL_FIELD, ...(usesBounds ? [GLSL_TL_BOUNDS] : [])];
 	let blurDone = false;
+	const outer = (layers[0]?.base ?? 0) + Math.max(0, num(layers[0]?.def.grows?.(layers[0]!.params)));
+	const written = new Set<string>();
+	const write = (name: string): { update?: true } => {
+		if (written.has(name)) return { update: true };
+		written.add(name);
+		return {};
+	};
 	layers.forEach((l, i) => {
 		const piece = pieces[i]!;
-		const blur = blurred[i];
-		const finish = l.def.finish ? titleFinish(String(l.params.finish ?? 'flat')) : undefined;
 		const include = [...baseInclude, ...piece.include];
-		const c: LayerPrepassContext = {
+		const c: PrepassContext = {
 			look,
 			pxPerPercent,
 			base: l.base,
+			include: baseInclude,
+			uniforms: piece.uniforms,
+			defines: piece.defines,
+			depth: l.def.depth ?? FILLED_DEPTH,
+			outer,
 			unitKnown: tl.unitPx !== null,
 			unit,
 			surfacePass: (pass) => ({
@@ -362,8 +401,12 @@ export function planTitleLook(ctx: FxPlanContext): readonly ShaderPass[] {
 				uniforms: { ...piece.uniforms, ...pass.uniforms },
 				frag: `${piece.defines}${piece.glsl}${pass.frag}`,
 			}),
+			write,
 		};
-		passes.push(...(finish?.prepass?.(l.params, c) ?? []), ...(l.def.prepass?.(l.params, c) ?? []));
+		const blur = blurred[i];
+		const finish = l.def.finish ? titleFinish(String(l.params.finish ?? 'flat')) : undefined;
+		// A layer's own prepass first: a plate's distance must exist before a bevel on it.
+		passes.push(...(l.def.prepass?.(l.params, c) ?? []), ...(finish?.prepass?.(l.params, c) ?? []));
 		if (blur && blur.sigma > 0) {
 			const again = blurDone ? { update: true } : {};
 			const sigmaPx = blur.sigma * pxPerPercent;
@@ -414,7 +457,9 @@ void main() { fragColor = tl_over(texture(u_tlComp, v_uv), tl_layer(tl_surface()
 export function titleLookTextures(ctx: FxPlanContext): readonly { uniform: string; mediaId: string }[] {
 	const tl = ctx.structures?.titleLook;
 	if (!tl) return [];
-	return plannedLayers(tl.appearance).flatMap((l, i) => layerPieces(l, tl.appearance, i).textures);
+	return plannedLayers(tl.appearance).flatMap(
+		(l, i) => layerPieces(l, tl.appearance, i, tl.textSpans).textures,
+	);
 }
 
 /** Instance-wide uniforms of a look (`gpu.uniforms`). */
@@ -431,6 +476,7 @@ export function titleLookUniforms(ctx: FxFrameContext): Record<string, FxUniform
 		u_tlTime: appearanceTimeInvariant(tl.appearance) ? 0 : tl.contentSeconds,
 		u_tlLight: [Math.cos(az) * Math.cos(el), Math.sin(az) * Math.cos(el), Math.sin(el)],
 		u_tlLightDir: [Math.cos(az), Math.sin(az)],
+		...textSpanUniforms(tl.textSpans),
 	};
 }
 
@@ -487,6 +533,7 @@ export function titleLookStructure(
 	clip: { source?: unknown; duration: number; sourceIn: number; speed: { rate: number } },
 	fps: number,
 	contentTime: number,
+	textSpans?: FxTextSpans | null,
 ): FxTitleLook {
 	return {
 		appearance,
@@ -494,5 +541,6 @@ export function titleLookStructure(
 		unitPx: clipLookUnit(clip),
 		contentSeconds: contentTime / FLICKS_PER_SECOND,
 		span: clipLookSpan(clip, fps),
+		...(textSpans ? { textSpans } : {}),
 	};
 }

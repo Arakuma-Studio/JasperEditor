@@ -105,15 +105,16 @@ vec4 tl_ramp(highp sampler2D t, float x) {
   return mix(fx_texel(t, i), fx_texel(t, min(i + 1, 255)), g - float(i));
 }
 // Position along a gradient: 0 linear (dir = rotated unit vector), 1 radial, 2 sweep, 3 shape (from the edge inward).
-float tl_gradientPos(int kind, vec2 dir, float angle, float depth, TlSurface s) {
-  vec4 b = tl_bounds();
-  vec2 size = max(b.zw - b.xy, vec2(1.0));
-  vec2 c = (b.xy + b.zw) * 0.5;
-  vec2 q = s.px - c;
+// q: the point from the centre of the box the gradient spans, size: that box, in any one unit.
+float tl_gradientIn(int kind, vec2 dir, float angle, float depth, TlSurface s, vec2 q, vec2 size) {
   if (kind == 0) return dot(q, dir) / max(abs(dir.x) * size.x + abs(dir.y) * size.y, 1.0) + 0.5;
   if (kind == 1) return length(q / (size * 0.5));
   if (kind == 2) return fract((atan(q.y, q.x) - angle) / FX_TAU);
   return clamp(-s.d / max(depth, 1.0), 0.0, 1.0);
+}
+float tl_gradientPos(int kind, vec2 dir, float angle, float depth, TlSurface s) {
+  vec4 b = tl_bounds();
+  return tl_gradientIn(kind, dir, angle, depth, s, s.px - (b.xy + b.zw) * 0.5, max(b.zw - b.xy, vec2(1.0)));
 }
 `,
 };
@@ -260,7 +261,7 @@ export const FRAG_TL_CLEAR = /* glsl */ `
 void main() { fragColor = vec4(0.0); }`;
 
 /** One axis of the blur of `tlMask` (`u_tlBlurDir`): sigma in percent of the unit, at the resolution of the pass. */
-const blurAxis = (tex: string) => /* glsl */ `
+export const tlBlurAxis = (tex: string) => /* glsl */ `
 void main() {
   vec2 size = vec2(textureSize(${tex}, 0));
   float sigma = tl_px(u_tlBlurSigma) * size.x / u_canvasSize.x;
@@ -280,5 +281,5 @@ void main() {
   fragColor = sum / wsum;
 }`;
 
-export const FRAG_TL_BLUR_H = blurAxis('u_tlMask');
-export const FRAG_TL_BLUR_V = blurAxis('u_tlBlurH');
+export const FRAG_TL_BLUR_H = tlBlurAxis('u_tlMask');
+export const FRAG_TL_BLUR_V = tlBlurAxis('u_tlBlurH');

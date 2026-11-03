@@ -6,6 +6,7 @@ import type { RGBA } from '../../../schema/common.ts';
 import type { Gradient, LayerParamValue, Paint, Role } from '../../../title-looks/model.ts';
 import { type FxUniformValue, type GlslChunk, hashFloats } from '../shader.ts';
 import { GLSL_TL_PAINT } from './glsl.ts';
+import { type FxTextSpans, GLSL_TL_SPAN_BLOCK, GLSL_TL_SPAN_OWNED } from './spans.ts';
 
 const DEG = Math.PI / 180;
 export const RAMP_SIZE = 256;
@@ -61,32 +62,44 @@ export function paintOf(v: LayerParamValue | undefined, fallback: Paint): Paint 
 }
 
 export type PaintParts = {
-	/** GLSL defining `vec4 tlPaint_<name>(TlSurface s)`. */
+	/**
+	 * GLSL defining `vec4 tlPaint_<name>(TlSurface s)`, and `vec4 tlPaintAt_<name>(float x, TlSurface s)`: the paint at
+	 * position `x` along it (a gradient's ramp; the plain paint for the other kinds), for gradient maps and curves.
+	 */
 	glsl: string;
 	uniforms: Record<string, FxUniformValue>;
 	include: readonly GlslChunk[];
 	/** The paint reads the alpha bounds. */
 	usesBounds: boolean;
+	/** The paint reads the owner of each pixel (TL-036). */
+	usesSpans: boolean;
 	/** The paint reads the field this far inside the shape, percent of the unit. */
 	fieldInside: number;
 };
 
-/** The uniforms and GLSL of paint param `name` with value `paint`. `angle`: the animatable rotation in degrees. */
+/**
+ * The uniforms and GLSL of paint param `name` with value `paint`. `angle`: the animatable rotation in degrees. `spans`:
+ * the text layout boxes (TL-036); without them a `line` or `glyph` gradient spans the block, as `gradientSpanOn` reports.
+ */
 export function paintParts(
 	name: string,
 	paint: Paint,
 	angle: number,
 	palette: Record<Role, RGBA>,
+	spans?: FxTextSpans | null,
 ): PaintParts {
 	const fn = `tlPaint_${name}`;
+	const at = `tlPaintAt_${name}`;
 	const color = `u_${name}Color`;
+	const plainAt = `vec4 ${at}(float x, TlSurface s) { return ${fn}(s); }\n`;
 	switch (paint.kind) {
 		case 'source':
 			return {
-				glsl: `vec4 ${fn}(TlSurface s) { return vec4(tl_sourceLinear(s.uv).rgb, 1.0); }\n`,
+				glsl: `vec4 ${fn}(TlSurface s) { return vec4(tl_sourceLinear(s.uv).rgb, 1.0); }\n${plainAt}`,
 				uniforms: {},
 				include: [],
 				usesBounds: false,
+				usesSpans: false,
 				fieldInside: 0,
 			};
 		case 'gradient': {
@@ -94,30 +107,51 @@ export function paintParts(
 			const ramp = gradientRamp(g, palette);
 			const rad = (g.angle + angle) * DEG;
 			const kind = ['linear', 'radial', 'sweep', 'shape'].indexOf(g.type);
+			const form = `u_${name}Type, u_${name}Dir, u_${name}Rad, tl_px(${SHAPE_GRADIENT_DEPTH.toFixed(1)}), s`;
+			const span = spans ? ['block', 'line', 'glyph'].indexOf(g.span) : 0;
+			const body = !spans
+				? `tl_ramp(u_${name}Ramp, tl_gradientPos(${form}))`
+				: span > 0
+					? `tl_spanRamp(u_${name}Ramp, ${span}, ${form})`
+					: `tl_spanRamp(u_${name}Ramp, ${form})`;
 			return {
 				glsl:
-					`vec4 ${fn}(TlSurface s) { return tl_ramp(u_${name}Ramp, tl_gradientPos(u_${name}Type, u_${name}Dir, ` +
-					`u_${name}Rad, tl_px(${SHAPE_GRADIENT_DEPTH.toFixed(1)}), s)); }\n`,
+					`vec4 ${fn}(TlSurface s) { return ${body}; }\n` +
+					`vec4 ${at}(float x, TlSurface s) { return tl_ramp(u_${name}Ramp, x); }\n`,
 				uniforms: {
 					[`u_${name}Ramp`]: { texels: ramp, key: hashFloats(ramp) },
 					[`u_${name}Type`]: { int: kind },
 					[`u_${name}Dir`]: [Math.cos(rad), Math.sin(rad)],
 					[`u_${name}Rad`]: rad,
 				},
-				include: [GLSL_TL_PAINT],
+				include: spans ? [span > 0 ? GLSL_TL_SPAN_OWNED : GLSL_TL_SPAN_BLOCK] : [GLSL_TL_PAINT],
 				usesBounds: true,
+				usesSpans: !!spans && span > 0,
 				fieldInside: g.type === 'shape' ? SHAPE_GRADIENT_DEPTH : 0,
 			};
 		}
 		default:
 			return {
-				glsl: `vec4 ${fn}(TlSurface s) { return ${color}; }\n`,
+				glsl: `vec4 ${fn}(TlSurface s) { return ${color}; }\n${plainAt}`,
 				uniforms: {
 					[color]: linearPremultiplied(paint.kind === 'role' ? palette[paint.role] : (paint.color as RGBA)),
 				},
 				include: [],
 				usesBounds: false,
+				usesSpans: false,
 				fieldInside: 0,
 			};
 	}
+}
+
+/**
+ * TL-036: the span a gradient actually gets on a clip. Line and glyph spans need text layout, so on other clips they act
+ * as `block`; the UI shows the requested span with `spanNote`.
+ */
+export function gradientSpanOn(
+	span: Gradient['span'],
+	clipKind: string,
+): { span: Gradient['span']; spanNote: 'needs-text' | null } {
+	if (span === 'block' || clipKind === 'text') return { span, spanNote: null };
+	return { span: 'block', spanNote: 'needs-text' };
 }

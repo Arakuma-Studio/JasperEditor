@@ -176,6 +176,8 @@ export type FxStage = {
 	key: string;
 	/** LUT assets of colour runs are still loading (the preview draws without them meanwhile). */
 	pending: boolean;
+	/** spec 19 TL-021: a look's picture is offline (the preview says so in its chip, the export plan warns). */
+	lookMediaOffline: boolean;
 	/** Video tracks read by Track Matte Keys (media track:<id>). */
 	trackMattes: string[];
 	/** Track mattes must use the same sequence frame as the stage. */
@@ -370,10 +372,11 @@ export function useLayerFx(
 				clip,
 				fps,
 				contentTime,
+				layer.textSpans,
 			);
 			return { titleLook };
 		};
-	}, [clip, fps, contentTime]);
+	}, [clip, fps, contentTime, layer.textSpans]);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `failures` re-plans when a shader fails
 	const plan = useMemo(
 		() =>
@@ -543,6 +546,7 @@ export function useLayerFx(
 		const samples: number[] = [];
 		const media = new Map<string, FxMediaInput>();
 		const trackMattes: string[] = [];
+		let lookMediaOffline = false;
 		const geometryOf = (masks: FxMaskGeometry['masks']): FxMaskGeometry => ({
 			masks,
 			box: layout.box,
@@ -655,7 +659,10 @@ export function useLayerFx(
 							continue;
 						}
 						const h: MediaHandle | null | undefined = t.mediaId ? doc.media[t.mediaId] : null;
-						if (!h) continue;
+						if (!h) {
+							if (t.mediaId && s.fx.appearance) lookMediaOffline = true;
+							continue;
+						}
 						if (t.kind === 'lut') {
 							if (h.kind === 'lut') media.set(t.mediaId, { mediaId: t.mediaId, url: h.url, kind: 'lut' });
 							else if (h.kind === 'color-config') {
@@ -772,6 +779,7 @@ export function useLayerFx(
 			builtins,
 			key,
 			pending,
+			lookMediaOffline,
 			trackMattes,
 			seqFrame: clip.start + realFrame,
 		};
@@ -830,7 +838,8 @@ export function useLayerFx(
 	const bypassed = canRun
 		? plan.bypassed
 		: plan.bypassed.map((b) => ({ ...b, reason: 'layer-unsupported' as const }));
-	const chip = doc.isPreview ? chipText(bypassed, gpu) : null;
+	const offlineChip = stage?.lookMediaOffline ? 'A picture of this look is offline' : null;
+	const chip = doc.isPreview ? (chipText(bypassed, gpu) ?? offlineChip) : null;
 	if (!plan.active || !drawn) return { mode: 'bypass', chip: chip ?? 'GPU effects unavailable', bypassed };
 	return { mode: 'active', stage: drawn, cssEffects: plan.cssEffects, chip };
 }
