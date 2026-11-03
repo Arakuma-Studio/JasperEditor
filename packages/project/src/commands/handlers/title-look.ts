@@ -10,6 +10,7 @@ import { intrinsicBoxOf } from '../../registry/properties.ts';
 import type { Clip, EffectInstance } from '../../schema/sequence.ts';
 import type { Rational } from '../../time.ts';
 import { factoryColorway, factoryLook } from '../../title-looks/factory/index.ts';
+import { chooseLookFont } from '../../title-looks/font.ts';
 import {
 	type Appearance,
 	type AppearanceLayer,
@@ -39,6 +40,8 @@ import {
 	applyColorway,
 	countKeyframes,
 	lookBodyOf,
+	paintRoles,
+	paintWithoutRoles,
 	rebaseAppearance,
 } from '../../title-looks/overrides.ts';
 import {
@@ -47,6 +50,7 @@ import {
 	layerFromRecipe,
 	MAX_RECIPE_BYTES,
 } from '../../title-looks/recipe.ts';
+import { resolveAppearance } from '../../title-looks/resolve.ts';
 import {
 	appearanceProblem,
 	paintLimitProblem,
@@ -209,18 +213,29 @@ function colorwayOf(look: TitleLook | null, id: string, h: HandlerContext): Colo
 	return c;
 }
 
-/** `font` of a look on a text clip: applied once (TL-011). A family the project lacks gets a font reference. */
-function applyLookFont(doc: DDoc, seq: DSeq, clip: DClip, a: Appearance, h: HandlerContext): void {
+/**
+ * `font` of a look on a text clip: applied once (TL-011), chosen by `chooseLookFont` (TL-053). A family the project lacks
+ * gets a font reference. The look's weight and tracking come with it: a display face has few weights.
+ */
+function applyLookFont(
+	doc: DDoc,
+	seq: DSeq,
+	clip: DClip,
+	a: Appearance,
+	h: HandlerContext,
+	available?: readonly string[],
+): void {
 	if (clip.kind !== 'text' || !a.font) return;
-	const family = a.font.family;
+	const content = (clip as unknown as { content: { text: string; style: object } }).content;
+	const { family, ...face } = chooseLookFont(a.font, content.text, available);
 	let fontId = Object.values(doc.fonts).find((f) => f.family === family)?.id;
 	if (!fontId) {
 		const font = createFontRef(h.ids, family);
 		doc.fonts[font.id] = font as never;
 		fontId = font.id;
 	}
-	const style = clone((clip as unknown as { content: { style: object } }).content.style);
-	applyClipPatch(doc, seq, clip, { content: { style: { ...style, fontId } } } as never, h, 'whole');
+	const style = { ...clone(content.style), ...face, fontId };
+	applyClipPatch(doc, seq, clip, { content: { style } } as never, h, 'whole');
 }
 
 /** Adds or replaces a clip's look instance. Returns the instance and the keys the replaced params had. */
@@ -294,7 +309,7 @@ export const titleLookHandlers = {
 			const { fx, dropped } = writeLook(clip, next, h);
 			droppedKeyframes += dropped;
 			effectInstanceIds.push(fx.id);
-			applyLookFont(doc, seq, clip, lookPlain.appearance, h);
+			applyLookFont(doc, seq, clip, lookPlain.appearance, h, cmd.availableFonts);
 		}
 		return { lookId: look.id, clipIds: ids, effectInstanceIds, droppedKeyframes };
 	},
@@ -522,6 +537,33 @@ export const titleLookHandlers = {
 		const a = fx.appearance as Draft<Appearance>;
 		a.layers[layerAt(a, cmd.layerId, h)]!.enabled = cmd.enabled;
 		return { layerId: cmd.layerId, enabled: cmd.enabled };
+	},
+
+	'appearance.setLayerFixedColor': (
+		doc,
+		cmd: CommandOf<'appearance.setLayerFixedColor'>,
+		h: HandlerContext,
+	) => {
+		const { seq, clip, fx } = lookInstance(doc, cmd.effectInstanceId, h);
+		const a = fx.appearance as Draft<Appearance>;
+		const layer = a.layers[layerAt(a, cmd.layerId, h)]!;
+		if (!cmd.fixed) {
+			delete layer.fixedColor;
+			return { layerId: cmd.layerId, fixed: false, flattened: 0 };
+		}
+		layer.fixedColor = true;
+		// A fixed layer reads no role, so the colours it shows now are the colours it keeps.
+		const { palette } = resolveAppearance(a as Appearance, clipFirstTime(seq, clip));
+		let flattened = 0;
+		for (const anim of Object.values(layer.params)) {
+			for (const slot of [anim, ...anim.keyframes]) {
+				if (paintRoles(slot.value).length === 0) continue;
+				slot.value = paintWithoutRoles(slot.value as Paint, palette) as never;
+				flattened++;
+			}
+		}
+		assertAppearance(a, 'appearance.setLayerFixedColor', h);
+		return { layerId: cmd.layerId, fixed: true, flattened };
 	},
 
 	'appearance.setPaint': (doc, cmd: CommandOf<'appearance.setPaint'>, h: HandlerContext) => {

@@ -7,7 +7,7 @@
 // that fails too.
 import type { ChildProcess } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
-import { decodeVoiceAnalysis, VOICE_ANALYSIS_VERSION, VOICE_CLASSES } from '@jasper/project';
+import { decodeVoiceAnalysis, VOICE_ANALYSIS_VERSION, VOICE_CLASSES } from '@jasper/project/cleanup-worker';
 import type { ProviderId } from '../../tools/ort.ts';
 import { restrictInputs } from '../../tools/protocols.ts';
 import { DEFAULT_DIARIZE, diarize } from '../core/diarize.ts';

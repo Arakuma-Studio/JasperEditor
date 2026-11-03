@@ -895,10 +895,14 @@ Status of the foundation; streams still in progress update this list. Evidence: 
 - **`graphics.newTextLayer` still inserts the word "Text"** at the centre: it runs from menus and for agents, with no pointer. The Type
   tool types in place.
 - **Style check badge** (TL-094): the rendered check (contrast with the picture behind the title) is listed as not measured in the
-  panel; only `title_check` measures it. The badge reads `lintAppearance` from the looks library and shows nothing in a build
-  without it.
+  panel; only `title_check` measures it. The badge runs the library's `lintAppearance` (TL-056).
 - **User looks** (TL-054) are not in the Looks tab: it lists the library and the project's looks. Saving, renaming and deleting
-  project looks work; the engine-backed store and import and export belong to the library stream.
+  project looks work there. The engine-backed store (`/api/title-looks`: list, save, rename, delete, import, export) exists and is
+  tested, but no panel calls it yet.
+- **The library is partial** (TL-050, TL-052): 30 of the 60 looks and 14 of the 16 templates; Brush and 3D hold no looks yet. They wait for
+  the finishes and generators; `pnpm exec vitest run packages/project/test/title-look-library.test.ts` holds its checks.
+- **Rendered style checks are not in the lint** (TL-056): backdrop contrast needs a measurement from the caller. Without one it is reported
+  as unmeasured, never as passed. `title_check` provides it (TL-102).
 - **Software rendering is slow**: ≈ 1.3 s per 1080p frame for a six-layer look on a title-sized box on SwiftShader, and an
   animated title redraws its whole stack every frame ([performance.md](performance.md) §7). Nothing has been measured on a GPU.
 

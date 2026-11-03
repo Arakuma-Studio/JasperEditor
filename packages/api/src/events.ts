@@ -68,6 +68,8 @@ export const EVENT_PAYLOADS = {
 	'fonts.changed': z.object({ revision: z.number().int() }),
 	/** The user effect preset library changed (Effects ▸ Presets refreshes). */
 	'effectPresets.changed': z.object({ revision: z.number().int() }),
+	/** Spec 19 TL-054: the user look library changed (the Looks tab refreshes). */
+	'titleLooks.changed': z.object({ revision: z.number().int() }),
 	/** spec 13 AS-020: the user subtitle template library changed (Create Subtitles and the Subtitles tab refresh). */
 	'subtitleTemplates.changed': z.object({ revision: z.number().int() }),
 	/** Spec 14 TC-030: the user's transcript cleanup presets changed (the Clean Up preset picker refreshes). */

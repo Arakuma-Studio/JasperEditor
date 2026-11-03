@@ -1,6 +1,6 @@
 // Spec 19 TL-097 / TL-098: every action has a command and a menu entry, no default shortcut was added, and a title-art
 // proposal shows its options and says Compare.
-import type { ProposalItem } from '@jasper/project';
+import { type Colorway, FACTORY_COLORWAYS, type ProposalItem } from '@jasper/project';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_KEYMAP } from '../src/commands/keymap-defaults.ts';
@@ -63,9 +63,7 @@ describe('wiring (TL-097)', () => {
 		for (const c of titleLookCommands) expect(typeof c.disabledReason?.(ctx), c.id).toBe('string');
 	});
 
-	it('Next Colourway on a look without colourways says so instead of doing nothing', async () => {
-		const session = makeSession();
-		const toast = vi.fn();
+	const nextColorway = async (session: ReturnType<typeof makeSession>, toast: ReturnType<typeof vi.fn>) => {
 		const r = session.apply({
 			label: 's',
 			origin: 'user',
@@ -79,9 +77,35 @@ describe('wiring (TL-097)', () => {
 		await titleLookCommands
 			.find((c) => c.id === 'graphics.nextColorway')!
 			.run({ session, ui: { toast } } as never);
-		expect(toast).toHaveBeenCalledWith(
-			expect.objectContaining({ message: 'This look has no colourways yet.' }),
-		);
+		return r.refs.$t!;
+	};
+
+	it('Next Colourway on a look without colourways says so instead of doing nothing', async () => {
+		// A build whose library has no colourways: held aside here, put back after.
+		const ways = FACTORY_COLORWAYS as unknown as Colorway[];
+		const held = ways.splice(0);
+		try {
+			const toast = vi.fn();
+			await nextColorway(makeSession(), toast);
+			expect(toast).toHaveBeenCalledWith(
+				expect.objectContaining({ message: 'This look has no colourways yet.' }),
+			);
+		} finally {
+			ways.push(...held);
+		}
+	});
+
+	it('Next Colourway steps to the library’s first colourway', async () => {
+		const session = makeSession();
+		const toast = vi.fn();
+		const id = await nextColorway(session, toast);
+		const first = FACTORY_COLORWAYS[0]!;
+		expect(toast).toHaveBeenCalledWith(expect.objectContaining({ message: `Colourway: ${first.name}` }));
+		const seq = Object.values(session.getCommitted().sequences)[0]!;
+		const fx = (
+			seq.clips[id] as unknown as { effects: { appearance?: { colorwayId?: string } }[] }
+		).effects.find((e) => e.appearance);
+		expect(fx?.appearance?.colorwayId).toBe(first.id);
 	});
 });
 

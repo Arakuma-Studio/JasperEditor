@@ -14,7 +14,7 @@ import {
 	measureTitleFrame,
 	RECIPE_BOUNDS,
 	recipeBoundsProblem,
-	recipeOfAppearance,
+	recipeFromAppearance,
 	relativeLuminance,
 	runAgentQuery,
 	summarizeTitleRows,
@@ -554,7 +554,7 @@ describe('recipes from stored looks (TL-104)', () => {
 	it('round-trips through an appearance', () => {
 		const ids = createRandomIdSource();
 		const a = appearanceFromRecipe(recipe, () => ids.next('apl'));
-		const back = recipeOfAppearance(a);
+		const back = recipeFromAppearance(a);
 		expect(back.palette).toEqual(recipe.palette);
 		expect(back.light).toEqual(recipe.light);
 		expect(back.font).toEqual(recipe.font);

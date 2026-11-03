@@ -16,8 +16,14 @@ import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
 import { fxCanvasLayout } from '../../src/fx/plan.ts';
 
 export type LookInput =
-	/** Bold text on transparent, `size` layer px (default 96). */
-	| { kind: 'text'; text?: string; size?: number; opacity?: number }
+	/** Bold text on transparent, `size` layer px (default 96); `font` names a face loaded with `loadFont`. */
+	| {
+			kind: 'text';
+			text?: string;
+			size?: number;
+			opacity?: number;
+			font?: { family: string; weight: number; trackingEm?: number };
+	  }
 	/** Letter-like vector shapes: the same geometry at every size, for resolution tests (text hints per size). */
 	| { kind: 'shapes' }
 	/** A rectangle inside the box (fractions), for exact edges. */
@@ -70,7 +76,11 @@ function paintInput(
 ) {
 	if (input.kind === 'text') {
 		ctx.fillStyle = `rgba(255, 255, 255, ${input.opacity ?? 1})`;
-		ctx.font = `bold ${(input.size ?? 96) * s}px "Liberation Sans", Arial, sans-serif`;
+		const size = (input.size ?? 96) * s;
+		ctx.font = input.font
+			? `${input.font.weight} ${size}px "${input.font.family}"`
+			: `bold ${size}px "Liberation Sans", Arial, sans-serif`;
+		if (input.font?.trackingEm) ctx.letterSpacing = `${input.font.trackingEm * size}px`;
 		ctx.textAlign = 'center';
 		ctx.textBaseline = 'middle';
 		ctx.fillText(input.text ?? 'Title', b.x + b.w / 2, b.y + b.h / 2);
@@ -256,8 +266,28 @@ function render(req: LookRequest): LookResult {
 	};
 }
 
+/** The size at which `text` fits `width`, at most `size`. */
+function fitSize(arg: {
+	text: string;
+	size: number;
+	width: number;
+	font: { family: string; weight: number };
+}) {
+	const ctx = document.createElement('canvas').getContext('2d')!;
+	ctx.font = `${arg.font.weight} 100px "${arg.font.family}"`;
+	return Math.min(arg.size, Math.floor((arg.width / Math.max(ctx.measureText(arg.text).width, 1)) * 100));
+}
+
 (window as unknown as { __tl: unknown }).__tl = {
 	render,
+	fitSize,
+	/** Loads a font file (base64) under a family and weight. */
+	loadFont: async (arg: { family: string; weight: number; base64: string }) => {
+		const bytes = Uint8Array.from(atob(arg.base64), (c) => c.charCodeAt(0));
+		const face = new FontFace(arg.family, bytes, { weight: String(arg.weight) });
+		await face.load();
+		document.fonts.add(face);
+	},
 	reach: (recipe: LookRecipe) => {
 		let n = 0;
 		return appearanceClipReach(appearanceFromRecipe(recipe, () => `apl_${String(++n).padStart(16, '0')}`));

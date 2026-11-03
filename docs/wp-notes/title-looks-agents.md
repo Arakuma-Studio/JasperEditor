@@ -51,9 +51,10 @@ The agent surface of [Title Looks](title-looks.md): search, sheet, propose, chec
   are an assumption, based on §7's six-layer figures.
 - **Width.** TL-106's "640 px by default" is read literally: the sheet, not a cell. At three columns a cell is 208 px, so
   the tools take `width` up to 1280.
-- **The lint seam.** `title-lint.ts` reads `lintAppearance` from `@jasper/project` at run time, so this stream built
-  before the looks stream landed it. It calls the lint once per measured frame with `rendered.backdropL` and keeps the worst
-  answer per issue. Without the lint, the row is `unverified`, never a clean pass.
+- **The lint seam.** `title-lint.ts` imports `lintAppearance` from `@jasper/project` (the library's TL-056 lint; the
+  Properties style badge uses the same one). It calls the lint once per measured frame with `rendered.backdropL` and keeps
+  the worst answer per issue. A caller that passes no lint gets an `unverified` row, never a clean pass. `titles.test.ts`
+  runs the real lint (rings that merge, thin rims, a measured backdrop) as well as stand-ins.
 - **Two tool names were wrong.** The scan of TL-107 found `remove_time_remap` in `TIME_GUIDE` and `generate_subtitles` in
   the subtitles feature's producers; both now name real tools. It also scans feature producers, which TL-107 does not ask for.
 
@@ -95,8 +96,8 @@ Machine: shared 8-vCPU host, 15 GB, no GPU (SwiftShader), Chrome 156. Load avera
 | A title cut by the frame fails on its real bounds; the fix, rendered again, is inside | pass | 274 s |
 | Headless `propose` refused; a cancelled sheet ends `cancelled` | pass | 1 s |
 
-The library is empty on this branch, so these runs use a recipe and `find_title_looks` returns no rows and no sheet. With the
-library merged that call also renders a sheet. The first render of an engine bundles the compositions (about 110 s at load 1); the
+These runs were made before the library was merged, so they use a recipe and `find_title_looks` returned no rows and no
+sheet; with the library merged that call also renders a sheet (not rerun end to end since). The first render of an engine bundles the compositions (about 110 s at load 1); the
 suite does that in `beforeAll`, outside the figures above. At load 31, before slots existed, one `title_check` on a four-layer look
 at 1080p took 32 s. At load 80 a sheet ran past 600 s and the engine stopped answering during the bundle, so jasper-mcp reported
 `ENGINE_NOT_FOUND`: those runs prove nothing about a normal host, and the timeout path behaved as designed.

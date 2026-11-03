@@ -7,11 +7,15 @@
 // social-comment §7.8: TikTok Sans (OFL) is bundled for the TikTok templates; the remote platform fonts of the
 // remote-asset manifest are listed last with `source: 'remote'` (served at `/fonts/remote/…`) for the templates that
 // declare them — text clips never resolve them, and a template face never falls back to another family.
+// Spec 19 TL-053: the display families looks name are committed unmodified from google/fonts under `apps/engine/fonts/
+// display` (`manifest.json` pins the commit and each file's hash, the fontsource layout `<id>/files/*` serves them), because
+// fontsource subsets and converts its files and splits Japanese into a hundred pieces, and TL-003 asks for upstream bytes.
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { catalogFaceFiles, type FontCatalog, type FontFamily, resolveCatalogFont } from '@jasper/api';
+import { z } from 'zod';
 import type { RemoteAssetService } from '../remote-assets/service.ts';
 import type { FontLibrary } from './library.ts';
 
@@ -50,6 +54,50 @@ type Metadata = {
 };
 
 type ResolvedFamily = FontFamily & { id: string; dir: string };
+
+/** `manifest.json` of the display families (TL-053). Hashes are checked by `display-fonts.test.ts`. */
+export const DisplayFontManifestSchema = z.strictObject({
+	source: z.string(),
+	commit: z.string().regex(/^[0-9a-f]{40}$/),
+	families: z
+		.array(
+			z.strictObject({
+				id: z.string().regex(/^[a-z0-9-]+$/),
+				family: z.string().min(1),
+				category: z.string(),
+				script: z.enum(['latin', 'japanese']),
+				copyright: z.string(),
+				files: z
+					.array(
+						z.strictObject({
+							file: z.string().regex(/^[a-z0-9-]+\.ttf$/),
+							upstream: z.string().min(1),
+							sha256: z.string().regex(/^[0-9a-f]{64}$/),
+							bytes: z.number().int().positive(),
+							weights: z.array(z.number().int().min(1).max(1000)).min(1).max(9),
+							style: z.enum(['normal', 'italic']),
+						}),
+					)
+					.min(1)
+					.max(16),
+			}),
+		)
+		.max(256),
+});
+export type DisplayFontManifest = z.infer<typeof DisplayFontManifestSchema>;
+
+/** The directory of the display families: `JASPER_FONTS_DIR/display`, the packaged bundle's copy, or the source tree. */
+function displayFontsDir(env: Record<string, string | undefined>): string | null {
+	const roots: string[] = [];
+	if (env.JASPER_FONTS_DIR) roots.push(join(env.JASPER_FONTS_DIR, 'display'));
+	try {
+		const here = dirname(fileURLToPath(import.meta.url));
+		roots.push(join(here, 'fonts', 'display'), join(here, '..', '..', 'fonts', 'display'));
+	} catch {
+		// not a file URL
+	}
+	return roots.find((r) => existsSync(join(r, 'manifest.json'))) ?? null;
+}
 
 /** CSS unicode-range of each subset (`unicode.json` of a @fontsource package; {} when absent or unreadable). */
 function unicodeRanges(dir: string): Record<string, string> {
@@ -144,6 +192,41 @@ export class FontCatalogService {
 			});
 		}
 		this.addVariableFamilies(env);
+		this.addDisplayFamilies(env);
+	}
+
+	/** TL-053: the display families of `apps/engine/fonts/display`, one file per face (no subsets). */
+	private addDisplayFamilies(env: Record<string, string | undefined>): void {
+		const root = displayFontsDir(env);
+		if (!root) return;
+		let manifest: DisplayFontManifest;
+		try {
+			manifest = DisplayFontManifestSchema.parse(
+				JSON.parse(readFileSync(join(root, 'manifest.json'), 'utf8')),
+			);
+		} catch {
+			return;
+		}
+		for (const f of manifest.families) {
+			const dir = join(root, f.id);
+			const files: FontFamily['files'] = [];
+			for (const file of f.files) {
+				if (!existsSync(join(dir, 'files', file.file))) continue;
+				for (const weight of file.weights)
+					files.push({ weight, style: file.style, url: `/fonts/${f.id}/${file.file}` });
+			}
+			if (!files.length) continue;
+			this.families.push({
+				id: f.id,
+				dir,
+				family: f.family,
+				category: f.category,
+				source: 'bundled',
+				weights: [...new Set(files.map((x) => x.weight))].sort((a, b) => a - b),
+				styles: [...new Set(files.map((x) => x.style))],
+				files,
+			});
+		}
 	}
 
 	/** text-animators: the variable families (`Inter Variable`, …). */
@@ -336,7 +419,7 @@ export class FontCatalogService {
 	filePath(rest: string): string | null {
 		if (rest.startsWith('library/')) return this.library?.filePath(rest.slice('library/'.length)) ?? null;
 		if (rest.startsWith('remote/')) return this.remote?.cachedFontPath(rest.slice('remote/'.length)) ?? null;
-		const m = /^([a-z0-9-]+)\/([a-z0-9-]+\.(woff2|woff))$/.exec(rest);
+		const m = /^([a-z0-9-]+)\/([a-z0-9-]+\.(woff2|woff|ttf))$/.exec(rest);
 		if (!m) return null;
 		const fam = this.families.find((f) => f.id === m[1]);
 		if (!fam) return null;

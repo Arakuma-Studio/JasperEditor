@@ -2,6 +2,7 @@
 // imports and agent recipes are recipes; `appearanceFromRecipe` turns one into a stored appearance, filling every param
 // of each layer type with its default, so a layer type added later stays editable on old looks.
 import { z } from 'zod';
+import { evaluate } from '../keyframes.ts';
 import { isPaintParam } from '../registry/fx/title-look/contract.ts';
 import { activeParamSpecs, titleLayerType } from '../registry/fx/title-look/registry.ts';
 import {
@@ -13,6 +14,8 @@ import {
 	type LayerParamValue,
 	LIGHT_SOURCES,
 	LookColorSchema,
+	type LookFont,
+	LookFontSchema,
 	MAX_APPEARANCE_LAYERS,
 	MAX_TITLE_LOOK_NAME,
 	type Role,
@@ -27,6 +30,8 @@ export const RecipeLayerSchema = z.strictObject({
 	type: z.string().min(1).max(64),
 	name: z.string().max(MAX_TITLE_LOOK_NAME).optional(),
 	enabled: z.boolean().optional(),
+	/** TL-051: colourways leave this layer alone (it uses `color` paints, a generator keeps its own colours). */
+	fixedColor: z.boolean().optional(),
 	params: z.record(z.string(), z.unknown()).optional(),
 });
 export type RecipeLayer = z.infer<typeof RecipeLayerSchema>;
@@ -42,7 +47,7 @@ export const LookRecipeSchema = z.strictObject({
 		.optional(),
 	/** Bottom-first. Limits are the commands' to refuse (TL-013: `E_LIMIT`), so a schema cap here is only a sanity bound. */
 	layers: z.array(RecipeLayerSchema).max(MAX_APPEARANCE_LAYERS * 8),
-	font: z.strictObject({ family: z.string().min(1).max(256) }).optional(),
+	font: LookFontSchema.optional(),
 });
 export type LookRecipe = z.infer<typeof LookRecipeSchema>;
 
@@ -69,34 +74,8 @@ export function layerFromRecipe(l: RecipeLayer, id: string): AppearanceLayer {
 		type: l.type,
 		enabled: l.enabled !== false,
 		...(l.name ? { name: l.name } : {}),
+		...(l.fixedColor ? { fixedColor: true } : {}),
 		params,
-	};
-}
-
-/**
- * A look's body as a recipe (TL-087: a project look's poster, TL-104: `get_title_recipe`): plain values at rest, only
- * the params its layers show, no ids, no keys, and no layer of a type this build does not know.
- */
-export function recipeOfAppearance(a: Appearance): LookRecipe {
-	const palette: NonNullable<LookRecipe['palette']> = {};
-	for (const [role, v] of Object.entries(a.palette ?? {}))
-		if (v) palette[role as Role] = [...v.value] as NonNullable<LookRecipe['palette']>[Role];
-	const layers = a.layers.flatMap((l): RecipeLayer[] => {
-		const def = titleLayerType(l.type);
-		if (!def) return [];
-		const finish = l.params.finish?.value;
-		const params: Record<string, unknown> = {};
-		for (const p of activeParamSpecs(def, typeof finish === 'string' ? finish : 'flat')) {
-			const v = l.params[p.name];
-			if (v) params[p.name] = v.value;
-		}
-		return [{ type: l.type, ...(l.name ? { name: l.name } : {}), enabled: l.enabled, params }];
-	});
-	return {
-		palette,
-		light: { source: a.light.source, angle: a.light.angle.value, altitude: a.light.altitude.value },
-		layers,
-		...(a.font ? { font: { family: a.font.family } } : {}),
 	};
 }
 
@@ -115,6 +94,52 @@ export function appearanceFromRecipe(r: LookRecipe, newLayerId: () => string, se
 		},
 		seed,
 		layers: r.layers.map((l) => layerFromRecipe(l, newLayerId())),
-		...(r.font ? { font: { family: r.font.family } } : {}),
+		...(r.font ? { font: { ...r.font } } : {}),
 	};
+}
+
+/**
+ * A clip's appearance as a recipe (TL-054: Save Look, TL-087: a project look's poster, TL-104: `get_title_recipe`):
+ * values at content time `t`, only the params its layers show, no ids, keys, link or seed, and no layer of a type this
+ * build does not know, so `look.apply` takes the result again.
+ */
+export function recipeFromAppearance(a: Appearance, t = 0): LookRecipe {
+	const palette: NonNullable<LookRecipe['palette']> = {};
+	for (const [role, anim] of Object.entries(a.palette ?? {}))
+		if (anim) palette[role as Role] = [...evaluate(anim, t)] as never;
+	const layers = a.layers.flatMap((l): RecipeLayer[] => {
+		const def = titleLayerType(l.type);
+		if (!def) return [];
+		const finish = l.params.finish?.value;
+		const params: Record<string, unknown> = {};
+		for (const p of activeParamSpecs(def, typeof finish === 'string' ? finish : 'flat')) {
+			const v = l.params[p.name];
+			if (v) params[p.name] = JSON.parse(JSON.stringify(evaluate(v, t)));
+		}
+		return [
+			{
+				type: l.type,
+				...(l.name ? { name: l.name } : {}),
+				enabled: l.enabled,
+				...(l.fixedColor ? { fixedColor: true } : {}),
+				params,
+			},
+		];
+	});
+	return {
+		palette,
+		light: {
+			source: a.light.source,
+			angle: evaluate(a.light.angle, t),
+			altitude: evaluate(a.light.altitude, t),
+		},
+		layers,
+		...(a.font ? { font: lookFontOf(a.font) } : {}),
+	};
+}
+
+/** The look's typography, without what a project's `FontRef` adds. */
+function lookFontOf(font: NonNullable<Appearance['font']>): LookFont {
+	const r = LookFontSchema.safeParse(font);
+	return r.success ? r.data : { family: font.family };
 }

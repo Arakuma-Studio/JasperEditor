@@ -1,0 +1,119 @@
+# TL-001: real names that must never appear in the shipped library. One per line, matched folded (case, accents, width and
+# kana do not matter) anywhere in look, colourway and template text and in the source files under title-looks/factory/.
+# This list exists only to keep these names out; it is not shipped. Add a name when one turns up.
+#
+# Titles and studios referred to in Pachislop's presets, and creators it credits.
+hokuto
+北斗
+北斗の拳
+fist of the north star
+aobuta
+青ブタ
+rascal does not dream
+まぺろに
+ヒロデザ
+hiro design
+eye candy
+element 3d
+# Pachinko and pachislot titles and makers.
+evangelion
+エヴァ
+ヱヴァ
+海物語
+sea story
+牙狼
+garo
+ジャグラー
+juggler
+バジリスク
+basilisk
+カイジ
+kaiji
+まどか
+madoka
+化物語
+monogatari
+ガンダム
+gundam
+ルパン
+lupin
+sammy
+サミー
+sanyo
+三洋
+sankyo
+三共
+newgin
+aruze
+universal entertainment
+# Video games and platforms.
+nintendo
+mario
+zelda
+pokemon
+ポケモン
+sonic
+final fantasy
+ファイナルファンタジー
+dragon quest
+ドラクエ
+street fighter
+tekken
+mortal kombat
+call of duty
+fortnite
+minecraft
+valorant
+overwatch
+league of legends
+outrun
+out run
+pac-man
+pacman
+tetris
+playstation
+xbox
+twitch
+steam
+# Film, television and comics.
+star wars
+stranger things
+blade runner
+tron
+matrix
+marvel
+avengers
+batman
+superman
+spider-man
+spiderman
+harry potter
+lord of the rings
+game of thrones
+james bond
+disney
+pixar
+netflix
+hbo
+dragon ball
+ドラゴンボール
+one piece
+naruto
+attack on titan
+進撃の巨人
+# Brands whose names people reach for in tags.
+tiktok
+instagram
+youtube
+snapchat
+facebook
+webtoon
+nike
+adidas
+coca-cola
+chanel
+gucci
+rolex
+photoshop
+after effects
+premiere

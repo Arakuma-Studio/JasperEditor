@@ -1,14 +1,15 @@
 // Spec 19 TL-086: what the Looks tab and `Graphics ▸ Apply Look…` show: one entry per look, from the factory library and
 // the project's own looks. A project copy of a library look (TL-015) is that look, not a second card. Pure.
-import * as project from '@jasper/project';
 import {
 	type Colorway,
 	FACTORY_COLORWAYS,
 	FACTORY_LOOKS,
 	type FactoryLook,
+	foldSearchText,
 	type LookRecipe,
+	lookCategory,
 	type ProjectDocument,
-	recipeOfAppearance,
+	recipeFromAppearance,
 	type TitleLook,
 	titleLooksOf,
 } from '@jasper/project';
@@ -40,16 +41,13 @@ type LibraryExtras = {
 	suggestedColorways?: readonly string[];
 };
 
-/** The library's category names and its search folding (accents, width, kana), where the build has them. */
-const libraryHelpers = project as unknown as {
-	lookCategory?(id: string): { label: string; labelEs?: string } | undefined;
-	foldSearchText?(s: string): string;
-};
-const fold = (s: string) => libraryHelpers.foldSearchText?.(s) ?? s.toLowerCase();
+/** Search folds accents, width and kana as the library's own search does. */
+const fold = foldSearchText;
 const spanish = () => getLanguage().startsWith('es');
+/** The library's category name; an id it does not know (a project's own category) stands as written. */
 function categoryName(id: string): string {
-	const c = libraryHelpers.lookCategory?.(id);
-	return (spanish() ? c?.labelEs : c?.label) ?? c?.label ?? id;
+	const c = lookCategory(id);
+	return (spanish() ? c?.labelEs : c?.label) ?? id;
 }
 
 /** Category of looks made in this project. */
@@ -113,7 +111,7 @@ function projectEntry(l: TitleLook, colorways: readonly Colorway[]): LookEntry {
 		tags,
 		colorways: all,
 		cardColorways: all,
-		recipe: recipeOfAppearance(l.appearance),
+		recipe: recipeFromAppearance(l.appearance),
 		searchText: fold([l.name, category, ...tags].join(' ')),
 	};
 }

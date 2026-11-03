@@ -1,6 +1,6 @@
 // Spec 19 §10 with real panels on a real session: the Looks grid, hover previews, the Look and Appearance sections, the
-// paint control, Effect Controls, the effect preview and the settings search. The factory library is filled by another
-// stream, so these use small looks of their own in the project.
+// paint control, Effect Controls, the effect preview and the settings search. These use small looks of their own in the
+// project; the Looks browser tests hold the shipped library aside so their counts are known, and one checks it is listed.
 import {
 	type Appearance,
 	type Clip,
@@ -9,12 +9,14 @@ import {
 	createEmptyProject,
 	defaultRegistries,
 	type EffectInstance,
+	FACTORY_LOOKS,
+	type FactoryLook,
 	type LookRecipe,
 	titleLooksOf,
 } from '@jasper/project';
 import { derivedPreviewFor, EditorSession } from '@jasper/session';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EffectControlsPanel } from '../src/panels/effectControls/EffectControlsPanel.tsx';
 import { settingsHits } from '../src/panels/effectControls/SettingsSearch.tsx';
 import { EffectsPanel } from '../src/panels/effects/EffectsPanel.tsx';
@@ -201,6 +203,31 @@ describe('clicking a look (TL-086)', () => {
 });
 
 describe('Looks browser (TL-086)', () => {
+	const library = FACTORY_LOOKS as FactoryLook[];
+	const shipped = [...FACTORY_LOOKS];
+	beforeAll(() => {
+		library.length = 0;
+	});
+	afterAll(() => {
+		library.splice(0, library.length, ...shipped);
+	});
+
+	it('lists the shipped library first, then the project’s own looks', () => {
+		library.splice(0, library.length, ...shipped);
+		try {
+			const { session } = project({ looks: ['Gold'], titles: 0 });
+			const restore = layout();
+			renderWithSession(session, <LooksBrowser session={session} />);
+			expect(screen.getByRole('list', { name: 'Looks' }).dataset.count).toBe(String(shipped.length + 1));
+			const entries = lookEntries(session.getCommitted());
+			expect(entries.slice(0, shipped.length).map((e) => e.lookId)).toEqual(shipped.map((l) => l.libraryId));
+			expect(entries.at(-1)).toMatchObject({ name: 'Gold', source: 'project' });
+			restore();
+		} finally {
+			library.length = 0;
+		}
+	});
+
 	it('says honestly when there is nothing to show', () => {
 		const { session } = project({ looks: [], titles: 0 });
 		renderWithSession(session, <LooksBrowser session={session} />);

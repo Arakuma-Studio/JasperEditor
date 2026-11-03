@@ -50,6 +50,7 @@ import { TEXT_STYLE_OWNER, textStyleHandlers } from './handlers/text-style.ts';
 import { THREE_D_OWNER, threeDHandlers } from './handlers/three-d.ts';
 import { timeHandlers } from './handlers/time.ts';
 import { TITLE_LOOK_OWNER, titleLookHandlers } from './handlers/title-look.ts';
+import { titleTemplateHandlers } from './handlers/title-template.ts';
 import { trackerHandlers } from './handlers/tracker.ts';
 import { transitionHandlers } from './handlers/transition.ts';
 import type { Handler, HandlerMap } from './handlers/util.ts';
@@ -431,11 +432,13 @@ const LABELS: Record<CommandType, string> = {
 	'appearance.removeLayer': 'Remove Layer',
 	'appearance.reorderLayer': 'Reorder Layers',
 	'appearance.setLayerEnabled': 'Show or Hide Layer',
+	'appearance.setLayerFixedColor': 'Fix Layer Colour',
 	'appearance.setPaint': 'Change Paint',
 	'appearance.setLightSource': 'Change Light Source',
 	'appearance.setGradient': 'Change Gradient',
 	'sequence.setGlobalLight': 'Global Light',
 	'clip.addGenerator': 'Add Generator',
+	'title.insertTemplate': 'Insert Title Template',
 	// spec 13 AS-001…AS-020: automatic subtitles and subtitle templates.
 	'captions.generate': 'Create Subtitles',
 	'captions.regenerate': 'Regenerate Subtitles',
@@ -509,6 +512,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[soundBedHandlers, SOUND_DESIGN_OWNER],
 	[textStyleHandlers, TEXT_STYLE_OWNER],
 	[titleLookHandlers, TITLE_LOOK_OWNER],
+	[titleTemplateHandlers, TITLE_LOOK_OWNER],
 	[subtitleHandlers, SUBTITLES_OWNER],
 	[batchHandlers, BATCH_OWNER],
 	[cleanupHandlers, CLEANUP_OWNER],

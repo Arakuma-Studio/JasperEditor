@@ -99,6 +99,8 @@ export type TitleLayerType = {
 	prepass?: LayerPrepass;
 	/** The layer's picture changes with time on its own (generators, grain): the clip then redraws every frame. */
 	timeDependent?: (p: LayerParams) => boolean;
+	/** TL-051: colours come from the shader, not from paints: the planner binds `tl_recolor`'s ramp (`recolor.ts`). */
+	recolors?: boolean;
 	summary: (p: LayerParams, ctx: SummaryContext) => LayerSummary;
 	/** Program-monitor handles (TL-092): param names by handle kind. Read by the UI. */
 	handles?: readonly { kind: 'distance' | 'offset' | 'angle' | 'position'; params: readonly string[] }[];

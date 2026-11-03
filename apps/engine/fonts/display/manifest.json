@@ -1,0 +1,465 @@
+{
+  "source": "https://github.com/google/fonts",
+  "commit": "2fe1e8c6b137fb13041a7cfca6fdcd8a910ea4dc",
+  "families": [
+    {
+      "id": "anton",
+      "family": "Anton",
+      "category": "sans-serif",
+      "script": "latin",
+      "copyright": "Copyright 2020 The Anton Project Authors (https://github.com/googlefonts/AntonFont.git)",
+      "files": [
+        {
+          "file": "anton-regular.ttf",
+          "upstream": "ofl/anton/Anton-Regular.ttf",
+          "sha256": "a4ba3a92350ebb031da0cb47630ac49eb265082ca1bc0450442f4a83ab947cab",
+          "bytes": 170812,
+          "weights": [400],
+          "style": "normal"
+        }
+      ]
+    },
+    {
+      "id": "bebas-neue",
+      "family": "Bebas Neue",
+      "category": "sans-serif",
+      "script": "latin",
+      "copyright": "Copyright © 2010 by Dharma Type.",
+      "files": [
+        {
+          "file": "bebasneue-regular.ttf",
+          "upstream": "ofl/bebasneue/BebasNeue-Regular.ttf",
+          "sha256": "08e4623805102d819f58601e46e345648846075e363b2ceb23313c2d1c83ec73",
+          "bytes": 61400,
+          "weights": [400],
+          "style": "normal"
+        }
+      ]
+    },
+    {
+      "id": "cinzel",
+      "family": "Cinzel",
+      "category": "serif",
+      "script": "latin",
+      "copyright": "Copyright 2020 The Cinzel Project Authors (https://github.com/NDISCOVER/Cinzel)",
+      "files": [
+        {
+          "file": "cinzel.ttf",
+          "upstream": "ofl/cinzel/Cinzel[wght].ttf",
+          "sha256": "f4d83d34d1f6c741193e4acf4b3dff9531e5a67b6aa65228d00a7db72a4e0f34",
+          "bytes": 125468,
+          "weights": [400, 500, 600, 700, 800, 900],
+          "style": "normal"
+        }
+      ]
+    },
+    {
+      "id": "abril-fatface",
+      "family": "Abril Fatface",
+      "category": "serif",
+      "script": "latin",
+      "copyright": "Copyright (c) 2011, TypeTogether (www.type-together.com),",
+      "files": [
+        {
+          "file": "abrilfatface-regular.ttf",
+          "upstream": "ofl/abrilfatface/AbrilFatface-Regular.ttf",
+          "sha256": "5971d4a3758a922a9fedc7f6fb825a96341a2e718c45a4b2c9a6b417c8c4dbe9",
+          "bytes": 67364,
+          "weights": [400],
+          "style": "normal"
+        }
+      ]
+    },
+    {
+      "id": "russo-one",
+      "family": "Russo One",
+      "category": "sans-serif",
+      "script": "latin",
+      "copyright": "Copyright (c) 2011-2012, Jovanny Lemonad (jovanny.ru), with Reserved Font Name \"Russo\"",
+      "files": [
+        {
+          "file": "russoone-regular.ttf",
+          "upstream": "ofl/russoone/RussoOne-Regular.ttf",
+          "sha256": "bc0abcc660bd8b7ad3000ecb2898a27c58a29a50f7ec81652fa12e75148d09df",
+          "bytes": 39124,
+          "weights": [400],
+          "style": "normal"
+        }
+      ]
+    },
+    {
+      "id": "bungee",
+      "family": "Bungee",
+      "category": "display",
+      "script": "latin",
+      "copyright": "Copyright 2023 The Bungee Project Authors (https://github.com/djrrb/Bungee)",
+      "files": [
+        {
+          "file": "bungee-regular.ttf",
+          "upstream": "ofl/bungee/Bungee-Regular.ttf",
+          "sha256": "c4f5361ce120af3e6b9156d0bf379fa19cda2ea0cd18ac01fd99596c6bf66e3f",
+          "bytes": 118996,
+          "weights": [400],
+          "style": "normal"
+        }
+      ]
+    },
+    {
+      "id": "black-ops-one",
+      "family": "Black Ops One",
+      "category": "display",
+      "script": "latin",
+      "copyright": "Copyright 2022 The Black-Ops Project Authors (https://github.com/googlefonts/googlefonts-project-template)",
+      "files": [
+        {
+          "file": "blackopsone-regular.ttf",
+          "upstream": "ofl/blackopsone/BlackOpsOne-Regular.ttf",
+          "sha256": "282a825b5f294377387e3969f765408157dbea8da0f5d0aae68c6bc704b145b3",
+          "bytes": 166532,
+          "weights": [400],
+          "style": "normal"
+        }
+      ]
+    },
+    {
+      "id": "monoton",
+      "family": "Monoton",
+      "category": "display",
+      "script": "latin",
+      "copyright": "Copyright (c) 2011 by vernon adams (vern@newtypography.co.uk),",
+      "files": [
+        {
+          "file": "monoton-regular.ttf",
+          "upstream": "ofl/monoton/Monoton-Regular.ttf",
+          "sha256": "951c4cea65ffede784a7c9672feec5d329a7e1e12216c42d53ecf36c90d04dea",
+          "bytes": 51604,
+          "weights": [400],
+          "style": "normal"
+        }
+      ]
+    },
+    {
+      "id": "audiowide",
+      "family": "Audiowide",
+      "category": "display",
+      "script": "latin",
+      "copyright": "Copyright (c) 2012, Brian J. Bonislawsky DBA Astigmatic (AOETI) (astigma@astigmatic.com), with Reserved Font Names \"Audiowide\"",
+      "files": [
+        {
+          "file": "audiowide-regular.ttf",
+          "upstream": "ofl/audiowide/Audiowide-Regular.ttf",
+          "sha256": "c7c0f2b0f6fad8c623e31772ce79f94a4edb9321ffce9fce978ea892d20ae730",
+          "bytes": 69916,
+          "weights": [400],
+          "style": "normal"
+        }
+      ]
+    },
+    {
+      "id": "orbitron",
+      "family": "Orbitron",
+      "category": "sans-serif",
+      "script": "latin",
+      "copyright": "Copyright 2018 The Orbitron Project Authors (https://github.com/theleagueof/orbitron), with Reserved Font Name: \"Orbitron\"",
+      "files": [
+        {
+          "file": "orbitron.ttf",
+          "upstream": "ofl/orbitron/Orbitron[wght].ttf",
+          "sha256": "f42db2dd16e642258e35782916eceb1dcdbea06fb958d77ad71dc5963587e8fd",
+          "bytes": 38576,
+          "weights": [400, 500, 600, 700, 800, 900],
+          "style": "normal"
+        }
+      ]
+    },
+    {
+      "id": "press-start-2p",
+      "family": "Press Start 2P",
+      "category": "display",
+      "script": "latin",
+      "copyright": "Copyright 2012 The Press Start 2P Project Authors (cody@zone38.net), with Reserved Font Name \"Press Start 2P\".",
+      "files": [
+        {
+          "file": "pressstart2p-regular.ttf",
+          "upstream": "ofl/pressstart2p/PressStart2P-Regular.ttf",
+          "sha256": "034c77f1f05ec89421e4a63f0e3a4ca1ecf852cc6d2bf611f126f275728e017d",
+          "bytes": 118204,
+          "weights": [400],
+          "style": "normal"
+        }
+      ]
+    },
+    {
+      "id": "bangers",
+      "family": "Bangers",
+      "category": "display",
+      "script": "latin",
+      "copyright": "Copyright 2010 The Bangers Project Authors (https://github.com/googlefonts/bangers)",
+      "files": [
+        {
+          "file": "bangers-regular.ttf",
+          "upstream": "ofl/bangers/Bangers-Regular.ttf",
+          "sha256": "4160a7311de9342674cce9160cde9fcbb30f48190397d86ff1b70b455af65824",
+          "bytes": 93148,
+          "weights": [400],
+          "style": "normal"
+        }
+      ]
+    },
+    {
+      "id": "creepster",
+      "family": "Creepster",
+      "category": "display",
+      "script": "latin",
+      "copyright": "Copyright (c) 2011, Font Diner, Inc (diner@fontdiner.com),",
+      "files": [
+        {
+          "file": "creepster-regular.ttf",
+          "upstream": "ofl/creepster/Creepster-Regular.ttf",
+          "sha256": "402aeb734586c74aecd3dbdc454589b1fb12e2e1c71f782fd019ae68066d9f44",
+          "bytes": 62724,
+          "weights": [400],
+          "style": "normal"
+        }
+      ]
+    },
+    {
+      "id": "pacifico",
+      "family": "Pacifico",
+      "category": "handwriting",
+      "script": "latin",
+      "copyright": "Copyright 2018 The Pacifico Project Authors (https://github.com/googlefonts/Pacifico)",
+      "files": [
+        {
+          "file": "pacifico-regular.ttf",
+          "upstream": "ofl/pacifico/Pacifico-Regular.ttf",
+          "sha256": "5b6c0d5334a7bf77dea52b975c5a0c408878c0f7115ed5b6fb151f634b7bf701",
+          "bytes": 329380,
+          "weights": [400],
+          "style": "normal"
+        }
+      ]
+    },
+    {
+      "id": "righteous",
+      "family": "Righteous",
+      "category": "display",
+      "script": "latin",
+      "copyright": "Copyright (c) 2011 by Brian J. Bonislawsky DBA Astigmatic (AOETI)",
+      "files": [
+        {
+          "file": "righteous-regular.ttf",
+          "upstream": "ofl/righteous/Righteous-Regular.ttf",
+          "sha256": "2ffb3fe5c27d7e6571210b800448c4e234e651b46c6b4426c1bb567e5341348a",
+          "bytes": 43104,
+          "weights": [400],
+          "style": "normal"
+        }
+      ]
+    },
+    {
+      "id": "fredoka",
+      "family": "Fredoka",
+      "category": "sans-serif",
+      "script": "latin",
+      "copyright": "Copyright 2016 The Fredoka Project Authors (https://github.com/hafontia/Fredoka-One)",
+      "files": [
+        {
+          "file": "fredoka.ttf",
+          "upstream": "ofl/fredoka/Fredoka[wdth,wght].ttf",
+          "sha256": "2ba02e68b152868aef9ba28e24b3648c7d457fe6f25c761f2c2c53fb61a73fc8",
+          "bytes": 159184,
+          "weights": [300, 400, 500, 600, 700],
+          "style": "normal"
+        }
+      ]
+    },
+    {
+      "id": "lilita-one",
+      "family": "Lilita One",
+      "category": "display",
+      "script": "latin",
+      "copyright": "Copyright (c) 2011 Juan Montoreano (juan@remolacha.biz),",
+      "files": [
+        {
+          "file": "lilitaone-regular.ttf",
+          "upstream": "ofl/lilitaone/LilitaOne-Regular.ttf",
+          "sha256": "f5b641c45c69d772ee4eda687bc9fda411d5cad6b0b45371491da4580cbc8d59",
+          "bytes": 28092,
+          "weights": [400],
+          "style": "normal"
+        }
+      ]
+    },
+    {
+      "id": "titan-one",
+      "family": "Titan One",
+      "category": "display",
+      "script": "latin",
+      "copyright": "Copyright (c) 2011, Rodrigo Fuenzalida (www.rfuenzalida.com|hello@rfuenzalida.com),",
+      "files": [
+        {
+          "file": "titanone-regular.ttf",
+          "upstream": "ofl/titanone/TitanOne-Regular.ttf",
+          "sha256": "563ff6de179bbd44bcd7d2a6c448d6dc3bf935834237cf1250e506e65cd86ff1",
+          "bytes": 55712,
+          "weights": [400],
+          "style": "normal"
+        }
+      ]
+    },
+    {
+      "id": "archivo-black",
+      "family": "Archivo Black",
+      "category": "sans-serif",
+      "script": "latin",
+      "copyright": "Copyright 2017 The Archivo Black Project Authors (https://github.com/Omnibus-Type/ArchivoBlack)",
+      "files": [
+        {
+          "file": "archivoblack-regular.ttf",
+          "upstream": "ofl/archivoblack/ArchivoBlack-Regular.ttf",
+          "sha256": "dd9a89a019b4849f66ab75455fe7bdf931311042cbb0f0f97acc061539703180",
+          "bytes": 90988,
+          "weights": [400],
+          "style": "normal"
+        }
+      ]
+    },
+    {
+      "id": "dela-gothic-one",
+      "family": "Dela Gothic One",
+      "category": "display",
+      "script": "japanese",
+      "copyright": "Copyright 2020 The Dela Gothic Project Authors (https://github.com/syakuzen/DelaGothic)",
+      "files": [
+        {
+          "file": "delagothicone-regular.ttf",
+          "upstream": "ofl/delagothicone/DelaGothicOne-Regular.ttf",
+          "sha256": "4ff87a0965f1b0505e5a2c58424bc6ad3cff27e56a82f21c2fc9d6b0e3857ee2",
+          "bytes": 2508848,
+          "weights": [400],
+          "style": "normal"
+        }
+      ]
+    },
+    {
+      "id": "reggae-one",
+      "family": "Reggae One",
+      "category": "display",
+      "script": "japanese",
+      "copyright": "Copyright 2020 The Reggae Project Authors (https://github.com/fontworks-fonts/Reggae)",
+      "files": [
+        {
+          "file": "reggaeone-regular.ttf",
+          "upstream": "ofl/reggaeone/ReggaeOne-Regular.ttf",
+          "sha256": "aebe62598732d76036f30ec11bb0ec5f68938e373a06d1b4ceb6b9cf1abf3db2",
+          "bytes": 2153256,
+          "weights": [400],
+          "style": "normal"
+        }
+      ]
+    },
+    {
+      "id": "rocknroll-one",
+      "family": "RocknRoll One",
+      "category": "display",
+      "script": "japanese",
+      "copyright": "Copyright 2020 The RocknRoll Project Authors (https://github.com/fontworks-fonts/RocknRoll)",
+      "files": [
+        {
+          "file": "rocknrollone-regular.ttf",
+          "upstream": "ofl/rocknrollone/RocknRollOne-Regular.ttf",
+          "sha256": "dc0f5ff975851827f63f2c6bfed128ffbca14b6399a10fb5e1711215c0108526",
+          "bytes": 2682824,
+          "weights": [400],
+          "style": "normal"
+        }
+      ]
+    },
+    {
+      "id": "dotgothic16",
+      "family": "DotGothic16",
+      "category": "display",
+      "script": "japanese",
+      "copyright": "Copyright 2020 The DotGothic16 Project Authors (https://github.com/fontworks-fonts/DotGothic16)",
+      "files": [
+        {
+          "file": "dotgothic16-regular.ttf",
+          "upstream": "ofl/dotgothic16/DotGothic16-Regular.ttf",
+          "sha256": "3ad9af88726d42b40f7f365f0dcac785af73cf20ea6f1d5b44e57cc21150b8f1",
+          "bytes": 2069236,
+          "weights": [400],
+          "style": "normal"
+        }
+      ]
+    },
+    {
+      "id": "yuji-boku",
+      "family": "Yuji Boku",
+      "category": "serif",
+      "script": "japanese",
+      "copyright": "Copyright 2021 The Yuji Project Authors (https://github.com/Kinutafontfactory/Yuji)",
+      "files": [
+        {
+          "file": "yujiboku-regular.ttf",
+          "upstream": "ofl/yujiboku/YujiBoku-Regular.ttf",
+          "sha256": "94fda16384f3bdac24376a000c57e99abfa314961bd89ef27badfb7410322003",
+          "bytes": 8525588,
+          "weights": [400],
+          "style": "normal"
+        }
+      ]
+    },
+    {
+      "id": "kaisei-tokumin",
+      "family": "Kaisei Tokumin",
+      "category": "serif",
+      "script": "japanese",
+      "copyright": "Copyright 2020 The Kaisei Project Authors (https://github.com/Font-Kai/Kaisei)",
+      "files": [
+        {
+          "file": "kaiseitokumin-extrabold.ttf",
+          "upstream": "ofl/kaiseitokumin/KaiseiTokumin-ExtraBold.ttf",
+          "sha256": "bf44bb3e23cc703bfb19111833f78e651998d0a2b1863eff9e88cecb38a8bc53",
+          "bytes": 4564000,
+          "weights": [800],
+          "style": "normal"
+        }
+      ]
+    },
+    {
+      "id": "zen-maru-gothic",
+      "family": "Zen Maru Gothic",
+      "category": "sans-serif",
+      "script": "japanese",
+      "copyright": "Copyright 2021 The Zen Maru Gothic Project Authors (https://github.com/googlefonts/zen-marugothic)",
+      "files": [
+        {
+          "file": "zenmarugothic-black.ttf",
+          "upstream": "ofl/zenmarugothic/ZenMaruGothic-Black.ttf",
+          "sha256": "6bd74fe76cd39ee0ec18775c3661d845343fb3f6f8fa09a3076638417baf741f",
+          "bytes": 3710324,
+          "weights": [900],
+          "style": "normal"
+        }
+      ]
+    },
+    {
+      "id": "zen-kaku-gothic-new",
+      "family": "Zen Kaku Gothic New",
+      "category": "sans-serif",
+      "script": "japanese",
+      "copyright": "Copyright 2022 The Zen Kaku Gothic Project Authors (https://github.com/googlefonts/zen-kakugothic)",
+      "files": [
+        {
+          "file": "zenkakugothicnew-black.ttf",
+          "upstream": "ofl/zenkakugothicnew/ZenKakuGothicNew-Black.ttf",
+          "sha256": "795819a979184981842994d8f4eb9e14ce443d687bd5e731d6ca67ded8f92261",
+          "bytes": 2300600,
+          "weights": [900],
+          "style": "normal"
+        }
+      ]
+    }
+  ]
+}

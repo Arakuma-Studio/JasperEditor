@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./agent/schema-export": "./src/agent/schema-export.ts",
     "./audio": "./src/audio-light.ts",
+    "./cleanup-worker": "./src/cleanup/worker.ts",
     "./sound": "./src/sound/index.ts",
     "./sound/cues": "./src/sound/cues/index.ts",
     "./proposals": "./src/proposals/index.ts",

@@ -9,6 +9,7 @@
 //   frame grid and content time; `relative` presets re-express Motion values for the clip's frame and layer box.
 // Unknown effect ids are skipped with a warning (W_PRESET_UNKNOWN_EFFECT); media params whose asset is not in the
 // project fall back to the default (W_PRESET_MEDIA_MISSING). Nothing applicable on any clip fails the command.
+
 import type { Draft } from 'immer';
 import { type PresetAnim, parseEffectPreset } from '../../effect-presets/schema.ts';
 import { presetKeyTime } from '../../effect-presets/time.ts';
@@ -22,6 +23,7 @@ import { dropForeignRotoRefs } from '../../roto/index.ts';
 import type { Animatable, Keyframe, Spatial, Vec2 } from '../../schema/common.ts';
 import { type Clip, type EffectInstance, isKnownClipKind } from '../../schema/sequence.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
+import { TITLE_LOOK_EFFECT_ID } from '../../title-looks/model.ts';
 import type { DClip, DDoc, HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';
 import type { CommandOf } from '../schemas/index.ts';
@@ -286,6 +288,14 @@ function applyPreset(doc: DDoc, cmd: CommandOf<'effect.applyPreset'>, h: Handler
 						: undefined) ?? h.registries.effects.get(fx.effectId);
 				if (!spec) {
 					unknown.add(fx.effectId);
+					continue;
+				}
+				// TL-055: a look has no place in a preset; one in an older or imported file would add an empty instance.
+				if (spec.id === TITLE_LOOK_EFFECT_ID) {
+					h.warn(
+						'W_PRESET_UNKNOWN_EFFECT',
+						'The preset holds a look, which presets do not carry; it was skipped',
+					);
 					continue;
 				}
 				if ((spec.appliesTo === 'video' && !caps.visual) || (spec.appliesTo === 'audio' && !caps.audio))

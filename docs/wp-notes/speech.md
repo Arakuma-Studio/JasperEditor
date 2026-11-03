@@ -18,6 +18,9 @@ FilmCraft `crates/speech` and OpenAI Whisper (records: `licenses/ported/speech.m
 Heavy work runs in a child process (`jasper-speech`, D-07), started like `jasper-proc`: the TypeScript source through
 tsx in a checkout, `dist/jasper-speech.mjs` (esbuild, `onnxruntime-node` external) next to the engine bundle in
 builds and the desktop app (`apps/engine/scripts/build.mjs`, `apps/desktop/scripts/package.mjs`).
+The worker imports the model only through `@jasper/project/cleanup-worker`, never the package root: through tsx a start
+then takes about 2 s instead of about 7 s (measured, `node --import tsx/esm src/speech/worker/cli.ts probe`, 5 runs each
+on the 8-core test host), and the root grows with every feature. `apps/engine/test/title-looks.test.ts` guards it.
 
 Worker protocol (`worker/cli.ts`): `jasper-speech <spec.json> <out.json>` (a transcription, `SpeechJobSpec` →
 `SpeechJobOutput`), `jasper-speech score <spec.json> <out.json>` (spec 17 teacher-forced scoring, `ScoreJobSpec` →

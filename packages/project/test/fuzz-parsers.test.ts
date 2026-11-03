@@ -2,6 +2,7 @@
 import { bytesTarget, describeFuzz, jsonTarget, textTarget } from '@jasper/testkit/fuzz';
 import { parseTranscriptJson } from '../src/commands/handlers/captions.ts';
 import {
+	buildLookBundle,
 	CaptionFormatError,
 	CubeParseError,
 	checkInvariants,
@@ -25,6 +26,7 @@ import {
 	parseCsp,
 	parseCube,
 	parseEffectPreset,
+	parseLookFile,
 	parseLottie,
 	parseLutFile,
 	parseMcc,
@@ -39,6 +41,7 @@ import {
 	parseSvgPath,
 	parseTimecode,
 	parseTtml,
+	parseUserLook,
 	parseVtt,
 	parseYaml,
 	readCaptionFile,
@@ -46,6 +49,7 @@ import {
 	SvgImportError,
 	SvgPathError,
 	svgToShapeContents,
+	USER_LOOK_VERSION,
 } from '../src/index.ts';
 import {
 	CDL,
@@ -68,6 +72,34 @@ import { hostileModelSeeds, triangleDocument } from './three-d-hostile.ts';
 const caption = captionSeeds();
 const text = (k: string) => caption[k]!.filter((x): x is string => typeof x === 'string');
 const enc = (s: string) => new TextEncoder().encode(s);
+/** A user look with a recipe of each kind of layer, its bundle and a bare look. */
+const userLookSeeds = () => {
+	const look = {
+		id: 'ulk_0123456789ABCDEF',
+		version: USER_LOOK_VERSION,
+		name: 'Seed',
+		tags: ['a'],
+		category: 'clean',
+		recipe: {
+			palette: { face: [1, 1, 1, 1] },
+			font: { family: 'Anton', weight: 400, ja: { family: 'Dela Gothic One' } },
+			layers: [
+				{ type: 'shadow', params: { distance: 3 } },
+				{ type: 'glow', params: { radius: 12 } },
+				{
+					type: 'rim',
+					fixedColor: true,
+					params: { width: 4, paint: { kind: 'color', color: [0, 0, 0, 1] } },
+				},
+				{ type: 'face' },
+			],
+		},
+		createdAt: '2026-11-02T00:00:00.000Z',
+		updatedAt: '2026-11-02T00:00:00.000Z',
+	};
+	return [look, buildLookBundle([look as never]), [look]];
+};
+
 const isResult = (r: unknown) => {
 	if (!r || typeof r !== 'object' || typeof (r as { ok?: unknown }).ok !== 'boolean')
 		throw new Error(`not a result object: ${JSON.stringify(r)?.slice(0, 200)}`);
@@ -187,6 +219,8 @@ describeFuzz('@jasper/project documents and libraries', [
 	}),
 	jsonTarget('migrate only', projectSeeds, migrate, ProjectLoadError, { iterations: 150 }),
 	jsonTarget('effect preset (result object)', presetSeeds, (v) => isResult(parseEffectPreset(v))),
+	jsonTarget('user look (result object)', userLookSeeds, (v) => isResult(parseUserLook(v))),
+	jsonTarget('user look file (result object)', userLookSeeds, (v) => isResult(parseLookFile(v))),
 	jsonTarget(
 		'effect preset file (result object)',
 		() => [{ version: 1, presets: presetSeeds(), folders: [] }],

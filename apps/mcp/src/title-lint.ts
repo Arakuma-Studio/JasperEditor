@@ -1,9 +1,15 @@
 // Spec 19 TL-102 / TL-056: the style lint as `title_check` rows. `lintAppearance` (`title-looks/lint.ts`) compares what the
-// caller measured (`rendered`); this seam feeds it each measured frame and keeps the worst answer per issue. A build
-// without the lint says so in an unverified row: a look that was not linted never reads as a clean one.
+// caller measured (`rendered`); this seam feeds it each measured frame and keeps the worst answer per issue. A caller
+// that passes no lint gets an unverified row: a look that was not linted never reads as a clean one.
 
-import type { Appearance, Clip, TitleCheckAt, TitleCheckRow } from '@jasper/project';
-import * as project from '@jasper/project';
+import {
+	type Appearance,
+	type Clip,
+	type LintContext,
+	lintAppearance,
+	type TitleCheckAt,
+	type TitleCheckRow,
+} from '@jasper/project';
 
 type Severity = 'error' | 'warning' | 'info';
 type LintIssue = {
@@ -17,10 +23,7 @@ type LintIssue = {
 	fix?: { label: string; commands: unknown[] };
 };
 export type LintReport = { issues: LintIssue[]; unmeasured: readonly string[] };
-export type LintFn = (a: Appearance, ctx: Record<string, unknown>) => LintReport;
-
-/** The library's lint, resolved at run time so this file builds with or without it. */
-const libraryLint = (project as unknown as { lintAppearance?: LintFn }).lintAppearance ?? null;
+export type LintFn = (a: Appearance, ctx: LintContext) => LintReport;
 
 export type TitleLintInput = {
 	appearance: Appearance;
@@ -40,7 +43,7 @@ export type TitleLintInput = {
 const RANK: Record<Severity, number> = { error: 0, warning: 1, info: 2 };
 const STATUS: Record<Severity, TitleCheckRow['status']> = { error: 'fail', warning: 'warn', info: 'pass' };
 
-export function titleLintRows(i: TitleLintInput, lint: LintFn | null = libraryLint): TitleCheckRow[] {
+export function titleLintRows(i: TitleLintInput, lint: LintFn | null = lintAppearance): TitleCheckRow[] {
 	if (!lint)
 		return [
 			{
@@ -50,11 +53,11 @@ export function titleLintRows(i: TitleLintInput, lint: LintFn | null = libraryLi
 				measured: null,
 				expected: 'the TL-056 style lint',
 				at: i.at,
-				message: 'This build has no style lint, so the look was not linted.',
+				message: 'No style lint was run, so the look was not linted.',
 			},
 		];
 	const text = (i.clip as { content?: { text?: string } }).content?.text;
-	const context = {
+	const context: LintContext = {
 		...(i.fixes ? { effectInstanceId: i.effectInstanceId } : {}),
 		time: i.time,
 		clipKind: i.clip.kind,
