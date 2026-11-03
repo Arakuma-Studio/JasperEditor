@@ -4,18 +4,22 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
 	type Appearance,
+	activeParamSpecs,
 	appearanceFromRecipe,
 	appearanceProblem,
+	buildTextSpans,
 	checkInvariants,
 	createCounterIdSource,
 	defaultEffectRegistry,
 	diffAppearance,
 	type EffectInstance,
 	type FxPlanContext,
+	type FxTextSpans,
 	GradientSchema,
 	gradientRamp,
 	type LookRecipe,
 	LookRecipeSchema,
+	layerParamSpecs,
 	loadProject,
 	lookBodyOf,
 	lookReach,
@@ -30,6 +34,7 @@ import {
 	repairDocument,
 	resolveAppearance,
 	staticAnim,
+	TITLE_FINISHES,
 	TITLE_LAYER_TYPES,
 	TITLE_LOOK_EFFECT,
 	titleLookPadding,
@@ -79,6 +84,8 @@ function arbitraryValue(p: (typeof TITLE_LAYER_TYPES)[number]['params'][number])
 	}
 	if (p.type === 'boolean') return fc.boolean();
 	if (p.type === 'enum') return fc.constantFrom(...(p.options ?? ['']));
+	// A picture of a look (a reflection's environment, a pattern's tile): bound or None.
+	if (p.type === 'media') return fc.constantFrom(null, { mediaId: 'med_look_picture' });
 	return fc.constant(p.default);
 }
 
@@ -91,6 +98,49 @@ const layer = fc.constantFrom(...TITLE_LAYER_TYPES).chain((t) =>
 		enabled: fc.boolean(),
 	}),
 );
+/** A layer with a finish and that finish's params, pictures included (`activeParamSpecs`). */
+const finishedLayer = fc
+	.tuple(fc.constantFrom(...TITLE_LAYER_TYPES), fc.constantFrom(...TITLE_FINISHES.map((f) => f.id)))
+	.chain(([t, finish]) =>
+		fc.record({
+			type: fc.constant(t.type),
+			params: fc
+				.record(
+					Object.fromEntries(
+						activeParamSpecs(t, finish)
+							.filter((p) => p.name !== 'finish')
+							.map((p) => [p.name, arbitraryValue(p)]),
+					),
+					{ requiredKeys: [] },
+				)
+				.map((params) => (t.finish ? { ...params, finish } : params)),
+			enabled: fc.boolean(),
+		}),
+	);
+
+/** A text layer's glyphs (TL-036) with the finishes its runs give letters (TL-093), some unknown, some moved in 3D. */
+const textSpans: fc.Arbitrary<FxTextSpans | null> = fc
+	.array(
+		fc.record(
+			{
+				box: fc
+					.tuple(
+						fc.double({ min: -50, max: 1200, noNaN: true }),
+						fc.double({ min: -50, max: 600, noNaN: true }),
+						fc.double({ min: 0, max: 300, noNaN: true }),
+						fc.double({ min: 0, max: 200, noNaN: true }),
+					)
+					.map(([x, y, w, h]) => [x, y, x + w, y + h] as [number, number, number, number]),
+				line: fc.nat(3),
+				toDrawn: fc.array(fc.double({ min: -4, max: 4, noNaN: true }), { minLength: 9, maxLength: 9 }),
+				finish: fc.constantFrom(...TITLE_FINISHES.map((f) => f.id), 'not-a-finish', ''),
+			},
+			{ requiredKeys: ['box', 'line'] },
+		),
+		{ maxLength: 40 },
+	)
+	.map((glyphs) => buildTextSpans(glyphs));
+
 const recipe: fc.Arbitrary<LookRecipe> = fc.record({
 	palette: fc.dictionary(role, color, { maxKeys: 9 }),
 	layers: fc.array(layer, { maxLength: MAX_APPEARANCE_LAYERS }),
@@ -320,6 +370,8 @@ describe('the planner on any look', () => {
 		'tlSupport',
 		'tlPlate',
 		'tlSpan',
+		// TL-093: the letters runs give another finish, summed by their share (only reached with text spans).
+		'tlRunFin',
 		'tlDgPyr',
 		'tlDgAcc',
 		'tlDgH',
@@ -371,6 +423,53 @@ describe('the planner on any look', () => {
 				}
 				const r = lookReach(resolveAppearance(a, 0));
 				for (const v of Object.values(r)) expect(Number.isFinite(v)).toBe(true);
+			}),
+			{ numRuns: RUNS },
+		);
+	});
+
+	it('plans text spans, per-letter finishes and pictures within the same limits', () => {
+		const finished = fc
+			.record({
+				palette: fc.dictionary(role, color, { maxKeys: 9 }),
+				layers: fc.array(finishedLayer, { maxLength: MAX_APPEARANCE_LAYERS }),
+			})
+			.map((r) => appearanceFromRecipe(r as LookRecipe, fresh(), 5));
+		fc.assert(
+			fc.property(finished, textSpans, fc.constantFrom(96, null), (a, spans, unit) => {
+				const base = ctx(a, unit);
+				const c: FxPlanContext = {
+					...base,
+					structures: { titleLook: { ...base.structures!.titleLook!, textSpans: spans } },
+				};
+				const passes = planTitleLook(c);
+				expect(passes.length).toBeGreaterThan(0);
+				for (const name of new Set(passes.slice(0, -1).map((p) => p.output)))
+					expect(LOOK_OUTPUTS).toContain(name);
+				const plan = planGpuEffect(
+					TITLE_LOOK_EFFECT,
+					{ id: 'fx1', params: {} },
+					{ ...c, frame: 0, duration: 30, seed: 0.5, progress: 0 },
+					{ width: c.width, height: c.height },
+				);
+				for (const p of plan.passes)
+					expect(p.source.match(/^uniform\s+(?:\w+\s+)?sampler\w+\s/gm)?.length ?? 0).toBeLessThanOrEqual(
+						WEBGL2_MIN_TEXTURE_UNITS,
+					);
+				// A picture the plan binds is one an enabled layer names (no texture of another layer or of nothing), and the
+				// picture's sampler is counted above with every other.
+				const pictures = new Set(
+					a.layers.flatMap((l) =>
+						l.enabled
+							? Object.values(l.params).flatMap((v) => {
+									const m = (v as { value?: { mediaId?: unknown } } | undefined)?.value?.mediaId;
+									return typeof m === 'string' && m ? [m] : [];
+								})
+							: [],
+					),
+				);
+				for (const t of plan.textures) if (t.mediaId) expect(pictures).toContain(t.mediaId);
+				for (const v of Object.values(titleLookPadding(c))) expect(Number.isFinite(v)).toBe(true);
 			}),
 			{ numRuns: RUNS },
 		);
