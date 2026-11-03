@@ -313,8 +313,9 @@ it too. `graphics.newTextLayer` keeps adding a clip: it runs from menus and for 
   starting playback and the clip leaving the monitor all commit. A refused commit keeps the editor open with the reason.
 - **One gesture is one History step, and it is the live preview.** Text changes go to `session.beginGesture(...).update(commands)`,
   so the Player draws the transient document and a look renders the letters as they are typed. Commit replays the commands on the
-  committed document; cancel leaves nothing. An entry that changes nothing holds no gesture. While text is being typed agents'
-  transactions queue, as during any drag. A new text gets a new clip id per keystroke, because a gesture replays its commands.
+  committed document; cancel leaves nothing. An entry that changes nothing holds no gesture. While text is being typed an agent's
+  `submit` waits and its `apply` gets `E_QUEUED`, as during any drag. A new text gets a new clip id per keystroke, because a gesture
+  replays its commands.
 - **Empty means gone.** A new entry of nothing or only whitespace writes nothing; emptying an existing clip lifts it, in one undo.
 - **A text clip that went while it was edited** (another window) comes back as a new text with what was typed.
 - **Ghost editor.** The editor is a transparent copy of the block (`textBlockStyle`, `contentSpans`, `runLayoutCss`, the same as the
@@ -365,7 +366,9 @@ with the reason (`docs/gaps.md`): set it to true with the planner change.
   Properties inserts the warp straight after it, so a look applied later still goes under the warp. It can be moved in Effect
   Controls: placed before the look, rims are computed on the bent letters and keep a constant width.
 - *Mesh, not a shader.* The Photoshop surfaces are defined forward (box → picture). Inverting them per pixel needs a solver that
-  fails on folds; a fixed lattice of 128 × 128 cells over the canvas is exact to under a pixel at 4K and draws folds with `over`.
+  fails on folds; a fixed lattice of 128 × 128 cells over the canvas draws folds with `over`. Chord error ≈ 0.6 px for a half-circle
+  arc 3840 px wide with the box filling half the canvas, so 64 cells across it (computed from the sagitta `r(1 − cos(θ/2))`, not
+  measured).
 - *Resolution independence.* Control points are normalised to the layer box and the lattice is fixed, so geometry does not depend on the
   canvas. `sourceMipmaps` filters what the warp shrinks.
 - *Past the box.* A rim or glow outside the box goes on along the surface's tangent at the edge (C1), because a Bernstein polynomial
@@ -396,9 +399,9 @@ Patchy's control meshes are compared control point by control point with the out
 - **Refused:** text on a path. A path has one direction and a column has none on it (`docs/gaps.md`).
 - The look reads the picture, and the warp's Vertical orientation is Patchy's transposed construction.
 
-### Measured
-
-Figures in [Measured](#measured) below, under "Text".
+- **A unit of several code points.** `substituteCharacter` compared the first code point with the whole unit, so on the typeset path
+  every multi-code-point grapheme was cut with no animator asking: a tate-chu-yoko "12" drew "1", and a decomposed "é" or a ZWJ emoji
+  lost its tail. Program and the render agreed, so SSIM was 1.0; looking at the frame found it. The E2E now checks the drawn text.
 
 ## Commands (TL-018)
 
@@ -444,6 +447,10 @@ Port map: `licenses/ported/pachislop-rendering.md`.
 | Resolution, exact shapes, six layers: 100/50, 200/50, 200/100 | SSIM 0.986, 0.983, 0.998 | `pnpm exec vitest run packages/compositions/test/title-look-gl.test.ts` |
 | `fxPreviewScale` 0.5 against full | SSIM 0.964 | same |
 | Frame cost, six layers, 1080p, SwiftShader | 1.3 s title-sized box, 5.8 s frame-sized | [performance.md](../performance.md) §7 |
+| Text: vertical title, look, keyed Warp Text, run, tate-chu-yoko: Program against a Remotion still, frames 0, 30, 60 | SSIM 1.0000, max difference 0 | `REMOTION_E2E=1 pnpm exec vitest run packages/compositions/test/title-text.e2e.test.ts`; figures in `test-results/title-text-e2e/metrics.json` |
+| Text: text animator on vertical text, Program against a Remotion still, frames 0, 30 | SSIM 1.0000, max difference 0 | same |
+| Text: the warped title at 200 % against 100 %, real text | SSIM 0.990 | same |
+| Warp meshes against Patchy's compiled C++: 240 meshes | equal to 6 decimals | `pnpm exec vitest run packages/project/test/text-warp.test.ts` |
 
 The extension contract was exercised by copying this note's three worked examples verbatim into their own files with their
 one-line registrations: they typechecked with no change to the core, and the registry and GL tests picked them up (and failed

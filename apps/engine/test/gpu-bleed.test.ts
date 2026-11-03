@@ -99,7 +99,7 @@ describe('contentBleed with Warp Text (spec 19 TL-110)', () => {
 
 	it('adds what the warp reaches, and keeps the bake cropped', () => {
 		const c = warp();
-		const text = textContentPad((c.source as { text: never }).text);
+		const text = textPad(c);
 		const bleed = contentBleed(c, defaultEffectRegistry, SPAN);
 		expect(bleed).not.toBeNull();
 		expect(bleed!).toBeGreaterThan(text + 10);
