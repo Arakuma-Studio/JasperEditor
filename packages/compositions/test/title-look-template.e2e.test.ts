@@ -132,6 +132,7 @@ describe.runIf(enabled && !!CHROME)(
 					id: SEQUENCE_COMPOSITION_ID,
 					inputProps,
 					puppeteerInstance,
+					timeoutInMilliseconds: LOAD_TIMEOUT,
 					...remotionBrowser,
 				});
 				const output = join(OUT, `${s.template}.png`);
@@ -142,6 +143,7 @@ describe.runIf(enabled && !!CHROME)(
 					frame: s.frame,
 					output,
 					puppeteerInstance,
+					timeoutInMilliseconds: LOAD_TIMEOUT,
 					...remotionBrowser,
 				});
 				const raw = execFileSync(
