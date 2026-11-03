@@ -3,12 +3,13 @@
 import type { LayerStyleFile, PsdPlan } from '@jasper/api';
 import { EngineClient } from '@jasper/engine-client';
 import { titleLooksOf } from '@jasper/project';
+import { SessionProvider } from '@jasper/session/react';
 import { closeAllDialogs, DialogHost, openDialog } from '@jasper/ui';
 import { act, cleanup, configure, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { getCommand, registerAllCommands } from '../src/commands/index.ts';
 import { ALPHA_DIALOG, registerAlphaDialog } from '../src/delivery/AlphaDialog.tsx';
-import { gamutOverlay } from '../src/delivery/GamutOverlay.tsx';
+import { GamutOverlay, gamutOverlay } from '../src/delivery/GamutOverlay.tsx';
 import {
 	LAYER_STYLE_DIALOG,
 	registerLayerStyleDialog,
@@ -17,6 +18,12 @@ import {
 import { layersTopFirst, PSD_DIALOG, registerPsdDialog } from '../src/delivery/PsdDialog.tsx';
 import { MENUBAR } from '../src/shell/menus/model.ts';
 import { makeSession } from './timeline-helpers.ts';
+
+const engineMock = vi.hoisted(() => ({ client: null as unknown }));
+vi.mock('../src/state/engine.tsx', async (load) => ({
+	...(await load<object>()),
+	useEngineOrNull: () => (engineMock.client ? { client: engineMock.client } : null),
+}));
 
 beforeAll(() => registerAllCommands());
 // Dialogs mount on a timer that a loaded host stretches.
@@ -179,6 +186,92 @@ describe('Send to Photoshop (TL-112)', () => {
 			expect(screen.getByTestId('psd-blockers').textContent).toContain('Nothing is visible'),
 		);
 		expect((screen.getByRole('button', { name: 'Write PSD' }) as HTMLButtonElement).disabled).toBe(true);
+	});
+});
+
+describe('Gamut overlay (TL-116)', () => {
+	const result = {
+		frame: 0,
+		output: 'rec709',
+		outputLabel: 'Rec. 709',
+		width: 1920,
+		height: 1080,
+		gamutPercent: 12.5,
+		legalPercent: 0.04,
+		anyPercent: 12.5,
+		maskUrl: '/renders/job_g/output',
+	};
+	const job = {
+		id: 'job_g',
+		kind: 'gamut-check',
+		state: 'succeeded',
+		title: 'Gamut',
+		priority: 'interactive',
+		progress: 1,
+		stage: null,
+		result,
+		createdAt: '2026-11-02T00:00:00.000Z',
+		updatedAt: '2026-11-02T00:00:00.000Z',
+	};
+
+	function mount() {
+		const { session } = makeSession();
+		const calls: string[] = [];
+		engineMock.client = engineWith({ '/api/gamut-check': job, '/api/jobs/job_g': job }, calls);
+		const view = { x: 10, y: 20, scale: 0.5 };
+		const out = render(
+			<SessionProvider session={session}>
+				<GamutOverlay
+					{...({
+						session,
+						doc: session.getCommitted(),
+						view,
+						viewport: { width: 800, height: 600 },
+						transport: session.transport,
+					} as never)}
+				/>
+			</SessionProvider>,
+		);
+		return { session, calls, ...out };
+	}
+
+	it('mounts on a live transport, measures the paused frame, and marks it with percentages', async () => {
+		mount();
+		expect(screen.getByTestId('gamut-readout').textContent).toContain('Measuring');
+		await waitFor(() => expect(screen.getByTestId('gamut-readout').textContent).toContain('12.5'));
+		expect(screen.getByTestId('gamut-readout').textContent).toContain('< 0.1');
+		const mask = screen.getByTestId('gamut-mask') as HTMLImageElement;
+		expect(mask.src).toContain('/renders/job_g/output');
+		expect(mask.style.width).toBe('960px');
+		expect(mask.style.left).toBe('10px');
+	});
+
+	it('hides the mask while playing: a stale mask would mark the wrong pixels', async () => {
+		const { session } = mount();
+		await screen.findByTestId('gamut-mask');
+		act(() => session.transport.play());
+		await waitFor(() => expect(screen.queryByTestId('gamut-mask')).toBeNull());
+		expect(screen.getByTestId('gamut-readout').textContent).toContain('pauses during playback');
+		act(() => session.transport.pause());
+	});
+
+	it('a failed measurement is shown, not thrown', async () => {
+		const { session } = makeSession();
+		engineMock.client = engineWith({});
+		render(
+			<SessionProvider session={session}>
+				<GamutOverlay
+					{...({
+						session,
+						doc: session.getCommitted(),
+						view: { x: 0, y: 0, scale: 1 },
+						viewport: { width: 1, height: 1 },
+						transport: session.transport,
+					} as never)}
+				/>
+			</SessionProvider>,
+		);
+		await waitFor(() => expect(screen.getByTestId('gamut-readout').textContent).toContain('Gamut check:'));
 	});
 });
 

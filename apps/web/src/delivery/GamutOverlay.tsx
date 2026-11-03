@@ -6,7 +6,7 @@ import type { GamutCheckResult } from '@jasper/api';
 import type { OUTPUT_SPACE_IDS } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useSessionState, useStoreSelector } from '@jasper/session/react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createStore } from 'zustand/vanilla';
 import type { ProgramOverlayHostProps } from '../extensions/index.ts';
 import { errorText } from '../processing/engine-jobs.ts';
@@ -26,8 +26,16 @@ const SETTLE_MS = 300;
 export function GamutOverlay({ session, view, viewport: _v, transport }: ProgramOverlayHostProps) {
 	const engine = useEngineOrNull()?.client ?? null;
 	const output = useStoreSelector(gamutOverlay, (s) => s.output);
-	const frame = useStoreSelector(transport, (s) => s.frame);
-	const playing = useStoreSelector(transport, (s) => s.playing);
+	// `TransportStore` is a class: its `subscribe` must keep its `this`.
+	const clock = useMemo(
+		() => ({
+			getState: () => transport.getState(),
+			subscribe: (l: Parameters<typeof transport.subscribe>[0]) => transport.subscribe(l),
+		}),
+		[transport],
+	);
+	const frame = useStoreSelector(clock, (s) => s.frame);
+	const playing = useStoreSelector(clock, (s) => s.playing);
 	const revision = useSessionState((s) => s.revision);
 	const sequenceId = useSessionState((s) => s.activeSequenceId);
 	const [result, setResult] = useState<(GamutCheckResult & { url: string; key: string }) | null>(null);
