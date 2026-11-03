@@ -250,6 +250,34 @@ describe('commands (TL-111)', () => {
 		expect(text(h.document).box.height).toBeLessThan(text(doc).box.height);
 	});
 
+	it('switching orientation and tate-chu-yoko is one undo step each: undo is the document before, redo the result', () => {
+		const { doc, id, run, text } = setup();
+		const before = structuredClone(doc);
+		const h = run(doc, [
+			{ type: 'clip.update', clipId: id, patch: { content: { writingMode: 'horizontal' } } },
+		]);
+		expect(h.result.ok).toBe(true);
+		// The transaction never touches the document it started from: History's undo restores it as it was.
+		expect(doc).toEqual(before);
+		expect(text(doc).content.writingMode).toBe('vertical');
+		const after = structuredClone(h.document);
+		const t = run(h.document, [
+			{
+				type: 'clip.update',
+				clipId: id,
+				patch: { content: { writingMode: 'vertical', tateChuYoko: false } },
+			},
+		]);
+		expect(t.result.ok).toBe(true);
+		expect(text(t.document).content).toMatchObject({ writingMode: 'vertical', tateChuYoko: false });
+		expect(h.document).toEqual(after);
+		// Redo replays the same command on the same document to the same result.
+		const again = run(doc, [
+			{ type: 'clip.update', clipId: id, patch: { content: { writingMode: 'horizontal' } } },
+		]);
+		expect(text(again.document)).toEqual(text(h.document));
+	});
+
 	it('a paragraph box keeps its height and takes the measured width', () => {
 		const { doc, id, run, text } = setup((box) => ({ width: 321, height: box.height + 999 }));
 		const r = run(doc, [

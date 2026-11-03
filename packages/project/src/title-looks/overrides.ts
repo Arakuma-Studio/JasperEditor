@@ -87,8 +87,15 @@ export function rebaseAppearance(base: Appearance, next: Appearance, a: Appearan
 	const layers: AppearanceLayer[] = [];
 	for (const l of next.layers) {
 		if (removed.has(l.id)) continue;
-		const out = clone(l);
 		const own = mine.get(l.id);
+		// A layer the clip added that the new look now has (Update Look from this clip, or from a copy of it): the
+		// clip's own layer, keys included, in the look's place, and not added a second time below.
+		if (own && added.has(l.id)) {
+			layers.push(clone(own));
+			added.delete(l.id);
+			continue;
+		}
+		const out = clone(l);
 		for (const name of (d[l.id] as string[] | undefined) ?? []) {
 			if (name === '$enabled' && own) out.enabled = own.enabled;
 			else if (name === '$name') {

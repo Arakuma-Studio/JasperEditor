@@ -11,6 +11,7 @@ import {
 	isHdrFile,
 	parseHdrHeader,
 } from '../src/index.ts';
+import { Harness, videoAsset } from './helpers.ts';
 
 const ascii = (s: string) => Array.from(s, (c) => c.charCodeAt(0));
 
@@ -204,5 +205,45 @@ describe('Radiance .hdr reader', () => {
 			),
 			{ numRuns: 300 },
 		);
+	});
+});
+
+describe('an HDR environment in the document (TL-075): undo and redo', () => {
+	it('registering it and lighting with it are one undo step each; redo is the result', () => {
+		const h = new Harness();
+		const empty = h.doc;
+		const reg = h.ok([{ type: 'media.register', asset: videoAsset({ kind: 'hdri' }) }]);
+		const { mediaId } = reg.results[0] as { mediaId: string };
+		const registered = h.doc;
+		const light = h.ok([
+			{ type: 'clip.addLight', at: 0, lightType: 'environment', environmentMediaId: mediaId, ref: '$l' },
+		]).refs.$l!;
+		const lit = h.doc;
+		const env = (d: typeof h.doc) =>
+			(
+				d.sequences[h.seqId]!.clips[light] as unknown as
+					| { light: { environmentMediaId: string | null } }
+					| undefined
+			)?.light.environmentMediaId;
+		expect(env(lit)).toBe(mediaId);
+		// An HDR is not footage, and is in use while a light shows it.
+		const place = h.tx([{ type: 'clip.place', source: { mediaId }, at: { frames: 100 } }]);
+		expect(place.ok ? null : place.errors[0]!.code).toBe('E_INVALID_PARAM');
+		const item = Object.values(h.doc.items).find((i) => i.kind === 'media' && i.mediaId === mediaId)!;
+		const del = h.tx([{ type: 'item.delete', itemIds: [item.id] }]);
+		expect(del.ok ? null : del.errors[0]!.code).toBe('E_IN_USE');
+		expect(h.doc).toBe(lit);
+		// Undo (History keeps the documents by identity) and redo.
+		h.doc = registered;
+		expect(h.seq.clips[light]).toBeUndefined();
+		expect(h.doc.media[mediaId]?.kind).toBe('hdri');
+		h.doc = empty;
+		expect(h.doc.media[mediaId]).toBeUndefined();
+		h.doc = lit;
+		expect(env(h.doc)).toBe(mediaId);
+		// Clearing the environment is undone the same way.
+		h.ok([{ type: 'light.settings', clipId: light, environmentMediaId: null }]);
+		expect(env(h.doc)).toBeNull();
+		expect(env(lit)).toBe(mediaId);
 	});
 });

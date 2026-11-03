@@ -330,6 +330,31 @@ describe('project looks: create, update, rename, delete (TL-015, TL-016)', () =>
 		expect(lookOf(h, t).lookOverrides).toEqual({ [rim]: ['width'] });
 	});
 
+	it('update from a clip that added a layer takes it into the look once, keys kept (regression: id used twice)', () => {
+		const { h, t, fx } = applied();
+		const lookId = lookOf(h, t).lookId!;
+		h.ok([{ type: 'appearance.addLayer', effectInstanceId: fx, layerType: 'glow' }]);
+		const glow = layerOf(h, t, 'glow').id;
+		h.ok([
+			{ type: 'keyframe.add', target: ['appearance', fx, glow, 'radius'], at: { frames: 0 }, value: 4 },
+			{ type: 'keyframe.add', target: ['appearance', fx, glow, 'radius'], at: { frames: 30 }, value: 20 },
+		]);
+		// A duplicate carries the same layer ids, and the same added layer.
+		h.ok([{ type: 'clip.duplicate', clipIds: [t], at: { frames: 300 } }]);
+		const r = h.ok([{ type: 'look.update', lookId, fromClipId: t }]);
+		expect((r.results[0] as { updated: number }).updated).toBe(2);
+		const linked = Object.values(h.seq.clips).filter((c) => fxOf(h, c.id)?.appearance?.lookId === lookId);
+		expect(linked).toHaveLength(2);
+		for (const id of linked.map((c) => c.id)) {
+			const ids = lookOf(h, id).layers.map((l) => l.id);
+			expect(new Set(ids).size).toBe(ids.length);
+			expect(lookOf(h, id).layers.filter((l) => l.type === 'glow')).toHaveLength(1);
+		}
+		expect(titleLookOf(h.doc, lookId)!.appearance.layers.map((l) => l.type)).toContain('glow');
+		expect(layerOf(h, t, 'glow').params.radius!.keyframes).toHaveLength(2);
+		ok(h);
+	});
+
 	it('update by clip keeps a deviation of another clip, on the same layer ids', () => {
 		const { h, t, u, fx } = applied();
 		const lookId = lookOf(h, t).lookId!;
