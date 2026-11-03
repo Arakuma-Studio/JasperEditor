@@ -792,7 +792,7 @@ describe('schema v5 migration (S07:PRC-015)', () => {
 		const env = JSON.parse(readFileSync(join(here, 'fixtures/v5/basic.jasper'), 'utf8'));
 		const r = loadProject(env, { effects: defaultEffectRegistry });
 		expect(r.readOnly).toBe(false);
-		expect(r.migration.steps).toEqual(['v5→v6', 'v6→v7', 'v7→v8', 'v8→v9', 'v9→v10', 'v10→v11']);
+		expect(r.migration.steps).toEqual(['v5→v6', 'v6→v7', 'v7→v8', 'v8→v9', 'v9→v10', 'v10→v11', 'v11→v12']);
 		expect(r.repairs).toEqual([]);
 		expect(r.issues).toEqual([]);
 		const d = r.document;
@@ -813,7 +813,16 @@ describe('schema v5 migration (S07:PRC-015)', () => {
 		delete doc.media[v].sourceRange;
 		doc.schemaVersion = 4;
 		const m = migrate({ format: 'jasper-project', document: doc });
-		expect(m.report.steps).toEqual(['v4→v5', 'v5→v6', 'v6→v7', 'v7→v8', 'v8→v9', 'v9→v10', 'v10→v11']);
+		expect(m.report.steps).toEqual([
+			'v4→v5',
+			'v5→v6',
+			'v6→v7',
+			'v7→v8',
+			'v8→v9',
+			'v9→v10',
+			'v10→v11',
+			'v11→v12',
+		]);
 		expect(m.document.media[v]!.sourceRange).toEqual({
 			mediaId,
 			sourceName: 'crudo.mp4',

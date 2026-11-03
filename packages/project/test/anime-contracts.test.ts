@@ -50,7 +50,16 @@ describe('schema v4 (ARCHITECTURE §20.1, D-32)', () => {
 	it('saved v4 fixture (animated text, anime template, rect + ellipse) loads without repairs (v4 → v6)', () => {
 		const r = loadProject(fixtureV4(), { effects: defaultEffectRegistry });
 		expect(r.readOnly).toBe(false);
-		expect(r.migration.steps).toEqual(['v4→v5', 'v5→v6', 'v6→v7', 'v7→v8', 'v8→v9', 'v9→v10', 'v10→v11']);
+		expect(r.migration.steps).toEqual([
+			'v4→v5',
+			'v5→v6',
+			'v6→v7',
+			'v7→v8',
+			'v8→v9',
+			'v9→v10',
+			'v10→v11',
+			'v11→v12',
+		]);
 		expect(r.repairs).toEqual([]);
 		expect(r.issues).toEqual([]);
 		const clips = clipsOf(r.document);
