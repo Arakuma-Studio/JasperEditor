@@ -319,6 +319,25 @@ siblings and the never-guess rule in the three descriptions); `+color` 17,139 �
 `all` 507,093 → 506,533 (469 tools → 464). `eval/budget.json` lowers the three that shrank to the measurement + 2 %:
 `+titles` 6,741 → 6,638, `+3d` 21,846 → 21,414, `+export` 13,548 → 13,278. The rest stay; every context is within budget.
 
+## Lower thirds: one route per intent (review 2)
+
+The routing table sent "Add a lower third" to `add_motion_graphic`, while `titles-template-insert` asked for "lower third
+templates" through `title_look_find`. Decision (the coordinator): animated lower thirds stay `add_motion_graphic`, `main`'s
+route; title templates are styled title art. So `add_motion_graphic` says "animated lower thirds … Styled title art:
+`title_look_find`", `title_look_find` says "Look rows: `title_propose {lookId}`; template rows: apply_commands
+`title.insertTemplate`. Animated lower thirds: `add_motion_graphic`" (its line used to end "Then `title_propose {lookId}`",
+wrong for a template row), the routing table has "Add an animated lower third or a social comment" and "Insert a styled
+title template (title art)", and `TITLE_ART_GUIDE` and the skill reference say the same. The template case now asks for a
+title-art template and must not call `add_motion_graphic`; the control `titles-animated-lower-third-control` asks for an
+animated lower third and must not insert a title template. The eval's fake engine serves the TS motion-graphic catalog
+(it served none), so that route can pass.
+
+Also in review 2: `titles-effect-by-name` passed on `apply_commands` alone, and needs `list_effects` or `add_effect` now;
+`titles-propose-on-footage` needs `title_propose` (no case did). Every refusal of the title tools names its fix
+(`test/titles.test.ts` "errors name the step that fixes them"), and `title_generator_add` bounds `params` at the MCP layer
+(64 names, 6 levels, 1,024 values, strings of 1,024 characters). Bytes: `+titles` 6,635 (budget 6,638), `+graphics`
+19,709 (19,969), `all` 506,707; core unchanged. No model samples were run.
+
 ## Title templates in `title_look_find` (integration 4)
 
 The finishing stream added real 3D titles as templates (the 3D category holds templates, the old drawn looks are Drawn

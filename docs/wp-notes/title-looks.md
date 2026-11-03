@@ -499,7 +499,15 @@ it too. `graphics.newTextLayer` keeps adding a clip: it runs from menus and for 
 
 - **The draft lives outside React** (`EntryDraft`, `text-edit/draft.ts`). A render failure commits it from the error boundary; if
   that is refused a new editor opens on it, and a second failure hands the text to the message. `pagehide`, unmounting the overlay,
-  starting playback and the clip leaving the monitor all commit. A refused commit keeps the editor open with the reason.
+  starting playback and the clip leaving the monitor all commit. A refused commit keeps the editor open with the reason. Where no
+  editor stays open to show it (the boundary, an unmount, as a change of language remounts the overlay), the old draft ends its
+  gesture and a new editor opens on the text; a newer entry in its place gets the text in the message instead.
+- **Checkpoint for a killed renderer** (`text-edit/checkpoint.ts`). A crashed tab reaches none of those moments, so the draft is
+  written to the tab's sessionStorage 400 ms after typing pauses, and at once when a commit is refused; a commit, or an entry
+  that changes nothing, clears it. One key per project; read back through zod (the page's storage may hold anything). With no
+  entry open, the Program monitor of that project and sequence offers it: Restore opens the entry on the clip again (a new text at
+  the same point when the clip is gone) through `beginTextEntry`'s refusals, Discard drops it. Lost: the last 400 ms, and the
+  whole draft when the tab or window itself is gone. Tests: `text-entry.test.tsx` "a killed renderer".
 - **One gesture is one History step, and it is the live preview.** Text changes go to `session.beginGesture(...).update(commands)`,
   so the Player draws the transient document and a look renders the letters as they are typed. Commit replays the commands on the
   committed document; cancel leaves nothing. An entry that changes nothing holds no gesture. While text is being typed an agent's
