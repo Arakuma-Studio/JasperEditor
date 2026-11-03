@@ -1,5 +1,6 @@
 // Spec 19, stream Glows: the Deep Glow PSF against the power law it stands for, the standalone effects as entries of the
 // registry (§8), padding across every frame (TL-033), the global light of effects (TL-017) and handles (TL-092).
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
 	type Appearance,
@@ -37,6 +38,8 @@ import {
 import { Harness } from './helpers.ts';
 
 const F = 23_520_000; // flicks per frame at 30 fps
+
+type Range = NonNullable<EffectSpec['params'][number]['range']>;
 
 const defaultsOf = (s: EffectSpec): EffectParams =>
 	Object.fromEntries(s.params.map((p) => [p.name, p.default]));
@@ -444,6 +447,73 @@ describe('the global light on effects (TL-017)', () => {
 		const pad = gpuPadding(s, p, base);
 		expect(Math.min(pad.left, pad.right)).toBeGreaterThanOrEqual(230);
 	});
+});
+
+describe('any params in range', () => {
+	const unit = fc.double({ min: 0, max: 1, noNaN: true });
+	const value = (
+		p: { type: string; default: unknown; options?: readonly string[]; range?: Range },
+		x: number,
+	) => {
+		if (p.type === 'number') {
+			const lo = p.range?.min ?? p.range?.softMin ?? -360;
+			const hi = p.range?.max ?? p.range?.softMax ?? 360;
+			return lo + (hi - lo) * x;
+		}
+		if (p.type === 'boolean') return x > 0.5;
+		if (p.type === 'enum') return p.options![Math.floor(x * 0.999 * p.options!.length)];
+		return p.default;
+	};
+
+	for (const t of TITLE_LAYER_TYPES)
+		it(`layer ${t.type} plans, with a finite reach`, () => {
+			fc.assert(
+				fc.property(fc.array(unit, { minLength: t.params.length, maxLength: t.params.length }), (xs) => {
+					const params = Object.fromEntries(t.params.map((p, i) => [p.name, value(p, xs[i]!)]));
+					const appearance = resolveAppearance(
+						appearanceFromRecipe({ layers: [{ type: 'face' }, { type: t.type, params }] }, ids(1)),
+						0,
+					);
+					const passes = planTitleLook({
+						width: 320,
+						height: 180,
+						pxScale: 1,
+						fps: 30,
+						structures: { titleLook: { appearance, unitPx: 64, contentSeconds: 0 } },
+					});
+					expect(passes.length).toBeGreaterThan(2);
+					const r = lookReach(appearance);
+					for (const v of Object.values(r)) {
+						expect(Number.isFinite(v)).toBe(true);
+						expect(v).toBeGreaterThanOrEqual(0);
+					}
+				}),
+				{ numRuns: 40 },
+			);
+		});
+
+	for (const s of [...TITLE_LOOK_EFFECTS, spec('jasper.alpha-glow')])
+		it(`effect ${s.id} plans, with a finite padding`, () => {
+			fc.assert(
+				fc.property(fc.array(unit, { minLength: s.params.length, maxLength: s.params.length }), (xs) => {
+					const p = Object.fromEntries(s.params.map((q, i) => [q.name, value(q, xs[i]!)])) as EffectParams;
+					const ctx = { width: 320, height: 180, pxScale: 1, fps: 30 };
+					const pad = gpuPadding(s, p, ctx);
+					for (const v of Object.values(pad)) {
+						expect(v).toBeGreaterThanOrEqual(0);
+						expect(v).toBeLessThanOrEqual(FX_MAX_PADDING);
+					}
+					const plan = planGpuEffect(
+						s,
+						{ id: 'f', params: p },
+						{ ...ctx, frame: 0, duration: 30, seed: 0.5, progress: 0 },
+						{ width: 400, height: 260 },
+					);
+					expect(plan.passes.length).toBeGreaterThan(0);
+				}),
+				{ numRuns: 25 },
+			);
+		});
 });
 
 describe('handles (TL-092)', () => {

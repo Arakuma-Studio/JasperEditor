@@ -34,7 +34,7 @@ float tl_amount(TlSurface s) {
 };
 
 const BLEND: Record<string, string> = {
-	normal: 'return p * k;',
+	normal: 'return tl_atop(under, p, k * tl_ofShape(under, s.alpha) / max(s.alpha, 1.0e-3));',
 	screen: 'return vec4((p.rgb - under.rgb * p.rgb) * k, 0.0);',
 	add: 'return vec4(p.rgb * k, 0.0);',
 };

@@ -21,6 +21,12 @@ vec4 tl_result(vec4 under, vec4 D) {
   float t = under.a < 0.9995 ? clamp((D.a - under.a) / (1.0 - under.a), 0.0, 1.0) : 0.0;
   return vec4(D.rgb - under.rgb * (1.0 - t), t);
 }
+// Paint over the picture at strength k, inside its alpha (source-atop): a faded glyph takes the paint and stays faded.
+vec4 tl_atop(vec4 under, vec4 paint, float k) {
+  return tl_result(under, vec4(under.rgb * (1.0 - k * paint.a) + paint.rgb * k * under.a, under.a));
+}
+// How much of the picture here is the shape itself and not what lies around it: a rim under an antialiased edge.
+float tl_ofShape(vec4 under, float alpha) { return clamp(alpha / max(under.a, 1.0e-3), 0.0, 1.0); }
 // Linear light on nothing as a premultiplied linear colour (see the note at the top of this file).
 vec4 tl_veil(vec3 light) {
   vec3 signal = fx_linearToSrgb(clamp(light, 0.0, 1.0));

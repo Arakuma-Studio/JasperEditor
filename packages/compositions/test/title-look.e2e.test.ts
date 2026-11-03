@@ -167,7 +167,12 @@ function build(o: Opts = {}) {
 			},
 			{ type: 'sequence.setGlobalLight', angle: 0, altitude: 45 },
 			{ type: 'keyframe.add', target: ['globalLight', seqId, 'angle'], at: { sequenceFrame: 0 }, value: 200 },
-			{ type: 'keyframe.add', target: ['globalLight', seqId, 'angle'], at: { sequenceFrame: 60 }, value: 340 },
+			{
+				type: 'keyframe.add',
+				target: ['globalLight', seqId, 'angle'],
+				at: { sequenceFrame: 60 },
+				value: 340,
+			},
 			{ type: 'keyframe.add', target: ['appearance', fx, deep, 'radius'], at: { frames: 0 }, value: 30 },
 			{ type: 'keyframe.add', target: ['appearance', fx, deep, 'radius'], at: { frames: 60 }, value: 120 },
 			{ type: 'keyframe.add', target: ['effect', '$k', 'width'], at: { frames: 0 }, value: 1 },

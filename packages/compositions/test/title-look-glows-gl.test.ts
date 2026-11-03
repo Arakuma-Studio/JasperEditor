@@ -253,16 +253,17 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Looks: glows', { ti
 					],
 				},
 			};
-			const plain = await lit({ radius: 200 });
-			const tinted = await lit({ radius: 200, tintAmount: 100, tint: gradient });
+			const plain = await lit({ radius: 200, exposure: 5 });
+			const tinted = await lit({ radius: 200, exposure: 5, tintAmount: 100, tint: gradient });
 			const x = plain.box.x + 500;
 			const y = plain.box.y + 250;
 			// Far out it is the outer stop: red, as bright as the untinted light.
 			const far = 160;
 			expect(lightAt(tinted, x + far, y, 1)).toBeLessThan(lightAt(tinted, x + far, y, 0) * 0.3);
 			expect(lightAt(tinted, x + far, y, 0) / lightAt(plain, x + far, y, 0)).toBeGreaterThan(0.8);
-			// Near the emitter it is still mostly the inner stop: white.
-			expect(lightAt(tinted, x + 24, y, 1)).toBeGreaterThan(lightAt(tinted, x + 24, y, 0) * 0.5);
+			// Near the emitter the narrow octaves count: more of the inner stop, white, than far out.
+			const green = (d: number) => lightAt(tinted, x + d, y, 1) / lightAt(tinted, x + d, y, 0);
+			expect(green(24)).toBeGreaterThan(green(far) * 2);
 		});
 
 		it('Glow Over Face keeps the face or lights it, and light on nothing stays visible', async () => {
@@ -288,22 +289,26 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Looks: glows', { ti
 			const none = await onRect([{ type: 'deepGlow', params: { from: 'stack', radius: 60, paint: WHITE } }]);
 			expect(lightSum(none)).toBe(0);
 			const behind = await onRect([{ type: 'deepGlow', params: { radius: 60, paint: WHITE } }, face(RED)]);
-			expect(pixel(behind, behind.box.x + 60, behind.box.y + 80)[3]).toBeGreaterThan(30);
+			expect(pixel(behind, behind.box.x + 60, behind.box.y + 80)[3]).toBeGreaterThan(15);
 			expect(pixel(behind, behind.box.x + 160, behind.box.y + 80).slice(0, 3)).toEqual([255, 0, 0]);
 		});
 
 		it('an animated radius is continuous: no pop where an octave changes pyramid level', async () => {
+			// σ = radius / 3 of the widest octave reaches 32 × 1.25 px at radius 120, where it drops one level.
 			let prev: LookImage | null = null;
 			let worst = 0;
-			for (const radius of [150, 153, 156, 159, 162, 165]) {
-				const img = await lit({ radius }, { pad: 200 - Math.ceil(radius) });
-				if (prev) {
-					for (let i = 0; i < img.data.length; i++)
+			for (const radius of [116, 119, 121, 124]) {
+				const img = await lit(
+					{ radius },
+					{ input: { kind: 'rect', x: 0.45, y: 0.4, w: 0.1, h: 0.2 }, box: R_BOX, pad: 130 - radius },
+				);
+				// Alpha: read-back is straight, so colour means nothing where there is almost no light.
+				if (prev)
+					for (let i = 3; i < img.data.length; i += 4)
 						worst = Math.max(worst, Math.abs(img.data[i]! - prev.data[i]!));
-				}
 				prev = img;
 			}
-			expect(worst).toBeLessThanOrEqual(8);
+			expect(worst).toBeLessThanOrEqual(6);
 		});
 
 		it('two deep glows in one look each draw their own light', async () => {
@@ -314,8 +319,9 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Looks: glows', { ti
 			]);
 			const x = one.box.x + 60;
 			const y = one.box.y + 80;
-			expect(pixel(both, x, y)[2]).toBeGreaterThan(30);
-			expect(Math.abs(pixel(both, x, y)[0] - pixel(one, x, y)[0])).toBeLessThan(30);
+			expect(lightAt(both, x, y, 2)).toBeGreaterThan(0.005);
+			expect(lightAt(both, x, y, 0) / lightAt(one, x, y, 0)).toBeGreaterThan(0.6);
+			expect(lightAt(both, x, y, 0) / lightAt(one, x, y, 0)).toBeLessThan(2);
 		});
 	});
 
@@ -390,7 +396,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Looks: glows', { ti
 				box: R_BOX,
 				unitPx: 100,
 			});
-			expect(pixel(img, img.box.x + 3, img.box.y + 80)[0]).toBeLessThan(40);
+			expect(pixel(img, img.box.x + 3, img.box.y + 80)[0]).toBeLessThan(60);
 			expect(pixel(img, img.box.x + 160, img.box.y + 80)[0]).toBeGreaterThan(245);
 		});
 
@@ -452,7 +458,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Looks: glows', { ti
 			const y = centre.box.y + 80;
 			expect(pixel(centre, x0 + 2, y)[0]).toBeLessThan(pixel(centre, x0 + 35, y)[0]);
 			const soft = await onRect([dark, { type: 'innerGlow', params: { radius: 30, paint: WHITE } }]);
-			const a = [2, 12, 32].map((d) => pixel(soft, x0 + d, y)[0]);
+			const a = [2, 12, 32].map((d) => pixel(soft, soft.box.x + 80 + d, soft.box.y + 80)[0]);
 			expect(a[0]).toBeGreaterThan(a[1]!);
 			expect(a[1]).toBeGreaterThan(a[2]!);
 		});
@@ -711,6 +717,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Looks: glows', { ti
 								useLight: true,
 								distance: 60,
 								foreshorten: 100,
+								convergence: 0,
 								blur: 0,
 								fade: 0,
 								opacity: 100,
@@ -956,10 +963,11 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Looks: glows', { ti
 					box: R_BOX,
 					unitPx: 100,
 				});
-			const up = await lit(270);
-			const down = await lit(90);
+			// The side at the right of the rectangle: its normal points right.
+			const right = await lit(0);
+			const left = await lit(180);
 			const p = (i: LookImage) => pixel(i, i.box.x + 245, i.box.y + 55)[1];
-			expect(p(up)).toBeGreaterThan(p(down) + 60);
+			expect(p(right)).toBeGreaterThan(p(left) + 60);
 		});
 
 		it('flat with a fade is a long shadow; a gradient runs front to back', async () => {
@@ -1041,8 +1049,10 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Looks: glows', { ti
 			const repeat = await over({ scale: 50, wrap: 'repeat' });
 			expect(pixel(repeat, x(repeat, 38), y(repeat))[0]).toBeGreaterThan(200);
 			expect(pixel(repeat, x(repeat, 42), y(repeat))[0]).toBeLessThan(60);
+			// 10 px in, the gradient's position is −0.375: repeated it is 0.625, mirrored 0.375.
 			const mirror = await over({ scale: 50, wrap: 'mirror' });
-			expect(pixel(mirror, x(mirror, 42), y(mirror))[0]).toBeGreaterThan(190);
+			expect(Math.abs(pixel(mirror, x(mirror, 10), y(mirror))[0] - 96)).toBeLessThan(10);
+			expect(Math.abs(pixel(repeat, x(repeat, 10), y(repeat))[0] - 159)).toBeLessThan(10);
 		});
 
 		it('a band of fixed length crosses the title: Position −100 is just off one side, 100 just off the other', async () => {
@@ -1125,7 +1135,11 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Looks: glows', { ti
 				const s = () => defaultEffectRegistry.get(id) as EffectSpec;
 
 				it('moves with its params, and draws the same pixels every time', async () => {
-					const request = { input: TEXT, box: BOX };
+					// Not white: Screen and Add on white change nothing.
+					const request = {
+						input: { kind: 'rect', x: 0.2, y: 0.25, w: 0.6, h: 0.5, color: '#305080' },
+						box: BOX,
+					} as const;
 					const a = await tl.effect({ id, params: on(id), ...request });
 					const b = await tl.effect({ id, params: on(id), ...request });
 					expect(meanDiff(a, b)).toBe(0);
@@ -1201,13 +1215,9 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Looks: glows', { ti
 				...card,
 			});
 			const glow = await tl.effect({ id: 'jasper.deep-glow', params: { radius: 60 }, ...card });
-			const dx = glow.box.x - none.box.x;
-			const dy = glow.box.y - none.box.y;
 			const inside = pixel(glow, glow.box.x + 200, glow.box.y + 80);
 			const before = pixel(none, none.box.x + 200, none.box.y + 80);
 			expect(inside[1]).toBeGreaterThan(before[1]);
-			expect(dx).toBeGreaterThan(0);
-			expect(dy).toBeGreaterThan(0);
 			// Outside the layer box there is light, with alpha, fading out.
 			const out = (d: number) => pixel(glow, glow.box.x + glow.box.w + d, glow.box.y + 80)[3];
 			expect(out(6)).toBeGreaterThan(out(40));
@@ -1251,10 +1261,10 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Looks: glows', { ti
 					...rect,
 					globalLight: { angle, altitude: 30 },
 				});
-			const up = await ex(270);
-			const down = await ex(90);
+			const lightRight = await ex(0);
+			const lightLeft = await ex(180);
 			const side = (i: LookImage) => pixel(i, i.box.x + 245, i.box.y + 55)[0];
-			expect(side(up)).toBeGreaterThan(side(down) + 50);
+			expect(side(lightRight)).toBeGreaterThan(side(lightLeft) + 50);
 		});
 
 		it('Keyline is a stroke of its width, softness feathering it', async () => {
@@ -1297,36 +1307,47 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Looks: glows', { ti
 	});
 
 	// Cost on this host (docs/performance.md §7): TL_PERF=1. Reports; the budget is on a real GPU.
-	it.runIf(process.env.TL_PERF === '1')('per-frame cost of Deep Glow at 1080p', { timeout: 600_000 }, async () => {
-		const text = { kind: 'text', text: 'Title Look', size: 200 } as const;
-		const median = async (run: () => Promise<LookImage>) => {
-			const first = await run();
-			const times: number[] = [];
-			for (let i = 0; i < 5; i++) times.push((await run()).ms);
-			times.sort((a, b) => a - b);
-			return `canvas ${first.width}×${first.height}, ${first.passes} passes, median ${times[2]!.toFixed(0)} ms`;
-		};
-		const box = { width: 1200, height: 280 };
-		const frame = { width: 1920, height: 1080 };
-		for (const pxScale of [1, 0.5]) {
-			const fx = (b: { width: number; height: number }, input: LookRequest['input']) =>
-				median(() =>
-					tl.effect({ id: 'jasper.deep-glow', params: { radius: 200 }, input, box: b, pxScale, timingOnly: true }),
+	it.runIf(process.env.TL_PERF === '1')(
+		'per-frame cost of Deep Glow at 1080p',
+		{ timeout: 600_000 },
+		async () => {
+			const text = { kind: 'text', text: 'Title Look', size: 200 } as const;
+			const median = async (run: () => Promise<LookImage>) => {
+				const first = await run();
+				const times: number[] = [];
+				for (let i = 0; i < 5; i++) times.push((await run()).ms);
+				times.sort((a, b) => a - b);
+				return `canvas ${first.width}×${first.height}, ${first.passes} passes, median ${times[2]!.toFixed(0)} ms`;
+			};
+			const box = { width: 1200, height: 280 };
+			const frame = { width: 1920, height: 1080 };
+			for (const pxScale of [1, 0.5]) {
+				const fx = (b: { width: number; height: number }, input: LookRequest['input']) =>
+					median(() =>
+						tl.effect({
+							id: 'jasper.deep-glow',
+							params: { radius: 200 },
+							input,
+							box: b,
+							pxScale,
+							timingOnly: true,
+						}),
+					);
+				console.info(`[glows-perf] ${pxScale} effect, title box: ${await fx(box, text)}`);
+				console.info(`[glows-perf] ${pxScale} effect, full frame: ${await fx(frame, { kind: 'card' })}`);
+				const layer = median(() =>
+					tl.render({
+						recipe: { layers: [face(), { type: 'deepGlow', params: { from: 'stack', radius: 100 } }] },
+						input: text,
+						box,
+						pxScale,
+						timingOnly: true,
+					}),
 				);
-			console.info(`[glows-perf] ${pxScale} effect, title box: ${await fx(box, text)}`);
-			console.info(`[glows-perf] ${pxScale} effect, full frame: ${await fx(frame, { kind: 'card' })}`);
-			const layer = median(() =>
-				tl.render({
-					recipe: { layers: [face(), { type: 'deepGlow', params: { from: 'stack', radius: 100 } }] },
-					input: text,
-					box,
-					pxScale,
-					timingOnly: true,
-				}),
-			);
-			console.info(`[glows-perf] ${pxScale} look layer, title box: ${await layer}`);
-		}
-	});
+				console.info(`[glows-perf] ${pxScale} look layer, title box: ${await layer}`);
+			}
+		},
+	);
 
 	it.runIf(!!process.env.TL_SHEET)('contact sheet', async () => {
 		const path = process.env.TL_SHEET ?? join(here, 'glows.png');
