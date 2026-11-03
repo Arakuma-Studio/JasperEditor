@@ -1029,6 +1029,12 @@ and rerun commands: [wp-notes/three-d.md](wp-notes/three-d.md) §9. Limits:
   video id (`E_INVALID_PARAM`, since integration 2); a project saved before that with a video environment keeps it, and its
   render refuses as before. The Environment section offers images and HDRs only.
 - **Per-character 3D** (Pachislop's glyph rigs) has no equivalent: a solid is traced from the layer's picture.
+- **A 3D title's Remotion export differs from Program on the solid's edges**: `template.gold-3d-title` at frames 45 and 46 has a mean
+  ΔE of 1.93 over the title (under the 2.0 gate and the just-noticeable 2.3; 1.8 % of values off by more than 3/255, a few
+  hundred pixels by up to ≈ 60/255), all along the silhouette and bevel edges; a 2D look on the same paths measures 0.2–0.5.
+  Program's Player and a Remotion still of the same frame are identical (`three-d-title.e2e.test.ts`, max difference 0), so the
+  difference is between a still and the video render of the export. Cause not found; the 422 HQ intermediate, which doubled it,
+  is fixed (`apps/engine/test/title-look-export.e2e.test.ts`).
 - **Fixed per-frame limits of Advanced 3D**, now said, not redesigned: at most 32 lights at a time (environment lights apart;
   later lights in drawing order are not drawn), 48 shadow maps (a point light takes six, a spot or parallel light one; a light
   whose maps would not fit casts no shadow), and supersampling by what the GPU's largest render buffer holds (`MAX_RENDERBUFFER_SIZE`

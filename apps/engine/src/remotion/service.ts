@@ -146,6 +146,12 @@ type RemotionRenderInput = {
 	 * with its own selected encoder, so no GPL encoder (Remotion's x264/fdk-aac) is ever needed.
 	 */
 	intermediate?: boolean;
+	/**
+	 * The intermediate is ProRes 4444 (10-bit 4:4:4) instead of 422 HQ: for an output that keeps full chroma (ProRes 4444,
+	 * and the GIF's picture), so the intermediate does not halve it (AGENTS §4: a Remotion export of a title measured a
+	 * mean ΔE of 3.9 against Program through 422 HQ, at its saturated edges).
+	 */
+	intermediate444?: boolean;
 	/** Direct VP9/Opus WebM (LGPL components); see export-plan.ts. */
 	vp9?: { crf: number; colorSpace: 'bt709' | null; ffmpegOverride?: RemotionFfmpegOverride };
 	audioBitrateKbps?: number;
@@ -790,7 +796,9 @@ export class RemotionService {
 						...(input.intermediate
 							? {
 									codec: 'prores' as const,
-									proResProfile: 'hq' as const,
+									...(input.intermediate444
+										? { proResProfile: '4444' as const, pixelFormat: 'yuv444p10le' as const }
+										: { proResProfile: 'hq' as const }),
 									...(input.muted ? {} : { audioCodec: 'pcm-16' as const }),
 								}
 							: input.vp9

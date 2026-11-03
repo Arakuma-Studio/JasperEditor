@@ -2157,7 +2157,12 @@ export class ExportService {
 				crf: rp.mode === 'direct' ? rp.crf : planned.output.crf,
 				x264Preset: planned.output.x264Preset,
 				audioBitrateKbps: planned.output.audioBitrateKbps,
-				...(rp.mode === 'intermediate' ? { intermediate: true } : {}),
+				...(rp.mode === 'intermediate'
+					? {
+							intermediate: true,
+							...(planned.output.proresProfile === '4444' ? { intermediate444: true } : {}),
+						}
+					: {}),
 				...(rp.mode === 'direct' && rp.codec === 'vp9'
 					? {
 							vp9: {
