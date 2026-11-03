@@ -937,6 +937,42 @@ never per texel: the edge point `q − n·d` is continuous in the site and the s
 of a stroke, the gap between two letters) the nearest edge flips from one side to the other; the gradient's length falls below 1
 there, and the site fades (0.55 to 0.9), so a flip, between frames or between resolutions, happens where it is invisible.
 
+**Lightning** reads its sites differently, because a bolt two units long turns a degree of direction into pixels at its tip. The
+field is right to its seeds, a tenth or two of a pixel, and that tenth differs between 1× and 2×; a gradient read from the field
+over a few pixels is good to a few degrees, and a site up to Capture away projected along it moves its start by pixels. So no bolt
+reads a direction or a projection from the field's gradient. Each bolt is computed once per frame in a data pass (`tlGenB`, two
+texels a bolt; one texel per point of an arc for Along Edge), not once per vertex:
+
+- *Direction* is the **mass** of the alpha around the site (`tlg_mass`): the Gaussian-weighted first moment of the alpha, summed
+  over every pixel within 3σ. Past 64 px of reach the sum runs over 2×2 blocks, each read at its shared corner, which gives their
+  exact mean; past 128 px it takes wider steps. Antialiased alpha is coverage, so this is an area integral, and at 1× and 2× it
+  converges to one value. σ is half the site's distance from the edge, and at least 10 % of the unit for the bolt's direction.
+  It is read at the site, which is a seeded point. A start is only right to a tenth of a pixel, and near a sharp corner that tenth
+  turns a direction read at the start by a degree.
+- *Start*: the site marches along the same mass (σ at least 3 %) to the edge of the field. That is sphere tracing, and a step
+  that passes the edge is taken back by regula falsi. The start is then moved onto the alpha's own edge: where the bilinear alpha
+  crosses half its local peak (the field's level), found by bisection.
+- *Anchor*: with Alpha Bounds, `tl_bounds()` is whole pixels, out to the last pixel with 2 % alpha, so it moves by up to a pixel
+  between resolutions and every site moves with it. Lightning refines each side to sub-pixel in a 1×1 pass (`tlGenC`): the
+  outermost crossing of half the alpha's peak, along the lines of pixels near that side. Other generators keep `tl_bounds()`, so
+  their pictures are unchanged.
+- *No pops*. Every gate is smooth. A site fades where its mass balances (between two letters, in a counter), where its march
+  meets the edge at a graze, and where the march passes within 4 % of the unit of another part of the shape first (the edge it
+  meets would jump there). It also fades towards Capture. A crawl arc fades with the gate of its far end and as its ends close
+  in; both used to be cut.
+- *Field reach*: a crawl arc looks for its far end up to twice Capture away, so the field now reaches that far in Mixed and
+  Crawl. Beyond its reach the field is clamped at a value in pixels, which differs between resolutions, and woke an arc at one
+  size only.
+
+Resolution test, the GL test's `shapes` input, SSIM between 1× and 2× at three moments (0.7, 1.1 and 2.3 s): perturbed params
+0.985, 0.986, 0.983; defaults 0.984, 0.990, 0.985; perturbed in Mixed 0.987, 0.989, 0.986; Along Edge 0.990, 0.988, 0.985.
+Earlier attempts, at the perturbed params: per-texel sites (0.52), the surface normal at the edge point (0.66), the alpha's
+first moment (0.70), bilinear sites (0.76), and the field's slope over a cross stencil of 6 % or 12 % of the unit (0.906, 0.935)
+or a ring of 16 reads at 12 % (0.942). All of them kept the start projected along the field's gradient. A diagnostic (not a
+design) separated the two errors. With seeded, resolution-free directions and the old projection the score was 0.967. Starting
+each bolt at its site itself gave 0.989. So the start needed fixing as much as the direction. Moving sites onto the field's nearest
+seeds instead (bilinear `toEdge`) gave 0.943.
+
 **Glints** run Pachislop's placement on the GPU every frame, with no read-back: a grid fixed in units of the title (so resolution does
 not change it), luminance of what is below the layer (`tlComp`, so a metal face's highlights count), non-maximum suppression,
 prominence, regional normalisation, face bias from the field, Hessian ridge rejection. Each of 64 seeded **homes** takes the strongest
