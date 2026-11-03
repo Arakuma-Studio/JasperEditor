@@ -39,7 +39,14 @@ import { memoizeEffects } from '../effect-chain.ts';
 import { ScopedHtmlInCanvas } from './canvas-scope.tsx';
 import { fxAdjustmentMix, fxCrop, fxFlip, fxLut, fxShader, fxStash, fxTap } from './effects.ts';
 import type { FxTextureInput } from './host.ts';
-import { fxImageFailed, loadedFxImage, loadFxImage, useFxImages } from './images.ts';
+import {
+	fxImageFailed,
+	fxImageStandIn,
+	loadedFxImage,
+	loadFxImage,
+	useFxImageFailures,
+	useFxImages,
+} from './images.ts';
 import { fxLowered } from './lowered.ts';
 import { fxMaskApply, fxMasked } from './mask.ts';
 import { fxMatteTap, useTrackMattes } from './matte.ts';
@@ -242,6 +249,20 @@ function canvasStyle(stage: FxStage): CSSProperties {
 
 let pictureSerial = 0;
 
+/** URL → the error a render fails with when that effect picture cannot be read (`FxMediaInput.unreadable`). */
+function requiredImages(media: readonly FxMediaInput[]): Map<string, string> {
+	const out = new Map<string, string>();
+	for (const m of media) if (m.kind === 'image' && m.unreadable) out.set(m.url, m.unreadable);
+	return out;
+}
+
+/** Preview: what is bound for an effect picture that could not be read (a visible stand-in, never a blank texture). */
+function standInInput(m: FxMediaInput): FxTextureInput | null {
+	if (!m.unreadable || !fxImageFailed(m.url)) return null;
+	const c = fxImageStandIn();
+	return { source: c, width: c.width, height: c.height, version: 'fx-image-stand-in' };
+}
+
 export function FxPicture({ stage, children }: { stage: FxStage; children?: ReactNode }) {
 	const canvasRef = useRef<HTMLCanvasElement | null>(null);
 	const chain = Internals.useEffectChainState();
@@ -258,7 +279,9 @@ export function FxPicture({ stage, children }: { stage: FxStage; children?: Reac
 		() => new Set(stage.media.filter((m) => m.matte).map((m) => m.url)),
 		[stage.media],
 	);
-	const images = useFxImages(imageUrls, rendering, matteUrls);
+	const required = useMemo(() => requiredImages(stage.media), [stage.media]);
+	const images = useFxImages(imageUrls, rendering, matteUrls, required);
+	const failures = useFxImageFailures();
 	const imagesRef = useRef(images);
 	imagesRef.current = images;
 	/** parity (roto): last drawn frame of each matte store (preview: shown while the next frame loads). */
@@ -321,12 +344,23 @@ export function FxPicture({ stage, children }: { stage: FxStage; children?: Reac
 					continue;
 				}
 				if (m.kind === 'image') {
-					let img = imagesRef.current.get(m.url) ?? (m.matte ? loadedFxImage(m.url) : null);
+					let img = imagesRef.current.get(m.url) ?? loadedFxImage(m.url);
 					if (m.matte) {
 						if (img) lastMatte.current.set(m.matte.group, img);
 						else if (rendering && fxImageFailed(m.url))
 							throw new Error(`ROTO_MATTE_MISSING: the object matte frame ${m.url} could not be loaded`);
 						else if (!rendering) img = lastMatte.current.get(m.matte.group) ?? null;
+					} else if (!img && m.unreadable) {
+						// AGENTS §4: a render waits for the picture inside this draw's delayRender and fails by name when it
+						// cannot be read; the preview binds a visible stand-in (its chip says why).
+						if (rendering) {
+							img = await loadFxImage(m.url);
+							if (!img) throw new Error(m.unreadable);
+						} else {
+							const standIn = standInInput(m);
+							if (standIn) media.set(m.mediaId, standIn);
+							continue;
+						}
 					}
 					if (img)
 						media.set(m.mediaId, {
@@ -407,7 +441,7 @@ export function FxPicture({ stage, children }: { stage: FxStage; children?: Reac
 			raf.current = null;
 			void draw();
 		});
-	}, [stage.key, images.size, mattes.key, draw]);
+	}, [stage.key, images.size, mattes.key, draw, failures]);
 	// Cleared as well as cancelled: React may run this cleanup and keep the component (Strict Mode, `<Activity>`), and a
 	// stale id would keep the layout effect above from asking for a draw again (fx/flat.tsx has the same rule).
 	useEffect(
@@ -475,7 +509,9 @@ const NO_TRACKS: readonly string[] = [];
 export function useDomFxDescriptors(stage: FxStage | null): EffectDescriptor[] {
 	const rendering = getRemotionEnvironment().isRendering;
 	const imageUrls = stage ? stage.media.filter((m) => m.kind === 'image').map((m) => m.url) : [];
-	const images = useFxImages(imageUrls, rendering);
+	const required = useMemo(() => requiredImages(stage?.media ?? []), [stage?.media]);
+	const images = useFxImages(imageUrls, rendering, undefined, required);
+	const failures = useFxImageFailures();
 	// wp masks: composites of the tracks the stack's Track Matte Keys read.
 	const mattes = useTrackMattes(stage?.trackMattes ?? NO_TRACKS, stage?.seqFrame ?? 0);
 	// biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the stage, the loaded images and the mattes
@@ -498,9 +534,14 @@ export function useDomFxDescriptors(stage: FxStage | null): EffectDescriptor[] {
 					height: img.naturalHeight,
 					version: m.url,
 				});
+			else if (m.kind === 'image' && !rendering) {
+				// A picture that could not be read: a visible stand-in in the preview (renders failed in useFxImages).
+				const standIn = standInInput(m);
+				if (standIn) media.set(m.mediaId, standIn);
+			}
 		}
 		return fxDescriptors(stage, { samples: new Map(), media, preview: !rendering });
-	}, [stage?.key, images.size, rendering, mattes.key]);
+	}, [stage?.key, images.size, rendering, mattes.key, failures]);
 }
 
 /** HTML-in-Canvas is available here (Chrome ≥ 148 with the feature; always in Remotion renders). */

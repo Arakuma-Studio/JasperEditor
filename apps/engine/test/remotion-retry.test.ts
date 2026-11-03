@@ -31,7 +31,7 @@ beforeEach(() => {
 });
 const timeout = () => new Error('delayRender timed out at frame 12');
 
-function render(signal = new AbortController().signal, concurrency = 4) {
+function render(signal = new AbortController().signal, concurrency = 4, intermediate444 = false) {
 	const service = new RemotionService({
 		bundleCacheDir: bundle,
 		prebuiltBundleDir: bundle,
@@ -46,6 +46,7 @@ function render(signal = new AbortController().signal, concurrency = 4) {
 		signal,
 		concurrency,
 		intermediate: true,
+		...(intermediate444 ? { intermediate444: true } : {}),
 	});
 }
 
@@ -96,5 +97,31 @@ describe('RemotionService timeout recovery', () => {
 			})
 			.mockResolvedValue(undefined);
 		await expect(render(controller.signal, concurrency)).rejects.toMatchObject({ code });
+	});
+});
+
+describe('the Remotion intermediate (AGENTS §4)', () => {
+	it('keeps full chroma for a 4:4:4 output: ProRes 4444 at yuv444p10le, not 422 HQ', async () => {
+		renderer.selectComposition.mockResolvedValue({
+			id: 'JasperSequence',
+			width: 16,
+			height: 16,
+			fps: 30,
+			durationInFrames: 30,
+		});
+		renderer.renderMedia.mockResolvedValue(undefined);
+		await render(new AbortController().signal, 1, true);
+		expect(renderer.renderMedia.mock.calls.at(-1)![0]).toMatchObject({
+			codec: 'prores',
+			proResProfile: '4444',
+			pixelFormat: 'yuv444p10le',
+			imageFormat: 'png',
+		});
+		await render(new AbortController().signal, 1, false);
+		expect(renderer.renderMedia.mock.calls.at(-1)![0]).toMatchObject({
+			codec: 'prores',
+			proResProfile: 'hq',
+		});
+		expect(renderer.renderMedia.mock.calls.at(-1)![0]).not.toHaveProperty('pixelFormat');
 	});
 });

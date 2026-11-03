@@ -974,6 +974,25 @@ What the integrated feature does not do, or does only in part. Evidence: [wp-not
   To follow a title, add the generator as a layer of its look.
 - **Magic Circle glyph rows are procedural** (runes, trigrams, segment digits): a plan cannot draw a font atlas, so Pachislop's
   kanji rows and its readable HUD string were not ported.
+- **A look reaches at most 2048 layer px past the layer on each side** (`FX_MAX_PADDING`, the effect canvas limit). A reach is in
+  percent of the look's unit, so at a unit above ≈ 256 px a Sunburst or Lens Flare at an `extent` of 800 %, or a Shockwave of
+  that radius, passes it: the drawing fades out at the canvas edge (`tlg_window`, a soft end, not a hard cut), the same in
+  Program and every export. The generator's inspector (Properties ▸ Appearance, Effect Controls, a standalone generator) says
+  so when it applies, with the reach and the limit (`lookLayerReachCut`).
+- **Glints over detail finer than the spacing of the stars.** The analysis grid reads every pixel of its cells (2 % of the unit)
+  up to 32 per side, so a unit up to 1600 canvas px is a true box mean (it was 6 per side: at a 600 px unit the three strongest
+  stars over a fine pattern moved 2–3 px from where 1× put them; now under 1 px, `title-look-generators-gl.test.ts`). Past
+  that the cell is read 32 × 32 points. On a periodic finish finer than the distance between stars (a 9 px stripe pattern at a
+  300 px unit), weaker stars tie with the next stripe's peak and may take it between resolutions: measured 3 of the 6 strongest
+  moved ≈ 20 px between 1× and 2×. Not fixed: a tie on a regular pattern has no resolution-independent winner.
+- **A look's picture that is offline refuses the export** (`LOOK_MEDIA_OFFLINE`, a plan blocker naming the picture and the clip,
+  as a missing 3D model does) and fails a render that reaches it anyway; Program draws the finish's preset with the chip "A
+  picture of this look is offline". **A picture that cannot be read** (a corrupt or unreachable file) fails the render
+  `LOOK_MEDIA_UNREADABLE` (a look) or `FX_MEDIA_UNREADABLE` (any other effect's picture), naming the layer and the media; Program
+  binds a magenta and black checkerboard in its place, with the chip "A picture of this look could not be read". The plan cannot
+  know a file is unreadable before the render opens it.
+- **Delivery jobs** (Export Frame, PNG sequence, Export Title, Send to Photoshop, the gamut check) return the export plan's
+  warnings with their own and are refused by its blockers, with their code and list, before anything renders.
 
 **Agents (TL-100…TL-107):** the `titles` toolset, `title_check`, the `title-art` proposal feature, `still-sheet` jobs and effects
 discovery are in; evidence and thresholds in [wp-notes/title-looks-agents.md](wp-notes/title-looks-agents.md). Limits:
@@ -1014,6 +1033,21 @@ and rerun commands: [wp-notes/three-d.md](wp-notes/three-d.md) §9. Limits:
   video id (`E_INVALID_PARAM`, since integration 2); a project saved before that with a video environment keeps it, and its
   render refuses as before. The Environment section offers images and HDRs only.
 - **Per-character 3D** (Pachislop's glyph rigs) has no equivalent: a solid is traced from the layer's picture.
+- **A 3D title's Remotion export differs from Program on the solid's edges**: `template.gold-3d-title` at frames 45 and 46 has a mean
+  ΔE of 1.93 over the title (under the 2.0 gate and the just-noticeable 2.3; 1.8 % of values off by more than 3/255, a few
+  hundred pixels by up to ≈ 60/255), all along the silhouette and bevel edges; a 2D look on the same paths measures 0.2–0.5.
+  Program's Player and a Remotion still of the same frame are identical (`three-d-title.e2e.test.ts`, max difference 0), so the
+  difference is between a still and the video render of the export. Cause not found; the 422 HQ intermediate, which doubled it,
+  is fixed (`apps/engine/test/title-look-export.e2e.test.ts`).
+- **Fixed per-frame limits of Advanced 3D**, now said, not redesigned: at most 32 lights at a time (environment lights apart;
+  later lights in drawing order are not drawn), 48 shadow maps (a point light takes six, a spot or parallel light one; a light
+  whose maps would not fit casts no shadow), and supersampling by what the GPU's largest render buffer holds (`MAX_RENDERBUFFER_SIZE`
+  ÷ the frame's long side, at most 4×). Program's 3D chip names what the frame leaves out ("Only 32 lights are drawn…", "Only 48
+  shadow maps are drawn…", "Supersampling is 2× here…"), and the export plan warns `THREE_D_LIGHTS_LIMIT`, `THREE_D_SHADOWS_LIMIT`
+  and `THREE_D_SUPERSAMPLING_LIMIT` (the last from the render browser's probe). Preview and export draw with the same renderer,
+  so they agree with each other; the warning is that both leave the feature out. The plan reads the exported sequence's own 3D
+  scene: a 3D scene inside a nested sequence gets the chip, not a plan warning. The chip's text has numbers in it and is not
+  translated.
 - **Ambient occlusion** (Pachislop `ao.ts`) was not ported: no requirement asks for it.
 
 ### title-looks fixes (spec 19 §13)

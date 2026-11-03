@@ -19,7 +19,7 @@ import { type Browser, chromium, type Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SEQUENCE_COMPOSITION_ID } from '../src/types.ts';
 import { type FxMedia, startFxMedia } from './fx-media.ts';
-import { resampleLuma, ssim } from './title-look-harness.ts';
+import { resampleLuma, ssim, ssimRgb } from './title-look-harness.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const enabled = process.env.REMOTION_E2E === '1';
@@ -416,9 +416,10 @@ describe.runIf(enabled && !!CHROME)(
 			for (const frame of [0, 30, 60]) {
 				const exported = await still(doc, frame, `export-${frame}`);
 				const program = await programFrame(frame, `program-${frame}`);
-				const score = ssim(luma(program), luma(exported), W, H);
+				// Colour, not luma alone (AGENTS §4): the least SSIM of R, G and B.
+				const score = ssimRgb(program.data, exported.data, W, H).min;
 				console.info(
-					`[title-look] frame ${frame}: Program vs export SSIM ${score.toFixed(4)}, max ${maxDiff(program, exported)}`,
+					`[title-look] frame ${frame}: Program vs export colour SSIM ${score.toFixed(4)} (luma ${ssim(luma(program), luma(exported), W, H).toFixed(4)}), max ${maxDiff(program, exported)}`,
 				);
 				expect(score).toBeGreaterThan(0.98);
 			}
@@ -446,9 +447,9 @@ describe.runIf(enabled && !!CHROME)(
 				const exported = await still(doc, frame, `glows-export-${frame}`);
 				// A frame here takes seconds: two equal screenshots 150 ms apart would prove nothing.
 				const program = await programFrame(frame, `glows-program-${frame}`, 'glows', 2500);
-				const score = ssim(luma(program), luma(exported), W, H);
+				const score = ssimRgb(program.data, exported.data, W, H).min;
 				console.info(
-					`[title-look] glows frame ${frame}: Program vs export SSIM ${score.toFixed(4)}, max ${maxDiff(program, exported)}`,
+					`[title-look] glows frame ${frame}: Program vs export colour SSIM ${score.toFixed(4)}, max ${maxDiff(program, exported)}`,
 				);
 				expect(score).toBeGreaterThan(0.98);
 			}

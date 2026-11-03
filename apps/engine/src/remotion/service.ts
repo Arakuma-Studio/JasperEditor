@@ -125,6 +125,8 @@ export type RemotionWebglStatus = {
 	renderer?: string;
 	/** TL-123: whether the probe context has `EXT_color_buffer_float` (float render targets); absent = not probed. */
 	floatTargets?: boolean;
+	/** `MAX_RENDERBUFFER_SIZE` of the probe context: what 3D supersampling can hold (absent = not probed). */
+	maxRenderbufferSize?: number;
 	message?: string;
 };
 
@@ -144,6 +146,12 @@ type RemotionRenderInput = {
 	 * with its own selected encoder, so no GPL encoder (Remotion's x264/fdk-aac) is ever needed.
 	 */
 	intermediate?: boolean;
+	/**
+	 * The intermediate is ProRes 4444 (10-bit 4:4:4) instead of 422 HQ: for an output that keeps full chroma (ProRes 4444,
+	 * and the GIF's picture), so the intermediate does not halve it (AGENTS §4: a Remotion export of a title measured a
+	 * mean ΔE of 3.9 against Program through 422 HQ, at its saturated edges).
+	 */
+	intermediate444?: boolean;
 	/** Direct VP9/Opus WebM (LGPL components); see export-plan.ts. */
 	vp9?: { crf: number; colorSpace: 'bt709' | null; ffmpegOverride?: RemotionFfmpegOverride };
 	audioBitrateKbps?: number;
@@ -632,9 +640,19 @@ export class RemotionService {
 					return {
 						renderer: String(ctx.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : ctx.RENDERER)),
 						floatTargets: !!ctx.getExtension('EXT_color_buffer_float'),
+						maxRenderbufferSize: Number(ctx.getParameter(ctx.MAX_RENDERBUFFER_SIZE)),
 					};
-				})) as { renderer: string; floatTargets: boolean } | null;
-				if (probe) return { state: 'ok', gl, renderer: probe.renderer, floatTargets: probe.floatTargets };
+				})) as { renderer: string; floatTargets: boolean; maxRenderbufferSize: number } | null;
+				if (probe)
+					return {
+						state: 'ok',
+						gl,
+						renderer: probe.renderer,
+						floatTargets: probe.floatTargets,
+						...(Number.isFinite(probe.maxRenderbufferSize) && probe.maxRenderbufferSize > 0
+							? { maxRenderbufferSize: probe.maxRenderbufferSize }
+							: {}),
+					};
 				errors.push(`${gl ?? 'default'}: no WebGL2 context`);
 			} catch (e) {
 				errors.push(`${gl ?? 'default'}: ${(e as Error).message.slice(0, 200)}`);
@@ -778,7 +796,9 @@ export class RemotionService {
 						...(input.intermediate
 							? {
 									codec: 'prores' as const,
-									proResProfile: 'hq' as const,
+									...(input.intermediate444
+										? { proResProfile: '4444' as const, pixelFormat: 'yuv444p10le' as const }
+										: { proResProfile: 'hq' as const }),
 									...(input.muted ? {} : { audioCodec: 'pcm-16' as const }),
 								}
 							: input.vp9

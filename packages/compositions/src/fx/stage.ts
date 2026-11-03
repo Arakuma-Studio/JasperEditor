@@ -62,6 +62,7 @@ import { bakedRunLut, loadedLutAsset, lutUrlKey } from '../color/luts.ts';
 import { NestCompSizeContext } from '../layers/nest-context.ts';
 import { useTemplateEditHold } from '../layers/template-edit-hold.ts';
 import type { LayerProps, LayerTap } from '../types.ts';
+import { fxImageFailed, useFxImageFailures } from './images.ts';
 import { type FxLoweredParams, loweredCanvasProgram } from './lowered.ts';
 import { type FxMaskGeometry, maskGeometryKey } from './mask.ts';
 import { type MatteTap, type MatteTapMeta, trackMatteMediaId } from './matte.ts';
@@ -155,6 +156,11 @@ export type FxMediaInput = {
 	 * `prefetch` = following frames the preview loads ahead.
 	 */
 	matte?: { group: string; prefetch: string[] };
+	/**
+	 * An effect's or look's picture: the error a render fails with when it cannot be read (`LOOK_MEDIA_UNREADABLE` /
+	 * `FX_MEDIA_UNREADABLE`, naming the layer and the media). The preview draws `fxImageStandIn` instead, with a chip.
+	 */
+	unreadable?: string;
 };
 
 /** Media frames the preview loads ahead of a playing roto matte. */
@@ -176,8 +182,10 @@ export type FxStage = {
 	key: string;
 	/** LUT assets of colour runs are still loading (the preview draws without them meanwhile). */
 	pending: boolean;
-	/** spec 19 TL-021: a look's picture is offline (the preview says so in its chip, the export plan warns). */
+	/** spec 19 TL-021: a look's picture is offline (the preview says so in its chip; the export plan refuses). */
 	lookMediaOffline: boolean;
+	/** A picture of a look / of an effect could not be read (preview: chip and stand-in; renders fail). */
+	mediaUnreadable: 'look' | 'effect' | null;
 	/** Video tracks read by Track Matte Keys (media track:<id>). */
 	trackMattes: string[];
 	/** Track mattes must use the same sequence frame as the stage. */
@@ -479,6 +487,8 @@ export function useLayerFx(
 		[plan, doc.media],
 	);
 	const pixelsVersion = useFxPixels(pixelUrls, !doc.isPreview);
+	// A picture that fails to load changes the chip (and the preview's stand-in): recompute the stage.
+	const imageFailures = useFxImageFailures();
 	// sim-warp: the layer's masks as polylines in layer px (effects that reference "Mask n").
 	const layerMasks = useMemo(
 		(): FxLayerMask[] =>
@@ -549,6 +559,7 @@ export function useLayerFx(
 		const media = new Map<string, FxMediaInput>();
 		const trackMattes: string[] = [];
 		let lookMediaOffline = false;
+		let mediaUnreadable: FxStage['mediaUnreadable'] = null;
 		const geometryOf = (masks: FxMaskGeometry['masks']): FxMaskGeometry => ({
 			masks,
 			box: layout.box,
@@ -681,8 +692,23 @@ export function useLayerFx(
 									});
 								}
 							}
-						} else if (h.kind === 'image' || h.kind === 'video')
+						} else if (h.kind === 'video')
 							media.set(t.mediaId, { mediaId: t.mediaId, url: h.url, kind: h.kind });
+						else if (h.kind === 'image') {
+							const look = !!s.fx.appearance;
+							// A look's textures are bound per layer (`u_tlm<n>_<param>`): name the param.
+							const param = String(t.param ?? t.uniform).replace(/^u_tlm\d+_|^u_/, '');
+							if (fxImageFailed(h.url) && mediaUnreadable !== 'look')
+								mediaUnreadable = look ? 'look' : 'effect';
+							media.set(t.mediaId, {
+								mediaId: t.mediaId,
+								url: h.url,
+								kind: h.kind,
+								unreadable: look
+									? `LOOK_MEDIA_UNREADABLE: the look picture ${t.mediaId} (${param}) of layer "${clip.name}" could not be read`
+									: `FX_MEDIA_UNREADABLE: the picture ${t.mediaId} (${param}) of effect ${s.fx.effectId} on layer "${clip.name}" could not be read`,
+							});
+						}
 					}
 					// Pass uniforms too: a look's layer values and blur sizes live there, and they change the picture.
 					const passKey = gp.passes.map((pp) => fxUniformsKey(pp.uniforms)).join('|');
@@ -782,6 +808,7 @@ export function useLayerFx(
 			key,
 			pending,
 			lookMediaOffline,
+			mediaUnreadable,
 			trackMattes,
 			seqFrame: clip.start + realFrame,
 		};
@@ -813,6 +840,7 @@ export function useLayerFx(
 		layerMasks,
 		doc.working,
 		structuresOf,
+		imageFailures,
 	]);
 
 	// spec 13 AS-075: the Program preview draws lowered layers with Canvas 2D (no WebGL passes or read-back per frame).
@@ -834,6 +862,9 @@ export function useLayerFx(
 		}
 	}, [doc.isPreview, stage, tap, matte, opts.extraSteps, clip, props, realFrame, fps, loweredCache]);
 	const drawn = lowered && stage ? { ...stage, lowered } : stage;
+	// AGENTS §4: a render never draws a look without its picture (the export plan refuses first: LOOK_MEDIA_OFFLINE).
+	if (stage?.lookMediaOffline && !doc.isPreview)
+		cancelRender(new Error(`LOOK_MEDIA_OFFLINE: a picture of the look on layer "${clip.name}" is offline`));
 
 	if (!plan) return NONE;
 	// A layer that cannot run shader effects at all (DOM layer without HTML-in-Canvas) says so in its chip.
@@ -841,7 +872,13 @@ export function useLayerFx(
 		? plan.bypassed
 		: plan.bypassed.map((b) => ({ ...b, reason: 'layer-unsupported' as const }));
 	const offlineChip = stage?.lookMediaOffline ? 'A picture of this look is offline' : null;
-	const chip = doc.isPreview ? (chipText(bypassed, gpu) ?? offlineChip) : null;
+	const unreadableChip =
+		stage?.mediaUnreadable === 'look'
+			? 'A picture of this look could not be read'
+			: stage?.mediaUnreadable === 'effect'
+				? 'A picture of this effect could not be read'
+				: null;
+	const chip = doc.isPreview ? (chipText(bypassed, gpu) ?? unreadableChip ?? offlineChip) : null;
 	if (!plan.active || !drawn) return { mode: 'bypass', chip: chip ?? 'GPU effects unavailable', bypassed };
 	return { mode: 'active', stage: drawn, cssEffects: plan.cssEffects, chip };
 }

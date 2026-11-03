@@ -506,12 +506,13 @@ describe('banned names (TL-001, §14)', () => {
 
 	it('has a real list, and the check finds what it should', () => {
 		expect(list.length).toBeGreaterThan(80);
-		expect(banned('Hokuto Slanted Box')).toEqual(expect.arrayContaining(['hokuto']));
-		expect(banned('北斗の拳 box')).not.toEqual([]);
-		expect(banned('ＨＯＫＵＴＯ')).not.toEqual([]);
-		expect(banned('ｴｳﾞｧ gold').length + banned('エヴァ gold').length).toBeGreaterThan(0);
-		expect(banned('a TikTok look')).toEqual(['tiktok']);
-		expect(banned('supersonic gold')).toEqual([]);
+		// The positive cases are the list's synthetic entries, so this file names no real title (TL-001).
+		expect(banned('Quorvane Slanted Box')).toEqual(expect.arrayContaining(['quorvane']));
+		expect(banned('霧星刃 box')).not.toEqual([]);
+		expect(banned('ＱＵＯＲＶＡＮＥ')).not.toEqual([]);
+		expect(banned('ｿﾞﾙｳﾞｧ gold').length + banned('ゾルヴァ gold').length).toBeGreaterThan(0);
+		expect(banned('a Quorvane look')).toEqual(['quorvane']);
+		expect(banned('superquorvane gold')).toEqual([]);
 	});
 
 	it('finds none in any look, colourway, category or template text', () => {

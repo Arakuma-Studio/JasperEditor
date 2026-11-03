@@ -132,6 +132,27 @@ export function ssim(a: Float64Array, b: Float64Array, w: number, h: number): nu
 	return n ? sum / n : 1;
 }
 
+/**
+ * Colour SSIM of two equal-size interleaved pictures (RGB or RGBA, `channels` per pixel): the least SSIM of the R, G and B
+ * planes, so a wrong colour fails where luma alone would pass (a colourway, gradient map or tint with the right lightness
+ * and the wrong hue). AGENTS §4: Program against export compares colour.
+ */
+export function ssimRgb(
+	a: Uint8Array,
+	b: Uint8Array,
+	w: number,
+	h: number,
+	channels = 3,
+): { r: number; g: number; b: number; min: number } {
+	const plane = (src: Uint8Array, k: number) => {
+		const out = new Float64Array(w * h);
+		for (let i = 0; i < out.length; i++) out[i] = src[i * channels + k]!;
+		return out;
+	};
+	const [r, g, bl] = [0, 1, 2].map((k) => ssim(plane(a, k), plane(b, k), w, h)) as [number, number, number];
+	return { r, g, b: bl, min: Math.min(r, g, bl) };
+}
+
 /** `img` resampled to `w`×`h` by box filtering (a resolution test's "after scaling"). */
 export function resampleLuma(src: Float64Array, sw: number, sh: number, w: number, h: number): Float64Array {
 	const out = new Float64Array(w * h);

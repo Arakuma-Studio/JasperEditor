@@ -241,6 +241,105 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('generators in WebGL2', { 
 			});
 	});
 
+	describe('Glints: the same stars at 1× and 2× with a large unit (TL-034)', () => {
+		// The analysis reads a grid of 2 % of the unit and averages at most 6 × 6 points per cell: at a unit of 300 px a cell
+		// is 6 px and is read whole, at 600 px it is 12 px and read one point in four. The stars must not move with it, also
+		// over detail finer than a cell (a pattern of 9 px stripes at 1×).
+		const faces: Record<string, Record<string, unknown>> = {
+			smooth: { paint: { kind: 'source' } },
+			'fine pattern': {
+				paint: { kind: 'source' },
+				finish: 'pattern',
+				patternKind: 'hazard',
+				patternScale: 3,
+				patternInk: { kind: 'color', color: [1, 1, 1, 1] },
+				patternInkAlt: { kind: 'color', color: [0.2, 0.2, 0.2, 1] },
+			},
+		};
+		const recipeOf = (face: Record<string, unknown>, intensity?: number) =>
+			({
+				layers: [
+					{ type: 'face', params: face },
+					{
+						type: 'generator:glints',
+						params: {
+							ownColors: true,
+							twinkle: 0,
+							size: 30,
+							large: 3,
+							small: 4,
+							...(intensity === undefined ? {} : { intensity }),
+						},
+					},
+				],
+			}) as LookRecipe;
+		const input: LookRequest['input'] = {
+			kind: 'letters',
+			letters: [
+				{ x: 0.08, y: 0.25, w: 0.2, h: 0.5, color: '#c8c8c8' },
+				{ x: 0.36, y: 0.2, w: 0.14, h: 0.6, color: '#e0d8b0' },
+				{ x: 0.58, y: 0.3, w: 0.3, h: 0.4, color: '#a8b8d0' },
+			],
+		};
+		/** The stars alone: luma the layer added over the same face without it, in the layer box. */
+		const starsAt = async (face: Record<string, unknown>, k: number) => {
+			const at = (r: LookRecipe) =>
+				tl.render({
+					recipe: r,
+					input,
+					unitPx: 300 * k,
+					box: { width: 500 * k, height: 200 * k },
+					pad: 40 * k,
+				});
+			const [img, off] = [await at(recipeOf(face)), await at(recipeOf(face, 0))];
+			const a = layerCrop(img, lumaOver(img, 0));
+			const b = layerCrop(off, lumaOver(off, 0));
+			return { ...a, data: a.data.map((v, i) => Math.max(0, v - b.data[i]!)) };
+		};
+		/** Brightest local maxima (3 × 3) of a light map, strongest first. */
+		const peaks = (m: { data: Float64Array; w: number; h: number }, n: number) => {
+			const out: { x: number; y: number; v: number }[] = [];
+			for (let y = 1; y < m.h - 1; y++)
+				for (let x = 1; x < m.w - 1; x++) {
+					const v = m.data[y * m.w + x]!;
+					if (v < 60) continue;
+					let top = true;
+					for (let j = -1; j <= 1 && top; j++)
+						for (let i = -1; i <= 1; i++)
+							if ((i || j) && m.data[(y + j) * m.w + x + i]! > v) {
+								top = false;
+								break;
+							}
+					if (top) out.push({ x, y, v });
+				}
+			return out.sort((p, q) => q.v - p.v).slice(0, n);
+		};
+
+		it('the analysis cell read whole at 2× puts the stars where 1× does', async () => {
+			for (const [name, face] of Object.entries(faces)) {
+				const a = await starsAt(face, 1);
+				const b = await starsAt(face, 2);
+				const down = { data: resampleLuma(b.data, b.w, b.h, a.w, a.h), w: a.w, h: a.h };
+				const pa = peaks(a, 6);
+				const pb = peaks(down, 12);
+				expect(pa.length).toBeGreaterThanOrEqual(3);
+				const shifts = pa.map((p) => Math.min(...pb.map((q) => Math.hypot(q.x - p.x, q.y - p.y))));
+				const score = ssim(down.data, a.data, a.w, a.h);
+				console.info(
+					`[glints 1x/2x] ${name}, unit 300/600 px: SSIM ${score.toFixed(4)}, shifts of the 6 strongest stars (1× px) ${shifts.map((d) => d.toFixed(2)).join(', ')}`,
+				);
+				// The three strongest stars hold their place to a pixel (a star is about 9 px across at 1× here). Read one
+				// point in four, the fine pattern's moved 2–3 px. Weaker stars on a pattern finer than the spacing between
+				// stars tie with the next stripe's peak and may take it (measured ≈ 20 px, docs/gaps.md): not asserted.
+				for (const d of shifts.slice(0, 3)) expect(d, name).toBeLessThanOrEqual(1.5);
+				if (name === 'smooth') {
+					for (const d of shifts) expect(d, name).toBeLessThanOrEqual(1.5);
+					expect(score, name).toBeGreaterThan(0.98);
+				}
+			}
+		});
+	});
+
 	describe('Particles: 7 emitters, 11 shapes, wrapped age, ballistic position', () => {
 		const emitters = ['point', 'ellipse', 'rect', 'ring', 'line', 'full', 'layer'];
 		const shapes = [
@@ -842,6 +941,46 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('generators in WebGL2', { 
 				timingOnly: true,
 			});
 			console.info(`[generator-perf] face only: ${base.ms.toFixed(0)} ms`);
+		},
+	);
+
+	// Lightning's cost by mode (docs/performance.md §7, "Lightning"): TL_PERF=1. Reports the frame and its slowest pass: the
+	// bolts pass, where `tlg_mass` sums the alpha around each site, must stay far below a GPU watchdog's time per draw.
+	it.runIf(process.env.TL_PERF === '1')(
+		'per-frame cost of Lightning in each mode',
+		{ timeout: 900_000 },
+		async () => {
+			const cases: [string, Record<string, unknown>][] = [
+				['defaults', {}],
+				['alpha bounds, capture 40 %, bolts 2 units', { anchor: 'bounds', capture: 40, boltLength: 200 }],
+				['along edge', { mode: 'edge' }],
+				// The most area sums a frame can ask for: every arc or bolt there is, Capture at its soft maximum.
+				['worst along edge: 60 arcs, capture 80 %', { mode: 'edge', arcs: 60, capture: 80 }],
+				['worst crawl: 40 bolts, capture 80 %', { mode: 'crawl', count: 40, capture: 80 }],
+			];
+			for (const [name, params] of cases) {
+				const req: LookRequest = {
+					recipe: layer('lightning', params, true),
+					input: { kind: 'text', text: 'Title Look', size: 200 },
+					box: { width: 1200, height: 280 },
+					contentSeconds: 0.5,
+					timingOnly: true,
+				};
+				const first = await tl.render(req);
+				const runs: number[] = [];
+				for (let i = 0; i < 3; i++) runs.push((await tl.render(req)).ms);
+				runs.sort((a, b) => a - b);
+				const half = (await tl.render({ ...req, pxScale: 0.5 })).ms;
+				const passes = (await tl.render({ ...req, perPass: true })).passLog ?? [];
+				const ms = (line: string) => Number(/ (\d+) ms$/.exec(line)?.[1] ?? 0);
+				const flat = (line: string) => line.replace(/\s+/g, ' ').trim();
+				const slowest = [...passes].sort((a, b) => ms(b) - ms(a))[0] ?? '';
+				// The bolts pass (`tlGenB`): one fragment per bolt end or arc point, each with its area sums.
+				const bolts = passes.find((l) => l.startsWith('tlGenB')) ?? '';
+				console.info(
+					`[lightning-perf] ${name}: canvas ${first.width}×${first.height}, ${first.passes} passes, median ${runs[1]!.toFixed(0)} ms, at 1/2 ${half.toFixed(0)} ms; bolts pass ${flat(bolts)}; slowest pass ${flat(slowest)}`,
+				);
+			}
 		},
 	);
 

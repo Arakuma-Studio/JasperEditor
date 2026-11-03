@@ -1,9 +1,10 @@
 // @vitest-environment node
 // Spec 19 finishes end to end (REMOTION_E2E=1): real text through HTML-in-Canvas and Remotion renders. TL-036 boxes from every
 // text drawing path (plain block, unit overlay of a legacy animation, typeset characters), TL-021 a real image on a look,
-// offline media, and Program against export for a look with finishes. GL detail: title-look-finishes-gl.test.ts.
+// offline media, a picture that cannot be read (renders fail by name, Program draws a stand-in with a chip), and Program
+// against export for a look with finishes. GL detail: title-look-finishes-gl.test.ts.
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Command, LookRecipe, Paint } from '@jasper/project';
@@ -12,7 +13,7 @@ import { type Browser, chromium, type Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SEQUENCE_COMPOSITION_ID } from '../src/types.ts';
 import { FX_H, FX_W, type FxMedia, fxAsset, fxSnapshot, startFxMedia } from './fx-media.ts';
-import { ssim } from './title-look-harness.ts';
+import { ssim, ssimRgb } from './title-look-harness.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const enabled = process.env.REMOTION_E2E === '1';
@@ -108,6 +109,8 @@ describe.runIf(enabled && !!CHROME)(
 		let browser: Browser;
 		let page: Page;
 		let panorama: ReturnType<typeof fxAsset>;
+		/** A `.png` the browser cannot decode: online media whose picture cannot be read. */
+		let broken: ReturnType<typeof fxAsset>;
 		const remotionBrowser = { browserExecutable: CHROME!, chromeMode: 'chrome-for-testing' as const };
 
 		/** The bars of a look: glyph spans, the same look on the whole text, and metal over a plate with a sheen. */
@@ -138,6 +141,8 @@ describe.runIf(enabled && !!CHROME)(
 				join(media.dir, 'panorama.png'),
 			]);
 			panorama = fxAsset(media, 'image', 'panorama.png', 64, 36);
+			writeFileSync(join(media.dir, 'broken.png'), 'not a picture, only its name says so');
+			broken = fxAsset(media, 'image', 'broken.png', 64, 36);
 			const { bundle } = await import('@remotion/bundler');
 			serveUrl = await bundle({ entryPoint: join(here, 'fx-render', 'entry.ts') });
 			renderer = await import('@remotion/renderer');
@@ -147,7 +152,11 @@ describe.runIf(enabled && !!CHROME)(
 			});
 			const code = await bundleForBrowser(join(here, 'fx-player', 'entry.tsx'));
 			media.page('bundle.js', 'text/javascript', code);
-			const docs = { showcase: looked(showcase, {}, [mover()]), gone: offlineDoc() };
+			const docs = {
+				showcase: looked(showcase, {}, [mover()]),
+				gone: offlineDoc(),
+				unreadable: pictureDoc(broken),
+			};
 			media.page(
 				'index.html',
 				'text/html',
@@ -178,14 +187,15 @@ describe.runIf(enabled && !!CHROME)(
 		}
 
 		function offlineDoc() {
+			return pictureDoc({ ...panorama, locators: [{ type: 'engine-store', engineId: 'x', key: 'mk_gone' }] });
+		}
+
+		/** A reflection face mirroring `asset`. */
+		function pictureDoc(asset: ReturnType<typeof fxAsset>) {
 			return fxSnapshot([
 				backdrop,
 				text(),
-				{
-					type: 'media.register',
-					asset: { ...panorama, locators: [{ type: 'engine-store', engineId: 'x', key: 'mk_gone' }] },
-					ref: '$m',
-				},
+				{ type: 'media.register', asset, ref: '$m' },
 				{
 					type: 'look.apply',
 					clipIds: ['$t'],
@@ -400,8 +410,9 @@ describe.runIf(enabled && !!CHROME)(
 					prev = shot;
 				}
 				const program = decode(prev!, W, H);
-				const score = ssim(luma(program), luma(exported), W, H);
-				console.info(`[finishes] frame ${frame}: Program vs export SSIM ${score.toFixed(4)}`);
+				// Colour, not luma alone (AGENTS §4): the least SSIM of R, G and B.
+				const score = ssimRgb(program.data, exported.data, W, H).min;
+				console.info(`[finishes] frame ${frame}: Program vs export colour SSIM ${score.toFixed(4)}`);
 				expect(score).toBeGreaterThan(0.98);
 			}
 		});
@@ -453,6 +464,61 @@ describe.runIf(enabled && !!CHROME)(
 				(window as never as { __fxPlayer: { chip(a: string): string | null } }).__fxPlayer.chip('gone'),
 			);
 			expect(chip).toMatch(/offline/i);
+		});
+
+		it('an offline picture fails a render by name: the look is never exported without it (AGENTS §4)', async () => {
+			const e = await still(offlineDoc(), 0, 'offline-render').catch((x: unknown) => x);
+			expect(e).toBeInstanceOf(Error);
+			expect((e as Error).message).toMatch(
+				/LOOK_MEDIA_OFFLINE: a picture of the look on layer "[^"]+" is offline/,
+			);
+		});
+
+		it('a picture that cannot be read fails a render by name, naming the layer and the media', async () => {
+			const doc = pictureDoc(broken);
+			expect(Object.values(doc.media).some((m) => m?.url.endsWith('broken.png'))).toBe(true);
+			const e = await still(doc, 0, 'unreadable-render').catch((x: unknown) => x);
+			expect(e).toBeInstanceOf(Error);
+			expect((e as Error).message).toMatch(
+				/LOOK_MEDIA_UNREADABLE: the look picture med_\w+ \(reflectionImage\) of layer "LOOK" could not be read/,
+			);
+		});
+
+		it('Program draws a picture that cannot be read as a visible stand-in, with a chip', async () => {
+			await page.evaluate(() =>
+				(window as never as { __fxPlayer: { seek(a: string, b: number): void } }).__fxPlayer.seek(
+					'unreadable',
+					3,
+				),
+			);
+			let chip: string | null = null;
+			for (let i = 0; i < 50 && !chip; i++) {
+				await page.waitForTimeout(200);
+				chip = await page.evaluate(() =>
+					(window as never as { __fxPlayer: { chip(a: string): string | null } }).__fxPlayer.chip(
+						'unreadable',
+					),
+				);
+			}
+			expect(chip).toBe('A picture of this look could not be read');
+			await page.waitForTimeout(1000);
+			const png = await page.locator('#unreadable').screenshot();
+			writeFileSync(join(OUT, 'unreadable-program.png'), png);
+			const shot = decode(png, W, H);
+			const gone = decode(await page.locator('#gone').screenshot(), W, H);
+			// The stand-in is a magenta and black checkerboard: the mirror shows magenta, which nothing else here draws.
+			const magenta = (r: Raw) => {
+				let n = 0;
+				for (let y = 0; y < r.h; y++)
+					for (let x = 0; x < r.w; x++) {
+						const [a, b, c] = rgb(r, x, y);
+						if (a > 150 && c > 150 && b < 90) n++;
+					}
+				return n;
+			};
+			console.info(`[finishes] stand-in: ${magenta(shot)} magenta pixels (offline preset: ${magenta(gone)})`);
+			expect(magenta(shot)).toBeGreaterThan(200);
+			expect(magenta(gone)).toBe(0);
 		});
 	},
 );

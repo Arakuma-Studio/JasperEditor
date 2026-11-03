@@ -40,12 +40,20 @@ vec2 tlg_homeUv(int k) {
 
 const LUM = 'vec3(0.2126, 0.7152, 0.0722)';
 
+/**
+ * Most points read per side of an analysis cell. Below it a cell is read at every pixel, so the grid is a true box mean at any
+ * resolution; a cell is 2 % of the unit, so this holds to a unit of 1600 canvas px. With 6 (the first version) a cell of a
+ * 600 px unit was read one point in four and stars over detail finer than a cell moved between 1× and 2×
+ * (title-look-generators-gl.test.ts, "Glints: the same stars at 1× and 2×"). Each pixel is still read about once in all.
+ */
+const GRID_POINTS = 32;
+
 /** Pass 1: luminance, coverage and distance, box means over the cells. */
 const FRAG_GRID = /* glsl */ `
 void main() {
   tlg_begin();
   ivec2 p = ivec2(floor(v_uv * u_resolution));
-  int n = int(clamp(ceil(u_canvasSize.x / u_resolution.x), 1.0, 6.0));
+  int n = int(clamp(ceil(u_canvasSize.x / u_resolution.x), 1.0, ${GRID_POINTS.toFixed(1)}));
   float lum = 0.0, a = 0.0;
   for (int y = 0; y < n; y++)
     for (int x = 0; x < n; x++) {

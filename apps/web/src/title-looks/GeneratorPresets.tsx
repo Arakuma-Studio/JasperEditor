@@ -9,6 +9,8 @@ import {
 	GENERATOR_LAYER_PREFIX,
 	type GeneratorPreset,
 	isPaintParam,
+	LOOK_EFFECT_UNIT,
+	lookLayerReachCut,
 	TITLE_GENERATORS,
 	type TitleGenerator,
 } from '@jasper/project';
@@ -84,51 +86,89 @@ export function presetCommands(
 	return out;
 }
 
+/**
+ * Why a generator stops short (spec 19, AGENTS §4): its reach at this unit passes the effect canvas's limit per side, so it
+ * fades out there, the same in Program and in every export. Nothing when it fits.
+ */
+export function GeneratorReachNote(props: {
+	generator: TitleGenerator;
+	rows: readonly Row[];
+	/** Layer px of 1 % of the unit; `LOOK_EFFECT_UNIT` for a standalone generator effect. */
+	unitPx: number;
+}) {
+	const params: Record<string, unknown> = {};
+	for (const row of props.rows) {
+		const name = paramOf(row);
+		const { mixed, value } = rowValue(row);
+		if (name && !mixed) params[name] = value;
+	}
+	const cut = lookLayerReachCut(`${GENERATOR_LAYER_PREFIX}${props.generator.id}`, params, props.unitPx);
+	if (!cut) return null;
+	return (
+		<p className="py-1 text-pr-small text-pr-warning" role="note" data-testid="generator-reach-cut">
+			{t(
+				'Reaches {0} px past the layer at this size; drawing fades out at {1} px, the effect canvas limit, in Program and export alike.',
+				cut.reachPx,
+				cut.limitPx,
+			)}
+		</p>
+	);
+}
+
 export function GeneratorPresetChips(props: {
 	generator: TitleGenerator;
 	rows: readonly Row[];
 	frame: number;
 	readOnly?: boolean;
 	apply(label: string, commands: Command[]): void;
+	/** Layer px of 1 % of the unit: says so when the generator's reach passes the canvas limit (`GeneratorReachNote`). */
+	unitPx?: number;
 	'data-testid'?: string;
 }) {
 	const { generator: g, rows } = props;
 	const presets = g.presets ?? [];
-	if (presets.length === 0) return null;
+	const note =
+		props.unitPx !== undefined ? (
+			<GeneratorReachNote generator={g} rows={rows} unitPx={props.unitPx} />
+		) : null;
+	if (presets.length === 0) return note;
 	return (
-		// biome-ignore lint/a11y/useSemanticElements: a row of toggle buttons; a fieldset would draw a frame
-		<div
-			role="group"
-			aria-label={t('{0} presets', g.label)}
-			className="flex flex-wrap items-center gap-1 py-1"
-			data-testid={props['data-testid'] ?? 'generator-presets'}
-		>
-			{presets.map((p) => {
-				const on = holdsPreset(g, p, rows);
-				return (
-					<button
-						key={p.id}
-						type="button"
-						aria-pressed={on}
-						disabled={props.readOnly}
-						className={cx(
-							'h-[20px] rounded-full border px-2 text-pr-small',
-							on
-								? 'border-pr-accent bg-pr-selected text-pr-text'
-								: 'border-pr-border-strong text-pr-muted hover:bg-pr-hover hover:text-pr-text',
-							'disabled:opacity-50',
-						)}
-						onClick={() => {
-							const commands = presetCommands(g, p, rows, props.frame);
-							if (commands.length) props.apply(t('Preset: {0}', p.label), commands);
-						}}
-						data-preset={p.id}
-					>
-						{p.label}
-					</button>
-				);
-			})}
-		</div>
+		<>
+			{note}
+			{/* biome-ignore lint/a11y/useSemanticElements: a row of toggle buttons; a fieldset would draw a frame */}
+			<div
+				role="group"
+				aria-label={t('{0} presets', g.label)}
+				className="flex flex-wrap items-center gap-1 py-1"
+				data-testid={props['data-testid'] ?? 'generator-presets'}
+			>
+				{presets.map((p) => {
+					const on = holdsPreset(g, p, rows);
+					return (
+						<button
+							key={p.id}
+							type="button"
+							aria-pressed={on}
+							disabled={props.readOnly}
+							className={cx(
+								'h-[20px] rounded-full border px-2 text-pr-small',
+								on
+									? 'border-pr-accent bg-pr-selected text-pr-text'
+									: 'border-pr-border-strong text-pr-muted hover:bg-pr-hover hover:text-pr-text',
+								'disabled:opacity-50',
+							)}
+							onClick={() => {
+								const commands = presetCommands(g, p, rows, props.frame);
+								if (commands.length) props.apply(t('Preset: {0}', p.label), commands);
+							}}
+							data-preset={p.id}
+						>
+							{p.label}
+						</button>
+					);
+				})}
+			</div>
+		</>
 	);
 }
 
@@ -172,6 +212,7 @@ export function GeneratorEffectPresets(props: EffectEditorProps) {
 				apply={(label, commands) =>
 					props.session.apply({ label, origin: 'user', sequenceId: props.sequenceId, commands })
 				}
+				unitPx={LOOK_EFFECT_UNIT}
 				data-testid={`generator-presets-${props.fx.id}`}
 			/>
 		</div>

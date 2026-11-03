@@ -5,6 +5,12 @@
 // document's snapshot, which is what Program draws (`packages/compositions/test/title-look.e2e.test.ts`: Program against a
 // Remotion still, SSIM 1.0000, max difference 0). Thresholds are the repository's export-parity ones: SSIM ≥ 0.98
 // (trim-paths-export, native-animated) and ≥ 99 % of values within 3/255 for the bake (layer-bake.e2e, text-paint-export).
+// Colour is checked as well (AGENTS §4), so a colourway, gradient map or tint that keeps the lightness and changes the hue
+// fails: the mean CIE76 ΔE over the pixels the title changes is at most 2, under the just-noticeable 2.3 (measured: 0.26–0.38
+// hybrid, 0.86–0.90 Remotion, whose ProRes adds chroma noise; a wrong hue there is tens). The least SSIM of the R, G and B planes (ffmpeg `ssim` on `gbrp`) is reported too: on the encoded paths it
+// reads the codec's chroma noise in flat areas (0.978 on the Remotion ProRes at frame 10, 1.4 % of values off by more than
+// 3/255, mean signed difference ≤ 0.11/255), so it is not the gate. Also: a look with generators, and a 3D title template,
+// Program against export.
 // `TITLE_LOOK_EXPORT_DUMP=<dir>` writes the compared frames as PNGs for inspection.
 import { spawnSync } from 'node:child_process';
 import { appendFileSync, mkdirSync } from 'node:fs';
@@ -71,6 +77,56 @@ function ssim(video: string, frame: number, still: string): number {
 	return Number(m[1]);
 }
 
+/** SSIM of the R, G and B planes (ffmpeg `ssim` on `gbrp`) of frame `frame` of a video against a still: the least of them. */
+function ssimRgb(video: string, frame: number, still: string): number {
+	const r = spawnSync(TEST_FFMPEG, [
+		...['-v', 'info', '-i', video, '-i', still],
+		...[
+			'-filter_complex',
+			`[0:v]select=eq(n\\,${frame}),setpts=PTS-STARTPTS,format=gbrp[a];[1:v]format=gbrp[b];[a][b]ssim`,
+		],
+		...['-frames:v', '1', '-f', 'null', '-'],
+	]);
+	const m = /SSIM R:([0-9.-]+).*G:([0-9.-]+).*B:([0-9.-]+)/.exec(r.stderr.toString());
+	if (!m) throw new Error(`ssim failed: ${r.stderr.toString().slice(-2000)}`);
+	return Math.min(Number(m[1]), Number(m[2]), Number(m[3]));
+}
+
+/** sRGB 8-bit to CIELAB (D65). */
+function lab(r: number, g: number, b: number): [number, number, number] {
+	const lin = (v: number) => {
+		const c = v / 255;
+		return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+	};
+	const [R, G, B] = [lin(r), lin(g), lin(b)];
+	const x = (0.4124 * R + 0.3576 * G + 0.1805 * B) / 0.95047;
+	const y = 0.2126 * R + 0.7152 * G + 0.0722 * B;
+	const z = (0.0193 * R + 0.1192 * G + 0.9505 * B) / 1.08883;
+	const f = (t: number) => (t > 216 / 24389 ? Math.cbrt(t) : ((24389 / 27) * t + 16) / 116);
+	return [116 * f(y) - 16, 500 * (f(x) - f(y)), 200 * (f(y) - f(z))];
+}
+
+/** Mean CIE76 ΔE of `e` against `p` over the pixels where `p` differs from `bare` (what the title draws), RGB24. */
+function deltaE(e: Buffer, p: Buffer, bare: Buffer): { mean: number; n: number } {
+	let sum = 0;
+	let n = 0;
+	for (let i = 0; i < p.length; i += 3) {
+		if (
+			Math.max(
+				Math.abs(p[i]! - bare[i]!),
+				Math.abs(p[i + 1]! - bare[i + 1]!),
+				Math.abs(p[i + 2]! - bare[i + 2]!),
+			) <= 3
+		)
+			continue;
+		const a = lab(p[i]!, p[i + 1]!, p[i + 2]!);
+		const b = lab(e[i]!, e[i + 1]!, e[i + 2]!);
+		sum += Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+		n++;
+	}
+	return { mean: n ? sum / n : 0, n };
+}
+
 /** Share of values within `tol` of each other. */
 function within(a: Uint8Array, b: Uint8Array, tol: number): number {
 	expect(a.length).toBe(b.length);
@@ -129,9 +185,10 @@ describe.runIf(enabled)('a title look on both export paths (REMOTION_E2E=1, spec
 		);
 		return queue().get(id)!;
 	};
-	const settings = (seqId: string, which: 'auto' | 'remotion') => ({
+	type Range = { start: number; end: number };
+	const settings = (seqId: string, which: 'auto' | 'remotion', range?: Range) => ({
 		sequenceId: seqId,
-		range: { type: 'entire' },
+		range: range ? { type: 'custom', startFrame: range.start, endFrame: range.end } : { type: 'entire' },
 		container: 'mov',
 		engine: which,
 		video: {
@@ -145,18 +202,18 @@ describe.runIf(enabled)('a title look on both export paths (REMOTION_E2E=1, spec
 			encoderSpeed: 'fast',
 		},
 	});
-	const plan = (d: DocBuilder, which: 'auto' | 'remotion') =>
+	const plan = (d: DocBuilder, which: 'auto' | 'remotion', range?: Range) =>
 		coreServices(engine.app).exports.plan({
 			envelope: d.envelope(),
 			sequenceId: d.seqId,
-			settings: settings(d.seqId, which) as never,
+			settings: settings(d.seqId, which, range) as never,
 		});
-	async function exportWith(d: DocBuilder, which: 'auto' | 'remotion') {
+	async function exportWith(d: DocBuilder, which: 'auto' | 'remotion', range?: Range) {
 		const r = await engine.app.inject({
 			method: 'POST',
 			url: '/api/exports',
 			headers: { ...JSON_H, ...hostH() },
-			payload: { envelope: d.envelope(), sequenceId: d.seqId, settings: settings(d.seqId, which) },
+			payload: { envelope: d.envelope(), sequenceId: d.seqId, settings: settings(d.seqId, which, range) },
 		});
 		expect(r.statusCode, r.body).toBe(202);
 		const done = await wait(r.json().id);
@@ -267,24 +324,99 @@ describe.runIf(enabled)('a title look on both export paths (REMOTION_E2E=1, spec
 			program.push(p);
 			const h = rgb(hybrid.file, f);
 			const r = rgb(remotion.file, f);
+			const b = rgb(bare);
 			const row = {
 				hybridSsim: ssim(hybrid.file, f, ref),
+				hybridRgb: ssimRgb(hybrid.file, f, ref),
 				hybridWithin3: within(h, p, 3),
 				remotionSsim: ssim(remotion.file, f, ref),
+				remotionRgb: ssimRgb(remotion.file, f, ref),
 				remotionWithin3: within(r, p, 3),
-				lookShare: 1 - within(p, rgb(bare), 3),
+				hybridDeltaE: deltaE(h, p, b).mean,
+				remotionDeltaE: deltaE(r, p, b).mean,
+				lookShare: 1 - within(p, b, 3),
 			};
 			rows.push(
-				`f${f}: hybrid SSIM ${row.hybridSsim.toFixed(4)}, within 3/255 ${row.hybridWithin3.toFixed(4)}; Remotion SSIM ${row.remotionSsim.toFixed(4)}, within 3/255 ${row.remotionWithin3.toFixed(4)}; look changes ${(row.lookShare * 100).toFixed(2)} % of values`,
+				`f${f}: hybrid SSIM ${row.hybridSsim.toFixed(4)} (RGB ${row.hybridRgb.toFixed(4)}, ΔE ${row.hybridDeltaE.toFixed(2)}), within 3/255 ${row.hybridWithin3.toFixed(4)}; Remotion SSIM ${row.remotionSsim.toFixed(4)} (RGB ${row.remotionRgb.toFixed(4)}, ΔE ${row.remotionDeltaE.toFixed(2)}), within 3/255 ${row.remotionWithin3.toFixed(4)}; look changes ${(row.lookShare * 100).toFixed(2)} % of values`,
 			);
 			expect(row.hybridSsim, `frame ${f} hybrid SSIM`).toBeGreaterThanOrEqual(0.98);
+			expect(row.hybridDeltaE, `frame ${f} hybrid ΔE over the look`).toBeLessThanOrEqual(2);
 			expect(row.hybridWithin3, `frame ${f} hybrid within 3/255`).toBeGreaterThanOrEqual(0.99);
 			expect(row.remotionSsim, `frame ${f} Remotion SSIM`).toBeGreaterThanOrEqual(0.98);
+			expect(row.remotionDeltaE, `frame ${f} Remotion ΔE over the look`).toBeLessThanOrEqual(2);
 			// The glow and rim cover a real part of the frame: a path that dropped the look would fail the SSIM above.
 			expect(row.lookShare, `frame ${f} look share`).toBeGreaterThan(0.02);
 		}
 		// The animation reached the exports: the first and last sampled Program frames differ.
 		expect(within(program[0]!, program.at(-1)!, 3)).toBeLessThan(0.99);
 		report(`[title-look export] ${LOOK}, ${W}×${H}, ${N} frames: ${rows.join('; ')}`);
+	}, 3_600_000);
+
+	/**
+	 * Program against the path the planner picks for `d` over `range`: each sampled frame of the export (all-plane SSIM ≥ 0.98,
+	 * mean ΔE ≤ 2 over the title) against a Remotion still of the document at that frame, and the title shown to be there.
+	 */
+	async function parity(d: DocBuilder, name: string, range: Range, sample: number[], bare: DocBuilder) {
+		const auto = await plan(d, 'auto', range);
+		const out = await exportWith(d, 'auto', range);
+		expect(out.result.renderPath).toBe(auto.plan.path);
+		const rows: string[] = [];
+		for (const f of sample) {
+			const ref = await programFrame(d, f, `${name}-program-${f}`);
+			dump(ref, `${name}-program-${f}`);
+			dump(out.file, `${name}-${out.result.renderPath}-${f}`, f - range.start);
+			const p = rgb(ref);
+			const e = rgb(out.file, f - range.start);
+			const all = ssim(out.file, f - range.start, ref);
+			const colour = ssimRgb(out.file, f - range.start, ref);
+			const b = rgb(await programFrame(bare, f, `${name}-bare-${f}`));
+			const share = 1 - within(p, b, 3);
+			const de = deltaE(e, p, b).mean;
+			rows.push(
+				`f${f}: SSIM ${all.toFixed(4)} (RGB ${colour.toFixed(4)}, ΔE over the title ${de.toFixed(2)}), within 3/255 ${within(e, p, 3).toFixed(4)}; the title changes ${(share * 100).toFixed(2)} % of values`,
+			);
+			expect(all, `${name} frame ${f} SSIM`).toBeGreaterThanOrEqual(0.98);
+			expect(de, `${name} frame ${f} ΔE over the title`).toBeLessThanOrEqual(2);
+			// A path that dropped the title would fail the SSIM above: the title covers a real part of the frame.
+			expect(share, `${name} frame ${f} title share`).toBeGreaterThan(0.02);
+		}
+		report(`[title-look export] ${name} (${out.result.renderPath}), ${W}×${H}: ${rows.join('; ')}`);
+	}
+
+	it('a look with a generator (fire behind a bevelled face) matches Program on its export path', async () => {
+		const d = new DocBuilder('hd-720p-30');
+		const r = d.tx([
+			{ type: 'clip.addSolid', at: 0, duration: N, track: 'V1', color: [0.12, 0.14, 0.2, 1] },
+			{
+				type: 'clip.addText',
+				at: 0,
+				duration: N,
+				track: 'V2',
+				content: { text: 'BURN', style: { sizePx: 160, fill: [1, 1, 1, 1], align: 'center', weight: 700 } },
+				box: { width: 900, height: 260, autoSize: 'none' },
+				ref: '$t',
+			},
+			{ type: 'look.apply', clipIds: ['$t'], lookId: 'look.cursed-flame', seed: 4242 },
+		]);
+		const bare = new DocBuilder('hd-720p-30');
+		bare.doc = structuredClone(d.doc);
+		bare.revision = d.revision;
+		bare.tx([{ type: 'look.remove', clipIds: [r.refs.$t!] }]);
+		await parity(d, 'generator-look', { start: 0, end: 12 }, [0, 6, 11], bare);
+	}, 3_600_000);
+
+	it('a 3D title template matches Program on the Remotion path', async () => {
+		const d = new DocBuilder('hd-720p-30');
+		const r = d.tx([
+			{ type: 'clip.addSolid', at: 0, duration: 120, track: 'V1', color: [0.12, 0.14, 0.2, 1] },
+			{ type: 'title.insertTemplate', templateId: 'template.gold-3d-title', at: 0 },
+		]);
+		expect(r.results.length).toBe(2);
+		const bare = new DocBuilder('hd-720p-30');
+		bare.tx([{ type: 'clip.addSolid', at: 0, duration: 120, track: 'V1', color: [0.12, 0.14, 0.2, 1] }]);
+		// After the reveal: the whole solid is there.
+		const p = await plan(d, 'auto', { start: 45, end: 47 });
+		expect(p.plan.path).toBe('remotion');
+		await parity(d, '3d-template', { start: 45, end: 47 }, [45, 46], bare);
 	}, 3_600_000);
 });

@@ -19,6 +19,7 @@
 | `src/engine/three/materials.ts` (surface relief, flakes, clearcoat, gem transmission, reflectivity) | `packages/compositions/src/three-d/advanced.ts` (`RELIEF_GLSL`, `shadePhysical`) | Written directly in our shader: upstream patches three.js chunks |
 | `src/engine/layer2d/contours.ts` (`curveFn`) | `packages/project/src/three-d/inflate.ts` (`inflateCurveFn`) | Monotone height curve |
 | `src/model/defaults.ts` (`PRESET_VALUES`) | `packages/project/src/three-d/surfaces.ts` (`SURFACE_PRESETS`) | Material preset numbers and metal banding ramps |
+| `src/model/defaults.ts` (metal banding), `src/engine/three/bevel.ts` (profile names) | `packages/project/src/schema/three-d.ts` (`SurfaceRamp`, `BEVEL_PROFILES`) | The shape of a surface's tint ramp and the bevel cross-sections a band may take |
 
 ## Changes made when porting
 

@@ -117,3 +117,7 @@ rolex
 photoshop
 after effects
 premiere
+# Synthetic names (no real title, brand or maker) that the check's own test uses as its positive cases.
+quorvane
+霧星刃
+ゾルヴァ

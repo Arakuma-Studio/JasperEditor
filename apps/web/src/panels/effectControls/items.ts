@@ -40,7 +40,7 @@ import {
 } from '@jasper/project';
 import { shapePropertyKeys } from '../../shapes/keys.ts';
 import { layerRows, lightRows, paletteRows } from '../../title-looks/rows.ts';
-import { lookedClip, sharedStack } from '../../title-looks/selection.ts';
+import { lookedClip, lookUnitOf, sharedStack } from '../../title-looks/selection.ts';
 import {
 	bindCrop,
 	bindEffectParam,
@@ -95,6 +95,8 @@ export type PuppetListModel = {
 export type AppearanceBlockModel = {
 	clipId: string;
 	fxId: string;
+	/** Layer px of 1 % of the look's unit (a generator's inspector says when its reach passes the canvas limit). */
+	unitPx: number;
 	palette: Row[];
 	light: Row[];
 	layers: { layer: AppearanceLayer; rows: Row[] }[];
@@ -112,6 +114,7 @@ function appearanceBlock(
 	return {
 		clipId: clip.id,
 		fxId: fx.id,
+		unitPx: lookUnitOf(doc, seq, clip),
 		palette: paletteRows(doc, seq, [looked], frame),
 		light: lightRows(doc, seq, [looked], frame),
 		layers: (sharedStack([looked]) ?? []).map((s) => ({

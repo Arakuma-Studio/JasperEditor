@@ -8,6 +8,7 @@ import type { EncoderChoice, ExportSettings, RenderPlan } from '@jasper/api';
 import { installAudioFxProcessors } from '@jasper/audio-fx';
 import { mgRegistry } from '@jasper/mg-templates';
 import {
+	advanced3dLimitWarnings,
 	blendModeInfo,
 	buildRenderSnapshot,
 	clipContentTime,
@@ -685,17 +686,6 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			message: `${lutOffline.size} clip(s) use an offline LUT or colour config; the colour steps using it are skipped`,
 			itemIds: [...lutOffline],
 		});
-	// spec 19 TL-021: a look's picture that is offline: the layer draws without it, so the export says which clips.
-	const lookMediaOffline = new Set<string>();
-	for (const c of visual)
-		for (const ref of effectMediaRefs(c.effects))
-			if (ref.param.startsWith('appearance.') && !snapshot.media[ref.mediaId]) lookMediaOffline.add(c.clipId);
-	if (lookMediaOffline.size > 0)
-		warnings.push({
-			code: 'LOOK_MEDIA_OFFLINE',
-			message: `${lookMediaOffline.size} clip(s) use an offline picture in a look: a reflection uses its preset environment, a pattern tile draws no marks`,
-			itemIds: [...lookMediaOffline],
-		});
 	// VFR media are mapped by their real timestamps by the retime stage (native) and the preview
 	// decoder (Remotion); only an engine without the retime stage still conforms them.
 	const vfr = new Set<string>();
@@ -868,6 +858,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	// TL-124 / TL-125 / TL-123: what the browser draws and needs WebGL2 for (colour and GPU effects, also in nested
 	// sequences; GPU transitions; masked effects; blend modes; 3D layers) is refused here when the render browser has
 	// none (or lacks the float targets an effect requires), naming the causes, not as a failure in the middle of a render.
+	let webgl: WebglStatus | null = null;
 	if ((path === 'remotion' || path === 'hybrid') && deps.capabilities.webgl) {
 		const all = snapshotGlNeeds(snapshot, deps.effects);
 		const bakedIds = new Set(baked.map((b) => b.clipId));
@@ -878,7 +869,8 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 						(n) => (n.clipId && bakedIds.has(n.clipId)) || (n.transitionId && bakedIds.has(n.transitionId)),
 					);
 		if (needs.length > 0) {
-			const refusal = webglRefusal(needs, await deps.capabilities.webgl());
+			webgl = await deps.capabilities.webgl();
+			const refusal = webglRefusal(needs, webgl);
 			if (refusal)
 				throw new PlanError(refusal.code, 409, refusal.message, {
 					path,
@@ -901,6 +893,26 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			{
 				path,
 				blockers: missing3d.map((m) => ({ path, reason: m.label, itemId: m.clipId })),
+			},
+		);
+
+	// AGENTS §4: what Advanced 3D's fixed limits leave out (lights, shadow maps, supersampling on the render browser's
+	// GPU) is said; the preview's chip says the same, as it draws with the same renderer.
+	if (path === 'remotion' || path === 'hybrid')
+		for (const w of advanced3dLimitWarnings(snapshot, range, webgl?.maxRenderbufferSize)) warnings.push(w);
+
+	// Spec 19 TL-021, AGENTS §4: a look's picture that is offline would draw the look without it (a reflection on its
+	// preset environment, a pattern tile with no marks), so the export refuses, as a missing 3D asset does (TL-075).
+	const lookOffline = lookMediaOfflineItems(snapshot, document);
+	if (lookOffline.length > 0)
+		throw new PlanError(
+			LOOK_MEDIA_OFFLINE,
+			409,
+			`A look's picture is offline: ${[...new Set(lookOffline.map((m) => m.label))].slice(0, 5).join(', ')}`,
+			{
+				path,
+				blockers: lookOffline.map((m) => ({ path, reason: m.label, itemId: m.clipId })),
+				hint: 'Relink the picture, or pick another one (or None) in the look layer.',
 			},
 		);
 
@@ -1284,6 +1296,31 @@ export function localHandle(asset: MediaAsset, m: LocalMedia): MediaHandle {
 
 /** Plan error code for template media params holding media a template cannot draw as a picture. */
 export const TEMPLATE_MEDIA_UNDRAWABLE = 'TEMPLATE_MEDIA_UNDRAWABLE';
+/** Spec 19 TL-021: a look layer's picture (reflection environment, pattern tile…) is offline; the export refuses. */
+export const LOOK_MEDIA_OFFLINE = 'LOOK_MEDIA_OFFLINE';
+
+/** Clips whose look reads a picture that is offline, one entry per clip and picture, labelled for the blocker. */
+export function lookMediaOfflineItems(
+	snapshot: RenderSnapshot,
+	document: Pick<ProjectDocument, 'media'>,
+): { clipId: string; mediaId: string; label: string }[] {
+	const out: { clipId: string; mediaId: string; label: string }[] = [];
+	for (const c of allVisualClips(snapshot)) {
+		const seen = new Set<string>();
+		for (const ref of effectMediaRefs(c.effects)) {
+			if (!ref.param.startsWith('appearance.') || snapshot.media[ref.mediaId] || seen.has(ref.mediaId))
+				continue;
+			seen.add(ref.mediaId);
+			const name = document.media[ref.mediaId]?.originalName ?? ref.mediaId;
+			out.push({
+				clipId: c.clipId,
+				mediaId: ref.mediaId,
+				label: `look picture "${name}" of clip "${c.name}"`,
+			});
+		}
+	}
+	return out;
+}
 
 /**
  * Why a medium cannot be a template picture (`TemplateImage` draws still images: an <img>, or its display picture when

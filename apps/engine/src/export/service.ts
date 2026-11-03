@@ -2157,7 +2157,12 @@ export class ExportService {
 				crf: rp.mode === 'direct' ? rp.crf : planned.output.crf,
 				x264Preset: planned.output.x264Preset,
 				audioBitrateKbps: planned.output.audioBitrateKbps,
-				...(rp.mode === 'intermediate' ? { intermediate: true } : {}),
+				...(rp.mode === 'intermediate'
+					? {
+							intermediate: true,
+							...(planned.output.proresProfile === '4444' ? { intermediate444: true } : {}),
+						}
+					: {}),
 				...(rp.mode === 'direct' && rp.codec === 'vp9'
 					? {
 							vp9: {
@@ -2728,7 +2733,8 @@ export class ExportService {
 		const { doc } = this.remotionProps(planned, prepared) as { doc: RenderSnapshot };
 		const displayLut = await displayLutFilter(planned.snapshot.settings.color, await ctx.scratchDir());
 		this.commitRefs(ctx, planned, 'still');
-		return { doc, displayLut, planned };
+		const warnings = planned.plan.warnings.map(({ code, message }) => ({ code, message }));
+		return { doc, displayLut, warnings, planned };
 	}
 
 	private deliveryDeps(): DeliveryDeps {

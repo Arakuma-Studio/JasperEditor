@@ -17,6 +17,9 @@
 // from a prefiltered environment, clearcoat, flakes, procedural normals, thin-film iridescence and transmission, and
 // tone maps only what it drew, never the backdrop. Everything else stays on the 8-bit path, pixel for pixel.
 import {
+	ADVANCED_MAX_LIGHTS,
+	ADVANCED_MAX_SHADOW_TILES,
+	advancedSupersampling,
 	basisView,
 	type CameraState,
 	type ClassicSetup,
@@ -112,9 +115,7 @@ export type AdvancedInput = {
 	look?: AdvancedLook;
 };
 
-const MAX_LIGHTS = 32;
 const LIGHT_TEXELS = 6;
-const MAX_TILES = 48;
 /** Texels per surface in the material table. */
 const MAT_TEXELS = 8;
 /** Entries of a tint ramp. */
@@ -1257,7 +1258,9 @@ export function renderAdvancedGL(h: FxHost, input: AdvancedInput, out: CanvasRen
 	const H = Math.max(1, Math.round(setup.height));
 	const cam = setup.camera;
 	const draft = !!setup.draft;
-	const lights = draft ? [] : setup.lights.filter((l) => l.type !== 'environment').slice(0, MAX_LIGHTS);
+	const lights = draft
+		? []
+		: setup.lights.filter((l) => l.type !== 'environment').slice(0, ADVANCED_MAX_LIGHTS);
 	const look: AdvancedLook = input.look ?? {
 		toneMapping: 'none',
 		exposure: 1,
@@ -1293,8 +1296,9 @@ export function renderAdvancedGL(h: FxHost, input: AdvancedInput, out: CanvasRen
 		? (env?.source ?? (env?.image ? { kind: 'image', image: env.image } : null))
 		: null;
 	const envKey = env?.key ?? null;
-	const ssMax = Math.floor((gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) as number) / Math.max(W, H));
-	const k = hdr ? Math.max(1, Math.min(4, ssMax, Math.round(look.supersampling))) : 1;
+	const k = hdr
+		? advancedSupersampling(look.supersampling, W, H, gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) as number)
+		: 1;
 	const RW = W * k;
 	const RH = H * k;
 	ps.frame++;
@@ -1509,7 +1513,7 @@ export function renderAdvancedGL(h: FxHost, input: AdvancedInput, out: CanvasRen
 	lights.forEach((l, i) => {
 		if (!l.castsShadows || l.type === 'ambient') return;
 		const ts = shadowTiles(l, allPts, S);
-		if (tiles.length + ts.length > MAX_TILES) return;
+		if (tiles.length + ts.length > ADVANCED_MAX_SHADOW_TILES) return;
 		firstTile.set(i, tiles.length);
 		tiles.push(...ts);
 	});

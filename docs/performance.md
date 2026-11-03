@@ -350,8 +350,8 @@ above, 2026-11-03 04:25 UTC, load average ≈ 2–10 (other agents' work, inside
 
 **Lightning, after its resolution fix** (`docs/wp-notes/title-looks.md`, "Stable identity"): every bolt now reads area sums of
 the alpha in a data pass. Same request and machine, 2026-11-03, one of the heavy-job slots, before and after measured back to
-back. The "before" runs had a load average of 1.9–4.5 and the "after" runs 0.5–1.5, so the increase is not overstated. Scratch
-harness, not committed (the request of the test below with `timingOnly`):
+back. The "before" runs had a load average of 1.9–4.5 and the "after" runs 0.5–1.5, so the increase is not overstated. These
+two columns came from an uncommitted harness; the rows are now measured by a committed test, below, whose figures supersede them:
 
 | Lightning | Canvas | Passes before → after | Full before → after | 1/2 before → after |
 |---|---|---|---|---|
@@ -361,6 +361,31 @@ harness, not committed (the request of the test below with `timingOnly`):
 
 The defaults row is higher than the table above (3 194 ms), because it was measured on a different day and under different
 load. Compare within a table, not across. Along Edge pays most: 41 sites per arc, each with two area sums.
+
+**Lightning by mode, rerunnable** (the "after" request above, plus the two heaviest settings a frame can ask for). Same machine
+and browser (8 cores, 15 GB, Chrome 156 on SwiftShader), 2026-11-03 18:31–18:36 UTC inside one of the host's three heavy-job
+slots; load average 8.3 at the start (other agents' work) and 0.1 at the end. Median of 3 warm frames, one frame at 1/2, and one
+frame with every pass timed on its own (each pass then ends in a read-back). Rerun:
+`TL_PERF=1 pnpm exec vitest run packages/compositions/test/title-look-generators-gl.test.ts --disable-console-intercept -t "cost of Lightning"`.
+
+| Lightning | Canvas | Passes | Full | 1/2 | Bolts pass (`tlGenB`) | Slowest pass |
+|---|---|---|---|---|---|---|
+| Defaults | 2070 × 1150 | 21 | 4 792 ms | 1 294 ms | 24 × 1, 106 ms | `tlGenA`, 609 ms |
+| Alpha Bounds, Capture 40 %, bolts 2 units | 2668 × 1748 | 23 | 10 990 ms | 2 900 ms | 24 × 1, 189 ms | `tlGenA`, 1 307 ms |
+| Along Edge | 1566 × 646 | 20 | 3 289 ms | 1 097 ms | 41 × 24, 497 ms | `tlGenB`, 497 ms |
+| Along Edge, 60 arcs, Capture 80 % | 1566 × 646 | 22 | 5 281 ms | 1 685 ms | 41 × 60, 1 507 ms | `tlGenB`, 1 507 ms |
+| Crawl, 40 bolts, Capture 80 % | 2070 × 1150 | 23 | 8 220 ms | 2 490 ms | 80 × 1, 798 ms | `tlGenA`, 1 705 ms |
+
+**The bolts pass and GPU watchdogs.** `tlg_mass` reads at most 130 × 130 = 16 900 texels per call: its step grows with the
+radius (1 px up to 64 px of reach, then 2 px per 128 px), so `n = ceil(2R / step) + 2` never passes 130 and the shader's own
+bound (`TLG_MASS_SIDE`, 260) is never reached. A bolts-pass fragment makes at most six calls (a crawl's two sites, each with its
+way, its direction and its facing: ≈ 101 000 reads) and an Along Edge fragment three (≈ 50 700); the pass has at most 80 or
+41 × 60 = 2 460 fragments, so one draw reads at most ≈ 125 million texels. On SwiftShader, a CPU, that draw took 1.5 s, the
+slowest single pass measured above. Windows resets a GPU whose command takes over 2 s (TDR, `TdrDelay`, Microsoft's documented
+default); assumed, not measured here: a GPU reads texels at least a hundred times faster than SwiftShader on this host, which
+leaves that draw in the tens of milliseconds at most. So the sums are not capped or restructured, and Lightning's fingerprints
+are unchanged. If a GPU is ever measured near the limit, the cheap fix is the bolts pass in tiles of arcs (one draw per tile),
+which changes no value.
 
 **Reading it.** The canvas dominates again: a generator that reaches far (Sunburst, Lens Flare, Light Streaks, Brush Swirl at their
 extents) grows the look's canvas, and with it the shape field every layer pays for. Magic Circle is the costliest per pixel (six
