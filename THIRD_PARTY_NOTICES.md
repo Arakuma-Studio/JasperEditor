@@ -10164,6 +10164,8 @@ Record: `licenses/ported/pachislop-finishes.md`
 | `src/engine/layer2d/contours.ts` (`curveFn`) | `packages/project/src/registry/fx/glsl/title-relief.ts` (`curveLut`) | Monotone cubic Hermite curve baked to a 256-entry table |
 | `src/engine/layer2d/reflectionMaps.ts` | `packages/project/src/registry/fx/glsl/title-env.ts` | Layout of a reflection panorama (row 0 the zenith, centre column where a flat face mirrors the view) and the blur scale; the maps themselves are not ported: ours are procedural |
 | `src/engine/patterns.ts` | `packages/project/src/registry/fx/glsl/title-pattern.ts` | Every motif's signed distance and its analytic antialiasing |
+| `src/engine/patterns.ts` (mark heights), `src/engine/layer2d/materialPass.ts` (the pattern step) | `packages/project/src/registry/fx/title-look/finishes/pattern.ts` | The pattern over the paint in two colours, and raised marks 6 % of a motif tall at full relief |
+| `src/effects/b/material.ts` (`chrome`: a Fit bevel domed to the centre, mirroring an environment) | `packages/project/src/registry/fx/title-look/finishes/metal.ts` | The domed surface of a metal over each stroke (Fit on by default) |
 | `src/effects/b/material.ts` | `packages/project/src/registry/fx/title-look/material.ts` | A material as an effect on the input's alpha, with the shading of a title's face |
 | `src/text/plate.ts` | `packages/project/src/registry/fx/title-look/layers/plate.ts` | Plate kinds and the leaning box with cut corners; here distances on the GPU instead of polygons |
 | `src/engine/layer2d/materialPass.ts` (`layerAngle`, `screenAngle`, `uReflM`) | `packages/project/src/registry/fx/title-look/plan.ts` (`lookOrientation`, `titleLookUniforms`), `glsl.ts` (`GLSL_TL_STAGE`) | Lights fixed on screen: the layer's rotation and flip undone for the light, and the reflection's directions taken back to the screen |
@@ -10387,6 +10389,7 @@ Record: `licenses/ported/pachislop-three-d.md`
 | `src/engine/three/materials.ts` (surface relief, flakes, clearcoat, gem transmission, reflectivity) | `packages/compositions/src/three-d/advanced.ts` (`RELIEF_GLSL`, `shadePhysical`) | Written directly in our shader: upstream patches three.js chunks |
 | `src/engine/layer2d/contours.ts` (`curveFn`) | `packages/project/src/three-d/inflate.ts` (`inflateCurveFn`) | Monotone height curve |
 | `src/model/defaults.ts` (`PRESET_VALUES`) | `packages/project/src/three-d/surfaces.ts` (`SURFACE_PRESETS`) | Material preset numbers and metal banding ramps |
+| `src/model/defaults.ts` (metal banding), `src/engine/three/bevel.ts` (profile names) | `packages/project/src/schema/three-d.ts` (`SurfaceRamp`, `BEVEL_PROFILES`) | The shape of a surface's tint ramp and the bevel cross-sections a band may take |
 
 ## Changes made when porting
 
