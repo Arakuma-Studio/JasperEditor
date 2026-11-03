@@ -232,7 +232,7 @@ test('Import Layer Styles: the report names what maps and what is not supported;
 	await expect(page.getByTestId('style-unsupported')).toContainText(/pattern/i);
 	await expect(dialog.getByRole('button', { name: 'Import 1 style' })).toBeEnabled();
 	// The reference size is an option per style; unticking the only style leaves nothing to import.
-	await dialog.getByRole('textbox', { name: 'Reference size of Styled title' }).fill('48');
+	await dialog.getByLabel('Reference size of Styled title').fill('48');
 	await dialog.getByText('Styled title', { exact: true }).click();
 	await expect(dialog.getByRole('button', { name: 'Import 0 styles' })).toBeDisabled();
 	await page.screenshot({ path: join(OUT, 'layer-styles.png') });

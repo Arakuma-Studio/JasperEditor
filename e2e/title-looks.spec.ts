@@ -241,7 +241,8 @@ test('a shadow following the light turns the look’s light from its handle', as
 	await expect(page.getByTestId('look-handle-angle')).toHaveCount(0);
 	const before = (await appearance()).light.angle.value;
 	const n = (await appliedLabels(page)).length;
-	await dragHandle('look-handle-light-angle', -50, -50);
+	// Across the ring, not along its radius: the light is up and to the left (225°), so up and to the right turns it.
+	await dragHandle('look-handle-light-angle', 60, -40);
 	await expect.poll(async () => (await appearance()).light.angle.value).not.toBe(before);
 	expect((await appliedLabels(page)).length).toBe(n + 1);
 	await page.screenshot({ path: join(OUT, 'light-angle.png') });
