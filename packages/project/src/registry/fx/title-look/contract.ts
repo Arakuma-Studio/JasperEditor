@@ -84,6 +84,8 @@ export type PrepassContext = LayerPlanContext & {
 	depth: LayerDepth;
 	/** Growth of the whole stack, percent of the unit: the silhouette of everything is at `s.d` = this. */
 	outer: number;
+	/** False when `pxPerPercent` is only an upper bound (a clip without text): size reduced passes with a margin. */
+	exactUnit: boolean;
 	/** The `update` flag of a write to output `name`: true from its second write in this plan on. */
 	write(name: string): { update?: true };
 };

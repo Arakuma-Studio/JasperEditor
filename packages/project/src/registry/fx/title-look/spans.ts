@@ -37,7 +37,17 @@ export const MAX_SPAN_GLYPHS = 4096;
 
 /** The inverse of a row-major 3×3, normalised so the last element is 1, or null when it is singular. */
 function invert3(m: readonly number[]): number[] | null {
-	const [a, b, c, d, e, f, g, h, i] = m as [number, number, number, number, number, number, number, number, number];
+	const [a, b, c, d, e, f, g, h, i] = m as [
+		number,
+		number,
+		number,
+		number,
+		number,
+		number,
+		number,
+		number,
+		number,
+	];
 	const A = e * i - f * h;
 	const B = c * h - b * i;
 	const C = b * f - c * e;
@@ -48,7 +58,12 @@ function invert3(m: readonly number[]): number[] | null {
 	const H = b * g - a * h;
 	const I = a * e - b * d;
 	const det = a * A + b * D + c * G;
-	if (!Number.isFinite(det) || Math.abs(det) < 1e-12 || !Number.isFinite(I) || Math.abs(I) < 1e-12 * Math.abs(det))
+	if (
+		!Number.isFinite(det) ||
+		Math.abs(det) < 1e-12 ||
+		!Number.isFinite(I) ||
+		Math.abs(I) < 1e-12 * Math.abs(det)
+	)
 		return null;
 	const k = 1 / I;
 	return [A * k, B * k, C * k, D * k, E * k, F * k, G * k, H * k, 1];
@@ -72,7 +87,9 @@ export function buildTextSpans(input: readonly SpanGlyph[]): FxTextSpans | null 
 	if (glyphs.length === 0) return null;
 	const lineIds = [...new Set(glyphs.map((x) => x.g.line))].sort((a, b) => a - b);
 	const lineIndex = new Map(lineIds.map((id, i) => [id, i]));
-	const lines = lineIds.map(() => [Infinity, Infinity, -Infinity, -Infinity] as [number, number, number, number]);
+	const lines = lineIds.map(
+		() => [Infinity, Infinity, -Infinity, -Infinity] as [number, number, number, number],
+	);
 	const block: [number, number, number, number] = [Infinity, Infinity, -Infinity, -Infinity];
 	for (const { g } of glyphs)
 		for (const box of [lines[lineIndex.get(g.line)!]!, block]) {
@@ -103,7 +120,8 @@ export function appearanceWantsTextSpans(appearance: unknown): boolean {
 		if (l?.enabled === false) continue;
 		for (const a of Object.values(l?.params ?? {})) {
 			const { value, keyframes } = (a ?? {}) as { value?: unknown; keyframes?: { value?: unknown }[] };
-			if (gradient(value) || (Array.isArray(keyframes) && keyframes.some((k) => gradient(k?.value)))) return true;
+			if (gradient(value) || (Array.isArray(keyframes) && keyframes.some((k) => gradient(k?.value))))
+				return true;
 		}
 	}
 	return false;

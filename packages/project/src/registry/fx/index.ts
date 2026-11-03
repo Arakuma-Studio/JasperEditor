@@ -64,7 +64,11 @@ export const FX_FAMILIES: readonly { file: string; idPrefix: string; effects: re
 	{ file: 'keying-matte', idPrefix: 'jasper.', effects: KEYING_MATTE_EFFECTS },
 	{ file: 'simulation-warp', idPrefix: 'jasper.', effects: SIMULATION_WARP_EFFECTS },
 	{ file: 'warp-stabilizer', idPrefix: 'jasper.', effects: WARP_STABILIZER_EFFECTS },
-	{ file: 'title-look', idPrefix: 'jasper.', effects: [TITLE_LOOK_EFFECT, TITLE_MATERIAL_EFFECT, ...TITLE_GENERATOR_EFFECTS] },
+	{
+		file: 'title-look',
+		idPrefix: 'jasper.',
+		effects: [TITLE_LOOK_EFFECT, TITLE_MATERIAL_EFFECT, ...TITLE_GENERATOR_EFFECTS],
+	},
 ];
 
 /** Every fx-catalogue effect (registered by default). */

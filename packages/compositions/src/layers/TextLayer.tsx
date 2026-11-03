@@ -30,8 +30,8 @@ import {
 	appearanceWantsTextSpans,
 	type FxTextSpans,
 	sourceTextAt,
-	TITLE_LOOK_EFFECT_ID,
 	type TextStyle,
+	TITLE_LOOK_EFFECT_ID,
 } from '@jasper/project';
 import {
 	type CSSProperties,
@@ -600,9 +600,7 @@ function TextOverlay({
 	});
 	useReportSpans(
 		reportSpans,
-		reportSpans
-			? unitSpans(restLayout(source, fonts), (s) => fontFamilyFor(s, fonts), placements)
-			: null,
+		reportSpans ? unitSpans(restLayout(source, fonts), (s) => fontFamilyFor(s, fonts), placements) : null,
 	);
 	const caretShown = impl.caret?.(params) && placedUnits.length > 0 && !lineMode;
 	if (caretShown && caretLit(values.filter((v) => v.reveal >= 1).length)) {

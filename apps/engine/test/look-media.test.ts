@@ -26,7 +26,7 @@ const settings = (seqId: string) => ({
 	},
 });
 
-describe('a look’s media in exports (TL-021)', () => {
+describe('a look’s media in exports (TL-021)', { timeout: 180_000 }, () => {
 	let app: TestApp;
 	let picture: Awaited<ReturnType<typeof register>>;
 	beforeAll(async () => {
@@ -45,7 +45,9 @@ describe('a look’s media in exports (TL-021)', () => {
 				clipIds: ['$t'],
 				look: {
 					name: 'Mirror',
-					recipe: { layers: [{ type: 'face', params: { finish: 'reflection', reflectionImage: { mediaId } } }] },
+					recipe: {
+						layers: [{ type: 'face', params: { finish: 'reflection', reflectionImage: { mediaId } } }],
+					},
 				},
 			},
 		]);

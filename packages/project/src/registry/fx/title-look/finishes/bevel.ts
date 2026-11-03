@@ -1,11 +1,20 @@
 // `bevel` (§5.1): Photoshop's Bevel & Emboss as Pachislop's material does it: the layer's shape through a profile into a
 // height field, lit by the look's light as a highlight screen and a shadow multiply. Size, softness and Fit are the relief's;
 // a rim or inline fits as a tube across its width.
-import { curveLut, curveParam, GLSL_TL_RELIEF, reliefPasses, reliefReach, TL_PROFILE_LABELS, TL_PROFILES } from '../../glsl/title-relief.ts';
-import { defineFinish, lp, type LayerParams } from '../contract.ts';
+import {
+	curveLut,
+	curveParam,
+	GLSL_TL_RELIEF,
+	reliefPasses,
+	reliefReach,
+	TL_PROFILE_LABELS,
+	TL_PROFILES,
+} from '../../glsl/title-relief.ts';
+import { defineFinish, type LayerParams, lp } from '../contract.ts';
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
-const profileOf = (p: LayerParams) => Math.max(0, TL_PROFILES.indexOf(p.bevelProfile as (typeof TL_PROFILES)[number]));
+const profileOf = (p: LayerParams) =>
+	Math.max(0, TL_PROFILES.indexOf(p.bevelProfile as (typeof TL_PROFILES)[number]));
 
 /** Bevel depth at 100 %: the surface's slope at a round profile's edge is about 1.5 (57°). */
 export const BEVEL_GLSL = /* glsl */ `

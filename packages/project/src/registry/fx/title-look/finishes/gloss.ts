@@ -1,6 +1,7 @@
 // `gloss` (§5.1): a cap of light across the upper part of the layer, Pachislop's Gloss2D. The same GLSL as the `gloss` layer.
-import { GLSL_TL_SURFACE } from '../glsl.ts';
+
 import { defineFinish, lp } from '../contract.ts';
+import { GLSL_TL_SURFACE } from '../glsl.ts';
 
 /**
  * Coverage of the cap at `s`, 0..1. height: 0..1 of the shape's bounds from the top along the tilted axis, curve: how far the

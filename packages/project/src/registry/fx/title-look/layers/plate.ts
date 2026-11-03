@@ -6,16 +6,17 @@
 //            grown by a disc is the same intersection of half-planes with each offset grown, so corners come out round;
 //   box      a rounded box around the alpha bounds; pill the same with fully round ends;
 //   slant    a box leaning by `skew`, its corners cut straight by `corner`, tight on the ink along the lean.
-import { FRAG_TL_FLOOD } from '../glsl.ts';
+
 import type { ShaderPass } from '../../shader.ts';
 import {
 	fmtDistance,
 	layerSwatch,
 	lp,
-	paintText,
 	type PrepassContext,
+	paintText,
 	type TitleLayerInit,
 } from '../contract.ts';
+import { FRAG_TL_FLOOD } from '../glsl.ts';
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 const DEG = Math.PI / 180;

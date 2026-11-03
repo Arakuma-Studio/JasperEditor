@@ -3,12 +3,12 @@
 import {
 	appearanceClipReach,
 	appearanceFromRecipe,
+	buildTextSpans,
+	type EffectParams,
 	type EffectSpec,
 	type FxPadding,
 	fxBuiltinUniforms,
 	type LookRecipe,
-	buildTextSpans,
-	type EffectParams,
 	planGpuEffect,
 	resolveAppearance,
 	type SpanGlyph,
@@ -56,7 +56,12 @@ export type LookRequest = {
 };
 
 /** A picture for a media param: horizontal bands top to bottom, or a checker of two colours. */
-export type LookImageInput = { width: number; height: number; bands?: readonly string[]; checker?: readonly [string, string] };
+export type LookImageInput = {
+	width: number;
+	height: number;
+	bands?: readonly string[];
+	checker?: readonly [string, string];
+};
 
 function paintImage(i: LookImageInput): HTMLCanvasElement {
 	const c = document.createElement('canvas');

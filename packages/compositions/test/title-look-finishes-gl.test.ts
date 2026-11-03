@@ -129,7 +129,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Look finishes', { t
 
 	afterAll(async () => {
 		await tl?.browser.close();
-	});
+	}, 120_000);
 
 	const render = (recipe: LookRecipe, over: Partial<LookRequest> = {}) =>
 		tl.render({ recipe, input: TEXT, box: BOX, ...over });
@@ -173,7 +173,10 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Look finishes', { t
 				label: 'inline',
 				recipe: {
 					palette,
-					layers: [{ type: 'face' }, { type: 'inline', params: { inset: 2, width: 2, ...sw(flat(0.1, 0.1, 0.3)) } }],
+					layers: [
+						{ type: 'face' },
+						{ type: 'inline', params: { inset: 2, width: 2, ...sw(flat(0.1, 0.1, 0.3)) } },
+					],
 				},
 			},
 			{
@@ -183,7 +186,13 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Look finishes', { t
 					layers: [
 						{
 							type: 'rim',
-							params: { width: 8, finish: 'bevel', bevelFit: true, bevelDepth: 200, ...sw(flat(0.2, 0.3, 0.7)) },
+							params: {
+								width: 8,
+								finish: 'bevel',
+								bevelFit: true,
+								bevelDepth: 200,
+								...sw(flat(0.2, 0.3, 0.7)),
+							},
 						},
 						{ type: 'face' },
 					],
@@ -420,6 +429,28 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Look finishes', { t
 			// Left rim, 0…16 px outside the rectangle: its outer half faces the light, its inner half turns away.
 			expect(pixel(img, x0 - 12, y)[0]).toBeGreaterThan(pixel(img, x0 - 4, y)[0] + 30);
 		});
+		it('a small shape in a big transparent box bevels as sharply as in a tight box', async () => {
+			// No text: the unit is the alpha bounds, unknown when passes are sized.
+			const of = (
+				box: { width: number; height: number },
+				r: { x: number; y: number; w: number; h: number },
+			) =>
+				render(face('bevel', { bevelSize: 12 }, paint), { input: { kind: 'rect', ...r }, box, unitPx: null });
+			// 20 px of margin: a shape that touches its canvas's edge has no edge there (the seeds clamp at the border).
+			const tight = await of({ width: 160, height: 100 }, { x: 0.125, y: 0.2, w: 0.75, h: 0.6 });
+			// A 120 × 60 shape in a frame-sized box: planned from the box, the blur would run at a quarter of the resolution.
+			const loose = await of(
+				{ width: 1920, height: 1080 },
+				{ x: 900 / 1920, y: 510 / 1080, w: 120 / 1920, h: 60 / 1080 },
+			);
+			const left = (img: LookImage) => img.width / 2 - 60;
+			for (const d of [2, 4, 6]) {
+				const a = pixel(tight, left(tight) + d, tight.height / 2)[0];
+				const b = pixel(loose, left(loose) + d, loose.height / 2)[0];
+				// Measured: equal with the planner's margin, up to 15 levels apart when passes are sized from the box.
+				expect(Math.abs(a - b), `${d} px in`).toBeLessThanOrEqual(4);
+			}
+		});
 		it('uses the look’s light', async () => {
 			const look = (angle: number): LookRecipe => ({
 				...face('bevel', { bevelSize: 10 }, paint),
@@ -451,7 +482,10 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Look finishes', { t
 			}
 		});
 		it('a large flat face is not one flat colour: the sheet bend runs the horizon across it', async () => {
-			const img = await render(face('metal', { metalFit: false, metalSize: 4 }), { input: WIDE, unitPx: 100 });
+			const img = await render(face('metal', { metalFit: false, metalSize: 4 }), {
+				input: WIDE,
+				unitPx: 100,
+			});
 			expect(lumaSpread(img)).toBeGreaterThan(90);
 		});
 		it('brushed metal has grain across its direction, in the unit', async () => {
@@ -521,7 +555,9 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Look finishes', { t
 			for (const e of TL_ENV_PRESETS) seen.push(await render(face('reflection', { reflectionEnv: e })));
 			for (let i = 0; i < seen.length; i++)
 				for (let j = i + 1; j < seen.length; j++)
-					expect(difference(seen[i]!, seen[j]!), `${TL_ENV_PRESETS[i]}/${TL_ENV_PRESETS[j]}`).toBeGreaterThan(1);
+					expect(difference(seen[i]!, seen[j]!), `${TL_ENV_PRESETS[i]}/${TL_ENV_PRESETS[j]}`).toBeGreaterThan(
+						1,
+					);
 		});
 		it('blur softens the room, rotation turns it', async () => {
 			const at = (x: Record<string, unknown>) => render(face('reflection', { reflectionEnv: 'neon', ...x }));
@@ -541,7 +577,11 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Look finishes', { t
 				reflectionSize: 30,
 				reflectionFit: false,
 			});
-			const img = await render(recipe, { input: RECT, unitPx: 100, images: { mda_panorama: SKY_OVER_GROUND } });
+			const img = await render(recipe, {
+				input: RECT,
+				unitPx: 100,
+				images: { mda_panorama: SKY_OVER_GROUND },
+			});
 			const x = img.box.x + 210;
 			const top = pixel(img, x, img.box.y + 45 + 6);
 			const mid = pixel(img, x, img.box.y + 90);
@@ -692,7 +732,14 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Look finishes', { t
 		});
 		it('takes a finish across its own shape: a bevel lights the plate’s edge, not the text’s', async () => {
 			const img = await render(
-				plate({ kind: 'box', grow: 20, corner: 0, finish: 'bevel', bevelSize: 8, paint: flat(0.5, 0.5, 0.5) }),
+				plate({
+					kind: 'box',
+					grow: 20,
+					corner: 0,
+					finish: 'bevel',
+					bevelSize: 8,
+					paint: flat(0.5, 0.5, 0.5),
+				}),
 				{ input: THIN, unitPx: 100 },
 			);
 			const y = img.box.y + 90;
@@ -778,7 +825,11 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Look finishes', { t
 		});
 		it('the appearance seed and Seed reshuffle noise; the same seed draws the same', async () => {
 			const n = texture({ kind: 'noise', scale: 8, amount: 90 });
-			const [a, b, c] = [await render(n, { seed: 1 }), await render(n, { seed: 1 }), await render(n, { seed: 2 })];
+			const [a, b, c] = [
+				await render(n, { seed: 1 }),
+				await render(n, { seed: 1 }),
+				await render(n, { seed: 2 }),
+			];
 			expect(difference(a, b)).toBe(0);
 			expect(difference(a, c)).toBeGreaterThan(0.2);
 			const d = await render(texture({ kind: 'noise', scale: 8, amount: 90, noiseSeed: 5 }), { seed: 1 });
@@ -786,7 +837,14 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Look finishes', { t
 		});
 		it('pattern over the stack marks everything below it', async () => {
 			const img = await render(
-				texture({ kind: 'pattern', motif: 'checker', scale: 20, amount: 100, paint: flat(1, 0, 0), paintAlt: flat(0, 1, 0) }),
+				texture({
+					kind: 'pattern',
+					motif: 'checker',
+					scale: 20,
+					amount: 100,
+					paint: flat(1, 0, 0),
+					paintAlt: flat(0, 1, 0),
+				}),
 				square,
 			);
 			let red = 0;
@@ -801,7 +859,10 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Look finishes', { t
 		});
 		it('dry-brush erosion takes ink from the edges, along the drag, and keeps the middle', async () => {
 			const stack = (amount: number): LookRecipe => ({
-				layers: [base, { type: 'texture', params: { kind: 'erosion', amount, scale: 1.5, edge: 24, length: 40 } }],
+				layers: [
+					base,
+					{ type: 'texture', params: { kind: 'erosion', amount, scale: 1.5, edge: 24, length: 40 } },
+				],
 			});
 			const [off, on] = [await render(stack(0), square), await render(stack(70), square)];
 			expect(alphaSum(on)).toBeLessThan(alphaSum(off) * 0.98);
@@ -809,7 +870,9 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Look finishes', { t
 			// Across the drag the cut alternates (lanes).
 			let across = 0;
 			for (let i = 0; i < 80; i++)
-				across += Math.abs(pixel(on, on.box.x + 110, on.box.y + 50 + i)[3] - pixel(on, on.box.x + 110, on.box.y + 51 + i)[3]);
+				across += Math.abs(
+					pixel(on, on.box.x + 110, on.box.y + 50 + i)[3] - pixel(on, on.box.x + 110, on.box.y + 51 + i)[3],
+				);
 			expect(across).toBeGreaterThan(200);
 		});
 	});
@@ -824,7 +887,9 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Look finishes', { t
 			],
 		};
 		const span = (s: 'block' | 'line' | 'glyph'): LookRecipe => ({
-			layers: [{ type: 'face', params: { paint: { kind: 'gradient', gradient: { ...ramp, span: s } } as Paint } }],
+			layers: [
+				{ type: 'face', params: { paint: { kind: 'gradient', gradient: { ...ramp, span: s } } as Paint } },
+			],
 		});
 		// Three "glyphs" of 42 px, two on the first line and one on the second, in a 420 × 180 box.
 		const A = { x: 0.1, y: 0.1, w: 0.1, h: 0.3 };
@@ -902,7 +967,11 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Look finishes', { t
 			const a = { x: 0.2, y: 0.2, w: 0.1, h: 0.2 };
 			const b = { x: 0.34, y: 0.6, w: 0.1, h: 0.2 };
 			const img = await render(
-				{ layers: [{ type: 'rim', params: { width: 80, paint: { kind: 'gradient', gradient: down } as Paint } }] },
+				{
+					layers: [
+						{ type: 'rim', params: { width: 80, paint: { kind: 'gradient', gradient: down } as Paint } },
+					],
+				},
 				{
 					input: { kind: 'bars', bars: [a, b] },
 					unitPx: 100,

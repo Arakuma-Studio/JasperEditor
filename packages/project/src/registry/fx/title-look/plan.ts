@@ -381,6 +381,7 @@ export function planTitleLook(ctx: FxPlanContext): readonly ShaderPass[] {
 			defines: piece.defines,
 			depth: l.def.depth ?? FILLED_DEPTH,
 			outer,
+			exactUnit: tl.unitPx !== null,
 			write,
 		};
 		const blur = blurred[i];

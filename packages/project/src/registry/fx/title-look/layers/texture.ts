@@ -14,8 +14,8 @@ import {
 	TL_PATTERN_LABELS,
 	tlPatternProgram,
 } from '../../glsl/title-pattern.ts';
-import { MOTIF_GLSL } from '../finishes/pattern.ts';
 import { fmtDistance, fmtNumber, lp, type TitleLayerInit } from '../contract.ts';
+import { MOTIF_GLSL } from '../finishes/pattern.ts';
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
@@ -153,7 +153,13 @@ export const TEXTURE_LAYER: TitleLayerInit = {
 		lp.percent('amount', 'Amount', 45),
 		lp.number('noiseSeed', 'Seed', 0, { min: 0, max: 100000, softMax: 1000, step: 1 }),
 		lp.angle('angle', 'Angle', 0),
-		lp.choice('blend', 'Blend', ['overlay', 'softLight', 'screen', 'multiply'], ['Overlay', 'Soft Light', 'Screen', 'Multiply'], 'overlay'),
+		lp.choice(
+			'blend',
+			'Blend',
+			['overlay', 'softLight', 'screen', 'multiply'],
+			['Overlay', 'Soft Light', 'Screen', 'Multiply'],
+			'overlay',
+		),
 		lp.number('boil', 'Boil', 0, { min: 0, max: 60, softMax: 24, step: 1 }, { unit: 'Hz' }),
 		lp.choice('motif', 'Motif', TL_PATTERN_KINDS, TL_PATTERN_LABELS, 'dots'),
 		lp.media('motifImage', 'Tile', ['image']),
@@ -189,6 +195,10 @@ export const TEXTURE_LAYER: TitleLayerInit = {
 		{ kind: 'angle', params: ['angle'] },
 	],
 	summary(p) {
-		return { swatch: null, text: `${String(p.kind)}, ${fmtDistance(p.scale)}, ${fmtNumber(p.amount)} %`, primary: 'amount' };
+		return {
+			swatch: null,
+			text: `${String(p.kind)}, ${fmtDistance(p.scale)}, ${fmtNumber(p.amount)} %`,
+			primary: 'amount',
+		};
 	},
 };

@@ -97,8 +97,8 @@ vec3 tl_env(int preset, vec3 r, float rotation, float blur) {
   return tl_envNeon(el, az, blur);
 }
 // tl_env with its edges no sharper than a pixel of the surface: on a tight curve a horizon line crosses many directions per
-// pixel and would alias into dots. Screen derivatives of r, so the pixel it widens by is the pixel being drawn.
-vec3 tl_envAA(int preset, vec3 r, float rotation, float blur) { return tl_env(preset, r, rotation, blur + 0.3 * length(fwidth(r))); }
+// pixel and would alias into dots. footprint: radians the mirrored ray turns per pixel (tl_reliefFootprint).
+vec3 tl_envAA(int preset, vec3 r, float rotation, float blur, float footprint) { return tl_env(preset, r, rotation, blur + footprint); }
 // A filmic S over the environment for a surface that tints it: lights brighter than white roll off (a gold mirroring a
 // softbox stays gold, not cream) and the darks stay dark, which is what makes a mirror read as metal.
 vec3 tl_envTone(vec3 e) { return e * e / (e * e + 0.5) * 1.2; }

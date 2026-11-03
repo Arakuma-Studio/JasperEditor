@@ -87,7 +87,9 @@ describe('registry', () => {
 
 	it('Title Material is a valid effect, searchable, sharing the finishes’ params', () => {
 		expect(validateGpuEffect(TITLE_MATERIAL_EFFECT)).toEqual([]);
-		expect(TITLE_MATERIAL_EFFECT.keywords).toEqual(expect.arrayContaining(['chrome', 'bevel', 'glass', 'satin']));
+		expect(TITLE_MATERIAL_EFFECT.keywords).toEqual(
+			expect.arrayContaining(['chrome', 'bevel', 'glass', 'satin']),
+		);
 		const names = TITLE_MATERIAL_EFFECT.params.map((p) => p.name);
 		expect(new Set(names).size).toBe(names.length);
 		for (const id of ['bevel', 'metal', 'glass', 'satin'])
@@ -98,7 +100,14 @@ describe('registry', () => {
 describe('params', () => {
 	it('a bevel curve is validated on entry', () => {
 		const spec = TITLE_FINISHES.find((f) => f.id === 'bevel')!.params.find((p) => p.name === 'bevelCurve')!;
-		expect(paramValueProblem(spec, { curve: [[0, 0], [1, 1]] })).toBeNull();
+		expect(
+			paramValueProblem(spec, {
+				curve: [
+					[0, 0],
+					[1, 1],
+				],
+			}),
+		).toBeNull();
 		expect(paramValueProblem(spec, { curve: 'no' })).toBeTruthy();
 		expect(paramValueProblem(spec, 3)).toBeTruthy();
 		const bad = appearanceFromRecipe(
@@ -127,7 +136,8 @@ describe('params', () => {
 				[1, 1],
 			],
 		}) as { texels: Float32Array };
-		for (let i = 1; i < 256; i++) expect(up.texels[i * 4]! + 1e-6).toBeGreaterThanOrEqual(up.texels[(i - 1) * 4]!);
+		for (let i = 1; i < 256; i++)
+			expect(up.texels[i * 4]! + 1e-6).toBeGreaterThanOrEqual(up.texels[(i - 1) * 4]!);
 		expect(curveLut('garbage')).toEqual(
 			curveLut({
 				curve: [
@@ -146,13 +156,18 @@ describe('plate padding', () => {
 		expect(lookReach(look({ kind: 'box', grow: 20 })).left).toBe(20);
 		expect(lookReach(look({ kind: 'box', grow: 20 })).boxHeight).toBe(0);
 		expect(lookReach(look({ kind: 'slant', grow: 5, skew: 45 })).boxHeight).toBeCloseTo(1, 6);
-		const a = appearanceFromRecipe({ layers: [{ type: 'plate', params: { kind: 'slant', grow: 0, skew: 45 } }] }, ids);
+		const a = appearanceFromRecipe(
+			{ layers: [{ type: 'plate', params: { kind: 'slant', grow: 0, skew: 45 } }] },
+			ids,
+		);
 		const pad = titleLookPadding({
 			width: 400,
 			height: 100,
 			pxScale: 1,
 			fps: 30,
-			structures: { titleLook: { appearance: resolveAppearance(a, 0), source: a, unitPx: 100, contentSeconds: 0 } },
+			structures: {
+				titleLook: { appearance: resolveAppearance(a, 0), source: a, unitPx: 100, contentSeconds: 0 },
+			},
 		});
 		expect(pad.left).toBe(100);
 		expect(pad.right).toBe(100);
@@ -160,13 +175,23 @@ describe('plate padding', () => {
 	});
 	it('every plate kind plans', () => {
 		for (const kind of ['contour', 'hull', 'box', 'slant', 'pill']) {
-			const a = appearanceFromRecipe({ layers: [{ type: 'plate', params: { kind } }, { type: 'plate', params: { kind } }] }, ids);
+			const a = appearanceFromRecipe(
+				{
+					layers: [
+						{ type: 'plate', params: { kind } },
+						{ type: 'plate', params: { kind } },
+					],
+				},
+				ids,
+			);
 			const passes = planTitleLook({
 				width: 640,
 				height: 360,
 				pxScale: 1,
 				fps: 30,
-				structures: { titleLook: { appearance: resolveAppearance(a, 0), source: a, unitPx: 64, contentSeconds: 0 } },
+				structures: {
+					titleLook: { appearance: resolveAppearance(a, 0), source: a, unitPx: 64, contentSeconds: 0 },
+				},
 			});
 			// Two plates write one output: the second must be an update (the planner's `write`).
 			expect(passes.filter((p) => p.output === 'tlPlate').map((p) => !!p.update)).toEqual([false, true]);
@@ -177,7 +202,8 @@ describe('plate padding', () => {
 describe('media reach (TL-021)', () => {
 	const setup = (param: string, recipeParams: Record<string, unknown>, layer = 'face') => {
 		const h = new Harness();
-		const { mediaId } = h.ok([{ type: 'media.register', asset: videoAsset({ kind: 'image' }) }]).results[0] as {
+		const { mediaId } = h.ok([{ type: 'media.register', asset: videoAsset({ kind: 'image' }) }])
+			.results[0] as {
 			mediaId: string;
 		};
 		const r = h.ok([
@@ -207,7 +233,9 @@ describe('media reach (TL-021)', () => {
 			const { h, mediaId, text } = setup(param, params, layer);
 			const c = clipOf(h, text);
 			expect(clipParamMediaIds(c)).toContain(mediaId);
-			expect(effectMediaRefs((c as { effects: never }).effects)[0]?.param).toMatch(new RegExp(`^appearance\\..*\\.${param}$`));
+			expect(effectMediaRefs((c as unknown as { effects: never }).effects)[0]?.param).toMatch(
+				new RegExp(`^appearance\\..*\\.${param}$`),
+			);
 			expect(mediaUsage(h.doc)[mediaId]?.clips).toBe(1);
 			const snap = buildRenderSnapshot(h.doc, h.seqId, {
 				resolveMedia: () => ({ url: 'media://picture' }),

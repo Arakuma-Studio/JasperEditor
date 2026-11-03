@@ -124,7 +124,17 @@ export function typesetSpans(
 			const za = m[8]! * k;
 			const zb = m[9]! * k;
 			const zc = (m[8]! * tx + m[9]! * ty + m[11]!) * k;
-			toDrawn = [a + ox * za, b + ox * zb, c + ox * zc, d + oy * za, e + oy * zb, f + oy * zc, za, zb, 1 + zc];
+			toDrawn = [
+				a + ox * za,
+				b + ox * zb,
+				c + ox * zc,
+				d + oy * za,
+				e + oy * zb,
+				f + oy * zc,
+				za,
+				zb,
+				1 + zc,
+			];
 		}
 		out.push({ box, line: lay.glyphs[g.index]!.lineIndex, toDrawn });
 	}

@@ -23,7 +23,10 @@ const group = (ps: readonly TitleParamSpec[], name: string): ParamSpec[] =>
 	ps.map((p) => ({ ...(p as ParamSpec), group: name }));
 
 /** The one-layer look of a set of params. */
-export function materialLook(p: EffectParams, ctx: Pick<FxPlanContext, 'pxScale'> & { seed?: number }): FxTitleLook {
+export function materialLook(
+	p: EffectParams,
+	ctx: Pick<FxPlanContext, 'pxScale'> & { seed?: number },
+): FxTitleLook {
 	return {
 		appearance: {
 			seed: Math.floor(num(ctx.seed, 0) * 4294967296),
@@ -48,7 +51,11 @@ const withLook = <T extends FxPlanContext>(p: EffectParams, ctx: T & { seed?: nu
 });
 
 /** A look's layer values are pass uniforms; here they are this effect's params, which every pass already gets. */
-function planMaterial(p: EffectParams, ctx: FxPlanContext, params: ReadonlySet<string>): readonly ShaderPass[] {
+function planMaterial(
+	p: EffectParams,
+	ctx: FxPlanContext,
+	params: ReadonlySet<string>,
+): readonly ShaderPass[] {
 	return planTitleLook(withLook(p, ctx)).map((pass) => {
 		if (!pass.uniforms) return pass;
 		const own = Object.entries(pass.uniforms).filter(([k]) => !params.has(k));
@@ -80,7 +87,8 @@ export const TITLE_MATERIAL_EFFECT: EffectSpec = defineShaderEffect({
 	id: 'jasper.title-material',
 	label: 'Title Material',
 	category: 'Stylize',
-	description: 'Bevel, chrome, glass or satin on the shape of any clip: the materials of a title’s face and rims.',
+	description:
+		'Bevel, chrome, glass or satin on the shape of any clip: the materials of a title’s face and rims.',
 	keywords: ['bevel', 'emboss', 'chrome', 'metal', 'gold', 'glass', 'satin', 'title', 'material'],
 	params: MATERIAL_PARAMS,
 	gpu: {

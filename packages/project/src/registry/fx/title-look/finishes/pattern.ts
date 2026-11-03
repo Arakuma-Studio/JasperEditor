@@ -1,7 +1,13 @@
 // `pattern` (§5.1): a motif over the paint, in two colours or a tile of the user's picture. The motif sits on the layer box, in
 // the look's unit: it moves with the title and keeps its size at every resolution (Pachislop's Pattern, without its layer
 // space). `Relief` raises the marks and lights them with the look's light.
-import { TL_PATTERN_KINDS, GLSL_TL_PATTERN_BASE, TL_PATTERN_LABELS, TLP_KINDS_GLSL, tlPatternDefine } from '../../glsl/title-pattern.ts';
+import {
+	GLSL_TL_PATTERN_BASE,
+	TL_PATTERN_KINDS,
+	TL_PATTERN_LABELS,
+	TLP_KINDS_GLSL,
+	tlPatternDefine,
+} from '../../glsl/title-pattern.ts';
 import { GLSL_TL_SHADE } from '../../glsl/title-relief.ts';
 import { defineFinish, lp } from '../contract.ts';
 

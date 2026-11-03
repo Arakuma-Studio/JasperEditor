@@ -64,6 +64,15 @@ vec2 tl_heightSlope(vec2 uv) {
                 tl_height(uv + vec2(0.0, e.y)) - tl_height(uv - vec2(0.0, e.y)));
   return g * 0.5 / (e * u_canvasSize);
 }
+// Radians a mirrored ray turns per canvas px, for a height of k canvas px at height 1. From the slope field, which is smooth:
+// fwidth is constant over each 2 × 2 quad, and a width that steps every two pixels draws stripes along a sharp reflection.
+float tl_reliefFootprint(TlSurface s, float k) {
+  vec2 e = 1.0 / u_canvasSize;
+  vec2 dx = tl_heightSlope(s.uv + vec2(e.x, 0.0)) - tl_heightSlope(s.uv - vec2(e.x, 0.0));
+  vec2 dy = tl_heightSlope(s.uv + vec2(0.0, e.y)) - tl_heightSlope(s.uv - vec2(0.0, e.y));
+  // A third of the turn: enough to stop a horizon breaking into dots, and the mirror stays sharp.
+  return length(vec4(dx, dy)) * k * 0.3;
+}
 // The surface normal for a height of k canvas px at height 1. x right, y down, z to the viewer.
 vec3 tl_reliefNormal(TlSurface s, float k) { return normalize(vec3(-tl_heightSlope(s.uv) * k, 1.0)); }
 // The view ray (straight into the screen) mirrored off a surface with normal n.
@@ -99,16 +108,16 @@ const FIT_REACH = 60;
 const TARGET_SIGMA = 2;
 const CUSTOM_PROFILE = TL_PROFILES.indexOf('custom');
 
-const blurScale = (sigmaPx: number) =>
-	1 / 2 ** Math.max(0, Math.floor(Math.log2(Math.max(1, sigmaPx / TARGET_SIGMA))));
+/** Without a known unit `pxPerPercent` is an upper bound: three levels finer keep a small logo in a big box sharp. */
+const reduced = (texels: number, ctx: PrepassContext) =>
+	1 / 2 ** Math.max(0, Math.floor(Math.log2(Math.max(1, texels))) - (ctx.exactUnit ? 0 : 3));
 
 /** Field reach of a relief, percent of the unit. */
 export const reliefReach = (size: number, fit: boolean) => ({ inside: fit ? FIT_REACH : size + 1 });
 
 /** Local half-thickness of a filled shape: `u_tlCover` (r), smoothed so the seams between strokes do not crease. */
 function coverPasses(ctx: PrepassContext): ShaderPass[] {
-	const unitPx = ctx.pxPerPercent * 100;
-	const scale = 1 / 2 ** Math.max(0, Math.floor(Math.log2(Math.max(1, unitPx / 64))));
+	const scale = reduced((ctx.pxPerPercent * 100) / 64, ctx);
 	const fmt = { format: 'rgba32f', filter: 'nearest', scale } as const;
 	const out: ShaderPass[] = [
 		{
@@ -184,7 +193,7 @@ export function reliefPasses(ctx: PrepassContext, o: ReliefShape): ShaderPass[] 
 	const fit = o.fit && !o.raw;
 	const cover = fit && !ctx.depth.ring;
 	const sigma = Math.max(MIN_SIGMA, o.softness / 2);
-	const scale = blurScale(sigma * ctx.pxPerPercent);
+	const scale = reduced((sigma * ctx.pxPerPercent) / TARGET_SIGMA, ctx);
 	const custom = o.profile === CUSTOM_PROFILE && !o.raw && !!o.curve;
 	const uniforms = {
 		...ctx.uniforms,
@@ -241,7 +250,11 @@ export const IDENTITY_CURVE: CurveValue = {
 };
 
 /** A curve param (`{curve: [x, y][]}`, hold-only): the builders have none. */
-export const curveParam = (name: string, label: string, def: CurveValue = IDENTITY_CURVE): TitleParamSpec => ({
+export const curveParam = (
+	name: string,
+	label: string,
+	def: CurveValue = IDENTITY_CURVE,
+): TitleParamSpec => ({
 	name,
 	label,
 	type: 'curve',

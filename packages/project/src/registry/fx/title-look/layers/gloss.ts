@@ -1,6 +1,7 @@
 // `gloss` (§5.1): the cap of the `gloss` finish over everything below it in the stack, so rims and face catch one highlight.
-import { GLOSS_CAP_GLSL } from '../finishes/gloss.ts';
+
 import { fmtNumber, layerSwatch, lp, paintText, type TitleLayerInit } from '../contract.ts';
+import { GLOSS_CAP_GLSL } from '../finishes/gloss.ts';
 
 export const GLOSS_LAYER: TitleLayerInit = {
 	type: 'gloss',

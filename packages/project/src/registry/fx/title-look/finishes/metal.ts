@@ -4,8 +4,9 @@
 // Fresnel). `Curve` bends the whole title like a sheet, so the horizon runs across the letters and a large flat face is not
 // one flat colour. Reflectances: linear sRGB values of measured metals, from Lagarde's "Feeding a physically based shading
 // model" table (2011); chrome uses silver's brightness for the airbrushed look (see the note).
-import { GLSL_TL_ENV, TL_ENV_LABELS, TL_ENV_PRESETS } from '../../glsl/title-env.ts';
+
 import { GLSL_NOISE } from '../../glsl/noise.ts';
+import { GLSL_TL_ENV, TL_ENV_LABELS, TL_ENV_PRESETS } from '../../glsl/title-env.ts';
 import { GLSL_TL_RELIEF, reliefPasses, reliefReach } from '../../glsl/title-relief.ts';
 import { defineFinish, lp } from '../contract.ts';
 
@@ -32,7 +33,7 @@ vec2 tl_metalBrush(TlSurface s, vec2 grain, float px) {
   float n = fx_valueNoise(vec2(v, u), u_tlSeed) + 0.5 * fx_valueNoise(vec2(v * 2.3, u * 1.7 + 9.0), u_tlSeed);
   return across * n * 0.5 * clamp(px * 0.5, 0.0, 1.0);
 }
-vec4 tl_metal(vec4 paint, TlSurface s, int kind, vec2 slope, int env, float rotation, float rough, float tint) {
+vec4 tl_metal(vec4 paint, TlSurface s, int kind, vec2 slope, float footprint, int env, float rotation, float rough, float tint) {
   vec2 b0 = vec2(0.0);
   float spread = rough;
   if (kind == 4) {
@@ -44,12 +45,12 @@ vec4 tl_metal(vec4 paint, TlSurface s, int kind, vec2 slope, int env, float rota
   vec3 f0 = TL_METAL_F0[kind];
   f0 = mix(f0, tl_straight(paint) * dot(f0, vec3(0.333)) * 1.3, tint);
   float fresnel = pow(1.0 - clamp(n.z, 0.0, 1.0), 5.0);
-  vec3 c = tl_envAA(env, r, rotation, spread);
+  vec3 c = tl_envAA(env, r, rotation, spread, footprint);
   if (kind == 4) {
     // Brushed metal smears a light across the grain.
     vec2 grain = fx_dir(u_metalGrainAngle);
     vec3 side = vec3(-grain.y, grain.x, 0.0) * 0.32;
-    c = (c + tl_envAA(env, normalize(r + side), rotation, spread) + tl_envAA(env, normalize(r - side), rotation, spread)) / 3.0;
+    c = (c + tl_envAA(env, normalize(r + side), rotation, spread, footprint) + tl_envAA(env, normalize(r - side), rotation, spread, footprint)) / 3.0;
   }
   c = tl_envTone(c) * (f0 + (1.0 - f0) * fresnel);
   // The look's light as a tight highlight on what faces it.
@@ -69,7 +70,7 @@ export const FINISH_METAL = defineFinish({
 		lp.choice('metalEnv', 'Environment', TL_ENV_PRESETS, TL_ENV_LABELS, 'chromeBands'),
 		lp.distance('metalSize', 'Size', 14, { softMax: 50 }),
 		lp.number('metalDepth', 'Depth', 110, { min: 0, max: 1000, softMax: 400, step: 1 }, { unit: '%' }),
-		lp.distance('metalSoftness', 'Softness', 3, { softMax: 20 }),
+		lp.distance('metalSoftness', 'Softness', 5, { softMax: 20 }),
 		lp.toggle('metalFit', 'Fit to Stroke Width', true),
 		lp.percent('metalCurve', 'Curve', 45),
 		lp.angle('metalRotation', 'Rotation', 0),
@@ -81,11 +82,12 @@ export const FINISH_METAL = defineFinish({
 	include: [GLSL_TL_RELIEF, GLSL_TL_ENV, GLSL_NOISE],
 	glsl: /* glsl */ `${METAL_GLSL}
 vec4 tl_finish(vec4 paint, TlSurface s) {
-  vec2 slope = tl_heightSlope(s.uv) * tl_px(max(u_metalSize, 0.05)) * u_metalDepth * 0.01;
+  float k = tl_px(max(u_metalSize, 0.05)) * u_metalDepth * 0.01;
+  vec2 slope = tl_heightSlope(s.uv) * k;
   // The sheet's bend: a cylinder across the shape's height, top leaning back to the sky.
   vec4 b = tl_bounds();
   slope.y -= (s.px.y - (b.y + b.w) * 0.5) / max((b.w - b.y) * 0.5, 1.0) * u_metalCurve * 0.01;
-  return tl_metal(paint, s, u_metalKind, slope, u_metalEnv, radians(u_metalRotation), u_metalRoughness * 0.01, u_metalTint * 0.01);
+  return tl_metal(paint, s, u_metalKind, slope, tl_reliefFootprint(s, k), u_metalEnv, radians(u_metalRotation), u_metalRoughness * 0.01, u_metalTint * 0.01);
 }`,
 	fieldReach: (p) => reliefReach(num(p.metalSize), p.metalFit === true),
 	prepass: (p, ctx) =>

@@ -107,7 +107,8 @@ looks and compile once. A six-layer look with a blur plans about 25 passes. Meas
   default), `metalCurve` bends the sheet so the horizon crosses the letters, and `tl_envTone` keeps darks dark and rolls lights off
   before the metal tints them. Linear `f0 × env` with HDR lights clipped gold to cream; the first version looked like that.
 - **Environments are closed forms**, so blur is a width in radians on every edge, not a pass, and a rough surface costs nothing. The
-  edges widen by the surface's own footprint (`tl_envAA`) or a tight curve aliases the horizon into dots.
+  edges widen by the surface's own footprint (`tl_envAA`) or a tight curve aliases the horizon into dots. The footprint comes from
+  the slope field, not `fwidth`: screen derivatives are constant over each 2 × 2 quad, and that step drew fine stripes.
 - **Layers over the stack read `u_tlComp`.** `sheen`, `gloss` and `texture` apply to what is below them, with `alpha` 0 in `tl_layer` or a
   delta, so they add no coverage at an antialiased edge. Dry-brush erosion removes ink, which `over` cannot do: it rewrites `tlComp`
   in its prepass and draws nothing itself. Its silhouette is the whole stack's (`ctx.outer`), so a rim is cut with the face.
