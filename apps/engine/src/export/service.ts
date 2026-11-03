@@ -246,7 +246,9 @@ export class ExportService {
 		this.deps.queue.registerRunner('alpha-delivery', (ctx) =>
 			this.withRequestCleanup(ctx, () => this.runAlpha(ctx)),
 		);
-		this.deps.queue.registerRunner('psd-export', (ctx) => this.withRequestCleanup(ctx, () => this.runPsd(ctx)));
+		this.deps.queue.registerRunner('psd-export', (ctx) =>
+			this.withRequestCleanup(ctx, () => this.runPsd(ctx)),
+		);
 		this.deps.queue.registerRunner('gamut-check', (ctx) =>
 			this.withRequestCleanup(ctx, () => this.runGamut(ctx)),
 		);
@@ -2731,7 +2733,10 @@ export class ExportService {
 	}
 
 	/** `POST /api/alpha-delivery` (spec 19 TL-114). */
-	async alphaDelivery(req: AlphaDeliveryRequest, origin: EngineJob['origin'] = { type: 'user' }): Promise<EngineJob> {
+	async alphaDelivery(
+		req: AlphaDeliveryRequest,
+		origin: EngineJob['origin'] = { type: 'user' },
+	): Promise<EngineJob> {
 		this.assertDestination(req.destination);
 		const frames = req.range.end - req.range.start;
 		const title = req.clipIds ? 'Export Title' : frames === 1 ? `Frame ${req.range.start}` : 'PNG sequence';
@@ -2770,7 +2775,10 @@ export class ExportService {
 			};
 		}
 		const { plan } = planPsd(planned.snapshot, req.frame, { splitTitles: req.splitTitles === true });
-		return { ...plan, warnings: [...planned.plan.warnings.map(({ code, message }) => ({ code, message })), ...plan.warnings] };
+		return {
+			...plan,
+			warnings: [...planned.plan.warnings.map(({ code, message }) => ({ code, message })), ...plan.warnings],
+		};
 	}
 
 	/** `POST /api/psd` (spec 19 TL-112). */
@@ -2789,9 +2797,18 @@ export class ExportService {
 	}
 
 	/** `POST /api/gamut-check` (spec 19 TL-116). */
-	async gamutCheck(req: GamutCheckRequest, origin: EngineJob['origin'] = { type: 'user' }): Promise<EngineJob> {
+	async gamutCheck(
+		req: GamutCheckRequest,
+		origin: EngineJob['origin'] = { type: 'user' },
+	): Promise<EngineJob> {
 		const file = await this.storeRequest({ kind: 'gamut', request: req });
-		return this.submitDelivery('gamut-check', `Gamut check of frame ${req.frame}`, req.envelope, file, origin);
+		return this.submitDelivery(
+			'gamut-check',
+			`Gamut check of frame ${req.frame}`,
+			req.envelope,
+			file,
+			origin,
+		);
 	}
 
 	private async runGamut(ctx: JobContext): Promise<unknown> {

@@ -21,9 +21,8 @@ export * from './clipboard/index.ts';
 export * from './color/analysis.ts';
 export * from './color/auto-tone.ts';
 export * from './color/cms/index.ts';
-export * from './color/gamut-check.ts';
-export * from './image-split/index.ts';
 export * from './color/curves.ts';
+export * from './color/gamut-check.ts';
 export * from './color/grade-math.ts';
 export * from './color/hue-curves.ts';
 export * from './color/looks.ts';
@@ -54,6 +53,7 @@ export * from './footage/index.ts';
 export * from './gaps/index.ts';
 export * from './glossary/index.ts';
 export * from './ids.ts';
+export * from './image-split/index.ts';
 export * from './interpret/index.ts';
 export * from './invariants.ts';
 export {

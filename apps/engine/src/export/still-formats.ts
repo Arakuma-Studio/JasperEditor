@@ -71,7 +71,16 @@ export function stillEncodeArgs(
 				'image2',
 			];
 		case 'tiff':
-			return ['-c:v', 'tiff', '-pix_fmt', alpha ? 'rgba' : 'rgb24', '-compression_algo', 'lzw', '-f', 'image2'];
+			return [
+				'-c:v',
+				'tiff',
+				'-pix_fmt',
+				alpha ? 'rgba' : 'rgb24',
+				'-compression_algo',
+				'lzw',
+				'-f',
+				'image2',
+			];
 		case 'dpx':
 			return ['-c:v', 'dpx', '-pix_fmt', 'gbrp10le', '-f', 'image2'];
 		case 'bmp':
@@ -157,7 +166,10 @@ export async function convertStill(
 		);
 		await rm(f32, { force: true });
 	} else {
-		await ff.run(['-i', png, '-frames:v', '1', ...stillEncodeArgs(format, opts.jpegQuality, opts.alpha), out], run);
+		await ff.run(
+			['-i', png, '-frames:v', '1', ...stillEncodeArgs(format, opts.jpegQuality, opts.alpha), out],
+			run,
+		);
 	}
 	if (!(await stat(out)).size) throw new Error(`The ${format} encoder wrote an empty file`);
 	const dest = png.replace(/\.png$/, `.${ext}`);

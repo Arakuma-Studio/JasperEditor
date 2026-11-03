@@ -315,7 +315,14 @@ export function unmappedOutputFn(
 	const wHdr = w.kind === 'pq' || w.kind === 'hlg';
 	const oHdr = o.kind === 'pq' || o.kind === 'hlg';
 	const sdrScale = !wHdr && oHdr ? Math.max(1, working.sdrWhiteNits) / RW : 1;
-	const peak = o.kind === 'pq' ? Math.min(10000, Math.max(RW, working.hdrPeakNits)) / RW : oHdr ? HLG_PEAK / RW : wHdr ? Number.POSITIVE_INFINITY : 1;
+	const peak =
+		o.kind === 'pq'
+			? Math.min(10000, Math.max(RW, working.hdrPeakNits)) / RW
+			: oHdr
+				? HLG_PEAK / RW
+				: wHdr
+					? Number.POSITIVE_INFINITY
+					: 1;
 	return {
 		peak,
 		fn: (c) => {

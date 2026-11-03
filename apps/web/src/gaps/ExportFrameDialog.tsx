@@ -252,11 +252,7 @@ function ExportFrameDialog(props: HostedDialogProps<Props>) {
 				{canAlpha ? (
 					<>
 						<span />
-						<Checkbox
-							checked={transparent}
-							onCheckedChange={setTransparent}
-							label="Transparent background"
-						/>
+						<Checkbox checked={transparent} onCheckedChange={setTransparent} label="Transparent background" />
 					</>
 				) : null}
 				{local ? (
