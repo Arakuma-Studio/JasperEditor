@@ -13,7 +13,11 @@ const TITLE_SECONDS = 5;
 /** Sample text of a title a look creates: replaced by typing. */
 const NEW_TITLE_TEXT = 'Title';
 
-export type LookRef = Pick<LookEntry, 'lookId' | 'name' | 'recipe'>;
+export type LookRef = Pick<LookEntry, 'lookId' | 'name' | 'recipe' | 'given'>;
+
+/** What `look.apply` is given for a look: its id, or the look whole when it lives in neither project nor library. */
+export const lookSourceOf = (look: Pick<LookEntry, 'lookId' | 'given'>) =>
+	look.given ? { look: look.given } : { lookId: look.lookId };
 
 export type LookOutcome =
 	| { ok: true; message: string; clipIds: string[]; notices: ToastRequest[] }
@@ -116,7 +120,7 @@ export function applyLookToClips(
 			{
 				type: 'look.apply',
 				clipIds: [...clipIds],
-				lookId: look.lookId,
+				...lookSourceOf(look),
 				...(colorwayId ? { colorwayId } : {}),
 			} as Command,
 		],
@@ -180,7 +184,7 @@ export function insertTitleWithLook(
 			{
 				type: 'look.apply',
 				clipIds: ['$title'],
-				lookId: look.lookId,
+				...lookSourceOf(look),
 				...(opts.colorwayId ? { colorwayId: opts.colorwayId } : {}),
 			} as Command,
 		],

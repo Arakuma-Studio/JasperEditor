@@ -1,6 +1,6 @@
 // Neon & Retro. A tube is a near-white core in a saturated sheath with two falloffs of light; retro chrome is a hard horizon
 // between a light sky and a dark ground (structure from Pachislop's neon looks, licenses/ported/pachislop-looks.md).
-import { face, font, glow, gradient, JA, longShadow, rim, role } from '../build.ts';
+import { face, font, glow, gradient, JA, layer, longShadow, rim, role } from '../build.ts';
 import { defineLook } from './define.ts';
 
 const neon = (l: Parameters<typeof defineLook>[1]) => defineLook('neon-retro', l);
@@ -49,6 +49,21 @@ export const NEON_RETRO_LOOKS = [
 			face(
 				gradient(90, [0, 'accent3'], [0.46, 'face'], [0.49, 'keyline'], [0.53, 'faceAlt'], [1, 'accent3']),
 			),
+		],
+	}),
+	neon({
+		slug: 'diner-neon',
+		name: 'Diner Neon',
+		nameEs: 'Neón de cafetería',
+		tags: ['diner', 'cafetería', '50s', 'años 50', 'motel', 'roadside', 'carretera', 'ネオン'],
+		description: 'Triple-line tube lettering in a deep glow, like a sign over a roadside diner.',
+		sampleText: 'NOW OPEN',
+		colorways: ['sunset', 'electric', 'crimson', 'emerald'],
+		font: font('Monoton', 400, 'Righteous', ...JA.round, 0.02),
+		layers: [
+			layer('deepGlow', { radius: 90, intensity: 1.4, falloff: 45, coreWhite: 10, onFace: 40 }),
+			glow(10, 110),
+			face(role('accent3')),
 		],
 	}),
 ];

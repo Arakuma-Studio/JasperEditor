@@ -81,6 +81,19 @@ export const hardShadow = (distance: number, angle: number, paint: Paint = role(
 export const longShadow = (distance: number, angle: number, paint: Paint = role('base')): RecipeLayer =>
 	shadow({ kind: 'long', distance, angle, blur: 0, opacity: 100, paint });
 
+/** A layer of the given type with its params as written (inner effects, plates, textures, gloss, extrusion). */
+export const layer = (type: string, params: Params = {}): RecipeLayer => ({ type, params });
+
+/**
+ * A generator as a look layer (§7). Its picture follows the colourway through its `paint` role; `own` keeps the
+ * generator's own colours (TL-051: fire stays fire), so the layer is marked fixed and its look colour is a colour.
+ */
+export const generator = (id: string, params: Params = {}, own?: RGBA): RecipeLayer => ({
+	type: `generator:${id}`,
+	...(own ? { fixedColor: true } : {}),
+	params: own ? { ...params, ownColors: true, paint: { kind: 'color', color: own } } : params,
+});
+
 /** Latin display faces name a Japanese face and a fallback: see `chooseLookFont`. */
 export const font = (
 	family: string,

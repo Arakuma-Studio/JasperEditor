@@ -1,5 +1,5 @@
 // Comic: flat inked shapes. Black line first, colour second, and a hard offset instead of any blur.
-import { face, font, gradient, hardShadow, JA, rim, role } from '../build.ts';
+import { face, font, generator, gradient, hardShadow, JA, rim, role } from '../build.ts';
 import { defineLook } from './define.ts';
 
 const comic = (l: Parameters<typeof defineLook>[1]) => defineLook('comic', l);
@@ -31,5 +31,51 @@ export const COMIC_LOOKS = [
 		colorways: ['pure-white', 'gold', 'ocean', 'crimson'],
 		font: font('Lilita One', 400, 'Poppins', ...JA.pop, 0.01),
 		layers: [hardShadow(3.5, 50), rim(3.2, role('keyline')), face()],
+	}),
+	comic({
+		slug: 'halftone-pop',
+		name: 'Halftone Pop',
+		nameEs: 'Trama pop',
+		tags: ['halftone', 'trama', 'dots', 'puntos', 'pop art', 'retro print', 'impresión'],
+		description: 'Printed letters with a halftone dot screen, an inked line and a hard offset.',
+		sampleText: 'ZAP!',
+		colorways: ['crimson', 'gold', 'cobalt', 'ocean'],
+		font: font('Bangers', 400, 'Lilita One', ...JA.pop, 0.05),
+		layers: [
+			hardShadow(5, 45),
+			rim(3, role('keyline')),
+			face(role('face'), {
+				finish: 'pattern',
+				patternKind: 'dots',
+				patternScale: 4,
+				patternAngle: 45,
+				patternInk: role('accent3'),
+				patternInkAlt: role('face'),
+				patternOpacity: 55,
+			}),
+		],
+	}),
+	comic({
+		slug: 'manga-impact',
+		name: 'Manga Impact',
+		nameEs: 'Impacto manga',
+		tags: ['manga', 'マンガ', 'anime', 'focus lines', 'líneas de enfoque', '集中線', 'impact', 'impacto'],
+		description: 'Inked lettering at the centre of a burst of focus lines.',
+		sampleText: 'ドーン',
+		colorways: ['pure-white', 'gold', 'crimson', 'electric'],
+		font: font('Bangers', 400, 'Lilita One', ...JA.pop, 0.03),
+		layers: [
+			generator('speedLines', {
+				kind: 'focus',
+				focus: 'title',
+				padding: 14,
+				count: 120,
+				extent: 150,
+				paint: role('glow'),
+			}),
+			hardShadow(4, 60),
+			rim(3.4, role('keyline')),
+			face(),
+		],
 	}),
 ];

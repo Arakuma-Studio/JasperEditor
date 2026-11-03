@@ -1,5 +1,5 @@
 // Playful: round shapes, a fat sticker edge and soft shadows. Light and dark rings still alternate, so it reads at any size.
-import { face, font, gradient, JA, rim, role, shadow } from '../build.ts';
+import { face, font, generator, gradient, JA, layer, rim, role, shadow } from '../build.ts';
 import { defineLook } from './define.ts';
 
 const playful = (l: Parameters<typeof defineLook>[1]) => defineLook('playful', l);
@@ -34,6 +34,67 @@ export const PLAYFUL_LOOKS = [
 			shadow({ angle: 90, distance: 2, blur: 8, opacity: 48 }),
 			rim(3.2, role('faceAlt')),
 			face(gradient(90, [0, 'accent3'], [0.7, 'face'], [1, 'face'])),
+		],
+	}),
+	playful({
+		slug: 'candy-glass',
+		name: 'Candy Glass',
+		nameEs: 'Caramelo de cristal',
+		tags: ['candy', 'caramelo', 'glass', 'cristal', 'sweet', 'dulce', 'jelly', 'gominola', 'キャンディ'],
+		description: 'Round letters of tinted boiled sugar, bright where the light passes through.',
+		sampleText: 'Yummy!',
+		colorways: ['crimson', 'cobalt', 'emerald', 'violet'],
+		font: font('Fredoka', 700, 'Poppins', ...JA.round),
+		layers: [
+			shadow({ angle: 90, distance: 2.4, blur: 8, opacity: 55 }),
+			rim(2.4, role('faceAlt')),
+			rim(1.2, role('accent3')),
+			face(role('face'), { finish: 'glass', glassTint: 0, glassOpacity: 80, glassSize: 7 }),
+			layer('gloss', { height: 44, intensity: 55, paint: role('accent3') }),
+		],
+	}),
+	playful({
+		slug: 'party-confetti',
+		name: 'Party Confetti',
+		nameEs: 'Confeti de fiesta',
+		tags: ['party', 'fiesta', 'birthday', 'cumpleaños', 'celebration', 'celebración', 'confetti', 'confeti'],
+		description: 'A fat sticker word with confetti bursting off its edges.',
+		sampleText: 'Happy Birthday',
+		colorways: ['gold', 'ocean', 'rose', 'violet'],
+		font: font('Titan One', 400, 'Fredoka', ...JA.round),
+		layers: [
+			generator(
+				'particles',
+				{
+					distribution: 'scatter',
+					emitFrom: 'fill',
+					shape: 'confetti',
+					colorMode: 'palette',
+					color: [1, 0.3, 0.45, 1],
+					color2: [0.2, 0.75, 1, 1],
+					color3: [1, 0.85, 0.2, 1],
+					count: 1400,
+					size: 7,
+					sizeRandom: 45,
+					travel: 110,
+					lifetime: 3,
+					drag: 0,
+					angle: 80,
+					cone: 160,
+					rotation: 180,
+					tumble: 85,
+					sheen: 60,
+					brightness: 110,
+					glow: 0,
+					opacityRandom: 0,
+					extent: 130,
+				},
+				[1, 1, 1, 1],
+			),
+			shadow({ angle: 80, distance: 2.2, blur: 5, opacity: 55 }),
+			rim(4.6, role('accent1')),
+			rim(1.8, role('keyline')),
+			face(gradient(90, [0, 'face'], [1, 'faceAlt'])),
 		],
 	}),
 ];

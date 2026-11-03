@@ -1,6 +1,6 @@
 // Sports: heavy condensed letters, stacked rings in team colours and hard extrusion. Multi-ring contrast is the look: dark
 // keyline, light line, team frame.
-import { face, font, gradient, JA, longShadow, rim, role } from '../build.ts';
+import { face, font, generator, gradient, JA, longShadow, rim, role, shadow } from '../build.ts';
 import { defineLook } from './define.ts';
 
 const sports = (l: Parameters<typeof defineLook>[1]) => defineLook('sports', l);
@@ -37,6 +37,51 @@ export const SPORTS_LOOKS = [
 			rim(2.4, role('accent1')),
 			rim(2, role('keyline')),
 			face(gradient(90, [0, 'accent3'], [0.48, 'face'], [0.52, 'faceAlt'], [1, 'face'])),
+		],
+	}),
+	sports({
+		slug: 'champion-chrome',
+		name: 'Champion Chrome',
+		nameEs: 'Cromo de campeón',
+		tags: ['trophy', 'trofeo', 'final', 'champion', 'campeón', 'chrome', 'cromo', 'metal'],
+		description:
+			'Heavy chrome letters in a dark keyline and a team frame, with a star of light on the metal.',
+		sampleText: 'CHAMPIONS',
+		colorways: ['silver', 'gold', 'cobalt', 'crimson'],
+		font: font('Archivo Black', 400, 'Anton', ...JA.heavy, 0.01),
+		layers: [
+			longShadow(6, 70),
+			rim(3.4, role('accent2')),
+			rim(2, role('keyline')),
+			face(role('face'), { finish: 'metal', metalKind: 'chrome', metalTint: 45, metalSize: 12 }),
+			generator('glints', { placement: 'hero', heroStars: 1, heroLength: 90, twinkle: 30 }),
+		],
+	}),
+	sports({
+		slug: 'fast-break',
+		name: 'Fast Break',
+		nameEs: 'Contraataque',
+		tags: ['speed', 'velocidad', 'motion', 'movimiento', 'racing', 'carreras', 'dynamic', 'dinámico'],
+		description: 'Square athletic letters leaving a trail of speed lines behind them.',
+		sampleText: 'FAST BREAK',
+		colorways: ['ember', 'cobalt', 'crimson', 'emerald'],
+		font: font('Russo One', 400, 'Oswald', ...JA.heavy, 0.02),
+		layers: [
+			generator('speedLines', {
+				kind: 'flow',
+				flowSide: 'behind',
+				flowAngle: 0,
+				count: 70,
+				lineWidth: 2.5,
+				length: 70,
+				lengthRandom: 60,
+				extent: 140,
+				paint: role('glow'),
+			}),
+			shadow({ angle: 90, distance: 2.4, blur: 8, opacity: 60 }),
+			rim(2.6, role('accent1')),
+			rim(2.2, role('keyline')),
+			face(gradient(90, [0, 'accent3'], [0.4, 'face'], [1, 'faceAlt'])),
 		],
 	}),
 ];

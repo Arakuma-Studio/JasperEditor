@@ -25,7 +25,7 @@ routing and the layer bake need no per-kind code.
 | User look format (TL-054) | `packages/project/src/title-looks/user-looks.ts` |
 | User look library and routes | `apps/engine/src/title-looks/library.ts`, `apps/engine/src/routes/title-looks.ts` |
 | Display fonts (TL-053) | `apps/engine/fonts/display/` (`manifest.json` pins commit and hashes) |
-| Generator recolour rule (TL-051) | `packages/project/src/registry/fx/title-look/registry.ts` (`recolorGlsl`); the library's earlier ramp in `recolor.ts` |
+| Generator recolour rule (TL-051) | `packages/project/src/registry/fx/title-look/registry.ts` (`recolorGlsl`) |
 | Template expansion (TL-052) | `packages/project/src/commands/handlers/title-template.ts` |
 | Commands (TL-018) | `packages/project/src/commands/{schemas,handlers}/title-look.ts` |
 | Extension contract, `lp` builders, summaries | `packages/project/src/registry/fx/title-look/contract.ts` |
@@ -699,8 +699,22 @@ Everything below is the library stream's. It reads as a general tool on purpose:
 of fifteen, and no code path knows about it. A test keeps that category at 15 % of the looks at most, and keeps the first look
 general.
 
-Current content: 30 looks in 13 categories, 15 colourways, 14 templates. Brush and 3D have no looks yet: they need `texture`
-and the 3D work to be worth shipping. The pass after the finishes and generators exist authors the rest (TL-050 asks for 60).
+Current content: 60 looks, four in each of the 15 categories, 15 colourways and 16 templates (TL-050, TL-052). The second pass, after
+the finishes, glows and generators merged, uses them: metal, bevel, glass, gloss, pattern and gradient-map finishes, Extrude, Plate,
+Texture (dry-brush erosion), Gloss, Sheen, Inner Glow and Deep Glow layers, and ten generators as look layers. Two looks keep their own
+colours on purpose and are marked `fixedColor`: Cursed Flame's fire and Party Confetti's confetti, and Rainbow Confirm's face, because a
+rainbow is every hue; the rings around it still follow the colourway.
+
+- **Brush** looks are set in Yuji Boku, which writes Latin and kana with the same brush, so it is its own Japanese face. Their sample
+  text is Japanese. Dry Brush and Rotten Print use the texture layer's erosion, kept under 45 % so the word still reads.
+- **3D** looks draw their depth (Extrude from the outermost rim, a bevelled or metal face, stacked plates) and so render on every path a
+  look does. They do not use the Advanced 3D title model: a look is an appearance (TL-055), and the 3D solid is a property of the clip
+  in Properties ▸ 3D Title. Carrying it in a look would need a `threeD` part in `LookRecipe` and a schema change (`docs/gaps.md`).
+- **Contact sheets** (`TITLE_LOOKS_SHEET`, with `TITLE_LOOKS_ONLY=<look or category ids>` to sheet part of the library and
+  `TITLE_LOOKS_COLORWAY` for one colourway) were looked at for every new look in its own colourway and in Cobalt. What changed after
+  looking: the anamorphic streak went behind the face (in front it read as a strikethrough), RGB Split's ghosts doubled their offset,
+  Party Confetti scatters from the fill (its burst from the edge showed a few specks at time 0), Black Lacquer gained a glow and a
+  wider metal line to separate from dark footage, and Dry Brush and Rotten Print erode less.
 
 ### Adding to it
 
@@ -741,10 +755,9 @@ generator has no palette and draws its own colours; a template gives it colours 
 **Since integration 2 the generators stream's recolour is the one that runs** ("Colour (TL-051)" under Generators): a generator layer
 maps its picture by luma onto its own `paint` (a role, so a colourway reaches it) unless its `Own Colours` param is on or the look marks
 the layer `fixedColor`. `recolors: true` on the generator layer type makes the planner bind `u_tlRecolor` = not `fixedColor`, which the
-layer's shader reads beside `u_ownColors`. Before the merge this library mapped every generator through a palette ramp (black,
-`shadow`, `glow`, `accent3`, white at their Rec. 601 lumas, white cores above 0.92 kept); that ramp (`recolor.ts`: `recolorStops`,
-`recolorRamp`, `GLSL_TL_RECOLOR`) is still exported and unit-tested but no layer draws with it now. Two rules for one job were not
-kept at run time; which of the two to keep long term is open (`docs/gaps.md`).
+layer's shader reads beside `u_ownColors`. Before the merge this library mapped every generator through a palette ramp of its own
+(`recolor.ts`). No layer drew with it after the merge, so it was deleted with its exports and tests (AGENTS §10: no parallel
+implementations): the generators' rule is the only one.
 
 `title-look-library-gl.test.ts` checks every registered generator: with Own Colours off it follows the colourway, keeps its alpha,
 and a `fixedColor` layer stays the same under any colourway.
@@ -809,6 +822,18 @@ effect presets do. To apply one, pass it to `look.apply` as `look: {name, recipe
 
 Routes: `GET`, `POST /api/title-looks`, `PUT`, `DELETE /api/title-looks/:lookId`, `POST /api/title-looks/import`, `POST
 /api/title-looks/export`. Event: `titleLooks.changed`.
+
+**In the editor** (`apps/web/src/title-looks/user-library.ts`, `user-look-actions.ts`, `MyLooksBar.tsx`). A store mirrors the engine's
+library, as the effect preset store does: it loads when the Looks tab mounts and on `titleLooks.changed`, and after its own writes.
+User looks are entries of their own source in the Looks tab, category My Looks, which always has a chip so saving and importing have a
+place to start; the bar under it saves the selected clip's look, imports a `.json` and exports all, and a card's menu renames, exports
+and deletes. Applying, previewing and dropping one give the look whole to `look.apply` with the user look's id as `sourceId`, so a
+second use reuses the project copy, and the card stays one card. Save takes the clip's values at its first frame, as Save Look does,
+with the linked look's tags, category and colourways. These actions change a file outside the project, so they are not History
+entries: deleting asks first, and every outcome is a toast or the status line. `userLooksUnavailable` gives the reason each disabled
+action shows: no engine, an engine that failed to read the library, still loading, or a file from a newer build. Graphics ▸ Look has
+Save Look to My Looks…, Import Looks… and Export My Looks… (`graphics.saveLookToMyLooks`, `graphics.importMyLooks`,
+`graphics.exportMyLooks`), all needing the engine capability.
 
 ### Four libraries (TL-055)
 
@@ -938,8 +963,7 @@ title and tuned.
 - Blur: separable Gaussian, reach 3σ (a layer's `blur` and `radius` are the visible radius ≈ 3σ, Pachislop's convention).
 - SSIM in tests: Wang et al. 2004, 8 × 8 windows, `C1 = (0.01·255)²`, `C2 = (0.03·255)²`.
 - Assumption, not documented anywhere: a rim's opacity rule (full from 50 % local alpha) was chosen by looking at fades.
-- CIE L*a*b* (D65) from sRGB, IEC 61966-2-1 primaries, as in Pachislop's `toLab`. Rec. 601 luma for the library's recolour ramp
-  (`recolor.ts`, no longer drawn with since integration 2), as design tools' gradient maps do.
+- CIE L*a*b* (D65) from sRGB, IEC 61966-2-1 primaries, as in Pachislop's `toLab`.
 - Bevel: Pachislop's `HEIGHT_FRAG` profiles and the highlight screen, shadow multiply of Photoshop's Bevel & Emboss. Satin: the
   absolute difference of two offset blurred copies of the shape, Photoshop's satin recipe as Pachislop writes it.
 - Metal: Schlick's approximation of Fresnel, `F = f0 + (1 − f0)(1 − cos θ)⁵` (Schlick, "An inexpensive BRDF model for
@@ -1061,9 +1085,11 @@ for the missing fingerprints, and for a generator example that was clipped by it
   `innerGlow`, `inline` and the face's `bevel` / `satin` finishes with their params (`ps-style.test.ts`). The finish check had read
   `finish` from the type's own params, where it is not (the registry adds it), so every Bevel and Satin was reported as missing
   until that integration.
-- **Store.** Imported looks are project looks: `saveImportedLooks` (`apps/web/src/delivery/LayerStyleDialog.tsx`) writes them with
-  `look.create`, undoable. It is the one place to change to send them to the engine's user-look store (TL-054), which no panel
-  lists yet.
+- **Store.** The dialog asks where the looks go: This project (default), My Looks, or both (`importLooksTo` in
+  `apps/web/src/delivery/LayerStyleDialog.tsx`). The project gets them as one undoable `look.create` transaction
+  (`saveImportedLooks`); My Looks gets them through the engine store under names free there (`saveUserLooks`). The project is written
+  first, so when My Looks then refuses, what was added can still be undone, and the dialog says which part was not stored and leaves
+  only My Looks ticked to retry. My Looks is disabled with the reason when the engine cannot keep them.
 - **Overlays stack.** Pachislop mixes overlays into one colour. Here each is a `face` layer over the base at its opacity, which is
   exact for normal blending and stays editable.
 - **Shape Burst.** ag-psd's enum lacks `GrdT.shapeburst` and throws, which loses the whole style in an `.asl` and the whole file in

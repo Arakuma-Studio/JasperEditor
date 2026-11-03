@@ -5,12 +5,13 @@ import { EngineClient } from '@jasper/engine-client';
 import { titleLooksOf } from '@jasper/project';
 import { SessionProvider } from '@jasper/session/react';
 import { closeAllDialogs, DialogHost, openDialog } from '@jasper/ui';
-import { act, cleanup, configure, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, configure, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { getCommand, registerAllCommands } from '../src/commands/index.ts';
 import { ALPHA_DIALOG, registerAlphaDialog } from '../src/delivery/AlphaDialog.tsx';
 import { GamutOverlay, gamutOverlay } from '../src/delivery/GamutOverlay.tsx';
 import {
+	importLooksTo,
 	LAYER_STYLE_DIALOG,
 	registerLayerStyleDialog,
 	saveImportedLooks,
@@ -18,7 +19,9 @@ import {
 import { layersTopFirst, PSD_DIALOG, registerPsdDialog } from '../src/delivery/PsdDialog.tsx';
 import type { ProgramOverlayHostProps } from '../src/extensions/index.ts';
 import { MENUBAR } from '../src/shell/menus/model.ts';
+import { connectUserLooks, refreshUserLooks } from '../src/title-looks/user-library.ts';
 import { makeSession } from './timeline-helpers.ts';
+import { fakeEngine, userLook } from './user-looks-engine.ts';
 
 const engineMock = vi.hoisted(() => ({ client: null as unknown }));
 vi.mock('../src/state/engine.tsx', async (load) => ({
@@ -31,6 +34,7 @@ beforeAll(() => registerAllCommands());
 configure({ asyncUtilTimeout: 30_000 });
 afterEach(() => {
 	act(() => closeAllDialogs());
+	connectUserLooks(null);
 	cleanup();
 });
 
@@ -342,6 +346,75 @@ describe('Import Layer Styles (TL-113)', () => {
 		await waitFor(() => expect(titleLooksOf(session.getCommitted()).map((l) => l.name)).toEqual(['Gold']));
 		act(() => session.undo());
 		expect(titleLooksOf(session.getCommitted())).toEqual([]);
+	});
+
+	it('offers My Looks beside the project, and sends the styles there alone when asked (TL-054)', async () => {
+		const { session } = makeSession();
+		const fake = fakeEngine();
+		registerLayerStyleDialog();
+		render(<DialogHost />);
+		act(() => {
+			void openDialog(LAYER_STYLE_DIALOG, { session, engine: fake.client, file });
+		});
+		const target = await screen.findByTestId('layer-style-target');
+		const [project, mine] = within(target).getAllByRole('checkbox');
+		await waitFor(() => expect(mine!.hasAttribute('disabled')).toBe(false));
+		fireEvent.click(project!);
+		fireEvent.click(mine!);
+		fireEvent.click(screen.getByRole('button', { name: 'Import 1 style' }));
+		await waitFor(() => expect(fake.looks.map((l) => l.name)).toEqual(['Gold']));
+		expect(fake.looks[0]!.recipe.layers.length).toBeGreaterThan(0);
+		expect(titleLooksOf(session.getCommitted())).toEqual([]);
+	});
+
+	it('stores in both, the project undoably, and names a My Looks copy free of the ones there', async () => {
+		const { session } = makeSession();
+		const fake = fakeEngine([userLook('Gold')]);
+		connectUserLooks(fake.client);
+		await refreshUserLooks();
+		const look = {
+			recipe: { layers: [{ type: 'face' }] },
+			report: { mapped: [], approximated: [], unsupported: [] },
+		};
+		const r = await importLooksTo(session, [{ name: 'Gold', look }], { project: true, myLooks: true });
+		expect(r.ok).toBe(true);
+		expect(titleLooksOf(session.getCommitted()).map((l) => l.name)).toEqual(['Gold']);
+		expect(fake.looks.map((l) => l.name)).toEqual(['Gold', 'Gold 2']);
+		act(() => session.undo());
+		expect(titleLooksOf(session.getCommitted())).toEqual([]);
+		expect(fake.looks).toHaveLength(2);
+	});
+
+	it('says what reached the project when My Looks then refuses', async () => {
+		const { session } = makeSession();
+		const fake = fakeEngine();
+		connectUserLooks(fake.client);
+		await refreshUserLooks();
+		fake.failSaves = true;
+		const look = {
+			recipe: { layers: [{ type: 'face' }] },
+			report: { mapped: [], approximated: [], unsupported: [] },
+		};
+		const r = await importLooksTo(session, [{ name: 'Gold', look }], { project: true, myLooks: true });
+		expect(r).toEqual({
+			ok: false,
+			message: expect.stringMatching(/Added to this project, but not to My Looks.*disk is full/),
+		});
+		expect(titleLooksOf(session.getCommitted()).map((l) => l.name)).toEqual(['Gold']);
+	});
+
+	it('disables My Looks with the reason when the engine cannot keep them', async () => {
+		const { session } = makeSession();
+		registerLayerStyleDialog();
+		render(<DialogHost />);
+		act(() => {
+			void openDialog(LAYER_STYLE_DIALOG, { session, engine: engineWith({}), file });
+		});
+		await waitFor(() =>
+			expect(screen.getByTestId('layer-style-my-looks-why').textContent).toMatch(/could not read My Looks/),
+		);
+		const [, mine] = within(screen.getByTestId('layer-style-target')).getAllByRole('checkbox');
+		expect(mine!.hasAttribute('disabled')).toBe(true);
 	});
 
 	it('saving refuses cleanly', () => {

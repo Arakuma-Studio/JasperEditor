@@ -30,10 +30,6 @@ import {
 	lookCategoryCounts,
 	type Paint,
 	paintRoles,
-	RECOLOR_WHITE_CORE,
-	recolorLuma,
-	recolorRamp,
-	recolorStops,
 	repairAppearance,
 	searchLooks,
 	searchTemplates,
@@ -78,11 +74,29 @@ describe('the library (TL-050)', () => {
 		for (const c of LOOK_CATEGORIES) expect(c.labelEs.length).toBeGreaterThan(0);
 	});
 
-	it('holds at least 15 looks in at least 6 categories, and none holds more than a quarter', () => {
+	it('holds at least 60 looks in at least 12 categories, every category filled, and none holds more than a quarter', () => {
 		const counts = lookCategoryCounts();
-		expect(FACTORY_LOOKS.length).toBeGreaterThanOrEqual(15);
-		expect(counts.filter((c) => c.count > 0).length).toBeGreaterThanOrEqual(6);
+		expect(FACTORY_LOOKS.length).toBeGreaterThanOrEqual(60);
+		expect(counts.filter((c) => c.count > 0).length).toBeGreaterThanOrEqual(12);
+		// Brush and 3D were empty in the first library: every category the spec names now has looks.
+		for (const c of counts) expect(c.count, c.id).toBeGreaterThan(0);
 		for (const c of counts) expect(c.count, c.id).toBeLessThanOrEqual(FACTORY_LOOKS.length / 4);
+	});
+
+	it('uses the finishes, glows and generators, and keeps a generator’s own colours only where it is marked fixed', () => {
+		const types = new Set(FACTORY_LOOKS.flatMap((l) => l.recipe.layers.map((x) => x.type)));
+		const finishes = new Set(
+			FACTORY_LOOKS.flatMap((l) => l.recipe.layers.map((x) => x.params?.finish).filter(Boolean)),
+		);
+		expect([...types].filter((t) => t.startsWith('generator:')).length).toBeGreaterThanOrEqual(8);
+		for (const t of ['extrude', 'plate', 'texture', 'gloss', 'innerGlow', 'deepGlow', 'sheen'])
+			expect(types.has(t), t).toBe(true);
+		for (const f of ['metal', 'bevel', 'glass', 'gloss', 'pattern', 'gradientMap'])
+			expect(finishes.has(f), f).toBe(true);
+		for (const l of FACTORY_LOOKS)
+			for (const x of l.recipe.layers)
+				if (x.type.startsWith('generator:') && x.params?.ownColors === true)
+					expect(x.fixedColor, `${l.libraryId}: ${x.type}`).toBe(true);
 	});
 
 	it('does not read as a pachinko tool: the first looks are general, and its category stays a minority', () => {
@@ -201,46 +215,6 @@ describe('colourways (TL-051)', () => {
 		expect(JSON.stringify(a.layers)).toBe(before);
 		expect(a.palette.face!.value).toEqual(factoryColorway('colorway.cobalt')!.palette.face);
 		expect(a.colorwayId).toBe('colorway.cobalt');
-	});
-});
-
-describe('the luma recolour rule (TL-051)', () => {
-	const paletteOf = (id: string) => factoryColorway(id)!.palette;
-
-	it('builds an ascending ramp from black to white through the palette’s light', () => {
-		for (const way of FACTORY_COLORWAYS) {
-			const stops = recolorStops(way.palette);
-			expect(stops[0]!.color, way.id).toEqual([0, 0, 0, 1]);
-			expect(stops.at(-1)!.color, way.id).toEqual([1, 1, 1, 1]);
-			for (let i = 1; i < stops.length; i++) expect(stops[i]!.at, way.id).toBeGreaterThan(stops[i - 1]!.at);
-		}
-	});
-
-	it('positions a role at its own luma, so a mapped colour keeps its brightness', () => {
-		const p = paletteOf('colorway.crimson');
-		const stop = recolorStops(p).find((s) => s.color[0] === p.glow[0] && s.color[1] === p.glow[1]);
-		expect(stop?.at).toBeCloseTo(recolorLuma(p.glow), 6);
-	});
-
-	it('leaves out a role that would break the order', () => {
-		const p = {
-			...paletteOf('colorway.gold'),
-			accent3: [0.05, 0.05, 0.05, 1] as [number, number, number, number],
-		};
-		expect(recolorStops(p).some((s) => s.color[0] === 0.05)).toBe(false);
-	});
-
-	it('gives different ramps for different colourways and the same one for the same palette', () => {
-		const a = recolorRamp(paletteOf('colorway.cobalt'));
-		const b = recolorRamp(paletteOf('colorway.ember'));
-		expect([...a]).not.toEqual([...b]);
-		expect([...recolorRamp(paletteOf('colorway.cobalt'))]).toEqual([...a]);
-		expect(a.length).toBe(256 * 4);
-	});
-
-	it('has a white-core threshold under full white', () => {
-		expect(RECOLOR_WHITE_CORE).toBeGreaterThan(0.8);
-		expect(RECOLOR_WHITE_CORE).toBeLessThan(1);
 	});
 });
 

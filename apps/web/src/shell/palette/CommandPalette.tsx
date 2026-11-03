@@ -17,6 +17,7 @@ import type { PanelDefinition } from '../../panels/types.ts';
 import { announce, pickLook } from '../../title-looks/actions.ts';
 import { lookEntries } from '../../title-looks/library.ts';
 import { lookedTargets } from '../../title-looks/look-actions.ts';
+import { currentUserLooks } from '../../title-looks/user-library.ts';
 import { recentCommands, useCommandCtx, useShellRuntime } from '../context.tsx';
 import { commandState } from '../menus/resolve.ts';
 import { workspaceName } from '../workspaces/definitions.ts';
@@ -209,7 +210,7 @@ function buildPaletteRows(
 				},
 				`${def.name} ${def.category}`,
 			);
-		for (const look of lookEntries(session.getCommitted()))
+		for (const look of lookEntries(session.getCommitted(), undefined, undefined, currentUserLooks()))
 			add(
 				{
 					key: `look:${look.lookId}`,

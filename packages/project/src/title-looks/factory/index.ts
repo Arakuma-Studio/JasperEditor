@@ -5,6 +5,7 @@
 import type { FactoryLook } from './build.ts';
 import { LOOK_CATEGORIES } from './categories.ts';
 import { FACTORY_COLORWAYS } from './colorways.ts';
+import { BRUSH_LOOKS } from './looks/brush.ts';
 import { CINEMATIC_LOOKS } from './looks/cinematic.ts';
 import { CLEAN_LOOKS } from './looks/clean.ts';
 import { COMIC_LOOKS } from './looks/comic.ts';
@@ -18,6 +19,7 @@ import { PACHINKO_ARCADE_LOOKS } from './looks/pachinko-arcade.ts';
 import { PLAYFUL_LOOKS } from './looks/playful.ts';
 import { SOCIAL_LOOKS } from './looks/social.ts';
 import { SPORTS_LOOKS } from './looks/sports.ts';
+import { THREE_D_LOOKS } from './looks/three-d.ts';
 
 export type { FactoryColorway, FactoryLook } from './build.ts';
 export { LOOK_CATEGORIES, type LookCategory, lookCategory } from './categories.ts';
@@ -39,6 +41,8 @@ export const FACTORY_LOOKS: readonly FactoryLook[] = [
 	...SOCIAL_LOOKS,
 	...JAPANESE_VARIETY_LOOKS,
 	...PACHINKO_ARCADE_LOOKS,
+	...BRUSH_LOOKS,
+	...THREE_D_LOOKS,
 ];
 
 export const factoryLook = (id: string): FactoryLook | undefined =>

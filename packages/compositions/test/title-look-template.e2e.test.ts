@@ -91,6 +91,8 @@ const SHOTS = [
 	{ template: 'template.end-card-gradient', preset: 'hd-720p-30', frame: 75 },
 	{ template: 'template.variety-telop', preset: 'hd-720p-30', frame: 45 },
 	{ template: 'template.social-hook', preset: 'vertical-1080x1920-30', frame: 45 },
+	{ template: 'template.brush-title', preset: 'hd-720p-30', frame: 75 },
+	{ template: 'template.block-title-3d', preset: 'hd-720p-30', frame: 60 },
 ];
 
 describe.runIf(enabled && !!CHROME)(
