@@ -76,13 +76,31 @@ export function titleArtOptions(doc: ProjectDocument, item: ProposalItem, width 
 	}));
 }
 
-function Poster(props: { store: PosterStore | null; request: LookPosterRequest; label: string }) {
+/** `compact`: the option under review, kept short so its check rows show beside it in a small Review panel. */
+function Poster(props: {
+	store: PosterStore | null;
+	request: LookPosterRequest;
+	label: string;
+	compact?: boolean;
+}) {
 	const poster = usePoster(props.store, props.request);
 	if (poster.state === 'ready')
-		return <img src={poster.url} alt={props.label} className="block w-full rounded-pr-control" />;
+		return (
+			<img
+				src={poster.url}
+				alt={props.label}
+				className={cx(
+					'block rounded-pr-control',
+					props.compact ? 'mx-auto max-h-28 w-auto max-w-full' : 'w-full',
+				)}
+			/>
+		);
 	return (
 		<span
-			className="flex aspect-video w-full items-center justify-center rounded-pr-control bg-pr-field-deep p-1 text-center text-pr-small text-pr-muted"
+			className={cx(
+				'flex w-full items-center justify-center rounded-pr-control bg-pr-field-deep p-1 text-center text-pr-small text-pr-muted',
+				props.compact ? 'h-16' : 'aspect-video',
+			)}
 			title={poster.state === 'error' ? poster.message : undefined}
 		>
 			{poster.state === 'error' ? t('No preview') : t('Rendering…')}
@@ -113,7 +131,7 @@ export function TitleArtDetails(props: {
 	if (!shown?.request && !checkView) return null;
 	return (
 		<div className="flex flex-col gap-1" data-testid="title-art-details">
-			{shown?.request ? <Poster store={store} request={shown.request} label={shown.label} /> : null}
+			{shown?.request ? <Poster store={store} request={shown.request} label={shown.label} compact /> : null}
 			{options.length > 1 ? (
 				<fieldset className="grid grid-cols-4 gap-1" aria-label={t('Alternates')}>
 					{options.map((o, i) =>
