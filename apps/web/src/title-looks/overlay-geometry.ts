@@ -1,6 +1,7 @@
 // Spec 19 TL-092: where a look layer's outline and handles sit, and what dragging them means. Pure: everything is in
 // sequence pixels; distances in a look are percent of its unit (TL-012), and a layer's own axes turn with the clip, so a
-// handle stays on the picture it edits whatever the clip's transform.
+// handle stays on the picture it edits whatever the clip's transform. The light and the directions the look keeps fixed
+// on screen (`LayerHandle.screen`) turn with nothing: their angles are measured on the sequence's own axes.
 import type { Vec2 } from '@jasper/project';
 
 export type Quad = readonly [Vec2, Vec2, Vec2, Vec2];
@@ -68,6 +69,10 @@ export function direction(f: LookFrame, deg: number): Vec2 {
 	return add(add([0, 0], f.u, Math.cos(a)), f.v, Math.sin(a));
 }
 
+/** The frame with the sequence's axes: where a screen-fixed angle points (the look's stage, `tl_fromScreen`). */
+export const onScreen = (f: LookFrame): LookFrame => ({ ...f, u: [1, 0], v: [0, 1] });
+const axesOf = (f: LookFrame, h: { screen?: boolean }) => (h.screen ? onScreen(f) : f);
+
 function angleOf(f: LookFrame, p: Vec2): number {
 	const d = sub(p, f.center);
 	return Math.atan2(dot(d, f.v), dot(d, f.u)) / DEG;
@@ -81,11 +86,28 @@ export type Handle =
 	(
 		| { kind: 'distance'; param: string; anchor: Vec2; dir: Vec2; start: number; value: number }
 		/** Angle and length together. The length starts at the edge of the box, so small offsets stay reachable. */
-		| { kind: 'offset'; angleParam: string; distanceParam: string; angle: number; distance: number }
+		| {
+				kind: 'offset';
+				angleParam: string;
+				distanceParam: string;
+				angle: number;
+				distance: number;
+				/** The angle is on screen, not in the layer. */
+				screen?: boolean;
+		  }
 		/** The same length along a fixed direction (a shadow following the light). */
 		| { kind: 'axis'; param: string; dir: Vec2; value: number }
 		/** A direction, on a ring. `base` is added to the value for where it points. `light`: the look's light angle. */
-		| { kind: 'angle'; param: string; base: number; value: number; radius: number; light?: boolean }
+		| {
+				kind: 'angle';
+				param: string;
+				base: number;
+				value: number;
+				radius: number;
+				light?: boolean;
+				/** The angle is on screen, not in the layer (the light always is). */
+				screen?: boolean;
+		  }
 		/**
 		 * A place along the shape: `sweep` (default) 0…100 % from one side of `extent` to the other; `centred` ±100 % of
 		 * `extent` from the centre (a band that starts and ends outside the shape).
@@ -100,13 +122,13 @@ export function handlePoint(f: LookFrame, h: Handle): Vec2 {
 		case 'distance':
 			return add(h.anchor, h.dir, (h.start + h.value) * f.perPercent);
 		case 'offset': {
-			const d = direction(f, h.angle);
+			const d = direction(axesOf(f, h), h.angle);
 			return add(f.center, d, extentAlong(f, d) + h.distance * f.perPercent);
 		}
 		case 'axis':
 			return add(f.center, h.dir, extentAlong(f, h.dir) + h.value * f.perPercent);
 		case 'angle':
-			return add(f.center, direction(f, h.base + h.value), h.radius);
+			return add(f.center, direction(axesOf(f, h), h.base + h.value), h.radius);
 		case 'position':
 			return add(f.center, h.dir, (h.map === 'centred' ? h.value * 0.01 : h.value * 0.02 - 1) * h.extent);
 	}
@@ -131,8 +153,9 @@ function rawValues(f: LookFrame, h: Handle, p: Vec2): Record<string, number> {
 		case 'distance':
 			return { [h.param]: round(dot(sub(p, h.anchor), h.dir) / k - h.start, 0.1) };
 		case 'offset': {
-			const angle = (angleOf(f, p) + 360) % 360;
-			const edge = extentAlong(f, direction(f, angle));
+			const axes = axesOf(f, h);
+			const angle = (angleOf(axes, p) + 360) % 360;
+			const edge = extentAlong(f, direction(axes, angle));
 			return {
 				[h.angleParam]: round(angle, 0.1),
 				[h.distanceParam]: round(Math.max(0, len(sub(p, f.center)) - edge) / k, 0.1),
@@ -141,7 +164,7 @@ function rawValues(f: LookFrame, h: Handle, p: Vec2): Record<string, number> {
 		case 'axis':
 			return { [h.param]: round((dot(sub(p, f.center), h.dir) - extentAlong(f, h.dir)) / k, 0.1) };
 		case 'angle':
-			return { [h.param]: round(wrap180(angleOf(f, p) - h.base - h.value) + h.value, 0.1) };
+			return { [h.param]: round(wrap180(angleOf(axesOf(f, h), p) - h.base - h.value) + h.value, 0.1) };
 		case 'position': {
 			const t = dot(sub(p, f.center), h.dir) / Math.max(1e-6, h.extent);
 			return { [h.param]: round(h.map === 'centred' ? t * 100 : (t + 1) * 50, 0.1) };

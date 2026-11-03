@@ -2,9 +2,13 @@
 // overlay draws them for the selected layer, a drag is one undo step, and an animated param gets a key at the playhead.
 import {
 	type Appearance,
+	appearanceFromRecipe,
 	buildRenderSnapshot,
+	lookOrientation,
+	resolveAppearance,
 	TITLE_LAYER_TYPES,
 	titleLayerType,
+	titleLookUniforms,
 	withDefaults,
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
@@ -14,7 +18,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { monitorStores } from '../src/panels/program/monitor-store.ts';
 import { lookFocus } from '../src/title-looks/focus.ts';
 import { growthAbove, handlesOf, LookLayerOverlay } from '../src/title-looks/LayerOverlay.tsx';
-import { handlePoint, handleValues, lookFrame } from '../src/title-looks/overlay-geometry.ts';
+import { type Handle, handlePoint, handleValues, lookFrame } from '../src/title-looks/overlay-geometry.ts';
 import { lookedClip } from '../src/title-looks/selection.ts';
 import { clipOf, makeSession } from './inspector-helpers.tsx';
 
@@ -170,6 +174,101 @@ describe('every declared handle (TL-092)', () => {
 		expect(
 			handlesOf(f, { id: 'x', type: 'shadow', params: { useLight: true } }, 0, { angle: 0 }, 300),
 		).toContainEqual(expect.objectContaining({ light: true, radius: 300 }));
+	});
+
+	describe('on a turned title, the light and screen-fixed directions do not turn with it', () => {
+		// The 400 × 200 box turned 90° clockwise about its centre (200, 100): the layer's +x points down the screen.
+		const turn = { a: 0, b: 1, c: -1, d: 0 };
+		const at = (x: number, y: number): [number, number] => [
+			200 + turn.a * (x - 200) + turn.c * (y - 100),
+			100 + turn.b * (x - 200) + turn.d * (y - 100),
+		];
+		const g = lookFrame([at(0, 0), at(400, 0), at(400, 200), at(0, 200)], { width: 400, height: 200 }, 100);
+		const toward = (h: Handle) => {
+			const p = handlePoint(g, h);
+			return (Math.atan2(p[1] - g.center[1], p[0] - g.center[0]) * 180) / Math.PI;
+		};
+		const same = (a: number, b: number) => expect(Math.abs(((a - b + 540) % 360) - 180)).toBeLessThan(0.01);
+
+		it('the light handle sits where the preview lights from, and a drag writes that screen angle', () => {
+			const light = handlesOf(g, { id: 'x', type: 'shadow', params: { useLight: true } }, 0, {
+				angle: 30,
+			}).find((x) => x.kind === 'angle' && x.light)!;
+			// The planner turns the light back into the layer by the layer map's rotation; on screen it is where it was set.
+			let n = 0;
+			const a = appearanceFromRecipe(
+				{ light: { angle: 30, altitude: 30 }, layers: [{ type: 'face', params: {} }] },
+				() => `apl_${String(++n).padStart(16, '0')}`,
+			);
+			const u = titleLookUniforms({
+				width: 400,
+				height: 400,
+				pxScale: 1,
+				fps: 30,
+				frame: 0,
+				duration: 30,
+				seed: 0,
+				progress: 0,
+				structures: {
+					titleLook: {
+						appearance: resolveAppearance(a, 0),
+						source: a,
+						unitPx: 100,
+						contentSeconds: 0,
+						orient: lookOrientation(turn),
+					},
+				},
+			} as never);
+			const [lx, ly] = u.u_tlLightDir as readonly [number, number];
+			const [xx, xy, yx, yy] = u.u_tlStage as readonly [number, number, number, number];
+			const shown = (Math.atan2(xy * lx + yy * ly, xx * lx + yx * ly) * 180) / Math.PI;
+			same(shown, 30);
+			same(toward(light), shown);
+			// Dragging it to a point straight below the centre on screen sets the light to 90°.
+			const to: [number, number] = [g.center[0], g.center[1] + 300];
+			expect(handleValues(g, light, to).angle).toBeCloseTo(90, 1);
+		});
+
+		it('a drop shadow’s offset points down-right on screen at 45°; a perspective shadow’s turns with its floor', () => {
+			const drop = handlesOf(
+				g,
+				{ id: 'x', type: 'shadow', params: { angle: 45, kind: 'drop', useLight: false } },
+				0,
+				{ angle: 0 },
+			)[0]!;
+			same(toward(drop), 45);
+			const back = handleValues(g, drop, handlePoint(g, drop));
+			expect(back.angle).toBeCloseTo(45, 1);
+			const floor = handlesOf(
+				g,
+				{ id: 'x', type: 'shadow', params: { angle: 45, kind: 'perspective', useLight: false } },
+				0,
+				{
+					angle: 0,
+				},
+			)[0]!;
+			same(toward(floor), 45 + 90);
+		});
+
+		it('Shaded Extrude’s depth and own light, and an inner shadow, are on screen too', () => {
+			const ex = handlesOf(
+				g,
+				{ id: 'x', type: 'extrude', params: { angle: 45, lightAngle: 200, useLight: false } },
+				0,
+				{
+					angle: 0,
+				},
+			);
+			same(toward(ex.find((h) => h.kind === 'offset')!), 45);
+			same(toward(ex.find((h) => h.kind === 'angle' && h.param === 'lightAngle')!), 200);
+			const inner = handlesOf(
+				g,
+				{ id: 'x', type: 'innerShadow', params: { angle: 120, useLight: false } },
+				0,
+				{ angle: 0 },
+			)[0]!;
+			same(toward(inner), 120);
+		});
 	});
 
 	it('a layer that starts from the whole silhouette counts every rim, wherever it sits', () => {

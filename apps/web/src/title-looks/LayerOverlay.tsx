@@ -5,6 +5,7 @@ import {
 	type Command,
 	clipLookUnit,
 	GLOBAL_LIGHT_PATH,
+	handleOnScreen,
 	type LayerHandle,
 	type LayerParams,
 	layerHandles,
@@ -31,6 +32,7 @@ import {
 	handleValues,
 	type LookFrame,
 	lookFrame,
+	onScreen,
 	outlineQuad,
 	type Quad,
 	type Sides,
@@ -96,6 +98,9 @@ export function handlesOf(
 	let edge = 0;
 	for (const h of layerHandles(def, p)) {
 		const name = h.params[0]!;
+		// Directions the look keeps on screen (the light, drop and long shadows, depth) do not turn with the title.
+		const screen = handleOnScreen(h, p);
+		const axes = screen ? onScreen(f) : f;
 		if (h.target === 'light') {
 			// The look's light, from the layer that follows it (TL-092 `target: 'light'`).
 			out.push({
@@ -105,13 +110,14 @@ export function handlesOf(
 				value: num(light.angle),
 				radius: lightRing,
 				light: true,
+				screen: true,
 			});
 		} else if (h.kind === 'distance' && p.useLight === true && name === 'distance') {
 			// A shadow following the light moves along it.
 			out.push({
 				kind: 'axis',
 				param: name,
-				dir: direction(f, light.angle + 180),
+				dir: direction(axes, light.angle + 180),
 				value: num(p[name]),
 				...limits(name),
 			});
@@ -158,7 +164,7 @@ export function handlesOf(
 				out.push({
 					kind: 'axis',
 					param: distance,
-					dir: direction(f, light.angle + 180),
+					dir: direction(axes, light.angle + 180),
 					value: num(p[distance]),
 					...limits(distance),
 				});
@@ -169,6 +175,7 @@ export function handlesOf(
 					distanceParam: distance,
 					angle: num(p[angle]),
 					distance: num(p[distance]),
+					...(screen ? { screen } : {}),
 					...limits(distance),
 				});
 		} else if (h.kind === 'angle') {
@@ -181,6 +188,7 @@ export function handlesOf(
 				base: (paint?.kind === 'gradient' ? paint.gradient.angle : 0) + (h.along?.turn ?? 0),
 				value: num(p[name]),
 				radius: ring,
+				...(screen ? { screen } : {}),
 				...limits(name),
 			});
 		} else {
@@ -268,6 +276,7 @@ export function LookLayerOverlay(props: ProgramOverlayHostProps) {
 					base: 0,
 					value: look.light.angle,
 					radius: lightRing,
+					screen: true,
 				},
 			];
 	const lightPath = (): string[] => {

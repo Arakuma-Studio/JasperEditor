@@ -108,8 +108,8 @@ vec4 tl_layer(TlSurface s) {
 	},
 	fieldReach: (p) => ({ outside: num(p.depth) / REACH_STEPS + 1, inside: 2 }),
 	handles: [
-		{ kind: 'offset', params: ['angle', 'depth'] },
-		{ kind: 'angle', params: ['lightAngle'], when: { param: 'useLight', value: false } },
+		{ kind: 'offset', params: ['angle', 'depth'], screen: true },
+		{ kind: 'angle', params: ['lightAngle'], when: { param: 'useLight', value: false }, screen: true },
 		{ kind: 'angle', params: ['angle'], target: 'light', when: { param: 'useLight', value: true } },
 	],
 	summary(p) {

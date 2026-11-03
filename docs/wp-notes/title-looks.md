@@ -341,7 +341,7 @@ Fields you may need:
 | `depth` | The layer's own shape for its finish (`LayerDepth`): `glsl` defines `tl_depth(s)` and `tl_bandPx(s)`, `ring: true` for rings. Default the filled shape |
 | `uniforms(p)` | Uniforms beyond one per param: curves as data textures, derived values. Also on a finish |
 | `timeDependent(p)` | The layer moves on its own: the clip then redraws every frame and `u_tlTime` is live |
-| `handles` | On-canvas handles for TL-092: `{kind, params}`, `target: 'light'` for the look's light, `when: {param, value}` when it only applies in one state; where it sits when the kind's default does not say: `from` (`edge`, `inside`, `below`, `band`, `corner`, `centre`), `after` (params whose lengths come first), `along` (the angle param or gradient paint a line follows, plus a `turn`) and `range` (`{band}` for a band that starts and ends outside the shape). Read them off your GLSL |
+| `handles` | On-canvas handles for TL-092: `{kind, params}`, `target: 'light'` for the look's light, `when: {param, value}` when it only applies in one state; where it sits when the kind's default does not say: `from` (`edge`, `inside`, `below`, `band`, `corner`, `centre`), `after` (params whose lengths come first), `along` (the angle param or gradient paint a line follows, plus a `turn`) `range` (`{band}` for a band that starts and ends outside the shape) and `screen` (`true`, or `{unless: {param, value}}`: the angle is read with `tl_fromScreen`, so on a turned title the handle points on screen, as the light's always does; `handleOnScreen`). Read them off your GLSL |
 | `shader(p, ctx)` | It is a function: return different GLSL per enum to keep programs small (`shadow.ts`, `glow.ts`) |
 
 ### Worked example: a standalone effect

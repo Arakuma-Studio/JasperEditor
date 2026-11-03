@@ -137,7 +137,7 @@ export type LayerSummary = { swatch: Paint | null; text: string; primary: string
  * - `distance`: one handle per param, a length in percent of the unit. With several params they chain: each starts where
  *   the one before ends (an inline's inset, then its width).
  * - `offset`: `[angle, distance]` together, measured from the box edge in that direction.
- * - `angle`: a direction on a ring (degrees, 0 = the layer's +x, clockwise, as `fx_dir`).
+ * - `angle`: a direction on a ring (degrees, 0 = the layer's +x, clockwise, as `fx_dir`; with `screen`, the screen's +x).
  * - `position`: a place 0…100 % across the bounds.
  * Where a handle sits, when the kind's default does not say it, is declared with `from`, `after`, `along` and `range`,
  * read from the layer's GLSL, so the handle sits on what it edits.
@@ -149,6 +149,12 @@ export type LayerHandle = {
 	target?: 'layer' | 'light';
 	/** The handle exists only while this param has this value (a shadow following the light has no angle of its own). */
 	when?: { param: string; value: boolean | string };
+	/**
+	 * The handle's direction is on screen, not in the layer: the GLSL reads its angle with `tl_fromScreen` (the look's stage,
+	 * fixed on screen when the layer turns), so a turned title's handle points where its shadow or depth falls. `unless`:
+	 * not while this param has this value (a perspective shadow's floor turns with the title). The light is always on screen.
+	 */
+	screen?: true | { unless: { param: string; value: boolean | string } };
 	/**
 	 * `distance`: where the length starts. `edge` (default): the box edge, outward, past the growth of the layers above;
 	 * `inside`: the box edge, inward; `below`: the bottom edge, downward (a reflection's gap); `band`: the centre of this

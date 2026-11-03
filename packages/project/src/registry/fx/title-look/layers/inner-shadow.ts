@@ -48,8 +48,13 @@ export const INNER_SHADOW_LAYER: TitleLayerInit = {
 	reach: (p) => Math.max(num(p.blur), 0.01),
 	fieldReach: () => ({ outside: 1 }),
 	handles: [
-		{ kind: 'offset', params: ['angle', 'distance'], when: { param: 'useLight', value: false } },
-		{ kind: 'distance', params: ['distance'], when: { param: 'useLight', value: true } },
+		{
+			kind: 'offset',
+			params: ['angle', 'distance'],
+			when: { param: 'useLight', value: false },
+			screen: true,
+		},
+		{ kind: 'distance', params: ['distance'], when: { param: 'useLight', value: true }, screen: true },
 		{ kind: 'angle', params: ['angle'], target: 'light', when: { param: 'useLight', value: true } },
 	],
 	summary(p) {

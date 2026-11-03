@@ -219,6 +219,13 @@ export function withDefaults(
  * A layer's Program handles (TL-092): the type's own while their `when` holds, and the angle of every gradient paint
  * (`lp.paint`'s `<name>Angle`). A paint's angle turns nothing while the paint is not a gradient, so it has no handle then.
  */
+/** A handle's direction is on screen (`LayerHandle.screen`; the look's light always is), with these params. */
+export function handleOnScreen(h: NonNullable<TitleLayerType['handles']>[number], p: LayerParams): boolean {
+	if (h.target === 'light') return true;
+	if (!h.screen) return false;
+	return h.screen === true || p[h.screen.unless.param] !== h.screen.unless.value;
+}
+
 export function layerHandles(t: TitleLayerType, p: LayerParams): NonNullable<TitleLayerType['handles']> {
 	const paints = t.params.filter(isPaintParam);
 	const isGradient = (name: string) => (p[name] as Paint | undefined)?.kind === 'gradient';

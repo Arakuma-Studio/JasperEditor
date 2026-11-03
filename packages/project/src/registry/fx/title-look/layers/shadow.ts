@@ -177,8 +177,18 @@ export const SHADOW_LAYER: TitleLayerInit = {
 		return { outside: spread };
 	},
 	handles: [
-		{ kind: 'offset', params: ['angle', 'distance'], when: { param: 'useLight', value: false } },
-		{ kind: 'distance', params: ['distance'], when: { param: 'useLight', value: true } },
+		{
+			kind: 'offset',
+			params: ['angle', 'distance'],
+			when: { param: 'useLight', value: false },
+			screen: { unless: { param: 'kind', value: 'perspective' } },
+		},
+		{
+			kind: 'distance',
+			params: ['distance'],
+			when: { param: 'useLight', value: true },
+			screen: { unless: { param: 'kind', value: 'perspective' } },
+		},
 		{ kind: 'angle', params: ['angle'], target: 'light', when: { param: 'useLight', value: true } },
 	],
 	summary(p) {
