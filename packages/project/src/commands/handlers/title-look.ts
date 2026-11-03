@@ -30,6 +30,7 @@ import {
 	staticAnim,
 	TITLE_LOOK_CLIP_KINDS,
 	TITLE_LOOK_EFFECT_ID,
+	TITLE_LOOK_INTENSITY,
 	type TitleLook,
 } from '../../title-looks/model.ts';
 import {
@@ -186,6 +187,7 @@ function lookForApply(doc: DDoc, cmd: CommandOf<'look.apply'>, h: HandlerContext
 	const colorways = source?.colorways ?? colorwaysOf(given?.colorways, h, who);
 	const tags = source?.tags ?? given?.tags;
 	const category = source?.category ?? given?.category;
+	const quickControls = source?.quickControls ?? given?.quickControls;
 	const id = h.ids.next('tlk');
 	looksOf(doc)[id] = {
 		id,
@@ -194,6 +196,7 @@ function lookForApply(doc: DDoc, cmd: CommandOf<'look.apply'>, h: HandlerContext
 		...(category ? { category } : {}),
 		...(sourceId !== undefined ? { sourceId } : {}),
 		...(colorways.length ? { colorways: clone(colorways) } : {}),
+		...(quickControls?.length ? { quickControls: clone(quickControls) } : {}),
 		appearance,
 	} as never;
 	return looksOf(doc)[id]!;
@@ -344,6 +347,8 @@ export const titleLookHandlers = {
 				}
 			} else {
 				droppedKeyframes += countKeyframes(a as Appearance);
+				droppedKeyframes += fx.params[TITLE_LOOK_INTENSITY]?.keyframes.length ?? 0;
+				delete fx.params[TITLE_LOOK_INTENSITY];
 				fx.appearance = fresh as never;
 			}
 			out.push(id);
@@ -539,6 +544,12 @@ export const titleLookHandlers = {
 		setPaint(layer, spec.name, limitOr({ kind: 'gradient', gradient: g.data }, h, 'appearance.setGradient'));
 		assertAppearance(a, 'appearance.setGradient', h);
 		return { layerId: cmd.layerId, param: spec.name };
+	},
+
+	'appearance.setLightSource': (doc, cmd: CommandOf<'appearance.setLightSource'>, h: HandlerContext) => {
+		const { fx } = lookInstance(doc, cmd.effectInstanceId, h);
+		(fx.appearance as Draft<Appearance>).light.source = cmd.source;
+		return { source: cmd.source };
 	},
 
 	'sequence.setGlobalLight': (doc, cmd: CommandOf<'sequence.setGlobalLight'>, h: HandlerContext) => {

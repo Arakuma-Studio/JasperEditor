@@ -1,7 +1,14 @@
 // Spec 19 TL-018: the commands of Title Looks. Paints, gradients and recipes travel as `z.unknown()` here and are checked
 // by the handlers, so a limit overflow is refused with `E_LIMIT` (TL-013) rather than a schema error.
 import { z } from 'zod';
-import { LookColorSchema, MAX_TITLE_LOOK_NAME, RoleSchema } from '../../title-looks/model.ts';
+import {
+	LIGHT_SOURCES,
+	LookColorSchema,
+	LookQuickControlSchema,
+	MAX_QUICK_CONTROLS,
+	MAX_TITLE_LOOK_NAME,
+	RoleSchema,
+} from '../../title-looks/model.ts';
 import { cmd, IdListSchema, IdRefSchema, RefDeclSchema, TimeInputSchema, TrackRefSchema } from './common.ts';
 
 const LookName = z.string().trim().min(1).max(MAX_TITLE_LOOK_NAME);
@@ -15,6 +22,7 @@ export const LookSourceSchema = z.strictObject({
 	tags: z.array(z.string().max(64)).max(64).optional(),
 	category: z.string().max(64).optional(),
 	colorways: z.array(z.unknown()).max(64).optional(),
+	quickControls: z.array(LookQuickControlSchema).max(MAX_QUICK_CONTROLS).optional(),
 });
 
 export const PalettePatchSchema = z.partialRecord(RoleSchema, LookColorSchema);
@@ -99,6 +107,11 @@ export const AppearanceSetGradientCmd = cmd('appearance.setGradient', {
 	param: z.string().min(1).max(64).optional(),
 	gradient: z.unknown(),
 });
+/** TL-017: whether the look keeps its own light or follows the sequence's. */
+export const AppearanceSetLightSourceCmd = cmd('appearance.setLightSource', {
+	...FxRef,
+	source: z.enum(LIGHT_SOURCES),
+});
 export const SequenceSetGlobalLightCmd = cmd('sequence.setGlobalLight', {
 	sequenceId: IdRefSchema.optional(),
 	angle: z.number().min(-3600).max(3600).optional(),
@@ -138,6 +151,7 @@ export const TITLE_LOOK_COMMANDS = [
 	AppearanceSetLayerEnabledCmd,
 	AppearanceSetPaintCmd,
 	AppearanceSetGradientCmd,
+	AppearanceSetLightSourceCmd,
 	SequenceSetGlobalLightCmd,
 	ClipAddGeneratorCmd,
 ] as const;

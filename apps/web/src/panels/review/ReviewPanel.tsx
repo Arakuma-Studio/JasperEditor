@@ -71,6 +71,7 @@ import {
 } from '../../proposals/sound-check.ts';
 import { problemText } from '../../proposals/stale-text.ts';
 import { useGhostModel, useProposals, useProposalsController } from '../../proposals/state.ts';
+import { isVisualProposal, TitleArtDetails } from '../../proposals/title-art.tsx';
 import { FixDiff, FixFacts, fixAriaText } from '../../script-fix/FixRow.tsx';
 import { type FixMeta, fixMetaOf } from '../../script-fix/model.ts';
 import {
@@ -525,6 +526,17 @@ function ReviewBody(props: PanelProps & { session: EditorSession }) {
 							refreshable={!!featureInfo?.refreshable}
 							playLabel={fixRows ? t('Play the recording') : undefined}
 							cut={cutMetaFor(feature, currentRow.item.meta)}
+							titleArt={
+								isVisualProposal(feature) ? (
+									<TitleArtDetails
+										doc={session.getCommitted()}
+										item={proposal?.items.find((i) => i.id === currentRow.item.id) ?? null}
+										selected={currentRow.item.selectedAlternative}
+										disabled={readOnly || currentRow.item.state === 'applied'}
+										onSelect={(k) => void c.selectAlternative(currentRow.item.id, k)}
+									/>
+								) : undefined
+							}
 						/>
 					) : null}
 					<div className="flex shrink-0 flex-wrap items-center gap-1.5 border-t border-pr-border px-2 py-1.5">
@@ -983,6 +995,8 @@ function Details(p: {
 	playLabel?: string;
 	/** A rough-cut item's meta: its beat and quote (the why-line is its reason). */
 	cut?: RoughCutMeta | null;
+	/** spec 19 TL-098: posters of a title and its alternates. */
+	titleArt?: ReactNode;
 }) {
 	const it = p.row.item;
 	const c = useProposalsController(p.session);
@@ -1010,6 +1024,7 @@ function Details(p: {
 			data-testid="review-details"
 		>
 			<div className="font-semibold text-pr-strong">{it.label}</div>
+			{p.titleArt}
 			{p.cut?.beat || p.cut?.quote ? (
 				<div className="flex min-w-0 items-center gap-1.5" data-review-detail-cut>
 					{p.cut.beat ? <CutBeat beat={p.cut.beat} /> : null}

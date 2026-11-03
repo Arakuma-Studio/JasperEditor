@@ -432,6 +432,7 @@ const LABELS: Record<CommandType, string> = {
 	'appearance.reorderLayer': 'Reorder Layers',
 	'appearance.setLayerEnabled': 'Show or Hide Layer',
 	'appearance.setPaint': 'Change Paint',
+	'appearance.setLightSource': 'Change Light Source',
 	'appearance.setGradient': 'Change Gradient',
 	'sequence.setGlobalLight': 'Global Light',
 	'clip.addGenerator': 'Add Generator',

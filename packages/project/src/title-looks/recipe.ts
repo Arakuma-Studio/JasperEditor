@@ -73,6 +73,33 @@ export function layerFromRecipe(l: RecipeLayer, id: string): AppearanceLayer {
 	};
 }
 
+/**
+ * A look's body as a recipe (TL-087: a project look's poster, TL-104: `get_title_recipe`): plain values, only the params
+ * its layers show, and no layer of a type this build does not know.
+ */
+export function recipeOfAppearance(a: Appearance): LookRecipe {
+	const palette: NonNullable<LookRecipe['palette']> = {};
+	for (const [role, v] of Object.entries(a.palette))
+		if (v) palette[role as Role] = [...v.value] as NonNullable<LookRecipe['palette']>[Role];
+	const layers = a.layers.flatMap((l): RecipeLayer[] => {
+		const def = titleLayerType(l.type);
+		if (!def) return [];
+		const finish = l.params.finish?.value;
+		const params: Record<string, unknown> = {};
+		for (const p of activeParamSpecs(def, typeof finish === 'string' ? finish : 'flat')) {
+			const v = l.params[p.name];
+			if (v) params[p.name] = v.value;
+		}
+		return [{ type: l.type, ...(l.name ? { name: l.name } : {}), enabled: l.enabled, params }];
+	});
+	return {
+		palette,
+		light: { source: a.light.source, angle: a.light.angle.value, altitude: a.light.altitude.value },
+		layers,
+		...(a.font ? { font: { family: a.font.family } } : {}),
+	};
+}
+
 /** The stored form of a recipe (TL-015: no keyframes). Throws a message for unknown types or params. */
 export function appearanceFromRecipe(r: LookRecipe, newLayerId: () => string, seed = 0): Appearance {
 	const palette: Appearance['palette'] = {};

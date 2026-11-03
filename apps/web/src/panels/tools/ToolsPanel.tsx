@@ -4,6 +4,7 @@
 import { useSession, useSessionOrNull, useSessionState } from '@jasper/session/react';
 import { Icon, Tooltip } from '@jasper/ui';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { ToolTarget } from '../../title-looks/ToolTarget.tsx';
 import { TOOL_GROUPS, TOOLS, type ToolId } from '../timeline/model/tools.ts';
 import type { PanelProps } from '../types.ts';
 
@@ -158,6 +159,7 @@ function ToolStrip() {
 					</div>
 				);
 			})}
+			<ToolTarget horizontal={horizontal} />
 		</div>
 	);
 }

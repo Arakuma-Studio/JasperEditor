@@ -4,6 +4,7 @@
 // the selected clips (one undo step for N clips). "GPU" = a shader effect (Premiere's Accelerated Effects badge).
 // M3 (wp-m3-presets, S03:FX-030): the Presets bin (built-in and user effect presets) is presets/PresetsBin.tsx.
 import {
+	type Command,
 	type EffectSpec,
 	effectBadges,
 	effectIsGpu,
@@ -13,7 +14,8 @@ import {
 import type { EditorSession } from '@jasper/session';
 import { useSessionOrNull, useSessionState, useStoreSelector } from '@jasper/session/react';
 import { cx } from '@jasper/ui';
-import { useMemo, useState } from 'react';
+import { type KeyboardEvent, useEffect, useMemo, useState } from 'react';
+import { endPreview, schedulePreview } from '../../title-looks/preview.ts';
 import { CaretGlyph, FxGlyph } from '../properties/controls/glyphs.tsx';
 import { ContextMenu } from '../timeline/components/Chrome.tsx';
 import type { ContextMenuItem } from '../timeline/state/ui-store.ts';
@@ -23,6 +25,7 @@ import {
 	clipsAccepting,
 	effectTree,
 	endTransitionDrag,
+	GENERATOR_EFFECT_PREFIX,
 	writeEffectDragPayload,
 	writeTransitionDragPayload,
 } from './drag.ts';
@@ -125,6 +128,47 @@ function EffectsBody({ session }: { session: EditorSession }) {
 		{ kind: 'item', label: 'Apply to Selected Clips', run: () => applyTransition(t) },
 	];
 
+	// TL-095: the highlighted effect shows on the selected clip, as a look does on hover: never an edit.
+	const highlight = (e: EffectSpec | null) => {
+		const targets = e ? clipsAccepting(session, e.id, selected) : [];
+		if (!e || targets.length === 0 || e.id.startsWith(GENERATOR_EFFECT_PREFIX)) {
+			endPreview(session);
+			return;
+		}
+		schedulePreview(session, {
+			label: e.label,
+			commands: [{ type: 'effect.addMany', clipIds: targets, effectId: e.id } as Command],
+		});
+	};
+	useEffect(() => () => endPreview(session), [session]);
+
+	/** TL-095: Up and Down walk the visible rows, Left and Right close and open folders, Esc leaves the preview. */
+	const onTreeKey = (ev: KeyboardEvent<HTMLDivElement>) => {
+		const items = [...ev.currentTarget.querySelectorAll<HTMLElement>('[role="treeitem"]')];
+		const at = items.indexOf(document.activeElement as HTMLElement);
+		const go = (i: number) => {
+			const el = items[Math.max(0, Math.min(items.length - 1, i))];
+			el?.focus();
+			el?.scrollIntoView?.({ block: 'nearest' });
+		};
+		if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+			ev.preventDefault();
+			go(at < 0 ? 0 : at + (ev.key === 'ArrowDown' ? 1 : -1));
+		} else if (ev.key === 'Home' || ev.key === 'End') {
+			ev.preventDefault();
+			go(ev.key === 'Home' ? 0 : items.length - 1);
+		} else if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') {
+			const el = items[at];
+			if (el?.getAttribute('aria-expanded') === (ev.key === 'ArrowLeft' ? 'true' : 'false')) {
+				ev.preventDefault();
+				el.click();
+			}
+		} else if (ev.key === 'Escape') {
+			endPreview(session);
+			setFocused(null);
+		}
+	};
+
 	const apply = (e: EffectSpec) => {
 		const targets = clipsAccepting(session, e.id, selected);
 		if (!targets.length) {
@@ -135,6 +179,7 @@ function EffectsBody({ session }: { session: EditorSession }) {
 			);
 			return;
 		}
+		endPreview(session);
 		const r = applyEffectToClips(session, e.id, targets);
 		setStatus(
 			r?.ok
@@ -214,7 +259,16 @@ function EffectsBody({ session }: { session: EditorSession }) {
 				<Badge on={native} label="native (ffmpeg)" short="N" onClick={() => setNative(!native)} />
 				<Badge on={gpu} label="GPU-accelerated" short="GPU" onClick={() => setGpu(!gpu)} />
 			</div>
-			<div className="min-h-0 flex-1 overflow-y-auto" role="tree" aria-label="Effects">
+			<div
+				className="min-h-0 flex-1 overflow-y-auto"
+				role="tree"
+				aria-label="Effects"
+				data-keymap-local
+				onKeyDown={onTreeKey}
+				onBlur={(ev) => {
+					if (!ev.currentTarget.contains(ev.relatedTarget as Node | null)) highlight(null);
+				}}
+			>
 				{tree.length === 0 && transitionBins.length === 0 && presets.matches === 0 ? (
 					<p className="px-2 py-1 text-pr-small text-pr-muted">No effects match.</p>
 				) : null}
@@ -262,9 +316,16 @@ function EffectsBody({ session }: { session: EditorSession }) {
 																	focused === e.id ? 'bg-pr-selected' : 'hover:bg-pr-hover',
 																)}
 																onClick={() => setFocused(e.id)}
+																onFocus={() => {
+																	setFocused(e.id);
+																	highlight(e);
+																}}
 																onDoubleClick={() => apply(e)}
 																onKeyDown={(ev) => ev.key === 'Enter' && apply(e)}
-																onDragStart={(ev) => writeEffectDragPayload(ev.dataTransfer, e.id)}
+																onDragStart={(ev) => {
+																	highlight(null);
+																	writeEffectDragPayload(ev.dataTransfer, e.id);
+																}}
 																data-effect-id={e.id}
 															>
 																<span className="text-pr-icon">

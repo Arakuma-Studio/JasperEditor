@@ -13,6 +13,8 @@ function intrinsicKey(s: FxSection): IntrinsicKey | null {
 }
 
 function presetableSection(s: FxSection): boolean {
+	// spec 19 TL-055: a look is saved as a look; a preset holds ordinary effects and would lose its stack.
+	if (s.appearance) return false;
 	return s.intrinsic ? intrinsicKey(s) !== null : !!s.fx;
 }
 

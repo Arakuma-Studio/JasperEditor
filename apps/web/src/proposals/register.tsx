@@ -4,6 +4,7 @@ import { useSessionOrNull } from '@jasper/session/react';
 import { programOverlays } from '../extensions/index.ts';
 import { t } from '../i18n/runtime.ts';
 import { useHeardDocument, useProposals } from './state.ts';
+import { isVisualProposal } from './title-art.tsx';
 
 function HearChip() {
 	const session = useSessionOrNull();
@@ -14,6 +15,7 @@ function HearChip() {
 function HearChipBody({ session }: { session: NonNullable<ReturnType<typeof useSessionOrNull>> }) {
 	const heard = useHeardDocument(session);
 	const title = useProposals(session, (s) => s.proposal?.title ?? '');
+	const visual = useProposals(session, (s) => isVisualProposal(s.proposal?.feature));
 	if (!heard) return null;
 	return (
 		<div className="pointer-events-none absolute top-2 right-2 z-10" data-testid="proposal-hear-chip">
@@ -22,7 +24,7 @@ function HearChipBody({ session }: { session: NonNullable<ReturnType<typeof useS
 				role="status"
 				aria-live="polite"
 			>
-				{t('Hearing proposal: {0}', title)}
+				{visual ? t('Comparing proposal: {0}', title) : t('Hearing proposal: {0}', title)}
 			</span>
 		</div>
 	);

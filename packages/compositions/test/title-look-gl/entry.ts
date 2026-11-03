@@ -10,6 +10,7 @@ import {
 	planGpuEffect,
 	resolveAppearance,
 	TITLE_LOOK_EFFECT,
+	TITLE_LOOK_INTENSITY,
 } from '@jasper/project';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
 import { fxCanvasLayout } from '../../src/fx/plan.ts';
@@ -35,6 +36,8 @@ export type LookRequest = {
 	pxScale?: number;
 	seed?: number;
 	contentSeconds?: number;
+	/** TL-089: the look's Intensity, percent. */
+	intensity?: number;
 	/** Extra padding in layer px beyond the look's own. */
 	pad?: number;
 	/** Timings only: no pixels back (a 1080p frame through `page.evaluate` costs more than drawing it). */
@@ -152,7 +155,7 @@ function render(req: LookRequest): LookResult {
 	const seconds = req.contentSeconds ?? 0;
 	const plan = planGpuEffect(
 		spec,
-		{ id: 'fx1', params: {} },
+		{ id: 'fx1', params: req.intensity === undefined ? {} : { [TITLE_LOOK_INTENSITY]: req.intensity } },
 		{
 			...base,
 			pxScale: layout.pxScale,

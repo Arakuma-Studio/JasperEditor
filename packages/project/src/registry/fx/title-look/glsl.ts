@@ -250,8 +250,9 @@ export const FRAG_TL_OUTPUT = /* glsl */ `
 void main() {
   vec4 c = texture(u_tlComp, v_uv);
   float a = clamp(c.a, 0.0, 1.0);
-  if (a <= 0.0) { fragColor = vec4(0.0); return; }
-  fragColor = vec4(fx_linearToSrgb(clamp(c.rgb / a, 0.0, 1.0)) * a, a);
+  vec4 look = a > 0.0 ? vec4(fx_linearToSrgb(clamp(c.rgb / a, 0.0, 1.0)) * a, a) : vec4(0.0);
+  // TL-089: Intensity shows the clip's own picture through the look, both premultiplied signal.
+  fragColor = mix(texture(u_source, v_uv), look, clamp(u_lookIntensity * 0.01, 0.0, 1.0));
 }`;
 
 /** The start of the composite: nothing. */

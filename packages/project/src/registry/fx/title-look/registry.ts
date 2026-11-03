@@ -1,6 +1,6 @@
 // The Title Looks catalogue: every layer type, finish and generator, normalised for the planner, validation, the UI
 // and the tests. Nothing else in the codebase lists them.
-import type { LayerParamValue } from '../../../title-looks/model.ts';
+import type { LayerParamValue, Paint } from '../../../title-looks/model.ts';
 import type { EffectSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
 import {
@@ -96,6 +96,22 @@ export function withDefaults(
 	const out: LayerParams = {};
 	for (const p of layerParamSpecs(t)) out[p.name] = stored[p.name] ?? p.default;
 	return out;
+}
+
+/**
+ * A layer's Program handles (TL-092): the type's own, and the angle of every gradient paint (`lp.paint`'s `<name>Angle`).
+ * A paint's angle turns nothing while the paint is not a gradient, so it has no handle then.
+ */
+export function layerHandles(t: TitleLayerType, p: LayerParams): NonNullable<TitleLayerType['handles']> {
+	const paints = t.params.filter(isPaintParam);
+	const isGradient = (name: string) => (p[name] as Paint | undefined)?.kind === 'gradient';
+	const flat = new Set(paints.filter((s) => !isGradient(s.name)).map((s) => `${s.name}Angle`));
+	const own = (t.handles ?? []).filter((h) => !(h.kind === 'angle' && flat.has(h.params[0]!)));
+	const named = new Set(own.flatMap((h) => h.params));
+	const gradients = paints
+		.filter((s) => isGradient(s.name) && !named.has(`${s.name}Angle`))
+		.map((s) => ({ kind: 'angle' as const, params: [`${s.name}Angle`] }));
+	return [...own, ...gradients];
 }
 
 /** The effect of one generator (`Generate` category, TL-060): on a clip it draws over the clip's picture. */

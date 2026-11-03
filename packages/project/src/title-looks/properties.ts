@@ -8,11 +8,11 @@
 
 import { isPaintParam, type TitleParamSpec } from '../registry/fx/title-look/contract.ts';
 import { activeParamSpecs, paramSpec, titleLayerType } from '../registry/fx/title-look/registry.ts';
-import type { PropertySpec } from '../registry/properties.ts';
+import type { PropertyContext, PropertySpec } from '../registry/properties.ts';
 import type { Animatable } from '../schema/common.ts';
 import type { EffectInstance } from '../schema/sequence.ts';
 import { type Appearance, type AppearanceLayer, COLOR_ROLES, type Role } from './model.ts';
-import { paramValueProblem } from './validate.ts';
+import { paramValueProblem, titleLookOf } from './validate.ts';
 
 export const APPEARANCE_PATH = 'appearance';
 export const PALETTE_SLOT = 'palette';
@@ -135,6 +135,18 @@ export function slotParamSpec(
 	return spec ? { spec, layer } : null;
 }
 
+/** What a param goes back to: the linked look's value where the look has it, else the type's default. */
+function defaultOf(p: TitleParamSpec, storagePath: readonly string[]) {
+	return (ctx: PropertyContext): unknown => {
+		const [, fxId, slot, name] = storagePath;
+		const fx = (ctx.clip as { effects?: EffectInstance[] }).effects?.find((e) => e.id === fxId);
+		const lookId = (fx?.appearance as Appearance | undefined)?.lookId;
+		const look = lookId ? titleLookOf(ctx.doc as never, lookId) : null;
+		const held = look ? appearanceAnimAt(look.appearance, slot!, name!) : undefined;
+		return held ? held.value : p.default;
+	};
+}
+
 function propertySpecOf(key: string, p: TitleParamSpec, storagePath: string[], label: string): PropertySpec {
 	const appliesTo = () => true;
 	if (isPaintParam(p))
@@ -146,8 +158,8 @@ function propertySpecOf(key: string, p: TitleParamSpec, storagePath: string[], l
 			animatable: 'hold-only',
 			storagePath,
 			appliesTo,
-			ui: { control: 'json' },
-			defaultValue: p.default,
+			ui: { control: 'paint' },
+			defaultValue: defaultOf(p, storagePath),
 			validate: (v) => !paramValueProblem(p, v),
 		};
 	return {
@@ -162,7 +174,7 @@ function propertySpecOf(key: string, p: TitleParamSpec, storagePath: string[], l
 		storagePath,
 		appliesTo,
 		ui: p.ui ?? { control: p.type === 'number' ? 'scrub' : p.type === 'color' ? 'color' : 'select' },
-		defaultValue: p.default,
+		defaultValue: defaultOf(p, storagePath),
 	} as PropertySpec;
 }
 

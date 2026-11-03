@@ -57,6 +57,8 @@ import {
 } from '../../three-d/scene.ts';
 import { threeDViews } from '../../three-d/view-store.ts';
 import { applyEffectToClips, isEffectDrag, readEffectDragPayload } from '../effects/drag.ts';
+import { announce } from '../../title-looks/actions.ts';
+import { dropLookAsTitle, dropLookOnClip, isLookDrag, readLookDrag } from '../../title-looks/drag.ts';
 import { insertMotionTemplate, MG_TEMPLATE_MIME, readMgTemplateDrag } from '../motionTemplates/insert.ts';
 import { inspectorFocus } from '../properties/lib/focus.ts';
 import { beginTextEntry } from '../../text-edit/begin.ts';
@@ -974,6 +976,13 @@ export function TransformOverlay({
 			e.preventDefault();
 			dt.dropEffect = 'copy';
 		}
+		// spec 19 TL-086: a look applies to the layer under the pointer; on an empty place it adds a title.
+		if (isLookDrag(dt)) {
+			e.preventDefault();
+			dt.dropEffect = 'copy';
+			setDropHint(layerAt(toSeq(e).seq));
+			return;
+		}
 		// M2 (wp-m2-text-anim, S11:TXA-020): text animation presets drop onto a text layer.
 		if (isTextAnimationDrag(dt)) {
 			const hit = layerAt(toSeq(e).seq);
@@ -992,7 +1001,18 @@ export function TransformOverlay({
 			if (hit) applyEffectToClips(session, effect.effectId, [hit]);
 			return;
 		}
-		// M2 (wp-m2-text-anim, S11:TXA-020): left half of the text layer = In, right half = Out.
+		const look = readLookDrag(e.dataTransfer);
+		if (look) {
+			e.preventDefault();
+			const hit = layerAt(toSeq(e).seq);
+			announce(
+				hit
+					? dropLookOnClip(session, look, hit)
+					: dropLookAsTitle(session, look, { at: transport.getState().frame }),
+			);
+			return;
+		}
+// M2 (wp-m2-text-anim, S11:TXA-020): left half of the text layer = In, right half = Out.
 		const textAnim = readTextAnimationDrag(e.dataTransfer);
 		if (textAnim) {
 			e.preventDefault();

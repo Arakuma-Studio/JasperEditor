@@ -28,6 +28,17 @@ export function fuzzyScore(query: string, text: string): number | null {
 	return score - t.length * 0.1;
 }
 
+/** Rows kept together by group, best row first in each, and the group with the best row first. */
+export function rankByGroup<T extends { group: string; score: number }>(rows: readonly T[]): T[] {
+	const groups = new Map<string, T[]>();
+	for (const r of [...rows].sort((a, b) => b.score - a.score)) {
+		const g = groups.get(r.group);
+		if (g) g.push(r);
+		else groups.set(r.group, [r]);
+	}
+	return [...groups.values()].flat();
+}
+
 export type PalettePrefix = '>' | '@' | ':' | '#' | '?' | null;
 
 /** Splits a palette query into its prefix (MN-042) and the remaining text. */

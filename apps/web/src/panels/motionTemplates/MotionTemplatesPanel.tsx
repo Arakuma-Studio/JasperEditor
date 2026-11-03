@@ -25,6 +25,7 @@ import { useFontCatalog } from '../../remote-assets/font-catalog.ts';
 import { catalogAssetResolver, type TemplateAssetResolver } from '../../remote-assets/resolve.ts';
 import { useEngine } from '../../state/engine.tsx';
 import { TextAnimationsTab } from '../../text-animation/TextAnimationsTab.tsx';
+import { LooksTab } from '../../title-looks/LooksTab.tsx';
 import type { PanelProps } from '../types.ts';
 import { addAnotherDisabledReason, addAnotherMotionGraphics } from './add-another.ts';
 import { MG_BULK_IMPORT_DIALOG } from './BulkImportDialog.tsx';
@@ -307,8 +308,8 @@ function TemplateCard({
 	);
 }
 
-type MotionTemplatesTab = 'templates' | 'textAnimations' | 'remotion';
-const TABS: readonly MotionTemplatesTab[] = ['templates', 'textAnimations', 'remotion'];
+type MotionTemplatesTab = 'looks' | 'templates' | 'textAnimations' | 'remotion';
+const TABS: readonly MotionTemplatesTab[] = ['looks', 'templates', 'textAnimations', 'remotion'];
 
 /** Last tab used (per browser), so the chosen tab stays open across reloads. */
 function initialTab(): MotionTemplatesTab {
@@ -488,6 +489,14 @@ export function MotionTemplatesPanel(props: PanelProps) {
 			</footer>
 		</div>
 	);
+	const changeTab = (v: string) => {
+		setTab(v as MotionTemplatesTab);
+		try {
+			globalThis.localStorage?.setItem('jasper.motionTemplates.tab', v);
+		} catch {
+			// storage unavailable
+		}
+	};
 	return (
 		<div
 			className="flex h-full min-h-0 flex-col text-pr-ui text-pr-text"
@@ -497,15 +506,14 @@ export function MotionTemplatesPanel(props: PanelProps) {
 			<Tabs
 				className="h-full"
 				value={tab}
-				onValueChange={(v) => {
-					setTab(v as MotionTemplatesTab);
-					try {
-						globalThis.localStorage?.setItem('jasper.motionTemplates.tab', v);
-					} catch {
-						// storage unavailable
-					}
-				}}
+				onValueChange={changeTab}
 				items={[
+					// spec 19 TL-086
+					{
+						value: 'looks',
+						label: 'Looks',
+						content: <LooksTab onShowTemplates={() => changeTab('templates')} />,
+					},
 					{ value: 'templates', label: 'Templates', content: templates },
 					// M2 (S11:TXA-020, wp-m2-text-anim)
 					{ value: 'textAnimations', label: 'Text Animations', content: <TextAnimationsTab /> },

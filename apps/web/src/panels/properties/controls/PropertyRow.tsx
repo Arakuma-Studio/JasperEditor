@@ -2,7 +2,13 @@
 // stopwatch (Effect Controls), label, value editor(s) by registry control, keyframe navigator ◀ ◆ ▶
 // and reset ⟲. Every numeric scrub is one gesture = one undo step; discrete edits are one transaction.
 // In Effect Controls a twirl opens the row's Value / Velocity graphs (S05:ECP-005, S03:KF-022).
-import { type Command, dropdownItems, type ProjectDocument, type Sequence } from '@jasper/project';
+import {
+	type Command,
+	dropdownItems,
+	type ProjectDocument,
+	propertyDefault,
+	type Sequence,
+} from '@jasper/project';
 import type { SessionState, TransportStore } from '@jasper/session';
 import { useSessionOrNull, useStoreSelector } from '@jasper/session/react';
 import { cx } from '@jasper/ui';
@@ -23,6 +29,7 @@ import {
 import { templateParamControls } from '../../../extensions/index.ts';
 import { useRegistry } from '../../../extensions/react.ts';
 import { ShapeJsonValue } from '../../../shapes/ShapeJsonValue.tsx';
+import { PaintField, PaintGradientBlock } from '../../../title-looks/PaintField.tsx';
 import { inspectorFocus } from '../lib/focus.ts';
 import {
 	animState,
@@ -38,7 +45,13 @@ import { applyTemplateParamPatch, clipParams } from '../lib/template-params.ts';
 import { CheckboxField, ColorField, MiniButton, SelectField, TextField } from './fields.tsx';
 import { CaretGlyph, DiamondGlyph, NextGlyph, PrevGlyph, ResetGlyph, StopwatchGlyph } from './glyphs.tsx';
 import { MediaParamPicker } from './MediaParamPicker.tsx';
-import { ScrubbyNumber, type ValueFn } from './ScrubbyNumber.tsx';
+import {
+	ScrubbyNumber,
+	trackMappingOf,
+	useScrubLabel,
+	type ValueFn,
+	type ValueTrack,
+} from './ScrubbyNumber.tsx';
 import { TemplateParamControlHost } from './TemplateParamControl.tsx';
 
 export type RowContext = {
@@ -78,6 +91,16 @@ function distinctColors(row: Row): [number, number, number, number][] {
 }
 
 const unitText = (u?: string) => (u === 'deg' ? '°' : u === '%' ? '%' : u ? ` ${u}` : undefined);
+
+/** TL-096: wide ranges get a track: to `softMax` where the spec names a useful end, or a positive range spanning 50×. */
+function trackOf(spec: Row['spec']): ValueTrack | undefined {
+	const r = spec.range;
+	if (spec.kind !== 'number' || spec.ui.control === 'slider' || r?.min === undefined) return undefined;
+	const max = r.softMax ?? r.max;
+	if (max === undefined || !(max > r.min)) return undefined;
+	if (r.softMax === undefined && !(r.min > 0 && max / r.min >= 50)) return undefined;
+	return { min: r.min, max, mapping: trackMappingOf(r.min, max, r.step ?? 1) };
+}
 
 export function PropertyRow(props: {
 	row: Row;
@@ -171,6 +194,35 @@ export function PropertyRow(props: {
 		if (base && !cancelled) report(P.set(base, live(), (b) => b).skipped);
 	};
 
+	const track = trackOf(spec);
+	const canReset = spec.defaultValue !== undefined && row.bindings.some((b) => b.path !== null);
+	const reset = () => {
+		const plan = P.reset(row, ctx.doc, ctx.seq, live());
+		apply(plan.commands, plan.skipped);
+	};
+	const scrubbable = spec.kind === 'number' && !exprActive && !readOnly;
+	const labelScrub = useScrubLabel(
+		scrubbable
+			? {
+					step: spec.range?.step ?? 1,
+					onStart: scrubStart,
+					onScrub: (d) => scrubTo((b) => Number(b) + d),
+					onEnd: scrubEnd,
+				}
+			: null,
+	);
+	// TL-096: a number off its default says so at its label.
+	const changed =
+		spec.kind === 'number' &&
+		spec.defaultValue !== undefined &&
+		row.bindings.some(
+			(b) =>
+				b.path !== null &&
+				!b.resolved.animated &&
+				JSON.stringify(b.resolved.value) !==
+					JSON.stringify(propertyDefault({ doc: ctx.doc, seq: ctx.seq, clip: b.clip }, b.spec)),
+		);
+
 	const numberEditor = (component?: 0 | 1 | 2) => {
 		const post = exprActive ? (status!.value as unknown) : undefined;
 		const v =
@@ -203,6 +255,9 @@ export function PropertyRow(props: {
 				min={component === undefined ? spec.range?.min : undefined}
 				max={component === undefined ? spec.range?.max : undefined}
 				dim={outside}
+				track={component === undefined ? track : undefined}
+				onReset={canReset ? reset : undefined}
+				{...(spec.key.startsWith('appearance.') ? { mixedText: '—' } : {})}
 				className={exprActive ? 'text-pr-expr-value!' : undefined}
 				onScrubStart={scrubStart}
 				onScrub={(d) => scrubTo(map((b) => b + d))}
@@ -363,6 +418,9 @@ export function PropertyRow(props: {
 					</span>
 				);
 			}
+			// spec 19 TL-091: a look's paint.
+			case 'paint':
+				return <PaintField row={row} ctx={ctx} />;
 			// Mask Path has no value editor (edited on the monitor): its vertex count.
 			case 'json':
 				// gradients (editor) and shape paths (vertex count, Closed).
@@ -540,11 +598,6 @@ export function PropertyRow(props: {
 			});
 		}
 	};
-	const reset = () => {
-		const plan = P.reset(row, ctx.doc, ctx.seq, live());
-		apply(plan.commands, plan.skipped);
-	};
-	const canReset = spec.defaultValue !== undefined && row.bindings.some((b) => b.path !== null);
 	const ec = ctx.mode === 'effectControls';
 	// WP7a: a custom control with `layout: 'block'` is drawn under the label row across the panel width.
 	const block = !props.editor && customControl?.layout === 'block';
@@ -598,13 +651,20 @@ export function PropertyRow(props: {
 						) : null}
 					</span>
 				) : null}
+				{/* biome-ignore lint/a11y/noStaticElementInteractions: the keyboard edits the value next to the label */}
 				<span
 					className={cx(
 						'shrink-0 truncate text-pr-ui',
 						ec ? 'w-[38%]' : 'w-[34%]',
-						anim !== 'none' ? 'text-pr-text' : 'text-pr-muted',
+						changed ? 'text-pr-strong' : anim !== 'none' ? 'text-pr-text' : 'text-pr-muted',
+						scrubbable && 'cursor-ew-resize select-none',
 					)}
 					title={spec.description ?? row.label}
+					style={scrubbable ? { touchAction: 'none' } : undefined}
+					onPointerDown={labelScrub}
+					onDoubleClick={canReset && scrubbable ? reset : undefined}
+					data-changed={changed || undefined}
+					data-testid={`label-${row.id}`}
 				>
 					{row.label}
 				</span>
@@ -681,6 +741,11 @@ export function PropertyRow(props: {
 					onFocusCapture={focusRow}
 				>
 					{editor}
+				</div>
+			) : null}
+			{spec.ui.control === 'paint' ? (
+				<div className={cx('min-w-0 pr-1', props.indent && !ec ? 'pl-5' : 'pl-2')} data-row-block={row.id}>
+					<PaintGradientBlock row={row} ctx={ctx} />
 				</div>
 			) : null}
 			{ec && rx?.expression ? (

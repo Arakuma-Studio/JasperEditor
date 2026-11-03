@@ -5,6 +5,7 @@
 // the stack (stack index 0, draggable like an effect header) or, when the clip has no crop, registry defaults whose
 // first edit adds one at index 0; a crop placed after other effects is listed with them at its stack position.
 import {
+	type AppearanceLayer,
 	type Clip,
 	CORNER_PIN_EFFECT_ID,
 	CROP_EFFECT,
@@ -30,12 +31,15 @@ import {
 	type TextAnimatorGroup,
 	type TextClip,
 	type TextSelector,
+	TITLE_LOOK_EFFECT_ID,
 	templateParamSections,
 	templateParamVisible,
 	textAnimatorPropertySpecs,
 	walkItems,
 } from '@jasper/project';
 import { shapePropertyKeys } from '../../shapes/keys.ts';
+import { layerRows, lightRows, paletteRows } from '../../title-looks/rows.ts';
+import { lookedClip, sharedStack } from '../../title-looks/selection.ts';
 import {
 	bindCrop,
 	bindEffectParam,
@@ -69,6 +73,8 @@ export type FxSection = {
 	threeDSwitch?: { clipId: string; enabled: boolean };
 	/** a Puppet effect's meshes and pins (their property rows). */
 	puppet?: PuppetListModel;
+	/** spec 19 TL-090: a look's stack. */
+	appearance?: AppearanceBlockModel;
 	/**
 	 * C3: the template section's `ui.groups`, in order: each group's row ids (rows in no group are drawn first, without
 	 * a header).
@@ -83,6 +89,47 @@ export type PuppetListModel = {
 	meshes: PuppetMesh[];
 	pins: { pin: PuppetPin; rows: Row[] }[];
 };
+
+/** spec 19 TL-090: what a look's section shows below Intensity, top of the stack first. */
+export type AppearanceBlockModel = {
+	clipId: string;
+	fxId: string;
+	palette: Row[];
+	light: Row[];
+	layers: { layer: AppearanceLayer; rows: Row[] }[];
+};
+
+function appearanceBlock(
+	doc: ProjectDocument,
+	seq: Sequence,
+	clip: Clip,
+	fx: EffectInstance,
+	frame: number,
+): AppearanceBlockModel | null {
+	const looked = lookedClip(clip);
+	if (!looked || looked.fx.id !== fx.id) return null;
+	return {
+		clipId: clip.id,
+		fxId: fx.id,
+		palette: paletteRows(doc, seq, [looked], frame),
+		light: lightRows(doc, seq, [looked], frame),
+		layers: (sharedStack([looked]) ?? []).map((s) => ({
+			layer: s.layers[0]!,
+			rows: layerRows(doc, seq, s, frame),
+		})),
+	};
+}
+
+/** Every row of a section, also those a block draws (keys, snapping, Simplify). */
+export function sectionRows(s: FxSection): Row[] {
+	if (!s.appearance) return s.rows;
+	return [
+		...s.rows,
+		...s.appearance.palette,
+		...s.appearance.light,
+		...s.appearance.layers.flatMap((l) => l.rows),
+	];
+}
 
 function puppetList(
 	doc: ProjectDocument,
@@ -263,7 +310,7 @@ const LIGHT_OPTION_KEYS = [
 	'light.environmentBackground',
 ];
 
-type EcGroup = { id: 'video' | 'audio'; title: string; sections: FxSection[] };
+export type EcGroup = { id: 'video' | 'audio'; title: string; sections: FxSection[] };
 
 /** The primary clip plus its linked partner of the other medium (video clip + its audio, S01:KND-003). */
 export function shownClips(seq: Sequence, primary: Clip): Clip[] {
@@ -533,6 +580,11 @@ export function buildGroups(
 					)
 					.filter((r): r is Row => r !== null),
 				...(fx.effectId === 'jasper.puppet' ? { puppet: puppetList(doc, seq, clip, fx, frame) } : {}),
+				...(() => {
+					const appearance =
+						fx.effectId === TITLE_LOOK_EFFECT_ID ? appearanceBlock(doc, seq, clip, fx, frame) : null;
+					return appearance ? { appearance } : {};
+				})(),
 				// every video effect but the corner pin (the layer geometry) has masks.
 				...(effect.appliesTo === 'video' && fx.effectId !== CORNER_PIN_EFFECT_ID && !effect.passthrough
 					? { masks: maskList(doc, seq, clip, fx.masks, fx.id, frame) }
