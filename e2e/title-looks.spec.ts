@@ -2,7 +2,7 @@
 // keyframe a param, undo, save and reload. Looks come from the project so the spec does not depend on the library's data.
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { expect, type Page, test } from '@playwright/test';
+import { expect, type Locator, type Page, test } from '@playwright/test';
 import {
 	appliedLabels,
 	browserLaunch,
@@ -72,6 +72,9 @@ async function look(id: string): Promise<Stored['appearance'] | null> {
 }
 
 const card = (name: string) => page.getByRole('listitem', { name: new RegExp(`^${name} \\(`) });
+/** The shipped library comes first and the grid is virtualised: show the project's own looks. */
+const projectLooks = (scope: Page | Locator = page) =>
+	scope.getByRole('button', { name: 'This Project', exact: true }).click();
 
 test.beforeAll(async ({ browser }) => {
 	page = await browser.newPage();
@@ -88,6 +91,7 @@ test.beforeAll(async ({ browser }) => {
 	await expect.poll(async () => (await clips(page)).length).toBe(0);
 	await page.getByText('Motion Templates', { exact: true }).first().click();
 	await page.getByRole('tab', { name: 'Looks' }).click();
+	await projectLooks();
 	await expect(card('Gold')).toBeVisible();
 });
 
@@ -97,7 +101,9 @@ test.afterAll(async () => {
 
 test('the grid mounts cards with their colourways; a poster comes from the engine', async () => {
 	await expect(page.getByTestId('looks-status')).toContainText('add a title at the playhead');
-	await expect(card('Gold').locator('[data-colorway]')).toHaveCount(2);
+	// Its own colourways come first; the library's factory colourways follow (TL-086).
+	await expect(card('Gold').locator('[data-colorway]').nth(0)).toHaveAttribute('data-colorway', 'cw.ember');
+	await expect(card('Gold').locator('[data-colorway]').nth(1)).toHaveAttribute('data-colorway', 'cw.ice');
 	await expect(card('Gold').locator('[data-poster]')).toHaveAttribute('data-poster', 'ready', {
 		timeout: 180_000,
 	});
@@ -286,6 +292,7 @@ test('Graphics ▸ Apply Look… opens the same grid, and Remove Look leaves the
 	await page.getByRole('menuitem', { name: 'Apply Look…' }).click();
 	const dialog = page.getByTestId('apply-look-dialog');
 	await expect(dialog).toBeVisible();
+	await projectLooks(dialog);
 	await dialog.getByRole('listitem', { name: /^Neon \(/ }).click();
 	await expect(dialog).toHaveCount(0);
 	await expect.poll(async () => (await look(title!.id))?.layers[0]?.type).toBe('glow');
@@ -300,6 +307,7 @@ test('a card dragged onto a clip in the Timeline applies there; on an empty plac
 	const [title] = await clips(page);
 	await page.getByText('Motion Templates', { exact: true }).first().click();
 	await page.getByRole('tab', { name: 'Looks' }).click();
+	await projectLooks();
 	const area = page.getByTestId('timeline-track-area');
 	await card('Gold').dragTo(area.locator(`[data-clip-id="${title!.id}"]`).first());
 	await expect.poll(async () => (await look(title!.id))?.layers[0]?.type).toBe('shadow');

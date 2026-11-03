@@ -161,6 +161,17 @@ describe('every declared handle (TL-092)', () => {
 		).toEqual(['angle']);
 	});
 
+	it('puts the light’s handle on a ring outside the box, clear of the clip’s own handles', () => {
+		const h = handlesOf(f, { id: 'x', type: 'shadow', params: { useLight: true } }, 0, { angle: 0 });
+		const light = h.find((x) => x.kind === 'angle' && x.light)!;
+		const at = handlePoint(f, light);
+		// Light from the right (0°): past the right edge of the 400 × 200 box.
+		expect(at[0]).toBeGreaterThan(400);
+		expect(
+			handlesOf(f, { id: 'x', type: 'shadow', params: { useLight: true } }, 0, { angle: 0 }, 300),
+		).toContainEqual(expect.objectContaining({ light: true, radius: 300 }));
+	});
+
 	it('a layer that starts from the whole silhouette counts every rim, wherever it sits', () => {
 		const layers = [
 			{ id: 'r', type: 'reflection', params: {} },

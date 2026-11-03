@@ -75,6 +75,8 @@ export function handlesOf(
 	layer: ResolvedLayer,
 	base: number,
 	light: { angle: number },
+	/** Radius of the light's ring, sequence px: outside the box, clear of the clip's own handles (the Light row's ring). */
+	lightRing = Math.max(f.halfW, f.halfH) * 1.15,
 ): Handle[] {
 	const def = titleLayerType(layer.type);
 	if (!def) return [];
@@ -96,7 +98,14 @@ export function handlesOf(
 		const name = h.params[0]!;
 		if (h.target === 'light') {
 			// The look's light, from the layer that follows it (TL-092 `target: 'light'`).
-			out.push({ kind: 'angle', param: name, base: 0, value: num(light.angle), radius: ring, light: true });
+			out.push({
+				kind: 'angle',
+				param: name,
+				base: 0,
+				value: num(light.angle),
+				radius: lightRing,
+				light: true,
+			});
 		} else if (h.kind === 'distance' && p.useLight === true && name === 'distance') {
 			// A shadow following the light moves along it.
 			out.push({
@@ -249,15 +258,16 @@ export function LookLayerOverlay(props: ProgramOverlayHostProps) {
 				.find((l) => l.id === focus.target)?.name ??
 			(def ? t(def.label) : undefined) ??
 			target!.type);
+	const lightRing = Math.max(f.halfW, f.halfH) + 24 / Math.max(view.scale, 1e-3);
 	const handles: Handle[] = target
-		? handlesOf(f, target, base, look.light)
+		? handlesOf(f, target, base, look.light, lightRing)
 		: [
 				{
 					kind: 'angle',
 					param: 'angle',
 					base: 0,
 					value: look.light.angle,
-					radius: Math.max(f.halfW, f.halfH) + 24 / Math.max(view.scale, 1e-3),
+					radius: lightRing,
 				},
 			];
 	const lightPath = (): string[] => {

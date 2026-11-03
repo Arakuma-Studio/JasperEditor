@@ -128,6 +128,22 @@ test.beforeAll(async ({ browser }) => {
 	] as never);
 	expectTransaction(r);
 	titleId = r.refs.$t!;
+	// A title with a look: Send to Photoshop can split it into its rims and face.
+	expectTransaction(
+		await transact(page, [
+			{
+				type: 'look.apply',
+				clipIds: [titleId],
+				look: {
+					name: 'Edged',
+					recipe: {
+						palette: { face: [1, 1, 1, 1] },
+						layers: [{ type: 'rim', params: { width: 4 } }, { type: 'face' }],
+					},
+				},
+			},
+		] as never),
+	);
 });
 
 test.afterAll(async () => {
@@ -135,7 +151,12 @@ test.afterAll(async () => {
 });
 
 test('Send to Photoshop: an empty frame is blocked by name, a full one lists its layers; Cancel writes nothing', async () => {
-	// At the end of the sequence, past the clips, nothing is visible: the dialog says so and will not write.
+	// On a transparent background, past the clips, nothing is visible: the dialog says so and will not write.
+	expectTransaction(
+		await transact(page, [
+			{ type: 'sequence.updateSettings', settings: { backgroundColor: [0, 0, 0, 0] } },
+		] as never),
+	);
 	await focusTimeline(page);
 	await page.keyboard.press('End');
 	expect(await playheadFrame(page)).toBe(60);
@@ -180,10 +201,14 @@ test('Export Title: unavailable without a title; its options; Cancel exports not
 	await expect(dialog).toBeVisible();
 	await expect(dialog).toContainText('Export Title');
 	await expect(dialog).toContainText('60 transparent PNGs');
-	await expect(page.getByTestId('alpha-margin')).toHaveCount(0);
-	await dialog.getByText('Trim to content').click();
+	// A title trims to its content by default, with a margin; without the trim there is no margin to set.
 	await expect(page.getByTestId('alpha-margin')).toBeVisible();
 	await expect(dialog).toContainText('glows do not clip');
+	await dialog.getByText('Trim to content').click();
+	await expect(page.getByTestId('alpha-margin')).toHaveCount(0);
+	await expect(dialog).not.toContainText('glows do not clip');
+	await dialog.getByText('Trim to content').click();
+	await expect(page.getByTestId('alpha-margin')).toBeVisible();
 	await dialog.getByRole('combobox', { name: 'Frames' }).click();
 	await page.getByRole('option', { name: 'Frame at the playhead' }).click();
 	await expect(dialog).toContainText('One transparent PNG.');
