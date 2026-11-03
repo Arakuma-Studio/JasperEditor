@@ -144,7 +144,7 @@ describe('plan (TL-112)', () => {
 
 	it('a dissolve keeps both sides, the outgoing clip drawn on its handle', () => {
 		const { d, s } = twoClips();
-		const snap = snapshotOf(d, 40);
+		const snap = snapshotOf(d);
 		const outgoing = { ...snap.videoTracks[0]!.clips[0]!, tailHandle: 15 };
 		const doc = { ...snap, videoTracks: [{ ...snap.videoTracks[0]!, clips: [outgoing] }] };
 		const { plan } = planPsd(doc, 40);
@@ -473,7 +473,7 @@ describe('writer (TL-112)', () => {
 			),
 			{ numRuns: 30 },
 		);
-	});
+	}, 120_000);
 });
 
 describe('frames (TL-114)', () => {

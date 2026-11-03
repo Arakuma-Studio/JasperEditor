@@ -1,6 +1,6 @@
 // Spec 19 TL-112: Send to Photoshop. The plan comes first: the dialog lists the layers and everything baked, with blockers
 // shown before anything is written. Writing is an engine job with a Cancel, and the file is complete or absent.
-import type { PsdPlan, PsdResult } from '@jasper/api';
+import type { PsdPlan, PsdPlanLayer, PsdResult } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import type { EditorSession } from '@jasper/session';
 import { Checkbox, Dialog, type HostedDialogProps, registerDialog, TextField } from '@jasper/ui';
@@ -92,15 +92,10 @@ function PsdDialog(props: Props & HostedDialogProps) {
 			size="medium"
 			primaryLabel={progress ? 'Writing…' : 'Write PSD'}
 			primaryDisabled={blocked || !!progress}
-			{...(progress?.id
-				? {
-						secondaryLabel: 'Cancel writing',
-						onSecondary: () => {
-							void cancelJob(engine, progress.id);
-							return false;
-						},
-					}
-				: {})}
+			cancelLabel={progress?.id ? 'Cancel writing' : 'Cancel'}
+			onCancel={() => {
+				if (progress?.id) void cancelJob(engine, progress.id);
+			}}
 			onPrimary={() => {
 				void write();
 				return false;
@@ -111,12 +106,7 @@ function PsdDialog(props: Props & HostedDialogProps) {
 				The frame at the playhead as a layered 8-bit PSD. Every layer is rasterised and registered to the
 				frame: text becomes pixels, not editable type.
 			</p>
-			<Checkbox
-				checked={split}
-				onCheckedChange={setSplit}
-				label="Split titles into rims, face and fx"
-				data-testid="psd-split"
-			/>
+			<Checkbox checked={split} onCheckedChange={setSplit} label="Split titles into rims, face and fx" />
 			{local ? (
 				<div className="mt-2 grid grid-cols-[110px_minmax(0,1fr)] items-center gap-2">
 					<span className="text-pr-muted">Folder</span>
@@ -138,8 +128,12 @@ function PsdDialog(props: Props & HostedDialogProps) {
 				<div className="mt-2">
 					<p className="font-semibold">Layers, top first</p>
 					<ul className="max-h-32 overflow-auto text-pr-small" data-testid="psd-layers">
-						{[...plan.layers].reverse().map((l) => (
-							<li key={plan.layers.indexOf(l)} className={l.hidden ? 'text-pr-muted' : ''}>
+						{layersTopFirst(plan.layers).map(({ layer: l, depth }) => (
+							<li
+								key={plan.layers.indexOf(l)}
+								className={l.hidden ? 'text-pr-muted' : ''}
+								style={{ paddingLeft: depth * 12 }}
+							>
 								{l.name}
 								{l.kind === 'group' ? ' (group)' : ''}
 								{l.hidden ? ' (hidden)' : ''}
@@ -167,7 +161,7 @@ function PsdDialog(props: Props & HostedDialogProps) {
 			) : null}
 			{progress ? (
 				<p className="mt-2 text-pr-small text-pr-muted" aria-live="polite" data-testid="psd-progress">
-					{progress.stage}
+					{progress.stage || 'Writing…'}
 					{progress.fraction !== null ? ` · ${Math.round(progress.fraction * 100)} %` : ''}
 				</p>
 			) : null}

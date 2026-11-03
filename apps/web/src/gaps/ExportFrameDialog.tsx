@@ -256,7 +256,6 @@ function ExportFrameDialog(props: HostedDialogProps<Props>) {
 							checked={transparent}
 							onCheckedChange={setTransparent}
 							label="Transparent background"
-							data-testid="export-frame-transparent"
 						/>
 					</>
 				) : null}

@@ -90,15 +90,10 @@ function AlphaDialog(props: Props & HostedDialogProps) {
 			size="medium"
 			primaryLabel={progress ? 'Exporting…' : 'Export'}
 			primaryDisabled={!!progress || !(frames > 0)}
-			{...(progress?.id
-				? {
-						secondaryLabel: 'Cancel export',
-						onSecondary: () => {
-							void cancelJob(engine, progress.id);
-							return false;
-						},
-					}
-				: {})}
+			cancelLabel={progress?.id ? 'Cancel export' : 'Cancel'}
+			onCancel={() => {
+				if (progress?.id) void cancelJob(engine, progress.id);
+			}}
 			onPrimary={() => {
 				void run();
 				return false;
@@ -123,7 +118,7 @@ function AlphaDialog(props: Props & HostedDialogProps) {
 					]}
 				/>
 				<span />
-				<Checkbox checked={trim} onCheckedChange={setTrim} label="Trim to content" data-testid="alpha-trim" />
+				<Checkbox checked={trim} onCheckedChange={setTrim} label="Trim to content" />
 				{trim ? (
 					<>
 						<span className="text-pr-muted">Margin</span>
@@ -162,7 +157,7 @@ function AlphaDialog(props: Props & HostedDialogProps) {
 			</p>
 			{progress ? (
 				<p className="mt-2 text-pr-small text-pr-muted" aria-live="polite" data-testid="alpha-progress">
-					{progress.stage}
+					{progress.stage || 'Exporting…'}
 					{progress.fraction !== null ? ` · ${Math.round(progress.fraction * 100)} %` : ''}
 				</p>
 			) : null}

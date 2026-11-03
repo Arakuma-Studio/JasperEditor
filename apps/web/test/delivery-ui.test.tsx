@@ -14,7 +14,7 @@ import {
 	registerLayerStyleDialog,
 	saveImportedLooks,
 } from '../src/delivery/LayerStyleDialog.tsx';
-import { PSD_DIALOG, registerPsdDialog } from '../src/delivery/PsdDialog.tsx';
+import { layersTopFirst, PSD_DIALOG, registerPsdDialog } from '../src/delivery/PsdDialog.tsx';
 import { MENUBAR } from '../src/shell/menus/model.ts';
 import { makeSession } from './timeline-helpers.ts';
 
@@ -76,7 +76,7 @@ describe('wiring (spec 19 §12)', () => {
 
 	it('Split Image needs one still; Export Title needs a title', () => {
 		const { session } = makeSession();
-		const ctx = { session, services: {} } as never;
+		const ctx = { session, services: { get: () => null } } as never;
 		expect(getCommand('delivery.splitImage')!.when!(ctx)).toBe(false);
 		expect(getCommand('delivery.exportTitle')!.when!(ctx)).toBe(false);
 		expect(getCommand('delivery.splitImage')!.disabledReason!(ctx)).toBeTruthy();
@@ -114,6 +114,57 @@ describe('Send to Photoshop (TL-112)', () => {
 		expect(screen.getByTestId('psd-layers').textContent).toContain('Background');
 		expect(screen.getByTestId('psd-warnings').textContent).toContain('rasterised');
 		expect((screen.getByRole('button', { name: 'Write PSD' }) as HTMLButtonElement).disabled).toBe(false);
+	});
+
+	it('shows the stack as Photoshop will: top first, a group above its members', () => {
+		const row = (name: string, kind: 'pixels' | 'group' = 'pixels', children?: number) => ({
+			name,
+			kind,
+			...(children ? { children } : {}),
+			blend: 'normal',
+			opacity: 1,
+			hidden: false,
+			baked: [],
+		});
+		const out = layersTopFirst([row('bg'), row('title', 'group', 2), row('face'), row('fx'), row('top')]);
+		expect(out.map((r) => [r.layer.name, r.depth])).toEqual([
+			['top', 0],
+			['title', 0],
+			['fx', 1],
+			['face', 1],
+			['bg', 0],
+		]);
+	});
+
+	it('Cancel cancels the running job instead of closing the dialog', async () => {
+		const calls: string[] = [];
+		const { session, seqId } = makeSession();
+		registerPsdDialog();
+		const job = {
+			id: 'job_1',
+			kind: 'psd-export',
+			state: 'running',
+			stage: 'Layer 1/2',
+			progress: 0.5,
+			title: 'x',
+			priority: 'user',
+			createdAt: 'x',
+			updatedAt: 'x',
+		};
+		const engine = engineWith(
+			{ '/api/psd/plan': PLAN, '/api/psd': job, '/api/jobs/job_1/cancel': job, '/api/jobs/job_1': job },
+			calls,
+		);
+		render(<DialogHost />);
+		act(() => {
+			void openDialog(PSD_DIALOG, { session, engine, sequenceId: seqId, frame: 0, baseName: 'Seq' });
+		});
+		await waitFor(() => expect(screen.getByTestId('psd-baked')).toBeTruthy());
+		fireEvent.click(screen.getByRole('button', { name: 'Write PSD' }));
+		const cancel = await screen.findByRole('button', { name: 'Cancel writing' });
+		fireEvent.click(cancel);
+		await waitFor(() => expect(calls.some((u) => u.includes('/api/jobs/job_1/cancel'))).toBe(true));
+		expect(screen.getByTestId('psd-dialog')).toBeTruthy();
 	});
 
 	it('a blocker stops it, with its reason, before anything runs', async () => {

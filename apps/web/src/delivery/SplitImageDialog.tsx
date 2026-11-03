@@ -216,15 +216,10 @@ function SplitImageDialog(props: Props & HostedDialogProps) {
 			size="large"
 			primaryLabel={progress ? 'Splitting…' : n === 1 ? 'Split' : `Split into ${n} parts`}
 			primaryDisabled={!analysis || n < 2 || n > MAX_SPLIT_PARTS || !!progress}
-			{...(progress?.id
-				? {
-						secondaryLabel: 'Cancel split',
-						onSecondary: () => {
-							void cancelJob(engine, progress.id);
-							return false;
-						},
-					}
-				: {})}
+			cancelLabel={progress?.id ? 'Cancel split' : 'Cancel'}
+			onCancel={() => {
+				if (progress?.id) void cancelJob(engine, progress.id);
+			}}
 			onPrimary={() => {
 				void split();
 				return false;
@@ -294,7 +289,7 @@ function SplitImageDialog(props: Props & HostedDialogProps) {
 			) : null}
 			{progress ? (
 				<p className="mt-2 text-pr-small text-pr-muted" aria-live="polite" data-testid="split-progress">
-					{progress.stage}
+					{progress.stage || 'Splitting…'}
 				</p>
 			) : null}
 			{error ? (

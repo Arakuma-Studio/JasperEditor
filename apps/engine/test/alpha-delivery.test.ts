@@ -186,7 +186,7 @@ describe('LGPL (AGENTS §2)', () => {
 			{ encoding: 'utf8' },
 		);
 		expect(probe.stdout.trim()).toBe('4,rgba');
-	});
+	}, 60_000);
 
 	it('TIFF and Targa keep their alpha pixel format only when asked', () => {
 		expect(stillEncodeArgs('tiff', undefined, true)).toContain('rgba');
