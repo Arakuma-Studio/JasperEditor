@@ -30,10 +30,6 @@ import {
 	lookCategoryCounts,
 	type Paint,
 	paintRoles,
-	RECOLOR_WHITE_CORE,
-	recolorLuma,
-	recolorRamp,
-	recolorStops,
 	repairAppearance,
 	searchLooks,
 	searchTemplates,
@@ -201,46 +197,6 @@ describe('colourways (TL-051)', () => {
 		expect(JSON.stringify(a.layers)).toBe(before);
 		expect(a.palette.face!.value).toEqual(factoryColorway('colorway.cobalt')!.palette.face);
 		expect(a.colorwayId).toBe('colorway.cobalt');
-	});
-});
-
-describe('the luma recolour rule (TL-051)', () => {
-	const paletteOf = (id: string) => factoryColorway(id)!.palette;
-
-	it('builds an ascending ramp from black to white through the palette’s light', () => {
-		for (const way of FACTORY_COLORWAYS) {
-			const stops = recolorStops(way.palette);
-			expect(stops[0]!.color, way.id).toEqual([0, 0, 0, 1]);
-			expect(stops.at(-1)!.color, way.id).toEqual([1, 1, 1, 1]);
-			for (let i = 1; i < stops.length; i++) expect(stops[i]!.at, way.id).toBeGreaterThan(stops[i - 1]!.at);
-		}
-	});
-
-	it('positions a role at its own luma, so a mapped colour keeps its brightness', () => {
-		const p = paletteOf('colorway.crimson');
-		const stop = recolorStops(p).find((s) => s.color[0] === p.glow[0] && s.color[1] === p.glow[1]);
-		expect(stop?.at).toBeCloseTo(recolorLuma(p.glow), 6);
-	});
-
-	it('leaves out a role that would break the order', () => {
-		const p = {
-			...paletteOf('colorway.gold'),
-			accent3: [0.05, 0.05, 0.05, 1] as [number, number, number, number],
-		};
-		expect(recolorStops(p).some((s) => s.color[0] === 0.05)).toBe(false);
-	});
-
-	it('gives different ramps for different colourways and the same one for the same palette', () => {
-		const a = recolorRamp(paletteOf('colorway.cobalt'));
-		const b = recolorRamp(paletteOf('colorway.ember'));
-		expect([...a]).not.toEqual([...b]);
-		expect([...recolorRamp(paletteOf('colorway.cobalt'))]).toEqual([...a]);
-		expect(a.length).toBe(256 * 4);
-	});
-
-	it('has a white-core threshold under full white', () => {
-		expect(RECOLOR_WHITE_CORE).toBeGreaterThan(0.8);
-		expect(RECOLOR_WHITE_CORE).toBeLessThan(1);
 	});
 });
 

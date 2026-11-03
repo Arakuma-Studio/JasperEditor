@@ -10,7 +10,6 @@
 |---|---|---|
 | `src/presets/lint.ts` | `packages/project/src/title-looks/lint.ts` | L*a*b* conversion, element sampling, spectrum and banding detection, and the contrast, hue family, rim thickness, hard shadow, span and no-op rules |
 | `src/presets/colourways.ts` (`COLOURWAY_DEFS`, colour rules) | `packages/project/src/title-looks/factory/colorways.ts` | Roles of a colourway and the rules: blue and green take silver, red takes gold, red stays hue 0, gold runs to brown, rings alternate light and dark, tinted shadows. Hex values of white, gold, silver, red, blue, green and purple |
-| `src/presets/colourways.ts` (`LIGHT`, `rampAt`, `onRamp`, `isWhiteCore`) | `packages/project/src/registry/fx/title-look/recolor.ts` | Luma-positioned light ramp and white-core rule for recolouring generators |
 | `src/presets/factory.ts` (`ladderBase`, `ladderEffects`) | `packages/project/src/title-looks/factory/looks/pachinko-arcade.ts` | The five-layer outline stack of the gold ladder look |
 | `src/presets/factory.ts` (`f-neon`, `f-neon-knockout`) | `packages/project/src/title-looks/factory/looks/neon-retro.ts` | Structure of the neon looks: a hot core, a saturated sheath and two falloffs of light |
 | `src/presets/templates.ts` (`Template`, `build()`) | `packages/project/src/title-looks/factory/templates/`, `packages/project/src/commands/handlers/title-template.ts` | The idea of a template that builds finished, fully editable layers |
@@ -30,7 +29,5 @@
 - Backdrop contrast is a rendered check: the caller measures and `lintAppearance` compares; with no measurement the check is
   reported as unmeasured, never as passed.
 - Issues carry codes, severities, an i18n template and arguments, measured and expected values.
-- Recolouring runs per pixel in the shader, so a generator's params and a keyed palette need no rewriting. Pachislop rewrites
-  stored colours once.
 - User looks live in the engine's library, written atomically and validated with zod, not in `localStorage`.
 - Templates are data, positioned in fractions of the frame, and expand through ordinary commands in one transaction.

@@ -175,7 +175,7 @@ export type TitleLayerType = {
 	uniforms?: (p: LayerParams) => Readonly<Record<string, FxUniformValue>>;
 	/** The layer's picture changes with time on its own (generators, grain): the clip then redraws every frame. */
 	timeDependent?: (p: LayerParams) => boolean;
-	/** TL-051: colours come from the shader, not from paints: the planner binds `tl_recolor`'s ramp (`recolor.ts`). */
+	/** TL-051: colours come from the shader, not from paints: the planner binds `u_tlRecolor` = not `fixedColor` (`plan.ts`). */
 	recolors?: boolean;
 	summary: (p: LayerParams, ctx: SummaryContext) => LayerSummary;
 	/** Program-monitor handles (TL-092). Read by the UI. */

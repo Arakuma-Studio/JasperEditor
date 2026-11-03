@@ -25,7 +25,7 @@ routing and the layer bake need no per-kind code.
 | User look format (TL-054) | `packages/project/src/title-looks/user-looks.ts` |
 | User look library and routes | `apps/engine/src/title-looks/library.ts`, `apps/engine/src/routes/title-looks.ts` |
 | Display fonts (TL-053) | `apps/engine/fonts/display/` (`manifest.json` pins commit and hashes) |
-| Generator recolour rule (TL-051) | `packages/project/src/registry/fx/title-look/registry.ts` (`recolorGlsl`); the library's earlier ramp in `recolor.ts` |
+| Generator recolour rule (TL-051) | `packages/project/src/registry/fx/title-look/registry.ts` (`recolorGlsl`) |
 | Template expansion (TL-052) | `packages/project/src/commands/handlers/title-template.ts` |
 | Commands (TL-018) | `packages/project/src/commands/{schemas,handlers}/title-look.ts` |
 | Extension contract, `lp` builders, summaries | `packages/project/src/registry/fx/title-look/contract.ts` |
@@ -701,10 +701,9 @@ generator has no palette and draws its own colours; a template gives it colours 
 **Since integration 2 the generators stream's recolour is the one that runs** ("Colour (TL-051)" under Generators): a generator layer
 maps its picture by luma onto its own `paint` (a role, so a colourway reaches it) unless its `Own Colours` param is on or the look marks
 the layer `fixedColor`. `recolors: true` on the generator layer type makes the planner bind `u_tlRecolor` = not `fixedColor`, which the
-layer's shader reads beside `u_ownColors`. Before the merge this library mapped every generator through a palette ramp (black,
-`shadow`, `glow`, `accent3`, white at their Rec. 601 lumas, white cores above 0.92 kept); that ramp (`recolor.ts`: `recolorStops`,
-`recolorRamp`, `GLSL_TL_RECOLOR`) is still exported and unit-tested but no layer draws with it now. Two rules for one job were not
-kept at run time; which of the two to keep long term is open (`docs/gaps.md`).
+layer's shader reads beside `u_ownColors`. Before the merge this library mapped every generator through a palette ramp of its own
+(`recolor.ts`). No layer drew with it after the merge, so it was deleted with its exports and tests (AGENTS §10: no parallel
+implementations): the generators' rule is the only one.
 
 `title-look-library-gl.test.ts` checks every registered generator: with Own Colours off it follows the colourway, keeps its alpha,
 and a `fixedColor` layer stays the same under any colourway.
@@ -898,8 +897,7 @@ title and tuned.
 - Blur: separable Gaussian, reach 3σ (a layer's `blur` and `radius` are the visible radius ≈ 3σ, Pachislop's convention).
 - SSIM in tests: Wang et al. 2004, 8 × 8 windows, `C1 = (0.01·255)²`, `C2 = (0.03·255)²`.
 - Assumption, not documented anywhere: a rim's opacity rule (full from 50 % local alpha) was chosen by looking at fades.
-- CIE L*a*b* (D65) from sRGB, IEC 61966-2-1 primaries, as in Pachislop's `toLab`. Rec. 601 luma for the library's recolour ramp
-  (`recolor.ts`, no longer drawn with since integration 2), as design tools' gradient maps do.
+- CIE L*a*b* (D65) from sRGB, IEC 61966-2-1 primaries, as in Pachislop's `toLab`.
 - Bevel: Pachislop's `HEIGHT_FRAG` profiles and the highlight screen, shadow multiply of Photoshop's Bevel & Emboss. Satin: the
   absolute difference of two offset blurred copies of the shape, Photoshop's satin recipe as Pachislop writes it.
 - Metal: Schlick's approximation of Fresnel, `F = f0 + (1 − f0)(1 − cos θ)⁵` (Schlick, "An inexpensive BRDF model for

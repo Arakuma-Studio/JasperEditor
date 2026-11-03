@@ -951,10 +951,6 @@ Status of the foundation; streams still in progress update this list. Evidence: 
   degrees, and a long thin bolt turns that into a pixel or two of drift at its tip. Tried and not enough: per-texel sites (0.52),
   the surface normal at the edge point (0.66), bilinear sites (0.76), the alpha's first moment (0.70). An exact normal needs the
   text's vector outline.
-- **Two generator recolour rules were written; one runs.** The look library mapped generators through a palette ramp
-  (`recolor.ts`), the generators stream through each generator's own paint and mode. Since integration 2 the generators' rule
-  draws, and the library's `fixedColor` keeps a generator's own colours as its `Own Colours` param does. The library's ramp is still
-  exported and unit-tested but unused: deleting it, or making it a generator colour mode, is a decision left open.
 - **Generator preset chips have no UI of their own here:** the presets exist and `clip.addGenerator` and `appearance.addLayer`
   take them; the chips belong to the UI streams.
 
