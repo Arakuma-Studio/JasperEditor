@@ -74,12 +74,12 @@ export function layerFromRecipe(l: RecipeLayer, id: string): AppearanceLayer {
 }
 
 /**
- * A look's body as a recipe (TL-087: a project look's poster, TL-104: `get_title_recipe`): plain values, only the params
- * its layers show, and no layer of a type this build does not know.
+ * A look's body as a recipe (TL-087: a project look's poster, TL-104: `get_title_recipe`): plain values at rest, only
+ * the params its layers show, no ids, no keys, and no layer of a type this build does not know.
  */
 export function recipeOfAppearance(a: Appearance): LookRecipe {
 	const palette: NonNullable<LookRecipe['palette']> = {};
-	for (const [role, v] of Object.entries(a.palette))
+	for (const [role, v] of Object.entries(a.palette ?? {}))
 		if (v) palette[role as Role] = [...v.value] as NonNullable<LookRecipe['palette']>[Role];
 	const layers = a.layers.flatMap((l): RecipeLayer[] => {
 		const def = titleLayerType(l.type);
@@ -116,25 +116,5 @@ export function appearanceFromRecipe(r: LookRecipe, newLayerId: () => string, se
 		seed,
 		layers: r.layers.map((l) => layerFromRecipe(l, newLayerId())),
 		...(r.font ? { font: { family: r.font.family } } : {}),
-	};
-}
-
-/** A stored appearance as a recipe (TL-104): values at rest, the params its layers show, no ids and no keys. */
-export function recipeOfAppearance(a: Appearance): LookRecipe {
-	const palette: NonNullable<LookRecipe['palette']> = {};
-	for (const [role, anim] of Object.entries(a.palette ?? {}))
-		if (anim) palette[role as Role] = [...anim.value] as never;
-	return {
-		palette,
-		light: { source: a.light.source, angle: a.light.angle.value, altitude: a.light.altitude.value },
-		layers: a.layers.map((l) => {
-			const def = titleLayerType(l.type);
-			const finish = l.params.finish?.value;
-			const shown = def ? activeParamSpecs(def, typeof finish === 'string' ? finish : 'flat') : [];
-			const params: Record<string, unknown> = {};
-			for (const p of shown) if (l.params[p.name]) params[p.name] = l.params[p.name]!.value;
-			return { type: l.type, ...(l.name ? { name: l.name } : {}), enabled: l.enabled, params };
-		}),
-		...(a.font ? { font: { family: a.font.family } } : {}),
 	};
 }
