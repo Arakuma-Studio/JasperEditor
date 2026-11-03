@@ -74,6 +74,8 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('export.frame', 'Frame…'),
 				c('export.quick', 'Quick Export'),
 				c('export.lottie', 'Lottie…'),
+				c('delivery.pngSequence', 'PNG Sequence with Alpha…'),
+				c('delivery.sendToPhotoshop', 'Send to Photoshop…'),
 				sep,
 				...TIMELINE_FORMATS.map((f) => c('file.exportTimeline', f.label, { format: f.id })),
 				sep,
@@ -481,6 +483,10 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 					]
 				: []),
 			sep,
+			c('delivery.importLayerStyles', 'Import Layer Styles…'),
+			c('delivery.exportTitle', 'Export Title…'),
+			c('delivery.sendToPhotoshop', 'Send to Photoshop…'),
+			c('delivery.splitImage', 'Split Image…'),
 			sub('Arrange', ARRANGE_MENU),
 			sub('Stroke Animation', [
 				c('strokeAnimation.drawIn', 'Draw In'),
@@ -517,6 +523,12 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 		label: 'View',
 		items: [
 			c('program.showRulers', 'Show Rulers'),
+			c('program.gamutOverlay', 'Gamut Warning'),
+			sub('Gamut Warning Output', [
+				c('program.gamutOutput.rec709', 'Rec. 709'),
+				c('program.gamutOutput.rec2020', 'Rec. 2020'),
+				c('program.gamutOutput.p3d65', 'P3-D65'),
+			]),
 			c('program.showGuides', 'Show Guides'),
 			c('program.lockGuides', 'Lock Guides'),
 			c('program.addGuide', 'Add Guide…'),

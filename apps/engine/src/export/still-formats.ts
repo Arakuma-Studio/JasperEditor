@@ -1,4 +1,4 @@
-// Still outputs use 8-bit RGB for JPEG / TIFF / BMP / Targa, 10-bit RGB DPX, and OpenEXR in linear light: the
+// Still outputs use 8-bit RGB for JPEG / TIFF / BMP / Targa (RGBA for transparent TIFF and Targa), 10-bit RGB DPX, and OpenEXR in linear light: the
 // display-referred still is linearised with the working space's own EOTF (BT.1886 ≈ γ2.4 for Rec. 709, the sRGB
 // curve for sRGB, γ2.6 for DCI-P3, γ2.2) — the inverse of what the Program monitor displays — and written as half
 // floats with ZIP compression, BT.709 primaries.
@@ -38,6 +38,8 @@ const MAX_EXR_PIXELS = 7680 * 4320;
 
 type Opts = {
 	jpegQuality?: number;
+	/** spec 19 TL-114: keep the PNG's alpha (TIFF, Targa). */
+	alpha?: boolean;
 	curve: StillCurve;
 	scratch: string;
 	signal?: AbortSignal;
@@ -51,7 +53,11 @@ function jpegQscale(quality = 90): number {
 }
 
 /** Encoder arguments for the 8/10-bit formats (after `-i <png>`). */
-export function stillEncodeArgs(format: Exclude<StillFormat, 'png' | 'exr'>, jpegQuality?: number): string[] {
+export function stillEncodeArgs(
+	format: Exclude<StillFormat, 'png' | 'exr'>,
+	jpegQuality?: number,
+	alpha = false,
+): string[] {
 	switch (format) {
 		case 'jpeg':
 			return [
@@ -65,13 +71,22 @@ export function stillEncodeArgs(format: Exclude<StillFormat, 'png' | 'exr'>, jpe
 				'image2',
 			];
 		case 'tiff':
-			return ['-c:v', 'tiff', '-pix_fmt', 'rgb24', '-compression_algo', 'lzw', '-f', 'image2'];
+			return [
+				'-c:v',
+				'tiff',
+				'-pix_fmt',
+				alpha ? 'rgba' : 'rgb24',
+				'-compression_algo',
+				'lzw',
+				'-f',
+				'image2',
+			];
 		case 'dpx':
 			return ['-c:v', 'dpx', '-pix_fmt', 'gbrp10le', '-f', 'image2'];
 		case 'bmp':
 			return ['-c:v', 'bmp', '-pix_fmt', 'bgr24', '-f', 'image2'];
 		case 'tga':
-			return ['-c:v', 'targa', '-pix_fmt', 'bgr24', '-f', 'image2'];
+			return ['-c:v', 'targa', '-pix_fmt', alpha ? 'bgra' : 'bgr24', '-f', 'image2'];
 	}
 }
 
@@ -151,7 +166,10 @@ export async function convertStill(
 		);
 		await rm(f32, { force: true });
 	} else {
-		await ff.run(['-i', png, '-frames:v', '1', ...stillEncodeArgs(format, opts.jpegQuality), out], run);
+		await ff.run(
+			['-i', png, '-frames:v', '1', ...stillEncodeArgs(format, opts.jpegQuality, opts.alpha), out],
+			run,
+		);
 	}
 	if (!(await stat(out)).size) throw new Error(`The ${format} encoder wrote an empty file`);
 	const dest = png.replace(/\.png$/, `.${ext}`);

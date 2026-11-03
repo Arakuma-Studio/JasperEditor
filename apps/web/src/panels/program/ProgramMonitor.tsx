@@ -37,6 +37,7 @@ import { useAudioSessionServices } from '../../audio/session.ts';
 import { useColorBypass } from '../../color/actions.ts';
 import { runCommand } from '../../commands/index.ts';
 import { registerFullscreenTarget } from '../../commands/monitor-view.ts';
+import { gamutOverlay } from '../../delivery/GamutOverlay.tsx';
 import { useExpressionsFor } from '../../expressions/engine.ts';
 import { programOverlays } from '../../extensions/index.ts';
 import { useRegistry } from '../../extensions/react.ts';
@@ -137,6 +138,7 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 	// automation passes and audio scrubbing follow this session's transport.
 	useAudioSessionServices(session);
 	const overlays = useRegistry(programOverlays);
+	const gamutEnabled = useStoreSelector(gamutOverlay, (s) => s.enabled);
 	const seqId = useSessionState((s) => s.activeSequenceId);
 	// gesture frames reach the Player as often as it can afford (useGestureFrameDocument); commits at once.
 	const gestureDrawn = useGestureFrameDocument();
@@ -695,6 +697,12 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 						},
 						// edit-ux (Premiere wrench menu): rulers, guides, comparison view, dropped frame indicator
 						{ type: 'separator' },
+						{
+							type: 'toggle',
+							label: 'Gamut Warning',
+							checked: gamutEnabled,
+							onToggle: () => gamutOverlay.setState((s) => ({ enabled: !s.enabled })),
+						},
 						{
 							type: 'toggle',
 							label: 'Show Rulers',

@@ -826,12 +826,113 @@ Port map: `licenses/ported/pachislop-rendering.md`, `licenses/ported/pachislop-l
 | Look effects at half resolution against full, perturbed params | SSIM above 0.93 for all ten | same, `-t "half the resolution"` |
 | Deep Glow cost, 1080p, SwiftShader | 7.0 s title box, 17.2 s full frame | [performance.md](../performance.md) §7 |
 
+Delivery (§12), real renders through the engine's routes, outputs opened and read back:
+
+| What | Result | Rerun |
+|---|---|---|
+| Transparent still in PNG, TIFF, Targa | `rgba`/`bgra`; corner alpha 0; opaque and partial pixels both present | `REMOTION_E2E=1 pnpm exec vitest run apps/engine/test/delivery.e2e.test.ts` |
+| PNG sequence | ZIP of numbered frames, read back by the engine's own ZIP reader | same |
+| Export Title beside the frame edge | `origin.x` < 0, so the glow was drawn past the frame; the margin is clear and content starts right after it | same |
+| PSD from a real frame, opened with ag-psd | Layers and groups in order, parts nested inside `fx`, title recombined over the solid within 6 code values of the composite | same |
+| Split with a glow at alpha 2 | The parts reassemble byte for byte | same |
+| Rec. 2020 still against Rec. 709 and Rec. 2020 | > 90 % and 0 % out of gamut | same |
+| Gamut Warning in the running app: a Rec. 2020 logo in a Rec. 2020 sequence, checked against Rec. 709 | 2.6 % flagged; the logo's blocks are 53 000 of 2 073 600 pixels (2.56 %), and the mask sits on them | By hand in the app: Program ▸ wrench ▸ Gamut Warning (no automated browser test) |
+| Shape Burst stroke with ag-psd's own decoder | The style is lost; with ours it maps to a `shape` gradient | `pnpm exec vitest run apps/engine/test/ps-styles.test.ts` |
+
 The extension contract was exercised by copying this note's three worked examples verbatim into their own files with their
 one-line registrations: they typechecked with no change to the core, and the registry and GL tests picked them up (and failed
 for the missing fingerprints, and for a generator example that was clipped by its own padding, now fixed above).
 
 | Poster from disk, 240 × 136, two layers, SwiftShader, shared host | answered as `cached`, under a fifth of the first render (asserted); 580 ms in one run under load | `REMOTION_E2E=1 pnpm exec vitest run apps/engine/test/title-look-posters.e2e.test.ts` |
 | Poster, first render, same conditions | ≈ 20 s, not timed alone. Basis: the four tests of that file took 58.6 s for three renders, on a bundle already built | same |
+
+## Interchange and delivery (§12)
+
+| Piece | File |
+|---|---|
+| Plan of a PSD: layers, what is baked, blockers | `apps/engine/src/export/delivery/psd-plan.ts` |
+| PSD on disk, one layer at a time | `apps/engine/src/export/delivery/psd-writer.ts`, `psd-job.ts` |
+| Style files to `PsStyleSchema` values | `apps/engine/src/title-looks/ps-styles.ts` |
+| Style to look, with its report | `packages/project/src/title-looks/ps-style.ts` |
+| PNG frames with alpha, Export Title | `apps/engine/src/export/delivery/alpha.ts`, `frames.ts`, `trim.ts`, `zip-writer.ts` |
+| Alpha islands and the cut | `packages/project/src/image-split/`, `apps/engine/src/export/delivery/split-image.ts` |
+| `clip.splitImage` | `packages/project/src/commands/{schemas,handlers}/image-split.ts` |
+| Gamut and legal check | `packages/project/src/color/gamut-check.ts`, `apps/engine/src/export/delivery/gamut.ts` |
+| Dialogs, overlay, commands | `apps/web/src/delivery/` |
+| MCP tools | `apps/mcp/src/tools/delivery.ts`; guide topic `delivery` |
+| Routes | `apps/engine/src/routes/delivery.ts` |
+
+### TL-112 Send to Photoshop
+
+- **Plan first.** `POST /api/psd/plan` runs nothing: it lists the layers, what is baked and the blockers, so the dialog can
+  show them before writing (Pachislop's warnings arrive after the download).
+- **One render per layer, alone, in the full frame.** That is what makes them register. A clip draws in Normal at 100 %, and
+  its blend mode and opacity go on the PSD layer. An opacity expression stays in the pixels and the plan says so.
+- **Baked with a name.** An adjustment layer or a blend mode without a Photoshop equal needs the picture below it, so a layer
+  `<name> (baked)` holds the composite up to there, and what it stands in for stays below, hidden. A transition at the frame is
+  one layer: its sides do not exist apart. A track matte or a 3D scene flattens the whole stack, because its sources can sit
+  above the clip.
+- **Memory.** `writePsd` takes every layer in RAM and returns one buffer. So each layer goes through ag-psd alone as a one-layer
+  document (ag-psd still writes every byte: records, RLE, blend keys), its channel data goes to a scratch file, and the records
+  are kept. The final file is head + records + streamed channels + tail + composite, the head and tail from one more ag-psd
+  document with empty layers. Peak memory is one layer's RGBA, the composite and ag-psd's scratch buffer, 16 bytes per
+  pixel, so `MAX_PSD_PIXELS` caps it at ≈ 1 GiB; the layer count does not matter. Cancellation is checked between layers and every step takes the
+  job's signal. The file is a same-directory temp file, fsync, rename, directory fsync.
+- **Split titles.** A part keeps every other layer of the look at zero opacity, not removed: rims grow from what is above them,
+  so removing a layer would move the ones below it. Layers that do not grow the silhouette are just disabled. Parts are hidden,
+  `fx` is shown: a look composites in linear light and Photoshop in gamma, so the parts recombine close to `fx`, not exactly.
+- **Colour.** Layers are the display rendition (the same LUT as stills). The flattened picture in the file is the render.
+
+### TL-113 Layer styles
+
+- **Written against the catalogue.** The mapper looks up each layer type, finish and param in the registry; what this build
+  lacks is reported (`this build has no …`, `… is not a setting of …`) and left out, never lost silently. Since the finishes and
+  glows streams merged (integration 2), Inner Shadow, Inner Glow, an inside Stroke, Bevel and Satin map to `innerShadow`,
+  `innerGlow`, `inline` and the face's `bevel` / `satin` finishes with their params (`ps-style.test.ts`). The finish check had read
+  `finish` from the type's own params, where it is not (the registry adds it), so every Bevel and Satin was reported as missing
+  until that integration.
+- **Store.** Imported looks are project looks: `saveImportedLooks` (`apps/web/src/delivery/LayerStyleDialog.tsx`) writes them with
+  `look.create`, undoable. It is the one place to change to send them to the engine's user-look store (TL-054), which no panel
+  lists yet.
+- **Overlays stack.** Pachislop mixes overlays into one colour. Here each is a `face` layer over the base at its opacity, which is
+  exact for normal blending and stays editable.
+- **Shape Burst.** ag-psd's enum lacks `GrdT.shapeburst` and throws, which loses the whole style in an `.asl` and the whole file in
+  a `.psd`. Confirmed on ag-psd 31.0.2: `ps-styles.test.ts` swaps the decoder back and sees the style go. `ps-styles.ts` extends it.
+- **No file from Photoshop was available.** Tests build `.asl` and `.psd` files with ag-psd's writers: the real layouts, but not
+  Photoshop's own bytes. The `.asl` layout follows Pachislop's reader.
+
+### TL-114 Alpha
+
+- A transparent still and a PNG sequence are drawn by the compositions on a transparent page (the layer bake's path), since the
+  native composite is RGB. ProRes 4444 is unchanged.
+- Export Title renders on a canvas a quarter of the long side larger on each edge, measures every frame (alpha ≥ 1, so a glow's
+  tail counts), crops all frames to the union plus the margin, and doubles the canvas once if something still touches its edge.
+  The result's `origin` says where its corner sits in the sequence, which can be negative.
+- `crop`, `lut3d`, `format` and the PNG encoder are LGPL: no GPL filter is involved (`alpha-delivery.test.ts` runs the graph
+  through `assertLgplGraphArgs`). A 3D scene projects through the frame, so it is trimmed inside the frame, with a warning.
+
+### TL-115 Split image
+
+- The engine decodes and cuts, so no canvas touches kept pixels. 8- and 16-bit pictures stay as they are; a 16-bit island's alpha
+  is judged by its high byte. The dialog's canvases only draw the preview.
+- Static Motion gives each part an anchor at its centre, which is what logo animation wants. With keyframes the anchor moves
+  instead, so every key stays valid and the parts follow the whole. Masks and trackers are refused: they are shaped to the whole
+  picture.
+- Parts are grouped. Each is on a free track above, or a new one.
+
+### TL-116 Gamut overlay
+
+- **The Program picture cannot be read back** in general: it is DOM, and only some stacks pass through a canvas. So the frame is
+  measured by the engine, as `frame.capture` is: a job per paused frame, debounced, the previous one cancelled. The mask is hidden
+  while playing or until the current frame's result is in, since a stale mask would mark the wrong pixels.
+- **Gamut** is the working signal in the output's linear light with nothing mapped: a channel below 0 or above the output's peak
+  (`unmappedOutputFn`). Against the working space itself that is 0 by construction.
+- **Legal range.** Full-range RGB cannot break legal limits by itself: every 8-bit value maps inside the narrow range. What breaks
+  them is 4:2:0, where a pixel gets its neighbours' chroma. So each pixel is rebuilt from its own Y′ and its block's chroma and
+  held to EBU R 103 (RGB −5 % … +105 %, luma −1 % … +103 %). R 103 tolerates under 1 % of the picture.
+- Assumption, not from a standard: nearest-neighbour chroma. A real decoder interpolates, so the check is a little stricter than a
+  scope.
+- Sources: EBU R 103 v3.0 (2020); ITU-R BT.709-6 and BT.2020-2 luma weights.
 
 ## Limits
 
@@ -852,6 +953,9 @@ for the missing fingerprints, and for a generator example that was clipped by it
 - A pattern tile and a reflection image have no mip chain: the tile spreads 9 taps over the pixel and the image 12 over the blur
   cone, which holds the look at the sizes titles use, not a 4K tile shown at 20 px.
 - Grain finer than two pixels loses contrast with its share of the pixel, so a resolution comparison keeps tone, not the pattern.
+- A PSD holds text as pixels, not type (TL-112), and the dialog says so.
+- Layer styles have not met a file written by Photoshop itself (see TL-113 above).
+- `line` and `glyph` spans render as `block` until TL-036 (`docs/gaps.md`).
 - The field is rebuilt whenever a frame is redrawn: an animated param on static text pays for it, though the input did not
   change. TL-037 only requires skipping unchanged input and params; `tlField` could be reused across frames when only layer
   uniforms change, by keying the field passes on their own.

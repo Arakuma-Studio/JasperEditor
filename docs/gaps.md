@@ -909,6 +909,19 @@ Status of the foundation; streams still in progress update this list. Evidence: 
   the finishes and generators; `pnpm exec vitest run packages/project/test/title-look-library.test.ts` holds its checks.
 - **Rendered style checks are not in the lint** (TL-056): backdrop contrast needs a measurement from the caller. Without one it is reported
   as unmeasured, never as passed. `title_check` provides it (TL-102).
+- **Send to Photoshop** (TL-112) rasterises everything: text arrives as pixels, and adjustment layers, blend modes Photoshop lacks,
+  track mattes and 3D scenes are baked into a layer named so (the dialog lists them). 8-bit only: ag-psd writes no other depth.
+- **Layer styles** (TL-113): reported, not mapped: pattern overlays and pattern strokes (a style file has no bitmaps), noise
+  gradients, contours, Knockout, noise; blend modes other than Normal are drawn Normal and say so. A face has one finish, so Satin is
+  left out under a Bevel. Tested on files written with ag-psd, not on files from Photoshop. Imported looks are project looks
+  (`saveImportedLooks`), not entries of the engine's user-look store (TL-054), which no panel lists yet.
+- **Export Title** (TL-114): a 3D scene is trimmed inside the sequence frame, since it projects through it. Transparent stills are
+  PNG, TIFF or Targa; JPEG, DPX, BMP and OpenEXR are refused.
+- **Split Image** (TL-115) refuses clips with masks or trackers: they are shaped to the whole picture. Remove them first.
+- **Delivery reports are in English**: the PSD plan's baked lines and blockers and the layer-style reports come from the engine and the
+  model as text, like job errors, so the Spanish UI shows them in English around translated headings.
+- **Gamut Warning** (TL-116) measures on the engine per paused frame, not during playback: the Program picture is DOM. Legal range
+  assumes 4:2:0 delivery and nearest-neighbour chroma.
 - **Software rendering is slow**: ≈ 1.3 s per 1080p frame for a six-layer look on a title-sized box on SwiftShader, and an
   animated title redraws its whole stack every frame ([performance.md](performance.md) §7). Nothing has been measured on a GPU.
 - **Look effects on full-frame clips pay for the shape field** (every §8 effect but Deep Glow, which has its own passes): six
@@ -934,8 +947,10 @@ discovery are in; evidence and thresholds in [wp-notes/title-looks-agents.md](wp
 - The rendered rows of a proposal are returned to the agent, not stored on it, so Review does not show them.
 - **The MCP eval cannot sample the titles tools yet.** `apps/mcp/eval/fake-engine.ts` does not model
   `requestStillSheet`, so a sample reaching `find_title_looks` or `propose_title` is marked invalid; the case
-  `titles-styled-title` builds but cannot pass until the fake renders look sheets. No model samples were run for the
-  `+titles`, `+effects` and `+export` budgets ([wp-notes/title-looks-agents.md](wp-notes/title-looks-agents.md)).
+  `titles-styled-title` builds but cannot pass until the fake renders look sheets. It has no route for `psdPlan`,
+  `psdExport`, `alphaDelivery` or `gamutCheck` either, so `delivery-psd`, `delivery-alpha-png` and `delivery-gamut` cannot
+  produce a valid sample yet. No model samples were run for the `+titles`, `+effects`, `+export`, `+3d`, `+color` and
+  `+graphics` budgets ([wp-notes/title-looks-agents.md](wp-notes/title-looks-agents.md)).
 
 ### 3D titles (spec 19 §9)
 

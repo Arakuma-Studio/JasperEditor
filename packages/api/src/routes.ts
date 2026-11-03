@@ -51,6 +51,14 @@ import {
 	CleanupPresetUpdateRequestSchema,
 } from './cleanup.ts';
 import {
+	AlphaDeliveryRequestSchema,
+	GamutCheckRequestSchema,
+	LayerStyleFileSchema,
+	PsdPlanSchema,
+	PsdRequestSchema,
+	SplitImageRequestSchema,
+} from './delivery.ts';
+import {
 	EffectPresetCreateRequestSchema,
 	EffectPresetDeleteResponseSchema,
 	EffectPresetFolderCreateRequestSchema,
@@ -601,6 +609,54 @@ export const ROUTES = {
 		method: 'POST',
 		path: '/api/stills/sheet',
 		body: StillSheetRequestSchema,
+		response: EngineJobSchema,
+	},
+	/** spec 19 TL-114: PNG frames with alpha, one or a sequence, optionally trimmed (`alpha-delivery` job). */
+	alphaDelivery: {
+		method: 'POST',
+		path: '/api/alpha-delivery',
+		body: AlphaDeliveryRequestSchema,
+		response: EngineJobSchema,
+	},
+	/** spec 19 TL-112: what a frame becomes as a PSD: layers, what is baked, blockers. */
+	psdPlan: {
+		method: 'POST',
+		path: '/api/psd/plan',
+		body: PsdRequestSchema,
+		response: PsdPlanSchema,
+	},
+	/** spec 19 TL-112: writes the PSD (`psd-export` job). */
+	psdExport: {
+		method: 'POST',
+		path: '/api/psd',
+		body: PsdRequestSchema,
+		response: EngineJobSchema,
+	},
+	/** spec 19 TL-116: measures a frame against an output gamut and the legal range (`gamut-check` job). */
+	gamutCheck: {
+		method: 'POST',
+		path: '/api/gamut-check',
+		body: GamutCheckRequestSchema,
+		response: EngineJobSchema,
+	},
+	/** spec 19 TL-113: the layer styles of a `.asl` or `.psd`, sent as the raw body. `?name=` is the file name. */
+	layerStylesRead: {
+		method: 'POST',
+		path: '/api/title-looks/layer-styles/read',
+		body: 'binary',
+		response: LayerStyleFileSchema,
+	},
+	/** spec 19 TL-115: the alpha islands of a still (`split-image` job, result `SplitImageAnalysis`). */
+	splitImageAnalyze: {
+		method: 'POST',
+		path: '/api/media/:key/split-image/analyze',
+		response: EngineJobSchema,
+	},
+	/** spec 19 TL-115: cuts a still into parts and registers them (`split-image` job, result `SplitImageResult`). */
+	splitImage: {
+		method: 'POST',
+		path: '/api/media/:key/split-image',
+		body: SplitImageRequestSchema,
 		response: EngineJobSchema,
 	},
 	/** Which segment hashes have render preview files. */

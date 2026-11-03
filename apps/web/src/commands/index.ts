@@ -7,6 +7,7 @@ import '../text-edit/register.ts';
 import '../remote-assets/register.ts';
 import '../title-looks/register.ts';
 import { audioFxCommands } from '../audio-fx/commands.ts';
+import { deliveryCommands } from '../delivery/commands.ts';
 import { strokeAnimationCommands } from '../stroke-animation/commands.ts';
 import { appCommands } from './app.ts';
 import { audioCommands } from './audio.ts';
@@ -87,6 +88,7 @@ const COMMAND_MODULES: UiCommand[][] = [
 	helpCommands,
 	colorCommands,
 	colorMgmtCommands,
+	deliveryCommands,
 	processCommands,
 	compositionCommands,
 	trackingCommands,

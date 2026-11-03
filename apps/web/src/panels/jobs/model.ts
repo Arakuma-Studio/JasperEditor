@@ -19,6 +19,8 @@ function groupOf(job: Pick<EngineJob, 'kind'>): JobGroupId {
 		case 'export':
 		case 'still':
 		case 'still-sheet':
+		case 'psd-export':
+		case 'alpha-delivery':
 			return 'exports';
 		case 'preview':
 			return 'previews';

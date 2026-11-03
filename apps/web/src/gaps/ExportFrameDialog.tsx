@@ -1,6 +1,6 @@
 // Frames use the engine's full-resolution still renderer, never proxies. Source-monitor export uses
 // a scratch sequence at the source playhead so its framing matches the monitor.
-import { STILL_FORMAT_EXTENSIONS, STILL_FORMATS, type StillFormat } from '@jasper/api';
+import { ALPHA_STILL_FORMATS, STILL_FORMAT_EXTENSIONS, STILL_FORMATS, type StillFormat } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	applyTransaction,
@@ -139,6 +139,9 @@ function ExportFrameDialog(props: HostedDialogProps<Props>) {
 	const [local, setLocal] = useState<boolean | null>(null);
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	// spec 19 TL-114: only PNG, TIFF and Targa hold alpha.
+	const [transparent, setTransparent] = useState(false);
+	const canAlpha = ALPHA_STILL_FORMATS.includes(format);
 
 	useEffect(() => {
 		let off = false;
@@ -185,6 +188,7 @@ function ExportFrameDialog(props: HostedDialogProps<Props>) {
 				sequenceId: built.sequenceId,
 				frame: built.frame,
 				format,
+				...(transparent && canAlpha ? { alpha: true } : {}),
 				...(toFolder ? { destination: { folder: folder.trim(), name: name.trim() || 'Frame' } } : {}),
 			});
 			const done = await followJob(engine, job.id, { intervalMs: 300 });
@@ -245,6 +249,12 @@ function ExportFrameDialog(props: HostedDialogProps<Props>) {
 					onValueChange={(v) => setFormat(v as StillFormat)}
 					options={STILL_FORMATS.map((f) => ({ value: f, label: STILL_FORMAT_LABELS[f] }))}
 				/>
+				{canAlpha ? (
+					<>
+						<span />
+						<Checkbox checked={transparent} onCheckedChange={setTransparent} label="Transparent background" />
+					</>
+				) : null}
 				{local ? (
 					<>
 						<span className="text-pr-muted">Path</span>

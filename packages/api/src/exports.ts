@@ -489,30 +489,43 @@ export const STILL_FORMAT_EXTENSIONS: Record<StillFormat, string> = {
 	tga: 'tga',
 };
 
-export const StillRequestSchema = z.object({
-	envelope: EnvelopeSchema,
-	sequenceId: z.string(),
-	frame: z.number().int().min(0),
-	width: z.number().int().positive().optional(),
-	/** the file format (default PNG). */
-	format: z.enum(STILL_FORMATS).optional(),
-	/** JPEG quality 1–100 (default 90). */
-	jpegQuality: z.number().int().min(1).max(100).optional(),
-	/**
-	 * also copy the frame to `<folder>/<name>.<ext>` on the engine host (local engines; never
-	 * overwrites: " (2)" is appended). The result's `path` is the file written.
-	 */
-	destination: z
-		.object({
-			folder: z.string().min(1).max(4096),
-			name: z
-				.string()
-				.min(1)
-				.max(200)
-				.refine((n) => !/[\\/\0]/.test(n) && n !== '.' && n !== '..', 'A file name, not a path'),
-		})
-		.optional(),
-});
+/** spec 19 TL-114: still formats that hold an alpha channel. */
+export const ALPHA_STILL_FORMATS: readonly StillFormat[] = ['png', 'tiff', 'tga'];
+
+export const StillRequestSchema = z
+	.object({
+		envelope: EnvelopeSchema,
+		sequenceId: z.string(),
+		frame: z.number().int().min(0),
+		width: z.number().int().positive().optional(),
+		/** the file format (default PNG). */
+		format: z.enum(STILL_FORMATS).optional(),
+		/** JPEG quality 1–100 (default 90). */
+		jpegQuality: z.number().int().min(1).max(100).optional(),
+		/**
+		 * also copy the frame to `<folder>/<name>.<ext>` on the engine host (local engines; never
+		 * overwrites: " (2)" is appended). The result's `path` is the file written.
+		 */
+		destination: z
+			.object({
+				folder: z.string().min(1).max(4096),
+				name: z
+					.string()
+					.min(1)
+					.max(200)
+					.refine((n) => !/[\\/\0]/.test(n) && n !== '.' && n !== '..', 'A file name, not a path'),
+			})
+			.optional(),
+		/**
+		 * spec 19 TL-114: a transparent still: no sequence background, straight alpha, on the Remotion path. PNG, TIFF or
+		 * Targa; other formats have no alpha and are refused.
+		 */
+		alpha: z.boolean().optional(),
+	})
+	.refine((r) => !r.alpha || ALPHA_STILL_FORMATS.includes(r.format ?? 'png'), {
+		message: 'A transparent still needs PNG, TIFF or Targa',
+		path: ['format'],
+	});
 export type StillRequest = z.infer<typeof StillRequestSchema>;
 
 /** Spec 19 TL-103 / TL-106: what one `still-sheet` job may hold. */

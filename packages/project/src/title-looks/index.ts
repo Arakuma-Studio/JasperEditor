@@ -8,6 +8,7 @@ export * from './model.ts';
 export * from './normalize.ts';
 export * from './overrides.ts';
 export * from './properties.ts';
+export * from './ps-style.ts';
 export * from './recipe.ts';
 export * from './recipe-bounds.ts';
 export * from './resolve.ts';

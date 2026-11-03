@@ -22,11 +22,15 @@ import { basename, dirname, extname, isAbsolute, join, sep } from 'node:path';
 import type { Writable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import {
+	type AlphaDeliveryRequest,
 	type EngineJob,
 	type ExportResult,
 	type ExportSettings,
 	type ExportStartRequest,
 	type ExportVerifyRequest,
+	type GamutCheckRequest,
+	type PsdPlan,
+	type PsdRequest,
 	STILL_FORMAT_EXTENSIONS,
 	type StillRequest,
 	type StillSheetRequest,
@@ -37,6 +41,7 @@ import {
 	copyableRuns,
 	type MediaHandle,
 	mediaDecodeHints,
+	type RenderSnapshot,
 	type RenderVisualClip,
 	rotoStorePath,
 	writeCaptionFile,
@@ -80,6 +85,10 @@ import {
 	subtitleCodecFor,
 } from './captions.ts';
 import { audioOnlyMuxArgs, gifGraphs, gifMuxLoop, gifToRgb } from './deliverables.ts';
+import { type DeliveryDeps, type DeliveryFrames, runAlphaDelivery } from './delivery/alpha.ts';
+import { runGamutCheck } from './delivery/gamut.ts';
+import { runPsdExport } from './delivery/psd-job.ts';
+import { planPsd } from './delivery/psd-plan.ts';
 import { BT709_FRAME_TAGS, buildNativeGraph, SWS_FLAGS } from './native.ts';
 import {
 	layerOverride,
@@ -168,7 +177,10 @@ export type PreviewSource = (
 type StoredRequest =
 	| { kind: 'export'; request: ExportStartRequest }
 	| { kind: 'still'; request: StillRequest }
-	| { kind: 'still-sheet'; request: StillSheetRequest };
+	| { kind: 'still-sheet'; request: StillSheetRequest }
+	| { kind: 'alpha'; request: AlphaDeliveryRequest }
+	| { kind: 'psd'; request: PsdRequest }
+	| { kind: 'gamut'; request: GamutCheckRequest };
 
 const JOB_ID_RE = /^job_[0-9a-f]{16}$/;
 
@@ -235,6 +247,16 @@ export class ExportService {
 		this.deps.queue.registerRunner('still', (ctx) => this.withRequestCleanup(ctx, () => this.runStill(ctx)));
 		this.deps.queue.registerRunner('still-sheet', (ctx) =>
 			this.withRequestCleanup(ctx, () => this.runStillSheet(ctx)),
+		);
+		// spec 19 §12
+		this.deps.queue.registerRunner('alpha-delivery', (ctx) =>
+			this.withRequestCleanup(ctx, () => this.runAlpha(ctx)),
+		);
+		this.deps.queue.registerRunner('psd-export', (ctx) =>
+			this.withRequestCleanup(ctx, () => this.runPsd(ctx)),
+		);
+		this.deps.queue.registerRunner('gamut-check', (ctx) =>
+			this.withRequestCleanup(ctx, () => this.runGamut(ctx)),
 		);
 		// spec 18 AF-VER-001: verification of a finished export
 		this.deps.queue.registerRunner('export-verify', (ctx) =>
@@ -2505,7 +2527,7 @@ export class ExportService {
 	/** One Program still as a PNG at `output`, on the export's path (S11:LBK-025). */
 	private async renderStillPng(
 		ctx: JobContext,
-		req: Pick<StillRequest, 'envelope' | 'sequenceId' | 'frame' | 'width'>,
+		req: Pick<StillRequest, 'envelope' | 'sequenceId' | 'frame' | 'width' | 'alpha'>,
 		output: string,
 	): Promise<{
 		planned: PlannedExport;
@@ -2516,7 +2538,8 @@ export class ExportService {
 			sequenceId: req.sequenceId,
 			range: { type: 'entire' },
 			container: 'mp4',
-			engine: 'auto',
+			// spec 19 TL-114: the native composite is RGB; a transparent still is drawn on the transparent page.
+			engine: req.alpha ? 'remotion' : 'auto',
 			destination: { type: 'download' },
 		};
 		let planned: PlannedExport;
@@ -2538,6 +2561,7 @@ export class ExportService {
 			if (e instanceof PlanError) throw new JobError(e.code, e.message, false, e.detail);
 			throw e;
 		}
+		if (req.alpha) planned.output.alpha = true;
 		const seqW = planned.snapshot.settings.width;
 		const seqH = planned.snapshot.settings.height;
 		if (req.width && req.width !== seqW) {
@@ -2609,6 +2633,7 @@ export class ExportService {
 		try {
 			written = await convertStill(this.deps.ff, output, format, ext, {
 				...(req.jpegQuality ? { jpegQuality: req.jpegQuality } : {}),
+				...(req.alpha ? { alpha: true } : {}),
 				curve: stillCurveFor(planned.snapshot.settings.color?.space),
 				scratch: await ctx.scratchDir(),
 				signal: ctx.signal,
@@ -2652,6 +2677,194 @@ export class ExportService {
 			...(destPath ? { path: destPath } : {}),
 			...(warnings.length ? { warnings } : {}),
 		};
+	}
+
+	// -- spec 19 §12: delivery on the Remotion path ------------------------------------------------------------------
+
+	private deliveryPlanInput(envelope: unknown, sequenceId: string, range: { start: number; end: number }) {
+		return {
+			envelope: envelope as Parameters<typeof planExport>[0]['envelope'],
+			sequenceId,
+			settings: {
+				sequenceId,
+				range: { type: 'entire' },
+				container: 'mp4',
+				engine: 'remotion',
+				destination: { type: 'download' },
+			} as ExportSettings,
+			rangeOverride: range,
+			still: true,
+		};
+	}
+
+	private async deliveryPlan(
+		envelope: unknown,
+		sequenceId: string,
+		range: { start: number; end: number },
+	): Promise<PlannedExport> {
+		return planExport(this.deliveryPlanInput(envelope, sequenceId, range), {
+			registry: this.deps.registry,
+			fonts: this.deps.fonts,
+			capabilities: await this.deps.capabilities(),
+			extensions: this.nativeExtensions.all(),
+		});
+	}
+
+	/** Frames of a request as a signed render document, plus the display LUT (a job's first step). */
+	private async deliveryFrames(
+		ctx: JobContext,
+		envelope: unknown,
+		sequenceId: string,
+		range: { start: number; end: number },
+	): Promise<DeliveryFrames & { planned: PlannedExport }> {
+		let planned: PlannedExport;
+		try {
+			planned = await this.deliveryPlan(envelope, sequenceId, range);
+		} catch (e) {
+			if (e instanceof PlanError) throw new JobError(e.code, e.message, false, e.detail);
+			throw e;
+		}
+		const prepared = await this.prepareForRemotion(planned, ctx);
+		const { doc } = this.remotionProps(planned, prepared) as { doc: RenderSnapshot };
+		const displayLut = await displayLutFilter(planned.snapshot.settings.color, await ctx.scratchDir());
+		this.commitRefs(ctx, planned, 'still');
+		return { doc, displayLut, planned };
+	}
+
+	private deliveryDeps(): DeliveryDeps {
+		return {
+			frames: (ctx, envelope, sequenceId, range) => this.deliveryFrames(ctx, envelope, sequenceId, range),
+			remotion: this.deps.remotion,
+			ff: this.deps.ff,
+			outDir: (ctx) => this.outDir(ctx),
+			copyOut: (src, dest, ctx) =>
+				copyNoOverwrite(src, dest, { signal: ctx.signal, claimed: (p) => ctx.addPartial(p) }).catch((e) => {
+					if (ctx.signal.aborted) throw e;
+					const code = (e as NodeJS.ErrnoException).code;
+					throw new JobError(
+						code === 'ENOSPC' ? 'DISK_FULL' : 'DESTINATION_FAILED',
+						`Could not write to ${dest}: ${(e as Error).message}`,
+						false,
+					);
+				}),
+			concurrency: (ctx) => remotionConcurrency(ctx.slots),
+		};
+	}
+
+	/** A local destination is validated like Export Frame's (S04:SC-002). */
+	private assertDestination(d: { folder: string } | undefined): void {
+		if (!d) return;
+		if (!this.deps.localMode)
+			throw new PlanError('LOCAL_MODE_ONLY', 403, 'Writing to a folder is only available in local mode');
+		if (!isAbsolute(d.folder))
+			throw new PlanError('VALIDATION_FAILED', 400, 'The destination folder must be an absolute path');
+	}
+
+	private submitDelivery(
+		kind: 'alpha-delivery' | 'psd-export' | 'gamut-check',
+		title: string,
+		envelope: unknown,
+		file: string,
+		origin: EngineJob['origin'],
+	): EngineJob {
+		const doc = (envelope as { document?: { projectId?: string } }).document;
+		return this.deps.queue.submit({
+			kind,
+			title,
+			priority: 'interactive',
+			cpuSlots: 2,
+			minSlots: 1,
+			origin,
+			...(typeof doc?.projectId === 'string' ? { projectId: doc.projectId } : {}),
+			input: { request: file },
+		});
+	}
+
+	/** `POST /api/alpha-delivery` (spec 19 TL-114). */
+	async alphaDelivery(
+		req: AlphaDeliveryRequest,
+		origin: EngineJob['origin'] = { type: 'user' },
+	): Promise<EngineJob> {
+		this.assertDestination(req.destination);
+		const frames = req.range.end - req.range.start;
+		const title = req.clipIds ? 'Export Title' : frames === 1 ? `Frame ${req.range.start}` : 'PNG sequence';
+		const file = await this.storeRequest({ kind: 'alpha', request: req });
+		return this.submitDelivery('alpha-delivery', title, req.envelope, file, origin);
+	}
+
+	private async runAlpha(ctx: JobContext): Promise<unknown> {
+		const stored = await this.loadRequest(ctx);
+		if (stored.kind !== 'alpha') throw new JobError('BAD_REQUEST', 'Not an alpha delivery request', false);
+		const result = await runAlphaDelivery(ctx, stored.request, this.deliveryDeps());
+		await rm((ctx.input as { request: string }).request, { force: true });
+		return result;
+	}
+
+	/**
+	 * `POST /api/psd/plan` (spec 19 TL-112): what the frame would become, what is baked and why it cannot be written.
+	 * A sequence the render path refuses is a blocker here, not an error: the dialog shows it before anything runs.
+	 */
+	async psdPlan(req: PsdRequest): Promise<PsdPlan> {
+		const range = { start: req.frame, end: req.frame + 1 };
+		let planned: PlannedExport;
+		try {
+			planned = await this.deliveryPlan(req.envelope, req.sequenceId, range);
+		} catch (e) {
+			if (!(e instanceof PlanError) || e.status < 409) throw e;
+			return {
+				width: 0,
+				height: 0,
+				frame: req.frame,
+				layers: [],
+				baked: [],
+				blockers: [{ code: e.code, message: e.message }],
+				warnings: [],
+				estimate: { renders: 0, bytes: 0 },
+			};
+		}
+		const { plan } = planPsd(planned.snapshot, req.frame, { splitTitles: req.splitTitles === true });
+		return {
+			...plan,
+			warnings: [...planned.plan.warnings.map(({ code, message }) => ({ code, message })), ...plan.warnings],
+		};
+	}
+
+	/** `POST /api/psd` (spec 19 TL-112). */
+	async psd(req: PsdRequest, origin: EngineJob['origin'] = { type: 'user' }): Promise<EngineJob> {
+		this.assertDestination(req.destination);
+		const file = await this.storeRequest({ kind: 'psd', request: req });
+		return this.submitDelivery('psd-export', `PSD of frame ${req.frame}`, req.envelope, file, origin);
+	}
+
+	private async runPsd(ctx: JobContext): Promise<unknown> {
+		const stored = await this.loadRequest(ctx);
+		if (stored.kind !== 'psd') throw new JobError('BAD_REQUEST', 'Not a PSD request', false);
+		const result = await runPsdExport(ctx, stored.request, this.deliveryDeps());
+		await rm((ctx.input as { request: string }).request, { force: true });
+		return result;
+	}
+
+	/** `POST /api/gamut-check` (spec 19 TL-116). */
+	async gamutCheck(
+		req: GamutCheckRequest,
+		origin: EngineJob['origin'] = { type: 'user' },
+	): Promise<EngineJob> {
+		const file = await this.storeRequest({ kind: 'gamut', request: req });
+		return this.submitDelivery(
+			'gamut-check',
+			`Gamut check of frame ${req.frame}`,
+			req.envelope,
+			file,
+			origin,
+		);
+	}
+
+	private async runGamut(ctx: JobContext): Promise<unknown> {
+		const stored = await this.loadRequest(ctx);
+		if (stored.kind !== 'gamut') throw new JobError('BAD_REQUEST', 'Not a gamut check request', false);
+		const result = await runGamutCheck(ctx, stored.request, this.deliveryDeps());
+		await rm((ctx.input as { request: string }).request, { force: true });
+		return result;
 	}
 
 	/** Spec 19 TL-103: `cell-<n>.png` per cell, in order, as one job. A failed cell fails the job and names itself. */

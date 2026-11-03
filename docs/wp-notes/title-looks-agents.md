@@ -139,3 +139,39 @@ effects tools follow the same rules since that merge:
   models look sheets, `titles-styled-title` cannot produce a valid sample (recorded in `docs/gaps.md`).
 - `toolsets.test.ts`'s unknown-tool-name scan reads every tool's `details` as well as its description, since most
   reference text now lives there.
+
+## 3D and delivery tools after the MCP text cut (integration 2)
+
+The 3D stream (`apps/mcp/src/tools/three-d.ts`) and the interchange stream (`apps/mcp/src/tools/delivery.ts`) were written
+before `main`'s conventions reached them. At integration 2 they follow them:
+
+- `set_3d_renderer`, `set_3d_surface`, `set_3d_geometry`, `edit_bevel_bands`, `edit_backplates`, `send_to_photoshop`,
+  `export_alpha`, `import_layer_styles`, `split_image` and `check_gamut` advertise one sentence; the former description is
+  their `details`. One correction inside them: the 3D details sent agents to `set_param`, which is no tool
+  (`toolsets.test.ts` caught it); they now name `apply_commands` `param.set` and `keyframe.*`, as `THREE_D_GUIDE` does.
+- No toolset is new: the 3D tools are in `3d`, the delivery tools in `export`, `graphics` and `color`, with the guide topic
+  `delivery`. The instructions map gains trigger words for both: `3d (cameras, lights, extruded 3D titles)` and
+  `export (PSD, PNGs with alpha)`. "Extruded 3D" rather than "metal" keeps a flat gold title in `titles`.
+- Measured bytes (`pnpm --filter @jasper/mcp eval:measure`, merged tree):
+
+  | Context | Base budget | Before the split | After | New budget (after + 2 %) |
+  |---|---|---|---|---|
+  | `core` | 25,884 | 25,510 | 25,571 (map words) | 25,884 (unchanged) |
+  | `+3d` | 14,883 | 23,336 | 21,403 | 21,846 |
+  | `+color` | 16,928 | 17,216 | 17,139 | 17,482 |
+  | `+graphics` | 18,957 | 19,764 | 19,577 | 19,969 |
+  | `+export` | 11,780 | 13,459 | 13,282 | 13,548 |
+  | `all` | 497,324 | 505,681 (3D only) | 507,077 | 513,876 |
+
+  "Before" for `+3d` was measured on the merged tree before the split; for the delivery contexts it is the measurement
+  after plus the description bytes the split moved (77, 187 and 177 bytes). Why they grow: `+3d` gains four tools
+  (`set_3d_surface` alone is 2.4 KB of schema: the physical material's values) and the tone mapping, exposure and glint
+  arguments of `set_3d_renderer`; `+export` gains `send_to_photoshop` and `export_alpha`, `+graphics`
+  `import_layer_styles` and `split_image`, `+color` `check_gamut`. `all` was raised once, after the 3D merge, to its
+  measurement + 2 %; the delivery tools fit inside it.
+- The eval cases those bytes have to earn: `eval/cases/three-d.jsonl` (`three-d-extruded-title`, and the control
+  `three-d-flat-title-control`, which keeps a flat gold title out of the 3D tools) and `eval/cases/delivery.jsonl`
+  (`delivery-psd`, `delivery-alpha-png`, `delivery-gamut`). They build (`pnpm --filter @jasper/mcp eval --dry-run`: 42
+  cases); no model samples were run. `eval/fake-engine.ts` has no route for `psdPlan`, `psdExport`, `alphaDelivery` or
+  `gamutCheck`, so a sample that reaches them is marked invalid (an unmodelled engine call), as for the titles cases
+  (`docs/gaps.md`). The 3D cases only edit the document, which the fake applies for real.

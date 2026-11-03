@@ -724,6 +724,8 @@ schemas):
   `export_frame`; Project Manager `project_manager`; Warp Stabilizer `stabilize_clip`; Auto Reframe
   `auto_reframe_sequence`; Essential Graphics `create_graphic` `set_graphic` `export_graphic_template`
   `import_graphic_template`.
+- Delivery and Photoshop (`docs/wp-notes/title-looks.md`): `send_to_photoshop` `export_alpha` `import_layer_styles`
+  `split_image` `check_gamut`.
 
 Resources: `jasper://projects/{projectId}/document`, `jasper://projects/{projectId}/timeline`,
 `jasper://guide`, `jasper://guide/<topic>`, `jasper://guide/routing`. Prompt: `edit-video`.
@@ -1158,6 +1160,26 @@ graphics)** and lists one graphics group per baked layer.
   bakes byte for byte, the third the subtitle templates with the composition's own frames); subtitle-scale timing and
   memory: `node scripts/perf/subtitles.mjs --case short|long9m --variant pixelpop --warm`;
   preview request timing and stale-result handling: `apps/web/test/layer-bake-runtime.test.ts`.
+
+## Titles: delivery and Photoshop
+
+Alpha delivery, Photoshop interchange and a gamut check (`docs/wp-notes/title-looks.md`):
+
+- **File ▸ Export ▸ PNG Sequence with Alpha…**: numbered PNGs on a transparent background, straight alpha, in a folder or a ZIP.
+  **File ▸ Export ▸ Frame…** takes *Transparent background* for PNG, TIFF and Targa. ProRes 4444 stays in Export Media.
+- **Graphics ▸ Export Title…**: the selected clips alone, trimmed across their whole range to what they paint plus a margin. It
+  renders past the sequence frame, so a glow at the edge is not cut, and reports where the picture sits in the sequence.
+- **Graphics ▸ Send to Photoshop…** (also File ▸ Export): the frame at the playhead as a layered, registered 8-bit PSD. The dialog
+  lists the layers and everything baked, and blockers appear before anything is written. Text is rasterised. *Split titles* groups
+  each title into rims, face and fx.
+- **Graphics ▸ Import Layer Styles…**: the styles of a `.asl` or `.psd` as looks, with a report per style of what was mapped,
+  approximated and not supported.
+- **Graphics ▸ Split Image…**: a still into its connected parts as separate clips, grouped, one undo step, for logo animation.
+- **Program ▸ wrench ▸ Gamut Warning** (also the View menu): marks the pixels of the paused frame outside an output gamut, or
+  outside the EBU R 103 legal range after 4:2:0, with percentages.
+- MCP: `send_to_photoshop` `export_alpha` (export toolset), `import_layer_styles` `split_image` (graphics), `check_gamut` (color);
+  guide topic `delivery`. Routes: `POST /api/psd/plan`, `/api/psd`, `/api/alpha-delivery`, `/api/gamut-check`,
+  `/api/title-looks/layer-styles/read`, `/api/media/:key/split-image[/analyze]`.
 
 ## Media cache
 

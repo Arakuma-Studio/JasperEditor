@@ -11,6 +11,7 @@ import capabilitiesRoutes from './capabilities.ts';
 import captionRoutes from './captions.ts';
 import cleanupRoutes from './cleanup.ts';
 import colorRoutes from './color.ts';
+import deliveryRoutes from './delivery.ts';
 import effectPresetRoutes from './effect-presets.ts';
 import eventsRoutes from './events.ts';
 import exportsRoutes from './exports.ts';
@@ -58,6 +59,7 @@ const ROUTE_PLUGINS = [
 	exportsRoutes,
 	stillsRoutes,
 	titleLookRoutes,
+	deliveryRoutes,
 	fontsRoutes,
 	remoteAssetRoutes,
 	mgRoutes,

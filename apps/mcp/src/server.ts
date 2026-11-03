@@ -28,6 +28,7 @@ import { CLIPBOARD_GUIDE, registerClipboardTools } from './tools/clipboard.ts';
 import { COLOR_GUIDE, registerColorTools } from './tools/color.ts';
 import { COLOR_MGMT_GUIDE, registerColorMgmtTools } from './tools/color-mgmt.ts';
 import { COMPOSITION_GUIDE, registerCompositionTools } from './tools/compositions.ts';
+import { DELIVERY_GUIDE, registerDeliveryTools } from './tools/delivery.ts';
 import { DERIVE_GUIDE, registerDeriveTools } from './tools/derive.ts';
 import { EASE_GUIDE, registerEaseTools } from './tools/ease.ts';
 import { EDIT_UX_GUIDE, registerEditUxTools } from './tools/edit-ux.ts';
@@ -191,6 +192,11 @@ const GUIDES: Record<string, GuideSource> = {
 	roto: ROTO_GUIDE,
 	'sim-warp': SIM_WARP_GUIDE,
 	interchange: INTERCHANGE_GUIDE,
+	delivery: {
+		title: 'Delivery and Photoshop',
+		description: 'Layered PSD, PNGs with alpha, Export Title, layer styles, image split, gamut check.',
+		sections: [DELIVERY_GUIDE],
+	},
 	imports: IMPORTS_GUIDE,
 	inspect: INSPECT_GUIDE,
 	ui: UI_GUIDE,
@@ -300,6 +306,7 @@ export function createJasperMcpServer(opts: JasperMcpOptions): { server: McpServ
 	registerRotoTools(ctx);
 	registerSimWarpTools(ctx);
 	registerInterchangeTools(ctx);
+	registerDeliveryTools(ctx);
 	registerInspectTools(ctx);
 	registerUiTools(ctx);
 	registerExpressionTools(ctx);
