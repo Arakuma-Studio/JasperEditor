@@ -5,7 +5,13 @@
 // Reading is strict and never throws: `parseUserLook` and `parseLookFile` return results. An entry of a newer version is
 // refused, not guessed at. Objects are loose, so a field a newer minor write added survives a round trip through this one.
 import { z } from 'zod';
-import { appearanceBytes, type Colorway, ColorwaySchema, MAX_LOOK_COLORWAYS, MAX_TITLE_LOOK_NAME } from './model.ts';
+import {
+	appearanceBytes,
+	type Colorway,
+	ColorwaySchema,
+	MAX_LOOK_COLORWAYS,
+	MAX_TITLE_LOOK_NAME,
+} from './model.ts';
 import { appearanceFromRecipe, type LookRecipe, LookRecipeSchema, MAX_RECIPE_BYTES } from './recipe.ts';
 import { appearanceProblem } from './validate.ts';
 

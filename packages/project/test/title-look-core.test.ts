@@ -157,7 +157,6 @@ describe('per-letter finishes (TL-093)', () => {
 describe('the look’s stage: lights fixed on screen', () => {
 	const close = (a: readonly number[] | null, b: readonly number[]) => {
 		for (const [i, v] of a!.entries()) expect(v).toBeCloseTo(b[i]!, 9);
-		a!.forEach((v, i) => expect(v).toBeCloseTo(b[i]!, 9));
 	};
 	const turned = (deg: number, sx = 1, sy = 1) => {
 		const t = (deg * Math.PI) / 180;
