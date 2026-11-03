@@ -66,15 +66,15 @@ async function session(name: string) {
 
 describe('the eval fake engine (spec 19 cases)', () => {
 	let s: Awaited<ReturnType<typeof session>>;
-	/** The title `propose_title` applied. */
+	/** The title `title_propose` applied. */
 	let titleClip = '';
 	beforeAll(async () => {
 		s = await session('titles');
 	});
 	afterAll(() => s.close());
 
-	it('find_title_looks: the library on one numbered sheet the fake rendered, user looks read', async () => {
-		const r = await s.ok('find_title_looks', { query: 'gold' });
+	it('title_look_find: the library on one numbered sheet the fake rendered, user looks read', async () => {
+		const r = await s.ok('title_look_find', { query: 'gold' });
 		expect(r.json.rows.length).toBeGreaterThan(0);
 		expect(r.json.userLooksError).toBeUndefined();
 		expect(r.json.timedOut).toBe(false);
@@ -82,14 +82,14 @@ describe('the eval fake engine (spec 19 cases)', () => {
 		expect(decodePng(Buffer.from(r.images[0]!.data, 'base64')).width).toBeLessThanOrEqual(640);
 	});
 
-	it('propose_title: refused headless, stored once an editor has the project, with measured rows', async () => {
-		const { rows } = (await s.ok('find_title_looks', { query: 'gold' })).json;
+	it('title_propose: refused headless, stored once an editor has the project, with measured rows', async () => {
+		const { rows } = (await s.ok('title_look_find', { query: 'gold' })).json;
 		const brief = { projectId: s.project, text: 'GAME NIGHT', at: 0, lookId: rows[0].lookId };
-		const headless = await s.run('propose_title', brief);
+		const headless = await s.run('title_propose', brief);
 		expect(headless.isError).toBe(true);
 		expect(headless.json.error.code).toBe('E_NO_EDITOR');
 		await s.ok('open_project_in_editor', { projectId: s.project });
-		const r = await s.ok('propose_title', { ...brief, alternatives: 2, seed: 7 });
+		const r = await s.ok('title_propose', { ...brief, alternatives: 2, seed: 7 });
 		expect(r.json.proposalId).toMatch(/^prp_/);
 		expect(r.images).toHaveLength(1);
 		const byId = new Map((r.json.check.rows as Json[]).map((x) => [x.id, x]));
@@ -98,9 +98,9 @@ describe('the eval fake engine (spec 19 cases)', () => {
 			expect(byId.get(id)?.status, id).toBe('pass');
 	});
 
-	it('propose_title apply, then title_check on the clip it made', async () => {
-		const { rows } = (await s.ok('find_title_looks', { query: 'gold' })).json;
-		const applied = await s.ok('propose_title', {
+	it('title_propose apply, then title_check on the clip it made', async () => {
+		const { rows } = (await s.ok('title_look_find', { query: 'gold' })).json;
+		const applied = await s.ok('title_propose', {
 			projectId: s.project,
 			text: 'GAME NIGHT',
 			at: 10,
@@ -114,25 +114,26 @@ describe('the eval fake engine (spec 19 cases)', () => {
 		expect(contrast?.status).toBe('pass');
 	});
 
-	it('send_to_photoshop: a plan, then a PSD job, both in the engine’s shapes', async () => {
-		const plan = await s.ok('send_to_photoshop', { projectId: s.project, at: 20, dryRun: true });
+	it('export_psd: a plan, then a PSD job, both in the engine’s shapes', async () => {
+		const plan = await s.ok('export_psd', { projectId: s.project, at: 20, dryRun: true });
 		expect(plan.json.written).toBe(false);
 		const { written: _w, next: _n, ...planBody } = plan.json;
 		expect(PsdPlanSchema.parse(planBody).layers.map((l) => l.name)).toContain('GAME NIGHT');
-		const psd = await s.ok('send_to_photoshop', { projectId: s.project, at: 20, splitTitles: true });
+		const psd = await s.ok('export_psd', { projectId: s.project, at: 20, splitTitles: true });
 		const { written, jobId: _j, ...result } = psd.json;
 		expect(written).toBe(true);
 		const parsed = PsdResultSchema.parse(result);
 		expect(parsed.layers.map((l) => l.name)).toEqual(expect.arrayContaining(['rim 1', 'face', 'fx']));
 	});
 
-	it('export_alpha: one PNG, a trimmed title, and a sequence', async () => {
-		const still = await s.ok('export_alpha', { projectId: s.project, start: 2 });
+	it('export_frame {alpha}: one PNG, a trimmed title, and a sequence', async () => {
+		const still = await s.ok('export_frame', { projectId: s.project, at: 2, alpha: true });
 		const { jobId: _a, ...one } = still.json;
 		expect(AlphaDeliveryResultSchema.parse(one)).toMatchObject({ format: 'png', frames: 1, width: 1920 });
-		const trimmed = await s.ok('export_alpha', {
+		const trimmed = await s.ok('export_frame', {
 			projectId: s.project,
-			start: 10,
+			at: 10,
+			alpha: true,
 			end: 12,
 			clipIds: [titleClip],
 			trimMarginPx: 16,
@@ -144,14 +145,14 @@ describe('the eval fake engine (spec 19 cases)', () => {
 		expect(r.origin.x).toBeGreaterThan(0);
 	});
 
-	it('check_gamut: a measurement against the working space or the one asked for', async () => {
-		const working = await s.ok('check_gamut', { projectId: s.project, at: 3 });
+	it('color_gamut_check: a measurement against the working space or the one asked for', async () => {
+		const working = await s.ok('color_gamut_check', { projectId: s.project, at: 3 });
 		const { jobId: _a, ...w } = working.json;
 		expect(GamutCheckResultSchema.parse(w)).toMatchObject({
 			output: 'rec709',
 			outputLabel: expect.any(String),
 		});
-		const p3 = await s.ok('check_gamut', { projectId: s.project, at: 3, output: 'p3d65' });
+		const p3 = await s.ok('color_gamut_check', { projectId: s.project, at: 3, output: 'p3d65' });
 		expect(p3.json.output).toBe('p3d65');
 	});
 

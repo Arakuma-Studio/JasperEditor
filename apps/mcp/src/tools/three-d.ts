@@ -69,7 +69,7 @@ export const THREE_D_GUIDE = `3D layers, cameras and lights (After Effects' 3D i
 - set_3d_renderer {renderer classic|advanced, draft}: Classic 3D is After Effects' plane renderer. get_3d_scene {frame} reports the evaluated camera, lights, every 3D layer's placement and projected corners and the runs — check results with render_frame.
 - Every property is also a param.set path: ["clip", id, "threeD", "positionZ" | "orientation" | "rotationX" | "material", "castsShadows" …], ["clip", id, "camera", "zoom" | "position" | "pointOfInterest" …], ["clip", id, "light", "intensity" | "color" …] (keyframe.add / expressions work on them too).
 - Export: 3D layers render on the Remotion path (the planner routes them there and says so); preview and export use the same renderer. A missing HDR or 3D model refuses the export (THREE_D_ASSET_MISSING); physical surfaces, HDR, tone mapping, glints and supersampling refuse where the render browser has no float targets (THREE_D_NEEDS_FLOAT). Enum costClass of a 3D title: 3d, or 3d-heavy with transmission, glints, inflate or supersampling.
-- 3D titles (Advanced 3D, text and shape layers): set_3d_geometry {mode extrude | inflate, bevelPosition, extrusionDepth, inflate}; edit_bevel_bands (up to 6 bands, each with width, depth, profile, curve and its own material); edit_backplates (up to 3 solids from contour, hull or box); set_3d_surface {surface base | face | side | back | band id | plate id.face | plate id.side, preset, values}: metal-roughness with clearcoat, flakes, procedural relief, iridescence, and transmission glass that refracts the sequence below it. Presets include gold, chrome, silver, copper, glass, diamond. Metal needs something to reflect: add_light {lightType environment, environmentPreset studio | sky | city | sunset | chromeBands | neon, or environmentMediaId with an image or a Radiance .hdr}; without one the neutral studio lights physical surfaces. set_3d_renderer {toneMapping aces | agx | neutral | hue, exposure, glint}. A title looks like metal with toneMapping aces, a bevel band, and an environment with bright bands. Look glass (the glass finish) refracts only its own fill: to refract the footage behind a title, use 3D transmission.
+- 3D titles (Advanced 3D, text and shape layers): threed_solid_edit {mode extrude | inflate, bevelPosition, extrusionDepth, inflate, band (up to 6 bevel bands, each with width, depth, profile, curve and its own material), plate (up to 3 backplates from contour, hull or box)}; set_material {surface base | face | side | back | band id | plate id.face | plate id.side, preset, values}: metal-roughness with clearcoat, flakes, procedural relief, iridescence, and transmission glass that refracts the sequence below it. Presets include gold, chrome, silver, copper, glass, diamond. Metal needs something to reflect: add_light {lightType environment, environmentPreset studio | sky | city | sunset | chromeBands | neon, or environmentMediaId with an image or a Radiance .hdr}; without one the neutral studio lights physical surfaces. set_3d_renderer {toneMapping aces | agx | neutral | hue, exposure, glint}. A title looks like metal with toneMapping aces, a bevel band, and an environment with bright bands. Look glass (the glass finish) refracts only its own fill: to refract the footage behind a title, use 3D transmission.
 - 3D Camera Tracker: track_camera {clipId} analyses a video clip (features tracked through the shown media frames, then the camera and lens solved: Shot Type fixed | variable | specify with hfov, Solve Method auto | typical | flat | tripod, detailed, lensDistortion) and stores the solve (Method Used, Average Error in px, 3D track points); it takes about a second per frame. get_camera_tracker {clipId, frame} lists the track points seen at a sequence frame (id, media px, depth, error). create_tracked_camera {clipId, layer none|text|solid, pointIds, text} makes a one-node camera keyed on every frame that sees the footage as it was filmed, plus a 3D text or solid on the target of the points (3 or more points: their plane). set_tracker_ground {clipId, pointIds ≥ 3} makes their plane the ground (horizontal, through the frame centre) before creating the camera. delete_track_points {clipId, pointIds} drops bad points and solves again. The tracked clip must be drawn centred, unrotated, not animated (its Motion scale is used).`;
 
 const Vec3Arg = z.tuple([z.number().finite(), z.number().finite(), z.number().finite()]);
@@ -153,13 +153,16 @@ export function registerThreeDTools(ctx: ToolContext): void {
 		},
 	);
 
+	const PresetArg = z.enum(Object.keys(SURFACE_PRESETS) as [string, ...string[]]);
 	defineTool(
 		ctx,
 		'set_material',
 		{
-			title: 'Set material options',
+			title: 'Set material',
 			description:
-				'Sets Material Options of 3D layers (one undoable edit): castsShadows / acceptsShadows off | on | only, acceptsLights, and percentages lightTransmission, ambient, diffuse, specularIntensity, specularShininess, metal, reflectionIntensity, reflectionSharpness (animated ones get a key at `frame`).',
+				'Material of 3D layers: Material Options, and with `preset` or `values` a physical surface (gold, chrome, glass…). `metal` is classic shading, not a metal look.',
+			details:
+				'One undoable edit. Material Options (classic and Advanced 3D): castsShadows / acceptsShadows off | on | only, acceptsLights, and percentages lightTransmission, ambient, diffuse, specularIntensity, specularShininess, metal, reflectionIntensity, reflectionSharpness (animated ones get a key at `frame`). A physical surface (Advanced 3D, text and shape layers): surface base (default, every surface), face, side, back, a band id, or plateId.face / plateId.side; preset, values (percent 0–100 unless noted: metalness, roughness, clearcoat, flakes, relief crumple | hammered | liquid, iridescence, transmission with ior and thickness in layer px, emissive) or clearSurface. List surfaces and values with get_clip_properties. Numbers animate through apply_commands param.set and keyframe.* at threeD.surface.<surface>.<value>. Physical surfaces need the float scene target and render on the Remotion path. The solid itself (depth, bevels, backplates): threed_solid_edit.',
 			input: {
 				projectId: ProjectIdArg,
 				clipIds: z.array(z.string().min(1)).min(1),
@@ -174,11 +177,19 @@ export function registerThreeDTools(ctx: ToolContext): void {
 				metal: z.number().finite().optional(),
 				reflectionIntensity: z.number().finite().optional(),
 				reflectionSharpness: z.number().finite().optional(),
+				surface: z
+					.string()
+					.min(1)
+					.optional()
+					.describe('Physical surface: base (default), face, side, back, a band id, plateId.face'),
+				preset: PresetArg.optional().describe('Physical material, e.g. gold, chrome, glass'),
+				values: SurfaceValuesSchema.optional(),
+				clearSurface: z.boolean().optional().describe('Remove the physical material of `surface`'),
 				frame: FrameArg,
 			},
 			annotations: EDIT_IDEMPOTENT,
 		},
-		async ({ projectId, clipIds, frame, ...props }, extra) => {
+		async ({ projectId, clipIds, frame, surface, preset, values, clearSurface, ...props }, extra) => {
 			const statics = new Set(['castsShadows', 'acceptsShadows', 'acceptsLights']);
 			const cmds: unknown[] = [];
 			for (const id of clipIds)
@@ -191,9 +202,25 @@ export function registerThreeDTools(ctx: ToolContext): void {
 						...(statics.has(k) ? {} : atOf(frame)),
 					});
 				}
+			if (preset !== undefined || values !== undefined || clearSurface)
+				cmds.push({
+					type: 'threeD.setSurface',
+					clipIds,
+					...(surface !== undefined ? { surface } : {}),
+					...(preset !== undefined ? { preset } : {}),
+					...(values !== undefined ? { values } : {}),
+					...(clearSurface ? { clear: true } : {}),
+					...atOf(frame),
+				});
+			else if (surface !== undefined)
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'surface names where a physical material goes',
+					'Add preset or values.',
+				);
 			if (cmds.length === 0)
 				throw new ToolError('E_INVALID_PARAM', 'Nothing to set', 'Pass at least one option.');
-			return applyHelper(ctx, projectId, 'Material Options', cmds, extra);
+			return applyHelper(ctx, projectId, 'Material', cmds, extra);
 		},
 	);
 
@@ -440,43 +467,43 @@ export function registerThreeDTools(ctx: ToolContext): void {
 			),
 	);
 
-	defineTool(
-		ctx,
-		'set_3d_surface',
-		{
-			title: 'Set 3D surface material',
-			description: 'Give a surface of 3D text or shape layers a physically based material.',
-			details:
-				'Gives a surface of 3D layers a physically based material (one undoable edit): surface base (default, every surface), face, side, back, a band id, or plateId.face / plateId.side; preset, values (percent 0–100 unless noted: metalness, roughness, clearcoat, flakes, relief crumple | hammered | liquid, iridescence, transmission with ior and thickness in layer px, emissive) or clear. List surfaces and values with get_clip_properties. Numbers animate through apply_commands param.set and keyframe.* at threeD.surface.<surface>.<value>. Physical surfaces need the float scene target and render on the Remotion path.',
-			input: {
-				projectId: ProjectIdArg,
-				clipIds: z.array(z.string().min(1)).min(1),
-				surface: z.string().min(1).optional(),
-				preset: z.enum(Object.keys(SURFACE_PRESETS) as [string, ...string[]]).optional(),
-				values: SurfaceValuesSchema.optional(),
-				clear: z.boolean().optional(),
-				frame: FrameArg,
-			},
-			annotations: EDIT_IDEMPOTENT,
-		},
-		async ({ projectId, frame, ...args }, extra) =>
-			applyHelper(
-				ctx,
-				projectId,
-				'3D Material',
-				[{ type: 'threeD.setSurface', ...args, ...atOf(frame) }],
-				extra,
-			),
-	);
+	const partAction = z.enum(['add', 'remove', 'reorder']).optional().describe('Default add');
+	const bandArgs = z.object({
+		action: partAction,
+		bandId: z.string().optional().describe('remove, reorder'),
+		index: z.number().int().min(0).optional(),
+		width: z.number().min(0).max(2000).optional(),
+		depth: z.number().min(0).max(2000).optional(),
+		profile: z.enum(BEVEL_PROFILES).optional(),
+		curve: z.number().min(-100).max(100).optional(),
+		segments: z.number().int().min(1).max(24).optional(),
+		preset: PresetArg.optional(),
+	});
+	const plateArgs = z.object({
+		action: partAction,
+		plateId: z.string().optional().describe('remove, reorder'),
+		index: z.number().int().min(0).optional(),
+		shape: z.enum(PLATE_SHAPES).optional(),
+		grow: z.number().min(0).max(2000).optional(),
+		depth: z.number().min(0).max(2000).optional(),
+		gap: z.number().min(-2000).max(2000).optional(),
+		corner: z.number().min(0).max(2000).optional(),
+		fillCounters: z.boolean().optional(),
+		bevelWidth: z.number().min(0).max(2000).optional(),
+		bevelDepth: z.number().min(0).max(2000).optional(),
+		bevelProfile: z.enum(BEVEL_PROFILES).optional(),
+		preset: PresetArg.optional(),
+	});
 
 	defineTool(
 		ctx,
-		'set_3d_geometry',
+		'threed_solid_edit',
 		{
-			title: 'Set 3D title geometry',
-			description: 'Set the solid of 3D text and shape layers: extrude or inflate, bevel position, depth.',
+			title: 'Edit a 3D solid',
+			description:
+				'The solid of 3D text and shape layers: extrude or inflate, depth, a bevel `band`, a backplate `plate`. Advanced 3D only. Its gold, chrome or glass: `set_material`.',
 			details:
-				'The solid of text and shape 3D layers (one undoable edit): mode extrude | inflate, bevelPosition inside | center | outside, extrusionDepth (layer px), inflate { height, smoothness, detail 1–4, curve: 2–16 points x, y in 0…1 from edge to ridge }. Numbers animate through apply_commands param.set and keyframe.*; a change of geometry rebuilds the solid, a change of camera, light or material does not.',
+				"One undoable edit on text and shape 3D layers. Geometry: mode extrude | inflate, bevelPosition inside | center | outside, extrusionDepth (layer px), inflate { height, smoothness, detail 1–4, curve: 2–16 points x, y in 0…1 from edge to ridge }. band adds (default), removes or reorders a bevel band, at most 6 per solid (a seventh is refused with E_LIMIT): bands run from the face edge outwards, width and depth in layer px, profile flat | chamfer | round | cove | step | inset | tube, curve −100…100, segments 1–24, preset for a material of its own. plate adds, removes or reorders a backplate, at most 3 (a fourth: E_LIMIT): a solid stacked behind the title, shape contour | hull | box, grow, depth, gap, corner, bevelWidth, bevelDepth in layer px, fillCounters, preset for its material; plates grow cumulatively. A new part's id comes back in refs ($band0, $plate0…, one per clip). Numbers animate through apply_commands param.set and keyframe.* at threeD.band.<bandId>.<value> and threeD.plate.<plateId>.<value>; a change of geometry rebuilds the solid, a change of camera, light or material does not.",
 			input: {
 				projectId: ProjectIdArg,
 				clipIds: z.array(z.string().min(1)).min(1),
@@ -501,98 +528,25 @@ export function registerThreeDTools(ctx: ToolContext): void {
 							.optional(),
 					})
 					.optional(),
+				band: bandArgs.optional().describe('A bevel band to add, remove or reorder'),
+				plate: plateArgs.optional().describe('A backplate to add, remove or reorder'),
 				frame: FrameArg,
 			},
-			annotations: EDIT_IDEMPOTENT,
-		},
-		async ({ projectId, frame, ...args }, extra) =>
-			applyHelper(
-				ctx,
-				projectId,
-				'3D Geometry',
-				[{ type: 'threeD.setGeometry', ...args, ...atOf(frame) }],
-				extra,
-			),
-	);
-
-	defineTool(
-		ctx,
-		'edit_bevel_bands',
-		{
-			title: 'Edit bevel bands',
-			description: 'Add, remove or reorder a bevel band of a 3D text or shape layer.',
-			details:
-				'Adds, removes or reorders a bevel band of a text or shape 3D layer (one undoable edit; at most 6 per solid, a seventh is refused with E_LIMIT). Bands run from the face edge outwards: width and depth in layer px, profile flat | chamfer | round | cove | step | inset | tube, curve −100…100, segments 1–24, preset for a material of its own. Numbers animate at threeD.band.<bandId>.<value>.',
-			input: {
-				projectId: ProjectIdArg,
-				clipId: z.string().min(1),
-				action: z.enum(['add', 'remove', 'reorder']),
-				bandId: z.string().optional().describe('remove, reorder'),
-				index: z.number().int().min(0).optional(),
-				width: z.number().min(0).max(2000).optional(),
-				depth: z.number().min(0).max(2000).optional(),
-				profile: z.enum(BEVEL_PROFILES).optional(),
-				curve: z.number().min(-100).max(100).optional(),
-				segments: z.number().int().min(1).max(24).optional(),
-				preset: z.enum(Object.keys(SURFACE_PRESETS) as [string, ...string[]]).optional(),
-			},
 			annotations: EDIT,
 		},
-		async ({ projectId, action, clipId, bandId, index, ...band }, extra) => {
-			if (action !== 'add' && !bandId)
-				throw new ToolError('E_INVALID_PARAM', 'bandId is required to remove or reorder a band');
-			const cmd =
-				action === 'add'
-					? { type: 'threeD.addBand' as const, clipId, ...band, ...(index !== undefined ? { index } : {}) }
-					: action === 'remove'
-						? { type: 'threeD.removeBand' as const, clipId, bandId: bandId! }
-						: { type: 'threeD.reorderBand' as const, clipId, bandId: bandId!, index: index ?? 0 };
-			return applyHelper(ctx, projectId, 'Bevel Band', [cmd], extra);
-		},
-	);
-
-	defineTool(
-		ctx,
-		'edit_backplates',
-		{
-			title: 'Edit backplates',
-			description: 'Add, remove or reorder a backplate behind a 3D text or shape layer.',
-			details:
-				'Adds, removes or reorders a backplate of a text or shape 3D layer (one undoable edit; at most 3, a fourth is refused with E_LIMIT): a solid stacked behind the title, shape contour | hull | box, grow, depth, gap, corner, bevelWidth, bevelDepth in layer px, fillCounters, preset for its material. Plates grow cumulatively. Numbers animate at threeD.plate.<plateId>.<value>.',
-			input: {
-				projectId: ProjectIdArg,
-				clipId: z.string().min(1),
-				action: z.enum(['add', 'remove', 'reorder']),
-				plateId: z.string().optional().describe('remove, reorder'),
-				index: z.number().int().min(0).optional(),
-				shape: z.enum(PLATE_SHAPES).optional(),
-				grow: z.number().min(0).max(2000).optional(),
-				depth: z.number().min(0).max(2000).optional(),
-				gap: z.number().min(-2000).max(2000).optional(),
-				corner: z.number().min(0).max(2000).optional(),
-				fillCounters: z.boolean().optional(),
-				bevelWidth: z.number().min(0).max(2000).optional(),
-				bevelDepth: z.number().min(0).max(2000).optional(),
-				bevelProfile: z.enum(BEVEL_PROFILES).optional(),
-				preset: z.enum(Object.keys(SURFACE_PRESETS) as [string, ...string[]]).optional(),
-			},
-			annotations: EDIT,
-		},
-		async ({ projectId, action, clipId, plateId, index, ...plate }, extra) => {
-			if (action !== 'add' && !plateId)
-				throw new ToolError('E_INVALID_PARAM', 'plateId is required to remove or reorder a plate');
-			const cmd =
-				action === 'add'
-					? {
-							type: 'threeD.addBackplate' as const,
-							clipId,
-							...plate,
-							...(index !== undefined ? { index } : {}),
-						}
-					: action === 'remove'
-						? { type: 'threeD.removeBackplate' as const, clipId, plateId: plateId! }
-						: { type: 'threeD.reorderBackplate' as const, clipId, plateId: plateId!, index: index ?? 0 };
-			return applyHelper(ctx, projectId, 'Backplate', [cmd], extra);
+		async ({ projectId, clipIds, frame, band, plate, ...geometry }, extra) => {
+			const cmds: unknown[] = [];
+			if (Object.values(geometry).some((v) => v !== undefined))
+				cmds.push({ type: 'threeD.setGeometry', clipIds, ...geometry, ...atOf(frame) });
+			if (band) cmds.push(...partCommands('band', band, clipIds));
+			if (plate) cmds.push(...partCommands('plate', plate, clipIds));
+			if (cmds.length === 0)
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'Nothing to change',
+					'Pass mode, extrusionDepth, bevelPosition, inflate, band or plate.',
+				);
+			return applyHelper(ctx, projectId, '3D Solid', cmds, extra);
 		},
 	);
 
@@ -976,4 +930,36 @@ function camtrackErr(e: unknown): never {
 		throw new ToolError(code ?? 'ENGINE_ERROR', e.message);
 	}
 	throw e;
+}
+
+type PartArgs = { action?: 'add' | 'remove' | 'reorder'; index?: number; [k: string]: unknown };
+
+/** The commands of one `band` or `plate` edit: an add on every clip, or a remove or reorder of one clip's part. */
+function partCommands(kind: 'band' | 'plate', part: PartArgs, clipIds: readonly string[]): unknown[] {
+	const idKey = kind === 'band' ? 'bandId' : 'plateId';
+	const noun = kind === 'band' ? 'Band' : 'Backplate';
+	const { action = 'add', index, [idKey]: id, ...fields } = part;
+	if (action === 'add')
+		return clipIds.map((clipId, i) => ({
+			type: `threeD.add${noun}`,
+			clipId,
+			...fields,
+			...(index !== undefined ? { index } : {}),
+			ref: `$${kind}${i}`,
+		}));
+	if (typeof id !== 'string' || !id)
+		throw new ToolError(
+			'E_INVALID_PARAM',
+			`${kind}.${idKey} is required to ${action}`,
+			`Pass ${kind}.${idKey}.`,
+		);
+	if (clipIds.length !== 1)
+		throw new ToolError(
+			'E_INVALID_PARAM',
+			`A ${kind} id belongs to one clip`,
+			`Pass only the clip that holds ${id} in clipIds.`,
+		);
+	return action === 'remove'
+		? [{ type: `threeD.remove${noun}`, clipId: clipIds[0], [idKey]: id }]
+		: [{ type: `threeD.reorder${noun}`, clipId: clipIds[0], [idKey]: id, index: index ?? 0 }];
 }

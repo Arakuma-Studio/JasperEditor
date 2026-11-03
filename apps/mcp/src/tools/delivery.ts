@@ -50,11 +50,11 @@ import { toolEnvelope } from '../envelope.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 
 export const DELIVERY_GUIDE = `Delivery and Photoshop:
-- send_to_photoshop writes the frame as a layered 8-bit PSD: one raster layer per clip, registered to the frame, blend mode and opacity on the layer. Text is rasterised: it arrives as pixels. dryRun returns the layers, what is baked and any blockers, and writes nothing; call it first when the frame has adjustment layers or 3D. splitTitles makes a group per title with a look: rims and face (hidden) and fx (the whole look, shown).
-- export_alpha writes PNGs with straight alpha: one frame (start + 1 = end, or at), or a sequence (a ZIP, or a folder with folder + name). It also covers transparent stills; export_frame stays for opaque formats. With clipIds it exports those clips alone; trimMarginPx trims every frame to what they paint across the whole range plus that margin, rendering past the sequence frame so glows do not clip. The result's origin says where the picture's corner sits in the sequence.
+- export_psd writes the frame as a layered 8-bit PSD: one raster layer per clip, registered to the frame, blend mode and opacity on the layer. Text is rasterised: it arrives as pixels. dryRun returns the layers, what is baked and any blockers, and writes nothing; call it first when the frame has adjustment layers or 3D. splitTitles makes a group per title with a look: rims and face (hidden) and fx (the whole look, shown).
+- export_frame {alpha: true} writes PNGs with straight alpha: one frame at at, or a sequence up to end (a ZIP, or a folder with folder + name); without alpha its PNG is opaque. With clipIds it exports those clips alone; trimMarginPx trims every frame to what they paint across the whole range plus that margin, rendering past the sequence frame so glows do not clip. The result's origin says where the picture's corner sits in the sequence.
 - import_layer_styles reads a .asl or .psd and returns one report per style: mapped, approximated, unsupported. dryRun reads without saving; without it the styles become project looks (look.apply {lookId}). A style holds pixels and a look percentages, so pass refPx, the text size the style was made for, when the report says the size is unknown.
-- split_image cuts a still clip into connected parts: one clip per part, grouped, one undo step. dryRun lists the parts. mergePercent is the gap, in percent of the long side, under which islands stay one part (1.5 keeps a word together).
-- check_gamut measures a frame against an output space: gamutPercent (colours the output cannot hold) and legalPercent (EBU R 103 limits after 4:2:0; R 103 tolerates under 1 %). Video gamuts only.`;
+- image_split cuts a still clip into connected parts: one clip per part, grouped, one undo step. dryRun lists the parts. mergePercent is the gap, in percent of the long side, under which islands stay one part (1.5 keeps a word together).
+- color_gamut_check measures a frame against an output space: gamutPercent (colours the output cannot hold) and legalPercent (EBU R 103 limits after 4:2:0; R 103 tolerates under 1 %). Video gamuts only.`;
 
 const NO_FOLDER_HINT = 'Omit folder to get the file as a URL.';
 
@@ -103,13 +103,76 @@ const Destination = {
 const destinationOf = (folder: string | undefined, name: string | undefined, fallback: string) =>
 	folder ? { destination: { folder, name: name ?? fallback } } : {};
 
+/** The alpha arguments of `export_frame` (TL-114): transparent PNG stills and sequences, Export Title. */
+export const AlphaFrameArgs = {
+	alpha: z.boolean().optional().describe('Transparent PNG (straight alpha); else the PNG is opaque'),
+	end: timeArg('With alpha: end of a PNG sequence, exclusive (default: one frame)').optional(),
+	clipIds: z
+		.array(z.string().min(1))
+		.min(1)
+		.max(256)
+		.optional()
+		.describe('With alpha: only these clips (Export Title)'),
+	trimMarginPx: z
+		.number()
+		.int()
+		.min(0)
+		.max(MAX_TRIM_MARGIN_PX)
+		.optional()
+		.describe(`With alpha: trim to content with this margin (Export Title's is ${DEFAULT_TRIM_MARGIN_PX})`),
+	timeoutSeconds: z.number().int().min(1).max(7200).optional(),
+};
+
+/** `export_frame {alpha: true}`: one PNG or a numbered sequence with straight alpha, through the alpha-delivery job. */
+export async function exportAlphaFrames(
+	ctx: ToolContext,
+	a: {
+		projectId: string;
+		at: unknown;
+		end?: unknown;
+		sequenceId?: string;
+		clipIds?: string[];
+		trimMarginPx?: number;
+		timeoutSeconds?: number;
+		folder?: string;
+		name?: string;
+	},
+	extra: Extra,
+) {
+	const loaded = await loadDoc(ctx, a.projectId);
+	const seq = seqOf(loaded.doc, a.sequenceId);
+	const s = frameOf(seq, a.at);
+	const e = a.end === undefined ? s + 1 : frameOf(seq, a.end);
+	if (e <= s || e - s > MAX_ALPHA_FRAMES)
+		throw new ToolError(
+			'E_INVALID_PARAM',
+			`The range must hold 1 to ${MAX_ALPHA_FRAMES} frames`,
+			'Pass an end after at.',
+		);
+	const job = await ctx.engine((c) =>
+		c.call('alphaDelivery', {
+			body: {
+				envelope: toolEnvelope(loaded.doc, loaded.revision),
+				sequenceId: seq.id,
+				range: { start: s, end: e },
+				...(a.clipIds ? { clipIds: a.clipIds } : {}),
+				...(a.trimMarginPx !== undefined ? { trim: { marginPx: a.trimMarginPx } } : {}),
+				...destinationOf(a.folder, a.name, 'Title'),
+			} as never,
+		}),
+	);
+	const r = await finished<AlphaDeliveryResult>(ctx, job, a.timeoutSeconds ?? 900, extra, NO_FOLDER_HINT);
+	return jsonResult({ jobId: job.id, ...r });
+}
+
 export function registerDeliveryTools(ctx: ToolContext): void {
 	defineTool(
 		ctx,
-		'send_to_photoshop',
+		'export_psd',
 		{
 			title: 'Send to Photoshop',
-			description: 'Write a frame as a layered 8-bit PSD for Photoshop.',
+			description:
+				'Write a frame as a layered 8-bit PSD for Photoshop; text arrives as pixels. `dryRun` lists the layers. A flat image: `export_frame`.',
 			details:
 				'The frame as a layered, registered, rasterised 8-bit PSD. dryRun returns layers, what is baked and blockers without writing. Text arrives as pixels.',
 			input: {
@@ -148,73 +211,11 @@ export function registerDeliveryTools(ctx: ToolContext): void {
 
 	defineTool(
 		ctx,
-		'export_alpha',
-		{
-			title: 'Export PNGs with alpha',
-			description:
-				'Export transparent PNG frames: a still, a sequence, or some clips trimmed to their content.',
-			details:
-				'Transparent PNG frames: a still or a numbered sequence, the sequence or some clips alone (clipIds), optionally trimmed to their content with a margin so glows do not clip.',
-			input: {
-				projectId: ProjectIdArg,
-				start: timeArg('First frame'),
-				end: timeArg('End of the range, exclusive (default: one frame)').optional(),
-				sequenceId: SequenceIdArg,
-				clipIds: z
-					.array(z.string().min(1))
-					.min(1)
-					.max(256)
-					.optional()
-					.describe('Only these clips (Export Title)'),
-				trimMarginPx: z
-					.number()
-					.int()
-					.min(0)
-					.max(MAX_TRIM_MARGIN_PX)
-					.optional()
-					.describe(`Trim to content with this margin (Export Title's default is ${DEFAULT_TRIM_MARGIN_PX})`),
-				timeoutSeconds: z.number().int().min(1).max(7200).optional(),
-				...Destination,
-			},
-			annotations: EDIT,
-		},
-		async (
-			{ projectId, start, end, sequenceId, clipIds, trimMarginPx, timeoutSeconds, folder, name },
-			extra,
-		) => {
-			const loaded = await loadDoc(ctx, projectId);
-			const seq = seqOf(loaded.doc, sequenceId);
-			const s = frameOf(seq, start);
-			const e = end === undefined ? s + 1 : frameOf(seq, end);
-			if (e <= s || e - s > MAX_ALPHA_FRAMES)
-				throw new ToolError(
-					'E_INVALID_PARAM',
-					`The range must hold 1 to ${MAX_ALPHA_FRAMES} frames`,
-					'Check start and end.',
-				);
-			const job = await ctx.engine((c) =>
-				c.call('alphaDelivery', {
-					body: {
-						envelope: toolEnvelope(loaded.doc, loaded.revision),
-						sequenceId: seq.id,
-						range: { start: s, end: e },
-						...(clipIds ? { clipIds } : {}),
-						...(trimMarginPx !== undefined ? { trim: { marginPx: trimMarginPx } } : {}),
-						...destinationOf(folder, name, 'Title'),
-					} as never,
-				}),
-			);
-			const r = await finished<AlphaDeliveryResult>(ctx, job, timeoutSeconds ?? 900, extra, NO_FOLDER_HINT);
-			return jsonResult({ jobId: job.id, ...r });
-		},
-	);
-
-	defineTool(
-		ctx,
 		'import_layer_styles',
 		{
 			title: 'Import layer styles',
-			description: 'Import the layer styles of a Photoshop .asl or .psd as project looks, with a report.',
+			description:
+				'Import the layer styles of a Photoshop .asl or .psd as project looks, with a report of what each one approximates. `dryRun` saves nothing.',
 			details:
 				'The layer styles of a Photoshop .asl or .psd as project looks, with a report per style of what was mapped, approximated and not supported. dryRun saves nothing.',
 			input: {
@@ -294,10 +295,11 @@ export function registerDeliveryTools(ctx: ToolContext): void {
 
 	defineTool(
 		ctx,
-		'split_image',
+		'image_split',
 		{
 			title: 'Split image into parts',
-			description: 'Split a still clip into its connected parts as grouped clips.',
+			description:
+				'Split a still image clip into its connected parts (letters, logo pieces) as grouped clips. A cut in time: `split_at`.',
 			details:
 				'A still clip into its connected parts as separate, grouped clips, one undo step, registered where they were. dryRun lists the parts; colour under low alpha is kept exactly.',
 			input: {
@@ -387,10 +389,11 @@ export function registerDeliveryTools(ctx: ToolContext): void {
 
 	defineTool(
 		ctx,
-		'check_gamut',
+		'color_gamut_check',
 		{
 			title: 'Check gamut and legal range',
-			description: 'Measure how much of a frame falls outside an output gamut and the legal range.',
+			description:
+				'Measure how much of a frame falls outside an output gamut and the EBU R 103 legal range. Levels and clipping: `scopes_read`.',
 			details:
 				'Percent of a frame outside an output gamut, and outside the EBU R 103 legal range after 4:2:0. Video gamuts only. Returns a mask URL of the flagged pixels.',
 			input: {

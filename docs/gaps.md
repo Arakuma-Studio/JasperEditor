@@ -910,7 +910,7 @@ Status of the foundation; streams still in progress update this list. Evidence: 
 - **User looks** (TL-054): My Looks in the Looks tab lists the engine's user looks and saves, renames, deletes, imports and exports them.
   They live outside the project, so these actions are not undoable (deleting asks first). Without the engine, or with a library file
   from a newer build, the actions are disabled with the reason, and an engine that stops answering leaves the last list it read on
-  screen, still usable to apply. Agents' `find_title_looks` searches them too, and both apply a user look through
+  screen, still usable to apply. Agents' `title_look_find` searches them too, and both apply a user look through
   `userLookSource`.
 - **The library's 3D category is drawn depth** (TL-050): its four looks build depth with Extrude, Bevel, metal and plates, so they render
   wherever a look does. A look is an appearance (TL-055) and does not carry the Advanced 3D solid of spec 19 §9, which stays in
@@ -979,7 +979,7 @@ discovery are in; evidence and thresholds in [wp-notes/title-looks-agents.md](wp
 - `title_check` thresholds for minimum size, CJK reading speed and the platform interface zones are assumptions, listed there.
   No official platform table was found, so `target-safe-area` only warns.
 - `font-available` answers for the family, not for every character of the text.
-- **The Review panel does not show a title proposal's rows yet.** `propose_title` stores them on the item
+- **The Review panel does not show a title proposal's rows yet.** `title_propose` stores them on the item
   (`meta.check`, read with `titleArtCheckOf`), for the first option only: alternatives are not measured. The panel
   (`apps/web/src/proposals/title-art.tsx`) reads the meta leniently and ignores them; drawing them is the UI stream's.
   A later `title_check {proposalId}` measures again but does not update the stored rows, and rows stored by a call that

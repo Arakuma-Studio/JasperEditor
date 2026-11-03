@@ -4,7 +4,7 @@ The agent surface of [Title Looks](title-looks.md): search, sheet, propose, chec
 
 | Piece | File |
 |---|---|
-| Tools `find_title_looks`, `propose_title`, `title_check`, `get_title_recipe`, `save_title_look`, `add_title_generator`, `set_global_light`, guide `TITLE_ART_GUIDE`, resource `jasper://title-looks/{id}` | `apps/mcp/src/tools/titles.ts` |
+| Tools `title_look_find`, `title_propose`, `title_check`, `title_look_find`, `title_look_save`, `title_generator_add`, `title_light_set`, guide `TITLE_ART_GUIDE`, resource `jasper://title-looks/{id}` | `apps/mcp/src/tools/titles.ts` |
 | `list_effects`, `add_effect`, `set_effect_param` | `apps/mcp/src/tools/effects.ts` |
 | Sheets as one job, safe-area guides, numbers, downscaling | `apps/mcp/src/still-sheet.ts`, `render_frames` in `tools/animation.ts` |
 | The `still-sheet` job | `apps/engine/src/export/service.ts` (`runStillSheet`), `POST /api/stills/sheet`, `GET /renders/:jobId/cells/:index` |
@@ -46,7 +46,7 @@ The agent surface of [Title Looks](title-looks.md): search, sheet, propose, chec
 - **Bounds run before anything reads the recipe.** The walk is iterative and stops at the first problem, so 200 000 levels
   of nesting or a cycle cannot overflow the stack. `instances` is 8 layers of a type and 4 generators: TL-106 names the
   cap without a figure, and each layer repeats its passes (`docs/performance.md` §7). TL-013 still applies at the command.
-- **`renderPath` in `find_title_looks` comes from the planner**, once per page on the sheet's scratch document. `costClass`
+- **`renderPath` in `title_look_find` comes from the planner**, once per page on the sheet's scratch document. `costClass`
   is computed: `heavy` for a look that moves on its own or has over 8 layers, `medium` over 4, else `light`. The bands
   are an assumption, based on §7's six-layer figures.
 - **Width.** TL-106's "640 px by default" is read literally: the sheet, not a cell. At three columns a cell is 208 px, so
@@ -96,12 +96,12 @@ Machine: shared 8-vCPU host, 15 GB, no GPU (SwiftShader), Chrome 156. Load avera
 
 | Scenario, 1280×720 | Result | Test time |
 |---|---|---|
-| Brief to checked title on real footage: `enable_toolsets`, `find_title_looks`, `propose_title`, `title_check`, 4 calls | pass; alpha bounds centred within 40 px, `revert` restores the picture (mean difference < 0.05) | 208 s |
+| Brief to checked title on real footage: `enable_toolsets`, `title_look_find`, `title_propose`, `title_check`, 4 calls | pass; alpha bounds centred within 40 px, `revert` restores the picture (mean difference < 0.05) | 208 s |
 | White on white fails on measured contrast (ratio < 1.2); the rim fix, rendered again, is > 3:1 | pass | 218 s |
 | A title cut by the frame fails on its real bounds; the fix, rendered again, is inside | pass | 274 s |
 | Headless `propose` refused; a cancelled sheet ends `cancelled` | pass | 1 s |
 
-These runs were made before the library was merged, so they use a recipe and `find_title_looks` returned no rows and no
+These runs were made before the library was merged, so they use a recipe and `title_look_find` returned no rows and no
 sheet; with the library merged that call also renders a sheet (not rerun end to end since). The first render of an engine bundles the compositions (about 110 s at load 1); the
 suite does that in `beforeAll`, outside the figures above. At load 31, before slots existed, one `title_check` on a four-layer look
 at 1080p took 32 s. At load 80 a sheet ran past 600 s and the engine stopped answering during the bundle, so jasper-mcp reported
@@ -122,8 +122,8 @@ at 1080p took 32 s. At load 80 a sheet ran past 600 s and the engine stopped ans
 `main` cut model-visible text by 60–69 % (`docs/wp-notes/agent-footage-context.md` § Model-visible text). The titles and
 effects tools follow the same rules since that merge:
 
-- Each of the ten tools (`find_title_looks`, `propose_title`, `title_check`, `get_title_recipe`, `save_title_look`,
-  `add_title_generator`, `set_global_light`, `list_effects`, `add_effect`, `set_effect_param`) advertises one short
+- Each of the ten tools (`title_look_find`, `title_propose`, `title_check`, `title_look_find`, `title_look_save`,
+  `title_generator_add`, `title_light_set`, `list_effects`, `add_effect`, `set_effect_param`) advertises one short
   sentence; its former description is its `details`, unchanged, read with `describe_tool {name, full: true}`.
   `render_frames`, `add_text` and `list_proposal_features` keep the spec 19 additions inside their `details`.
   `title_check`'s rules for format and judgement rows still reach the agent in every result's `next`.
@@ -140,7 +140,7 @@ effects tools follow the same rules since that merge:
   measurement plus the 2 % headroom `--write-budget` uses. The eval cases in `eval/cases/titles.jsonl`
   (`titles-effect-by-name`, `titles-styled-title`, `titles-plain-text-control`) are what those bytes have to earn;
   they build (`pnpm eval --dry-run`), but no model samples were run for this merge. `eval/fake-engine.ts` has no
-  `requestStillSheet`, so a sample that reaches `find_title_looks` or `propose_title` is marked invalid: until the fake
+  `requestStillSheet`, so a sample that reaches `title_look_find` or `title_propose` is marked invalid: until the fake
   models look sheets, `titles-styled-title` cannot produce a valid sample (recorded in `docs/gaps.md`).
 - `toolsets.test.ts`'s unknown-tool-name scan reads every tool's `details` as well as its description, since most
   reference text now lives there.
@@ -150,8 +150,8 @@ effects tools follow the same rules since that merge:
 The 3D stream (`apps/mcp/src/tools/three-d.ts`) and the interchange stream (`apps/mcp/src/tools/delivery.ts`) were written
 before `main`'s conventions reached them. At integration 2 they follow them:
 
-- `set_3d_renderer`, `set_3d_surface`, `set_3d_geometry`, `edit_bevel_bands`, `edit_backplates`, `send_to_photoshop`,
-  `export_alpha`, `import_layer_styles`, `split_image` and `check_gamut` advertise one sentence; the former description is
+- `set_3d_renderer`, `set_3d_surface`, `set_3d_geometry`, `edit_bevel_bands`, `edit_backplates`, `export_psd`,
+  `export_alpha`, `import_layer_styles`, `image_split` and `color_gamut_check` advertise one sentence; the former description is
   their `details`. One correction inside them: the 3D details sent agents to `set_param`, which is no tool
   (`toolsets.test.ts` caught it); they now name `apply_commands` `param.set` and `keyframe.*`, as `THREE_D_GUIDE` does.
 - No toolset is new: the 3D tools are in `3d`, the delivery tools in `export`, `graphics` and `color`, with the guide topic
@@ -171,8 +171,8 @@ before `main`'s conventions reached them. At integration 2 they follow them:
   "Before" for `+3d` was measured on the merged tree before the split; for the delivery contexts it is the measurement
   after plus the description bytes the split moved (77, 187 and 177 bytes). Why they grow: `+3d` gains four tools
   (`set_3d_surface` alone is 2.4 KB of schema: the physical material's values) and the tone mapping, exposure and glint
-  arguments of `set_3d_renderer`; `+export` gains `send_to_photoshop` and `export_alpha`, `+graphics`
-  `import_layer_styles` and `split_image`, `+color` `check_gamut`. `all` was raised once, after the 3D merge, to its
+  arguments of `set_3d_renderer`; `+export` gains `export_psd` and `export_alpha`, `+graphics`
+  `import_layer_styles` and `image_split`, `+color` `color_gamut_check`. `all` was raised once, after the 3D merge, to its
   measurement + 2 %; the delivery tools fit inside it.
 - The eval cases those bytes have to earn: `eval/cases/three-d.jsonl` (`three-d-extruded-title`, and the control
   `three-d-flat-title-control`, which keeps a flat gold title out of the 3D tools) and `eval/cases/delivery.jsonl`
@@ -183,13 +183,13 @@ before `main`'s conventions reached them. At integration 2 they follow them:
 
 ## User looks, stored rows and the eval's engine (agents, part 2)
 
-- **`find_title_looks` searches the user's looks** (TL-054, `GET /api/title-looks`), between the library and the
+- **`title_look_find` searches the user's looks** (TL-054, `GET /api/title-looks`), between the library and the
   project's. Rows say `source: library | user | project`. A user look travels whole in `look.apply {look: {…, sourceId:
   ulk_…}}`, so the first use copies it into the project and later ones reuse that copy (the handler matches `sourceId`);
-  a project copy of a user look is the user row, not a second one. `propose_title` and `get_title_recipe` take a `ulk_…`
+  a project copy of a user look is the user row, not a second one. `title_propose` and `title_look_find` take a `ulk_…`
   id without a project. A user look deleted since it was used resolves to the project's copy. When the store cannot be
   read the library and project looks are still searched and `userLooksError` says why.
-- **Rows on the proposal.** `propose_title` in `propose` mode now renders first and stores the proposal after, so the
+- **Rows on the proposal.** `title_propose` in `propose` mode now renders first and stores the proposal after, so the
   item's meta carries `check` (`titleArtCheck`: at most 32 KB, passes dropped first, `omitted` counts them; texts cut to
   what the reader takes). Only option 0 is measured, so alternatives carry none. The refusals that cost nothing (headless,
   revision, Agent Proposals, a bad recipe) still come before any render. Item meta is `z.unknown()` in `ProposalSchema`

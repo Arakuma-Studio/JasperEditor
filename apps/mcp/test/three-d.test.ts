@@ -148,9 +148,9 @@ describe('three-d MCP tools', () => {
 				})
 			).isError,
 		).toBe(false);
-		expect((await call('set_3d_surface', { clipIds: [engine.b], preset: 'gold' })).isError).toBe(false);
+		expect((await call('set_material', { clipIds: [engine.b], preset: 'gold' })).isError).toBe(false);
 		// The perturbation: an unknown preset is refused by the schema, nothing is applied.
-		expect((await call('set_3d_surface', { clipIds: [engine.b], preset: 'mithril' })).isError).toBe(true);
+		expect((await call('set_material', { clipIds: [engine.b], preset: 'mithril' })).isError).toBe(true);
 		expect(
 			(await call('add_light', { at: 0, lightType: 'environment', environmentPreset: 'chromeBands' }))
 				.isError,
@@ -164,5 +164,95 @@ describe('three-d MCP tools', () => {
 			}
 		).threeD;
 		expect(td.material.pbr).toBeDefined();
+	});
+
+	it('threed_solid_edit: geometry, a band and a plate in one undo step; ids come back; refusals name the fix', async () => {
+		const { engine, call } = await connect();
+		const added = await call('apply_commands', {
+			label: 'Title',
+			commands: [
+				{ type: 'clip.addText', at: 0, duration: 60, track: 'V3', content: { text: 'GOLD' }, ref: '$t' },
+			],
+		});
+		expect(added.isError, JSON.stringify(added.body)).toBe(false);
+		const id = (added.body.refs as Record<string, string>).$t!;
+		expect((await call('set_3d_layer', { clipIds: [id], enabled: true })).isError).toBe(false);
+		const before = engine.doc();
+		const r = await call('threed_solid_edit', {
+			clipIds: [id],
+			extrusionDepth: 40,
+			band: { width: 6, profile: 'round', preset: 'gold' },
+			plate: { shape: 'box', grow: 12 },
+		});
+		expect(r.isError).toBe(false);
+		const refs = r.body.refs as Record<string, string>;
+		const solid = () =>
+			(
+				engine.doc().sequences[engine.seqId]!.clips[id] as unknown as {
+					threeD: {
+						geometry: {
+							extrusionDepth: { value: number };
+							bands: { id: string }[];
+							backplates: { id: string }[];
+						};
+					};
+				}
+			).threeD.geometry;
+		expect(solid().extrusionDepth.value).toBe(40);
+		expect(solid().bands.map((b) => b.id)).toEqual([refs.$band0]);
+		expect(solid().backplates.map((p) => p.id)).toEqual([refs.$plate0]);
+		// One transaction: the document before it had none of the three.
+		expect(
+			(
+				before.sequences[engine.seqId]!.clips[id] as unknown as {
+					threeD: { geometry?: { bands?: unknown[] } };
+				}
+			).threeD.geometry?.bands ?? [],
+		).toEqual([]);
+		const second = await call('threed_solid_edit', { clipIds: [id], band: { width: 2 } });
+		const band2 = (second.body.refs as Record<string, string>).$band0!;
+		expect(
+			(
+				await call('threed_solid_edit', {
+					clipIds: [id],
+					band: { action: 'reorder', bandId: band2, index: 0 },
+				})
+			).isError,
+		).toBe(false);
+		expect(solid().bands.map((b) => b.id)).toEqual([band2, refs.$band0]);
+		expect(
+			(await call('threed_solid_edit', { clipIds: [id], plate: { action: 'remove', plateId: refs.$plate0 } }))
+				.isError,
+		).toBe(false);
+		expect(solid().backplates ?? []).toEqual([]);
+		const hint = async (args: Record<string, unknown>) => {
+			const x = await call('threed_solid_edit', args);
+			expect(x.isError).toBe(true);
+			return (x.body.error as { hint: string }).hint;
+		};
+		expect(await hint({ clipIds: [id] })).toBe(
+			'Pass mode, extrusionDepth, bevelPosition, inflate, band or plate.',
+		);
+		expect(await hint({ clipIds: [id], band: { action: 'remove' } })).toBe('Pass band.bandId.');
+		expect(await hint({ clipIds: [id, engine.b], band: { action: 'remove', bandId: band2 } })).toContain(
+			band2,
+		);
+	});
+
+	it('set_material: classic options and a physical surface in one edit; a bare surface names the fix', async () => {
+		const { engine, call } = await connect();
+		await call('set_3d_layer', { clipIds: [engine.b], enabled: true });
+		const r = await call('set_material', { clipIds: [engine.b], castsShadows: 'on', preset: 'chrome' });
+		expect(r.isError).toBe(false);
+		const td = (
+			engine.doc().sequences[engine.seqId]!.clips[engine.b] as unknown as {
+				threeD: { material: { castsShadows: string; pbr?: unknown } };
+			}
+		).threeD;
+		expect(td.material.castsShadows).toBe('on');
+		expect(td.material.pbr).toBeDefined();
+		const bare = await call('set_material', { clipIds: [engine.b], surface: 'face' });
+		expect(bare.isError).toBe(true);
+		expect((bare.body.error as { hint: string }).hint).toBe('Add preset or values.');
 	});
 });

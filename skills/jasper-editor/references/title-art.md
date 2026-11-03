@@ -6,11 +6,11 @@ shows the arguments). Guide: `get_guide` topic `title-art`.
 
 ## From brief to checked title
 
-1. `find_title_looks` {query, tags?, aspect?, sampleText?, projectId?}: rows and one numbered sheet of real renders.
+1. `title_look_find` {query, tags?, aspect?, sampleText?, projectId?}: rows and one numbered sheet of real renders.
    It searches the library, the user's own looks (`ulk_…`: saved in the editor, shared by every project) and, with
-   `projectId`, the project's looks; each row's `source` says which. Any row's `lookId` works with `propose_title` and
-   `get_title_recipe`. When the user's looks cannot be read, `userLooksError` says so and the rest is still searched.
-2. `propose_title` {projectId, text, at, lookId, colorway?, energy?, alternatives?}: the title on the real footage, one
+   `projectId`, the project's looks; each row's `source` says which. Any row's `lookId` works with `title_propose` and
+   `title_look_find`. When the user's looks cannot be read, `userLooksError` says so and the rest is still searched.
+2. `title_propose` {projectId, text, at, lookId, colorway?, energy?, alternatives?}: the title on the real footage, one
    sheet of intro, hold and outro × alternatives, and its check. `duration` defaults to the time the text needs.
 3. `title_check` {projectId, clipId | proposalId, target?} after any change.
 
@@ -42,11 +42,11 @@ That is three calls. Read `check` before you hand anything over.
 
 ## Going beyond the library
 
-- `get_title_recipe` {lookId}: a look as JSON, what each of its layer types takes, and every layer type.
-- `propose_title` {recipe} and `save_title_look` {clipId | recipe, name, tags}. A recipe is bounded: 24 layers, 64 KB, 12
+- `title_look_find` {lookId}: a look as JSON, what each of its layer types takes, and every layer type.
+- `title_propose` {recipe} and `title_look_save` {clipId | recipe, name, tags}. A recipe is bounded: 24 layers, 64 KB, 12
   levels of nesting, 8 layers of a type, 4 generators.
-- `add_title_generator`: a generator behind a title (standalone, `belowClipId`) or a layer of its look (`clipId`).
-- `set_global_light`: the light every look with `light.source: "sequence"` follows.
+- `title_generator_add`: a generator behind a title (standalone, `belowClipId`) or a layer of its look (`clipId`).
+- `title_light_set`: the light every look with `light.source: "sequence"` follows.
 - `get_clip_properties` lists a look's palette, light and layer params with `param.set` targets; keyframes and
   expressions reach them through `apply_commands`.
 - `list_effects`, `add_effect`, `set_effect_param`: ordinary effects on top.

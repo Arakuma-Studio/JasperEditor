@@ -235,12 +235,12 @@ const body = (r: unknown) => JSON.parse(((r as CallToolResult).content[0] as { t
 const projectId = 'prj_0000000000000001';
 
 describe('delivery tools (spec 19 §12)', () => {
-	it('send_to_photoshop: dryRun lists what is baked and writes nothing', async () => {
+	it('export_psd: dryRun lists what is baked and writes nothing', async () => {
 		const e = fakeEngine();
 		const c = await connect(e.link);
 		const r = body(
 			await c.callTool({
-				name: 'send_to_photoshop',
+				name: 'export_psd',
 				arguments: { projectId, at: { frames: 0 }, dryRun: true },
 			}),
 		);
@@ -249,23 +249,21 @@ describe('delivery tools (spec 19 §12)', () => {
 		expect(e.calls.map((x) => x.name)).toEqual(['psdPlan']);
 	});
 
-	it('send_to_photoshop: blockers stop it before the job', async () => {
+	it('export_psd: blockers stop it before the job', async () => {
 		const e = fakeEngine();
 		e.plan.blockers.push({ code: 'PSD_EMPTY', message: 'Nothing is visible' });
 		const c = await connect(e.link);
-		const r = body(
-			await c.callTool({ name: 'send_to_photoshop', arguments: { projectId, at: { frames: 0 } } }),
-		);
+		const r = body(await c.callTool({ name: 'export_psd', arguments: { projectId, at: { frames: 0 } } }));
 		expect(r.written).toBe(false);
 		expect(e.calls.map((x) => x.name)).toEqual(['psdPlan']);
 	});
 
-	it('send_to_photoshop writes through the job', async () => {
+	it('export_psd writes through the job', async () => {
 		const e = fakeEngine();
 		const c = await connect(e.link);
 		const r = body(
 			await c.callTool({
-				name: 'send_to_photoshop',
+				name: 'export_psd',
 				arguments: { projectId, at: { frames: 0 }, splitTitles: true },
 			}),
 		);
@@ -273,13 +271,13 @@ describe('delivery tools (spec 19 §12)', () => {
 		expect((e.calls[1]!.opts.body as { splitTitles?: boolean }).splitTitles).toBe(true);
 	});
 
-	it('export_alpha trims selected clips and reports where the picture sits', async () => {
+	it('export_frame {alpha} trims selected clips and reports where the picture sits', async () => {
 		const e = fakeEngine();
 		const c = await connect(e.link);
 		const r = body(
 			await c.callTool({
-				name: 'export_alpha',
-				arguments: { projectId, start: { frames: 3 }, clipIds: [e.clipId], trimMarginPx: 12 },
+				name: 'export_frame',
+				arguments: { projectId, at: { frames: 3 }, alpha: true, clipIds: [e.clipId], trimMarginPx: 12 },
 			}),
 		);
 		expect(r.origin).toEqual({ x: -5, y: 3 });
@@ -288,14 +286,33 @@ describe('delivery tools (spec 19 §12)', () => {
 		expect(sent.trim.marginPx).toBe(12);
 	});
 
-	it('export_alpha refuses an empty range', async () => {
+	it('export_frame {alpha} refuses an empty range', async () => {
 		const e = fakeEngine();
 		const c = await connect(e.link);
 		const r = (await c.callTool({
-			name: 'export_alpha',
-			arguments: { projectId, start: { frames: 5 }, end: { frames: 5 } },
+			name: 'export_frame',
+			arguments: { projectId, at: { frames: 5 }, end: { frames: 5 }, alpha: true },
 		})) as CallToolResult;
 		expect(r.isError).toBe(true);
+		expect(body(r).error.hint).toBe('Pass an end after at.');
+	});
+
+	it('export_frame keeps the alpha arguments to alpha, and the folder to the opaque frame', async () => {
+		const e = fakeEngine();
+		const c = await connect(e.link);
+		const refused = async (args: Record<string, unknown>) => {
+			const r = (await c.callTool({
+				name: 'export_frame',
+				arguments: { projectId, at: { frames: 0 }, ...args },
+			})) as CallToolResult;
+			expect(r.isError, JSON.stringify(args)).toBe(true);
+			return body(r).error as { code: string; hint: string };
+		};
+		expect((await refused({ folder: '/tmp', trimMarginPx: 4 })).hint).toBe('Add alpha: true.');
+		expect((await refused({ folder: '/tmp', end: { frames: 4 } })).hint).toBe('Add alpha: true.');
+		expect((await refused({})).hint).toBe('Pass folder.');
+		expect((await refused({ alpha: true, format: 'jpeg' })).hint).toBe('Leave format out.');
+		expect(e.calls).toEqual([]);
 	});
 
 	it('import_layer_styles: dryRun reports; otherwise the styles become project looks', async () => {
@@ -332,12 +349,12 @@ describe('delivery tools (spec 19 §12)', () => {
 		expect(r.isError).toBe(true);
 	});
 
-	it('split_image: dryRun lists parts; otherwise one transaction replaces the clip', async () => {
+	it('image_split: dryRun lists parts; otherwise one transaction replaces the clip', async () => {
 		const e = fakeEngine();
 		const c = await connect(e.link);
 		const dry = body(
 			await c.callTool({
-				name: 'split_image',
+				name: 'image_split',
 				arguments: { projectId, clipId: e.clipId, mergePercent: 0, dryRun: true },
 			}),
 		);
@@ -346,7 +363,7 @@ describe('delivery tools (spec 19 §12)', () => {
 		const seq = () => Object.values(e.doc().sequences)[0]!;
 		expect(Object.keys(seq().clips)).toEqual([e.clipId]);
 		const r = (await c.callTool({
-			name: 'split_image',
+			name: 'image_split',
 			arguments: { projectId, clipId: e.clipId, mergePercent: 0 },
 		})) as CallToolResult;
 		expect(r.isError, JSON.stringify(r.content)).toBeFalsy();
@@ -354,22 +371,22 @@ describe('delivery tools (spec 19 §12)', () => {
 		expect(Object.keys(seq().groups)).toHaveLength(1);
 	});
 
-	it('split_image refuses a clip that is not a still', async () => {
+	it('image_split refuses a clip that is not a still', async () => {
 		const e = fakeEngine();
 		const c = await connect(e.link);
 		const r = (await c.callTool({
-			name: 'split_image',
+			name: 'image_split',
 			arguments: { projectId, clipId: 'clp_none' },
 		})) as CallToolResult;
 		expect(r.isError).toBe(true);
 	});
 
-	it('check_gamut returns the percentages and the mask', async () => {
+	it('color_gamut_check returns the percentages and the mask', async () => {
 		const e = fakeEngine();
 		const c = await connect(e.link);
 		const r = body(
 			await c.callTool({
-				name: 'check_gamut',
+				name: 'color_gamut_check',
 				arguments: { projectId, at: { frames: 0 }, output: 'rec709' },
 			}),
 		);

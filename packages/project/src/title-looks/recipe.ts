@@ -99,7 +99,7 @@ export function appearanceFromRecipe(r: LookRecipe, newLayerId: () => string, se
 }
 
 /**
- * A clip's appearance as a recipe (TL-054: Save Look, TL-087: a project look's poster, TL-104: `get_title_recipe`):
+ * A clip's appearance as a recipe (TL-054: Save Look, TL-087: a project look's poster, TL-104: `title_look_find`):
  * values at content time `t`, only the params its layers show, no ids, keys, link or seed, and no layer of a type this
  * build does not know, so `look.apply` takes the result again.
  */

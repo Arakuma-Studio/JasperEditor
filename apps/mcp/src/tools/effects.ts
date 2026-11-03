@@ -48,7 +48,8 @@ export function registerEffectTools(ctx: ToolContext): void {
 		'list_effects',
 		{
 			title: 'List effects',
-			description: 'Search the video effects `add_effect` takes. With `effectId`: one effect and its params.',
+			description:
+				'Search the video effects `add_effect` takes, 100 a page. With `effectId`: one effect and its params. Audio effects: `list_audio_effects`.',
 			details: `The video effects add_effect takes. Rows {id, label, category, description, gpu}, ${MAX_PAGE} at most per page, no schemas; query matches words of the id, label, description or category, category filters, cursor continues. effectId returns that one effect with its params (name, type, default, range, options, unit). categories lists what exists.`,
 			input: {
 				query: z.string().max(200).optional().describe('Words to look for, e.g. "blur"'),
@@ -122,7 +123,8 @@ export function registerEffectTools(ctx: ToolContext): void {
 		'add_effect',
 		{
 			title: 'Add an effect',
-			description: 'Add a video effect to one or more clips. Returns instance ids for `set_effect_param`.',
+			description:
+				'Add a video effect to clips in one undo step; ids come from `list_effects`, never guessed. Returns instance ids for `set_effect_param`.',
 			details:
 				'Adds a video effect to one clip or several in one undo step (effect.add). params: values by name, the rest take their defaults (list_effects {effectId} lists them). index: place in the stack, top first (default the end). Returns the instance ids for set_effect_param.',
 			input: {
@@ -169,7 +171,8 @@ export function registerEffectTools(ctx: ToolContext): void {
 		'set_effect_param',
 		{
 			title: 'Set an effect param',
-			description: 'Set one param of an effect instance, optionally as a keyframe.',
+			description:
+				'Set one param of an effect instance (ids from `add_effect` or `get_clip_properties`); with `keyframe: true` and `at`, a key per call.',
 			details:
 				'Sets one param of an effect instance in one undo step (param.set on ["effect", effectInstanceId, param]). The instance id comes from add_effect or get_clip_properties. at sets the value at that time on an animated param; with keyframe: true it starts animating the param and sets a key there. Values are checked against the param: wrong types or ranges are refused.',
 			input: {

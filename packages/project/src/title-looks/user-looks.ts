@@ -106,7 +106,7 @@ export function parseLookFile(raw: unknown): ParsedLookFile {
 
 /**
  * What `look.apply {look}` is given for a user look: the look whole, with its id as `sourceId`, so the first use copies it
- * into the project and later uses reuse that copy (TL-015). The Looks tab and agents' `find_title_looks` both apply it so.
+ * into the project and later uses reuse that copy (TL-015). The Looks tab and agents' `title_look_find` both apply it so.
  */
 export function userLookSource(l: UserLook): {
 	name: string;
