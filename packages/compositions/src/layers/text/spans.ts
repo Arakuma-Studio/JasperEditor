@@ -26,6 +26,9 @@ function inkBoxes(lay: TypesetLayout, family: (s: TextStyle) => string): (SpanBo
 		const s = lay.styles[g.style]!;
 		const ink = inkBounds(g.text, s, family(s));
 		const r = g.rect;
+		// A column (TL-111) places each glyph by the middle of its cell, not on a horizontal baseline: its box is the
+		// cell, which is where the glyph is drawn whether it stands upright or turns.
+		if (lay.vertical) return [r.left, r.top, r.left + r.width, r.top + r.height];
 		return ink
 			? [r.left + ink.left, g.baseline - ink.ascent, r.left + ink.right, g.baseline + ink.descent]
 			: [r.left, r.top, r.left + r.width, r.top + r.height];

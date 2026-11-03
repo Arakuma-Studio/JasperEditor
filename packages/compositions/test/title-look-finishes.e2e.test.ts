@@ -305,6 +305,42 @@ describe.runIf(enabled && !!CHROME)(
 			}
 		});
 
+		it('glyph spans on vertical text: each letter of the column runs the ramp (integration 2)', async () => {
+			// Vertical text (TL-111), upright CJK, wraps at the box height: its rest layout must be measured with it, or the
+			// glyph boxes that a look's spans read sit where the letters are not.
+			const column = (span: string) =>
+				fxSnapshot([
+					backdrop,
+					{
+						...text(),
+						content: {
+							text: '縦書文字',
+							style: { sizePx: 60, fill: [1, 1, 1, 1], align: 'center', weight: 700 },
+							writingMode: 'vertical',
+						},
+						box: { width: 120, height: 320, autoSize: 'none' },
+					},
+					{ type: 'look.apply', clipIds: ['$t'], look: { name: 'E2E', recipe: faceRamp(span, 90) } },
+				] as Command[]);
+			/** Mean red of the text in each row, top to bottom; -1 where a row has no ink. */
+			const inkRows = (r: Raw) =>
+				Array.from({ length: r.h }, (_, y) => {
+					let sum = 0;
+					let n = 0;
+					for (let x = 0; x < r.w; x++) {
+						const [a, b, c] = rgb(r, x, y);
+						if (Math.abs(a - 51) + Math.abs(b - 77) + Math.abs(c - 51) < 12) continue;
+						sum += a;
+						n++;
+					}
+					return n > 4 ? sum / n : -1;
+				});
+			const glyph = await still(column('glyph'), 0, 'vertical-glyph');
+			const block = await still(column('block'), 0, 'vertical-block');
+			expect(ramps(inkRows(glyph))).toBeGreaterThanOrEqual(3);
+			expect(ramps(inkRows(block))).toBeLessThanOrEqual(1);
+		});
+
 		it('a moved text keeps its ramp on the letters: typeset characters report their matrices', async () => {
 			const atRest = await still(looked(faceRamp('glyph', 90)), 0, 'rest');
 			const lifted = looked(faceRamp('glyph', 90), {}, [

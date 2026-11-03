@@ -115,6 +115,10 @@ looks and compile once. A six-layer look with a blur plans about 25 passes. Meas
   `glyph` need `tlSpan`, the owner of each pixel: nearest box with the runner-up and its share, so a seam under a rim
   antialiases. Only clips whose look has a gradient report anything (`appearanceWantsTextSpans`). Without records (`still`,
   `shape`, `video`…) every span is the frame's alpha bounds; `gradientSpanOn(span, clip.kind)` says so to the UI.
+  Vertical text (TL-111, merged with spans at integration 2): the rest layout is measured with the box height, where a column
+  wraps, and a glyph's box is its cell, since a column places glyphs by the middle of the cell rather than on a baseline
+  (`TypesetLayout.vertical`). `title-look-finishes.e2e.test.ts` "glyph spans on vertical text" failed with either change missing
+  (0, then 1 of 4 letters ran its ramp).
 - **A finish lights the layer's own shape.** A height field from `s.d` would bevel the text under a rim's band. `TitleLayerType.depth`
   gives each layer's shape: face the field, rim and inline a ring (`ring: true`: Fit is a tube across the width), plate its
   own distance. The height, its blur and Fit run in the finish's prepass, against that shape.

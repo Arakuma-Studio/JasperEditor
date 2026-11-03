@@ -45,6 +45,8 @@ export type TypesetLayout = {
 	styles: TextStyle[];
 	/** Paragraph style (base ⊕ paragraph overrides). */
 	paragraphs: TextStyle[];
+	/** spec 19 TL-111: laid out in columns; a glyph's `baseline` is then the middle of its cell. */
+	vertical: boolean;
 };
 
 export type FontResolver = (s: Pick<TextStyle, 'fontId' | 'weight' | 'italic'>) => string;
@@ -533,6 +535,7 @@ export function measureTypeset(input: FlowInput, cacheKey: string): TypesetLayou
 		lineBoxes: lineBoxes.map((b) => (Number.isFinite(b[0]) ? b : [0, 0, 0])),
 		styles,
 		paragraphs,
+		vertical,
 	};
 	if (layoutCache.size > 200) layoutCache.delete(layoutCache.keys().next().value!);
 	layoutCache.set(cacheKey, out);

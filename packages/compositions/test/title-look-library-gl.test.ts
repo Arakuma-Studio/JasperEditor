@@ -122,16 +122,37 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 							recipe: {
 								palette: palette(colorway),
 								// Own Colours off: a generator that defaults to its own colours (fire) recolours too, so
-								// `fixedColor` alone is what keeps the colours in the fixed shots (integration 2).
-								layers: [
-									{
+								// `fixedColor` alone is what keeps the colours in the fixed shots (integration 2). A face of the
+								// clip's own picture, behind or in front as the generator asks (TL-064): Glints places its stars
+								// on the highlights of the stack, which a generator alone does not have.
+								layers: (() => {
+									const face = { type: 'face', params: { paint: { kind: 'source' } } };
+									const gen = {
 										type: `generator:${g.id}`,
-										params: { ownColors: false },
+										// Glints draws a few small twinkling stars by default; steady larger ones, as its own
+										// GL test draws them, give the colourway enough pixels to show in a mean.
+										// Its own colours a mid orange: a white picture stays white in every colourway (hot
+										// cores stay white, TL-051), so white defaults (Speed Lines) would show no colourway.
+										params: {
+											...Object.fromEntries(
+												g.params.filter((p) => p.type === 'color').map((p) => [p.name, [0.8, 0.45, 0.2, 1]]),
+											),
+											ownColors: false,
+											...(g.id === 'glints' ? { twinkle: 0, size: 30, large: 3, small: 4 } : {}),
+										},
 										...(fixedColor ? { fixedColor } : {}),
-									},
+									};
+									return g.front ? [face, gen] : [gen, face];
+								})(),
+							},
+							// Letters with a brighter corner, so highlights have a place to be.
+							input: {
+								kind: 'letters',
+								letters: [
+									{ x: 0.2, y: 0.25, w: 0.25, h: 0.5 },
+									{ x: 0.55, y: 0.25, w: 0.25, h: 0.5 },
 								],
 							},
-							input: { kind: 'rect', x: 0.25, y: 0.25, w: 0.5, h: 0.5 },
 							box: { width: 320, height: 200 },
 							unitPx: 100,
 							contentSeconds: 1,
@@ -151,9 +172,33 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 						for (let i = 3; i < a.data.length; i += 4) n = Math.max(n, Math.abs(a.data[i]! - b.data[i]!));
 						return n;
 					};
-					expect(rgbDiff(blue, red), `${g.id} follows the colourway`).toBeGreaterThan(0.5);
+					// Per pixel that recolouring touched (a recoloured shot differs from the generator's own colours), so a
+					// sparse generator such as Glints is held to the same change as one that fills the box (integration 2:
+					// the mean over the whole frame was set with a stand-in generator, before any shipped).
+					let touched = 0;
+					let change = 0;
+					for (let i = 0; i < blue.data.length; i += 4) {
+						let moved = false;
+						for (let k = 0; k < 3; k++)
+							moved ||=
+								Math.abs(blue.data[i + k]! - fixedA.data[i + k]!) > 2 ||
+								Math.abs(red.data[i + k]! - fixedA.data[i + k]!) > 2;
+						if (!moved) continue;
+						touched++;
+						change += Math.abs(blue.data[i]! - red.data[i]!) + Math.abs(blue.data[i + 2]! - red.data[i + 2]!);
+					}
+					expect(touched, `${g.id} is recoloured`).toBeGreaterThan(0);
+					expect(change / touched, `${g.id} follows the colourway`).toBeGreaterThan(20);
+					expect(rgbDiff(blue, red), `${g.id} follows the colourway`).toBeGreaterThan(0);
 					expect(rgbDiff(fixedA, fixedB), `${g.id} fixed`).toBe(0);
-					expect(alphaDiff(blue, fixedA), `${g.id} keeps alpha`).toBeLessThanOrEqual(2);
+					// The generators' rule (integration 2) keeps alpha in `luma` and `flat` modes; `light` treats the picture
+					// as light, so its alpha follows the mapped brightness, but it never paints where the generator does not.
+					if ((g.color?.mode ?? 'light') === 'light') {
+						let outside = 0;
+						for (let i = 3; i < blue.data.length; i += 4)
+							if (fixedA.data[i] === 0) outside = Math.max(outside, blue.data[i]!);
+						expect(outside, `${g.id} paints only where it draws`).toBeLessThanOrEqual(2);
+					} else expect(alphaDiff(blue, fixedA), `${g.id} keeps alpha`).toBeLessThanOrEqual(2);
 					const out = process.env.TITLE_LOOKS_RECOLOR_DIR;
 					if (out)
 						for (const [name, img] of [
