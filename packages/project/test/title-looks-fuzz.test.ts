@@ -11,7 +11,6 @@ import {
 	defaultEffectRegistry,
 	diffAppearance,
 	type EffectInstance,
-	FX_MAX_TEXTURES,
 	type FxPlanContext,
 	GradientSchema,
 	gradientRamp,
@@ -23,6 +22,7 @@ import {
 	MAX_APPEARANCE_LAYERS,
 	type Paint,
 	PaintSchema,
+	planGpuEffect,
 	planTitleLook,
 	type Role,
 	rebaseAppearance,
@@ -31,6 +31,7 @@ import {
 	resolveAppearance,
 	staticAnim,
 	TITLE_LAYER_TYPES,
+	TITLE_LOOK_EFFECT,
 	titleLookPadding,
 	titleLookProblem,
 } from '../src/index.ts';
@@ -300,6 +301,31 @@ describe('paints', () => {
 });
 
 describe('the planner on any look', () => {
+	// The outputs of the framework, the finishes, plates, spans and Deep Glow (wp-notes/title-looks.md, "How to extend").
+	const LOOK_OUTPUTS = [
+		'tlBounds',
+		'tlFlood',
+		'tlField',
+		'tlComp',
+		'tlMask',
+		'tlBlurH',
+		'tlBlur',
+		'tlHeightRaw',
+		'tlReliefH',
+		'tlHeight',
+		'tlCoverFlood',
+		'tlCover',
+		'tlPlateBlocks',
+		'tlSupport',
+		'tlPlate',
+		'tlSpan',
+		'tlDgPyr',
+		'tlDgAcc',
+		'tlDgH',
+		'tlDgFar',
+	];
+	/** `MAX_TEXTURE_IMAGE_UNITS` every WebGL 2 implementation has. */
+	const WEBGL2_MIN_TEXTURE_UNITS = 16;
 	const ctx = (a: Appearance, unitPx: number | null): FxPlanContext => ({
 		width: 1280,
 		height: 720,
@@ -316,9 +342,23 @@ describe('the planner on any look', () => {
 				const c = ctx(a, unit);
 				const passes = planTitleLook(c);
 				expect(passes.length).toBeGreaterThan(0);
+				// A look's limits are not those of a validated effect (`FX_MAX_TEXTURES` outputs per plan): since the finishes,
+				// plates and Deep Glow merged, one look can name more. Its outputs come from one closed set of shared names (a
+				// type held twice reuses them, so its textures do not grow with its layers), and no pass declares more
+				// samplers than WebGL 2 guarantees.
 				const names = new Set(passes.slice(0, -1).map((p) => p.output));
-				expect(names.size).toBeLessThanOrEqual(FX_MAX_TEXTURES);
+				for (const name of names) expect(LOOK_OUTPUTS).toContain(name);
 				for (const p of passes.slice(0, -1)) expect(p.output).toBeTruthy();
+				const plan = planGpuEffect(
+					TITLE_LOOK_EFFECT,
+					{ id: 'fx1', params: {} },
+					{ ...c, frame: 0, duration: 30, seed: 0.5, progress: 0 },
+					{ width: c.width, height: c.height },
+				);
+				for (const p of plan.passes)
+					expect(p.source.match(/^uniform\s+(?:\w+\s+)?sampler\w+\s/gm)?.length ?? 0).toBeLessThanOrEqual(
+						WEBGL2_MIN_TEXTURE_UNITS,
+					);
 				const pad = titleLookPadding(c);
 				for (const v of Object.values(pad)) {
 					expect(Number.isFinite(v)).toBe(true);

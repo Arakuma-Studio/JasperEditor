@@ -43,6 +43,58 @@ for (const t of TRANSITION_SPECS) {
 	}
 }
 for (const c of Object.values(COMMAND_CATALOG)) add(c.label);
+// Spec 19 §9: the words of a 3D title's dynamic rows and the cost notice.
+for (const s of [...project.SURFACE_NUMBERS, ...project.SURFACE_COLORS]) add(s.label);
+for (const p of Object.values(project.SURFACE_PRESETS)) add(p.label);
+for (const p of Object.values(project.SCENE_3D_SPECS)) add(p.label);
+for (const c of Object.values(project.COST_CLASSES)) {
+	add(c.label);
+	add(c.detail);
+}
+for (const s of ['Base', 'Face', 'Side', 'Back']) add(`Surface: ${s}`);
+for (let i = 1; i <= project.MAX_BEVEL_BANDS; i++) {
+	add(`Band ${i}`);
+	add(`Surface: Band ${i}`);
+}
+for (let i = 1; i <= project.MAX_BACKPLATES; i++) {
+	add(`Plate ${i}`);
+	add(`Surface: Plate ${i} Face`);
+	add(`Surface: Plate ${i} Side`);
+}
+for (const s of [
+	'Width',
+	'Depth',
+	'Profile',
+	'Curve',
+	'Segments',
+	'On',
+	'Shape',
+	'Grow',
+	'Gap',
+	'Corner',
+	'Fill Counters',
+	'Bevel Width',
+	'Bevel Profile',
+	'Color From',
+	'Relief',
+	'Flat',
+	'Chamfer',
+	'Round',
+	'Cove',
+	'Step',
+	'Inset',
+	'Tube',
+	'Contour',
+	'Hull',
+	'Box',
+	'None',
+	'Crumple',
+	'Hammered',
+	'Liquid',
+	'Layer Picture',
+	'Base Color',
+])
+	add(s);
 for (const p of PROPERTY_SPECS) {
 	add(p.label);
 	for (const o of p.optionLabels ?? []) add(o);

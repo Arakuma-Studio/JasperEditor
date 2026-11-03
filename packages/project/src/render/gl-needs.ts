@@ -9,6 +9,7 @@
 import { isCssBlend } from '../blend-modes.ts';
 import { defaultEffectRegistry, type EffectRegistry } from '../registry/effects.ts';
 import { fxFloatRefusal } from '../registry/fx/shader.ts';
+import { advancedNeedsFloat, THREE_D_FLOAT_MESSAGE, THREE_D_NEEDS_FLOAT } from '../three-d/scene-look.ts';
 import { transitionSpec } from '../transitions.ts';
 
 /** One thing in a document that needs WebGL2. */
@@ -53,6 +54,8 @@ export function snapshotGlNeeds(doc: unknown, registry: EffectRegistry = default
 	const out: GlNeed[] = [];
 	const seen = new WeakSet<object>();
 	let nodes = 0;
+	// spec 19 TL-076: whether the snapshot being walked draws its 3D through the floating-point scene target.
+	let float3d = false;
 	const visitClip = (c: unknown, depth: number): void => {
 		if (!isObj(c) || nodes++ >= GL_NEEDS_MAX_NODES) return;
 		const clipId = typeof c.clipId === 'string' ? c.clipId : undefined;
@@ -74,7 +77,14 @@ export function snapshotGlNeeds(doc: unknown, registry: EffectRegistry = default
 		if (hasActiveMask(c.masks)) out.push({ kind: 'masks', id: 'masks', label: 'layer mask', ...at });
 		if (typeof c.blendMode === 'string' && !isCssBlend(c.blendMode))
 			out.push({ kind: 'blend', id: c.blendMode, label: `blend mode ${c.blendMode}`, ...at });
-		if (isObj(c.threeD)) out.push({ kind: '3d', id: '3d', label: '3D layer', ...at });
+		if (isObj(c.threeD))
+			out.push({
+				kind: '3d',
+				id: '3d',
+				label: '3D layer',
+				...at,
+				...(float3d ? { float: { code: THREE_D_NEEDS_FLOAT, message: THREE_D_FLOAT_MESSAGE } } : {}),
+			});
 		const nest = isObj(c.source) && isObj(c.source.nest) ? c.source.nest.snapshot : undefined;
 		if (nest) visitSnapshot(nest, depth + 1);
 	};
@@ -95,6 +105,8 @@ export function snapshotGlNeeds(doc: unknown, registry: EffectRegistry = default
 	const visitSnapshot = (snap: unknown, depth: number): void => {
 		if (!isObj(snap) || depth > GL_NEEDS_MAX_DEPTH || seen.has(snap)) return;
 		seen.add(snap);
+		const outer = float3d;
+		float3d = advancedNeedsFloat(snap as never);
 		for (const key of ['videoTracks', 'matteTracks'] as const) {
 			const tracks = snap[key];
 			if (!Array.isArray(tracks)) continue;
@@ -104,6 +116,7 @@ export function snapshotGlNeeds(doc: unknown, registry: EffectRegistry = default
 				visitTransitions(t.transitions);
 			}
 		}
+		float3d = outer;
 	};
 	visitSnapshot(doc, 0);
 	return out;

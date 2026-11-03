@@ -52,6 +52,10 @@ export const ID_PREFIXES = {
 	appearanceLayer: 'apl',
 	/** spec 19 TL-015: looks of a project (`ProjectDocument.titleLooks`). */
 	titleLook: 'tlk',
+	/** spec 19 TL-070: bevel bands of a 3D title (unique within their clip). */
+	bevelBand: 'bnd',
+	/** spec 19 TL-073: backplates of a 3D title (unique within their clip). */
+	backplate: 'plt',
 } as const;
 export type IdPrefix = (typeof ID_PREFIXES)[keyof typeof ID_PREFIXES];
 export const ALL_ID_PREFIXES: readonly IdPrefix[] = Object.values(ID_PREFIXES);

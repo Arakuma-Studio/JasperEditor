@@ -35,6 +35,7 @@ import {
 	templateParamSections,
 	templateParamVisible,
 	textAnimatorPropertySpecs,
+	threeDSpecGroups,
 	walkItems,
 } from '@jasper/project';
 import { shapePropertyKeys } from '../../shapes/keys.ts';
@@ -306,6 +307,7 @@ const LIGHT_OPTION_KEYS = [
 	'light.castsShadows',
 	'light.shadowDarkness',
 	'light.shadowDiffusion',
+	'light.environmentPreset',
 	'light.environmentRotation',
 	'light.environmentBackground',
 ];
@@ -440,12 +442,26 @@ export function buildGroups(
 						clip,
 						intrinsic: true,
 						rows: rows([
+							'threeD.geometry.mode',
 							'threeD.geometry.bevelStyle',
 							'threeD.geometry.bevelDepth',
 							'threeD.geometry.holeBevelDepth',
 							'threeD.geometry.extrusionDepth',
+							'threeD.geometry.bevelPosition',
+							'threeD.geometry.inflate.height',
+							'threeD.geometry.inflate.smoothness',
 						]),
 					});
+				// Spec 19 §9: every number of its surfaces, bevel bands and backplates, keyed like any property.
+				if (seq.threeD?.renderer === 'advanced')
+					for (const g of threeDSpecGroups(clip as never))
+						sections.push({
+							id: `${clip.id}:title3d:${g.id}`,
+							title: g.title,
+							clip,
+							intrinsic: true,
+							rows: rows(g.keys),
+						});
 			}
 			sections.push({
 				id: `${clip.id}:opacity`,

@@ -42,7 +42,8 @@
 			"itm_000000000000PR01",
 			"itm_000000000000SC01",
 			"itm_00000000000006TZ",
-			"itm_00000000000AVA01"
+			"itm_00000000000AVA01",
+			"itm_00000000000008S8"
 		],
 		"items": {
 			"itm_000000000000SQ01": {
@@ -124,6 +125,17 @@
 				"name": "avatar.png",
 				"mediaId": "med_00000000000AVA01",
 				"label": "lavender",
+				"marks": {
+					"in": null,
+					"out": null
+				}
+			},
+			"itm_00000000000008S8": {
+				"id": "itm_00000000000008S8",
+				"kind": "media",
+				"name": "studio.hdr",
+				"mediaId": "med_00000000000V1DE0",
+				"label": "violet",
 				"marks": {
 					"in": null,
 					"out": null
@@ -659,6 +671,22 @@
 					},
 					{
 						"id": "trk_0000000000000V03",
+						"kind": "video",
+						"name": null,
+						"locked": false,
+						"syncLock": true,
+						"output": true
+					},
+					{
+						"id": "trk_00000000000008SF",
+						"kind": "video",
+						"name": null,
+						"locked": false,
+						"syncLock": true,
+						"output": true
+					},
+					{
+						"id": "trk_00000000000008SH",
 						"kind": "video",
 						"name": null,
 						"locked": false,
@@ -1426,6 +1454,834 @@
 								"durationFrames": 15,
 								"params": {}
 							}
+						},
+						"threeD": {
+							"enabled": true,
+							"positionZ": {
+								"value": 0,
+								"keyframes": []
+							},
+							"anchorZ": {
+								"value": 0,
+								"keyframes": []
+							},
+							"scaleZ": {
+								"value": 100,
+								"keyframes": []
+							},
+							"orientation": {
+								"value": [
+									0,
+									0,
+									0
+								],
+								"keyframes": []
+							},
+							"rotationX": {
+								"value": 0,
+								"keyframes": []
+							},
+							"rotationY": {
+								"value": 0,
+								"keyframes": []
+							},
+							"material": {
+								"castsShadows": "off",
+								"lightTransmission": {
+									"value": 0,
+									"keyframes": []
+								},
+								"acceptsShadows": "on",
+								"acceptsLights": true,
+								"ambient": {
+									"value": 100,
+									"keyframes": []
+								},
+								"diffuse": {
+									"value": 50,
+									"keyframes": []
+								},
+								"specularIntensity": {
+									"value": 50,
+									"keyframes": []
+								},
+								"specularShininess": {
+									"value": 5,
+									"keyframes": []
+								},
+								"metal": {
+									"value": 100,
+									"keyframes": []
+								},
+								"reflectionIntensity": {
+									"value": 0,
+									"keyframes": []
+								},
+								"reflectionSharpness": {
+									"value": 100,
+									"keyframes": []
+								},
+								"pbr": {
+									"base": "color",
+									"baseColor": {
+										"value": [
+											1,
+											1,
+											1,
+											1
+										],
+										"keyframes": []
+									},
+									"ramp": {
+										"angle": 90,
+										"stops": [
+											{
+												"at": 0,
+												"color": [
+													1,
+													1,
+													1,
+													1
+												]
+											},
+											{
+												"at": 0.22,
+												"color": [
+													0.9098039215686274,
+													0.9333333333333333,
+													0.9607843137254902,
+													1
+												]
+											},
+											{
+												"at": 0.45,
+												"color": [
+													0.5411764705882353,
+													0.5803921568627451,
+													0.6392156862745098,
+													1
+												]
+											},
+											{
+												"at": 0.52,
+												"color": [
+													0.1803921568627451,
+													0.20392156862745098,
+													0.23921568627450981,
+													1
+												]
+											},
+											{
+												"at": 0.6,
+												"color": [
+													0.49019607843137253,
+													0.5294117647058824,
+													0.5803921568627451,
+													1
+												]
+											},
+											{
+												"at": 0.8,
+												"color": [
+													0.8666666666666667,
+													0.8941176470588236,
+													0.9333333333333333,
+													1
+												]
+											},
+											{
+												"at": 1,
+												"color": [
+													1,
+													1,
+													1,
+													1
+												]
+											}
+										]
+									},
+									"metalness": {
+										"value": 100,
+										"keyframes": []
+									},
+									"roughness": {
+										"value": 4,
+										"keyframes": []
+									},
+									"reflectivity": {
+										"value": 100,
+										"keyframes": []
+									},
+									"specularBoost": {
+										"value": 100,
+										"keyframes": []
+									},
+									"clearcoat": {
+										"value": 0,
+										"keyframes": []
+									},
+									"clearcoatRoughness": {
+										"value": 3,
+										"keyframes": []
+									},
+									"flakes": {
+										"value": 0,
+										"keyframes": []
+									},
+									"flakeScale": {
+										"value": 4,
+										"keyframes": []
+									},
+									"relief": "none",
+									"reliefAmount": {
+										"value": 50,
+										"keyframes": []
+									},
+									"reliefScale": {
+										"value": 40,
+										"keyframes": []
+									},
+									"reliefSeed": 1,
+									"iridescence": {
+										"value": 0,
+										"keyframes": []
+									},
+									"iridescenceThickness": {
+										"value": 400,
+										"keyframes": []
+									},
+									"transmission": {
+										"value": 0,
+										"keyframes": []
+									},
+									"ior": {
+										"value": 1.5,
+										"keyframes": []
+									},
+									"thickness": {
+										"value": 40,
+										"keyframes": []
+									},
+									"dispersion": {
+										"value": 0,
+										"keyframes": []
+									},
+									"attenuationColor": {
+										"value": [
+											1,
+											1,
+											1,
+											1
+										],
+										"keyframes": []
+									},
+									"emissive": {
+										"value": [
+											0,
+											0,
+											0,
+											1
+										],
+										"keyframes": []
+									},
+									"emissiveIntensity": {
+										"value": 0,
+										"keyframes": []
+									}
+								}
+							},
+							"geometry": {
+								"bevelStyle": "none",
+								"bevelDepth": {
+									"value": 2,
+									"keyframes": []
+								},
+								"holeBevelDepth": {
+									"value": 100,
+									"keyframes": []
+								},
+								"extrusionDepth": {
+									"value": 30,
+									"keyframes": []
+								},
+								"bands": [
+									{
+										"id": "bnd_00000000000008S9",
+										"width": {
+											"value": 6,
+											"keyframes": [
+												{
+													"id": "kf_00000000000008SB",
+													"time": 0,
+													"value": 4,
+													"interpolation": "linear",
+													"easeIn": {
+														"influence": 0.3333333333333333,
+														"slope": 1
+													},
+													"easeOut": {
+														"influence": 0.3333333333333333,
+														"slope": 1
+													}
+												},
+												{
+													"id": "kf_00000000000008SC",
+													"time": 235435200,
+													"value": 8,
+													"interpolation": "linear",
+													"easeIn": {
+														"influence": 0.3333333333333333,
+														"slope": 1
+													},
+													"easeOut": {
+														"influence": 0.3333333333333333,
+														"slope": 1
+													}
+												}
+											]
+										},
+										"depth": {
+											"value": 6,
+											"keyframes": []
+										},
+										"profile": "round",
+										"curve": {
+											"value": 0,
+											"keyframes": []
+										},
+										"segments": 6,
+										"material": {
+											"base": "color",
+											"baseColor": {
+												"value": [
+													1,
+													0.7529411764705882,
+													0,
+													1
+												],
+												"keyframes": []
+											},
+											"ramp": {
+												"angle": 90,
+												"stops": [
+													{
+														"at": 0,
+														"color": [
+															1,
+															0.9568627450980393,
+															0.6901960784313725,
+															1
+														]
+													},
+													{
+														"at": 0.18,
+														"color": [
+															1,
+															0.8313725490196079,
+															0,
+															1
+														]
+													},
+													{
+														"at": 0.42,
+														"color": [
+															1,
+															0.596078431372549,
+															0,
+															1
+														]
+													},
+													{
+														"at": 0.5,
+														"color": [
+															0.7215686274509804,
+															0.18823529411764706,
+															0,
+															1
+														]
+													},
+													{
+														"at": 0.58,
+														"color": [
+															1,
+															0.48627450980392156,
+															0,
+															1
+														]
+													},
+													{
+														"at": 0.8,
+														"color": [
+															1,
+															0.7215686274509804,
+															0,
+															1
+														]
+													},
+													{
+														"at": 1,
+														"color": [
+															1,
+															0.8784313725490196,
+															0.4392156862745098,
+															1
+														]
+													}
+												]
+											},
+											"metalness": {
+												"value": 100,
+												"keyframes": []
+											},
+											"roughness": {
+												"value": 8,
+												"keyframes": []
+											},
+											"reflectivity": {
+												"value": 100,
+												"keyframes": []
+											},
+											"specularBoost": {
+												"value": 100,
+												"keyframes": []
+											},
+											"clearcoat": {
+												"value": 0,
+												"keyframes": []
+											},
+											"clearcoatRoughness": {
+												"value": 3,
+												"keyframes": []
+											},
+											"flakes": {
+												"value": 0,
+												"keyframes": []
+											},
+											"flakeScale": {
+												"value": 4,
+												"keyframes": []
+											},
+											"relief": "none",
+											"reliefAmount": {
+												"value": 50,
+												"keyframes": []
+											},
+											"reliefScale": {
+												"value": 40,
+												"keyframes": []
+											},
+											"reliefSeed": 1,
+											"iridescence": {
+												"value": 0,
+												"keyframes": []
+											},
+											"iridescenceThickness": {
+												"value": 400,
+												"keyframes": []
+											},
+											"transmission": {
+												"value": 0,
+												"keyframes": []
+											},
+											"ior": {
+												"value": 1.5,
+												"keyframes": []
+											},
+											"thickness": {
+												"value": 40,
+												"keyframes": []
+											},
+											"dispersion": {
+												"value": 0,
+												"keyframes": []
+											},
+											"attenuationColor": {
+												"value": [
+													1,
+													1,
+													1,
+													1
+												],
+												"keyframes": []
+											},
+											"emissive": {
+												"value": [
+													0,
+													0,
+													0,
+													1
+												],
+												"keyframes": []
+											},
+											"emissiveIntensity": {
+												"value": 0,
+												"keyframes": []
+											}
+										}
+									}
+								],
+								"backplates": [
+									{
+										"id": "plt_00000000000008SA",
+										"enabled": true,
+										"shape": "contour",
+										"grow": {
+											"value": 12,
+											"keyframes": []
+										},
+										"depth": {
+											"value": 20,
+											"keyframes": []
+										},
+										"gap": {
+											"value": 0,
+											"keyframes": []
+										},
+										"corner": {
+											"value": 0,
+											"keyframes": []
+										},
+										"fillCounters": true,
+										"bevelWidth": {
+											"value": 3,
+											"keyframes": []
+										},
+										"bevelDepth": {
+											"value": 3,
+											"keyframes": []
+										},
+										"bevelProfile": "round",
+										"face": {
+											"base": "color",
+											"baseColor": {
+												"value": [
+													0.0196078431372549,
+													0.0196078431372549,
+													0.0196078431372549,
+													1
+												],
+												"keyframes": []
+											},
+											"metalness": {
+												"value": 20,
+												"keyframes": []
+											},
+											"roughness": {
+												"value": 8,
+												"keyframes": []
+											},
+											"reflectivity": {
+												"value": 100,
+												"keyframes": []
+											},
+											"specularBoost": {
+												"value": 100,
+												"keyframes": []
+											},
+											"clearcoat": {
+												"value": 100,
+												"keyframes": []
+											},
+											"clearcoatRoughness": {
+												"value": 3,
+												"keyframes": []
+											},
+											"flakes": {
+												"value": 0,
+												"keyframes": []
+											},
+											"flakeScale": {
+												"value": 4,
+												"keyframes": []
+											},
+											"relief": "none",
+											"reliefAmount": {
+												"value": 50,
+												"keyframes": []
+											},
+											"reliefScale": {
+												"value": 40,
+												"keyframes": []
+											},
+											"reliefSeed": 1,
+											"iridescence": {
+												"value": 0,
+												"keyframes": []
+											},
+											"iridescenceThickness": {
+												"value": 400,
+												"keyframes": []
+											},
+											"transmission": {
+												"value": 0,
+												"keyframes": []
+											},
+											"ior": {
+												"value": 1.5,
+												"keyframes": []
+											},
+											"thickness": {
+												"value": 40,
+												"keyframes": []
+											},
+											"dispersion": {
+												"value": 0,
+												"keyframes": []
+											},
+											"attenuationColor": {
+												"value": [
+													1,
+													1,
+													1,
+													1
+												],
+												"keyframes": []
+											},
+											"emissive": {
+												"value": [
+													0,
+													0,
+													0,
+													1
+												],
+												"keyframes": []
+											},
+											"emissiveIntensity": {
+												"value": 0,
+												"keyframes": []
+											}
+										},
+										"side": {
+											"base": "color",
+											"baseColor": {
+												"value": [
+													0.0196078431372549,
+													0.0196078431372549,
+													0.0196078431372549,
+													1
+												],
+												"keyframes": []
+											},
+											"metalness": {
+												"value": 20,
+												"keyframes": []
+											},
+											"roughness": {
+												"value": 8,
+												"keyframes": []
+											},
+											"reflectivity": {
+												"value": 100,
+												"keyframes": []
+											},
+											"specularBoost": {
+												"value": 100,
+												"keyframes": []
+											},
+											"clearcoat": {
+												"value": 100,
+												"keyframes": []
+											},
+											"clearcoatRoughness": {
+												"value": 3,
+												"keyframes": []
+											},
+											"flakes": {
+												"value": 0,
+												"keyframes": []
+											},
+											"flakeScale": {
+												"value": 4,
+												"keyframes": []
+											},
+											"relief": "none",
+											"reliefAmount": {
+												"value": 50,
+												"keyframes": []
+											},
+											"reliefScale": {
+												"value": 40,
+												"keyframes": []
+											},
+											"reliefSeed": 1,
+											"iridescence": {
+												"value": 0,
+												"keyframes": []
+											},
+											"iridescenceThickness": {
+												"value": 400,
+												"keyframes": []
+											},
+											"transmission": {
+												"value": 0,
+												"keyframes": []
+											},
+											"ior": {
+												"value": 1.5,
+												"keyframes": []
+											},
+											"thickness": {
+												"value": 40,
+												"keyframes": []
+											},
+											"dispersion": {
+												"value": 0,
+												"keyframes": []
+											},
+											"attenuationColor": {
+												"value": [
+													1,
+													1,
+													1,
+													1
+												],
+												"keyframes": []
+											},
+											"emissive": {
+												"value": [
+													0,
+													0,
+													0,
+													1
+												],
+												"keyframes": []
+											},
+											"emissiveIntensity": {
+												"value": 0,
+												"keyframes": []
+											}
+										}
+									}
+								],
+								"surfaces": {
+									"side": {
+										"base": "color",
+										"baseColor": {
+											"value": [
+												1,
+												1,
+												1,
+												1
+											],
+											"keyframes": []
+										},
+										"metalness": {
+											"value": 0,
+											"keyframes": []
+										},
+										"roughness": {
+											"value": 2,
+											"keyframes": []
+										},
+										"reflectivity": {
+											"value": 100,
+											"keyframes": []
+										},
+										"specularBoost": {
+											"value": 100,
+											"keyframes": []
+										},
+										"clearcoat": {
+											"value": 0,
+											"keyframes": []
+										},
+										"clearcoatRoughness": {
+											"value": 3,
+											"keyframes": []
+										},
+										"flakes": {
+											"value": 0,
+											"keyframes": []
+										},
+										"flakeScale": {
+											"value": 4,
+											"keyframes": []
+										},
+										"relief": "none",
+										"reliefAmount": {
+											"value": 50,
+											"keyframes": []
+										},
+										"reliefScale": {
+											"value": 40,
+											"keyframes": []
+										},
+										"reliefSeed": 1,
+										"iridescence": {
+											"value": 0,
+											"keyframes": []
+										},
+										"iridescenceThickness": {
+											"value": 400,
+											"keyframes": []
+										},
+										"transmission": {
+											"value": 100,
+											"keyframes": []
+										},
+										"ior": {
+											"value": 1.5,
+											"keyframes": []
+										},
+										"thickness": {
+											"value": 40,
+											"keyframes": []
+										},
+										"dispersion": {
+											"value": 0,
+											"keyframes": []
+										},
+										"attenuationColor": {
+											"value": [
+												1,
+												1,
+												1,
+												1
+											],
+											"keyframes": []
+										},
+										"emissive": {
+											"value": [
+												0,
+												0,
+												0,
+												1
+											],
+											"keyframes": []
+										},
+										"emissiveIntensity": {
+											"value": 0,
+											"keyframes": []
+										}
+									}
+								},
+								"bevelPosition": "center",
+								"inflate": {
+									"height": {
+										"value": 20,
+										"keyframes": []
+									},
+									"curve": [
+										{
+											"x": 0,
+											"y": 0
+										},
+										{
+											"x": 0.35,
+											"y": 0.72
+										},
+										{
+											"x": 1,
+											"y": 1
+										}
+									],
+									"smoothness": {
+										"value": 60,
+										"keyframes": []
+									},
+									"detail": 1
+								}
+							}
 						}
 					},
 					"clp_00000000000SH001": {
@@ -1893,6 +2749,219 @@
 						},
 						"blendMode": "normal",
 						"effects": []
+					},
+					"clp_00000000000008SG": {
+						"id": "clp_00000000000008SG",
+						"trackId": "trk_00000000000008SF",
+						"start": 0,
+						"duration": 30,
+						"sourceIn": 0,
+						"speed": {
+							"rate": 1,
+							"reverse": false,
+							"maintainPitch": true
+						},
+						"name": "Light 1",
+						"label": "rose",
+						"enabled": true,
+						"linkId": null,
+						"groupId": null,
+						"markers": [],
+						"kind": "light",
+						"light": {
+							"type": "environment",
+							"transform": {
+								"autoOrient": "off",
+								"position": {
+									"value": [
+										700,
+										280,
+										-440
+									],
+									"keyframes": []
+								},
+								"pointOfInterest": {
+									"value": [
+										960,
+										540,
+										0
+									],
+									"keyframes": []
+								},
+								"orientation": {
+									"value": [
+										0,
+										0,
+										0
+									],
+									"keyframes": []
+								},
+								"rotationX": {
+									"value": 0,
+									"keyframes": []
+								},
+								"rotationY": {
+									"value": 0,
+									"keyframes": []
+								},
+								"rotationZ": {
+									"value": 0,
+									"keyframes": []
+								}
+							},
+							"intensity": {
+								"value": 100,
+								"keyframes": []
+							},
+							"color": {
+								"value": [
+									1,
+									1,
+									1,
+									1
+								],
+								"keyframes": []
+							},
+							"coneAngle": {
+								"value": 90,
+								"keyframes": []
+							},
+							"coneFeather": {
+								"value": 50,
+								"keyframes": []
+							},
+							"falloff": "none",
+							"radius": {
+								"value": 500,
+								"keyframes": []
+							},
+							"falloffDistance": {
+								"value": 500,
+								"keyframes": []
+							},
+							"castsShadows": false,
+							"shadowDarkness": {
+								"value": 100,
+								"keyframes": []
+							},
+							"shadowDiffusion": {
+								"value": 0,
+								"keyframes": []
+							},
+							"environmentMediaId": null,
+							"environmentRotation": {
+								"value": 30,
+								"keyframes": []
+							},
+							"environmentBackground": false,
+							"environmentPreset": "chromeBands"
+						}
+					},
+					"clp_00000000000008SJ": {
+						"id": "clp_00000000000008SJ",
+						"trackId": "trk_00000000000008SH",
+						"start": 0,
+						"duration": 30,
+						"sourceIn": 0,
+						"speed": {
+							"rate": 1,
+							"reverse": false,
+							"maintainPitch": true
+						},
+						"name": "Light 2",
+						"label": "rose",
+						"enabled": true,
+						"linkId": null,
+						"groupId": null,
+						"markers": [],
+						"kind": "light",
+						"light": {
+							"type": "environment",
+							"transform": {
+								"autoOrient": "off",
+								"position": {
+									"value": [
+										700,
+										280,
+										-440
+									],
+									"keyframes": []
+								},
+								"pointOfInterest": {
+									"value": [
+										960,
+										540,
+										0
+									],
+									"keyframes": []
+								},
+								"orientation": {
+									"value": [
+										0,
+										0,
+										0
+									],
+									"keyframes": []
+								},
+								"rotationX": {
+									"value": 0,
+									"keyframes": []
+								},
+								"rotationY": {
+									"value": 0,
+									"keyframes": []
+								},
+								"rotationZ": {
+									"value": 0,
+									"keyframes": []
+								}
+							},
+							"intensity": {
+								"value": 100,
+								"keyframes": []
+							},
+							"color": {
+								"value": [
+									1,
+									1,
+									1,
+									1
+								],
+								"keyframes": []
+							},
+							"coneAngle": {
+								"value": 90,
+								"keyframes": []
+							},
+							"coneFeather": {
+								"value": 50,
+								"keyframes": []
+							},
+							"falloff": "none",
+							"radius": {
+								"value": 500,
+								"keyframes": []
+							},
+							"falloffDistance": {
+								"value": 500,
+								"keyframes": []
+							},
+							"castsShadows": false,
+							"shadowDarkness": {
+								"value": 100,
+								"keyframes": []
+							},
+							"shadowDiffusion": {
+								"value": 0,
+								"keyframes": []
+							},
+							"environmentMediaId": "med_00000000000V1DE0",
+							"environmentRotation": {
+								"value": 0,
+								"keyframes": []
+							},
+							"environmentBackground": false
+						}
 					}
 				},
 				"transitions": {},
@@ -1916,6 +2985,76 @@
 					"platform": "instagram-reels",
 					"targetDurationSec": 45,
 					"aspect": "9:16"
+				},
+				"threeD": {
+					"renderer": "advanced",
+					"toneMapping": "aces",
+					"exposure": {
+						"value": 0.5,
+						"keyframes": [
+							{
+								"id": "kf_00000000000008SD",
+								"time": 0,
+								"value": 0,
+								"interpolation": "linear",
+								"easeIn": {
+									"influence": 0.3333333333333333,
+									"slope": 1
+								},
+								"easeOut": {
+									"influence": 0.3333333333333333,
+									"slope": 1
+								}
+							},
+							{
+								"id": "kf_00000000000008SE",
+								"time": 235435200,
+								"value": 1,
+								"interpolation": "linear",
+								"easeIn": {
+									"influence": 0.3333333333333333,
+									"slope": 1
+								},
+								"easeOut": {
+									"influence": 0.3333333333333333,
+									"slope": 1
+								}
+							}
+						]
+					},
+					"glint": {
+						"enabled": true,
+						"threshold": {
+							"value": 1.5,
+							"keyframes": []
+						},
+						"intensity": {
+							"value": 100,
+							"keyframes": []
+						},
+						"radius": {
+							"value": 24,
+							"keyframes": []
+						},
+						"rays": 4,
+						"length": {
+							"value": 120,
+							"keyframes": []
+						},
+						"angle": {
+							"value": 45,
+							"keyframes": []
+						},
+						"tint": {
+							"value": [
+								1,
+								1,
+								1,
+								1
+							],
+							"keyframes": []
+						}
+					}
 				}
 			}
 		},

@@ -10,6 +10,7 @@
 //   shadows or depth of field) with a chip saying so; renders fail with WEBGL_UNAVAILABLE / THREE_D_UNSUPPORTED.
 import {
 	activeCameraAt,
+	advancedNeedsFloat,
 	type CameraState,
 	type ClassicSetup,
 	clipContentTime,
@@ -17,6 +18,7 @@ import {
 	invertMat3,
 	type LightState,
 	layerMapOf,
+	layerSurfacesAt,
 	layerWorldMatrix,
 	lightsAt,
 	type Mat3,
@@ -34,7 +36,12 @@ import {
 	resolveCachedLayerProps,
 	runBottomTracks,
 	runs3d,
+	type SurfaceState,
+	sceneLookAt,
 	stackAt,
+	THREE_D_ASSET_MISSING,
+	THREE_D_FLOAT_MESSAGE,
+	THREE_D_NEEDS_FLOAT,
 } from '@jasper/project';
 import {
 	type CSSProperties,
@@ -62,7 +69,13 @@ import { usePublishFlatChain } from '../fx/flat.tsx';
 import { fxHost } from '../fx/host.ts';
 import type { FxGpuState } from '../fx/status.ts';
 import type { LayerTap } from '../types.ts';
-import { type AdvancedEnvironment, type AdvancedMember, renderAdvancedGL } from './advanced.ts';
+import {
+	type AdvancedEnvironment,
+	type AdvancedLook,
+	type AdvancedMember,
+	renderAdvancedGL,
+} from './advanced.ts';
+import { hdrAt, type LoadedHdr } from './env-loader.ts';
 import { extrudedMesh, geometryAt } from './extruded.ts';
 import { type GlPlane, renderClassicGL } from './gl.ts';
 import { type LoadedModel, modelAt, modelToLayer } from './model-loader.ts';
@@ -129,9 +142,17 @@ export class Scene3DHub {
 }
 
 /** How the 3D scopes run here. */
-export type Scene3DMode = { mode: 'gpu' } | { mode: 'fallback'; reason: string };
+export type Scene3DMode = { mode: 'gpu' } | { mode: 'fallback'; reason: string; code?: string };
 
-export function scene3dRunMode(env: { gpu: FxGpuState; htmlInCanvas: boolean }): Scene3DMode {
+export function scene3dRunMode(env: {
+	gpu: FxGpuState;
+	htmlInCanvas: boolean;
+	/** The document draws its 3D in floating point, and whether this browser can (TL-076). */
+	needsFloat?: boolean;
+	floatTargets?: boolean;
+}): Scene3DMode {
+	if (env.gpu === 'ok' && env.needsFloat && env.floatTargets === false)
+		return { mode: 'fallback', reason: THREE_D_FLOAT_MESSAGE, code: THREE_D_NEEDS_FLOAT };
 	if (env.gpu !== 'ok')
 		return {
 			mode: 'fallback',
@@ -255,6 +276,8 @@ type Fx3DParams = {
 		world: number[];
 		props: ResolvedLayerProps;
 		material: MaterialState;
+		/** Physically based surfaces per mesh slot (spec 19 TL-071). */
+		surfaces: (SurfaceState | null)[];
 		localFrame: number;
 		contentTime: number;
 	}[];
@@ -262,6 +285,7 @@ type Fx3DParams = {
 	preview: boolean;
 	renderer: 'classic' | 'advanced';
 	environment: AdvancedEnvironment | null;
+	look: AdvancedLook;
 	/** Loaded models of the run's model layers, by clip id. */
 	models: ReadonlyMap<string, LoadedModel>;
 	shadowMapSize: number;
@@ -312,6 +336,7 @@ export const fx3dRun = createEffect<Fx3DParams, null>({
 					});
 					continue;
 				}
+				const physical = m.surfaces.some((s) => !!s);
 				members.push({
 					key: m.clip.clipId,
 					picture: pic.canvas,
@@ -319,8 +344,9 @@ export const fx3dRun = createEffect<Fx3DParams, null>({
 					pictureHeight: pic.height,
 					layerToPicture,
 					world: m.world,
-					mesh: g ? extrudedMesh(m.clip.clipId, pic, layerToPicture, g) : null,
+					mesh: g ? extrudedMesh(m.clip.clipId, pic, layerToPicture, g, setup.scale) : null,
 					material: m.material,
+					...(physical ? { surfaces: m.surfaces } : {}),
 					opacity: Math.min(1, Math.max(0, pic.opacity)),
 					draw: m.clip.threeD!.material.castsShadows !== 'only',
 				});
@@ -334,6 +360,7 @@ export const fx3dRun = createEffect<Fx3DParams, null>({
 						backdrop: source as TexImageSource,
 						environment: params.environment,
 						shadowMapSize: params.shadowMapSize,
+						look: params.look,
 					},
 					out,
 				);
@@ -387,8 +414,15 @@ export const fx3dRun = createEffect<Fx3DParams, null>({
 /** A short fingerprint of the 3D state an effect draws (rounded numbers; FNV-1a). */
 function sceneFingerprint(
 	setup: ClassicSetup,
-	members: { clip: RenderVisualClip; world: number[]; material: MaterialState; contentTime: number }[],
+	members: {
+		clip: RenderVisualClip;
+		world: number[];
+		material: MaterialState;
+		surfaces: readonly (SurfaceState | null)[];
+		contentTime: number;
+	}[],
 	scene3d: RenderScene3D | undefined,
+	look: AdvancedLook,
 ): string {
 	let h = 0x811c9dc5;
 	const mix = (v: unknown) => {
@@ -417,14 +451,38 @@ function sceneFingerprint(
 		mix(m.clip.clipId);
 		deep(m.world);
 		deep(m.material);
+		deep(m.surfaces);
 		const g = m.clip.threeD?.geometry;
 		if (g) deep([geometryAt(m.clip, m.contentTime)]);
 	}
-	deep([scene3d?.renderer, scene3d?.shadowMapSize, scene3d?.draft]);
+	deep([scene3d?.renderer, scene3d?.shadowMapSize, scene3d?.draft, look]);
 	return h.toString(36);
 }
 
 const envImages = new Map<string, HTMLImageElement | 'error'>();
+
+/** The decoded HDR of a URL (null while loading; renders fail when it cannot be read). */
+function useEnvironmentHdr(
+	url: string | null,
+	rendering: boolean,
+): { hdr: LoadedHdr | null; error: string | null } {
+	const [, bump] = useReducer((n: number) => n + 1, 0);
+	const entry = url ? hdrAt(url, bump) : null;
+	const loading = entry?.state === 'loading' ? url : null;
+	useEffect(() => {
+		if (!rendering || !loading) return;
+		const handle = delayRender(`environment HDR ${loading}`);
+		return () => continueRender(handle);
+	}, [loading, rendering]);
+	if (entry?.state === 'error' && rendering)
+		cancelRender(
+			new Error(`${THREE_D_ASSET_MISSING}: the HDR environment could not be read: ${entry.error}`),
+		);
+	return {
+		hdr: entry?.state === 'ready' ? entry.value : null,
+		error: entry?.state === 'error' ? entry.error : null,
+	};
+}
 
 /** Loaded models by clip id (absent while loading); renders hold until they are loaded and fail when one cannot be. */
 function useModels(urls: ReadonlyMap<string, string>, rendering: boolean): Map<string, LoadedModel> {
@@ -436,7 +494,7 @@ function useModels(urls: ReadonlyMap<string, string>, rendering: boolean): Map<s
 		if (e.state === 'ready') out.set(id, e.value);
 		else if (e.state === 'loading') pending.push(url);
 		else if (rendering)
-			cancelRender(new Error(`THREE_D_UNSUPPORTED: the 3D model could not be loaded: ${e.error}`));
+			cancelRender(new Error(`${THREE_D_ASSET_MISSING}: the 3D model could not be loaded: ${e.error}`));
 	}
 	const key = pending.join(',');
 	useEffect(() => {
@@ -464,7 +522,9 @@ function useEnvironmentImage(url: string | null, rendering: boolean): HTMLImageE
 		img.onerror = () => {
 			envImages.set(url, 'error');
 			if (rendering)
-				cancelRender(new Error(`THREE_D_UNSUPPORTED: the environment image could not be loaded (${url})`));
+				cancelRender(
+					new Error(`${THREE_D_ASSET_MISSING}: the environment image could not be loaded (${url})`),
+				);
 			bump();
 		};
 		img.src = url;
@@ -493,16 +553,28 @@ export function useScene3DRun(
 	const gpu = scene.mode.mode === 'gpu';
 	const run = gpu ? scene.runsAt(frame).find((r) => r.bottomTrack === trackIndex) : undefined;
 	const version = useSyncExternalStore(hub.subscribe, hub.getVersion, () => 0);
-	// Advanced 3D: the environment light's image (the first environment light that is on).
+	// Advanced 3D: the environment of the first environment light that is on: its media, or its procedural preset.
 	const envLight =
 		run && scene.doc.scene3d?.renderer === 'advanced' && !(isPreview && scene.doc.scene3d?.draft)
 			? (lightsAt(scene.doc.scene3d, frame, scene.doc.settings.fps, { environment: true }).find(
-					(l) => l.type === 'environment' && l.environment?.mediaId,
+					(l) => l.type === 'environment',
 				) ?? null)
 			: null;
-	const envMedia = envLight?.environment?.mediaId ? scene.doc.media?.[envLight.environment.mediaId] : null;
+	const envMediaId = envLight?.environment?.mediaId ?? null;
+	const envMedia = envMediaId ? scene.doc.media?.[envMediaId] : null;
+	// An export never quietly loses its environment: the planner's blocker comes first, this is the backstop.
+	if (rendering && envMediaId && !envMedia)
+		cancelRender(new Error(`${THREE_D_ASSET_MISSING}: environment media ${envMediaId} is missing`));
+	const envIsHdr = envMedia?.kind === 'hdri';
 	const envUrl = envMedia ? (isPreview && envMedia.proxyUrl ? envMedia.proxyUrl : envMedia.url) : null;
-	const envImage = useEnvironmentImage(envUrl, rendering);
+	const envImage = useEnvironmentImage(envIsHdr ? null : envUrl, rendering);
+	const { hdr: envHdr, error: envHdrError } = useEnvironmentHdr(envIsHdr ? envUrl : null, rendering);
+	/** What preview says it cannot show: exports refuse the same things. */
+	const problem = envHdrError
+		? `The HDR environment could not be read: ${envHdrError}`
+		: envMediaId && !envMedia
+			? 'The environment media is missing'
+			: null;
 	// Advanced 3D: the models of the run's model layers.
 	const modelUrls = new Map<string, string>();
 	if (run && scene.doc.scene3d?.renderer === 'advanced')
@@ -511,6 +583,8 @@ export function useScene3DRun(
 			const mid = c?.kind === 'model' && 'mediaId' in c.source ? c.source.mediaId : null;
 			const h = mid ? scene.doc.media?.[mid] : null;
 			if (h) modelUrls.set(id, h.url);
+			else if (mid && rendering)
+				cancelRender(new Error(`${THREE_D_ASSET_MISSING}: 3D model ${mid} is missing`));
 		}
 	const models = useModels(modelUrls, rendering);
 	const pictures = new Map<string, HubPicture>();
@@ -520,7 +594,7 @@ export function useScene3DRun(
 		if (p && (p.frame === frame || !rendering)) pictures.set(id, p);
 		else complete = false;
 	}
-	if (rendering && run && envUrl && !envImage) complete = false;
+	if (rendering && run && envUrl && !envImage && !envHdr) complete = false;
 	if (rendering && run && models.size < modelUrls.size) complete = false;
 	const modelKey = [...models.keys()].join(',');
 	const pictureKey = [...pictures.entries()].map(([k, p]) => `${k}:${p.version}`).join(',');
@@ -540,6 +614,10 @@ export function useScene3DRun(
 					world: m.world,
 					props: m.props,
 					material: materialAt(clip.threeD!.material, m.contentTime),
+					surfaces:
+						doc.scene3d?.renderer === 'advanced' && clip.kind !== 'model'
+							? layerSurfacesAt(clip.threeD!, m.contentTime)
+							: [],
 					localFrame: frame - clip.start,
 					contentTime: m.contentTime,
 				};
@@ -554,18 +632,38 @@ export function useScene3DRun(
 			draft,
 		};
 		const renderer = doc.scene3d?.renderer === 'advanced' ? 'advanced' : 'classic';
+		const envRest = envLight
+			? {
+					rotation: envLight.environment?.rotation ?? 0,
+					color: envLight.color,
+					background: !!envLight.environment?.background,
+				}
+			: null;
+		const preset = envLight?.environment?.preset ?? 0;
 		const environment: AdvancedEnvironment | null =
-			renderer === 'advanced' && envLight && envImage
-				? {
-						image: envImage,
-						rotation: envLight.environment?.rotation ?? 0,
-						color: envLight.color,
-						background: !!envLight.environment?.background,
-					}
-				: null;
+			renderer !== 'advanced' || !envRest
+				? null
+				: envHdr
+					? {
+							...envRest,
+							source: { kind: 'float', width: envHdr.width, height: envHdr.height, data: envHdr.data },
+							key: `hdr:${envUrl}`,
+						}
+					: envImage
+						? { ...envRest, image: envImage, key: `image:${envUrl}` }
+						: envMediaId
+							? null
+							: { ...envRest, source: { kind: 'preset', preset }, key: `preset:${preset}` };
+		const lookAt = sceneLookAt(doc.scene3d, frame, doc.settings.fps);
+		const look: AdvancedLook = {
+			toneMapping: lookAt.toneMapping,
+			exposure: lookAt.exposure,
+			glint: lookAt.glint,
+			supersampling: doc.scene3d?.supersampling ?? 1,
+		};
 		// The effect re-runs when its key changes: the pictures, and everything 3D that moves without changing them
 		// (world matrices, materials, the camera, the lights, the renderer settings).
-		const key = `${frame}|${run.members.join(',')}|${pictureKey}|${renderer}|${envImage ? envUrl : ''}|${modelKey}|${sceneFingerprint(setup, members, doc.scene3d)}`;
+		const key = `${frame}|${run.members.join(',')}|${pictureKey}|${renderer}|${environment?.key ?? ''}|${modelKey}|${sceneFingerprint(setup, members, doc.scene3d, look)}`;
 		return [
 			fx3dRun({
 				key,
@@ -575,6 +673,7 @@ export function useScene3DRun(
 				preview: isPreview,
 				renderer,
 				environment,
+				look,
 				models,
 				shadowMapSize: doc.scene3d?.shadowMapSize ?? 1024,
 			}),
@@ -591,9 +690,10 @@ export function useScene3DRun(
 		comp.width,
 		comp.height,
 		envImage,
+		envHdr,
 		modelKey,
 	]);
-	return { frame, run, complete, effects };
+	return { frame, run, complete, effects, problem };
 }
 
 /**
@@ -617,7 +717,13 @@ export function Scene3DScope({
 }) {
 	const rendering = getRemotionEnvironment().isRendering;
 	const gpu = scene.mode.mode === 'gpu';
-	const { frame, run, complete, effects } = useScene3DRun(scene, trackIndex, comp, offset, isPreview);
+	const { frame, run, complete, effects, problem } = useScene3DRun(
+		scene,
+		trackIndex,
+		comp,
+		offset,
+		isPreview,
+	);
 	const hold = useRef<number | null>(null);
 	if (rendering && run && !complete && hold.current === null)
 		hold.current = delayRender(`3D layers at frame ${frame}`);
@@ -639,23 +745,31 @@ export function Scene3DScope({
 				{children}
 			</div>
 		);
+	const chip = problem ? (
+		<AbsoluteFill style={{ pointerEvents: 'none' }}>
+			<CompositeChip text={problem} />
+		</AbsoluteFill>
+	) : null;
 	return (
-		<ScopedHtmlInCanvas
-			scope="3D layers"
-			width={comp.width}
-			height={comp.height}
-			effects={effects}
-			style={{ ...FILL, display: 'block' }}
-			showInTimeline={false}
-		>
-			<div
-				data-scene3d-scope="canvas"
-				data-track-index={trackIndex}
-				style={{ position: 'absolute', left: 0, top: 0, width: comp.width, height: comp.height }}
+		<>
+			<ScopedHtmlInCanvas
+				scope="3D layers"
+				width={comp.width}
+				height={comp.height}
+				effects={effects}
+				style={{ ...FILL, display: 'block' }}
+				showInTimeline={false}
 			>
-				{children}
-			</div>
-		</ScopedHtmlInCanvas>
+				<div
+					data-scene3d-scope="canvas"
+					data-track-index={trackIndex}
+					style={{ position: 'absolute', left: 0, top: 0, width: comp.width, height: comp.height }}
+				>
+					{children}
+				</div>
+			</ScopedHtmlInCanvas>
+			{chip}
+		</>
 	);
 }
 
@@ -676,7 +790,13 @@ export function FlatRun3D({
 	offset: number;
 	isPreview: boolean;
 }) {
-	const { frame, run, complete, effects } = useScene3DRun(scene, trackIndex, comp, offset, isPreview);
+	const { frame, run, complete, effects, problem } = useScene3DRun(
+		scene,
+		trackIndex,
+		comp,
+		offset,
+		isPreview,
+	);
 	usePublishFlatChain(`run3d:${trackIndex}`, {
 		frame,
 		effects,
@@ -684,7 +804,11 @@ export function FlatRun3D({
 		ready: !run || (complete && effects.length > 0),
 		key: effects.length ? ((effects[0]!.params as { key?: string }).key ?? 'run') : run ? 'pending' : 'idle',
 	});
-	return null;
+	return problem ? (
+		<AbsoluteFill style={{ pointerEvents: 'none' }}>
+			<CompositeChip text={problem} />
+		</AbsoluteFill>
+	) : null;
 }
 
 /** The fallback chip (Player without the GPU scope) at frames where 3D layers are drawn; renders cancel. */
@@ -704,9 +828,11 @@ export function Scene3DFallback({
 	if (!isPreview)
 		cancelRender(
 			new Error(
-				reason.includes('WebGL2') || reason.includes('context lost')
-					? `WEBGL_UNAVAILABLE: ${reason}`
-					: `THREE_D_UNSUPPORTED: ${reason}`,
+				scene.mode.code
+					? `${scene.mode.code}: ${reason}`
+					: reason.includes('WebGL2') || reason.includes('context lost')
+						? `WEBGL_UNAVAILABLE: ${reason}`
+						: `THREE_D_UNSUPPORTED: ${reason}`,
 			),
 		);
 	return (
@@ -717,4 +843,4 @@ export function Scene3DFallback({
 }
 
 export type { RenderScene3D };
-export { layerMapOf, runBottomTracks };
+export { advancedNeedsFloat, layerMapOf, runBottomTracks };

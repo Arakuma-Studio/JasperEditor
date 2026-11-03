@@ -16,7 +16,7 @@ import {
 	useStoreSelector,
 	useTransportFrame,
 } from '@jasper/session/react';
-import { cx, PointMenu, TimecodeText } from '@jasper/ui';
+import { cx, openDialog, PointMenu, TimecodeText } from '@jasper/ui';
 import {
 	type DragEvent,
 	type KeyboardEvent as ReactKeyboardEvent,
@@ -30,6 +30,7 @@ import {
 	useRef,
 	useState,
 } from 'react';
+import { COST_3D_DIALOG, cost3dAcknowledged } from '../../three-d/Cost3DDialog.tsx';
 import { effectEditorFor, templateParamControls } from '../../extensions/index.ts';
 import { useRegistry } from '../../extensions/react.ts';
 import { formatTimecode } from '../../gaps/time-display.ts';
@@ -1010,15 +1011,20 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 															disabled={readOnly}
 															data-testid={`ec-3d-switch-${s.threeDSwitch.clipId}`}
 															onClick={(ev) => ev.stopPropagation()}
-															onChange={(ev) =>
-																ops.apply('3D Layer', [
-																	{
-																		type: 'clip.set3d',
-																		clipIds: [s.threeDSwitch!.clipId],
-																		enabled: ev.currentTarget.checked,
-																	} as Command,
-																])
-															}
+															onChange={(ev) => {
+																const enabled = ev.currentTarget.checked;
+																const clipIds = [s.threeDSwitch!.clipId];
+																const go = () =>
+																	ops.apply('3D Layer', [
+																		{ type: 'clip.set3d', clipIds, enabled } as Command,
+																	]);
+																// TL-078: the cost of 3D is said before it is taken on.
+																if (!enabled || cost3dAcknowledged()) go();
+																else
+																	void openDialog<boolean>(COST_3D_DIALOG, {}).then((ok) => {
+																		if (ok) go();
+																	});
+															}}
 														/>
 														3D Layer
 													</label>

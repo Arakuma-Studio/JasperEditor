@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { CamTrackService } from '../camtrack/service.ts';
 import { replyWithJob } from '../jobs/reply.ts';
 import { registerAssetProber } from '../media/probe.ts';
+import { hdrProber } from '../three-d/hdr-prober.ts';
 import { modelProber } from '../three-d/model-prober.ts';
 import { guarded, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
@@ -15,7 +16,11 @@ export default async function camtrackRoutes(app: FastifyInstance): Promise<void
 	app.jasper.services.camtrack = svc;
 	svc.registerRunners();
 	const unregisterProber = registerAssetProber(modelProber);
-	app.addHook('onClose', async () => unregisterProber());
+	const unregisterHdr = registerAssetProber(hdrProber);
+	app.addHook('onClose', async () => {
+		unregisterProber();
+		unregisterHdr();
+	});
 
 	app.post<Wait>(
 		'/api/camtrack/solve',

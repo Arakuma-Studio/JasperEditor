@@ -4,6 +4,8 @@ import {
 	activeCameraAt,
 	activeCameraClipAt,
 	angleOfViewForZoom,
+	BEVEL_POSITIONS,
+	BEVEL_PROFILES,
 	buildRenderSnapshot,
 	CAMERA_PRESETS,
 	type CameraClip,
@@ -13,8 +15,11 @@ import {
 	cameraTrackerSolveBody,
 	clipContentTime,
 	contentTimeAt,
+	costClassOf,
+	ENVIRONMENT_PRESETS,
 	findCameraTracker,
 	focalLengthForZoom,
+	GEOMETRY_MODES,
 	IRIS_SHAPES,
 	isSolveStale,
 	LIGHT_FALLOFFS,
@@ -23,12 +28,16 @@ import {
 	lightsAt,
 	mat4Apply,
 	mediaFrameAt,
+	PLATE_SHAPES,
 	planeHomography,
 	type Rational,
 	RENDERERS_3D,
 	runs3d,
 	SHADOW_MODES,
+	SURFACE_PRESETS,
+	SurfaceValuesSchema,
 	stackAt,
+	TONE_MAPPINGS,
 	trackPointsAt,
 } from '@jasper/project';
 import { z } from 'zod';
@@ -59,7 +68,8 @@ export const THREE_D_GUIDE = `3D layers, cameras and lights (After Effects' 3D i
 - add_light {lightType parallel|spot|point|ambient|environment, position, pointOfInterest, intensity, color, coneAngle, coneFeather, falloff none|smooth|inverse-square, radius, falloffDistance, castsShadows, shadowDarkness, shadowDiffusion}; light_settings edits one. Shadows need a light with castsShadows and layers with Casts Shadows on.
 - set_3d_renderer {renderer classic|advanced, draft}: Classic 3D is After Effects' plane renderer. get_3d_scene {frame} reports the evaluated camera, lights, every 3D layer's placement and projected corners and the runs — check results with render_frame.
 - Every property is also a param.set path: ["clip", id, "threeD", "positionZ" | "orientation" | "rotationX" | "material", "castsShadows" …], ["clip", id, "camera", "zoom" | "position" | "pointOfInterest" …], ["clip", id, "light", "intensity" | "color" …] (keyframe.add / expressions work on them too).
-- Export: 3D layers render on the Remotion path (the planner routes them there and says so); preview and export use the same renderer.
+- Export: 3D layers render on the Remotion path (the planner routes them there and says so); preview and export use the same renderer. A missing HDR or 3D model refuses the export (THREE_D_ASSET_MISSING); physical surfaces, HDR, tone mapping, glints and supersampling refuse where the render browser has no float targets (THREE_D_NEEDS_FLOAT). Enum costClass of a 3D title: 3d, or 3d-heavy with transmission, glints, inflate or supersampling.
+- 3D titles (Advanced 3D, text and shape layers): set_3d_geometry {mode extrude | inflate, bevelPosition, extrusionDepth, inflate}; edit_bevel_bands (up to 6 bands, each with width, depth, profile, curve and its own material); edit_backplates (up to 3 solids from contour, hull or box); set_3d_surface {surface base | face | side | back | band id | plate id.face | plate id.side, preset, values}: metal-roughness with clearcoat, flakes, procedural relief, iridescence, and transmission glass that refracts the sequence below it. Presets include gold, chrome, silver, copper, glass, diamond. Metal needs something to reflect: add_light {lightType environment, environmentPreset studio | sky | city | sunset | chromeBands | neon, or environmentMediaId with an image or a Radiance .hdr}; without one the neutral studio lights physical surfaces. set_3d_renderer {toneMapping aces | agx | neutral | hue, exposure, glint}. A title looks like metal with toneMapping aces, a bevel band, and an environment with bright bands. Look glass (the glass finish) refracts only its own fill: to refract the footage behind a title, use 3D transmission.
 - 3D Camera Tracker: track_camera {clipId} analyses a video clip (features tracked through the shown media frames, then the camera and lens solved: Shot Type fixed | variable | specify with hfov, Solve Method auto | typical | flat | tripod, detailed, lensDistortion) and stores the solve (Method Used, Average Error in px, 3D track points); it takes about a second per frame. get_camera_tracker {clipId, frame} lists the track points seen at a sequence frame (id, media px, depth, error). create_tracked_camera {clipId, layer none|text|solid, pointIds, text} makes a one-node camera keyed on every frame that sees the footage as it was filmed, plus a 3D text or solid on the target of the points (3 or more points: their plane). set_tracker_ground {clipId, pointIds ≥ 3} makes their plane the ground (horizontal, through the frame centre) before creating the camera. delete_track_points {clipId, pointIds} drops bad points and solves again. The tracked clip must be drawn centred, unrotated, not animated (its Motion scale is used).`;
 
 const Vec3Arg = z.tuple([z.number().finite(), z.number().finite(), z.number().finite()]);
@@ -315,8 +325,17 @@ export function registerThreeDTools(ctx: ToolContext): void {
 		castsShadows: z.boolean().optional(),
 		shadowDarkness: z.number().min(0).max(100).optional(),
 		shadowDiffusion: z.number().min(0).optional(),
-		environmentMediaId: z.string().nullable().optional(),
+		environmentMediaId: z
+			.string()
+			.nullable()
+			.optional()
+			.describe('An image or Radiance .hdr media id; null uses environmentPreset'),
 		environmentBackground: z.boolean().optional(),
+		environmentPreset: z
+			.enum(ENVIRONMENT_PRESETS)
+			.optional()
+			.describe('Procedural environment, the look presets'),
+		environmentRotation: z.number().finite().optional().describe('Degrees'),
 	};
 
 	defineTool(
@@ -383,8 +402,9 @@ export function registerThreeDTools(ctx: ToolContext): void {
 		'set_3d_renderer',
 		{
 			title: 'Set 3D renderer',
-			description:
-				"Sets a sequence's 3D renderer (Composition Settings ▸ 3D Renderer; one undoable edit): renderer classic | advanced, draft (Draft 3D previews: no lights, shadows or depth of field; exports always render in full), shadowMapSize and supersampling (Advanced 3D).",
+			description: "Set a sequence's 3D renderer, and for Advanced 3D its tone mapping, exposure and glints.",
+			details:
+				'Sets a sequence\'s 3D renderer (Composition Settings ▸ 3D Renderer; one undoable edit): renderer classic | advanced, draft (Draft 3D previews: no lights, shadows or depth of field; exports always render in full), and for Advanced 3D shadowMapSize, supersampling, toneMapping (none, aces, agx, neutral, hue), exposure (stops) and glint (HDR bloom and star rays). Values key at `frame` when animated; the same values animate through apply_commands param.set and keyframe.* at ["scene3d", sequenceId, prop], props exposure, glintThreshold, glintIntensity, glintRadius, glintLength, glintAngle, glintTint.',
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: z.string().optional(),
@@ -392,11 +412,188 @@ export function registerThreeDTools(ctx: ToolContext): void {
 				draft: z.boolean().optional(),
 				shadowMapSize: z.number().int().min(256).max(8192).optional(),
 				supersampling: z.number().int().min(1).max(4).optional(),
+				toneMapping: z.enum(TONE_MAPPINGS).optional(),
+				exposure: z.number().finite().min(-10).max(10).optional().describe('Stops'),
+				glint: z
+					.object({
+						enabled: z.boolean().optional(),
+						threshold: z.number().min(0).max(64).optional().describe('Scene-linear luminance'),
+						intensity: z.number().min(0).max(800).optional().describe('%'),
+						radius: z.number().min(0).max(400).optional().describe('Sequence px'),
+						rays: z.number().int().min(0).max(8).optional().describe('0, 2, 4, 6 or 8'),
+						length: z.number().min(0).max(2000).optional().describe('Sequence px'),
+						angle: z.number().finite().optional().describe('Degrees'),
+						tint: z.tuple([z.number(), z.number(), z.number(), z.number()]).optional(),
+					})
+					.optional(),
+				frame: FrameArg,
 			},
 			annotations: EDIT_IDEMPOTENT,
 		},
-		async ({ projectId, ...args }, extra) =>
-			applyHelper(ctx, projectId, '3D Renderer', [{ type: 'sequence.set3dRenderer', ...args }], extra),
+		async ({ projectId, frame, ...args }, extra) =>
+			applyHelper(
+				ctx,
+				projectId,
+				'3D Renderer',
+				[{ type: 'sequence.set3dRenderer', ...args, ...atOf(frame) }],
+				extra,
+			),
+	);
+
+	defineTool(
+		ctx,
+		'set_3d_surface',
+		{
+			title: 'Set 3D surface material',
+			description: 'Give a surface of 3D text or shape layers a physically based material.',
+			details:
+				'Gives a surface of 3D layers a physically based material (one undoable edit): surface base (default, every surface), face, side, back, a band id, or plateId.face / plateId.side; preset, values (percent 0–100 unless noted: metalness, roughness, clearcoat, flakes, relief crumple | hammered | liquid, iridescence, transmission with ior and thickness in layer px, emissive) or clear. List surfaces and values with get_clip_properties. Numbers animate through apply_commands param.set and keyframe.* at threeD.surface.<surface>.<value>. Physical surfaces need the float scene target and render on the Remotion path.',
+			input: {
+				projectId: ProjectIdArg,
+				clipIds: z.array(z.string().min(1)).min(1),
+				surface: z.string().min(1).optional(),
+				preset: z.enum(Object.keys(SURFACE_PRESETS) as [string, ...string[]]).optional(),
+				values: SurfaceValuesSchema.optional(),
+				clear: z.boolean().optional(),
+				frame: FrameArg,
+			},
+			annotations: EDIT_IDEMPOTENT,
+		},
+		async ({ projectId, frame, ...args }, extra) =>
+			applyHelper(
+				ctx,
+				projectId,
+				'3D Material',
+				[{ type: 'threeD.setSurface', ...args, ...atOf(frame) }],
+				extra,
+			),
+	);
+
+	defineTool(
+		ctx,
+		'set_3d_geometry',
+		{
+			title: 'Set 3D title geometry',
+			description: 'Set the solid of 3D text and shape layers: extrude or inflate, bevel position, depth.',
+			details:
+				'The solid of text and shape 3D layers (one undoable edit): mode extrude | inflate, bevelPosition inside | center | outside, extrusionDepth (layer px), inflate { height, smoothness, detail 1–4, curve: 2–16 points x, y in 0…1 from edge to ridge }. Numbers animate through apply_commands param.set and keyframe.*; a change of geometry rebuilds the solid, a change of camera, light or material does not.',
+			input: {
+				projectId: ProjectIdArg,
+				clipIds: z.array(z.string().min(1)).min(1),
+				mode: z.enum(GEOMETRY_MODES).optional(),
+				bevelPosition: z.enum(BEVEL_POSITIONS).optional(),
+				extrusionDepth: z.number().min(0).max(10000).optional(),
+				inflate: z
+					.object({
+						height: z.number().min(0).max(2000).optional(),
+						smoothness: z.number().min(0).max(100).optional(),
+						detail: z.number().min(1).max(4).optional(),
+						curve: z
+							.array(
+								z.object({
+									x: z.number().min(0).max(1),
+									y: z.number().min(0).max(1),
+									corner: z.boolean().optional(),
+								}),
+							)
+							.min(2)
+							.max(16)
+							.optional(),
+					})
+					.optional(),
+				frame: FrameArg,
+			},
+			annotations: EDIT_IDEMPOTENT,
+		},
+		async ({ projectId, frame, ...args }, extra) =>
+			applyHelper(
+				ctx,
+				projectId,
+				'3D Geometry',
+				[{ type: 'threeD.setGeometry', ...args, ...atOf(frame) }],
+				extra,
+			),
+	);
+
+	defineTool(
+		ctx,
+		'edit_bevel_bands',
+		{
+			title: 'Edit bevel bands',
+			description: 'Add, remove or reorder a bevel band of a 3D text or shape layer.',
+			details:
+				'Adds, removes or reorders a bevel band of a text or shape 3D layer (one undoable edit; at most 6 per solid, a seventh is refused with E_LIMIT). Bands run from the face edge outwards: width and depth in layer px, profile flat | chamfer | round | cove | step | inset | tube, curve −100…100, segments 1–24, preset for a material of its own. Numbers animate at threeD.band.<bandId>.<value>.',
+			input: {
+				projectId: ProjectIdArg,
+				clipId: z.string().min(1),
+				action: z.enum(['add', 'remove', 'reorder']),
+				bandId: z.string().optional().describe('remove, reorder'),
+				index: z.number().int().min(0).optional(),
+				width: z.number().min(0).max(2000).optional(),
+				depth: z.number().min(0).max(2000).optional(),
+				profile: z.enum(BEVEL_PROFILES).optional(),
+				curve: z.number().min(-100).max(100).optional(),
+				segments: z.number().int().min(1).max(24).optional(),
+				preset: z.enum(Object.keys(SURFACE_PRESETS) as [string, ...string[]]).optional(),
+			},
+			annotations: EDIT,
+		},
+		async ({ projectId, action, clipId, bandId, index, ...band }, extra) => {
+			if (action !== 'add' && !bandId)
+				throw new ToolError('E_INVALID_PARAM', 'bandId is required to remove or reorder a band');
+			const cmd =
+				action === 'add'
+					? { type: 'threeD.addBand' as const, clipId, ...band, ...(index !== undefined ? { index } : {}) }
+					: action === 'remove'
+						? { type: 'threeD.removeBand' as const, clipId, bandId: bandId! }
+						: { type: 'threeD.reorderBand' as const, clipId, bandId: bandId!, index: index ?? 0 };
+			return applyHelper(ctx, projectId, 'Bevel Band', [cmd], extra);
+		},
+	);
+
+	defineTool(
+		ctx,
+		'edit_backplates',
+		{
+			title: 'Edit backplates',
+			description: 'Add, remove or reorder a backplate behind a 3D text or shape layer.',
+			details:
+				'Adds, removes or reorders a backplate of a text or shape 3D layer (one undoable edit; at most 3, a fourth is refused with E_LIMIT): a solid stacked behind the title, shape contour | hull | box, grow, depth, gap, corner, bevelWidth, bevelDepth in layer px, fillCounters, preset for its material. Plates grow cumulatively. Numbers animate at threeD.plate.<plateId>.<value>.',
+			input: {
+				projectId: ProjectIdArg,
+				clipId: z.string().min(1),
+				action: z.enum(['add', 'remove', 'reorder']),
+				plateId: z.string().optional().describe('remove, reorder'),
+				index: z.number().int().min(0).optional(),
+				shape: z.enum(PLATE_SHAPES).optional(),
+				grow: z.number().min(0).max(2000).optional(),
+				depth: z.number().min(0).max(2000).optional(),
+				gap: z.number().min(-2000).max(2000).optional(),
+				corner: z.number().min(0).max(2000).optional(),
+				fillCounters: z.boolean().optional(),
+				bevelWidth: z.number().min(0).max(2000).optional(),
+				bevelDepth: z.number().min(0).max(2000).optional(),
+				bevelProfile: z.enum(BEVEL_PROFILES).optional(),
+				preset: z.enum(Object.keys(SURFACE_PRESETS) as [string, ...string[]]).optional(),
+			},
+			annotations: EDIT,
+		},
+		async ({ projectId, action, clipId, plateId, index, ...plate }, extra) => {
+			if (action !== 'add' && !plateId)
+				throw new ToolError('E_INVALID_PARAM', 'plateId is required to remove or reorder a plate');
+			const cmd =
+				action === 'add'
+					? {
+							type: 'threeD.addBackplate' as const,
+							clipId,
+							...plate,
+							...(index !== undefined ? { index } : {}),
+						}
+					: action === 'remove'
+						? { type: 'threeD.removeBackplate' as const, clipId, plateId: plateId! }
+						: { type: 'threeD.reorderBackplate' as const, clipId, plateId: plateId!, index: index ?? 0 };
+			return applyHelper(ctx, projectId, 'Backplate', [cmd], extra);
+		},
 	);
 
 	defineTool(
@@ -460,6 +657,7 @@ export function registerThreeDTools(ctx: ToolContext): void {
 					return {
 						clipId: c.clipId,
 						name: c.name,
+						costClass: costClassOf(c.threeD, seq.threeD),
 						worldCentre: rv(mat4Apply(world, [b.width / 2, b.height / 2, 0])),
 						...(anchor ? { worldAnchor: rv(mat4Apply(world, [anchor[0]!, anchor[1]!, 0])) } : {}),
 						normal: rv(

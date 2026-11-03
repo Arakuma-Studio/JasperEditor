@@ -2,7 +2,7 @@
 // Pachislop's Material effect it runs the very same shading as a title's face (effects/b/material.ts): here a one-layer look
 // over the clip's own picture, planned by `planTitleLook`, so nothing is shaded twice. Sizes are percent of `Size`, in layer
 // px, so a logo and a title can share a setting and the material does not breathe as animated text changes its bounds.
-import { DEFAULT_PALETTE } from '../../../title-looks/model.ts';
+import { DEFAULT_PALETTE, TITLE_LOOK_INTENSITY } from '../../../title-looks/model.ts';
 import type { EffectParams, EffectSpec, ParamSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
 import { seedParam } from '../params.ts';
@@ -93,7 +93,8 @@ export const TITLE_MATERIAL_EFFECT: EffectSpec = defineShaderEffect({
 	params: MATERIAL_PARAMS,
 	gpu: {
 		passes: (p, ctx) => planMaterial(p, ctx, MATERIAL_UNIFORMS),
-		uniforms: (p, ctx) => titleLookUniforms(withLook(p, ctx)),
+		// The look's output pass mixes by `u_lookIntensity` (TL-089), a param of the look effect only: a material shows in full.
+		uniforms: (p, ctx) => ({ ...titleLookUniforms(withLook(p, ctx)), [`u_${TITLE_LOOK_INTENSITY}`]: 100 }),
 		requiresFloat: TITLE_LOOK_NEEDS_FLOAT,
 		timeInvariant: true,
 	},

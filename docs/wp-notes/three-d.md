@@ -17,7 +17,11 @@ Branch `feat/three-d` (parity program). Ports: [`licenses/ported/three-d.md`](..
 | Classic 3D CPU reference (plane compositor, Blinn-Phong, ray-cast shadows, bokeh DOF) | `three-d/{classic,bokeh}.ts` |
 | Classic 3D on the GPU (WebGL2 on the fx host) | `packages/compositions/src/three-d/gl.ts` |
 | Advanced 3D on the GPU (rasterised meshes, MSAA, GGX, shadow maps, environment light, screen-space DOF, models) | `packages/compositions/src/three-d/advanced.ts`, `extruded.ts`, `model-loader.ts` |
+| Floating-point pipeline: environment prefilter, tone mapping, glints, resolve, composite (§9) | `packages/compositions/src/three-d/hdr-passes.ts`, `env-loader.ts` |
 | Extrusion geometry (contour tracing, earcut, bevel profiles) | `packages/project/src/three-d/{extrude,triangulate}.ts` |
+| 3D titles: bevel bands, wavefront rings, offsets, inflate, plates (§9) | `packages/project/src/three-d/{bevel,solid,offset,inflate,title-solid}.ts` |
+| Surfaces, presets, slots; scene look; validation and repair (§9) | `packages/project/src/three-d/{surfaces,scene-look,validate}.ts` |
+| Radiance `.hdr` reader and prober (§9) | `packages/project/src/three-d/hdr.ts`, `apps/engine/src/three-d/hdr-prober.ts` |
 | Composition integration (3D scopes over run bottoms, taps, fallback with CSS homographies) | `packages/compositions/src/three-d/scope.tsx`, `SequenceComposition.tsx`, `layers/ModelLayer.tsx` |
 | Commands: `clip.set3d`, `clip.addCamera`, `clip.addLight`, `camera.settings`, `light.settings`, `camera.orbit/pan/dolly`, `sequence.set3dRenderer`, `cameraTracker.add/settings/setResult/deletePoints/setGround/create/remove` | `packages/project/src/commands/{schemas,handlers}/three-d.ts`, `handlers/camtrack.ts` |
 | Properties (`threeD.*`, `camera.*`, `light.*`) for param.set / keyframes / expressions | `packages/project/src/registry/three-d-properties.ts` |
@@ -178,10 +182,20 @@ identifies the least-squares similarity objective; the scalar derivation is our 
   their DOF linearised; no motion blur of 3D layers.
 - Nested sequences are planes (their 3D layers are not collapsed into the parent's scene).
 - Per-character 3D text animators are drawn inside the text layer's plane (flattened), not as separate planes.
-- Advanced 3D: no blend modes between 3D layers, no Light Transmission, no Reflection Rolloff / transparency index of
-  refraction, screen-space DOF with ≤ 96 taps (large radii are grainy), environment irradiance from a blurred mip (not
-  a cosine convolution), model textures sampled as display values (no sRGB linearisation), extrusion bevels can
-  self-intersect on very thin strokes (miter offsets), fill colour forced opaque on extruded faces.
+- Advanced 3D: no blend modes between 3D layers, no Light Transmission, no Reflection Rolloff, screen-space DOF with ≤ 96
+  taps (large radii are grainy), fill colour forced opaque on extruded faces. On the 8-bit path (no §9 feature in the
+  sequence) environment irradiance is a blurred mip and bevels of Bevel Style can self-intersect on very thin strokes
+  (miter offsets): bevel bands do not.
+- Environment lights take images and Radiance `.hdr`. `light.settings` and `clip.addLight` refuse a video id
+  (`E_INVALID_PARAM`): the image loader cannot read one. A project saved earlier with a video environment keeps it and its
+  render refuses. The Environment section offers images and HDRs only.
+- Metal needs something to reflect: a physical surface with no environment light reflects the neutral studio. Model layers do
+  not: they stay lit by the sequence's lights.
+- Models keep their own materials: `threeD.setSurface` refuses them, and metallic-roughness and normal textures are not read.
+- Backplates and outside bevels have round joins: an iso-line of a distance field has no miter.
+- Transmission refracts what is opaque behind it, in screen space: a glass solid does not see another glass solid, and
+  rays that leave the frame clamp to its edge.
+- Iridescence is two-beam interference at three wavelengths, not a spectral integration.
 - Models: no animations, skins, morph targets, second UV sets, Draco / meshopt, external `.gltf` files (refused: use
   `.glb`), OBJ materials (`.mtl` not read: one neutral material).
 - 3D Camera Tracker: the clip must be centred, unrotated, not animated; no "Render Track Points" in the output; no
@@ -195,6 +209,15 @@ identifies the least-squares similarity objective; the scalar derivation is our 
   video as images and are correct (`three-d-render.e2e.test.ts` › "a 2D video below a 3D run"). Not fixed here.
 
 ## 7. Sources (Adobe documentation and references)
+
+Formulas of §9: GGX prefiltering, Karis, *Real Shading in Unreal Engine 4* (2013); solid-angle mip selection, Křivánek and
+Colbert, *Real-time Shading with Filtered Importance Sampling* (2008); environment BRDF fit, Karis, *Physically Based Shading
+on Mobile* (2014); tone curves, the ACES fitted RRT+ODT (Narkowicz; the three.js constants), AgX (Troy Sobotka, Benjamin
+Wrensch's fit), Khronos PBR Neutral (the Khronos specification), the hue-preserving mode Pachislop's `punch`; shoulder resolve,
+Karis, *Tone mapping* (2013); thin film, Born and Wolf; Radiance format, Ward, *Real Pixels* (Graphics Gems II, 1991);
+distance propagation, Danielsson, *Euclidean distance mapping* (1980).
+Assumptions, undocumented: glint knee, detail size and tail are Pachislop's; the 45 % stop of bevel rings is Pachislop's;
+the 6-pixel point size of glints was chosen by looking at frames.
 
 - After Effects User Guide: 3D layers, 3D layer properties and Material Options, Cameras, lights and points of
   interest, 3D views and the camera tools, Advanced 3D renderer, Extruded text and shape layers (Geometry Options),
@@ -232,3 +255,97 @@ Bugs found and fixed by these runs: the preview did not redraw a run when only 3
 fingerprints cameras, lights, world matrices and materials); a member whose run moved to another bottom track never
 delivered again (one shared hub per composition); exports hung on static run members (3D taps deliver every frame);
 the camera tracker section looped on an unstable store selector.
+
+## 9. 3D titles (spec 19 §9)
+
+Everything here is Advanced 3D, in one renderer. A sequence that uses none of it stays on the 8-bit path and draws what it
+always drew, to the pixel; `advancedNeedsFloat` (shared by the renderer's decision, `snapshotGlNeeds` and the planner) is
+the one place that says which is which.
+
+**Pipeline.** Scene linear on a multisampled `RGBA16F` target, transparent where nothing is drawn. Each sample goes through
+an invertible shoulder so the hardware resolve averages about what the tone map will show (`hdrCompress`, `EXPAND_FS`). Then
+resolve, expand, optional Mitchell downsample (`Sequence3D.supersampling`), depth of field, glints, and the composite: tone
+map the scene, add what glass transmitted, put both over the backdrop in linear light, encode to the signal. **The backdrop
+never enters the scene**: it does not go through the tone curve, and where nothing is drawn it passes through to the last
+bit. A float target that is not there refuses with `THREE_D_NEEDS_FLOAT`: a chip in preview, a plan blocker and a job refusal
+in export (`gl-needs.ts`, `webgl-refusal.ts`), `cancelRender` as the backstop. It never degrades.
+
+**Geometry.** Solids are built from the traced outline, never from text. Band rings are a shrinking wavefront (`waveOf`): a
+traced outline has a tiny edge at every antialiased corner, and Pachislop's clamp, right for font outlines, stops both ends
+of a collapsing edge and leaves a spike. Here the edge leaves the front and its neighbours meet. A ring keeps its vertex
+count, merged vertices coincide, so strips stay quads. Each vertex still stops at 45 % of the way to the opposite side, so
+hairlines and CJK narrow the bevel instead of folding it. Offsets for plates and outside bevels are iso-lines of a distance
+field over the polygon (exact near it, propagated by Danielsson's sweeps): that gives union, closed counters and no
+self-intersection without a boolean library, so `clipper2-ts` is not needed. Budgets: 2 M grid nodes, `MAX_SOLID_QUADS`
+ring × station products; past them outlines coarsen, so a hostile picture cannot allocate gigabytes.
+
+**Caching.** A picture is delivered every frame, so `picture.version` says nothing. A solid is keyed by a hash of the alpha
+and the evaluated `SolidGeometry`; the GPU copy lives as long as the mesh object. Camera, lights, materials, tone mapping and
+exposure change uniforms and the material table, never a buffer (`solidBuilds`, tested). An animated bevel width does rebuild.
+
+**Surfaces.** A mesh vertex stores its slot (`SLOT_FACE`, side, back, six bands, two per plate). A table of 8 texels per slot
+holds each surface at the frame, so one draw call shades every surface. Absent surfaces fall back to `material.pbr`, then to
+Material Options. Relief and flakes are in layer pixels, resolution independent; their antialiasing width comes from depth,
+because derivatives are unstable on a glyph cap's sliver triangles.
+
+**Transmission** (TL-074, TL-080). After opaque and transparent passes the scene is resolved, tone mapped and composited over
+the backdrop into a mipped target; glass then reads it at the point its refracted ray leaves the solid, and writes a second
+attachment that bypasses the tone curve, so a clear pane shows the backdrop as it is. This is the only route for footage
+refracted behind a title: look glass (§5.1 of the spec) stays self-contained and refracts its own fill.
+
+**Environments** (TL-075). `.hdr` media are their own kind, `hdri`: a browser cannot show them. The prober decodes the whole
+file with the renderer's reader (fuzzed; dimensions validated before anything is allocated; 16K × 8K at most), and decoding
+reduces by box factors as it goes, so an 8K file costs 134 MB. In the renderer every environment becomes the same thing: a
+2048 × 1024 `RGBA16F` map whose levels hold GGX prefilters at fixed roughnesses, and a cosine-convolved irradiance. Procedural
+presets are `GLSL_TL_ENV`, the chunk looks use (TL-038), by the same names, rendered once into the map. Maps are cached by
+key, six at most.
+
+**Glints** (TL-077). See the comment at `renderGlint`. Every step is continuous in the highlight's position: a soft knee, a
+grid locked to sequence pixels, a tent at every mip step, a point detector that a line of light cannot pass. The test turns a
+title in steps of 0.15° and bounds the largest change of total glint energy. It measures energy, not each star, so a star
+that moved while the total held would pass; a control with Pachislop's 2×2 box measured 1.2 % against the tent's 1.0 %, so the
+test does not separate the two and the tent is a small gain, not the cause of the stability.
+
+**Determinism.** Frames are pure functions of the document and frame. A render holds until pictures, models and HDRs are in.
+A model or HDR that is gone refuses with `THREE_D_ASSET_MISSING`: a plan blocker first, `cancelRender` as the backstop. Prefilter
+sampling is a fixed Hammersley set.
+
+**Cost** (TL-078). 3D stays on the Remotion path; `costClassOf` gives `3d` or `3d-heavy` (transmission, glints, inflate,
+supersampling) and `COST_CLASSES` the words. The UI says so before a clip turns 3D, once, and in the 3D Title section; agents
+get `costClass` in `get_3d_scene`.
+
+**Gizmo** (TL-079). Arcs per axis and a free-rotate ring, sized to 60 % of the layer's larger side on screen, 44 to 260 px
+(`gizmo.ts`). One undo step per drag, keys when animated.
+
+### Usage
+
+Properties ▸ 3D Title on a 3D text or shape layer (Advanced 3D): surface, material preset, bands, inflate, plates, tone
+mapping, exposure, glints. Effect Controls ▸ 3D Title has every number with a stopwatch. Environment lights: Properties ▸
+Environment. MCP: `set_3d_surface`, `set_3d_geometry`, `edit_bevel_bands`, `edit_backplates`, `set_3d_renderer`, `add_light`.
+
+### Addresses
+
+| Path | What |
+|---|---|
+| `["clip", id, "threeD", "surface", <surface>, <value>]` | `<surface>`: `base`, `face`, `side`, `back`, a band id, `<plateId>-face`, `<plateId>-side` |
+| `["clip", id, "threeD", "band", <bandId>, "width" \| "depth" \| "curve" \| "profile" \| "segments"]` | |
+| `["clip", id, "threeD", "plate", <plateId>, <value>]` | |
+| `["clip", id, "threeD", "geometry", "inflate", "height" \| "smoothness"]` | |
+| `["scene3d", sequenceId, "exposure" \| "glintThreshold" \| …]` | Keys in sequence time |
+
+### Measured
+
+Machine: 8-vCPU EPYC VM, 15 GB, no GPU (Chrome 156, SwiftShader), shared with other agents. Load average 2 to 9 during the
+measured runs below, up to 75 earlier, when only correctness was checked.
+
+| What | Result | Rerun |
+|---|---|---|
+| Program (Player) against a Remotion still: gold title, environment preset, ACES, a keyed roughness; frames 0 and 45 | SSIM 1.000 both, frames 0 and 45 differ (SSIM 0.974) | `REMOTION_E2E=1 pnpm exec vitest run packages/compositions/test/three-d-title.e2e.test.ts` (frames in `test-results/three-d-title-e2e`) |
+| Razor cut at frame 30 against the uncut clip, frame 45 | identical (SSIM 1.000) | same |
+| Glint stability: 8 steps of 0.15° | largest step of total glint energy 1.0 % of the mean (control with a 2×2 box: 1.2 %) | `pnpm exec vitest run packages/compositions/test/three-d-title-gl.test.ts -t "glints hold still"` |
+| A moving camera, a material and an environment change | 0 solids built (a bevel change: 1) | `… -t "builds no geometry"` |
+| Frame cost, 1920 × 1080, gold title with a band, 4× MSAA, read back each frame | first frame 29.2 s (shaders, environment prefilter, solid), then 7.0 s; glass 14.8 s; glints 20.9 s | `THREE_D_PERF=1 pnpm exec vitest run packages/compositions/test/three-d-title-gl.test.ts -t "cost at 1080p"` |
+| Contact sheet of twenty looks | inspected: `/tmp/title-looks/sheets/three-d.png` at the time of writing | `THREE_D_SHEET=<file> … three-d-title-gl.test.ts -t "contact sheet"` |
+
+A first cost run reported 140 ms per frame: it timed only the submission of GL work, as the foundation's first figures did. The
+timing now reads a pixel back after each frame. Nothing was measured on a GPU.

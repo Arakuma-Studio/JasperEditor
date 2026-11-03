@@ -56,8 +56,9 @@ export type ProjectRow = {
 		| 'lut'
 		| 'mg-bundle'
 		| 'color-config'
-		// 3D models
+		// 3D models and HDR environments
 		| 'model'
+		| 'hdri'
 		| 'search-bin';
 	mediaId: string | null;
 	frameRate: string;

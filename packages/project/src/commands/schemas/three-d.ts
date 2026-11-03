@@ -2,16 +2,27 @@
 import { z } from 'zod';
 import { RGBASchema, Vec3Schema } from '../../schema/common.ts';
 import {
+	BEVEL_POSITIONS,
+	BEVEL_PROFILES,
 	CAMERA_TRACKER_METHODS,
 	CAMERA_TRACKER_SHOT_TYPES,
 	CameraSolvePointSchema,
+	ENVIRONMENT_PRESETS,
 	FILM_SIZE_MEASURES,
+	GEOMETRY_MODES,
+	GLINT_RAYS,
 	IRIS_SHAPES,
 	LIGHT_FALLOFFS,
 	LIGHT_TYPES,
+	MAX_BEVEL_SEGMENTS,
+	PLATE_SHAPES,
 	RENDERERS_3D,
+	SURFACE_BASES,
+	SURFACE_RELIEFS,
+	TONE_MAPPINGS,
 	TRACK_POINT_DISPLAY,
 } from '../../schema/three-d.ts';
+import { MAX_INFLATE_POINTS, MAX_RAMP_STOPS } from '../../three-d/validate.ts';
 import {
 	cmd,
 	IdListSchema,
@@ -82,9 +93,12 @@ const lightShape = {
 	castsShadows: z.boolean().optional(),
 	shadowDarkness: finite().min(0).max(100).optional(),
 	shadowDiffusion: finite().min(0).optional(),
-	/** Environment lights: an equirectangular image or video (media id), null = neutral studio. */
+	/** Environment lights: an equirectangular image or Radiance HDR (media id), null = neutral studio. */
 	environmentMediaId: IdRefSchema.nullable().optional(),
 	environmentBackground: z.boolean().optional(),
+	/** Procedural environment (spec 19 TL-075), used while `environmentMediaId` is null. */
+	environmentPreset: z.enum(ENVIRONMENT_PRESETS).optional(),
+	environmentRotation: finite().optional(),
 };
 
 /** Layer ▸ New ▸ Light: a light clip (placement as `clip.addCamera`). */
@@ -155,6 +169,158 @@ export const SequenceSet3dRendererCmd = cmd('sequence.set3dRenderer', {
 	draft: z.boolean().optional(),
 	shadowMapSize: z.number().int().min(256).max(8192).optional(),
 	supersampling: z.number().int().min(1).max(4).optional(),
+	/** spec 19 TL-076. */
+	toneMapping: z.enum(TONE_MAPPINGS).optional(),
+	/** Stops; keyed at `at` when animated. */
+	exposure: finite().min(-10).max(10).optional(),
+	/** spec 19 TL-077: switches glints and sets their values (numbers keyed at `at` when animated). */
+	glint: z
+		.strictObject({
+			enabled: z.boolean().optional(),
+			threshold: finite().min(0).max(64).optional(),
+			intensity: finite().min(0).max(800).optional(),
+			radius: finite().min(0).max(400).optional(),
+			rays: z
+				.number()
+				.int()
+				.refine((n) => (GLINT_RAYS as readonly number[]).includes(n), 'rays must be 0, 2, 4, 6 or 8')
+				.optional(),
+			length: finite().min(0).max(2000).optional(),
+			angle: finite().optional(),
+			tint: RGBASchema.optional(),
+		})
+		.optional(),
+	at: ParamAtSchema.optional(),
+});
+
+/** Plain values of a physically based surface (percentages 0…100, sizes in layer px). */
+export const SurfaceValuesSchema = z.strictObject({
+	base: z.enum(SURFACE_BASES).optional(),
+	baseColor: RGBASchema.optional(),
+	ramp: z
+		.strictObject({
+			angle: finite(),
+			stops: z
+				.array(z.strictObject({ at: finite().min(0).max(1), color: RGBASchema }))
+				.min(2)
+				.max(MAX_RAMP_STOPS),
+		})
+		.nullable()
+		.optional(),
+	metalness: finite().min(0).max(100).optional(),
+	roughness: finite().min(0).max(100).optional(),
+	reflectivity: finite().min(0).max(400).optional(),
+	specularBoost: finite().min(0).max(400).optional(),
+	clearcoat: finite().min(0).max(100).optional(),
+	clearcoatRoughness: finite().min(0).max(100).optional(),
+	flakes: finite().min(0).max(100).optional(),
+	flakeScale: finite().min(0.25).max(200).optional(),
+	relief: z.enum(SURFACE_RELIEFS).optional(),
+	reliefAmount: finite().min(0).max(100).optional(),
+	reliefScale: finite().min(1).max(2000).optional(),
+	reliefSeed: z.number().int().optional(),
+	iridescence: finite().min(0).max(100).optional(),
+	iridescenceThickness: finite().min(50).max(1200).optional(),
+	transmission: finite().min(0).max(100).optional(),
+	ior: finite().min(1).max(2.5).optional(),
+	thickness: finite().min(0).max(2000).optional(),
+	dispersion: finite().min(0).max(100).optional(),
+	attenuationColor: RGBASchema.optional(),
+	emissive: RGBASchema.optional(),
+	emissiveIntensity: finite().min(0).max(2000).optional(),
+});
+
+/**
+ * Gives a surface of 3D layers a physically based material (spec 19 TL-071, TL-074), from a preset and values, or clears
+ * it. `surface`: `base` (default), `face`, `side`, `back`, a band id, `<plateId>.face` or `<plateId>.side`. Values on a
+ * surface that exists write its numbers; individual numbers animate through `param.set`.
+ */
+export const ThreeDSetSurfaceCmd = cmd('threeD.setSurface', {
+	clipIds: IdListSchema,
+	surface: z.string().min(1).optional(),
+	preset: z.string().min(1).optional(),
+	values: SurfaceValuesSchema.optional(),
+	/** Removes the material: the surface shows the layer's base surface, or Material Options. */
+	clear: z.boolean().optional(),
+	at: ParamAtSchema.optional(),
+});
+
+/** Solid mode and the inflate shape (spec 19 TL-072); numbers animate through `param.set`. */
+export const ThreeDSetGeometryCmd = cmd('threeD.setGeometry', {
+	clipIds: IdListSchema,
+	mode: z.enum(GEOMETRY_MODES).optional(),
+	bevelPosition: z.enum(BEVEL_POSITIONS).optional(),
+	extrusionDepth: finite().min(0).max(10000).optional(),
+	inflate: z
+		.strictObject({
+			height: finite().min(0).max(2000).optional(),
+			smoothness: finite().min(0).max(100).optional(),
+			detail: finite().min(1).max(4).optional(),
+			curve: z
+				.array(
+					z.strictObject({
+						x: finite().min(0).max(1),
+						y: finite().min(0).max(1),
+						corner: z.boolean().optional(),
+					}),
+				)
+				.min(2)
+				.max(MAX_INFLATE_POINTS)
+				.optional(),
+		})
+		.optional(),
+	at: ParamAtSchema.optional(),
+});
+
+const bandShape = {
+	width: finite().min(0).max(2000).optional(),
+	depth: finite().min(0).max(2000).optional(),
+	profile: z.enum(BEVEL_PROFILES).optional(),
+	curve: finite().min(-100).max(100).optional(),
+	segments: z.number().int().min(1).max(MAX_BEVEL_SEGMENTS).optional(),
+};
+
+/** Adds a bevel band to a text or shape layer (TL-070): at most 6. Refuses a seventh with `E_LIMIT`. */
+export const ThreeDAddBandCmd = cmd('threeD.addBand', {
+	clipId: IdRefSchema,
+	index: z.number().int().min(0).optional(),
+	...bandShape,
+	/** A material preset of its own. */
+	preset: z.string().min(1).optional(),
+	ref: RefDeclSchema.optional(),
+});
+export const ThreeDRemoveBandCmd = cmd('threeD.removeBand', { clipId: IdRefSchema, bandId: IdRefSchema });
+export const ThreeDReorderBandCmd = cmd('threeD.reorderBand', {
+	clipId: IdRefSchema,
+	bandId: IdRefSchema,
+	index: z.number().int().min(0),
+});
+
+/** Adds a backplate behind a text or shape layer (TL-073): at most 3. Refuses a fourth with `E_LIMIT`. */
+export const ThreeDAddBackplateCmd = cmd('threeD.addBackplate', {
+	clipId: IdRefSchema,
+	index: z.number().int().min(0).optional(),
+	shape: z.enum(PLATE_SHAPES).optional(),
+	grow: finite().min(0).max(2000).optional(),
+	depth: finite().min(0).max(2000).optional(),
+	gap: finite().min(-2000).max(2000).optional(),
+	corner: finite().min(0).max(2000).optional(),
+	fillCounters: z.boolean().optional(),
+	bevelWidth: finite().min(0).max(2000).optional(),
+	bevelDepth: finite().min(0).max(2000).optional(),
+	bevelProfile: z.enum(BEVEL_PROFILES).optional(),
+	/** A material preset for its face and side. */
+	preset: z.string().min(1).optional(),
+	ref: RefDeclSchema.optional(),
+});
+export const ThreeDRemoveBackplateCmd = cmd('threeD.removeBackplate', {
+	clipId: IdRefSchema,
+	plateId: IdRefSchema,
+});
+export const ThreeDReorderBackplateCmd = cmd('threeD.reorderBackplate', {
+	clipId: IdRefSchema,
+	plateId: IdRefSchema,
+	index: z.number().int().min(0),
 });
 
 const trackerSettingsShape = {
@@ -246,4 +412,12 @@ export const THREE_D_COMMANDS = [
 	CameraPanCmd,
 	CameraDollyCmd,
 	SequenceSet3dRendererCmd,
+	ThreeDSetSurfaceCmd,
+	ThreeDSetGeometryCmd,
+	ThreeDAddBandCmd,
+	ThreeDRemoveBandCmd,
+	ThreeDReorderBandCmd,
+	ThreeDAddBackplateCmd,
+	ThreeDRemoveBackplateCmd,
+	ThreeDReorderBackplateCmd,
 ] as const;

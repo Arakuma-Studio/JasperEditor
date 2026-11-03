@@ -265,6 +265,16 @@ describe('lights', () => {
 		h.ok([{ type: 'light.settings', clipId: a!, lightType: 'environment', environmentMediaId: m }]);
 		expect((h.seq.clips[a!] as LightClip).light.environmentMediaId).toBe(m);
 		expect(snap(h).media[m]).toBeTruthy();
+		// Follow-up 15 of the 3D stream: the environment loader reads images and HDRs only, so a video is refused here
+		// instead of at render time, by light.settings and clip.addLight alike.
+		const video = h.registerVideo();
+		const refused = h.tx([{ type: 'light.settings', clipId: a!, environmentMediaId: video }]);
+		expect(refused.ok).toBe(false);
+		expect(JSON.stringify(refused)).toContain('E_INVALID_PARAM');
+		expect((h.seq.clips[a!] as LightClip).light.environmentMediaId).toBe(m);
+		expect(
+			h.tx([{ type: 'clip.addLight', at: 0, lightType: 'environment', environmentMediaId: video }]).ok,
+		).toBe(false);
 		clean(h);
 		const broken = JSON.parse(JSON.stringify(h.doc));
 		const seq = Object.values(broken.sequences)[0] as { clips: Record<string, Record<string, unknown>> };

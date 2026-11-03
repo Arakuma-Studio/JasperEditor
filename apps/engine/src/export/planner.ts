@@ -39,6 +39,8 @@ import {
 	snapshotGlNeeds,
 	transitionSpec,
 	warpExportIssues,
+	missing3dAssets,
+	THREE_D_ASSET_MISSING,
 } from '@jasper/project';
 import { codecHeadroomDb } from '../audio/deliver.ts';
 import { lutRefs } from '../color/extension.ts';
@@ -888,6 +890,19 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 				});
 		}
 	}
+
+	// Spec 19 TL-075: a 3D model or HDR environment that is gone never exports as a scene without it.
+	const missing3d = missing3dAssets(snapshot);
+	if (missing3d.length > 0)
+		throw new PlanError(
+			THREE_D_ASSET_MISSING,
+			409,
+			`3D media is missing: ${[...new Set(missing3d.map((m) => m.label))].slice(0, 5).join(', ')}`,
+			{
+				path,
+				blockers: missing3d.map((m) => ({ path, reason: m.label, itemId: m.clipId })),
+			},
+		);
 
 	// S11:LBK-024: baking needs the browser too; a pending download is not a blocker.
 	if (path === 'hybrid' && deps.capabilities.remotionLocal === 'needs-browser-download')

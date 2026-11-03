@@ -5,7 +5,17 @@ import { anim } from '../../factories.ts';
 import { evaluate } from '../../keyframes.ts';
 import type { Vec3 } from '../../schema/common.ts';
 import type { CameraClip, Clip, LightClip } from '../../schema/sequence.ts';
-import type { CameraData, LightData } from '../../schema/three-d.ts';
+import {
+	type Backplate,
+	type BevelBand,
+	type CameraData,
+	type Layer3D,
+	type LightData,
+	MAX_BACKPLATES,
+	MAX_BEVEL_BANDS,
+	type Sequence3D,
+	type SurfaceMaterial,
+} from '../../schema/three-d.ts';
 import { finiteOr, orientationFor, sub3 } from '../../three-d/math.ts';
 import {
 	aperturePxFromMm,
@@ -21,6 +31,16 @@ import {
 	zoomForAngleOfView,
 	zoomForFocalLength,
 } from '../../three-d/model.ts';
+import { ensureScene3dAnim, newGlint } from '../../three-d/scene-look.ts';
+import {
+	layerSurfaces,
+	newSurface,
+	SURFACE_COLORS,
+	SURFACE_NUMBERS,
+	SURFACE_PRESETS,
+	type SurfaceValues,
+} from '../../three-d/surfaces.ts';
+import { newInflate } from '../../three-d/title-solid.ts';
 import { dollyRig, orbitRig, panRig, type Rig } from '../../three-d/tools.ts';
 import { type Rational, secondsToFrames } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
@@ -190,14 +210,24 @@ function applyLightSettings(doc: DDoc, h: HandlerContext, clip: Draft<LightClip>
 			h.fail('E_INVALID_PARAM', 'Only environment lights take an environment image');
 		if (o.environmentMediaId !== null) {
 			const m = doc.media[o.environmentMediaId];
-			if (!m || (m.kind !== 'image' && m.kind !== 'video'))
-				h.fail('E_INVALID_PARAM', `Media ${o.environmentMediaId} is not an image or video`);
+			// The environment loader reads images and Radiance HDRs; a video would only refuse at render time.
+			if (!m || (m.kind !== 'image' && m.kind !== 'hdri'))
+				h.fail('E_INVALID_PARAM', `Media ${o.environmentMediaId} is not an image or HDR`);
 		}
 		l.environmentMediaId = o.environmentMediaId;
 	}
 	if (o.environmentBackground !== undefined) {
 		if (l.type !== 'environment') h.fail('E_INVALID_PARAM', 'Only environment lights draw a background');
 		l.environmentBackground = o.environmentBackground;
+	}
+	if (o.environmentPreset !== undefined) {
+		if (l.type !== 'environment')
+			h.fail('E_INVALID_PARAM', 'Only environment lights take an environment preset');
+		l.environmentPreset = o.environmentPreset;
+	}
+	if (o.environmentRotation !== undefined) {
+		if (l.type !== 'environment') h.fail('E_INVALID_PARAM', 'Only environment lights rotate an environment');
+		setParam(doc, h, clip.id, 'light.environmentRotation', o.environmentRotation, at);
 	}
 	if (o.falloff !== undefined) l.falloff = o.falloff;
 	if (o.castsShadows !== undefined) l.castsShadows = o.castsShadows;
@@ -316,6 +346,86 @@ function cameraTool(
 	return { position: r.eye, pointOfInterest: r.poi };
 }
 
+type DLayer3D = Draft<Layer3D>;
+
+/** The 3D block of a clip that can be edited, refusing locked tracks, clips that are not 3D, and clips without Geometry. */
+function layer3dOf(
+	doc: DDoc,
+	h: HandlerContext,
+	clipId: string,
+	needsGeometry: boolean,
+): { seq: DSeq; clip: DClip; td: DLayer3D } {
+	const { seq, clip } = h.clip(doc, clipId);
+	assertUnlocked(findTrackIn(seq, clip.trackId)!.track, h);
+	const td = (clip as { threeD?: DLayer3D }).threeD;
+	if (!td) h.fail('E_INVALID_PARAM', `Clip "${clip.name}" is not a 3D layer: turn its 3D switch on first`);
+	if (needsGeometry && !td.geometry)
+		h.fail(
+			'E_INVALID_PARAM',
+			`Clip "${clip.name}" has no Geometry Options: only text and shape layers extrude`,
+		);
+	return { seq, clip, td };
+}
+
+function presetValues(h: HandlerContext, preset: string | undefined): SurfaceValues {
+	if (preset === undefined) return {};
+	const p = SURFACE_PRESETS[preset];
+	if (!p)
+		return h.fail(
+			'E_INVALID_PARAM',
+			`Unknown material preset ${preset} (${Object.keys(SURFACE_PRESETS).join(', ')})`,
+		);
+	return p.values;
+}
+
+/** Writes values on an existing surface: numbers and colours through `param.set` (keys when animated). */
+function writeSurface(
+	doc: DDoc,
+	h: HandlerContext,
+	clipId: string,
+	sid: string,
+	s: Draft<SurfaceMaterial>,
+	v: SurfaceValues,
+	at?: ParamAt,
+): void {
+	const key = (f: string) => `threeD.surface.${sid.replace('.', '-')}.${f}`;
+	if (v.base !== undefined) s.base = v.base;
+	if (v.relief !== undefined) s.relief = v.relief;
+	if (v.reliefSeed !== undefined) s.reliefSeed = v.reliefSeed;
+	if (v.ramp === null) delete s.ramp;
+	else if (v.ramp !== undefined) s.ramp = v.ramp as never;
+	for (const n of SURFACE_NUMBERS)
+		if (v[n.key] !== undefined) setParam(doc, h, clipId, key(n.key), v[n.key], at);
+	for (const c of SURFACE_COLORS)
+		if (v[c.key] !== undefined) setParam(doc, h, clipId, key(c.key), v[c.key], at);
+}
+
+/** Puts a surface where `path` (from `layerSurfaces`) says, in the 3D block of a clip. */
+function placeSurface(
+	td: DLayer3D,
+	path: readonly (string | number)[],
+	s: SurfaceMaterial | undefined,
+): void {
+	let cur = td as unknown as Record<string | number, unknown>;
+	for (const k of path.slice(0, -1)) {
+		cur[k] ??= {};
+		cur = cur[k] as Record<string | number, unknown>;
+	}
+	const last = path[path.length - 1]!;
+	if (s) cur[last] = s;
+	else delete cur[last];
+}
+
+const clampIndex = (i: number | undefined, n: number) => Math.min(n, Math.max(0, i ?? n));
+
+function reorder<T extends { id: string }>(list: T[], id: string, index: number): boolean {
+	const from = list.findIndex((x) => x.id === id);
+	if (from < 0) return false;
+	const [x] = list.splice(from, 1);
+	list.splice(Math.min(list.length, index), 0, x!);
+	return true;
+}
+
 export const threeDHandlers = {
 	'clip.set3d': (doc, cmd: CommandOf<'clip.set3d'>, h: HandlerContext) => {
 		const { seq, clips } = h.clipsOf(doc, idList(cmd.clipIds));
@@ -388,8 +498,171 @@ export const threeDHandlers = {
 			...(cmd.draft !== undefined ? { draft: cmd.draft } : {}),
 			...(cmd.shadowMapSize !== undefined ? { shadowMapSize: cmd.shadowMapSize } : {}),
 			...(cmd.supersampling !== undefined ? { supersampling: cmd.supersampling } : {}),
+			...(cmd.toneMapping !== undefined ? { toneMapping: cmd.toneMapping } : {}),
 		};
 		seq.threeD = next as never;
-		return { threeD: next };
+		const param = (prop: string, value: unknown) =>
+			(paramHandlers['param.set'] as (d: DDoc, c: CommandOf<'param.set'>, x: HandlerContext) => unknown)(
+				doc,
+				{ type: 'param.set', target: ['scene3d', seq.id, prop], value, ...(cmd.at ? { at: cmd.at } : {}) },
+				h,
+			);
+		if (cmd.exposure !== undefined) param('exposure', cmd.exposure);
+		if (cmd.glint) {
+			const three = seq.threeD as unknown as Sequence3D;
+			three.glint ??= newGlint();
+			const g = cmd.glint;
+			if (g.enabled !== undefined) three.glint!.enabled = g.enabled;
+			if (g.rays !== undefined) three.glint!.rays = g.rays;
+			const nums = [
+				['threshold', 'glintThreshold'],
+				['intensity', 'glintIntensity'],
+				['radius', 'glintRadius'],
+				['length', 'glintLength'],
+				['angle', 'glintAngle'],
+				['tint', 'glintTint'],
+			] as const;
+			for (const [k, prop] of nums) {
+				if (g[k] === undefined) continue;
+				ensureScene3dAnim(three as never, prop);
+				param(prop, g[k]);
+			}
+		}
+		return { threeD: seq.threeD };
+	},
+	'threeD.setSurface': (doc, cmd: CommandOf<'threeD.setSurface'>, h: HandlerContext) => {
+		const ids = idList(cmd.clipIds);
+		const sid = cmd.surface ?? 'base';
+		const preset = presetValues(h, cmd.preset);
+		for (const id of ids) {
+			const { clip, td } = layer3dOf(doc, h, id, false);
+			if (clip.kind === 'model')
+				h.fail('E_INVALID_PARAM', `"${clip.name}" is a 3D model: its materials come from the file`);
+			const slot = layerSurfaces(td as Layer3D).find((s) => s.id === sid);
+			if (!slot) return h.fail('E_NOT_FOUND', `Clip "${clip.name}" has no surface ${sid}`);
+			if (cmd.clear) {
+				placeSurface(td, slot.path, undefined);
+				continue;
+			}
+			if (cmd.preset !== undefined) {
+				const values = { ...preset, ...(cmd.values ?? {}) } as SurfaceValues;
+				placeSurface(td, slot.path, newSurface(values));
+				continue;
+			}
+			if (!slot.surface) placeSurface(td, slot.path, newSurface({}));
+			const live = layerSurfaces(td as Layer3D)
+				.find((s) => s.id === sid)!
+				.path.reduce<unknown>(
+					(o, k) => (o as Record<string | number, unknown>)[k],
+					td,
+				) as Draft<SurfaceMaterial>;
+			if (cmd.values) writeSurface(doc, h, clip.id, sid, live, cmd.values as SurfaceValues, cmd.at);
+		}
+		return { clipIds: ids };
+	},
+	'threeD.setGeometry': (doc, cmd: CommandOf<'threeD.setGeometry'>, h: HandlerContext) => {
+		const ids = idList(cmd.clipIds);
+		for (const id of ids) {
+			const { clip, td } = layer3dOf(doc, h, id, true);
+			const g = td.geometry!;
+			if (cmd.mode !== undefined) g.mode = cmd.mode;
+			if (cmd.bevelPosition !== undefined) g.bevelPosition = cmd.bevelPosition;
+			if (cmd.extrusionDepth !== undefined)
+				setParam(doc, h, clip.id, 'threeD.geometry.extrusionDepth', cmd.extrusionDepth, cmd.at);
+			if (cmd.inflate) {
+				g.inflate ??= newInflate() as never;
+				const inf = g.inflate as Draft<NonNullable<Layer3D['geometry']>>['inflate'] & object;
+				if (cmd.inflate.curve)
+					(inf as { curve: unknown }).curve = [...cmd.inflate.curve].sort((a, b) => a.x - b.x);
+				if (cmd.inflate.detail !== undefined) (inf as { detail: number }).detail = cmd.inflate.detail;
+				const was = g.mode;
+				g.mode = 'inflate';
+				if (cmd.inflate.height !== undefined)
+					setParam(doc, h, clip.id, 'threeD.geometry.inflate.height', cmd.inflate.height, cmd.at);
+				if (cmd.inflate.smoothness !== undefined)
+					setParam(doc, h, clip.id, 'threeD.geometry.inflate.smoothness', cmd.inflate.smoothness, cmd.at);
+				if (was === undefined) delete g.mode;
+				else g.mode = was;
+			}
+			if (g.mode === 'inflate') g.inflate ??= newInflate() as never;
+		}
+		return { clipIds: ids };
+	},
+	'threeD.addBand': (doc, cmd: CommandOf<'threeD.addBand'>, h: HandlerContext) => {
+		const { td } = layer3dOf(doc, h, cmd.clipId, true);
+		const g = td.geometry!;
+		const bands = (g.bands ??= [] as never) as Draft<BevelBand>[];
+		if (bands.length >= MAX_BEVEL_BANDS)
+			return h.fail('E_LIMIT', `A solid has at most ${MAX_BEVEL_BANDS} bevel bands`);
+		const id = h.ids.next('bnd');
+		const material = cmd.preset !== undefined ? newSurface(presetValues(h, cmd.preset)) : undefined;
+		const band: BevelBand = {
+			id,
+			width: anim(cmd.width ?? 6),
+			depth: anim(cmd.depth ?? 6),
+			profile: cmd.profile ?? 'round',
+			curve: anim(cmd.curve ?? 0),
+			segments: cmd.segments ?? 6,
+			...(material ? { material } : {}),
+		};
+		bands.splice(clampIndex(cmd.index, bands.length), 0, band as never);
+		h.defineRef(cmd.ref, id);
+		return { bandId: id };
+	},
+	'threeD.removeBand': (doc, cmd: CommandOf<'threeD.removeBand'>, h: HandlerContext) => {
+		const { td } = layer3dOf(doc, h, cmd.clipId, true);
+		const bands = (td.geometry!.bands ?? []) as Draft<BevelBand>[];
+		const i = bands.findIndex((b) => b.id === cmd.bandId);
+		if (i < 0) return h.fail('E_NOT_FOUND', `Bevel band not found: ${cmd.bandId}`);
+		bands.splice(i, 1);
+		if (bands.length === 0) delete td.geometry!.bands;
+		return { bandId: cmd.bandId };
+	},
+	'threeD.reorderBand': (doc, cmd: CommandOf<'threeD.reorderBand'>, h: HandlerContext) => {
+		const { td } = layer3dOf(doc, h, cmd.clipId, true);
+		if (!reorder((td.geometry!.bands ?? []) as Draft<BevelBand>[], cmd.bandId, cmd.index))
+			return h.fail('E_NOT_FOUND', `Bevel band not found: ${cmd.bandId}`);
+		return { bandId: cmd.bandId };
+	},
+	'threeD.addBackplate': (doc, cmd: CommandOf<'threeD.addBackplate'>, h: HandlerContext) => {
+		const { td } = layer3dOf(doc, h, cmd.clipId, true);
+		const g = td.geometry!;
+		const plates = (g.backplates ??= [] as never) as Draft<Backplate>[];
+		if (plates.length >= MAX_BACKPLATES)
+			return h.fail('E_LIMIT', `A title has at most ${MAX_BACKPLATES} backplates`);
+		const id = h.ids.next('plt');
+		const values = cmd.preset !== undefined ? presetValues(h, cmd.preset) : null;
+		const plate: Backplate = {
+			id,
+			enabled: true,
+			shape: cmd.shape ?? 'contour',
+			grow: anim(cmd.grow ?? 12),
+			depth: anim(cmd.depth ?? 20),
+			gap: anim(cmd.gap ?? 0),
+			corner: anim(cmd.corner ?? 0),
+			fillCounters: cmd.fillCounters ?? true,
+			bevelWidth: anim(cmd.bevelWidth ?? 3),
+			bevelDepth: anim(cmd.bevelDepth ?? 3),
+			bevelProfile: cmd.bevelProfile ?? 'round',
+			...(values ? { face: newSurface(values), side: newSurface(values) } : {}),
+		};
+		plates.splice(clampIndex(cmd.index, plates.length), 0, plate as never);
+		h.defineRef(cmd.ref, id);
+		return { plateId: id };
+	},
+	'threeD.removeBackplate': (doc, cmd: CommandOf<'threeD.removeBackplate'>, h: HandlerContext) => {
+		const { td } = layer3dOf(doc, h, cmd.clipId, true);
+		const plates = (td.geometry!.backplates ?? []) as Draft<Backplate>[];
+		const i = plates.findIndex((p) => p.id === cmd.plateId);
+		if (i < 0) return h.fail('E_NOT_FOUND', `Backplate not found: ${cmd.plateId}`);
+		plates.splice(i, 1);
+		if (plates.length === 0) delete td.geometry!.backplates;
+		return { plateId: cmd.plateId };
+	},
+	'threeD.reorderBackplate': (doc, cmd: CommandOf<'threeD.reorderBackplate'>, h: HandlerContext) => {
+		const { td } = layer3dOf(doc, h, cmd.clipId, true);
+		if (!reorder((td.geometry!.backplates ?? []) as Draft<Backplate>[], cmd.plateId, cmd.index))
+			return h.fail('E_NOT_FOUND', `Backplate not found: ${cmd.plateId}`);
+		return { plateId: cmd.plateId };
 	},
 } satisfies HandlerMap;

@@ -937,6 +937,27 @@ discovery are in; evidence and thresholds in [wp-notes/title-looks-agents.md](wp
   `titles-styled-title` builds but cannot pass until the fake renders look sheets. No model samples were run for the
   `+titles`, `+effects` and `+export` budgets ([wp-notes/title-looks-agents.md](wp-notes/title-looks-agents.md)).
 
+### 3D titles (spec 19 §9)
+
+**Done:** TL-070 to TL-080: bevel bands, surfaces, inflate, backplates, clearcoat, flakes, relief, iridescence, transmission of
+the backdrop, Radiance `.hdr` and procedural environments, tone mapping, glints, the cost notice, the rotation gizmo. Evidence
+and rerun commands: [wp-notes/three-d.md](wp-notes/three-d.md) §9. Limits:
+
+- **Software rendering is slow, and 3D never bakes**: every frame goes through Remotion. About 7 s per 1080p frame for a gold
+  title on SwiftShader, 15 s with glass, 21 s with glints (note above); nothing has been measured on a GPU.
+- **Glint stability is measured on total energy**, not per star: a star that moved while the total held would pass the test.
+- **Backplates and outside bevels have round joins.** An iso-line of a distance field has no miter; hull and box plates keep
+  straight sides.
+- **Transmission is screen space.** Glass sees what is opaque behind it, not other glass, and rays that leave the frame clamp
+  to its edge.
+- **Iridescence** is two-beam interference at three wavelengths, not a spectral integration.
+- **Models** keep their own materials: metallic-roughness and normal textures are not read, and `threeD.setSurface` refuses them.
+- **Video environments:** the environment loader reads images and HDRs only. `light.settings` and `clip.addLight` refuse a
+  video id (`E_INVALID_PARAM`, since integration 2); a project saved before that with a video environment keeps it, and its
+  render refuses as before. The Environment section offers images and HDRs only.
+- **Per-character 3D** (Pachislop's glyph rigs) has no equivalent: a solid is traced from the layer's picture.
+- **Ambient occlusion** (Pachislop `ao.ts`) was not ported: no requirement asks for it.
+
 ### title-looks fixes (spec 19 §13)
 Fixes the Title Looks feature depends on, each with a regression test that failed before it; details, decisions and
 evidence in [wp-notes/title-looks-fixes.md](wp-notes/title-looks-fixes.md). **Done:** TL-120 (media use-counting for

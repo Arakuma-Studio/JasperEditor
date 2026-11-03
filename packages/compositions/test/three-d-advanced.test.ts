@@ -138,10 +138,16 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Advanced 3D on the GPU', 
 		const img = await call<number[]>('advanced', 'model');
 		const shades = new Set<number>();
 		let red = 0;
+		// Base colour factors are linear (glTF 2.0): the scene's 0.9 / 0.1 is compared in linear light, not on the encoded
+		// pixels, where 0.1 reads 0.35.
+		const linear = (v: number) => {
+			const c = v / 255;
+			return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+		};
 		for (let i = 0; i < W * H; i++) {
 			if (img[i * 4 + 3]! < 250) continue;
 			const [r, g, b] = [img[i * 4]!, img[i * 4 + 1]!, img[i * 4 + 2]!];
-			if (r > g * 3 && r > b * 3 && r > 30) {
+			if (linear(r) > linear(g) * 3 && linear(r) > linear(b) * 3 && r > 30) {
 				red++;
 				shades.add(Math.round(r / 12));
 			}

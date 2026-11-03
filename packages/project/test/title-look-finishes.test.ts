@@ -19,6 +19,7 @@ import {
 	MAX_SPAN_GLYPHS,
 	mediaUsage,
 	paramValueProblem,
+	planGpuEffect,
 	planTitleLook,
 	resolveAppearance,
 	type SpanBox,
@@ -94,6 +95,33 @@ describe('registry', () => {
 		expect(new Set(names).size).toBe(names.length);
 		for (const id of ['bevel', 'metal', 'glass', 'satin'])
 			for (const p of TITLE_FINISHES.find((f) => f.id === id)!.params) expect(names).toContain(p.name);
+	});
+
+	it('Title Material binds the Intensity its look’s output pass reads, so it shows in full (TL-089)', () => {
+		// Integration: the output pass mixes by `u_lookIntensity`, a param of `jasper.title-look` only; unbound, every
+		// Title Material shader failed to compile (undeclared identifier).
+		const defaults = Object.fromEntries(TITLE_MATERIAL_EFFECT.params.map((p) => [p.name, p.default]));
+		const ctx = {
+			width: 320,
+			height: 180,
+			pxScale: 1,
+			fps: 30,
+			frame: 0,
+			duration: 30,
+			seed: 0.5,
+			progress: 0,
+		};
+		for (const material of ['bevel', 'chrome', 'glass', 'satin']) {
+			const plan = planGpuEffect(TITLE_MATERIAL_EFFECT, { id: 'f', params: { ...defaults, material } }, ctx, {
+				width: 320,
+				height: 180,
+			});
+			expect(
+				plan.passes.some((p) => p.source.includes('u_lookIntensity')),
+				material,
+			).toBe(true);
+			expect(plan.uniforms.find((u) => u.name === 'u_lookIntensity')?.value, material).toEqual([100]);
+		}
 	});
 });
 
