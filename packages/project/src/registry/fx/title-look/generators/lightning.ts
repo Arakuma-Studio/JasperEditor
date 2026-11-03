@@ -242,7 +242,10 @@ void main() {
     inten *= 0.7;
   }
 #endif
-  float hw = max(core * taper, 0.35);
+  // Thinner than a pixel, a core is drawn a pixel wide at its own energy: the same light at every resolution.
+  float hw0 = core * taper;
+  float hw = max(hw0, 0.5);
+  inten *= hw0 / hw;
   float pad = hw * 1.6 + glow * 3.0 + 1.0;
   vec2 d = p1 - p0;
   float l = max(length(d), 1.0e-3);
@@ -264,7 +267,9 @@ void main() {
   float w = v_s.y;
   float I = v_s.z;
   float g = max(v_s.w, 1.0e-3);
-  fragColor = vec4(I * exp(-d * d / (w * w) * 2.2), I * exp(-d / (0.3 * g)), I * exp(-d / g), 1.0);
+  // The glow ends inside the quad: an exponential cut at its edge would draw the quad.
+  float end = 1.0 - smoothstep(0.6, 1.0, d / (3.0 * g + w * 1.6));
+  fragColor = vec4(I * exp(-d * d / (w * w) * 2.2), I * exp(-d / (0.3 * g)) * end, I * exp(-d / g) * end, 1.0);
 }`,
 		}),
 	],

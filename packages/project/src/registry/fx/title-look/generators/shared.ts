@@ -44,8 +44,9 @@ export const GLSL_TLG_WINDOW: GlslChunk = {
 	name: 'title-look/generator-window',
 	source: /* glsl */ `
 float tlg_window(vec2 px) {
+  // Pixel centres sit half a pixel in: the last one is fully out.
   vec2 e = min(px, u_canvasSize - px);
-  return smoothstep(0.0, max(tl_px(2.0), 2.0), min(e.x, e.y));
+  return smoothstep(0.5, 0.5 + max(tl_px(2.0), 2.0), min(e.x, e.y));
 }
 `,
 };

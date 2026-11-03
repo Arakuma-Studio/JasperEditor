@@ -542,7 +542,7 @@ export const GENERATOR_GLINTS = defineGenerator({
 		};
 		if (!analysed(p)) return [c.pass({ ...stars, include: [...QUAD, GLSL_TLG_SITES] })];
 		// Cells fixed in units of the title: the same grid at every resolution.
-		const scale = 1 / Math.max(2, CELL * c.pxPerPercent);
+		const scale = 1 / Math.max(1, CELL * c.pxPerPercent);
 		const grid = { format: 'rgba16f' as const, filter: 'nearest' as const, scale };
 		const data = (width: number) => ({
 			format: 'rgba32f' as const,

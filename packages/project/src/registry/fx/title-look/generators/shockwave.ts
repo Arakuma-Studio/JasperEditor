@@ -153,7 +153,8 @@ vec4 tl_generate(TlSurface s) {
   float half0 = max(tl_px(u_ringWidth) * 0.5, 0.5);
   float softIn = tl_px(u_softIn), softOut = tl_px(u_softOut);
   float spacing = tl_px(u_spacing);
-  float fibre = 1.0 + 0.12 * tl_px(u_ringWidth);
+  // Pachislop's 2 + 0.12 × width was in comp px: here every part of it is in the unit, so the fibres are the same at any size.
+  float fibre = tl_px(1.0) + 0.12 * tl_px(u_ringWidth);
   float breakScale = max(tl_px(u_breakupScale), 1.0);
   vec2 p = s.px - fx_uvOfLayerNorm(u_center) * u_canvasSize;
   vec2 axis = fx_dir(u_tilt);

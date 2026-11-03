@@ -68,8 +68,8 @@ export const GENERATOR_SPEED_LINES = defineGenerator({
 			'title',
 		),
 		lp.distance('padding', 'Padding', 20, { softMax: 200 }),
-		lp.distance('rx', 'Focus Radius X', 210, { softMax: 800 }),
-		lp.distance('ry', 'Focus Radius Y', 130, { softMax: 800 }),
+		lp.distance('rx', 'Focus Radius X', 150, { softMax: 300 }),
+		lp.distance('ry', 'Focus Radius Y', 60, { softMax: 300 }),
 		lp.angle('flowAngle', 'Flow Angle', 0),
 		lp.choice(
 			'flowSide',

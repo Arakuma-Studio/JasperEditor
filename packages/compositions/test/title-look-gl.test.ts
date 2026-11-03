@@ -458,8 +458,9 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Looks in WebGL2', {
 			it('changes the picture compared with no layer', async () => {
 				const on = await render(recipeOf(perturbedParams(type)), { pad: 60, ...moment });
 				const off = await render(base, { pad: 60 });
-				const a = layerCrop(on, lumaOver(on, 128));
-				const b = layerCrop(off, lumaOver(off, 128));
+				// The box and the 60 px both canvases have: a layer may draw only around the shape (focus lines).
+				const a = layerCrop(on, lumaOver(on, 128), 60);
+				const b = layerCrop(off, lumaOver(off, 128), 60);
 				let d = 0;
 				for (let i = 0; i < a.data.length; i++) d += Math.abs(a.data[i]! - b.data[i]!);
 				expect(d / a.data.length).toBeGreaterThan(0.05);

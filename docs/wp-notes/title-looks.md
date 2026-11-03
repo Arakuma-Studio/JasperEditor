@@ -405,6 +405,16 @@ Differences from upstream: normalisation is by the regional maximum only, becaus
 the regional one already lets a dim second line compete. Near ties within 4 % of the unit keep the stronger peak instead of blending
 positions.
 
+### Canvas size
+
+A look's canvas is the layer box plus the reach of its layers, every frame, and the shape field is jump-flooded over all of it in
+`rgba32f`. Physics can reach any distance: at a gravity of 70 % of the unit per second² and a life of 4 s, particles fall 5.6 units.
+A canvas grown to that, and drawn at 2× for the resolution test, is about 4 700 px a side, and its flood buffers alone are about 700 MB:
+SwiftShader lost the context there, and every later picture of the run came back blank (which a fingerprint run then blessed; the GL
+test now checks a perturbation before it blesses). So Particles and Light Streaks have an **Extent**, as Sunburst, Lens Flare and
+Pattern do: the reach is the smaller of the physics and the extent, and the picture fades out over the last 8 to 12 % of the unit.
+Standalone they fill the frame.
+
 ### Colour (TL-051)
 
 A generator draws its own colours, plain `lp.color` params, the same as a standalone effect. As a look layer it gains `Own Colours`, a
