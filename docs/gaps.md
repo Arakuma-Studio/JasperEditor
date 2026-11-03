@@ -890,6 +890,8 @@ Status of the foundation; streams still in progress update this list. Evidence: 
 - **Export Title** (TL-114): a 3D scene is trimmed inside the sequence frame, since it projects through it. Transparent stills are
   PNG, TIFF or Targa; JPEG, DPX, BMP and OpenEXR are refused.
 - **Split Image** (TL-115) refuses clips with masks or trackers: they are shaped to the whole picture. Remove them first.
+- **Delivery reports are in English**: the PSD plan's baked lines and blockers and the layer-style reports come from the engine and the
+  model as text, like job errors, so the Spanish UI shows them in English around translated headings.
 - **Gamut Warning** (TL-116) measures on the engine per paused frame, not during playback: the Program picture is DOM. Legal range
   assumes 4:2:0 delivery and nearest-neighbour chroma.
 - **Software rendering is slow**: ≈ 1.3 s per 1080p frame for a six-layer look on a title-sized box on SwiftShader, and an
