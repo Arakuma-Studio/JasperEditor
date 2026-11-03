@@ -26,6 +26,9 @@ export function MyLooksBar(props: {
 		setBusy(which);
 		try {
 			await fn();
+		} catch (e) {
+			// The actions report their own outcomes; anything else that fails (a dialog, the file picker) shows here too.
+			onMessage('error', t('My Looks: {0}', e instanceof Error ? e.message : String(e)));
 		} finally {
 			setBusy(null);
 		}

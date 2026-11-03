@@ -33,7 +33,8 @@ const looked = (ctx: CommandCtx) => (ctx.session ? lookedTargets(ctx.session) : 
 const linked = (ctx: CommandCtx) => looked(ctx).filter((l) => l.appearance.lookId !== undefined);
 
 // Shared reasons are module-level functions, which the i18n transform does not wrap: they translate with `t()`.
-const withLook = (ctx: CommandCtx) => (looked(ctx).length ? undefined : t('Select a clip with a look first.'));
+const withLook = (ctx: CommandCtx) =>
+	looked(ctx).length ? undefined : t('Select a clip with a look first.');
 const withLink = (ctx: CommandCtx) =>
 	linked(ctx).length ? undefined : t('Select a clip linked to a look first.');
 

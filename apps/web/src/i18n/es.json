@@ -13725,5 +13725,6 @@
   "Text you were typing was not added: “{0}”": "No se añadió el texto que estabas escribiendo: “{0}”",
   "The job could not be cancelled: {0}": "No se pudo cancelar el trabajo: {0}",
   "The text could not be written: {0}. Your text: {1}": "No se pudo escribir el texto: {0}. Tu texto: {1}",
-  "This dialog stopped working": "Este cuadro de diálogo dejó de funcionar"
+  "This dialog stopped working": "Este cuadro de diálogo dejó de funcionar",
+  "My Looks: {0}": "Mis aspectos: {0}"
 }

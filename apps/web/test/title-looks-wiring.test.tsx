@@ -4,9 +4,9 @@ import { type Colorway, FACTORY_COLORWAYS, type ProposalItem } from '@jasper/pro
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_KEYMAP } from '../src/commands/keymap-defaults.ts';
-import { setLanguage } from '../src/i18n/runtime.ts';
 import { getCommand } from '../src/commands/registry.ts';
 import { titleLookCommands } from '../src/commands/title-looks.ts';
+import { setLanguage } from '../src/i18n/runtime.ts';
 import { addGeneratorBelow } from '../src/panels/effects/drag.ts';
 import { isVisualProposal, TitleArtDetails, titleArtOptions } from '../src/proposals/title-art.tsx';
 import { MENUBAR } from '../src/shell/menus/model.ts';

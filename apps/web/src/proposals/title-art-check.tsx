@@ -38,6 +38,8 @@ const MAX_VALUE_TEXT = 200;
 const MAX_LIST = 4;
 /** Levels of nesting shown before "…". */
 const MAX_DEPTH = 3;
+/** Keys of an object shown before "…": an agent stores the value, so its width is anyone's. */
+const MAX_KEYS = 8;
 
 const roundNumber = (n: number) => (Number.isFinite(n) ? String(Math.round(n * 100) / 100) : '—');
 
@@ -51,10 +53,17 @@ function valueText(v: unknown, depth: number): string {
 		const shown = v.slice(0, MAX_LIST).map((x) => valueText(x, depth + 1));
 		return `[${shown.join(', ')}${v.length > MAX_LIST ? ', …' : ''}]`;
 	}
-	const parts = Object.entries(v as Record<string, unknown>).map(([k, x]) => {
+	const parts: string[] = [];
+	for (const k in v) {
+		if (!Object.hasOwn(v, k)) continue;
+		if (parts.length === MAX_KEYS) {
+			parts.push('…');
+			break;
+		}
+		const x = (v as Record<string, unknown>)[k];
 		const inner = valueText(x, depth + 1);
-		return depth > 0 && x !== null && typeof x === 'object' ? `${k} (${inner})` : `${k} ${inner}`;
-	});
+		parts.push(depth > 0 && x !== null && typeof x === 'object' ? `${k} (${inner})` : `${k} ${inner}`);
+	}
 	return parts.join(depth > 0 ? ', ' : '; ');
 }
 

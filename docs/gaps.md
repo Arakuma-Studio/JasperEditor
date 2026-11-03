@@ -869,7 +869,7 @@ per area are in [wp-notes/agent-footage.md](wp-notes/agent-footage.md). Limits t
 
 ### Title Looks (spec 19): limits
 
-Status of the foundation; streams still in progress update this list. Evidence: [wp-notes/title-looks.md](wp-notes/title-looks.md).
+What the integrated feature does not do, or does only in part. Evidence: [wp-notes/title-looks.md](wp-notes/title-looks.md).
 
 - **A title of more than 4096 drawn glyphs** gets span records for its first 4096 (`MAX_SPAN_GLYPHS`); the owner pass is linear
   in the glyphs. Nobody sets a gradient per glyph on that much text, but it is a hard cap, not a soft one.
