@@ -12,7 +12,8 @@ shows the arguments). Guide: `get_guide` topic `title-art`.
    `title_look_find` {lookId}. When the user's looks cannot be read, `userLooksError` says so and the rest is still searched.
    Title templates (lower thirds, full-screen titles, end cards, social hooks, real 3D titles) are rows too, of
    `kind: "template"` with a `templateId` and their text slots: a template makes clips, so insert it with `apply_commands`
-   `title.insertTemplate` {templateId, at, texts?} instead of proposing it.
+   `title.insertTemplate` {templateId, at, texts?} instead of proposing it. Animated lower thirds and social comments
+   from the motion-graphic templates are `add_motion_graphic`, in the `graphics` toolset.
 2. `title_propose` {projectId, text, at, lookId, colorway?, energy?, alternatives?}: the title on the real footage, one
    sheet of intro, hold and outro × alternatives, and its check. `duration` defaults to the time the text needs.
 3. `title_check` {projectId, clipId | proposalId, target?} after any change.

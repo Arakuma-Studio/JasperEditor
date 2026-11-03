@@ -252,7 +252,7 @@ export function registerAddMotionGraphic(ctx: ToolContext): void {
 		{
 			title: 'Add motion graphic(s)',
 			description:
-				'Add motion-graphic template clips: lower thirds, title cards, social comments. One or `items`, in one undo step. Goes on the first free video track from V2; never overwrites unless you name a track.',
+				'Add motion-graphic template clips: animated lower thirds, title cards, social comments. One or `items`, in one undo step. Goes on the first free video track from V2; never overwrites unless you name a track. Styled title art: `title_look_find`.',
 			details: `Adds motion-graphic template clips (clip.addMotionGraphic), e.g. lower thirds, title cards or social comments: one item (template, params, at, duration, track) or items: [...] (up to ${MAX_MG_ITEMS}), all in ONE transaction (one undo step; all or nothing). Placement never overwrites by default: each clip goes on the first free unlocked video track from V2 up for its time range (a new top track when none is free), and the items of one call never collide. An explicit track keeps the old behaviour (overwrite on exactly that track) unless placement: "first-free". Omitted params are filled by the template's fill hook (deterministic for seed; a random seed is picked and returned when none is given), else take the defaults. Returns per item the clip id, track, start/end (frames and timecode) and the fully resolved params. dryRun: true returns the same without changing the project; with preview: true also a still per item (middle of its hold, up to ${MAX_MG_PREVIEWS} items) through render_motion_graphic_preview's path. Errors name the failing item (details.items).`,
 			input: {
 				projectId: ProjectIdArg,

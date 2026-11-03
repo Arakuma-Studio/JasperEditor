@@ -1324,6 +1324,65 @@ describe('escape hatch (TL-104)', () => {
 	});
 });
 
+describe('errors name the step that fixes them (AGENTS §10)', () => {
+	it('every refusal of the title tools carries a hint', async () => {
+		const s = await connect();
+		const generate = registries.effects.list().find((e) => e.category === 'Generate' && !e.internal)!;
+		const title = await s.ok('title_propose', { ...BASE, mode: 'apply' });
+		const refusals = [
+			await s.fail('title_look_save', {
+				projectId: P,
+				name: 'Wide',
+				recipe: { layers: [{ type: 'rim', params: { width: 99999 } }, { type: 'face' }] },
+			}),
+			await s.fail('title_check', { projectId: P, clipId: title.json.clipIds[0], itemId: 'x' }),
+			await s.fail('title_generator_add', {
+				projectId: P,
+				generator: generate.id,
+				clipId: title.json.clipIds[0],
+				at: 0,
+			}),
+			await s.fail('title_light_set', { projectId: P }),
+		];
+		for (const e of refusals) {
+			expect(e.code).toBe('E_INVALID_PARAM');
+			expect(typeof e.hint, e.message).toBe('string');
+			expect(e.hint!.length, e.message).toBeGreaterThan(20);
+		}
+		expect(refusals[0]!.hint).toContain('layerParams');
+	});
+
+	it('a look the document refuses says what to do instead', async () => {
+		// A user look stored by an older build, with a value this build refuses: the title cannot be drawn with it.
+		const broken: UserLook = {
+			...USER_LOOK,
+			recipe: { layers: [{ type: 'rim', params: { width: 99999 } }, { type: 'face' }] },
+		};
+		const s = await connect({ userLooks: [broken] });
+		const e = await s.fail('title_propose', { ...BASE, lookId: broken.id, mode: 'dryRun' });
+		expect(e.code).toBe('E_INVALID_PARAM');
+		expect(e.hint).toContain('recipe');
+	});
+
+	it('generator params are bounded before they reach the engine', async () => {
+		const s = await connect();
+		const generate = registries.effects.list().find((e) => e.category === 'Generate' && !e.internal)!;
+		const base = { projectId: P, generator: generate.id, at: 0, duration: 30 };
+		const wide = Object.fromEntries(Array.from({ length: 65 }, (_, i) => [`p${i}`, i]));
+		expect((await s.fail('title_generator_add', { ...base, params: wide })).code).toBe('E_INVALID_ARGUMENT');
+		let deep: unknown = 1;
+		for (let i = 0; i < 12; i++) deep = { x: deep };
+		expect((await s.fail('title_generator_add', { ...base, params: { deep } })).code).toBe(
+			'E_INVALID_ARGUMENT',
+		);
+		const long = 'x'.repeat(5000);
+		expect((await s.fail('title_generator_add', { ...base, params: { long } })).code).toBe(
+			'E_INVALID_ARGUMENT',
+		);
+		await s.ok('title_generator_add', { ...base, params: {} });
+	});
+});
+
 describe('effects discovery (TL-105)', () => {
 	it('lists without schemas, pages, searches and describes one effect', async () => {
 		const s = await connect();

@@ -27,6 +27,7 @@ import {
 	TranscriptionResultSchema,
 } from '@jasper/api';
 import { EngineError as DefaultEngineError } from '@jasper/engine-client';
+import { mgRegistry } from '@jasper/mg-templates';
 import {
 	applyTransaction,
 	type Clip,
@@ -372,7 +373,8 @@ export function createFakeEngine(
 	setup: EngineSetup = {},
 	EngineError: typeof DefaultEngineError = DefaultEngineError,
 ): FakeEngine {
-	const registries = defaultRegistries();
+	// The built-in motion-graphic templates, as the engine serves its TS catalog without the native renderer.
+	const registries = defaultRegistries(mgRegistry);
 	const ids = createCounterIdSource(41);
 	const mode = setup.project ?? 'interview';
 	const projects = new Map<string, { name: string; doc: ProjectDocument; revision: number }>();
@@ -980,7 +982,10 @@ export function createFakeEngine(
 			errors: [],
 		}),
 		mediaStatus: () => ({ status: 'ready' }),
-		mgTemplates: () => ({ templates: [] }),
+		mgTemplates: () => ({
+			templates: mgRegistry.catalogJson().map((d) => ({ ...d, native: false })),
+			renderer: { status: 'unavailable', reason: 'eval: no native renderer' },
+		}),
 		getJob: (id: string) => {
 			const job = jobs.get(id);
 			if (!job) throw new EngineError('NOT_FOUND', `No job ${id}`, { status: 404 });

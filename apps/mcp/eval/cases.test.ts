@@ -52,6 +52,28 @@ const ROUTES: Record<string, Route> = {
 			],
 		],
 	},
+	'titles-animated-lower-third-control': {
+		calls: (v) => [
+			[
+				'add_motion_graphic',
+				{
+					projectId: v.project,
+					template: 'lower-third',
+					at: '5s',
+					params: { name: 'Ana Ruiz', title: 'Director' },
+				},
+			],
+		],
+	},
+	'titles-propose-on-footage': {
+		calls: (v) => [
+			['title_look_find', { query: 'bold' }],
+			[
+				'title_propose',
+				{ projectId: v.project, text: 'FINAL SALE', at: '2s', lookId: 'look.impact-burn', mode: 'dryRun' },
+			],
+		],
+	},
 	'titles-plain-text-control': {
 		calls: (v) => [['add_text', { projectId: v.project, text: 'Chapter 2', at: 300, duration: 90 }]],
 	},

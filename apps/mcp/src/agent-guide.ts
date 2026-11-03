@@ -199,9 +199,14 @@ export const ROUTES: readonly Route[] = [
 	},
 	{ en: 'Change an effect setting', es: 'Cambia un ajuste de un efecto', tools: ['set_effect_param'] },
 	{
-		en: 'Add a lower third or a social comment',
-		es: 'Añade un rótulo o un comentario social',
+		en: 'Add an animated lower third or a social comment',
+		es: 'Añade un rótulo animado o un comentario social',
 		tools: ['add_motion_graphic'],
+	},
+	{
+		en: 'Insert a styled title template (title art)',
+		es: 'Inserta una plantilla de título con estilo',
+		tools: ['title_look_find', 'apply_commands'],
 	},
 	{ en: 'Add subtitles', es: 'Añade subtítulos', tools: ['captions_from_transcript'] },
 	{
