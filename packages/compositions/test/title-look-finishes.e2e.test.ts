@@ -13,7 +13,7 @@ import { type Browser, chromium, type Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SEQUENCE_COMPOSITION_ID } from '../src/types.ts';
 import { FX_H, FX_W, type FxMedia, fxAsset, fxSnapshot, startFxMedia } from './fx-media.ts';
-import { ssim } from './title-look-harness.ts';
+import { ssim, ssimRgb } from './title-look-harness.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const enabled = process.env.REMOTION_E2E === '1';
@@ -410,8 +410,9 @@ describe.runIf(enabled && !!CHROME)(
 					prev = shot;
 				}
 				const program = decode(prev!, W, H);
-				const score = ssim(luma(program), luma(exported), W, H);
-				console.info(`[finishes] frame ${frame}: Program vs export SSIM ${score.toFixed(4)}`);
+				// Colour, not luma alone (AGENTS §4): the least SSIM of R, G and B.
+				const score = ssimRgb(program.data, exported.data, W, H).min;
+				console.info(`[finishes] frame ${frame}: Program vs export colour SSIM ${score.toFixed(4)}`);
 				expect(score).toBeGreaterThan(0.98);
 			}
 		});

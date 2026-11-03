@@ -18,7 +18,7 @@ import { type Browser, chromium, type Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SEQUENCE_COMPOSITION_ID } from '../src/types.ts';
 import { type FxMedia, startFxMedia } from './fx-media.ts';
-import { resampleLuma, ssim } from './title-look-harness.ts';
+import { ssimRgb } from './title-look-harness.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const enabled = process.env.REMOTION_E2E === '1';
@@ -116,12 +116,6 @@ const decode = (png: Buffer | string): Raw => ({
 	w: W,
 	h: H,
 });
-const luma = (r: Raw) => {
-	const out = new Float64Array(r.w * r.h);
-	for (let i = 0; i < out.length; i++)
-		out[i] = 0.2126 * r.data[i * 3]! + 0.7152 * r.data[i * 3 + 1]! + 0.0722 * r.data[i * 3 + 2]!;
-	return out;
-};
 const maxDiff = (a: Raw, b: Raw) => {
 	let m = 0;
 	for (let i = 0; i < a.data.length; i++) m = Math.max(m, Math.abs(a.data[i]! - b.data[i]!));
@@ -212,9 +206,10 @@ describe.runIf(enabled && !!CHROME)('3D titles in real Chrome (REMOTION_E2E=1)',
 	it.each([0, 45])('Program and export agree at frame %i', async (frame) => {
 		const exported = await still(build(), frame, `export-${frame}`);
 		const program = await programFrame(frame, `program-${frame}`);
-		const s = ssim(resampleLuma(luma(program), W, H, W, H), resampleLuma(luma(exported), W, H, W, H), W, H);
+		// Colour, not luma alone (AGENTS §4): the least SSIM of R, G and B.
+		const s = ssimRgb(program.data, exported.data, W, H).min;
 		console.info(
-			`[3d-title] frame ${frame}: SSIM ${s.toFixed(4)}, max difference ${maxDiff(program, exported)}`,
+			`[3d-title] frame ${frame}: colour SSIM ${s.toFixed(4)}, max difference ${maxDiff(program, exported)}`,
 		);
 		expect(s).toBeGreaterThan(0.98);
 		// It is gold, not a flat fallback: warm, and with highlights.
