@@ -1264,7 +1264,8 @@ export function renderAdvancedGL(h: FxHost, input: AdvancedInput, out: CanvasRen
 		glint: null,
 		supersampling: 1,
 	};
-	const physical = input.members.some((m) => m.model || m.surfaces?.some((s) => !!s));
+	const surfaced = input.members.some((m) => m.surfaces?.some((s) => !!s));
+	const physical = surfaced || input.members.some((m) => m.model);
 	const wantHdr =
 		physical ||
 		look.toneMapping !== 'none' ||
@@ -1274,11 +1275,12 @@ export function renderAdvancedGL(h: FxHost, input: AdvancedInput, out: CanvasRen
 		!!input.environment?.source;
 	if (wantHdr && !h.floatTargets) throw new Error(`${THREE_D_NEEDS_FLOAT}: ${THREE_D_FLOAT_MESSAGE}`);
 	const hdr = wantHdr;
-	// A physical surface with no environment light reflects the neutral studio: metal without one would be black.
+	// A physical surface with no environment light reflects the neutral studio: metal without one would be black. Models
+	// do not: a model is lit by the sequence's lights, as it always was.
 	const env: AdvancedEnvironment | null = draft
 		? null
 		: (input.environment ??
-			(physical
+			(surfaced
 				? {
 						source: { kind: 'preset', preset: 0 },
 						key: 'preset:0',

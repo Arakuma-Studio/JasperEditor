@@ -261,7 +261,7 @@ export const SURFACE_PRESETS: Record<string, { label: string; values: SurfaceVal
 			roughness: 35,
 			clearcoat: 100,
 			flakes: 80,
-			flakeScale: 6,
+			flakeScale: 2,
 			reflectivity: 140,
 			specularBoost: 150,
 		},
@@ -294,13 +294,15 @@ export const SURFACE_PRESETS: Record<string, { label: string; values: SurfaceVal
 	},
 	pearl: {
 		label: 'Pearl',
+		// A dark body under the film: on a white one the diffuse swamps the thin-film colours.
 		values: {
-			...color('#f4eee6'),
-			metalness: 0,
-			roughness: 25,
+			...color('#6e6a72'),
+			metalness: 35,
+			roughness: 22,
 			clearcoat: 60,
-			iridescence: 90,
-			iridescenceThickness: 320,
+			reflectivity: 160,
+			iridescence: 100,
+			iridescenceThickness: 420,
 		},
 	},
 	glass: {

@@ -5,12 +5,14 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { expectFingerprints, fingerprint } from '@jasper/testkit/golden';
 import type { Browser, Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CHROME, openGlPage } from './gl-browser.ts';
 import type { TitleScene } from './three-d-title/entry.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
+const GOLDENS = join(here, 'goldens', 'three-d-title-fingerprints.json');
 const W = 320;
 const H = 160;
 const round = (width: number, depth: number, profile = 'round') => ({
@@ -526,6 +528,72 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('3D titles on the GPU', { 
 		// The perturbation: a bevel change does build.
 		await render({ ...gold, geometry: { depth: 26, bands: [round(7, 5)] } });
 		expect(await call<number>('builds')).toBe(n1 + 1);
+	});
+
+	it('fingerprints: every finish, band, solid mode, tone curve and glint (JASPER_BLESS=1 records them)', async () => {
+		const small = { ...gold, W: 200, H: 100 } as TitleScene;
+		const p = (surfaces: unknown) => ({ ...small, surfaces }) as TitleScene;
+		const scenes: Record<string, TitleScene> = {
+			gold: small,
+			chrome: p({ base: 'chrome' }),
+			candy: p({ base: 'candy' }),
+			pearl: p({ base: 'pearl' }),
+			'hammered-gold': p({ base: 'hammered-gold' }),
+			'liquid-chrome': p({ base: 'liquid-chrome' }),
+			foil: p({ base: 'foil' }),
+			glass: { ...p({ base: 'glass' }), backdrop: 'stripes' },
+			bands: {
+				...p({ base: 'gold', band0: 'chrome', band1: 'black-gloss' }),
+				geometry: { depth: 16, bands: [round(3, 3), round(3, 3, 'tube')] },
+			},
+			inflate: {
+				...p({ base: 'chrome' }),
+				geometry: {
+					mode: 'inflate',
+					depth: 6,
+					inflate: { height: 16, curve: [{ x: 0, y: 0 }, { x: 1, y: 1 }], smoothness: 60, detail: 1 },
+				},
+			},
+			agx: { ...small, toneMapping: 'agx' },
+			neutral: { ...small, toneMapping: 'neutral' },
+			hue: { ...small, toneMapping: 'hue' },
+			none: { ...small, toneMapping: 'none' },
+			glint: { ...small, envColor: [3, 3, 3], glint: { threshold: 2, intensity: 200, radius: 6, rays: 4, length: 30, angle: 45 } },
+		};
+		const got: Record<string, number[]> = {};
+		for (const [name, s] of Object.entries(scenes)) {
+			const data = await render(s);
+			got[name] = fingerprint({ width: s.W, height: s.H, data: new Uint8Array(data) });
+		}
+		expectFingerprints(GOLDENS, got, 4);
+		// A deliberate perturbation moves the fingerprint: the record is not blind to the feature.
+		const moved = fingerprint({
+			width: small.W,
+			height: small.H,
+			data: new Uint8Array(await render({ ...small, envPreset: 3 })),
+		});
+		expect(moved.some((v, i) => Math.abs(v - got.gold![i]!) > 4)).toBe(true);
+	});
+
+	// `THREE_D_PERF=1`: frame cost at 1080p, for docs/wp-notes/three-d.md.
+	it.runIf(!!process.env.THREE_D_PERF)('cost at 1080p', { timeout: 1_500_000 }, async () => {
+		const s = {
+			...gold,
+			W: 1920,
+			H: 1080,
+			font: '900 300px "Liberation Sans", sans-serif',
+			geometry: { depth: 60, bands: [round(10, 10)] },
+		} as TitleScene;
+		const first = await call<number>('time', s, 1);
+		const warm = await call<number>('time', { ...s, orbit: 3 }, 5);
+		const glass = await call<number>('time', { ...s, surfaces: { base: 'glass' }, backdrop: 'stripes' }, 3);
+		const glint = await call<number>('time', {
+			...s,
+			glint: { threshold: 2, intensity: 200, radius: 16, rays: 4, length: 90, angle: 45 },
+		}, 3);
+		process.stdout.write(
+			`perf 1080p first ${first.toFixed(0)} ms, warm ${(warm / 5).toFixed(0)} ms/frame, glass ${(glass / 3).toFixed(0)} ms/frame, glint ${(glint / 3).toFixed(0)} ms/frame\n`,
+		);
 	});
 
 	// `THREE_D_SHEET=<file>`: the contact sheet of the stream, for looking at.

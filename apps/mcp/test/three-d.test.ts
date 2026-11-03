@@ -117,22 +117,6 @@ describe('three-d MCP tools', () => {
 			(await call('add_light', { at: 0, lightType: 'spot', castsShadows: true, coneAngle: 60 })).isError,
 		).toBe(false);
 		expect((await call('set_3d_renderer', { draft: true })).isError).toBe(false);
-		// spec 19 §9: a 3D title by tools.
-		expect(
-			(
-				await call('set_3d_renderer', {
-					renderer: 'advanced',
-					toneMapping: 'aces',
-					exposure: 0.5,
-					glint: { enabled: true, rays: 4 },
-				})
-			).isError,
-		).toBe(false);
-		expect((await call('set_3d_surface', { clipIds: [engine.b], preset: 'gold' })).isError).toBe(false);
-		expect((await call('set_3d_surface', { clipIds: [engine.b], preset: 'mithril' })).isError).toBe(true);
-		expect((await call('add_light', { at: 0, lightType: 'environment', environmentPreset: 'chromeBands' })).isError).toBe(false);
-		const cost = await call('get_3d_scene', { frame: 10 });
-		expect((cost.body as { layers: { costClass: string }[] }).layers.some((l) => l.costClass === '3d-heavy')).toBe(true);
 		const scene = await call('get_3d_scene', { frame: 10 });
 		expect(scene.isError).toBe(false);
 		const s = scene.body as {
@@ -149,5 +133,32 @@ describe('three-d MCP tools', () => {
 		expect(s.runs).toEqual([{ members: [engine.a, engine.b], bottomTrack: 'V1', topTrack: 'V2' }]);
 		const c = engine.doc().sequences[engine.seqId]!.clips[camId] as CameraClip;
 		expect(c.camera.depthOfField).toBe(true);
+	});
+
+	it('builds a 3D title by tools, and reports what it costs (spec 19 TL-078)', async () => {
+		const { engine, call } = await connect();
+		expect((await call('set_3d_layer', { clipIds: [engine.b], enabled: true })).isError).toBe(false);
+		expect(
+			(
+				await call('set_3d_renderer', {
+					renderer: 'advanced',
+					toneMapping: 'aces',
+					exposure: 0.5,
+					glint: { enabled: true, rays: 4 },
+				})
+			).isError,
+		).toBe(false);
+		expect((await call('set_3d_surface', { clipIds: [engine.b], preset: 'gold' })).isError).toBe(false);
+		// The perturbation: an unknown preset is refused by the schema, nothing is applied.
+		expect((await call('set_3d_surface', { clipIds: [engine.b], preset: 'mithril' })).isError).toBe(true);
+		expect(
+			(await call('add_light', { at: 0, lightType: 'environment', environmentPreset: 'chromeBands' })).isError,
+		).toBe(false);
+		const scene = await call('get_3d_scene', { frame: 10 });
+		const layers = (scene.body as { layers: { clipId: string; costClass: string }[] }).layers;
+		expect(layers.find((l) => l.clipId === engine.b)?.costClass).toBe('3d-heavy');
+		const td = (engine.doc().sequences[engine.seqId]!.clips[engine.b] as unknown as { threeD: { material: { pbr?: unknown } } })
+			.threeD;
+		expect(td.material.pbr).toBeDefined();
 	});
 });

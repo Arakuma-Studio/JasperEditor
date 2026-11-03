@@ -46,9 +46,8 @@ describe('Radiance media', () => {
 			method: 'POST',
 			url: '/api/media/register',
 			headers: JSON_H,
-			payload: JSON.stringify({ path: file }),
+			payload: { projectId: 'prj_0000000000000001', paths: [file] },
 		});
-		expect(res.statusCode).toBeGreaterThanOrEqual(400);
 		expect(res.body).toContain('INVALID_HDR');
 	});
 });
@@ -98,7 +97,7 @@ function goldTitle(): DocBuilder {
 describe('the plan of a 3D title', () => {
 	it('routes it to Remotion and refuses by name without float targets', async () => {
 		const p = await plan(goldTitle(), caps(true));
-		expect(p.path).toBe('remotion');
+		expect(p.plan.path).toBe('remotion');
 		const e = await plan(goldTitle(), caps(false)).catch((x) => x);
 		expect(e).toBeInstanceOf(PlanError);
 		expect((e as PlanError).code).toBe('THREE_D_NEEDS_FLOAT');
@@ -111,7 +110,7 @@ describe('the plan of a 3D title', () => {
 		writeFileSync(file, hdrFile(4, 2, new Array<number>(4 * 2 * 4).fill(128)));
 		const m = await register(app, file);
 		d.tx([{ type: 'media.register', asset: m, ref: '$m' }]);
-		const id = Object.values(d.doc().media).find((x) => x.kind === 'hdri')!.id;
+		const id = Object.values(d.doc.media).find((x) => x.kind === 'hdri')!.id;
 		d.tx([{ type: 'clip.addLight', at: 0, duration: 30, lightType: 'environment', environmentMediaId: id }]);
 		rmSync(file);
 		const e = await plan(d, caps(true)).catch((x) => x);

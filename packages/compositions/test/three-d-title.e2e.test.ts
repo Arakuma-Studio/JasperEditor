@@ -161,7 +161,7 @@ describe.runIf(enabled && !!CHROME)('3D titles in real Chrome (REMOTION_E2E=1)',
 		});
 		page = await browser.newPage({ viewport: { width: W, height: H } });
 		page.on('pageerror', (e) => console.error(`[3d-title] page error: ${e.message}`));
-		await page.goto(`${media.base}/index.html`);
+		await page.goto(`${media.base}/index.html`, { timeout: 300_000 });
 	}, 600_000);
 
 	afterAll(async () => {

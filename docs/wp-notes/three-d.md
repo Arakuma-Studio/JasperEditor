@@ -188,7 +188,8 @@ identifies the least-squares similarity objective; the scalar derivation is our 
   (miter offsets): bevel bands do not.
 - Environment lights take images and Radiance `.hdr`. `light.settings` also accepts a video id, which the image loader
   cannot read: the render refuses. The Environment section offers images and HDRs only.
-- Metal needs something to reflect: a physical surface with no environment light reflects the neutral studio.
+- Metal needs something to reflect: a physical surface with no environment light reflects the neutral studio. Model layers do
+  not: they stay lit by the sequence's lights.
 - Models keep their own materials: `threeD.setSurface` refuses them, and metallic-roughness and normal textures are not read.
 - Backplates and outside bevels have round joins: an iso-line of a distance field has no miter.
 - Transmission refracts what is opaque behind it, in screen space: a glass solid does not see another glass solid, and
