@@ -408,9 +408,12 @@ export function FxPicture({ stage, children }: { stage: FxStage; children?: Reac
 			void draw();
 		});
 	}, [stage.key, images.size, mattes.key, draw]);
+	// Cleared as well as cancelled: React may run this cleanup and keep the component (Strict Mode, `<Activity>`), and a
+	// stale id would keep the layout effect above from asking for a draw again (fx/flat.tsx has the same rule).
 	useEffect(
 		() => () => {
 			if (raf.current !== null) cancelAnimationFrame(raf.current);
+			raf.current = null;
 		},
 		[],
 	);

@@ -431,10 +431,15 @@ export function FlatCompositor({
 			void draw();
 		});
 	}, [drawKey, complete, hubVersion, regVersion]);
+	// A cancelled request must not stay in `raf`: React runs this cleanup without unmounting (Strict Mode's second
+	// mount in development, an `<Activity>` hidden and shown again), and a stale id would keep the layout effect above
+	// from ever asking for a draw again, leaving the stack (a Rec. 2020 Program with text, for one) blank.
 	useEffect(
 		() => () => {
 			if (raf.current !== null) cancelAnimationFrame(raf.current);
+			raf.current = null;
 			if (hold.current !== null) continueRender(hold.current);
+			hold.current = null;
 		},
 		[],
 	);
