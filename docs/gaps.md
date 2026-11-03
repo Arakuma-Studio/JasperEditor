@@ -917,8 +917,8 @@ Status of the foundation; streams still in progress update this list. Evidence: 
   surfaces, environment, tone mapping, glints), and no looks. The four looks that draw depth in 2D are the Drawn Depth category.
   A 3D template sets the whole sequence's renderer, tone mapping, exposure and glints (the last inserted wins) and adds an
   environment light over its span, which also lights any other 3D layer there. Its titles animate in and out with whole-shape
-  reveals; a fade would pop the solid at its tracing threshold. Agents insert one with `apply_commands` `title.insertTemplate`; no
-  MCP tool lists templates.
+  reveals; a fade would pop the solid at its tracing threshold. Agents find templates with `title_look_find` (rows of
+  `kind: "template"`) and insert one with `apply_commands` `title.insertTemplate`.
 - **Generator looks are judged at three times** (`title-look-library-gl.test.ts`: 0.25 s, 1.5 s, 5 s), and each generator must
   change at least 300 pixels of its tile at every one. The sheets showed one look that read wrong as it played: Gold Leaf's glints
   were a few dark pixels at every time (12 to 34 pixels), now larger and steadier (415 to 552). Colourway changes were inspected on the
@@ -992,7 +992,7 @@ discovery are in; evidence and thresholds in [wp-notes/title-looks-agents.md](wp
   panel does not mark rows whose `revision` is older than the document. The fixes are labels: a proposal's clip has no id
   yet, so they cannot be applied from the panel.
 - **The MCP eval cases for the spec 19 tools can sample, but have not been sampled.** Every titles, effects, 3D and
-  delivery tool has a case (`apps/mcp/eval/cases/{titles,three-d,delivery}.jsonl`, 23 cases with their controls), and
+  delivery tool has a case (`apps/mcp/eval/cases/{titles,three-d,delivery}.jsonl`, 24 cases with their controls), and
   `apps/mcp/eval/fake-engine.ts` answers every engine call they reach (sheets, fonts, user looks, PSD, alpha delivery,
   gamut, scopes, layer-style files, image split), with results parsed by the engine's schemas.
   `eval/cases.test.ts` runs each case's intended route through the stub and grades it a valid pass. No model samples

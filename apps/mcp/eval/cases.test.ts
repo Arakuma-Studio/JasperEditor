@@ -32,6 +32,26 @@ const ROUTES: Record<string, Route> = {
 		],
 	},
 	'titles-styled-title': { calls: () => [['title_look_find', { query: 'gold flashy' }]] },
+	'titles-template-insert': {
+		calls: (v) => [
+			['title_look_find', { query: 'lower third' }],
+			[
+				'apply_commands',
+				{
+					projectId: v.project,
+					label: 'Lower third',
+					commands: [
+						{
+							type: 'title.insertTemplate',
+							templateId: 'template.lower-third-clean',
+							at: '00:00:05:00',
+							texts: { name: 'Ana Ruiz', role: 'Director' },
+						},
+					],
+				},
+			],
+		],
+	},
 	'titles-plain-text-control': {
 		calls: (v) => [['add_text', { projectId: v.project, text: 'Chapter 2', at: 300, duration: 90 }]],
 	},

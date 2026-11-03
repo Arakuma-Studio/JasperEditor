@@ -10,6 +10,9 @@ shows the arguments). Guide: `get_guide` topic `title-art`.
    It searches the library, the user's own looks (`ulk_…`: saved in the editor, shared by every project) and, with
    `projectId`, the project's looks; each row's `source` says which. Any row's `lookId` works with `title_propose` and
    `title_look_find` {lookId}. When the user's looks cannot be read, `userLooksError` says so and the rest is still searched.
+   Title templates (lower thirds, full-screen titles, end cards, social hooks, real 3D titles) are rows too, of
+   `kind: "template"` with a `templateId` and their text slots: a template makes clips, so insert it with `apply_commands`
+   `title.insertTemplate` {templateId, at, texts?} instead of proposing it.
 2. `title_propose` {projectId, text, at, lookId, colorway?, energy?, alternatives?}: the title on the real footage, one
    sheet of intro, hold and outro × alternatives, and its check. `duration` defaults to the time the text needs.
 3. `title_check` {projectId, clipId | proposalId, target?} after any change.

@@ -209,8 +209,8 @@ before `main`'s conventions reached them. At integration 2 they follow them:
 ## Names and merges (AGENTS.md §10)
 
 The sections above "Measured" use the current names; the measurements and the integration notes keep the names the runs
-used. Since this pass the 19 tools spec 19 added to `main`'s surface follow §10. The spec (TL-100…TL-105, TL-112…TL-116)
-still uses the old names: AGENTS.md takes precedence over it.
+used. Since this pass the 19 tools spec 19 added to `main`'s surface follow §10. The spec (TL-078, TL-100…TL-104) was
+amended to these names at integration 4.
 
 | Before | Now | Why |
 |---|---|---|
@@ -259,7 +259,8 @@ still uses the old names: AGENTS.md takes precedence over it.
 
 ### Eval cases
 
-`eval/cases/titles.jsonl`, `three-d.jsonl`, `delivery.jsonl`: 23 cases, each naming the text it is for. New since this
+`eval/cases/titles.jsonl`, `three-d.jsonl`, `delivery.jsonl`: 23 cases at this pass (24 since integration 4, below),
+each naming the text it is for. New since this
 pass: `titles-check-readable`, `titles-look-recipe`, `titles-save-look`, `titles-generator-behind` with the control
 `titles-fire-sound-control`, `titles-global-light` with `titles-3d-light-control`, `effects-keyframe-param`,
 `three-d-backplate`, `delivery-title-alpha`, `delivery-jpeg-control` (control of `delivery-alpha-png` and `delivery-psd`),
@@ -281,7 +282,7 @@ account, from `apps/mcp` (`<a>,<b>` two accounts with quota):
 git worktree add /tmp/mcpeval-base-desc <this branch> && cd /tmp/mcpeval-base-desc && pnpm install --frozen-lockfile
 python3 -I ablate.py /tmp/mcpeval-base-desc descriptions        # the script is in the report of this pass
 cd <this checkout>/apps/mcp
-pnpm eval --account <a>,<b> --samples 4 --case titles-effect-by-name,titles-plain-text-control,titles-check-readable,titles-look-recipe,titles-save-look,titles-generator-behind,titles-fire-sound-control,titles-global-light,titles-3d-light-control,effects-keyframe-param,three-d-extruded-title,three-d-backplate,delivery-psd,delivery-alpha-png,delivery-title-alpha,delivery-jpeg-control,delivery-gamut,delivery-levels-control,delivery-layer-styles,delivery-split-logo,delivery-split-clip-control --source-root /tmp/mcpeval-base-desc --out /tmp/mcpeval/base-desc
+pnpm eval --account <a>,<b> --samples 4 --case titles-effect-by-name,titles-plain-text-control,titles-template-insert,titles-check-readable,titles-look-recipe,titles-save-look,titles-generator-behind,titles-fire-sound-control,titles-global-light,titles-3d-light-control,effects-keyframe-param,three-d-extruded-title,three-d-backplate,delivery-psd,delivery-alpha-png,delivery-title-alpha,delivery-jpeg-control,delivery-gamut,delivery-levels-control,delivery-layer-styles,delivery-split-logo,delivery-split-clip-control --source-root /tmp/mcpeval-base-desc --out /tmp/mcpeval/base-desc
 # Baseline 2: the instructions map without the titles, 3d, export and effects trigger words
 git worktree add /tmp/mcpeval-base-map <this branch> && cd /tmp/mcpeval-base-map && pnpm install --frozen-lockfile
 python3 -I ablate.py /tmp/mcpeval-base-map map
@@ -302,3 +303,36 @@ tools → 6); `+3d` 21,403 → 20,994 (19 → 16); `+export` 13,282 → 13,017 (
 siblings and the never-guess rule in the three descriptions); `+color` 17,139 → 17,181; `+graphics` 19,577 → 19,663;
 `all` 507,093 → 506,533 (469 tools → 464). `eval/budget.json` lowers the three that shrank to the measurement + 2 %:
 `+titles` 6,741 → 6,638, `+3d` 21,846 → 21,414, `+export` 13,548 → 13,278. The rest stay; every context is within budget.
+
+## Title templates in `title_look_find` (integration 4)
+
+The finishing stream added real 3D titles as templates (the 3D category holds templates, the old drawn looks are Drawn
+Depth) and listed templates in the Looks tab, but no tool listed them: `apply_commands` `title.insertTemplate` worked only
+with an id an agent could not find. AGENTS.md §10 gives one route per intent and merges into an existing tool before adding
+a near-duplicate, and the Looks tab, the people's one home for looks and templates (TL-055), lists both. So
+`title_look_find` lists the library's templates too, with no new tool and no new parameter:
+
+- Rows have a `kind`. `look` rows are as before. `template` rows carry `templateId`, `name`, `tags` (the format, such as
+  `lower-third`, first, so `tags: ["lower-third"]` filters on it), `texts` (sample text by slot, the keys `texts` takes),
+  `seconds`, `costClass` and `renderPath`. A template's `costClass` is `3d` or `3d-heavy` when it makes Advanced 3D solids
+  (`templateCostClass`, TL-078), else its heaviest look's, and `heavy` with a generator.
+- Search and tags work as for looks (name and tags score most, then the category). A tie goes to the look, since that is
+  what `title_propose` takes.
+- The sheet stays one engine job and one document. The looks are on the first sequence, as before; each template is on a
+  sequence of its own, since a 3D template sets its sequence's renderer, drawn at the middle of its span with its own
+  texts.
+- The result's `next` names the route: `apply_commands {label, commands: [{type: "title.insertTemplate", templateId, at,
+  texts?}]}`, one undo step. A template is not proposed: `title_propose` takes one look on one text, and a template makes
+  several clips.
+- Text: the description says "looks and templates" and the `tags` parameter "Only rows with all of these". `+titles`
+  6,507 → 6,520 bytes (budget 6,638), `all` 506,533 → 506,546 (budget 513,876).
+- Cases: the guard `titles-template-insert` (a ready-made lower third with the person's texts: `title_look_find`, then
+  `title.insertTemplate` with `texts`). `three-d-flat-title-control` now also forbids inserting a 3D template, since a flat
+  gold title's search can now show one. `eval/cases.test.ts` runs the new route through the stub; it passes and is valid.
+  No model samples were run.
+- Tests: `apps/mcp/test/titles.test.ts` "lists the library's title templates as rows of kind template…" (rows, slots,
+  one document with a sequence per template, the frame, the route the result names, the 3D cost). It fails without the
+  change.
+- Open risk, unmeasured: `three-d-extruded-title` ("an extruded 3D title in gold with a bevel") wants the 3D tools. An
+  agent that enables `titles` can now find Gold 3D Title and insert it, which makes the same kind of title but fails that
+  guard. The paid runs above would show whether it happens.

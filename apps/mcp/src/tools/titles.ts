@@ -29,6 +29,7 @@ import {
 	defaultRegistries,
 	FACTORY_COLORWAYS,
 	FACTORY_LOOKS,
+	FACTORY_TEMPLATES,
 	type FactoryLook,
 	factoryLook,
 	fpsOf,
@@ -59,6 +60,8 @@ import {
 	type TitleCheckRow,
 	type TitleFrameMeasure,
 	type TitleLook,
+	type TitleTemplate,
+	templateCostClass,
 	titleArtCheck,
 	titleArtDraft,
 	titleCheckFrames,
@@ -357,7 +360,7 @@ function tokens(s: string): string[] {
 }
 
 /** A row's score for a query: words of the name and tags count most, the category next, parts of words last. */
-function searchScore(e: LookEntry, words: readonly string[]): number {
+function searchScore(e: Pick<LookEntry, 'name' | 'tags' | 'category'>, words: readonly string[]): number {
 	if (!words.length) return 1;
 	const name = tokens(e.name);
 	const tags = e.tags.flatMap(tokens);
@@ -399,13 +402,14 @@ function applyLocally(doc: ProjectDocument, seqId: string | null, commands: unkn
 	return { document: r.document, refs: r.result.refs };
 }
 
-/** One document with one 1-frame title per row, frame n = row n, over a neutral backdrop. */
+/** One document with one 1-frame title per row, frame n = row n, over a neutral backdrop (none without rows). */
 function lookSheetDocument(rows: readonly LookEntry[], sampleText: string, aspect: string) {
 	const ids = createRandomIdSource();
 	const fresh = createEmptyProject({ ids, name: 'Title looks' });
 	const seq = Object.values(fresh.sequences)[0] as Sequence;
 	const size = ASPECT_SIZES[aspect]!;
 	seq.settings = makeSequenceSettings(size.width, size.height, { num: 30, den: 1 });
+	if (!rows.length) return { document: fresh, sequenceId: seq.id };
 	const sizePx = titleSizeFor(sampleText, size);
 	const commands: unknown[] = [
 		{ type: 'clip.addSolid', at: 0, duration: rows.length, track: 'V1', color: LOOK_BACKDROP },
@@ -432,6 +436,79 @@ function lookSheetDocument(rows: readonly LookEntry[], sampleText: string, aspec
 	});
 	const { document } = applyLocally(fresh, seq.id, commands);
 	return { document, sequenceId: seq.id };
+}
+
+/**
+ * A row of the search: a look, or a title template of the library (TL-052), the clips the Looks tab inserts. A template's
+ * format (lower-third, end-card…) counts as one of its tags.
+ */
+type FindHit = { name: string; tags: readonly string[]; category?: string } & (
+	| { look: LookEntry }
+	| { template: TitleTemplate }
+);
+
+const templateHit = (t: TitleTemplate): FindHit => ({
+	name: t.name,
+	tags: [t.kind, ...t.tags],
+	category: t.category,
+	template: t,
+});
+
+/** How a template row is used: it makes clips, so it is inserted, not proposed. */
+const TEMPLATE_NEXT =
+	'A look row: title_propose {lookId}. A template row: apply_commands {label, commands: [{type: "title.insertTemplate", templateId, at, texts?: {slot: text}}]}, one undo step.';
+
+const COST_ORDER = ['light', 'medium', 'heavy'] as const;
+
+/** A template's cost: `3d` or `3d-heavy` when it makes Advanced 3D solids (TL-078), else its heaviest look's. */
+function templateCost(t: TitleTemplate): string {
+	const solid = templateCostClass(t);
+	if (solid !== 'fast') return solid;
+	if (t.clips.some((c) => c.kind === 'generator')) return 'heavy';
+	let worst = 0;
+	for (const c of t.clips) {
+		const recipe = c.kind === 'text' && typeof c.look === 'string' ? factoryLook(c.look)?.recipe : undefined;
+		if (recipe) worst = Math.max(worst, COST_ORDER.indexOf(costClassOf(recipe)));
+	}
+	return COST_ORDER[worst]!;
+}
+
+const templateFrames = (t: TitleTemplate) => Math.max(1, Math.round(t.seconds * 30));
+
+/**
+ * The page's sheet: the looks on the first sequence (frame n = look n), and each template on a sequence of its own, since
+ * a 3D one sets its sequence's renderer. A template is drawn at the middle of its span, when every text is in.
+ */
+function findSheetDocument(page: readonly FindHit[], sampleText: string, aspect: string) {
+	const looks = page.flatMap((h) => ('look' in h ? [h.look] : []));
+	const { document: withLooks, sequenceId } = lookSheetDocument(looks, sampleText, aspect);
+	const settings = { ...ASPECT_SIZES[aspect]!, frameRate: { num: 30, den: 1 } };
+	const commands = page.flatMap((h, i) => {
+		if (!('template' in h)) return [];
+		const ref = `$s${i}`;
+		return [
+			{ type: 'sequence.create', name: h.template.name, settings, ref },
+			{
+				type: 'clip.addSolid',
+				sequenceId: ref,
+				at: 0,
+				duration: templateFrames(h.template),
+				track: 'V1',
+				color: LOOK_BACKDROP,
+			},
+			{ type: 'title.insertTemplate', sequenceId: ref, templateId: h.template.id, at: 0 },
+		];
+	});
+	const { document, refs } = commands.length
+		? applyLocally(withLooks, sequenceId, commands)
+		: { document: withLooks, refs: {} as Record<string, string> };
+	let look = 0;
+	const cells = page.map((h, i) =>
+		'template' in h
+			? { sequenceId: refs[`$s${i}`]!, frame: Math.floor(templateFrames(h.template) / 2) }
+			: { sequenceId, frame: look++ },
+	);
+	return { document, cells };
 }
 
 /** A size that fits the longest line in the title-safe width (0.55 em per character, an estimate), capped by the height. */
@@ -1061,8 +1138,8 @@ export function registerTitleTools(ctx: ToolContext): void {
 		{
 			title: 'Find title looks',
 			description:
-				'Search title looks by words and tags: rows plus one numbered sheet of real renders. With `lookId`: that look as JSON. Then `title_propose {lookId}`.',
-			details: `Searches title looks by words and tags: the library, the user's own looks (saved in the editor, shared by every project) and, with projectId, the project's looks. Returns rows {lookId, name, tags, colorways, costClass, renderPath, source: library | user | project} with ONE numbered PNG sheet of real renders of sampleText, ${DEFAULT_SHEET_WIDTH} px wide by default. Cell n of the sheet is row n. limit is at most ${MAX_FIND_LIMIT}; cursor continues a list. costClass: light, medium or heavy, how much a look costs to draw; heavy looks move on their own and redraw every frame. renderPath comes from the planner. libraryColorways lists the colourways usable with any look, once. No schemas: lookId gives one look's JSON. An empty result says so; the library may be empty in a development build. The sheet is one engine job: past timeoutSeconds the rows come back with {jobId, timedOut, next}. lookId instead returns that one look as JSON, with no sheet: its recipe (bottom-first layers, palette, light, font), colourways, tags, what each layer type it uses takes (name, kind, default, range, no schemas) and every layer type there is; the starting point for title_propose {recipe} and title_look_save {recipe}. Library and user looks need no project; a project look needs projectId.`,
+				'Search title looks and templates by words and tags: rows plus one numbered sheet of real renders. With `lookId`: that look as JSON. Then `title_propose {lookId}`.',
+			details: `Searches title looks by words and tags: the library, the user's own looks (saved in the editor, shared by every project) and, with projectId, the project's looks. Returns rows {kind: look, lookId, name, tags, colorways, costClass, renderPath, source: library | user | project} with ONE numbered PNG sheet of real renders of sampleText, ${DEFAULT_SHEET_WIDTH} px wide by default. The library's title templates (lower thirds, full-screen titles, end cards, social hooks, real 3D titles) are rows too: {kind: template, templateId, name, tags (its format first), texts (sample text by slot), seconds, costClass, renderPath}, drawn with their own texts; a template makes clips, so it is inserted with apply_commands title.insertTemplate {templateId, at, texts?}, not proposed. A 3D template's costClass is 3d or 3d-heavy: it exports on the Remotion path, every frame. Cell n of the sheet is row n. limit is at most ${MAX_FIND_LIMIT}; cursor continues a list. costClass: light, medium or heavy, how much a look costs to draw; heavy looks move on their own and redraw every frame. renderPath comes from the planner. libraryColorways lists the colourways usable with any look, once. No schemas: lookId gives one look's JSON. An empty result says so; the library may be empty in a development build. The sheet is one engine job: past timeoutSeconds the rows come back with {jobId, timedOut, next}. lookId instead returns that one look as JSON, with no sheet: its recipe (bottom-first layers, palette, light, font), colourways, tags, what each layer type it uses takes (name, kind, default, range, no schemas) and every layer type there is; the starting point for title_propose {recipe} and title_look_save {recipe}. Library and user looks need no project; a project look needs projectId.`,
 			input: {
 				query: z
 					.string()
@@ -1070,7 +1147,7 @@ export function registerTitleTools(ctx: ToolContext): void {
 					.optional()
 					.describe('Words to look for, e.g. "chrome trailer" (default: everything)'),
 				lookId: LookIdArg.optional().describe('One look as JSON: its recipe and layer types, no sheet'),
-				tags: z.array(z.string().min(1).max(64)).max(16).optional().describe('Only looks with all of these'),
+				tags: z.array(z.string().min(1).max(64)).max(16).optional().describe('Only rows with all of these'),
 				aspect: z
 					.enum(['16:9', '9:16', '1:1', '4:5'])
 					.optional()
@@ -1105,11 +1182,26 @@ export function registerTitleTools(ctx: ToolContext): void {
 			const user = await userLooks(ctx);
 			const words = tokens(a.query ?? '');
 			const wanted = (a.tags ?? []).map((t) => t.toLowerCase());
-			const hits = lookCatalogue(doc, user.looks)
+			const catalogue: FindHit[] = [
+				...lookCatalogue(doc, user.looks).map((e) => ({
+					name: e.name,
+					tags: e.tags,
+					category: e.category,
+					look: e,
+				})),
+				...FACTORY_TEMPLATES.map(templateHit),
+			];
+			const hits = catalogue
 				.filter((e) => wanted.every((t) => e.tags.some((x) => x.toLowerCase() === t)))
 				.map((e) => ({ e, score: searchScore(e, words) }))
 				.filter((x) => x.score > 0)
-				.sort((x, y) => y.score - x.score || x.e.name.localeCompare(y.e.name))
+				// A tie goes to the look: it is what title_propose takes.
+				.sort(
+					(x, y) =>
+						y.score - x.score ||
+						Number('template' in x.e) - Number('template' in y.e) ||
+						x.e.name.localeCompare(y.e.name),
+				)
 				.map((x) => x.e);
 			const offset = Number(a.cursor ?? 0);
 			const limit = a.limit ?? 6;
@@ -1132,33 +1224,59 @@ export function registerTitleTools(ctx: ToolContext): void {
 							: 'The library of this build holds no looks. Write a recipe for title_propose (get_guide {"topic": "title-art"}).',
 				});
 			const aspect = a.aspect ?? '16:9';
-			const { document, sequenceId } = lookSheetDocument(page, a.sampleText ?? DEFAULT_SAMPLE_TEXT, aspect);
+			const { document, cells } = findSheetDocument(page, a.sampleText ?? DEFAULT_SAMPLE_TEXT, aspect);
 			const envelope = toolEnvelope(document);
-			const plan = await ctx
-				.engine((c) =>
-					c.planExport({
-						envelope,
-						sequenceId,
-						settings: {
+			const planOf = (sequenceId: string) =>
+				ctx
+					.engine((c) =>
+						c.planExport({
+							envelope,
 							sequenceId,
-							range: { type: 'entire' },
-							container: 'mp4',
-							engine: 'auto',
-							destination: { type: 'download' },
-						},
-					}),
-				)
-				.catch(() => null);
-			const rows = page.map((e, i) => ({
-				n: offset + i + 1,
-				lookId: e.lookId,
-				name: e.name,
-				tags: e.tags,
-				colorways: e.colorways.map((c) => c.id),
-				costClass: costClassOf(e.recipe),
-				renderPath: plan?.path ?? null,
-				source: e.source,
-			}));
+							settings: {
+								sequenceId,
+								range: { type: 'entire' },
+								container: 'mp4',
+								engine: 'auto',
+								destination: { type: 'download' },
+							},
+						}),
+					)
+					.catch(() => null);
+			const sequences = [...new Set(cells.map((c) => c.sequenceId))];
+			const paths = new Map(
+				await Promise.all(sequences.map(async (id) => [id, (await planOf(id))?.path ?? null] as const)),
+			);
+			const rows = page.map((h, i) => {
+				const common = { n: offset + i + 1, name: h.name, tags: h.tags };
+				const renderPath = paths.get(cells[i]!.sequenceId) ?? null;
+				if ('template' in h) {
+					const t = h.template;
+					const texts = Object.fromEntries(
+						t.clips.flatMap((c) => (c.kind === 'text' ? [[c.slot, c.text]] : [])),
+					);
+					return {
+						...common,
+						kind: 'template' as const,
+						templateId: t.id,
+						texts,
+						seconds: t.seconds,
+						costClass: templateCost(t),
+						renderPath,
+						source: 'library' as const,
+					};
+				}
+				const e = h.look;
+				return {
+					...common,
+					kind: 'look' as const,
+					lookId: e.lookId,
+					colorways: e.colorways.map((c) => c.id),
+					costClass: costClassOf(e.recipe),
+					renderPath,
+					source: e.source,
+				};
+			});
+			const hasTemplate = rows.some((r) => r.kind === 'template');
 			const columns = Math.min(4, page.length);
 			const width = cellWidthOf(a.width ?? DEFAULT_SHEET_WIDTH, columns);
 			const meta: SheetMeta = {
@@ -1170,14 +1288,21 @@ export function registerTitleTools(ctx: ToolContext): void {
 				ctx,
 				{
 					documents: [envelope],
-					cells: page.map((_, frame) => ({ document: 0, sequenceId, frame })),
+					cells: cells.map((c) => ({ document: 0, ...c })),
 					width,
 					meta: meta as never,
 				},
 				extra,
 			);
 			const out = await awaitSheet(ctx, jobId, a.timeoutSeconds ?? DEFAULT_SHEET_TIMEOUT_SEC, extra);
-			if (!out.done) return jsonResult({ rows, ...base, jobId, timedOut: true, next: sheetNext(jobId) });
+			if (!out.done)
+				return jsonResult({
+					rows,
+					...base,
+					jobId,
+					timedOut: true,
+					next: hasTemplate ? `${sheetNext(jobId)} ${TEMPLATE_NEXT}` : sheetNext(jobId),
+				});
 			const { body, image } = await composeSheet(ctx, out.result);
 			return jsonResult(
 				{
@@ -1186,7 +1311,7 @@ export function registerTitleTools(ctx: ToolContext): void {
 					jobId,
 					timedOut: false,
 					sheet: body.sheet,
-					next: 'Pick a row and call title_propose {lookId}. Numbers on the sheet start at 1 on each page.',
+					next: `${hasTemplate ? TEMPLATE_NEXT : 'Pick a row and call title_propose {lookId}.'} Numbers on the sheet start at 1 on each page.`,
 				},
 				[image],
 			);

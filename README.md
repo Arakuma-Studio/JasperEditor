@@ -563,7 +563,8 @@ schemas):
 - Titles (`titles` toolset, guide `title-art`): `title_look_find` `title_propose` `title_check` `title_look_save`
   `title_generator_add` `title_light_set`; the resource `jasper://title-looks/{id}`.
   `title_look_find` searches the library, the user's looks (`/api/title-looks`) and, with `projectId`, the project's;
-  with `lookId` it returns that look's recipe.
+  with `lookId` it returns that look's recipe. The library's title templates are rows of `kind: "template"`, inserted with
+  `apply_commands` `title.insertTemplate`.
   `title_propose` needs an open editor to propose, and stores the first option's check rows on the proposal item; with `mode: "apply"` on a headless engine it returns `revert`, because there is no
   Undo there. `render_frames` runs as one engine job and takes `proposalId`, `itemIds`, `overlay: "safe-area"`, `wait`,
   `timeoutSeconds` and `jobId`.

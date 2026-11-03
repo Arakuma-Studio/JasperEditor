@@ -16,6 +16,7 @@ import {
 	defaultRegistries,
 	FACTORY_COLORWAYS,
 	FACTORY_LOOKS,
+	FACTORY_TEMPLATES,
 	type FactoryLook,
 	type LookRecipe,
 	type ProjectDocument,
@@ -24,6 +25,7 @@ import {
 	runAgentQuery,
 	TITLE_ART_FEATURE,
 	TITLE_SAFE_MARGINS,
+	type TitleTemplate,
 	titleArtCheckOf,
 	titleArtMetaOf,
 	type UserLook,
@@ -309,12 +311,19 @@ type StandInLook = Pick<FactoryLook, 'libraryId' | 'name' | 'tags' | 'category' 
 	Partial<FactoryLook>;
 const looks = FACTORY_LOOKS as unknown as StandInLook[];
 const ways = FACTORY_COLORWAYS as unknown as Colorway[];
-const shipped = { looks: [...FACTORY_LOOKS] as StandInLook[], ways: [...FACTORY_COLORWAYS] as Colorway[] };
+const templates = FACTORY_TEMPLATES as unknown as TitleTemplate[];
+const shipped = {
+	looks: [...FACTORY_LOOKS] as StandInLook[],
+	ways: [...FACTORY_COLORWAYS] as Colorway[],
+	templates: [...FACTORY_TEMPLATES],
+};
 const dark = (r: number): Colorway['palette'] => ({ face: [r, 0.2, 0.2, 1] });
 
 beforeAll(() => {
 	looks.length = 0;
 	ways.length = 0;
+	// Templates insert library looks; the stand-in library has none of theirs.
+	templates.length = 0;
 	looks.push(
 		{
 			libraryId: 'look.test-chrome',
@@ -349,6 +358,7 @@ beforeAll(() => {
 afterAll(() => {
 	looks.splice(0, looks.length, ...shipped.looks);
 	ways.splice(0, ways.length, ...shipped.ways);
+	templates.splice(0, templates.length, ...shipped.templates);
 });
 
 const footage = (color: number[]) => ({
@@ -515,6 +525,66 @@ describe('title_look_find (TL-100)', () => {
 		} finally {
 			looks.splice(0, looks.length, ...held);
 			ways.splice(0, ways.length, ...heldWays);
+		}
+	});
+
+	it('lists the library’s title templates as rows of kind template, each drawn on its own sequence, inserted with title.insertTemplate', async () => {
+		const held = looks.splice(0, looks.length, ...shipped.looks);
+		const heldWays = ways.splice(0, ways.length, ...shipped.ways);
+		templates.push(...shipped.templates);
+		try {
+			const s = await connect();
+			const r = await s.ok('title_look_find', { query: 'lower third', limit: 12 });
+			const rows = r.json.rows as Json[];
+			const tpl = rows.filter((x) => x.kind === 'template');
+			expect(tpl.length).toBeGreaterThan(0);
+			expect(new Set(tpl.map((x) => x.templateId))).toEqual(
+				new Set(shipped.templates.filter((t) => t.kind === 'lower-third').map((t) => t.id)),
+			);
+			const lower = shipped.templates.find((t) => t.id === tpl[0]!.templateId)!;
+			expect(tpl[0]).toMatchObject({
+				name: lower.name,
+				tags: ['lower-third', ...lower.tags],
+				seconds: lower.seconds,
+				source: 'library',
+				renderPath: 'hybrid',
+			});
+			expect(Object.keys(tpl[0]!.texts as Json)).toEqual(
+				lower.clips.flatMap((c) => (c.kind === 'text' ? [c.slot] : [])),
+			);
+			expect(tpl[0]).not.toHaveProperty('lookId');
+			for (const x of rows.filter((x) => x.kind !== 'template')) expect(x.kind).toBe('look');
+			expect(r.json.next).toContain('title.insertTemplate');
+			// one sheet, one document; every template on a sequence of its own, at the middle of its span
+			expect(s.engine.sheets).toHaveLength(1);
+			expect(s.engine.sheets[0]!.documents).toBe(1);
+			const cells = s.engine.sheets[0]!.cells as unknown as { sequenceId: string; frame: number }[];
+			const tplCells = rows.flatMap((x, i) => (x.kind === 'template' ? [cells[i]!] : []));
+			expect(new Set(tplCells.map((c) => c.sequenceId)).size).toBe(tplCells.length);
+			expect(tplCells[0]!.frame).toBe(Math.floor(Math.round(lower.seconds * 30) / 2));
+			// the route the result names works, with a text of the template's own slot
+			const slot = Object.keys(tpl[0]!.texts as Json)[0]!;
+			const before = Object.keys(Object.values(s.engine.doc().sequences)[0]!.clips).length;
+			await s.ok('apply_commands', {
+				projectId: P,
+				label: 'Lower third',
+				commands: [
+					{ type: 'title.insertTemplate', templateId: lower.id, at: 0, texts: { [slot]: 'Ana Ruiz' } },
+				],
+			});
+			const after = Object.values(Object.values(s.engine.doc().sequences)[0]!.clips);
+			expect(after.length).toBeGreaterThan(before);
+			// a 3D template says what it costs
+			const solid = await s.ok('title_look_find', { query: '', tags: ['3d'], limit: 12 });
+			expect(solid.json.rows.length).toBeGreaterThanOrEqual(4);
+			for (const x of solid.json.rows as Json[]) {
+				expect(x.kind).toBe('template');
+				expect(['3d', '3d-heavy']).toContain(x.costClass);
+			}
+		} finally {
+			looks.splice(0, looks.length, ...held);
+			ways.splice(0, ways.length, ...heldWays);
+			templates.length = 0;
 		}
 	});
 
