@@ -3,18 +3,31 @@
 import { type EngineJob, TERMINAL_JOB_STATES } from '@jasper/api';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
 
-/** Polls a job until it reaches a terminal state (or the signal aborts); `onUpdate` sees every snapshot. */
+/**
+ * Polls a job until it reaches a terminal state or the signal aborts; `onUpdate` sees every snapshot until then. An
+ * abort ends the wait at once: no poll and no `onUpdate` follow it, and the last snapshot read comes back.
+ */
 export async function followJob(
 	engine: EngineClient,
 	jobId: string,
 	opts: { onUpdate?(job: EngineJob): void; signal?: AbortSignal; intervalMs?: number } = {},
 ): Promise<EngineJob> {
+	const { signal } = opts;
 	for (;;) {
 		const job = await engine.getJob(jobId);
+		if (signal?.aborted) return job;
 		opts.onUpdate?.(job);
 		if (TERMINAL_JOB_STATES.has(job.state)) return job;
-		if (opts.signal?.aborted) return job;
-		await new Promise((r) => setTimeout(r, opts.intervalMs ?? 1000));
+		await new Promise<void>((resolve) => {
+			const done = () => {
+				clearTimeout(timer);
+				signal?.removeEventListener('abort', done);
+				resolve();
+			};
+			const timer = setTimeout(done, opts.intervalMs ?? 1000);
+			signal?.addEventListener('abort', done, { once: true });
+		});
+		if (signal?.aborted) return job;
 	}
 }
 

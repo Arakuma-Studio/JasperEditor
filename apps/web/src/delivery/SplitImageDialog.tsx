@@ -14,8 +14,9 @@ import { clusterIslands, DEFAULT_MERGE, type ImagePart, type PxBox, partsOf } fr
 import type { EditorSession } from '@jasper/session';
 import { Dialog, type HostedDialogProps, registerDialog, TextField } from '@jasper/ui';
 import { type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { t } from '../i18n/runtime.ts';
 import { errorText } from '../processing/engine-jobs.ts';
-import { cancelJob, type JobProgress, runToEnd } from './shared.ts';
+import { cancelJob, cancelQuietly, type JobProgress, runToEnd, useDialogJob } from './shared.ts';
 
 export const SPLIT_IMAGE_DIALOG = 'delivery.splitImage';
 
@@ -67,21 +68,24 @@ function SplitImageDialog(props: Props & HostedDialogProps) {
 	const [progress, setProgress] = useState<JobProgress | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const tintRef = useRef<HTMLCanvasElement>(null);
+	const job = useDialogJob();
+	const signal = useRef<AbortSignal | null>(null);
 
+	// The analysis is a job too: closing the dialog stops following it and cancels it.
 	useEffect(() => {
-		let off = false;
+		const ctl = new AbortController();
+		const off = ctl.signal;
 		(async () => {
 			const started = await engine.call('splitImageAnalyze', { params: { key: mediaKey } });
-			const a = await runToEnd<SplitImageAnalysis>(engine, started, () => undefined);
-			if (!a || off) return;
+			if (off.aborted) return cancelQuietly(engine, started.id);
+			const a = await runToEnd<SplitImageAnalysis>(engine, started, () => undefined, off);
+			if (!a || off.aborted) return;
 			const l = await readLabels(engine, a.labelMapUrl);
-			if (off) return;
+			if (off.aborted) return;
 			setAnalysis(a);
 			setLabels(l);
-		})().catch((e) => !off && setError(errorText(e)));
-		return () => {
-			off = true;
-		};
+		})().catch((e) => !off.aborted && setError(errorText(e)));
+		return () => ctl.abort();
 	}, [engine, mediaKey]);
 
 	useEffect(() => {
@@ -166,6 +170,8 @@ function SplitImageDialog(props: Props & HostedDialogProps) {
 	};
 
 	const split = async () => {
+		const run = job.start();
+		signal.current = run;
 		setError(null);
 		setProgress({ id: '', stage: 'Queued', fraction: null });
 		try {
@@ -173,7 +179,9 @@ function SplitImageDialog(props: Props & HostedDialogProps) {
 				params: { key: mediaKey },
 				body: { groups: parts.map((p) => p.islands), projectId: session.projectId },
 			});
-			const done = await runToEnd<SplitImageResult>(engine, started, setProgress);
+			if (run.aborted) return cancelQuietly(engine, started.id);
+			const done = await runToEnd<SplitImageResult>(engine, started, setProgress, run);
+			if (run.aborted) return;
 			if (!done) return setProgress(null);
 			const media = done.parts.map((p, i) => ({
 				...mediaRegisterCommand(p.media as RegisteredMedia, `$m${i}`, `$i${i}`, `${clipName} ${i + 1}`),
@@ -202,8 +210,25 @@ function SplitImageDialog(props: Props & HostedDialogProps) {
 			}
 			props.close((r.results.at(-1) as { clipIds: string[] }).clipIds);
 		} catch (e) {
+			if (run.aborted) return;
 			setProgress(null);
 			setError(errorText(e));
+		}
+	};
+
+	/**
+	 * Cancel: a running job is cancelled on the engine (the dialog stays until it stops), a refusal is shown; a write still
+	 * queued has no job yet, so the dialog closes and the job is cancelled when it arrives.
+	 */
+	const cancel = () => {
+		if (progress?.id)
+			void cancelJob(engine, progress.id).catch(
+				(e: unknown) =>
+					!signal.current?.aborted && setError(t('The job could not be cancelled: {0}', errorText(e))),
+			);
+		else if (progress) {
+			job.abort();
+			props.close();
 		}
 	};
 
@@ -217,9 +242,7 @@ function SplitImageDialog(props: Props & HostedDialogProps) {
 			primaryLabel={progress ? 'Splitting…' : n === 1 ? 'Split' : `Split into ${n} parts`}
 			primaryDisabled={!analysis || n < 2 || n > MAX_SPLIT_PARTS || !!progress}
 			cancelLabel={progress?.id ? 'Cancel split' : 'Cancel'}
-			onCancel={() => {
-				if (progress?.id) void cancelJob(engine, progress.id);
-			}}
+			onCancel={cancel}
 			onPrimary={() => {
 				void split();
 				return false;

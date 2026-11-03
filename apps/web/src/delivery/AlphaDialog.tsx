@@ -4,16 +4,19 @@ import { type AlphaDeliveryResult, DEFAULT_TRIM_MARGIN_PX, MAX_TRIM_MARGIN_PX } 
 import type { EngineClient } from '@jasper/engine-client';
 import type { EditorSession } from '@jasper/session';
 import { Checkbox, Dialog, type HostedDialogProps, registerDialog, Select, TextField } from '@jasper/ui';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { t } from '../i18n/runtime.ts';
 import { errorText } from '../processing/engine-jobs.ts';
 import {
 	cancelJob,
+	cancelQuietly,
 	downloadFile,
 	envelopeOf,
 	type JobProgress,
 	localFolder,
 	runToEnd,
 	safeName,
+	useDialogJob,
 } from './shared.ts';
 
 export const ALPHA_DIALOG = 'delivery.alpha';
@@ -41,6 +44,8 @@ function AlphaDialog(props: Props & HostedDialogProps) {
 	const [folder, setFolder] = useState('');
 	const [progress, setProgress] = useState<JobProgress | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const job = useDialogJob();
+	const signal = useRef<AbortSignal | null>(null);
 
 	useEffect(() => {
 		let off = false;
@@ -58,6 +63,8 @@ function AlphaDialog(props: Props & HostedDialogProps) {
 	const frames = span.end - span.start;
 
 	const run = async () => {
+		const running = job.start();
+		signal.current = running;
 		setError(null);
 		setProgress({ id: '', stage: 'Queued', fraction: null });
 		try {
@@ -72,13 +79,32 @@ function AlphaDialog(props: Props & HostedDialogProps) {
 					...(local && folder.trim() ? { destination: { folder: folder.trim(), name: clean } } : {}),
 				},
 			});
-			const done = await runToEnd<AlphaDeliveryResult>(engine, started, setProgress);
+			if (running.aborted) return cancelQuietly(engine, started.id);
+			const done = await runToEnd<AlphaDeliveryResult>(engine, started, setProgress, running);
+			if (running.aborted) return;
 			if (!done) return setProgress(null);
 			if (!done.path) downloadFile(engine, done.url, `${clean}.${done.format}`);
 			props.close(done.path ?? done.url);
 		} catch (e) {
+			if (running.aborted) return;
 			setProgress(null);
 			setError(errorText(e));
+		}
+	};
+
+	/**
+	 * Cancel: a running job is cancelled on the engine (the dialog stays until it stops), a refusal is shown; a write still
+	 * queued has no job yet, so the dialog closes and the job is cancelled when it arrives.
+	 */
+	const cancel = () => {
+		if (progress?.id)
+			void cancelJob(engine, progress.id).catch(
+				(e: unknown) =>
+					!signal.current?.aborted && setError(t('The job could not be cancelled: {0}', errorText(e))),
+			);
+		else if (progress) {
+			job.abort();
+			props.close();
 		}
 	};
 
@@ -91,9 +117,7 @@ function AlphaDialog(props: Props & HostedDialogProps) {
 			primaryLabel={progress ? 'Exporting…' : 'Export'}
 			primaryDisabled={!!progress || !(frames > 0)}
 			cancelLabel={progress?.id ? 'Cancel export' : 'Cancel'}
-			onCancel={() => {
-				if (progress?.id) void cancelJob(engine, progress.id);
-			}}
+			onCancel={cancel}
 			onPrimary={() => {
 				void run();
 				return false;
