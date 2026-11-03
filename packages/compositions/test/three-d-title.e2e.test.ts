@@ -1,7 +1,7 @@
 // @vitest-environment node
 // Spec 19 §9 end to end in real Chrome (REMOTION_E2E=1): a physical 3D title with an environment preset, tone mapping and
 // a keyed material, in the Player (the Program monitor's path) and through Remotion renders. Program against export by
-// SSIM, a razor cut, and the refusal of a scene whose HDR cannot be read.
+// SSIM and a razor cut. Refusals of missing HDRs and models are tested at the plan: apps/engine/test/three-d-hdr.test.ts.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -12,7 +12,6 @@ import {
 	createCounterIdSource,
 	createEmptyProject,
 	defaultRegistries,
-	type MediaHandle,
 } from '@jasper/project';
 import { bundleForBrowser } from '@jasper/testkit/browser';
 import { type Browser, chromium, type Page } from '@playwright/test';
@@ -30,7 +29,7 @@ const W = 640;
 const H = 360;
 const OUT = process.env.THREE_D_E2E_OUT ?? join(here, '..', '..', '..', 'test-results', 'three-d-title-e2e');
 
-type Opts = { split?: number; hdr?: MediaHandle | null };
+type Opts = { split?: number };
 
 function build(o: Opts = {}) {
 	const ids = createCounterIdSource(1);

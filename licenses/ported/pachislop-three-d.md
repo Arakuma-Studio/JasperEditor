@@ -29,7 +29,7 @@
   need no boolean library and are simple for any input.
 - z points away from the viewer here: every z and normal z is negated.
 - `three.ShapeUtils.triangulateShape` became our earcut port.
-- Glints: a tent prefilter at every mip step instead of 2 × 2 boxes, so a highlight's response varies smoothly as it moves.
+- Glints: a tent prefilter at every mip step instead of 2 × 2 boxes (a small measured gain, `docs/wp-notes/three-d.md` §9).
 - Float hashes in the surface relief became the integer hashes of `fx/hash`; the antialiasing width comes from the depth, not
   from derivatives.
 - Zod at every entry point; a missing float target refuses with `THREE_D_NEEDS_FLOAT` instead of degrading.

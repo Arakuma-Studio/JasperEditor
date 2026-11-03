@@ -366,8 +366,8 @@ export function composite(
 // is continuous in its position:
 // - a soft knee, e² / (e + K), instead of a hard threshold;
 // - bright pass and detector on a grid locked to sequence pixels, so an export at any size computes what a 1× one does;
-// - a tent prefilter at every mip step: a 2×2 box drops a sub-pixel highlight in and out of a cell as it crosses cell
-//   borders, which is the flicker of a naive glint; the tent's response varies only smoothly with the position;
+// - a tent prefilter at every mip step instead of a 2×2 box: measured, a modest gain (largest energy step between frames
+//   1.0 % of the mean, against 1.2 % with the box), so the knee and the detector carry most of the stability;
 // - a point detector, the bright pass minus the larger of its two 1D blurs: corners and hot spots throw rays, long
 //   bevel lines (bright along one axis) do not, so a line of light does not throw a curtain as it sweeps.
 

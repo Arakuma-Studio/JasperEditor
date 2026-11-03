@@ -890,8 +890,9 @@ Status of the foundation; streams still in progress update this list. Evidence: 
 the backdrop, Radiance `.hdr` and procedural environments, tone mapping, glints, the cost notice, the rotation gizmo. Evidence
 and rerun commands: [wp-notes/three-d.md](wp-notes/three-d.md) §9. Limits:
 
-- **Software rendering is slow, and 3D never bakes**: every frame goes through Remotion. Figures in the note above; nothing has
-  been measured on a GPU.
+- **Software rendering is slow, and 3D never bakes**: every frame goes through Remotion. About 7 s per 1080p frame for a gold
+  title on SwiftShader, 15 s with glass, 21 s with glints (note above); nothing has been measured on a GPU.
+- **Glint stability is measured on total energy**, not per star: a star that moved while the total held would pass the test.
 - **Backplates and outside bevels have round joins.** An iso-line of a distance field has no miter; hull and box plates keep
   straight sides.
 - **Transmission is screen space.** Glass sees what is opaque behind it, not other glass, and rays that leave the frame clamp

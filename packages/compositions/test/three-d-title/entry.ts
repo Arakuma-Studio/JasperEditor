@@ -344,7 +344,11 @@ const api = {
 	time(s: TitleScene, n: number): number {
 		const { ctx } = canvasOf(s);
 		const t0 = performance.now();
-		for (let i = 0; i < n; i++) draw({ ...s, orbit: (s.orbit ?? 0) + i * 0.5 }, ctx);
+		for (let i = 0; i < n; i++) {
+			draw({ ...s, orbit: (s.orbit ?? 0) + i * 0.5 }, ctx);
+			// GL work is queued: only a read-back proves it ran, or the figure is the cost of submitting it.
+			ctx.getImageData(0, 0, 1, 1);
+		}
 		return performance.now() - t0;
 	},
 	hasFloat: () => fxHost()?.floatTargets ?? false,

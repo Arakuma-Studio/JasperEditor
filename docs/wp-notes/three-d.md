@@ -299,9 +299,11 @@ reduces by box factors as it goes, so an 8K file costs 134 MB. In the renderer e
 presets are `GLSL_TL_ENV`, the chunk looks use (TL-038), by the same names, rendered once into the map. Maps are cached by
 key, six at most.
 
-**Glints** (TL-077). See the comment at `renderGlint`. Stability comes from every step being continuous in the highlight's
-position: a soft knee, a grid locked to sequence pixels, a tent at every mip step, a point detector that a line of light
-cannot pass. The test turns a title in steps of 0.15° and bounds the largest change of glint energy.
+**Glints** (TL-077). See the comment at `renderGlint`. Every step is continuous in the highlight's position: a soft knee, a
+grid locked to sequence pixels, a tent at every mip step, a point detector that a line of light cannot pass. The test turns a
+title in steps of 0.15° and bounds the largest change of total glint energy. It measures energy, not each star, so a star
+that moved while the total held would pass; a control with Pachislop's 2×2 box measured 1.2 % against the tent's 1.0 %, so the
+test does not separate the two and the tent is a small gain, not the cause of the stability.
 
 **Determinism.** Frames are pure functions of the document and frame. A render holds until pictures, models and HDRs are in.
 A model or HDR that is gone refuses with `THREE_D_ASSET_MISSING`: a plan blocker first, `cancelRender` as the backstop. Prefilter
@@ -332,4 +334,17 @@ Environment. MCP: `set_3d_surface`, `set_3d_geometry`, `edit_bevel_bands`, `edit
 
 ### Measured
 
-MEASURED_PLACEHOLDER
+Machine: 8-vCPU EPYC VM, 15 GB, no GPU (Chrome 156, SwiftShader), shared with other agents. Load average 2 to 9 during the
+measured runs below, up to 75 earlier, when only correctness was checked.
+
+| What | Result | Rerun |
+|---|---|---|
+| Program (Player) against a Remotion still: gold title, environment preset, ACES, a keyed roughness; frames 0 and 45 | SSIM 1.000 both, frames 0 and 45 differ (SSIM 0.974) | `REMOTION_E2E=1 pnpm exec vitest run packages/compositions/test/three-d-title.e2e.test.ts` (frames in `test-results/three-d-title-e2e`) |
+| Razor cut at frame 30 against the uncut clip, frame 45 | identical (SSIM 1.000) | same |
+| Glint stability: 8 steps of 0.15° | largest step of total glint energy 1.0 % of the mean (control with a 2×2 box: 1.2 %) | `pnpm exec vitest run packages/compositions/test/three-d-title-gl.test.ts -t "glints hold still"` |
+| A moving camera, a material and an environment change | 0 solids built (a bevel change: 1) | `… -t "builds no geometry"` |
+| Frame cost, 1920 × 1080, gold title with a band, 4× MSAA, read back each frame | first frame 29.2 s (shaders, environment prefilter, solid), then 7.0 s; glass 14.8 s; glints 20.9 s | `THREE_D_PERF=1 pnpm exec vitest run packages/compositions/test/three-d-title-gl.test.ts -t "cost at 1080p"` |
+| Contact sheet of twenty looks | inspected: `/tmp/title-looks/sheets/three-d.png` at the time of writing | `THREE_D_SHEET=<file> … three-d-title-gl.test.ts -t "contact sheet"` |
+
+A first cost run reported 140 ms per frame: it timed only the submission of GL work, as the foundation's first figures did. The
+timing now reads a pixel back after each frame. Nothing was measured on a GPU.
