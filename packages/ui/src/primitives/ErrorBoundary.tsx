@@ -86,7 +86,7 @@ export class PanelErrorBoundary extends Component<PanelErrorBoundaryProps, State
 					<Icon id="status.error" size={24} />
 				</span>
 				<p className="text-pr-ui text-pr-text">This panel crashed</p>
-				<p className="max-w-[320px] truncate text-pr-small text-pr-muted">{this.state.error.message}</p>
+				<p className="max-w-[320px] truncate text-pr-small text-pr-muted">{error.message}</p>
 				{this.state.copyError ? <p className="text-pr-small text-pr-danger">{this.state.copyError}</p> : null}
 				<div className="flex gap-2">
 					<Button

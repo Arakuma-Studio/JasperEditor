@@ -1,5 +1,7 @@
 // Motion Templates ▸ Looks (TL-086). The neighbours keep their own homes (TL-055): this tab links to them.
 import { useSessionOrNull } from '@jasper/session/react';
+import { PanelErrorBoundary } from '@jasper/ui';
+import { t } from '../i18n/runtime.ts';
 import { revealSection } from '../panels/properties/controls/Section.tsx';
 import { useShellRuntimeOrNull } from '../shell/context.tsx';
 import { LooksBrowser } from './LooksBrowser.tsx';
@@ -23,8 +25,10 @@ export function LooksTab(props: { onShowTemplates(): void }) {
 	if (!session)
 		return <p className="p-2 text-center text-pr-small text-pr-muted">Open a project to use looks.</p>;
 	const focus = (id: string) => void shell?.run(id);
+	// AGENTS §0: a failure in the browser stays in this tab, with Retry; the panel and its other tabs keep working.
 	return (
-		<LooksBrowser
+		<PanelErrorBoundary name={t('Looks')} inline resetKey={session}>
+			<LooksBrowser
 			session={session}
 			links={
 				<>
@@ -48,6 +52,7 @@ export function LooksTab(props: { onShowTemplates(): void }) {
 					/>
 				</>
 			}
-		/>
+			/>
+		</PanelErrorBoundary>
 	);
 }

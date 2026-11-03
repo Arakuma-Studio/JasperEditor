@@ -171,6 +171,8 @@ export type ProgramOverlayHostProps = Omit<
 /** An SVG/DOM layer drawn over the Program monitor above the transform overlay (tracker, corner pin handles). */
 export type ProgramOverlayDef = {
 	id: string;
+	/** Names the overlay in the notice that replaces it when it fails. */
+	label?: string;
 	/** Rendered only while this returns true (e.g. a tracker is being edited). */
 	active(session: EditorSession): boolean;
 	component: ComponentType<ProgramOverlayHostProps>;

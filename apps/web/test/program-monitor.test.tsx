@@ -10,7 +10,8 @@ import {
 import { defaultMediaRuntime, EditorSession } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { programOverlays } from '../src/extensions/index.ts';
 import { monitorStores } from '../src/panels/program/monitor-store.ts';
 import { ProgramMonitor } from '../src/panels/program/ProgramMonitor.tsx';
 import { playerDurationFrames, resolveMediaHandle } from '../src/panels/program/render-doc.ts';
@@ -175,6 +176,72 @@ describe('Program monitor', () => {
 		expect(Object.keys(session.getCommitted().sequences[seqId]!.clips)).toEqual(before);
 		expect(session.getState().toggles.activeTool).toBe('selection');
 		textEntryStore.setState({ current: null });
+	});
+});
+
+describe('overlay boundaries (AGENTS §0)', () => {
+	it('an overlay that throws is hidden with a notice; the picture and the other overlays stay', () => {
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+		const { session } = makeSession();
+		let broken = true;
+		const offBroken = programOverlays.register({
+			id: 'test-broken',
+			label: 'Test handles',
+			active: () => true,
+			component: () => {
+				if (broken) throw new Error('no quad for this layer');
+				return <div data-testid="test-broken-overlay" />;
+			},
+		});
+		const offFine = programOverlays.register({
+			id: 'test-fine',
+			active: () => true,
+			component: () => <div data-testid="test-fine-overlay" />,
+		});
+		const { getByTestId, queryByTestId } = render(
+			<SessionProvider session={session}>
+				<ProgramMonitor instanceId="program-1" visible />
+			</SessionProvider>,
+		);
+		try {
+			const notice = getByTestId('program-overlay-failed');
+			expect(notice.textContent).toContain('Test handles');
+			expect(notice.textContent).toContain('no quad for this layer');
+			expect(getByTestId('program-timecode')).toBeTruthy();
+			expect(getByTestId('test-fine-overlay')).toBeTruthy();
+			broken = false;
+			fireEvent.click(notice.querySelector('button')!);
+			expect(getByTestId('test-broken-overlay')).toBeTruthy();
+			expect(queryByTestId('program-overlay-failed')).toBeNull();
+		} finally {
+			offBroken();
+			offFine();
+			vi.restoreAllMocks();
+		}
+	});
+
+	it('an overlay whose active() throws is hidden the same way', () => {
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+		const { session } = makeSession();
+		const off = programOverlays.register({
+			id: 'test-active-throws',
+			active: () => {
+				throw new Error('no state');
+			},
+			component: () => null,
+		});
+		const { getByTestId } = render(
+			<SessionProvider session={session}>
+				<ProgramMonitor instanceId="program-1" visible />
+			</SessionProvider>,
+		);
+		try {
+			expect(getByTestId('program-overlay-failed').textContent).toContain('no state');
+			expect(getByTestId('program-timecode')).toBeTruthy();
+		} finally {
+			off();
+			vi.restoreAllMocks();
+		}
 	});
 });
 
