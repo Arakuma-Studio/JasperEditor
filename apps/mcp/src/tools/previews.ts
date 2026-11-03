@@ -120,7 +120,8 @@ export function registerPreviewTools(ctx: ToolContext): void {
 		'render_previews',
 		{
 			title: 'Render previews',
-			description:
+			description: 'Render preview files of segments so they play smoothly.',
+			details:
 				'Sequence ▸ Render…: renders preview files of segments through the export paths (the picture an export writes) so they play smoothly in the Program monitor and turn green. mode "effects" = red and yellow segments in the range (Render Effects In to Out), "all" = every segment in the range (Render In to Out), "selection" = segments showing clipIds (Render Selection), "audio" = the mix of the audio segments in the range (Render Audio). Segments that already have a file are skipped; segments with offline media or missing fonts are skipped with the reason. wait (default true) waits for the job.',
 			input: {
 				projectId: ProjectIdArg,
@@ -210,7 +211,8 @@ export function registerPreviewTools(ctx: ToolContext): void {
 		'perf_stats',
 		{
 			title: 'Get performance stats',
-			description:
+			description: 'Performance counters of the engine and the open editor.',
+			details:
 				'Performance counters: the engine (process CPU %, memory, event-loop delay, host load and cores, running/queued jobs, frames per second of recent exports and preview renders, preview files) and, when an editor window has the project open, its playback (frames shown and dropped since playback started, measured fps, stalls recovered, buffering time, UI frame rate), its render bar (segments by state), how its edits checked invariants, and its gesture frames (how many transient gesture documents the Program monitor drew or skipped and what one cost).',
 			input: { projectId: ProjectIdArg.optional() },
 			annotations: READ_ONLY,

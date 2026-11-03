@@ -9,6 +9,7 @@ import {
 	transitionSpec,
 } from '@jasper/project';
 import { z } from 'zod';
+import { compactInputSchema } from '../advertise.ts';
 import { ProjectIdArg, SequenceIdArg, timeArg } from '../arguments.ts';
 import {
 	DESTRUCTIVE,
@@ -32,16 +33,13 @@ import { transitionEffectId } from './transitions.ts';
 
 const COMMAND_TYPES = Object.keys(COMMAND_CATALOG) as [string, ...string[]];
 
-const ClipIdsArg = z.array(z.string().min(1)).min(1).describe('Clip ids ("clp_…") from get_timeline');
+const ClipIdsArg = z.array(z.string().min(1)).min(1);
 
 const TIME_NOTES = [
-	'Times on the timeline are sequence frames; every time argument of a command also accepts {"frames": n}, {"seconds": x} or a timecode string "HH:MM:SS:FF" (the helper tools also take "3s", "250ms", "00:03" and "1:02:03").',
-	'Generator clips (clip.addText / addSolid / addShape / addMotionGraphic) take placement: "first-free" to land on the lowest unlocked track at or above `track` that is empty for their range (a new top track when none is) instead of overwriting; clip.addMotionGraphic {fill: {seed}} fills omitted params with the template\'s fill hook.',
-	'Tracks are addressed by label: "V1" is the lowest video track, "A1" the first audio track (or by track id).',
-	'Creating commands may declare "ref": "$name"; later commands in the same transaction can use "$name" as an id.',
-	'Instead of ids you can write {"mediaByName": "file.mp4"}, {"clipAt": {"track": "V1", "at": "00:00:01:00"}}, {"markerByName": "Intro"} or {"itemByName": "Cam A.mp4"} (a project item).',
-	'A transaction is atomic: all commands apply or none. Use dryRun: true to validate first.',
-	`Transactions containing ${APPROVAL_COMMANDS.join(', ')} or any "force": true need the user's approval in an open editor (60 s timeout); without an editor they are rejected.`,
+	'Times: frames, {"frames": n}, {"seconds": x} or "HH:MM:SS:FF".',
+	'Tracks: "V1", "A1" or ids. Generator clips (clip.addText, addSolid, addShape, addMotionGraphic) take placement: "first-free".',
+	'A creating command may declare "ref": "$name"; later commands in the transaction use "$name" as an id.',
+	'Instead of ids: {"mediaByName": "file.mp4"}, {"clipAt": {"track": "V1", "at": "00:00:01:00"}}, {"markerByName": "Intro"}, {"itemByName": "Cam A.mp4"}.',
 ];
 
 let schemaCache: { url: string; schema: Record<string, unknown> } | null = null;
@@ -90,18 +88,17 @@ export function registerEditingTools(ctx: ToolContext): void {
 		'describe_commands',
 		{
 			title: 'Describe edit commands',
-			description:
-				'The catalog of document commands accepted by apply_commands (protocol jasper.tx/1): without arguments a list of every command type with its label, whether it is implemented and whether it needs user approval, plus addressing and time rules and a sample transaction. With `types`, the full JSON Schema and a worked example for each of those commands. Also lists motion-graphic templates and sequence presets, and counts the effects (list_effects lists them).',
+			description: 'The commands `apply_commands` accepts. With `types`: the schema and an example of each.',
 			input: {
-				types: z
-					.array(z.string())
-					.max(30)
+				types: z.array(z.string()).max(30).optional().describe('E.g. ["clip.place"].'),
+				catalogues: z
+					.boolean()
 					.optional()
-					.describe('Command types to describe in full, e.g. ["clip.place", "clip.addText"]'),
+					.describe('Also list motion-graphic templates, sequence presets and animatable properties.'),
 			},
 			annotations: READ_ONLY,
 		},
-		async ({ types }) => {
+		async ({ types, catalogues }) => {
 			const schema = await engineSchema(ctx);
 			const commands = schema.commands as Record<
 				string,
@@ -116,38 +113,37 @@ export function registerEditingTools(ctx: ToolContext): void {
 						'Call describe_commands without arguments for the list of types.',
 					);
 				return jsonResult({
+					rules: TIME_NOTES,
 					commands: types.map((t) => ({
 						type: t,
-						label: commands[t]!.label,
-						implemented: commands[t]!.implemented,
-						needsApproval: (APPROVAL_COMMANDS as readonly string[]).includes(t),
-						schema: commands[t]!.schema,
+						...(commands[t]!.implemented ? {} : { implemented: false }),
+						...((APPROVAL_COMMANDS as readonly string[]).includes(t) ? { needsApproval: true } : {}),
+						schema: compactInputSchema(commands[t]!.schema),
 						...(COMMAND_EXAMPLES[t] ? { example: COMMAND_EXAMPLES[t] } : {}),
 					})),
-					rules: TIME_NOTES,
 				});
 			}
 			return jsonResult({
-				protocol: 'jasper.tx/1',
+				types: Object.keys(commands).filter((type) => commands[type]!.implemented),
+				needApproval: APPROVAL_COMMANDS,
 				rules: TIME_NOTES,
-				commands: Object.entries(commands).map(([type, c]) => ({
-					type,
-					label: c.label,
-					...(c.implemented ? {} : { implemented: false }),
-					...((APPROVAL_COMMANDS as readonly string[]).includes(type) ? { needsApproval: true } : {}),
-				})),
 				exampleTransaction: TRANSACTION_EXAMPLE,
-				mgTemplates: (schema.mgTemplates as { id: string; version: number; name: string }[] | undefined)?.map(
-					(t) => `${t.id}@${t.version} (${t.name})`,
-				),
-				presets: (schema.presets as { id: string }[] | undefined)?.map((p) => p.id),
-				effects: {
-					count: (schema.effects as unknown[] | undefined)?.length ?? 0,
-					hint: 'list_effects searches them by words and category; effect.add takes an id.',
-				},
-				properties: (schema.properties as { key: string; animatable: string }[] | undefined)?.map(
-					(p) => p.key,
-				),
+				...(catalogues
+					? {
+							mgTemplates: (
+								schema.mgTemplates as { id: string; version: number; name: string }[] | undefined
+							)?.map((t) => `${t.id}@${t.version} (${t.name})`),
+							presets: (schema.presets as { id: string }[] | undefined)?.map((p) => p.id),
+							effects: {
+								count: (schema.effects as unknown[] | undefined)?.length ?? 0,
+								hint: 'list_effects searches them by words and category; effect.add takes an id.',
+							},
+							properties: (schema.properties as { key: string; animatable: string }[] | undefined)?.map(
+								(p) => p.key,
+							),
+						}
+					: {}),
+				next: 'Pass `types` for the schema and an example of the commands you will use.',
 			});
 		},
 	);
@@ -158,14 +154,10 @@ export function registerEditingTools(ctx: ToolContext): void {
 		{
 			title: 'Apply edit commands',
 			description:
-				'Applies a transaction of document commands (see describe_commands) atomically. If an editor window has the project open the change appears live there as one undoable History entry "Agent: <label>" (appliedBy: session); otherwise the engine applies and saves it headlessly. dryRun: true validates without changing anything. Returns the new revision, created/changed/deleted ids and the ids bound to "$refs". Destructive commands (track.remove, item.delete, sequence.delete, force: true) wait for the user to approve in the editor.',
+				"Run document commands atomically as one undo step; put related changes in one call. Schemas: `describe_commands`. `dryRun`: validate only. Deleting tracks or items and `force: true` wait for the user's approval. For a multi-step cut use `propose_edits`.",
 			input: {
 				projectId: ProjectIdArg,
-				label: z
-					.string()
-					.min(1)
-					.max(80)
-					.describe('Short description shown in the editor History as "Agent: <label>"'),
+				label: z.string().min(1).max(80).describe('Shown in History.'),
 				commands: z
 					.array(
 						// Each command's own keys are checked against its schema by the engine (unknown keys anywhere
@@ -176,13 +168,9 @@ export function registerEditingTools(ctx: ToolContext): void {
 					)
 					.min(1)
 					.max(5000)
-					.describe('Commands in order; each is {"type": "...", ...arguments}'),
-				dryRun: z.boolean().optional().describe('Validate only: report what would change'),
-				expectedRevision: z
-					.number()
-					.int()
-					.optional()
-					.describe('Reject if the project changed since this revision (optimistic concurrency)'),
+					.describe('Each is {"type": "...", ...arguments}.'),
+				dryRun: z.boolean().optional(),
+				expectedRevision: z.number().int().optional().describe('Refuse if the project changed since.'),
 				sequenceId: SequenceIdArg,
 			},
 			annotations: DESTRUCTIVE,
@@ -209,8 +197,8 @@ export function registerEditingTools(ctx: ToolContext): void {
 				title: name === 'undo' ? 'Undo' : 'Redo',
 				description:
 					name === 'undo'
-						? "Undoes the editor's most recent History entry if this agent made it (the user's own edits are never undone by agents). Needs an editor window with the project open."
-						: 'Redoes the next History entry if this agent made it. Needs an editor window with the project open.',
+						? "Undo your own last History entry. Needs the project open in the editor; the user's edits are never undone."
+						: 'Redo your own next History entry. Needs the project open in the editor.',
 				input: { projectId: ProjectIdArg },
 				annotations: EDIT,
 			},
@@ -227,38 +215,30 @@ export function registerEditingTools(ctx: ToolContext): void {
 		{
 			title: 'Add clip to timeline',
 			description:
-				'Places imported media on the timeline (clip.place). Video files create a linked video + audio pair (V track + A track). Overwrite mode replaces what is under the new clip; insert mode pushes later clips right. Returns the new clip ids with their times.',
+				'Place imported media on a track. A video file adds a linked video and audio pair. `mode`: overwrite (default) or insert, which pushes later clips right.',
 			input: {
 				projectId: ProjectIdArg,
-				media: z.string().min(1).describe('mediaId ("med_…") or the Project item / file name ("clip-a.mp4")'),
+				media: z.string().min(1).describe('`med_…` or a file name.'),
 				at: timeArg('Where the clip starts on the timeline'),
-				track: TrackRefSchema.optional().describe('Video track label or id (default V1)'),
-				audioTrack: TrackRefSchema.optional().describe('Audio track label or id (default A1)'),
-				sourceIn: z.number().min(0).optional().describe('Start inside the media, in seconds (default 0)'),
-				sourceOut: z
-					.number()
-					.min(0)
-					.optional()
-					.describe('End inside the media, in seconds (default: the end; required with sourceIn)'),
+				track: TrackRefSchema.optional().describe('Default V1.'),
+				audioTrack: TrackRefSchema.optional().describe('Default A1.'),
+				sourceIn: z.number().min(0).optional().describe('Seconds into the media. Default 0.'),
+				sourceOut: z.number().min(0).optional().describe('Seconds. Required with `sourceIn`.'),
 				sourceInFrame: z
 					.number()
 					.int()
 					.min(0)
 					.optional()
-					.describe(
-						'Frame-exact alternative to sourceIn: first media frame (0-based, at the media frame rate)',
-					),
+					.describe('Instead of `sourceIn`: first media frame.'),
 				sourceOutFrame: z
 					.number()
 					.int()
 					.min(1)
 					.optional()
-					.describe(
-						'Frame-exact alternative to sourceOut: media frame after the last one used (exclusive); the clip is sourceOutFrame − sourceInFrame frames long',
-					),
-				mode: EditModeSchema.optional().describe('overwrite (default) or insert (ripples later clips)'),
-				videoOnly: z.boolean().optional().describe('Place only the video'),
-				audioOnly: z.boolean().optional().describe('Place only the audio'),
+					.describe('Instead of `sourceOut`: the frame after the last one used.'),
+				mode: EditModeSchema.optional(),
+				videoOnly: z.boolean().optional(),
+				audioOnly: z.boolean().optional(),
 				sequenceId: SequenceIdArg,
 			},
 			annotations: EDIT,
@@ -327,7 +307,7 @@ export function registerEditingTools(ctx: ToolContext): void {
 					.int()
 					.optional()
 					.describe('Tracks to move up (+) or down (−) within the same kind'),
-				mode: EditModeSchema.optional().describe('overwrite (default) or insert (ripples later clips)'),
+				mode: EditModeSchema.optional(),
 			},
 			annotations: EDIT,
 		},
@@ -365,16 +345,13 @@ export function registerEditingTools(ctx: ToolContext): void {
 		{
 			title: 'Trim clip',
 			description:
-				'Moves the in (head) or out (tail) edge of a clip by deltaFrames (clip.trim). Positive moves the edge later. regular leaves a gap / needs room; ripple shifts later clips to close or open the gap; roll moves the edit point shared with the neighbour. Linked partners trim along.',
+				"Move a clip's `in` or `out` edge by `deltaFrames`; positive moves it later. `mode`: regular, ripple or roll. Linked partners follow.",
 			input: {
 				projectId: ProjectIdArg,
-				clipId: z.string().min(1).describe('Clip id ("clp_…")'),
-				edge: z.enum(['in', 'out']).describe('in = head (start), out = tail (end)'),
-				deltaFrames: z
-					.number()
-					.int()
-					.describe('Frames to move the edge by (e.g. -30 shortens a tail by 1 s at 30 fps)'),
-				mode: z.enum(['regular', 'ripple', 'roll']).optional().describe('Default regular'),
+				clipId: z.string().min(1),
+				edge: z.enum(['in', 'out']).describe('in = head, out = tail.'),
+				deltaFrames: z.number().int().describe('E.g. -30 shortens a tail by 1 s at 30 fps.'),
+				mode: z.enum(['regular', 'ripple', 'roll']).optional().describe('Default regular.'),
 			},
 			annotations: EDIT,
 		},
@@ -394,12 +371,12 @@ export function registerEditingTools(ctx: ToolContext): void {
 		{
 			title: 'Split clips',
 			description:
-				'Cuts clips in two at a time (clip.split, like the razor tool). By default every clip under that time on all unlocked tracks is split; restrict with clipIds or tracks. A cut inside a transition keeps the transition on its edit, shortened to the part of the clip it still has (W_TRANSITION_SHORTENED, as Premiere). Returns the new right-hand halves.',
+				'Cut clips in two at a time: every clip there on unlocked tracks, or only `clipIds` or `tracks`.',
 			input: {
 				projectId: ProjectIdArg,
 				at: timeArg('Where to cut'),
 				clipIds: ClipIdsArg.optional(),
-				tracks: z.array(TrackRefSchema).min(1).optional().describe('Track labels, e.g. ["V1", "A1"]'),
+				tracks: z.array(TrackRefSchema).min(1).optional().describe('E.g. ["V1", "A1"].'),
 				sequenceId: SequenceIdArg,
 			},
 			annotations: EDIT,
@@ -427,13 +404,11 @@ export function registerEditingTools(ctx: ToolContext): void {
 		{
 			title: 'Delete clips',
 			description:
-				'Removes clips from the timeline. ripple: false (default) lifts them and leaves a gap (clip.lift); ripple: true closes the gap by shifting later clips (clip.extract). Linked partners are removed too. Media stays in the project. Undoable in the editor.',
+				'Remove clips and their linked partners from the timeline; the media stays. `ripple: true` closes the gap.',
 			input: {
 				projectId: ProjectIdArg,
-				clipIds: IdListSchema.describe(
-					'Clip ids ("clp_…") from get_timeline, or "$selection" for the clips selected in the open editor',
-				),
-				ripple: z.boolean().optional().describe('Close the gap (ripple delete)'),
+				clipIds: IdListSchema.describe('From `get_timeline`, or "$selection".'),
+				ripple: z.boolean().optional(),
 			},
 			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},
@@ -453,6 +428,8 @@ export function registerEditingTools(ctx: ToolContext): void {
 		{
 			title: 'Add text',
 			description:
+				'Add a text clip on a video track above the footage. Position in sequence pixels; default centred.',
+			details:
 				"Adds a text (title) clip (clip.addText) on a video track above the footage. Position is in sequence pixels (0,0 = top left; default: centred). animateIn/animateOut add text animations (list_text_animations). strokes: every entry is drawn, the first on top (outside / center / inside of the glyph outline); shadow: the glyphs and their strokes grown by spreadPx, blurred (blurPx = CSS blur radius, Gaussian σ = blurPx / 2), offset by distancePx at angleDeg (0 = right, 90 = down), opacity = the colour's alpha. The box follows the glyph metrics of the font (measured in the editor or the engine's render browser; `layoutPending` marks an estimate). vertical: right-to-left columns, with 1 to 3 half-width characters upright (tate-chu-yoko). Preview and every export draw the same.",
 			input: {
 				projectId: ProjectIdArg,
@@ -567,6 +544,8 @@ export function registerEditingTools(ctx: ToolContext): void {
 		{
 			title: 'Add transition',
 			description:
+				'Add a transition at an edit point, or a fade at a clip edge. Address by `clipId` + `edge`, or `track` + `at`. Types: `list_transition_types`.',
+			details:
 				'Adds a transition at an edit point or a fade at a clip edge (transition.add). Address it by clipId + edge ("in" = head, "out" = tail) or by track + at (the frame where one clip ends and the next begins). Video: cross-dissolve (the incoming clip fades in over the outgoing one; needs media beyond the cut, "handles") or dip-to-black; at a free clip edge they are fades from/to transparent or black; or any GPU transition of list_transition_types (push, iris-round, cross-zoom, s.dissolve-luma, …; params e.g. {"direction": "eastToWest"}; a GPU transition at a free clip edge transitions from/to transparency). Audio tracks: constant-gain (linear), constant-power (quarter sine), exponential-fade or custom-fade (Premiere\'s Custom Fade: params fadeShape "linear" | "cosine", fadeValue −100…100 — Cosine at 19 is constant power, Linear at 0 constant gain; symmetry "symmetric" | "asymmetric" with outFadeShape / outFadeValue for the outgoing clip) fades at a clip edge (clipId + edge), or crossfades between two audio clips at an edit point (track + at). cutOffset places the cut off-centre (Premiere\'s Custom Start: frames of the span before the cut). The duration is shortened (with a warning) to what the clips and their handles allow.',
 			input: {
 				projectId: ProjectIdArg,

@@ -33,56 +33,22 @@ import { pickSequence } from '../format.ts';
 export const SPEECH_GUIDE = `Speech to text (local Whisper on the engine; nothing is uploaded): list_speech_models shows the models (tiny / base / small, multilingual or English-only ".en", and large-v3-turbo — the most accurate; its half-precision variant is for NVIDIA GPUs) with size, licence, installed, recommended (for this computer), runsOn (encoder/decoder provider, device, threads) and speed (minutes per 10 min of audio, "measured" from the last run or "estimated"); install_speech_model downloads one (pinned revision, SHA-256 verified, resumable; the licence is MIT — say so to the user). transcribe makes transcripts: mediaId / clipId (that media), or sequenceId with mode "media" (default: every clip media heard in the sequence without a transcript, or all with replace: true) or "mix" (the sequence's mixed audio, optionally inOutOnly; the words go back to the clips' media in media time, covering only what the sequence plays). Options: model (default: the recommended model), language (ISO 639-1, default auto-detect), translate (English text of other languages), speakerLabels (+ speakerCount when known), accuracy ("standard" greedy, default; "best" beam 5, slower), device ("auto" default = the Transcription preference; "cpu"; "gpu" — falls back to the CPU with the reason), verbatim (keep filler words: um, eh…), initialPrompt (names, vocabulary; conditions the first window and then fades with the previous text), glossary (≤ 40 names / English terms of up to 64 characters, script spelling, most frequent first — e.g. the proper nouns of the attached script: carried into EVERY window's prompt after the verbatim prompt, so names come out spelled right throughout; optional, it may drop some off-script chatter, and a window where a glossary term repeats ≥ 3 times within 10 s is decoded again without it and keeps that text when it differs), conditionOnPreviousText (default true). Results report where it ran (device, fallbacks), what the hallucination guard removed (text over silence, loops, known phrases such as "Thanks for watching") and, with a glossary, guard.glossary {terms carried, tokens, events, replaced}. engine_status shows the GPU probe (speech.providers / chosen). Word times come from cross-attention alignment refined against the audio (pauses stay pauses; the media's voice analysis when it exists), with a confidence per word. With wait (default true) it commits ONE undo step "Generate Transcript"; with wait: false it returns the jobs — follow them with wait_for_job, then call transcribe {projectId, jobIds} to commit. get_transcript reads a media's transcript (media time) or a sequence's (sequence time, as heard through its audio clips). Then use the transcript_* / captions tools for text-based editing and captions.`;
 
 const OptionsShape = {
-	model: z
-		.string()
-		.optional()
-		.describe('Speech model id from list_speech_models (default: the model recommended for this computer)'),
-	language: z.string().optional().describe('ISO 639-1 language code, or "auto" (default) to detect it'),
-	translate: z
-		.boolean()
-		.optional()
-		.describe('Translate speech in other languages to English text (multilingual models)'),
-	speakerLabels: z.boolean().optional().describe('Label speakers (S1, S2…)'),
-	speakerCount: z.number().int().min(1).max(32).optional().describe('Exact number of speakers when known'),
-	beamSize: z
-		.number()
-		.int()
-		.min(1)
-		.max(10)
-		.optional()
-		.describe('Beam search width (overrides accuracy; 1 = greedy, 5 = best)'),
-	accuracy: z
-		.enum(['standard', 'best'])
-		.optional()
-		.describe('"standard" (greedy with temperature fallback, default) or "best" (beam search 5, slower)'),
-	device: z
-		.enum(['auto', 'cpu', 'gpu'])
-		.optional()
-		.describe(
-			'Processor: "auto" (the Transcription preference), "cpu", or "gpu" (falls back to the CPU and says why)',
-		),
-	verbatim: z
-		.boolean()
-		.optional()
-		.describe('Keep filler words (um, eh, o sea…): a verbatim prompt in the language'),
-	initialPrompt: z
-		.string()
-		.max(1000)
-		.optional()
-		.describe('Initial prompt: names, vocabulary or style the speech uses'),
-	conditionOnPreviousText: z
-		.boolean()
-		.optional()
-		.describe(
-			'Condition each 30 s window on the previous text (default true; false resists repetition loops)',
-		),
+	model: z.string().optional().describe('From `list_speech_models`.'),
+	language: z.string().optional().describe('ISO 639-1. Default auto.'),
+	translate: z.boolean().optional().describe('To English.'),
+	speakerLabels: z.boolean().optional(),
+	speakerCount: z.number().int().min(1).max(32).optional(),
+	beamSize: z.number().int().min(1).max(10).optional().describe('Overrides `accuracy`.'),
+	accuracy: z.enum(['standard', 'best']).optional().describe('Default standard.'),
+	device: z.enum(['auto', 'cpu', 'gpu']).optional().describe('Default auto.'),
+	verbatim: z.boolean().optional().describe('Keep fillers (um, eh).'),
+	initialPrompt: z.string().max(1000).optional().describe('Names, vocabulary or style of the speech.'),
+	conditionOnPreviousText: z.boolean().optional().describe('Default true; false resists repetition loops.'),
 	glossary: z
 		.array(z.string().trim().min(1).max(64))
 		.max(40)
 		.optional()
-		.describe(
-			"Names and terms (≤ 40, script spelling, most frequent first) carried into every window's prompt; a window where one repeats ≥ 3 times within 10 s is decoded again without them",
-		),
+		.describe('Names in script spelling, most frequent first.'),
 };
 
 type Opts = {
@@ -185,9 +151,7 @@ export const ImportTranscribeArg = z
 		}),
 	])
 	.optional()
-	.describe(
-		'Queue a transcription job for every imported media with sound (true, or {model, language}). The result lists the job ids: wait_for_job, then transcribe {projectId, jobIds} commits the transcripts. Media that already have a transcript are skipped.',
-	);
+	.describe('true or {model, language}. Returns job ids: `wait_for_job`, then `transcribe` with `jobIds`.');
 
 export type ImportTranscription =
 	| { jobId: string }
@@ -383,27 +347,22 @@ export function registerSpeechTools(ctx: ToolContext): void {
 		{
 			title: 'Transcribe',
 			description:
-				'Speech to text on the engine (local Whisper) with word timestamps, optional language detection, translation to English, speaker labels and an optional names glossary carried into every window (glossary). Target: mediaId, clipId (its media), or sequenceId (mode "media": each clip media heard in it — one transcript per media, reused by all its clips; mode "mix": the mixed audio, words mapped back to the clips\' media). With wait (default true) it waits (timeoutSeconds, default 600) and commits one undo step; with wait: false it returns the job ids — then call transcribe {projectId, jobIds} to commit.',
+				'Speech to text with word times, for a `mediaId`, `clipId` or `sequenceId`. Waits and commits by default. `wait: false` returns `jobIds`: after `wait_for_job`, call again with `jobIds` to commit.',
 			input: {
 				projectId: ProjectIdArg,
-				mediaId: z.string().optional().describe('Media id ("med_…")'),
-				clipId: z.string().optional().describe('Audio or video clip id ("clp_…"): its media is transcribed'),
-				sequenceId: z.string().optional().describe('Sequence id ("seq_…")'),
-				mode: z.enum(['media', 'mix']).optional().describe('For a sequence: "media" (default) or "mix"'),
-				inOutOnly: z.boolean().optional().describe('Mix mode: only the sequence In/Out range'),
+				mediaId: z.string().optional(),
+				clipId: z.string().optional().describe('Its media is transcribed.'),
+				sequenceId: z.string().optional(),
+				mode: z.enum(['media', 'mix']).optional().describe('For a sequence. Default media.'),
+				inOutOnly: z.boolean().optional().describe('Mix mode.'),
 				replace: z
 					.boolean()
 					.optional()
-					.describe(
-						'Replace existing transcripts (default true for media/clips; for a sequence in media mode, false = skip media that have one)',
-					),
+					.describe('Default true; for a sequence in media mode, false skips media that have one.'),
 				...OptionsShape,
-				wait: z.boolean().optional().describe('Wait for the jobs and commit (default true)'),
+				wait: z.boolean().optional().describe('Default true.'),
 				timeoutSeconds: z.number().int().min(1).max(3600).optional(),
-				jobIds: z
-					.array(z.string())
-					.optional()
-					.describe('Commit these finished transcription jobs (from wait: false)'),
+				jobIds: z.array(z.string()).optional().describe('Finished jobs to commit.'),
 			},
 			annotations: EDIT,
 		},

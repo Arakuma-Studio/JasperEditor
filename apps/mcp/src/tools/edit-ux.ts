@@ -293,7 +293,8 @@ export function registerEditUxTools(ctx: ToolContext): void {
 		'trim_edit_points',
 		{
 			title: 'Trim edit points',
-			description:
+			description: 'Trim several edit points by `frames` as one edit.',
+			details:
 				'Trims edit points by `frames` as one edit (clip.trimEdits; Premiere trim mode / Trim Forward and Backward): each point is {clipId, edge: in|out, mode: regular|ripple|roll}, at most one per track. Regular trims move one edge (gaps open or close), ripple trims shift later material and sync-locked tracks (split edits stay in sync), rolls move the cut between two adjacent clips. Linked partners at the same edge follow unless linked: false. All points move by the same, most restrictive amount; clampToSyncLock stops at what sync locks allow instead of refusing. Returns the applied frames.',
 			input: {
 				projectId: ProjectIdArg,

@@ -220,7 +220,8 @@ export function registerImportsTools(ctx: ToolContext): void {
 		'interpret_footage',
 		{
 			title: 'Interpret footage',
-			description:
+			description: 'Change how media is interpreted: frame rate, field order, alpha. Omitted fields stay.',
+			details:
 				'Premiere Modify ▸ Interpret Footage on one or more media (one undo step). Omitted fields stay as they are; null resets a field to the file value. frameRate: assume this frame rate (video, animated images, Lottie, image sequences); pixelAspect: conform to (e.g. {num:10,den:11} DV NTSC, {num:2,den:1} anamorphic 2:1); fieldOrder: progressive / upper / lower (interlaced pictures are deinterlaced in the preview and every export); alpha: {mode: straight | premultiplied (matte: [r,g,b,a] 0…1, default black) | ignore, invert}; loop: play the media N times. Clips that would run past the new media end are trimmed.',
 			input: {
 				projectId: ProjectIdArg,
@@ -387,7 +388,8 @@ export function registerImportsTools(ctx: ToolContext): void {
 		'import_layered_document',
 		{
 			title: 'Import a PSD',
-			description:
+			description: 'Import a Photoshop document as a flat picture or layers.',
+			details:
 				'Imports a Photoshop document (Premiere Import Layered File, one undo step): mode merged-all = the flattened picture; merged = the chosen `layers` merged into one picture; individual = a bin "<name> Layers" with one item per chosen layer; sequence = that bin plus a new sequence of the document size with each layer on its own track (bottom layer on V1) at its position, with its opacity, blend mode and visibility (hidden layers become disabled clips), groups that isolate as nested sequences and clipping masks as Track Matte Keys. layers = indexes from list_document_layers (default: every layer with a picture).',
 			input: {
 				projectId: ProjectIdArg,

@@ -398,7 +398,8 @@ export function registerTransitionTools(ctx: ToolContext): void {
 		'update_transition',
 		{
 			title: 'Update transition',
-			description: `Changes an existing transition (transition.update): its length (duration, in frames), alignment or Custom Start (cutOffset: frames of the span before the cut), type (effectId, within the same medium: ${TYPE_LIST}) or params (a custom-fade's fadeShape / fadeValue / symmetry / outFadeShape / outFadeValue). The length is shortened to what the clips and their media handles allow (warning W_TRANSITION_SHORTENED). Returns the updated transition as list_transitions shows it.`,
+			description: "Change an existing transition's length, alignment or type.",
+			details: `Changes an existing transition (transition.update): its length (duration, in frames), alignment or Custom Start (cutOffset: frames of the span before the cut), type (effectId, within the same medium: ${TYPE_LIST}) or params (a custom-fade's fadeShape / fadeValue / symmetry / outFadeShape / outFadeValue). The length is shortened to what the clips and their media handles allow (warning W_TRANSITION_SHORTENED). Returns the updated transition as list_transitions shows it.`,
 			input: {
 				projectId: ProjectIdArg,
 				transitionId: z
@@ -503,10 +504,11 @@ export function registerTransitionTools(ctx: ToolContext): void {
 		'apply_default_transitions',
 		{
 			title: 'Apply default transitions',
-			description: `Puts a transition on the edges of the given clips in one step (transition.applyDefault): at an edit point between two clips a two-sided transition (alignment center), at a free clip edge a fade. media picks the tracks (default ["video"]); with ["video", "audio"] the linked audio of the given video clips is included. Types and the alignment default to the editor user's defaults (Preferences ▸ Timeline, the same as Ctrl+D) when the project is open in the editor, else cross-dissolve (video), constant-power (audio) and center; the length to the project's default length of each medium (set_transition_defaults). Edges without room are skipped; longer lengths are shortened (W_TRANSITION_SHORTENED). An edge's existing transition is replaced. Returns the created transitions and the defaults used.`,
+			description: 'Put the default transition on the edges of the given clips in one step.',
+			details: `Puts a transition on the edges of the given clips in one step (transition.applyDefault): at an edit point between two clips a two-sided transition (alignment center), at a free clip edge a fade. media picks the tracks (default ["video"]); with ["video", "audio"] the linked audio of the given video clips is included. Types and the alignment default to the editor user's defaults (Preferences ▸ Timeline, the same as Ctrl+D) when the project is open in the editor, else cross-dissolve (video), constant-power (audio) and center; the length to the project's default length of each medium (set_transition_defaults). Edges without room are skipped; longer lengths are shortened (W_TRANSITION_SHORTENED). An edge's existing transition is replaced. Returns the created transitions and the defaults used.`,
 			input: {
 				projectId: ProjectIdArg,
-				clipIds: z.array(z.string().min(1)).min(1).max(1000).describe('Clip ids ("clp_…") from get_timeline'),
+				clipIds: z.array(z.string().min(1)).min(1).max(1000),
 				edges: z
 					.enum(['both', 'in', 'out'])
 					.optional()
@@ -602,6 +604,8 @@ export function registerTransitionTools(ctx: ToolContext): void {
 		{
 			title: 'Set transition defaults',
 			description:
+				"Change the project's default transition lengths and still length. Existing transitions keep theirs.",
+			details:
 				'Changes the project\'s default lengths (project.updateSettings, one undoable History entry "Agent: Transition Defaults"): the video and audio transition lengths in frames (used by apply_default_transitions, add_transition without a duration and transitions dropped in the editor) and the still image length in seconds (new stills). Existing transitions and clips keep their length. The default transition types and alignment are the editor user\'s preferences (Preferences ▸ Timeline) and are not part of the project. Returns the defaults after the change.',
 			input: {
 				projectId: ProjectIdArg,

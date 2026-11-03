@@ -77,7 +77,7 @@ import {
 	txBody,
 	waitJob,
 } from '../context.ts';
-import { jsonResult, ToolError } from '../errors.ts';
+import { isMissingRoute, jsonResult, ToolError } from '../errors.ts';
 import { pickSequence } from '../format.ts';
 import { composeGrid, encodePng } from '../png.ts';
 import { drawSoundCell, drawSoundDetail, isTruncated, type RgbaImage } from '../sound-sheet.ts';
@@ -153,7 +153,7 @@ export async function soundCall<T>(ctx: ToolContext, fn: Parameters<ToolContext[
 	try {
 		return (await ctx.engine(fn)) as T;
 	} catch (e) {
-		if (e instanceof EngineError) {
+		if (e instanceof EngineError && !isMissingRoute(e)) {
 			const inner = (e.detail as { code?: unknown } | undefined)?.code;
 			if (typeof inner !== 'string' && SOUND_HINTS[e.code])
 				throw new ToolError(
@@ -553,7 +553,9 @@ export function registerSoundTools(ctx: ToolContext): void {
 		'search_sounds',
 		{
 			title: 'Search sounds',
-			description: `Searches the sound library (ranked: real recordings before Jasper Synth, title words before type synonyms, then type fit, length fit, the judge and licence preference). describe: "…" ranks by what sounds sound like with the optional Describe-it search model (blended with the rest; rows carry match {z, verdict: strong | plausible | weak | none}; describe.mode "keywords" when the model is not installed: its words are searched instead). Returns rows with soundId, title, types, durationSec, peakSec, riseMs, decayMs (null when it does not decay), centroidHz, below150Share, flatness, pitchMidi, judge {ok, score, reasons}, license, author, credit (the line a CC-BY licence asks for), creditRequired, shareAlike (CC BY-SA: the video must be shared alike), source.type, materials (named by its words) and, for a multi-hit recording, takes (how many clean single takes it offers), plus facets (counts per type, family, licence class, source and material) and total. takes: true also returns those takes as rows (soundId snd_…~t<n>, take {recordingId, index, startSec, endSec, strokes}): one key press or tick each, judged on its own; use them for repeated cues — the rotation varies the take, not the pitch. material filters by material. Licences default to commercial-safe without ShareAlike (license "commercial-safe-sa" includes CC BY-SA, "any" every licence). contactSheet: true also returns ONE PNG with a numbered cell per result (waveform over spectrogram, red peak line, dashed decay end, id and numbers printed) and its cells JSON.`,
+			description:
+				'Search the sound library. `describe` ranks by what sounds sound like. Returns rows with `soundId`, type, length, licence and credit.',
+			details: `Searches the sound library (ranked: real recordings before Jasper Synth, title words before type synonyms, then type fit, length fit, the judge and licence preference). describe: "…" ranks by what sounds sound like with the optional Describe-it search model (blended with the rest; rows carry match {z, verdict: strong | plausible | weak | none}; describe.mode "keywords" when the model is not installed: its words are searched instead). Returns rows with soundId, title, types, durationSec, peakSec, riseMs, decayMs (null when it does not decay), centroidHz, below150Share, flatness, pitchMidi, judge {ok, score, reasons}, license, author, credit (the line a CC-BY licence asks for), creditRequired, shareAlike (CC BY-SA: the video must be shared alike), source.type, materials (named by its words) and, for a multi-hit recording, takes (how many clean single takes it offers), plus facets (counts per type, family, licence class, source and material) and total. takes: true also returns those takes as rows (soundId snd_…~t<n>, take {recordingId, index, startSec, endSec, strokes}): one key press or tick each, judged on its own; use them for repeated cues — the rotation varies the take, not the pitch. material filters by material. Licences default to commercial-safe without ShareAlike (license "commercial-safe-sa" includes CC BY-SA, "any" every licence). contactSheet: true also returns ONE PNG with a numbered cell per result (waveform over spectrogram, red peak line, dashed decay end, id and numbers printed) and its cells JSON.`,
 			input: {
 				...SearchArgs,
 				contactSheet: z.boolean().optional().describe('Also return a PNG contact sheet of the results'),
@@ -631,7 +633,8 @@ export function registerSoundTools(ctx: ToolContext): void {
 		'get_sound',
 		{
 			title: 'Get sound',
-			description:
+			description: 'Read one library sound in full: licence, credit, every descriptor.',
+			details:
 				'One library sound in full: title, types, tags, materials, source, licence, author, credit line, format and every descriptor (peakSec, onsetSec, riseMs, decayMs, tailSec, centroidHz, rolloff85Hz, rolloff95Hz, cutoffHz (a lossy band-limit cliff), below150Share, above6kShare, flatness, octaveBandsDb 125 Hz…8 kHz, pitchMidi, onsetCount, integrated / max momentary LUFS, true peak, stereoWidth, headQuietSec, loopable, floorDb (the noise floor between events), dcDb), the judge, plus a PNG: waveform over spectrogram with a time axis (ms), frequency labels, the onset (green dashed), peak (red) and decay end (yellow dashed). A multi-hit recording also lists its takes (takeId, where each lies, strokes, headDb / tailDb, flags head-cut / tail-cut — a cut take is never offered —, its peak and judge); a take id (snd_…~t<n>) gives that take alone (take {soundId of the recording, index, startSec, endSec}).',
 			input: {
 				soundId: SoundIdArg.describe('Sound id from search_sounds'),
@@ -716,7 +719,9 @@ export function registerSoundTools(ctx: ToolContext): void {
 		'import_sounds',
 		{
 			title: 'Import sounds',
-			description: `Adds library sounds to a project as media in its "${SOUND_EFFECTS_BIN}" bin (created when missing), with their provenance (licence, author, credit, descriptors), in ONE transaction (one undo step). Starter-kit, pack and synth files are copied into the project's managed media; folder sounds are referenced in place. Sounds whose head is not silent are copied with 50 ms of lead silence in front (sample-exact placement), sounds that do not end in quiet with 50 ms of silence after them (so a placed clip holds the whole sound); the provenance's descriptors, leadSilenceSec and trailSilenceSec describe the copy. Sounds the project already has are reused (reused: true), never duplicated; an older copy of a sound (registered before a registration rule changed) is replaced by the new copy in place — same mediaId, its clips moved onto it sample for sample (replacedOlderCopy: true). Sounds up to 1 h are copied sample-exact; longer ones, or copies over the size cap or without free disk space, are used as they are (inexact {reason, message}). All or nothing: an unknown or changed sound fails the call and imports nothing. Returns one mediaId per sound; place them with add_clip, or use insert_sound to import and place peak-aligned in one go.`,
+			description:
+				'Add library sounds to a project as media in its Sound Effects bin, with their licence and credit. Reuses sounds it already has.',
+			details: `Adds library sounds to a project as media in its "${SOUND_EFFECTS_BIN}" bin (created when missing), with their provenance (licence, author, credit, descriptors), in ONE transaction (one undo step). Starter-kit, pack and synth files are copied into the project's managed media; folder sounds are referenced in place. Sounds whose head is not silent are copied with 50 ms of lead silence in front (sample-exact placement), sounds that do not end in quiet with 50 ms of silence after them (so a placed clip holds the whole sound); the provenance's descriptors, leadSilenceSec and trailSilenceSec describe the copy. Sounds the project already has are reused (reused: true), never duplicated; an older copy of a sound (registered before a registration rule changed) is replaced by the new copy in place — same mediaId, its clips moved onto it sample for sample (replacedOlderCopy: true). Sounds up to 1 h are copied sample-exact; longer ones, or copies over the size cap or without free disk space, are used as they are (inexact {reason, message}). All or nothing: an unknown or changed sound fails the call and imports nothing. Returns one mediaId per sound; place them with add_clip, or use insert_sound to import and place peak-aligned in one go.`,
 			input: {
 				projectId: ProjectIdArg,
 				soundIds: z
@@ -795,7 +800,9 @@ export function registerSoundTools(ctx: ToolContext): void {
 		'insert_sound',
 		{
 			title: 'Insert sound (peak-aligned)',
-			description: `Puts a library sound on the timeline so that its aligned point lands exactly on \`at\` — the agent version of the Sound Library's Insert. align "auto" (default) uses the sound type's: peak for hits, booms, impacts, whooshes; end for risers and reverses (they lead into the moment); start for UI blips; or give peak | start | end. The sub-frame rest is trimmed from the head of the registered file (library sounds whose head is not silent get 50 ms of lead silence when registered), so the aligned point is exact to the flick (errorFlicks 0). A sound that would start before frame 0 starts at 0 with its head trimmed (trimmedHeadSec). track "auto" (default) picks a free unmuted "SFX…" audio track over the clip's span, else adds "SFX n"; an explicit track must be free there (E_OVERLAP otherwise): it never overwrites audio and places one clip. ONE undo step registers and imports the sound (into the "${SOUND_EFFECTS_BIN}" bin, reusing the project's copy; an older copy of the sound is replaced by the new one in place, its clips moved onto it sample for sample), adds the track if needed, places the clip, tags it Essential Sound ▸ SFX and sets its gain: gainDb when given, else the sound's default level (its loudest 400 ms to the role's momentary target at the sequence's delivery — web: support −22 LUFS — under a true-peak ceiling, within −30…+12 dB; \`level\` in the result says what limited it). Returns the clip, its track, start, the aligned frame, errorFlicks and gainDb.`,
+			description:
+				'Put a library sound on the timeline with its aligned point exactly on `at`. Never overwrites audio. One undo step.',
+			details: `Puts a library sound on the timeline so that its aligned point lands exactly on \`at\` — the agent version of the Sound Library's Insert. align "auto" (default) uses the sound type's: peak for hits, booms, impacts, whooshes; end for risers and reverses (they lead into the moment); start for UI blips; or give peak | start | end. The sub-frame rest is trimmed from the head of the registered file (library sounds whose head is not silent get 50 ms of lead silence when registered), so the aligned point is exact to the flick (errorFlicks 0). A sound that would start before frame 0 starts at 0 with its head trimmed (trimmedHeadSec). track "auto" (default) picks a free unmuted "SFX…" audio track over the clip's span, else adds "SFX n"; an explicit track must be free there (E_OVERLAP otherwise): it never overwrites audio and places one clip. ONE undo step registers and imports the sound (into the "${SOUND_EFFECTS_BIN}" bin, reusing the project's copy; an older copy of the sound is replaced by the new one in place, its clips moved onto it sample for sample), adds the track if needed, places the clip, tags it Essential Sound ▸ SFX and sets its gain: gainDb when given, else the sound's default level (its loudest 400 ms to the role's momentary target at the sequence's delivery — web: support −22 LUFS — under a true-peak ceiling, within −30…+12 dB; \`level\` in the result says what limited it). Returns the clip, its track, start, the aligned frame, errorFlicks and gainDb.`,
 			input: {
 				projectId: ProjectIdArg,
 				soundId: SoundIdArg.describe('Sound id from search_sounds'),
@@ -1042,7 +1049,8 @@ export function registerSoundTools(ctx: ToolContext): void {
 		'export_sound_credits',
 		{
 			title: 'Export sound credits',
-			description:
+			description: "Write a project's sound credits to a file.",
+			details:
 				'Writes the sound credits of a project (or of one sequence and every sequence nested in it) to a file, as File ▸ Export ▸ Sound Credits… does: the same text list_sound_credits returns, in md (default), txt or csv. path is an absolute file path on the engine\'s computer (the format follows its extension, else format) or a folder (the file is named "<sequence or project>-sound-credits.<ext>" in it); an existing file is never overwritten (" (2)" is appended). Refused with E_INVALID_PARAM when no library sound is used (nothing to credit). Returns the path, format, rows and warnings. To write the credits next to an exported video instead, use start_export {credits}.',
 			input: {
 				projectId: ProjectIdArg,
@@ -1173,6 +1181,8 @@ export function registerSoundTools(ctx: ToolContext): void {
 		{
 			title: 'Add sound folder',
 			description:
+				"Add a folder of the user's own sounds to the library, indexed in place, with a licence declaration.",
+			details:
 				"Adds a folder of the user's own sounds to the library (indexed in place, never copied; local engines only), with a licence declaration: LicenseRef-UserProvided (default: undeclared, flagged in credits and hidden by the commercial-safe filter), LicenseRef-UserRoyaltyFree, CC0-1.0, CC-BY-3.0/4.0 or CC-BY-SA-3.0/4.0. Needs the user's approval on a card in an open editor window (they decide which files and which licence): E_APPROVAL_DENIED when they say no or no window is open — do not retry without asking. Starts an index job (wait: true waits for it).",
 			input: {
 				path: z.string().min(1).max(4096).describe('Absolute folder path on the engine’s computer'),
@@ -1312,7 +1322,8 @@ export function registerSoundTools(ctx: ToolContext): void {
 		'list_sound_packs',
 		{
 			title: 'List sound packs',
-			description:
+			description: 'Downloadable sound packs and what is installed.',
+			details:
 				'The downloadable sound packs this engine offers and what is installed: id, title, author, description, licence (SPDX) with its URL and the evidence it was checked against, the credit line (null for CC0), the pack page, download and installed sizes, how many sounds it adds, its state (available, installed, outdated — install again to update —, damaged — install again or remove), how many of its sounds are in the library index now, and a running install job. Installed packs the catalogue no longer lists appear with inCatalog: false (they can only be removed).',
 			input: {},
 			annotations: READ_ONLY,
@@ -1334,6 +1345,8 @@ export function registerSoundTools(ctx: ToolContext): void {
 		{
 			title: 'Install sound pack',
 			description:
+				'Download and install a sound pack. First tell the user its name, size and licence; install only packs they want.',
+			details:
 				"Downloads a sound pack from its upstream site (the URL list_sound_packs shows; nothing is hosted by JasperEditor), checks the archive and every file against their pinned SHA-256 and sizes (packs downloaded file by file, like BigSoundBank's, fetch one file at a time, at most one per second, so a 40-sound pack takes about a minute), installs only the listed files into the engine's sound library and indexes them (a sound-pack-install job, then a sound-index job). Before calling it, tell the user the pack's name, download size and licence (and its credit line when it has one); install only packs the user wants. wait (default true) waits for both jobs with progress (cancelling the request does not cancel the jobs; cancel_job does); wait: false returns the job to follow with wait_for_job. Installing an installed pack changes nothing; an outdated or damaged one is repaired (files that already match are kept).",
 			input: {
 				packId: z

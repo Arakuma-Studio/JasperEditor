@@ -577,7 +577,8 @@ export function registerCompositionTools(ctx: ToolContext): void {
 		'list_composition_texts',
 		{
 			title: 'List composition texts',
-			description:
+			description: 'The texts a composition clip exposes, with their limits.',
+			details:
 				"Lists the texts a composition clip exposes (S08 hybrid text layers): path, label, current and default value, limits (maxChars/maxLines = designed for; maxLength = hard), safe box, the props that style each text (fontFamily, fontSize, fontWeight, italic, color, align, lineHeight, letterSpacing) with their values and allowed options, and warnings — including layout ones measured by rendering the composition in the engine (runs off the frame, cut off by its box, outside its safe area, too many lines) with the text's box in composition pixels.",
 			input: {
 				projectId: ProjectIdArg,

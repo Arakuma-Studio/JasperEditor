@@ -61,7 +61,9 @@ export function registerDeriveTools(ctx: ToolContext): void {
 		'derive_media',
 		{
 			title: 'Derive media',
-			description: `Runs one file operation on a media and adds the result to the project (bin "Processed") as one undoable step. recipe.op: conform-cfr {frameRate {num, den}, 1…240 fps}, reverse {}, denoise-audio {strength 0…1}, extract-audio {streamIndex, format wav|flac}, time-stretch {rate 0.25…4, preservePitch}, range {inFlicks, outFlicks} (frame-accurate [in, out); 705600000 flicks per second). Waits for the job (timeoutSeconds, default 600) unless wait: false; calling again with the same arguments reuses the finished file. replaceInClips: audio clips switch to a denoise-audio result, video clips to a range result (keeping their source frames). Refusals are coded: NO_AUDIO, NO_VIDEO, UNSUPPORTED_RATE, OUT_OF_RANGE, EMPTY_RANGE, UNSUPPORTED_MEDIA, MEDIA_OFFLINE.`,
+			description:
+				'Run one file operation on a media and add the result to the project: `extract-audio`, `range` (trim), `conform-cfr`, `reverse`, `denoise-audio`, `time-stretch`. There is no raw ffmpeg tool: use this.',
+			details: `Runs one file operation on a media and adds the result to the project (bin "Processed") as one undoable step. recipe.op: conform-cfr {frameRate {num, den}, 1…240 fps}, reverse {}, denoise-audio {strength 0…1}, extract-audio {streamIndex, format wav|flac}, time-stretch {rate 0.25…4, preservePitch}, range {inFlicks, outFlicks} (frame-accurate [in, out); 705600000 flicks per second). Waits for the job (timeoutSeconds, default 600) unless wait: false; calling again with the same arguments reuses the finished file. replaceInClips: audio clips switch to a denoise-audio result, video clips to a range result (keeping their source frames). Refusals are coded: NO_AUDIO, NO_VIDEO, UNSUPPORTED_RATE, OUT_OF_RANGE, EMPTY_RANGE, UNSUPPORTED_MEDIA, MEDIA_OFFLINE.`,
 			input: {
 				projectId: ProjectIdArg,
 				mediaId: z.string().min(1).describe('Media id ("med_…") to derive from'),

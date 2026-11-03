@@ -1,8 +1,8 @@
 # Stylized titles
 
 A look is a reusable appearance on a clip: rims, glows, shadows, finishes, generators. A colourway fills a look's
-colour roles without changing its structure. The tools are in the `titles` toolset: `enable_toolsets` once, or run them
-with `call_tool`. Guide: `get_guide` topic `title-art`.
+colour roles without changing its structure. The tools are in the `titles` toolset: run them with `call_tool` (`describe_tool`
+shows the arguments). Guide: `get_guide` topic `title-art`.
 
 ## From brief to checked title
 
@@ -11,7 +11,7 @@ with `call_tool`. Guide: `get_guide` topic `title-art`.
    sheet of intro, hold and outro × alternatives, and its check. `duration` defaults to the time the text needs.
 3. `title_check` {projectId, clipId | proposalId, target?} after any change.
 
-That is three calls, four with `enable_toolsets`. Read `check` before you hand anything over.
+That is three calls. Read `check` before you hand anything over.
 
 ## The three modes, and what happens without an editor
 

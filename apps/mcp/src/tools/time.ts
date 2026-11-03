@@ -43,7 +43,7 @@ export const TIME_GUIDE = `Time remapping, time interpolation, scene edit detect
 - Variable-frame-rate media (phone footage) are mapped by their real frame timestamps in the preview and every export path; no conform is needed.`;
 
 const ClipIdArg = z.string().min(1).describe('Clip id ("clp_…") from get_timeline');
-const ClipIdsArg = z.array(z.string().min(1)).min(1).describe('Clip ids ("clp_…") from get_timeline');
+const ClipIdsArg = z.array(z.string().min(1)).min(1);
 const SpeedArg = z.number().gt(0).max(20_000).describe('Speed in percent (100 = normal)');
 
 /** A clip's time mapping for agents. */

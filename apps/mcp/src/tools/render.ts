@@ -41,7 +41,11 @@ import {
 } from './templates.ts';
 import { fastVerification } from './verify.ts';
 
-const JobIdArg = z.string().min(1).describe('Job id from start_export / render tools');
+const JobIdArg = z.string().min(1);
+
+/** What an export writes and reports: the `export` guide, reference an agent reads when it needs a detail. */
+export const EXPORT_GUIDE =
+	'Exporting: starts rendering a sequence to a video file (or, with format, an animated GIF or an audio-only WAV / FLAC / M4A file) and returns a job id at once; format "gif" renders the picture on the same path as a video (nothing the timeline shows is dropped) and converts it with a palette and dithering (gif: fps default 15 max 50, width default the sequence width capped at 1080, loop 0 = forever / 1 = once / n plays, dither, palette); a GIF has no sound and the plan warns GIF_NO_AUDIO; result.gif gives the frames written. Formats "wav" (16/24-bit PCM, audioBitDepth), "flac" (16/24-bit) and "m4a" (AAC, audioBitrateKbps) write the sequence mix through the same mixer as every export (range, audioChannels, audioSampleRate, normalizeLufs apply); plan.deliverable says what the file will be. Video: follow it with wait_for_job (or get_job), or pass wait: true to block until it is written. Cancelling the MCP request (notifications/cancelled) during wait cancels the export and deletes the partial file. The engine picks the fastest path that can render everything (native ffmpeg for footage-only cuts, Remotion when there are text/effects). Uses the live editor state when the project is open. With outputPath the file is written there (existing files are never overwritten: the engine then writes "name (2).mp4" and the job result gives the real path); otherwise it is downloadable from the job result URL. Sound credits: a credits file goes next to the output (credits; result.credits {format, count, url, path}); soundWarnings (and result.warnings) name W_SOUND_CREDITS when a sound heard in the export needs a credit and no credits file is written, W_SOUND_LICENSE_NC for non-commercial sounds, W_SOUND_SHARE_ALIKE for CC BY-SA sounds (the video must then be shared under CC BY-SA), and W_SOUND_CHECK_STALE (level info) when the stored Sound Check is out of date or failed — tell the user. result.container / result.audioCodec are what the file holds; OUTPUT_CONTAINER_CHANGED / AUDIO_CODEC_CHANGED (plan and result warnings) say when that is not what was requested (e.g. PCM needs MOV, ProRes masters carry PCM) — tell the user. Loudness normalisation (the Mix\'s, or normalizeLufs): plan.loudness gives the target and the true-peak limiter ceiling in front of the encoder (target less the codec\'s headroom: 0 for PCM, 0.5–2 dB for AAC / Opus by bit rate); the engine encodes the audio, decodes it and turns the moments the codec still pushes over the target down, then result.audioLoudness reports the delivered file\'s own audio decoded (measuredOn "decoded-file"; pcm = the mix it encoded): integratedLufs, truePeakDbtp, limiterCeilingDbtp, codecHeadroomDb, loudnessPasses, encodePasses, localCorrections, ceilingLimited, truePeakMet. AUDIO_TRUE_PEAK_OVER / AUDIO_LOUDNESS_CEILING (result warnings) say when the delivered file misses the target — tell the user. A finished export (wait: true, or wait_for_job) also returns output (container, duration, streams, size) and the fast verification rows (streams, duration, av-skew) with verified; run verify_export {exportId: jobId} for the full checks (black / flash frames and clicks at cuts, loudness, true peak, silences) and verify_export {target} for a platform. Platform presets (delivery-youtube, delivery-youtube-shorts, delivery-instagram-reels, delivery-tiktok, delivery-x, delivery-linkedin; list_export_presets) export at the platform\'s size, rate and loudness; a sequence of another shape (a horizontal sequence for a vertical platform) is refused with a hint to auto_reframe_sequence — it is never cropped.';
 
 export function registerRenderTools(ctx: ToolContext): void {
 	defineTool(
@@ -50,7 +54,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 		{
 			title: 'Get timeline',
 			description:
-				'The timeline of one sequence as a compact text table: one row per clip with track, clip id, kind, name, start–end timecode and frames, source (media file and in/out seconds, text, or template) and linked partners; then transitions per track (id, type, span, alignment or fade in/out, duration), markers and In/Out. Optionally only what overlaps [from, to).',
+				'One sequence as a text table: clips with ids, times and sources, then transitions and markers. `from`, `to`: only that range.',
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -83,12 +87,11 @@ export function registerRenderTools(ctx: ToolContext): void {
 		'render_frame',
 		{
 			title: 'Render frame',
-			description:
-				'Renders the Program output (what the viewer sees: all tracks composited, titles and graphics included) at one time and returns it as a PNG image, downscaled to `width` (default 640 px). Use it to check framing, titles and cuts visually. Uses the live editor state when the project is open.',
+			description: 'Render the Program output at one time as a PNG.',
 			input: {
 				projectId: ProjectIdArg,
 				at: timeArg('Time of the frame'),
-				width: z.number().int().min(64).max(1280).optional().describe('Image width in pixels (default 640)'),
+				width: z.number().int().min(64).max(1280).optional().describe('Default 640.'),
 				sequenceId: SequenceIdArg,
 			},
 			annotations: READ_ONLY,
@@ -165,7 +168,8 @@ export function registerRenderTools(ctx: ToolContext): void {
 		'list_motion_templates',
 		{
 			title: 'List motion-graphic templates',
-			description:
+			description: 'Motion-graphic templates for `add_motion_graphic`, with their params.',
+			details:
 				'Motion-graphic templates available to add_motion_graphic: id, version, name, description, default length, renderer ("fframes" = the native jasper-mg renderer; "anime" = drawn by Remotion, previewable and exportable without the fframes renderer), native (rendered by jasper-mg), a compact params list (type with range or options, default, keyframable = numeric/colour params of anime templates, animatable with set_motion_graphic_params; label, group and visibleWhen = how the editor shows it), presets (named param sets; pass their ref, e.g. "counter:percentage", as template to add_motion_graphic), the defaults and the full JSON Schema of the params. Also reports whether the native fframes renderer is ready.',
 			input: {},
 			annotations: READ_ONLY,
@@ -183,6 +187,8 @@ export function registerRenderTools(ctx: ToolContext): void {
 		{
 			title: 'Preview motion graphic',
 			description:
+				'Render a motion-graphic template with given params as PNG frames, to check them before adding it.',
+			details:
 				'Renders a motion-graphic template with the given params and returns frames as PNG images, to check params before adding the graphic. Params that reference project media (an avatar {mediaId}) need projectId: the still draws that project\'s media. fframes templates use the native renderer (the middle frame plus the URL of the animated WebM-with-alpha preview). Anime templates (renderer "anime") are drawn by Remotion in a headless Chrome from a one-clip sequence of width×height: by default the middle of the hold (the settled design); frames: 2 adds the middle of the intro, frames: 3 the middle of the outro, more frames go to the intro and outro; renderedBy tells which still path drew them (native, hybrid or remotion). Invalid params fail with E_INVALID_PARAM listing the issues.',
 			input: {
 				template: z
@@ -269,22 +275,18 @@ export function registerRenderTools(ctx: ToolContext): void {
 		{
 			title: 'Start export',
 			description:
-				'Starts rendering a sequence to a video file (or, with format, an animated GIF or an audio-only WAV / FLAC / M4A file) and returns a job id at once; format "gif" renders the picture on the same path as a video (nothing the timeline shows is dropped) and converts it with a palette and dithering (gif: fps default 15 max 50, width default the sequence width capped at 1080, loop 0 = forever / 1 = once / n plays, dither, palette); a GIF has no sound and the plan warns GIF_NO_AUDIO; result.gif gives the frames written. Formats "wav" (16/24-bit PCM, audioBitDepth), "flac" (16/24-bit) and "m4a" (AAC, audioBitrateKbps) write the sequence mix through the same mixer as every export (range, audioChannels, audioSampleRate, normalizeLufs apply); plan.deliverable says what the file will be. Video: follow it with wait_for_job (or get_job), or pass wait: true to block until it is written. Cancelling the MCP request (notifications/cancelled) during wait cancels the export and deletes the partial file. The engine picks the fastest path that can render everything (native ffmpeg for footage-only cuts, Remotion when there are text/effects). Uses the live editor state when the project is open. With outputPath the file is written there (existing files are never overwritten: the engine then writes "name (2).mp4" and the job result gives the real path); otherwise it is downloadable from the job result URL. Sound credits: a credits file goes next to the output (credits; result.credits {format, count, url, path}); soundWarnings (and result.warnings) name W_SOUND_CREDITS when a sound heard in the export needs a credit and no credits file is written, W_SOUND_LICENSE_NC for non-commercial sounds, W_SOUND_SHARE_ALIKE for CC BY-SA sounds (the video must then be shared under CC BY-SA), and W_SOUND_CHECK_STALE (level info) when the stored Sound Check is out of date or failed — tell the user. result.container / result.audioCodec are what the file holds; OUTPUT_CONTAINER_CHANGED / AUDIO_CODEC_CHANGED (plan and result warnings) say when that is not what was requested (e.g. PCM needs MOV, ProRes masters carry PCM) — tell the user. Loudness normalisation (the Mix\'s, or normalizeLufs): plan.loudness gives the target and the true-peak limiter ceiling in front of the encoder (target less the codec\'s headroom: 0 for PCM, 0.5–2 dB for AAC / Opus by bit rate); the engine encodes the audio, decodes it and turns the moments the codec still pushes over the target down, then result.audioLoudness reports the delivered file\'s own audio decoded (measuredOn "decoded-file"; pcm = the mix it encoded): integratedLufs, truePeakDbtp, limiterCeilingDbtp, codecHeadroomDb, loudnessPasses, encodePasses, localCorrections, ceilingLimited, truePeakMet. AUDIO_TRUE_PEAK_OVER / AUDIO_LOUDNESS_CEILING (result warnings) say when the delivered file misses the target — tell the user. A finished export (wait: true, or wait_for_job) also returns output (container, duration, streams, size) and the fast verification rows (streams, duration, av-skew) with verified; run verify_export {exportId: jobId} for the full checks (black / flash frames and clicks at cuts, loudness, true peak, silences) and verify_export {target} for a platform. Platform presets (delivery-youtube, delivery-youtube-shorts, delivery-instagram-reels, delivery-tiktok, delivery-x, delivery-linkedin; list_export_presets) export at the platform\'s size, rate and loudness; a sequence of another shape (a horizontal sequence for a vertical platform) is refused with a hint to auto_reframe_sequence — it is never cropped.',
+				'Render a sequence to a file: a video `preset`, or `format` gif, wav, flac or m4a. Returns a job id; `wait: true` blocks until it is written, else `wait_for_job`. Platform presets are `delivery-youtube`, `delivery-tiktok`… (`list_export_presets`). Never overwrites a file. Tell the user any warning in the result. A finished export returns fast checks; `verify_export` runs the full ones.',
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
 				format: z
 					.enum(EXPORT_FORMATS)
 					.optional()
-					.describe(
-						'What to write: "video" (default: a preset), "gif" (animated GIF, no sound), "wav", "flac" or "m4a" (the mix only)',
-					),
+					.describe('Default video. gif has no sound; wav, flac and m4a write the mix only.'),
 				preset: z
 					.string()
 					.optional()
-					.describe(
-						`Video preset id from list_export_presets (default ${DEFAULT_EXPORT_PRESET}); only with format "video"`,
-					),
+					.describe(`From \`list_export_presets\`. Default ${DEFAULT_EXPORT_PRESET}.`),
 				gif: z
 					.strictObject({
 						fps: z
@@ -328,18 +330,18 @@ export function registerRenderTools(ctx: ToolContext): void {
 							),
 					})
 					.optional()
-					.describe('GIF options (format "gif")'),
+					.describe('With format gif.'),
 				audioBitDepth: z
 					.union([z.literal(16), z.literal(24)])
 					.optional()
-					.describe('Bits per sample of a WAV or FLAC file (default 24)'),
+					.describe('WAV or FLAC. Default 24.'),
 				audioBitrateKbps: z
 					.number()
 					.int()
 					.min(32)
 					.max(512)
 					.optional()
-					.describe('AAC bit rate of an M4A file in kb/s (default 192 stereo, 384 for 5.1)'),
+					.describe('M4A. Default 192, or 384 for 5.1.'),
 				range: z
 					.union([
 						z.enum(['entire', 'in-out']),
@@ -349,69 +351,45 @@ export function registerRenderTools(ctx: ToolContext): void {
 						}),
 					])
 					.optional()
-					.describe('"entire" (default), "in-out" (sequence In/Out marks) or {"from": time, "to": time}'),
-				engine: z.enum(['auto', 'native', 'remotion']).optional().describe('Render path (default auto)'),
+					.describe('Default entire; in-out uses the sequence marks.'),
+				engine: z.enum(['auto', 'native', 'remotion']).optional().describe('Default auto.'),
 				crf: z
 					.number()
 					.int()
 					.min(0)
 					.max(51)
 					.optional()
-					.describe('Quality override, x264-style CRF (lower = better; 14–16 is visually lossless)'),
+					.describe('Lower is better; 14-16 is visually lossless.'),
 				videoBitrateKbps: z
 					.number()
 					.int()
 					.min(500)
 					.max(200_000)
 					.optional()
-					.describe(
-						'Average video bitrate in kbit/s (e.g. 16000): the target of bitrate-driven encoders such as OpenH264, a ceiling for x264; ignored by ProRes',
-					),
+					.describe('Target of bitrate-driven encoders, a ceiling for x264; ignored by ProRes.'),
 				outputPath: z
 					.string()
 					.optional()
-					.describe(
-						"Absolute path of the output file; the extension is replaced by the container's (.mp4 / .webm / .mov / .gif / .wav / .flac / .m4a). Never overwrites: see result.path",
-					),
-				wait: z
-					.boolean()
-					.optional()
-					.describe(
-						'Block until the export finishes (progress notifications with a progressToken; cancelling the request cancels the export and deletes the partial file). Default false: return the job id at once',
-					),
-				timeoutSeconds: z
-					.number()
-					.int()
-					.min(1)
-					.max(3600)
-					.optional()
-					.describe('With wait: how long to block before returning timedOut: true (default 900)'),
+					.describe('Absolute. The extension follows the container; `result.path` is the real path.'),
+				wait: z.boolean().optional().describe('Block until written. Default false.'),
+				timeoutSeconds: z.number().int().min(1).max(3600).optional().describe('With `wait`. Default 900.'),
 				// audio-mix
 				audioChannels: z
 					.union([z.literal(1), z.literal(2), z.literal(6)])
 					.optional()
-					.describe(
-						'Audio channels: 2 (stereo; a 5.1 Mix is folded with ITU-R BS.775), 1, or 6 (discrete 5.1). Default: 6 for a 5.1 Mix, else 2',
-					),
+					.describe('Default 2, or 6 for a 5.1 Mix.'),
 				audioSampleRate: z
 					.union([z.literal(44100), z.literal(48000), z.literal(96000)])
 					.optional()
-					.describe('Audio sample rate (default: the sequence rate; Opus is always 48 kHz)'),
+					.describe('Default: the sequence rate.'),
 				normalizeLufs: z
 					.number()
 					.min(-60)
 					.max(0)
 					.nullable()
 					.optional()
-					.describe(
-						'Two-pass loudness normalisation of the final mix to this target (e.g. -14, -16, -23); null = off even when the sequence normalises',
-					),
-				truePeakDb: z
-					.number()
-					.min(-20)
-					.max(0)
-					.optional()
-					.describe('True-peak ceiling of the normalisation (default -1 dBTP)'),
+					.describe('Target, e.g. -14. null: off.'),
+				truePeakDb: z.number().min(-20).max(0).optional().describe('Default -1.'),
 				captions: z
 					.object({
 						burnIn: z
@@ -434,23 +412,13 @@ export function registerRenderTools(ctx: ToolContext): void {
 						dropFrame: z.boolean().optional(),
 					})
 					.optional()
-					.describe('Caption output (wp captions)'),
-				usePreviews: z
-					.boolean()
-					.optional()
-					.describe('Take the frames of rendered segments from their render previews (render_previews)'),
+					.describe('Default: burn in visible caption tracks.'),
+				usePreviews: z.boolean().optional().describe('Take frames from render previews.'),
 				smartRender: z
 					.boolean()
 					.optional()
-					.describe(
-						'Stream-copy untouched stretches of H.264 sources into an H.264 export (ProRes copies automatically; false = always encode)',
-					),
-				draftUseProxies: z
-					.boolean()
-					.optional()
-					.describe(
-						'Use Proxies: render attached proxies instead of full-resolution media (a draft; never the default)',
-					),
+					.describe('Stream-copy untouched H.264 stretches; false always encodes.'),
+				draftUseProxies: z.boolean().optional().describe('Render proxies, as a draft.'),
 				credits: z
 					.union([
 						z.enum(['txt', 'md', 'csv']),
@@ -462,7 +430,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 					])
 					.optional()
 					.describe(
-						'Sound credits file written next to the output as <name>.credits.<txt|md|csv> (result.credits): the credit lines of the library sounds heard in the exported range (nested sequences included; muted tracks and disabled clips are not heard). "md" / "txt" / "csv", {sidecar, scope: "all" (default) | "attribution" (only sounds whose licence asks for a credit)}, or null = none. Default: the sequence\'s sound design credits setting, else "md" when a sound it uses needs a credit (CC BY…), else none',
+						'Sound credits file next to the output: md, txt, csv or {sidecar, scope}; null for none.',
 					),
 			},
 			annotations: EDIT,
@@ -716,16 +684,10 @@ export function registerRenderTools(ctx: ToolContext): void {
 		{
 			title: 'Wait for job',
 			description:
-				'Waits until a job finishes (or timeoutSeconds passes, default 120, max 900) and returns its final state and result: for exports the output file path (when outputPath was given), download URL, frame count and duration, the sound credits file (result.credits) and warnings (result.warnings: W_SOUND_CREDITS, W_SOUND_CHECK_STALE…). Sends progress notifications (at most one every 100 ms) while waiting. On timeout returns the current state with timedOut: true; call it again to keep waiting. Cancelling this request (notifications/cancelled) cancels the job itself and the engine deletes its partial output. A finished export also returns output (container, duration, streams, size) and the fast verification rows (streams, duration, av-skew) with verified; verify_export runs the full checks.',
+				'Wait for a job and return its result. On `timedOut: true` call again. Cancelling this request cancels the job.',
 			input: {
 				jobId: JobIdArg,
-				timeoutSeconds: z
-					.number()
-					.int()
-					.min(1)
-					.max(900)
-					.optional()
-					.describe('How long to wait before returning timedOut: true (default 120, max 900)'),
+				timeoutSeconds: z.number().int().min(1).max(900).optional().describe('Default 120, max 900.'),
 			},
 			annotations: READ_ONLY,
 		},

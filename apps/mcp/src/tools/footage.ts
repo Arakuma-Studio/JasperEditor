@@ -28,9 +28,7 @@ const MediaIdsArg = z
 	.min(1)
 	.max(500)
 	.optional()
-	.describe(
-		'Only these media ("med_…" from list_media); default: every transcribed media and every media with sound',
-	);
+	.describe('Default: every media with sound.');
 
 function footageError(e: FootageError): never {
 	throw new ToolError(e.code, e.message, e.hint, e.details);
@@ -67,24 +65,18 @@ export function registerFootageTools(ctx: ToolContext): void {
 		{
 			title: 'Footage digest',
 			description:
-				'Every transcribed media of the project (or mediaIds, or one sequence in sequence time) as compact text: one header per media (duration, size, fps, phrases, speakers) and one line per phrase "[start-end] S0 words" in seconds (phrases split at a ≥ 0.5 s pause, a speaker change, a caption break or 12 s; "~" marks low-confidence words). Media with sound but no transcript are listed with a hint to transcribe them. Read it before planning a cut; maxChars truncates only between media.',
+				'Read transcribed media as timed text: `[start-end] S0 words` in seconds, `~` on unsure words. Media with no transcript are listed. Read it before planning a cut.',
 			input: {
 				projectId: ProjectIdArg,
 				mediaIds: MediaIdsArg,
-				sequenceId: z
-					.string()
-					.min(1)
-					.optional()
-					.describe(
-						'One sequence in sequence time (the words heard through its audio clips) instead of media',
-					),
+				sequenceId: z.string().min(1).optional().describe('One sequence in sequence time, instead of media.'),
 				maxChars: z
 					.number()
 					.int()
 					.min(DIGEST_MIN_MAX_CHARS)
 					.max(DIGEST_MAX_CHARS_LIMIT)
 					.optional()
-					.describe(`Character budget (default ${DIGEST_DEFAULT_MAX_CHARS})`),
+					.describe(`Default ${DIGEST_DEFAULT_MAX_CHARS}.`),
 			},
 			annotations: READ_ONLY,
 		},
@@ -99,7 +91,7 @@ export function registerFootageTools(ctx: ToolContext): void {
 		'find_takes',
 		{
 			title: 'Find takes',
-			description: `Groups phrases that say the same line, across every transcribed media (or mediaIds): text normalised (case, punctuation, fillers removed), LCS similarity of the word tokens ≥ minSimilarity. Each group lists its members (mediaId, name, start/end media seconds, text, meanConfidence, complete = ends a sentence with no restart or stutter) and "suggested" (index of the last complete take). Compares at most ${TAKES_MAX_PHRASES} phrases (E_TOO_LARGE beyond: pass mediaIds).`,
+			description: `Group lines said more than once across transcribed media, with the \`suggested\` take of each; times are media seconds for \`add_clip\`. Beyond ${TAKES_MAX_PHRASES} phrases pass \`mediaIds\`.`,
 			input: {
 				projectId: ProjectIdArg,
 				mediaIds: MediaIdsArg,
@@ -108,9 +100,7 @@ export function registerFootageTools(ctx: ToolContext): void {
 					.min(0.3)
 					.max(1)
 					.optional()
-					.describe(
-						`LCS ratio 2·LCS / (|a| + |b|) over word tokens (default ${TAKES_DEFAULT_MIN_SIMILARITY})`,
-					),
+					.describe(`Default ${TAKES_DEFAULT_MIN_SIMILARITY}.`),
 			},
 			annotations: READ_ONLY,
 		},

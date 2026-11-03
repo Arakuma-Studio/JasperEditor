@@ -8,7 +8,7 @@ Spec: [`docs/specs/18-agent-footage-editing.md`](../specs/18-agent-footage-editi
 | Where | What |
 |---|---|
 | `apps/mcp/src/toolsets.ts` | `TOOLSETS` (the map, in order), `CORE_TOOL_BUDGET`, `parseToolsets`, `installToolsets` (the advertise filter), `registerToolsetTools` (`list_toolsets`, `enable_toolsets`, `disable_toolsets`, `describe_tool`, `call_tool`) |
-| `apps/mcp/src/agent-guide.ts` | `buildInstructions` (≤ `INSTRUCTIONS_MAX_BYTES` = 8192), `guideTopics` / `fullGuide` / `guideTitle`, `ROUTES` + `routingMarkdown`, `editVideoPrompt`, `registerGuides` (topic resources, `jasper://guide`, `get_guide`) |
+| `apps/mcp/src/agent-guide.ts` | `buildInstructions` (≤ `INSTRUCTIONS_MAX_BYTES` = 4096, Claude Code's cut), `guideTopics` / `fullGuide` / `guideTitle`, `ROUTES` + `routingMarkdown`, `editVideoPrompt`, `registerGuides` (topic resources, `jasper://guide`, `get_guide`) |
 | `apps/mcp/src/server.ts` | `GUIDES` (topic → `*_GUIDE` or a titled bundle), `createJasperMcpServer({toolsets})`: option, else `JASPER_MCP_TOOLSETS`, else core |
 | `apps/mcp/src/cli.ts` | `--toolsets <list>` (else `JASPER_MCP_TOOLSETS`); an unknown name exits 2 naming the valid ones |
 | `apps/mcp/src/jasper-cli.ts` | the `jasper` CLI's in-process servers advertise `all` |
@@ -46,7 +46,7 @@ handler map after the first tool registered them):
 - `tools/list` = the SDK list filtered to the advertised toolsets (unmapped tools are always listed, so a
   forgotten mapping never hides a tool at run time; the test catches it).
 - `tools/call` of a registered tool whose toolset is off → `E_TOOLSET_NOT_ENABLED` error result
-  (`{error: {code, message, hint, details: {tool, toolset}}}`, hint: `enable_toolsets` or `call_tool`). Everything
+  (`{error: {code, message, hint, details: {tool, toolset}}}`, hint: `call_tool` and `describe_tool`). Everything
   else goes to the SDK handler unchanged.
 - `enable_toolsets` / `disable_toolsets {names}` (`all` allowed; `core` cannot be disabled → `E_INVALID_PARAM`)
   send **one** `notifications/tools/list_changed` per call that changed the set, none otherwise.
@@ -55,7 +55,7 @@ handler map after the first tool registered them):
   (`installStrictValidation`), the same handler, the same error results, approval waits with progress, and
   cancellation that cancels the engine job. It refuses itself and unknown names (`E_NOT_FOUND`). Its own hints
   are destructive + open-world, because it can run any tool; the tool it runs keeps its hints (`describe_tool`).
-- `describe_tool {name}` = that tool's `tools/list` entry (same JSON Schema) + `toolset` + `advertised`.
+- `describe_tool {name}` = that tool's advertised description and schema + `toolset`; `full: true` adds every nested field, the reference text (`details`), the annotations and `advertised`.
 - Why not the SDK's `RegisteredTool.disable()`: a disabled tool's call returns the SDK's plain "Tool X disabled"
   text (no toolset, not our error shape), the SDK handler refuses it so `call_tool` would have to re-implement the
   pipeline, and each `update()` sends its own `list_changed` (30 notifications to enable one toolset).
@@ -131,3 +131,19 @@ the `jasper://projects/{id}/footage` resource needs no mapping. Any further tool
   as before.
 - The Codex and Cursor installation paths are documented from their docs, not exercised (neither is installed on
   the build machine); Claude Code's skill layout is the reference format.
+
+## Model-visible text (MCP eval)
+
+`apps/mcp/eval` measures what agents do with this surface on real harnesses; `apps/mcp/eval/budget.json` caps the bytes a
+model receives per context, and `apps/mcp/test/context-budget.test.ts` enforces it. What changed from the sections above:
+
+- `tools/list` advertises `compactInputSchema` (`src/advertise.ts`): keywords a call does not need are gone, a time union
+  reads as `["integer", "string"]`, an animatable value as its plain form, a tagged union as its tag, and over 6000
+  characters nested fields keep only name and type. Validation still uses the full zod schema.
+- Instructions are 1.7 KB: routes, rules and a one-line toolset map. Everything past Claude Code's 4096-character cut
+  used to be lost, including most of the toolset index and all of the guide pointers.
+- A tool's long text moved to `details`, returned by `describe_tool {full: true}`. The `export` guide holds what
+  `start_export` and `verify_export` used to say.
+- `describe_commands` returns type names; `types` gives compact schemas and examples; `catalogues: true` adds templates,
+  presets and properties.
+- `disable_toolsets` left core. An engine without a route answers `ENGINE_OUTDATED`.

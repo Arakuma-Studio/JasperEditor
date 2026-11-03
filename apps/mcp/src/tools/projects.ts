@@ -97,8 +97,7 @@ export function registerProjectTools(ctx: ToolContext): void {
 		'list_projects',
 		{
 			title: 'List projects',
-			description:
-				'Lists the projects stored by the engine (id, name, last modified, revision), newest first. Use the projectId with every other tool.',
+			description: "The engine's projects, newest first.",
 			input: {},
 			annotations: READ_ONLY,
 		},
@@ -122,9 +121,10 @@ export function registerProjectTools(ctx: ToolContext): void {
 		'create_project',
 		{
 			title: 'Create project',
-			description: `Creates an empty project with one sequence (3 video + 3 audio tracks: V1–V3, A1–A3). The preset sets the sequence frame size and rate (default ${DEFAULT_PRESET_ID}). Returns the projectId and the sequence summary.`,
+			description:
+				'Create an empty project with one sequence and tracks V1-V3, A1-A3. `preset` sets frame size and rate.',
 			input: {
-				name: z.string().min(1).max(120).describe('Project name'),
+				name: z.string().min(1).max(120),
 				preset: z
 					.enum(PRESET_IDS)
 					.optional()
@@ -149,7 +149,7 @@ export function registerProjectTools(ctx: ToolContext): void {
 		{
 			title: 'Get project',
 			description:
-				'Summary of a project: sequences (size, fps, duration), tracks (V1…/A1…, locked/muted), every clip (id, kind, track, start/end in frames and timecode, source media and range), markers, and the imported media. editorOpen = true when an editor window has it open (then reads and edits are live). For a compact table of one sequence use get_timeline.',
+				'Project summary: sequences, tracks, clips, markers, media. For one sequence as a table use `get_timeline`.',
 			input: { projectId: ProjectIdArg },
 			annotations: READ_ONLY,
 		},
@@ -165,6 +165,8 @@ export function registerProjectTools(ctx: ToolContext): void {
 		{
 			title: 'Open project in the editor',
 			description:
+				'Open this project in every editor window, so edits appear live and the user can approve destructive ones.',
+			details:
 				'Asks every open JasperEditor window (desktop app or browser tab) to open this project, so your edits appear live with "Agent: …" undo entries and the user can approve destructive changes. Waits until the editor has the project open. If no editor window is running, returns the URL of the project and a note for the user: the editor is the desktop app, the dev server (`pnpm dev`, http://127.0.0.1:5173) or a browser the user paired with the engine. An agent cannot sign a browser in (launchBrowser only works on an engine started without a token, JASPER_INSECURE_DEV=1).',
 			input: {
 				projectId: ProjectIdArg,
@@ -236,18 +238,11 @@ export function registerProjectTools(ctx: ToolContext): void {
 		{
 			title: 'Import media files',
 			description:
-				'Imports video, audio or image files into a project by absolute path on this machine (the engine probes each file; nothing is uploaded). Returns one mediaId per file with duration, video size/fps and audio channels. Then place them with add_clip. Re-importing a file already in the project adds a new Project item for the same media (deduped: true). A rendered file with a source-range sidecar next to it (<name>.json or <stem>.json with "first_src_frame", e.g. a graded render with handles) records the source frames it holds and becomes a version of its source when that is in the project (matched by file name): use_media_version then switches clips to it on the same source frames.',
+				'Import files by absolute path; returns one `mediaId` per file. `transcribe` also queues their transcripts.',
 			input: {
 				projectId: ProjectIdArg,
-				paths: z
-					.array(z.string().min(1))
-					.min(1)
-					.max(200)
-					.describe('Absolute file paths, e.g. ["/home/me/footage/interview.mp4"]'),
-				copyIntoProject: z
-					.boolean()
-					.optional()
-					.describe('Copy the files into the engine media store instead of referencing them in place'),
+				paths: z.array(z.string().min(1)).min(1).max(200),
+				copyIntoProject: z.boolean().optional().describe('Copy into the media store instead of referencing.'),
 				transcribe: ImportTranscribeArg,
 			},
 			annotations: EDIT,
@@ -392,7 +387,8 @@ export function registerProjectTools(ctx: ToolContext): void {
 		'get_media_info',
 		{
 			title: 'Get media info',
-			description:
+			description: 'Full details of one media: streams, file locations, derived files, versions.',
+			details:
 				"Full details of one media asset: every stream from the probe (codec, size, fps, rotation, channels, sample rate), file locations, the engine status of its derived files (poster, waveform peaks, filmstrip, proxy, playback-audio), playbackAudio (needed: the browser cannot decode the audio — WMA, AC-3, ALAC… — so previews play the engine's lossless playback copy, silent until its status is ready; exports always decode the original), its derivation (for processed versions: the original and the recipe), its sourceRange (which source frames the file holds) and every version of the same original with the source frames [start, end) each holds (for use_media_version).",
 			input: {
 				projectId: ProjectIdArg,

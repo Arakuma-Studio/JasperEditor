@@ -910,6 +910,10 @@ discovery are in; evidence and thresholds in [wp-notes/title-looks-agents.md](wp
 - `font-available` answers for the family, not for every character of the text.
 - User looks in the engine-backed store (TL-054) are not searched by `find_title_looks`.
 - The rendered rows of a proposal are returned to the agent, not stored on it, so Review does not show them.
+- **The MCP eval cannot sample the titles tools yet.** `apps/mcp/eval/fake-engine.ts` does not model
+  `requestStillSheet`, so a sample reaching `find_title_looks` or `propose_title` is marked invalid; the case
+  `titles-styled-title` builds but cannot pass until the fake renders look sheets. No model samples were run for the
+  `+titles`, `+effects` and `+export` budgets ([wp-notes/title-looks-agents.md](wp-notes/title-looks-agents.md)).
 
 ### title-looks fixes (spec 19 §13)
 Fixes the Title Looks feature depends on, each with a regression test that failed before it; details, decisions and

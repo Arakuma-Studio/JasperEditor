@@ -382,11 +382,12 @@ export function registerFootageViewTools(ctx: ToolContext): void {
 		'view_media_range',
 		{
 			title: 'View media range',
-			description: `Look at a stretch of raw footage (mediaId, media time) or of a sequence (sequenceId, sequence time) in ONE PNG, plus the same facts as text: a filmstrip of \`frames\` frames (2-${VIEW_MAX_FRAMES}, default ${VIEW_DEFAULT_FRAMES}) taken at the centres of equal slots, the RMS waveform of the audio, the transcript's words at their times, shaded bands for silences >= 0.4 s and a time ruler. Media without video show only the audio rows; media without audio have no waveform or silence bands. The range is clamped to the media/sequence and may be at most ${RANGE_VIEW_MAX_SECONDS} s long. Use it at decision points (where to cut, which take); read transcripts first. Sequence frames are rendered like render_frame (the live editor state when the project is open).`,
+			description:
+				'One PNG of a media or sequence range (at most 600 s): filmstrip, waveform, words, silences. For decision points, after reading the transcript.',
 			input: {
 				projectId: ProjectIdArg,
-				mediaId: z.string().min(1).optional().describe('Media id ("med_…", list_media): view the raw media'),
-				sequenceId: z.string().min(1).optional().describe('Sequence id ("seq_…"): view the edited sequence'),
+				mediaId: z.string().min(1).optional().describe('View raw media, in media time.'),
+				sequenceId: z.string().min(1).optional().describe('View the edit, in sequence time.'),
 				start: TimeArg.describe(`Range start. ${TIME_HELP}`),
 				end: TimeArg.describe(
 					`Range end (after start; at most ${RANGE_VIEW_MAX_SECONDS} s later). ${TIME_HELP}`,
@@ -397,14 +398,14 @@ export function registerFootageViewTools(ctx: ToolContext): void {
 					.min(VIEW_MIN_FRAMES)
 					.max(VIEW_MAX_FRAMES)
 					.optional()
-					.describe(`Filmstrip frames (default ${VIEW_DEFAULT_FRAMES})`),
+					.describe(`Default ${VIEW_DEFAULT_FRAMES}.`),
 				width: z
 					.number()
 					.int()
 					.min(VIEW_MIN_WIDTH)
 					.max(VIEW_MAX_WIDTH)
 					.optional()
-					.describe(`Image width in pixels (default ${VIEW_DEFAULT_WIDTH})`),
+					.describe(`Default ${VIEW_DEFAULT_WIDTH}.`),
 			},
 			annotations: READ_ONLY,
 		},

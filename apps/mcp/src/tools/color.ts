@@ -726,7 +726,9 @@ export function registerColorTools(ctx: ToolContext): void {
 		'grade_clip',
 		{
 			title: 'Grade clip',
-			description: `Colour-grades a clip with a Lumetri Color effect (jasper.lumetri) in ONE transaction (one "Agent: Grade clip" History entry). Edits the clip's first Lumetri instance, adding one when it has none (instance "new" always adds another). Only the params you pass change; the rest keep their values. Ranges (default): basic: ${params('basic')}; creative: ${params('creative')}; curves: ${params('curves')} as [[x,y],…] in 0…1; wheels: ${params('wheels')} with wheels as [x,y] in the unit disc. Out-of-range values are clamped and reported. LUT fields take a mediaId from import_lut (or null for none). ${ORDER} Params that already have keyframes get a keyframe at \`at\` (or the editor playhead on the clip) instead of a new static value; without either the call is rejected. Returns the effect instance id and the applied values; check the result with render_frame.`,
+			description:
+				'Colour-grade a clip with Lumetri in one undo step; only the params you pass change. Start with small moves. Sections: `basic`, `creative`, `curves`, `wheels`, `secondary`, `vignette`. Ranges: `describe_tool` with `full`.',
+			details: `Colour-grades a clip with a Lumetri Color effect (jasper.lumetri) in ONE transaction (one "Agent: Grade clip" History entry). Edits the clip's first Lumetri instance, adding one when it has none (instance "new" always adds another). Only the params you pass change; the rest keep their values. Ranges (default): basic: ${params('basic')}; creative: ${params('creative')}; curves: ${params('curves')} as [[x,y],…] in 0…1; wheels: ${params('wheels')} with wheels as [x,y] in the unit disc. Out-of-range values are clamped and reported. LUT fields take a mediaId from import_lut (or null for none). ${ORDER} Params that already have keyframes get a keyframe at \`at\` (or the editor playhead on the clip) instead of a new static value; without either the call is rejected. Returns the effect instance id and the applied values; check the result with render_frame.`,
 			input: GradeClipInput,
 			annotations: EDIT_IDEMPOTENT,
 		},
@@ -823,7 +825,7 @@ export function registerColorTools(ctx: ToolContext): void {
 				"Every colour effect of a clip in stack (processing) order — Lumetri Color instances in the grade_clip shape (basic, creative, curves, wheels) and the simple colour effects (Brightness & Contrast, Hue/Saturation, Black & White) with their params — evaluated at `at` when given, else at the editor playhead when it is on the clip, else at the clip's first frame. Includes bypass state, which params are keyframed and the names/sizes of referenced LUTs.",
 			input: {
 				projectId: ProjectIdArg,
-				clipId: z.string().min(1).describe('Clip id ("clp_…")'),
+				clipId: z.string().min(1),
 				at: timeArg(
 					'Evaluate at this time (default: the playhead when on the clip, else the clip start)',
 				).optional(),

@@ -34,7 +34,7 @@ export function registerClipboardTools(ctx: ToolContext): void {
 				'Returns a clipboard payload for clips of one sequence (with their linked partners unless linked: false, the transitions between them, and every media/font/synthetic/transcript they use). Paste it with paste_clips (any project), or use it with clip.pasteAttributes / effect.paste in apply_commands. Read-only.',
 			input: {
 				projectId: ProjectIdArg,
-				clipIds: z.array(z.string().min(1)).min(1).describe('Clip ids ("clp_…") from get_timeline'),
+				clipIds: z.array(z.string().min(1)).min(1),
 				linked: z.boolean().optional().describe('Include linked audio/video partners (default true)'),
 			},
 			annotations: READ_ONLY,

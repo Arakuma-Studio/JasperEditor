@@ -550,7 +550,8 @@ export function registerAudioTools(ctx: ToolContext): void {
 		'set_loudness_normalization',
 		{
 			title: 'Set loudness normalization',
-			description:
+			description: "Normalise a sequence's Mix to a target loudness on every export.",
+			details:
 				"Normalises the Mix of a sequence to a target loudness with a true-peak limit: applied two-pass on every export (the gain converged under the look-ahead true-peak limiter) and heard in the preview with the same gain and limiter ceiling. analyze: true (default) measures the current mix now and stores it for the preview with the export's converged delivery for this target (analysis.delivery {gainDb, limiterCeilingDbtp, passes, ceilingLimited, deliveredLufs}); without it (or after changing the target) the preview plays the one-pass gain target − measured, up to ≈ 1 dB under the export on a heavily limited mix.",
 			input: {
 				projectId: ProjectIdArg,

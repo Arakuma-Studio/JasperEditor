@@ -118,7 +118,8 @@ export function registerGradingTools(ctx: ToolContext): void {
 		'scopes_read',
 		{
 			title: 'Read Lumetri Scopes',
-			description:
+			description: 'Lumetri Scopes as numbers: check colour without looking.',
+			details:
 				'Lumetri Scopes as numbers, so you can check colour without looking: renders the Program frame (or one clip alone with clipId) with the export renderer and returns per-channel levels in % (R, G, B, Y min/max/mean), clipping (% of samples at 0 % and 100 %), mean chroma hue and saturation, waveform and parade levels per column range (left to right), histogram peak bins (and the 256 bins with bins: true), and the densest vectorscope spots with their angle (degrees from +Cb, counter-clockwise; skin tones sit near 123°) and magnitude (% of 0.5; 100 % = a fully saturated primary). Matrix bt709 by default (bt601, bt2020).',
 			input: {
 				projectId: ProjectIdArg,
@@ -194,7 +195,9 @@ export function registerGradingTools(ctx: ToolContext): void {
 		'color_match',
 		{
 			title: 'Color match',
-			description: `Lumetri Color ▸ Apply Match: grades a clip so its colour matches a reference frame (another time of this or another sequence). The clip's picture before its Lumetri instance and the reference are compared in Oklab per tonal range (shadows, midtones, highlights) and saturation; the match is solved into the instance's colour wheels, their levels and Basic saturation, so the result stays an ordinary, editable grade. Face Detection (default on), as in Premiere: with the face model installed (install_roto_model), faces found in either frame weigh more and, with faces in both, the clip's face colour is matched to the reference's (skin: "faces"; no face found: "none", the whole frame counts equally); without the model, skin-coloured pixels are protected instead and the cast is limited so skin moves at most 8° in hue (skin: "hue"). apply: false only reports the solution. One undoable transaction ("Agent: Apply Match").`,
+			description:
+				'Grade a clip so its colour matches a reference frame, as an ordinary editable grade. `apply: false` only reports.',
+			details: `Lumetri Color ▸ Apply Match: grades a clip so its colour matches a reference frame (another time of this or another sequence). The clip's picture before its Lumetri instance and the reference are compared in Oklab per tonal range (shadows, midtones, highlights) and saturation; the match is solved into the instance's colour wheels, their levels and Basic saturation, so the result stays an ordinary, editable grade. Face Detection (default on), as in Premiere: with the face model installed (install_roto_model), faces found in either frame weigh more and, with faces in both, the clip's face colour is matched to the reference's (skin: "faces"; no face found: "none", the whole frame counts equally); without the model, skin-coloured pixels are protected instead and the cast is limited so skin moves at most 8° in hue (skin: "hue"). apply: false only reports the solution. One undoable transaction ("Agent: Apply Match").`,
 			input: {
 				projectId: ProjectIdArg,
 				clipId: z.string().min(1).describe('Clip to grade ("clp_…")'),

@@ -104,7 +104,7 @@ import { titleLintRows } from '../title-lint.ts';
 import { APPROVAL_REQUIRED_HINT } from './proposals.ts';
 import { durationFrames } from './trim-paths.ts';
 
-export const TITLE_ART_GUIDE = `Title art: stylized titles from a brief, in three to five calls (spec 19). A look is a reusable appearance on a clip (rims, glows, shadows, finishes, generators); a colourway is a palette that fills a look's colour roles without changing its structure. Enable the toolset first: enable_toolsets {"names": ["titles"]}, or run the tools through call_tool.
+export const TITLE_ART_GUIDE = `Title art: stylized titles from a brief, in three to five calls (spec 19). A look is a reusable appearance on a clip (rims, glows, shadows, finishes, generators); a colourway is a palette that fills a look's colour roles without changing its structure. The tools are in the titles toolset: run them with call_tool (describe_tool shows the arguments).
 - Workflow: find_title_looks → propose_title → title_check. find_title_looks {query, tags?, aspect?, sampleText?} returns rows and one numbered sheet of real renders; propose_title {projectId, text, at, lookId, alternatives?} puts the title on the timeline or in Review, and returns one sheet of intro, hold and outro × alternatives over the real footage, plus its check; title_check {projectId, clipId | proposalId, target?} measures it again after any change.
 - Modes of propose_title. "propose" (default) stores a title-art proposal: colourways are the item's alternatives, the user reviews it in the Review panel, wait_for_proposal gives the decision, accept_proposal applies it where Project Settings ▸ Agent Proposals allows it. It needs the project open in an editor window: without one nobody can review it and it is refused with E_NO_EDITOR, nothing stored. "dryRun" changes nothing. "apply" adds the title now: with an editor it is one undoable History entry; on a headless engine there is no History and undo cannot reach it, so the result carries revert, the apply_commands arguments that take it out again. Ask before leaving a headless apply in place when the user did not ask for it.
 - energy (low, medium, high) picks the in and out animations. duration defaults to the time the text needs to be read. colorway names a colourway by id or name; alternatives (0–3) adds others, chosen from seed, which every result returns so a run can be repeated. An empty library is said plainly: pass recipe instead.
@@ -962,7 +962,8 @@ export function registerTitleTools(ctx: ToolContext): void {
 		'find_title_looks',
 		{
 			title: 'Find title looks',
-			description: `Searches the title look library (and a project's own looks with projectId) by words and tags, and returns rows {lookId, name, tags, colorways, costClass, renderPath} with ONE numbered PNG sheet of real renders of sampleText, ${DEFAULT_SHEET_WIDTH} px wide by default. Cell n of the sheet is row n. limit is at most ${MAX_FIND_LIMIT}; cursor continues a list. costClass: light, medium or heavy, how much a look costs to draw; heavy looks move on their own and redraw every frame. renderPath comes from the planner. libraryColorways lists the colourways usable with any look, once. No schemas: get_title_recipe gives a look's JSON. An empty result says so; the library may be empty in a development build. The sheet is one engine job: past timeoutSeconds the rows come back with {jobId, timedOut, next}.`,
+			description: 'Search title looks by words and tags: rows plus one numbered sheet of real renders.',
+			details: `Searches the title look library (and a project's own looks with projectId) by words and tags, and returns rows {lookId, name, tags, colorways, costClass, renderPath} with ONE numbered PNG sheet of real renders of sampleText, ${DEFAULT_SHEET_WIDTH} px wide by default. Cell n of the sheet is row n. limit is at most ${MAX_FIND_LIMIT}; cursor continues a list. costClass: light, medium or heavy, how much a look costs to draw; heavy looks move on their own and redraw every frame. renderPath comes from the planner. libraryColorways lists the colourways usable with any look, once. No schemas: get_title_recipe gives a look's JSON. An empty result says so; the library may be empty in a development build. The sheet is one engine job: past timeoutSeconds the rows come back with {jobId, timedOut, next}.`,
 			input: {
 				query: z.string().max(200).describe('Words to look for, e.g. "chrome trailer"; "" lists everything'),
 				tags: z.array(z.string().min(1).max(64)).max(16).optional().describe('Only looks with all of these'),
@@ -1089,7 +1090,9 @@ export function registerTitleTools(ctx: ToolContext): void {
 		'propose_title',
 		{
 			title: 'Propose a title',
-			description: `Turns a brief into a title on the real footage and checks it. text, at, lookId (find_title_looks) or recipe; colorway, energy (low, medium, high: the in and out animations), alternatives (0–${MAX_ALTERNATIVES} other colourways), seed. duration defaults to the time the text needs. mode "propose" (default) stores a title-art proposal for the user's review, colourways as the item's alternatives, and needs the project open in an editor window (no window: E_NO_EDITOR, nothing stored). "dryRun" changes nothing. "apply" adds the title now: one undoable entry with an editor; on a headless engine there is no Undo, so the result carries revert, the apply_commands arguments that remove it. Returns {proposalId | clipIds, seed, check, next} and ONE PNG sheet of intro, hold and outro × alternatives, composited over the real footage, ${DEFAULT_SHEET_WIDTH} px wide by default. check holds title_check's rows; costClass and renderPath say what the look costs. All renders are one engine job: past timeoutSeconds it returns {jobId, timedOut, next} and the plain rows; the title itself is already stored or applied. Bounds: ${RECIPE_BOUNDS.layers} layers, ${RECIPE_BOUNDS.maxBytes / 1024} KB, ${RECIPE_BOUNDS.maxDepth} levels, ${RECIPE_BOUNDS.maxTypeInstances} layers of a type, ${RECIPE_BOUNDS.maxGeneratorInstances} generators in a recipe.`,
+			description:
+				'Put a styled title on the footage as a proposal for review (or dryRun, apply), with a sheet and `title_check` rows.',
+			details: `Turns a brief into a title on the real footage and checks it. text, at, lookId (find_title_looks) or recipe; colorway, energy (low, medium, high: the in and out animations), alternatives (0–${MAX_ALTERNATIVES} other colourways), seed. duration defaults to the time the text needs. mode "propose" (default) stores a title-art proposal for the user's review, colourways as the item's alternatives, and needs the project open in an editor window (no window: E_NO_EDITOR, nothing stored). "dryRun" changes nothing. "apply" adds the title now: one undoable entry with an editor; on a headless engine there is no Undo, so the result carries revert, the apply_commands arguments that remove it. Returns {proposalId | clipIds, seed, check, next} and ONE PNG sheet of intro, hold and outro × alternatives, composited over the real footage, ${DEFAULT_SHEET_WIDTH} px wide by default. check holds title_check's rows; costClass and renderPath say what the look costs. All renders are one engine job: past timeoutSeconds it returns {jobId, timedOut, next} and the plain rows; the title itself is already stored or applied. Bounds: ${RECIPE_BOUNDS.layers} layers, ${RECIPE_BOUNDS.maxBytes / 1024} KB, ${RECIPE_BOUNDS.maxDepth} levels, ${RECIPE_BOUNDS.maxTypeInstances} layers of a type, ${RECIPE_BOUNDS.maxGeneratorInstances} generators in a recipe.`,
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -1360,7 +1363,9 @@ export function registerTitleTools(ctx: ToolContext): void {
 		'title_check',
 		{
 			title: 'Check a title',
-			description: `Measures a title on rendered frames and returns verify-style rows {id, kind: "format" | "judgement", status: pass | warn | fail | unverified, measured, expected, at, message, fix?} with verified (no fail row and no unverified format row) and the revision they hold for. clipId checks a clip; proposalId (+ itemId, alternative) checks what a proposal would create, nothing applied. Rows: safe-area and off-frame (the title's real alpha bounds, by difference matting), contrast (each part of the title against the picture rendered behind it, at the frames it is at rest), min-size, read-time, font-available, export-path (the planner's answer) and every style lint issue. target (${DELIVERY_TARGET_IDS.join(', ')}; default the brief's platform) adds target-safe-area on vertical platforms: an estimate that only warns. fix.commands are ready for apply_commands; a proposal's rows carry only fix.label, because its clip has no id yet. notChecked says what no row measures: taste above all; report it as not checked. The renders are one engine job: past timeoutSeconds it returns the plain rows with {jobId, timedOut, next}; call again with the same arguments and jobId. ${CHECK_NEXT}`,
+			description:
+				'Measure a title clip or proposal on rendered frames: safe area, contrast, size, read time, fonts, export path.',
+			details: `Measures a title on rendered frames and returns verify-style rows {id, kind: "format" | "judgement", status: pass | warn | fail | unverified, measured, expected, at, message, fix?} with verified (no fail row and no unverified format row) and the revision they hold for. clipId checks a clip; proposalId (+ itemId, alternative) checks what a proposal would create, nothing applied. Rows: safe-area and off-frame (the title's real alpha bounds, by difference matting), contrast (each part of the title against the picture rendered behind it, at the frames it is at rest), min-size, read-time, font-available, export-path (the planner's answer) and every style lint issue. target (${DELIVERY_TARGET_IDS.join(', ')}; default the brief's platform) adds target-safe-area on vertical platforms: an estimate that only warns. fix.commands are ready for apply_commands; a proposal's rows carry only fix.label, because its clip has no id yet. notChecked says what no row measures: taste above all; report it as not checked. The renders are one engine job: past timeoutSeconds it returns the plain rows with {jobId, timedOut, next}; call again with the same arguments and jobId. ${CHECK_NEXT}`,
 			input: {
 				projectId: ProjectIdArg,
 				clipId: z.string().min(1).max(64).optional().describe('The title clip (get_timeline)'),
@@ -1483,6 +1488,8 @@ export function registerTitleTools(ctx: ToolContext): void {
 		{
 			title: 'Get a title recipe',
 			description:
+				'A look as JSON: its recipe, colourways and the layer types it uses. Start a custom `recipe` from it.',
+			details:
 				'A look as JSON: its recipe (bottom-first layers, palette, light, font), colourways, tags, what each layer type it uses takes (name, kind, default, range, no schemas) and every layer type there is. The starting point for propose_title {recipe} and save_title_look {recipe}. A project look needs projectId.',
 			input: { lookId: LookIdArg, projectId: ProjectIdArg.optional().describe('For a look of the project') },
 			annotations: READ_ONLY,
@@ -1520,7 +1527,8 @@ export function registerTitleTools(ctx: ToolContext): void {
 		'save_title_look',
 		{
 			title: 'Save a title look',
-			description:
+			description: "Save a clip's look or a recipe as a look of the project.",
+			details:
 				'Saves a look in the project (look.create, one undo step): from a clip (clipId, its appearance at its first frame; link: true links the clip to the new look) or a recipe. name is unique in the project. The new lookId works with propose_title and find_title_looks {projectId}.',
 			input: {
 				projectId: ProjectIdArg,
@@ -1567,6 +1575,8 @@ export function registerTitleTools(ctx: ToolContext): void {
 		{
 			title: 'Add a title generator',
 			description:
+				"Add a generator (fire, particles, sunburst…) to a title's look, or as its own clip below the title.",
+			details:
 				'Adds a generator (fire, particles, sunburst…: list_effects {category: "Generate"}) in one undo step. With clipId it becomes a layer of that clip\'s look, so it follows the title\'s shape. Without it a standalone clip goes on a free track, below belowClipId when given, so it never hides the title (clip.addGenerator); give at and duration.',
 			input: {
 				projectId: ProjectIdArg,
@@ -1651,7 +1661,8 @@ export function registerTitleTools(ctx: ToolContext): void {
 		'set_global_light',
 		{
 			title: 'Set the global light',
-			description:
+			description: 'Set or clear the light of a sequence, which looks that follow the sequence use.',
+			details:
 				'Sets the light of a sequence (sequence.setGlobalLight, one undo step): every look whose light source is "sequence" follows it. angle in degrees (0 = right, clockwise), altitude 0–90. clear: true removes it, and those looks use their own light again. Keyframe it with apply_commands param.set on ["globalLight", sequenceId, "angle"].',
 			input: {
 				projectId: ProjectIdArg,

@@ -158,7 +158,8 @@ export function registerSimWarpTools(ctx: ToolContext): void {
 		'add_puppet_pins',
 		{
 			title: 'Add Puppet pins',
-			description:
+			description: 'Place pins on a Puppet effect.',
+			details:
 				"Places pins on a Puppet effect (After Effects' Puppet Position / Starch / Bend / Advanced / Overlap Pin tools), one undoable step. Points are layer-normalised ([0, 0] = the layer's top-left, [1, 1] its bottom-right). A pin outside every mesh first makes a mesh: by default from the opaque region of a PNG still with transparency under the first pin (After Effects' behaviour), else the clip's whole box; `outline` gives a polygon (layer-normalised, e.g. the subject's silhouette) or forces \"box\". Returns the pin ids (results[i].pinId). The picture changes once pins move (move_puppet_pins / record_puppet_pins).",
 			input: {
 				projectId: ProjectIdArg,
@@ -321,7 +322,8 @@ export function registerSimWarpTools(ctx: ToolContext): void {
 		'liquify_stroke',
 		{
 			title: 'Liquify brush stroke',
-			description:
+			description: 'Paint one brush stroke on a Liquify effect.',
+			details:
 				"Paints one brush stroke on a Liquify effect's Distortion Mesh (After Effects' Liquify tools): points are the brush path in layer pixels (one point = a dab); tool defaults to the effect's Tool param (warp, turbulence, twirlClockwise, twirlCounterclockwise, pucker, bloat, shiftPixels, reflection, clone, reconstruction); size = brush diameter (layer px) and pressure 1–100 default to the effect's Brush Size / Pressure. At `at` with the Distortion Mesh animated the stroke writes a key there. reset: true clears the mesh instead. One undoable step.",
 			input: {
 				projectId: ProjectIdArg,

@@ -315,7 +315,8 @@ export function registerTrimPathTools(ctx: ToolContext): void {
 		'add_trim_tracer',
 		{
 			title: 'Add trim tracer',
-			description:
+			description: 'Make a follower ride the moving tip of a Trim Paths.',
+			details:
 				'Makes a follower ride the moving tip of a Trim Paths (shape.addTrimTracer, one undoable step): its Position (and Rotation with orient) becomes an id-addressed expression computing the tip in sequence pixels every frame (Start / End and Offset as rendered, through the group transforms and the shape clip\'s Motion). Without followerClipId a 12 px "Tracer" dot clip is created on the track above the shape clip over the same span. trimItemId defaults to the clip\'s master trim (the one animate_trim_paths animates). An existing Position / Rotation expression on the follower is replaced (W_EXPRESSION_REPLACED).',
 			input: {
 				projectId: ProjectIdArg,

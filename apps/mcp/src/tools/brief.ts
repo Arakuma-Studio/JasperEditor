@@ -70,7 +70,7 @@ export function registerBriefTools(ctx: ToolContext): void {
 		{
 			title: 'Get the brief',
 			description:
-				"Reads a sequence's brief — what the user wants the video to be (text: goal, audience, tone, must-keep moments; platform; targetDurationSec; aspect) — with the platform's frame shape, whether the sequence frame matches it, and how many agent notes the project has. Read it before cutting; brief null = the user stated nothing yet.",
+				"Read a sequence's brief: goal, platform, length, aspect. `brief: null`: the user stated nothing yet.",
 			input: { projectId: ProjectIdArg, sequenceId: SequenceIdArg },
 			annotations: READ_ONLY,
 		},
@@ -86,7 +86,7 @@ export function registerBriefTools(ctx: ToolContext): void {
 		{
 			title: 'Set the brief',
 			description:
-				"Changes a sequence's brief in one undo step: the fields you give replace the stored ones, omitted fields are kept, null clears a field; clear: true removes the whole brief. The brief is the user's statement of intent — change it only when the user asks or confirms (e.g. they told you the platform in chat).",
+				"Change a sequence's brief: given fields replace, omitted ones stay, null clears. Only when the user asks or confirms.",
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -94,7 +94,7 @@ export function registerBriefTools(ctx: ToolContext): void {
 				platform: BriefPlatformSchema.nullable().optional(),
 				targetDurationSec: BriefDurationSchema.nullable().optional(),
 				aspect: BriefAspectSchema.nullable().optional(),
-				clear: z.boolean().optional().describe('Remove the whole brief (no other field may be given)'),
+				clear: z.boolean().optional().describe('Remove the whole brief; no other field.'),
 			},
 			annotations: EDIT_IDEMPOTENT,
 		},
@@ -132,17 +132,10 @@ export function registerBriefTools(ctx: ToolContext): void {
 		'list_agent_notes',
 		{
 			title: 'List agent notes',
-			description:
-				'Lists the notes agents kept about this project (oldest first: id, at, author, text) — decisions, chosen takes, open questions from earlier sessions. Read them when you start working on a project.',
+			description: 'Notes earlier agents kept on this project.',
 			input: {
 				projectId: ProjectIdArg,
-				limit: z
-					.number()
-					.int()
-					.min(1)
-					.max(AGENT_NOTE_LIMITS.maxEntries)
-					.optional()
-					.describe('Only the newest N notes (default: all, at most 500)'),
+				limit: z.number().int().min(1).max(AGENT_NOTE_LIMITS.maxEntries).optional().describe('Newest N.'),
 			},
 			annotations: READ_ONLY,
 		},
@@ -159,7 +152,8 @@ export function registerBriefTools(ctx: ToolContext): void {
 		'add_agent_note',
 		{
 			title: 'Add an agent note',
-			description: `Keeps a note in the project for later sessions and other agents (one undo step; signed with your client name, timestamped). Use it for decisions and facts worth remembering ("take 3 of the intro has the cleanest audio"), not for progress chatter. At most ${AGENT_NOTE_LIMITS.maxEntries} notes per project; only the user removes notes (Sequence ▸ Brief…).`,
+			description:
+				'Keep a decision for later agents (a chosen take, an open question), not progress chatter. At most 500 per project; only the user removes them.',
 			input: { projectId: ProjectIdArg, text: AgentNoteTextSchema },
 			annotations: EDIT,
 		},

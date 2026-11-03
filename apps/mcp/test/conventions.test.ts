@@ -155,7 +155,7 @@ describe('tool catalogue conventions', () => {
 		expect(byName.get('remove_sound_pack')).toMatchObject({ destructiveHint: true, idempotentHint: true });
 	});
 
-	it('every fixed-shape object of every input schema forbids additional properties', () => {
+	it('every fixed-shape object of every input schema forbids additional properties', async () => {
 		const loose: string[] = [];
 		const walk = (s: unknown, path: string, tool: string) => {
 			if (!s || typeof s !== 'object') return;
@@ -173,7 +173,13 @@ describe('tool catalogue conventions', () => {
 				else if (v && typeof v === 'object') walk(v, `${path}.${k}`, tool);
 			}
 		};
-		for (const t of tools) walk(t.inputSchema, '', t.name);
+		for (const t of tools) {
+			const r = (await client.callTool({
+				name: 'describe_tool',
+				arguments: { name: t.name, full: true },
+			})) as CallToolResult;
+			walk((JSON.parse((r.content[0] as { text: string }).text) as Tool).inputSchema, '', t.name);
+		}
 		expect(loose).toEqual([]);
 	});
 });

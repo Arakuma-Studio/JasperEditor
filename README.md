@@ -746,16 +746,16 @@ once before enabling a project-scoped server; start it from the repository root 
 
 The server has over 400 tools. To keep an agent's context small, a session advertises only the **`core`**
 toolset (≤ 32 tools: projects, the timeline, `describe_commands` / `apply_commands`, the main edits, footage digest
-and takes, range views, proposals, the brief, export and verification, guides) and short instructions (≤ 8 KB:
-the read → propose → verify workflow, the rules, the toolset index). Every other tool belongs to one named
-toolset (`project`, `media`, `editing`, `color`, `audio`, `sound`, `captions`, `transcript`, `ui`… —
-`list_toolsets` lists them with counts):
+and takes, range views, proposals, the brief, export and verification, guides) and short instructions (≤ 4 KB,
+because Claude Code cuts them at 4096 characters: when to use which route, the rules, a one-line toolset map). Every
+other tool belongs to one named toolset (`project`, `media`, `editing`, `color`, `audio`, `sound`, `captions`,
+`transcript`, `ui`… — `list_toolsets` lists them, `list_toolsets {names}` their tools):
 
-- `enable_toolsets {"names": ["color"]}` / `disable_toolsets` change what `tools/list` shows and send
-  `notifications/tools/list_changed`;
-- `call_tool {"name", "arguments"}` runs any tool even when its toolset is off, with the same strict arguments,
-  approvals, progress and errors as a direct call (`describe_tool {name}` gives its schema) — for clients that
-  ignore `list_changed`; calling an unadvertised tool by name returns `E_TOOLSET_NOT_ENABLED` naming its toolset;
+- `describe_tool {name}` + `call_tool {name, arguments}` run any tool with the same strict arguments, approvals,
+  progress and errors as a direct call; this is the route the instructions teach, because it works in every client;
+- `enable_toolsets {"names": ["color"]}` changes what `tools/list` shows and sends
+  `notifications/tools/list_changed`; `disable_toolsets` (in the `project` toolset) reverses it;
+- calling an unadvertised tool by name returns `E_TOOLSET_NOT_ENABLED`, whose hint names `call_tool`;
 - `--toolsets all` (or `JASPER_MCP_TOOLSETS=all`) advertises everything, as before; the `jasper` CLI always
   reaches every tool;
 - guides: `get_guide {topic}` or the resources `jasper://guide/<topic>` (one per domain guide);

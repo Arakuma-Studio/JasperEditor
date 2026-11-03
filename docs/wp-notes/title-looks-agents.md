@@ -110,3 +110,31 @@ at 1080p took 32 s. At load 80 a sheet ran past 600 s and the engine stopped ans
 - A title moving through a frame edge during the hold is measured only at three frames.
 - User looks in the engine-backed store (TL-054) are not searched here; `find_title_looks {projectId}` covers project looks.
 - Rendered rows of a proposal are not stored on it, so Review does not show them; the agent reports them.
+
+## After the MCP text cut (merge of `main` at e84806b6)
+
+`main` cut model-visible text by 60–69 % (`docs/wp-notes/agent-footage-context.md` § Model-visible text). The titles and
+effects tools follow the same rules since that merge:
+
+- Each of the ten tools (`find_title_looks`, `propose_title`, `title_check`, `get_title_recipe`, `save_title_look`,
+  `add_title_generator`, `set_global_light`, `list_effects`, `add_effect`, `set_effect_param`) advertises one short
+  sentence; its former description is its `details`, unchanged, read with `describe_tool {name, full: true}`.
+  `render_frames`, `add_text` and `list_proposal_features` keep the spec 19 additions inside their `details`.
+  `title_check`'s rules for format and judgement rows still reach the agent in every result's `next`.
+- The one-line toolset map in the instructions names `titles` with its trigger words, and `list_effects` under effects;
+  `text` reads "plain titles, text styles", so a styled title no longer routes to it.
+- `describe_commands` lists catalogues only with `catalogues: true`; the effect count and its `list_effects` hint
+  live there.
+- The guide and `references/title-art.md` send agents to `call_tool` instead of `enable_toolsets`, as `main` does.
+- Measured bytes (`pnpm --filter @jasper/mcp eval:measure`, merged tree): `+titles` 10,612 → 6,608 after the split;
+  `+effects` 21,137, over the old 19,663 by the three effects tools' schemas; `all` 496,936 (budget 497,324);
+  `core` 25,510 (budget 25,884); `+export` 11,549, over the old 11,113 by `render_frames`' six spec 19 arguments
+  (`proposalId`, `itemIds`, `overlay`, `wait`, `timeoutSeconds`, `jobId`: proposal previews and one-job sheets, TL-103,
+  TL-104). `eval/budget.json` gains `+titles` (6,741) and raises `+effects` to 21,560 and `+export` to 11,780, each the
+  measurement plus the 2 % headroom `--write-budget` uses. The eval cases in `eval/cases/titles.jsonl`
+  (`titles-effect-by-name`, `titles-styled-title`, `titles-plain-text-control`) are what those bytes have to earn;
+  they build (`pnpm eval --dry-run`), but no model samples were run for this merge. `eval/fake-engine.ts` has no
+  `requestStillSheet`, so a sample that reaches `find_title_looks` or `propose_title` is marked invalid: until the fake
+  models look sheets, `titles-styled-title` cannot produce a valid sample (recorded in `docs/gaps.md`).
+- `toolsets.test.ts`'s unknown-tool-name scan reads every tool's `details` as well as its description, since most
+  reference text now lives there.

@@ -192,7 +192,6 @@ describe('toolset map (AF-CTX-001)', () => {
 		for (const name of [
 			'list_toolsets',
 			'enable_toolsets',
-			'disable_toolsets',
 			'call_tool',
 			'describe_tool',
 			'get_guide',
@@ -271,14 +270,16 @@ describe('advertised toolsets (AF-CTX-001/002)', () => {
 		expect(bodyOf(await call(s, 'enable_toolsets', { names: ['color'] }))).toMatchObject({ changed: false });
 		await settle();
 		expect(s.listChanged()).toBe(1);
-		expect(bodyOf(await call(s, 'disable_toolsets', { names: ['color'] }))).toMatchObject({
+		const disable = (toolsetNames: string[]) =>
+			call(s, 'call_tool', { name: 'disable_toolsets', arguments: { names: toolsetNames } });
+		expect(bodyOf(await disable(['color']))).toMatchObject({
 			changed: true,
 			enabled: ['core', 'audio'],
 		});
 		await settle();
 		expect(s.listChanged()).toBe(2);
 		expect(names((await s.client.listTools()).tools)).not.toContain('grade_clip');
-		const core = await call(s, 'disable_toolsets', { names: ['core'] });
+		const core = await disable(['core']);
 		expect(core.isError).toBe(true);
 		expect(bodyOf(core).error).toMatchObject({ code: 'E_INVALID_PARAM' });
 		const bad = await call(s, 'enable_toolsets', { names: ['colour'] });
@@ -287,24 +288,25 @@ describe('advertised toolsets (AF-CTX-001/002)', () => {
 		expect(bodyOf(await call(s, 'enable_toolsets', { names: ['all'] })).advertisedTools).toBe(
 			(await allTools()).length,
 		);
-		expect(bodyOf(await call(s, 'disable_toolsets', { names: ['all'] })).enabled).toEqual(['core']);
+		expect(bodyOf(await disable(['all'])).enabled).toEqual(['core']);
 	});
 
-	it('list_toolsets reports each toolset with its tool count, state and guides', async () => {
+	it('list_toolsets reports each toolset, and with names only those, with their tools and guides', async () => {
 		const s = await connect('core,ui');
-		const r = bodyOf(await call(s, 'list_toolsets', { names: ['ui'] }));
+		const r = bodyOf(await call(s, 'list_toolsets'));
 		expect(r.toolsets.map((t: { name: string }) => t.name)).toEqual([...TOOLSET_NAMES]);
 		const registered = new Set(names(await allTools()));
 		for (const t of r.toolsets) {
 			const def = TOOLSETS.find((d) => d.name === t.name)!;
 			expect(t.tools, t.name).toBe(def.tools.filter((x) => registered.has(x)).length);
 			expect(t.enabled, t.name).toBe(t.name === 'core' || t.name === 'ui');
-			expect(t.guides).toEqual(def.guides);
+			expect(t.description).toBe(def.description);
 		}
 		expect(r.toolsets.reduce((n: number, t: { tools: number }) => n + t.tools, 0)).toBe(registered.size);
-		const ui = r.toolsets.find((t: { name: string }) => t.name === 'ui');
-		expect(ui.toolList.map((t: { name: string }) => t.name)).toContain('ui_screenshot');
-		expect(r.toolsets.find((t: { name: string }) => t.name === 'core').toolList).toBeUndefined();
+		const some = bodyOf(await call(s, 'list_toolsets', { names: ['ui'] }));
+		expect(some.toolsets).toHaveLength(1);
+		expect(some.toolsets[0].tools).toContain('ui_screenshot');
+		expect(some.toolsets[0].guides).toEqual(TOOLSETS.find((d) => d.name === 'ui')!.guides);
 	});
 
 	it('calling a registered but unadvertised tool by name returns an error naming its toolset', async () => {
@@ -314,7 +316,7 @@ describe('advertised toolsets (AF-CTX-001/002)', () => {
 		expect(bodyOf(r).error).toMatchObject({
 			code: 'E_TOOLSET_NOT_ENABLED',
 			message: expect.stringContaining('"color"'),
-			hint: expect.stringContaining('enable_toolsets'),
+			hint: expect.stringContaining('describe_tool'),
 			details: { tool: 'grade_clip', toolset: 'color' },
 		});
 		expect(bodyOf(r).error.hint).toContain('call_tool');
@@ -390,11 +392,18 @@ describe('call_tool and describe_tool (AF-CTX-002)', () => {
 
 	it('describe_tool returns the tools/list definition of any tool with its toolset', async () => {
 		const s = await connect('core');
-		const def = bodyOf(await call(s, 'describe_tool', { name: 'grade_clip' }));
 		const listed = (await allTools()).find((t) => t.name === 'grade_clip')!;
-		expect(def).toEqual({ ...JSON.parse(JSON.stringify(listed)), toolset: 'color', advertised: false });
-		expect(def.inputSchema.additionalProperties).toBe(false);
-		expect(bodyOf(await call(s, 'describe_tool', { name: 'get_timeline' }))).toMatchObject({
+		expect(bodyOf(await call(s, 'describe_tool', { name: 'grade_clip' }))).toEqual({
+			name: 'grade_clip',
+			description: listed.description,
+			inputSchema: JSON.parse(JSON.stringify(listed.inputSchema)),
+			toolset: 'color',
+		});
+		const full = bodyOf(await call(s, 'describe_tool', { name: 'grade_clip', full: true }));
+		expect(full).toMatchObject({ toolset: 'color', advertised: false });
+		expect(full.inputSchema.additionalProperties).toBe(false);
+		expect(full.details).toContain('Colour-grades a clip');
+		expect(bodyOf(await call(s, 'describe_tool', { name: 'get_timeline', full: true }))).toMatchObject({
 			toolset: 'core',
 			advertised: true,
 		});
@@ -433,20 +442,13 @@ describe('call_tool and describe_tool (AF-CTX-002)', () => {
 });
 
 describe('instructions, guides and prompt (AF-CTX-003)', () => {
-	it('sends short instructions: the workflow, rules, the toolset index and guide pointers', async () => {
+	it('sends instructions that survive the harness cut: routes, rules, every toolset and guide pointers', async () => {
 		const s = await connect('core');
 		const text = s.client.getInstructions() ?? '';
-		expect(Buffer.byteLength(text, 'utf8')).toBeLessThanOrEqual(INSTRUCTIONS_MAX_BYTES);
-		expect(INSTRUCTIONS_MAX_BYTES).toBe(8192);
-		expect(text).toContain('brief → digest/takes → view → propose → wait → verify');
-		for (const ts of TOOLSETS) expect(text, ts.name).toContain(`- ${ts.name}: ${ts.description}`);
-		for (const ref of [
-			'get_guide',
-			'jasper://guide/routing',
-			'call_tool',
-			'enable_toolsets',
-			'E_APPROVAL_DENIED',
-		])
+		expect(text.length).toBeLessThanOrEqual(INSTRUCTIONS_MAX_BYTES);
+		expect(INSTRUCTIONS_MAX_BYTES).toBe(4096);
+		for (const ts of TOOLSETS) if (ts.name !== 'core') expect(text, ts.name).toContain(ts.name);
+		for (const ref of ['propose_edits', 'verify_export', 'list_toolsets', 'call_tool', 'get_guide', 'hint'])
 			expect(text).toContain(ref);
 		const guides = await guideConstants();
 		// No domain guide is embedded any more.
@@ -456,15 +458,12 @@ describe('instructions, guides and prompt (AF-CTX-003)', () => {
 
 	it('serves every domain guide as jasper://guide/<topic> and get_guide, and the full text at jasper://guide', async () => {
 		const s = await connect('core');
-		const index = bodyOf(await call(s, 'get_guide')) as { topics: { topic: string; title: string }[] };
-		const topics = index.topics.map((t) => t.topic);
+		const { topics } = bodyOf(await call(s, 'get_guide')) as { topics: string[] };
 		expect(topics).toEqual(
-			expect.arrayContaining(['routing', 'cleanup', 'transcript-fix', 'editing-automation']),
+			expect.arrayContaining(['routing', 'cleanup', 'transcript-fix', 'editing-automation', 'export']),
 		);
 		const texts = new Map<string, string>();
-		for (const { topic, title } of index.topics) {
-			expect(title.length, topic).toBeGreaterThan(0);
-			expect(title.length, topic).toBeLessThanOrEqual(120);
+		for (const topic of topics) {
 			const res = await s.client.readResource({ uri: `jasper://guide/${topic}` });
 			expect(res.contents[0], topic).toMatchObject({
 				uri: `jasper://guide/${topic}`,
@@ -607,12 +606,22 @@ describe('agent skill (AF-CTX-005)', () => {
 });
 
 describe('tool names in agent-facing text (AF-CTX-003/004/005)', () => {
-	it('no guide and no tool description names a tool that does not exist (TL-105, TL-107)', async () => {
+	it('no guide, tool description or tool details names a tool that does not exist (TL-105, TL-107)', async () => {
 		const tools = await allTools();
 		const registered = new Set(names(tools));
+		// The reference text moved out of `description` into `details` (describe_tool {full}): it names tools too.
+		const s = await connect('core');
+		const details: [string, string][] = [];
+		for (const t of tools) {
+			const d = (bodyOf(await call(s, 'describe_tool', { name: t.name, full: true })) as { details?: string })
+				.details;
+			if (d) details.push([`details ${t.name}`, d]);
+		}
+		expect(details.length).toBeGreaterThan(50);
 		const sources: [string, string][] = [
 			...Object.entries(await guideConstants()),
 			...tools.map((t) => [`tool ${t.name}`, t.description ?? ''] as [string, string]),
+			...details,
 			...PROPOSAL_FEATURES.map((f) => [`feature ${f.id}`, f.producers.join(' ')] as [string, string]),
 		];
 		const missing: string[] = [];

@@ -65,7 +65,7 @@ export const TX_ERROR_HINTS: Record<string, string> = {
 	E_SYNC_CONFLICT:
 		'Sync-locked tracks block this ripple. Pass syncConflict: "cut" or unlock sync on those tracks.',
 	E_NOT_OWNER:
-		'Agents may only undo/redo their own history entries; the top entry was made by the user or another agent.',
+		'Agents may only undo/redo their own history entries; the top entry was made by the user or another agent. Tell the user the undo was refused.',
 	E_NOT_IMPLEMENTED:
 		"This operation is unavailable in the current engine or editor session. Check engine_status and the requested tool's requirements.",
 	E_UNSUPPORTED:
@@ -111,11 +111,19 @@ function errorResult(code: string, message: string, hint?: string, details?: unk
 	};
 }
 
+const ENGINE_OUTDATED_HINT =
+	'The running engine is older than this server: this tool will keep failing, so do not retry it. Ask the user to restart JasperEditor.';
+
+/** The engine answered that it has no such route: it is older than this server, and no id or retry can fix that. */
+export const isMissingRoute = (e: EngineError): boolean =>
+	e.code === 'NOT_FOUND' && e.message.startsWith('No route for ');
+
 /** Converts anything thrown by a tool into an MCP tool error result. */
 export function toErrorResult(e: unknown): CallToolResult {
 	if (e instanceof ToolError) return errorResult(e.code, e.message, e.hint, e.details);
 	if (e instanceof RequestCancelled) return errorResult('CANCELLED', e.message);
 	if (e instanceof EngineError) {
+		if (isMissingRoute(e)) return errorResult('ENGINE_OUTDATED', e.message, ENGINE_OUTDATED_HINT);
 		const inner = (e.detail as { code?: unknown } | undefined)?.code;
 		const txHint = typeof inner === 'string' ? TX_ERROR_HINTS[inner] : undefined;
 		return errorResult(

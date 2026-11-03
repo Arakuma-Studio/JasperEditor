@@ -21,7 +21,10 @@ import { jsonResult, ToolError } from '../errors.ts';
 const FAST_TIMEOUT_MS = 60_000;
 
 export const VERIFY_NEXT =
-	'Rows: kind "format" = what the file is (codec, size, duration, A/V skew, true peak, a platform limit): you may fix a failing one unasked by exporting again with corrected settings. kind "judgement" = what the cut does (black or flash frames and clicks at cuts, loudness, silences, platform recommendations): tell the user what was measured, with the timecode (at), and ask before changing the edit. verified = no fail row and no unverified format row. Never claim an export looks or sounds right beyond what these rows measured; review the output at most three times.';
+	'Fix a failing `format` row yourself by exporting again. Report `judgement` rows with their timecode and ask before changing the edit. Claim nothing beyond these rows; review at most three times.';
+
+/** What each check measures: the second half of the `export` guide. */
+export const VERIFY_GUIDE = `Verifying: rows are {id, kind: "format" | "judgement", status: pass | warn | fail | unverified, measured, expected, tolerance, at?: {sec, frame, timecode}, message}; verified = no fail row and no unverified format row. Kind "format" = what the file is (codec, size, duration, A/V skew, true peak, a platform limit). Kind "judgement" = what the cut does (black or flash frames and clicks at cuts, loudness, silences, platform recommendations). Checks: decode (the file decodes without errors), streams (codec, frame size, frame rate, pixel format, sample rate, channels match the export settings), duration (|file − range| ≤ max(1 frame, 50 ms)), av-skew (audio and video ends within 250 ms), cut-black (a black run ≥ 100 ms within ±2 frames of a cut where the timeline shows a picture — gaps, dark solids, fades and dips are intended black), cut-flash (one frame's luma jumping > 0.25 against both neighbours at a cut; warn when a transition or effect is over the cut), cut-click (a sample step > 12 dB over the local RMS of the steps within ±10 ms of a cut), loudness (BS.1770 integrated loudness within 1.0 LU of the export's normalisation or the target's level), true-peak (≤ ceiling + 0.1 dB; format) and silence (digital silence > 2 s, warn). target (${DELIVERY_TARGET_IDS.join(', ')}) adds the platform delivery rows target-container, target-aspect, target-resolution, target-duration, target-frame-rate, target-size and target-loudness: format rows (fail) where the platform refuses the file outright, judgement rows for its recommendations. checks "fast" probes only (streams, duration, av-skew; what start_export and wait_for_job already return).`;
 
 /** The probe-only verification of a finished export (streams, duration, A/V skew), or why it is missing. */
 export async function fastVerification(
@@ -53,25 +56,20 @@ export function registerVerifyTools(ctx: ToolContext): void {
 		'verify_export',
 		{
 			title: 'Verify export',
-			description: `Measures a finished export (exportId = the start_export job id) against the sequence range it rendered, and returns rows {id, kind: "format" | "judgement", status: pass | warn | fail | unverified, measured, expected, tolerance, at?: {sec, frame, timecode}, message} plus verified (no fail row and no unverified format row), counts and output (container, duration, streams, size). Checks: decode (the file decodes without errors), streams (codec, frame size, frame rate, pixel format, sample rate, channels match the export settings), duration (|file − range| ≤ max(1 frame, 50 ms)), av-skew (audio and video ends within 250 ms), cut-black (a black run ≥ 100 ms within ±2 frames of a cut where the timeline shows a picture — gaps, dark solids, fades and dips are intended black), cut-flash (one frame's luma jumping > 0.25 against both neighbours at a cut; warn when a transition or effect is over the cut), cut-click (a sample step > 12 dB over the local RMS of the steps within ±10 ms of a cut), loudness (BS.1770 integrated loudness within 1.0 LU of the export's normalisation or the target's level), true-peak (≤ ceiling + 0.1 dB; format) and silence (digital silence > 2 s, warn). target (${DELIVERY_TARGET_IDS.join(', ')}) adds the platform delivery rows target-container, target-aspect, target-resolution, target-duration, target-frame-rate, target-size and target-loudness: format rows (fail) where the platform refuses the file outright, judgement rows for its recommendations. checks "fast" probes only (streams, duration, av-skew; what start_export and wait_for_job already return). ${VERIFY_NEXT}`,
+			description:
+				'Measure a finished export (`exportId`: its job id): decode, streams, duration, A/V skew, black or flash frames and clicks at cuts, loudness, true peak, silence. `target` adds a platform\'s limits. `checks: "fast"` probes only.',
 			input: {
 				projectId: ProjectIdArg,
-				exportId: z.string().min(1).max(64).describe('The export job id (start_export / wait_for_job jobId)'),
-				target: z
-					.enum(DELIVERY_TARGET_IDS)
-					.optional()
-					.describe('Delivery target: adds the platform limit rows (target-*)'),
-				checks: z
-					.enum(['full', 'fast'])
-					.optional()
-					.describe('"full" (default): decode everything; "fast": streams, duration and A/V skew only'),
+				exportId: z.string().min(1).max(64).describe('The job id of `start_export`.'),
+				target: z.enum(DELIVERY_TARGET_IDS).optional(),
+				checks: z.enum(['full', 'fast']).optional().describe('Default full.'),
 				timeoutSeconds: z
 					.number()
 					.int()
 					.min(1)
 					.max(900)
 					.optional()
-					.describe('How long to wait for the measurement (default 300); on timeout call wait_for_job'),
+					.describe('Default 300; then `wait_for_job`.'),
 			},
 			annotations: READ_ONLY,
 		},

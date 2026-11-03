@@ -29,6 +29,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import fc from 'fast-check';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { buildInstructions } from '../src/agent-guide.ts';
 import type { EngineConnection } from '../src/link.ts';
 import { decodePng, encodePng } from '../src/png.ts';
 import { createJasperMcpServer } from '../src/server.ts';
@@ -1122,11 +1123,21 @@ describe('effects discovery (TL-105)', () => {
 		expect(looks.json.total).toBe(0);
 	});
 
-	it('describe_commands no longer drops effects', async () => {
+	it('describe_commands no longer drops effects: they are counted with its catalogues', async () => {
 		const s = await connect();
-		const r = await s.ok('describe_commands');
+		const lean = await s.ok('describe_commands');
+		expect(lean.json.effects).toBeUndefined();
+		const r = await s.ok('describe_commands', { catalogues: true });
 		expect(r.json.effects.count).toBeGreaterThan(10);
 		expect(r.json.effects.hint).toContain('list_effects');
+	});
+
+	it('the server instructions name list_effects and the titles toolset, so agents with core only find them', async () => {
+		const instructions = buildInstructions();
+		expect(instructions).toContain('`list_effects`');
+		expect(instructions).toMatch(
+			/titles \(styled title looks: `find_title_looks`, `propose_title`, `title_check`\)/,
+		);
 	});
 
 	it('adds an effect and sets and keys its params', async () => {
