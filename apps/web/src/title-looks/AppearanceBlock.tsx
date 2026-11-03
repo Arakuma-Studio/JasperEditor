@@ -128,6 +128,7 @@ export function AppearanceBlock(props: {
 								frame={props.frame}
 								readOnly={props.readOnly}
 								apply={(label, commands) => ops.apply(label, commands)}
+								unitPx={model.unitPx}
 								data-testid={`ec-look-generator-presets-${l.layer.id}`}
 							/>
 						</div>

@@ -22,7 +22,7 @@ import type {
 	GlslChunk,
 	ShaderPass,
 } from '../shader.ts';
-import { resolveIncludes } from '../shader.ts';
+import { FX_MAX_PADDING, resolveIncludes } from '../shader.ts';
 import {
 	FILLED_DEPTH,
 	isPaintParam,
@@ -271,6 +271,24 @@ export function titleLookPadding(ctx: FxPlanContext): Partial<FxPadding> {
 	const px = (v: number) => (v > 0 ? Math.ceil(v * k) + PADDING_GUARD : 0);
 	const lean = Math.ceil(r.boxHeight * ctx.height);
 	return { left: px(r.left) + lean, top: px(r.top), right: px(r.right) + lean, bottom: px(r.bottom) };
+}
+
+/**
+ * A look layer (a generator's `extent`, Shockwave's radius…) that reaches past the effect canvas's limit at this unit:
+ * its own reach, layer px, and the limit (`FX_MAX_PADDING` per side), or null when it fits. Past the limit the drawing
+ * fades out at the canvas edge, the same in Program and in every export (docs/gaps.md); the generator's inspector says so.
+ */
+export function lookLayerReachCut(
+	type: string,
+	params: Record<string, unknown>,
+	unitPx: number,
+): { reachPx: number; limitPx: number } | null {
+	const def = titleLayerType(type);
+	if (!def?.reach || !(unitPx > 0) || !Number.isFinite(unitPx)) return null;
+	const s = sides(def.reach(withDefaults(def, params as LayerParams)));
+	const widest = Math.max(num(s.left), num(s.top), num(s.right), num(s.bottom));
+	const reachPx = Math.ceil(widest * unitPx * 0.01) + PADDING_GUARD;
+	return Number.isFinite(reachPx) && reachPx > FX_MAX_PADDING ? { reachPx, limitPx: FX_MAX_PADDING } : null;
 }
 
 /**

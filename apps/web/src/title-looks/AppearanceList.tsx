@@ -21,7 +21,7 @@ import { LIGHT_TARGET, lookFocus, useLookFocus } from './focus.ts';
 import { GeneratorPresetChips, generatorOf } from './GeneratorPresets.tsx';
 import { flatPalette, paintCss } from './paint.ts';
 import { layerRows, lightRows, paletteRows } from './rows.ts';
-import { type LookedClip, layerName, type SharedLayer, sharedStack } from './selection.ts';
+import { type LookedClip, layerName, lookUnitOf, type SharedLayer, sharedStack } from './selection.ts';
 
 const REORDER_MIME = 'application/x-jasper-look-layer';
 const rowCls = 'group flex h-[var(--pr-row-h)] items-center gap-1 pr-1 pl-2 text-pr-ui';
@@ -291,6 +291,7 @@ export function AppearanceList(props: {
 												frame={frame}
 												readOnly={readOnly}
 												apply={(label, commands) => ctx.ops.apply(label, commands)}
+												unitPx={lookUnitOf(doc, seq, first.clip)}
 												data-testid={`look-generator-presets-${listIndex}`}
 											/>
 										</div>

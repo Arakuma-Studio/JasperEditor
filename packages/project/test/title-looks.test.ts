@@ -36,6 +36,7 @@ import {
 	resolvePropertySpec,
 	sequenceAnimatables,
 	TITLE_LOOK_EFFECT_ID,
+	lookLayerReachCut,
 	titleLookBleed,
 	titleLookOf,
 	titleLooksOf,
@@ -1242,5 +1243,25 @@ describe('padding (TL-033)', () => {
 		expect(appearanceClipReach(lookOf(h, t), { from: 0, to: 59 * F, frames: 60 }).left).toBeLessThan(
 			reach.left,
 		);
+	});
+});
+
+describe('reach past the effect canvas (FX_MAX_PADDING)', () => {
+	it('names a generator whose reach at a unit passes 2048 layer px per side, and nothing that fits', () => {
+		// Sunburst and Lens Flare reach their `extent`, Shockwave its radius and ring: percent of the unit.
+		expect(lookLayerReachCut('generator:sunburst', { extent: 800 }, 300)).toEqual({
+			reachPx: 2404,
+			limitPx: 2048,
+		});
+		expect(lookLayerReachCut('generator:sunburst', { extent: 800 }, 200)).toBeNull();
+		expect(lookLayerReachCut('generator:sunburst', { extent: 800, clip: true }, 300)).toBeNull();
+		expect(lookLayerReachCut('generator:lensFlare', { extent: 900 }, 256)?.limitPx).toBe(2048);
+		expect(lookLayerReachCut('generator:shockwave', { radius: 900 }, 256)?.reachPx).toBeGreaterThan(2048);
+		expect(lookLayerReachCut('generator:shockwave', { radius: 100 }, 256)).toBeNull();
+		// No reach, unknown types and units that are not sizes say nothing.
+		expect(lookLayerReachCut('face', {}, 10_000)).toBeNull();
+		expect(lookLayerReachCut('nonsense', { extent: 1e9 }, 300)).toBeNull();
+		expect(lookLayerReachCut('generator:sunburst', { extent: 800 }, Number.NaN)).toBeNull();
+		expect(lookLayerReachCut('generator:sunburst', { extent: 800 }, 0)).toBeNull();
 	});
 });

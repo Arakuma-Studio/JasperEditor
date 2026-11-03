@@ -4,8 +4,11 @@ import {
 	type AppearanceLayer,
 	type Clip,
 	clipLook,
+	clipLookUnit,
 	type EffectInstance,
+	intrinsicBoxOf,
 	type ProjectDocument,
+	type Sequence,
 	TITLE_LOOK_CLIP_KINDS,
 	type TitleLook,
 	titleLayerType,
@@ -87,4 +90,12 @@ export function sharedStack(looked: readonly LookedClip[]): SharedLayer[] | null
 		looked: [...looked],
 	}));
 	return out.reverse();
+}
+
+/** Layer px of 1 % of a look's unit on `clip`: its type size, else the box's short side (an upper bound). */
+export function lookUnitOf(doc: ProjectDocument, seq: Sequence, clip: Clip): number {
+	const box = intrinsicBoxOf({ clip, doc, seq });
+	// The render clip's `source.text` is the document clip's `content` (render/snapshot.ts).
+	const unit = clipLookUnit(clip.kind === 'text' ? { source: { text: clip.content } } : {});
+	return unit ?? Math.min(box.width, box.height);
 }

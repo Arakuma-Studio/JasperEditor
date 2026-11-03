@@ -17,7 +17,10 @@ import { DocBuilder } from './helpers.ts';
 function scene(): { d: DocBuilder; doc: RenderSnapshot } {
 	const d = new DocBuilder('hd-720p-30');
 	d.tx([{ type: 'clip.addSolid', at: 0, duration: 10, track: 'V1', color: [1, 0, 0, 1] }]);
-	return { d, doc: buildRenderSnapshot(d.doc, d.seqId, { resolveMedia: () => null, resolveFont: () => null }) };
+	return {
+		d,
+		doc: buildRenderSnapshot(d.doc, d.seqId, { resolveMedia: () => null, resolveFont: () => null }),
+	};
 }
 
 function context(): JobContext {
@@ -98,7 +101,9 @@ describe('delivery jobs carry the plan (AGENTS §4)', () => {
 
 	it('a blocked plan refuses every delivery with its code and blockers, before anything renders', async () => {
 		const { d, doc } = scene();
-		const blockers = [{ path: 'hybrid', reason: 'look picture "pano.png" of clip "Title"', itemId: 'clip_1' }];
+		const blockers = [
+			{ path: 'hybrid', reason: 'look picture "pano.png" of clip "Title"', itemId: 'clip_1' },
+		];
 		let rendered = 0;
 		const base = deps(doc, async () => {
 			throw new JobError('LOOK_MEDIA_OFFLINE', 'A look’s picture is offline', false, { blockers });

@@ -183,6 +183,82 @@ describe('chips in Effect Controls', () => {
 	});
 });
 
+/** A title of `sizePx` whose look holds a Sunburst reaching `extent` % of the unit, selected. */
+function titleWithSunburst(sizePx: number, extent: number) {
+	const session = makeSession();
+	const r = session.apply({
+		label: 'setup',
+		origin: 'user',
+		commands: [
+			{
+				type: 'clip.addText',
+				at: 0,
+				duration: 30,
+				track: 'V2',
+				content: { text: 'big', style: { sizePx } },
+				ref: '$t',
+			},
+			{
+				type: 'look.apply',
+				clipIds: ['$t'],
+				look: { name: 'Rays', recipe: { layers: [{ type: 'face' }] } },
+			},
+		] as never,
+	});
+	if (!r.ok) throw new Error(JSON.stringify(r.errors));
+	const id = r.refs.$t!;
+	const fx = lookedClip(clipOf(session, id))!.fx;
+	session.apply({
+		label: 'rays',
+		origin: 'user',
+		commands: [
+			{ type: 'appearance.addLayer', effectInstanceId: fx.id, layerType: 'generator:sunburst' },
+		] as never,
+	});
+	const layer = lookedClip(clipOf(session, id))!.appearance.layers.find(
+		(l) => l.type === 'generator:sunburst',
+	)!;
+	const set = session.apply({
+		label: 'extent',
+		origin: 'user',
+		commands: [
+			{ type: 'param.set', target: ['appearance', fx.id, layer.id, 'extent'], value: extent },
+		] as never,
+	});
+	if (!set.ok) throw new Error(JSON.stringify(set.errors));
+	act(() => session.select('timeline', [id]));
+	return { session, layerId: layer.id };
+}
+
+describe('reach past the canvas limit (spec 19, AGENTS §4)', () => {
+	const openSunburst = () => {
+		const row = screen
+			.getAllByRole('listitem')
+			.find((e) => e.getAttribute('data-layer-type') === 'generator:sunburst')!;
+		fireEvent.click(
+			screen.getByTestId(`look-layer-open-${row.getAttribute('data-testid')!.replace('look-layer-', '')}`),
+		);
+	};
+
+	it('the generator’s inspector says where its drawing stops when the reach passes the canvas limit', () => {
+		const { session, layerId } = titleWithSunburst(300, 800);
+		renderWithSession(session, <PropertiesPanel instanceId="p1" visible />);
+		openSunburst();
+		expect(screen.getByTestId('generator-reach-cut').textContent).toMatch(/2404 px.*2048 px/);
+		cleanup();
+		renderWithSession(session, <EffectControlsPanel instanceId="e1" visible />);
+		fireEvent.click(screen.getByTestId(`ec-look-toggle-${layerId}`));
+		expect(screen.getByTestId('generator-reach-cut').textContent).toMatch(/2048 px/);
+	});
+
+	it('says nothing when it fits', () => {
+		const { session } = titleWithSunburst(120, 800);
+		renderWithSession(session, <PropertiesPanel instanceId="p1" visible />);
+		openSunburst();
+		expect(screen.queryByTestId('generator-reach-cut')).toBeNull();
+	});
+});
+
 describe('Graphics ▸ New Layer ▸ Generator (TL-064, TL-097)', () => {
 	const flat = (
 		items: readonly { type: string; label?: string; items?: unknown; command?: string; args?: unknown }[],
