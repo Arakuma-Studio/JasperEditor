@@ -4,7 +4,7 @@
 - **Commit:** `dd952d0`
 - **Licence:** `LicenseRef-Pachislop`
 - **Copyright:** Copyright (c) 2026 SafEight
-- **Ported by:** title-looks finishes, 2026-11-02
+- **Ported by:** title-looks finishes, 2026-11-02; the rotation undo by title-looks core polish, 2026-11-03
 
 | Upstream path | Local path | What |
 |---|---|---|
@@ -18,6 +18,7 @@
 | `src/engine/patterns.ts` | `packages/project/src/registry/fx/glsl/title-pattern.ts` | Every motif's signed distance and its analytic antialiasing |
 | `src/effects/b/material.ts` | `packages/project/src/registry/fx/title-look/material.ts` | A material as an effect on the input's alpha, with the shading of a title's face |
 | `src/text/plate.ts` | `packages/project/src/registry/fx/title-look/layers/plate.ts` | Plate kinds and the leaning box with cut corners; here distances on the GPU instead of polygons |
+| `src/engine/layer2d/materialPass.ts` (`layerAngle`, `screenAngle`, `uReflM`) | `packages/project/src/registry/fx/title-look/plan.ts` (`lookOrientation`, `titleLookUniforms`), `glsl.ts` (`GLSL_TL_STAGE`) | Lights fixed on screen: the layer's rotation and flip undone for the light, and the reflection's directions taken back to the screen |
 
 ## Changes made when porting
 
@@ -34,5 +35,8 @@
 - Motif names are generic (`blossom`, `fans`, `leafLattice`, `rings`, `hexagons`, `scales`), and each kind compiles on its own.
 - The dry-brush cut antialiases through screen derivatives rather than the original's analytic exit gradients, and cuts the
   composite of what is below it rather than each element's mask, so lights do not follow the cut.
-- Not ported: Pachislop's gloss contours (`ring`, `sawtooth`…), its surface textures (hammered, crumple, liquid) and its
-  layer-rotation undo of lights. A look lights in layer space.
+- Not ported: Pachislop's gloss contours (`ring`, `sawtooth`…) and its surface textures (hammered, crumple, liquid).
+- The rotation undo reads the layer map the stage draws with, not a transform's `rotZ` and flips: its orthogonal part (polar
+  decomposition), so Motion scale and skew do not tilt the light. It also turns the directions of
+  drop, long and inner shadows and of extrusion, which Pachislop keeps in the layer, and the padding grows alike on every side
+  of a layer that turns.

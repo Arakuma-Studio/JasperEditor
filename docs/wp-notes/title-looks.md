@@ -74,6 +74,32 @@ looks and compile once. A six-layer look with a blur plans about 25 passes. Meas
   the peak is 75 %, and a rim inherits a nearby opacity that is full from 50 % local alpha up. Effect: a rim fades in with
   its glyph, reaching full strength when the glyph is half visible. Two pixels of reach matter: with a 3×3 window the outer
   pixels of a 2 px antialiased ramp read as a faint shape of their own and seed a false edge (visible as translucent wedges).
+- **Soft alpha has its edge at half opacity.** The local threshold assumes the 5×5 holds an edge: a step between neighbours of a
+  quarter of the peak or more (beyond one 8-bit step). Soft alpha (a glow's tail reaching an effect after it, a blurred
+  picture) changes by a few percent of itself per pixel, so its local peak is the pixel itself and half of it found an edge
+  wherever the ramp was long, along the 8-bit steps of the tail: a ragged line far outside the picture. Where the window holds
+  no edge the level is 0.5, blended into the local threshold as the steps grow (`tl_window`, `tl_level` in `glsl.ts`), and the
+  edge point is where a plane fitted by least squares over the 5×5 (16 bilinear taps) crosses it, so an 8-bit ramp's edge
+  follows the ramp, not its steps. The field's inside test reads the same level and the same plane. Where the window holds an
+  edge nothing changed: every fingerprint of hard alpha is bit-identical. Consequence: a soft picture that is never more than
+  half opaque has no edge, and one fading in gets it when it passes half (a hard-edged glyph fading in still has its rim fade
+  in). Tested in `title-look-core-gl.test.ts` (a soft disc: one ring at the half-opacity radius, round to 0.35 px, nothing in
+  the tail; the same at 2×), which failed before (the ring sat in the tail, faint and ragged).
+- **The look's stage: lights stay on screen.** A look is drawn in layer space, but its light, the rooms its finishes mirror and
+  the directions of drop, long and inner shadows and of Shaded Extrude are given on screen, as Photoshop's layer styles and
+  Pachislop's renderer (`layerAngle`, `uReflM` in `materialPass.ts`) keep them. The stage hands the layer map at the frame to
+  the look (`titleLookStructure(..., layerMap)`); `lookOrientation` takes its rotation and mirroring (the orthogonal part of the
+  polar decomposition, so scale and skew do not tilt the light); `titleLookUniforms` turns the light back into the layer and
+  binds `u_tlStage`, the layer's axes on screen, for `GLSL_TL_STAGE`'s `tl_fromScreen` and `tl_toScreen`. A layer that turns at
+  any frame (`clipLookTurns`: rotation not upright, keyed or driven, or a flip) pads every side as far as the farthest, so its
+  canvas keeps one size while directions move in it. Upright layers bind the identity and draw bit-identically. What stays
+  with the title, on purpose: paints and gradients, sheen, gloss, texture, satin's and brushed metal's angles, metal's sheet
+  bend (they belong to the surface), and the floor of a perspective shadow and of a reflection (a floor under a turned title
+  turns with it; a floor fixed on screen would need the shape's bounds on screen, not in the layer). The §8 effects (Inner
+  Shadow, Perspective Shadow, Shaded Extrude…) keep layer space like After Effects' effects, which render before the layer's
+  transform. Tested in `title-look-core-gl.test.ts`: a disc look (bevel rim, reflection face, inner shadow, extrude, drop
+  shadow) turned 40°, 90° and 200° and seen on screen matches the upright one (mean difference under 1.5 levels, against 14.7
+  for a mirrored disc without the stage), and so does the mirrored one.
 - **Face coverage is the input's alpha, not the field**, so the glyphs' antialiasing stays exactly as drawn.
 - **Rims reach one pixel under what is above them** when they touch it, so antialiased edges never leak the background.
 - **`source` paint.** TL-011 lists role, colour and gradient. Without a fourth kind a look on a still or a video would
@@ -159,8 +185,8 @@ looks and compile once. A six-layer look with a blur plans about 25 passes. Meas
   decides the direction, so a moving light never clips.
 - **Layers beyond §5.1.** `contourLines`, `extrude` and `gradientOverlay` are not in the §5.1 table. Their effects are in §8 and §5.1
   says an effect shares GLSL with its layer, so they are registered like any type, and Add Layer offers them.
-- **Keyline's threshold and `follow` are not ported.** The field's edge is its local threshold, tuned for fading glyphs, and an
-  effect reads the stack before it by definition.
+- **Keyline's threshold and `follow` are not ported.** The field's edge is its local threshold, tuned for fading glyphs, and at
+  half opacity on soft alpha (above), and an effect reads the stack before it by definition.
 
 ### Standalone effects: the audit (AGENTS §10)
 
@@ -512,11 +538,25 @@ The look applies over the runs. Size, weight, font and spacing change the pictur
 rim stays one outline (tested: `title-text.e2e.test.ts`). A run's **colour** shows where the face paints `{kind: 'source'}`; a role,
 colour or gradient face paints over it, as the toolbar's tooltip says.
 
-**Per-letter finishes: data contract for the finishes stream.** `content.runs[i].finish` holds a finish id, and it persists, repairs
-and survives edits. A look uses one program per finish, so drawing it needs a pixel-to-letter map and a second program in the
-planner, which is GLSL and belongs to that stream. The map exists in TL-036's owner pass; a glyph's run is
-`textRunAt(content.runs, glyph.offset)`. Until the planner draws it `RUN_FINISHES_DRAWN` is false and the toolbar's control is disabled
-with the reason (`docs/gaps.md`): set it to true with the planner change.
+**Per-letter finishes.** `content.runs[i].finish` holds a finish id; it persists, repairs and survives edits, and the look draws it.
+The rule: **a run's finish replaces the finish of the look's face on its letters.** Rims, inlines and plates keep the look's finish,
+so an outline stays one outline across letters (TL-093), and a letter's face is what a reader sees as the letter. Which layers take
+it is the contract's `letterFinish` (only `face`); the finish's params are its defaults, since a layer stores the params of its own
+finish only.
+
+- The text layer reports its glyphs whenever a run gives a finish (`appearanceWantsTextSpans(appearance, runs)`), and each glyph's
+  record carries its run's finish (`textRunAt(content.runs, glyph.offset)`) as a slot: 0 is the look's own, k + 1 is
+  `FxTextSpans.finishes[k]`, at most `MAX_RUN_FINISHES` (16) distinct ones, past which a letter keeps the look's. The ids are in the
+  records' key, so changing a letter from gold to glass redraws.
+- The planner draws the layer once more per other finish, into `tlRunFin`, weighted by how much of the pixel belongs to letters of
+  that slot (`tl_runShare` over the owner pass: the owner's share, and the runner-up's at a seam), then the layer's own pass draws
+  its finish on the rest and composites the sum. The shares add to one, so a seam between two finishes antialiases and nothing is
+  composited twice. Letter passes run before the layer's own finish prepass, as they may share its intermediates (a bevel's and a
+  metal's height). One program per finish, as for any layer.
+- `RUN_FINISHES_DRAWN` is true: the run toolbar's Finish control is enabled.
+- Tested in `title-look-core-gl.test.ts` (one letter metal on a flat look and flat on a metal look, each equal to the whole look in
+  that finish within half a level and the other letters bit-identical; a letter that moves takes its finish along) and
+  `packages/project/test/title-look-core.test.ts` (slots, key, cap, the plan, the samplers of a letter's finish).
 
 ### Warp Text (TL-110)
 
@@ -1079,7 +1119,12 @@ for the missing fingerprints, and for a generator example that was clipped by it
   which can be wider than the glyphs.
 - The style check's rendered row (contrast against the picture) needs pixels only the engine has: the badge lists it as not measured,
   never as passed. `title_check` measures it for agents.
-- Lights and environments are in layer space: a rotated title's bevel light turns with it (`docs/gaps.md`).
+- Lights stay on screen when a title turns (Decisions, "The look's stage"), except a perspective shadow's floor and a reflection's,
+  which turn with the title, and the §8 effects, which keep layer space. The stage sees the layer's own map: a title inside a
+  nested sequence that is itself turned is lit as its nested sequence draws it.
+- A soft picture never more than half opaque has no edge (Decisions, "Soft alpha").
+- A shape touching its canvas edge has no edge there: the seed pass clamps reads at the border, so a bevel or keyline on a picture
+  that fills a canvas without padding stops at the canvas (`docs/gaps.md`).
 - A pattern tile and a reflection image have no mip chain: the tile spreads 9 taps over the pixel and the image 12 over the blur
   cone, which holds the look at the sizes titles use, not a 4K tile shown at 20 px.
 - Grain finer than two pixels loses contrast with its share of the pixel, so a resolution comparison keeps tone, not the pattern.
