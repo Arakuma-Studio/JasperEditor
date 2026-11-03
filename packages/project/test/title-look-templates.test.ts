@@ -51,6 +51,9 @@ describe('title templates (TL-052)', () => {
 	});
 
 	it('cover lower thirds, full-screen titles, end cards and social hooks across general categories', () => {
+		expect(FACTORY_TEMPLATES.length).toBeGreaterThanOrEqual(16);
+		for (const c of ['brush', '3d'])
+			expect(FACTORY_TEMPLATES.some((t) => t.category === c), c).toBe(true);
 		for (const k of TEMPLATE_KINDS)
 			expect(FACTORY_TEMPLATES.filter((t) => t.kind === k).length, k).toBeGreaterThan(0);
 		expect(new Set(FACTORY_TEMPLATES.map((t) => t.category)).size).toBeGreaterThanOrEqual(6);

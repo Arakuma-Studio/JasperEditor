@@ -74,11 +74,29 @@ describe('the library (TL-050)', () => {
 		for (const c of LOOK_CATEGORIES) expect(c.labelEs.length).toBeGreaterThan(0);
 	});
 
-	it('holds at least 15 looks in at least 6 categories, and none holds more than a quarter', () => {
+	it('holds at least 60 looks in at least 12 categories, every category filled, and none holds more than a quarter', () => {
 		const counts = lookCategoryCounts();
-		expect(FACTORY_LOOKS.length).toBeGreaterThanOrEqual(15);
-		expect(counts.filter((c) => c.count > 0).length).toBeGreaterThanOrEqual(6);
+		expect(FACTORY_LOOKS.length).toBeGreaterThanOrEqual(60);
+		expect(counts.filter((c) => c.count > 0).length).toBeGreaterThanOrEqual(12);
+		// Brush and 3D were empty in the first library: every category the spec names now has looks.
+		for (const c of counts) expect(c.count, c.id).toBeGreaterThan(0);
 		for (const c of counts) expect(c.count, c.id).toBeLessThanOrEqual(FACTORY_LOOKS.length / 4);
+	});
+
+	it('uses the finishes, glows and generators, and keeps a generator’s own colours only where it is marked fixed', () => {
+		const types = new Set(FACTORY_LOOKS.flatMap((l) => l.recipe.layers.map((x) => x.type)));
+		const finishes = new Set(
+			FACTORY_LOOKS.flatMap((l) => l.recipe.layers.map((x) => x.params?.finish).filter(Boolean)),
+		);
+		expect([...types].filter((t) => t.startsWith('generator:')).length).toBeGreaterThanOrEqual(8);
+		for (const t of ['extrude', 'plate', 'texture', 'gloss', 'innerGlow', 'deepGlow', 'sheen'])
+			expect(types.has(t), t).toBe(true);
+		for (const f of ['metal', 'bevel', 'glass', 'gloss', 'pattern', 'gradientMap'])
+			expect(finishes.has(f), f).toBe(true);
+		for (const l of FACTORY_LOOKS)
+			for (const x of l.recipe.layers)
+				if (x.type.startsWith('generator:') && x.params?.ownColors === true)
+					expect(x.fixedColor, `${l.libraryId}: ${x.type}`).toBe(true);
 	});
 
 	it('does not read as a pachinko tool: the first looks are general, and its category stays a minority', () => {

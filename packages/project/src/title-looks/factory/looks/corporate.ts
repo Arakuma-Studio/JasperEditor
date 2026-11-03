@@ -1,5 +1,5 @@
 // Corporate: restraint. Brand colour appears once, shadows stay soft, and no gradient draws attention to itself.
-import { face, font, gradient, hardShadow, JA, rim, role, shadow } from '../build.ts';
+import { face, font, gradient, hardShadow, JA, layer, rim, role, shadow } from '../build.ts';
 import { defineLook } from './define.ts';
 
 const corporate = (l: Parameters<typeof defineLook>[1]) => defineLook('corporate', l);
@@ -40,5 +40,20 @@ export const CORPORATE_LOOKS = [
 		colorways: ['corporate-navy', 'ocean', 'crimson', 'gold'],
 		font: font('Montserrat', 800, 'Inter', ...JA.gothic),
 		layers: [hardShadow(3.2, 45, role('accent2')), face()],
+	}),
+	corporate({
+		slug: 'brand-bar',
+		name: 'Brand Bar',
+		nameEs: 'Barra de marca',
+		tags: ['bar', 'barra', 'label', 'etiqueta', 'lower third', 'rótulo', 'plate', 'placa'],
+		description: 'Letters on a crisp bar in the brand colour, cut square around the words.',
+		sampleText: 'Head of Design',
+		colorways: ['corporate-navy', 'ocean', 'crimson', 'graphite'],
+		font: font('Inter', 700, 'Source Sans 3', ...JA.gothic),
+		layers: [
+			shadow({ angle: 90, distance: 1.4, blur: 8, opacity: 40 }),
+			layer('plate', { kind: 'box', grow: 16, corner: 2, paint: role('accent2') }),
+			face(),
+		],
 	}),
 ];

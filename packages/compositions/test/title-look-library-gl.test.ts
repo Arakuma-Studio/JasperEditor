@@ -1,7 +1,8 @@
 // @vitest-environment node
 // Spec 19 §14 library check: every factory look on a real title, in its own bundled font, through the real planner and
 // WebGL2. Each tile must draw and must not clip at its padding. `TITLE_LOOKS_SHEET=<png>` writes the contact sheet; set
-// `TITLE_LOOKS_COLORWAY=<colorway id>` to see the whole library in one colourway.
+// `TITLE_LOOKS_COLORWAY=<colorway id>` to see the whole library in one colourway, and `TITLE_LOOKS_ONLY=<ids>` (look ids or
+// category ids, comma-separated) to sheet part of it while working on it. Unset, every look is checked.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -218,7 +219,9 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			const way = process.env.TITLE_LOOKS_COLORWAY
 				? factoryColorway(process.env.TITLE_LOOKS_COLORWAY)
 				: undefined;
-			const rows = Math.ceil(FACTORY_LOOKS.length / COLS);
+			const only = process.env.TITLE_LOOKS_ONLY?.split(',').map((x) => x.trim());
+			const looks = only ? FACTORY_LOOKS.filter((l) => only.includes(l.libraryId) || only.includes(l.category)) : FACTORY_LOOKS;
+			const rows = Math.ceil(looks.length / COLS);
 			const W = COLS * TILE.w;
 			const H = rows * TILE.h;
 			const sheet = new Uint8Array(W * H * 4);
@@ -229,7 +232,7 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 					for (let k = 0; k < 3; k++) sheet[i + k] = Math.round(Math.max(0, Math.min(1, c[k]!)) * 255);
 					sheet[i + 3] = 255;
 				}
-			for (const [i, l] of FACTORY_LOOKS.entries()) {
+			for (const [i, l] of looks.entries()) {
 				const f = sampleFace(l);
 				const size = await tl.fitSize({
 					text: l.sampleText,
