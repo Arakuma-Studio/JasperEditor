@@ -902,19 +902,24 @@ Status of the foundation; streams still in progress update this list. Evidence: 
   tool types in place.
 - **Style check badge** (TL-094): the rendered check (contrast with the picture behind the title) is listed as not measured in the
   panel; only `title_check` measures it. The badge runs the library's `lintAppearance` (TL-056).
-- **User looks** (TL-054) are not in the Looks tab: it lists the library and the project's looks. Saving, renaming and deleting
-  project looks work there. The engine-backed store (`/api/title-looks`: list, save, rename, delete, import, export) exists and is
-  tested, but no panel calls it yet.
-- **The library is partial** (TL-050, TL-052): 30 of the 60 looks and 14 of the 16 templates; Brush and 3D hold no looks yet. They wait for
-  the finishes and generators; `pnpm exec vitest run packages/project/test/title-look-library.test.ts` holds its checks.
+- **User looks** (TL-054): My Looks in the Looks tab lists the engine's user looks and saves, renames, deletes, imports and exports them.
+  They live outside the project, so these actions are not undoable (deleting asks first). Without the engine, or with a library file
+  from a newer build, the actions are disabled with the reason, and an engine that stops answering leaves the last list it read on
+  screen, still usable to apply. Agents' `find_title_looks` does not search them yet (below).
+- **The library's 3D category is drawn depth** (TL-050): its four looks build depth with Extrude, Bevel, metal and plates, so they render
+  wherever a look does. A look is an appearance (TL-055) and does not carry the Advanced 3D solid of spec 19 §9, which stays in
+  Properties ▸ 3D Title; a look that turns a clip 3D would need the 3D title model inside `LookRecipe` and a schema change.
+- **The library's sample sheets are stills at time 0** (`title-look-library-gl.test.ts`): generators that build up over time (Party
+  Confetti's particles) show their first frame there. Colourway changes were inspected on the new looks in their own colourways and in
+  Cobalt; a look shown in a colourway it does not suggest can lose contrast (Brand Bar and Highlighter in Cobalt).
 - **Rendered style checks are not in the lint** (TL-056): backdrop contrast needs a measurement from the caller. Without one it is reported
   as unmeasured, never as passed. `title_check` provides it (TL-102).
 - **Send to Photoshop** (TL-112) rasterises everything: text arrives as pixels, and adjustment layers, blend modes Photoshop lacks,
   track mattes and 3D scenes are baked into a layer named so (the dialog lists them). 8-bit only: ag-psd writes no other depth.
 - **Layer styles** (TL-113): reported, not mapped: pattern overlays and pattern strokes (a style file has no bitmaps), noise
   gradients, contours, Knockout, noise; blend modes other than Normal are drawn Normal and say so. A face has one finish, so Satin is
-  left out under a Bevel. Tested on files written with ag-psd, not on files from Photoshop. Imported looks are project looks
-  (`saveImportedLooks`), not entries of the engine's user-look store (TL-054), which no panel lists yet.
+  left out under a Bevel. Tested on files written with ag-psd, not on files from Photoshop. The import dialog sends looks to the
+  project (undoable), to My Looks (TL-054, not undoable), or both.
 - **Export Title** (TL-114): a 3D scene is trimmed inside the sequence frame, since it projects through it. Transparent stills are
   PNG, TIFF or Targa; JPEG, DPX, BMP and OpenEXR are refused.
 - **Split Image** (TL-115) refuses clips with masks or trackers: they are shaped to the whole picture. Remove them first.
