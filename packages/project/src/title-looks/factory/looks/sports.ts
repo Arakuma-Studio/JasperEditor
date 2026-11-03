@@ -44,7 +44,8 @@ export const SPORTS_LOOKS = [
 		name: 'Champion Chrome',
 		nameEs: 'Cromo de campeón',
 		tags: ['trophy', 'trofeo', 'final', 'champion', 'campeón', 'chrome', 'cromo', 'metal'],
-		description: 'Heavy chrome letters in a dark keyline and a team frame, with a star of light on the metal.',
+		description:
+			'Heavy chrome letters in a dark keyline and a team frame, with a star of light on the metal.',
 		sampleText: 'CHAMPIONS',
 		colorways: ['silver', 'gold', 'cobalt', 'crimson'],
 		font: font('Archivo Black', 400, 'Anton', ...JA.heavy, 0.01),

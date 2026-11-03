@@ -65,7 +65,14 @@ export const COMIC_LOOKS = [
 		colorways: ['pure-white', 'gold', 'crimson', 'electric'],
 		font: font('Bangers', 400, 'Lilita One', ...JA.pop, 0.03),
 		layers: [
-			generator('speedLines', { kind: 'focus', focus: 'title', padding: 14, count: 120, extent: 150, paint: role('glow') }),
+			generator('speedLines', {
+				kind: 'focus',
+				focus: 'title',
+				padding: 14,
+				count: 120,
+				extent: 150,
+				paint: role('glow'),
+			}),
 			hardShadow(4, 60),
 			rim(3.4, role('keyline')),
 			face(),

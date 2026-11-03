@@ -86,7 +86,11 @@ export const PACHINKO_ARCADE_LOOKS = [
 			rim(3, role('face'), { finish: 'metal', metalKind: 'gold', metalTint: 70, metalSize: 3 }),
 			rim(1.4, role('keyline')),
 			rim(1.6, role('accent3')),
-			{ type: 'face', fixedColor: true, params: { paint: RAINBOW, finish: 'bevel', bevelSize: 3, bevelHighlight: 70 } },
+			{
+				type: 'face',
+				fixedColor: true,
+				params: { paint: RAINBOW, finish: 'bevel', bevelSize: 3, bevelHighlight: 70 },
+			},
 		],
 	}),
 	arcade({
@@ -99,7 +103,14 @@ export const PACHINKO_ARCADE_LOOKS = [
 		colorways: ['gold', 'crimson', 'cobalt', 'emerald'],
 		font: font('Bungee', 400, 'Russo One', ...JA.heavy, 0.02),
 		layers: [
-			generator('sunburst', { rays: 18, spin: 10, inner: 30, extent: 150, rayOpacity: 55, paint: role('glow') }),
+			generator('sunburst', {
+				rays: 18,
+				spin: 10,
+				inner: 30,
+				extent: 150,
+				rayOpacity: 55,
+				paint: role('glow'),
+			}),
 			shadow({ angle: 90, distance: 4, blur: 10, opacity: 60 }),
 			rim(3, role('accent2')),
 			rim(1.8, role('accent1')),

@@ -63,7 +63,14 @@ export const CINEMATIC_LOOKS = [
 		font: font('Bebas Neue', 400, 'Oswald', ...JA.gothic, 0.14),
 		layers: [
 			shadow({ angle: 90, distance: 2, blur: 14, opacity: 64 }),
-			generator('lightStreaks', { count: 2, length: 240, thickness: 2.5, brightness: 200, halo: 60, extent: 200 }),
+			generator('lightStreaks', {
+				count: 2,
+				length: 240,
+				thickness: 2.5,
+				brightness: 200,
+				halo: 60,
+				extent: 200,
+			}),
 			glow(30, 34),
 			face(gradient(90, [0, 'accent3'], [0.55, 'accent3'], [1, 'face'])),
 		],

@@ -69,7 +69,14 @@ export const GAMING_LOOKS = [
 				bevelHighlight: 70,
 				bevelShadow: 45,
 			}),
-			generator('lightning', { mode: 'edge', motion: 'crawl', count: 8, arcs: 14, boltLength: 60, glowSize: 6 }),
+			generator('lightning', {
+				mode: 'edge',
+				motion: 'crawl',
+				count: 8,
+				arcs: 14,
+				boltLength: 60,
+				glowSize: 6,
+			}),
 		],
 	}),
 ];

@@ -220,7 +220,9 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				? factoryColorway(process.env.TITLE_LOOKS_COLORWAY)
 				: undefined;
 			const only = process.env.TITLE_LOOKS_ONLY?.split(',').map((x) => x.trim());
-			const looks = only ? FACTORY_LOOKS.filter((l) => only.includes(l.libraryId) || only.includes(l.category)) : FACTORY_LOOKS;
+			const looks = only
+				? FACTORY_LOOKS.filter((l) => only.includes(l.libraryId) || only.includes(l.category))
+				: FACTORY_LOOKS;
 			const rows = Math.ceil(looks.length / COLS);
 			const W = COLS * TILE.w;
 			const H = rows * TILE.h;

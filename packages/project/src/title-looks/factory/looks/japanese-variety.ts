@@ -44,7 +44,8 @@ export const JAPANESE_VARIETY_LOOKS = [
 		name: 'Variety Round Pop',
 		nameEs: 'Pop redondo de variedades',
 		tags: ['telop', 'テロップ', 'cute', 'かわいい', 'round', '丸文字', 'food', 'comida', 'グルメ'],
-		description: 'A soft rounded telop: light letters in a coloured frame and a darker edge, for food and kids.',
+		description:
+			'A soft rounded telop: light letters in a coloured frame and a darker edge, for food and kids.',
 		sampleText: 'おいしい！',
 		colorways: ['rose', 'sunset', 'ocean', 'emerald'],
 		font: font('Zen Maru Gothic', 900, 'Fredoka', ...JA.round),
