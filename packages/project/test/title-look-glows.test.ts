@@ -357,6 +357,20 @@ describe('padding across a clip (TL-033)', () => {
 		expect((reach * 48) / 800).toBeGreaterThanOrEqual(1);
 	});
 
+	it('regression: a shadow following the light pads every side, not only right and bottom', () => {
+		// The light can be anywhere: under a light from the lower right the shadow falls up and left, and was clipped there.
+		const t = titleLayerType('shadow')!;
+		for (const kind of ['drop', 'long']) {
+			const r = t.reach!(withDefaults(t, { kind, useLight: true, distance: 80, blur: 10, spread: 5 })) as {
+				left: number;
+				top: number;
+				right: number;
+				bottom: number;
+			};
+			for (const v of Object.values(r)) expect(v).toBeCloseTo(95, 5);
+		}
+	});
+
 	it('perspective reach follows the direction and the foreshortening, and every side under a light', () => {
 		const t = titleLayerType('shadow')!;
 		const r = t.reach!(

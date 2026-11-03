@@ -615,6 +615,27 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Looks: glows', { ti
 			expect(pixel(img, right + 510, y)[3]).toBe(0);
 		});
 
+		it('regression: a shadow following a light from the lower right is not clipped at the top left', async () => {
+			const img = await tl.render({
+				recipe: {
+					light: { angle: 45, altitude: 45 },
+					layers: [
+						{
+							type: 'shadow',
+							params: { useLight: true, distance: 60, blur: 0, opacity: 100, paint: flat(0, 0, 1) },
+						},
+					],
+				},
+				input: { kind: 'rect', x: 0, y: 0, w: 1, h: 1 },
+				box: R_BOX,
+				unitPx: 100,
+			});
+			// The whole box moved up and left by 60 × cos 45° ≈ 42 px: there must be canvas for it.
+			expect(img.padding.left).toBeGreaterThanOrEqual(60);
+			expect(img.padding.top).toBeGreaterThanOrEqual(60);
+			expect(pixel(img, img.box.x - 30, img.box.y - 30)[3]).toBeGreaterThan(240);
+		});
+
 		it('regression: a perspective shadow keeps its shape at any resolution (TL-034)', async () => {
 			const at = (k: number) =>
 				tl.render({
