@@ -136,6 +136,10 @@ function readText(el: HTMLElement): string {
 
 type Caret = { x: number; y: number; length: number };
 
+/** The selection over invisible text, and the caret's blink. */
+const entryCss = (ghost: boolean) =>
+	`[data-testid="text-entry-input"]::selection,[data-testid="text-entry-input"] *::selection{background:color-mix(in srgb,var(--pr-accent) 40%,transparent);color:${ghost ? 'transparent' : 'inherit'}}@keyframes text-entry-blink{0%,55%{opacity:1}56%,100%{opacity:0}}`;
+
 function TextEntryEditor({
 	entry,
 	session,
@@ -448,7 +452,7 @@ function TextEntryEditor({
 			className="pointer-events-none absolute inset-0 overflow-hidden"
 			data-testid="text-entry"
 		>
-			<style>{`[data-testid="text-entry-input"]::selection,[data-testid="text-entry-input"] *::selection{background:color-mix(in srgb,var(--pr-accent) 40%,transparent);color:${ghost ? 'transparent' : 'inherit'}}@keyframes text-entry-blink{0%,55%{opacity:1}56%,100%{opacity:0}}`}</style>
+			<style>{entryCss(ghost)}</style>
 			<div
 				style={{
 					position: 'absolute',
