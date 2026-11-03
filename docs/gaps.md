@@ -970,14 +970,6 @@ Status of the foundation; streams still in progress update this list. Evidence: 
   To follow a title, add the generator as a layer of its look.
 - **Magic Circle glyph rows are procedural** (runes, trigrams, segment digits): a plan cannot draw a font atlas, so Pachislop's
   kanji rows and its readable HUD string were not ported.
-- **Lightning is not resolution independent to the look threshold at long bolts** (SSIM ≥ 0.97 between 1× and 2×): 0.94 at the
-  perturbed params of the GL test (21 bolts two units long), up from 0.76; not measured again at its defaults (0.95 before). The
-  bolts are the same bolts at both sizes (`docs/wp-notes/title-looks.md`, "Stable identity"); their directions come from a field
-  rebuilt from raster alpha, good to a few degrees, and a long thin bolt turns that into a pixel or two of drift at its tip. Tried and not enough: per-texel sites (0.52),
-  the surface normal at the edge point (0.66), bilinear sites (0.76), the alpha's first moment (0.70). Since: the bolt's direction
-  is the field's slope fitted over a wider reach, in units: a cross stencil of 6 % of the unit (0.906) or 12 % (0.935), a ring of
-  16 reads at 12 % (0.942, what draws now). The soft-alpha fix of the field changes nothing here (the input is hard). An exact
-  normal needs the text's vector outline; the test stays red rather than loosened.
 
 **Agents (TL-100…TL-107):** the `titles` toolset, `title_check`, the `title-art` proposal feature, `still-sheet` jobs and effects
 discovery are in; evidence and thresholds in [wp-notes/title-looks-agents.md](wp-notes/title-looks-agents.md). Limits:

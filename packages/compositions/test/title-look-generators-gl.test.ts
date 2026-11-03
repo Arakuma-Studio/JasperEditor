@@ -209,6 +209,38 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('generators in WebGL2', { 
 			});
 	});
 
+	// `title-look-gl.test.ts` checks one mode at perturbed params. A bolt two units long turns a degree of direction or a tenth
+	// of a pixel at its start into pixels at its tip, so every mode is checked with long bolts and a wide Capture, with both
+	// anchors and at two moments. Crawl arcs search their far end up to twice Capture away, beyond the field's old reach; at
+	// two units their far end is out of reach and every arc sleeps, so they are a bolt length of 1.1 units.
+	describe('Lightning: the same bolts at 1× and 2× in every mode (TL-034, TL-062)', () => {
+		for (const [mode, anchor, boltLength] of [
+			['mixed', 'layout', 200],
+			['outward', 'bounds', 200],
+			['crawl', 'bounds', 110],
+			['edge', 'layout', 200],
+		] as const)
+			it(`${mode}, anchored to the ${anchor === 'bounds' ? 'alpha bounds' : 'layer box'}`, async () => {
+				for (const t of [0.7, 2.3]) {
+					const at = (k: number) =>
+						tl.render({
+							recipe: layer('lightning', { boltLength, capture: 40, motion: 'crawl', mode, anchor }, true),
+							input: { kind: 'shapes' },
+							unitPx: 96 * k,
+							box: { width: 320 * k, height: 160 * k },
+							contentSeconds: t,
+						});
+					const [a, b] = [await at(1), await at(2)];
+					const ca = layerCrop(a, lumaOver(a, 128));
+					const cb = layerCrop(b, lumaOver(b, 128));
+					// The bolts are there (white cores over a grey face): a picture without them would match itself.
+					expect(ca.data.filter((v) => v > 200).length).toBeGreaterThan(200);
+					const score = ssim(resampleLuma(cb.data, cb.w, cb.h, ca.w, ca.h), ca.data, ca.w, ca.h);
+					expect(score, `t = ${t}`).toBeGreaterThan(0.97);
+				}
+			});
+	});
+
 	describe('Particles: 7 emitters, 11 shapes, wrapped age, ballistic position', () => {
 		const emitters = ['point', 'ellipse', 'rect', 'ring', 'line', 'full', 'layer'];
 		const shapes = [
