@@ -574,11 +574,15 @@ describe('handles (TL-092)', () => {
 	it('a shadow offers its offset, or the light’s angle while it follows the light', () => {
 		for (const type of ['shadow', 'innerShadow']) {
 			const h = titleLayerType(type)!.handles!;
-			expect(h).toContainEqual({
-				kind: 'offset',
-				params: ['angle', 'distance'],
-				when: { param: 'useLight', value: false },
-			});
+			expect(h).toContainEqual(
+				expect.objectContaining({
+					kind: 'offset',
+					params: ['angle', 'distance'],
+					when: { param: 'useLight', value: false },
+				}),
+			);
+			// Its direction is on screen (the look's stage): a turned title's shadow handle points where the shadow falls.
+			expect(h.find((x) => x.kind === 'offset')?.screen).toBeTruthy();
 			expect(h).toContainEqual({
 				kind: 'angle',
 				params: ['angle'],

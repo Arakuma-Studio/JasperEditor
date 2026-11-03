@@ -204,13 +204,24 @@ describe('layer handles (TL-092)', () => {
 	it('come from the layer type', () => {
 		expect(of('rim')).toEqual([{ kind: 'distance', params: ['width'], after: ['offset'] }]);
 		expect(of('shadow')).toEqual([
-			{ kind: 'offset', params: ['angle', 'distance'], when: { param: 'useLight', value: false } },
+			{
+				kind: 'offset',
+				params: ['angle', 'distance'],
+				when: { param: 'useLight', value: false },
+				// A drop or long shadow falls the same way on screen when the title turns; a perspective floor turns with it.
+				screen: { unless: { param: 'kind', value: 'perspective' } },
+			},
 		]);
 	});
 
 	it('only while their `when` holds: a shadow following the light offers its distance and the light’s angle', () => {
 		expect(of('shadow', { useLight: true as never })).toEqual([
-			{ kind: 'distance', params: ['distance'], when: { param: 'useLight', value: true } },
+			{
+				kind: 'distance',
+				params: ['distance'],
+				when: { param: 'useLight', value: true },
+				screen: { unless: { param: 'kind', value: 'perspective' } },
+			},
 			{ kind: 'angle', params: ['angle'], target: 'light', when: { param: 'useLight', value: true } },
 		]);
 	});
@@ -224,6 +235,10 @@ describe('layer handles (TL-092)', () => {
 					for (const n of h.params) expect(names.has(n), `${t.type}: ${n}`).toBe(true);
 				for (const n of h.after ?? []) expect(names.has(n), `${t.type}: after ${n}`).toBe(true);
 				if (h.when) expect(names.has(h.when.param), `${t.type}: when ${h.when.param}`).toBe(true);
+				if (typeof h.screen === 'object')
+					expect(names.has(h.screen.unless.param), `${t.type}: screen unless ${h.screen.unless.param}`).toBe(
+						true,
+					);
 				if (h.along?.param) expect(names.has(h.along.param), `${t.type}: along ${h.along.param}`).toBe(true);
 				if (h.along?.paint) expect(names.has(h.along.paint), `${t.type}: along ${h.along.paint}`).toBe(true);
 				if (typeof h.range === 'object') expect(names.has(h.range.band), `${t.type}: band`).toBe(true);
