@@ -237,10 +237,12 @@ describe.runIf(enabled)('delivery end to end (REMOTION_E2E=1)', () => {
 			height: number;
 			origin: { x: number; y: number };
 			format: string;
-			warnings: unknown[];
+			warnings: { code: string }[];
 		};
 		expect(r.format).toBe('png');
-		expect(r.warnings).toEqual([]);
+		// Nothing of its own (the title is not cut at the canvas), and the export plan's warnings carried (AGENTS §4): this
+		// document was made without an editor, so its text boxes are estimates.
+		expect(r.warnings.map((w) => w.code)).toEqual(['TEXT_LAYOUT_PENDING']);
 		expect(r.width).toBeLessThan(1280);
 		expect(r.height).toBeLessThan(360);
 		expect(r.origin.x).toBeLessThan(0); // the picture starts left of the frame: the glow was not cut there
