@@ -18,6 +18,7 @@ import { PropertyRow, type RowContext } from '../panels/properties/controls/Prop
 import { ScrubbyNumber } from '../panels/properties/controls/ScrubbyNumber.tsx';
 import { PLAYHEAD_PLANNER, type Row, rowValue } from '../panels/properties/lib/model.ts';
 import { LIGHT_TARGET, lookFocus, useLookFocus } from './focus.ts';
+import { GeneratorPresetChips, generatorOf } from './GeneratorPresets.tsx';
 import { flatPalette, paintCss } from './paint.ts';
 import { layerRows, lightRows, paletteRows } from './rows.ts';
 import { type LookedClip, layerName, type SharedLayer, sharedStack } from './selection.ts';
@@ -216,6 +217,7 @@ export function AppearanceList(props: {
 					const isOpen = open === key;
 					const selected = focus?.target === s.layers[0]!.id && focus.clipId === first.clip.id;
 					const rows = isOpen ? layerRows(doc, seq, s, frame) : [];
+					const generator = isOpen ? generatorOf(s.type) : undefined;
 					const primary = info?.summary.primary
 						? layerRows(doc, seq, s, frame).find((r) => r.id.endsWith(`.${info.summary.primary}`))
 						: undefined;
@@ -281,6 +283,18 @@ export function AppearanceList(props: {
 							</div>
 							{isOpen ? (
 								<>
+									{generator ? (
+										<div className="pr-1 pl-5">
+											<GeneratorPresetChips
+												generator={generator}
+												rows={rows}
+												frame={frame}
+												readOnly={readOnly}
+												apply={(label, commands) => ctx.ops.apply(label, commands)}
+												data-testid={`look-generator-presets-${listIndex}`}
+											/>
+										</div>
+									) : null}
 									{rows.map((r) => (
 										<PropertyRow key={r.id} row={r} ctx={ctx} indent />
 									))}

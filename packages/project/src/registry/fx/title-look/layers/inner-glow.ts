@@ -77,7 +77,7 @@ vec4 tl_layer(TlSurface s) {
 	// Nothing is drawn outside the shape: this is what the blur and the field must see around it.
 	reach: (p) => (precise(p) ? 0.01 : Math.max(num(p.radius), 0.01)),
 	fieldReach: (p) => ({ inside: precise(p) ? num(p.radius) + 1 : 0, outside: 1 }),
-	handles: [{ kind: 'distance', params: ['radius'] }],
+	handles: [{ kind: 'distance', params: ['radius'], from: 'inside' }],
 	summary(p) {
 		return {
 			swatch: layerSwatch(INNER_GLOW_LAYER, p),

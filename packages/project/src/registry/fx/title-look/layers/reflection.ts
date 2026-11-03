@@ -62,7 +62,7 @@ vec4 tl_layer(TlSurface s) {
 		return { left: blur, top: 0, right: blur, bottom: Math.max(0, num(p.gap)) + num(p.fade) + blur };
 	},
 	fieldReach: () => ({ outside: 1 }),
-	handles: [{ kind: 'distance', params: ['gap'] }],
+	handles: [{ kind: 'distance', params: ['gap'], from: 'below' }],
 	summary(p) {
 		return {
 			swatch: null,

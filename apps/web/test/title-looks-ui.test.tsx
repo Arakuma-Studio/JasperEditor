@@ -653,9 +653,9 @@ describe('paint control (TL-091)', () => {
 		const view = renderWithSession(session, <PropertiesPanel instanceId="p1" visible />);
 		fireEvent.click(screen.getByTestId('look-layer-open-0'));
 		expect(screen.queryByTestId('look-gradient-span-note')).toBeNull();
-		expect([...(screen.getByTestId('look-gradient-span') as HTMLSelectElement).options].map((o) => o.textContent)).toEqual(
-			['Block', 'Line', 'Glyph'],
-		);
+		expect(
+			[...(screen.getByTestId('look-gradient-span') as HTMLSelectElement).options].map((o) => o.textContent),
+		).toEqual(['Block', 'Line', 'Glyph']);
 		view.unmount();
 		act(() => session.select('timeline', [ids[0]!, solid]));
 		renderWithSession(session, <PropertiesPanel instanceId="p2" visible />);

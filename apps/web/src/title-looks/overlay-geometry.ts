@@ -73,17 +73,26 @@ function angleOf(f: LookFrame, p: Vec2): number {
 	return Math.atan2(dot(d, f.v), dot(d, f.u)) / DEG;
 }
 
+/** The param's range, where a drag stops (a distance stops at 0 unless its range goes below). */
+type Limits = { min?: number; max?: number };
+
 export type Handle =
-	/** A length measured outward from `anchor` along `dir`. */
-	| { kind: 'distance'; param: string; anchor: Vec2; dir: Vec2; start: number; value: number }
-	/** Angle and length together. The length starts at the edge of the box, so small offsets stay reachable. */
-	| { kind: 'offset'; angleParam: string; distanceParam: string; angle: number; distance: number }
-	/** The same length along a fixed direction (a shadow following the light). */
-	| { kind: 'axis'; param: string; dir: Vec2; value: number }
-	/** A direction, on a ring. `base` is added to the value for where it points. `light`: the look's light angle. */
-	| { kind: 'angle'; param: string; base: number; value: number; radius: number; light?: boolean }
-	/** A place along the shape, 0…100 %. */
-	| { kind: 'position'; param: string; dir: Vec2; extent: number; value: number };
+	/** A length measured from `anchor` along `dir` (outward, inward, down, across a band…), after `start` percent. */
+	(
+		| { kind: 'distance'; param: string; anchor: Vec2; dir: Vec2; start: number; value: number }
+		/** Angle and length together. The length starts at the edge of the box, so small offsets stay reachable. */
+		| { kind: 'offset'; angleParam: string; distanceParam: string; angle: number; distance: number }
+		/** The same length along a fixed direction (a shadow following the light). */
+		| { kind: 'axis'; param: string; dir: Vec2; value: number }
+		/** A direction, on a ring. `base` is added to the value for where it points. `light`: the look's light angle. */
+		| { kind: 'angle'; param: string; base: number; value: number; radius: number; light?: boolean }
+		/**
+		 * A place along the shape: `sweep` (default) 0…100 % from one side of `extent` to the other; `centred` ±100 % of
+		 * `extent` from the centre (a band that starts and ends outside the shape).
+		 */
+		| { kind: 'position'; param: string; dir: Vec2; extent: number; value: number; map?: 'sweep' | 'centred' }
+	) &
+		Limits;
 
 /** Where a handle sits. */
 export function handlePoint(f: LookFrame, h: Handle): Vec2 {
@@ -99,18 +108,28 @@ export function handlePoint(f: LookFrame, h: Handle): Vec2 {
 		case 'angle':
 			return add(f.center, direction(f, h.base + h.value), h.radius);
 		case 'position':
-			return add(f.center, h.dir, (h.value * 0.02 - 1) * h.extent);
+			return add(f.center, h.dir, (h.map === 'centred' ? h.value * 0.01 : h.value * 0.02 - 1) * h.extent);
 	}
 }
 
 const round = (x: number, q: number) => Math.round(x / q) * q;
 
-/** What dragging a handle to `p` sets: param → value, rounded to what the eye can place. */
+/** What dragging a handle to `p` sets: param → value, rounded to what the eye can place, within the param's range. */
 export function handleValues(f: LookFrame, h: Handle, p: Vec2): Record<string, number> {
+	const out = rawValues(f, h, p);
+	const lo = h.min ?? (h.kind === 'distance' || h.kind === 'axis' ? 0 : Number.NEGATIVE_INFINITY);
+	const hi = h.max ?? Number.POSITIVE_INFINITY;
+	// An offset's angle wraps: only its distance keeps to the range.
+	for (const key of Object.keys(out))
+		if (h.kind !== 'offset' || key === h.distanceParam) out[key] = Math.min(hi, Math.max(lo, out[key]!));
+	return out;
+}
+
+function rawValues(f: LookFrame, h: Handle, p: Vec2): Record<string, number> {
 	const k = Math.max(1e-6, f.perPercent);
 	switch (h.kind) {
 		case 'distance':
-			return { [h.param]: round(Math.max(0, dot(sub(p, h.anchor), h.dir) / k - h.start), 0.1) };
+			return { [h.param]: round(dot(sub(p, h.anchor), h.dir) / k - h.start, 0.1) };
 		case 'offset': {
 			const angle = (angleOf(f, p) + 360) % 360;
 			const edge = extentAlong(f, direction(f, angle));
@@ -120,13 +139,18 @@ export function handleValues(f: LookFrame, h: Handle, p: Vec2): Record<string, n
 			};
 		}
 		case 'axis':
-			return { [h.param]: round(Math.max(0, dot(sub(p, f.center), h.dir) - extentAlong(f, h.dir)) / k, 0.1) };
+			return { [h.param]: round((dot(sub(p, f.center), h.dir) - extentAlong(f, h.dir)) / k, 0.1) };
 		case 'angle':
-			return { [h.param]: round(angleOf(f, p) - h.base, 0.1) };
-		case 'position':
-			return { [h.param]: round((dot(sub(p, f.center), h.dir) / Math.max(1e-6, h.extent) + 1) * 50, 0.1) };
+			return { [h.param]: round(wrap180(angleOf(f, p) - h.base - h.value) + h.value, 0.1) };
+		case 'position': {
+			const t = dot(sub(p, f.center), h.dir) / Math.max(1e-6, h.extent);
+			return { [h.param]: round(h.map === 'centred' ? t * 100 : (t + 1) * 50, 0.1) };
+		}
 	}
 }
+
+/** Into (−180, 180]: an angle drag moves the value by the turn, never by a jump of 360°. */
+const wrap180 = (a: number) => a - 360 * Math.ceil((a - 180) / 360);
 
 /** Half the extent of the frame along a direction (the renderer's `ext` for bands across the shape). */
 export function extentAlong(f: LookFrame, dir: Vec2): number {

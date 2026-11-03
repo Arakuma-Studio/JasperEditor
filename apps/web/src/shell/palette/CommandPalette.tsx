@@ -4,7 +4,7 @@
 // timecode, `?` help. Recent commands come first when the query is empty. (There is no in-app agent row:
 // agents drive the editor over MCP.)
 import { mgRegistry } from '@jasper/mg-templates';
-import { type Sequence, TITLE_LAYER_TYPES } from '@jasper/project';
+import { type Sequence, TITLE_GENERATORS, TITLE_LAYER_TYPES } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { cx, Dialog, Icon, type IconId, Kbd, toast } from '@jasper/ui';
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
@@ -236,6 +236,38 @@ function buildPaletteRows(
 				},
 				label,
 			);
+		}
+		// TL-063: a generator layer below the selected title (or at the playhead), with any of its presets.
+		for (const g of TITLE_GENERATORS) {
+			const label = t('New Generator Layer: {0}', g.label);
+			add(
+				{
+					key: `generator:${g.id}`,
+					group: 'Generators',
+					label,
+					detail: g.description,
+					disabled: !hasSequence,
+					reason: 'Open a sequence first',
+					run: exec(() => void env.run('graphics.addGenerator', { generatorId: g.id })),
+				},
+				`${label} ${(g.keywords ?? []).join(' ')}`,
+			);
+			for (const p of g.presets ?? []) {
+				if (Object.keys(p.params).length === 0) continue;
+				const named = t('New Generator Layer: {0} › {1}', g.label, p.label);
+				add(
+					{
+						key: `generator:${g.id}:${p.id}`,
+						group: 'Generators',
+						label: named,
+						detail: g.description,
+						disabled: !hasSequence,
+						reason: 'Open a sequence first',
+						run: exec(() => void env.run('graphics.addGenerator', { generatorId: g.id, preset: p.id })),
+					},
+					named,
+				);
+			}
 		}
 		return out.sort((a, b) => b.score - a.score).slice(0, limit);
 	};

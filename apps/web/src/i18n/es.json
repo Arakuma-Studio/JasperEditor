@@ -13571,5 +13571,12 @@
   "Apply Preset…": "Aplicar ajuste…",
   "{0} (needs text)": "{0} (necesita texto)",
   "Line and Glyph follow text. On these clips they draw as Block.": "Línea y Glifo siguen al texto. En estos clips se dibujan como Bloque.",
-  "Line and Glyph follow text. On the clips without text they draw as Block.": "Línea y Glifo siguen al texto. En los clips sin texto se dibujan como Bloque."
+  "Line and Glyph follow text. On the clips without text they draw as Block.": "Línea y Glifo siguen al texto. En los clips sin texto se dibujan como Bloque.",
+  "{0} presets": "Preajustes de {0}",
+  "Preset: {0}": "Preajuste: {0}",
+  "New Generator Layer": "Nueva capa de generador",
+  "Adds a generator layer on a free track below the selected title, for its length; with no title, at the playhead.": "Añade una capa de generador en una pista libre bajo el título seleccionado, con su duración; sin título, en el cabezal.",
+  "New Generator Layer: {0}": "Nueva capa de generador: {0}",
+  "New Generator Layer: {0} › {1}": "Nueva capa de generador: {0} › {1}",
+  "Generator": "Generador"
 }

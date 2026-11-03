@@ -37,7 +37,7 @@ vec4 tl_layer(TlSurface s) {
 	handles: [
 		{ kind: 'position', params: ['position'] },
 		{ kind: 'angle', params: ['angle'] },
-		{ kind: 'distance', params: ['width'] },
+		{ kind: 'distance', params: ['width'], from: 'band' },
 	],
 	summary(p) {
 		return {

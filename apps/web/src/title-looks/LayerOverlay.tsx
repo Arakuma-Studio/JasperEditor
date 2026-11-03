@@ -5,6 +5,7 @@ import {
 	type Command,
 	clipLookUnit,
 	GLOBAL_LIGHT_PATH,
+	type LayerHandle,
 	type LayerParams,
 	layerHandles,
 	type Paint,
@@ -15,6 +16,7 @@ import {
 import { useStoreSelector } from '@jasper/session/react';
 import { useMemo } from 'react';
 import type { ProgramOverlayHostProps } from '../extensions/index.ts';
+import { t } from '../i18n/runtime.ts';
 import { MONITOR_COLORS } from '../panels/program/monitor.tokens.ts';
 import { useOverlayFrame } from '../panels/program/TransformOverlay.tsx';
 import { toScreen, toSequence, type Vec2 } from '../panels/program/viewport.ts';
@@ -40,17 +42,34 @@ const sides = (r: number | Sides | undefined): Sides =>
 
 type ResolvedLayer = { id: string; type: string; params: Record<string, unknown> };
 
-/** Silhouette growth of the layers above this one, percent of the unit (the renderer's `base`). */
-function growthAbove(layers: readonly ResolvedLayer[], index: number): number {
+/**
+ * Silhouette growth under this layer, percent of the unit (the renderer's `s.base`): the layers above it in the stack, or
+ * every other layer for one that starts from the whole look's silhouette (`outermost`: a reflection, Deep Glow).
+ */
+export function growthAbove(layers: readonly ResolvedLayer[], index: number): number {
+	const own = titleLayerType(layers[index]?.type ?? '');
 	let base = 0;
-	for (let i = layers.length - 1; i > index; i--) {
+	for (let i = layers.length - 1; i >= 0; i--) {
+		if (i === index || (i < index && !own?.outermost)) continue;
 		const def = titleLayerType(layers[i]!.type);
 		if (def) base += Math.max(0, num(def.grows?.(withDefaults(def, layers[i]!.params as never))));
 	}
 	return base;
 }
 
-/** The handles of one layer on a frame. */
+/** Where a declared line points (`LayerHandle.along`): an angle param or a gradient paint's direction, plus a turn. */
+function alongDeg(h: LayerHandle, p: Record<string, unknown>, fallback: number): number {
+	const turn = h.along?.turn ?? 0;
+	if (h.along?.paint) {
+		const paint = p[h.along.paint] as Paint | undefined;
+		const g = paint?.kind === 'gradient' ? paint.gradient.angle : 0;
+		return g + num(p[`${h.along.paint}Angle`]) + turn;
+	}
+	const name = h.along?.param ?? 'angle';
+	return (name in p ? num(p[name]) : fallback) + turn;
+}
+
+/** The handles of one layer on a frame, placed where the layer type declares them (`LayerHandle`). */
 export function handlesOf(
 	f: LookFrame,
 	layer: ResolvedLayer,
@@ -60,26 +79,70 @@ export function handlesOf(
 	const def = titleLayerType(layer.type);
 	if (!def) return [];
 	const p = withDefaults(def, layer.params as never) as LayerParams & Record<string, unknown>;
+	/** A drag stops at the param's range (a reflection's gap goes below 0, a rim's width does not). */
+	const limits = (name: string): { min?: number; max?: number } => {
+		const spec = def.params.find((x) => x.name === name);
+		const range =
+			spec && 'range' in spec ? (spec.range as { min?: number; max?: number } | undefined) : undefined;
+		return {
+			...(range?.min !== undefined ? { min: range.min } : {}),
+			...(range?.max !== undefined ? { max: range.max } : {}),
+		};
+	};
+	const ring = Math.min(f.halfW, f.halfH) * 0.8;
 	const out: Handle[] = [];
 	let edge = 0;
 	for (const h of layerHandles(def, p)) {
 		const name = h.params[0]!;
 		if (h.target === 'light') {
 			// The look's light, from the layer that follows it (TL-092 `target: 'light'`).
-			out.push({
-				kind: 'angle',
-				param: name,
-				base: 0,
-				value: num(light.angle),
-				radius: Math.min(f.halfW, f.halfH) * 0.8,
-				light: true,
-			});
+			out.push({ kind: 'angle', param: name, base: 0, value: num(light.angle), radius: ring, light: true });
 		} else if (h.kind === 'distance' && p.useLight === true && name === 'distance') {
 			// A shadow following the light moves along it.
-			out.push({ kind: 'axis', param: name, dir: direction(f, light.angle + 180), value: num(p[name]) });
+			out.push({
+				kind: 'axis',
+				param: name,
+				dir: direction(f, light.angle + 180),
+				value: num(p[name]),
+				...limits(name),
+			});
 		} else if (h.kind === 'distance') {
-			const start = base + (name === 'width' ? num(p.offset) : 0);
-			out.push({ kind: 'distance', param: name, ...edgeAnchor(f, edge++), start, value: num(p[name]) });
+			const from = h.from ?? 'edge';
+			const before = (h.after ?? []).reduce((sum, a) => sum + num(p[a]), 0);
+			// One place per declaration; its params chain from there (an inline's inset, then its width).
+			let at: { anchor: Vec2; dir: Vec2 };
+			let start = before;
+			if (from === 'edge') {
+				at = edgeAnchor(f, edge++);
+				start += base;
+			} else if (from === 'inside') {
+				const e = edgeAnchor(f, edge++);
+				at = { anchor: e.anchor, dir: [0 - e.dir[0], 0 - e.dir[1]] };
+			} else if (from === 'below') {
+				at = { anchor: [f.center[0] + f.v[0] * f.halfH, f.center[1] + f.v[1] * f.halfH], dir: f.v };
+				start += base;
+			} else if (from === 'corner') {
+				// The top-left corner of the box grown by the growth and what comes before (a plate's Grow), along its top.
+				const g = (base + before) * f.perPercent;
+				at = {
+					anchor: [
+						f.center[0] - f.u[0] * (f.halfW + g) - f.v[0] * (f.halfH + g),
+						f.center[1] - f.u[1] * (f.halfW + g) - f.v[1] * (f.halfH + g),
+					],
+					dir: f.u,
+				};
+				start = 0;
+			} else {
+				const dir = direction(f, alongDeg(h, p, 0));
+				// `band`: from the centre of this layer's band, at its `position` along the same line.
+				const t0 = from === 'band' ? (num(p.position) * 0.02 - 1) * extentAlong(f, dir) : 0;
+				at = { anchor: [f.center[0] + dir[0] * t0, f.center[1] + dir[1] * t0], dir };
+			}
+			for (const param of h.params) {
+				const value = num(p[param]);
+				out.push({ kind: 'distance', param, ...at, start, value, ...limits(param) });
+				start += value;
+			}
 		} else if (h.kind === 'offset') {
 			const [angle, distance] = h.params as readonly [string, string];
 			if (p.useLight === true)
@@ -88,6 +151,7 @@ export function handlesOf(
 					param: distance,
 					dir: direction(f, light.angle + 180),
 					value: num(p[distance]),
+					...limits(distance),
 				});
 			else
 				out.push({
@@ -96,6 +160,7 @@ export function handlesOf(
 					distanceParam: distance,
 					angle: num(p[angle]),
 					distance: num(p[distance]),
+					...limits(distance),
 				});
 		} else if (h.kind === 'angle') {
 			const paint = name.endsWith('Angle')
@@ -104,16 +169,36 @@ export function handlesOf(
 			out.push({
 				kind: 'angle',
 				param: name,
-				base: paint?.kind === 'gradient' ? paint.gradient.angle : 0,
+				base: (paint?.kind === 'gradient' ? paint.gradient.angle : 0) + (h.along?.turn ?? 0),
 				value: num(p[name]),
-				radius: Math.min(f.halfW, f.halfH) * 0.8,
+				radius: ring,
+				...limits(name),
 			});
 		} else {
-			const dir = direction(f, 'angle' in p ? num(p.angle) : 90);
-			out.push({ kind: 'position', param: name, dir, extent: extentAlong(f, dir), value: num(p[name]) });
+			const dir = direction(f, alongDeg(h, p, 90));
+			const ext = extentAlong(f, dir);
+			// `{ band }`: ±100 % carries the band's centre from fully before the bounds to fully past them.
+			const band = typeof h.range === 'object' ? num(p[h.range.band]) * f.perPercent * 0.5 : null;
+			out.push({
+				kind: 'position',
+				param: name,
+				dir,
+				extent: band === null ? ext : Math.max(1, ext) + band,
+				value: num(p[name]),
+				...(band === null ? {} : { map: 'centred' as const }),
+				...limits(name),
+			});
 		}
 	}
 	return out;
+}
+
+/** What a handle edits, in words: its param's label (or the light's angle). */
+function handleLabel(def: ReturnType<typeof titleLayerType>, h: Handle): string {
+	if (h.kind === 'angle' && h.light) return t('Light Angle');
+	const param = h.kind === 'offset' ? h.distanceParam : h.param;
+	const spec = def?.params.find((x) => x.name === param);
+	return spec ? t(spec.label) : param;
 }
 
 function path(q: Quad, view: ProgramOverlayHostProps['view']): string {
@@ -154,7 +239,7 @@ export function LookLayerOverlay(props: ProgramOverlayHostProps) {
 		bottom: base + grown.bottom,
 	});
 	const name = isLight
-		? 'Light'
+		? t('Light')
 		: ((
 				session.getCommitted().sequences[seqId ?? '']?.clips[focus.clipId] as
 					| { effects?: { appearance?: { layers: { id: string; name?: string }[] } }[] }
@@ -162,7 +247,7 @@ export function LookLayerOverlay(props: ProgramOverlayHostProps) {
 			)?.effects
 				?.flatMap((e) => e.appearance?.layers ?? [])
 				.find((l) => l.id === focus.target)?.name ??
-			def?.label ??
+			(def ? t(def.label) : undefined) ??
 			target!.type);
 	const handles: Handle[] = target
 		? handlesOf(f, target, base, look.light)
@@ -187,7 +272,7 @@ export function LookLayerOverlay(props: ProgramOverlayHostProps) {
 			: ['appearance', focus.fxId, 'light', 'angle'];
 	};
 	const spec = (h: Handle, grab: Vec2): DragSpec => ({
-		label: `${name}: ${h.kind === 'offset' ? h.distanceParam : h.param}`,
+		label: `${name}: ${isLight ? t('Light Angle') : handleLabel(def, h)}`,
 		commandsAt: (screen) => {
 			const s = toSequence(view, screen);
 			const values = handleValues(f, h, [s[0] + grab[0], s[1] + grab[1]]);
@@ -252,7 +337,7 @@ export function LookLayerOverlay(props: ProgramOverlayHostProps) {
 							stroke={tone}
 							strokeWidth={1.5}
 						/>
-						<title>{`${name}: ${handleKey(h)}`}</title>
+						<title>{`${name}: ${isLight ? t('Light Angle') : handleLabel(def, h)}`}</title>
 						<circle
 							cx={at[0]}
 							cy={at[1]}

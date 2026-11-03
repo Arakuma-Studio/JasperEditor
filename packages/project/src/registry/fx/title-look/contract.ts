@@ -132,7 +132,16 @@ export type SummaryContext = {
 /** One line in the Appearance list (TL-089): a swatch, a sentence and the primary value's param. */
 export type LayerSummary = { swatch: Paint | null; text: string; primary: string | null };
 
-/** An on-canvas handle of a layer (TL-092). */
+/**
+ * An on-canvas handle of a layer (TL-092), drawn on the Program monitor by the web overlay. Kinds:
+ * - `distance`: one handle per param, a length in percent of the unit. With several params they chain: each starts where
+ *   the one before ends (an inline's inset, then its width).
+ * - `offset`: `[angle, distance]` together, measured from the box edge in that direction.
+ * - `angle`: a direction on a ring (degrees, 0 = the layer's +x, clockwise, as `fx_dir`).
+ * - `position`: a place 0…100 % across the bounds.
+ * Where a handle sits, when the kind's default does not say it, is declared with `from`, `after`, `along` and `range`,
+ * read from the layer's GLSL, so the handle sits on what it edits.
+ */
 export type LayerHandle = {
 	kind: 'distance' | 'offset' | 'angle' | 'position';
 	params: readonly string[];
@@ -140,6 +149,27 @@ export type LayerHandle = {
 	target?: 'layer' | 'light';
 	/** The handle exists only while this param has this value (a shadow following the light has no angle of its own). */
 	when?: { param: string; value: boolean | string };
+	/**
+	 * `distance`: where the length starts. `edge` (default): the box edge, outward, past the growth of the layers above;
+	 * `inside`: the box edge, inward; `below`: the bottom edge, downward (a reflection's gap); `band`: the centre of this
+	 * layer's `position` band, across it; `corner`: the top-left corner, along the top edge (a plate's corner);
+	 * `centre`: the centre, along `along` (a texture's scale).
+	 */
+	from?: 'edge' | 'inside' | 'below' | 'band' | 'corner' | 'centre';
+	/** `distance`: params whose lengths come before this one (a rim's `offset`, contour lines' first line). */
+	after?: readonly string[];
+	/**
+	 * The direction a `position` runs along and the line of `from: 'band' | 'centre'`: this angle param (default the
+	 * layer's `angle`, else 90°), or the direction of this gradient paint (its angle plus `<paint>Angle`), plus `turn`
+	 * degrees (a gloss cap runs down from its angle: `turn: 90`). On an `angle` handle only `turn` counts: where the
+	 * value 0 points (default 0°; a `<paint>Angle` adds its gradient's own angle, as the paint does).
+	 */
+	along?: { param?: string; paint?: string; turn?: number };
+	/**
+	 * `position`: how a value maps onto the bounds. `sweep` (default): 0 % at one side, 100 % at the other; `{ band }`:
+	 * −100…100 % moves the centre of a band, as long as that distance param, from fully before to fully past them.
+	 */
+	range?: 'sweep' | { band: string };
 };
 
 export type TitleLayerType = {

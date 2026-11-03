@@ -932,8 +932,11 @@ Status of the foundation; streams still in progress update this list. Evidence: 
   replaces it; on soft alpha it does not. The fix belongs in the field's seed pass (`title-look/glsl.ts`, the foundation's core).
 - **Deep Glow is slow on software GL**: ≈ 7 s per frame at full resolution for a title, ≈ 17 s for a full frame on this host
   ([performance.md](performance.md) §7).
-- **Handles (TL-092) are declared, not drawn**: shadow offset and light angle are in each layer's `handles`; the Program monitor
-  overlay that reads them belongs to the UI stream. Standalone effects have no handles beyond `point` params.
+- **Handles (TL-092) are placed on the layer's box, not its ink.** Every declared handle is drawn and dragged on the Program
+  monitor, but the shaders measure sweeps and bands (sheen, gloss, a gradient overlay's band) across the alpha bounds and the
+  overlay across the clip's box, and edges are the box's: on a text box much wider than its text a position handle is where the
+  value says on the box, not on the letters. The value written is exact either way. Standalone effects have no handles beyond
+  `point` params.
 - **Generators (§7): a particle in flight reads the shape of this frame**, not of its birth frame, because no generator keeps
   history (TL-061). Per-letter animation carries a letter's particles with it. A title moved whole by a text animator, not by
   clip Motion, leaves `Layout`-anchored sites behind: `Alpha Bounds` follows it, at the price of locality.
@@ -953,8 +956,6 @@ Status of the foundation; streams still in progress update this list. Evidence: 
   (`recolor.ts`), the generators stream through each generator's own paint and mode. Since integration 2 the generators' rule
   draws, and the library's `fixedColor` keeps a generator's own colours as its `Own Colours` param does. The library's ramp is still
   exported and unit-tested but unused: deleting it, or making it a generator colour mode, is a decision left open.
-- **Generator preset chips have no UI of their own here:** the presets exist and `clip.addGenerator` and `appearance.addLayer`
-  take them; the chips belong to the UI streams.
 
 **Agents (TL-100…TL-107):** the `titles` toolset, `title_check`, the `title-art` proposal feature, `still-sheet` jobs and effects
 discovery are in; evidence and thresholds in [wp-notes/title-looks-agents.md](wp-notes/title-looks-agents.md). Limits:

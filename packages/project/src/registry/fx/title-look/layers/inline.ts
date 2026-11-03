@@ -32,7 +32,7 @@ float tl_bandPx(TlSurface s) { return tl_px(u_width); }
 	},
 	fieldReach: (p) => ({ inside: num(p.inset) + num(p.width) + 1, outside: 0 }),
 	handles: [
-		{ kind: 'distance', params: ['inset', 'width'] },
+		{ kind: 'distance', params: ['inset', 'width'], from: 'inside' },
 		{ kind: 'angle', params: ['paintAngle'] },
 	],
 	summary(p) {
