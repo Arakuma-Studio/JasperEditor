@@ -8,6 +8,8 @@ export type WebglStatus = {
 	state: 'ok' | 'unavailable' | 'unknown';
 	/** Whether the browser has `EXT_color_buffer_float` (float render targets); absent = not probed. */
 	floatTargets?: boolean;
+	/** `MAX_RENDERBUFFER_SIZE` of the browser's WebGL2 (3D supersampling); absent = not probed. */
+	maxRenderbufferSize?: number;
 	message?: string;
 };
 

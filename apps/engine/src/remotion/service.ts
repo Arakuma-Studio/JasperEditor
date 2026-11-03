@@ -125,6 +125,8 @@ export type RemotionWebglStatus = {
 	renderer?: string;
 	/** TL-123: whether the probe context has `EXT_color_buffer_float` (float render targets); absent = not probed. */
 	floatTargets?: boolean;
+	/** `MAX_RENDERBUFFER_SIZE` of the probe context: what 3D supersampling can hold (absent = not probed). */
+	maxRenderbufferSize?: number;
 	message?: string;
 };
 
@@ -632,9 +634,19 @@ export class RemotionService {
 					return {
 						renderer: String(ctx.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : ctx.RENDERER)),
 						floatTargets: !!ctx.getExtension('EXT_color_buffer_float'),
+						maxRenderbufferSize: Number(ctx.getParameter(ctx.MAX_RENDERBUFFER_SIZE)),
 					};
-				})) as { renderer: string; floatTargets: boolean } | null;
-				if (probe) return { state: 'ok', gl, renderer: probe.renderer, floatTargets: probe.floatTargets };
+				})) as { renderer: string; floatTargets: boolean; maxRenderbufferSize: number } | null;
+				if (probe)
+					return {
+						state: 'ok',
+						gl,
+						renderer: probe.renderer,
+						floatTargets: probe.floatTargets,
+						...(Number.isFinite(probe.maxRenderbufferSize) && probe.maxRenderbufferSize > 0
+							? { maxRenderbufferSize: probe.maxRenderbufferSize }
+							: {}),
+					};
 				errors.push(`${gl ?? 'default'}: no WebGL2 context`);
 			} catch (e) {
 				errors.push(`${gl ?? 'default'}: ${(e as Error).message.slice(0, 200)}`);

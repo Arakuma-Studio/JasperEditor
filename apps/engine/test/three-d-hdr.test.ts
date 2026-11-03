@@ -149,3 +149,46 @@ describe('the plan of a 3D title', () => {
 		expect(JSON.stringify((e as PlanError).detail)).toContain('3D model');
 	});
 });
+
+describe('Advanced 3D limits in the plan (AGENTS §4)', () => {
+	const capsWith = (maxRenderbufferSize?: number): PlanCapabilities => ({
+		...caps(true),
+		webgl: async () => ({
+			state: 'ok',
+			floatTargets: true,
+			...(maxRenderbufferSize ? { maxRenderbufferSize } : {}),
+		}),
+	});
+
+	it('warns by name when lights or shadows pass the renderer’s limits, or supersampling the GPU’s', async () => {
+		const d = goldTitle();
+		d.tx([{ type: 'sequence.set3dRenderer', supersampling: 4 }]);
+		d.tx(
+			Array.from({ length: 33 }, () => ({
+				type: 'clip.addLight',
+				at: 0,
+				duration: 30,
+				lightType: 'point',
+				castsShadows: true,
+			})),
+		);
+		const p = await plan(d, capsWith(4096));
+		const codes = p.plan.warnings.map((w) => w.code);
+		expect(codes).toEqual(
+			expect.arrayContaining([
+				'THREE_D_LIGHTS_LIMIT',
+				'THREE_D_SHADOWS_LIMIT',
+				'THREE_D_SUPERSAMPLING_LIMIT',
+			]),
+		);
+		// 1920 × 1080 on 4096 px render buffers: 2×, not 4×.
+		expect(p.plan.warnings.find((w) => w.code === 'THREE_D_SUPERSAMPLING_LIMIT')!.message).toContain('2×');
+	});
+
+	it('says nothing within them', async () => {
+		const d = goldTitle();
+		d.tx([{ type: 'clip.addLight', at: 0, duration: 30, lightType: 'point', castsShadows: true }]);
+		const codes = (await plan(d, capsWith(16384))).plan.warnings.map((w) => w.code);
+		expect(codes.filter((c) => c.startsWith('THREE_D_'))).toEqual([]);
+	});
+});

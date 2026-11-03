@@ -6,6 +6,7 @@ export * from './extrude.ts';
 export * from './gltf.ts';
 export * from './hdr.ts';
 export * from './inflate.ts';
+export * from './limits.ts';
 export * from './math.ts';
 export * from './model.ts';
 export * from './offset.ts';

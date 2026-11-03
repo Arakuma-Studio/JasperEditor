@@ -9,8 +9,13 @@
 //   3D layers draw themselves through their 3D homography (CSS matrix3d: no depth sort across layers, no lights,
 //   shadows or depth of field) with a chip saying so; renders fail with WEBGL_UNAVAILABLE / THREE_D_UNSUPPORTED.
 import {
+	ADVANCED_MAX_LIGHTS,
+	ADVANCED_MAX_SHADOW_TILES,
+	ADVANCED_MAX_SUPERSAMPLING,
 	activeCameraAt,
+	advanced3dLimitsOf,
 	advancedNeedsFloat,
+	advancedSupersampling,
 	type CameraState,
 	type ClassicSetup,
 	clipContentTime,
@@ -535,6 +540,37 @@ function useEnvironmentImage(url: string | null, rendering: boolean): HTMLImageE
 const FILL: CSSProperties = { position: 'absolute', left: 0, top: 0, width: '100%', height: '100%' };
 
 /**
+ * AGENTS §4: what Advanced 3D leaves out at this frame by its fixed limits (lights, shadow maps, supersampling on this
+ * GPU), said in the preview's chip; the export plan warns the same (`advanced3dLimitWarnings`). Null when nothing is.
+ */
+export function advancedLimitChip(
+	doc: Scene3DValue['doc'],
+	frame: number,
+	comp: { width: number; height: number },
+): string | null {
+	const scene3d = doc.scene3d;
+	if (scene3d?.renderer !== 'advanced' || scene3d.draft) return null;
+	const limits = advanced3dLimitsOf(lightsAt(scene3d, frame, doc.settings.fps));
+	if (limits.droppedLights.length)
+		return `Only ${ADVANCED_MAX_LIGHTS} lights are drawn: ${limits.droppedLights.length} left out`;
+	if (limits.shadowless.length)
+		return `Only ${ADVANCED_MAX_SHADOW_TILES} shadow maps are drawn: ${limits.shadowless.length} light(s) cast no shadow`;
+	const want = Math.min(ADVANCED_MAX_SUPERSAMPLING, Math.round(scene3d.supersampling ?? 1));
+	const gl = want > 1 ? fxHost()?.gl : null;
+	if (gl) {
+		const got = advancedSupersampling(
+			want,
+			comp.width,
+			comp.height,
+			gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) as number,
+		);
+		if (got < want)
+			return `Supersampling is ${got}× here, not ${want}×: this GPU's render buffers are too small`;
+	}
+	return null;
+}
+
+/**
  * The 3D run a scope draws at the current frame over its backdrop (the chain's source): the run topping out on track
  * `trackIndex`, its members' delivered pictures, models and environment image, and the `fx3dRun` descriptor (empty
  * while a render still waits for a picture). Shared by `Scene3DScope` (HTML-in-Canvas capture of the stack below) and
@@ -574,7 +610,9 @@ export function useScene3DRun(
 		? `The HDR environment could not be read: ${envHdrError}`
 		: envMediaId && !envMedia
 			? 'The environment media is missing'
-			: null;
+			: run && isPreview
+				? advancedLimitChip(scene.doc, frame, comp)
+				: null;
 	// Advanced 3D: the models of the run's model layers.
 	const modelUrls = new Map<string, string>();
 	if (run && scene.doc.scene3d?.renderer === 'advanced')

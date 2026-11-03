@@ -8,6 +8,7 @@ import type { EncoderChoice, ExportSettings, RenderPlan } from '@jasper/api';
 import { installAudioFxProcessors } from '@jasper/audio-fx';
 import { mgRegistry } from '@jasper/mg-templates';
 import {
+	advanced3dLimitWarnings,
 	blendModeInfo,
 	buildRenderSnapshot,
 	clipContentTime,
@@ -857,6 +858,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	// TL-124 / TL-125 / TL-123: what the browser draws and needs WebGL2 for (colour and GPU effects, also in nested
 	// sequences; GPU transitions; masked effects; blend modes; 3D layers) is refused here when the render browser has
 	// none (or lacks the float targets an effect requires), naming the causes, not as a failure in the middle of a render.
+	let webgl: WebglStatus | null = null;
 	if ((path === 'remotion' || path === 'hybrid') && deps.capabilities.webgl) {
 		const all = snapshotGlNeeds(snapshot, deps.effects);
 		const bakedIds = new Set(baked.map((b) => b.clipId));
@@ -867,7 +869,8 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 						(n) => (n.clipId && bakedIds.has(n.clipId)) || (n.transitionId && bakedIds.has(n.transitionId)),
 					);
 		if (needs.length > 0) {
-			const refusal = webglRefusal(needs, await deps.capabilities.webgl());
+			webgl = await deps.capabilities.webgl();
+			const refusal = webglRefusal(needs, webgl);
 			if (refusal)
 				throw new PlanError(refusal.code, 409, refusal.message, {
 					path,
@@ -892,6 +895,11 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 				blockers: missing3d.map((m) => ({ path, reason: m.label, itemId: m.clipId })),
 			},
 		);
+
+	// AGENTS §4: what Advanced 3D's fixed limits leave out (lights, shadow maps, supersampling on the render browser's
+	// GPU) is said; the preview's chip says the same, as it draws with the same renderer.
+	if (path === 'remotion' || path === 'hybrid')
+		for (const w of advanced3dLimitWarnings(snapshot, range, webgl?.maxRenderbufferSize)) warnings.push(w);
 
 	// Spec 19 TL-021, AGENTS §4: a look's picture that is offline would draw the look without it (a reflection on its
 	// preset environment, a pattern tile with no marks), so the export refuses, as a missing 3D asset does (TL-075).
