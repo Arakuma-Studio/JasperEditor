@@ -19,7 +19,6 @@ import {
 	gradientRamp,
 	type LookRecipe,
 	LookRecipeSchema,
-	layerParamSpecs,
 	loadProject,
 	lookBodyOf,
 	lookReach,

@@ -168,7 +168,11 @@ export async function runAlphaDelivery(
 	req: AlphaDeliveryRequest,
 	d: DeliveryDeps,
 ): Promise<AlphaDeliveryResult> {
-	const { doc: full, displayLut, warnings: planned } = await d.frames(ctx, req.envelope, req.sequenceId, req.range);
+	const {
+		doc: full,
+		displayLut,
+		warnings: planned,
+	} = await d.frames(ctx, req.envelope, req.sequenceId, req.range);
 	const warnings: AlphaDeliveryResult['warnings'] = [...planned];
 	const doc = req.clipIds ? onlyClips(full, new Set(req.clipIds)) : full;
 	if (

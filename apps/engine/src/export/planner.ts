@@ -1308,7 +1308,8 @@ export function lookMediaOfflineItems(
 	for (const c of allVisualClips(snapshot)) {
 		const seen = new Set<string>();
 		for (const ref of effectMediaRefs(c.effects)) {
-			if (!ref.param.startsWith('appearance.') || snapshot.media[ref.mediaId] || seen.has(ref.mediaId)) continue;
+			if (!ref.param.startsWith('appearance.') || snapshot.media[ref.mediaId] || seen.has(ref.mediaId))
+				continue;
 			seen.add(ref.mediaId);
 			const name = document.media[ref.mediaId]?.originalName ?? ref.mediaId;
 			out.push({
