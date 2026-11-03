@@ -76,7 +76,8 @@ CI runs only the unit tests here (`*.test.ts`). The eval calls paid models, so C
 - Codex gets prior turns as text, since it cannot resume an invented session.
 - The fake's pictures are stand-ins (`rasterFrame`): footage is grey, a solid its colour, a title a light box around its
   position. `title_check` rows, sheets, PSD layers, alpha trims and gamut figures come from those, not from a look: they
-  grade what the agent does with a result, never the render. `open_project_in_editor` makes reads report an editor
+  grade what the agent does with a result, never the render. Scopes read that grey; any style file holds the same two
+  styles; `setup.logo`'s still has three letters. `open_project_in_editor` makes reads report an editor
   (`title_propose` then stores a proposal); edits still apply headless, with no History.
 - Harnesses change: Claude Code 2.1 cuts server instructions and each description at 4096 characters and defers MCP
   tools behind ToolSearch; Codex 0.163 sends no tool text until the model reaches for tools, and starts a turn without an

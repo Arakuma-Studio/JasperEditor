@@ -203,3 +203,100 @@ before `main`'s conventions reached them. At integration 2 they follow them:
 - Measured bytes (`pnpm --filter @jasper/mcp eval:measure`): `+titles` 6,608 → 6,624 (the `lookId` argument names user
   looks, in two tools; budget 6,741), `all` 507,077 → 507,093 (budget 513,876); every other context unchanged. No budget
   was raised. No model samples were run.
+
+## Names and merges (AGENTS.md §10)
+
+The sections above "Measured" use the current names; the measurements and the integration notes keep the names the runs
+used. Since this pass the 19 tools spec 19 added to `main`'s surface follow §10. The spec (TL-100…TL-105, TL-112…TL-116)
+still uses the old names: AGENTS.md takes precedence over it.
+
+| Before | Now | Why |
+|---|---|---|
+| `find_title_looks` | `title_look_find` | `title_` for the new `titles` toolset; "look" is the one word for a look |
+| `get_title_recipe` | `title_look_find {lookId}` | Merged: the same lookup of the same catalogue, as `list_effects {effectId}` returns one effect |
+| `propose_title` | `title_propose` | The area is the noun, as `main`'s `scopes_read` |
+| `title_check` | `title_check` | Already `<area>_<verb>` |
+| `save_title_look` | `title_look_save` | |
+| `add_title_generator` | `title_generator_add` | |
+| `set_global_light` | `title_light_set` | Only title looks follow the global light; the 3D lights are `add_light` clips |
+| `list_effects`, `add_effect`, `set_effect_param` | unchanged | See below |
+| `set_3d_surface` | `set_material {surface, preset, values, clearSurface}` | Merged: "the material of a 3D layer" had two routes, and `metal` on `set_material` read as a metal look |
+| `set_3d_geometry`, `edit_bevel_bands`, `edit_backplates` | `threed_solid_edit {mode…, band, plate}` | Merged: three edits of one solid; the two `edit_*` tools were the same add / remove / reorder |
+| `export_alpha` | `export_frame {alpha, end, clipIds, trimMarginPx}` | Merged: "export a PNG still" had two routes, and the eval case existed because agents could pick the wrong one |
+| `send_to_photoshop` | `export_psd` | `main`'s export area is `export_<noun>` (`export_frame`, `export_timeline`, `export_lottie`) |
+| `import_layer_styles` | unchanged | Already `main`'s import area, `import_<noun>` (`import_media`, `import_lut`, `import_timeline`) |
+| `check_gamut` | `color_gamut_check` | `main`'s colour area prefix (`color_match`) |
+| `split_image` | `image_split` | "split" is `split_at`'s cut in time: the still is the noun, its UI and command say "Split Image" |
+
+- **One prefix per area, and the areas are `main`'s where they exist.** A `delivery_` prefix would give `main`'s export
+  area two prefixes (`export_frame` and `delivery_…`) and put a logo split and a style import under "delivery". So
+  export, import and colour keep `main`'s words; the new areas get one each: `title_` and `threed_`. `threed` rather
+  than `3d`: some clients (Gemini) require a name to start with a letter, and it is the documents' own `threeD` key.
+  `toolsets.test.ts`'s `TOOL_VERBS` gains `image` and `threed`.
+- **The effects tools keep their names.** They were new tools, but not new names: `main`'s `ROTO_GUIDE` and
+  `add_adjustment_layer` already sent agents to `add_effect`, `set_effect_param` and `list_effects` (TL-105 says register
+  them or correct the guides), and they are the video side of `main`'s own `list_audio_effects`, `add_audio_effect` and the
+  `*_effect_preset` tools in the same `effects` toolset. Renaming three of that toolset to `effect_*` would split it across
+  two schemes. Not near-duplicates of `apply_commands effect.add` / `param.set` either, in `main`'s terms: like every
+  helper (`set_3d_layer` is `clip.set3d`), they add clip lists in one step, times resolved on the owning sequence and the
+  keyframe switch.
+- **Not merged:** `title_generator_add` (a look layer, or a generator clip kept below the title: no other tool does
+  either), `title_look_save` and `import_layer_styles` (one makes a look from a clip, the other reads Photoshop files),
+  `export_psd` (a layered file with a dry-run plan; `export_frame` writes flat images), `color_gamut_check` (`scopes_read`
+  measures levels, not an output gamut), `image_split`.
+- **Descriptions.** Each says what it does and its sibling or misuse where a case tests that boundary: `title_propose`
+  "Plain text: `add_text`", `title_light_set` "3D lights are clips: `add_light`", `image_split` "A cut in time:
+  `split_at`", `color_gamut_check` "Levels and clipping: `scopes_read`", `export_psd` "A flat image: `export_frame`",
+  `export_frame` "A transparent PNG needs `alpha: true`", `set_material` "`metal` is classic shading, not a metal look",
+  `threed_solid_edit` "Advanced 3D only", `add_effect` "ids come from `list_effects`, never guessed". Limits the schema
+  or an error already states stay out (a page of 12, headless `propose` is `E_NO_EDITOR`, `notChecked` says taste is not
+  measured). The new refusals name their fix: `threed_solid_edit` "Pass band.bandId.", "Pass only the clip that holds …";
+  `export_frame` "Add alpha: true.", "Pass folder.", "Leave format out."; `set_material` "Add preset or values.".
+- **`threed_solid_edit` returns the new ids** in `refs` (`$band0`, `$plate0`, one per clip), which `edit_bevel_bands` and
+  `edit_backplates` did not, so a remove or reorder no longer needs `get_clip_properties` first.
+
+### Eval cases
+
+`eval/cases/titles.jsonl`, `three-d.jsonl`, `delivery.jsonl`: 23 cases, each naming the text it is for. New since this
+pass: `titles-check-readable`, `titles-look-recipe`, `titles-save-look`, `titles-generator-behind` with the control
+`titles-fire-sound-control`, `titles-global-light` with `titles-3d-light-control`, `effects-keyframe-param`,
+`three-d-backplate`, `delivery-title-alpha`, `delivery-jpeg-control` (control of `delivery-alpha-png` and `delivery-psd`),
+`delivery-levels-control` (of `delivery-gamut`), `delivery-layer-styles`, `delivery-split-logo` with
+`delivery-split-clip-control`. Changed: `three-d-extruded-title` now needs Advanced 3D, a bevel `band` and a gold `preset`;
+`delivery-psd` needs `dryRun` and no write; `delivery-alpha-png` needs `export_frame {alpha: true}`; `delivery-gamut` must
+not call `title_check`.
+
+The fake engine (`eval/fake-engine.ts`) now answers `layerStylesRead`, `splitImageAnalyze`, `splitImage` and
+`gradingScopes` with the routes' schemas, `setup.logo` places a still with three letters (`{{still}}`), and a seed's refs
+are vars (`{{seed_t}}`). `eval/cases.test.ts` runs each case's intended route through the stub with the case's own setup
+and grades it: all 23 pass and none is invalid. That proves each case can pass, not that it fails without its text.
+
+**No model samples were run** (paid; the owner decides). The runs that would prove each case, on an Orquester-managed
+account, from `apps/mcp` (`<a>,<b>` two accounts with quota):
+
+```sh
+# Baseline 1: every new or merged tool's description cut to its title (scratch checkout of this branch)
+git worktree add /tmp/mcpeval-base-desc <this branch> && cd /tmp/mcpeval-base-desc && pnpm install --frozen-lockfile
+python3 -I ablate.py /tmp/mcpeval-base-desc descriptions        # the script is in the report of this pass
+cd <this checkout>/apps/mcp
+pnpm eval --account <a>,<b> --samples 4 --case titles-effect-by-name,titles-plain-text-control,titles-check-readable,titles-look-recipe,titles-save-look,titles-generator-behind,titles-fire-sound-control,titles-global-light,titles-3d-light-control,effects-keyframe-param,three-d-extruded-title,three-d-backplate,delivery-psd,delivery-alpha-png,delivery-title-alpha,delivery-jpeg-control,delivery-gamut,delivery-levels-control,delivery-layer-styles,delivery-split-logo,delivery-split-clip-control --source-root /tmp/mcpeval-base-desc --out /tmp/mcpeval/base-desc
+# Baseline 2: the instructions map without the titles, 3d, export and effects trigger words
+git worktree add /tmp/mcpeval-base-map <this branch> && cd /tmp/mcpeval-base-map && pnpm install --frozen-lockfile
+python3 -I ablate.py /tmp/mcpeval-base-map map
+cd <this checkout>/apps/mcp
+pnpm eval --account <a>,<b> --samples 4 --case titles-styled-title,titles-plain-text-control,three-d-extruded-title,three-d-flat-title-control,delivery-psd,delivery-alpha-png,titles-effect-by-name --source-root /tmp/mcpeval-base-map --out /tmp/mcpeval/base-map
+# After: this branch, compared with each baseline
+pnpm eval --account <a>,<b> --samples 4 --case <the same ids> --out /tmp/mcpeval/after-desc --baseline /tmp/mcpeval/base-desc/results.jsonl
+pnpm eval --account <a>,<b> --samples 4 --case <the same ids> --out /tmp/mcpeval/after-map --baseline /tmp/mcpeval/base-map/results.jsonl
+```
+
+A guard that also passes on its baseline shows its text is not needed: cut that text. A control that fails after shows an
+overcorrection.
+
+### Bytes
+
+`pnpm --filter @jasper/mcp eval:measure`, before → after this pass: `core` 25,571 → 25,570; `+titles` 6,624 → 6,507 (7
+tools → 6); `+3d` 21,403 → 20,994 (19 → 16); `+export` 13,282 → 13,017 (14 → 13); `+effects` 21,137 → 21,241 (the
+siblings and the never-guess rule in the three descriptions); `+color` 17,139 → 17,181; `+graphics` 19,577 → 19,663;
+`all` 507,093 → 506,533 (469 tools → 464). `eval/budget.json` lowers the three that shrank to the measurement + 2 %:
+`+titles` 6,741 → 6,638, `+3d` 21,846 → 21,414, `+export` 13,548 → 13,278. The rest stay; every context is within budget.

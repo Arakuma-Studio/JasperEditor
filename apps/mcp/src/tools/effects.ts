@@ -48,8 +48,7 @@ export function registerEffectTools(ctx: ToolContext): void {
 		'list_effects',
 		{
 			title: 'List effects',
-			description:
-				'Search the video effects `add_effect` takes, 100 a page. With `effectId`: one effect and its params. Audio effects: `list_audio_effects`.',
+			description: 'Search the video effects `add_effect` takes. With `effectId`: one effect and its params.',
 			details: `The video effects add_effect takes. Rows {id, label, category, description, gpu}, ${MAX_PAGE} at most per page, no schemas; query matches words of the id, label, description or category, category filters, cursor continues. effectId returns that one effect with its params (name, type, default, range, options, unit). categories lists what exists.`,
 			input: {
 				query: z.string().max(200).optional().describe('Words to look for, e.g. "blur"'),
@@ -124,7 +123,7 @@ export function registerEffectTools(ctx: ToolContext): void {
 		{
 			title: 'Add an effect',
 			description:
-				'Add a video effect to clips in one undo step; ids come from `list_effects`, never guessed. Returns instance ids for `set_effect_param`.',
+				'Add a video effect to clips; ids come from `list_effects`, never guessed. Returns instance ids for `set_effect_param`.',
 			details:
 				'Adds a video effect to one clip or several in one undo step (effect.add). params: values by name, the rest take their defaults (list_effects {effectId} lists them). index: place in the stack, top first (default the end). Returns the instance ids for set_effect_param.',
 			input: {

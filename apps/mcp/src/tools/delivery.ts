@@ -172,7 +172,7 @@ export function registerDeliveryTools(ctx: ToolContext): void {
 		{
 			title: 'Send to Photoshop',
 			description:
-				'Write a frame as a layered 8-bit PSD for Photoshop; text arrives as pixels. `dryRun` lists the layers. A flat image: `export_frame`.',
+				'Write a frame as a layered 8-bit PSD for Photoshop. `dryRun` lists the layers. A flat image: `export_frame`.',
 			details:
 				'The frame as a layered, registered, rasterised 8-bit PSD. dryRun returns layers, what is baked and blockers without writing. Text arrives as pixels.',
 			input: {
@@ -215,7 +215,7 @@ export function registerDeliveryTools(ctx: ToolContext): void {
 		{
 			title: 'Import layer styles',
 			description:
-				'Import the layer styles of a Photoshop .asl or .psd as project looks, with a report of what each one approximates. `dryRun` saves nothing.',
+				'Import the layer styles of a Photoshop .asl or .psd as project looks, with a report of what each one approximates.',
 			details:
 				'The layer styles of a Photoshop .asl or .psd as project looks, with a report per style of what was mapped, approximated and not supported. dryRun saves nothing.',
 			input: {
@@ -393,7 +393,7 @@ export function registerDeliveryTools(ctx: ToolContext): void {
 		{
 			title: 'Check gamut and legal range',
 			description:
-				'Measure how much of a frame falls outside an output gamut and the EBU R 103 legal range. Levels and clipping: `scopes_read`.',
+				'Measure how much of a frame falls outside an output gamut and the legal range. Levels and clipping: `scopes_read`.',
 			details:
 				'Percent of a frame outside an output gamut, and outside the EBU R 103 legal range after 4:2:0. Video gamuts only. Returns a mask URL of the flagged pixels.',
 			input: {

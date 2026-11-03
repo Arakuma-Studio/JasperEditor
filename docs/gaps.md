@@ -984,13 +984,13 @@ discovery are in; evidence and thresholds in [wp-notes/title-looks-agents.md](wp
   (`apps/web/src/proposals/title-art.tsx`) reads the meta leniently and ignores them; drawing them is the UI stream's.
   A later `title_check {proposalId}` measures again but does not update the stored rows, and rows stored by a call that
   timed out are the plain ones (`pending: true`).
-- **The MCP eval cases for titles and delivery can sample, but have not been sampled.** `apps/mcp/eval/fake-engine.ts`
-  now models `requestStillSheet` (cells drawn as stand-in pictures), `listFonts`, the user look library
-  (`titleLooksList`), `psdPlan`, `psdExport`, `alphaDelivery` and `gamutCheck`, with results parsed by the engine's
-  schemas; `eval/fake-engine.test.ts` drives those tools through the stub with no unmodelled call. So
-  `titles-styled-title`, `delivery-psd`, `delivery-alpha-png` and `delivery-gamut` can produce valid samples. No model
-  samples were run for them, nor for the `+titles`, `+effects`, `+export`, `+3d`, `+color` and `+graphics` budgets
-  ([wp-notes/title-looks-agents.md](wp-notes/title-looks-agents.md)).
+- **The MCP eval cases for the spec 19 tools can sample, but have not been sampled.** Every titles, effects, 3D and
+  delivery tool has a case (`apps/mcp/eval/cases/{titles,three-d,delivery}.jsonl`, 23 cases with their controls), and
+  `apps/mcp/eval/fake-engine.ts` answers every engine call they reach (sheets, fonts, user looks, PSD, alpha delivery,
+  gamut, scopes, layer-style files, image split), with results parsed by the engine's schemas.
+  `eval/cases.test.ts` runs each case's intended route through the stub and grades it a valid pass. No model samples
+  were run for them, so no case is yet shown to fail without its text: the paid runs that would show it wait for the
+  owner ([wp-notes/title-looks-agents.md](wp-notes/title-looks-agents.md) § Names and merges).
 
 ### 3D titles (spec 19 §9)
 
