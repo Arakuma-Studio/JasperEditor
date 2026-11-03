@@ -240,6 +240,9 @@ export function setColorway(
 			} as Command,
 		],
 		coalesceKey: `look.colorway:${clipIds.join(',')}`,
+		// The run lasts until another edit, however long a person looks at each one, and is named after the last.
+		coalesceWindowMs: Number.POSITIVE_INFINITY,
+		coalesceRelabel: true,
 	});
 }
 

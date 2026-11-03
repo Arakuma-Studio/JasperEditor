@@ -143,14 +143,6 @@ export class PosterStore {
 			(this.opts.revokeUrl ?? defaultRevokeUrl)(u);
 		}
 	}
-
-	/** Drops everything: requests in flight and object URLs. */
-	dispose(): void {
-		for (const j of this.jobs.values()) j.ac.abort();
-		this.jobs.clear();
-		for (const u of this.done.values()) (this.opts.revokeUrl ?? defaultRevokeUrl)(u);
-		this.done.clear();
-	}
 }
 
 const defaultCreateUrl = (bytes: Uint8Array) =>

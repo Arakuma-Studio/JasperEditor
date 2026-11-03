@@ -13,7 +13,7 @@ import {
 export type PaintKind = Paint['kind'];
 export const PAINT_KINDS: readonly PaintKind[] = ['role', 'color', 'gradient', 'source'];
 export const PAINT_KIND_LABELS: Record<PaintKind, string> = {
-	role: 'Palette Role',
+	role: 'Role',
 	color: 'Colour',
 	gradient: 'Gradient',
 	source: 'Clip Picture',

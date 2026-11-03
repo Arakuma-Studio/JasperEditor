@@ -92,6 +92,7 @@ export function lookPosterDocument(req: LookPosterRequest): { doc: ProjectDocume
 	const project = createEmptyProject({ ids, name: 'poster', preset: 'hd-720p-30' });
 	const sequenceId = Object.keys(project.sequences)[0]!;
 	const family = req.font?.family;
+	const size = posterTextSize(req.text, width, height);
 	const { document, result } = applyTransaction(
 		project,
 		{
@@ -112,14 +113,15 @@ export function lookPosterDocument(req: LookPosterRequest): { doc: ProjectDocume
 						text: req.text,
 						style: {
 							...(family ? { fontId: '$font' } : {}),
-							sizePx: posterTextSize(req.text, width, height),
+							sizePx: size,
 							fill: [1, 1, 1, 1],
 							align: 'center',
 							weight: req.font?.weight ?? 700,
 							italic: req.font?.italic ?? false,
 						},
 					},
-					box: { width: Math.round(width * 0.92), height: Math.round(height * 0.8), autoSize: 'none' },
+					// As tall as its line: the clip is centred in the frame, so the text is too.
+					box: { width: Math.round(width * 0.92), height: Math.round(size * 1.4), autoSize: 'none' },
 					ref: '$title',
 				},
 				// The seed is fixed: the same look always gets the same poster.

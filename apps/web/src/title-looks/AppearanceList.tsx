@@ -96,11 +96,8 @@ export function AppearanceList(props: {
 		ctx.ops.apply(label, looked.map(command));
 	const layerOf = (s: SharedLayer, i: number) => s.layers[i]!;
 
-	const select = (target: string) => {
-		lookFocus.set({ clipId: first.clip.id, fxId: first.fx.id, target });
-		ctx.hint('');
-	};
-	const toggle = (key: string, target: string) => {
+	const select = (target: string) => lookFocus.set({ clipId: first.clip.id, fxId: first.fx.id, target });
+const toggle = (key: string, target: string) => {
 		setOpen(open === key ? null : key);
 		select(target);
 	};

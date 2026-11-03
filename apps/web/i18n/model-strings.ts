@@ -6,7 +6,16 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mgRegistry, SOCIAL_IMPORT_HINTS } from '@jasper/mg-templates';
 import * as project from '@jasper/project';
-import { COMMAND_CATALOG, defaultRegistries, PROPERTY_SPECS, TRANSITION_SPECS } from '@jasper/project';
+import {
+	COMMAND_CATALOG,
+	defaultRegistries,
+	layerParamSpecs,
+	PROPERTY_SPECS,
+	ROLE_LABELS,
+	TITLE_FINISHES,
+	TITLE_LAYER_TYPES,
+	TRANSITION_SPECS,
+} from '@jasper/project';
 
 const root = fileURLToPath(new URL('../../..', import.meta.url));
 const out = new Set<string>();
@@ -75,6 +84,17 @@ for (const p of Object.values(project.DELIVERY_PRESETS)) {
 	add(p.label);
 	add(p.source);
 }
+// Spec 19: layer types, their params and options, finishes and colour roles.
+for (const l of TITLE_LAYER_TYPES) {
+	add(l.label);
+	for (const p of layerParamSpecs(l)) {
+		add(p.label);
+		for (const o of 'optionLabels' in p ? (p.optionLabels ?? []) : []) add(o);
+	}
+}
+for (const f of TITLE_FINISHES) add(f.label);
+for (const r of Object.values(ROLE_LABELS)) add(r);
+
 // Sound design: the History labels agents' tools compose and the refusals the editor shows in notices, as templates
 // (`{0}`… are ids, titles and numbers); the runtime translates a text that matches one (`translateName`).
 for (const t of project.SOUND_MODEL_STRINGS) add(t);

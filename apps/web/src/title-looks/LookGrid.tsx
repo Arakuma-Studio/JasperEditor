@@ -98,6 +98,7 @@ export function LookGrid(props: {
 				className="relative"
 				style={{ height: w.totalHeight }}
 				data-count={entries.length}
+				data-keymap-local
 				onKeyDown={onKeyDown}
 			>
 				{entries.slice(w.start, w.end).map((e, k) => {

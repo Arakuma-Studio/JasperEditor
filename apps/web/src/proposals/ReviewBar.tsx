@@ -19,6 +19,7 @@ import {
 } from './actions.ts';
 import { authorName, reviewCounts } from './review.ts';
 import { useProposals, useProposalsController } from './state.ts';
+import { isVisualProposal } from './title-art.tsx';
 
 /** Height of the bar (px): the Timeline's playhead overlay starts below it. */
 export const REVIEW_BAR_PX = 30;
@@ -46,6 +47,8 @@ export function ReviewBar(props: { session: EditorSession; reveal: RevealFn }) {
 	const counts = useMemo(() => reviewCounts(items), [items]);
 	if (!proposal) return null;
 	const agent = typeof proposal.author === 'object';
+	// spec 19 TL-098: a title is looked at, not heard.
+	const visual = isVisualProposal(proposal.feature);
 	return (
 		<div
 			className="flex shrink-0 items-center gap-1.5 overflow-hidden border-b border-pr-border bg-pr-panel-alt px-2 text-pr-small text-pr-text"
@@ -94,11 +97,15 @@ export function ReviewBar(props: { session: EditorSession; reveal: RevealFn }) {
 				<Button
 					variant={hear ? 'primary' : 'secondary'}
 					aria-pressed={hear}
-					title={t('A/B: hear the proposal in the Program monitor, or the sequence as it is (A)')}
+					title={
+						visual
+							? t('Compare: show the proposal in the Program monitor, or the sequence as it is (A)')
+							: t('A/B: hear the proposal in the Program monitor, or the sequence as it is (A)')
+					}
 					onClick={() => c.toggleHear()}
 					data-testid="review-bar-ab"
 				>
-					A/B
+					{visual ? t('Compare') : 'A/B'}
 				</Button>
 				<Button
 					variant="secondary"

@@ -315,6 +315,70 @@ Addresses: `["appearance", fxId, layerId, param]`, `["appearance", fxId, "palett
 "angle"]`, `["globalLight", sequenceId, "angle"]`. Property keys join the first with dots. Slot names have no `$`: `$` starts
 a temp ref in commands.
 
+## People (TL-086 to TL-098)
+
+Three tiers over one model: click a look (Looks tab, `Graphics ▸ Apply Look…`), tune a few controls (Properties ▸ Look), open
+the full stack (Properties ▸ Appearance, Effect Controls). Everything is in `apps/web/src/title-looks/`.
+
+| Piece | File |
+|---|---|
+| One entry per look: library, then what only the project has | `library.ts` |
+| What a click does, what it must announce | `actions.ts` |
+| Actions on the selection's look and on project looks | `look-actions.ts` |
+| Search, categories, recents, tile size, status line | `LooksBrowser.tsx` (the tab: `LooksTab.tsx`; the dialog: `ApplyLookDialog.tsx`) |
+| Virtual grid | `grid-window.ts` (pure), `LookGrid.tsx`, `LookCard.tsx` |
+| Posters | `posters.ts`; engine `apps/engine/src/title-looks/posters.ts`, `POST /api/title-looks/poster` |
+| Preview without an edit (TL-088, TL-095) | `preview.ts`, `PreviewChip.tsx` |
+| Look header, stack rows | `LookSection.tsx`, `AppearanceList.tsx`, `rows.ts`, `selection.ts` |
+| Effect Controls block | `AppearanceBlock.tsx`, `appearance` of `FxSection` (`panels/effectControls/items.ts`) |
+| Paint and gradient controls | `PaintField.tsx`, `GradientField.tsx`, `paint.ts` |
+| On-canvas outline and handles, tool bar target | `LayerOverlay.tsx`, `overlay-geometry.ts`, `ToolTarget.tsx`, `focus.ts` |
+| Style check badge | `StyleCheckBadge.tsx`, `style-check.ts` |
+| Commands | `apps/web/src/commands/title-looks.ts` |
+| Review of `title-art` proposals | `apps/web/src/proposals/title-art.tsx` |
+
+Decisions:
+
+- **A preview is the session's derived preview.** `derivedPreviewFor(session)` already draws the committed document with commands
+  applied in a dry transaction, never saved and never in History, and ends itself on any edit, gesture or close. `look.apply`,
+  `look.setColorway` and `effect.addMany` run there unchanged, so what a hover shows is what the click does. A chip says what
+  Program shows. The 180 ms wait means sweeping across a grid draws nothing. Preview ends only its own kind, never Clean Up's.
+- **A poster is a render, not a drawing of one.** The engine builds a one-clip project with the same commands a person uses and
+  renders it through `JasperSequence`, so a thumbnail cannot disagree with the look, and a recipe the commands refuse answers
+  with their `E_*` code. The key is the content (`canonicalJson` of recipe, palette, text, font and size) plus the scene version
+  and the engine version; files are ordinary `mg-posters` cache entries, so the cache cleaner, its budget and its orphan sweep
+  need no new code. The browser is shared across a burst and closes after 20 s idle. A press on a card that has left stops
+  waiting; the render stops when the last waiter leaves (`clientGoneSignal`).
+- **Intensity is the effect's own param, `lookIntensity`.** It is a mix of the clip's picture and the finished look in the last
+  pass, in the signal, both premultiplied. Being an ordinary param it keyframes, pastes and shows in Effect Controls with no code,
+  and it animates a look on or off, which a macro over the layers could not. 100 % is the look exactly (the test compares bytes).
+  `u_lookIntensity` is named so it cannot meet a layer's `u_intensity` in a pass. `look.reset` of the whole appearance clears it.
+- **Quick controls name a layer by type and position** (`TitleLook.quickControls`), because recipes have no ids. A look that names
+  none offers the primary value of its top three layers. Saved in the project with the look (`look.apply` copies them).
+- **Rows reset to the look.** `defaultValue` of an appearance property is a function: the linked look's value, else the type's
+  default. Without it ⟲ on a rim went to the type's 6 %, not the look's 5 %, and every tuned look read as changed.
+- **`lookOverrides` is the link status.** The header counts it; nothing else keeps a "dirty" flag.
+- **Layers are matched across clips by position and type** (`sharedStack`). Same structure: rows edit all of them, mixed reads "—",
+  and a drag offsets each clip from its own value through the usual `planSet`. Different structure: the panel says so rather than
+  guessing which layer is which.
+- **New layers do not cover the title** (`newLayerIndex`): a type that reaches outside the shape goes under the face, one that
+  stays inside (sheen, inner glow) over it. A generator follows its own `front`. `applyEffectToClips` sends a generator dropped on
+  a title to a free track below it (TL-064).
+- **Handles come from `layerHandles`**: the type's `handles`, plus the angle of each gradient paint; a paint angle has no handle
+  while the paint is not a gradient. An offset handle starts at the edge of the box: at Fit, a 10 % shadow is 5 screen px from the
+  anchor and could not be grabbed there.
+- **`Clip › Layer` sits in the Tools strip** as vertical text when the strip is vertical; a click returns to the clip. Selecting a
+  layer never changes the clip selection.
+- **Colourways coalesce until the next edit** (`coalesceWindowMs: Infinity`, `coalesceRelabel`): the entries have different
+  labels, so a key alone merged nothing. A person may look at each for as long as they like; it stays one History entry.
+- **A look on a still or a video announces itself.** Its face paints over the picture, which is usually not what was wanted, so the
+  toast offers Keep Clip Picture (the `source` paint). Replaced keyframes are announced with their count (TL-019).
+- **TL-096 lives in `ScrubbyNumber`:** `useScrubLabel` for the label, `onReset` for double-click, and `track` with `log` and
+  `pow` mappings. Tracks appear where the spec names a useful end (`softMax`) or a positive range spans 50×, so plain numbers
+  look as they did. Mappings ported from Pachislop's `controls.tsx` (`licenses/ported/pachislop-ui.md`).
+- **Double-click on a value.** The first click turns the value into a field, so the second lands on the field. Within 400 ms of
+  that click it resets; later it selects text as a field should.
+
 ## Formulas and sources
 
 - Jump flooding: Rong and Tan, "Jump flooding in GPU with applications to Voronoi diagram and distance transform" (I3D 2006);
@@ -346,9 +410,15 @@ The extension contract was exercised by copying this note's three worked example
 one-line registrations: they typechecked with no change to the core, and the registry and GL tests picked them up (and failed
 for the missing fingerprints, and for a generator example that was clipped by its own padding, now fixed above).
 
+| Poster, first render and cached, 240 × 136, three layers, SwiftShader, load ≈ 60 on 8 vCPU | ≈ 20 to 60 s, then < 500 ms from disk | `REMOTION_E2E=1 pnpm exec vitest run apps/engine/test/title-look-posters.e2e.test.ts` |
+
 ## Limits
 
 - `block` gradients on animated text follow the frame's bounds until TL-036 brings layout boxes.
+- The layer outline in Program is the layer's reach around the clip box, not its pixels: the box of a text clip is its text box,
+  which can be wider than the glyphs.
+- The style check's rendered row (contrast against the picture) needs pixels only the engine has: the badge lists it as not measured,
+  never as passed. `title_check` measures it for agents.
 - `line` and `glyph` spans render as `block` until TL-036 (`docs/gaps.md`).
 - The field is rebuilt whenever a frame is redrawn: an animated param on static text pays for it, though the input did not
   change. TL-037 only requires skipping unchanged input and params; `tlField` could be reused across frames when only layer

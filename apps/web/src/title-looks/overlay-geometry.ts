@@ -76,9 +76,9 @@ function angleOf(f: LookFrame, p: Vec2): number {
 export type Handle =
 	/** A length measured outward from `anchor` along `dir`. */
 	| { kind: 'distance'; param: string; anchor: Vec2; dir: Vec2; start: number; value: number }
-	/** Angle and length together, from the centre. */
+	/** Angle and length together. The length starts at the edge of the box, so small offsets stay reachable. */
 	| { kind: 'offset'; angleParam: string; distanceParam: string; angle: number; distance: number }
-	/** A length from the centre along a fixed direction (a shadow following the light). */
+	/** The same length along a fixed direction (a shadow following the light). */
 	| { kind: 'axis'; param: string; dir: Vec2; value: number }
 	/** A direction, on a ring. `base` is added to the value for where it points. */
 	| { kind: 'angle'; param: string; base: number; value: number; radius: number }
@@ -90,10 +90,12 @@ export function handlePoint(f: LookFrame, h: Handle): Vec2 {
 	switch (h.kind) {
 		case 'distance':
 			return add(h.anchor, h.dir, (h.start + h.value) * f.perPercent);
-		case 'offset':
-			return add(f.center, direction(f, h.angle), h.distance * f.perPercent);
+		case 'offset': {
+			const d = direction(f, h.angle);
+			return add(f.center, d, extentAlong(f, d) + h.distance * f.perPercent);
+		}
 		case 'axis':
-			return add(f.center, h.dir, h.value * f.perPercent);
+			return add(f.center, h.dir, extentAlong(f, h.dir) + h.value * f.perPercent);
 		case 'angle':
 			return add(f.center, direction(f, h.base + h.value), h.radius);
 		case 'position':
@@ -110,14 +112,15 @@ export function handleValues(f: LookFrame, h: Handle, p: Vec2): Record<string, n
 		case 'distance':
 			return { [h.param]: round(Math.max(0, dot(sub(p, h.anchor), h.dir) / k - h.start), 0.1) };
 		case 'offset': {
-			const d = sub(p, f.center);
+			const angle = (angleOf(f, p) + 360) % 360;
+			const edge = extentAlong(f, direction(f, angle));
 			return {
-				[h.angleParam]: round((angleOf(f, p) + 360) % 360, 0.1),
-				[h.distanceParam]: round(len(d) / k, 0.1),
+				[h.angleParam]: round(angle, 0.1),
+				[h.distanceParam]: round(Math.max(0, len(sub(p, f.center)) - edge) / k, 0.1),
 			};
 		}
 		case 'axis':
-			return { [h.param]: round(Math.max(0, dot(sub(p, f.center), h.dir) / k), 0.1) };
+			return { [h.param]: round(Math.max(0, dot(sub(p, f.center), h.dir) - extentAlong(f, h.dir)) / k, 0.1) };
 		case 'angle':
 			return { [h.param]: round(angleOf(f, p) - h.base, 0.1) };
 		case 'position':

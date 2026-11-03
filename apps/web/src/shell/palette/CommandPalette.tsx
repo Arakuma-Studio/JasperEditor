@@ -175,21 +175,21 @@ function buildPaletteRows(
 		const selected = session.getState().selection.timeline.clips;
 		for (const e of session.ctx.registries.effects.list()) {
 			if (e.internal) continue;
+			const score = fuzzyScore(text, [e.label, ...(e.keywords ?? [])].join(' '));
+			if (score === null) continue;
 			const targets = clipsAccepting(session, e.id, selected);
-			add(
-				{
-					key: `effect:${e.id}`,
-					group: 'Effects',
-					label: e.label,
-					detail: e.category,
-					disabled: targets.length === 0,
-					reason: 'Select a clip that can take this effect first.',
-					run: exec(() => void applyEffectToClips(session, e.id, targets)),
-				},
-				[e.label, ...(e.keywords ?? [])].join(' '),
-			);
+			out.push({
+				key: `effect:${e.id}`,
+				group: 'Effects',
+				label: e.label,
+				detail: e.category,
+				disabled: targets.length === 0,
+				reason: 'Select a clip that can take this effect first.',
+				score,
+				run: exec(() => void applyEffectToClips(session, e.id, targets)),
+			});
 		}
-		const hasSequence = !!session.getState().activeSequenceId;
+const hasSequence = !!session.getState().activeSequenceId;
 		for (const def of mgRegistry.definitions())
 			add(
 				{

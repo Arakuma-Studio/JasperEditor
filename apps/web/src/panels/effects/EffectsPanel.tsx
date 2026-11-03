@@ -265,6 +265,7 @@ function EffectsBody({ session }: { session: EditorSession }) {
 				className="min-h-0 flex-1 overflow-y-auto"
 				role="tree"
 				aria-label="Effects"
+				data-keymap-local
 				onKeyDown={onTreeKey}
 				onBlur={(ev) => {
 					if (!ev.currentTarget.contains(ev.relatedTarget as Node | null)) highlight(null);

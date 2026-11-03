@@ -171,6 +171,7 @@ import {
 	PreviewStatusRequestSchema,
 	PreviewStatusSchema,
 } from './previews.ts';
+import { LookPosterRequestSchema } from './title-looks.ts';
 import {
 	DeriveRequestSchema,
 	ProcessingModelsResponseSchema,
@@ -576,6 +577,13 @@ export const ROUTES = {
 		path: '/api/stills',
 		body: StillRequestSchema,
 		response: EngineJobSchema,
+	},
+	/** Spec 19 TL-087: a look's poster, as a PNG. */
+	titleLookPoster: {
+		method: 'POST',
+		path: '/api/title-looks/poster',
+		body: LookPosterRequestSchema,
+		response: 'binary',
 	},
 	/** Which segment hashes have render preview files. */
 	previewStatus: {

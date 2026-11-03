@@ -881,6 +881,11 @@ Status of the foundation; streams still in progress update this list. Evidence: 
   `FX_LAYER_UNSUPPORTED`. Nothing is silently dropped.
 - **Requires float targets** (TL-032, TL-123): without them the preview bypasses the look with a chip, a render fails with
   `TITLE_LOOK_NEEDS_FLOAT` and the export plan refuses when the probe answered (TL-124).
+- **Style check badge** (TL-094): the rendered check (contrast with the picture behind the title) is listed as not measured in the
+  panel; only `title_check` measures it. The badge reads `lintAppearance` from the looks library and shows nothing in a build
+  without it.
+- **User looks** (TL-054) are not in the Looks tab: it lists the library and the project's looks. Saving, renaming and deleting
+  project looks work; the engine-backed store and import and export belong to the library stream.
 - **Software rendering is slow**: ≈ 1.3 s per 1080p frame for a six-layer look on a title-sized box on SwiftShader, and an
   animated title redraws its whole stack every frame ([performance.md](performance.md) §7). Nothing has been measured on a GPU.
 
