@@ -123,6 +123,22 @@ float tlg_jag(float x, int b, float o) {
   return sum;
 }
 struct TlgBolt { vec2 a, b, n; float gain, len; bool live; };
+// A bolt's direction: the outward normal at its edge point, fitted over a ring of 16 field reads 12 % of the unit
+// away. The site's own normal is read over 1.5 % of the unit, where raster and flood noise are a few degrees, and a bolt two
+// units long turns a degree into pixels at its tip; over this ring the noise averages out, in units, at every resolution
+// (resolution test, perturbed params: SSIM 0.756 with the site's normal, 0.942 with this; docs/gaps.md).
+vec2 tlg_wideNormal(vec2 px, vec2 fallback) {
+  float h = max(1.0, tl_px(12.0));
+  vec2 uv = px / u_canvasSize;
+  vec2 o = vec2(h) / u_canvasSize;
+  vec2 g = vec2(0.0);
+  for (int k = 0; k < 16; k++) {
+    vec2 u = vec2(cos(float(k) * FX_TAU / 16.0), sin(float(k) * FX_TAU / 16.0));
+    g += u * tlg_d(uv + u * o);
+  }
+  float gl = length(g);
+  return gl > 1.0e-4 ? g / gl : fallback;
+}
 TlgBolt tlg_bolt(int b) {
   float capture = max(tl_px(u_capture), 1.0);
   float L = tl_px(u_boltLength);
@@ -132,7 +148,7 @@ TlgBolt tlg_bolt(int b) {
   o.live = s.gate > 0.01;
   o.gain = (0.7 + 0.3 * tlg_rs(b, 3)) * s.gate;
   o.a = s.px;
-  o.n = s.normal;
+  o.n = tlg_wideNormal(s.px, s.normal);
   o.len = L * (0.55 + 0.45 * tlg_rs(b, 4));
   bool crawl = TLG_LIGHTNING == 2 || (TLG_LIGHTNING == 0 && tlg_rs(b, 5) < 0.45);
   if (crawl) {
@@ -146,7 +162,7 @@ TlgBolt tlg_bolt(int b) {
   } else {
     float ang = (tlg_rs(b, 7) - 0.5) * 1.3;
     float c0 = cos(ang), s0 = sin(ang);
-    vec2 d = vec2(s.normal.x * c0 - s.normal.y * s0, s.normal.x * s0 + s.normal.y * c0);
+    vec2 d = vec2(o.n.x * c0 - o.n.y * s0, o.n.x * s0 + o.n.y * c0);
     o.b = o.a + d * o.len;
   }
   return o;
