@@ -4,6 +4,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { TitleLookLibraryResponseSchema } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	appearanceFromRecipe,
@@ -23,7 +24,9 @@ import {
 	runAgentQuery,
 	TITLE_ART_FEATURE,
 	TITLE_SAFE_MARGINS,
+	titleArtCheckOf,
 	titleArtMetaOf,
+	type UserLook,
 } from '@jasper/project';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -53,7 +56,9 @@ type Job = {
 	error?: { code: string; message: string };
 };
 
-function fakeEngine(opts: { live?: boolean; paint?: Painted; stuck?: boolean } = {}) {
+function fakeEngine(
+	opts: { live?: boolean; paint?: Painted; stuck?: boolean; userLooks?: UserLook[] | 'broken' } = {},
+) {
 	const ids = createCounterIdSource(11);
 	let doc: ProjectDocument = createEmptyProject({ ids, name: 'Titles', preset: 'hd-1080p-30' });
 	let revision = 0;
@@ -64,7 +69,7 @@ function fakeEngine(opts: { live?: boolean; paint?: Painted; stuck?: boolean } =
 	const proposals = new Map<string, Proposal>();
 	const sheets: { cells: { hide?: string[] }[]; width?: number; documents: number }[] = [];
 	const cancelled: string[] = [];
-	const state = { paint: opts.paint ?? CENTRED, live: opts.live ?? false };
+	const state = { paint: opts.paint ?? CENTRED, live: opts.live ?? false, userLooks: opts.userLooks ?? [] };
 	let n = 0;
 
 	/** The picture: the V1 solid (or black), and the box of every enabled text clip. */
@@ -154,6 +159,12 @@ function fakeEngine(opts: { live?: boolean; paint?: Painted; stuck?: boolean } =
 		}),
 		planExport: async () => ({ path: 'hybrid', blockers: [] }),
 		listProjects: async () => ({ projects: [] }),
+		// TL-054: the user's library, as `GET /api/title-looks` answers it (parsed like the real client does).
+		call: async (name: string) => {
+			if (name !== 'titleLooksList') throw new Error(`no route ${name}`);
+			if (state.userLooks === 'broken') throw new Error('the look library is unreadable');
+			return TitleLookLibraryResponseSchema.parse({ revision: 1, readOnly: false, looks: state.userLooks });
+		},
 		requestStillSheet: async (req: {
 			documents: { document: ProjectDocument }[];
 			cells: { document: number; sequenceId: string; frame: number; tag?: string; hide?: string[] }[];
@@ -346,6 +357,18 @@ const footage = (color: number[]) => ({
 	commands: [{ type: 'clip.addSolid', at: 0, duration: 300, track: 'V1', color }],
 });
 const BASE = { projectId: P, text: 'BIG NEWS', at: 0, lookId: 'look.test-plain' };
+/** A look of the user's library (TL-054), as the engine's store holds it. */
+const USER_LOOK: UserLook = {
+	id: 'ulk_00000000000000B1',
+	version: 1,
+	name: 'Brand Gold',
+	tags: ['brand', 'gold'],
+	category: 'House',
+	colorways: [{ id: 'cw.brand', name: 'Brand', palette: dark(0.6) }],
+	recipe: RECIPE,
+	createdAt: '2026-11-01T00:00:00.000Z',
+	updatedAt: '2026-11-01T00:00:00.000Z',
+};
 const rowOf = (rows: Json[], id: string) => rows.find((r) => r.id === id)!;
 
 describe('find_title_looks (TL-100)', () => {
@@ -397,6 +420,74 @@ describe('find_title_looks (TL-100)', () => {
 		expect(none.json).toMatchObject({ rows: [], total: 0 });
 		expect(none.json.next).toMatch(/No look matches/);
 		expect(none.image).toBeUndefined();
+	});
+
+	it('finds the user’s own looks (TL-054), says where each row comes from, and needs no project for them', async () => {
+		const s = await connect({ userLooks: [USER_LOOK] });
+		const r = await s.ok('find_title_looks', { query: 'brand' });
+		expect(r.json.rows).toHaveLength(1);
+		expect(r.json.rows[0]).toMatchObject({
+			n: 1,
+			lookId: USER_LOOK.id,
+			name: 'Brand Gold',
+			tags: ['brand', 'gold'],
+			colorways: ['cw.brand'],
+			source: 'user',
+		});
+		expect(r.json.userLooksError).toBeUndefined();
+		// one sheet, the user look drawn on it from its recipe
+		expect(s.engine.sheets).toHaveLength(1);
+		const all = await s.ok('find_title_looks', { query: '' });
+		expect(all.json.total).toBe(4);
+		expect(new Set(all.json.rows.map((x: Json) => x.source))).toEqual(new Set(['library', 'user']));
+	});
+
+	it('a user look’s id works with propose_title and get_title_recipe, and its project copy is not a second row', async () => {
+		const s = await connect({ userLooks: [USER_LOOK] });
+		const recipe = await s.ok('get_title_recipe', { lookId: USER_LOOK.id });
+		expect(recipe.json).toMatchObject({
+			lookId: USER_LOOK.id,
+			name: 'Brand Gold',
+			recipe: { layers: [{ type: 'rim' }, { type: 'face' }] },
+			colorways: [{ id: 'cw.brand' }],
+		});
+		await s.ok('apply_commands', footage([0.1, 0.1, 0.4, 1]));
+		const applied = await s.ok('propose_title', {
+			...BASE,
+			lookId: USER_LOOK.id,
+			colorway: 'cw.brand',
+			mode: 'apply',
+		});
+		expect(applied.json.look).toMatchObject({ lookId: USER_LOOK.id, source: 'user' });
+		const doc = s.engine.doc() as ProjectDocument & { titleLooks?: Record<string, { sourceId?: string }> };
+		const copies = Object.values(doc.titleLooks ?? {}).filter((l) => l.sourceId === USER_LOOK.id);
+		expect(copies).toHaveLength(1);
+		const again = await s.ok('find_title_looks', { query: 'brand', projectId: P });
+		expect(again.json.rows.map((x: Json) => [x.lookId, x.source])).toEqual([[USER_LOOK.id, 'user']]);
+		// applying it again reuses the project's copy
+		await s.ok('propose_title', { ...BASE, at: 150, lookId: USER_LOOK.id, mode: 'apply' });
+		const after = s.engine.doc() as typeof doc;
+		expect(Object.values(after.titleLooks ?? {}).filter((l) => l.sourceId === USER_LOOK.id)).toHaveLength(1);
+	});
+
+	it('a user look deleted since it was used falls back to the project’s copy; an unknown one is not found', async () => {
+		const s = await connect({ userLooks: [USER_LOOK] });
+		await s.ok('propose_title', { ...BASE, lookId: USER_LOOK.id, mode: 'apply' });
+		s.engine.state.userLooks = [];
+		const hit = await s.ok('find_title_looks', { query: 'brand', projectId: P });
+		expect(hit.json.rows[0]).toMatchObject({ name: 'Brand Gold', source: 'project' });
+		const r = await s.ok('propose_title', { ...BASE, at: 150, lookId: USER_LOOK.id, mode: 'dryRun' });
+		expect(r.json.look).toMatchObject({ name: 'Brand Gold', source: 'project' });
+		const e = await s.fail('get_title_recipe', { lookId: 'ulk_0000000000000ZZZ' });
+		expect(e.code).toBe('E_NOT_FOUND');
+		expect(e.message).toContain('user');
+	});
+
+	it('an unreadable user library still finds the rest, and says so', async () => {
+		const s = await connect({ userLooks: 'broken' });
+		const r = await s.ok('find_title_looks', { query: '' });
+		expect(r.json.rows).toHaveLength(3);
+		expect(r.json.userLooksError).toMatch(/could not be read: the look library is unreadable/);
 	});
 
 	it('is honest about an empty library', async () => {
@@ -485,6 +576,15 @@ describe('propose_title (TL-101)', () => {
 		expect(item.alternatives).toHaveLength(2);
 		expect(titleArtMetaOf(item)).toMatchObject({ lookId: 'look.test-plain', colorwayId: 'cw.a', seed: 9 });
 		expect(titleArtMetaOf(item.alternatives![0]!)?.colorwayId).toBeDefined();
+		// The rendered rows travel with the item, for Review: what the agent got, at the revision it measured.
+		const stored = titleArtCheckOf(item)!;
+		expect(stored).toMatchObject({ revision: r.json.check.revision, verified: r.json.check.verified });
+		expect(stored.pending).toBeUndefined();
+		expect(stored.rows).toEqual(r.json.check.rows);
+		expect(stored.rows.find((x) => x.id === 'contrast')?.status).toBe('pass');
+		expect(titleArtMetaOf(item)?.renderPath).toBe('hybrid');
+		// Only the first option is measured: an alternative carries no rows rather than borrowed ones.
+		expect(titleArtCheckOf(item.alternatives![0]!)).toBeNull();
 		expect(r.json).toMatchObject({ seed: 9, colorway: { id: 'cw.a' }, timedOut: false });
 		expect(r.json.alternatives).toHaveLength(2);
 		// one sheet: intro, hold, outro × three options, 640 px wide, on one job
@@ -640,6 +740,16 @@ describe('propose_title (TL-101)', () => {
 		expect(r.json.check.notChecked.join(' ')).toContain('still running');
 		expect(r.json.check.rows.map((x: Json) => x.id)).not.toContain('contrast');
 		expect(r.image).toBeUndefined();
+	});
+
+	it('a proposal past its timeout is stored with the plain rows, marked pending', async () => {
+		const s = await connect({ stuck: true, live: true });
+		const r = await s.ok('propose_title', { ...BASE, timeoutSeconds: 1 });
+		expect(r.json).toMatchObject({ timedOut: true, proposalId: expect.stringMatching(/^prp_/) });
+		const stored = titleArtCheckOf(s.engine.proposals.get(r.json.proposalId)!.items[0]!)!;
+		expect(stored).toMatchObject({ pending: true, verified: false });
+		expect(stored.rows.map((x) => x.id)).toEqual(r.json.check.rows.map((x: Json) => x.id));
+		expect(stored.rows.map((x) => x.id)).not.toContain('contrast');
 	});
 });
 

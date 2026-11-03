@@ -975,14 +975,18 @@ discovery are in; evidence and thresholds in [wp-notes/title-looks-agents.md](wp
 - `title_check` thresholds for minimum size, CJK reading speed and the platform interface zones are assumptions, listed there.
   No official platform table was found, so `target-safe-area` only warns.
 - `font-available` answers for the family, not for every character of the text.
-- User looks in the engine-backed store (TL-054) are not searched by `find_title_looks`.
-- The rendered rows of a proposal are returned to the agent, not stored on it, so Review does not show them.
-- **The MCP eval cannot sample the titles tools yet.** `apps/mcp/eval/fake-engine.ts` does not model
-  `requestStillSheet`, so a sample reaching `find_title_looks` or `propose_title` is marked invalid; the case
-  `titles-styled-title` builds but cannot pass until the fake renders look sheets. It has no route for `psdPlan`,
-  `psdExport`, `alphaDelivery` or `gamutCheck` either, so `delivery-psd`, `delivery-alpha-png` and `delivery-gamut` cannot
-  produce a valid sample yet. No model samples were run for the `+titles`, `+effects`, `+export`, `+3d`, `+color` and
-  `+graphics` budgets ([wp-notes/title-looks-agents.md](wp-notes/title-looks-agents.md)).
+- **The Review panel does not show a title proposal's rows yet.** `propose_title` stores them on the item
+  (`meta.check`, read with `titleArtCheckOf`), for the first option only: alternatives are not measured. The panel
+  (`apps/web/src/proposals/title-art.tsx`) reads the meta leniently and ignores them; drawing them is the UI stream's.
+  A later `title_check {proposalId}` measures again but does not update the stored rows, and rows stored by a call that
+  timed out are the plain ones (`pending: true`).
+- **The MCP eval cases for titles and delivery can sample, but have not been sampled.** `apps/mcp/eval/fake-engine.ts`
+  now models `requestStillSheet` (cells drawn as stand-in pictures), `listFonts`, the user look library
+  (`titleLooksList`), `psdPlan`, `psdExport`, `alphaDelivery` and `gamutCheck`, with results parsed by the engine's
+  schemas; `eval/fake-engine.test.ts` drives those tools through the stub with no unmodelled call. So
+  `titles-styled-title`, `delivery-psd`, `delivery-alpha-png` and `delivery-gamut` can produce valid samples. No model
+  samples were run for them, nor for the `+titles`, `+effects`, `+export`, `+3d`, `+color` and `+graphics` budgets
+  ([wp-notes/title-looks-agents.md](wp-notes/title-looks-agents.md)).
 
 ### 3D titles (spec 19 §9)
 

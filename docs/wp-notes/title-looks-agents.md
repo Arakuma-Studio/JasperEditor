@@ -62,6 +62,11 @@ The agent surface of [Title Looks](title-looks.md): search, sheet, propose, chec
 
 `titleArtMetaOf(item)` and `titleArtMetaOf(item.alternatives[k])` give `{text, lookId?, lookName, colorwayId?, colorwayName?,
 seed, clipRef, costClass?, renderPath?}`, or null. Item id `title`, group `titles`. `clipRef` is the temp ref of the clip.
+`lookId` may be a user look (`ulk_…`): its recipe is in the item's `look.apply` command.
+
+`titleArtCheckOf(item)` gives the rendered check of the first option, `{revision, verified, counts, rows, notChecked,
+pending?, omitted?}` (rows as `title_check` returns them, fixes as labels), or null: alternatives carry none, and an
+unreadable one hides nothing else of the meta.
 
 ## Thresholds and sources
 
@@ -109,8 +114,8 @@ at 1080p took 32 s. At load 80 a sheet ran past 600 s and the engine stopped ans
 - Title-only renders drop the clips around the title, so an adjustment layer over it does not count towards its alpha.
   The `with` and `behind` frames are the real document, so contrast does count it.
 - A title moving through a frame edge during the hold is measured only at three frames.
-- User looks in the engine-backed store (TL-054) are not searched here; `find_title_looks {projectId}` covers project looks.
-- Rendered rows of a proposal are not stored on it, so Review does not show them; the agent reports them.
+- A proposal keeps the rows of its first option only (`meta.check`); the Review panel does not draw them yet, and a later
+  `title_check {proposalId}` does not update them.
 
 ## After the MCP text cut (merge of `main` at e84806b6)
 
@@ -175,3 +180,26 @@ before `main`'s conventions reached them. At integration 2 they follow them:
   cases); no model samples were run. `eval/fake-engine.ts` has no route for `psdPlan`, `psdExport`, `alphaDelivery` or
   `gamutCheck`, so a sample that reaches them is marked invalid (an unmodelled engine call), as for the titles cases
   (`docs/gaps.md`). The 3D cases only edit the document, which the fake applies for real.
+
+## User looks, stored rows and the eval's engine (agents, part 2)
+
+- **`find_title_looks` searches the user's looks** (TL-054, `GET /api/title-looks`), between the library and the
+  project's. Rows say `source: library | user | project`. A user look travels whole in `look.apply {look: {…, sourceId:
+  ulk_…}}`, so the first use copies it into the project and later ones reuse that copy (the handler matches `sourceId`);
+  a project copy of a user look is the user row, not a second one. `propose_title` and `get_title_recipe` take a `ulk_…`
+  id without a project. A user look deleted since it was used resolves to the project's copy. When the store cannot be
+  read the library and project looks are still searched and `userLooksError` says why.
+- **Rows on the proposal.** `propose_title` in `propose` mode now renders first and stores the proposal after, so the
+  item's meta carries `check` (`titleArtCheck`: at most 32 KB, passes dropped first, `omitted` counts them; texts cut to
+  what the reader takes). Only option 0 is measured, so alternatives carry none. The refusals that cost nothing (headless,
+  revision, Agent Proposals, a bad recipe) still come before any render. Item meta is `z.unknown()` in `ProposalSchema`
+  and the panel reads it with a loose schema, so an older build keeps the field and ignores it: no schema bump.
+- **The eval's engine** (`eval/fake-engine.ts`) models `requestStillSheet`, `listFonts`, `titleLooksList`, `psdPlan`,
+  `psdExport`, `alphaDelivery` and `gamutCheck`. Bodies are checked with the routes' request schemas and results built with
+  the result schemas. Cells are stand-in pictures (grey footage, a solid's colour, a light box per title), so a sample's
+  `title_check` rows are computed, not canned. `open_project_in_editor` makes reads report an editor, which `propose`
+  needs. `eval/fake-engine.test.ts` runs these tools through the stub, from a core session with `call_tool`, and checks
+  that no call is unmodelled.
+- Measured bytes (`pnpm --filter @jasper/mcp eval:measure`): `+titles` 6,608 → 6,624 (the `lookId` argument names user
+  looks, in two tools; budget 6,741), `all` 507,077 → 507,093 (budget 513,876); every other context unchanged. No budget
+  was raised. No model samples were run.

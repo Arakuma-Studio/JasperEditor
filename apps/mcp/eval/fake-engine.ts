@@ -2,16 +2,36 @@
 // current source's; this fakes only the engine behind them. Documents go through the real command system and queries
 // (`applyTransaction`, `runAgentQuery`), so an edit changes the project and a bad command gets its real `E_*`. Anything
 // not modelled here fails loudly and marks the sample invalid: a gap in the fake is an eval bug, not agent behaviour.
-import { AudioAnalyzeResultSchema, ExportVerifyResultSchema, TranscriptionResultSchema } from '@jasper/api';
+import {
+	AlphaDeliveryRequestSchema,
+	AlphaDeliveryResultSchema,
+	AudioAnalyzeResultSchema,
+	ExportVerifyResultSchema,
+	FontCatalogSchema,
+	GamutCheckRequestSchema,
+	GamutCheckResultSchema,
+	type PsdPlan,
+	PsdPlanSchema,
+	PsdRequestSchema,
+	PsdResultSchema,
+	StillSheetRequestSchema,
+	StillSheetResultSchema,
+	TitleLookLibraryResponseSchema,
+	TranscriptionResultSchema,
+} from '@jasper/api';
 import { EngineError as DefaultEngineError } from '@jasper/engine-client';
 import {
 	applyTransaction,
+	type Clip,
+	colorSpace,
 	createCounterIdSource,
 	createEmptyProject,
 	createProposal,
+	DEFAULT_FONT_FAMILY,
 	defaultRegistries,
 	exportAgentQuerySchemas,
 	exportAgentSchema,
+	FACTORY_LOOKS,
 	type MediaAsset,
 	normalizeAgentTransaction,
 	type ProjectDocument,
@@ -19,8 +39,11 @@ import {
 	proposalItemFailures,
 	resolveAgentAddresses,
 	runAgentQuery,
+	type Sequence,
+	sequenceColorInfo,
 	type Transcript,
 } from '@jasper/project';
+import type { z } from 'zod';
 import { encodePng } from '../src/png.ts';
 
 const S = 705_600_000;
@@ -141,6 +164,102 @@ const greyPng = (width: number, height: number): Buffer => {
 
 type Job = { id: string; kind: string; title: string; polls: number; result: unknown; failure?: unknown };
 
+/** What a title clip paints in the fake's pictures: a box of 40 % × 16 % of the frame around its position. */
+const TITLE_BOX = { w: 0.4, h: 0.16 };
+const TITLE_FACE = [245, 245, 245];
+const FOOTAGE_GREY = [96, 96, 96];
+
+/** The clips of `seq` on screen at `frame`, bottom track first. */
+function visibleAt(seq: Sequence, frame: number, hidden: readonly string[] = []): Clip[] {
+	const order = new Map(seq.videoTracks.map((t, i) => [t.id, i]));
+	return (Object.values(seq.clips) as Clip[])
+		.filter(
+			(c) =>
+				order.has(c.trackId) &&
+				!hidden.includes(c.id) &&
+				(c as { enabled?: boolean }).enabled !== false &&
+				frame >= c.start &&
+				frame < c.start + c.duration,
+		)
+		.sort((a, b) => order.get(a.trackId)! - order.get(b.trackId)!);
+}
+
+const isTitleClip = (c: Clip) => c.kind === 'text' || c.kind === 'shape';
+
+/** A title's box in sequence px: centred on its position, else on the frame. */
+function titleBox(seq: Sequence, c: Clip) {
+	const { width, height } = seq.settings;
+	const pos = (c as { transform?: { position?: { value?: [number, number] } } }).transform?.position?.value;
+	const w = Math.round(width * TITLE_BOX.w);
+	const h = Math.round(height * TITLE_BOX.h);
+	const [cx, cy] = pos ?? [width / 2, height / 2];
+	return { x: Math.round(cx - w / 2), y: Math.round(cy - h / 2), w, h };
+}
+
+/**
+ * A frame as the fake renders it: the top picture under the titles (a solid's colour, grey for footage, black for
+ * nothing), then each title as a light box. Stand-in pixels with known answers, so the title check's matting, bounds and
+ * contrast measure something real; not the look itself.
+ */
+function rasterFrame(
+	doc: ProjectDocument,
+	sequenceId: string,
+	frame: number,
+	width: number,
+	hide?: string[],
+) {
+	const seq = doc.sequences[sequenceId] as Sequence | undefined;
+	if (!seq) throw new Error(`no sequence ${sequenceId}`);
+	const w = Math.max(16, Math.min(width, 480));
+	const k = w / seq.settings.width;
+	const h = Math.max(16, Math.round(seq.settings.height * k));
+	const clips = visibleAt(seq, frame, hide);
+	let back = [0, 0, 0];
+	for (const c of clips) {
+		if (isTitleClip(c)) continue;
+		if (c.kind === 'solid') {
+			const syn = (doc.synthetics as Record<string, { color?: readonly number[] }>)[
+				(c as { syntheticId?: string }).syntheticId ?? ''
+			];
+			back = (syn?.color ?? [0, 0, 0, 1]).slice(0, 3).map((v) => Math.round(v * 255));
+		} else back = FOOTAGE_GREY;
+	}
+	const data = new Uint8Array(w * h * 4);
+	for (let i = 0; i < w * h; i++) data.set([back[0]!, back[1]!, back[2]!, 255], i * 4);
+	for (const c of clips.filter(isTitleClip)) {
+		const b = titleBox(seq, c);
+		for (let y = Math.max(0, Math.round(b.y * k)); y < Math.min(h, Math.round((b.y + b.h) * k)); y++)
+			for (let x = Math.max(0, Math.round(b.x * k)); x < Math.min(w, Math.round((b.x + b.w) * k)); x++)
+				data.set([TITLE_FACE[0]!, TITLE_FACE[1]!, TITLE_FACE[2]!, 255], (y * w + x) * 4);
+	}
+	return { png: encodePng({ width: w, height: h, data }), width: w, height: h };
+}
+
+/** Every family the library's looks name, and the default: the engine bundles them (TL-053). */
+function fontCatalog() {
+	const families = new Set<string>([DEFAULT_FONT_FAMILY]);
+	for (const l of FACTORY_LOOKS) {
+		const f = l.recipe.font as { family?: string; fallback?: string; ja?: { family?: string } } | undefined;
+		for (const name of [f?.family, f?.fallback, f?.ja?.family]) if (name) families.add(name);
+	}
+	const weights = [100, 200, 300, 400, 500, 600, 700, 800, 900];
+	return FontCatalogSchema.parse({
+		fonts: [...families].map((family) => ({
+			family,
+			source: 'bundled',
+			weights,
+			styles: ['normal', 'italic'],
+			files: weights.flatMap((weight) =>
+				(['normal', 'italic'] as const).map((style) => ({
+					weight,
+					style,
+					url: `/fonts/${family.toLowerCase().replace(/[^a-z0-9]+/g, '-')}/${weight}-${style}.woff2`,
+				})),
+			),
+		})),
+	});
+}
+
 export type FakeEngine = {
 	client: unknown;
 	/** Ids a case may name in its prompt and history as `{{name}}`. */
@@ -167,6 +286,10 @@ export function createFakeEngine(
 	const jobs = new Map<string, Job>();
 	const proposals = new Map<string, Proposal>();
 	const reviewed = new Set<string>();
+	/** Projects `open_project_in_editor` opened: reads say an editor has them (edits still apply headless). */
+	const opened = new Set<string>();
+	/** Pictures jobs wrote, by the URL the engine would serve them at. */
+	const files = new Map<string, Uint8Array>();
 	let jobN = 0;
 	let proposalN = 0;
 
@@ -206,6 +329,22 @@ export function createFakeEngine(
 			f.times--;
 		}
 		return f;
+	};
+	/** A request body as the engine's route checks it (`parseOr400`). */
+	const body = <S extends z.ZodType>(schema: S, value: unknown): z.infer<S> => {
+		const r = schema.safeParse(value);
+		if (r.success) return r.data;
+		const i = r.error.issues[0];
+		throw new EngineError('VALIDATION_FAILED', `${i?.path.join('.') || 'body'}: ${i?.message ?? 'invalid'}`, {
+			status: 400,
+		});
+	};
+	/** The document and sequence of a delivery request. */
+	const framed = (envelope: { document: unknown }, sequenceId: string) => {
+		const doc = envelope.document as unknown as ProjectDocument;
+		const seq = doc.sequences?.[sequenceId] as Sequence | undefined;
+		if (!seq) throw new EngineError('VALIDATION_FAILED', `No sequence ${sequenceId}`, { status: 400 });
+		return { doc, seq };
 	};
 	const refuse = (f: EngineFault): never => {
 		const e = f.error!;
@@ -391,6 +530,58 @@ export function createFakeEngine(
 		});
 	};
 
+	/** One layer per clip on screen, bottom first, named as `planPsd` names them; titles split into rims, face and fx. */
+	const psdPlan = (req: z.infer<typeof PsdRequestSchema>): PsdPlan => {
+		const { seq } = framed(req.envelope, req.sequenceId);
+		const { width, height } = seq.settings;
+		const layers: PsdPlan['layers'] = [];
+		const baked: string[] = [];
+		const KIND_WORD: Record<string, string> = { text: 'text rasterised', shape: 'shape rasterised' };
+		for (const c of visibleAt(seq, req.frame)) {
+			const name = (c as { name?: string }).name || c.kind;
+			const look = (c as { effects?: { effectId: string }[] }).effects?.some(
+				(fx) => fx.effectId === 'jasper.title-look',
+			);
+			const here = [
+				...(KIND_WORD[c.kind] ? [KIND_WORD[c.kind]!] : []),
+				...(look ? ['title look rasterised'] : []),
+			];
+			for (const b of here) baked.push(`${name}: ${b}`);
+			const layer = { kind: 'pixels' as const, blend: 'normal', opacity: 1, hidden: false, baked: here };
+			if (req.splitTitles && look) {
+				layers.push({
+					name,
+					kind: 'group',
+					children: 3,
+					blend: 'pass through',
+					opacity: 1,
+					hidden: false,
+					baked: [],
+				});
+				layers.push({ ...layer, name: 'rim 1', hidden: true }, { ...layer, name: 'face', hidden: true });
+				layers.push({ ...layer, name: 'fx' });
+			} else layers.push({ ...layer, name });
+		}
+		const renders = layers.filter((l) => l.kind === 'pixels').length;
+		return PsdPlanSchema.parse({
+			width,
+			height,
+			frame: req.frame,
+			layers,
+			baked: [...new Set(baked)],
+			blockers: layers.length
+				? []
+				: [{ code: 'PSD_EMPTY', message: 'Nothing is visible at this frame on a transparent background' }],
+			warnings: [
+				{
+					code: 'PSD_RASTERISED',
+					message: 'Everything is rasterised at 8 bits per channel: text is pixels, not editable type.',
+				},
+			],
+			estimate: { renders: renders + 1, bytes: (renders + 1) * width * height * 4 },
+		});
+	};
+
 	const routes: Record<string, (opts: { params?: Record<string, string>; body?: never }) => unknown> = {
 		mediaTranscribe: ({ params }) =>
 			jobView(
@@ -440,6 +631,83 @@ export function createFakeEngine(
 				frames: times.map((time) => ({ time, at: time, width, height, png })),
 			};
 		},
+		titleLooksList: () => TitleLookLibraryResponseSchema.parse({ revision: 0, readOnly: false, looks: [] }),
+		psdPlan: ({ body: raw }) => psdPlan(body(PsdRequestSchema, raw)),
+		psdExport: ({ body: raw }) => {
+			const req = body(PsdRequestSchema, raw);
+			const plan = psdPlan(req);
+			if (plan.blockers.length)
+				throw new EngineError('PSD_BLOCKED', plan.blockers[0]!.message, { status: 409 });
+			const job = newJob('psd-export', `PSD of frame ${req.frame}`, 1, null);
+			job.result = PsdResultSchema.parse({
+				url: `/renders/${job.id}/output`,
+				...(req.destination ? { path: `${req.destination.folder}/${req.destination.name}.psd` } : {}),
+				bytes: plan.estimate.bytes,
+				width: plan.width,
+				height: plan.height,
+				layers: plan.layers,
+				baked: plan.baked,
+				warnings: plan.warnings,
+			});
+			return jobView(job);
+		},
+		alphaDelivery: ({ body: raw }) => {
+			const req = body(AlphaDeliveryRequestSchema, raw);
+			const { seq } = framed(req.envelope, req.sequenceId);
+			const frames = req.range.end - req.range.start;
+			const title = req.clipIds ? 'Export Title' : frames === 1 ? `Frame ${req.range.start}` : 'PNG sequence';
+			// Trimmed to what the titles paint: the boxes of the fake's pictures, grown by the margin.
+			const painted = (Object.values(seq.clips) as Clip[]).filter(
+				(c) => isTitleClip(c) && (!req.clipIds || req.clipIds.includes(c.id)),
+			);
+			const m = req.trim?.marginPx ?? 0;
+			const boxes = painted.map((c) => titleBox(seq, c));
+			const x0 = Math.min(...boxes.map((b) => b.x));
+			const y0 = Math.min(...boxes.map((b) => b.y));
+			const area =
+				req.trim && boxes.length
+					? {
+							x: x0 - m,
+							y: y0 - m,
+							w: Math.max(...boxes.map((b) => b.x + b.w)) - x0 + 2 * m,
+							h: Math.max(...boxes.map((b) => b.y + b.h)) - y0 + 2 * m,
+						}
+					: { x: 0, y: 0, w: seq.settings.width, h: seq.settings.height };
+			const job = newJob('alpha-delivery', title, 1, null);
+			const format = frames === 1 ? 'png' : 'zip';
+			const dest = req.destination;
+			job.result = AlphaDeliveryResultSchema.parse({
+				url: `/renders/${job.id}/output`,
+				format,
+				frames,
+				width: area.w,
+				height: area.h,
+				origin: { x: area.x, y: area.y },
+				...(dest ? { path: `${dest.folder}/${dest.name}${format === 'png' ? '.png' : ''}` } : {}),
+				warnings: [],
+			});
+			return jobView(job);
+		},
+		gamutCheck: ({ body: raw }) => {
+			const req = body(GamutCheckRequestSchema, raw);
+			const { seq } = framed(req.envelope, req.sequenceId);
+			const output =
+				!req.output || req.output === 'working' ? sequenceColorInfo(seq.settings as never).space : req.output;
+			const job = newJob('gamut-check', `Gamut check of frame ${req.frame}`, 1, null);
+			// Grey footage and light titles: inside every video gamut, a sliver over the legal range at the title's edge.
+			job.result = GamutCheckResultSchema.parse({
+				frame: req.frame,
+				output,
+				outputLabel: colorSpace(output)?.label ?? output,
+				width: seq.settings.width,
+				height: seq.settings.height,
+				gamutPercent: 0,
+				legalPercent: 0.4,
+				anyPercent: 0.4,
+				maskUrl: `/renders/${job.id}/output`,
+			});
+			return jobView(job);
+		},
 		mediaRangeAudio: ({ body }) => {
 			const { start, end } = body as unknown as { start: number; end: number };
 			const frameCount = Math.round((end - start) * 100);
@@ -475,12 +743,11 @@ export function createFakeEngine(
 			const projectId = newProject(req.name, req.preset);
 			return { projectId };
 		},
-		agentOpenProject: (req: { projectId: string }) => ({
-			projectId: req.projectId,
-			path: `/projects/${req.projectId}`,
-			editors: 1,
-			live: true,
-		}),
+		agentOpenProject: (req: { projectId: string }) => {
+			project(req.projectId);
+			opened.add(req.projectId);
+			return { projectId: req.projectId, path: `/projects/${req.projectId}`, editors: 1, live: true };
+		},
 		agentSchema: () => ({ ...exportAgentSchema(registries), queries: exportAgentQuerySchemas() }),
 		agentQuery: (req: { projectId: string; query: string; args?: unknown }) => {
 			const p = project(req.projectId);
@@ -491,7 +758,7 @@ export function createFakeEngine(
 					req.args ?? {},
 				),
 				revision: p.revision,
-				via: 'headless',
+				via: opened.has(req.projectId) ? 'session' : 'headless',
 			};
 		},
 		agentTx: (req: { projectId: string; transaction: Record<string, unknown> }) => {
@@ -613,7 +880,37 @@ export function createFakeEngine(
 		verifyExport: (exportId: string, req: { checks?: 'fast' | 'full'; target?: string } = {}) =>
 			jobView(newJob('export-verify', 'Verify', 1, verifyResult(exportId, req.checks ?? 'full', req.target))),
 		requestStill: () => jobView(newJob('still', 'Still', 1, { url: '/stills/1.png' })),
-		fetchBytes: () => ({ bytes: new Uint8Array(greyPng(64, 36)), contentType: 'image/png' }),
+		/** TL-103: every cell drawn by `rasterFrame`, served at `/renders/<job>/cells/<n>` like the engine's. */
+		requestStillSheet: (raw: unknown) => {
+			const req = body(StillSheetRequestSchema, raw);
+			const job = newJob('still-sheet', `Sheet of ${req.cells.length} frames`, 1, null);
+			const cells = req.cells.map((c, index) => {
+				const doc = req.documents[c.document]!.document as unknown as ProjectDocument;
+				const seq = doc.sequences?.[c.sequenceId] as Sequence | undefined;
+				if (!seq)
+					throw new EngineError('VALIDATION_FAILED', `cell ${index}: no sequence ${c.sequenceId}`, {
+						status: 400,
+					});
+				const url = `/renders/${job.id}/cells/${index}`;
+				files.set(url, rasterFrame(doc, c.sequenceId, c.frame, req.width ?? seq.settings.width, c.hide).png);
+				return {
+					index,
+					url,
+					document: c.document,
+					sequenceId: c.sequenceId,
+					frame: c.frame,
+					...(c.tag ? { tag: c.tag } : {}),
+					renderPath: 'native',
+				};
+			});
+			job.result = StillSheetResultSchema.parse({ cells, ...(req.meta ? { meta: req.meta } : {}) });
+			return jobView(job);
+		},
+		listFonts: () => fontCatalog(),
+		fetchBytes: (url: string) => ({
+			bytes: new Uint8Array(files.get(url) ?? greyPng(64, 36)),
+			contentType: 'image/png',
+		}),
 		createProposal: (projectId: string, req: Record<string, unknown>) => {
 			const p = project(projectId);
 			const { allOrNothing, expectedRevision, author: _author, ...draft } = req;

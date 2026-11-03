@@ -6,7 +6,10 @@ shows the arguments). Guide: `get_guide` topic `title-art`.
 
 ## From brief to checked title
 
-1. `find_title_looks` {query, tags?, aspect?, sampleText?}: rows and one numbered sheet of real renders.
+1. `find_title_looks` {query, tags?, aspect?, sampleText?, projectId?}: rows and one numbered sheet of real renders.
+   It searches the library, the user's own looks (`ulk_…`: saved in the editor, shared by every project) and, with
+   `projectId`, the project's looks; each row's `source` says which. Any row's `lookId` works with `propose_title` and
+   `get_title_recipe`. When the user's looks cannot be read, `userLooksError` says so and the rest is still searched.
 2. `propose_title` {projectId, text, at, lookId, colorway?, energy?, alternatives?}: the title on the real footage, one
    sheet of intro, hold and outro × alternatives, and its check. `duration` defaults to the time the text needs.
 3. `title_check` {projectId, clipId | proposalId, target?} after any change.
