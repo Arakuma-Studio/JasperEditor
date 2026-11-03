@@ -74,7 +74,8 @@ describe.runIf(enabled)('look posters through Remotion (TL-087)', { timeout: 300
 		expect(res.headers.get('content-type')).toBe('image/png');
 		expect(res.headers.get('x-jasper-poster')).toBe('rendered');
 		const png = new Uint8Array(await res.arrayBuffer());
-		console.info(`poster first render ${Math.round(performance.now() - t0)} ms, ${png.length} bytes`);
+		const firstMs = performance.now() - t0;
+		console.info(`poster first render ${Math.round(firstMs)} ms, ${png.length} bytes`);
 		const px = pixels(png, 240, 136);
 		// The face and the rim of the look, not the plain white text it was typed in.
 		expect(count(px, (r, g, b) => r > 200 && g < 60 && b < 60)).toBeGreaterThan(100);
@@ -86,7 +87,8 @@ describe.runIf(enabled)('look posters through Remotion (TL-087)', { timeout: 300
 		const again = await ask(body);
 		expect(again.headers.get('x-jasper-poster')).toBe('cached');
 		await again.arrayBuffer();
-		expect(performance.now() - t1).toBeLessThan(500);
+		// Relative to the render: a fixed limit measures the host's load, not the cache.
+		expect(performance.now() - t1).toBeLessThan(firstMs / 5);
 	});
 
 	it('takes a colourway over the look', async () => {

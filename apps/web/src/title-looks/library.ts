@@ -12,6 +12,7 @@ import {
 	type TitleLook,
 	titleLooksOf,
 } from '@jasper/project';
+import { getLanguage } from '../i18n/runtime.ts';
 
 export type LookEntry = {
 	/** Card key, recents and drag payloads: the id `look.apply` takes. */
@@ -45,7 +46,11 @@ const libraryHelpers = project as unknown as {
 	foldSearchText?(s: string): string;
 };
 const fold = (s: string) => libraryHelpers.foldSearchText?.(s) ?? s.toLowerCase();
-const categoryName = (id: string) => libraryHelpers.lookCategory?.(id)?.label ?? id;
+const spanish = () => getLanguage().startsWith('es');
+function categoryName(id: string): string {
+	const c = libraryHelpers.lookCategory?.(id);
+	return (spanish() ? c?.labelEs : c?.label) ?? c?.label ?? id;
+}
 
 /** Category of looks made in this project. */
 export const PROJECT_CATEGORY = 'This Project';
@@ -77,7 +82,8 @@ export function lookEntries(
 		return {
 			lookId: l.libraryId,
 			source: 'library' as const,
-			name: l.name,
+			// The project stores the English name; only what is shown follows the language.
+			name: (spanish() ? extra.nameEs : l.name) ?? l.name,
 			category,
 			tags,
 			colorways: all,

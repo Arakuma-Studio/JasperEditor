@@ -82,6 +82,22 @@ describe('the library (TL-086)', () => {
 		]);
 	});
 
+	it('shows a library look under its Spanish name in Spanish, and search finds both', async () => {
+		const es = [{ ...library[0], nameEs: 'Barra de oro' }] as unknown as FactoryLook[];
+		const i18n = await import('../src/i18n/runtime.ts');
+		const language = vi.spyOn(i18n, 'getLanguage').mockReturnValue('es');
+		try {
+			const entries = lookEntries(null, es, colorways);
+			expect(entries[0]!.name).toBe('Barra de oro');
+			expect(entries[0]!.lookId).toBe('look.a');
+			expect(filterLooks(entries, { query: 'gold', category: null })).toHaveLength(1);
+			expect(filterLooks(entries, { query: 'barra', category: null })).toHaveLength(1);
+		} finally {
+			language.mockRestore();
+		}
+		expect(lookEntries(null, es, colorways)[0]!.name).toBe('Gold Bar');
+	});
+
 	it('shows suggested colourways first on the card when the library names them', () => {
 		const withSuggested = [{ ...library[0], suggestedColorways: ['cw.red'] }] as unknown as FactoryLook[];
 		const entries = lookEntries(null, withSuggested, [

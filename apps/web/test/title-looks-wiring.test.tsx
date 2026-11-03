@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_KEYMAP } from '../src/commands/keymap-defaults.ts';
 import { getCommand } from '../src/commands/registry.ts';
 import { titleLookCommands } from '../src/commands/title-looks.ts';
+import { addGeneratorBelow } from '../src/panels/effects/drag.ts';
 import { isVisualProposal, TitleArtDetails, titleArtOptions } from '../src/proposals/title-art.tsx';
 import { MENUBAR } from '../src/shell/menus/model.ts';
 import { fuzzyScore, rankByGroup } from '../src/shell/palette/fuzzy.ts';
@@ -14,6 +15,8 @@ import { makeSession } from './inspector-helpers.tsx';
 afterEach(() => cleanup());
 
 const recipe = { palette: { face: [1, 0, 0, 1] }, layers: [{ type: 'face' }] };
+/** The effects of a clip: a title keeps its stack when a generator is added. */
+const clipLookless = (c: unknown) => (c as { effects: unknown[] }).effects;
 const option = (name: string, face: number[]) => ({
 	label: `Gold, ${name}`,
 	commands: [
@@ -79,6 +82,32 @@ describe('wiring (TL-097)', () => {
 		expect(toast).toHaveBeenCalledWith(
 			expect.objectContaining({ message: 'This look has no colourways yet.' }),
 		);
+	});
+});
+
+describe('generators keep off the title (TL-064)', () => {
+	it('go on a free track below it, for its length', () => {
+		const session = makeSession();
+		const r = session.apply({
+			label: 's',
+			origin: 'user',
+			commands: [
+				{ type: 'clip.addText', at: 10, duration: 30, track: 'V2', content: { text: 'x' }, ref: '$t' },
+			] as never,
+		});
+		if (!r.ok) throw new Error(JSON.stringify(r.errors));
+		const seq = () => Object.values(session.getCommitted().sequences)[0]!;
+		const title = seq().clips[r.refs.$t!]!;
+		const generate = session.ctx.registries.effects
+			.list()
+			.find((e) => e.category === 'Generate' && e.appliesTo === 'video')!;
+		const out = addGeneratorBelow(session, generate.id, title);
+		expect(out.ok).toBe(true);
+		const added = Object.values(seq().clips).find((c) => c.id !== title.id)!;
+		expect([added.start, added.duration]).toEqual([10, 30]);
+		const order = seq().videoTracks.map((t) => t.id);
+		expect(order.indexOf(added.trackId)).toBeLessThan(order.indexOf(title.trackId));
+		expect(clipLookless(seq().clips[title.id]!)).toEqual([]);
 	});
 });
 
