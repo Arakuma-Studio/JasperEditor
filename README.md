@@ -561,8 +561,9 @@ schemas):
   `edit_shape_path` `convert_shape_to_vector`; Trim Paths animations: `animate_trim_paths` (with an optional tracer
   in the same undo step) `reverse_path_direction` `add_line` `add_trim_tracer`.
 - Titles (`titles` toolset, guide `title-art`): `find_title_looks` `propose_title` `title_check` `get_title_recipe`
-  `save_title_look` `add_title_generator` `set_global_light`; the resource `jasper://title-looks/{id}`. `propose_title`
-  needs an open editor to propose; with `mode: "apply"` on a headless engine it returns `revert`, because there is no
+  `save_title_look` `add_title_generator` `set_global_light`; the resource `jasper://title-looks/{id}`.
+  `find_title_looks` searches the library, the user's looks (`/api/title-looks`) and, with `projectId`, the project's.
+  `propose_title` needs an open editor to propose, and stores the first option's check rows on the proposal item; with `mode: "apply"` on a headless engine it returns `revert`, because there is no
   Undo there. `render_frames` runs as one engine job and takes `proposalId`, `itemIds`, `overlay: "safe-area"`, `wait`,
   `timeoutSeconds` and `jobId`.
 - Effects: `list_effects` `add_effect` `set_effect_param`.

@@ -59,6 +59,7 @@ import {
 	type TitleCheckRow,
 	type TitleFrameMeasure,
 	type TitleLook,
+	titleArtCheck,
 	titleArtDraft,
 	titleCheckFrames,
 	titleLayerType,
@@ -72,6 +73,7 @@ import {
 	type UserLook,
 } from '@jasper/project';
 import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import { ProjectIdArg, SequenceIdArg, timeArg } from '../arguments.ts';
 import {
@@ -1319,43 +1321,9 @@ export function registerTitleTools(ctx: ToolContext): void {
 				clip: options[0]!.clip,
 				real: false,
 			};
-			let stored: Record<string, unknown>;
-			let next: string;
-			if (mode === 'propose') {
-				const metaOf = (o: (typeof options)[number]): TitleArtMeta => ({
-					group: TITLE_ART_GROUP,
-					text: a.text,
-					...(look.lookId ? { lookId: look.lookId } : {}),
-					lookName: look.name,
-					...(o.colorway ? { colorwayId: o.colorway.id, colorwayName: o.colorway.name } : {}),
-					seed,
-					clipRef: '$title',
-					costClass,
-				});
-				const [first, ...rest] = options;
-				let r: ProposalCreateResponse;
-				try {
-					r = await ctx.engine((c) =>
-						c.createProposal(a.projectId, {
-							...titleArtDraft({
-								sequenceId: seq.id,
-								title: `Title: ${a.text.split('\n')[0]!}`,
-								summary: labelOf(first!.colorway),
-								option: { label: first!.label, commands: first!.commands, meta: metaOf(first!) },
-								alternatives: rest.map((o) => ({ label: o.label, commands: o.commands, meta: metaOf(o) })),
-							}),
-							allOrNothing: true,
-							...(a.expectedRevision !== undefined ? { expectedRevision: a.expectedRevision } : {}),
-						}),
-					);
-				} catch (e) {
-					if (e instanceof EngineError && e.code === 'PROPOSAL_INVALID')
-						throw new ToolError('E_PROPOSAL_INVALID', e.message, 'Nothing was stored.', { detail: e.detail });
-					throw e;
-				}
-				stored = { proposalId: r.proposal.id, updatedAt: r.proposal.updatedAt, revision: r.revision };
-				next = `Nothing was applied. Tell the user the title is waiting in the Review panel, with ${others.length} alternative colourway(s), then wait_for_proposal {projectId, proposalId, since: updatedAt}. Read check first: propose again rather than hand over a failing row without saying so.`;
-			} else if (mode === 'apply') {
+			let stored: Record<string, unknown> = {};
+			let next = '';
+			if (mode === 'apply') {
 				const res = await transact(
 					ctx,
 					a.projectId,
@@ -1388,7 +1356,7 @@ export function registerTitleTools(ctx: ToolContext): void {
 					res.appliedBy === 'session'
 						? 'Applied as one undo step (undo). Read check; alternatives swap with apply_commands look.setColorway.'
 						: 'Applied on a headless engine: there is no History, so undo cannot reach it. revert holds the apply_commands arguments that remove it. Read check; alternatives swap with apply_commands look.setColorway.';
-			} else {
+			} else if (mode === 'dryRun') {
 				stored = { dryRun: true };
 				next = 'Nothing changed. Run it with mode "propose", or "apply" when the user asked for the title.';
 			}
@@ -1407,33 +1375,89 @@ export function registerTitleTools(ctx: ToolContext): void {
 				extra,
 			);
 			const textClip = check.clip.kind === 'text';
-			if (!out.done)
+			let rendered: {
+				rows: TitleCheckRow[];
+				image: CallToolResult['content'][number];
+				cells: unknown;
+			} | null = null;
+			if (out.done) {
+				const images = await sheetImages(ctx, out.result);
+				const measures = measuresOf(out.result, images, seq.settings.width);
+				const rows = [...renderedRowsOf(check, measures, target), ...plain, ...lintRows(check, measures)];
+				const { image, body } = await composeSheet(ctx, out.result, images);
+				rendered = { rows, image, cells: body.cells };
+			}
+			const checked = rendered
+				? checkBody(rendered.rows, check.revision, { textClip })
+				: checkBody([...plain, ...lintRows(check, [])], check.revision, { pending: true, textClip });
+			const renderPath = (
+				checked.rows.find((x) => x.id === 'export-path')?.measured as { path?: string } | null
+			)?.path;
+
+			if (mode === 'propose') {
+				// Stored after the renders, so the item carries the rows Review shows: only option 0 is measured.
+				const metaOf = (o: (typeof options)[number], k: number): TitleArtMeta => ({
+					group: TITLE_ART_GROUP,
+					text: a.text,
+					...(look.lookId ? { lookId: look.lookId } : {}),
+					lookName: look.name,
+					...(o.colorway ? { colorwayId: o.colorway.id, colorwayName: o.colorway.name } : {}),
+					seed,
+					clipRef: '$title',
+					costClass,
+					...(renderPath ? { renderPath } : {}),
+					...(k === 0 ? { check: titleArtCheck({ ...checked, pending: !rendered }) } : {}),
+				});
+				const [first, ...rest] = options;
+				let r: ProposalCreateResponse;
+				try {
+					r = await ctx.engine((c) =>
+						c.createProposal(a.projectId, {
+							...titleArtDraft({
+								sequenceId: seq.id,
+								title: `Title: ${a.text.split('\n')[0]!}`,
+								summary: labelOf(first!.colorway),
+								option: { label: first!.label, commands: first!.commands, meta: metaOf(first!, 0) },
+								alternatives: rest.map((o, i) => ({
+									label: o.label,
+									commands: o.commands,
+									meta: metaOf(o, i + 1),
+								})),
+							}),
+							allOrNothing: true,
+							...(a.expectedRevision !== undefined ? { expectedRevision: a.expectedRevision } : {}),
+						}),
+					);
+				} catch (e) {
+					if (e instanceof EngineError && e.code === 'PROPOSAL_INVALID')
+						throw new ToolError('E_PROPOSAL_INVALID', e.message, 'Nothing was stored.', { detail: e.detail });
+					throw e;
+				}
+				stored = { proposalId: r.proposal.id, updatedAt: r.proposal.updatedAt, revision: r.revision };
+				next = `Nothing was applied. Tell the user the title is waiting in the Review panel, with ${others.length} alternative colourway(s), then wait_for_proposal {projectId, proposalId, since: updatedAt}. Read check first (the proposal keeps it for the first option): propose again rather than hand over a failing row without saying so.`;
+			}
+
+			if (!rendered)
 				return jsonResult({
 					...stored,
 					...common,
-					check: checkBody([...plain, ...lintRows(check, [])], check.revision, { pending: true, textClip }),
+					check: checked,
 					jobId: out.jobId,
 					timedOut: true,
 					next: `${next} ${sheetNext(out.jobId)}`,
 				});
-			const images = await sheetImages(ctx, out.result);
-			const measures = measuresOf(out.result, images, seq.settings.width);
-			const rows = [...renderedRowsOf(check, measures, target), ...plain, ...lintRows(check, measures)];
-			const { image, body } = await composeSheet(ctx, out.result, images);
-			const renderPath = (rows.find((x) => x.id === 'export-path')?.measured as { path?: string } | null)
-				?.path;
 			return jsonResult(
 				{
 					...stored,
 					...common,
 					...(renderPath ? { renderPath } : {}),
-					check: checkBody(rows, check.revision, { textClip }),
+					check: checked,
 					jobId: out.jobId,
 					timedOut: false,
-					cells: body.cells,
+					cells: rendered.cells,
 					next,
 				},
-				[image],
+				[rendered.image],
 			);
 		},
 	);

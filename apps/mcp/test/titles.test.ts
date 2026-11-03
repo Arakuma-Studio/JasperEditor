@@ -24,6 +24,7 @@ import {
 	runAgentQuery,
 	TITLE_ART_FEATURE,
 	TITLE_SAFE_MARGINS,
+	titleArtCheckOf,
 	titleArtMetaOf,
 	type UserLook,
 } from '@jasper/project';
@@ -575,6 +576,15 @@ describe('propose_title (TL-101)', () => {
 		expect(item.alternatives).toHaveLength(2);
 		expect(titleArtMetaOf(item)).toMatchObject({ lookId: 'look.test-plain', colorwayId: 'cw.a', seed: 9 });
 		expect(titleArtMetaOf(item.alternatives![0]!)?.colorwayId).toBeDefined();
+		// The rendered rows travel with the item, for Review: what the agent got, at the revision it measured.
+		const stored = titleArtCheckOf(item)!;
+		expect(stored).toMatchObject({ revision: r.json.check.revision, verified: r.json.check.verified });
+		expect(stored.pending).toBeUndefined();
+		expect(stored.rows).toEqual(r.json.check.rows);
+		expect(stored.rows.find((x) => x.id === 'contrast')?.status).toBe('pass');
+		expect(titleArtMetaOf(item)?.renderPath).toBe('hybrid');
+		// Only the first option is measured: an alternative carries no rows rather than borrowed ones.
+		expect(titleArtCheckOf(item.alternatives![0]!)).toBeNull();
 		expect(r.json).toMatchObject({ seed: 9, colorway: { id: 'cw.a' }, timedOut: false });
 		expect(r.json.alternatives).toHaveLength(2);
 		// one sheet: intro, hold, outro × three options, 640 px wide, on one job
@@ -730,6 +740,16 @@ describe('propose_title (TL-101)', () => {
 		expect(r.json.check.notChecked.join(' ')).toContain('still running');
 		expect(r.json.check.rows.map((x: Json) => x.id)).not.toContain('contrast');
 		expect(r.image).toBeUndefined();
+	});
+
+	it('a proposal past its timeout is stored with the plain rows, marked pending', async () => {
+		const s = await connect({ stuck: true, live: true });
+		const r = await s.ok('propose_title', { ...BASE, timeoutSeconds: 1 });
+		expect(r.json).toMatchObject({ timedOut: true, proposalId: expect.stringMatching(/^prp_/) });
+		const stored = titleArtCheckOf(s.engine.proposals.get(r.json.proposalId)!.items[0]!)!;
+		expect(stored).toMatchObject({ pending: true, verified: false });
+		expect(stored.rows.map((x) => x.id)).toEqual(r.json.check.rows.map((x: Json) => x.id));
+		expect(stored.rows.map((x) => x.id)).not.toContain('contrast');
 	});
 });
 

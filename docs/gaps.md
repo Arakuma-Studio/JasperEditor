@@ -964,8 +964,11 @@ discovery are in; evidence and thresholds in [wp-notes/title-looks-agents.md](wp
 - `title_check` thresholds for minimum size, CJK reading speed and the platform interface zones are assumptions, listed there.
   No official platform table was found, so `target-safe-area` only warns.
 - `font-available` answers for the family, not for every character of the text.
-- User looks in the engine-backed store (TL-054) are not searched by `find_title_looks`.
-- The rendered rows of a proposal are returned to the agent, not stored on it, so Review does not show them.
+- **The Review panel does not show a title proposal's rows yet.** `propose_title` stores them on the item
+  (`meta.check`, read with `titleArtCheckOf`), for the first option only: alternatives are not measured. The panel
+  (`apps/web/src/proposals/title-art.tsx`) reads the meta leniently and ignores them; drawing them is the UI stream's.
+  A later `title_check {proposalId}` measures again but does not update the stored rows, and rows stored by a call that
+  timed out are the plain ones (`pending: true`).
 - **The MCP eval cases for titles and delivery can sample, but have not been sampled.** `apps/mcp/eval/fake-engine.ts`
   now models `requestStillSheet` (cells drawn as stand-in pictures), `listFonts`, the user look library
   (`titleLooksList`), `psdPlan`, `psdExport`, `alphaDelivery` and `gamutCheck`, with results parsed by the engine's
