@@ -89,10 +89,7 @@ export class PanelErrorBoundary extends Component<PanelErrorBoundaryProps, State
 				<p className="max-w-[320px] truncate text-pr-small text-pr-muted">{error.message}</p>
 				{this.state.copyError ? <p className="text-pr-small text-pr-danger">{this.state.copyError}</p> : null}
 				<div className="flex gap-2">
-					<Button
-						variant="primary"
-						onClick={this.reset}
-					>
+					<Button variant="primary" onClick={this.reset}>
 						Reload Panel
 					</Button>
 					<Button

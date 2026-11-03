@@ -76,7 +76,6 @@ import {
 	useTransportPlaying,
 } from './MonitorChrome.tsx';
 import { MgRenderStateProvider } from './mg-render-state.tsx';
-import { ProgramOverlayLayers } from './OverlayLayers.tsx';
 import { checkerboard } from './monitor.tokens.ts';
 import { handleMonitorKey, monitorPanelServices, useMonitorCommandCtx } from './monitor-commands.ts';
 import {
@@ -86,6 +85,7 @@ import {
 	resolutionToProxy,
 } from './monitor-store.ts';
 import { monitorExtras } from './monitor-view.ts';
+import { ProgramOverlayLayers } from './OverlayLayers.tsx';
 import { PlaybackDriver } from './playback-driver.ts';
 import { buildProgramDoc, playerDurationFrames, usesProxies } from './render-doc.ts';
 import { TransformOverlay } from './TransformOverlay.tsx';

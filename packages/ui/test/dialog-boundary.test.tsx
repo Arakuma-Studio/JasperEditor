@@ -2,7 +2,14 @@
 // window with it. DialogHost renders above every other boundary of the app (GlobalHosts).
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { closeAllDialogs, Dialog, DialogHost, type HostedDialogProps, openDialog, registerDialog } from '../src/index.ts';
+import {
+	closeAllDialogs,
+	Dialog,
+	DialogHost,
+	type HostedDialogProps,
+	openDialog,
+	registerDialog,
+} from '../src/index.ts';
 
 afterEach(() => {
 	act(() => closeAllDialogs());

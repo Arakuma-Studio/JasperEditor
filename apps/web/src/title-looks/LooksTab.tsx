@@ -29,29 +29,29 @@ export function LooksTab(props: { onShowTemplates(): void }) {
 	return (
 		<PanelErrorBoundary name={t('Looks')} inline resetKey={session}>
 			<LooksBrowser
-			session={session}
-			links={
-				<>
-					<Link
-						label="Text Styles"
-						title="Typography and basic paint, in Properties"
-						onClick={() => {
-							revealSection('properties.textStyle');
-							focus('panel.focus.properties');
-						}}
-					/>
-					<Link
-						label="Effect Presets"
-						title="Stacks of ordinary effects, in the Effects panel"
-						onClick={() => focus('panel.focus.effects')}
-					/>
-					<Link
-						label="Templates"
-						title="Motion templates that create clips"
-						onClick={props.onShowTemplates}
-					/>
-				</>
-			}
+				session={session}
+				links={
+					<>
+						<Link
+							label="Text Styles"
+							title="Typography and basic paint, in Properties"
+							onClick={() => {
+								revealSection('properties.textStyle');
+								focus('panel.focus.properties');
+							}}
+						/>
+						<Link
+							label="Effect Presets"
+							title="Stacks of ordinary effects, in the Effects panel"
+							onClick={() => focus('panel.focus.effects')}
+						/>
+						<Link
+							label="Templates"
+							title="Motion templates that create clips"
+							onClick={props.onShowTemplates}
+						/>
+					</>
+				}
 			/>
 		</PanelErrorBoundary>
 	);
