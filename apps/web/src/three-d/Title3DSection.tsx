@@ -51,8 +51,13 @@ const SURFACE_GROUPS: { title: string; keys: string[] }[] = [
 	{ title: 'Glass', keys: ['transmission', 'ior', 'thickness', 'dispersion', 'attenuationColor'] },
 	{ title: 'Emission', keys: ['emissive', 'emissiveIntensity'] },
 ];
-const PRESET_IDS = Object.keys(SURFACE_PRESETS);
-const PRESET_LABELS = PRESET_IDS.map((k) => SURFACE_PRESETS[k]!.label);
+// The first option is a prompt, not a value: the select applies a preset and has no current one to show.
+const PICK = '';
+const PRESET_IDS = [PICK, ...Object.keys(SURFACE_PRESETS)];
+const PRESET_LABELS = [
+	'Apply Preset…',
+	...Object.keys(SURFACE_PRESETS).map((k) => SURFACE_PRESETS[k]!.label),
+];
 const BAND_KEYS = ['width', 'depth', 'profile', 'curve', 'segments'];
 const PLATE_KEYS = [
 	'enabled',
@@ -177,10 +182,11 @@ export function Title3DSection({ session, clips, frame, sequenceId }: ClipSectio
 			<Row label="Material">
 				<SelectField
 					label="Material"
-					value={null}
+					value={PICK}
 					options={PRESET_IDS}
 					labels={PRESET_LABELS}
 					onChange={(preset) =>
+						preset !== PICK &&
 						ops.apply('3D Material', [
 							{ type: 'threeD.setSurface', clipIds: [clip.id], surface: current.id, preset: String(preset) },
 						])

@@ -112,14 +112,18 @@ describe('the plan of a 3D title', () => {
 		writeFileSync(file, hdrFile(4, 2, new Array<number>(4 * 2 * 4).fill(128)));
 		const m = await register(app, file);
 		const withEnv = (mediaId: string, d: DocBuilder) => {
-			d.tx([{ type: 'clip.addLight', at: 0, duration: 30, lightType: 'environment', environmentMediaId: mediaId }]);
+			d.tx([
+				{ type: 'clip.addLight', at: 0, duration: 30, lightType: 'environment', environmentMediaId: mediaId },
+			]);
 			return d;
 		};
 		const online = goldTitle();
 		const ok = await plan(withEnv(online.addMedia(m), online), caps(true));
 		expect(ok.plan.path).toBe('remotion');
 		const gone = goldTitle();
-		const e = await plan(withEnv(gone.addMedia({ ...m, ...offline } as never), gone), caps(true)).catch((x) => x);
+		const e = await plan(withEnv(gone.addMedia({ ...m, ...offline } as never), gone), caps(true)).catch(
+			(x) => x,
+		);
 		expect(e).toBeInstanceOf(PlanError);
 		expect((e as PlanError).code).toBe('THREE_D_ASSET_MISSING');
 		expect(JSON.stringify((e as PlanError).detail)).toContain('Environment');
@@ -137,7 +141,9 @@ describe('the plan of a 3D title', () => {
 		const online = new DocBuilder();
 		expect((await plan(place(online, online.addMedia(m)), caps(true))).plan.path).toBe('remotion');
 		const gone = new DocBuilder();
-		const e = await plan(place(gone, gone.addMedia({ ...m, ...offline } as never)), caps(true)).catch((x) => x);
+		const e = await plan(place(gone, gone.addMedia({ ...m, ...offline } as never)), caps(true)).catch(
+			(x) => x,
+		);
 		expect(e).toBeInstanceOf(PlanError);
 		expect((e as PlanError).code).toBe('THREE_D_ASSET_MISSING');
 		expect(JSON.stringify((e as PlanError).detail)).toContain('3D model');

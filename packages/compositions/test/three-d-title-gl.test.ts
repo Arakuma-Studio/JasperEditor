@@ -551,14 +551,26 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('3D titles on the GPU', { 
 				geometry: {
 					mode: 'inflate',
 					depth: 6,
-					inflate: { height: 16, curve: [{ x: 0, y: 0 }, { x: 1, y: 1 }], smoothness: 60, detail: 1 },
+					inflate: {
+						height: 16,
+						curve: [
+							{ x: 0, y: 0 },
+							{ x: 1, y: 1 },
+						],
+						smoothness: 60,
+						detail: 1,
+					},
 				},
 			},
 			agx: { ...small, toneMapping: 'agx' },
 			neutral: { ...small, toneMapping: 'neutral' },
 			hue: { ...small, toneMapping: 'hue' },
 			none: { ...small, toneMapping: 'none' },
-			glint: { ...small, envColor: [3, 3, 3], glint: { threshold: 2, intensity: 200, radius: 6, rays: 4, length: 30, angle: 45 } },
+			glint: {
+				...small,
+				envColor: [3, 3, 3],
+				glint: { threshold: 2, intensity: 200, radius: 6, rays: 4, length: 30, angle: 45 },
+			},
 		};
 		const got: Record<string, number[]> = {};
 		for (const [name, s] of Object.entries(scenes)) {
@@ -587,10 +599,14 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('3D titles on the GPU', { 
 		const first = await call<number>('time', s, 1);
 		const warm = await call<number>('time', { ...s, orbit: 3 }, 5);
 		const glass = await call<number>('time', { ...s, surfaces: { base: 'glass' }, backdrop: 'stripes' }, 3);
-		const glint = await call<number>('time', {
-			...s,
-			glint: { threshold: 2, intensity: 200, radius: 16, rays: 4, length: 90, angle: 45 },
-		}, 3);
+		const glint = await call<number>(
+			'time',
+			{
+				...s,
+				glint: { threshold: 2, intensity: 200, radius: 16, rays: 4, length: 90, angle: 45 },
+			},
+			3,
+		);
 		process.stdout.write(
 			`perf 1080p first ${first.toFixed(0)} ms, warm ${(warm / 5).toFixed(0)} ms/frame, glass ${(glass / 3).toFixed(0)} ms/frame, glint ${(glint / 3).toFixed(0)} ms/frame\n`,
 		);

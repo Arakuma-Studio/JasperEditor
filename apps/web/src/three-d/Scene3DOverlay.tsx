@@ -155,7 +155,7 @@ function Scene3DSurface(props: ProgramOverlayHostProps) {
 	let ring: { c: Vec2; r: number } | null = null;
 	if (sel && gizmo) {
 		const screen = sel.props.quad.map((q) => toScreen(view, q as Vec2));
-		const R = gizmoRadius(screen);
+		const R = gizmoRadius(screen, props.viewport);
 		const depth = mat4Apply(cam.view, gizmo.p0)[2];
 		const unit = cam.ortho ? 1 / cam.zoom : Math.max(1, depth) / cam.zoom;
 		const worldR = (R / Math.max(1e-6, view.scale)) * unit;

@@ -11,14 +11,20 @@ export const FREE_RING = 1.22;
 /** Degrees per screen pixel of a free rotation. */
 export const FREE_DEG_PER_PX = 0.5;
 
-/** Screen radius of the arcs: 60 % of the larger side of the layer's screen bounds, within limits. */
-export function gizmoRadius(corners: readonly Vec2[]): number {
-	if (corners.length === 0) return GIZMO_MIN_PX;
+/**
+ * Screen radius of the arcs: 60 % of the larger side of the layer's screen bounds, within limits, and small enough that
+ * the free ring stays inside a monitor of `viewport` (a ring past the edge cannot be grabbed).
+ */
+export function gizmoRadius(corners: readonly Vec2[], viewport?: { width: number; height: number }): number {
+	const fit = viewport
+		? Math.max(GIZMO_MIN_PX, (Math.min(viewport.width, viewport.height) / 2 - 6) / FREE_RING)
+		: Number.POSITIVE_INFINITY;
+	if (corners.length === 0) return Math.min(GIZMO_MIN_PX, fit);
 	const xs = corners.map((c) => c[0]);
 	const ys = corners.map((c) => c[1]);
 	const side = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
-	if (!Number.isFinite(side)) return GIZMO_MIN_PX;
-	return Math.min(GIZMO_MAX_PX, Math.max(GIZMO_MIN_PX, side * 0.6));
+	if (!Number.isFinite(side)) return Math.min(GIZMO_MIN_PX, fit);
+	return Math.min(GIZMO_MAX_PX, fit, Math.max(GIZMO_MIN_PX, side * 0.6));
 }
 
 /** A circle of `radius` world units around `centre`, in the plane normal to world axis `axis`. */

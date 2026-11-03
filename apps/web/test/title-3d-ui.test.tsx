@@ -86,6 +86,20 @@ describe('gizmo maths (TL-079)', () => {
 		expect(gizmoRadius(box(Number.NaN, 2))).toBe(GIZMO_MIN_PX);
 	});
 
+	it('keeps the free ring inside the monitor however wide the layer', () => {
+		const wide = [
+			[0, 0],
+			[900, 0],
+			[900, 200],
+			[0, 200],
+		] as [number, number][];
+		const viewport = { width: 960, height: 400 };
+		const r = gizmoRadius(wide, viewport);
+		expect(r * FREE_RING).toBeLessThanOrEqual(viewport.height / 2);
+		// The perturbation: without the monitor it is sized to the layer alone and does not fit.
+		expect(gizmoRadius(wide) * FREE_RING).toBeGreaterThan(viewport.height / 2);
+	});
+
 	it('a world circle stays at its radius, in the plane of its axis', () => {
 		const pts = worldCircle([10, 20, 30], 2, 5, 16);
 		expect(pts).toHaveLength(17);
