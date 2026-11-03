@@ -36,6 +36,8 @@ export const LookApplyCmd = cmd('look.apply', {
 	colorwayId: z.string().min(1).max(128).optional(),
 	/** The appearance seed (default: kept on clips that have a look, else a new one per clip). */
 	seed: z.number().int().min(0).max(0xffff_ffff).optional(),
+	/** TL-053: installed font families, when the caller knows them: a look's `fallback` then replaces a missing one. */
+	availableFonts: z.array(z.string().min(1).max(256)).max(8192).optional(),
 });
 export const LookRemoveCmd = cmd('look.remove', { clipIds: IdListSchema });
 export const LookDetachCmd = cmd('look.detach', { clipIds: IdListSchema });
@@ -94,6 +96,12 @@ export const AppearanceSetLayerEnabledCmd = cmd('appearance.setLayerEnabled', {
 	layerId: IdRefSchema,
 	enabled: z.boolean(),
 });
+/** TL-051: colourways leave a fixed layer alone. Fixing a layer turns the roles it reads into their current colours. */
+export const AppearanceSetLayerFixedColorCmd = cmd('appearance.setLayerFixedColor', {
+	...FxRef,
+	layerId: IdRefSchema,
+	fixed: z.boolean(),
+});
 export const AppearanceSetPaintCmd = cmd('appearance.setPaint', {
 	...FxRef,
 	layerId: IdRefSchema,
@@ -135,6 +143,23 @@ export const ClipAddGeneratorCmd = cmd('clip.addGenerator', {
 	ref: RefDeclSchema.optional(),
 });
 
+/** TL-052: a title template as ordinary clips, in one transaction. */
+export const TitleInsertTemplateCmd = cmd('title.insertTemplate', {
+	sequenceId: IdRefSchema.optional(),
+	templateId: z.string().min(1).max(128),
+	at: TimeInputSchema,
+	/** Default: the template's own length. */
+	duration: TimeInputSchema.optional(),
+	/** The lowest track to consider (default V2, so a title lands above the footage). */
+	track: TrackRefSchema.optional(),
+	/** Text of each slot, by slot name (default: the template's sample text). */
+	texts: z.record(z.string().max(64), z.string().min(1).max(4096)).optional(),
+	colorwayId: z.string().min(1).max(128).optional(),
+	seed: z.number().int().min(0).max(0xffff_ffff).optional(),
+	availableFonts: z.array(z.string().min(1).max(256)).max(8192).optional(),
+	ref: RefDeclSchema.optional(),
+});
+
 export const TITLE_LOOK_COMMANDS = [
 	LookApplyCmd,
 	LookRemoveCmd,
@@ -149,9 +174,11 @@ export const TITLE_LOOK_COMMANDS = [
 	AppearanceRemoveLayerCmd,
 	AppearanceReorderLayerCmd,
 	AppearanceSetLayerEnabledCmd,
+	AppearanceSetLayerFixedColorCmd,
 	AppearanceSetPaintCmd,
 	AppearanceSetGradientCmd,
 	AppearanceSetLightSourceCmd,
 	SequenceSetGlobalLightCmd,
 	ClipAddGeneratorCmd,
+	TitleInsertTemplateCmd,
 ] as const;

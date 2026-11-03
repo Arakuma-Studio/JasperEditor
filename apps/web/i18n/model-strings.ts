@@ -139,6 +139,19 @@ for (const def of mgRegistry.definitions()) {
 // social-comment hints (also listed when no installed template uses them yet)
 for (const s of Object.values(project.MG_IMPORT_TEXT)) add(s);
 for (const reason of Object.values(SOCIAL_IMPORT_HINTS.ignored ?? {})) add(reason);
+// Spec 19: the library of Title Looks and its style check.
+for (const c of project.LOOK_CATEGORIES) add(c.label);
+for (const l of project.FACTORY_LOOKS) {
+	add(l.name);
+	add(l.description);
+}
+for (const c of project.FACTORY_COLORWAYS) add(c.name);
+for (const t of project.FACTORY_TEMPLATES) {
+	add(t.name);
+	add(t.description);
+	for (const c of t.clips) add(c.kind === 'text' ? c.label : c.name);
+}
+for (const s of project.LINT_STRINGS) add(s);
 const list = [...out].sort((a, b) => a.localeCompare(b, 'en'));
 writeFileSync(join(root, 'apps/web/src/i18n/model-strings.json'), `${JSON.stringify(list, null, 2)}\n`);
 console.log(`model strings: ${list.length}`);

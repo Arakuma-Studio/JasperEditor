@@ -4,9 +4,9 @@ import { join } from 'node:path';
 import type { LookRecipe } from '@jasper/project';
 import type { Browser, Page } from '@playwright/test';
 import { CHROME, openGlPage } from './gl-browser.ts';
-import type { LookRequest, LookResult } from './title-look-gl/entry.ts';
+import type { EffectRequest, LookRequest, LookResult } from './title-look-gl/entry.ts';
 
-export type { LookRequest };
+export type { EffectRequest, LookRequest };
 export { CHROME };
 
 export type LookImage = Omit<LookResult, 'rgba'> & { data: Uint8Array };
@@ -15,7 +15,18 @@ export type LookPage = {
 	browser: Browser;
 	page: Page;
 	render(req: LookRequest): Promise<LookImage>;
+	/** One standalone effect on the same inputs. */
+	effect(req: EffectRequest): Promise<LookImage>;
 	reach(recipe: LookRecipe): Promise<{ left: number; top: number; right: number; bottom: number }>;
+	/** Loads a font file for `{kind: 'text', font}` inputs. */
+	loadFont(family: string, weight: number, file: Uint8Array): Promise<void>;
+	/** The size at which `text` fits `width` px, at most `size`. */
+	fitSize(arg: {
+		text: string;
+		size: number;
+		width: number;
+		font: { family: string; weight: number };
+	}): Promise<number>;
 	float(): Promise<boolean>;
 	/** What `render` throws on a GPU without float targets, or null. */
 	withoutFloat(req: LookRequest): Promise<string | null>;
@@ -30,14 +41,19 @@ export async function openLookPage(dir: string): Promise<LookPage> {
 				(window as unknown as { __tl: Record<string, (a?: unknown) => unknown> }).__tl[n as string]!(a),
 			[name, arg] as const,
 		) as Promise<T>;
+	const image = ({ rgba, ...rest }: LookResult): LookImage => ({
+		...rest,
+		data: new Uint8Array(Buffer.from(rgba, 'base64')),
+	});
 	return {
 		browser,
 		page,
-		render: async (req) => {
-			const { rgba, ...rest } = await call<LookResult>('render', req);
-			return { ...rest, data: new Uint8Array(Buffer.from(rgba, 'base64')) };
-		},
+		render: async (req) => image(await call<LookResult>('render', req)),
+		effect: async (req) => image(await call<LookResult>('renderEffect', req)),
 		reach: (recipe) => call('reach', recipe),
+		loadFont: (family, weight, file) =>
+			call('loadFont', { family, weight, base64: Buffer.from(file).toString('base64') }),
+		fitSize: (arg) => call('fitSize', arg),
 		float: () => call('float'),
 		withoutFloat: (req) => call('withoutFloat', req),
 		renderer: () => call('renderer'),

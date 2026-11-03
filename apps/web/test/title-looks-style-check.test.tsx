@@ -53,11 +53,14 @@ function looked(n = 1): { session: EditorSession; ids: string[] } {
 	return { session, ids };
 }
 
+// The real lint's issue shape (`LintIssue`): the badge shows `template` with its translated `args`.
 const issue = (over: Record<string, unknown> = {}) => ({
 	id: 'x',
 	code: 'LOOK_RIMS_THIN',
 	severity: 'warning',
 	message: 'The rim is too thin.',
+	template: (over.message as string | undefined) ?? 'The rim is too thin.',
+	args: [],
 	rule: 'A rim must survive a downscale.',
 	layerIds: [],
 	fixable: true,

@@ -22,11 +22,12 @@ import type {
 	GlslChunk,
 	ShaderPass,
 } from '../shader.ts';
+import { hashFloats } from '../shader.ts';
 import {
 	isPaintParam,
 	type LayerFieldReach,
 	type LayerParams,
-	type LayerPlanContext,
+	type LayerPrepassContext,
 	type LayerReach,
 	type TitleLayerType,
 	type TitleParamSpec,
@@ -49,6 +50,7 @@ import {
 	GLSL_TL_UNIT_KNOWN,
 } from './glsl.ts';
 import { paintOf, paintParts } from './paint.ts';
+import { recolorRamp } from './recolor.ts';
 import { activeParamSpecs, titleFinish, titleLayerType, withDefaults } from './registry.ts';
 
 /** `FxStructures.titleLook`: what a look instance needs at a frame. */
@@ -87,6 +89,8 @@ type PlannedLayer = {
 	params: LayerParams;
 	/** Silhouette growth of the layers above, percent of the unit. */
 	base: number;
+	/** TL-051: colourways leave this layer alone. */
+	fixedColor: boolean;
 };
 
 /** The enabled layers of known types, bottom-first, with the growth above each. */
@@ -98,9 +102,10 @@ function plannedLayers(look: ResolvedAppearance): PlannedLayer[] {
 		const def = titleLayerType(l.type);
 		if (!def) continue; // INV-APPEARANCE: repair removes unknown types when a project loads.
 		const params = withDefaults(def, l.params);
-		out.unshift({ def, id: l.id, params, base });
+		out.unshift({ def, id: l.id, params, base, fixedColor: l.fixedColor === true });
 		base += Math.max(0, num(def.grows?.(params)));
 	}
+	for (const l of out) if (l.def.outermost) l.base = base;
 	return out;
 }
 
@@ -295,6 +300,13 @@ function layerPieces(l: PlannedLayer, look: ResolvedAppearance, index: number): 
 		glsl += `${finish.glsl}\n`;
 		include.push(...(finish.include ?? []));
 	}
+	if (l.def.recolors) {
+		const ramp = recolorRamp(look.palette);
+		uniforms.u_tlRecolor = !l.fixedColor;
+		uniforms.u_tlRecolorRamp = { texels: ramp, key: hashFloats(ramp) };
+		// `tl_recolor` comes with the gradient chunk, which reads the bounds.
+		usesBounds = true;
+	}
 	return { defines, textures, glsl, uniforms, include, usesBounds, fieldInside };
 }
 
@@ -334,12 +346,24 @@ export function planTitleLook(ctx: FxPlanContext): readonly ShaderPass[] {
 	const baseInclude = [unit, GLSL_TL_FIELD, ...(usesBounds ? [GLSL_TL_BOUNDS] : [])];
 	let blurDone = false;
 	layers.forEach((l, i) => {
-		const c: LayerPlanContext = { look, pxPerPercent, base: l.base };
 		const piece = pieces[i]!;
 		const blur = blurred[i];
 		const finish = l.def.finish ? titleFinish(String(l.params.finish ?? 'flat')) : undefined;
-		passes.push(...(finish?.prepass?.(l.params, c) ?? []), ...(l.def.prepass?.(l.params, c) ?? []));
 		const include = [...baseInclude, ...piece.include];
+		const c: LayerPrepassContext = {
+			look,
+			pxPerPercent,
+			base: l.base,
+			unitKnown: tl.unitPx !== null,
+			unit,
+			surfacePass: (pass) => ({
+				...pass,
+				include: [...include, ...(pass.include ?? [])],
+				uniforms: { ...piece.uniforms, ...pass.uniforms },
+				frag: `${piece.defines}${piece.glsl}${pass.frag}`,
+			}),
+		};
+		passes.push(...(finish?.prepass?.(l.params, c) ?? []), ...(l.def.prepass?.(l.params, c) ?? []));
 		if (blur && blur.sigma > 0) {
 			const again = blurDone ? { update: true } : {};
 			const sigmaPx = blur.sigma * pxPerPercent;

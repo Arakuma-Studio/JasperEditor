@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { EngineClient } from '@jasper/engine-client';
 import {
+	appearanceFromRecipe,
 	applyTransaction,
 	type Colorway,
 	createCounterIdSource,
@@ -292,11 +293,17 @@ const RECIPE: LookRecipe = {
 	palette: { face: [1, 1, 1, 1], keyline: [0, 0, 0, 1] },
 	layers: [{ type: 'rim', params: { width: 6 } }, { type: 'face' }],
 };
-const looks = FACTORY_LOOKS as FactoryLook[];
-const ways = FACTORY_COLORWAYS as Colorway[];
+// The tools read the shipped library; these tests swap in a small stand-in with known answers and put the real one back.
+type StandInLook = Pick<FactoryLook, 'libraryId' | 'name' | 'tags' | 'category' | 'recipe'> &
+	Partial<FactoryLook>;
+const looks = FACTORY_LOOKS as unknown as StandInLook[];
+const ways = FACTORY_COLORWAYS as unknown as Colorway[];
+const shipped = { looks: [...FACTORY_LOOKS] as StandInLook[], ways: [...FACTORY_COLORWAYS] as Colorway[] };
 const dark = (r: number): Colorway['palette'] => ({ face: [r, 0.2, 0.2, 1] });
 
 beforeAll(() => {
+	looks.length = 0;
+	ways.length = 0;
 	looks.push(
 		{
 			libraryId: 'look.test-chrome',
@@ -329,8 +336,8 @@ beforeAll(() => {
 	);
 });
 afterAll(() => {
-	looks.length = 0;
-	ways.length = 0;
+	looks.splice(0, looks.length, ...shipped.looks);
+	ways.splice(0, ways.length, ...shipped.ways);
 });
 
 const footage = (color: number[]) => ({
@@ -401,6 +408,22 @@ describe('find_title_looks (TL-100)', () => {
 			expect(r.json.next).toMatch(/library of this build holds no looks/);
 		} finally {
 			looks.push(...held);
+		}
+	});
+
+	it('searches the shipped library', async () => {
+		const held = looks.splice(0, looks.length, ...shipped.looks);
+		const heldWays = ways.splice(0, ways.length, ...shipped.ways);
+		try {
+			const s = await connect();
+			const r = await s.ok('find_title_looks', { query: 'neon' });
+			expect(r.json.rows.length).toBeGreaterThan(0);
+			const ids = new Set(shipped.looks.map((l) => l.libraryId));
+			for (const row of r.json.rows as Json[]) expect(ids.has(row.lookId as string)).toBe(true);
+			expect(r.json.libraryColorways.map((c: Json) => c.id)).toEqual(shipped.ways.map((c) => c.id));
+		} finally {
+			looks.splice(0, looks.length, ...held);
+			ways.splice(0, ways.length, ...heldWays);
 		}
 	});
 
@@ -876,6 +899,26 @@ describe('style lint rows (TL-056 through TL-102)', () => {
 
 	it('a build without the lint never reads as a clean look', () => {
 		expect(titleLintRows(input, null)).toMatchObject([{ id: 'lint', status: 'unverified' }]);
+	});
+
+	it('runs the library lint by default: real issues, real fixes, and the measured backdrop', () => {
+		let n = 0;
+		const appearance = appearanceFromRecipe(
+			{
+				palette: { face: [1, 1, 1, 1], keyline: [0.95, 0.95, 0.95, 1] },
+				layers: [{ type: 'rim', params: { width: 1 } }, { type: 'face' }],
+			},
+			() => `apl_${String(++n).padStart(16, '0')}`,
+		);
+		const rows = titleLintRows({ ...input, appearance, backdrops: [97] });
+		const byId = new Map(rows.map((r) => [r.id, r]));
+		expect(byId.get('lint-backdrop')).toMatchObject({ kind: 'format', status: 'fail' });
+		expect(byId.get('lint-rims-thin')).toMatchObject({ status: 'warn' });
+		expect(byId.get('lint-rims-thin')!.fix?.commands?.length).toBeGreaterThan(0);
+		expect([...byId.keys()].some((id) => id.startsWith('lint-contrast-'))).toBe(true);
+		expect(byId.has('lint')).toBe(false);
+		const unmeasured = titleLintRows({ ...input, appearance, backdrops: [] });
+		expect(unmeasured.find((r) => r.id === 'lint-backdrop-contrast')).toMatchObject({ status: 'unverified' });
 	});
 });
 

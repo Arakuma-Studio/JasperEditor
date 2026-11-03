@@ -3,8 +3,11 @@
 import {
 	appearanceClipReach,
 	appearanceFromRecipe,
+	defaultEffectRegistry,
+	type EffectParams,
 	type EffectSpec,
 	type FxPadding,
+	type FxStructures,
 	fxBuiltinUniforms,
 	type LookRecipe,
 	planGpuEffect,
@@ -16,8 +19,14 @@ import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
 import { fxCanvasLayout } from '../../src/fx/plan.ts';
 
 export type LookInput =
-	/** Bold text on transparent, `size` layer px (default 96). */
-	| { kind: 'text'; text?: string; size?: number; opacity?: number }
+	/** Bold text on transparent, `size` layer px (default 96); `font` names a face loaded with `loadFont`. */
+	| {
+			kind: 'text';
+			text?: string;
+			size?: number;
+			opacity?: number;
+			font?: { family: string; weight: number; trackingEm?: number };
+	  }
 	/** Letter-like vector shapes: the same geometry at every size, for resolution tests (text hints per size). */
 	| { kind: 'shapes' }
 	/** A rectangle inside the box (fractions), for exact edges. */
@@ -46,6 +55,14 @@ export type LookRequest = {
 	perPass?: boolean;
 };
 
+/** One standalone effect instead of a look: `params` over its defaults, on the same inputs. */
+export type EffectRequest = Omit<LookRequest, 'recipe' | 'unitPx' | 'seed'> & {
+	id: string;
+	params?: Record<string, unknown>;
+	/** TL-017: the sequence's light at the frame, as the stage passes it. */
+	globalLight?: { angle: number; altitude: number };
+};
+
 export type LookResult = {
 	width: number;
 	height: number;
@@ -70,7 +87,11 @@ function paintInput(
 ) {
 	if (input.kind === 'text') {
 		ctx.fillStyle = `rgba(255, 255, 255, ${input.opacity ?? 1})`;
-		ctx.font = `bold ${(input.size ?? 96) * s}px "Liberation Sans", Arial, sans-serif`;
+		const size = (input.size ?? 96) * s;
+		ctx.font = input.font
+			? `${input.font.weight} ${size}px "${input.font.family}"`
+			: `bold ${size}px "Liberation Sans", Arial, sans-serif`;
+		if (input.font?.trackingEm) ctx.letterSpacing = `${input.font.trackingEm * size}px`;
 		ctx.textAlign = 'center';
 		ctx.textBaseline = 'middle';
 		ctx.fillText(input.text ?? 'Title', b.x + b.w / 2, b.y + b.h / 2);
@@ -122,9 +143,6 @@ function base64(bytes: Uint8ClampedArray): string {
 }
 
 function render(req: LookRequest): LookResult {
-	const h = fxHost();
-	if (!h) throw new Error('no WebGL2');
-	const spec = TITLE_LOOK_EFFECT as EffectSpec;
 	let n = 0;
 	const stored = appearanceFromRecipe(
 		req.recipe,
@@ -135,15 +153,39 @@ function render(req: LookRequest): LookResult {
 	const unitPx =
 		req.unitPx !== undefined ? req.unitPx : req.input.kind === 'text' ? (req.input.size ?? 96) : null;
 	const titleLook = { appearance, source: stored, unitPx, contentSeconds: req.contentSeconds ?? 0 };
+	const params: EffectParams = req.intensity === undefined ? {} : { [TITLE_LOOK_INTENSITY]: req.intensity };
+	return draw(TITLE_LOOK_EFFECT as EffectSpec, params, req, { titleLook });
+}
+
+function renderEffect(req: EffectRequest): LookResult {
+	const spec = defaultEffectRegistry.get(req.id);
+	if (!spec?.gpu) throw new Error(`no GPU effect ${req.id}`);
+	const params = {
+		...Object.fromEntries(spec.params.map((p) => [p.name, p.default])),
+		...req.params,
+	} as EffectParams;
+	return draw(spec, params, req, req.globalLight ? { globalLight: req.globalLight } : {});
+}
+
+function draw(
+	spec: EffectSpec,
+	params: EffectParams,
+	req: Omit<EffectRequest, 'id' | 'params' | 'globalLight'>,
+	structures: FxStructures,
+): LookResult {
+	const h = fxHost();
+	if (!h) throw new Error('no WebGL2');
 	const pxScale = req.pxScale ?? 1;
 	const base = {
 		width: req.box.width,
 		height: req.box.height,
 		pxScale: 1,
 		fps: 30,
-		structures: { titleLook },
+		structures,
 	};
-	const pad = spec.gpu!.padding!({}, base) as Partial<FxPadding>;
+	const raw = spec.gpu!.padding?.(params, base) ?? 0;
+	const pad: Partial<FxPadding> =
+		typeof raw === 'number' ? { left: raw, top: raw, right: raw, bottom: raw } : raw;
 	const extra = req.pad ?? 0;
 	const padding: FxPadding = {
 		left: (pad.left ?? 0) + extra,
@@ -155,7 +197,7 @@ function render(req: LookRequest): LookResult {
 	const seconds = req.contentSeconds ?? 0;
 	const plan = planGpuEffect(
 		spec,
-		{ id: 'fx1', params: req.intensity === undefined ? {} : { [TITLE_LOOK_INTENSITY]: req.intensity } },
+		{ id: 'fx1', params },
 		{
 			...base,
 			pxScale: layout.pxScale,
@@ -256,8 +298,29 @@ function render(req: LookRequest): LookResult {
 	};
 }
 
+/** The size at which `text` fits `width`, at most `size`. */
+function fitSize(arg: {
+	text: string;
+	size: number;
+	width: number;
+	font: { family: string; weight: number };
+}) {
+	const ctx = document.createElement('canvas').getContext('2d')!;
+	ctx.font = `${arg.font.weight} 100px "${arg.font.family}"`;
+	return Math.min(arg.size, Math.floor((arg.width / Math.max(ctx.measureText(arg.text).width, 1)) * 100));
+}
+
 (window as unknown as { __tl: unknown }).__tl = {
 	render,
+	renderEffect,
+	fitSize,
+	/** Loads a font file (base64) under a family and weight. */
+	loadFont: async (arg: { family: string; weight: number; base64: string }) => {
+		const bytes = Uint8Array.from(atob(arg.base64), (c) => c.charCodeAt(0));
+		const face = new FontFace(arg.family, bytes, { weight: String(arg.weight) });
+		await face.load();
+		document.fonts.add(face);
+	},
 	reach: (recipe: LookRecipe) => {
 		let n = 0;
 		return appearanceClipReach(appearanceFromRecipe(recipe, () => `apl_${String(++n).padStart(16, '0')}`));

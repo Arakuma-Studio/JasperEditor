@@ -23,6 +23,7 @@ import {
 	isPlainObject,
 	type LayerParamValue,
 	LookColorSchema,
+	LookFontSchema,
 	MAX_APPEARANCE_BYTES,
 	MAX_APPEARANCE_LAYERS,
 	MAX_GRADIENT_STOPS,
@@ -192,11 +193,14 @@ function repairLayer(raw: unknown, def: TitleLayerType, id: string, note: Note):
 		if (fixed !== undefined) params[name] = fixed;
 	}
 	const name = typeof r.name === 'string' ? r.name.slice(0, MAX_TITLE_LOOK_NAME) : undefined;
+	if (r.fixedColor !== undefined && typeof r.fixedColor !== 'boolean')
+		note('repair-appearance', id, 'unreadable fixed colour mark removed');
 	return {
 		id,
 		type: def.type,
 		enabled: r.enabled !== false,
 		...(name ? { name } : {}),
+		...(r.fixedColor === true ? { fixedColor: true } : {}),
 		params: params as AppearanceLayer['params'],
 	};
 }
@@ -238,6 +242,11 @@ export function repairAppearance(
 	) {
 		delete a.font;
 		note('repair-appearance', who, 'unreadable font removed');
+	} else if (a.font !== undefined && !LookFontSchema.loose().safeParse(a.font).success) {
+		const family = (a.font as { family: string }).family;
+		if (LookFontSchema.safeParse({ family }).success) a.font = { family };
+		else delete a.font;
+		note('repair-appearance', who, 'unreadable font settings removed');
 	}
 	const seed = Number.isSafeInteger(a.seed) && (a.seed as number) >= 0 ? (a.seed as number) : null;
 	if (seed === null || seed > 0xffff_ffff) {

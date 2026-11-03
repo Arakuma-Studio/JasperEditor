@@ -12,7 +12,7 @@
 // - SC-075: when a carried term appears ≥ 3 times within 10 s of a window's text, the window is decoded again
 //   without the glossary (the research saw a glossary term written 5× over a stretch the unprompted run left
 //   empty, FINDINGS §6).
-import { cleanupNorm } from '@jasper/project';
+import { cleanupNorm } from '@jasper/project/cleanup-worker';
 
 /** SC-074 caps (also enforced by `TranscribeOptionsSchema`). */
 export const GLOSSARY_MAX_TERMS = 40;

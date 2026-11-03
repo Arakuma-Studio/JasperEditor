@@ -9,13 +9,47 @@ code ported from other projects is recorded in [licenses/ported/](licenses/porte
 
 ## Fonts
 
-Font files committed in the repository. The fonts the engine serves at `/fonts` come from `@fontsource/*` npm packages and are listed in `THIRD_PARTY_NOTICES.md`.
+Font files committed in the repository. The text fonts the engine serves at `/fonts` come from `@fontsource/*` npm packages and are listed in `THIRD_PARTY_NOTICES.md`; the display fonts are below.
 
 | Asset | Author | Source | Licence |
 |---|---|---|---|
 | `native/mg/crates/jasper-mg-templates/media/Inter_24pt-Regular.ttf` | The Inter Project Authors | https://github.com/rsms/inter | OFL-1.1 (`native/mg/crates/jasper-mg-templates/FONTS-OFL.txt`) |
 | `native/mg/crates/jasper-mg-templates/media/Inter_24pt-Bold.ttf` | The Inter Project Authors | https://github.com/rsms/inter | OFL-1.1 (`native/mg/crates/jasper-mg-templates/FONTS-OFL.txt`) |
 | `fixtures/mg-project/public/fonts/Inter-Bold.ttf` | The Inter Project Authors | https://github.com/rsms/inter | OFL-1.1 (`fixtures/mg-project/public/fonts/OFL.txt`) |
+
+### Display fonts
+
+Display families looks name (spec 19 TL-053), committed unmodified from [google/fonts](https://github.com/google/fonts) at commit `2fe1e8c6b137fb13041a7cfca6fdcd8a910ea4dc` and served at `/fonts`. `apps/engine/fonts/display/manifest.json` pins each file's upstream path and SHA-256, and `apps/engine/test/title-looks.test.ts` checks them. Each family's licence text sits next to it as `OFL.txt`.
+
+| Family | Script | Copyright | Upstream file | Licence |
+|---|---|---|---|---|
+| Anton | Latin | Copyright 2020 The Anton Project Authors (https://github.com/googlefonts/AntonFont.git) | `ofl/anton/Anton-Regular.ttf` | OFL-1.1 (`apps/engine/fonts/display/anton/OFL.txt`) |
+| Bebas Neue | Latin | Copyright © 2010 by Dharma Type. | `ofl/bebasneue/BebasNeue-Regular.ttf` | OFL-1.1 (`apps/engine/fonts/display/bebas-neue/OFL.txt`) |
+| Cinzel | Latin | Copyright 2020 The Cinzel Project Authors (https://github.com/NDISCOVER/Cinzel) | `ofl/cinzel/Cinzel[wght].ttf` | OFL-1.1 (`apps/engine/fonts/display/cinzel/OFL.txt`) |
+| Abril Fatface | Latin | Copyright (c) 2011, TypeTogether (www.type-together.com) | `ofl/abrilfatface/AbrilFatface-Regular.ttf` | OFL-1.1 (`apps/engine/fonts/display/abril-fatface/OFL.txt`) |
+| Russo One | Latin | Copyright (c) 2011-2012, Jovanny Lemonad (jovanny.ru), with Reserved Font Name "Russo" | `ofl/russoone/RussoOne-Regular.ttf` | OFL-1.1 (`apps/engine/fonts/display/russo-one/OFL.txt`) |
+| Bungee | Latin | Copyright 2023 The Bungee Project Authors (https://github.com/djrrb/Bungee) | `ofl/bungee/Bungee-Regular.ttf` | OFL-1.1 (`apps/engine/fonts/display/bungee/OFL.txt`) |
+| Black Ops One | Latin | Copyright 2022 The Black-Ops Project Authors (https://github.com/googlefonts/googlefonts-project-template) | `ofl/blackopsone/BlackOpsOne-Regular.ttf` | OFL-1.1 (`apps/engine/fonts/display/black-ops-one/OFL.txt`) |
+| Monoton | Latin | Copyright (c) 2011 by vernon adams (vern@newtypography.co.uk) | `ofl/monoton/Monoton-Regular.ttf` | OFL-1.1 (`apps/engine/fonts/display/monoton/OFL.txt`) |
+| Audiowide | Latin | Copyright (c) 2012, Brian J. Bonislawsky DBA Astigmatic (AOETI) (astigma@astigmatic.com), with Reserved Font Names "Audiowide" | `ofl/audiowide/Audiowide-Regular.ttf` | OFL-1.1 (`apps/engine/fonts/display/audiowide/OFL.txt`) |
+| Orbitron | Latin | Copyright 2018 The Orbitron Project Authors (https://github.com/theleagueof/orbitron), with Reserved Font Name: "Orbitron" | `ofl/orbitron/Orbitron[wght].ttf` | OFL-1.1 (`apps/engine/fonts/display/orbitron/OFL.txt`) |
+| Press Start 2P | Latin | Copyright 2012 The Press Start 2P Project Authors (cody@zone38.net), with Reserved Font Name "Press Start 2P". | `ofl/pressstart2p/PressStart2P-Regular.ttf` | OFL-1.1 (`apps/engine/fonts/display/press-start-2p/OFL.txt`) |
+| Bangers | Latin | Copyright 2010 The Bangers Project Authors (https://github.com/googlefonts/bangers) | `ofl/bangers/Bangers-Regular.ttf` | OFL-1.1 (`apps/engine/fonts/display/bangers/OFL.txt`) |
+| Creepster | Latin | Copyright (c) 2011, Font Diner, Inc (diner@fontdiner.com) | `ofl/creepster/Creepster-Regular.ttf` | OFL-1.1 (`apps/engine/fonts/display/creepster/OFL.txt`) |
+| Pacifico | Latin | Copyright 2018 The Pacifico Project Authors (https://github.com/googlefonts/Pacifico) | `ofl/pacifico/Pacifico-Regular.ttf` | OFL-1.1 (`apps/engine/fonts/display/pacifico/OFL.txt`) |
+| Righteous | Latin | Copyright (c) 2011 by Brian J. Bonislawsky DBA Astigmatic (AOETI) | `ofl/righteous/Righteous-Regular.ttf` | OFL-1.1 (`apps/engine/fonts/display/righteous/OFL.txt`) |
+| Fredoka | Latin | Copyright 2016 The Fredoka Project Authors (https://github.com/hafontia/Fredoka-One) | `ofl/fredoka/Fredoka[wdth,wght].ttf` | OFL-1.1 (`apps/engine/fonts/display/fredoka/OFL.txt`) |
+| Lilita One | Latin | Copyright (c) 2011 Juan Montoreano (juan@remolacha.biz) | `ofl/lilitaone/LilitaOne-Regular.ttf` | OFL-1.1 (`apps/engine/fonts/display/lilita-one/OFL.txt`) |
+| Titan One | Latin | Copyright (c) 2011, Rodrigo Fuenzalida (www.rfuenzalida.com/hello@rfuenzalida.com) | `ofl/titanone/TitanOne-Regular.ttf` | OFL-1.1 (`apps/engine/fonts/display/titan-one/OFL.txt`) |
+| Archivo Black | Latin | Copyright 2017 The Archivo Black Project Authors (https://github.com/Omnibus-Type/ArchivoBlack) | `ofl/archivoblack/ArchivoBlack-Regular.ttf` | OFL-1.1 (`apps/engine/fonts/display/archivo-black/OFL.txt`) |
+| Dela Gothic One | Japanese | Copyright 2020 The Dela Gothic Project Authors (https://github.com/syakuzen/DelaGothic) | `ofl/delagothicone/DelaGothicOne-Regular.ttf` | OFL-1.1 (`apps/engine/fonts/display/dela-gothic-one/OFL.txt`) |
+| Reggae One | Japanese | Copyright 2020 The Reggae Project Authors (https://github.com/fontworks-fonts/Reggae) | `ofl/reggaeone/ReggaeOne-Regular.ttf` | OFL-1.1 (`apps/engine/fonts/display/reggae-one/OFL.txt`) |
+| RocknRoll One | Japanese | Copyright 2020 The RocknRoll Project Authors (https://github.com/fontworks-fonts/RocknRoll) | `ofl/rocknrollone/RocknRollOne-Regular.ttf` | OFL-1.1 (`apps/engine/fonts/display/rocknroll-one/OFL.txt`) |
+| DotGothic16 | Japanese | Copyright 2020 The DotGothic16 Project Authors (https://github.com/fontworks-fonts/DotGothic16) | `ofl/dotgothic16/DotGothic16-Regular.ttf` | OFL-1.1 (`apps/engine/fonts/display/dotgothic16/OFL.txt`) |
+| Yuji Boku | Japanese | Copyright 2021 The Yuji Project Authors (https://github.com/Kinutafontfactory/Yuji) | `ofl/yujiboku/YujiBoku-Regular.ttf` | OFL-1.1 (`apps/engine/fonts/display/yuji-boku/OFL.txt`) |
+| Kaisei Tokumin | Japanese | Copyright 2020 The Kaisei Project Authors (https://github.com/Font-Kai/Kaisei) | `ofl/kaiseitokumin/KaiseiTokumin-ExtraBold.ttf` | OFL-1.1 (`apps/engine/fonts/display/kaisei-tokumin/OFL.txt`) |
+| Zen Maru Gothic | Japanese | Copyright 2021 The Zen Maru Gothic Project Authors (https://github.com/googlefonts/zen-marugothic) | `ofl/zenmarugothic/ZenMaruGothic-Black.ttf` | OFL-1.1 (`apps/engine/fonts/display/zen-maru-gothic/OFL.txt`) |
+| Zen Kaku Gothic New | Japanese | Copyright 2022 The Zen Kaku Gothic Project Authors (https://github.com/googlefonts/zen-kakugothic) | `ofl/zenkakugothicnew/ZenKakuGothicNew-Black.ttf` | OFL-1.1 (`apps/engine/fonts/display/zen-kaku-gothic-new/OFL.txt`) |
 
 ## App icons
 

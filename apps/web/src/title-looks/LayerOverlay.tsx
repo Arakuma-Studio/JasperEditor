@@ -64,7 +64,20 @@ export function handlesOf(
 	let edge = 0;
 	for (const h of layerHandles(def, p)) {
 		const name = h.params[0]!;
-		if (h.kind === 'distance') {
+		if (h.target === 'light') {
+			// The look's light, from the layer that follows it (TL-092 `target: 'light'`).
+			out.push({
+				kind: 'angle',
+				param: name,
+				base: 0,
+				value: num(light.angle),
+				radius: Math.min(f.halfW, f.halfH) * 0.8,
+				light: true,
+			});
+		} else if (h.kind === 'distance' && p.useLight === true && name === 'distance') {
+			// A shadow following the light moves along it.
+			out.push({ kind: 'axis', param: name, dir: direction(f, light.angle + 180), value: num(p[name]) });
+		} else if (h.kind === 'distance') {
 			const start = base + (name === 'width' ? num(p.offset) : 0);
 			out.push({ kind: 'distance', param: name, ...edgeAnchor(f, edge++), start, value: num(p[name]) });
 		} else if (h.kind === 'offset') {
@@ -107,7 +120,8 @@ function path(q: Quad, view: ProgramOverlayHostProps['view']): string {
 	return `${q.map((p, i) => `${i ? 'L' : 'M'}${toScreen(view, p as Vec2).join(' ')}`).join(' ')} Z`;
 }
 
-const handleKey = (h: Handle) => (h.kind === 'offset' ? h.distanceParam : h.param);
+const handleKey = (h: Handle) =>
+	h.kind === 'offset' ? h.distanceParam : h.kind === 'angle' && h.light ? `light-${h.param}` : h.param;
 
 export function LookLayerOverlay(props: ProgramOverlayHostProps) {
 	const { session, doc, view, transport } = props;
@@ -181,7 +195,10 @@ export function LookLayerOverlay(props: ProgramOverlayHostProps) {
 				([param, value]) =>
 					({
 						type: 'param.set',
-						target: isLight ? lightPath() : ['appearance', focus.fxId, focus.target, param],
+						target:
+							isLight || (h.kind === 'angle' && h.light)
+								? lightPath()
+								: ['appearance', focus.fxId, focus.target, param],
 						value,
 						at: { sequenceFrame: frame },
 					}) as Command,

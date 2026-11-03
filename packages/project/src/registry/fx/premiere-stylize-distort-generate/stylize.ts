@@ -2,13 +2,14 @@
 // Brush Strokes, Color Emboss, Emboss, Find Edges, Mosaic, Posterize.
 // Angles of these After Effects-derived controls are compass angles (0° = up, clockwise), as in Premiere: an Emboss
 // Direction of 45° lights the picture from the upper right. GLSL: `psdg_compass(deg)` (screen vector, y down).
-import type { EffectSpec } from '../../effects.ts';
+import type { EffectParams, EffectSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
 import { GLSL_BLEND } from '../glsl/blend.ts';
 import { GLSL_COLOR } from '../glsl/color.ts';
 import { fxParam } from '../params.ts';
 import { gaussianBlurPasses } from '../passes.ts';
-import type { GlslChunk } from '../shader.ts';
+import { type GlslChunk, gpuPasses } from '../shader.ts';
+import { colorPaint, gradientPaint, lookEffectGpu, SOURCE_FACE } from '../title-look/look-effect.ts';
 import { blendWithOriginalParam, GLSL_PSDG_BLEND, num } from './common.ts';
 import { GLSL_PSDG_HASH } from './noise-glsl.ts';
 
@@ -20,26 +21,80 @@ vec2 psdg_compass(float deg) { float a = radians(deg); return vec2(sin(a), -cos(
 `,
 };
 
+/**
+ * spec 19 §8 Outer Glow: Technique Soft and Precise are the look's `glow` layer (linear light, a precise falloff, from the
+ * edge or the picture, behind or as light). Classic is Premiere's glow, drawn as before.
+ */
+const alphaGlowClassic = (p: EffectParams) => p.technique !== 'soft' && p.technique !== 'precise';
+
+const alphaGlowLook = lookEffectGpu((p) => {
+	const end = p.useEndColor === true;
+	return [
+		{
+			type: 'glow',
+			params: {
+				technique: String(p.technique),
+				from: end ? 'distance' : String(p.from ?? 'edge'),
+				radius: Math.max(0, num(p.glow, 10)),
+				intensity: num(p.intensity, 100) * (Math.max(0, num(p.brightness, 255)) / 255),
+				// Fade Out off: the glow keeps its strength to the end of its radius.
+				spread: p.fadeOut === false ? 95 : num(p.glowSpread),
+				paint: end
+					? gradientPaint('shape', 0, [
+							[0, p.startColor],
+							[1, p.endColor],
+						])
+					: colorPaint(p.startColor),
+				blend: String(p.blend ?? 'behind'),
+				onFace: num(p.onFace, 15),
+			},
+		},
+		SOURCE_FACE,
+	];
+});
+
 export const ALPHA_GLOW = defineShaderEffect({
 	id: 'jasper.alpha-glow',
 	label: 'Alpha Glow',
 	category: 'Stylize',
 	description:
-		'Adds a coloured glow around the edges of the layer’s alpha channel, fading from Start Color to End Color outward.',
-	keywords: ['outer glow', 'halo', 'edge', 'aura', 'alpha'],
+		'Adds a coloured glow around the edges of the layer’s alpha channel, fading from Start Color to End Color outward. Technique Soft and Precise are an outer glow in linear light, from the edge or the picture, behind the layer or as light.',
+	keywords: ['outer glow', 'halo', 'edge', 'aura', 'alpha', 'title'],
 	expensive: true,
 	params: [
-		fxParam.number('glow', 'Glow', 10, { min: 0, max: 255, softMax: 100, step: 1 }),
+		fxParam.number('glow', 'Glow', 10, { min: 0, max: 1700, softMax: 100, step: 1 }),
 		fxParam.number('brightness', 'Brightness', 255, { min: 0, max: 255, step: 1 }),
 		fxParam.color('startColor', 'Start Color', [1, 1, 1, 1]),
 		fxParam.color('endColor', 'End Color', [0, 0, 0, 1]),
 		fxParam.toggle('useEndColor', 'Use End Color', false),
 		fxParam.toggle('fadeOut', 'Fade Out', true),
+		fxParam.choice(
+			'technique',
+			'Technique',
+			['classic', 'soft', 'precise'],
+			['Classic', 'Soft', 'Precise'],
+			'classic',
+		),
+		fxParam.choice('from', 'From', ['edge', 'layer'], ['Edge', 'Layer'], 'edge'),
+		fxParam.number(
+			'intensity',
+			'Intensity',
+			100,
+			{ min: 0, max: 1000, softMax: 300, step: 1 },
+			{ unit: '%' },
+		),
+		fxParam.percent('glowSpread', 'Spread', 0),
+		fxParam.choice('blend', 'Blend', ['behind', 'add'], ['Behind', 'Add as Light'], 'behind'),
+		fxParam.percent('onFace', 'Glow Over Layer', 15),
 	],
 	gpu: {
 		timeInvariant: true,
-		padding: (p) => Math.max(0, num(p.glow, 10)) * 1.2 + 2,
+		paramUniforms: alphaGlowClassic,
+		padding: (p, ctx) =>
+			alphaGlowClassic(p) ? Math.max(0, num(p.glow, 10)) * 1.2 + 2 : (alphaGlowLook.padding?.(p, ctx) ?? 0),
+		uniforms: (p, ctx) => (alphaGlowClassic(p) ? {} : (alphaGlowLook.uniforms?.(p, ctx) ?? {})),
 		passes: (p, ctx) => {
+			if (!alphaGlowClassic(p)) return gpuPasses(alphaGlowLook, p, ctx);
 			const g = Math.max(0, num(p.glow, 10)) * ctx.pxScale;
 			return [
 				{

@@ -8,6 +8,7 @@ import { pinnedCropOf } from '../render/crop.ts';
 import type { Animatable } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Clip, EffectInstance, Sequence, Transform } from '../schema/sequence.ts';
+import { TITLE_LOOK_EFFECT_ID } from '../title-looks/model.ts';
 import {
 	EFFECT_PRESET_FORMAT,
 	EFFECT_PRESET_VERSION,
@@ -135,15 +136,21 @@ export function buildEffectPreset(
 	const missing = (s.effectIds ?? []).filter((id) => !stack.some((fx) => fx.id === id));
 	if (missing.length)
 		throw new PresetBuildError('E_NOT_FOUND', `The clip has no effect instance ${missing.join(', ')}`);
-	const effects: PresetEffect[] = stack
-		.filter((fx) => fx !== pinned && s.effectIds?.includes(fx.id))
-		.map((fx) => ({
-			id: fx.id,
-			effectId: fx.effectId,
-			effectVersion: fx.effectVersion,
-			enabled: fx.enabled,
-			params: paramsOf(fx, timing, seq),
-		}));
+	// TL-055: an effect preset is a stack of ordinary effects. A look is its own library, and its appearance would not travel.
+	const chosen = stack.filter((fx) => fx !== pinned && s.effectIds?.includes(fx.id));
+	const ordinary = chosen.filter((fx) => fx.effectId !== TITLE_LOOK_EFFECT_ID);
+	if (chosen.length > 0 && ordinary.length === 0 && !Object.keys(intrinsic).length)
+		throw new PresetBuildError(
+			'E_INVALID_PARAM',
+			'A look is not an effect: save it as a look, or choose other effects of this clip',
+		);
+	const effects: PresetEffect[] = ordinary.map((fx) => ({
+		id: fx.id,
+		effectId: fx.effectId,
+		effectVersion: fx.effectVersion,
+		enabled: fx.enabled,
+		params: paramsOf(fx, timing, seq),
+	}));
 	if (!Object.keys(intrinsic).length && !effects.length)
 		throw new PresetBuildError(
 			'E_INVALID_PARAM',

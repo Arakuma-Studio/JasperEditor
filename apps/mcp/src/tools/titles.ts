@@ -43,7 +43,7 @@ import {
 	type Rational,
 	RECIPE_BOUNDS,
 	recipeBoundsProblem,
-	recipeOfAppearance,
+	recipeFromAppearance,
 	type Sequence,
 	scaleAnimationFrames,
 	sequenceTimecode,
@@ -203,7 +203,7 @@ const projectEntry = (l: TitleLook): LookEntry => ({
 	tags: l.tags ?? [],
 	...(l.category ? { category: l.category } : {}),
 	source: 'project',
-	recipe: recipeOfAppearance(l.appearance),
+	recipe: recipeFromAppearance(l.appearance),
 	colorways: l.colorways ?? [],
 	apply: { lookId: l.id },
 });

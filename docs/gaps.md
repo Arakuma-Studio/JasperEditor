@@ -895,12 +895,28 @@ Status of the foundation; streams still in progress update this list. Evidence: 
 - **`graphics.newTextLayer` still inserts the word "Text"** at the centre: it runs from menus and for agents, with no pointer. The Type
   tool types in place.
 - **Style check badge** (TL-094): the rendered check (contrast with the picture behind the title) is listed as not measured in the
-  panel; only `title_check` measures it. The badge reads `lintAppearance` from the looks library and shows nothing in a build
-  without it.
+  panel; only `title_check` measures it. The badge runs the library's `lintAppearance` (TL-056).
 - **User looks** (TL-054) are not in the Looks tab: it lists the library and the project's looks. Saving, renaming and deleting
-  project looks work; the engine-backed store and import and export belong to the library stream.
+  project looks work there. The engine-backed store (`/api/title-looks`: list, save, rename, delete, import, export) exists and is
+  tested, but no panel calls it yet.
+- **The library is partial** (TL-050, TL-052): 30 of the 60 looks and 14 of the 16 templates; Brush and 3D hold no looks yet. They wait for
+  the finishes and generators; `pnpm exec vitest run packages/project/test/title-look-library.test.ts` holds its checks.
+- **Rendered style checks are not in the lint** (TL-056): backdrop contrast needs a measurement from the caller. Without one it is reported
+  as unmeasured, never as passed. `title_check` provides it (TL-102).
 - **Software rendering is slow**: ≈ 1.3 s per 1080p frame for a six-layer look on a title-sized box on SwiftShader, and an
   animated title redraws its whole stack every frame ([performance.md](performance.md) §7). Nothing has been measured on a GPU.
+- **Look effects on full-frame clips pay for the shape field** (every §8 effect but Deep Glow, which has its own passes): six
+  full-size passes that Gradient Overlay, Floor Reflection and Perspective Shadow do not read. Nothing on a GPU, measurable on software.
+- **Gradient Overlay and Contour Lines as effects take two or three colours, not a gradient**: an effect param has no gradient type
+  (TL-091 is a look's control). In a look they take any gradient.
+- **The field has no edge on very gradual alpha** (the seed pass skips neighbourhoods changing by under 0.002): a Keyline, Contour Lines
+  or rim traced around a soft picture, such as a glow's tail when the effect comes after a glow in the stack, comes out ragged. Seen in
+  `title-look.e2e.test.ts`'s glows frames. Pachislop's Keyline threshold was not ported on the grounds that the local threshold
+  replaces it; on soft alpha it does not. The fix belongs in the field's seed pass (`title-look/glsl.ts`, the foundation's core).
+- **Deep Glow is slow on software GL**: ≈ 7 s per frame at full resolution for a title, ≈ 17 s for a full frame on this host
+  ([performance.md](performance.md) §7).
+- **Handles (TL-092) are declared, not drawn**: shadow offset and light angle are in each layer's `handles`; the Program monitor
+  overlay that reads them belongs to the UI stream. Standalone effects have no handles beyond `point` params.
 
 **Agents (TL-100…TL-107):** the `titles` toolset, `title_check`, the `title-art` proposal feature, `still-sheet` jobs and effects
 discovery are in; evidence and thresholds in [wp-notes/title-looks-agents.md](wp-notes/title-looks-agents.md). Limits:

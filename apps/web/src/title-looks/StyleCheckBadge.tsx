@@ -79,7 +79,9 @@ export function StyleCheckBadge(props: {
 									data-severity={i.severity}
 								>
 									<div className="min-w-0 flex-1">
-										<p className={cx('text-pr-small', TONE[i.severity])}>{t(i.message)}</p>
+										<p className={cx('text-pr-small', TONE[i.severity])}>
+											{t(i.template, ...i.args.map((a) => t(a)))}
+										</p>
 										<p className="text-pr-small text-pr-dim">{t(i.rule)}</p>
 									</div>
 									{i.fix ? (

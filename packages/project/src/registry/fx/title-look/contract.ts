@@ -56,7 +56,7 @@ export type LayerBlur = {
 };
 
 /** Passes a layer runs before its own (shared intermediates beyond the blur). See "How to extend". */
-export type LayerPrepass = (p: LayerParams, ctx: LayerPlanContext) => readonly ShaderPass[];
+export type LayerPrepass = (p: LayerParams, ctx: LayerPrepassContext) => readonly ShaderPass[];
 
 export type LayerPlanContext = {
 	look: ResolvedAppearance;
@@ -64,6 +64,18 @@ export type LayerPlanContext = {
 	pxPerPercent: number;
 	/** Silhouette growth of the layers above this one, percent of the unit (TL §5.1 rim: cumulative). */
 	base: number;
+};
+
+export type LayerPrepassContext = LayerPlanContext & {
+	/** `pxPerPercent` is exact (the text size); false = an upper bound, the true unit comes from the alpha bounds. */
+	unitKnown: boolean;
+	/** The GLSL of `tl_px` and `tl_unit` (a blur prepass needs nothing else). */
+	unit: GlslChunk;
+	/**
+	 * `pass` with what the layer's own pass has: `frag` may use `tl_surface()`, `tl_px`, `tlPaint_<param>(s)`, the
+	 * layer's `u_<param>` and `tl_finish`. Without it a prepass sees the framework's prelude only.
+	 */
+	surfacePass: (pass: ShaderPass) => ShaderPass;
 };
 
 /** What the shape field must get right for a layer: distance from the shape edge, percent of the unit. */
@@ -76,6 +88,16 @@ export type SummaryContext = {
 
 /** One line in the Appearance list (TL-089): a swatch, a sentence and the primary value's param. */
 export type LayerSummary = { swatch: Paint | null; text: string; primary: string | null };
+
+/** An on-canvas handle of a layer (TL-092). */
+export type LayerHandle = {
+	kind: 'distance' | 'offset' | 'angle' | 'position';
+	params: readonly string[];
+	/** Whose `params`: the layer's (default), or the look's `light` (address `["appearance", fxId, "light", <param>]`). */
+	target?: 'layer' | 'light';
+	/** The handle exists only while this param has this value (a shadow following the light has no angle of its own). */
+	when?: { param: string; value: boolean | string };
+};
 
 export type TitleLayerType = {
 	/** `face`, `rim`, …; a generator layer is `generator:<id>`. Stored in documents: never rename. */
@@ -91,6 +113,11 @@ export type TitleLayerType = {
 	reach?: (p: LayerParams) => LayerReach;
 	/** The silhouette growth this layer adds for the layers below it (rims; default 0). */
 	grows?: (p: LayerParams) => number;
+	/**
+	 * The layer starts from the whole look's silhouette wherever it sits: `s.base` and padding count every layer's
+	 * growth, not only that of the layers above it (a reflection on top of the stack mirrors about the outermost rim).
+	 */
+	outermost?: boolean;
 	/** What the shape field must reach for this layer. Default: `reach`'s largest side outside, nothing inside. */
 	fieldReach?: (p: LayerParams) => Partial<LayerFieldReach>;
 	/** A blur the layer reads through `u_tlBlur`, or null. */
@@ -99,9 +126,11 @@ export type TitleLayerType = {
 	prepass?: LayerPrepass;
 	/** The layer's picture changes with time on its own (generators, grain): the clip then redraws every frame. */
 	timeDependent?: (p: LayerParams) => boolean;
+	/** TL-051: colours come from the shader, not from paints: the planner binds `tl_recolor`'s ramp (`recolor.ts`). */
+	recolors?: boolean;
 	summary: (p: LayerParams, ctx: SummaryContext) => LayerSummary;
-	/** Program-monitor handles (TL-092): param names by handle kind. Read by the UI. */
-	handles?: readonly { kind: 'distance' | 'offset' | 'angle' | 'position'; params: readonly string[] }[];
+	/** Program-monitor handles (TL-092). Read by the UI. */
+	handles?: readonly LayerHandle[];
 };
 
 export type TitleLayerInit = Omit<TitleLayerType, 'finish'> & { finish?: boolean };

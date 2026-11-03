@@ -9,7 +9,7 @@ import {
 	type EffectInstance,
 	type LookRecipe,
 	layerHandles,
-	recipeOfAppearance,
+	recipeFromAppearance,
 	TITLE_LOOK_EFFECT_ID,
 	TITLE_LOOK_INTENSITY,
 	TitleLookSchema,
@@ -107,12 +107,12 @@ describe('quick controls (TL-089)', () => {
 	});
 });
 
-describe('recipeOfAppearance (TL-087)', () => {
+describe('recipeFromAppearance (TL-087)', () => {
 	it('gives back what the look was made from', () => {
 		const { h, t } = applied();
 		const a = (clipLook((h.seq.clips[t] as unknown as { effects: EffectInstance[] }).effects)!
 			.appearance as Appearance)!;
-		const r = recipeOfAppearance(a);
+		const r = recipeFromAppearance(a);
 		expect(r.palette).toEqual(recipe.palette);
 		expect(r.light).toEqual(recipe.light);
 		expect(r.font).toEqual(recipe.font);
@@ -130,10 +130,10 @@ describe('recipeOfAppearance (TL-087)', () => {
 			.appearance as Appearance;
 		const again = applied();
 		again.h.ok([
-			{ type: 'look.apply', clipIds: [again.t], look: { name: 'Again', recipe: recipeOfAppearance(a) } },
+			{ type: 'look.apply', clipIds: [again.t], look: { name: 'Again', recipe: recipeFromAppearance(a) } },
 		]);
 		const b = again.fx().appearance as Appearance;
-		expect(recipeOfAppearance(b)).toEqual(recipeOfAppearance(a));
+		expect(recipeFromAppearance(b)).toEqual(recipeFromAppearance(a));
 	});
 
 	it('drops params of another finish and layers this build does not know', () => {
@@ -149,7 +149,7 @@ describe('recipeOfAppearance (TL-087)', () => {
 				params: { paint: { value: { kind: 'source' }, keyframes: [] }, stale: { value: 1, keyframes: [] } },
 			},
 		];
-		const r = recipeOfAppearance({ ...a, layers } as Appearance);
+		const r = recipeFromAppearance({ ...a, layers } as Appearance);
 		expect(r.layers.map((l) => l.type)).toEqual(['face']);
 		expect(r.layers[0]!.params).toEqual({ paint: { kind: 'source' } });
 	});
@@ -202,7 +202,16 @@ describe('layer handles (TL-092)', () => {
 
 	it('come from the layer type', () => {
 		expect(of('rim')).toEqual([{ kind: 'distance', params: ['width'] }]);
-		expect(of('shadow')).toEqual([{ kind: 'offset', params: ['angle', 'distance'] }]);
+		expect(of('shadow')).toEqual([
+			{ kind: 'offset', params: ['angle', 'distance'], when: { param: 'useLight', value: false } },
+		]);
+	});
+
+	it('only while their `when` holds: a shadow following the light offers its distance and the light’s angle', () => {
+		expect(of('shadow', { useLight: true as never })).toEqual([
+			{ kind: 'distance', params: ['distance'], when: { param: 'useLight', value: true } },
+			{ kind: 'angle', params: ['angle'], target: 'light', when: { param: 'useLight', value: true } },
+		]);
 	});
 
 	it('add the angle of a gradient paint, only while the paint is a gradient', () => {
