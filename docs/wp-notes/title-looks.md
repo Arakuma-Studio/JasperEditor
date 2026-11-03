@@ -445,9 +445,9 @@ Port map: `licenses/ported/pachislop-rendering.md`, `licenses/ported/pachislop-e
 | `fxPreviewScale` 0.5 against full | SSIM 0.964 | same |
 | Frame cost, six layers, 1080p, SwiftShader | 1.3 s title-sized box, 5.8 s frame-sized | [performance.md](../performance.md) §7 |
 | Glows in Program against a Remotion still: keyed `deepGlow`, `reflection`, `innerShadow` on a moving sequence light, Deep Glow, Perspective Shadow and a keyed Keyline as effects, frames 0, 30, 60 | SSIM 1.0000, max difference 0 | `REMOTION_E2E=1 pnpm exec vitest run packages/compositions/test/title-look.e2e.test.ts` |
-| Deep Glow energy: a 40 × 40 emitter of 1 at radius 40–120 %, falloff 10–90 % | 88–105 % of 1 600 (8-bit tails and clipping) | `pnpm exec vitest run packages/compositions/test/title-look-glows-gl.test.ts -t energy` |
-| Deep Glow variance against Σ wσ² of its octaves at 100 %, 50 %, 25 % resolution | within −15 % / +4 %, x and y within 3 % | same, `-t variance` |
-| Deep Glow radius across a pyramid level (116 → 124 %) | largest alpha step 6 / 255 | same, `-t continuous` |
+| Deep Glow energy: a 40 × 40 emitter of 1 at radius 40–120 %, falloff 10–90 % | inside the test bounds, 88–105 % of 1 600 (8-bit tails and clipping); exact values not logged | `pnpm exec vitest run packages/compositions/test/title-look-glows-gl.test.ts -t energy` |
+| Deep Glow variance against Σ wσ² of its octaves at 100 %, 50 %, 25 % resolution | inside the test bounds, −15 % / +4 %, x and y within 3 %; exact values not logged | same, `-t variance` |
+| Deep Glow radius across a pyramid level (116 → 124 %) | largest alpha step at most 6 / 255 (test bound) | same, `-t continuous` |
 | Look effects at half resolution against full, perturbed params | SSIM above 0.93 for all ten | same, `-t "half the resolution"` |
 | Deep Glow cost, 1080p, SwiftShader | 7.0 s title box, 17.2 s full frame | [performance.md](../performance.md) §7 |
 
