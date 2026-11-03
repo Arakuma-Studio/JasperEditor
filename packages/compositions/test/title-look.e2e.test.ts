@@ -254,7 +254,7 @@ describe.runIf(enabled && !!CHROME)(
 			media.page(
 				'index.html',
 				'text/html',
-				`<!doctype html><html><body style="margin:0;background:#000"><script>window.__tlDraws = 0; const d = WebGL2RenderingContext.prototype.drawArrays; WebGL2RenderingContext.prototype.drawArrays = function (...a) { window.__tlDraws++; return d.apply(this, a); }; window.__docs = ${JSON.stringify({ animated: build(), still: build({ still: true }), glows: build({ glows: true }) })};</script><script src="/bundle.js"></script></body></html>`,
+				`<!doctype html><html><body style="margin:0;background:#000"><script>window.__tlDraws = 0; const d = WebGL2RenderingContext.prototype.drawArrays; WebGL2RenderingContext.prototype.drawArrays = function (...a) { window.__tlDraws++; return d.apply(this, a); }; window.__docs = ${JSON.stringify({ animated: build(), still: build({ still: true }) })};</script><script src="/bundle.js"></script></body></html>`,
 			);
 			browser = await chromium.launch({
 				executablePath: CHROME!,
@@ -300,7 +300,12 @@ describe.runIf(enabled && !!CHROME)(
 			return decode(output, doc.settings.width, doc.settings.height);
 		}
 
-		async function programFrame(frame: number, name: string, player = 'animated'): Promise<Raw> {
+		async function programFrame(
+			frame: number,
+			name: string,
+			player = 'animated',
+			settleMs = 150,
+		): Promise<Raw> {
 			await page.evaluate(
 				([p, f]) => {
 					(window as never as { __fxPlayer: { seek(a: string, b: number): void } }).__fxPlayer.seek(
@@ -313,7 +318,7 @@ describe.runIf(enabled && !!CHROME)(
 			// Settle: the Player redraws asynchronously; two identical screenshots in a row end the wait.
 			let prev = null as Buffer | null;
 			for (let i = 0; i < 40; i++) {
-				await page.waitForTimeout(150);
+				await page.waitForTimeout(settleMs);
 				const shot = await page.locator(`#${player}`).screenshot();
 				if (prev?.equals(shot) && i > 2) break;
 				prev = shot;
@@ -397,9 +402,19 @@ describe.runIf(enabled && !!CHROME)(
 
 		it('Program and export agree on light, shadow and reflection, with keys and a moving global light', async () => {
 			const doc = build({ glows: true });
+			// Mounted here, not with the page: on software GL its first frame takes longer than a page load may.
+			await page.evaluate(
+				(d) =>
+					(window as never as { __fxPlayer: { setDoc(a: string, b: unknown): void } }).__fxPlayer.setDoc(
+						'glows',
+						d,
+					),
+				doc,
+			);
 			for (const frame of [0, 30, 60]) {
 				const exported = await still(doc, frame, `glows-export-${frame}`);
-				const program = await programFrame(frame, `glows-program-${frame}`, 'glows');
+				// A frame here takes seconds: two equal screenshots 150 ms apart would prove nothing.
+				const program = await programFrame(frame, `glows-program-${frame}`, 'glows', 2500);
 				const score = ssim(luma(program), luma(exported), W, H);
 				console.info(
 					`[title-look] glows frame ${frame}: Program vs export SSIM ${score.toFixed(4)}, max ${maxDiff(program, exported)}`,

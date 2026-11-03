@@ -1238,7 +1238,8 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Looks: glows', { ti
 			const before = pixel(none, none.box.x + 200, none.box.y + 80);
 			expect(inside[1]).toBeGreaterThan(before[1]);
 			// Outside the layer box there is light, with alpha, fading out.
-			const out = (d: number) => pixel(glow, glow.box.x + glow.box.w + d, glow.box.y + 80)[3];
+			// The card stops at 90 % of the box: distances are from the picture's edge.
+			const out = (d: number) => pixel(glow, glow.box.x + glow.box.w * 0.9 + d, glow.box.y + 80)[3];
 			expect(out(6)).toBeGreaterThan(out(40));
 			expect(out(6)).toBeGreaterThan(10);
 		});
