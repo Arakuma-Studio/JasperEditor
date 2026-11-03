@@ -3,6 +3,7 @@
 // mask is the silhouette, not the alpha, so a fading glyph keeps its shadow and only fades. Outside the canvas counts as
 // empty, and the blur has transparent padding to read, so a clip filling its box is shaded from its box's edges.
 import { fmtDistance, layerSwatch, lp, paintText, type TitleLayerInit } from '../contract.ts';
+import { GLSL_TL_STAGE } from '../glsl.ts';
 import { GLSL_TL_LIGHT } from '../light.ts';
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
@@ -12,7 +13,8 @@ const sigmaOf = (p: Record<string, unknown>) => num(p.blur) / 3;
 
 const body = (blurred: boolean) => /* glsl */ `
 vec4 tl_layer(TlSurface s) {
-  vec2 dir = u_useLight ? -u_tlLightDir : fx_dir(u_angle);
+  // Angle on screen: the shadow falls the same way however the title turns.
+  vec2 dir = u_useLight ? -u_tlLightDir : tl_fromScreen(fx_dir(u_angle));
   vec2 q = s.uv - dir * tl_px(u_distance) / u_canvasSize;
   float inside = 0.0;
   if (all(greaterThanEqual(q, vec2(0.0))) && all(lessThanEqual(q, vec2(1.0))))
@@ -36,7 +38,7 @@ export const INNER_SHADOW_LAYER: TitleLayerInit = {
 		...lp.paint('paint', 'Paint', { kind: 'role', role: 'shadow' }),
 		lp.percent('opacity', 'Opacity', 60),
 	],
-	shader: (p) => ({ glsl: body(sigmaOf(p) > 0), include: [GLSL_TL_LIGHT] }),
+	shader: (p) => ({ glsl: body(sigmaOf(p) > 0), include: [GLSL_TL_LIGHT, GLSL_TL_STAGE] }),
 	blur(p) {
 		const sigma = sigmaOf(p);
 		if (sigma <= 0) return null;

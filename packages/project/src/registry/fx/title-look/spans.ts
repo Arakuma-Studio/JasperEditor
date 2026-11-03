@@ -6,7 +6,7 @@
 // Port map: licenses/ported/pachislop-finishes.md.
 import { GLSL_DATA } from '../glsl/data.ts';
 import { type FxUniformValue, type GlslChunk, hashFloats, type ShaderPass } from '../shader.ts';
-import { GLSL_TL_PAINT } from './glsl.ts';
+import { GLSL_TL_PAINT, GLSL_TL_SURFACE } from './glsl.ts';
 
 /** A box `[x0, y0, x1, y1]` in text box px. */
 export type SpanBox = readonly [number, number, number, number];
@@ -18,6 +18,8 @@ export type SpanGlyph = {
 	line: number;
 	/** Rest → drawn, row-major 3×3 homography in text box px (per-character 3D); absent = not moved. */
 	toDrawn?: readonly number[];
+	/** TL-093: the finish its run gives the letter (`content.runs[].finish`); absent = the look's own. */
+	finish?: string;
 };
 
 /** `FxTitleLook.textSpans`: what the text layer hands to a look. */
@@ -29,11 +31,15 @@ export type FxTextSpans = {
 	lines: number;
 	/** The text at rest, layer px: the box of a `block` span. */
 	block: SpanBox;
+	/** TL-093: the finishes runs give letters; a glyph's record holds its slot, 0 = the look's own, k + 1 = `finishes[k]`. */
+	finishes: readonly string[];
 };
 
 const RECORD_TEXELS = 4;
 /** Most glyphs in the records: the owner pass is linear in them, and the data texture must stay bounded. */
 export const MAX_SPAN_GLYPHS = 4096;
+/** Most distinct run finishes in one text: a slot is a bit of an int mask in `tl_runShare`. More fall back to the look's. */
+export const MAX_RUN_FINISHES = 16;
 
 /** The inverse of a row-major 3×3, normalised so the last element is 1, or null when it is singular. */
 function invert3(m: readonly number[]): number[] | null {
@@ -98,23 +104,41 @@ export function buildTextSpans(input: readonly SpanGlyph[]): FxTextSpans | null 
 			box[2] = Math.max(box[2], g.box[2]);
 			box[3] = Math.max(box[3], g.box[3]);
 		}
+	const finishes: string[] = [];
+	const slotOf = (f: string | undefined) => {
+		if (typeof f !== 'string' || f === '') return 0;
+		const at = finishes.indexOf(f);
+		if (at >= 0) return at + 1;
+		if (finishes.length >= MAX_RUN_FINISHES) return 0;
+		finishes.push(f);
+		return finishes.length;
+	};
 	const texels = new Float32Array((glyphs.length * RECORD_TEXELS + lines.length) * 4);
 	glyphs.forEach(({ g, inv, scale }, i) => {
 		const at = i * RECORD_TEXELS * 4;
 		texels.set([inv[0]!, inv[1]!, inv[2]!, inv[3]!, inv[4]!, inv[5]!, inv[6]!, inv[7]!], at);
 		texels.set(g.box, at + 8);
-		texels.set([lineIndex.get(g.line)!, scale, 0, 0], at + 12);
+		texels.set([lineIndex.get(g.line)!, scale, slotOf(g.finish), 0], at + 12);
 	});
 	lines.forEach((b, i) => {
 		texels.set(b, (glyphs.length * RECORD_TEXELS + i) * 4);
 	});
-	return { texels, key: hashFloats(texels), glyphs: glyphs.length, lines: lines.length, block };
+	// The slots are numbers in the records: the ids they stand for belong in the key.
+	const key = finishes.length ? `${hashFloats(texels)}:${finishes.join(',')}` : hashFloats(texels);
+	return { texels, key, glyphs: glyphs.length, lines: lines.length, block, finishes };
 }
 
-/** A stored appearance has a gradient paint on an enabled layer, so its text layer should report its glyphs. */
-export function appearanceWantsTextSpans(appearance: unknown): boolean {
+/**
+ * A stored appearance has a gradient paint on an enabled layer, or the text's runs give letters a finish (TL-093), so its
+ * text layer should report its glyphs.
+ */
+export function appearanceWantsTextSpans(
+	appearance: unknown,
+	runs?: readonly { finish?: string | undefined }[],
+): boolean {
 	const layers = (appearance as { layers?: unknown } | undefined)?.layers;
 	if (!Array.isArray(layers)) return false;
+	if (runs?.some((r) => typeof r?.finish === 'string')) return true;
 	const gradient = (v: unknown) => (v as { kind?: unknown } | null | undefined)?.kind === 'gradient';
 	for (const l of layers as { enabled?: boolean; params?: Record<string, unknown> }[]) {
 		if (l?.enabled === false) continue;
@@ -137,7 +161,10 @@ export function textSpanUniforms(s: FxTextSpans | null | undefined): Record<stri
 	};
 }
 
-/** `u_tlSpans`, `RECORD_TEXELS` per glyph: (H00 H01 H02 H10) (H11 H12 H20 H21) (ink box) (line, scale), H = drawn → rest. */
+/**
+ * `u_tlSpans`, `RECORD_TEXELS` per glyph: (H00 H01 H02 H10) (H11 H12 H20 H21) (ink box) (line, scale, finish slot),
+ * H = drawn → rest.
+ */
 export const GLSL_TL_SPAN_RECORDS: GlslChunk = {
 	name: 'title-look/span-records',
 	deps: [GLSL_DATA],
@@ -215,3 +242,21 @@ void main() {
 }`,
 	};
 }
+
+/**
+ * TL-093: how much of this pixel belongs to letters whose run finish slot is in `mask` (bit k: slot k), from the owner
+ * pass: its owner's share, and at a seam between two letters the runner-up's. Needs `textSpanPass`.
+ */
+export const GLSL_TL_SPAN_FINISH: GlslChunk = {
+	name: 'title-look/span-finish',
+	deps: [GLSL_TL_SPAN_RECORDS, GLSL_TL_SURFACE],
+	source: /* glsl */ `
+float tl_runShare(TlSurface s, int mask) {
+  ivec2 size = textureSize(u_tlSpan, 0);
+  vec4 o = texelFetch(u_tlSpan, clamp(ivec2(s.uv * vec2(size)), ivec2(0), size - 1), 0);
+  int a = int(fx_texel(u_tlSpans, int(o.x) * ${RECORD_TEXELS} + 3).z + 0.5);
+  int b = int(fx_texel(u_tlSpans, int(o.y) * ${RECORD_TEXELS} + 3).z + 0.5);
+  return (((mask >> a) & 1) == 1 ? 1.0 - o.z : 0.0) + (((mask >> b) & 1) == 1 ? o.z : 0.0);
+}
+`,
+};

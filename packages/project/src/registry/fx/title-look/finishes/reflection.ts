@@ -4,6 +4,7 @@
 import { GLSL_TL_ENV, TL_ENV_LABELS, TL_ENV_PRESETS } from '../../glsl/title-env.ts';
 import { GLSL_TL_RELIEF, reliefPasses, reliefReach } from '../../glsl/title-relief.ts';
 import { defineFinish, lp } from '../contract.ts';
+import { GLSL_TL_STAGE } from '../glsl.ts';
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
@@ -22,13 +23,14 @@ export const FINISH_REFLECTION = defineFinish({
 		lp.number('reflectionDepth', 'Depth', 110, { min: 0, max: 1000, softMax: 400, step: 1 }, { unit: '%' }),
 		lp.toggle('reflectionFit', 'Fit to Stroke Width', true),
 	],
-	include: [GLSL_TL_RELIEF, GLSL_TL_ENV],
+	include: [GLSL_TL_RELIEF, GLSL_TL_ENV, GLSL_TL_STAGE],
 	glsl: /* glsl */ `
 vec4 tl_finish(vec4 paint, TlSurface s) {
   vec3 c = tl_straight(paint);
   float k = tl_px(max(u_reflectionSize, 0.05)) * u_reflectionDepth * 0.01;
   vec3 n = tl_reliefNormal(s, k);
-  vec3 r = tl_mirror(n);
+  // The room is on screen: the mirrored ray goes out of the layer (the title turns, the room does not).
+  vec3 r = tl_toScreen(tl_mirror(n));
   float rot = radians(u_reflectionRotation);
   float blur = u_reflectionBlur * 0.01 * 0.6;
   // No picture bound (none chosen, or offline: the chip and the export warning say so): the preset.

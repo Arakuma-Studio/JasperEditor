@@ -52,7 +52,7 @@ import {
 } from './glsl.ts';
 import { paintOf, paintParts } from './paint.ts';
 import { activeParamSpecs, titleFinish, titleLayerType, withDefaults } from './registry.ts';
-import { type FxTextSpans, textSpanPass, textSpanUniforms } from './spans.ts';
+import { type FxTextSpans, GLSL_TL_SPAN_FINISH, textSpanPass, textSpanUniforms } from './spans.ts';
 
 /** `FxStructures.titleLook`: what a look instance needs at a frame. */
 export type FxTitleLook = {
@@ -68,7 +68,61 @@ export type FxTitleLook = {
 	span?: { from: number; to: number; frames: number };
 	/** TL-036: the text layer's glyph and line boxes at this frame; absent on other clips (spans act as `block`). */
 	textSpans?: FxTextSpans | null;
+	/**
+	 * The look's stage: the layer's x and y axes on screen at this frame, unit vectors `[xx, xy, yx, yy]`
+	 * (`lookOrientation`). Lights, environments and shadow directions stay fixed on screen. Absent = upright.
+	 */
+	orient?: LookOrientation | null;
+	/** The layer turns or mirrors at some frame of the clip: padding is the same on every side (`clipLookTurns`). */
+	turns?: boolean;
 };
+
+/** The layer's x and y axes on screen, unit vectors: `[xx, xy, yx, yy]`. */
+export type LookOrientation = readonly [number, number, number, number];
+
+/**
+ * The rotation and mirroring of a layer map (`x' = a·x + c·y + e`, `y' = b·x + d·y + f`): the orthogonal part of its
+ * linear part (polar decomposition), so scale and skew do not tilt the light. Null = upright, or no orientation at all.
+ */
+export function lookOrientation(
+	m: { a: number; b: number; c: number; d: number } | null | undefined,
+): LookOrientation | null {
+	if (!m || ![m.a, m.b, m.c, m.d].every(Number.isFinite)) return null;
+	const mirrored = m.a * m.d - m.b * m.c < 0;
+	// Mirrored: the rotation of the map with its y axis flipped, then the flip.
+	const y = mirrored ? m.b + m.c : m.b - m.c;
+	const x = mirrored ? m.a - m.d : m.a + m.d;
+	if (x === 0 && y === 0) return null;
+	if (y === 0 && x > 0 && !mirrored) return null;
+	const t = Math.atan2(y, x);
+	const cos = Math.cos(t);
+	const sin = Math.sin(t);
+	return mirrored ? [cos, sin, sin, -cos] : [cos, sin, -sin, cos];
+}
+
+/**
+ * The layer may turn or mirror somewhere in the clip (rotation keyed, driven, not upright, or a flip): its look's directions
+ * then move in the layer from frame to frame, so its canvas is padded alike on every side and keeps its size.
+ */
+export function clipLookTurns(clip: { transform?: unknown }): boolean {
+	const t = clip.transform as
+		| {
+				rotation?: { value?: unknown; keyframes?: unknown[]; expression?: { enabled?: boolean } };
+				flipH?: boolean;
+				flipV?: boolean;
+		  }
+		| null
+		| undefined;
+	if (!t) return false;
+	const r = t.rotation;
+	return (
+		t.flipH === true ||
+		t.flipV === true ||
+		(r?.keyframes?.length ?? 0) > 0 ||
+		r?.expression?.enabled === true ||
+		num(r?.value) % 360 !== 0
+	);
+}
 
 const DEG = Math.PI / 180;
 const num = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
@@ -95,6 +149,24 @@ type PlannedLayer = {
 	/** TL-051: colourways leave this layer alone. */
 	fixedColor: boolean;
 };
+
+/** TL-093: a layer drawn again with a finish runs give some letters, for the letters of span slot `slot`. */
+type LetterFinish = { slot: number; layer: PlannedLayer };
+
+/**
+ * The finishes runs give letters of a `letterFinish` layer (the face), other than its own: each one draws the layer with
+ * that finish where the owner pass says the pixel is one of those letters. Unknown ids are repaired away on load.
+ */
+function letterFinishes(l: PlannedLayer, spans: FxTextSpans | null | undefined): LetterFinish[] {
+	if (!l.def.letterFinish || !l.def.finish || !spans?.finishes.length) return [];
+	const own = String(l.params.finish ?? 'flat');
+	const out: LetterFinish[] = [];
+	spans.finishes.forEach((id, k) => {
+		if (id !== own && titleFinish(id))
+			out.push({ slot: k + 1, layer: { ...l, params: { ...l.params, finish: id } } });
+	});
+	return out;
+}
 
 /** The enabled layers of known types, bottom-first, with the growth above each. */
 function plannedLayers(look: ResolvedAppearance): PlannedLayer[] {
@@ -189,7 +261,12 @@ function layerPxPerPercent(tl: FxTitleLook, ctx: Pick<FxPlanContext, 'width' | '
 export function titleLookPadding(ctx: FxPlanContext): Partial<FxPadding> {
 	const tl = ctx.structures?.titleLook;
 	if (!tl) return {};
-	const r = tl.source ? appearanceClipReach(tl.source, tl.span) : lookReach(tl.appearance);
+	let r = tl.source ? appearanceClipReach(tl.source, tl.span) : lookReach(tl.appearance);
+	if (tl.turns || tl.orient) {
+		// Directions fixed on screen turn in the layer: every side as far as the farthest.
+		const m = Math.max(r.left, r.top, r.right, r.bottom);
+		r = { ...r, left: m, top: m, right: m, bottom: m };
+	}
 	const k = layerPxPerPercent(tl, ctx);
 	const px = (v: number) => (v > 0 ? Math.ceil(v * k) + PADDING_GUARD : 0);
 	const lean = Math.ceil(r.boxHeight * ctx.height);
@@ -278,7 +355,7 @@ type LayerPieces = {
 function layerPieces(
 	l: PlannedLayer,
 	look: ResolvedAppearance,
-	index: number,
+	index: number | string,
 	spans?: FxTextSpans | null,
 ): LayerPieces {
 	const finishId = String(l.params.finish ?? 'flat');
@@ -341,25 +418,38 @@ export function planTitleLook(ctx: FxPlanContext): readonly ShaderPass[] {
 	const unit: GlslChunk = tl.unitPx !== null ? GLSL_TL_UNIT_KNOWN : GLSL_TL_UNIT_BOUNDS;
 	const reach = lookReach(look);
 	const pieces = layers.map((l, i) => layerPieces(l, look, i, tl.textSpans));
-	const fieldInside = Math.max(reach.inside, ...pieces.map((p) => p.fieldInside));
+	const letters = layers.map((l) => letterFinishes(l, tl.textSpans));
+	const letterPieces = letters.map((ls, i) =>
+		ls.map((x) => layerPieces(x.layer, look, `${i}r${x.slot}`, tl.textSpans)),
+	);
+	let fieldOutside = reach.outside;
+	let fieldInside = Math.max(reach.inside, ...pieces.map((p) => p.fieldInside));
+	for (const x of letters.flat()) {
+		const fi = titleFinish(String(x.layer.params.finish))?.fieldReach?.(x.layer.params) ?? {};
+		fieldOutside = Math.max(fieldOutside, x.layer.base + num(fi.outside));
+		fieldInside = Math.max(fieldInside, num(fi.inside));
+	}
+	for (const p of letterPieces.flat()) fieldInside = Math.max(fieldInside, p.fieldInside);
 	const reachPx = Math.min(
 		(ctx.width + ctx.height) * ctx.pxScale,
-		Math.max(4, Math.max(reach.outside, fieldInside) * pxPerPercent + 2),
+		Math.max(4, Math.max(fieldOutside, fieldInside) * pxPerPercent + 2),
 	);
 	const blurred = layers.map((l) => l.def.blur?.(l.params, { look, pxPerPercent, base: l.base }) ?? null);
 	const shaders = layers.map((l) => l.def.shader(l.params, { look, pxPerPercent, base: l.base }));
 	const readsBounds = (s: string) => /\btl_bounds\s*\(/.test(s);
+	const allPieces = [...pieces, ...letterPieces.flat()];
 	const usesBounds =
 		tl.unitPx === null ||
 		layers.some((l) => l.def.prepassReadsBounds?.(l.params)) ||
-		pieces.some((p) => p.usesBounds || readsBounds(p.glsl)) ||
-		pieces.some((p) => resolveIncludes(p.include).some((c) => readsBounds(c.source))) ||
+		allPieces.some((p) => p.usesBounds || readsBounds(p.glsl)) ||
+		allPieces.some((p) => resolveIncludes(p.include).some((c) => readsBounds(c.source))) ||
 		shaders.some((s) => s.usesBounds === true || readsBounds(s.glsl)) ||
 		blurred.some((b) => !!b && readsBounds(b.mask));
 	const passes: ShaderPass[] = [];
 	if (usesBounds) passes.push(...boundsPasses());
 	passes.push(...fieldPasses(reachPx));
-	if (tl.textSpans && pieces.some((p) => p.usesSpans)) passes.push(textSpanPass());
+	if (tl.textSpans && (allPieces.some((p) => p.usesSpans) || letters.some((ls) => ls.length > 0)))
+		passes.push(textSpanPass());
 	passes.push({
 		output: 'tlComp',
 		frag: FRAG_TL_CLEAR,
@@ -375,10 +465,9 @@ export function planTitleLook(ctx: FxPlanContext): readonly ShaderPass[] {
 		written.add(name);
 		return {};
 	};
-	layers.forEach((l, i) => {
-		const piece = pieces[i]!;
+	const prepassContext = (l: PlannedLayer, piece: LayerPieces): PrepassContext => {
 		const include = [...baseInclude, ...piece.include];
-		const c: PrepassContext = {
+		return {
 			look,
 			pxPerPercent,
 			base: l.base,
@@ -397,10 +486,45 @@ export function planTitleLook(ctx: FxPlanContext): readonly ShaderPass[] {
 			}),
 			write,
 		};
+	};
+	layers.forEach((l, i) => {
+		const piece = pieces[i]!;
+		const include = [...baseInclude, ...piece.include];
+		const c = prepassContext(l, piece);
 		const blur = blurred[i];
 		const finish = l.def.finish ? titleFinish(String(l.params.finish ?? 'flat')) : undefined;
 		// A layer's own prepass first: a plate's distance must exist before a bevel on it.
-		passes.push(...(l.def.prepass?.(l.params, c) ?? []), ...(finish?.prepass?.(l.params, c) ?? []));
+		passes.push(...(l.def.prepass?.(l.params, c) ?? []));
+		// TL-093: the letters runs give another finish, each drawn with it and summed into `tlRunFin` by their share of
+		// each pixel, before the layer's own finish prepass (they may share its intermediates).
+		const ls = letters[i]!;
+		let runMask = 0;
+		if (ls.length > 0) {
+			passes.push({
+				output: 'tlRunFin',
+				frag: FRAG_TL_CLEAR,
+				format: 'rgba16f',
+				size: { width: 1, height: 1 },
+				...write('tlRunFin'),
+			});
+			ls.forEach((x, k) => {
+				const lp = letterPieces[i]![k]!;
+				const fin = titleFinish(String(x.layer.params.finish));
+				passes.push(...(fin?.prepass?.(x.layer.params, prepassContext(x.layer, lp)) ?? []));
+				const sh = l.def.shader(x.layer.params, { look, pxPerPercent, base: l.base });
+				passes.push({
+					output: 'tlRunFin',
+					update: true,
+					format: 'rgba16f',
+					include: [...baseInclude, ...lp.include, ...(sh.include ?? []), GLSL_TL_SPAN_FINISH],
+					uniforms: { ...lp.uniforms, u_tlRunMask: { int: 1 << x.slot } },
+					frag: `${lp.defines}${lp.glsl}${sh.glsl}
+void main() { TlSurface s = tl_surface(); fragColor = texture(u_tlRunFin, v_uv) + tl_layer(s) * tl_runShare(s, u_tlRunMask); }`,
+				});
+				runMask |= 1 << x.slot;
+			});
+		}
+		passes.push(...(finish?.prepass?.(l.params, c) ?? []));
 		if (blur && blur.sigma > 0) {
 			const again = blurDone ? { update: true } : {};
 			const sigmaPx = blur.sigma * pxPerPercent;
@@ -437,10 +561,23 @@ void main() { tl_aa = u_tlMaskAA; fragColor = tl_mask(tl_surface()); }`,
 			output: 'tlComp',
 			update: true,
 			format: 'rgba16f',
-			include: [...include, ...(shader.include ?? [])],
-			uniforms: piece.uniforms,
-			frag: `${piece.defines}${piece.glsl}${shader.glsl}
+			...(runMask
+				? {
+						include: [...include, ...(shader.include ?? []), GLSL_TL_SPAN_FINISH],
+						uniforms: { ...piece.uniforms, u_tlRunMask: { int: runMask } },
+						frag: `${piece.defines}${piece.glsl}${shader.glsl}
+void main() {
+  TlSurface s = tl_surface();
+  vec4 own = tl_layer(s) * (1.0 - tl_runShare(s, u_tlRunMask));
+  fragColor = tl_over(texture(u_tlComp, v_uv), own + texture(u_tlRunFin, v_uv));
+}`,
+					}
+				: {
+						include: [...include, ...(shader.include ?? [])],
+						uniforms: piece.uniforms,
+						frag: `${piece.defines}${piece.glsl}${shader.glsl}
 void main() { fragColor = tl_over(texture(u_tlComp, v_uv), tl_layer(tl_surface())); }`,
+					}),
 		});
 	});
 	passes.push({ include: [GLSL_TL_SURFACE], frag: FRAG_TL_OUTPUT });
@@ -451,9 +588,12 @@ void main() { fragColor = tl_over(texture(u_tlComp, v_uv), tl_layer(tl_surface()
 export function titleLookTextures(ctx: FxPlanContext): readonly { uniform: string; mediaId: string }[] {
 	const tl = ctx.structures?.titleLook;
 	if (!tl) return [];
-	return plannedLayers(tl.appearance).flatMap(
-		(l, i) => layerPieces(l, tl.appearance, i, tl.textSpans).textures,
-	);
+	return plannedLayers(tl.appearance).flatMap((l, i) => [
+		...layerPieces(l, tl.appearance, i, tl.textSpans).textures,
+		...letterFinishes(l, tl.textSpans).flatMap(
+			(x) => layerPieces(x.layer, tl.appearance, `${i}r${x.slot}`, tl.textSpans).textures,
+		),
+	]);
 }
 
 /** Instance-wide uniforms of a look (`gpu.uniforms`). */
@@ -463,13 +603,19 @@ export function titleLookUniforms(ctx: FxFrameContext): Record<string, FxUniform
 	const { angle, altitude } = tl.appearance.light;
 	const az = angle * DEG;
 	const el = altitude * DEG;
+	// The light is on screen; the look shades in the layer: turn it back by the layer's rotation (and mirror).
+	const [xx, xy, yx, yy] = tl.orient ?? [1, 0, 0, 1];
+	const sx = Math.cos(az);
+	const sy = Math.sin(az);
+	const dir = [xx * sx + xy * sy, yx * sx + yy * sy];
 	return {
 		...(tl.unitPx !== null ? { u_tlUnit: tl.unitPx * ctx.pxScale } : {}),
 		u_tlSeed: (tl.appearance.seed >>> 0) / 4294967296,
 		// Only what moves on its own reads the time: a still look keeps one key and is not redrawn (TL-037).
 		u_tlTime: appearanceTimeInvariant(tl.appearance) ? 0 : tl.contentSeconds,
-		u_tlLight: [Math.cos(az) * Math.cos(el), Math.sin(az) * Math.cos(el), Math.sin(el)],
-		u_tlLightDir: [Math.cos(az), Math.sin(az)],
+		u_tlLight: [dir[0]! * Math.cos(el), dir[1]! * Math.cos(el), Math.sin(el)],
+		u_tlLightDir: dir as unknown as readonly [number, number],
+		u_tlStage: [xx, xy, yx, yy],
 		...textSpanUniforms(tl.textSpans),
 	};
 }
@@ -520,7 +666,10 @@ export function clipLookUnit(clip: { source?: unknown }): number | null {
 	return typeof size === 'number' && Number.isFinite(size) && size > 0 ? size : null;
 }
 
-/** What a look's hooks read at a frame (`FxStructures.titleLook`). `contentTime`: flicks at this frame. */
+/**
+ * What a look's hooks read at a frame (`FxStructures.titleLook`). `contentTime`: flicks at this frame; `layerMap`: the
+ * layer's map at this frame (`ResolvedLayerProps.matrix`), whose rotation the look's lights undo.
+ */
 export function titleLookStructure(
 	appearance: ResolvedAppearance,
 	source: unknown,
@@ -528,7 +677,10 @@ export function titleLookStructure(
 	fps: number,
 	contentTime: number,
 	textSpans?: FxTextSpans | null,
+	layerMap?: { a: number; b: number; c: number; d: number } | null,
 ): FxTitleLook {
+	const orient = lookOrientation(layerMap);
+	const turns = clipLookTurns(clip as { transform?: unknown }) || orient !== null;
 	return {
 		appearance,
 		...(source ? { source: source as Appearance } : {}),
@@ -536,5 +688,7 @@ export function titleLookStructure(
 		contentSeconds: contentTime / FLICKS_PER_SECOND,
 		span: clipLookSpan(clip, fps),
 		...(textSpans ? { textSpans } : {}),
+		...(orient ? { orient } : {}),
+		...(turns ? { turns } : {}),
 	};
 }

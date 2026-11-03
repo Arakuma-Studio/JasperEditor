@@ -106,7 +106,7 @@ function restLayout(source: TextSource, fonts: Fonts): TypesetLayout {
 function RestSpans({ source, fonts, report }: { source: TextSource; fonts: Fonts; report: ReportSpans }) {
 	useReportSpans(
 		report,
-		restSpans(restLayout(source, fonts), (s) => fontFamilyFor(s, fonts)),
+		restSpans(restLayout(source, fonts), (s) => fontFamilyFor(s, fonts), source.text.runs),
 	);
 	return null;
 }
@@ -670,7 +670,9 @@ function TextOverlay({
 	});
 	useReportSpans(
 		reportSpans,
-		reportSpans ? unitSpans(restLayout(source, fonts), (s) => fontFamilyFor(s, fonts), placements) : null,
+		reportSpans
+			? unitSpans(restLayout(source, fonts), (s) => fontFamilyFor(s, fonts), placements, source.text.runs)
+			: null,
 	);
 	const caretShown = impl.caret?.(params) && placedUnits.length > 0 && !lineMode;
 	if (caretShown && caretLit(values.filter((v) => v.reveal >= 1).length)) {
@@ -721,8 +723,9 @@ export function TextLayer(layer: LayerProps) {
 		() =>
 			appearanceWantsTextSpans(
 				layer.clip.effects.find((fx) => fx.effectId === TITLE_LOOK_EFFECT_ID)?.appearance,
+				'text' in source ? source.text.runs : undefined,
 			),
-		[layer.clip],
+		[layer.clip, source],
 	);
 	const [spans, setSpans] = useState<FxTextSpans | null>(null);
 	const report = useCallback<ReportSpans>((next) => {

@@ -336,6 +336,7 @@ export function TypesetText({
 					visible,
 					laid.map((g) => g.origin),
 					threeD ? { distance: cameraZoom(compWidth), origin: camera as [number, number] } : null,
+					content.runs,
 				)
 			: null,
 	);

@@ -6,6 +6,7 @@
 // keeps its closest approach to the shape, whose distance antialiases the sides' outline. Like Pachislop's, it draws behind
 // what is below it in the stack, so it works above or below the face.
 import { fmtDistance, layerSwatch, lp, type TitleLayerInit } from '../contract.ts';
+import { GLSL_TL_STAGE } from '../glsl.ts';
 import { GLSL_TL_LIGHT } from '../light.ts';
 
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
@@ -53,7 +54,8 @@ export const EXTRUDE_LAYER: TitleLayerInit = {
 			glsl: /* glsl */ `
 vec4 tl_layer(TlSurface s) {
   vec4 under = texture(u_tlComp, s.uv);
-  vec2 dir = fx_dir(u_angle);
+  // Depth and light on screen: the sides go the same way however the title turns.
+  vec2 dir = tl_fromScreen(fx_dir(u_angle));
   float len = max(tl_px(u_depth), 1.0);
   float least = max(1.0, len / 256.0);
   float t = 0.0;
@@ -77,7 +79,7 @@ vec4 tl_layer(TlSurface s) {
                 tl_surfaceAt(bestUv + vec2(0.0, e.y)).d - tl_surfaceAt(bestUv - vec2(0.0, e.y)).d);
   float gl = length(g);
   vec2 n = gl > 1.0e-4 ? g / gl : dir;
-  vec2 light = u_useLight ? u_tlLightDir : fx_dir(u_lightAngle);
+  vec2 light = u_useLight ? u_tlLightDir : tl_fromScreen(fx_dir(u_lightAngle));
   float lit = 0.5 + 0.5 * dot(n, light);
   float x = bestT / len;
   vec4 c = ${gradientPaint(p) ? 'tl_ramp(u_paintRamp, x)' : 'tlPaint_paint(s)'};
@@ -90,7 +92,7 @@ vec4 tl_layer(TlSurface s) {
   vec4 side = vec4(rgb, c.a) * cov * (1.0 - u_fade * 0.01 * x) * (u_opacity * 0.01);
   return tl_result(under, under + side * (1.0 - under.a));
 }`,
-			include: [GLSL_TL_LIGHT],
+			include: [GLSL_TL_LIGHT, GLSL_TL_STAGE],
 		};
 	},
 	reach(p) {

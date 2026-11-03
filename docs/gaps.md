@@ -875,8 +875,15 @@ Status of the foundation; streams still in progress update this list. Evidence: 
   UI the fact (`spanNote: 'needs-text'`). The Appearance UI still has to show it.
 - **A title of more than 4096 drawn glyphs** gets span records for its first 4096 (`MAX_SPAN_GLYPHS`); the owner pass is linear
   in the glyphs. Nobody sets a gradient per glyph on that much text, but it is a hard cap, not a soft one.
-- **Lights and reflections are in layer space**: a rotated title's bevel light and environment turn with it. Pachislop undoes the
-  layer's rotation so lights stay fixed on screen; a look's stage has no such input yet, and shadows behave the same.
+- **Lights stay on screen when a title turns, floors do not.** The look's light, the rooms its finishes mirror and the directions of
+  drop, long and inner shadows and Shaded Extrude undo the layer's rotation and mirroring. A perspective shadow's floor and a
+  reflection's floor turn with the title (a floor fixed on screen needs the shape's bounds on screen). The §8 effects keep layer
+  space, like After Effects' effects. A title in a nested sequence that is itself turned is lit as the nested sequence draws it:
+  the stage sees the layer's own map ([wp-notes/title-looks.md](wp-notes/title-looks.md), "The look's stage").
+- **A shape touching its canvas edge has no edge there**: the field's seed pass clamps its reads at the border, so a bevel or keyline
+  on a picture that fills a canvas without padding (a look whose layers reach nothing outside the shape, on a clip filling its box)
+  stops at the canvas. Inner Shadow already reads outside as empty. Treating outside as transparent everywhere would also put edges
+  along the frame of every full-frame clip under a look effect, which is a separate decision; not changed.
 - **A box or pill plate does not grow rims below it** (`grows` is 0 except on `contour`): rims follow the shape field, not the plate.
   A second, larger plate underneath gives an outline.
 - **Glass refracts only its own fill** by design (§5.1); footage behind a title is §9.
@@ -887,9 +894,9 @@ Status of the foundation; streams still in progress update this list. Evidence: 
   `FX_LAYER_UNSUPPORTED`. Nothing is silently dropped.
 - **Requires float targets** (TL-032, TL-123): without them the preview bypasses the look with a chip, a render fails with
   `TITLE_LOOK_NEEDS_FLOAT` and the export plan refuses when the probe answered (TL-124).
-- **Per-letter finish overrides are not drawn (TL-093).** `content.runs[].finish` persists, repairs and survives edits, and the rule is
-  in [wp-notes/title-looks.md](wp-notes/title-looks.md) "Runs". Drawing it needs a planner change in the finishes stream. Until then
-  the toolbar's Finish control is disabled with that reason (`RUN_FINISHES_DRAWN`).
+- **A run's finish (TL-093) is the finish of its letters' face**, with that finish's default params: rims, inlines and plates keep the
+  look's finish, and a layer stores the params of its own finish only. At most 16 distinct run finishes per text; past that a letter
+  keeps the look's ([wp-notes/title-looks.md](wp-notes/title-looks.md), "Runs").
 - **Vertical text on a path is refused** (TL-111): `clip.update` and `text.setPathOptions` return `E_INVALID_PARAM`, and Properties and
   the Graphics menu disable it with the reason. A path has one direction and a column has none on it.
 - **A run's colour under a look** shows only where the face paints the clip's own picture (`source`); a role, colour or gradient face
@@ -928,10 +935,11 @@ Status of the foundation; streams still in progress update this list. Evidence: 
   full-size passes that Gradient Overlay, Floor Reflection and Perspective Shadow do not read. Nothing on a GPU, measurable on software.
 - **Gradient Overlay and Contour Lines as effects take two or three colours, not a gradient**: an effect param has no gradient type
   (TL-091 is a look's control). In a look they take any gradient.
-- **The field has no edge on very gradual alpha** (the seed pass skips neighbourhoods changing by under 0.002): a Keyline, Contour Lines
-  or rim traced around a soft picture, such as a glow's tail when the effect comes after a glow in the stack, comes out ragged. Seen in
-  `title-look.e2e.test.ts`'s glows frames. Pachislop's Keyline threshold was not ported on the grounds that the local threshold
-  replaces it; on soft alpha it does not. The fix belongs in the field's seed pass (`title-look/glsl.ts`, the foundation's core).
+- **Soft alpha has its edge at half opacity**: a soft picture (a glow's tail reaching a Keyline after it) that is never more than half
+  opaque has no edge, and one fading in gets its edge when it passes half. Hard-edged pictures keep the local threshold, so a glyph
+  fading in still has its rim fade in with it. A thin part that hovers around half opacity gets a broken outline: in
+  `title-look.e2e.test.ts`'s glows frames, the floor line under the glowing title draws a dotted keyline (the ragged ring the
+  keyline drew far out in the glow's tail is gone).
 - **Deep Glow is slow on software GL**: ≈ 7 s per frame at full resolution for a title, ≈ 17 s for a full frame on this host
   ([performance.md](performance.md) §7).
 - **Handles (TL-092) are declared, not drawn**: shadow offset and light angle are in each layer's `handles`; the Program monitor
@@ -945,12 +953,14 @@ Status of the foundation; streams still in progress update this list. Evidence: 
   To follow a title, add the generator as a layer of its look.
 - **Magic Circle glyph rows are procedural** (runes, trigrams, segment digits): a plan cannot draw a font atlas, so Pachislop's
   kanji rows and its readable HUD string were not ported.
-- **Lightning is not resolution independent to the look threshold at long bolts** (SSIM ≥ 0.97 between 1× and 2×): 0.95 at its
-  defaults, 0.76 at the perturbed params of the GL test (21 bolts two units long). The bolts are the same bolts at both sizes
-  (`docs/wp-notes/title-looks.md`, "Stable identity"); their directions come from a field rebuilt from raster alpha, good to a few
-  degrees, and a long thin bolt turns that into a pixel or two of drift at its tip. Tried and not enough: per-texel sites (0.52),
-  the surface normal at the edge point (0.66), bilinear sites (0.76), the alpha's first moment (0.70). An exact normal needs the
-  text's vector outline.
+- **Lightning is not resolution independent to the look threshold at long bolts** (SSIM ≥ 0.97 between 1× and 2×): 0.94 at the
+  perturbed params of the GL test (21 bolts two units long), up from 0.76; not measured again at its defaults (0.95 before). The
+  bolts are the same bolts at both sizes (`docs/wp-notes/title-looks.md`, "Stable identity"); their directions come from a field
+  rebuilt from raster alpha, good to a few degrees, and a long thin bolt turns that into a pixel or two of drift at its tip. Tried and not enough: per-texel sites (0.52),
+  the surface normal at the edge point (0.66), bilinear sites (0.76), the alpha's first moment (0.70). Since: the bolt's direction
+  is the field's slope fitted over a wider reach, in units: a cross stencil of 6 % of the unit (0.906) or 12 % (0.935), a ring of
+  16 reads at 12 % (0.942, what draws now). The soft-alpha fix of the field changes nothing here (the input is hard). An exact
+  normal needs the text's vector outline; the test stays red rather than loosened.
 - **Two generator recolour rules were written; one runs.** The look library mapped generators through a palette ramp
   (`recolor.ts`), the generators stream through each generator's own paint and mode. Since integration 2 the generators' rule
   draws, and the library's `fixedColor` keeps a generator's own colours as its `Own Colours` param does. The library's ramp is still

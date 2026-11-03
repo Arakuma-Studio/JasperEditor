@@ -7,6 +7,8 @@ export const FACE_LAYER: TitleLayerInit = {
 	label: 'Face',
 	description: 'The fill of the shape.',
 	finish: true,
+	// TL-093: a run's finish is the finish of its letters' face.
+	letterFinish: true,
 	params: [
 		...lp.paint('paint', 'Paint', { kind: 'role', role: 'face' }),
 		lp.percent('opacity', 'Opacity', 100),

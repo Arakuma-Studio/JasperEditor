@@ -12,6 +12,7 @@ import {
 	fxBuiltinUniforms,
 	fxOffsetBuiltins,
 	type LookRecipe,
+	lookOrientation,
 	planGpuEffect,
 	resolveAppearance,
 	type SpanGlyph,
@@ -41,10 +42,17 @@ export type LookInput =
 			kind: 'letters';
 			letters: { x: number; y: number; w: number; h: number; opacity?: number; color?: string }[];
 	  }
+	/** A disc (centre and radius in fractions of the box height): the same picture however the layer turns. */
+	| { kind: 'disc'; x: number; y: number; r: number }
 	/** A rectangle inside the box (fractions), for exact edges. */
 	| { kind: 'rect'; x: number; y: number; w: number; h: number; color?: string }
 	/** White bars (fractions of the box), for exact gradient spans. */
 	| { kind: 'bars'; bars: readonly { x: number; y: number; w: number; h: number }[] }
+	/**
+	 * Soft alpha, as a glow's picture reaches an effect after it: an opaque disc (centre and radius in fractions of the box
+	 * height) whose alpha falls off as exp(−(d / soft)²) beyond it, drawn into the 8-bit canvas like any picture.
+	 */
+	| { kind: 'soft'; x: number; y: number; r: number; soft: number }
 	/** The golden test card. */
 	| { kind: 'card' };
 
@@ -71,6 +79,8 @@ export type LookRequest = {
 	material?: Record<string, unknown>;
 	/** TL-036: the text layer's glyphs at this frame. */
 	glyphs?: readonly SpanGlyph[];
+	/** The layer's map on screen (its linear part): the look's lights undo its rotation, as the stage passes it. */
+	layerMap?: { a: number; b: number; c: number; d: number };
 	/** Pictures of `{mediaId}` params, painted on a canvas: bound as the real path binds media (`inputs.textures`). */
 	images?: Readonly<Record<string, LookImageInput>>;
 };
@@ -190,6 +200,28 @@ function paintInput(
 		for (const r of input.bars) ctx.fillRect(b.x + b.w * r.x, b.y + b.h * r.y, b.w * r.w, b.h * r.h);
 		return;
 	}
+	if (input.kind === 'disc') {
+		ctx.fillStyle = '#fff';
+		ctx.beginPath();
+		ctx.arc(b.x + b.w * input.x, b.y + b.h * input.y, b.h * input.r, 0, Math.PI * 2);
+		ctx.fill();
+		return;
+	}
+	if (input.kind === 'soft') {
+		const cx = b.x + b.w * input.x;
+		const cy = b.y + b.h * input.y;
+		const r0 = b.h * input.r;
+		const r1 = r0 + b.h * input.soft * 3;
+		const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r1);
+		for (let i = 0; i <= 64; i++) {
+			const r = (r1 * i) / 64;
+			const a = r <= r0 ? 1 : Math.exp(-(((r - r0) / (b.h * input.soft)) ** 2));
+			g.addColorStop(i / 64, `rgba(255, 255, 255, ${a.toFixed(5)})`);
+		}
+		ctx.fillStyle = g;
+		ctx.fillRect(cx - r1, cy - r1, 2 * r1, 2 * r1);
+		return;
+	}
 	if (input.kind === 'rect') {
 		ctx.fillStyle = input.color ?? '#fff';
 		ctx.fillRect(b.x + b.w * input.x, b.y + b.h * input.y, b.w * input.w, b.h * input.h);
@@ -227,6 +259,7 @@ function render(req: LookRequest): LookResult {
 		unitPx,
 		contentSeconds: req.contentSeconds ?? 0,
 		...(req.glyphs ? { textSpans: buildTextSpans(req.glyphs) } : {}),
+		...(req.layerMap ? { orient: lookOrientation(req.layerMap), turns: true } : {}),
 	};
 	if (req.material)
 		return draw(TITLE_MATERIAL_EFFECT as EffectSpec, req.material as EffectParams, req, { titleLook });

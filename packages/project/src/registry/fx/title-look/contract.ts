@@ -151,6 +151,11 @@ export type TitleLayerType = {
 	params: readonly TitleParamSpec[];
 	/** The type takes the shared finish param (TL §5.1): `tl_finish` is available and the finish's params are valid. */
 	finish: boolean;
+	/**
+	 * TL-093: letters whose run sets a finish (`content.runs[].finish`) draw this layer with that finish instead of its
+	 * own (the face: the letters themselves; rims stay one outline across letters). Needs `finish`.
+	 */
+	letterFinish?: boolean;
 	shader: (p: LayerParams, ctx: LayerPlanContext) => LayerShader;
 	/** How far this layer paints beyond the silhouette it starts from, for `gpu.padding` (default 0). */
 	reach?: (p: LayerParams) => LayerReach;
