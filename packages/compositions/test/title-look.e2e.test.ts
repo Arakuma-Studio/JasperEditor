@@ -393,6 +393,10 @@ describe.runIf(enabled && !!CHROME)(
 				console.info(`[title-look] generators, razor frame ${frame}: max difference ${maxDiff(a, b)}`);
 				expect(maxDiff(a, b)).toBeLessThanOrEqual(2);
 			}
+		});
+
+		it('generators: frame N after a seek, motion, and the title in front of its generator clip', async () => {
+			const whole = build({ generators: true });
 			// Frame N after a seek from either side: a render holds no state to reach it with.
 			await still(whole, 60, 'gen-seek');
 			const again = await still(whole, 45, 'gen-again');
