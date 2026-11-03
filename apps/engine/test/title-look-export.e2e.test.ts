@@ -1,8 +1,8 @@
 // Spec 19 §14 parity, both export paths, through the engine (REMOTION_E2E=1): a library look on animated text (a text
 // animator lifts the letters, a look param is keyed) over a native solid. The planner routes it hybrid: the solid is
 // composited natively and the title is a layer bake (a moving master, rendered through Remotion and overlaid by
-// ffmpeg). The hybrid export, and the Remotion export, are compared frame by frame with Remotion stills of the planned
-// snapshot, which is what Program draws (`packages/compositions/test/title-look.e2e.test.ts`: Program against a
+// ffmpeg). The hybrid export, and the Remotion export, are compared frame by frame with Remotion stills of the
+// document's snapshot, which is what Program draws (`packages/compositions/test/title-look.e2e.test.ts`: Program against a
 // Remotion still, SSIM 1.0000, max difference 0). Thresholds are the repository's export-parity ones: SSIM ≥ 0.98
 // (trim-paths-export, native-animated) and ≥ 99 % of values within 3/255 for the bake (layer-bake.e2e, text-paint-export).
 // `TITLE_LOOK_EXPORT_DUMP=<dir>` writes the compared frames as PNGs for inspection.
@@ -11,7 +11,7 @@ import { appendFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { EngineJob } from '@jasper/api';
-import type { RenderSnapshot } from '@jasper/project';
+import { buildRenderSnapshot } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type RunningEngine, startEngine } from '../src/index.ts';
 import { coreServices } from '../src/tools/services.ts';
@@ -168,10 +168,22 @@ describe.runIf(enabled)('a title look on both export paths (REMOTION_E2E=1, spec
 			bakes: children(done.id).filter((j) => j.kind === 'layer-bake'),
 		};
 	}
-	/** What Program draws at `frame`: a Remotion still of the planned snapshot (fonts and media resolved). */
-	async function programFrame(snapshot: RenderSnapshot, frame: number, name: string): Promise<string> {
+	/**
+	 * What Program draws at `frame`: a Remotion still of the document's snapshot with the fonts the editor loads from the
+	 * engine (signed absolute URLs, as the export's own snapshot; the plan's snapshot carries relative font paths that a
+	 * headless page cannot load, and draws the fallback face).
+	 */
+	async function programFrame(d: DocBuilder, frame: number, name: string): Promise<string> {
+		const core = coreServices(engine.app);
+		const snapshot = buildRenderSnapshot(d.doc, d.seqId, {
+			resolveMedia: () => null,
+			resolveFont: (font, weight, italic) => {
+				const face = core.fonts.resolve(font.family, weight, italic);
+				return face ? core.signer.signUrl(`http://127.0.0.1:${engine.port}`, face.url) : null;
+			},
+		});
 		const out = join(tempAppdir('jasper-tl-export-ref-'), `${name}.png`);
-		await coreServices(engine.app).remotion.renderStill({
+		await core.remotion.renderStill({
 			inputProps: {
 				doc: snapshot,
 				options: { isPreview: false, useProxies: false, transparentBackground: false },
@@ -205,9 +217,9 @@ describe.runIf(enabled)('a title look on both export paths (REMOTION_E2E=1, spec
 		const title = r.refs.$t!;
 		const fx = (r.results[2] as { effectInstanceIds: string[] }).effectInstanceIds[0]!;
 		const clip = d.doc.sequences[d.seqId]!.clips[title] as unknown as {
-			effects: { effectInstanceId: string; appearance: { layers: { id: string; type: string }[] } }[];
+			effects: { id: string; appearance: { layers: { id: string; type: string }[] } }[];
 		};
-		const look = clip.effects.find((e) => e.effectInstanceId === fx)!;
+		const look = clip.effects.find((e) => e.id === fx)!;
 		const rim = look.appearance.layers.find((l) => l.type === 'rim')!.id;
 		const glow = look.appearance.layers.find((l) => l.type === 'glow')!.id;
 		const pos = ['clip', title, 'textAnimators', r.refs.$a!, 'properties', 'position'];
@@ -242,13 +254,12 @@ describe.runIf(enabled)('a title look on both export paths (REMOTION_E2E=1, spec
 		plain.doc = structuredClone(d.doc);
 		plain.revision = d.revision;
 		plain.tx([{ type: 'look.remove', clipIds: [title] }]);
-		const plainPlan = await plan(plain, 'auto');
 
 		const rows: string[] = [];
 		const program: Buffer[] = [];
 		for (const f of SAMPLE) {
-			const ref = await programFrame(auto.snapshot, f, `program-${f}`);
-			const bare = await programFrame(plainPlan.snapshot, f, `plain-${f}`);
+			const ref = await programFrame(d, f, `program-${f}`);
+			const bare = await programFrame(plain, f, `plain-${f}`);
 			dump(ref, `program-${f}`);
 			dump(hybrid.file, `hybrid-${f}`, f);
 			dump(remotion.file, `remotion-${f}`, f);
