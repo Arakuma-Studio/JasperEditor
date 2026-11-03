@@ -2728,7 +2728,8 @@ export class ExportService {
 		const { doc } = this.remotionProps(planned, prepared) as { doc: RenderSnapshot };
 		const displayLut = await displayLutFilter(planned.snapshot.settings.color, await ctx.scratchDir());
 		this.commitRefs(ctx, planned, 'still');
-		return { doc, displayLut, planned };
+		const warnings = planned.plan.warnings.map(({ code, message }) => ({ code, message }));
+		return { doc, displayLut, warnings, planned };
 	}
 
 	private deliveryDeps(): DeliveryDeps {

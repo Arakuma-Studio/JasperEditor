@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { AlphaDeliveryRequestSchema, StillRequestSchema } from '@jasper/api';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { canvasPads, frameFilterArgs } from '../src/export/delivery/alpha.ts';
+import { canvasPads, frameFilterArgs, padLadder } from '../src/export/delivery/alpha.ts';
 import { alphaBounds, grownBox, touchesEdge, unionBounds } from '../src/export/delivery/trim.ts';
 import { StoredZipWriter, ZipTooLargeError } from '../src/export/delivery/zip-writer.ts';
 import { stillEncodeArgs } from '../src/export/still-formats.ts';
@@ -74,6 +74,20 @@ describe('trim (TL-114)', () => {
 	it('the canvas grows, within the texture limit', () => {
 		expect(canvasPads(1920, 1080)).toEqual([480, 960]);
 		expect(canvasPads(16000, 9000)).toEqual([]);
+	});
+
+	it('keeps the largest canvas that fits: a long side of 8193–10922 px is not thrown back to the frame', () => {
+		expect(padLadder(1920, 1080, false)).toEqual([480, 960]);
+		// Only the first pad fits: it is the last tried and kept, never followed by a render on the bare frame.
+		expect(padLadder(9000, 5000, false)).toEqual([2250]);
+		expect(padLadder(10922, 4000, false)).toEqual([2731]);
+		expect(padLadder(16000, 9000, false)).toEqual([0]);
+		expect(padLadder(1920, 1080, true)).toEqual([0]);
+		for (const w of [8193, 9500, 10922]) {
+			const pads = padLadder(w, 1000, false);
+			expect(pads.at(-1)).toBeGreaterThan(0);
+			expect(w + 2 * pads.at(-1)!).toBeLessThanOrEqual(16384);
+		}
 	});
 });
 

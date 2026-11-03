@@ -111,7 +111,7 @@ export function assertWritable(plan: PsdPlan): void {
 /** `psd-export` job. */
 export async function runPsdExport(ctx: JobContext, req: PsdRequest, d: DeliveryDeps): Promise<PsdResult> {
 	const range = { start: req.frame, end: req.frame + 1 };
-	const { doc, displayLut } = await d.frames(ctx, req.envelope, req.sequenceId, range);
+	const { doc, displayLut, warnings } = await d.frames(ctx, req.envelope, req.sequenceId, range);
 	const layout = planPsd(doc, req.frame, { splitTitles: req.splitTitles === true });
 	assertWritable(layout.plan);
 	const scratch = await ctx.scratchDir();
@@ -172,6 +172,6 @@ export async function runPsdExport(ctx: JobContext, req: PsdRequest, d: Delivery
 		height,
 		layers: layout.plan.layers,
 		baked: layout.plan.baked,
-		warnings: layout.plan.warnings,
+		warnings: [...warnings, ...layout.plan.warnings],
 	};
 }

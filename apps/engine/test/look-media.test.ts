@@ -1,5 +1,5 @@
-// Spec 19 TL-021 in the engine: a look's picture reaches the export snapshot and the layer bake key, and an offline one is
-// announced by the plan, never dropped in silence.
+// Spec 19 TL-021 in the engine: a look's picture reaches the export snapshot and the layer bake key, and an offline one
+// refuses the export by name (AGENTS §4: the look is never drawn without it), as a missing 3D asset does.
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -53,13 +53,15 @@ describe('a look’s media in exports (TL-021)', { timeout: 180_000 }, () => {
 		]);
 		return r.refs!.$t as string;
 	};
-	const plan = async (d: DocBuilder) => {
-		const res = await app.inject({
+	const planRes = (d: DocBuilder) =>
+		app.inject({
 			method: 'POST',
 			url: '/api/exports/plan',
 			headers: JSON_H,
 			payload: { envelope: d.envelope(), sequenceId: d.seqId, settings: settings(d.seqId) },
 		});
+	const plan = async (d: DocBuilder) => {
+		const res = await planRes(d);
 		expect(res.statusCode, res.body).toBe(200);
 		return res.json() as { warnings: { code: string; itemIds?: string[] }[] };
 	};
@@ -70,14 +72,23 @@ describe('a look’s media in exports (TL-021)', { timeout: 180_000 }, () => {
 		expect((await plan(d)).warnings.map((w) => w.code)).not.toContain('LOOK_MEDIA_OFFLINE');
 	});
 
-	it('an offline picture is announced with the clip that uses it', async () => {
+	it('an offline picture refuses the export, naming the picture and the clip that uses it', async () => {
 		const d = new DocBuilder('hd-720p-30');
 		const id = d.addMedia({
 			...picture,
 			locators: [{ type: 'engine-store', engineId: 'x', key: 'mk_ffffffffffffffffffffffff' }],
 		});
 		const clipId = titled(id, d);
-		const w = (await plan(d)).warnings.find((x) => x.code === 'LOOK_MEDIA_OFFLINE');
-		expect(w?.itemIds).toEqual([clipId]);
+		const res = await planRes(d);
+		expect(res.statusCode, res.body).toBe(409);
+		const body = res.json() as {
+			code: string;
+			message: string;
+			detail: { blockers: { itemId?: string; reason: string }[] };
+		};
+		expect(body.code).toBe('LOOK_MEDIA_OFFLINE');
+		expect(body.message).toContain('panorama.png');
+		expect(body.detail.blockers).toEqual([expect.objectContaining({ itemId: clipId })]);
+		expect(body.detail.blockers[0]!.reason).toContain('look picture');
 	});
 });

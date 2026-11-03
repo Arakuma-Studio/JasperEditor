@@ -15,7 +15,10 @@ export async function runGamutCheck(
 	req: GamutCheckRequest,
 	d: DeliveryDeps,
 ): Promise<GamutCheckResult> {
-	const { doc } = await d.frames(ctx, req.envelope, req.sequenceId, { start: req.frame, end: req.frame + 1 });
+	const { doc, warnings } = await d.frames(ctx, req.envelope, req.sequenceId, {
+		start: req.frame,
+		end: req.frame + 1,
+	});
 	const { width, height } = doc.settings;
 	const working = doc.settings.color ?? sequenceColorInfo(null);
 	const output = !req.output || req.output === 'working' ? working.space : req.output;
@@ -53,5 +56,6 @@ export async function runGamutCheck(
 		legalPercent: check.legalPercent,
 		anyPercent: check.anyPercent,
 		maskUrl: `/renders/${ctx.job.id}/output`,
+		warnings,
 	};
 }

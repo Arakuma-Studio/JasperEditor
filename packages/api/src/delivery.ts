@@ -252,5 +252,7 @@ export const GamutCheckResultSchema = z.object({
 	anyPercent: z.number(),
 	/** Transparent PNG of the frame: flagged pixels only. `/renders/<job>/output`. */
 	maskUrl: z.string(),
+	/** The export planner's warnings for the frame (what the render path changes). Absent from older engines. */
+	warnings: z.array(z.object({ code: z.string(), message: z.string() })).optional(),
 });
 export type GamutCheckResult = z.infer<typeof GamutCheckResultSchema>;

@@ -23,6 +23,11 @@ export type DeliveryFrames = {
 	doc: RenderSnapshot;
 	/** The display rendition's `lut3d` filter when the working space is not shown as it is, else null. */
 	displayLut: string | null;
+	/**
+	 * The export planner's warnings for the range (AGENTS §4: what the render path changes is said, never dropped); every
+	 * delivery returns them with its own. The planner's blockers refuse the job before this exists.
+	 */
+	warnings: { code: string; message: string }[];
 };
 
 export type DeliveryDeps = {
@@ -53,6 +58,15 @@ export function canvasPads(w: number, h: number): number[] {
 	const first = Math.round(Math.max(w, h) / 4);
 	const fits = (pad: number) => Math.max(w, h) + 2 * pad <= MAX_CANVAS_SIDE;
 	return [first, first * 2].filter(fits);
+}
+
+/**
+ * The canvases Export Title tries, smallest first; the last one is kept even when the title still reaches its edge. A
+ * frame no pad fits (long side over 10 922 px) and a 3D scene (drawn through the frame) render on the frame alone.
+ */
+export function padLadder(w: number, h: number, in3d: boolean): number[] {
+	const pads = in3d ? [] : canvasPads(w, h);
+	return pads.length ? pads : [0];
 }
 
 /** Renders `doc` as `dir/000000.png…`, straight alpha, in document frame order. */
@@ -154,8 +168,8 @@ export async function runAlphaDelivery(
 	req: AlphaDeliveryRequest,
 	d: DeliveryDeps,
 ): Promise<AlphaDeliveryResult> {
-	const { doc: full, displayLut } = await d.frames(ctx, req.envelope, req.sequenceId, req.range);
-	const warnings: AlphaDeliveryResult['warnings'] = [];
+	const { doc: full, displayLut, warnings: planned } = await d.frames(ctx, req.envelope, req.sequenceId, req.range);
+	const warnings: AlphaDeliveryResult['warnings'] = [...planned];
 	const doc = req.clipIds ? onlyClips(full, new Set(req.clipIds)) : full;
 	if (
 		!doc.videoTracks.some((t) =>
@@ -182,7 +196,7 @@ export async function runAlphaDelivery(
 				code: 'TRIM_AT_FRAME',
 				message: 'A 3D scene is drawn through the sequence frame: it is trimmed inside the frame',
 			});
-		const pads = in3d ? [0] : [...canvasPads(seqW, seqH), 0].slice(0, 2);
+		const pads = padLadder(seqW, seqH, in3d);
 		let bounds: Bounds | null = null;
 		for (const [i, p] of pads.entries()) {
 			pad = p;
