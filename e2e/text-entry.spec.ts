@@ -1,6 +1,7 @@
 // Spec 19 TL-085, TL-093, TL-110, TL-111 in the real editor: type in place on Program, double-click a text, a look drawn
 // as you type, a visible caret, real IME composition (through the DevTools protocol), per-word styles, vertical text and
 // Warp Text from Properties and Effect Controls. Screenshots: test-results/e2e-text-entry.
+import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Browser, chromium, expect, type Page, test } from '@playwright/test';
@@ -267,6 +268,87 @@ test('a word selected in place gets its own style, in the same undo step', async
 	expect(runs).toEqual([{ from: 0, to: 2, style: { italic: true, sizePx: 216 } }]);
 	await page.waitForTimeout(1500);
 	await shot('run-under-look');
+});
+
+/** Mean absolute RGB difference of two PNG screenshots over a box (screen px, relative to the shot). */
+function boxDifference(a: Buffer, b: Buffer, box: { x: number; y: number; w: number; h: number }): number {
+	const crop = (png: Buffer) =>
+		execFileSync(
+			process.env.JASPER_FFMPEG ?? 'ffmpeg',
+			[
+				...['-v', 'error', '-i', 'pipe:0'],
+				...[
+					'-vf',
+					`crop=${Math.round(box.w)}:${Math.round(box.h)}:${Math.round(box.x)}:${Math.round(box.y)}`,
+				],
+				...['-f', 'rawvideo', '-pix_fmt', 'rgb24', 'pipe:1'],
+			],
+			{ input: png, maxBuffer: 64 << 20 },
+		);
+	const pa = crop(a);
+	const pb = crop(b);
+	expect(pa.length).toBe(pb.length);
+	let sum = 0;
+	for (let i = 0; i < pa.length; i++) sum += Math.abs(pa[i]! - pb[i]!);
+	return sum / pa.length;
+}
+
+test('the run toolbar gives the selected letters their own finish, drawn in Program, in one undo step', async () => {
+	const [c] = await textClips();
+	const id = c!.id;
+	const before = await viewport().screenshot({ animations: 'disabled' });
+	const vp = (await viewport().boundingBox())!;
+	const drawn = (await page
+		.getByTestId('program-player-wrapper')
+		.locator(`[data-clip-id="${id}"]`)
+		.first()
+		.boundingBox())!;
+	const labels = (await appliedLabels(page)).length;
+	await page.mouse.dblclick(drawn.x + drawn.width / 2, drawn.y + drawn.height / 2);
+	await expect(input()).toBeFocused();
+	// "LOOKS!" with "LO" styled by the previous test: select "KS!" across however many nodes the runs made.
+	await input().evaluate((el) => {
+		const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+		const r = document.createRange();
+		let at = 0;
+		for (let n = walker.nextNode() as Text | null; n; n = walker.nextNode() as Text | null) {
+			const len = n.data.length;
+			if (at <= 3 && 3 < at + len) r.setStart(n, 3 - at);
+			if (at < 6 && 6 <= at + len) r.setEnd(n, 6 - at);
+			at += len;
+		}
+		const s = document.getSelection()!;
+		s.removeAllRanges();
+		s.addRange(r);
+	});
+	const bar = page.getByTestId('text-run-toolbar');
+	await expect(bar).toBeVisible();
+	const finish = bar.locator('[data-run-action="finish"]');
+	await expect(finish).toBeEnabled();
+	await finish.selectOption('metal');
+	await expect(input()).toBeFocused();
+	await page.keyboard.press('Escape');
+	await expect(input()).toHaveCount(0);
+	const { runs } = await textOf(id);
+	expect(runs).toContainEqual(expect.objectContaining({ from: 3, to: 6, finish: 'metal' }));
+	expect(runs?.filter((r) => r.finish)).toHaveLength(1);
+	expect(await appliedLabels(page)).toHaveLength(labels + 1);
+	await page.waitForTimeout(1500);
+	await shot('run-finish-metal');
+	const after = await viewport().screenshot({ animations: 'disabled' });
+	// The finished letters (right half of the text) change; "LO" (left quarter) keeps the look's own finish.
+	const rel = { x: drawn.x - vp.x, y: drawn.y - vp.y, w: drawn.width, h: drawn.height };
+	const right = boxDifference(before, after, { ...rel, x: rel.x + rel.w * 0.5, w: rel.w * 0.5 });
+	const left = boxDifference(before, after, { ...rel, w: rel.w * 0.25 });
+	console.info(
+		`[text-entry] run finish: mean |Δ| right half ${right.toFixed(2)}, left quarter ${left.toFixed(2)}`,
+	);
+	expect(right).toBeGreaterThan(2);
+	expect(right).toBeGreaterThan(left * 4);
+	// Undo takes the finish off in one step.
+	await focusTimeline(page);
+	await page.keyboard.press('Control+KeyZ');
+	await expect.poll(async () => (await textOf(id)).runs?.some((r) => r.finish) ?? false).toBe(false);
 });
 
 test('vertical text and Warp Text come from Properties, and Warp Text keys in Effect Controls', async () => {

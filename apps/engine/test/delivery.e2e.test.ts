@@ -18,6 +18,16 @@ import { DocBuilder, JSON_H, register, TEST_FFMPEG, TEST_FFPROBE, tempAppdir, un
 
 const enabled = process.env.REMOTION_E2E === '1';
 const out = mkdtempSync(join(tmpdir(), 'jasper-delivery-'));
+// `JASPER_FFMPEG_LGPL_ONLY=1` and the binaries in use reach the engine, so the deliveries can be run as shipped (AGENTS §2).
+const FWD_ENV: Record<string, string> = {};
+for (const k of [
+	'JASPER_FFMPEG',
+	'JASPER_FFPROBE',
+	'JASPER_FFMPEG_LGPL_ONLY',
+	'JASPER_REMOTION_BIN_DIR',
+	'JASPER_BROWSER_EXECUTABLE',
+])
+	if (process.env[k]) FWD_ENV[k] = process.env[k]!;
 
 function rawRgba(file: string): { px: Buffer; w: number; h: number } {
 	const probe = spawnSync(
@@ -69,13 +79,16 @@ describe.runIf(enabled)('delivery end to end (REMOTION_E2E=1)', () => {
 			port: Number(process.env.JASPER_E2E_PORT ?? 0),
 			insecure: true,
 			dev: true,
-			env: {
-				PATH: process.env.PATH,
-				...(process.env.JASPER_BROWSER_EXECUTABLE
-					? { JASPER_BROWSER_EXECUTABLE: process.env.JASPER_BROWSER_EXECUTABLE }
-					: {}),
-			},
+			env: { PATH: process.env.PATH, ...FWD_ENV },
 		});
+		// Which FFmpeg the engine and the Remotion path use, so a run with `JASPER_FFMPEG_LGPL_ONLY=1` is shown to be one.
+		const caps = (
+			await engine.app.inject({ method: 'GET', url: '/api/capabilities', headers: base() })
+		).json();
+		console.info(
+			`[toolchain] ffmpeg ${caps.media.ffmpegSource} (${caps.media.encoding?.license}, lgplOnly ${caps.media.encoding?.lgplOnly}); Remotion ${JSON.stringify(caps.render.remotionBinaries)}`,
+		);
+		if (FWD_ENV.JASPER_FFMPEG_LGPL_ONLY === '1') expect(caps.media.encoding?.lgplOnly).toBe(true);
 	}, 600_000);
 	afterAll(async () => {
 		await engine?.stop();
