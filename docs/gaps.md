@@ -887,6 +887,12 @@ Status of the foundation; streams still in progress update this list. Evidence: 
   full-size passes that Gradient Overlay, Floor Reflection and Perspective Shadow do not read. Nothing on a GPU, measurable on software.
 - **Gradient Overlay and Contour Lines as effects take two or three colours, not a gradient**: an effect param has no gradient type
   (TL-091 is a look's control). In a look they take any gradient.
+- **The field has no edge on very gradual alpha** (the seed pass skips neighbourhoods changing by under 0.002): a Keyline, Contour Lines
+  or rim traced around a soft picture, such as a glow's tail when the effect comes after a glow in the stack, comes out ragged. Seen in
+  `title-look.e2e.test.ts`'s glows frames. Pachislop's Keyline threshold was not ported on the grounds that the local threshold
+  replaces it; on soft alpha it does not. The fix belongs in the field's seed pass (`title-look/glsl.ts`, the foundation's core).
+- **Deep Glow is slow on software GL**: ≈ 7 s per frame at full resolution for a title, ≈ 17 s for a full frame on this host
+  ([performance.md](performance.md) §7).
 - **Handles (TL-092) are declared, not drawn**: shadow offset and light angle are in each layer's `handles`; the Program monitor
   overlay that reads them belongs to the UI stream. Standalone effects have no handles beyond `point` params.
 

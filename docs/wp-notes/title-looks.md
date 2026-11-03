@@ -142,6 +142,28 @@ A look effect (`look-effect.ts`) is a small look: `[face(source), layer]` or `[l
 one that runs on full-frame footage. Cost of the wrapper: every other effect pays for the field on a full-frame clip. That is
 6 passes at 1080p, nothing on a GPU, and ≈ 1 s per frame on this host's SwiftShader.
 
+### Bugs of the foundation's layers, fixed with the glows stream
+
+Each has a regression test that was run against the foundation's own `shadow.ts` and `glow.ts` and failed there.
+
+- **`useLight` padded only right and bottom.** `side(-dx)` with `dx = d` gives 0, against its comment: a light from the lower right
+  clipped the shadow at the top left. On the old code the shadow had no canvas at all there.
+- **A long shadow stopped short.** 48 steps of a field reaching a few pixels cover about 290 px; the field's reach now follows the length.
+- **A perspective shadow scaled with the square of the resolution.** `tl_px(distance) * 0.01 * above` is px²; SSIM 0.866 between two
+  scales on the old code. The kind is now Pachislop's floor projection.
+- **A layer glow above 100 % cut a black hole in what was below it.** Alpha above 1 made `under * (1 - a)` negative. The first test written
+  for this passed on the old code, because the bright card outweighed the negative term: it proved nothing and was rewritten.
+
+Goldens this moved, all explained, none of them in a default the fix should not touch:
+
+| Key | Largest change (levels) | Why |
+|---|---|---|
+| `glow@default` | 2.9 | Pachislop's tighter core in the soft technique |
+| `glow@perturbed` | 151.9 | New params in the perturbation (Spread, Add as Light), and Precise from Layer now takes the picture's colours |
+| `shadow@perturbed` | 66.7 | `useLight` now pads every side, so the canvas grew and the 4 × 4 grid moved |
+| `rim@perturbed` | 1.0 | Softness in the perturbation |
+| `jasper.alpha-glow@perturbed` | 177.6 | The perturbation reaches Technique Soft. `jasper.alpha-glow` at defaults did not change |
+
 ### A note on a false alarm worth keeping
 
 `getImageData` returns **straight** alpha. The harness's `over()` and `lumaOver()` handle that; comparing raw `data` to a
@@ -422,6 +444,12 @@ Port map: `licenses/ported/pachislop-rendering.md`, `licenses/ported/pachislop-e
 | Resolution, exact shapes, six layers: 100/50, 200/50, 200/100 | SSIM 0.986, 0.983, 0.998 | `pnpm exec vitest run packages/compositions/test/title-look-gl.test.ts` |
 | `fxPreviewScale` 0.5 against full | SSIM 0.964 | same |
 | Frame cost, six layers, 1080p, SwiftShader | 1.3 s title-sized box, 5.8 s frame-sized | [performance.md](../performance.md) §7 |
+| Glows in Program against a Remotion still: keyed `deepGlow`, `reflection`, `innerShadow` on a moving sequence light, Deep Glow, Perspective Shadow and a keyed Keyline as effects, frames 0, 30, 60 | SSIM 1.0000, max difference 0 | `REMOTION_E2E=1 pnpm exec vitest run packages/compositions/test/title-look.e2e.test.ts` |
+| Deep Glow energy: a 40 × 40 emitter of 1 at radius 40–120 %, falloff 10–90 % | 88–105 % of 1 600 (8-bit tails and clipping) | `pnpm exec vitest run packages/compositions/test/title-look-glows-gl.test.ts -t energy` |
+| Deep Glow variance against Σ wσ² of its octaves at 100 %, 50 %, 25 % resolution | within −15 % / +4 %, x and y within 3 % | same, `-t variance` |
+| Deep Glow radius across a pyramid level (116 → 124 %) | largest alpha step 6 / 255 | same, `-t continuous` |
+| Look effects at half resolution against full, perturbed params | SSIM above 0.93 for all ten | same, `-t "half the resolution"` |
+| Deep Glow cost, 1080p, SwiftShader | 7.0 s title box, 17.2 s full frame | [performance.md](../performance.md) §7 |
 
 The extension contract was exercised by copying this note's three worked examples verbatim into their own files with their
 one-line registrations: they typechecked with no change to the core, and the registry and GL tests picked them up (and failed
