@@ -27,6 +27,9 @@ routing and the layer bake need no per-kind code.
 | Shared GLSL (surface, field, blur) | `packages/project/src/registry/fx/title-look/glsl.ts` |
 | Paints and gradients | `packages/project/src/registry/fx/title-look/paint.ts` |
 | Layer types, finishes, generators | `packages/project/src/registry/fx/title-look/{layers,finishes,generators}/` |
+| Direct text entry, run toolbar (TL-085, TL-093) | `apps/web/src/text-edit/` |
+| Run operations, vertical text rules (TL-093, TL-111) | `packages/project/src/text-runs.ts`, `text-writing.ts` |
+| Warp Text (TL-110) | `packages/project/src/registry/fx/text-warp.ts`, `text-warp/mesh.ts` |
 | Test harness | `packages/compositions/test/title-look-harness.ts`, `title-look-gl/entry.ts` |
 | Registry completeness, GL, fuzz, E2E | `packages/project/test/title-look*.test.ts`, `packages/compositions/test/title-look*.test.ts` |
 
@@ -297,6 +300,106 @@ hints differently per size, so text scores low before your layer does anything).
 Dump a PNG and look at it (`over()` + `encodePng` of `@jasper/testkit/png`). Assertions on a few pixels passed while the
 first shape field drew translucent wedges.
 
+## Text (TL-085, TL-093, TL-110, TL-111)
+
+### Direct entry (TL-085)
+
+The Type tool opens a caret where it is clicked; double-clicking a text clip in Program edits it through the plain-text handler
+(`text-edit/register.ts`, order 60, after template texts and before composition texts). Clicking text with the Type tool edits
+it too. `graphics.newTextLayer` keeps adding a clip: it runs from menus and for agents, with no pointer to type at.
+
+- **The draft lives outside React** (`EntryDraft`, `text-edit/draft.ts`). A render failure commits it from the error boundary; if
+  that is refused a new editor opens on it, and a second failure hands the text to the message. `pagehide`, unmounting the overlay,
+  starting playback and the clip leaving the monitor all commit. A refused commit keeps the editor open with the reason.
+- **One gesture is one History step, and it is the live preview.** Text changes go to `session.beginGesture(...).update(commands)`,
+  so the Player draws the transient document and a look renders the letters as they are typed. Commit replays the commands on the
+  committed document; cancel leaves nothing. An entry that changes nothing holds no gesture. While text is being typed agents'
+  transactions queue, as during any drag. A new text gets a new clip id per keystroke, because a gesture replays its commands.
+- **Empty means gone.** A new entry of nothing or only whitespace writes nothing; emptying an existing clip lifts it, in one undo.
+- **A text clip that went while it was edited** (another window) comes back as a new text with what was typed.
+- **Ghost editor.** The editor is a transparent copy of the block (`textBlockStyle`, `contentSpans`, `runLayoutCss`, the same as the
+  layer) inside the same layer map, over the real picture. Where it cannot match, it shows its own text on a scrim
+  (`data-mode="plain"`): text on a path, paragraph overrides, optical or manual kerning, tsume.
+- **Our own caret.** Transparent text needs one, and no single colour is visible on every look: a white bar with a black edge,
+  placed in layer px from the selection's rectangle (the centre survives rotation, a bounding box would not) and scaled to stay
+  2 screen px.
+- **IME.** The DOM is not rebuilt during a composition, keys belong to the IME (`isComposing`), and the editor switches to plain
+  mode with a native caret, because the IME's underlines are drawn in the text colour. The text reaches the preview at
+  `compositionend`. `syncFromDom` reads the element when committing, so a blur in mid-composition keeps what is shown.
+- **Rest while editing.** The clip uses the template edit hold: In/Out animators and text animators rest, and a warp stands aside
+  (`useLayerFx`), so the caret sits on the letters. The look keeps drawing. All of this is preview only.
+- **Keys.** `data-keymap-suspend` makes the dispatcher ignore the target; the element stops propagation; browser chords that
+  would take the focus (Ctrl+S, Ctrl+P…) are prevented. Ctrl+Z undoes typing locally, because History is out of reach during a
+  gesture. Enter is a new line, Ctrl+Enter or Esc commits. Ctrl+B and Ctrl+I style the selection.
+- **The press does not open the caret, the release does.** A press on the SVG overlay moves focus to the body afterwards, which
+  blurred the fresh editor and committed nothing.
+- **StrictMode.** Effects replay in development. The commit on unmount runs in a microtask and checks the effect came back: run
+  synchronously, it closed the draft on mount, so every later commit was a no-op and the gesture stayed open. The component tests
+  mount in `StrictMode` for this reason.
+- Refused: read-only projects, locked tracks, text an expression drives, 3D layers (a short message at the pointer). Subtitles are
+  left to the Captions panel. Source Text keys: the edit writes a key at the playhead with `param.set`.
+
+### Runs (TL-093)
+
+The toolbar over a selection writes `content.runs` through `text-runs.ts`: flat, sorted runs with fields equal to the base removed.
+All of it belongs to the entry's one History step. Runs follow typing like a word processor (`remapTextRuns`; `remapParagraphs` does
+the same for paragraph overrides).
+
+The look applies over the runs. Size, weight, font and spacing change the picture, so the shape field wraps the styled letters and a
+rim stays one outline (tested: `title-text.e2e.test.ts`). A run's **colour** shows where the face paints `{kind: 'source'}`; a role,
+colour or gradient face paints over it, as the toolbar's tooltip says.
+
+**Per-letter finishes: data contract for the finishes stream.** `content.runs[i].finish` holds a finish id, and it persists, repairs
+and survives edits. A look uses one program per finish, so drawing it needs a pixel-to-letter map and a second program in the
+planner, which is GLSL and belongs to that stream. The map exists in TL-036's owner pass; a glyph's run is
+`textRunAt(content.runs, glyph.offset)`. Until the planner draws it `RUN_FINISHES_DRAWN` is false and the toolbar's control is disabled
+with the reason (`docs/gaps.md`): set it to true with the planner change.
+
+### Warp Text (TL-110)
+
+**Decision: an ordinary effect that follows the look, drawn as a forward mesh.**
+
+- *Effect, not a look step.* It reads the composited look, so rims, glows and shadows bend with the letters. It works on text with no
+  look. Keyframes, expressions, Effect Controls, copy and paste, MCP `add_effect`, export routing and the bake need no code. A look
+  step would add per-kind code to `plan.ts` and would not exist without a look. `look.apply` puts the look first in the stack, and
+  Properties inserts the warp straight after it, so a look applied later still goes under the warp. It can be moved in Effect
+  Controls: placed before the look, rims are computed on the bent letters and keep a constant width.
+- *Mesh, not a shader.* The Photoshop surfaces are defined forward (box → picture). Inverting them per pixel needs a solver that
+  fails on folds; a fixed lattice of 128 × 128 cells over the canvas is exact to under a pixel at 4K and draws folds with `over`.
+- *Resolution independence.* Control points are normalised to the layer box and the lattice is fixed, so geometry does not depend on the
+  canvas. `sourceMipmaps` filters what the warp shrinks.
+- *Past the box.* A rim or glow outside the box goes on along the surface's tangent at the edge (C1), because a Bernstein polynomial
+  runs away within one box width. This also means the warp bends a text box, as Photoshop does, so a fixed box wider than its text
+  bends the box, not the ink.
+- *Padding.* `FxPlanContext.inputPadding` tells a warp how far its input reaches, in `planLayerFx` and in `contentBleed`, so a glow does
+  not clip where the warp stretches it, and a bake stays cropped.
+- *Framing.* The warped frame is re-centred on the box (Pachislop's rule): a title does not drift as its bend animates.
+
+Patchy's control meshes are compared control point by control point with the output of Patchy's own C++
+(`packages/project/test/fixtures/patchy-warp-meshes.json`: 15 styles × 4 bends × 2 orientations × 2 distortions).
+
+### Vertical text (TL-111)
+
+`content.writingMode` (next to `style`, not in it: it applies to a whole block and has no meaning per run). Chromium does all shaping:
+`writing-mode: vertical-rl` and `text-orientation: mixed` give columns from the right, `vert` forms and sideways Latin, and
+`text-combine-upright: all` draws tate-chu-yoko. Pachislop's own glyph layout is not ported, for that reason.
+
+- **Tate-chu-yoko** (`tateChuYokoRanges`): a maximal run of 1 to 3 half-width characters with another kind of character or a paragraph
+  edge on both sides. A space next to it means Latin text, so "12月" and a lone "OK" stand up and "GO TO IT" and "2026年" stay on
+  their side. On by default, off per clip. This rule is ours, not a documented one: Photoshop leaves it to a manual setting, and
+  automatic rules vary.
+- **Three renderers.** The plain block; the In/Out overlay, which groups columns from `offsetLeft`, merges a run's letters into one
+  unit, shifts along the column and draws a horizontal typewriter caret; the typeset renderer, which merges the run into one glyph,
+  measures columns, places glyphs by the middle of their cell, and runs tracking down the column (`PlaceOptions.vertical`).
+- **Box.** Columns wrap at `box.height`. `autoSize: 'height'` keeps the height and takes the width; point text takes both. Columns start
+  at the right edge of the box. The headless measurer gets the height too.
+- **Refused:** text on a path. A path has one direction and a column has none on it (`docs/gaps.md`).
+- The look reads the picture, and the warp's Vertical orientation is Patchy's transposed construction.
+
+### Measured
+
+Figures in [Measured](#measured) below, under "Text".
+
 ## Commands (TL-018)
 
 | Command | Notes |
@@ -348,6 +451,9 @@ for the missing fingerprints, and for a generator example that was clipped by it
 
 ## Limits
 
+- Text entry: tsume, optical and manual kerning, per-paragraph settings and text on a path are edited in plain mode. A tab or browser
+  crash loses an entry that was never committed: what commits on `pagehide` is safe, a killed renderer has no such moment.
+- A warp bends the layer box, so a fixed box bends more air than text. Use point text.
 - `block` gradients on animated text follow the frame's bounds until TL-036 brings layout boxes.
 - `line` and `glyph` spans render as `block` until TL-036 (`docs/gaps.md`).
 - The field is rebuilt whenever a frame is redrawn: an animated param on static text pays for it, though the input did not

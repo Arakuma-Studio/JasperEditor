@@ -47,7 +47,8 @@ const caret = () => page.getByTestId('text-entry-caret');
 const viewport = () => page.getByTestId('program-viewport');
 
 async function shot(name: string): Promise<void> {
-	writeFileSync(join(OUT, `${name}.png`), await viewport().screenshot());
+	// `animations: 'disabled'` holds the caret's blink on its lit phase.
+	writeFileSync(join(OUT, `${name}.png`), await viewport().screenshot({ animations: 'disabled' }));
 }
 
 async function textOf(id: string): Promise<{
@@ -100,7 +101,8 @@ test('the Type tool types in place; the entry is one undo step; an empty one lea
 	await expect.poll(textClips).toHaveLength(1);
 	const [c] = await textClips();
 	expect((await textOf(c!.id)).text).toBe('In place');
-	expect((await query<{ clips: string[] }>(page, 'selection.get')).clips).toEqual([c!.id]);
+	const { selection } = await query<{ selection: { timeline: { clips: string[] } } }>(page, 'selection.get');
+	expect(selection.timeline.clips).toEqual([c!.id]);
 	expect((await appliedLabels(page)).at(-1)).toBe('Add Text');
 	await focusTimeline(page);
 	await page.keyboard.press('Control+KeyZ');
@@ -223,6 +225,14 @@ test('double-click edits text under a look: the caret shows and the look draws w
 		)
 		.toBeGreaterThan((await input().boundingBox())!.width * 0.5);
 	await page.waitForTimeout(1500);
+	// The caret follows the text: after the last letter, across the height of the line.
+	await expect
+		.poll(async () => {
+			const c = (await caret().boundingBox())!;
+			const b = (await input().boundingBox())!;
+			return Math.abs(c.x + c.width / 2 - (b.x + b.width));
+		})
+		.toBeLessThan(14);
 	await shot('look-typing');
 	await page.mouse.click(5, 5);
 	await expect(input()).toHaveCount(0);

@@ -4,6 +4,7 @@
 // spacing change its shape field, so rims wrap the styled letters as one continuous outline; a colour shows where the
 // look's face paints the clip's own picture (`source`), and a finish is the look's own, per letter.
 import {
+	RUN_FINISHES_DRAWN,
 	type RunPatch,
 	type TextContent,
 	type TextStyle,
@@ -156,6 +157,12 @@ export function RunToolbar(props: {
 			{props.look ? (
 				<select
 					aria-label={t('Finish of the selected letters')}
+					title={
+						RUN_FINISHES_DRAWN
+							? t('Finish of the selected letters')
+							: t('Per-letter finishes are not drawn yet: a look uses one finish per layer')
+					}
+					disabled={!RUN_FINISHES_DRAWN}
 					data-run-action="finish"
 					className="max-w-[96px] rounded-pr-control bg-pr-menu px-0.5 text-pr-small text-pr-text"
 					value={state.finish}

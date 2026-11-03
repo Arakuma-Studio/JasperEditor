@@ -378,7 +378,7 @@ function TextSections(props: {
 			{/* spec 13 AS-030: every stroke (not only the first) and the shadow with its spread. */}
 			{/* spec 19 TL-110, TL-111: orientation and Warp Text. */}
 			<Section id="properties.textLayout" title="Orientation and Warp">
-				<TextLayoutRows clips={visual} ctx={ctx} rowFor={rowFor} render={render} />
+				<TextLayoutRows clips={visual} ctx={ctx} render={render} />
 			</Section>
 			<Section id="properties.textStrokes" title="Strokes">
 				<StrokeList clips={textClips} ctx={ctx} rowFor={rowFor} render={render} />

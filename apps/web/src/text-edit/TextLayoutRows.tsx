@@ -1,10 +1,19 @@
 // Properties rows of a text selection (spec 19 TL-110, TL-111): orientation, upright short runs, and Warp Text. The
 // warp's numbers are the effect's own rows, so stopwatches and keyframes work here as in Effect Controls.
-import { type Clip, isVerticalText, WARP_STYLE_LABELS, WARP_STYLES, type WarpStyle } from '@jasper/project';
+import {
+	type Clip,
+	defaultEffectRegistry,
+	type EffectInstance,
+	isVerticalText,
+	TEXT_WARP_EFFECT_ID,
+	WARP_STYLE_LABELS,
+	WARP_STYLES,
+	type WarpStyle,
+} from '@jasper/project';
 import type { ReactNode } from 'react';
 import { CheckboxField, SelectField } from '../panels/properties/controls/fields.tsx';
 import type { RowContext } from '../panels/properties/controls/PropertyRow.tsx';
-import type { Row } from '../panels/properties/lib/model.ts';
+import { bindEffectParam, makeRow, type Row } from '../panels/properties/lib/model.ts';
 import {
 	textClipsOf,
 	uprightCommands,
@@ -36,10 +45,9 @@ function FieldRow(props: { label: string; children: ReactNode }) {
 export function TextLayoutRows(props: {
 	clips: readonly Clip[];
 	ctx: RowContext;
-	rowFor(key: string): Row | null;
 	render(r: Row | null): ReactNode;
 }) {
-	const { clips, ctx, rowFor, render } = props;
+	const { clips, ctx, render } = props;
 	const text = textClipsOf(clips);
 	const vertical = common(text.map((c) => isVerticalText(c.content)));
 	const upright = common(text.map((c) => c.content.tateChuYoko !== false));
@@ -49,7 +57,19 @@ export function TextLayoutRows(props: {
 		return fx ? String(fx.params?.style?.value ?? 'arc') : NONE;
 	};
 	const style = common(clips.map(styleOf));
-	const single = clips.length === 1 ? warpEffectOf(clips[0]!) : null;
+	// The effect's own rows, across every selected clip once all of them have a warp.
+	const instances = clips.map(warpEffectOf);
+	const spec = defaultEffectRegistry.get(TEXT_WARP_EFFECT_ID);
+	const warpRow = (name: string): Row | null => {
+		const param = spec?.params.find((p) => p.name === name);
+		if (!spec || !param || instances.some((fx) => !fx)) return null;
+		return makeRow(
+			`warp.${name}`,
+			clips.map((c, i) =>
+				bindEffectParam(ctx.doc, ctx.seq, c, instances[i] as EffectInstance, spec, param, ctx.frame),
+			),
+		);
+	};
 	return (
 		<>
 			<FieldRow label="Orientation">
@@ -95,7 +115,7 @@ export function TextLayoutRows(props: {
 					}
 				/>
 			</FieldRow>
-			{single ? FX_PARAMS.map((p) => render(rowFor(`effects.${single.id}.${p}`))) : null}
+			{FX_PARAMS.map((p) => render(warpRow(p)))}
 		</>
 	);
 }

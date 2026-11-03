@@ -158,6 +158,13 @@ deterministic; textperf measured 1080 × 760 with its own box) — ≈ 2 × fewe
   meet: every background is now drawn under all text). `text-animators.e2e.test.ts` "strokes over fills" now uses a
   centred 12 px stroke: an outside stroke no longer paints inside its own glyph (After Effects' strokes are centred).
 
+## 5a. Vertical text (spec 19 TL-111)
+
+`content.writingMode: 'vertical'` runs through all three renderers and both measurers. Decisions, rules and tests:
+[title-looks.md](title-looks.md) "Vertical text". In this file's terms: columns wrap at `box.height`, `autoSize: 'height'` keeps the
+height and takes the measured width, and the headless measurer's job carries the height. Paragraph space and indents use logical
+properties, so they follow the writing mode.
+
 ## 6. Limits
 
 - Joins are miter (see §1); round joins would need vector outlines the DOM does not expose.

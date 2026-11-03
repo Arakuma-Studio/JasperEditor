@@ -296,6 +296,12 @@ as inline styles, so the Player, `renderStill` and parallel `renderMedia` agree 
 
 ## Text animations
 
+Type in place on the Program monitor: the Type tool places a caret, double-clicking a text clip edits it, Esc or a click
+away commits, and the whole entry is one undo step. IME composition works, and a look draws the letters as you type.
+Selecting text in place shows a toolbar for per-word and per-letter styles. Properties sets a text vertical (right-to-left
+columns, with short runs upright) and bends it with Warp Text: the 15 Photoshop styles, keyframable, after the look so its
+rims bend with the letters (`docs/wp-notes/title-looks.md` "Text").
+
 Text clips can animate in and out (S11 §4, `docs/wp-notes/wp-m2-text-anim.md`): twelve presets — Fade, Slide
 Up/Down/Left/Right, Pop, Blur, Typewriter, Tracking, Mask Reveal, Rotate In, Drop — per character, word or line,
 with stagger, order (forward, backward, centre, edges, seeded random), ease and preset-specific params.

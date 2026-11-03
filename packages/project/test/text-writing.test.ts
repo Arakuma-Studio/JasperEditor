@@ -5,10 +5,18 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
 	applyRunPatch,
+	applyTransaction,
+	type Clip,
+	checkInvariants,
 	clearRuns,
+	createCounterIdSource,
+	createEmptyProject,
+	defaultEffectRegistry,
+	defaultRegistries,
 	normalizeTextRuns,
 	remapParagraphs,
 	remapTextRuns,
+	repairDocument,
 	repairTextWriting,
 	type TextRun,
 	tateChuYokoRanges,
@@ -185,5 +193,89 @@ describe('schema v12 fixture', () => {
 		expect(raw).toContain('"writingMode": "vertical"');
 		expect(raw).toContain('"tateChuYoko": false');
 		expect(raw).toContain('"finish": "flat"');
+	});
+});
+
+describe('commands (TL-111)', () => {
+	function setup(measure?: (box: { autoSize: string; height: number }) => { width: number; height: number }) {
+		const ids = createCounterIdSource(1);
+		const project = createEmptyProject({ ids, name: 'writing', preset: 'hd-1080p-30' });
+		const sequenceId = Object.keys(project.sequences)[0]!;
+		const ctx = {
+			ids,
+			now: () => 't',
+			revision: 0,
+			registries: defaultRegistries(),
+			...(measure ? { textMeasurer: { measure: (_c: unknown, box: never) => measure(box) } } : {}),
+		};
+		const run = (doc: typeof project, commands: unknown[]) =>
+			applyTransaction(doc, { label: 't', origin: 'user', sequenceId, commands }, ctx as never);
+		const add = run(project, [
+			{
+				type: 'clip.addText',
+				at: 0,
+				duration: 30,
+				track: 'V1',
+				content: { text: '縦書き\n二行目', writingMode: 'vertical', tateChuYoko: false },
+				ref: '$t',
+			},
+		]);
+		if (!add.result.ok) throw new Error(JSON.stringify(add.result.errors));
+		const id = add.result.refs.$t!;
+		const text = (doc: typeof project) =>
+			doc.sequences[sequenceId]!.clips[id] as Extract<Clip, { kind: 'text' }>;
+		return { doc: add.document, id, run, text };
+	}
+
+	it('clip.addText stores the fields and estimates columns', () => {
+		const { doc, text } = setup();
+		const c = text(doc);
+		expect(c.content.writingMode).toBe('vertical');
+		expect(c.content.tateChuYoko).toBe(false);
+		expect(c.box.height).toBeGreaterThan(c.box.width);
+	});
+
+	it('clip.update switches orientation, and horizontal leaves no field', () => {
+		const { doc, id, run, text } = setup();
+		const h = run(doc, [
+			{
+				type: 'clip.update',
+				clipId: id,
+				patch: { content: { writingMode: 'horizontal', tateChuYoko: true } },
+			},
+		]);
+		expect(h.result.ok).toBe(true);
+		expect('writingMode' in text(h.document).content).toBe(false);
+		expect('tateChuYoko' in text(h.document).content).toBe(false);
+		expect(text(h.document).box.height).toBeLessThan(text(doc).box.height);
+	});
+
+	it('a paragraph box keeps its height and takes the measured width', () => {
+		const { doc, id, run, text } = setup((box) => ({ width: 321, height: box.height + 999 }));
+		const r = run(doc, [
+			{ type: 'clip.update', clipId: id, patch: { box: { height: 400, autoSize: 'height' } } },
+		]);
+		expect(r.result.ok).toBe(true);
+		expect(text(r.document).box).toMatchObject({ width: 321, height: 400 });
+	});
+
+	it('refuses a text path on vertical text', () => {
+		const { doc, id, run } = setup();
+		const path = run(doc, [{ type: 'text.setPathOptions', clipIds: [id], maskId: 'msk_x' }]);
+		expect(path.result.ok).toBe(false);
+		if (!path.result.ok) expect(path.result.errors[0]?.code).toBe('E_INVALID_PARAM');
+	});
+
+	it('repair removes unreadable fields and reports them, once', () => {
+		const { doc, id, text } = setup();
+		const damaged = structuredClone(doc);
+		(text(damaged).content as { writingMode: unknown }).writingMode = 'sideways';
+		const issues = checkInvariants(damaged, { effects: defaultEffectRegistry });
+		expect(issues.some((i) => /writing mode/.test(i.message))).toBe(true);
+		const { document, report } = repairDocument(damaged, createCounterIdSource(90));
+		expect('writingMode' in text(document).content).toBe(false);
+		expect(report.some((r) => r.action === 'repair-text-writing' && r.entity === id)).toBe(true);
+		const again = repairDocument(document, createCounterIdSource(95));
+		expect(again.report.filter((r) => r.action === 'repair-text-writing')).toEqual([]);
 	});
 });

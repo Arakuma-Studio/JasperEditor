@@ -181,7 +181,7 @@ describe.runIf(enabled && !!CHROME)(
 			});
 			page = await browser.newPage({ viewport: { width: W, height: H * 2 } });
 			page.on('pageerror', (e) => console.error(`[title-text] page error: ${e.message}`));
-			await page.goto(`${media.base}/index.html`);
+			await page.goto(`${media.base}/index.html`, { timeout: 300_000 });
 		}, 600_000);
 
 		afterAll(async () => {
@@ -268,6 +268,63 @@ describe.runIf(enabled && !!CHROME)(
 			const rest = await still(build({ warp: false }), 60, 'plain-60');
 			const moved = await still(doc, 60, 'animator-60');
 			expect(ssim(luma(rest), luma(moved), W, H)).toBeGreaterThan(0.9);
+		});
+
+		it('a rim stays one outline across letters of different runs (TL-093)', async () => {
+			const ids = createCounterIdSource(1);
+			const project = createEmptyProject({ ids, name: 'rim', preset: 'hd-720p-30' });
+			const seqId = Object.keys(project.sequences)[0]!;
+			const { document, result } = applyTransaction(
+				project,
+				{
+					label: 't',
+					origin: 'user',
+					sequenceId: seqId,
+					commands: [
+						{ type: 'sequence.updateSettings', sequenceId: seqId, settings: { width: W, height: H } },
+						{
+							type: 'clip.addText',
+							at: 0,
+							duration: 30,
+							track: 'V1',
+							content: {
+								text: 'HH',
+								style: { sizePx: 140, fill: [1, 1, 1, 1], align: 'center', weight: 700 },
+								runs: [{ from: 1, to: 2, style: { sizePx: 110, italic: true } }],
+							},
+							box: { width: 400, height: 200, autoSize: 'none' },
+							ref: '$t',
+						},
+						{
+							type: 'look.apply',
+							clipIds: ['$t'],
+							look: {
+								name: 'Rim',
+								recipe: {
+									palette: { face: [1, 1, 0, 1], keyline: [0, 0, 1, 1] },
+									layers: [
+										{ type: 'rim', params: { width: 20, paint: { kind: 'role', role: 'keyline' } } },
+										{ type: 'face', params: { paint: { kind: 'role', role: 'face' } } },
+									],
+								},
+							},
+						},
+					],
+				},
+				{ ids, now: () => '2026-11-02T10:00:00.000Z', revision: 0, registries: defaultRegistries() },
+			);
+			if (!result.ok) throw new Error(JSON.stringify(result.errors));
+			const doc = buildRenderSnapshot(document, seqId, { resolveMedia: () => null, resolveFont: () => null });
+			const r = await still(doc, 10, 'rim-runs');
+			// Along the row through the title, from the first lit pixel to the last there is no background.
+			const y = Math.round(H / 2);
+			const lit = (x: number) => {
+				const i = (y * W + x) * 3;
+				return r.data[i]! + r.data[i + 1]! + r.data[i + 2]! > 60;
+			};
+			const xs = Array.from({ length: W }, (_, x) => x).filter(lit);
+			expect(xs.length).toBeGreaterThan(40);
+			expect(xs.length).toBe(xs[xs.length - 1]! - xs[0]! + 1);
 		});
 
 		it('the warp holds at another resolution (TL-034)', async () => {
