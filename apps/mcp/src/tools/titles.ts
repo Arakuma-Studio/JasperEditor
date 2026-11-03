@@ -9,6 +9,7 @@ import {
 	resolveCatalogFont,
 	type StillSheetCell,
 	type StillSheetResult,
+	type TitleLookLibraryResponse,
 } from '@jasper/api';
 import { EngineError } from '@jasper/engine-client';
 import {
@@ -67,6 +68,8 @@ import {
 	titleSizePx,
 	titleTextRows,
 	titleTiming,
+	USER_LOOK_ID,
+	type UserLook,
 } from '@jasper/project';
 import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
@@ -105,7 +108,7 @@ import { APPROVAL_REQUIRED_HINT } from './proposals.ts';
 import { durationFrames } from './trim-paths.ts';
 
 export const TITLE_ART_GUIDE = `Title art: stylized titles from a brief, in three to five calls (spec 19). A look is a reusable appearance on a clip (rims, glows, shadows, finishes, generators); a colourway is a palette that fills a look's colour roles without changing its structure. The tools are in the titles toolset: run them with call_tool (describe_tool shows the arguments).
-- Workflow: find_title_looks → propose_title → title_check. find_title_looks {query, tags?, aspect?, sampleText?} returns rows and one numbered sheet of real renders; propose_title {projectId, text, at, lookId, alternatives?} puts the title on the timeline or in Review, and returns one sheet of intro, hold and outro × alternatives over the real footage, plus its check; title_check {projectId, clipId | proposalId, target?} measures it again after any change.
+- Workflow: find_title_looks → propose_title → title_check. find_title_looks {query, tags?, aspect?, sampleText?, projectId?} searches the library, the user's own looks (ulk_…, saved in the editor and shared by every project) and the project's, and returns rows (source says which) and one numbered sheet of real renders; any row's lookId works with propose_title and get_title_recipe; propose_title {projectId, text, at, lookId, alternatives?} puts the title on the timeline or in Review, and returns one sheet of intro, hold and outro × alternatives over the real footage, plus its check; title_check {projectId, clipId | proposalId, target?} measures it again after any change.
 - Modes of propose_title. "propose" (default) stores a title-art proposal: colourways are the item's alternatives, the user reviews it in the Review panel, wait_for_proposal gives the decision, accept_proposal applies it where Project Settings ▸ Agent Proposals allows it. It needs the project open in an editor window: without one nobody can review it and it is refused with E_NO_EDITOR, nothing stored. "dryRun" changes nothing. "apply" adds the title now: with an editor it is one undoable History entry; on a headless engine there is no History and undo cannot reach it, so the result carries revert, the apply_commands arguments that take it out again. Ask before leaving a headless apply in place when the user did not ask for it.
 - energy (low, medium, high) picks the in and out animations. duration defaults to the time the text needs to be read. colorway names a colourway by id or name; alternatives (0–3) adds others, chosen from seed, which every result returns so a run can be repeated. An empty library is said plainly: pass recipe instead.
 - title_check rows are {id, kind, status, measured, expected, at, message, fix?}, as verify_export's: kind "format" = you may fix it unasked (fix.commands go to apply_commands, then check again), kind "judgement" = tell the user what was measured and ask. safe-area and off-frame use the title's real alpha bounds; contrast compares it with the rendered picture behind it, tile by tile, at the frames it is at rest; min-size, read-time, font-available and export-path (from the planner) follow, then every style lint issue. target adds the platform's interface zones, which are estimates and only warn. verified = no fail row and no unverified format row, at the returned revision: after any edit it says nothing, run it again. notChecked lists what no row measures: taste above all. Report those as not checked, never as fine.
@@ -116,7 +119,7 @@ const LookIdArg = z
 	.string()
 	.min(1)
 	.max(128)
-	.describe('A library id ("look.…") or a look of the project ("tlk_…"): find_title_looks');
+	.describe('A library ("look.…"), user ("ulk_…") or project ("tlk_…") look: find_title_looks');
 
 /** TL-106: checked before anything reads the value; an arbitrary JSON object otherwise. */
 const RecipeArg = z
@@ -180,10 +183,21 @@ type LookEntry = {
 	name: string;
 	tags: readonly string[];
 	category?: string;
-	source: 'library' | 'project' | 'recipe';
+	source: 'library' | 'user' | 'project' | 'recipe';
 	recipe: LookRecipe;
 	colorways: readonly Colorway[];
-	apply: { lookId: string } | { look: { name: string; recipe: LookRecipe } };
+	apply:
+		| { lookId: string }
+		| {
+				look: {
+					name: string;
+					recipe: LookRecipe;
+					sourceId?: string;
+					tags?: readonly string[];
+					category?: string;
+					colorways?: readonly Colorway[];
+				};
+		  };
 };
 
 const factoryEntry = (l: FactoryLook): LookEntry => ({
@@ -208,19 +222,82 @@ const projectEntry = (l: TitleLook): LookEntry => ({
 	apply: { lookId: l.id },
 });
 
-/** The library, then the project's own looks (a copy of a library look is the library's row). */
-function lookCatalogue(doc: ProjectDocument | null): LookEntry[] {
-	const own = Object.keys((doc as { titleLooks?: object } | null)?.titleLooks ?? {})
-		.map((id) => (doc ? titleLookOf(doc as never, id) : null))
-		.filter((l): l is TitleLook => !!l && !(l.sourceId && factoryLook(l.sourceId)));
-	return [...FACTORY_LOOKS.map(factoryEntry), ...own.map(projectEntry)];
+/**
+ * A look of the user's library (TL-054, the engine's store shared by every project). It travels whole, with its id as
+ * `sourceId`: `look.apply` copies it into the project once and reuses that copy afterwards, as for a library look.
+ */
+const userEntry = (l: UserLook): LookEntry => ({
+	lookId: l.id,
+	name: l.name,
+	tags: l.tags ?? [],
+	...(l.category ? { category: l.category } : {}),
+	source: 'user',
+	recipe: l.recipe,
+	colorways: l.colorways ?? [],
+	apply: {
+		look: {
+			name: l.name,
+			recipe: l.recipe,
+			sourceId: l.id,
+			...(l.tags?.length ? { tags: l.tags } : {}),
+			...(l.category ? { category: l.category } : {}),
+			...(l.colorways?.length ? { colorways: l.colorways } : {}),
+		},
+	},
+});
+
+/** The user's looks, or why they could not be read: an engine without the store still finds the library. */
+async function userLooks(ctx: ToolContext): Promise<{ looks: UserLook[]; error?: string }> {
+	try {
+		const r: TitleLookLibraryResponse = await ctx.engine((c) => c.call('titleLooksList'));
+		return { looks: r.looks };
+	} catch (e) {
+		return { looks: [], error: (e as Error).message };
+	}
 }
 
-function lookById(doc: ProjectDocument | null, id: string): LookEntry {
+/** The project's looks that are not a copy of a library or user look (those are the original's row). */
+function projectLooks(doc: ProjectDocument | null, user: readonly UserLook[]): TitleLook[] {
+	const userIds = new Set(user.map((l) => l.id));
+	return Object.keys((doc as { titleLooks?: object } | null)?.titleLooks ?? {})
+		.map((id) => (doc ? titleLookOf(doc as never, id) : null))
+		.filter(
+			(l): l is TitleLook => !!l && !(l.sourceId && (factoryLook(l.sourceId) || userIds.has(l.sourceId))),
+		);
+}
+
+/** The library, the user's looks, then the project's own. */
+function lookCatalogue(doc: ProjectDocument | null, user: readonly UserLook[]): LookEntry[] {
+	return [
+		...FACTORY_LOOKS.map(factoryEntry),
+		...user.map(userEntry),
+		...projectLooks(doc, user).map(projectEntry),
+	];
+}
+
+async function lookById(ctx: ToolContext, doc: ProjectDocument | null, id: string): Promise<LookEntry> {
 	const f = factoryLook(id);
 	if (f) return factoryEntry(f);
 	const own = doc ? titleLookOf(doc as never, id) : null;
 	if (own) return projectEntry(own);
+	if (USER_LOOK_ID.test(id)) {
+		const lib: TitleLookLibraryResponse = await ctx.engine((c) => c.call('titleLooksList'));
+		const user = lib.looks.find((l) => l.id === id);
+		if (user) return userEntry(user);
+		// Deleted from the user's library since: the project's copy is still the look that was picked.
+		const copy = doc
+			? Object.keys((doc as { titleLooks?: object }).titleLooks ?? {})
+					.map((k) => titleLookOf(doc as never, k))
+					.find((l) => l?.sourceId === id)
+			: undefined;
+		if (copy) return projectEntry(copy);
+		throw new ToolError(
+			'E_NOT_FOUND',
+			`No look ${id} in the user's library`,
+			'find_title_looks lists looks; the user may have deleted it.',
+			{ lookId: id },
+		);
+	}
 	throw new ToolError(
 		'E_NOT_FOUND',
 		`No look ${id}`,
@@ -354,7 +431,7 @@ function lookSheetDocument(rows: readonly LookEntry[], sampleText: string, aspec
 			{
 				type: 'look.apply',
 				clipIds: [ref],
-				...(row.source === 'library' ? row.apply : { look: { name: row.name, recipe: row.recipe } }),
+				...(row.source === 'project' ? { look: { name: row.name, recipe: row.recipe } } : row.apply),
 				seed: 1,
 			},
 		);
@@ -963,7 +1040,7 @@ export function registerTitleTools(ctx: ToolContext): void {
 		{
 			title: 'Find title looks',
 			description: 'Search title looks by words and tags: rows plus one numbered sheet of real renders.',
-			details: `Searches the title look library (and a project's own looks with projectId) by words and tags, and returns rows {lookId, name, tags, colorways, costClass, renderPath} with ONE numbered PNG sheet of real renders of sampleText, ${DEFAULT_SHEET_WIDTH} px wide by default. Cell n of the sheet is row n. limit is at most ${MAX_FIND_LIMIT}; cursor continues a list. costClass: light, medium or heavy, how much a look costs to draw; heavy looks move on their own and redraw every frame. renderPath comes from the planner. libraryColorways lists the colourways usable with any look, once. No schemas: get_title_recipe gives a look's JSON. An empty result says so; the library may be empty in a development build. The sheet is one engine job: past timeoutSeconds the rows come back with {jobId, timedOut, next}.`,
+			details: `Searches title looks by words and tags: the library, the user's own looks (saved in the editor, shared by every project) and, with projectId, the project's looks. Returns rows {lookId, name, tags, colorways, costClass, renderPath, source: library | user | project} with ONE numbered PNG sheet of real renders of sampleText, ${DEFAULT_SHEET_WIDTH} px wide by default. Cell n of the sheet is row n. limit is at most ${MAX_FIND_LIMIT}; cursor continues a list. costClass: light, medium or heavy, how much a look costs to draw; heavy looks move on their own and redraw every frame. renderPath comes from the planner. libraryColorways lists the colourways usable with any look, once. No schemas: get_title_recipe gives a look's JSON. An empty result says so; the library may be empty in a development build. The sheet is one engine job: past timeoutSeconds the rows come back with {jobId, timedOut, next}.`,
 			input: {
 				query: z.string().max(200).describe('Words to look for, e.g. "chrome trailer"; "" lists everything'),
 				tags: z.array(z.string().min(1).max(64)).max(16).optional().describe('Only looks with all of these'),
@@ -997,9 +1074,10 @@ export function registerTitleTools(ctx: ToolContext): void {
 		},
 		async (a, extra) => {
 			const doc = a.projectId ? (await loadDoc(ctx, a.projectId)).doc : null;
+			const user = await userLooks(ctx);
 			const words = tokens(a.query);
 			const wanted = (a.tags ?? []).map((t) => t.toLowerCase());
-			const hits = lookCatalogue(doc)
+			const hits = lookCatalogue(doc, user.looks)
 				.filter((e) => wanted.every((t) => e.tags.some((x) => x.toLowerCase() === t)))
 				.map((e) => ({ e, score: searchScore(e, words) }))
 				.filter((x) => x.score > 0)
@@ -1014,14 +1092,16 @@ export function registerTitleTools(ctx: ToolContext): void {
 				total: hits.length,
 				...(next ? { nextCursor: next } : {}),
 				libraryColorways: library,
+				...(user.error ? { userLooksError: `The user's looks could not be read: ${user.error}` } : {}),
 			};
 			if (!page.length)
 				return jsonResult({
 					rows: [],
 					...base,
-					next: FACTORY_LOOKS.length
-						? 'No look matches: try other words, or fewer tags.'
-						: 'The library of this build holds no looks. Write a recipe for propose_title (get_guide {"topic": "title-art"}).',
+					next:
+						FACTORY_LOOKS.length || user.looks.length
+							? 'No look matches: try other words, or fewer tags.'
+							: 'The library of this build holds no looks. Write a recipe for propose_title (get_guide {"topic": "title-art"}).',
 				});
 			const aspect = a.aspect ?? '16:9';
 			const { document, sequenceId } = lookSheetDocument(page, a.sampleText ?? DEFAULT_SAMPLE_TEXT, aspect);
@@ -1162,7 +1242,7 @@ export function registerTitleTools(ctx: ToolContext): void {
 			const seq = pickSequence(doc, a.sequenceId);
 			const look: LookEntry =
 				a.lookId !== undefined
-					? lookById(doc, a.lookId)
+					? await lookById(ctx, doc, a.lookId)
 					: (() => {
 							const recipe = parseRecipe(a.recipe);
 							const name = a.name ?? 'Custom title';
@@ -1490,13 +1570,13 @@ export function registerTitleTools(ctx: ToolContext): void {
 			description:
 				'A look as JSON: its recipe, colourways and the layer types it uses. Start a custom `recipe` from it.',
 			details:
-				'A look as JSON: its recipe (bottom-first layers, palette, light, font), colourways, tags, what each layer type it uses takes (name, kind, default, range, no schemas) and every layer type there is. The starting point for propose_title {recipe} and save_title_look {recipe}. A project look needs projectId.',
+				'A look as JSON: its recipe (bottom-first layers, palette, light, font), colourways, tags, what each layer type it uses takes (name, kind, default, range, no schemas) and every layer type there is. The starting point for propose_title {recipe} and save_title_look {recipe}. Library and user looks need no project; a project look needs projectId.',
 			input: { lookId: LookIdArg, projectId: ProjectIdArg.optional().describe('For a look of the project') },
 			annotations: READ_ONLY,
 		},
 		async ({ lookId, projectId }) => {
 			const doc = projectId ? (await loadDoc(ctx, projectId)).doc : null;
-			const look = lookById(doc, lookId);
+			const look = await lookById(ctx, doc, lookId);
 			const used = [...new Set(look.recipe.layers.map((l) => l.type))];
 			return jsonResult({
 				lookId,
