@@ -4,7 +4,13 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { appdirPaths } from '@jasper/config';
-import { FACTORY_LOOKS, FACTORY_TEMPLATES, factoryLook, type LookRecipe } from '@jasper/project';
+import {
+	FACTORY_LOOKS,
+	FACTORY_TEMPLATES,
+	factoryLook,
+	type LookFont,
+	type LookRecipe,
+} from '@jasper/project';
 import { afterAll, describe, expect, it } from 'vitest';
 import { DisplayFontManifestSchema, FontCatalogService } from '../src/fonts/catalog.ts';
 import { coreServices } from '../src/tools/services.ts';
@@ -311,14 +317,18 @@ describe('display fonts (TL-053)', () => {
 
 	it('bundles every face a factory look names, at its weight, with its fallback and Japanese face', () => {
 		const has = (family: string, weight: number) => fonts.isBundledFace({ family, weight, style: 'normal' });
-		for (const l of FACTORY_LOOKS) {
-			const f = l.recipe.font!;
-			expect(has(f.family, f.weight ?? 400), `${l.libraryId}: ${f.family} ${f.weight}`).toBe(true);
-			if (f.fallback) expect(fonts.byFamily(f.fallback), `${l.libraryId}: ${f.fallback}`).toBeTruthy();
-			if (f.ja) expect(has(f.ja.family, f.ja.weight ?? 400), `${l.libraryId}: ${f.ja.family}`).toBe(true);
-		}
+		const bundled = (who: string, f: LookFont) => {
+			expect(has(f.family, f.weight ?? 400), `${who}: ${f.family} ${f.weight}`).toBe(true);
+			if (f.fallback) expect(fonts.byFamily(f.fallback), `${who}: ${f.fallback}`).toBeTruthy();
+			if (f.ja) expect(has(f.ja.family, f.ja.weight ?? 400), `${who}: ${f.ja.family}`).toBe(true);
+		};
+		for (const l of FACTORY_LOOKS) bundled(l.libraryId, l.recipe.font!);
+		// A template's text names a library look, or (under a 3D solid) a bare face in a font of its own.
 		for (const t of FACTORY_TEMPLATES)
-			for (const c of t.clips) if (c.kind === 'text') expect(factoryLook(c.look)).toBeTruthy();
+			for (const c of t.clips)
+				if (c.kind === 'text')
+					if (typeof c.look === 'string') expect(factoryLook(c.look), `${t.id}: ${c.look}`).toBeTruthy();
+					else bundled(`${t.id} ${c.slot}`, c.look.font);
 	});
 
 	it('finds the fonts in a packaged layout through JASPER_FONTS_DIR', () => {
