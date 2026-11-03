@@ -398,6 +398,8 @@ export function titleRenderedRows(o: {
 	atOf: (frame: number) => TitleCheckAt;
 	/** Commands that move or scale the title; absent for a proposal, or when the Motion is animated. */
 	moveFix?: ((dx: number, dy: number, scale: number) => Record<string, unknown>[]) | null;
+	/** Where the title's anchor is, sequence px, when it is not animated. */
+	position?: readonly [number, number] | null;
 	/** Commands that add a separating rim; absent when there is no look to add it to. */
 	rimFix?: ((color: [number, number, number, number]) => Record<string, unknown>[]) | null;
 }): TitleCheckRow[] {
@@ -445,8 +447,12 @@ export function titleRenderedRows(o: {
 		const cy = (ink.y0 + ink.y1) / 2;
 		const halfW = (w * scale) / 2;
 		const halfH = (h * scale) / 2;
-		const dx = Math.min(titleRect.x1 - halfW, Math.max(titleRect.x0 + halfW, cx)) - cx;
-		const dy = Math.min(titleRect.y1 - halfH, Math.max(titleRect.y0 + halfH, cy)) - cy;
+		let dx = Math.min(titleRect.x1 - halfW, Math.max(titleRect.x0 + halfW, cx)) - cx;
+		let dy = Math.min(titleRect.y1 - halfH, Math.max(titleRect.y0 + halfH, cy)) - cy;
+		// The frame cuts what it shows, so on a clipped axis the bounds understate the title and a shift by them leaves it
+		// clipped. Its anchor is known: centre that on the frame, and the next check sees the whole title.
+		if (o.position && (ink.x0 <= 0 || ink.x1 >= size.width)) dx = size.width / 2 - o.position[0];
+		if (o.position && (ink.y0 <= 0 || ink.y1 >= size.height)) dy = size.height / 2 - o.position[1];
 		safe.fix = {
 			label:
 				scale < 1 ? 'Scale the title into the title-safe area' : 'Move the title into the title-safe area',

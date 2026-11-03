@@ -254,6 +254,20 @@ describe('rendered rows', () => {
 		expect(row(rows, 'safe-area').fix!.label).toMatch(/Scale/);
 	});
 
+	it('safe-area: a title the frame cuts is centred from its anchor, because its bounds understate it', () => {
+		// anchored at x 60: half of a wide title is past the left edge, so the frame shows x 0…700 of it
+		const rows = rowsOf([frame({ ink: { x0: 0, y0: 400, x1: 700, y1: 600 } })], {
+			position: [60, 500],
+			moveFix: (dx, dy, k) => [{ dx, dy, k }],
+		});
+		expect(row(rows, 'safe-area').fix?.commands).toEqual([{ dx: 960 - 60, dy: 0, k: 1 }]);
+		// no anchor to go on: the shift by what it can see
+		const blind = rowsOf([frame({ ink: { x0: 0, y0: 400, x1: 700, y1: 600 } })], {
+			moveFix: (dx, dy, k) => [{ dx, dy, k }],
+		});
+		expect(row(blind, 'safe-area').fix?.commands).toEqual([{ dx: 192, dy: 0, k: 1 }]);
+	});
+
 	it('off-frame: ink on the edge fails, a glow on the edge warns', () => {
 		const ink = rowsOf([frame({ ink: { x0: 0, y0: 400, x1: 900, y1: 600 } })]);
 		expect(row(ink, 'off-frame')).toMatchObject({ status: 'fail', measured: { inkTouches: ['left'] } });

@@ -643,6 +643,7 @@ function renderedRowsOf(
 		sizePx,
 		target,
 		atOf: atFrame(seq),
+		position: movable ? pos.value : null,
 		moveFix: movable
 			? (dx, dy, k) => [
 					{

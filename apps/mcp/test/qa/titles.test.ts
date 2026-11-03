@@ -9,7 +9,7 @@ import { decodePng } from '../../src/png.ts';
 import { QA_ENABLED, Qa, ROOT } from './harness.ts';
 
 const PORT = Number(process.env.MCP_QA_TITLES_PORT ?? 49026);
-const LONG = { timeoutSeconds: 600 };
+const LONG = { timeoutSeconds: 900 };
 
 const RECIPE = {
 	palette: { face: [0.98, 0.82, 0.25, 1], keyline: [0.08, 0.1, 0.35, 1], shadow: [0, 0, 0, 1] },
@@ -50,7 +50,18 @@ describe.runIf(QA_ENABLED)('titles (real engine, real rendering, MCP over stdio)
 
 	beforeAll(async () => {
 		await qa.start();
-	}, 240_000);
+		// The first browser render bundles the compositions, which stalls the engine: get it out of the way of the timings.
+		await qa.project('QA warm-up');
+		await qa.tx('Title', [
+			{ type: 'clip.addText', at: 0, duration: 30, track: 'V2', content: { text: 'WARM' }, ref: '$t' },
+			{ type: 'look.apply', clipIds: ['$t'], look: { name: 'Warm', recipe: RECIPE }, seed: 1 },
+		]);
+		for (let i = 0; i < 12; i++) {
+			const r = await qa.tryTool('render_frame', { projectId: qa.projectId, at: 10, width: 320 });
+			if (!r.isError) return;
+		}
+		throw new Error(`no render after 12 tries: ${qa.logs.join('').slice(-2000)}`);
+	}, 1_500_000);
 	afterAll(async () => {
 		await qa.stop();
 	}, 60_000);
@@ -59,7 +70,7 @@ describe.runIf(QA_ENABLED)('titles (real engine, real rendering, MCP over stdio)
 		await qa.project('QA title');
 		const media = await qa.importMedia('clip-a.mp4');
 		await qa.tool('add_clip', { projectId: qa.projectId, media: media['clip-a.mp4'], at: 0, sourceOut: 4 });
-		await qa.tool('set_brief', { projectId: qa.projectId, goal: 'A launch teaser', platform: 'youtube' });
+		await qa.tool('set_brief', { projectId: qa.projectId, text: 'A launch teaser', platform: 'youtube' });
 		const before = await qa.frame(45);
 
 		calls = 0;
@@ -115,7 +126,7 @@ describe.runIf(QA_ENABLED)('titles (real engine, real rendering, MCP over stdio)
 		const gone = await qa.frame(45);
 		const left = gone.data.reduce((n, v, i) => n + Math.abs(v - before.data[i]!), 0) / gone.data.length;
 		expect(left).toBeLessThan(0.05);
-	}, 1_200_000);
+	}, 1_500_000);
 
 	it('a title lost in the picture fails on measured contrast, and its fix passes when rendered again', async () => {
 		await qa.project('QA contrast');
@@ -140,7 +151,7 @@ describe.runIf(QA_ENABLED)('titles (real engine, real rendering, MCP over stdio)
 		const row = rowOf(again.json.rows, 'contrast');
 		expect(row.status).not.toBe('fail');
 		expect(row.measured.ratio).toBeGreaterThan(3);
-	}, 900_000);
+	}, 1_500_000);
 
 	it('a title off the frame fails on its real bounds, and the move puts it inside', async () => {
 		await qa.project('QA frame');
@@ -168,7 +179,7 @@ describe.runIf(QA_ENABLED)('titles (real engine, real rendering, MCP over stdio)
 		});
 		expect(rowOf(again.json.rows, 'off-frame').status).toBe('pass');
 		expect(rowOf(again.json.rows, 'safe-area').status).not.toBe('fail');
-	}, 900_000);
+	}, 1_500_000);
 
 	it('a headless propose says what to do, and a cancelled sheet leaves nothing behind', async () => {
 		await qa.project('QA headless');
@@ -193,7 +204,7 @@ describe.runIf(QA_ENABLED)('titles (real engine, real rendering, MCP over stdio)
 		});
 		const jobId = queued.json.jobId;
 		await qa.tool('cancel_job', { jobId });
-		const job = await qa.tool<{ state: string }>('wait_for_job', { jobId, timeoutSeconds: 60 });
-		expect(job.state).toBe('cancelled');
+		const job = await qa.tryTool('wait_for_job', { jobId, timeoutSeconds: 60 });
+		expect(JSON.parse(textOf(job)).error.code).toBe('JOB_CANCELLED');
 	}, 300_000);
 });

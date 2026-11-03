@@ -1122,6 +1122,13 @@ describe('effects discovery (TL-105)', () => {
 		expect(looks.json.total).toBe(0);
 	});
 
+	it('describe_commands no longer drops effects', async () => {
+		const s = await connect();
+		const r = await s.ok('describe_commands');
+		expect(r.json.effects.count).toBeGreaterThan(10);
+		expect(r.json.effects.hint).toContain('list_effects');
+	});
+
 	it('adds an effect and sets and keys its params', async () => {
 		const s = await connect();
 		const placed = await s.ok('apply_commands', {
