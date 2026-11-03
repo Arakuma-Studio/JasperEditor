@@ -828,7 +828,8 @@ library, as the effect preset store does: it loads when the Looks tab mounts and
 User looks are entries of their own source in the Looks tab, category My Looks, which always has a chip so saving and importing have a
 place to start; the bar under it saves the selected clip's look, imports a `.json` and exports all, and a card's menu renames, exports
 and deletes. Applying, previewing and dropping one give the look whole to `look.apply` with the user look's id as `sourceId`, so a
-second use reuses the project copy, and the card stays one card. Save takes the clip's values at its first frame, as Save Look does,
+second use reuses the project copy, and the card stays one card. `userLookSource` (`packages/project`) builds that argument, for the
+Looks tab and for agents' `find_title_looks` alike; both read the store with the engine client's `titleLooksList`. Save takes the clip's values at its first frame, as Save Look does,
 with the linked look's tags, category and colourways. These actions change a file outside the project, so they are not History
 entries: deleting asks first, and every outcome is a toast or the status line. `userLooksUnavailable` gives the reason each disabled
 action shows: no engine, an engine that failed to read the library, still loading, or a file from a newer build. Graphics ▸ Look has

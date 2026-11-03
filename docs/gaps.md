@@ -912,7 +912,8 @@ Status of the foundation; streams still in progress update this list. Evidence: 
 - **User looks** (TL-054): My Looks in the Looks tab lists the engine's user looks and saves, renames, deletes, imports and exports them.
   They live outside the project, so these actions are not undoable (deleting asks first). Without the engine, or with a library file
   from a newer build, the actions are disabled with the reason, and an engine that stops answering leaves the last list it read on
-  screen, still usable to apply. Agents' `find_title_looks` does not search them yet (below).
+  screen, still usable to apply. Agents' `find_title_looks` searches them too, and both apply a user look through
+  `userLookSource`.
 - **The library's 3D category is drawn depth** (TL-050): its four looks build depth with Extrude, Bevel, metal and plates, so they render
   wherever a look does. A look is an appearance (TL-055) and does not carry the Advanced 3D solid of spec 19 §9, which stays in
   Properties ▸ 3D Title; a look that turns a clip 3D would need the 3D title model inside `LookRecipe` and a schema change.

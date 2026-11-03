@@ -20,6 +20,7 @@ import {
 	USER_LOOK_LIBRARY_FORMAT,
 	USER_LOOK_VERSION,
 	type UserLook,
+	userLookSource,
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
 
@@ -122,6 +123,41 @@ describe('user looks (TL-054)', () => {
 			}),
 			{ numRuns: 300 },
 		);
+	});
+});
+
+describe('userLookSource: a user look given to look.apply', () => {
+	it('copies the look in once, with its id as sourceId; a second apply reuses the copy', () => {
+		const user = parseUserLook(
+			look({
+				tags: ['bold'],
+				category: 'sports',
+				colorways: [{ id: 'cw.mine', name: 'Mine', palette: { face: [0, 0, 1, 1] } }],
+			}),
+		);
+		if (!user.ok) throw new Error(user.message);
+		const source = userLookSource(user.look);
+		expect(source).toEqual({
+			name: 'Mine',
+			recipe,
+			sourceId: 'ulk_0123456789ABCDEF',
+			tags: ['bold'],
+			category: 'sports',
+			colorways: [{ id: 'cw.mine', name: 'Mine', palette: { face: [0, 0, 1, 1] } }],
+		});
+		// No empty lists or metadata the look does not have.
+		expect(Object.keys(userLookSource(look() as UserLook))).toEqual(['name', 'recipe', 'sourceId']);
+		const h = new Harness();
+		h.ok([
+			{ type: 'clip.addText', at: 0, duration: 60, track: 'V2', content: { text: 'A' }, ref: '$a' },
+			{ type: 'clip.addText', at: 60, duration: 60, track: 'V2', content: { text: 'B' }, ref: '$b' },
+			{ type: 'look.apply', clipIds: ['$a'], look: source },
+			{ type: 'look.apply', clipIds: ['$b'], look: source },
+		]);
+		const copies = Object.values(h.doc.titleLooks ?? {}).filter(
+			(l) => (l as { sourceId?: string }).sourceId === 'ulk_0123456789ABCDEF',
+		);
+		expect(copies).toHaveLength(1);
 	});
 });
 

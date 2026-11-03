@@ -5,8 +5,8 @@
 // Reading is strict and never throws: `parseUserLook` and `parseLookFile` return results. An entry of a newer version is
 // refused, not guessed at. Objects are loose, so a field a newer minor write added survives a round trip through this one.
 import { z } from 'zod';
-import { appearanceBytes, ColorwaySchema, MAX_LOOK_COLORWAYS, MAX_TITLE_LOOK_NAME } from './model.ts';
-import { appearanceFromRecipe, LookRecipeSchema, MAX_RECIPE_BYTES } from './recipe.ts';
+import { appearanceBytes, type Colorway, ColorwaySchema, MAX_LOOK_COLORWAYS, MAX_TITLE_LOOK_NAME } from './model.ts';
+import { appearanceFromRecipe, type LookRecipe, LookRecipeSchema, MAX_RECIPE_BYTES } from './recipe.ts';
 import { appearanceProblem } from './validate.ts';
 
 export const USER_LOOK_VERSION = 1;
@@ -96,6 +96,28 @@ export function parseLookFile(raw: unknown): ParsedLookFile {
 	if (entries.length > MAX_FILE_ENTRIES)
 		return { ok: false, message: `A file holds at most ${MAX_FILE_ENTRIES} looks` };
 	return { ok: true, entries };
+}
+
+/**
+ * What `look.apply {look}` is given for a user look: the look whole, with its id as `sourceId`, so the first use copies it
+ * into the project and later uses reuse that copy (TL-015). The Looks tab and agents' `find_title_looks` both apply it so.
+ */
+export function userLookSource(l: UserLook): {
+	name: string;
+	recipe: LookRecipe;
+	sourceId: string;
+	tags?: string[];
+	category?: string;
+	colorways?: Colorway[];
+} {
+	return {
+		name: l.name,
+		recipe: l.recipe,
+		sourceId: l.id,
+		...(l.tags?.length ? { tags: [...l.tags] } : {}),
+		...(l.category ? { category: l.category } : {}),
+		...(l.colorways?.length ? { colorways: [...(l.colorways as Colorway[])] } : {}),
+	};
 }
 
 /** The file Export writes. */

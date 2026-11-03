@@ -14,6 +14,7 @@ import {
 	type TitleLook,
 	titleLooksOf,
 	type UserLook,
+	userLookSource,
 } from '@jasper/project';
 import { getLanguage, t } from '../i18n/runtime.ts';
 
@@ -37,14 +38,7 @@ export type LookEntry = {
 	 * A user look is not in the project or the library: `look.apply` takes it whole and copies it into the project, with
 	 * the user look's id as its `sourceId`, so applying it again reuses that copy (TL-015).
 	 */
-	given?: {
-		name: string;
-		recipe: LookRecipe;
-		sourceId: string;
-		tags?: string[];
-		category?: string;
-		colorways?: Colorway[];
-	};
+	given?: ReturnType<typeof userLookSource>;
 };
 
 /** What the factory library may carry beyond the model's fields. */
@@ -134,14 +128,7 @@ function userEntry(l: UserLook, colorways: readonly Colorway[]): LookEntry {
 		cardColorways: own.length ? all.filter((c) => own.some((o) => o.id === c.id)) : all,
 		recipe: l.recipe,
 		searchText: fold([l.name, category, l.category ?? '', ...tags].join(' ')),
-		given: {
-			name: l.name,
-			recipe: l.recipe,
-			sourceId: l.id,
-			...(tags.length ? { tags: [...tags] } : {}),
-			...(l.category ? { category: l.category } : {}),
-			...(own.length ? { colorways: own } : {}),
-		},
+		given: userLookSource(l),
 	};
 }
 

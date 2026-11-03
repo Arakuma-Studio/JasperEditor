@@ -71,6 +71,7 @@ import {
 	titleTiming,
 	USER_LOOK_ID,
 	type UserLook,
+	userLookSource,
 } from '@jasper/project';
 import { ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
@@ -236,16 +237,7 @@ const userEntry = (l: UserLook): LookEntry => ({
 	source: 'user',
 	recipe: l.recipe,
 	colorways: l.colorways ?? [],
-	apply: {
-		look: {
-			name: l.name,
-			recipe: l.recipe,
-			sourceId: l.id,
-			...(l.tags?.length ? { tags: l.tags } : {}),
-			...(l.category ? { category: l.category } : {}),
-			...(l.colorways?.length ? { colorways: l.colorways } : {}),
-		},
-	},
+	apply: { look: userLookSource(l) },
 });
 
 /** The user's looks, or why they could not be read: an engine without the store still finds the library. */
