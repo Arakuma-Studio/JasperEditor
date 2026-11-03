@@ -325,8 +325,9 @@ along the arc on screen as before. The 0.35 is our choice, not a measured or doc
 
 Properties ▸ 3D Title on a 3D text or shape layer (Advanced 3D): surface, material preset, bands, inflate, plates, tone
 mapping, exposure, glints. Ready-made 3D titles: Motion Templates ▸ Looks ▸ 3D, four templates that expand to these same layers
-(`packages/project/src/title-looks/factory/templates/three-d.ts`, [title-looks.md](title-looks.md) § Templates). Effect Controls ▸ 3D Title has every number with a stopwatch. Environment lights: Properties ▸
-Environment. MCP: `set_3d_surface`, `set_3d_geometry`, `edit_bevel_bands`, `edit_backplates`, `set_3d_renderer`, `add_light`.
+(`packages/project/src/title-looks/factory/templates/three-d.ts`, [title-looks.md](title-looks.md) § Templates). Effect Controls ▸
+3D Title has every number with a stopwatch. Environment lights: Properties ▸ Environment. MCP: `set_material` (its physical surface
+arguments), `threed_solid_edit` (geometry, `band`, `plate`), `set_3d_renderer`, `add_light`.
 
 ### Addresses
 

@@ -24,7 +24,7 @@ export const TRANSCRIPT_CLEANUP_FEATURE = 'transcript-cleanup';
 export const TRANSCRIPT_CORRECTION_FEATURE = 'transcript-correction';
 /** Spec 18 AF-PROP-001: an agent's own multi-step cut (`propose_edits`), reviewed by the user before it lands. */
 export const ROUGH_CUT_FEATURE = 'rough-cut';
-/** Spec 19 TL-101: a stylized title from `propose_title`; its colourways are the item's alternatives. */
+/** Spec 19 TL-101: a stylized title from `title_propose`; its colourways are the item's alternatives. */
 export const TITLE_ART_FEATURE = 'title-art';
 
 /** A Review group a producer declares: items carry its id in `meta.group` (or `group`); order = declaration order. */
@@ -185,7 +185,7 @@ export const PROPOSAL_FEATURES: readonly ProposalFeatureInfo[] = [
 		itemNoun: { one: '1 title', other: '{0} titles' },
 		agentAccept: { setting: 'project', default: true },
 		groups: [{ id: 'titles', label: 'Titles' }],
-		producers: ['propose_title'],
+		producers: ['title_propose'],
 	},
 ];
 

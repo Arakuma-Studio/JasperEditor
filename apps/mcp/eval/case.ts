@@ -83,6 +83,8 @@ export const CaseSchema = z.strictObject({
 			seed: z.array(z.record(z.string(), z.unknown())).optional(),
 			exportPolls: z.number().int().optional(),
 			verify: z.strictObject({ failRow: z.string().optional() }).optional(),
+			/** A still logo.png on V2: `{{still}}` (`fake-engine.ts` `EngineSetup.logo`). */
+			logo: z.boolean().optional(),
 		})
 		.optional(),
 	checks: ChecksSchema,

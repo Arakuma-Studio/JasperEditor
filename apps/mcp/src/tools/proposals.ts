@@ -170,7 +170,7 @@ function itemView(it: ProposalItem, withCommands: boolean) {
 		...(typeof m.timecode === 'string' ? { timecode: m.timecode } : {}),
 		...(typeof m.soundId === 'string' ? { soundId: m.soundId } : {}),
 		...(typeof m.role === 'string' ? { role: m.role } : {}),
-		// a title (propose_title): the look and colourway the item applies
+		// a title (title_propose): the look and colourway the item applies
 		...(typeof m.lookName === 'string' ? { look: m.lookName } : {}),
 		...(typeof m.colorwayName === 'string' ? { colorway: m.colorwayName } : {}),
 		...(withCommands

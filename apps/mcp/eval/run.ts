@@ -156,6 +156,7 @@ async function runSample(input: {
 			...(testCase.setup?.seed ? { seed: testCase.setup.seed } : {}),
 			...(testCase.setup?.exportPolls ? { exportPolls: testCase.setup.exportPolls } : {}),
 			...(testCase.setup?.verify ? { verify: testCase.setup.verify } : {}),
+			...(testCase.setup?.logo ? { logo: true } : {}),
 		};
 		// The ids are deterministic, so the same setup here gives the stub's ids to the prompt and history.
 		const vars = { ...createFakeEngine(engine).vars, cwd };

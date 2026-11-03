@@ -75,9 +75,9 @@ describe.runIf(QA_ENABLED)('titles (real engine, real rendering, MCP over stdio)
 
 		calls = 0;
 		await call('enable_toolsets', { names: ['titles'] });
-		const found = await call('find_title_looks', { query: 'bold', ...LONG });
+		const found = await call('title_look_find', { query: 'bold', ...LONG });
 		const look = found.json.rows[0]?.lookId ? { lookId: found.json.rows[0].lookId } : { recipe: RECIPE };
-		const made = await call('propose_title', {
+		const made = await call('title_propose', {
 			projectId: qa.projectId,
 			text: 'LAUNCH DAY',
 			at: 0,
@@ -133,7 +133,7 @@ describe.runIf(QA_ENABLED)('titles (real engine, real rendering, MCP over stdio)
 		await qa.tx('Footage', [
 			{ type: 'clip.addSolid', at: 0, duration: 150, track: 'V1', color: [1, 1, 1, 1] },
 		]);
-		const made = await call('propose_title', {
+		const made = await call('title_propose', {
 			projectId: qa.projectId,
 			text: 'WHITE ON WHITE',
 			at: 0,
@@ -158,7 +158,7 @@ describe.runIf(QA_ENABLED)('titles (real engine, real rendering, MCP over stdio)
 		await qa.tx('Footage', [
 			{ type: 'clip.addSolid', at: 0, duration: 150, track: 'V1', color: [0.1, 0.1, 0.3, 1] },
 		]);
-		const made = await call('propose_title', {
+		const made = await call('title_propose', {
 			projectId: qa.projectId,
 			text: 'OFF THE EDGE',
 			at: 0,
@@ -186,7 +186,7 @@ describe.runIf(QA_ENABLED)('titles (real engine, real rendering, MCP over stdio)
 		await qa.tx('Footage', [
 			{ type: 'clip.addSolid', at: 0, duration: 150, track: 'V1', color: [0, 0, 0, 1] },
 		]);
-		const e = await qa.toolError('propose_title', {
+		const e = await qa.toolError('title_propose', {
 			projectId: qa.projectId,
 			text: 'x',
 			at: 0,

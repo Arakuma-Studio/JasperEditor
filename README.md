@@ -560,10 +560,11 @@ schemas):
   `update_shape_item` `remove_shape_items` `move_shape_item` `group_shape_items` `duplicate_shape_item`
   `edit_shape_path` `convert_shape_to_vector`; Trim Paths animations: `animate_trim_paths` (with an optional tracer
   in the same undo step) `reverse_path_direction` `add_line` `add_trim_tracer`.
-- Titles (`titles` toolset, guide `title-art`): `find_title_looks` `propose_title` `title_check` `get_title_recipe`
-  `save_title_look` `add_title_generator` `set_global_light`; the resource `jasper://title-looks/{id}`.
-  `find_title_looks` searches the library, the user's looks (`/api/title-looks`) and, with `projectId`, the project's.
-  `propose_title` needs an open editor to propose, and stores the first option's check rows on the proposal item; with `mode: "apply"` on a headless engine it returns `revert`, because there is no
+- Titles (`titles` toolset, guide `title-art`): `title_look_find` `title_propose` `title_check` `title_look_save`
+  `title_generator_add` `title_light_set`; the resource `jasper://title-looks/{id}`.
+  `title_look_find` searches the library, the user's looks (`/api/title-looks`) and, with `projectId`, the project's;
+  with `lookId` it returns that look's recipe.
+  `title_propose` needs an open editor to propose, and stores the first option's check rows on the proposal item; with `mode: "apply"` on a headless engine it returns `revert`, because there is no
   Undo there. `render_frames` runs as one engine job and takes `proposalId`, `itemIds`, `overlay: "safe-area"`, `wait`,
   `timeoutSeconds` and `jobId`.
 - Effects: `list_effects` `add_effect` `set_effect_param`.
@@ -725,8 +726,8 @@ schemas):
   `export_frame`; Project Manager `project_manager`; Warp Stabilizer `stabilize_clip`; Auto Reframe
   `auto_reframe_sequence`; Essential Graphics `create_graphic` `set_graphic` `export_graphic_template`
   `import_graphic_template`.
-- Delivery and Photoshop (`docs/wp-notes/title-looks.md`): `send_to_photoshop` `export_alpha` `import_layer_styles`
-  `split_image` `check_gamut`.
+- Delivery and Photoshop (`docs/wp-notes/title-looks.md`): `export_psd`, `export_frame {alpha: true}`,
+  `import_layer_styles`, `image_split`, `color_gamut_check`.
 
 Resources: `jasper://projects/{projectId}/document`, `jasper://projects/{projectId}/timeline`,
 `jasper://guide`, `jasper://guide/<topic>`, `jasper://guide/routing`. Prompt: `edit-video`.
@@ -1178,7 +1179,7 @@ Alpha delivery, Photoshop interchange and a gamut check (`docs/wp-notes/title-lo
 - **Graphics ▸ Split Image…**: a still into its connected parts as separate clips, grouped, one undo step, for logo animation.
 - **Program ▸ wrench ▸ Gamut Warning** (also the View menu): marks the pixels of the paused frame outside an output gamut, or
   outside the EBU R 103 legal range after 4:2:0, with percentages.
-- MCP: `send_to_photoshop` `export_alpha` (export toolset), `import_layer_styles` `split_image` (graphics), `check_gamut` (color);
+- MCP: `export_psd`, `export_frame {alpha: true}` (export toolset), `import_layer_styles` `image_split` (graphics), `color_gamut_check` (color);
   guide topic `delivery`. Routes: `POST /api/psd/plan`, `/api/psd`, `/api/alpha-delivery`, `/api/gamut-check`,
   `/api/title-looks/layer-styles/read`, `/api/media/:key/split-image[/analyze]`.
 

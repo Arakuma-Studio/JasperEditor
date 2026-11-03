@@ -1,6 +1,6 @@
 // A stylized title as a reviewable proposal (spec 19 TL-101, TL-098): one item per title, its colourways as the item's
-// alternatives. `propose_title` builds the draft; `titleArtMetaOf` is the lenient reader the Review panel uses for the
-// thumbnail and the swatches. The rendered check of the option `propose_title` measured travels in its meta (`check`,
+// alternatives. `title_propose` builds the draft; `titleArtMetaOf` is the lenient reader the Review panel uses for the
+// thumbnail and the swatches. The rendered check of the option `title_propose` measured travels in its meta (`check`,
 // read by `titleArtCheckOf`): `meta` is opaque to the proposal schema, so this adds no field an older build would drop. Pure.
 import { z } from 'zod';
 import { utf8Length } from '../clipboard/payload.ts';
@@ -9,7 +9,7 @@ import { TITLE_ART_FEATURE } from './features.ts';
 import { PROPOSAL_LIMITS, type ProposalDraft } from './schema.ts';
 
 export const TITLE_ART_GROUP = 'titles';
-/** The item's id: a `propose_title` holds one title. */
+/** The item's id: a `title_propose` holds one title. */
 export const TITLE_ART_ITEM_ID = 'title';
 
 /** What Review shows for an option (`meta` of the item and of each alternative). */
@@ -52,7 +52,7 @@ const CheckRowSchema = z.looseObject({
 });
 
 /**
- * `title_check`'s body for the option as `propose_title` rendered it: the rows, the verdict and the revision they hold
+ * `title_check`'s body for the option as `title_propose` rendered it: the rows, the verdict and the revision they hold
  * for. `pending`: the renders outlived the call, so only the rows that need no picture are here. `omitted`: rows left
  * out to stay within `MAX_TITLE_ART_CHECK_BYTES`, passes first.
  */

@@ -23,7 +23,7 @@ export const INSTRUCTIONS_MAX_BYTES = 4096;
 
 /** Trigger words per toolset: a model that sees only core tools has to learn here that the others exist. */
 const TOOLSET_MAP =
-	'Toolsets: project (open in the editor, settings, versions), media (info, `derive_media`: extract audio, convert, denoise a file), processing (restore, upscale, stabilize), editing (move, markers, tracks, paste), structure (nests, frame holds), time (speed, remap), multicam, transitions, color (`grade_clip`, LUTs), effects (`list_effects`, masks, presets), keyframes, text (plain titles, text styles), titles (styled title looks: `find_title_looks`, `propose_title`, `title_check`), graphics, shapes, 3d (cameras, lights, extruded 3D titles), vfx (tracking, roto), audio (mixer, `measure_loudness`), sound (effects library), sound-design, transcript (`remove_fillers`, cleanup), captions (`captions_from_transcript`, subtitles), review, automation, export (PSD, PNGs with alpha), ui.';
+	'Toolsets: project (open in the editor, settings, versions), media (info, `derive_media`: extract audio, convert, denoise a file), processing (restore, upscale, stabilize), editing (move, markers, tracks, paste), structure (nests, frame holds), time (speed, remap), multicam, transitions, color (`grade_clip`, LUTs), effects (`list_effects`, masks, presets), keyframes, text (plain titles, text styles), titles (styled title looks: `title_look_find`, `title_propose`, `title_check`), graphics, shapes, 3d (cameras, lights, extruded 3D titles), vfx (tracking, roto), audio (mixer, `measure_loudness`), sound (effects library), sound-design, transcript (`remove_fillers`, cleanup), captions (`captions_from_transcript`, subtitles), review, automation, export (PSD, PNGs with alpha), ui.';
 
 /** A guide's title: its first line up to the first ": " or ". " outside parentheses (the guides open that way). */
 export function guideTitle(text: string): string {
@@ -182,16 +182,16 @@ export const ROUTES: readonly Route[] = [
 	{
 		en: 'Make a stylish title',
 		es: 'Haz un título con estilo',
-		tools: ['find_title_looks', 'propose_title'],
+		tools: ['title_look_find', 'title_propose'],
 	},
 	{ en: 'Can the title be read?', es: '¿Se puede leer el título?', tools: ['title_check'] },
-	{ en: 'Save this title look', es: 'Guarda este aspecto de título', tools: ['save_title_look'] },
+	{ en: 'Save this title look', es: 'Guarda este aspecto de título', tools: ['title_look_save'] },
 	{
 		en: 'Show a title look as JSON',
 		es: 'Muestra un aspecto de título en JSON',
-		tools: ['get_title_recipe'],
+		tools: ['title_look_find'],
 	},
-	{ en: 'Put fire behind the title', es: 'Pon fuego detrás del título', tools: ['add_title_generator'] },
+	{ en: 'Put fire behind the title', es: 'Pon fuego detrás del título', tools: ['title_generator_add'] },
 	{
 		en: 'Add an effect to this clip',
 		es: 'Añade un efecto a este clip',

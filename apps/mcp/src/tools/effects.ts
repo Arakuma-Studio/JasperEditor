@@ -122,7 +122,8 @@ export function registerEffectTools(ctx: ToolContext): void {
 		'add_effect',
 		{
 			title: 'Add an effect',
-			description: 'Add a video effect to one or more clips. Returns instance ids for `set_effect_param`.',
+			description:
+				'Add a video effect to clips; ids come from `list_effects`, never guessed. Returns instance ids for `set_effect_param`.',
 			details:
 				'Adds a video effect to one clip or several in one undo step (effect.add). params: values by name, the rest take their defaults (list_effects {effectId} lists them). index: place in the stack, top first (default the end). Returns the instance ids for set_effect_param.',
 			input: {
@@ -169,7 +170,8 @@ export function registerEffectTools(ctx: ToolContext): void {
 		'set_effect_param',
 		{
 			title: 'Set an effect param',
-			description: 'Set one param of an effect instance, optionally as a keyframe.',
+			description:
+				'Set one param of an effect instance (ids from `add_effect` or `get_clip_properties`); with `keyframe: true` and `at`, a key per call.',
 			details:
 				'Sets one param of an effect instance in one undo step (param.set on ["effect", effectInstanceId, param]). The instance id comes from add_effect or get_clip_properties. at sets the value at that time on an animated param; with keyframe: true it starts animating the param and sets a key there. Values are checked against the param: wrong types or ranges are refused.',
 			input: {

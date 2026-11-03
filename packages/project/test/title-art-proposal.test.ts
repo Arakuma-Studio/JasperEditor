@@ -55,10 +55,10 @@ function draft(sequenceId: string) {
 }
 
 describe('title-art feature', () => {
-	it('is a project-setting feature, on by default, produced by propose_title', () => {
+	it('is a project-setting feature, on by default, produced by title_propose', () => {
 		const f = proposalFeatureInfo(TITLE_ART_FEATURE)!;
 		expect(f).toMatchObject({
-			producers: ['propose_title'],
+			producers: ['title_propose'],
 			agentAccept: { setting: 'project', default: true },
 		});
 		expect(f.groups.map((g) => g.id)).toEqual([TITLE_ART_GROUP]);

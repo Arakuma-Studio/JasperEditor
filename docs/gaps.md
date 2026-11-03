@@ -910,7 +910,7 @@ Status of the foundation; streams still in progress update this list. Evidence: 
 - **User looks** (TL-054): My Looks in the Looks tab lists the engine's user looks and saves, renames, deletes, imports and exports them.
   They live outside the project, so these actions are not undoable (deleting asks first). Without the engine, or with a library file
   from a newer build, the actions are disabled with the reason, and an engine that stops answering leaves the last list it read on
-  screen, still usable to apply. Agents' `find_title_looks` searches them too, and both apply a user look through
+  screen, still usable to apply. Agents' `title_look_find` searches them too, and both apply a user look through
   `userLookSource`.
 - **Real 3D titles are templates, not looks** (TL-050, TL-052): a look is an appearance (TL-055) and cannot carry the Advanced 3D
   solid of spec 19 §9, so the 3D category holds four templates that make Advanced 3D layers (bands, plates, inflate, physical
@@ -985,19 +985,19 @@ discovery are in; evidence and thresholds in [wp-notes/title-looks-agents.md](wp
 - `title_check` thresholds for minimum size, CJK reading speed and the platform interface zones are assumptions, listed there.
   No official platform table was found, so `target-safe-area` only warns.
 - `font-available` answers for the family, not for every character of the text.
-- **A title proposal's rows in Review are the ones `propose_title` stored**, for its first option only. The Review panel
+- **A title proposal's rows in Review are the ones `title_propose` stored**, for its first option only. The Review panel
   (`apps/web/src/proposals/title-art-check.tsx`) shows each row's status, measured against expected, timecode and fix label,
   says "Pending" when the renders outlived the call (only the rows that need no picture are there), and says that an
   alternate has no rows. A later `title_check {proposalId}` measures again but does not update the stored rows, and the
   panel does not mark rows whose `revision` is older than the document. The fixes are labels: a proposal's clip has no id
   yet, so they cannot be applied from the panel.
-- **The MCP eval cases for titles and delivery can sample, but have not been sampled.** `apps/mcp/eval/fake-engine.ts`
-  now models `requestStillSheet` (cells drawn as stand-in pictures), `listFonts`, the user look library
-  (`titleLooksList`), `psdPlan`, `psdExport`, `alphaDelivery` and `gamutCheck`, with results parsed by the engine's
-  schemas; `eval/fake-engine.test.ts` drives those tools through the stub with no unmodelled call. So
-  `titles-styled-title`, `delivery-psd`, `delivery-alpha-png` and `delivery-gamut` can produce valid samples. No model
-  samples were run for them, nor for the `+titles`, `+effects`, `+export`, `+3d`, `+color` and `+graphics` budgets
-  ([wp-notes/title-looks-agents.md](wp-notes/title-looks-agents.md)).
+- **The MCP eval cases for the spec 19 tools can sample, but have not been sampled.** Every titles, effects, 3D and
+  delivery tool has a case (`apps/mcp/eval/cases/{titles,three-d,delivery}.jsonl`, 23 cases with their controls), and
+  `apps/mcp/eval/fake-engine.ts` answers every engine call they reach (sheets, fonts, user looks, PSD, alpha delivery,
+  gamut, scopes, layer-style files, image split), with results parsed by the engine's schemas.
+  `eval/cases.test.ts` runs each case's intended route through the stub and grades it a valid pass. No model samples
+  were run for them, so no case is yet shown to fail without its text: the paid runs that would show it wait for the
+  owner ([wp-notes/title-looks-agents.md](wp-notes/title-looks-agents.md) § Names and merges).
 
 ### 3D titles (spec 19 §9)
 

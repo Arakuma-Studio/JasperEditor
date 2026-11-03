@@ -1,6 +1,6 @@
 // Title art for agents (spec 19 §11, TL-100…TL-107; docs/wp-notes/title-looks-agents.md): search → sheet → propose →
-// check, the way the sound tools work. `find_title_looks` searches the library and shows it on one numbered sheet;
-// `propose_title` turns a brief into a title on the real footage, with colourways as alternatives, and checks it;
+// check, the way the sound tools work. `title_look_find` searches the library and shows it on one numbered sheet;
+// `title_propose` turns a brief into a title on the real footage, with colourways as alternatives, and checks it;
 // `title_check` measures rendered frames and reports rows bound to a revision. The rest is the escape hatch: recipes,
 // saved looks, generators and the sequence's global light.
 import {
@@ -111,18 +111,18 @@ import { APPROVAL_REQUIRED_HINT } from './proposals.ts';
 import { durationFrames } from './trim-paths.ts';
 
 export const TITLE_ART_GUIDE = `Title art: stylized titles from a brief, in three to five calls (spec 19). A look is a reusable appearance on a clip (rims, glows, shadows, finishes, generators); a colourway is a palette that fills a look's colour roles without changing its structure. The tools are in the titles toolset: run them with call_tool (describe_tool shows the arguments).
-- Workflow: find_title_looks → propose_title → title_check. find_title_looks {query, tags?, aspect?, sampleText?, projectId?} searches the library, the user's own looks (ulk_…, saved in the editor and shared by every project) and the project's, and returns rows (source says which) and one numbered sheet of real renders; any row's lookId works with propose_title and get_title_recipe; propose_title {projectId, text, at, lookId, alternatives?} puts the title on the timeline or in Review, and returns one sheet of intro, hold and outro × alternatives over the real footage, plus its check; title_check {projectId, clipId | proposalId, target?} measures it again after any change.
-- Modes of propose_title. "propose" (default) stores a title-art proposal: colourways are the item's alternatives, the user reviews it in the Review panel, wait_for_proposal gives the decision, accept_proposal applies it where Project Settings ▸ Agent Proposals allows it. It needs the project open in an editor window: without one nobody can review it and it is refused with E_NO_EDITOR, nothing stored. "dryRun" changes nothing. "apply" adds the title now: with an editor it is one undoable History entry; on a headless engine there is no History and undo cannot reach it, so the result carries revert, the apply_commands arguments that take it out again. Ask before leaving a headless apply in place when the user did not ask for it.
+- Workflow: title_look_find → title_propose → title_check. title_look_find {query, tags?, aspect?, sampleText?, projectId?} searches the library, the user's own looks (ulk_…, saved in the editor and shared by every project) and the project's, and returns rows (source says which) and one numbered sheet of real renders; any row's lookId works with title_propose and title_look_find {lookId} (its recipe); title_propose {projectId, text, at, lookId, alternatives?} puts the title on the timeline or in Review, and returns one sheet of intro, hold and outro × alternatives over the real footage, plus its check; title_check {projectId, clipId | proposalId, target?} measures it again after any change.
+- Modes of title_propose. "propose" (default) stores a title-art proposal: colourways are the item's alternatives, the user reviews it in the Review panel, wait_for_proposal gives the decision, accept_proposal applies it where Project Settings ▸ Agent Proposals allows it. It needs the project open in an editor window: without one nobody can review it and it is refused with E_NO_EDITOR, nothing stored. "dryRun" changes nothing. "apply" adds the title now: with an editor it is one undoable History entry; on a headless engine there is no History and undo cannot reach it, so the result carries revert, the apply_commands arguments that take it out again. Ask before leaving a headless apply in place when the user did not ask for it.
 - energy (low, medium, high) picks the in and out animations. duration defaults to the time the text needs to be read. colorway names a colourway by id or name; alternatives (0–3) adds others, chosen from seed, which every result returns so a run can be repeated. An empty library is said plainly: pass recipe instead.
 - title_check rows are {id, kind, status, measured, expected, at, message, fix?}, as verify_export's: kind "format" = you may fix it unasked (fix.commands go to apply_commands, then check again), kind "judgement" = tell the user what was measured and ask. safe-area and off-frame use the title's real alpha bounds; contrast compares it with the rendered picture behind it, tile by tile, at the frames it is at rest; min-size, read-time, font-available and export-path (from the planner) follow, then every style lint issue. target adds the platform's interface zones, which are estimates and only warn. verified = no fail row and no unverified format row, at the returned revision: after any edit it says nothing, run it again. notChecked lists what no row measures: taste above all. Report those as not checked, never as fine.
 - Sheets are one engine job. Past timeoutSeconds a call returns {jobId, timedOut: true, next}; render_frames {jobId} (sheets) or title_check {jobId, …} (rows) picks the job up. render_frames {proposalId, overlay: "safe-area"} shows a proposal with the Program monitor's safe margins.
-- Escape hatch. get_title_recipe {lookId} returns a look as JSON and the layer types it uses; propose_title {recipe} and save_title_look {clipId | recipe, name, tags} take such a recipe (${RECIPE_BOUNDS.layers} layers, ${RECIPE_BOUNDS.maxBytes / 1024} KB, ${RECIPE_BOUNDS.maxDepth} levels of nesting, ${RECIPE_BOUNDS.maxTypeInstances} layers of a type, ${RECIPE_BOUNDS.maxGeneratorInstances} generators). add_title_generator adds a generator behind a title or as a layer of its look; set_global_light moves the light of every look that follows the sequence. get_clip_properties lists a look's palette, light and layer params with their param.set targets, so keyframes and expressions reach them. list_effects, add_effect and set_effect_param add ordinary effects on top.`;
+- Escape hatch. title_look_find {lookId} returns a look as JSON and the layer types it uses; title_propose {recipe} and title_look_save {clipId | recipe, name, tags} take such a recipe (${RECIPE_BOUNDS.layers} layers, ${RECIPE_BOUNDS.maxBytes / 1024} KB, ${RECIPE_BOUNDS.maxDepth} levels of nesting, ${RECIPE_BOUNDS.maxTypeInstances} layers of a type, ${RECIPE_BOUNDS.maxGeneratorInstances} generators). title_generator_add adds a generator behind a title or as a layer of its look; title_light_set moves the light of every look that follows the sequence. get_clip_properties lists a look's palette, light and layer params with their param.set targets, so keyframes and expressions reach them. list_effects, add_effect and set_effect_param add ordinary effects on top.`;
 
 const LookIdArg = z
 	.string()
 	.min(1)
 	.max(128)
-	.describe('A library ("look.…"), user ("ulk_…") or project ("tlk_…") look: find_title_looks');
+	.describe('A library ("look.…"), user ("ulk_…") or project ("tlk_…") look: title_look_find');
 
 /** TL-106: checked before anything reads the value; an arbitrary JSON object otherwise. */
 const RecipeArg = z
@@ -132,7 +132,7 @@ const RecipeArg = z
 		if (p) c.addIssue({ code: 'custom', message: p.message });
 	})
 	.describe(
-		'A look as JSON: {layers: [{type, name?, enabled?, params?}], palette?, light?, font?}. get_title_recipe gives examples',
+		'A look as JSON: {layers: [{type, name?, enabled?, params?}], palette?, light?, font?}. title_look_find {lookId} gives examples',
 	);
 
 const TimeoutArg = z
@@ -288,7 +288,7 @@ async function lookById(ctx: ToolContext, doc: ProjectDocument | null, id: strin
 		throw new ToolError(
 			'E_NOT_FOUND',
 			`No look ${id} in the user's library`,
-			'find_title_looks lists looks; the user may have deleted it.',
+			'title_look_find lists looks; the user may have deleted it.',
 			{ lookId: id },
 		);
 	}
@@ -296,7 +296,7 @@ async function lookById(ctx: ToolContext, doc: ProjectDocument | null, id: strin
 		'E_NOT_FOUND',
 		`No look ${id}`,
 		FACTORY_LOOKS.length
-			? 'find_title_looks lists looks; a project look needs its projectId.'
+			? 'title_look_find lists looks; a project look needs its projectId.'
 			: 'The library of this build is empty, and a project look needs its projectId: pass recipe instead.',
 		{ lookId: id },
 	);
@@ -310,7 +310,7 @@ function parseRecipe(raw: unknown): LookRecipe {
 		throw new ToolError(
 			'E_INVALID_PARAM',
 			`recipe.${i.path.join('.')}: ${i.message}`,
-			'get_title_recipe shows a working recipe.',
+			'title_look_find {lookId} shows a working recipe.',
 		);
 	}
 	const ids = createRandomIdSource();
@@ -326,7 +326,7 @@ function parseRecipe(raw: unknown): LookRecipe {
 }
 
 function layerTypesHint(): string {
-	return 'get_title_recipe lists the layer types in layerTypes; each takes the params of its layerParams entry.';
+	return 'title_look_find {lookId} lists the layer types in layerTypes; each takes the params of its layerParams entry.';
 }
 
 /** How much a look costs to draw, from what TL-037 and docs/performance.md §7 measured: time dependence, then layers. */
@@ -994,6 +994,33 @@ function revertOf(
 	};
 }
 
+/** One look as JSON (TL-104): its recipe, colourways, what each of its layer types takes and every layer type. */
+async function lookRecipeBody(ctx: ToolContext, doc: ProjectDocument | null, lookId: string) {
+	const look = await lookById(ctx, doc, lookId);
+	const used = [...new Set(look.recipe.layers.map((l) => l.type))];
+	return {
+		lookId,
+		name: look.name,
+		tags: look.tags,
+		...(look.category ? { category: look.category } : {}),
+		colorways: look.colorways,
+		recipe: look.recipe,
+		layerParams: Object.fromEntries(
+			used.map((type) => [
+				type,
+				(titleLayerType(type)?.params ?? []).map((p) => ({
+					name: p.name,
+					type: p.type,
+					default: p.default,
+					...('range' in p && p.range ? { range: p.range } : {}),
+					...('options' in p && p.options ? { options: p.options } : {}),
+				})),
+			]),
+		),
+		layerTypes: layerCatalog(),
+	};
+}
+
 export function registerTitleTools(ctx: ToolContext): void {
 	ctx.server.registerResource(
 		'title-look',
@@ -1009,7 +1036,7 @@ export function registerTitleTools(ctx: ToolContext): void {
 		{
 			title: 'Title look',
 			description:
-				'A library look as JSON: its tags, colourways and recipe (get_title_recipe gives the same).',
+				'A library look as JSON: its tags, colourways and recipe (title_look_find {lookId} gives the same).',
 			mimeType: 'application/json',
 		},
 		async (uri, { id }) => {
@@ -1030,13 +1057,19 @@ export function registerTitleTools(ctx: ToolContext): void {
 
 	defineTool(
 		ctx,
-		'find_title_looks',
+		'title_look_find',
 		{
 			title: 'Find title looks',
-			description: 'Search title looks by words and tags: rows plus one numbered sheet of real renders.',
-			details: `Searches title looks by words and tags: the library, the user's own looks (saved in the editor, shared by every project) and, with projectId, the project's looks. Returns rows {lookId, name, tags, colorways, costClass, renderPath, source: library | user | project} with ONE numbered PNG sheet of real renders of sampleText, ${DEFAULT_SHEET_WIDTH} px wide by default. Cell n of the sheet is row n. limit is at most ${MAX_FIND_LIMIT}; cursor continues a list. costClass: light, medium or heavy, how much a look costs to draw; heavy looks move on their own and redraw every frame. renderPath comes from the planner. libraryColorways lists the colourways usable with any look, once. No schemas: get_title_recipe gives a look's JSON. An empty result says so; the library may be empty in a development build. The sheet is one engine job: past timeoutSeconds the rows come back with {jobId, timedOut, next}.`,
+			description:
+				'Search title looks by words and tags: rows plus one numbered sheet of real renders. With `lookId`: that look as JSON. Then `title_propose {lookId}`.',
+			details: `Searches title looks by words and tags: the library, the user's own looks (saved in the editor, shared by every project) and, with projectId, the project's looks. Returns rows {lookId, name, tags, colorways, costClass, renderPath, source: library | user | project} with ONE numbered PNG sheet of real renders of sampleText, ${DEFAULT_SHEET_WIDTH} px wide by default. Cell n of the sheet is row n. limit is at most ${MAX_FIND_LIMIT}; cursor continues a list. costClass: light, medium or heavy, how much a look costs to draw; heavy looks move on their own and redraw every frame. renderPath comes from the planner. libraryColorways lists the colourways usable with any look, once. No schemas: lookId gives one look's JSON. An empty result says so; the library may be empty in a development build. The sheet is one engine job: past timeoutSeconds the rows come back with {jobId, timedOut, next}. lookId instead returns that one look as JSON, with no sheet: its recipe (bottom-first layers, palette, light, font), colourways, tags, what each layer type it uses takes (name, kind, default, range, no schemas) and every layer type there is; the starting point for title_propose {recipe} and title_look_save {recipe}. Library and user looks need no project; a project look needs projectId.`,
 			input: {
-				query: z.string().max(200).describe('Words to look for, e.g. "chrome trailer"; "" lists everything'),
+				query: z
+					.string()
+					.max(200)
+					.optional()
+					.describe('Words to look for, e.g. "chrome trailer" (default: everything)'),
+				lookId: LookIdArg.optional().describe('One look as JSON: its recipe and layer types, no sheet'),
 				tags: z.array(z.string().min(1).max(64)).max(16).optional().describe('Only looks with all of these'),
 				aspect: z
 					.enum(['16:9', '9:16', '1:1', '4:5'])
@@ -1068,8 +1101,9 @@ export function registerTitleTools(ctx: ToolContext): void {
 		},
 		async (a, extra) => {
 			const doc = a.projectId ? (await loadDoc(ctx, a.projectId)).doc : null;
+			if (a.lookId !== undefined) return jsonResult(await lookRecipeBody(ctx, doc, a.lookId));
 			const user = await userLooks(ctx);
-			const words = tokens(a.query);
+			const words = tokens(a.query ?? '');
 			const wanted = (a.tags ?? []).map((t) => t.toLowerCase());
 			const hits = lookCatalogue(doc, user.looks)
 				.filter((e) => wanted.every((t) => e.tags.some((x) => x.toLowerCase() === t)))
@@ -1095,7 +1129,7 @@ export function registerTitleTools(ctx: ToolContext): void {
 					next:
 						FACTORY_LOOKS.length || user.looks.length
 							? 'No look matches: try other words, or fewer tags.'
-							: 'The library of this build holds no looks. Write a recipe for propose_title (get_guide {"topic": "title-art"}).',
+							: 'The library of this build holds no looks. Write a recipe for title_propose (get_guide {"topic": "title-art"}).',
 				});
 			const aspect = a.aspect ?? '16:9';
 			const { document, sequenceId } = lookSheetDocument(page, a.sampleText ?? DEFAULT_SAMPLE_TEXT, aspect);
@@ -1152,7 +1186,7 @@ export function registerTitleTools(ctx: ToolContext): void {
 					jobId,
 					timedOut: false,
 					sheet: body.sheet,
-					next: 'Pick a row and call propose_title {lookId}. Numbers on the sheet start at 1 on each page.',
+					next: 'Pick a row and call title_propose {lookId}. Numbers on the sheet start at 1 on each page.',
 				},
 				[image],
 			);
@@ -1161,12 +1195,12 @@ export function registerTitleTools(ctx: ToolContext): void {
 
 	defineTool(
 		ctx,
-		'propose_title',
+		'title_propose',
 		{
 			title: 'Propose a title',
 			description:
-				'Put a styled title on the footage as a proposal for review (or dryRun, apply), with a sheet and `title_check` rows.',
-			details: `Turns a brief into a title on the real footage and checks it. text, at, lookId (find_title_looks) or recipe; colorway, energy (low, medium, high: the in and out animations), alternatives (0–${MAX_ALTERNATIVES} other colourways), seed. duration defaults to the time the text needs. mode "propose" (default) stores a title-art proposal for the user's review, colourways as the item's alternatives, and needs the project open in an editor window (no window: E_NO_EDITOR, nothing stored). "dryRun" changes nothing. "apply" adds the title now: one undoable entry with an editor; on a headless engine there is no Undo, so the result carries revert, the apply_commands arguments that remove it. Returns {proposalId | clipIds, seed, check, next} and ONE PNG sheet of intro, hold and outro × alternatives, composited over the real footage, ${DEFAULT_SHEET_WIDTH} px wide by default. check holds title_check's rows; costClass and renderPath say what the look costs. All renders are one engine job: past timeoutSeconds it returns {jobId, timedOut, next} and the plain rows; the title itself is already stored or applied. Bounds: ${RECIPE_BOUNDS.layers} layers, ${RECIPE_BOUNDS.maxBytes / 1024} KB, ${RECIPE_BOUNDS.maxDepth} levels, ${RECIPE_BOUNDS.maxTypeInstances} layers of a type, ${RECIPE_BOUNDS.maxGeneratorInstances} generators in a recipe.`,
+				'Put a styled title on the footage as a proposal for review (or dryRun, apply), with a sheet and `title_check` rows. Plain text: `add_text`.',
+			details: `Turns a brief into a title on the real footage and checks it. text, at, lookId (title_look_find) or recipe; colorway, energy (low, medium, high: the in and out animations), alternatives (0–${MAX_ALTERNATIVES} other colourways), seed. duration defaults to the time the text needs. mode "propose" (default) stores a title-art proposal for the user's review, colourways as the item's alternatives, and needs the project open in an editor window (no window: E_NO_EDITOR, nothing stored). "dryRun" changes nothing. "apply" adds the title now: one undoable entry with an editor; on a headless engine there is no Undo, so the result carries revert, the apply_commands arguments that remove it. Returns {proposalId | clipIds, seed, check, next} and ONE PNG sheet of intro, hold and outro × alternatives, composited over the real footage, ${DEFAULT_SHEET_WIDTH} px wide by default. check holds title_check's rows; costClass and renderPath say what the look costs. All renders are one engine job: past timeoutSeconds it returns {jobId, timedOut, next} and the plain rows; the title itself is already stored or applied. Bounds: ${RECIPE_BOUNDS.layers} layers, ${RECIPE_BOUNDS.maxBytes / 1024} KB, ${RECIPE_BOUNDS.maxDepth} levels, ${RECIPE_BOUNDS.maxTypeInstances} layers of a type, ${RECIPE_BOUNDS.maxGeneratorInstances} generators in a recipe.`,
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -1210,7 +1244,7 @@ export function registerTitleTools(ctx: ToolContext): void {
 		},
 		async (a, extra) => {
 			if ((a.lookId === undefined) === (a.recipe === undefined))
-				throw new ToolError('E_INVALID_PARAM', 'Give lookId or recipe', 'find_title_looks lists looks.');
+				throw new ToolError('E_INVALID_PARAM', 'Give lookId or recipe', 'title_look_find lists looks.');
 			const mode = a.mode ?? 'propose';
 			const loaded = await loadDoc(ctx, a.projectId);
 			const { doc } = loaded;
@@ -1465,7 +1499,7 @@ export function registerTitleTools(ctx: ToolContext): void {
 			input: {
 				projectId: ProjectIdArg,
 				clipId: z.string().min(1).max(64).optional().describe('The title clip (get_timeline)'),
-				proposalId: z.string().min(1).max(64).optional().describe('A proposal (propose_title)'),
+				proposalId: z.string().min(1).max(64).optional().describe('A proposal (title_propose)'),
 				itemId: z
 					.string()
 					.min(1)
@@ -1580,52 +1614,12 @@ export function registerTitleTools(ctx: ToolContext): void {
 
 	defineTool(
 		ctx,
-		'get_title_recipe',
-		{
-			title: 'Get a title recipe',
-			description:
-				'A look as JSON: its recipe, colourways and the layer types it uses. Start a custom `recipe` from it.',
-			details:
-				'A look as JSON: its recipe (bottom-first layers, palette, light, font), colourways, tags, what each layer type it uses takes (name, kind, default, range, no schemas) and every layer type there is. The starting point for propose_title {recipe} and save_title_look {recipe}. Library and user looks need no project; a project look needs projectId.',
-			input: { lookId: LookIdArg, projectId: ProjectIdArg.optional().describe('For a look of the project') },
-			annotations: READ_ONLY,
-		},
-		async ({ lookId, projectId }) => {
-			const doc = projectId ? (await loadDoc(ctx, projectId)).doc : null;
-			const look = await lookById(ctx, doc, lookId);
-			const used = [...new Set(look.recipe.layers.map((l) => l.type))];
-			return jsonResult({
-				lookId,
-				name: look.name,
-				tags: look.tags,
-				...(look.category ? { category: look.category } : {}),
-				colorways: look.colorways,
-				recipe: look.recipe,
-				layerParams: Object.fromEntries(
-					used.map((type) => [
-						type,
-						(titleLayerType(type)?.params ?? []).map((p) => ({
-							name: p.name,
-							type: p.type,
-							default: p.default,
-							...('range' in p && p.range ? { range: p.range } : {}),
-							...('options' in p && p.options ? { options: p.options } : {}),
-						})),
-					]),
-				),
-				layerTypes: layerCatalog(),
-			});
-		},
-	);
-
-	defineTool(
-		ctx,
-		'save_title_look',
+		'title_look_save',
 		{
 			title: 'Save a title look',
-			description: "Save a clip's look or a recipe as a look of the project.",
+			description: "Save a clip's look or a recipe as a title look of the project.",
 			details:
-				'Saves a look in the project (look.create, one undo step): from a clip (clipId, its appearance at its first frame; link: true links the clip to the new look) or a recipe. name is unique in the project. The new lookId works with propose_title and find_title_looks {projectId}.',
+				'Saves a look in the project (look.create, one undo step): from a clip (clipId, its appearance at its first frame; link: true links the clip to the new look) or a recipe. name is unique in the project. The new lookId works with title_propose and title_look_find {projectId}.',
 			input: {
 				projectId: ProjectIdArg,
 				clipId: z.string().min(1).max(64).optional().describe('A clip with a look'),
@@ -1639,7 +1633,11 @@ export function registerTitleTools(ctx: ToolContext): void {
 		},
 		async (a, extra) => {
 			if ((a.clipId === undefined) === (a.recipe === undefined))
-				throw new ToolError('E_INVALID_PARAM', 'Give clipId or recipe', 'get_title_recipe gives a recipe.');
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'Give clipId or recipe',
+					'title_look_find {lookId} gives a recipe.',
+				);
 			const recipe = a.recipe !== undefined ? parseRecipe(a.recipe) : undefined;
 			const res = await transact(
 				ctx,
@@ -1667,11 +1665,11 @@ export function registerTitleTools(ctx: ToolContext): void {
 
 	defineTool(
 		ctx,
-		'add_title_generator',
+		'title_generator_add',
 		{
 			title: 'Add a title generator',
 			description:
-				"Add a generator (fire, particles, sunburst…) to a title's look, or as its own clip below the title.",
+				"Add a generator (fire, particles, sunburst…) to a title's look, or as its own clip below the title so it never hides it.",
 			details:
 				'Adds a generator (fire, particles, sunburst…: list_effects {category: "Generate"}) in one undo step. With clipId it becomes a layer of that clip\'s look, so it follows the title\'s shape. Without it a standalone clip goes on a free track, below belowClipId when given, so it never hides the title (clip.addGenerator); give at and duration.',
 			input: {
@@ -1705,7 +1703,7 @@ export function registerTitleTools(ctx: ToolContext): void {
 					throw new ToolError(
 						'E_INVALID_PARAM',
 						`Clip ${a.clipId} has no look`,
-						'propose_title applies one; or leave clipId out for a standalone generator.',
+						'title_propose applies one; or leave clipId out for a standalone generator.',
 					);
 				const id = a.generator.replace(/^jasper\.generator\./, '');
 				commands = [
@@ -1754,10 +1752,11 @@ export function registerTitleTools(ctx: ToolContext): void {
 
 	defineTool(
 		ctx,
-		'set_global_light',
+		'title_light_set',
 		{
 			title: 'Set the global light',
-			description: 'Set or clear the light of a sequence, which looks that follow the sequence use.',
+			description:
+				'Set or clear the global light of a sequence: the light of every title look that follows the sequence. 3D lights are clips: `add_light`.',
 			details:
 				'Sets the light of a sequence (sequence.setGlobalLight, one undo step): every look whose light source is "sequence" follows it. angle in degrees (0 = right, clockwise), altitude 0–90. clear: true removes it, and those looks use their own light again. Keyframe it with apply_commands param.set on ["globalLight", sequenceId, "angle"].',
 			input: {

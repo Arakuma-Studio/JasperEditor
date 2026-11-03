@@ -38,7 +38,7 @@ fails and no format row is unverified.
 
 `title_check` {projectId, clipId | proposalId, target?} measures rendered frames before the export exists. Its rows have
 the same shape as `verify_export`'s: `{id, kind, status, measured, expected, at, message, fix?}`, and `verified` means the
-same. `propose_title` returns the same rows as `check`.
+same. `title_propose` returns the same rows as `check`.
 
 | Row | Measured from |
 |---|---|

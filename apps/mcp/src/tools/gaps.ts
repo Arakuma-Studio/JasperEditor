@@ -47,13 +47,14 @@ import {
 import { toolEnvelope } from '../envelope.ts';
 import { jsonResult, ToolError } from '../errors.ts';
 import { pickSequence } from '../format.ts';
+import { AlphaFrameArgs, exportAlphaFrames } from './delivery.ts';
 
 export const GAPS_GUIDE = `Find, Edit Original, tracks:
 - find searches the Project panel (scope "project": name, label, type, path, codec, frameSize, any) or a sequence (scope "timeline": clipName, sourceName, text, marker, any) with up to two criteria (contains, matches, begins, ends, notContains), match all/any and matchCase, like Premiere's Edit ▸ Find. Timeline hits come in frame order with timecodes.
 - locate_media says where a media file is on the engine host; action "reveal" shows it in the file browser and "open" opens it in its default application (Edit Original; local engines only, never programs).
 - get_project_settings / set_project_settings: Project Settings (video display format timecode / frames / feet35 / feet16, audio display format samples / milliseconds, the Captured and Generated Media folder, ingest at import: copy / transcode / proxies / copyAndProxies) and the engine folders behind Scratch Disks.
 - create_proxies transcodes video media to a proxy preset in the background and attaches the proxies when the job ends (wait: true waits and attaches); attach_proxy attaches an existing file (duration ± 1 frame and frame rate must match unless force); detach_proxies removes them; reconnect_full_resolution links a clip to its full-resolution file (the file it used becomes its proxy). The editor's Toggle Proxies plays proxies; exports never use them unless start_export gets draftUseProxies.
-- export_frame writes the sequence frame at a time as png / jpeg / tiff / dpx (10-bit) / exr (linear half float) / bmp / tga to a folder on this machine (never overwriting), optionally importing it into the project.
+- export_frame writes the sequence frame at a time as png / jpeg / tiff / dpx (10-bit) / exr (linear half float) / bmp / tga to a folder on this machine (never overwriting), optionally importing it into the project. With alpha: true it writes PNGs with straight alpha instead (get_guide {"topic": "delivery"}).
 - get_sequence_settings / set_sequence_settings: Sequence Settings (timebase, frame size, pixel aspect ratio, fields, drop frame, audio sample rate, Mix channels). A non-square pixel aspect ratio means the sequence is edited at its display width (storageWidth × ratio) and exports at storageWidth with the ratio signalled; changing the timebase of a sequence with clips conforms them and needs conform: true (Premiere does not allow it); a frame size change takes reposition. new_sequence_from_clip makes a sequence matching a media item (size, rate, pixel aspect, fields) with the clip in it. Fields are kept with the sequence; exports are progressive (the plan warns FIELDS_PROGRESSIVE).
 - set_audio_channels: Clip ▸ Modify ▸ Audio Channels. Each routed clip = {streamIndex, map: source channel per clip channel (1 mono, 2 stereo, 6 for 5.1), mute: clip channels that play silence}. On timeline clips (clipIds: one routing per clip, typically a linked group) or on Project media items (itemIds: the audio clips future placements create; clips null = default). get_audio_channels lists a media's source channels and the routing.
 - project_manager: File ▸ Project Manager — mode "collect" copies every used file into destination, "consolidate" writes only the used part of each video / audio media plus handlesFrames (ProRes 422 HQ / WAV) and re-bases the clips; excludeUnused drops unchosen sequences and unused media items; includePreviews / includeProxies; dryRun only estimates the disk space. The copy is written as <destination>/<projectName>.jasper and registered as a new project (its id comes back).
@@ -643,20 +644,67 @@ export function registerGapsTools(ctx: ToolContext): void {
 		{
 			title: 'Export frame',
 			description:
-				'File ▸ Export ▸ Frame: renders the sequence frame at `at` at full resolution (never from proxies) and writes <folder>/<name>.<ext> on this machine (never overwriting: " (2)" is appended). format png (default), jpeg (jpegQuality), tiff, dpx (10-bit), exr (linear light, half float), bmp, tga. importIntoProject adds the file to the project like import_media.',
+				'File ▸ Export ▸ Frame: renders the sequence frame at `at` at full resolution (never from proxies) and writes <folder>/<name>.<ext> on this machine (never overwriting: " (2)" is appended). format png (default), jpeg (jpegQuality), tiff, dpx (10-bit), exr (linear light, half float), bmp, tga. importIntoProject adds the file to the project like import_media. A transparent PNG needs `alpha: true`.',
+			details:
+				"alpha: true writes PNGs with straight alpha through the alpha-delivery job: one frame at at, or a numbered sequence up to end (a ZIP, or a folder of PNGs with folder + name); without folder the result is a URL. With clipIds only those clips (Export Title); trimMarginPx trims every frame to what they paint across the whole range plus that margin, rendering past the sequence frame so glows do not clip, and origin says where the picture's corner sits in the sequence. format, jpegQuality and importIntoProject are for the opaque frame; end, clipIds and trimMarginPx need alpha.",
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
 				at: timeArg('Sequence frame to export'),
 				format: z.enum(['png', 'jpeg', 'tiff', 'dpx', 'exr', 'bmp', 'tga']).optional(),
 				jpegQuality: z.number().int().min(1).max(100).optional(),
-				folder: z.string().min(1),
+				folder: z
+					.string()
+					.min(1)
+					.optional()
+					.describe('Folder on this machine; with alpha, omit it to get a URL'),
 				name: z.string().min(1).max(200).optional(),
 				importIntoProject: z.boolean().optional(),
+				...AlphaFrameArgs,
 			},
 			annotations: EDIT,
 		},
-		async ({ projectId, sequenceId, at, format, jpegQuality, folder, name, importIntoProject }, extra) => {
+		async (
+			{
+				projectId,
+				sequenceId,
+				at,
+				format,
+				jpegQuality,
+				folder,
+				name,
+				importIntoProject,
+				alpha,
+				end,
+				clipIds,
+				trimMarginPx,
+				timeoutSeconds,
+			},
+			extra,
+		) => {
+			if (alpha) {
+				if (format !== undefined && format !== 'png')
+					throw new ToolError('E_INVALID_PARAM', `alpha writes PNG, not ${format}`, 'Leave format out.');
+				if (jpegQuality !== undefined || importIntoProject)
+					throw new ToolError(
+						'E_INVALID_PARAM',
+						'jpegQuality and importIntoProject are for the opaque frame',
+						'Leave them out with alpha.',
+					);
+				return exportAlphaFrames(
+					ctx,
+					{ projectId, at, end, sequenceId, clipIds, trimMarginPx, timeoutSeconds, folder, name },
+					extra,
+				);
+			}
+			if (end !== undefined || clipIds !== undefined || trimMarginPx !== undefined)
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'end, clipIds and trimMarginPx export PNGs with alpha',
+					'Add alpha: true.',
+				);
+			if (folder === undefined)
+				throw new ToolError('E_INVALID_PARAM', 'export_frame writes into a folder', 'Pass folder.');
 			const loaded = await loadDoc(ctx, projectId);
 			const seq = pickSequence(loaded.doc, sequenceId);
 			let frame: number;

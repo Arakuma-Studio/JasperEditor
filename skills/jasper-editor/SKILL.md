@@ -41,7 +41,7 @@ the arguments, `call_tool` runs them. `get_guide` (topic "routing") maps request
 6. **Verify.** `start_export` (wait: true), then `verify_export` with the brief's platform as target. Fix
    format rows yourself; ask about judgement rows. Details: [verification](references/verification.md).
 
-A designed title has its own short loop in the `titles` toolset: `find_title_looks`, `propose_title`, `title_check`.
+A designed title has its own short loop in the `titles` toolset: `title_look_find`, `title_propose`, `title_check`.
 Details, including what changes without an editor window: [title art](references/title-art.md).
 
 Small direct fixes the user asked for by name (one trim, one marker, a title) can go straight through `add_clip`,

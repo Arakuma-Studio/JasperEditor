@@ -371,10 +371,10 @@ const USER_LOOK: UserLook = {
 };
 const rowOf = (rows: Json[], id: string) => rows.find((r) => r.id === id)!;
 
-describe('find_title_looks (TL-100)', () => {
+describe('title_look_find (TL-100)', () => {
 	it('ranks by words and returns rows and one numbered sheet, with no schemas', async () => {
 		const s = await connect();
-		const r = await s.ok('find_title_looks', { query: 'chrome cinematic' });
+		const r = await s.ok('title_look_find', { query: 'chrome cinematic' });
 		expect(r.json.rows.map((x: Json) => x.lookId)).toEqual(['look.test-chrome']);
 		expect(r.json.rows[0]).toMatchObject({
 			n: 1,
@@ -394,29 +394,29 @@ describe('find_title_looks (TL-100)', () => {
 
 	it('pages with cursor, filters by tags, and costs heavy looks', async () => {
 		const s = await connect();
-		const first = await s.ok('find_title_looks', { query: '', limit: 2 });
+		const first = await s.ok('title_look_find', { query: '', limit: 2 });
 		expect(first.json.total).toBe(3);
 		expect(first.json.rows).toHaveLength(2);
 		expect(first.json.nextCursor).toBe('2');
-		const next = await s.ok('find_title_looks', { query: '', limit: 2, cursor: '2' });
+		const next = await s.ok('title_look_find', { query: '', limit: 2, cursor: '2' });
 		expect(next.json.rows).toHaveLength(1);
 		expect(next.json.rows[0].n).toBe(3);
 		expect(next.json.nextCursor).toBeUndefined();
-		const neon = await s.ok('find_title_looks', { query: '', tags: ['NEON'] });
+		const neon = await s.ok('title_look_find', { query: '', tags: ['NEON'] });
 		expect(neon.json.rows[0]).toMatchObject({ lookId: 'look.test-neon', costClass: 'medium' });
 	});
 
 	it('finds a project’s own looks, and says plainly when nothing matches', async () => {
 		const s = await connect();
-		const saved = await s.ok('save_title_look', {
+		const saved = await s.ok('title_look_save', {
 			projectId: P,
 			recipe: RECIPE,
 			name: 'House Style',
 			tags: ['house'],
 		});
-		const hit = await s.ok('find_title_looks', { query: 'house', projectId: P });
+		const hit = await s.ok('title_look_find', { query: 'house', projectId: P });
 		expect(hit.json.rows[0]).toMatchObject({ lookId: saved.json.lookId, source: 'project' });
-		const none = await s.ok('find_title_looks', { query: 'zzz' });
+		const none = await s.ok('title_look_find', { query: 'zzz' });
 		expect(none.json).toMatchObject({ rows: [], total: 0 });
 		expect(none.json.next).toMatch(/No look matches/);
 		expect(none.image).toBeUndefined();
@@ -424,7 +424,7 @@ describe('find_title_looks (TL-100)', () => {
 
 	it('finds the user’s own looks (TL-054), says where each row comes from, and needs no project for them', async () => {
 		const s = await connect({ userLooks: [USER_LOOK] });
-		const r = await s.ok('find_title_looks', { query: 'brand' });
+		const r = await s.ok('title_look_find', { query: 'brand' });
 		expect(r.json.rows).toHaveLength(1);
 		expect(r.json.rows[0]).toMatchObject({
 			n: 1,
@@ -437,14 +437,14 @@ describe('find_title_looks (TL-100)', () => {
 		expect(r.json.userLooksError).toBeUndefined();
 		// one sheet, the user look drawn on it from its recipe
 		expect(s.engine.sheets).toHaveLength(1);
-		const all = await s.ok('find_title_looks', { query: '' });
+		const all = await s.ok('title_look_find', { query: '' });
 		expect(all.json.total).toBe(4);
 		expect(new Set(all.json.rows.map((x: Json) => x.source))).toEqual(new Set(['library', 'user']));
 	});
 
-	it('a user look’s id works with propose_title and get_title_recipe, and its project copy is not a second row', async () => {
+	it('a user look’s id works with title_propose and title_look_find, and its project copy is not a second row', async () => {
 		const s = await connect({ userLooks: [USER_LOOK] });
-		const recipe = await s.ok('get_title_recipe', { lookId: USER_LOOK.id });
+		const recipe = await s.ok('title_look_find', { lookId: USER_LOOK.id });
 		expect(recipe.json).toMatchObject({
 			lookId: USER_LOOK.id,
 			name: 'Brand Gold',
@@ -452,7 +452,7 @@ describe('find_title_looks (TL-100)', () => {
 			colorways: [{ id: 'cw.brand' }],
 		});
 		await s.ok('apply_commands', footage([0.1, 0.1, 0.4, 1]));
-		const applied = await s.ok('propose_title', {
+		const applied = await s.ok('title_propose', {
 			...BASE,
 			lookId: USER_LOOK.id,
 			colorway: 'cw.brand',
@@ -462,30 +462,30 @@ describe('find_title_looks (TL-100)', () => {
 		const doc = s.engine.doc() as ProjectDocument & { titleLooks?: Record<string, { sourceId?: string }> };
 		const copies = Object.values(doc.titleLooks ?? {}).filter((l) => l.sourceId === USER_LOOK.id);
 		expect(copies).toHaveLength(1);
-		const again = await s.ok('find_title_looks', { query: 'brand', projectId: P });
+		const again = await s.ok('title_look_find', { query: 'brand', projectId: P });
 		expect(again.json.rows.map((x: Json) => [x.lookId, x.source])).toEqual([[USER_LOOK.id, 'user']]);
 		// applying it again reuses the project's copy
-		await s.ok('propose_title', { ...BASE, at: 150, lookId: USER_LOOK.id, mode: 'apply' });
+		await s.ok('title_propose', { ...BASE, at: 150, lookId: USER_LOOK.id, mode: 'apply' });
 		const after = s.engine.doc() as typeof doc;
 		expect(Object.values(after.titleLooks ?? {}).filter((l) => l.sourceId === USER_LOOK.id)).toHaveLength(1);
 	});
 
 	it('a user look deleted since it was used falls back to the project’s copy; an unknown one is not found', async () => {
 		const s = await connect({ userLooks: [USER_LOOK] });
-		await s.ok('propose_title', { ...BASE, lookId: USER_LOOK.id, mode: 'apply' });
+		await s.ok('title_propose', { ...BASE, lookId: USER_LOOK.id, mode: 'apply' });
 		s.engine.state.userLooks = [];
-		const hit = await s.ok('find_title_looks', { query: 'brand', projectId: P });
+		const hit = await s.ok('title_look_find', { query: 'brand', projectId: P });
 		expect(hit.json.rows[0]).toMatchObject({ name: 'Brand Gold', source: 'project' });
-		const r = await s.ok('propose_title', { ...BASE, at: 150, lookId: USER_LOOK.id, mode: 'dryRun' });
+		const r = await s.ok('title_propose', { ...BASE, at: 150, lookId: USER_LOOK.id, mode: 'dryRun' });
 		expect(r.json.look).toMatchObject({ name: 'Brand Gold', source: 'project' });
-		const e = await s.fail('get_title_recipe', { lookId: 'ulk_0000000000000ZZZ' });
+		const e = await s.fail('title_look_find', { lookId: 'ulk_0000000000000ZZZ' });
 		expect(e.code).toBe('E_NOT_FOUND');
 		expect(e.message).toContain('user');
 	});
 
 	it('an unreadable user library still finds the rest, and says so', async () => {
 		const s = await connect({ userLooks: 'broken' });
-		const r = await s.ok('find_title_looks', { query: '' });
+		const r = await s.ok('title_look_find', { query: '' });
 		expect(r.json.rows).toHaveLength(3);
 		expect(r.json.userLooksError).toMatch(/could not be read: the look library is unreadable/);
 	});
@@ -494,7 +494,7 @@ describe('find_title_looks (TL-100)', () => {
 		const held = looks.splice(0);
 		try {
 			const s = await connect();
-			const r = await s.ok('find_title_looks', { query: '' });
+			const r = await s.ok('title_look_find', { query: '' });
 			expect(r.json.rows).toEqual([]);
 			expect(r.json.next).toMatch(/library of this build holds no looks/);
 		} finally {
@@ -507,7 +507,7 @@ describe('find_title_looks (TL-100)', () => {
 		const heldWays = ways.splice(0, ways.length, ...shipped.ways);
 		try {
 			const s = await connect();
-			const r = await s.ok('find_title_looks', { query: 'neon' });
+			const r = await s.ok('title_look_find', { query: 'neon' });
 			expect(r.json.rows.length).toBeGreaterThan(0);
 			const ids = new Set(shipped.looks.map((l) => l.libraryId));
 			for (const row of r.json.rows as Json[]) expect(ids.has(row.lookId as string)).toBe(true);
@@ -520,17 +520,17 @@ describe('find_title_looks (TL-100)', () => {
 
 	it('bounds its arguments', async () => {
 		const s = await connect();
-		expect((await s.fail('find_title_looks', { query: 'x', limit: 13 })).code).toBe('E_INVALID_ARGUMENT');
-		expect((await s.fail('find_title_looks', { query: 'x', cursor: 'abc' })).code).toBe('E_INVALID_ARGUMENT');
-		expect((await s.fail('find_title_looks', { query: 'x', sampleText: 'y'.repeat(41) })).code).toBe(
+		expect((await s.fail('title_look_find', { query: 'x', limit: 13 })).code).toBe('E_INVALID_ARGUMENT');
+		expect((await s.fail('title_look_find', { query: 'x', cursor: 'abc' })).code).toBe('E_INVALID_ARGUMENT');
+		expect((await s.fail('title_look_find', { query: 'x', sampleText: 'y'.repeat(41) })).code).toBe(
 			'E_INVALID_ARGUMENT',
 		);
-		expect((await s.fail('find_title_looks', { query: 'x', schema: true })).code).toBe('E_UNKNOWN_ARGUMENT');
+		expect((await s.fail('title_look_find', { query: 'x', schema: true })).code).toBe('E_UNKNOWN_ARGUMENT');
 	});
 
 	it('past its timeout returns the rows, the job and what to do next', async () => {
 		const s = await connect({ stuck: true });
-		const r = await s.ok('find_title_looks', { query: '', timeoutSeconds: 1 });
+		const r = await s.ok('title_look_find', { query: '', timeoutSeconds: 1 });
 		expect(r.json.rows).toHaveLength(3);
 		expect(r.json).toMatchObject({ timedOut: true, jobId: expect.stringMatching(/^job_/) });
 		expect(r.json.next).toContain('render_frames');
@@ -550,10 +550,10 @@ describe('find_title_looks (TL-100)', () => {
 	});
 });
 
-describe('propose_title (TL-101)', () => {
+describe('title_propose (TL-101)', () => {
 	it('headless propose is refused with what to do, and stores nothing', async () => {
 		const s = await connect();
-		const e = await s.fail('propose_title', BASE);
+		const e = await s.fail('title_propose', BASE);
 		expect(e.code).toBe('E_NO_EDITOR');
 		expect(e.message).toContain('Nothing was stored');
 		expect(e.hint).toContain('open_project_in_editor');
@@ -567,7 +567,7 @@ describe('propose_title (TL-101)', () => {
 		const s = await connect({ live: true });
 		await s.ok('apply_commands', footage([0.1, 0.1, 0.4, 1]));
 		const before = s.engine.doc();
-		const r = await s.ok('propose_title', { ...BASE, alternatives: 2, seed: 9, colorway: 'Alpha' });
+		const r = await s.ok('title_propose', { ...BASE, alternatives: 2, seed: 9, colorway: 'Alpha' });
 		expect(s.engine.doc()).toBe(before);
 		const p = s.engine.proposals.get(r.json.proposalId)!;
 		expect(p.feature).toBe(TITLE_ART_FEATURE);
@@ -610,7 +610,7 @@ describe('propose_title (TL-101)', () => {
 	it('the same seed picks the same alternatives', async () => {
 		const pick = async () => {
 			const s = await connect({ live: true });
-			const r = await s.ok('propose_title', { ...BASE, alternatives: 3, seed: 1234 });
+			const r = await s.ok('title_propose', { ...BASE, alternatives: 3, seed: 1234 });
 			return r.json.alternatives;
 		};
 		expect(await pick()).toEqual(await pick());
@@ -620,7 +620,7 @@ describe('propose_title (TL-101)', () => {
 		const held = ways.splice(0);
 		try {
 			const s = await connect({ live: true });
-			const r = await s.ok('propose_title', { ...BASE, alternatives: 3 });
+			const r = await s.ok('title_propose', { ...BASE, alternatives: 3 });
 			expect(r.json.alternatives).toEqual([]);
 			expect(r.json.alternativesNote).toMatch(/3 asked, 0 exist/);
 		} finally {
@@ -632,7 +632,7 @@ describe('propose_title (TL-101)', () => {
 		const s = await connect();
 		await s.ok('apply_commands', footage([0.1, 0.1, 0.4, 1]));
 		const before = s.engine.doc();
-		const r = await s.ok('propose_title', { ...BASE, mode: 'dryRun' });
+		const r = await s.ok('title_propose', { ...BASE, mode: 'dryRun' });
 		expect(r.json.dryRun).toBe(true);
 		expect(s.engine.doc()).toBe(before);
 		expect(rowOf(r.json.check.rows, 'contrast').status).toBe('pass');
@@ -643,7 +643,7 @@ describe('propose_title (TL-101)', () => {
 		const s = await connect();
 		await s.ok('apply_commands', footage([0.1, 0.1, 0.4, 1]));
 		const before = s.engine.doc();
-		const r = await s.ok('propose_title', { ...BASE, mode: 'apply', energy: 'high', seed: 5 });
+		const r = await s.ok('title_propose', { ...BASE, mode: 'apply', energy: 'high', seed: 5 });
 		const id = r.json.clipIds[0];
 		const seq = s.engine.doc().sequences[s.engine.seqId]!;
 		expect(seq.clips[id]?.kind).toBe('text');
@@ -661,7 +661,7 @@ describe('propose_title (TL-101)', () => {
 	it('apply with an editor is one undo step and carries no revert', async () => {
 		const s = await connect({ live: true });
 		const before = s.engine.doc();
-		const r = await s.ok('propose_title', { ...BASE, mode: 'apply' });
+		const r = await s.ok('title_propose', { ...BASE, mode: 'apply' });
 		expect(r.json.revert).toBeUndefined();
 		expect(r.json.appliedLive).toBe(true);
 		await s.ok('undo', { projectId: P });
@@ -675,7 +675,7 @@ describe('propose_title (TL-101)', () => {
 			label: 'off',
 			commands: [{ type: 'project.updateSettings', settings: { agentProposals: { 'title-art': false } } }],
 		});
-		const e = await s.fail('propose_title', { ...BASE, mode: 'apply' });
+		const e = await s.fail('title_propose', { ...BASE, mode: 'apply' });
 		expect(e.code).toBe('E_APPROVAL_REQUIRED');
 	});
 
@@ -686,7 +686,7 @@ describe('propose_title (TL-101)', () => {
 			label: 'busy',
 			commands: [{ type: 'clip.addSolid', at: 0, duration: 300, track: 'V2', color: [1, 0, 0, 1] }],
 		});
-		const r = await s.ok('propose_title', { ...BASE, text: 'x'.repeat(90), mode: 'apply', energy: 'low' });
+		const r = await s.ok('title_propose', { ...BASE, text: 'x'.repeat(90), mode: 'apply', energy: 'low' });
 		const seq = s.engine.doc().sequences[s.engine.seqId]!;
 		const clip = seq.clips[r.json.clipIds[0]]!;
 		const track = seq.videoTracks.findIndex((t) => t.id === clip.trackId);
@@ -698,21 +698,21 @@ describe('propose_title (TL-101)', () => {
 
 	it('refuses what it cannot do, before touching anything', async () => {
 		const s = await connect();
-		expect((await s.fail('propose_title', { projectId: P, text: 'x', at: 0 })).code).toBe('E_INVALID_PARAM');
+		expect((await s.fail('title_propose', { projectId: P, text: 'x', at: 0 })).code).toBe('E_INVALID_PARAM');
 		expect(
-			(await s.fail('propose_title', { projectId: P, text: 'x', at: 0, lookId: 'a', recipe: RECIPE })).code,
+			(await s.fail('title_propose', { projectId: P, text: 'x', at: 0, lookId: 'a', recipe: RECIPE })).code,
 		).toBe('E_INVALID_PARAM');
-		expect((await s.fail('propose_title', { ...BASE, lookId: 'look.none', mode: 'dryRun' })).code).toBe(
+		expect((await s.fail('title_propose', { ...BASE, lookId: 'look.none', mode: 'dryRun' })).code).toBe(
 			'E_NOT_FOUND',
 		);
-		const cw = await s.fail('propose_title', { ...BASE, colorway: 'nope', mode: 'dryRun' });
+		const cw = await s.fail('title_propose', { ...BASE, colorway: 'nope', mode: 'dryRun' });
 		expect(cw.code).toBe('E_NOT_FOUND');
 		expect(cw.hint).toContain('cw.a');
-		expect((await s.fail('propose_title', { ...BASE, mode: 'dryRun', expectedRevision: 99 })).code).toBe(
+		expect((await s.fail('title_propose', { ...BASE, mode: 'dryRun', expectedRevision: 99 })).code).toBe(
 			'E_REVISION_MISMATCH',
 		);
-		expect((await s.fail('propose_title', { ...BASE, alternatives: 4 })).code).toBe('E_INVALID_ARGUMENT');
-		const unknownLayer = await s.fail('propose_title', {
+		expect((await s.fail('title_propose', { ...BASE, alternatives: 4 })).code).toBe('E_INVALID_ARGUMENT');
+		const unknownLayer = await s.fail('title_propose', {
 			projectId: P,
 			text: 'x',
 			at: 0,
@@ -720,8 +720,8 @@ describe('propose_title (TL-101)', () => {
 			recipe: { layers: [{ type: 'no-such-layer' }] },
 		});
 		expect(unknownLayer.code).toBe('E_INVALID_PARAM');
-		expect(unknownLayer.hint).toContain('get_title_recipe');
-		const badParam = await s.fail('propose_title', {
+		expect(unknownLayer.hint).toContain('title_look_find');
+		const badParam = await s.fail('title_propose', {
 			projectId: P,
 			text: 'x',
 			at: 0,
@@ -733,7 +733,7 @@ describe('propose_title (TL-101)', () => {
 
 	it('past its timeout the title stands, with the plain rows and the job', async () => {
 		const s = await connect({ stuck: true });
-		const r = await s.ok('propose_title', { ...BASE, mode: 'apply', timeoutSeconds: 1 });
+		const r = await s.ok('title_propose', { ...BASE, mode: 'apply', timeoutSeconds: 1 });
 		expect(r.json.clipIds).toHaveLength(1);
 		expect(r.json).toMatchObject({ timedOut: true, jobId: expect.stringMatching(/^job_/) });
 		expect(r.json.check.verified).toBe(false);
@@ -744,7 +744,7 @@ describe('propose_title (TL-101)', () => {
 
 	it('a proposal past its timeout is stored with the plain rows, marked pending', async () => {
 		const s = await connect({ stuck: true, live: true });
-		const r = await s.ok('propose_title', { ...BASE, timeoutSeconds: 1 });
+		const r = await s.ok('title_propose', { ...BASE, timeoutSeconds: 1 });
 		expect(r.json).toMatchObject({ timedOut: true, proposalId: expect.stringMatching(/^prp_/) });
 		const stored = titleArtCheckOf(s.engine.proposals.get(r.json.proposalId)!.items[0]!)!;
 		expect(stored).toMatchObject({ pending: true, verified: false });
@@ -755,7 +755,7 @@ describe('propose_title (TL-101)', () => {
 
 describe('recipe bounds (TL-106)', () => {
 	const propose = (s: Awaited<ReturnType<typeof connect>>, recipe: unknown) =>
-		s.call('propose_title', { projectId: P, text: 'x', at: 0, mode: 'dryRun', recipe });
+		s.call('title_propose', { projectId: P, text: 'x', at: 0, mode: 'dryRun', recipe });
 
 	it('refuses hostile recipes by bytes, layers, depth and instances, and runs no render', async () => {
 		const s = await connect();
@@ -825,7 +825,7 @@ describe('title_check (TL-102)', () => {
 	async function titled(paint: Painted, back: number[], opts: { live?: boolean } = {}) {
 		const s = await connect({ ...opts, paint });
 		await s.ok('apply_commands', footage(back));
-		const r = await s.ok('propose_title', { ...BASE, mode: 'apply', seed: 3 });
+		const r = await s.ok('title_propose', { ...BASE, mode: 'apply', seed: 3 });
 		return { s, clipId: r.json.clipIds[0] as string };
 	}
 
@@ -891,7 +891,7 @@ describe('title_check (TL-102)', () => {
 	it('checks a proposal before anything is applied, without commands in its fixes', async () => {
 		const s = await connect({ live: true, paint: { ...CENTRED, face: [235, 235, 235] } });
 		await s.ok('apply_commands', footage([0.95, 0.95, 0.95, 1]));
-		const made = await s.ok('propose_title', { ...BASE, alternatives: 1, seed: 2 });
+		const made = await s.ok('title_propose', { ...BASE, alternatives: 1, seed: 2 });
 		const before = s.engine.doc();
 		const r = await s.ok('title_check', { projectId: P, proposalId: made.json.proposalId, alternative: 1 });
 		expect(s.engine.doc()).toBe(before);
@@ -920,7 +920,7 @@ describe('title_check (TL-102)', () => {
 	it('past its timeout returns the plain rows, and a later call picks up the job', async () => {
 		const s = await connect({ stuck: true });
 		await s.ok('apply_commands', footage([0.05, 0.1, 0.3, 1]));
-		const applied = await s.ok('propose_title', { ...BASE, mode: 'apply', timeoutSeconds: 1 });
+		const applied = await s.ok('title_propose', { ...BASE, mode: 'apply', timeoutSeconds: 1 });
 		const clipId = applied.json.clipIds[0];
 		const r = await s.ok('title_check', { projectId: P, clipId, timeoutSeconds: 1 });
 		expect(r.json).toMatchObject({ timedOut: true, verified: false });
@@ -1089,7 +1089,7 @@ describe('render_frames extensions (TL-103)', () => {
 	it('shows a proposal’s options, one row each, nothing applied', async () => {
 		const s = await connect({ live: true });
 		await s.ok('apply_commands', footage([0.1, 0.1, 0.4, 1]));
-		const made = await s.ok('propose_title', { ...BASE, alternatives: 2, seed: 2 });
+		const made = await s.ok('title_propose', { ...BASE, alternatives: 2, seed: 2 });
 		const before = s.engine.doc();
 		const r = await s.ok('render_frames', { projectId: P, proposalId: made.json.proposalId });
 		expect(s.engine.doc()).toBe(before);
@@ -1120,7 +1120,7 @@ describe('render_frames extensions (TL-103)', () => {
 		expect((await s.fail('render_frames', { projectId: P, jobId: 'j', count: 3 })).code).toBe(
 			'E_INVALID_PARAM',
 		);
-		const made = await s.ok('propose_title', { ...BASE, alternatives: 3, seed: 2 });
+		const made = await s.ok('title_propose', { ...BASE, alternatives: 3, seed: 2 });
 		expect(
 			(await s.fail('render_frames', { projectId: P, proposalId: made.json.proposalId, count: 7 })).code,
 		).toBe('E_LIMIT');
@@ -1128,9 +1128,9 @@ describe('render_frames extensions (TL-103)', () => {
 });
 
 describe('escape hatch (TL-104)', () => {
-	it('get_title_recipe returns a library look, what its layers take, and every type, without schemas', async () => {
+	it('title_look_find returns a library look, what its layers take, and every type, without schemas', async () => {
 		const s = await connect();
-		const r = await s.ok('get_title_recipe', { lookId: 'look.test-chrome' });
+		const r = await s.ok('title_look_find', { lookId: 'look.test-chrome' });
 		expect(r.json.recipe).toEqual(RECIPE);
 		expect(r.json.colorways[0].id).toBe('cw.own');
 		expect(r.json.layerParams.rim.map((p: Json) => p.name)).toContain('width');
@@ -1138,39 +1138,39 @@ describe('escape hatch (TL-104)', () => {
 			expect.arrayContaining(['face', 'rim', 'shadow', 'glow']),
 		);
 		expect(r.text).not.toContain('additionalProperties');
-		expect((await s.fail('get_title_recipe', { lookId: 'look.none' })).code).toBe('E_NOT_FOUND');
+		expect((await s.fail('title_look_find', { lookId: 'look.none' })).code).toBe('E_NOT_FOUND');
 	});
 
-	it('save_title_look saves a recipe and a clip’s look; both apply and read back', async () => {
+	it('title_look_save saves a recipe and a clip’s look; both apply and read back', async () => {
 		const s = await connect();
-		const saved = await s.ok('save_title_look', {
+		const saved = await s.ok('title_look_save', {
 			projectId: P,
 			recipe: RECIPE,
 			name: 'Saved',
 			tags: ['house'],
 		});
 		expect(saved.json.lookId).toMatch(/^tlk_/);
-		const back = await s.ok('get_title_recipe', { lookId: saved.json.lookId, projectId: P });
+		const back = await s.ok('title_look_find', { lookId: saved.json.lookId, projectId: P });
 		expect(back.json.recipe.layers.map((l: Json) => l.type)).toEqual(['rim', 'face']);
-		expect((await s.fail('save_title_look', { projectId: P, recipe: RECIPE, name: 'saved' })).code).toBe(
+		expect((await s.fail('title_look_save', { projectId: P, recipe: RECIPE, name: 'saved' })).code).toBe(
 			'E_INVALID_PARAM',
 		);
-		const applied = await s.ok('propose_title', {
+		const applied = await s.ok('title_propose', {
 			projectId: P,
 			text: 'x',
 			at: 0,
 			lookId: saved.json.lookId,
 			mode: 'apply',
 		});
-		const fromClip = await s.ok('save_title_look', {
+		const fromClip = await s.ok('title_look_save', {
 			projectId: P,
 			clipId: applied.json.clipIds[0],
 			name: 'From clip',
 			link: true,
 		});
 		expect(fromClip.json.lookId).toMatch(/^tlk_/);
-		expect((await s.fail('save_title_look', { projectId: P, name: 'x' })).code).toBe('E_INVALID_PARAM');
-		const hostile = await s.fail('save_title_look', {
+		expect((await s.fail('title_look_save', { projectId: P, name: 'x' })).code).toBe('E_INVALID_PARAM');
+		const hostile = await s.fail('title_look_save', {
 			projectId: P,
 			name: 'h',
 			recipe: { layers: Array.from({ length: 25 }, () => ({ type: 'face' })) },
@@ -1178,9 +1178,9 @@ describe('escape hatch (TL-104)', () => {
 		expect(hostile.code).toBe('E_INVALID_ARGUMENT');
 	});
 
-	it('propose_title takes a recipe, and a recipe’s look carries its name', async () => {
+	it('title_propose takes a recipe, and a recipe’s look carries its name', async () => {
 		const s = await connect();
-		const r = await s.ok('propose_title', {
+		const r = await s.ok('title_propose', {
 			projectId: P,
 			text: 'x',
 			at: 0,
@@ -1195,10 +1195,10 @@ describe('escape hatch (TL-104)', () => {
 		expect(looksInDoc.map((l) => l.name)).toEqual(['One Off']);
 	});
 
-	it('add_title_generator places a standalone generator, and refuses without what it needs', async () => {
+	it('title_generator_add places a standalone generator, and refuses without what it needs', async () => {
 		const s = await connect();
 		const generate = registries.effects.list().find((e) => e.category === 'Generate' && !e.internal)!;
-		const r = await s.ok('add_title_generator', {
+		const r = await s.ok('title_generator_add', {
 			projectId: P,
 			generator: generate.id,
 			at: 0,
@@ -1206,12 +1206,12 @@ describe('escape hatch (TL-104)', () => {
 		});
 		expect(r.json.ok).toBe(true);
 		expect(r.json.refs.$generator).toMatch(/^clp_/);
-		expect((await s.fail('add_title_generator', { projectId: P, generator: generate.id })).code).toBe(
+		expect((await s.fail('title_generator_add', { projectId: P, generator: generate.id })).code).toBe(
 			'E_INVALID_PARAM',
 		);
 		expect(
 			(
-				await s.fail('add_title_generator', {
+				await s.fail('title_generator_add', {
 					projectId: P,
 					generator: generate.id,
 					clipId: r.json.refs.$generator,
@@ -1219,28 +1219,26 @@ describe('escape hatch (TL-104)', () => {
 			).code,
 		).toBe('E_INVALID_PARAM');
 		expect(
-			(await s.fail('add_title_generator', { projectId: P, generator: 'x', clipId: 'c', at: 0 })).code,
+			(await s.fail('title_generator_add', { projectId: P, generator: 'x', clipId: 'c', at: 0 })).code,
 		).toBe('E_INVALID_PARAM');
 	});
 
-	it('set_global_light sets, and clears, the sequence light', async () => {
+	it('title_light_set sets, and clears, the sequence light', async () => {
 		const s = await connect();
-		await s.ok('set_global_light', { projectId: P, angle: 120, altitude: 30 });
+		await s.ok('title_light_set', { projectId: P, angle: 120, altitude: 30 });
 		const seq = () => s.engine.doc().sequences[s.engine.seqId]!;
 		expect((seq().settings as { globalLight?: { angle: { value: number } } }).globalLight?.angle.value).toBe(
 			120,
 		);
-		await s.ok('set_global_light', { projectId: P, clear: true });
+		await s.ok('title_light_set', { projectId: P, clear: true });
 		expect((seq().settings as { globalLight?: unknown }).globalLight).toBeUndefined();
-		expect((await s.fail('set_global_light', { projectId: P })).code).toBe('E_INVALID_PARAM');
-		expect((await s.fail('set_global_light', { projectId: P, altitude: 91 })).code).toBe(
-			'E_INVALID_ARGUMENT',
-		);
+		expect((await s.fail('title_light_set', { projectId: P })).code).toBe('E_INVALID_PARAM');
+		expect((await s.fail('title_light_set', { projectId: P, altitude: 91 })).code).toBe('E_INVALID_ARGUMENT');
 	});
 
 	it('get_clip_properties lists a look’s targets', async () => {
 		const s = await connect();
-		const r = await s.ok('propose_title', { ...BASE, mode: 'apply' });
+		const r = await s.ok('title_propose', { ...BASE, mode: 'apply' });
 		const props = await s.ok('get_clip_properties', {
 			projectId: P,
 			clipId: r.json.clipIds[0],
@@ -1289,7 +1287,7 @@ describe('effects discovery (TL-105)', () => {
 		const instructions = buildInstructions();
 		expect(instructions).toContain('`list_effects`');
 		expect(instructions).toMatch(
-			/titles \(styled title looks: `find_title_looks`, `propose_title`, `title_check`\)/,
+			/titles \(styled title looks: `title_look_find`, `title_propose`, `title_check`\)/,
 		);
 	});
 
