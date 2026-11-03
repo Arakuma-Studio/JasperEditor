@@ -84,9 +84,22 @@ Sources: [WCAG 2.2](https://www.w3.org/TR/WCAG22/#contrast-minimum), [BBC subtit
 
 ## Measured
 
-See the stream report for this run's figures. On the shared 8-vCPU host at load average 31, with no GPU and the
-compositions already bundled: `propose_title {mode: "apply"}` plus `title_check` on a four-layer look at 1080p took 32 s
-for the check. The first render of an engine bundles the compositions, about 110 s at load 1.
+Real engine, real rendering, MCP over stdio: `apps/mcp/test/qa/titles.test.ts`. Rerun:
+`JASPER_BROWSER_EXECUTABLE=/usr/bin/google-chrome MCP_QA=1 pnpm exec vitest run --project @jasper/mcp apps/mcp/test/qa/titles.test.ts --maxWorkers=1`.
+Machine: shared 8-vCPU host, 15 GB, no GPU (SwiftShader), Chrome 156. Load average 3 to 10 during the run; other agents were working.
+
+| Scenario, 1280×720 | Result | Test time |
+|---|---|---|
+| Brief to checked title on real footage: `enable_toolsets`, `find_title_looks`, `propose_title`, `title_check`, 4 calls | pass; alpha bounds centred within 40 px, `revert` restores the picture (mean difference < 0.05) | 208 s |
+| White on white fails on measured contrast (ratio < 1.2); the rim fix, rendered again, is > 3:1 | pass | 218 s |
+| A title cut by the frame fails on its real bounds; the fix, rendered again, is inside | pass | 274 s |
+| Headless `propose` refused; a cancelled sheet ends `cancelled` | pass | 1 s |
+
+The library is empty on this branch, so these runs use a recipe and `find_title_looks` returns no rows and no sheet. With the
+library merged that call also renders a sheet. The first render of an engine bundles the compositions (about 110 s at load 1); the
+suite does that in `beforeAll`, outside the figures above. At load 31, before slots existed, one `title_check` on a four-layer look
+at 1080p took 32 s. At load 80 a sheet ran past 600 s and the engine stopped answering during the bundle, so jasper-mcp reported
+`ENGINE_NOT_FOUND`: those runs prove nothing about a normal host, and the timeout path behaved as designed.
 
 ## Limits
 
