@@ -386,9 +386,13 @@ within Capture sleeps behind a smooth gate. Three things follow, and they are li
 - *Birth is read now.* A particle in flight flies from where its site's nearest edge is at this frame, not at its birth frame:
   that would need the shape's history. Per-letter animation carries a letter's particles with it.
 - *Count.* Sites are spread over the box, so Count is a density: the share near the shape emits. A wide box with a small logo emits
-  fewer. A nearest-edge flip across the medial axis between two letters moves a site across the gap; Capture smaller than the gap
-  leaves no site there to flip. An inverse-CDF mapping of the shape's mass was considered: it gives an exact count and rigid letters,
-  but a letter fading in slides every other particle, which breaks locality.
+  fewer. An inverse-CDF mapping of the shape's mass was considered: it gives an exact count and rigid letters, but a letter fading in
+  slides every other particle, which breaks locality.
+
+A site reads the distance bilinearly at its own point and its normal from the distance's gradient over a step of 1.5 % of the unit,
+never per texel: the edge point `q − n·d` is continuous in the site and the same at every resolution. On a medial axis (the middle
+of a stroke, the gap between two letters) the nearest edge flips from one side to the other; the gradient's length falls below 1
+there, and the site fades (0.55 to 0.9), so a flip, between frames or between resolutions, happens where it is invisible.
 
 **Glints** run Pachislop's placement on the GPU every frame, with no read-back: a grid fixed in units of the title (so resolution does
 not change it), luminance of what is below the layer (`tlComp`, so a metal face's highlights count), non-maximum suppression,
