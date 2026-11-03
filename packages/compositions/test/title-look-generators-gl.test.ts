@@ -944,6 +944,46 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('generators in WebGL2', { 
 		},
 	);
 
+	// Lightning's cost by mode (docs/performance.md §7, "Lightning"): TL_PERF=1. Reports the frame and its slowest pass: the
+	// bolts pass, where `tlg_mass` sums the alpha around each site, must stay far below a GPU watchdog's time per draw.
+	it.runIf(process.env.TL_PERF === '1')(
+		'per-frame cost of Lightning in each mode',
+		{ timeout: 900_000 },
+		async () => {
+			const cases: [string, Record<string, unknown>][] = [
+				['defaults', {}],
+				['alpha bounds, capture 40 %, bolts 2 units', { anchor: 'bounds', capture: 40, boltLength: 200 }],
+				['along edge', { mode: 'edge' }],
+				// The most area sums a frame can ask for: every arc or bolt there is, Capture at its soft maximum.
+				['worst along edge: 60 arcs, capture 80 %', { mode: 'edge', arcs: 60, capture: 80 }],
+				['worst crawl: 40 bolts, capture 80 %', { mode: 'crawl', count: 40, capture: 80 }],
+			];
+			for (const [name, params] of cases) {
+				const req: LookRequest = {
+					recipe: layer('lightning', params, true),
+					input: { kind: 'text', text: 'Title Look', size: 200 },
+					box: { width: 1200, height: 280 },
+					contentSeconds: 0.5,
+					timingOnly: true,
+				};
+				const first = await tl.render(req);
+				const runs: number[] = [];
+				for (let i = 0; i < 3; i++) runs.push((await tl.render(req)).ms);
+				runs.sort((a, b) => a - b);
+				const half = (await tl.render({ ...req, pxScale: 0.5 })).ms;
+				const passes = (await tl.render({ ...req, perPass: true })).passLog ?? [];
+				const ms = (line: string) => Number(/ (\d+) ms$/.exec(line)?.[1] ?? 0);
+				const flat = (line: string) => line.replace(/\s+/g, ' ').trim();
+				const slowest = [...passes].sort((a, b) => ms(b) - ms(a))[0] ?? '';
+				// The bolts pass (`tlGenB`): one fragment per bolt end or arc point, each with its area sums.
+				const bolts = passes.find((l) => l.startsWith('tlGenB')) ?? '';
+				console.info(
+					`[lightning-perf] ${name}: canvas ${first.width}×${first.height}, ${first.passes} passes, median ${runs[1]!.toFixed(0)} ms, at 1/2 ${half.toFixed(0)} ms; bolts pass ${flat(bolts)}; slowest pass ${flat(slowest)}`,
+				);
+			}
+		},
+	);
+
 	it('Speed Lines: the title focus keeps the lines off the shape, as it changes', async () => {
 		const recipe = {
 			layers: [
