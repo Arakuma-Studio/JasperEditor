@@ -31,6 +31,8 @@ const CHROME =
 const W = 640;
 const H = 360;
 const OUT = join(here, '..', '..', '..', 'test-results', 'title-text-e2e');
+/** The figures of a run, in `metrics.json` next to the pictures: docs/wp-notes/title-looks.md quotes them. */
+const metrics: Record<string, number> = {};
 
 const recipe: LookRecipe = {
 	palette: { face: [0.98, 0.82, 0.25, 1], keyline: [0.08, 0.1, 0.35, 1], glow: [1, 0.35, 0.1, 1] },
@@ -185,6 +187,7 @@ describe.runIf(enabled && !!CHROME)(
 		}, 600_000);
 
 		afterAll(async () => {
+			writeFileSync(join(OUT, 'metrics.json'), `${JSON.stringify(metrics, null, 2)}\n`);
 			await browser?.close();
 			await puppeteerInstance?.close({ silent: true });
 			media?.close();
@@ -242,7 +245,8 @@ describe.runIf(enabled && !!CHROME)(
 				const a = await programFrame('warped', f, `warped-program-${f}`);
 				const b = await still(doc, f, `warped-render-${f}`);
 				const s = ssim(luma(a), luma(b), W, H);
-				console.info(`[title-text] warped frame ${f}: SSIM ${s.toFixed(4)}, max diff ${maxDiff(a, b)}`);
+				metrics[`warped-${f}-ssim`] = s;
+				metrics[`warped-${f}-maxdiff`] = maxDiff(a, b);
 				expect(s).toBeGreaterThan(0.98);
 			}
 		});
@@ -261,9 +265,14 @@ describe.runIf(enabled && !!CHROME)(
 				const a = await programFrame('animated', f, `animator-program-${f}`);
 				const b = await still(doc, f, `animator-render-${f}`);
 				const s = ssim(luma(a), luma(b), W, H);
-				console.info(`[title-text] animator frame ${f}: SSIM ${s.toFixed(4)}, max diff ${maxDiff(a, b)}`);
+				metrics[`animator-${f}-ssim`] = s;
+				metrics[`animator-${f}-maxdiff`] = maxDiff(a, b);
 				expect(s).toBeGreaterThan(0.98);
 			}
+			// A tate-chu-yoko run is one unit on the animators' path, and all of it is drawn. Comparing Program with the
+			// render cannot see this: both lost the second digit when a substitution cut the unit to its first character.
+			const drawn = await page.locator('#animated [data-text-char]').allTextContents();
+			expect(drawn).toContain('12');
 			// The animator's vertical path draws the same columns as the plain block once it has settled.
 			const rest = await still(build({ warp: false }), 60, 'plain-60');
 			const moved = await still(doc, 60, 'animator-60');
@@ -332,7 +341,7 @@ describe.runIf(enabled && !!CHROME)(
 			const b = await still(build({ scale: 2 }), 45, 'res-200');
 			const down = resampleLuma(luma(b), W * 2, H * 2, W, H);
 			const s = ssim(luma(a), down, W, H);
-			console.info(`[title-text] warped 200 % against 100 %: SSIM ${s.toFixed(4)}`);
+			metrics['warped-200-against-100-ssim'] = s;
 			expect(s).toBeGreaterThan(0.93);
 		});
 	},
