@@ -156,7 +156,7 @@ describe('per-letter finishes (TL-093)', () => {
 
 describe('the look’s stage: lights fixed on screen', () => {
 	const close = (a: readonly number[] | null, b: readonly number[]) => {
-		expect(a).not.toBeNull();
+		for (const [i, v] of a!.entries()) expect(v).toBeCloseTo(b[i]!, 9);
 		a!.forEach((v, i) => expect(v).toBeCloseTo(b[i]!, 9));
 	};
 	const turned = (deg: number, sx = 1, sy = 1) => {
@@ -231,10 +231,10 @@ describe('the look’s stage: lights fixed on screen', () => {
 			expect(up.u_tlStage).toEqual([1, 0, 0, 1]);
 			// Turned a quarter clockwise: a light from screen right comes from the layer's −y.
 			const q = titleLookUniforms(ctx({ a: 0, b: 1, c: -1, d: 0 }));
-			const dir = q.u_tlLightDir as number[];
+			const dir = q.u_tlLightDir as unknown as number[];
 			expect(dir[0]).toBeCloseTo(0, 9);
 			expect(dir[1]).toBeCloseTo(-1, 9);
-			const light = q.u_tlLight as number[];
+			const light = q.u_tlLight as unknown as number[];
 			expect(light[2]).toBeCloseTo(0.5, 9);
 			expect(Math.hypot(light[0]!, light[1]!)).toBeCloseTo(Math.cos(Math.PI / 6), 9);
 		});
