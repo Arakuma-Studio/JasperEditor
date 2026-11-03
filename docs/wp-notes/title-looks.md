@@ -161,8 +161,16 @@ looks and compile once. A six-layer look with a blur plans about 25 passes. Meas
 - **Plates are distances**, one pass each (`tlPlate`): `contour` closes with a second flood from the grown outline, `hull` is a support
   function of 64 directions over 4 × 4 blocks of ink, `slant` a lean tight on those blocks. A lean carries the plate past the layer
   box by the box's height, which percent of the unit cannot say: `LayerReach.boxHeight`.
-- **Offline look media.** Rendering falls back to what the finish does without a picture (the preset, no marks), with a chip in the
-  preview and `LOOK_MEDIA_OFFLINE` in the export plan. A deleted one clears to None (`clearEffectMedia`).
+- **Offline look media.** The preview falls back to what the finish does without a picture (the preset, no marks), with a chip.
+  The export plan refuses with `LOOK_MEDIA_OFFLINE`, a blocker naming the picture and the clip, as `THREE_D_ASSET_MISSING` does
+  (AGENTS §4: a look is never exported without its picture), and a render that reaches one anyway fails with that code
+  (`useLayerFx`). A deleted one clears to None (`clearEffectMedia`).
+- **Unreadable look media.** A picture that is online but cannot be decoded is only known when the browser opens it. A render
+  waits for it inside the draw's own `delayRender` and fails `LOOK_MEDIA_UNREADABLE` (`FX_MEDIA_UNREADABLE` for another effect's
+  picture), naming the layer and the media; `useFxImages` cancels the render before it lets go of its wait, and releases a
+  successful wait only after the re-render that holds the pictures has committed, so no frame is captured from a draw before
+  them. The preview binds `fxImageStandIn`, a magenta and black checkerboard, never a blank texture, and the chip says "A
+  picture of this look could not be read". Test: `title-look-finishes.e2e.test.ts` (a `.png` that is not a picture).
 - **Sequence light** travels on the render clip (`sequenceLight`, keys in sequence time) only when a look follows it.
 
 - **Light on nothing.** A premultiplied picture cannot show additive light where it has no alpha, and the framework's signal is
@@ -1013,7 +1021,9 @@ The last four rows are `title-look-generators-gl.test.ts`, "Lightning: the same 
 asserts above 0.97. On the code before this change (604fbcf2) three of its four cases fail: Mixed 0.940 (at 2.3 s), Outward
 0.932 and Crawl 0.957. Along Edge passed there too: its arcs hover on the outline and have no long lever. Crawl arcs two units
 long all sleep: their far end is out of reach. That is why that case uses shorter bolts, and the test checks there is light
-before it compares. The cost of these reads is in [performance.md](../performance.md) §7.
+before it compares. The cost of these reads is in [performance.md](../performance.md) §7, with the bound that keeps the data pass
+far from a GPU watchdog: at most 130 × 130 reads per `tlg_mass`, six per bolt or three per arc point, ≈ 125 million texels per
+draw, 1.5 s on SwiftShader at the heaviest settings. Not capped, so the fingerprints are unchanged.
 
 Earlier attempts, at the perturbed params: per-texel sites (0.52), the surface normal at the edge point (0.66), the alpha's
 first moment (0.70), bilinear sites (0.76), and the field's slope over a cross stencil of 6 % or 12 % of the unit (0.906, 0.935)
@@ -1023,7 +1033,8 @@ each bolt at its site itself gave 0.989. So the start needed fixing as much as t
 sites onto the field's nearest seeds (bilinear `toEdge`) gave 0.943.
 
 **Glints** run Pachislop's placement on the GPU every frame, with no read-back: a grid fixed in units of the title (so resolution does
-not change it), luminance of what is below the layer (`tlComp`, so a metal face's highlights count), non-maximum suppression,
+not change it; every pixel of a cell is read up to 32 per side, `GRID_POINTS`, so the grid is a true box mean to a unit of 1600
+canvas px), luminance of what is below the layer (`tlComp`, so a metal face's highlights count), non-maximum suppression,
 prominence, regional normalisation, face bias from the field, Hessian ridge rejection. Each of 64 seeded **homes** takes the strongest
 peak under a Gaussian prior around it, in one pass per home; a star's jitter, rotation and twinkle belong to the home. That prior is
 the hysteresis, and it is spatial, because a temporal one needs last frame: a peak must beat the one a star holds by the prior's

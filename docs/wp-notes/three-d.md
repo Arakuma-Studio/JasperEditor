@@ -310,6 +310,13 @@ test does not separate the two and the tent is a small gain, not the cause of th
 A model or HDR that is gone refuses with `THREE_D_ASSET_MISSING`: a plan blocker first, `cancelRender` as the backstop. Prefilter
 sampling is a fixed Hammersley set.
 
+**Fixed limits, said** (AGENTS §4). A frame draws at most `ADVANCED_MAX_LIGHTS` (32) lights besides environment lights and
+`ADVANCED_MAX_SHADOW_TILES` (48) shadow maps, and supersamples by `advancedSupersampling` (what `MAX_RENDERBUFFER_SIZE` holds,
+at most 4×); the numbers live in `packages/project/src/three-d/limits.ts`, which the renderer imports. Program's 3D chip names
+what a frame leaves out (`advancedLimitChip`), and the plan warns `THREE_D_LIGHTS_LIMIT`, `THREE_D_SHADOWS_LIMIT` and
+`THREE_D_SUPERSAMPLING_LIMIT` over the export range (the last from the render browser's probe, which now reports
+`maxRenderbufferSize`). Warnings, not blockers: preview and export draw the same picture. Not redesigned (docs/gaps.md).
+
 **Cost** (TL-078). 3D stays on the Remotion path; `costClassOf` gives `3d` or `3d-heavy` (transmission, glints, inflate,
 supersampling) and `COST_CLASSES` the words. The UI says so before a clip turns 3D, once, and in the 3D Title section; agents
 get `costClass` in `get_3d_scene`.
