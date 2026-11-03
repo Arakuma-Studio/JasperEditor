@@ -417,6 +417,29 @@ describe('font library routes', () => {
 			(await app.inject({ method: 'GET', url: '/api/fonts/library/fnope/usage', headers: H })).statusCode,
 		).toBe(404);
 	});
+
+	it('usage counts a project whose only use is a look naming the family (spec 19 TL-053)', async () => {
+		const app = await makeApp();
+		const face = (await upload(app, circular(), 'c.ttf')).json().installed[0] as LibraryFont;
+		const d = new DocBuilder('hd-1080p-30', 700);
+		d.tx([
+			{
+				type: 'look.create',
+				name: 'Circular Gold',
+				recipe: { font: { family: 'Inter', fallback: 'Circular Std' }, layers: [{ type: 'face' }] },
+			},
+		]);
+		expect(Object.values(d.doc.fonts).map((f) => f.family)).not.toContain('Circular Std');
+		const file = appdirPaths(app.appdir).projectFile(d.doc.projectId);
+		mkdirSync(join(file, '..'), { recursive: true });
+		writeFileSync(file, JSON.stringify(d.envelope()));
+		const usage = FontUsageResponseSchema.parse(
+			(await app.inject({ method: 'GET', url: `/api/fonts/library/${face.id}/usage`, headers: H })).json(),
+		);
+		expect(usage.projects).toEqual([
+			expect.objectContaining({ projectId: d.doc.projectId, families: ['Circular Std'] }),
+		]);
+	});
 });
 
 describe('removing a library font', () => {

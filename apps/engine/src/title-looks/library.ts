@@ -2,10 +2,12 @@
 // project, every editor window and agents, in its own file like the other preset libraries, so a build that does not know
 // looks never rewrites them. Writes are serialized and atomic (same-directory temp file, fsync, rename, directory fsync);
 // every change bumps `revision`. Entries are validated with the @jasper/project format; entries that no longer validate are
-// kept aside in `invalid` and written back, never dropped; an unreadable file is renamed to `….corrupt-<time>`; a file of a
-// newer version is read and never written.
+// kept aside in `invalid` and written back, never dropped; a file that is not JSON, or JSON this build cannot read as a
+// library (`readLookLibrary`), is renamed to `….corrupt-<time>` (logged, and named by `list` as `movedAside`) before
+// anything is written; a file of a newer version is read and never written.
 import { randomBytes } from 'node:crypto';
 import { rename } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import {
 	buildLookBundle,
 	CROCKFORD_ALPHABET,
@@ -13,11 +15,12 @@ import {
 	MAX_USER_LOOKS,
 	parseLookFile,
 	parseUserLook,
+	readLookLibrary,
 	USER_LOOK_LIBRARY_FORMAT,
 	USER_LOOK_VERSION,
 	type UserLook,
 } from '@jasper/project';
-import { atomicWriteJson, exists, readJsonOrNull } from '../tools/fs.ts';
+import { atomicWriteJson, exists, fsyncDir, readJsonOrNull } from '../tools/fs.ts';
 import { HttpError } from '../tools/reply.ts';
 
 type LibraryFile = {
@@ -63,6 +66,10 @@ function freeName(s: LibraryFile, name: string): string {
 export class UserLookLibrary {
 	private state: LibraryFile | null = null;
 	private newer = false;
+	/** Where an unreadable library file was moved (reported by `list`). */
+	private movedAside: string | null = null;
+	/** Why an unreadable library file that could not be moved aside makes the library read-only. */
+	private stuck: string | null = null;
 	private chain: Promise<void> = Promise.resolve();
 
 	constructor(
@@ -86,35 +93,37 @@ export class UserLookLibrary {
 			revision: 0,
 			looks: [],
 		};
-		const raw = await readJsonOrNull<Record<string, unknown>>(this.file);
-		if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+		const raw = await readJsonOrNull<unknown>(this.file);
+		// Invalid JSON, or JSON this build cannot read as a library: moved aside, never overwritten by the next save.
+		const read = raw === null ? null : readLookLibrary(raw);
+		if (!read?.ok) {
 			if (await exists(this.file)) {
+				const why = read ? read.message : 'not JSON';
 				const aside = `${this.file}.corrupt-${Date.now()}`;
-				await rename(this.file, aside).catch(() => undefined);
-				this.opts.log?.(`title looks: unreadable library moved to ${aside}`);
+				try {
+					await rename(this.file, aside);
+					await fsyncDir(dirname(this.file)).catch(() => undefined);
+					this.movedAside = aside;
+					this.opts.log?.(`title looks: unreadable library (${why}) moved to ${aside}`);
+				} catch (e) {
+					// It stays where it is, and nothing writes over it.
+					this.stuck = `${why}; it could not be moved aside: ${(e as Error).message}`;
+					this.opts.log?.(`title looks: unreadable library (${this.stuck})`);
+				}
 			}
 			this.state = empty;
 			return empty;
 		}
-		if (typeof raw.version === 'number' && raw.version > USER_LOOK_VERSION) {
+		if (read.newer) {
 			this.newer = true;
 			this.opts.log?.('title looks: the library was written by a newer JasperEditor (read-only)');
 		}
-		const looks: UserLook[] = [];
-		const invalid: unknown[] = Array.isArray(raw.invalid) ? [...raw.invalid] : [];
-		const seen = new Set<string>();
-		for (const l of Array.isArray(raw.looks) ? raw.looks : []) {
-			const r = parseUserLook(l);
-			if (r.ok && !seen.has(r.look.id)) {
-				seen.add(r.look.id);
-				looks.push(r.look);
-			} else invalid.push(l);
-		}
+		const { looks, invalid } = read;
 		if (invalid.length) this.opts.log?.(`title looks: ${invalid.length} invalid entries kept aside`);
 		this.state = {
 			...empty,
-			version: typeof raw.version === 'number' ? raw.version : USER_LOOK_VERSION,
-			revision: typeof raw.revision === 'number' && Number.isInteger(raw.revision) ? raw.revision : 0,
+			version: read.version,
+			revision: read.revision,
 			looks,
 			...(invalid.length ? { invalid } : {}),
 		};
@@ -131,6 +140,12 @@ export class UserLookLibrary {
 					'LOOK_LIBRARY_NEWER',
 					'The look library was written by a newer JasperEditor and is read-only here',
 				);
+			if (this.stuck)
+				throw new HttpError(
+					409,
+					'LOOK_LIBRARY_UNREADABLE',
+					`The look library file is unreadable (${this.stuck})`,
+				);
 			const next = structuredClone(s);
 			const out = fn(next);
 			next.revision = s.revision + 1;
@@ -146,10 +161,15 @@ export class UserLookLibrary {
 		return run;
 	}
 
-	async list(): Promise<{ revision: number; readOnly: boolean; looks: UserLook[] }> {
+	async list(): Promise<{ revision: number; readOnly: boolean; looks: UserLook[]; movedAside?: string }> {
 		await this.chain;
 		const s = await this.load();
-		return structuredClone({ revision: s.revision, readOnly: this.newer, looks: s.looks });
+		return structuredClone({
+			revision: s.revision,
+			readOnly: this.newer || this.stuck !== null,
+			looks: s.looks,
+			...(this.movedAside ? { movedAside: this.movedAside } : {}),
+		});
 	}
 
 	async get(id: string): Promise<UserLook> {

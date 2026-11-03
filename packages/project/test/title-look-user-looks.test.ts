@@ -14,6 +14,7 @@ import {
 	type LookRecipe,
 	parseLookFile,
 	parseUserLook,
+	readLookLibrary,
 	recipeFromAppearance,
 	recipeProblem,
 	TITLE_LOOK_EFFECT_ID,
@@ -158,6 +159,72 @@ describe('userLookSource: a user look given to look.apply', () => {
 			(l) => (l as { sourceId?: string }).sourceId === 'ulk_0123456789ABCDEF',
 		);
 		expect(copies).toHaveLength(1);
+	});
+
+	it('applying a user look is one undo step (the copy and the clip go back together), and redo is the result', () => {
+		const user = parseUserLook(look());
+		if (!user.ok) throw new Error(user.message);
+		const h = new Harness();
+		const t = h.ok([
+			{ type: 'clip.addText', at: 0, duration: 60, track: 'V2', content: { text: 'A' }, ref: '$a' },
+		]).refs.$a!;
+		const before = h.doc;
+		h.ok([{ type: 'look.apply', clipIds: [t], look: userLookSource(user.look) }]);
+		const after = h.doc;
+		expect(Object.values(after.titleLooks ?? {})).toHaveLength(1);
+		// Undo is the document before (History keeps it by identity): no copy, no look on the clip.
+		h.doc = before;
+		expect(h.doc.titleLooks).toBeUndefined();
+		expect(clipLook((h.seq.clips[t] as unknown as { effects: EffectInstance[] }).effects)).toBeNull();
+		expect(checkInvariants(h.doc, { effects: defaultEffectRegistry })).toEqual([]);
+		// Redo is the document after, and applying again from there reuses the copy.
+		h.doc = after;
+		h.ok([{ type: 'look.apply', clipIds: [t], look: userLookSource(user.look) }]);
+		expect(Object.values(h.doc.titleLooks ?? {})).toHaveLength(1);
+	});
+});
+
+describe('readLookLibrary: the engine library file (TL-054)', () => {
+	const file = (over: object = {}) => ({
+		format: USER_LOOK_LIBRARY_FORMAT,
+		version: USER_LOOK_VERSION,
+		revision: 4,
+		looks: [look()],
+		...over,
+	});
+
+	it('reads its looks, keeps bad and repeated entries aside, and the revision', () => {
+		const r = readLookLibrary(file({ looks: [look(), look(), { id: 'nope' }], invalid: ['old'] }));
+		expect(r).toMatchObject({ ok: true, newer: false, version: 1, revision: 4 });
+		if (!r.ok) return;
+		expect(r.looks.map((l) => l.id)).toEqual(['ulk_0123456789ABCDEF']);
+		expect(r.invalid).toEqual(['old', look(), { id: 'nope' }]);
+		expect(readLookLibrary(file({ revision: -1 }))).toMatchObject({ ok: true, revision: 0 });
+	});
+
+	it('refuses what is not a library, so the engine moves it aside instead of overwriting it', () => {
+		for (const raw of [
+			null,
+			[look()],
+			'text',
+			{ hello: 1 },
+			file({ format: 'jasper-title-looks' }),
+			file({ looks: { a: look() } }),
+			file({ looks: undefined }),
+			file({ invalid: 3 }),
+			file({ version: '1' }),
+			file({ version: 0 }),
+		])
+			expect(readLookLibrary(raw).ok, JSON.stringify(raw)).toBe(false);
+	});
+
+	it('reads a newer library as far as it goes, flagged newer', () => {
+		expect(readLookLibrary({ version: 9, looks: 'changed shape' })).toMatchObject({
+			ok: true,
+			newer: true,
+			version: 9,
+			looks: [],
+		});
 	});
 });
 

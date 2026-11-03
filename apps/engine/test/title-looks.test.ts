@@ -200,6 +200,37 @@ describe('user look library (TL-054)', () => {
 		expect(readdirSync(dirname(file)).some((f) => f.includes('.corrupt-'))).toBe(true);
 	});
 
+	for (const [what, value] of [
+		[
+			'looks that is not a list',
+			{ format: 'jasper-title-look-library', version: 1, revision: 3, looks: { a: 1 } },
+		],
+		['another object', { hello: 'world', looks: [] }],
+		['a list', [{ name: 'x' }]],
+		[
+			'invalid entries that are not a list',
+			{ format: 'jasper-title-look-library', version: 1, looks: [], invalid: 5 },
+		],
+		['an unreadable version', { format: 'jasper-title-look-library', version: 'one', looks: [] }],
+	] as const)
+		it(`moves valid JSON of the wrong shape (${what}) aside before a save could overwrite it`, async () => {
+			const appdir = tempAppdir();
+			const file = appdirPaths(appdir).titleLooksFile;
+			mkdirSync(dirname(file), { recursive: true });
+			const text = JSON.stringify(value);
+			writeFileSync(file, text);
+			const app = await makeApp({ appdir });
+			const list = (await app.inject({ method: 'GET', url: '/api/title-looks', headers: H })).json();
+			expect(list.looks).toEqual([]);
+			expect(list.movedAside).toMatch(/title-looks\.json\.corrupt-\d+$/);
+			await saved(app, 'New');
+			// The file that could not be read is kept byte for byte; the new library is a separate file.
+			expect(readFileSync(list.movedAside, 'utf8')).toBe(text);
+			expect(JSON.parse(readFileSync(file, 'utf8')).looks.map((l: { name: string }) => l.name)).toEqual([
+				'New',
+			]);
+		});
+
 	it('never writes a newer library: it is read-only here', async () => {
 		const appdir = tempAppdir();
 		const file = appdirPaths(appdir).titleLooksFile;

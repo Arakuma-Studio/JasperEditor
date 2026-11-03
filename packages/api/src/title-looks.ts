@@ -17,6 +17,8 @@ export const TitleLookLibraryResponseSchema = z.object({
 	/** The file was written by a newer build: it is shown and never changed. */
 	readOnly: z.boolean(),
 	looks: z.array(UserLookSchema),
+	/** The library file could not be read (not JSON, or not a look library) and was moved here; the list started empty. */
+	movedAside: z.string().optional(),
 });
 export type TitleLookLibraryResponse = z.infer<typeof TitleLookLibraryResponseSchema>;
 

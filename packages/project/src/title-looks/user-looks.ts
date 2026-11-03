@@ -104,6 +104,60 @@ export function parseLookFile(raw: unknown): ParsedLookFile {
 	return { ok: true, entries };
 }
 
+/** The library file as read: its looks, and the entries that no longer validate (kept aside, written back). */
+export type ReadLookLibrary =
+	| {
+			ok: true;
+			/** Written by a newer JasperEditor: read, never written. */
+			newer: boolean;
+			version: number;
+			revision: number;
+			looks: UserLook[];
+			invalid: unknown[];
+	  }
+	| { ok: false; message: string };
+
+/**
+ * Reads the engine's library file (`<appdir>/presets/title-looks.json`). Never throws. A file this build cannot read as
+ * a library (not an object, another format, `looks` or `invalid` not lists) is `ok: false`: the engine moves it aside
+ * rather than starting empty and overwriting it on the next save. A newer file is read as far as it goes and flagged
+ * `newer`. Entries that fail `parseUserLook`, or repeat an id, go to `invalid`.
+ */
+export function readLookLibrary(raw: unknown): ReadLookLibrary {
+	if (!isObject(raw)) return { ok: false, message: 'the library is not a JSON object' };
+	const version = raw.version;
+	if (version !== undefined && (typeof version !== 'number' || !Number.isInteger(version) || version < 1))
+		return { ok: false, message: 'the library has no readable version' };
+	const newer = typeof version === 'number' && version > USER_LOOK_VERSION;
+	if (!newer) {
+		if (raw.format !== USER_LOOK_LIBRARY_FORMAT)
+			return { ok: false, message: `the file is not a look library (format ${JSON.stringify(raw.format)})` };
+		if (!Array.isArray(raw.looks)) return { ok: false, message: 'the library holds no list of looks' };
+		if (raw.invalid !== undefined && !Array.isArray(raw.invalid))
+			return { ok: false, message: 'the library has an unreadable list of invalid looks' };
+	}
+	const looks: UserLook[] = [];
+	const invalid: unknown[] = Array.isArray(raw.invalid) ? [...raw.invalid] : [];
+	const seen = new Set<string>();
+	for (const l of Array.isArray(raw.looks) ? raw.looks : []) {
+		const r = parseUserLook(l);
+		if (r.ok && !seen.has(r.look.id)) {
+			seen.add(r.look.id);
+			looks.push(r.look);
+		} else invalid.push(l);
+	}
+	const revision =
+		Number.isSafeInteger(raw.revision) && (raw.revision as number) >= 0 ? (raw.revision as number) : 0;
+	return {
+		ok: true,
+		newer,
+		version: typeof version === 'number' ? version : USER_LOOK_VERSION,
+		revision,
+		looks,
+		invalid,
+	};
+}
+
 /**
  * What `look.apply {look}` is given for a user look: the look whole, with its id as `sourceId`, so the first use copies it
  * into the project and later uses reuse that copy (TL-015). The Looks tab and agents' `title_look_find` both apply it so.

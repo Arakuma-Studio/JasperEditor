@@ -46,9 +46,11 @@ import {
 	parseYaml,
 	readCaptionFile,
 	readEssentialSound,
+	readLookLibrary,
 	SvgImportError,
 	SvgPathError,
 	svgToShapeContents,
+	USER_LOOK_LIBRARY_FORMAT,
 	USER_LOOK_VERSION,
 } from '../src/index.ts';
 import {
@@ -221,6 +223,27 @@ describeFuzz('@jasper/project documents and libraries', [
 	jsonTarget('effect preset (result object)', presetSeeds, (v) => isResult(parseEffectPreset(v))),
 	jsonTarget('user look (result object)', userLookSeeds, (v) => isResult(parseUserLook(v))),
 	jsonTarget('user look file (result object)', userLookSeeds, (v) => isResult(parseLookFile(v))),
+	jsonTarget(
+		'user look library file (result object; read only as a library)',
+		() => [
+			{
+				format: USER_LOOK_LIBRARY_FORMAT,
+				version: USER_LOOK_VERSION,
+				revision: 3,
+				looks: userLookSeeds().slice(0, 1),
+				invalid: [],
+			},
+		],
+		(v) => {
+			const r = readLookLibrary(v);
+			isResult(r);
+			// Read as a library only when it is one: what is not is moved aside, never overwritten by an empty list.
+			if (r.ok && !r.newer && (v as { format?: unknown }).format !== USER_LOOK_LIBRARY_FORMAT)
+				throw new Error('read a file of another format as a library');
+			if (r.ok && !r.newer && !Array.isArray((v as { looks?: unknown }).looks))
+				throw new Error('read a library without a list of looks');
+		},
+	),
 	jsonTarget(
 		'effect preset file (result object)',
 		() => [{ version: 1, presets: presetSeeds(), folders: [] }],
