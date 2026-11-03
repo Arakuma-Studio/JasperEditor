@@ -216,23 +216,33 @@ struct TlgSite {
   float gate;   // 0..1: asleep .. awake (smooth, so a site never pops)
 };
 // The site at q. edge: on the outline, or depth px inside it; else the fill, with q itself where q is inside.
+// Everything is read bilinearly at q and over steps in the unit, never per texel: the edge point and the normal are
+// continuous in q, and the same at every resolution (a bolt two units long turns a pixel of quantisation into many).
 TlgSite tlg_site(vec2 q, bool edge, float depth, float capture) {
-  vec4 f = tlg_field(q);
-  vec2 at = (floor(q) + 0.5);
-  float d = f.x;
-  float l = length(f.zw);
+  float h = max(1.0, tl_px(1.5));
+  vec2 uv = q / u_canvasSize;
+  vec2 o = vec2(h) / u_canvasSize;
+  float d = tlg_d(uv);
+  vec2 g = vec2(tlg_d(uv + vec2(o.x, 0.0)) - tlg_d(uv - vec2(o.x, 0.0)),
+                tlg_d(uv + vec2(0.0, o.y)) - tlg_d(uv - vec2(0.0, o.y))) / (2.0 * h);
+  float gl = length(g);
   TlgSite s;
-  vec2 toward = l > 1.0e-3 ? f.zw / l : vec2(0.0);
-  s.normal = d > 0.0 ? -toward : toward;
-  if (l <= 1.0e-3) {
+  if (gl > 1.0e-3) s.normal = g / gl;
+  else {
     vec2 r = q - (u_box.xy + u_box.zw * 0.5);
     float rl = length(r);
     s.normal = rl > 1.0e-3 ? r / rl : vec2(1.0, 0.0);
   }
-  vec2 onEdge = at + f.zw;
+  // The distance is 1-Lipschitz: the nearest edge is d along the normal.
+  vec2 onEdge = q - s.normal * d;
   if (edge) s.px = onEdge - s.normal * depth;
-  else s.px = d <= 0.0 ? at : onEdge;
-  s.gate = (1.0 - smoothstep(capture * 0.6, capture, edge ? abs(d) : max(d, 0.0))) * f.y;
+  else s.px = d <= 0.0 ? q : onEdge;
+  // Opacity of the nearest part of the shape (a fading glyph's sites fade with it); none beyond the field's reach.
+  float opacity = tlg_field(q).y;
+  s.gate = (1.0 - smoothstep(capture * 0.6, capture, edge ? abs(d) : max(d, 0.0))) * opacity;
+  // On a medial axis (the middle of a stroke, the gap between two letters) the nearest edge flips from one side to the
+  // other: there the gradient falls below 1. A site fades there, so a flip, between frames or resolutions, is invisible.
+  if (edge || d > 0.0) s.gate *= smoothstep(0.55, 0.9, gl);
   return s;
 }
 `,
