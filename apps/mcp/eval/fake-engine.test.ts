@@ -1,7 +1,7 @@
 // The fake engine answers what the titles and delivery cases reach (spec 19 TL-100…TL-116), through the stub a sample
 // talks to: a core session, tools run with call_tool, the call log the grader reads. A call the fake does not model
 // would mark a sample invalid, so every call here must log none. Results are parsed with the engine's own schemas.
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,11 +26,11 @@ afterAll(() => rmSync(dir, { recursive: true, force: true }));
 // biome-ignore lint/suspicious/noExplicitAny: tool results are JSON read loosely by the assertions
 type Json = Record<string, any>;
 
-async function session(name: string) {
+async function session(name: string, engine: Record<string, unknown> = { project: 'interview' }) {
 	const log = join(dir, `${name}.jsonl`);
-	const { server, engine } = await buildStub({
+	const { server, engine: fake } = await buildStub({
 		sourceRoot: root,
-		engine: { project: 'interview' },
+		engine,
 		toolsets: 'core',
 		log,
 	});
@@ -61,7 +61,15 @@ async function session(name: string) {
 			.trim()
 			.split('\n')
 			.map((l) => JSON.parse(l) as McpCall);
-	return { client, run, ok, calls, project: engine.vars.project!, close: () => client.close() };
+	return {
+		client,
+		run,
+		ok,
+		calls,
+		vars: fake.vars,
+		project: fake.vars.project!,
+		close: () => client.close(),
+	};
 }
 
 describe('the eval fake engine (spec 19 cases)', () => {
@@ -160,5 +168,89 @@ describe('the eval fake engine (spec 19 cases)', () => {
 		const calls = s.calls();
 		expect(calls.length).toBeGreaterThan(8);
 		expect(calls.filter((c) => c.unmodelled)).toEqual([]);
+	});
+});
+
+describe('the eval fake engine: looks, effects, 3D and stills (AGENTS.md §10 cases)', () => {
+	let s: Awaited<ReturnType<typeof session>>;
+	let files = '';
+	beforeAll(async () => {
+		s = await session('looks', { project: 'interview', logo: true });
+		files = mkdtempSync(join(tmpdir(), 'jasper-eval-styles-'));
+		writeFileSync(join(files, 'brand.asl'), 'styles');
+	});
+	afterAll(() => {
+		rmSync(files, { recursive: true, force: true });
+		return s.close();
+	});
+
+	it('a title with a look: save it, add a generator, set the global light, read its recipe', async () => {
+		const applied = await s.ok('title_propose', {
+			projectId: s.project,
+			text: 'LAUNCH DAY',
+			at: 0,
+			lookId: 'look.impact-burn',
+			mode: 'apply',
+		});
+		const clipId = applied.json.clipIds[0] as string;
+		const saved = await s.ok('title_look_save', { projectId: s.project, clipId, name: 'Launch' });
+		expect(saved.json.lookId).toMatch(/^tlk_/);
+		const recipe = await s.ok('title_look_find', { projectId: s.project, lookId: saved.json.lookId });
+		expect(recipe.json.recipe.layers.length).toBeGreaterThan(0);
+		await s.ok('title_generator_add', { projectId: s.project, generator: 'fire', clipId });
+		await s.ok('title_light_set', { projectId: s.project, angle: 135, altitude: 40 });
+	});
+
+	it('effects: find one, add it, key a param', async () => {
+		const found = await s.ok('list_effects', { query: 'gaussian blur' });
+		const effectId = found.json.effects[0].id as string;
+		const added = await s.ok('add_effect', { projectId: s.project, clipId: s.vars.clip, effectId });
+		const fx = (added.json.results?.[0]?.effectInstanceId ?? added.json.created[0]) as string;
+		const one = await s.ok('list_effects', { effectId });
+		const param = one.json.params.find((p: Json) => p.type === 'number')?.name as string;
+		await s.ok('set_effect_param', {
+			projectId: s.project,
+			effectInstanceId: fx,
+			param,
+			value: 4,
+			at: 0,
+			keyframe: true,
+		});
+	});
+
+	it('a 3D title: the switch, the solid, a band, a plate and gold', async () => {
+		const text = await s.ok('add_text', { projectId: s.project, text: 'GOLD', at: 0, duration: 90 });
+		const clipId = (text.json.clipId ??
+			text.json.created.find((id: string) => id.startsWith('clp_'))) as string;
+		await s.ok('set_3d_layer', { projectId: s.project, clipIds: [clipId], enabled: true });
+		await s.ok('set_3d_renderer', { projectId: s.project, renderer: 'advanced' });
+		await s.ok('threed_solid_edit', {
+			projectId: s.project,
+			clipIds: [clipId],
+			extrusionDepth: 30,
+			band: { width: 4, profile: 'round' },
+			plate: { shape: 'box' },
+		});
+		await s.ok('set_material', { projectId: s.project, clipIds: [clipId], preset: 'gold' });
+	});
+
+	it('image_split: the parts of the logo, then the split', async () => {
+		const dry = await s.ok('image_split', { projectId: s.project, clipId: s.vars.still, dryRun: true });
+		expect(dry.json.parts).toHaveLength(3);
+		const split = await s.ok('image_split', { projectId: s.project, clipId: s.vars.still });
+		expect(split.json.created.length).toBeGreaterThanOrEqual(3);
+	});
+
+	it('import_layer_styles: a report, then project looks', async () => {
+		const path = join(files, 'brand.asl');
+		const dry = await s.ok('import_layer_styles', { projectId: s.project, path, dryRun: true });
+		expect(dry.json.styles.map((x: Json) => x.name)).toEqual(['Brand Gold', 'Brand Outline']);
+		expect(dry.json.styles[0].report.unsupported.join()).toContain('Bricks');
+		const saved = await s.ok('import_layer_styles', { projectId: s.project, path, refPx: 120 });
+		expect(saved.json.styles.every((x: Json) => /^tlk_/.test(x.lookId))).toBe(true);
+	});
+
+	it('logged every call without an unmodelled engine call', () => {
+		expect(s.calls().filter((c) => c.unmodelled)).toEqual([]);
 	});
 });

@@ -10,10 +10,17 @@ import {
 	FontCatalogSchema,
 	GamutCheckRequestSchema,
 	GamutCheckResultSchema,
+	GradingScopesRequestSchema,
+	GradingScopesResponseSchema,
+	LayerStyleFileSchema,
+	LayerStyleReadQuerySchema,
 	type PsdPlan,
 	PsdPlanSchema,
 	PsdRequestSchema,
 	PsdResultSchema,
+	SplitImageAnalysisSchema,
+	SplitImageRequestSchema,
+	SplitImageResultSchema,
 	StillSheetRequestSchema,
 	StillSheetResultSchema,
 	TitleLookLibraryResponseSchema,
@@ -86,6 +93,95 @@ export type EngineSetup = {
 	exportPolls?: number;
 	/** What an export's verification finds. */
 	verify?: { failRow?: string };
+	/** A still `logo.png` (three letters with gaps between them) on V2 at 0: `{{still}}`. */
+	logo?: boolean;
+};
+
+/** The still of `setup.logo`: 600 × 200, three alpha islands (the letters), as `image_split` analyses it. */
+const LOGO = { key: 'mk_logo', width: 600, height: 200 };
+const LOGO_ISLANDS = [
+	{ x0: 20, y0: 40, x1: 180, y1: 160 },
+	{ x0: 220, y0: 40, x1: 380, y1: 160 },
+	{ x0: 420, y0: 40, x1: 580, y1: 160 },
+];
+const imageProbe = (width: number, height: number): MediaAsset['probe'] => ({
+	durationFlicks: null,
+	startTimecode: null,
+	streams: [
+		{
+			index: 0,
+			type: 'video',
+			codec: 'png',
+			width,
+			height,
+			pixelAspect: { num: 1, den: 1 },
+			frameRate: { num: 25, den: 1 },
+			pixelFormat: 'rgba',
+			bitDepth: 8,
+			color: { primaries: 'bt709', transfer: 'bt709', matrix: 'bt709', range: 'pc' },
+			browserDecodable: true,
+		},
+	],
+	rotationDegrees: 0,
+	hasAlpha: true,
+	variableFrameRate: false,
+});
+const imageAsset = (key: string, name: string, width: number, height: number) => ({
+	kind: 'image' as const,
+	fingerprint: `q1:${key.padStart(64, '0')}`,
+	originalName: name,
+	sizeBytes: 1,
+	container: 'png_pipe',
+	probe: imageProbe(width, height),
+	locators: [{ type: 'engine-store' as const, engineId: 'local', key }],
+});
+
+/** What `layerStylesRead` finds in any style file: two styles, one of them with a pattern the mapper cannot draw. */
+const STYLE_FILE = {
+	styles: [
+		{
+			name: 'Brand Gold',
+			origin: 'style library' as const,
+			refPx: 100,
+			refKnown: false,
+			refNote: 'The file names no text size: 100 px is a suggestion; pass refPx to confirm it.',
+			style: {
+				effects: {
+					stroke: [
+						{ enabled: true, size: { units: 'Pixels', value: 6 }, position: 'outside', fillType: 'color' },
+					],
+					patternOverlay: { enabled: true, pattern: { name: 'Bricks' } },
+				},
+				baseColor: null,
+				ppi: 72,
+				globalAngle: 120,
+				globalAltitude: 30,
+				fillOpacity: 1,
+				knockout: false,
+			},
+		},
+		{
+			name: 'Brand Outline',
+			origin: 'style library' as const,
+			refPx: 100,
+			refKnown: false,
+			refNote: 'The file names no text size: 100 px is a suggestion; pass refPx to confirm it.',
+			style: {
+				effects: {
+					stroke: [
+						{ enabled: true, size: { units: 'Pixels', value: 3 }, position: 'center', fillType: 'color' },
+					],
+				},
+				baseColor: null,
+				ppi: 72,
+				globalAngle: 120,
+				globalAltitude: 30,
+				fillOpacity: 0,
+				knockout: false,
+			},
+		},
+	],
+	skipped: [],
 };
 
 const probe = (seconds: number, audio: boolean, video: boolean): MediaAsset['probe'] => ({
@@ -414,6 +510,30 @@ export function createFakeEngine(
 			if (clips[0]) vars.clip = clips[0].id;
 			if (clips[1]) vars.linkedClip = clips[1].id;
 		}
+		if (setup.logo) {
+			const r = applyTo(projectId, {
+				protocol: 'jasper.tx/1',
+				label: 'logo',
+				origin: { agent: 'eval' },
+				sequenceId: seqId,
+				commands: [
+					{
+						type: 'media.register',
+						asset: imageAsset(LOGO.key, 'logo.png', LOGO.width, LOGO.height),
+						ref: '$l',
+					},
+					{
+						type: 'clip.place',
+						source: { mediaId: '$l' },
+						at: 0,
+						tracks: { video: 'V2' },
+						ref: '$s',
+					},
+				],
+			});
+			if (!r.ok) throw new Error(`eval logo seed failed: ${JSON.stringify(r.errors)}`);
+			vars.still = r.refs.$s!;
+		}
 		if (setup.seed) {
 			const r = applyTo(projectId, {
 				protocol: 'jasper.tx/1',
@@ -423,6 +543,8 @@ export function createFakeEngine(
 				commands: setup.seed,
 			});
 			if (!r.ok) throw new Error(`eval seed failed: ${JSON.stringify(r.errors)}`);
+			// The refs of the seed, for prompts and tests: `$t` is `{{seed_t}}`.
+			for (const [ref, id] of Object.entries(r.refs)) vars[`seed_${ref.slice(1)}`] = id;
 		}
 		if (setup.brief) {
 			const r = applyTo(projectId, {
@@ -632,6 +754,52 @@ export function createFakeEngine(
 			};
 		},
 		titleLooksList: () => TitleLookLibraryResponseSchema.parse({ revision: 0, readOnly: false, looks: [] }),
+		layerStylesRead: (opts) => {
+			const { name } = LayerStyleReadQuerySchema.parse((opts as { query?: unknown }).query);
+			return LayerStyleFileSchema.parse({ fileName: name, ...STYLE_FILE });
+		},
+		splitImageAnalyze: ({ params }) => {
+			if (params?.key !== LOGO.key)
+				throw new EngineError('NOT_FOUND', `No still ${params?.key} in the store`, { status: 404 });
+			const job = newJob('split-image', 'Analyse logo.png', 1, null);
+			job.result = SplitImageAnalysisSchema.parse({
+				width: LOGO.width,
+				height: LOGO.height,
+				cell: 1,
+				cols: LOGO.width,
+				rows: LOGO.height,
+				bitDepth: 8,
+				islands: LOGO_ISLANDS,
+				labelMapUrl: `/renders/${job.id}/labels`,
+			});
+			return jobView(job);
+		},
+		splitImage: ({ params, body: raw }) => {
+			const req = body(SplitImageRequestSchema, raw);
+			if (params?.key !== LOGO.key)
+				throw new EngineError('NOT_FOUND', `No still ${params?.key} in the store`, { status: 404 });
+			const job = newJob('split-image', `Split logo.png into ${req.groups.length}`, 1, null);
+			job.result = SplitImageResultSchema.parse({
+				parts: req.groups.map((group, i) => {
+					const boxes = group.map((k) => LOGO_ISLANDS[k]!);
+					const x = Math.min(...boxes.map((b) => b.x0));
+					const y = Math.min(...boxes.map((b) => b.y0));
+					const w = Math.max(...boxes.map((b) => b.x1)) - x;
+					const h = Math.max(...boxes.map((b) => b.y1)) - y;
+					const key = `mk_logo_part_${i + 1}`;
+					return {
+						media: {
+							...imageAsset(key, `logo part ${i + 1}.png`, w, h),
+							mediaKey: key,
+							locators: [],
+							browserPlayable: 'yes',
+						},
+						box: { x, y, w, h },
+					};
+				}),
+			});
+			return jobView(job);
+		},
 		psdPlan: ({ body: raw }) => psdPlan(body(PsdRequestSchema, raw)),
 		psdExport: ({ body: raw }) => {
 			const req = body(PsdRequestSchema, raw);
@@ -880,6 +1048,38 @@ export function createFakeEngine(
 		verifyExport: (exportId: string, req: { checks?: 'fast' | 'full'; target?: string } = {}) =>
 			jobView(newJob('export-verify', 'Verify', 1, verifyResult(exportId, req.checks ?? 'full', req.target))),
 		requestStill: () => jobView(newJob('still', 'Still', 1, { url: '/stills/1.png' })),
+		/** The grey footage everywhere: every channel at 96/255, nothing clipped. */
+		gradingScopes: (raw: unknown) => {
+			const req = body(GradingScopesRequestSchema, raw);
+			const v = Math.round((96 / 255) * 1000) / 10;
+			const level = { min: v, max: v, mean: v };
+			const columns = req.columns ?? 8;
+			const traces = (keys: string[]) =>
+				Object.fromEntries(keys.map((k) => [k, Array.from({ length: columns }, () => level)]));
+			return GradingScopesResponseSchema.parse({
+				sequenceId: req.sequenceId,
+				frame: req.frame,
+				...(req.clipId ? { clipId: req.clipId } : {}),
+				renderPath: 'native',
+				samples: [480, 270],
+				matrix: req.matrix ?? 'bt709',
+				clamp: req.clamp ?? true,
+				unit: '%',
+				stats: {
+					r: level,
+					g: level,
+					b: level,
+					y: level,
+					chromaMean: [0, 0],
+					hueDeg: 0,
+					saturation: 0,
+					clipLow: [0, 0, 0, 0],
+					clipHigh: [0, 0, 0, 0],
+					samples: 480 * 270,
+				},
+				waveform: { type: req.waveformType ?? 'rgb', lo: v, hi: v, columns, traces: traces(['r', 'g', 'b']) },
+			});
+		},
 		/** TL-103: every cell drawn by `rasterFrame`, served at `/renders/<job>/cells/<n>` like the engine's. */
 		requestStillSheet: (raw: unknown) => {
 			const req = body(StillSheetRequestSchema, raw);

@@ -111,7 +111,7 @@ import { APPROVAL_REQUIRED_HINT } from './proposals.ts';
 import { durationFrames } from './trim-paths.ts';
 
 export const TITLE_ART_GUIDE = `Title art: stylized titles from a brief, in three to five calls (spec 19). A look is a reusable appearance on a clip (rims, glows, shadows, finishes, generators); a colourway is a palette that fills a look's colour roles without changing its structure. The tools are in the titles toolset: run them with call_tool (describe_tool shows the arguments).
-- Workflow: title_look_find → title_propose → title_check. title_look_find {query, tags?, aspect?, sampleText?, projectId?} searches the library, the user's own looks (ulk_…, saved in the editor and shared by every project) and the project's, and returns rows (source says which) and one numbered sheet of real renders; any row's lookId works with title_propose and title_look_find; title_propose {projectId, text, at, lookId, alternatives?} puts the title on the timeline or in Review, and returns one sheet of intro, hold and outro × alternatives over the real footage, plus its check; title_check {projectId, clipId | proposalId, target?} measures it again after any change.
+- Workflow: title_look_find → title_propose → title_check. title_look_find {query, tags?, aspect?, sampleText?, projectId?} searches the library, the user's own looks (ulk_…, saved in the editor and shared by every project) and the project's, and returns rows (source says which) and one numbered sheet of real renders; any row's lookId works with title_propose and title_look_find {lookId} (its recipe); title_propose {projectId, text, at, lookId, alternatives?} puts the title on the timeline or in Review, and returns one sheet of intro, hold and outro × alternatives over the real footage, plus its check; title_check {projectId, clipId | proposalId, target?} measures it again after any change.
 - Modes of title_propose. "propose" (default) stores a title-art proposal: colourways are the item's alternatives, the user reviews it in the Review panel, wait_for_proposal gives the decision, accept_proposal applies it where Project Settings ▸ Agent Proposals allows it. It needs the project open in an editor window: without one nobody can review it and it is refused with E_NO_EDITOR, nothing stored. "dryRun" changes nothing. "apply" adds the title now: with an editor it is one undoable History entry; on a headless engine there is no History and undo cannot reach it, so the result carries revert, the apply_commands arguments that take it out again. Ask before leaving a headless apply in place when the user did not ask for it.
 - energy (low, medium, high) picks the in and out animations. duration defaults to the time the text needs to be read. colorway names a colourway by id or name; alternatives (0–3) adds others, chosen from seed, which every result returns so a run can be repeated. An empty library is said plainly: pass recipe instead.
 - title_check rows are {id, kind, status, measured, expected, at, message, fix?}, as verify_export's: kind "format" = you may fix it unasked (fix.commands go to apply_commands, then check again), kind "judgement" = tell the user what was measured and ask. safe-area and off-frame use the title's real alpha bounds; contrast compares it with the rendered picture behind it, tile by tile, at the frames it is at rest; min-size, read-time, font-available and export-path (from the planner) follow, then every style lint issue. target adds the platform's interface zones, which are estimates and only warn. verified = no fail row and no unverified format row, at the returned revision: after any edit it says nothing, run it again. notChecked lists what no row measures: taste above all. Report those as not checked, never as fine.
@@ -132,7 +132,7 @@ const RecipeArg = z
 		if (p) c.addIssue({ code: 'custom', message: p.message });
 	})
 	.describe(
-		'A look as JSON: {layers: [{type, name?, enabled?, params?}], palette?, light?, font?}. title_look_find gives examples',
+		'A look as JSON: {layers: [{type, name?, enabled?, params?}], palette?, light?, font?}. title_look_find {lookId} gives examples',
 	);
 
 const TimeoutArg = z
@@ -310,7 +310,7 @@ function parseRecipe(raw: unknown): LookRecipe {
 		throw new ToolError(
 			'E_INVALID_PARAM',
 			`recipe.${i.path.join('.')}: ${i.message}`,
-			'title_look_find shows a working recipe.',
+			'title_look_find {lookId} shows a working recipe.',
 		);
 	}
 	const ids = createRandomIdSource();
@@ -326,7 +326,7 @@ function parseRecipe(raw: unknown): LookRecipe {
 }
 
 function layerTypesHint(): string {
-	return 'title_look_find lists the layer types in layerTypes; each takes the params of its layerParams entry.';
+	return 'title_look_find {lookId} lists the layer types in layerTypes; each takes the params of its layerParams entry.';
 }
 
 /** How much a look costs to draw, from what TL-037 and docs/performance.md §7 measured: time dependence, then layers. */
@@ -1036,7 +1036,7 @@ export function registerTitleTools(ctx: ToolContext): void {
 		{
 			title: 'Title look',
 			description:
-				'A library look as JSON: its tags, colourways and recipe (title_look_find gives the same).',
+				'A library look as JSON: its tags, colourways and recipe (title_look_find {lookId} gives the same).',
 			mimeType: 'application/json',
 		},
 		async (uri, { id }) => {
@@ -1062,7 +1062,7 @@ export function registerTitleTools(ctx: ToolContext): void {
 			title: 'Find title looks',
 			description:
 				'Search title looks by words and tags: rows plus one numbered sheet of real renders, 12 a page. With `lookId`: that look as JSON. Then `title_propose {lookId}`.',
-			details: `Searches title looks by words and tags: the library, the user's own looks (saved in the editor, shared by every project) and, with projectId, the project's looks. Returns rows {lookId, name, tags, colorways, costClass, renderPath, source: library | user | project} with ONE numbered PNG sheet of real renders of sampleText, ${DEFAULT_SHEET_WIDTH} px wide by default. Cell n of the sheet is row n. limit is at most ${MAX_FIND_LIMIT}; cursor continues a list. costClass: light, medium or heavy, how much a look costs to draw; heavy looks move on their own and redraw every frame. renderPath comes from the planner. libraryColorways lists the colourways usable with any look, once. No schemas: title_look_find gives a look's JSON. An empty result says so; the library may be empty in a development build. The sheet is one engine job: past timeoutSeconds the rows come back with {jobId, timedOut, next}.`,
+			details: `Searches title looks by words and tags: the library, the user's own looks (saved in the editor, shared by every project) and, with projectId, the project's looks. Returns rows {lookId, name, tags, colorways, costClass, renderPath, source: library | user | project} with ONE numbered PNG sheet of real renders of sampleText, ${DEFAULT_SHEET_WIDTH} px wide by default. Cell n of the sheet is row n. limit is at most ${MAX_FIND_LIMIT}; cursor continues a list. costClass: light, medium or heavy, how much a look costs to draw; heavy looks move on their own and redraw every frame. renderPath comes from the planner. libraryColorways lists the colourways usable with any look, once. No schemas: lookId gives one look's JSON. An empty result says so; the library may be empty in a development build. The sheet is one engine job: past timeoutSeconds the rows come back with {jobId, timedOut, next}. lookId instead returns that one look as JSON, with no sheet: its recipe (bottom-first layers, palette, light, font), colourways, tags, what each layer type it uses takes (name, kind, default, range, no schemas) and every layer type there is; the starting point for title_propose {recipe} and title_look_save {recipe}. Library and user looks need no project; a project look needs projectId.`,
 			input: {
 				query: z
 					.string()
@@ -1634,7 +1634,7 @@ export function registerTitleTools(ctx: ToolContext): void {
 		},
 		async (a, extra) => {
 			if ((a.clipId === undefined) === (a.recipe === undefined))
-				throw new ToolError('E_INVALID_PARAM', 'Give clipId or recipe', 'title_look_find gives a recipe.');
+				throw new ToolError('E_INVALID_PARAM', 'Give clipId or recipe', 'title_look_find {lookId} gives a recipe.');
 			const recipe = a.recipe !== undefined ? parseRecipe(a.recipe) : undefined;
 			const res = await transact(
 				ctx,
