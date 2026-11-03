@@ -3,6 +3,8 @@
 // WebGL2. Each tile must draw and must not clip at its padding. `TITLE_LOOKS_SHEET=<png>` writes the contact sheet; set
 // `TITLE_LOOKS_COLORWAY=<colorway id>` to see the whole library in one colourway, and `TITLE_LOOKS_ONLY=<ids>` (look ids or
 // category ids, comma-separated) to sheet part of it while working on it. Unset, every look is checked.
+// A look with a generator layer is also drawn at three times (`GENERATOR_TIMES`): a generator builds up, so its first frame
+// says little about how it reads. `TITLE_LOOKS_TIME_SHEET=<png>` writes that sheet, a row per look.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -19,6 +21,7 @@ import {
 import { encodePng } from '@jasper/testkit/png';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CHROME, type LookImage, type LookPage, openLookPage, over } from './title-look-harness.ts';
+import { writeSheet } from './title-look-sheet.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ENGINE = join(here, '..', '..', '..', 'apps', 'engine');
@@ -26,6 +29,15 @@ const DISPLAY = join(ENGINE, 'fonts', 'display');
 const require_ = createRequire(join(ENGINE, 'package.json'));
 
 const TILE = { w: 640, h: 216 };
+/**
+ * Content seconds a generator look is judged at: arriving, part way, and settled. Settled is past the longest build of a
+ * look's generator (confetti lives 3 s, so by 5 s every particle has been born, aged and reborn at least once).
+ */
+const GENERATOR_TIMES = [
+	{ label: 'in', seconds: 0.25 },
+	{ label: 'middle', seconds: 1.5 },
+	{ label: 'settled', seconds: 5 },
+] as const;
 const BOX = { width: 560, height: 150 };
 const COLS = 4;
 
@@ -66,6 +78,36 @@ function backdrop(x: number, y: number): [number, number, number] {
 		0.02 * Math.sin(x * 0.0413) * Math.sin(y * 0.0371);
 	return [v * 0.92, v, v * 1.12];
 }
+
+/**
+ * Pixels where a look with its generators differs visibly (any channel by more than 32 of 255, over mid grey) from the same
+ * look without them. The two canvases are aligned on the layer box: a generator widens the padding.
+ */
+function visibleChange(withGen: LookImage, without: LookImage): number {
+	const a = over(withGen, 96);
+	const b = over(without, 96);
+	const ox = without.box.x - withGen.box.x;
+	const oy = without.box.y - withGen.box.y;
+	let n = 0;
+	for (let y = 0; y < withGen.height; y++)
+		for (let x = 0; x < withGen.width; x++) {
+			const bx = x + ox;
+			const by = y + oy;
+			const i = (y * withGen.width + x) * 4;
+			const inside = bx >= 0 && by >= 0 && bx < without.width && by < without.height;
+			const j = (by * without.width + bx) * 4;
+			let d = 0;
+			for (let k = 0; k < 3; k++) d = Math.max(d, Math.abs(a[i + k]! - (inside ? b[j + k]! : 96)));
+			if (d > 32) n++;
+		}
+	return n;
+}
+
+/**
+ * Fewest visibly changed pixels a generator layer gives a library tile at any of `GENERATOR_TIMES`. Measured: every
+ * generator look but one changed 600 or more at each time; gold-leaf's glints changed 12 to 34 before they were enlarged.
+ */
+const MIN_GENERATOR_PIXELS = 300;
 
 function composite(
 	sheet: Uint8Array,
@@ -215,6 +257,36 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			},
 		);
 
+		/** Pixels drawn, and drawn pixels on the edge of the padded canvas (a look that clips at its padding). */
+		const coverage = (img: LookImage) => {
+			let drawn = 0;
+			let edge = 0;
+			for (let y = 0; y < img.height; y++)
+				for (let x = 0; x < img.width; x++) {
+					const a = img.data[(y * img.width + x) * 4 + 3]!;
+					if (a > 8) drawn++;
+					if (a > 8 && (x === 0 || y === 0 || x === img.width - 1 || y === img.height - 1)) edge++;
+				}
+			return { drawn, edge };
+		};
+
+		/** A look on its sample text in its own font, fitted to the box. */
+		async function renderLook(l: FactoryLook, recipe: LookRecipe, contentSeconds?: number) {
+			const f = sampleFace(l);
+			const size = await tl.fitSize({
+				text: l.sampleText,
+				size: 96,
+				width: BOX.width - 60 - f.trackingEm * 96 * l.sampleText.length,
+				font: f,
+			});
+			return tl.render({
+				recipe,
+				input: { kind: 'text', text: l.sampleText, size, font: f },
+				box: BOX,
+				...(contentSeconds !== undefined ? { contentSeconds } : {}),
+			});
+		}
+
 		it('draws every look without clipping, and the sheet can be written', async () => {
 			const way = process.env.TITLE_LOOKS_COLORWAY
 				? factoryColorway(process.env.TITLE_LOOKS_COLORWAY)
@@ -235,27 +307,9 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 					sheet[i + 3] = 255;
 				}
 			for (const [i, l] of looks.entries()) {
-				const f = sampleFace(l);
-				const size = await tl.fitSize({
-					text: l.sampleText,
-					size: 96,
-					width: BOX.width - 60 - f.trackingEm * 96 * l.sampleText.length,
-					font: f,
-				});
 				const recipe: LookRecipe = way ? { ...l.recipe, palette: way.palette } : l.recipe;
-				const img = await tl.render({
-					recipe,
-					input: { kind: 'text', text: l.sampleText, size, font: f },
-					box: BOX,
-				});
-				let drawn = 0;
-				let edge = 0;
-				for (let y = 0; y < img.height; y++)
-					for (let x = 0; x < img.width; x++) {
-						const a = img.data[(y * img.width + x) * 4 + 3]!;
-						if (a > 8) drawn++;
-						if (a > 8 && (x === 0 || y === 0 || x === img.width - 1 || y === img.height - 1)) edge++;
-					}
+				const img = await renderLook(l, recipe);
+				const { drawn, edge } = coverage(img);
 				expect(drawn, `${l.libraryId} draws`).toBeGreaterThan(2000);
 				expect(edge, `${l.libraryId} clips at its padding`).toBe(0);
 				composite(sheet, W, (i % COLS) * TILE.w, Math.floor(i / COLS) * TILE.h, img);
@@ -266,6 +320,46 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				if (!existsSync(dirname(out))) mkdirSync(dirname(out), { recursive: true });
 				writeFileSync(out, encodePng({ width: W, height: H, data: sheet }));
 			}
+		});
+
+		it('draws every look with a generator at its in, middle and settled times without clipping', async () => {
+			const only = process.env.TITLE_LOOKS_ONLY?.split(',').map((x) => x.trim());
+			const looks = FACTORY_LOOKS.filter(
+				(l) =>
+					l.recipe.layers.some((layer) => layer.type.startsWith('generator:')) &&
+					(!only || only.includes(l.libraryId) || only.includes(l.category)),
+			);
+			if (!only) expect(looks.length, 'the library has generator looks').toBeGreaterThan(0);
+			const tiles: { label: string; image: LookImage }[] = [];
+			const shown: { look: string; seconds: number; pixels: number }[] = [];
+			for (const l of looks) {
+				const withoutGenerators = {
+					...l.recipe,
+					layers: l.recipe.layers.filter((layer) => !layer.type.startsWith('generator:')),
+				};
+				for (const t of GENERATOR_TIMES) {
+					const img = await renderLook(l, l.recipe, t.seconds);
+					const plain = await renderLook(l, withoutGenerators, t.seconds);
+					const { drawn, edge } = coverage(img);
+					expect(drawn, `${l.libraryId} draws at ${t.seconds} s`).toBeGreaterThan(2000);
+					expect(edge, `${l.libraryId} clips at its padding at ${t.seconds} s`).toBe(0);
+					shown.push({ look: l.libraryId, seconds: t.seconds, pixels: visibleChange(img, plain) });
+					tiles.push({ label: `${l.libraryId} · ${t.label} ${t.seconds} s`, image: img });
+				}
+			}
+			const out = process.env.TITLE_LOOKS_TIME_SHEET;
+			if (out) {
+				if (!existsSync(dirname(out))) mkdirSync(dirname(out), { recursive: true });
+				await writeSheet(tl, out, tiles, GENERATOR_TIMES.length, TILE.w, TILE.h + 60);
+			}
+			process.stdout.write(
+				`[library] generator pixels: ${shown.map((s) => `${s.look}@${s.seconds}s ${s.pixels}`).join(', ')}\n`,
+			);
+			// The generator has to be seen at every time, not only when a twinkle or a flicker happens to peak.
+			for (const s of shown)
+				expect(s.pixels, `${s.look}'s generator shows at ${s.seconds} s`).toBeGreaterThanOrEqual(
+					MIN_GENERATOR_PIXELS,
+				);
 		});
 	},
 );

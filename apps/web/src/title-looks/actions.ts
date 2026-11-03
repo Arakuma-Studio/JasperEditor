@@ -5,7 +5,7 @@ import type { Clip, Command, ProjectDocument, Sequence, TransactionResult } from
 import type { EditorSession } from '@jasper/session';
 import { type ToastRequest, toast } from '@jasper/ui';
 import { t } from '../i18n/runtime.ts';
-import type { LookEntry } from './library.ts';
+import type { LookEntry, TemplateEntry } from './library.ts';
 import { rememberRecent } from './library.ts';
 import { lookedClip, takesLook } from './selection.ts';
 
@@ -195,6 +195,32 @@ export function insertTitleWithLook(
 	session.select('timeline', [id], 'replace');
 	rememberRecent(look.lookId);
 	return { ok: true, clipIds: [id], message: t('Added a title with {0}', look.name), notices: [] };
+}
+
+/**
+ * A title template at the playhead (TL-052): its clips in one undo step, selected. A 3D template also turns the sequence
+ * to Advanced 3D and adds its environment light; the caller states the cost first (TL-078).
+ */
+export function insertTitleTemplate(
+	session: EditorSession,
+	template: Pick<TemplateEntry, 'templateId' | 'name'>,
+	opts: { at?: number } = {},
+): LookOutcome {
+	const seq = activeSequence(session);
+	if (!seq) return { ok: false, message: t('Open a sequence first') };
+	const at = Math.max(0, Math.round(opts.at ?? session.transport.getState().frame));
+	const r = session.apply({
+		label: t('Insert Template: {0}', template.name),
+		origin: 'user',
+		sequenceId: seq.id,
+		commands: [
+			{ type: 'title.insertTemplate', sequenceId: seq.id, templateId: template.templateId, at } as Command,
+		],
+	});
+	if (!r.ok) return { ok: false, message: r.errors[0]?.message ?? t('The template could not be inserted') };
+	const clipIds = (r.results[0] as { clipIds?: string[] } | undefined)?.clipIds ?? [];
+	if (clipIds.length) session.select('timeline', clipIds, 'replace');
+	return { ok: true, clipIds, message: t('Inserted {0}', template.name), notices: [] };
 }
 
 /**

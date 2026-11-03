@@ -1,5 +1,6 @@
 // Spec 19 TL-078: 3D layers render on the Remotion path, every frame in a browser, where a 2D title is baked once. The
-// cost is said before it is taken on: the first time a clip turns 3D, until "Do not show again".
+// cost is said before it is taken on: the first time a clip turns 3D or a 3D title template is inserted, until "Do not
+// show again".
 import { COST_CLASSES } from '@jasper/project';
 import { Checkbox, Dialog, type HostedDialogProps, registerDialog } from '@jasper/ui';
 import { useState } from 'react';
@@ -23,7 +24,10 @@ function acknowledge(): void {
 	}
 }
 
-function Cost3DDialog({ close }: HostedDialogProps) {
+/** What the dialog asks before: making a layer 3D (the default), or inserting a 3D title template. */
+export type Cost3DDialogProps = { title?: string; primaryLabel?: string };
+
+function Cost3DDialog({ close, title, primaryLabel }: HostedDialogProps<Cost3DDialogProps>) {
 	const [dontAsk, setDontAsk] = useState(false);
 	return (
 		<Dialog
@@ -31,9 +35,9 @@ function Cost3DDialog({ close }: HostedDialogProps) {
 			onOpenChange={(o) => {
 				if (!o) close(false);
 			}}
-			title="Make 3D Layer"
+			title={title ?? 'Make 3D Layer'}
 			size="small"
-			primaryLabel="Make 3D"
+			primaryLabel={primaryLabel ?? 'Make 3D'}
 			onPrimary={() => {
 				if (dontAsk) acknowledge();
 				close(true);

@@ -95,10 +95,18 @@ export const LOOK_CATEGORIES: readonly LookCategory[] = [
 		tags: ['calligraphy', 'ink', 'sumi', 'caligrafía', 'tinta', '筆文字', '書道'],
 	},
 	{
+		// Depth a 2D look draws: extruded walls, domes and plates. Renders and bakes like any look.
+		id: 'drawn-depth',
+		label: 'Drawn Depth',
+		labelEs: 'Profundidad dibujada',
+		tags: ['extrude', 'faux 3d', '2.5d', 'block', 'extrusión', 'falso 3d', 'bloque', 'profundidad'],
+	},
+	{
+		// Real Advanced 3D solids (spec 19 §9). A look cannot hold a solid, so this category holds templates, not looks.
 		id: '3d',
 		label: '3D',
 		labelEs: '3D',
-		tags: ['extrude', 'depth', 'bevel', 'extrusión', 'profundidad', '立体'],
+		tags: ['solid', 'bevel', 'metal', 'depth', 'sólido', 'bisel', 'profundidad', '立体'],
 	},
 ];
 

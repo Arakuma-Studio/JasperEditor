@@ -720,10 +720,11 @@ Decisions:
 ## The library
 
 Everything below is the library stream's. It reads as a general tool on purpose: categories run from Clean to 3D, pachinko is one
-of fifteen, and no code path knows about it. A test keeps that category at 15 % of the looks at most, and keeps the first look
+of sixteen, and no code path knows about it. A test keeps that category at 15 % of the looks at most, and keeps the first look
 general.
 
-Current content: 60 looks, four in each of the 15 categories, 15 colourways and 16 templates (TL-050, TL-052). The second pass, after
+Current content: 60 looks, four in each of 15 categories, 15 colourways and 20 templates (TL-050, TL-052). The sixteenth category,
+3D, holds the four 3D templates and no look (below). The second pass, after
 the finishes, glows and generators merged, uses them: metal, bevel, glass, gloss, pattern and gradient-map finishes, Extrude, Plate,
 Texture (dry-brush erosion), Gloss, Sheen, Inner Glow and Deep Glow layers, and ten generators as look layers. Two looks keep their own
 colours on purpose and are marked `fixedColor`: Cursed Flame's fire and Party Confetti's confetti, and Rainbow Confirm's face, because a
@@ -731,9 +732,18 @@ rainbow is every hue; the rings around it still follow the colourway.
 
 - **Brush** looks are set in Yuji Boku, which writes Latin and kana with the same brush, so it is its own Japanese face. Their sample
   text is Japanese. Dry Brush and Rotten Print use the texture layer's erosion, kept under 45 % so the word still reads.
-- **3D** looks draw their depth (Extrude from the outermost rim, a bevelled or metal face, stacked plates) and so render on every path a
-  look does. They do not use the Advanced 3D title model: a look is an appearance (TL-055), and the 3D solid is a property of the clip
-  in Properties ▸ 3D Title. Carrying it in a look would need a `threeD` part in `LookRecipe` and a schema change (`docs/gaps.md`).
+- **Drawn Depth** looks draw their depth (Extrude from the outermost rim, a bevelled or metal face, stacked plates) and so render and
+  bake on every path a look does. They were the first "3D" looks; a look is an appearance (TL-055) and the 3D solid is a property of
+  the clip, so carrying it in a look would need a `threeD` part in `LookRecipe` and a schema change. They now carry an honest name,
+  and the 3D category is real solids, delivered as templates (`factory/templates/three-d.ts`, see Templates).
+- **Generators over time.** `title-look-library-gl.test.ts` draws every look with a generator layer at 0.25 s (in), 1.5 s (middle) and
+  5 s (settled: past the 3 s life of the longest-lived particles), checks it does not clip its padding at any of them, and requires
+  each generator to change at least 300 pixels of its tile at each (`TITLE_LOOKS_TIME_SHEET=<png>` writes the sheet, a row per look).
+  Measured on the eleven generator looks: ten changed 600 or more pixels at every time and read the same as they built up (streaks,
+  hero glint, flow lines, crawling arcs, focus lines, mist, flame, confetti, sunburst and glints, brush swirl and splatter). Gold
+  Leaf's glints, at 16 % of the text with a 60 % twinkle, changed 12 to 34 pixels: a few dark specks, so the look showed no light at
+  any time. They are now 48 % with a 30 % twinkle and brighter (415 to 552 pixels). Thin capitals give the highlights placement one
+  or two peaks; peaks and scatter placements were tried and showed no more (scatter seeds its sites over the whole box).
 - **Contact sheets** (`TITLE_LOOKS_SHEET`, with `TITLE_LOOKS_ONLY=<look or category ids>` to sheet part of the library and
   `TITLE_LOOKS_COLORWAY` for one colourway) were looked at for every new look in its own colourway and in Cobalt. What changed after
   looking: the anamorphic streak went behind the face (in front it read as a strikethrough), RGB Split's ghosts doubled their offset,
@@ -835,6 +845,27 @@ A template is JSON-safe data. `title.insertTemplate` runs the ordinary handlers 
 rules are the single commands', a refusal applies nothing, and one undo removes everything. Text clips carry a look and in and out
 animators; shapes carry a one-role look so a colourway reaches them, and keyframes for their motion; generators are `transparent`
 solids. Each clip takes the first free track above the one before, so nothing is overwritten, and the clips are grouped.
+
+**3D templates** (spec 19 §9). A text clip may carry a `solid`: material presets for the whole solid and single surfaces,
+extrusion depth, bevel bands, backplates or inflate, and a turn. Lengths are fractions of the text size, so the solid is the same
+at any frame size. Its look is a bare face in a font (`TemplateSolidFace`), because the solid is traced from the layer's
+picture and a rim, plate or hard shadow would become part of it; the surfaces paint it. A template with a solid has a `scene3d`:
+`title.insertTemplate` sets the sequence to Advanced 3D with its tone mapping, exposure and glints (`sequence.set3dRenderer`), turns
+the text 3D (`clip.set3d`, `threeD.setGeometry`, `threeD.addBand`, `threeD.addBackplate`, `threeD.setSurface`, `param.set` of the
+rotation) and adds an environment light over the template's span, all in the same one undo step. `templateCostClass` says what it
+costs, and a test holds it equal to `costClassOf` of the clip it makes. In and out animations reveal whole shapes (mask reveal,
+typewriter, pop): a fade would cross the tracing threshold at 50 % and pop the solid. The four: Gold 3D Title (gold, a round band,
+sunset), Chrome on Plates 3D (chamfered chrome, a gold contour plate and a black gloss board, chrome bands), Puffy 3D Hook (inflated
+glossy plastic, sunset, hue-preserving), Gold Glint End Card 3D (gold with a pale gold face, two bands, glints). Each was rendered
+through Remotion (`REMOTION_E2E=1 pnpm exec vitest run packages/compositions/test/title-look-template.e2e.test.ts`) and looked at;
+what changed after looking: the chrome title's board went from chrome to black gloss (the letters were darker than their board),
+candy paint's flakes became glossy plastic (the flakes read as noise at 720p), the glint card's glints went from threshold 1.2 at
+220 % to 1.8 at 150 % (they washed out the second word), and the gold title went from studio to sunset light (its faces read brown).
+
+**In the Looks tab** (`TemplateList.tsx`). Choosing a category, or searching, also lists that category's templates above its looks;
+3D lists only templates. A card names the template, its kind and what it does, and a 3D card states its cost (`COST_CLASSES`: it
+never bakes and exports on the Remotion path). A click inserts it at the playhead, selected; a 3D template first shows the 3D cost
+dialog, as making a layer 3D does, until Do not show again.
 
 ### User looks (TL-054)
 

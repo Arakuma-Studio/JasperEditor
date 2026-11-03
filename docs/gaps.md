@@ -912,12 +912,18 @@ Status of the foundation; streams still in progress update this list. Evidence: 
   from a newer build, the actions are disabled with the reason, and an engine that stops answering leaves the last list it read on
   screen, still usable to apply. Agents' `find_title_looks` searches them too, and both apply a user look through
   `userLookSource`.
-- **The library's 3D category is drawn depth** (TL-050): its four looks build depth with Extrude, Bevel, metal and plates, so they render
-  wherever a look does. A look is an appearance (TL-055) and does not carry the Advanced 3D solid of spec 19 §9, which stays in
-  Properties ▸ 3D Title; a look that turns a clip 3D would need the 3D title model inside `LookRecipe` and a schema change.
-- **The library's sample sheets are stills at time 0** (`title-look-library-gl.test.ts`): generators that build up over time (Party
-  Confetti's particles) show their first frame there. Colourway changes were inspected on the new looks in their own colourways and in
-  Cobalt; a look shown in a colourway it does not suggest can lose contrast (Brand Bar and Highlighter in Cobalt).
+- **Real 3D titles are templates, not looks** (TL-050, TL-052): a look is an appearance (TL-055) and cannot carry the Advanced 3D
+  solid of spec 19 §9, so the 3D category holds four templates that make Advanced 3D layers (bands, plates, inflate, physical
+  surfaces, environment, tone mapping, glints), and no looks. The four looks that draw depth in 2D are the Drawn Depth category.
+  A 3D template sets the whole sequence's renderer, tone mapping, exposure and glints (the last inserted wins) and adds an
+  environment light over its span, which also lights any other 3D layer there. Its titles animate in and out with whole-shape
+  reveals; a fade would pop the solid at its tracing threshold. Agents insert one with `apply_commands` `title.insertTemplate`; no
+  MCP tool lists templates.
+- **Generator looks are judged at three times** (`title-look-library-gl.test.ts`: 0.25 s, 1.5 s, 5 s), and each generator must
+  change at least 300 pixels of its tile at every one. The sheets showed one look that read wrong as it played: Gold Leaf's glints
+  were a few dark pixels at every time (12 to 34 pixels), now larger and steadier (415 to 552). Colourway changes were inspected on the
+  new looks in their own colourways and in Cobalt; a look shown in a colourway it does not suggest can lose contrast (Brand Bar and
+  Highlighter in Cobalt).
 - **Rendered style checks are not in the lint** (TL-056): backdrop contrast needs a measurement from the caller. Without one it is reported
   as unmeasured, never as passed. `title_check` provides it (TL-102).
 - **Send to Photoshop** (TL-112) rasterises everything: text arrives as pixels, and adjustment layers, blend modes Photoshop lacks,
@@ -979,11 +985,12 @@ discovery are in; evidence and thresholds in [wp-notes/title-looks-agents.md](wp
 - `title_check` thresholds for minimum size, CJK reading speed and the platform interface zones are assumptions, listed there.
   No official platform table was found, so `target-safe-area` only warns.
 - `font-available` answers for the family, not for every character of the text.
-- **The Review panel does not show a title proposal's rows yet.** `propose_title` stores them on the item
-  (`meta.check`, read with `titleArtCheckOf`), for the first option only: alternatives are not measured. The panel
-  (`apps/web/src/proposals/title-art.tsx`) reads the meta leniently and ignores them; drawing them is the UI stream's.
-  A later `title_check {proposalId}` measures again but does not update the stored rows, and rows stored by a call that
-  timed out are the plain ones (`pending: true`).
+- **A title proposal's rows in Review are the ones `propose_title` stored**, for its first option only. The Review panel
+  (`apps/web/src/proposals/title-art-check.tsx`) shows each row's status, measured against expected, timecode and fix label,
+  says "Pending" when the renders outlived the call (only the rows that need no picture are there), and says that an
+  alternate has no rows. A later `title_check {proposalId}` measures again but does not update the stored rows, and the
+  panel does not mark rows whose `revision` is older than the document. The fixes are labels: a proposal's clip has no id
+  yet, so they cannot be applied from the panel.
 - **The MCP eval cases for titles and delivery can sample, but have not been sampled.** `apps/mcp/eval/fake-engine.ts`
   now models `requestStillSheet` (cells drawn as stand-in pictures), `listFonts`, the user look library
   (`titleLooksList`), `psdPlan`, `psdExport`, `alphaDelivery` and `gamutCheck`, with results parsed by the engine's

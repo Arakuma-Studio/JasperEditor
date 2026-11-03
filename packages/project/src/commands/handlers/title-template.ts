@@ -1,6 +1,8 @@
 // Spec 19 TL-052: `title.insertTemplate`. A template is data; this expands it by running the ordinary handlers
 // (`clip.addText`, `clip.addShape`, `clip.addGenerator`, `look.apply`, `keyframe.add`) inside one command, like the batch
 // commands do, so the rules of each are the ones of the single commands, the result is plain clips, and one undo removes it.
+// A 3D template (spec 19 §9) also runs the 3D commands: `sequence.set3dRenderer`, `clip.addLight`, `clip.set3d` and the
+// `threeD.*` solid commands, so its titles are ordinary Advanced 3D layers.
 import { nominalFps, type Rational } from '../../time.ts';
 import { factoryColorway, factoryLook } from '../../title-looks/factory/index.ts';
 import { factoryTemplate } from '../../title-looks/factory/templates/index.ts';
@@ -9,11 +11,13 @@ import {
 	type TemplateClip,
 	type TemplateMotion,
 	type TemplateShape,
+	type TemplateSolid,
 	type TemplateText,
 	type TemplateTiming,
 	type TitleTemplate,
 } from '../../title-looks/factory/templates/types.ts';
-import { DEFAULT_PALETTE } from '../../title-looks/model.ts';
+import { DEFAULT_PALETTE, type LookFont } from '../../title-looks/model.ts';
+import type { LookRecipe } from '../../title-looks/recipe.ts';
 import type { DDoc, DSeq, HandlerContext } from '../context.ts';
 import { trackSlotOf } from '../placement.ts';
 import type { CommandOf } from '../schemas/index.ts';
@@ -22,6 +26,7 @@ import { keyframeHandlers } from './keyframe.ts';
 import { paramHandlers } from './param.ts';
 import { shapeHandlers } from './shape.ts';
 import { structureHandlers } from './structure.ts';
+import { threeDHandlers } from './three-d.ts';
 import { titleLookHandlers } from './title-look.ts';
 import type { HandlerMap } from './util.ts';
 
@@ -37,6 +42,8 @@ const applyLook = titleLookHandlers['look.apply'] as unknown as Run<'look.apply'
 const addKey = keyframeHandlers['keyframe.add'] as unknown as Run<'keyframe.add', unknown>;
 const setParam = paramHandlers['param.set'] as unknown as Run<'param.set', unknown>;
 const group = structureHandlers['clip.group'] as unknown as Run<'clip.group', unknown>;
+const run3d = <K extends keyof typeof threeDHandlers, R = unknown>(type: K) =>
+	threeDHandlers[type] as unknown as Run<K, R>;
 
 const SHAPE_MOTION_SECONDS = 0.4;
 
@@ -93,14 +100,139 @@ function textClip(
 		{
 			type: 'look.apply',
 			clipIds: [clipId],
-			lookId: c.look,
+			...(typeof c.look === 'string'
+				? { lookId: c.look }
+				: {
+						// A solid's face: one project copy per font, shared by every template that names it.
+						look: {
+							name: `3D Title Face (${c.look.font.family})`,
+							sourceId: `template-solid-face.${c.look.font.family}.${c.look.font.weight ?? 400}`,
+							recipe: solidFaceRecipe(c.look.font),
+						},
+					}),
 			...(cmd.colorwayId ? { colorwayId: cmd.colorwayId } : {}),
 			...(cmd.seed !== undefined ? { seed: cmd.seed } : {}),
 			...(cmd.availableFonts ? { availableFonts: cmd.availableFonts } : {}),
 		},
 		h,
 	);
+	if (c.solid) solidOf(doc, clipId, c.solid, Math.round(c.size * short), h);
 	return clipId;
+}
+
+/** Turns a template's text into its 3D solid: materials, depth, bands, plates or inflate, and a turn. */
+function solidOf(doc: DDoc, clipId: string, s: TemplateSolid, sizePx: number, h: HandlerContext): void {
+	const px = (f: number) => Math.round(f * sizePx * 100) / 100;
+	const clipIds = [clipId];
+	run3d('clip.set3d')(doc, { type: 'clip.set3d', clipIds, enabled: true }, h);
+	run3d('threeD.setGeometry')(
+		doc,
+		{
+			type: 'threeD.setGeometry',
+			clipIds,
+			extrusionDepth: px(s.depth),
+			...(s.bevelPosition ? { bevelPosition: s.bevelPosition } : {}),
+			...(s.inflate
+				? {
+						mode: 'inflate',
+						inflate: {
+							height: px(s.inflate.height),
+							...(s.inflate.smoothness !== undefined ? { smoothness: s.inflate.smoothness } : {}),
+						},
+					}
+				: {}),
+		},
+		h,
+	);
+	for (const b of s.bands ?? [])
+		run3d('threeD.addBand')(
+			doc,
+			{
+				type: 'threeD.addBand',
+				clipId,
+				width: px(b.width),
+				depth: px(b.depth),
+				...(b.profile ? { profile: b.profile } : {}),
+				...(b.material ? { preset: b.material } : {}),
+			},
+			h,
+		);
+	for (const p of s.plates ?? [])
+		run3d('threeD.addBackplate')(
+			doc,
+			{
+				type: 'threeD.addBackplate',
+				clipId,
+				shape: p.shape,
+				grow: px(p.grow),
+				depth: px(p.depth),
+				...(p.gap !== undefined ? { gap: px(p.gap) } : {}),
+				...(p.corner !== undefined ? { corner: px(p.corner) } : {}),
+				...(p.material ? { preset: p.material } : {}),
+			},
+			h,
+		);
+	const setSurface = run3d('threeD.setSurface');
+	setSurface(doc, { type: 'threeD.setSurface', clipIds, preset: s.material }, h);
+	for (const [surface, preset] of Object.entries(s.surfaces ?? {}))
+		setSurface(doc, { type: 'threeD.setSurface', clipIds, surface, preset }, h);
+	for (const [axis, value] of [
+		['rotationX', s.rotation?.x],
+		['rotationY', s.rotation?.y],
+	] as const)
+		if (value !== undefined)
+			setParam(doc, { type: 'param.set', target: ['clip', clipId, 'threeD', axis], value }, h);
+}
+
+/** The sequence a 3D template needs: Advanced 3D, its tone mapping, exposure and glints. */
+function scene3dOf(doc: DDoc, t: TitleTemplate, ctx: Ctx, h: HandlerContext): void {
+	const s = t.scene3d;
+	if (!s) return;
+	const { short } = ctx;
+	run3d('sequence.set3dRenderer')(
+		doc,
+		{
+			type: 'sequence.set3dRenderer',
+			sequenceId: ctx.seq.id,
+			renderer: 'advanced',
+			toneMapping: s.toneMapping,
+			...(s.exposure !== undefined ? { exposure: s.exposure } : {}),
+			...(s.glint
+				? {
+						glint: {
+							enabled: true,
+							threshold: s.glint.threshold,
+							intensity: s.glint.intensity,
+							radius: Math.round(s.glint.radius * short),
+							rays: s.glint.rays,
+							length: Math.round(s.glint.length * short),
+							...(s.glint.angle !== undefined ? { angle: s.glint.angle } : {}),
+						},
+					}
+				: {}),
+		},
+		h,
+	);
+}
+
+/** The environment light of a 3D template, over its span: the light its metals reflect. */
+function environmentOf(doc: DDoc, t: TitleTemplate, ctx: Ctx, h: HandlerContext): void {
+	if (!t.scene3d) return;
+	const { clipId } = run3d<'clip.addLight', { clipId: string }>('clip.addLight')(
+		doc,
+		{
+			type: 'clip.addLight',
+			sequenceId: ctx.seq.id,
+			at: ctx.at,
+			duration: ctx.length,
+			track: ctx.track(),
+			name: 'Environment',
+			lightType: 'environment',
+			environmentPreset: t.scene3d.environment,
+		},
+		h,
+	);
+	ctx.placed(clipId);
 }
 
 /** Keys of how a shape arrives and leaves. A wipe grows the width from one edge; a fade moves opacity. */
@@ -225,10 +357,17 @@ type Ctx = {
 	placed(clipId: string): void;
 };
 
-/** The look a template's shapes take their palette from: its first text clip's. */
+/** The look a template's shapes take their palette from: its first text clip with a library look. */
 function paletteLook(t: TitleTemplate) {
-	const text = t.clips.find((c): c is TemplateText => c.kind === 'text');
+	const text = t.clips.find(
+		(c): c is TemplateText & { look: string } => c.kind === 'text' && typeof c.look === 'string',
+	);
 	return text ? factoryLook(text.look) : undefined;
+}
+
+/** A solid's face: its font and one face, nothing a 2D look would add around the letters (`TemplateSolidFace`). */
+function solidFaceRecipe(font: LookFont): LookRecipe {
+	return { font, layers: [{ type: 'face', params: { paint: { kind: 'role', role: 'face' } } }] };
 }
 
 function clipOf(
@@ -307,10 +446,12 @@ export const titleTemplateHandlers = {
 				floor = trackSlotOf(seq, seq.clips[id]!.trackId, h).index + 1;
 			},
 		};
+		scene3dOf(doc, template, ctx, h);
 		for (const c of template.clips) {
 			const id = clipOf(doc, c, cmd, ctx, h);
 			if (c.kind === 'text') slotsOut[c.slot] = id;
 		}
+		environmentOf(doc, template, ctx, h);
 		if (clipIds.length > 1) group(doc, { type: 'clip.group', clipIds }, h);
 		h.defineRef(cmd.ref, clipIds[0]!);
 		return { templateId: template.id, clipIds, slots: slotsOut };

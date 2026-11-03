@@ -114,7 +114,9 @@ at 1080p took 32 s. At load 80 a sheet ran past 600 s and the engine stopped ans
 - Title-only renders drop the clips around the title, so an adjustment layer over it does not count towards its alpha.
   The `with` and `behind` frames are the real document, so contrast does count it.
 - A title moving through a frame edge during the hold is measured only at three frames.
-- A proposal keeps the rows of its first option only (`meta.check`); the Review panel does not draw them yet, and a later
+- A proposal keeps the rows of its first option only (`meta.check`); the Review panel draws them under the posters
+  (`apps/web/src/proposals/title-art-check.tsx`: status, measured against expected, timecode, fix label, "Pending" for a
+  timed-out render, and a line saying an alternate has none), and a later
   `title_check {proposalId}` does not update them.
 
 ## After the MCP text cut (merge of `main` at e84806b6)

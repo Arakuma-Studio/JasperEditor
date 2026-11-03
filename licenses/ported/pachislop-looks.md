@@ -15,15 +15,16 @@
 | `src/presets/factory.ts` (`f-rainbow-kakutei`, `GRADIENTS.rainbowFill`, `f-fx-jackpot` rays and sparkles) | `packages/project/src/title-looks/factory/looks/pachinko-arcade.ts` | The rainbow face with a white band in a ladder of metal rings, and rays behind a ladder face with glints |
 | `src/presets/factory.ts` (`brushLook`, `f-brush-kasure`) | `packages/project/src/title-looks/factory/looks/brush.ts` | Brush looks: an ink face with a thin metal line, a dark line and a light frame; dry brush that breaks its frame up with the ink, over a glow |
 | `src/presets/factory.ts` (`blackGloss`, `glassLook`, `f-lightning-blue`, `f-fire-gekiatsu`, `f-chrome`) | `packages/project/src/title-looks/factory/looks/{luxury,playful,gaming,horror,sports}.ts` | Structures of Black Lacquer (black gloss face, metal rim, glow), Candy Glass (glass face, light line, tinted frame, gloss cap), Arc Charge (bevelled face with lightning), Cursed Flame (fire behind a framed face) and Champion Chrome |
-| `src/presets/factory.ts` (`surfaceGold3D` depth-fade walls, `ぷっくり` inflate candy, slanted box plates) | `packages/project/src/title-looks/factory/looks/three-d.ts` | The 3D looks as drawn depth: walls fading to dark, an inflated domed face with a gloss cap, stacked slanted plates |
+| `src/presets/factory.ts` (`surfaceGold3D` depth-fade walls, `ぷっくり` inflate candy, slanted box plates) | `packages/project/src/title-looks/factory/looks/drawn-depth.ts` | The 3D looks as drawn depth (the Drawn Depth category): walls fading to dark, an inflated domed face with a gloss cap, stacked slanted plates |
 | `src/presets/templates.ts` (`Template`, `build()`) | `packages/project/src/title-looks/factory/templates/`, `packages/project/src/commands/handlers/title-template.ts` | The idea of a template that builds finished, fully editable layers |
 | `src/presets/user.ts` (`PresetFile`, `.pslot-styles.json`) | `packages/project/src/title-looks/user-looks.ts` | A versioned file of looks for import and export |
 | `src/presets/types.ts` (`StylePreset`, `Colourway`) | `packages/project/src/title-looks/factory/build.ts` | The separation of a look's structure from its colour |
 
 ## Changes made when porting
 
-- Pachislop's 3D looks build a solid in its 3D renderer. Here a look is an appearance (TL-055), so the 3D category draws its
-  depth with the look's own layers (Extrude, Bevel, metal, plates) and renders on every path a look does.
+- Pachislop's 3D looks build a solid in its 3D renderer. Here a look is an appearance (TL-055), so these draw their depth with
+  the look's own layers (Extrude, Bevel, metal, plates), render on every path a look does, and are the Drawn Depth category.
+  Real solids are the 3D category's templates, which use our own Advanced 3D model (licenses/ported/pachislop-three-d.md).
 - A name of Pachislop's that refers to a real title (its slanted box plates) is replaced with a descriptive one.
 - Nothing that names a real title, person or product was brought over. Looks are renamed under generic descriptive names, and
   sample text is new. `packages/project/test/title-look-library.test.ts` checks a list of banned names.
