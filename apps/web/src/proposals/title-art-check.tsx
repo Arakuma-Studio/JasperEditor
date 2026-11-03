@@ -1,4 +1,4 @@
-// Spec 19 TL-098 / TL-102: the rendered check `propose_title` stored with a title proposal (`meta.check`, read with
+// Spec 19 TL-098 / TL-102: the rendered check `title_propose` stored with a title proposal (`meta.check`, read with
 // `titleArtCheckOf`), in Review: each row's status, what was measured against what was expected, the frame it was measured
 // at and the fix's label. Only the first option is measured, so an alternate says it has no rows rather than showing none.
 // The check is the agent's data, read leniently: values of any shape are shown as short text and never throw.

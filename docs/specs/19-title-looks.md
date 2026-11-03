@@ -195,13 +195,17 @@ Glass in a look refracts only its own fill. Refraction of the footage behind a t
 
 - **TL-050 Library.** At least **60 looks** in at least **12 categories**, stored as data in
   `packages/project/src/title-looks/factory/`: Clean, Corporate, Cinematic, Sports, Gaming, Neon & Retro, Comic, Luxury,
-  Horror, Playful, Social, Japanese Variety, Pachinko & Arcade, Brush, 3D. No category holds more than a quarter of them.
+  Horror, Playful, Social, Japanese Variety, Pachinko & Arcade, Brush, Drawn Depth. No category holds more than a quarter
+  of them. Drawn Depth looks draw their depth in 2D (extrusion, bevel, plates), so they render and bake like any look. A
+  sixteenth category, 3D, holds templates and no looks: a look is an appearance (TL-055) and cannot carry the Advanced 3D
+  solid of §9.
 - **TL-051 Colourways.** At least **12 colourways**, usable with any look. Colour stays separate from structure, and role
   tags are stored rather than guessed. Generators recolour through a luma gradient map, keeping hot cores white. A look
   may mark a layer's colour as fixed (fire keeps its own colours).
 - **TL-052 Templates.** At least **16 title templates** across the same categories, each expanding into ordinary clips
   in one transaction: text with a look, an in and out animation, and generators where they help. Includes lower thirds,
-  full-screen titles, end cards and social hooks.
+  full-screen titles, end cards and social hooks. The 3D category's templates make real 3D titles: Advanced 3D layers
+  with the solids, surfaces and scene settings of §9.
 - **TL-053 Fonts.** Looks name fonts with a fallback. Bundled OFL display fonts cover Latin and Japanese display styles
   and appear in `ATTRIBUTION.md`. A missing font follows the existing `FONT_FALLBACK` path.
 - **TL-054 User looks.** People can save, rename, delete, import and export looks through the engine-backed preset
@@ -271,8 +275,8 @@ Extends Advanced 3D. Nothing here adds a dependency.
   reflections, environment rotation, and procedural environments shared with TL-038. HDR values stay in float.
 - **TL-076 Tone mapping.** ACES, AgX, Khronos Neutral and a hue-preserving mode, applied before the RGBA8 output.
 - **TL-077 Glints.** HDR-thresholded bloom with star rays, computed from a stable detector so stars do not flicker.
-- **TL-078 Routing.** 3D stays on the Remotion export path. The UI shows the cost before enabling it, and `propose_title`
-  reports it as `costClass`.
+- **TL-078 Routing.** 3D stays on the Remotion export path. The UI shows the cost before enabling it or inserting a 3D
+  template, and `title_look_find` reports a 3D template's cost as `costClass` (`3d`, `3d-heavy`).
 - **TL-079 Gizmos.** The Program monitor gets rotation arcs and a free-rotate ring for 3D layers, scaled to the target.
 - **TL-080 Reflections of the backdrop.** Look glass (§5.1) stays self-contained. Backdrop refraction in 2D is not
   provided. 3D transmission (TL-074) is its route.
@@ -317,11 +321,14 @@ Extends Advanced 3D. Nothing here adds a dependency.
 
 ## 11. Agents (`apps/mcp`)
 
-A new `titles` toolset, because `core` is full. It works by intent, with raw recipes as an escape hatch.
+A new `titles` toolset, because `core` is full. It works by intent, with raw recipes as an escape hatch. Tool names
+follow AGENTS.md §10; the renames and merges are in `docs/wp-notes/title-looks-agents.md` § Names and merges.
 
-- **TL-100 `find_title_looks`** `{query, tags?, aspect?, sampleText?, limit≤12, cursor?}` returns rows
-  `{lookId, name, tags, colorways, costClass, renderPath}` and one numbered image sheet.
-- **TL-101 `propose_title`** `{projectId, sequenceId?, text, at, duration?, lookId|recipe, colorway?, energy?,
+- **TL-100 `title_look_find`** `{query?, tags?, aspect?, sampleText?, limit≤12, cursor?, projectId?}` returns rows
+  `{kind: 'look', lookId, name, tags, colorways, costClass, renderPath, source}` and one numbered image sheet. The
+  library's title templates (TL-052) are rows of `kind: 'template'` with `templateId` and their text slots, inserted with
+  `apply_commands` `title.insertTemplate`. With `lookId` it returns that look as JSON instead.
+- **TL-101 `title_propose`** `{projectId, sequenceId?, text, at, duration?, lookId|recipe, colorway?, energy?,
   alternatives≤3, seed?, mode: 'propose'|'dryRun'|'apply', expectedRevision?}` returns `{proposalId|clipIds, seed, check,
   next}` and one sheet of intro, hold and outro × alternatives, composited over the real footage. Headless `apply` also
   returns `revert`. New proposal feature `title-art`, with colourways as item alternatives.
@@ -331,8 +338,8 @@ A new `titles` toolset, because `core` is full. It works by intent, with raw rec
   plus every TL-056 lint issue. Results are bound to `revision`.
 - **TL-103 Render extensions.** `render_frames` gains `proposalId`, `itemIds` and `overlay: 'safe-area'`. Sheets run as
   one engine job with `{wait, timeoutSeconds, timedOut, jobId, next}` and cancel on abort.
-- **TL-104 Escape hatch.** `get_title_recipe {lookId}`, `save_title_look {clipId|recipe, name, tags}`,
-  `propose_title.recipe`, `add_title_generator`, `set_global_light`, and appearance targets in `get_clip_properties`.
+- **TL-104 Escape hatch.** `title_look_find {lookId}`, `title_look_save {clipId|recipe, name, tags}`,
+  `title_propose.recipe`, `title_generator_add`, `title_light_set`, and appearance targets in `get_clip_properties`.
 - **TL-105 Effects discovery.** Register `list_effects`, `add_effect` and `set_effect_param`, or correct every guide that
   names them, so no guide names a tool that does not exist.
 - **TL-106 Bounds.** `recipe` has zod caps on bytes, layers, depth and instances. Lists are paginated and contain no

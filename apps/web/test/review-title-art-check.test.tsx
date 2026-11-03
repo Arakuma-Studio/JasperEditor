@@ -1,4 +1,4 @@
-// Spec 19 TL-098 / TL-102: Review shows the rendered check `propose_title` stored with a title proposal's first option
+// Spec 19 TL-098 / TL-102: Review shows the rendered check `title_propose` stored with a title proposal's first option
 // (`meta.check`): each row's status, measured against expected, its timecode and its fix's label; "pending" when the
 // renders outlived the call; and, for an alternate, that it carries no rows.
 import { type ProposalItem, type TitleCheckRow, titleArtCheck } from '@jasper/project';
