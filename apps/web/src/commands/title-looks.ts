@@ -18,6 +18,13 @@ import {
 	updateProjectLook,
 } from '../title-looks/look-actions.ts';
 import { lookSelection } from '../title-looks/selection.ts';
+import { ensureUserLooks, userLookLibrary, userLooksUnavailable } from '../title-looks/user-library.ts';
+import {
+	exportMyLooks,
+	importMyLooks,
+	saveToMyLooks,
+	saveToMyLooksDisabled,
+} from '../title-looks/user-look-actions.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
 
 const canEdit = (ctx: CommandCtx) => !!ctx.session && !ctx.session.getState().readOnly;
@@ -112,6 +119,57 @@ export const titleLookCommands: UiCommand[] = [
 		disabledReason: withLook,
 		run: (ctx) => {
 			if (ctx.session) void saveLook(ctx.session);
+		},
+	},
+	{
+		id: 'graphics.saveLookToMyLooks',
+		label: 'Save Look to My Looks…',
+		description: 'Keeps the look of the selected clip in My Looks, where every project can use it.',
+		scope: 'editing',
+		capability: 'engine',
+		when: (ctx) => !!ctx.session && looked(ctx).length > 0,
+		disabledReason: (ctx) => (looked(ctx).length ? undefined : withLook(ctx)),
+		run: async (ctx) => {
+			if (!ctx.session) return;
+			await ensureUserLooks(ctx.engine);
+			const why = saveToMyLooksDisabled(ctx.session);
+			if (why) ctx.ui.toast({ kind: 'warning', message: why });
+			else await saveToMyLooks(ctx.session);
+		},
+	},
+	{
+		id: 'graphics.importMyLooks',
+		label: 'Import Looks…',
+		description: 'Adds the looks of a .json looks file to My Looks.',
+		scope: 'global',
+		capability: 'engine',
+		run: async (ctx) => {
+			await ensureUserLooks(ctx.engine);
+			const r = await importMyLooks();
+			if (r) ctx.ui.toast({ kind: r.ok ? 'success' : 'error', message: r.message });
+		},
+	},
+	{
+		id: 'graphics.exportMyLooks',
+		label: 'Export My Looks…',
+		description: 'Saves every look of My Looks as one .json file to share or keep.',
+		scope: 'global',
+		capability: 'engine',
+		run: async (ctx) => {
+			await ensureUserLooks(ctx.engine);
+			const s = userLookLibrary().getState();
+			const why =
+				s.status !== 'ready'
+					? userLooksUnavailable(s)
+					: s.looks.length === 0
+						? t('There are no looks in My Looks to export yet.')
+						: null;
+			if (why) {
+				ctx.ui.toast({ kind: 'warning', message: why });
+				return;
+			}
+			const r = await exportMyLooks(undefined, t('My Looks'));
+			ctx.ui.toast({ kind: r.ok ? 'success' : 'error', message: r.message });
 		},
 	},
 	{

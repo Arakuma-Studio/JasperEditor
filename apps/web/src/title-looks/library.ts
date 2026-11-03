@@ -1,5 +1,6 @@
-// Spec 19 TL-086: what the Looks tab and `Graphics ▸ Apply Look…` show: one entry per look, from the factory library and
-// the project's own looks. A project copy of a library look (TL-015) is that look, not a second card. Pure.
+// Spec 19 TL-086: what the Looks tab and `Graphics ▸ Apply Look…` show: one entry per look, from the factory library, the
+// project's own looks and the user's own (TL-054: My Looks, kept by the engine). A project copy of a library or user look
+// (TL-015) is that look, not a second card. Pure.
 import {
 	type Colorway,
 	FACTORY_COLORWAYS,
@@ -12,13 +13,14 @@ import {
 	recipeFromAppearance,
 	type TitleLook,
 	titleLooksOf,
+	type UserLook,
 } from '@jasper/project';
-import { getLanguage } from '../i18n/runtime.ts';
+import { getLanguage, t } from '../i18n/runtime.ts';
 
 export type LookEntry = {
 	/** Card key, recents and drag payloads: the id `look.apply` takes. */
 	lookId: string;
-	source: 'library' | 'project';
+	source: 'library' | 'project' | 'user';
 	name: string;
 	category: string;
 	tags: readonly string[];
@@ -31,6 +33,18 @@ export type LookEntry = {
 	sampleText?: string;
 	/** Everything search reads. */
 	searchText: string;
+	/**
+	 * A user look is not in the project or the library: `look.apply` takes it whole and copies it into the project, with
+	 * the user look's id as its `sourceId`, so applying it again reuses that copy (TL-015).
+	 */
+	given?: {
+		name: string;
+		recipe: LookRecipe;
+		sourceId: string;
+		tags?: string[];
+		category?: string;
+		colorways?: Colorway[];
+	};
 };
 
 /** What the factory library may carry beyond the model's fields. */
@@ -52,6 +66,10 @@ function categoryName(id: string): string {
 
 /** Category of looks made in this project. */
 export const PROJECT_CATEGORY = 'This Project';
+/** Category of the user's own looks (TL-054), in every project. */
+export const MY_LOOKS_CATEGORY = 'My Looks';
+/** The category as shown: `MY_LOOKS_CATEGORY` follows the language. */
+export const myLooksLabel = () => t(MY_LOOKS_CATEGORY);
 const UNSORTED_CATEGORY = 'Other';
 
 function allColorways(own: readonly Colorway[] | undefined, shared: readonly Colorway[]): Colorway[] {
@@ -65,11 +83,12 @@ function allColorways(own: readonly Colorway[] | undefined, shared: readonly Col
 	return out;
 }
 
-/** Every look on offer: the library first, then what only this project has. */
+/** Every look on offer: the library first, then what only this project has, then the user's own looks. */
 export function lookEntries(
 	doc: ProjectDocument | null,
 	library: readonly FactoryLook[] = FACTORY_LOOKS,
 	colorways: readonly Colorway[] = FACTORY_COLORWAYS,
+	userLooks: readonly UserLook[] = [],
 ): LookEntry[] {
 	const out: LookEntry[] = library.map((l) => {
 		const extra = l as FactoryLook & LibraryExtras;
@@ -91,12 +110,39 @@ export function lookEntries(
 			searchText: fold([l.name, extra.nameEs ?? '', category, ...tags, extra.description ?? ''].join(' ')),
 		};
 	});
-	const known = new Set(library.map((l) => l.libraryId));
+	const known = new Set([...library.map((l) => l.libraryId), ...userLooks.map((l) => l.id)]);
 	for (const l of doc ? titleLooksOf(doc) : []) {
 		if (l.sourceId !== undefined && known.has(l.sourceId)) continue;
 		out.push(projectEntry(l, colorways));
 	}
+	for (const l of userLooks) out.push(userEntry(l, colorways));
 	return out;
+}
+
+function userEntry(l: UserLook, colorways: readonly Colorway[]): LookEntry {
+	const all = allColorways(l.colorways as Colorway[] | undefined, colorways);
+	const category = myLooksLabel();
+	const tags = l.tags ?? [];
+	const own = (l.colorways ?? []) as Colorway[];
+	return {
+		lookId: l.id,
+		source: 'user',
+		name: l.name,
+		category,
+		tags,
+		colorways: all,
+		cardColorways: own.length ? all.filter((c) => own.some((o) => o.id === c.id)) : all,
+		recipe: l.recipe,
+		searchText: fold([l.name, category, l.category ?? '', ...tags].join(' ')),
+		given: {
+			name: l.name,
+			recipe: l.recipe,
+			sourceId: l.id,
+			...(tags.length ? { tags: [...tags] } : {}),
+			...(l.category ? { category: l.category } : {}),
+			...(own.length ? { colorways: own } : {}),
+		},
+	};
 }
 
 function projectEntry(l: TitleLook, colorways: readonly Colorway[]): LookEntry {

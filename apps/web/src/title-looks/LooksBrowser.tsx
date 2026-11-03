@@ -23,13 +23,17 @@ import {
 	type LookEntry,
 	lookCategories,
 	lookEntries,
+	myLooksLabel,
 	readRecents,
 	recentLooks,
 } from './library.ts';
 import { deleteProjectLook, renameProjectLook, updateProjectLook } from './look-actions.ts';
+import { MyLooksBar } from './MyLooksBar.tsx';
 import { type PosterSample, posterStoreFor } from './posters.ts';
 import { colorwayPreviewCommands, endPreview, lookPreviewCommands, schedulePreview } from './preview.ts';
 import { lookedClip, takesLook } from './selection.ts';
+import { userLooksUnavailable, useUserLooks } from './user-library.ts';
+import { deleteMyLook, exportMyLooks, renameMyLook } from './user-look-actions.ts';
 
 const TILE_KEY = 'jasper.titleLooks.tile';
 const RECENT = '$recent';
@@ -98,10 +102,16 @@ export function LooksBrowser(props: {
 	const [recents, setRecents] = useState(readRecents);
 	const [message, setMessage] = useState<{ kind: 'info' | 'error'; text: string } | null>(null);
 	const [outside, setOutside] = useState(false);
+	const user = useUserLooks();
+	const myLooks = myLooksLabel();
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: `doc` matters to entries only through `titleLooks`
-	const entries = useMemo(() => lookEntries(doc), [titleLooks]);
-	const categories = useMemo(() => lookCategories(entries), [entries]);
+	const entries = useMemo(() => lookEntries(doc, undefined, undefined, user.looks), [titleLooks, user.looks]);
+	// My Looks has a chip even while it is empty: it is where saving and importing start.
+	const categories = useMemo(() => {
+		const list = lookCategories(entries);
+		return list.includes(myLooks) ? list : [...list, myLooks];
+	}, [entries, myLooks]);
 	const recentEntries = useMemo(() => recentLooks(entries, recents), [entries, recents]);
 	const visible = useMemo(
 		() =>
@@ -171,7 +181,7 @@ export function LooksBrowser(props: {
 			label: colorway ? t('{0} in {1}', entry.name, colorway.name) : entry.name,
 			commands: swatchOnly
 				? colorwayPreviewCommands(ids, colorway)
-				: lookPreviewCommands(ids, entry.lookId, colorway?.id),
+				: lookPreviewCommands(ids, entry, colorway?.id),
 		});
 	}, []);
 
@@ -210,6 +220,41 @@ export function LooksBrowser(props: {
 					onSelect: () => finish(insertTitleWithLook(session, entry)),
 				},
 			];
+			if (entry.source === 'user') {
+				const why = userLooksUnavailable(user) ?? undefined;
+				const look = { id: entry.lookId, name: entry.name };
+				return [
+					...items,
+					{ type: 'separator', id: 'sep' },
+					{
+						type: 'item',
+						id: 'rename',
+						label: 'Rename…',
+						disabled: !!why,
+						...(why ? { disabledReason: why } : {}),
+						onSelect: () => void renameMyLook(look),
+					},
+					{
+						type: 'item',
+						id: 'export',
+						label: 'Export…',
+						disabled: user.status !== 'ready',
+						...(user.status !== 'ready' && why ? { disabledReason: why } : {}),
+						onSelect: () =>
+							void exportMyLooks([entry.lookId], entry.name).then((r) =>
+								setMessage({ kind: r.ok ? 'info' : 'error', text: r.message }),
+							),
+					},
+					{
+						type: 'item',
+						id: 'delete',
+						label: 'Delete…',
+						disabled: !!why,
+						...(why ? { disabledReason: why } : {}),
+						onSelect: () => void deleteMyLook(look),
+					},
+				];
+			}
 			if (entry.source !== 'project') return items;
 			return [
 				...items,
@@ -238,7 +283,7 @@ export function LooksBrowser(props: {
 				},
 			];
 		},
-		[finish, readOnly, seqId],
+		[finish, readOnly, seqId, user],
 	);
 
 	const chip = (value: string | null, label: string) => (
@@ -308,9 +353,20 @@ export function LooksBrowser(props: {
 				{recentEntries.length ? chip(RECENT, t('Recent')) : null}
 				{categories.map((c) => chip(c, c))}
 			</div>
+			{category === myLooks ? (
+				<MyLooksBar session={session} library={user} onMessage={(kind, text) => setMessage({ kind, text })} />
+			) : null}
 			{visible.length === 0 ? (
 				<div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 p-3 text-center">
-					{entries.length === 0 ? (
+					{category === myLooks && !query.trim() ? (
+						<p className="text-pr-small text-pr-muted" data-testid="my-looks-empty">
+							{userLooksUnavailable(user) && user.status !== 'ready'
+								? userLooksUnavailable(user)
+								: t(
+										'No looks of your own yet. Select a clip with a look and choose Save to My Looks…, or import a looks file.',
+									)}
+						</p>
+					) : entries.length === 0 ? (
 						<p className="text-pr-small text-pr-muted" data-testid="looks-empty">
 							No looks yet. Style a title in Properties, then choose Graphics ▸ Save Look… to keep it here.
 						</p>

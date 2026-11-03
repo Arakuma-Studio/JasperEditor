@@ -3,6 +3,8 @@
 // after a short delay and leaving ends it, so sweeping the pointer across a grid draws nothing.
 import type { Command } from '@jasper/project';
 import { derivedPreviewFor, type EditorSession } from '@jasper/session';
+import { lookSourceOf } from './actions.ts';
+import type { LookEntry } from './library.ts';
 
 /** Pause over a card before Program redraws. */
 export const PREVIEW_DELAY_MS = 180;
@@ -52,17 +54,17 @@ export function endPreview(session: EditorSession | null): void {
 	shown = null;
 }
 
-/** A look on the targets, for the preview. */
+/** A look on the targets, for the preview: a project or library id, or an entry (a user look is given whole). */
 export function lookPreviewCommands(
 	clipIds: readonly string[],
-	lookId: string,
+	look: string | Pick<LookEntry, 'lookId' | 'given'>,
 	colorwayId?: string,
 ): Command[] {
 	return [
 		{
 			type: 'look.apply',
 			clipIds: [...clipIds],
-			lookId,
+			...(typeof look === 'string' ? { lookId: look } : lookSourceOf(look)),
 			...(colorwayId ? { colorwayId } : {}),
 		} as Command,
 	];

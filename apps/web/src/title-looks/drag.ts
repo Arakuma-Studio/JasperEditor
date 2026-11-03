@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { t } from '../i18n/runtime.ts';
 import { applyLookToClips, insertTitleWithLook, type LookOutcome } from './actions.ts';
 import { type LookEntry, lookEntries } from './library.ts';
+import { currentUserLooks } from './user-library.ts';
 
 export const TITLE_LOOK_MIME = 'application/x-jasper-title-look';
 
@@ -39,7 +40,9 @@ export function readLookDrag(dt: Pick<DataTransfer, 'getData'> | null): LookDrag
 }
 
 function entryOf(session: EditorSession, id: string): LookEntry | undefined {
-	return lookEntries(session.getCommitted()).find((e) => e.lookId === id);
+	return lookEntries(session.getCommitted(), undefined, undefined, currentUserLooks()).find(
+		(e) => e.lookId === id,
+	);
 }
 
 /** A drop on one clip. */
