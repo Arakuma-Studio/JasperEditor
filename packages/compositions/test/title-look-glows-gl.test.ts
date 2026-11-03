@@ -760,21 +760,19 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Looks: glows', { ti
 
 	describe('glow', () => {
 		it('regression: Intensity above 100 % on a layer glow never cuts into what is below it', async () => {
-			// Alpha above 1 made `under * (1 - a)` negative: a black hole in the face below.
+			// Alpha above 1 made `under * (1 - a)` negative. A grey picture over a white face, blurred alpha ≈ 0.5 at its
+			// edge, × 8: 4 × 0.21 − 3 × 1 is below zero, a black hole. The glow there is simply the picture's grey.
 			const img = await tl.render({
 				recipe: {
-					layers: [
-						face(flat(0.2, 0.6, 1)),
-						{ type: 'glow', params: { from: 'layer', radius: 20, intensity: 800 } },
-					],
+					layers: [face(WHITE), { type: 'glow', params: { from: 'layer', radius: 20, intensity: 800 } }],
 				},
-				input: { kind: 'card' },
+				input: { ...RECT, color: 'rgb(128,128,128)' },
 				box: R_BOX,
 				unitPx: 100,
 			});
-			const p = pixel(img, img.box.x + 160, img.box.y + 80);
+			const p = pixel(img, img.box.x + 82, img.box.y + 80);
 			expect(p[3]).toBe(255);
-			expect(p[0] + p[1] + p[2]).toBeGreaterThan(200);
+			expect(Math.abs(p[0] - 128)).toBeLessThan(12);
 		});
 
 		it('Precise from the layer lights with the picture’s colours (Pachislop’s From layer holds for both techniques)', async () => {
