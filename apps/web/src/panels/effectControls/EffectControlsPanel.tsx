@@ -30,7 +30,6 @@ import {
 	useRef,
 	useState,
 } from 'react';
-import { COST_3D_DIALOG, cost3dAcknowledged } from '../../three-d/Cost3DDialog.tsx';
 import { effectEditorFor, templateParamControls } from '../../extensions/index.ts';
 import { useRegistry } from '../../extensions/react.ts';
 import { formatTimecode } from '../../gaps/time-display.ts';
@@ -48,6 +47,7 @@ import {
 import { TextAnimationBars } from '../../text-animation/TextAnimationBars.tsx';
 import { TextAnimationSection } from '../../text-animation/TextAnimationSection.tsx';
 import { TextAnimatorList } from '../../text-animators/AnimatorList.tsx';
+import { COST_3D_DIALOG, cost3dAcknowledged } from '../../three-d/Cost3DDialog.tsx';
 import { TimeRemapSection } from '../../time/TimeRemapSection.tsx';
 import { AppearanceBlock } from '../../title-looks/AppearanceBlock.tsx';
 import { announce } from '../../title-looks/actions.ts';

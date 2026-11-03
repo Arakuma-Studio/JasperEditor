@@ -13,13 +13,13 @@
 
 import { EXPRESSION_BINDING, type ExpressionBinding, hasActiveExpression } from './keyframes.ts';
 import { intrinsicBoxOf } from './registry/properties.ts';
+import { threeDDynamicSpecs } from './registry/three-d-properties.ts';
 import type { Animatable, Expression } from './schema/common.ts';
 import type { ProjectDocument } from './schema/document.ts';
 import { PUPPET_PIN_PROPS } from './schema/puppet.ts';
 import type { EffectInstance, Sequence, TextContent } from './schema/sequence.ts';
 import type { ShapeItem } from './schema/shapes.ts';
 import type { TextAnimatorGroup } from './schema/text-animators.ts';
-import { threeDDynamicSpecs } from './registry/three-d-properties.ts';
 import { SCENE_3D_PATH, scene3dAnims } from './three-d/scene-look.ts';
 import { type Appearance, globalLightOf } from './title-looks/model.ts';
 import { appearanceSlots, GLOBAL_LIGHT_PATH, LIGHT_PROPS } from './title-looks/properties.ts';
@@ -183,7 +183,8 @@ function* clipAnimatables(
 			if (s.animatable === 'no') continue;
 			const path = s.storagePath;
 			const a = path.reduce<unknown>((o, k) => (o as Record<string, unknown> | undefined)?.[k], c);
-			if (isAnimObj(a)) yield { ref: { seq: seqId, owner: id, path: s.key }, at: [...at, ...path], kind: 'anim', target: a };
+			if (isAnimObj(a))
+				yield { ref: { seq: seqId, owner: id, path: s.key }, at: [...at, ...path], kind: 'anim', target: a };
 		}
 	// sim-warp: Puppet pin properties (`puppet.<pinId>.<prop>`).
 	for (let i = 0; i < fxs.length; i++) {

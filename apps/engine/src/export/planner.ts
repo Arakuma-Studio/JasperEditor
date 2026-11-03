@@ -23,6 +23,7 @@ import {
 	type MediaHandle,
 	maskExportRoute,
 	mediaDecodeHints,
+	missing3dAssets,
 	type PixelInterpretation,
 	type ProjectDocument,
 	pixelInterpretation,
@@ -37,10 +38,9 @@ import {
 	type SnapshotOptions,
 	sequenceFormatOf,
 	snapshotGlNeeds,
+	THREE_D_ASSET_MISSING,
 	transitionSpec,
 	warpExportIssues,
-	missing3dAssets,
-	THREE_D_ASSET_MISSING,
 } from '@jasper/project';
 import { codecHeadroomDb } from '../audio/deliver.ts';
 import { lutRefs } from '../color/extension.ts';

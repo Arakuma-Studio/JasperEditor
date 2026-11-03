@@ -53,8 +53,8 @@ export {
 	GLSL_MB_POSES,
 } from './motion-blur.ts';
 export { GLSL_NOISE } from './noise.ts';
-export { GLSL_TL_ENV, TL_ENV_LABELS, TL_ENV_PRESETS } from './title-env.ts';
 export { FX_EDGE_MODE_LABELS, FX_EDGE_MODES, GLSL_SAMPLE, GLSL_UV } from './sample.ts';
+export { GLSL_TL_ENV, TL_ENV_LABELS, TL_ENV_PRESETS } from './title-env.ts';
 
 /** Every library chunk (the GL test compiles them all together). */
 export const GLSL_LIBRARY = [

@@ -228,7 +228,8 @@ function render(req: LookRequest): LookResult {
 		contentSeconds: req.contentSeconds ?? 0,
 		...(req.glyphs ? { textSpans: buildTextSpans(req.glyphs) } : {}),
 	};
-	if (req.material) return draw(TITLE_MATERIAL_EFFECT as EffectSpec, req.material as EffectParams, req, { titleLook });
+	if (req.material)
+		return draw(TITLE_MATERIAL_EFFECT as EffectSpec, req.material as EffectParams, req, { titleLook });
 	const params: EffectParams = req.intensity === undefined ? {} : { [TITLE_LOOK_INTENSITY]: req.intensity };
 	return draw(TITLE_LOOK_EFFECT as EffectSpec, params, req, { titleLook });
 }

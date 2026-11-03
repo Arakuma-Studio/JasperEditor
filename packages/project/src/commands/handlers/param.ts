@@ -21,6 +21,8 @@ import {
 } from '../../schema/common.ts';
 import { PUPPET_PIN_LABELS } from '../../schema/puppet.ts';
 import type { Clip, EffectInstance, Sequence, Track } from '../../schema/sequence.ts';
+import { ensureScene3dAnim, SCENE_3D_PATH, SCENE_3D_SPECS } from '../../three-d/scene-look.ts';
+import { newInflate } from '../../three-d/title-solid.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
 import {
 	type Appearance,
@@ -31,8 +33,6 @@ import {
 } from '../../title-looks/model.ts';
 import { appearanceAnimAt, LIGHT_SPECS, PALETTE_SLOT, slotParamSpec } from '../../title-looks/properties.ts';
 import { paintLimitProblem, paintProblem } from '../../title-looks/validate.ts';
-import { ensureScene3dAnim, SCENE_3D_PATH, SCENE_3D_SPECS } from '../../three-d/scene-look.ts';
-import { newInflate } from '../../three-d/title-solid.ts';
 import { transitionSpec, transitionStartFrame } from '../../transitions.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';

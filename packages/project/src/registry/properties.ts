@@ -55,7 +55,6 @@ import {
 import { flicksPerFrame, type Rational } from '../time.ts';
 import type { Appearance } from '../title-looks/model.ts';
 import { appearanceAnimAt, appearancePropertySpecs } from '../title-looks/properties.ts';
-import { isThreeDDynamicKey, threeDDynamicSpecs } from './three-d-properties.ts';
 import { SHAPE_ITEM_KEY_PREFIX, shapeItemPropertySpecs } from '../vector/properties.ts';
 import type { EffectRegistry, EffectSpec, ParamSpec } from './effects.ts';
 import { kindCapabilities } from './kinds.ts';
@@ -66,7 +65,7 @@ import {
 	SOURCE_TEXT_SPEC,
 	textAnimatorPropertySpecs,
 } from './text-animator-properties.ts';
-import { THREE_D_PROPERTY_SPECS } from './three-d-properties.ts';
+import { isThreeDDynamicKey, THREE_D_PROPERTY_SPECS, threeDDynamicSpecs } from './three-d-properties.ts';
 
 /** `json` properties carry their schema in `valueSchema` (arrays and free-form composition props). */
 export type ValueKind = ParamSpec['type'] | 'json';

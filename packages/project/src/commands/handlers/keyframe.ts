@@ -23,7 +23,6 @@ import { MASK_PROPS } from '../../masks/model.ts';
 import { PROPERTY_SPECS } from '../../registry/properties.ts';
 import { textAnimatorPropertySpecs } from '../../registry/text-animator-properties.ts';
 import { threeDDynamicSpecs } from '../../registry/three-d-properties.ts';
-import { SCENE_3D_PATH, scene3dAnims } from '../../three-d/scene-look.ts';
 import type {
 	Animatable,
 	Ease,
@@ -35,6 +34,7 @@ import type {
 import type { Mask } from '../../schema/mask.ts';
 import { PUPPET_PIN_PROPS } from '../../schema/puppet.ts';
 import { type EffectInstance, isKnownClipKind, type Track } from '../../schema/sequence.ts';
+import { SCENE_3D_PATH, scene3dAnims } from '../../three-d/scene-look.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
 import { type Appearance, globalLightOf } from '../../title-looks/model.ts';
 import { appearanceSlots, GLOBAL_LIGHT_PATH, LIGHT_PROPS } from '../../title-looks/properties.ts';

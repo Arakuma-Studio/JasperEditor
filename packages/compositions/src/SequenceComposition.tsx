@@ -24,7 +24,7 @@
 // keyframes-blend: a track holding a layer whose blend mode CSS cannot draw exactly wraps everything below it in a
 // `BlendScope` (fx/composite.tsx): the composite below is captured and the track's layers are composited onto it on
 // the GPU at the frames where such a layer is drawn (its clips and GPU transition stages hand over their pictures).
-import { canUseFloatTargets } from './color/gl.ts';
+
 import {
 	clipContentTime,
 	clipPictureTime,
@@ -63,6 +63,7 @@ import { type MixGraph, mixGraphFor } from './audio/graph.ts';
 import { installSerialAudioContext } from './audio/serial-audio-context.ts';
 import { ColorDocContext, type ColorDocValue } from './color/chain.ts';
 import { DisplayStage } from './color/DisplayStage.tsx';
+import { canUseFloatTargets } from './color/gl.ts';
 import { useExpressionSnapshot, useTextExpressionHosts } from './expressions.ts';
 import {
 	EmojiTableContext,
@@ -127,9 +128,9 @@ import { applyPreviews, PreviewLayers } from './previews.tsx';
 import { FrameRepaint } from './repaint.tsx';
 import { ShowFrame } from './show-frame.tsx';
 import {
+	advancedNeedsFloat,
 	FlatRun3D,
 	fallbackProjective,
-	advancedNeedsFloat,
 	makeScene3D,
 	runBottomTracks,
 	Scene3DContext,

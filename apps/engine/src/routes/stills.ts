@@ -1,4 +1,4 @@
-import { AlphaDeliveryRequestSchema, StillRequestSchema, StillSheetRequestSchema } from '@jasper/api';
+import { StillRequestSchema, StillSheetRequestSchema } from '@jasper/api';
 import type { FastifyInstance } from 'fastify';
 import { guarded, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
