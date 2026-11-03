@@ -2,7 +2,10 @@
 // (`clip.addText`, `clip.addShape`, `clip.addGenerator`, `look.apply`, `keyframe.add`) inside one command, like the batch
 // commands do, so the rules of each are the ones of the single commands, the result is plain clips, and one undo removes it.
 // A 3D template (spec 19 §9) also runs the 3D commands: `sequence.set3dRenderer`, `clip.addLight`, `clip.set3d` and the
-// `threeD.*` solid commands, so its titles are ordinary Advanced 3D layers.
+// `threeD.*` solid commands, so its titles are ordinary Advanced 3D layers. The sequence's look of 3D (tone mapping,
+// exposure, glints) is set only while it is at its defaults: a template never overwrites what the user set.
+import type { Sequence3D } from '../../schema/three-d.ts';
+import { userScene3d } from '../../three-d/scene-look.ts';
 import { nominalFps, type Rational } from '../../time.ts';
 import { factoryColorway, factoryLook } from '../../title-looks/factory/index.ts';
 import { factoryTemplate } from '../../title-looks/factory/templates/index.ts';
@@ -184,20 +187,41 @@ function solidOf(doc: DDoc, clipId: string, s: TemplateSolid, sizePx: number, h:
 			setParam(doc, { type: 'param.set', target: ['clip', clipId, 'threeD', axis], value }, h);
 }
 
-/** The sequence a 3D template needs: Advanced 3D, its tone mapping, exposure and glints. */
-function scene3dOf(doc: DDoc, t: TitleTemplate, ctx: Ctx, h: HandlerContext): void {
+/** What a 3D template did to its sequence: switched the renderer, set or kept its look of 3D. */
+export type TemplateScene3dOutcome = { switchedRenderer: boolean; set: string[]; kept: string[] };
+
+/**
+ * The sequence a 3D template needs: Advanced 3D, and its tone mapping, exposure and glints. The renderer is switched (the
+ * cost dialog says so first). The look of 3D belongs to the sequence and every 3D layer in it, so the template sets it
+ * only while the sequence is Classic 3D at its defaults, and otherwise keeps the user's values: nothing here overwrites
+ * a value or writes a key. Either way a warning says what happened (`W_SCENE3D_SET`, `W_SCENE3D_KEPT`).
+ */
+function scene3dOf(
+	doc: DDoc,
+	t: TitleTemplate,
+	ctx: Ctx,
+	h: HandlerContext,
+): TemplateScene3dOutcome | undefined {
 	const s = t.scene3d;
-	if (!s) return;
+	if (!s) return undefined;
 	const { short } = ctx;
+	const three = ctx.seq.threeD as Sequence3D | undefined;
+	const advanced = three?.renderer === 'advanced';
+	const user = userScene3d(three);
+	const setLook = !advanced && user.length === 0;
+	const set = setLook
+		? ['tone mapping', ...(s.exposure !== undefined ? ['exposure'] : []), ...(s.glint ? ['glints'] : [])]
+		: [];
+	const kept = setLook ? [] : advanced ? ['tone mapping', 'exposure', 'glints'] : user;
 	run3d('sequence.set3dRenderer')(
 		doc,
 		{
 			type: 'sequence.set3dRenderer',
 			sequenceId: ctx.seq.id,
 			renderer: 'advanced',
-			toneMapping: s.toneMapping,
-			...(s.exposure !== undefined ? { exposure: s.exposure } : {}),
-			...(s.glint
+			...(setLook ? { toneMapping: s.toneMapping } : {}),
+			...(setLook && s.exposure !== undefined ? { exposure: s.exposure } : {}),
+			...(setLook && s.glint
 				? {
 						glint: {
 							enabled: true,
@@ -213,6 +237,17 @@ function scene3dOf(doc: DDoc, t: TitleTemplate, ctx: Ctx, h: HandlerContext): vo
 		},
 		h,
 	);
+	if (setLook)
+		h.warn(
+			'W_SCENE3D_SET',
+			`${t.name} switched the sequence to Advanced 3D and set its ${set.join(', ')} (they apply to every 3D layer in it)`,
+		);
+	else
+		h.warn(
+			'W_SCENE3D_KEPT',
+			`${t.name} kept the ${kept.join(', ')} of the sequence${advanced ? '' : ' and switched it to Advanced 3D'}: the title may look different from its preview`,
+		);
+	return { switchedRenderer: !advanced, set, kept };
 }
 
 /** The environment light of a 3D template, over its span: the light its metals reflect. */
@@ -446,7 +481,7 @@ export const titleTemplateHandlers = {
 				floor = trackSlotOf(seq, seq.clips[id]!.trackId, h).index + 1;
 			},
 		};
-		scene3dOf(doc, template, ctx, h);
+		const scene3d = scene3dOf(doc, template, ctx, h);
 		for (const c of template.clips) {
 			const id = clipOf(doc, c, cmd, ctx, h);
 			if (c.kind === 'text') slotsOut[c.slot] = id;
@@ -454,6 +489,6 @@ export const titleTemplateHandlers = {
 		environmentOf(doc, template, ctx, h);
 		if (clipIds.length > 1) group(doc, { type: 'clip.group', clipIds }, h);
 		h.defineRef(cmd.ref, clipIds[0]!);
-		return { templateId: template.id, clipIds, slots: slotsOut };
+		return { templateId: template.id, clipIds, slots: slotsOut, ...(scene3d ? { scene3d } : {}) };
 	},
 } satisfies HandlerMap;

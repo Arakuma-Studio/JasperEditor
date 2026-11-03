@@ -99,6 +99,10 @@ export const WARNING_CODES = [
 	'W_SUBTITLES_CONVERT',
 	/** spec 17 SC-051: a subtitle or caption clip showing replaced words was left unchanged (edited by hand, locked…). */
 	'W_TRANSCRIPT_PATCH_SKIPPED',
+	/** spec 19 TL-078: a 3D title template switched the sequence to Advanced 3D and set its tone mapping, exposure, glints. */
+	'W_SCENE3D_SET',
+	/** spec 19 TL-078: a 3D title template kept the sequence's own tone mapping, exposure or glints (named). */
+	'W_SCENE3D_KEPT',
 ] as const;
 
 /** A problem report. `commandIndex` is -1 for transaction-level issues (invariants, revision). */

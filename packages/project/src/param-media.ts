@@ -124,6 +124,35 @@ export function clipParamMediaIds(clip: Pick<Clip, 'kind'>): string[] {
 	return [...out];
 }
 
+/** A project look read as the effect instance it becomes on a clip: the same walkers find its layers' media. */
+const lookAsEffect = (look: unknown) =>
+	isObject(look)
+		? { id: (look as { id?: unknown }).id, appearance: (look as { appearance?: unknown }).appearance }
+		: {};
+
+/**
+ * `{mediaId}` values of a project look's layers (pattern tiles, reflection images), keyframes included, with their
+ * `appearance.<layerId>.<param>` names. Paste carries these media, and every use counter counts them (spec 19 TL-021):
+ * a medium only a look uses is in use.
+ */
+export function titleLookMediaRefs(look: unknown): { param: string; mediaId: string }[] {
+	return effectMediaRefs([lookAsEffect(look)]).map(({ param, mediaId }) => ({ param, mediaId }));
+}
+
+/** The media ids of {@link titleLookMediaRefs}, each once. */
+export function titleLookMediaIds(look: unknown): string[] {
+	return [...new Set(titleLookMediaRefs(look).map((r) => r.mediaId))];
+}
+
+/** Media every project look (`doc.titleLooks`) uses, each once. Read raw: a damaged look still keeps its media. */
+export function projectLookMediaIds(doc: { titleLooks?: unknown }): string[] {
+	const rec = (doc as { titleLooks?: unknown }).titleLooks;
+	if (!isObject(rec) || Array.isArray(rec)) return [];
+	const out = new Set<string>();
+	for (const look of Object.values(rec)) for (const id of titleLookMediaIds(look)) out.add(id);
+	return [...out];
+}
+
 /**
  * Sets every effect `{mediaId}` value (and key) naming a medium in `gone` to None (`{mediaId: ''}`: effect params
  * have no null), in place. Returns the cleared `effects.<effect id>.<param>` paths. Works on drafts.
@@ -154,6 +183,14 @@ export function clearEffectMedia(
 		}
 	}
 	return cleared;
+}
+
+/**
+ * Sets every layer `{mediaId}` of a project look naming a medium in `gone` to None, in place (works on drafts). Returns
+ * the cleared `titleLooks.<look id>.appearance.<layer id>.<param>` paths.
+ */
+export function clearTitleLookMedia(look: unknown, gone: (mediaId: string) => boolean): string[] {
+	return clearEffectMedia([lookAsEffect(look)], gone).map((p) => `titleLooks.${p.slice('effects.'.length)}`);
 }
 
 /**

@@ -7,6 +7,7 @@ import { reidCaptionGroups } from '../../captions/subtitles/model.ts';
 import { clipEnd, contentTimeAt, isThroughEdit } from '../../derive/index.ts';
 import { anim, createSequence, defaultTransform } from '../../factories.ts';
 import { TRACK_MATTE_EFFECT_ID } from '../../masks/track-matte.ts';
+import { projectLookMediaIds } from '../../param-media.ts';
 import { contentDurationFlicks, isBoundedContent, kindCapabilities } from '../../registry/kinds.ts';
 import type { ProjectItem } from '../../schema/document.ts';
 import type { MediaAsset, SyntheticSource } from '../../schema/media.ts';
@@ -1112,8 +1113,8 @@ function duplicateSequence(src: Sequence, h: HandlerContext): Sequence {
 	return seq;
 }
 
-/** Media ids anything still uses: clips (any `mediaId` inside them, incl. effect and transition params), derived
- * media sources, font assets, transcripts. A light's `environmentMediaId` counts like a `mediaId`. */
+/** Media ids anything still uses: clips (any `mediaId` inside them, incl. effect and transition params), project
+ * looks, derived media sources, font assets, transcripts. A light's `environmentMediaId` counts like a `mediaId`. */
 function usedMediaIds(doc: DDoc): Set<string> {
 	const used = new Set<string>();
 	const walk = (v: unknown): void => {
@@ -1130,6 +1131,8 @@ function usedMediaIds(doc: DDoc): Set<string> {
 		walk(seq.master);
 		for (const t of [...seq.videoTracks, ...seq.audioTracks, ...seq.captionTracks]) walk(t);
 	}
+	// spec 19 TL-021: a medium only a project look shows (a pattern tile, a reflection image) is in use.
+	for (const id of projectLookMediaIds(doc)) used.add(id);
 	for (const m of Object.values(doc.media))
 		if (m.derivation && used.has(m.id)) used.add(m.derivation.fromMediaId);
 	for (const f of Object.values(doc.fonts)) if (f.source.type === 'asset') used.add(f.source.mediaId);

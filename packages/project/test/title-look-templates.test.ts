@@ -20,6 +20,7 @@ import {
 	TEMPLATE_KINDS,
 	type TemplateText,
 	templateCostClass,
+	userScene3d,
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
 
@@ -410,6 +411,107 @@ describe('3D title templates (spec 19 §9 through TL-052)', () => {
 		h.doc = before;
 		expect(h.seq.threeD?.renderer ?? 'classic').toBe('classic');
 		ok(h);
+	});
+
+	describe('never overwrites the sequence look of 3D the user set', () => {
+		const END_CARD = 'template.gold-glint-end-card';
+		const warned = (r: { warnings: { code: string; message: string }[] }, c: string) =>
+			r.warnings.filter((w) => w.code === c);
+		const outcome = (r: { results: unknown[] }) =>
+			(r.results[0] as { scene3d?: Record<string, unknown> }).scene3d;
+
+		it('a Classic sequence at its defaults takes the template look, in one undo step, and says so', () => {
+			const h = new Harness();
+			const before = h.doc;
+			expect(userScene3d(h.seq.threeD)).toEqual([]);
+			const r = h.ok([{ type: 'title.insertTemplate', templateId: END_CARD, at: 0 }]);
+			expect(outcome(r)).toEqual({
+				switchedRenderer: true,
+				set: ['tone mapping', 'exposure', 'glints'],
+				kept: [],
+			});
+			expect(warned(r, 'W_SCENE3D_SET')).toHaveLength(1);
+			expect(warned(r, 'W_SCENE3D_SET')[0]!.message).toMatch(
+				/Advanced 3D and set its tone mapping, exposure, glints/,
+			);
+			expect(warned(r, 'W_SCENE3D_KEPT')).toEqual([]);
+			const three = h.seq.threeD!;
+			expect(three.toneMapping).toBe('aces');
+			expect(three.exposure).toMatchObject({ value: 0.25, keyframes: [] });
+			expect(three.glint?.enabled).toBe(true);
+			ok(h);
+			h.doc = before;
+			expect(h.seq.threeD).toBeUndefined();
+		});
+
+		it('an Advanced 3D sequence keeps its tone mapping, exposure and glints', () => {
+			const h = new Harness();
+			h.ok([{ type: 'sequence.set3dRenderer', renderer: 'advanced' }]);
+			const three = h.seq.threeD;
+			const r = h.ok([{ type: 'title.insertTemplate', templateId: END_CARD, at: 0 }]);
+			expect(outcome(r)).toEqual({
+				switchedRenderer: false,
+				set: [],
+				kept: ['tone mapping', 'exposure', 'glints'],
+			});
+			expect(h.seq.threeD).toEqual(three);
+			expect(warned(r, 'W_SCENE3D_KEPT')[0]!.message).toMatch(
+				/kept the tone mapping, exposure, glints of the sequence:/,
+			);
+			expect(warned(r, 'W_SCENE3D_SET')).toEqual([]);
+			ok(h);
+		});
+
+		it('a Classic sequence with its own tone mapping is switched to Advanced 3D and keeps it', () => {
+			const h = new Harness();
+			h.ok([{ type: 'sequence.set3dRenderer', renderer: 'classic', toneMapping: 'agx' }]);
+			expect(userScene3d(h.seq.threeD)).toEqual(['tone mapping']);
+			const r = h.ok([{ type: 'title.insertTemplate', templateId: END_CARD, at: 0 }]);
+			expect(outcome(r)).toEqual({ switchedRenderer: true, set: [], kept: ['tone mapping'] });
+			expect(h.seq.threeD).toMatchObject({ renderer: 'advanced', toneMapping: 'agx' });
+			expect(h.seq.threeD?.exposure).toBeUndefined();
+			expect(h.seq.threeD?.glint).toBeUndefined();
+			expect(warned(r, 'W_SCENE3D_KEPT')[0]!.message).toMatch(
+				/kept the tone mapping of the sequence and switched it to Advanced 3D/,
+			);
+			ok(h);
+		});
+
+		it('an animated exposure or glint keeps every key (no key at frame 0 is overwritten)', () => {
+			const h = new Harness();
+			const exposure = ['scene3d', h.seqId, 'exposure'];
+			const glint = ['scene3d', h.seqId, 'glintThreshold'];
+			h.ok([
+				{ type: 'keyframe.add', target: exposure, at: { sequenceFrame: 0 }, value: -1 },
+				{ type: 'keyframe.add', target: exposure, at: { sequenceFrame: 30 }, value: 1 },
+				{ type: 'keyframe.add', target: glint, at: { sequenceFrame: 0 }, value: 2 },
+				{ type: 'keyframe.add', target: glint, at: { sequenceFrame: 30 }, value: 4 },
+				{ type: 'sequence.set3dRenderer', renderer: 'classic' },
+			]);
+			expect(userScene3d(h.seq.threeD)).toEqual(['exposure', 'glints']);
+			const three = h.seq.threeD!;
+			const r = h.ok([{ type: 'title.insertTemplate', templateId: END_CARD, at: 0 }]);
+			expect(outcome(r)).toMatchObject({ switchedRenderer: true, set: [], kept: ['exposure', 'glints'] });
+			expect(h.seq.threeD!.exposure).toEqual(three.exposure);
+			expect(h.seq.threeD!.glint).toEqual(three.glint);
+			expect(h.seq.threeD!.toneMapping).toBeUndefined();
+			ok(h);
+		});
+
+		it('a static non-default exposure or a tweaked disabled glint counts as set by the user', () => {
+			const h = new Harness();
+			h.ok([{ type: 'param.set', target: ['scene3d', h.seqId, 'exposure'], value: 0.5 }]);
+			expect(userScene3d(h.seq.threeD)).toEqual(['exposure']);
+			const g = new Harness();
+			g.ok([
+				{ type: 'sequence.set3dRenderer', renderer: 'classic', glint: { enabled: false, threshold: 3 } },
+			]);
+			expect(userScene3d(g.seq.threeD)).toEqual(['glints']);
+			const z = new Harness();
+			z.ok([{ type: 'param.set', target: ['scene3d', z.seqId, 'exposure'], value: 0 }]);
+			z.ok([{ type: 'sequence.set3dRenderer', renderer: 'classic', toneMapping: 'none' }]);
+			expect(userScene3d(z.seq.threeD)).toEqual([]);
+		});
 	});
 
 	it('shares one face per font across 3D templates (TL-015)', () => {

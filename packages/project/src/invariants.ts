@@ -43,7 +43,16 @@ import {
 	multicamSourceOf,
 	pruneMulticamAngles,
 } from './multicam/model.ts';
-import { clearEffectMedia, clipParamMediaIds, rewriteParamMedia, templateMediaRefs } from './param-media.ts';
+import {
+	clearEffectMedia,
+	clearTitleLookMedia,
+	clipParamMediaIds,
+	effectMediaRefs,
+	projectLookMediaIds,
+	rewriteParamMedia,
+	templateMediaRefs,
+	titleLookMediaRefs,
+} from './param-media.ts';
 import { type BezierPath, isBezierPath, segmentCount } from './path/model.ts';
 import type { EffectRegistry, ParamSpec } from './registry/effects.ts';
 import { defaultEffectRegistry } from './registry/effects.ts';
@@ -103,6 +112,7 @@ import {
 	repairTitleLooks,
 	sanitizeAppearances,
 	titleLookOf,
+	titleLooksOf,
 	titleLooksRecordIssues,
 } from './title-looks/validate.ts';
 import { CUSTOM_FADE, transitionSpec } from './transitions.ts';
@@ -712,6 +722,17 @@ export function invariantCheckers(
 							: appearanceProblem(fx.appearance);
 				if (look)
 					issues.push(inv('INV-APPEARANCE', `Effect ${fx.id}: ${look}`, [...where, fx.id, 'appearance']));
+				// TL-021: a layer's media (pattern tile, reflection image) must exist, like an effect param's (INV-006).
+				else
+					for (const ref of effectMediaRefs([fx]))
+						if (ref.param.startsWith('appearance.') && !doc.media[ref.mediaId])
+							issues.push(
+								inv('INV-006', `Effect ${fx.id}: ${ref.param} references missing media ${ref.mediaId}`, [
+									...where,
+									fx.id,
+									'appearance',
+								]),
+							);
 			}
 			if (fx.masks?.length) {
 				if (!onClip)
@@ -1436,6 +1457,15 @@ export function runInvariants(
 	// spec 19 TL-015: looks of the project.
 	for (const [message, path] of titleLooksRecordIssues(doc))
 		issues.push(inv('INV-APPEARANCE', message, path));
+	for (const look of titleLooksOf(doc))
+		for (const ref of titleLookMediaRefs(look))
+			if (!doc.media[ref.mediaId])
+				issues.push(
+					inv('INV-006', `Look ${look.id}: ${ref.param} references missing media ${ref.mediaId}`, [
+						'titleLooks',
+						look.id,
+					]),
+				);
 	// spec 15 EA-010: style recipes copied into the project.
 	for (const [message, path] of styleRecipesIssues(doc)) issues.push(inv('INV-STYLE-RECIPE', message, path));
 	// spec 18 AF-BRF-002: agent notes must be readable (INV-AGENT-NOTES).
@@ -1672,6 +1702,7 @@ export function runInvariants(
 	}
 	for (const m of Object.values(doc.media)) if (m.derivation) usedMedia.add(m.derivation.fromMediaId);
 	for (const f of Object.values(doc.fonts)) if (f.source.type === 'asset') usedMedia.add(f.source.mediaId);
+	for (const id of projectLookMediaIds(doc)) usedMedia.add(id);
 	for (const id of Object.keys(doc.media))
 		if (!usedMedia.has(id)) issues.push(inv('INV-014', `Media ${id} is not referenced`, ['media', id]));
 	for (const id of Object.keys(doc.synthetics))
@@ -2086,6 +2117,10 @@ export function repairDocument(
 			}
 		}
 	}
+	// spec 19 TL-021: a project look's layer media that is gone becomes None, like an effect param's.
+	for (const look of Object.values((doc as { titleLooks?: Record<string, unknown> }).titleLooks ?? {}))
+		for (const path of clearTitleLookMedia(look, (m) => !doc.media[m]))
+			note('clear-look-media', (look as { id: string }).id, `${path} referenced missing media: cleared`);
 	// sound-design: unreadable library provenance is repaired field by field, or dropped without a sound id.
 	for (const m of Object.values(doc.media)) {
 		const r = m as { library?: unknown };
@@ -2603,6 +2638,7 @@ export function repairDocument(
 	}
 	for (const m of Object.values(doc.media)) if (m.derivation) usedMedia.add(m.derivation.fromMediaId);
 	for (const f of Object.values(doc.fonts)) if (f.source.type === 'asset') usedMedia.add(f.source.mediaId);
+	for (const id of projectLookMediaIds(doc)) usedMedia.add(id);
 	for (const m of Object.values(doc.media)) {
 		if (usedMedia.has(m.id)) continue;
 		const itemId = ids.next('itm');

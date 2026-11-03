@@ -3,7 +3,7 @@
 // reference (media closed over derivation sources and font files, synthetics, transcripts, fonts).
 // Pure: callers pass the committed document; nothing here reads session state.
 
-import { clipParamMediaIds, collectParamMediaIds, effectMediaRefs } from '../param-media.ts';
+import { clipParamMediaIds, effectMediaRefs, titleLookMediaIds } from '../param-media.ts';
 import { PROPERTY_SPECS } from '../registry/properties.ts';
 import type { Animatable, Keyframe } from '../schema/common.ts';
 import type { ProjectDocument, ProjectItem } from '../schema/document.ts';
@@ -130,7 +130,7 @@ function packReferences(
 		const l = titleLookOf(doc, id);
 		if (!l) continue;
 		titleLooks.push(clone(l));
-		for (const m of collectParamMediaIds(l.appearance.layers)) refs.media.add(m);
+		for (const m of titleLookMediaIds(l)) refs.media.add(m);
 	}
 	const media: MediaAsset[] = [];
 	const done = new Set<string>();

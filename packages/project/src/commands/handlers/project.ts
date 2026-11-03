@@ -1,6 +1,13 @@
 import { current, type Draft, isDraft } from 'immer';
 import { mediaDurationFlicks } from '../../interpret/model.ts';
-import { clearEffectMedia, clipParamMediaIds, rewriteParamMedia } from '../../param-media.ts';
+import {
+	clearEffectMedia,
+	clearTitleLookMedia,
+	clipParamMediaIds,
+	projectLookMediaIds,
+	rewriteParamMedia,
+	titleLookMediaIds,
+} from '../../param-media.ts';
 import { frameShiftFlicks, sourceTimingShift } from '../../process/source-range.ts';
 import { defaultLabelForMedia } from '../../registry/kinds.ts';
 import {
@@ -81,6 +88,8 @@ export function collectOrphans(doc: DDoc): void {
 		for (const id of refs.synthetics) usedSyn.add(id);
 		for (const id of refs.transcripts) usedTrs.add(id);
 	}
+	// spec 19 TL-021: media of project looks' layers.
+	for (const id of projectLookMediaIds({ titleLooks: peek(doc, 'titleLooks') })) usedMedia.add(id);
 	const media = peek<Record<string, MediaAsset>>(doc, 'media')!;
 	for (const id of peekKeys(media)) {
 		const m = peek<MediaAsset>(media, id)!;
@@ -192,11 +201,22 @@ export const projectHandlers = {
 					if (!removed.has(c.id) && clipParamMediaIds(c).some((m) => goneMedia.has(m)))
 						paramUsers.push({ seqId: seq.id, clipId: c.id });
 			}
-		if ((clipRemovals.length > 0 || paramUsers.length > 0) && !cmd.force) {
+		// spec 19 TL-021: project looks whose layers show such a medium (a pattern tile, a reflection image) use it too;
+		// with `force` those layers are set to None and the look stays.
+		const lookUsers: string[] = [];
+		const looks = (doc as { titleLooks?: Record<string, unknown> }).titleLooks;
+		if (goneMedia.size > 0 && looks)
+			for (const [lookId, look] of Object.entries(looks))
+				if (titleLookMediaIds(look).some((m) => goneMedia.has(m))) lookUsers.push(lookId);
+		if ((clipRemovals.length > 0 || paramUsers.length > 0 || lookUsers.length > 0) && !cmd.force) {
 			const users = [...clipRemovals, ...paramUsers];
 			const seqs = new Set(users.map((r) => r.seqId));
-			h.fail('E_IN_USE', `${users.length} clips in ${seqs.size} sequences use this media`, {
-				blocking: users.map((r) => r.clipId),
+			const parts = [
+				...(users.length ? [`${users.length} clips in ${seqs.size} sequences`] : []),
+				...(lookUsers.length ? [`${lookUsers.length} project looks`] : []),
+			];
+			h.fail('E_IN_USE', `${parts.join(' and ')} use this media`, {
+				blocking: [...users.map((r) => r.clipId), ...lookUsers],
 			});
 		}
 		const clearedParams: { clipId: string; params: string[]; mediaIds: string[] }[] = [];
@@ -221,6 +241,12 @@ export const projectHandlers = {
 			}
 			paths.push(...clearEffectMedia((c as { effects?: Draft<EffectInstance>[] }).effects, isGone));
 			clearedParams.push({ clipId: u.clipId, params: paths, mediaIds });
+		}
+		const clearedLooks: { lookId: string; params: string[]; mediaIds: string[] }[] = [];
+		for (const lookId of lookUsers) {
+			const look = looks![lookId];
+			const mediaIds = titleLookMediaIds(look).filter(isGone);
+			clearedLooks.push({ lookId, params: clearTitleLookMedia(look, isGone), mediaIds });
 		}
 		for (const r of clipRemovals) {
 			const seq = doc.sequences[r.seqId]!;
@@ -248,6 +274,7 @@ export const projectHandlers = {
 			deletedItems: [...toDelete],
 			removedClips: clipRemovals.map((r) => r.clipId),
 			...(clearedParams.length ? { clearedParams } : {}),
+			...(clearedLooks.length ? { clearedLooks } : {}),
 		};
 	},
 	// Set / Clear Poster Frame (the thumbnail frame of a media item).

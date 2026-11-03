@@ -717,15 +717,17 @@ function applyAttributes(
 				resolver.remapEffectMedia([copy]);
 				for (const a of Object.values(copy.params))
 					a.keyframes = retimeKeys(a.keyframes, src, to, h, !!opts.scale);
-				// spec 19 TL-010: a pasted look replaces the clip's look (at most one), and its keys follow the clip.
+				// spec 19 TL-010: a pasted look replaces the clip's look (at most one), and its keys follow the clip. Its
+				// own params (TL-089 Look Intensity) come with it, retimed like the appearance.
 				if (fx.effectId === TITLE_LOOK_EFFECT_ID) {
 					if (!(TITLE_LOOK_CLIP_KINDS as readonly string[]).includes(t.kind)) continue;
 					retimeAll(copy.appearance, src, to, h, !!opts.scale);
 					const had = list.findIndex((e) => e.effectId === TITLE_LOOK_EFFECT_ID);
 					if (had >= 0) {
 						(list[had] as { appearance?: unknown }).appearance = copy.appearance;
+						list[had]!.params = copy.params as never;
 						list[had]!.enabled = copy.enabled;
-					} else list.splice(0, 0, { ...copy, params: {}, id: h.ids.next('fx') } as never);
+					} else list.splice(0, 0, { ...copy, id: h.ids.next('fx') } as never);
 					if (had < 0) at++;
 					done.push(`effect:${fx.id}`);
 					continue;

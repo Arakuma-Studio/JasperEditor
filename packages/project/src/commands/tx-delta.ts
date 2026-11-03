@@ -99,7 +99,7 @@ function docUses(base: ProjectDocument): ReadonlySet<string> {
 
 /**
  * What collectOrphans must delete, from the transaction's changes alone: null when that cannot be decided this way
- * (no normalized base, items / media / transcripts edited, a medium or transcript that may have lost its last use),
+ * (no normalized base, items / media / transcripts / project looks edited, a medium or transcript that may have lost its last use),
  * else the synthetics no longer used (often none). Exact: on an orphan-free base only references a changed clip gave
  * up, and entities added in the transaction, can be unused; each is counted over the whole document (per-record
  * counts of the base, corrected by the changed clips).
@@ -110,6 +110,8 @@ export function orphanedSynthetics(doc: ProjectDocument): string[] | null {
 	const raw = latest(doc);
 	const base = delta.base;
 	if (latest(raw.items) !== base.items) return null;
+	// spec 19 TL-021: project looks use media too; an edited look may give up its last use of one.
+	if (latest(raw.titleLooks) !== base.titleLooks) return null;
 	const candidates = new Set<string>();
 	for (const field of ['media', 'transcripts', 'synthetics'] as const) {
 		const d = recordDelta(raw[field] as Rec<unknown>);

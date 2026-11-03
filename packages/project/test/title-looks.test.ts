@@ -372,6 +372,30 @@ describe('project looks: create, update, rename, delete (TL-015, TL-016)', () =>
 		expect(code(h.tx([{ type: 'look.delete', lookId }]))).toBe('E_NOT_FOUND');
 		ok(h);
 	});
+
+	it('delete refuses while a linked clip is on a locked track (E_TRACK_LOCKED naming it); nothing changes', () => {
+		const { h, t, u } = applied();
+		const lookId = lookOf(h, t).lookId!;
+		h.ok([{ type: 'look.apply', clipIds: [u], lookId }]);
+		const track = h.seq.clips[t]!.trackId;
+		h.ok([{ type: 'track.update', trackId: track, patch: { locked: true } }]);
+		const before = h.doc;
+		const r = h.tx([{ type: 'look.delete', lookId }]);
+		expect(code(r)).toBe('E_TRACK_LOCKED');
+		expect(r.ok ? null : r.errors[0]!.blocking).toEqual(
+			[t, u].filter((id) => h.seq.clips[id]!.trackId === track),
+		);
+		expect(h.doc).toBe(before);
+		expect(lookOf(h, t).lookId).toBe(lookId);
+		expect(titleLookOf(h.doc, lookId)).not.toBeNull();
+		// Unlocked, the same delete unlinks every clip: no clip is left linked to a look that is gone.
+		h.ok([{ type: 'track.update', trackId: track, patch: { locked: false } }]);
+		const res = h.ok([{ type: 'look.delete', lookId }]).results[0] as { unlinked: number };
+		expect(res.unlinked).toBe(2);
+		expect(lookOf(h, t).lookId).toBeUndefined();
+		expect(lookOf(h, u).lookId).toBeUndefined();
+		ok(h);
+	});
 });
 
 describe('appearance.* (TL-018)', () => {
@@ -703,6 +727,39 @@ describe('the look survives editing (TL-014)', () => {
 		const list = (h.seq.clips[u] as unknown as { effects: EffectInstance[] }).effects;
 		expect(list.filter((e) => e.effectId === TITLE_LOOK_EFFECT_ID)).toHaveLength(1);
 		expect(fxOf(h, u).id).toBe(fxU);
+		ok(h);
+	});
+
+	it('Paste Attributes carries Look Intensity and its keys, retimed, onto a clip with and without a look', () => {
+		const { h, t, u, fx } = keyed();
+		const path = ['effect', fx, 'lookIntensity'];
+		h.ok([
+			{ type: 'keyframe.add', target: path, at: { frames: 0 }, value: 20 },
+			{ type: 'keyframe.add', target: path, at: { frames: 40 }, value: 90 },
+		]);
+		const payload = buildEffectsPayload(h.doc, t);
+		const intensityOf = (id: string) => fxOf(h, id).params.lookIntensity!;
+		const expectRetimed = (id: string) => {
+			const a = intensityOf(id);
+			expect(a.keyframes.map((k) => [k.time, k.value])).toEqual([
+				[h.seq.clips[id]!.sourceIn, 20],
+				[h.seq.clips[id]!.sourceIn + 40 * F, 90],
+			]);
+			expect(a.keyframes.map((k) => k.id)).not.toEqual(
+				fxOf(h, t).params.lookIntensity!.keyframes.map((k) => k.id),
+			);
+		};
+		// u has no look: the pasted look brings its intensity.
+		h.ok([{ type: 'clip.pasteAttributes', payload, clipIds: [u], attributes: { effects: 'all' } }]);
+		expectRetimed(u);
+		ok(h);
+		// u now has a look of its own, at another intensity: the pasted one replaces it, intensity included.
+		const own = ['effect', fxOf(h, u).id, 'lookIntensity'];
+		h.ok([{ type: 'param.setAnimated', target: own, animated: false }]);
+		h.ok([{ type: 'param.set', target: own, value: 55 }]);
+		expect(intensityOf(u)).toMatchObject({ value: 55, keyframes: [] });
+		h.ok([{ type: 'clip.pasteAttributes', payload, clipIds: [u], attributes: { effects: 'all' } }]);
+		expectRetimed(u);
 		ok(h);
 	});
 

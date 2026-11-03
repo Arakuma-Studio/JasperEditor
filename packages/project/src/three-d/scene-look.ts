@@ -72,6 +72,37 @@ export function newGlint(): Glint3D {
 	};
 }
 
+/** Whether a sequence 3D value is not at rest: keys or an expression. */
+const moves = (a: { keyframes?: unknown[]; expression?: unknown } | undefined) =>
+	!!a && ((a.keyframes?.length ?? 0) > 0 || a.expression !== undefined);
+
+const GLINT_ANIM_FIELDS = ['threshold', 'intensity', 'radius', 'length', 'angle', 'tint'] as const;
+
+/**
+ * What of a sequence's look of 3D (TL-076, TL-077) differs from its defaults or is animated: `tone mapping`,
+ * `exposure`, `glints`. Empty = all at their defaults.
+ */
+export function userScene3d(three: Sequence3D | undefined): string[] {
+	const out: string[] = [];
+	if (!three) return out;
+	if (three.toneMapping !== undefined && three.toneMapping !== 'none') out.push('tone mapping');
+	const exposure = three.exposure as Animatable<number> | undefined;
+	if (exposure && (moves(exposure) || exposure.value !== 0)) out.push('exposure');
+	const g = three.glint;
+	if (g) {
+		const d = newGlint();
+		const changed =
+			g.enabled !== d.enabled ||
+			g.rays !== d.rays ||
+			GLINT_ANIM_FIELDS.some((k) => {
+				const a = g[k] as Animatable<unknown> | undefined;
+				return moves(a) || JSON.stringify(a?.value) !== JSON.stringify(d[k].value);
+			});
+		if (changed) out.push('glints');
+	}
+	return out;
+}
+
 /** Where the sequence stores one of `SCENE_3D_SPECS`, or undefined while it has none. */
 export function scene3dAnim(three: Sequence3D | undefined, prop: string): Animatable<unknown> | undefined {
 	if (!three) return undefined;

@@ -19,7 +19,10 @@ import {
 	mediaUsage,
 	type ProjectDocument,
 	planProjectManager,
+	projectLookFontFamilies,
+	projectLookMediaIds,
 	repairDocument,
+	titleLookMediaIds,
 } from '../src/index.ts';
 import { Harness, videoAsset } from './helpers.ts';
 
@@ -244,5 +247,167 @@ describe('effect {mediaId} params are in use (TL-120)', () => {
 			detail: `effects.${fx.id}.look referenced missing media: cleared`,
 		});
 		expect(checkInvariants(document, opts).filter((i) => i.invariant === 'INV-006')).toEqual([]);
+	});
+});
+
+/** A project look whose texture layer tiles an image that has a project item and no other use (spec 19 TL-021). */
+function lookSetup() {
+	const h = new Harness();
+	const reg = h.ok([{ type: 'media.register', asset: videoAsset({ kind: 'image' }) }]);
+	const { mediaId, itemId } = reg.results[0] as { mediaId: string; itemId: string };
+	const lookId = (
+		h.ok([
+			{
+				type: 'look.create',
+				name: 'Tiled',
+				recipe: {
+					layers: [
+						{ type: 'texture', params: { motif: 'image', motifImage: { mediaId } } },
+						{ type: 'face' },
+					],
+				},
+			},
+		]).results[0] as { lookId: string }
+	).lookId;
+	return { h, mediaId, itemId, lookId };
+}
+const tileOf = (doc: ProjectDocument, lookId: string) =>
+	doc.titleLooks![lookId]!.appearance.layers.find((l) => l.type === 'texture')!.params.motifImage!.value;
+const addTitle = (h: Harness, lookId: string) =>
+	h.ok([
+		{ type: 'clip.addText', at: 0, duration: 30, track: 'V1', content: { text: 'T' }, ref: '$t' },
+		{ type: 'look.apply', clipIds: ['$t'], lookId },
+	]).refs.$t!;
+
+describe('media of a project look is in use (TL-021)', () => {
+	it('every use counter sees it: projectLookMediaIds, titleLookMediaIds', () => {
+		const { h, mediaId, lookId } = lookSetup();
+		expect(projectLookMediaIds(h.doc)).toEqual([mediaId]);
+		expect(titleLookMediaIds(h.doc.titleLooks![lookId])).toEqual([mediaId]);
+		expect(checkInvariants(h.doc)).toEqual([]);
+	});
+
+	it('item.delete refuses to delete the medium (E_IN_USE naming the look)', () => {
+		const { h, itemId, mediaId, lookId } = lookSetup();
+		const r = h.tx([{ type: 'item.delete', itemIds: [itemId] }]);
+		expect(r.ok ? null : r.errors[0]!.code).toBe('E_IN_USE');
+		expect(r.ok ? null : r.errors[0]!.blocking).toEqual([lookId]);
+		expect(r.ok ? null : r.errors[0]!.message).toBe('1 project looks use this media');
+		expect(h.doc.media[mediaId]).toBeDefined();
+	});
+
+	it('item.delete with force sets the layer to None (the look stays) and reports it; the old document is intact', () => {
+		const { h, itemId, mediaId, lookId } = lookSetup();
+		const before = h.doc;
+		const layer = before.titleLooks![lookId]!.appearance.layers.find((l) => l.type === 'texture')!;
+		const r = h.ok([{ type: 'item.delete', itemIds: [itemId], force: true }]);
+		expect(r.results[0]).toMatchObject({
+			clearedLooks: [
+				{
+					lookId,
+					params: [`titleLooks.${lookId}.appearance.${layer.id}.motifImage`],
+					mediaIds: [mediaId],
+				},
+			],
+		});
+		expect(tileOf(h.doc, lookId)).toEqual({ mediaId: '' });
+		expect(h.doc.media[mediaId]).toBeUndefined();
+		expect(checkInvariants(h.doc)).toEqual([]);
+		expect(tileOf(before, lookId)).toEqual({ mediaId });
+		expect(before.media[mediaId]).toBeDefined();
+	});
+
+	it('collectOrphans, Remove Unused, the invariants, repair and Project Manager keep the medium', () => {
+		const { h, itemId, mediaId } = lookSetup();
+		const kept = h.ok([{ type: 'media.removeUnused' }]);
+		expect((kept.results[0] as { removed: string[] }).removed).not.toContain(itemId);
+		expect(h.doc.media[mediaId]).toBeDefined();
+		const doc = structuredClone(h.doc) as ProjectDocument;
+		delete doc.items[itemId];
+		doc.rootItems = doc.rootItems.filter((id) => id !== itemId);
+		collectOrphans(doc as never);
+		expect(doc.media[mediaId]).toBeDefined();
+		expect(checkInvariants(doc).filter((i) => i.invariant === 'INV-014')).toEqual([]);
+		expect(repairDocument(doc, h.ids).report.filter((e) => e.action === 'add-item')).toEqual([]);
+		const plan = planProjectManager(h.doc, { mode: 'collect', excludeUnused: true, handlesFrames: 0 });
+		expect(plan.droppedItems).not.toContain(itemId);
+		expect(plan.files.map((f) => f.mediaId)).toContain(mediaId);
+	});
+
+	it('an edit of the look that drops its last use keeps the medium while its item holds it', () => {
+		const { h, mediaId, lookId } = lookSetup();
+		h.ok([{ type: 'look.update', lookId, recipe: { layers: [{ type: 'face' }] } }]);
+		expect(projectLookMediaIds(h.doc)).toEqual([]);
+		expect(h.doc.media[mediaId]).toBeDefined();
+		expect(checkInvariants(h.doc)).toEqual([]);
+	});
+
+	it('look.create, look.update and look.apply refuse media the project does not have', () => {
+		const { h, lookId } = lookSetup();
+		const recipe = {
+			layers: [
+				{ type: 'texture', params: { motif: 'image', motifImage: { mediaId: 'med_0000000000000ZZZ' } } },
+			],
+		};
+		const code = (r: { ok: boolean; errors?: { code: string }[] }) => (r.ok ? null : r.errors![0]!.code);
+		expect(code(h.tx([{ type: 'look.create', name: 'Gone', recipe }]))).toBe('E_NOT_FOUND');
+		expect(code(h.tx([{ type: 'look.update', lookId, recipe }]))).toBe('E_NOT_FOUND');
+		const t = h.ok([
+			{ type: 'clip.addText', at: 0, duration: 30, track: 'V1', content: { text: 'T' }, ref: '$t' },
+		]).refs.$t!;
+		expect(code(h.tx([{ type: 'look.apply', clipIds: [t], look: { name: 'Gone', recipe } }]))).toBe(
+			'E_NOT_FOUND',
+		);
+	});
+
+	it('repair clears a dangling look layer medium (INV-006) and reports it', () => {
+		const { h, lookId } = lookSetup();
+		const doc = structuredClone(h.doc) as ProjectDocument;
+		const layer = doc.titleLooks![lookId]!.appearance.layers.find((l) => l.type === 'texture')!;
+		layer.params.motifImage!.value = { mediaId: 'med_0000000000000ZZZ' };
+		expect(checkInvariants(doc).filter((i) => i.invariant === 'INV-006')).toEqual([
+			expect.objectContaining({ path: ['titleLooks', lookId] }),
+		]);
+		const { document, report } = repairDocument(doc, createCounterIdSource(5));
+		expect(tileOf(document, lookId)).toEqual({ mediaId: '' });
+		expect(report).toContainEqual({
+			action: 'clear-look-media',
+			entity: lookId,
+			detail: `titleLooks.${lookId}.appearance.${layer.id}.motifImage referenced missing media: cleared`,
+		});
+		expect(checkInvariants(document).filter((i) => i.invariant === 'INV-006')).toEqual([]);
+	});
+
+	it('a clip look layer naming missing media fails INV-006, and repair clears it', () => {
+		const { h, lookId } = lookSetup();
+		const t = addTitle(h, lookId);
+		const doc = structuredClone(h.doc) as ProjectDocument;
+		const fx = (doc.sequences[h.seqId]!.clips[t] as Video).effects[0]!;
+		const layer = fx.appearance!.layers.find((l) => l.type === 'texture')!;
+		layer.params.motifImage!.value = { mediaId: 'med_0000000000000ZZZ' };
+		expect(checkInvariants(doc).filter((i) => i.invariant === 'INV-006')).toHaveLength(1);
+		const { document, report } = repairDocument(doc, createCounterIdSource(5));
+		const fixed = (document.sequences[h.seqId]!.clips[t] as Video).effects[0]!.appearance!.layers.find(
+			(l) => l.type === 'texture',
+		)!;
+		expect(fixed.params.motifImage!.value).toEqual({ mediaId: '' });
+		expect(report.some((e) => e.action === 'clear-effect-media' && e.entity === t)).toBe(true);
+		expect(checkInvariants(document).filter((i) => i.invariant === 'INV-006')).toEqual([]);
+	});
+
+	it('copy carries the look medium; the fonts a look names are listed for font removal', () => {
+		const { h, mediaId, lookId } = lookSetup();
+		const t = addTitle(h, lookId);
+		const p = buildClipsPayload(h.doc, h.seqId, [t]) as ClipboardPayload;
+		expect(p.media.map((m) => m.id)).toContain(mediaId);
+		const doc = structuredClone(h.doc) as ProjectDocument;
+		(doc.titleLooks![lookId]!.appearance as { font?: unknown }).font = {
+			family: 'Display One',
+			fallback: 'Display Two',
+			ja: { family: 'Display Kana' },
+		};
+		expect(projectLookFontFamilies(doc).sort()).toEqual(['Display Kana', 'Display One', 'Display Two']);
+		expect(projectLookFontFamilies({ titleLooks: { x: null, y: { appearance: 3 } } })).toEqual([]);
+		expect(projectLookFontFamilies(null)).toEqual([]);
 	});
 });

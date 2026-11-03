@@ -37,7 +37,7 @@ import {
 	type SeqScope,
 } from './invariants.ts';
 import { TRACK_MATTE_EFFECT_ID } from './masks/track-matte.ts';
-import { clipParamMediaIds } from './param-media.ts';
+import { clipParamMediaIds, projectLookMediaIds } from './param-media.ts';
 import type { ProjectDocument } from './schema/document.ts';
 import type { Clip, Sequence, Track } from './schema/sequence.ts';
 import { isKnownClipKind } from './schema/sequence.ts';
@@ -327,11 +327,15 @@ function allUses(doc: ProjectDocument): Set<string> {
 	return used;
 }
 
-/** Media and synthetics referenced outside sequences (items, derivations, fonts), cached by the records. */
-const docUseCache = new WeakMap<object, { media: object; fonts: object; uses: ReadonlySet<string> }>();
+/** Media and synthetics referenced outside sequences (items, derivations, fonts, project looks), cached by the records. */
+const docUseCache = new WeakMap<
+	object,
+	{ media: object; fonts: object; looks: unknown; uses: ReadonlySet<string> }
+>();
 function docLevelUses(doc: ProjectDocument): ReadonlySet<string> {
 	const hit = docUseCache.get(doc.items);
-	if (hit && hit.media === doc.media && hit.fonts === doc.fonts) return hit.uses;
+	if (hit && hit.media === doc.media && hit.fonts === doc.fonts && hit.looks === doc.titleLooks)
+		return hit.uses;
 	const uses = new Set<string>();
 	for (const it of Object.values(doc.items)) {
 		if (it.kind === 'media' || it.kind === 'subclip') uses.add(it.mediaId);
@@ -339,7 +343,8 @@ function docLevelUses(doc: ProjectDocument): ReadonlySet<string> {
 	}
 	for (const m of Object.values(doc.media)) if (m.derivation) uses.add(m.derivation.fromMediaId);
 	for (const f of Object.values(doc.fonts)) if (f.source.type === 'asset') uses.add(f.source.mediaId);
-	docUseCache.set(doc.items, { media: doc.media, fonts: doc.fonts, uses });
+	for (const id of projectLookMediaIds(doc)) uses.add(id);
+	docUseCache.set(doc.items, { media: doc.media, fonts: doc.fonts, looks: doc.titleLooks, uses });
 	return uses;
 }
 

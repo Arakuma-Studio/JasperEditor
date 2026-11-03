@@ -4,6 +4,7 @@
 import type { Draft } from 'immer';
 import { contentTimeAt } from '../../derive/index.ts';
 import { createFontRef, defaultTransform } from '../../factories.ts';
+import { titleLookMediaRefs } from '../../param-media.ts';
 import { isPaintParam } from '../../registry/fx/title-look/contract.ts';
 import {
 	defaultLayerIndex,
@@ -162,6 +163,16 @@ function appearanceOfRecipe(raw: unknown, h: HandlerContext, who: string): Appea
 	return a;
 }
 
+/** TL-021: a project look shows only media the project has (a pattern tile, a reflection image). */
+function assertLookMedia(doc: DDoc, appearance: Appearance, who: string, h: HandlerContext): void {
+	for (const ref of titleLookMediaRefs({ appearance }))
+		if (!doc.media[ref.mediaId])
+			h.fail(
+				'E_NOT_FOUND',
+				`${who}: ${ref.param} names media ${ref.mediaId}, which the project does not have`,
+			);
+}
+
 function colorwaysOf(raw: readonly unknown[] | undefined, h: HandlerContext, who: string): Colorway[] {
 	return (raw ?? []).map((c) => {
 		const r = ColorwaySchema.safeParse(c);
@@ -203,6 +214,7 @@ function lookForApply(doc: DDoc, cmd: CommandOf<'look.apply'>, h: HandlerContext
 	const name = (source?.name ?? given!.name).slice(0, MAX_TITLE_LOOK_NAME);
 	const who = `Look "${name}"`;
 	const appearance = appearanceOfRecipe(source ? source.recipe : given!.recipe, h, who);
+	assertLookMedia(doc, appearance, who, h);
 	const colorways = source?.colorways ?? colorwaysOf(given?.colorways, h, who);
 	const tags = source?.tags ?? given?.tags;
 	const category = source?.category ?? given?.category;
@@ -417,6 +429,7 @@ export const titleLookHandlers = {
 			if (!fx?.appearance) return h.fail('E_INVALID_PARAM', `Clip ${clip.id} has no look`);
 			appearance = lookBodyOf(clone(fx.appearance) as Appearance, clipFirstTime(seq, clip));
 		} else appearance = appearanceOfRecipe(cmd.recipe, h, cmd.name);
+		assertLookMedia(doc, appearance, `Look "${cmd.name}"`, h);
 		const id = h.newId(doc, 'tlk', cmd.id);
 		looksOf(doc)[id] = {
 			id,
@@ -446,6 +459,7 @@ export const titleLookHandlers = {
 			if (!fx?.appearance) return h.fail('E_INVALID_PARAM', `Clip ${clip.id} has no look`);
 			body = lookBodyOf(clone(fx.appearance) as Appearance, clipFirstTime(seq, clip));
 		} else body = appearanceOfRecipe(cmd.recipe, h, old.name);
+		assertLookMedia(doc, body, `Look "${old.name}"`, h);
 		const prior = clone(old.appearance);
 		adoptLayerIds(prior, body);
 		(looksOf(doc)[cmd.lookId] as Draft<TitleLook>).appearance = body as never;
@@ -485,18 +499,32 @@ export const titleLookHandlers = {
 	'look.delete': (doc, cmd: CommandOf<'look.delete'>, h: HandlerContext) => {
 		const rec = (doc as { titleLooks?: Record<string, TitleLook> }).titleLooks;
 		if (!rec || !Object.hasOwn(rec, cmd.lookId)) h.fail('E_NOT_FOUND', `Look not found: ${cmd.lookId}`);
-		// TL-015: the clips keep their effective values, only the link goes.
-		let unlinked = 0;
+		// TL-015: the clips keep their effective values, only the link goes. A linked clip on a locked track cannot be
+		// unlinked, and skipping it would leave it linked to a look that is gone, so the delete is refused, naming the
+		// clips (as item.delete refuses to edit locked clips): unlock them, or unlink them, first.
+		const linked: { seq: DSeq; cid: string }[] = [];
+		const locked: string[] = [];
 		for (const seq of Object.values(doc.sequences))
 			for (const cid of peekKeys(seq.clips)) {
 				const raw = peek<Clip>(seq.clips, cid)!;
 				const fxRaw = clipLook((raw as { effects?: EffectInstance[] }).effects);
 				if ((fxRaw?.appearance as Appearance | undefined)?.lookId !== cmd.lookId) continue;
-				const a = clipLook(effectsOf(seq.clips[cid]!))!.appearance as Draft<Appearance>;
-				delete a.lookId;
-				delete a.lookOverrides;
-				unlinked++;
+				linked.push({ seq, cid });
+				if (findTrackIn(seq, raw.trackId)?.track.locked) locked.push(cid);
 			}
+		if (locked.length)
+			h.fail(
+				'E_TRACK_LOCKED',
+				`${locked.length} clip(s) linked to this look are on locked tracks: unlock them first (${locked.join(', ')})`,
+				{ blocking: locked },
+			);
+		let unlinked = 0;
+		for (const { seq, cid } of linked) {
+			const a = clipLook(effectsOf(seq.clips[cid]!))!.appearance as Draft<Appearance>;
+			delete a.lookId;
+			delete a.lookOverrides;
+			unlinked++;
+		}
 		delete rec![cmd.lookId];
 		if (Object.keys(rec!).length === 0) delete (doc as { titleLooks?: unknown }).titleLooks;
 		return { lookId: cmd.lookId, unlinked };

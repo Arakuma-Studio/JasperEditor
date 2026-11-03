@@ -23,7 +23,12 @@ import { EffectsPanel } from '../src/panels/effects/EffectsPanel.tsx';
 import { PropertiesPanel } from '../src/panels/properties/PropertiesPanel.tsx';
 import { newLayerIndex } from '../src/title-looks/AppearanceList.tsx';
 import { ApplyLookDialog } from '../src/title-looks/ApplyLookDialog.tsx';
-import { insertTitleWithLook, pickLook, setColorway } from '../src/title-looks/actions.ts';
+import {
+	insertTitleTemplate,
+	insertTitleWithLook,
+	pickLook,
+	setColorway,
+} from '../src/title-looks/actions.ts';
 import { isLookDrag, readLookDrag, writeLookDrag } from '../src/title-looks/drag.ts';
 import { lookFocus } from '../src/title-looks/focus.ts';
 import { handlesOf } from '../src/title-looks/LayerOverlay.tsx';
@@ -823,6 +828,32 @@ describe('layer handles on a frame (TL-092)', () => {
 
 	it('a layer of an unknown type has none', () => {
 		expect(handlesOf(f, { id: 'x', type: 'gone', params: {} }, 0, { angle: 0 })).toEqual([]);
+	});
+});
+
+describe('insertTitleTemplate (TL-078: what a 3D template does to the sequence is said)', () => {
+	it('says it set the sequence look at defaults, and that it kept the user look otherwise', () => {
+		const { session } = project({ titles: 0 });
+		const card = { templateId: 'template.gold-glint-end-card', name: 'Gold Glint End Card 3D' };
+		const first = insertTitleTemplate(session, card);
+		expect(first.ok && first.notices).toEqual([
+			expect.objectContaining({ kind: 'info', title: 'Set the 3D look of the sequence' }),
+		]);
+		const second = insertTitleTemplate(session, card, { at: 300 });
+		expect(second.ok && second.notices).toEqual([
+			expect.objectContaining({
+				kind: 'warning',
+				title: 'Kept the 3D look of the sequence',
+				detail: expect.stringMatching(/kept the tone mapping, exposure, glints/),
+			}),
+		]);
+		// Each insert is one History entry, and Undo puts the sequence back.
+		const seq = () => Object.values(session.getCommitted().sequences)[0]!;
+		expect(session.undo().ok).toBe(true);
+		expect(session.undo().ok).toBe(true);
+		expect(seq().threeD).toBeUndefined();
+		const flat = insertTitleTemplate(session, { templateId: 'template.lower-third-clean', name: 'Clean' });
+		expect(flat.ok && flat.notices).toEqual([]);
 	});
 });
 

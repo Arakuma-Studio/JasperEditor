@@ -35,3 +35,24 @@ export function chooseLookFont(
 	if (f.fallback && !has(out.family) && has(f.fallback)) return { ...out, family: f.fallback };
 	return out;
 }
+
+const str = (v: unknown): string | null => (typeof v === 'string' && v ? v : null);
+const rec = (v: unknown): Record<string, unknown> | null =>
+	v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+
+/**
+ * The families the looks of a stored document name (`doc.titleLooks[*].appearance.font`: the family, its fallback
+ * and its Japanese face), each once. A look applies its font when it is applied, so until then the project's font table
+ * does not list it: whatever asks "does a project use this font" (removing a font of the user library) reads these too.
+ * Read raw and never throws: the document may be unvalidated.
+ */
+export function projectLookFontFamilies(doc: unknown): string[] {
+	const looks = rec(rec(doc)?.titleLooks);
+	const out = new Set<string>();
+	for (const look of Object.values(looks ?? {})) {
+		const font = rec(rec(rec(look)?.appearance)?.font);
+		if (!font) continue;
+		for (const f of [str(font.family), str(font.fallback), str(rec(font.ja)?.family)]) if (f) out.add(f);
+	}
+	return [...out];
+}

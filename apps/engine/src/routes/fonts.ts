@@ -8,6 +8,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { basename, isAbsolute } from 'node:path';
 import type { Readable } from 'node:stream';
 import { FontInstallPathRequestSchema, type FontUsageResponse, type LibraryFont } from '@jasper/api';
+import { projectLookFontFamilies } from '@jasper/project';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { requireUserApproval } from '../agent/user-approval.ts';
@@ -38,25 +39,31 @@ async function readCapped(body: Readable, max: number): Promise<Uint8Array> {
 	return new Uint8Array(Buffer.concat(chunks, size));
 }
 
-/** Saved projects whose fonts render with the face (or its family). */
+/** Saved projects whose fonts, or whose project looks, render with the face (or its family). */
 async function fontUsage(core: CoreServices, face: LibraryFont): Promise<FontUsageResponse> {
 	const projects = await core.projects.list();
 	const out: FontUsageResponse['projects'] = [];
 	let scanned = 0;
 	for (const p of projects.slice(0, USAGE_MAX_PROJECTS)) {
-		let fonts: unknown;
+		let doc: { fonts?: unknown } | null;
 		try {
-			fonts = ((await core.projects.get(p.projectId)).envelope.document as { fonts?: unknown } | null)?.fonts;
+			doc = (await core.projects.get(p.projectId)).envelope.document as { fonts?: unknown } | null;
 		} catch {
 			continue; // unreadable or newer project: not counted
 		}
 		scanned++;
-		if (!fonts || typeof fonts !== 'object') continue;
+		const fonts = doc?.fonts;
+		const named: unknown[] =
+			fonts && typeof fonts === 'object'
+				? Object.values(fonts as Record<string, unknown>).map(
+						(ref) => (ref as { family?: unknown } | null)?.family,
+					)
+				: [];
+		// spec 19 TL-053: a project look names its family before any text is set in it.
+		named.push(...projectLookFontFamilies(doc));
 		const families = new Set<string>();
-		for (const ref of Object.values(fonts as Record<string, unknown>)) {
-			const family = (ref as { family?: unknown } | null)?.family;
+		for (const family of named)
 			if (typeof family === 'string' && core.fonts.usesLibraryFace(family, face.id)) families.add(family);
-		}
 		if (families.size) out.push({ projectId: p.projectId, name: p.name, families: [...families] });
 	}
 	return { projects: out, scanned, truncated: projects.length > USAGE_MAX_PROJECTS };

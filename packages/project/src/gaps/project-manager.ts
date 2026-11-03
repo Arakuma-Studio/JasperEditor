@@ -7,9 +7,10 @@
 //   Timing over a declared source range — the mechanism of processed versions).
 // "Exclude Unused Clips" drops the sequences that were not chosen and the media items no kept clip uses (LUTs, fonts,
 // motion-graphics bundles and colour configs are always kept: effects and clips reference them by id; media a
-// template param of a kept clip shows, e.g. an avatar, count as used).
+// template param of a kept clip shows, e.g. an avatar, count as used, and so do media of project looks, which the copy
+// always keeps).
 import { contentTimeAt } from '../derive/index.ts';
-import { clipParamMediaIds } from '../param-media.ts';
+import { clipParamMediaIds, projectLookMediaIds } from '../param-media.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { MediaAsset } from '../schema/media.ts';
 import type { Clip, Sequence } from '../schema/sequence.ts';
@@ -43,8 +44,8 @@ export function sequenceClosure(doc: ProjectDocument, roots: readonly string[]):
 }
 
 /**
- * The media time (flicks) the clips of `sequenceIds` use per media: [lo, hi). `whole` = something needs the whole
- * media (time remapping, a loop, a still). Frame holds count their held time.
+ * The media time (flicks) the clips of `sequenceIds` use per media: [lo, hi), and the media of project looks.
+ * `whole` = something needs the whole media (time remapping, a loop, a still, a look). Frame holds count their held time.
  */
 export function usedMedia(doc: ProjectDocument, sequenceIds: readonly string[]): Map<string, MediaUse> {
 	const out = new Map<string, MediaUse>();
@@ -86,6 +87,11 @@ export function usedMedia(doc: ProjectDocument, sequenceIds: readonly string[]):
 			}
 			add(mediaId, Math.max(0, Math.floor(lo)), Math.ceil(hi));
 		}
+	}
+	// spec 19 TL-021: the copy keeps every project look, and with it the media its layers show (whole pictures).
+	for (const id of projectLookMediaIds(doc)) {
+		const a = doc.media[id];
+		if (a) add(id, 0, a.probe.durationFlicks ?? 0, true);
 	}
 	return out;
 }

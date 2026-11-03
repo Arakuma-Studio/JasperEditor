@@ -220,7 +220,15 @@ export function insertTitleTemplate(
 	if (!r.ok) return { ok: false, message: r.errors[0]?.message ?? t('The template could not be inserted') };
 	const clipIds = (r.results[0] as { clipIds?: string[] } | undefined)?.clipIds ?? [];
 	if (clipIds.length) session.select('timeline', clipIds, 'replace');
-	return { ok: true, clipIds, message: t('Inserted {0}', template.name), notices: [] };
+	// What a 3D template did to the sequence's tone mapping, exposure and glints (set at defaults, else kept).
+	const notices: ToastRequest[] = r.warnings
+		.filter((w) => w.code === 'W_SCENE3D_SET' || w.code === 'W_SCENE3D_KEPT')
+		.map((w) =>
+			w.code === 'W_SCENE3D_KEPT'
+				? { kind: 'warning', title: t('Kept the 3D look of the sequence'), detail: w.message }
+				: { kind: 'info', title: t('Set the 3D look of the sequence'), detail: w.message },
+		);
+	return { ok: true, clipIds, message: t('Inserted {0}', template.name), notices };
 }
 
 /**
