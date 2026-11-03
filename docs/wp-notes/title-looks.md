@@ -342,6 +342,18 @@ Port map: `licenses/ported/pachislop-rendering.md`.
 | `fxPreviewScale` 0.5 against full | SSIM 0.964 | same |
 | Frame cost, six layers, 1080p, SwiftShader | 1.3 s title-sized box, 5.8 s frame-sized | [performance.md](../performance.md) §7 |
 
+Delivery (§12), real renders through the engine's routes, outputs opened and read back:
+
+| What | Result | Rerun |
+|---|---|---|
+| Transparent still in PNG, TIFF, Targa | `rgba`/`bgra`; corner alpha 0; opaque and partial pixels both present | `REMOTION_E2E=1 pnpm exec vitest run apps/engine/test/delivery.e2e.test.ts` |
+| PNG sequence | ZIP of numbered frames, read back by the engine's own ZIP reader | same |
+| Export Title beside the frame edge | `origin.x` < 0, so the glow was drawn past the frame; the margin is clear and content starts right after it | same |
+| PSD from a real frame, opened with ag-psd | Layers and groups in order, parts nested inside `fx`, title recombined over the solid within 6 code values of the composite | same |
+| Split with a glow at alpha 2 | The parts reassemble byte for byte | same |
+| Rec. 2020 still against Rec. 709 and Rec. 2020 | > 90 % and 0 % out of gamut | same |
+| Shape Burst stroke with ag-psd's own decoder | The style is lost; with ours it maps to a `shape` gradient | `pnpm exec vitest run apps/engine/test/ps-styles.test.ts` |
+
 The extension contract was exercised by copying this note's three worked examples verbatim into their own files with their
 one-line registrations: they typechecked with no change to the core, and the registry and GL tests picked them up (and failed
 for the missing fingerprints, and for a generator example that was clipped by its own padding, now fixed above).

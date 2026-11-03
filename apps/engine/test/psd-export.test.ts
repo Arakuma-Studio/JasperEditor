@@ -15,7 +15,12 @@ import { initializeCanvas, type Layer, readPsd, writePsdUint8Array } from 'ag-ps
 import fc from 'fast-check';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { neutralClip, onLargerCanvas, onlyClips } from '../src/export/delivery/frames.ts';
-import { assertWritable, trimmedPixels, writePsdFile } from '../src/export/delivery/psd-job.ts';
+import {
+	assertWritable,
+	psdRenderProps,
+	trimmedPixels,
+	writePsdFile,
+} from '../src/export/delivery/psd-job.ts';
 import { type PsdRender, planPsd, psdRenderDoc } from '../src/export/delivery/psd-plan.ts';
 import { layerSlices, PsdAssembler, PsdTooLargeError } from '../src/export/delivery/psd-writer.ts';
 import { DocBuilder } from './helpers.ts';
@@ -195,6 +200,20 @@ describe('plan (TL-112)', () => {
 		if (top.kind !== 'pixels') throw new Error('expected pixels');
 		expect(top.render.clips).toContain(s);
 		expect(top.render.clips.length).toBeGreaterThan(1);
+	});
+
+	it('the background draws on an opaque page; a clip on a transparent one', () => {
+		const { d } = twoClips();
+		const snap = snapshotOf(d);
+		const { nodes, composite } = planPsd(snap, 0);
+		const [bg, clip] = nodes as [
+			Extract<(typeof nodes)[number], { kind: 'pixels' }>,
+			Extract<(typeof nodes)[number], { kind: 'pixels' }>,
+		];
+		expect(psdRenderProps(snap, bg.render).options.transparentBackground).toBe(false);
+		expect(psdRenderProps(snap, composite).options.transparentBackground).toBe(false);
+		expect(psdRenderProps(snap, clip.render).options.transparentBackground).toBe(true);
+		expect(psdRenderProps(snap, clip.render).doc.settings.backgroundColor[3]).toBe(0);
 	});
 
 	it('names blockers before anything runs', () => {

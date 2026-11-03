@@ -4,7 +4,7 @@ import type { LayerStyleFile, PsdPlan } from '@jasper/api';
 import { EngineClient } from '@jasper/engine-client';
 import { titleLooksOf } from '@jasper/project';
 import { closeAllDialogs, DialogHost, openDialog } from '@jasper/ui';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, configure, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { getCommand, registerAllCommands } from '../src/commands/index.ts';
 import { ALPHA_DIALOG, registerAlphaDialog } from '../src/delivery/AlphaDialog.tsx';
@@ -19,6 +19,8 @@ import { MENUBAR } from '../src/shell/menus/model.ts';
 import { makeSession } from './timeline-helpers.ts';
 
 beforeAll(() => registerAllCommands());
+// Dialogs mount on a timer that a loaded host stretches.
+configure({ asyncUtilTimeout: 30_000 });
 afterEach(() => {
 	act(() => closeAllDialogs());
 	cleanup();

@@ -221,13 +221,17 @@ export function planPsd(
 	const matted2d: RenderVisualClip[] = [];
 	for (const track of doc.videoTracks) {
 		const clips = track.clips.filter((c) => activeAt(c, frame));
-		// A transition's two sides are one picture.
+		// A GPU transition's two sides are one picture; so is a matte (a dip to black) with what it is under. A plain
+		// dissolve needs neither: its sides are two layers with their fades, which stack back exactly.
 		const live = (track.transitions ?? []).filter((t) => frame >= t.start && frame < t.start + t.duration);
+		const matted = (track.mattes ?? []).some((m) => frame >= m.start && frame < m.start + m.duration);
 		const inTransition = new Set<string>();
-		for (const t of live) {
-			const ids = [t.outgoingClipId, t.incomingClipId].filter((x): x is string => !!x);
-			const sides = track.clips.filter((c) => ids.includes(c.clipId));
-			if (!sides.length) continue;
+		const joined: RenderVisualClip[][] = live.map((t) =>
+			track.clips.filter((c) => c.clipId === t.outgoingClipId || c.clipId === t.incomingClipId),
+		);
+		if (matted) joined.push(clips);
+		for (const sides of joined) {
+			if (!sides.length || sides.every((c) => inTransition.has(c.clipId))) continue;
 			for (const c of sides) {
 				inTransition.add(c.clipId);
 				drawn.push(c.clipId);
@@ -240,7 +244,7 @@ export function planPsd(
 				opacity: 1,
 				hidden: false,
 				baked: ['transition baked'],
-				render: { clips: sides.map((c) => c.clipId), background: false },
+				render: { clips: sides.map((c) => c.clipId), background: false, mattes: matted },
 			});
 			baked.push(`${name}: transition baked into one layer`);
 		}

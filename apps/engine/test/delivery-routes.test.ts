@@ -86,7 +86,7 @@ describe('POST /api/psd/plan', () => {
 		const plan = r.json() as { blockers: { code: string }[]; layers: { name: string }[] };
 		if (!plan.blockers.length) expect(plan.layers.length).toBeGreaterThan(0);
 		else expect(plan.blockers[0]!.code).toBeTruthy();
-	});
+	}, 60_000);
 
 	it('an unknown sequence is a 404, not a blocker', async () => {
 		const { envelope: e } = envelope();

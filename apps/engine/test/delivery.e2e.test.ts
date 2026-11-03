@@ -266,6 +266,8 @@ describe.runIf(enabled)('delivery end to end (REMOTION_E2E=1)', () => {
 		const psd = readPsd(readFileSync(file), { useImageData: true });
 		expect([psd.width, psd.height, psd.bitsPerChannel]).toEqual([1280, 720, 8]);
 		expect(psd.children!.map((l) => l.name)).toEqual(['Background', expect.any(String), 'Headline']);
+		// The background is a layer with pixels, full frame, regression of an empty one.
+		expect([psd.children![0]!.right, psd.children![0]!.bottom]).toEqual([1280, 720]);
 		const group = psd.children![2]!;
 		expect(group.children!.map((l: Layer) => l.name)).toEqual(['Edge', 'face', 'fx']);
 		const fx = group.children![2]!;

@@ -94,6 +94,12 @@ export async function writePsdFile(o: {
 	}
 }
 
+/** What the composition draws for one picture: transparent page unless the picture holds the sequence background. */
+export const psdRenderProps = (doc: RenderSnapshot, render: PsdRender) => ({
+	doc: psdRenderDoc(doc, render),
+	options: renderOptions(!render.background),
+});
+
 /** Refuses a blocked plan with its blockers (they are shown before writing; a job that gets here is a stale request). */
 export function assertWritable(plan: PsdPlan): void {
 	if (plan.blockers.length)
@@ -116,9 +122,8 @@ export async function runPsdExport(ctx: JobContext, req: PsdRequest, d: Delivery
 	const tmp = join(scratch, 'layer.png');
 	const browser: SharedRenderBrowser = await d.remotion.openSharedBrowser();
 	const paint: PsdPainter = async (render) => {
-		const page: RenderSnapshot = psdRenderDoc(doc, render);
 		await d.remotion.renderStill({
-			inputProps: { doc: page, options: renderOptions(true) },
+			inputProps: psdRenderProps(doc, render),
 			output: tmp,
 			frame: 0,
 			signal: ctx.signal,

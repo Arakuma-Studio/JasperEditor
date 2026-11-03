@@ -676,12 +676,6 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 						},
 						{
 							type: 'toggle',
-							label: 'Gamut Warning',
-							checked: gamutEnabled,
-							onToggle: () => gamutOverlay.setState((s) => ({ enabled: !s.enabled })),
-						},
-						{
-							type: 'toggle',
 							label: 'Transparency Grid',
 							checked: monitor.transparencyGrid,
 							onToggle: () =>
@@ -703,6 +697,12 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 						},
 						// edit-ux (Premiere wrench menu): rulers, guides, comparison view, dropped frame indicator
 						{ type: 'separator' },
+						{
+							type: 'toggle',
+							label: 'Gamut Warning',
+							checked: gamutEnabled,
+							onToggle: () => gamutOverlay.setState((s) => ({ enabled: !s.enabled })),
+						},
 						{
 							type: 'toggle',
 							label: 'Show Rulers',
