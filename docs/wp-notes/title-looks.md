@@ -352,6 +352,7 @@ Delivery (§12), real renders through the engine's routes, outputs opened and re
 | PSD from a real frame, opened with ag-psd | Layers and groups in order, parts nested inside `fx`, title recombined over the solid within 6 code values of the composite | same |
 | Split with a glow at alpha 2 | The parts reassemble byte for byte | same |
 | Rec. 2020 still against Rec. 709 and Rec. 2020 | > 90 % and 0 % out of gamut | same |
+| Gamut Warning in the running app: a Rec. 2020 logo in a Rec. 2020 sequence, checked against Rec. 709 | 2.6 % flagged; the logo's blocks are 53 000 of 2 073 600 pixels (2.56 %), and the mask sits on them | By hand in the app: Program ▸ wrench ▸ Gamut Warning (no automated browser test) |
 | Shape Burst stroke with ag-psd's own decoder | The style is lost; with ours it maps to a `shape` gradient | `pnpm exec vitest run apps/engine/test/ps-styles.test.ts` |
 
 The extension contract was exercised by copying this note's three worked examples verbatim into their own files with their
