@@ -22,10 +22,11 @@ vec2 tlg_corner(int v) {
 `,
 };
 
+/** How far streaks may reach in a look before they fade: a streak can cross the frame, a canvas should not grow to it. */
 function reachOf(p: LayerParams): number {
 	const L = Math.max(1, num(p.length));
 	const pad = num(p.halo) + num(p.chroma) + num(p.thickness) + 4;
-	return (p.mode === 'anamorphic' ? 0.7 * L : 1.6 * L) + pad;
+	return Math.min((p.mode === 'anamorphic' ? 0.7 * L : 1.6 * L) + pad, Math.max(1, num(p.extent)));
 }
 
 export const GENERATOR_LIGHT_STREAKS = defineGenerator({
@@ -45,7 +46,7 @@ export const GENERATOR_LIGHT_STREAKS = defineGenerator({
 		lp.angle('angle', 'Angle', 0),
 		lp.number('spread', 'Spread', 3, { min: 0, max: 360, step: 0.1 }, { unit: 'deg' }),
 		lp.number('count', 'Count', 6, { min: 1, max: MAX_STREAKS, softMax: 60, step: 1 }),
-		lp.distance('length', 'Length', 320, { min: 1, softMax: 1500 }),
+		lp.distance('length', 'Length', 320, { min: 1, softMax: 800 }),
 		lp.percent('lengthRandom', 'Length Random', 55),
 		lp.distance('thickness', 'Thickness', 8, { min: 0.25, softMax: 80 }),
 		lp.percent('thicknessRandom', 'Thickness Random', 60),
@@ -58,6 +59,7 @@ export const GENERATOR_LIGHT_STREAKS = defineGenerator({
 		lp.number('brightness', 'Brightness', 250, { min: 0, max: 400, step: 1 }, { unit: '%' }),
 		lp.distance('halo', 'Halo', 40, { softMax: 200 }),
 		lp.distance('chroma', 'Chromatic Split', 0, { softMax: 20 }),
+		lp.distance('extent', 'Extent', 260, { min: 5, softMax: 600 }),
 		variationParam(),
 	],
 	include: [GLSL_UV, GLSL_TLG, GLSL_TLG_QUAD],
@@ -210,5 +212,13 @@ void main() {
 		}),
 	],
 	glsl: /* glsl */ `
-vec4 tl_generate(TlSurface s) { return tlg_light(texture(u_tlGenA, s.uv).rgb); }`,
+vec4 tl_generate(TlSurface s) {
+  vec3 c = texture(u_tlGenA, s.uv).rgb;
+#ifndef TLG_STANDALONE
+  // In a look the canvas ends at Extent: streaks fade out before they reach it.
+  vec2 e = min(s.px, u_canvasSize - s.px);
+  c *= smoothstep(0.0, tl_px(12.0), min(e.x, e.y));
+#endif
+  return tlg_light(c);
+}`,
 });

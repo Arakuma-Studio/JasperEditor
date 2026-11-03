@@ -71,7 +71,15 @@ function premultiplied(img: LookImage, x: number, y: number) {
 }
 
 /** Largest difference over a rectangle of canvas px, with `b` read `dx` px to the right of `a`. */
-function maxDiffShifted(a: LookImage, b: LookImage, dx: number, x0: number, y0: number, x1: number, y1: number) {
+function maxDiffShifted(
+	a: LookImage,
+	b: LookImage,
+	dx: number,
+	x0: number,
+	y0: number,
+	x1: number,
+	y1: number,
+) {
 	let m = 0;
 	for (let y = y0; y < y1; y++)
 		for (let x = x0; x < x1; x++) {

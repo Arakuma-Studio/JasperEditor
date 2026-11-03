@@ -111,7 +111,7 @@ export const GENERATOR_BRUSH_SWIRL = defineGenerator({
 	params: [
 		lp.choice('path', 'Path', PATHS, ['Arc', 'Spiral', 'Slash', 'Ring'], 'arc'),
 		lp.point('center', 'Centre', [0.5, 0.5]),
-		lp.distance('radius', 'Radius', 190, { min: 1, softMax: 800 }),
+		lp.distance('radius', 'Radius', 190, { min: 1, softMax: 500 }),
 		lp.number('sweep', 'Sweep', 300, { min: 10, max: 1080, step: 0.1 }, { unit: 'deg' }),
 		lp.angle('angle', 'Start Angle', -150),
 		lp.number('strokes', 'Strokes', 4, { min: 1, max: 12, step: 1 }),

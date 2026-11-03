@@ -66,7 +66,12 @@ function particleReach(p: LayerParams): number {
 	return r * defocus * halo + (p.shape === 'ember' || p.shape === 'rain' ? num(p.streak) * halo : 0);
 }
 
+/** How far particles may fly in a look before they fade: physics can reach any distance, a canvas cannot. */
 function reachOf(p: LayerParams): number {
+	return Math.min(physicsReach(p), Math.max(1, num(p.extent)));
+}
+
+function physicsReach(p: LayerParams): number {
 	const life = Math.max(0.05, num(p.lifetime));
 	const fall = 0.5 * Math.abs(num(p.gravity)) * life * life;
 	const free = Math.max(0, num(p.travel)) * 1.45 + fall + Math.abs(num(p.sway)) + particleReach(p) + 2;
@@ -453,13 +458,13 @@ export const GENERATOR_PARTICLES = defineGenerator({
 			'burst',
 		),
 		lp.percent('falloff', 'Density Falloff', 60),
-		lp.distance('travel', 'Distance', 90, { softMax: 800 }),
+		lp.distance('travel', 'Distance', 90, { softMax: 400 }),
 		lp.percent('distanceRandom', 'Distance Random', 100),
 		lp.angle('angle', 'Stream Angle', -90),
 		lp.number('cone', 'Spread Angle', 20, { min: 0, max: 360, step: 0.1 }, { unit: 'deg' }),
 		lp.choice('split', 'Particles', ['all', 'front', 'back'], ['All', 'Front Half', 'Back Half'], 'all'),
 		lp.choice('timing', 'Timing', ['loop', 'once'], ['Loop', 'Once'], 'loop'),
-		lp.number('lifetime', 'Life', 2.2, { min: 0.05, max: 60, softMax: 8, step: 0.01 }, { unit: 's' }),
+		lp.number('lifetime', 'Life', 2.2, { min: 0.05, max: 60, softMax: 6, step: 0.01 }, { unit: 's' }),
 		lp.percent('lifeRandom', 'Life Random', 40),
 		lp.number('stagger', 'Stagger', 0.2, { min: 0, max: 20, softMax: 3, step: 0.01 }, { unit: 's' }),
 		lp.percent('drag', 'Drag', 40),
@@ -505,6 +510,7 @@ export const GENERATOR_PARTICLES = defineGenerator({
 		lp.number('brightness', 'Brightness', 220, { min: 0, max: 800, softMax: 400, step: 1 }, { unit: '%' }),
 		lp.percent('glow', 'Glow', 35),
 		lp.percent('opacityRandom', 'Opacity Random', 40),
+		lp.distance('extent', 'Extent', 150, { min: 5, softMax: 400 }),
 		variationParam(),
 	],
 	include: [GLSL_UV, GLSL_TLG],
@@ -757,6 +763,11 @@ export const GENERATOR_PARTICLES = defineGenerator({
 	glsl: /* glsl */ `
 vec4 tl_generate(TlSurface s) {
   vec4 c = texture(u_tlGenA, s.uv);
+#ifndef TLG_STANDALONE
+  // In a look the canvas ends at Extent: particles fade out before they reach it.
+  vec2 e = min(s.px, u_canvasSize - s.px);
+  c *= smoothstep(0.0, tl_px(8.0), min(e.x, e.y));
+#endif
   return vec4(c.rgb, clamp(c.a, 0.0, 1.0));
 }`,
 });

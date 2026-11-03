@@ -43,7 +43,7 @@ export const GENERATOR_SUNBURST = defineGenerator({
 			{ min: -720, max: 720, softMin: -90, softMax: 90, step: 0.1 },
 			{ unit: 'deg' },
 		),
-		lp.distance('inner', 'Inner Radius', 70, { softMax: 300 }),
+		lp.distance('inner', 'Inner Radius', 40, { softMax: 150 }),
 		lp.percent('softness', 'Softness', 10),
 		lp.percent('innerSoftness', 'Inner Softness', 60),
 		lp.choice('rayColors', 'Ray Colour', ['flat', 'radial'], ['Colour A', 'Along the Radius'], 'flat'),

@@ -33,6 +33,9 @@ void main() {
 
 const reach = (p: LayerParams) => num(p.rayLength) * 1.03 + 2;
 
+/** Soft rays hold at half a texel per 1 % of the unit: 50 across a title's height. */
+const TEXELS_PER_PERCENT = 0.5;
+
 export const GENERATOR_BACKLIGHT = defineGenerator({
 	id: 'backlight',
 	label: 'Backlight',
@@ -87,7 +90,8 @@ export const GENERATOR_BACKLIGHT = defineGenerator({
 	timeDependent: (p) => num(p.spin) !== 0,
 	summary: (p) => `length ${pct(p.rayLength)}, ${num(p.rayCount)} rays`,
 	prepass: (_p, c) => {
-		const half = { format: 'rgba16f' as const, scale: 0.5 };
+		// Texels per unit are fixed, not per canvas pixel: the same grid at every resolution, so rays are the same rays.
+		const half = { format: 'rgba16f' as const, scale: Math.min(1, TEXELS_PER_PERCENT / c.pxPerPercent) };
 		return [
 			c.pass({
 				...half,
