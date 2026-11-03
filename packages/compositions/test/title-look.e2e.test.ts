@@ -64,7 +64,27 @@ const recipe: LookRecipe = {
 	],
 };
 
-type Opts = { idSeed?: number; split?: number; scale?: number; still?: boolean; text?: string };
+/** Stream Glows: light, a mirror and an inner shadow in the look, keyed, and effects on the same clip. */
+const glows: LookRecipe = {
+	palette: recipe.palette!,
+	light: { source: 'sequence' },
+	layers: [
+		{ type: 'deepGlow', params: { radius: 60, exposure: 2 } },
+		{ type: 'rim', name: 'Outer', params: { width: 4 } },
+		{ type: 'face', params: { paint: { kind: 'role', role: 'face' } } },
+		{ type: 'innerShadow', params: { distance: 3, blur: 3, useLight: true } },
+		{ type: 'reflection', params: { fade: 40 } },
+	],
+};
+
+type Opts = {
+	idSeed?: number;
+	split?: number;
+	scale?: number;
+	still?: boolean;
+	text?: string;
+	glows?: boolean;
+};
 
 /** A sequence with a dark gradient-free background, the animated title and a keyed look param. */
 function build(o: Opts = {}) {
@@ -104,7 +124,12 @@ function build(o: Opts = {}) {
 			box: { width: 520 * k, height: 180 * k, autoSize: 'none' },
 			ref: '$t',
 		},
-		{ type: 'look.apply', clipIds: ['$t'], look: { name: 'E2E', recipe }, seed: 4242 },
+		{
+			type: 'look.apply',
+			clipIds: ['$t'],
+			look: o.glows ? { name: 'Glows', recipe: glows } : { name: 'E2E', recipe },
+			seed: 4242,
+		},
 		...(o.still ? [] : [{ type: 'textAnimator.add', clipId: '$t', properties: ['position'], ref: '$a' }]),
 	]);
 	if (o.still) return buildRenderSnapshot(doc, seqId, { resolveMedia: () => null, resolveFont: () => null });
@@ -117,6 +142,43 @@ function build(o: Opts = {}) {
 	const outer = clip.effects[0]!.appearance.layers.find((l) => l.name === 'Outer')!.id;
 	const pos = ['clip', t, 'textAnimators', a, 'properties', 'position'];
 	const rim = ['appearance', fx, outer, 'width'];
+	if (o.glows) {
+		const look = clip.effects[0] as unknown as { appearance: { layers: { id: string; type: string }[] } };
+		const deep = look.appearance.layers.find((l) => l.type === 'deepGlow')!.id;
+		({ document: doc } = step(doc, [
+			{
+				type: 'effect.add',
+				target: { clipId: t },
+				effectId: 'jasper.deep-glow',
+				params: { radius: 24, threshold: 0.4, exposure: 1 },
+			},
+			{
+				type: 'effect.add',
+				target: { clipId: t },
+				effectId: 'jasper.perspective-shadow',
+				params: { useGlobalLight: true, length: 60, opacity: 50 },
+			},
+			{
+				type: 'effect.add',
+				target: { clipId: t },
+				effectId: 'jasper.keyline',
+				params: { width: 2, color: [1, 1, 1, 1] },
+				ref: '$k',
+			},
+			{ type: 'sequence.setGlobalLight', angle: 0, altitude: 45 },
+			{ type: 'keyframe.add', target: ['globalLight', seqId, 'angle'], at: { sequenceFrame: 0 }, value: 200 },
+			{
+				type: 'keyframe.add',
+				target: ['globalLight', seqId, 'angle'],
+				at: { sequenceFrame: 60 },
+				value: 340,
+			},
+			{ type: 'keyframe.add', target: ['appearance', fx, deep, 'radius'], at: { frames: 0 }, value: 30 },
+			{ type: 'keyframe.add', target: ['appearance', fx, deep, 'radius'], at: { frames: 60 }, value: 120 },
+			{ type: 'keyframe.add', target: ['effect', '$k', 'width'], at: { frames: 0 }, value: 1 },
+			{ type: 'keyframe.add', target: ['effect', '$k', 'width'], at: { frames: 60 }, value: 8 },
+		]));
+	}
 	({ document: doc } = step(doc, [
 		// The text animator lifts the characters; a look param keys over the same span.
 		{ type: 'keyframe.add', target: pos, at: { frames: 0 }, value: [0, -50 * k] },
@@ -202,7 +264,7 @@ describe.runIf(enabled && !!CHROME)(
 					'--enable-unsafe-swiftshader',
 				],
 			});
-			page = await browser.newPage({ viewport: { width: W, height: H * 2 } });
+			page = await browser.newPage({ viewport: { width: W, height: H * 3 } });
 			page.on('pageerror', (e) => console.error(`[title-look] page error: ${e.message}`));
 			await page.goto(`${media.base}/index.html`);
 		}, 300_000);
@@ -238,18 +300,26 @@ describe.runIf(enabled && !!CHROME)(
 			return decode(output, doc.settings.width, doc.settings.height);
 		}
 
-		async function programFrame(frame: number, name: string): Promise<Raw> {
-			await page.evaluate((f) => {
-				(window as never as { __fxPlayer: { seek(a: string, b: number): void } }).__fxPlayer.seek(
-					'animated',
-					f,
-				);
-			}, frame);
+		async function programFrame(
+			frame: number,
+			name: string,
+			player = 'animated',
+			settleMs = 150,
+		): Promise<Raw> {
+			await page.evaluate(
+				([p, f]) => {
+					(window as never as { __fxPlayer: { seek(a: string, b: number): void } }).__fxPlayer.seek(
+						p as string,
+						f as number,
+					);
+				},
+				[player, frame] as const,
+			);
 			// Settle: the Player redraws asynchronously; two identical screenshots in a row end the wait.
 			let prev = null as Buffer | null;
 			for (let i = 0; i < 40; i++) {
-				await page.waitForTimeout(150);
-				const shot = await page.locator('#animated').screenshot();
+				await page.waitForTimeout(settleMs);
+				const shot = await page.locator(`#${player}`).screenshot();
 				if (prev?.equals(shot) && i > 2) break;
 				prev = shot;
 			}
@@ -327,6 +397,32 @@ describe.runIf(enabled && !!CHROME)(
 			expect(maxDiff(a, b)).toBeGreaterThan(50);
 			expect(
 				await page.evaluate(() => document.querySelector('[data-grade-chip]')?.textContent ?? null),
+			).toBeNull();
+		});
+
+		it('Program and export agree on light, shadow and reflection, with keys and a moving global light', async () => {
+			const doc = build({ glows: true });
+			// Mounted here, not with the page: on software GL its first frame takes longer than a page load may.
+			await page.evaluate(
+				(d) =>
+					(window as never as { __fxPlayer: { setDoc(a: string, b: unknown): void } }).__fxPlayer.setDoc(
+						'glows',
+						d,
+					),
+				doc,
+			);
+			for (const frame of [0, 30, 60]) {
+				const exported = await still(doc, frame, `glows-export-${frame}`);
+				// A frame here takes seconds: two equal screenshots 150 ms apart would prove nothing.
+				const program = await programFrame(frame, `glows-program-${frame}`, 'glows', 2500);
+				const score = ssim(luma(program), luma(exported), W, H);
+				console.info(
+					`[title-look] glows frame ${frame}: Program vs export SSIM ${score.toFixed(4)}, max ${maxDiff(program, exported)}`,
+				);
+				expect(score).toBeGreaterThan(0.98);
+			}
+			expect(
+				await page.evaluate(() => document.querySelector('#glows [data-grade-chip]')?.textContent ?? null),
 			).toBeNull();
 		});
 

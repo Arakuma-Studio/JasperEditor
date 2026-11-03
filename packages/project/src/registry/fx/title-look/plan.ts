@@ -27,7 +27,7 @@ import {
 	isPaintParam,
 	type LayerFieldReach,
 	type LayerParams,
-	type LayerPlanContext,
+	type LayerPrepassContext,
 	type LayerReach,
 	type TitleLayerType,
 	type TitleParamSpec,
@@ -105,6 +105,7 @@ function plannedLayers(look: ResolvedAppearance): PlannedLayer[] {
 		out.unshift({ def, id: l.id, params, base, fixedColor: l.fixedColor === true });
 		base += Math.max(0, num(def.grows?.(params)));
 	}
+	for (const l of out) if (l.def.outermost) l.base = base;
 	return out;
 }
 
@@ -345,12 +346,24 @@ export function planTitleLook(ctx: FxPlanContext): readonly ShaderPass[] {
 	const baseInclude = [unit, GLSL_TL_FIELD, ...(usesBounds ? [GLSL_TL_BOUNDS] : [])];
 	let blurDone = false;
 	layers.forEach((l, i) => {
-		const c: LayerPlanContext = { look, pxPerPercent, base: l.base };
 		const piece = pieces[i]!;
 		const blur = blurred[i];
 		const finish = l.def.finish ? titleFinish(String(l.params.finish ?? 'flat')) : undefined;
-		passes.push(...(finish?.prepass?.(l.params, c) ?? []), ...(l.def.prepass?.(l.params, c) ?? []));
 		const include = [...baseInclude, ...piece.include];
+		const c: LayerPrepassContext = {
+			look,
+			pxPerPercent,
+			base: l.base,
+			unitKnown: tl.unitPx !== null,
+			unit,
+			surfacePass: (pass) => ({
+				...pass,
+				include: [...include, ...(pass.include ?? [])],
+				uniforms: { ...piece.uniforms, ...pass.uniforms },
+				frag: `${piece.defines}${piece.glsl}${pass.frag}`,
+			}),
+		};
+		passes.push(...(finish?.prepass?.(l.params, c) ?? []), ...(l.def.prepass?.(l.params, c) ?? []));
 		if (blur && blur.sigma > 0) {
 			const again = blurDone ? { update: true } : {};
 			const sigmaPx = blur.sigma * pxPerPercent;

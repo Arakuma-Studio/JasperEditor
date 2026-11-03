@@ -202,7 +202,16 @@ describe('layer handles (TL-092)', () => {
 
 	it('come from the layer type', () => {
 		expect(of('rim')).toEqual([{ kind: 'distance', params: ['width'] }]);
-		expect(of('shadow')).toEqual([{ kind: 'offset', params: ['angle', 'distance'] }]);
+		expect(of('shadow')).toEqual([
+			{ kind: 'offset', params: ['angle', 'distance'], when: { param: 'useLight', value: false } },
+		]);
+	});
+
+	it('only while their `when` holds: a shadow following the light offers its distance and the light’s angle', () => {
+		expect(of('shadow', { useLight: true as never })).toEqual([
+			{ kind: 'distance', params: ['distance'], when: { param: 'useLight', value: true } },
+			{ kind: 'angle', params: ['angle'], target: 'light', when: { param: 'useLight', value: true } },
+		]);
 	});
 
 	it('add the angle of a gradient paint, only while the paint is a gradient', () => {

@@ -749,6 +749,18 @@ describe('layer handles on a frame (TL-092)', () => {
 		expect(lit[0]).toMatchObject({ param: 'distance', value: 8 });
 	});
 
+	it('offers each handle only in its state, and the light’s angle while a layer follows it', () => {
+		const free = handlesOf(f, { id: 'x', type: 'shadow', params: { angle: 45, distance: 8 } }, 0, {
+			angle: 225,
+		});
+		expect(free.map((h) => h.kind)).toEqual(['offset']);
+		const lit = handlesOf(f, { id: 'x', type: 'shadow', params: { useLight: true, distance: 8 } }, 0, {
+			angle: 30,
+		});
+		expect(lit.map((h) => h.kind)).toEqual(['axis', 'angle']);
+		expect(lit[1]).toMatchObject({ kind: 'angle', param: 'angle', light: true, value: 30 });
+	});
+
 	it('a layer of an unknown type has none', () => {
 		expect(handlesOf(f, { id: 'x', type: 'gone', params: {} }, 0, { angle: 0 })).toEqual([]);
 	});

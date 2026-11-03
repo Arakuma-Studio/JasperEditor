@@ -288,6 +288,23 @@ One change came out of this table: blurs read a full-resolution mask through mip
 7.1 s of a 14.0 s frame. The mask now renders directly at the blur's own reduced size (sigma ≈ 2–4 texels): the frame went
 from 13 989 ms to 5 796 ms under the same conditions, with SSIM against the other resolutions unchanged to the fourth decimal.
 
+**Deep Glow** (glows stream). Same machine, load average 8–16 during the run (other agents' work), median of 5 warm frames,
+2026-11-03. Rerun: `TL_PERF=1 pnpm exec vitest run packages/compositions/test/title-look-glows-gl.test.ts --reporter=verbose -t
+"per-frame cost"`. The canvas is the box grown by the glow's reach on every side, so a 200 px radius more than doubles a title's area.
+
+| Program resolution | What | Canvas | Passes | Median |
+|---|---|---|---|---|
+| Full | effect, radius 200 px, text 200 px in a 1200 × 280 box | 1608 × 688 | 33 | **6 981 ms** |
+| Full | effect, radius 200 px, full-frame picture | 2328 × 1488 | 33 | **17 192 ms** |
+| Full | look: face + `deepGlow` (Layers Below, radius 100 %) | 1608 × 688 | 42 | 9 309 ms |
+| 1/2 | effect, title box | 804 × 344 | 29 | 3 407 ms |
+| 1/2 | effect, full frame | 1164 × 744 | 29 | 5 896 ms |
+| 1/2 | look layer, title box | 804 × 344 | 38 | 1 988 ms |
+
+Under a load that varied by a factor of two, the 1/2 rows do not order the effect and the layer reliably. One profiled frame
+(0.43 Mpx, load 16): the full-size blurs of the narrow octaves cost most until octaves from 1.25 texels moved to half-size levels
+and summed at half size; that took the passes from 8.2–9.1 s to 6.6–6.9 s under the same load. Nothing was measured on a GPU.
+
 **Reading it.** A frame is proportional to the canvas area, so the box matters more than the layer count: a title-sized box
 costs a fifth of a frame-sized one. On a software renderer a look does not play in real time at Full; Program stays responsive
 through `fxPreviewScale`, and a still look with unchanged input and params is not redrawn at all (0 GL draws across seeks,

@@ -80,8 +80,8 @@ export type Handle =
 	| { kind: 'offset'; angleParam: string; distanceParam: string; angle: number; distance: number }
 	/** The same length along a fixed direction (a shadow following the light). */
 	| { kind: 'axis'; param: string; dir: Vec2; value: number }
-	/** A direction, on a ring. `base` is added to the value for where it points. */
-	| { kind: 'angle'; param: string; base: number; value: number; radius: number }
+	/** A direction, on a ring. `base` is added to the value for where it points. `light`: the look's light angle. */
+	| { kind: 'angle'; param: string; base: number; value: number; radius: number; light?: boolean }
 	/** A place along the shape, 0…100 %. */
 	| { kind: 'position'; param: string; dir: Vec2; extent: number; value: number };
 

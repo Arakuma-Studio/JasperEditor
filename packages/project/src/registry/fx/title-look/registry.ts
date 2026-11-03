@@ -101,15 +101,19 @@ export function withDefaults(
 }
 
 /**
- * A layer's Program handles (TL-092): the type's own, and the angle of every gradient paint (`lp.paint`'s `<name>Angle`).
- * A paint's angle turns nothing while the paint is not a gradient, so it has no handle then.
+ * A layer's Program handles (TL-092): the type's own while their `when` holds, and the angle of every gradient paint
+ * (`lp.paint`'s `<name>Angle`). A paint's angle turns nothing while the paint is not a gradient, so it has no handle then.
  */
 export function layerHandles(t: TitleLayerType, p: LayerParams): NonNullable<TitleLayerType['handles']> {
 	const paints = t.params.filter(isPaintParam);
 	const isGradient = (name: string) => (p[name] as Paint | undefined)?.kind === 'gradient';
 	const flat = new Set(paints.filter((s) => !isGradient(s.name)).map((s) => `${s.name}Angle`));
-	const own = (t.handles ?? []).filter((h) => !(h.kind === 'angle' && flat.has(h.params[0]!)));
-	const named = new Set(own.flatMap((h) => h.params));
+	const own = (t.handles ?? []).filter(
+		(h) =>
+			(!h.when || p[h.when.param] === h.when.value) &&
+			!(h.kind === 'angle' && h.target !== 'light' && flat.has(h.params[0]!)),
+	);
+	const named = new Set(own.filter((h) => h.target !== 'light').flatMap((h) => h.params));
 	const gradients = paints
 		.filter((s) => isGradient(s.name) && !named.has(`${s.name}Angle`))
 		.map((s) => ({ kind: 'angle' as const, params: [`${s.name}Angle`] }));
