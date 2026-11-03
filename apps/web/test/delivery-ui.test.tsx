@@ -16,6 +16,7 @@ import {
 	saveImportedLooks,
 } from '../src/delivery/LayerStyleDialog.tsx';
 import { layersTopFirst, PSD_DIALOG, registerPsdDialog } from '../src/delivery/PsdDialog.tsx';
+import type { ProgramOverlayHostProps } from '../src/extensions/index.ts';
 import { MENUBAR } from '../src/shell/menus/model.ts';
 import { makeSession } from './timeline-helpers.ts';
 
@@ -229,7 +230,7 @@ describe('Gamut overlay (TL-116)', () => {
 						view,
 						viewport: { width: 800, height: 600 },
 						transport: session.transport,
-					} as never)}
+					} as unknown as ProgramOverlayHostProps)}
 				/>
 			</SessionProvider>,
 		);
@@ -268,7 +269,7 @@ describe('Gamut overlay (TL-116)', () => {
 						view: { x: 0, y: 0, scale: 1 },
 						viewport: { width: 1, height: 1 },
 						transport: session.transport,
-					} as never)}
+					} as unknown as ProgramOverlayHostProps)}
 				/>
 			</SessionProvider>,
 		);
