@@ -2,7 +2,7 @@
 // keyframe a param, undo, save and reload. Looks come from the project so the spec does not depend on the library's data.
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { expect, type Page, test } from '@playwright/test';
+import { expect, type Locator, type Page, test } from '@playwright/test';
 import {
 	appliedLabels,
 	browserLaunch,
@@ -10,6 +10,7 @@ import {
 	createProject,
 	enableAgentBridge,
 	focusTimeline,
+	playheadFrame,
 	programPixels,
 	query,
 	ROOT,
@@ -71,6 +72,9 @@ async function look(id: string): Promise<Stored['appearance'] | null> {
 }
 
 const card = (name: string) => page.getByRole('listitem', { name: new RegExp(`^${name} \\(`) });
+/** The shipped library comes first and the grid is virtualised: show the project's own looks. */
+const projectLooks = (scope: Page | Locator = page) =>
+	scope.getByRole('button', { name: 'This Project', exact: true }).click();
 
 test.beforeAll(async ({ browser }) => {
 	page = await browser.newPage();
@@ -87,6 +91,7 @@ test.beforeAll(async ({ browser }) => {
 	await expect.poll(async () => (await clips(page)).length).toBe(0);
 	await page.getByText('Motion Templates', { exact: true }).first().click();
 	await page.getByRole('tab', { name: 'Looks' }).click();
+	await projectLooks();
 	await expect(card('Gold')).toBeVisible();
 });
 
@@ -96,7 +101,9 @@ test.afterAll(async () => {
 
 test('the grid mounts cards with their colourways; a poster comes from the engine', async () => {
 	await expect(page.getByTestId('looks-status')).toContainText('add a title at the playhead');
-	await expect(card('Gold').locator('[data-colorway]')).toHaveCount(2);
+	// Its own colourways come first; the library's factory colourways follow (TL-086).
+	await expect(card('Gold').locator('[data-colorway]').nth(0)).toHaveAttribute('data-colorway', 'cw.ember');
+	await expect(card('Gold').locator('[data-colorway]').nth(1)).toHaveAttribute('data-colorway', 'cw.ice');
 	await expect(card('Gold').locator('[data-poster]')).toHaveAttribute('data-poster', 'ready', {
 		timeout: 180_000,
 	});
@@ -163,6 +170,84 @@ test('selecting a layer outlines it in Program, and its handle edits it in one u
 	await expect(page.getByTestId('look-name')).toHaveText('Gold');
 });
 
+/** Drags a Program handle by (dx, dy) screen px from where it is drawn. */
+async function dragHandle(testId: string, dx: number, dy: number) {
+	const h = page.getByTestId(testId).locator('circle').last();
+	const box = (await h.boundingBox())!;
+	const x = box.x + box.width / 2;
+	const y = box.y + box.height / 2;
+	await page.mouse.move(x, y);
+	await page.mouse.down();
+	await page.mouse.move(x + dx, y + dy, { steps: 5 });
+	await page.mouse.up();
+}
+
+test('a shadow’s offset handle sets angle and distance in one step, and keys them at the playhead when animated', async () => {
+	const [title] = await clips(page);
+	const shadow = () => look(title!.id).then((l) => l!.layers.find((x) => x.type === 'shadow')!);
+	await page.getByTestId('look-layer-open-2').click();
+	await expect(page.getByTestId('look-layer-name')).toHaveText('Shadow');
+	const before = await shadow();
+	const n = (await appliedLabels(page)).length;
+	await dragHandle('look-handle-distance', 0, 60);
+	await expect
+		.poll(async () => (await shadow()).params.distance!.value)
+		.not.toBe(before.params.distance!.value);
+	expect((await shadow()).params.angle!.value).not.toBe(before.params.angle!.value);
+	expect((await appliedLabels(page)).length).toBe(n + 1);
+	await page.screenshot({ path: join(OUT, 'shadow-offset.png') });
+
+	// Animated: the drag adds a key at the playhead instead of moving the whole animation.
+	const seq = await query<{ sequenceId: string }>(page, 'sequence.summary');
+	const clip = await query<{ effects: { id: string; effectId: string }[] }>(page, 'doc.get', {
+		path: ['sequences', seq.sequenceId, 'clips', title!.id],
+	});
+	const fxId = clip.effects.find((e) => e.effectId === 'jasper.title-look')!.id;
+	const id = (await shadow()).id;
+	const r = await transact(page, [
+		{
+			type: 'param.setAnimated',
+			target: ['appearance', fxId, id, 'distance'],
+			animated: true,
+			at: { sequenceFrame: 0 },
+		},
+	] as never);
+	expect(r.ok, JSON.stringify(r)).toBe(true);
+	const start = await playheadFrame(page);
+	for (let i = 0; i < 12; i++) await page.getByTestId('btn-step-forward').click();
+	await expect.poll(() => playheadFrame(page)).toBe(start + 12);
+	await dragHandle('look-handle-distance', 40, 0);
+	await expect.poll(async () => (await shadow()).params.distance!.keyframes.length).toBe(2);
+});
+
+test('a shadow following the light turns the look’s light from its handle', async () => {
+	const [title] = await clips(page);
+	const appearance = async () =>
+		(await look(title!.id))! as Stored['appearance'] & { light: { angle: { value: number } } };
+	const seq = await query<{ sequenceId: string }>(page, 'sequence.summary');
+	const clip = await query<{ effects: { id: string; effectId: string }[] }>(page, 'doc.get', {
+		path: ['sequences', seq.sequenceId, 'clips', title!.id],
+	});
+	const fxId = clip.effects.find((e) => e.effectId === 'jasper.title-look')!.id;
+	const id = (await appearance()).layers.find((x) => x.type === 'shadow')!.id;
+	expect(
+		(
+			await transact(page, [
+				{ type: 'param.set', target: ['appearance', fxId, id, 'useLight'], value: true },
+			] as never)
+		).ok,
+	).toBe(true);
+	await expect(page.getByTestId('look-handle-light-angle')).toBeVisible();
+	await expect(page.getByTestId('look-handle-angle')).toHaveCount(0);
+	const before = (await appearance()).light.angle.value;
+	const n = (await appliedLabels(page)).length;
+	// Across the ring, not along its radius: the light is up and to the left (225°), so up and to the right turns it.
+	await dragHandle('look-handle-light-angle', 60, -40);
+	await expect.poll(async () => (await appearance()).light.angle.value).not.toBe(before);
+	expect((await appliedLabels(page)).length).toBe(n + 1);
+	await page.screenshot({ path: join(OUT, 'light-angle.png') });
+});
+
 test('Effect Controls keyframes a layer param', async () => {
 	const [title] = await clips(page);
 	const rim = (await look(title!.id))!.layers.find((l) => l.type === 'rim')!;
@@ -208,6 +293,7 @@ test('Graphics ▸ Apply Look… opens the same grid, and Remove Look leaves the
 	await page.getByRole('menuitem', { name: 'Apply Look…' }).click();
 	const dialog = page.getByTestId('apply-look-dialog');
 	await expect(dialog).toBeVisible();
+	await projectLooks(dialog);
 	await dialog.getByRole('listitem', { name: /^Neon \(/ }).click();
 	await expect(dialog).toHaveCount(0);
 	await expect.poll(async () => (await look(title!.id))?.layers[0]?.type).toBe('glow');
@@ -222,6 +308,7 @@ test('a card dragged onto a clip in the Timeline applies there; on an empty plac
 	const [title] = await clips(page);
 	await page.getByText('Motion Templates', { exact: true }).first().click();
 	await page.getByRole('tab', { name: 'Looks' }).click();
+	await projectLooks();
 	const area = page.getByTestId('timeline-track-area');
 	await card('Gold').dragTo(area.locator(`[data-clip-id="${title!.id}"]`).first());
 	await expect.poll(async () => (await look(title!.id))?.layers[0]?.type).toBe('shadow');
@@ -232,4 +319,53 @@ test('a card dragged onto a clip in the Timeline applies there; on an empty plac
 	expect(added.kind).toBe('text');
 	expect((await look(added.id))?.layers[0]?.type).toBe('glow');
 	expect((await look(title!.id))?.layers[0]?.type).toBe('shadow');
+});
+
+test('Graphics ▸ New Layer ▸ Generator adds a fire below the title; a preset chip sets it in one step; the palette finds presets', async () => {
+	const [title] = await clips(page);
+	await page
+		.locator(`[data-testid="timeline-track-area"] [data-clip-id="${title!.id}"]`)
+		.first()
+		.click({ position: { x: 12, y: 10 } });
+	const before = (await clips(page)).length;
+	await page.getByTestId('menubar').getByRole('menuitem', { name: 'Graphics', exact: true }).click();
+	await page.getByRole('menuitem', { name: 'New Layer', exact: true }).hover();
+	await page.getByRole('menuitem', { name: 'Generator', exact: true }).hover();
+	await page.getByRole('menuitem', { name: 'Fire', exact: true }).click();
+	await expect.poll(async () => (await clips(page)).length).toBe(before + 1);
+	const all = await clips(page);
+	const fire = all.find((c) => !c.kind.startsWith('text'))!;
+	const t = all.find((c) => c.id === title!.id)!;
+	expect([fire.start, fire.duration]).toEqual([t.start, t.duration]);
+	const seq = await query<{ sequenceId: string; tracks?: { id: string; label: string }[] }>(
+		page,
+		'sequence.summary',
+	);
+	const fx = async () =>
+		(
+			await query<{
+				effects: { id: string; effectId: string; params: Record<string, { value: unknown }> }[];
+			}>(page, 'doc.get', { path: ['sequences', seq.sequenceId, 'clips', fire.id] })
+		).effects[0]!;
+	expect((await fx()).effectId).toBe('jasper.generator.fire');
+	// It is selected: Effect Controls shows its chips above its params.
+	await page.getByText('Effect Controls', { exact: true }).first().click();
+	const chips = page.getByTestId(`generator-presets-${(await fx()).id}`);
+	await expect(chips).toBeVisible();
+	await expect(chips.locator('[data-preset="behind"]')).toHaveAttribute('aria-pressed', 'true');
+	const n = (await appliedLabels(page)).length;
+	await chips.locator('[data-preset="blaze"]').click();
+	await expect.poll(async () => (await fx()).params.height?.value).toBe(130);
+	expect((await appliedLabels(page)).length).toBe(n + 1);
+	await expect(chips.locator('[data-preset="blaze"]')).toHaveAttribute('aria-pressed', 'true');
+	await page.screenshot({ path: join(OUT, 'generator-chips.png') });
+
+	await focusTimeline(page);
+	await page.keyboard.press('Control+Shift+KeyP');
+	await page.getByTestId('palette-input').fill('spirit fire');
+	const row = page.getByTestId('palette-row').filter({ hasText: 'New Generator Layer: Fire › Spirit Fire' });
+	await expect(row).toBeVisible();
+	await page.screenshot({ path: join(OUT, 'generator-palette.png') });
+	await row.click();
+	await expect.poll(async () => (await clips(page)).length).toBe(before + 2);
 });

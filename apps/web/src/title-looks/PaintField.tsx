@@ -137,7 +137,7 @@ export function PaintGradientBlock(props: { row: Row; ctx: RowContext }) {
 			gradient={paint.gradient}
 			palette={paletteOf(row)}
 			label={row.label}
-			spansApply={row.bindings.every((b) => b.clip.kind === 'text')}
+			clipKinds={row.bindings.map((b) => b.clip.kind)}
 			onChange={(g) => setGradient(row, ctx, g)}
 		/>
 	);

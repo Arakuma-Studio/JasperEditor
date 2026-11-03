@@ -99,7 +99,18 @@ vec4 tl_layer(TlSurface s) {
 			outside: p.mode === 'inside' ? 1 : lastLine + 1,
 		};
 	},
-	handles: [{ kind: 'distance', params: ['spacing'] }],
+	// The second line, where First Line plus Spacing put it: inside the shape, or around it.
+	handles: [
+		{
+			kind: 'distance',
+			params: ['spacing'],
+			after: ['offset'],
+			from: 'inside',
+			when: { param: 'mode', value: 'inside' },
+		},
+		{ kind: 'distance', params: ['spacing'], after: ['offset'], when: { param: 'mode', value: 'outside' } },
+		{ kind: 'distance', params: ['spacing'], after: ['offset'], when: { param: 'mode', value: 'both' } },
+	],
 	summary(p) {
 		return {
 			swatch: layerSwatch(CONTOUR_LINES_LAYER, p),

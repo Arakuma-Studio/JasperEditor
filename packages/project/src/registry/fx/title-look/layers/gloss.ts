@@ -28,8 +28,10 @@ vec4 tl_layer(TlSurface s) {
 }`,
 	}),
 	handles: [
-		{ kind: 'position', params: ['height'] },
-		{ kind: 'angle', params: ['angle'] },
+		// The cap's edge runs down the shape from its angle (`tl_glossCap`: 0 % at the top, 100 % at the bottom); the
+		// angle's zero points up, where the cap is.
+		{ kind: 'position', params: ['height'], along: { turn: 90 } },
+		{ kind: 'angle', params: ['angle'], along: { turn: -90 } },
 	],
 	summary(p) {
 		return {

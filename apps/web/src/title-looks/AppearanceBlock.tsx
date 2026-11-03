@@ -11,6 +11,7 @@ import { CaretGlyph, TrashGlyph } from '../panels/properties/controls/glyphs.tsx
 import type { Row } from '../panels/properties/lib/model.ts';
 import type { InspectorOps } from '../panels/properties/lib/ops.ts';
 import { LIGHT_TARGET, lookFocus } from './focus.ts';
+import { GeneratorPresetChips, generatorOf } from './GeneratorPresets.tsx';
 import { layerName } from './selection.ts';
 
 type Layout = { left: CSSProperties; lane(children: ReactNode): ReactNode };
@@ -20,6 +21,8 @@ export function AppearanceBlock(props: {
 	ops: InspectorOps;
 	seq: Sequence;
 	range: Range;
+	/** The sequence frame the rows are read at (a preset chip writes there). */
+	frame: number;
 	readOnly: boolean;
 	layout: Layout;
 	collapsed: Record<string, boolean>;
@@ -36,6 +39,7 @@ export function AppearanceBlock(props: {
 		target: string,
 		lead?: ReactNode,
 		actions?: ReactNode,
+		top?: ReactNode,
 	) => {
 		const id = `${model.fxId}:appearance:${key}`;
 		const visible = rows.filter(props.filter);
@@ -64,6 +68,7 @@ export function AppearanceBlock(props: {
 					</div>
 					{layout.lane(<SummaryLane rows={rows} seq={seq} range={range} />)}
 				</div>
+				{open && top ? <div style={layout.left}>{top}</div> : null}
 				{open ? visible.map((r) => props.renderRow(r)) : null}
 			</div>
 		);
@@ -74,6 +79,7 @@ export function AppearanceBlock(props: {
 			{group('light', 'Light', model.light, LIGHT_TARGET)}
 			{model.layers.map((l) => {
 				const name = layerName(l.layer);
+				const generator = generatorOf(l.layer.type);
 				return group(
 					l.layer.id,
 					name,
@@ -114,6 +120,18 @@ export function AppearanceBlock(props: {
 					>
 						<TrashGlyph size={12} />
 					</MiniButton>,
+					generator ? (
+						<div className="pr-1 pl-8">
+							<GeneratorPresetChips
+								generator={generator}
+								rows={l.rows}
+								frame={props.frame}
+								readOnly={props.readOnly}
+								apply={(label, commands) => ops.apply(label, commands)}
+								data-testid={`ec-look-generator-presets-${l.layer.id}`}
+							/>
+						</div>
+					) : undefined,
 				);
 			})}
 		</div>

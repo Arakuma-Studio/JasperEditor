@@ -6,6 +6,7 @@ import {
 	GRADIENT_SPANS,
 	GRADIENT_TYPES,
 	type Gradient,
+	gradientSpanOn,
 	MAX_GRADIENT_STOPS,
 	type RGBA,
 	ROLE_LABELS,
@@ -13,6 +14,7 @@ import {
 } from '@jasper/project';
 import { cx, Icon } from '@jasper/ui';
 import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
+import { t } from '../i18n/runtime.ts';
 import { ColorField, MiniButton, SelectField } from '../panels/properties/controls/fields.tsx';
 import { ScrubbyNumber } from '../panels/properties/controls/ScrubbyNumber.tsx';
 import {
@@ -34,8 +36,11 @@ export function GradientField(props: {
 	gradient: Gradient;
 	palette: Palette;
 	label: string;
-	/** Line and glyph spans need text; other clips draw them as a block, and the control says so (TL-036). */
-	spansApply: boolean;
+	/**
+	 * The kinds of the clips the gradient paints. Line and glyph spans need text: on other clips they draw as a block
+	 * (`gradientSpanOn`, TL-036), and the control says so.
+	 */
+	clipKinds: readonly string[];
 	disabled?: boolean;
 	onChange(g: Gradient): void;
 }) {
@@ -49,6 +54,14 @@ export function GradientField(props: {
 	const index = Math.min(selected, g.stops.length - 1);
 	const stop = g.stops[index]!;
 	const full = g.stops.length >= MAX_GRADIENT_STOPS;
+	// TL-036: what each clip actually draws for a span; the options and the note carry the reason.
+	const blocked = (span: Gradient['span']) =>
+		props.clipKinds.filter((k) => gradientSpanOn(span, k).spanNote === 'needs-text').length;
+	const kinds = props.clipKinds.length;
+	const spanLabels = GRADIENT_SPANS.map((span, i) =>
+		kinds > 0 && blocked(span) === kinds ? t('{0} (needs text)', SPAN_LABELS[i]!) : SPAN_LABELS[i]!,
+	);
+	const spanBlocked = blocked(g.span);
 
 	const posAt = (x: number) => {
 		const r = bar.current!.getBoundingClientRect();
@@ -116,7 +129,7 @@ export function GradientField(props: {
 				<SelectField
 					value={g.span}
 					options={GRADIENT_SPANS}
-					labels={SPAN_LABELS}
+					labels={spanLabels}
 					label={`${props.label} gradient span`}
 					disabled={disabled}
 					onChange={(span) => props.onChange({ ...g, span })}
@@ -141,9 +154,13 @@ export function GradientField(props: {
 					/>
 				) : null}
 			</div>
-			{!props.spansApply && g.span !== 'block' ? (
+			{spanBlocked > 0 ? (
 				<p className="text-pr-small text-pr-muted" data-testid="look-gradient-span-note">
-					Line and Glyph follow text. On this clip they draw as Block.
+					{spanBlocked === kinds
+						? kinds === 1
+							? 'Line and Glyph follow text. On this clip they draw as Block.'
+							: 'Line and Glyph follow text. On these clips they draw as Block.'
+						: 'Line and Glyph follow text. On the clips without text they draw as Block.'}
 				</p>
 			) : null}
 			<div className="relative h-[24px] w-full select-none">

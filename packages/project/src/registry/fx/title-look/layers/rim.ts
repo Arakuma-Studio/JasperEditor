@@ -40,7 +40,7 @@ float tl_bandPx(TlSurface s) { return tl_px(u_width); }
 	grows: (p) => num(p.offset) + num(p.width),
 	reach: (p) => num(p.offset) + num(p.width),
 	handles: [
-		{ kind: 'distance', params: ['width'] },
+		{ kind: 'distance', params: ['width'], after: ['offset'] },
 		{ kind: 'angle', params: ['paintAngle'] },
 	],
 	summary(p) {

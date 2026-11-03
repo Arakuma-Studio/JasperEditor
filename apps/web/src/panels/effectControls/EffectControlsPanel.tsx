@@ -1113,6 +1113,7 @@ function EffectControlsBody({ session, instanceId }: { session: EditorSession; i
 												ops={ops}
 												seq={seq}
 												range={range}
+												frame={frame}
 												readOnly={readOnly}
 												layout={{ left, lane }}
 												collapsed={collapsed}

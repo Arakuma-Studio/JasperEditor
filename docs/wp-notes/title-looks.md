@@ -140,7 +140,8 @@ looks and compile once. A six-layer look with a blur plans about 25 passes. Meas
   at rest and stays on the letter as it moves, turns and scales. `block` is the text at rest in a uniform (no pass); `line` and
   `glyph` need `tlSpan`, the owner of each pixel: nearest box with the runner-up and its share, so a seam under a rim
   antialiases. Only clips whose look has a gradient report anything (`appearanceWantsTextSpans`). Without records (`still`,
-  `shape`, `video`…) every span is the frame's alpha bounds; `gradientSpanOn(span, clip.kind)` says so to the UI.
+  `shape`, `video`…) every span is the frame's alpha bounds; `gradientSpanOn(span, clip.kind)` says so to the UI, which marks Line and Glyph
+  "(needs text)" when no selected clip has text and notes under the gradient that they draw as Block there (`GradientField`).
   Vertical text (TL-111, merged with spans at integration 2): the rest layout is measured with the box height, where a column
   wraps, and a glyph's box is its cell, since a column places glyphs by the middle of the cell rather than on a baseline
   (`TypesetLayout.vertical`). `title-look-finishes.e2e.test.ts` "glyph spans on vertical text" failed with either change missing
@@ -340,7 +341,7 @@ Fields you may need:
 | `depth` | The layer's own shape for its finish (`LayerDepth`): `glsl` defines `tl_depth(s)` and `tl_bandPx(s)`, `ring: true` for rings. Default the filled shape |
 | `uniforms(p)` | Uniforms beyond one per param: curves as data textures, derived values. Also on a finish |
 | `timeDependent(p)` | The layer moves on its own: the clip then redraws every frame and `u_tlTime` is live |
-| `handles` | On-canvas handles for TL-092: `{kind, params}`, `target: 'light'` for the look's light, `when: {param, value}` when it only applies in one state |
+| `handles` | On-canvas handles for TL-092: `{kind, params}`, `target: 'light'` for the look's light, `when: {param, value}` when it only applies in one state; where it sits when the kind's default does not say: `from` (`edge`, `inside`, `below`, `band`, `corner`, `centre`), `after` (params whose lengths come first), `along` (the angle param or gradient paint a line follows, plus a `turn`) and `range` (`{band}` for a band that starts and ends outside the shape). Read them off your GLSL |
 | `shader(p, ctx)` | It is a function: return different GLSL per enum to keep programs small (`shadow.ts`, `glow.ts`) |
 
 ### Worked example: a standalone effect
@@ -681,6 +682,29 @@ Decisions:
   paint angle has no handle while the paint is not a gradient. A handle with `target: 'light'` turns the look's light (or the
   sequence's, when the look follows it), and a shadow that follows the light moves its distance along it. An offset handle
   starts at the edge of the box: at Fit, a 10 % shadow is 5 screen px from the anchor and could not be grabbed there.
+- **Every handle sits on what it edits** (UI polish): each declaration says where from its GLSL. Distances chain (an inline's
+  inset, then its width, inwards); a rim's width starts past its offset and the rims above it; contour lines' spacing is the second
+  line, inside or around as their mode says; a reflection's gap starts at the bottom edge and goes below 0 as its range allows;
+  a sheen's width is measured from its band's centre; a plate's corner runs along the top edge of the grown box and its skew leans
+  from upright (slant plates only); a gloss cap's height runs down from its angle, whose ring points at the cap; a gradient
+  overlay's band position carries the band from fully before the shape to fully past it along the paint's direction; a texture's
+  scale is a bar from the centre along its angle. Layers that start from the whole silhouette (`outermost`) count every rim. A
+  drag stops at the param's range, an angle moves by the turn (never a jump of 360°), and each drag is one gesture: one History
+  entry, written at the playhead, so an animated param gets a key there (`title-looks-handles.test.tsx`, `e2e/title-looks.spec.ts`).
+- **A Rec. 2020 Program with text was blank** (the interchange stream saw it with the Gamut Warning on; the overlay was not the
+  cause). Text in a wide working space takes the colour input transform, a colour effect on a DOM layer, so the Program stack is
+  drawn by the flat compositor (`fx/flat.tsx`). Its cleanup cancelled the pending draw request but kept the id, and React's
+  development Strict Mode runs that cleanup without unmounting: the layout effect then saw an id and never asked again, so the
+  compositor's canvas stayed transparent. The cleanup now clears the id (`FxPicture` had the same pattern).
+  `packages/compositions/test/flat-compositor-strict.test.tsx` failed before the fix. A production build has no Strict Mode, but
+  an `<Activity>` hidden and shown would have done the same.
+- **Generator presets are chips** at the top of a generator's inspector: the opened generator layer in Properties ▸ Appearance
+  and in Effect Controls, and a standalone generator effect's section (an effect editor per `jasper.generator.*`). A chip sets
+  every own param of the generator (its colours too, not the look paint, Own Colours or Opacity) to the preset over the defaults,
+  only where they differ, in one History entry, through each row's `planSet`: an animated param gets a key at the playhead
+  rather than losing its animation. The chip the generator holds reads as pressed. `Graphics ▸ New Layer ▸ Generator ▸ …`
+  (`graphics.addGenerator`) adds a standalone generator below the selected title for its length, or at the playhead on V1 with
+  no title, and selects it; the palette lists `New Generator Layer: …` for each generator and each preset that sets something.
 - **`Clip › Layer` sits in the Tools strip** as vertical text when the strip is vertical; a click returns to the clip. Selecting a
   layer never changes the clip selection.
 - **Colourways coalesce until the next edit** (`coalesceWindowMs: Infinity`, `coalesceRelabel`): the entries have different

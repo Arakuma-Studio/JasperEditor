@@ -191,7 +191,7 @@ export const TEXTURE_LAYER: TitleLayerInit = {
 			: {},
 	timeDependent: (p) => p.kind !== 'erosion' && num(p.boil) > 0,
 	handles: [
-		{ kind: 'distance', params: ['scale'] },
+		{ kind: 'distance', params: ['scale'], from: 'centre' },
 		{ kind: 'angle', params: ['angle'] },
 	],
 	summary(p) {

@@ -11,10 +11,12 @@ import {
 	FREE_RING,
 	freeDelta,
 	GIZMO_MAX_PX,
+	GIZMO_MIN_OPEN,
 	GIZMO_MIN_PX,
 	gizmoRadius,
 	polylinePath,
 	tangentAt,
+	viewFacingCircle,
 	worldCircle,
 } from '../src/three-d/gizmo.ts';
 import { Scene3DOverlay } from '../src/three-d/Scene3DOverlay.tsx';
@@ -124,6 +126,39 @@ describe('gizmo maths (TL-079)', () => {
 		);
 	});
 
+	it('turns an arc that would read edge-on towards the viewer, and leaves an open one alone', () => {
+		const normalOf = (pts: readonly [number, number, number][], c: [number, number, number]) => {
+			const a = pts[0]!.map((x, i) => x - c[i]!);
+			const b = pts[16]!.map((x, i) => x - c[i]!);
+			const n = [a[1]! * b[2]! - a[2]! * b[1]!, a[2]! * b[0]! - a[0]! * b[2]!, a[0]! * b[1]! - a[1]! * b[0]!];
+			const l = Math.hypot(n[0]!, n[1]!, n[2]!);
+			return n.map((x) => x / l);
+		};
+		const c: [number, number, number] = [5, -3, 40];
+		const sight: [number, number, number] = [0, 0, 1];
+		// Head-on, X and Y are edge-on: each opens to the minimum, keeps its radius and still turns about its own axis.
+		for (const axis of [0, 1] as const) {
+			const pts = viewFacingCircle(c, axis, 10, sight, 64);
+			for (const p of pts) expect(Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2])).toBeCloseTo(10);
+			const n = normalOf(pts, c);
+			expect(Math.abs(n[2]!)).toBeCloseTo(GIZMO_MIN_OPEN, 5);
+			expect(n[axis]!).toBeGreaterThan(0.9);
+		}
+		// Z faces the viewer already: the same circle as the world's.
+		const z = viewFacingCircle(c, 2, 10, sight, 16);
+		worldCircle(c, 2, 10, 16).forEach((p, i) => {
+			for (let k = 0; k < 3; k++) expect(z[i]![k]).toBeCloseTo(p[k]!);
+		});
+		// Open enough: untouched, and just past the threshold it has barely turned (no pop while orbiting).
+		const tilt = (deg: number) => {
+			const r = (deg * Math.PI) / 180;
+			return [Math.cos(r), 0, Math.sin(r)] as [number, number, number];
+		};
+		const open = Math.acos(GIZMO_MIN_OPEN) * (180 / Math.PI);
+		expect(normalOf(viewFacingCircle(c, 0, 10, tilt(open - 5), 64), c)[0]).toBeCloseTo(1, 6);
+		expect(normalOf(viewFacingCircle(c, 0, 10, tilt(open + 0.5), 64), c)[0]).toBeGreaterThan(0.999);
+	});
+
 	it('free rotation turns about Y across and X along the screen', () => {
 		expect(freeDelta([0, 0], [10, 0])).toEqual({ x: -0, y: 5 });
 		expect(freeDelta([0, 0], [0, 10]).x).toBe(-5);
@@ -162,6 +197,14 @@ describe('rotation gizmo in the overlay', () => {
 		}));
 		overlay(session, seqId);
 		for (const a of ['X', 'Y', 'Z']) expect(screen.getByTestId(`scene3d-arc-${a}`)).toBeTruthy();
+		// Head-on, the X and Y arcs are ellipses that can be grabbed, not lines.
+		for (const a of ['X', 'Y']) {
+			const d = screen.getByTestId(`scene3d-arc-${a}`).querySelector('path')!.getAttribute('d')!;
+			const pts = [...d.matchAll(/(-?[\d.]+),(-?[\d.]+)/g)].map((m) => [Number(m[1]), Number(m[2])]);
+			const w = Math.max(...pts.map((p) => p[0]!)) - Math.min(...pts.map((p) => p[0]!));
+			const h = Math.max(...pts.map((p) => p[1]!)) - Math.min(...pts.map((p) => p[1]!));
+			expect(Math.min(w, h) / Math.max(w, h)).toBeGreaterThan(0.3);
+		}
 		const ring = screen.getByTestId('scene3d-free-ring');
 		const r = Number(ring.getAttribute('r'));
 		expect(r).toBeGreaterThanOrEqual(GIZMO_MIN_PX * FREE_RING);

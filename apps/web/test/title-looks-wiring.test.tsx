@@ -41,8 +41,7 @@ describe('wiring (TL-097)', () => {
 
 	it('every look command is in the Graphics menu, and every menu entry is a command', () => {
 		const inMenu = new Set(flat(graphics.items as never));
-		for (const c of titleLookCommands)
-			if (c.id !== 'graphics.addGenerator') expect(inMenu.has(c.id), c.id).toBe(true);
+		for (const c of titleLookCommands) expect(inMenu.has(c.id), c.id).toBe(true);
 		for (const id of inMenu) if (id.startsWith('graphics.')) expect(!!getCommand(id) || id, id).toBeTruthy();
 	});
 

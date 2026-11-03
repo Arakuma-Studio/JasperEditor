@@ -56,7 +56,11 @@ function stepColorways(ctx: CommandCtx, dir: 1 | -1): void {
 }
 
 const AddLayerArgs = z.object({ layerType: z.string().min(1).max(64) });
-const AddGeneratorArgs = z.object({ generatorId: z.string().min(1).max(64) });
+const AddGeneratorArgs = z.object({
+	generatorId: z.string().min(1).max(64),
+	/** TL-063: one of the generator's presets (default: its defaults). */
+	preset: z.string().min(1).max(64).optional(),
+});
 
 export const titleLookCommands: UiCommand[] = [
 	{
@@ -245,15 +249,16 @@ export const titleLookCommands: UiCommand[] = [
 	},
 	{
 		id: 'graphics.addGenerator',
-		label: 'Add Generator',
-		description: 'Adds a generator on a free track below the selected title, at the playhead.',
+		label: 'New Generator Layer',
+		description:
+			'Adds a generator layer on a free track below the selected title, for its length; with no title, at the playhead.',
 		scope: 'editing',
 		hidden: true,
 		argsSchema: AddGeneratorArgs,
 		when: (ctx) => hasSequence(ctx) && canEdit(ctx),
 		disabledReason: (ctx) => (hasSequence(ctx) ? undefined : 'Open a sequence first'),
 		run: (ctx, args) => {
-			const { generatorId } = AddGeneratorArgs.parse(args);
+			const { generatorId, preset } = AddGeneratorArgs.parse(args);
 			const session = ctx.session;
 			if (!session) return;
 			const title = lookTargets(session).find((c) => c.kind === 'text');
@@ -264,7 +269,7 @@ export const titleLookCommands: UiCommand[] = [
 			const at = title ? title.start : session.transport.getState().frame;
 			const duration = title ? title.duration : Math.max(1, Math.round(5 * fps));
 			const r = session.apply({
-				label: 'Add Generator',
+				label: 'New Generator Layer',
 				origin: 'user',
 				sequenceId: seq.id,
 				commands: [
@@ -274,11 +279,17 @@ export const titleLookCommands: UiCommand[] = [
 						at,
 						duration,
 						...(title ? { belowClipId: title.id } : {}),
+						...(preset ? { preset } : {}),
 					} as Command,
 				],
 			});
-			if (!r.ok)
+			if (!r.ok) {
 				ctx.ui.toast({ kind: 'error', message: r.errors[0]?.message ?? 'Could not add the generator' });
+				return;
+			}
+			// Selected like any new layer, so Effect Controls shows it with its preset chips.
+			const clipId = (r.results[0] as { clipId?: string } | undefined)?.clipId;
+			if (clipId) session.select('timeline', [clipId]);
 		},
 	},
 ];

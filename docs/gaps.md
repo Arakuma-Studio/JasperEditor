@@ -871,8 +871,6 @@ per area are in [wp-notes/agent-footage.md](wp-notes/agent-footage.md). Limits t
 
 Status of the foundation; streams still in progress update this list. Evidence: [wp-notes/title-looks.md](wp-notes/title-looks.md).
 
-- **`line` and `glyph` gradient spans act as `block` on clips without text** (TL-036); `gradientSpanOn(span, clip.kind)` gives the
-  UI the fact (`spanNote: 'needs-text'`). The Appearance UI still has to show it.
 - **A title of more than 4096 drawn glyphs** gets span records for its first 4096 (`MAX_SPAN_GLYPHS`); the owner pass is linear
   in the glyphs. Nobody sets a gradient per glyph on that much text, but it is a hard cap, not a soft one.
 - **Lights stay on screen when a title turns, floors do not.** The look's light, the rooms its finishes mirror and the directions of
@@ -933,6 +931,10 @@ Status of the foundation; streams still in progress update this list. Evidence: 
 - **Split Image** (TL-115) refuses clips with masks or trackers: they are shaped to the whole picture. Remove them first.
 - **Delivery reports are in English**: the PSD plan's baked lines and blockers and the layer-style reports come from the engine and the
   model as text, like job errors, so the Spanish UI shows them in English around translated headings.
+- **Text in a Rec. 2020 or P3 sequence is previewed without its colour input transform**: the Program stack is drawn flat there
+  (the display transform and the text's own HTML-in-Canvas cannot nest), and a DOM layer's colour effects are not run in a flat
+  stack, so the title carries the chip "Grade not previewed under this blend mode" (its wording names blend modes, the other
+  reason a stack goes flat). Seen while fixing the blank Program (UI polish); renders were not compared here.
 - **Gamut Warning** (TL-116) measures on the engine per paused frame, not during playback: the Program picture is DOM. Legal range
   assumes 4:2:0 delivery and nearest-neighbour chroma.
 - **Software rendering is slow**: ≈ 1.3 s per 1080p frame for a six-layer look on a title-sized box on SwiftShader, and an
@@ -948,8 +950,11 @@ Status of the foundation; streams still in progress update this list. Evidence: 
   keyline drew far out in the glow's tail is gone).
 - **Deep Glow is slow on software GL**: ≈ 7 s per frame at full resolution for a title, ≈ 17 s for a full frame on this host
   ([performance.md](performance.md) §7).
-- **Handles (TL-092) are declared, not drawn**: shadow offset and light angle are in each layer's `handles`; the Program monitor
-  overlay that reads them belongs to the UI stream. Standalone effects have no handles beyond `point` params.
+- **Handles (TL-092) are placed on the layer's box, not its ink.** Every declared handle is drawn and dragged on the Program
+  monitor, but the shaders measure sweeps and bands (sheen, gloss, a gradient overlay's band) across the alpha bounds and the
+  overlay across the clip's box, and edges are the box's: on a text box much wider than its text a position handle is where the
+  value says on the box, not on the letters. The value written is exact either way. Standalone effects have no handles beyond
+  `point` params.
 - **Generators (§7): a particle in flight reads the shape of this frame**, not of its birth frame, because no generator keeps
   history (TL-061). Per-letter animation carries a letter's particles with it. A title moved whole by a text animator, not by
   clip Motion, leaves `Layout`-anchored sites behind: `Alpha Bounds` follows it, at the price of locality.
@@ -967,8 +972,6 @@ Status of the foundation; streams still in progress update this list. Evidence: 
   is the field's slope fitted over a wider reach, in units: a cross stencil of 6 % of the unit (0.906) or 12 % (0.935), a ring of
   16 reads at 12 % (0.942, what draws now). The soft-alpha fix of the field changes nothing here (the input is hard). An exact
   normal needs the text's vector outline; the test stays red rather than loosened.
-- **Generator preset chips have no UI of their own here:** the presets exist and `clip.addGenerator` and `appearance.addLayer`
-  take them; the chips belong to the UI streams.
 
 **Agents (TL-100…TL-107):** the `titles` toolset, `title_check`, the `title-art` proposal feature, `still-sheet` jobs and effects
 discovery are in; evidence and thresholds in [wp-notes/title-looks-agents.md](wp-notes/title-looks-agents.md). Limits:

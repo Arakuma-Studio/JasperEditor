@@ -448,6 +448,10 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 				c('graphics.newEllipse', 'Ellipse'),
 				c('threeD.newCamera', 'Camera…'),
 				c('threeD.newLight', 'Light…'),
+				sub(
+					'Generator',
+					TITLE_GENERATORS.map((g) => c('graphics.addGenerator', () => g.label, { generatorId: g.id })),
+				),
 			]),
 			c('graphics.verticalText', 'Vertical Text'),
 			c('graphics.warpText', 'Warp Text'),
@@ -477,14 +481,6 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 					),
 				),
 			]),
-			...(TITLE_GENERATORS.length
-				? [
-						sub(
-							'Add Generator',
-							TITLE_GENERATORS.map((g) => c('graphics.addGenerator', () => g.label, { generatorId: g.id })),
-						),
-					]
-				: []),
 			sep,
 			c('delivery.importLayerStyles', 'Import Layer Styles…'),
 			c('delivery.exportTitle', 'Export Title…'),

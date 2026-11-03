@@ -80,7 +80,13 @@ vec4 tl_layer(TlSurface s) {
 	},
 	handles: [
 		{ kind: 'angle', params: ['paintAngle'] },
-		{ kind: 'position', params: ['position'], when: { param: 'style', value: 'band' } },
+		{
+			kind: 'position',
+			params: ['position'],
+			when: { param: 'style', value: 'band' },
+			along: { paint: 'paint' },
+			range: { band: 'bandLength' },
+		},
 	],
 	summary(p) {
 		return {

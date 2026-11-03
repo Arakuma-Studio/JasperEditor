@@ -254,8 +254,9 @@ float tl_bandPx(TlSurface s) { return 0.0; }
 	}),
 	handles: [
 		{ kind: 'distance', params: ['grow'] },
-		{ kind: 'distance', params: ['corner'] },
-		{ kind: 'angle', params: ['skew'] },
+		{ kind: 'distance', params: ['corner'], from: 'corner', after: ['grow'] },
+		// A positive skew leans the top to the right, as italics do: the handle is the lean of a side, from upright.
+		{ kind: 'angle', params: ['skew'], along: { turn: -90 }, when: { param: 'kind', value: 'slant' } },
 		{ kind: 'angle', params: ['paintAngle'] },
 	],
 	summary(p) {

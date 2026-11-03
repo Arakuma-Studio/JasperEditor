@@ -10,6 +10,7 @@ import {
 	type LookRecipe,
 	layerHandles,
 	recipeFromAppearance,
+	TITLE_LAYER_TYPES,
 	TITLE_LOOK_EFFECT_ID,
 	TITLE_LOOK_INTENSITY,
 	TitleLookSchema,
@@ -201,7 +202,7 @@ describe('layer handles (TL-092)', () => {
 	};
 
 	it('come from the layer type', () => {
-		expect(of('rim')).toEqual([{ kind: 'distance', params: ['width'] }]);
+		expect(of('rim')).toEqual([{ kind: 'distance', params: ['width'], after: ['offset'] }]);
 		expect(of('shadow')).toEqual([
 			{ kind: 'offset', params: ['angle', 'distance'], when: { param: 'useLight', value: false } },
 		]);
@@ -212,6 +213,32 @@ describe('layer handles (TL-092)', () => {
 			{ kind: 'distance', params: ['distance'], when: { param: 'useLight', value: true } },
 			{ kind: 'angle', params: ['angle'], target: 'light', when: { param: 'useLight', value: true } },
 		]);
+	});
+
+	it('say where they sit, and name only params their type has', () => {
+		// Each declaration is read by the Program overlay: an unknown name would draw a handle that edits nothing.
+		for (const t of TITLE_LAYER_TYPES) {
+			const names = new Set(t.params.map((p) => p.name));
+			for (const h of t.handles ?? []) {
+				if (h.target !== 'light')
+					for (const n of h.params) expect(names.has(n), `${t.type}: ${n}`).toBe(true);
+				for (const n of h.after ?? []) expect(names.has(n), `${t.type}: after ${n}`).toBe(true);
+				if (h.when) expect(names.has(h.when.param), `${t.type}: when ${h.when.param}`).toBe(true);
+				if (h.along?.param) expect(names.has(h.along.param), `${t.type}: along ${h.along.param}`).toBe(true);
+				if (h.along?.paint) expect(names.has(h.along.paint), `${t.type}: along ${h.along.paint}`).toBe(true);
+				if (typeof h.range === 'object') expect(names.has(h.range.band), `${t.type}: band`).toBe(true);
+				if (h.from === 'band') expect(names.has('position'), `${t.type}: band needs position`).toBe(true);
+			}
+		}
+		expect(of('inline')[0]).toMatchObject({ params: ['inset', 'width'], from: 'inside' });
+		expect(of('reflection')[0]).toMatchObject({ params: ['gap'], from: 'below' });
+		expect(of('contourLines', { mode: 'outside' as never }).filter((h) => h.kind === 'distance')).toEqual([
+			{ kind: 'distance', params: ['spacing'], after: ['offset'], when: { param: 'mode', value: 'outside' } },
+		]);
+		expect(of('plate').some((h) => h.params[0] === 'skew')).toBe(false);
+		expect(of('plate', { kind: 'slant' as never }).find((h) => h.params[0] === 'skew')).toMatchObject({
+			along: { turn: -90 },
+		});
 	});
 
 	it('add the angle of a gradient paint, only while the paint is a gradient', () => {
