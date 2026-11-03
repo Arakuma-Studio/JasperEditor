@@ -254,6 +254,21 @@ amended to these names at integration 4.
   or an error already states stay out (a page of 12, headless `propose` is `E_NO_EDITOR`, `notChecked` says taste is not
   measured). The new refusals name their fix: `threed_solid_edit` "Pass band.bandId.", "Pass only the clip that holds …";
   `export_frame` "Add alpha: true.", "Pass folder.", "Leave format out."; `set_material` "Add preset or values.".
+- **Names that do not follow §10's `<area>_<noun>[_<verb>]` exactly, kept by decision** (the coordinator, review 2 of
+  spec 19, 2026-11-03; nothing renamed). Each keeps a reason this note already gives:
+  - `title_propose`, `title_check` and `image_split` are area plus verb, with no noun between. In each the area word is
+    the noun the verb acts on, as in `main`'s `scopes_read` (the table: "The area is the noun"): a title is proposed or
+    checked, a still is split. A noun in between (`title_clip_check`) would only repeat it, and `image_split` keeps
+    "split" off `split_at`'s cut in time.
+  - `threed_solid_edit` sits beside `main`'s verb-first `set_3d_layer`, `set_3d_renderer` and the other `set_3d_*`, so
+    the `3d` toolset holds two schemes. The new area takes one prefix, `threed_`, because a name cannot start with `3`
+    for some clients and `threeD` is the documents' own key; and the tool merges three edits of one solid (add, remove
+    and reorder bands and plates), which no `set_3d_*` verb covers. Renaming `main`'s `set_3d_*` is outside spec 19.
+  - `list_effects`, `add_effect` and `set_effect_param` are verb-first because `main` already used those names: its
+    `ROTO_GUIDE` and `add_adjustment_layer` sent agents to them before they existed, and they are the video side of
+    `list_audio_effects`, `add_audio_effect` and the `*_effect_preset` tools in the same `effects` toolset (above).
+  Renaming any of these later changes names agents have learned and that guides, skills and eval cases cite, so it waits
+  for eval samples that show the current names cost a wrong route; none has so far, and no paid samples were run.
 - **`threed_solid_edit` returns the new ids** in `refs` (`$band0`, `$plate0`, one per clip), which `edit_bevel_bands` and
   `edit_backplates` did not, so a remove or reorder no longer needs `get_clip_properties` first.
 
