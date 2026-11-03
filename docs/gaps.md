@@ -918,6 +918,10 @@ Status of the foundation; streams still in progress update this list. Evidence: 
 - **Split Image** (TL-115) refuses clips with masks or trackers: they are shaped to the whole picture. Remove them first.
 - **Delivery reports are in English**: the PSD plan's baked lines and blockers and the layer-style reports come from the engine and the
   model as text, like job errors, so the Spanish UI shows them in English around translated headings.
+- **Text in a Rec. 2020 or P3 sequence is previewed without its colour input transform**: the Program stack is drawn flat there
+  (the display transform and the text's own HTML-in-Canvas cannot nest), and a DOM layer's colour effects are not run in a flat
+  stack, so the title carries the chip "Grade not previewed under this blend mode" (its wording names blend modes, the other
+  reason a stack goes flat). Seen while fixing the blank Program (UI polish); renders were not compared here.
 - **Gamut Warning** (TL-116) measures on the engine per paused frame, not during playback: the Program picture is DOM. Legal range
   assumes 4:2:0 delivery and nearest-neighbour chroma.
 - **Software rendering is slow**: ≈ 1.3 s per 1080p frame for a six-layer look on a title-sized box on SwiftShader, and an

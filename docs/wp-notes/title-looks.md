@@ -651,6 +651,13 @@ Decisions:
   scale is a bar from the centre along its angle. Layers that start from the whole silhouette (`outermost`) count every rim. A
   drag stops at the param's range, an angle moves by the turn (never a jump of 360°), and each drag is one gesture: one History
   entry, written at the playhead, so an animated param gets a key there (`title-looks-handles.test.tsx`, `e2e/title-looks.spec.ts`).
+- **A Rec. 2020 Program with text was blank** (the interchange stream saw it with the Gamut Warning on; the overlay was not the
+  cause). Text in a wide working space takes the colour input transform, a colour effect on a DOM layer, so the Program stack is
+  drawn by the flat compositor (`fx/flat.tsx`). Its cleanup cancelled the pending draw request but kept the id, and React's
+  development Strict Mode runs that cleanup without unmounting: the layout effect then saw an id and never asked again, so the
+  compositor's canvas stayed transparent. The cleanup now clears the id (`FxPicture` had the same pattern).
+  `packages/compositions/test/flat-compositor-strict.test.tsx` failed before the fix. A production build has no Strict Mode, but
+  an `<Activity>` hidden and shown would have done the same.
 - **Generator presets are chips** at the top of a generator's inspector: the opened generator layer in Properties ▸ Appearance
   and in Effect Controls, and a standalone generator effect's section (an effect editor per `jasper.generator.*`). A chip sets
   every own param of the generator (its colours too, not the look paint, Own Colours or Opacity) to the preset over the defaults,
