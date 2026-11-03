@@ -18,6 +18,21 @@ import {
 
 export const PSD_DIALOG = 'delivery.psd';
 
+/** The flat plan as the Layers panel shows it: top first, a group above its members. */
+export function layersTopFirst(layers: readonly PsdPlanLayer[]): { layer: PsdPlanLayer; depth: number }[] {
+	let at = 0;
+	const level = (count: number, depth: number): { layer: PsdPlanLayer; depth: number }[][] => {
+		const rows: { layer: PsdPlanLayer; depth: number }[][] = [];
+		for (let i = 0; i < count && at < layers.length; i++) {
+			const layer = layers[at++]!;
+			const inner = layer.kind === 'group' ? level(layer.children ?? 0, depth + 1) : [];
+			rows.push([{ layer, depth }, ...inner.reverse().flat()]);
+		}
+		return rows;
+	};
+	return level(layers.length, 0).reverse().flat();
+}
+
 type Props = {
 	session: EditorSession;
 	engine: EngineClient;

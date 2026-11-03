@@ -156,9 +156,10 @@ describe('Send to Photoshop (TL-112)', () => {
 			stage: 'Layer 1/2',
 			progress: 0.5,
 			title: 'x',
+			origin: { type: 'user' },
+			cpuSlots: 1,
 			priority: 'user',
 			createdAt: 'x',
-			updatedAt: 'x',
 		};
 		const engine = engineWith(
 			{ '/api/psd/plan': PLAN, '/api/psd': job, '/api/jobs/job_1/cancel': job, '/api/jobs/job_1': job },
@@ -206,12 +207,12 @@ describe('Gamut overlay (TL-116)', () => {
 		kind: 'gamut-check',
 		state: 'succeeded',
 		title: 'Gamut',
+		origin: { type: 'user' },
+		cpuSlots: 1,
 		priority: 'interactive',
 		progress: 1,
-		stage: null,
 		result,
 		createdAt: '2026-11-02T00:00:00.000Z',
-		updatedAt: '2026-11-02T00:00:00.000Z',
 	};
 
 	function mount() {
