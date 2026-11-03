@@ -4,7 +4,7 @@
 // - the 3D axis gizmo of one selected 3D layer (X red, Y green, Z blue): drag an arrow to move along that world axis
 //   (one undo step);
 // - the rotation gizmo of that layer (spec 19 TL-079): one arc per axis and a free-rotate ring, sized to the layer as
-//   seen (gizmo.ts): drag an arc to turn about that axis, the ring to turn freely (one undo step, keys when animated);
+//   seen (gizmo.ts), each turned towards the viewer where it would be edge-on: drag an arc to turn about that axis, the ring to turn freely (one undo step, keys when animated);
 // - the Camera tool (After Effects' Unified Camera Tool): left drag orbits, middle (or Shift+left) drag pans, right (or
 //   Alt+left) drag dollies, the wheel dollies — the active camera clip in the Active Camera view (one undo step per
 //   drag, keys when animated), else the view's own camera (view state, not undoable).
@@ -20,6 +20,7 @@ import {
 	projectPoint,
 	type Rig,
 	rigFrameAt,
+	toViewer,
 	type Vec2,
 	type Vec3,
 	VIEW_3D_LABELS,
@@ -40,7 +41,7 @@ import {
 	gizmoRadius,
 	polylinePath,
 	tangentAt,
-	worldCircle,
+	viewFacingCircle,
 } from './gizmo.ts';
 import { programCamera, resolveProgramScene } from './scene.ts';
 import { setViewCam, switchView, threeDViews, viewCamOf } from './view-store.ts';
@@ -150,7 +151,8 @@ function Scene3DSurface(props: ProgramOverlayHostProps) {
 		}
 	}
 
-	// Rotation gizmo: arcs around the anchor in world planes, the free ring outside them, sized to the layer as seen.
+	// Rotation gizmo: arcs around the anchor in world planes, turned towards the viewer where they would read edge-on, the
+	// free ring outside them, sized to the layer as seen.
 	let arcs: { axis: 0 | 1 | 2; pts: (Vec2 | null)[]; d: string }[] = [];
 	let ring: { c: Vec2; r: number } | null = null;
 	if (sel && gizmo) {
@@ -159,8 +161,9 @@ function Scene3DSurface(props: ProgramOverlayHostProps) {
 		const depth = mat4Apply(cam.view, gizmo.p0)[2];
 		const unit = cam.ortho ? 1 / cam.zoom : Math.max(1, depth) / cam.zoom;
 		const worldR = (R / Math.max(1e-6, view.scale)) * unit;
+		const sight = toViewer(cam, gizmo.p0);
 		arcs = AXES.map(({ axis }) => {
-			const pts = worldCircle(gizmo!.p0, axis, worldR).map(scr);
+			const pts = viewFacingCircle(gizmo!.p0, axis, worldR, sight).map(scr);
 			return { axis, pts, d: polylinePath(pts) };
 		});
 		ring = { c: gizmo.origin, r: R * FREE_RING };

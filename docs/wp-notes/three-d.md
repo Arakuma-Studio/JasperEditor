@@ -315,7 +315,11 @@ supersampling) and `COST_CLASSES` the words. The UI says so before a clip turns 
 get `costClass` in `get_3d_scene`.
 
 **Gizmo** (TL-079). Arcs per axis and a free-rotate ring, sized to 60 % of the layer's larger side on screen, 44 to 260 px
-(`gizmo.ts`). One undo step per drag, keys when animated.
+(`gizmo.ts`). One undo step per drag, keys when animated. An arc whose plane the line of sight meets at less than
+acos 0.35 (≈ 69.5° off its axis) is turned towards the viewer until it opens to that (`viewFacingCircle`, `GIZMO_MIN_OPEN`),
+so head-on the X and Y arcs are ellipses, not lines. The turn grows from zero at the threshold (no pop while orbiting) and
+stays in the plane of the axis and the sight, so the arc keeps the direction of a turn about its axis; the drag is read
+along the arc on screen as before. The 0.35 is our choice, not a measured or documented value.
 
 ### Usage
 
