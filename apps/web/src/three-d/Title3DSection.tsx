@@ -364,7 +364,7 @@ export function Environment3DSection({ session, clips, sequenceId }: ClipSection
 	const doc = useSessionState((s) => s.transient ?? s.document);
 	const ops = useInspectorOps(session);
 	const clip = clips[0];
-	if (!clip || clip.kind !== 'light' || !doc.sequences[sequenceId]) return null;
+	if (clip?.kind !== 'light' || !doc.sequences[sequenceId]) return null;
 	const light = clip.light;
 	const media = Object.values(doc.media).filter((m) => m.kind === 'hdri' || m.kind === 'image');
 	const set = (patch: {

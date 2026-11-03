@@ -49,6 +49,13 @@ export {
 	useTemplateEditHold,
 } from './template-edit-hold.ts';
 export {
+	contentSpans,
+	runLayoutCss,
+	textBlockStyle,
+	UPRIGHT_TEXT_CSS,
+	VERTICAL_TEXT_CSS,
+} from './text/block.ts';
+export {
 	contentFaces,
 	createDomTextMeasurer,
 	type DomTextMeasurer,
@@ -60,13 +67,6 @@ export {
 	measureTextBox,
 	type TextMeasureJob,
 } from './text/box-measure.ts';
-export {
-	contentSpans,
-	runLayoutCss,
-	textBlockStyle,
-	UPRIGHT_TEXT_CSS,
-	VERTICAL_TEXT_CSS,
-} from './text/block.ts';
 export { lottieThumbnail, pdfThumbnail } from './thumbnails.ts';
 export { drawPdfPage, pdfPagePicture } from './VectorLayer.tsx';
 export {

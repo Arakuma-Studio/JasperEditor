@@ -60,6 +60,8 @@ import {
 	isTextAnimationDrag,
 	readTextAnimationDrag,
 } from '../../text-animation/actions.ts';
+import { announce } from '../../title-looks/actions.ts';
+import { dropLookAsTitle, dropLookOnClip, isLookDrag, readLookDrag } from '../../title-looks/drag.ts';
 import { commonPreset, INTERPOLATION_MENU, interpolationCommand } from '../effectControls/lib.ts';
 import {
 	applyEffectToClips,
@@ -71,8 +73,6 @@ import {
 	transitionDragId,
 } from '../effects/drag.ts';
 import { setDefaultTransition, TRANSITION_ALIGNMENTS } from '../effects/transition-prefs.ts';
-import { announce } from '../../title-looks/actions.ts';
-import { dropLookAsTitle, dropLookOnClip, isLookDrag, readLookDrag } from '../../title-looks/drag.ts';
 import { insertMotionTemplate, MG_TEMPLATE_MIME, readMgTemplateDrag } from '../motionTemplates/insert.ts';
 import { projectItemOf } from '../program/layer-ops.ts';
 import { CleanupTimelineOverlay } from '../text/cleanup/TimelineOverlay.tsx';
@@ -1443,7 +1443,7 @@ function TimelineBody(props: PanelProps & { session: EditorSession; seqId: strin
 			e.dataTransfer.dropEffect = 'copy';
 			return;
 		}
-if (
+		if (
 			!types.includes(PROJECT_ITEMS_MIME) &&
 			!types.includes(MG_TEMPLATE_MIME) &&
 			!types.includes('Files') &&

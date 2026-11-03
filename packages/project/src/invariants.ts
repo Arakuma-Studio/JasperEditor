@@ -80,8 +80,8 @@ import { isNestClip } from './structure/nest.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
 import { repairTextAnimators, textAnimatorIssues } from './text-animators/validate.ts';
 import { clipTextStyles, repairTextStyle, storedTextStyles, textStyleIssues } from './text-style.ts';
-import { clipTextContents, repairTextWriting, textWritingIssues } from './text-writing.ts';
 import { clipTextStyleIssue, repairTextStyles, textStylesRecordIssues } from './text-styles/model.ts';
+import { clipTextContents, repairTextWriting, textWritingIssues } from './text-writing.ts';
 import { canBe3d, newLayer3D } from './three-d/model.ts';
 import { sanitizeThreeD, threeDProblem } from './three-d/validate.ts';
 import {
