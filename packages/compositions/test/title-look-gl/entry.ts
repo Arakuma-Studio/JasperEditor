@@ -45,6 +45,11 @@ export type LookInput =
 	| { kind: 'rect'; x: number; y: number; w: number; h: number; color?: string }
 	/** White bars (fractions of the box), for exact gradient spans. */
 	| { kind: 'bars'; bars: readonly { x: number; y: number; w: number; h: number }[] }
+	/**
+	 * Soft alpha, as a glow's picture reaches an effect after it: an opaque disc (centre and radius in fractions of the box
+	 * height) whose alpha falls off as exp(−(d / soft)²) beyond it, drawn into the 8-bit canvas like any picture.
+	 */
+	| { kind: 'soft'; x: number; y: number; r: number; soft: number }
 	/** The golden test card. */
 	| { kind: 'card' };
 
@@ -188,6 +193,21 @@ function paintInput(
 	if (input.kind === 'bars') {
 		ctx.fillStyle = '#fff';
 		for (const r of input.bars) ctx.fillRect(b.x + b.w * r.x, b.y + b.h * r.y, b.w * r.w, b.h * r.h);
+		return;
+	}
+	if (input.kind === 'soft') {
+		const cx = b.x + b.w * input.x;
+		const cy = b.y + b.h * input.y;
+		const r0 = b.h * input.r;
+		const r1 = r0 + b.h * input.soft * 3;
+		const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r1);
+		for (let i = 0; i <= 64; i++) {
+			const r = (r1 * i) / 64;
+			const a = r <= r0 ? 1 : Math.exp(-(((r - r0) / (b.h * input.soft)) ** 2));
+			g.addColorStop(i / 64, `rgba(255, 255, 255, ${a.toFixed(5)})`);
+		}
+		ctx.fillStyle = g;
+		ctx.fillRect(cx - r1, cy - r1, 2 * r1, 2 * r1);
 		return;
 	}
 	if (input.kind === 'rect') {

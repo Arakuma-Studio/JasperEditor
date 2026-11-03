@@ -6,11 +6,11 @@ import type { TextContent, TextStyle } from './schema/sequence.ts';
 export type TextRun = NonNullable<TextContent['runs']>[number];
 type ParagraphOverride = NonNullable<TextContent['paragraphs']>[number];
 /**
- * Whether the look planner draws `TextRun.finish` yet. The field persists, repairs and survives edits; drawing it is the
- * finishes stream's (it owns the GLSL: the glyph owner pass of TL-036 can map a pixel to a run through
- * `textRunAt(content.runs, glyph.offset)`). The toolbar keeps the control disabled with a reason until this is true.
+ * Whether the look planner draws `TextRun.finish`: it does. A glyph's span record carries its run's finish
+ * (`textRunAt(content.runs, glyph.offset)`), and the planner draws a `letterFinish` layer (the face) with it on those
+ * letters (`registry/fx/title-look/plan.ts`). The toolbar's Finish control is enabled by it.
  */
-export const RUN_FINISHES_DRAWN = false;
+export const RUN_FINISHES_DRAWN = true;
 
 /** What a run sets: style fields and, for the look on the clip, a finish for these letters (null clears it). */
 export type RunPatch = { style?: Partial<TextStyle>; finish?: string | null };

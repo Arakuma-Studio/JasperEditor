@@ -8,7 +8,9 @@ import {
 	type PlacedGlyph,
 	type SpanBox,
 	type SpanGlyph,
+	type TextRun,
 	type TextStyle,
+	textRunAt,
 } from '@jasper/project';
 import { useLayoutEffect } from 'react';
 import { inkBounds, type TypesetLayout } from './measure.ts';
@@ -37,13 +39,23 @@ function inkBoxes(lay: TypesetLayout, family: (s: TextStyle) => string): (SpanBo
 	return out;
 }
 
-/** Text that is not moving: the plain block. */
-export function restSpans(lay: TypesetLayout, family: (s: TextStyle) => string): FxTextSpans | null {
+/** TL-093: what the glyph at `offset` takes from its run: its finish, if the run gives one. */
+function runFields(runs: readonly TextRun[] | undefined, offset: number): Pick<SpanGlyph, 'finish'> {
+	const finish = runs?.length ? textRunAt(runs, offset)?.finish : undefined;
+	return finish ? { finish } : {};
+}
+
+/** Text that is not moving: the plain block. `runs`: the content's (finishes per letter, TL-093). */
+export function restSpans(
+	lay: TypesetLayout,
+	family: (s: TextStyle) => string,
+	runs?: readonly TextRun[],
+): FxTextSpans | null {
 	const boxes = inkBoxes(lay, family);
 	const out: SpanGlyph[] = [];
 	lay.glyphs.forEach((g, i) => {
 		const box = boxes[i];
-		if (box) out.push({ box, line: g.lineIndex });
+		if (box) out.push({ box, line: g.lineIndex, ...runFields(runs, g.offset) });
 	});
 	return buildTextSpans(out);
 }
@@ -75,6 +87,7 @@ export function unitSpans(
 	lay: TypesetLayout,
 	family: (s: TextStyle) => string,
 	units: readonly UnitPlacement[],
+	runs?: readonly TextRun[],
 ): FxTextSpans | null {
 	const boxes = inkBoxes(lay, family);
 	const out: SpanGlyph[] = [];
@@ -90,8 +103,9 @@ export function unitSpans(
 				cy >= u.box.top &&
 				cy <= u.box.top + u.box.height,
 		);
-		if (unit?.toDrawn) out.push({ box, line: g.lineIndex, toDrawn: unit.toDrawn });
-		else if (!unit) out.push({ box, line: g.lineIndex });
+		const fields = runFields(runs, g.offset);
+		if (unit?.toDrawn) out.push({ box, line: g.lineIndex, toDrawn: unit.toDrawn, ...fields });
+		else if (!unit) out.push({ box, line: g.lineIndex, ...fields });
 	});
 	return buildTextSpans(out);
 }
@@ -103,6 +117,7 @@ export function typesetSpans(
 	placed: readonly PlacedGlyph[],
 	origins: readonly (readonly [number, number])[],
 	perspective: { distance: number; origin: readonly [number, number] } | null,
+	runs?: readonly TextRun[],
 ): FxTextSpans | null {
 	const boxes = inkBoxes(lay, family);
 	const out: SpanGlyph[] = [];
@@ -139,7 +154,8 @@ export function typesetSpans(
 				1 + zc,
 			];
 		}
-		out.push({ box, line: lay.glyphs[g.index]!.lineIndex, toDrawn });
+		const glyph = lay.glyphs[g.index]!;
+		out.push({ box, line: glyph.lineIndex, toDrawn, ...runFields(runs, glyph.offset) });
 	}
 	return buildTextSpans(out);
 }

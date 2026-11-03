@@ -119,27 +119,60 @@ float tl_gradientPos(int kind, vec2 dir, float angle, float depth, TlSurface s) 
 `,
 };
 
-/** The alpha read of the seed and field passes: the shape edge sits at half the local peak opacity. */
+/**
+ * The alpha read of the seed and field passes: the shape edge sits at half the local peak opacity where the alpha has
+ * an edge (antialiased, a glyph fading), and at half opacity where it is soft (a glow's tail), see `tl_level`.
+ */
 export const GLSL_TL_ALPHA: GlslChunk = {
 	name: 'title-look/alpha',
 	source: /* glsl */ `
 const float TL_FLOOR = ${FLOOR};
 float tl_a(ivec2 q, ivec2 sz) { return texelFetch(u_source, clamp(q, ivec2(0), sz - 1), 0).a; }
-// The brightest alpha of the 5×5 around q. A glyph fading in at 30 % has its edge at 20 %, not at a fixed 50 %, so its
-// rim fades in with it instead of popping when it crosses a threshold (per-character opacity animators). Two pixels of
-// reach: the outer pixels of a 2 px antialiased ramp must see the solid interior, else they read as a faint shape of
-// their own and seed a false edge outside the true one.
-float tl_peak(ivec2 p, ivec2 sz) {
-  float m = 0.0;
-  for (int y = -2; y <= 2; y++)
-    for (int x = -2; x <= 2; x++) m = max(m, tl_a(p + ivec2(x, y), sz));
-  return m;
-}
-// Antialiased edges are up to 2 px wide and thin strokes never reach full alpha: from 75 % up a part of the picture
-// counts as solid, so its edge sits at the usual 50 % and solid text has one threshold everywhere.
+// The edge at a peak, the brightest alpha of the 5x5 around a pixel. A glyph fading in at 30 % has its edge at 20 %, not
+// at a fixed 50 %, so its rim fades in with it instead of popping when it crosses a threshold (per-character opacity
+// animators). Two pixels of reach: the outer pixels of a 2 px antialiased ramp must see the solid interior, else they
+// read as a faint shape of their own and seed a false edge outside the true one. Antialiased edges are up to 2 px wide
+// and thin strokes never reach full alpha: from 75 % up a part of the picture counts as solid, so its edge sits at the
+// usual 50 % and solid text has one threshold everywhere.
 float tl_threshold(float peak) { return 0.5 * min(peak / 0.75, 1.0); }
 // What a rim around this part of the picture inherits: full from 50 % local alpha up, so thin strokes keep solid rims.
 float tl_opacity(float peak) { return clamp(peak * 2.0, 0.0, 1.0); }
+// The 5x5 around p: (peak, how much of an edge it holds, 0..1). An edge is a step between neighbours of at least a
+// quarter of the peak, beyond one 8-bit step: every antialiased edge, solid or fading, holds one (1), and so does the
+// plateau beside it. Soft alpha changes by a few percent of itself per pixel (0): its local peak is the pixel itself, so
+// half of it would find an edge wherever the ramp is long enough, far out in a glow's tail and along its 8-bit steps,
+// which at a few percent of opacity are a quarter of the value.
+vec2 tl_window(ivec2 p, ivec2 sz) {
+  float v[25];
+  float m = 0.0;
+  for (int y = 0; y < 5; y++)
+    for (int x = 0; x < 5; x++) {
+      v[y * 5 + x] = tl_a(p + ivec2(x - 2, y - 2), sz);
+      m = max(m, v[y * 5 + x]);
+    }
+  float jump = 0.0;
+  for (int i = 0; i < 5; i++)
+    for (int j = 0; j < 4; j++) {
+      jump = max(jump, abs(v[i * 5 + j + 1] - v[i * 5 + j]));
+      jump = max(jump, abs(v[j * 5 + 5 + i] - v[j * 5 + i]));
+    }
+  return vec2(m, smoothstep(0.1, 0.25, (jump - 1.0 / 255.0) / max(m, 1.0e-6)));
+}
+// The level of the edge here: half the local peak at an edge, half opacity on soft alpha, blended in between. Exactly
+// tl_threshold where the window holds an edge, so hard alpha draws as it always did.
+float tl_level(vec2 w) { return w.y >= 1.0 ? tl_threshold(w.x) : mix(0.5, tl_threshold(w.x), w.y); }
+// Soft alpha as a plane over the 5x5 around p (canvas px): (mean, slope x, slope y). 16 bilinear taps, each the mean of
+// 2x2 texels, fitted by least squares: the edge of an 8-bit ramp follows the ramp, not its steps.
+vec3 tl_alphaPlane(vec2 p, vec2 size) {
+  vec3 f = vec3(0.0);
+  for (int y = 0; y < 4; y++)
+    for (int x = 0; x < 4; x++) {
+      vec2 o = vec2(float(x), float(y)) - 1.5;
+      float a = texture(u_source, clamp(p + o, vec2(0.5), size - 0.5) / size).a;
+      f += vec3(a / 16.0, a * o / 20.0);
+    }
+  return f;
+}
 `,
 };
 
@@ -154,18 +187,31 @@ void main() {
   float a = tl_a(ip, sz);
   float l = tl_a(ip + ivec2(-1, 0), sz), r = tl_a(ip + ivec2(1, 0), sz);
   float t = tl_a(ip + ivec2(0, -1), sz), b = tl_a(ip + ivec2(0, 1), sz);
-  // Flat alpha, inside or out: no edge here, and most of the canvas stops at these five reads.
+  // Flat alpha, inside or out: no edge here, and most of the canvas stops at these five reads. Near half opacity a soft
+  // ramp may be flat over a few pixels (8-bit steps) and still hold its edge.
   float hi = max(a, max(max(l, r), max(t, b)));
   float lo = min(a, min(min(l, r), min(t, b)));
-  if (hi < TL_FLOOR || hi - lo < 0.002) { fragColor = vec4(0.0); return; }
-  float peak = tl_peak(ip, sz);
-  float th = tl_threshold(peak);
+  if (hi < TL_FLOOR || (hi - lo < 0.002 && (hi < 0.45 || lo > 0.55))) { fragColor = vec4(0.0); return; }
+  vec2 w = tl_window(ip, sz);
+  float peak = w.x;
+  float th = tl_level(w);
+  vec2 p = vec2(ip) + 0.5;
+  if (w.y < 1.0) {
+    // Soft alpha: the edge is where the fitted plane crosses the level, if that line passes through this pixel.
+    vec3 f = tl_alphaPlane(p, tl_size);
+    float g = length(f.yz);
+    if (g < 1.0e-5) { fragColor = vec4(0.0); return; }
+    vec2 n = f.yz / g;
+    float along = (f.x - th) / g;
+    if (abs(along) > 0.5 * (abs(n.x) + abs(n.y))) { fragColor = vec4(0.0); return; }
+    fragColor = vec4(p - n * along, tl_opacity(peak), 1.0);
+    return;
+  }
   bool inside = a >= th;
   if ((l >= th) == inside && (r >= th) == inside && (t >= th) == inside && (b >= th) == inside) {
     fragColor = vec4(0.0);
     return;
   }
-  vec2 p = vec2(ip) + 0.5;
   float tl = tl_a(ip + ivec2(-1, -1), sz), tr = tl_a(ip + ivec2(1, -1), sz);
   float bl = tl_a(ip + ivec2(-1, 1), sz), br = tl_a(ip + ivec2(1, 1), sz);
   // Sobel gradient of alpha: the normal pointing into the shape.
@@ -207,13 +253,16 @@ void main() {
   vec2 p = vec2(ip) + 0.5;
   vec4 s = texelFetch(u_tlFlood, ip, 0);
   float a = tl_a(ip, sz);
-  // Only partial alpha needs its surroundings: solid and empty pixels answer at once.
-  float peak = (a <= 0.0 || a >= 0.75) ? a : tl_peak(ip, sz);
-  bool inside = peak >= TL_FLOOR && a >= tl_threshold(peak);
+  // Only partial alpha needs its surroundings: solid and empty pixels answer at once. Inside means above the level the
+  // seed pass put the edge at; on soft alpha near that level, the plane the seeds were fitted to decides.
+  vec2 w = (a <= 0.0 || a >= 0.75) ? vec2(a, 1.0) : tl_window(ip, sz);
+  float th = tl_level(w);
+  float v = w.y < 1.0 && abs(a - th) < 0.1 ? tl_alphaPlane(p, vec2(sz)).x : a;
+  bool inside = w.x >= TL_FLOOR && v >= th;
   bool seeded = s.w > 0.5;
   vec2 toEdge = seeded ? s.xy - p : vec2(0.0);
   float d = seeded ? length(toEdge) : u_tlReach;
-  fragColor = vec4(inside ? -d : d, seeded ? s.z : (inside ? tl_opacity(peak) : 0.0), toEdge);
+  fragColor = vec4(inside ? -d : d, seeded ? s.z : (inside ? tl_opacity(w.x) : 0.0), toEdge);
 }`;
 
 /** First bounds reduction: 8×8 blocks of the input to (−x0, −y0, x1, y1), −1e9 where empty. */
