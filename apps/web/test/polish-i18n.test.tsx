@@ -113,7 +113,7 @@ describe('names from the model', () => {
 		const added = document.createElement('p');
 		added.textContent = 'Radius';
 		document.body.appendChild(added);
-		await new Promise((r) => setTimeout(r, 0));
+		await Promise.resolve();
 		expect(added.textContent).toBe('Radio');
 		await setLanguage('en');
 		expect(a.textContent).toBe('Gaussian Blur: Radius');

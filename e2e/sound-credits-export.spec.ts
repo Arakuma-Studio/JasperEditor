@@ -121,11 +121,18 @@ test('a CC BY folder sound: the Export dialog warns without credits and writes t
 	);
 	await page.getByTestId('export-sound').screenshot({ path: join(outDir, 'export-warning.png') });
 	await page.screenshot({ path: join(outDir, 'export-mode-warning.png') });
+	await page.getByTestId('export-filename').fill('credits-e2e');
+	const replanned = page.waitForResponse(
+		(res) =>
+			res.url().endsWith('/api/exports/plan') &&
+			res.request().method() === 'POST' &&
+			res.request().postDataJSON()?.settings?.credits?.sidecar === 'md',
+	);
 	await credits.selectOption('md');
+	await (await replanned).finished();
+	await expect(page.getByTestId('plan-path')).toBeVisible({ timeout: 30_000 });
 	await expect(page.locator('[data-code="W_SOUND_CREDITS"]')).toHaveCount(0, { timeout: 30_000 });
 	await page.getByTestId('export-sound').screenshot({ path: join(outDir, 'export-credits-md.png') });
-	await page.getByTestId('export-filename').fill('credits-e2e');
-	await expect(page.getByTestId('plan-path')).toBeVisible({ timeout: 30_000 });
 	const before = new Set(
 		JobListResponseSchema.parse(await (await request.get('/api/jobs')).json()).jobs.map((j) => j.id),
 	);

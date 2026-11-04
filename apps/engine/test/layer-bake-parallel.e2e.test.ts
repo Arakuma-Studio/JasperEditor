@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type RunningEngine, startEngine } from '../src/index.ts';
 import type { BakeParallelism, LayerBakeService } from '../src/layer-bake/service.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { DocBuilder, JSON_H, tempAppdir, until } from './helpers.ts';
+import { DocBuilder, JSON_H, tempAppdir } from './helpers.ts';
 
 const enabled = process.env.REMOTION_E2E === '1';
 const FIXTURE_V4 = join(
@@ -207,13 +207,8 @@ describe.runIf(enabled)('parallel bakes end to end (REMOTION_E2E=1, S11:LBK-022)
 		return r.json().id as string;
 	}
 
-	async function finished(id: string): Promise<EngineJob> {
-		await until(
-			() => ['succeeded', 'failed', 'cancelled'].includes(queue().get(id)?.state ?? ''),
-			1_800_000,
-			200,
-		);
-		return queue().get(id)!;
+	function finished(id: string): Promise<EngineJob> {
+		return queue().wait(id);
 	}
 
 	const bakesOf = (id: string) =>
@@ -277,15 +272,19 @@ describe.runIf(enabled)('parallel bakes end to end (REMOTION_E2E=1, S11:LBK-022)
 		clearCache();
 		svc.parallelism = PARALLEL;
 		const id = await submit(layeredDoc());
-		await until(() => bakesOf(id).filter((k) => k.state === 'running').length >= 2, 600_000, 100);
+		if (bakesOf(id).filter((k) => k.state === 'running').length < 2) {
+			await new Promise<void>((resolve) => {
+				const off = coreServices(engine.app).broadcaster.subscribe(() => {
+					if (bakesOf(id).filter((k) => k.state === 'running').length < 2) return;
+					off();
+					resolve();
+				});
+			});
+		}
 		queue().cancel(id);
 		const done = await finished(id);
 		expect(done.state).toBe('cancelled');
-		await until(
-			() => bakesOf(id).every((k) => ['cancelled', 'succeeded', 'failed'].includes(k.state)),
-			10_000,
-			100,
-		);
+		await Promise.all(bakesOf(id).map((job) => queue().wait(job.id)));
 		const states = bakesOf(id).map((k) => k.state);
 		expect(states.filter((s) => s === 'cancelled').length).toBeGreaterThanOrEqual(2);
 		expect(states).not.toContain('failed');

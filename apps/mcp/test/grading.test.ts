@@ -12,7 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { FixedEngineLink } from '../src/link.ts';
 import { createJasperMcpServer } from '../src/server.ts';
-import { cleanEnv, stopEngine, testPort } from './helpers.ts';
+import { cleanEnv, engineReady, stopEngine, testPort } from './helpers.ts';
 
 const ScopeSummarySchema = GradingScopesResponseSchema.required({
 	waveform: true,
@@ -118,22 +118,13 @@ describe('grading tools against a real engine (color-grade)', () => {
 				cwd: ROOT, // A dev engine (as compositions.test / the QA harness): Remotion renders also without the LGPL FFmpeg folder,
 				// which a clean CI checkout does not have (a built engine refuses with BINARY_MISSING, by design).
 				env: cleanEnv({ JASPER_LOCAL_TOKEN: token, JASPER_DEV: '1' }),
-				stdio: ['ignore', 'pipe', 'pipe'],
+				stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
 			},
 		);
 		const log: string[] = [];
 		engine.stdout?.on('data', (d: Buffer) => log.push(d.toString()));
 		engine.stderr?.on('data', (d: Buffer) => log.push(d.toString()));
-		const until = Date.now() + 120_000;
-		for (;;) {
-			const up = await fetch(`${URL_BASE}/health`)
-				.then((r) => r.ok)
-				.catch(() => false);
-			if (up) break;
-			if (Date.now() > until || engine.exitCode !== null)
-				throw new Error(`engine did not start: ${log.join('')}`);
-			await new Promise((r) => setTimeout(r, 250));
-		}
+		await engineReady(engine, PORT, log);
 		const { server } = createJasperMcpServer({
 			link: new FixedEngineLink(URL_BASE, token),
 			agentName: 'grading-test',
@@ -142,13 +133,13 @@ describe('grading tools against a real engine (color-grade)', () => {
 		await server.connect(a);
 		client = new Client({ name: 'grading-test', version: '1' });
 		await client.connect(b);
-	}, 180_000);
+	});
 
 	afterAll(async () => {
 		await client?.close().catch(() => {});
 		await stopEngine(engine);
 		if (appdir) rmSync(appdir, { recursive: true, force: true });
-	}, 30_000);
+	});
 
 	let projectId = '';
 	let clipA = '';
@@ -215,7 +206,7 @@ describe('grading tools against a real engine (color-grade)', () => {
 		const without = await frameAt(projectId, 330, 'grading-no-vignette.png');
 		expect(meanAbsDiff(withVignette, without)).toBeGreaterThan(1.5);
 		await ok('grade_clip', { projectId, clipId: clipB, sections: { vignette: true } });
-	}, 600_000);
+	});
 
 	it('scopes_read measures a frame as numbers (and one clip alone)', async () => {
 		const r = ScopeSummarySchema.parse(await ok('scopes_read', { projectId, at: 30, columns: 4, peaks: 3 }));

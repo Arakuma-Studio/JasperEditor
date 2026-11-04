@@ -23,7 +23,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { cleanEnv, stopEngine, testPort, waitFor } from './helpers.ts';
+import { cleanEnv, engineReady, stopEngine, testPort } from './helpers.ts';
 import { FIXTURE_COMMANDS } from './sound-cues-fixture.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -113,16 +113,12 @@ beforeAll(async () => {
 				JASPER_SOUND_SYNTH_VARIANTS: '1',
 				JASPER_SOUND_AUTO_INDEX: '0',
 			}),
-			stdio: ['ignore', 'pipe', 'pipe'],
+			stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
 		},
 	);
 	engine.stdout?.on('data', (d: Buffer) => engineLog.push(d.toString()));
 	engine.stderr?.on('data', (d: Buffer) => engineLog.push(d.toString()));
-	await waitFor(
-		async () => (await fetch(`http://127.0.0.1:${PORT}/health`)).ok,
-		120_000,
-		`the engine on ${PORT}: ${engineLog.join('')}`,
-	);
+	await engineReady(engine, PORT, engineLog);
 	const transport = new StdioClientTransport({
 		command: process.execPath,
 		args: ['--import', 'tsx', join(ROOT, 'apps/mcp/src/cli.ts'), '--appdir', appdir],
@@ -134,13 +130,13 @@ beforeAll(async () => {
 	client = new Client({ name: 'vitest-mcp-cues', version: '1.0.0' });
 	await client.connect(transport);
 	await ok('rescan_sound_library', { wait: true });
-}, 600_000);
+});
 
 afterAll(async () => {
 	await client?.close().catch(() => {});
 	await stopEngine(engine);
 	if (work) rmSync(work, { recursive: true, force: true });
-}, 30_000);
+});
 
 type Cue = {
 	key: string;
@@ -187,7 +183,7 @@ type Placed = {
 let projectId = '';
 const sounds: Record<string, string> = {};
 
-describe('sound cue MCP tools', { timeout: 900_000 }, () => {
+describe('sound cue MCP tools', () => {
 	it('builds the fixture and finds every event with frames, timecodes, reasons and anchors', async () => {
 		projectId = (await ok<{ projectId: string }>('create_project', { name: 'Cues', preset: 'hd-1080p-30' }))
 			.projectId;

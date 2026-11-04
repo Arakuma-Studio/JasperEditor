@@ -16,7 +16,6 @@ import {
 	silenceBands,
 	slotTimes,
 	type ViewAudio,
-	WAVE_COLOUR,
 } from '../src/range-view.ts';
 import type { RgbaImage } from '../src/sound-sheet.ts';
 
@@ -140,7 +139,6 @@ describe('drawRangeView', () => {
 		// encodes to a PNG of the same size
 		const png = decodePng(encodePng(image));
 		expect([png.width, png.height]).toEqual([480, 268]);
-		expect(WAVE_COLOUR).toHaveLength(3);
 	});
 
 	it('scales text up from 960 px and keeps frames inside the strip height cap', () => {

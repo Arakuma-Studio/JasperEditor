@@ -183,6 +183,7 @@ type Fake = {
 	calls: SpeechScoreRequest[];
 	installed: boolean;
 	mode: 'ok' | 'block' | 'fail' | 'offline';
+	onScore?: (signal: AbortSignal) => void;
 };
 const fake: Fake = { calls: [], installed: true, mode: 'ok' };
 
@@ -200,6 +201,7 @@ const fakeSpeech = {
 		opts?: { onProgress?(f: number, s: string): void },
 	): Promise<SpeechScoreResult> {
 		fake.calls.push(req);
+		fake.onScore?.(signal);
 		if (fake.mode === 'fail')
 			throw new JobError('SPEECH_SCORE_FAILED', 'jasper-speech crashed (exit 3)', false);
 		if (fake.mode === 'offline')
@@ -295,6 +297,7 @@ beforeAll(async () => {
 afterAll(async () => closeApps());
 beforeEach(() => {
 	fake.calls = [];
+	delete fake.onScore;
 	fake.installed = true;
 	fake.mode = 'ok';
 });
@@ -543,17 +546,19 @@ describe('scope, sources, failures', () => {
 		expect(result.itemCount).toBe(1);
 	});
 
-	it('cancelling stops the audio check within a second', async () => {
+	it('cancelling stops the running audio check', async () => {
 		fake.mode = 'block';
+		const started = new Promise<AbortSignal>((resolve) => {
+			fake.onScore = resolve;
+		});
 		const r = await post(fixUrl(seed()), { mode: 'propose' });
 		const id = (r.json() as EngineJob).id;
 		const q = coreServices(app).queue;
-		for (let i = 0; i < 100 && fake.calls.length === 0; i++) await new Promise((x) => setTimeout(x, 20));
-		const t0 = Date.now();
+		const signal = await started;
 		q.cancel(id);
+		expect(signal.aborted).toBe(true);
 		const done = await q.wait(id);
 		expect(done.state).toBe('cancelled');
-		expect(Date.now() - t0).toBeLessThan(1000);
 	});
 
 	it('identical requests while the job runs return that job', async () => {

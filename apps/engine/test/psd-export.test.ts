@@ -102,7 +102,7 @@ describe('plan (TL-112)', () => {
 
 	it('a clip not at the frame is not a layer', () => {
 		const { d } = twoClips();
-		const snap = snapshotOf(d, 40);
+		const snap = snapshotOf(d);
 		const clear = {
 			...snap,
 			settings: { ...snap.settings, backgroundColor: [0, 0, 0, 0] as [number, number, number, number] },
@@ -177,6 +177,8 @@ describe('plan (TL-112)', () => {
 		const other = nodes.find((n) => n.name === 'Headline')!;
 		if (other.kind !== 'pixels') throw new Error('expected pixels');
 		expect(psdRenderDoc(doc, other.render).videoTracks[0]!.mattes ?? []).toEqual([]);
+		const isolated = psdRenderDoc(doc, { ...baked.render, mattes: false });
+		expect(isolated.videoTracks[0]!.mattes).toEqual([]);
 	});
 
 	it('a track matte flattens the whole stack, whatever track its source is on', () => {

@@ -3,11 +3,12 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { EngineJobSchema, MgTemplatesResponseSchema } from '@jasper/api';
+import { type EngineJob, EngineJobSchema, MgTemplatesResponseSchema } from '@jasper/api';
 import { lowerThird } from '@jasper/mg-templates';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { createServer, engineConfig } from '../src/index.ts';
 import { createMgService, type MgService, resolveMgBinary } from '../src/mg/index.ts';
+import { coreServices } from '../src/tools/services.ts';
 
 const H = { host: '127.0.0.1:47900' };
 const apps: { close(): Promise<unknown> }[] = [];
@@ -131,6 +132,21 @@ describe.skipIf(!canRender)('real jasper-mg renders', () => {
 		await app?.close();
 	});
 
+	function running(id: string): Promise<void> {
+		const service = app.jasper.services.mg as MgService;
+		if (service.getJob(id)?.state === 'running') return Promise.resolve();
+		return new Promise((resolve) => {
+			const off = coreServices(app).broadcaster.subscribe((event) => {
+				if (event.type !== 'job.updated') return;
+				const job = event.payload as EngineJob;
+				if (job.id === id && job.state === 'running') {
+					off();
+					resolve();
+				}
+			});
+		});
+	}
+
 	it('renders lower-third 1920x1080 @30 for 150 frames into a verified ProRes 4444 master', async () => {
 		const res = await app.inject({
 			method: 'POST',
@@ -195,6 +211,7 @@ describe.skipIf(!canRender)('real jasper-mg renders', () => {
 
 	it('mg-render jobs are listed, cancelled and retried through /api/jobs (WP-3I)', async () => {
 		const spec = { ...lt150, durationFrames: 2990 };
+		const service = app.jasper.services.mg as MgService;
 		const started = await app.inject({
 			method: 'POST',
 			url: '/api/motion-graphics/render',
@@ -210,18 +227,20 @@ describe.skipIf(!canRender)('real jasper-mg renders', () => {
 		const one = await app.inject({ method: 'GET', url: `/api/jobs/${id}`, headers: H });
 		expect(one.statusCode).toBe(200);
 		expect(one.json()).toMatchObject({ id, kind: 'mg-render' });
-		await new Promise((r) => setTimeout(r, 300));
+		const render = service.requestRender(spec, 'master');
+		await running(id);
 		const cancelled = await app.inject({ method: 'POST', url: `/api/jobs/${id}/cancel`, headers: H });
 		expect(cancelled.statusCode).toBe(200);
-		const service = app.jasper.services.mg as MgService;
-		await vi.waitFor(() => expect(service.getJob(id)?.state).toBe('cancelled'), { timeout: 10_000 });
+		expect((await render.done).state).toBe('cancelled');
 		const retried = await app.inject({ method: 'POST', url: `/api/jobs/${id}/retry`, headers: H });
 		expect(retried.statusCode).toBe(200);
 		const retryId = retried.json().id as string;
 		expect(retryId).not.toBe(id);
 		expect(retried.json()).toMatchObject({ kind: 'mg-render' });
+		const retry = service.requestRender(spec, 'master');
+		await running(retryId);
 		await app.inject({ method: 'POST', url: `/api/jobs/${retryId}/cancel`, headers: H });
-		await vi.waitFor(() => expect(service.getJob(retryId)?.state).toBe('cancelled'), { timeout: 10_000 });
+		expect((await retry.done).state).toBe('cancelled');
 		const unknown = await app.inject({ method: 'GET', url: '/api/jobs/job_mg_doesnotexist', headers: H });
 		expect(unknown.statusCode).toBe(404);
 	}, 60_000);
@@ -245,7 +264,7 @@ describe.skipIf(!canRender)('real jasper-mg renders', () => {
 
 		const service = app.jasper.services.mg as MgService;
 		const { job, done } = service.requestRender({ ...lt150, durationFrames: 3000 }, 'master');
-		await new Promise((r) => setTimeout(r, 400));
+		await running(job.id);
 		service.cancel(job.id);
 		const final = await done;
 		expect(final.state).toBe('cancelled');

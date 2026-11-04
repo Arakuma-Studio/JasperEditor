@@ -114,7 +114,6 @@ const probe = async ({
 					frame.close();
 				}
 			} catch (error) {
-				clearTimeout(timer);
 				rej(error);
 				return;
 			}
@@ -122,29 +121,19 @@ const probe = async ({
 		};
 		callback = v.requestVideoFrameCallback(tick);
 		v.onended = () => {
-			clearTimeout(timer);
 			v.cancelVideoFrameCallback(callback);
 			res();
 		};
 		v.onerror = () => rej(new Error(`media error ${v.error?.code} ${v.error?.message}`));
 		v.playbackRate = 0.5;
 		void v.play().catch(rej);
-		const timer = setTimeout(() => rej(new Error(`playback stalled at ${v.currentTime}`)), 30_000);
 	});
 	const ended = v.ended;
 	const sought: { currentTime: number; code: number; seeking: boolean; readyState: number }[] = [];
 	for (const frame of seekFrames) {
 		v.pause();
 		await new Promise<void>((res, rej) => {
-			const timer = setTimeout(
-				() =>
-					rej(
-						new Error(`seek frame ${frame} stalled at ${v.currentTime}; samples ${JSON.stringify(sought)}`),
-					),
-				30_000,
-			);
 			v.onseeked = () => {
-				clearTimeout(timer);
 				res();
 			};
 			v.onerror = () => rej(new Error(`media error ${v.error?.code} ${v.error?.message}`));

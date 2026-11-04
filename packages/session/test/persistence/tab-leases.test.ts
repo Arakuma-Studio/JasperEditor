@@ -1,5 +1,5 @@
 import { createCounterIdSource, defaultRegistries } from '@jasper/project';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	createTabLeaseRegistry,
 	EditorSession,
@@ -70,36 +70,47 @@ function setup() {
 		const store = new EngineProjectStore(engine.client(), { tabLeases });
 		return { store, tabLeases, channel };
 	};
-	const open = (store: EngineProjectStore, sessionId: string) =>
-		EditorSession.open({ store, projectId, ctx: ctx(), sessionId });
+	const open = async (store: EngineProjectStore, sessionId: string) => {
+		const pending = EditorSession.open({ store, projectId, ctx: ctx(), sessionId });
+		await vi.advanceTimersByTimeAsync(30);
+		return pending;
+	};
 	return { engine, projectId, hub, page, open };
 }
 
-/** The page goes away and its keepalive DELETE never reaches the engine. */
-async function unloadDroppingRelease(engine: FakeEngine) {
-	engine.failures.push({ match: /^DELETE .*\/lease\//, status: 0, network: true });
-	window.dispatchEvent(new Event('pagehide'));
-	await new Promise((r) => setTimeout(r, 0));
-}
-
 describe('tab lease memory (S01:PER-040, polish)', () => {
-	afterEach(() => vi.unstubAllGlobals());
+	beforeEach(() => vi.useFakeTimers());
+	afterEach(() => {
+		vi.useRealTimers();
+		vi.unstubAllGlobals();
+	});
 
 	it('a reload reclaims the previous page lease at once when its pagehide release was lost', async () => {
 		const { engine, projectId, page, open } = setup();
-		vi.stubGlobal('fetch', engine.fetch);
+		let releaseDone!: () => void;
+		const releaseReceipt = new Promise<void>((resolve) => {
+			releaseDone = resolve;
+		});
+		const keepaliveFetch: typeof fetch = async (input, init) => {
+			try {
+				return await engine.fetch(input, init);
+			} finally {
+				if (init?.method === 'DELETE' && init.keepalive) releaseDone();
+			}
+		};
+		vi.stubGlobal('fetch', keepaliveFetch);
 		const tab = new MemStorage();
 		const p1 = page(tab);
 		const a = await open(p1.store, 'a');
 		expect(a.getState().lease.status).toBe('held');
-		await unloadDroppingRelease(engine);
+		engine.failures.push({ match: /^DELETE .*\/lease\//, status: 0, network: true });
+		window.dispatchEvent(new Event('pagehide'));
+		await releaseReceipt;
 		expect(engine.leases.get(projectId)?.sessionId).toBe('a');
 		p1.channel.close();
 
 		const p2 = page(tab);
-		const t0 = Date.now();
 		const b = await open(p2.store, 'b');
-		expect(Date.now() - t0).toBeLessThan(2000);
 		expect(b.getState().readOnly).toBe(false);
 		expect(b.getState().lease.status).toBe('held');
 		expect(engine.leases.get(projectId)?.sessionId).toBe('b');

@@ -43,18 +43,9 @@ import { buildCompositionInfos, loadSchemaModule } from '../src/mg-bundles/schem
 import { type MgBundleService, prerenderKey } from '../src/mg-bundles/service.ts';
 import { extractZip, ZipError } from '../src/mg-bundles/zip.ts';
 import { mgBundleService } from '../src/routes/mg-bundles.ts';
+import * as fsTools from '../src/tools/fs.ts';
 import { coreServices } from '../src/tools/services.ts';
-import {
-	closeApps,
-	DocBuilder,
-	ensureFixtures,
-	H,
-	JSON_H,
-	makeApp,
-	ROOT,
-	tempAppdir,
-	until,
-} from './helpers.ts';
+import { closeApps, DocBuilder, ensureFixtures, H, JSON_H, makeApp, ROOT, tempAppdir } from './helpers.ts';
 
 const FIXTURE_PROJECT = join(ROOT, 'fixtures', 'mg-project');
 const E2E = process.env.MG_E2E === '1';
@@ -673,17 +664,7 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 		title = r.json();
 	}, 600_000);
 
-	const job = async (id: string): Promise<EngineJob> => {
-		await until(
-			() => {
-				const j = coreServices(app).queue.get(id);
-				return j && ['succeeded', 'failed', 'cancelled'].includes(j.state);
-			},
-			900_000,
-			200,
-		);
-		return coreServices(app).queue.get(id)!;
-	};
+	const job = (id: string): Promise<EngineJob> => coreServices(app).queue.wait(id);
 
 	it('test 2: imports the project — Title schema from the module, Badge inferred, manifest hints', () => {
 		expect(title.kind).toBe('mg-bundle');
@@ -1063,8 +1044,13 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 		for (const f of ['src', 'remotion.config.ts', 'jasper.mg.json', 'package.json', 'tsconfig.json'])
 			cpSync(join(FIXTURE_PROJECT, f), join(dir, f), { recursive: true });
 		symlinkSync(join(FIXTURE_PROJECT, 'node_modules'), join(dir, 'node_modules'));
-		const events: { type: string; payload: unknown }[] = [];
-		const off = coreServices(app).broadcaster.subscribe((e) => events.push(e), {});
+		const rebuilt = new Promise<unknown>((resolve) => {
+			const off = coreServices(app).broadcaster.subscribe((event) => {
+				if (event.type !== 'mgBundle.rebuilt') return;
+				off();
+				resolve(event.payload);
+			}, {});
+		});
 		const response = await app.inject({
 			method: 'POST',
 			url: '/api/mg-bundles/import',
@@ -1075,9 +1061,7 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 		const first = response.json() as RegisteredMedia;
 		const src = join(dir, 'src', 'Title.tsx');
 		writeFileSync(src, readFileSync(src, 'utf8').replace('borderRadius: 24', 'borderRadius: 4'));
-		await until(() => events.find((e) => e.type === 'mgBundle.rebuilt'), 600_000, 500);
-		off();
-		const ev = events.find((e) => e.type === 'mgBundle.rebuilt')!.payload as {
+		const ev = (await rebuilt) as {
 			oldKey: string;
 			newKey: string;
 			mgBundle: MgBundleInfo;
@@ -1097,7 +1081,27 @@ describe.runIf(E2E)('Remotion bundles end to end (MG_E2E=1, S08 §8)', () => {
 			quality: 'master' as const,
 		};
 		expect(svc.renderKeyOf(req)).not.toBe(svc.renderKeyOf({ ...req, mediaKey: ev.newKey }));
-		svc.stopWatch(dir);
+		const writeJson = fsTools.atomicWriteJson;
+		let completion!: Promise<void>;
+		let started!: () => void;
+		const writing = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		const writer = vi.spyOn(fsTools, 'atomicWriteJson').mockImplementation((file, value, pretty) => {
+			const receipt = writeJson(file, value, pretty);
+			if (file === join(svc.bundlesDir, 'watches.json')) {
+				completion = receipt;
+				started();
+			}
+			return receipt;
+		});
+		try {
+			svc.stopWatch(dir);
+			await writing;
+			await completion;
+		} finally {
+			writer.mockRestore();
+		}
 		rmSync(dir, { recursive: true, force: true });
 	}, 900_000);
 });

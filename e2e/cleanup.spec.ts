@@ -45,7 +45,6 @@ const sequenceEnd = async () => {
 };
 
 test('Clean Up mode on a generated clip: analyze, review, play the result, apply in one step, undo', async () => {
-	test.setTimeout(180_000);
 	await createProject(page, 'E2E Clean Up');
 	await importFiles(page, ['cleanup-voice.mp4']);
 	const mediaId = await mediaIdForFile(page, 'cleanup-voice.mp4');
@@ -129,7 +128,7 @@ test('Clean Up mode on a generated clip: analyze, review, play the result, apply
 	const labels0 = await appliedLabels(page);
 	await page.getByTestId('text.cleanup.playResult').click();
 	await expect(page.getByTestId('cleanup-preview-chip')).toBeVisible();
-	await page.waitForTimeout(800);
+	await expect.poll(() => query<{ playing: boolean }>(page, 'playhead.get')).toMatchObject({ playing: true });
 	await page.getByTestId('text.cleanup.stop').click();
 	await expect(page.getByTestId('cleanup-preview-chip')).toBeHidden();
 	expect(await appliedLabels(page)).toEqual(labels0);

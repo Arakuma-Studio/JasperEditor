@@ -8,7 +8,7 @@ import { SoundListenResultSchema } from '@jasper/api';
 import type { Sequence } from '@jasper/project';
 import { SessionProvider } from '@jasper/session/react';
 import { closeAllDialogs, toasts } from '@jasper/ui';
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createCommandContext } from '../src/commands/context.ts';
 import { getCommand, runCommand } from '../src/commands/registry.ts';
@@ -33,10 +33,14 @@ vi.mock('../src/state/engine.tsx', () => ({
 const { registerAllCommands } = await import('../src/commands/index.ts');
 
 beforeAll(() => registerAllCommands());
-beforeEach(() => toasts.dismissAll());
+beforeEach(() => {
+	vi.useFakeTimers();
+	toasts.dismissAll();
+});
 afterEach(() => {
 	cleanup();
 	closeAllDialogs();
+	vi.useRealTimers();
 });
 
 /** Music on A1 and a hit on A2 at frame 90. */
@@ -307,10 +311,11 @@ describe('Sound Check ▸ Log tab', () => {
 		expect(screen.getByTestId('sound-check-tab-log').getAttribute('aria-selected')).toBe('true');
 		const log = screen.getByTestId('sound-listen-log');
 		expect(within(log).getByTestId('sound-listen-copy').getAttribute('aria-disabled')).toBe('true');
-		fireEvent.click(within(log).getByTestId('sound-listen-run'));
-		await waitFor(() => expect(within(log).getAllByTestId('sound-listen-line')).toHaveLength(5), {
-			timeout: 3000,
+		await act(async () => {
+			fireEvent.click(within(log).getByTestId('sound-listen-run'));
+			await vi.advanceTimersByTimeAsync(400);
 		});
+		expect(within(log).getAllByTestId('sound-listen-line')).toHaveLength(5);
 		expect(eng.listens).toEqual([{ projectId: f.session.projectId, sequenceId: f.seqId, detail: 'normal' }]);
 		// verbatim: the same lines MCP prints (timecode, two spaces, text)
 		const result = listenStore(f.session).getState().result!;
@@ -341,18 +346,17 @@ describe('Sound Check ▸ Log tab', () => {
 		// copy log
 		const writeText = vi.fn(async () => undefined);
 		Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
-		fireEvent.click(within(log).getByTestId('sound-listen-copy'));
-		await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+		await act(async () => fireEvent.click(within(log).getByTestId('sound-listen-copy')));
 		expect((writeText.mock.calls[0] as unknown as [string])[0]).toContain(result.text);
 		// the spectrogram of the listened range, marked at the current line
-		fireEvent.click(within(log).getByTestId('sound-listen-spectrogram-toggle'));
-		await waitFor(() => expect(eng.visuals).toHaveLength(1));
+		await act(async () => fireEvent.click(within(log).getByTestId('sound-listen-spectrogram-toggle')));
+		expect(eng.visuals).toHaveLength(1);
 		expect(eng.visuals[0]).toMatchObject({
 			sequenceId: f.seqId,
 			range: { start: 0, end: 300 },
 			spectrogram: true,
 		});
-		expect(await within(log).findByTestId('sound-listen-spectrogram-mark')).toBeDefined();
+		expect(within(log).getByTestId('sound-listen-spectrogram-mark')).toBeDefined();
 		// back to the findings
 		fireEvent.click(screen.getByTestId('sound-check-tab-findings'));
 		expect(screen.queryByTestId('sound-listen-log')).toBeNull();
@@ -369,8 +373,11 @@ describe('Sound Check ▸ Log tab', () => {
 		expect(box.getAttribute('aria-checked')).toBe('false');
 		fireEvent.click(box);
 		expect(listenStore(f.session).getState().tags).toBe(true);
-		fireEvent.click(within(log).getByTestId('sound-listen-run'));
-		await waitFor(() => expect(eng.listens).toHaveLength(1));
+		await act(async () => {
+			fireEvent.click(within(log).getByTestId('sound-listen-run'));
+			await vi.advanceTimersByTimeAsync(400);
+		});
+		expect(eng.listens).toHaveLength(1);
 		expect(eng.listens[0]).toMatchObject({ tags: true, detail: 'normal' });
 	});
 
@@ -386,7 +393,9 @@ describe('Sound Check ▸ Log tab', () => {
 			capabilities: ['engine'],
 		});
 		await act(async () => {
-			await runCommand('sound.listenToSequence', ctx);
+			const run = runCommand('sound.listenToSequence', ctx);
+			await vi.advanceTimersByTimeAsync(400);
+			await run;
 		});
 		expect(listenStore(f.session).getState()).toMatchObject({ tab: 'log', error: null });
 		expect(listenStore(f.session).getState().result?.lines).toHaveLength(5);

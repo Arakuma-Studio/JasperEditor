@@ -16,6 +16,7 @@ const electron = vi.hoisted(() => ({
 	showOpenDialog: vi.fn<() => Promise<{ canceled: boolean; filePaths: string[] }>>(),
 	fromWebContents: vi.fn<(sender: PickerEvent['sender']) => { id: number } | null>(() => null),
 	pickFolder: vi.fn<PickerHandler>(),
+	ipcRegistered: vi.fn<() => void>(),
 	clipboardHandlers: new Map<string, (event: PickerEvent) => Promise<unknown>>(),
 	clipboardHas: vi.fn<() => Promise<boolean>>(),
 	clipboardRead: vi.fn<() => Promise<{ types: string[]; getType(): Promise<Blob> }[]>>(),
@@ -44,7 +45,10 @@ vi.mock('electron', () => ({
 	dialog: { showErrorBox: electron.showErrorBox, showOpenDialog: electron.showOpenDialog },
 	ipcMain: {
 		handle: (channel: string, handler: PickerHandler) => {
-			if (channel === 'jasper:pick-folder') electron.pickFolder.mockImplementation(handler);
+			if (channel === 'jasper:pick-folder') {
+				electron.pickFolder.mockImplementation(handler);
+				electron.ipcRegistered();
+			}
 			if (channel === 'jasper:clipboard-read' || channel === 'jasper:clipboard-read-files')
 				electron.clipboardHandlers.set(channel, handler);
 		},
@@ -73,20 +77,25 @@ describe('desktop startup failures', () => {
 
 	it('reports invalid development URLs and exits through the normal shutdown path', async () => {
 		vi.stubEnv('JASPER_DESKTOP_DEV_URL', 'not a URL');
+		const reported = new Promise<void>((resolve) =>
+			electron.showErrorBox.mockImplementationOnce(() => resolve()),
+		);
 		await import('../src/main.ts');
-		await vi.waitFor(() => expect(electron.showErrorBox).toHaveBeenCalled());
+		await reported;
 		expect(electron.quit).toHaveBeenCalledOnce();
 	});
 
 	it('reports failed editor loads instead of leaving an invisible window', async () => {
 		vi.stubEnv('JASPER_DESKTOP_DEV_URL', 'http://127.0.0.1:5173');
 		electron.loadURL.mockRejectedValueOnce(new Error('connection refused'));
+		const reported = new Promise<void>((resolve) =>
+			electron.showErrorBox.mockImplementationOnce(() => resolve()),
+		);
 		await import('../src/main.ts');
-		await vi.waitFor(() =>
-			expect(electron.showErrorBox).toHaveBeenCalledWith(
-				expect.any(String),
-				expect.stringContaining('connection refused'),
-			),
+		await reported;
+		expect(electron.showErrorBox).toHaveBeenCalledWith(
+			expect.any(String),
+			expect.stringContaining('connection refused'),
 		);
 		expect(electron.show).toHaveBeenCalledOnce();
 	});
@@ -101,8 +110,12 @@ describe('desktop folder picker IPC', () => {
 		electron.fromWebContents.mockReturnValue(null);
 		vi.stubEnv('JASPER_DESKTOP_MODE', 'dev');
 		vi.stubEnv('JASPER_DESKTOP_DEV_URL', 'http://127.0.0.1:5173');
+		electron.ipcRegistered.mockReset();
+		const registered = new Promise<void>((resolve) =>
+			electron.ipcRegistered.mockImplementationOnce(() => resolve()),
+		);
 		await import('../src/main.ts');
-		await vi.waitFor(() => expect(electron.pickFolder.getMockImplementation()).toBeTypeOf('function'));
+		await registered;
 	});
 
 	afterEach(() => vi.unstubAllEnvs());
@@ -150,9 +163,14 @@ describe('desktop clipboard read isolation', () => {
 		electron.clipboardHandlers.clear();
 		electron.clipboardHas.mockResolvedValue(true);
 		electron.loadURL.mockResolvedValue(undefined);
+		electron.ipcRegistered.mockReset();
+		const registered = new Promise<void>((resolve) =>
+			electron.ipcRegistered.mockImplementationOnce(() => resolve()),
+		);
 		vi.stubEnv('JASPER_DESKTOP_MODE', 'dev');
 		vi.stubEnv('JASPER_DESKTOP_DEV_URL', 'http://127.0.0.1:5173');
 		await import('../src/main.ts');
+		await registered;
 	});
 
 	afterEach(() => {
@@ -167,7 +185,6 @@ describe('desktop clipboard read isolation', () => {
 		['jasper:clipboard-read-files', 'text'],
 	])('%s keeps later valid entries when %s rejects', async (channel, failure) => {
 		const files = channel === 'jasper:clipboard-read-files';
-		await vi.waitFor(() => expect(electron.clipboardHandlers.get(channel)).toBeTypeOf('function'));
 		const format = files ? 'text/uri-list' : ELECTRON_CLIPBOARD_FORMAT;
 		const file = new URL('../src/security.ts', import.meta.url);
 		const json = JSON.stringify({ format: 'jasper-clipboard', version: 1, kind: 'clips' });

@@ -6,7 +6,7 @@
 // Screenshots: test-results/e2e-sound-review.
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { type APIRequestContext, expect, type Page, test } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
 import { FIXTURE_COMMANDS } from '../apps/mcp/test/sound-cues-fixture.ts';
 import {
 	appliedLabels,
@@ -14,6 +14,7 @@ import {
 	createProject,
 	enableAgentBridge,
 	focusTimeline,
+	libraryReady,
 	query,
 	ROOT,
 	serverInfo,
@@ -53,21 +54,6 @@ async function asAgent<T>(
 		...(body !== undefined ? { body: JSON.stringify(body) } : {}),
 	});
 	return { status: r.status, json: (await r.json()) as T };
-}
-
-/** The starter kit is indexed by the throwaway engine on start; wait for it. */
-async function libraryReady(request: APIRequestContext) {
-	await expect
-		.poll(
-			async () => {
-				const r = await request.get('/api/sounds/status');
-				if (!r.ok()) return 0;
-				const s = (await r.json()) as { sounds: number; indexing: unknown; needsIndex: boolean };
-				return s.indexing || s.needsIndex ? 0 : s.sounds;
-			},
-			{ timeout: 360_000, intervals: [1000] },
-		)
-		.toBeGreaterThan(20);
 }
 
 type Item = {

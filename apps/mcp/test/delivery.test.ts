@@ -347,6 +347,7 @@ describe('delivery tools (spec 19 §12)', () => {
 			arguments: { projectId, path: 'a.asl' },
 		})) as CallToolResult;
 		expect(r.isError).toBe(true);
+		expect(body(r).error.code).toBe('NOT_ABSOLUTE');
 	});
 
 	it('image_split: dryRun lists parts; otherwise one transaction replaces the clip', async () => {
@@ -374,11 +375,40 @@ describe('delivery tools (spec 19 §12)', () => {
 	it('image_split refuses a clip that is not a still', async () => {
 		const e = fakeEngine();
 		const c = await connect(e.link);
+		const added = body(
+			await c.callTool({
+				name: 'apply_commands',
+				arguments: {
+					projectId,
+					label: 'Add text',
+					commands: [
+						{
+							type: 'clip.addText',
+							content: { text: 'Title' },
+							at: 0,
+							duration: 30,
+							track: 'V2',
+							ref: '$text',
+						},
+					],
+				},
+			}),
+		);
 		const r = (await c.callTool({
+			name: 'image_split',
+			arguments: { projectId, clipId: added.refs.$text },
+		})) as CallToolResult;
+		expect(r.isError).toBe(true);
+		expect(body(r).error).toMatchObject({
+			code: 'E_INVALID_PARAM',
+			hint: expect.stringContaining('Pick a still'),
+		});
+		const missing = (await c.callTool({
 			name: 'image_split',
 			arguments: { projectId, clipId: 'clp_none' },
 		})) as CallToolResult;
-		expect(r.isError).toBe(true);
+		expect(missing.isError).toBe(true);
+		expect(body(missing).error.code).toBe('E_NOT_FOUND');
 	});
 
 	it('color_gamut_check returns the percentages and the mask', async () => {

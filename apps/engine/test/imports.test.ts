@@ -39,7 +39,11 @@ describe('zip reader', () => {
 		const manifest = listZip(archive).find((e) => e.name === 'manifest.json')!;
 		expect(manifest.method).toBe(8);
 		expect(JSON.parse(readZipEntry(archive, manifest).toString()).animations).toEqual([{ id: 'spin' }]);
-		expect(() => readZipEntry(archive, manifest, 8)).toThrow(ZipError);
+		for (const [bytes, entry] of [
+			[zip, listZip(zip)[0]!],
+			[archive, manifest],
+		] as const)
+			expect(() => readZipEntry(bytes, entry, 8)).toThrow(ZipError);
 	});
 });
 

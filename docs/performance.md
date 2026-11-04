@@ -35,10 +35,10 @@ expression-editor loading and FFT plan construction, with new paired baselines.
 | Project panel with 2 000 items, scrolling | ≥ 50 fps | ui-perf | same |
 | Opening a 2 000-item project: editor interactive and every medium resolved | < 2 s | polish | `pnpm perf --sections ui --ui open` (scaled by load² unless `PERF=1`) |
 | Autosave of the 8 MB scale project after a one-clip edit (serialisation on the UI thread) | — (measured: ≈ 0.5 ms) | ui-perf | `packages/project/bench/json-cache.ts` |
-| Lumetri bake, colour scopes, shader compilation and tracking cancellation | limits documented by each owner | their specs and wp-notes | `packages/project/test/{color,lumetri-grade,scopes}.test.ts`, `packages/compositions/test/fx-compile-budget.test.ts`, `apps/engine/test/tracking.test.ts`, through `budgetMs` |
+| Lumetri bake, colour scopes, shader compilation and tracking cancellation | limits documented by each owner | their specs and wp-notes | `packages/project/test/{color,lumetri-grade,scopes}.test.ts`, `packages/compositions/test/fx-compile-budget.test.ts`, `apps/engine/test/tracking.test.ts`, through `budgetMs` (Lumetri measures executing-thread CPU time) |
 
 The performance runner records budget misses in its report and exits nonzero for them with `PERF=1`. Retained
-unit timing tests fail against their load-scaled limits in the normal test gate.
+unit performance tests fail against their reference limits, retaining existing load scaling in the normal test gate.
 
 ## 2. Load-tolerant enforcement
 
@@ -53,6 +53,9 @@ average 8–40 from parallel agents) fixed budgets failed without any regression
 
 A real regression still fails: the calibration workload does not get slower when the code does. No budget was
 raised: at load factor 1 the enforced budget is the documented one.
+
+The table parser, full-grade Lumetri bake and script-fix ratchets measure executing-thread CPU time through
+`scripts/perf/cpu.ts`. Their reference budgets, input sizes and existing `budgetMs` thresholds are retained.
 
 ### Test timeouts of the web project (workstream `hardening`)
 

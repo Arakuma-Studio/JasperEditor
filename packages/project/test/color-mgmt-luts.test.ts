@@ -143,8 +143,12 @@ describe('.cube', () => {
 		expect(at(l, [0.5, 0.5, 0.5])).toEqual([0.5, 0.5, 0.5]);
 	});
 	it('refuses duplicate sizes and data before sizes', () => {
-		expect(() => parseCube('LUT_3D_SIZE 2\nLUT_3D_SIZE 2\n')).toThrow(CubeParseError);
-		expect(() => parseCube('0 0 0\nLUT_3D_SIZE 2\n')).toThrow(CubeParseError);
+		expect(() =>
+			parseCube('LUT_3D_SIZE 2\nLUT_3D_SIZE 2\n0 0 0\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n'),
+		).toThrow(CubeParseError);
+		expect(() =>
+			parseCube('0 0 0\nLUT_3D_SIZE 2\n1 0 0\n0 1 0\n1 1 0\n0 0 1\n1 0 1\n0 1 1\n1 1 1\n'),
+		).toThrow(CubeParseError);
 		expect(() => parseCube('LUT_3D_SIZE 2\nLUT_1D_SIZE 2\n0 0 0\n')).toThrow(/Expected 10 table entries/);
 	});
 });

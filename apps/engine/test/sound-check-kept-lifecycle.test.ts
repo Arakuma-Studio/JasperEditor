@@ -9,8 +9,9 @@ import { join } from 'node:path';
 import { type Lease, SoundCheckLastResponseSchema } from '@jasper/api';
 import { appdirPaths } from '@jasper/config';
 import { makeEnvelope, type ProjectDocument } from '@jasper/project';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { SoundCheckReportStore } from '../src/sound-design/report-store.ts';
+import { coreServices } from '../src/tools/services.ts';
 import { closeApps, DocBuilder, makeApp, type TestApp } from './helpers.ts';
 import { keptReportFixture } from './sound-check-fixture.ts';
 
@@ -53,12 +54,23 @@ const post = (url: string, body: unknown, headers: Record<string, string> = EDIT
 	app.inject({ method: 'POST', url, headers: json(headers), payload: JSON.stringify(body) });
 const last = (projectId: string, sequenceId: string) =>
 	post('/api/sound-design/check/last', { projectId, sequenceId });
-/** Waits for the asynchronous prune after a save / lease change. */
-async function until(pred: () => boolean, what: string): Promise<void> {
-	for (let i = 0; i < 200 && !pred(); i++) await new Promise((r) => setTimeout(r, 10));
-	expect(pred(), what).toBe(true);
+// Observe real reads and prunes so a save or lease change can be drained without a deadline.
+const pending = new Set<Promise<unknown>>();
+function observe<T>(promise: Promise<T>): Promise<T> {
+	pending.add(promise);
+	void promise.then(
+		() => pending.delete(promise),
+		() => pending.delete(promise),
+	);
+	return promise;
 }
-const settle = () => new Promise((r) => setTimeout(r, 150));
+async function drainPrunes(): Promise<void> {
+	do {
+		await Promise.allSettled([...pending]);
+		// A completed project read starts the prune in its promise continuation.
+		await new Promise<void>((resolve) => setImmediate(resolve));
+	} while (pending.size);
+}
 async function saveDoc(projectId: string, doc: ProjectDocument): Promise<void> {
 	const cur = await app.inject({ method: 'GET', url: `/api/projects/${projectId}`, headers: EDITOR_H });
 	const revision = (cur.json() as { revision: number }).revision;
@@ -81,9 +93,21 @@ const without = (doc: ProjectDocument, seqId: string): ProjectDocument => {
 beforeAll(async () => {
 	appdir = mkdtempSync(join(tmpdir(), 'jasper-life-appdir-'));
 	app = await makeApp({ appdir, dev: false, token: TOKEN, editorKey: KEY });
+	const projects = coreServices(app).projects;
+	const get = projects.get.bind(projects);
+	vi.spyOn(projects, 'get').mockImplementation((projectId) => observe(get(projectId)));
+	const prune = SoundCheckReportStore.prototype.prune;
+	vi.spyOn(SoundCheckReportStore.prototype, 'prune').mockImplementation(function (
+		this: SoundCheckReportStore,
+		...args: Parameters<SoundCheckReportStore['prune']>
+	) {
+		return observe(prune.apply(this, args));
+	});
 }, 180_000);
 afterAll(async () => {
 	await closeApps();
+	await drainPrunes();
+	vi.restoreAllMocks();
 	rmSync(appdir, { recursive: true, force: true });
 });
 
@@ -93,7 +117,8 @@ describe('the kept report follows its sequence and project', { timeout: 120_000 
 		expect((await last(projectId, b)).statusCode).toBe(200);
 		// (headless agent transactions refuse sequence.delete — destructive — so the save is the way it goes)
 		await saveDoc(projectId, without(doc, b));
-		await until(() => !existsSync(file(b)), 'the deleted sequence’s report is gone');
+		await drainPrunes();
+		expect(existsSync(file(b)), 'the deleted sequence’s report is gone').toBe(false);
 		expect(existsSync(file(a))).toBe(true);
 		expect((await last(projectId, a)).statusCode).toBe(200);
 	});
@@ -106,7 +131,7 @@ describe('the kept report follows its sequence and project', { timeout: 120_000 
 		expect(lease.leaseId).toBeTruthy();
 		// the editor deletes B and saves: B's History entry can still undo it
 		await saveDoc(projectId, without(doc, b));
-		await settle();
+		await drainPrunes();
 		expect(existsSync(file(b))).toBe(true);
 		// undo + save: the sequence is back, and so is its report
 		await saveDoc(projectId, doc);
@@ -115,7 +140,7 @@ describe('the kept report follows its sequence and project', { timeout: 120_000 
 		expect(SoundCheckLastResponseSchema.parse(back.json()).sequenceId).toBe(b);
 		// deleted again, saved, the editor closes (lease released): nobody can bring it back
 		await saveDoc(projectId, without(doc, b));
-		await settle();
+		await drainPrunes();
 		expect(existsSync(file(b))).toBe(true);
 		const rel = await app.inject({
 			method: 'DELETE',
@@ -123,7 +148,8 @@ describe('the kept report follows its sequence and project', { timeout: 120_000 
 			headers: EDITOR_H,
 		});
 		expect(rel.statusCode, rel.body).toBe(200);
-		await until(() => !existsSync(file(b)), 'gone when the session ends');
+		await drainPrunes();
+		expect(existsSync(file(b)), 'gone when the session ends').toBe(false);
 		expect(existsSync(file(a))).toBe(true);
 	});
 
@@ -137,7 +163,8 @@ describe('the kept report follows its sequence and project', { timeout: 120_000 
 		const l2 = await post(`/api/projects/${projectId}/lease`, { sessionId: 'ses_editor_3', takeOver: true });
 		expect(l2.statusCode, l2.body).toBe(200);
 		expect((l2.json() as Lease).leaseId).not.toBe(l1.leaseId);
-		await until(() => !existsSync(file(b)), 'a new session starts from the saved project');
+		await drainPrunes();
+		expect(existsSync(file(b)), 'a new session starts from the saved project').toBe(false);
 		expect(existsSync(file(a))).toBe(true);
 	});
 

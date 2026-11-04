@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { EngineJob, ProcessResult, RegisteredMedia } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { coreServices } from '../src/tools/services.ts';
 import { frameCodes } from './frame-codes.ts';
 import {
 	closeApps,
@@ -22,7 +23,6 @@ import {
 	makeApp,
 	register,
 	type TestApp,
-	until,
 } from './helpers.ts';
 
 const H = { host: '127.0.0.1:47900' };
@@ -50,15 +50,8 @@ function frameCount(file: string): number {
 	return Number(r.stdout.trim());
 }
 
-async function waitJob(id: string, timeoutMs = 240_000): Promise<EngineJob> {
-	return until(
-		async () => {
-			const j = (await app.inject({ method: 'GET', url: `/api/jobs/${id}`, headers: H })).json() as EngineJob;
-			return ['succeeded', 'failed', 'cancelled', 'interrupted'].includes(j.state) ? j : null;
-		},
-		timeoutMs,
-		200,
-	);
+function waitJob(id: string): Promise<EngineJob> {
+	return coreServices(app).queue.wait(id);
 }
 
 const exportSettings = (seqId: string) => ({

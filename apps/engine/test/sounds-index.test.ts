@@ -254,7 +254,7 @@ describe('sound index job contracts', () => {
 					visual: { ...setup.analysis.visual, soundId: request.soundId, fingerprint: request.fingerprint },
 				};
 			});
-			const result = await setup.indexer.run({ ...setup.context, signal: AbortSignal.timeout(4_000) });
+			const result = await setup.indexer.run({ ...setup.context, signal: new AbortController().signal });
 			const snapshot = await setup.library.snapshot();
 			expect(Object.values(snapshot.sounds).map((entry) => entry.source.type)).toEqual(['starter']);
 			expect(snapshot.roots).toEqual([]);

@@ -8,12 +8,14 @@
 // Env: DESKTOP_SMOKE_PORT (base port, default 48140: engine = base, Vite = base + 1). Screenshots go to
 // test-results/desktop-<mode>.png. Needs xvfb-run; sets ELECTRON_DISABLE_SANDBOX=1 (no SUID sandbox helper).
 import { spawn, spawnSync } from 'node:child_process';
+import { once } from 'node:events';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { stripVTControlCharacters } from 'node:util';
 import { chromium, expect } from '@playwright/test';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -40,18 +42,36 @@ function fail(msg) {
 	process.exit(1);
 }
 
-async function waitFor(url, ms) {
-	const t0 = Date.now();
-	while (Date.now() - t0 < ms) {
-		try {
-			const r = await fetch(url);
-			if (r.ok) return;
-		} catch {
-			// not up yet
-		}
-		await new Promise((r) => setTimeout(r, 500));
-	}
-	fail(`${url} did not come up within ${ms} ms`);
+function waitForOutput(proc, pattern, timeoutMs) {
+	const signal = AbortSignal.timeout(timeoutMs);
+	return new Promise((resolve, reject) => {
+		let output = '';
+		const cleanup = () => {
+			proc.stdout.off('data', data);
+			proc.stderr.off('data', data);
+			proc.off('error', error);
+			proc.off('exit', exited);
+			signal.removeEventListener('abort', aborted);
+		};
+		const data = (chunk) => {
+			output += stripVTControlCharacters(String(chunk));
+			const match = pattern.exec(output);
+			if (!match) return;
+			cleanup();
+			resolve(match);
+		};
+		const error = (cause) => {
+			cleanup();
+			reject(cause);
+		};
+		const exited = (code) => error(new Error(`exited before ${pattern} (${code}): ${output.slice(-3000)}`));
+		const aborted = () => error(signal.reason);
+		signal.addEventListener('abort', aborted, { once: true });
+		proc.stdout.on('data', data);
+		proc.stderr.on('data', data);
+		proc.once('error', error);
+		proc.once('exit', exited);
+	});
 }
 
 /**
@@ -61,7 +81,7 @@ async function waitFor(url, ms) {
  * addresses change, e.g. a Docker container starting; Node's fetch is not affected). The page reloads itself when
  * that happens (apps/web/editor-boot.ts) and that is tested in apps/web; this keeps the smoke about the desktop shell.
  */
-async function warmViteGraph(origin, ms) {
+async function warmViteGraph(origin) {
 	const t0 = Date.now();
 	const seen = new Set();
 	const queue = ['/', '/src/main.tsx'];
@@ -81,7 +101,7 @@ async function warmViteGraph(origin, ms) {
 			failures++;
 		}
 	};
-	while (queue.length && Date.now() - t0 < ms) {
+	while (queue.length) {
 		const batch = [];
 		while (queue.length && batch.length < 8) {
 			const next = queue.shift();
@@ -126,30 +146,41 @@ if (mode === 'dev') {
 	temps.push(appdir);
 	const enginePort = base;
 	const webPort = base + 1;
-	children.push(
-		spawn(
-			join(root, 'node_modules/.bin/tsx'),
-			[join(root, 'apps/engine/src/cli.ts'), '--port', String(enginePort)],
-			{
-				cwd: root,
-				stdio: 'inherit',
-				env: { ...process.env, JASPER_APPDIR: appdir, JASPER_DEV: '1', JASPER_DEV_WEB_PORT: String(webPort) },
-			},
-		),
+	const engine = spawn(
+		join(root, 'node_modules/.bin/tsx'),
+		[join(root, 'apps/engine/src/cli.ts'), '--port', String(enginePort)],
+		{
+			cwd: root,
+			stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
+			env: { ...process.env, JASPER_APPDIR: appdir, JASPER_DEV: '1', JASPER_DEV_WEB_PORT: String(webPort) },
+		},
 	);
-	children.push(
-		spawn(
-			join(root, 'apps/web/node_modules/.bin/vite'),
-			['--host', '127.0.0.1', '--port', String(webPort), '--strictPort'],
-			{
-				cwd: join(root, 'apps/web'),
-				stdio: 'inherit',
-				env: { ...process.env, JASPER_ENGINE_URL: `http://127.0.0.1:${enginePort}` },
-			},
-		),
+	children.push(engine);
+	const engineReady = Promise.race([
+		once(engine, 'message', { signal: AbortSignal.timeout(60_000) }),
+		once(engine, 'exit').then(([code]) => {
+			throw new Error(`dev engine exited (${code})`);
+		}),
+	]);
+	const vite = spawn(
+		join(root, 'apps/web/node_modules/.bin/vite'),
+		['--host', '127.0.0.1', '--port', String(webPort), '--strictPort'],
+		{
+			cwd: join(root, 'apps/web'),
+			stdio: ['ignore', 'pipe', 'pipe'],
+			env: { ...process.env, JASPER_ENGINE_URL: `http://127.0.0.1:${enginePort}` },
+		},
 	);
-	await waitFor(`http://127.0.0.1:${webPort}/health`, 60_000); // Vite up and proxying to the engine
-	await warmViteGraph(`http://127.0.0.1:${webPort}`, 300_000);
+	children.push(vite);
+	vite.stdout.pipe(process.stdout);
+	vite.stderr.pipe(process.stderr);
+	const [[ready]] = await Promise.all([
+		engineReady,
+		waitForOutput(vite, new RegExp(`127\\.0\\.0\\.1:${webPort}`), 60_000),
+	]);
+	if (ready?.type !== 'ready' || ready.port !== enginePort) fail('invalid dev engine readiness');
+	if (!(await fetch(`http://127.0.0.1:${webPort}/health`)).ok) fail('Vite did not proxy the ready engine');
+	await warmViteGraph(`http://127.0.0.1:${webPort}`);
 	env.JASPER_DESKTOP_DEV_URL = `http://127.0.0.1:${webPort}`;
 } else {
 	for (const f of ['apps/engine/dist/engine.mjs', 'apps/web/dist/index.html'])
@@ -192,13 +223,7 @@ app.stdout.on('data', (d) => {
 app.stderr.on('data', (d) => {
 	out += d;
 });
-let loaded;
-for (let i = 0; i < 600 && !loaded; i++) {
-	loaded = /\[desktop\] loaded (http:\/\/127\.0\.0\.1:\d+\/\S*)/.exec(out);
-	if (app.exitCode !== null) fail(`the window exited before loading (${app.exitCode})\n${out.slice(-3000)}`);
-	if (!loaded) await new Promise((r) => setTimeout(r, 200));
-}
-if (!loaded) fail(`the window never finished loading\n${out.slice(-3000)}`);
+const loaded = await waitForOutput(app, /\[desktop\] loaded (http:\/\/127\.0\.0\.1:\d+\/\S*)/, 120_000);
 const browser = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`);
 try {
 	const page = browser

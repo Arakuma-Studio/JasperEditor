@@ -88,8 +88,7 @@ async function saved(): Promise<{ doc: ProjectDocument; revision: number }> {
 	return { doc: b.result, revision: b.revision };
 }
 
-async function plan(body: unknown): Promise<{ job: EngineJob; result: SoundDesignPlanResult; ms: number }> {
-	const t0 = Date.now();
+async function plan(body: unknown): Promise<{ job: EngineJob; result: SoundDesignPlanResult }> {
 	const r = await app.inject({
 		method: 'POST',
 		url: '/api/sound-design/plan',
@@ -99,7 +98,7 @@ async function plan(body: unknown): Promise<{ job: EngineJob; result: SoundDesig
 	expect(r.statusCode, r.body).toBe(202);
 	const job = await coreServices(app).queue.wait((r.json() as EngineJob).id);
 	expect(job.state, JSON.stringify(job.error)).toBe('succeeded');
-	return { job, result: SoundDesignPlanResultSchema.parse(job.result), ms: Date.now() - t0 };
+	return { job, result: SoundDesignPlanResultSchema.parse(job.result) };
 }
 
 beforeAll(async () => {

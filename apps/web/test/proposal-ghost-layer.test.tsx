@@ -24,7 +24,7 @@ afterEach(() => {
 });
 
 const V = { scrollFrame: 0, pxPerFrame: 2, width: 1200 };
-const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
+const settle = () => act(() => Promise.resolve());
 
 async function setup() {
 	const f = await proposalFixture();

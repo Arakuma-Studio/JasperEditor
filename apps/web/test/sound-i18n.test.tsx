@@ -64,7 +64,7 @@ describe('sound design labels and refusals in Spanish', () => {
 		await spanish();
 		renderWithSession(session, <HistoryPanel instanceId="h1" visible />);
 		await act(async () => {
-			await new Promise((r) => setTimeout(r, 0));
+			await Promise.resolve();
 		});
 		expect(screen.getByTestId('history-row-2').textContent).toContain(
 			'Agente: Señales de sonido (añadir 17)',
@@ -106,7 +106,7 @@ describe('sound design labels and refusals in Spanish', () => {
 		notice.querySelector('#a')!.textContent = message;
 		notice.querySelector('#b')!.textContent = plan.ok ? '' : plan.message;
 		notice.querySelector('#c')!.textContent = late.ok ? '' : late.message;
-		await new Promise((r) => setTimeout(r, 0));
+		await Promise.resolve();
 		expect(notice.querySelector('#a')!.textContent).toBe(
 			'No se encuentra la señal de sonido: cue_0000000000000999',
 		);

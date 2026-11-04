@@ -357,6 +357,7 @@ describe('display fonts (TL-053)', () => {
 	});
 
 	it('refuses paths outside the catalogue', () => {
+		expect(fonts.filePath('anton/../OFL.txt')).toBeNull();
 		expect(fonts.filePath('anton/../../etc/passwd')).toBeNull();
 		expect(fonts.filePath('anton/nope.ttf')).toBeNull();
 		expect(fonts.filePath('anton/OFL.txt')).toBeNull();

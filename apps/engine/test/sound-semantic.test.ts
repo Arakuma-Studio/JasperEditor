@@ -5,6 +5,7 @@
 // new embedding and the old one leaves the cache; Find Moment finds the bright burst of a long recording and reuses its
 // cached windows; hostile requests are refused with typed errors; a worker that dies fails its request and the next
 // one works; removing the model asks an agent's user and leaves keyword search as before. No network.
+import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -24,13 +25,13 @@ import { appdirPaths } from '@jasper/config';
 import { createCounterIdSource, createEmptyProject, makeEnvelope } from '@jasper/project';
 import { writeTinyClapCatalog } from '@jasper/testkit/tiny-clap';
 import type { FastifyInstance } from 'fastify';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 import type { WebSocket } from 'ws';
 import { ClapError } from '../src/sounds/semantic/runtime.ts';
 import { SOUND_VOCABULARY } from '../src/sounds/semantic/vocab.ts';
 import type { SoundService } from '../src/sounds/service.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, H, JSON_H, makeApp, type TestApp, tempAppdir, until } from './helpers.ts';
+import { closeApps, H, JSON_H, makeApp, type TestApp, tempAppdir } from './helpers.ts';
 import { buildCheckDoc, registerCheckMedia } from './sound-check-fixture.ts';
 import { PACK, SR } from './sound-fixtures.ts';
 
@@ -150,11 +151,8 @@ async function installTiny(app: FastifyInstance, headers: Record<string, string>
 
 async function embed(app: FastifyInstance, body: Record<string, unknown> = {}) {
 	// the install starts one by itself once its job has ended: let it finish, then run ours
-	await until(async () => {
-		const j = sounds(app).semantic.embedJob();
-		if (j) await wait(app, j.id);
-		return !sounds(app).semantic.embedJob();
-	}, 120_000);
+	const automatic = sounds(app).semantic.embedJob();
+	if (automatic) await wait(app, automatic.id);
 	const r = await json(app, 'POST', '/api/sounds/semantic/embed', body);
 	expect(r.status, JSON.stringify(r.body)).toBe(202);
 	const j = await wait(app, r.body.id as string);
@@ -388,14 +386,46 @@ describe('Describe-it search with the model', { timeout: 300_000 }, () => {
 
 	it('fails a request whose worker dies and works again on the next one', async () => {
 		const svc = sounds(app).semantic;
+		// Finish installation's automatic requests before holding this request's reply pipe.
+		await embed(app);
 		const dir = join(appdirPaths(app.appdir).root, 'models', 'sound', 'clap-test');
 		await svc.runtime.embedTexts(dir, ['warm up']);
-		const pending = svc.runtime.embedTexts(
-			dir,
-			Array.from({ length: 400 }, (_, i) => `text ${i}`),
+		const child = (svc.runtime as unknown as { child: ChildProcessWithoutNullStreams }).child;
+		// Submit the real request, but hold its reply until the old worker has exited.
+		child.stdout.pause();
+		const closed = once(child, 'close');
+		let submitted!: () => void;
+		let refused!: (error: Error) => void;
+		const dispatched = new Promise<void>((resolve, reject) => {
+			submitted = resolve;
+			refused = reject;
+		});
+		const write = child.stdin.write.bind(child.stdin);
+		const submission = vi.spyOn(child.stdin, 'write').mockImplementationOnce((chunk) =>
+			write(chunk, (error) => {
+				if (error) refused(error);
+				else submitted();
+			}),
 		);
-		(svc.runtime as unknown as { child: { kill(s: string): void } }).child.kill('SIGKILL');
-		await expect(pending).rejects.toMatchObject({ code: 'CLAP_CRASHED' });
+		const release = async () => {
+			submission.mockRestore();
+			child.kill('SIGKILL');
+			child.stdout.destroy();
+			await closed;
+		};
+		onTestFinished(release);
+		try {
+			const pending = svc.runtime.embedTexts(
+				dir,
+				Array.from({ length: 400 }, (_, i) => `text ${i}`),
+			);
+			pending.catch(() => undefined);
+			await dispatched;
+			await release();
+			await expect(pending).rejects.toMatchObject({ code: 'CLAP_CRASHED' });
+		} finally {
+			await release();
+		}
 		expect((await svc.runtime.embedTexts(dir, ['again'])).length).toBe(1);
 		// a broken model directory is a typed error, not a crash
 		const bad = tempAppdir('jasper-clap-bad-');
@@ -469,12 +499,25 @@ describe('removing the model', { timeout: 300_000 }, () => {
 		await indexed(app, AGENT);
 		await installTiny(app, AGENT);
 		// the install embeds the library by itself (it starts once the install job has ended)
-		await until(async () => {
-			const s = SoundSemanticStatusSchema.parse(
-				(await json(app, 'GET', '/api/sounds/semantic', undefined, AGENT)).body,
-			);
-			return s.job === null && s.embedded === s.total;
-		}, 120_000);
+		const core = coreServices(app);
+		const existing = core.queue.list({ kind: 'sound-embed' })[0];
+		const automatic =
+			existing ??
+			(await new Promise<EngineJob>((resolve) => {
+				const off = core.broadcaster.subscribe((event) => {
+					if (event.type !== 'job.created') return;
+					const job = event.payload as EngineJob;
+					if (job.kind !== 'sound-embed') return;
+					off();
+					resolve(job);
+				});
+			}));
+		await core.queue.wait(automatic.id);
+		const embedded = SoundSemanticStatusSchema.parse(
+			(await json(app, 'GET', '/api/sounds/semantic', undefined, AGENT)).body,
+		);
+		expect(embedded.job).toBeNull();
+		expect(embedded.embedded).toBe(embedded.total);
 		const del = () => json(app, 'DELETE', '/api/sounds/semantic/models/clap-test', undefined, AGENT);
 		const refused = await del();
 		expect(refused.status).toBe(403);

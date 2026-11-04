@@ -50,14 +50,14 @@ export type Route = {
 	status?: number;
 	body?: Buffer | string;
 	contentType?: string;
-	/** Answer after this many ms. */
-	delayMs?: number;
 	/** Never answer (timeouts). */
 	hang?: boolean;
 	/** Answer 503 this many times first (retries). */
 	failTimes?: number;
 	/** Declared content-length larger than the body (size cap on headers). */
 	declaredLength?: number;
+	/** Stream the body without declaring its length. */
+	chunked?: boolean;
 };
 
 export class FixtureServer {
@@ -98,17 +98,16 @@ export class FixtureServer {
 				const body = typeof r.body === 'string' ? Buffer.from(r.body) : (r.body ?? Buffer.alloc(0));
 				res.writeHead(r.status ?? 200, {
 					'content-type': r.contentType ?? 'application/octet-stream',
-					'content-length': String(r.declaredLength ?? body.length),
+					...(r.chunked ? {} : { 'content-length': String(r.declaredLength ?? body.length) }),
 				});
 				if (r.declaredLength) {
 					res.flushHeaders();
-					res.write(body);
-					setTimeout(() => res.destroy(), 200).unref();
+					const socket = res.socket;
+					res.end(body, () => socket?.end());
 				} else res.end(body);
 				done();
 			};
-			if (r.delayMs) setTimeout(answer, r.delayMs);
-			else answer();
+			answer();
 		});
 		this.server.on('connection', (s) => {
 			this.sockets.add(s);

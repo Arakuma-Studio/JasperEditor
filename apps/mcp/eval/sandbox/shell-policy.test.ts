@@ -9,6 +9,7 @@ describe('shell policy', () => {
 		expect(isReadOnlyCommand('git status', cwd)).toBe(true);
 		expect(isReadOnlyCommand(`cat ${cwd}/a.txt`, cwd)).toBe(true);
 		expect(isReadOnlyCommand('cat /etc/passwd', cwd)).toBe(false);
+		expect(isReadOnlyCommand('cat /tmp/jasper-mcp-eval-2/a.txt', cwd)).toBe(false);
 		expect(isReadOnlyCommand('cat ../../x', cwd)).toBe(false);
 		expect(isReadOnlyCommand('rm -rf .', cwd)).toBe(false);
 		expect(isReadOnlyCommand('ls; rm x', cwd)).toBe(false);

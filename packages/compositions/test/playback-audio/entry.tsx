@@ -1,8 +1,9 @@
 // Actual Source/Program preview fixture: observes PCM at the Web Audio destination and uses public Player controls.
 import type { MediaHandle } from '@jasper/project';
 import { Player, type PlayerRef } from '@remotion/player';
-import { createRef } from 'react';
+import { createRef, useContext, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
+import { Internals, useCurrentFrame } from 'remotion';
 import { setMixWorkletUrl } from '../../src/audio/graph.ts';
 import {
 	AssetComposition,
@@ -10,6 +11,7 @@ import {
 	type RenderDoc,
 	SequenceComposition,
 } from '../../src/index.ts';
+import { monitorFrame, observeBuffering, settlePlayer } from '../player-receipt.ts';
 
 type Config = { mode: 'source'; media: MediaHandle } | { mode: 'program'; doc: RenderDoc };
 const config = (window as unknown as { __config: Config }).__config;
@@ -28,8 +30,15 @@ AudioNode.prototype.connect = function (this: AudioNode, ...args: unknown[]) {
 } as typeof AudioNode.prototype.connect;
 setMixWorkletUrl('/worklet.js');
 const ref = createRef<PlayerRef>();
+let mounted!: (player: PlayerRef) => void;
+const ready = new Promise<PlayerRef>((resolve) => {
+	mounted = resolve;
+});
 const common = {
-	ref,
+	ref: (player: PlayerRef | null) => {
+		ref.current = player;
+		if (player) mounted(player);
+	},
 	compositionWidth: 64,
 	compositionHeight: 36,
 	durationInFrames: 30,
@@ -39,17 +48,35 @@ const common = {
 	moveToBeginningWhenEnded: false,
 	acknowledgeRemotionLicense: true,
 };
-createRoot(document.getElementById('player')!).render(
-	config.mode === 'source' ? (
-		<Player {...common} component={AssetComposition} inputProps={{ asset: config.media, fps: 30 }} />
+const container = document.getElementById('player')!;
+let buffering: { readonly current: boolean };
+let committedFrame = -1;
+const waiting = new Set<{ frame: number; resolve: () => void }>();
+function committed(frame: number): Promise<void> {
+	if (committedFrame === frame) return Promise.resolve();
+	return new Promise((resolve) => waiting.add({ frame, resolve }));
+}
+function ObservedComposition() {
+	const frame = useCurrentFrame();
+	const buffer = useContext(Internals.BufferingContextReact);
+	if (!buffer) throw new Error('Playback fixture has no buffering context');
+	observeBuffering(buffer);
+	useEffect(() => {
+		buffering = buffer.buffering;
+		committedFrame = frame;
+		for (const waiter of waiting)
+			if (waiter.frame === frame) {
+				waiting.delete(waiter);
+				waiter.resolve();
+			}
+	}, [frame, buffer]);
+	return config.mode === 'source' ? (
+		<AssetComposition asset={config.media} fps={30} />
 	) : (
-		<Player
-			{...common}
-			component={SequenceComposition}
-			inputProps={{ doc: config.doc, options: DEFAULT_RENDER_OPTIONS }}
-		/>
-	),
-);
+		<SequenceComposition doc={config.doc} options={DEFAULT_RENDER_OPTIONS} />
+	);
+}
+createRoot(container).render(<Player {...common} component={ObservedComposition} />);
 let rms = 0;
 let hz = 0;
 function meterFrame() {
@@ -66,21 +93,32 @@ function meterFrame() {
 			hz = (peak * meter.context.sampleRate) / meter.fftSize;
 		}
 	}
-	requestAnimationFrame(meterFrame);
+	monitorFrame(meterFrame);
 }
-requestAnimationFrame(meterFrame);
-let ended = false;
+monitorFrame(meterFrame);
 (window as unknown as { __playback: unknown }).__playback = {
-	frame: () => ref.current?.getCurrentFrame() ?? null,
-	seek: (frame: number) => ref.current?.seekTo(frame),
+	ready: ready.then(async (player) => {
+		await committed(0);
+		await settlePlayer(player, container, buffering);
+	}),
+	seek: async (frame: number) => {
+		const player = await ready;
+		const done = committed(frame);
+		player.seekTo(frame);
+		await done;
+		await settlePlayer(player, container, buffering);
+	},
 	play: () => {
 		const player = ref.current;
 		if (!player) throw new Error('Playback fixture has no mounted Player');
-		player.addEventListener('ended', () => {
-			ended = true;
+		return new Promise<void>((resolve) => {
+			const ended = () => {
+				player.removeEventListener('ended', ended);
+				resolve();
+			};
+			player.addEventListener('ended', ended);
+			player.play();
 		});
-		player.play();
 	},
-	ended: () => ended,
 	signal: () => ({ rms, hz }),
 };

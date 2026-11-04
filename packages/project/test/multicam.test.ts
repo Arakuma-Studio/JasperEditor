@@ -284,8 +284,8 @@ describe('multi-camera clips: placing and rendering', () => {
 		h.tx([{ type: 'clip.trim', clipId: video, edge: 'out', deltaFrames: 5, linked: false }]);
 		expect(h.seq.clips[video]!.duration).toBe(len);
 		expect(checkInvariants(h.doc)).toEqual([]);
-		const self = h.tx([{ type: 'clip.place', source: { sequenceId }, at: 0, sequenceId }]);
-		expect(self.ok).toBe(false);
+		const self = h.tx([{ type: 'clip.place', source: { sequenceId }, at: len + 1, sequenceId }]);
+		expect(self).toMatchObject({ ok: false, errors: [{ code: 'E_CYCLE' }] });
 	});
 
 	it('renders through the nest: only the active angle’s track, outer effects and Motion on top', () => {

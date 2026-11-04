@@ -105,10 +105,11 @@ describe('page budget', () => {
 		await setImmediate();
 		expect(a.started && b.started).toBe(true);
 		a.fail(new JobError('RENDER_FAILED', 'boom'));
-		const err = (await settled) as JobError;
-		expect(err.code).toBe('RENDER_FAILED');
+		await setImmediate();
 		expect(b.aborted).toBe(true);
 		expect(c.started).toBe(false);
+		const err = (await settled) as JobError;
+		expect(err.code).toBe('RENDER_FAILED');
 	});
 
 	it('aborting the signal cancels every render in flight and rejects with JOB_CANCELLED', async () => {
@@ -121,11 +122,15 @@ describe('page budget', () => {
 		);
 		await setImmediate();
 		ac.abort();
-		const err = (await settled) as JobError;
-		expect(err.code).toBe('JOB_CANCELLED');
+		await setImmediate();
 		expect(ts.filter((t) => t.aborted)).toHaveLength(2);
 		expect(ts[2]!.started).toBe(false);
-		await expect(runPagePool([manual(1)], { budget: 2, signal: ac.signal })).rejects.toMatchObject({
+		const err = (await settled) as JobError;
+		expect(err.code).toBe('JOB_CANCELLED');
+		const waiting = manual(1);
+		const cancelled = runPagePool([waiting], { budget: 2, signal: ac.signal });
+		expect(waiting.started).toBe(false);
+		await expect(cancelled).rejects.toMatchObject({
 			code: 'JOB_CANCELLED',
 		});
 		expect(await runPagePool([], { budget: 2, signal: new AbortController().signal })).toEqual([]);

@@ -143,9 +143,16 @@ describe('proposals slice: sync with the engine', () => {
 	});
 
 	it('events of other projects are ignored; engine failures resolve to typed results (never throw)', async () => {
-		const { c, engine, draft } = await setup();
+		const { c, engine, t, draft } = await setup();
 		const p = engine.create(draft);
+		t.run();
+		await settle();
+		expect(c.getState().list.map((item) => item.id)).toEqual([p.id]);
+		engine.proposals.delete(p.id);
 		c.handleEvent({ projectId: 'prj_other', proposalId: p.id, change: 'created' });
+		t.run();
+		await settle();
+		expect(c.getState().list.map((item) => item.id)).toEqual([p.id]);
 		engine.failNext = 'E_BOOM';
 		const r = await c.setActive(p.id);
 		expect(r).toMatchObject({ ok: false, code: 'E_BOOM' });

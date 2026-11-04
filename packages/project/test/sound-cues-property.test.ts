@@ -4,6 +4,7 @@
 import { fuzzScale, fuzzSeed, mutateJson, Rng } from '@jasper/testkit/fuzz';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { threadCpuMs } from '../../../scripts/perf/cpu.ts';
 import {
 	type Animatable,
 	type Clip,
@@ -324,7 +325,7 @@ describe('deriveCues properties (P2-R3)', () => {
 			),
 			{ numRuns: 60 * fuzzScale(), seed: fuzzSeed() },
 		);
-	}, 240_000);
+	});
 
 	it('fuzzed documents and options (testkit mutateJson): never throws, frames stay in range', () => {
 		const rng = new Rng(fuzzSeed());
@@ -376,7 +377,7 @@ describe('deriveCues properties (P2-R3)', () => {
 		// Whole-document garbage.
 		for (const bad of [null, undefined, 1, 'doc', {}, { sequences: null }, { sequences: { s: 5 } }])
 			expect(deriveCues(bad as never, 's').cues).toEqual([]);
-	}, 240_000);
+	});
 });
 
 /** A 10-minute 30 fps sequence with 200 clips: 120 shots (transitions every 4th edit), 40 keyframed graphics, 40 titles. */
@@ -467,16 +468,16 @@ describe('deriveCues performance', () => {
 		const times: number[] = [];
 		let r: DeriveCuesResult | null = null;
 		for (let i = 0; i < 3; i++) {
-			const t0 = performance.now();
+			const t0 = threadCpuMs();
 			r = deriveCues(doc, seqId, { density: 'balanced' });
-			times.push(performance.now() - t0);
+			times.push(threadCpuMs() - t0);
 		}
 		const best = Math.min(...times);
 		console.log(
-			`deriveCues 10 min / 200 clips: ${times.map((t) => t.toFixed(0)).join(', ')} ms (best ${best.toFixed(0)} ms); found ${r!.stats.found}, kept ${r!.stats.kept}, curves ${r!.curves.length}`,
+			`deriveCues 10 min / 200 clips: ${times.map((t) => t.toFixed(0)).join(', ')} CPU ms (best ${best.toFixed(0)} CPU ms); found ${r!.stats.found}, kept ${r!.stats.kept}, curves ${r!.curves.length}`,
 		);
 		expect(r!.stats.found).toBeGreaterThan(300);
 		expect(r!.warnings).toEqual([]);
 		expect(best).toBeLessThan(1000);
-	}, 120_000);
+	});
 });

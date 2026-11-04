@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { runCli, writeToolImages } from '../src/jasper-cli.ts';
 import { decodePng } from '../src/png.ts';
-import { cleanEnv, stopEngine, testPort, waitFor } from './helpers.ts';
+import { cleanEnv, engineReady, stopEngine, testPort } from './helpers.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const PORT = await testPort(process.env.JASPER_CLI_TEST_PORT);
@@ -112,25 +112,19 @@ describe('jasper against a real engine', () => {
 			{
 				cwd: ROOT,
 				env: cleanEnv({ JASPER_LOCAL_TOKEN: randomBytes(16).toString('hex') }),
-				stdio: ['ignore', 'pipe', 'pipe'],
+				stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
 			},
 		);
 		engine.stdout?.on('data', (d: Buffer) => logs.push(d.toString()));
 		engine.stderr?.on('data', (d: Buffer) => logs.push(d.toString()));
-		await waitFor(
-			async () =>
-				existsSync(join(appdir, 'engine', 'runtime.json')) &&
-				(await fetch(`http://127.0.0.1:${PORT}/health`)).ok,
-			90_000,
-			`engine on ${PORT}: ${logs.join('')}`,
-		);
-	}, 180_000);
+		await engineReady(engine, PORT, logs);
+	});
 
 	afterAll(async () => {
 		await stopEngine(engine);
 		if (appdir) rmSync(appdir, { recursive: true, force: true });
 		if (work) rmSync(work, { recursive: true, force: true });
-	}, 30_000);
+	});
 
 	it('status, project creation through call, and project resolution', async () => {
 		const s = await jasper('status', '--json');
@@ -237,7 +231,7 @@ describe('jasper against a real engine', () => {
 		]);
 		expect(Number(probe.stdout.toString().trim())).toBe(15);
 		expect(e.err).toMatch(/\[jasper\] \d+%/);
-	}, 300_000);
+	});
 
 	it('the bin entry runs and returns the exit status', () => {
 		const r = spawnSync(

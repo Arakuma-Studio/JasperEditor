@@ -20,7 +20,7 @@ const N = 96;
 beforeAll(() => registerAllCommands());
 afterEach(() => cleanup());
 
-const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
+const settle = () => act(async () => Promise.resolve());
 
 describe(`Review panel with ${N} items`, () => {
 	it('renders only the rows in view, keeps them reachable by keyboard and scrolling', async () => {

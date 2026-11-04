@@ -1,8 +1,7 @@
 // analyze_picture_motion and find_sound_cues' engine sources (spec 12 §2.10, P6-R2; wp-note "Phase 6 → WP6.2") through
 // jasper-mcp over stdio against a real engine with generated footage (a box that rests, moves and stops): the events
 // with timecodes, the PNG strip (decodes, thumbnails at the events), find_sound_cues {sources: ["pixel"]} waiting for the
-// analysis and returning anchored cues, view_sound_timeline drawing the measured curve once analysed (WP6.5b),
-// find_sound_cues' timeSignature, strict arguments and typed refusals.
+// analysis and returning anchored cues, view_sound_timeline drawing the measured curve once analysed (WP6.5b).
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
@@ -15,7 +14,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { decodePng } from '../src/png.ts';
-import { cleanEnv, stopEngine, testPort, waitFor } from './helpers.ts';
+import { cleanEnv, engineReady, stopEngine, testPort } from './helpers.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const PORT = await testPort(process.env.MCP_SOUND_MOTION_TEST_PORT);
@@ -48,7 +47,7 @@ async function ok<T = Record<string, unknown>>(name: string, args: Record<string
 
 describe.skipIf(!HAVE_FFMPEG)(
 	'analyze_picture_motion / find_sound_cues engine sources',
-	{ timeout: 900_000 },
+	// find_sound_cues' timeSignature, strict arguments and typed refusals.
 	() => {
 		beforeAll(async () => {
 			work = mkdtempSync(join(tmpdir(), 'jasper-mcp-motion-'));
@@ -77,16 +76,12 @@ describe.skipIf(!HAVE_FFMPEG)(
 						JASPER_EDITOR_KEY: editorKey,
 						JASPER_SOUND_AUTO_INDEX: '0',
 					}),
-					stdio: ['ignore', 'pipe', 'pipe'],
+					stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
 				},
 			);
 			engine.stdout?.on('data', (d: Buffer) => engineLog.push(d.toString()));
 			engine.stderr?.on('data', (d: Buffer) => engineLog.push(d.toString()));
-			await waitFor(
-				async () => (await fetch(`http://127.0.0.1:${PORT}/health`)).ok,
-				300_000,
-				`the engine on ${PORT}: ${engineLog.join('')}`,
-			);
+			await engineReady(engine, PORT, engineLog);
 			const transport = new StdioClientTransport({
 				command: process.execPath,
 				args: ['--import', 'tsx', join(ROOT, 'apps/mcp/src/cli.ts'), '--appdir', appdir],
@@ -97,13 +92,13 @@ describe.skipIf(!HAVE_FFMPEG)(
 			transport.stderr?.on('data', (d: Buffer) => logs.push(d.toString('utf8')));
 			client = new Client({ name: 'vitest-mcp-sound-motion', version: '1.0.0' });
 			await client.connect(transport);
-		}, 600_000);
+		});
 
 		afterAll(async () => {
 			await client?.close().catch(() => {});
 			await stopEngine(engine);
 			if (work) rmSync(work, { recursive: true, force: true });
-		}, 30_000);
+		});
 
 		it('finds the box moving (00:00:01:01–00:00:02:01) and stopping, draws the strip, and gives anchored pixel cues', async () => {
 			const { json: created } = await ok<{ projectId: string }>('create_project', {

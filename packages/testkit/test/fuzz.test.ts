@@ -2,12 +2,14 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import * as cpu from '../../../scripts/perf/cpu.ts';
 import {
 	bytesTarget,
 	describeFuzz,
 	formatFailures,
 	jsonTarget,
 	runFuzzTarget,
+	runFuzzTargetSync,
 	textTarget,
 } from '../src/fuzz.ts';
 import { decodePng, encodePng, PngError, rgba8 } from '../src/index.ts';
@@ -63,7 +65,10 @@ describe('fuzz kit', () => {
 
 	it('flags slow inputs', async () => {
 		let elapsed = 0;
-		const clock = vi.spyOn(performance, 'now').mockImplementation(() => elapsed);
+		const clocks = [
+			vi.spyOn(performance, 'now').mockImplementation(() => elapsed),
+			vi.spyOn(cpu, 'threadCpuMs').mockImplementation(() => elapsed),
+		];
 		const slow = jsonTarget(
 			'slow',
 			[1],
@@ -74,10 +79,13 @@ describe('fuzz kit', () => {
 			{ slowMs: 5, iterations: 2, properties: 1 },
 		);
 		try {
-			const f = await runFuzzTarget(slow, { scale: 1, maxFailures: 1 });
-			expect(f[0]!.error).toMatch(/took 30 ms \(limit 5 ms\)/);
+			for (const run of [runFuzzTarget, runFuzzTargetSync]) {
+				const failures = await run(slow, { scale: 1, maxFailures: 1 });
+				expect(failures).toHaveLength(1);
+				expect(failures[0]!.error).toMatch(/took 30 ms \(limit 5 ms\)/);
+			}
 		} finally {
-			clock.mockRestore();
+			for (const clock of clocks) clock.mockRestore();
 		}
 	});
 });

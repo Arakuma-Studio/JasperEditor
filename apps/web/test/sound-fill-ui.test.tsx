@@ -73,6 +73,7 @@ afterEach(() => {
 	stopInContext({ returnToAnchor: false });
 	cancelLibraryMode();
 	restoreAudition();
+	vi.useRealTimers();
 });
 
 function setup() {
@@ -296,8 +297,12 @@ describe('Cue Seam drop and cue menu', () => {
 		const loaded = (await fillWith.load!()) as Extract<MenuItemSpec, { kind: 'item' }>[];
 		expect(loaded).toHaveLength(3);
 		expect(loaded[0]!.label).toMatch(/ · Hit · /);
-		loaded[0]!.onHighlight!();
-		await waitFor(() => expect(inContextStore.getState().active).toBe(true), { timeout: 2000 });
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+		await act(async () => {
+			loaded[0]!.onHighlight!();
+			await vi.advanceTimersToNextTimerAsync();
+		});
+		expect(inContextStore.getState().active).toBe(true);
 		expect(s.labels().at(-1)).toBe('setup');
 		loaded[0]!.onUnhighlight!();
 		expect(inContextStore.getState().active).toBe(false);

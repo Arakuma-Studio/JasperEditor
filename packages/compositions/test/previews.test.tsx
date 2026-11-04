@@ -67,6 +67,19 @@ describe('applyPreviews', () => {
 				[{ start: 0, frames: 40 }],
 			),
 		).toEqual([]);
+		// Each clip stays live when its own handle extends beyond the rendered audio.
+		expect(
+			usableAudioSpans(
+				[
+					{ start: 0, duration: 40, tailHandle: 10 },
+					{ start: 80, duration: 40, headHandle: 10 },
+				],
+				[
+					{ start: 0, frames: 40 },
+					{ start: 80, frames: 40 },
+				],
+			),
+		).toEqual([]);
 	});
 
 	it('property: no live audio clip overlaps a usable span, and usable ⊆ the rendered spans', () => {

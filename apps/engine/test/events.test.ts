@@ -1,5 +1,5 @@
 import { EngineCapabilitiesSchema, FontCatalogSchema, LicensesResponseSchema, parseEvent } from '@jasper/api';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { type RunningEngine, startEngine } from '../src/index.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, H, makeApp, tempAppdir } from './helpers.ts';
@@ -25,6 +25,7 @@ async function readEvents(
 	during?: () => void,
 ): Promise<Record<string, unknown>[]> {
 	const ac = new AbortController();
+	onTestFinished(() => ac.abort());
 	const res = await fetch(url, { signal: ac.signal });
 	expect(res.status).toBe(200);
 	expect(res.headers.get('content-type')).toContain('application/x-ndjson');
@@ -33,7 +34,6 @@ async function readEvents(
 	let buf = '';
 	const dec = new TextDecoder();
 	let triggered = false;
-	const timer = setTimeout(() => ac.abort(), 10_000);
 	try {
 		while (out.length < count) {
 			const { value, done } = await reader.read();
@@ -49,7 +49,6 @@ async function readEvents(
 			}
 		}
 	} finally {
-		clearTimeout(timer);
 		ac.abort();
 	}
 	return out;

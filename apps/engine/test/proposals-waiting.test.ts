@@ -56,6 +56,7 @@ describe('ProposalWaitWatch', () => {
 		w.poll('prj', 'prp_1', 'b');
 		expect(w.waiting('prj', 'prp_1')?.agent).toBe('b');
 		w.forget('prj', 'prp_1');
+		expect(w.waiting('prj', 'prp_1')).toBeNull();
 		advance(10_000);
 		expect(events.map((e) => e[2]?.agent ?? null)).toEqual(['a', null, 'b']);
 	});

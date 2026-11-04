@@ -14,7 +14,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { decodePng } from '../src/png.ts';
-import { cleanEnv, stopEngine, testPort, waitFor } from './helpers.ts';
+import { cleanEnv, engineReady, stopEngine, testPort } from './helpers.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const PORT = await testPort(process.env.MCP_TAKES_TEST_PORT);
@@ -136,16 +136,12 @@ beforeAll(async () => {
 				JASPER_SOUND_SYNTH_VARIANTS: '0',
 				JASPER_SOUND_AUTO_INDEX: '0',
 			}),
-			stdio: ['ignore', 'pipe', 'pipe'],
+			stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
 		},
 	);
 	engine.stdout?.on('data', (d: Buffer) => engineLog.push(d.toString()));
 	engine.stderr?.on('data', (d: Buffer) => engineLog.push(d.toString()));
-	await waitFor(
-		async () => (await fetch(`http://127.0.0.1:${PORT}/health`)).ok,
-		120_000,
-		`the engine on ${PORT}: ${engineLog.join('')}`,
-	);
+	await engineReady(engine, PORT, engineLog);
 	const transport = new StdioClientTransport({
 		command: process.execPath,
 		args: ['--import', 'tsx', join(ROOT, 'apps/mcp/src/cli.ts'), '--appdir', appdir],
@@ -157,13 +153,13 @@ beforeAll(async () => {
 	client = new Client({ name: 'vitest-mcp-takes', version: '1.0.0' });
 	await client.connect(transport);
 	await ok('rescan_sound_library', { wait: true });
-}, 300_000);
+});
 
 afterAll(async () => {
 	await client?.close().catch(() => {});
 	await stopEngine(engine);
 	if (work) rmSync(work, { recursive: true, force: true });
-}, 30_000);
+});
 
 type Row = {
 	soundId: string;
@@ -175,7 +171,7 @@ type Row = {
 };
 type Search = { total: number; results: Row[]; facets: Record<string, Record<string, number>> };
 
-describe('takes through MCP', { timeout: 600_000 }, () => {
+describe('takes through MCP', () => {
 	let recording = '';
 	it('search_sounds: a recording row says how many takes it has; takes: true returns them as rows', async () => {
 		const plain = (await ok<Search>('search_sounds', { types: ['key'] })).body;

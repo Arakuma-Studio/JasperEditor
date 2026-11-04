@@ -9,7 +9,7 @@ import { type RunningEngine, startEngine } from '../src/index.ts';
 import { JobError } from '../src/jobs/types.ts';
 import type { LayerBakeService } from '../src/layer-bake/service.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { DocBuilder, ensureFixtures, fixture, JSON_H, register, tempAppdir, until } from './helpers.ts';
+import { DocBuilder, ensureFixtures, fixture, JSON_H, register, tempAppdir } from './helpers.ts';
 
 const enabled = process.env.REMOTION_E2E === '1';
 const PORT = Number(process.env.JASPER_E2E_PORT ?? 0);
@@ -122,14 +122,7 @@ describe.runIf(enabled)('layer bake end to end (REMOTION_E2E=1, S11 §11 test 4)
 		queue()
 			.list({})
 			.filter((j) => j.parentId === id);
-	const wait = async (id: string): Promise<EngineJob> => {
-		await until(
-			() => ['succeeded', 'failed', 'cancelled'].includes(queue().get(id)?.state ?? ''),
-			1_200_000,
-			250,
-		);
-		return queue().get(id)!;
-	};
+	const wait = (id: string): Promise<EngineJob> => queue().wait(id);
 
 	const proresSettings = (seqId: string, engineName: 'auto' | 'native' | 'remotion') => ({
 		sequenceId: seqId,

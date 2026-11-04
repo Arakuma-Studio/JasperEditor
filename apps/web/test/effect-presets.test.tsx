@@ -123,8 +123,9 @@ describe('Effects ▸ Presets bin (EFX-001, FX-030)', () => {
 		await act(async () => {
 			fireEvent.click(within(dialog).getByRole('button', { name: 'Delete Preset' }));
 		});
-		await waitFor(() => expect(engine.calls.some((c) => c.name === 'effectPresetDelete')).toBe(true));
-		await waitFor(() => expect(presetRows()).not.toContain('fxp_USER'));
+		expect(presetRows()).not.toContain('fxp_USER');
+		const persisted = await engine.client.call('effectPresetsList');
+		expect(persisted.presets.map((preset) => preset.id)).not.toContain('fxp_USER');
 	});
 });
 

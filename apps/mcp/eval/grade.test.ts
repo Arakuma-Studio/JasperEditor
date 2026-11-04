@@ -5,7 +5,6 @@ import {
 	compareToBaseline,
 	grade,
 	needsThirdSample,
-	partialMatch,
 	type SampleRecord,
 } from './grade.ts';
 
@@ -27,13 +26,34 @@ const sample = (over: Partial<SampleRecord> = {}): SampleRecord => ({
 
 const failures = (checks: Checks, over?: Partial<SampleRecord>) => grade(sample(over), checks).failures;
 
-describe('partialMatch', () => {
+describe('call argument matching', () => {
 	it('matches nested keys, regex strings and array members', () => {
-		expect(partialMatch({ a: { b: 1, c: 2 } }, { a: { b: 1 } })).toBe(true);
-		expect(partialMatch({ a: 'hello' }, { a: '/^HEL/' })).toBe(true);
-		expect(partialMatch({ a: [{ x: 1 }, { x: 2 }] }, { a: [{ x: 2 }] })).toBe(true);
-		expect(partialMatch({ a: 1 }, { a: 2 })).toBe(false);
-		expect(partialMatch({}, { a: 1 })).toBe(false);
+		const recorded = sample({
+			calls: [
+				{
+					tool: 'match',
+					args: { nested: { b: 1, c: 2 }, text: 'hello', items: [{ x: 1 }, { x: 2 }], a: 1 },
+					isError: false,
+				},
+			],
+		});
+		expect(
+			grade(recorded, {
+				calls: [
+					{ tool: 'match', args: { nested: { b: 1 } } },
+					{ tool: 'match', args: { text: '/^HEL/' } },
+					{ tool: 'match', args: { items: [{ x: 2 }] } },
+				],
+			}).pass,
+		).toBe(true);
+		expect(
+			grade(recorded, {
+				calls: [
+					{ tool: 'match', args: { a: 2 } },
+					{ tool: 'match', args: { missing: 1 } },
+				],
+			}).failures,
+		).toHaveLength(2);
 	});
 });
 

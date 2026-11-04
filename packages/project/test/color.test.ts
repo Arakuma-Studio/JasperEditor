@@ -1,6 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { budgetMs } from '../../../scripts/perf/budget.ts';
+import { threadCpuMs } from '../../../scripts/perf/cpu.ts';
 import {
 	applyLut,
 	BLACK_WHITE_OP,
@@ -23,7 +24,6 @@ import {
 	normalizeCurve,
 	type Rgb,
 } from '../src/index.ts';
-import { threadCpuMs } from './cpu-time.ts';
 
 const NO_LUTS: ColorOpContext = { lut: () => null };
 const run = (params: EffectParams, c: Rgb, ctx: ColorOpContext = NO_LUTS): Rgb => {

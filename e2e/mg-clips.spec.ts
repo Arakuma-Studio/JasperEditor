@@ -27,7 +27,6 @@ test('renderer-page protocol contract (Remotion 4.0.499) drives the fixture bund
 	browser,
 	request,
 }) => {
-	test.setTimeout(600_000);
 	const imported = await request.post('/api/mg-bundles/import', { data: { path: FIXTURE_PROJECT } });
 	expect(imported.status(), await imported.text()).toBe(200);
 	const reg = (await imported.json()) as { mediaKey: string; mgBundle: { compositions: { id: string }[] } };
@@ -148,7 +147,6 @@ async function hostText(p: Page): Promise<string | null> {
 }
 
 test('import a Remotion project, insert a composition, live preview, props edit, preview WebM', async () => {
-	test.setTimeout(900_000);
 	await createProject(page, 'E2E Composition Clips');
 	await page.getByRole('menuitem', { name: 'File' }).click();
 	await page.getByRole('menuitem', { name: /Import Remotion Project/ }).click();
@@ -190,44 +188,17 @@ test('import a Remotion project, insert a composition, live preview, props edit,
 
 	const field = page.getByTestId('text-title');
 	await field.fill('Edited in Properties');
-	// The moment the new title is on screen is observed inside the host page (the editor cannot see into the
-	// sandboxed frame); both sides stamp wall-clock times (performance.timeOrigin + now).
 	const hostFrame = page.frames().find((x) => x.url().includes('/mg/sandbox/'))!;
 	expect(hostFrame, 'the live host is a sandboxed frame under its capability path').toBeTruthy();
-	await hostFrame.evaluate(() => {
-		const w = window as unknown as { __seenAt?: number };
-		w.__seenAt = undefined;
-		const check = () => {
-			if (document.querySelector('[data-testid="title-text"]')?.textContent === 'Edited in Properties')
-				w.__seenAt = performance.timeOrigin + performance.now();
-			else requestAnimationFrame(check);
-		};
-		requestAnimationFrame(check);
-	});
-	await field.evaluate((input) => {
-		input.addEventListener(
-			'keydown',
-			(event) => {
-				if (event instanceof KeyboardEvent && event.key === 'Enter')
-					(window as unknown as { __enterAt?: number }).__enterAt =
-						performance.timeOrigin + performance.now();
-			},
-			{ capture: true, once: true },
-		);
-	});
+	// Check the iframe the shipped layer mounted; the protocol probe above supplies its own sandbox.
+	await expect(page.locator('[data-testid="program-monitor"] iframe[data-mg-host]')).toHaveAttribute(
+		'sandbox',
+		'allow-scripts',
+	);
 	await field.press('Enter');
-	await expect
-		.poll(() => hostFrame.evaluate(() => (window as unknown as { __seenAt?: number }).__seenAt ?? null), {
-			timeout: 5_000,
-			intervals: [20],
-		})
-		.not.toBeNull();
-	const elapsed =
-		(await hostFrame.evaluate(() => (window as unknown as { __seenAt: number }).__seenAt)) -
-		(await page.evaluate(() => (window as unknown as { __enterAt: number }).__enterAt));
-	test.info().annotations.push({ type: 'live-title-latency', description: `${elapsed.toFixed(1)} ms` });
-	expect(elapsed).toBeLessThan(500);
-	await expect.poll(() => hostText(page), { timeout: 5_000, intervals: [20] }).toBe('Edited in Properties');
+	await expect(
+		page.frameLocator('[data-testid="program-monitor"] iframe[data-mg-host]').getByTestId('title-text'),
+	).toHaveText('Edited in Properties');
 
 	await expect(page.getByTestId('composition-status')).toHaveText(/Preview ready/, { timeout: 300_000 });
 

@@ -4,7 +4,7 @@
 // fails the render by name (`TemplateImageError`), never a silent placeholder in an export (AGENTS §4).
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { createServer, type Server } from 'node:http';
+import { createServer, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -42,16 +42,13 @@ describe.runIf(enabled)('TemplateImage render (REMOTION_E2E=1)', { timeout: 600_
 	let server: Server;
 	let origin = '';
 	let serveUrl = '';
+	let slowPicture: ((response: ServerResponse) => void) | undefined;
 	let r: typeof import('@remotion/renderer');
 	const browserOpts = CHROME ? { browserExecutable: CHROME, chromeMode: 'chrome-for-testing' as const } : {};
 
 	beforeAll(async () => {
 		server = createServer((req, res) => {
-			if (req.url?.startsWith('/slow.png'))
-				setTimeout(() => {
-					res.writeHead(200, { 'content-type': 'image/png', 'access-control-allow-origin': '*' });
-					res.end(RED);
-				}, 1500);
+			if (req.url?.startsWith('/slow.png') && slowPicture) slowPicture(res);
 			else {
 				res.writeHead(404, { 'access-control-allow-origin': '*' });
 				res.end();
@@ -65,12 +62,14 @@ describe.runIf(enabled)('TemplateImage render (REMOTION_E2E=1)', { timeout: 600_
 	}, 600_000);
 	afterAll(() => new Promise<void>((ok) => (server ? server.close(() => ok()) : ok())));
 
-	async function still(src: string): Promise<Buffer> {
+	async function still(src: string, onBrowserLog?: (text: string) => void): Promise<Buffer> {
 		const inputProps = { src };
+		const log = onBrowserLog ? { onBrowserLog: (entry: { text: string }) => onBrowserLog(entry.text) } : {};
 		const composition = await r.selectComposition({
 			serveUrl,
 			id: 'TemplateImage',
 			inputProps,
+			...log,
 			...browserOpts,
 		});
 		const { buffer } = await r.renderStill({
@@ -80,14 +79,55 @@ describe.runIf(enabled)('TemplateImage render (REMOTION_E2E=1)', { timeout: 600_
 			inputProps,
 			imageFormat: 'png',
 			output: null,
+			...log,
 			...browserOpts,
 		});
 		return buffer!;
 	}
 
 	it('waits for a slow cross-origin picture and draws it', async () => {
-		const png = await still(`${origin}/slow.png`);
-		expect(pixel(png, 32, 32, 64)).toEqual([255, 0, 0, 255]);
+		let requested!: () => void;
+		const request = new Promise<void>((resolve) => {
+			requested = resolve;
+		});
+		let observed!: (state: string) => void;
+		const ready = new Promise<string>((resolve) => {
+			observed = resolve;
+		});
+		const responses = new Set<ServerResponse>();
+		let released = false;
+		const send = (response: ServerResponse) => {
+			if (response.destroyed || response.writableEnded) return;
+			response.writeHead(200, { 'content-type': 'image/png', 'access-control-allow-origin': '*' });
+			response.end(RED);
+		};
+		slowPicture = (response) => {
+			responses.add(response);
+			requested();
+			if (released) send(response);
+		};
+		const release = () => {
+			released = true;
+			for (const response of responses) send(response);
+		};
+		const rendered = still(`${origin}/slow.png`, (text) => {
+			if (text.startsWith('template-image-ready:')) observed(text.slice('template-image-ready:'.length));
+		});
+		try {
+			await Promise.race([
+				request,
+				rendered.then(() => {
+					throw new Error('Render completed before the picture request');
+				}),
+			]);
+			expect(await Promise.race([ready, rendered.then(() => 'completed')])).toBe('false');
+			release();
+			expect(pixel(await rendered, 32, 32, 64)).toEqual([255, 0, 0, 255]);
+		} finally {
+			release();
+			await rendered.catch(() => undefined);
+			slowPicture = undefined;
+		}
 	});
 
 	it('a missing picture fails the render, naming the picture (never a silent placeholder)', async () => {

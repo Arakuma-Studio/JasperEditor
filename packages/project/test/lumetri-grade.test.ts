@@ -1,6 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { budgetMs } from '../../../scripts/perf/budget.ts';
+import { threadCpuMs } from '../../../scripts/perf/cpu.ts';
 import {
 	type Animatable,
 	bakeColorRun,
@@ -348,19 +349,19 @@ describe('full grade: properties and bake budget', () => {
 			}),
 		);
 	});
-	it('a 33³ bake of a full grade with every new step takes < 30 ms (best of several runs)', () => {
+	it('a 33³ bake of a full grade with every new step takes < 30 ms of CPU time (best of several runs)', () => {
 		const effects = [
 			{ id: 'fx', effectId: LUMETRI_EFFECT_ID, effectVersion: 1, enabled: true, params: fullGrade },
 		];
 		bakeColorRun(effects, defaultEffectRegistry, NO_LUTS, 33);
 		const times: number[] = [];
 		for (let i = 0; i < 5; i++) {
-			const t0 = performance.now();
+			const t0 = threadCpuMs();
 			bakeColorRun(effects, defaultEffectRegistry, NO_LUTS, 33);
-			times.push(performance.now() - t0);
+			times.push(threadCpuMs() - t0);
 		}
 		const best = Math.min(...times);
-		console.info(`[color-grade] 33³ Lumetri bake with every completion step: best ${best.toFixed(2)} ms`);
+		console.info(`[color-grade] 33³ Lumetri bake with every completion step: best ${best.toFixed(2)} ms CPU`);
 		// Load-tolerant like every timing budget (docs/performance.md §2): exactly 30 ms with PERF=1.
 		expect(best).toBeLessThan(budgetMs(30));
 	});

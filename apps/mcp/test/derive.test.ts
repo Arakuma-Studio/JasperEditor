@@ -1,6 +1,6 @@
 // spec 18 AF-OPS-002: derive_media against a real engine (LGPL-only mode) with lavfi-generated media.
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,7 +8,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { cleanEnv, stopEngine, testPort, waitFor } from './helpers.ts';
+import { cleanEnv, engineReady, stopEngine, testPort } from './helpers.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, '..', '..', '..');
@@ -56,18 +56,12 @@ beforeAll(async () => {
 	engine = spawn(
 		process.execPath,
 		['--import', 'tsx', join(ROOT, 'apps/engine/src/cli.ts'), '--port', String(PORT), '--appdir', appdir],
-		{ cwd: ROOT, env: cleanEnv({ JASPER_FFMPEG_LGPL_ONLY: '1' }), stdio: ['ignore', 'pipe', 'pipe'] },
+		{ cwd: ROOT, env: cleanEnv({ JASPER_FFMPEG_LGPL_ONLY: '1' }), stdio: ['ignore', 'pipe', 'pipe', 'ipc'] },
 	);
 	const engineLog: string[] = [];
 	engine.stdout?.on('data', (d: Buffer) => engineLog.push(d.toString()));
 	engine.stderr?.on('data', (d: Buffer) => engineLog.push(d.toString()));
-	await waitFor(
-		async () =>
-			existsSync(join(appdir, 'engine', 'runtime.json')) &&
-			(await fetch(`http://127.0.0.1:${PORT}/health`)).ok,
-		90_000,
-		`the engine on ${PORT}: ${engineLog.join('')}`,
-	);
+	await engineReady(engine, PORT, engineLog);
 	const transport = new StdioClientTransport({
 		command: process.execPath,
 		args: ['--import', 'tsx', join(ROOT, 'apps/mcp/src/cli.ts'), '--appdir', appdir],
@@ -78,16 +72,16 @@ beforeAll(async () => {
 	transport.stderr?.on('data', (d: Buffer) => logs.push(d.toString('utf8')));
 	client = new Client({ name: 'vitest-mcp-derive', version: '1.0.0' });
 	await client.connect(transport);
-}, 180_000);
+});
 
 afterAll(async () => {
 	await client?.close().catch(() => {});
 	await stopEngine(engine);
 	if (appdir) rmSync(appdir, { recursive: true, force: true });
 	if (dir) rmSync(dir, { recursive: true, force: true });
-}, 30_000);
+});
 
-describe('derive_media (AF-OPS-002)', { timeout: 300_000 }, () => {
+describe('derive_media (AF-OPS-002)', () => {
 	let projectId = '';
 	let mediaId = '';
 	let silentId = '';

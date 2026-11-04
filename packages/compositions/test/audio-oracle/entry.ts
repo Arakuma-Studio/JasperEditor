@@ -22,8 +22,6 @@ type Spec = {
 	length: number;
 };
 
-const tick = () => new Promise((r) => setTimeout(r, 0));
-
 async function render(spec: Spec): Promise<{ channels: number[][]; latency: number }> {
 	setMixWorkletUrl(spec.workletUrl);
 	installAudioFxPreview();
@@ -36,12 +34,11 @@ async function render(spec: Spec): Promise<{ channels: number[][]; latency: numb
 	graph.update(first, clips, 0, spec.fps);
 	const inputs = spec.clips.map((c) => graph.clipInput(c.clip));
 	graph.update(first, clips, 0, spec.fps);
-	await tick();
-	// effect slots create their worklet nodes once the module is ready (a microtask later)
-	await tick();
+	// Slots register node-construction callbacks on this Promise before this await resumes.
+	await mixWorkletReady(ctx);
 	graph.update(spec.mix, clips, 0, spec.fps);
 	// slots added by this update create their worklet nodes a microtask later
-	await tick();
+	await mixWorkletReady(ctx);
 	spec.clips.forEach((c, i) => {
 		const buf = ctx.createBuffer(c.data.length, c.data[0]!.length, sr);
 		for (const [k, ch] of c.data.entries()) buf.copyToChannel(Float32Array.from(ch), k);
@@ -94,8 +91,7 @@ async function transport(spec: TransportSpec): Promise<{
 	graph.update(spec.mix, clips, 0, spec.fps);
 	const inputs = spec.clips.map((c) => graph.clipInput(c.clip));
 	graph.update(spec.mix, clips, 0, spec.fps);
-	await tick();
-	await tick();
+	await mixWorkletReady(ctx);
 	if (spec.action === 'live') graph.setPlaying(true);
 	const before = graph.latency * sr;
 	spec.clips.forEach((c, i) => {
@@ -118,7 +114,7 @@ async function transport(spec: TransportSpec): Promise<{
 			const t = (spec.at / sr) * 705_600_000;
 			graph.update(spec.next, clips, t, spec.fps);
 			// slots added by the update create their worklet nodes a microtask later
-			await tick();
+			await mixWorkletReady(ctx);
 		}
 		after = graph.latency * sr;
 		await ctx.resume();
@@ -158,8 +154,7 @@ async function played(spec: PlayedSpec): Promise<{ channels: number[][]; latency
 	graph.update(spec.mix, clips, 0, spec.fps);
 	const inputs = spec.clips.map((c) => graph.clipInput(c.clip));
 	graph.update(spec.mix, clips, 0, spec.fps);
-	await tick();
-	await tick();
+	await mixWorkletReady(ctx);
 	// Remotion's anchor (context time 0 = sequence time 0). Attached while the context is suspended, the graph primes a
 	// start (moves the anchor later by its wait); this harness plays from its own clock, as an unprimed run, so the anchor
 	// is put back (the wait's silence at the output ends long before the first clip, at 0.1 s).
@@ -168,7 +163,7 @@ async function played(spec: PlayedSpec): Promise<{ channels: number[][]; latency
 	sync.anchor.value = 0;
 	graph.setPlaying(true);
 	graph.update(spec.mix, clips, 0, spec.fps);
-	await tick();
+	await mixWorkletReady(ctx);
 	const F = 705_600_000 / spec.fpsValue;
 	const gains: GainNode[] = [];
 	const levelAt = (i: number, frame: number) => {

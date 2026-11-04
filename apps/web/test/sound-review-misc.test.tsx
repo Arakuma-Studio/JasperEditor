@@ -2,6 +2,7 @@
 // and keeps a typed folder path until the engine accepts it; the timeline's sound-drop tooltip names the track
 // under a drag from another window by its label (A2) and speaks the UI language; the credits dialog's licence
 // warnings are translated from their codes.
+import { setImmediate as nextTurn } from 'node:timers/promises';
 import type { SoundRoot } from '@jasper/api';
 import type { SoundCreditRow, SoundCreditWarning } from '@jasper/project';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -50,15 +51,15 @@ describe('Preferences ▸ Sound Library', () => {
 			await screen.findByText(/0 sounds/);
 			await act(async () => {
 				fireEvent.click(screen.getByRole('button', { name: 'Rescan' }));
-				await new Promise((r) => setTimeout(r, 20));
+				await Promise.resolve();
 			});
 			await act(async () => {
 				for (const l of [...mocks.listeners]) l({ type: 'sounds.changed' });
-				await new Promise((r) => setTimeout(r, 20));
+				await Promise.resolve();
 			});
 			expect(calls).toBeGreaterThanOrEqual(3);
-			await screen.findByText('The library status is not available.');
-			await new Promise((r) => setTimeout(r, 20));
+			await nextTurn();
+			expect(screen.getByText('The library status is not available.')).toBeTruthy();
 			expect(unhandled).toEqual([]);
 		} finally {
 			process.off('unhandledRejection', onUnhandled);

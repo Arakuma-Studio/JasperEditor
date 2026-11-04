@@ -234,5 +234,5 @@ describe('spec 19 eval cases pass on their intended route', () => {
 			const g = grade({ calls, shell: [], reply: route.reply ?? '' }, checks);
 			expect(g.invalid).toBeUndefined();
 			expect(g.failures).toEqual([]);
-		}, 120_000);
+		});
 });

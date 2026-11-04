@@ -7,8 +7,8 @@ import type { EngineJob, TranscriptFixResult } from '@jasper/api';
 import { readSequenceScriptFix } from '@jasper/project';
 import { SessionProvider } from '@jasper/session/react';
 import { closeAllDialogs, DialogHost, openDialog } from '@jasper/ui';
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	FIX_TRANSCRIPT_DIALOG,
 	registerFixTranscriptDialog,
@@ -22,17 +22,25 @@ vi.mock('../src/proposals/actions.ts', async (orig) => ({
 }));
 
 beforeAll(() => registerFixTranscriptDialog());
+beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }));
 afterEach(() => {
 	closeAllDialogs();
 	cleanup();
 	openReview.mockClear();
+	vi.useRealTimers();
 });
+
+const advance = async (ms = 0) => {
+	await act(async () => {});
+	await act(async () => vi.advanceTimersByTimeAsync(ms));
+};
+const drain = () => act(async () => vi.runAllTimersAsync());
 
 async function chooseOption(trigger: HTMLElement, name: string) {
 	await act(async () => {
 		fireEvent.keyDown(trigger, { key: 'Enter' });
 	});
-	const option = await screen.findByRole('option', { name });
+	const option = screen.getByRole('option', { name });
 	await act(async () => {
 		fireEvent.keyDown(option, { key: 'Enter' });
 	});
@@ -196,9 +204,8 @@ describe('Fix Transcript dialog (SC-081)', () => {
 	it('is disabled with the reason when there is no script and no glossary', async () => {
 		const e = fakeEngine({ glossary: 0 });
 		const { run } = setup({ engine: e });
-		await waitFor(() =>
-			expect(screen.getByTestId('fix-blocker').textContent).toMatch(/Attach the video script/),
-		);
+		await advance(300);
+		expect(screen.getByTestId('fix-blocker').textContent).toMatch(/Attach the video script/);
 		expect(run().disabled).toBe(true);
 		expect(e.requests).toEqual([]);
 	});
@@ -206,7 +213,8 @@ describe('Fix Transcript dialog (SC-081)', () => {
 	it('runs the dry run and shows its summary; without a speech model Run is disabled with the reason', async () => {
 		const e = fakeEngine({ glossary: 2, models: [{ id: 'whisper-tiny', installed: false }] });
 		const { run } = setup({ script: true, engine: e });
-		await screen.findByTestId('fix-dry-summary', {}, { timeout: 3000 });
+		await advance(300);
+		screen.getByTestId('fix-dry-summary');
 		expect(e.requests[0]!.body).toEqual({
 			sources: ['script', 'glossary'],
 			scope: 'recordings',
@@ -236,7 +244,8 @@ describe('Fix Transcript dialog (SC-081)', () => {
 	it('saves the settings with the sequence in one undo step and dry-runs again', async () => {
 		const e = fakeEngine({ glossary: 2 });
 		const { session, seq } = setup({ script: true, engine: e });
-		await screen.findByTestId('fix-dry-summary', {}, { timeout: 3000 });
+		await advance(300);
+		screen.getByTestId('fix-dry-summary');
 		const entries = session.getState().history.entries.length;
 		await chooseOption(
 			screen.getByRole('combobox', { name: 'Strictness' }),
@@ -251,12 +260,8 @@ describe('Fix Transcript dialog (SC-081)', () => {
 			scope: 'recordings',
 		});
 		expect(session.getState().history.entries.length).toBe(entries + 1);
-		await waitFor(
-			() => expect(e.requests.at(-1)!.body).toMatchObject({ strictness: 'careful', sources: ['script'] }),
-			{
-				timeout: 3000,
-			},
-		);
+		await advance(300);
+		expect(e.requests.at(-1)!.body).toMatchObject({ strictness: 'careful', sources: ['script'] });
 		act(() => session.undo());
 		expect(readSequenceScriptFix(seq()).settings).toBeUndefined();
 	});
@@ -264,51 +269,58 @@ describe('Fix Transcript dialog (SC-081)', () => {
 	it('Run follows the job with progress and opens the proposal in Review', async () => {
 		const e = fakeEngine({ glossary: 2 });
 		const { run } = setup({ script: true, engine: e });
-		await screen.findByTestId('fix-dry-summary', {}, { timeout: 3000 });
-		await waitFor(() => expect(run().disabled).toBe(false));
+		await advance(300);
+		screen.getByTestId('fix-dry-summary');
+		expect(run().disabled).toBe(false);
 		act(() => {
 			fireEvent.click(run());
 		});
-		await screen.findByTestId('fix-progress');
+		await advance();
+		screen.getByTestId('fix-progress');
 		expect(screen.getByTestId('fix-progress-text').textContent).toMatch(/Checking against the audio/);
-		await waitFor(() => expect(openReview).toHaveBeenCalledWith(expect.anything(), 'prp_1'), {
-			timeout: 3000,
-		});
+		await drain();
+		expect(openReview).toHaveBeenCalledWith(expect.anything(), 'prp_1');
 		expect(e.requests.at(-1)!.body.mode).toBe('propose');
-		await waitFor(() => expect(screen.queryByTestId('fix-transcript-dialog')).toBeNull());
+		expect(screen.queryByTestId('fix-transcript-dialog')).toBeNull();
 	});
 
 	it('Cancel while running cancels the job', async () => {
 		const e = fakeEngine({ glossary: 2 });
 		const { run, dialog } = setup({ script: true, engine: e });
-		await screen.findByTestId('fix-dry-summary', {}, { timeout: 3000 });
-		await waitFor(() => expect(run().disabled).toBe(false));
+		await advance(300);
+		screen.getByTestId('fix-dry-summary');
+		expect(run().disabled).toBe(false);
 		act(() => {
 			fireEvent.click(run());
 		});
-		await screen.findByTestId('fix-progress');
+		await advance();
+		screen.getByTestId('fix-progress');
 		act(() => {
 			fireEvent.click(within(dialog()).getByRole('button', { name: 'Cancel' }));
 		});
-		await waitFor(() => expect(e.cancelled).toEqual(['job_1']), { timeout: 3000 });
+		await drain();
+		expect(e.cancelled).toEqual(['job_1']);
 		expect(openReview).not.toHaveBeenCalled();
 	});
 
 	it('shows a refusal of the run without blanking the dialog', async () => {
 		const e = fakeEngine({ glossary: 2, refuse: { propose: 'E_NO_SPEECH_MODEL' } });
 		const { run } = setup({ script: true, engine: e });
-		await screen.findByTestId('fix-dry-summary', {}, { timeout: 3000 });
-		await waitFor(() => expect(run().disabled).toBe(false));
+		await advance(300);
+		screen.getByTestId('fix-dry-summary');
+		expect(run().disabled).toBe(false);
 		act(() => {
 			fireEvent.click(run());
 		});
-		expect((await screen.findByTestId('fix-message')).textContent).toMatch(/No installed speech model fits/);
+		await advance();
+		expect(screen.getByTestId('fix-message').textContent).toMatch(/No installed speech model fits/);
 	});
 
 	it('shows a dry-run refusal in words', async () => {
 		const e = fakeEngine({ glossary: 2, refuse: { dryRun: 'E_NO_TRANSCRIPT' } });
 		setup({ script: true, engine: e });
-		expect((await screen.findByTestId('fix-dry-error', {}, { timeout: 3000 })).textContent).toMatch(
+		await advance(300);
+		expect(screen.getByTestId('fix-dry-error').textContent).toMatch(
 			/No transcribed words in the chosen scope/,
 		);
 	});

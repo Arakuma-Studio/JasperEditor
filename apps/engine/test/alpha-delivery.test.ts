@@ -108,7 +108,9 @@ describe('stored ZIP (TL-114)', () => {
 	it('an aborted archive leaves nothing under the final name', async () => {
 		const dest = join(dir, 'gone.zip');
 		const z = await StoredZipWriter.create(dest);
-		await z.add('a.bin', join(dir, 'a.bin'));
+		const input = join(dir, 'aborted-entry.bin');
+		writeFileSync(input, 'cancelled entry');
+		await z.add('a.bin', input);
 		await z.abort();
 		expect(readdirSync(dir)).not.toContain('gone.zip');
 		expect(readdirSync(dir).filter((f) => f.startsWith('.gone'))).toEqual([]);

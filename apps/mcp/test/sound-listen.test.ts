@@ -26,7 +26,7 @@ import {
 import { decodePng } from '../src/png.ts';
 import type { RgbaImage } from '../src/sound-sheet.ts';
 import type { TimelineCells } from '../src/sound-timeline.ts';
-import { cleanEnv, stopEngine, testPort, waitFor } from './helpers.ts';
+import { cleanEnv, engineReady, stopEngine, testPort } from './helpers.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const PORT = await testPort(process.env.MCP_SOUND_LISTEN_TEST_PORT);
@@ -101,16 +101,12 @@ beforeAll(async () => {
 				JASPER_SOUND_SYNTH_VARIANTS: '1',
 				JASPER_SOUND_AUTO_INDEX: '0',
 			}),
-			stdio: ['ignore', 'pipe', 'pipe'],
+			stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
 		},
 	);
 	engine.stdout?.on('data', (d: Buffer) => engineLog.push(d.toString()));
 	engine.stderr?.on('data', (d: Buffer) => engineLog.push(d.toString()));
-	await waitFor(
-		async () => (await fetch(`http://127.0.0.1:${PORT}/health`)).ok,
-		300_000,
-		`the engine on ${PORT}: ${engineLog.join('')}`,
-	);
+	await engineReady(engine, PORT, engineLog);
 	const transport = new StdioClientTransport({
 		command: process.execPath,
 		args: ['--import', 'tsx', join(ROOT, 'apps/mcp/src/cli.ts'), '--appdir', appdir],
@@ -121,13 +117,13 @@ beforeAll(async () => {
 	transport.stderr?.on('data', (d: Buffer) => logs.push(d.toString('utf8')));
 	client = new Client({ name: 'vitest-mcp-sound-listen', version: '1.0.0' });
 	await client.connect(transport);
-}, 600_000);
+});
 
 afterAll(async () => {
 	await client?.close().catch(() => {});
 	await stopEngine(engine);
 	if (work) rmSync(work, { recursive: true, force: true });
-}, 30_000);
+});
 
 type Compact = {
 	jobId: string;
@@ -139,7 +135,7 @@ type Compact = {
 	next: string;
 };
 
-describe('listen_to_sequence / view_sound_timeline sheet', { timeout: 900_000 }, () => {
+describe('listen_to_sequence / view_sound_timeline sheet', () => {
 	it('gives the transcript, the compact JSON and the annotated sheet; cells locate every lane, cue and thumbnail', async () => {
 		const media = join(work, 'media');
 		const files = writeBedFixture(media);

@@ -52,18 +52,6 @@ async function programLuma(): Promise<number[]> {
 }
 const mean = (xs: number[]) => xs.reduce((s, x) => s + x, 0) / Math.max(1, xs.length);
 
-/** Waits until two consecutive Program captures agree (the Player finished drawing the seeked frame). */
-async function settledLuma(): Promise<number[]> {
-	let prev = await programLuma();
-	for (let i = 0; i < 20; i++) {
-		await page.waitForTimeout(150);
-		const next = await programLuma();
-		if (next.length === prev.length && next.every((v, k) => v === prev[k])) return next;
-		prev = next;
-	}
-	return prev;
-}
-
 test('TXA-013: character glyphs stay within 1 px of plain text at the animation boundary', async () => {
 	const testInfo = test.info();
 	const changed = await transact(page, [
@@ -103,14 +91,14 @@ test('TXA-013: character glyphs stay within 1 px of plain text at the animation 
 				return result;
 			});
 	await seek(9);
-	await settledLuma();
+	await programLuma();
 	const animated = await glyphs();
 	await testInfo.attach('animated-glyphs', {
 		body: await page.getByTestId('program-player-wrapper').screenshot(),
 		contentType: 'image/png',
 	});
 	await seek(10);
-	await settledLuma();
+	await programLuma();
 	const plain = await glyphs();
 	expect(animated.map((g) => g.text).join('')).toBe('Hellobraveworld');
 	expect(plain.map((g) => g.text)).toEqual(animated.map((g) => g.text));
@@ -133,7 +121,7 @@ test('returning from Export preserves the paused animated title without another 
 }, testInfo) => {
 	test.setTimeout(600_000);
 	await seek(8);
-	const before = await settledLuma();
+	const before = await programLuma();
 	expect(mean(before)).toBeGreaterThan(0.5);
 	await testInfo.attach('before-export', {
 		body: await page.getByTestId('program-player-wrapper').screenshot(),
@@ -145,7 +133,7 @@ test('returning from Export preserves the paused animated title without another 
 		expectPath: /native|hybrid|remotion/i,
 		outDir: OUT_DIR,
 	});
-	const after = await settledLuma();
+	const after = await programLuma();
 	await testInfo.attach('after-export', {
 		body: await page.getByTestId('program-player-wrapper').screenshot(),
 		contentType: 'image/png',

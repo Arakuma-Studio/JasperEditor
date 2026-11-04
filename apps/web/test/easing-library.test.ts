@@ -1,6 +1,6 @@
 import { type EaseCurve, EasePresetSchema } from '@jasper/project';
 import fc from 'fast-check';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	addGroup,
 	DEFAULT_GROUP_ID,
@@ -9,7 +9,6 @@ import {
 	duplicatePreset,
 	EASE_LIBRARY_VERSION,
 	type EaseLibraryState,
-	easeLibrary,
 	emptyLibrary,
 	exportLibrary,
 	importLibrary,
@@ -38,7 +37,6 @@ function ok(r: ReturnType<typeof savePreset>): EaseLibraryState & { lastId: stri
 
 beforeEach(() => {
 	globalThis.localStorage?.clear();
-	easeLibrary.reload();
 });
 
 describe('user library operations', () => {
@@ -116,11 +114,14 @@ describe('user library operations', () => {
 });
 
 describe('persistence', () => {
-	it('stores the library and settings and reads them back', () => {
+	it('stores the library and settings and reads them back', async () => {
+		vi.resetModules();
+		const { easeLibrary } = await import('../src/panels/easing/library.ts');
 		expect(easeLibrary.run((s) => savePreset(s, { name: 'Kept', curve }))).toBeNull();
 		easeLibrary.settings({ autoApply: true, sections: ['in', 'out'], thumb: 96, columns: 3, curve: other });
-		easeLibrary.reload();
-		const s = easeLibrary.get();
+		vi.resetModules();
+		const { easeLibrary: reloaded } = await import('../src/panels/easing/library.ts');
+		const s = reloaded.get();
 		expect(s.presets.map((p) => p.name)).toEqual(['Kept']);
 		expect(s.settings).toMatchObject({
 			autoApply: true,
@@ -151,10 +152,17 @@ describe('persistence', () => {
 		expect(dropped).toBe(7);
 	});
 
-	it('does not read or overwrite a library written by a newer version', () => {
-		const newer = { version: EASE_LIBRARY_VERSION + 1, presets: [{ anything: true }] };
+	it('does not read or overwrite a library written by a newer version', async () => {
+		const newer = {
+			version: EASE_LIBRARY_VERSION + 1,
+			presets: [
+				{ anything: true },
+				{ id: 'future', name: 'Future-compatible', group: DEFAULT_GROUP_ID, curve },
+			],
+		};
 		globalThis.localStorage.setItem('jasper.easing.v1', JSON.stringify(newer));
-		easeLibrary.reload();
+		vi.resetModules();
+		const { easeLibrary } = await import('../src/panels/easing/library.ts');
 		expect(easeLibrary.loadReport().newer).toBe(true);
 		expect(easeLibrary.get().presets).toEqual([]);
 		easeLibrary.settings({ thumb: 100 });
@@ -197,8 +205,22 @@ describe('export / import', () => {
 	it.each([
 		['not json', 'not valid JSON'],
 		['[]', 'not an ease preset file'],
-		[JSON.stringify({ format: 'something-else', presets: [] }), 'not an ease preset file'],
-		[JSON.stringify({ format: 'jasper-ease-presets', version: 99, presets: [] }), 'newer version'],
+		[
+			JSON.stringify({
+				format: 'something-else',
+				version: 1,
+				presets: [{ id: 'a', name: 'A', group: 'user', curve }],
+			}),
+			'not an ease preset file',
+		],
+		[
+			JSON.stringify({
+				format: 'jasper-ease-presets',
+				version: 99,
+				presets: [{ id: 'a', name: 'A', group: 'user', curve }],
+			}),
+			'newer version',
+		],
 		[JSON.stringify({ format: 'jasper-ease-presets', version: 1 }), 'no presets list'],
 	])('refuses %s', (text, msg) => {
 		const { state, report } = importLibrary(emptyLibrary(), text);

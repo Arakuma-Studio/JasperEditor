@@ -23,7 +23,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { cleanEnv, stopEngine, testPort, waitFor } from './helpers.ts';
+import { cleanEnv, engineReady, stopEngine, testPort } from './helpers.ts';
 import { FIXTURE_COMMANDS } from './sound-cues-fixture.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -119,16 +119,12 @@ beforeAll(async () => {
 				JASPER_SOUND_SYNTH_VARIANTS: '1',
 				JASPER_SOUND_AUTO_INDEX: '0',
 			}),
-			stdio: ['ignore', 'pipe', 'pipe'],
+			stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
 		},
 	);
 	engine.stdout?.on('data', (d: Buffer) => engineLog.push(d.toString()));
 	engine.stderr?.on('data', (d: Buffer) => engineLog.push(d.toString()));
-	await waitFor(
-		async () => (await fetch(`${BASE}/health`)).ok,
-		120_000,
-		`the engine on ${PORT}: ${engineLog.join('')}`,
-	);
+	await engineReady(engine, PORT, engineLog);
 	const transport = new StdioClientTransport({
 		command: process.execPath,
 		args: ['--import', 'tsx', join(ROOT, 'apps/mcp/src/cli.ts'), '--appdir', appdir],
@@ -140,13 +136,13 @@ beforeAll(async () => {
 	client = new Client({ name: 'vitest-mcp-proposals', version: '1.0.0' });
 	await client.connect(transport);
 	await ok('rescan_sound_library', { wait: true });
-}, 600_000);
+});
 
 afterAll(async () => {
 	await client?.close().catch(() => {});
 	await stopEngine(engine);
 	if (work) rmSync(work, { recursive: true, force: true });
-}, 30_000);
+});
 
 type Planned = {
 	proposalId: string;
@@ -196,7 +192,7 @@ type Waited = {
 let projectId = '';
 let plan: Planned;
 
-describe('proposal MCP tools', { timeout: 900_000 }, () => {
+describe('proposal MCP tools', () => {
 	it('plan_sound_design stores a proposal (nothing applied) with a table, why-lines and alternates', async () => {
 		projectId = (await ok<{ projectId: string }>('create_project', { name: 'Plan', preset: 'hd-1080p-30' }))
 			.projectId;

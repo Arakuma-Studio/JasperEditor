@@ -500,13 +500,31 @@ describe('clip.link / clip.unlink (S01:CLP-010, S02:TL-704)', () => {
 	});
 
 	it.each([
-		{ name: 'two clips on one track', build: [solid(0, 10, 'V1'), solid(20, 10, 'V1')] },
+		{
+			name: 'two clips on one track',
+			build: (h: Harness): string[] => {
+				const mediaId = h.registerVideo({ kind: 'audio', seconds: 2 });
+				return h
+					.ok(
+						[0, 20].map((at) => ({
+							type: 'clip.place',
+							source: { mediaId },
+							at,
+							sourceRange: { in: { seconds: 0 }, out: { seconds: 0.25 } },
+							tracks: { audio: 'A1' },
+						})),
+					)
+					.results.flatMap((x) => (x as { clipIds: string[] }).clipIds);
+			},
+		},
 		{ name: 'two video clips', build: [solid(0, 10, 'V1'), solid(0, 10, 'V2')] },
 		{ name: 'a single clip', build: [solid(0, 10, 'V1')] },
 	])('link refuses $name', ({ build }) => {
 		const h = new Harness();
-		const r0 = h.ok(build);
-		const ids = r0.results.map((x) => (x as { clipId: string }).clipId);
+		const ids =
+			typeof build === 'function'
+				? build(h)
+				: h.ok(build).results.map((x) => (x as { clipId: string }).clipId);
 		const r = h.tx([{ type: 'clip.link', clipIds: ids }]);
 		expect(r.ok).toBe(false);
 		if (!r.ok) expect(r.errors[0]!.code).toBe('E_INVALID_PARAM');
@@ -877,5 +895,5 @@ describe('invariants under random WP-2B commands (S02:TL-1051)', () => {
 			{ numRuns: 1500, seed: 20260930 },
 		);
 		expect(successes).toBeGreaterThan(0);
-	}, 300_000);
+	});
 });

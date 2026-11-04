@@ -28,7 +28,7 @@ export const SAMPLE_TIMEOUT_MS = 6 * 60_000;
 export const MIN_TOKEN_MINUTES = 25;
 
 /** Environment that would override the account's own login. Removed from every sample. */
-export const AUTH_ENV = [
+const AUTH_ENV = [
 	'ANTHROPIC_API_KEY',
 	'ANTHROPIC_AUTH_TOKEN',
 	'CLAUDE_CODE_OAUTH_TOKEN',
@@ -104,8 +104,8 @@ export type CredentialState = {
 	mode: number;
 };
 
-/** Minutes left on the access token, from the expiry alone. `null` when unknown. Pure, for the tests. */
-export function minutesLeftOf(agent: Agent, credentials: unknown, now: number): number | null {
+/** Minutes left on the access token, from the expiry alone. `null` when unknown. */
+function minutesLeftOf(agent: Agent, credentials: unknown, now: number): number | null {
 	const root = credentials as {
 		claudeAiOauth?: { expiresAt?: unknown };
 		tokens?: { access_token?: unknown };

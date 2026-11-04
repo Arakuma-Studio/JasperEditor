@@ -1,9 +1,11 @@
 // Generic contract of every registered processor (port of filmcraft `effects/mod.rs` tests): block-size independence with parameter changes, degenerate blocks, extreme settings, reset.
-import type { ParamSpec } from '@jasper/project/audio';
+import { AUDIO_EFFECTS, type ParamSpec } from '@jasper/project/audio';
 import { describe, expect, it } from 'vitest';
 import type { AudioProcessor } from '../src/core/effect.ts';
-import { createProcessor, processorIds } from '../src/registry.ts';
+import { createProcessor } from '../src/registry.ts';
 import { noise, SR } from './util.ts';
+
+const processors = AUDIO_EFFECTS.map(({ id }) => id);
 
 /** A non-default setting for every parameter (exercises real processing paths). */
 function tweak(fx: AudioProcessor) {
@@ -30,7 +32,7 @@ describe('audio-fx registry', () => {
 		const srcL = noise(1, n, 0.7);
 		const srcR = noise(2, n, 0.7);
 		const changeAt = 11111;
-		for (const id of processorIds()) {
+		for (const id of processors) {
 			const runWith = (sizes: () => number) => {
 				const fx = createProcessor(id, SR, 2)!;
 				const l = srcL.slice();
@@ -71,7 +73,7 @@ describe('audio-fx registry', () => {
 	});
 
 	it('handles empty, single-sample, mono and extra-channel blocks', () => {
-		for (const id of processorIds()) {
+		for (const id of processors) {
 			for (const configured of [1, 2]) {
 				const fx = createProcessor(id, SR, configured)!;
 				for (const changed of [false, true]) {
@@ -102,7 +104,7 @@ describe('audio-fx registry', () => {
 		}
 	});
 
-	it.each(processorIds().flatMap((id) => (['min', 'max'] as const).map((extreme) => [id, extreme] as const)))(
+	it.each(processors.flatMap((id) => (['min', 'max'] as const).map((extreme) => [id, extreme] as const)))(
 		'extreme settings stay finite and tails end without subnormals (%s, %s)',
 		(id, extreme) => {
 			const fx = createProcessor(id, SR, 2)!;
@@ -140,7 +142,7 @@ describe('audio-fx registry', () => {
 	);
 
 	it('reset restores the initial behaviour', () => {
-		for (const id of processorIds()) {
+		for (const id of processors) {
 			const fx = createProcessor(id, SR, 2)!;
 			const x = noise(8, 6000, 0.5);
 			const a1 = x.slice();

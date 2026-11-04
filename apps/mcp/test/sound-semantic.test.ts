@@ -11,13 +11,15 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { EngineJob } from '@jasper/api';
+import { EngineClient } from '@jasper/engine-client';
 import { FLICKS_PER_SECOND, type ProjectDocument } from '@jasper/project';
 import { writeTinyClapCatalog } from '@jasper/testkit/tiny-clap';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { cleanEnv, stopEngine, testPort, waitFor } from './helpers.ts';
+import { cleanEnv, engineReady, stopEngine, testPort } from './helpers.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const PORT = await testPort(process.env.MCP_SEMANTIC_TEST_PORT);
@@ -127,16 +129,12 @@ beforeAll(async () => {
 				JASPER_SOUND_AUTO_INDEX: '0',
 				JASPER_MODEL_CATALOG: catalog,
 			}),
-			stdio: ['ignore', 'pipe', 'pipe'],
+			stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
 		},
 	);
 	engine.stdout?.on('data', (d: Buffer) => engineLog.push(d.toString()));
 	engine.stderr?.on('data', (d: Buffer) => engineLog.push(d.toString()));
-	await waitFor(
-		async () => (await fetch(`http://127.0.0.1:${PORT}/health`)).ok,
-		120_000,
-		`the engine on ${PORT}`,
-	);
+	await engineReady(engine, PORT, []);
 	const transport = new StdioClientTransport({
 		command: process.execPath,
 		args: ['--import', 'tsx', join(ROOT, 'apps/mcp/src/cli.ts'), '--appdir', appdir],
@@ -147,13 +145,13 @@ beforeAll(async () => {
 	transport.stderr?.on('data', (d: Buffer) => logs.push(d.toString('utf8')));
 	client = new Client({ name: 'vitest-mcp-clap', version: '1.0.0' });
 	await client.connect(transport);
-}, 240_000);
+});
 
 afterAll(async () => {
 	await client?.close().catch(() => {});
 	await stopEngine(engine);
 	if (work) rmSync(work, { recursive: true, force: true });
-}, 30_000);
+});
 
 async function documentOf(projectId: string): Promise<ProjectDocument> {
 	const r = await client.readResource({ uri: `jasper://projects/${projectId}/document` });
@@ -166,7 +164,7 @@ type Search = {
 	describe?: { mode: string; reason?: string; embedded: number; pending: number };
 };
 
-describe('Describe-it search over MCP', { timeout: 900_000 }, () => {
+describe('Describe-it search over MCP', () => {
 	it('falls back to keywords without the model, installs it, ranks by sound, finds and places a moment', async () => {
 		await ok('rescan_sound_library', { wait: true });
 		const before = await ok<{
@@ -182,18 +180,51 @@ describe('Describe-it search over MCP', { timeout: 900_000 }, () => {
 		expect(noModel.isError).toBe(true);
 		expect(textOf(noModel)).toContain('MODEL_NOT_INSTALLED');
 
-		const inst = await ok<{ state: string; model: { license: string } }>('install_describe_search_model', {
-			wait: true,
+		let opened!: () => void;
+		let failedOpen!: (error: Error) => void;
+		const connected = new Promise<void>((resolve, reject) => {
+			opened = resolve;
+			failedOpen = reject;
 		});
-		expect(inst).toMatchObject({ state: 'succeeded', model: { license: 'Apache-2.0' } });
-		await waitFor(
-			async () => {
-				const s = await ok<{ embedded: number; total: number; job: unknown }>('describe_search_status');
-				return s.job === null && s.embedded === s.total;
+		let embedded!: (job: EngineJob) => void;
+		let failedEmbedding!: (error: Error) => void;
+		const embedding = new Promise<EngineJob>((resolve, reject) => {
+			embedded = resolve;
+			failedEmbedding = reject;
+		});
+		const events = new EngineClient({ baseUrl: `http://127.0.0.1:${PORT}`, token }).openEvents(
+			{},
+			{
+				onStateChange(state, info) {
+					if (state === 'open') opened();
+					if (state === 'reconnecting') {
+						const error = new Error('Sound embedding event stream disconnected', { cause: info.error });
+						failedOpen(error);
+						failedEmbedding(error);
+					}
+				},
+				onEvent(event) {
+					if (event.type === 'job.finished' && event.payload.kind === 'sound-embed') embedded(event.payload);
+				},
 			},
-			300_000,
-			'the library embedded after install',
 		);
+		try {
+			const [inst, indexed] = await Promise.all([
+				(async () => {
+					await connected;
+					return ok<{ state: string; model: { license: string } }>('install_describe_search_model', {
+						wait: true,
+					});
+				})(),
+				embedding,
+			]);
+			expect(inst).toMatchObject({ state: 'succeeded', model: { license: 'Apache-2.0' } });
+			expect(indexed.state).toBe('succeeded');
+		} finally {
+			events.close();
+		}
+		const indexed = await ok<{ embedded: number; total: number; job: unknown }>('describe_search_status');
+		expect(indexed).toMatchObject({ embedded: indexed.total, job: null });
 		const prep = await ok<{ state: string; embedded: number; reused: number }>('prepare_describe_search', {
 			wait: true,
 		});

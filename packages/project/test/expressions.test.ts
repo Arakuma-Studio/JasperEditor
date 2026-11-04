@@ -117,8 +117,8 @@ describe('commands', () => {
 					effectId: 'jasper.slider-control',
 					params: { slider: { value: 3, keyframes: [], expression: { text: 1 } } },
 				},
-			]).ok,
-		).toBe(false);
+			]),
+		).toMatchObject({ ok: false, errors: [{ code: 'E_INVALID_PARAM' }] });
 	});
 });
 

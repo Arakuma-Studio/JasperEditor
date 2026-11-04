@@ -134,7 +134,8 @@ Each target runs its seeds, truncations of every seed (32 cut points plus the ed
 text: lines dropped, duplicated and swapped, numbers replaced by `NaN`, `1e309`, `-0`, 2³¹…, tokens and odd
 characters; JSON: nodes replaced, deleted, re-typed, arrays emptied or grown, `__proto__` / `constructor` keys, deep
 nesting) and a fast-check property over arbitrary inputs of its kind. Options: `iterations`, `properties`,
-`slowMs` (default 2 s per input), `check` (assert something about a successful result). Failing inputs are written to
+`slowMs` (default 2 s per input: CPU in the synchronous runner, elapsed time in the asynchronous runner),
+`check` (assert something about a successful result). Failing inputs are written to
 `test-results/fuzz-failures/<target>-<seed>-<phase>-<n>.*` and the message names the seed; reproduce with
 `FUZZ_SEED=<n>`. `runFuzzTarget` / `runFuzzTargetSync` / `assertFuzzSync` run a target outside `describeFuzz`
 (the interchange tests use `assertFuzzSync` through `expectOnlyInterchangeErrors`).

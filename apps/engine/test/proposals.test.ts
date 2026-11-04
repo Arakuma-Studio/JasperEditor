@@ -569,6 +569,7 @@ async function liveEditor(app: App, projectId: string, file: string, headers: Re
 	const ws: WebSocket = await app.injectWS('/agent', { headers });
 	const txs: Msg[] = [];
 	const cards: { approvalId: string; answerKey: string }[] = [];
+	let cardChanged = () => {};
 	let welcome: () => void = () => {};
 	const welcomed = new Promise<void>((r) => {
 		welcome = r;
@@ -576,7 +577,10 @@ async function liveEditor(app: App, projectId: string, file: string, headers: Re
 	ws.on('message', (d) => {
 		const m = JSON.parse(String(d)) as Msg;
 		if (m.type === 'welcome') welcome();
-		if (m.type === 'event' && m.event === 'agent.approval.requested') cards.push(m.payload as never);
+		if (m.type === 'event' && m.event === 'agent.approval.requested') {
+			cards.push(m.payload as never);
+			cardChanged();
+		}
 		if (m.type !== 'request') return;
 		const payload = m.payload as {
 			query?: string;
@@ -620,6 +624,13 @@ async function liveEditor(app: App, projectId: string, file: string, headers: Re
 		ws,
 		txs,
 		cards,
+		async card(n: number) {
+			while (cards.length < n)
+				await new Promise<void>((resolve) => {
+					cardChanged = resolve;
+				});
+			return cards[n - 1]!;
+		},
 		answer,
 		get doc() {
 			return doc;
@@ -628,13 +639,6 @@ async function liveEditor(app: App, projectId: string, file: string, headers: Re
 }
 
 const secured = () => makeApp({ dev: false, token: TOKEN, editorKey: KEY });
-const until = async (pred: () => boolean, ms = 5000) => {
-	const end = Date.now() + ms;
-	while (!pred()) {
-		if (Date.now() > end) throw new Error('timed out');
-		await new Promise((r) => setTimeout(r, 10));
-	}
-};
 
 describe('accept policy: agents vs the editor window', { timeout: TIMEOUT }, () => {
 	it('refuses an agent with 403 APPROVAL_REQUIRED unless the sequence allows agents; the editor needs nothing extra', async () => {
@@ -822,14 +826,12 @@ describe('accept policy: agents vs the editor window', { timeout: TIMEOUT }, () 
 			AGENT_H,
 		);
 		const denied = post(app, `${base(projectId)}/${rm.id}/accept`, { itemIds: 'all' }, AGENT_H);
-		await until(() => editor.cards.length === 1);
-		editor.answer(editor.cards[0]!, 'denied');
+		editor.answer(await editor.card(1), 'denied');
 		const d = await denied;
 		expect([d.statusCode, d.json().code]).toEqual([403, 'APPROVAL_DENIED']);
 		const tracksBefore = editor.doc.sequences[seqId]!.audioTracks.length;
 		const approved = post(app, `${base(projectId)}/${rm.id}/accept`, { itemIds: 'all' }, AGENT_H);
-		await until(() => editor.cards.length === 2);
-		editor.answer(editor.cards[1]!, 'approved');
+		editor.answer(await editor.card(2), 'approved');
 		const a = await approved;
 		expect(a.statusCode, a.body).toBe(200);
 		expect(editor.txs.at(-1)).toMatchObject({ approved: true });

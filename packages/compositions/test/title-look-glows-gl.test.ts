@@ -1,3 +1,7 @@
+// @vitest-environment node
+// Spec 19, stream Glows, in real WebGL2 (headless Chrome, SwiftShader): what each layer type and effect is for, against
+// independent numbers. Fingerprints, the perturbation check, padding and the two-scale test of every layer type are in
+// `title-look-gl.test.ts`, of every effect in `fx-gl.test.ts` and below.
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {

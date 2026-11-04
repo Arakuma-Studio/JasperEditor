@@ -2,6 +2,7 @@
 // bed, determinism, sanitisation and speed.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { threadCpuMs } from '../../../scripts/perf/cpu.ts';
 import {
 	BED_CAP_LU,
 	CONSISTENCY_DB,
@@ -702,7 +703,7 @@ describe('sanitisation', () => {
 });
 
 describe('performance', () => {
-	// The best of 9 runs: on a shared, loaded host the median measures the load, the minimum the solver.
+	// The best of 9 runs measures the solver’s executing-thread CPU use.
 	/** 2000 events over 10 minutes (≈ 3 playing at once); `sameWeightRepeats`: a sound repeats under one weight only. */
 	function events2000(sameWeightRepeats: boolean): SolverEvent[] {
 		const rnd = (() => {
@@ -735,9 +736,9 @@ describe('performance', () => {
 		solveSfxGains(events, opts); // warm-up (JIT)
 		const times: number[] = [];
 		for (let k = 0; k < 9; k++) {
-			const t0 = performance.now();
+			const t0 = threadCpuMs();
 			const r = solveSfxGains(events, opts);
-			times.push(performance.now() - t0);
+			times.push(threadCpuMs() - t0);
 			expect(r.events).toHaveLength(2000);
 		}
 		times.sort((a, b) => a - b);
@@ -752,7 +753,7 @@ describe('performance', () => {
 		expect(t.min).toBeLessThan(50);
 	});
 
-	/** Best-of-5 wall time of the masking solve and of the one-pass (bed-alone) solve, interleaved in this process. */
+	/** Best-of-5 thread CPU time of the masking and one-pass solves, interleaved in this process. */
 	function ratioToOnePass(events: SolverEvent[]) {
 		solveSfxGains(events, {});
 		solveSfxGains(events, { sfxMasking: false });
@@ -760,12 +761,12 @@ describe('performance', () => {
 		const onePass: number[] = [];
 		let iterations = 0;
 		for (let k = 0; k < 5; k++) {
-			let t0 = performance.now();
+			let t0 = threadCpuMs();
 			solveSfxGains(events, { sfxMasking: false });
-			onePass.push(performance.now() - t0);
-			t0 = performance.now();
+			onePass.push(threadCpuMs() - t0);
+			t0 = threadCpuMs();
 			iterations = solveSfxGains(events, {}).stats.iterations;
-			masking.push(performance.now() - t0);
+			masking.push(threadCpuMs() - t0);
 		}
 		const m = Math.min(...masking);
 		const o = Math.min(...onePass);

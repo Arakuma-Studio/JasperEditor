@@ -2,8 +2,7 @@
 // Spec 19 §9 end to end in real Chrome (REMOTION_E2E=1): a physical 3D title with an environment preset, tone mapping and
 // a keyed material, in the Player (the Program monitor's path) and through Remotion renders. Program against export by
 // SSIM and a razor cut. Refusals of missing HDRs and models are tested at the plan: apps/engine/test/three-d-hdr.test.ts.
-import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -17,7 +16,7 @@ import { bundleForBrowser } from '@jasper/testkit/browser';
 import { type Browser, chromium, type Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SEQUENCE_COMPOSITION_ID } from '../src/types.ts';
-import { type FxMedia, startFxMedia } from './fx-media.ts';
+import { type FxMedia, fxPixels, startFxMedia } from './fx-media.ts';
 import { ssimRgb } from './title-look-harness.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -98,21 +97,7 @@ function build(o: Opts = {}) {
 
 type Raw = { data: Buffer; w: number; h: number };
 const decode = (png: Buffer | string): Raw => ({
-	data: execFileSync(
-		'ffmpeg',
-		[
-			'-v',
-			'error',
-			'-i',
-			typeof png === 'string' ? png : 'pipe:0',
-			'-f',
-			'rawvideo',
-			'-pix_fmt',
-			'rgb24',
-			'-',
-		],
-		{ maxBuffer: 1 << 27, ...(typeof png === 'string' ? {} : { input: png }) },
-	),
+	data: fxPixels(typeof png === 'string' ? readFileSync(png) : png),
 	w: W,
 	h: H,
 });
@@ -189,18 +174,17 @@ describe.runIf(enabled && !!CHROME)('3D titles in real Chrome (REMOTION_E2E=1)',
 	}
 
 	async function programFrame(frame: number, name: string): Promise<Raw> {
-		await page.evaluate((f) => {
-			(window as never as { __fxPlayer: { seek(a: string, b: number): void } }).__fxPlayer.seek('title', f);
-		}, frame);
-		let prev = null as Buffer | null;
-		for (let i = 0; i < 120; i++) {
-			await page.waitForTimeout(500);
-			const shot = await page.locator('#title').screenshot();
-			if (prev?.equals(shot) && i > 3) break;
-			prev = shot;
-		}
-		writeFileSync(join(OUT, `${name}.png`), prev!);
-		return decode(prev!);
+		await page.evaluate(
+			(f) =>
+				(window as never as { __fxPlayer: { seek(a: string, b: number): Promise<void> } }).__fxPlayer.seek(
+					'title',
+					f,
+				),
+			frame,
+		);
+		const shot = await page.locator('#title').screenshot();
+		writeFileSync(join(OUT, `${name}.png`), shot);
+		return decode(shot);
 	}
 
 	it.each([0, 45])('Program and export agree at frame %i', async (frame) => {

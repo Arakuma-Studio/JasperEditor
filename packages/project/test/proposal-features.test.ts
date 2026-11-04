@@ -265,7 +265,7 @@ describe('finer anchors (spec 15 EA-003)', () => {
 		const p = propose(h, [
 			{
 				...kitItem('k', trackId, 60, []),
-				meta: { anchorOn: { clips: [42, 'nope'], cuts: [{ trackId, frame: -1 }, { frame: 3 }, 'x'] } },
+				meta: { anchorOn: { clips: [42, 'nope'], cuts: [null, { trackId, frame: -1 }, { frame: 3 }, 'x'] } },
 			},
 		]);
 		expect(Object.keys(p.items[0]!.anchors ?? {}).filter((k) => k.startsWith('cut@'))).toEqual([]);

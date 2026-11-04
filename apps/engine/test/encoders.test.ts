@@ -207,7 +207,10 @@ describe('masters and bitrate overrides', () => {
 		});
 		expect(usableByCodec(inv(OPENH264_ONLY)).prores).toEqual(['prores_ks']);
 		expect(
-			selectVideoEncoder(inv(['aac', 'libopenh264']), { purpose: 'export', codec: 'prores' }),
+			selectVideoEncoder(inv(['aac', 'libopenh264', 'libvpx-vp9']), {
+				purpose: 'export',
+				codec: 'prores',
+			}),
 		).toBeNull();
 		expect(EncodingCapabilitiesSchema.parse(encodingCapabilities(inv(LGPL_LIST))).codecs.prores).toEqual([
 			'prores_ks',

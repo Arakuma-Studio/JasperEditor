@@ -670,15 +670,22 @@ describe('double-click → in-place editor', () => {
 	it('Ctrl+Z inside the editor first undoes typing locally (no History entry)', async () => {
 		const session = newSession();
 		const id = addTemplate(session, 'V1', { text: 'abc' });
+		const renamed = session.apply({
+			label: 'Rename before typing',
+			origin: 'user',
+			commands: [{ type: 'project.rename', name: 'Renamed' }],
+		});
+		if (!renamed.ok) throw new Error(JSON.stringify(renamed.errors));
 		const { input, ui } = await openEditor(session, id);
-		const before = historyLabels(session).length;
+		const before = session.getState().history;
 		typeVisible(input, 'abcd');
 		typeVisible(input, 'abcde');
 		press(input, 'z', { ctrlKey: true });
+		expect(session.getState().history).toEqual(before);
 		expect(input.getAttribute('data-value')).toBe('abcd');
 		press(input, 'y', { ctrlKey: true });
 		expect(input.getAttribute('data-value')).toBe('abcde');
-		expect(historyLabels(session)).toHaveLength(before);
+		expect(session.getState().history).toEqual(before);
 		press(input, 'Escape');
 		expect(paramsOf(session, id).text).toBe('abc');
 		ui.unsub();

@@ -65,6 +65,7 @@ describe('Liquify', () => {
 		]);
 		const mesh = fx().params.distortionMesh!.value as number[];
 		expect(mesh.some((v, i) => i >= 3 && v !== 0)).toBe(true);
+		expect(h.tx([{ type: 'meshWarp.reset', effectInstanceId: fxId }]).ok).toBe(false);
 		h.ok([
 			{
 				type: 'param.setAnimated',
@@ -86,7 +87,6 @@ describe('Liquify', () => {
 		const mid = evaluate(fx().params.distortionMesh as never, 5 * F) as number[];
 		expect(mid.length).toBe(mesh.length);
 		h.ok([{ type: 'liquify.reset', effectInstanceId: fxId, at: { frames: 10 } }]);
-		expect(h.tx([{ type: 'meshWarp.reset', effectInstanceId: fxId }]).ok).toBe(false);
 		expect(h.tx([{ type: 'liquify.stroke', effectInstanceId: 'fx_nope', points: [[0, 0]] }]).ok).toBe(false);
 		expect(checkInvariants(h.doc, { effects: defaultEffectRegistry })).toEqual([]);
 	});

@@ -170,6 +170,6 @@ describe.runIf(
 		);
 		const patched = readFileSync(copy);
 		expect(() => rewriteElfRpath(copy, '$ORIGIN/../lib')).toThrow();
-		expect(readFileSync(copy)).toEqual(patched);
+		expect(readFileSync(copy).equals(patched)).toBe(true);
 	});
 });

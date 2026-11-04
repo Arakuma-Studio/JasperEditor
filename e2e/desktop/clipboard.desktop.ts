@@ -44,20 +44,41 @@ function collect(proc: ChildProcess): string[] {
 	return out;
 }
 
-async function waitForLine(
+function waitForLine(
 	out: string[],
 	proc: ChildProcess,
 	re: RegExp,
-	ms: number,
+	timeoutMs: number,
 ): Promise<RegExpExecArray> {
-	const t0 = Date.now();
-	for (;;) {
-		const m = re.exec(out.join(''));
-		if (m) return m;
-		if (proc.exitCode !== null) throw new Error(`exited ${proc.exitCode}: ${out.join('').slice(-2000)}`);
-		if (Date.now() - t0 > ms) throw new Error(`timeout waiting for ${re}: ${out.join('').slice(-2000)}`);
-		await new Promise((r) => setTimeout(r, 200));
-	}
+	const signal = AbortSignal.timeout(timeoutMs);
+	return new Promise((resolve, reject) => {
+		const cleanup = () => {
+			proc.stdout?.off('data', inspect);
+			proc.stderr?.off('data', inspect);
+			proc.off('error', error);
+			proc.off('exit', exited);
+			signal.removeEventListener('abort', aborted);
+		};
+		const error = (cause: Error) => {
+			cleanup();
+			reject(cause);
+		};
+		const exited = () => error(new Error(`exited ${proc.exitCode}: ${out.join('').slice(-2000)}`));
+		const aborted = () => error(signal.reason as Error);
+		signal.addEventListener('abort', aborted, { once: true });
+		const inspect = () => {
+			const match = re.exec(out.join(''));
+			if (!match) return;
+			cleanup();
+			resolve(match);
+		};
+		proc.stdout?.on('data', inspect);
+		proc.stderr?.on('data', inspect);
+		proc.once('error', error);
+		proc.once('exit', exited);
+		inspect();
+		if (proc.exitCode !== null || proc.signalCode !== null) exited();
+	});
 }
 
 /** Launches one packaged-like desktop app (it forks its own engine) and attaches to its window over CDP. */
@@ -81,14 +102,10 @@ async function launch(name: string): Promise<App> {
 		await waitForLine(out, proc, /\[desktop\] loaded (http:\/\/127\.0\.0\.1:\d+)\//, 120_000)
 	)[1]!;
 	const browser = await chromium.connectOverCDP(`http://127.0.0.1:${cdp}`);
-	let page: Page | undefined;
-	for (let i = 0; i < 100 && !page; i++) {
-		page = browser
-			.contexts()[0]
-			?.pages()
-			.find((p) => p.url().startsWith(origin));
-		if (!page) await new Promise((r) => setTimeout(r, 200));
-	}
+	const page = browser
+		.contexts()[0]
+		?.pages()
+		.find((p) => p.url().startsWith(origin));
 	if (!page) throw new Error(`no window on ${origin}`);
 	const app: App = { proc, browser, page };
 	apps.push(app);
@@ -102,7 +119,6 @@ async function newProject(page: Page, name: string): Promise<void> {
 	await page.getByTestId('new-project-create').click();
 	await expect(page.getByTestId('editor-shell')).toBeVisible();
 	await expect(page.getByTestId('timeline-track-area')).toBeVisible();
-	await expect.poll(() => page.evaluate(() => !!window.jasper)).toBe(true);
 }
 
 type DocClip = { id: string; kind: string; start: number; mediaId?: string; content?: { text: string } };
@@ -158,7 +174,6 @@ async function external(kind: 'text' | 'image' | 'files', data: string): Promise
 }
 
 test.beforeAll(async () => {
-	test.setTimeout(300_000);
 	[A, B] = await Promise.all([launch('a'), launch('b')]);
 	await newProject(A.page, 'Desktop A');
 });

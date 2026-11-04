@@ -14,7 +14,7 @@ import {
 type RemotionWindow = Window & { remotion_renderReady?: boolean; remotion_delayRenderHandles?: number[] };
 const w = window as RemotionWindow;
 const held = () => (w.remotion_delayRenderHandles ?? []).length;
-const flush = () => act(async () => await new Promise((r) => setTimeout(r, 0)));
+const flush = () => act(async () => await Promise.resolve());
 
 afterEach(() => {
 	vi.unstubAllEnvs();

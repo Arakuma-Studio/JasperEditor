@@ -55,9 +55,15 @@ describe('validation', () => {
 	it.each(['/api/psd/plan', '/api/psd', '/api/alpha-delivery', '/api/gamut-check'])(
 		'%s refuses a bad body with 400',
 		async (url) => {
-			const r = await post(app, url, { nonsense: true });
-			expect(r.statusCode).toBe(400);
-			expect(r.json().code).toBe('VALIDATION_FAILED');
+			const { d, envelope: e } = envelope();
+			const bodies: unknown[] = [{ nonsense: true }];
+			if (url === '/api/psd/plan')
+				bodies.push({ envelope: e, sequenceId: d.seqId, frame: 0, splitTitles: 'true' });
+			for (const body of bodies) {
+				const r = await post(app, url, body);
+				expect(r.statusCode).toBe(400);
+				expect(r.json().code).toBe('VALIDATION_FAILED');
+			}
 		},
 	);
 
@@ -96,6 +102,14 @@ describe('POST /api/psd/plan', () => {
 });
 
 describe('POST /api/title-looks/layer-styles/read', () => {
+	const file = writePsdUint8Array(
+		{
+			width: 16,
+			height: 16,
+			children: [{ name: 'Styled', left: 0, top: 0, bottom: 8, right: 8, effects: stroke }],
+		},
+		{ noBackground: true },
+	);
 	const send = (body: Uint8Array, name = 'a.psd') =>
 		app.inject({
 			method: 'POST',
@@ -105,14 +119,6 @@ describe('POST /api/title-looks/layer-styles/read', () => {
 		});
 
 	it('reads the raw file', async () => {
-		const file = writePsdUint8Array(
-			{
-				width: 16,
-				height: 16,
-				children: [{ name: 'Styled', left: 0, top: 0, bottom: 8, right: 8, effects: stroke }],
-			},
-			{ noBackground: true },
-		);
 		const r = await send(file);
 		expect(r.statusCode, r.body).toBe(200);
 		expect(r.json().styles.map((s: { name: string }) => s.name)).toEqual(['Styled']);
@@ -129,9 +135,10 @@ describe('POST /api/title-looks/layer-styles/read', () => {
 			method: 'POST',
 			url: '/api/title-looks/layer-styles/read',
 			headers: { ...H, 'content-type': 'application/octet-stream' },
-			payload: Buffer.from('x'),
+			payload: Buffer.from(file),
 		});
 		expect(noName.statusCode).toBe(400);
+		expect(noName.json().code).toBe('VALIDATION_FAILED');
 		const json = await post(app, '/api/title-looks/layer-styles/read?name=a.asl', {});
 		expect(json.statusCode).toBe(415);
 	});

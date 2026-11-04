@@ -12,22 +12,40 @@ export function cleanEnv(extra: Record<string, string> = {}): Record<string, str
 	return { ...env, JASPER_CACHE_AUTO_GC: '0', JASPER_MCP_TOOLSETS: 'all', ...extra };
 }
 
-export async function waitFor(
-	check: () => Promise<boolean> | boolean,
-	timeoutMs: number,
-	description: string,
-) {
-	const until = Date.now() + timeoutMs;
-	while (Date.now() < until) {
-		if (
-			await Promise.resolve()
-				.then(check)
-				.catch(() => false)
-		)
-			return;
-		await new Promise((resolve) => setTimeout(resolve, 250));
+/** The CLI announces its bound port; verify its HTTP endpoint before starting a client. */
+export async function engineReady(child: ChildProcess, port: number, logs: readonly string[] = []) {
+	try {
+		await new Promise<void>((resolve, reject) => {
+			const finish = (error?: Error) => {
+				child.removeListener('message', message);
+				child.removeListener('error', failed);
+				child.removeListener('exit', exited);
+				if (error) reject(error);
+				else resolve();
+			};
+			const message = (value: unknown) => {
+				if (!value || typeof value !== 'object' || (value as { type?: unknown }).type !== 'ready') return;
+				const actual = (value as { port?: unknown }).port;
+				finish(
+					actual === port
+						? undefined
+						: new Error(`Engine announced port ${String(actual)}, expected ${port}`),
+				);
+			};
+			const failed = (error: Error) => finish(error);
+			const exited = (code: number | null, signal: NodeJS.Signals | null) =>
+				finish(new Error(`Engine exited before readiness (${signal ?? code})`));
+			child.on('message', message);
+			child.once('error', failed);
+			child.once('exit', exited);
+			if (child.exitCode !== null || child.signalCode !== null) exited(child.exitCode, child.signalCode);
+		});
+		const health = await fetch(`http://127.0.0.1:${port}/health`);
+		if (!health.ok) throw new Error(`Engine health returned HTTP ${health.status}`);
+	} catch (error) {
+		await stopEngine(child);
+		throw new Error(`Engine on ${port} did not become ready: ${logs.join('')}`, { cause: error });
 	}
-	throw new Error(`timed out waiting for ${description}`);
 }
 
 /**

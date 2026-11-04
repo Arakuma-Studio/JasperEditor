@@ -17,6 +17,7 @@
 // Env: PACKAGED_CHECK_PORT (default 48530), JASPER_BROWSER_EXECUTABLE (default: system Chrome if present).
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { once } from 'node:events';
 import {
 	chmodSync,
 	cpSync,
@@ -30,6 +31,8 @@ import {
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
+import { createInterface } from 'node:readline';
+import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { checkPackagedApp } from '../scripts/ffmpeg/check-lgpl.mjs';
 
@@ -130,19 +133,17 @@ child = spawn(
 			...AUTH_ENV,
 			...(browser ? { JASPER_BROWSER_EXECUTABLE: browser } : {}),
 		},
-		stdio: ['ignore', 'inherit', 'inherit'],
+		stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
 	},
 );
 const url = `http://127.0.0.1:${port}`;
-let up = false;
-for (let i = 0; i < 240 && !up; i++) {
-	try {
-		up = (await fetch(`${url}/health`)).ok;
-	} catch {}
-	if (!up) await new Promise((r) => setTimeout(r, 250));
-	if (child.exitCode !== null) fail(`the packaged engine exited with code ${child.exitCode}`);
-}
-expect(up, 'the packaged engine did not start');
+const [ready] = await Promise.race([
+	once(child, 'message', { signal: AbortSignal.timeout(60_000) }),
+	once(child, 'exit').then(([code]) => {
+		throw new Error(`the packaged engine exited before readiness (${code})`);
+	}),
+]);
+expect(ready?.type === 'ready' && ready.port === port, 'invalid packaged engine readiness');
 
 async function call(method, path, body) {
 	const res = await fetch(`${url}${path}`, {
@@ -213,11 +214,25 @@ const plan = await call('POST', '/api/exports/plan', request);
 expect(plan.path === 'remotion', `plan path ${plan.path}`);
 expect(plan.encoder?.encoder === 'libopenh264', `plan encoder ${JSON.stringify(plan.encoder)}`);
 const started = await call('POST', '/api/exports', request);
+const events = await fetch(`${url}/events?since=0`, {
+	headers: AUTH_HEADERS,
+	signal: AbortSignal.timeout(300_000),
+});
+expect(events.ok && events.body, `event stream ${events.status}`);
+const input = Readable.fromWeb(events.body);
+const lines = createInterface({ input });
 let job = started;
-for (let i = 0; i < 600; i++) {
-	job = await call('GET', `/api/jobs/${started.id}`);
-	if (['succeeded', 'failed', 'cancelled', 'interrupted'].includes(job.state)) break;
-	await new Promise((r) => setTimeout(r, 500));
+try {
+	for await (const line of lines) {
+		const event = JSON.parse(line);
+		if (event.type === 'job.finished' && event.payload.id === started.id) {
+			job = event.payload;
+			break;
+		}
+	}
+} finally {
+	lines.close();
+	input.destroy();
 }
 expect(job.state === 'succeeded', `export ${job.state}: ${JSON.stringify(job.error ?? null)}`);
 const result = job.result;

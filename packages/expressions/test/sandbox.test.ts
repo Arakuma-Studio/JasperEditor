@@ -27,7 +27,7 @@ describe('expression realm isolation', () => {
 		['JSON.stringify = function () { return "{\\"r\\":99}" }; 0', '5', 5],
 		['Object.prototype.valueOf = function () { return 7 }; 0', '({}) + 1 === "[object Object]1" ? 1 : 0', 1],
 		['wiggle = function () { return 9 }; 0', 'typeof wiggle === "function" && wiggle(0, 0) === 0 ? 1 : 0', 1],
-		['thisComp.constructor.prototype.layer = 5; 0', 'typeof thisComp.layer === "function" ? 1 : 0', 1],
+		['Object.getPrototypeOf(thisComp).layer = 5; 0', 'typeof thisComp.layer === "function" ? 1 : 0', 1],
 		['Date.now = function () { return 5 }; 0', 'Date.now()', 0],
 	])('%s does not leak into the next evaluation', (attack, check, expected) => {
 		const run = setup();

@@ -127,6 +127,21 @@ describe('pass planning', () => {
 
 	it('declares earlier outputs, params, custom/pass uniforms and media textures; never later outputs', () => {
 		const [p0, p1, p2] = plan.passes;
+		const forward = planGpuEffect(
+			spec({
+				gpu: {
+					passes: [
+						{ frag: 'void main() { fragColor = texture(u_future, v_uv); }' },
+						{ output: 'future', frag: FRAG },
+						{ frag: FRAG },
+					],
+				},
+			}),
+			{ id: 'fxforward', params: {} },
+			CTX,
+			CTX,
+		);
+		expect(forward.passes[0]!.source).not.toMatch(/uniform sampler2D u_future;/);
 		expect(p0!.source.startsWith('#version 300 es\n')).toBe(true);
 		expect(p0!.source).not.toMatch(/uniform sampler2D u_bright;/);
 		expect(p1!.source).toMatch(/uniform sampler2D u_bright;/);

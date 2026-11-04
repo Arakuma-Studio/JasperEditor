@@ -1,6 +1,7 @@
 // Budgets scale with measured host load unless PERF=1 (scripts/perf/budget.ts; docs/performance.md).
 import { describe, expect, it } from 'vitest';
 import { budgetMs, budgetReport } from '../../../scripts/perf/budget.ts';
+import { threadCpuMs } from '../../../scripts/perf/cpu.ts';
 import {
 	buildRenderSnapshot,
 	flicksPerFrame,
@@ -24,9 +25,9 @@ const handle: MediaHandle = {
 const best = (n: number, fn: () => void) => {
 	let b = Number.POSITIVE_INFINITY;
 	for (let i = 0; i < n; i++) {
-		const t0 = performance.now();
+		const t0 = threadCpuMs();
 		fn();
-		b = Math.min(b, performance.now() - t0);
+		b = Math.min(b, threadCpuMs() - t0);
 	}
 	return b;
 };
@@ -77,5 +78,5 @@ describe('model budgets', () => {
 		});
 		console.info(budgetReport('render bar, 1 000 clips', ms, 120));
 		expect(ms).toBeLessThan(budgetMs(120));
-	}, 60_000);
+	});
 });

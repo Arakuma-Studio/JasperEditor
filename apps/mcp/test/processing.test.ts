@@ -7,7 +7,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { cleanEnv, stopEngine, testPort, waitFor } from './helpers.ts';
+import { cleanEnv, engineReady, stopEngine, testPort } from './helpers.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, '..', '..', '..');
@@ -45,18 +45,12 @@ beforeAll(async () => {
 	engine = spawn(
 		process.execPath,
 		['--import', 'tsx', join(ROOT, 'apps/engine/src/cli.ts'), '--port', String(PORT), '--appdir', appdir],
-		{ cwd: ROOT, env: cleanEnv(), stdio: ['ignore', 'pipe', 'pipe'] },
+		{ cwd: ROOT, env: cleanEnv(), stdio: ['ignore', 'pipe', 'pipe', 'ipc'] },
 	);
 	const engineLog: string[] = [];
 	engine.stdout?.on('data', (d: Buffer) => engineLog.push(d.toString()));
 	engine.stderr?.on('data', (d: Buffer) => engineLog.push(d.toString()));
-	await waitFor(
-		async () =>
-			existsSync(join(appdir, 'engine', 'runtime.json')) &&
-			(await fetch(`http://127.0.0.1:${PORT}/health`)).ok,
-		90_000,
-		`the engine on ${PORT}: ${engineLog.join('')}`,
-	);
+	await engineReady(engine, PORT, engineLog);
 	const transport = new StdioClientTransport({
 		command: process.execPath,
 		args: ['--import', 'tsx', join(ROOT, 'apps/mcp/src/cli.ts'), '--appdir', appdir],
@@ -67,13 +61,13 @@ beforeAll(async () => {
 	transport.stderr?.on('data', (d: Buffer) => logs.push(d.toString('utf8')));
 	client = new Client({ name: 'vitest-mcp-processing', version: '1.0.0' });
 	await client.connect(transport);
-}, 180_000);
+});
 
 afterAll(async () => {
 	await client?.close().catch(() => {});
 	await stopEngine(engine);
 	if (appdir) rmSync(appdir, { recursive: true, force: true });
-}, 30_000);
+});
 
 describe('clip-processing MCP tools', () => {
 	let projectId = '';
@@ -145,7 +139,7 @@ describe('clip-processing MCP tools', () => {
 		writeFileSync(join(artifacts, 'processed-project.json'), (resource.contents[0] as { text: string }).text);
 		await ok('use_media_version', { projectId, clipIds: [clipId], mediaId });
 		expect(await videoSource()).toContain(`[${mediaId}]`);
-	}, 600_000);
+	});
 });
 
 describe('source ranges (process_clip handles, use_media_version fit, sidecars, replace_footage)', () => {
@@ -213,7 +207,7 @@ describe('source ranges (process_clip handles, use_media_version fit, sidecars, 
 		]);
 		await ok('use_media_version', { projectId, clipIds: [clipId], mediaId: codeId });
 		expect((await clip(clipId)).sourceIn).toBe(20 * F);
-	}, 600_000);
+	});
 
 	it('use_media_version refuses a version that does not cover a clip, or trims with fit: "trim"', async () => {
 		const add = await ok<{ clips: { id: string }[] }>('add_clip', {
@@ -239,7 +233,7 @@ describe('source ranges (process_clip handles, use_media_version fit, sidecars, 
 		expect(r.clips[0]!.trimmed).toEqual({ head: 14, tail: 0 });
 		const c = await clip(wide);
 		expect([c.start, c.duration, c.sourceIn]).toEqual([114, 16, 0]);
-	}, 120_000);
+	});
 
 	it('import_media links a render with a sidecar to its source; set_media_source_range; replace_footage keeps timing', async () => {
 		const dir = mkdtempSync(join(tmpdir(), 'jasper-mcp-sidecar-'));
@@ -300,5 +294,5 @@ describe('source ranges (process_clip handles, use_media_version fit, sidecars, 
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
-	}, 300_000);
+	});
 });

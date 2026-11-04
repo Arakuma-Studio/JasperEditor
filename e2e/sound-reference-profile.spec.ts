@@ -117,7 +117,6 @@ async function openSoundPrefs(p: Page) {
 const panel = () => page.locator('[data-panel-kind="soundCheck"][data-instance-id]');
 
 test('build a reference profile from project media, compare the sequence in Sound Check, the same in MCP; export, import, delete', async () => {
-	test.setTimeout(3_600_000);
 	await page.goto('/');
 	await expect(page.getByTestId('home')).toBeVisible({ timeout: 120_000 });
 	await page.getByTestId('home-new').click();
@@ -260,7 +259,16 @@ test('build a reference profile from project media, compare the sequence in Soun
 	};
 	expect(file).toMatchObject({ format: 'jasper-sound-profile', id: profileId });
 	expect(file.references).toHaveLength(3);
-	expect(readFileSync(saved, 'utf8')).not.toContain(join(outDir, 'media'));
+	// The raw API response and downloaded export must both exclude engine-local paths and source audio.
+	const wire = await page.request.get(`/api/sound-design/profiles/${encodeURIComponent(profileId)}`);
+	expect(wire.ok()).toBe(true);
+	for (const serialized of [await wire.text(), readFileSync(saved, 'utf8')]) {
+		expect(serialized).not.toContain(serverInfo().appdir);
+		expect(serialized).not.toContain(join(outDir, 'media'));
+		expect(serialized).not.toMatch(
+			/"(?:path|sourcePath|localPath|privatePath|audio|audioData|samples|pcm)"\s*:/,
+		);
+	}
 	await sec.getByTestId('sound-profiles-import-file').setInputFiles(saved);
 	await expect(profiles).toHaveCount(earlier + 2, { timeout: 60_000 });
 	// the copy gets a distinct name

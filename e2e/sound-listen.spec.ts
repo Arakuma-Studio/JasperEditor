@@ -10,11 +10,12 @@ import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { type APIRequestContext, expect, type Page, test } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
 import { FIXTURE_COMMANDS } from '../apps/mcp/test/sound-cues-fixture.ts';
 import {
 	appliedLabels,
 	enableAgentBridge,
+	libraryReady,
 	playheadFrame,
 	query,
 	ROOT,
@@ -95,20 +96,6 @@ async function createProject(p: Page, name: string): Promise<string> {
 	const m = /\/project\/([^/?#]+)/.exec(p.url());
 	if (!m) throw new Error(`Unexpected editor URL ${p.url()}`);
 	return decodeURIComponent(m[1]!);
-}
-
-async function libraryReady(request: APIRequestContext) {
-	await expect
-		.poll(
-			async () => {
-				const r = await request.get('/api/sounds/status');
-				if (!r.ok()) return 0;
-				const s = (await r.json()) as { sounds: number; indexing: unknown; needsIndex: boolean };
-				return s.indexing || s.needsIndex ? 0 : s.sounds;
-			},
-			{ timeout: 360_000, intervals: [1000] },
-		)
-		.toBeGreaterThan(20);
 }
 
 async function menu(p: Page, item: string) {

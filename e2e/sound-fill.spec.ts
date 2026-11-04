@@ -19,9 +19,11 @@ import {
 	enableAgentBridge,
 	exportViaUi,
 	focusTimeline,
+	locate,
 	pointerDrag,
 	query,
 	ROOT,
+	timelineArea,
 	transact,
 } from './support.ts';
 
@@ -91,28 +93,6 @@ function decodeMono(file: string, rate = 1): Float32Array {
 	return new Float32Array(raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength));
 }
 
-/**
- * Where `ref[w0, w1)` sits in `mix`, searching lags around `guess` (± `span` samples): the lag of the largest
- * normalised cross-correlation (as the Sound Library e2e measures inserts).
- */
-function locate(mix: Float32Array, ref: Float32Array, w0: number, w1: number, guess: number, span: number) {
-	let best = { lag: Number.NaN, r: -2 };
-	let rr = 0;
-	for (let i = w0; i < w1; i++) rr += ref[i]! * ref[i]!;
-	for (let lag = guess - span; lag <= guess + span; lag++) {
-		let xy = 0;
-		let xx = 0;
-		for (let i = w0; i < w1; i++) {
-			const x = mix[lag + i] ?? 0;
-			xy += x * ref[i]!;
-			xx += x * x;
-		}
-		const r = xx > 0 && rr > 0 ? xy / Math.sqrt(xx * rr) : -1;
-		if (r > best.r) best = { lag, r };
-	}
-	return best;
-}
-
 test.beforeAll(async ({ browser }) => {
 	mkdirSync(outDir, { recursive: true });
 	page = await browser.newPage({ viewport: { width: 1800, height: 1000 } });
@@ -160,7 +140,7 @@ test('fill, variation ×3 = one entry, swap, layer, link move, in context, fill 
 	await expect(seam).toBeVisible();
 	await focusTimeline(page);
 	await page.keyboard.press('Backslash');
-	await page.waitForTimeout(300);
+	await timelineArea(page).screenshot({ animations: 'disabled' });
 	const glyphBox = async (id: string) => (await seam.locator(`[data-cue-id="${id}"]`).boundingBox())!;
 	let g = await glyphBox(cut75.id);
 	await page.mouse.dblclick(g.x + g.width / 2, g.y + g.height / 2);
@@ -195,7 +175,7 @@ test('fill, variation ×3 = one entry, swap, layer, link move, in context, fill 
 		if (!(await inView(b))) {
 			await focusTimeline(page);
 			await page.keyboard.press('Backslash');
-			await page.waitForTimeout(300);
+			await timelineArea(page).screenshot({ animations: 'disabled' });
 			b = await box();
 		}
 		for (let i = 0; (!b || b.width < 40 || !(await inView(b))) && i < 10; i++) {
@@ -203,7 +183,7 @@ test('fill, variation ×3 = one entry, swap, layer, link move, in context, fill 
 			await query(page, 'playhead.set', { frame: c.start });
 			await focusTimeline(page);
 			await page.keyboard.press('Equal');
-			await page.waitForTimeout(200);
+			await timelineArea(page).screenshot({ animations: 'disabled' });
 			b = await box();
 		}
 		if (!b || !(await inView(b))) throw new Error(`clip ${id} is not visible`);
@@ -212,7 +192,7 @@ test('fill, variation ×3 = one entry, swap, layer, link move, in context, fill 
 	const zoomToSequence = async () => {
 		await focusTimeline(page);
 		await page.keyboard.press('Backslash');
-		await page.waitForTimeout(300);
+		await timelineArea(page).screenshot({ animations: 'disabled' });
 	};
 	await clipBodyClick(filled.id);
 	await expect
@@ -234,7 +214,7 @@ test('fill, variation ×3 = one entry, swap, layer, link move, in context, fill 
 	for (let i = 0; i < 3; i++) {
 		await clipBodyClick(filled.id);
 		await page.keyboard.press('Equal');
-		await page.waitForTimeout(250);
+		await timelineArea(page).screenshot({ animations: 'disabled' });
 	}
 	await page
 		.locator(`[data-testid="timeline-track-area"] [data-clip-id="${filled.id}"]`)

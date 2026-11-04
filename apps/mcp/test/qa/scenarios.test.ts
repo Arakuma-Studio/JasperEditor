@@ -322,17 +322,17 @@ describe.runIf(QA_ENABLED)('MCP scenario QA (real engine, MCP over stdio)', () =
 		);
 		await expect(call).rejects.toThrow();
 		expect(progress.length).toBeGreaterThan(0);
-		await expect
-			.poll(
-				async () =>
-					(await qa.engineJson<{ jobs: { kind: string; state: string }[] }>('/api/jobs')).jobs.find(
-						(j) => j.kind === 'export',
-					)?.state,
-				{
-					timeout: 15_000,
-				},
-			)
-			.toBe('cancelled');
+		const { jobs } = await qa.engineJson<{ jobs: { id: string; kind: string; projectId?: string }[] }>(
+			'/api/jobs',
+		);
+		const job = jobs.find((j) => j.kind === 'export' && j.projectId === qa.projectId);
+		expect(job).toBeDefined();
+		const done = await qa.tryTool('wait_for_job', { jobId: job!.id });
+		expect(done.isError).toBe(true);
+		expect(
+			JSON.parse((done.content.find((c) => c.type === 'text') as { text: string }).text).error.code,
+		).toBe('JOB_CANCELLED');
+		expect((await qa.engineJson<{ state: string }>(`/api/jobs/${job!.id}`)).state).toBe('cancelled');
 		expect(existsSync(out)).toBe(false);
 	}, 300_000);
 });

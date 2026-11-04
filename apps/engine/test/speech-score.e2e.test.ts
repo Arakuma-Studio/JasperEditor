@@ -18,7 +18,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadCatalog } from '../src/processing/models.ts';
 import { SpeechModelStore } from '../src/speech/models.ts';
 import type { SpeechService } from '../src/speech/service.ts';
-import { closeApps, JSON_H, makeApp, ROOT, register, type TestApp, until } from './helpers.ts';
+import { coreServices } from '../src/tools/services.ts';
+import { closeApps, JSON_H, makeApp, ROOT, register, type TestApp } from './helpers.ts';
 import { wordErrorRate } from './speech-wer.ts';
 
 const CACHE = process.env.JASPER_SPEECH_MODELS_DIR ?? join(ROOT, 'target', 'speech-models');
@@ -34,7 +35,6 @@ const BENCH = process.env.SPEECH_SCORE_BENCH === '1';
 const FIXTURE = join(ROOT, 'fixtures', 'speech', 'lj-composite.flac');
 type Truth = { utterances: Array<{ text: string; start: number; end: number }>; durationSeconds: number };
 const truth = JSON.parse(readFileSync(FIXTURE.replace(/\.flac$/, '.json'), 'utf8')) as Truth;
-const H = { host: '127.0.0.1:47900' };
 const F = FLICKS_PER_SECOND;
 /** SC-034 Standard margin for `sub`. */
 const MARGIN = -1.5;
@@ -59,15 +59,8 @@ let speech: SpeechService;
 let mediaKey: string;
 const transcripts = new Map<string, Word[]>();
 
-async function waitJob(id: string, timeoutMs = 900_000): Promise<EngineJob> {
-	return until(
-		async () => {
-			const j = (await app.inject({ method: 'GET', url: `/api/jobs/${id}`, headers: H })).json() as EngineJob;
-			return ['succeeded', 'failed', 'cancelled', 'interrupted'].includes(j.state) ? j : null;
-		},
-		timeoutMs,
-		200,
-	);
+function waitJob(id: string): Promise<EngineJob> {
+	return coreServices(app).queue.wait(id);
 }
 
 async function transcribe(model: string, extra: Record<string, unknown> = {}): Promise<TranscriptionResult> {

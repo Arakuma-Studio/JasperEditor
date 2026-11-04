@@ -43,7 +43,7 @@ export type Checks = {
 export type Grade = { pass: boolean; failures: string[]; invalid?: string };
 
 /** Partial deep match: every key in `want` matches in `got`; a string starting with `/` and ending in `/` is a regex. */
-export function partialMatch(got: unknown, want: unknown): boolean {
+function partialMatch(got: unknown, want: unknown): boolean {
 	if (typeof want === 'string' && want.length > 1 && want.startsWith('/') && want.endsWith('/'))
 		return typeof got === 'string' && new RegExp(want.slice(1, -1), 'i').test(got);
 	if (Array.isArray(want))

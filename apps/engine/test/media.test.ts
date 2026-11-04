@@ -14,7 +14,6 @@ import {
 	register,
 	type TestApp,
 	tempAppdir,
-	until,
 } from './helpers.ts';
 
 let app: TestApp;
@@ -109,11 +108,20 @@ describe('probe (S04:PB-001…004, S01:AST-001)', () => {
 describe('derivatives (ARCHITECTURE §9.4, S04:TH-002, WF-001)', () => {
 	it('poster, sprite + index and peaks are produced and parseable', async () => {
 		const m = await register(app, fixture('clip-a.mp4'));
-		const status = await until(async () => {
-			const s = (await app.inject({ method: 'GET', url: `/api/media/${m.mediaKey}`, headers: H })).json();
-			const d = s.derivatives;
-			return ['keyframes', 'poster', 'sprite', 'peaks'].every((k) => d[k].state === 'ready') ? s : null;
-		}, 60_000);
+		const queue = coreServices(app).queue;
+		await Promise.all(
+			queue
+				.list()
+				.filter((job) => job.assetId === m.mediaKey)
+				.map((job) => queue.wait(job.id)),
+		);
+		const status = (await app.inject({ method: 'GET', url: `/api/media/${m.mediaKey}`, headers: H })).json();
+		expect(status.derivatives).toMatchObject({
+			keyframes: { state: 'ready' },
+			poster: { state: 'ready' },
+			sprite: { state: 'ready' },
+			peaks: { state: 'ready' },
+		});
 		expect(status.status).toBe('online');
 		expect(status.derivatives['proxy-720'].state).toBe('none');
 
@@ -177,14 +185,14 @@ describe('derivatives (ARCHITECTURE §9.4, S04:TH-002, WF-001)', () => {
 		expect(r.status).toBe(0);
 		const m = await register(app, src);
 		expect(m.browserPlayable).toBe('no');
-		const status = await until(async () => {
-			const s = (await app.inject({ method: 'GET', url: `/api/media/${m.mediaKey}`, headers: H })).json();
-			return s.derivatives['proxy-720'].state === 'ready'
-				? s
-				: s.derivatives['proxy-720'].state === 'failed'
-					? s
-					: null;
-		}, 60_000);
+		const queue = coreServices(app).queue;
+		await Promise.all(
+			queue
+				.list({ kind: 'proxy' })
+				.filter((job) => job.assetId === m.mediaKey)
+				.map((job) => queue.wait(job.id)),
+		);
+		const status = (await app.inject({ method: 'GET', url: `/api/media/${m.mediaKey}`, headers: H })).json();
 		expect(status.derivatives['proxy-720'].state).toBe('ready');
 		const proxyUrl = status.derivatives['proxy-720'].url as string;
 		expect(proxyUrl).toMatch(new RegExp(`^/media/${m.mediaKey}/proxy/720\\?v=`));
@@ -214,10 +222,14 @@ describe('proxies of sources with alpha', () => {
 		const m = await register(app, fixture('overlay-alpha.mov'));
 		expect(m.browserPlayable).toBe('no');
 		expect(m.probe.hasAlpha).toBe(true);
-		const status = await until(async () => {
-			const s = (await app.inject({ method: 'GET', url: `/api/media/${m.mediaKey}`, headers: H })).json();
-			return ['ready', 'failed'].includes(s.derivatives['proxy-720'].state) ? s : null;
-		}, 300_000);
+		const queue = coreServices(app).queue;
+		await Promise.all(
+			queue
+				.list({ kind: 'proxy' })
+				.filter((job) => job.assetId === m.mediaKey)
+				.map((job) => queue.wait(job.id)),
+		);
+		const status = (await app.inject({ method: 'GET', url: `/api/media/${m.mediaKey}`, headers: H })).json();
 		expect(status.derivatives['proxy-720'].state).toBe('ready');
 		const core = coreServices(app);
 		const rec = core.registry.get(m.mediaKey)!;

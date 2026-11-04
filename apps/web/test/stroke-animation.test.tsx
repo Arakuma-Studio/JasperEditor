@@ -215,6 +215,7 @@ describe('UI commands', () => {
 			ctx: { ids: createCounterIdSource(500), now: () => 't', registries: defaultRegistries() },
 			readOnly: true,
 		});
+		ro.select('timeline', [rect]);
 		expect(drawIn.when!(ctxFor(ro))).toBe(false);
 		expect(drawIn.disabledReason!(ctxFor(ro))).toBeTruthy();
 		expect(getCommand('strokeAnimation.addHorizontalLine')!.when!(ctxFor(ro))).toBe(false);

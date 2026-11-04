@@ -360,18 +360,26 @@ describe('engine dialogs', () => {
 
 	it('keeps the Connect dialog open when saving before navigation fails', async () => {
 		registerEngineDialogs();
-		const beforeLeave = vi.fn().mockRejectedValue(new Error('Save failed: disk full'));
+		let reachedSave!: () => void;
+		const saveStarted = new Promise<void>((resolve) => {
+			reachedSave = resolve;
+		});
+		const beforeLeave = vi.fn(() => {
+			reachedSave();
+			return Promise.reject(new Error('Save failed: disk full'));
+		});
 		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response()));
 		try {
 			render(<DialogHost />);
 			act(() => void openDialog(ENGINE_DIALOGS.connect, { engine: browseEngine().client(), beforeLeave }));
-			fireEvent.change(await screen.findByTestId('engine-connect-address'), {
+			fireEvent.change(screen.getByTestId('engine-connect-address'), {
 				target: { value: 'http://127.0.0.1:47903' },
 			});
-			fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
-			await waitFor(() =>
-				expect(screen.getByTestId('engine-connect-result').textContent).toBe('Save failed: disk full'),
-			);
+			await act(async () => {
+				fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+				await saveStarted;
+			});
+			expect(screen.getByTestId('engine-connect-result').textContent).toBe('Save failed: disk full');
 			expect(beforeLeave).toHaveBeenCalledOnce();
 			expect(screen.getByTestId('engine-connect-dialog')).toBeTruthy();
 			expect(window.location.origin).not.toBe('http://127.0.0.1:47903');

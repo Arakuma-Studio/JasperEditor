@@ -9,7 +9,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { cleanEnv, stopEngine, testPort, waitFor } from './helpers.ts';
+import { cleanEnv, engineReady, stopEngine, testPort } from './helpers.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, '..', '..', '..');
@@ -95,17 +95,11 @@ beforeAll(async () => {
 	engine = spawn(
 		process.execPath,
 		['--import', 'tsx', join(ROOT, 'apps/engine/src/cli.ts'), '--port', String(PORT), '--appdir', appdir],
-		{ cwd: ROOT, env: cleanEnv({ JASPER_LOCAL_TOKEN: token }), stdio: ['ignore', 'pipe', 'pipe'] },
+		{ cwd: ROOT, env: cleanEnv({ JASPER_LOCAL_TOKEN: token }), stdio: ['ignore', 'pipe', 'pipe', 'ipc'] },
 	);
 	engine.stdout?.on('data', (d: Buffer) => logs.push(d.toString()));
 	engine.stderr?.on('data', (d: Buffer) => logs.push(d.toString()));
-	await waitFor(
-		async () =>
-			existsSync(join(appdir, 'engine', 'runtime.json')) &&
-			(await fetch(`http://127.0.0.1:${PORT}/health`)).ok,
-		90_000,
-		`the engine on ${PORT}: ${logs.join('')}`,
-	);
+	await engineReady(engine, PORT, logs);
 	const transport = new StdioClientTransport({
 		command: process.execPath,
 		args: ['--import', 'tsx', join(ROOT, 'apps/mcp/src/cli.ts'), '--appdir', appdir],
@@ -115,13 +109,13 @@ beforeAll(async () => {
 	});
 	client = new Client({ name: 'vitest-mcp-tracking', version: '1.0.0' });
 	await client.connect(transport);
-}, 180_000);
+});
 
 afterAll(async () => {
 	await client?.close().catch(() => {});
 	await stopEngine(engine);
 	if (appdir) rmSync(appdir, { recursive: true, force: true });
-}, 30_000);
+});
 
 describe('tracking tools (S09:TRA-001/002, §8 item 7)', () => {
 	it('set_corner_pin stores the requested sequence-pixel corners on the clip', async () => {
@@ -259,5 +253,5 @@ describe('tracking tools (S09:TRA-001/002, §8 item 7)', () => {
 				expect(d, `frame ${frame} corner ${k}: got ${got[k]} want ${want[k]}`).toBeLessThan(3);
 			}
 		}
-	}, 900_000);
+	});
 });

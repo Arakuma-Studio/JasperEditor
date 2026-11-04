@@ -111,7 +111,7 @@ describe('path classification', () => {
 				// `..` survives only at the start of relative paths
 				if (p.style !== 'relative') expect(p.segments).not.toContain('..');
 			}),
-			{ numRuns: 500 },
+			{ numRuns: 500, examples: [['/../a']] },
 		);
 		expect(parsePath(`/${'a/'.repeat(100_000)}`).segments.length).toBeLessThanOrEqual(4097);
 	});

@@ -186,7 +186,8 @@ describe('Effect Controls stopwatches on anime template params (S11:ATP-006, S05
 		act(() => fireEvent.click(view.getByTestId('stopwatch-params.titleColor')));
 		expect(clipOf(session, seqId, anime).paramKeyframes?.titleColor).toHaveLength(1);
 		act(() => session.select('timeline', [fframes], 'replace'));
-		expect(view.queryByTestId('stopwatch-params.titleColor')).toBeNull();
+		expect(view.getByTestId('prop-params.accentColor')).toBeTruthy();
+		expect(view.queryByTestId('stopwatch-params.accentColor')).toBeNull();
 		await session.close();
 	});
 });

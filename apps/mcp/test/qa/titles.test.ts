@@ -56,11 +56,13 @@ describe.runIf(QA_ENABLED)('titles (real engine, real rendering, MCP over stdio)
 			{ type: 'clip.addText', at: 0, duration: 30, track: 'V2', content: { text: 'WARM' }, ref: '$t' },
 			{ type: 'look.apply', clipIds: ['$t'], look: { name: 'Warm', recipe: RECIPE }, seed: 1 },
 		]);
-		for (let i = 0; i < 12; i++) {
-			const r = await qa.tryTool('render_frame', { projectId: qa.projectId, at: 10, width: 320 });
-			if (!r.isError) return;
+		const warm = await qa.tryTool('render_frame', { projectId: qa.projectId, at: 10, width: 320 });
+		if (warm.isError) {
+			const { error } = JSON.parse(textOf(warm)) as { error: { code: string; details: { jobId: string } } };
+			expect(error.code).toBe('RENDER_TIMEOUT');
+			const job = await qa.tool<{ state: string }>('wait_for_job', { jobId: error.details.jobId, ...LONG });
+			expect(job.state).toBe('succeeded');
 		}
-		throw new Error(`no render after 12 tries: ${qa.logs.join('').slice(-2000)}`);
 	}, 1_500_000);
 	afterAll(async () => {
 		await qa.stop();

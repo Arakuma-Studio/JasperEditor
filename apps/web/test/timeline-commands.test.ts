@@ -278,6 +278,7 @@ describe('In/Out, lift and extract (TL-690…766, AC-13d, AC-15a/b)', () => {
 		const before = h.session.getCommitted();
 		const entries = h.history().length;
 		await h.run('timeline.lift');
+		expect(h.toasts.at(-1)).toMatchObject({ kind: 'info', message: expect.stringMatching(/In.*Out/) });
 		expect(h.session.getCommitted()).toEqual(before);
 		expect(h.history()).toHaveLength(entries);
 	});

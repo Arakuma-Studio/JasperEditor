@@ -257,7 +257,9 @@ describe('caption MCP tools', () => {
 		const stl = await call('export_captions', { track: 'C1', format: 'stl' });
 		expect(typeof stl.body.contentBase64).toBe('string');
 		expect((await call('import_captions', { content: 'not captions at all' })).isError).toBe(true);
-		expect((await call('import_captions', { path: 'relative.srt' })).isError).toBe(true);
+		const relativePath = await call('import_captions', { path: 'relative.srt' });
+		expect(relativePath.isError).toBe(true);
+		expect(relativePath.body).toMatchObject({ error: { code: 'E_INVALID_PARAM' } });
 		expect((await call('export_captions', { track: 'C9' })).isError).toBe(true);
 	});
 

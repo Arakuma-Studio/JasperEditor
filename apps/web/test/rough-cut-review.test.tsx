@@ -12,7 +12,7 @@ import { applyReview } from '../src/proposals/actions.ts';
 import { makeSession } from './timeline-helpers.ts';
 
 afterEach(cleanup);
-const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
+const settle = () => act(() => Promise.resolve());
 const row = (id: string) => document.querySelector(`[data-review-row="${id}"]`) as HTMLElement;
 const STRATEGY = 'Open on the hook. Cut the weak middle take. Keep the ending as it is.';
 
@@ -109,5 +109,4 @@ describe('rough-cut review (AF-PROP-003)', () => {
 		expect(t.session.getCommitted().sequences[t.seqId]).toEqual(before.sequences[t.seqId]);
 		t.c.exit();
 	});
-
 });

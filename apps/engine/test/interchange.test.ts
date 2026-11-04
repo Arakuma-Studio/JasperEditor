@@ -10,6 +10,7 @@ import type {
 import { parseAiff, parseWav } from '@jasper/interchange';
 import { checkInvariants, defaultRegistries, type MediaAsset } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { coreServices } from '../src/tools/services.ts';
 import {
 	closeApps,
 	DocBuilder,
@@ -20,7 +21,6 @@ import {
 	register,
 	type TestApp,
 	tempAppdir,
-	until,
 } from './helpers.ts';
 
 let app: TestApp;
@@ -74,12 +74,7 @@ async function exportJob(format: string, options: Record<string, unknown> = {}, 
 	});
 	expect(r.statusCode, r.body).toBe(202);
 	const job = r.json() as EngineJob;
-	const end = await until(async () => {
-		const j = (
-			await app.inject({ method: 'GET', url: `/api/jobs/${job.id}`, headers: JSON_H })
-		).json() as EngineJob;
-		return ['succeeded', 'failed', 'cancelled'].includes(j.state) ? j : null;
-	}, 60_000);
+	const end = await coreServices(app).queue.wait(job.id);
 	expect(end.state, JSON.stringify(end.error)).toBe('succeeded');
 	return { job: end, result: end.result as InterchangeExportResult };
 }
@@ -255,12 +250,7 @@ describe('interchange through the engine', () => {
 		});
 		expect(scan.statusCode, scan.body).toBe(202);
 		const job = scan.json() as EngineJob;
-		const end = await until(async () => {
-			const j = (
-				await app.inject({ method: 'GET', url: `/api/jobs/${job.id}`, headers: JSON_H })
-			).json() as EngineJob;
-			return j.state === 'succeeded' || j.state === 'failed' ? j : null;
-		}, 30_000);
+		const end = await coreServices(app).queue.wait(job.id);
 		expect(end.state).toBe('succeeded');
 		expect(end.result).toMatchObject({ found: 3, notFound: 0, ambiguous: 0 });
 		const full = await app.inject({
@@ -432,12 +422,7 @@ describe('Link Media routes', () => {
 		});
 		expect(r.statusCode, r.body).toBe(202);
 		const job = r.json() as EngineJob;
-		const end = await until(async () => {
-			const j = (
-				await app.inject({ method: 'GET', url: `/api/jobs/${job.id}`, headers: JSON_H })
-			).json() as EngineJob;
-			return ['succeeded', 'failed', 'cancelled'].includes(j.state) ? j : null;
-		}, 60_000);
+		const end = await coreServices(app).queue.wait(job.id);
 		expect(end.state, JSON.stringify(end.error)).toBe('succeeded');
 		expect(end.result).toEqual({
 			found: 2,

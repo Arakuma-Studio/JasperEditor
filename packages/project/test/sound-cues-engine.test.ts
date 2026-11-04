@@ -4,6 +4,7 @@
 import { fuzzScale, fuzzSeed, mutateJson, Rng } from '@jasper/testkit/fuzz';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { threadCpuMs } from '../../../scripts/perf/cpu.ts';
 import {
 	applyTransaction,
 	beatCues,
@@ -729,12 +730,12 @@ describe('engine-source mappers on hostile input', () => {
 		const seq = doc.sequences[h.seqId]!;
 		(seq.clips[videoClip] as { start: number }).start = 1e20;
 		(seq.clips[musicClip] as { start: number }).start = 2 ** 60;
-		const t0 = Date.now();
+		const t0 = threadCpuMs();
 		expect(sceneCutCues(doc, seq, new Map([[media, { cuts: [1, 2] }]]))).toEqual([]);
 		expect(beatCues(doc, seq, new Map([[musicClip, { beats: [1, 2] }]]))).toEqual([]);
 		expect(footageClips(doc, seq)).toEqual([]);
 		expect(sceneAnchorAt(doc, seq)(10)).toBeNull();
-		expect(Date.now() - t0).toBeLessThan(2000);
+		expect(threadCpuMs() - t0).toBeLessThan(2000);
 	});
 
 	it('fuzzed sequences and measurements (testkit mutateJson): never throw, frames are integers, deterministic', () => {

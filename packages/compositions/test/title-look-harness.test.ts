@@ -59,6 +59,8 @@ describe('colour SSIM (title-look-harness)', () => {
 	it('reads RGBA with its stride', () => {
 		const rgba = new Uint8Array(W * H * 4);
 		for (let i = 0; i < W * H; i++) rgba.set([warm[i * 3]!, warm[i * 3 + 1]!, warm[i * 3 + 2]!, 255], i * 4);
-		expect(ssimRgb(rgba, rgba, W, H, 4).min).toBeCloseTo(1, 6);
+		const differentAlpha = rgba.slice();
+		for (let i = 3; i < differentAlpha.length; i += 4) differentAlpha[i] = 0;
+		expect(ssimRgb(rgba, differentAlpha, W, H, 4).min).toBeCloseTo(1, 6);
 	});
 });

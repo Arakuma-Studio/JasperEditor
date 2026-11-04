@@ -37,7 +37,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadCatalog } from '../src/processing/models.ts';
 import { SpeechModelStore } from '../src/speech/models.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, JSON_H, makeApp, ROOT, register, type TestApp, until } from './helpers.ts';
+import { closeApps, JSON_H, makeApp, ROOT, register, type TestApp } from './helpers.ts';
 
 const CACHE = process.env.JASPER_SPEECH_MODELS_DIR ?? join(ROOT, 'target', 'speech-models');
 const store = new SpeechModelStore(CACHE, loadCatalog({}).speech);
@@ -56,7 +56,6 @@ const truth = JSON.parse(readFileSync(SHORT.replace(/\.flac$/, '.json'), 'utf8')
 const F = FLICKS_PER_SECOND;
 const TAKE_FLICKS = Math.round(truth.durationSeconds * F);
 const SPEECH_MINUTES = (REPEATS * truth.utterances.reduce((n, u) => n + (u.end - u.start), 0)) / 60;
-const H = { host: '127.0.0.1:47900' };
 
 /** Recognition errors put into the transcript (two per take, rotating) … */
 const TRANSCRIPT_PAIRS: Array<[string, string]> = [
@@ -80,15 +79,8 @@ let app: TestApp;
 let reg: RegisteredMedia;
 let take: Word[] = [];
 
-async function waitJob(id: string, timeoutMs = 1_800_000): Promise<EngineJob> {
-	return until(
-		async () => {
-			const j = (await app.inject({ method: 'GET', url: `/api/jobs/${id}`, headers: H })).json() as EngineJob;
-			return ['succeeded', 'failed', 'cancelled', 'interrupted'].includes(j.state) ? j : null;
-		},
-		timeoutMs,
-		500,
-	);
+function waitJob(id: string): Promise<EngineJob> {
+	return coreServices(app).queue.wait(id);
 }
 
 const swapWord = (text: string, to: string) =>

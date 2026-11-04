@@ -22,7 +22,7 @@ afterEach(() => {
 	closeAllDialogs();
 });
 
-const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
+const settle = () => act(async () => Promise.resolve());
 
 function delta(proposalId: string, baseMixHash: string, itemIds: string[]): SoundCheckProposal {
 	const finding = (

@@ -4,18 +4,21 @@ import { describe, expect, it } from 'vitest';
 import { type P2, Rng, ransacHomography } from '../src/camtrack/core/geometry.ts';
 import { cross, type M3, mv, normalize, sub, type V3 } from '../src/camtrack/core/linalg.ts';
 import { solveCamera } from '../src/camtrack/core/solver.ts';
-import {
-	type CameraTracks,
-	type Distortion,
-	type SolveSettings,
-	solveFocal,
-} from '../src/camtrack/core/types.ts';
+import type { CameraSolve, CameraTracks, Distortion, SolveSettings } from '../src/camtrack/core/types.ts';
 import { collinearPathError } from './camera-path-oracle.ts';
 
 const W = 1280;
 const H = 720;
 
 type Cam = { r: M3; c: V3; f: number };
+
+/** Median focal length of the solved frames (pixels). */
+function solveFocal(s: Pick<CameraSolve, 'frames'>): number {
+	const f = s.frames.filter((c) => c.solved).map((c) => c.focal);
+	if (f.length === 0) return 0;
+	f.sort((a, b) => a - b);
+	return f[f.length >> 1]!;
+}
 
 /** A camera at `c` looking at `target` (y down). */
 function lookAt(c: V3, target: V3, f: number): Cam {

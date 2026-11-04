@@ -112,12 +112,4 @@ export type CameraSolve = {
 	distortion: Distortion | null;
 };
 
-/** Median focal length of the solved frames (pixels). */
-export function solveFocal(s: Pick<CameraSolve, 'frames'>): number {
-	const f = s.frames.filter((c) => c.solved).map((c) => c.focal);
-	if (f.length === 0) return 0;
-	f.sort((a, b) => a - b);
-	return f[f.length >> 1]!;
-}
-
 export class SolveError extends Error {}

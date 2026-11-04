@@ -20,7 +20,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { provenance, writeBedFixture, writeTick } from '../../engine/test/sound-bed-fixture.ts';
-import { cleanEnv, stopEngine, testPort, waitFor } from './helpers.ts';
+import { cleanEnv, engineReady, stopEngine, testPort } from './helpers.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const PORT = await testPort(process.env.MCP_SOUND_ACK_TEST_PORT);
@@ -73,16 +73,12 @@ beforeAll(async () => {
 				JASPER_SOUND_SYNTH_VARIANTS: '1',
 				JASPER_SOUND_AUTO_INDEX: '0',
 			}),
-			stdio: ['ignore', 'pipe', 'pipe'],
+			stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
 		},
 	);
 	engine.stdout?.on('data', (d: Buffer) => engineLog.push(d.toString()));
 	engine.stderr?.on('data', (d: Buffer) => engineLog.push(d.toString()));
-	await waitFor(
-		async () => (await fetch(`http://127.0.0.1:${PORT}/health`)).ok,
-		300_000,
-		`the engine on ${PORT}: ${engineLog.join('')}`,
-	);
+	await engineReady(engine, PORT, engineLog);
 	const transport = new StdioClientTransport({
 		command: process.execPath,
 		args: ['--import', 'tsx', join(ROOT, 'apps/mcp/src/cli.ts'), '--appdir', appdir],
@@ -93,13 +89,13 @@ beforeAll(async () => {
 	transport.stderr?.on('data', (d: Buffer) => logs.push(d.toString('utf8')));
 	client = new Client({ name: 'vitest-mcp-sound-ack', version: '1.0.0' });
 	await client.connect(transport);
-}, 600_000);
+});
 
 afterAll(async () => {
 	await client?.close().catch(() => {});
 	await stopEngine(engine);
 	if (work) rmSync(work, { recursive: true, force: true });
-}, 30_000);
+});
 
 type Check = {
 	verdict: string;
@@ -119,7 +115,7 @@ type Check = {
 	next: string;
 };
 
-describe('acknowledge_sound_issue / sound_check {proposalId}', { timeout: 900_000 }, () => {
+describe('acknowledge_sound_issue / sound_check {proposalId}', () => {
 	it('acknowledges a warning (not an error), the check agrees; a proposal check reports what it introduces', async () => {
 		const files = writeBedFixture(join(work, 'media'));
 		files.click = writeTick(join(work, 'media'));

@@ -2,7 +2,6 @@
 import { randomBytes } from 'node:crypto';
 import { request } from 'node:http';
 import type { Duplex } from 'node:stream';
-import { waitFor } from './helpers.ts';
 
 /**
  * A stand-in editor window: the engine's `/agent` WebSocket with the editor cookies (a minimal RFC 6455 client on
@@ -41,7 +40,22 @@ export async function editorWindow(o: { port: number; token: string; editorKey: 
 		const body = Buffer.from(payload.map((b, i) => b ^ mask[i % 4]!));
 		socket.write(Buffer.concat([head, mask, body]));
 	};
-	let ready = false;
+	let failure: Error | undefined;
+	let welcomed!: () => void;
+	let failedWelcome!: (error: Error) => void;
+	const welcome = new Promise<void>((resolve, reject) => {
+		welcomed = resolve;
+		failedWelcome = reject;
+	});
+	const waiting = new Set<{ n: number; resolve: () => void; reject: (error: Error) => void }>();
+	const fail = (error: Error) => {
+		failure = error;
+		failedWelcome(error);
+		for (const waiter of waiting) waiter.reject(error);
+		waiting.clear();
+	};
+	socket.on('error', fail);
+	socket.on('close', () => fail(new Error('Editor WebSocket closed before its pending receipt')));
 	socket.on('data', (chunk: Buffer) => {
 		pending = Buffer.concat([pending, chunk]);
 		for (;;) {
@@ -63,18 +77,32 @@ export async function editorWindow(o: { port: number; token: string; editorKey: 
 			pending = pending.subarray(off + len);
 			if (opcode === 9) send(null, 10);
 			if (opcode !== 1) continue;
-			const m = JSON.parse(payload.toString('utf8')) as { type: string; event?: string; payload?: unknown };
-			if (m.type === 'welcome') ready = true;
-			if (m.type === 'event' && m.event === 'agent.approval.requested')
+			let m: { type: string; event?: string; payload?: unknown };
+			try {
+				m = JSON.parse(payload.toString('utf8'));
+			} catch (error) {
+				fail(error as Error);
+				socket.destroy();
+				return;
+			}
+			if (m.type === 'welcome') welcomed();
+			if (m.type === 'event' && m.event === 'agent.approval.requested') {
 				cards.push(m.payload as (typeof cards)[number]);
+				for (const waiter of waiting)
+					if (cards.length >= waiter.n) {
+						waiting.delete(waiter);
+						waiter.resolve();
+					}
+			}
 		}
 	});
 	send({ type: 'hello', projectId, sessionId: 'ses_soundtest', leaseId: 'lease_soundtest' });
-	await waitFor(() => ready, 10_000, 'editor welcome');
+	await welcome;
 	return {
 		cards,
 		async card(n: number) {
-			await waitFor(() => cards.length >= n, 60_000, `approval card ${n}`);
+			if (failure) throw failure;
+			if (cards.length < n) await new Promise<void>((resolve, reject) => waiting.add({ n, resolve, reject }));
 			return cards[n - 1]!;
 		},
 		answer(c: (typeof cards)[number], decision: 'approved' | 'denied') {

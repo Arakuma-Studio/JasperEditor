@@ -327,7 +327,7 @@ describe('Essential Sound commands', () => {
 				settings: { type: 'dialogue', repair: { noise: { on: 'yes', amount: 8 } } },
 			},
 		]);
-		expect(bad.ok).toBe(false);
+		expect(bad).toMatchObject({ ok: false, errors: [{ code: 'E_INVALID_PARAM' }] });
 		// out-of-range numbers are clamped like every other setting
 		h.ok([
 			{
@@ -378,7 +378,7 @@ describe('Essential Sound commands', () => {
 		h.ok([{ type: 'essentialSound.set', clipIds: [id], values: { mute: true } }]);
 		expect(clip().effects.map((e) => e.effectId)).toEqual(['jasper.audio.mute']);
 		const bad = h.tx([{ type: 'essentialSound.applyPreset', clipIds: [id], preset: 'Nope' }]);
-		expect(bad.ok).toBe(false);
+		expect(bad).toMatchObject({ ok: false, errors: [{ code: 'E_INVALID_PARAM' }] });
 	});
 
 	it('refuses video clips, clips without a type and unknown keys', () => {
@@ -387,7 +387,10 @@ describe('Essential Sound commands', () => {
 		h.ok([{ type: 'clip.place', source: { mediaId: v }, at: 0 }]);
 		const video = h.clips('V1')[0]!.id;
 		const audio = h.clips('A1')[0]!.id;
-		expect(h.tx([{ type: 'essentialSound.setType', clipIds: [video], audioType: 'music' }]).ok).toBe(false);
+		expect(h.tx([{ type: 'essentialSound.setType', clipIds: [video], audioType: 'music' }])).toMatchObject({
+			ok: false,
+			errors: [{ code: 'E_INVALID_PARAM' }],
+		});
 		expect(
 			h.tx([{ type: 'essentialSound.set', clipIds: [audio], values: { 'repair.noise.on': true } }]).ok,
 		).toBe(false);
@@ -493,7 +496,10 @@ describe('Remix', () => {
 		const id = clip().id;
 		const m2 = h.registerVideo({ kind: 'audio', seconds: 5 });
 		h.ok([{ type: 'clip.place', source: { mediaId: m2 }, at: 700, tracks: { audio: 'A1' } }]);
-		expect(h.tx([{ type: 'clip.remix', clipId: id, targetFrames: 800, pieces, bpm: 120 }]).ok).toBe(false);
+		expect(h.tx([{ type: 'clip.remix', clipId: id, targetFrames: 800, pieces, bpm: 120 }])).toMatchObject({
+			ok: false,
+			errors: [{ code: 'E_OVERLAP' }],
+		});
 		h.ok([{ type: 'clip.setSpeed', clipIds: [id], rate: 2, ripple: false }]);
 		expect(h.tx([{ type: 'clip.remix', clipId: id, targetFrames: 200, pieces, bpm: 120 }]).ok).toBe(false);
 		const v = h.registerVideo({ seconds: 5 });

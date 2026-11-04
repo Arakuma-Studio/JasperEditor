@@ -3,6 +3,7 @@
 // refusals naming the offending item / target and key, invariants, and 1 000-item batches.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { threadCpuMs } from '../../../scripts/perf/cpu.ts';
 import {
 	type AdjustmentClip,
 	type Animatable,
@@ -213,15 +214,15 @@ describe('clip.addAdjustmentBatch', () => {
 	it('1 000 items in one command (a whole-video pass): one command, all placed, invariants hold', () => {
 		const h = new Harness();
 		const items = Array.from({ length: 1000 }, (_, i) => kit(i * 30));
-		const t0 = performance.now();
+		const t0 = threadCpuMs();
 		const r = h.ok([{ type: 'clip.addAdjustmentBatch', trackId: 'V2', items }]);
-		const ms = performance.now() - t0;
+		const ms = threadCpuMs() - t0;
 		expect((r.results[0] as { clipIds: string[] }).clipIds).toHaveLength(1000);
 		expect(adjustments(h)).toHaveLength(1000);
 		valid(h);
 		// generous bound for a shared test machine; the wp-note records the measured time (edit-automation.md)
 		expect(ms).toBeLessThan(30_000);
-		console.info(`[perf] clip.addAdjustmentBatch 1000 items: ${ms.toFixed(0)} ms`);
+		console.info(`[perf] clip.addAdjustmentBatch 1000 items: ${ms.toFixed(0)} CPU ms`);
 	});
 });
 
@@ -357,7 +358,7 @@ describe('keyframe.addBatch', () => {
 			},
 		]);
 		const ids = (ok.results[0] as { clipIds: string[] }).clipIds;
-		const t0 = performance.now();
+		const t0 = threadCpuMs();
 		h.ok([
 			{
 				type: 'keyframe.addBatch',
@@ -371,10 +372,10 @@ describe('keyframe.addBatch', () => {
 				})),
 			},
 		]);
-		const ms = performance.now() - t0;
+		const ms = threadCpuMs() - t0;
 		valid(h);
 		expect(adjustments(h).every((c) => (c.opacity as Animatable<number>).keyframes.length === 2)).toBe(true);
 		expect(ms).toBeLessThan(30_000);
-		console.info(`[perf] keyframe.addBatch 1000 targets × 2 keys: ${ms.toFixed(0)} ms`);
+		console.info(`[perf] keyframe.addBatch 1000 targets × 2 keys: ${ms.toFixed(0)} CPU ms`);
 	});
 });

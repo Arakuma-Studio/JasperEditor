@@ -29,7 +29,8 @@ import {
 	soundCuesOf,
 } from '@jasper/project';
 import { describeFuzz, jsonTarget } from '@jasper/testkit/fuzz';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
+import type { ProposalService } from '../src/proposals/service.ts';
 import {
 	collectPlanCues,
 	composePlanDraft,
@@ -212,6 +213,12 @@ function withDialogue(f: ReturnType<typeof fixture>, from: number, to: number) {
 describe('plan selection (pure)', () => {
 	it('derives the fixture’s cues and gives each a ranked, rotated sound with alternatives; deterministic by seed', () => {
 		const f = fixture();
+		f.tx([
+			{
+				type: 'soundCue.add',
+				cues: [{ frame: 500, kind: 'manual', weight: 'support', source: 'user', types: ['shimmer'] }],
+			},
+		]);
 		const a = planOf(f.get(), f.seqId, { style: { seed: 7 } });
 		const again = planOf(f.get(), f.seqId, { style: { seed: 7 } });
 		expect(picksOf(again)).toEqual(picksOf(a));
@@ -230,7 +237,8 @@ describe('plan selection (pure)', () => {
 		expect(cut.sounds.every((s) => s.entry.types.includes('hit'))).toBe(true);
 		// Real recordings rank before synth; the NC-licensed sound is never offered.
 		expect(push.sounds.every((s) => s.entry.source.type !== 'synth')).toBe(true);
-		for (const p of a.selected.picks) expect(p.sounds.some((s) => s.entry.title === 'Shimmer')).toBe(false);
+		for (const p of a.selected.picks)
+			expect(p.sounds.some((s) => s.entry.license === 'CC-BY-NC-4.0')).toBe(false);
 		// Neighbouring cues of one type rotate (the typewriter keys never repeat the previous key).
 		const keys = a.selected.picks.filter((p) => p.cue.types[0] === 'key').map((p) => p.sounds[0]!.entry.id);
 		expect(keys.length).toBeGreaterThan(3);
@@ -655,34 +663,83 @@ describe('POST /api/sound-design/plan (real engine)', { timeout: 600_000 }, () =
 	});
 
 	it('cancels: a cancelled plan leaves no proposal', async () => {
-		const f = fixture();
-		const { projectId, seqId } = seedProject(app, f);
 		const sounds = app.jasper.services.sounds as { register: (id: string, pid: string) => Promise<unknown> };
-		const real = sounds.register.bind(sounds);
-		let calls = 0;
-		sounds.register = async (id, pid) => {
-			calls++;
-			await new Promise((r) => setTimeout(r, 150));
-			return real(id, pid);
+		const proposals = app.jasper.services.proposals as ProposalService;
+		const register = sounds.register.bind(sounds);
+		const create = proposals.create.bind(proposals);
+		const planning = await import('../src/sound-design/plan.ts');
+		const run = planning.runSoundDesignPlan;
+		let finish!: () => void;
+		let running: Promise<SoundDesignPlanResult> | undefined;
+		const observed = vi.spyOn(planning, 'runSoundDesignPlan').mockImplementation((...args) => {
+			running = run(...args);
+			return running.finally(() => finish());
+		});
+		const q = coreServices(app).queue;
+		let jobId: string | null = null;
+		let release: () => void = () => undefined;
+		const restore = () => {
+			if (jobId) q.cancel(jobId);
+			release();
+			sounds.register = register;
+			proposals.create = create;
 		};
+		onTestFinished(async () => {
+			restore();
+			await running?.catch(() => undefined);
+			observed.mockRestore();
+		});
 		try {
-			const r = await startPlan({ projectId, sequenceId: seqId });
-			expect(r.statusCode).toBe(202);
-			const id = (r.json() as EngineJob).id;
-			const q = coreServices(app).queue;
-			const end = Date.now() + 30_000;
-			while (calls < 1 && Date.now() < end) await new Promise((res) => setTimeout(res, 10));
-			q.cancel(id);
-			const job = await q.wait(id);
-			expect(job.state).toBe('cancelled');
-			const list = await app.inject({
-				method: 'GET',
-				url: `/api/projects/${projectId}/proposals`,
-				headers: AGENT_H,
-			});
-			expect((list.json() as { proposals: unknown[] }).proposals).toEqual([]);
+			for (const phase of ['registration', 'stored proposal'] as const) {
+				const f = fixture();
+				const { projectId, seqId } = seedProject(app, f);
+				let started!: () => void;
+				const reached = new Promise<void>((resolve) => {
+					started = resolve;
+				});
+				const held = new Promise<void>((resolve) => {
+					release = resolve;
+				});
+				const drained = new Promise<void>((resolve) => {
+					finish = resolve;
+				});
+				if (phase === 'registration') {
+					sounds.register = async (...args) => {
+						started();
+						await held;
+						return register(...args);
+					};
+				} else {
+					proposals.create = async (...args) => {
+						const result = await create(...args);
+						started();
+						await held;
+						return result;
+					};
+				}
+				try {
+					const r = await startPlan({ projectId, sequenceId: seqId });
+					expect(r.statusCode).toBe(202);
+					jobId = (r.json() as EngineJob).id;
+					await reached;
+					q.cancel(jobId);
+					release();
+					await drained;
+					const job = await q.wait(jobId);
+					expect(job.state, phase).toBe('cancelled');
+					const list = await app.inject({
+						method: 'GET',
+						url: `/api/projects/${projectId}/proposals`,
+						headers: AGENT_H,
+					});
+					expect((list.json() as { proposals: unknown[] }).proposals, phase).toEqual([]);
+				} finally {
+					restore();
+				}
+			}
 		} finally {
-			sounds.register = real;
+			restore();
+			observed.mockRestore();
 		}
 	});
 

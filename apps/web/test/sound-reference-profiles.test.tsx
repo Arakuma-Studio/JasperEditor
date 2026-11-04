@@ -157,7 +157,7 @@ function fixture() {
 	return { session, seqId, engine, mediaId: r.refs.$a! };
 }
 
-const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
+const settle = () => act(() => Promise.resolve());
 
 beforeEach(() => {
 	toasts.dismissAll();
@@ -166,6 +166,7 @@ beforeEach(() => {
 afterEach(async () => {
 	cleanup();
 	closeAllDialogs();
+	vi.useRealTimers();
 	await setLanguage('en');
 });
 
@@ -282,8 +283,13 @@ describe('Preferences ▸ Sound Library ▸ Reference profiles', () => {
 			target: { value: '/films/a.mp4\nrelative.mp4' },
 		});
 		expect(within(dialog).getByRole('alert').textContent).toMatch(/Not absolute, left out: relative\.mp4/);
-		fireEvent.click(within(dialog).getByRole('button', { name: 'Build Profile' }));
-		await within(dialog).findByTestId('new-reference-profile-result');
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+		await act(async () => {
+			fireEvent.click(within(dialog).getByRole('button', { name: 'Build Profile' }));
+			await vi.runAllTimersAsync();
+		});
+		vi.useRealTimers();
+		expect(within(dialog).getByTestId('new-reference-profile-result')).toBeTruthy();
 		expect(engine.calls.find((c) => c.kind === 'build')?.arg).toEqual({
 			name: 'New one',
 			projectId: session.projectId,
@@ -335,8 +341,13 @@ describe('Sound Check: Reference select and rows', () => {
 		const dlg = await screen.findByTestId('new-reference-profile-dialog');
 		fireEvent.change(within(dlg).getByTestId('new-reference-profile-name'), { target: { value: 'New one' } });
 		fireEvent.click(within(dlg).getByRole('checkbox', { name: 'Episode 1.wav' }));
-		fireEvent.click(within(dlg).getByRole('button', { name: 'Build Profile' }));
-		await within(dlg).findByTestId('new-reference-profile-result', undefined, { timeout: 5000 });
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+		await act(async () => {
+			fireEvent.click(within(dlg).getByRole('button', { name: 'Build Profile' }));
+			await vi.runAllTimersAsync();
+		});
+		vi.useRealTimers();
+		expect(within(dlg).getByTestId('new-reference-profile-result')).toBeTruthy();
 		fireEvent.click(within(dlg).getByRole('button', { name: 'Done' }));
 		await waitFor(() => expect(selectedProfile(session.getCommitted(), seqId)).toBe('sprf_0000000000000004'));
 		cleanup();

@@ -9,7 +9,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { cleanEnv, stopEngine, testPort, waitFor } from './helpers.ts';
+import { cleanEnv, engineReady, stopEngine, testPort } from './helpers.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const PORT = await testPort(process.env.MCP_TEST_PORT);
@@ -67,28 +67,22 @@ beforeAll(async () => {
 	engine = spawn(
 		process.execPath,
 		['--import', 'tsx', join(ROOT, 'apps/engine/src/cli.ts'), '--port', String(PORT), '--appdir', appdir],
-		{ cwd: ROOT, env: cleanEnv({ JASPER_LOCAL_TOKEN: token }), stdio: ['ignore', 'pipe', 'pipe'] },
+		{ cwd: ROOT, env: cleanEnv({ JASPER_LOCAL_TOKEN: token }), stdio: ['ignore', 'pipe', 'pipe', 'ipc'] },
 	);
 	const logs: string[] = [];
 	engine.stdout?.on('data', (data: Buffer) => logs.push(data.toString()));
 	engine.stderr?.on('data', (data: Buffer) => logs.push(data.toString()));
-	await waitFor(
-		async () =>
-			existsSync(join(appdir, 'engine', 'runtime.json')) &&
-			(await fetch(`http://127.0.0.1:${PORT}/health`)).ok,
-		90_000,
-		`engine on ${PORT}: ${logs.join('')}`,
-	);
+	await engineReady(engine, PORT, logs);
 	expect((await fetch(`http://127.0.0.1:${PORT}/api/projects`)).status).toBe(401);
 	session = connect(['--appdir', appdir]);
 	await session.client.connect(session.transport);
-}, 180_000);
+});
 
 afterAll(async () => {
 	await session?.client.close().catch(() => {});
 	await stopEngine(engine);
 	if (appdir) rmSync(appdir, { recursive: true, force: true });
-}, 30_000);
+});
 
 describe('MCP over stdio with a token-protected engine', () => {
 	it('discovers the engine, edits media, renders a frame, and exports a playable video', async () => {
@@ -160,7 +154,7 @@ describe('MCP over stdio with a token-protected engine', () => {
 		const stream = JSON.parse(probe.stdout).streams[0];
 		expect([stream.width, stream.height, Number(stream.nb_read_frames)]).toEqual([1280, 720, 30]);
 		copyFileSync(output, join(artifacts, 'edit-export.mp4'));
-	}, 300_000);
+	});
 
 	it('clipboard tools preserve destination time, track, insertion mode and bin', async () => {
 		const source = await ok<{ projectId: string }>('create_project', { name: 'Clipboard source' });
@@ -584,12 +578,23 @@ describe('jasper-mcp --start-engine', () => {
 			});
 			expect(existsSync(join(dir, 'engine', 'runtime.json'))).toBe(true);
 		} finally {
-			await started.client.close().catch(() => {});
+			const closed =
+				started.transport.pid === null
+					? Promise.resolve()
+					: new Promise<void>((resolve) => {
+							const previous = started.client.onclose;
+							started.client.onclose = () => {
+								previous?.();
+								resolve();
+							};
+						});
 			try {
-				await waitFor(() => !existsSync(join(dir, 'engine', 'runtime.json')), 15_000, 'engine shutdown');
+				await started.client.close();
+				await closed;
+				expect(existsSync(join(dir, 'engine', 'runtime.json'))).toBe(false);
 			} finally {
 				rmSync(dir, { recursive: true, force: true });
 			}
 		}
-	}, 180_000);
+	});
 });

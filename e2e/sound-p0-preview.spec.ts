@@ -7,7 +7,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
-import { arm, disarm, peaks, TAP } from './sound-tap.ts';
+import { arm, disarm, pausedAudio, peaks, recordedAudio, TAP } from './sound-tap.ts';
 import {
 	browserLaunch,
 	createProject,
@@ -44,9 +44,9 @@ async function playAndTap(page: Page): Promise<{ rate: number; peaks: { at: numb
 	await page.waitForTimeout(500);
 	await arm(page);
 	await page.keyboard.press('Space');
-	await page.waitForTimeout(2600);
+	await recordedAudio(page, 2600, true);
 	await page.keyboard.press('Space');
-	await page.waitForTimeout(200);
+	await pausedAudio(page);
 	const rec = await disarm(page);
 	const first = rec.frames[0] ?? 0;
 	return {

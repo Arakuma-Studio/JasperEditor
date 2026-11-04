@@ -7,7 +7,7 @@ import {
 	type MediaAsset,
 } from '@jasper/project';
 import { EditorSession } from '@jasper/session';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
 import {
 	type CommandCtx,
 	createCommandContext,
@@ -259,7 +259,14 @@ describe('layer commands (XF-050)', () => {
 	it('Reveal in Project selects the media item and is disabled for sequence-only text', async () => {
 		const p = withVideo(46);
 		p.session.select('timeline', [p.video]);
-		await p.run('clip.revealInProject');
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+		try {
+			const reveal = p.run('clip.revealInProject');
+			await vi.runAllTimersAsync();
+			await reveal;
+		} finally {
+			vi.useRealTimers();
+		}
 		expect(p.session.getState().selection.project.items).toEqual([p.item]);
 		const t = p.apply([
 			{ type: 'clip.addText', at: 300, duration: 30, track: 'V2', content: { text: 'T' }, ref: '$t' },

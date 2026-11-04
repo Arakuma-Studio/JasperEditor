@@ -85,6 +85,12 @@ describe('ClickDetector (CLICK)', () => {
 		const burst = noise(7, 240, 0.4);
 		for (let i = 0; i < 240; i++) y[20_000 + i]! += burst[i]! * Math.sin((Math.PI * i) / 240);
 		expect(detectClicks([y], SR).filter((c) => c.kind === 'click')).toEqual([]);
+		const attack = noise(6, SR, 0.0005);
+		// A sharp onset crosses the burst gate; its tail spreads energy beyond the inner 1 ms.
+		attack[20_000] = 0.8;
+		const tail = noise(7, 120, 0.2);
+		for (let i = 0; i < 120; i++) attack[20_120 + i]! += tail[i]! * Math.sin((Math.PI * i) / 120);
+		expect(detectClicks([attack], SR).map((c) => c.kind)).toEqual(['attack']);
 	});
 
 	it('is block-size independent and merges channels within 1 ms', () => {

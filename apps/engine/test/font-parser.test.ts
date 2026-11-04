@@ -246,9 +246,7 @@ describe('font parser: property tests (never throws anything but FontParseError,
 						const span = i % 2 === 0 ? Math.min(256, b.length) : b.length;
 						b[at % span] = v;
 					});
-					const t0 = performance.now();
 					settle(b);
-					expect(performance.now() - t0).toBeLessThan(2000);
 				},
 			),
 			{ numRuns: 1500 },

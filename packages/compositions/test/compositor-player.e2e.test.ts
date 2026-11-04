@@ -1,7 +1,6 @@
 // @vitest-environment node
 // Chrome cannot nest HTML-in-Canvas scopes; mixed adjustment, blend and 3D stacks must share a flat capture.
 // COMPOSITOR_ELECTRON=1 runs the same checks in desktop Electron under xvfb-run.
-import { execFileSync } from 'node:child_process';
 import { existsSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -10,7 +9,7 @@ import type { Command, Rgba } from '@jasper/project';
 import { bundleForBrowser } from '@jasper/testkit/browser';
 import { _electron, type Browser, chromium, type ElectronApplication, type Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { FX_H, FX_W, type FxMedia, fxCmd, fxSnapshot, startFxMedia } from './fx-media.ts';
+import { FX_H, FX_W, type FxMedia, fxCmd, fxPixels, fxSnapshot, startFxMedia } from './fx-media.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const enabled = process.env.REMOTION_E2E === '1';
@@ -155,33 +154,22 @@ app.whenReady().then(() => {
 		});
 
 		async function pixels(name: string): Promise<Buffer> {
-			const png = await page.locator(`#${name}`).screenshot();
-			return execFileSync(
-				'ffmpeg',
-				['-v', 'error', '-i', 'pipe:0', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'],
-				{
-					input: png,
-					maxBuffer: 1 << 26,
-				},
+			await page.evaluate(
+				(n) =>
+					(window as never as { __fxPlayer: { ready(name: string): Promise<void> } }).__fxPlayer.ready(n),
+				name,
 			);
+			const png = await page.locator(`#${name}`).screenshot();
+			return fxPixels(png);
 		}
 		const at = (raw: Buffer, x: number, y: number): Rgb => {
 			const i = (Math.round(y) * FX_W + Math.round(x)) * 3;
 			return [raw[i]!, raw[i + 1]!, raw[i + 2]!];
 		};
-		async function until(name: string, ok: (raw: Buffer) => boolean, ms = 20_000): Promise<Buffer> {
-			const t0 = Date.now();
-			let raw = await pixels(name);
-			while (!ok(raw) && Date.now() - t0 < ms) {
-				await page.waitForTimeout(250);
-				raw = await pixels(name);
-			}
-			return raw;
-		}
 		const seek = (name: string, frame: number) =>
 			page.evaluate(
 				([n, f]) =>
-					(window as never as { __fxPlayer: { seek(a: string, b: number): void } }).__fxPlayer.seek(
+					(window as never as { __fxPlayer: { seek(a: string, b: number): Promise<void> } }).__fxPlayer.seek(
 						n as string,
 						f as number,
 					),
@@ -192,11 +180,10 @@ app.whenReady().then(() => {
 			for (const f of [10, 25]) {
 				await seek('video', f);
 				await seek('videoFlat', f);
-				await until('video', (r) => at(r, 100, 100).some((v) => v > 40));
-				await page.waitForTimeout(800);
 				const ref = await pixels('video');
+				expect(ref.some((v) => v > 40)).toBe(true);
 				let worst = 255;
-				await until('videoFlat', (r) => {
+				await pixels('videoFlat').then((r) => {
 					worst = 0;
 					for (let y = 20; y < FX_H; y += 40)
 						for (let x = 20; x < FX_W; x += 40) {
@@ -205,7 +192,6 @@ app.whenReady().then(() => {
 							// invert, then linear burn with white (identity)
 							for (let k = 0; k < 3; k++) worst = Math.max(worst, Math.abs(q[k]! - (255 - p[k]!)));
 						}
-					return worst < 12;
 				});
 				expect(worst, `frame ${f}`).toBeLessThan(12);
 			}
@@ -215,7 +201,7 @@ app.whenReady().then(() => {
 			await seek('nest', 5);
 			// Opaque linear burn of the declared solids is [0.1, 0, 0.1]; the two Inverts cancel.
 			const want: Rgb = [26, 0, 26];
-			const raw = await until('nest', (r) => close(at(r, FX_W / 2, FX_H / 2), want, 4));
+			const raw = await pixels('nest');
 			expect(close(at(raw, FX_W / 2, FX_H / 2), want, 4), `${at(raw, FX_W / 2, FX_H / 2)} want ${want}`).toBe(
 				true,
 			);
@@ -223,11 +209,7 @@ app.whenReady().then(() => {
 
 		it('an adjustment layer over a 3D run', async () => {
 			await seek('run', 5);
-			const raw = await until(
-				'run',
-				(r) =>
-					close(at(r, 10, 10), to8(invert(base)), 4) && close(at(r, FX_W / 2, FX_H / 2), [0, 255, 255], 6),
-			);
+			const raw = await pixels('run');
 			expect(close(at(raw, 10, 10), to8(invert(base)), 4), `corner ${at(raw, 10, 10)}`).toBe(true);
 			expect(
 				close(at(raw, FX_W / 2, FX_H / 2), [0, 255, 255], 6),
@@ -239,7 +221,7 @@ app.whenReady().then(() => {
 			await seek('pq', 5);
 
 			// Graphics white of a PQ sequence: 58 % PQ signal (148) shown tone mapped (≈ 230).
-			const raw = await until('pq', (r) => at(r, FX_W / 2, FX_H / 2)[0] > 220);
+			const raw = await pixels('pq');
 			expect(at(raw, FX_W / 2, FX_H / 2)[0], `${at(raw, FX_W / 2, FX_H / 2)}`).toBeGreaterThan(220);
 		});
 	},

@@ -21,7 +21,7 @@ import { buildRenderSnapshot } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type RunningEngine, startEngine } from '../src/index.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { DocBuilder, JSON_H, TEST_FFMPEG, tempAppdir, until } from './helpers.ts';
+import { DocBuilder, JSON_H, TEST_FFMPEG, tempAppdir } from './helpers.ts';
 
 const enabled = process.env.REMOTION_E2E === '1';
 const PORT = Number(process.env.JASPER_E2E_PORT ?? 0);
@@ -177,14 +177,7 @@ describe.runIf(enabled)('a title look on both export paths (REMOTION_E2E=1, spec
 		queue()
 			.list({})
 			.filter((j) => j.parentId === id);
-	const wait = async (id: string): Promise<EngineJob> => {
-		await until(
-			() => ['succeeded', 'failed', 'cancelled'].includes(queue().get(id)?.state ?? ''),
-			2_400_000,
-			250,
-		);
-		return queue().get(id)!;
-	};
+	const wait = (id: string): Promise<EngineJob> => queue().wait(id);
 	type Range = { start: number; end: number };
 	const settings = (seqId: string, which: 'auto' | 'remotion', range?: Range) => ({
 		sequenceId: seqId,

@@ -1,6 +1,7 @@
 // Word-mark markup (design 2026-10-25 §7.5) and comment tokenization: examples plus fast-check properties.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { threadCpuMs } from '../../../scripts/perf/cpu.ts';
 import {
 	applyMark,
 	type MarkSpan,
@@ -138,9 +139,9 @@ describe('parseMarks', () => {
 			`==${'a|'.repeat(100_000)}`,
 			'\\'.repeat(200_000),
 		];
-		const t0 = performance.now();
+		const t0 = threadCpuMs();
 		for (const s of inputs) parseMarks(s);
-		expect(performance.now() - t0).toBeLessThan(2000);
+		expect(threadCpuMs() - t0).toBeLessThan(2000);
 	});
 });
 

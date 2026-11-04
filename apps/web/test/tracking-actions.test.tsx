@@ -25,7 +25,7 @@ const REF: Quad = [
 const trackerOf = (session: ReturnType<typeof trackingSession>['session'], plate: string, id: string) =>
 	(seqOf(session).clips[plate] as { trackers?: ClipTracker[] }).trackers!.find((t) => t.id === id)!;
 
-const tick = () => act(async () => void (await new Promise((r) => setTimeout(r, 0))));
+const tick = () => act(() => Promise.resolve());
 
 beforeEach(() => trackingStore.setState(trackingStore.getInitialState(), true));
 afterEach(() => {

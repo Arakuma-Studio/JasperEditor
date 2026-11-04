@@ -1,5 +1,6 @@
 // Spec 19 §12 in the UI: the commands and menus are wired, the PSD dialog shows blockers before writing, the style dialog
 // shows the report and stores looks undoably, and the gamut overlay marks only the frame it measured.
+import { setImmediate } from 'node:timers/promises';
 import type { LayerStyleFile, PsdPlan } from '@jasper/api';
 import { EngineClient } from '@jasper/engine-client';
 import { titleLooksOf } from '@jasper/project';
@@ -47,8 +48,9 @@ afterEach(async () => {
 	act(() => closeAllDialogs());
 	connectUserLooks(null);
 	cleanup();
-	// Rejections are reported a macrotask after the promise settles.
-	await new Promise((r) => setTimeout(r, 0));
+	vi.useRealTimers();
+	// Drain the check phase so settled promise rejections have been reported.
+	await setImmediate();
 	expect(unhandled).toEqual([]);
 	unhandled.length = 0;
 });
@@ -211,6 +213,7 @@ describe('Send to Photoshop (TL-112)', () => {
 	});
 
 	it('closing the dialog stops following its job: no polling and no state after it is gone', async () => {
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
 		const calls: string[] = [];
 		const { session, seqId } = makeSession();
 		registerPsdDialog();
@@ -228,21 +231,25 @@ describe('Send to Photoshop (TL-112)', () => {
 		act(() => {
 			void openDialog(PSD_DIALOG, { session, engine, sequenceId: seqId, frame: 0, baseName: 'Seq' });
 		});
-		await waitFor(() => expect(screen.getByTestId('psd-baked')).toBeTruthy());
+		await act(async () => vi.advanceTimersByTimeAsync(0));
+		expect(screen.getByTestId('psd-baked')).toBeTruthy();
 		fireEvent.click(screen.getByRole('button', { name: 'Write PSD' }));
-		await screen.findByRole('button', { name: 'Cancel writing' });
+		await act(async () => vi.advanceTimersByTimeAsync(0));
+		expect(screen.getByRole('button', { name: 'Cancel writing' })).toBeTruthy();
 		const polls = () => calls.filter((u) => /\/api\/jobs\/job_1(\?|$)/.test(u)).length;
-		await waitFor(() => expect(polls()).toBeGreaterThan(0));
+		expect(polls()).toBeGreaterThan(0);
 		act(() => closeAllDialogs());
 		// The job the closed dialog started is cancelled, once.
-		await waitFor(() => expect(calls.filter((u) => u.includes('/api/jobs/job_1/cancel'))).toHaveLength(1));
+		await act(async () => vi.advanceTimersByTimeAsync(0));
+		expect(calls.filter((u) => u.includes('/api/jobs/job_1/cancel'))).toHaveLength(1);
 		const after = polls();
-		await new Promise((r) => setTimeout(r, 1000));
+		await act(async () => vi.advanceTimersByTimeAsync(1000));
 		expect(polls()).toBe(after);
 		expect(errors.mock.calls.flat().join(' ')).not.toMatch(/unmounted component/);
 	});
 
 	it('Cancel while the write is still queued closes the dialog, and the job it then gets is cancelled', async () => {
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
 		const calls: string[] = [];
 		const { session, seqId } = makeSession();
 		registerPsdDialog();
@@ -265,15 +272,17 @@ describe('Send to Photoshop (TL-112)', () => {
 		act(() => {
 			result = openDialog(PSD_DIALOG, { session, engine, sequenceId: seqId, frame: 0, baseName: 'Seq' });
 		});
-		await waitFor(() => expect(screen.getByTestId('psd-baked')).toBeTruthy());
+		await act(async () => vi.advanceTimersByTimeAsync(0));
+		expect(screen.getByTestId('psd-baked')).toBeTruthy();
 		fireEvent.click(screen.getByRole('button', { name: 'Write PSD' }));
-		await screen.findByText('Queued');
+		expect(screen.getByText('Queued')).toBeTruthy();
 		fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
-		await waitFor(() => expect(screen.queryByTestId('psd-dialog')).toBeNull());
+		expect(screen.queryByTestId('psd-dialog')).toBeNull();
 		await expect(result).resolves.toBeUndefined();
 		act(() => started(new Response()));
-		await waitFor(() => expect(calls.some((u) => u.includes('/api/jobs/job_1/cancel'))).toBe(true));
-		await new Promise((r) => setTimeout(r, 700));
+		await act(async () => vi.advanceTimersByTimeAsync(0));
+		expect(calls.some((u) => u.includes('/api/jobs/job_1/cancel'))).toBe(true);
+		await act(async () => vi.advanceTimersByTimeAsync(700));
 		expect(calls.filter((u) => /\/api\/jobs\/job_1(\?|$)/.test(u))).toEqual([]);
 	});
 
@@ -466,6 +475,7 @@ describe('jobs end with their dialog (AGENTS §0)', () => {
 	});
 
 	it('Split Image: closing during the analysis stops polling it and cancels it', async () => {
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
 		const calls: string[] = [];
 		const { session, seqId } = makeSession();
 		registerSplitImageDialog();
@@ -486,11 +496,13 @@ describe('jobs end with their dialog (AGENTS §0)', () => {
 			});
 		});
 		const polls = () => calls.filter((u) => /\/api\/jobs\/job_1(\?|$)/.test(u)).length;
-		await waitFor(() => expect(polls()).toBeGreaterThan(0));
+		await act(async () => vi.advanceTimersByTimeAsync(0));
+		expect(polls()).toBeGreaterThan(0);
 		act(() => closeAllDialogs());
-		await waitFor(() => expect(calls.some((u) => u.includes('/api/jobs/job_1/cancel'))).toBe(true));
+		await act(async () => vi.advanceTimersByTimeAsync(0));
+		expect(calls.some((u) => u.includes('/api/jobs/job_1/cancel'))).toBe(true);
 		const after = polls();
-		await new Promise((r) => setTimeout(r, 1000));
+		await act(async () => vi.advanceTimersByTimeAsync(1000));
 		expect(polls()).toBe(after);
 	});
 });

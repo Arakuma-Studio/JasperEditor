@@ -11,10 +11,10 @@ import {
 	writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import type { DeriveResult, EngineJob, RegisteredMedia } from '@jasper/api';
 import { FLICKS_PER_SECOND } from '@jasper/project';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 import {
 	atempoFactors,
 	concatArgs,
@@ -26,16 +26,8 @@ import {
 	reverseSegmentFrames,
 } from '../src/processing/derive-plan.ts';
 import { assertLgplFilters } from '../src/processing/proc/filters.ts';
-import {
-	closeApps,
-	JSON_H,
-	makeApp,
-	register,
-	TEST_FFMPEG,
-	TEST_FFPROBE,
-	type TestApp,
-	until,
-} from './helpers.ts';
+import { coreServices } from '../src/tools/services.ts';
+import { closeApps, JSON_H, makeApp, register, TEST_FFMPEG, TEST_FFPROBE, type TestApp } from './helpers.ts';
 
 const H = { host: '127.0.0.1:47900' };
 let app: TestApp;
@@ -110,15 +102,8 @@ const zeroCrossingsPerSec = (a: Float32Array, rate: number, from: number, to: nu
 	return n / 2 / ((to - from) / rate);
 };
 
-async function waitJob(id: string, timeoutMs = 240_000): Promise<EngineJob> {
-	return until(
-		async () => {
-			const j = (await app.inject({ method: 'GET', url: `/api/jobs/${id}`, headers: H })).json() as EngineJob;
-			return ['succeeded', 'failed', 'cancelled', 'interrupted'].includes(j.state) ? j : null;
-		},
-		timeoutMs,
-		100,
-	);
+async function waitJob(id: string): Promise<EngineJob> {
+	return coreServices(app).queue.wait(id);
 }
 
 async function derive(key: string, recipe: unknown) {
@@ -188,7 +173,6 @@ beforeAll(async () => {
 	// video without audio
 	media.silent = join(dir, 'silent.mkv');
 	ff(['-f', 'lavfi', '-i', 'color=c=gray:s=64x48:r=25:d=1', '-c:v', 'ffv1', media.silent]);
-	// a longer, larger video for cancellation (60 s 640×360)
 	// audio starting 0.2 s after the video (a stream start offset, not silence)
 	media.offset = join(dir, 'offset.mov');
 	ff([
@@ -196,8 +180,9 @@ beforeAll(async () => {
 		...['-itsoffset', '0.2', '-f', 'lavfi', '-i', 'sine=f=440:r=48000:d=3.8'],
 		...['-map', '0', '-map', '1', '-c:v', 'ffv1', '-c:a', 'pcm_s16le', '-f', 'mov', media.offset],
 	]);
+	// Cancellation controls encoder completion, so its source can stay small.
 	media.long = join(dir, 'long.mkv');
-	ff(['-f', 'lavfi', '-i', 'testsrc=s=640x360:r=25:d=60', '-c:v', 'ffv1', '-level', '1', media.long]);
+	ff(['-f', 'lavfi', '-i', 'testsrc=s=64x48:r=25:d=1', '-c:v', 'ffv1', '-level', '1', media.long]);
 	app = await makeApp({ totalSlots: 4, env: { JASPER_FFMPEG_LGPL_ONLY: '1' } });
 	for (const [k, p] of Object.entries(media)) keys[k] = await register(app, p);
 }, 180_000);
@@ -536,33 +521,65 @@ describe('derive jobs (AF-OPS-001)', { timeout: 240_000 }, () => {
 	});
 
 	it('a cancelled job leaves no partial output', async () => {
-		const r = await derive(keys.long!.mediaKey, { op: 'reverse' });
-		expect(r.statusCode).toBe(202);
-		const id = (r.json() as EngineJob).id;
-		await until(
-			async () => {
-				const j = (
-					await app.inject({ method: 'GET', url: `/api/jobs/${id}`, headers: H })
-				).json() as EngineJob;
-				return j.state === 'running' ? j : null;
-			},
-			60_000,
-			20,
-		);
-		await app.inject({ method: 'POST', url: `/api/jobs/${id}/cancel`, headers: H });
-		const done = await waitJob(id);
-		expect(done.state).toBe('cancelled');
-		const processed = join(app.appdir, 'media', 'processed');
-		const leftovers: string[] = [];
-		const walk = (d: string) => {
-			if (!existsSync(d)) return;
-			for (const e of readdirSync(d, { withFileTypes: true })) {
-				if (e.isDirectory()) walk(join(d, e.name));
-				else if (e.name.startsWith('.partial-')) leftovers.push(join(d, e.name));
+		const core = coreServices(app);
+		await Promise.all(core.queue.list({ active: true }).map((job) => core.queue.wait(job.id)));
+		const run = core.ffmpeg.run;
+		let began!: (output: string) => void;
+		const started = new Promise<string>((resolve) => {
+			began = resolve;
+		});
+		core.ffmpeg.run = (args, options = {}) => {
+			const output = args.at(-1)!;
+			if (!basename(output).startsWith('.partial-')) return run.call(core.ffmpeg, args, options);
+			return new Promise<{ stderr: string }>((_resolve, reject) => {
+				const signal = options.signal;
+				if (!signal || signal.aborted) {
+					reject(new Error('The cancellation fixture requires a running encoder'));
+					return;
+				}
+				writeFileSync(output, 'partial encoded output');
+				signal.addEventListener('abort', () => reject(new Error('encoder cancelled')), { once: true });
+				began(output);
+			});
+		};
+		let id: string | undefined;
+		const cleanup = async () => {
+			core.ffmpeg.run = run;
+			if (id) {
+				core.queue.cancel(id);
+				await core.queue.wait(id);
 			}
 		};
-		walk(processed);
-		expect(leftovers).toEqual([]);
-		expect(existsSync(join(app.appdir, 'tmp', id))).toBe(false);
+		onTestFinished(cleanup);
+		try {
+			const r = await derive(keys.long!.mediaKey, { op: 'reverse' });
+			expect(r.statusCode).toBe(202);
+			id = (r.json() as EngineJob).id;
+			const partial = await Promise.race([
+				started,
+				core.queue.wait(id).then((job) => {
+					throw new Error(`Derivation finished before the encoder began (${job.state})`);
+				}),
+			]);
+			expect(existsSync(partial)).toBe(true);
+			expect(existsSync(join(app.appdir, 'tmp', id))).toBe(true);
+			await app.inject({ method: 'POST', url: `/api/jobs/${id}/cancel`, headers: H });
+			const done = await waitJob(id);
+			expect(done.state).toBe('cancelled');
+			const processed = join(app.appdir, 'media', 'processed');
+			const leftovers: string[] = [];
+			const walk = (d: string) => {
+				if (!existsSync(d)) return;
+				for (const e of readdirSync(d, { withFileTypes: true })) {
+					if (e.isDirectory()) walk(join(d, e.name));
+					else if (e.name.startsWith('.partial-')) leftovers.push(join(d, e.name));
+				}
+			};
+			walk(processed);
+			expect(leftovers).toEqual([]);
+			expect(existsSync(join(app.appdir, 'tmp', id))).toBe(false);
+		} finally {
+			await cleanup();
+		}
 	});
 });

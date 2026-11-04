@@ -12,13 +12,15 @@ import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { type APIRequestContext, expect, type Page, test } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
 import { FIXTURE_COMMANDS } from '../apps/mcp/test/sound-cues-fixture.ts';
 import {
 	appliedLabels,
 	browserLaunch,
 	createProject,
 	enableAgentBridge,
+	libraryReady,
+	locate,
 	query,
 	ROOT,
 	serverInfo,
@@ -75,20 +77,6 @@ test.afterAll(async () => {
 	await page?.close();
 });
 
-async function libraryReady(request: APIRequestContext) {
-	await expect
-		.poll(
-			async () => {
-				const r = await request.get('/api/sounds/status');
-				if (!r.ok()) return 0;
-				const s = (await r.json()) as { sounds: number; indexing: unknown; needsIndex: boolean };
-				return s.indexing || s.needsIndex ? 0 : s.sounds;
-			},
-			{ timeout: 360_000, intervals: [1000] },
-		)
-		.toBeGreaterThan(20);
-}
-
 type Clip = {
 	id: string;
 	start: number;
@@ -115,23 +103,6 @@ function decodeMono(file: string, rate = 1): Float32Array {
 		{ maxBuffer: 256 * 1024 * 1024 },
 	);
 	return new Float32Array(raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength));
-}
-function locate(mix: Float32Array, ref: Float32Array, w0: number, w1: number, guess: number, span: number) {
-	let best = { lag: Number.NaN, r: -2 };
-	let rr = 0;
-	for (let i = w0; i < w1; i++) rr += ref[i]! * ref[i]!;
-	for (let lag = guess - span; lag <= guess + span; lag++) {
-		let xy = 0;
-		let xx = 0;
-		for (let i = w0; i < w1; i++) {
-			const x = mix[lag + i] ?? 0;
-			xy += x * ref[i]!;
-			xx += x * x;
-		}
-		const r = xx > 0 && rr > 0 ? xy / Math.sqrt(xx * rr) : -1;
-		if (r > best.r) best = { lag, r };
-	}
-	return best;
 }
 
 /**

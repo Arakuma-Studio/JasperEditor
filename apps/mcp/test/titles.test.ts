@@ -34,7 +34,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import fc from 'fast-check';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { buildInstructions } from '../src/agent-guide.ts';
 import type { EngineConnection } from '../src/link.ts';
 import { decodePng, encodePng } from '../src/png.ts';
@@ -59,7 +59,13 @@ type Job = {
 };
 
 function fakeEngine(
-	opts: { live?: boolean; paint?: Painted; stuck?: boolean; userLooks?: UserLook[] | 'broken' } = {},
+	opts: {
+		live?: boolean;
+		paint?: Painted;
+		stuck?: boolean;
+		userLooks?: UserLook[] | 'broken';
+		onCancelled?: () => void;
+	} = {},
 ) {
 	const ids = createCounterIdSource(11);
 	let doc: ProjectDocument = createEmptyProject({ ids, name: 'Titles', preset: 'hd-1080p-30' });
@@ -220,6 +226,7 @@ function fakeEngine(
 		},
 		cancelJob: async (id: string) => {
 			cancelled.push(id);
+			opts.onCancelled?.();
 			const j = jobs.get(id)!;
 			j.state = 'cancelled';
 			return structuredClone(j);
@@ -275,8 +282,12 @@ async function connect(opts: Parameters<typeof fakeEngine>[0] = {}) {
 	const client = new Client({ name: 'titles-test', version: '1' });
 	await client.connect(y);
 	open.push(client);
-	const call = async (name: string, args: Record<string, unknown> = {}) => {
-		const r = (await client.callTool({ name, arguments: args })) as CallToolResult;
+	const call = async (name: string, args: Record<string, unknown> = {}, onprogress?: () => void) => {
+		const r = (await client.callTool(
+			{ name, arguments: args },
+			undefined,
+			onprogress ? { onprogress } : undefined,
+		)) as CallToolResult;
 		const text = (r.content.find((c) => c.type === 'text') as { text: string }).text;
 		let json: Json = {};
 		try {
@@ -289,8 +300,8 @@ async function connect(opts: Parameters<typeof fakeEngine>[0] = {}) {
 			image: r.content.find((c) => c.type === 'image') as { data: string } | undefined,
 		};
 	};
-	const ok = async (name: string, args: Record<string, unknown> = {}) => {
-		const out = await call(name, args);
+	const ok = async (name: string, args: Record<string, unknown> = {}, onprogress?: () => void) => {
+		const out = await call(name, args, onprogress);
 		expect(out.r.isError, `${name}: ${out.text}`).toBeFalsy();
 		return out;
 	};
@@ -299,7 +310,38 @@ async function connect(opts: Parameters<typeof fakeEngine>[0] = {}) {
 		expect(out.r.isError, `${name} should fail: ${out.text}`).toBe(true);
 		return out.json.error as { code: string; message: string; hint?: string; details?: Json };
 	};
-	return { engine, client, call, ok, fail };
+	const pastDeadline = async (name: string, args: Record<string, unknown>) => {
+		vi.useFakeTimers();
+		try {
+			let received!: () => void;
+			const progress = new Promise<void>((resolve) => {
+				received = resolve;
+			});
+			let settled = false;
+			const pending = ok(name, args, received).then(
+				(value) => {
+					settled = true;
+					return { value };
+				},
+				(error: unknown) => {
+					settled = true;
+					return { error };
+				},
+			);
+			expect(await Promise.race([progress.then(() => true), pending.then(() => false)])).toBe(true);
+			await vi.advanceTimersByTimeAsync(0);
+			expect(settled).toBe(false);
+			await vi.advanceTimersByTimeAsync(1000);
+			expect(settled).toBe(true);
+			const result = await pending;
+			if ('error' in result) throw result.error;
+			return result.value;
+		} finally {
+			vi.clearAllTimers();
+			vi.useRealTimers();
+		}
+	};
+	return { engine, client, call, ok, fail, pastDeadline };
 }
 
 const RECIPE: LookRecipe = {
@@ -600,7 +642,7 @@ describe('title_look_find (TL-100)', () => {
 
 	it('past its timeout returns the rows, the job and what to do next', async () => {
 		const s = await connect({ stuck: true });
-		const r = await s.ok('title_look_find', { query: '', timeoutSeconds: 1 });
+		const r = await s.pastDeadline('title_look_find', { query: '', timeoutSeconds: 1 });
 		expect(r.json.rows).toHaveLength(3);
 		expect(r.json).toMatchObject({ timedOut: true, jobId: expect.stringMatching(/^job_/) });
 		expect(r.json.next).toContain('render_frames');
@@ -803,7 +845,7 @@ describe('title_propose (TL-101)', () => {
 
 	it('past its timeout the title stands, with the plain rows and the job', async () => {
 		const s = await connect({ stuck: true });
-		const r = await s.ok('title_propose', { ...BASE, mode: 'apply', timeoutSeconds: 1 });
+		const r = await s.pastDeadline('title_propose', { ...BASE, mode: 'apply', timeoutSeconds: 1 });
 		expect(r.json.clipIds).toHaveLength(1);
 		expect(r.json).toMatchObject({ timedOut: true, jobId: expect.stringMatching(/^job_/) });
 		expect(r.json.check.verified).toBe(false);
@@ -814,7 +856,7 @@ describe('title_propose (TL-101)', () => {
 
 	it('a proposal past its timeout is stored with the plain rows, marked pending', async () => {
 		const s = await connect({ stuck: true, live: true });
-		const r = await s.ok('title_propose', { ...BASE, timeoutSeconds: 1 });
+		const r = await s.pastDeadline('title_propose', { ...BASE, timeoutSeconds: 1 });
 		expect(r.json).toMatchObject({ timedOut: true, proposalId: expect.stringMatching(/^prp_/) });
 		const stored = titleArtCheckOf(s.engine.proposals.get(r.json.proposalId)!.items[0]!)!;
 		expect(stored).toMatchObject({ pending: true, verified: false });
@@ -864,7 +906,9 @@ describe('recipe bounds (TL-106)', () => {
 				fc.dictionary(fc.string({ maxLength: 8 }), fc.jsonValue({ maxDepth: 4 })),
 				async (recipe) => {
 					const r = await propose(s, recipe);
-					if (r.r.isError) expect(typeof r.json.error.code).toBe('string');
+					expect(r.json).toMatchObject(
+						r.r.isError ? { error: { code: expect.any(String) } } : { dryRun: true },
+					);
 				},
 			),
 			{ numRuns: 15 },
@@ -883,7 +927,9 @@ describe('recipe bounds (TL-106)', () => {
 				),
 				async (layers) => {
 					const r = await propose(s, { layers });
-					if (r.r.isError) expect(typeof r.json.error.code).toBe('string');
+					expect(r.json).toMatchObject(
+						r.r.isError ? { error: { code: expect.any(String) } } : { dryRun: true },
+					);
 				},
 			),
 			{ numRuns: 15 },
@@ -990,9 +1036,9 @@ describe('title_check (TL-102)', () => {
 	it('past its timeout returns the plain rows, and a later call picks up the job', async () => {
 		const s = await connect({ stuck: true });
 		await s.ok('apply_commands', footage([0.05, 0.1, 0.3, 1]));
-		const applied = await s.ok('title_propose', { ...BASE, mode: 'apply', timeoutSeconds: 1 });
+		const applied = await s.pastDeadline('title_propose', { ...BASE, mode: 'apply', timeoutSeconds: 1 });
 		const clipId = applied.json.clipIds[0];
-		const r = await s.ok('title_check', { projectId: P, clipId, timeoutSeconds: 1 });
+		const r = await s.pastDeadline('title_check', { projectId: P, clipId, timeoutSeconds: 1 });
 		expect(r.json).toMatchObject({ timedOut: true, verified: false });
 		expect(r.json.next).toContain('jobId');
 		const job = s.engine.jobs.get(r.json.jobId)!;
@@ -1065,16 +1111,20 @@ describe('style lint rows (TL-056 through TL-102)', () => {
 		});
 	});
 
+	let n = 0;
+	const appearance = appearanceFromRecipe(
+		{
+			palette: { face: [1, 1, 1, 1], keyline: [0.95, 0.95, 0.95, 1] },
+			layers: [{ type: 'rim', params: { width: 1 } }, { type: 'face' }],
+		},
+		() => `apl_${String(++n).padStart(16, '0')}`,
+	);
 	it('a rendered check that did not run is unverified, and a proposal gets no commands', () => {
-		const rows = titleLintRows({ ...input, fixes: false, backdrops: [] }, () => ({
-			unmeasured: ['backdrop-contrast'],
-			issues: [{ id: 'thin', severity: 'warning', message: 'thin', rule: 'r', fixable: true }],
-		}));
-		expect(rows.map((r) => [r.id, r.status])).toEqual([
-			['lint-thin', 'warn'],
-			['lint-backdrop-contrast', 'unverified'],
-		]);
-		expect(rows[0]!.fix?.commands).toBeUndefined();
+		const rows = titleLintRows({ ...input, appearance, fixes: false, backdrops: [] });
+		const thin = rows.find((row) => row.id === 'lint-rims-thin');
+		expect(thin).toMatchObject({ status: 'warn', fix: { label: expect.any(String) } });
+		expect(thin!.fix).not.toHaveProperty('commands');
+		expect(rows.find((row) => row.id === 'lint-backdrop-contrast')).toMatchObject({ status: 'unverified' });
 	});
 
 	it('a build without the lint never reads as a clean look', () => {
@@ -1082,14 +1132,6 @@ describe('style lint rows (TL-056 through TL-102)', () => {
 	});
 
 	it('runs the library lint by default: real issues, real fixes, and the measured backdrop', () => {
-		let n = 0;
-		const appearance = appearanceFromRecipe(
-			{
-				palette: { face: [1, 1, 1, 1], keyline: [0.95, 0.95, 0.95, 1] },
-				layers: [{ type: 'rim', params: { width: 1 } }, { type: 'face' }],
-			},
-			() => `apl_${String(++n).padStart(16, '0')}`,
-		);
 		const rows = titleLintRows({ ...input, appearance, backdrops: [97] });
 		const byId = new Map(rows.map((r) => [r.id, r]));
 		expect(byId.get('lint-backdrop')).toMatchObject({ kind: 'format', status: 'fail' });
@@ -1136,24 +1178,36 @@ describe('render_frames extensions (TL-103)', () => {
 		expect(later.json.cells).toHaveLength(2);
 		const stuck = await connect({ stuck: true });
 		await stuck.ok('apply_commands', footage([0, 0, 0, 1]));
-		const r = await stuck.ok('render_frames', { projectId: P, times: [0], timeoutSeconds: 1 });
+		const r = await stuck.pastDeadline('render_frames', { projectId: P, times: [0], timeoutSeconds: 1 });
 		expect(r.json).toMatchObject({ timedOut: true, state: 'running' });
 		expect(r.json.next).toContain('cancel_job');
 	});
 
 	it('cancelling the request cancels the job', async () => {
-		const s = await connect({ stuck: true });
+		let onCancelled!: () => void;
+		const cancelled = new Promise<void>((resolve) => {
+			onCancelled = resolve;
+		});
+		const s = await connect({ stuck: true, onCancelled });
+		let progressed!: () => void;
+		const progressReceived = new Promise<void>((resolve) => {
+			progressed = resolve;
+		});
 		await s.ok('apply_commands', footage([0, 0, 0, 1]));
 		const ac = new AbortController();
 		const pending = s.client.callTool(
 			{ name: 'render_frames', arguments: { projectId: P, times: [0, 1] } },
 			undefined,
-			{ signal: ac.signal, onprogress: () => {} },
+			{ signal: ac.signal, onprogress: progressed },
 		);
-		await expect.poll(() => s.engine.jobs.size, { timeout: 5000 }).toBe(1);
+		await progressReceived;
+		expect(s.engine.jobs.size).toBe(1);
+		const jobId = [...s.engine.jobs.keys()][0]!;
 		ac.abort();
 		await expect(pending).rejects.toThrow();
-		await expect.poll(() => s.engine.cancelled.length, { timeout: 5000 }).toBe(1);
+		await cancelled;
+		expect(s.engine.cancelled).toEqual([jobId]);
+		expect(s.engine.jobs.get(jobId)?.state).toBe('cancelled');
 	});
 
 	it('shows a proposal’s options, one row each, nothing applied', async () => {

@@ -13,7 +13,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type APIRequestContext, expect, type Page, test } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
 import { JobListResponseSchema } from '../packages/api/src/jobs.ts';
 import { encodeWav } from '../packages/audio-dsp/src/index.ts';
 import { dropMusic } from '../packages/audio-fx/test/music.ts';
@@ -26,6 +26,8 @@ import {
 	enableAgentBridge,
 	FIXTURES,
 	focusTimeline,
+	libraryReady,
+	locate,
 	query,
 	ROOT,
 	transact,
@@ -96,25 +98,6 @@ function decodeMono(file: string, rate = 1): Float32Array {
 	return new Float32Array(raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength));
 }
 
-/** The lag of `ref[w0, w1)` in `mix` around `guess` (± `span` samples) with the largest normalised correlation. */
-function locate(mix: Float32Array, ref: Float32Array, w0: number, w1: number, guess: number, span: number) {
-	let best = { lag: Number.NaN, r: -2 };
-	let rr = 0;
-	for (let i = w0; i < w1; i++) rr += ref[i]! * ref[i]!;
-	for (let lag = guess - span; lag <= guess + span; lag++) {
-		let xy = 0;
-		let xx = 0;
-		for (let i = w0; i < w1; i++) {
-			const x = mix[lag + i] ?? 0;
-			xy += x * ref[i]!;
-			xx += x * x;
-		}
-		const r = xx > 0 && rr > 0 ? xy / Math.sqrt(xx * rr) : -1;
-		if (r > best.r) best = { lag, r };
-	}
-	return best;
-}
-
 function ebur128(file: string): { integrated: number; truePeak: number; lra: number } {
 	const r = spawnSync(
 		FFMPEG,
@@ -145,20 +128,6 @@ async function menu(item: string, top = 'Sequence', sub: string | null = 'Sound 
 	await menubar.getByRole('menuitem', { name: top, exact: true }).click();
 	if (sub) await page.getByRole('menuitem', { name: sub }).hover();
 	await page.getByRole('menuitem', { name: item, exact: true }).click();
-}
-
-async function libraryReady(request: APIRequestContext) {
-	await expect
-		.poll(
-			async () => {
-				const r = await request.get('/api/sounds/status');
-				if (!r.ok()) return 0;
-				const s = (await r.json()) as { sounds: number; indexing: unknown; needsIndex: boolean };
-				return s.indexing || s.needsIndex ? 0 : s.sounds;
-			},
-			{ timeout: 360_000, intervals: [1000] },
-		)
-		.toBeGreaterThan(20);
 }
 
 type Clip = {

@@ -128,14 +128,16 @@ const props = (s: EditorSession, id: string, transient = false) => {
 	return (Object.values(doc.sequences)[0]!.clips[id] as { props: Record<string, unknown> }).props;
 };
 
-const frames = () => act(async () => void (await new Promise((r) => setTimeout(r, 40))));
+const frames = () => act(async () => void vi.advanceTimersToNextFrame());
 
 beforeEach(() => {
+	vi.useFakeTimers();
 	measure.mockResolvedValue({ measurements: [], fonts: [] });
 });
 afterEach(() => {
 	cleanup();
 	endCanvasTextEdit();
+	vi.useRealTimers();
 });
 
 describe('Properties ▸ Composition ▸ Text (S08:MGU-006)', () => {

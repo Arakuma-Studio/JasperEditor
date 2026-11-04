@@ -231,21 +231,15 @@ describe('fillSocialParams', () => {
 			text: fc.string({ maxLength: 50 }),
 		});
 		fc.assert(
-			fc.property(
-				full,
-				fc.uniqueArray(fc.constantFrom(...Object.keys(full)), {}),
-				fc.integer(),
-				(all, keep, seed) => {
-					const partial = Object.fromEntries(Object.entries(all).filter(([k]) => keep.includes(k)));
-					const r = fillSocialParams(partial, seed);
-					expect(r.ok).toBe(true);
-					if (!r.ok) return;
-					expect(socialCommentParamsSchema.safeParse(r.params).success).toBe(true);
-					for (const [k, v] of Object.entries(partial))
-						expect(r.params[k as keyof typeof r.params]).toEqual(v);
-					expect(r.filled.sort()).toEqual(SOCIAL_PARAM_NAMES.filter((k) => !(k in partial)).sort());
-				},
-			),
+			fc.property(full, fc.subarray<string>([...SOCIAL_PARAM_NAMES]), fc.integer(), (all, keep, seed) => {
+				const partial = Object.fromEntries(Object.entries(all).filter(([k]) => keep.includes(k)));
+				const r = fillSocialParams(partial, seed);
+				expect(r.ok).toBe(true);
+				if (!r.ok) return;
+				expect(socialCommentParamsSchema.safeParse(r.params).success).toBe(true);
+				for (const [k, v] of Object.entries(partial)) expect(r.params[k as keyof typeof r.params]).toEqual(v);
+				expect(r.filled.sort()).toEqual(SOCIAL_PARAM_NAMES.filter((k) => !(k in partial)).sort());
+			}),
 		);
 		fc.assert(
 			fc.property(fc.anything(), fc.double(), (x, seed) => {

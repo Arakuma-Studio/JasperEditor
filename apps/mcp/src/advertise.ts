@@ -90,7 +90,7 @@ function compactUnion(node: Json): Json {
 }
 
 /** One schema node, children first. */
-export function compactNode(input: unknown): unknown {
+function compactNode(input: unknown): unknown {
 	if (Array.isArray(input)) return input.map(compactNode);
 	if (!isObject(input)) return input;
 	const out: Json = {};

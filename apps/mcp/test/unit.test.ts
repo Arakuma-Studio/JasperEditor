@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EngineError } from '@jasper/engine-client';
 import { createCounterIdSource, createEmptyProject } from '@jasper/project';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { discoverEngine } from '../src/discovery.ts';
 import { ToolError, toErrorResult } from '../src/errors.ts';
 import { buildExportSettings, findExportPreset } from '../src/export-presets.ts';
@@ -148,30 +148,56 @@ describe('engine request guard (no unbounded waits, no blind re-apply)', () => {
 		}) as unknown as typeof fetch;
 
 	it('a request that never answers ends with ENGINE_TIMEOUT instead of hanging', async () => {
-		const never = ((_input: unknown, init?: RequestInit) =>
-			new Promise((_resolve, reject) => {
-				init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
-			})) as unknown as typeof fetch;
-		const link = new EngineLink({
-			url: 'http://127.0.0.1:1',
-			token: 'secret-token',
-			fetch: never,
-			healthTimeoutMs: 40,
-			requestTimeoutMs: 40,
-			log: () => {},
+		vi.useFakeTimers();
+		const deadline = new AbortController();
+		const timeout = vi.spyOn(AbortSignal, 'timeout').mockImplementation((milliseconds) => {
+			setTimeout(
+				() => deadline.abort(new DOMException('Controlled request deadline', 'TimeoutError')),
+				milliseconds,
+			);
+			return deadline.signal;
 		});
-		let calls = 0;
-		const t0 = Date.now();
-		const err = await withEngine(link, (c) => {
-			calls++;
-			return c.listProjects();
-		}).catch((e) => e);
-		expect(Date.now() - t0).toBeLessThan(5000);
-		expect(err).toBeInstanceOf(EngineRequestAborted);
-		expect(calls).toBe(1);
-		const body = errorOf(toErrorResult(err));
-		expect(body.code).toBe('ENGINE_TIMEOUT');
-		expect(JSON.stringify(body)).not.toContain('secret-token');
+		let healthSeen!: () => void;
+		const healthStarted = new Promise<void>((resolve) => {
+			healthSeen = resolve;
+		});
+		let requestStarted = false;
+		const never = ((input: string | URL, init?: RequestInit) =>
+			new Promise((_resolve, reject) => {
+				init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), { once: true });
+				if (String(input).endsWith('/health')) healthSeen();
+				else requestStarted = true;
+			})) as unknown as typeof fetch;
+		try {
+			const link = new EngineLink({
+				url: 'http://127.0.0.1:1',
+				token: 'secret-token',
+				fetch: never,
+				healthTimeoutMs: 40,
+				requestTimeoutMs: 40,
+				log: () => {},
+			});
+			let calls = 0;
+			const pending = withEngine(link, (c) => {
+				calls++;
+				return c.listProjects();
+			}).catch((e) => e);
+			await healthStarted;
+			await vi.advanceTimersByTimeAsync(40);
+			expect(requestStarted).toBe(true);
+			await vi.advanceTimersByTimeAsync(40);
+			expect(deadline.signal.aborted).toBe(true);
+			const err = await pending;
+			expect(err).toBeInstanceOf(EngineRequestAborted);
+			expect(calls).toBe(1);
+			const body = errorOf(toErrorResult(err));
+			expect(body.code).toBe('ENGINE_TIMEOUT');
+			expect(JSON.stringify(body)).not.toContain('secret-token');
+		} finally {
+			vi.clearAllTimers();
+			timeout.mockRestore();
+			vi.useRealTimers();
+		}
 	});
 
 	it('a write cut off mid-flight is reported, not retried (it may have been applied)', async () => {

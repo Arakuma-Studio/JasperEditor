@@ -17,5 +17,5 @@ describe('model-visible bytes', () => {
 			.map((c) => `${c.context}: ${c.total} > ${budget.contexts[c.context] ?? 'no budget'}`);
 		expect(over).toEqual([]);
 		expect(tools.filter((t) => t.total > budget.tool).map((t) => `${t.name}: ${t.total}`)).toEqual([]);
-	}, 120_000);
+	});
 });

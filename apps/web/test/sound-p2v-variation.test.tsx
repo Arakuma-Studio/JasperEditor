@@ -158,7 +158,9 @@ describe('Variation cycling runs', () => {
 describe('Variation commands are enabled only where they can act', () => {
 	it('project audio with a detected peak (sfx, no library sound): Next / Previous Variation disabled', async () => {
 		const h = await filled();
-		h.apply([{ type: 'media.register', asset: { ...videoAsset(4), id: 'med_0000000000000ABC' } }]);
+		// Keep this project asset distinct from the library fixtures, independently of their counters.
+		const asset = { ...videoAsset(4), fingerprint: `q1:${'f'.repeat(64)}` };
+		h.apply([{ type: 'media.register', asset: { ...asset, id: 'med_0000000000000ABC' } }]);
 		h.apply([
 			{ type: 'clip.place', source: { mediaId: 'med_0000000000000ABC' }, at: 300, tracks: { audio: 'A1' } },
 		]);

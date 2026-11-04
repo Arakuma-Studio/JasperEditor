@@ -6,7 +6,6 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { EvalAccount } from './accounts.ts';
-import { claudeSessionDir } from './accounts.ts';
 
 export const EVAL_DIR = fileURLToPath(new URL('.', import.meta.url));
 
@@ -280,11 +279,6 @@ export function parseCodex(stdout: string): ParsedRun {
 			run.inputTokens = (ev.usage as { input_tokens?: number } | undefined)?.input_tokens;
 	}
 	return run;
-}
-
-/** Removes what a Claude sample left in the home: its own per-cwd session directory and nothing else. */
-export function claudeSessionDirOf(account: EvalAccount, cwd: string): string {
-	return claudeSessionDir(account.home, cwd);
 }
 
 /** A throwaway git repo of the case's files, on `main` with one commit. */

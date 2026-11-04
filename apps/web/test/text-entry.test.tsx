@@ -150,6 +150,7 @@ afterEach(() => {
 	textEntryStore.setState({ current: null });
 	endTemplateEdit();
 	setTemplateEditHold(null);
+	vi.useRealTimers();
 	vi.restoreAllMocks();
 });
 
@@ -532,10 +533,11 @@ describe('typed text survives (AGENTS §0)', () => {
 describe('a killed renderer (AGENTS §0)', () => {
 	const idle = () =>
 		act(async () => {
-			await new Promise((r) => setTimeout(r, CHECKPOINT_IDLE_MS + 100));
+			await vi.advanceTimersByTimeAsync(CHECKPOINT_IDLE_MS);
 		});
 
 	it('checkpoints the draft to the tab when typing pauses; the commit clears it', async () => {
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
 		const s = newSession();
 		openNew(s);
 		type('Half a ti');
@@ -547,6 +549,7 @@ describe('a killed renderer (AGENTS §0)', () => {
 	});
 
 	it('offers the checkpoint on the next Program monitor of the project; Restore brings the text back', async () => {
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
 		const first = newSession();
 		const id = addText(first, 'Old title');
 		const before = first.getCommitted();

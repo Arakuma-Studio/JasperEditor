@@ -312,7 +312,7 @@ describe('appearance diff and apply (TL-016)', () => {
 	it('a look body has no keys, no link, and the values at that time', () => {
 		fc.assert(
 			fc.property(appearance, (a) => {
-				const body = lookBodyOf(a, 0);
+				const body = lookBodyOf({ ...a, lookId: 'tlk_0000000000000001' }, 0);
 				expect(body.lookId).toBeUndefined();
 				expect(appearanceProblem(body)).toBeNull();
 				for (const l of body.layers) for (const p of Object.values(l.params)) expect(p.keyframes).toEqual([]);

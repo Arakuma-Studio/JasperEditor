@@ -178,10 +178,16 @@ describe('light source (TL-017)', () => {
 	});
 
 	it('refuses an instance that is not a look', () => {
-		const { h } = applied();
+		const { h, t } = applied();
 		expect(
-			h.tx([{ type: 'appearance.setLightSource', effectInstanceId: 'fx_none', source: 'look' }]).ok,
-		).toBe(false);
+			h.tx([{ type: 'appearance.setLightSource', effectInstanceId: 'fx_none', source: 'look' }]),
+		).toMatchObject({ ok: false, errors: [{ code: 'E_NOT_FOUND' }] });
+		const plain = h.ok([
+			{ type: 'effect.add', target: { clipId: t }, effectId: 'jasper.gaussian-blur', ref: '$plain' },
+		]);
+		expect(
+			h.tx([{ type: 'appearance.setLightSource', effectInstanceId: plain.refs.$plain!, source: 'look' }]),
+		).toMatchObject({ ok: false, errors: [{ code: 'E_INVALID_PARAM' }] });
 	});
 });
 

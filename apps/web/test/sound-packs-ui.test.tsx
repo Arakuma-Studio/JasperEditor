@@ -6,7 +6,7 @@
 import type { EngineJob, SoundPackInfo } from '@jasper/api';
 import { SessionProvider } from '@jasper/session/react';
 import { closeAllDialogs, DialogHost } from '@jasper/ui';
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getCommand, registerCommands } from '../src/commands/registry.ts';
 import { soundCommands } from '../src/commands/sound.ts';
@@ -29,6 +29,7 @@ beforeAll(() => {
 });
 let restoreAudition = () => {};
 beforeEach(() => {
+	vi.useFakeTimers();
 	localStorage.clear();
 	soundLibraryPrefs.reload();
 	restoreAudition = mockAuditionPlayer(
@@ -44,6 +45,7 @@ afterEach(() => {
 	cleanup();
 	closeAllDialogs();
 	restoreAudition();
+	vi.useRealTimers();
 });
 
 const job = (over: Partial<EngineJob> = {}): EngineJob =>
@@ -107,21 +109,23 @@ function packsEngine(initial: SoundPackInfo[]) {
 	return { client, calls };
 }
 
-function renderPacks(packs: SoundPackInfo[]) {
+async function renderPacks(packs: SoundPackInfo[]) {
 	const e = packsEngine(packs);
 	mocks.client = e.client;
-	render(
-		<>
-			<PacksSection />
-			<DialogHost />
-		</>,
+	await act(async () =>
+		render(
+			<>
+				<PacksSection />
+				<DialogHost />
+			</>,
+		),
 	);
 	return e;
 }
 
 describe('Preferences ▸ Sound Library ▸ Packs', () => {
 	it('lists each pack with its licence badge, links, sizes, sound count and state', async () => {
-		renderPacks([
+		await renderPacks([
 			soundPack(),
 			soundPack({
 				id: 'kenney-rpg-audio',
@@ -131,7 +135,7 @@ describe('Preferences ▸ Sound Library ▸ Packs', () => {
 				sounds: 49,
 			}),
 		]);
-		const list = await screen.findByRole('list', { name: 'Sound packs' });
+		const list = screen.getByRole('list', { name: 'Sound packs' });
 		const rows = within(list).getAllByRole('listitem');
 		expect(rows).toHaveLength(2);
 		const ui = rows[0]!;
@@ -157,9 +161,9 @@ describe('Preferences ▸ Sound Library ▸ Packs', () => {
 	});
 
 	it('shows the licence before downloading; Cancel downloads nothing', async () => {
-		const e = renderPacks([soundPack()]);
-		fireEvent.click(await screen.findByRole('button', { name: 'Install UI Audio' }));
-		const dialog = await screen.findByTestId('confirm-dialog');
+		const e = await renderPacks([soundPack()]);
+		await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Install UI Audio' })));
+		const dialog = screen.getByTestId('confirm-dialog');
 		expect(dialog.textContent).toContain('Install “UI Audio”?');
 		expect(dialog.textContent).toContain('402 KB download from kenney.nl');
 		expect(dialog.textContent).toContain(
@@ -174,45 +178,39 @@ describe('Preferences ▸ Sound Library ▸ Packs', () => {
 	});
 
 	it('Accept Licence and Download installs, follows the install and index jobs, and shows the pack installed', async () => {
-		const e = renderPacks([soundPack()]);
-		fireEvent.click(await screen.findByRole('button', { name: 'Install UI Audio' }));
-		const dialog = await screen.findByTestId('confirm-dialog');
+		const e = await renderPacks([soundPack()]);
+		await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Install UI Audio' })));
+		const dialog = screen.getByTestId('confirm-dialog');
 		await act(async () => {
 			fireEvent.click(within(dialog).getByRole('button', { name: 'Accept Licence and Download' }));
+			await vi.advanceTimersByTimeAsync(1000);
 		});
-		await waitFor(() => expect(e.calls).toEqual(['install:kenney-ui-audio']));
-		await waitFor(
-			() => expect(screen.getByTestId('sound-pack-state-kenney-ui-audio').textContent).toBe('Installed'),
-			{
-				timeout: 5000,
-			},
-		);
+		expect(e.calls).toEqual(['install:kenney-ui-audio']);
+		expect(screen.getByTestId('sound-pack-state-kenney-ui-audio').textContent).toBe('Installed');
 		expect(screen.queryByTestId('sound-pack-progress-kenney-ui-audio')).toBeNull();
 	});
 
 	it('Remove asks first (danger) and removes', async () => {
-		const e = renderPacks([soundPack({ state: 'installed', indexedSounds: 45, installedBytes: 288_000 })]);
-		fireEvent.click(await screen.findByRole('button', { name: 'Remove UI Audio' }));
-		const dialog = await screen.findByTestId('confirm-dialog');
+		const e = await renderPacks([
+			soundPack({ state: 'installed', indexedSounds: 45, installedBytes: 288_000 }),
+		]);
+		await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Remove UI Audio' })));
+		const dialog = screen.getByTestId('confirm-dialog');
 		expect(dialog.textContent).toContain('Projects that already use them keep their own copies');
 		await act(async () => {
 			fireEvent.click(within(dialog).getByRole('button', { name: 'Remove' }));
 		});
-		await waitFor(() => expect(e.calls).toEqual(['remove:kenney-ui-audio']));
-		await waitFor(() =>
-			expect(screen.getByTestId('sound-pack-state-kenney-ui-audio').textContent).toBe('Not installed'),
-		);
+		expect(e.calls).toEqual(['remove:kenney-ui-audio']);
+		expect(screen.getByTestId('sound-pack-state-kenney-ui-audio').textContent).toBe('Not installed');
 	});
 
 	it('a job someone else started shows its progress and disables the buttons; damaged and outdated packs offer Repair / Update', async () => {
-		renderPacks([
+		await renderPacks([
 			soundPack({ job: job({ progress: 0.42, stage: 'Downloading' }) }),
 			soundPack({ id: 'b', title: 'B', state: 'damaged' }),
 			soundPack({ id: 'c', title: 'C', state: 'outdated' }),
 		]);
-		expect((await screen.findByTestId('sound-pack-progress-kenney-ui-audio')).textContent).toBe(
-			'Downloading 42 %',
-		);
+		expect(screen.getByTestId('sound-pack-progress-kenney-ui-audio').textContent).toBe('Downloading 42 %');
 		expect((screen.getByRole('button', { name: 'Install UI Audio' }) as HTMLButtonElement).disabled).toBe(
 			true,
 		);
@@ -227,14 +225,14 @@ describe('Preferences ▸ Sound Library ▸ Packs', () => {
 				throw new Error('engine down');
 			},
 		};
-		render(<PacksSection />);
-		expect((await screen.findByRole('alert')).textContent).toContain('engine down');
+		await act(async () => render(<PacksSection />));
+		expect(screen.getByRole('alert').textContent).toContain('engine down');
 	});
 
 	it('the confirmation names the credit line of a CC BY pack', async () => {
-		renderPacks([soundPack({ license: 'CC-BY-4.0', attribution: '"X" by Y (CC BY 4.0)' })]);
-		fireEvent.click(await screen.findByRole('button', { name: 'Install UI Audio' }));
-		const dialog = await screen.findByTestId('confirm-dialog');
+		await renderPacks([soundPack({ license: 'CC-BY-4.0', attribution: '"X" by Y (CC BY 4.0)' })]);
+		await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Install UI Audio' })));
+		const dialog = screen.getByTestId('confirm-dialog');
 		expect(dialog.textContent).toContain('"X" by Y (CC BY 4.0)');
 	});
 
@@ -244,18 +242,17 @@ describe('Preferences ▸ Sound Library ▸ Packs', () => {
 		expect(cmd.label).toBe('Install Sound Packs…');
 		await cmd.run({ ui: { openDialog: (...a: unknown[]) => opened.push(a) }, session: null } as never, {});
 		expect(opened[0]).toEqual(['shell.preferences', { page: 'sound-library', session: null }]);
-		renderPacks([soundPack()]);
+		await renderPacks([soundPack()]);
 		const section = screen.getByTestId('sound-prefs-packs');
-		await waitFor(() => expect(document.activeElement).toBe(section));
+		expect(document.activeElement).toBe(section);
 		// only once: a later mount does not take the focus again
 		cleanup();
-		renderPacks([soundPack()]);
-		await screen.findByRole('button', { name: 'Install UI Audio' });
+		await renderPacks([soundPack()]);
 		expect(document.activeElement).not.toBe(screen.getByTestId('sound-prefs-packs'));
 		requestPacksFocus();
 		cleanup();
-		renderPacks([soundPack()]);
-		await waitFor(() => expect(document.activeElement).toBe(screen.getByTestId('sound-prefs-packs')));
+		await renderPacks([soundPack()]);
+		expect(document.activeElement).toBe(screen.getByTestId('sound-prefs-packs'));
 	});
 });
 
@@ -272,22 +269,24 @@ describe('Sound Library panel and packs', () => {
 		});
 		mocks.client = engine.client;
 		const { session } = makeSession();
-		render(
-			<SessionProvider session={session}>
-				<SoundLibraryPanel instanceId="sl" visible />
-			</SessionProvider>,
+		await act(async () =>
+			render(
+				<SessionProvider session={session}>
+					<SoundLibraryPanel instanceId="sl" visible />
+				</SessionProvider>,
+			),
 		);
-		await screen.findByRole('listbox', { name: 'Sounds' });
 		const select = screen.getByRole('combobox', { name: 'Collection' });
 		await act(async () => {
 			fireEvent.keyDown(select, { key: 'Enter' });
 		});
-		const option = await screen.findByRole('option', { name: 'Sources › Packs › UI Audio' });
+		const option = screen.getByRole('option', { name: 'Sources › Packs › UI Audio' });
 		// a pack that is not installed is not a collection
 		expect(screen.queryByRole('option', { name: 'Sources › Packs › RPG Audio' })).toBeNull();
 		await act(async () => {
 			fireEvent.keyDown(option, { key: 'Enter' });
 		});
-		await waitFor(() => expect(engine.calls.search.at(-1)?.packId).toBe('kenney-ui-audio'));
+		await act(async () => vi.advanceTimersByTimeAsync(250));
+		expect(engine.calls.search.at(-1)?.packId).toBe('kenney-ui-audio');
 	});
 });

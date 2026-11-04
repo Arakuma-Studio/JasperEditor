@@ -3,10 +3,28 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { type RunningEngine, startEngine } from '../src/index.ts';
 import { lookPosterKey } from '../src/title-looks/posters.ts';
+import { coreServices } from '../src/tools/services.ts';
 import { tempAppdir } from './helpers.ts';
+
+const rendererReceipts = vi.hoisted(() => ({
+	renders: 0,
+	onStill: undefined as (() => void) | undefined,
+}));
+vi.mock('@remotion/renderer', async (importOriginal) => {
+	const renderer = await importOriginal<typeof import('@remotion/renderer')>();
+	return {
+		...renderer,
+		renderStill: (...args: Parameters<typeof renderer.renderStill>) => {
+			const rendering = renderer.renderStill(...args);
+			rendererReceipts.renders++;
+			rendererReceipts.onStill?.();
+			return rendering;
+		},
+	};
+});
 
 const enabled = process.env.REMOTION_E2E === '1';
 const recipe = {
@@ -68,14 +86,12 @@ describe.runIf(enabled)('look posters through Remotion (TL-087)', { timeout: 300
 		});
 
 	it('draws the look, caches it on disk and answers a second ask from the cache', async () => {
-		const t0 = performance.now();
+		const beforeFirstRender = rendererReceipts.renders;
 		const res = await ask(body);
 		expect(res.status, await res.clone().text()).toBe(200);
 		expect(res.headers.get('content-type')).toBe('image/png');
 		expect(res.headers.get('x-jasper-poster')).toBe('rendered');
 		const png = new Uint8Array(await res.arrayBuffer());
-		const firstMs = performance.now() - t0;
-		console.info(`poster first render ${Math.round(firstMs)} ms, ${png.length} bytes`);
 		const px = pixels(png, 240, 136);
 		// The face and the rim of the look, not the plain white text it was typed in.
 		expect(count(px, (r, g, b) => r > 200 && g < 60 && b < 60)).toBeGreaterThan(100);
@@ -83,12 +99,13 @@ describe.runIf(enabled)('look posters through Remotion (TL-087)', { timeout: 300
 		expect(count(px, (r, g, b) => r > 240 && g > 240 && b > 240)).toBe(0);
 		const key = lookPosterKey({ ...body, width: 240 } as never);
 		expect(existsSync(join(appdir, 'mg', 'posters', key, 'poster.png'))).toBe(true);
-		const t1 = performance.now();
+		expect(rendererReceipts.renders - beforeFirstRender).toBeGreaterThan(0);
+		const renderBaseline = rendererReceipts.renders;
 		const again = await ask(body);
 		expect(again.headers.get('x-jasper-poster')).toBe('cached');
-		await again.arrayBuffer();
-		// Relative to the render: a fixed limit measures the host's load, not the cache.
-		expect(performance.now() - t1).toBeLessThan(firstMs / 5);
+		const cached = new Uint8Array(await again.arrayBuffer());
+		expect(rendererReceipts.renders - renderBaseline).toBe(0);
+		expect(cached).toEqual(png);
 	});
 
 	it('takes a colourway over the look', async () => {
@@ -100,15 +117,44 @@ describe.runIf(enabled)('look posters through Remotion (TL-087)', { timeout: 300
 	});
 
 	it('leaves no poster when the client leaves mid-render', async () => {
+		const remotion = coreServices(engine.app).remotion;
+		const render = remotion.renderStill;
+		let started!: () => void;
+		const entered = new Promise<void>((resolve) => {
+			started = resolve;
+		});
+		let settled: Promise<{ ok: boolean; error?: unknown }> | undefined;
+		rendererReceipts.onStill = started;
+		remotion.renderStill = (input) => {
+			const rendering = render.call(remotion, input);
+			settled = rendering.then(
+				() => ({ ok: true }),
+				(error: unknown) => ({ ok: false, error }),
+			);
+			return rendering;
+		};
 		const ac = new AbortController();
+		onTestFinished(() => ac.abort());
 		const b = { ...body, text: 'LEFT' };
-		const p = ask(b, ac.signal);
-		await new Promise((r) => setTimeout(r, 300));
-		ac.abort();
-		await expect(p).rejects.toThrow();
-		const key = lookPosterKey({ ...b, width: 240 } as never);
-		await new Promise((r) => setTimeout(r, 1500));
-		expect(existsSync(join(appdir, 'mg', 'posters', key, 'poster.png'))).toBe(false);
+		try {
+			const p = ask(b, ac.signal);
+			await Promise.race([
+				entered,
+				p.then((response) => {
+					throw new Error(`The poster replied before rendering (${response.status})`);
+				}),
+			]);
+			ac.abort();
+			await expect(p).rejects.toThrow();
+			expect(await settled).toMatchObject({ ok: false, error: { code: 'JOB_CANCELLED' } });
+			const key = lookPosterKey({ ...b, width: 240 } as never);
+			expect(existsSync(join(appdir, 'mg', 'posters', key, 'poster.png'))).toBe(false);
+		} finally {
+			ac.abort();
+			if (settled) await settled;
+			remotion.renderStill = render;
+			rendererReceipts.onStill = undefined;
+		}
 	});
 
 	it('answers a refusal as an error reply, not as a picture', async () => {

@@ -279,9 +279,7 @@ describe('solids on traced outlines', () => {
 		}
 	});
 
-	it('property: bands on noisy traced strokes never leave the outline, always close', {
-		timeout: 300_000,
-	}, () => {
+	it('property: bands on noisy traced strokes never leave the outline, always close', () => {
 		fc.assert(
 			fc.property(
 				fc.array(
@@ -468,7 +466,7 @@ describe('inflate (TL-072)', () => {
 		expect(dome(1)).toBe(1);
 	});
 
-	it('fuzz: traced strokes inflate to closed meshes', { timeout: 300_000 }, () => {
+	it('fuzz: traced strokes inflate to closed meshes', () => {
 		fc.assert(
 			fc.property(
 				fc.array(
@@ -855,9 +853,7 @@ describe('repair and load', () => {
 		expect(repairDocument(fixed.document, ids).report).toEqual([]);
 	});
 
-	it('property: junk in every lenient field neither crashes repair nor survives it', {
-		timeout: 300_000,
-	}, () => {
+	it('property: junk in every lenient field neither crashes repair nor survives it', () => {
 		const junk = fc.oneof(
 			fc.constant(null),
 			fc.integer(),

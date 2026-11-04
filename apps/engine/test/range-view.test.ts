@@ -30,7 +30,7 @@ import {
 } from '@jasper/audio-dsp';
 import { VOICE_CLASSES } from '@jasper/project';
 import { decodePng } from '@jasper/testkit/png';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { frameStart, mediaRangeAudio, pngSize, StreamingVoiceFeatures } from '../src/media/range-view.ts';
 import { coreServices } from '../src/tools/services.ts';
 import {
@@ -261,50 +261,65 @@ describe('range audio', () => {
 	it('stops decoding when cancelled', async () => {
 		const long = join(dir, 'long.wav');
 		const g = spawnSync(TEST_FFMPEG, [
-			...['-v', 'error', '-y', '-f', 'lavfi', '-i', 'sine=f=220:r=16000:d=1500'],
+			...['-v', 'error', '-y', '-f', 'lavfi', '-i', 'sine=f=220:r=16000:d=120'],
 			...['-ac', '1', '-c:a', 'pcm_s16le', long],
 		]);
 		expect(g.status, String(g.stderr)).toBe(0);
 		const reg = await register(app, long);
 		const core = coreServices(app);
-		const ac = new AbortController();
-		const t0 = Date.now();
-		setTimeout(() => ac.abort(), 100);
-		await expect(
-			mediaRangeAudio({
-				ff: core.ffmpeg,
-				path: long,
-				record: core.registry.get(reg.mediaKey)!,
-				start: 0,
-				end: 1500,
-				signal: ac.signal,
-			}),
-		).rejects.toMatchObject({ code: 'CANCELLED' });
-		expect(Date.now() - t0).toBeLessThan(5000);
-		// over a real connection: the decoder runs while the client waits and is gone soon after it hangs up
-		await app.listen({ host: '127.0.0.1', port: 0 });
-		const port = (app.server.address() as AddressInfo).port;
-		const decoders = () =>
-			spawnSync('pgrep', ['-f', '--', long], { encoding: 'utf8' }).stdout.trim().split('\n').filter(Boolean);
-		const req = request({
-			host: '127.0.0.1',
-			port,
-			method: 'POST',
-			path: `/api/media/${reg.mediaKey}/range-audio`,
-			headers: JSON_H,
+		type Decoder = { closed: Promise<number | null> };
+		let entered: ((decoder: Decoder) => void) | undefined;
+		const nextDecoder = () =>
+			new Promise<Decoder>((resolve) => {
+				entered = resolve;
+			});
+		const spawn = core.ffmpeg.spawnRaw.bind(core.ffmpeg);
+		const spy = vi.spyOn(core.ffmpeg, 'spawnRaw').mockImplementation((args, opts) => {
+			const child = spawn(args, opts);
+			if (args.includes(long) && args.includes('f32le')) {
+				const closed = new Promise<number | null>((resolve) => child.once('close', resolve));
+				child.stdout!.once('data', () => entered?.({ closed }));
+			}
+			return child;
 		});
-		req.on('error', () => {});
-		req.end(JSON.stringify({ start: 0, end: 1500 }));
-		const until = async (cond: () => boolean, ms: number) => {
-			const end = Date.now() + ms;
-			while (!cond() && Date.now() < end) await new Promise((r) => setTimeout(r, 25));
-			return cond();
-		};
-		expect(await until(() => decoders().length > 0, 10_000)).toBe(true);
-		req.destroy();
-		// the whole range takes ≈ 12 s to analyse; the decoder must be gone long before (measured 0.3–0.9 s)
-		expect(await until(() => decoders().length === 0, 2000)).toBe(true);
-	}, 60_000);
+		try {
+			const ac = new AbortController();
+			const decoding = nextDecoder();
+			const cancelled = expect(
+				mediaRangeAudio({
+					ff: core.ffmpeg,
+					path: long,
+					record: core.registry.get(reg.mediaKey)!,
+					start: 0,
+					end: 120,
+					signal: ac.signal,
+				}),
+			).rejects.toMatchObject({ code: 'CANCELLED' });
+			const direct = await decoding;
+			ac.abort();
+			await cancelled;
+			expect(await direct.closed).not.toBe(0);
+
+			// A real decoder emits samples while the HTTP client waits, then exits when the client leaves.
+			await app.listen({ host: '127.0.0.1', port: 0 });
+			const port = (app.server.address() as AddressInfo).port;
+			const remoteDecoding = nextDecoder();
+			const req = request({
+				host: '127.0.0.1',
+				port,
+				method: 'POST',
+				path: `/api/media/${reg.mediaKey}/range-audio`,
+				headers: JSON_H,
+			});
+			req.on('error', () => {});
+			req.end(JSON.stringify({ start: 0, end: 120 }));
+			const remote = await remoteDecoding;
+			req.destroy();
+			expect(await remote.closed).not.toBe(0);
+		} finally {
+			spy.mockRestore();
+		}
+	});
 
 	it('describes the bytes with the voice analysis constants', () => {
 		expect([RANGE_AUDIO_LEVEL_MIN_DB, RANGE_AUDIO_LEVEL_STEP_DB]).toEqual([

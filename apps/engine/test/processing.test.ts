@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { EngineJob, ProcessResult } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { coreServices } from '../src/tools/services.ts';
 import {
 	closeApps,
 	DocBuilder,
@@ -13,7 +14,6 @@ import {
 	makeApp,
 	register,
 	type TestApp,
-	until,
 } from './helpers.ts';
 import { writeTinySrModel } from './tiny-model.ts';
 
@@ -28,16 +28,8 @@ function ffprobeJson(file: string): { streams: Array<Record<string, string | num
 	return JSON.parse(r.stdout);
 }
 
-async function waitJob(id: string, timeoutMs = 240_000): Promise<EngineJob> {
-	return until(
-		async () => {
-			const r = await app.inject({ method: 'GET', url: `/api/jobs/${id}`, headers: H });
-			const j = r.json() as EngineJob;
-			return ['succeeded', 'failed', 'cancelled', 'interrupted'].includes(j.state) ? j : null;
-		},
-		timeoutMs,
-		200,
-	);
+async function waitJob(id: string): Promise<EngineJob> {
+	return coreServices(app).queue.wait(id);
 }
 
 beforeAll(async () => {

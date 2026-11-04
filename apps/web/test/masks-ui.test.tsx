@@ -25,7 +25,7 @@ function setup() {
 	return { session, id: id! };
 }
 
-describe('Effect Controls masks', { timeout: 60_000 }, () => {
+describe('Effect Controls masks', () => {
 	it('creates ellipse / polygon masks under Opacity, edits mode / inverted / feather, keys the path, deletes', () => {
 		const { session, id } = setup();
 		act(() => {

@@ -5,7 +5,7 @@
 // Sound Design ▸ Rebalance SFX Levels / Room Glue… / Delivery Target… (menus, dialogs, job progress, result, Undo).
 import type { EngineJob, SfxRebalanceRequest, SoundDeliveryRequest } from '@jasper/api';
 import type { AudioClip, Sequence } from '@jasper/project';
-import { readSoundDesignMix } from '@jasper/project';
+import { mixFingerprint, readSoundDesignMix } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
 import { closeAllDialogs, DialogHost, toasts } from '@jasper/ui';
@@ -50,8 +50,6 @@ afterEach(() => {
 	cleanup();
 	closeAllDialogs();
 });
-
-const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
 
 /** A fake engine for the mixing jobs: each start returns a job; the first poll runs `build` (which may edit). */
 function fakeMixEngine(session: EditorSession) {
@@ -342,36 +340,48 @@ describe('Essential Sound ▸ Auto gain', () => {
 		await waitFor(() => expect(f.labels().slice(m)).toEqual(['Auto Gain On']));
 	});
 
-	it('Rebalance runs the selection’s automatic gains; nothing to change = no History entry', async () => {
+	it('Rebalance runs the selected automatic gains; unchanged levels preserve History and offer no Undo', async () => {
 		const f = fixture();
 		mountEssential(f);
-		f.engine.onRebalance(() => ({
-			projectId: f.session.projectId,
-			sequenceId: f.seqId,
-			mode: 'apply',
-			applied: false,
-			revision: f.session.revision,
-			proposalId: null,
-			report: {
-				version: 1,
+		const historyBefore = f.session.getState().history;
+		f.engine.onRebalance(() => {
+			f.ok(
+				[
+					{
+						type: 'soundDesign.expectMix',
+						sequenceId: f.seqId,
+						mixHash: mixFingerprint(f.session.getCommitted(), f.seqId),
+					},
+				],
+				'Rebalance SFX Levels',
+			);
+			return {
+				projectId: f.session.projectId,
 				sequenceId: f.seqId,
-				events: [],
-				skipped: [],
-				conflicts: [],
-				warnings: [],
-				counts: counts({ changed: 0, limited: 1 }),
-				levels,
-			},
-		}));
-		const n = f.labels().length;
+				mode: 'apply',
+				applied: false,
+				revision: f.session.revision,
+				proposalId: null,
+				report: {
+					version: 1,
+					sequenceId: f.seqId,
+					events: [],
+					skipped: [],
+					conflicts: [],
+					warnings: [],
+					counts: counts({ changed: 0, limited: 1 }),
+					levels,
+				},
+			};
+		});
 		await act(async () => {
 			fireEvent.click(screen.getByTestId('essential-rebalance'));
 		});
-		await waitFor(() =>
-			expect(toastTitles()).toContain('Nothing to change: the sound effects are at their solved levels'),
-		);
+		const unchanged = 'Nothing to change: the sound effects are at their solved levels';
+		await waitFor(() => expect(toastTitles()).toContain(unchanged));
 		expect(f.engine.rebalances[0]).toMatchObject({ clipIds: [f.clipId], mode: 'apply' });
-		expect(f.labels()).toHaveLength(n);
+		expect(toastAction(unchanged, 'Undo')).toBeUndefined();
+		expect(f.session.getState().history).toEqual(historyBefore);
 	});
 });
 
@@ -995,7 +1005,7 @@ describe('Sequence ▸ Sound Design: Rebalance, Room Glue…, Delivery Target…
 		).toBe(true);
 		// WP6.5a: after the run, Close alone (a Cancel beside it read as "undo what just ran")
 		expect(within(dialog).queryByRole('button', { name: 'Cancel' })).toBeNull();
-		await settle();
+		await act(() => Promise.resolve());
 		const title = 'Applied Podcast · −16 LUFS · −1 dBTP';
 		expect(toastTitles()).toContain(title);
 		act(() => toastAction(title, 'Undo')!.run!());

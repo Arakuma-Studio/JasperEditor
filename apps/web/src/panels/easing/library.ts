@@ -395,7 +395,7 @@ function load(): { state: EaseLibraryState; dropped: number; newer: boolean } {
 	}
 }
 
-let loaded = load();
+const loaded = load();
 let state = loaded.state;
 const listeners = new Set<() => void>();
 let saveError: string | null = null;
@@ -437,12 +437,6 @@ export const easeLibrary = {
 	subscribe(l: () => void): () => void {
 		listeners.add(l);
 		return () => listeners.delete(l);
-	},
-	/** Tests: re-read storage. */
-	reload(): void {
-		loaded = load();
-		state = loaded.state;
-		for (const l of [...listeners]) l();
 	},
 };
 

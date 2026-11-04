@@ -10,7 +10,17 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
-import { arm, disarm, mark, peaks, type Recording, TAP, timeOf } from './sound-tap.ts';
+import {
+	arm,
+	disarm,
+	mark,
+	pausedAudio,
+	peaks,
+	type Recording,
+	recordedAudio,
+	TAP,
+	timeOf,
+} from './sound-tap.ts';
 import {
 	browserLaunch,
 	clipBox,
@@ -42,10 +52,10 @@ async function playFor(p: Page, ms: number, during?: (p: Page) => Promise<void>)
 	await arm(p);
 	await p.keyboard.press('Space');
 	if (during) await during(p);
-	await p.waitForTimeout(ms);
+	await recordedAudio(p, ms);
 	await focusTimeline(p);
 	await p.keyboard.press('Space');
-	await p.waitForTimeout(200);
+	await pausedAudio(p);
 	return disarm(p);
 }
 
@@ -136,27 +146,21 @@ async function pictureAnchor(p: Page, ms: number, fromFrame: number, skipMs: num
 	return p.evaluate(
 		async ([dur, num, den, from, skip]) => {
 			const w = window as unknown as {
-				__tap: { ctxs: { ctx: BaseAudioContext; starts: number }[] };
+				__tap: {
+					ctxs: { ctx: BaseAudioContext; starts: number }[];
+					wait(ms: number): Promise<void>;
+					program(): Promise<BaseAudioContext>;
+				};
 				jasper: { query(n: string, a?: unknown): Promise<{ frame: number; playing: boolean }> };
 			};
-			// anime-allow: test-side wall clock bound of a sampling loop
-			const t0 = performance.now();
-			const end = t0 + dur;
-			// the Program monitor's context: the running one Remotion schedules media buffers on
-			const program = () =>
-				w.__tap.ctxs
-					.filter((c) => c.ctx.state === 'running' && c.starts > 0)
-					.sort((a, b) => b.starts - a.starts)[0]?.ctx;
-			let ctx = program();
-			// anime-allow: test-side wall clock bound of a sampling loop
-			while (!ctx && performance.now() < end) {
-				await new Promise<number>((r) => requestAnimationFrame(r));
-				ctx = program();
-			}
-			if (!ctx) return Number.NaN;
+			let sampling = true;
+			const done = w.__tap.wait(dur).then(() => {
+				sampling = false;
+			});
+			const ctx = await w.__tap.program();
+			const fromTime = ctx.currentTime;
 			let best = Number.POSITIVE_INFINITY;
-			// anime-allow: test-side wall clock bound of a sampling loop
-			while (performance.now() < end) {
+			while (sampling) {
 				await new Promise<number>((r) => requestAnimationFrame(r));
 				const { frame, playing } = await w.jasper.query('playhead.get');
 				// The context time of the sample at the output now (precise, unlike currentTime's steps), read after the
@@ -169,8 +173,10 @@ async function pictureAnchor(p: Page, ms: number, fromFrame: number, skipMs: num
 				const now = performance.now();
 				const o = (ctx as AudioContext).getOutputTimestamp();
 				const t = (o.contextTime ?? 0) + (now - (o.performanceTime ?? 0)) / 1000;
-				if (playing && frame > from && now - t0 >= skip) best = Math.min(best, t - (frame * den) / num);
+				if (playing && frame > from && ctx.currentTime - fromTime >= skip / 1000)
+					best = Math.min(best, t - (frame * den) / num);
 			}
+			await done;
 			return best;
 		},
 		[ms, fps.num, fps.den, fromFrame, skipMs] as const,
@@ -328,7 +334,7 @@ test('a latency change during playback: playback restarts primed — the added l
 	await seekPaused(page, frameAt(2.0));
 	let added = '';
 	const rec = await playFor(page, 1200, async (p) => {
-		await p.waitForTimeout(500);
+		await recordedAudio(p, 500, true);
 		await mark(p, 'edit');
 		const r = await transact(p, [
 			{

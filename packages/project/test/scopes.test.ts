@@ -2,6 +2,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { budgetMs, budgetReport } from '../../../scripts/perf/budget.ts';
+import { threadCpuMs } from '../../../scripts/perf/cpu.ts';
 import {
 	angleDeg,
 	channelStats,
@@ -327,9 +328,9 @@ describe('scopes maths (color-grade additions)', () => {
 			f();
 			let b = 1e9;
 			for (let i = 0; i < 5; i++) {
-				const t = performance.now();
+				const t = threadCpuMs();
 				f();
-				b = Math.min(b, performance.now() - t);
+				b = Math.min(b, threadCpuMs() - t);
 			}
 			return b;
 		};
@@ -346,7 +347,7 @@ describe('scopes maths (color-grade additions)', () => {
 			vectorscopeHls: best(() => vectorscopeHls(s)),
 		};
 		console.info(
-			'[color-grade] scopes at 1080p (ms):',
+			'[color-grade] scopes at 1080p (CPU ms):',
 			JSON.stringify(times, (_, v) => (typeof v === 'number' ? Math.round(v * 100) / 100 : v)),
 		);
 		// PERF=1 enforces the 60 ms budget; ordinary runs account for shared-host load (docs/performance.md).

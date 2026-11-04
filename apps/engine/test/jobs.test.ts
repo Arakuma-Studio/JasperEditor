@@ -9,7 +9,9 @@ import { JobQueue } from '../src/jobs/queue.ts';
 import { type JobContext, JobError, type JobRunner } from '../src/jobs/types.ts';
 import { Ffmpeg, resolveBinaries } from '../src/tools/ffmpeg.ts';
 import { spawnTool } from '../src/tools/process.ts';
-import { closeApps, H, makeApp, tempAppdir, until } from './helpers.ts';
+import { closeApps, H, makeApp, tempAppdir } from './helpers.ts';
+
+const drain = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 const queues: JobQueue[] = [];
 afterEach(async () => {
@@ -165,7 +167,8 @@ describe('scheduling (S04:JB-011/012/014)', () => {
 		});
 		q.start();
 		const a = q.submit({ kind: 'analysis', title: 'bg-1', priority: 'background', cpuSlots: 2 });
-		await until(() => order.length === 1);
+		await drain();
+		expect(order).toHaveLength(1);
 		q.submit({ kind: 'analysis', title: 'bg-2', priority: 'background', cpuSlots: 1 });
 		q.submit({ kind: 'analysis', title: 'user-1', priority: 'user', cpuSlots: 1 });
 		q.submit({ kind: 'analysis', title: 'int-1', priority: 'interactive', cpuSlots: 1 });
@@ -187,13 +190,13 @@ describe('scheduling (S04:JB-011/012/014)', () => {
 		expect(q.usedSlots).toBe(2);
 		gates.get('bg-1')!();
 		await q.wait(a.id);
-		await until(() => order.length === 3);
+		await drain();
 		expect(order).toEqual(['bg-1', 'int-1', 'int-2']);
 		for (const t of ['int-1', 'int-2']) gates.get(t)!();
-		await until(() => order.length === 5);
+		await drain();
 		expect(order.slice(3)).toEqual(['user-1', 'bg-2']);
 		for (const t of ['user-1', 'bg-2']) gates.get(t)!();
-		await until(() => q.list({ active: true }).length === 0);
+		await Promise.all(q.list({ active: true }).map((job) => q.wait(job.id)));
 	});
 
 	it('starts exports with at least half the slots and pauses the background lane meanwhile (JB-012/013)', async () => {
@@ -214,12 +217,14 @@ describe('scheduling (S04:JB-011/012/014)', () => {
 		q.start();
 		q.submit({ kind: 'analysis', title: 'probe', priority: 'interactive', cpuSlots: 1 });
 		const exp = q.submit({ kind: 'export', title: 'export', priority: 'user', cpuSlots: 4, minSlots: 2 });
-		await until(() => started.length === 2);
+		await drain();
+		expect(started).toHaveLength(2);
 		expect(started[1]).toEqual({ title: 'export', slots: 3 });
 		q.submit({ kind: 'analysis', title: 'bg', priority: 'background', cpuSlots: 0 });
 		gates[1]!();
 		await q.wait(exp.id);
-		await until(() => started.length === 3);
+		await drain();
+		expect(started).toHaveLength(3);
 		expect(backgroundSawExport).toEqual([false]);
 		for (const g of gates) g();
 	});
@@ -318,12 +323,16 @@ describe('scheduling (S04:JB-011/012/014)', () => {
 });
 
 describe('cancellation (S04:JB-020, QA-007)', () => {
-	it('cancels a running ffmpeg job within 5 s with no child process left and removes partials', async () => {
+	it('cancels a running ffmpeg job, kills its child processes and removes partials', async () => {
 		const ff = new Ffmpeg(resolveBinaries());
 		const q = makeQueue();
 		const dir = tempAppdir('jasper-cancel-');
 		const partial = join(dir, 'out.partial.mp4');
 		let pgids: number[] = [];
+		let progressed!: () => void;
+		const encoding = new Promise<void>((resolve) => {
+			progressed = resolve;
+		});
 		q.registerRunner('analysis', async (ctx) => {
 			ctx.addPartial(partial);
 			// A child that ignores SIGTERM (forces the SIGKILL escalation) plus a real ffmpeg encode.
@@ -351,26 +360,39 @@ describe('cancellation (S04:JB-020, QA-007)', () => {
 						ctx.trackChild(c);
 						pgids.push(c.pid!);
 					},
-					onProgress: (p) => ctx.progress(p.outTimeUs / 600e6),
+					onProgress: (p) => {
+						ctx.progress(p.outTimeUs / 600e6);
+						if (p.outTimeUs > 0) progressed();
+					},
 				},
 			);
 		});
 		q.start();
 		const job = q.submit({ kind: 'analysis', title: 'long encode', priority: 'user', cpuSlots: 1 });
-		await until(() => pgids.length === 2 && existsSync(partial), 60_000);
-		await until(() => (q.get(job.id)?.progress ?? 0) > 0, 60_000);
-		const t0 = Date.now();
-		expect(q.cancel(job.id)?.state).toBe('cancelling');
-		const done = await q.wait(job.id);
-		const took = Date.now() - t0;
-		expect(done.state).toBe('cancelled');
-		expect(took).toBeLessThan(5000);
-		for (const g of pgids) {
-			expect(() => process.kill(g, 0)).toThrow('ESRCH');
-			expect(groupMembers(g)).toEqual([]);
+		await encoding;
+		expect(pgids).toHaveLength(2);
+		expect(existsSync(partial)).toBe(true);
+		try {
+			vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+			expect(q.cancel(job.id)?.state).toBe('cancelling');
+			await vi.advanceTimersByTimeAsync(3000);
+			expect((await q.wait(job.id)).state).toBe('cancelled');
+			for (const g of pgids) {
+				expect(() => process.kill(g, 0)).toThrow('ESRCH');
+				expect(groupMembers(g)).toEqual([]);
+			}
+			expect(existsSync(partial)).toBe(false);
+		} finally {
+			vi.useRealTimers();
+			for (const g of pgids) {
+				try {
+					process.kill(-g, 'SIGKILL');
+				} catch {
+					// The assertions above already require the owned process group to be gone.
+				}
+			}
+			pgids = [];
 		}
-		expect(existsSync(partial)).toBe(false);
-		pgids = [];
 	}, 180_000);
 
 	it('cancels queued jobs immediately and cascades to child jobs', async () => {
@@ -397,14 +419,14 @@ describe('cancellation (S04:JB-020, QA-007)', () => {
 		const core = coreServices(app);
 		core.queue.registerRunner('analysis', hang);
 		const job = core.queue.submit({ kind: 'analysis', title: 'x', priority: 'user', cpuSlots: 1 });
-		await until(() => core.queue.get(job.id)?.state === 'running');
+		await drain();
+		expect(core.queue.get(job.id)?.state).toBe('running');
 		const r = await app.inject({ method: 'POST', url: `/api/jobs/${job.id}/cancel`, headers: H });
 		expect(r.statusCode).toBe(200);
 		expect(['cancelling', 'cancelled']).toContain(r.json().state);
-		await until(
-			async () =>
-				(await app.inject({ method: 'GET', url: `/api/jobs/${job.id}`, headers: H })).json().state ===
-				'cancelled',
+		await core.queue.wait(job.id);
+		expect((await app.inject({ method: 'GET', url: `/api/jobs/${job.id}`, headers: H })).json().state).toBe(
+			'cancelled',
 		);
 		const list = (await app.inject({ method: 'GET', url: '/api/jobs?active=1', headers: H })).json();
 		expect(list.jobs.some((j: EngineJob) => j.id === job.id)).toBe(false);
@@ -483,7 +505,8 @@ describe('journal and restart recovery (S04:JB-030, QA-008)', () => {
 			cpuSlots: 1,
 			input: { mediaKey: 'mk_1' },
 		});
-		await until(() => first.get(exp.id)?.state === 'running');
+		await drain();
+		expect(first.get(exp.id)?.state).toBe('running');
 		expect(first.get(proxy.id)?.state).toBe('queued');
 
 		// "Crash": a new engine reads the same journal while the first never shut down.
@@ -513,7 +536,8 @@ describe('journal and restart recovery (S04:JB-030, QA-008)', () => {
 			cpuSlots: 1,
 			input: { mediaKey: 'mk_2' },
 		});
-		await until(() => third.get(p.id)?.state === 'running');
+		await drain();
+		expect(third.get(p.id)?.state).toBe('running');
 		const fourth = makeQueue({ journal: join(dir, 'b.jsonl'), slots: 1 });
 		const seen: unknown[] = [];
 		fourth.registerRunner('proxy', async (ctx) => {
@@ -522,7 +546,7 @@ describe('journal and restart recovery (S04:JB-030, QA-008)', () => {
 		});
 		fourth.start();
 		expect(fourth.get(p.id)?.state).toBe('interrupted');
-		await until(() => seen.length === 1);
+		await drain();
 		expect(seen).toEqual([{ mediaKey: 'mk_2' }]);
 		const fifth = makeQueue({ journal: join(dir, 'b.jsonl'), slots: 1 });
 		fifth.registerRunner('proxy', async () => {
@@ -543,7 +567,8 @@ describe('journal and restart recovery (S04:JB-030, QA-008)', () => {
 		q.registerRunner('export', hang);
 		q.start();
 		const j = q.submit({ kind: 'export', title: 'e', priority: 'user', cpuSlots: 1 });
-		await until(() => q.get(j.id)?.state === 'running');
+		await drain();
+		expect(q.get(j.id)?.state).toBe('running');
 		await q.shutdown();
 		expect(q.get(j.id)?.state).toBe('interrupted');
 		const again = new JobQueue({ journalPath: journal, tmpDir: join(dir, 'tmp'), totalSlots: 2 });

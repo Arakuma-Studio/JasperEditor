@@ -1,23 +1,25 @@
 // Frequent updates can starve Suspense retries because their render lane never expires.
 // State-based loading must still mount slow panels while other updates arrive.
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, getConfig, render, screen } from '@testing-library/react';
 import { useEffect, useState } from 'react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadable, useLoaded } from '../src/panels/lazy.ts';
 import type { PanelProps } from '../src/panels/types.ts';
 
-afterEach(() => cleanup());
+afterEach(() => {
+	cleanup();
+	vi.restoreAllMocks();
+});
 
-function busy(ms: number) {
-	const t = performance.now();
-	while (performance.now() - t < ms) {}
-}
+let renderTime = 0;
+let mounted = () => {};
 function Slow() {
-	busy(3);
+	renderTime += 3;
 	return <i />;
 }
-/** ≈ 180 ms of rendering in 60 units React can yield between. */
+/** Sixty units of work consume virtual scheduler time, so React yields without spinning the CPU. */
 function Heavy(_props: Partial<PanelProps>) {
+	useEffect(() => mounted(), []);
 	return (
 		<div data-testid="content">
 			{Array.from({ length: 60 }, (_, i) => (
@@ -27,18 +29,37 @@ function Heavy(_props: Partial<PanelProps>) {
 		</div>
 	);
 }
-/** Another part of the app that updates every 4 ms (job progress, meters…). */
-function Ticker() {
+/** Job progress arrives between scheduler tasks until the panel commits. */
+function Ticker({ update }: { update(): void }) {
 	const [n, setN] = useState(0);
 	useEffect(() => {
-		const id = setInterval(() => setN((x) => x + 1), 4);
-		return () => clearInterval(id);
-	}, []);
+		let task: ReturnType<typeof setImmediate>;
+		const tick = () => {
+			setN((x) => x + 1);
+			update();
+			task = setImmediate(tick);
+		};
+		task = setImmediate(tick);
+		return () => clearImmediate(task);
+	}, [update]);
 	return <span data-n={n} />;
 }
 
 describe('panel loading under frequent updates', () => {
 	it('a panel loaded through state appears although updates keep arriving', async () => {
+		renderTime = performance.now();
+		vi.spyOn(performance, 'now').mockImplementation(() => renderTime);
+		let updates = 0;
+		let updateLimit!: () => void;
+		const pressure = new Promise<void>((r) => {
+			updateLimit = r;
+		});
+		const committed = new Promise<void>((r) => {
+			mounted = r;
+		});
+		const update = () => {
+			if (++updates === 120) updateLimit();
+		};
 		let resolve!: (c: typeof Heavy) => void;
 		const source = loadable<Partial<PanelProps>>(() => new Promise((r) => (resolve = r)));
 		function Panel() {
@@ -48,14 +69,16 @@ describe('panel loading under frequent updates', () => {
 		}
 		render(
 			<div>
-				<Ticker />
+				<Ticker update={update} />
 				<Panel />
 			</div>,
 		);
 		expect(screen.queryByTestId('fallback')).not.toBeNull();
 		resolve(Heavy);
 		// Keep this outside React's act wrapper: forcing a synchronous render would hide scheduler starvation.
-		await waitFor(() => expect(screen.queryByTestId('content')).not.toBeNull(), { timeout: 1200 });
+		await getConfig().asyncWrapper(() => Promise.race([committed, pressure]));
+		expect(screen.queryByTestId('content')).not.toBeNull();
+		expect(updates).toBeGreaterThan(0);
 		expect(screen.queryByTestId('fallback')).toBeNull();
 	});
 });
@@ -97,7 +120,10 @@ describe('loadable', () => {
 		}
 		const view = render(<Probe source={failing} />);
 		expect(screen.getByTestId('state').textContent).toBe('loading');
-		await waitFor(() => expect(screen.getByTestId('state').textContent).toBe('failed: offline'));
+		await act(async () => {
+			await failing.load().catch(() => undefined);
+		});
+		expect(screen.getByTestId('state').textContent).toBe('failed: offline');
 		const ready = loadable<object>(async () => Heavy);
 		await ready.load();
 		view.rerender(<Probe source={ready} />);

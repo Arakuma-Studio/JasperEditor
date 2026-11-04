@@ -20,7 +20,7 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type RunningEngine, startEngine } from '../src/index.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { DocBuilder, JSON_H, tempAppdir, until } from './helpers.ts';
+import { DocBuilder, JSON_H, tempAppdir } from './helpers.ts';
 
 const enabled = process.env.REMOTION_E2E === '1';
 const PORT = Number(process.env.JASPER_E2E_PORT ?? 0);
@@ -363,12 +363,7 @@ describe.runIf(enabled)(
 			});
 			expect(r.statusCode, r.body).toBe(202);
 			const queue = coreServices(engine.app).queue;
-			await until(
-				() => ['succeeded', 'failed', 'cancelled'].includes(queue.get(r.json().id)?.state ?? ''),
-				2_400_000,
-				250,
-			);
-			const done = queue.get(r.json().id)!;
+			const done = await queue.wait(r.json().id);
 			expect(done.state, JSON.stringify(done.error)).toBe('succeeded');
 			const file = (await coreServices(engine.app).exports.outputFile(done.id))!;
 			return { file, result: done.result as { renderPath?: string; warnings?: { code: string }[] } };

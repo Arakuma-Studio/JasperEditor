@@ -241,10 +241,9 @@ describe('Preferences ▸ Audio ▸ Auto-tag audio types in the timeline', () =>
 
 	it('ignores the clips of a duplicated sequence', async () => {
 		const f = fixture();
+		f.place(0, 0);
 		audioPrefs.set({ autoTagInTimeline: true });
 		const stop = watchAutoTagOnAdd(f.session, f.engine);
-		f.place(0, 0);
-		await settle();
 		const r = f.session.apply({
 			label: 'Duplicate',
 			origin: 'user',
@@ -253,7 +252,7 @@ describe('Preferences ▸ Audio ▸ Auto-tag audio types in the timeline', () =>
 		expect(r.ok, JSON.stringify(!r.ok && r.errors)).toBe(true);
 		if (!r.ok) return;
 		await settle();
-		expect(f.requests).toHaveLength(1);
+		expect(f.requests).toHaveLength(0);
 		stop();
 	});
 });

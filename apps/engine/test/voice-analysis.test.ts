@@ -21,20 +21,12 @@ import { type EngineJob, type VoiceAnalysisJobResult, VoiceAnalysisJobResultSche
 import { encodeWav, VOICE_HOP, voiceFeatures } from '@jasper/audio-dsp';
 import { buildVoiceAnalysis, decodeVoiceAnalysis, encodeVoiceAnalysis } from '@jasper/project';
 import { build } from 'esbuild';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { entryOfPath } from '../src/cache/layout.ts';
 import { fingerprintHex } from '../src/media/fingerprint.ts';
-import {
-	closeApps,
-	H,
-	JSON_H,
-	makeApp,
-	ROOT,
-	register,
-	TEST_FFMPEG,
-	type TestApp,
-	until,
-} from './helpers.ts';
+import { coreServices } from '../src/tools/services.ts';
+import { type FeatureBlock, VoiceFeatureRunner } from '../src/voice/pool.ts';
+import { closeApps, H, JSON_H, makeApp, ROOT, register, TEST_FFMPEG, type TestApp } from './helpers.ts';
 
 const HAVE_FFMPEG = spawnSync(TEST_FFMPEG, ['-version'], { encoding: 'utf8' }).status === 0;
 const SR = 16_000;
@@ -243,25 +235,42 @@ describe.skipIf(!HAVE_FFMPEG)('voice-analysis job and routes', () => {
 	});
 
 	it('cancels a running analysis: no file, the next request works', async () => {
-		const long = join(dir, 'long.flac');
-		ff(['-f', 'lavfi', '-i', 'sine=f=150:sample_rate=16000:d=1500', '-c:a', 'flac', long]);
-		const m = await register(app, long);
-		const job = (await post(app, m.mediaKey, {}, false)).json() as EngineJob;
-		await until(async () => {
-			const j = (
-				await app.inject({ method: 'GET', url: `/api/jobs/${job.id}`, headers: H })
-			).json() as EngineJob;
-			return j.state === 'running' && (j.progress ?? 0) > 0 ? j : null;
-		}, 60_000);
-		await app.inject({ method: 'POST', url: `/api/jobs/${job.id}/cancel`, headers: H });
-		const done = await until(async () => {
-			const j = (
-				await app.inject({ method: 'GET', url: `/api/jobs/${job.id}`, headers: H })
-			).json() as EngineJob;
-			return ['cancelled', 'failed', 'succeeded'].includes(j.state) ? j : null;
-		}, 20_000);
-		expect(done.state).toBe('cancelled');
-		expect(cacheFiles(app, m.fingerprint)).toEqual([]);
+		const m = await register(app, writeWav('cancel.wav', programme(3, 6)));
+		let ready!: () => void;
+		const started = new Promise<void>((resolve) => {
+			ready = resolve;
+		});
+		let release!: () => void;
+		const released = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const run = VoiceFeatureRunner.prototype.run;
+		let held = false;
+		const fence = vi.spyOn(VoiceFeatureRunner.prototype, 'run').mockImplementation(async function (
+			this: VoiceFeatureRunner,
+			block: FeatureBlock,
+		) {
+			const result = await run.call(this, block);
+			if (!held) {
+				held = true;
+				ready();
+				await released;
+			}
+			return result;
+		});
+		try {
+			const job = (await post(app, m.mediaKey, {}, false)).json() as EngineJob;
+			await started;
+			expect(coreServices(app).queue.get(job.id)?.state).toBe('running');
+			await app.inject({ method: 'POST', url: `/api/jobs/${job.id}/cancel`, headers: H });
+			release();
+			const done = await coreServices(app).queue.wait(job.id);
+			expect(done.state).toBe('cancelled');
+			expect(cacheFiles(app, m.fingerprint)).toEqual([]);
+		} finally {
+			release();
+			fence.mockRestore();
+		}
 		const short = await register(app, writeWav('after-cancel.wav', programme(3, 9)));
 		expect(resultOf((await post(app, short.mediaKey)).json() as EngineJob).frameCount).toBe(300);
 	}, 120_000);

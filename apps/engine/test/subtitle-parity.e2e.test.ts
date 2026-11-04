@@ -11,8 +11,9 @@ import type { EngineJob } from '@jasper/api';
 import { buildRenderSnapshot } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type RunningEngine, startEngine } from '../src/index.ts';
+import type { SharedRenderBrowser } from '../src/remotion/service.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { DocBuilder, JSON_H, TEST_FFMPEG, tempAppdir, until } from './helpers.ts';
+import { DocBuilder, JSON_H, TEST_FFMPEG, tempAppdir } from './helpers.ts';
 
 const enabled = process.env.REMOTION_E2E === '1';
 const PORT = Number(process.env.JASPER_E2E_PORT ?? 0);
@@ -191,6 +192,8 @@ describe.runIf(enabled)(
 	'subtitle templates: native vs the composition (REMOTION_E2E=1, spec 13 AS-070…073)',
 	() => {
 		let engine: RunningEngine;
+		let referenceBrowser: Promise<SharedRenderBrowser> | null = null;
+		const sharedBrowser = () => (referenceBrowser ??= coreServices(engine.app).remotion.openSharedBrowser());
 		const hostH = () => ({ host: `127.0.0.1:${engine.port}` });
 		beforeAll(async () => {
 			engine = await startEngine({
@@ -207,17 +210,14 @@ describe.runIf(enabled)(
 			});
 		}, 600_000);
 		afterAll(async () => {
-			await engine?.stop();
+			try {
+				if (referenceBrowser) await (await referenceBrowser).close();
+			} finally {
+				await engine?.stop();
+			}
 		});
 		const queue = () => coreServices(engine.app).queue;
-		const wait = async (id: string): Promise<EngineJob> => {
-			await until(
-				() => ['succeeded', 'failed', 'cancelled'].includes(queue().get(id)?.state ?? ''),
-				1_800_000,
-				250,
-			);
-			return queue().get(id)!;
-		};
+		const wait = (id: string): Promise<EngineJob> => queue().wait(id);
 
 		function subtitlesDoc(
 			templates: Template[] = TEMPLATES,
@@ -329,6 +329,7 @@ describe.runIf(enabled)(
 					const f = s.f0 + k;
 					const ref = join(tempAppdir('jasper-sub-ref-'), 'ref.png');
 					await core.remotion.renderStill({
+						browser: await sharedBrowser(),
 						inputProps: {
 							doc: referenceDoc,
 							options: { isPreview: false, useProxies: false, transparentBackground: false },
@@ -442,6 +443,7 @@ describe.runIf(enabled)(
 			const composition = async (f: number) => {
 				const ref = join(tempAppdir('jasper-sub-same-'), 'ref.png');
 				await core.remotion.renderStill({
+					browser: await sharedBrowser(),
 					inputProps: {
 						doc: referenceDoc,
 						options: { isPreview: false, useProxies: false, transparentBackground: false },

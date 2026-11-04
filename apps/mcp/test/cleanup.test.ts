@@ -354,7 +354,9 @@ describe('Clean Up MCP tools', () => {
 		expect(engine.doc().sequences[engine.seqId]!.cleanup).toMatchObject({
 			script: { name: 'guion', text: GOLDEN_SCRIPT },
 		});
-		expect((await call('attach_script', { path: 'relative.txt' })).isError).toBe(true);
+		const relativePath = await call('attach_script', { path: 'relative.txt' });
+		expect(relativePath.isError).toBe(true);
+		expect(relativePath.body).toMatchObject({ error: { code: 'E_INVALID_PARAM' } });
 		r = await call('attach_script', { detach: true });
 		expect((engine.doc().sequences[engine.seqId]!.cleanup as Body).script).toBeUndefined();
 	});

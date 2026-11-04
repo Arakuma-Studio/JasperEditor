@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { threadCpuMs } from '../../../scripts/perf/cpu.ts';
 import { ModelParseError, parseModel } from '../src/three-d/gltf.ts';
 import {
 	accessorOfZeros,
@@ -15,13 +16,13 @@ const enc = (doc: unknown) => new TextEncoder().encode(JSON.stringify(doc));
 
 function attempt(bytes: Uint8Array): { ms: number; error?: unknown; grownMiB: number } {
 	const before = process.memoryUsage().arrayBuffers;
-	const t0 = performance.now();
+	const t0 = threadCpuMs();
 	try {
 		parseModel(bytes, 'gltf');
-		return { ms: performance.now() - t0, grownMiB: (process.memoryUsage().arrayBuffers - before) / 2 ** 20 };
+		return { ms: threadCpuMs() - t0, grownMiB: (process.memoryUsage().arrayBuffers - before) / 2 ** 20 };
 	} catch (error) {
 		return {
-			ms: performance.now() - t0,
+			ms: threadCpuMs() - t0,
 			error,
 			grownMiB: (process.memoryUsage().arrayBuffers - before) / 2 ** 20,
 		};

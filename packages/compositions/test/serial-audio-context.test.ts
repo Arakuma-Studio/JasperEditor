@@ -8,37 +8,45 @@ import { bundleGlEntry, CHROME } from './gl-browser.ts';
 
 const run = !!CHROME && process.env.FX_GL !== '0';
 
-/** Resume then suspend 0–2 ms later, a few times: whether the resumes settle and the clock moved after them. */
+/** Same-turn and next-task requests settle in order and let the real audio clock advance. */
 const probe = async () => {
-	const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-	const settle = (p: Promise<unknown>, ms: number) =>
-		Promise.race([
-			p.then(
-				() => 'ok',
-				() => 'rejected',
-			),
-			sleep(ms).then(() => 'pending'),
-		]);
 	const ctx = new AudioContext();
 	const osc = ctx.createOscillator();
 	osc.connect(ctx.destination);
 	osc.start();
-	await settle(ctx.resume(), 2000);
-	await sleep(100);
 	const out: { resume: string; moved: boolean }[] = [];
-	for (let i = 0; i < 4; i++) {
-		await settle(ctx.suspend(), 1000);
-		await sleep(30);
-		const t0 = ctx.getOutputTimestamp().contextTime ?? 0;
-		const r = ctx.resume();
-		await sleep(i % 2);
-		const s = ctx.suspend();
-		const resume = await settle(r, 1000);
-		await settle(s, 1000);
-		out.push({ resume, moved: (ctx.getOutputTimestamp().contextTime ?? 0) > t0 });
+	try {
+		await ctx.resume();
+		for (let i = 0; i < 4; i++) {
+			await ctx.suspend();
+			const t0 = ctx.getOutputTimestamp().contextTime ?? 0;
+			let resume = 'pending';
+			void ctx.resume().then(
+				() => {
+					resume = 'ok';
+				},
+				() => {
+					resume = 'rejected';
+				},
+			);
+			if (i % 2)
+				await new Promise<void>((resolve) => {
+					const { port1, port2 } = new MessageChannel();
+					port1.onmessage = () => {
+						port1.close();
+						port2.close();
+						resolve();
+					};
+					port2.postMessage(null);
+				});
+			await ctx.suspend();
+			out.push({ resume, moved: (ctx.getOutputTimestamp().contextTime ?? 0) > t0 });
+			if (resume !== 'ok') break;
+		}
+		return out;
+	} finally {
+		await ctx.close();
 	}
-	await ctx.close();
-	return out;
 };
 
 describe.runIf(run)('AudioContext resume/suspend races', () => {
@@ -74,5 +82,5 @@ describe.runIf(run)('AudioContext resume/suspend races', () => {
 			after.every((x) => x.moved),
 			JSON.stringify(after),
 		).toBe(true);
-	}, 60_000);
+	});
 });

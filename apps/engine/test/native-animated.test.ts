@@ -27,7 +27,6 @@ import {
 	register,
 	type TestApp,
 	tempAppdir,
-	until,
 } from './helpers.ts';
 
 const FWD_ENV: Record<string, string> = {};
@@ -1022,12 +1021,7 @@ describe.runIf(REMOTION)('native vs Remotion render of the keyframed fixture (RE
 		});
 		expect(r.statusCode, r.body).toBe(202);
 		const queue = coreServices(engine.app).queue;
-		await until(
-			() => ['succeeded', 'failed', 'cancelled'].includes(queue.get(r.json().id)?.state ?? ''),
-			1_200_000,
-			250,
-		);
-		const done = queue.get(r.json().id)!;
+		const done = await queue.wait(r.json().id);
 		expect(done.state, JSON.stringify(done.error)).toBe('succeeded');
 		return (await coreServices(engine.app).exports.outputFile(done.id))!;
 	}

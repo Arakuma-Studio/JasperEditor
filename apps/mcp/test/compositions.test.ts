@@ -1,6 +1,6 @@
 // MG_E2E=1 enables the real engine flow (on a free port, or MCP_MG_TEST_PORT).
 import { type ChildProcess, spawn } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,7 +8,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { cleanEnv, stopEngine, testPort } from './helpers.ts';
+import { cleanEnv, engineReady, stopEngine, testPort } from './helpers.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, '..', '..', '..');
@@ -36,19 +36,11 @@ describe.runIf(E2E)('composition tools over stdio against a real engine (MG_E2E=
 		engine = spawn(
 			process.execPath,
 			['--import', 'tsx', join(ROOT, 'apps/engine/src/cli.ts'), '--port', String(PORT), '--appdir', appdir],
-			{ cwd: ROOT, env: cleanEnv({ JASPER_DEV: '1' }), stdio: ['ignore', 'pipe', 'pipe'] },
+			{ cwd: ROOT, env: cleanEnv({ JASPER_DEV: '1' }), stdio: ['ignore', 'pipe', 'pipe', 'ipc'] },
 		);
-		const until = Date.now() + 120_000;
-		while (Date.now() < until) {
-			if (existsSync(join(appdir, 'engine', 'runtime.json'))) {
-				const ok = await fetch(`http://127.0.0.1:${PORT}/health`).then(
-					(r) => r.ok,
-					() => false,
-				);
-				if (ok) break;
-			}
-			await new Promise((r) => setTimeout(r, 250));
-		}
+		engine.stdout?.on('data', (d: Buffer) => logs.push(d.toString('utf8')));
+		engine.stderr?.on('data', (d: Buffer) => logs.push(d.toString('utf8')));
+		await engineReady(engine, PORT, logs);
 		const transport = new StdioClientTransport({
 			command: process.execPath,
 			args: ['--import', 'tsx', join(ROOT, 'apps/mcp/src/cli.ts'), '--appdir', appdir],

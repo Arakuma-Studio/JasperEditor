@@ -3,7 +3,7 @@ import { once } from 'node:events';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expect, it } from 'vitest';
+import { expect, it, onTestFinished } from 'vitest';
 import { procCommand } from '../src/processing/proc-entry.ts';
 
 it.skipIf(process.platform === 'win32')(
@@ -49,7 +49,24 @@ if (args.includes('-show_streams')) {
 			stdio: ['ignore', 'ignore', 'pipe'],
 			detached: true,
 		});
-		const readyTimeout = setTimeout(() => child.kill('SIGKILL'), 20_000);
+		let cleaned = false;
+		const cleanup = async () => {
+			if (cleaned) return;
+			cleaned = true;
+			const exited =
+				child.pid && child.exitCode === null && child.signalCode === null ? once(child, 'exit') : undefined;
+			child.kill('SIGKILL');
+			if (existsSync(pidFile)) {
+				try {
+					process.kill(Number(readFileSync(pidFile, 'utf8')), 'SIGKILL');
+				} catch {
+					// The processor already reaped its child.
+				}
+			}
+			await exited;
+			rmSync(dir, { recursive: true, force: true });
+		};
+		onTestFinished(cleanup);
 		try {
 			await new Promise<void>((resolve, reject) => {
 				let stderr = '';
@@ -62,24 +79,14 @@ if (args.includes('-show_streams')) {
 					reject(new Error(`processor exited before processing (${code}): ${stderr}`)),
 				);
 			});
-			clearTimeout(readyTimeout);
-			const exited = once(child, 'exit', { signal: AbortSignal.timeout(5000) });
+			const exited = once(child, 'exit');
 			child.kill('SIGTERM');
 			const [code] = await exited;
 			expect(code).toBe(3);
 			expect(existsSync(output)).toBe(false);
 			expect(() => process.kill(Number(readFileSync(pidFile, 'utf8')), 0)).toThrow('ESRCH');
 		} finally {
-			clearTimeout(readyTimeout);
-			child.kill('SIGKILL');
-			if (existsSync(pidFile)) {
-				try {
-					process.kill(Number(readFileSync(pidFile, 'utf8')), 'SIGKILL');
-				} catch {
-					// The processor already reaped its child.
-				}
-			}
-			rmSync(dir, { recursive: true, force: true });
+			await cleanup();
 		}
 	},
 	30_000,

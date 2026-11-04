@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { join } from 'node:path';
 import { EMOJI_PACK_IDS, REMOTE_IMAGE_IDS } from '@jasper/mg-templates';
 import fc from 'fast-check';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { checkImage, RemoteAssetError, svgHasActiveContent } from '../src/remote-assets/fetcher.ts';
 import shipped from '../src/remote-assets/manifest.json' with { type: 'json' };
 import {
@@ -33,7 +33,7 @@ const RED = pngBytes(4, 4, [255, 0, 0, 255]);
 const BLUE = pngBytes(4, 4, [0, 0, 255, 255]);
 
 const EMPTY = { version: 1 as const, fonts: [], emojiPacks: [], images: [] };
-const fast = { timeoutMs: 400, retries: 1, backoffMs: 10 };
+const fast = { timeoutMs: 400, retries: 1, backoffMs: 0 };
 
 let server: FixtureServer;
 let dir: string;
@@ -289,27 +289,62 @@ describe('download failures', () => {
 	});
 
 	it('times out a host that never answers', async () => {
-		server.routes.set('/fonts/chirp-700.woff2', { hang: true });
-		const e = await rejects(
-			service({ fontLimits: { timeoutMs: 150, retries: 0 } }).ensureFace({
-				family: 'Chirp',
-				weight: 700,
-				style: 'normal',
-			}),
-		);
-		expect(e.code).toBe('DOWNLOAD_TIMEOUT');
+		const path = '/fonts/chirp-700.woff2';
+		server.routes.set(path, { hang: true });
+		let received!: () => void;
+		const request = new Promise<void>((resolve) => {
+			received = resolve;
+		});
+		const set = server.hits.set.bind(server.hits);
+		const receipt = vi.spyOn(server.hits, 'set').mockImplementation((key, value) => {
+			const result = set(key, value);
+			if (key === path) received();
+			return result;
+		});
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+		const cleanup = async () => {
+			vi.useRealTimers();
+			receipt.mockRestore();
+			await server.close();
+		};
+		onTestFinished(cleanup);
+		try {
+			const requestSignal: { current?: AbortSignal | null } = {};
+			const outcome = rejects(
+				service({
+					fontLimits: { timeoutMs: 150, retries: 0 },
+					fetchImpl: (input, init) => {
+						requestSignal.current = init?.signal;
+						return fetch(input, init);
+					},
+				}).ensureFace({
+					family: 'Chirp',
+					weight: 700,
+					style: 'normal',
+				}),
+			).then(
+				(error) => ({ error }),
+				(unexpected: unknown) => ({ unexpected }),
+			);
+			await request;
+			await vi.advanceTimersByTimeAsync(150);
+			expect(requestSignal.current?.aborted).toBe(true);
+			expect(await outcome).toMatchObject({ error: { code: 'DOWNLOAD_TIMEOUT' } });
+		} finally {
+			await cleanup();
+		}
 	});
 
 	it('caps sizes (declared and streamed)', async () => {
 		const small = { maxBytes: 1000 };
-		const e = await rejects(
+		server.routes.set('/fonts/chirp-700.woff2', { body: FONT_BYTES, chunked: true });
+		await expect(
 			service({ fontLimits: { ...fast, ...small } }).ensureFace({
 				family: 'Chirp',
 				weight: 700,
 				style: 'normal',
 			}),
-		);
-		expect(e.code).toBe('DOWNLOAD_TOO_LARGE');
+		).rejects.toMatchObject({ code: 'DOWNLOAD_TOO_LARGE' });
 		server.routes.set('/emoji/1f600.png', { body: RED, declaredLength: 10_000_000 });
 		const e2 = await rejects(service().ensureEmojiImage('apple', GRIN));
 		expect(e2.code).toBe('DOWNLOAD_TOO_LARGE');
@@ -326,21 +361,71 @@ describe('download failures', () => {
 	});
 
 	it('shares one download between concurrent requests and limits downloads per host', async () => {
-		server.routes.set('/fonts/chirp-700.woff2', { body: FONT_BYTES, delayMs: 50 });
-		const s = service({ perHost: 2 });
-		const faces = Array.from({ length: 10 }, () =>
-			s.ensureFace({ family: 'Chirp', weight: 700, style: 'normal' }),
-		);
-		const paths = await Promise.all(faces);
-		expect(new Set(paths.map((p) => p[0])).size).toBe(1);
-		expect(server.hits.get('/fonts/chirp-700.woff2')).toBe(1);
-		const many = Array.from({ length: 8 }, (_, i) => String.fromCodePoint(0x1f601 + i));
-		for (const g of many)
-			server.routes.set(`/emoji/${g.codePointAt(0)!.toString(16)}.png`, { body: RED, delayMs: 40 });
-		server.maxActive = 0;
-		await Promise.all(many.map((g) => s.ensureEmojiImage('apple', g)));
-		expect(server.maxActive).toBeLessThanOrEqual(2);
-		expect(server.maxActive).toBeGreaterThan(0);
+		let release!: () => void;
+		let began!: () => void;
+		let gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		let entered = new Promise<void>((resolve) => {
+			began = resolve;
+		});
+		let active = 0;
+		let peak = 0;
+		const fetchImpl: typeof fetch = async (input, init) => {
+			active++;
+			peak = Math.max(peak, active);
+			began();
+			try {
+				await gate;
+				return await fetch(input, init);
+			} finally {
+				active--;
+			}
+		};
+		onTestFinished(() => release());
+		try {
+			const s = service({ perHost: 2, fetchImpl });
+			const faces = Array.from({ length: 10 }, () =>
+				s.ensureFace({ family: 'Chirp', weight: 700, style: 'normal' }),
+			);
+			const facePaths = Promise.all(faces);
+			await Promise.race([
+				entered,
+				facePaths.then(() => {
+					throw new Error('Font requests settled before downloading');
+				}),
+			]);
+			release();
+			const paths = await facePaths;
+			expect(new Set(paths.map((p) => p[0])).size).toBe(1);
+			expect(server.hits.get('/fonts/chirp-700.woff2')).toBe(1);
+			const many = Array.from({ length: 8 }, (_, i) => String.fromCodePoint(0x1f601 + i));
+			for (const g of many) server.routes.set(`/emoji/${g.codePointAt(0)!.toString(16)}.png`, { body: RED });
+			// Shared metadata is ready before the uncached image requests enter the downloader.
+			await s.emojiHash('apple', many[0]!);
+			server.maxActive = 0;
+			peak = 0;
+			gate = new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			entered = new Promise<void>((resolve) => {
+				began = resolve;
+			});
+			const downloads = Promise.all(many.map((g) => s.ensureEmojiImage('apple', g)));
+			await Promise.race([
+				entered,
+				downloads.then(() => {
+					throw new Error('Emoji requests settled before downloading');
+				}),
+			]);
+			release();
+			await downloads;
+			expect(peak).toBeLessThanOrEqual(2);
+			expect(server.maxActive).toBeLessThanOrEqual(2);
+			expect(server.maxActive).toBeGreaterThan(0);
+		} finally {
+			release();
+		}
 	});
 });
 

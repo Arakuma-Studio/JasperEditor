@@ -2,8 +2,7 @@
 // Spec 19 end to end in real Chrome (REMOTION_E2E=1): a text clip with a text animator and a keyed look param, in the
 // Player (HTML-in-Canvas: `--enable-features=CanvasDrawElement`) and through Remotion renders. Program against export
 // by SSIM, determinism with fresh ids, a razor cut, resolution, and per-frame cost at 1080p.
-import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -18,7 +17,7 @@ import { bundleForBrowser } from '@jasper/testkit/browser';
 import { type Browser, chromium, type Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SEQUENCE_COMPOSITION_ID } from '../src/types.ts';
-import { type FxMedia, startFxMedia } from './fx-media.ts';
+import { type FxMedia, fxPixels, startFxMedia } from './fx-media.ts';
 import { resampleLuma, ssim, ssimRgb } from './title-look-harness.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -225,24 +224,7 @@ function build(o: Opts = {}) {
 type Raw = { data: Buffer; w: number; h: number };
 
 const decode = (png: Buffer | string, w: number, h: number): Raw => ({
-	data: execFileSync(
-		'ffmpeg',
-		[
-			'-v',
-			'error',
-			'-i',
-			typeof png === 'string' ? png : 'pipe:0',
-			'-f',
-			'rawvideo',
-			'-pix_fmt',
-			'rgb24',
-			'-',
-		],
-		{
-			maxBuffer: 1 << 27,
-			...(typeof png === 'string' ? {} : { input: png }),
-		},
-	),
+	data: fxPixels(typeof png === 'string' ? readFileSync(png) : png),
 	w,
 	h,
 });
@@ -331,50 +313,34 @@ describe.runIf(enabled && !!CHROME)(
 			return decode(output, doc.settings.width, doc.settings.height);
 		}
 
-		async function programFrame(
-			frame: number,
-			name: string,
-			player = 'animated',
-			settleMs = 150,
-		): Promise<Raw> {
+		async function programFrame(frame: number, name: string, player = 'animated'): Promise<Raw> {
 			await page.evaluate(
-				([p, f]) => {
-					(window as never as { __fxPlayer: { seek(a: string, b: number): void } }).__fxPlayer.seek(
+				([p, f]) =>
+					(window as never as { __fxPlayer: { seek(a: string, b: number): Promise<void> } }).__fxPlayer.seek(
 						p as string,
 						f as number,
-					);
-				},
+					),
 				[player, frame] as const,
 			);
-			// Settle: the Player redraws asynchronously; two identical screenshots in a row end the wait.
-			let prev = null as Buffer | null;
-			for (let i = 0; i < 40; i++) {
-				await page.waitForTimeout(settleMs);
-				const shot = await page.locator(`#${player}`).screenshot();
-				if (prev?.equals(shot) && i > 2) break;
-				prev = shot;
-			}
-			writeFileSync(join(OUT, `${name}.png`), prev!);
-			return decode(prev!, W, H);
+			const shot = await page.locator(`#${player}`).screenshot();
+			writeFileSync(join(OUT, `${name}.png`), shot);
+			return decode(shot, W, H);
 		}
 
 		it('a still look is not recomputed between frames in the Player (TL-037)', async () => {
 			const seek = (name: string, f: number) =>
 				page.evaluate(
 					([n, frame]) =>
-						(window as never as { __fxPlayer: { seek(a: string, b: number): void } }).__fxPlayer.seek(
-							n as string,
-							frame as number,
-						),
+						(
+							window as never as { __fxPlayer: { seek(a: string, b: number): Promise<void> } }
+						).__fxPlayer.seek(n as string, frame as number),
 					[name, f] as const,
 				);
 			const draws = () => page.evaluate(() => (window as never as { __tlDraws: number }).__tlDraws);
 			await seek('still', 5);
-			await page.waitForTimeout(3000);
 			const settled = await draws();
 			for (const f of [10, 20, 30, 40]) {
 				await seek('still', f);
-				await page.waitForTimeout(400);
 			}
 			const after = await draws();
 			console.info(`[title-look] still look: ${after - settled} GL draws across 4 seeks`);
@@ -382,20 +348,16 @@ describe.runIf(enabled && !!CHROME)(
 			// The input changed: a text edit makes a new clip, and the cache must not hide it.
 			await page.evaluate(
 				(doc) =>
-					(window as never as { __fxPlayer: { setDoc(a: string, b: unknown): void } }).__fxPlayer.setDoc(
-						'still',
-						doc,
-					),
+					(
+						window as never as { __fxPlayer: { setDoc(a: string, b: unknown): Promise<void> } }
+					).__fxPlayer.setDoc('still', doc),
 				build({ still: true, text: 'EDIT' }),
 			);
-			await page.waitForTimeout(3000);
 			const edited = await draws();
 			expect(edited).toBeGreaterThan(after);
 			// The animated clip does redraw: the counter is live.
 			await seek('animated', 11);
-			await page.waitForTimeout(1500);
 			await seek('animated', 12);
-			await page.waitForTimeout(1500);
 			expect(await draws()).toBeGreaterThan(edited);
 		});
 
@@ -425,16 +387,14 @@ describe.runIf(enabled && !!CHROME)(
 			// Mounted here, not with the page: on software GL its first frame takes longer than a page load may.
 			await page.evaluate(
 				(d) =>
-					(window as never as { __fxPlayer: { setDoc(a: string, b: unknown): void } }).__fxPlayer.setDoc(
-						'glows',
-						d,
-					),
+					(
+						window as never as { __fxPlayer: { setDoc(a: string, b: unknown): Promise<void> } }
+					).__fxPlayer.setDoc('glows', d),
 				doc,
 			);
 			for (const frame of [0, 30, 60]) {
 				const exported = await still(doc, frame, `glows-export-${frame}`);
-				// A frame here takes seconds: two equal screenshots 150 ms apart would prove nothing.
-				const program = await programFrame(frame, `glows-program-${frame}`, 'glows', 2500);
+				const program = await programFrame(frame, `glows-program-${frame}`, 'glows');
 				const score = ssimRgb(program.data, exported.data, W, H).min;
 				console.info(
 					`[title-look] glows frame ${frame}: Program vs export colour SSIM ${score.toFixed(4)}, max ${maxDiff(program, exported)}`,

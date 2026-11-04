@@ -149,7 +149,12 @@ describe('clip.duplicateMotionGraphic', () => {
 		]);
 		const solidId = Object.values(h.seq.clips).find((c) => c.kind === 'solid')!.id;
 		h.ok([{ type: 'clip.group', clipIds: [src, solidId] }]);
+		const mediaId = h.registerVideo({ kind: 'audio', seconds: 2 });
+		const placed = h.ok([{ type: 'clip.place', source: { mediaId }, at: 30, tracks: { audio: 'A1' } }]);
+		const audioId = (placed.results[0] as { clipIds: string[] }).clipIds[0]!;
+		h.ok([{ type: 'clip.link', clipIds: [src, audioId] }]);
 		const source = h.seq.clips[src] as MgClip;
+		expect(source.linkId).not.toBeNull();
 		const r = h.ok([dup(src)]).results[0] as DupResult;
 		const copy = h.seq.clips[r.clipId] as MgClip;
 		expect(copy.name).toBe('Reply card');

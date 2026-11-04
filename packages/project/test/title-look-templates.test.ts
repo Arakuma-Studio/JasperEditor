@@ -69,6 +69,7 @@ describe('title templates (TL-052)', () => {
 				const out = r.results[0] as { clipIds: string[]; slots: Record<string, string> };
 				// A 3D template adds its environment light.
 				expect(out.clipIds.length, t.id).toBe(t.clips.length + (t.scene3d ? 1 : 0));
+				expect(Object.keys(h.seq.clips).sort(), t.id).toEqual([...out.clipIds].sort());
 				ok(h);
 				for (const c of t.clips) {
 					if (c.kind !== 'text') continue;

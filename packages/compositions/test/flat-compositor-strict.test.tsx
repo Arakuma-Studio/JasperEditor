@@ -74,11 +74,11 @@ describe('the flat compositor under Strict Mode', () => {
 		expect(out).not.toBeNull();
 		// The animation frames that were asked for and not cancelled.
 		await act(async () => {
-			for (let round = 0; round < 3; round++) {
+			while (pending.size) {
 				const due = [...pending.values()];
 				pending.clear();
-				for (const cb of due) cb(16 * round);
-				await new Promise((r) => setTimeout(r, 0));
+				for (const cb of due) cb(0);
+				await Promise.resolve();
 			}
 		});
 		// Before the fix nothing was ever drawn: the only request was cancelled by the simulated unmount.

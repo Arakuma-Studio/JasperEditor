@@ -257,7 +257,7 @@ describe('proposed fixes in the transcript (SC-083)', () => {
 		});
 		expect(word(5).getAttribute('data-fix-item')).toBeNull();
 		c.exit();
-		await act(async () => new Promise((r) => setTimeout(r, 0)));
+		await act(async () => Promise.resolve());
 		expect(word(2).getAttribute('data-fix-item')).toBeNull();
 	});
 });

@@ -14,7 +14,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { GH, GW, goldenCard, goldenTile } from '../../../packages/compositions/test/golden/scenes.ts';
 import { type RunningEngine, startEngine } from '../src/index.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { DocBuilder, JSON_H, register, tempAppdir, until } from './helpers.ts';
+import { DocBuilder, JSON_H, register, tempAppdir } from './helpers.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const GOLDENS = join(here, 'goldens', 'native');
@@ -145,12 +145,7 @@ describe.runIf(enabled)('native vs Remotion on golden scenes (REMOTION_E2E=1)', 
 			payload: { envelope: d.envelope(), sequenceId: d.seqId, frame: 10 },
 		});
 		expect(r.statusCode, r.body).toBeLessThan(300);
-		await until(
-			() => ['succeeded', 'failed'].includes(svc.queue.get(r.json().id)?.state ?? ''),
-			600_000,
-			100,
-		);
-		const done = svc.queue.get(r.json().id)!;
+		const done = await svc.queue.wait(r.json().id);
 		expect(done.state, JSON.stringify(done.error)).toBe('succeeded');
 		expect(done.result, 'the scene must render on the native path').toMatchObject({ renderPath: 'native' });
 		return decodePng(readFileSync(join(svc.config.paths.rendersDir, done.id, 'output.png')));

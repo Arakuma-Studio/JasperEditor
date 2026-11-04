@@ -129,7 +129,7 @@ describe('copyEase / keyframe.pasteEase', () => {
 		const noCurve = h.tx([
 			{
 				type: 'keyframe.pasteEase',
-				keyframeIds: dst,
+				keyframeIds: a.keyframes.map((k) => k.id),
 				clip: { kind: 'segments', segments: [SWIFT] },
 				mode: 'curve',
 			},

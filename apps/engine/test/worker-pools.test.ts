@@ -6,27 +6,22 @@ import { availableParallelism, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import { ExportWorkerPool } from '../src/export/worker-pool.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-async function settles<T>(
-	p: Promise<T>,
-	ms = 5000,
-): Promise<{ ok: true; value: T } | { ok: false; error: Error }> {
-	let timer: ReturnType<typeof setTimeout> | undefined;
-	const timeout = new Promise<never>((_, reject) => {
-		timer = setTimeout(() => reject(new Error(`HANG: not settled after ${ms} ms`)), ms);
-	});
-	try {
-		return { ok: true, value: await Promise.race([p, timeout]) };
-	} catch (e) {
-		if (!(e instanceof Error) || e.message.startsWith('HANG')) throw e;
-		return { ok: false, error: e };
-	} finally {
-		clearTimeout(timer);
-	}
+function outcomeOf<T>(p: Promise<T>): () => { ok: true; value: T } | { ok: false; error: Error } | undefined {
+	let result: { ok: true; value: T } | { ok: false; error: Error } | undefined;
+	void p.then(
+		(value) => {
+			result = { ok: true, value };
+		},
+		(error: Error) => {
+			result = { ok: false, error };
+		},
+	);
+	return () => result;
 }
 
 describe('native export worker pools survive a dead worker', () => {
@@ -36,12 +31,9 @@ describe('native export worker pools survive a dead worker', () => {
 			1,
 			() => new Worker(`require('node:worker_threads').parentPort.on('message', () => {});`, { eval: true }),
 		);
-		const requests = [settles(pool.run(1)), settles(pool.run(2))];
+		const requests = [outcomeOf(pool.run(1)), outcomeOf(pool.run(2))];
 		await pool.close();
-		for (const result of await Promise.all(requests)) {
-			expect(result.ok).toBe(false);
-			if (!result.ok) expect(result.error).toBeInstanceOf(Error);
-		}
+		for (const result of requests) expect(result()).toMatchObject({ ok: false, error: expect.any(Error) });
 	});
 
 	it('the blend pool works in the dev engine (tsx, esbuild keepNames)', async () => {
@@ -53,19 +45,23 @@ describe('native export worker pools survive a dead worker', () => {
 				[
 					`import { BlendPool } from ${JSON.stringify(join(here, '../src/export/blend/pool.ts'))};`,
 					'const pool = new BlendPool({ W: 2, H: 1 }, { workers: 1, slots: 1 });',
-					'const t = setTimeout(() => { console.log("hang"); process.exit(2); }, 10000);',
 					'await pool.run(pool.slots[0]!, 0, 0, true);',
-					'clearTimeout(t);',
 					'await pool.close();',
 					'console.log("ok");',
 				].join('\n'),
 			);
 			const tsx = createRequire(import.meta.url).resolve('tsx/cli');
-			const out = await new Promise<string>((resolve, reject) =>
-				execFile(process.execPath, [tsx, script], { timeout: 60_000 }, (e, stdout, stderr) =>
+			const out = await new Promise<string>((resolve, reject) => {
+				const child = execFile(process.execPath, [tsx, script], (e, stdout, stderr) =>
 					e ? reject(new Error(`${e.message}\n${stdout}\n${stderr}`)) : resolve(stdout),
-				),
-			);
+				);
+				onTestFinished(async () => {
+					if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
+					const exited = once(child, 'exit');
+					child.kill('SIGKILL');
+					await exited;
+				});
+			});
 			expect(out.trim()).toBe('ok');
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
@@ -84,10 +80,13 @@ describe('export worker scheduling', () => {
 	);
 
 	it.skipIf(availableParallelism() < 2)('terminates already-created workers if startup fails', async () => {
-		const worker = new Worker(`require('node:worker_threads').parentPort.on('message', () => {});`, {
-			eval: true,
-		});
-		const exited = once(worker, 'exit');
+		const worker = new Worker(
+			`const { parentPort } = require('node:worker_threads');
+parentPort.on('message', () => parentPort.postMessage('alive'));`,
+			{ eval: true },
+		);
+		const exited = once(worker, 'exit').then(() => 'exited');
+		const alive = once(worker, 'message').then(() => 'alive');
 		const error = new Error('worker resources exhausted');
 		const createWorker = vi
 			.fn<() => Worker>()
@@ -95,8 +94,14 @@ describe('export worker scheduling', () => {
 			.mockImplementationOnce(() => {
 				throw error;
 			});
-		expect(() => new ExportWorkerPool('test', 2, createWorker)).toThrow(error);
-		expect((await settles(exited)).ok).toBe(true);
+		try {
+			expect(() => new ExportWorkerPool('test', 2, createWorker)).toThrow(error);
+			worker.postMessage(null);
+			expect(await Promise.race([exited, alive])).toBe('exited');
+			expect(worker.threadId).toBe(-1);
+		} finally {
+			await worker.terminate();
+		}
 	});
 
 	it('rejects running and queued tasks when a worker exits', async () => {
@@ -104,13 +109,15 @@ describe('export worker scheduling', () => {
 			eval: true,
 		});
 		const pool = new ExportWorkerPool<number, number>('test', 1, () => worker);
-		const running = settles(pool.run(1));
-		const queued = settles(pool.run(2));
+		const running = outcomeOf(pool.run(1));
+		const queued = outcomeOf(pool.run(2));
 		try {
 			await worker.terminate();
-			for (const result of await Promise.all([running, queued])) {
-				expect(result.ok).toBe(false);
-				if (!result.ok) expect(result.error.message).toMatch(/test worker exited/);
+			for (const result of [running, queued]) {
+				expect(result()).toMatchObject({
+					ok: false,
+					error: { message: expect.stringMatching(/test worker exited/) },
+				});
 			}
 		} finally {
 			await pool.close();
@@ -124,9 +131,9 @@ describe('export worker scheduling', () => {
 			() => new Worker(`require('node:worker_threads').parentPort.on('message', () => {});`, { eval: true }),
 		);
 		try {
-			const result = await settles(pool.run(() => 1));
-			expect(result.ok).toBe(false);
-			if (!result.ok) expect(result.error.name).toBe('DataCloneError');
+			const result = outcomeOf(pool.run(() => 1));
+			await Promise.resolve();
+			expect(result()).toMatchObject({ ok: false, error: { name: 'DataCloneError' } });
 		} finally {
 			await pool.close();
 		}

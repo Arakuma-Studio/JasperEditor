@@ -58,7 +58,6 @@ beforeEach(() => {
 	);
 });
 afterEach(() => {
-	vi.useRealTimers();
 	cleanup();
 	closeAllDialogs();
 	stopInContext({ returnToAnchor: false });
@@ -66,9 +65,10 @@ afterEach(() => {
 	requestCueFill(null);
 	resetVariationRun();
 	restoreAudition();
+	vi.useRealTimers();
 });
 
-const tick = () => new Promise((r) => setTimeout(r, 0));
+const drain = () => vi.advanceTimersByTimeAsync(0);
 
 function entries(): SoundEntry[] {
 	return [
@@ -206,6 +206,7 @@ describe('In Context: the playhead and the gesture come back', () => {
 	});
 
 	it('an agent transaction arriving ends the audition and applies at once (not queued behind it)', async () => {
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
 		const h = harness();
 		const bridge = new AgentBridge(h.session, null).start();
 		try {
@@ -216,7 +217,7 @@ describe('In Context: the playhead and the gesture come back', () => {
 				origin: { agent: 'bot' },
 				commands: [{ type: 'marker.add', frame: 3 }],
 			});
-			const settled = await Promise.race([p.then(() => 'done'), tick().then(() => 'queued')]);
+			const settled = await Promise.race([p.then(() => 'done'), drain().then(() => 'queued')]);
 			expect(settled).toBe('done');
 			expect((await p).ok).toBe(true);
 			expect(inContextStore.getState().active).toBe(false);
@@ -263,12 +264,13 @@ describe('In Context: the playhead and the gesture come back', () => {
 	});
 
 	it('a superseded audition is not reported as a failure (agents and toasts)', async () => {
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
 		const h = harness();
 		const release = slowRegister(h);
 		const a = runCommand('soundLibrary.auditionInContext', h.ctx, { soundId: h.list[0]!.id });
-		await tick();
+		await drain();
 		const b = runCommand('soundLibrary.auditionInContext', h.ctx, { soundId: h.list[1]!.id });
-		await tick();
+		await drain();
 		release();
 		expect((await a).ran).toBe(true);
 		expect((await b).ran).toBe(true);
@@ -293,11 +295,14 @@ describe('In Context in the Sound Library: keys toggle it', () => {
 		mount(h);
 		const list = await screen.findByRole('listbox');
 		await within(list).findAllByRole('option');
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
 		list.focus();
 		fireEvent.click(within(list).getAllByRole('option')[0]!);
-		key(list, ' ', 'Space', { shiftKey: true });
-		await waitFor(() => expect(inContextStore.getState().active).toBe(true));
-		await tick(); // the audition listens for the next key from here
+		await act(async () => {
+			key(list, ' ', 'Space', { shiftKey: true });
+			await drain(); // the audition now listens for the next key
+		});
+		expect(inContextStore.getState().active).toBe(true);
 		return list;
 	}
 
@@ -306,8 +311,7 @@ describe('In Context in the Sound Library: keys toggle it', () => {
 		h.session.transport.seek(100);
 		const list = await playing(h);
 		key(list, ' ', 'Space', { shiftKey: true });
-		await tick();
-		await tick();
+		await drain();
 		expect(inContextStore.getState()).toMatchObject({ active: false, loading: false });
 		expect(h.session.gestureActive).toBe(false);
 		expect(h.session.transport.getState()).toMatchObject({ playing: false, frame: 100 });
@@ -318,8 +322,7 @@ describe('In Context in the Sound Library: keys toggle it', () => {
 		soundLibraryPrefs.set({ inContext: true });
 		const list = await playing(h);
 		key(list, ' ', 'Space');
-		await tick();
-		await tick();
+		await drain();
 		expect(inContextStore.getState()).toMatchObject({ active: false, loading: false });
 	});
 
@@ -329,11 +332,11 @@ describe('In Context in the Sound Library: keys toggle it', () => {
 		requestCueFill({ sequenceId: h.seqId, cueId, types: ['hit'], label: 'Hero Land cue at 00:00:03:00' });
 		const list = await playing(h);
 		key(list, 'Escape', 'Escape');
-		await tick();
+		await drain();
 		expect(inContextStore.getState().active).toBe(false);
 		expect(cueFillTarget()?.cueId).toBe(cueId);
 		key(list, 'Escape', 'Escape');
-		await waitFor(() => expect(cueFillTarget()).toBeNull());
+		expect(cueFillTarget()).toBeNull();
 	});
 
 	it('closing the panel ends an audition it started', async () => {
@@ -369,8 +372,10 @@ describe('Fill With ▸ hover auditions on the cue whose menu it is', () => {
 			load(): Promise<{ onHighlight(): void; onUnhighlight(): void }[]>;
 		};
 		const loaded = await fillWith.load();
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
 		loaded[0]!.onHighlight();
-		await waitFor(() => expect(inContextStore.getState().active).toBe(true), { timeout: 2000 });
+		await vi.advanceTimersToNextTimerAsync();
+		expect(inContextStore.getState().active).toBe(true);
 		const st = h.session.getState();
 		const drawn = st.transient!.sequences[h.seqId]!;
 		const placed = Object.values(drawn.clips).find((x) => x.kind === 'audio')!;
@@ -442,10 +447,11 @@ describe('In Context: more exit paths and races (gap tests)', () => {
 	});
 
 	it('two quick Shift+Space presses on the same sound (the second while it registers) leave nothing playing', async () => {
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
 		const h = harness();
 		const release = slowRegister(h);
 		const a = runCommand('soundLibrary.auditionInContext', h.ctx, { soundId: h.list[0]!.id });
-		await tick();
+		await drain();
 		expect(inContextStore.getState().loading).toBe(true);
 		stopInContext(); // what the panel's toggle does for the same sound while it loads
 		release();
@@ -526,7 +532,7 @@ describe('Sound Library modes follow their target', () => {
 		requestCueFill({ sequenceId: h.seqId, cueId, types: ['hit'], label: 'x' });
 		const other = harness();
 		mount(other.session);
-		await waitFor(() => expect(cueFillTarget()).toBeNull());
+		expect(cueFillTarget()).toBeNull();
 		expect(screen.queryByTestId('sound-fill-chip')).toBeNull();
 	});
 });
@@ -543,8 +549,12 @@ describe('Hover audition with In Context on', () => {
 		);
 		const list = await screen.findByRole('listbox');
 		const option = (await within(list).findAllByRole('option'))[0]!;
-		fireEvent.mouseEnter(option);
-		await waitFor(() => expect(inContextStore.getState().active).toBe(true), { timeout: 3000 });
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+		await act(async () => {
+			fireEvent.mouseEnter(option);
+			await vi.runOnlyPendingTimersAsync();
+		});
+		expect(inContextStore.getState().active).toBe(true);
 		expect(h.session.getState().transient).not.toBeNull();
 		fireEvent.mouseLeave(option);
 		expect(inContextStore.getState().active).toBe(false);
@@ -556,20 +566,22 @@ describe('a key pressed while it plays runs its own command too (Phase 2 verific
 	// Before: the keymap dispatcher (window, capture, installed at start-up) resolved the key while the audition still
 	// held the session gesture, so Ctrl+Z was disabled and only ended the audition; the user had to press it again.
 	it('Ctrl+Z ends the audition and undoes the last edit in the same press', async () => {
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
 		const h = harness();
 		h.addCue(150);
 		expect(h.labels()).toEqual(['setup']);
+		let receipt: ReturnType<typeof runCommand> | undefined;
 		const off = installKeyboardDispatcher(window, {
 			getCtx: () => h.ctx,
 			getFocusKind: () => 'timeline',
 			platform: 'linux',
 			runtime: 'web',
-			run: (c, ctx, args) => void runCommand(c.id, ctx, args),
+			run: (c, ctx, args) => void (receipt = runCommand(c.id, ctx, args)),
 		});
 		try {
 			h.session.transport.seek(100);
 			expect((await auditionInContext(h.session, h.engine, h.list[0]!)).ok).toBe(true);
-			await tick(); // the audition listens for the next key from here
+			await drain(); // the audition listens for the next key from here
 			expect(h.session.gestureActive).toBe(true);
 			document.body.dispatchEvent(
 				new KeyboardEvent('keydown', {
@@ -580,10 +592,12 @@ describe('a key pressed while it plays runs its own command too (Phase 2 verific
 					bubbles: true,
 				}),
 			);
-			await waitFor(() => expect(inContextStore.getState().active).toBe(false));
+			await receipt;
+			await drain();
+			expect(inContextStore.getState().active).toBe(false);
 			expect(h.session.gestureActive).toBe(false);
 			// the cue the setup added is gone: undone, not only the audition stopped
-			await waitFor(() => expect(h.session.getState().history.canUndo).toBe(false));
+			expect(h.session.getState().history.canUndo).toBe(false);
 			expect(h.session.getState().history.canRedo).toBe(true);
 			const seq = h.session.getState().document.sequences[h.seqId]!;
 			expect(Object.keys((seq.soundDesign as { cues?: object } | undefined)?.cues ?? {})).toHaveLength(0);

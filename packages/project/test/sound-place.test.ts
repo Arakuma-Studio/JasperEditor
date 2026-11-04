@@ -1,12 +1,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import {
-	FLICKS_PER_SECOND,
-	flicksPerFrame,
-	type PeakAlignInput,
-	peakAlignedStart,
-	RATES,
-} from '../src/index.ts';
+import { type PeakAlignInput, peakAlignedStart } from '../src/sound/place.ts';
+import { FLICKS_PER_SECOND, flicksPerFrame, RATES } from '../src/time.ts';
 
 const fps30 = { num: 30, den: 1 };
 const ok = (input: PeakAlignInput) => {

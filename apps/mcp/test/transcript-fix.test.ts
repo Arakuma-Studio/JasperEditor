@@ -100,7 +100,11 @@ const result = (mode: 'propose' | 'dryRun'): TranscriptFixResult => ({
 });
 
 function fakeEngine(
-	opts: { fail?: { code: string; message: string; detail?: unknown }; runningPolls?: number } = {},
+	opts: {
+		fail?: { code: string; message: string; detail?: unknown };
+		runningPolls?: number;
+		onCancelled?: () => void;
+	} = {},
 ) {
 	const calls: { name: string; args: unknown[] }[] = [];
 	let polls = 0;
@@ -134,6 +138,7 @@ function fakeEngine(
 		cancelJob: async (id: string) => {
 			calls.push({ name: 'cancelJob', args: [id] });
 			cancelled = true;
+			opts.onCancelled?.();
 			return job();
 		},
 	};
@@ -242,7 +247,15 @@ describe('fix_transcript', () => {
 	});
 
 	it('cancelling the request cancels the engine job', async () => {
-		const t = await connect({ runningPolls: 1000 });
+		let onCancelled!: () => void;
+		const cancelled = new Promise<void>((resolve) => {
+			onCancelled = resolve;
+		});
+		const t = await connect({ runningPolls: 1000, onCancelled });
+		let progressed!: () => void;
+		const progressReceived = new Promise<void>((resolve) => {
+			progressed = resolve;
+		});
 		const ac = new AbortController();
 		const progress: number[] = [];
 		const call = t.client.callTool(
@@ -250,13 +263,18 @@ describe('fix_transcript', () => {
 			undefined,
 			{
 				signal: ac.signal,
-				onprogress: (p) => progress.push(p.progress),
+				onprogress: (p) => {
+					progress.push(p.progress);
+					progressed();
+				},
 			},
 		);
-		await expect.poll(() => progress.length, { timeout: 5000 }).toBeGreaterThan(0);
+		await progressReceived;
+		expect(progress.length).toBeGreaterThan(0);
 		ac.abort('stop');
 		await expect(call).rejects.toThrow();
-		await expect.poll(() => t.engine.calls.some((c) => c.name === 'cancelJob'), { timeout: 5000 }).toBe(true);
+		await cancelled;
+		expect(t.engine.calls).toContainEqual({ name: 'cancelJob', args: ['job_fix'] });
 	});
 
 	it('a refused job is a tool error with its E_* code and a hint', async () => {

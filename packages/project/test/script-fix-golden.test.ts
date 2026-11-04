@@ -207,7 +207,7 @@ describe('alignment and candidates, Spanish (SC-010 … SC-026)', () => {
 	it('off-script chatter is aligned to OFF and produces no candidates', () => {
 		const r = run(
 			'Vamos a añadir tres botones grandes al menú principal.',
-			'vamos a añadir tres botones | uy espera que se me ha caído el café encima del teclado otra vez madre mía | grandes al menú principal',
+			'vamos a añadir tres botones | uy espera que se me ha caído el café encima del teclado otra vez madre mía | grande al menú principal',
 		);
 		expect(r.alignment.report.offScriptTokens).toBeGreaterThanOrEqual(10);
 		expect(r.candidates).toEqual([]);
@@ -349,8 +349,15 @@ describe('English (SC-012 en rules)', () => {
 			'en',
 		);
 		expect(r.candidates.map(brief)).toEqual(['sub:other:built→build', 'join:proper:pixel forge→Pixelforge']);
-		expect(run('I made it in 24 hours.', 'i made it in twentyfour hours', 'en').candidates).toEqual([]);
-		expect(run('We need one more level.', 'we need 1 more level', 'en').candidates).toEqual([]);
+		for (const [text, spoken, exactTokens] of [
+			['I made it in 24 hours.', 'i made it in twentyfour hours', 6],
+			['We need one more level.', 'we need 1 more level', 5],
+		] as const) {
+			expect(run(text, spoken, 'en')).toMatchObject({
+				candidates: [],
+				alignment: { report: { exactTokens } },
+			});
+		}
 	});
 });
 
@@ -664,16 +671,32 @@ describe('windows, scores, edits (SC-030 … SC-042)', () => {
 			'hoy probamos el motor de pixelforch con un nivel nuevo',
 		);
 		const { windows } = buildScoreWindows(r.words, r.candidates);
-		const bad: ScoreWindowResult[] = [
-			{
-				id: windows[0]!.id,
-				readings: [
-					{ id: 'asr', logprob: Number.NaN, tokens: 1, words: [] },
-					{ id: r.candidates[0]!.id, logprob: -1, tokens: 1, words: [] },
-				],
-			},
-		];
-		expect(candidateScores(windows, bad).size).toBe(0);
+		const valid: ScoreWindowResult[] = windows.map((w) => ({
+			id: w.id,
+			readings: w.readings.map((rd) => ({
+				id: rd.id,
+				logprob: -1,
+				tokens: rd.words.length,
+				words: rd.words.map((text, i) => ({
+					text,
+					tokens: 1,
+					logprob: -1,
+					probability: 0.9,
+					start: w.start + i,
+					end: w.start + i + 1,
+				})),
+			})),
+		}));
+		expect(candidateScores(windows, valid).size).toBe(1);
+		const nonfinite = structuredClone(valid);
+		nonfinite[0]!.readings[0]!.logprob = Number.NaN;
+		expect(candidateScores(windows, nonfinite).size).toBe(0);
+		const shortened = structuredClone(valid);
+		shortened[0]!.readings[0]!.words.pop();
+		expect(candidateScores(windows, shortened).size).toBe(0);
+		const missing = structuredClone(valid);
+		missing[0]!.readings.pop();
+		expect(candidateScores(windows, missing).size).toBe(0);
 		expect(candidateScores(windows, []).size).toBe(0);
 	});
 

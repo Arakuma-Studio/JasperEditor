@@ -14,13 +14,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { EngineJob, ExportResult, ExportSettings, RenderPlan } from '@jasper/api';
 import { appdirPaths } from '@jasper/config';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, onTestFinished } from 'vitest';
 import {
 	audioOnlyMuxArgs,
 	DeliverableError,
 	deliverableOf,
 	gifFrames,
 	gifGraphs,
+	gifMuxLoop,
 	gifSize,
 	gifToRgb,
 } from '../src/export/deliverables.ts';
@@ -36,7 +37,6 @@ import {
 	TEST_FFMPEG,
 	TEST_FFPROBE,
 	type TestApp,
-	until,
 } from './helpers.ts';
 import { writeBedFixture } from './sound-bed-fixture.ts';
 
@@ -155,6 +155,11 @@ describe('GIF helpers', () => {
 		expect(gifFrames(3 / 25, 10)).toBe(1);
 		expect(gifFrames(0, 15)).toBe(1);
 		expect(gifFrames(Number.NaN, 15)).toBe(1);
+	});
+	it('plays → the muxer loop count', () => {
+		expect(gifMuxLoop(0)).toBe(0);
+		expect(gifMuxLoop(1)).toBe(-1);
+		expect(gifMuxLoop(3)).toBe(2);
 	});
 	it('sizes are even and keep the aspect', () => {
 		expect(gifSize({ width: 1920, height: 1080 }, undefined)).toEqual({ width: 1080, height: 608 });
@@ -442,17 +447,45 @@ describe('GIF export on a real engine (AF-EXP-001)', { timeout: 600_000 }, () =>
 
 	it('cancelling during the GIF render removes the partial output and the scratch directory', async () => {
 		const d = await doc(120);
-		const id = await start(d, settings(d, { gif: { fps: 30, width: 640 } }));
-		const q = coreServices(app).queue;
-		// cancelled in the GIF's render phase (its stages are named "GIF 1/2 · …")
-		await until(() => q.get(id)?.state === 'running' && q.get(id)?.stage?.startsWith('GIF'), 60_000, 10);
-		const cancel = await app.inject({ method: 'POST', url: `/api/jobs/${id}/cancel`, headers: H });
-		expect(cancel.statusCode, cancel.body).toBeLessThan(300);
-		const done = await q.wait(id);
-		expect(done.state).toBe('cancelled');
-		expect(existsSync(join(appdirPaths(app.appdir).rendersDir, id))).toBe(false);
-		expect(existsSync(join(appdirPaths(app.appdir).tmpDir, id))).toBe(false);
-		expect(await coreServices(app).exports.outputFile(id)).toBeNull();
+		const core = coreServices(app);
+		const q = core.queue;
+		await Promise.all(q.list({ active: true }).map((job) => q.wait(job.id)));
+		const run = core.ffmpeg.run;
+		let began!: () => void;
+		const rendering = new Promise<void>((resolve) => {
+			began = resolve;
+		});
+		core.ffmpeg.run = (args, options = {}) =>
+			run.call(core.ffmpeg, args, {
+				...options,
+				onProgress: (progress) => {
+					options.onProgress?.(progress);
+					began();
+				},
+			});
+		let id: string | undefined;
+		const cleanup = async () => {
+			core.ffmpeg.run = run;
+			if (id) {
+				q.cancel(id);
+				await q.wait(id);
+			}
+		};
+		onTestFinished(cleanup);
+		try {
+			id = await start(d, settings(d, { gif: { fps: 30, width: 640 } }));
+			expect(await Promise.race([rendering.then(() => true), q.wait(id).then(() => false)])).toBe(true);
+			expect(q.get(id)).toMatchObject({ state: 'running', stage: expect.stringMatching(/^GIF/) });
+			const cancel = await app.inject({ method: 'POST', url: `/api/jobs/${id}/cancel`, headers: H });
+			expect(cancel.statusCode, cancel.body).toBeLessThan(300);
+			const done = await q.wait(id);
+			expect(done.state).toBe('cancelled');
+			expect(existsSync(join(appdirPaths(app.appdir).rendersDir, id))).toBe(false);
+			expect(existsSync(join(appdirPaths(app.appdir).tmpDir, id))).toBe(false);
+			expect(await core.exports.outputFile(id)).toBeNull();
+		} finally {
+			await cleanup();
+		}
 	});
 });
 

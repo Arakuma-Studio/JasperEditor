@@ -12,7 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { planExport } from '../src/export/planner.ts';
 import { missingTemplates } from '../src/mg/index.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, H, JSON_H, makeApp, type TestApp, until } from './helpers.ts';
+import { closeApps, H, JSON_H, makeApp, type TestApp } from './helpers.ts';
 
 let app: TestApp;
 beforeAll(async () => {
@@ -194,10 +194,7 @@ describe('templates that are not installed block every export path (S11:ATP-010,
 			payload: { envelope: envelope(doc), sequenceId: b.seqId, frame: 10 },
 		});
 		expect(still.statusCode).toBe(202);
-		const job = await until(async () => {
-			const j = coreServices(app).queue.get(still.json().id);
-			return j && ['failed', 'succeeded'].includes(j.state) ? j : null;
-		});
+		const job = await coreServices(app).queue.wait(still.json().id);
 		expect(job.state).toBe('failed');
 		expect(job.error).toMatchObject({
 			code: 'TEMPLATE_NOT_INSTALLED',

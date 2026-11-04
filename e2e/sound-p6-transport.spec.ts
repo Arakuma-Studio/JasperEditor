@@ -13,7 +13,7 @@ import { mkdirSync } from 'node:fs';
 import { loadavg } from 'node:os';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
-import { arm, disarm, mark, peaks, type Recording, TAP } from './sound-tap.ts';
+import { arm, disarm, mark, pausedAudio, peaks, type Recording, recordedAudio, TAP } from './sound-tap.ts';
 import {
 	browserLaunch,
 	createProject,
@@ -144,14 +144,12 @@ async function playFor(p: Page, ms: number, during?: (p: Page) => Promise<void>)
 	await focusTimeline(p);
 	await arm(p);
 	await p.keyboard.press('Space');
-	const t0 = Date.now();
 	if (during) await during(p);
-	const left = ms - (Date.now() - t0);
-	if (left > 0) await p.waitForTimeout(left);
+	await recordedAudio(p, ms, true);
 	await focusTimeline(p);
 	await mark(p, 'pause');
 	await p.keyboard.press('Space');
-	await p.waitForTimeout(200);
+	await pausedAudio(p);
 	await p.evaluate(() => {
 		(window as unknown as { __p6on: boolean }).__p6on = false;
 	});
@@ -204,7 +202,7 @@ test('a big edit while playing (an agent adds tracks) keeps the audio going on i
 		await seekPaused(page, 0);
 		const rec = await playFor(page, 3400, async (p) => {
 			for (const wait of [700, 800, 800]) {
-				await p.waitForTimeout(wait);
+				await recordedAudio(p, wait);
 				const r = await transact(
 					p,
 					Array.from({ length: 4 }, () => ({ type: 'track.add', kind: 'audio' })),
@@ -242,7 +240,7 @@ test('a latency added while playing: after the restart the Mix is on time again'
 		let added: string[] = [];
 		await startSampler(page);
 		const rec = await playFor(page, 2600, async (p) => {
-			await p.waitForTimeout(800);
+			await recordedAudio(p, 800, true);
 			await mark(p, 'edit');
 			// six more Hard Limiters on the Mix: + 6 × 998 samples (125 ms) of read-ahead
 			const r = await transact(
@@ -397,7 +395,7 @@ test('seek while playing: the audio after the seek starts on its first sample', 
 	for (let i = 0; i < Math.max(2, Math.ceil(PLAYS / 2)); i++) {
 		await seekPaused(page, frameAt(1.5));
 		const rec = await playFor(page, 2000, async (p) => {
-			await p.waitForTimeout(700);
+			await recordedAudio(p, 700, true);
 			// type 4 s into the timecode readout while playing (it seeks without pausing the transport)
 			await p.getByTestId('timeline-timecode').click();
 			const input = p.getByTestId('timeline-timecode-input');

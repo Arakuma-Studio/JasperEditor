@@ -3,7 +3,7 @@
 // stream's 'close' fires once its body has been read — listening to it cancelled every analysis that started at once
 // (the beats route before WP-E7), and attached after an await it never fires again, so a client that left was never
 // noticed (the visual route). The work must see its signal unaborted while the client waits, and aborted soon after the
-// client closes its socket. Each route's work is replaced by a stub that holds until its signal aborts (or 3 s pass).
+// client closes its socket. Each route's work is replaced by a stub that reports when its signal aborts.
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -12,41 +12,40 @@ import { join } from 'node:path';
 import { encodeWav } from '@jasper/audio-dsp';
 import { appdirPaths } from '@jasper/config';
 import { makeEnvelope } from '@jasper/project';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, DocBuilder, makeApp, register, type TestApp } from './helpers.ts';
 
-type Seen = { aborted: boolean; abortedAfterMs: number | null };
+type Seen = { aborted: boolean };
 const hooks = vi.hoisted(() => ({
-	/** 'answer' crosses an event-loop turn; 'hold' waits for its signal to abort (≤ 3 s). */
+	/** 'answer' crosses an event-loop turn; 'hold' waits for its signal to abort. */
 	mode: 'answer' as 'answer' | 'hold',
 	entered: null as null | (() => void),
-	seen: [] as { aborted: boolean; abortedAfterMs: number | null }[],
+	finished: null as null | (() => void),
+	release: null as null | (() => void),
+	seen: [] as { aborted: boolean }[],
 	async work(signal: AbortSignal | undefined): Promise<void> {
-		hooks.entered?.();
-		const t0 = Date.now();
-		const seen: { aborted: boolean; abortedAfterMs: number | null } = {
-			aborted: false,
-			abortedAfterMs: null,
-		};
+		const seen = { aborted: false };
 		hooks.seen.push(seen);
 		await new Promise<void>((resolve) => {
-			const timer = setTimeout(resolve, 3000);
-			if (hooks.mode === 'answer')
-				setImmediate(() => {
-					clearTimeout(timer);
-					resolve();
-				});
-			signal?.addEventListener('abort', () => {
-				seen.aborted = true;
-				seen.abortedAfterMs = Date.now() - t0;
-				clearTimeout(timer);
-				resolve();
-			});
+			hooks.release = resolve;
+			if (hooks.mode === 'answer') setImmediate(resolve);
+			else if (signal?.aborted) resolve();
+			else signal?.addEventListener('abort', () => resolve(), { once: true });
+			hooks.entered?.();
 		});
 		seen.aborted = signal?.aborted ?? false;
+		hooks.finished?.();
 	},
 }));
+
+afterEach(() => {
+	// Release held work after a failed assertion so closing the server cannot hang.
+	hooks.release?.();
+	hooks.release = null;
+	hooks.entered = null;
+	hooks.finished = null;
+});
 
 vi.mock('../src/sound-design/visual.ts', async (orig) => {
 	const m = await orig<typeof import('../src/sound-design/visual.ts')>();
@@ -187,7 +186,7 @@ describe('long route work and the client, over a real connection', () => {
 			const res = await post(r.path, r.body()).done;
 			expect(res.status, res.body).toBe(200);
 			expect(hooks.seen).toHaveLength(1);
-			expect(hooks.seen[0]).toEqual({ aborted: false, abortedAfterMs: null } satisfies Seen);
+			expect(hooks.seen[0]).toEqual({ aborted: false } satisfies Seen);
 		});
 
 		it(`${r.name}: cancelled when the client closes the connection`, async () => {
@@ -196,15 +195,21 @@ describe('long route work and the client, over a real connection', () => {
 			const entered = new Promise<void>((resolve) => {
 				hooks.entered = resolve;
 			});
+			const finished = new Promise<void>((resolve) => {
+				hooks.finished = resolve;
+			});
+			const disconnected = new Promise<void>((resolve) => {
+				app.server.once('request', (_req, response) => response.once('close', resolve));
+			});
 			const call = post(r.path, r.body());
 			call.done.catch(() => {});
 			await entered;
 			hooks.entered = null;
 			call.destroy();
-			await vi.waitFor(() => expect(hooks.seen[0]?.abortedAfterMs).not.toBeNull(), { timeout: 2500 });
+			await disconnected;
+			hooks.release?.();
+			await finished;
 			expect(hooks.seen[0]!.aborted).toBe(true);
-			// it stopped at once (the hold would have lasted 3 s)
-			expect(hooks.seen[0]!.abortedAfterMs!).toBeLessThan(1500);
 		});
 	}
 });

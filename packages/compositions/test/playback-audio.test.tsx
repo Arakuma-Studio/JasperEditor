@@ -188,30 +188,24 @@ describe.runIf(!!CHROME && oraclesAvailable('ffmpeg'))(
 			);
 			try {
 				await page.goto(`${media.base}/${name}`);
-				await page.waitForFunction(
-					() =>
-						(window as unknown as { __playback?: { frame(): number | null } }).__playback?.frame() != null,
-					undefined,
-					{ timeout: 5000 },
+				await page.evaluate(
+					() => (window as unknown as { __playback: { ready: Promise<void> } }).__playback.ready,
 				);
 				if (picture) {
-					await expect.poll(async () => near(await centre(page), [255, 0, 0])).toBe(true);
+					expect(near(await centre(page), [255, 0, 0])).toBe(true);
 					await page.evaluate(() =>
-						(window as unknown as { __playback: { seek(frame: number): void } }).__playback.seek(20),
+						(window as unknown as { __playback: { seek(frame: number): Promise<void> } }).__playback.seek(20),
 					);
-					await expect.poll(async () => near(await centre(page), [0, 0, 255])).toBe(true);
+					expect(near(await centre(page), [0, 0, 255])).toBe(true);
 					await page.locator('#player').screenshot({
 						path: join(artifacts, `${mode}-${handle.kind}-${band ? 'ready' : 'pending'}-blue.png`),
 					});
 					await page.evaluate(() =>
-						(window as unknown as { __playback: { seek(frame: number): void } }).__playback.seek(0),
+						(window as unknown as { __playback: { seek(frame: number): Promise<void> } }).__playback.seek(0),
 					);
 				}
-				await page.evaluate(() => (window as unknown as { __playback: { play(): void } }).__playback.play());
-				await page.waitForFunction(
-					() => (window as unknown as { __playback: { ended(): boolean } }).__playback.ended(),
-					undefined,
-					{ timeout: 5000 },
+				await page.evaluate(() =>
+					(window as unknown as { __playback: { play(): Promise<void> } }).__playback.play(),
 				);
 				const signal = await page.evaluate(() =>
 					(

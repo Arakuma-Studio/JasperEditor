@@ -6,7 +6,7 @@
 import type { SoundEntry } from '@jasper/api';
 import { type AudioClip, type ClipSfx, FLICKS_PER_SECOND, type Sequence } from '@jasper/project';
 import { proposalsFor } from '@jasper/session';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { FakeEngine } from '../../../packages/session/test/fake-proposals-engine.ts';
 import {
 	type CommandCtx,
@@ -39,6 +39,7 @@ afterEach(() => {
 	requestCueFill(null);
 	resetVariationRun();
 	soundLibraryPrefs.set({ auditionOnSwap: true, inContext: false });
+	vi.useRealTimers();
 });
 
 type SfxClip = AudioClip & { sfx?: ClipSfx };
@@ -391,15 +392,16 @@ describe('In Context audition', () => {
 		h.session.select('cues', [], 'replace');
 		h.session.select('timeline', [r.clipId], 'replace');
 		await h.run('sound.swap');
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
 		const ok = await auditionInContext(h.session, h.engine, entries[1]!);
 		expect(ok.ok).toBe(true);
 		const t = h.session.getState().transient!.sequences[h.seqId]!;
 		expect(t.clips[r.clipId]!.enabled).toBe(false);
 		expect(h.clip(r.clipId).enabled).toBe(true);
 		// any other action (a key press) ends it
+		await vi.advanceTimersByTimeAsync(0);
 		window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' }));
-		await new Promise((res) => setTimeout(res, 5));
-		window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' }));
+		await vi.advanceTimersByTimeAsync(0);
 		expect(inContextStore.getState().active).toBe(false);
 		expect(h.session.getState().transient).toBeNull();
 	});

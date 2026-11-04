@@ -235,17 +235,12 @@ function cpuTimed(fn: () => void): { cpu: number; wall: number } {
 	return { cpu: threadCpuMs() - c0, wall };
 }
 
-/** Min CPU (and the median wall time) of 7 runs (`run(1)` … `run(7)`); up to 3 batches until the min fits the budget. */
+/** Min CPU and median wall time of one fixed set of 7 runs after the warm-up. */
 function measure(run: (i: number) => { cpu: number; wall: number }): { min: number; wallMedian: number } {
-	let best = { min: Number.POSITIVE_INFINITY, wallMedian: Number.POSITIVE_INFINITY };
-	for (let batch = 0; batch < 3 && best.min >= BUDGET_CPU_MS; batch++) {
-		const runs: { cpu: number; wall: number }[] = [];
-		for (let i = 1; i <= 7; i++) runs.push(run(batch * 7 + i));
-		const cpu = runs.map((r) => r.cpu).sort((a, b) => a - b);
-		const wall = runs.map((r) => r.wall).sort((a, b) => a - b);
-		if (cpu[0]! < best.min) best = { min: cpu[0]!, wallMedian: wall[3]! };
-	}
-	return best;
+	const runs = Array.from({ length: 7 }, (_, i) => run(i + 1));
+	const cpu = runs.map((r) => r.cpu).sort((a, b) => a - b);
+	const wall = runs.map((r) => r.wall).sort((a, b) => a - b);
+	return { min: cpu[0]!, wallMedian: wall[3]! };
 }
 
 describe('search speed (finding 10: < 50 ms for thousands of sounds)', () => {

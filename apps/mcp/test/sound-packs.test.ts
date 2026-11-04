@@ -13,7 +13,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { editorWindow } from './editor-window.ts';
-import { cleanEnv, stopEngine, testPort, waitFor } from './helpers.ts';
+import { cleanEnv, engineReady, stopEngine, testPort } from './helpers.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const PORT = await testPort(process.env.MCP_SOUND_PACKS_TEST_PORT);
@@ -163,16 +163,12 @@ beforeAll(async () => {
 				JASPER_SOUND_AUTO_INDEX: '0',
 				JASPER_SOUND_CATALOG: join(work, 'catalog.json'),
 			}),
-			stdio: ['ignore', 'pipe', 'pipe'],
+			stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
 		},
 	);
 	engine.stdout?.on('data', (d: Buffer) => engineLog.push(d.toString()));
 	engine.stderr?.on('data', (d: Buffer) => engineLog.push(d.toString()));
-	await waitFor(
-		async () => (await fetch(`http://127.0.0.1:${PORT}/health`)).ok,
-		120_000,
-		`the engine on ${PORT}: ${engineLog.join('')}`,
-	);
+	await engineReady(engine, PORT, engineLog);
 	const transport = new StdioClientTransport({
 		command: process.execPath,
 		args: ['--import', 'tsx', join(ROOT, 'apps/mcp/src/cli.ts'), '--appdir', appdir],
@@ -183,13 +179,13 @@ beforeAll(async () => {
 	transport.stderr?.on('data', (d: Buffer) => logs.push(d.toString('utf8')));
 	client = new Client({ name: 'vitest-mcp-packs', version: '1.0.0' });
 	await client.connect(transport);
-}, 240_000);
+});
 
 afterAll(async () => {
 	await client?.close().catch(() => {});
 	await stopEngine(engine);
 	if (work) rmSync(work, { recursive: true, force: true });
-}, 30_000);
+});
 
 type PackView = {
 	packId: string;
@@ -203,7 +199,7 @@ type PackView = {
 	licenseEvidence: { url: string }[];
 };
 
-describe('sound pack MCP tools', { timeout: 900_000 }, () => {
+describe('sound pack MCP tools', () => {
 	it('lists, installs (waiting for the index), searches by pack and removes behind the approval card', async () => {
 		const list = await ok<{ packs: PackView[] }>('list_sound_packs');
 		expect(list.packs).toEqual([

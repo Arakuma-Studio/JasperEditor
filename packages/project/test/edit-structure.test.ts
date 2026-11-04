@@ -495,10 +495,13 @@ describe('synthetic sources', () => {
 			{ type: 'synthetic.create', kind: 'color-matte', params: { color: [1, 0, 0, 1] }, ref: '$m' },
 		]);
 		const id = r.refs.$m!;
-		expect(h.tx([{ type: 'synthetic.update', syntheticId: id, params: { color: [2, 0, 0, 1] } }]).ok).toBe(
-			false,
-		);
-		expect(h.tx([{ type: 'synthetic.update', syntheticId: id, params: { hue: 3 } }]).ok).toBe(false);
+		expect(
+			h.tx([{ type: 'synthetic.update', syntheticId: id, params: { color: [2, 0, 0, 1] } }]),
+		).toMatchObject({ ok: false, errors: [{ code: 'E_INVALID_PARAM' }] });
+		expect(h.tx([{ type: 'synthetic.update', syntheticId: id, params: { hue: 3 } }])).toMatchObject({
+			ok: false,
+			errors: [{ code: 'E_INVALID_PARAM' }],
+		});
 		h.ok([{ type: 'synthetic.update', syntheticId: id, params: { color: [0, 1, 0, 1] } }]);
 		expect(h.doc.synthetics[id]).toMatchObject({ color: [0, 1, 0, 1] });
 		const l = h.ok([

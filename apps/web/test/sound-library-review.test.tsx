@@ -34,7 +34,7 @@ vi.mock('../src/state/engine.tsx', () => ({
 const soundsChanged = () =>
 	act(async () => {
 		for (const l of [...mocks.listeners]) l({ type: 'sounds.changed' });
-		await new Promise((r) => setTimeout(r, 20));
+		await Promise.resolve();
 	});
 
 const { SoundLibraryPanel } = await import('../src/panels/soundLibrary/SoundLibraryPanel.tsx');
@@ -250,7 +250,7 @@ describe('Sound Library panel: review fixes', () => {
 		await waitFor(() => expect(within(again).getAllByRole('option')).toHaveLength(12));
 		await act(async () => {
 			held[0]!.release();
-			await new Promise((r) => setTimeout(r, 20));
+			await Promise.resolve();
 		});
 		const names = within(again)
 			.getAllByRole('option')
@@ -274,7 +274,14 @@ describe('Sound Library panel: review fixes', () => {
 		await within(l2).findAllByRole('option');
 		fireEvent.scroll(l2, { target: { scrollTop: 3300 } });
 		await act(async () => {
-			await new Promise((r) => setTimeout(r, 100));
+			await Promise.resolve();
+		});
+		// Returning to the end must not request the exhausted page again.
+		await act(async () => {
+			fireEvent.scroll(l2, { target: { scrollTop: 0 } });
+		});
+		await act(async () => {
+			fireEvent.scroll(l2, { target: { scrollTop: 3300 } });
 		});
 		expect(pages.filter((o) => o > 0)).toEqual([100]);
 	});
@@ -358,7 +365,7 @@ describe('Sound Library panel: review fixes', () => {
 		const before = statusCalls;
 		await act(async () => {
 			fireEvent.click(install);
-			await new Promise((r) => setTimeout(r, 20));
+			await Promise.resolve();
 		});
 		expect(statusCalls).toBeGreaterThanOrEqual(before + 2);
 		await waitFor(() => expect(screen.getByTestId('sound-status').textContent).toContain('Indexing 50 %'));

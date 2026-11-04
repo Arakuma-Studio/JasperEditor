@@ -146,5 +146,4 @@ describe('edge inputs', () => {
 			{ numRuns: 60, seed: 2026 },
 		);
 	});
-
 });

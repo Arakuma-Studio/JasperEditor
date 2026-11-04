@@ -1,3 +1,4 @@
+import { setImmediate as tick } from 'node:timers/promises';
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	createCounterIdSource,
@@ -37,8 +38,6 @@ const agentTx = (commands: unknown[]) => ({
 	origin: { agent: 'bot' },
 	commands,
 });
-
-const tick = () => new Promise((r) => setTimeout(r, 0));
 
 describe('window.jasper transact (S01:AGT-003, UND-007)', () => {
 	it('forces an agent origin even when the caller claims to be the user', async () => {

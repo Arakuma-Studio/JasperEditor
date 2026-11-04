@@ -27,13 +27,14 @@ import type { EditorSession } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
 import { closeAllDialogs, DialogHost, toasts } from '@jasper/ui';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { resultFixture } from '../../mcp/test/sound-check-report-fixture.ts';
 import { createCommandContext } from '../src/commands/context.ts';
 import { getActiveKeymap } from '../src/commands/keymap-defaults.ts';
 import { getCommand, runCommand } from '../src/commands/registry.ts';
 import { useExportSoundCheck } from '../src/export/SoundCheckGate.tsx';
 import { SoundCheckPanel } from '../src/panels/soundCheck/SoundCheckPanel.tsx';
+import { installKeyboardDispatcher } from '../src/shell/keymap/dispatcher.ts';
 import { shortcutRows } from '../src/shell/keymap/KeyboardShortcutsDialog.tsx';
 import { assignShortcut, restoreBindings } from '../src/shell/keymap/store.ts';
 import { MENUBAR } from '../src/shell/menus/model.ts';
@@ -82,11 +83,12 @@ beforeEach(() => {
 	mocks.windows.length = 0;
 });
 afterEach(() => {
+	vi.useRealTimers();
 	cleanup();
 	closeAllDialogs();
 });
 
-const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
+const settle = () => act(() => Promise.resolve());
 const SND_B1 = 'snd_00000000000000b1';
 
 /** Music on A1; a hit filling a cut cue at 90 on A2 (clip A); a click at 150 on A3 (clip B). */
@@ -840,20 +842,22 @@ describe('Sound Check panel', () => {
 			fireEvent.click(within(rows()[0]!).getByTestId('sound-check-sounds-right'));
 		});
 		expect(screen.getByTestId('sound-check-play-all').textContent).toBe('Stop');
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
 		for (let i = 0; i < 2; i++) {
 			await act(async () => {
 				mocks.windows.at(-1)!.onEnd!('window');
-				await new Promise((r) => setTimeout(r, 5));
+				await vi.advanceTimersByTimeAsync(0);
 			});
 		}
 		expect(mocks.windows.map((w) => w.center)).toEqual([90, 91, 120]);
 		expect(screen.getByTestId('sound-check-play-all').textContent).toBe('Stop');
 		await act(async () => {
 			mocks.windows.at(-1)!.onEnd!('stopped');
-			await new Promise((r) => setTimeout(r, 5));
+			await vi.advanceTimersByTimeAsync(0);
 		});
 		expect(mocks.windows).toHaveLength(3);
 		expect(screen.getByTestId('sound-check-play-all').textContent).toBe('Play all');
+		vi.useRealTimers();
 		// an edit of the sound the verdicts judged: they are out of date (the row says so; MCP reports stale)
 		await act(async () => {
 			f.ok([{ type: 'audio.setGain', clipIds: [f.clipA], mode: 'adjust', db: 4 }], 'Gain');
@@ -1044,6 +1048,20 @@ describe('Sound Check panel: acknowledged findings (spec 12 §4 P6-E4)', () => {
 		const f = fixture();
 		mount(f);
 		await run();
+		onTestFinished(
+			installKeyboardDispatcher(window, {
+				getCtx: () =>
+					createCommandContext({
+						engine: f.engine.client as never,
+						session: f.session,
+						capabilities: ['engine'],
+					}),
+				getFocusKind: () => 'soundCheck',
+				platform: 'linux',
+				runtime: 'web',
+				run: (command, ctx, args) => void runCommand(command.id, ctx, args),
+			}),
+		);
 		const list = screen.getByTestId('sound-check-findings');
 		await act(async () => {
 			fireEvent.focus(list);
@@ -1053,13 +1071,17 @@ describe('Sound Check panel: acknowledged findings (spec 12 §4 P6-E4)', () => {
 			fireEvent.keyDown(list, { key: 'a', code: 'KeyA' });
 		});
 		const reason = screen.getByTestId('sound-check-ack-reason') as HTMLInputElement;
-		// typing there never drives the list (A, F, arrows)
+		const beforeTyping = f.session.getCommitted();
 		await act(async () => {
 			fireEvent.keyDown(reason, { key: 'f', code: 'KeyF' });
+		});
+		expect(f.session.getCommitted()).toEqual(beforeTyping);
+		await act(async () => {
+			fireEvent.change(reason, { target: { value: 'Discard this draft reason' } });
 			fireEvent.keyDown(reason, { key: 'Escape', code: 'Escape' });
 		});
 		expect(screen.queryByTestId('sound-check-ack-editor')).toBeNull();
-		expect(f.labels().at(-1)).not.toMatch(/^Sound Check Fix/);
+		expect(soundAcknowledgementsOf(f.seq())[`OUT_OF_SYNC:${f.clipA}`]).toBeUndefined();
 		await act(async () => {
 			fireEvent.keyDown(list, { key: 'a', code: 'KeyA' });
 		});

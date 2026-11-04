@@ -30,8 +30,9 @@ import { EditorSession } from '@jasper/session';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadCatalog } from '../src/processing/models.ts';
 import { SpeechModelStore } from '../src/speech/models.ts';
+import { coreServices } from '../src/tools/services.ts';
 import { transcriptFixAcceptExtension } from '../src/transcript-fix/run.ts';
-import { closeApps, JSON_H, makeApp, ROOT, register, type TestApp, until } from './helpers.ts';
+import { closeApps, JSON_H, makeApp, ROOT, register, type TestApp } from './helpers.ts';
 import { corrupt, scriptOf, transcriptFixDocument, type Word } from './transcript-fix-fixture.ts';
 
 const CACHE = process.env.JASPER_SPEECH_MODELS_DIR ?? join(ROOT, 'target', 'speech-models');
@@ -48,15 +49,8 @@ let app: TestApp;
 let reg: RegisteredMedia;
 const transcripts = new Map<string, Word[]>();
 
-async function waitJob(id: string, timeoutMs = 900_000): Promise<EngineJob> {
-	return until(
-		async () => {
-			const j = (await app.inject({ method: 'GET', url: `/api/jobs/${id}`, headers: H })).json() as EngineJob;
-			return ['succeeded', 'failed', 'cancelled', 'interrupted'].includes(j.state) ? j : null;
-		},
-		timeoutMs,
-		200,
-	);
+async function waitJob(id: string): Promise<EngineJob> {
+	return coreServices(app).queue.wait(id);
 }
 
 let projects = 0;

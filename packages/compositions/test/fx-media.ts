@@ -15,7 +15,20 @@ import {
 	type MediaAsset,
 } from '@jasper/project';
 import { BROWSER_VIDEO_ARGS } from '@jasper/testkit/fixture-video';
+import { decodePng } from '@jasper/testkit/png';
 import { testFxRegistry } from './fx-examples.ts';
+
+/** Decode the same RGB24 channels as the FFmpeg screenshot pipe, without starting a process per picture. */
+export function fxPixels(png: Uint8Array): Buffer {
+	const image = decodePng(png);
+	const rgb = Buffer.alloc(image.width * image.height * 3);
+	for (let p = 0, i = 0; p < image.data.length; p += 4, i += 3) {
+		rgb[i] = image.data[p]!;
+		rgb[i + 1] = image.data[p + 1]!;
+		rgb[i + 2] = image.data[p + 2]!;
+	}
+	return rgb;
+}
 
 export const FX_W = 640;
 export const FX_H = 360;

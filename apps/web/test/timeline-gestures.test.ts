@@ -96,8 +96,8 @@ describe('move gestures (TL-480…491)', () => {
 		t.drag(t.x(10), t.rowY('V1'), t.x(10) + 100, t.rowY('V2') + 2, { shift: false }, false);
 		t.controller.pointerMove(t.pt(t.x(10) + 100, t.rowY('V2') + 2, { shift: true }));
 		t.controller.pointerUp(t.pt(t.x(10) + 100, t.rowY('V2') + 2, { shift: true }));
-		expect(t.spans('V1')).toEqual([[50, 100]]);
 		expect(t.spans('V2')).toEqual([]);
+		expect(t.spans('V1')).toEqual([[50, 100]]);
 	});
 
 	it('clips on locked tracks cannot be grabbed (TL-481)', () => {

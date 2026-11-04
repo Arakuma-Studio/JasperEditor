@@ -14,7 +14,8 @@ import { initializeCanvas, type Layer, readPsd } from 'ag-psd';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { listZip } from '../src/imports/zip.ts';
 import { type RunningEngine, startEngine } from '../src/index.ts';
-import { DocBuilder, JSON_H, register, TEST_FFMPEG, TEST_FFPROBE, tempAppdir, until } from './helpers.ts';
+import { coreServices } from '../src/tools/services.ts';
+import { DocBuilder, JSON_H, register, TEST_FFMPEG, TEST_FFPROBE, tempAppdir } from './helpers.ts';
 
 const enabled = process.env.REMOTION_E2E === '1';
 const out = mkdtempSync(join(tmpdir(), 'jasper-delivery-'));
@@ -105,17 +106,7 @@ describe.runIf(enabled)('delivery end to end (REMOTION_E2E=1)', () => {
 		const r = await post(url, payload);
 		expect(r.statusCode, r.body).toBe(202);
 		const id = (r.json() as EngineJob).id;
-		let done: EngineJob | null = null;
-		await until(
-			async () => {
-				const g = await engine.app.inject({ method: 'GET', url: `/api/jobs/${id}`, headers: base() });
-				done = g.json() as EngineJob;
-				return ['succeeded', 'failed', 'cancelled'].includes(done.state);
-			},
-			600_000,
-			250,
-		);
-		const j = done as unknown as EngineJob;
+		const j = await coreServices(engine.app).queue.wait(id);
 		expect(j.state, JSON.stringify(j.error)).toBe('succeeded');
 		return j;
 	};

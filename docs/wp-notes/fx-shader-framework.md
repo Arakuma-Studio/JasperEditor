@@ -503,9 +503,17 @@ time dependent (the picture plays). The composition (re-render per frame), the s
 
 `packages/compositions/test/fx-compile-budget.test.ts` compiles, links and draws EVERY distinct program of every
 registered effect and transition (default params) plus the library noise/hash helpers inside loops on SwiftShader,
-and fails when one takes longer than `FX_COMPILE_BUDGET_MS` (default 5000 ms); it prints the slowest programs
-(`FX_COMPILE_REPORT=path.json` writes them all; `FX_COMPILE_FILTER=<id part>`; `FX_COMPILE_WORKERS`). Run it after
-adding noise-heavy effects:
+and fails when one consumes more than `FX_COMPILE_BUDGET_MS` (default 5000 CPU ms); it prints the slowest programs
+(`FX_COMPILE_REPORT=path.json` writes them all; `FX_COMPILE_FILTER=<id part>`; `FX_COMPILE_WORKERS`).
+
+Each worker owns a browser. The measurement sums positive per-process CPU deltas across that browser,
+including its GPU process, from before compilation through the first draw and readback. CDP's
+[`SystemInfo.getProcessInfo`](https://chromedevtools.github.io/devtools-protocol/tot/SystemInfo/#method-getProcessInfo)
+reports cumulative CPU seconds across each process's threads; multiply by 1000 for milliseconds. Wall
+milliseconds remain diagnostic output. `PERF=1` uses the strict budget; otherwise the existing host-load
+factor applies. Each program runs once. The separate hard timeout still bounds a stalled compiler.
+
+Run it after adding noise-heavy effects:
 
 ```bash
 pnpm vitest run packages/compositions/test/fx-compile-budget.test.ts

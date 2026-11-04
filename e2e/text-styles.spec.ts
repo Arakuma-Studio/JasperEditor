@@ -26,7 +26,6 @@ async function strokeWidths(page: Parameters<typeof query>[0]): Promise<(number 
 test('select 100 text clips → add a stroke and set its width in Properties → one undo step each', async ({
 	page,
 }, testInfo) => {
-	test.setTimeout(180_000);
 	await enableAgentBridge(page);
 	await createProject(page, 'E2E Multi-clip Styling');
 	const setup = await transact(

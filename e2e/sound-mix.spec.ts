@@ -8,7 +8,7 @@
 import { spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { type APIRequestContext, expect, type Page, test } from '@playwright/test';
+import { expect, type Page, test } from '@playwright/test';
 import { FIXTURE_COMMANDS } from '../apps/mcp/test/sound-cues-fixture.ts';
 import {
 	appliedLabels,
@@ -18,8 +18,10 @@ import {
 	enableAgentBridge,
 	exportViaUi,
 	focusTimeline,
+	libraryReady,
 	query,
 	ROOT,
+	timelineArea,
 	transact,
 } from './support.ts';
 
@@ -105,20 +107,6 @@ async function createProject(p: Page, name: string): Promise<string> {
 	return decodeURIComponent(m[1]!);
 }
 
-async function libraryReady(request: APIRequestContext) {
-	await expect
-		.poll(
-			async () => {
-				const r = await request.get('/api/sounds/status');
-				if (!r.ok()) return 0;
-				const s = (await r.json()) as { sounds: number; indexing: unknown; needsIndex: boolean };
-				return s.indexing || s.needsIndex ? 0 : s.sounds;
-			},
-			{ timeout: 360_000, intervals: [1000] },
-		)
-		.toBeGreaterThan(20);
-}
-
 type Level = { by: string; gainDb: number; limitedBy?: string[]; reason?: string };
 type Clip = {
 	id: string;
@@ -182,7 +170,7 @@ async function clipBodyClick(id: string) {
 		await query(page, 'playhead.set', { frame: c.start });
 		await focusTimeline(page);
 		await page.keyboard.press(i === 0 ? 'Backslash' : 'Equal');
-		await page.waitForTimeout(300);
+		await timelineArea(page).screenshot({ animations: 'disabled' });
 		b = await box();
 	}
 	if (!b || !(await inView(b))) throw new Error(`clip ${id} is not visible`);

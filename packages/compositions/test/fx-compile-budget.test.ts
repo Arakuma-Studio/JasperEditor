@@ -1,7 +1,7 @@
 // @vitest-environment node
 // SwiftShader compile time grows super-linearly with inlined noise and hash calls.
 // Include the first draw and readback: ANGLE may compile a pipeline lazily.
-// Retest over-budget programs in a fresh browser; host load can inflate wall times.
+// Measure CPU consumed by this browser, so scheduler delays cannot fail the budget.
 import { existsSync, writeFileSync } from 'node:fs';
 import {
 	defaultEffectRegistry,
@@ -17,7 +17,7 @@ import {
 	TRANSITION_SPECS,
 	type TransitionSpec,
 } from '@jasper/project';
-import { type Browser, chromium, type Page } from '@playwright/test';
+import { type Browser, type CDPSession, chromium, type Page } from '@playwright/test';
 import { describe, expect, it } from 'vitest';
 import { budgetMs } from '../../../scripts/perf/budget.ts';
 import { TEST_FX } from './fx-examples.ts';
@@ -227,16 +227,25 @@ function compileInPage(prog: { source: string; vertex?: string }): number | stri
 	return ms;
 }
 
-type Timing = { ms: number | null; users: string[]; error?: string };
+type Timing = { ms: number | null; cpuMs: number | null; users: string[]; error?: string };
 
-async function launch(): Promise<{ browser: Browser; page: Page }> {
+// CDP reports cumulative CPU seconds across each process's threads. Sum positive
+// deltas by PID; each worker owns a separate browser, including its GPU process.
+// https://github.com/ChromeDevTools/devtools-protocol/blob/master/pdl/domains/SystemInfo.pdl
+async function processCpu(session: CDPSession): Promise<Map<number, number>> {
+	const { processInfo } = await session.send('SystemInfo.getProcessInfo');
+	return new Map(processInfo.map((p) => [p.id, p.cpuTime * 1000]));
+}
+
+async function launch(): Promise<{ browser: Browser; page: Page; session: CDPSession }> {
 	const browser = await chromium.launch({
 		executablePath: CHROME,
 		args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
 	});
 	const page = await browser.newPage();
 	await page.setContent('<!doctype html><html><body></body></html>');
-	return { browser, page };
+	const session = await browser.newBrowserCDPSession();
+	return { browser, page, session };
 }
 
 async function timeAll(programs: Program[]): Promise<Timing[]> {
@@ -248,6 +257,7 @@ async function timeAll(programs: Program[]): Promise<Timing[]> {
 			while (next < programs.length) {
 				const i = next++;
 				const prog = programs[i]!;
+				const before = await processCpu(b.session);
 				let timer: ReturnType<typeof setTimeout> | undefined;
 				const r = await Promise.race([
 					b.page.evaluate(compileInPage, {
@@ -260,11 +270,21 @@ async function timeAll(programs: Program[]): Promise<Timing[]> {
 				]).catch((e: Error) => `evaluate failed: ${e.message}`);
 				clearTimeout(timer);
 				if (r === 'timeout') {
-					out[i] = { ms: null, users: prog.users, error: `still compiling after ${HARD_TIMEOUT} ms` };
+					out[i] = {
+						ms: null,
+						cpuMs: null,
+						users: prog.users,
+						error: `still compiling after ${HARD_TIMEOUT} ms`,
+					};
 					await b.browser.close().catch(() => {});
 					b = await launch();
-				} else if (typeof r === 'string') out[i] = { ms: null, users: prog.users, error: r };
-				else out[i] = { ms: r, users: prog.users };
+				} else if (typeof r === 'string') out[i] = { ms: null, cpuMs: null, users: prog.users, error: r };
+				else {
+					const after = await processCpu(b.session);
+					let cpuMs = 0;
+					for (const [pid, ms] of after) cpuMs += Math.max(0, ms - (before.get(pid) ?? 0));
+					out[i] = { ms: r, cpuMs, users: prog.users };
+				}
 			}
 		} finally {
 			await b.browser.close().catch(() => {});
@@ -275,25 +295,16 @@ async function timeAll(programs: Program[]): Promise<Timing[]> {
 }
 
 describe.runIf(!!CHROME && process.env.FX_GL !== '0')('fx programs compile fast on SwiftShader', () => {
-	it(`every effect and transition program compiles within ${BASE_BUDGET} ms (× host load unless PERF=1)`, {
+	it(`every effect and transition program compiles within ${BASE_BUDGET} CPU ms (× host load unless PERF=1)`, {
 		timeout: 3_600_000,
 	}, async () => {
 		const programs = collectPrograms();
 		const t0 = Date.now();
 		const timings = await timeAll(programs);
-		// A loaded host inflates wall times: programs over the budget are timed again (fresh browser), best kept.
-		const slow = timings.map((t, i) => [t, i] as const).filter(([t]) => t.ms !== null && t.ms > BUDGET);
-		if (slow.length) {
-			const again = await timeAll(slow.map(([, i]) => programs[i]!));
-			slow.forEach(([t, i], k) => {
-				const r = again[k]!;
-				if (r.ms !== null && r.ms < t.ms!) timings[i] = r;
-			});
-		}
 		const total = Date.now() - t0;
-		const ranked = [...timings].sort((a, b) => (b.ms ?? Infinity) - (a.ms ?? Infinity));
+		const ranked = [...timings].sort((a, b) => (b.cpuMs ?? Infinity) - (a.cpuMs ?? Infinity));
 		const label = (t: Timing) =>
-			`${t.ms === null ? 'TIMEOUT/ERROR' : `${Math.round(t.ms)} ms`}  ${t.users.slice(0, 3).join(', ')}${t.users.length > 3 ? ` (+${t.users.length - 3})` : ''}${t.error ? `  ${t.error.slice(0, 200)}` : ''}`;
+			`${t.cpuMs === null ? 'TIMEOUT/ERROR' : `${Math.round(t.cpuMs)} CPU ms (${Math.round(t.ms!)} wall ms)`}  ${t.users.slice(0, 3).join(', ')}${t.users.length > 3 ? ` (+${t.users.length - 3})` : ''}${t.error ? `  ${t.error.slice(0, 200)}` : ''}`;
 		console.log(
 			`[fx-compile] ${programs.length} programs in ${Math.round(total / 1000)} s (${WORKERS} workers); slowest:\n${ranked
 				.slice(0, 15)
@@ -304,14 +315,14 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('fx programs compile fast 
 			writeFileSync(
 				process.env.FX_COMPILE_REPORT,
 				JSON.stringify(
-					ranked.map((t) => ({ ms: t.ms, users: t.users, error: t.error })),
+					ranked.map((t) => ({ ms: t.ms, cpuMs: t.cpuMs, users: t.users, error: t.error })),
 					null,
 					1,
 				),
 			);
 		const errors = timings.filter((t) => t.error).map(label);
 		expect(errors).toEqual([]);
-		const over = timings.filter((t) => t.ms !== null && t.ms > BUDGET).map(label);
+		const over = timings.filter((t) => t.cpuMs !== null && t.cpuMs > BUDGET).map(label);
 		expect(over).toEqual([]);
 	});
 });

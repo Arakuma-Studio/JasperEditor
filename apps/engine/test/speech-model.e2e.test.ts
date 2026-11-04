@@ -1,6 +1,9 @@
 // Public-domain LJ Speech fixture: twelve sentences with measured onsets/offsets, 71.6 s (three Whisper windows).
 // Uses JASPER_SPEECH_MODELS_DIR or target/speech-models; SPEECH_E2E=1 downloads missing models via the verified installer.
+import childProcess, { type ChildProcess } from 'node:child_process';
+import { once } from 'node:events';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { EngineJob, TranscriptionResult } from '@jasper/api';
@@ -12,7 +15,8 @@ import { SpeechModelStore } from '../src/speech/models.ts';
 import { decodeAudio } from '../src/speech/worker/run.ts';
 import { VERBATIM_PROMPTS } from '../src/speech/worker/whisper.ts';
 import { resolveBinaries } from '../src/tools/ffmpeg.ts';
-import { closeApps, DocBuilder, JSON_H, makeApp, ROOT, register, type TestApp, until } from './helpers.ts';
+import { coreServices } from '../src/tools/services.ts';
+import { closeApps, DocBuilder, JSON_H, makeApp, ROOT, register, type TestApp } from './helpers.ts';
 import { wordErrorRate } from './speech-wer.ts';
 
 const CACHE = process.env.JASPER_SPEECH_MODELS_DIR ?? join(ROOT, 'target', 'speech-models');
@@ -54,16 +58,8 @@ const H = { host: '127.0.0.1:47900' };
 
 let app: TestApp;
 
-async function waitJob(id: string, timeoutMs = 300_000): Promise<EngineJob> {
-	return until(
-		async () => {
-			const r = await app.inject({ method: 'GET', url: `/api/jobs/${id}`, headers: H });
-			const j = r.json() as EngineJob;
-			return ['succeeded', 'failed', 'cancelled', 'interrupted'].includes(j.state) ? j : null;
-		},
-		timeoutMs,
-		200,
-	);
+async function waitJob(id: string): Promise<EngineJob> {
+	return coreServices(app).queue.wait(id);
 }
 
 /** Boundary error of every utterance's first word start / last word end, and words outside the speech. */
@@ -302,22 +298,64 @@ describe.skipIf(!enabled)('speech-to-text with real Whisper models (wp speech)',
 
 	it('cancels a running transcription (the child process is killed)', async () => {
 		const m = await register(app, FIXTURE);
-		const r = await app.inject({
-			method: 'POST',
-			url: `/api/media/${m.mediaKey}/transcribe`,
-			headers: JSON_H,
-			payload: { model: 'whisper-tiny', language: 'de' },
+		const queue = coreServices(app).queue;
+		await Promise.all(queue.list().map((job) => queue.wait(job.id)));
+		const children: ChildProcess[] = [];
+		const originalSpawn = childProcess.spawn;
+		childProcess.spawn = ((...args: Parameters<typeof originalSpawn>) => {
+			const child = Reflect.apply(originalSpawn, childProcess, args) as ChildProcess;
+			children.push(child);
+			return child;
+		}) as typeof originalSpawn;
+		syncBuiltinESMExports();
+		let unsubscribe = () => {};
+		const ready = new Promise<void>((resolve) => {
+			unsubscribe = coreServices(app).broadcaster.subscribe((event) => {
+				const updated = event.payload as EngineJob;
+				if (
+					event.type === 'job.updated' &&
+					updated.kind === 'transcription' &&
+					updated.state === 'running' &&
+					(updated.progress ?? 0) > 0.03
+				)
+					resolve();
+			});
 		});
-		const job = r.json() as EngineJob;
-		await until(async () => {
-			const j = (
-				await app.inject({ method: 'GET', url: `/api/jobs/${job.id}`, headers: H })
-			).json() as EngineJob;
-			return j.state === 'running' && (j.progress ?? 0) > 0.03 ? j : null;
-		}, 120_000);
-		await app.inject({ method: 'POST', url: `/api/jobs/${job.id}/cancel`, headers: H });
-		const done = await waitJob(job.id, 60_000);
-		expect(done.state).toBe('cancelled');
+		let job: EngineJob | undefined;
+		try {
+			const r = await app.inject({
+				method: 'POST',
+				url: `/api/media/${m.mediaKey}/transcribe`,
+				headers: JSON_H,
+				payload: { model: 'whisper-tiny', language: 'de' },
+			});
+			expect(r.statusCode, r.body).toBe(202);
+			job = r.json() as EngineJob;
+			expect(await Promise.race([ready.then(() => true), queue.wait(job.id).then(() => false)])).toBe(true);
+			const pids = children
+				.filter((child) => child.pid !== undefined && child.exitCode === null && child.signalCode === null)
+				.map((child) => child.pid!);
+			expect(pids.length, 'a real transcription child is running').toBeGreaterThan(0);
+			await app.inject({ method: 'POST', url: `/api/jobs/${job.id}/cancel`, headers: H });
+			const done = await waitJob(job.id);
+			expect(done.state).toBe('cancelled');
+			for (const pid of pids)
+				expect(() => process.kill(pid, 0)).toThrow(expect.objectContaining({ code: 'ESRCH' }));
+		} finally {
+			unsubscribe();
+			childProcess.spawn = originalSpawn;
+			syncBuiltinESMExports();
+			if (job) queue.cancel(job.id);
+			await Promise.all(
+				children.map(async (child) => {
+					if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return;
+					const exited = once(child, 'exit');
+					child.kill('SIGKILL');
+					await exited;
+				}),
+			);
+			if (job) await queue.wait(job.id);
+		}
 	}, 300_000);
 });
 

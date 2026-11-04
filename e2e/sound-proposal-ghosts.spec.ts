@@ -10,7 +10,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import { FIXTURE_COMMANDS } from '../apps/mcp/test/sound-cues-fixture.ts';
-import { arm, disarm, mark, peaks, TAP } from './sound-tap.ts';
+import { arm, disarm, mark, pausedAudio, peaks, recordedAudio, TAP } from './sound-tap.ts';
 import {
 	appliedLabels,
 	browserLaunch,
@@ -122,15 +122,15 @@ async function playChecked(name: string, start: boolean, switchTo: boolean | nul
 	await arm(page);
 	await page.keyboard.press('Space');
 	if (switchTo !== null) {
-		await page.waitForTimeout(1200);
+		await recordedAudio(page, 1200, true);
 		await runCommand('proposals.toggleHear', { on: switchTo });
-		await page.waitForTimeout(2500);
-	} else await page.waitForTimeout(3700);
+		await recordedAudio(page, 2500);
+	} else await recordedAudio(page, 3700, true);
 	await mark(page, 'pause');
 	const frameAtPause = (await query<{ frame: number }>(page, 'playhead.get')).frame;
 	await focusTimeline(page);
 	await page.keyboard.press('Space');
-	await page.waitForTimeout(200);
+	await pausedAudio(page);
 	const rec = await disarm(page);
 	const until = rec.marks.pause ?? Number.POSITIVE_INFINITY;
 	const p = peaks(rec, 0.1)

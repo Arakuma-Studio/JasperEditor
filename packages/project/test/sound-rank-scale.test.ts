@@ -4,6 +4,7 @@
 import { loadavg } from 'node:os';
 import { performance } from 'node:perf_hooks';
 import { describe, expect, it } from 'vitest';
+import { threadCpuMs } from '../../../scripts/perf/cpu.ts';
 import {
 	inferTypesFromName,
 	type RankableSound,
@@ -17,7 +18,6 @@ import {
 	synonymType,
 	typesInTokens,
 } from '../src/index.ts';
-import { threadCpuMs } from './cpu-time.ts';
 
 const PROTO_KEYS = ['constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf', 'prototype'];
 
@@ -196,9 +196,7 @@ function measure(run: (i: number) => { cpu: number; wall: number }): { min: numb
 }
 
 describe('ranking 5 000 sounds (finding 10)', () => {
-	it('takes < 50 ms of CPU time (min of 7 runs after a warm-up, a new query each run)', {
-		timeout: 300_000,
-	}, () => {
+	it('takes < 50 ms of CPU time (min of 7 runs after a warm-up, a new query each run)', () => {
 		const lib = library(5000);
 		const report: string[] = [];
 		for (const base of [

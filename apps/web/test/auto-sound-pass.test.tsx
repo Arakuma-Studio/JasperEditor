@@ -15,7 +15,7 @@ import { makeSession } from './timeline-helpers.ts';
 
 afterEach(() => cleanup());
 
-const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
+const settle = () => act(async () => Promise.resolve());
 
 async function chooseOption(trigger: HTMLElement, name: string | RegExp) {
 	await act(async () => {

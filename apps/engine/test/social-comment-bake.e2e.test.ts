@@ -17,7 +17,7 @@ import { applyTransaction, defaultRegistries } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type RunningEngine, startEngine } from '../src/index.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { DocBuilder, JSON_H, tempAppdir, until } from './helpers.ts';
+import { DocBuilder, JSON_H, tempAppdir } from './helpers.ts';
 
 const enabled = process.env.REMOTION_E2E === '1';
 const W = 1280;
@@ -150,14 +150,7 @@ describe.runIf(enabled)(
 			queue()
 				.list({})
 				.filter((j) => j.parentId === id);
-		const wait = async (id: string): Promise<EngineJob> => {
-			await until(
-				() => ['succeeded', 'failed', 'cancelled'].includes(queue().get(id)?.state ?? ''),
-				1_500_000,
-				250,
-			);
-			return queue().get(id)!;
-		};
+		const wait = (id: string): Promise<EngineJob> => queue().wait(id);
 
 		/** The real social-comment@1: a TikTok comment over a grey background, every extra on, an emoji in the text. */
 		function doc(): DocBuilder {

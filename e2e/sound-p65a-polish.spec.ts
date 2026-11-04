@@ -177,10 +177,10 @@ test('the Razor inside a video and an audio transition cuts and shortens them', 
 	await query(page, 'playhead.set', { frame: cut });
 	await focusTimeline(page);
 	await page.keyboard.press('Backslash'); // the whole sequence (the playhead in view), then zoom in on it
-	await page.waitForTimeout(300);
+	await timelineArea(page).screenshot({ animations: 'disabled' });
 	for (let i = 0; i < 6; i++) {
 		await page.keyboard.press('Equal');
-		await page.waitForTimeout(150);
+		await timelineArea(page).screenshot({ animations: 'disabled' });
 	}
 	const inc = await clipBox(page, ids.$b!);
 	const seq = await sequence(page);

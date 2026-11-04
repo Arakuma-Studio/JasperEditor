@@ -23,7 +23,7 @@ import { SoundAnalyzer } from '../src/sounds/analysis.ts';
 import type { AnalysisJob, AnalysisResult } from '../src/sounds/analysis-core.ts';
 import type { SoundService } from '../src/sounds/service.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, H, JSON_H, makeApp, tempAppdir, until } from './helpers.ts';
+import { closeApps, H, JSON_H, makeApp, tempAppdir } from './helpers.ts';
 import { makeStarter, SR, samples, writeWav } from './sound-fixtures.ts';
 
 type App = Awaited<ReturnType<typeof makeApp>>;
@@ -50,6 +50,21 @@ afterEach(async () => {
 });
 
 const svcOf = (app: FastifyInstance) => app.jasper.services.sounds as SoundService;
+
+function jobMatching(app: FastifyInstance, match: (job: EngineJob) => boolean): Promise<EngineJob> {
+	const core = coreServices(app);
+	const existing = core.queue.list({}).find(match);
+	if (existing) return Promise.resolve(existing);
+	return new Promise((resolve) => {
+		const off = core.broadcaster.subscribe((event) => {
+			if (!['job.created', 'job.updated', 'job.finished'].includes(event.type)) return;
+			const job = event.payload as EngineJob;
+			if (!match(job)) return;
+			off();
+			resolve(job);
+		});
+	});
+}
 
 async function get<T = unknown>(app: FastifyInstance, url: string, headers: Record<string, string> = H) {
 	const r = await app.inject({ method: 'GET', url, headers });
@@ -246,7 +261,7 @@ describe('joining index jobs', { timeout: 300_000 }, () => {
 		bulkStarter(10);
 		const q = coreServices(app).queue;
 		const job = await startIndex(app);
-		await until(() => q.get(job.id)?.state === 'running' && (q.get(job.id)?.progress ?? 0) > 0, 120_000, 10);
+		await jobMatching(app, (j) => j.id === job.id && j.state === 'running' && (j.progress ?? 0) > 0);
 		const joined = await startIndex(app, { full: true });
 		expect(joined.id).toBe(job.id);
 		const done = await q.wait(job.id);
@@ -259,21 +274,25 @@ describe('joining index jobs', { timeout: 300_000 }, () => {
 
 describe('automatic indexing (finding 4)', { timeout: 300_000 }, () => {
 	it('does not start again after the user cancelled it, until an index is asked for', async () => {
-		bulkStarter(10);
 		process.env.JASPER_SOUND_AUTO_INDEX = '1';
 		const app = await makeApp();
 		const q = coreServices(app).queue;
 		const jobs = () => q.list({ kind: 'sound-index' });
-		const auto = await until(() => jobs()[0], 60_000);
+		const auto = await jobMatching(app, (j) => j.kind === 'sound-index');
 		expect(auto.origin.type).toBe('system');
-		await until(() => q.get(auto.id)?.state === 'running', 60_000, 10);
+		await jobMatching(app, (j) => j.id === auto.id && j.state === 'running');
 		q.cancel(auto.id);
 		expect((await q.wait(auto.id)).state).toBe('cancelled');
 		expect((await get<{ needsIndex: boolean }>(app, '/api/sounds/status')).body.needsIndex).toBe(true);
-		await search(app);
-		await get(app, '/api/sounds/status');
-		await new Promise((r) => setTimeout(r, 200));
-		expect(jobs()).toHaveLength(1);
+		const automatic = vi.spyOn(svcOf(app), 'autoIndex');
+		try {
+			await search(app);
+			await get(app, '/api/sounds/status');
+			await Promise.all(automatic.mock.results.map((result) => result.value));
+			expect(jobs()).toHaveLength(1);
+		} finally {
+			automatic.mockRestore();
+		}
 		// The user asks: it runs, and automatic indexing is allowed again afterwards.
 		const user = await startIndex(app);
 		expect(user.origin.type).toBe('user');

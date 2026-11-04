@@ -5,11 +5,10 @@
 // exporting after the pack is gone. Generated WAVs and archives only; never the network.
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, watch, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join, resolve } from 'node:path';
-import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { pathToFileURL } from 'node:url';
 import { deflateRawSync } from 'node:zlib';
 import {
@@ -35,14 +34,14 @@ import {
 } from '@jasper/project';
 import fc from 'fast-check';
 import type { FastifyInstance } from 'fastify';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import type { WebSocket } from 'ws';
 import { renderMixdown, WAV_F32_HEADER_BYTES } from '../src/audio/mixdown.ts';
 import { audioWorld } from '../src/sound-design/bed.ts';
 import builtin from '../src/sounds/packs.json' with { type: 'json' };
-import { filesDigest, parsePackCatalog, partialName, safeJoin } from '../src/sounds/packs.ts';
+import { filesDigest, parsePackCatalog, partialName, SoundPackStore, safeJoin } from '../src/sounds/packs.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, DocBuilder, H, JSON_H, makeApp, tempAppdir, until } from './helpers.ts';
+import { closeApps, DocBuilder, H, JSON_H, makeApp, tempAppdir } from './helpers.ts';
 import { makeStarter, SR, samples } from './sound-fixtures.ts';
 
 const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
@@ -693,14 +692,28 @@ describe('installing from a file:// catalogue', { timeout: 300_000 }, () => {
 describe('downloading over HTTP (a local server; no network)', { timeout: 300_000 }, () => {
 	let server: Server | null = null;
 	afterEach(async () => {
+		server?.closeAllConnections();
 		await new Promise<void>((r) => (server ? server.close(() => r()) : r()));
 		server = null;
 	});
 
-	/** Serves `body` at /pack.zip: honouring Range or not, slowly (bytes per 50 ms) or stalling after `stallAfter`. */
-	async function serve(body: Buffer, o: { range?: boolean; chunk?: number; stallAfter?: number } = {}) {
+	/** Serves the first chunk immediately; held responses continue only when the test releases them. */
+	async function serve(
+		body: Buffer,
+		o: { range?: boolean; chunk?: number; stallAfter?: number; hold?: boolean } = {},
+	) {
 		const seen: { range: string | null }[] = [];
+		let markStarted = () => {};
+		const started = new Promise<void>((resolve) => {
+			markStarted = resolve;
+		});
+		let markClosed = (_completed: boolean) => {};
+		const closed = new Promise<boolean>((resolve) => {
+			markClosed = resolve;
+		});
+		let release = () => {};
 		server = createServer((req, res) => {
+			res.once('close', () => markClosed(res.writableFinished));
 			seen.push({ range: (req.headers.range as string | undefined) ?? null });
 			let start = 0;
 			const m = /^bytes=(\d+)-$/.exec(String(req.headers.range ?? ''));
@@ -711,21 +724,33 @@ describe('downloading over HTTP (a local server; no network)', { timeout: 300_00
 					'content-range': `bytes ${start}-${body.length - 1}/${body.length}`,
 				});
 			} else res.writeHead(200, { 'content-length': body.length });
-			let at = start;
-			const step = () => {
-				if (res.destroyed) return;
-				if (o.stallAfter !== undefined && at >= o.stallAfter) return; // never ends
-				const n = o.chunk ?? body.length;
-				res.write(body.subarray(at, Math.min(body.length, at + n)));
-				at += n;
-				if (at >= body.length) res.end();
-				else setTimeout(step, 50);
+			const at = Math.min(body.length, start + (o.stallAfter ?? o.chunk ?? body.length));
+			res.write(body.subarray(start, at));
+			release = () => {
+				if (!res.destroyed) res.end(body.subarray(at));
 			};
-			step();
+			markStarted();
+			if (!o.hold && o.stallAfter === undefined) release();
 		});
 		await new Promise<void>((r) => server!.listen(0, '127.0.0.1', () => r()));
 		const port = (server!.address() as AddressInfo).port;
-		return { url: `http://127.0.0.1:${port}/pack.zip`, seen };
+		return { url: `http://127.0.0.1:${port}/pack.zip`, seen, started, closed, release: () => release() };
+	}
+
+	function partialWritten(file: string, bytes: number) {
+		mkdirSync(join(file, '..'), { recursive: true });
+		let watcher: ReturnType<typeof watch> | undefined;
+		const ready = new Promise<void>((resolve) => {
+			const check = () => {
+				if (existsSync(file) && statSync(file).size >= bytes) resolve();
+			};
+			watcher = watch(join(file, '..'), check);
+			check();
+		});
+		onTestFinished(() => {
+			watcher?.close();
+		});
+		return { ready, close: () => watcher?.close() };
 	}
 
 	it('resumes with a Range request, and starts over when the server ignores it', async () => {
@@ -751,17 +776,32 @@ describe('downloading over HTTP (a local server; no network)', { timeout: 300_00
 
 	it('cancel stops the download and deletes the partial file; nothing is installed', async () => {
 		const f = makePackFixture();
-		const s = await serve(f.zip, { chunk: 2048 });
+		const s = await serve(f.zip, { chunk: 2048, hold: true });
+		const fetch = globalThis.fetch;
+		let downloadSignal: AbortSignal | null | undefined;
+		const network = vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => {
+			if (String(input) === s.url) downloadSignal = init?.signal;
+			return fetch(input, init);
+		});
+		const cleanup = () => {
+			s.release();
+			network.mockRestore();
+		};
+		onTestFinished(cleanup);
 		writeCatalog([
 			packEntry(f, { download: { type: 'zip', url: s.url, sha256: sha(f.zip), sizeBytes: f.zip.length } }),
 		]);
 		const app = await makeApp();
-		const job = await install(app);
 		const dir = appdirPaths(app.appdir).soundPacksDir;
 		const partial = join(dir, '.downloads', partialName('test-pack', sha(f.zip)));
-		const deadline = Date.now() + 20_000;
-		while (!existsSync(partial) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 20));
-		expect(existsSync(partial)).toBe(true);
+		const written = partialWritten(partial, 2048);
+		const job = await install(app);
+		try {
+			await written.ready;
+		} finally {
+			written.close();
+		}
+		expect(statSync(partial).size).toBe(2048);
 		const c = await app.inject({
 			method: 'POST',
 			url: `/api/jobs/${job.id}/cancel`,
@@ -769,11 +809,17 @@ describe('downloading over HTTP (a local server; no network)', { timeout: 300_00
 			payload: {},
 		});
 		expect(c.statusCode, c.body).toBeLessThan(300);
-		const end = await wait(app, job.id);
-		expect(end.state).toBe('cancelled');
-		expect(existsSync(partial)).toBe(false);
-		expect(existsSync(join(dir, 'test-pack'))).toBe(false);
-		expect(tree(join(dir, '.staging'))).toEqual([]);
+		try {
+			expect(downloadSignal?.aborted).toBe(true);
+			expect(await s.closed).toBe(false);
+			const end = await wait(app, job.id);
+			expect(end.state).toBe('cancelled');
+			expect(existsSync(partial)).toBe(false);
+			expect(existsSync(join(dir, 'test-pack'))).toBe(false);
+			expect(tree(join(dir, '.staging'))).toEqual([]);
+		} finally {
+			cleanup();
+		}
 	});
 
 	it('a stalled download fails as retryable and keeps its partial file to resume', async () => {
@@ -784,109 +830,174 @@ describe('downloading over HTTP (a local server; no network)', { timeout: 300_00
 		]);
 		process.env.JASPER_SOUND_PACK_STALL_MS = '400';
 		const app = await makeApp();
-		const end = await wait(app, (await install(app)).id);
-		expect(end.state).toBe('failed');
-		expect(end.error).toMatchObject({ code: 'DOWNLOAD_TIMEOUT', retryable: true });
 		const partial = join(
 			appdirPaths(app.appdir).soundPacksDir,
 			'.downloads',
 			partialName('test-pack', sha(f.zip)),
 		);
-		expect(statSync(partial).size).toBe(2048);
+		const written = partialWritten(partial, 2048);
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+		try {
+			const job = await install(app);
+			await written.ready;
+			await vi.advanceTimersByTimeAsync(400);
+			const end = await wait(app, job.id);
+			expect(end.state).toBe('failed');
+			expect(end.error).toMatchObject({ code: 'DOWNLOAD_TIMEOUT', retryable: true });
+			expect(statSync(partial).size).toBe(2048);
+		} finally {
+			written.close();
+			vi.useRealTimers();
+		}
 	});
 
 	it('a removal while the pack installs is refused (409 SOUND_PACK_BUSY) and nothing breaks', async () => {
 		const f = makePackFixture();
-		const s = await serve(f.zip, { chunk: 16_384 });
+		const s = await serve(f.zip, { chunk: 16_384, hold: true });
 		writeCatalog([
 			packEntry(f, { download: { type: 'zip', url: s.url, sha256: sha(f.zip), sizeBytes: f.zip.length } }),
 		]);
 		const app = await makeApp();
 		const job = await install(app);
+		await s.started;
 		const r = await app.inject({ method: 'DELETE', url: '/api/sounds/packs/test-pack', headers: H });
 		expect(r.statusCode).toBe(409);
 		expect(r.json().code).toBe('SOUND_PACK_BUSY');
 		// a second install request joins the running job
 		expect((await install(app)).id).toBe(job.id);
-		expect((await wait(app, job.id)).state).toBe('succeeded');
+		s.release();
+		const end = await wait(app, job.id);
+		expect(end.state, JSON.stringify(end.error)).toBe('succeeded');
 	});
 
 	it('a `files` pack fetches one file at a time, at most one request per interval, saying who it is', async () => {
 		const f = makePackFixture();
-		const hits: { path: string; at: number; ua: string | undefined }[] = [];
-		const bodies = new Map(f.files.map((x, i) => [`/f/${i}.wav`, x.data]));
-		let open = 0;
-		let maxOpen = 0;
-		server = createServer((req, res) => {
-			open++;
-			maxOpen = Math.max(maxOpen, open);
-			hits.push({ path: req.url ?? '', at: Date.now(), ua: req.headers['user-agent'] });
-			const body = bodies.get(req.url ?? '');
-			res.on('close', () => open--);
-			if (!body) return res.writeHead(404).end();
-			res.writeHead(200, { 'content-length': body.length });
-			// slow enough that a parallel downloader would overlap two requests
-			setTimeout(() => res.end(body), 60);
-		});
-		await new Promise<void>((r) => server!.listen(0, '127.0.0.1', () => r()));
-		const port = (server!.address() as AddressInfo).port;
-		const { licenseFile: _l, ...zipless } = packEntry(f);
-		writeCatalog([
-			{
-				...zipless,
-				id: 'test-files',
-				download: { type: 'files' },
-				files: f.files.slice(0, 2).map((x, i) => ({
-					path: `${i}.wav`,
-					url: `http://127.0.0.1:${port}/f/${i}.wav`,
-					sha256: sha(x.data),
-					sizeBytes: x.data.length,
-					title: x.title,
-					types: x.types,
-					tags: [],
-					...(x.types.length ? {} : { inferTypes: false }),
-				})),
-			},
-		]);
-		const app = await makeApp();
-		// The engine paces the starts of its requests; this server stamps their arrival on the same event loop, so an
-		// arrival can be stamped late by as much as the loop was held up (measured: 282 ms between two stamps under the
-		// full suite at load 30, Final verification A). The allowance is that hold-up, measured over the download.
-		const loop = monitorEventLoopDelay({ resolution: 5 });
-		loop.enable();
-		const job = await wait(app, (await install(app, 'test-files')).id);
-		loop.disable();
-		expect(job.state, JSON.stringify(job.error)).toBe('succeeded');
-		expect(hits.map((h) => h.path)).toEqual(['/f/0.wav', '/f/1.wav']);
-		expect(maxOpen).toBe(1);
-		const heldUpMs = loop.max / 1e6;
-		for (let i = 1; i < hits.length; i++)
-			expect(
-				hits[i]!.at - hits[i - 1]!.at,
-				`the loop was held up ${heldUpMs.toFixed(1)} ms`,
-			).toBeGreaterThanOrEqual(995 - heldUpMs);
-		for (const h of hits) expect(h.ua).toMatch(/^JasperEditor\b/);
-
-		// cancelling while the job waits for its next request stops it at once
-		hits.length = 0;
-		await closeApps();
-		process.env.JASPER_SOUND_PACK_FILE_INTERVAL_MS = '60000';
-		const app2 = await makeApp();
-		const pending = await install(app2, 'test-files');
-		const firstFileShare = f.files[0]!.data.length / (f.files[0]!.data.length + f.files[1]!.data.length);
-		await until(() => (coreServices(app2).queue.get(pending.id)?.progress ?? 0) >= firstFileShare);
-		const t0 = Date.now();
-		const c = await app2.inject({
-			method: 'POST',
-			url: `/api/jobs/${pending.id}/cancel`,
-			headers: JSON_H,
-			payload: {},
-		});
-		expect(c.statusCode, c.body).toBeLessThan(300);
-		expect((await wait(app2, pending.id)).state).toBe('cancelled');
-		expect(Date.now() - t0).toBeLessThan(5000);
-		expect(hits).toHaveLength(1);
-		expect(existsSync(join(appdirPaths(app2.appdir).soundPacksDir, 'test-files'))).toBe(false);
+		const { licenseFile: _license, ...zipless } = packEntry(f);
+		const entry = {
+			...zipless,
+			id: 'test-files',
+			download: { type: 'files' },
+			files: f.files.slice(0, 2).map((x, i) => ({
+				path: `${i}.wav`,
+				url: `http://127.0.0.1:47900/f/${i}.wav`,
+				sha256: sha(x.data),
+				sizeBytes: x.data.length,
+				title: x.title,
+				types: x.types,
+				tags: [],
+			})),
+		};
+		const catalog = parsePackCatalog({ version: 1, packs: [entry] }, { builtin: false, base: null });
+		expect(catalog.errors).toEqual([]);
+		vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+		const fakeTimeout = globalThis.setTimeout;
+		let markPaced = () => {};
+		let paceInterval = 1000;
+		vi.spyOn(globalThis, 'setTimeout').mockImplementation(((...args: Parameters<typeof setTimeout>) => {
+			const timer = fakeTimeout(...args);
+			if (args[1] === paceInterval) markPaced();
+			return timer;
+		}) as typeof setTimeout);
+		try {
+			for (const cancel of [false, true]) {
+				paceInterval = cancel ? 60_000 : 1000;
+				const hits: { path: string; ua: string | null }[] = [];
+				const receipt = () => {
+					let resolve = () => {};
+					const promise = new Promise<void>((done) => {
+						resolve = done;
+					});
+					return { promise, resolve };
+				};
+				const requests = [receipt(), receipt()];
+				const releases: (() => void)[] = [];
+				let open = 0;
+				let maxOpen = 0;
+				const paced = receipt();
+				markPaced = paced.resolve;
+				vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, options) => {
+					if (options?.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+					const i = hits.length;
+					hits.push({
+						path: new URL(String(url)).pathname,
+						ua: new Headers(options?.headers).get('user-agent'),
+					});
+					open++;
+					maxOpen = Math.max(maxOpen, open);
+					const body = new ReadableStream<Uint8Array>({
+						start(controller) {
+							let finished = false;
+							releases[i] = () => {
+								if (finished) return;
+								finished = true;
+								controller.enqueue(f.files[i]!.data);
+								controller.close();
+								open--;
+							};
+						},
+					});
+					requests[i]!.resolve();
+					return new Response(body, { headers: { 'content-length': String(f.files[i]!.data.length) } });
+				});
+				const packsDir = tempAppdir('jasper-paced-pack-');
+				const store = new SoundPackStore({
+					packsDir,
+					catalog: async () => catalog,
+					stallMs: 400,
+					...(cancel ? { fileIntervalMs: paceInterval } : {}),
+				});
+				const ac = new AbortController();
+				const pending = store.install('test-files', { signal: ac.signal, jobId: 'job_pacing' });
+				// Attach the rejection handler before cancelling so a synchronous refusal cannot be unhandled.
+				const result = pending.then(
+					(value) => ({ value }),
+					(error: unknown) => ({ error }),
+				);
+				try {
+					await requests[0]!.promise;
+					expect(hits.map((h) => h.path)).toEqual(['/f/0.wav']);
+					releases[0]!();
+					expect(
+						await Promise.race([
+							paced.promise.then(() => 'waiting'),
+							requests[1]!.promise.then(() => 'requested'),
+						]),
+					).toBe('waiting');
+					if (cancel) {
+						const cancelledAt = vi.getMockedSystemTime();
+						ac.abort();
+						await vi.runAllTimersAsync();
+						const outcome = await Promise.race([
+							result.then((result) => ({ kind: 'settled' as const, result })),
+							requests[1]!.promise.then(() => ({ kind: 'requested' as const })),
+						]);
+						expect(outcome.kind).toBe('settled');
+						if (outcome.kind !== 'settled') throw new Error('A cancelled pack made another request');
+						expect(outcome.result).toMatchObject({ error: { code: 'JOB_CANCELLED' } });
+						expect(vi.getMockedSystemTime()).toEqual(cancelledAt);
+						expect(hits).toHaveLength(1);
+						expect(existsSync(join(packsDir, 'test-files'))).toBe(false);
+					} else {
+						await vi.advanceTimersByTimeAsync(999);
+						expect(hits.map((h) => h.path)).toEqual(['/f/0.wav']);
+						await vi.advanceTimersByTimeAsync(1);
+						await requests[1]!.promise;
+						releases[1]!();
+						expect(await result).toMatchObject({ value: { packId: 'test-files', sounds: 2 } });
+						expect(hits.map((h) => h.path)).toEqual(['/f/0.wav', '/f/1.wav']);
+					}
+					expect(maxOpen).toBe(1);
+					for (const h of hits) expect(h.ua).toMatch(/^JasperEditor\b/);
+				} finally {
+					for (const release of releases) release();
+					ac.abort();
+					await result;
+				}
+			}
+		} finally {
+			vi.restoreAllMocks();
+			vi.useRealTimers();
+		}
 	});
 
 	it('a server that sends more than the pinned size is refused', async () => {

@@ -187,7 +187,7 @@ describe('posters on the client (TL-087)', () => {
 		);
 		return { s, pending, revoked };
 	}
-	const flush = () => new Promise((r) => setTimeout(r, 0));
+	const flush = () => Promise.resolve();
 
 	it('asks once per poster, and answers from memory afterwards', async () => {
 		const { s, pending } = store();

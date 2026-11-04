@@ -227,6 +227,10 @@ describe('generators', () => {
 				expect(fx.gpu!.requiresFloat === true).toBe(!!g.prepass || !!g.lowRes);
 			});
 
+			it('names no param after a built-in uniform', () => {
+				for (const p of specs) expect(Object.keys(FX_BUILTIN_UNIFORMS)).not.toContain(`u_${p.name}`);
+			});
+
 			it('reaches a finite distance at its presets', () => {
 				for (const preset of g.presets ?? []) {
 					const values = withDefaults(layer, preset.params as never);

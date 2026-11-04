@@ -2,12 +2,14 @@
 // share one kernel stream (inputs do not grow with the clip count; frames equal the one-input-per-layer composite),
 // the planner refuses a composite that cannot fit in memory, and a compositor killed by the system (as by the OOM
 // killer) or starved by a memory cap ends the job with an error while the engine keeps serving.
-import { spawnSync } from 'node:child_process';
+import { type ChildProcess, spawnSync } from 'node:child_process';
 import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import type { RenderVisualClip } from '@jasper/project';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { buildNativeGraph } from '../src/export/native.ts';
 import { killedComposite } from '../src/export/service.ts';
 import { coreServices } from '../src/tools/services.ts';
@@ -470,16 +472,80 @@ describe('memory preflight and killed compositors (spec 13 AS-074)', () => {
 	}, 300_000);
 
 	it('a compositor that fails on its own reports its error, not the pipe error of the stream it fed', async () => {
-		// It closes the stream's pipe first, so the stream fails (EPIPE / ECONNRESET) before the compositor exits; the
-		// stream's terminate request is outlived (TERM ignored, exit within the grace period).
+		// The compositor stays alive after the broken stream asks it to terminate, then exits on our release.
 		const failing = await wrappedEngine(
-			'trap "" TERM; exec 3<&-; echo "graph: Filter has an unconnected output" >&2; sleep 0.3; exit 3',
+			`trap 'echo "jasper-test: TERM held" >&2' TERM; exec 3<&-; echo "graph: Filter has an unconnected output" >&2; while ! read -r release; do :; done; exit 3`,
 		);
 		const d = await stillsDoc(failing, 3);
-		const job = await startExport(failing, d, settings(d.seqId, 24, 'native'));
-		expect(job.state).toBe('failed');
-		expect(job.error?.message).toMatch(/unconnected output/);
-		expect(job.error?.message).not.toMatch(/layer stream/);
+		const ff = coreServices(failing).ffmpeg;
+		const run = ff.run.bind(ff);
+		let compositor: ChildProcess | undefined;
+		let received!: () => void;
+		const terminated = new Promise<void>((resolve) => {
+			received = resolve;
+		});
+		let released = false;
+		let releaseReceipt: Promise<void> | undefined;
+		const release = () => {
+			released = true;
+			if (
+				!releaseReceipt &&
+				compositor?.stdin &&
+				!compositor.stdin.destroyed &&
+				!compositor.stdin.writableEnded
+			) {
+				releaseReceipt = pipeline(Readable.from(['release\n']), compositor.stdin);
+				releaseReceipt.catch(() => undefined);
+			}
+		};
+		onTestFinished(release);
+		const spy = vi.spyOn(ff, 'run').mockImplementation((args, opts) => {
+			if (!args.some((arg) => arg.includes('overlay='))) return run(args, opts);
+			return run(args, {
+				...opts,
+				stdin: 'pipe',
+				onSpawn(child) {
+					compositor = child;
+					let stderr = '';
+					child.stderr!.on('data', (chunk) => {
+						stderr += String(chunk);
+						if (stderr.includes('jasper-test: TERM held')) received();
+					});
+					opts?.onSpawn?.(child);
+					if (released) release();
+				},
+			});
+		});
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+		let finished = false;
+		const pending = startExport(failing, d, settings(d.seqId, 24, 'native')).then((job) => {
+			finished = true;
+			return job;
+		});
+		try {
+			await Promise.race([
+				terminated,
+				pending.then((job) => {
+					throw new Error(`Export ended before the compositor held TERM: ${JSON.stringify(job)}`);
+				}),
+			]);
+			await vi.advanceTimersByTimeAsync(100);
+			expect(compositor!.exitCode).toBeNull();
+			expect(compositor!.signalCode).toBeNull();
+			expect(finished).toBe(false);
+			release();
+			const job = await pending;
+			expect(job.state).toBe('failed');
+			expect(job.error?.message).toMatch(/unconnected output/);
+			expect(job.error?.message).not.toMatch(/layer stream/);
+			await releaseReceipt;
+		} finally {
+			release();
+			await pending.catch(() => undefined);
+			await releaseReceipt?.catch(() => undefined);
+			spy.mockRestore();
+			vi.useRealTimers();
+		}
 		// The decision itself: the compositor's error, OUT_OF_MEMORY only for a SIGKILL nobody asked for.
 		const own = new Error('ffmpeg exited 234: graph error');
 		expect(killedComposite(own, 3, false)).toBe(own);

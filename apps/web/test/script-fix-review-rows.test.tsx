@@ -20,7 +20,7 @@ afterEach(() => {
 	stopSourceAudio();
 	vi.unstubAllGlobals();
 });
-const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
+const settle = () => act(async () => Promise.resolve());
 const row = (id: string) => document.querySelector(`[data-review-row="${id}"]`) as HTMLElement;
 
 async function reviewFixture(opts: { subtitles?: boolean; lockSubtitles?: boolean } = {}) {
@@ -147,7 +147,7 @@ describe('transcript fixes as Review rows (SC-082)', () => {
 		const { session, c } = await reviewFixture();
 		await act(async () => {
 			fireEvent.click(document.querySelector('[data-review-group-action="maybe:accept"]')!);
-			await new Promise((r) => setTimeout(r, 0));
+			await Promise.resolve();
 		});
 		expect(c.acceptedIds()).toEqual(['fix:3']);
 		await act(async () => {

@@ -138,8 +138,28 @@ test('a typing run’s takes: listed under it, auditioned and inserted peak-alig
 	const historyBefore = await appliedLabels(page);
 	const t3 = panel.locator('[data-take="3"]');
 	await t3.click();
+	await panel.getByTestId('sound-live').evaluate((el) => {
+		(window as unknown as { __takeAuditionStarted: Promise<void> }).__takeAuditionStarted = new Promise(
+			(resolve, reject) => {
+				const signal = AbortSignal.timeout(30_000);
+				const observer = new MutationObserver(() => {
+					if (!/^Playing /.test(el.textContent ?? '')) return;
+					observer.disconnect();
+					signal.onabort = null;
+					resolve();
+				});
+				observer.observe(el, { childList: true, subtree: true, characterData: true });
+				signal.onabort = () => {
+					observer.disconnect();
+					reject(signal.reason);
+				};
+			},
+		);
+	});
 	await page.keyboard.press('Space');
-	await expect(panel.getByTestId('sound-live')).toHaveText(/^Playing /, { timeout: 30_000 });
+	await page.evaluate(
+		() => (window as unknown as { __takeAuditionStarted: Promise<void> }).__takeAuditionStarted,
+	);
 	await page.keyboard.press('Space');
 	expect(await appliedLabels(page)).toEqual(historyBefore);
 	await t3.click();

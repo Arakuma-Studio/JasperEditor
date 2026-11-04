@@ -43,7 +43,7 @@ afterEach(() => {
 	dismissedProposals.setState({ ids: {} });
 });
 
-const settle = () => act(async () => new Promise((r) => setTimeout(r, 0)));
+const settle = () => act(() => Promise.resolve());
 
 async function setup() {
 	const f = await proposalFixture();

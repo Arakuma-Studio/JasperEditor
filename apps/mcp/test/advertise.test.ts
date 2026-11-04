@@ -4,7 +4,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterEach, describe, expect, it } from 'vitest';
-import { compactInputSchema, compactNode } from '../src/advertise.ts';
+import { compactInputSchema } from '../src/advertise.ts';
 import type { EngineConnection } from '../src/link.ts';
 import { createJasperMcpServer } from '../src/server.ts';
 
@@ -56,12 +56,12 @@ describe('compactNode', () => {
 		});
 	});
 	it('keeps a property that is named like a dropped keyword', () => {
-		expect(compactNode({ properties: { pattern: { type: 'string' } } })).toEqual({
+		expect(compactInputSchema({ properties: { pattern: { type: 'string' } } })).toEqual({
 			properties: { pattern: { type: 'string' } },
 		});
 	});
 	it('drops the null branch of an optional field', () => {
-		expect(compactNode({ anyOf: [{ type: 'string' }, { type: 'null' }], description: 'd' })).toEqual({
+		expect(compactInputSchema({ anyOf: [{ type: 'string' }, { type: 'null' }], description: 'd' })).toEqual({
 			type: 'string',
 			description: 'd',
 		});
@@ -81,11 +81,11 @@ describe('compactNode', () => {
 			],
 			description: 'When',
 		};
-		expect(compactNode(time)).toEqual({ type: ['integer', 'string'], description: 'When' });
+		expect(compactInputSchema(time)).toEqual({ type: ['integer', 'string'], description: 'When' });
 	});
 	it('advertises the plain form of an animatable value', () => {
 		expect(
-			compactNode({
+			compactInputSchema({
 				anyOf: [
 					{ type: 'number' },
 					{ type: 'object', properties: { value: { type: 'number' }, keyframes: { type: 'array' } } },
@@ -95,7 +95,7 @@ describe('compactNode', () => {
 	});
 	it('turns a tagged union into its tag', () => {
 		expect(
-			compactNode({
+			compactInputSchema({
 				anyOf: [
 					{ type: 'object', properties: { kind: { const: 'a' }, x: { type: 'number' } } },
 					{ type: 'object', properties: { kind: { type: 'string', enum: ['b'] }, y: { type: 'number' } } },
@@ -110,19 +110,25 @@ describe('compactNode', () => {
 		});
 	});
 	it('leaves a union of different shapes alone, without duplicates', () => {
-		expect(compactNode({ anyOf: [{ type: 'string' }, { type: 'string' }, { type: 'number' }] })).toEqual({
+		expect(
+			compactInputSchema({ anyOf: [{ type: 'string' }, { type: 'string' }, { type: 'number' }] }),
+		).toEqual({
 			anyOf: [{ type: 'string' }, { type: 'number' }],
 		});
 	});
 	it('reads a tuple of one type as an array of it', () => {
 		expect(
-			compactNode({ type: 'array', items: [{ type: 'number' }, { type: 'number' }], additionalItems: false }),
+			compactInputSchema({
+				type: 'array',
+				items: [{ type: 'number' }, { type: 'number' }],
+				additionalItems: false,
+			}),
 		).toEqual({ type: 'array', items: { type: 'number' } });
 	});
 	it('drops an enum long enough to be a catalogue', () => {
 		const values = Array.from({ length: 41 }, (_, i) => `v${i}`);
-		expect(compactNode({ type: 'string', enum: values })).toEqual({ type: 'string' });
-		expect(compactNode({ type: 'string', enum: values.slice(0, 40) })).toEqual({
+		expect(compactInputSchema({ type: 'string', enum: values })).toEqual({ type: 'string' });
+		expect(compactInputSchema({ type: 'string', enum: values.slice(0, 40) })).toEqual({
 			type: 'string',
 			enum: values.slice(0, 40),
 		});

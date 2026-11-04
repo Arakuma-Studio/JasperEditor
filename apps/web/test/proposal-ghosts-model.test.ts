@@ -70,6 +70,9 @@ describe('buildGhostModel', () => {
 		expect(m.byItem.trk!.state).toBe('accepted');
 		const r = await f.c.apply({ trusted: true });
 		expect(r.ok).toBe(true);
+		m = model(f.session, f.seqId);
+		expect(m.byItem.hit).toBeUndefined();
+		expect(m.byItem.trk).toBeUndefined();
 		f.flush();
 		m = model(f.session, f.seqId);
 		expect(m.byItem.hit).toBeUndefined();

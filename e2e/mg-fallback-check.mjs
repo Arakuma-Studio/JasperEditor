@@ -6,6 +6,7 @@
 //   node e2e/mg-fallback-check.mjs      # after `pnpm build && pnpm mg:build`
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { once } from 'node:events';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -62,19 +63,17 @@ async function engine(port, extraEnv) {
 	temps.push(appdir);
 	const child = spawn(process.execPath, [join(root, 'apps/engine/dist/engine.mjs'), '--port', String(port)], {
 		env: { ...process.env, JASPER_APPDIR: appdir, ...AUTH_ENV, ...extraEnv },
-		stdio: ['ignore', 'ignore', 'inherit'],
+		stdio: ['ignore', 'ignore', 'inherit', 'ipc'],
 	});
 	children.push(child);
-	const url = `http://127.0.0.1:${port}`;
-	for (let i = 0; i < 120; i++) {
-		try {
-			if ((await fetch(`${url}/health`)).ok) return url;
-		} catch {
-			// starting
-		}
-		await new Promise((r) => setTimeout(r, 250));
-	}
-	await fail(`engine on ${port} did not start`);
+	const [ready] = await Promise.race([
+		once(child, 'message', { signal: AbortSignal.timeout(30_000) }),
+		once(child, 'exit').then(([code]) => {
+			throw new Error(`engine on ${port} exited before readiness (${code})`);
+		}),
+	]);
+	if (ready?.type !== 'ready' || ready.port !== port) await fail(`invalid readiness on ${port}`);
+	return `http://127.0.0.1:${port}`;
 }
 
 async function call(url, method, path, body) {

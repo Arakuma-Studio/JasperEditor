@@ -44,12 +44,14 @@ describe('PNG input for render_frames', () => {
 
 	it('decodes greyscale with alpha and rejects unsupported input', () => {
 		expect([...decodePng(GREY_ALPHA).data]).toEqual(GREY_ALPHA_PIXELS);
-		expect(() => decodePng(Buffer.from('not a png'))).toThrow();
+		const badSignature = Buffer.from(RGB);
+		badSignature[0] = 0;
+		expect(() => decodePng(badSignature)).toThrow('Not a PNG image');
 		const sixteen = Buffer.from(
 			'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABEAIAAADA54+dAAAAD0lEQVR4nGMQMgmrmLUHAAYnAmsO3tV6AAAAAElFTkSuQmCC',
 			'base64',
 		);
-		expect(() => decodePng(sixteen)).toThrow();
+		expect(() => decodePng(sixteen)).toThrow('Unsupported PNG');
 	});
 });
 

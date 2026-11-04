@@ -249,7 +249,7 @@ describe('bug 1: overlapping realisations are a stack per lane', () => {
 			),
 			{ numRuns: 40 },
 		);
-	}, 300_000);
+	});
 });
 
 describe('bug 2: Bézier volume curves', () => {
@@ -409,7 +409,7 @@ describe('bug 2: mergeDips on curved lanes (property)', () => {
 		);
 		// the largest deviation of a rebuilt curve outside the dips in these runs
 		expect(maxCurved).toBeLessThan(0.05);
-	}, 300_000);
+	});
 });
 
 describe('bug 3: splitting a dipped music clip', () => {

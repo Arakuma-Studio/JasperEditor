@@ -225,7 +225,6 @@ test('double-click edits text under a look: the caret shows and the look draws w
 				.evaluate((el) => el.getBoundingClientRect().width),
 		)
 		.toBeGreaterThan((await input().boundingBox())!.width * 0.5);
-	await page.waitForTimeout(1500);
 	// The caret follows the text: after the last letter, across the height of the line.
 	await expect
 		.poll(async () => {
@@ -266,7 +265,6 @@ test('a word selected in place gets its own style, in the same undo step', async
 	await expect(input()).toHaveCount(0);
 	const { runs } = await textOf(c!.id);
 	expect(runs).toEqual([{ from: 0, to: 2, style: { italic: true, sizePx: 216 } }]);
-	await page.waitForTimeout(1500);
 	await shot('run-under-look');
 });
 
@@ -333,17 +331,21 @@ test('the run toolbar gives the selected letters their own finish, drawn in Prog
 	expect(runs).toContainEqual(expect.objectContaining({ from: 3, to: 6, finish: 'metal' }));
 	expect(runs?.filter((r) => r.finish)).toHaveLength(1);
 	expect(await appliedLabels(page)).toHaveLength(labels + 1);
-	await page.waitForTimeout(1500);
-	await shot('run-finish-metal');
-	const after = await viewport().screenshot({ animations: 'disabled' });
 	// The finished letters (right half of the text) change; "LO" (left quarter) keeps the look's own finish.
 	const rel = { x: drawn.x - vp.x, y: drawn.y - vp.y, w: drawn.width, h: drawn.height };
+	let after!: Buffer;
+	await expect
+		.poll(async () => {
+			after = await viewport().screenshot({ animations: 'disabled' });
+			return boxDifference(before, after, { ...rel, x: rel.x + rel.w * 0.5, w: rel.w * 0.5 });
+		})
+		.toBeGreaterThan(2);
+	writeFileSync(join(OUT, 'run-finish-metal.png'), after);
 	const right = boxDifference(before, after, { ...rel, x: rel.x + rel.w * 0.5, w: rel.w * 0.5 });
 	const left = boxDifference(before, after, { ...rel, w: rel.w * 0.25 });
 	console.info(
 		`[text-entry] run finish: mean |Δ| right half ${right.toFixed(2)}, left quarter ${left.toFixed(2)}`,
 	);
-	expect(right).toBeGreaterThan(2);
 	expect(right).toBeGreaterThan(left * 4);
 	// Undo takes the finish off in one step.
 	await focusTimeline(page);
@@ -356,17 +358,14 @@ test('vertical text and Warp Text come from Properties, and Warp Text keys in Ef
 	await page.getByRole('tab', { name: 'Properties', exact: true }).click();
 	await page.getByTestId('text-orientation').selectOption('vertical');
 	await expect.poll(async () => (await textOf(c!.id)).writingMode).toBe('vertical');
-	await page.waitForTimeout(1500);
 	await shot('vertical-look');
 	await page.getByTestId('text-warp-style').selectOption('arch');
 	await expect(page.getByText('Bend', { exact: true }).first()).toBeVisible();
-	await page.waitForTimeout(2000);
 	await shot('vertical-warp-look');
 	// Editing it: the warp stands aside so the caret sits on the letters.
 	const at = await textCentre(c!.id);
 	await page.mouse.dblclick(at.x, at.y);
 	await expect(input()).toBeFocused();
-	await page.waitForTimeout(1500);
 	await shot('vertical-warp-editing');
 	await page.keyboard.press('Escape');
 	await expect(input()).toHaveCount(0);

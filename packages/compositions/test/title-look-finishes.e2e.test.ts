@@ -4,7 +4,7 @@
 // offline media, a picture that cannot be read (renders fail by name, Program draws a stand-in with a chip), and Program
 // against export for a look with finishes. GL detail: title-look-finishes-gl.test.ts.
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Command, LookRecipe, Paint } from '@jasper/project';
@@ -12,7 +12,7 @@ import { bundleForBrowser } from '@jasper/testkit/browser';
 import { type Browser, chromium, type Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SEQUENCE_COMPOSITION_ID } from '../src/types.ts';
-import { FX_H, FX_W, type FxMedia, fxAsset, fxSnapshot, startFxMedia } from './fx-media.ts';
+import { FX_H, FX_W, type FxMedia, fxAsset, fxPixels, fxSnapshot, startFxMedia } from './fx-media.ts';
 import { ssim, ssimRgb } from './title-look-harness.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -66,24 +66,7 @@ const faceRamp = (span: string, angle = 0): LookRecipe => ({
 
 type Raw = { data: Buffer; w: number; h: number };
 const decode = (png: Buffer | string, w: number, h: number): Raw => ({
-	data: execFileSync(
-		'ffmpeg',
-		[
-			'-v',
-			'error',
-			'-i',
-			typeof png === 'string' ? png : 'pipe:0',
-			'-f',
-			'rawvideo',
-			'-pix_fmt',
-			'rgb24',
-			'-',
-		],
-		{
-			maxBuffer: 1 << 27,
-			...(typeof png === 'string' ? {} : { input: png }),
-		},
-	),
+	data: fxPixels(typeof png === 'string' ? readFileSync(png) : png),
 	w,
 	h,
 });
@@ -396,20 +379,12 @@ describe.runIf(enabled && !!CHROME)(
 				const exported = await still(doc, frame, `showcase-${frame}`);
 				await page.evaluate(
 					(f) =>
-						(window as never as { __fxPlayer: { seek(a: string, b: number): void } }).__fxPlayer.seek(
-							'showcase',
-							f,
-						),
+						(
+							window as never as { __fxPlayer: { seek(a: string, b: number): Promise<void> } }
+						).__fxPlayer.seek('showcase', f),
 					frame,
 				);
-				let prev = null as Buffer | null;
-				for (let i = 0; i < 50; i++) {
-					await page.waitForTimeout(200);
-					const shot = await page.locator('#showcase').screenshot();
-					if (prev?.equals(shot) && i > 2) break;
-					prev = shot;
-				}
-				const program = decode(prev!, W, H);
+				const program = decode(await page.locator('#showcase').screenshot(), W, H);
 				// Colour, not luma alone (AGENTS §4): the least SSIM of R, G and B.
 				const score = ssimRgb(program.data, exported.data, W, H).min;
 				console.info(`[finishes] frame ${frame}: Program vs export colour SSIM ${score.toFixed(4)}`);
@@ -457,9 +432,11 @@ describe.runIf(enabled && !!CHROME)(
 			const offline = offlineDoc();
 			expect(Object.values(offline.media).every((m) => m === null)).toBe(true);
 			await page.evaluate(() =>
-				(window as never as { __fxPlayer: { seek(a: string, b: number): void } }).__fxPlayer.seek('gone', 3),
+				(window as never as { __fxPlayer: { seek(a: string, b: number): Promise<void> } }).__fxPlayer.seek(
+					'gone',
+					3,
+				),
 			);
-			await page.waitForTimeout(2500);
 			const chip = await page.evaluate(() =>
 				(window as never as { __fxPlayer: { chip(a: string): string | null } }).__fxPlayer.chip('gone'),
 			);
@@ -486,22 +463,15 @@ describe.runIf(enabled && !!CHROME)(
 
 		it('Program draws a picture that cannot be read as a visible stand-in, with a chip', async () => {
 			await page.evaluate(() =>
-				(window as never as { __fxPlayer: { seek(a: string, b: number): void } }).__fxPlayer.seek(
+				(window as never as { __fxPlayer: { seek(a: string, b: number): Promise<void> } }).__fxPlayer.seek(
 					'unreadable',
 					3,
 				),
 			);
-			let chip: string | null = null;
-			for (let i = 0; i < 50 && !chip; i++) {
-				await page.waitForTimeout(200);
-				chip = await page.evaluate(() =>
-					(window as never as { __fxPlayer: { chip(a: string): string | null } }).__fxPlayer.chip(
-						'unreadable',
-					),
-				);
-			}
+			const chip = await page.evaluate(() =>
+				(window as never as { __fxPlayer: { chip(a: string): string | null } }).__fxPlayer.chip('unreadable'),
+			);
 			expect(chip).toBe('A picture of this look could not be read');
-			await page.waitForTimeout(1000);
 			const png = await page.locator('#unreadable').screenshot();
 			writeFileSync(join(OUT, 'unreadable-program.png'), png);
 			const shot = decode(png, W, H);

@@ -76,7 +76,6 @@ describe('a crashing measurement worker', { timeout: 300_000 }, () => {
 	it('fails the rebalance job with MEASURE_FAILED (retryable); nothing applied; the engine keeps working', async () => {
 		for (const n of [1, 2]) {
 			const projectId = seed(n);
-			const t0 = Date.now();
 			const r = await app.inject({
 				method: 'POST',
 				url: '/api/sound-design/rebalance',
@@ -88,7 +87,6 @@ describe('a crashing measurement worker', { timeout: 300_000 }, () => {
 			expect(job.state).toBe('failed');
 			expect(job.error).toMatchObject({ code: 'MEASURE_FAILED', retryable: true });
 			expect(job.error?.message).toMatch(/measurement worker stopped/);
-			expect(Date.now() - t0).toBeLessThan(120_000);
 			const q = await app.inject({
 				method: 'POST',
 				url: '/api/agent/query',

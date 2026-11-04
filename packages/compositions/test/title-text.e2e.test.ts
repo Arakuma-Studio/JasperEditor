@@ -2,8 +2,7 @@
 // Spec 19 TL-110, TL-111 end to end in real Chrome (REMOTION_E2E=1): a vertical title with a look, a keyed Warp Text and
 // tate-chu-yoko, drawn by the Player and through a Remotion render, compared frame by frame; a text animator on vertical
 // text; and the warp's resolution independence. The pictures land in test-results/title-text-e2e: look at them.
-import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -19,7 +18,7 @@ import { bundleForBrowser } from '@jasper/testkit/browser';
 import { type Browser, chromium, type Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SEQUENCE_COMPOSITION_ID } from '../src/types.ts';
-import { type FxMedia, startFxMedia } from './fx-media.ts';
+import { type FxMedia, fxPixels, startFxMedia } from './fx-media.ts';
 import { resampleLuma, ssim } from './title-look-harness.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -114,21 +113,7 @@ function build(o: Opts = {}) {
 type Raw = { data: Buffer; w: number; h: number };
 
 const decode = (png: Buffer | string, w: number, h: number): Raw => ({
-	data: execFileSync(
-		'ffmpeg',
-		[
-			'-v',
-			'error',
-			'-i',
-			typeof png === 'string' ? png : 'pipe:0',
-			'-f',
-			'rawvideo',
-			'-pix_fmt',
-			'rgb24',
-			'-',
-		],
-		{ maxBuffer: 1 << 27, ...(typeof png === 'string' ? {} : { input: png }) },
-	),
+	data: fxPixels(typeof png === 'string' ? readFileSync(png) : png),
 	w,
 	h,
 });
@@ -220,23 +205,16 @@ describe.runIf(enabled && !!CHROME)(
 
 		async function programFrame(id: string, frame: number, name: string): Promise<Raw> {
 			await page.evaluate(
-				([n, f]) => {
-					(window as never as { __fxPlayer: { seek(a: string, b: number): void } }).__fxPlayer.seek(
+				([n, f]) =>
+					(window as never as { __fxPlayer: { seek(a: string, b: number): Promise<void> } }).__fxPlayer.seek(
 						n as string,
 						f as number,
-					);
-				},
+					),
 				[id, frame] as const,
 			);
-			let prev = null as Buffer | null;
-			for (let i = 0; i < 80; i++) {
-				await page.waitForTimeout(200);
-				const shot = await page.locator(`#${id}`).screenshot();
-				if (prev?.equals(shot) && i > 3) break;
-				prev = shot;
-			}
-			writeFileSync(join(OUT, `${name}.png`), prev!);
-			return decode(prev!, W, H);
+			const shot = await page.locator(`#${id}`).screenshot();
+			writeFileSync(join(OUT, `${name}.png`), shot);
+			return decode(shot, W, H);
 		}
 
 		it('a warped vertical title with a look: Program against a real render', async () => {

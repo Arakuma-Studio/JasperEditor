@@ -522,8 +522,13 @@ describe('cache, capability and preview route (LBK-021, LBK-030)', () => {
 		const t = smallTitle(d, 'Plain', { at: 0, track: 'V1' });
 		const post = (body: unknown) =>
 			app.inject({ method: 'POST', url: '/api/layer-bake/preview', headers: JSON_H, payload: body as never });
-		expect((await post({ clipId: t })).statusCode).toBe(400);
+		const missing = await post({ clipId: t });
+		expect(missing.statusCode).toBe(400);
+		expect(missing.json().code).toBe('VALIDATION_FAILED');
 		const base = { envelope: d.envelope(), sequenceId: d.seqId };
+		const invalid = await post({ ...base, clipId: '' });
+		expect(invalid.statusCode).toBe(400);
+		expect(invalid.json().code).toBe('VALIDATION_FAILED');
 		const r404 = await post({ ...base, clipId: 'clp_NOPE00000000000' });
 		expect(r404.statusCode).toBe(404);
 		const plain = await post({ ...base, clipId: t });

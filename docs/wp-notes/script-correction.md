@@ -221,7 +221,7 @@ difference is listed below.
     span, the edited transcript stays sorted and non-overlapping, and every new word lies inside the span and lasts
     ≥ 1 flick when the span allows it;
   - psim is symmetric and in [0, 1].
-- **`test/script-fix-perf.test.ts`** (SC-015). A load-scaled 5 s budget on the 2 h case, plus a bounded degenerate
+- **`test/script-fix-perf.test.ts`** (SC-015). A load-scaled 5 s CPU budget on the 2 h case, plus a bounded degenerate
   case.
 
 ### Measurements

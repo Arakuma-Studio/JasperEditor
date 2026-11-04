@@ -2,7 +2,7 @@ import fc from 'fast-check';
 import { produce } from 'immer';
 import { describe, expect, it } from 'vitest';
 
-import { stringifyJson } from '../src/index.ts';
+import { stringifyJson } from '../src/json-cache.ts';
 
 function deepFreeze<T>(v: T): T {
 	if (v !== null && typeof v === 'object' && !Object.isFrozen(v)) {

@@ -173,10 +173,13 @@ describe('Auto tone', () => {
 		expect(Math.abs(ok.exposure)).toBeLessThan(0.6);
 		expect(ok.saturation).toBe(100);
 	});
-	it('never throws on an empty or transparent frame', () => {
-		expect(() => autoTone({ w: 0, h: 0, rgb: new Float32Array(0) })).not.toThrow();
-		expect(() =>
-			autoTone({ w: 2, h: 2, rgb: new Float32Array(12), alpha: new Float32Array(4) }),
-		).not.toThrow();
+	it('returns finite controls and quantiles for an empty or transparent frame', () => {
+		for (const image of [
+			{ w: 0, h: 0, rgb: new Float32Array(0) },
+			{ w: 2, h: 2, rgb: new Float32Array(12), alpha: new Float32Array(4) },
+		]) {
+			const result = autoTone(image);
+			expect(Object.values(result).flat().every(Number.isFinite)).toBe(true);
+		}
 	});
 });

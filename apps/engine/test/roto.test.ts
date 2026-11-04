@@ -14,19 +14,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { EngineJob, RotoSegmentRequest, RotoSegmentResult } from '@jasper/api';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 import builtin from '../src/processing/models.json' with { type: 'json' };
-import {
-	closeApps,
-	ensureFixtures,
-	fixture,
-	H,
-	JSON_H,
-	makeApp,
-	register,
-	type TestApp,
-	until,
-} from './helpers.ts';
+import { coreServices } from '../src/tools/services.ts';
+import { closeApps, ensureFixtures, fixture, H, JSON_H, makeApp, register, type TestApp } from './helpers.ts';
 
 type Truth = {
 	width: number;
@@ -92,12 +83,7 @@ async function segment(body: unknown, target: TestApp = app): Promise<EngineJob>
 	});
 	if (r.statusCode !== 202) throw new Error(`segment failed ${r.statusCode}: ${r.body}`);
 	const job = r.json() as EngineJob;
-	return until(async () => {
-		const j = (
-			await target.inject({ method: 'GET', url: `/api/jobs/${job.id}`, headers: H })
-		).json() as EngineJob;
-		return ['succeeded', 'failed', 'cancelled'].includes(j.state) ? j : null;
-	}, 600_000);
+	return coreServices(target).queue.wait(job.id);
 }
 
 async function iouOf(res: RotoSegmentResult, f: number, target: TestApp = app): Promise<number> {
@@ -261,6 +247,34 @@ describe('roto jobs (classic engine)', () => {
 	});
 
 	it('cancelling leaves no partial files and publishes no set', async () => {
+		const worker = join(dir, 'cancel-worker.mjs');
+		writeFileSync(
+			worker,
+			`
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const spec = JSON.parse(readFileSync(process.argv[2], 'utf8'));
+for (const sub of ['seg', 'png']) {
+  const folder = join(spec.store, 'pool', sub);
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(join(folder, 'partial.' + process.pid + '.tmp'), 'partial');
+}
+console.log(JSON.stringify({ type: 'progress', fraction: 0.2 }));
+setInterval(() => {}, 1_000);
+`,
+		);
+		const previousWorker = process.env.JASPER_ROTO;
+		const core = coreServices(app);
+		let jobId: string | undefined;
+		onTestFinished(async () => {
+			if (jobId) {
+				core.queue.cancel(jobId);
+				await core.queue.wait(jobId);
+			}
+			if (previousWorker === undefined) delete process.env.JASPER_ROTO;
+			else process.env.JASPER_ROTO = previousWorker;
+		});
+		process.env.JASPER_ROTO = worker;
 		const root = join(app.appdir, 'cache', 'roto');
 		mkdirSync(join(root, 'sets'), { recursive: true });
 		const before = readdirSync(join(root, 'sets')).sort();
@@ -272,19 +286,28 @@ describe('roto jobs (classic engine)', () => {
 			payload: body as object,
 		});
 		const job = r.json() as EngineJob;
-		await until(async () => {
-			const j = (
-				await app.inject({ method: 'GET', url: `/api/jobs/${job.id}`, headers: H })
-			).json() as EngineJob;
-			return j.state === 'running' && (j.progress ?? 0) > 0.05 ? j : null;
-		}, 120_000);
+		jobId = job.id;
+		const running = await new Promise<EngineJob>((resolve) => {
+			const accept = (current: EngineJob) => {
+				if (
+					current.id === job.id &&
+					((current.progress ?? 0) > 0.05 || !['queued', 'running'].includes(current.state))
+				) {
+					unsubscribe();
+					resolve(current);
+				}
+			};
+			const unsubscribe = core.broadcaster.subscribe((event) => {
+				if (event.type === 'job.updated') accept(event.payload as EngineJob);
+			});
+			const current = core.queue.get(job.id);
+			if (current) accept(current);
+		});
+		expect(running.state, JSON.stringify(running.error)).toBe('running');
+		for (const sub of ['seg', 'png'])
+			expect(readdirSync(join(root, 'pool', sub)).some((name) => name.endsWith('.tmp'))).toBe(true);
 		await app.inject({ method: 'POST', url: `/api/jobs/${job.id}/cancel`, headers: H });
-		const done = await until(async () => {
-			const j = (
-				await app.inject({ method: 'GET', url: `/api/jobs/${job.id}`, headers: H })
-			).json() as EngineJob;
-			return ['cancelled', 'failed', 'succeeded'].includes(j.state) ? j : null;
-		}, 60_000);
+		const done = await core.queue.wait(job.id);
 		expect(done.state).toBe('cancelled');
 		for (const sub of ['pool/seg', 'pool/png'])
 			for (const n of existsSync(join(root, sub)) ? readdirSync(join(root, sub)) : [])
@@ -303,12 +326,7 @@ describe.runIf(!!MODELS)('roto jobs with SAM 2.1 (JASPER_ROTO_MODELS_DIR)', () =
 		});
 		expect(inst.statusCode).toBe(200);
 		const job = inst.json() as EngineJob;
-		const done = await until(async () => {
-			const j = (
-				await app.inject({ method: 'GET', url: `/api/jobs/${job.id}`, headers: H })
-			).json() as EngineJob;
-			return ['succeeded', 'failed'].includes(j.state) ? j : null;
-		}, 120_000);
+		const done = await coreServices(app).queue.wait(job.id);
 		expect(done.state, JSON.stringify(done.error)).toBe('succeeded');
 		const notice = readFileSync(
 			join(app.appdir, 'models', 'vision', 'sam2.1-hiera-tiny', 'NOTICE.txt'),

@@ -1,12 +1,11 @@
 // @vitest-environment node
-import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bundleForBrowser } from '@jasper/testkit/browser';
 import { type Browser, chromium, type Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { FX_H, FX_W, type FxMedia, fxCmd, fxSnapshot, startFxMedia } from './fx-media.ts';
+import { FX_H, FX_W, type FxMedia, fxCmd, fxPixels, fxSnapshot, startFxMedia } from './fx-media.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const enabled = process.env.REMOTION_E2E === '1';
@@ -77,34 +76,22 @@ describe.runIf(enabled && !!CHROME)(
 		});
 
 		async function pixels(name: string): Promise<Buffer> {
-			const png = await page.locator(`#${name}`).screenshot();
-			return execFileSync(
-				'ffmpeg',
-				['-v', 'error', '-i', 'pipe:0', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'],
-				{
-					input: png,
-					maxBuffer: 1 << 26,
-				},
+			await page.evaluate(
+				(n) =>
+					(window as never as { __fxPlayer: { ready(name: string): Promise<void> } }).__fxPlayer.ready(n),
+				name,
 			);
+			const png = await page.locator(`#${name}`).screenshot();
+			return fxPixels(png);
 		}
 		const at = (raw: Buffer, x: number, y: number): Rgb => {
 			const i = (Math.round(y) * FX_W + Math.round(x)) * 3;
 			return [raw[i]!, raw[i + 1]!, raw[i + 2]!];
 		};
-		/** Polls until `ok` holds for the player's pixels (decoders and redraws are asynchronous in the Player). */
-		async function until(name: string, ok: (raw: Buffer) => boolean, ms = 15_000): Promise<Buffer> {
-			const t0 = Date.now();
-			let raw = await pixels(name);
-			while (!ok(raw) && Date.now() - t0 < ms) {
-				await page.waitForTimeout(250);
-				raw = await pixels(name);
-			}
-			return raw;
-		}
 		const seek = (name: string, frame: number) =>
 			page.evaluate(
 				([n, f]) =>
-					(window as never as { __fxPlayer: { seek(a: string, b: number): void } }).__fxPlayer.seek(
+					(window as never as { __fxPlayer: { seek(a: string, b: number): Promise<void> } }).__fxPlayer.seek(
 						n as string,
 						f as number,
 					),
@@ -114,9 +101,10 @@ describe.runIf(enabled && !!CHROME)(
 		it('a paused video frame goes through the shader chain (headless <Video> → FxPicture)', async () => {
 			await seek('plain', 10);
 			await seek('halved', 10);
-			const plain = await until('plain', (r) => at(r, 100, 100).some((v) => v > 40));
+			const plain = await pixels('plain');
+			expect(plain.some((v) => v > 40)).toBe(true);
 			let worst = 255;
-			await until('halved', (r) => {
+			await pixels('halved').then((r) => {
 				worst = 0;
 				for (let y = 20; y < FX_H; y += 40)
 					for (let x = 20; x < FX_W; x += 40) {
@@ -124,29 +112,26 @@ describe.runIf(enabled && !!CHROME)(
 						const q = at(r, x, y);
 						for (let k = 0; k < 3; k++) worst = Math.max(worst, Math.abs(q[k]! - p[k]! / 2));
 					}
-				return worst < 14;
 			});
 			expect(worst).toBeLessThan(14);
 		});
 
 		it('a freeze frame shows the frozen source frame', async () => {
 			await seek('plain', 5);
-			const frame5 = await until('plain', () => true);
-			await page.waitForTimeout(1500);
+			const frame5 = await pixels('plain');
 			const ref = await pixels('plain');
 			await seek('frozen', 25);
 			let d = 255;
-			await until('frozen', (r) => {
+			await pixels('frozen').then((r) => {
 				d = 0;
 				for (let i = 0; i < r.length; i += 97) d = Math.max(d, Math.abs(r[i]! - ref[i]!));
-				return d < 16;
 			});
 			expect(frame5.length).toBe(ref.length);
 			expect(d).toBeLessThan(16);
 		});
 
 		it('a still with a padded drop shadow, and a paused param edit redraws it', async () => {
-			let raw = await until('still', (r) => close(at(r, 440, FX_H / 2), [0, 255, 0], 12));
+			let raw = await pixels('still');
 			expect(close(at(raw, FX_W / 2, FX_H / 2), [255, 0, 0], 12)).toBe(true);
 			expect(close(at(raw, 440, FX_H / 2), [0, 255, 0], 12)).toBe(true);
 			const blue = fxSnapshot([
@@ -155,25 +140,24 @@ describe.runIf(enabled && !!CHROME)(
 			]);
 			await page.evaluate(
 				(d) =>
-					(window as never as { __fxPlayer: { setDoc(a: string, b: unknown): void } }).__fxPlayer.setDoc(
-						'still',
-						d,
-					),
+					(
+						window as never as { __fxPlayer: { setDoc(a: string, b: unknown): Promise<void> } }
+					).__fxPlayer.setDoc('still', d),
 				blue,
 			);
-			raw = await until('still', (r) => close(at(r, 440, FX_H / 2), [0, 0, 255], 12));
+			raw = await pixels('still');
 			expect(close(at(raw, 440, FX_H / 2), [0, 0, 255], 12)).toBe(true);
 		});
 
 		it('Transform Shutter Angle motion blur from the keyframes, as in renders', async () => {
 			await seek('mblur', 5);
-			const raw = await until('mblur', (r) => Math.abs(at(r, 222, FX_H / 2)[0] - 153) < 30);
+			const raw = await pixels('mblur');
 			expect(Math.abs(at(raw, 222, FX_H / 2)[0] - 153)).toBeLessThan(30);
 			expect(at(raw, FX_W / 2, FX_H / 2)[0]).toBeGreaterThan(235);
 		});
 
 		it('a shape (DOM layer) runs its shader effects through HTML-in-Canvas', async () => {
-			const raw = await until('shape', (r) => close(at(r, FX_W / 2, 245), [0, 255, 0], 16));
+			const raw = await pixels('shape');
 			expect(close(at(raw, FX_W / 2, FX_H / 2), [255, 255, 255], 12)).toBe(true);
 			expect(close(at(raw, FX_W / 2, 245), [0, 255, 0], 16)).toBe(true);
 		});
@@ -186,7 +170,11 @@ describe.runIf(enabled && !!CHROME)(
 			try {
 				const p = await plainChrome.newPage({ viewport: { width: FX_W, height: FX_H * 7 } });
 				await p.goto(`${media.base}/index.html`);
-				await p.waitForSelector('#shape [data-grade-chip]', { timeout: 15_000 });
+				await p.evaluate(() =>
+					(window as never as { __fxPlayer: { ready(name: string): Promise<void> } }).__fxPlayer.ready(
+						'shape',
+					),
+				);
 				const chip = await p.evaluate(() =>
 					(window as never as { __fxPlayer: { chip(n: string): string | null } }).__fxPlayer.chip('shape'),
 				);

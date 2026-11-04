@@ -8,12 +8,11 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Command } from '@jasper/project';
 import { bundleForBrowser } from '@jasper/testkit/browser';
-import { decodePng } from '@jasper/testkit/png';
 import { type Browser, chromium, type Page } from '@playwright/test';
 import type { HeadlessBrowser } from '@remotion/renderer';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SEQUENCE_COMPOSITION_ID } from '../src/types.ts';
-import { FX_H, FX_W, type FxMedia, fxAsset, fxSnapshot, startFxMedia } from './fx-media.ts';
+import { FX_H, FX_W, type FxMedia, fxAsset, fxPixels, fxSnapshot, startFxMedia } from './fx-media.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const enabled = process.env.REMOTION_E2E === '1';
@@ -121,10 +120,6 @@ describe.runIf(enabled && !!CHROME)(
 			});
 			page = await browser.newPage({ viewport: { width: FX_W, height: FX_H * 3 } });
 			await page.goto(`${media.base}/index.html`);
-			await page.waitForFunction(() => {
-				const player = (window as unknown as { __fxPlayer?: { frame(n: string): number | null } }).__fxPlayer;
-				return player?.frame('cut') != null && player.frame('head') != null;
-			});
 		}, 300_000);
 
 		afterAll(async () => {
@@ -133,17 +128,7 @@ describe.runIf(enabled && !!CHROME)(
 			media?.close();
 		});
 
-		// Decode PNGs in process, retaining exactly the original RGB24 comparison channels and tolerances.
-		const raw = (png: Buffer | string) => {
-			const image = decodePng(typeof png === 'string' ? readFileSync(png) : png);
-			const out = Buffer.alloc(image.width * image.height * 3);
-			for (let p = 0, i = 0; p < image.data.length; p += 4, i += 3) {
-				out[i] = image.data[p]!;
-				out[i + 1] = image.data[p + 1]!;
-				out[i + 2] = image.data[p + 2]!;
-			}
-			return out;
-		};
+		const raw = (png: Buffer | string) => fxPixels(typeof png === 'string' ? readFileSync(png) : png);
 
 		async function exported(name: string, frame: number): Promise<Buffer> {
 			const inputProps = {
@@ -170,44 +155,19 @@ describe.runIf(enabled && !!CHROME)(
 			return raw(output);
 		}
 
-		/** The Player frame once it is stable (two identical screenshots in a row after the seek). */
+		/** Capture after the Player's decoder, effect and paint receipts complete. */
 		async function previewed(name: string, frame: number): Promise<Buffer> {
 			await page.evaluate(
 				([n, f]) =>
-					(window as never as { __fxPlayer: { seek(a: string, b: number): void } }).__fxPlayer.seek(
-						n as string,
-						f as number,
+					(window as never as { __fxPlayer: { seek(a: string, b: number): Promise<void> } }).__fxPlayer.seek(
+						n,
+						f,
 					),
 				[name, frame] as const,
 			);
-			await page.waitForFunction(
-				([n, f]) =>
-					(window as unknown as { __fxPlayer: { frame(n: string): number | null } }).__fxPlayer.frame(
-						n as string,
-					) === f,
-				[name, frame],
-			);
-			await page.evaluate(async () => {
-				await Promise.all([...document.images].map((image) => image.decode()));
-			});
-			const t0 = Date.now();
-			let prev = raw(await page.locator(`#${name}`).screenshot());
-			while (Date.now() - t0 < 20_000) {
-				await page.evaluate(
-					() =>
-						new Promise<void>((resolve) =>
-							requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-						),
-				);
-				const png = await page.locator(`#${name}`).screenshot();
-				const cur = raw(png);
-				if (cur.equals(prev)) {
-					writeFileSync(join(media.dir, `${name}-${frame}-preview.png`), png);
-					return cur;
-				}
-				prev = cur;
-			}
-			throw new Error(`Player frame did not settle: ${name} at ${frame}`);
+			const png = await page.locator(`#${name}`).screenshot();
+			writeFileSync(join(media.dir, `${name}-${frame}-preview.png`), png);
+			return raw(png);
 		}
 
 		for (const [name, frames] of [

@@ -160,8 +160,10 @@ describe('the plan reports WebGL (TL-124)', () => {
 	it('never asks for WebGL when the browser draws nothing (a native sequence)', async () => {
 		const d = new DocBuilder();
 		d.tx([{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V1', color: [1, 0, 0, 1] }]);
-		const webgl = vi.fn(async () => ({ state: 'unavailable' as const }));
-		expect((await plan(d, caps(webgl))).plan.path).toBe('native');
+		const webgl = vi.fn(async () => {
+			throw new Error('No render browser is installed');
+		});
+		await expect(plan(d, caps(webgl))).resolves.toMatchObject({ plan: { path: 'native' } });
 		expect(webgl).not.toHaveBeenCalled();
 	});
 });

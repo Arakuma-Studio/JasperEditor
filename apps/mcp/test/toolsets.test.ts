@@ -31,7 +31,12 @@ const SKILL_DIR = join(ROOT, 'skills', 'jasper-editor');
  */
 const PENDING_TOOLS = new Set<string>();
 
-type FakeEngine = { jobs: Map<string, EngineJob>; cancelled: string[]; tx: unknown[] };
+type FakeEngine = {
+	jobs: Map<string, EngineJob>;
+	cancelled: string[];
+	tx: unknown[];
+	onCancelled?: () => void;
+};
 
 function fakeJob(
 	id: string,
@@ -59,6 +64,7 @@ function fakeLink(engine: FakeEngine): EngineConnection {
 		},
 		cancelJob: async (id: string) => {
 			engine.cancelled.push(id);
+			engine.onCancelled?.();
 			const j = engine.jobs.get(id);
 			if (j) j.state = 'cancelled';
 			return structuredClone(j ?? fakeJob(id, 'cancelled'));
@@ -127,8 +133,6 @@ const bodyOf = (r: CallToolResult) => JSON.parse(textOf(r));
 const call = async (s: Session, name: string, args: Record<string, unknown> = {}) =>
 	(await s.client.callTool({ name, arguments: args })) as CallToolResult;
 const names = (tools: Tool[]) => tools.map((t) => t.name).sort();
-/** Lets queued notifications reach the client. */
-const settle = () => new Promise((r) => setTimeout(r, 20));
 
 let allToolsCache: Tool[] | null = null;
 async function allTools(): Promise<Tool[]> {
@@ -261,14 +265,13 @@ describe('advertised toolsets (AF-CTX-001/002)', () => {
 		const on = bodyOf(await call(s, 'enable_toolsets', { names: ['color', 'audio'] }));
 		expect(on).toMatchObject({ changed: true });
 		expect(on.enabled.sort()).toEqual(['audio', 'color', 'core']);
-		await settle();
-		expect(s.listChanged()).toBe(1);
 		const after = names((await s.client.listTools()).tools);
+		expect(s.listChanged()).toBe(1);
 		expect(after).toEqual(expect.arrayContaining(['grade_clip', 'get_mixer', ...before]));
 		expect(on.advertisedTools).toBe(after.length);
 		// Unchanged: no notification.
 		expect(bodyOf(await call(s, 'enable_toolsets', { names: ['color'] }))).toMatchObject({ changed: false });
-		await settle();
+		await s.client.listTools();
 		expect(s.listChanged()).toBe(1);
 		const disable = (toolsetNames: string[]) =>
 			call(s, 'call_tool', { name: 'disable_toolsets', arguments: { names: toolsetNames } });
@@ -276,9 +279,9 @@ describe('advertised toolsets (AF-CTX-001/002)', () => {
 			changed: true,
 			enabled: ['core', 'audio'],
 		});
-		await settle();
+		const afterDisable = names((await s.client.listTools()).tools);
 		expect(s.listChanged()).toBe(2);
-		expect(names((await s.client.listTools()).tools)).not.toContain('grade_clip');
+		expect(afterDisable).not.toContain('grade_clip');
 		const core = await disable(['core']);
 		expect(core.isError).toBe(true);
 		expect(bodyOf(core).error).toMatchObject({ code: 'E_INVALID_PARAM' });
@@ -377,17 +380,32 @@ describe('call_tool and describe_tool (AF-CTX-002)', () => {
 	it('forwards progress and cancellation of the tool it runs', async () => {
 		const s = await connect('core');
 		s.engine.jobs.set('job_7', fakeJob('job_7'));
+		const cancelled = new Promise<void>((resolve) => {
+			s.engine.onCancelled = resolve;
+		});
+		let progressed!: () => void;
+		const progressReceived = new Promise<void>((resolve) => {
+			progressed = resolve;
+		});
 		const ac = new AbortController();
 		const progress: number[] = [];
 		const pending = s.client.callTool(
 			{ name: 'call_tool', arguments: { name: 'wait_for_job', arguments: { jobId: 'job_7' } } },
 			undefined,
-			{ signal: ac.signal, onprogress: (p) => progress.push(p.progress) },
+			{
+				signal: ac.signal,
+				onprogress: (p) => {
+					progress.push(p.progress);
+					progressed();
+				},
+			},
 		);
-		await expect.poll(() => progress.length, { timeout: 5000 }).toBeGreaterThan(0);
+		await progressReceived;
+		expect(progress.length).toBeGreaterThan(0);
 		ac.abort();
 		await expect(pending).rejects.toThrow();
-		await expect.poll(() => s.engine.cancelled, { timeout: 5000 }).toEqual(['job_7']);
+		await cancelled;
+		expect(s.engine.cancelled).toEqual(['job_7']);
 	});
 
 	it('describe_tool returns the tools/list definition of any tool with its toolset', async () => {

@@ -221,6 +221,8 @@ describe('colour management MCP tools', () => {
 		expect(r.isError).toBe(false);
 		expect(r.body.spaces[0].name).toBe('ACEScct');
 		expect(engine.doc().media[r.body.mediaId]!.kind).toBe('color-config');
-		expect((await call('import_ocio_config', { path: 'studio.ocio' })).isError).toBe(true);
+		const relative = await call('import_ocio_config', { path: 'studio.ocio' });
+		expect(relative.isError).toBe(true);
+		expect(relative.body.error.code).toBe('NOT_ABSOLUTE');
 	});
 });

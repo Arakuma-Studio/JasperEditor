@@ -76,20 +76,6 @@ export async function register(
 	return body.items[0]!;
 }
 
-export async function until<T>(
-	fn: () => T | Promise<T>,
-	timeoutMs = 20_000,
-	stepMs = 50,
-): Promise<NonNullable<T>> {
-	const end = Date.now() + timeoutMs;
-	for (;;) {
-		const v = await fn();
-		if (v) return v as NonNullable<T>;
-		if (Date.now() > end) throw new Error('timed out waiting for condition');
-		await new Promise((r) => setTimeout(r, stepMs));
-	}
-}
-
 export class DocBuilder {
 	doc: ProjectDocument;
 	readonly ids: IdSource;

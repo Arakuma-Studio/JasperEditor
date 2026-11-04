@@ -13,14 +13,12 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
 	type AccountRecord,
-	AUTH_ENV,
 	canStartSample,
 	claudeSessionDir,
 	credentialState,
 	type EvalAccount,
 	isAuthFailure,
 	MIN_TOKEN_MINUTES,
-	minutesLeftOf,
 	pickAccount,
 	resolveAccount,
 	resolveAppdir,
@@ -90,12 +88,13 @@ describe('credentials', () => {
 	});
 
 	it('reports the expiry and metadata without token material and without touching the file', () => {
-		write(Date.now() + 90 * 60_000);
+		const now = 1_700_000_000_000;
+		write(now + 90 * 60_000);
 		const path = join(home(), '.credentials.json');
 		const before = readFileSync(path, 'utf8');
 		const beforeStat = statSync(path).mtimeMs;
-		const state = credentialState(account());
-		expect(state.minutesLeft).toBeGreaterThanOrEqual(89);
+		const state = credentialState(account(), now);
+		expect(state.minutesLeft).toBe(90);
 		expect(JSON.stringify(state)).not.toMatch(/SECRET/);
 		expect(readFileSync(path, 'utf8')).toBe(before);
 		expect(statSync(path).mtimeMs).toBe(beforeStat);
@@ -103,12 +102,17 @@ describe('credentials', () => {
 	});
 
 	it('reads a Codex expiry from the access token payload only', () => {
-		const exp = Math.floor(Date.now() / 1000) + 3600;
+		const now = 1_700_000_000_000;
+		const exp = now / 1000 + 3600;
 		const jwt = `x.${Buffer.from(JSON.stringify({ exp })).toString('base64url')}.y`;
-		const left = minutesLeftOf('codex', { tokens: { access_token: jwt } }, Date.now());
-		expect(left).toBeGreaterThanOrEqual(59);
-		expect(minutesLeftOf('codex', { tokens: { access_token: 'garbage' } }, 0)).toBeNull();
-		expect(minutesLeftOf('claude', {}, 0)).toBeNull();
+		const codex = { ...account(), agent: 'codex' as const };
+		const path = join(codex.home, 'auth.json');
+		writeFileSync(path, JSON.stringify({ tokens: { access_token: jwt } }));
+		expect(credentialState(codex, now).minutesLeft).toBe(60);
+		writeFileSync(path, JSON.stringify({ tokens: { access_token: 'garbage' } }));
+		expect(credentialState(codex, now).minutesLeft).toBeNull();
+		writeFileSync(join(home(), '.credentials.json'), '{}');
+		expect(credentialState(account(), now).minutesLeft).toBeNull();
 	});
 });
 
@@ -127,22 +131,25 @@ describe('the refresh rule', () => {
 describe('sampleEnv', () => {
 	const account: EvalAccount = { id: 'x', label: 'x', agent: 'claude', home: '/h/claude' };
 	it('removes every auth override and points at the real home', () => {
-		const base = Object.fromEntries(AUTH_ENV.map((k) => [k, 'SECRET']));
 		const env = sampleEnv(account, {
-			...base,
+			ANTHROPIC_API_KEY: 'SECRET',
+			ANTHROPIC_AUTH_TOKEN: 'SECRET',
+			CLAUDE_CODE_OAUTH_TOKEN: 'SECRET',
+			OPENAI_API_KEY: 'SECRET',
+			CODEX_API_KEY: 'SECRET',
+			CODEX_ACCESS_TOKEN: 'SECRET',
 			PATH: '/bin',
 			CODEX_HOME: '/other',
 			CLAUDE_CONFIG_DIR: '/other',
 		});
-		for (const k of AUTH_ENV) expect(env[k]).toBeUndefined();
-		expect(env.CLAUDE_CONFIG_DIR).toBe('/h/claude');
-		expect(env.CODEX_HOME).toBeUndefined();
-		expect(env.PATH).toBe('/bin');
+		expect(env).toEqual({ PATH: '/bin', CLAUDE_CONFIG_DIR: '/h/claude' });
 	});
 	it('uses CODEX_HOME for a Codex account', () => {
-		const env = sampleEnv({ ...account, agent: 'codex', home: '/h/codex' }, {});
-		expect(env.CODEX_HOME).toBe('/h/codex');
-		expect(env.CLAUDE_CONFIG_DIR).toBeUndefined();
+		const env = sampleEnv(
+			{ ...account, agent: 'codex', home: '/h/codex' },
+			{ CLAUDE_CONFIG_DIR: '/other', CODEX_HOME: '/other' },
+		);
+		expect(env).toEqual({ CODEX_HOME: '/h/codex' });
 	});
 });
 

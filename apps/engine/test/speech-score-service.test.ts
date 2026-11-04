@@ -2,17 +2,19 @@
 // `SpeechService.score` request/result shape with flicks ↔ samples, validation, the device plan, a GPU worker that
 // crashes → one CPU retry with the reason, refusals and failures as JobErrors, cancellation within ≈ 1 s, and the
 // transcription glossary (spec, dedupe key, guard report).
+import type { ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, watch, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { EngineJob, SpeechScoreRequest, TranscriptionResult } from '@jasper/api';
 import { FLICKS_PER_SECOND } from '@jasper/project';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { JobError } from '../src/jobs/types.ts';
 import type { SpeechService } from '../src/speech/service.ts';
-import { closeApps, JSON_H, makeApp, ROOT, register, type TestApp, until } from './helpers.ts';
+import { coreServices } from '../src/tools/services.ts';
+import { closeApps, JSON_H, makeApp, ROOT, register, type TestApp } from './helpers.ts';
 
 const H = { host: '127.0.0.1:47900' };
 const FIXTURE = join(ROOT, 'fixtures', 'speech', 'lj-composite.flac');
@@ -20,16 +22,19 @@ const FPS = FLICKS_PER_SECOND / 16_000;
 let app: TestApp;
 let dir: string;
 let specLog: string;
+let transcriptionGate: string;
 let speech: SpeechService;
 let mediaKey: string;
+let stopCancellationFixture = async () => {};
 
 /**
  * The fake worker. probe: WebGPU available. score: the first window id picks a behaviour — `crash-gpu` (killed
  * when a GPU is planned), `refuse` (exit 4 with a code), `fail` (exit 3), `hang` (ignores SIGTERM, never ends);
- * otherwise each word is timed to its window and scored −1 per word. transcription: 300 ms, then one word.
+ * otherwise each word is timed to its window and scored −1 per word. Transcription waits for its release receipt.
  */
 const FAKE_WORKER = `
-import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, watch, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 const argv = process.argv.slice(2);
 const emit = (o) => process.stdout.write(JSON.stringify(o) + '\\n');
 if (argv[0] === 'probe') {
@@ -62,6 +67,7 @@ if (scoring) {
 	if (mode === 'hang') {
 		process.on('SIGTERM', () => {});
 		setInterval(() => {}, 1000);
+		writeFileSync(process.env.FAKE_SPEECH_READY, 'ready');
 	} else {
 		writeFileSync(outPath, JSON.stringify({
 			modelId: spec.modelId, language: spec.language, samples: 16000 * 71,
@@ -76,9 +82,14 @@ if (scoring) {
 			guard: { frames: 'energy' },
 		}));
 		process.exit(0);
-	}
+}
 } else {
-	await new Promise((r) => setTimeout(r, 300));
+	const gate = process.env.FAKE_SPEECH_GATE;
+	if (!existsSync(gate)) await new Promise((resolve) => {
+		const ready = () => { if (existsSync(gate)) { watcher.close(); resolve(); } };
+		const watcher = watch(dirname(gate), ready);
+		ready();
+	});
 	writeFileSync(outPath, JSON.stringify({
 		modelId: spec.modelId, language: 'en', languageProbability: null, task: 'transcribe', samples: 16000 * 20, speakers: 0,
 		words: [{ text: 'hello', start: 16000, end: 24000, confidence: 0.9, speaker: null }],
@@ -103,15 +114,8 @@ function file(name: string, content: string) {
 	};
 }
 
-async function waitJob(id: string): Promise<EngineJob> {
-	return until(
-		async () => {
-			const j = (await app.inject({ method: 'GET', url: `/api/jobs/${id}`, headers: H })).json() as EngineJob;
-			return ['succeeded', 'failed', 'cancelled', 'interrupted'].includes(j.state) ? j : null;
-		},
-		120_000,
-		100,
-	);
+function waitJob(id: string): Promise<EngineJob> {
+	return coreServices(app).queue.wait(id);
 }
 
 const logged = () =>
@@ -154,6 +158,7 @@ beforeAll(async () => {
 	const worker = join(dir, 'fake-speech.mjs');
 	writeFileSync(worker, FAKE_WORKER);
 	specLog = join(dir, 'specs.jsonl');
+	transcriptionGate = join(dir, 'transcribe.release');
 	writeFileSync(specLog, '');
 	const entry = {
 		id: 'test-turbo',
@@ -180,6 +185,7 @@ beforeAll(async () => {
 	process.env.JASPER_MODEL_CATALOG = join(dir, 'catalog.json');
 	process.env.JASPER_SPEECH = worker;
 	process.env.FAKE_SPEECH_LOG = specLog;
+	process.env.FAKE_SPEECH_GATE = transcriptionGate;
 	app = await makeApp({ totalSlots: 8 });
 	const inst = await app.inject({ method: 'POST', url: '/api/speech/models/test-turbo/install', headers: H });
 	expect((await waitJob((inst.json() as EngineJob).id)).state).toBe('succeeded');
@@ -188,9 +194,11 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
+	await stopCancellationFixture();
 	delete process.env.JASPER_MODEL_CATALOG;
 	delete process.env.JASPER_SPEECH;
 	delete process.env.FAKE_SPEECH_LOG;
+	delete process.env.FAKE_SPEECH_GATE;
 	await closeApps();
 	rmSync(dir, { recursive: true, force: true });
 });
@@ -307,20 +315,46 @@ describe('SpeechService.score (spec 17 SC-092)', () => {
 		expect(logged()).toHaveLength(1);
 	});
 
-	it('cancellation ends the call within ≈ 1 s, even when the worker ignores SIGTERM (SC-036)', async () => {
+	it('cancellation kills a worker that ignores SIGTERM after its grace period (SC-036)', async () => {
 		const ac = new AbortController();
-		const p = speech.score(req('hang', { device: 'cpu' }), ac.signal);
-		await until(
-			async () =>
-				logged().some((r) => (r.spec.windows as Array<{ id: string }>)[0]!.id === 'hang') ? true : null,
-			20_000,
-			20,
+		const readyFile = join(dir, 'hang.ready');
+		process.env.FAKE_SPEECH_READY = readyFile;
+		let ready!: () => void;
+		const started = new Promise<void>((resolve) => {
+			ready = resolve;
+		});
+		const watcher = watch(dir, () => {
+			if (existsSync(readyFile)) ready();
+		});
+		let worker: ChildProcess | undefined;
+		let exited = Promise.resolve<NodeJS.Signals | null>(null);
+		const result = failure(
+			speech.score(req('hang', { device: 'cpu' }), ac.signal, {
+				trackChild: (child) => {
+					worker = child;
+					exited = new Promise((resolve) => child.once('exit', (_, signal) => resolve(signal)));
+				},
+			}),
 		);
-		const t = Date.now();
-		ac.abort();
-		const e = await failure(p);
-		expect(e.code).toBe('JOB_CANCELLED');
-		expect(Date.now() - t).toBeLessThan(2000);
+		void result.catch(() => {});
+		stopCancellationFixture = async () => {
+			watcher.close();
+			delete process.env.FAKE_SPEECH_READY;
+			vi.useRealTimers();
+			if (worker?.exitCode === null && worker.signalCode === null) worker.kill('SIGKILL');
+			await exited;
+		};
+		try {
+			await started;
+			vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+			ac.abort();
+			await vi.advanceTimersByTimeAsync(1000);
+			expect((await result).code).toBe('JOB_CANCELLED');
+			expect(await exited).toBe('SIGKILL');
+		} finally {
+			await stopCancellationFixture();
+			await result.catch(() => {});
+		}
 	}, 30_000);
 });
 
@@ -347,6 +381,7 @@ describe('transcription glossary (SC-074)', () => {
 		const a2 = await submit(['NovaPlay', 'Glimmerbox']);
 		const b = await submit(['Pixelforge']);
 		const c = await submit();
+		writeFileSync(transcriptionGate, 'release');
 		expect(a2.id).toBe(a.id);
 		expect(new Set([a.id, b.id, c.id]).size).toBe(3);
 		const done = await waitJob(a.id);

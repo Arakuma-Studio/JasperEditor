@@ -1,5 +1,5 @@
 import { defineProject } from 'vitest/config';
-import { hasThreadCpuTimer } from './test/cpu-time.ts';
+import { hasThreadCpuTimer } from '../../scripts/perf/cpu.ts';
 
 export default defineProject({
 	test: {

@@ -2,6 +2,7 @@
 // by copying them into the project once, saved from the selected clip, renamed, deleted, imported and exported through
 // `/api/title-looks`, and every action says why when the engine cannot take it. The engine is an in-memory fake that
 // answers the real routes through the real client, so request and response schemas are checked on both sides.
+import { setImmediate } from 'node:timers/promises';
 import { clipLook, type EffectInstance, type LookRecipe, titleLooksOf, type UserLook } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
@@ -253,9 +254,11 @@ describe('rename, delete, import, export (TL-054)', () => {
 	});
 
 	it('imports a looks file and reports skipped entries; bad JSON and no engine say so', async () => {
-		expect((await importMyLooks('{}'))?.message).toMatch(/not connected/);
+		const offline = await importMyLooks('{}');
+		expect(offline).toMatchObject({ ok: false, message: expect.stringMatching(/not connected/) });
 		await connected();
-		expect((await importMyLooks('not json'))?.message).toMatch(/not valid JSON/);
+		const invalid = await importMyLooks('not json');
+		expect(invalid).toMatchObject({ ok: false, message: expect.stringMatching(/not valid JSON/) });
 		const file = {
 			format: 'jasper-title-looks',
 			version: 1,
@@ -349,7 +352,7 @@ describe('the Looks tab (TL-054, TL-086)', () => {
 			await waitFor(() =>
 				expect(screen.getByTestId('looks-status').textContent).toContain('the name field did not open'),
 			);
-			await new Promise((r) => setTimeout(r, 0));
+			await setImmediate();
 			expect(rejections).toEqual([]);
 			expect(screen.getByTestId('my-looks-save').getAttribute('aria-busy')).not.toBe('true');
 		} finally {

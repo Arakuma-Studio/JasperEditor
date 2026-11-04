@@ -10,7 +10,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { FixedEngineLink } from '../src/link.ts';
 import { createJasperMcpServer } from '../src/server.ts';
-import { cleanEnv, stopEngine, testPort } from './helpers.ts';
+import { cleanEnv, engineReady, stopEngine, testPort } from './helpers.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, '..', '..', '..');
@@ -101,21 +101,12 @@ describe('colour tools against a real engine (S06 §9 test 8)', () => {
 		engine = spawn(
 			process.execPath,
 			['--import', 'tsx', join(ROOT, 'apps/engine/src/cli.ts'), '--port', String(PORT), '--appdir', appdir],
-			{ cwd: ROOT, env: cleanEnv({ JASPER_LOCAL_TOKEN: token }), stdio: ['ignore', 'pipe', 'pipe'] },
+			{ cwd: ROOT, env: cleanEnv({ JASPER_LOCAL_TOKEN: token }), stdio: ['ignore', 'pipe', 'pipe', 'ipc'] },
 		);
 		const log: string[] = [];
 		engine.stdout?.on('data', (d: Buffer) => log.push(d.toString()));
 		engine.stderr?.on('data', (d: Buffer) => log.push(d.toString()));
-		const until = Date.now() + 120_000;
-		for (;;) {
-			const up = await fetch(`${URL_BASE}/health`)
-				.then((r) => r.ok)
-				.catch(() => false);
-			if (up) break;
-			if (Date.now() > until || engine.exitCode !== null)
-				throw new Error(`engine did not start: ${log.join('')}`);
-			await new Promise((r) => setTimeout(r, 250));
-		}
+		await engineReady(engine, PORT, log);
 		const { server } = createJasperMcpServer({
 			link: new FixedEngineLink(URL_BASE, token),
 			agentName: 'color-test',
@@ -124,13 +115,13 @@ describe('colour tools against a real engine (S06 §9 test 8)', () => {
 		await server.connect(a);
 		client = new Client({ name: 'color-test', version: '1' });
 		await client.connect(b);
-	}, 180_000);
+	});
 
 	afterAll(async () => {
 		await client?.close().catch(() => {});
 		await stopEngine(engine);
 		if (appdir) rmSync(appdir, { recursive: true, force: true });
-	}, 30_000);
+	});
 
 	let projectId = '';
 	let clipA = '';

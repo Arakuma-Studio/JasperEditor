@@ -1,6 +1,7 @@
 import { type CaptionsClip, captionClipText, checkInvariants, defaultRegistries } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import { budgetMs, budgetReport } from '../../../scripts/perf/budget.ts';
+import { threadCpuMs } from '../../../scripts/perf/cpu.ts';
 import { exportTimeline, type Format, importTimeline, planPrerender } from '../src/index.ts';
 import { addCaptions, Harness, richProject, summarize } from './support/rich.ts';
 
@@ -60,9 +61,9 @@ describe('JasperEditor round trips', () => {
 			rate: { num: 25, den: 1 },
 		});
 		const target = new Harness({ preset: 'hd-1080p-25', seed: 7 });
-		const t0 = performance.now();
+		const t0 = threadCpuMs();
 		target.ok([{ type: 'project.importTimeline', fragment: imp }]);
-		const ms = performance.now() - t0;
+		const ms = threadCpuMs() - t0;
 		console.info(budgetReport('ALE import, 3,000 clips', ms, 2000));
 		expect(Object.keys(target.doc.media)).toHaveLength(3000);
 		expect(ms).toBeLessThan(budgetMs(2000));

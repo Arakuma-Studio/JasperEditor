@@ -1,6 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { createInterface } from 'node:readline';
+import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import {
 	type APIRequestContext,
@@ -10,6 +12,7 @@ import {
 	type Page,
 } from '@playwright/test';
 import type { JasperAgentApi } from '../apps/web/src/agent-bridge/types.ts';
+import { EventEnvelopeSchema } from '../packages/api/src/events.ts';
 import { type ExportResult, ExportResultSchema } from '../packages/api/src/exports.ts';
 import {
 	type EngineJob,
@@ -52,6 +55,47 @@ type HistoryEntry = { label: string; applied: boolean };
 /** Engine info written by e2e/serve.mjs (port + temp appdir). */
 export function serverInfo(): { port: number; appdir: string } {
 	return JSON.parse(readFileSync(join(ROOT, 'test-results', 'e2e-server.json'), 'utf8'));
+}
+
+/** The starter kit is indexed by the throwaway engine on start; wait for it. */
+export async function libraryReady(request: APIRequestContext) {
+	await expect
+		.poll(
+			async () => {
+				const r = await request.get('/api/sounds/status');
+				if (!r.ok()) return 0;
+				const s = (await r.json()) as { sounds: number; indexing: unknown; needsIndex: boolean };
+				return s.indexing || s.needsIndex ? 0 : s.sounds;
+			},
+			{ timeout: 360_000, intervals: [1000] },
+		)
+		.toBeGreaterThan(20);
+}
+
+/** Locate the source window in a mix by its largest normalised cross-correlation. */
+export function locate(
+	mix: Float32Array,
+	ref: Float32Array,
+	w0: number,
+	w1: number,
+	guess: number,
+	span: number,
+) {
+	let best = { lag: Number.NaN, r: -2 };
+	let rr = 0;
+	for (let i = w0; i < w1; i++) rr += ref[i]! * ref[i]!;
+	for (let lag = guess - span; lag <= guess + span; lag++) {
+		let xy = 0;
+		let xx = 0;
+		for (let i = w0; i < w1; i++) {
+			const x = mix[lag + i] ?? 0;
+			xy += x * ref[i]!;
+			xx += x * x;
+		}
+		const r = xx > 0 && rr > 0 ? xy / Math.sqrt(xx * rr) : -1;
+		if (r > best.r) best = { lag, r };
+	}
+	return best;
 }
 
 export async function enableAgentBridge(page: Page): Promise<void> {
@@ -179,7 +223,7 @@ export async function pointerDrag(
 	const steps = opts.steps ?? 12;
 	for (let i = 1; i <= steps; i++) {
 		await page.mouse.move(from.x + ((to.x - from.x) * i) / steps, from.y + ((to.y - from.y) * i) / steps);
-		await page.waitForTimeout(16);
+		await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
 	}
 	await page.mouse.up();
 }
@@ -254,25 +298,37 @@ export async function waitForJob(
 	jobId: string,
 	timeoutMs = 240_000,
 ): Promise<EngineJob> {
-	const t0 = Date.now();
-	let resets = 0;
-	for (;;) {
-		let res: Awaited<ReturnType<APIRequestContext['get']>>;
-		try {
-			res = await request.get(`/api/jobs/${jobId}`);
-		} catch (e) {
-			// a kept-alive socket the loaded engine closed under the poll: ask again (a few times), never hide a failure
-			if (resets++ < 5 && /ECONNRESET|socket hang up/i.test(String((e as Error).message))) {
-				await new Promise((r) => setTimeout(r, 500));
-				continue;
-			}
-			throw e;
-		}
+	const { port } = serverInfo();
+	const { cookies } = await request.storageState();
+	const cookie = cookies
+		.filter((c) => c.domain === '127.0.0.1' && c.name.endsWith(`_${port}`))
+		.map((c) => `${c.name}=${c.value}`)
+		.join('; ');
+	// Subscribe before the snapshot: a job that finishes during either request is still observed.
+	const events = await fetch(`http://127.0.0.1:${port}/events?since=0`, {
+		headers: { cookie },
+		signal: AbortSignal.timeout(timeoutMs),
+	});
+	expect(events.ok).toBe(true);
+	if (!events.body) throw new Error('Engine event stream has no body');
+	const input = Readable.fromWeb(events.body as Parameters<typeof Readable.fromWeb>[0]);
+	const lines = createInterface({ input });
+	const receipts = lines[Symbol.asyncIterator]();
+	try {
+		const res = await request.get(`/api/jobs/${jobId}`);
 		expect(res.ok()).toBe(true);
-		const job = EngineJobSchema.parse(await res.json());
-		if (TERMINAL_JOB_STATES.has(job.state)) return job;
-		if (Date.now() - t0 > timeoutMs) throw new Error(`job ${jobId} still ${job.state} after ${timeoutMs} ms`);
-		await new Promise((r) => setTimeout(r, 500));
+		const current = EngineJobSchema.parse(await res.json());
+		if (TERMINAL_JOB_STATES.has(current.state)) return current;
+		for await (const line of receipts) {
+			const event = EventEnvelopeSchema.parse(JSON.parse(line));
+			if (event.type !== 'job.finished') continue;
+			const job = EngineJobSchema.parse(event.payload);
+			if (job.id === jobId && TERMINAL_JOB_STATES.has(job.state)) return job;
+		}
+		throw new Error(`Engine event stream closed before job ${jobId} finished`);
+	} finally {
+		lines.close();
+		input.destroy();
 	}
 }
 

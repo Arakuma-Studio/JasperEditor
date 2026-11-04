@@ -4,15 +4,10 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
-import {
-	AGE_UNITS,
-	type AgeUnit,
-	type MgImportTemplate,
-	mgImportText,
-	parseAgeCell,
-	parseTable,
-	planMgImport,
-} from '../src/index.ts';
+import { AGE_UNITS, type AgeUnit, parseAgeCell } from '../src/bulk/age.ts';
+import { mgImportText } from '../src/bulk/messages.ts';
+import { type MgImportTemplate, planMgImport } from '../src/bulk/mg-import.ts';
+import { parseTable } from '../src/bulk/table.ts';
 
 const UNITS = ['minute', 'hour', 'day', 'week', 'month', 'year'] as const;
 const schema = z.strictObject({

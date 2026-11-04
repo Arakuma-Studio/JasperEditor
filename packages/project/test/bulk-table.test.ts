@@ -2,6 +2,7 @@
 // CSV, spreadsheet TSV and semicolon CSV, lenient and bounded.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { threadCpuMs } from '../../../scripts/perf/cpu.ts';
 import {
 	detectDelimiter,
 	formatTable,
@@ -216,15 +217,15 @@ describe('parseTable', () => {
 		});
 	});
 
-	it('parses a 2 MB table (500 rows of 4 KB) in well under a second', () => {
+	it('parses a 2 MB table (500 rows of 4 KB) within its 1.5 s CPU budget', () => {
 		const long = `This is ==so good== 🔥, ""really"" ${'lorem ipsum '.repeat(330)}`;
 		const row = `"luna.makes","${long}","1.2K","yes"\n`;
 		const text = `User,Comment,Likes,Verified\n${row.repeat(TABLE_MAX_ROWS)}`;
 		expect(text.length).toBeGreaterThan(1.9 * 1024 * 1024);
 		expect(text.length).toBeLessThanOrEqual(TABLE_MAX_CHARS);
-		const t0 = performance.now();
+		const t0 = threadCpuMs();
 		const r = parseTable(text);
-		const ms = performance.now() - t0;
+		const ms = threadCpuMs() - t0;
 		expect(r.ok && r.table.records).toHaveLength(TABLE_MAX_ROWS + 1);
 		expect(ms).toBeLessThan(1500);
 	});

@@ -18,6 +18,8 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import fc from 'fast-check';
 import { describe, it } from 'vitest';
+// layers-allow: the test-only fuzz harness shares the repository's CPU budget clock.
+import { threadCpuMs } from '../../../scripts/perf/cpu.ts';
 import { envFlag, testResultsDir } from './env.ts';
 
 /** xorshift128 (Marsaglia) seeded through splitmix32: fast, deterministic, 32-bit outputs. */
@@ -410,7 +412,7 @@ export type FuzzTarget<K extends FuzzKind = FuzzKind> = {
 	iterations?: number;
 	/** fast-check runs (default 100; ×20 with FUZZ=1). */
 	properties?: number;
-	/** One input may take at most this long (ms; default 2000): catches quadratic blow-ups and near-hangs. */
+	/** Per-input budget (ms; default 2000): CPU in the sync runner, elapsed time in the async runner. */
 	slowMs?: number;
 };
 
@@ -504,6 +506,7 @@ function verdict<K extends FuzzKind>(
 	input: InputOf<K>,
 	t0: number,
 	run: () => unknown,
+	clock: () => number = () => performance.now(),
 ): string | undefined {
 	let failure: string | undefined;
 	try {
@@ -513,7 +516,7 @@ function verdict<K extends FuzzKind>(
 	} catch (e) {
 		if (!isExpected(e, t.expected)) failure = describeError(e);
 	}
-	const ms = performance.now() - t0;
+	const ms = clock() - t0;
 	if (!failure && ms > (t.slowMs ?? 2000))
 		failure = `took ${ms.toFixed(0)} ms (limit ${t.slowMs ?? 2000} ms)`;
 	return failure;
@@ -540,12 +543,18 @@ async function exercise<K extends FuzzKind>(
 
 /** Runs one input of a synchronous target. */
 function exerciseSync<K extends FuzzKind>(t: FuzzTarget<K>, input: InputOf<K>): string | undefined {
-	const t0 = performance.now();
-	return verdict(t, input, t0, () => {
-		const r = t.run(input);
-		if (r instanceof Promise) throw new Error('runFuzzTargetSync: the target returned a Promise');
-		return r;
-	});
+	const t0 = threadCpuMs();
+	return verdict(
+		t,
+		input,
+		t0,
+		() => {
+			const r = t.run(input);
+			if (r instanceof Promise) throw new Error('runFuzzTargetSync: the target returned a Promise');
+			return r;
+		},
+		threadCpuMs,
+	);
 }
 
 function arbitraryOf(kind: FuzzKind): fc.Arbitrary<unknown> {

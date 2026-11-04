@@ -40,9 +40,7 @@ describe('per-sequence invariant memo', () => {
 		expect(
 			checkInvariants(d, { effects }).some((i) => i.invariant === 'INV-001' && i.path?.includes(clip.id)),
 		).toBe(true);
-		const e = structuredClone(h.doc) as ProjectDocument;
-		e.sequences[s1!] = h.doc.sequences[s1!]!;
-		e.media = {};
+		const e = { ...h.doc, media: {} } as ProjectDocument;
 		expect(
 			checkInvariants(e, { effects }).some((i) => i.invariant === 'INV-006' && i.path?.includes(clip.id)),
 		).toBe(true);

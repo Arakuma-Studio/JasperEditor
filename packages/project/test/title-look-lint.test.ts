@@ -279,7 +279,16 @@ describe('the lint (TL-056)', () => {
 					],
 				},
 			};
-			expect(codes({ layers: [{ type: 'face', params: { paint } }] })).not.toContain('LOOK_TOO_MANY_HUES');
+			const layers: LookRecipe['layers'] = [
+				{ type: 'rim', params: { width: 4, paint: color([1, 0, 0, 1]) } },
+				{ type: 'rim', params: { width: 4, paint: color([0, 0, 1, 1]) } },
+			];
+			expect(codes({ layers: [...layers, { type: 'face', params: { paint } }] })).not.toContain(
+				'LOOK_TOO_MANY_HUES',
+			);
+			expect(
+				codes({ layers: [...layers, { type: 'face', params: { paint: color([0, 1, 0, 1]) } }] }),
+			).toContain('LOOK_TOO_MANY_HUES');
 		});
 	});
 

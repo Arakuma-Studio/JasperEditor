@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { EngineJob } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { closeApps, JSON_H, makeApp, ROOT, register, type TestApp, until } from './helpers.ts';
+import { coreServices } from '../src/tools/services.ts';
+import { closeApps, JSON_H, makeApp, ROOT, register, type TestApp } from './helpers.ts';
 
 const H = { host: '127.0.0.1:47900' };
 const FIXTURE = join(ROOT, 'fixtures', 'speech', 'lj-composite.flac');
@@ -41,15 +42,8 @@ function model(id: string, files: ReturnType<typeof file>[], extra: Record<strin
 	};
 }
 
-async function waitJob(id: string): Promise<EngineJob> {
-	return until(
-		async () => {
-			const j = (await app.inject({ method: 'GET', url: `/api/jobs/${id}`, headers: H })).json() as EngineJob;
-			return ['succeeded', 'failed', 'cancelled', 'interrupted'].includes(j.state) ? j : null;
-		},
-		120_000,
-		100,
-	);
+function waitJob(id: string): Promise<EngineJob> {
+	return coreServices(app).queue.wait(id);
 }
 
 beforeAll(async () => {

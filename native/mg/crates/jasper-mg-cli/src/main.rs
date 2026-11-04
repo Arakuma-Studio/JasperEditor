@@ -384,7 +384,9 @@ mod tests {
     use super::*;
 
     #[derive(Debug)]
-    struct PanickingVideo;
+    struct PanickingVideo {
+        during_initialization: bool,
+    }
 
     impl Video for PanickingVideo {
         const FPS: usize = 30;
@@ -393,6 +395,9 @@ mod tests {
         const BACKGROUND_COLOR: Color = Color::TRANSPARENT;
 
         fn duration(&self) -> fframes::Duration<'_> {
+            if self.during_initialization {
+                panic!("failed render worker");
+            }
             fframes::Duration::Frames(3)
         }
 
@@ -420,9 +425,17 @@ mod tests {
         .unwrap();
         let prepared = Prepared::new(spec).unwrap();
         let media = MgMedia::new().unwrap();
-        assert!(matches!(
-            render_raw(&PanickingVideo, &prepared, &media, 3),
-            Err(CliError::Other(message)) if message.contains("panicked")
-        ));
+        for during_initialization in [false, true] {
+            let video = PanickingVideo {
+                during_initialization,
+            };
+            assert!(
+                matches!(
+                    render_raw(&video, &prepared, &media, 3),
+                    Err(CliError::Other(message)) if message.contains("panicked")
+                ),
+                "panic during initialization: {during_initialization}"
+            );
+        }
     }
 }

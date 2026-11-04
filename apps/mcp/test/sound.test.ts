@@ -16,7 +16,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { decodePng } from '../src/png.ts';
 import { editorWindow } from './editor-window.ts';
-import { cleanEnv, stopEngine, testPort, waitFor } from './helpers.ts';
+import { cleanEnv, engineReady, stopEngine, testPort } from './helpers.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const KIT = join(ROOT, 'apps', 'engine', 'sounds', 'starter');
@@ -141,16 +141,12 @@ beforeAll(async () => {
 				JASPER_SOUND_SYNTH_VARIANTS: '1',
 				JASPER_SOUND_AUTO_INDEX: '0',
 			}),
-			stdio: ['ignore', 'pipe', 'pipe'],
+			stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
 		},
 	);
 	engine.stdout?.on('data', (d: Buffer) => engineLog.push(d.toString()));
 	engine.stderr?.on('data', (d: Buffer) => engineLog.push(d.toString()));
-	await waitFor(
-		async () => (await fetch(`http://127.0.0.1:${PORT}/health`)).ok,
-		120_000,
-		`the engine on ${PORT}: ${engineLog.join('')}`,
-	);
+	await engineReady(engine, PORT, engineLog);
 	const transport = new StdioClientTransport({
 		command: process.execPath,
 		args: ['--import', 'tsx', join(ROOT, 'apps/mcp/src/cli.ts'), '--appdir', appdir],
@@ -161,13 +157,13 @@ beforeAll(async () => {
 	transport.stderr?.on('data', (d: Buffer) => logs.push(d.toString('utf8')));
 	client = new Client({ name: 'vitest-mcp-sound', version: '1.0.0' });
 	await client.connect(transport);
-}, 240_000);
+});
 
 afterAll(async () => {
 	await client?.close().catch(() => {});
 	await stopEngine(engine);
 	if (work) rmSync(work, { recursive: true, force: true });
-}, 30_000);
+});
 
 type Row = {
 	rank: number;
@@ -188,7 +184,7 @@ type Row = {
 type Search = { total: number; results: Row[]; facets: Record<string, Record<string, number>> };
 const byTitle = new Map<string, Row>();
 
-describe('sound library MCP tools', { timeout: 900_000 }, () => {
+describe('sound library MCP tools', () => {
 	it('rescan_sound_library indexes the kit and the synth fallback (wait, progress)', async () => {
 		const progress: number[] = [];
 		const r = (await client.callTool({ name: 'rescan_sound_library', arguments: { wait: true } }, undefined, {

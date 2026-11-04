@@ -11,7 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type RunningEngine, startEngine } from '../src/index.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { makeTestTtf } from './font-fixtures.ts';
-import { DocBuilder, JSON_H, tempAppdir, until } from './helpers.ts';
+import { DocBuilder, JSON_H, tempAppdir } from './helpers.ts';
 
 const enabled = process.env.REMOTION_E2E === '1';
 const W = 1280;
@@ -85,14 +85,7 @@ describe.runIf(enabled)('library fonts: preview vs every export path (REMOTION_E
 	});
 
 	const queue = () => coreServices(engine.app).queue;
-	const wait = async (id: string): Promise<EngineJob> => {
-		await until(
-			() => ['succeeded', 'failed', 'cancelled'].includes(queue().get(id)?.state ?? ''),
-			1_200_000,
-			250,
-		);
-		return queue().get(id)!;
-	};
+	const wait = (id: string): Promise<EngineJob> => queue().wait(id);
 
 	const settings = (seqId: string, engineName: 'auto' | 'remotion') => ({
 		sequenceId: seqId,

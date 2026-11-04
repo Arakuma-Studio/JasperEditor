@@ -8,7 +8,10 @@ import { createMediaRuntimeSync } from '../src/import/media-runtime.ts';
 import { fetchWithEarly } from '../src/state/engine.tsx';
 import { memorySession, registered, ScriptedEngine } from './wp2e/helpers.ts';
 
-afterEach(() => localStorage.clear());
+afterEach(() => {
+	localStorage.clear();
+	vi.useRealTimers();
+});
 
 const BOOT_RETRY_STORAGE_KEY = 'jasper:boot-retries';
 
@@ -39,8 +42,19 @@ const derivatives = (over: Record<string, unknown> = {}) => ({
 const settled = (session: EditorSession) =>
 	Object.values(session.getState().media).every((m) => m.availability !== 'resolving');
 
-async function until(fn: () => boolean) {
-	for (let i = 0; i < 200 && !fn(); i++) await new Promise((r) => setTimeout(r, 5));
+async function until(session: EditorSession, fn: () => boolean) {
+	await new Promise<void>((resolve) => {
+		const off = session.store.subscribe(() => {
+			if (fn()) {
+				off();
+				resolve();
+			}
+		});
+		if (fn()) {
+			off();
+			resolve();
+		}
+	});
 	expect(fn()).toBe(true);
 }
 
@@ -69,7 +83,7 @@ describe('media resolution at project open', () => {
 			};
 		});
 		const sync = createMediaRuntimeSync(session, engine.client(), null);
-		await until(() => Object.keys(session.getState().media).length === n && settled(session));
+		await until(session, () => Object.keys(session.getState().media).length === n && settled(session));
 
 		const batches = engine.requests
 			.filter((r) => r.method === 'POST' && r.path === '/api/media/status')
@@ -104,7 +118,7 @@ describe('media resolution at project open', () => {
 			return undefined;
 		});
 		const sync = createMediaRuntimeSync(session, engine.client(), null);
-		await until(() => settled(session) && Object.keys(session.getState().media).length === 3);
+		await until(session, () => settled(session) && Object.keys(session.getState().media).length === 3);
 		expect(
 			engine.requests.filter((r) => r.method === 'GET' && r.path.startsWith('/api/media/mk_')),
 		).toHaveLength(3);
@@ -125,7 +139,7 @@ describe('media resolution at project open', () => {
 			}) as unknown as typeof fetch,
 		});
 		const sync = createMediaRuntimeSync(session, down, null);
-		await until(() => settled(session) && Object.keys(session.getState().media).length === 4);
+		await until(session, () => settled(session) && Object.keys(session.getState().media).length === 4);
 		for (const id of ids) expect(session.getState().media[id]?.availability).toBe('needs-engine');
 		sync.dispose();
 	});
@@ -326,6 +340,8 @@ describe('editor boot script (preload + early project fetch)', () => {
 	});
 
 	it('the engine client takes the early answer once, for exactly that GET, and asks again when it failed', async () => {
+		vi.useFakeTimers({ toFake: ['Date'] });
+		vi.setSystemTime(new Date('2026-10-07T10:00:00.000Z'));
 		const w = window as unknown as {
 			__jasperEarly?: { url: string; response: Promise<Response>; at: number };
 		};

@@ -157,7 +157,10 @@ describe('split, merge, trim, move and ripple delete (FilmCraft caption edits)',
 		expect(spans(H)[1]).toEqual([100, 300, 'b']);
 		H.ok([{ type: 'caption.setTimes', clipId: c!.id, start: 310, end: 400 }]);
 		expect(spans(H)[2]).toEqual([310, 400, 'c']);
-		expect(H.tx([{ type: 'caption.setTimes', clipId: c!.id, start: 250 }]).ok).toBe(false);
+		expect(H.tx([{ type: 'caption.setTimes', clipId: c!.id, start: 250 }])).toMatchObject({
+			ok: false,
+			errors: [{ code: 'E_OVERLAP' }],
+		});
 		H.ok([{ type: 'clip.move', clipIds: [a!.id], deltaFrames: 1000, mode: 'overwrite' }]);
 		expect(spans(H).map((x) => x[2])).toEqual(['b', 'c', 'a']);
 		ensureValid(H.doc);
@@ -297,8 +300,8 @@ describe('text edits', () => {
 		H.ok([{ type: 'transcript.setBreak', transcriptId: trs, wordIndex: 3, breakBefore: 'segment' }]);
 		expect(H.doc.transcripts[trs]!.words[3]!.breakBefore).toBe('segment');
 		expect(
-			H.tx([{ type: 'transcript.editText', transcriptId: trs, fromWord: 30, toWord: 31, text: 'x' }]).ok,
-		).toBe(false);
+			H.tx([{ type: 'transcript.editText', transcriptId: trs, fromWord: 30, toWord: 31, text: 'x' }]),
+		).toMatchObject({ ok: false, errors: [{ code: 'E_INVALID_PARAM' }] });
 	});
 	it('a blank line in caption text starts a new page', () => {
 		const H = new Harness();

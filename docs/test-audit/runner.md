@@ -105,7 +105,7 @@ defines the first `schedstat` field as cumulative CPU runtime in nanoseconds.
 The harness inference is that this path measures the executing JavaScript worker,
 where the old process-PID path always selected the process's main thread.
 
-`test/cpu-time.ts` is used by the two retained tests and the project configuration.
+`scripts/perf/cpu.ts` supplies the shared clock for CPU budgets and the project configuration.
 Workers throw if a valid positive per-thread counter is unavailable. Forks retain
 the existing process-CPU fallback. The default pool checks Linux plus the readable
 counter; a simulated unavailable clock selected forks and passed the existing

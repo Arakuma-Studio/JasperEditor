@@ -12,7 +12,6 @@ import {
 	makeApp,
 	register,
 	type TestApp,
-	until,
 } from './helpers.ts';
 
 let app: TestApp;
@@ -142,9 +141,7 @@ describe('LGPL-only mode (JASPER_FFMPEG_LGPL_ONLY=1)', () => {
 		expect(v.codec_name).toBe(choice.codec);
 		expect(Number(v.height)).toBeLessThanOrEqual(540);
 		expect(info.format.format_name).toContain('mp4');
-		await until(async () => {
-			const r = await app.inject({ method: 'GET', url: `/api/media/${m.mediaKey}`, headers: H });
-			return r.json().derivatives?.['proxy-540']?.state === 'ready';
-		});
+		const r = await app.inject({ method: 'GET', url: `/api/media/${m.mediaKey}`, headers: H });
+		expect(r.json().derivatives?.['proxy-540']?.state).toBe('ready');
 	}, 120_000);
 });

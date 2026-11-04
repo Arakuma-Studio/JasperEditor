@@ -22,14 +22,14 @@ import {
 	type ToastRequest,
 } from '../src/commands/index.ts';
 import { easeClipboard } from '../src/panels/easing/clipboard.ts';
-import { easeLibrary } from '../src/panels/easing/library.ts';
+import { easeLibrary, emptyLibrary } from '../src/panels/easing/library.ts';
 import { addSolids, clipOf, makeSession } from './inspector-helpers.tsx';
 
 const engine = new EngineClient({ fetch: (async () => new Response('{}')) as unknown as typeof fetch });
 beforeAll(() => registerAllCommands());
 beforeEach(() => {
+	easeLibrary.set(emptyLibrary());
 	globalThis.localStorage?.clear();
-	easeLibrary.reload();
 	easeClipboard.set(null);
 });
 

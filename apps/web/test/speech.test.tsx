@@ -588,13 +588,15 @@ describe('automatic transcription of media an agent imports (spec 18 AF-DIG-003)
 		>;
 		delete asset.id;
 		asset.fingerprint = `q1:${'ef'.repeat(32)}`;
-		const r = session.apply({
-			label: 'Import 1 file',
-			origin: { agent: 'claude-code' },
-			sequenceId: seqId,
-			commands: [{ type: 'media.register', asset }] as never[],
+		await act(async () => {
+			const r = session.apply({
+				label: 'Import 1 file',
+				origin: { agent: 'claude-code' },
+				sequenceId: seqId,
+				commands: [{ type: 'media.register', asset }] as never[],
+			});
+			expect(r.ok).toBe(true);
 		});
-		expect(r.ok).toBe(true);
 		return { calls };
 	}
 	const queued = (state: EngineJob['state'], projectId = 'prj_speech'): EngineJob => ({
@@ -621,10 +623,7 @@ describe('automatic transcription of media an agent imports (spec 18 AF-DIG-003)
 
 	it('leaves media alone when the agent already queued its transcription', async () => {
 		const { calls } = await agentImport([queued('queued')]);
-		await waitFor(() => expect(calls.some((c) => c.url.startsWith('/api/jobs?'))).toBe(true));
-		await act(async () => {
-			await new Promise((r) => setTimeout(r, 50));
-		});
+		expect(calls.some((c) => c.url.startsWith('/api/jobs?'))).toBe(true);
 		expect(posts(calls)).toHaveLength(0);
 		saveAuto({ enabled: false, model: 'whisper-base', language: 'auto' });
 	});

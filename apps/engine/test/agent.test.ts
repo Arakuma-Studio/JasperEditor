@@ -50,12 +50,26 @@ async function makeEngine(token: string | null = null) {
 	apps.push(app);
 	await app.ready();
 	const events: { type: string; payload: unknown; projectId?: string }[] = [];
+	let delivered = () => {};
 	app.jasper.services.events = {
-		publish: (type: string, payload: unknown, projectId?: string) =>
-			events.push({ type, payload, projectId }),
+		publish: (type: string, payload: unknown, projectId?: string) => {
+			events.push({ type, payload, projectId });
+			delivered();
+		},
 	};
 	const project = seedProject(appdirPaths(appdir).projectFile);
-	return { app, events, ...project };
+	return {
+		app,
+		events,
+		...project,
+		async event(type: string) {
+			while (!events.some((e) => e.type === type))
+				await new Promise<void>((resolve) => {
+					delivered = resolve;
+				});
+			return events.find((e) => e.type === type)!;
+		},
+	};
 }
 
 const tx = (commands: unknown[], extra: Record<string, unknown> = {}) => ({
@@ -283,7 +297,7 @@ describe('headless mode (S01:AGT-020)', () => {
 
 describe('WS /agent relay (ARCHITECTURE §11)', () => {
 	it('relays transactions and queries to the session that holds the lease and forwards its events', async () => {
-		const { app, events, projectId } = await makeEngine();
+		const { app, event, projectId } = await makeEngine();
 		const { ws, box } = await connectSession(app, projectId);
 
 		const pending = postTx(app, projectId, tx([{ type: 'marker.add', frame: 5, name: 'Live' }]));
@@ -350,14 +364,10 @@ describe('WS /agent relay (ARCHITECTURE §11)', () => {
 				},
 			}),
 		);
-		await vi.waitFor(
-			() =>
-				expect(events.find((e) => e.type === 'doc.changed')).toMatchObject({
-					projectId,
-					payload: { revision: 9, projectId },
-				}),
-			{ interval: 5 },
-		);
+		expect(await event('doc.changed')).toMatchObject({
+			projectId,
+			payload: { revision: 9, projectId },
+		});
 		ws.terminate();
 	});
 

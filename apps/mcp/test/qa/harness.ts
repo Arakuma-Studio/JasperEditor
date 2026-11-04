@@ -9,7 +9,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { decodePng } from '../../src/png.ts';
-import { cleanEnv, stopEngine, waitFor } from '../helpers.ts';
+import { cleanEnv, engineReady, stopEngine } from '../helpers.ts';
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
 export const FIXTURES = join(ROOT, 'fixtures', 'media');
@@ -61,17 +61,11 @@ export class Qa {
 				'--appdir',
 				this.appdir,
 			],
-			{ cwd: ROOT, env: cleanEnv({ ...pass, JASPER_DEV: '1' }), stdio: ['ignore', 'pipe', 'pipe'] },
+			{ cwd: ROOT, env: cleanEnv({ ...pass, JASPER_DEV: '1' }), stdio: ['ignore', 'pipe', 'pipe', 'ipc'] },
 		);
 		this.engine.stdout?.on('data', (d: Buffer) => this.logs.push(d.toString()));
 		this.engine.stderr?.on('data', (d: Buffer) => this.logs.push(d.toString()));
-		await waitFor(
-			async () =>
-				existsSync(join(this.appdir, 'engine', 'runtime.json')) &&
-				(await fetch(`http://127.0.0.1:${this.port}/health`)).ok,
-			120_000,
-			`engine on ${this.port}: ${this.logs.join('').slice(-4000)}`,
-		);
+		await engineReady(this.engine, this.port, this.logs);
 		const transport = new StdioClientTransport({
 			command: process.execPath,
 			args: [

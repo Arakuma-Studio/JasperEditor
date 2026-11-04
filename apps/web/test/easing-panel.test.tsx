@@ -8,7 +8,7 @@ import { registerCommands } from '../src/commands/registry.ts';
 import { CurvePreview } from '../src/panels/easing/CurvePreview.tsx';
 import { easeClipboard } from '../src/panels/easing/clipboard.ts';
 import { EasingPanel } from '../src/panels/easing/EasingPanel.tsx';
-import { easeLibrary } from '../src/panels/easing/library.ts';
+import { easeLibrary, emptyLibrary } from '../src/panels/easing/library.ts';
 import { ShellRuntimeProvider } from '../src/shell/context.tsx';
 import { EngineProvider } from '../src/state/engine.tsx';
 import { addSolids, clipOf, makeSession } from './inspector-helpers.tsx';
@@ -56,8 +56,8 @@ const editor = () => screen.getByTestId('ease-curve-editor');
 let unregister: (() => void) | undefined;
 
 beforeEach(() => {
+	easeLibrary.set(emptyLibrary());
 	globalThis.localStorage?.clear();
-	easeLibrary.reload();
 	easeClipboard.set(null);
 	unregister = registerCommands(easingCommands);
 });

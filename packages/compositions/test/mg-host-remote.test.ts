@@ -404,7 +404,7 @@ describe('the editor trusts nothing a bundle page says (MG-1)', () => {
 			`url("https://fonts.gstatic.com/a.woff2"), url("${origin}/api/projects")`,
 			'',
 			'expression(alert(1))',
-			`url("${'a'.repeat(20_000)}")`,
+			`url("https://fonts.example/${'a'.repeat(20_000)}.woff2")`,
 		];
 		for (const s of bad)
 			expect([s.slice(0, 60), isSafeFontSource(s, origin)]).toEqual([s.slice(0, 60), false]);

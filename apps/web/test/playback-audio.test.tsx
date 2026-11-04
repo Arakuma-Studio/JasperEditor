@@ -10,6 +10,7 @@ import { buildMediaAsset } from '../src/import/assets.ts';
 import { createMediaRuntimeSync } from '../src/import/media-runtime.ts';
 import { resolveMediaHandle } from '../src/panels/program/render-doc.ts';
 import { ClipView } from '../src/panels/timeline/components/ClipView.tsx';
+import { playbackAudioBadge } from '../src/panels/timeline/model/playback-audio.ts';
 import { makeSession } from './timeline-helpers.ts';
 import { memorySession, registered, ScriptedEngine } from './wp2e/helpers.ts';
 
@@ -202,7 +203,9 @@ describe('timeline playback failure', () => {
 			view(rt({ playbackAudio: { state: 'failed', progress: 0, error: 'decoder fixture failure' } })),
 		);
 		expect(screen.getByTitle(/decoder fixture failure/).textContent).not.toBe('');
-		r.rerender(view(rt({ playbackAudio: { state: 'ready', progress: 1 } })));
+		const ready = rt({ playbackAudio: { state: 'ready', progress: 1 } });
+		r.rerender(view(ready));
 		expect(screen.queryByTitle(/decoder fixture failure/)).toBeNull();
+		expect(playbackAudioBadge(a, ready)).toBeNull();
 	});
 });

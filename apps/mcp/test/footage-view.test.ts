@@ -14,7 +14,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { decodePng } from '../src/png.ts';
 import { clampRange, secondsArg } from '../src/tools/footage-view.ts';
-import { cleanEnv, stopEngine, testPort, waitFor } from './helpers.ts';
+import { cleanEnv, engineReady, stopEngine, testPort } from './helpers.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(here, '..', '..', '..');
@@ -94,18 +94,12 @@ beforeAll(async () => {
 	engine = spawn(
 		process.execPath,
 		['--import', 'tsx', join(ROOT, 'apps/engine/src/cli.ts'), '--port', String(PORT), '--appdir', appdir],
-		{ cwd: ROOT, env: cleanEnv(), stdio: ['ignore', 'pipe', 'pipe'] },
+		{ cwd: ROOT, env: cleanEnv(), stdio: ['ignore', 'pipe', 'pipe', 'ipc'] },
 	);
 	const engineLog: string[] = [];
 	engine.stdout?.on('data', (d: Buffer) => engineLog.push(d.toString()));
 	engine.stderr?.on('data', (d: Buffer) => engineLog.push(d.toString()));
-	await waitFor(
-		async () =>
-			existsSync(join(appdir, 'engine', 'runtime.json')) &&
-			(await fetch(`http://127.0.0.1:${PORT}/health`)).ok,
-		90_000,
-		`the engine on ${PORT}: ${engineLog.join('')}`,
-	);
+	await engineReady(engine, PORT, engineLog);
 	const transport = new StdioClientTransport({
 		command: process.execPath,
 		args: ['--import', 'tsx', join(ROOT, 'apps/mcp/src/cli.ts'), '--appdir', appdir],
@@ -116,13 +110,13 @@ beforeAll(async () => {
 	transport.stderr?.on('data', (d: Buffer) => logs.push(d.toString('utf8')));
 	client = new Client({ name: 'vitest-mcp-footage-view', version: '1.0.0' });
 	await client.connect(transport);
-}, 180_000);
+});
 
 afterAll(async () => {
 	await client?.close().catch(() => {});
 	await stopEngine(engine);
 	if (appdir) rmSync(appdir, { recursive: true, force: true });
-}, 30_000);
+});
 
 describe('argument helpers', () => {
 	it('reads seconds and friendly times, and clamps ranges to the media', () => {

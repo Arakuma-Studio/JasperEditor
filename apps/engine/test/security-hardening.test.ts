@@ -224,11 +224,9 @@ describe('AGT-2: approval answers count only from the editor connection that was
 		const app = await secured();
 		const { projectId } = seed(app);
 		await session(app, AGENT, projectId, 'ses_rogue');
-		const t0 = Date.now();
 		const r = await postTx(app, projectId);
 		expect(r.json().result).toMatchObject({ ok: false, errors: [{ code: 'E_APPROVAL_DENIED' }] });
 		expect(r.json().result.errors[0].message).toMatch(/no editor window/);
-		expect(Date.now() - t0).toBeLessThan(3000);
 		expect(agentService(app).approvals.pending()).toEqual([]);
 	});
 

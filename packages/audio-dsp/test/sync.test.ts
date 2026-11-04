@@ -142,11 +142,13 @@ describe('findOffset (GCC-PHAT, two passes)', () => {
 		[2, -31_337.4, 3, 0.3, 10],
 		[3, 150_000.6, 0.5, null, 3],
 	];
+	let microphoneSource: Float32Array | undefined;
+	let microphoneReference: Float32Array | undefined;
 	it.each(microphones)(
 		'three microphones: mic %i with gain, noise, colouring and fractional delay is within one sample',
 		(k, delay, gain, lowpass, snrDb) => {
-			const src = speechy(sr, 30, 7);
-			const reference = mic(src, 0, 1, null, 40, 30 * sr, 100);
+			const src = (microphoneSource ??= speechy(sr, 30, 7));
+			const reference = (microphoneReference ??= mic(src, 0, 1, null, 40, 30 * sr, 100));
 			const target = mic(src, delay, gain, lowpass, snrDb, 30 * sr, 100 + k);
 			// b[n] = src[n − delay], reference has zero delay → lag = −delay.
 			const expected = -delay;
@@ -195,11 +197,13 @@ describe('findOffset (GCC-PHAT, two passes)', () => {
 		expect(Math.abs(q.lag + 6 * sr)).toBeLessThanOrEqual(1);
 	}, 30_000);
 
+	let subSampleSource: Float32Array | undefined;
+	let subSampleReference: Float32Array | undefined;
 	it.each([0.25, 0.5, 10.4, -3.7])(
 		'sub-sample delays come out of the parabolic refinement (%s samples)',
 		(d) => {
-			const s = speechy(sr, 6, 51);
-			const a = mic(s, 0, 1, null, 50, s.length, 1);
+			const s = (subSampleSource ??= speechy(sr, 6, 51));
+			const a = (subSampleReference ??= mic(s, 0, 1, null, 50, s.length, 1));
 			const b = mic(s, d, 1, null, 50, s.length, 2);
 			// b[n] = s[n − d] = a[n − d] → lag = −d
 			const r = findOffset(a, b, sr)!;

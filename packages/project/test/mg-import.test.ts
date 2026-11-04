@@ -302,7 +302,7 @@ describe('cells', () => {
 						for (const row of r.plan.rows) for (const m of [...row.errors, ...row.warnings]) mgImportText(m);
 				},
 			),
-			{ numRuns: 400 },
+			{ numRuns: 400, examples: [[[['avatar'], ['{bad']], undefined]] },
 		);
 	});
 });

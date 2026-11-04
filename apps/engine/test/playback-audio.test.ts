@@ -23,7 +23,6 @@ import {
 	TEST_FFMPEG,
 	type TestApp,
 	tempAppdir,
-	until,
 } from './helpers.ts';
 
 const WMA = fixture('legacy-wma.wma');
@@ -84,16 +83,13 @@ const statusOf = async (key: string) =>
 		derivatives: Record<string, { state: string; url?: string; error?: string; jobId?: string }>;
 	};
 
-const settled = (key: string) =>
-	until(
-		async () => {
-			const s = await statusOf(key);
-			const st = s.derivatives['playback-audio']!.state;
-			return st === 'ready' || st === 'failed' ? s : null;
-		},
-		60_000,
-		50,
-	);
+async function settled(key: string) {
+	const first = await statusOf(key);
+	const derivative = first.derivatives['playback-audio']!;
+	if (derivative.state !== 'ready' && derivative.state !== 'failed')
+		await coreServices(app).queue.wait(derivative.jobId!);
+	return statusOf(key);
+}
 
 /** A WMA of its own content (own fingerprint, so its playback audio is made, not reused). */
 function freshWma(name: string, hz: number): string {

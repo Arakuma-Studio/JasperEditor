@@ -1,6 +1,6 @@
 // ARCHITECTURE §13 budgets (docs/performance.md): a single command on a
 // 1 000-clip sequence, with the per-track reindex the timeline then does, < 4 ms; a 50-clip gesture update (with
-// the reindex) < 8 ms. Times are the best of several runs (median noise is the host's, not the code's). PERF=1
+// the reindex) < 8 ms. Times are the best executing-thread CPU time of several runs. PERF=1
 // enforces the budgets exactly; the normal gate scales them by the host's measured load (scripts/perf/budget.ts)
 // with 1.5× headroom, so a loaded shared machine does not fail them while a real regression still does.
 import {
@@ -12,6 +12,7 @@ import {
 } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import { budgetMs, budgetReport, PERF_STRICT } from '../../../scripts/perf/budget.ts';
+import { threadCpuMs } from '../../../scripts/perf/cpu.ts';
 
 const COMMAND_BUDGET_MS = 4;
 const GESTURE_BUDGET_MS = 8;
@@ -60,9 +61,9 @@ const clipIdsOf = (doc: ProjectDocument) =>
 const best = (n: number, fn: () => void) => {
 	let b = Number.POSITIVE_INFINITY;
 	for (let i = 0; i < n; i++) {
-		const t0 = performance.now();
+		const t0 = threadCpuMs();
 		fn();
-		b = Math.min(b, performance.now() - t0);
+		b = Math.min(b, threadCpuMs() - t0);
 	}
 	return b;
 };

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { type BrowseList, browseCategoryOf } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createServer, engineConfig } from '../src/index.ts';
+import { coreServices } from '../src/tools/services.ts';
 import { closeApps, ensureFixtures, FIXTURES, fixture, H, makeApp, tempAppdir } from './helpers.ts';
 
 beforeAll(() => ensureFixtures(), 180_000);
@@ -252,6 +253,10 @@ describe('Media Browser routes', () => {
 	});
 
 	it('does not follow a playlist-like file to the network when it is only looked at', async () => {
+		// Keep the unforced route scenario; explicit HLS parsing also exercises the local-input policy.
+		const builds: Record<string, string>[] = [{}];
+		if (existsSync('/usr/bin/ffmpeg') && existsSync('/usr/bin/ffprobe'))
+			builds.push({ JASPER_FFMPEG: '/usr/bin/ffmpeg', JASPER_FFPROBE: '/usr/bin/ffprobe' });
 		const hits: string[] = [];
 		const server = createHttpServer((req, res) => {
 			hits.push(req.url ?? '');
@@ -261,22 +266,37 @@ describe('Media Browser routes', () => {
 		await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
 		const port = (server.address() as { port: number }).port;
 		try {
-			const app = await makeApp();
-			const dir = mkdtempSync(join(tmpdir(), 'jasper-browse-hls-'));
-			const file = join(dir, 'trailer.mp4');
-			writeFileSync(
-				file,
-				`#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4,\nhttp://127.0.0.1:${port}/segment0.ts\n#EXT-X-ENDLIST\n`,
-			);
-			const info = await app.inject({ method: 'GET', url: `/api/browse/info?path=${q(file)}`, headers: H });
-			expect(info.statusCode).toBe(200);
-			const thumb = await app.inject({
-				method: 'GET',
-				url: `/api/browse/thumbnail?path=${q(file)}`,
-				headers: H,
-			});
-			expect(thumb.statusCode).toBe(404);
-			expect(hits).toEqual([]);
+			for (const env of builds) {
+				const app = await makeApp({ env });
+				for (const forceHls of [false, true]) {
+					if (forceHls) {
+						const ffmpeg = coreServices(app).ffmpeg;
+						const probe = ffmpeg.probeJson.bind(ffmpeg);
+						ffmpeg.probeJson = (args, opts) => probe(['-f', 'hls', ...args], opts);
+						const run = ffmpeg.run.bind(ffmpeg);
+						ffmpeg.run = (args, opts) => run(['-f', 'hls', ...args], opts);
+					}
+					const dir = mkdtempSync(join(tmpdir(), 'jasper-browse-hls-'));
+					const file = join(dir, 'trailer.mp4');
+					writeFileSync(
+						file,
+						`#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4,\nhttp://127.0.0.1:${port}/segment0.ts\n#EXT-X-ENDLIST\n`,
+					);
+					const info = await app.inject({
+						method: 'GET',
+						url: `/api/browse/info?path=${q(file)}`,
+						headers: H,
+					});
+					expect(info.statusCode).toBe(200);
+					const thumb = await app.inject({
+						method: 'GET',
+						url: `/api/browse/thumbnail?path=${q(file)}`,
+						headers: H,
+					});
+					expect(thumb.statusCode).toBe(404);
+					expect(hits).toEqual([]);
+				}
+			}
 		} finally {
 			await new Promise((r) => server.close(r));
 		}

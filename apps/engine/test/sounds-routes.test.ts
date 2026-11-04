@@ -42,10 +42,10 @@ import {
 } from '@jasper/project';
 import fc from 'fast-check';
 import type { FastifyInstance } from 'fastify';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished } from 'vitest';
 import type { WebSocket } from 'ws';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, H, JSON_H, makeApp, TEST_FFMPEG, tempAppdir, until } from './helpers.ts';
+import { closeApps, H, JSON_H, makeApp, TEST_FFMPEG, tempAppdir } from './helpers.ts';
 import { makeStarter, SR, samples, writeWav } from './sound-fixtures.ts';
 
 /** Interleaved f32 samples of a file's first audio stream (the engine tests' ffmpeg). */
@@ -226,24 +226,52 @@ describe('indexing the starter kit', { timeout: 300_000 }, () => {
 			});
 		writeFileSync(join(starter, 'manifest.json'), JSON.stringify(manifest));
 		const app = await makeApp();
-		const r = await app.inject({ method: 'POST', url: '/api/sounds/index', headers: JSON_H, payload: {} });
-		const job = r.json() as EngineJob;
-		const q = coreServices(app).queue;
-		await until(() => q.get(job.id)?.state === 'running' && (q.get(job.id)?.progress ?? 0) > 0, 60_000, 10);
-		const c = await app.inject({
-			method: 'POST',
-			url: `/api/jobs/${job.id}/cancel`,
-			headers: JSON_H,
-			payload: {},
+		const core = coreServices(app);
+		const q = core.queue;
+		let began!: () => void;
+		const scanning = new Promise<void>((resolve) => {
+			began = resolve;
 		});
-		expect(c.statusCode).toBe(200);
-		expect((await waitJob(app, job.id)).state).toBe('cancelled');
-		expect(existsSync(appdirPaths(app.appdir).soundLibraryIndex)).toBe(false);
-		expect(SoundLibraryStatusSchema.parse((await get(app, '/api/sounds/status')).body).sounds).toBe(0);
-		// What it analysed before the cancel is cached: the next scan does not decode those files again.
-		const next = await index(app);
-		expect(next.sounds).toBe(16);
-		expect(next.reused).toBeGreaterThan(0);
+		const unsubscribe = core.broadcaster.subscribe((event) => {
+			const updated = event.payload as EngineJob;
+			if (
+				event.type === 'job.updated' &&
+				updated.kind === 'sound-index' &&
+				updated.state === 'running' &&
+				(updated.progress ?? 0) > 0
+			)
+				began();
+		});
+		let job: EngineJob | undefined;
+		const cleanup = async () => {
+			unsubscribe();
+			if (job) {
+				q.cancel(job.id);
+				await q.wait(job.id);
+			}
+		};
+		onTestFinished(cleanup);
+		try {
+			const r = await app.inject({ method: 'POST', url: '/api/sounds/index', headers: JSON_H, payload: {} });
+			job = r.json() as EngineJob;
+			expect(await Promise.race([scanning.then(() => true), q.wait(job.id).then(() => false)])).toBe(true);
+			const c = await app.inject({
+				method: 'POST',
+				url: `/api/jobs/${job.id}/cancel`,
+				headers: JSON_H,
+				payload: {},
+			});
+			expect(c.statusCode).toBe(200);
+			expect((await waitJob(app, job.id)).state).toBe('cancelled');
+			expect(existsSync(appdirPaths(app.appdir).soundLibraryIndex)).toBe(false);
+			expect(SoundLibraryStatusSchema.parse((await get(app, '/api/sounds/status')).body).sounds).toBe(0);
+			// What it analysed before the cancel is cached: the next scan does not decode those files again.
+			const next = await index(app);
+			expect(next.sounds).toBe(16);
+			expect(next.reused).toBeGreaterThan(0);
+		} finally {
+			await cleanup();
+		}
 	});
 });
 

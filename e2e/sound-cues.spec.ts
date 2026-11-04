@@ -15,6 +15,7 @@ import {
 	pointerDrag,
 	query,
 	ROOT,
+	timelineArea,
 	transact,
 } from './support.ts';
 
@@ -151,7 +152,7 @@ test('Suggest Cues derives events and supports role, drag, delete and undo', asy
 	await expect(seam).toBeVisible();
 	await focusTimeline(page);
 	await page.keyboard.press('Backslash'); // zoom to sequence
-	await page.waitForTimeout(300);
+	await timelineArea(page).screenshot({ animations: 'disabled' });
 	const a = await clipBox(page, refs.$a!);
 	const b = await clipBox(page, refs.$b!);
 	const ppf = (b.x - a.x) / 90;

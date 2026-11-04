@@ -1,5 +1,6 @@
 // Sound Design Phase 2 model review (spec 12 §2.2, §2.3, §2.9; P2-R1…R5): regression tests for the bugs the
 // verification review found (each failed before its fix) and the coverage gaps it filled.
+import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
 	type AudioClip,
@@ -242,8 +243,7 @@ describe('repairDocument on hostile sound-design data (review, property)', () =>
 		return o;
 	}
 
-	it('one repair is enough (repair twice == once) and nothing is left to repair, whatever the values', async () => {
-		const fc = (await import('fast-check')).default;
+	it('one repair is enough (repair twice == once) and nothing is left to repair, whatever the values', () => {
 		const { h, a, b, trackId } = edit();
 		const m = libMedia(h);
 		const r = h.ok([
@@ -418,7 +418,7 @@ describe('repairDocument on hostile sound-design data (review, property)', () =>
 			),
 			{ numRuns: 300 },
 		);
-	}, 120_000);
+	});
 });
 
 describe('soundDesign.swap keeps every property of the clip (review)', () => {
@@ -728,8 +728,7 @@ describe('sound command input is strict and bounded (review, gaps)', () => {
 });
 
 describe('deriveCues determinism (review, gaps)', () => {
-	it('the same cues whatever order the clips, transitions, media and markers are stored in (property)', async () => {
-		const fc = (await import('fast-check')).default;
+	it('the same cues whatever order the clips, transitions, media and markers are stored in (property)', () => {
 		const f = phase2Fixture();
 		const h = f.h;
 		h.ok([
@@ -762,7 +761,7 @@ describe('deriveCues determinism (review, gaps)', () => {
 			}),
 			{ numRuns: 40 },
 		);
-	}, 120_000);
+	});
 });
 
 describe('soundCue.resync follows trims, speed changes and moves (review, gaps)', () => {

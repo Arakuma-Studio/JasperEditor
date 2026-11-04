@@ -3,29 +3,23 @@
 import {
 	chmodSync,
 	existsSync,
+	mkdirSync,
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
+	readlinkSync,
 	rmSync,
 	statSync,
+	watch,
 	writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { EngineJob, ProcessResult, RemoteProbeResult } from '@jasper/api';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 import { SshRemote } from '../src/processing/remote.ts';
 import { coreServices } from '../src/tools/services.ts';
-import {
-	closeApps,
-	ensureFixtures,
-	fixture,
-	JSON_H,
-	makeApp,
-	register,
-	type TestApp,
-	until,
-} from './helpers.ts';
+import { closeApps, ensureFixtures, fixture, JSON_H, makeApp, register, type TestApp } from './helpers.ts';
 import { SSH_SHIM } from './ssh-shim.ts';
 
 const H = { host: '127.0.0.1:47900' };
@@ -172,8 +166,24 @@ describe('remote executor (shims)', () => {
 			});
 			const dest = join(remoteDir, 'cache', 'resume-test.bin');
 			const ac = new AbortController();
-			const first = slowRemote.upload(big, dest, { signal: ac.signal });
-			await until(() => existsSync(`${dest}.part`) && statSync(`${dest}.part`).size > 0, 20_000, 20);
+			let markWritten = () => {};
+			const written = new Promise<void>((resolve) => {
+				markWritten = resolve;
+			});
+			const watcher = watch(join(remoteDir, 'cache'), () => {
+				if (existsSync(`${dest}.part`) && statSync(`${dest}.part`).size > 0) markWritten();
+			});
+			onTestFinished(() => {
+				ac.abort();
+				watcher.close();
+			});
+			const first = slowRemote.upload(big, dest, { signal: ac.signal }).finally(() => watcher.close());
+			await Promise.race([
+				written,
+				first.then(() => {
+					throw new Error('The upload finished before its partial could be cancelled');
+				}),
+			]);
 			ac.abort();
 			await expect(first).rejects.toMatchObject({ code: 'CANCELLED' });
 			const partial = statSync(`${dest}.part`).size;
@@ -185,8 +195,26 @@ describe('remote executor (shims)', () => {
 			expect(readFileSync(dest).equals(readFileSync(big))).toBe(true);
 			expect(existsSync(`${dest}.part`)).toBe(false);
 		}
-		// cancel kills the remote process group and leaves no job directory
+		// cancel kills active remote processing and leaves no job directory
 		{
+			const bins = coreServices(app).ffmpeg.bins;
+			const binDir = join(remoteDir, 'ffmpeg');
+			mkdirSync(binDir, { recursive: true });
+			for (const name of ['ffmpeg', 'ffprobe'] as const) {
+				const binary = bins[name];
+				if (!binary) throw new Error(`Missing fixture ${name}`);
+				const executable = join(binDir, name);
+				const receipt =
+					name === 'ffmpeg'
+						? `case " $* " in *nlmeans*) printf '%s\n' "$$" > processing-started;; esac\n`
+						: '';
+				writeFileSync(executable, `#!/usr/bin/env bash\n${receipt}exec "${binary}" "$@"\n`);
+				chmodSync(executable, 0o755);
+			}
+			// The normal remote probe selects the fixture wrapper without touching a host executable.
+			const probe = await app.inject({ method: 'POST', url: '/api/processing/remote/probe', headers: H });
+			expect(probe.statusCode).toBe(200);
+			expect(probe.json().ok).toBe(true);
 			const m = await register(app, fixture('clip-a.mp4'));
 			const r = await app.inject({
 				method: 'POST',
@@ -195,33 +223,88 @@ describe('remote executor (shims)', () => {
 				payload: { steps: [{ op: 'denoise', method: 'nlmeans', strength: 1 }], executor: 'remote' },
 			});
 			const id = (r.json() as EngineJob).id;
-			const pidFile = join(remoteDir, 'jobs', id, 'pid');
-			await until(() => existsSync(pidFile), 60_000, 50);
-			const pid = Number(readFileSync(pidFile, 'utf8').trim());
-			// jasper-proc is running remotely once it reported its start event (stage "Remote · Processing N frames").
-			const running = await until(
-				async () => {
-					const j = (
-						await app.inject({ method: 'GET', url: `/api/jobs/${id}`, headers: H })
-					).json() as EngineJob;
-					return /Processing|Step/.test(j.stage ?? '') || j.state !== 'running' ? j : null;
-				},
-				60_000,
-				100,
-			);
+			const core = coreServices(app);
+			const jobDir = join(remoteDir, 'jobs', id);
+			let pid = 0;
+			let cleaned = false;
+			const cleanup = () => {
+				if (cleaned) return;
+				cleaned = true;
+				// The local SSH shim started this process group; reap it even when a cleanup assertion fails.
+				try {
+					if (Number.isSafeInteger(pid) && pid > 1) process.kill(-pid, 'SIGKILL');
+				} catch {
+					// Already reaped by cancellation.
+				}
+				// The remote runtime can detach its FFmpeg child into a second process group.
+				// Only processes whose cwd is this fixture's unique job directory belong to this job.
+				if (process.platform === 'linux') {
+					for (const entry of readdirSync('/proc')) {
+						if (!/^\d+$/.test(entry)) continue;
+						try {
+							const cwd = readlinkSync(`/proc/${entry}/cwd`);
+							if (cwd === jobDir || cwd === `${jobDir} (deleted)`) process.kill(Number(entry), 'SIGKILL');
+						} catch {
+							// The owned process may have exited between the lookup and signal.
+						}
+					}
+				}
+			};
+			onTestFinished(cleanup);
+			const running = await new Promise<EngineJob>((resolve) => {
+				let watcher: ReturnType<typeof watch> | undefined;
+				const accept = () => {
+					try {
+						pid = Number(readFileSync(join(jobDir, 'pid'), 'utf8').trim());
+					} catch {
+						// The worker has not written its pid yet.
+					}
+					const job = core.queue.get(id);
+					// The processing protocol's start/progress event has reached the job, and its real filter child entered.
+					const processing =
+						/Processing|Step/.test(job?.stage ?? '') && existsSync(join(jobDir, 'processing-started'));
+					if (
+						job &&
+						((processing && Number.isSafeInteger(pid) && pid > 1) ||
+							!['queued', 'running'].includes(job.state))
+					) {
+						watcher?.close();
+						unsubscribe();
+						resolve(job);
+					}
+				};
+				const unsubscribe = core.broadcaster.subscribe((event) => {
+					if (event.type === 'job.updated') accept();
+				});
+				watcher = watch(join(remoteDir, 'jobs'), { recursive: true }, accept);
+				onTestFinished(() => {
+					watcher?.close();
+					unsubscribe();
+					core.queue.cancel(id);
+				});
+				accept();
+			});
 			expect(running.error).toBeUndefined();
 			expect(running.state).toBe('running');
-			await app.inject({ method: 'POST', url: `/api/jobs/${id}/cancel`, headers: H });
-			const done = await coreServices(app).queue.wait(id);
-			expect(done.state).toBe('cancelled');
-			await until(() => !existsSync(join(remoteDir, 'jobs', id)), 20_000, 100);
-			let alive = true;
+			expect(running.stage).toMatch(/Processing|Step/);
+			expect(existsSync(join(jobDir, 'processing-started'))).toBe(true);
+			if (!Number.isSafeInteger(pid) || pid <= 1)
+				throw new Error('The remote fixture reported an invalid pid');
 			try {
-				process.kill(pid, 0);
-			} catch {
-				alive = false;
+				await app.inject({ method: 'POST', url: `/api/jobs/${id}/cancel`, headers: H });
+				const done = await core.queue.wait(id);
+				expect(done.state).toBe('cancelled');
+				expect(existsSync(jobDir)).toBe(false);
+				let alive = true;
+				try {
+					process.kill(pid, 0);
+				} catch {
+					alive = false;
+				}
+				expect(alive).toBe(false);
+			} finally {
+				cleanup();
 			}
-			expect(alive).toBe(false);
 		}
 		// a broken connection fails with REMOTE_CONNECTION_LOST (retryable), never falls back to local
 		{

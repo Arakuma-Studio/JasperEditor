@@ -1,6 +1,6 @@
 import { EngineClient } from '@jasper/engine-client';
 import { toasts } from '@jasper/ui';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../src/App.tsx';
@@ -32,28 +32,29 @@ function fakeEngine() {
 	return new EngineClient({ fetch: fetchImpl });
 }
 
-function mountEditor() {
+async function mountEditor() {
 	(
 		window as unknown as { happyDOM: { setViewport(v: { width: number; height: number }): void } }
 	).happyDOM.setViewport({
 		width: 1920,
 		height: 1080,
 	});
-	return render(
-		<EngineProvider client={fakeEngine()}>
-			<GlobalHosts>
-				<MemoryRouter initialEntries={['/project/demo']}>
-					<AppRoutes />
-				</MemoryRouter>
-			</GlobalHosts>
-		</EngineProvider>,
+	return act(async () =>
+		render(
+			<EngineProvider client={fakeEngine()}>
+				<GlobalHosts>
+					<MemoryRouter initialEntries={['/project/demo']}>
+						<AppRoutes />
+					</MemoryRouter>
+				</GlobalHosts>
+			</EngineProvider>,
+		),
 	);
 }
 
 registerAllCommands();
 
-// Mounting and laying out the full editor can exceed Vitest's default timeout on a busy runner.
-describe('editor shell (rendered)', { timeout: 60_000 }, () => {
+describe('editor shell (rendered)', () => {
 	afterEach(() => cleanup());
 	beforeEach(() => {
 		toasts.dismissAll();
@@ -63,17 +64,15 @@ describe('editor shell (rendered)', { timeout: 60_000 }, () => {
 
 	it('AC-SH-4: a corrupt stored layout opens the default layout with exactly one warning toast', async () => {
 		workspace = new WorkspaceStore(memoryStorage({ 'jasper:workspaces': '{not json' }));
-		mountEditor();
-		await waitFor(() => expect(screen.getByTestId('editor-shell').dataset.workspace).toBe('editing'));
-		await act(async () => {});
+		await mountEditor();
+		expect(screen.getByTestId('editor-shell').dataset.workspace).toBe('editing');
 		const warnings = toasts.getState().log.filter((e) => e.kind === 'warning');
 		expect(warnings).toHaveLength(1);
 	});
 
 	it('AC-DT-1/2: theme and contrast switch via data attributes without reload', async () => {
 		workspace = new WorkspaceStore(memoryStorage());
-		mountEditor();
-		await waitFor(() => screen.getByTestId('editor-shell'));
+		await mountEditor();
 		act(() => prefsStore.set({ theme: 'dark', contrast: 'high' }));
 		expect(document.documentElement.getAttribute('data-pr-theme')).toBe('dark');
 		expect(document.documentElement.getAttribute('data-pr-contrast')).toBe('high');
@@ -84,20 +83,19 @@ describe('editor shell (rendered)', { timeout: 60_000 }, () => {
 
 	it('header: mode tabs, workspace tabs and the palette button work through commands', async () => {
 		workspace = new WorkspaceStore(memoryStorage());
-		mountEditor();
-		await waitFor(() => screen.getByTestId('editor-shell'));
+		await mountEditor();
 		fireEvent.click(screen.getByTestId('workspace-tab-assembly'));
-		await waitFor(() => expect(screen.getByTestId('editor-shell').dataset.workspace).toBe('assembly'));
+		expect(screen.getByTestId('editor-shell').dataset.workspace).toBe('assembly');
 		fireEvent.click(screen.getByTestId('mode-export'));
 		expect(screen.getByTestId('mode-view-export')).toBeTruthy();
-		await waitFor(() => expect(exportMode.get().open).toBe(true));
+		expect(exportMode.get().open).toBe(true);
 		fireEvent.click(screen.getByTestId('mode-edit'));
-		await waitFor(() => expect(exportMode.get().open).toBe(false));
+		expect(exportMode.get().open).toBe(false);
 		act(() => exportMode.open(null));
-		await waitFor(() => screen.getByTestId('mode-view-export'));
+		expect(screen.getByTestId('mode-view-export')).toBeTruthy();
 		act(() => exportMode.close());
-		await waitFor(() => expect(screen.queryByTestId('mode-view-export')).toBeNull());
+		expect(screen.queryByTestId('mode-view-export')).toBeNull();
 		fireEvent.click(screen.getByTestId('palette-button'));
-		await waitFor(() => screen.getByTestId('palette-input'));
+		expect(screen.getByTestId('palette-input')).toBeTruthy();
 	});
 });

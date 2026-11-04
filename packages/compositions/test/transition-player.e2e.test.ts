@@ -7,7 +7,7 @@ import type { Command } from '@jasper/project';
 import { bundleForBrowser } from '@jasper/testkit/browser';
 import { type Browser, chromium, type Page } from '@playwright/test';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { FX_H, FX_W, type FxMedia, fxAsset, fxSnapshot, startFxMedia } from './fx-media.ts';
+import { FX_H, FX_W, type FxMedia, fxAsset, fxPixels, fxSnapshot, startFxMedia } from './fx-media.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const enabled = process.env.REMOTION_E2E === '1';
@@ -151,33 +151,22 @@ describe.runIf(enabled && !!CHROME)(
 		});
 
 		async function pixels(name: string, p: Page = page): Promise<Buffer> {
-			const png = await p.locator(`#${name}`).screenshot();
-			return execFileSync(
-				'ffmpeg',
-				['-v', 'error', '-i', 'pipe:0', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'],
-				{
-					input: png,
-					maxBuffer: 1 << 26,
-				},
+			await p.evaluate(
+				(n) =>
+					(window as never as { __fxPlayer: { ready(name: string): Promise<void> } }).__fxPlayer.ready(n),
+				name,
 			);
+			const png = await p.locator(`#${name}`).screenshot();
+			return fxPixels(png);
 		}
 		const at = (raw: Buffer, x: number, y: number): Rgb => {
 			const i = (Math.round(y) * FX_W + Math.round(x)) * 3;
 			return [raw[i]!, raw[i + 1]!, raw[i + 2]!];
 		};
-		async function until(name: string, ok: (raw: Buffer) => boolean, ms = 15_000): Promise<Buffer> {
-			const t0 = Date.now();
-			let raw = await pixels(name);
-			while (!ok(raw) && Date.now() - t0 < ms) {
-				await page.waitForTimeout(250);
-				raw = await pixels(name);
-			}
-			return raw;
-		}
 		const seek = (name: string, frame: number, p: Page = page) =>
 			p.evaluate(
 				([n, f]) =>
-					(window as never as { __fxPlayer: { seek(a: string, b: number): void } }).__fxPlayer.seek(
+					(window as never as { __fxPlayer: { seek(a: string, b: number): Promise<void> } }).__fxPlayer.seek(
 						n as string,
 						f as number,
 					),
@@ -186,41 +175,32 @@ describe.runIf(enabled && !!CHROME)(
 
 		it('Push follows the playhead while scrubbing', async () => {
 			await seek('push', 30);
-			let raw = await until(
-				'push',
-				(r) => close(at(r, 100, 100), [0, 0, 255]) && close(at(r, 540, 100), [255, 0, 0]),
-			);
+			let raw = await pixels('push');
 			expect(close(at(raw, 100, 100), [0, 0, 255])).toBe(true);
 			expect(close(at(raw, 540, 100), [255, 0, 0])).toBe(true);
 			await seek('push', 37); // p = 18 / 21: the seam at x ≈ 549
-			raw = await until('push', (r) => close(at(r, 500, 100), [0, 0, 255]));
+			raw = await pixels('push');
 			expect(close(at(raw, 500, 100), [0, 0, 255])).toBe(true);
 			expect(close(at(raw, 620, 100), [255, 0, 0])).toBe(true);
 		});
 
 		it('Iris Round over a video side: B in the circle, the decoded video outside', async () => {
 			await seek('iris', 30);
-			const raw = await until(
-				'iris',
-				(r) => close(at(r, FX_W / 2, FX_H / 2), [0, 0, 255]) && at(r, 20, 20).some((v) => v > 40),
-			);
+			const raw = await pixels('iris');
 			expect(close(at(raw, FX_W / 2, FX_H / 2), [0, 0, 255])).toBe(true);
 			expect(at(raw, 20, 20).some((v) => v > 40)).toBe(true);
 		});
 
 		it('S_DissolveLuma: the white half of A already shows B', async () => {
 			await seek('luma', 30);
-			const raw = await until(
-				'luma',
-				(r) => close(at(r, 100, 100), [0, 0, 255]) && close(at(r, 540, 100), [0, 0, 0]),
-			);
+			const raw = await pixels('luma');
 			expect(close(at(raw, 100, 100), [0, 0, 255])).toBe(true);
 			expect(close(at(raw, 540, 100), [0, 0, 0])).toBe(true);
 		});
 
 		it('a shape side is captured through HTML-in-Canvas', async () => {
 			await seek('shape', 30);
-			const raw = await until('shape', (r) => close(at(r, 620, FX_H / 2), [255, 255, 255], 24));
+			const raw = await pixels('shape');
 			expect(close(at(raw, 620, FX_H / 2), [255, 255, 255], 24)).toBe(true);
 			expect(close(at(raw, 320, FX_H / 2), [0, 0, 255])).toBe(true);
 		});
@@ -234,7 +214,6 @@ describe.runIf(enabled && !!CHROME)(
 				const p = await plain.newPage({ viewport: { width: FX_W, height: FX_H * 5 } });
 				await p.goto(`${media.base}/index.html`);
 				await seek('shape', 30, p);
-				await p.waitForSelector('#shape [data-transition-chip]', { timeout: 15_000 });
 				const chip = await p.locator('#shape [data-transition-chip]').textContent();
 				expect(chip).toMatch(/HTML-in-Canvas/);
 			} finally {

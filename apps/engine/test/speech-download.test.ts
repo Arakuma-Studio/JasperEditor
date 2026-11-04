@@ -299,7 +299,7 @@ describe('CUDA runtime guidance (SG-006; found on the RTX 4060 Ti box: CUDA 12.8
 		expect(g).toContain('nvidia-cuda-runtime');
 		expect(g).not.toMatch(/cuda-runtime-13\b|libcurand-10\b/);
 		expect(g).toContain('Missing: libcudart.so.13, libcublas.so.13, libcublasLt.so.13.');
-		expect(cudaGuidance({ missing: ['libcudnn.so.9'], olderCuda: null })).not.toMatch(/CUDA 12 is installed/);
+		expect(cudaGuidance({ missing: ['libcudnn.so.9'], olderCuda: null })).not.toContain('is installed');
 	});
 });
 

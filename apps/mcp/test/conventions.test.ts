@@ -2,7 +2,7 @@ import type { EngineJob } from '@jasper/api';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult, Tool } from '@modelcontextprotocol/sdk/types.js';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { type Extra, progressReporter } from '../src/context.ts';
 import type { EngineConnection } from '../src/link.ts';
@@ -11,6 +11,7 @@ import { createJasperMcpServer } from '../src/server.ts';
 type FakeEngine = {
 	jobs: Map<string, EngineJob>;
 	cancelled: string[];
+	onCancelled?: () => void;
 	calls: string[];
 };
 
@@ -41,6 +42,7 @@ function fakeLink(engine: FakeEngine): EngineConnection {
 		cancelJob: async (id: string) => {
 			engine.calls.push(`cancelJob ${id}`);
 			engine.cancelled.push(id);
+			engine.onCancelled?.();
 			const j = engine.jobs.get(id);
 			if (j) j.state = 'cancelled';
 			return structuredClone(j ?? fakeJob(id, 'cancelled'));
@@ -73,11 +75,11 @@ const errorBody = (r: CallToolResult) =>
 
 describe('tool catalogue conventions', () => {
 	let tools: Tool[];
-	beforeEach(async () => {
+	beforeAll(async () => {
 		await connect();
 		tools = (await client.listTools()).tools;
 	});
-	afterEach(async () => client.close());
+	afterAll(async () => client.close());
 
 	it('every tool has a title and all four annotation hints, set consistently', () => {
 		const bad: string[] = [];
@@ -273,6 +275,7 @@ describe('progress and cancellation', () => {
 				await vi.advanceTimersByTimeAsync(5);
 			}
 			report(40, 100, 'going back is ignored');
+			await vi.advanceTimersByTimeAsync(100);
 			latest = 100;
 			report(100, 100, 'done');
 			const flushed = report.flush();
@@ -303,16 +306,27 @@ describe('progress and cancellation', () => {
 	it('notifications/cancelled on wait_for_job cancels the engine job', async () => {
 		await connect();
 		engine.jobs.set('job_2', fakeJob('job_2'));
+		const cancelled = new Promise<void>((resolve) => {
+			engine.onCancelled = resolve;
+		});
+		let progressed!: () => void;
+		const progressReceived = new Promise<void>((resolve) => {
+			progressed = resolve;
+		});
 		const ac = new AbortController();
 		const progress: number[] = [];
 		const call = client.callTool({ name: 'wait_for_job', arguments: { jobId: 'job_2' } }, undefined, {
 			signal: ac.signal,
-			onprogress: (p) => progress.push(p.progress),
+			onprogress: (p) => {
+				progress.push(p.progress);
+				progressed();
+			},
 		});
-		await expect.poll(() => progress.length, { timeout: 5000 }).toBeGreaterThan(0);
+		await progressReceived;
 		ac.abort('user stopped it');
 		await expect(call).rejects.toThrow();
-		await expect.poll(() => engine.cancelled, { timeout: 5000 }).toEqual(['job_2']);
+		await cancelled;
+		expect(engine.cancelled).toEqual(['job_2']);
 		expect(progress.length).toBeGreaterThan(0);
 	});
 });

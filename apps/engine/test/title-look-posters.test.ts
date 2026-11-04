@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { LookPosterRequest } from '@jasper/api';
 import { LookPosterRequestSchema } from '@jasper/api';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { JobError } from '../src/jobs/types.ts';
 import {
 	LookPosterService,
@@ -15,6 +15,13 @@ import {
 	lookPosterKey,
 	posterTextSize,
 } from '../src/title-looks/posters.ts';
+
+// Keep filesystem work real, with mkdir completion ordered before render-start receipts.
+vi.mock('node:fs/promises', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('node:fs/promises')>();
+	const { mkdirSync } = await import('node:fs');
+	return { ...actual, mkdir: async (...args: Parameters<typeof mkdirSync>) => mkdirSync(...args) };
+});
 
 const recipe = {
 	palette: { face: [1, 0.8, 0.2, 1] },
@@ -27,9 +34,15 @@ type Call = { output: string; signal: AbortSignal; props: Record<string, unknown
 
 function fakeRemotion(opts: { hold?: boolean; fail?: unknown } = {}) {
 	const calls: Call[] = [];
+	const starts = new Map<number, () => void>();
 	const browsers = { opened: 0, closed: 0 };
 	return {
 		calls,
+		started: (count: number) =>
+			new Promise<void>((resolve) => {
+				if (calls.length >= count) resolve();
+				else starts.set(count, resolve);
+			}),
 		browsers,
 		remotion: {
 			async openSharedBrowser() {
@@ -48,11 +61,12 @@ function fakeRemotion(opts: { hold?: boolean; fail?: unknown } = {}) {
 			}): Promise<void> {
 				return new Promise<void>((resolve, reject) => {
 					const finish = () => {
-						if (opts.fail) return reject(opts.fail);
 						writeFileSync(input.output, 'png');
+						if (opts.fail) return reject(opts.fail);
 						resolve();
 					};
 					calls.push({ output: input.output, signal: input.signal, props: input.inputProps, finish });
+					starts.get(calls.length)?.();
 					input.signal.addEventListener('abort', () => reject(new JobError('JOB_CANCELLED', 'Cancelled')));
 					if (!opts.hold) finish();
 				});
@@ -75,6 +89,7 @@ const ac = () => new AbortController();
 afterEach(async () => {
 	for (const s of services.splice(0)) await s.close();
 	for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true });
+	vi.useRealTimers();
 });
 
 describe('look posters (TL-087)', () => {
@@ -133,7 +148,7 @@ describe('look posters (TL-087)', () => {
 		const { s } = make(f.remotion);
 		const a = s.poster(req(), ac().signal);
 		const b = s.poster(req(), ac().signal);
-		await expect.poll(() => f.calls.length).toBe(1);
+		await f.started(1);
 		f.calls[0]!.finish();
 		const [x, y] = await Promise.all([a, b]);
 		expect(x.file).toBe(y.file);
@@ -144,11 +159,10 @@ describe('look posters (TL-087)', () => {
 		const f = fakeRemotion({ hold: true });
 		const { s } = make(f.remotion);
 		const all = ['a', 'b', 'c'].map((text) => s.poster(req({ text }), ac().signal));
-		await expect.poll(() => f.calls.length).toBe(2);
-		await new Promise((r) => setTimeout(r, 10));
+		await f.started(2);
 		expect(f.calls).toHaveLength(2);
 		f.calls[0]!.finish();
-		await expect.poll(() => f.calls.length).toBe(3);
+		await f.started(3);
 		f.calls[1]!.finish();
 		f.calls[2]!.finish();
 		await Promise.all(all);
@@ -158,7 +172,7 @@ describe('look posters (TL-087)', () => {
 		const f = fakeRemotion({ hold: true });
 		const { s } = make(f.remotion);
 		const held = ['a', 'b'].map((text) => s.poster(req({ text }), ac().signal));
-		await expect.poll(() => f.calls.length).toBe(2);
+		await f.started(2);
 		const c = ac();
 		const queued = s.poster(req({ text: 'c' }), c.signal);
 		c.abort();
@@ -166,7 +180,6 @@ describe('look posters (TL-087)', () => {
 		f.calls[0]!.finish();
 		f.calls[1]!.finish();
 		await Promise.all(held);
-		await new Promise((r) => setTimeout(r, 10));
 		expect(f.calls).toHaveLength(2);
 	});
 
@@ -175,10 +188,10 @@ describe('look posters (TL-087)', () => {
 		const { s } = make(f.remotion);
 		const c = ac();
 		const p = s.poster(req(), c.signal);
-		await expect.poll(() => f.calls.length).toBe(1);
+		await f.started(1);
 		c.abort();
 		await expect(p).rejects.toMatchObject({ code: 'JOB_CANCELLED' });
-		await expect.poll(() => f.calls[0]!.signal.aborted).toBe(true);
+		expect(f.calls[0]!.signal.aborted).toBe(true);
 		expect(existsSync(s.fileOf(lookPosterKey(req())))).toBe(false);
 	});
 
@@ -188,7 +201,7 @@ describe('look posters (TL-087)', () => {
 		const left = ac();
 		const a = s.poster(req(), left.signal);
 		const b = s.poster(req(), ac().signal);
-		await expect.poll(() => f.calls.length).toBe(1);
+		await f.started(1);
 		left.abort();
 		await expect(a).rejects.toMatchObject({ code: 'JOB_CANCELLED' });
 		expect(f.calls[0]!.signal.aborted).toBe(false);
@@ -216,11 +229,13 @@ describe('look posters (TL-087)', () => {
 	});
 
 	it('shares one render browser across a burst and closes it when idle', async () => {
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
 		const f = fakeRemotion();
 		const { s } = make(f.remotion);
 		await Promise.all(['a', 'b', 'c'].map((text) => s.poster(req({ text }), ac().signal)));
 		expect(f.browsers.opened).toBe(1);
-		await expect.poll(() => f.browsers.closed).toBe(1);
+		await vi.advanceTimersByTimeAsync(5);
+		expect(f.browsers.closed).toBe(1);
 		await s.poster(req({ text: 'd' }), ac().signal);
 		expect(f.browsers.opened).toBe(2);
 	});
@@ -229,8 +244,14 @@ describe('look posters (TL-087)', () => {
 		const f = fakeRemotion({ hold: true });
 		const { s } = make(f.remotion);
 		const all = ['a', 'b', 'c'].map((text) => s.poster(req({ text }), ac().signal));
-		await expect.poll(() => f.calls.length).toBe(2);
+		let queuedRejected = false;
+		void all[2]!.catch(() => {
+			queuedRejected = true;
+		});
+		await f.started(2);
 		await s.close();
+		expect(queuedRejected).toBe(true);
+		expect(f.calls.every((call) => call.signal.aborted)).toBe(true);
 		for (const r of await Promise.allSettled(all)) expect(r.status).toBe('rejected');
 	});
 

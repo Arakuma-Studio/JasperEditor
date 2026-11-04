@@ -1,6 +1,7 @@
 // Malformed container graphs must fail with format errors before exhausting memory or time. Field-aware
 // mutations target counts, offsets and links that random byte mutations rarely exercise.
 import { describe, expect, it } from 'vitest';
+import { threadCpuMs } from '../../../scripts/perf/cpu.ts';
 import { importAaf } from '../src/aaf/index.ts';
 import { readStore, StoreError } from '../src/aaf/store.ts';
 import { CfbError, CfbWriter, CompoundFile } from '../src/cfb.ts';
@@ -20,15 +21,15 @@ import { richProject } from './support/rich.ts';
 
 const NOW = '2026-10-07T00:00:00.000Z';
 
-/** Allows for a loaded host while bounding malformed-container traversal. */
+/** Bounds malformed-container traversal by executing-thread CPU use. */
 const LIMIT_MS = 20_000;
 
 function timed<T>(fn: () => T): { ms: number; value?: T; error?: unknown } {
-	const t0 = performance.now();
+	const t0 = threadCpuMs();
 	try {
-		return { value: fn(), ms: performance.now() - t0 };
+		return { value: fn(), ms: threadCpuMs() - t0 };
 	} catch (error) {
-		return { error, ms: performance.now() - t0 };
+		return { error, ms: threadCpuMs() - t0 };
 	}
 }
 
@@ -73,7 +74,13 @@ describe('AAF object store', () => {
 	});
 
 	it('a collection may name each child once (the legitimate case keeps working)', () => {
-		expect(() => readStore(aafRepeatedChildren(1, 6))).not.toThrow();
+		let object = readStore(aafRepeatedChildren(1, 6));
+		for (let depth = 0; depth < 6; depth++) {
+			const children = object.objs(0x1901);
+			expect(children).toHaveLength(1);
+			object = children[0]!;
+		}
+		expect(object.props).toEqual([]);
 	});
 
 	it('a weak reference set of 2³² − 1 zero-length keys is refused', () => {

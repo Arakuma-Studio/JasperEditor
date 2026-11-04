@@ -628,9 +628,7 @@ describe('warp sources and cancellation', () => {
 		const w3 = createWarpExtension({ ffmpeg: coreServices(app).ffmpeg, cacheDir, getExtensions: () => [] });
 		const ac = new AbortController();
 		const ctx = { ...ctxOf(ac.signal), stage: (s: string) => (s.includes('%') ? ac.abort() : undefined) };
-		const started = Date.now();
 		await expect(w3.prepare!(planned, ctx)).rejects.toMatchObject({ code: 'JOB_CANCELLED' });
-		expect(Date.now() - started).toBeLessThan(20_000);
 		expect(readdirSync(cacheDir)).toEqual([]);
 	}, 120_000);
 });

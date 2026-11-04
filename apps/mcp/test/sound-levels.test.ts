@@ -22,7 +22,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { cleanEnv, stopEngine, testPort, waitFor } from './helpers.ts';
+import { cleanEnv, engineReady, stopEngine, testPort } from './helpers.ts';
 import { FIXTURE_COMMANDS } from './sound-cues-fixture.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -114,19 +114,8 @@ async function exportAudio(doc: ProjectDocument, sequenceId: string, name: strin
 	});
 	expect(start.status, await start.clone().text()).toBe(202);
 	const { id } = (await start.json()) as { id: string };
-	await waitFor(
-		async () => {
-			const j = (await (await fetch(`http://127.0.0.1:${PORT}/api/jobs/${id}`, { headers: H() })).json()) as {
-				state: string;
-				error?: unknown;
-			};
-			if (j.state === 'failed' || j.state === 'cancelled' || j.state === 'interrupted')
-				throw new Error(`export ${name}: ${JSON.stringify(j)}`);
-			return j.state === 'succeeded';
-		},
-		600_000,
-		`export ${name}`,
-	);
+	const done = await ok<{ state: string }>('wait_for_job', { jobId: id, timeoutSeconds: 600 });
+	expect(done.state, `export ${name}`).toBe('succeeded');
 	const out = await fetch(`http://127.0.0.1:${PORT}/renders/${id}/output`, { headers: H() });
 	expect(out.status).toBe(200);
 	const file = join(work, name);
@@ -182,16 +171,12 @@ beforeAll(async () => {
 				JASPER_SOUND_SYNTH_VARIANTS: '1',
 				JASPER_SOUND_AUTO_INDEX: '0',
 			}),
-			stdio: ['ignore', 'pipe', 'pipe'],
+			stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
 		},
 	);
 	engine.stdout?.on('data', (d: Buffer) => engineLog.push(d.toString()));
 	engine.stderr?.on('data', (d: Buffer) => engineLog.push(d.toString()));
-	await waitFor(
-		async () => (await fetch(`http://127.0.0.1:${PORT}/health`)).ok,
-		120_000,
-		`the engine on ${PORT}: ${engineLog.join('')}`,
-	);
+	await engineReady(engine, PORT, engineLog);
 	const transport = new StdioClientTransport({
 		command: process.execPath,
 		args: ['--import', 'tsx', join(ROOT, 'apps/mcp/src/cli.ts'), '--appdir', appdir],
@@ -203,15 +188,15 @@ beforeAll(async () => {
 	client = new Client({ name: 'vitest-mcp-levels', version: '1.0.0' });
 	await client.connect(transport);
 	await ok('rescan_sound_library', { wait: true });
-}, 600_000);
+});
 
 afterAll(async () => {
 	await client?.close().catch(() => {});
 	await stopEngine(engine);
 	if (work) rmSync(work, { recursive: true, force: true });
-}, 30_000);
+});
 
-describe('default insert levels on the Phase 2 fixture', { timeout: 1_200_000 }, () => {
+describe('default insert levels on the Phase 2 fixture', () => {
 	it('every fill gets its role level; the mix stays under 0 dBTP without normalisation', async () => {
 		const { projectId } = await ok<{ projectId: string }>('create_project', {
 			name: 'Levels',
