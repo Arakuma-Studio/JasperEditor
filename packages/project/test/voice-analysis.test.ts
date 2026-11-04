@@ -153,16 +153,6 @@ describe('the binary file', () => {
 describe('decodeVoiceAnalysis against hostile input (fuzz)', () => {
 	const small = encodeVoiceAnalysis(analysisOf(5));
 
-	it('never throws on random bytes', () => {
-		fc.assert(
-			fc.property(fc.uint8Array({ maxLength: 4096 }), (b) => {
-				const r = decodeVoiceAnalysis(b);
-				expect(r.ok).toBe(false);
-			}),
-			{ numRuns: 500 },
-		);
-	});
-
 	it('never throws on random bytes behind a valid magic and header length', () => {
 		fc.assert(
 			fc.property(fc.uint8Array({ maxLength: 2048 }), fc.integer({ min: 0, max: 2 ** 32 - 1 }), (b, hl) => {

@@ -13,7 +13,6 @@ import {
 	type RangeViewInput,
 	rangeSummary,
 	rmsDb,
-	SILENCE_COLOUR,
 	silenceBands,
 	slotTimes,
 	type ViewAudio,
@@ -135,7 +134,6 @@ describe('drawRangeView', () => {
 		const quiet = px(image, 356, mid - 15);
 		expect(quiet[2]).toBeLessThan(100);
 		expect(quiet[0]).toBeGreaterThan(quiet[2]!);
-		expect(px(image, 300, 153)).toEqual([...SILENCE_COLOUR]);
 		expect(layout.wordsDrawn).toBe(2);
 		expect(layout.ticks[0]).toBe(0);
 		expect(layout.ticks.at(-1)).toBe(2);

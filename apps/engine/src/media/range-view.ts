@@ -103,7 +103,7 @@ export function pngSize(png: Uint8Array): { width: number; height: number } | nu
  * rotation), the picture fitted inside `w × h` and never enlarged; `area` averaging for the downscale; square pixels,
  * 8-bit RGB (what the MCP PNG decoder reads).
  */
-export function frameFilter(w: number, h: number): string {
+function frameFilter(w: number, h: number): string {
 	const f = `min(min(${w}/(iw*sar)\\,${h}/ih)\\,1)`;
 	return `scale=w='max(1\\,round(iw*sar*${f}))':h='max(1\\,round(ih*${f}))':flags=area,setsar=1,format=rgb24`;
 }

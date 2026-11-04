@@ -23,7 +23,7 @@ import { type ResolvedTitleLayer, resolveAppearance } from './resolve.ts';
 export const LINT_SEVERITIES = ['error', 'warning', 'info'] as const;
 export type LintSeverity = (typeof LINT_SEVERITIES)[number];
 
-export const LINT_CODES = [
+const LINT_CODES = [
 	'LOOK_INVISIBLE',
 	'LOOK_NOOP_LAYER',
 	'LOOK_HIDDEN_LAYER',

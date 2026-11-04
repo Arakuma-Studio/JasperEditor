@@ -357,8 +357,7 @@ measured runs below, up to 75 earlier, when only correctness was checked.
 | Razor cut at frame 30 against the uncut clip, frame 45 | identical (SSIM 1.000) | same |
 | Glint stability: 8 steps of 0.15° | largest step of total glint energy 1.0 % of the mean (control with a 2×2 box: 1.2 %) | `pnpm exec vitest run packages/compositions/test/three-d-title-gl.test.ts -t "glints hold still"` |
 | A moving camera, a material and an environment change | 0 solids built (a bevel change: 1) | `… -t "builds no geometry"` |
-| Frame cost, 1920 × 1080, gold title with a band, 4× MSAA, read back each frame | first frame 29.2 s (shaders, environment prefilter, solid), then 7.0 s; glass 14.8 s; glints 20.9 s | `THREE_D_PERF=1 pnpm exec vitest run packages/compositions/test/three-d-title-gl.test.ts -t "cost at 1080p"` |
-| Contact sheet of twenty looks | inspected: `/tmp/title-looks/sheets/three-d.png` at the time of writing | `THREE_D_SHEET=<file> … three-d-title-gl.test.ts -t "contact sheet"` |
+| Frame cost, 1920 × 1080, gold title with a band, 4× MSAA, read back each frame | first frame 29.2 s (shaders, environment prefilter, solid), then 7.0 s; glass 14.8 s; glints 20.9 s | `pnpm exec tsx packages/compositions/bench/title-looks.ts three-d` |
 
 A first cost run reported 140 ms per frame: it timed only the submission of GL work, as the foundation's first figures did. The
 timing now reads a pixel back after each frame. Nothing was measured on a GPU.

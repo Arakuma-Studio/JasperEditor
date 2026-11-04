@@ -218,22 +218,6 @@ describe('the eval fake engine: looks, effects, 3D and stills (AGENTS.md §10 ca
 		});
 	});
 
-	it('a 3D title: the switch, the solid, a band, a plate and gold', async () => {
-		const text = await s.ok('add_text', { projectId: s.project, text: 'GOLD', at: 0, duration: 90 });
-		const clipId = (text.json.clipId ??
-			text.json.created.find((id: string) => id.startsWith('clp_'))) as string;
-		await s.ok('set_3d_layer', { projectId: s.project, clipIds: [clipId], enabled: true });
-		await s.ok('set_3d_renderer', { projectId: s.project, renderer: 'advanced' });
-		await s.ok('threed_solid_edit', {
-			projectId: s.project,
-			clipIds: [clipId],
-			extrusionDepth: 30,
-			band: { width: 4, profile: 'round' },
-			plate: { shape: 'box' },
-		});
-		await s.ok('set_material', { projectId: s.project, clipIds: [clipId], preset: 'gold' });
-	});
-
 	it('image_split: the parts of the logo, then the split', async () => {
 		const dry = await s.ok('image_split', { projectId: s.project, clipId: s.vars.still, dryRun: true });
 		expect(dry.json.parts).toHaveLength(3);

@@ -21,7 +21,6 @@ import {
 	deliverableOf,
 	gifFrames,
 	gifGraphs,
-	gifMuxLoop,
 	gifSize,
 	gifToRgb,
 } from '../src/export/deliverables.ts';
@@ -156,11 +155,6 @@ describe('GIF helpers', () => {
 		expect(gifFrames(3 / 25, 10)).toBe(1);
 		expect(gifFrames(0, 15)).toBe(1);
 		expect(gifFrames(Number.NaN, 15)).toBe(1);
-	});
-	it('plays → the muxer loop count', () => {
-		expect(gifMuxLoop(0)).toBe(0);
-		expect(gifMuxLoop(1)).toBe(-1);
-		expect(gifMuxLoop(3)).toBe(2);
 	});
 	it('sizes are even and keep the aspect', () => {
 		expect(gifSize({ width: 1920, height: 1080 }, undefined)).toEqual({ width: 1080, height: 608 });

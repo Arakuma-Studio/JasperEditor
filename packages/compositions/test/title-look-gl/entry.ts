@@ -541,7 +541,6 @@ function renderGenerator(req: GeneratorRequest): LookResult {
 		let n = 0;
 		return appearanceClipReach(appearanceFromRecipe(recipe, () => `apl_${String(++n).padStart(16, '0')}`));
 	},
-	float: () => !!fxHost()?.floatTargets,
 	/** Pretends this GPU has no float targets (TL-032); returns what `render` then throws. */
 	withoutFloat: (req: LookRequest) => {
 		const h = fxHost()!;
@@ -569,11 +568,5 @@ function renderGenerator(req: GeneratorRequest): LookResult {
 		g.textBaseline = 'middle';
 		g.fillText(text, 6, height / 2);
 		return base64(g.getImageData(0, 0, width, height).data);
-	},
-	renderer: () => {
-		const h = fxHost();
-		if (!h) return null;
-		const dbg = h.gl.getExtension('WEBGL_debug_renderer_info');
-		return String(h.gl.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : h.gl.RENDERER));
 	},
 };

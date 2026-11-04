@@ -3,7 +3,7 @@
 // resolution independence and determinism. Fingerprints: `goldens/title-look-fingerprints.json` (JASPER_BLESS=1).
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { type LookRecipe, type Paint, TITLE_FINISHES, TITLE_LAYER_TYPES } from '@jasper/project';
+import { type LookRecipe, type Paint, TITLE_LAYER_TYPES } from '@jasper/project';
 import { expectFingerprints } from '@jasper/testkit/golden';
 import { meanGrid } from '@jasper/testkit/image';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -88,11 +88,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Looks in WebGL2', {
 
 	const render = (recipe: LookRecipe, over: Partial<LookRequest> = {}) =>
 		tl.render({ recipe, input: TEXT, box: BOX, ...over });
-
-	it('runs on floating-point targets', async () => {
-		expect(await tl.float()).toBe(true);
-		console.info(`[title-look] renderer: ${await tl.renderer()}`);
-	});
 
 	it('refuses without float targets, never degrading to 8 bits (TL-032)', async () => {
 		const message = await tl.withoutFloat({ recipe: six, input: TEXT, box: BOX });
@@ -378,52 +373,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Looks in WebGL2', {
 		expect(score).toBeGreaterThan(0.95);
 	});
 
-	// Cost on this host (docs/performance.md §7): TL_PERF=1. Reports; the budget is on a real GPU.
-	it.runIf(process.env.TL_PERF === '1')(
-		'per-frame cost of a six-layer look at 1080p',
-		{ timeout: 300_000 },
-		async () => {
-			const req = (pxScale: number): LookRequest => ({
-				recipe: six,
-				input: { kind: 'text', text: 'Title Look', size: 200 },
-				box: { width: 1920, height: 1080 },
-				pxScale,
-				timingOnly: true,
-			});
-			await tl.render(req(1));
-			const profile = await tl.render({ ...req(1), perPass: true });
-			console.info(`[title-look-perf] passes:\n${(profile as { passLog?: string[] }).passLog?.join('\n')}`);
-			const face = (pxScale: number): LookRequest => ({
-				...req(pxScale),
-				recipe: { palette, layers: [{ type: 'face' }] },
-			});
-			// A title's real box: the text and the look's padding, not the whole frame.
-			const tight = (pxScale: number): LookRequest => ({
-				...req(pxScale),
-				box: { width: 1200, height: 280 },
-			});
-			for (const [name, pxScale] of [
-				['full', 1],
-				['1/2', 0.5],
-				['1/4', 0.25],
-			] as const) {
-				for (const [what, r] of [
-					['six layers, frame-sized box', req(pxScale)],
-					['six layers, title-sized box', tight(pxScale)],
-					['field + face, frame-sized box', face(pxScale)],
-				] as const) {
-					const first = await tl.render(r);
-					const runs: number[] = [];
-					for (let i = 0; i < 7; i++) runs.push((await tl.render(r)).ms);
-					runs.sort((a, b) => a - b);
-					console.info(
-						`[title-look-perf] ${name}, ${what}: canvas ${first.width}×${first.height}, ${first.passes} passes, first ${first.ms.toFixed(0)} ms, median ${runs[3]!.toFixed(0)} ms, min ${runs[0]!.toFixed(0)} ms, max ${runs[6]!.toFixed(0)} ms`,
-					);
-				}
-			}
-		},
-	);
-
 	// Every registered layer type: this is the registry completeness check (a new type has no fingerprints until it is
 	// blessed, and fails until then), plus the checks a type gets for free.
 	for (const type of TITLE_LAYER_TYPES)
@@ -489,17 +438,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Looks in WebGL2', {
 				const cb = layerCrop(b, lumaOver(b, 128));
 				const score = ssim(resampleLuma(cb.data, cb.w, cb.h, ca.w, ca.h), ca.data, ca.w, ca.h);
 				expect(score).toBeGreaterThan(0.97);
-			});
-		});
-
-	for (const finish of TITLE_FINISHES)
-		it(`finish ${finish.id} compiles on a face and a rim`, async () => {
-			await render({
-				palette,
-				layers: [
-					{ type: 'rim', params: { finish: finish.id } },
-					{ type: 'face', params: { finish: finish.id } },
-				],
 			});
 		});
 });

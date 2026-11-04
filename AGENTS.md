@@ -119,6 +119,12 @@
 
 ## 7. Verification
 
+- Test observable behavior through stable seams; avoid mirroring implementation details.
+- Don't add one assertion per constant, label or switch case.
+- A bug fix ships the fewest tests that fail before the fix for that bug.
+- Verify purely visual fixes with before/after screenshots rather than new tests.
+- Don't add sleeps, deadline polling, timing assertions or per-test timeouts.
+- Don't export production symbols solely for tests.
 - Don't skip verification, weaken tests or suppress failures to make a change pass.
 - During development, run affected tests with
   `pnpm exec vitest run <files> --maxWorkers=2` and `pnpm --filter <package> typecheck`.

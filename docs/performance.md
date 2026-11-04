@@ -72,7 +72,6 @@ The profiles attributed the remaining time to full editor renders, a 101-option 
 queries in happy-dom with development React. The current web project's limit is scaled with the host
 (`apps/web/vitest.config.ts`): `5 s × loadFactor²`, at least 15 s, at most 60 s; `PERF=1` keeps 5 s. A hung test
 still fails within a minute; `waitFor` / `findBy…` keep their own 1 s deadlines.
-`apps/web/test/test-timeout.test.ts` pins the scaling.
 
 Also moved to the load-scaled budget: the colour-scope timing test (`packages/project/test/scopes.test.ts`, 60 ms per
 scope at 1080p; it measured 63 ms on the loaded host with no code change). `PERF=1` enforces 60 ms exactly.
@@ -253,7 +252,7 @@ no gain (median 2.85 s deferred against 2.64 s eager at load ≈ 18), so the pan
 
 Per-frame cost of a look, measured with a read-back as the sync point (`gl.finish` does not wait on ANGLE: without the
 read-back the work lands in the next call, and a first attempt reported a false 94 ms). Rerun:
-`TL_PERF=1 pnpm exec vitest run packages/compositions/test/title-look-gl.test.ts --reporter=verbose -t "per-frame cost"`.
+`pnpm exec tsx packages/compositions/bench/title-looks.ts look`.
 
 Machine: shared 8-vCPU AMD EPYC-Rome VM, 15 GB, no GPU. Chrome 156.0.8078.79 with ANGLE over SwiftShader (Vulkan, Subzero).
 Load average 0.5–6 during the runs (other agents' work); figures are the median of 7 warm frames, 2026-11-02. They bound a
@@ -289,8 +288,7 @@ One change came out of this table: blurs read a full-resolution mask through mip
 from 13 989 ms to 5 796 ms under the same conditions, with SSIM against the other resolutions unchanged to the fourth decimal.
 
 **Deep Glow** (glows stream). Same machine, load average 8–16 during the run (other agents' work), median of 5 warm frames,
-2026-11-03. Rerun: `TL_PERF=1 pnpm exec vitest run packages/compositions/test/title-look-glows-gl.test.ts --reporter=verbose -t
-"per-frame cost"`. The canvas is the box grown by the glow's reach on every side, so a 200 px radius more than doubles a title's area.
+2026-11-03. Rerun: `pnpm exec tsx packages/compositions/bench/title-looks.ts deep-glow`. The canvas is the box grown by the glow's reach on every side, so a 200 px radius more than doubles a title's area.
 
 | Program resolution | What | Canvas | Passes | Median |
 |---|---|---|---|---|
@@ -319,14 +317,14 @@ Planned passes for a 1200 × 280 canvas with a 200 px unit (`planTitleLook`): fa
 floods inscribed circles and needs the shape field to the middle of the stroke, 31; a hull plate 13; a closed contour plate 21
 (its second flood); a `glyph` gradient 15; a stack of plate, rim, face, inline, sheen, gloss and erosion, all with finishes, 57.
 No timings: this host ran at a load average of 60 to 80 from other agents' work while these were built, which would have
-measured the queue, not the shaders. Rerun `TL_PERF=1` on a quiet machine. Turning Fit off is the cheap way to lighten a metal.
+measured the queue, not the shaders. Rerun the title-look benchmarks above on a quiet machine. Turning Fit off is the cheap way to lighten a metal.
 
 ### Generators (spec 19 §7)
 
 A generator layer under a face, text 200 px, canvas = box 1200 × 280 plus the layer's own reach, `contentSeconds` 0.5 (moving
 params of each generator's sheet), median of 3 warm frames and one frame at `fxPreviewScale` 1/2. Same machine and browser as
 above, 2026-11-03 04:25 UTC, load average ≈ 2–10 (other agents' work, inside one of the host's three heavy-job slots). Rerun:
-`TL_PERF=1 pnpm exec vitest run packages/compositions/test/title-look-generators-gl.test.ts --disable-console-intercept -t "per-frame cost of each"`.
+`pnpm exec tsx packages/compositions/bench/title-looks.ts generators`.
 
 | Generator | Canvas | Passes | Full | 1/2 |
 |---|---|---|---|---|
@@ -351,7 +349,7 @@ above, 2026-11-03 04:25 UTC, load average ≈ 2–10 (other agents' work, inside
 **Lightning, after its resolution fix** (`docs/wp-notes/title-looks.md`, "Stable identity"): every bolt now reads area sums of
 the alpha in a data pass. Same request and machine, 2026-11-03, one of the heavy-job slots, before and after measured back to
 back. The "before" runs had a load average of 1.9–4.5 and the "after" runs 0.5–1.5, so the increase is not overstated. These
-two columns came from an uncommitted harness; the rows are now measured by a committed test, below, whose figures supersede them:
+two columns came from an uncommitted harness; the rows are now measured by a committed benchmark, below, whose figures supersede them:
 
 | Lightning | Canvas | Passes before → after | Full before → after | 1/2 before → after |
 |---|---|---|---|---|
@@ -366,7 +364,7 @@ load. Compare within a table, not across. Along Edge pays most: 41 sites per arc
 and browser (8 cores, 15 GB, Chrome 156 on SwiftShader), 2026-11-03 18:31–18:36 UTC inside one of the host's three heavy-job
 slots; load average 8.3 at the start (other agents' work) and 0.1 at the end. Median of 3 warm frames, one frame at 1/2, and one
 frame with every pass timed on its own (each pass then ends in a read-back). Rerun:
-`TL_PERF=1 pnpm exec vitest run packages/compositions/test/title-look-generators-gl.test.ts --disable-console-intercept -t "cost of Lightning"`.
+`pnpm exec tsx packages/compositions/bench/title-looks.ts lightning`.
 
 | Lightning | Canvas | Passes | Full | 1/2 | Bolts pass (`tlGenB`) | Slowest pass |
 |---|---|---|---|---|---|---|

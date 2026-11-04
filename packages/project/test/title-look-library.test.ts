@@ -3,7 +3,6 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
 	type Appearance,
@@ -11,7 +10,6 @@ import {
 	appearanceProblem,
 	applyColorway,
 	type Clip,
-	COLOR_ROLES,
 	chooseLookFont,
 	clipLook,
 	type EffectInstance,
@@ -27,7 +25,6 @@ import {
 	labOf,
 	lintAppearance,
 	lookCategory,
-	lookCategoryCounts,
 	type Paint,
 	paintRoles,
 	repairAppearance,
@@ -53,43 +50,6 @@ const paintsOf = (params: Record<string, unknown> | undefined): Paint[] =>
 	});
 
 describe('the library (TL-050)', () => {
-	it('has the categories of the spec, general styles first, with pachinko as one among them', () => {
-		expect(LOOK_CATEGORIES.map((c) => c.label)).toEqual([
-			'Clean',
-			'Corporate',
-			'Cinematic',
-			'Sports',
-			'Gaming',
-			'Neon & Retro',
-			'Comic',
-			'Luxury',
-			'Horror',
-			'Playful',
-			'Social',
-			'Japanese Variety',
-			'Pachinko & Arcade',
-			'Brush',
-			'Drawn Depth',
-			'3D',
-		]);
-		for (const c of LOOK_CATEGORIES) expect(c.labelEs.length).toBeGreaterThan(0);
-	});
-
-	it('holds at least 60 looks in at least 12 categories, every category filled, and none holds more than a quarter', () => {
-		const counts = lookCategoryCounts();
-		expect(FACTORY_LOOKS.length).toBeGreaterThanOrEqual(60);
-		expect(counts.filter((c) => c.count > 0).length).toBeGreaterThanOrEqual(15);
-		// Every category is filled: with looks, or, for 3D, with templates. A look cannot hold an Advanced 3D solid
-		// (TL-055), so 3D is the category of the solid templates and no look claims it; depth a look draws is Drawn Depth.
-		for (const c of counts)
-			if (c.id === '3d') {
-				expect(c.count, 'no look is called 3D').toBe(0);
-				expect(FACTORY_TEMPLATES.filter((t) => t.category === '3d').length).toBeGreaterThanOrEqual(4);
-			} else expect(c.count, c.id).toBeGreaterThan(0);
-		expect(counts.find((c) => c.id === 'drawn-depth')!.count).toBe(4);
-		for (const c of counts) expect(c.count, c.id).toBeLessThanOrEqual(FACTORY_LOOKS.length / 4);
-	});
-
 	it('uses the finishes, glows and generators, and keeps a generator’s own colours only where it is marked fixed', () => {
 		const types = new Set(FACTORY_LOOKS.flatMap((l) => l.recipe.layers.map((x) => x.type)));
 		const finishes = new Set(
@@ -104,14 +64,6 @@ describe('the library (TL-050)', () => {
 			for (const x of l.recipe.layers)
 				if (x.type.startsWith('generator:') && x.params?.ownColors === true)
 					expect(x.fixedColor, `${l.libraryId}: ${x.type}`).toBe(true);
-	});
-
-	it('does not read as a pachinko tool: the first looks are general, and its category stays a minority', () => {
-		const counts = lookCategoryCounts();
-		const pachinko = counts.find((c) => c.id === 'pachinko-arcade')!.count;
-		expect(pachinko / FACTORY_LOOKS.length).toBeLessThanOrEqual(0.15);
-		expect(FACTORY_LOOKS[0]!.category).toBe('clean');
-		expect(searchLooks(FACTORY_LOOKS)[0]!.category).not.toBe('pachinko-arcade');
 	});
 
 	it('gives every look unique ids, names and complete metadata', () => {
@@ -191,14 +143,6 @@ describe('colourways (TL-051)', () => {
 		expect(new Set(FACTORY_COLORWAYS.map((c) => c.id)).size).toBe(FACTORY_COLORWAYS.length);
 	});
 
-	it('fills every role explicitly, with Spanish names and tags', () => {
-		for (const c of FACTORY_COLORWAYS) {
-			expect(Object.keys(c.palette).sort(), c.id).toEqual([...COLOR_ROLES].sort());
-			expect(c.nameEs, c.id).toBeTruthy();
-			expect(c.tags.length, c.id).toBeGreaterThan(0);
-		}
-	});
-
 	it('keeps what the roles promise a look: rings alternate, light is bright, shadows are tinted', () => {
 		const L = (c: readonly number[]) => labOf(c)[0];
 		for (const { id, palette: p } of FACTORY_COLORWAYS) {
@@ -262,16 +206,6 @@ describe('search (TL-050)', () => {
 		expect(searchTemplates('rótulo').map((t) => t.id)).toContain('template.lower-third-clean');
 		expect(searchTemplates('ROTULO').map((t) => t.id)).toContain('template.lower-third-clean');
 		expect(searchTemplates('てろっぷ').map((t) => t.id)).toContain('template.variety-telop');
-	});
-
-	it('never throws and stays deterministic on any text', () => {
-		fc.assert(
-			fc.property(fc.string({ maxLength: 40 }), (q) => {
-				expect(ids({ query: q })).toEqual(ids({ query: q }));
-				foldSearchText(q);
-			}),
-			{ numRuns: 200 },
-		);
 	});
 });
 

@@ -1,6 +1,6 @@
 // @vitest-environment node
 // Finishes and the layer types over them in real WebGL2 (spec 19 §5.1, TL-034, TL-036, TL-038). The picture tests every type
-// gets are in title-look-gl.test.ts; this file holds what each one must do, and a contact sheet to look at (TL_SHEET=<png>).
+// gets are in title-look-gl.test.ts; this file holds what each one must do.
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -29,7 +29,6 @@ import {
 	resampleLuma,
 	ssim,
 } from './title-look-harness.ts';
-import { writeSheet } from './title-look-sheet.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const GOLDENS = join(here, 'goldens', 'title-look-fingerprints.json');
@@ -133,151 +132,6 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')('Title Look finishes', { t
 
 	const render = (recipe: LookRecipe, over: Partial<LookRequest> = {}) =>
 		tl.render({ recipe, input: TEXT, box: BOX, ...over });
-
-	it.runIf(!!process.env.TL_SHEET)('writes the contact sheet', { timeout: 600_000 }, async () => {
-		const metals = ['gold', 'silver', 'chrome', 'copper', 'brushed'];
-		const sw = (paint: Paint, extra: object = {}) => ({ paint, ...extra });
-		const tiles: { label: string; recipe: LookRecipe }[] = [
-			...metals.map((m) => ({ label: `metal ${m}`, recipe: face('metal', { metalKind: m }) })),
-			...TL_ENV_PRESETS.map((e) => ({
-				label: `chrome in ${e}`,
-				recipe: face('metal', { metalKind: 'chrome', metalEnv: e }),
-			})),
-			...TL_ENV_PRESETS.map((e) => ({
-				label: `reflection ${e}`,
-				recipe: face('reflection', { reflectionEnv: e }, flat(0.2, 0.3, 0.8)),
-			})),
-			{
-				label: 'glass over a plate',
-				recipe: {
-					palette,
-					layers: [
-						{ type: 'plate', params: { grow: 0, ...sw(flat(0.15, 0.17, 0.2)) } },
-						{ type: 'face', params: { finish: 'glass', ...sw(flat(0.3, 0.6, 1)) } },
-					],
-				},
-			},
-			{ label: 'gradient map', recipe: face('gradientMap') },
-			{ label: 'gloss', recipe: face('gloss', {}, flat(0.8, 0.1, 0.15)) },
-			...TL_PROFILES.map((p) => ({
-				label: `bevel ${p}`,
-				recipe: face('bevel', { bevelProfile: p, bevelSize: 10, bevelCurve: RIDGED }, flat(0.8, 0.25, 0.2)),
-			})),
-			{ label: 'bevel fit', recipe: face('bevel', { bevelFit: true, bevelDepth: 180 }, flat(0.3, 0.7, 0.4)) },
-			{ label: 'satin', recipe: face('satin', {}, flat(0.75, 0.2, 0.3)) },
-			...TL_PATTERN_KINDS.filter((k) => k !== 'image').map((k) => ({
-				label: `pattern ${k}`,
-				recipe: face('pattern', { patternKind: k }, flat(0.95, 0.85, 0.5)),
-			})),
-			{
-				label: 'inline',
-				recipe: {
-					palette,
-					layers: [
-						{ type: 'face' },
-						{ type: 'inline', params: { inset: 2, width: 2, ...sw(flat(0.1, 0.1, 0.3)) } },
-					],
-				},
-			},
-			{
-				label: 'bevelled rim',
-				recipe: {
-					palette,
-					layers: [
-						{
-							type: 'rim',
-							params: {
-								width: 8,
-								finish: 'bevel',
-								bevelFit: true,
-								bevelDepth: 200,
-								...sw(flat(0.2, 0.3, 0.7)),
-							},
-						},
-						{ type: 'face' },
-					],
-				},
-			},
-			{
-				label: 'chrome rim',
-				recipe: {
-					palette,
-					layers: [
-						{ type: 'rim', params: { width: 9, finish: 'metal' } },
-						{ type: 'face', params: sw(flat(0.1, 0.1, 0.15)) },
-					],
-				},
-			},
-			...['contour', 'hull', 'box', 'slant', 'pill'].map((k) => ({
-				label: `plate ${k}`,
-				recipe: { palette, layers: [{ type: 'plate', params: { kind: k } }, { type: 'face' }] } as LookRecipe,
-			})),
-			{
-				label: 'gold plate',
-				recipe: {
-					palette,
-					layers: [
-						{
-							type: 'plate',
-							params: { kind: 'slant', finish: 'metal', metalKind: 'gold', metalFit: false, metalSize: 3 },
-						},
-						{ type: 'face', params: sw(flat(0.1, 0.05, 0.05)) },
-					],
-				},
-			},
-			{ label: 'sheen', recipe: { palette, layers: [{ type: 'face' }, { type: 'sheen' }] } },
-			{
-				label: 'gloss layer',
-				recipe: {
-					palette,
-					layers: [{ type: 'rim', params: { width: 5 } }, { type: 'face' }, { type: 'gloss' }],
-				},
-			},
-			{ label: 'texture noise', recipe: { palette, layers: [{ type: 'face' }, { type: 'texture' }] } },
-			{
-				label: 'texture grain',
-				recipe: {
-					palette,
-					layers: [{ type: 'face' }, { type: 'texture', params: { kind: 'grain', scale: 0.8, amount: 70 } }],
-				},
-			},
-			{
-				label: 'texture pattern',
-				recipe: {
-					palette,
-					layers: [
-						{ type: 'face' },
-						{ type: 'texture', params: { kind: 'pattern', motif: 'leopard', amount: 100, scale: 12 } },
-					],
-				},
-			},
-			{
-				label: 'dry brush',
-				recipe: {
-					palette,
-					layers: [
-						{ type: 'rim', params: { width: 5 } },
-						{ type: 'face' },
-						{ type: 'texture', params: { kind: 'erosion', amount: 60, scale: 1.2 } },
-					],
-				},
-			},
-		];
-		const only = process.env.TL_SHEET_ONLY;
-		const big = process.env.TL_SHEET_BIG === '1';
-		const k = big ? 2 : 1;
-		const out = [];
-		for (const t of tiles)
-			if (!only || new RegExp(only).test(t.label))
-				out.push({
-					label: t.label,
-					image: await render(t.recipe, {
-						input: { kind: 'text', text: 'Agate', size: 96 * k },
-						box: { width: BOX.width * k, height: BOX.height * k },
-					}),
-				});
-		await writeSheet(tl, process.env.TL_SHEET!, out, big ? 2 : 5, 340 * k, 170 * k);
-	});
 
 	// Every finish, on every layer type that takes one (§5.1): this is the finishes' completeness check.
 	const SHAPE_REQ = { input: { kind: 'shapes' } as const, unitPx: 96, box: { width: 320, height: 160 } };

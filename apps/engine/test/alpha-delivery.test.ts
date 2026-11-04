@@ -7,9 +7,9 @@ import { join } from 'node:path';
 import { AlphaDeliveryRequestSchema, StillRequestSchema } from '@jasper/api';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { canvasPads, frameFilterArgs, padLadder } from '../src/export/delivery/alpha.ts';
+import { frameFilterArgs, padLadder } from '../src/export/delivery/alpha.ts';
 import { alphaBounds, grownBox, touchesEdge, unionBounds } from '../src/export/delivery/trim.ts';
-import { StoredZipWriter, ZipTooLargeError } from '../src/export/delivery/zip-writer.ts';
+import { StoredZipWriter } from '../src/export/delivery/zip-writer.ts';
 import { stillEncodeArgs } from '../src/export/still-formats.ts';
 import { listZip, readZipEntry } from '../src/imports/zip.ts';
 import { assertLgplGraphArgs } from '../src/tools/ffmpeg.ts';
@@ -71,11 +71,6 @@ describe('trim (TL-114)', () => {
 		expect(touchesEdge({ x0: 1, y0: 1, x1: 9, y1: 9 }, 10, 10)).toBe(false);
 	});
 
-	it('the canvas grows, within the texture limit', () => {
-		expect(canvasPads(1920, 1080)).toEqual([480, 960]);
-		expect(canvasPads(16000, 9000)).toEqual([]);
-	});
-
 	it('keeps the largest canvas that fits: a long side of 8193–10922 px is not thrown back to the frame', () => {
 		expect(padLadder(1920, 1080, false)).toEqual([480, 960]);
 		// Only the first pad fits: it is the last tried and kept, never followed by a render on the bare frame.
@@ -117,10 +112,6 @@ describe('stored ZIP (TL-114)', () => {
 		await z.abort();
 		expect(readdirSync(dir)).not.toContain('gone.zip');
 		expect(readdirSync(dir).filter((f) => f.startsWith('.gone'))).toEqual([]);
-	});
-
-	it('names the limit instead of truncating', () => {
-		expect(new ZipTooLargeError('x').name).toBe('ZipTooLargeError');
 	});
 });
 

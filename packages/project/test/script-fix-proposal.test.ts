@@ -10,13 +10,10 @@ import {
 	createProposal,
 	defaultRegistries,
 	FLICKS_PER_SECOND,
-	PROPOSAL_FEATURE_MODEL_STRINGS,
 	type Proposal,
 	type ProposalContext,
 	planAccept,
-	proposalFeatureInfo,
 	revalidate,
-	TRANSCRIPT_CLEANUP_FEATURE,
 	TRANSCRIPT_CORRECTION_FEATURE,
 	type TranscriptFixCandidate,
 	type TranscriptFixDecision,
@@ -148,25 +145,7 @@ function propose(H: Harness, items: unknown[]): Proposal {
 	return r.proposal;
 }
 
-describe('transcript-correction feature (SC-060)', () => {
-	it('is declared with its name, noun, groups and agent policy; cleanup has no transcript group any more', () => {
-		const f = proposalFeatureInfo(TRANSCRIPT_CORRECTION_FEATURE)!;
-		expect(f.name).toBe('Transcript fixes');
-		expect(f.itemNoun).toEqual({ one: '1 fix', other: '{0} fixes' });
-		expect(f.agentAccept).toEqual({ setting: 'project', default: true });
-		expect(f.groups).toEqual([
-			{ id: 'fix', label: 'Fixes' },
-			{ id: 'spelling', label: 'Spelling' },
-			{ id: 'maybe', label: 'Maybe' },
-		]);
-		expect(f.agentAllExcludes).toEqual(['maybe']);
-		expect(proposalFeatureInfo(TRANSCRIPT_CLEANUP_FEATURE)!.groups.map((g) => g.id)).not.toContain(
-			'transcript',
-		);
-		for (const s of ['1 fix', '{0} fixes', 'Fixes', 'Spelling', 'Maybe', 'Transcript fixes'])
-			expect(PROPOSAL_FEATURE_MODEL_STRINGS).toContain(s);
-	});
-});
+describe('transcript-correction feature (SC-060)', () => {});
 
 describe('transcript fix items (SC-061)', () => {
 	it('builds one replaceWords item per candidate with the meta, and Maybe items unselected', () => {

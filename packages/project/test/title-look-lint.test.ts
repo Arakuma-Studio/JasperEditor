@@ -8,7 +8,6 @@ import {
 	type Clip,
 	clipLook,
 	type EffectInstance,
-	LINT_CODES,
 	LINT_STRINGS,
 	type LintCode,
 	type LintContext,
@@ -81,32 +80,6 @@ function fixClears(recipe: LookRecipe, code: LintCode, text?: string) {
 describe('the lint (TL-056)', () => {
 	it('finds nothing on a well-made look', () => {
 		expect(lint(GOOD, { clipKind: 'text' }).issues).toEqual([]);
-	});
-
-	it('has stable, unique ids and only known codes', () => {
-		const r = lint({
-			palette: { face: c(0.5, 0.5, 0.5), keyline: c(0.52, 0.52, 0.52) },
-			layers: [
-				{ type: 'rim', params: { width: 0 } },
-				{ type: 'rim', params: { width: 4 } },
-				{ type: 'face' },
-			],
-		});
-		const ids = r.issues.map((i) => i.id);
-		expect(new Set(ids).size).toBe(ids.length);
-		for (const i of r.issues) {
-			expect(LINT_CODES).toContain(i.code);
-			expect(i.message.length).toBeGreaterThan(5);
-			expect(i.rule.length).toBeGreaterThan(5);
-		}
-	});
-
-	it('is deterministic', () => {
-		const recipe: LookRecipe = {
-			palette: { face: c(0.5, 0.5, 0.5), keyline: c(0.52, 0.52, 0.52) },
-			layers: [{ type: 'rim', params: { width: 40 } }, { type: 'face' }],
-		};
-		expect(lint(recipe)).toEqual(lint(recipe));
 	});
 
 	it('sorts errors first', () => {

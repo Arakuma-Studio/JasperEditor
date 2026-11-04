@@ -5,7 +5,6 @@ import { SessionProvider } from '@jasper/session/react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { monitorStores } from '../src/panels/program/monitor-store.ts';
-import { Cost3DContent, cost3dAcknowledged } from '../src/three-d/Cost3DDialog.tsx';
 import {
 	arcDelta,
 	FREE_RING,
@@ -295,14 +294,5 @@ describe('Properties ▸ Environment', () => {
 			(clipOf(session, seqId, id) as unknown as { light: { environmentPreset: string } }).light
 				.environmentPreset,
 		).toBe('neon');
-	});
-});
-
-describe('the cost before enabling (TL-078)', () => {
-	it('names the Remotion path and what makes a title heavy', () => {
-		render(<Cost3DContent dontAsk={false} onDontAsk={() => {}} />);
-		expect(document.body.textContent).toContain('Remotion path');
-		expect(document.body.textContent).toContain('transmission');
-		expect(cost3dAcknowledged()).toBe(false);
 	});
 });

@@ -11,10 +11,10 @@ import {
 	type RenderSnapshot,
 	titleLookOf,
 } from '@jasper/project';
-import { initializeCanvas, type Layer, readPsd, writePsdUint8Array } from 'ag-psd';
+import { initializeCanvas, type Layer, readPsd } from 'ag-psd';
 import fc from 'fast-check';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { neutralClip, onLargerCanvas, onlyClips } from '../src/export/delivery/frames.ts';
+import { onLargerCanvas, onlyClips } from '../src/export/delivery/frames.ts';
 import {
 	assertWritable,
 	psdRenderProps,
@@ -22,7 +22,7 @@ import {
 	writePsdFile,
 } from '../src/export/delivery/psd-job.ts';
 import { type PsdRender, planPsd, psdRenderDoc } from '../src/export/delivery/psd-plan.ts';
-import { layerSlices, PsdAssembler, PsdTooLargeError } from '../src/export/delivery/psd-writer.ts';
+import { PsdAssembler, PsdTooLargeError } from '../src/export/delivery/psd-writer.ts';
 import { DocBuilder } from './helpers.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'jasper-psd-'));
@@ -429,22 +429,6 @@ describe('writer (TL-112)', () => {
 		a.close();
 	});
 
-	it('slices one layer out of an ag-psd document at the record boundary', () => {
-		const px = new Uint8ClampedArray(4 * 4 * 4).fill(255);
-		const doc = writePsdUint8Array(
-			{
-				width: 8,
-				height: 8,
-				children: [{ name: 'layer', top: 2, left: 3, imageData: { data: px, width: 4, height: 4 } as never }],
-			},
-			{ noBackground: true },
-		);
-		const { record, channels } = layerSlices(doc);
-		const view = new DataView(record.buffer, record.byteOffset);
-		expect([view.getInt32(0), view.getInt32(4), view.getInt32(8), view.getInt32(12)]).toEqual([2, 3, 6, 7]);
-		expect(channels.length).toBeGreaterThan(0);
-	});
-
 	it('trims to visible pixels, keeping registration', () => {
 		const px = new Uint8Array(10 * 10 * 4);
 		px.set([9, 8, 7, 1], (3 * 10 + 4) * 4);
@@ -506,11 +490,5 @@ describe('frames (TL-114)', () => {
 		expect(p(big)[1]).toBe(p(snap)[1] + 100);
 		expect(onLargerCanvas(snap, 0)).toBe(snap);
 		expect(onlyClips(big, new Set([s])).videoTracks).toHaveLength(1);
-	});
-
-	it('neutral clips are normal and at 100 %', () => {
-		const { d } = twoClips();
-		const c = neutralClip(snapshotOf(d).videoTracks[0]!.clips[0]!);
-		expect([c.blendMode, c.opacity.value]).toEqual(['normal', 100]);
 	});
 });

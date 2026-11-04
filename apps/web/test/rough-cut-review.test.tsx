@@ -9,7 +9,6 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { FakeEngine } from '../../../packages/session/test/fake-proposals-engine.ts';
 import { ReviewPanel } from '../src/panels/review/ReviewPanel.tsx';
 import { applyReview } from '../src/proposals/actions.ts';
-import { cardSentence } from '../src/proposals/review.ts';
 import { makeSession } from './timeline-helpers.ts';
 
 afterEach(cleanup);
@@ -111,12 +110,4 @@ describe('rough-cut review (AF-PROP-003)', () => {
 		t.c.exit();
 	});
 
-	it('the agent’s card reads naturally', () => {
-		expect(cardSentence('cut-agent', 'Tight cut', 'rough-cut', { sounds: 0, newTracks: 0, items: 2 })).toBe(
-			'cut-agent proposes Tight cut: 2 edits',
-		);
-		expect(cardSentence('cut-agent', 'Tight cut', 'rough-cut', { sounds: 0, newTracks: 0, items: 1 })).toBe(
-			'cut-agent proposes Tight cut: 1 edit',
-		);
-	});
 });

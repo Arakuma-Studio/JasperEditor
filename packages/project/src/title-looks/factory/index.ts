@@ -3,7 +3,6 @@
 // look into the project on first use (TL-015), so a project never depends on this list. The UI and the agents read
 // `FACTORY_LOOKS`, `FACTORY_COLORWAYS`, `LOOK_CATEGORIES`, `FACTORY_TEMPLATES` and `searchLooks`.
 import type { FactoryLook } from './build.ts';
-import { LOOK_CATEGORIES } from './categories.ts';
 import { FACTORY_COLORWAYS } from './colorways.ts';
 import { BRUSH_LOOKS } from './looks/brush.ts';
 import { CINEMATIC_LOOKS } from './looks/cinematic.ts';
@@ -48,11 +47,3 @@ export const FACTORY_LOOKS: readonly FactoryLook[] = [
 export const factoryLook = (id: string): FactoryLook | undefined =>
 	FACTORY_LOOKS.find((l) => l.libraryId === id);
 export const factoryColorway = (id: string) => FACTORY_COLORWAYS.find((c) => c.id === id);
-
-/** How many looks each category holds, in category order (every category is listed). */
-export function lookCategoryCounts(): { id: string; count: number }[] {
-	return LOOK_CATEGORIES.map((c) => ({
-		id: c.id,
-		count: FACTORY_LOOKS.filter((l) => l.category === c.id).length,
-	}));
-}

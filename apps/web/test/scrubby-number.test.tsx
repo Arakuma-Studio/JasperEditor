@@ -181,12 +181,3 @@ describe('tracks (TL-096)', () => {
 		up();
 	});
 });
-
-describe('mixed text', () => {
-	it('defaults to the inspector dash and can be set', () => {
-		render(<ScrubbyNumber value={null} label="A" data-testid="a" />);
-		render(<ScrubbyNumber value={null} label="B" mixedText="—" data-testid="b" />);
-		expect(screen.getByTestId('a').textContent).toBe('–');
-		expect(screen.getByTestId('b').textContent).toBe('—');
-	});
-});

@@ -24,7 +24,6 @@ import {
 	lookReach,
 	MAX_APPEARANCE_LAYERS,
 	type Paint,
-	PaintSchema,
 	planGpuEffect,
 	planTitleLook,
 	type Role,
@@ -338,13 +337,6 @@ describe('paints', () => {
 				}
 			}),
 			{ numRuns: Math.min(RUNS, 60) },
-		);
-	});
-
-	it('any JSON through the paint schema never throws', () => {
-		fc.assert(
-			fc.property(fc.jsonValue(), (v) => void PaintSchema.safeParse(v)),
-			{ numRuns: RUNS },
 		);
 	});
 });

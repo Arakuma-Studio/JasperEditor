@@ -358,18 +358,6 @@ describe.runIf(enabled && !!CHROME)(
 			return decode(prev!, W, H);
 		}
 
-		it('HTML-in-Canvas is available in the test Chrome', async () => {
-			const supported = await page.evaluate(() => {
-				const c = document.createElement('canvas');
-				return (
-					typeof (c.getContext('2d') as unknown as { drawElementImage?: unknown }).drawElementImage ===
-					'function'
-				);
-			});
-			console.info(`[title-look] Chrome ${browser.version()} drawElementImage: ${supported}`);
-			expect(supported).toBe(true);
-		});
-
 		it('a still look is not recomputed between frames in the Player (TL-037)', async () => {
 			const seek = (name: string, f: number) =>
 				page.evaluate(

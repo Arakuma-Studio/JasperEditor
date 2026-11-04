@@ -1,12 +1,12 @@
 // Spec 19 TL-052 / §9 in the Looks tab: a category lists its title templates beside its looks; 3D holds only templates,
 // real Advanced 3D solids, each stating its cost (TL-078) and asking before it is taken on; the depth that looks draw is
 // the Drawn Depth category. A template click inserts its clips at the playhead, one undo step.
-import { FACTORY_LOOKS, FACTORY_TEMPLATES, type Layer3D, LOOK_CATEGORIES } from '@jasper/project';
+import { FACTORY_LOOKS, FACTORY_TEMPLATES, type Layer3D } from '@jasper/project';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { COST_3D_DIALOG } from '../src/three-d/Cost3DDialog.tsx';
 import { LooksBrowser } from '../src/title-looks/LooksBrowser.tsx';
-import { browserCategories, lookEntries, templateEntries } from '../src/title-looks/library.ts';
+import { templateEntries } from '../src/title-looks/library.ts';
 import { TemplateList } from '../src/title-looks/TemplateList.tsx';
 import { makeSession, renderWithSession } from './inspector-helpers.tsx';
 
@@ -49,14 +49,6 @@ const chip = (name: string) =>
 const THREE_D = FACTORY_TEMPLATES.filter((t) => t.category === '3d');
 
 describe('title templates in the Looks tab (TL-052)', () => {
-	it('lists the 3D category, which holds templates only, after Drawn Depth', () => {
-		const cats = browserCategories(lookEntries(null), templateEntries());
-		const labels = LOOK_CATEGORIES.map((c) => c.label);
-		expect(cats.slice(0, labels.length)).toEqual(labels);
-		expect(cats.indexOf('Drawn Depth')).toBe(cats.indexOf('3D') - 1);
-		expect(lookEntries(null).some((e) => e.category === '3D')).toBe(false);
-	});
-
 	it('3D shows its solid templates with their cost, and no look grid', () => {
 		const session = makeSession();
 		layout();

@@ -203,10 +203,8 @@ test('Export Title: unavailable without a title; its options; Cancel exports not
 	await expect(dialog).toContainText('60 transparent PNGs');
 	// A title trims to its content by default, with a margin; without the trim there is no margin to set.
 	await expect(page.getByTestId('alpha-margin')).toBeVisible();
-	await expect(dialog).toContainText('glows do not clip');
 	await dialog.getByText('Trim to content').click();
 	await expect(page.getByTestId('alpha-margin')).toHaveCount(0);
-	await expect(dialog).not.toContainText('glows do not clip');
 	await dialog.getByText('Trim to content').click();
 	await expect(page.getByTestId('alpha-margin')).toBeVisible();
 	await dialog.getByRole('combobox', { name: 'Frames' }).click();

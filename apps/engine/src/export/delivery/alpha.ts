@@ -54,7 +54,7 @@ export const renderOptions = (transparentBackground: boolean) => ({
 });
 
 /** First canvas pad of Export Title: a quarter of the frame's long side per edge (as Pachislop's probe canvas). */
-export function canvasPads(w: number, h: number): number[] {
+function canvasPads(w: number, h: number): number[] {
 	const first = Math.round(Math.max(w, h) / 4);
 	const fits = (pad: number) => Math.max(w, h) + 2 * pad <= MAX_CANVAS_SIDE;
 	return [first, first * 2].filter(fits);

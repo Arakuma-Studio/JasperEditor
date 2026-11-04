@@ -31,13 +31,7 @@ import {
 import { VOICE_CLASSES } from '@jasper/project';
 import { decodePng } from '@jasper/testkit/png';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import {
-	frameFilter,
-	frameStart,
-	mediaRangeAudio,
-	pngSize,
-	StreamingVoiceFeatures,
-} from '../src/media/range-view.ts';
+import { frameStart, mediaRangeAudio, pngSize, StreamingVoiceFeatures } from '../src/media/range-view.ts';
 import { coreServices } from '../src/tools/services.ts';
 import {
 	closeApps,
@@ -214,11 +208,6 @@ describe('POST /api/media/:mediaKey/frames', () => {
 		expect(frameStart(2 / 3, 30)).toBeLessThanOrEqual(2 / 3);
 		expect(frameStart(20 / 30, 30)).toBeGreaterThan(19.9 / 30);
 		expect(frameStart(1.234, null)).toBe(1.234);
-	});
-
-	it('keeps the scale expression quoted', () => {
-		expect(frameFilter(320, 180)).toContain("scale=w='max(1\\,round(iw*sar*");
-		expect(frameFilter(320, 180)).toMatch(/format=rgb24$/);
 	});
 });
 

@@ -37,7 +37,6 @@ export {
 export {
 	type CandidateScore,
 	candidateScores,
-	DECISION_PRESETS,
 	type DecisionThresholds,
 	decideFix,
 	type FixDecision,

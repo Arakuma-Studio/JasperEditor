@@ -50,7 +50,7 @@ function Cost3DDialog({ close, title, primaryLabel }: HostedDialogProps<Cost3DDi
 	);
 }
 
-export function Cost3DContent(props: { dontAsk: boolean; onDontAsk(v: boolean): void }) {
+function Cost3DContent(props: { dontAsk: boolean; onDontAsk(v: boolean): void }) {
 	return (
 		<>
 			<p className="max-w-[46ch] text-pr-ui text-pr-text">{COST_CLASSES['3d'].detail}.</p>

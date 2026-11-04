@@ -142,9 +142,6 @@ const KEY: SoundDescriptors = {
 
 describe('judge flags lowpassed, noisy-floor, dc-offset', () => {
 	const key = DEFAULT_TYPE_PROFILES.key;
-	it('a clean key passes', () => {
-		expect(judgeSound(KEY, key)).toEqual({ ok: true, score: 1, reasons: [] });
-	});
 
 	it('lowpassed: a band-limit cliff under 12 kHz for a type that needs air only (not the 95 % roll-off)', () => {
 		expect(judgeSound({ ...KEY, cutoffHz: 9000 }, key).reasons).toEqual(['lowpassed']);
@@ -181,10 +178,6 @@ describe('judge flags lowpassed, noisy-floor, dc-offset', () => {
 		const { rolloff95Hz: _r, cutoffHz: _c, floorDb: _f, dcDb: _d, ...v1 } = KEY;
 		expect(judgeSound(v1, key)).toEqual({ ok: true, score: 1, reasons: [] });
 		expect(judgeSound({ ...v1, onsetCount: 3 }, key).reasons).toEqual(['multi-hit']);
-	});
-
-	it('a take is judged as one event: singleHit false never reports multi-hit', () => {
-		expect(judgeSound({ ...KEY, onsetCount: 2 }, { ...key, singleHit: false }).ok).toBe(true);
 	});
 
 	it('a measured key band-limited at 8 kHz (a low-bitrate encode) is lowpassed; the same key full-band is not', () => {

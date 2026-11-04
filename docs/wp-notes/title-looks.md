@@ -48,7 +48,7 @@ routing and the layer bake need no per-kind code.
 | What generators share: noise, the shape, stable sites | `packages/project/src/registry/fx/title-look/generators/shared.ts` |
 | Test harness | `packages/compositions/test/title-look-harness.ts`, `title-look-gl/entry.ts` |
 | Registry completeness, GL, fuzz, E2E | `packages/project/test/title-look*.test.ts`, `packages/compositions/test/title-look*.test.ts` |
-| Generator behaviour (time, identity), contact sheets | `packages/compositions/test/title-look-generators-gl.test.ts`, `title-look-generators-sheets.test.ts` |
+| Generator behaviour (time, identity) | `packages/compositions/test/title-look-generators-gl.test.ts` |
 
 ## How a frame is drawn
 
@@ -472,8 +472,7 @@ summary, forbidden GLSL), `packages/compositions/test/title-look-gl.test.ts` (co
 params, a perturbation check, nothing clipped at the padding, and resolution independence at two scales) and, for a finish,
 `title-look-finishes-gl.test.ts` (draws on a face, rim, inline and plate; fingerprints; **every param changes the picture**;
 resolution; determinism). **A registered type without recorded fingerprints fails**: run the GL test with `JASPER_BLESS=1`, look
-at the picture, and commit `goldens/title-look-fingerprints.json`. `TL_SHEET=<png>` on the finishes test writes a contact sheet
-of every finish and type (`TL_SHEET_ONLY=<regex>`, `TL_SHEET_BIG=1`): judge it with your eyes, a metal can pass and read as grey.
+at the picture, and commit `goldens/title-look-fingerprints.json`. Judge it with your eyes: a metal can pass and read as grey.
 
 Write your own behaviour tests in `packages/compositions/test/title-look-<area>-gl.test.ts`:
 
@@ -946,8 +945,7 @@ rather than listing them twice.
 
 The sixteen of TL-061: Fire, Smoke, Corona, Sunburst, Magic Circle, Lens Flare, Backlight, Light Streaks, Shockwave, Particles,
 Glints, Ink Splatter, Brush Swirl, Speed Lines, Lightning, Pattern. Each is one file, a `generator:<id>` layer and a
-`jasper.generator.<id>` effect from the same GLSL (TL-060). Contact sheets: `GEN_SHEETS=1 pnpm exec vitest run
-packages/compositions/test/title-look-generators-sheets.test.ts --maxWorkers=1` writes `/tmp/title-looks/sheets/generators-*.png`.
+`jasper.generator.<id>` effect from the same GLSL (TL-060).
 
 ### How they relate to the effects already in the registry
 

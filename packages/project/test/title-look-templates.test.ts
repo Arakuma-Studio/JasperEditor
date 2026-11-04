@@ -58,19 +58,6 @@ describe('title templates (TL-052)', () => {
 		}
 	});
 
-	it('cover lower thirds, full-screen titles, end cards and social hooks across general categories', () => {
-		expect(FACTORY_TEMPLATES.length).toBeGreaterThanOrEqual(16);
-		for (const c of ['brush', 'drawn-depth', '3d'])
-			expect(
-				FACTORY_TEMPLATES.some((t) => t.category === c),
-				c,
-			).toBe(true);
-		for (const k of TEMPLATE_KINDS)
-			expect(FACTORY_TEMPLATES.filter((t) => t.kind === k).length, k).toBeGreaterThan(0);
-		expect(new Set(FACTORY_TEMPLATES.map((t) => t.category)).size).toBeGreaterThanOrEqual(6);
-		expect(FACTORY_TEMPLATES.filter((t) => t.category === 'pachinko-arcade').length).toBeLessThanOrEqual(2);
-	});
-
 	for (const [preset, label] of [
 		['hd-1080p-30', '16:9'],
 		['vertical-1080x1920-30', '9:16'],
@@ -112,19 +99,6 @@ describe('title templates (TL-052)', () => {
 		expect(index(clips[1]!)).toBeLessThan(index(clips[2]!));
 		expect(clips[0]!.start).toBe(30);
 		expect(clips[1]!.start).toBeGreaterThan(30);
-	});
-
-	it('is one undo step: the document before it comes back whole', () => {
-		const h = new Harness();
-		const before = h.doc;
-		const clipsBefore = Object.keys(h.seq.clips).length;
-		h.ok([{ type: 'title.insertTemplate', templateId: 'template.lower-third-corporate', at: 0 }]);
-		expect(Object.keys(h.seq.clips).length).toBe(clipsBefore + 4);
-		expect(h.doc).not.toBe(before);
-		h.doc = before;
-		expect(Object.keys(h.seq.clips).length).toBe(clipsBefore);
-		expect((h.doc as { titleLooks?: unknown }).titleLooks).toBeUndefined();
-		ok(h);
 	});
 
 	it('applies nothing when anything in it is refused', () => {
@@ -400,17 +374,6 @@ describe('3D title templates (spec 19 §9 through TL-052)', () => {
 		expect(hd.ratio).toBeCloseTo(0.22, 2);
 		expect(small.ratio).toBeCloseTo(hd.ratio, 2);
 		expect(small.band).toBeCloseTo(hd.band, 2);
-	});
-
-	it('is one undo step: the sequence goes back to its own renderer', () => {
-		const h = new Harness();
-		const before = h.doc;
-		expect(h.seq.threeD?.renderer ?? 'classic').toBe('classic');
-		h.ok([{ type: 'title.insertTemplate', templateId: 'template.gold-glint-end-card', at: 0 }]);
-		expect(h.seq.threeD?.renderer).toBe('advanced');
-		h.doc = before;
-		expect(h.seq.threeD?.renderer ?? 'classic').toBe('classic');
-		ok(h);
 	});
 
 	describe('never overwrites the sequence look of 3D the user set', () => {

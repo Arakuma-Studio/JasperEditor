@@ -184,14 +184,6 @@ describe('the standalone effects of §8 (registry)', () => {
 			});
 		});
 
-	it('every effect of the family is listed above', () => {
-		expect(TITLE_LOOK_EFFECTS.map((e) => e.id).sort()).toEqual(
-			Object.values(SECTION_8)
-				.filter((id) => id !== 'jasper.alpha-glow')
-				.sort(),
-		);
-	});
-
 	it('binds every uniform the look’s output pass reads: a look effect shows its look in full (TL-089)', () => {
 		const ctx = {
 			width: 320,
@@ -216,28 +208,6 @@ describe('the standalone effects of §8 (registry)', () => {
 			expect(uniform?.value, s.id).toEqual([100]);
 		}
 		expect(reading).toBeGreaterThan(5);
-	});
-
-	it('a look effect plans the same passes as its look layer, so they share GLSL', () => {
-		const ctx: FxPlanContext = { width: 640, height: 360, pxScale: 1, fps: 30 };
-		const s = spec('jasper.keyline');
-		const passes = (typeof s.gpu!.passes === 'function' ? s.gpu!.passes(defaultsOf(s), ctx) : s.gpu!.passes)!;
-		const look = appearanceFromRecipe(
-			{
-				layers: [
-					{ type: 'rim', params: { width: 2, paint: { kind: 'color', color: [0.04, 0.02, 0.02, 1] } } },
-					{ type: 'face', params: { paint: { kind: 'source' } } },
-				],
-			},
-			ids(1),
-		);
-		const direct = planTitleLook({
-			...ctx,
-			structures: {
-				titleLook: { appearance: resolveAppearance(look, 0), unitPx: 100, contentSeconds: 0 },
-			},
-		});
-		expect(passes.map((p) => p.frag)).toEqual(direct.map((p) => p.frag));
 	});
 
 	it('Alpha Glow at Classic plans what it always did, and its look techniques share nothing with it', () => {

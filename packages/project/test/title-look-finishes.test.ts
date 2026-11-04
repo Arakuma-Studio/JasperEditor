@@ -39,25 +39,6 @@ const ids = () => `apl_${String(++n).padStart(16, '0')}`;
 const texelCount = (u: unknown) => ((u as { texels: Float32Array }).texels.length / 4) | 0;
 
 describe('registry', () => {
-	it('every finish of §5.1 and every layer type of this stream exists', () => {
-		expect(TITLE_FINISHES.map((f) => f.id)).toEqual(
-			expect.arrayContaining([
-				'flat',
-				'gradientMap',
-				'metal',
-				'glass',
-				'pattern',
-				'gloss',
-				'bevel',
-				'reflection',
-				'satin',
-			]),
-		);
-		expect(TITLE_LAYER_TYPES.map((t) => t.type)).toEqual(
-			expect.arrayContaining(['inline', 'plate', 'sheen', 'gloss', 'texture']),
-		);
-	});
-
 	it('types that take a finish have a `paint` param (glass refracts it) and declare handles', () => {
 		for (const t of TITLE_LAYER_TYPES.filter((x) => x.finish))
 			expect(

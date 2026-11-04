@@ -10,7 +10,6 @@ import {
 	lookOrientation,
 	MAX_RUN_FINISHES,
 	planTitleLook,
-	RUN_FINISHES_DRAWN,
 	resolveAppearance,
 	type SpanBox,
 	type SpanGlyph,
@@ -28,10 +27,6 @@ const box: SpanBox = [0, 0, 10, 20];
 const slotOf = (s: { texels: Float32Array }, i: number) => s.texels[i * 16 + 14];
 
 describe('per-letter finishes (TL-093)', () => {
-	it('the toolbar is told the planner draws them', () => {
-		expect(RUN_FINISHES_DRAWN).toBe(true);
-	});
-
 	it('a glyph record carries the slot of its run finish; the ids are in the key', () => {
 		const s = buildTextSpans([
 			{ box, line: 0 },

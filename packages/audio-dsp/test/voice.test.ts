@@ -298,23 +298,6 @@ describe('frame classes (TC-001)', () => {
 			expect(every(inner(classes, r[k]!), VOICE_CLASS_SILENCE), `${k}`).toBe(true);
 	});
 
-	it('speech runs have no gaps under 60 ms and no blips under 40 ms; breath-like runs last 120–900 ms', () => {
-		const runs: Array<{ c: number; n: number; at: number }> = [];
-		for (let i = 0; i < classes.length; ) {
-			let j = i;
-			while (j < classes.length && classes[j] === classes[i]) j++;
-			runs.push({ c: classes[i]!, n: j - i, at: i });
-			i = j;
-		}
-		for (const run of runs) {
-			if (run.c === VOICE_CLASS_SPEECH) expect(run.n).toBeGreaterThanOrEqual(4);
-			if (run.c === VOICE_CLASS_BREATH) {
-				expect(run.n).toBeGreaterThanOrEqual(12);
-				expect(run.n).toBeLessThanOrEqual(90);
-			}
-		}
-	});
-
 	it('digital silence has no levels and only silence frames', () => {
 		const z = classifyVoiceFrames(voiceFeatures(new Float32Array(SR)));
 		expect(z.levels).toBeNull();

@@ -1,9 +1,7 @@
 // Export verification (spec 18 AF-VER-001…003; docs/wp-notes/agent-footage-verify.md): small exports with known
 // defects built with ffmpeg lavfi (LGPL encoders: MPEG-4 Part 2 + AAC in MP4) are measured and judged against a
-// recorded verification context; each defect yields its exact row, a clean file verifies. Also pins the wp-note's
-// thresholds table to VERIFY_THRESHOLDS.
+// recorded verification context; each defect yields its exact row, a clean file verifies.
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { VerifyRow } from '@jasper/api';
 import { describe, expect, it } from 'vitest';
@@ -17,7 +15,7 @@ import {
 import type { ExportVerifyContext } from '../src/export/verify-context.ts';
 import { verifyExportFile } from '../src/export/verify-job.ts';
 import { Ffmpeg } from '../src/tools/ffmpeg.ts';
-import { ROOT, TEST_FFMPEG, TEST_FFPROBE } from './fixtures.ts';
+import { TEST_FFMPEG, TEST_FFPROBE } from './fixtures.ts';
 import { tempAppdir } from './temp.ts';
 
 const ff = new Ffmpeg({ ffmpeg: TEST_FFMPEG, ffprobe: TEST_FFPROBE });
@@ -369,24 +367,5 @@ describe('detectors', () => {
 		).toBe(true);
 		expect(summarizeRows([row('unverified', 'format')]).verified).toBe(false);
 		expect(summarizeRows([row('fail', 'judgement')]).verified).toBe(false);
-	});
-});
-
-describe('wp-note thresholds', () => {
-	it('pins the "Thresholds" table to VERIFY_THRESHOLDS', () => {
-		const text = readFileSync(join(ROOT, 'docs/wp-notes/agent-footage-verify.md'), 'utf8');
-		const section = text.slice(
-			text.indexOf('## Thresholds'),
-			text.indexOf('\n## ', text.indexOf('## Thresholds') + 5),
-		);
-		const rows = section
-			.split('\n')
-			.filter((l) => l.startsWith('| `'))
-			.map((l) => l.split('|').map((c) => c.trim()));
-		const table = Object.fromEntries(rows.map((r) => [r[1]!.replace(/`/g, ''), Number(r[2])]));
-		const code = Object.fromEntries(
-			Object.entries(VERIFY_THRESHOLDS).map(([k, v]) => [k, Math.round(v * 1e6) / 1e6]),
-		);
-		expect(table).toEqual(code);
 	});
 });

@@ -240,14 +240,6 @@ describe('Looks browser (TL-086)', () => {
 		expect(screen.queryByTestId('look-grid')).toBeNull();
 	});
 
-	it('says what a click will do, in words', () => {
-		const { session, ids } = project({ titles: 2 });
-		renderWithSession(session, <LooksBrowser session={session} />);
-		expect(screen.getByTestId('looks-status').textContent).toMatch(/add a title at the playhead/);
-		act(() => session.select('timeline', ids));
-		expect(screen.getByTestId('looks-status').textContent).toMatch(/2 selected clips/);
-	});
-
 	it('mounts only what is on screen: posters of the rest are never asked for', () => {
 		const names = Array.from({ length: 300 }, (_, i) => `Look ${i}`);
 		const { session } = project({ looks: names, titles: 0 });

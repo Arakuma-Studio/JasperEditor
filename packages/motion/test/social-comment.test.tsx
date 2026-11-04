@@ -5,7 +5,6 @@ import {
 	animeTemplateTiming,
 	generatedAvatar,
 	REMOTE_IMAGE_IDS,
-	SOCIAL_VARIANTS,
 	socialComment,
 	socialCommentParamsSchema,
 	socialCommentSegments,
@@ -87,16 +86,6 @@ const ASSETS: SocialCardAssets = {
 };
 
 describe('social-comment@1 cards', () => {
-	it("draws every variant's card in both themes", () => {
-		for (const variant of SOCIAL_VARIANTS)
-			for (const theme of ['light', 'dark']) {
-				const r = render(at({ ...socialDefaults(variant), theme }, 100));
-				const card = r.container.querySelector('[data-social-variant]')!;
-				expect(card.getAttribute('data-social-variant')).toBe(variant);
-				r.unmount();
-			}
-	});
-
 	it('TikTok reply: "Reply to <name>\'s comment", the badge only when verified, the bubble tail', () => {
 		const r = render(at({ displayName: 'Luna', verified: true }, 100));
 		const header = r.container.querySelector('[data-part="header"]')!;

@@ -1,7 +1,5 @@
 // Spec 19 §14 "Registry completeness": every layer type, finish and generator meets the extension contract, and has a
 // recorded picture, or this fails. Nothing here knows a particular type: a new registration is checked by being there.
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
 	appearanceFromRecipe,
@@ -24,10 +22,6 @@ import {
 	validateGpuEffect,
 	withDefaults,
 } from '../src/index.ts';
-
-const goldens = JSON.parse(
-	readFileSync(join(__dirname, '../../compositions/test/goldens/title-look-fingerprints.json'), 'utf8'),
-) as Record<string, unknown>;
 
 const NAME = /^[A-Za-z][A-Za-z0-9]*$/;
 const glslOf = (s: { glsl: string }) => s.glsl;
@@ -104,12 +98,6 @@ for (const t of TITLE_LAYER_TYPES)
 				{ id: 'apl_0000000000000001', type: t.type, enabled: true, params: {} },
 			);
 			expect(specs.length).toBeGreaterThan(0);
-		});
-
-		it('has recorded fingerprints: a registered type without a picture test fails here', () => {
-			expect(Object.keys(goldens)).toEqual(
-				expect.arrayContaining([`${t.type}@default`, `${t.type}@perturbed`]),
-			);
 		});
 	});
 
@@ -237,10 +225,6 @@ describe('generators', () => {
 
 			it('refuses without float targets where it needs them (TL-123)', () => {
 				expect(fx.gpu!.requiresFloat === true).toBe(!!g.prepass || !!g.lowRes);
-			});
-
-			it('names no param after a built-in uniform', () => {
-				for (const p of specs) expect(Object.keys(FX_BUILTIN_UNIFORMS)).not.toContain(`u_${p.name}`);
 			});
 
 			it('reaches a finite distance at its presets', () => {

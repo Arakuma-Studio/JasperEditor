@@ -8,7 +8,6 @@ import {
 	AudioCategoryError,
 	audioCategoryFeatures,
 	classifyAudio,
-	LOW_CATEGORY_CONFIDENCE,
 	MAX_CATEGORY_WINDOWS,
 } from '../src/analysis/audio-category.ts';
 import { renderSynth } from '../src/synth/render.ts';
@@ -148,7 +147,4 @@ describe('edge inputs', () => {
 		);
 	});
 
-	it('LOW_CATEGORY_CONFIDENCE is the documented 0.6', () => {
-		expect(LOW_CATEGORY_CONFIDENCE).toBe(0.6);
-	});
 });

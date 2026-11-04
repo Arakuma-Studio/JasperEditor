@@ -7,7 +7,6 @@ import {
 	buildScoreWindows,
 	type CandidateScore,
 	candidateScores,
-	DECISION_PRESETS,
 	decideFix,
 	delAnchorOf,
 	type FixCandidate,
@@ -422,14 +421,6 @@ describe('decisions (SC-034): presets and the Maybe band', () => {
 	);
 	const proper = base.candidates[0]!;
 	const plain = { ...proper, category: 'other' as const };
-
-	it('the table', () => {
-		expect(DECISION_PRESETS).toEqual({
-			careful: { audio: -1, spelling: -4, spellingMinPsim: 0.8, del: 0, maybe: -3 },
-			standard: { audio: -1.5, spelling: -5, spellingMinPsim: 0.8, del: 0, maybe: -4 },
-			generous: { audio: -2, spelling: -5, spellingMinPsim: 0.8, del: 0, maybe: -4 },
-		});
-	});
 
 	it.each([
 		// [category, deltaTok, preset, decision, rule]

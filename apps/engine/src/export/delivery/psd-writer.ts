@@ -45,8 +45,8 @@ function sections(psd: Uint8Array) {
 	return { layerMask, layerMaskEnd: layerMask + 4 + layerMaskLength, layerInfo, layerInfoLength };
 }
 
-/** The layer record and the channel data of a one-layer document (exported for the tests). */
-export function layerSlices(psd: Uint8Array): { record: Uint8Array; channels: Uint8Array } {
+/** The layer record and the channel data of a one-layer document. */
+function layerSlices(psd: Uint8Array): { record: Uint8Array; channels: Uint8Array } {
 	const { layerInfo } = sections(psd);
 	const start = layerInfo + 4 + 2;
 	let o = start + 16;

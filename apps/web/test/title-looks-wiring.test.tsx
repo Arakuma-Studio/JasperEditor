@@ -1,9 +1,8 @@
-// Spec 19 TL-097 / TL-098: every action has a command and a menu entry, no default shortcut was added, and a title-art
-// proposal shows its options and says Compare.
+// Spec 19 TL-097 / TL-098: every action has a command and a menu entry, and a title-art proposal shows its options
+// and says Compare.
 import { type Colorway, FACTORY_COLORWAYS, type ProposalItem } from '@jasper/project';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { DEFAULT_KEYMAP } from '../src/commands/keymap-defaults.ts';
 import { getCommand } from '../src/commands/registry.ts';
 import { titleLookCommands } from '../src/commands/title-looks.ts';
 import { setLanguage } from '../src/i18n/runtime.ts';
@@ -67,11 +66,6 @@ describe('wiring (TL-097)', () => {
 		const { TITLE_LAYER_TYPES } = await import('@jasper/project');
 		const entries = flat(graphics.items as never).filter((c) => c === 'graphics.addLookLayer');
 		expect(entries.length).toBe(TITLE_LAYER_TYPES.filter((l) => !l.type.startsWith('generator:')).length);
-	});
-
-	it('claims no default shortcut, so nothing can collide', () => {
-		const ids = new Set(titleLookCommands.map((c) => c.id));
-		expect(DEFAULT_KEYMAP.filter((b) => ids.has(b.command))).toEqual([]);
 	});
 
 	it('every look command says why it is unavailable', () => {

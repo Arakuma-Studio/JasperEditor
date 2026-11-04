@@ -811,8 +811,7 @@ engine-client `transcriptFix`, MCP `apps/mcp/src/tools/transcript-fix.ts`.
 
 ### Measurements (SC-037 integration, build VM, 2026-10-27)
 
-`JASPER_SPEECH_MODELS_DIR=<dir> TRANSCRIPT_FIX_BENCH=1 pnpm exec vitest run apps/engine/test/transcript-fix.e2e.test.ts
--t "cost per speech minute" --maxWorkers=1` (`FIX_BENCH` line), under the bench lock; 16 shared EPYC-Rome vCPU, load
+`JASPER_SPEECH_MODELS_DIR=<dir> pnpm exec tsx apps/engine/bench/transcript-fix.ts` (`FIX_BENCH` line), under the bench lock; 16 shared EPYC-Rome vCPU, load
 average 6.4 → 9.0 from other agents; whisper-large-v3-turbo fp32, CPU, 8 threads; the LJ fixture (0.966 speech
 minutes by its utterance bounds), 10 candidates (≈ 10 per speech minute, the research's rate is 6.3), 3 packed windows,
 13 readings; whole job from the request to the stored proposal, median of 3:

@@ -354,16 +354,6 @@ const shadowOf = (s: EditorSession, clipId: string) =>
 	(lookedClip(clipOf(s, clipId))!.appearance as Appearance).layers[0]!;
 
 describe('the Program overlay (TL-092)', () => {
-	it('draws the selected layer’s outline, name and handles', () => {
-		const { session, seqId } = setup();
-		overlay(session, seqId);
-		expect(screen.getByTestId('look-layer-name').textContent).toBe('Shadow');
-		expect(screen.getByTestId('look-handle-distance')).toBeTruthy();
-		expect(screen.getByTestId('look-handle-distance').querySelector('title')!.textContent).toBe(
-			'Shadow: Distance',
-		);
-	});
-
 	it('a shadow offset drag sets angle and distance together in one undo step', () => {
 		const { session, seqId, clipId } = setup();
 		overlay(session, seqId);

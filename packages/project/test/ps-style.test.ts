@@ -243,13 +243,6 @@ describe('layer styles (TL-113)', () => {
 			expect(all).toContain(word);
 	});
 
-	it('names a layer type the build does not have, and the look still imports', () => {
-		if (titleLayerType('innerGlow')) return;
-		const r = mapped(style({ innerGlow: { enabled: true } }));
-		expect(r.report.unsupported.join()).toContain('this build has no innerGlow layer');
-		expect(layer(r, 'innerGlow')).toBeUndefined();
-	});
-
 	it('with the finishes and glows merged, every effect maps to its layer type, finish and params (integration 2)', () => {
 		// Written against spec §5.1 names before those streams landed; checked here against the registry they ship.
 		const bevelled = mapped(

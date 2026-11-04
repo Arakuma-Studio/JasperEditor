@@ -53,13 +53,6 @@ describe('ease curves ↔ keyframe eases', () => {
 			}),
 		);
 	});
-	it('Easy Ease is cubic-bezier(1/3, 0, 2/3, 1)', () => {
-		const c = easesToCubic({ influence: 1 / 3, slope: 0 }, { influence: 1 / 3, slope: 0 });
-		expect(c.x1).toBeCloseTo(1 / 3, 15);
-		expect(c.y1).toBe(0);
-		expect(c.x2).toBeCloseTo(2 / 3, 15);
-		expect(c.y2).toBe(1);
-	});
 	it('stores a handle at x = 0 at the minimum influence, keeping finite slopes', () => {
 		const { easeOut, easeIn } = cubicToEases({ kind: 'cubic', x1: 0, y1: 0.5, x2: 1, y2: 0.5 });
 		expect(easeOut.influence).toBe(MIN_EASE_INFLUENCE);

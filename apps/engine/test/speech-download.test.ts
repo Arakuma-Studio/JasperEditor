@@ -6,7 +6,7 @@ import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import fc from 'fast-check';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { writeStoredZip } from '../src/imports/zip.ts';
 import { loadCatalog } from '../src/processing/models.ts';
 import { cudaGuidance, listZipEntries } from '../src/speech/cuda.ts';
@@ -317,8 +317,4 @@ describe('CUDA provider package reading (SG-006)', () => {
 		writeFileSync(join(dir, 'junk.nupkg'), randomBytes(100));
 		await expect(listZipEntries(join(dir, 'junk.nupkg'))).rejects.toThrow(/not a ZIP/);
 	});
-});
-
-afterAll(() => {
-	// temp dirs are left to the OS cleanup (tmpdir)
 });

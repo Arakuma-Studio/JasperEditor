@@ -29,10 +29,8 @@ export type LookPage = {
 		width: number;
 		font: { family: string; weight: number };
 	}): Promise<number>;
-	float(): Promise<boolean>;
 	/** What `render` throws on a GPU without float targets, or null. */
 	withoutFloat(req: LookRequest): Promise<string | null>;
-	renderer(): Promise<string | null>;
 	/** A caption as RGBA8. */
 	label(text: string, width: number, height: number): Promise<Uint8Array>;
 };
@@ -59,9 +57,7 @@ export async function openLookPage(dir: string): Promise<LookPage> {
 		loadFont: (family, weight, file) =>
 			call('loadFont', { family, weight, base64: Buffer.from(file).toString('base64') }),
 		fitSize: (arg) => call('fitSize', arg),
-		float: () => call('float'),
 		withoutFloat: (req) => call('withoutFloat', req),
-		renderer: () => call('renderer'),
 		label: async (text, width, height) =>
 			new Uint8Array(Buffer.from(await call<string>('label', [text, width, height]), 'base64')),
 	};
