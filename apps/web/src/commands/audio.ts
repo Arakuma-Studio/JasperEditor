@@ -14,6 +14,7 @@ import { audioPrefs } from '../audio/prefs.ts';
 import { installAudioRuntime } from '../audio/runtime.ts';
 import { voiceoverFor } from '../audio/voiceover.ts';
 import { clipMenuExtensions, projectItemMenuExtensions } from '../extensions/index.ts';
+import { t } from '../i18n/runtime.ts';
 import {
 	PREFERENCES_DIALOG,
 	registerPreferencesDialog,
@@ -198,6 +199,35 @@ export const audioCommands: UiCommand[] = [
 				engine: ctx.engine,
 				sequenceId: seq.id,
 				clipIds: selectedAudioClips(ctx),
+			});
+		},
+	},
+	{
+		id: 'audio.smoothJoins',
+		label: 'Smooth Audio Joins',
+		description:
+			'Short equal-power fades at the hard audio cuts between In and Out, else in the whole sequence',
+		scope: 'global',
+		agentExposed: true,
+		when: (ctx) => editable(ctx) && !!activeSeq(ctx),
+		run: (ctx) => {
+			const seq = activeSeq(ctx);
+			if (!seq || !ctx.session) return;
+			const range =
+				seq.inPoint !== null && seq.outPoint !== null ? { from: seq.inPoint, to: seq.outPoint } : {};
+			const r = ctx.session.apply({
+				label: 'Smooth Audio Joins',
+				origin: 'user',
+				commands: [{ type: 'audio.smoothJoins', sequenceId: seq.id, ...range }] as never,
+			});
+			if (!r.ok) {
+				ctx.ui.toast({ kind: 'error', message: r.errors?.[0]?.message ?? 'Smooth Audio Joins failed' });
+				return;
+			}
+			const res = r.results?.[0] as { fades?: number } | undefined;
+			ctx.ui.toast({
+				kind: 'info',
+				message: res?.fades ? t('{0} join fades added', res.fades) : t('No hard audio cut without a fade'),
 			});
 		},
 	},

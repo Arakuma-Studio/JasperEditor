@@ -606,6 +606,8 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		clipIds: [{ clipAt: { track: 'A1', at: 0 } }],
 		dips: [{ start: 352_800_000, end: 529_200_000, depthDb: -18, fadeMs: 30 }],
 	},
+	// Clean Up's 4 ms join fades at the hard audio cuts near these sequence frames (verify_export cut-click `at.frame`).
+	'audio.smoothJoins': { type: 'audio.smoothJoins', at: [120, 348] },
 	// …the cue's stopBefore / build written into the mix (re-running replaces; a cleared field removes)…
 	'soundDesign.applyStopBefore': { type: 'soundDesign.applyStopBefore', cueId: 'cue_00000000000000EX' },
 	'soundDesign.applyBuild': { type: 'soundDesign.applyBuild', cueId: 'cue_00000000000000EX' },
