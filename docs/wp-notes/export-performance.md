@@ -72,3 +72,53 @@ bake. Remaining limit: candidates are still written before the first encode is c
 their passes when the first encode meets the target, but changes the encode counters and, where the 8-encode cap is
 reached, the search order — not done here. Test: `apps/engine/test/audio-deliver.test.ts` ("writes no pass twice…",
 fails before the change: 6 distinct of 8 written passes).
+
+## 3. Parallel picture segments
+
+`segments.ts` splits the export range into frame-exact segments; `service.ts` (`runNative`) builds each one as an
+export of its own sub-range (`buildNativeGraph` with `snapshot.range` = the segment, picture only), runs them at
+once, checks each segment's frame count and parameter sets, and joins them with the sound by stream copy
+(`joinSegments`: concat demuxer + the mix through `mixAudioFilters`, the chain a one-graph export applies, or the
+delivery's checked encode copied).
+
+- **Only their own layers**: `drawStack` already clips every layer to `[range.start, range.end)` and drops the ones
+  outside; a layer that starts before the segment starts mid-layer exactly as a range export starts (seek windows,
+  fades started inside a ramp, keyframes sampled at absolute frames, kernel streams planned from the segment's first
+  frame). Each segment is therefore the range export of its frames.
+- **Boundaries**: `count` near-equal parts; each inner boundary moves to the nearest clip start / end on the lowest
+  video track within a quarter segment (a segment then starts on a fresh source), else stays on its frame (any frame
+  is exact). Every segment is its own encode, so it starts with a key frame; the concat demuxer continues each
+  segment's timestamps from the previous one's duration (measured with B-frames: libx264 `-bf 3` at 60000/1001,
+  three 100-frame MP4 segments joined: 300 frames, every PTS step 1001 in 1/60000, first PTS 0).
+- **How many** (`JASPER_EXPORT_SEGMENTS`: `auto` default, a number, `1` = off): `auto` takes
+  `min(⌊length / JASPER_EXPORT_SEGMENT_MIN_SEC (20 s)⌋, ⌊CPU slots / JASPER_EXPORT_SEGMENT_SLOTS (3)⌋, cap)`, the cap
+  being `JASPER_EXPORT_HW_SESSIONS` (default 4) for hardware encoders and 16 otherwise. Consumer NVIDIA drivers
+  limited concurrent NVENC sessions (3 before 2023, 5 and later 8 in later drivers, per NVIDIA's support matrix as
+  reported; undocumented assumption for older drivers); on the user's PC (driver 595.99) 12 concurrent `h264_nvenc`
+  sessions ran (measured: `nvidia-smi encoder.stats.sessionCount` = 12, all exited 0). 4 stays well under every
+  limit.
+- **One graph** (plan / result `pipeline.reason`): segments off; an encoder whose segments are not known to join
+  (`JOINABLE`: H.264 / HEVC encoders and ProRes; VP9 / AV1 / GIF intermediates keep one graph); alpha masters; an
+  output rate that differs from the sequence's or a frame count that differs from the range; shorter than two
+  minimum segments; too few CPU slots. Stills always use one graph. Segments whose parameter sets differ (never seen;
+  checked by the SHA-256 of each segment's extradata) are re-rendered as one graph.
+- **Failures**: the first failing segment's error is the job's (`killedComposite` for an OOM kill, stream errors as
+  before); the others are stopped (their abort signal); a cancelled job stops every segment; the segment files live
+  in the job's scratch directory, removed on success, failure and cancellation; pipelined-bake restarts and
+  background failures behave as with one graph.
+- **Threads**: each segment's encoder / motion threads get `⌊slots / segments⌋`; kernel stream workers are divided
+  over every stream of every segment.
+
+Identity with one graph: the composite of each segment is the one-graph composite of its frames, so a ProRes export
+(intra-only: each frame encoded on its own) decodes to identical frames (`framemd5`) and identical sound; an H.264
+export differs only by encoder decisions at the segment starts (key frames: SSIM 0.9895 on the first frame of a
+segment, ≥ 0.98 everywhere; OpenH264, this host). Program-preview parity is therefore that of the one-graph path.
+Tests: `apps/engine/test/export-segments.test.ts` (ProRes identity, H.264 SSIM / timestamps / key frames / colour
+tags / sound, a failing segment, cancellation); the one-graph suites `export.test.ts`, `blend-export.test.ts`,
+`export-gif-audio.test.ts`, `edit-structure-export.test.ts`, `subtitles-export.test.ts`, `time-export.test.ts` pass
+unchanged.
+
+Measured on this host (16 logical cores, no GPU, shared with other agents: load average 7 → 33 during the runs, so
+only indicative): a 60 s 1080p60 sequence (24 cuts on V1, 120 sub-pixel keyframed stills on V2), exported 1280×720
+H.264 (OpenH264) — one graph: encode 381 s; `auto` (3 segments): encode 232 s + join 10 s (1.57×). The user's PC
+numbers are to be measured by the coordinator (see the end of this note).

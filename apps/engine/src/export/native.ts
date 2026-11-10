@@ -1461,13 +1461,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 			copiedAudio = addInput(['-i', o.audio.encoded]);
 		} else if (o.audio) {
 			const k = addInput(['-i', o.audio.file]);
-			const rs =
-				o.audio.sampleRate !== output.audioSampleRate
-					? [`aresample=${output.audioSampleRate}:${resamplerArgs(o.audio.soxr ?? false)}`]
-					: [];
-			chains.push(
-				`[${k}:a]${[...rs, `aformat=sample_fmts=fltp:channel_layouts=${layout}`, `apad=whole_len=${totalSamples}`, `atrim=end_sample=${totalSamples}`].join(',')}[aout]`,
-			);
+			chains.push(`[${k}:a]${mixAudioFilters(o.audio, output).join(',')}[aout]`);
 		} else {
 			chains.push(`anullsrc=r=${output.audioSampleRate}:cl=${layout},atrim=end_sample=${totalSamples}[aout]`);
 		}
@@ -1524,6 +1518,23 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 		...(waitFor.length ? { waitFor } : {}),
 	};
 }
+/**
+ * The mixdown WAV as the deliverable's audio: resampled with the export's resampler when the delivered rate differs,
+ * the delivered layout, padded / trimmed to exactly the export's samples (every mux of a native picture uses this).
+ */
+export function mixAudioFilters(audio: { sampleRate: number; soxr?: boolean }, output: OutputSpec): string[] {
+	const totalSamples = Math.round(output.durationSec * output.audioSampleRate);
+	const layout = output.audioChannels === 1 ? 'mono' : output.audioChannels === 6 ? '5.1' : 'stereo';
+	return [
+		...(audio.sampleRate !== output.audioSampleRate
+			? [`aresample=${output.audioSampleRate}:${resamplerArgs(audio.soxr ?? false)}`]
+			: []),
+		`aformat=sample_fmts=fltp:channel_layouts=${layout}`,
+		`apad=whole_len=${totalSamples}`,
+		`atrim=end_sample=${totalSamples}`,
+	];
+}
+
 /** edit-structure: the clip-local frame a frame hold shows (the composition's `pictureLocalFrame`). */
 function heldLocalFrame(c: RenderVisualClip, fps: Rational): number {
 	const hold = c.frameHold;
