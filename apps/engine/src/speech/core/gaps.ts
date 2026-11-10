@@ -162,6 +162,8 @@ export const SUSPECT_MERGE_MAX_FRAMES = 3000;
 export const SUSPECT_MAX_WINDOWS = 96;
 /** … and this many frames (10 min) in all. */
 export const SUSPECT_MAX_FRAMES = 60_000;
+/** Audio (10 min, both passes counted) a job decodes again in VAD chunks for rejected windows. */
+export const REDECODE_CHUNKED_MAX_FRAMES = 60_000;
 
 /**
  * A window to decode again (frames `[start, end)`), the traces inside it, and whether each edge lies in a pause

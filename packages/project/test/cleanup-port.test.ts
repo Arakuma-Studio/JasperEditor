@@ -154,7 +154,17 @@ describe('cleanup port vs the research prototype', () => {
 			const plan = planMediaCuts({ words: r.words, removed, voice, settings, strictRemoval: false });
 			expect(plan.kept.length).toBe(c.expect.kept.length);
 			plan.kept.forEach(([a, b], i) => {
-				expect(a).toBeCloseTo(c.expect.kept[i]![0], 9);
+				// deliberate difference (level edges): after removed words an in point inside the first kept word moves
+				// back to that word's start (≤ 100 ms earlier than the prototype's; soft onsets stay)
+				const proto = c.expect.kept[i]![0];
+				if (Math.abs(a - proto) > 1e-9) {
+					expect(c.preset).toBe('fast');
+					expect(proto - a).toBeGreaterThan(0);
+					expect(proto - a).toBeLessThanOrEqual(0.1);
+					expect(r.words.some((w, k) => Math.abs(w.s - a) < 1e-9 && !removed[k] && removed[k - 1])).toBe(
+						true,
+					);
+				}
 				expect(b).toBeCloseTo(c.expect.kept[i]![1], 9);
 			});
 		});

@@ -237,7 +237,16 @@ Deliberate differences from the prototype (labelled):
   change only drops cross-sentence restarts and keeps the first words of a last take the prototype cut; a true restart
   that swaps its last word ("y luego le puse, y luego le añadí…") is no longer flagged — not distinguishable by tokens
   from a list ("o tipo caricatura, o tipo de goma"). Regression test `cleanup-rules.test.ts` "restarts and retakes
-  re-say what they remove".
+  re-say what they remove". A cut-off last word counts as re-said by a word that starts with it ("Y funcionan con
+  cual…" → "cualquier"; large-v3-turbo fragment D, where the middle false start stayed between two takes).
+- **After removed words the in point never lands inside the first kept word** (level mode): the prototype's in point
+  (first frame from 80 ms before the piece that reaches floor + 25 dB, up to 100 ms after it) clipped soft onsets —
+  "déjenme" at −48 dBFS reached the threshold 70 ms in, and the cut ended 73 ms into the kept take (reporter's
+  large-v3-turbo run; the other cuts there landed −127…+23 ms). When the word before the piece's first kept word is
+  removed, the in point is now at most that word's start (no earlier than the search start); after a pause the
+  calibrated in point stays. In the port fixture this moves in points of 5 of the 8 `fast` recordings up to 69 ms
+  earlier (seen 7–69 ms); the check accepts exactly that — earlier by ≤ 100 ms, at a kept word's start after a
+  removed word — and still compares every other edge to 1e-9 s.
 - **Strict removal**: the prototype joined kept words across gaps ≤ `maxGapS` before looking at removed words, so a
   removed word closer than 120 ms to kept ones stayed (a short filler glued to words, the first copy of an immediate
   restart). The planner cuts the removed word's own speech frames out of the joined range (kept words' frames ± 50 ms
@@ -290,10 +299,19 @@ Fingerprint (TC-013): `<mediaId>~<stream>~<kind>~<round(start × 10)>~<round(end
 and keep their findings unaccepted on later runs.
 
 Take groups: the units the take rule linked (unit a said again as unit b) are joined with union-find; each take has its
-range, words, text, mean probability, script line and coverage (with a script) and `complete` (≥ 60 % of the group's
-longest take's content words, or of the best coverage). Chosen: the last complete take; with a script an earlier take
-covering ≥ 20 % more of the line wins (its retake / false-start / restart labels are cleared and the other takes,
-the last one included, become retakes). Script (TC-012): lines are sentences (. ? ! … and line breaks); a unit says a
+range, words, text, mean probability, script line and coverage (with a script) and `complete` (≥ 60 % of the
+distinct content tokens the group's take saying the most says, or of the best coverage — distinct, so a take that
+re-says itself inside says no more: large-v3-turbo fragment E's first take, "¿Qué puedo hacer…" three times in 32
+words, made the final 18-word take that alone says "de millones de dólares" incomplete, and the cut dropped it).
+Chosen: the last complete take; with a script an earlier take covering ≥ 20 % more of the line wins (its retake /
+false-start / restart labels are cleared and the other takes, the last one included, become retakes). **Safety
+check** (every group, retakes and hidden retakes alike): a cut never removes content words (no stop word, ≥ 3
+letters, or a number) that the kept take does not say (a cut-off last word counts as said by its completion) — else
+the latest take whose choice loses nothing is kept, and with none the takes that would lose words are only
+suggested for review. The kept take starts at its first word: a restart run that goes on from the take before into
+its first words ("… en un par | En el Jasper Engine": the restart matched "el Jasper Engine") stops there. Only the
+take rule's labels carry the group id; a restart inside a take keeps none, so its reason names the words that re-say
+it. Script (TC-012): lines are sentences (. ? ! … and line breaks); a unit says a
 line when ≥ 60 % of its content words appear in order in it (LCS); the report lists every line and whether a take says
 it.
 
@@ -309,14 +327,17 @@ retake label with a word whose midpoint lies in such a range becomes kind **hidd
 that found it — no new setting — and the same group). The cut is the restart's: from the first take's first word up
 to the kept take's first word, so with three or four takes only the last stays (each restart point closes the earlier
 attempt); retake groups keep their choice (the last complete take, or the take closest to the script). Its reason
-carries both takes: `text` (cut) and `kept` (the as many words that follow it, or the group's kept take). Review
+carries both takes: `text` (cut) and `kept` (the group's kept take when it lies in another take of a group, else the
+as many words that follow it). Review
 panel label "Hidden retakes", MCP `plan_cleanup` / `analyze_voice` findings and reason text name it.
 
 Script repeats: a run of one restart / false-start / stutter label whose words, followed by as many words after it,
 occur in a row in the attached script loses its label — the script itself says the repeat ("boing boing boing").
 Applies to every transcript with a script, not only re-decoded ranges. Test: `packages/project/test/cleanup-hidden-
 retakes.test.ts` (fails without the relabel, the script check or the stored ranges; its second case fails when a
-mark of an earlier recognition still counts). Limit: without a script a
+mark of an earlier recognition still counts); "hidden retakes of a real recording": word lists of the reporter's
+large-v3-turbo runs (fragments A, D, E) — the safety check and distinct-token completeness, the cut-off attempt, the
+reason / range of a group's finding, the in point at a soft onset; each fails without its fix. Limit: without a script a
 deliberate repeat is judged by the existing rules only (the allow list).
 
 Frame findings (with a voice analysis): **pause** = a non-speech run longer than `maxGapS` between speech frames inside

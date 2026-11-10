@@ -74,6 +74,15 @@ const TEMPERATURES = [0, 0.2, 0.4, 0.6, 0.8, 1.0];
 const COMPRESSION_RATIO_THRESHOLD = 2.4;
 const LOGPROB_THRESHOLD = -1;
 const NO_SPEECH_THRESHOLD = 0.6;
+/**
+ * Punctuation that is never a word of its own (OpenAI's prepend / append punctuation, ellipses, Spanish marks);
+ * "%", "€", "&" are said, so they stay words.
+ */
+const PUNCTUATION_ONLY = /^[.…,;:!?¿¡"'“”‘’«»()[\]{}、。，！？：-]+$/u;
+/** An ellipsis a verbatim decode writes in front of the next word ("...y"): it ends the word before. */
+const LEADING_ELLIPSIS = /^(?:\.{2,}|…)+/u;
+/** Opening punctuation: it joins the next word. */
+const OPENING_ONLY = /^[¿¡“‘«([{]+$/u;
 /** SG-011: OpenAI `hallucination_silence_threshold` and the silence that resets the prompt (seconds). */
 export const HALLUCINATION_SILENCE = 2;
 /** A window with fewer voiced 10 ms frames than this is silence (not decoded). */
@@ -1190,6 +1199,8 @@ export class WhisperModel {
 		if (!this.tok.multilingual) language = 'en';
 		let languageProbability: number | null = null;
 		const words: WhisperWord[] = [];
+		/** Punctuation written before the first word (it joins that word). */
+		let lead = '';
 		const segmentsOut: WhisperSegment[] = [];
 		const removed: WhisperResult['guard']['removed'] = [];
 		let skippedWindows = 0;
@@ -1369,11 +1380,30 @@ export class WhisperModel {
 						const prevEnd = words.length ? words[words.length - 1].end : 0;
 						const a = Math.max(prevEnd, Math.round(Math.min(w.start, windowEnd) * SAMPLE_RATE));
 						const b = Math.max(a, Math.round(Math.min(w.end, windowEnd) * SAMPLE_RATE));
-						const t = w.word.trim();
-						if (t) {
-							words.push({ text: t, start: a, end: Math.min(b, input.samples), probability: w.probability });
-							lastWordFrame = Math.ceil(Math.min(b, input.samples) / HOP);
+						let t = w.word.trim();
+						if (!t) continue;
+						lastWordFrame = Math.ceil(Math.min(b, input.samples) / HOP);
+						// never a word of punctuation only: a verbatim decode writes "..." alone (" ...") or before the
+						// next word ("...y"); like the punctuation `mergePunctuations` joins, it goes to the word before
+						// (opening marks to the word after)
+						const prev = words[words.length - 1];
+						if (PUNCTUATION_ONLY.test(t)) {
+							if (prev && !OPENING_ONLY.test(t)) prev.text += t;
+							else lead += t;
+							continue;
 						}
+						const ellipsis = LEADING_ELLIPSIS.exec(t)?.[0];
+						if (ellipsis && prev) {
+							prev.text += ellipsis;
+							t = t.slice(ellipsis.length);
+						}
+						words.push({
+							text: lead + t,
+							start: a,
+							end: Math.min(b, input.samples),
+							probability: w.probability,
+						});
+						lead = '';
 					}
 					allTokens.push(...(segTokens.get(s) ?? s.textTokens));
 				}

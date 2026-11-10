@@ -27,13 +27,18 @@ export const SPACE = 25;
  * the tokenizer has a BPE merge (so it can encode) and token 25 is the space ('Ġ') instead of 'z', so
  * `encode(' ab')` = [25, 0, 1] and decoded text splits into words.
  */
-export function fakeModelDir(opts: { encodable?: boolean } = {}): string {
+export function fakeModelDir(opts: { encodable?: boolean; dot?: boolean } = {}): string {
 	const dir = mkdtempSync(join(tmpdir(), 'jasper-fake-whisper-'));
 	const vocab: Record<string, number> = {};
 	for (let i = 0; i < 26; i++) vocab[String.fromCharCode(97 + i)] = i;
 	if (opts.encodable) {
 		delete vocab.z;
 		vocab['\u0120'] = SPACE;
+	}
+	// `dot`: token 24 is an ellipsis ("...", one token as in Whisper's vocabulary) instead of 'y'
+	if (opts.dot) {
+		delete vocab.y;
+		vocab['...'] = 24;
 	}
 	const added = [
 		['<|endoftext|>', 26],

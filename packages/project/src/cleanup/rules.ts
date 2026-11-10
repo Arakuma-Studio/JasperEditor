@@ -135,8 +135,15 @@ export function ruleRestarts(ctx: RuleContext): void {
 	const reSaid = (i: number, j: number) => {
 		const attempt = content(ctx, span(i, j));
 		const cont = content(ctx, span(j, Math.min(n, j + 2 * (j - i))));
+		const said = cw(ctx, cont);
 		const a = cw(ctx, attempt).filter((x) => !markers.has(x));
-		return lcs(a, cw(ctx, cont)) === a.length && numbersReSaid(ctx, attempt, cont);
+		// a cut-off last word ("Y funcionan con cual…") is said again by its completion ("cualquier")
+		const last = attempt[attempt.length - 1];
+		if (a.length && a[a.length - 1] === last && !said.includes(last)) {
+			const whole = said.find((y) => y.startsWith(last));
+			if (whole) a[a.length - 1] = whole;
+		}
+		return lcs(a, said) === a.length && numbersReSaid(ctx, attempt, cont);
 	};
 	let j = 1;
 	let floor = 0;

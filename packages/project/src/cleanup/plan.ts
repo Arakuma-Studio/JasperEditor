@@ -137,11 +137,18 @@ export function planMediaCuts(input: MediaPlanInput): MediaPlan {
 	const thrOut = voice ? edgeThreshold(voice, P.edges, 'out') : null;
 	const thrIn = voice ? edgeThreshold(voice, P.edges, 'in') : null;
 	const breathMax = Math.round(P.gaps.breathKeepMaxS / FR);
+	const firstKeptFrom = firstKeptFinder(input.words, keepIdx);
 	for (const r of out) {
 		let { a, b } = r;
 		if (voice && mode === 'level' && thrOut !== null && thrIn !== null) {
 			b = Math.min(levelOutPoint(voice, a, b, thrOut), r.maxB);
-			a = Math.max(levelInPoint(voice, a, thrIn), r.minA);
+			// after removed words the in point never lands inside the kept word the piece starts with: a soft onset
+			// ("d" at −48 dBFS under a −39 dBFS threshold) stays (deliberate difference from the prototype, which could
+			// start up to 100 ms in; after a pause its in point stays, as calibrated)
+			const inPt = levelInPoint(voice, a, thrIn);
+			const first = firstKeptFrom(a);
+			const onset = first > 0 && input.removed[first - 1] ? input.words[first]!.s : Number.POSITIVE_INFINITY;
+			a = Math.max(onset >= a - 0.08 && onset < inPt ? onset : inPt, r.minA);
 		}
 		let a2 = a - P.edges.padBeforeS;
 		const b2 = Math.min(b + P.edges.padAfterS, r.maxB);
@@ -324,6 +331,21 @@ function lastKeptFinder(words: readonly AWord[], keepIdx: readonly number[]): (t
 			else hi = m;
 		}
 		return lo > 0 ? byEnd[lo - 1]! : -1;
+	};
+}
+
+/** The first kept word ending after `t`, by binary search over kept words in end order (−1: none). */
+function firstKeptFinder(words: readonly AWord[], keepIdx: readonly number[]): (t: number) => number {
+	const byEnd = [...keepIdx].sort((x, y) => words[x]!.e - words[y]!.e || words[x]!.s - words[y]!.s);
+	return (t: number) => {
+		let lo = 0;
+		let hi = byEnd.length;
+		while (lo < hi) {
+			const m = (lo + hi) >> 1;
+			if (words[byEnd[m]!]!.e <= t) lo = m + 1;
+			else hi = m;
+		}
+		return lo < byEnd.length ? byEnd[lo]! : -1;
 	};
 }
 

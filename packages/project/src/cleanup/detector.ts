@@ -334,6 +334,22 @@ export function detectCleanup(input: DetectInput): DetectResult {
 	const index = lines.length ? new ScriptIndex(lines) : null;
 	const unitContent = units.map((u) => u.map((k) => aw[k]!.n).filter((t) => !fillers.has(t)));
 	const unitCw = unitContent.map((c) => c.filter((t) => !stop.has(t) && t.length >= 3));
+	// what a take says: its distinct content tokens (a take that re-says itself inside says no more), and the words a
+	// cut must not lose — content words and numbers
+	const unitSays = unitContent.map((c) => new Set(c).size);
+	const numberWords = new Set(lists.numbers);
+	const unitKey = unitContent.map((c) =>
+		c.filter((t) => (!stop.has(t) && t.length >= 3) || numberWords.has(t) || /^\d+$/.test(t)),
+	);
+	/** Content of unit `u` that unit `kept` does not say (a cut-off last word counts as said by its completion). */
+	const lostFrom = (u: number, kept: number): string[] => {
+		const keep = unitKey[kept]!;
+		const have = new Set(keep);
+		const toks = unitKey[u]!;
+		return toks.filter(
+			(x, q) => !have.has(x) && !(q === toks.length - 1 && keep.some((y) => y.startsWith(x))),
+		);
+	};
 	const unitLine = units.map((_, u) => (index ? index.match(unitCw[u]!, T.scriptLineSimilarity) : null));
 	const uf = new UnionFind(units.length);
 	for (const h of hits) uf.union(h.from, h.to);
@@ -347,18 +363,21 @@ export function detectCleanup(input: DetectInput): DetectResult {
 		}
 	const groups: RetakeGroup[] = [];
 	const unitGroup = new Map<number, number>();
+	const unitOf = new Array<number>(aw.length);
+	units.forEach((u, q) => {
+		for (const k of u) unitOf[k] = q;
+	});
 	const retakeAction = settings.rules.retake;
 	for (const list of [...members.values()].sort((a, b) => Math.min(...a) - Math.min(...b))) {
 		list.sort((a, b) => a - b);
 		const gi = groups.length;
-		const maxContent = Math.max(...list.map((u) => unitContent[u]!.length));
+		const maxSays = Math.max(...list.map((u) => unitSays[u]!));
 		const maxCov = Math.max(0, ...list.map((u) => unitLine[u]?.coverage ?? 0));
 		const takes: RetakeTake[] = list.map((u) => {
 			const ws = units[u]!.map((k) => aw[k]!);
 			const probs = ws.map((w) => w.conf).filter((p): p is number => p !== null);
 			const m = unitLine[u];
-			const complete =
-				m && maxCov > 0 ? m.coverage >= 0.6 * maxCov : unitContent[u]!.length >= 0.6 * maxContent;
+			const complete = m && maxCov > 0 ? m.coverage >= 0.6 * maxCov : unitSays[u]! >= 0.6 * maxSays;
 			return {
 				range: { start: input.words[ws[0]!.i]!.start, end: input.words[ws[ws.length - 1]!.i]!.end },
 				words: [ws[0]!.i, ws[ws.length - 1]!.i],
@@ -389,6 +408,14 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			}
 			if (best >= 0) chosen = best;
 		}
+		// a cut never removes content words the kept take does not say: else the latest take that loses nothing is
+		// kept, and with none the takes that would lose words are only listed for review
+		const loses = (c: number) => list.some((u, t) => t !== c && lostFrom(u, list[c]!).length > 0);
+		if (loses(chosen)) {
+			let alt = takes.length - 1;
+			while (alt >= 0 && loses(alt)) alt--;
+			if (alt >= 0) chosen = alt;
+		}
 		const last = takes.length - 1;
 		if (chosen !== last) {
 			// the chosen take loses its take labels; the other takes (the last one too) become retakes
@@ -400,16 +427,35 @@ export function detectCleanup(input: DetectInput): DetectResult {
 				if (t !== chosen)
 					for (const k of units[list[t]!]!) claimWord(ctx, k, 'retake', retakeAction, list[t]);
 		}
+		// the kept take starts at its first word: a restart run that goes on from the take before it into its first
+		// words ("… les pones en un par | En el Jasper Engine…": the restart rule matched "el Jasper Engine") stops there
+		const keptUnit = units[list[chosen]!]!;
+		const runIn = labels[keptUnit[0]! - 1];
+		if (runIn && TAKE_LABELS.has(runIn.kind))
+			for (const k of keptUnit) {
+				if (!sameLabel(labels[k], runIn)) break;
+				labels[k] = null;
+			}
+		for (let t = 0; t < takes.length; t++) {
+			if (t === chosen || !lostFrom(list[t]!, list[chosen]!).length) continue;
+			for (const k of units[list[t]!]!) {
+				const l = labels[k];
+				if (l && l.group !== undefined && (l.kind === 'retake' || l.kind === 'false-start'))
+					labels[k] = { ...l, action: 'review' };
+			}
+		}
 		for (const u of list) unitGroup.set(u, gi);
 		groups.push({ id: `g${gi}`, takes, chosen });
 	}
-	// group ids on the take labels
+	// group ids on the take rule's labels (a restart inside a take is no take of the group: its reason names the words
+	// that re-say it, not the group's kept take)
 	for (let u = 0; u < units.length; u++) {
 		const g = unitGroup.get(u);
 		if (g === undefined) continue;
 		for (const k of units[u]!) {
 			const l = labels[k];
-			if (l && (l.kind === 'retake' || l.kind === 'false-start')) labels[k] = { ...l, group: g };
+			if (l && l.group !== undefined && (l.kind === 'retake' || l.kind === 'false-start'))
+				labels[k] = { ...l, group: g };
 		}
 	}
 
@@ -471,7 +517,7 @@ export function detectCleanup(input: DetectInput): DetectResult {
 	if (redecoded.length)
 		for (let k = 0; k < aw.length; ) {
 			const l = labels[k];
-			if (!l || !HIDDEN_FROM.has(l.kind)) {
+			if (!l || !TAKE_LABELS.has(l.kind)) {
 				k++;
 				continue;
 			}
@@ -518,14 +564,21 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			j++;
 		const a = aw[k]!;
 		const b = aw[j]!;
-		// a hidden retake names the take that stays: as many words as it removes, after it
-		const keptTake =
-			l.kind === 'hidden-retake' && l.group === undefined
-				? aw
-						.slice(j + 1, j + 1 + (j - k + 1))
-						.map((w) => w.text.trim())
-						.join(' ')
-				: '';
+		// a hidden retake names the take that stays: in a take group's dropped take the group's kept take, else as
+		// many words as it removes, after it
+		let keptTake = '';
+		if (l.kind === 'hidden-retake' && l.group === undefined) {
+			const u = unitOf[k]!;
+			const g = groups[unitGroup.get(u) ?? -1];
+			const take = g?.takes[g.chosen];
+			keptTake =
+				take && take.words[0] !== aw[units[u]![0]!]!.i
+					? take.text
+					: aw
+							.slice(j + 1, j + 1 + (j - k + 1))
+							.map((w) => w.text.trim())
+							.join(' ');
+		}
 		const confs = aw
 			.slice(k, j + 1)
 			.map((w) => w.conf)
@@ -608,8 +661,8 @@ export function detectCleanup(input: DetectInput): DetectResult {
 	return { mediaId: input.mediaId, stream, language: lang, words, guarded, findings, groups, script };
 }
 
-/** Labels that become hidden retakes inside re-decoded ranges. */
-const HIDDEN_FROM: ReadonlySet<FindingKind> = new Set(['restart', 'false-start', 'retake']);
+/** Labels of the take rules (restarts, false starts, retakes); they become hidden retakes inside re-decoded ranges. */
+const TAKE_LABELS: ReadonlySet<FindingKind> = new Set(['restart', 'false-start', 'retake']);
 
 const sameLabel = (x: WordLabel | null | undefined, l: WordLabel) =>
 	!!x && x.kind === l.kind && x.action === l.action && x.group === l.group;

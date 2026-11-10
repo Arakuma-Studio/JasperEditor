@@ -374,7 +374,16 @@ whisper evaluation (53 configurations; the numbers of spec 16 §0). This section
   `conditionOnPreviousText: false`. Acceptance: the re-decode replaces the window's words only when it holds MORE words
   with letters/digits and ≥ 20 % voiced frames than the original holds words, and re-says the original words in order
   (LCS of `cleanupNorm` texts ≥ 80 % of them: "Playstore" / "Play Store"); an equal or smaller result never replaces
-  anything, so the pass never drops words. At an edge that found no pause the original words within 0.5 s of it stay
+  anything, so the pass never drops words. A rejected window that splits into several VAD chunks is decoded once more
+  the `chunking: "vad"` way within it (both passes and the merge below, verbatim, no previous text; ≤ 10 min of audio
+  per job, both passes counted, `REDECODE_CHUNKED_MAX_FRAMES`) and judged by the same rule; its range then reports
+  `chunked` (true when those words replaced the window's, `after` counts them). Reporter's large-v3-turbo run,
+  fragment E: the 17 s window around "miles" 3.89 s / "millones" 2.58 s went from 26 to 33 words and was rejected,
+  while `chunking: "vad"` wrote all three takes there. Why the plain re-decode failed the rule is not known: the job
+  result does not keep a rejected re-decode's words (assumption: it lost or rewrote > 20 % of the original words —
+  the window starts mid-sentence — or its extra words were "..." tokens, which count for nothing), so the rule stays
+  and the fallback decodes the way that worked. A window that is one chunk anyway (≤ 10 s) is not decoded again.
+  At an edge that found no pause the original words within 0.5 s of it stay
   (`replaceRegion`; measured: a window cut inside "and a foraging" made tiny.en write "far …"). Replacement keeps the
   words sorted, non-overlapping and integer (`replaceWindowWords`), and swaps the window's segments. Bounded: ≤ 96
   windows and 10 min of audio per job, in time order (the rest counted as `skipped`). Reported as `guard.redecoded
@@ -389,7 +398,8 @@ whisper evaluation (53 configurations; the numbers of spec 16 §0). This section
   there (its words at that point are whole), else the first pass's; chunks of one pass never overlap, so nothing is
   written twice. Reported as `guard.chunked {chunks, shiftedChunks, zones, replaced}`; the re-decode pass runs after it.
   Tests (scripted decoder that writes the long-window reading with one take stretched, and both takes for a window
-  ≤ 10 s; `apps/engine/test/speech-hidden-takes.test.ts`, each fails without its pass / merge). **Measured** (16-core
+  ≤ 10 s; `apps/engine/test/speech-hidden-takes.test.ts`, each fails without its pass / merge; "a window whose
+  re-decode is rejected…" fails without the chunked fallback). **Measured** (16-core
   shared Linux host, load ≈ 2, 4 threads, one-off script over the LJ fixture, `runSpeechJob`): plain fixture WER with
   the re-decode off / on — tiny.en 1.92 / 1.92 %, tiny 8.33 / 8.33 % (2 windows decoded, none replaced; ≈ +2–11 %
   time); with a spliced restart (the first 1.6 s of utterance 2 said again 0.15 s before it) tiny.en reproduces the
@@ -409,7 +419,13 @@ whisper evaluation (53 configurations; the numbers of spec 16 §0). This section
   window and the following ones through the previous text until a prompt reset. Encoding is byte-level BPE from the
   model's `tokenizer.json` (`core/tokenizer.ts encode`, round-trip tested on the real tokenizer). Observed: carrying
   the prompt into every window (our first version) derailed tiny.en into "Oh, oh, oh…" loops, hence OpenAI's
-  semantics. `conditionOnPreviousText: false` is the OpenAI option.
+  semantics. `conditionOnPreviousText: false` is the OpenAI option. Never a word of punctuation only (every decode,
+  `worker/whisper.ts`): the prompt's "..." makes verbatim decodes write " ..." as a word and "...y" before the next
+  word (reporter's large-v3-turbo re-decodes: "motor ...[13.86-14.04] ...y[14.04-14.08] correr"); OpenAI's
+  `merge_punctuations` joins only single marks, so a word of punctuation marks (OpenAI's prepend / append sets,
+  ellipses, ¿ ¡ « ») joins the word before it (opening marks the word after) and a leading ellipsis goes to the word
+  before — "motor......", "y"; its time is dropped. "%", "€", "&" are said, so they stay words. Test:
+  `speech-hidden-takes.test.ts` "a re-decode writes no word of punctuation only".
 - Segment scores (TC-003): `avgLogprob`, `noSpeechProb`, `compressionRatio` (and `temperature`) per segment in the
   result; stored as `Transcript.segments` (media-time flicks, project-files.md v10 table), merged inside a mix's coverage.
 - Word bounds against speech frames (TC-004): bounds snap (split at pauses, grow ≤ 250 ms into voice, tighten) to the
