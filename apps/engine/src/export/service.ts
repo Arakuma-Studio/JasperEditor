@@ -90,6 +90,7 @@ import { type DeliveryDeps, type DeliveryFrames, runAlphaDelivery } from './deli
 import { runGamutCheck } from './delivery/gamut.ts';
 import { runPsdExport } from './delivery/psd-job.ts';
 import { planPsd } from './delivery/psd-plan.ts';
+import { gpuDecodePolicyFromEnv, nvdecEligible, nvdecForGraph, probeCudaDecode } from './gpu.ts';
 import { compositeMemoryBudget, estimateComposite } from './memory.ts';
 import { BT709_FRAME_TAGS, buildNativeGraph, mixAudioFilters, SWS_FLAGS } from './native.ts';
 import {
@@ -388,13 +389,24 @@ export class ExportService {
 				};
 		} else if (!planned.previews) await this.attachSmart(planned, req.settings);
 		if ((planned.plan.path === 'native' || planned.plan.path === 'hybrid') && kind !== 'audio')
-			planned.plan.pipeline = this.expectedPipeline(planned);
+			planned.plan.pipeline = await this.expectedPipeline(planned);
 		return planned;
 	}
 
 	/** How the composite of a native / hybrid export is expected to run (plan `pipeline`; the result's is what ran). */
-	private expectedPipeline(planned: PlannedExport): ExportPipeline {
+	private async expectedPipeline(planned: PlannedExport): Promise<ExportPipeline> {
 		const snap = planned.snapshot;
+		const gpu = gpuDecodePolicyFromEnv();
+		const nvdec =
+			gpu.mode === 'auto' &&
+			gpu.maxInputs > 0 &&
+			snap.videoTracks.some((t) =>
+				t.clips.some((c) => {
+					const m = 'mediaId' in c.source ? planned.media[c.source.mediaId] : undefined;
+					return c.kind === 'video' && !!m && nvdecEligible(m);
+				}),
+			) &&
+			(await probeCudaDecode(this.deps.ff)).ok;
 		// (the export job asks for every CPU slot of the queue: the segments it will plan)
 		const { segments, reason } = planPictureSegments({
 			snapshot: snap,
@@ -404,7 +416,7 @@ export class ExportService {
 			fits: segmentsFit(snap),
 		});
 		return {
-			decode: 'cpu',
+			decode: nvdec ? 'nvdec' : 'cpu',
 			composite: 'cpu',
 			segments: segments.length,
 			overlays: layersPerSegment(snap, segments),
@@ -1426,6 +1438,16 @@ export class ExportService {
 		const frameSec = fps.den / fps.num;
 		const ext = planned.output.encoder?.container ?? 'mp4';
 		const soxr = await hasSoxr(this.deps.ff);
+		// GPU decode (gpu.ts): NVDEC for the graphs' own video inputs when a CUDA device works
+		const gpuPolicy = gpuDecodePolicyFromEnv();
+		const nvdec =
+			!still && gpuPolicy.mode === 'auto' && gpuPolicy.maxInputs > 0
+				? await probeCudaDecode(this.deps.ff)
+				: {
+						ok: false,
+						reason: still ? 'stills decode on the CPU' : 'GPU decode is off (JASPER_EXPORT_NVDEC=0)',
+					};
+		if (!still) ctx.log(`native: decode ${nvdec.ok ? 'NVDEC (cuda)' : `CPU (${nvdec.reason})`}`);
 		type Part = { graph: ReturnType<typeof buildNativeGraph>; file: string; args: string[]; label: string };
 		const parts: Part[] = [];
 		try {
@@ -1447,6 +1469,10 @@ export class ExportService {
 					},
 					threads,
 					...(split ? { filterThreads: threads } : {}),
+					// (the export's GPU decoders are shared by its concurrent segments)
+					...(nvdec.ok
+						? { hwDecode: nvdecForGraph(Math.floor(gpuPolicy.maxInputs / segPlan.segments.length)) }
+						: {}),
 					still,
 					trackStreams: process.env.JASPER_EXPORT_TRACK_STREAMS !== '0',
 					coverBase: process.env.JASPER_EXPORT_COVER_BASE !== '0',
@@ -1483,7 +1509,7 @@ export class ExportService {
 		}
 		if (!still)
 			report.pipeline = {
-				decode: 'cpu',
+				decode: parts.some((p) => p.graph.hwDecoded > 0) ? 'nvdec' : 'cpu',
 				composite: 'cpu',
 				segments: parts.length,
 				overlays: Math.max(

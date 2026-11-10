@@ -106,8 +106,12 @@ delivery's checked encode copied).
   before); the others are stopped (their abort signal); a cancelled job stops every segment; the segment files live
   in the job's scratch directory, removed on success, failure and cancellation; pipelined-bake restarts and
   background failures behave as with one graph.
-- **Threads**: each segment's encoder / motion threads get `⌊slots / segments⌋`; kernel stream workers are divided
-  over every stream of every segment.
+- **Threads**: each segment's encoder / motion threads and its filter graph (`-filter_complex_threads`) get
+  `⌊slots / segments⌋` (ffmpeg's default is one filter thread per CPU in every graph); kernel stream workers are
+  divided over every stream of every segment.
+- **Sound**: the sound of a segmented export (the mix WAV through `mixAudioFilters` and the deliverable's encoder, or
+  silence; the delivery's checked encode is used as it is) is encoded into the scratch directory while the segments
+  render (phase `sound`), so the join only copies (measured: join 7.8 s → 0.2 s on the 200 s bench below).
 
 Identity with one graph: the composite of each segment is the one-graph composite of its frames, so a ProRes export
 (intra-only: each frame encoded on its own) decodes to identical frames (`framemd5`) and identical sound; an H.264
@@ -120,5 +124,92 @@ unchanged.
 
 Measured on this host (16 logical cores, no GPU, shared with other agents: load average 7 → 33 during the runs, so
 only indicative): a 60 s 1080p60 sequence (24 cuts on V1, 120 sub-pixel keyframed stills on V2), exported 1280×720
-H.264 (OpenH264) — one graph: encode 381 s; `auto` (3 segments): encode 232 s + join 10 s (1.57×). The user's PC
-numbers are to be measured by the coordinator (see the end of this note).
+H.264 (OpenH264) — one graph: encode 381 s; `auto` (3 segments): encode 232 s + join 10 s (1.57×; before the
+filter-thread budget and the concurrent sound encode).
+
+Measured on the user's PC (RTX 3080 Ti, 24 logical cores, driver 595.99; the user's desktop session running, load
+average 2–18 during the runs; scratch driver `zz-bench-segments`, not committed): synthetic 1080p60 sequences (a V1
+cut every 300 frames alternating two H.264 sources, a sub-pixel keyframed still every 30 frames on V2, drawn by one
+kernel stream), exported 1280×720 H.264 with `h264_nvenc`, `normalize` off:
+
+| Sequence | Mode | Encode | Join | Total job | Notes |
+|---|---|---:|---:|---:|---|
+| 63.5 s (3,810 fr.) | one graph | 30.0 s | — | 31.7 s | ffmpeg ≈ 10 cores: `fc0` thread 80 %, slice threads ≈ 29 % each |
+| 63.5 s | 3 segments | 24.1–24.7 s | 2.5 s | 29.0 s | 3 × ffmpeg ≈ 4.4 cores, ≈ 21 % idle (CPU-bound) |
+| 203.5 s (12,210 fr.) | one graph (NVDEC) | 96.2 s | — | 101.2 s | |
+| 203.5 s | `auto` = 4 segments (NVDEC) | 72.1 s | 0.2 s | 78.3 s | 1.29× total; peak VRAM 3.9 GB (baseline ≈ 2.4 GB) |
+
+So on CPU-bound pictures segments give 1.2–1.3× here, because one graph already spreads its per-pixel work over
+slice threads; the per-frame CPU cost dominates (§4). On the user's sequence one graph used ≈ 45 % of the CPU at
+73 fps with ≈ 400–2,000 overlays and hundreds of open inputs per graph, where splitting also cuts the per-frame
+traversal and the open inputs per graph: its gain must be measured there (see "To verify on the GPU PC").
+
+## 4. Composite at output size (evaluated, not implemented)
+
+A downscaled export (1920×1080 sequence → 1280×720 draft) composites at the sequence size and scales at the end. The
+per-frame CPU cost is dominated by full-size pixel work: measured on the user's PC, converting one 1080p H.264 frame
+to RGBA with the composite's swscale flags (`bicubic+accurate_rnd+full_chroma_int+full_chroma_inp`) takes ≈ 34 ms of
+CPU (103.7 user-seconds for 3,000 frames), decoding it ≈ 6 ms. Compositing the same synthetic sequence (120 s,
+3,630 frames, one graph) at 1280×720 instead of 1920×1080 took 16.2 s instead of 29.1 s of encode (measured, user's PC,
+load 6–8): **≈ 1.8× per frame** is the potential.
+
+Not implemented in this change, because every layer kind would have to be placed with the extra output scale and
+compared (SSIM against the full-size composite and the Program preview, AGENTS §4) kind by kind: Motion
+(`P' = s·P`, `scale' = s·scale`) is simple, but `jasper.transform` and `jasper.s.shake` parameters (sequence pixels,
+the user's subtitles), the kernel streams' and lowered layers' per-frame matrices, sequence-space baked rectangles at
+fractional positions (`overlay` places whole pixels), adjustment layers and nested sequences (effects in sequence
+pixels), and the layer bake itself (rendered at sequence size by Remotion) each need their own scaling and their own
+SSIM gate, with the full-size composite kept for any kind that does not pass. This is the largest remaining CPU
+win; recorded as the next step.
+
+## 5. GPU pipeline
+
+What the shipped LGPL FFmpeg 7.1 offers (checked on the user's PC): hwaccels `cuda`, `vaapi`, `qsv`, `drm`, `opencl`,
+`vulkan`; filters `scale_cuda`, `overlay_cuda`, `hwupload_cuda`, `colorspace_cuda`, `bilateral_cuda`,
+`chromakey_cuda`, `bwdif_cuda`, Vulkan / OpenCL filters; encoders `h264_nvenc`, `hevc_nvenc`; no NPP (nonfree, never
+used).
+
+**NVDEC decode (implemented, `gpu.ts`)**: the main graph's own video inputs whose codec ffmpeg's decoders can decode
+through NVDEC (H.264, HEVC, VP9, AV1; not libvpx alpha) get `-hwaccel cuda -hwaccel_device jcu`, with one
+`-init_hw_device cuda=jcu` per process; frames are downloaded (NV12) and the CPU composite is unchanged (the filter
+graph text is identical); ffmpeg falls back to its software decoder for a stream the GPU cannot decode. Availability:
+the `cuda` hwaccel and a working device, probed once per ffmpeg binary (`probeCudaDecode`: a tiny
+`hwupload_cuda`/`hwdownload` run); `JASPER_EXPORT_NVDEC=0` turns it off. Each NVDEC input keeps its own surfaces and
+ffmpeg opens every input of a graph at once: measured on the user's PC, 4 segments × 16 inputs took +5.9 GB of video
+memory and ≈ 40 inputs per graph +7.3 GB, so at most `JASPER_EXPORT_NVDEC_MAX_INPUTS` (16) inputs of an export, shared
+by its segments, decode on the GPU (peak +1.5 GB measured on the 200 s bench) and the rest on the CPU. Plan and result
+`pipeline.decode` say `nvdec` when any input uses it.
+
+Verified on the user's PC (load 2–5): one 1080p H.264 source decoded by NVDEC and converted with the composite's
+swscale flags gives identical RGBA frames to the CPU decoder (`framemd5`, all frames); an export with H.264 cuts, a
+scaled picture-in-picture and a still, ProRes, CPU decode vs NVDEC (one graph, and 3 segments) decodes to identical
+frames (240 of 240); the same export as H.264 (`h264_nvenc`), NVDEC + 3 segments vs CPU decode in one graph: SSIM min
+0.9989, mean 0.9997. Gain: NVDEC saves ≈ 5.6 ms of CPU per decoded 1080p frame (103.7 → 86.8 user-seconds for 3,000
+frames decoded + converted), ≈ 5 % of the 200 s bench's encode with 4 segments (75.9 s → 72.4 s) and nothing
+measurable with one graph — the YUV → RGBA conversion, not the decode, is the CPU cost.
+
+**GPU composite (evaluated, not used)**: `overlay_cuda` blends only YUV planes (`yuv420p`, `nv12`, `yuva420p`
+overlays) with straight alpha; the composite's layers are premultiplied-aware RGBA blended in RGB
+(`overlay=format=rgb`), so moving them to the GPU means converting every layer to `yuva420p` (chroma subsampling of
+the layer and of its alpha edge, a different blend space): a change of colour and edges that the SSIM gate would have
+to accept per layer kind, and every layer drawn by the kernels / bakes would still be uploaded from the CPU each
+frame. `scale_cuda` (7.1) converts between YUV formats only (no YUV → RGB with the composite's matrix and rounding),
+`colorspace_cuda` converts YUV ranges / matrices only. A Vulkan YUV → RGBA conversion (`scale_vulkan=format=rgba`)
+failed to negotiate formats with this build. No GPU composite path ships; the SSIM-gated per-kind route of §4 applies
+to it too.
+
+**NVENC** encodes every segment (sessions measured above); frames are uploaded from the CPU composite.
+
+## To verify on the GPU PC (coordinator)
+
+On the user's real project (prj_SC0SEK431T1QPQYF, 15:31, `draft-720p-h264`, `normalizeLufs: -14`, hybrid, NVENC),
+with an engine on its own port and appdir started from this branch:
+
+1. The job result's `timings` (phases `audio`, `bake`, `audioWait`, `plan`, `encode`, `sound`, `join`, `frameCheck`,
+   `finish`) and `pipeline` (`segments` should be 4 with the default policy on 24 cores and NVENC; `overlays` per
+   graph; `decode: nvdec`), against the 19.5 min baseline (encode 12.8 min at ≈ 73 fps).
+2. The job log's `audio:` line: passes by kind (converging / candidates / rewritten) and their time.
+3. CPU / GPU / NVENC / NVDEC utilisation during `encode` (`nvidia-smi dmon`, `top`), peak video memory.
+4. `JASPER_EXPORT_SEGMENTS=6` and `=8` (and `JASPER_EXPORT_HW_SESSIONS` to allow them) against the default 4: the
+   cores left idle decide whether the cap should rise.
+5. `verify_export` on the result (black / flash frames at cuts and at the segment boundaries listed in the job log).
