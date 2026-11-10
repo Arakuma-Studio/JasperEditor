@@ -83,11 +83,14 @@ Verified in the 4.0.499 sources and end to end (headless Chrome render, Player i
   probes `null → angle-egl → angle → egl → vulkan` at start-up and uses the first whose `UNMASKED_RENDERER_WEBGL` is not
   a software rasteriser (SwiftShader, llvmpipe, softpipe, lavapipe, swrast). With none, it uses the first software
   context, trying `swangle → swiftshader` only when no candidate gave WebGL2 at all, and reports `hardware: false`
-  (`JASPER_REMOTION_GL` forces one, `off` disables). Measured by another agent on an RTX 3080 Ti (driver 595.99.02, KDE X11),
-  headless Chrome with `--dump-dom`: inside the desktop session environment `angle` (`--use-angle=gl`) and `angle-egl`
-  reach the NVIDIA GPU, while the default stays on SwiftShader. Over SSH without `DISPLAY` every mode is SwiftShader or
-  has no WebGL2, and `vulkan` crashes the GPU process (exit 139). There the render browser's CPU load dropped from
-  641 % to ≈47 % with `angle-egl`. Graded Remotion stills equal the TypeScript reference (`applyLut` of the baked LUT) on 100 % of chart
+  (`JASPER_REMOTION_GL` forces one, `off` disables). On Linux the GPU back ends are tried only when a GPU device node
+  exists (`/dev/dri/renderD128`, `/dev/nvidia0`, `/dev/dxg`). They open in parallel after the default.
+  Measured with the engine's probe and system Chrome on an RTX 3080 Ti (driver 595.99.02, KDE X11) over SSH without
+  `DISPLAY`: default → SwiftShader; `angle` → no WebGL2; `angle-egl` → `ANGLE (NVIDIA Corporation, NVIDIA GeForce RTX
+  3080 Ti/PCIe/SSE2, OpenGL ES 3.2)`; `vulkan` → `ANGLE (NVIDIA, Vulkan 1.4.329 (NVIDIA …))`. Inside the desktop session
+  environment `angle` reaches the GPU too (`OpenGL 4.5.0`). The automatic probe chose `angle-egl` in both environments,
+  taking about 1.6 s. Chrome run by hand with only `--use-angle=vulkan` (without Remotion's other Vulkan flags) crashed its GPU
+  process there. The JasperVideoStuff session saw the render browser's CPU load drop from 641 % to about 47 % with `angle-egl`. Graded Remotion stills equal the TypeScript reference (`applyLut` of the baked LUT) on 100 % of chart
   pixels (max 1 code value).
 
 ## Not verified (follow-ups)

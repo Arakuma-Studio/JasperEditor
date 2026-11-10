@@ -115,13 +115,19 @@ function browserLogOption(): { onBrowserLog?: (log: { type: string; text: string
 export type RemotionGl = 'angle' | 'swangle' | 'egl' | 'swiftshader' | 'vulkan' | 'angle-egl';
 /**
  * Order in which the start-up probe tries OpenGL back ends for WebGL2 (S06:CG-042). The first one whose renderer is a
- * GPU wins; Chrome's default comes first as it is the GPU on macOS and Windows, but headless Linux gives SwiftShader
- * there, where only ANGLE over EGL / desktop GL reaches the GPU. Vulkan is last of the GPU back ends: it crashes the GPU
- * process on some NVIDIA drivers. Without any GPU the first software renderer found is used.
+ * GPU wins. Chrome's default comes first, alone, as it is the GPU on macOS and Windows; headless Linux gives SwiftShader
+ * there, where ANGLE over EGL reaches the GPU even without a display (desktop GL needs the session's display). Vulkan
+ * is last: Chrome run with `--use-angle=vulkan` crashed its GPU process on an NVIDIA driver
+ * (docs/research/remotion-4.0.499-notes.md). Without any GPU the first software renderer found is used.
  */
 const WEBGL_GL_CANDIDATES: readonly (RemotionGl | null)[] = [null, 'angle-egl', 'angle', 'egl', 'vulkan'];
 /** Software back ends, tried only when no candidate gave WebGL2 at all. */
 const WEBGL_SOFTWARE_CANDIDATES: readonly RemotionGl[] = ['swangle', 'swiftshader'];
+/**
+ * GPU device nodes on Linux (a DRM render node, NVIDIA's, WSL's): without one no back end can reach a GPU, so the probe
+ * does not open a browser for each of them.
+ */
+const LINUX_GPU_DEVICES = ['/dev/dri/renderD128', '/dev/nvidia0', '/dev/dxg'];
 /** A WebGL renderer string that names a CPU rasteriser rather than a GPU. */
 const SOFTWARE_RENDERER = /swiftshader|llvmpipe|softpipe|lavapipe|swrast|software|basic render driver/i;
 
@@ -657,7 +663,8 @@ export class RemotionService {
 			Promise.all(list.map((gl) => this.probeGl(r, gl)));
 		const results = await probeAll(candidates.slice(0, 1));
 		const found = () => results.filter((x): x is RemotionWebglStatus => typeof x !== 'string');
-		if (!found()[0]?.hardware) results.push(...(await probeAll(candidates.slice(1))));
+		const gpuDevice = process.platform !== 'linux' || LINUX_GPU_DEVICES.some((d) => existsSync(d));
+		if (!found()[0]?.hardware && gpuDevice) results.push(...(await probeAll(candidates.slice(1))));
 		const gpu = found().find((x) => x.hardware);
 		if (gpu) return gpu;
 		if (found().length === 0 && !forced) results.push(...(await probeAll(WEBGL_SOFTWARE_CANDIDATES)));

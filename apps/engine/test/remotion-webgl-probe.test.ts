@@ -10,6 +10,11 @@ import { RemotionService } from '../src/remotion/service.ts';
 const SWIFTSHADER = 'ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)), SwiftShader driver)';
 const NVIDIA = 'ANGLE (NVIDIA GeForce RTX 3080 Ti, OpenGL ES 3.2)';
 
+// A Linux host without a GPU device node skips the GPU back ends; this one has an NVIDIA card.
+vi.mock('node:fs', async (importOriginal) => {
+	const fs = await importOriginal<typeof import('node:fs')>();
+	return { ...fs, existsSync: (p: string) => p === '/dev/nvidia0' || fs.existsSync(p) };
+});
 const browsers = vi.hoisted(() => ({ renderers: new Map<string, string>() }));
 vi.mock('@remotion/renderer', () => ({
 	openBrowser: async (_name: string, opts: { chromiumOptions: { gl: string | null } }) => {
