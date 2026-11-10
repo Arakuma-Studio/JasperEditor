@@ -4,7 +4,7 @@
 // fallback and in semantic mode (rows with match), prepare_describe_search, match_sound, find_sound_moment on the
 // recording, and
 // insert_sound_moment placing that range in one transaction (its undo is covered by packages/project's
-// sound-moment.test.ts: undo needs an editor session). No network.
+// sound-moment.test.ts). No network.
 import { type ChildProcess, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';

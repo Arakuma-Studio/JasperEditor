@@ -295,6 +295,74 @@ describe('headless mode (S01:AGT-020)', () => {
 	});
 });
 
+describe('headless undo / redo (S01:UND-008 without an editor session)', () => {
+	const markers = (file: string) =>
+		(
+			Object.values(JSON.parse(readFileSync(file, 'utf8')).document.sequences)[0] as {
+				markers: { name: string }[];
+			}
+		).markers.map((m) => m.name);
+	const undo = tx([{ type: 'history.undo' }]);
+	const redo = tx([{ type: 'history.redo' }]);
+
+	it("undoes and redoes the agent's own headless transactions as new saved revisions", async () => {
+		const { app, events, projectId, file } = await makeEngine();
+		await postTx(app, projectId, tx([{ type: 'marker.add', frame: 10, name: 'One' }]));
+		const two = await postTx(app, projectId, tx([{ type: 'marker.add', frame: 20, name: 'Two', ref: '$m' }]));
+		const markerId = two.result.ok ? two.result.refs.$m : '';
+		expect(markers(file)).toEqual(['One', 'Two']);
+
+		const u = await postTx(app, projectId, undo);
+		expect(u).toMatchObject({
+			appliedBy: 'headless',
+			result: { ok: true, revision: 3, deleted: [markerId], results: [{ 'history.undo': 'Agent: Test' }] },
+		});
+		expect(markers(file)).toEqual(['One']);
+		expect(JSON.parse(readFileSync(file, 'utf8')).revision).toBe(3);
+		expect(events.at(-1)).toMatchObject({ type: 'doc.changed', payload: { revision: 3, isUndo: true } });
+		expect((await postTx(app, projectId, undo)).result).toMatchObject({ ok: true, revision: 4 });
+		expect(markers(file)).toEqual([]);
+
+		expect((await postTx(app, projectId, redo)).result).toMatchObject({ ok: true, revision: 5 });
+		expect((await postTx(app, projectId, redo)).result).toMatchObject({ ok: true, revision: 6 });
+		expect(markers(file)).toEqual(['One', 'Two']);
+	});
+
+	it("refuses with nothing to undo, another agent's entry on top, or a change made since, and keeps the project", async () => {
+		const { app, projectId, file } = await makeEngine();
+		expect((await postTx(app, projectId, undo)).result).toMatchObject({
+			ok: false,
+			errors: [{ code: 'E_NOT_FOUND' }],
+		});
+		await postTx(app, projectId, tx([{ type: 'marker.add', frame: 10, name: 'Mine' }]));
+		await postTx(app, projectId, {
+			...tx([{ type: 'marker.add', frame: 20, name: 'Theirs' }]),
+			origin: { agent: 'other-agent' },
+		});
+		expect((await postTx(app, projectId, undo)).result).toMatchObject({
+			ok: false,
+			errors: [{ code: 'E_NOT_OWNER' }],
+		});
+		expect(markers(file)).toEqual(['Mine', 'Theirs']);
+
+		// Another writer (an editor that has since closed, a version restore) saves over the agent's last step.
+		await postTx(app, projectId, tx([{ type: 'marker.add', frame: 30, name: 'Third' }]));
+		const env = JSON.parse(readFileSync(file, 'utf8'));
+		writeFileSync(
+			file,
+			JSON.stringify({ ...env, revision: env.revision + 1, document: { ...env.document, name: 'Renamed' } }),
+		);
+		const refused = await postTx(app, projectId, undo);
+		expect(refused.result).toMatchObject({ ok: false, revision: 4, errors: [{ code: 'E_NOT_OWNER' }] });
+		const after = JSON.parse(readFileSync(file, 'utf8'));
+		expect([after.revision, after.document.name, markers(file)]).toEqual([
+			4,
+			'Renamed',
+			['Mine', 'Theirs', 'Third'],
+		]);
+	});
+});
+
 describe('WS /agent relay (ARCHITECTURE §11)', () => {
 	it('relays transactions and queries to the session that holds the lease and forwards its events', async () => {
 		const { app, event, projectId } = await makeEngine();

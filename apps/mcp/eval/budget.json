@@ -1,10 +1,10 @@
 {
   "contexts": {
-    "core": 25884,
+    "core": 25846,
     "+project": 12140,
     "+media": 16236,
     "+processing": 6403,
-    "+editing": 21547,
+    "+editing": 21509,
     "+structure": 13351,
     "+time": 7136,
     "+multicam": 11726,
@@ -27,7 +27,7 @@
     "+automation": 28141,
     "+export": 13278,
     "+ui": 14220,
-    "all": 513876
+    "all": 513800
   },
   "tool": 10493
 }

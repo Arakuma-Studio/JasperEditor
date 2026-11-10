@@ -1,6 +1,7 @@
 // Agent API service (ARCHITECTURE §11 Stage 1, S01 §21): schema, queries and transactions for external
 // agents. Requests for a project whose editor session is connected to WS /agent are relayed to it
-// (30 s timeout); otherwise the engine answers headlessly with @jasper/project (S01:AGT-020).
+// (30 s timeout); otherwise the engine answers headlessly with @jasper/project (S01:AGT-020), and undoes / redoes the
+// agent's own headless transactions from its in-memory `HeadlessHistory`.
 // Destructive transactions go through the approval gate (S01:AGT-011).
 import { randomBytes } from 'node:crypto';
 import {
@@ -25,9 +26,11 @@ import {
 	checkAgentTxLimits,
 	createPresetIdSource,
 	createRandomIdSource,
+	diffDocuments,
 	exportAgentQuerySchemas,
 	exportAgentSchema,
 	HISTORY_PSEUDO_COMMANDS,
+	type HistoryPseudoCommand,
 	historyPseudoCommand,
 	type IdSource,
 	loadProject,
@@ -47,6 +50,7 @@ import {
 import { secretsEqual } from '../auth/secrets.ts';
 import { KeyedMutex } from '../tools/mutex.ts';
 import { type ApprovalDecision, ApprovalGate, type ApprovalRequest } from './approvals.ts';
+import { HeadlessHistory } from './headless-history.ts';
 import { RevisionTracker } from './revisions.ts';
 import { type AgentConnection, type AgentSocket, RelayError, SessionRegistry } from './sessions.ts';
 import type { AgentProjectStore } from './store.ts';
@@ -125,6 +129,8 @@ export class AgentService {
 	readonly sessions: SessionRegistry;
 	readonly approvals: ApprovalGate;
 	readonly revisions = new RevisionTracker();
+	/** What `history.undo` / `history.redo` step through without an editor session (in memory, per project). */
+	private readonly history = new HeadlessHistory();
 	private readonly mutex = new KeyedMutex();
 	private readonly ids: IdSource;
 	private readonly now: () => Date;
@@ -246,8 +252,9 @@ export class AgentService {
 			...exportAgentSchema(this.opts.registries),
 			queries: exportAgentQuerySchemas(),
 			pseudoCommands: {
-				'history.undo': 'Undo the top history entry if this agent made it (S01:UND-008); needs a session.',
-				'history.redo': 'Redo the next entry if this agent made it; needs a session.',
+				'history.undo':
+					"Undo the top history entry if this agent made it (S01:UND-008). Without an editor session: the agent's last headless transaction, while nothing else changed the project since (history kept in the engine's memory).",
+				'history.redo': 'Redo the next entry if this agent made it; headless as history.undo.',
 				list: HISTORY_PSEUDO_COMMANDS,
 			},
 			addressing: {
@@ -528,12 +535,6 @@ export class AgentService {
 		presetIds?: readonly string[],
 	): Promise<TransactionResult> {
 		return this.mutex.run(projectId, async () => {
-			if (historyPseudoCommand(tx))
-				return fail(
-					-1,
-					'E_NO_SESSION',
-					'history.undo/redo need an open editor session (history is per session)',
-				);
 			const store = this.opts.store();
 			if (store.leaseHolder && !(await this.leaseExpired(projectId))) {
 				const lease = await store.leaseHolder(projectId);
@@ -544,6 +545,8 @@ export class AgentService {
 					{ retryable: true },
 				);
 			}
+			const pseudo = historyPseudoCommand(tx);
+			if (pseudo) return this.headlessHistoryStep(projectId, pseudo, tx.origin.agent, tx.dryRun === true);
 			for (let attempt = 0; attempt < 3; attempt++) {
 				const { doc, revision, readOnly } = await this.loadDocument(projectId);
 				if (readOnly)
@@ -577,13 +580,21 @@ export class AgentService {
 					...result.changed,
 					...result.deleted,
 				]);
+				const label = asUser || tx.label.startsWith('Agent: ') ? tx.label : `Agent: ${tx.label}`;
+				const origin = asUser ? 'user' : tx.origin;
+				this.history.record(projectId, revision, saved.revision, {
+					label,
+					origin,
+					before: doc,
+					after: document,
+				});
 				this.publish(
 					'doc.changed',
 					{
 						projectId,
 						revision: result.revision,
-						label: asUser || tx.label.startsWith('Agent: ') ? tx.label : `Agent: ${tx.label}`,
-						origin: asUser ? 'user' : tx.origin,
+						label,
+						origin,
 						created: result.created,
 						changed: result.changed,
 						deleted: result.deleted,
@@ -599,6 +610,85 @@ export class AgentService {
 				retryable: true,
 			});
 		});
+	}
+
+	/**
+	 * history.undo / history.redo without an editor session (S01:UND-008): restores the snapshot before (or after) the
+	 * agent's own last headless transaction, saved as a new revision. Refused when the entry is someone else's or the
+	 * stored project changed since the history recorded it (undoing would discard that change). Runs under the
+	 * project's lock, after the lease check.
+	 */
+	private async headlessHistoryStep(
+		projectId: string,
+		pseudo: HistoryPseudoCommand,
+		agent: string,
+		dryRun: boolean,
+	): Promise<TransactionResult> {
+		const kind = pseudo === 'history.undo' ? 'undo' : 'redo';
+		const store = this.opts.store();
+		const stored = await store.load(projectId);
+		if (!stored) throw new AgentApiError(404, 'PROJECT_NOT_FOUND', `Project not found: ${projectId}`);
+		const step = this.history.peek(projectId, kind);
+		if (!step)
+			return fail(
+				stored.revision,
+				'E_NOT_FOUND',
+				kind === 'undo'
+					? 'Nothing to undo: no headless transaction on this project since the engine started or since the project was last changed outside this history'
+					: 'Nothing to redo: no undone headless transaction on this project',
+			);
+		const { entry } = step;
+		if (typeof entry.origin !== 'object' || entry.origin.agent !== agent)
+			return fail(
+				stored.revision,
+				'E_NOT_OWNER',
+				`The ${kind === 'undo' ? 'top' : 'next'} history entry "${entry.label}" was not made by ${agent}`,
+			);
+		const changedSince = (now: number) => {
+			this.history.drop(projectId);
+			return fail(
+				now,
+				'E_NOT_OWNER',
+				`The project was changed after "${entry.label}" by an edit outside this history (an editor, another agent or writer; revision ${step.revision}, now ${now}): a ${kind} would discard that change`,
+			);
+		};
+		if (stored.revision !== step.revision) return changedSince(stored.revision);
+		const [from, to] = kind === 'undo' ? [entry.after, entry.before] : [entry.before, entry.after];
+		const diff = diffDocuments(from, to);
+		const ok = (revision: number): TransactionResult => ({
+			ok: true,
+			revision,
+			refs: {},
+			...diff,
+			warnings: [],
+			results: [{ [pseudo]: entry.label }],
+		});
+		if (dryRun) return ok(stored.revision);
+		const envelope = makeEnvelope(to, {
+			revision: stored.revision + 1,
+			savedAt: this.now().toISOString(),
+			platform: 'engine-headless',
+			appVersion: this.opts.engineVersion,
+		});
+		const saved = await store.save(projectId, envelope, stored.revision);
+		if (!saved.ok) return changedSince(saved.revision);
+		this.history.stepped(projectId, kind, saved.revision);
+		this.revisions.observe(projectId, saved.revision, [...diff.created, ...diff.changed, ...diff.deleted]);
+		this.publish(
+			'doc.changed',
+			{
+				projectId,
+				revision: saved.revision,
+				label: entry.label,
+				origin: entry.origin,
+				...diff,
+				isUndo: kind === 'undo',
+				isRedo: kind === 'redo',
+				headless: true,
+			},
+			projectId,
+		);
+		return ok(saved.revision);
 	}
 
 	private onSessionEvent(conn: AgentConnection, event: string, payload: unknown): void {

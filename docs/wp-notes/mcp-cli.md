@@ -238,6 +238,31 @@ engine / editor with the real registries). Segments into / out of a selection na
 frame is in `get_clip_properties`). `span.preset` matching on point properties is subject to the arc-length tables'
 accuracy (≈ 0.2 % of the path) and may not match at 2e-3.
 
+## 8. Headless `undo` / `redo`
+
+`undo` / `redo` (`history.undo` / `history.redo`) used to fail with `E_NO_SESSION` whenever no editor had the project
+open, although headless agent edits worked. With an editor session holding the lease the editor still owns History
+(relayed, unchanged). Otherwise `AgentService` steps through `HeadlessHistory` (`apps/engine/src/agent/headless-history.ts`):
+
+- Each saved headless transaction records its before / after documents (snapshots, as the editor's History, D-05) and
+  the revision it was saved as. Undo saves the before snapshot, redo the after one, each as a new revision through the
+  project store (If-Match, atomic write), under the project's lock and the same lease check as any headless edit;
+  `doc.changed` carries `isUndo` / `isRedo`. A new headless transaction clears the redo stack.
+- Refusals: nothing recorded → `E_NOT_FOUND`; the entry is the user's (a headless proposal accept) or another agent's →
+  `E_NOT_OWNER`; the stored project is not at the revision the history recorded (an editor, another writer or a version
+  restore saved since) → `E_NOT_OWNER` naming both revisions, and the history of that project is dropped, because no
+  older entry can be restored without discarding that change. The code and its hint are the ones the editor gives when
+  someone else's entry is on top, so the MCP text did not change; only "Needs the project open in the editor" left the
+  two descriptions.
+- Limits (decided): the history is in the engine process's memory, 16 entries per project for the 8 most recently
+  edited projects; an engine restart forgets it. It is not persisted: each entry is a whole document, and the editor's
+  own History is per session too. While an editor has the project open, undo goes to its History, which does not hold
+  the earlier headless steps; they are undoable again after it closes only if it saved nothing. Nothing to undo is
+  `E_NOT_FOUND` as in the editor, whose MCP hint speaks of ids (the message says what happened). `history.list` still
+  needs an editor session.
+- Tests: `apps/engine/test/agent.test.ts` "headless undo / redo" (undo and redo round trip as new saved revisions;
+  refusals with the project left untouched).
+
 ## Verified in the real app
 
 Built stack on 49020 (`e2e/agent-ui.spec.ts`, `e2e/ui-audit.spec.ts`): a clip dragged 30 frames by `ui_drag`

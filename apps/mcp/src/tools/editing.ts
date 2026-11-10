@@ -197,8 +197,8 @@ export function registerEditingTools(ctx: ToolContext): void {
 				title: name === 'undo' ? 'Undo' : 'Redo',
 				description:
 					name === 'undo'
-						? "Undo your own last History entry. Needs the project open in the editor; the user's edits are never undone."
-						: 'Redo your own next History entry. Needs the project open in the editor.',
+						? "Undo your own last History entry; the user's edits are never undone."
+						: 'Redo your own next History entry.',
 				input: { projectId: ProjectIdArg },
 				annotations: EDIT,
 			},

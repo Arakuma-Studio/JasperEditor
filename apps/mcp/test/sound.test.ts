@@ -377,8 +377,8 @@ describe('sound library MCP tools', () => {
 			});
 		}
 		expect(Object.keys(doc.media)).toHaveLength(Object.keys(before.media).length + 2);
-		// ONE transaction (= one "Agent: Import 2 Sounds" History entry in an open editor; headless history.undo
-		// needs a session): the revision moved by exactly one.
+		// ONE transaction (= one "Agent: Import 2 Sounds" History entry, in an open editor or headless): the revision
+		// moved by exactly one.
 		expect(r.revision).toBe(rev0 + 1);
 		expect(r.historyLabel).toBe('Import 2 Sounds');
 		// Again: reused, nothing new.

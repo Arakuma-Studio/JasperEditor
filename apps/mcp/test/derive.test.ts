@@ -123,7 +123,7 @@ describe('derive_media (AF-OPS-002)', () => {
 			{ projectId, mediaId: r.derivedMediaId },
 		);
 		expect(info.derivation).toMatchObject({ fromMediaId: mediaId, recipe: { op: 'reverse' } });
-		// Undo needs an editor session (history is per session; covered by the web dialog test). Again: the finished
+		// Undo is covered by the web dialog test and the engine's headless undo test. Again: the finished
 		// file is reused and the derivation is not added twice.
 		const again = await ok<{ reused: boolean; derivedMediaId: string }>('derive_media', {
 			projectId,
