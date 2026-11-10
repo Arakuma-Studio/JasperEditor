@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { setImmediate } from 'node:timers/promises';
 import { RenderPlanSchema } from '@jasper/api';
 import {
 	buildRenderSnapshot,
@@ -10,6 +11,7 @@ import {
 } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { PlanCapabilities, PlannedExport } from '../src/export/planner.ts';
+import { layerBakeExtension } from '../src/layer-bake/extension.ts';
 import type { BakeEnvironment } from '../src/layer-bake/key.ts';
 import { bakeClip, effectRunsOrderWarning, isStaticLayer } from '../src/layer-bake/layer.ts';
 import type { LayerBakeService } from '../src/layer-bake/service.ts';
@@ -414,6 +416,115 @@ describe('planner (LBK-002, LBK-024)', () => {
 		} as unknown as RenderVisualClip;
 		expect(effectRunsOrderWarning(clip)).not.toBeNull();
 		expect(effectRunsOrderWarning({ ...clip, effects: [...clip.effects].reverse() })).toBeNull();
+	});
+});
+
+describe('shared render browsers (S11:LBK-022)', () => {
+	afterAll(closeApps);
+
+	it('a native export bakes as many titles at once as its CPU slots allow: 12 in flight with 2 pages each on 24', async () => {
+		// the real project's bake: 17 animated title cards of 363 frames
+		const clips = Array.from(
+			{ length: 17 },
+			(_, i) =>
+				({
+					clipId: `card${i}`,
+					name: `Card ${i}`,
+					kind: 'text',
+					engine: 'remotion',
+					effects: [],
+					masks: [],
+					trackId: 'V2',
+					start: i * 400,
+					duration: 363,
+				}) as unknown as RenderVisualClip,
+		);
+		const planned = {
+			range: { start: 0, end: 17 * 400 },
+			snapshot: { videoTracks: [{ trackId: 'V2', clips }] },
+		} as unknown as PlannedExport;
+		let inFlight = 0;
+		let most = 0;
+		const pages: number[] = [];
+		const svc = {
+			unavailableReason: () => null,
+			environment: async () => ({}),
+			parallelism: { maxInFlight: null, sharedBrowser: false, pagesPerBrowser: 2 },
+			stats: { rendered: 0, reused: 0, joined: 0 },
+			planBake: async (_p: unknown, clip: RenderVisualClip) => ({
+				clipId: clip.clipId,
+				clipName: clip.name,
+				key: `key-${clip.clipId}`,
+				variant: { recipe: 'master' },
+				rect: null,
+				frames: 363,
+				startFrame: clip.start,
+				colorRuns: false,
+				material: {},
+			}),
+			lookup: async () => null,
+			ensureBake: async (plan: { key: string }, meta: { concurrency?: number }) => {
+				pages.push(meta.concurrency ?? 0);
+				most = Math.max(most, ++inFlight);
+				await setImmediate();
+				inFlight--;
+				return {
+					key: plan.key,
+					path: '/bake.mov',
+					still: false,
+					rect: null,
+					frames: 363,
+					width: 1280,
+					height: 720,
+				};
+			},
+		} as unknown as LayerBakeService;
+		const prepared = await layerBakeExtension(svc).prepare!(planned, {
+			signal: new AbortController().signal,
+			stage: () => undefined,
+			scratchDir: async () => '/tmp',
+			log: () => undefined,
+			jobId: 'job_bake',
+			purpose: 'native',
+			concurrency: 12,
+			bakePages: 24,
+		});
+		expect((prepared as Map<string, unknown>).size).toBe(17);
+		expect(most).toBe(12);
+		expect(pages).toEqual(new Array(17).fill(2));
+	});
+
+	it('a browser serves at most pagesPerBrowser pages: more bakes in flight open more browsers, closed with the session', async () => {
+		const app = await makeApp();
+		const svc = app.jasper.services.layerBake as LayerBakeService;
+		const closed: number[] = [];
+		let n = 0;
+		const open = vi.spyOn(coreServices(app).remotion, 'openSharedBrowser').mockImplementation(async () => {
+			const id = n++;
+			return {
+				instance: { id } as never,
+				close: async () => {
+					closed.push(id);
+				},
+			};
+		});
+		svc.parallelism = { ...svc.parallelism, pagesPerBrowser: 4 };
+		const release = svc.browserSession('job_bake');
+		const a = svc.acquireBrowser('job_bake', 2)!;
+		const b = svc.acquireBrowser('job_bake', 2)!;
+		const c = svc.acquireBrowser('job_bake', 2)!;
+		expect(await b.browser).toBe(await a.browser);
+		expect(await c.browser).not.toBe(await a.browser);
+		expect(open).toHaveBeenCalledTimes(2);
+		// a finished: the next bake joins the least busy browser instead of opening one
+		a.release();
+		const d = svc.acquireBrowser('job_bake', 2)!;
+		expect(await d.browser).toBe(await b.browser);
+		expect(open).toHaveBeenCalledTimes(2);
+		// no session: the bake opens a browser of its own
+		expect(svc.acquireBrowser('job_other', 1)).toBeNull();
+		await release();
+		expect(closed.sort()).toEqual([0, 1]);
 	});
 });
 

@@ -160,9 +160,14 @@ class NativePrepareError extends Error {
 /** edit-structure: what the Remotion-path extensions prepared for nested sequences, per top-level preparation. */
 const NESTED_REMOTION = new WeakMap<ReadonlyMap<string, unknown>, Map<string, PreparedExtensions>>();
 
-/** Remotion concurrency of an export with `slots` CPU slots (S04:RR-004; bakes follow it, S11:LBK-022). */
+/** Remotion concurrency of an export with `slots` CPU slots (S04:RR-004; the Remotion path's bakes follow it). */
 function remotionConcurrency(slots: number): number {
 	return Math.max(1, Math.min(slots, Math.floor(availableParallelism() / 2)));
+}
+
+/** Remotion pages of the native path's layer bakes (`NativePrepareContext.bakePages`): one per granted CPU slot. */
+function bakePages(slots: number): number {
+	return Math.max(1, Math.min(slots, availableParallelism()));
 }
 
 export type MgMasterRequest = {
@@ -1408,6 +1413,7 @@ export class ExportService {
 				...(planned.document.projectId ? { projectId: planned.document.projectId } : {}),
 				purpose: 'native' as const,
 				concurrency: remotionConcurrency(ctx.slots),
+				bakePages: bakePages(ctx.slots),
 				...(this.pinFor(ctx) ? { pin: this.pinFor(ctx) } : {}),
 				pipeline: pipeline && !still,
 				backgroundSignal: bgAbort.signal,
