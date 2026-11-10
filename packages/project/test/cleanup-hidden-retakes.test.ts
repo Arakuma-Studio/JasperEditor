@@ -276,14 +276,14 @@ describe('hidden retakes of a real recording', () => {
 		const toFrames = (p: ReturnType<typeof planMediaCuts>) =>
 			keptToFrames(clip, { num: 30, den: 1 }, voice, p.kept, 0.01, [0, 9000], p.tight);
 		expect(toFrames(plan)[0]![0]).toBe(2158);
-		// and starts at the frame at or before the removed word (4.333), not the one after (4.367)
+		// and starts at the frame at or before the removed word (its start 4.30), not after it (4.367)
 		const f = planMediaCuts({
 			words: [w('distinto.', 3.54, 4.3, 0), w('Windows', 4.3, 4.54, 1)],
 			removed: [false, true],
 			voice,
 			settings: FAST_SETTINGS,
 		});
-		expect(toFrames(f)[0]![1]).toBe(130);
+		expect(toFrames(f)[0]![1]).toBe(129);
 	});
 
 	it('ASR variants between takes do not keep an earlier take (second run: fragments D, C and E)', () => {

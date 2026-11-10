@@ -36,7 +36,13 @@ const ids = (w: string) => [
 ];
 
 /** `long`: what a window holding more than 10 s of audio gets; `truth`: what a shorter one gets. */
-function hiddenTakeDecoder(audio: Float32Array, truth: readonly W[] = TRUTH, long: readonly W[] = LONG) {
+/** `window`: what a window of 5–10 s gets instead of `truth` (when given). */
+function hiddenTakeDecoder(
+	audio: Float32Array,
+	truth: readonly W[] = TRUTH,
+	long: readonly W[] = LONG,
+	window?: readonly W[],
+) {
 	const input = inputFromSamples(audio, 80);
 	const F = Math.round((audio.length / SR) * 100);
 	const full = new Float32Array(80 * F);
@@ -58,7 +64,7 @@ function hiddenTakeDecoder(audio: Float32Array, truth: readonly W[] = TRUTH, lon
 		offset = o / 100;
 		// a short window loses the words within 80 ms of its edges (a chunk edge cuts them)
 		const edge = n > 1000 ? 0 : 0.08;
-		words = (n > 1000 ? long : truth)
+		words = (n > 1000 ? long : window && n > 500 ? window : truth)
 			.filter((w) => w.start >= offset + edge - 1e-6 && w.end <= offset + n / 100 - edge + 1e-6)
 			.map((w) => ({ ...w, start: w.start - offset, end: w.end - offset }));
 	};
@@ -248,5 +254,26 @@ describe('hidden takes', () => {
 			expect(w.end, w.text).toBeGreaterThan(w.start);
 			if (k) expect(w.start, w.text).toBeGreaterThanOrEqual(placed[k - 1]!.end);
 		}
+	});
+
+	it('voice a replaced window leaves without words is decoded alone (run 4, fragment E: the take at 38.14–42.15)', async () => {
+		const seq = (t: string, at0: number) => t.split(' ').map((x, k) => at(x, at0 + 0.4 * k));
+		const lead = [at('ab', 0.5), at('cd', 0.9, 0.4)];
+		const take1 = [at('ij', 1.4), at('kl', 1.8), at('mn', 2.2, 0.2)];
+		// an attempt of 2.4 s of voice that the window's re-decode does not write
+		const missed = seq('op qr st uv wx bd ce df', 2.42);
+		const final = seq('ij kl mn op qr', 6.0);
+		const tail = seq('eg fh gi hj ik jl km ln mo np oq pr qs rt su tv uw', 8.5);
+		const truth = [...lead, ...take1, ...missed, ...final, ...tail];
+		// the long reading skips "cd" and stretches "mn" over the attempt
+		const long = [lead[0]!, at('ij', 1.4), at('kl', 1.8), at('mn', 2.2, 3.4), ...final, ...tail];
+		const window = [...lead, ...take1, ...final, ...tail];
+		const audio = noiseAudio(SECONDS, (t) => truth.some((w) => t >= w.start && t < w.end));
+		const out = await runSpeechJob(
+			{ modelDir: fakeModelDir({ encodable: true }), modelId: 'fake', input: { f32: '' }, language: 'en' },
+			{ ort: fakeOrt(hiddenTakeDecoder(audio, truth, long, window)).ort, audio },
+		);
+		expect(out.guard.redecoded!.ranges.some((r) => r.replaced)).toBe(true);
+		expect(out.words.map((w) => w.text)).toEqual(truth.map((w) => w.text));
 	});
 });

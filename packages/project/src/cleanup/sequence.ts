@@ -441,7 +441,13 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 				const ws = words.filter((_, k) => inClip[k]);
 				const rm = removed.filter((_, k) => inClip[k]);
 				const clipSpan = (s: readonly Span[]) => s.filter(([a, b]) => b > lo && a < hi);
+				// what may remove time: accepted findings (not skipped as harsh) and the words of takes a choice drops
+				const covered = spans((f) => accepted.has(f) && !harshSkip.has(f));
+				words.forEach((w, k) => {
+					if (removed[k] && inClip[k]) covered.push([w.s, w.e]);
+				});
 				return planMediaCuts({
+					covered: clipSpan(covered),
 					words: ws,
 					removed: rm,
 					voice: run.voice,

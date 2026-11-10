@@ -14,8 +14,11 @@ import { restrictInputs } from '../../tools/protocols.ts';
 import { type Chunk, mergeZones, shiftedChunks, vadChunks } from '../core/chunks.ts';
 import { DEFAULT_DIARIZE, diarize } from '../core/diarize.ts';
 import {
+	GAP_MAX_SPANS,
+	isStretchedWord,
 	mergeRecoveredWords,
 	REDECODE_CHUNKED_MAX_FRAMES,
+	REDECODE_EDGE_GUARD_FRAMES,
 	redecodeAccepted,
 	replaceRegion,
 	replaceWindowWords,
@@ -528,6 +531,85 @@ async function recoverWordlessSpans(
 }
 
 /**
+ * After the hidden-take pass: inside the windows whose words it replaced (`windows`, samples), voice without words
+ * (≥ 2 s, `wordlessVoicedSpans`) and words still stretched over voice (`isStretchedWord`) are decoded again alone, with
+ * 0.5 s of context — a re-decode can skip a take and time a neighbour over it (run 4, fragment E: no words for the take
+ * at 38.14–42.15). A stretch's words replace it when `redecodeAccepted` takes them; a wordless span takes the words
+ * decoded there. At most `GAP_MAX_SPANS` decodes. A decoder failure is thrown.
+ */
+async function recoverReplaced(
+	model: Pick<WhisperModel, 'transcribe'>,
+	input: SpeechInput,
+	r: WhisperResult,
+	mask: SpeechMask,
+	opts: WhisperOptions,
+	windows: ReadonlyArray<{ start: number; end: number }>,
+): Promise<{ result: WhisperResult; report: RecoveredReport | null }> {
+	const inWindow = (a: number, b: number) => windows.some((w) => a < w.end && b > w.start);
+	const pad = REDECODE_EDGE_GUARD_FRAMES;
+	const targets: Array<{ span: Chunk; region: { start: number; end: number } }> = [];
+	for (const sp of wordlessVoicedSpans(r.words, mask).spans)
+		if (inWindow(sp.start * VAD_FRAME, sp.end * VAD_FRAME))
+			targets.push({ span: sp, region: { start: sp.start * VAD_FRAME, end: sp.end * VAD_FRAME } });
+	for (const w of r.words)
+		if (inWindow(w.start, w.end) && isStretchedWord(w, mask))
+			targets.push({
+				span: {
+					start: Math.max(0, Math.floor(w.start / VAD_FRAME) - pad),
+					end: Math.min(mask.length, Math.ceil(w.end / VAD_FRAME) + pad),
+				},
+				region: { start: w.start, end: w.end },
+			});
+	if (!targets.length) return { result: r, report: null };
+	targets.sort((a, b) => a.region.start - b.region.start);
+	const report: RecoveredReport = { spans: 0, words: 0, skipped: 0, ranges: [] };
+	const extra = new ExtraDecodes(r);
+	let words = r.words;
+	const mid = (x: { start: number; end: number }) => (x.start + x.end) / 2;
+	for (const [k, t] of targets.entries()) {
+		if (k >= GAP_MAX_SPANS) {
+			report.skipped++;
+			continue;
+		}
+		const got = await model.transcribe(input, { ...opts, language: r.language, span: t.span });
+		extra.add(got);
+		report.spans++;
+		const inside = (w: { start: number; end: number }) => mid(w) >= t.region.start && mid(w) < t.region.end;
+		const before = words.filter(inside);
+		const after = got.words.filter(inside);
+		const placed = before.length
+			? redecodeAccepted(before, after, mask, MIN_VOICED_FRACTION)
+			: after.length
+				? after
+				: null;
+		report.ranges.push({
+			start: t.region.start / SAMPLE_RATE,
+			end: t.region.end / SAMPLE_RATE,
+			words: placed ? placed.length : 0,
+		});
+		if (!placed) continue;
+		words = replaceWindowWords(words, t.region.start, t.region.end, placed);
+		report.words += placed.length - before.length;
+		extra.segments.push(
+			...got.segments.filter((sg) => inside({ start: sg.start * SAMPLE_RATE, end: sg.end * SAMPLE_RATE })),
+		);
+	}
+	return { result: extra.result(r, words), report };
+}
+
+/** Both safety-net passes in one report (null when neither decoded anything). */
+function mergeRecovered(a: RecoveredReport | null, b: RecoveredReport | null): RecoveredReport | null {
+	if (!a || !b) return a ?? b;
+	return {
+		spans: a.spans + b.spans,
+		words: a.words + b.words,
+		skipped: a.skipped + b.skipped,
+		// the job result lists at most `GAP_MAX_SPANS` ranges (each pass decodes at most that many)
+		ranges: [...a.ranges, ...b.ranges].sort((x, y) => x.start - y.start).slice(0, GAP_MAX_SPANS),
+	};
+}
+
+/**
  * Hidden takes (`core/gaps.ts`, docs/wp-notes/speech.md §11.3 "Hidden takes"): decodes again, each alone, the windows around
  * stretched words and short wordless voice of `r` — verbatim, without the previous text — and replaces a window's
  * words when the re-decode holds more words consistent with the audio and re-says the original ones
@@ -748,7 +830,21 @@ async function recognise(
 		if (spec.redecode === false) return { ...again, redecoded: null, chunked, va };
 		opts.onProgress?.(0.955, 'Checking for hidden takes');
 		const hidden = await redecodeSuspects(model, input, again.result, mask, options);
-		return { result: hidden.result, report: again.report, redecoded: hidden.report, chunked, va };
+		// a replaced window can leave voice without words where the original had a stretched word over it (run 4,
+		// fragment E: the take at 38.14–42.15): those spans are decoded alone too, like the first safety net
+		const replaced = (hidden.report?.ranges ?? [])
+			.filter((x) => x.replaced)
+			.map((x) => ({ start: x.start * SAMPLE_RATE, end: x.end * SAMPLE_RATE }));
+		const after = replaced.length
+			? await recoverReplaced(model, input, hidden.result, mask, options, replaced)
+			: { result: hidden.result, report: null };
+		return {
+			result: after.result,
+			report: mergeRecovered(again.report, after.report),
+			redecoded: hidden.report,
+			chunked,
+			va,
+		};
 	});
 	const { result: r, report: recovered, redecoded, chunked, va: vaMask } = ran.value;
 	const { threads, fallbacks, loadMs } = ran;

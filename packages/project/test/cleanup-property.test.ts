@@ -12,6 +12,9 @@ import { checkInvariants, type ProjectDocument, type Sequence } from '../src/ind
 import { FLICKS_PER_SECOND } from '../src/time.ts';
 import { Harness } from './helpers.ts';
 
+/** Level edges trim a word's quiet onset and decay: removed voice this close (seconds) to a cut edge is the edge. */
+const EDGE_S = 0.1;
+
 const VOCAB = [
 	'hola',
 	'eh',
@@ -136,6 +139,67 @@ describe('planning properties', () => {
 		);
 	});
 
+	it('every removed second is explained by a finding, and rejecting every finding removes nothing', () => {
+		fc.assert(
+			fc.property(recording, (r) => {
+				const d = detectCleanup({
+					mediaId: 'med_p',
+					words: r.words,
+					voice: r.voice,
+					language: 'es',
+					settings: r.settings,
+				});
+				const sec = (f: number) => f / FLICKS_PER_SECOND;
+				const span = (f: (typeof d.findings)[number]) =>
+					[sec(f.range.start), sec(f.range.end)] as [number, number];
+				const removing = d.findings.filter((f) => f.suggested === 'remove');
+				const removedIdx = new Set<number>();
+				for (const f of removing)
+					if (f.words) for (let i = f.words[0]; i <= f.words[1]; i++) removedIdx.add(i);
+				const removed = d.words.map((w, k) => d.guarded[k] || removedIdx.has(w.i));
+				const of = (kind: string, pred: (f: (typeof d.findings)[number]) => boolean) =>
+					d.findings.filter((f) => f.kind === kind && pred(f)).map(span);
+				const plan = planMediaCuts({
+					words: d.words,
+					removed,
+					voice: r.voice,
+					settings: r.settings,
+					keepSpeech: of('untranscribed', (f) => f.suggested !== 'remove'),
+					covered: removing.map(span),
+				});
+				if (!d.words.length) return;
+				const lo = Math.ceil(Math.min(...d.words.map((w) => w.s)) * 100);
+				const hi = Math.floor(Math.max(...d.words.map((w) => w.e)) * 100);
+				const inKept = (f: number, kept: ReadonlyArray<readonly [number, number]>) =>
+					kept.some(([a, b]) => (f + 0.5) / 100 >= a && (f + 0.5) / 100 < b);
+				// voice the plan removes lies within a removing finding (or the edge tolerance of one or of a kept piece)
+				const tol = EDGE_S + 0.01;
+				const edges = plan.kept.map(([a, b]) => [a - tol, b + tol] as const);
+				for (let f = lo; f < hi; f++)
+					if (r.voice.classes[f] === 2 && !inKept(f, edges))
+						expect(
+							removing.some((x) => (f + 0.5) / 100 >= span(x)[0] - tol && (f + 0.5) / 100 < span(x)[1] + tol),
+							`voice at ${f / 100} removed without a finding`,
+						).toBe(true);
+				// everything rejected: one piece from the first word to the last (their outer edges aside)
+				const all = planMediaCuts({
+					words: d.words,
+					removed: d.words.map(() => false),
+					voice: r.voice,
+					settings: r.settings,
+					keepSpeech: of('untranscribed', () => true),
+					keepPauses: of('pause', () => true),
+					keepBreaths: of('breath', () => true),
+					covered: [],
+				});
+				const t = Math.round(tol * 100);
+				for (let f = lo + t; f < hi - t; f++)
+					expect(inKept(f, all.kept), `${f / 100} removed with every finding off`).toBe(true);
+			}),
+			{ numRuns: 200 },
+		);
+	});
+
 	it('Fast never leaves non-speech longer than maxGap inside a piece; every piece is long enough', () => {
 		fc.assert(
 			fc.property(recording, (r) => {
@@ -149,7 +213,9 @@ describe('planning properties', () => {
 				});
 				const plan = planMediaCuts({ words: d.words, removed: d.guarded, voice: r.voice, settings });
 				for (const [a, b] of plan.kept) {
-					expect(b - a).toBeGreaterThanOrEqual(settings.guards.minPieceS - 1e-9);
+					// a shorter piece holds a kept word (never cut without a finding)
+					if (!d.words.some((w, k) => !d.guarded[k] && w.s < b && w.e > a))
+						expect(b - a).toBeGreaterThanOrEqual(settings.guards.minPieceS - 1e-9);
 					let run = 0;
 					for (let f = Math.round(a * 100); f < Math.round(b * 100); f++) {
 						run = r.voice.classes[f] === 2 ? 0 : run + 1;
