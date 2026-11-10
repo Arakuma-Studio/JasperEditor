@@ -3787,6 +3787,8 @@
   "Graphic: {0}": "Gráfico: {0}",
   "Graphics": "Gráficos",
   "Graphics renders": "Procesamientos de gráficos",
+  "Graphics renderer:": "Renderizador de gráficos:",
+  "Graphics renderer: no WebGL2 in the render browser.": "Renderizador de gráficos: el navegador de renderizado no tiene WebGL2.",
   "Gravity": "Gravedad",
   "Gravity Direction": "Dirección de la gravedad",
   "Gravity Inclination": "Inclinación de la gravedad",

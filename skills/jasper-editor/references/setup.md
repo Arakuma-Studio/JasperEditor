@@ -10,5 +10,10 @@ Help ▸ Connect an AI Agent… shows them with real paths.
   `call_tool`; or start the server with `--toolsets all` / `JASPER_MCP_TOOLSETS=all` to advertise every tool from the start
   (more context per turn). Every tool is always reachable through `call_tool`.
 - Guides: `get_guide` {"topic"} (`get_guide` without a topic lists them); the resource jasper://guide/routing maps requests to tools.
+- Before a long export with titles, shapes or effects, check `engine_status` → `render.remotionGraphics`. With
+  `hardware: false` the render browser draws on the CPU (SwiftShader) and the layer bake takes hours; `start_export`'s
+  plan warns about it too. On Linux this happens when the engine runs over SSH without the desktop session's `DISPLAY`
+  and `XAUTHORITY`. Restart it inside the desktop session or with that environment, or set
+  `JASPER_REMOTION_GL=angle-egl`, and tell the user before starting the export.
 - The same tools run from a shell with the `jasper` CLI: `jasper call <tool> k=v…`, `jasper tools`,
   `jasper export --out cut.mp4`.

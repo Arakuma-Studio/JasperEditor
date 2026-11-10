@@ -91,6 +91,17 @@ macOS and Windows builds that have ever been run ([`docs/gaps.md`](docs/gaps.md)
   cargo is installed; without it motion graphics export through Remotion and the native motion-graphic smoke
   test skips with that reason).
 - E2E: Google Chrome at `/usr/bin/google-chrome` (Playwright `channel: 'chrome'`); desktop smoke: `xvfb-run`.
+- GPU WebGL for the render browser: layer bakes (titles, shapes, animated text) and Remotion renders draw in a
+  headless Chrome. At start-up the engine tries Chrome's default and then `angle-egl`, `angle`, `egl` and `vulkan`,
+  keeps the first that reaches the GPU, and falls back to SwiftShader (the CPU) only when none does. The engine log
+  line `graphics render on the GPU (…)`, `render.remotionGraphics` in `/api/capabilities` (`engine_status`,
+  `jasper status`) and Help ▸ About name the renderer. In software the export plan warns `GRAPHICS_SOFTWARE`:
+  a bake can then take hours instead of minutes.
+  On Linux, headless Chrome reaches the GPU only through the desktop session's display. An engine started over
+  SSH has no `DISPLAY`, so it renders in software. Start it from a terminal inside the desktop session, or give it
+  the session's environment (`DISPLAY`, `XAUTHORITY`, `XDG_RUNTIME_DIR`, `DBUS_SESSION_BUS_ADDRESS`; they can be
+  read from `/proc/<pid of plasmashell or gnome-shell>/environ`). `JASPER_REMOTION_GL=angle-egl` (or `angle`,
+  `vulkan`, `swangle`, `default`, `off`) forces one back end and skips the search.
 
 ## Quick start
 

@@ -216,6 +216,7 @@ export async function createCoreServices(
 				...(check.decoders.length ? { decoders: check.decoders } : {}),
 				// TL-124: probed once by the Remotion service and cached; awaited only when the browser must draw GL.
 				webgl: () => remotion.probeWebgl(),
+				webglKnown: () => remotion.webglStatus,
 			};
 		},
 	});

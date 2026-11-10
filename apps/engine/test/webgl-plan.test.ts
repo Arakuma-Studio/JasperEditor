@@ -157,6 +157,20 @@ describe('the plan reports WebGL (TL-124)', () => {
 			expect((await plan(d, c)).plan.path).toBe('remotion');
 	});
 
+	it('warns first when the render browser’s WebGL is software, so a slow bake is said before it starts', async () => {
+		const message = 'Graphics render in software (SwiftShader): set JASPER_REMOTION_GL=angle-egl';
+		const software = await plan(
+			glowDoc(false),
+			caps(async () => ({ state: 'ok', hardware: false, message })),
+		);
+		expect(software.plan.warnings[0]).toMatchObject({ code: 'GRAPHICS_SOFTWARE', message });
+		const gpu = await plan(
+			glowDoc(false),
+			caps(async () => ({ state: 'ok', hardware: true })),
+		);
+		expect(gpu.plan.warnings.map((w) => w.code)).not.toContain('GRAPHICS_SOFTWARE');
+	});
+
 	it('never asks for WebGL when the browser draws nothing (a native sequence)', async () => {
 		const d = new DocBuilder();
 		d.tx([{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V1', color: [1, 0, 0, 1] }]);

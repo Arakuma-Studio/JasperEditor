@@ -21,6 +21,7 @@ import {
 } from '../commands/keymap-defaults.ts';
 import { getCommand } from '../commands/registry.ts';
 import type { CommandScope } from '../commands/types.ts';
+import { useEngineOrNull } from '../state/engine.tsx';
 import { formatChord } from './keymap/format.ts';
 import { ThirdPartyLicenses } from './licenses.tsx';
 import { prefsStore, useUiPrefs } from './prefs.ts';
@@ -252,6 +253,31 @@ function ShortcutReferenceDialog(
 	);
 }
 
+/** The render browser's WebGL renderer (layer bakes, Remotion renders), and how to get the GPU when it is software. */
+function GraphicsRenderer() {
+	const graphics = useEngineOrNull()?.capabilities?.render.remotionGraphics;
+	if (!graphics || graphics.webgl === 'unknown') return null;
+	if (graphics.webgl === 'unavailable')
+		return (
+			<p className="text-pr-small text-pr-warning" data-testid="about-graphics">
+				Graphics renderer: no WebGL2 in the render browser.
+			</p>
+		);
+	return (
+		<div className="flex flex-col gap-1" data-testid="about-graphics">
+			<p className="text-pr-small text-pr-muted">
+				Graphics renderer: <span data-no-i18n>{graphics.renderer ?? graphics.gl ?? 'default'}</span> (
+				{graphics.hardware === false ? 'software' : 'GPU'})
+			</p>
+			{graphics.hardware === false && graphics.message ? (
+				<p className="text-pr-small text-pr-warning" role="alert" data-no-i18n>
+					{graphics.message}
+				</p>
+			) : null}
+		</div>
+	);
+}
+
 function AboutDialog(props: HostedDialogProps<{ engineVersion?: string | null }>) {
 	return (
 		<Dialog
@@ -270,6 +296,7 @@ function AboutDialog(props: HostedDialogProps<{ engineVersion?: string | null }>
 					Uses Remotion (company license terms apply), FFmpeg (LGPL build, run as a separate process),
 					fframes, dockview, Radix UI, lucide and Source Sans 3 (SIL OFL).
 				</p>
+				<GraphicsRenderer />
 				<ThirdPartyLicenses />
 			</div>
 		</Dialog>

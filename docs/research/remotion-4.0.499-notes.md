@@ -79,9 +79,15 @@ Verified in the 4.0.499 sources and end to end (headless Chrome render, Player i
   `continueRender`, so a synchronous `delayRender` + draw into our `ColorCanvas` (Internals `useEffectChainState` +
   `runEffectChain`) is captured in renders. The `<OffthreadVideo>` stays mounted (opacity 0).
 - Headless render browser: Remotion's default `chromiumOptions.gl` (no flag) already gives WebGL2 on this host
-  (`ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)))`); the engine probes `null → angle → swangle → egl →
-  swiftshader` at start-up and uses the first one with a WebGL2 context (`JASPER_REMOTION_GL` forces one, `off`
-  disables). Graded Remotion stills equal the TypeScript reference (`applyLut` of the baked LUT) on 100 % of chart
+  (`ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)))`), but that is SwiftShader on the CPU. The engine
+  probes `null → angle-egl → angle → egl → vulkan` at start-up and uses the first whose `UNMASKED_RENDERER_WEBGL` is not
+  a software rasteriser (SwiftShader, llvmpipe, softpipe, lavapipe, swrast). With none, it uses the first software
+  context, trying `swangle → swiftshader` only when no candidate gave WebGL2 at all, and reports `hardware: false`
+  (`JASPER_REMOTION_GL` forces one, `off` disables). Measured by another agent on an RTX 3080 Ti (driver 595.99.02, KDE X11),
+  headless Chrome with `--dump-dom`: inside the desktop session environment `angle` (`--use-angle=gl`) and `angle-egl`
+  reach the NVIDIA GPU, while the default stays on SwiftShader. Over SSH without `DISPLAY` every mode is SwiftShader or
+  has no WebGL2, and `vulkan` crashes the GPU process (exit 139). There the render browser's CPU load dropped from
+  641 % to ≈47 % with `angle-egl`. Graded Remotion stills equal the TypeScript reference (`applyLut` of the baked LUT) on 100 % of chart
   pixels (max 1 code value).
 
 ## Not verified (follow-ups)

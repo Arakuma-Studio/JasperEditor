@@ -88,6 +88,22 @@ export const RemotionBinariesSchema = z.object({
 });
 export type RemotionBinariesInfo = z.infer<typeof RemotionBinariesSchema>;
 
+/**
+ * The Remotion render browser's WebGL (`render.remotionGraphics`): the start-up probe's back end and renderer. A
+ * software renderer (`hardware: false`) draws every baked or Remotion frame on the CPU.
+ */
+export const RemotionGraphicsSchema = z.object({
+	webgl: z.enum(['ok', 'unavailable', 'unknown']),
+	/** The `chromiumOptions.gl` in use (null = Chrome's default). */
+	gl: z.string().nullable(),
+	/** WebGL `UNMASKED_RENDERER_WEBGL`, e.g. "ANGLE (NVIDIA GeForce RTX 3080 Ti, OpenGL ES 3.2)". */
+	renderer: z.string().optional(),
+	hardware: z.boolean().optional(),
+	/** Why WebGL is unavailable, or how to get the GPU when it renders in software. */
+	message: z.string().optional(),
+});
+export type RemotionGraphicsInfo = z.infer<typeof RemotionGraphicsSchema>;
+
 export const EngineCapabilitiesSchema = z.object({
 	engine: z.object({
 		version: z.string(),
@@ -111,6 +127,8 @@ export const EngineCapabilitiesSchema = z.object({
 		remotionLocal: z.enum(['ready', 'needs-browser-download', 'unavailable']),
 		/** FFmpeg used by the Remotion path. */
 		remotionBinaries: RemotionBinariesSchema.optional(),
+		/** WebGL of the render browser (absent: engines before the probe reported it). */
+		remotionGraphics: RemotionGraphicsSchema.optional(),
 		fframes: z.enum(['ready', 'unavailable']),
 		fframesReason: z.string().optional(),
 	}),

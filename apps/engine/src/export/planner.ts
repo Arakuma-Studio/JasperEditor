@@ -105,6 +105,8 @@ export type PlanCapabilities = {
 	 * unknown (nothing is refused; the render decides).
 	 */
 	webgl?: () => Promise<WebglStatus>;
+	/** The probe's answer so far, without waiting for it (`unknown` until it finished; the engine probes at start-up). */
+	webglKnown?: () => WebglStatus;
 };
 
 /** Largest frame side any path renders (16K). */
@@ -881,6 +883,15 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 					})),
 				});
 		}
+	}
+
+	// The browser draws every baked or Remotion frame: when its WebGL is a CPU rasteriser (an engine started over SSH,
+	// outside the desktop session) the bake takes hours instead of minutes, which is said before it starts (first, so
+	// short warning lists keep it). Without a GL need the plan does not wait for the probe.
+	if (path === 'remotion' || path === 'hybrid') {
+		const s = webgl ?? deps.capabilities.webglKnown?.();
+		if (s?.hardware === false)
+			warnings.unshift({ code: 'GRAPHICS_SOFTWARE', message: s.message ?? 'Graphics render in software' });
 	}
 
 	// Spec 19 TL-075: a 3D model or HDR environment that is gone never exports as a scene without it.

@@ -6,6 +6,8 @@ import type { GlNeed } from '@jasper/project';
 /** What the WebGL probe of the render browser found (`RemotionWebglStatus` of service.ts, narrowed). */
 export type WebglStatus = {
 	state: 'ok' | 'unavailable' | 'unknown';
+	/** Whether the WebGL renderer is a GPU (false: SwiftShader, llvmpipe…); absent = not probed. */
+	hardware?: boolean;
 	/** Whether the browser has `EXT_color_buffer_float` (float render targets); absent = not probed. */
 	floatTargets?: boolean;
 	/** `MAX_RENDERBUFFER_SIZE` of the browser's WebGL2 (3D supersampling); absent = not probed. */

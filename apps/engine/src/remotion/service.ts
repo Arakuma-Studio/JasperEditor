@@ -113,8 +113,44 @@ function browserLogOption(): { onBrowserLog?: (log: { type: string; text: string
 
 /** `chromiumOptions.gl` values Remotion 4.0.499 accepts (null = Chrome's default). */
 export type RemotionGl = 'angle' | 'swangle' | 'egl' | 'swiftshader' | 'vulkan' | 'angle-egl';
-/** Order in which the start-up probe tries OpenGL back ends for WebGL2 (S06:CG-042). */
-const WEBGL_GL_CANDIDATES: readonly (RemotionGl | null)[] = [null, 'angle', 'swangle', 'egl', 'swiftshader'];
+/**
+ * Order in which the start-up probe tries OpenGL back ends for WebGL2 (S06:CG-042). The first one whose renderer is a
+ * GPU wins; Chrome's default comes first as it is the GPU on macOS and Windows, but headless Linux gives SwiftShader
+ * there, where only ANGLE over EGL / desktop GL reaches the GPU. Vulkan is last of the GPU back ends: it crashes the GPU
+ * process on some NVIDIA drivers. Without any GPU the first software renderer found is used.
+ */
+const WEBGL_GL_CANDIDATES: readonly (RemotionGl | null)[] = [null, 'angle-egl', 'angle', 'egl', 'vulkan'];
+/** Software back ends, tried only when no candidate gave WebGL2 at all. */
+const WEBGL_SOFTWARE_CANDIDATES: readonly RemotionGl[] = ['swangle', 'swiftshader'];
+/** A WebGL renderer string that names a CPU rasteriser rather than a GPU. */
+const SOFTWARE_RENDERER = /swiftshader|llvmpipe|softpipe|lavapipe|swrast|software|basic render driver/i;
+
+/**
+ * Why graphics are slow when the render browser's WebGL is a CPU rasteriser, and what gets the GPU (export plan
+ * warning, start-up log). On Linux an engine started outside the desktop session (over SSH) has no display, and
+ * headless Chrome then reaches no GPU back end.
+ */
+function softwareGraphicsMessage(
+	renderer: string | undefined,
+	env: Record<string, string | undefined>,
+): string {
+	const name = renderer?.match(SOFTWARE_RENDERER)?.[0] ?? renderer ?? 'unknown renderer';
+	const noDisplay = process.platform === 'linux' && !env.DISPLAY && !env.WAYLAND_DISPLAY;
+	return `Graphics render in software (${name}): layer bakes and Remotion renders will be very slow. ${
+		noDisplay
+			? 'The engine has no DISPLAY: start it inside the desktop session, or with its DISPLAY and XAUTHORITY'
+			: 'Start the engine inside the desktop session'
+	}, or set JASPER_REMOTION_GL=angle-egl (or angle) on a computer with a GPU.`;
+}
+
+/** The start-up log line of the WebGL probe. */
+function webglLogLine(s: RemotionWebglStatus): string {
+	if (s.state !== 'ok') return `[remotion] WebGL2 ${s.state}${s.message ? `: ${s.message}` : ''}`;
+	const where = `gl=${s.gl ?? 'default'}, ${s.renderer ?? '?'}`;
+	return s.hardware === false
+		? `[remotion] WARNING: WebGL2 in software (${where}). ${s.message ?? ''}`.trimEnd()
+		: `[remotion] WebGL2 ok on the GPU (${where})`;
+}
 
 /** WebGL2 in the Remotion render browser (colour stage, S06:CG-042). */
 export type RemotionWebglStatus = {
@@ -123,6 +159,8 @@ export type RemotionWebglStatus = {
 	gl: RemotionGl | null;
 	/** `gl.RENDERER` of the probe context, e.g. "ANGLE (Google, Vulkan 1.3.0 (SwiftShader …))". */
 	renderer?: string;
+	/** Whether `renderer` is a GPU (false: SwiftShader, llvmpipe… — every frame is rasterised on the CPU). */
+	hardware?: boolean;
 	/** TL-123: whether the probe context has `EXT_color_buffer_float` (float render targets); absent = not probed. */
 	floatTargets?: boolean;
 	/** `MAX_RENDERBUFFER_SIZE` of the probe context: what 3D supersampling can hold (absent = not probed). */
@@ -592,9 +630,7 @@ export class RemotionService {
 	probeWebgl(): Promise<RemotionWebglStatus> {
 		this.webglPromise ??= this.runWebglProbe().then((s) => {
 			this.webgl = s;
-			this.opts.log?.(
-				`[remotion] WebGL2 ${s.state}${s.state === 'ok' ? ` (gl=${s.gl ?? 'default'}, ${s.renderer ?? '?'})` : s.message ? `: ${s.message}` : ''}`,
-			);
+			this.opts.log?.(webglLogLine(s));
 			return s;
 		});
 		return this.webglPromise;
@@ -615,52 +651,66 @@ export class RemotionService {
 		} catch (e) {
 			return { state: 'unknown', gl: null, message: (e as Error).message };
 		}
-		const errors: string[] = [];
-		for (const gl of candidates) {
-			let browser: RenderBrowser | null = null;
-			try {
-				browser = await r.openBrowser('chrome', {
-					...this.browserOptions(),
-					chromiumOptions: { gl },
-					logLevel: 'error',
-				});
-				const page = await browser.newPage({
-					context: () => null,
-					logLevel: 'error',
-					indent: false,
-					pageIndex: 0,
-					onBrowserLog: null,
-					onLog: () => undefined,
-				});
-				const probe = (await page.evaluate(() => {
-					const c = document.createElement('canvas');
-					const ctx = c.getContext('webgl2');
-					if (!ctx) return null;
-					const dbg = ctx.getExtension('WEBGL_debug_renderer_info');
-					return {
-						renderer: String(ctx.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : ctx.RENDERER)),
-						floatTargets: !!ctx.getExtension('EXT_color_buffer_float'),
-						maxRenderbufferSize: Number(ctx.getParameter(ctx.MAX_RENDERBUFFER_SIZE)),
-					};
-				})) as { renderer: string; floatTargets: boolean; maxRenderbufferSize: number } | null;
-				if (probe)
-					return {
-						state: 'ok',
-						gl,
-						renderer: probe.renderer,
-						floatTargets: probe.floatTargets,
-						...(Number.isFinite(probe.maxRenderbufferSize) && probe.maxRenderbufferSize > 0
-							? { maxRenderbufferSize: probe.maxRenderbufferSize }
-							: {}),
-					};
-				errors.push(`${gl ?? 'default'}: no WebGL2 context`);
-			} catch (e) {
-				errors.push(`${gl ?? 'default'}: ${(e as Error).message.slice(0, 200)}`);
-			} finally {
-				await browser?.close({ silent: true }).catch(() => undefined);
-			}
+		// Each result is a status (WebGL2 found) or why there was none. Chrome's default goes alone first: it is the GPU on
+		// macOS and Windows. The other back ends then open at the same time, so the search costs about one launch.
+		const probeAll = (list: readonly (RemotionGl | null)[]) =>
+			Promise.all(list.map((gl) => this.probeGl(r, gl)));
+		const results = await probeAll(candidates.slice(0, 1));
+		const found = () => results.filter((x): x is RemotionWebglStatus => typeof x !== 'string');
+		if (!found()[0]?.hardware) results.push(...(await probeAll(candidates.slice(1))));
+		const gpu = found().find((x) => x.hardware);
+		if (gpu) return gpu;
+		if (found().length === 0 && !forced) results.push(...(await probeAll(WEBGL_SOFTWARE_CANDIDATES)));
+		const first = found()[0];
+		if (first) return { ...first, message: softwareGraphicsMessage(first.renderer, this.env) };
+		return { state: 'unavailable', gl: null, message: results.join('; ') };
+	}
+
+	/** Opens the render browser with `gl` and reads a WebGL2 context's renderer, or says why there is none. */
+	private async probeGl(r: RendererModule, gl: RemotionGl | null): Promise<RemotionWebglStatus | string> {
+		let browser: RenderBrowser | null = null;
+		try {
+			browser = await r.openBrowser('chrome', {
+				...this.browserOptions(),
+				chromiumOptions: { gl },
+				logLevel: 'error',
+			});
+			const page = await browser.newPage({
+				context: () => null,
+				logLevel: 'error',
+				indent: false,
+				pageIndex: 0,
+				onBrowserLog: null,
+				onLog: () => undefined,
+			});
+			const probe = (await page.evaluate(() => {
+				const c = document.createElement('canvas');
+				const ctx = c.getContext('webgl2');
+				if (!ctx) return null;
+				const dbg = ctx.getExtension('WEBGL_debug_renderer_info');
+				return {
+					renderer: String(ctx.getParameter(dbg ? dbg.UNMASKED_RENDERER_WEBGL : ctx.RENDERER)),
+					floatTargets: !!ctx.getExtension('EXT_color_buffer_float'),
+					maxRenderbufferSize: Number(ctx.getParameter(ctx.MAX_RENDERBUFFER_SIZE)),
+				};
+			})) as { renderer: string; floatTargets: boolean; maxRenderbufferSize: number } | null;
+			if (probe)
+				return {
+					state: 'ok',
+					gl,
+					renderer: probe.renderer,
+					hardware: !SOFTWARE_RENDERER.test(probe.renderer),
+					floatTargets: probe.floatTargets,
+					...(Number.isFinite(probe.maxRenderbufferSize) && probe.maxRenderbufferSize > 0
+						? { maxRenderbufferSize: probe.maxRenderbufferSize }
+						: {}),
+				};
+			return `${gl ?? 'default'}: no WebGL2 context`;
+		} catch (e) {
+			return `${gl ?? 'default'}: ${(e as Error).message.slice(0, 200)}`;
+		} finally {
+			await browser?.close({ silent: true }).catch(() => undefined);
 		}
-		return { state: 'unavailable', gl: null, message: errors.join('; ') };
 	}
 
 	/** `chromiumOptions` for renders: the probed `gl` (awaits the probe once). */

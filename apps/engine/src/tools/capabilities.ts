@@ -44,6 +44,17 @@ function remotionBinaries(r: RemotionService): EngineCapabilities['render']['rem
 	};
 }
 
+function remotionGraphics(r: RemotionService): EngineCapabilities['render']['remotionGraphics'] {
+	const s = r.webglStatus;
+	return {
+		webgl: s.state,
+		gl: s.gl,
+		...(s.renderer ? { renderer: s.renderer } : {}),
+		...(s.hardware !== undefined ? { hardware: s.hardware } : {}),
+		...(s.message ? { message: s.message } : {}),
+	};
+}
+
 export class CapabilityService {
 	private readonly providers = new Set<CapabilityProvider>();
 
@@ -101,6 +112,7 @@ export class CapabilityService {
 				native: sc.nativeRender && encoding.export !== null,
 				remotionLocal: this.deps.remotion.state(),
 				remotionBinaries: remotionBinaries(this.deps.remotion),
+				remotionGraphics: remotionGraphics(this.deps.remotion),
 				fframes: 'unavailable',
 				fframesReason: 'The jasper-mg renderer is not registered',
 			},

@@ -40,6 +40,21 @@ async function main(): Promise<void> {
 	const remotion = caps.render.remotionBinaries;
 	if (remotion?.message) console.warn(`[engine] WARNING: ${remotion.message}`);
 	else if (remotion) console.log(`[engine] Remotion uses the LGPL FFmpeg directory (${remotion.source})`);
+	// The render browser's WebGL: in software (SwiftShader) a graphics bake takes hours, so say which it is.
+	if (caps.render.remotionLocal === 'ready' && process.env.JASPER_WEBGL_PROBE !== '0')
+		void coreServices(engine.app)
+			.remotion.probeWebgl()
+			.then((s) => {
+				const where = `${s.renderer ?? 'unknown renderer'}, gl=${s.gl ?? 'default'}`;
+				if (s.state === 'ok' && s.hardware) console.log(`[engine] graphics render on the GPU (${where})`);
+				else if (s.state === 'ok')
+					console.warn(`[engine] WARNING: ${s.message ?? 'graphics render in software'} (${where})`);
+				else if (s.state === 'unavailable')
+					console.warn(
+						`[engine] WARNING: the render browser has no WebGL2${s.message ? `: ${s.message}` : ''}`,
+					);
+			})
+			.catch(() => undefined);
 	const ready = { type: 'ready', port: engine.port } as const;
 	(process as NodeJS.Process & { parentPort?: ParentPort }).parentPort?.postMessage(ready);
 	process.send?.(ready);
