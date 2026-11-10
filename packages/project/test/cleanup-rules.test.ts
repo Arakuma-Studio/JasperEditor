@@ -182,6 +182,21 @@ describe('rules (Spanish)', () => {
 		expect(none.byWord.some((k) => k === 'off-script' || k === 'head-tail')).toBe(false);
 	});
 
+	it('off-script chatter is found although its function words occur in the script', () => {
+		// A speaker thinking aloud between script lines: "cómo" and "lo" are in every Spanish script, and counting them
+		// put the phrase over the in-script share, so long recordings got no off-script findings at all.
+		const script =
+			'Hoy os enseño cómo funciona Claude Code.\nLo podéis instalar con un solo comando.\nDespués os explico cómo lo uso yo cada día.';
+		const r = kinds(
+			'hoy os enseño cómo funciona claude code | ¿Cómo lo puedo pronunciar? Cloud… | lo puedes instalar con un comando | después os explico cómo lo uso yo cada día',
+			{ script },
+		);
+		expect(r.byWord.slice(7, 12)).toEqual(Array(5).fill('off-script'));
+		// on-script lines, one of them reworded, stay
+		expect(r.byWord.slice(0, 7).every((k) => k === null)).toBe(true);
+		expect(r.byWord.slice(12).every((k) => k === null)).toBe(true);
+	});
+
 	it('a paraphrased closing line is not tail chatter (TC-071 calibration regression)', () => {
 		// The user rewords the last script line when recording; the head / tail rule used to cut everything after the
 		// last unit that matched a line, i.e. the closing sentences the user kept (head / tail precision 0.17 on shorts).

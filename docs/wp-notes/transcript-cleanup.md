@@ -258,6 +258,17 @@ Deliberate differences from the prototype (labelled):
   phrase between pauses ≥ 0.3 s of ≤ 2 words made only of them (and vocalic fillers) is a filler phrase. English
   lists are an **assumption** (not measured on this user): `DEFAULT_FILLERS` + uhh, hm, ahh…; markers you know, I mean,
   like, so, well, okay, right, basically, actually, literally, kind of, sort of, anyway, yeah, oh.
+- **Off-script share over content words.** The prototype took the in-script share over every non-filler token, and
+  function words ("cómo", "lo", "de", "la") are in any Spanish script, so chatter such as "¿Cómo lo puedo
+  pronunciar? Cloud…" scored 2 / 5 ≥ 0.35 and stayed. A 57-minute Spanish recording with a script and
+  `offScript: "remove"` got no off-script findings. The phrase still needs ≥ `offScriptMinTokens` non-filler
+  tokens, but the share is taken over its content words (no stop words, ≥ 3 letters). The phrase also needs two content
+  words to be judged (one when `offScriptMinTokens` is 1), so a single reworded word cannot condemn an on-script
+  fragment. The port fixture labels are unchanged. Regression test: `cleanup-rules.test.ts` "off-script chatter is
+  found although its function words occur in the script" (fails before the change). The tail's "on script" test
+  (see "Calibration") keeps the all-token share it was calibrated with. Limitation: the vocabulary is the whole
+  script, so on a long script more chatter words occur somewhere in it, and recall drops with script length. Not
+  measured on the user's material.
 - **Untranscribed voice** (speech runs ≥ 150 ms without a word) is flagged for review and kept unless accepted
   ("never auto-removed", TC-011). The prototype cut it as part of the gap; on the user's material that was 1–2 % of the
   removed time (FINDINGS §3.1), so Fast keeps a little more there until the user accepts those findings.

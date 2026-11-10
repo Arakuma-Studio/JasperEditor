@@ -220,7 +220,13 @@ export function ruleTakes(ctx: RuleContext): { units: number[][]; hits: TakeHit[
 	return { units, hits };
 }
 
-/** Rule 4 of the prototype: phrases with ≥ `offScriptMinTokens` content tokens of which < `offScriptSimilarity` occur in the script. */
+/**
+ * Rule 4 of the prototype: phrases with ≥ `offScriptMinTokens` content tokens of which < `offScriptSimilarity` occur in
+ * the script. Deliberate difference: the share is taken over the phrase's content words (no stop words, ≥ 3 letters),
+ * and a phrase needs two of them (one when `offScriptMinTokens` is 1) to be judged. The prototype counted function
+ * words, which every script of the language holds ("cómo", "lo", "de"), so chatter such as "¿Cómo lo puedo pronunciar?
+ * Cloud…" passed as scripted and long recordings got no off-script findings at all.
+ */
 export function ruleOffScript(ctx: RuleContext, phs: readonly number[][]): void {
 	const a = ctx.settings.rules.offScript;
 	if (a === 'off' || !ctx.scriptTokens.length) return;
@@ -229,7 +235,9 @@ export function ruleOffScript(ctx: RuleContext, phs: readonly number[][]): void 
 	for (const ph of phs) {
 		const c = content(ctx, ph);
 		if (c.length < t.offScriptMinTokens) continue;
-		const inscript = c.filter((x) => st.has(x)).length / c.length;
+		const ci = cw(ctx, c);
+		if (ci.length < Math.min(2, t.offScriptMinTokens)) continue;
+		const inscript = ci.filter((x) => st.has(x)).length / ci.length;
 		if (inscript < t.offScriptSimilarity) for (const k of ph) claim(ctx, k, 'off-script', a);
 	}
 }

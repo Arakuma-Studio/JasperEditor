@@ -412,7 +412,8 @@ export function detectCleanup(input: DetectInput): DetectResult {
 	ruleMarkerPhrases(ctx, phs, markers);
 	ruleStutters(ctx);
 	// head / tail: before the first unit that says a script line / after the last unit on script — one that says a line
-	// or, after it, one whose words come from the script by the off-script test: closing lines are often paraphrased,
+	// or, after it, one whose words come from the script by the prototype's off-script share (over all non-filler tokens,
+	// as calibrated; the off-script rule itself now judges content words): closing lines are often paraphrased,
 	// and cutting them as tail chatter was the largest error on the user's material (TC-071 calibration). The head side
 	// stays strict: pre-roll talk before the first line is usually on topic, and the user cuts it (measured: a
 	// symmetric rule left 25 s of pre-roll on 13 shorts against 10 s).
