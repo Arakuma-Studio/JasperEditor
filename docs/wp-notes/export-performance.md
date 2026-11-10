@@ -568,8 +568,9 @@ says the device the probe found, the result what ran):
 - a pipelined still that comes out larger than its stream's canvas: `BakeChangedError`, the export prepares again
   without pipelined stills (the existing restart);
 - a composite that fails with an error naming OpenCL or the upload / download (device lost, out of video memory): the
-  export is rendered again with the CPU kernel, the error line in `fallbackReasons` (verified with POCL by removing
-  the OpenCL driver after the probe; e2e test below).
+  export is rendered again with the CPU kernel, the error line in `fallbackReasons` (e2e test below: the OpenCL driver
+  hidden from the ICD loader after the probe; on the RTX 3080 Ti the reason read `the OpenCL kernel failed:
+  [AVHWDeviceContext @ …] Failed to get number of OpenCL platforms: -1001.`).
 
 **Availability** (`probeOpenClTaps`, once per ffmpeg binary and device for the engine's lifetime): the device opens
 (`opencl=jcl:,device_type=gpu` by default: an OpenCL runtime on the CPU would take the cores the kernel is moved off;
@@ -589,13 +590,20 @@ kernel within 2 levels per channel. Frames are written little-endian (big-endian
   (`JASPER_TAPDUMP_DIR`) per pixel (worst ≤ 2 levels, < 0.1 % of values differing); subtitle words with Transform
   pop-in keyframes, a 360° shutter and S_Shake exported 1280×720 with the OpenCL kernel vs the CPU kernel (SSIM ≥ 0.998
   per frame, ≥ 99.5 % of the text region's values within 2 levels); the CPU re-render after an OpenCL failure.
-  RESULTS_E2E
+  Measured on the user's PC (RTX 3080 Ti, driver 595.99, load1 ≈ 1.7, at 0029f19b1): all 4 pass — dumped frames worst
+  1 level, 451 values differ; the subtitle export SSIM per frame min 1.000000 (PSNR min 89.1 dB), text regions
+  99.993–100 % of values within 2 levels; the CPU re-render's result `{device: cpu, streams: {opencl: 0, cpu: 1}}`.
+  `export-opencl.test.ts` on the same PC (OpenCL path): SSIM min 0.999999.
 
 **Cost of the route** (measured on the user's PC, another agent's export running, load1 ≈ 20): the 39 dumped frames
 repeated 50 times (1,950 frames, ≈ 694,000 tap-pixels per frame, input 1059×217, output 822×198) through `hwupload,
 program_opencl, hwdownload` in one ffmpeg: 635 fps, ffmpeg 3.10 s user + 0.77 s system = **≈ 2.0 ms of CPU per
 frame** (NVIDIA's OpenCL waits for each frame's kernel and transfers on the filter thread), against ≈ 17–46 ms of CPU
 per frame for the CPU kernel at 24–66 ns per tap-pixel (§9).
+
+Light suites on this host (no GPU; POCL for the OpenCL path): `export-opencl.test.ts` passes with and without a
+device; `subtitle-lowered.test.ts`'s fast-check cases time out at 5 s with this host at load ≈ 60–95 (they pass on the
+user's PC; the kernel code is unchanged).
 
 Tests: `apps/engine/test/export-opencl.test.ts` — the plan and the result say where kernel streams are drawn (the
 CPU kernel and the probe's reason without a device; on a device, the export against the CPU kernel's, SSIM ≥ 0.999);
@@ -604,4 +612,52 @@ one OpenCL device as the filter device, and the rest of the graph unchanged; str
 size) and a VAAPI encoder stay on the CPU kernel by name. All three fail on the previous commit (no `kernel`
 report, no `openCl` route).
 
-RESULTS_BENCH
+**Full export of the real project** (user's PC: RTX 3080 Ti, 24 logical cores, 94 GB, driver 595.99; engine of
+this branch merged with main at 0029f19b1, in a systemd scope `MemoryMax=40G`, `MemorySwapMax=0`, vendor LGPL FFmpeg
+7.1.5, defaults: 24 segments, 4 at a time, NVDEC, output-size composite; prj_SC0SEK431T1QPQYF, 15:31, 55,860 frames,
+`draft-720p-h264`, `normalizeLufs: -14`). Each run started after the idle check (3 samples: load1 < 8, no other
+ffmpeg); the user's desktop (Chrome, Discord) used the GPU as it pleased (10–45 % before the runs). The CPU-kernel
+baseline is the same build with `JASPER_EXPORT_OPENCL=0`, run in the same session. *Warm* = layer cache warm, the
+second export of the engine process (as `mout2` in §7: the delivery reuses the solved loudness parameters); *cold* =
+the layer cache moved aside, the first export of a new engine (restored afterwards). Job time from the job result.
+
+| Run | Job | Bake | Encode (start → time) | fps | Audio (beside) | CPU busy mean / max | node / ffmpeg cores | GPU · NVENC · NVDEC mean (max) | Composites' RSS sum (largest) | Video memory |
+|---|---:|---:|---|---:|---:|---|---|---|---|---:|
+| warm, CPU kernel | 264.7 s | 1.6 s | 13.7 s → 245.5 s | 227.6 | 179.3 s | 83 % / 90 % | 6.3 / 9.9 | 23 (39) · 17 (33) · 15 (100) % | 9.3 GB (3.1) | 4.3 GB |
+| warm, **OpenCL** | **223.0 s** | 1.7 s | 15.0 s → **200.4 s** | **278.7** | 189.9 s | **70 %** / 84 % | **0.75** / 12.1 | 26 (48) · 21 (36) · 18 (75) % | 10.1 GB (3.4) | 4.9 GB |
+| cold, CPU kernel | 375.5 s | 93.8 s | 102.5 s → 267.7 s | 208.7 | 321.4 s | 85 % / 93 % | 6.6 / 9.9 | 15 (30) · 16 (37) · 11 (62) % | 9.5 GB (3.2) | 4.3 GB |
+| cold, **OpenCL** | 381.9 s | 110.3 s | 118.9 s → 255.8 s | 218.4 | 284.2 s | **70 %** / 86 % | **1.3** / 11.3 | 49 (100) · 15 (24) · 15 (100) % | 10.4 GB (3.4) | 5.5 GB |
+
+Other phases: plan 8.6–13.3 s, frameCheck 4.0–6.2 s, join 0.8 s, finish 0.5 s. Peak scope memory 15.0 GB (CPU
+kernel) / 16.9 GB (OpenCL) over cold + warm (the scope's peak spans both runs of an engine, the cold bake included).
+
+- **The CPU is freed**: the node kernel threads go from ≈ 6.3 cores to ≈ 0.6–1.3 (the rest is the engine and the
+  mixer), ffmpeg takes ≈ 2 cores more (the uploads, downloads and NVIDIA's waits for each frame on the filter
+  threads, ≈ 0.5 core per running stream), and the machine is 70 % busy during the encode instead of 83–85 %.
+- **Warm: the encode is 18 % faster** (245.5 → 200.4 s, 228 → 279 fps) and the job 16 % (264.7 → 223.0 s; §7's
+  pre-merge baseline: 269.9 s, 221 fps).
+- **Cold: the job is not shorter** (375.5 vs 381.9 s): its critical path is the bake (93.8 vs 110.3 s, the render
+  browsers' variation) and the loudness delivery running beside the encode (it ends at 321 / 284 s); the encode itself
+  4 % faster (267.7 → 255.8 s).
+- **Other GPU load slows the OpenCL route**: each composite's filter thread waits for its stream's frame on the GPU,
+  so the encode follows the GPU's other users. Runs of this branch with the desktop's GPU use at ≥ 49 % mean during
+  the encode encoded at 218–231 fps (this cold run; a pre-merge cold run 231 fps at 55 %; a pre-merge warm run whose
+  17 masters were re-rendered just before, 222 fps at 56 %), runs at ≤ 37 % at 262–279 fps (pre-merge warm 262 fps).
+  With the CPU kernel the encode is CPU-bound and ignores the GPU's load. Per-segment composite lifetimes are equal
+  (37.1 s CPU kernel, 37.3 s OpenCL in the 56 % run; 31.8 s in the 37 % run): the four composites at a time, not the
+  CPU, now bound the encode — more segments at once (`JASPER_EXPORT_HW_SESSIONS`) are the next measurement.
+- One pre-merge CPU-kernel run overlapped a redeploy of the user's live engine (13:23–13:25) and is not used.
+
+**Picture and checks** (warm OpenCL export): `verify_export` — every format row passes (decode, streams h264
+1280×720 60 fps + AAC 48 kHz stereo, duration 931 s, A/V skew 0, true peak −2.32 dBTP), no black or flash at the
+cuts, loudness −13.9 LUFS; `cut-click` flags the edit's own 19 cuts as before. SSIM against `/tmp/je-mine/out2.mp4`
+(the CPU-kernel export of §7; the CPU-kernel run here is the same file, byte for byte in size and SSIM) over all
+55,860 frames: mean 0.99928, 1st percentile 0.99526, min 0.98922, none under 0.98; cold OpenCL vs cold CPU kernel:
+mean 0.99928, min 0.98923. The lowest frames (40,666–40,674) differ over the whole picture (mean 0.42 levels, max 48,
+rows 80–719 — video and text alike) and look identical: NVENC's decisions diverging from slightly different input
+(the kernel itself differs by ≤ 1 level), not the text drawing. The lossless gates are the dumped frames and the
+ProRes e2e above.
+
+**Not done**: an asynchronous OpenCL route (the filter thread waits per frame; `program_opencl` finishes each frame)
+and moving the sub-pixel video streams (`streamLayer`, decoded per frame) to the GPU; more concurrent segments to turn
+the freed cores into speed.

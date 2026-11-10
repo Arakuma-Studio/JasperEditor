@@ -8,7 +8,7 @@
 //   streams; the layer bake needs Remotion) drawn by the OpenCL kernel against the same export drawn by the CPU
 //   kernel: SSIM per frame, and per pixel on the text.
 import { spawnSync } from 'node:child_process';
-import { appendFileSync, existsSync, readdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ExportResultSchema } from '@jasper/api';
@@ -315,9 +315,11 @@ describe.runIf(enabled)('OpenCL kernel fidelity (JASPER_OPENCL_E2E=1)', { timeou
 
 	it('renders again with the CPU kernel when the OpenCL composite fails', async () => {
 		const d = await subtitleDoc();
-		// (the probe passed; the composite's device then fails to open: no OpenCL platform)
-		const icd = process.env.OCL_ICD_FILENAMES;
-		process.env.OCL_ICD_FILENAMES = join(tmpdir(), 'no-such-opencl-driver.so');
+		// (the probe passed; the composite's device then fails to open: no OpenCL driver for the ICD loader)
+		const saved = { files: process.env.OCL_ICD_FILENAMES, vendors: process.env.OCL_ICD_VENDORS };
+		const empty = mkdtempSync(join(tmpdir(), 'no-opencl-'));
+		process.env.OCL_ICD_FILENAMES = join(empty, 'none.so');
+		process.env.OCL_ICD_VENDORS = empty;
 		try {
 			const r = await exportFile(d);
 			report(`after an OpenCL failure: ${JSON.stringify(r.result.pipeline?.kernel)}`);
@@ -326,8 +328,14 @@ describe.runIf(enabled)('OpenCL kernel fidelity (JASPER_OPENCL_E2E=1)', { timeou
 				fallbackReasons: [expect.stringMatching(/^the OpenCL kernel failed: .*opencl/i)],
 			});
 		} finally {
-			if (icd === undefined) delete process.env.OCL_ICD_FILENAMES;
-			else process.env.OCL_ICD_FILENAMES = icd;
+			for (const [k, v] of [
+				['OCL_ICD_FILENAMES', saved.files],
+				['OCL_ICD_VENDORS', saved.vendors],
+			] as const) {
+				if (v === undefined) delete process.env[k];
+				else process.env[k] = v;
+			}
+			rmSync(empty, { recursive: true, force: true });
 		}
 	});
 });
