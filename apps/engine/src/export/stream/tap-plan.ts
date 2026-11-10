@@ -3,6 +3,7 @@
 import type { Rational } from '@jasper/project';
 import type { OverrideReady } from '../native-ext.ts';
 import { shiftProgram, type TapFrame } from './lowered.ts';
+import type { GpuTapLayout } from './opencl.ts';
 
 /** A picture of a member: `inputs` + `filter` (ending in a `w × h` RGBA stream) decoded for one frame. */
 export type TapPicture = {
@@ -45,6 +46,11 @@ export type TapStreamPlan = {
 	g0: number;
 	g1: number;
 	fps: Rational;
+	/**
+	 * Drawn by the OpenCL program in the composite (opencl.ts): the stream's pipe carries each frame's program and
+	 * picture in this layout instead of its drawn pixels. Absent = the CPU kernel draws it.
+	 */
+	gpu?: GpuTapLayout;
 };
 
 /**

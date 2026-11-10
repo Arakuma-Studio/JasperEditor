@@ -75,7 +75,7 @@ import { exportAudioWorkers } from '../sound-design/measure-pool.ts';
 import { audioEncodeArgs, type EncoderService, pixFmtFor, videoEncodeArgs } from '../tools/encoders.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { exists, randomId } from '../tools/fs.ts';
-import { terminateTree } from '../tools/process.ts';
+import { ToolError, terminateTree } from '../tools/process.ts';
 import { LOCAL_PROTOCOLS } from '../tools/protocols.ts';
 import { runBlendPipeline } from './blend/run.ts';
 import {
@@ -139,6 +139,7 @@ import {
 	resultSoundWarnings,
 } from './sound-credits.ts';
 import { convertStill, stillCurveFor } from './still-formats.ts';
+import { openClPolicyFromEnv, probeOpenClTaps } from './stream/opencl.ts';
 import type { StreamLayerPlan } from './stream/plan.ts';
 import { streamLayer } from './stream/run.ts';
 import { BakeChangedError, streamTaps } from './stream/taps.ts';
@@ -430,6 +431,9 @@ export class ExportService {
 		});
 		const comp = planCompositeSize(snap, planned.output);
 		const size = outputSizeSnapshot(snap, comp).settings;
+		// docs/wp-notes/export-performance.md §10: where kernel streams will be drawn (streams that do not fit the OpenCL
+		// program are known when the graphs are built: the result names them)
+		const cl = await probeOpenClTaps(this.deps.ff, openClPolicyFromEnv());
 		return {
 			decode: nvdec ? 'nvdec' : 'cpu',
 			composite: {
@@ -437,6 +441,7 @@ export class ExportService {
 				size: comp.size,
 				...(comp.fallbackReasons.length ? { fallbackReasons: comp.fallbackReasons } : {}),
 			},
+			kernel: cl.ok ? { device: 'opencl' } : { device: 'cpu', fallbackReasons: [cl.reason] },
 			segments: segments.length,
 			concurrency,
 			overlays: layersPerSegment(snap, segments),
@@ -1361,6 +1366,8 @@ export class ExportService {
 		 * on whole output pixels; the extensions prepare again at the sequence size). Null = decide by `planCompositeSize`.
 		 */
 		compositeFallback: string[] | null = null,
+		/** docs/wp-notes/export-performance.md §10: the OpenCL kernel failed in an earlier attempt (the CPU draws). */
+		openClFailure: string | null = null,
 	): Promise<number> {
 		// output-size.ts: decided before the extensions prepare (the layer bake renders masters at the composite size)
 		const comp0: CompositeSizePlan = compositeFallback
@@ -1400,6 +1407,7 @@ export class ExportService {
 				false,
 				segmentsOff,
 				compositeFallback,
+				openClFailure,
 			);
 		};
 		const report = this.report(ctx);
@@ -1509,6 +1517,12 @@ export class ExportService {
 						reason: still ? 'stills decode on the CPU' : 'GPU decode is off (JASPER_EXPORT_NVDEC=0)',
 					};
 		if (!still) ctx.log(`native: decode ${nvdec.ok ? 'NVDEC (cuda)' : `CPU (${nvdec.reason})`}`);
+		// docs/wp-notes/export-performance.md §10: kernel streams drawn by the OpenCL program when a device passes the probe
+		const openCl = still
+			? ({ ok: false, reason: 'stills draw on the CPU' } as const)
+			: openClFailure
+				? ({ ok: false, reason: openClFailure } as const)
+				: await probeOpenClTaps(this.deps.ff, openClPolicyFromEnv());
 		type Part = { graph: ReturnType<typeof buildNativeGraph>; file: string; args: string[]; label: string };
 		const parts: Part[] = [];
 		// output-size.ts: a downscaled export is composited on an output-size canvas, unless a feature needs the sequence
@@ -1538,6 +1552,7 @@ export class ExportService {
 					...(split ? { filterThreads: threads } : {}),
 					// (the export's GPU decoders are shared by its concurrent segments)
 					...(nvdec.ok ? { hwDecode: nvdecForGraph(Math.floor(gpuPolicy.maxInputs / atOnce)) } : {}),
+					...(openCl.ok ? { openCl: openCl.taps } : {}),
 					still,
 					trackStreams: process.env.JASPER_EXPORT_TRACK_STREAMS !== '0',
 					coverBase: process.env.JASPER_EXPORT_COVER_BASE !== '0',
@@ -1592,8 +1607,19 @@ export class ExportService {
 				pipeline,
 				segmentsOff,
 				inexact.slice(0, 20),
+				openClFailure,
 			);
 		}
+		const kernel = {
+			opencl: parts.reduce((n, p) => n + p.graph.kernel.opencl, 0),
+			cpu: parts.reduce((n, p) => n + p.graph.kernel.cpu, 0),
+			fallbackReasons: [
+				...new Set([
+					...(openCl.ok ? [] : [openCl.reason]),
+					...parts.flatMap((p) => p.graph.kernel.fallbackReasons),
+				]),
+			].slice(0, 20),
+		};
 		if (!still)
 			report.pipeline = {
 				decode: parts.some((p) => p.graph.hwDecoded > 0) ? 'nvdec' : 'cpu',
@@ -1602,6 +1628,15 @@ export class ExportService {
 					size: comp.size,
 					...(comp.fallbackReasons.length ? { fallbackReasons: comp.fallbackReasons } : {}),
 				},
+				...(kernel.opencl + kernel.cpu > 0
+					? {
+							kernel: {
+								device: kernel.opencl > 0 ? ('opencl' as const) : ('cpu' as const),
+								streams: { opencl: kernel.opencl, cpu: kernel.cpu },
+								...(kernel.fallbackReasons.length ? { fallbackReasons: kernel.fallbackReasons } : {}),
+							},
+						}
+					: {}),
 				segments: parts.length,
 				concurrency: atOnce,
 				memoryBytes: segPlan.peakBytes,
@@ -1617,6 +1652,10 @@ export class ExportService {
 		if (!still)
 			ctx.log(
 				`native: composited at the ${comp.size} size (${outputSizeSnapshot(snap, comp).settings.width}×${outputSizeSnapshot(snap, comp).settings.height})${comp.fallbackReasons.length ? `: ${comp.fallbackReasons.join('; ')}` : ''}`,
+			);
+		if (!still && kernel.opencl + kernel.cpu > 0)
+			ctx.log(
+				`native: kernel streams: ${kernel.opencl} on the OpenCL device, ${kernel.cpu} on the CPU${kernel.fallbackReasons.length ? ` (${kernel.fallbackReasons.join('; ')})` : ''}`,
 			);
 		ctx.log(
 			`native: estimated composite memory ${(segPlan.peakBytes / 1024 ** 3).toFixed(1)} GB of a ${(compositeMemoryBudget() / 1024 ** 3).toFixed(1)} GB budget`,
@@ -1677,11 +1716,14 @@ export class ExportService {
 		if (ctx.signal.aborted) onJobAbort();
 		const producers: Promise<void>[] = [];
 		let streamError: Error | null = null;
+		// (streams the OpenCL kernel draws use no kernel threads)
+		const cpuStreams = (streams: ReturnType<typeof buildNativeGraph>['streams']) =>
+			streams.filter((s) => !('kind' in s.plan && s.plan.kind === 'taps' && s.plan.gpu)).length;
 		const allStreams = parts.reduce(
 			(n, p) =>
 				n +
-				p.graph.streams.length +
-				(p.graph.blend?.segments.reduce((m, sg) => m + sg.streams.length + 1, 0) ?? 0),
+				cpuStreams(p.graph.streams) +
+				(p.graph.blend?.segments.reduce((m, sg) => m + cpuStreams(sg.streams) + 1, 0) ?? 0),
 			0,
 		);
 		// (the streams of the segments rendering at once share the CPU)
@@ -1871,9 +1913,31 @@ export class ExportService {
 			// A stream that lost its pipe only reports the composite's death: the composite's own error then wins.
 			const se = streamError as Error | null;
 			if (se instanceof BakeChangedError && !ctx.signal.aborted) return restart(se.message);
+			const consequence = !se || /^layer stream:/.test(se.message);
+			// §10: a composite that failed in the OpenCL kernel (device lost, out of video memory…) is rendered again with
+			// the CPU kernel, named in `pipeline.kernel.fallbackReasons`
+			const clError = part.graph.kernel.opencl > 0 && consequence ? openClErrorOf(e) : null;
+			if (clError && !ctx.signal.aborted && bgError === null) {
+				const why = `the OpenCL kernel failed: ${clError}`;
+				ctx.log(`native: ${why}; rendering again with the CPU kernel`);
+				await settle();
+				ctx.signal.removeEventListener('abort', onAbortBg);
+				if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
+				return this.runNative(
+					planned,
+					masters,
+					output,
+					ctx,
+					still,
+					audioIn,
+					pipeline,
+					segmentsOff,
+					compositeFallback,
+					why,
+				);
+			}
 			await abandon();
 			if (bgError !== null && !ctx.signal.aborted) throw failure(e);
-			const consequence = !se || /^layer stream:/.test(se.message);
 			throw consequence ? killedComposite(e, part.graph.inputs.length, ctx.signal.aborted) : se;
 		}
 		// The composite succeeded (and the frame count is checked below): a stream it stopped reading ends here.
@@ -1902,6 +1966,7 @@ export class ExportService {
 					pipeline,
 					true,
 					compositeFallback,
+					openClFailure,
 				);
 			}
 		}
@@ -3529,6 +3594,19 @@ function residentBytes(pid: number): number {
 /** Overlay filters in a filtergraph (each one is traversed by every frame of the composite). */
 function overlayCount(filter: string): number {
 	return filter.match(/\]overlay=/g)?.length ?? 0;
+}
+
+/**
+ * §10: the line of a failed composite's error that names the OpenCL device or the filters around the OpenCL kernel
+ * (`hwupload`, `program_opencl`, `hwdownload`), null when the failure is elsewhere.
+ */
+function openClErrorOf(e: unknown): string | null {
+	if (!(e instanceof Error)) return null;
+	const stderr = e instanceof ToolError && typeof e.detail?.stderr === 'string' ? e.detail.stderr : '';
+	const line = `${stderr}\n${e.message}`
+		.split('\n')
+		.find((l) => /opencl|hwupload|hwdownload|\bCL_[A-Z_]+/i.test(l));
+	return line ? line.trim().slice(0, 240) : null;
 }
 
 export function killedComposite(e: unknown, inputs: number, cancelled: boolean): unknown {

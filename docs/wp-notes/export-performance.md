@@ -499,3 +499,165 @@ as its CPU slots allow…", "a browser serves at most pagesPerBrowser pages…")
 encodes of a round side by side…": the round's two decoded checks run at once, and the outcome equals the
 one-at-a-time delivery) — all fail on main; `sound-design-measure-worker.test.ts` ("a delivery whose passes and
 decoded checks run on worker threads writes the same WAV, encode and outcome", bundled worker).
+
+## 9. Subtitle / text drawing off the CPU (investigation)
+
+After §7 the warm export encodes at 221 fps with the CPU 82–84 % busy; the node kernel streams drawing the lowered
+subtitles take ≈ 5.2 cores of it (uncached run, encode after the audio: node 5.2 cores, ffmpeg 10.8).
+
+**What the kernel draws** (measured on the user's PC: the tap stream instrumented, uncommitted, over the first 4 min of
+the real project, 5 segments, 14,379 frames): 14,312 frames drawn, on average **10.3 taps** per frame over a
+**73,177 px** rectangle (≈ 690,000 tap-pixels per frame; up to 40 taps), 3 coverage stages per tap (the layer box, the
+Transform effect's box, the S_Shake canvas). **No frame repeats the previous one** (0 identical tap programs) and **no
+frame's taps share one map** (0 frames): S_Shake moves the picture every frame and the Transform effect's 360° shutter
+spreads 8–40 taps along that motion.
+
+- **(b) caching cue rasters and letting ffmpeg transform them** is therefore not faithful: there is no repeated frame
+  to reuse, and one transformed raster per frame would drop the shutter taps (the motion blur the composition draws).
+- **(c) cheaper CPU kernel**: per-tap-pixel cost measured with real frames (dumped tap programs and pictures, kernel
+  run as the workers run it) ≈ 24–66 ns on the user's PC (under the other agent's load: load1 ≈ 30). Skipping samples
+  whose bilinear footprint is fully transparent (a per-picture mask; byte-identical output on all 39 dumped frames)
+  saves only ≈ 5 %; removing closure-captured loop bounds nothing measurable. The work is inherent (10 bilinear RGBA
+  samples per pixel); a SIMD / premultiplied-float rewrite is estimated at ≈ 1.5–2× (≈ 1.5–2.5 cores freed), not byte
+  exact.
+- **(a) the GPU**: the render browser could draw it, but every frame would leave Chrome through the DevTools protocol
+  (≈ 150 MB/s of RGBA at 221 fps): not viable. **FFmpeg's OpenCL is**: the shipped LGPL build has `program_opencl`,
+  `openclsrc`, `overlay_opencl`, `hwupload` / `hwdownload`, and an OpenCL device opens on the RTX 3080 Ti (NVIDIA CUDA
+  platform; an RGBA upload / download round trip ran). Plan: port `drawTaps` (taps, coverage stages, bilinear
+  premultiplied sum, `sum / wsum`) to an OpenCL kernel run by `program_opencl` with two inputs per frame — the cue's
+  picture and a small float "program" frame with that frame's taps, both written by node instead of the drawn frame —
+  then `hwdownload` into the CPU overlay; float32 on the GPU instead of float64: an SSIM / text-edge gate against the
+  kernel, the kernel kept as the fallback (no OpenCL device, a program that does not fit) and reported in `pipeline`.
+  Built in §10.
+
+## 10. Kernel streams on the OpenCL device (implemented)
+
+`stream/opencl.ts`, `stream/taps.ts`, `native.ts`, `service.ts`.
+
+**Route.** Every kernel stream (`TapStreamPlan`: the lowered subtitles / text stills, baked stills placed in sequence
+space, sub-pixel stills; one or many members) whose frames fit the OpenCL program gets `plan.gpu`, a layout of its
+input frame: `inW × inH` RGBA, the frame's program in the first `progRows` rows (one little-endian float32 per pixel,
+bytes in R, G, B, A) and the member's picture below it (top-left of a canvas the size of the stream's largest
+picture, every mip level counted). Node writes one such frame per output frame instead of the drawn pixels
+(`streamGpuTaps`: no kernel threads, pictures decoded and prefetched as before), and the composite's chain for the
+stream becomes `hwupload, program_opencl=source=<taps.cl>:kernel=jasper_taps:size=<outW>x<outH>, hwdownload,
+format=rgba` before the unchanged `setpts` / fades / `overlay`. The process gets `-init_hw_device <device>
+-filter_hw_device jcl` (one OpenCL device per process; NVDEC's CUDA device is separate). The shipped LGPL FFmpeg 7.1
+runs it as a separate executable; `program_opencl`'s `size` option sets the output size with an input (checked: an
+input of 64×48 gave 16×8 frames). The program file is content-addressed in the temp directory
+(`jasper-opencl/taps-<sha>.cl`), written atomically and again when missing.
+
+**Maths.** `jasper_taps` is `drawTaps` per output pixel (one work item per pixel of the stream's frame): the same taps
+in the same order, the picture's clip coverage and every stage's coverage (½ px ramps, product, early-out at 0), the
+clamped bilinear premultiplied sample (texel centres at i + ½), `acc += k·Σ c·a / 255`, `acc.a += k·a`, then
+`255 / a` normalisation, `min(255)` and `floor(x + 0.5)`; texels are read with nearest sampling and turned back into
+bytes (`× 255`, round to nearest), bilinear weights are computed in the program (the hardware filter's 8-bit
+fractions are not used). Values the CPU kernel derives once per tap — clamped clip, ½-texel sample bounds, the
+`1 / hypot` edge gradients of the clip and every stage — are computed in float64 by node and sent as float32
+(`encodeGpuFrame`); taps the CPU kernel skips (w ≤ 0, empty clip) are left out. Differences: float32 maps and sums
+on the GPU (the CPU kernel computes in float64 and accumulates in float32); `drawLayer`'s one-tap fast path is drawn
+by the same multi-tap formula (equal up to rounding, `subtitle-lowered.test.ts`). The row-span shortcut of the CPU
+kernel only skips coverage computations that are 1; the GPU computes them.
+
+**Fallbacks** (`pipeline.kernel = { device: 'opencl' | 'cpu', streams: { opencl, cpu }, fallbackReasons }`; the plan
+says the device the probe found, the result what ran):
+- no OpenCL GPU, a failed self-test, `JASPER_EXPORT_OPENCL=0`, stills (one frame): every stream on the CPU kernel;
+- a stream with a frame of more than 256 taps or a tap of more than 8 stages, or a picture / stream larger than
+  8192 px (the image size every full-profile OpenCL device supports): that stream on the CPU kernel, by name;
+- a VAAPI encoder (its `hwupload` needs the process's one filter device): the graph's streams on the CPU kernel;
+- a pipelined still that comes out larger than its stream's canvas: `BakeChangedError`, the export prepares again
+  without pipelined stills (the existing restart);
+- a composite that fails with an error naming OpenCL or the upload / download (device lost, out of video memory): the
+  export is rendered again with the CPU kernel, the error line in `fallbackReasons` (e2e test below: the OpenCL driver
+  hidden from the ICD loader after the probe; on the RTX 3080 Ti the reason read `the OpenCL kernel failed:
+  [AVHWDeviceContext @ …] Failed to get number of OpenCL platforms: -1001.`).
+
+**Availability** (`probeOpenClTaps`, once per ffmpeg binary and device for the engine's lifetime): the device opens
+(`opencl=jcl:,device_type=gpu` by default: an OpenCL runtime on the CPU would take the cores the kernel is moved off;
+`JASPER_EXPORT_OPENCL_DEVICE=any` or `<platform>.<device>` picks another), `program_opencl` builds the program, and a
+self-test frame (3 rotated, scaled taps with 2 stages each over a partly transparent 23×17 picture) matches the CPU
+kernel within 2 levels per channel. Frames are written little-endian (big-endian hosts use the CPU kernel).
+
+**Fidelity** (float32 vs the CPU kernel):
+- The 39 real-project frames dumped from the kernel (`/tmp/je-mine/tapdump`, 1–40 taps, 3 stages, pictures up to
+  1059×214, streams 766–822 × 186–198), all drawn by `program_opencl` exactly as the composite runs them, against
+  `drawTaps`: worst difference **1 level**, 451 of 25,389,936 values differ (measured on the user's PC, RTX 3080 Ti,
+  driver 595.99); with POCL 3.0 (CPU OpenCL, this host, dev only) worst 1 level, 445 values differ.
+- Export of two moving, rotating sub-pixel stills on one track (one kernel stream), OpenCL (POCL) vs CPU kernel, 50
+  frames ProRes: SSIM min 0.999999 (`export-opencl.test.ts`, runs the comparison only where a device passes the
+  probe).
+- `export-opencl.e2e.test.ts` (JASPER_OPENCL_E2E=1, needs an OpenCL GPU and Remotion): the probe; the dumped frames
+  (`JASPER_TAPDUMP_DIR`) per pixel (worst ≤ 2 levels, < 0.1 % of values differing); subtitle words with Transform
+  pop-in keyframes, a 360° shutter and S_Shake exported 1280×720 with the OpenCL kernel vs the CPU kernel (SSIM ≥ 0.998
+  per frame, ≥ 99.5 % of the text region's values within 2 levels); the CPU re-render after an OpenCL failure.
+  Measured on the user's PC (RTX 3080 Ti, driver 595.99, load1 ≈ 1.7, at 0029f19b1): all 4 pass — dumped frames worst
+  1 level, 451 values differ; the subtitle export SSIM per frame min 1.000000 (PSNR min 89.1 dB), text regions
+  99.993–100 % of values within 2 levels; the CPU re-render's result `{device: cpu, streams: {opencl: 0, cpu: 1}}`.
+  `export-opencl.test.ts` on the same PC (OpenCL path): SSIM min 0.999999.
+
+**Cost of the route** (measured on the user's PC, another agent's export running, load1 ≈ 20): the 39 dumped frames
+repeated 50 times (1,950 frames, ≈ 694,000 tap-pixels per frame, input 1059×217, output 822×198) through `hwupload,
+program_opencl, hwdownload` in one ffmpeg: 635 fps, ffmpeg 3.10 s user + 0.77 s system = **≈ 2.0 ms of CPU per
+frame** (NVIDIA's OpenCL waits for each frame's kernel and transfers on the filter thread), against ≈ 17–46 ms of CPU
+per frame for the CPU kernel at 24–66 ns per tap-pixel (§9).
+
+Light suites on this host (no GPU; POCL for the OpenCL path): `export-opencl.test.ts` passes with and without a
+device; `subtitle-lowered.test.ts`'s fast-check cases time out at 5 s with this host at load ≈ 60–95 (they pass on the
+user's PC; the kernel code is unchanged).
+
+Tests: `apps/engine/test/export-opencl.test.ts` — the plan and the result say where kernel streams are drawn (the
+CPU kernel and the probe's reason without a device; on a device, the export against the CPU kernel's, SSIM ≥ 0.999);
+the built graph runs `hwupload, program_opencl, hwdownload` for the stream, with the input frame size of the layout,
+one OpenCL device as the filter device, and the rest of the graph unchanged; streams that do not fit (taps, picture
+size) and a VAAPI encoder stay on the CPU kernel by name. All three fail on the previous commit (no `kernel`
+report, no `openCl` route).
+
+**Full export of the real project** (user's PC: RTX 3080 Ti, 24 logical cores, 94 GB, driver 595.99; engine of
+this branch merged with main at 0029f19b1, in a systemd scope `MemoryMax=40G`, `MemorySwapMax=0`, vendor LGPL FFmpeg
+7.1.5, defaults: 24 segments, 4 at a time, NVDEC, output-size composite; prj_SC0SEK431T1QPQYF, 15:31, 55,860 frames,
+`draft-720p-h264`, `normalizeLufs: -14`). Each run started after the idle check (3 samples: load1 < 8, no other
+ffmpeg); the user's desktop (Chrome, Discord) used the GPU as it pleased (10–45 % before the runs). The CPU-kernel
+baseline is the same build with `JASPER_EXPORT_OPENCL=0`, run in the same session. *Warm* = layer cache warm, the
+second export of the engine process (as `mout2` in §7: the delivery reuses the solved loudness parameters); *cold* =
+the layer cache moved aside, the first export of a new engine (restored afterwards). Job time from the job result.
+
+| Run | Job | Bake | Encode (start → time) | fps | Audio (beside) | CPU busy mean / max | node / ffmpeg cores | GPU · NVENC · NVDEC mean (max) | Composites' RSS sum (largest) | Video memory |
+|---|---:|---:|---|---:|---:|---|---|---|---|---:|
+| warm, CPU kernel | 264.7 s | 1.6 s | 13.7 s → 245.5 s | 227.6 | 179.3 s | 83 % / 90 % | 6.3 / 9.9 | 23 (39) · 17 (33) · 15 (100) % | 9.3 GB (3.1) | 4.3 GB |
+| warm, **OpenCL** | **223.0 s** | 1.7 s | 15.0 s → **200.4 s** | **278.7** | 189.9 s | **70 %** / 84 % | **0.75** / 12.1 | 26 (48) · 21 (36) · 18 (75) % | 10.1 GB (3.4) | 4.9 GB |
+| cold, CPU kernel | 375.5 s | 93.8 s | 102.5 s → 267.7 s | 208.7 | 321.4 s | 85 % / 93 % | 6.6 / 9.9 | 15 (30) · 16 (37) · 11 (62) % | 9.5 GB (3.2) | 4.3 GB |
+| cold, **OpenCL** | 381.9 s | 110.3 s | 118.9 s → 255.8 s | 218.4 | 284.2 s | **70 %** / 86 % | **1.3** / 11.3 | 49 (100) · 15 (24) · 15 (100) % | 10.4 GB (3.4) | 5.5 GB |
+
+Other phases: plan 8.6–13.3 s, frameCheck 4.0–6.2 s, join 0.8 s, finish 0.5 s. Peak scope memory 15.0 GB (CPU
+kernel) / 16.9 GB (OpenCL) over cold + warm (the scope's peak spans both runs of an engine, the cold bake included).
+
+- **The CPU is freed**: the node kernel threads go from ≈ 6.3 cores to ≈ 0.6–1.3 (the rest is the engine and the
+  mixer), ffmpeg takes ≈ 2 cores more (the uploads, downloads and NVIDIA's waits for each frame on the filter
+  threads, ≈ 0.5 core per running stream), and the machine is 70 % busy during the encode instead of 83–85 %.
+- **Warm: the encode is 18 % faster** (245.5 → 200.4 s, 228 → 279 fps) and the job 16 % (264.7 → 223.0 s; §7's
+  pre-merge baseline: 269.9 s, 221 fps).
+- **Cold: the job is not shorter** (375.5 vs 381.9 s): its critical path is the bake (93.8 vs 110.3 s, the render
+  browsers' variation) and the loudness delivery running beside the encode (it ends at 321 / 284 s); the encode itself
+  4 % faster (267.7 → 255.8 s).
+- **Other GPU load slows the OpenCL route**: each composite's filter thread waits for its stream's frame on the GPU,
+  so the encode follows the GPU's other users. Runs of this branch with the desktop's GPU use at ≥ 49 % mean during
+  the encode encoded at 218–231 fps (this cold run; a pre-merge cold run 231 fps at 55 %; a pre-merge warm run whose
+  17 masters were re-rendered just before, 222 fps at 56 %), runs at ≤ 37 % at 262–279 fps (pre-merge warm 262 fps).
+  With the CPU kernel the encode is CPU-bound and ignores the GPU's load. Per-segment composite lifetimes are equal
+  (37.1 s CPU kernel, 37.3 s OpenCL in the 56 % run; 31.8 s in the 37 % run): the four composites at a time, not the
+  CPU, now bound the encode — more segments at once (`JASPER_EXPORT_HW_SESSIONS`) are the next measurement.
+- One pre-merge CPU-kernel run overlapped a redeploy of the user's live engine (13:23–13:25) and is not used.
+
+**Picture and checks** (warm OpenCL export): `verify_export` — every format row passes (decode, streams h264
+1280×720 60 fps + AAC 48 kHz stereo, duration 931 s, A/V skew 0, true peak −2.32 dBTP), no black or flash at the
+cuts, loudness −13.9 LUFS; `cut-click` flags the edit's own 19 cuts as before. SSIM against `/tmp/je-mine/out2.mp4`
+(the CPU-kernel export of §7; the CPU-kernel run here is the same file, byte for byte in size and SSIM) over all
+55,860 frames: mean 0.99928, 1st percentile 0.99526, min 0.98922, none under 0.98; cold OpenCL vs cold CPU kernel:
+mean 0.99928, min 0.98923. The lowest frames (40,666–40,674) differ over the whole picture (mean 0.42 levels, max 48,
+rows 80–719 — video and text alike) and look identical: NVENC's decisions diverging from slightly different input
+(the kernel itself differs by ≤ 1 level), not the text drawing. The lossless gates are the dumped frames and the
+ProRes e2e above.
+
+**Not done**: an asynchronous OpenCL route (the filter thread waits per frame; `program_opencl` finishes each frame)
+and moving the sub-pixel video streams (`streamLayer`, decoded per frame) to the GPU; more concurrent segments to turn
+the freed cores into speed.

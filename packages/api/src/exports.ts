@@ -267,6 +267,19 @@ export const ExportPipelineSchema = z.object({
 		size: z.enum(['output', 'sequence']),
 		fallbackReasons: z.array(z.string().max(300)).max(20).optional(),
 	}),
+	/**
+	 * Where kernel streams (the lowered subtitle / text layers, sub-pixel stills) are drawn: `opencl` = by the OpenCL
+	 * program in the composite (docs/wp-notes/export-performance.md §10), `cpu` = by the engine's kernel threads.
+	 * `streams` counts them per device (job result); `fallbackReasons` name why streams, or the whole export, stayed on
+	 * the CPU (no OpenCL device, a stream that does not fit the program).
+	 */
+	kernel: z
+		.object({
+			device: z.enum(['opencl', 'cpu']),
+			streams: z.object({ opencl: z.number().int().min(0), cpu: z.number().int().min(0) }).optional(),
+			fallbackReasons: z.array(z.string().max(300)).max(20).optional(),
+		})
+		.optional(),
 	segments: z.number().int().min(1),
 	/** Segments rendering at once (the others wait); fewer than the CPU allows when memory is the limit. */
 	concurrency: z.number().int().min(1).optional(),

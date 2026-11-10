@@ -1162,6 +1162,9 @@ graphics)** and lists one graphics group per baked layer.
   `JASPER_EXPORT_SEGMENT_MIN_SEC` (20), `JASPER_EXPORT_HW_SESSIONS` (hardware encoder sessions, 4),
   `JASPER_EXPORT_SEGMENT_SLOTS` (CPU slots per segment, 3). With a working CUDA device, source video decodes through
   NVDEC (`JASPER_EXPORT_NVDEC=0` turns it off; `JASPER_EXPORT_NVDEC_MAX_INPUTS`, 16 per export, bounds video memory).
+  With an OpenCL GPU the per-track text and still pictures are drawn by an OpenCL program inside the composite
+  instead of the engine's kernel threads (`pipeline.kernel` says where and why not; `JASPER_EXPORT_OPENCL=0` turns it
+  off, `JASPER_EXPORT_OPENCL_DEVICE` = `any` or `<platform>.<device>` picks another device than the first GPU).
   Segments run a few at a time within the memory available (`JASPER_EXPORT_MAX_SEGMENTS`, 64;
   `JASPER_EXPORT_SEGMENT_MEMORY_MIN_SEC`, 2); a watchdog stops a composite that grows past the budget, and an export no
   segmentation fits is refused by name instead of running out of memory. A downscaled export (1080p sequence → 720p)

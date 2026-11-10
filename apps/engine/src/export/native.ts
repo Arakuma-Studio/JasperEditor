@@ -54,11 +54,24 @@ import {
 import { scaledRect } from './output-size.ts';
 import { audioCodecOf, type LocalMedia, type OutputSpec } from './planner.ts';
 import { chainMember, constantSource, loweredMember, stillMember } from './stream/members.ts';
+import { gpuTapFilters, gpuTapLayout, type OpenClTaps, openClDeviceArgs } from './stream/opencl.ts';
 import { needsSubpixel, planStreamLayer, type StreamLayerPlan } from './stream/plan.ts';
 import { planTapStream, type TapMember, type TapStreamPlan } from './stream/tap-plan.ts';
 
 /** What feeds one pipe of the composite: a sub-pixel layer, or a kernel stream of constant pictures (spec 13 AS-072). */
 export type StreamPlan = StreamLayerPlan | TapStreamPlan;
+
+/** A kernel stream's composite input and the filters before its overlay (OpenCL: upload, program, download). */
+function tapStreamInput(pl: TapStreamPlan, fd: number, fps: Rational): { input: string[]; head: string[] } {
+	const g = pl.gpu;
+	return {
+		input: [
+			...['-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', g ? `${g.inW}x${g.inH}` : `${pl.outW}x${pl.outH}`],
+			...['-framerate', rate(fps), '-i', `pipe:${fd}`],
+		],
+		head: g ? gpuTapFilters(g, pl.outW, pl.outH) : [],
+	};
+}
 
 /**
  * swscale flags for every YUV ↔ RGB conversion of the composite. Without `accurate_rnd` the default
@@ -97,6 +110,12 @@ type NativeBuildOptions = {
 	 * for the main graph's own video inputs. `device` is created once per process (`-init_hw_device cuda=<name>`).
 	 */
 	hwDecode?: { device: string; args(m: LocalMedia): string[] };
+	/**
+	 * docs/wp-notes/export-performance.md §10: kernel streams are drawn by the OpenCL program in the composite
+	 * (stream/opencl.ts; the device and program file `probeOpenClTaps` checked); a stream that does not fit stays on
+	 * the CPU kernel and is named in `kernel.fallbackReasons`. Absent = every stream on the CPU kernel.
+	 */
+	openCl?: OpenClTaps;
 	/**
 	 * output-size.ts: the snapshot is drawn on a canvas this × the sequence size (its settings and clip placement already
 	 * scaled, `outputSizeSnapshot`); sequence-pixel rectangles of extension pictures are scaled here.
@@ -144,6 +163,8 @@ type NativeGraph = {
 	hwDecoded: number;
 	/** output-size.ts: what kept this graph from being exact on the output-size canvas (empty = exact). */
 	inexact: string[];
+	/** Kernel streams drawn by the OpenCL program / the CPU kernel, and why streams stayed on the CPU (`openCl` given). */
+	kernel: { opencl: number; cpu: number; fallbackReasons: string[] };
 	outputFrames: number;
 	durationSec: number;
 	/**
@@ -1076,12 +1097,10 @@ function drawStack(ctx: StackContext): string {
 				if (!ctx.addStream) throw new Error('A kernel stream outside the main graph');
 				const label = `${P}l${li++}`;
 				const fd = ctx.addStream(pl);
-				const k = ctx.addInput([
-					...['-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${pl.outW}x${pl.outH}`],
-					...['-framerate', rate(fps), '-i', `pipe:${fd}`],
-				]);
+				const tin = tapStreamInput(pl, fd, fps);
+				const k = ctx.addInput(tin.input);
 				ctx.chains.push(
-					`[${k}:v:0]setpts=PTS-STARTPTS,${shift}[${label}]`,
+					`[${k}:v:0]${[...tin.head, 'setpts=PTS-STARTPTS', shift].join(',')}[${label}]`,
 					`[${last}][${label}]overlay=x=${pl.x}:y=${pl.y}:format=rgb:eof_action=pass:${enable}[o${label}]`,
 				);
 				last = `o${label}`;
@@ -1120,12 +1139,10 @@ function drawStack(ctx: StackContext): string {
 					fps,
 				);
 				const fd = ctx.addStream(plan);
-				const k = ctx.addInput([
-					...['-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${plan.outW}x${plan.outH}`],
-					...['-framerate', rate(fps), '-i', `pipe:${fd}`],
-				]);
+				const tin = tapStreamInput(plan, fd, fps);
+				const k = ctx.addInput(tin.input);
 				ctx.chains.push(
-					`[${k}:v:0]${['setpts=PTS-STARTPTS', ...fadeFilters(c.fades, f0), shift].join(',')}[${label}]`,
+					`[${k}:v:0]${[...tin.head, 'setpts=PTS-STARTPTS', ...fadeFilters(c.fades, f0), shift].join(',')}[${label}]`,
 					`[${last}][${label}]overlay=x=${plan.x}:y=${plan.y}:format=rgb:eof_action=pass:${enable}[o${label}]`,
 				);
 				last = `o${label}`;
@@ -1408,6 +1425,19 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 				return a;
 			}
 		: undefined;
+	// docs/wp-notes/export-performance.md §10: kernel streams on the OpenCL device, which the process creating them opens
+	const kernel: NativeGraph['kernel'] = { opencl: 0, cpu: 0, fallbackReasons: [] };
+	const clProcs = new Set<Proc>();
+	// (ffmpeg has one filter device per process: a VAAPI encoder's upload needs it)
+	const openCl = o.openCl && !enc?.filters.includes('hwupload') ? o.openCl : undefined;
+	if (o.openCl && !openCl)
+		kernel.fallbackReasons.push(
+			'the encoder uploads its frames to a VAAPI device (one filter device per process)',
+		);
+	const devArgs = (p: Proc) => [
+		...(hwProcs.has(p) ? ['-init_hw_device', `cuda=${hw!.device}`] : []),
+		...(clProcs.has(p) ? openClDeviceArgs(openCl!.init) : []),
+	];
 	const segments: BlendSegment[] = [];
 	const stackFrames = R1 - R0 + 1;
 	const ctx: StackContext = {
@@ -1421,6 +1451,17 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 		addStream: (plan) => {
 			const fd = 3 + (proc.backdropFd !== null ? 1 : 0) + proc.streams.length;
 			proc.streams.push({ fd, plan });
+			if ('kind' in plan && plan.kind === 'taps') {
+				const r = openCl ? gpuTapLayout(plan, openCl.source) : null;
+				if (r && 'layout' in r) {
+					plan.gpu = r.layout;
+					clProcs.add(proc);
+					kernel.opencl++;
+				} else {
+					kernel.cpu++;
+					if (r && !kernel.fallbackReasons.includes(r.reason)) kernel.fallbackReasons.push(r.reason);
+				}
+			}
 			return fd;
 		},
 		sources: o.sources,
@@ -1442,7 +1483,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 				);
 				segments.push({
 					args: [
-						...(hwProcs.has(proc) ? ['-init_hw_device', `cuda=${hw!.device}`] : []),
+						...devArgs(proc),
 						...decoderCapped(proc.inputs, o.threads).flat(),
 						'-filter_complex',
 						proc.chains.join(';\n'),
@@ -1541,7 +1582,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 	const filter = chains.join(';\n');
 	const args: string[] = [
 		...(o.filterThreads ? ['-filter_complex_threads', String(Math.max(1, Math.floor(o.filterThreads)))] : []),
-		...(hwProcs.has(proc) ? ['-init_hw_device', `cuda=${hw!.device}`] : []),
+		...devArgs(proc),
 		...(enc?.pre ?? []),
 	];
 	for (const inp of decoderCapped(inputs, o.threads)) args.push(...inp);
@@ -1588,6 +1629,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 		inputs,
 		hwDecoded,
 		inexact,
+		kernel: { ...kernel, fallbackReasons: kernel.fallbackReasons.slice(0, 20) },
 		outputFrames: output.frames,
 		durationSec: output.durationSec,
 		streams,
