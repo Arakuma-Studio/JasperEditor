@@ -376,7 +376,14 @@ export class AgentService {
 		};
 	}
 
-	private async loadDocument(projectId: string): Promise<{
+	/**
+	 * The stored project. `forApply`: while the stored revision is still the one the last headless step saved, its
+	 * document object from the headless history (what was saved, sharing structure with the undo snapshots).
+	 */
+	private async loadDocument(
+		projectId: string,
+		opts: { forApply?: boolean } = {},
+	): Promise<{
 		doc: ProjectDocument;
 		revision: number;
 		envelope: EnvelopeJson;
@@ -384,6 +391,8 @@ export class AgentService {
 	}> {
 		const stored = await this.opts.store().load(projectId);
 		if (!stored) throw new AgentApiError(404, 'PROJECT_NOT_FOUND', `Project not found: ${projectId}`);
+		const kept = opts.forApply ? this.history.document(projectId, stored.revision) : null;
+		if (kept) return { doc: kept, revision: stored.revision, envelope: stored.envelope, readOnly: false };
 		try {
 			const loaded = loadProject(stored.envelope, {
 				ids: this.ids,
@@ -548,7 +557,7 @@ export class AgentService {
 			const pseudo = historyPseudoCommand(tx);
 			if (pseudo) return this.headlessHistoryStep(projectId, pseudo, tx.origin.agent, tx.dryRun === true);
 			for (let attempt = 0; attempt < 3; attempt++) {
-				const { doc, revision, readOnly } = await this.loadDocument(projectId);
+				const { doc, revision, readOnly } = await this.loadDocument(projectId, { forApply: true });
 				if (readOnly)
 					return fail(revision, 'E_NOT_OWNER', 'The project was saved by a newer version and is read-only');
 				this.revisions.sync(projectId, revision);

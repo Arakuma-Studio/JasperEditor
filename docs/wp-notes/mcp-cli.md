@@ -254,14 +254,18 @@ open, although headless agent edits worked. With an editor session holding the l
   older entry can be restored without discarding that change. The code and its hint are the ones the editor gives when
   someone else's entry is on top, so the MCP text did not change; only "Needs the project open in the editor" left the
   two descriptions.
-- Limits (decided): the history is in the engine process's memory, 16 entries per project for the 8 most recently
-  edited projects; an engine restart forgets it. It is not persisted: each entry is a whole document, and the editor's
-  own History is per session too. While an editor has the project open, undo goes to its History, which does not hold
+- Memory: the history keeps the document each project is at, and the next headless transaction applies on that object
+  while the stored revision is still the one it saved (instead of a fresh load), so snapshots share structure as in the
+  editor's History and an entry costs what its transaction changed.
+- Limits (decided): the history is in the engine process's memory, at most 16 entries per project, 32 across all
+  projects (the least recently edited project loses its oldest entries first) and 8 projects; an engine restart forgets
+  it. It is not persisted: a snapshot on disk would be a whole document per entry, and the editor's own History is per
+  session too. While an editor has the project open, undo goes to its History, which does not hold
   the earlier headless steps; they are undoable again after it closes only if it saved nothing. Nothing to undo is
   `E_NOT_FOUND` as in the editor, whose MCP hint speaks of ids (the message says what happened). `history.list` still
   needs an editor session.
 - Tests: `apps/engine/test/agent.test.ts` "headless undo / redo" (undo and redo round trip as new saved revisions;
-  refusals with the project left untouched).
+  refusals with the project left untouched; the oldest project's undo refused with `E_NOT_FOUND` past 32 entries).
 
 ## Verified in the real app
 

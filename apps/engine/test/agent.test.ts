@@ -361,6 +361,32 @@ describe('headless undo / redo (S01:UND-008 without an editor session)', () => {
 			['Mine', 'Theirs', 'Third'],
 		]);
 	});
+	it('keeps 32 steps across projects: the least recently edited project loses its oldest first', async () => {
+		const { app, projectId } = await makeEngine();
+		const create = async () =>
+			(
+				await app.inject({
+					method: 'POST',
+					url: '/api/projects',
+					headers: H,
+					payload: { name: 'Other', preset: 'hd-1080p-30' },
+				})
+			).json().projectId as string;
+		const [b, c] = [await create(), await create()];
+		const mark = (pid: string, i: number) =>
+			postTx(app, pid, tx([{ type: 'marker.add', frame: i, name: `M${i}` }]));
+		await mark(projectId, 1);
+		for (let i = 0; i < 16; i++) await mark(b, i);
+		await mark(c, 0);
+		expect((await postTx(app, projectId, undo)).result).toMatchObject({ ok: true });
+		expect((await postTx(app, projectId, redo)).result).toMatchObject({ ok: true });
+		for (let i = 1; i < 16; i++) await mark(c, i); // the 33rd step
+		expect((await postTx(app, projectId, undo)).result).toMatchObject({
+			ok: false,
+			errors: [{ code: 'E_NOT_FOUND' }],
+		});
+		expect((await postTx(app, b, undo)).result).toMatchObject({ ok: true });
+	});
 });
 
 describe('WS /agent relay (ARCHITECTURE §11)', () => {
