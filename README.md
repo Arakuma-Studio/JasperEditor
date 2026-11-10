@@ -114,6 +114,13 @@ pnpm ffmpeg:lgpl     # optional in dev: the LGPL FFmpeg + Remotion binaries dire
 pnpm dev             # engine on http://127.0.0.1:47900 + web on http://127.0.0.1:5173 (proxied, same origin)
 ```
 
+Updating a checkout that runs `pnpm dev`: stop it first (`tsx watch` would restart the engine halfway through the
+file changes), fast-forward, `pnpm install --frozen-lockfile`, then rebuild what git does not track:
+`pnpm mcp:build` when the `jasper` CLI or `jasper-mcp` runs from `apps/mcp/dist` (restart registered MCP servers
+afterwards: a running one keeps the old client), and `pnpm --filter @jasper/engine build` only for remote processing
+or packaged-like runs (the dev engine runs its workers from source; remote hosts receive the `apps/engine/dist`
+bundles). Reload open editor windows after the restart.
+
 Open http://127.0.0.1:5173: Home lists the engine's projects; **New Project** opens the Editing workspace.
 
 Desktop (Electron):
