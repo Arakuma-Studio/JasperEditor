@@ -390,3 +390,33 @@ memory 13.2 GB, composites' summed RSS 9.3 GB; video memory 3.8 GB. `verify_expo
 The encode is still the critical path, CPU-bound at 82–84 %: the sequence-size layer pictures (lowered subtitle stills
 drawn by the node kernel, 6 cores) and the per-segment startup are the next costs; scaling at decode on the GPU is the
 next measured step (see "Not done here").
+
+## 8. Subtitle / text drawing off the CPU (investigation)
+
+After §7 the warm export encodes at 221 fps with the CPU 82–84 % busy; the node kernel streams drawing the lowered
+subtitles take ≈ 5.2 cores of it (uncached run, encode after the audio: node 5.2 cores, ffmpeg 10.8).
+
+**What the kernel draws** (measured on the user's PC: the tap stream instrumented, uncommitted, over the first 4 min of
+the real project, 5 segments, 14,379 frames): 14,312 frames drawn, on average **10.3 taps** per frame over a
+**73,177 px** rectangle (≈ 690,000 tap-pixels per frame; up to 40 taps), 3 coverage stages per tap (the layer box, the
+Transform effect's box, the S_Shake canvas). **No frame repeats the previous one** (0 identical tap programs) and **no
+frame's taps share one map** (0 frames): S_Shake moves the picture every frame and the Transform effect's 360° shutter
+spreads 8–40 taps along that motion.
+
+- **(b) caching cue rasters and letting ffmpeg transform them** is therefore not faithful: there is no repeated frame
+  to reuse, and one transformed raster per frame would drop the shutter taps (the motion blur the composition draws).
+- **(c) cheaper CPU kernel**: per-tap-pixel cost measured with real frames (dumped tap programs and pictures, kernel
+  run as the workers run it) ≈ 24–66 ns on the user's PC (under the other agent's load: load1 ≈ 30). Skipping samples
+  whose bilinear footprint is fully transparent (a per-picture mask; byte-identical output on all 39 dumped frames)
+  saves only ≈ 5 %; removing closure-captured loop bounds nothing measurable. The work is inherent (10 bilinear RGBA
+  samples per pixel); a SIMD / premultiplied-float rewrite is estimated at ≈ 1.5–2× (≈ 1.5–2.5 cores freed), not byte
+  exact.
+- **(a) the GPU**: the render browser could draw it, but every frame would leave Chrome through the DevTools protocol
+  (≈ 150 MB/s of RGBA at 221 fps): not viable. **FFmpeg's OpenCL is**: the shipped LGPL build has `program_opencl`,
+  `openclsrc`, `overlay_opencl`, `hwupload` / `hwdownload`, and an OpenCL device opens on the RTX 3080 Ti (NVIDIA CUDA
+  platform; an RGBA upload / download round trip ran). Plan: port `drawTaps` (taps, coverage stages, bilinear
+  premultiplied sum, `sum / wsum`) to an OpenCL kernel run by `program_opencl` with two inputs per frame — the cue's
+  picture and a small float "program" frame with that frame's taps, both written by node instead of the drawn frame —
+  then `hwdownload` into the CPU overlay; float32 on the GPU instead of float64: an SSIM / text-edge gate against the
+  kernel, the kernel kept as the fallback (no OpenCL device, a program that does not fit) and reported in `pipeline`.
+  Not built in this step.
