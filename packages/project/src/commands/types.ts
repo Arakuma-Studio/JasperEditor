@@ -32,6 +32,11 @@ export const ERROR_CODES = [
 	'E_TOO_LARGE',
 	'E_AMBIGUOUS',
 	'E_NOT_OWNER',
+	/**
+	 * The editor window would not save the edit: the project file was saved from somewhere else and its autosave is
+	 * paused until the user chooses Reload or Overwrite. Nothing was applied (or, for a Save, written).
+	 */
+	'E_SAVE_CONFLICT',
 	'E_NOT_IMPLEMENTED',
 	'E_APPROVAL_DENIED',
 	/** Only the user can do this (an agent acknowledging a Sound Check error, spec 12 §4 P6-E4): not retryable. */

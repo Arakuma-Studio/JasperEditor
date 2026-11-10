@@ -6,6 +6,7 @@
 // - a 409 conflict pauses autosave until the user chooses Overwrite (or reloads) (S01:PER-025);
 // - read-only sessions and sessions whose lease was lost never save;
 // - the view record is saved with a 1 s debounce (S01:SES-004).
+import type { AgentPersistence } from '@jasper/api';
 import { jsonWarmUnits } from '@jasper/project';
 import type { EditorSession } from '../session.ts';
 import type { ProjectStore } from './types.ts';
@@ -50,6 +51,8 @@ export type Autosaver = {
 	overwrite(): Promise<void>;
 	/** Whether automatic saving is enabled; explicit saves remain available. */
 	readonly automatic: boolean;
+	/** Whether the session's live revision is on disk, and the revision that is (agents: get_project, transactions). */
+	persistence(): AgentPersistence;
 };
 
 export function createAutosaver(
@@ -252,6 +255,24 @@ export function createAutosaver(
 			return opts.policy?.().enabled ?? true;
 		},
 		getStatus: () => status,
+		persistence() {
+			const s = session.store.getState();
+			const conflict = status.conflict;
+			const savedRevision =
+				conflict && conflict.serverRevision >= 0 ? conflict.serverRevision : status.serverRevision;
+			const state: AgentPersistence['state'] = s.readOnly
+				? 'read-only'
+				: s.lease.status === 'lost'
+					? 'lease-lost'
+					: conflict
+						? 'paused-conflict'
+						: !unsaved()
+							? 'saved'
+							: status.error
+								? 'save-failing'
+								: 'pending';
+			return { state, savedRevision };
+		},
 		subscribe(listener) {
 			listeners.add(listener);
 			return () => listeners.delete(listener);

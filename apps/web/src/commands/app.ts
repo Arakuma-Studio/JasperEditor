@@ -1,3 +1,4 @@
+import type { EditorSession } from '@jasper/session';
 import { z } from 'zod';
 import { assignLazy, defineLazyLabel, type LazyLabel } from '../i18n/lazy.ts';
 import { t } from '../i18n/runtime.ts';
@@ -7,6 +8,7 @@ import type { ShellController } from '../shell/context.tsx';
 import { DIALOGS } from '../shell/dialogs.tsx';
 import { focusStore } from '../shell/focus.ts';
 import { prefsStore } from '../shell/prefs.ts';
+import { ReportedCommandError } from './registry.ts';
 import type { CommandCtx, UiCommand } from './types.ts';
 
 const hasShell = (ctx: CommandCtx) => !!ctx.services.get('shell');
@@ -98,16 +100,39 @@ const save: UiCommand = {
 					message: 'Save conflict',
 					detail: 'The project changed elsewhere. Reopen it to continue.',
 				});
-				break;
+				throw nothingSaved(ctx.session);
 			default:
 				ctx.ui.toast({
 					kind: 'error',
 					message: 'Save failed',
 					detail: 'Check that the engine is running and try again.',
 				});
+				throw nothingSaved(ctx.session);
 		}
 	},
 };
+
+/**
+ * A Save that wrote nothing fails the command (the toast above told the user), so an agent running file.save is not
+ * told it ran: the error names why and what fixes it.
+ */
+function nothingSaved(session: EditorSession): ReportedCommandError {
+	const p = session.persistence();
+	if (p.state === 'paused-conflict')
+		return new ReportedCommandError(
+			`Nothing was saved: the project was saved from somewhere else (revision ${p.savedRevision}) and this window has paused saving. Ask the user to choose Reload or Overwrite in the editor's banner`,
+			'E_SAVE_CONFLICT',
+		);
+	if (p.state === 'lease-lost')
+		return new ReportedCommandError(
+			`Nothing was saved: another session took over editing this project (the file has revision ${p.savedRevision})`,
+			'E_NOT_OWNER',
+		);
+	return new ReportedCommandError(
+		`Nothing was saved (the file has revision ${p.savedRevision}): the save failed; check that the engine is running, then retry`,
+		'E_INTERNAL',
+	);
+}
 
 const focusPanels: UiCommand[] = PANEL_KINDS.map((kind) =>
 	sc(

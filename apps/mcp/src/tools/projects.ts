@@ -138,8 +138,8 @@ export function registerProjectTools(ctx: ToolContext): void {
 			const { projectId } = await ctx.engine((c) =>
 				c.createProject({ name, preset: preset ?? DEFAULT_PRESET_ID }),
 			);
-			const { doc, revision, live } = await loadDoc(ctx, projectId);
-			return jsonResult(projectSummary(doc, revision, live));
+			const { doc, revision, live, persistence } = await loadDoc(ctx, projectId);
+			return jsonResult(projectSummary(doc, revision, live, persistence));
 		},
 	);
 
@@ -154,8 +154,8 @@ export function registerProjectTools(ctx: ToolContext): void {
 			annotations: READ_ONLY,
 		},
 		async ({ projectId }) => {
-			const { doc, revision, live } = await loadDoc(ctx, projectId);
-			return jsonResult(projectSummary(doc, revision, live));
+			const { doc, revision, live, persistence } = await loadDoc(ctx, projectId);
+			return jsonResult(projectSummary(doc, revision, live, persistence));
 		},
 	);
 

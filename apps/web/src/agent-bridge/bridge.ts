@@ -22,7 +22,7 @@ import {
 	type TxInput,
 	unknownCommandKeyIssues,
 } from '@jasper/project';
-import { type EditorSession, leaseLostResult } from '@jasper/session';
+import type { EditorSession } from '@jasper/session';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { transitionPreferences } from '../panels/effects/transition-prefs.ts';
 import { runBeforeAgentTransaction } from './hooks.ts';
@@ -354,8 +354,8 @@ export class AgentBridge {
 
 		const pseudo = historyPseudoCommand(tx);
 		if (pseudo) {
-			if (this.session.getState().lease.status === 'lost')
-				return this.record(tx, via, leaseLostResult(revision));
+			const refused = this.session.agentEditRefusal();
+			if (refused) return this.record(tx, via, refused);
 			runBeforeAgentTransaction(this.session);
 			return this.record(tx, via, this.historyStep(pseudo, tx.origin.agent), { historyStep: true });
 		}
@@ -552,7 +552,9 @@ export class AgentBridge {
 			if (kind === 'query') {
 				const p = (payload ?? {}) as { query?: string; args?: Record<string, unknown> };
 				const result = await this.query(String(p.query), p.args ?? {});
-				return { result: { result, revision: this.session.revision } };
+				return {
+					result: { result, revision: this.session.revision, persistence: this.session.persistence() },
+				};
 			}
 			const p = (payload ?? {}) as {
 				transaction?: AgentTxInput;
@@ -574,7 +576,8 @@ export class AgentBridge {
 				...(asUser ? { asUser: true } : {}),
 				...(ids.length ? { ids } : {}),
 			});
-			return { result };
+			// Next to the live revision: whether it reached the file (the engine answers it beside the result).
+			return { result: { ...result, persistence: this.session.persistence() } };
 		} catch (e) {
 			if (e instanceof AgentQueryError || e instanceof UiAutomationError)
 				return { error: { code: e.code, message: e.message } };

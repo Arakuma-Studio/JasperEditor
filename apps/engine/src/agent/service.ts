@@ -6,6 +6,8 @@
 import { randomBytes } from 'node:crypto';
 import {
 	AgentApprovalResolveSchema,
+	type AgentPersistence,
+	AgentPersistenceSchema,
 	type AgentQueryRequest,
 	type AgentTxResponse,
 	type AgentUiRequest,
@@ -104,6 +106,18 @@ const fail = (revision: number, code: string, message: string, extra: object = {
 	revision,
 	errors: [{ commandIndex: -1, code, message, ...extra }],
 });
+
+/** The stored project's revision, as answered without an editor: nothing is unsaved. */
+const savedAt = (revision: number): AgentPersistence => ({ state: 'saved', savedRevision: revision });
+
+/** A headless write refused because an editor window holds the lease (it is about to connect to the relay). */
+const leaseHeldResult = (sessionId: string | undefined): TransactionResult =>
+	fail(
+		-1,
+		'E_NO_SESSION',
+		`Session ${sessionId ?? '?'} holds the project lease but is not connected to the agent relay; retry later`,
+		{ retryable: true },
+	);
 
 const QUERY_ERROR_STATUS: Record<string, [number, string]> = {
 	E_NOT_FOUND: [404, 'NOT_FOUND'],
@@ -288,9 +302,12 @@ export class AgentService {
 		return this.schemaCache;
 	}
 
-	async query(
-		req: AgentQueryRequest,
-	): Promise<{ result: unknown; revision?: number; via: 'session' | 'headless' }> {
+	async query(req: AgentQueryRequest): Promise<{
+		result: unknown;
+		revision?: number;
+		via: 'session' | 'headless';
+		persistence?: AgentPersistence;
+	}> {
 		const holder = this.sessions.holder(req.projectId) ?? this.sessions.connectionsFor(req.projectId).at(-1);
 		if (holder) {
 			try {
@@ -301,11 +318,13 @@ export class AgentService {
 					this.relayTimeoutMs,
 				);
 				if (out.error) throw queryError(out.error.code, out.error.message);
-				const r = (out.result ?? {}) as { result?: unknown; revision?: number };
+				const r = (out.result ?? {}) as { result?: unknown; revision?: number; persistence?: unknown };
+				const persistence = AgentPersistenceSchema.safeParse(r.persistence);
 				return {
 					result: r.result,
 					...(typeof r.revision === 'number' ? { revision: r.revision } : {}),
 					via: 'session',
+					...(persistence.success ? { persistence: persistence.data } : {}),
 				};
 			} catch (e) {
 				if (!(e instanceof RelayError)) throw e;
@@ -330,7 +349,7 @@ export class AgentService {
 				if (!this.opts.captureStill)
 					throw new AgentApiError(501, 'NOT_IMPLEMENTED', 'Stills are not available');
 				const result = await this.opts.captureStill({ projectId: req.projectId, envelope, ...cap });
-				return { result, revision, via: 'headless' };
+				return { result, revision, via: 'headless', persistence: savedAt(revision) };
 			}
 			const result = runAgentQuery(
 				{
@@ -343,7 +362,7 @@ export class AgentService {
 				req.query,
 				req.args ?? {},
 			);
-			return { result, revision, via: 'headless' };
+			return { result, revision, via: 'headless', persistence: savedAt(revision) };
 		} catch (e) {
 			if (e instanceof AgentQueryError) throw queryError(e.code, e.message);
 			throw e;
@@ -494,7 +513,15 @@ export class AgentService {
 						result: fail(-1, 'E_INTERNAL', 'The editor session returned an invalid result'),
 						appliedBy: 'session',
 					};
-				return { result: parsed.data as TransactionResult, appliedBy: 'session' };
+				// The window answers whether its live revision reached the file beside the result (older windows don't).
+				const persistence = AgentPersistenceSchema.safeParse(
+					(out.result as { persistence?: unknown } | null)?.persistence,
+				);
+				return {
+					result: parsed.data as TransactionResult,
+					appliedBy: 'session',
+					...(persistence.success ? { persistence: persistence.data } : {}),
+				};
 			} catch (e) {
 				if (!(e instanceof RelayError)) throw e;
 				// A disconnect mid-request is ambiguous (the session may have applied it): never re-apply.
@@ -508,7 +535,13 @@ export class AgentService {
 				appliedBy: 'session',
 			};
 		}
-		return { result: await this.headless(projectId, tx, asUser, opts.ids), appliedBy: 'headless' };
+		const result = await this.headless(projectId, tx, asUser, opts.ids);
+		// A headless result that changed the project is its saved revision.
+		return {
+			result,
+			appliedBy: 'headless',
+			...(result.ok && !tx.dryRun ? { persistence: savedAt(result.revision) } : {}),
+		};
 	}
 
 	private async requestApproval(
@@ -559,15 +592,8 @@ export class AgentService {
 	): Promise<TransactionResult> {
 		return this.mutex.run(projectId, async () => {
 			const store = this.opts.store();
-			if (store.leaseHolder && !(await this.leaseExpired(projectId))) {
-				const lease = await store.leaseHolder(projectId);
-				return fail(
-					-1,
-					'E_NO_SESSION',
-					`Session ${lease?.sessionId ?? '?'} holds the project lease but is not connected to the agent relay; retry later`,
-					{ retryable: true },
-				);
-			}
+			if (store.leaseHolder && !(await this.leaseExpired(projectId)))
+				return leaseHeldResult((await store.leaseHolder(projectId))?.sessionId);
 			const pseudo = historyPseudoCommand(tx);
 			if (pseudo) return this.headlessHistoryStep(projectId, pseudo, tx.origin.agent, tx.dryRun === true);
 			for (let attempt = 0; attempt < 3; attempt++) {
@@ -596,7 +622,10 @@ export class AgentService {
 					platform: 'engine-headless',
 					appVersion: this.opts.engineVersion,
 				});
-				const saved = await store.save(projectId, envelope, revision);
+				// `unleased`: an editor that took the lease since the check above has read (or will read) the project;
+				// writing now would supersede the revision it opened on without telling it.
+				const saved = await store.save(projectId, envelope, revision, { unleased: true });
+				if (!saved.ok && 'leaseHeld' in saved) return leaseHeldResult(saved.sessionId);
 				if (!saved.ok) continue; // someone saved in between: reload and re-apply
 				this.revisions.observe(projectId, result.revision, [
 					...result.created,
@@ -693,7 +722,8 @@ export class AgentService {
 			platform: 'engine-headless',
 			appVersion: this.opts.engineVersion,
 		});
-		const saved = await store.save(projectId, envelope, stored.revision);
+		const saved = await store.save(projectId, envelope, stored.revision, { unleased: true });
+		if (!saved.ok && 'leaseHeld' in saved) return leaseHeldResult(saved.sessionId);
 		if (!saved.ok) return changedSince(saved.revision);
 		this.history.stepped(projectId, kind, saved.revision);
 		this.revisions.observe(projectId, saved.revision, [...diff.created, ...diff.changed, ...diff.deleted]);

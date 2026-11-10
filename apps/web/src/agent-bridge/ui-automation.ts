@@ -3,7 +3,8 @@
 // elements and input are DOM-level (ui-elements.ts, ui-input.ts); screenshots use Electron's capturePage when
 // the desktop preload offers it and a DOM rasterisation otherwise; coordinate mapping comes from the panels
 // themselves (Timeline time ↔ x and track ↔ y, Program monitor sequence pixels ↔ window points).
-import type { RunResult } from '../commands/registry.ts';
+import type { ErrorCode } from '@jasper/project';
+import { ReportedCommandError, type RunResult } from '../commands/registry.ts';
 import type { CommandCtx, UiCommand } from '../commands/types.ts';
 import { editorPerfStats } from '../previews/perf.ts';
 import type { ShellController } from '../shell/context.tsx';
@@ -31,7 +32,7 @@ import {
 
 export class UiAutomationError extends Error {
 	constructor(
-		readonly code: 'E_NOT_FOUND' | 'E_INVALID_PARAM' | 'E_NOT_AVAILABLE' | 'E_DISABLED',
+		readonly code: 'E_NOT_FOUND' | 'E_INVALID_PARAM' | 'E_NOT_AVAILABLE' | 'E_DISABLED' | ErrorCode,
 		message: string,
 	) {
 		super(message);
@@ -731,8 +732,10 @@ async function doCommand(a: Args) {
 				'E_INVALID_PARAM',
 				`${id}: invalid args (${String((r.error as Error)?.message ?? r.error)})`,
 			);
+		// A command that reported why it did nothing (file.save: nothing saved) names it with its own code.
+		const code = r.error instanceof ReportedCommandError ? r.error.code : undefined;
 		throw new UiAutomationError(
-			'E_INVALID_PARAM',
+			code ?? 'E_INVALID_PARAM',
 			`${id} failed: ${String((r.error as Error)?.message ?? r.reason)}`,
 		);
 	}

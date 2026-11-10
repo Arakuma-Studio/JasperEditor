@@ -6,7 +6,7 @@ import {
 	defaultRegistries,
 	type TransactionResult,
 } from '@jasper/project';
-import { EditorSession, MemoryProjectStore } from '@jasper/session';
+import { attachPersistence, EditorSession, MemoryProjectStore } from '@jasper/session';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AgentBridge } from '../src/agent-bridge/bridge.ts';
 
@@ -216,6 +216,75 @@ describe('WS /agent relay client (ARCHITECTURE §11)', () => {
 			expect(ws.sent.find((m) => m.id === 'l1')).toMatchObject({
 				result: { ok: false, errors: [{ code: 'E_NOT_OWNER' }] },
 			});
+			await session.close();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('answers whether its live revision reached the file, and refuses agent edits and undo while a conflict pauses saving', async () => {
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+		try {
+			const sockets: FakeSocket[] = [];
+			vi.stubGlobal(
+				'WebSocket',
+				class extends FakeSocket {
+					constructor() {
+						super();
+						sockets.push(this);
+					}
+				},
+			);
+			const ids = createCounterIdSource(11);
+			const store = new MemoryProjectStore({ ids });
+			const doc = createEmptyProject({ ids, name: 'Bridge', preset: 'hd-1080p-30' });
+			store.put(doc);
+			const ctx = { ids, now: () => '2026-09-30T00:00:00.000Z', registries: defaultRegistries() };
+			const session = await EditorSession.open({ store, projectId: doc.projectId, ctx, sessionId: 'a' });
+			const persistence = attachPersistence(session, { window: null, document: null, recovery: false });
+			const engine = { agentWsUrl: () => 'ws://test/agent' } as EngineClient;
+			const bridge = new AgentBridge(session, engine, { relay: true }).start();
+			bridges.push(bridge);
+			const ws = sockets[0]!;
+			ws.open();
+			const ask = async (id: string, kind: 'tx' | 'query', payload: unknown) => {
+				ws.server({ type: 'request', id, kind, payload });
+				await vi.advanceTimersByTimeAsync(0);
+				return ws.sent.find((m) => m.id === id)?.result;
+			};
+			const marker = (frame: number) => ({
+				transaction: agentTx([{ type: 'marker.add', frame }]),
+				approved: false,
+			});
+
+			expect(await ask('t1', 'tx', marker(1))).toMatchObject({
+				ok: true,
+				revision: 1,
+				persistence: { state: 'pending', savedRevision: 0 },
+			});
+			await vi.advanceTimersByTimeAsync(1600);
+			expect(await ask('q1', 'query', { query: 'playhead.get' })).toMatchObject({
+				revision: 1,
+				persistence: { state: 'saved', savedRevision: 1 },
+			});
+
+			// Saved from somewhere else; the window's next save conflicts and pauses autosave.
+			await store.save(doc.projectId, session.getCommitted(), { revision: 40, baseRevision: 1 });
+			session.apply({ label: 'Mine', origin: 'user', commands: [{ type: 'marker.add', frame: 2 }] });
+			await vi.advanceTimersByTimeAsync(1600);
+			expect(persistence.autosaver.getStatus().paused).toBe('conflict');
+			expect(await ask('t2', 'tx', marker(3))).toMatchObject({
+				ok: false,
+				errors: [{ code: 'E_SAVE_CONFLICT' }],
+			});
+			expect(
+				await ask('t3', 'tx', { transaction: agentTx([{ type: 'history.undo' }]), approved: false }),
+			).toMatchObject({ ok: false, errors: [{ code: 'E_SAVE_CONFLICT' }] });
+			expect(await ask('q2', 'query', { query: 'playhead.get' })).toMatchObject({
+				revision: 2,
+				persistence: { state: 'paused-conflict', savedRevision: 40 },
+			});
+			await persistence.dispose();
 			await session.close();
 		} finally {
 			vi.useRealTimers();

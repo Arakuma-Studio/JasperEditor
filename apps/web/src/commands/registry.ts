@@ -1,3 +1,4 @@
+import type { ErrorCode } from '@jasper/project';
 import { AGENT_UI_REFUSED_COMMANDS, agentInputActive } from '../agent-bridge/agent-input.ts';
 import type { CommandCtx, CommandScope, UiCommand } from './types.ts';
 
@@ -7,7 +8,11 @@ import type { CommandCtx, CommandScope, UiCommand } from './types.ts';
  */
 export class ReportedCommandError extends Error {
 	readonly reported = true;
-	constructor(error: unknown) {
+	/** `code`: the E_* code agents get for it (UI automation), when it is more than a failure. */
+	constructor(
+		error: unknown,
+		readonly code?: ErrorCode,
+	) {
 		super(error instanceof Error ? error.message : String(error));
 		this.name = 'ReportedCommandError';
 	}

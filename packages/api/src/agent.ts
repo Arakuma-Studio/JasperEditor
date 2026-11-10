@@ -64,11 +64,24 @@ export const AgentQueryRequestSchema = z.object({
 	args: z.record(z.string(), z.unknown()).optional(),
 });
 export type AgentQueryRequest = z.infer<typeof AgentQueryRequestSchema>;
+/**
+ * Whether the live revision has reached the project file. `savedRevision`: the revision on disk as far as the answerer
+ * knows. `saved`: nothing unsaved; `pending`: autosave (or the user's Save, with Auto Save off) has edits still to
+ * write; `save-failing`: the last save failed and is retried; `paused-conflict`: the file was saved from somewhere else
+ * and nothing is saved until the user chooses Reload or Overwrite; `lease-lost`: another session took over editing;
+ * `read-only`: this window never saves.
+ */
+export const AgentPersistenceSchema = z.object({
+	state: z.enum(['saved', 'pending', 'save-failing', 'paused-conflict', 'lease-lost', 'read-only']),
+	savedRevision: z.number().int(),
+});
+export type AgentPersistence = z.infer<typeof AgentPersistenceSchema>;
 export const AgentQueryResponseSchema = z.object({
 	result: z.unknown(),
 	revision: z.number().int().optional(),
 	/** `session` = answered by the open editor (live state), `headless` = from the stored project. */
 	via: z.enum(['session', 'headless']).optional(),
+	persistence: AgentPersistenceSchema.optional(),
 });
 export type AgentQueryResponse = z.infer<typeof AgentQueryResponseSchema>;
 
@@ -106,6 +119,7 @@ export type TransactionResultJson = z.infer<typeof TransactionResultSchema>;
 export const AgentTxResponseSchema = z.object({
 	result: TransactionResultSchema,
 	appliedBy: z.enum(['session', 'headless']),
+	persistence: AgentPersistenceSchema.optional(),
 });
 export type AgentTxResponse = z.infer<typeof AgentTxResponseSchema>;
 

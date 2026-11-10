@@ -1,5 +1,6 @@
 // Compact, LLM-friendly views of a project document: sequences, tracks and clips with ids, frames and
 // timecodes (S02:TL-951: frames always come with timecode), media summaries and a text timeline table.
+import type { AgentPersistence } from '@jasper/api';
 import {
 	type Animatable,
 	allTracks,
@@ -26,6 +27,11 @@ import {
 import { ToolError } from './errors.ts';
 
 const round3 = (x: number) => Math.round(x * 1000) / 1000;
+
+/** `savedRevision` (on disk) and `persistence` (whether the live revision reached it), when the engine answered them. */
+export function persistenceFields(p: AgentPersistence | undefined) {
+	return p ? { savedRevision: p.savedRevision, persistence: p.state } : {};
+}
 
 export function sequenceName(doc: ProjectDocument, seqId: string): string {
 	for (const item of Object.values(doc.items))
@@ -232,11 +238,17 @@ export function mediaSummary(doc: ProjectDocument, m: MediaAsset) {
 }
 
 /** `get_project` body. */
-export function projectSummary(doc: ProjectDocument, revision: number | undefined, live: boolean) {
+export function projectSummary(
+	doc: ProjectDocument,
+	revision: number | undefined,
+	live: boolean,
+	persistence?: AgentPersistence,
+) {
 	return {
 		projectId: doc.projectId,
 		name: doc.name,
 		revision: revision ?? null,
+		...persistenceFields(persistence),
 		editorOpen: live,
 		sequences: Object.values(doc.sequences).map((s) => sequenceSummary(doc, s)),
 		media: Object.values(doc.media).map((m) => mediaSummary(doc, m)),

@@ -243,6 +243,22 @@ opening (TL-020).
   lease is lost refuses agent transactions (`E_NOT_OWNER`) and stops announcing a lease on WS /agent; the engine
   relays a transaction only to the window of the session that holds the project's lease
   (`AgentService.relayTarget`), so an edit acknowledged to an agent is one the window can save.
+- **Opening takes the lease first, then reads the project** (`EditorSession.open`). The engine grants a lease under
+  the project's save lock (`ProjectStoreFs.acquireLease`), and a headless agent write checks for a lease under that
+  lock right before it writes (`save(…, {unleased: true})`; refused `E_NO_SESSION`, retryable, once an editor holds
+  it). So a headless write either is on disk before the window reads the project or never lands: a window does not
+  open on a revision that a racing write then supersedes (which made its first autosave a conflict while agent edits
+  kept being acknowledged).
+- **What an agent sees.** While a window cannot save, agent transactions it would apply are refused instead of
+  acknowledged: a lost lease with `E_NOT_OWNER`, a revision conflict (autosave paused until the user picks Reload or
+  Overwrite in the banner) with `E_SAVE_CONFLICT`, whose message names that step; `history.undo/redo` too. A failing
+  save (engine error, retried every 10 s, the edits journalled) does not refuse. Relayed transaction and query answers
+  carry `persistence: {state, savedRevision}` (`AgentPersistenceSchema`): `saved`, `pending`, `save-failing`,
+  `paused-conflict`, `lease-lost` or `read-only`, and the revision on disk; headless answers are `saved` at their
+  revision. jasper-mcp shows them as `savedRevision` and `persistence` in `get_project` and transaction results; judge
+  by `persistence`, as an Overwrite saves at the engine's next revision, which can be above the live one. File ▸ Save
+  run by an agent (`ui` command `file.save`) fails when it wrote nothing: `E_SAVE_CONFLICT` during a conflict,
+  `E_NOT_OWNER` without the lease, `E_INTERNAL` when the save failed.
 - **Closing a session** (`EditorSession.close`) first finishes its persistence (the last save and, if that fails,
   the journal write) and only then releases the lease, whichever of the two the app tears down first.
 
@@ -314,13 +330,19 @@ Tests: `apps/engine/test/recovery-versions.test.ts` (routes, lock semantics acro
 processes, schema backup, restore), `packages/session/test/persistence/recovery.test.ts` (timing, clearing,
 recovery as an undoable step, Revert, close order), `packages/session/test/persistence/engine-store.test.ts`
 (leases: transient heartbeat errors, journalling under a re-acquired lease, a lost window refusing agent edits),
-`apps/web/test/agent-bridge.test.ts` and `apps/engine/test/agent.test.ts` (relay only to the lease holder),
+`apps/web/test/agent-bridge.test.ts` and `apps/engine/test/agent.test.ts` (relay only to the lease holder, a
+headless write racing a lease grant, conflict refusals and `persistence` in relay answers), `apps/web/test/agent-ui.test.ts`
+(`file.save` during a conflict), `apps/mcp/test/persistence.test.ts`,
 `apps/web/test/project-files.test.tsx` (actions and dialogs).
 
 Known limits: a journal write that fails is reported only on the console (`[recovery] journal write failed`);
 edits made in the last ~1 s before a reload or tab close can be lost when the browser skips the "unsaved changes"
 prompt (`beforeunload`, shown only after the user interacted with the page) and neither the save nor the journal
 request completes during unload (neither is a keepalive request: project bodies exceed its 64 KB limit).
+A heartbeat that re-acquires a lease the engine forgot (restart, expiry) does not re-read the project: a headless
+write that landed in the gap still surfaces as a conflict at the next autosave (agent edits are refused from then
+on). `PUT /api/projects/:pid` (If-Match only; an agent needs the user's approval for it) is not lease-checked:
+a window it supersedes finds out at its next save, as a conflict.
 
 ## Newer files
 

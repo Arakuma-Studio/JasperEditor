@@ -262,6 +262,26 @@ describe('leases (S01:PER-040)', () => {
 		await b.close();
 	});
 
+	it('opens on the revision on disk when a headless agent write races the open', async () => {
+		const { engine, open, projectId } = setup();
+		// Like the engine: a headless agent write lands whenever no editor holds the lease, here right after the
+		// window has read the project.
+		const serve = engine.fetch;
+		engine.fetch = async (input, init) => {
+			const res = await serve(input, init);
+			const read = (init?.method ?? 'GET') === 'GET' && String(input).endsWith(`/api/projects/${projectId}`);
+			if (read && !engine.leases.has(projectId)) {
+				const p = engine.projects.get(projectId)!;
+				p.revision += 1;
+				p.envelope = { ...p.envelope, revision: p.revision };
+			}
+			return res;
+		};
+		const s = await open('a');
+		expect(s.revision).toBe(engine.projects.get(projectId)!.revision);
+		await s.close();
+	});
+
 	it('a document with a newer schemaVersion opens read-only without taking the lease (MIG-003)', async () => {
 		const { engine, open, projectId } = setup();
 		const p = engine.projects.get(projectId)!;
@@ -316,6 +336,29 @@ describe('autosave through the engine (S01:PER-020, PER-025)', () => {
 		expect(puts()[2]!.headers['if-match']).toBe('40');
 		expect(p.autosaver.getStatus().paused).toBeNull();
 		expect(s.getState().dirty).toBe(false);
+		await p.dispose();
+		await s.close();
+	});
+
+	it('while a conflict pauses autosave, agent edits are refused and persistence names the revision on disk', async () => {
+		const { engine, open, projectId } = setup();
+		const s = await open('a');
+		const p = attachPersistence(s, noLifecycle);
+		expect(s.apply({ label: 'Add', origin: { agent: 'bot' }, commands: [solid(0)] }).ok).toBe(true);
+		expect(s.persistence()).toEqual({ state: 'pending', savedRevision: 0 });
+		await vi.advanceTimersByTimeAsync(1600);
+		expect(s.persistence()).toEqual({ state: 'saved', savedRevision: 1 });
+
+		engine.projects.get(projectId)!.revision = 40; // saved from somewhere else
+		s.apply({ label: 'Add', origin: 'user', commands: [solid(100)] });
+		await vi.advanceTimersByTimeAsync(1600);
+		expect(s.persistence()).toEqual({ state: 'paused-conflict', savedRevision: 40 });
+		const refused = s.apply({ label: 'Add', origin: { agent: 'bot' }, commands: [solid(200)] });
+		expect(refused).toMatchObject({ ok: false, errors: [{ code: 'E_SAVE_CONFLICT' }] });
+
+		await p.autosaver.overwrite();
+		expect(s.persistence().state).toBe('saved');
+		expect(s.apply({ label: 'Add', origin: { agent: 'bot' }, commands: [solid(200)] }).ok).toBe(true);
 		await p.dispose();
 		await s.close();
 	});

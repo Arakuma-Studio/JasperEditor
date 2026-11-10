@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import {
 	type EnvelopeJson,
 	EnvelopeSchema,
+	type Lease,
 	type ProjectSummary,
 	type VersionInfo,
 	type VersionKind,
@@ -222,21 +223,34 @@ export class ProjectStoreFs {
 	/**
 	 * Saves an envelope when `ifMatch` equals the stored revision (or is `'*'`). The stored revision is
 	 * `max(envelope.revision, current + 1)`; a mismatch throws 409 REVISION_CONFLICT with `{revision}`.
+	 * `unleased` (a headless agent write): refused with 409 LEASE_HELD when an editor holds the project's lease,
+	 * checked under the project's lock that `acquireLease` takes too.
 	 */
 	async save(
 		projectId: string,
 		envelope: EnvelopeJson,
 		ifMatch: number | '*',
+		opts: { unleased?: boolean } = {},
 	): Promise<{ revision: number }> {
-		const saved = await this.saveLocked(projectId, envelope, ifMatch);
+		const saved = await this.saveLocked(projectId, envelope, ifMatch, opts);
 		this.emit({ projectId, kind: 'saved', document: envelope.document });
 		return saved;
+	}
+
+	/**
+	 * Grants (or renews) the project's lease under the project's lock (S01:PER-040): an `unleased` save that found no
+	 * lease has finished writing before the lease is granted, and none writes after. The editor reads the project once
+	 * it holds the lease, so what it opens is the newest saved revision and stays so.
+	 */
+	acquireLease(projectId: string, sessionId: string, opts: { takeOver?: boolean } = {}): Promise<Lease> {
+		return this.mutex.run(projectId, () => this.opts.leases.acquire(projectId, sessionId, opts));
 	}
 
 	private saveLocked(
 		projectId: string,
 		envelope: EnvelopeJson,
 		ifMatch: number | '*',
+		opts: { unleased?: boolean },
 	): Promise<{ revision: number }> {
 		this.check(projectId);
 		return this.mutex.run(projectId, async () => {
@@ -246,6 +260,12 @@ export class ProjectStoreFs {
 					revision: current.revision,
 				});
 			}
+			const lease = opts.unleased ? this.opts.leases.get(projectId) : null;
+			if (lease)
+				throw new ProjectError('LEASE_HELD', 409, 'An editor window holds the project', {
+					holderSessionId: lease.sessionId,
+					expiresAt: lease.expiresAt,
+				});
 			this.validate(projectId, envelope.document);
 			const revision = Math.max(envelope.revision, current.revision + 1);
 			await this.keepSchemaBackup(projectId, current, envelope);

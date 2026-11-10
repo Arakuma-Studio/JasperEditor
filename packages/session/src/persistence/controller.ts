@@ -99,6 +99,7 @@ export function attachPersistence(
 	win?.addEventListener('beforeunload', onBeforeUnload);
 	doc?.addEventListener('visibilitychange', onVisibility);
 
+	const offPersistence = session.reportPersistence(() => autosaver.persistence());
 	let disposed = false;
 	// Closing the session first (the project host unmounts before its subtree) must not release the lease under the
 	// last save and journal write.
@@ -112,6 +113,7 @@ export function attachPersistence(
 			if (disposed) return;
 			disposed = true;
 			offClose();
+			offPersistence();
 			win?.removeEventListener('pagehide', flushQuietly);
 			win?.removeEventListener('beforeunload', onBeforeUnload);
 			doc?.removeEventListener('visibilitychange', onVisibility);

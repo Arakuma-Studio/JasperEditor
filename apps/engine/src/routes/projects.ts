@@ -218,7 +218,7 @@ export default async function projectsRoutes(app: FastifyInstance): Promise<void
 					reasons: ['the window that has the project open becomes read-only'],
 					projectId: req.params.projectId,
 				});
-			return leases.acquire(req.params.projectId, sessionId, { takeOver });
+			return projects.acquireLease(req.params.projectId, sessionId, { takeOver });
 		}),
 	);
 

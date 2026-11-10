@@ -23,6 +23,7 @@ import {
 } from '../src/agent/index.ts';
 import { findMcpEntry } from '../src/agent/mcp-entry.ts';
 import { createServer, engineConfig } from '../src/index.ts';
+import { ProjectStoreFs } from '../src/projects/store.ts';
 
 const H = { host: '127.0.0.1:47900' };
 const apps: FastifyInstance[] = [];
@@ -238,6 +239,31 @@ describe('headless mode (S01:AGT-020)', () => {
 		});
 	});
 
+	it('never writes over a project an editor window took the lease of while the transaction was applied', async () => {
+		const { app, projectId, file } = await makeEngine();
+		const get = ProjectStoreFs.prototype.get;
+		// After the lease check, while the transaction is applied: an editor window opens the project (takes the lease
+		// and reads revision 0). A write now would leave the window on a revision the file no longer has.
+		const spy = vi.spyOn(ProjectStoreFs.prototype, 'get').mockImplementationOnce(async function (
+			this: ProjectStoreFs,
+			id: string,
+		) {
+			const loaded = await get.call(this, id);
+			const lease = await app.inject({
+				method: 'POST',
+				url: `/api/projects/${projectId}/lease`,
+				headers: H,
+				payload: { sessionId: 'ses_window' },
+			});
+			expect(lease.statusCode).toBe(200);
+			return loaded;
+		});
+		const r = await postTx(app, projectId, tx([{ type: 'marker.add', frame: 1, name: 'late' }]));
+		spy.mockRestore();
+		expect(r.result).toMatchObject({ ok: false, errors: [{ code: 'E_NO_SESSION', retryable: true }] });
+		expect(JSON.parse(readFileSync(file, 'utf8')).revision).toBe(0);
+	});
+
 	it('rejects destructive transactions with E_APPROVAL_DENIED and unknown projects with 404', async () => {
 		const { app, projectId } = await makeEngine();
 		const r = await postTx(app, projectId, tx([{ type: 'track.remove', trackIds: ['V3'] }]));
@@ -410,8 +436,10 @@ describe('WS /agent relay (ARCHITECTURE §11)', () => {
 			warnings: [],
 			results: [null],
 		};
-		ws.send(JSON.stringify({ type: 'response', id: req.id, result }));
-		expect(await pending).toEqual({ result, appliedBy: 'session' });
+		// Beside the result, the window says whether its live revision reached the file.
+		const persistence = { state: 'pending', savedRevision: 7 };
+		ws.send(JSON.stringify({ type: 'response', id: req.id, result: { ...result, persistence } }));
+		expect(await pending).toEqual({ result, appliedBy: 'session', persistence });
 
 		const q = app.inject({
 			method: 'POST',
@@ -422,9 +450,13 @@ describe('WS /agent relay (ARCHITECTURE §11)', () => {
 		const qreq = await box.until((m) => m.type === 'request');
 		expect(qreq).toMatchObject({ kind: 'query', payload: { query: 'playhead.get' } });
 		ws.send(
-			JSON.stringify({ type: 'response', id: qreq.id, result: { result: { frame: 12 }, revision: 8 } }),
+			JSON.stringify({
+				type: 'response',
+				id: qreq.id,
+				result: { result: { frame: 12 }, revision: 8, persistence },
+			}),
 		);
-		expect((await q).json()).toEqual({ result: { frame: 12 }, revision: 8, via: 'session' });
+		expect((await q).json()).toEqual({ result: { frame: 12 }, revision: 8, via: 'session', persistence });
 
 		const qe = app.inject({
 			method: 'POST',

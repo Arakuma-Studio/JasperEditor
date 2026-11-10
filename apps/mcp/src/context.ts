@@ -1,4 +1,4 @@
-import type { AgentTxResponse, EngineJob } from '@jasper/api';
+import type { AgentPersistence, AgentTxResponse, EngineJob } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import { loadExpressionEngine } from '@jasper/expressions';
 import {
@@ -31,6 +31,7 @@ import {
 	TX_ERROR_HINTS,
 	toErrorResult,
 } from './errors.ts';
+import { persistenceFields } from './format.ts';
 import { type EngineConnection, withEngine } from './link.ts';
 import { strictInputSchema } from './strict.ts';
 
@@ -140,7 +141,13 @@ export const DESTRUCTIVE: FullToolAnnotations = { ...EDIT, destructiveHint: true
 /** Deletes or overwrites a named target; calling it again changes nothing more. */
 export const DESTRUCTIVE_IDEMPOTENT: FullToolAnnotations = { ...DESTRUCTIVE, idempotentHint: true };
 
-export type LoadedDoc = { doc: ProjectDocument; revision: number | undefined; live: boolean };
+export type LoadedDoc = {
+	doc: ProjectDocument;
+	revision: number | undefined;
+	live: boolean;
+	/** Whether `revision` reached the project file (absent from engines and editors that predate it). */
+	persistence?: AgentPersistence;
+};
 
 /** The current document: from the open editor when there is one (unsaved edits included), else stored. */
 export async function loadDoc(ctx: ToolContext, projectId: string): Promise<LoadedDoc> {
@@ -153,7 +160,12 @@ export async function loadDoc(ctx: ToolContext, projectId: string): Promise<Load
 		await loadExpressionEngine();
 		doc = bindExpressions(doc);
 	}
-	return { doc, revision: r.revision, live: r.via === 'session' };
+	return {
+		doc,
+		revision: r.revision,
+		live: r.via === 'session',
+		...(r.persistence ? { persistence: r.persistence } : {}),
+	};
 }
 
 export function findClip(doc: ProjectDocument, clipId: string): { seq: Sequence; clip: Clip } {
@@ -365,6 +377,7 @@ export function txBody(
 		appliedBy: res.appliedBy,
 		appliedLive: res.appliedBy === 'session',
 		revision: r.revision,
+		...persistenceFields(res.persistence),
 		...(Object.keys(r.refs).length ? { refs: r.refs } : {}),
 		created: r.created,
 		changed: r.changed,

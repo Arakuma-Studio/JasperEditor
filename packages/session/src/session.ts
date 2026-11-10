@@ -1,5 +1,6 @@
 // EditorSession (ARCHITECTURE §6, S01 §14–§17): one per open project, on a zustand vanilla store.
 // Only EditorSession methods call setState; the document changes only through apply() and gestures.
+import type { AgentPersistence, Lease } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import {
 	applyTransaction,
@@ -111,6 +112,22 @@ export const leaseLostResult = (revision: number): TransactionResult => ({
 			code: 'E_NOT_OWNER',
 			message:
 				'This editor window no longer holds the project (another session took over editing), so the edit would not be saved; retry to reach the session that holds it',
+		},
+	],
+});
+
+/**
+ * An agent edit in a window whose autosave a revision conflict paused (the file was saved from somewhere else) would
+ * be acknowledged and stay unsaved until the user resolves the conflict: refused, naming that step.
+ */
+export const saveConflictResult = (revision: number, savedRevision: number): TransactionResult => ({
+	ok: false,
+	revision,
+	errors: [
+		{
+			commandIndex: -1,
+			code: 'E_SAVE_CONFLICT',
+			message: `The project was saved from somewhere else (revision ${savedRevision}) and this editor window has paused saving, so the edit would not be saved. Ask the user to choose Reload or Overwrite in the editor's banner, then retry`,
 		},
 	],
 });
@@ -242,7 +259,13 @@ export class EditorSession {
 		);
 	}
 
-	/** Opens a project through a ProjectStore and takes the lease; a held lease opens read-only (S01:PER-040). */
+	/**
+	 * Opens a project through a ProjectStore and takes the lease; a held lease opens read-only (S01:PER-040). The lease
+	 * comes first: once it is granted no headless agent write lands any more (the engine finishes one that started
+	 * before), so the revision read next is the one on disk and stays so until this session saves. Read first, a
+	 * write landing between the read and the lease would leave the session on a superseded revision, acknowledging
+	 * edits it can only save by overwriting.
+	 */
 	static async open(opts: {
 		store: ProjectStore;
 		projectId: string;
@@ -251,7 +274,30 @@ export class EditorSession {
 		readOnly?: boolean;
 		sessionId?: string;
 	}): Promise<EditorSession> {
-		const opened = await opts.store.open(opts.projectId, { readOnly: opts.readOnly });
+		const sessionId = opts.sessionId ?? createSessionId();
+		let lease: Lease | null = null;
+		let heldBy: string | null = null;
+		if (!opts.readOnly) {
+			try {
+				lease = await opts.store.acquireLease(opts.projectId, sessionId);
+			} catch (e) {
+				if (!(e instanceof LeaseHeldError)) throw e;
+				heldBy = e.holderSessionId;
+			}
+		}
+		const release = async () => {
+			if (lease) await opts.store.releaseLease?.(opts.projectId, lease.leaseId).catch(() => undefined);
+			lease = null;
+		};
+		let opened: Awaited<ReturnType<ProjectStore['open']>>;
+		try {
+			opened = await opts.store.open(opts.projectId, { readOnly: opts.readOnly });
+		} catch (e) {
+			await release();
+			throw e;
+		}
+		// A newer schema opens read-only (S01:MIG-003): it never saves, so it holds no lease.
+		if (opened.readOnly) await release();
 		const session = new EditorSession({
 			projectId: opts.projectId,
 			document: opened.document,
@@ -269,35 +315,28 @@ export class EditorSession {
 					message: `${r.action} ${r.entity}: ${r.detail}`,
 				})),
 			],
-			sessionId: opts.sessionId,
+			sessionId,
 		});
-		if (!opened.readOnly) await session.acquireLease();
+		if (lease) session.holdLease(lease, opts.store);
+		else if (heldBy !== null && !opened.readOnly)
+			session.store.setState({
+				readOnly: true,
+				lease: { status: 'read-only', leaseId: null, holder: heldBy },
+			});
 		return session;
 	}
 
-	private async acquireLease(): Promise<void> {
-		const store = this.projectStore;
-		if (!store) return;
-		try {
-			const lease = await store.acquireLease(this.projectId, this.sessionId);
-			this.store.setState({ lease: { status: 'held', leaseId: lease.leaseId } });
-			if (store.heartbeatLease) {
-				this.leaseTimer = setInterval(() => {
-					void store.heartbeatLease!(this.projectId, lease.leaseId).then(
-						(next) => this.leaseConfirmed(next.leaseId),
-						(e) => this.leaseHeartbeatFailed(e, lease.leaseId),
-					);
-				}, lease.heartbeatMs);
-				(this.leaseTimer as { unref?: () => void }).unref?.();
-			}
-		} catch (e) {
-			if (e instanceof LeaseHeldError)
-				this.store.setState({
-					readOnly: true,
-					lease: { status: 'read-only', leaseId: null, holder: e.holderSessionId },
-				});
-			else throw e;
-		}
+	/** Starts holding `lease` (taken by `open`): state `held` and the heartbeat. */
+	private holdLease(lease: Lease, store: ProjectStore): void {
+		this.store.setState({ lease: { status: 'held', leaseId: lease.leaseId } });
+		if (!store.heartbeatLease) return;
+		this.leaseTimer = setInterval(() => {
+			void store.heartbeatLease!(this.projectId, lease.leaseId).then(
+				(next) => this.leaseConfirmed(next.leaseId),
+				(e) => this.leaseHeartbeatFailed(e, lease.leaseId),
+			);
+		}, lease.heartbeatMs);
+		(this.leaseTimer as { unref?: () => void }).unref?.();
 	}
 
 	/**
@@ -384,7 +423,10 @@ export class EditorSession {
 				errors: [{ commandIndex: -1, code: 'E_NO_SESSION', message: 'Session closed' }],
 			};
 		if (s.readOnly) return READ_ONLY_RESULT(s.revision);
-		if (typeof tx.origin === 'object' && s.lease.status === 'lost') return leaseLostResult(s.revision);
+		if (typeof tx.origin === 'object') {
+			const refused = this.agentEditRefusal();
+			if (refused) return refused;
+		}
 		for (const guard of this.txGuards) {
 			const refused = guard(tx);
 			if (refused) return { ok: false, revision: s.revision, errors: [refused] };
@@ -397,6 +439,46 @@ export class EditorSession {
 			};
 		}
 		return this.commit(tx, this.commandContext(tx.ids ? { ids: tx.ids } : {}));
+	}
+
+	private persistenceProbe: (() => AgentPersistence) | null = null;
+
+	/**
+	 * The persistence controller reports what its autosaver knows (the revision on disk, a conflict, failing saves).
+	 * Returns the remover.
+	 */
+	reportPersistence(probe: () => AgentPersistence): () => void {
+		this.persistenceProbe = probe;
+		return () => {
+			if (this.persistenceProbe === probe) this.persistenceProbe = null;
+		};
+	}
+
+	/** Whether this session's edits reach the project file (agents see it next to the live revision). */
+	persistence(): AgentPersistence {
+		if (this.persistenceProbe) return this.persistenceProbe();
+		const s = this.store.getState();
+		const state = s.readOnly
+			? 'read-only'
+			: s.lease.status === 'lost'
+				? 'lease-lost'
+				: s.dirty
+					? 'pending'
+					: 'saved';
+		return { state, savedRevision: this.openedRevision };
+	}
+
+	/**
+	 * The refusal for an agent edit this window would acknowledge without saving: its lease was lost, or a revision
+	 * conflict paused its autosave. Null when the edit can apply (a failing save is retried and journalled: applied,
+	 * and the result's persistence says so).
+	 */
+	agentEditRefusal(): TransactionResult | null {
+		const s = this.store.getState();
+		if (s.lease.status === 'lost') return leaseLostResult(s.revision);
+		const p = this.persistenceProbe?.();
+		if (p?.state === 'paused-conflict') return saveConflictResult(s.revision, p.savedRevision);
+		return null;
 	}
 
 	/**

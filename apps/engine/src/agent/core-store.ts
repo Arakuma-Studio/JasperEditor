@@ -14,14 +14,23 @@ export function createCoreAgentStore(projects: ProjectStoreFs, leases: LeaseMana
 				throw e;
 			}
 		},
-		async save(projectId: string, envelope: EnvelopeJson, baseRevision: number): Promise<SaveOutcome> {
+		async save(
+			projectId: string,
+			envelope: EnvelopeJson,
+			baseRevision: number,
+			opts: { unleased?: boolean } = {},
+		): Promise<SaveOutcome> {
 			try {
-				const { revision } = await projects.save(projectId, envelope, baseRevision);
+				const { revision } = await projects.save(projectId, envelope, baseRevision, opts);
 				return { ok: true, revision };
 			} catch (e) {
 				if (e instanceof ProjectError && e.code === 'REVISION_CONFLICT') {
 					const current = (e.detail as { revision?: number } | undefined)?.revision;
 					return { ok: false, conflict: true, revision: current ?? baseRevision };
+				}
+				if (e instanceof ProjectError && e.code === 'LEASE_HELD') {
+					const holder = (e.detail as { holderSessionId?: string } | undefined)?.holderSessionId;
+					return { ok: false, leaseHeld: true, sessionId: holder ?? '?' };
 				}
 				throw e;
 			}
