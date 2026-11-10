@@ -238,7 +238,20 @@ Deliberate differences from the prototype (labelled):
   that swaps its last word ("y luego le puse, y luego le añadí…") is no longer flagged — not distinguishable by tokens
   from a list ("o tipo caricatura, o tipo de goma"). Regression test `cleanup-rules.test.ts` "restarts and retakes
   re-say what they remove". A cut-off last word counts as re-said by a word that starts with it ("Y funcionan con
-  cual…" → "cualquier"; large-v3-turbo fragment D, where the middle false start stayed between two takes).
+  cual…" → "cualquier"; large-v3-turbo fragment D, where the middle false start stayed between two takes). Since the
+  third large-v3-turbo run the restart rule also (`ruleRestarts`):
+  - matches the re-said words across ASR variants (`sameWord`: "brillito" / "brillitos", "efecto" / "efectos") and
+    lets an attempt of ≥ 6 content words keep up to 15 % (at least one) unmatched;
+  - starts the retry where the words before both copies still match, one ASR substitution between two matches allowed
+    ("que pueda ser en un mes…" / "¿Que puedo hacer en un mes…"), so the first word of the last take is never cut;
+  - leaves one or two words without content after a pause before the restart point to the retry ("… en un par | En el
+    Jasper Engine": the n-gram matched "el Jasper Engine");
+  - follows a chain: when an attempt is not said again right after, but its n-gram comes back in later attempts, each
+    within the window of the one before, the attempts up to the last copy whose words it says (any order, the same
+    garble allowance) are one restart ("…que puedo hacer … dólares. ¿Qué puedo hacer…? ¿Qué puedo hacer…? … ¿Que puedo
+    hacer … dólares?", fragment E).
+  An ending re-said right after a run of retries (the longest ending of ≥ 3 words, 2 of them content words, that the
+  words after the run start with, within 3 more words) goes with the retries (`detector.ts`).
 - **After removed words the in point never lands inside the first kept word** (level mode): the prototype's in point
   (first frame from 80 ms before the piece that reaches floor + 25 dB, up to 100 ms after it) clipped soft onsets —
   "déjenme" at −48 dBFS reached the threshold 70 ms in, and the cut ended 73 ms into the kept take (reporter's
@@ -323,8 +336,16 @@ exactly and turned the second large-v3-turbo run's good cuts ("las piensas" / "l
 into review-only takes — leaving one sentence twice in fragment E — and kept fragment B's aside take over the clean
 last take. The kept take is reported as what stays of it: words its own restarts, false starts or fillers remove at
 its edges are trimmed from its range, words and text (fragment A: "… para poder subirlos" said again right after),
-so no finding overlaps it; a restart in its middle still lies inside (limit). The kept take starts at its first word: a restart run that goes on from the take before into
-its first words ("… en un par | En el Jasper Engine": the restart matched "el Jasper Engine") stops there. Only the
+so no finding overlaps it; a restart in its middle still lies inside (limit). Takes are compared on what they say once
+their own restarts are out (a unit that restarts inside says no more than its last attempt; fragment C's "meterle …
+quise, meterle … tener en Unity," joined its group only so), with ASR variants; a unit a restart removes whole is still
+an earlier take of what follows but never the later take of a hit, and the tail of an attempt whose start a restart
+removed is a take of a later unit that says all of it. Real content counts what stays after the kept take within the
+restart window too (fragment E's "pueda ser" is said by the last question, not by the kept "Ok, wow…" take). What
+lies between a group's first take and its kept take within the restart window goes with the retries: fragments of
+≤ 2 words ("No,", "a ver", "no.") and units whose words the kept take mostly says ("En toda su puta vida", "Y el otro
+1 %"). The aside of an earlier take is the longest run of its trailing sentences the later kept take mostly does not
+say. Only the
 take rule's labels carry the group id; a restart inside a take keeps none, so its reason names the words that re-say
 it. Script (TC-012): lines are sentences (. ? ! … and line breaks); a unit says a
 line when ≥ 60 % of its content words appear in order in it (LCS); the report lists every line and whether a take says
@@ -355,6 +376,22 @@ large-v3-turbo runs (fragments A, B, C, D, E, F) — the safety check and distin
 the aside take, the later-take reason, the cut-off attempt, the reason / range of a group's finding, the kept take's
 range, "%" as a word, the in / out points and their frames next to a cut; each fails without its fix. Limit: without a script a
 deliberate repeat is judged by the existing rules only (the allow list).
+
+Real-take corpus (`packages/project/test/cleanup-real-takes.test.ts`, `fixtures/cleanup-real-takes.json`): the
+whisper-large-v3-turbo transcripts of the six ~80 s fragments of the reporter's recording from runs 2 and 3 of the
+hidden-retake test, every mode (re-decode on, `chunking: "vad"`, re-decode off), 24 distinct transcripts, text and
+times only. The spec is written by hand per fragment as the speaker meant it — phrases the edit says exactly once
+(the last clean take of each sentence, and what only one take says: "millones de dólares" on E), phrases it never
+says (asides, garbled takes, cut-off attempts), no run of five words twice, no cut inside a kept word, and no kept
+take of a group losing a word — and runs through the detector and the media planner (Fast preset, speech under every
+word). At 0b492215c 12 of the 24 failed (B ×5, C b, D ×2, E ×4); all pass now. Limit: without the re-decode
+(fragment A, mode c) "a" stretched over the second "poder subirlos" (1.03 s) goes as a drawn vowel, so that case
+asserts "poder subirlos" and "la Play Store" apart.
+
+An accepted removal of words takes the voice without words inside it (`sequence.ts`): an untranscribed span kept for
+review never punches a hole into it (run 3, fragment E: "Que puedo hacer en un mes lo mismo" had no words at
+38.14–39.34 inside the hidden retake 31.88–42.48). Test: `cleanup-hidden-retakes.test.ts` "voice without words inside
+a removed retake goes with it".
 
 Spoken symbols: a word that is only a symbol said as a word and punctuation ("%", "%...", "€", "$", "&", "+", "@",
 "°") is a candidate word with the symbol's name as its token ("porciento" / "percent"), so it covers its sound: the

@@ -391,7 +391,11 @@ whisper evaluation (53 configurations; the numbers of spec 16 §0). This section
   chunks wrote so few words is not measured here (no model or audio on this host); its plan differed from the
   whole-file chunking in the mask (voice analysis vs energy), the chunk edges (the window's edges, mid-sentence) and
   the verbatim prompt, so the fallback now uses the whole-file plan and options. A window that is one chunk anyway
-  (≤ 10 s) is not decoded again.
+  (≤ 10 s) is not decoded again. No word has zero length (`placeWord`, `core/align.ts`, at every decode and in
+  `replaceWindowWords`): a word timed inside the word before it takes the second half of that word's time (run 3,
+  fragment E: "decenas hacer... de" with "hacer..." at 37.23–37.23). An original word the re-decode wrote nothing over
+  stays even next to a stretched one it replaced (run 3, fragment E: "de" at 42.03–42.48 where the chunked fallback
+  wrote no words for the take at 38.14–42.48); Clean Up removes it with the retake around it.
   At an edge that found no pause the original words within 0.5 s of it stay
   (`replaceRegion`; measured: a window cut inside "and a foraging" made tiny.en write "far …"). Replacement keeps the
   words sorted, non-overlapping and integer (`replaceWindowWords`), and swaps the window's segments. Bounded: ≤ 96

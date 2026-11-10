@@ -405,7 +405,25 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 		const sec = (f: number) => f / FLICKS_PER_SECOND;
 		const spans = (pred: (f: CleanupFinding) => boolean): Span[] =>
 			res.findings.filter(pred).map((f) => [sec(f.range.start), sec(f.range.end)] as Span);
-		const keepSpeech = spans((f) => f.kind === 'untranscribed' && !accepted.has(f));
+		// voice without words is kept unless accepted, but never inside an accepted removal of words: a take the
+		// recogniser wrote no words for, between the words of a removed retake run, goes with it (fragment E, run 3:
+		// "Que puedo hacer en un mes lo mismo" without words at 38.14–39.34 inside the hidden retake 31.88–42.48)
+		const removing = spans((f) => !!f.words && WORD_KINDS.has(f.kind) && accepted.has(f));
+		const keepSpeech = spans((f) => f.kind === 'untranscribed' && !accepted.has(f)).flatMap(([a, b]) => {
+			let parts: Span[] = [[a, b]];
+			for (const [x, y] of removing)
+				parts = parts.flatMap(([p, q]): Span[] =>
+					y <= p || x >= q
+						? [[p, q]]
+						: (
+								[
+									[p, Math.min(q, x)],
+									[Math.max(p, y), q],
+								] as Span[]
+							).filter(([u, v]) => v - u > 1e-9),
+				);
+			return parts;
+		});
 		const keepPauses = spans(
 			(f) =>
 				f.kind === 'pause' &&

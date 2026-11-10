@@ -93,11 +93,11 @@ const DIFFERENCES: Record<number, Array<[from: number, to: number, kind: Finding
 	// "Primero diseñé la carretera con curvas muy cerradas. Le puse texturas a la carretera…": "la carretera" said in
 	// the next sentence is no restart (the prototype cut "la carretera con curvas muy cerradas. Le puse texturas a").
 	// "Si te gusta el video | a ver | Si te gusta el video suscríbete…": "a ver" as one word is not in the prototype's
-	// single-word markers (the built-in list has it), so it is content said once: the take rule removes the attempt.
+	// single-word markers (the built-in list has it); the take rule removes the attempt, and "a ver" between the take
+	// and its retake goes with it (a fragment of ≤ 2 words between takes of a group).
 	2: [
 		[14, 23, null],
-		[54, 58, 'retake'],
-		[59, 59, null],
+		[54, 59, 'retake'],
 	],
 	// The first sentence's "la carretera con curvas muy cerradas" stays, and so does the start of the last take
 	// "Le puse texturas a la carretera y ambienté el lugar" (the prototype cut "Le puse texturas a").

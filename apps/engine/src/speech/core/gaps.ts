@@ -10,6 +10,7 @@
 //
 // Frames are 10 ms (160 samples at 16 kHz); word times are 16 kHz samples.
 import { cleanupNorm, sameWord } from '@jasper/project/cleanup-worker';
+import { placeWord } from './align.ts';
 import { VAD_FRAME } from './vad.ts';
 
 /** Voiced frames (2 s) a wordless span needs to be decoded again. */
@@ -435,9 +436,8 @@ export function replaceWindowWords<W extends Timed>(
 		if (!inside(w)) continue;
 		const s = Math.max(prev, Math.round(w.start));
 		if (s >= limit) break;
-		const e = Math.min(limit, Math.max(s, Math.round(w.end)));
-		placed.push({ ...w, start: s, end: e });
-		prev = e;
+		placeWord(placed, w, s, Math.min(limit, Math.max(s, Math.round(w.end))));
+		prev = placed[placed.length - 1]!.end;
 	}
 	return [...before, ...placed, ...after];
 }

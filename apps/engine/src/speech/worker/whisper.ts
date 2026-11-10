@@ -41,6 +41,7 @@ import { loadOrt, type Ort, type ProviderId, type OrtTensor as Tensor } from '..
 import {
 	addWordTimestamps,
 	alignTokens,
+	placeWord,
 	type SegmentWords,
 	type WordTiming,
 	wordTimings,
@@ -1408,12 +1409,12 @@ export class WhisperModel {
 							prev.text = joinPunctuation(prev.text, ellipsis);
 							t = t.slice(ellipsis.length);
 						}
-						words.push({
-							text: lead + t,
-							start: a,
-							end: Math.min(b, input.samples),
-							probability: w.probability,
-						});
+						placeWord(
+							words,
+							{ text: lead + t, start: a, end: a, probability: w.probability },
+							a,
+							Math.min(b, input.samples),
+						);
 						lead = '';
 					}
 					allTokens.push(...(segTokens.get(s) ?? s.textTokens));

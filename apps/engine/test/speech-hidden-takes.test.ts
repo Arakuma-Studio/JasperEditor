@@ -5,7 +5,7 @@
 // "long" reading (one take, stretched), else the true words.
 import { wordsWellFormed } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
-import { redecodeAccepted } from '../src/speech/core/gaps.ts';
+import { redecodeAccepted, replaceWindowWords } from '../src/speech/core/gaps.ts';
 import { inputFromSamples } from '../src/speech/worker/audio.ts';
 import { runSpeechJob, type SpeechJobSpec } from '../src/speech/worker/run.ts';
 import { EOT, fakeModelDir, fakeOrt, noiseAudio, SPACE, TS_BEGIN } from './speech-fake-ort.ts';
@@ -218,5 +218,35 @@ describe('hidden takes', () => {
 			placed?.some((p) => p.text === w.text && p.start === w.start) ?? true;
 		// either nothing is replaced, or every original word under 31.15 s is still there
 		expect(original.filter((w) => w.end <= 31.15 * SR).every(kept)).toBe(true);
+	});
+
+	it('a re-decoded word timed inside the word before it gets time of its own (third run, fragment E: "hacer…")', () => {
+		const at2 = (text: string, a: number, b: number) => ({
+			text,
+			start: Math.round(a * SR),
+			end: Math.round(b * SR),
+		});
+		const words = [at2('empresa', 36.49, 36.77), at2('de', 36.77, 36.97), at2('Que', 38.14, 38.2)];
+		// the re-decode wrote "decenas hacer... de miles?" with "hacer..." inside "decenas"
+		const placed = replaceWindowWords(words, 36.7 * SR, 37.6 * SR, [
+			at2('de', 36.77, 37.01),
+			at2('decenas', 37.01, 37.23),
+			at2('hacer...', 37.1, 37.2),
+			at2('de', 37.23, 37.39),
+			at2('miles?', 37.39, 37.55),
+		]);
+		expect(placed.map((w) => w.text)).toEqual([
+			'empresa',
+			'de',
+			'decenas',
+			'hacer...',
+			'de',
+			'miles?',
+			'Que',
+		]);
+		for (const [k, w] of placed.entries()) {
+			expect(w.end, w.text).toBeGreaterThan(w.start);
+			if (k) expect(w.start, w.text).toBeGreaterThanOrEqual(placed[k - 1]!.end);
+		}
 	});
 });

@@ -22,7 +22,7 @@ import { FLICKS_PER_SECOND, flicksPerFrame } from '../src/time.ts';
 import { synthRecording } from './cleanup-synth.ts';
 import { Harness, videoAsset } from './helpers.ts';
 
-const rec = synthRecording(
+const REC = synthRecording(
 	[
 		{ say: 'Hoy les cuento cómo publicar el juego.', keep: true },
 		{ pauseS: 0.8 },
@@ -40,7 +40,10 @@ const SCRIPT = [
 	'El sonido hace boing boing boing al saltar.',
 ].join('\n');
 
-function analyse(older?: (doc: ProjectDocument) => void): {
+function analyse(
+	older?: (doc: ProjectDocument) => void,
+	rec: ReturnType<typeof synthRecording> = REC,
+): {
 	a: CleanupAnalysis;
 	F: number;
 	doc: ProjectDocument;
@@ -76,8 +79,8 @@ function analyse(older?: (doc: ProjectDocument) => void): {
 describe('hidden retakes', () => {
 	it('cuts the first take of a re-decoded restart up to the kept take, and keeps a repeat the script makes', () => {
 		const { a, F } = analyse();
-		const firstTake = rec.words.findIndex((w) => w.text === 'para');
-		const keptTake = rec.words.findIndex((w, i) => i > firstTake && w.text === 'para');
+		const firstTake = REC.words.findIndex((w) => w.text === 'para');
+		const keptTake = REC.words.findIndex((w, i) => i > firstTake && w.text === 'para');
 		const hidden = a.findings.filter((f) => f.kind === 'hidden-retake');
 		expect(hidden).toHaveLength(1);
 		expect(hidden[0]).toMatchObject({
@@ -87,10 +90,10 @@ describe('hidden retakes', () => {
 		});
 		// the cut lands at the kept take's first word (word edges, within a frame)
 		const cut = a.plan.ranges.find((r) => r.reasons.includes('hidden-retake'))!;
-		expect(Math.abs(cut.end * F - rec.words[keptTake]!.start)).toBeLessThanOrEqual(2 * F);
-		expect(cut.start * F).toBeLessThanOrEqual(rec.words[firstTake]!.end);
+		expect(Math.abs(cut.end * F - REC.words[keptTake]!.start)).toBeLessThanOrEqual(2 * F);
+		expect(cut.start * F).toBeLessThanOrEqual(REC.words[firstTake]!.end);
 		// "boing boing boing" is in the script: nothing of it is cut
-		const boing = rec.words.flatMap((w, i) => (w.text === 'boing' ? [i] : []));
+		const boing = REC.words.flatMap((w, i) => (w.text === 'boing' ? [i] : []));
 		for (const f of a.findings)
 			if (f.words && f.suggested === 'remove')
 				expect(boing.some((i) => i >= f.words![0] && i <= f.words![1])).toBe(false);
@@ -109,6 +112,29 @@ describe('hidden retakes', () => {
 		const r = repairDocument(doc, createCounterIdSource(900));
 		expect(r.report.map((x) => x.action)).toContain('normalize-redecoded');
 		expect(Object.values(r.document.transcripts).some((t) => 'redecoded' in t)).toBe(false);
+	});
+
+	it('voice without words inside a removed retake goes with it (third run, fragment E: a take with no words)', () => {
+		// the recogniser wrote no word for a stretch of the first take (here a voiced blip between its words)
+		const rec = synthRecording(
+			[
+				{ say: 'Hoy les cuento cómo publicar el juego.', keep: true },
+				{ pauseS: 0.8 },
+				{ say: 'para poder', keep: false },
+				{ coughS: 0.5 },
+				{ say: 'subirlos', keep: false },
+				{ say: 'para poder subirlos a la Playstore.', keep: true },
+				{ pauseS: 0.8 },
+			],
+			5,
+		);
+		const { a } = analyse(undefined, rec);
+		const [ca, cb] = rec.coughs[0]!;
+		const F = flicksPerFrame({ num: 30, den: 1 });
+		expect(a.findings.some((f) => f.kind === 'hidden-retake' && f.suggested === 'remove')).toBe(true);
+		expect(
+			a.plan.kept.some((k) => (k.start * F) / FLICKS_PER_SECOND < cb && (k.end * F) / FLICKS_PER_SECOND > ca),
+		).toBe(false);
 	});
 });
 
@@ -287,9 +313,7 @@ describe('hidden retakes of a real recording', () => {
 				empresa[29.23-29.55] de[29.55-29.79] decenas[29.79-30.07] de[30.07-30.17] miles[30.17-30.37]
 				de[30.37-30.47] millones[30.47-30.65] de[30.65-30.81] dólares.[30.81-31.15]`),
 		]) {
-			const r = detectReal(words);
-			expect(r.groups[0]!.chosen, words[0]!.text).toBe(1);
-			expect(removedBy(r).has(0), words[0]!.text).toBe(true);
+			expect(removedBy(detectReal(words)).has(0), words[0]!.text).toBe(true);
 		}
 	});
 
@@ -340,7 +364,8 @@ describe('hidden retakes of a real recording', () => {
 			Store[18.58-18.80] y[18.80-18.94] App[18.94-19.12] Store...[19.12-19.40]`);
 		const r = detectReal(words);
 		const kept = r.groups.map((g) => g.takes[g.chosen]!.range);
-		expect(kept).toHaveLength(1);
+		// the first take goes (by a restart or as a take of a group)
+		expect(removedBy(r).has(0)).toBe(true);
 		for (const f of r.findings)
 			if (f.words) for (const k of kept) expect(f.range.end <= k.start || f.range.start >= k.end).toBe(true);
 	});
