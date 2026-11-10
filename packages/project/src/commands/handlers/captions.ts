@@ -35,7 +35,13 @@ import {
 	speakerName,
 	wordRangeFrames,
 } from '../../captions/sequence-transcript.ts';
-import { normalizeWords, replaceWordRange, spreadTokens, tokenizeText } from '../../captions/words.ts';
+import {
+	normalizeWords,
+	replaceWordRange,
+	spreadTokens,
+	stretchedWordsWarning,
+	tokenizeText,
+} from '../../captions/words.ts';
 import { languageFillerHits } from '../../cleanup/fillers.ts';
 import { buildClipsPayload } from '../../clipboard/build.ts';
 import { anim, createTrack, defaultTransform } from '../../factories.ts';
@@ -646,6 +652,8 @@ function createCaptionsFromTranscript(
 		language: lang,
 		style,
 	});
+	const stretched = stretchedWordsWarning(words, FLICKS_PER_SECOND);
+	if (stretched) h.warn('W_STRETCHED_WORDS', stretched);
 	h.defineRef(cmd.ref, track.id);
 	return { trackId: track.id, clipIds, captions: clipIds.length };
 }

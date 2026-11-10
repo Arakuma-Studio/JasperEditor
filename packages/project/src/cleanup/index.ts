@@ -35,6 +35,7 @@ export {
 	cleanupFindingMedia,
 	cleanupRejectionChanges,
 } from './review.ts';
+export { lcs } from './rules.ts';
 export {
 	BUILTIN_CLEANUP_PRESETS,
 	builtinCleanupSettings,

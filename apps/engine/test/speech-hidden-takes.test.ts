@@ -1,0 +1,138 @@
+// Hidden takes (docs/wp-notes/speech.md §11.3 "Hidden takes"; reported on a 57-minute Spanish file with large-v3-turbo): a phrase the
+// speaker says twice back to back is written once over a long window, its last word stretched over both takes, but
+// decoding a few seconds around it alone writes both takes with correct times. The scripted decoder here behaves like
+// that: it finds where its window lies in the audio and, for a window holding more than 10 s of audio, writes the
+// "long" reading (one take, stretched), else the true words.
+import { wordsWellFormed } from '@jasper/project';
+import { describe, expect, it } from 'vitest';
+import { inputFromSamples } from '../src/speech/worker/audio.ts';
+import { runSpeechJob, type SpeechJobSpec } from '../src/speech/worker/run.ts';
+import { EOT, fakeModelDir, fakeOrt, noiseAudio, SPACE, TS_BEGIN } from './speech-fake-ort.ts';
+
+const SOT = 27;
+const NO_TS = 31;
+const SR = 16_000;
+const SECONDS = 17;
+type W = { text: string; start: number; end: number };
+
+const at = (text: string, start: number, len = 0.3): W => ({ text, start, end: start + len });
+const LEAD = [at('ab', 0.5), at('cd', 0.9), at('ef', 1.3), at('gh', 1.7)];
+// the first take breaks off ("ij kl mn—"), the second says the whole phrase
+const TAKE1 = [at('ij', 2.2), at('kl', 2.6), at('mn', 3.0, 0.2)];
+const TAKE2 = [at('ij', 3.32), at('kl', 3.72), at('mn', 4.12), at('op', 4.52), at('qr', 4.92)];
+const TAIL = 'st uv wx ya bd ce df eg fh gi hj ik jl km ln mo np oq pr qs rt su tv uw'
+	.split(' ')
+	.map((t, k) => at(t, 5.5 + 0.4 * k));
+const TRUTH = [...LEAD, ...TAKE1, ...TAKE2, ...TAIL];
+// what a long window gets: the phrase once, "mn" stretched from the first take to the second take's "op"
+const LONG = [...LEAD, ...TAKE1, ...TAKE2.slice(3), ...TAIL];
+
+const ids = (w: string) => [SPACE, ...[...w].map((c) => c.charCodeAt(0) - 97)];
+
+function hiddenTakeDecoder(audio: Float32Array) {
+	const input = inputFromSamples(audio, 80);
+	const F = Math.round(SECONDS * 100);
+	const full = new Float32Array(80 * F);
+	input.mel.window(0, F, full, F);
+	input.dispose();
+	let words: W[] = [];
+	let offset = 0;
+	const onEncoderInput = (x: Float32Array) => {
+		// where the window starts in the audio (the same normalised mel values) and how many frames it holds
+		let o = 0;
+		for (; o < F; o++) {
+			let same = true;
+			for (let j = 0; j < 3 && same; j++)
+				for (let m = 0; m < 80 && same; m++) same = x[m * 3000 + j] === full[m * F + o + j];
+			if (same) break;
+		}
+		let n = 0;
+		while (n < 3000 && [0, 40, 79].some((m) => x[m * 3000 + n] !== 0)) n++;
+		offset = o / 100;
+		// a short window loses the words within 80 ms of its edges (a chunk edge cuts them)
+		const edge = n > 1000 ? 0 : 0.08;
+		words = (n > 1000 ? LONG : TRUTH)
+			.filter((w) => w.start >= offset + edge - 1e-6 && w.end <= offset + n / 100 - edge + 1e-6)
+			.map((w) => ({ ...w, start: w.start - offset, end: w.end - offset }));
+	};
+	const ts = (sec: number) => TS_BEGIN + Math.round(sec * 50);
+	const logits = (h: readonly number[], row: Float32Array) => {
+		const sot = h.lastIndexOf(SOT);
+		if (sot < 0) return;
+		const aligning = h[sot + 1] === NO_TS;
+		const text = words.flatMap((w) => ids(w.text));
+		const gen = h.slice(sot + (aligning ? 2 : 1));
+		const target = aligning
+			? text
+			: words.length
+				? [ts(words[0]!.start), ...text, ts(words[words.length - 1]!.end)]
+				: [TS_BEGIN];
+		row.fill(-20);
+		row[gen.length < target.length ? target[gen.length]! : EOT] = 20;
+	};
+	// word alignment: each token attends to its share of its word (20 ms encoder frames), the end token to the end
+	const cross = (h: readonly number[], row: Float32Array) => {
+		const sot = h.lastIndexOf(SOT);
+		// the row at a token attends for the token after it (OpenAI reads rows from `<|notimestamps|>` on)
+		const k = h.length - 1 - (sot + 1);
+		const frames: number[] = [];
+		for (const w of words) {
+			const n = ids(w.text).length;
+			for (let q = 0; q < n; q++) frames.push((w.start + ((w.end - w.start) * q) / n) * 50);
+		}
+		const last = words.length ? words[words.length - 1]!.end * 50 : 0;
+		frames.push(last);
+		const i = Math.min(frames.length - 1, Math.max(0, k));
+		const a = Math.round(frames[i]!);
+		const b = Math.max(a + 4, Math.round(frames[i + 1] ?? last + 4));
+		row.fill(1e-6);
+		for (let j = a; j < Math.min(1500, b); j++) row[j] = 1;
+	};
+	return { onEncoderInput, logits, cross };
+}
+
+const audio = noiseAudio(SECONDS, (t) => TRUTH.some((w) => t >= w.start && t < w.end));
+const transcribe = (spec: Partial<SpeechJobSpec> = {}) =>
+	runSpeechJob(
+		{
+			modelDir: fakeModelDir({ encodable: true }),
+			modelId: 'fake',
+			input: { f32: '' },
+			language: 'en',
+			...spec,
+		},
+		{ ort: fakeOrt(hiddenTakeDecoder(audio)).ort, audio },
+	);
+
+describe('hidden takes', () => {
+	it('a stretched word is decoded again alone and both takes are written with their times', async () => {
+		const out = await transcribe();
+		expect(
+			wordsWellFormed(out.words.map((w) => ({ ...w, speaker: null, breakBefore: 'none' as const }))),
+		).toBeNull();
+		const texts = out.words.map((w) => w.text);
+		expect(texts.slice(4, 12)).toEqual(['ij', 'kl', 'mn', 'ij', 'kl', 'mn', 'op', 'qr']);
+		// each take where it was said (±60 ms)
+		for (const [k, w] of [...TAKE1, ...TAKE2].entries()) {
+			expect(Math.abs(out.words[4 + k]!.start / SR - w.start)).toBeLessThan(0.06);
+			expect(Math.abs(out.words[4 + k]!.end / SR - w.end)).toBeLessThan(0.06);
+		}
+		expect(out.guard.redecoded).toEqual({
+			windows: 1,
+			replaced: 1,
+			wordsAdded: 3,
+			skipped: 0,
+			// 3 s before "mn" (from 0) to 1.5 s after it, widened to the end of the word there
+			ranges: [{ start: 0, end: 6.3, before: 11, after: 14, replaced: true }],
+		});
+	});
+
+	it('VAD chunks decode every take, and the shifted pass restores the words a chunk edge cut', async () => {
+		const out = await transcribe({ chunking: 'vad', redecode: false });
+		expect(out.words.map((w) => w.text)).toEqual(TRUTH.map((w) => w.text));
+		for (const [k, w] of TRUTH.entries())
+			expect(Math.abs(out.words[k]!.start / SR - w.start)).toBeLessThan(0.06);
+		expect(out.guard.chunked).toMatchObject({ chunks: 2, shiftedChunks: 3 });
+		expect(out.guard.chunked!.replaced).toBeGreaterThan(0);
+	});
+});

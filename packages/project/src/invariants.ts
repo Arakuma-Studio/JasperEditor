@@ -62,6 +62,7 @@ import { ROTO_OBJECT_PARAMS } from './roto/index.ts';
 import { type Animatable, type Keyframe, SPATIAL_INTERPOLATIONS } from './schema/common.ts';
 import type { ProjectDocument } from './schema/document.ts';
 import { MASK_MODES, type Mask } from './schema/mask.ts';
+import { MAX_TRANSCRIPT_REDECODED } from './schema/media.ts';
 import { PUPPET_PIN_KINDS, PUPPET_PIN_PROPS, type Puppet } from './schema/puppet.ts';
 import type {
 	AudioClip,
@@ -84,7 +85,11 @@ import {
 	repairSoundDesign,
 	sequenceSoundDesignIssue,
 } from './sound/repair.ts';
-import { normalizeTranscriptSegments, transcriptSegmentsProblem } from './speech/index.ts';
+import {
+	normalizeTranscriptSegments,
+	transcriptRedecoded,
+	transcriptSegmentsProblem,
+} from './speech/index.ts';
 import { isNestClip } from './structure/nest.ts';
 import { getTextAnimationSpec } from './text-animations.ts';
 import { repairTextAnimators, textAnimatorIssues } from './text-animators/validate.ts';
@@ -1498,6 +1503,9 @@ export function runInvariants(
 		// wp speech: coverage ranges sorted, disjoint, non-empty
 		const cov = coverageProblem(t.coverage);
 		if (cov) issues.push(inv('INV-012', `Transcript ${t.id}: ${cov}`, ['transcripts', t.id, 'coverage']));
+		// hidden takes: re-decoded ranges of this recognition
+		const red = redecodedProblem(t);
+		if (red) issues.push(inv('INV-012', `Transcript ${t.id}: ${red}`, ['transcripts', t.id, 'redecoded']));
 		// spec 14 TC-003: decoder scores per segment, read leniently
 		const segs = transcriptSegmentsProblem(t.segments);
 		if (segs) issues.push(inv('INV-012', `Transcript ${t.id}: ${segs}`, ['transcripts', t.id, 'segments']));
@@ -2282,6 +2290,13 @@ export function repairDocument(
 			t.coverage = mergeRanges(ok);
 			note('normalize-coverage', t.id, 'transcript coverage ranges sorted and merged');
 		}
+		// hidden takes: a mark of an earlier recognition dropped, malformed ranges dropped, the rest sorted and merged
+		if (redecodedProblem(t)) {
+			const ranges = transcriptRedecoded(t);
+			if (ranges.length) t.redecoded = { createdAt: t.createdAt, ranges };
+			else delete t.redecoded;
+			note('normalize-redecoded', t.id, 'transcript re-decoded ranges repaired or dropped');
+		}
 		// spec 14 TC-003: malformed segments dropped, the rest sorted
 		if (transcriptSegmentsProblem(t.segments)) {
 			const segs = normalizeTranscriptSegments(t.segments);
@@ -2716,16 +2731,36 @@ function findNestCycleClip(doc: ProjectDocument): { seqId: string; clipId: strin
 	return null;
 }
 
-/** wp speech: why a transcript's `coverage` is malformed, or null (absent = the whole media). */
-export function coverageProblem(coverage: unknown): string | null {
+/**
+ * Hidden takes: why a transcript's `redecoded` (`{createdAt, ranges}`) is malformed or marks an earlier recognition
+ * than the transcript's (`createdAt` differs: a build that predates the field transcribed the media again), or null.
+ */
+function redecodedProblem(t: { redecoded?: unknown; createdAt?: unknown }): string | null {
+	const r = t.redecoded;
+	if (r === undefined) return null;
+	if (!r || typeof r !== 'object' || Array.isArray(r)) return 'redecoded is not {createdAt, ranges}';
+	const { createdAt, ranges } = r as { createdAt?: unknown; ranges?: unknown };
+	if (typeof createdAt !== 'string' || createdAt !== t.createdAt)
+		return 'redecoded ranges belong to another recognition than the words';
+	if (!Array.isArray(ranges) || !ranges.length) return 'redecoded has no ranges';
+	if (ranges.length > MAX_TRANSCRIPT_REDECODED)
+		return `more than ${MAX_TRANSCRIPT_REDECODED} redecoded ranges`;
+	return coverageProblem(ranges, 'redecoded');
+}
+
+/**
+ * wp speech: why a transcript's `coverage` (absent = the whole media) — or another of its range lists, named
+ * `label` (`redecoded`) — is malformed, or null.
+ */
+export function coverageProblem(coverage: unknown, label = 'coverage'): string | null {
 	if (coverage === undefined) return null;
-	if (!Array.isArray(coverage)) return 'coverage is not a list of ranges';
+	if (!Array.isArray(coverage)) return `${label} is not a list of ranges`;
 	let prev = -1;
 	for (const r of coverage) {
 		if (!Array.isArray(r) || r.length !== 2 || !Number.isInteger(r[0]) || !Number.isInteger(r[1]))
-			return 'coverage ranges must be [start, end] integer flicks';
-		if (r[0] < 0 || r[1] <= r[0]) return 'a coverage range is empty or negative';
-		if (r[0] <= prev) return 'coverage ranges are not sorted and disjoint';
+			return `${label} ranges must be [start, end] integer flicks`;
+		if (r[0] < 0 || r[1] <= r[0]) return `a ${label} range is empty or negative`;
+		if (r[0] <= prev) return `${label} ranges are not sorted and disjoint`;
 		prev = r[1];
 	}
 	return null;

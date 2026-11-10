@@ -158,3 +158,53 @@ export function replaceWordRange(t: Transcript, from: number, to: number, text: 
 	for (const w of fresh) if (keep.has(w.text)) w.confidence = keep.get(w.text)!;
 	return [...words.slice(0, from), ...fresh, ...words.slice(to + 1)];
 }
+
+/** A word longer than this (seconds) inside continuous speech is stretched over more than it says. */
+export const STRETCHED_WORD_S = 1;
+/** Neighbouring words closer than this (seconds) make continuous speech. */
+const CONTINUOUS_GAP_S = 0.3;
+
+/**
+ * Hidden takes (docs/wp-notes/speech.md §11.3 "Hidden takes"): the words (flicks) longer than 1 s inside continuous speech — every
+ * neighbour it has within 0.3 s, and at least one. Speech to text writes a phrase said twice back to back once and
+ * stretches its words over both takes, so subtitles timed from them run ahead of the audio. Normal words last
+ * 0.2–0.4 s. Returns `{start, end}` of each, in order.
+ */
+export function stretchedWords(
+	words: ReadonlyArray<{ start: number; end: number }>,
+	flicksPerSecond: number,
+): Array<{ start: number; end: number }> {
+	const out: Array<{ start: number; end: number }> = [];
+	const gap = CONTINUOUS_GAP_S * flicksPerSecond;
+	for (let i = 0; i < words.length; i++) {
+		const w = words[i]!;
+		if (w.end - w.start <= STRETCHED_WORD_S * flicksPerSecond) continue;
+		const prev = words[i - 1];
+		const next = words[i + 1];
+		if (!prev && !next) continue;
+		if (prev && w.start - prev.end >= gap) continue;
+		if (next && next.start - w.end >= gap) continue;
+		out.push({ start: w.start, end: w.end });
+	}
+	return out;
+}
+
+/** The warning for stretched words (sequence flicks), or null when there are none. */
+export function stretchedWordsWarning(
+	words: ReadonlyArray<{ start: number; end: number }>,
+	flicksPerSecond: number,
+): string | null {
+	const hits = stretchedWords(words, flicksPerSecond);
+	if (!hits.length) return null;
+	const at = (f: number) => {
+		const s = f / flicksPerSecond;
+		const m = Math.floor(s / 60);
+		const r = s - m * 60;
+		return `${m}:${r < 10 ? '0' : ''}${r.toFixed(1)}`;
+	};
+	const list = hits
+		.slice(0, 8)
+		.map((w) => `${at(w.start)}–${at(w.end)}`)
+		.join(', ');
+	return `${hits.length} word(s) last over 1 s inside continuous speech (${list}${hits.length > 8 ? ', …' : ''}): speech to text probably wrote a phrase said twice only once, so these captions run ahead of the audio. Transcribe again with chunking "vad", then rebuild the captions.`;
+}

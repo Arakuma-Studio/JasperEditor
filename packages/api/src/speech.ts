@@ -98,6 +98,20 @@ export const TranscribeOptionsSchema = z.object({
 	/** Condition each 30 s window on the previous window's text (default true; OpenAI `condition_on_previous_text`). */
 	conditionOnPreviousText: z.boolean().optional(),
 	/**
+	 * Hidden takes (default true): after recognition, the windows around stretched words (> 1 s over continuous
+	 * speech) and short wordless voice (≥ 0.35 s) are decoded again alone — verbatim, without the previous text — and
+	 * their words replaced when the re-decode writes more words that re-say the original ones (a restart Whisper wrote
+	 * once). `false` turns the pass off. Part of the transcription's dedupe key.
+	 */
+	redecode: z.boolean().optional(),
+	/**
+	 * `vad`: decode chunks of 3–10 s split at short pauses (≥ 100 ms), each on its own without the previous text, a
+	 * second time with boundaries at other pauses, and merge the passes around the first pass's boundaries — writes
+	 * restarts and retakes that 30 s windows write once. About twice the decoding time. Default: 30 s windows.
+	 * Part of the transcription's dedupe key.
+	 */
+	chunking: z.enum(['vad']).optional(),
+	/**
 	 * Spec 17 SC-074: names and terms (script spelling, most frequent first) carried into every window's prompt after
 	 * the verbatim / initial prompt, within the 223-token prompt cap (terms that do not fit are left out). A term
 	 * repeated ≥ 3 times within 10 s makes that window decode again without the glossary (SC-075). Part of the
@@ -207,6 +221,40 @@ export const SpeechGuardReportSchema = z.object({
 			ranges: z
 				.array(z.object({ start: z.number(), end: z.number(), words: z.number().int().min(0) }))
 				.max(32),
+		})
+		.optional(),
+	/** `chunking: "vad"`: chunks of the first and the shifted pass, merge zones, zones that took the shifted words. */
+	chunked: z
+		.object({
+			chunks: z.number().int().min(0),
+			shiftedChunks: z.number().int().min(0),
+			zones: z.number().int().min(0),
+			replaced: z.number().int().min(0),
+		})
+		.optional(),
+	/**
+	 * Hidden takes (`redecode`): windows around stretched words and short wordless voice decoded again alone (at most
+	 * 96 windows and 10 min per job, in time order): windows decoded, windows whose words were replaced, words that
+	 * added, windows over the budget, and each window (seconds) with its word counts before and after. Absent when
+	 * there was none or the pass was off.
+	 */
+	redecoded: z
+		.object({
+			windows: z.number().int().min(0),
+			replaced: z.number().int().min(0),
+			wordsAdded: z.number().int(),
+			skipped: z.number().int().min(0),
+			ranges: z
+				.array(
+					z.object({
+						start: z.number(),
+						end: z.number(),
+						before: z.number().int().min(0),
+						after: z.number().int().min(0),
+						replaced: z.boolean(),
+					}),
+				)
+				.max(96),
 		})
 		.optional(),
 });

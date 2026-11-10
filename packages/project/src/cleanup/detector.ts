@@ -85,6 +85,11 @@ export type DetectInput = {
 	settings: CleanupSettings;
 	/** Only words whose midpoint lies in one of these media ranges (flicks) are analysed (absent: all). */
 	spans?: ReadonlyArray<{ start: number; end: number }> | null;
+	/**
+	 * Media ranges (flicks) the recogniser decoded again alone (`Transcript.redecoded`): restarts, false starts and
+	 * retakes there are hidden retakes — takes the first decode had written once.
+	 */
+	redecoded?: ReadonlyArray<readonly [number, number]> | null;
 };
 
 export type ScriptLineReport = { index: number; text: string; said: boolean; takes: number };
@@ -111,6 +116,7 @@ const CONFIDENCE: Record<FindingKind, number> = {
 	restart: 0.85,
 	'false-start': 0.9,
 	retake: 0.9,
+	'hidden-retake': 0.85,
 	stutter: 0.8,
 	'off-script': 0.85,
 	'head-tail': 0.8,
@@ -411,6 +417,7 @@ export function detectCleanup(input: DetectInput): DetectResult {
 	ruleOffScript(ctx, phs);
 	ruleMarkerPhrases(ctx, phs, markers);
 	ruleStutters(ctx);
+	if (sTokens.length) dropScriptRepeats(ctx);
 	// head / tail: before the first unit that says a script line / after the last unit on script — one that says a line
 	// or, after it, one whose words come from the script by the prototype's off-script share (over all non-filler tokens,
 	// as calibrated; the off-script rule itself now judges content words): closing lines are often paraphrased,
@@ -459,6 +466,26 @@ export function detectCleanup(input: DetectInput): DetectResult {
 		}
 	}
 
+	// hidden retakes: take labels inside re-decoded ranges (a whole run of one label at a time)
+	const redecoded = input.redecoded ?? [];
+	if (redecoded.length)
+		for (let k = 0; k < aw.length; ) {
+			const l = labels[k];
+			if (!l || !HIDDEN_FROM.has(l.kind)) {
+				k++;
+				continue;
+			}
+			let j = k;
+			while (j + 1 < aw.length && sameLabel(labels[j + 1], l)) j++;
+			const inside = aw.slice(k, j + 1).some((w) => {
+				const src = input.words[w.i]!;
+				const mid = src.start + (src.end - src.start) / 2;
+				return redecoded.some(([a, b]) => mid >= a && mid < b);
+			});
+			if (inside) for (let q = k; q <= j; q++) labels[q] = { ...labels[q]!, kind: 'hidden-retake' };
+			k = j + 1;
+		}
+
 	// ---- findings
 	type Raw = {
 		kind: FindingKind;
@@ -469,6 +496,8 @@ export function detectCleanup(input: DetectInput): DetectResult {
 		text: string;
 		group?: number;
 		confidence?: number;
+		/** Hidden retakes outside take groups: the take that stays. */
+		kept?: string;
 	};
 	const raw: Raw[] = [];
 	// word findings: runs of analysed words with one label
@@ -489,6 +518,14 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			j++;
 		const a = aw[k]!;
 		const b = aw[j]!;
+		// a hidden retake names the take that stays: as many words as it removes, after it
+		const keptTake =
+			l.kind === 'hidden-retake' && l.group === undefined
+				? aw
+						.slice(j + 1, j + 1 + (j - k + 1))
+						.map((w) => w.text.trim())
+						.join(' ')
+				: '';
 		const confs = aw
 			.slice(k, j + 1)
 			.map((w) => w.conf)
@@ -504,6 +541,7 @@ export function detectCleanup(input: DetectInput): DetectResult {
 				.map((w) => w.text.trim())
 				.join(' '),
 			...(l.group !== undefined ? { group: l.group } : {}),
+			...(keptTake ? { kept: keptTake } : {}),
 			...(l.kind === 'asr-suspect' && confs.length ? { confidence: 1 - Math.min(...confs) } : {}),
 		});
 		k = j + 1;
@@ -548,7 +586,7 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			range: { start: r.start, end: r.end },
 			words: r.words,
 			confidence: Math.round((r.confidence ?? CONFIDENCE[r.kind]) * 1000) / 1000,
-			reason: reasonOf(r.kind, r.text, r.end - r.start, r.group, groups),
+			reason: reasonOf(r.kind, r.text, r.end - r.start, r.group, groups, r.kept),
 			suggested: r.suggested,
 			...(r.group !== undefined ? { group: `g${r.group}` } : {}),
 			fingerprint: fp,
@@ -570,15 +608,52 @@ export function detectCleanup(input: DetectInput): DetectResult {
 	return { mediaId: input.mediaId, stream, language: lang, words, guarded, findings, groups, script };
 }
 
+/** Labels that become hidden retakes inside re-decoded ranges. */
+const HIDDEN_FROM: ReadonlySet<FindingKind> = new Set(['restart', 'false-start', 'retake']);
+
+const sameLabel = (x: WordLabel | null | undefined, l: WordLabel) =>
+	!!x && x.kind === l.kind && x.action === l.action && x.group === l.group;
+
+/**
+ * Repeats the script itself makes are no restarts, false starts or stutters ("boing boing boing"): a run of one such
+ * label whose words, followed by as many words after it, occur in a row in the script loses its label.
+ */
+function dropScriptRepeats(ctx: RuleContext): void {
+	const script = ctx.scriptTokens;
+	const kinds: ReadonlySet<FindingKind> = new Set(['restart', 'false-start', 'stutter']);
+	const inScript = (toks: readonly string[]) => {
+		for (let s = 0; s + toks.length <= script.length; s++) {
+			let q = 0;
+			while (q < toks.length && script[s + q] === toks[q]) q++;
+			if (q === toks.length) return true;
+		}
+		return false;
+	};
+	for (let k = 0; k < ctx.words.length; ) {
+		const l = ctx.labels[k];
+		if (!l || !kinds.has(l.kind)) {
+			k++;
+			continue;
+		}
+		let j = k;
+		while (j + 1 < ctx.words.length && sameLabel(ctx.labels[j + 1], l)) j++;
+		const toks = ctx.words.slice(k, Math.min(ctx.words.length, j + 1 + (j - k + 1))).map((w) => w.n);
+		if (toks.length > j - k + 1 && inScript(toks)) for (let q = k; q <= j; q++) ctx.labels[q] = null;
+		k = j + 1;
+	}
+}
+
 function reasonOf(
 	kind: FindingKind,
 	text: string,
 	flicks: number,
 	group: number | undefined,
 	groups: readonly RetakeGroup[],
+	kept?: string,
 ): CleanupFinding['reason'] {
 	const params: Record<string, string | number> = { seconds: Math.round(toSec(flicks) * 100) / 100 };
 	if (text) params.text = text.length > 120 ? `${text.slice(0, 117)}…` : text;
+	if (kept) params.kept = kept.length > 80 ? `${kept.slice(0, 77)}…` : kept;
 	if (group !== undefined) {
 		const g = groups[group];
 		if (g) {

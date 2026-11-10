@@ -358,6 +358,51 @@ whisper evaluation (53 configurations; the numbers of spec 16 §0). This section
   decoder, and the large-v3-turbo behaviour of the report was not reproduced here (no turbo model on the build VM).
   Limits: speech the energy VAD calls silence is not retried; voiced non-speech (music, noise) without a voice
   analysis is retried within the budget and costs decode time; recovered words still pass the silence guards.
+- Hidden takes (fix "hidden retakes", reported on a 57-minute Spanish talking-head file with large-v3-turbo: a phrase
+  the speaker said twice back to back — a restart or retake — was written once with its word times stretched over both
+  takes, with `conditionOnPreviousText` on or off and on the exported cut too; Clean Up kept 21 of them in one cut and
+  captions ran ahead of the audio. Re-transcribing each suspicious window alone — 3 s before the stretched word to
+  1.5 s after, verbatim, no previous text — wrote every take with correct times; reporter's measurement, not ours).
+  **Re-decode pass** (`core/gaps.ts` "Hidden takes", `worker/run.ts redecodeSuspects`; default on, `redecode: false`
+  in the transcription options / job spec turns it off; part of the dedupe key). After the wordless-span pass, on the
+  raw Whisper words: traces are (a) stretched words — longer than 1 s with ≥ 50 % of their 10 ms frames voiced
+  ("continuous speech": the voice-analysis speech class, else the energy VAD; a word stretched over a pause is not,
+  refinement trims it) and (b) short wordless voice — ≥ 0.35 s of voiced frames no word covers within ±50 ms (voice
+  closer than 100 ms joins; the same scan as the 2 s safety net, `wordlessVoicedSpans` with another shape). Window =
+  3 s before to 1.5 s after the trace, each edge moved out to the middle of a pause of ≥ 100 ms within 1 s, then to the
+  bounds of a word it cuts; overlapping windows merge while ≤ 30 s. Each window is decoded alone (`span`), verbatim,
+  `conditionOnPreviousText: false`. Acceptance: the re-decode replaces the window's words only when it holds MORE words
+  with letters/digits and ≥ 20 % voiced frames than the original holds words, and re-says the original words in order
+  (LCS of `cleanupNorm` texts ≥ 80 % of them: "Playstore" / "Play Store"); an equal or smaller result never replaces
+  anything, so the pass never drops words. At an edge that found no pause the original words within 0.5 s of it stay
+  (`replaceRegion`; measured: a window cut inside "and a foraging" made tiny.en write "far …"). Replacement keeps the
+  words sorted, non-overlapping and integer (`replaceWindowWords`), and swaps the window's segments. Bounded: ≤ 96
+  windows and 10 min of audio per job, in time order (the rest counted as `skipped`). Reported as `guard.redecoded
+  {windows, replaced, wordsAdded, skipped, ranges[{start, end, before, after, replaced}]}` (worker output, job result;
+  the MCP transcribe report lists only replaced ranges, ≤ 30); replaced ranges are stored as `Transcript.redecoded`
+  (`{createdAt, ranges}`, bound to the recognition; project-files.md) so Clean Up labels takes there `hidden-retake` (transcript-cleanup.md) and captions warn on
+  stretched words (captions.md). **VAD chunking** (`chunking: "vad"`, opt-in; `core/chunks.ts`): chunks split at
+  pauses ≥ 100 ms of the energy VAD, joined to 3–10 s (a chunk under 3 s takes the next voice up to 30 s; a ≥ 2 s
+  silence always ends one), each decoded alone without the previous text; a second pass with one boundary per
+  first-pass chunk at its interior pause nearest its middle; merge: around each first-pass boundary inside a shifted
+  chunk (±1.5 s, halfway to the neighbouring boundaries) the shifted pass's words win when it has at least as many
+  there (its words at that point are whole), else the first pass's; chunks of one pass never overlap, so nothing is
+  written twice. Reported as `guard.chunked {chunks, shiftedChunks, zones, replaced}`; the re-decode pass runs after it.
+  Tests (scripted decoder that writes the long-window reading with one take stretched, and both takes for a window
+  ≤ 10 s; `apps/engine/test/speech-hidden-takes.test.ts`, each fails without its pass / merge). **Measured** (16-core
+  shared Linux host, load ≈ 2, 4 threads, one-off script over the LJ fixture, `runSpeechJob`): plain fixture WER with
+  the re-decode off / on — tiny.en 1.92 / 1.92 %, tiny 8.33 / 8.33 % (2 windows decoded, none replaced; ≈ +2–11 %
+  time); with a spliced restart (the first 1.6 s of utterance 2 said again 0.15 s before it) tiny.en reproduces the
+  report — "all prisoners passed their(8.12–10.26 s) time…", one take, "their" stretched 2.1 s — and the re-decode
+  writes both takes with their times ("All prisoners pass their time. All prisoners pass their time in absolute…",
+  second take at 8.86 s); tiny wrote both takes in the main pass already (re-decode replaced nothing). VAD chunking:
+  both models wrote both takes, but plain-fixture WER tiny.en 1.92 → 6.41 % (short contexts: "pass" for "passed",
+  "tablespoon full", "rat" for "wretch"), tiny 8.33 → 8.33 %, ≈ 2–2.3× the time — hence opt-in. Not measured here:
+  large-v3-turbo (not on this host) and the reporter's file; the 1 s / 0.35 s / 3 s / 1.5 s values come from the
+  report (assumption: they hold for other speakers and languages). Limits: a take the re-decode also writes once stays
+  hidden; acceptance needs strictly more words, so a re-decode that fixes timing without adding a word changes nothing
+  (captions still warn); a re-decoded word timed across a guarded edge differently from the original may be written
+  twice there; the web Transcribe dialog has no chunking control yet (docs/gaps.md).
 - Verbatim prompts (TC-003): `verbatim` puts the language's filler prompt (Spanish `Eh... em, bueno, o sea, este...
   mmm, ¿vale? Ah, eh, pues...`, English `Um, uh, so, like, you know... hmm, okay? Ah, er, well...` — the English one is
   our assumption) and `initialPrompt` at the start of the running text, OpenAI semantics: it conditions the first

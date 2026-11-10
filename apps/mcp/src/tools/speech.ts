@@ -44,6 +44,10 @@ const OptionsShape = {
 	verbatim: z.boolean().optional().describe('Keep fillers (um, eh).'),
 	initialPrompt: z.string().max(1000).optional().describe('Names, vocabulary or style of the speech.'),
 	conditionOnPreviousText: z.boolean().optional().describe('Default true; false resists repetition loops.'),
+	chunking: z
+		.enum(['vad'])
+		.optional()
+		.describe('Short chunks split at pauses: writes a phrase said twice (restarts) twice; ≈2× slower.'),
 	glossary: z
 		.array(z.string().trim().min(1).max(64))
 		.max(40)
@@ -63,6 +67,7 @@ type Opts = {
 	verbatim?: boolean;
 	initialPrompt?: string;
 	conditionOnPreviousText?: boolean;
+	chunking?: 'vad';
 	glossary?: string[];
 };
 
@@ -79,6 +84,7 @@ function requestOf(o: Opts) {
 		...(o.verbatim ? { verbatim: true } : {}),
 		...(o.initialPrompt?.trim() ? { initialPrompt: o.initialPrompt.trim() } : {}),
 		...(o.conditionOnPreviousText === false ? { conditionOnPreviousText: false } : {}),
+		...(o.chunking === 'vad' ? { chunking: 'vad' as const } : {}),
 		...(o.glossary?.length ? { glossary: o.glossary.map((t) => t.trim()).filter(Boolean) } : {}),
 	};
 }
@@ -269,6 +275,15 @@ async function commit(
 							...(res.guard.frames ? { frames: res.guard.frames } : {}),
 							...(res.guard.glossary ? { glossary: res.guard.glossary } : {}),
 							...(res.guard.recovered ? { recovered: res.guard.recovered } : {}),
+							// hidden takes: the windows whose words were replaced (the others changed nothing)
+							...(res.guard.redecoded
+								? {
+										redecoded: {
+											...res.guard.redecoded,
+											ranges: res.guard.redecoded.ranges.filter((r) => r.replaced).slice(0, 30),
+										},
+									}
+								: {}),
 						},
 					}
 				: {}),

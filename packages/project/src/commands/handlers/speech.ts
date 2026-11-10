@@ -4,7 +4,9 @@ import type { Transcript } from '../../schema/media.ts';
 import {
 	mergeTranscriptSegments,
 	mergeTranscriptWords,
+	normalizeRedecodedRanges,
 	normalizeTranscriptSegments,
+	transcriptRedecoded,
 	transcriptSegments,
 } from '../../speech/index.ts';
 import type { HandlerMap } from './util.ts';
@@ -26,6 +28,7 @@ export const speechHandlers = {
 			if (w.speaker && !speakers[w.speaker])
 				speakers[w.speaker] = { name: `Speaker ${Object.keys(speakers).length + 1}` };
 		const segments = cmd.segments ? normalizeTranscriptSegments(cmd.segments) : undefined;
+		const redecoded = normalizeRedecodedRanges(cmd.redecoded);
 		const words = normalizeWords(
 			cmd.words.map((w) => ({
 				text: w.text,
@@ -54,6 +57,9 @@ export const speechHandlers = {
 			...(cmd.sourceLanguage ? { sourceLanguage: cmd.sourceLanguage } : {}),
 			createdAt: h.ctx.now(),
 		};
+		// hidden takes: the ranges are bound to this recognition (`transcriptRedecoded`)
+		const markOf = (ranges: Array<[number, number]>) =>
+			ranges.length ? { createdAt: meta.createdAt, ranges } : undefined;
 		if (current) {
 			const t = doc.transcripts[current.id] as Transcript;
 			if (mode === 'merge' && coverage) {
@@ -65,6 +71,17 @@ export const speechHandlers = {
 				const segs = mergeTranscriptSegments(transcriptSegments(current), segments ?? [], coverage);
 				if (segs.length) t.segments = segs;
 				else delete t.segments;
+				// re-decoded ranges outside the coverage stay; inside it the new transcription's count
+				const inCoverage = (r: readonly [number, number]) =>
+					coverage.some(([a, b]) => (r[0] + r[1]) / 2 >= a && (r[0] + r[1]) / 2 < b);
+				const red = markOf(
+					normalizeRedecodedRanges([
+						...transcriptRedecoded(current).filter((r) => !inCoverage(r)),
+						...redecoded,
+					]),
+				);
+				if (red) t.redecoded = red;
+				else delete t.redecoded;
 			} else {
 				t.words = words;
 				t.speakers = speakers;
@@ -72,6 +89,9 @@ export const speechHandlers = {
 				else delete t.coverage;
 				if (segments?.length) t.segments = segments;
 				else delete t.segments;
+				const red = markOf(redecoded);
+				if (red) t.redecoded = red;
+				else delete t.redecoded;
 			}
 			Object.assign(t, meta);
 			if (!cmd.task) delete t.task;
@@ -96,6 +116,7 @@ export const speechHandlers = {
 			...meta,
 			...(coverage ? { coverage } : {}),
 			...(segments?.length ? { segments } : {}),
+			...(redecoded.length ? { redecoded: markOf(redecoded) } : {}),
 		} as Transcript;
 		h.defineRef(cmd.ref, id);
 		return { transcriptId: id, words: words.length, replaced: false };

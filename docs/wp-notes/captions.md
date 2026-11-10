@@ -168,6 +168,16 @@ pure model). Readers snap cue times to the sequence frames on import (`snapCapti
 README tool list updated. Text-based tools take word indices or a `query` + `occurrence`; fillers / pauses have a
 `dryRun`.
 
+Stretched words (fix "hidden retakes"): `captions.generate`, `captions.regenerate` (`W_SUBTITLES`) and
+`transcript.createCaptions` (`W_STRETCHED_WORDS`) warn when the words they time cues from hold a word longer than 1 s
+inside continuous speech — every neighbour within 0.3 s, at least one (`stretchedWords`, `captions/words.ts`) — naming
+up to 8 sequence times and suggesting `transcribe {chunking: "vad"}`, then rebuilding the captions (the hidden-take
+re-decode is on by default, so stretched words left in a new transcript are ones it could not split). Speech to text writes a phrase said twice once and stretches its words over both takes, so cues from them
+run ahead of the audio (wp-notes/speech.md §11.3 "Hidden takes"). The 1 s / 0.3 s thresholds follow the report
+(normal words 0.2–0.4 s; stretched ones 1.46–4.3 s), not a measurement here. The warning reaches MCP results
+(`captions_from_transcript`, `regenerate_captions`) as transaction warnings. Test: `subtitles-commands.test.ts`
+"stretched words".
+
 ## 7. Verified behaviour
 
 - `packages/project/test/caption-formats.test.ts` (46): every FilmCraft format unit test; property round trips

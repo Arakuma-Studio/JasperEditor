@@ -281,8 +281,8 @@ Deliberate differences from the prototype (labelled):
 `detectCleanup(input) → {findings, groups, words, guarded, script}` per media. A finding is a run of words with one
 label (or a frame run): `{id, kind, range (media flicks), words [first, last] | null, confidence, reason {key:
 'cleanup.reason.<kind>', params: {text, seconds, takes?, kept?, line?}}, suggested, group?, fingerprint}`. Kinds: pause,
-breath, filler-vocalic, filler-phrase, filler-lexical, restart, false-start, retake, stutter, off-script, head-tail,
-untranscribed, asr-suspect, hallucination. `suggested` is the rule's action (`remove` / `review`); `off` rules do not
+breath, filler-vocalic, filler-phrase, filler-lexical, restart, false-start, retake, hidden-retake, stutter, off-script,
+head-tail, untranscribed, asr-suspect, hallucination. `suggested` is the rule's action (`remove` / `review`); `off` rules do not
 run.
 
 Fingerprint (TC-013): `<mediaId>~<stream>~<kind>~<round(start × 10)>~<round(end × 10)>~<fnv1a(normalised text)>` —
@@ -296,6 +296,28 @@ covering ≥ 20 % more of the line wins (its retake / false-start / restart labe
 the last one included, become retakes). Script (TC-012): lines are sentences (. ? ! … and line breaks); a unit says a
 line when ≥ 60 % of its content words appear in order in it (LCS); the report lists every line and whether a take says
 it.
+
+Hidden retakes (fix "hidden retakes", reported on a 57-minute Spanish recording with large-v3-turbo: 21 restarts and
+retakes kept in one cut because the transcript held each repeated phrase once). The recogniser now decodes the
+windows around stretched words and short wordless voice again (wp-notes/speech.md §11.3 "Hidden takes") and stores the
+ranges whose words it replaced as `Transcript.redecoded` (media flicks; carried by `transcriptAttachPlan` from
+`guard.redecoded` of the job result through `transcript.attach`, merged inside a mix's coverage like segments, and
+bound to the recognition's `createdAt`: after a build that predates the field transcribes the media again, the old
+ranges no longer count and repair drops them). The
+existing restart and take rules find the recovered takes; after every rule ran, a run of one restart / false-start /
+retake label with a word whose midpoint lies in such a range becomes kind **hidden-retake** (same action as the rule
+that found it — no new setting — and the same group). The cut is the restart's: from the first take's first word up
+to the kept take's first word, so with three or four takes only the last stays (each restart point closes the earlier
+attempt); retake groups keep their choice (the last complete take, or the take closest to the script). Its reason
+carries both takes: `text` (cut) and `kept` (the as many words that follow it, or the group's kept take). Review
+panel label "Hidden retakes", MCP `plan_cleanup` / `analyze_voice` findings and reason text name it.
+
+Script repeats: a run of one restart / false-start / stutter label whose words, followed by as many words after it,
+occur in a row in the attached script loses its label — the script itself says the repeat ("boing boing boing").
+Applies to every transcript with a script, not only re-decoded ranges. Test: `packages/project/test/cleanup-hidden-
+retakes.test.ts` (fails without the relabel, the script check or the stored ranges; its second case fails when a
+mark of an earlier recognition still counts). Limit: without a script a
+deliberate repeat is judged by the existing rules only (the allow list).
 
 Frame findings (with a voice analysis): **pause** = a non-speech run longer than `maxGapS` between speech frames inside
 the words' span; **breath** = a breath-like run within 30 ms of speech; **untranscribed** = see above. A rejected pause

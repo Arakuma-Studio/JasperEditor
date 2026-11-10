@@ -4,4 +4,5 @@
 // here is also exported from the package root.
 
 export { cleanupNorm } from './lists.ts';
+export { lcs } from './rules.ts';
 export { decodeVoiceAnalysis, VOICE_ANALYSIS_VERSION, VOICE_CLASSES } from './voice-analysis.ts';

@@ -963,6 +963,19 @@ export class SpeechService {
 							},
 						}
 					: {}),
+				...(out.guard.chunked ? { chunked: out.guard.chunked } : {}),
+				...(out.guard.redecoded
+					? {
+							redecoded: {
+								...out.guard.redecoded,
+								ranges: out.guard.redecoded.ranges.map((r) => ({
+									...r,
+									start: r.start + offsetSec,
+									end: r.end + offsetSec,
+								})),
+							},
+						}
+					: {}),
 			},
 			accuracy,
 			beamSize,
@@ -1381,6 +1394,8 @@ function pickOptions(o: TranscribeOptions): TranscribeOptions {
 	if (o.verbatim) out.verbatim = true;
 	if (o.initialPrompt?.trim()) out.initialPrompt = o.initialPrompt.trim();
 	if (o.conditionOnPreviousText === false) out.conditionOnPreviousText = false;
+	if (o.redecode === false) out.redecode = false;
+	if (o.chunking === 'vad') out.chunking = 'vad';
 	// SC-074: the glossary is part of the dedupe key (normalised, order kept: most frequent first)
 	const glossary = normalizeGlossary(o.glossary);
 	if (glossary.length) out.glossary = glossary;
@@ -1391,7 +1406,15 @@ function specOptions(
 	o: TranscribeOptions,
 ): Pick<
 	SpeechJobSpec,
-	'language' | 'task' | 'speakers' | 'verbatim' | 'initialPrompt' | 'conditionOnPreviousText' | 'glossary'
+	| 'language'
+	| 'task'
+	| 'speakers'
+	| 'verbatim'
+	| 'initialPrompt'
+	| 'conditionOnPreviousText'
+	| 'redecode'
+	| 'chunking'
+	| 'glossary'
 > {
 	const glossary = normalizeGlossary(o.glossary);
 	return {
@@ -1405,6 +1428,8 @@ function specOptions(
 		...(o.verbatim ? { verbatim: true } : {}),
 		...(o.initialPrompt?.trim() ? { initialPrompt: o.initialPrompt.trim() } : {}),
 		...(o.conditionOnPreviousText === false ? { conditionOnPreviousText: false } : {}),
+		...(o.redecode === false ? { redecode: false } : {}),
+		...(o.chunking === 'vad' ? { chunking: 'vad' as const } : {}),
 		...(glossary.length ? { glossary } : {}),
 	};
 }
