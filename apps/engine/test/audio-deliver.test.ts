@@ -8,8 +8,13 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { limitBuffer, measureLoudness } from '@jasper/audio-dsp';
 import { describe, expect, it } from 'vitest';
-import { codecHeadroomDb, solveDelivery } from '../src/audio/deliver.ts';
-import { WAV_F32_HEADER_BYTES, writeDeliveryWav } from '../src/audio/mixdown.ts';
+import {
+	codecHeadroomDb,
+	type DeliveryRunner,
+	measureEncodedAudio,
+	solveDelivery,
+} from '../src/audio/deliver.ts';
+import { runDeliveryPassRequest, WAV_F32_HEADER_BYTES, writeDeliveryWav } from '../src/audio/mixdown.ts';
 import { Ffmpeg } from '../src/tools/ffmpeg.ts';
 import { TEST_FFMPEG, TEST_FFPROBE } from './fixtures.ts';
 import { loudMix } from './loud-fixture.ts';
@@ -256,6 +261,77 @@ describe('delivery speed (wp-note "Fix: preview loudness parity, codec-aware Sou
 		expect(writes.length).toBe(r.passes);
 		expect(new Set(writes).size).toBe(writes.length);
 		expect(r.truePeakMet).toBe(true);
+	}, 300_000);
+
+	it('decodes the encodes of a round side by side (still judged in order of preference)', async () => {
+		// the speech-like mix of the test above: its first round encodes the converged pass and a lower-ceiling candidate
+		const n = 20 * SR;
+		const voice = new Float32Array(n);
+		let seed = 7;
+		let lp = 0;
+		for (let i = 0; i < n; i++) {
+			const t = i / SR;
+			seed = (seed * 1103515245 + 12345) >>> 0;
+			lp = 0.7 * lp + 0.3 * ((seed / 2 ** 32) * 2 - 1);
+			const syllable = Math.max(0, Math.sin(2 * Math.PI * 4 * t)) ** 2 * (t % 3 < 2.2 ? 1 : 0);
+			voice[i] = (0.25 * lp + 0.05 * Math.sin(2 * Math.PI * 150 * t)) * syllable;
+		}
+		const mix = [voice, Float32Array.from(voice)];
+		const p1 = pass1Of('speech-par.f32', mix);
+		const out = join(dir, 'speech-par.wav');
+		const codec = { codec: 'aac', bitrateKbps: 128, sampleRate: SR, channels: 2 };
+		// the round's two encodes finish together (the first waits for the second)
+		let encodes = 0;
+		const waiting: (() => void)[] = [];
+		const gated = Object.create(ff) as Ffmpeg;
+		gated.run = async (args, opts) => {
+			const r = await ff.run(args, opts);
+			if (!args.includes('-c:a')) return r;
+			if (++encodes < 2) await new Promise<void>((resolve) => waiting.push(resolve));
+			else for (const w of waiting.splice(0)) w();
+			return r;
+		};
+		let decoding = 0;
+		let mostAtOnce = 0;
+		const runner: DeliveryRunner = {
+			pass: (req, signal) => runDeliveryPassRequest(req, signal),
+			measureEncoded: async (req, signal) => {
+				mostAtOnce = Math.max(mostAtOnce, ++decoding);
+				try {
+					return await measureEncodedAudio({ ff, ...req, signal });
+				} finally {
+					decoding--;
+				}
+			},
+		};
+		const delivery = (o: { ff: Ffmpeg; runner?: DeliveryRunner }) =>
+			solveDelivery({
+				...o,
+				pass1: p1,
+				sampleRate: SR,
+				channels: 2,
+				total: n,
+				before: measureLoudness(mix, SR),
+				targetLufs: -14,
+				truePeakDb: -1,
+				codec,
+				soxr: false,
+				scratchDir: dir,
+				outPath: out,
+				parallel: 2,
+				write: (params, path = out) => writeDeliveryWav(p1, path, SR, 2, n, params),
+			});
+		const r = await delivery({ ff: gated, runner });
+		expect(r.passKinds.alternative).toBeGreaterThan(0);
+		expect(mostAtOnce).toBe(2);
+		// the same delivery as one decode at a time in this thread
+		const plain = await delivery({ ff });
+		expect({ ...r.params, correction: r.params.correction && [...r.params.correction] }).toEqual({
+			...plain.params,
+			correction: plain.params.correction && [...plain.params.correction],
+		});
+		expect(r.decoded).toEqual(plain.decoded);
+		expect([r.passes, r.encodePasses]).toEqual([plain.passes, plain.encodePasses]);
 	}, 300_000);
 
 	it('an encode failure rejects delivery without an unhandled rejection', async () => {

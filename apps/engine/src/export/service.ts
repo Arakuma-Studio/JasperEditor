@@ -49,7 +49,7 @@ import {
 } from '@jasper/project';
 import { hasSoxr, resamplerArgs } from '../audio/decode.ts';
 import { type DeliveryCodec, measureEncodedAudio, needsDecodedCheck } from '../audio/deliver.ts';
-import { layoutOf, type MixdownResult, renderMixdown } from '../audio/mixdown.ts';
+import { layoutOf, type MixdownResult, type MixSource, renderMixdown } from '../audio/mixdown.ts';
 import type { UrlSigner } from '../auth/signed-url.ts';
 import type { CacheService } from '../cache/service.ts';
 import { writeHdrBoxes } from '../color/hdr-boxes.ts';
@@ -71,6 +71,7 @@ import { assertLgplFilters } from '../processing/proc/filters.ts';
 import { engineTemplateAssets } from '../remote-assets/plan.ts';
 import { appendEncoderArgs, planRemotionExport } from '../remotion/export-plan.ts';
 import type { RemotionService } from '../remotion/service.ts';
+import { exportAudioWorkers } from '../sound-design/measure-pool.ts';
 import { audioEncodeArgs, type EncoderService, pixFmtFor, videoEncodeArgs } from '../tools/encoders.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { exists, randomId } from '../tools/fs.ts';
@@ -2038,33 +2039,63 @@ export class ExportService {
 		const o = planned.output;
 		const sr = planned.snapshot.audioMix?.sampleRate ?? 48000;
 		const t0 = performance.now();
-		const mix = await this.report(ctx).time('audio', async () =>
-			renderMixdown({
+		// The media the mix plays, as files (plain data: the mix runs on a worker thread).
+		const media: Record<string, MixSource> = {};
+		for (const c of planned.snapshot.audioClips) {
+			const m = planned.media[c.mediaId];
+			if (!m || Object.hasOwn(media, c.mediaId)) continue;
+			media[c.mediaId] = {
+				path: m.path,
+				streams: m.record.probe.streams.filter((x) => x.type === 'audio') as never,
+				container: m.record.container,
+			};
+		}
+		const scratchDir = await ctx.scratchDir();
+		const length = Math.round(o.durationSec * sr);
+		const outputLayout = layoutOf(o.audioChannels);
+		const onProgress = (f: number, stage: string) =>
+			opts.onProgress ? opts.onProgress(f, stage) : ctx.progress(0, { stage });
+		// wp-note export-performance "Audio delivery": the mix and the delivery's passes and decoded checks run on
+		// worker threads (the same functions: the same bytes), off the event loop the layer bake's pages wait on
+		const workers = exportAudioWorkers(
+			{ ff: this.deps.ff, signal: ctx.signal, onSpawn: ctx.trackChild },
+			o.durationSec,
+			(m) => ctx.log(m),
+		);
+		const mix = await this.report(ctx).time('audio', async () => {
+			// (an audio-only export, which reports the mix's progress and runs nothing beside it, mixes here)
+			const pass1 = opts.onProgress
+				? undefined
+				: await workers.mixPass1({
+						// the mixer reads the audio, the Mix and the settings: the picture's tracks stay here
+						snapshot: { ...planned.snapshot, videoTracks: [] },
+						media,
+						range: planned.range,
+						length,
+						outputLayout,
+						normalize: o.normalize ?? null,
+						scratchDir,
+					});
+			return renderMixdown({
 				ff: this.deps.ff,
 				snapshot: planned.snapshot,
-				media: (id) => {
-					const m = planned.media[id];
-					if (!m) return null;
-					return {
-						path: m.path,
-						streams: m.record.probe.streams.filter((x) => x.type === 'audio') as never,
-						container: m.record.container,
-					};
-				},
+				media: (id) => (Object.hasOwn(media, id) ? media[id]! : null),
 				range: planned.range,
-				length: Math.round(o.durationSec * sr),
-				outputLayout: layoutOf(o.audioChannels),
+				length,
+				outputLayout,
 				normalize: o.normalize,
 				// the deliverable's encoding: a lossy codec's limiter headroom and the decoded check (deliver.ts)
 				...(opts.deliver
 					? { deliver: deliveryCodecOf(planned), parallel: Math.min(3, Math.max(1, ctx.slots)) }
 					: {}),
-				scratchDir: await ctx.scratchDir(),
+				scratchDir,
 				signal: ctx.signal,
 				onSpawn: ctx.trackChild,
-				onProgress: (f, stage) => (opts.onProgress ? opts.onProgress(f, stage) : ctx.progress(0, { stage })),
-			}),
-		);
+				onProgress,
+				...(pass1 ? { pass1 } : {}),
+				runner: workers.runner,
+			});
+		});
 		const d = mix.normalized?.delivery;
 		const t = (ms: number) => `${Math.round(ms)} ms`;
 		ctx.log(

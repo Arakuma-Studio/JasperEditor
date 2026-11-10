@@ -256,6 +256,58 @@ export async function runDeliveryPass(o: {
 	}
 }
 
+/** One delivery pass as plain data (a worker op): written to `out` as a float32 WAV, or only measured (`out` null). */
+export type DeliveryPassRequest = {
+	pass1: Pass1;
+	sampleRate: number;
+	channels: number;
+	total: number;
+	params: DeliveryParams;
+	out: string | null;
+	/** A measured pass: run the true-peak meter too (a written pass always does). */
+	truePeak: boolean;
+};
+
+/** The decoded check of one encode (`measureEncodedAudio`). */
+export type EncodedMeasure = { loudness: LoudnessSummary; hopTruePeakDb: Float32Array; samples: number };
+
+/**
+ * Where the CPU-heavy steps of a delivery run (wp-note export-performance "Audio delivery"): an export's worker
+ * threads, so that its passes and decoded checks neither hold the engine's event loop (the layer bake's render pages
+ * wait on it) nor wait for each other; absent = this thread. Both run the functions this thread runs: the same bytes.
+ */
+export type DeliveryRunner = {
+	/** A delivery pass (`runDeliveryPassRequest` in mixdown.ts). */
+	pass(req: DeliveryPassRequest, signal?: AbortSignal): Promise<LoudnessSummary>;
+	/** The decoded check of an encoded file (`measureEncodedAudio`). */
+	measureEncoded(
+		req: { file: string; channels: number; sampleRate: number },
+		signal?: AbortSignal,
+	): Promise<EncodedMeasure>;
+};
+
+/** A measured (not written) delivery pass: the loudness of the chain's output, with the true peak when asked. */
+export async function measureDeliveryPass(
+	req: Omit<DeliveryPassRequest, 'out'>,
+	signal?: AbortSignal,
+): Promise<LoudnessSummary> {
+	const meter = new LoudnessMeter(req.sampleRate, req.channels, {
+		weights: defaultChannelWeights(req.channels),
+		truePeak: req.truePeak,
+	});
+	await runDeliveryPass({
+		pass1: req.pass1,
+		sampleRate: req.sampleRate,
+		channels: req.channels,
+		total: req.total,
+		params: req.params,
+		signal,
+		sink: (view, m) => meter.process(view, 0, m),
+	});
+	meter.flush();
+	return meter.summary();
+}
+
 /**
  * The per-sample gain of a correction: each hop's attenuation held over ±`holdHops`, interpolated linearly between hop
  * starts (10 ms ramps: no click; the hold keeps the corrected hop itself fully down), as `sample → linear gain ≤ 1`.
@@ -293,7 +345,7 @@ export async function measureEncodedAudio(o: {
 	sampleRate: number;
 	signal?: AbortSignal | undefined;
 	onSpawn?(child: import('node:child_process').ChildProcess): void;
-}): Promise<{ loudness: LoudnessSummary; hopTruePeakDb: Float32Array; samples: number }> {
+}): Promise<EncodedMeasure> {
 	const ch = o.channels;
 	const sr = o.sampleRate;
 	const child = o.ff.spawnRaw(
@@ -510,6 +562,8 @@ export async function solveDelivery(o: {
 	contentHash?: string | undefined;
 	/** Encodes of the decoded check run at once (the round's own + lower-ceiling alternatives; default 3, min 1). */
 	parallel?: number | undefined;
+	/** Measured passes and decoded checks run here (worker threads); absent = this thread. */
+	runner?: DeliveryRunner | undefined;
 	signal?: AbortSignal | undefined;
 	onSpawn?(child: import('node:child_process').ChildProcess): void;
 	onProgress?(fraction: number, stage: string): void;
@@ -562,21 +616,10 @@ export async function solveDelivery(o: {
 			}
 			// with a writer only the integrated loudness of a measuring pass is read (the written pass reports the true
 			// peak): no true-peak meter; measure-only deliveries report the true peak of their passes
-			const meter = new LoudnessMeter(sr, o.channels, {
-				weights: defaultChannelWeights(o.channels),
-				truePeak: !o.write,
-			});
-			await runDeliveryPass({
-				pass1: o.pass1,
-				sampleRate: sr,
-				channels: o.channels,
-				total: o.total,
-				params: p,
-				signal: o.signal,
-				sink: (view, m) => meter.process(view, 0, m),
-			});
-			meter.flush();
-			return meter.summary();
+			const req = { pass1: o.pass1, sampleRate: sr, channels: o.channels, total: o.total, params: p };
+			return o.runner
+				? await o.runner.pass({ ...req, out: null, truePeak: !o.write }, o.signal)
+				: await measureDeliveryPass({ ...req, truePeak: !o.write }, o.signal);
 		} finally {
 			timings.passesMs += performance.now() - t0;
 		}
@@ -680,6 +723,12 @@ export async function solveDelivery(o: {
 			file: string;
 			ac: AbortController;
 			done: Promise<boolean>;
+			/**
+			 * The decoded check, started as soon as the encode is written: the candidates of a round are decoded side by
+			 * side and while the round's alternatives are converged (they are still judged in order of preference); null
+			 * when the encode was stopped.
+			 */
+			measured: Promise<EncodedMeasure | null>;
 			/** The decoded check of this encode (once measured). */
 			decoded?: LoudnessSummary;
 			score?: [number, number];
@@ -688,7 +737,18 @@ export async function solveDelivery(o: {
 		let best: Cand | null = null;
 		const keep = new Set<string>();
 		const made: string[] = [];
-		const start = (c: Omit<Cand, 'ac' | 'done' | 'file'>, tag: string): Cand => {
+		const measureEncoded = (file: string, signal: AbortSignal): Promise<EncodedMeasure> =>
+			o.runner
+				? o.runner.measureEncoded({ file, channels: codec.channels, sampleRate: codec.sampleRate }, signal)
+				: measureEncodedAudio({
+						ff: o.ff,
+						file,
+						channels: codec.channels,
+						sampleRate: codec.sampleRate,
+						signal,
+						...(o.onSpawn ? { onSpawn: o.onSpawn } : {}),
+					});
+		const start = (c: Omit<Cand, 'ac' | 'done' | 'file' | 'measured'>, tag: string): Cand => {
 			const file = join(o.scratchDir, `verify-${tag}.${ext}`);
 			made.push(file);
 			const ac = new AbortController();
@@ -715,7 +775,23 @@ export async function solveDelivery(o: {
 			// a failed encode is reported where it is awaited; until then it must not count as unhandled (the next
 			// candidates are converged while it runs)
 			done.catch(() => {});
-			return { ...c, file, ac, done };
+			const measured = done.then(async (ok) => {
+				if (!ok) return null;
+				const t1 = performance.now();
+				try {
+					const m = await measureEncoded(file, ac.signal);
+					if (o.signal?.aborted) throw new Error('aborted');
+					return ac.signal.aborted ? null : m;
+				} catch (e) {
+					// stopped because an earlier candidate met the target: not a failure
+					if (ac.signal.aborted && !o.signal?.aborted) return null;
+					throw e;
+				} finally {
+					timings.decodeMs += performance.now() - t1;
+				}
+			});
+			measured.catch(() => {});
+			return { ...c, file, ac, done, measured };
 		};
 		/** Corrections of `raw` from a decoded hop map at a margin and over-correction (a copy). */
 		const corrected = (
@@ -807,17 +883,8 @@ export async function solveDelivery(o: {
 				let roundBest: { c: Cand; hopDb: Float32Array; loudErr: number; score: [number, number] } | null =
 					null;
 				for (const [i, c] of round.entries()) {
-					if (!(await c.done)) continue;
-					const t0 = performance.now();
-					const m = await measureEncodedAudio({
-						ff: o.ff,
-						file: c.file,
-						channels: codec.channels,
-						sampleRate: codec.sampleRate,
-						signal: o.signal,
-						...(o.onSpawn ? { onSpawn: o.onSpawn } : {}),
-					});
-					timings.decodeMs += performance.now() - t0;
+					const m = await c.measured;
+					if (!m) continue;
 					const excess = Math.max(0, m.loudness.truePeakDb - (tpTarget - L.truePeakMarginDb));
 					const loudErr = Number.isFinite(m.loudness.integrated) ? target - m.loudness.integrated : 0;
 					const score: [number, number] = [excess, Math.abs(loudErr)];
@@ -830,7 +897,7 @@ export async function solveDelivery(o: {
 					if (excess === 0 && (Math.abs(loudErr) <= L.decodedTolLu || c.r.limited)) {
 						met = c;
 						for (const later of round.slice(i + 1)) later.ac.abort();
-						await Promise.allSettled(round.slice(i + 1).map((x) => x.done));
+						await Promise.allSettled(round.slice(i + 1).map((x) => x.measured));
 						break;
 					}
 				}
@@ -864,7 +931,7 @@ export async function solveDelivery(o: {
 			}
 		} finally {
 			for (const c of round) c.ac.abort();
-			await Promise.allSettled(round.map((c) => c.done));
+			await Promise.allSettled(round.map((c) => c.measured));
 		}
 		// deliver the encode that met the target, else the best one, as it is (the export copies it); its WAV becomes
 		// `outPath` (written again only when a later pass overwrote it)

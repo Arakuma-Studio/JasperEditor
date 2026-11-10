@@ -4,7 +4,10 @@
 // ffmpeg decoders it spawns, so it runs the same on the engine's main thread (the fallback) and on a worker thread
 // (`measure-worker.ts`, managed by `measure-pool.ts`): same code, same float operations, bit-identical results.
 // Requests are plain data (structured-cloneable): the render snapshot, the media it plays as files, frame ranges.
+// An export's audio uses the same threads (wp-note export-performance §8): its pass-1 mix (`mixPass1`), the delivery's
+// passes (`deliveryPass`) and decoded checks (`encodedMeasure`).
 import { tmpdir } from 'node:os';
+import type { Layout, LoudnessSummary } from '@jasper/audio-dsp';
 import {
 	bandLevels,
 	bedLocalPeakLu,
@@ -14,7 +17,14 @@ import {
 	type TimeWindow,
 } from '@jasper/audio-fx';
 import { frameToSample, type Rational, type RenderSnapshot } from '@jasper/project';
-import { type MixSource, renderMixdown } from '../audio/mixdown.ts';
+import { type DeliveryPassRequest, type EncodedMeasure, measureEncodedAudio } from '../audio/deliver.ts';
+import {
+	type MixPass1,
+	type MixSource,
+	renderMixdown,
+	renderPass1,
+	runDeliveryPassRequest,
+} from '../audio/mixdown.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 
 /** The active window: 10 ms frames within this many dB of the loudest frame. */
@@ -198,16 +208,42 @@ export function bedBandsCore(req: BedBandsRequest): BedBands[] {
 	});
 }
 
+/**
+ * An export's pass-1 mix (`renderPass1`, wp-note export-performance "Audio delivery"): the snapshot's audio, the
+ * media it plays as files, the range and output; the WAV is written into `scratchDir`.
+ */
+export type MixPass1Request = {
+	snapshot: RenderSnapshot;
+	media: Record<string, MixSource>;
+	range: { start: number; end: number };
+	length: number;
+	outputLayout?: Layout;
+	normalize: { targetLufs: number; truePeakDb: number } | null;
+	scratchDir: string;
+};
+
+/** The decoded check of an encoded file (deliver.ts `measureEncodedAudio`). */
+export type EncodedMeasureRequest = { file: string; channels: number; sampleRate: number };
+
 /** One unit of work for a measurement thread. */
 export type MeasureOp =
 	| { kind: 'solo'; req: SoloRequest }
 	| { kind: 'render'; req: RenderRequest }
-	| { kind: 'bedBands'; req: BedBandsRequest };
+	| { kind: 'bedBands'; req: BedBandsRequest }
+	| { kind: 'mixPass1'; req: MixPass1Request }
+	| { kind: 'deliveryPass'; req: DeliveryPassRequest }
+	| { kind: 'encodedMeasure'; req: EncodedMeasureRequest };
 export type MeasureOpResult<K extends MeasureOp['kind']> = K extends 'solo'
 	? SoundEntry
 	: K extends 'render'
 		? RenderedPcm
-		: BedBands[];
+		: K extends 'mixPass1'
+			? MixPass1
+			: K extends 'deliveryPass'
+				? LoudnessSummary
+				: K extends 'encodedMeasure'
+					? EncodedMeasure
+					: BedBands[];
 
 /** Runs one op (in whichever thread calls it). */
 export async function runMeasureOp<O extends MeasureOp>(
@@ -219,6 +255,37 @@ export async function runMeasureOp<O extends MeasureOp>(
 			return (await measureSoloCore(op.req, env)) as MeasureOpResult<O['kind']>;
 		case 'render':
 			return (await renderPcmCore(op.req, env)) as MeasureOpResult<O['kind']>;
+		case 'mixPass1': {
+			const req = (op as Extract<MeasureOp, { kind: 'mixPass1' }>).req;
+			return (await renderPass1({
+				ff: env.ff,
+				snapshot: req.snapshot,
+				media: (id) => (Object.hasOwn(req.media, id) ? req.media[id]! : null),
+				range: req.range,
+				length: req.length,
+				...(req.outputLayout ? { outputLayout: req.outputLayout } : {}),
+				normalize: req.normalize,
+				scratchDir: req.scratchDir,
+				...(env.signal ? { signal: env.signal } : {}),
+				...(env.onSpawn ? { onSpawn: env.onSpawn } : {}),
+			})) as MeasureOpResult<O['kind']>;
+		}
+		case 'deliveryPass':
+			return (await runDeliveryPassRequest(
+				(op as Extract<MeasureOp, { kind: 'deliveryPass' }>).req,
+				env.signal,
+			)) as MeasureOpResult<O['kind']>;
+		case 'encodedMeasure': {
+			const req = (op as Extract<MeasureOp, { kind: 'encodedMeasure' }>).req;
+			return (await measureEncodedAudio({
+				ff: env.ff,
+				file: req.file,
+				channels: req.channels,
+				sampleRate: req.sampleRate,
+				signal: env.signal,
+				...(env.onSpawn ? { onSpawn: env.onSpawn } : {}),
+			})) as MeasureOpResult<O['kind']>;
+		}
 		default:
 			return bedBandsCore((op as Extract<MeasureOp, { kind: 'bedBands' }>).req) as MeasureOpResult<O['kind']>;
 	}
@@ -226,6 +293,8 @@ export async function runMeasureOp<O extends MeasureOp>(
 
 /** The typed arrays of a result, to transfer them back from a worker instead of copying. */
 export function transferablesOf(result: unknown): ArrayBuffer[] {
+	const hops = (result as Partial<EncodedMeasure> | null)?.hopTruePeakDb;
+	if (hops?.buffer instanceof ArrayBuffer) return [hops.buffer];
 	const r = result as Partial<RenderedPcm> | null;
 	if (!r?.pcm) return [];
 	const out = new Set<ArrayBuffer>();

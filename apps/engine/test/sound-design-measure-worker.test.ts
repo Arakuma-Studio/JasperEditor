@@ -2,21 +2,36 @@
 // bed renders and their band analysis give BIT-IDENTICAL results on a worker and in-thread (the worker is bundled with
 // esbuild, as the engine build does). Small real Worker URL fixtures exercise failures and deadlines through the
 // same protocol, with file events synchronizing receipt and controlled clocks advancing the documented deadlines.
-import { existsSync, type FSWatcher, mkdtempSync, readFileSync, rmSync, watch, writeFileSync } from 'node:fs';
+import {
+	existsSync,
+	type FSWatcher,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	watch,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { measureLoudness } from '@jasper/audio-dsp';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { type DeliveryRunner, solveDelivery } from '../src/audio/deliver.ts';
+import { WAV_F32_HEADER_BYTES, wavHeaderF32, writeDeliveryWav } from '../src/audio/mixdown.ts';
 import { MeasureCache, type MeasureDeps, measureSfxEvents } from '../src/sound-design/bed.ts';
 import type { MeasureOp } from '../src/sound-design/measure-core.ts';
 import {
 	closeSoundDesignMeasurer,
+	exportAudioWorkers,
 	SoundDesignMeasurer,
 	soundDesignMeasurer,
 } from '../src/sound-design/measure-pool.ts';
 import { Ffmpeg } from '../src/tools/ffmpeg.ts';
 import { coreServices } from '../src/tools/services.ts';
+import { TEST_FFMPEG, TEST_FFPROBE } from './fixtures.ts';
 import { closeApps, DocBuilder, makeApp, register, type TestApp } from './helpers.ts';
+import { loudMix } from './loud-fixture.ts';
 import { provenance, writeBedFixture } from './sound-bed-fixture.ts';
 
 const HERE = fileURLToPath(new URL('.', import.meta.url));
@@ -224,6 +239,86 @@ afterEach(async () => {
 	await Promise.all(pools.splice(0).map((pool) => pool.close()));
 	for (const dir of fixtureDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 	vi.useRealTimers();
+});
+
+describe('export audio on the measurement workers (wp-note export-performance "Audio delivery")', {
+	timeout: 600_000,
+}, () => {
+	it('a delivery whose passes and decoded checks run on worker threads writes the same WAV, encode and outcome', async () => {
+		const SR = 48_000;
+		const ff = new Ffmpeg({ ffmpeg: TEST_FFMPEG, ffprobe: TEST_FFPROBE });
+		const dir = mkdtempSync(join(tmpdir(), 'jasper-export-audio-'));
+		artifactDirs.push(dir);
+		const mix = loudMix(8, SR);
+		const n = mix[0]!.length;
+		const pcm = new Float32Array(n * 2);
+		for (let i = 0; i < n; i++) {
+			pcm[2 * i] = mix[0]![i]!;
+			pcm[2 * i + 1] = mix[1]![i]!;
+		}
+		const p1 = { path: join(dir, 'pass1.wav'), headerBytes: WAV_F32_HEADER_BYTES };
+		writeFileSync(p1.path, Buffer.concat([wavHeaderF32(2, SR, n), Buffer.from(pcm.buffer)]));
+		const delivery = async (tag: string, runner?: DeliveryRunner) => {
+			const scratch = join(dir, tag);
+			mkdirSync(scratch);
+			const out = join(scratch, 'mix.wav');
+			const r = await solveDelivery({
+				ff,
+				pass1: p1,
+				sampleRate: SR,
+				channels: 2,
+				total: n,
+				before: measureLoudness(mix, SR),
+				targetLufs: -14,
+				truePeakDb: -1,
+				codec: { codec: 'aac', bitrateKbps: 128, sampleRate: SR, channels: 2 },
+				soxr: false,
+				scratchDir: scratch,
+				outPath: out,
+				...(runner ? { runner } : {}),
+				// as renderMixdown writes its passes (on the runner when there is one)
+				write: (params, path = out) =>
+					runner
+						? runner.pass({
+								pass1: p1,
+								sampleRate: SR,
+								channels: 2,
+								total: n,
+								params,
+								out: path,
+								truePeak: true,
+							})
+						: writeDeliveryWav(p1, path, SR, 2, n, params),
+			});
+			return { r, wav: readFileSync(out), encoded: readFileSync(r.encoded!) };
+		};
+		const previous = process.env.JASPER_SD_MEASURE_WORKER;
+		await closeSoundDesignMeasurer();
+		process.env.JASPER_SD_MEASURE_WORKER = await bundleWorker();
+		try {
+			const here = await delivery('here');
+			// (a worker that cannot start logs it and measures in-thread)
+			const logs: string[] = [];
+			const workers = await delivery(
+				'workers',
+				exportAudioWorkers({ ff }, n / SR, (m) => logs.push(m)).runner,
+			);
+			expect(logs).toEqual([]);
+			expect(workers.wav.equals(here.wav)).toBe(true);
+			expect(workers.encoded.equals(here.encoded)).toBe(true);
+			const outcome = ({ r }: typeof here) => ({
+				...r,
+				params: { ...r.params, correction: r.params.correction && [...r.params.correction] },
+				encoded: null,
+				timings: null,
+			});
+			expect(outcome(workers)).toEqual(outcome(here));
+		} finally {
+			await closeSoundDesignMeasurer();
+			if (previous === undefined) delete process.env.JASPER_SD_MEASURE_WORKER;
+			else process.env.JASPER_SD_MEASURE_WORKER = previous;
+		}
+	});
 });
 
 describe('measurement worker URL and lifecycle', () => {
