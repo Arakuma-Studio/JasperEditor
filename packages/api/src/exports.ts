@@ -247,6 +247,37 @@ export const ExportWarningParamsSchema = z.record(
 );
 export type ExportWarningParams = z.infer<typeof ExportWarningParamsSchema>;
 
+/**
+ * How the native / hybrid composite runs (docs/wp-notes/export-performance.md): where source video is decoded
+ * (`nvdec` = `-hwaccel cuda`), where layers are composited, how many picture segments render at once (each its own
+ * ffmpeg graph with only the layers it shows, joined by stream copy; 1 = one graph for the range), the overlays of the
+ * largest graph and the composite frame size. In the plan it is what the engine expects (`overlays` counts the visual
+ * layers of the busiest segment, an upper bound: kernel streams draw runs of layers through one overlay); in the job
+ * result it is what ran. `reason` says why the range was not split.
+ */
+export const ExportPipelineSchema = z.object({
+	decode: z.enum(['nvdec', 'cpu']),
+	composite: z.enum(['gpu', 'cpu']),
+	segments: z.number().int().min(1),
+	overlays: z.number().int().min(0),
+	compositeSize: z.object({ width: z.number().int(), height: z.number().int() }).optional(),
+	reason: z.string().max(200).optional(),
+});
+export type ExportPipeline = z.infer<typeof ExportPipelineSchema>;
+
+/**
+ * Wall-clock phases of an export job, ms from the job's start (`startMs`) and how long each took (`ms`, summed when a
+ * phase ran more than once). Phases overlap: the audio mix runs while layers bake. Names: `masters` (motion-graphic
+ * masters), `audio` (mix + loudness delivery), `bake` (layer preparation), `audioWait` (the composite waiting for the
+ * mix), `plan` (building the graphs), `bakeWait` (pipelined stills), `encode` (the composite), `join` (segments and
+ * sound joined by stream copy), `frameCheck`, `remotion`, `finish` (sidecars, loudness of the file, copy).
+ */
+export const ExportTimingsSchema = z.object({
+	totalMs: z.number().min(0),
+	phases: z.record(z.string().max(32), z.object({ startMs: z.number().min(0), ms: z.number().min(0) })),
+});
+export type ExportTimings = z.infer<typeof ExportTimingsSchema>;
+
 export const RenderPlanSchema = z.object({
 	planId: z.string().optional(),
 	documentRevision: z.number().int().optional(),
@@ -310,6 +341,8 @@ export const RenderPlanSchema = z.object({
 		.optional(),
 	/** Encoder that will write the file (D-13); absent when the engine cannot encode at all. */
 	encoder: EncoderChoiceSchema.optional(),
+	/** native / hybrid paths: how the composite is expected to run (the result's `pipeline` is what ran). */
+	pipeline: ExportPipelineSchema.optional(),
 	/**
 	 * spec 18 AF-EXP: the file of a GIF or audio-only export. A GIF renders the picture on `path` into a ProRes
 	 * intermediate (`encoder`) and converts it (palette + dither) to `frames` GIF frames; an audio-only export writes the
@@ -371,6 +404,10 @@ export const ExportResultSchema = z.object({
 	remotionOutput: z.enum(['direct', 'intermediate']).optional(),
 	/** The path that produced the file (`hybrid` = native with baked layers; `audio` = audio-only, no picture). */
 	renderPath: z.enum(['copy', 'native', 'hybrid', 'remotion', 'audio']).optional(),
+	/** native / hybrid: how the composite ran (decode, composite, segments, overlays). */
+	pipeline: ExportPipelineSchema.optional(),
+	/** Where the job's time went, by phase. */
+	timings: ExportTimingsSchema.optional(),
 	/** spec 18 AF-EXP-001: a GIF's rate, size, frame count and loop count as written. */
 	gif: z
 		.object({

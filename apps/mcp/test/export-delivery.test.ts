@@ -122,8 +122,14 @@ describe('lossy export delivery through MCP', () => {
 					limiterCeilingDb: number;
 					codecHeadroomDb: number;
 				};
+				pipeline?: { decode: string; composite: string; segments: number };
 			};
-			result?: { audioLoudness: AudioLoudness; audioCodec: string };
+			result?: {
+				audioLoudness: AudioLoudness;
+				audioCodec: string;
+				pipeline?: { segments: number };
+				timings?: { totalMs: number; phases: Record<string, { startMs: number; ms: number }> };
+			};
 		}>('start_export', { projectId, preset: 'draft-720p-h264', engine: 'native', wait: true });
 		expect(started.state).toBe('succeeded');
 		expect(started.plan.loudness).toEqual({
@@ -132,6 +138,11 @@ describe('lossy export delivery through MCP', () => {
 			limiterCeilingDb: -2.5,
 			codecHeadroomDb: 1.5,
 		});
+		// the expected composite pipeline in the plan; what ran and where the time went in the result
+		expect(started.plan.pipeline).toMatchObject({ decode: 'cpu', composite: 'cpu', segments: 1 });
+		expect(started.result!.pipeline).toMatchObject({ segments: 1 });
+		expect(started.result!.timings!.phases.audio!.ms).toBeGreaterThan(0);
+		expect(started.result!.timings!.phases.encode).toBeDefined();
 		const a = started.result!.audioLoudness;
 		console.log('mcp export', JSON.stringify(a));
 		expect(started.result!.audioCodec).toBe('aac');

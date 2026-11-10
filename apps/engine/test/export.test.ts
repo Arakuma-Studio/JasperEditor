@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { RenderPlanSchema } from '@jasper/api';
+import { ExportResultSchema, RenderPlanSchema } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
 import { frameCodes } from './frame-codes.ts';
@@ -154,6 +154,8 @@ describe('native export (S03:ENG-030, S04:RN-021/022, QA-005)', () => {
 		});
 		expect(plan.planId).toMatch(/^pln_/);
 		expect(plan.estimate.seconds).toBeGreaterThan(0);
+		// the expected composite pipeline: three layers on the CPU in one graph (a 3 s range is never split)
+		expect(plan.pipeline).toMatchObject({ decode: 'cpu', composite: 'cpu', segments: 1, overlays: 3 });
 		const again = await app.inject({
 			method: 'POST',
 			url: '/api/exports/plan',
@@ -188,6 +190,13 @@ describe('native export (S03:ENG-030, S04:RN-021/022, QA-005)', () => {
 			renderPath: 'native',
 		});
 		expect(events).toContain('export.finished');
+		// what ran, and where the time went
+		const ran = ExportResultSchema.parse(done.result);
+		expect(ran.pipeline).toMatchObject({ decode: 'cpu', composite: 'cpu', segments: 1 });
+		expect(ran.pipeline!.overlays).toBeGreaterThanOrEqual(2);
+		for (const phase of ['audio', 'bake', 'plan', 'encode', 'frameCheck', 'finish'])
+			expect(ran.timings!.phases[phase], phase).toBeDefined();
+		expect(ran.timings!.phases.encode!.startMs).toBeGreaterThanOrEqual(ran.timings!.phases.plan!.startMs);
 
 		const file = (await coreServices(app).exports.outputFile(job.id))!;
 		const streams = probe(file);
