@@ -4,7 +4,7 @@
 // WP-2G registers (`registerMgMasterProvider`).
 
 import type { ChildProcess } from 'node:child_process';
-import { createReadStream } from 'node:fs';
+import { createReadStream, readFileSync } from 'node:fs';
 import {
 	copyFile,
 	type FileHandle,
@@ -24,6 +24,7 @@ import { pipeline } from 'node:stream/promises';
 import {
 	type AlphaDeliveryRequest,
 	type EngineJob,
+	type ExportPipeline,
 	type ExportResult,
 	type ExportSettings,
 	type ExportStartRequest,
@@ -89,7 +90,9 @@ import { type DeliveryDeps, type DeliveryFrames, runAlphaDelivery } from './deli
 import { runGamutCheck } from './delivery/gamut.ts';
 import { runPsdExport } from './delivery/psd-job.ts';
 import { planPsd } from './delivery/psd-plan.ts';
-import { BT709_FRAME_TAGS, buildNativeGraph, SWS_FLAGS } from './native.ts';
+import { gpuDecodePolicyFromEnv, nvdecEligible, nvdecForGraph, probeCudaDecode } from './gpu.ts';
+import { compositeMemoryBudget, compositeProfile, estimateFrom } from './memory.ts';
+import { BT709_FRAME_TAGS, buildNativeGraph, mixAudioFilters, SWS_FLAGS } from './native.ts';
 import {
 	layerOverride,
 	type NativeExtension,
@@ -108,6 +111,14 @@ import {
 	type PlannedExport,
 	planExport,
 } from './planner.ts';
+import { ExportRunReport } from './run-report.ts';
+import {
+	layersPerSegment,
+	planPictureSegments,
+	type SegmentMemory,
+	type SegmentPlan,
+	segmentPolicyFromEnv,
+} from './segments.ts';
 import {
 	probeSourceFrames,
 	proresProfileMatches,
@@ -219,6 +230,17 @@ export class ExportService {
 	private rotoSet: ((key: string) => Promise<{ start: number; end: number } | null>) | null = null;
 	registerRotoSets(fn: (key: string) => Promise<{ start: number; end: number } | null>): void {
 		this.rotoSet = fn;
+	}
+
+	/** Phases and pipeline of each running export job (result `timings` / `pipeline`). */
+	private readonly runReports = new WeakMap<JobContext, ExportRunReport>();
+	private report(ctx: JobContext): ExportRunReport {
+		let r = this.runReports.get(ctx);
+		if (!r) {
+			r = new ExportRunReport();
+			this.runReports.set(ctx, r);
+		}
+		return r;
 	}
 
 	constructor(private readonly deps: ExportServiceDeps) {
@@ -372,7 +394,43 @@ export class ExportService {
 					],
 				};
 		} else if (!planned.previews) await this.attachSmart(planned, req.settings);
+		if ((planned.plan.path === 'native' || planned.plan.path === 'hybrid') && kind !== 'audio')
+			planned.plan.pipeline = await this.expectedPipeline(planned);
 		return planned;
+	}
+
+	/** How the composite of a native / hybrid export is expected to run (plan `pipeline`; the result's is what ran). */
+	private async expectedPipeline(planned: PlannedExport): Promise<ExportPipeline> {
+		const snap = planned.snapshot;
+		const gpu = gpuDecodePolicyFromEnv();
+		const nvdec =
+			gpu.mode === 'auto' &&
+			gpu.maxInputs > 0 &&
+			snap.videoTracks.some((t) =>
+				t.clips.some((c) => {
+					const m = 'mediaId' in c.source ? planned.media[c.source.mediaId] : undefined;
+					return c.kind === 'video' && !!m && nvdecEligible(m);
+				}),
+			) &&
+			(await probeCudaDecode(this.deps.ff)).ok;
+		// (the export job asks for every CPU slot of the queue: the segments it will plan)
+		const { segments, reason, concurrency, peakBytes } = planPictureSegments({
+			snapshot: snap,
+			output: planned.output,
+			slots: this.deps.queue.totalSlots,
+			policy: segmentPolicyFromEnv(),
+			memory: segmentMemory(snap),
+		});
+		return {
+			decode: nvdec ? 'nvdec' : 'cpu',
+			composite: 'cpu',
+			segments: segments.length,
+			concurrency,
+			overlays: layersPerSegment(snap, segments),
+			compositeSize: { width: snap.settings.width, height: snap.settings.height },
+			memoryBytes: peakBytes,
+			...(reason ? { reason } : {}),
+		};
 	}
 
 	/**
@@ -547,7 +605,7 @@ export class ExportService {
 					ext === 'mov' ? 'mov' : 'mp4',
 					file,
 				];
-				ctx.log(`ffmpeg ${args.join(' ')}`);
+				ctx.log(`ffmpeg ${commandLine(args)}`);
 				ctx.progress((done / total) * 0.95, { stage: `Copying frames ${p.start}–${p.end}` });
 				await this.deps.ff.run(args, { signal: ctx.signal, onSpawn: ctx.trackChild });
 				const count = await this.deps.ff.countVideoFrames(file, { signal: ctx.signal });
@@ -685,7 +743,7 @@ export class ExportService {
 				String(o.frames),
 				video,
 			];
-			ctx.log(`ffmpeg ${vargs.join(' ')}`);
+			ctx.log(`ffmpeg ${commandLine(vargs)}`);
 			await this.deps.ff.run(vargs, { signal: ctx.signal, onSpawn: ctx.trackChild });
 			args = [
 				'-y',
@@ -717,7 +775,7 @@ export class ExportService {
 				output,
 			];
 		}
-		ctx.log(`ffmpeg ${args.join(' ')}`);
+		ctx.log(`ffmpeg ${commandLine(args)}`);
 		await this.deps.ff.run(args, { signal: ctx.signal, onSpawn: ctx.trackChild });
 		const count = await this.deps.ff.countVideoFrames(output, { signal: ctx.signal });
 		if (count !== o.frames)
@@ -894,7 +952,7 @@ export class ExportService {
 			o.encoder?.container ?? 'mp4',
 			output,
 		];
-		ctx.log(`ffmpeg ${args.join(' ')}`);
+		ctx.log(`ffmpeg ${commandLine(args)}`);
 		const durationSec = o.durationSec;
 		await this.deps.ff.run(args, {
 			signal: ctx.signal,
@@ -1035,7 +1093,7 @@ export class ExportService {
 			const container = extname(output).slice(1);
 			const tmp = join(dir, `captioned${extname(output)}`);
 			const args = embedArgs(output, files, container, tmp);
-			ctx.log(`ffmpeg ${args.join(' ')}`);
+			ctx.log(`ffmpeg ${commandLine(args)}`);
 			await this.deps.ff.run(args, { signal: ctx.signal, onSpawn: ctx.trackChild });
 			await rename(tmp, output);
 			for (const t of tracks)
@@ -1283,6 +1341,8 @@ export class ExportService {
 		still = false,
 		audioIn: MixdownResult | null | Promise<MixdownResult | null> = null,
 		pipeline = true,
+		/** One graph for the range whatever the segment policy says (segments that could not be joined). */
+		segmentsOff = false,
 	): Promise<number> {
 		const exts = this.nativeExtensions.all();
 		let prepared: Map<string, unknown>;
@@ -1307,8 +1367,10 @@ export class ExportService {
 			await settle();
 			ctx.signal.removeEventListener('abort', onAbortBg);
 			if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
-			return this.runNative(planned, masters, output, ctx, still, audioIn, false);
+			return this.runNative(planned, masters, output, ctx, still, audioIn, false, segmentsOff);
 		};
+		const report = this.report(ctx);
+		const endBake = report.begin('bake');
 		try {
 			const pctx = {
 				signal: ctx.signal,
@@ -1339,12 +1401,14 @@ export class ExportService {
 			await abandon();
 			if (ctx.signal.aborted) throw e;
 			throw new NativePrepareError(e);
+		} finally {
+			endBake();
 		}
-		// The mixdown (started before the preparation) is an input of the composite.
-		const audio = await Promise.resolve(audioIn).catch(async (e) => {
-			await abandon();
-			throw e;
-		});
+		// The mixdown (started before the preparation): an input of a one-graph composite, which waits for it; segments
+		// render while it is delivered (their sound is encoded and joined when it is ready).
+		const audioP = Promise.resolve(audioIn);
+		audioP.catch(() => {});
+		const endPlan = report.begin('plan');
 		await this.pinInputs(ctx, planned, exts, prepared, masters);
 		const pinNested = async (pl: PlannedExport, parent: string): Promise<void> => {
 			for (const c of pl.snapshot.videoTracks.flatMap((t) => t.clips)) {
@@ -1363,90 +1427,199 @@ export class ExportService {
 				? await outputLutFilter(planned.output.color, await ctx.scratchDir())
 				: null;
 		ctx.progress(0, { stage: 'Planning layers' });
-		let graph: ReturnType<typeof buildNativeGraph>;
-		try {
-			graph = buildNativeGraph({
-				colorLut,
-				snapshot: planned.snapshot,
-				output: planned.output,
-				outputFile: output,
-				sources: {
-					media: (id) => planned.media[id] ?? null,
-					mgMaster: (id) => masters.get(id) ?? null,
-				},
-				threads: ctx.slots,
-				still,
-				trackStreams: process.env.JASPER_EXPORT_TRACK_STREAMS !== '0',
-				coverBase: process.env.JASPER_EXPORT_COVER_BASE !== '0',
-				extensions: { list: exts, prepared },
-				...(audio?.path
-					? {
-							audio: {
-								file: audio.path,
-								sampleRate: audio.sampleRate,
-								soxr: await hasSoxr(this.deps.ff),
-								// the delivery's checked encode: muxed by stream copy
-								...(deliveredEncode(planned, audio) ? { encoded: deliveredEncode(planned, audio)! } : {}),
-							},
-						}
-					: {}),
-				nested,
+		// Parallel picture segments (segments.ts): each an export of its own sub-range, picture only, joined below.
+		const snap = planned.snapshot;
+		const segPlan: SegmentPlan = still
+			? { segments: [{ start: snap.range.start, end: snap.range.end }], concurrency: 1, peakBytes: 0 }
+			: planPictureSegments({
+					snapshot: snap,
+					output: planned.output,
+					slots: ctx.slots,
+					policy: segmentsOff ? { ...segmentPolicyFromEnv(), count: 1 } : segmentPolicyFromEnv(),
+					memory: segmentMemory(snap),
+				});
+		// spec 13 AS-074 / AGENTS §0: refused by name when even one short segment at a time would not fit (memory taken
+		// since the plan), never an out-of-memory kill
+		if (segPlan.blocker) {
+			endPlan();
+			await abandon();
+			throw new JobError('INSUFFICIENT_MEMORY', `Not enough memory: ${segPlan.blocker}`, true, {
+				estimateBytes: segPlan.peakBytes,
 			});
-			// AF-SEC-003: no GPL-only filter in the composite's or a blend segment's graph, before anything starts (a
-			// long graph goes to a -filter_complex_script file, which Ffmpeg.run's own argument check cannot see).
-			assertLgplFilters(graph.filter);
-			for (const seg of graph.blend?.segments ?? []) assertLgplFilters(seg.filter);
+		}
+		const split = segPlan.segments.length > 1;
+		let audio: MixdownResult | null = null;
+		if (!split) {
+			const endWait = report.begin('audioWait');
+			audio = await audioP
+				.catch(async (e) => {
+					endPlan();
+					await abandon();
+					throw e;
+				})
+				.finally(endWait);
+		}
+		/** Segments rendering at once. */
+		const atOnce = split ? Math.max(1, Math.min(segPlan.concurrency, segPlan.segments.length)) : 1;
+		const fps = snap.settings.fps;
+		const frameSec = fps.den / fps.num;
+		const ext = planned.output.encoder?.container ?? 'mp4';
+		const soxr = await hasSoxr(this.deps.ff);
+		// GPU decode (gpu.ts): NVDEC for the graphs' own video inputs when a CUDA device works
+		const gpuPolicy = gpuDecodePolicyFromEnv();
+		const nvdec =
+			!still && gpuPolicy.mode === 'auto' && gpuPolicy.maxInputs > 0
+				? await probeCudaDecode(this.deps.ff)
+				: {
+						ok: false,
+						reason: still ? 'stills decode on the CPU' : 'GPU decode is off (JASPER_EXPORT_NVDEC=0)',
+					};
+		if (!still) ctx.log(`native: decode ${nvdec.ok ? 'NVDEC (cuda)' : `CPU (${nvdec.reason})`}`);
+		type Part = { graph: ReturnType<typeof buildNativeGraph>; file: string; args: string[]; label: string };
+		const parts: Part[] = [];
+		try {
+			const scratch = split ? await ctx.scratchDir() : '';
+			const threads = split ? Math.max(1, Math.floor(ctx.slots / atOnce)) : ctx.slots;
+			for (const [i, s] of segPlan.segments.entries()) {
+				const n = s.end - s.start;
+				const file = split ? join(scratch, `segment-${i}.${ext}`) : output;
+				const graph = buildNativeGraph({
+					colorLut,
+					snapshot: split ? { ...snap, range: { start: s.start, end: s.end } } : snap,
+					output: split
+						? { ...planned.output, frames: n, durationSec: n * frameSec, videoOnly: true }
+						: planned.output,
+					outputFile: file,
+					sources: {
+						media: (id) => planned.media[id] ?? null,
+						mgMaster: (id) => masters.get(id) ?? null,
+					},
+					threads,
+					...(split ? { filterThreads: threads } : {}),
+					// (the export's GPU decoders are shared by its concurrent segments)
+					...(nvdec.ok ? { hwDecode: nvdecForGraph(Math.floor(gpuPolicy.maxInputs / atOnce)) } : {}),
+					still,
+					trackStreams: process.env.JASPER_EXPORT_TRACK_STREAMS !== '0',
+					coverBase: process.env.JASPER_EXPORT_COVER_BASE !== '0',
+					extensions: { list: exts, prepared },
+					...(audio?.path && !split
+						? {
+								audio: {
+									file: audio.path,
+									sampleRate: audio.sampleRate,
+									soxr,
+									// the delivery's checked encode: muxed by stream copy
+									...(deliveredEncode(planned, audio) ? { encoded: deliveredEncode(planned, audio)! } : {}),
+								},
+							}
+						: {}),
+					nested,
+				});
+				// AF-SEC-003: no GPL-only filter in the composite's or a blend segment's graph, before anything starts (a
+				// long graph goes to a -filter_complex_script file, which Ffmpeg.run's own argument check cannot see).
+				assertLgplFilters(graph.filter);
+				for (const seg of graph.blend?.segments ?? []) assertLgplFilters(seg.filter);
+				parts.push({
+					graph,
+					file,
+					args: graph.args,
+					label: split ? `segment ${i + 1}/${segPlan.segments.length} [${s.start}, ${s.end})` : '',
+				});
+			}
 		} catch (e) {
 			await abandon();
 			throw e;
+		} finally {
+			endPlan();
 		}
+		if (!still)
+			report.pipeline = {
+				decode: parts.some((p) => p.graph.hwDecoded > 0) ? 'nvdec' : 'cpu',
+				composite: 'cpu',
+				segments: parts.length,
+				concurrency: atOnce,
+				memoryBytes: segPlan.peakBytes,
+				overlays: Math.max(
+					...parts.flatMap((p) => [
+						overlayCount(p.graph.filter),
+						...(p.graph.blend?.segments ?? []).map((sg) => overlayCount(sg.filter)),
+					]),
+				),
+				compositeSize: { width: snap.settings.width, height: snap.settings.height },
+				...(segPlan.reason ? { reason: segPlan.reason } : {}),
+			};
+		ctx.log(
+			`native: estimated composite memory ${(segPlan.peakBytes / 1024 ** 3).toFixed(1)} GB of a ${(compositeMemoryBudget() / 1024 ** 3).toFixed(1)} GB budget`,
+		);
+		if (split)
+			ctx.log(
+				`native: ${parts.length} picture segments, ${atOnce} at a time${segPlan.reason ? ` (${segPlan.reason})` : ''}: ${parts.map((p) => p.label).join(', ')}`,
+			);
+		else if (segPlan.reason) ctx.log(`native: one graph (${segPlan.reason})`);
 		// Pipelined stills the composite opens as inputs are written first.
-		if (graph.waitFor) {
-			ctx.progress(0, {
-				stage: `Waiting for ${graph.waitFor.length} baked graphic${graph.waitFor.length === 1 ? '' : 's'}`,
-			});
-			const ready = await Promise.all(graph.waitFor).catch(async (e) => {
-				await abandon();
-				// Only a failed background bake rejects these.
-				throw new NativePrepareError(bgError ?? e);
-			});
+		const waitFor = parts.flatMap((p) => p.graph.waitFor ?? []);
+		if (waitFor.length) {
+			const unique = new Set(waitFor).size;
+			ctx.progress(0, { stage: `Waiting for ${unique} baked graphic${unique === 1 ? '' : 's'}` });
+			const ready = await report
+				.time('bakeWait', () => Promise.all(waitFor))
+				.catch(async (e) => {
+					await abandon();
+					// Only a failed background bake rejects these.
+					throw new NativePrepareError(bgError ?? e);
+				});
 			const changed = ready.find((r) => !r.ok);
 			if (changed && !changed.ok) return restart(changed.reason);
 		}
-		let args = graph.args;
-		if (graph.filter.length > 60_000) {
-			const script = join(await ctx.scratchDir(), 'graph.txt');
-			await writeFile(script, graph.filter);
-			const i = args.indexOf('-filter_complex');
-			args = [...args.slice(0, i), '-filter_complex_script', script, ...args.slice(i + 2)];
-		}
-		for (const [i, seg] of (graph.blend?.segments ?? []).entries()) {
-			if (seg.filter.length > 60_000) {
-				const script = join(await ctx.scratchDir(), `blend-${i}.txt`);
-				await writeFile(script, seg.filter);
-				const k = seg.args.indexOf('-filter_complex');
-				seg.args = [...seg.args.slice(0, k), '-filter_complex_script', script, ...seg.args.slice(k + 2)];
+		for (const [pi, part] of parts.entries()) {
+			const { graph } = part;
+			if (graph.filter.length > 60_000) {
+				const script = join(await ctx.scratchDir(), `graph-${pi}.txt`);
+				await writeFile(script, graph.filter);
+				const i = part.args.indexOf('-filter_complex');
+				part.args = [...part.args.slice(0, i), '-filter_complex_script', script, ...part.args.slice(i + 2)];
 			}
-			ctx.log(`ffmpeg (blend layer ${i + 1}) ${seg.args.join(' ')}`);
+			for (const [i, seg] of (graph.blend?.segments ?? []).entries()) {
+				if (seg.filter.length > 60_000) {
+					const script = join(await ctx.scratchDir(), `blend-${pi}-${i}.txt`);
+					await writeFile(script, seg.filter);
+					const k = seg.args.indexOf('-filter_complex');
+					seg.args = [...seg.args.slice(0, k), '-filter_complex_script', script, ...seg.args.slice(k + 2)];
+				}
+				ctx.log(
+					`ffmpeg (${part.label ? `${part.label}, ` : ''}blend layer ${i + 1}) ${commandLine(seg.args)}`,
+				);
+			}
+			ctx.log(`ffmpeg${part.label ? ` (${part.label})` : ''} ${commandLine(part.args)}`);
 		}
-		ctx.log(`ffmpeg ${args.join(' ')}`);
-		const total = graph.durationSec;
+		const total = parts.reduce((t, p) => t + p.graph.durationSec, 0);
 		const started = Date.now();
 		// Sub-pixel layers stream into the composite's pipes while it runs (stream/run.ts). A failed stream stops the
 		// composite and is the reported error.
 		const streamAbort = new AbortController();
-		const onJobAbort = () => streamAbort.abort();
+		// Every segment's composite stops when the job is cancelled or another segment fails (its error is reported).
+		const runAbort = new AbortController();
+		const onJobAbort = () => {
+			streamAbort.abort();
+			runAbort.abort();
+		};
 		ctx.signal.addEventListener('abort', onJobAbort, { once: true });
+		if (ctx.signal.aborted) onJobAbort();
 		const producers: Promise<void>[] = [];
 		let streamError: Error | null = null;
-		const blend = graph.blend;
-		const allStreams =
-			graph.streams.length + (blend?.segments.reduce((n, sg) => n + sg.streams.length, 0) ?? 0);
+		const allStreams = parts.reduce(
+			(n, p) =>
+				n +
+				p.graph.streams.length +
+				(p.graph.blend?.segments.reduce((m, sg) => m + sg.streams.length + 1, 0) ?? 0),
+			0,
+		);
+		// (the streams of the segments rendering at once share the CPU)
 		const workers = Math.max(
 			2,
-			Math.floor(Math.max(1, ctx.slots) / Math.max(1, allStreams + (blend?.segments.length ?? 0))),
+			Math.floor(Math.max(1, ctx.slots) / Math.max(1, Math.ceil((allStreams * atOnce) / parts.length))),
 		);
-		const runStreams = (child: ChildProcess, streams = graph.streams) => {
+		const runStreams = (child: ChildProcess, streams: ReturnType<typeof buildNativeGraph>['streams']) => {
 			for (const s of streams) {
 				const sink = child.stdio[s.fd] as Writable;
 				const run = { workers, signal: streamAbort.signal, onSpawn: ctx.trackChild };
@@ -1463,7 +1636,7 @@ export class ExportService {
 			}
 		};
 		// keyframes-blend: the processes before the composite run while it runs; the last kernel feeds its pipe:3.
-		const runBlend = (child: ChildProcess) => {
+		const runBlend = (child: ChildProcess, blend: ReturnType<typeof buildNativeGraph>['blend']) => {
 			if (!blend) return;
 			producers.push(
 				runBlendPipeline(
@@ -1484,28 +1657,145 @@ export class ExportService {
 				}),
 			);
 		};
-		const pipes = graph.streams.length + (blend ? 1 : 0);
+		const done = parts.map(() => 0);
+		let failed: { error: unknown; part: Part } | null = null;
+		// the sound of a segmented export is encoded while the segments render (the join then only copies)
+		const sound = split ? this.segmentSound(planned, audioP, soxr, ctx, runAbort.signal) : null;
+		// a failed mixdown or sound encode fails the export and stops the segments
+		sound?.catch((error: unknown) => {
+			failed ??= { error, part: parts[0]! };
+			runAbort.abort();
+		});
+		const endEncode = report.begin(still ? 'still' : 'encode');
+		// Memory watchdog (AGENTS §0): the composites' resident memory is sampled every second; past the budget the most
+		// recently started segment is stopped and queued again with one segment fewer at a time, and a lone composite
+		// past it fails the export by name — the system's out-of-memory killer (or a frozen machine) never decides.
+		const budget = still ? 0 : compositeMemoryBudget();
+		const running = new Map<number, { ac: AbortController; pid: number | null; since: number }>();
+		const requeued = new Set<number>();
+		/** Segments the watchdog stopped whose process has not ended yet (their memory is still counted). */
+		const stopping = new Set<number>();
+		const pending = parts.map((_, i) => i);
+		let limit = atOnce;
+		/** Lanes waiting for a running composite to end (a stopped segment may come back). */
+		const waiting: (() => void)[] = [];
+		/** One composite (a segment, or the whole range). */
+		const runPart = (part: Part, i: number): Promise<void> => {
+			const { graph } = part;
+			const pipes = graph.streams.length + (graph.blend ? 1 : 0);
+			const ac = new AbortController();
+			const stop = () => ac.abort();
+			runAbort.signal.addEventListener('abort', stop, { once: true });
+			const slot = { ac, pid: null as number | null, since: Date.now() };
+			running.set(i, slot);
+			return this.deps.ff
+				.run(part.args, {
+					signal: ac.signal,
+					...(pipes > 0 ? { pipes } : {}),
+					onSpawn: (child) => {
+						ctx.trackChild(child);
+						slot.pid = child.pid ?? null;
+						if (graph.streams.length > 0) runStreams(child, graph.streams);
+						runBlend(child, graph.blend);
+					},
+					onProgress: (p) => {
+						if (still || total <= 0) return;
+						done[i] = Math.min(graph.durationSec, p.outTimeUs / 1e6);
+						const sum = done.reduce((a, b) => a + b, 0);
+						const elapsed = (Date.now() - started) / 1000;
+						const speed = split
+							? elapsed > 0
+								? sum / elapsed
+								: undefined
+							: (p.speed ?? (elapsed > 0 ? sum / elapsed : undefined));
+						ctx.progress((sum / total) * (split ? 0.96 : 0.98), {
+							stage: split ? `Encoding (native, ${parts.length} segments)` : 'Encoding (native)',
+							...(speed ? { speed, etaSec: (total - sum) / speed } : {}),
+						});
+					},
+				})
+				.then(() => {})
+				.catch((error: unknown) => {
+					if (requeued.delete(i)) {
+						// stopped by the watchdog: rendered again when memory allows
+						done[i] = 0;
+						pending.unshift(i);
+						return;
+					}
+					// the first failure is the export's; the other segments are stopped (their cancellation is not)
+					failed ??= { error, part };
+					runAbort.abort();
+				})
+				.finally(() => {
+					running.delete(i);
+					stopping.delete(i);
+					runAbort.signal.removeEventListener('abort', stop);
+					for (const wake of waiting.splice(0)) wake();
+				});
+		};
+		const watchdog =
+			budget > 0 && process.platform === 'linux'
+				? setInterval(() => {
+						let rss = 0;
+						for (const r of running.values()) rss += r.pid ? residentBytes(r.pid) : 0;
+						// (one stop at a time: the stopped process's memory is counted until it has ended)
+						if (rss <= budget || stopping.size > 0) return;
+						const gbs = (b: number) => `${(b / 1024 ** 3).toFixed(1)} GB`;
+						if (running.size > 1) {
+							const [i, r] = [...running.entries()].sort((a, b) => b[1].since - a[1].since)[0]!;
+							limit = Math.max(1, Math.min(limit, running.size) - 1);
+							stopping.add(i);
+							requeued.add(i);
+							ctx.log(
+								`native: composites at ${gbs(rss)}, over the ${gbs(budget)} budget: ${parts[i]!.label} stopped and queued again, ${limit} at a time`,
+							);
+							r.ac.abort();
+						} else if (failed === null) {
+							failed = {
+								error: new JobError(
+									'INSUFFICIENT_MEMORY',
+									`Not enough memory: the export's compositor reached ${gbs(rss)}, over the ${gbs(budget)} this machine has available for it; close other applications or export a shorter range`,
+									true,
+									{ rssBytes: rss, budgetBytes: budget },
+								),
+								part: parts[[...running.keys()][0] ?? 0]!,
+							};
+							runAbort.abort();
+						}
+					}, 1000)
+				: null;
 		try {
-			await this.deps.ff.run(args, {
-				signal: ctx.signal,
-				...(pipes > 0 ? { pipes } : {}),
-				onSpawn: (child) => {
-					ctx.trackChild(child);
-					if (graph.streams.length > 0) runStreams(child);
-					runBlend(child);
-				},
-				onProgress: (p) => {
-					if (still || total <= 0) return;
-					const done = Math.min(total, p.outTimeUs / 1e6);
-					const elapsed = (Date.now() - started) / 1000;
-					const speed = p.speed ?? (elapsed > 0 ? done / elapsed : undefined);
-					ctx.progress((done / total) * 0.98, {
-						stage: 'Encoding (native)',
-						...(speed ? { speed, etaSec: (total - done) / speed } : {}),
-					});
-				},
-			});
-		} catch (e) {
+			// at most `limit` composites at a time, in range order; none starts after a failure or a cancellation
+			const lane = async (lane: number) => {
+				while (failed === null && !runAbort.signal.aborted) {
+					if (lane >= limit) return;
+					if (running.size >= limit) {
+						// (the watchdog lowered the limit while this lane's segment was stopped: wait for a place)
+						await new Promise<void>((wake) => waiting.push(wake));
+						continue;
+					}
+					const i = pending.shift();
+					if (i === undefined) {
+						// a segment may still come back from the watchdog while others run
+						if (running.size === 0) return;
+						await new Promise<void>((wake) => waiting.push(wake));
+						continue;
+					}
+					await runPart(parts[i]!, i);
+				}
+			};
+			await Promise.all(Array.from({ length: atOnce }, (_, l) => lane(l)));
+			// cancelled between two segments: nothing failed, but the export did not finish
+			if (failed === null && runAbort.signal.aborted)
+				failed = { error: new JobError('JOB_CANCELLED', 'Cancelled'), part: parts[0]! };
+		} finally {
+			if (watchdog) clearInterval(watchdog);
+			endEncode();
+			ctx.signal.removeEventListener('abort', onJobAbort);
+		}
+		if (failed !== null) {
+			const { error: e, part } = failed as { error: unknown; part: Part };
+			await sound?.catch(() => {});
 			streamAbort.abort();
 			await Promise.all(producers);
 			// A stream that lost its pipe only reports the composite's death: the composite's own error then wins.
@@ -1514,9 +1804,7 @@ export class ExportService {
 			await abandon();
 			if (bgError !== null && !ctx.signal.aborted) throw failure(e);
 			const consequence = !se || /^layer stream:/.test(se.message);
-			throw consequence ? killedComposite(e, graph.inputs.length, ctx.signal.aborted) : se;
-		} finally {
-			ctx.signal.removeEventListener('abort', onJobAbort);
+			throw consequence ? killedComposite(e, part.graph.inputs.length, ctx.signal.aborted) : se;
 		}
 		// The composite succeeded (and the frame count is checked below): a stream it stopped reading ends here.
 		streamAbort.abort();
@@ -1527,19 +1815,135 @@ export class ExportService {
 		});
 		ctx.signal.removeEventListener('abort', onAbortBg);
 		if (still) return 1;
-		const count = await this.deps.ff.countVideoFrames(output, { signal: ctx.signal });
-		if (count !== graph.outputFrames) {
+		if (split) {
+			const joined = await this.joinSegments(planned, parts, output, await sound!, ctx);
+			if (!joined) {
+				ctx.log(
+					'native: the segments were encoded with different parameter sets; rendering one graph instead',
+				);
+				for (const p of parts) await rm(p.file, { force: true });
+				return this.runNative(planned, masters, output, ctx, still, audioP, pipeline, true);
+			}
+		}
+		const count = await report.time('frameCheck', () =>
+			this.deps.ff.countVideoFrames(output, { signal: ctx.signal }),
+		);
+		const expected = planned.output.frames;
+		if (count !== expected) {
 			throw new JobError(
 				'FRAME_COUNT_MISMATCH',
-				`Expected ${graph.outputFrames} frames, the output has ${count}`,
+				`Expected ${expected} frames, the output has ${count}`,
 				true,
 				{
-					expected: graph.outputFrames,
+					expected,
 					actual: count,
 				},
 			);
 		}
 		return count;
+	}
+
+	/**
+	 * The sound stream of a segmented export, as a file the join copies: the delivery's checked encode as it is, else
+	 * the mix WAV (or silence) through the chain and encoder a one-graph export uses (`mixAudioFilters`), encoded into
+	 * the scratch directory while the segments render. Null for a picture-only export.
+	 */
+	private async segmentSound(
+		planned: PlannedExport,
+		audioP: Promise<MixdownResult | null>,
+		soxr: boolean,
+		ctx: JobContext,
+		signal: AbortSignal,
+	): Promise<string | null> {
+		const o = planned.output;
+		if (o.videoOnly) return null;
+		const audio = await audioP;
+		const encoded = deliveredEncode(planned, audio);
+		if (encoded) return encoded;
+		const ext = o.encoder?.container ?? 'mp4';
+		const file = join(await ctx.scratchDir(), `sound.${ext}`);
+		const layout = o.audioChannels === 1 ? 'mono' : o.audioChannels === 6 ? '5.1' : 'stereo';
+		const totalSamples = Math.round(o.durationSec * o.audioSampleRate);
+		const args = [
+			...(audio?.path
+				? ['-i', audio.path, '-af', mixAudioFilters({ sampleRate: audio.sampleRate, soxr }, o).join(',')]
+				: [
+						...['-f', 'lavfi', '-i', `anullsrc=r=${o.audioSampleRate}:cl=${layout}`],
+						...['-af', `atrim=end_sample=${totalSamples}`],
+					]),
+			'-vn',
+			...audioEncodeArgs(audioCodecOf(o.encoder, o), o.audioBitrateKbps, o.audioChannels),
+			...['-ar', String(o.audioSampleRate), '-ac', String(o.audioChannels), '-f', ext, file],
+		];
+		ctx.log(`ffmpeg (sound) ${commandLine(args)}`);
+		await this.report(ctx).time('sound', () => this.deps.ff.run(args, { signal, onSpawn: ctx.trackChild }));
+		return file;
+	}
+
+	/**
+	 * Joins the encoded picture segments by stream copy (concat demuxer: each segment's timestamps continue from the
+	 * previous one's duration; every segment starts with a key frame) with the export's sound (`segmentSound`, copied)
+	 * into `output`. Checks each segment's frame count first (FRAME_COUNT_MISMATCH names it). False, without writing,
+	 * when the segments' parameter sets differ (a concatenated stream must share them).
+	 */
+	private async joinSegments(
+		planned: PlannedExport,
+		parts: readonly { graph: { outputFrames: number }; file: string; label: string }[],
+		output: string,
+		sound: string | null,
+		ctx: JobContext,
+	): Promise<boolean> {
+		const report = this.report(ctx);
+		const o = planned.output;
+		const ext = o.encoder?.container ?? 'mp4';
+		const checks = await report.time('frameCheck', () =>
+			Promise.all(
+				parts.map(async (p) => {
+					const count = await this.deps.ff.countVideoFrames(p.file, { signal: ctx.signal });
+					const j = await this.deps.ff.probeJson(
+						[
+							'-show_data_hash',
+							'SHA256',
+							'-select_streams',
+							'v:0',
+							'-show_entries',
+							'stream=extradata_hash',
+							p.file,
+						],
+						{ signal: ctx.signal },
+					);
+					const hash = (j.streams as { extradata_hash?: string }[] | undefined)?.[0]?.extradata_hash ?? '';
+					return { count, hash };
+				}),
+			),
+		);
+		for (const [i, c] of checks.entries()) {
+			const want = parts[i]!.graph.outputFrames;
+			if (c.count !== want)
+				throw new JobError(
+					'FRAME_COUNT_MISMATCH',
+					`Expected ${want} frames in ${parts[i]!.label}, it has ${c.count}`,
+					true,
+					{ expected: want, actual: c.count, segment: i },
+				);
+		}
+		if (new Set(checks.map((c) => c.hash)).size > 1) return false;
+		const scratch = await ctx.scratchDir();
+		const list = join(scratch, 'segments.txt');
+		await writeFile(list, `${parts.map((p) => `file '${p.file.replace(/'/g, "'\\''")}'`).join('\n')}\n`);
+		const args = [
+			...['-f', 'concat', '-safe', '0', '-i', list],
+			...(sound ? ['-i', sound] : []),
+			...['-map', '0:v:0'],
+			...(sound ? ['-map', '1:a:0', '-c', 'copy'] : ['-c:v', 'copy', '-an']),
+			...(ext !== 'webm' ? ['-movflags', '+faststart'] : []),
+			...['-f', ext, output],
+		];
+		ctx.progress(0.97, { stage: `Joining ${parts.length} segments${sound ? ' and the sound' : ''}` });
+		ctx.log(`ffmpeg ${commandLine(args)}`);
+		await report.time('join', () => this.deps.ff.run(args, { signal: ctx.signal, onSpawn: ctx.trackChild }));
+		for (const p of parts) await rm(p.file, { force: true });
+		return true;
 	}
 
 	/**
@@ -1555,36 +1959,38 @@ export class ExportService {
 		const o = planned.output;
 		const sr = planned.snapshot.audioMix?.sampleRate ?? 48000;
 		const t0 = performance.now();
-		const mix = await renderMixdown({
-			ff: this.deps.ff,
-			snapshot: planned.snapshot,
-			media: (id) => {
-				const m = planned.media[id];
-				if (!m) return null;
-				return {
-					path: m.path,
-					streams: m.record.probe.streams.filter((x) => x.type === 'audio') as never,
-					container: m.record.container,
-				};
-			},
-			range: planned.range,
-			length: Math.round(o.durationSec * sr),
-			outputLayout: layoutOf(o.audioChannels),
-			normalize: o.normalize,
-			// the deliverable's encoding: a lossy codec's limiter headroom and the decoded check (deliver.ts)
-			...(opts.deliver
-				? { deliver: deliveryCodecOf(planned), parallel: Math.min(3, Math.max(1, ctx.slots)) }
-				: {}),
-			scratchDir: await ctx.scratchDir(),
-			signal: ctx.signal,
-			onSpawn: ctx.trackChild,
-			onProgress: (f, stage) => (opts.onProgress ? opts.onProgress(f, stage) : ctx.progress(0, { stage })),
-		});
+		const mix = await this.report(ctx).time('audio', async () =>
+			renderMixdown({
+				ff: this.deps.ff,
+				snapshot: planned.snapshot,
+				media: (id) => {
+					const m = planned.media[id];
+					if (!m) return null;
+					return {
+						path: m.path,
+						streams: m.record.probe.streams.filter((x) => x.type === 'audio') as never,
+						container: m.record.container,
+					};
+				},
+				range: planned.range,
+				length: Math.round(o.durationSec * sr),
+				outputLayout: layoutOf(o.audioChannels),
+				normalize: o.normalize,
+				// the deliverable's encoding: a lossy codec's limiter headroom and the decoded check (deliver.ts)
+				...(opts.deliver
+					? { deliver: deliveryCodecOf(planned), parallel: Math.min(3, Math.max(1, ctx.slots)) }
+					: {}),
+				scratchDir: await ctx.scratchDir(),
+				signal: ctx.signal,
+				onSpawn: ctx.trackChild,
+				onProgress: (f, stage) => (opts.onProgress ? opts.onProgress(f, stage) : ctx.progress(0, { stage })),
+			}),
+		);
 		const d = mix.normalized?.delivery;
 		const t = (ms: number) => `${Math.round(ms)} ms`;
 		ctx.log(
 			d
-				? `audio: mixed (${t(mix.mixMs ?? 0)}) and delivered in ${t(performance.now() - t0)} — ${d.passes} passes (${t(d.timings.passesMs)}), ${d.encodePasses} encodes (${t(d.timings.encodeMs)} summed), decoded checks ${t(d.timings.decodeMs)}${d.cached ? ', reused an earlier delivery of this mix' : ''}${d.encoded ? ', the checked encode is muxed as it is' : ''}`
+				? `audio: mixed (${t(mix.mixMs ?? 0)}) and delivered in ${t(performance.now() - t0)} — ${d.passes} passes (${t(d.timings.passesMs)}: ${d.passKinds.converge} converging, ${d.passKinds.alternative} lower-ceiling candidates, ${d.passKinds.rewrite} rewritten), ${d.encodePasses} encodes (${t(d.timings.encodeMs)} summed), decoded checks ${t(d.timings.decodeMs)}${d.cached ? ', reused an earlier delivery of this mix' : ''}${d.encoded ? ', the checked encode is muxed as it is' : ''}`
 				: `audio: mixed in ${t(performance.now() - t0)}`,
 		);
 		return mix;
@@ -1638,8 +2044,10 @@ export class ExportService {
 			ext,
 			output,
 		];
-		ctx.log(`ffmpeg ${args.join(' ')}`);
-		await this.deps.ff.run(args, { signal: ctx.signal, onSpawn: ctx.trackChild });
+		ctx.log(`ffmpeg ${commandLine(args)}`);
+		await this.report(ctx).time('join', () =>
+			this.deps.ff.run(args, { signal: ctx.signal, onSpawn: ctx.trackChild }),
+		);
 		await rm(picture, { force: true });
 		return frames;
 	}
@@ -1672,7 +2080,7 @@ export class ExportService {
 			o.encoder?.container ?? 'mp4',
 			output,
 		];
-		ctx.log(`ffmpeg ${args.join(' ')}`);
+		ctx.log(`ffmpeg ${commandLine(args)}`);
 		await this.deps.ff.run(args, { signal: ctx.signal, onSpawn: ctx.trackChild });
 	}
 
@@ -1800,7 +2208,7 @@ export class ExportService {
 			choice.container,
 			output,
 		];
-		ctx.log(`ffmpeg ${args.join(' ')}`);
+		ctx.log(`ffmpeg ${commandLine(args)}`);
 		const total = o.durationSec;
 		await this.deps.ff.run(args, {
 			signal: ctx.signal,
@@ -2016,17 +2424,11 @@ export class ExportService {
 		const dir = await this.outDir(ctx);
 		const output = join(dir, `output.${outputExtension(planned)}`);
 		ctx.addPartial(dir);
-		const del = planned.deliverable;
-		const rendered =
-			del?.kind === 'audio'
-				? await this.renderAudioOnly(ctx, planned, output)
-				: del?.kind === 'gif'
-					? await this.renderGif(ctx, req, planned, output)
-					: planned.previews?.some((r) => r.kind === 'preview')
-						? await this.renderWithPreviews(ctx, req, planned, output, planned.previews)
-						: planned.smart
-							? await this.renderSmart(ctx, req, planned, output, planned.smart)
-							: await this.renderPlanned(ctx, req, planned, output);
+		// where the time went, in the log of a failed (or cancelled) export too
+		const rendered = await this.renderExport(ctx, req, planned, output).catch((e: unknown) => {
+			ctx.log(this.report(ctx).summary());
+			throw e;
+		});
 		planned = rendered.planned;
 		const { frames, path, remotionOutput, warnings, audio } = rendered;
 		return this.finishExport(ctx, req, planned, output, dir, {
@@ -2036,6 +2438,17 @@ export class ExportService {
 			warnings,
 			audio,
 		});
+	}
+
+	/** The file of a planned export by its deliverable and path (`runExport`). */
+	private renderExport(ctx: JobContext, req: ExportStartRequest, planned: PlannedExport, output: string) {
+		const del = planned.deliverable;
+		if (del?.kind === 'audio') return this.renderAudioOnly(ctx, planned, output);
+		if (del?.kind === 'gif') return this.renderGif(ctx, req, planned, output);
+		if (planned.previews?.some((r) => r.kind === 'preview'))
+			return this.renderWithPreviews(ctx, req, planned, output, planned.previews);
+		if (planned.smart) return this.renderSmart(ctx, req, planned, output, planned.smart);
+		return this.renderPlanned(ctx, req, planned, output);
 	}
 
 	/** Renders a planned export into `output` (native / hybrid with the Remotion fallback, or Remotion). */
@@ -2067,7 +2480,7 @@ export class ExportService {
 		// The mixdown runs while the native path prepares (bakes) its layers; the composite waits for it.
 		let audio: MixdownResult | null = null;
 		if (path === 'native' || path === 'hybrid') {
-			const m = await this.collectMgMasters(planned, ctx);
+			const m = await this.report(ctx).time('masters', () => this.collectMgMasters(planned, ctx));
 			if (m === null) {
 				if (req.settings.engine === 'native') {
 					throw new JobError('PATH_NOT_ELIGIBLE', 'Motion-graphic masters are unavailable (fframes)', false);
@@ -2103,6 +2516,7 @@ export class ExportService {
 		}
 		// (the mix of an export that left the native path, or whose masters were unavailable)
 		if (!planned.output.videoOnly) audio ??= await audioP;
+		const endRemotion = path === 'remotion' ? this.report(ctx).begin('remotion') : () => {};
 		if (path === 'remotion' && planned.output.alpha) {
 			// wp interchange: a straight-alpha ProRes 4444 master of the range (no audio), as the layer bake renders it.
 			const prepared = await this.prepareForRemotion(planned, ctx);
@@ -2200,6 +2614,7 @@ export class ExportService {
 			}
 			frames = count;
 		}
+		endRemotion();
 		return {
 			planned,
 			frames,
@@ -2258,7 +2673,7 @@ export class ExportService {
 			palette = join(scratch, 'gif-palette.png');
 			ctx.progress(RENDER, { stage: 'GIF 2/2 · Building the palette' });
 			const args = [...input, '-filter_complex', graphs.palette, '-map', '[out]', '-frames:v', '1', palette];
-			ctx.log(`ffmpeg ${args.join(' ')}`);
+			ctx.log(`ffmpeg ${commandLine(args)}`);
 			await this.deps.ff.run(args, { signal: ctx.signal, onSpawn: ctx.trackChild });
 		}
 		const loop = gifMuxLoop(gif.loop);
@@ -2275,7 +2690,7 @@ export class ExportService {
 			'gif',
 			output,
 		];
-		ctx.log(`ffmpeg ${args.join(' ')}`);
+		ctx.log(`ffmpeg ${commandLine(args)}`);
 		const total = planned.output.durationSec;
 		ctx.progress(PALETTE, { stage: 'GIF 2/2 · Writing frames' });
 		await this.deps.ff.run(args, {
@@ -2344,7 +2759,7 @@ export class ExportService {
 			...audioOnlyMuxArgs(del.audio.container),
 			output,
 		];
-		ctx.log(`ffmpeg ${args.join(' ')}`);
+		ctx.log(`ffmpeg ${commandLine(args)}`);
 		const total = planned.output.durationSec;
 		ctx.progress(MIX, { stage: `Writing ${name}` });
 		await this.deps.ff.run(args, {
@@ -2408,6 +2823,8 @@ export class ExportService {
 		const { frames, path, remotionOutput, warnings, audio } = r;
 		const encoder = planned.output.encoder;
 		const del = planned.deliverable;
+		const report = this.report(ctx);
+		const endFinish = report.begin('finish');
 		if (!del) {
 			// gaps: the sequence's pixel aspect ratio and field order signalled in the file.
 			await this.writeSequenceFormat(planned, output, ctx);
@@ -2512,7 +2929,11 @@ export class ExportService {
 			...(captionResult ? { captions: captionResult } : {}),
 			...(creditsResult ? { credits: creditsResult } : {}),
 			planId: planned.plan.planId,
+			...(report.pipeline && (path === 'native' || path === 'hybrid') ? { pipeline: report.pipeline } : {}),
 		};
+		endFinish();
+		const timings = report.timings();
+		ctx.log(report.summary());
 		this.commitRefs(ctx, planned, 'export');
 		this.deps.broadcaster.publish(
 			'export.finished',
@@ -2526,7 +2947,7 @@ export class ExportService {
 			planned.document.projectId,
 		);
 		await rm((ctx.input as { request: string }).request, { force: true });
-		return result;
+		return { ...result, timings };
 	}
 
 	/** One Program still as a PNG at `output`, on the export's path (S11:LBK-025). */
@@ -2584,7 +3005,7 @@ export class ExportService {
 		let masters = new Map<string, string>();
 		const warnings: { code: string; message: string }[] = [];
 		if (path === 'native' || path === 'hybrid') {
-			const m = await this.collectMgMasters(planned, ctx);
+			const m = await this.report(ctx).time('masters', () => this.collectMgMasters(planned, ctx));
 			if (m === null) path = 'remotion';
 			else masters = m;
 		}
@@ -2966,6 +3387,40 @@ function dedupeWarnings(w: readonly { code: string; message: string }[]) {
  * spec 13 AS-074: a composite killed by the system (SIGKILL that the job did not send: the OOM killer, a memory
  * limit) becomes an `OUT_OF_MEMORY` job error naming the cause, never a crash; other errors pass unchanged.
  */
+/** The memory side of the segment plan of `snap` (spec 13 AS-074, memory.ts): the budget and one graph's estimate. */
+function segmentMemory(snap: PlannedExport['snapshot']): SegmentMemory {
+	const profile = compositeProfile(snap);
+	return {
+		budget: compositeMemoryBudget(),
+		estimate: (range, threads) => estimateFrom(snap, profile, range, { threads }).bytes,
+	};
+}
+
+/**
+ * An ffmpeg command line for the job log, shortened in the middle when long (a composite has hundreds of inputs; the
+ * log keeps its last 64,000 characters, which whole command lines pushed the segment list and the audio summary out of).
+ */
+function commandLine(args: readonly string[]): string {
+	const text = args.join(' ').replace(/\s*\n\s*/g, ' ');
+	if (text.length <= 2_000) return text;
+	return `${text.slice(0, 700)} … [${args.length} arguments, ${text.length} characters] … ${text.slice(-900)}`;
+}
+
+/** Resident memory of a process (Linux `/proc/<pid>/status` VmRSS; 0 when it is gone). */
+function residentBytes(pid: number): number {
+	try {
+		const m = /^VmRSS:\s+(\d+) kB/m.exec(readFileSync(`/proc/${pid}/status`, 'utf8'));
+		return m ? Number(m[1]) * 1024 : 0;
+	} catch {
+		return 0;
+	}
+}
+
+/** Overlay filters in a filtergraph (each one is traversed by every frame of the composite). */
+function overlayCount(filter: string): number {
+	return filter.match(/\]overlay=/g)?.length ?? 0;
+}
+
 export function killedComposite(e: unknown, inputs: number, cancelled: boolean): unknown {
 	if (cancelled || !(e instanceof Error) || !/exited SIGKILL/.test(e.message)) return e;
 	return new JobError(

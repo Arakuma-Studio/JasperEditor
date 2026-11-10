@@ -388,6 +388,12 @@ export type DeliveryOutcome = {
 	codecHeadroomDb: number;
 	/** Delivery passes run (each a limiter pass over the mix) and encodes for the decoded check. */
 	passes: number;
+	/**
+	 * What the passes were (logs and benchmarks): `converge` = a loudness step at new parameters; `rewrite` = parameters
+	 * an earlier pass measured, written again because a later pass overwrote `outPath`; `alternative` = a lower-ceiling
+	 * candidate written while the first encode of a round runs.
+	 */
+	passKinds: { converge: number; rewrite: number; alternative: number };
 	encodePasses: number;
 	/** The limiter took the push: the target cannot be reached under the ceiling (loudness ±0.5 LU not met). */
 	ceilingLimited: boolean;
@@ -533,12 +539,19 @@ export async function solveDelivery(o: {
 	const hit = key ? cacheGet(key) : undefined;
 	let params: DeliveryParams = { gainDb: initialGainDb, ceilingDb: tpTarget - headroom, correction: null };
 	let passes = 0;
+	const passKinds = { converge: 0, rewrite: 0, alternative: 0 };
 	let encodePasses = 0;
 	/** The parameters `outPath` was last written with (identity). */
 	let writtenWith: DeliveryParams | null = null;
 
-	const measure = async (p: DeliveryParams, write: boolean, path?: string): Promise<LoudnessSummary> => {
+	const measure = async (
+		p: DeliveryParams,
+		write: boolean,
+		path?: string,
+		kind: keyof typeof passKinds = 'converge',
+	): Promise<LoudnessSummary> => {
 		passes++;
+		passKinds[kind]++;
 		if (o.signal?.aborted) throw new Error('aborted');
 		const t0 = performance.now();
 		try {
@@ -729,7 +742,7 @@ export async function solveDelivery(o: {
 		});
 		const raw0 = new Float32Array(hops);
 		if (params.correction) raw0.set(params.correction.subarray(0, raw0.length));
-		if (writtenWith !== params) r = { ...r, pcm: await measure(params, true) };
+		if (writtenWith !== params) r = { ...r, pcm: await measure(params, true, undefined, 'rewrite') };
 		o.onProgress?.(0.96, 'Checking the encoded audio');
 		/**
 		 * The round's lower-ceiling alternatives (`DELIVERY_CEILING_STEPS_DB`, at most `parallel` − 1), converged and
@@ -756,12 +769,14 @@ export async function solveDelivery(o: {
 				made.push(wav);
 				// one written pass at the predicted gain; a second (secant on the curve) when it misses the aim
 				let p = withCorrection({ ...base.params, gainDb: gainAtCeiling(pts, ceil, aimAt) }, raw, ceil);
-				let pcm = await measure(p, true, wav);
+				let pcm = await measure(p, true, wav, 'alternative');
 				if (Number.isFinite(pcm.integrated)) {
 					pts.push({ p: p.gainDb - ceil, f: pcm.integrated - ceil });
-					if (Math.abs(aimAt - pcm.integrated) > L.loudnessTolLu) {
-						p = { ...p, gainDb: gainAtCeiling(pts, ceil, aimAt) };
-						pcm = await measure(p, true, wav);
+					// (a gain at the push cap is the one just measured: the same pass again would write the same bytes)
+					const next = gainAtCeiling(pts, ceil, aimAt);
+					if (Math.abs(aimAt - pcm.integrated) > L.loudnessTolLu && next !== p.gainDb) {
+						p = { ...p, gainDb: next };
+						pcm = await measure(p, true, wav, 'alternative');
 						if (Number.isFinite(pcm.integrated)) pts.push({ p: p.gainDb - ceil, f: pcm.integrated - ceil });
 					}
 				}
@@ -839,7 +854,8 @@ export async function solveDelivery(o: {
 				if (!from.r.limited) nextAim = clampAim(from.aim + roundBest.loudErr);
 				let rc = await converge(withCorrection(from.params, raw, ceiling), nextAim, true);
 				// `outPath` holds the converged pass (the encode reads it)
-				if (writtenWith !== rc.params) rc = { ...rc, pcm: await measure(rc.params, true) };
+				if (writtenWith !== rc.params)
+					rc = { ...rc, pcm: await measure(rc.params, true, undefined, 'rewrite') };
 				const next: Cand[] = [
 					start({ params: rc.params, r: rc, raw, ceiling, aim: nextAim, wav: outPath }, `${k + 1}a`),
 				];
@@ -864,11 +880,11 @@ export async function solveDelivery(o: {
 			if (pick.wav !== outPath) {
 				await rename(pick.wav, outPath);
 				writtenWith = params;
-			} else if (writtenWith !== params) await measure(params, true);
+			} else if (writtenWith !== params) await measure(params, true, undefined, 'rewrite');
 		}
 		for (const f of made) if (!keep.has(f)) await rm(f, { force: true });
 	} else if (o.write && writtenWith !== params) {
-		r = { ...r, pcm: await measure(params, true) };
+		r = { ...r, pcm: await measure(params, true, undefined, 'rewrite') };
 	}
 	if (key) cacheSet(key, { params: copyParams(params), aim: solvedAim, limited: r.limited });
 	let corrHops = 0;
@@ -883,6 +899,7 @@ export async function solveDelivery(o: {
 		initialGainDb,
 		codecHeadroomDb: headroom,
 		passes,
+		passKinds,
 		encodePasses,
 		ceilingLimited: r.limited,
 		decoded,

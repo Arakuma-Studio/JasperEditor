@@ -605,6 +605,8 @@ export function registerRenderTools(ctx: ToolContext): void {
 				...(plan.audio.normalize ? { loudness: plan.audio.normalize } : {}),
 				// spec 18 AF-EXP: the GIF (rate, size, frames, loop, dither) or audio-only file (codec, rate, channels)
 				...(plan.deliverable ? { deliverable: plan.deliverable } : {}),
+				// how the composite is expected to run (decode, composite, segments, overlays); the result's is what ran
+				...(plan.pipeline ? { pipeline: plan.pipeline } : {}),
 			};
 			// spec 12 §2.11: W_SOUND_CREDITS / W_SOUND_CHECK_STALE (info) / W_SOUND_LICENSE_NC, with their codes
 			const soundWarnings = plan.warnings

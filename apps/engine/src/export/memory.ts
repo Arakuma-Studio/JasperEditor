@@ -9,8 +9,16 @@
 // layer (decoder + frame slots), ≈ 0.3 GB for the base composite with one video. Kernel streams (stream/taps.ts)
 // hold their output slots and a few pictures whatever their clip count. The estimate scales the per-input costs by
 // the sequence's pixel count and is deliberately conservative.
+// Media inputs (docs/wp-notes/export-performance.md §6): ffmpeg opens every input of a graph at once and each video
+// decoder keeps frame buffers per thread. Measured on the user's PC (1080p60 H.264 inputs of an overlay chain, peak
+// RSS): FFmpeg 6.1 ≈ 63 MB per input at 1 decoder thread, 78 MB at 2, 266 MB at its default (16 frame threads);
+// FFmpeg 7.1 (the shipped build, which runs every decoder in its own thread and buffers frames per input) ≈ 181 MB at
+// 1 thread and 200 MB at 2 (59 inputs: 10.7 / 11.9 GB; 20 synthetic inputs: 4.0 GB). The model takes 7.1's numbers,
+// ≈ 170 MB + 14 MB per thread, scaled by the decoded picture's size. The composite caps each input's decoder threads
+// (`decoderThreadsFor`), the budget follows the memory actually available, and a watchdog (service.ts) stops a
+// composite that still grows past it.
 import { readFileSync } from 'node:fs';
-import { totalmem } from 'node:os';
+import { freemem, totalmem } from 'node:os';
 import {
 	contentTimeAt,
 	maskExportRoute,
@@ -31,8 +39,42 @@ const COST = {
 	master: 220 * MB,
 	still: 40 * MB,
 	stream: 165 * MB,
-	video: 100 * MB,
 };
+/** Measured per 1080p video input (see above): fixed part and per decoder thread. */
+const MEDIA_FIXED = 170 * MB;
+const MEDIA_PER_THREAD = 14 * MB;
+const MEDIA_REF_PIXELS = 1920 * 1080;
+
+/**
+ * Decoder threads of each file input of a composite graph with `threads` CPU threads and `inputs` file inputs: ffmpeg's
+ * default (a thread per CPU, 16 frame threads for H.264) multiplies every input's frame buffers; 2 per input decodes
+ * as fast in a many-input graph (measured: 43 s vs 47 s, 7.8 GB vs 26.6 GB for 100 inputs) and a graph of few inputs
+ * keeps up to 8.
+ */
+export function decoderThreadsFor(threads: number, inputs: number): number {
+	return Math.max(2, Math.min(8, Math.round((4 * Math.max(1, threads)) / Math.max(1, inputs))));
+}
+
+/** Whether an ffmpeg input (its arguments up to and including `-i <path>`) reads a file (not a pipe or lavfi). */
+export function isFileInput(input: readonly string[]): boolean {
+	const i = input.lastIndexOf('-i');
+	const path = input[i + 1] ?? '';
+	return i >= 0 && !path.startsWith('pipe:') && !input.includes('lavfi');
+}
+
+/** The file inputs' decoders limited to `threads` threads each (`-threads` before `-i`; one already set is kept). */
+export function capDecoderThreads(inputs: readonly (readonly string[])[], threads: number): string[][] {
+	return inputs.map((input) => {
+		if (!isFileInput(input) || input.includes('-threads')) return [...input];
+		const i = input.lastIndexOf('-i');
+		return [...input.slice(0, i), '-threads', String(threads), ...input.slice(i)];
+	});
+}
+
+/** Estimated memory of one video input decoded with `threads` threads at `pixels` per picture. */
+export function mediaInputBytes(pixels: number, threads: number): number {
+	return (MEDIA_FIXED + MEDIA_PER_THREAD * threads) * Math.max(0.25, pixels / MEDIA_REF_PIXELS);
+}
 
 /** What the composite of a planned export will hold, by kind of input. */
 export type CompositeEstimate = {
@@ -81,68 +123,170 @@ function kindOf(c: RenderVisualClip, fps: RenderSnapshot['settings']['fps']): Ki
 	return 'media';
 }
 
-/** Estimated peak memory of the native composite of `snap` over `range` (top-level tracks; nests count as media). */
-export function estimateComposite(
+/** One layer of a composite profile: its drawn span, how it is drawn, its track and (media) decoded pixels. */
+type ProfileItem = { f0: number; f1: number; kind: Kind; track: number; pixels: number; run: number | null };
+
+/**
+ * How each top-level layer of `snap` is drawn (computed once; `estimateFrom` then counts any range cheaply). Masters
+ * in one run of shaken masters share a `run` id (one input, AS-073).
+ */
+export function compositeProfile(snap: RenderSnapshot): ProfileItem[] {
+	const items: ProfileItem[] = [];
+	let runId = 0;
+	for (const [ti, t] of snap.videoTracks.entries()) {
+		const masters: RenderVisualClip[] = [];
+		const byClip = new Map<RenderVisualClip, ProfileItem>();
+		for (const c of t.clips) {
+			const k = kindOf(c, snap.settings.fps);
+			const item: ProfileItem = {
+				f0: c.start - (c.headHandle ?? 0),
+				f1: c.start + c.duration + (c.tailHandle ?? 0),
+				kind: k,
+				track: ti,
+				pixels: Math.max(1, c.intrinsicBox.width) * Math.max(1, c.intrinsicBox.height),
+				run: null,
+			};
+			items.push(item);
+			byClip.set(c, item);
+			if (k === 'master') masters.push(c);
+		}
+		for (const run of shakeRuns(masters.filter(runEligible), (c) => c)) {
+			runId++;
+			for (const c of run) byClip.get(c)!.run = runId;
+		}
+	}
+	return items;
+}
+
+/**
+ * Estimated peak memory of one composite graph over `range` from a profile: media inputs with the decoder threads
+ * the graph gives them (`decoderThreadsFor` of its `threads`), the other inputs at their measured costs.
+ */
+export function estimateFrom(
 	snap: RenderSnapshot,
+	profile: readonly ProfileItem[],
 	range: { start: number; end: number },
-	workers = 8,
+	opts: { workers?: number; threads?: number } = {},
 ): CompositeEstimate {
 	const W = snap.settings.width;
 	const H = snap.settings.height;
 	const scale = Math.max(0.25, (W * H) / REF_PIXELS);
 	const inputs = { masters: 0, stills: 0, streams: 0, kernelStreams: 0, media: 0 };
-	let bytes = COST.base * scale;
-	for (const t of snap.videoTracks) {
-		let members = 0;
-		const masters: RenderVisualClip[] = [];
-		for (const c of t.clips) {
-			const f0 = c.start - (c.headHandle ?? 0);
-			const f1 = c.start + c.duration + (c.tailHandle ?? 0);
-			if (f1 <= range.start || f0 >= range.end) continue;
-			const k = kindOf(c, snap.settings.fps);
-			if (k === 'member') {
-				members++;
-				continue;
-			}
-			if (k === 'master') {
+	const members = new Map<number, number>();
+	const runs = new Set<number>();
+	const mediaPixels: number[] = [];
+	for (const it of profile) {
+		if (it.f1 <= range.start || it.f0 >= range.end) continue;
+		if (it.kind === 'member') members.set(it.track, (members.get(it.track) ?? 0) + 1);
+		else if (it.kind === 'master') {
+			if (it.run === null) inputs.masters++;
+			else if (!runs.has(it.run)) {
+				runs.add(it.run);
 				inputs.masters++;
-				masters.push(c);
-			} else if (k === 'still') inputs.stills++;
-			else if (k === 'stream') inputs.streams++;
-			else if (k === 'media') inputs.media++;
+			}
+		} else if (it.kind === 'still') inputs.stills++;
+		else if (it.kind === 'stream') inputs.streams++;
+		else if (it.kind === 'media') {
+			inputs.media++;
+			mediaPixels.push(it.pixels);
 		}
-		// A run of shaken masters is one input (AS-073).
-		for (const run of shakeRuns(masters.filter(runEligible), (c) => c)) inputs.masters -= run.length - 1;
-		// One member alone is drawn as a stream of its own; two or more share a kernel stream (AS-072).
-		if (members === 1) inputs.streams++;
-		else if (members > 1) inputs.kernelStreams++;
 	}
-	bytes +=
+	// One member alone is drawn as a stream of its own; two or more share a kernel stream (AS-072).
+	for (const n of members.values()) {
+		if (n === 1) inputs.streams++;
+		else inputs.kernelStreams++;
+	}
+	const threads = decoderThreadsFor(opts.threads ?? 8, inputs.media + inputs.masters + inputs.stills);
+	const workers = opts.workers ?? 8;
+	const bytes =
+		COST.base * scale +
 		inputs.masters * COST.master * scale +
 		inputs.stills * COST.still * scale +
 		inputs.streams * COST.stream * scale +
-		inputs.media * COST.video * scale +
+		mediaPixels.reduce((t, px) => t + mediaInputBytes(px, threads), 0) +
 		inputs.kernelStreams * (tapStreamBytes({ outW: W, outH: H, picture: W * H, workers }) + 50 * MB);
 	return { bytes: Math.round(bytes), inputs };
 }
 
+/** Estimated peak memory of the native composite of `snap` over `range` (top-level tracks; nests count as media). */
+export function estimateComposite(
+	snap: RenderSnapshot,
+	range: { start: number; end: number },
+	workers = 8,
+	threads = 8,
+): CompositeEstimate {
+	return estimateFrom(snap, compositeProfile(snap), range, { workers, threads });
+}
+
+const readNumber = (file: string): number | null => {
+	try {
+		const v = Number(readFileSync(file, 'utf8').trim());
+		return Number.isFinite(v) && v > 0 ? v : null;
+	} catch {
+		return null;
+	}
+};
+
 /**
- * Memory the native composite may use (bytes): `JASPER_EXPORT_MEMORY_BUDGET_MB` when set, else 60 % of the
- * physical memory or of the engine's cgroup limit (containers, systemd units), whichever is smaller.
+ * The engine's memory limits on Linux: the smallest `memory.max` (cgroup v2) / `memory.limit_in_bytes` (v1) of its
+ * own cgroup and its ancestors (a systemd unit or scope, a container), and the room left under it (limit − usage).
+ */
+function cgroupLimit(): { limit: number; room: number } | null {
+	let best: { limit: number; room: number } | null = null;
+	const consider = (limit: number | null, usage: number | null) => {
+		if (limit === null || limit >= 2 ** 60) return;
+		const room = Math.max(0, limit - (usage ?? 0));
+		if (!best || room < best.room) best = { limit, room };
+	};
+	let lines: string[] = [];
+	try {
+		lines = readFileSync('/proc/self/cgroup', 'utf8').split('\n');
+	} catch {
+		return null;
+	}
+	for (const line of lines) {
+		const [, controllers, path] = line.split(':');
+		if (path === undefined) continue;
+		const v2 = controllers === '';
+		if (!v2 && !controllers!.split(',').includes('memory')) continue;
+		const root = v2 ? '/sys/fs/cgroup' : '/sys/fs/cgroup/memory';
+		const parts = path.split('/').filter(Boolean);
+		for (let i = parts.length; i >= 0; i--) {
+			const dir = [root, ...parts.slice(0, i)].join('/');
+			if (v2) consider(readNumber(`${dir}/memory.max`), readNumber(`${dir}/memory.current`));
+			else consider(readNumber(`${dir}/memory.limit_in_bytes`), readNumber(`${dir}/memory.usage_in_bytes`));
+		}
+	}
+	return best;
+}
+
+/** `MemAvailable` (Linux), else the free memory Node reports. */
+function availableMemory(): number {
+	try {
+		const m = /^MemAvailable:\s+(\d+) kB/m.exec(readFileSync('/proc/meminfo', 'utf8'));
+		if (m) return Number(m[1]) * 1024;
+	} catch {
+		// not Linux
+	}
+	return freemem();
+}
+
+/**
+ * Memory the native composite may use (bytes): `JASPER_EXPORT_MEMORY_BUDGET_MB` when set, else the smallest of 60 % of
+ * the physical memory or the engine's cgroup limit (containers, systemd units and scopes, found from
+ * `/proc/self/cgroup`), 80 % of the memory available now (`MemAvailable`) and 80 % of the room left in the cgroup.
  */
 export function compositeMemoryBudget(env: Record<string, string | undefined> = process.env): number {
 	const set = Number(env.JASPER_EXPORT_MEMORY_BUDGET_MB);
 	if (Number.isFinite(set) && set > 0) return set * MB;
 	let limit = totalmem();
-	for (const file of ['/sys/fs/cgroup/memory.max', '/sys/fs/cgroup/memory/memory.limit_in_bytes']) {
-		try {
-			const v = Number(readFileSync(file, 'utf8').trim());
-			if (Number.isFinite(v) && v > 0 && v < limit) limit = v;
-		} catch {
-			// not on Linux / no cgroup limit
-		}
+	let room = availableMemory();
+	const cg = cgroupLimit() as { limit: number; room: number } | null;
+	if (cg) {
+		limit = Math.min(limit, cg.limit);
+		room = Math.min(room, cg.room);
 	}
-	return Math.round(limit * 0.6);
+	return Math.round(Math.min(limit * 0.6, room * 0.8));
 }
 
 const gb = (b: number) => `${(b / 1024 ** 3).toFixed(1)} GB`;

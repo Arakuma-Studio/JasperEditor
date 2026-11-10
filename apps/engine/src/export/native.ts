@@ -43,6 +43,7 @@ import { audioEncodeArgs, LEGACY_X264_CHOICE, videoEncodeArgs } from '../tools/e
 import { sec } from '../tools/ffmpeg.ts';
 import { adjustmentCropFilters, cropFeatherFilter, hardCropFilter, isFeatheredCrop } from './crop.ts';
 import { CROP_EDGES, mergeResize, motionFilters, motionStage } from './keyframed.ts';
+import { capDecoderThreads, decoderThreadsFor, isFileInput } from './memory.ts';
 import {
 	BUILTIN_NATIVE_EFFECTS,
 	type LayerOverride,
@@ -84,6 +85,17 @@ type NativeBuildOptions = {
 	outputFile: string;
 	sources: NativeSourceResolver;
 	threads: number;
+	/**
+	 * Threads of the filter graph (`-filter_complex_threads`; absent = ffmpeg's default, one per CPU). Parallel picture
+	 * segments (segments.ts) give each graph its share, so N graphs do not each start a thread per CPU.
+	 */
+	filterThreads?: number;
+	/**
+	 * GPU decode (docs/wp-notes/export-performance.md §5): the input arguments that decode a media's video on the GPU
+	 * (`-hwaccel cuda -hwaccel_device <name>`, frames downloaded for the CPU composite), or none for this input; asked
+	 * for the main graph's own video inputs. `device` is created once per process (`-init_hw_device cuda=<name>`).
+	 */
+	hwDecode?: { device: string; args(m: LocalMedia): string[] };
 	/** Single-frame PNG (stills): no audio, RGB output. */
 	still?: boolean;
 	/** M2 native extensions (ARCHITECTURE §19.6) and what their `prepare` returned for this export. */
@@ -122,6 +134,8 @@ type NativeGraph = {
 	/** Filtergraph text (tests; also written to a script file when large). */
 	filter: string;
 	inputs: string[][];
+	/** Video inputs decoded on the GPU (`hwDecode`). */
+	hwDecoded: number;
 	outputFrames: number;
 	durationSec: number;
 	/**
@@ -331,6 +345,8 @@ type LayerSourceOptions = {
 	skipCrop?: boolean;
 	/** edit-structure: the source is the composite stream `label` (adjustment layers), frame 0 = sequence `R0`. */
 	composite?: { label: string; R0: number };
+	/** GPU decode arguments for a media's video input (`NativeBuildOptions.hwDecode`; none = CPU). */
+	hwDecode?: (m: LocalMedia) => string[];
 	/** edit-structure: how nested sequences of nest clips are drawn (see `drawStack`). */
 	nest?: {
 		nested?: ReadonlyMap<string, PreparedExtensions>;
@@ -570,6 +586,8 @@ export function layerSourceChain(o: LayerSourceOptions): LayerSourceChain {
 		const lead = decodeFromStart ? startSec : win.lead;
 		const k = addInput([
 			...(dec ? ['-c:v', dec] : []),
+			// (alpha decoders are libvpx: the GPU decodes only with ffmpeg's own decoders)
+			...(!dec && o.hwDecode ? o.hwDecode(local) : []),
 			...decoderArgs(local.record),
 			...(decodeFromStart
 				? ['-t', sec(startSec + srcDur)]
@@ -762,6 +780,8 @@ type StackContext = {
 	chains: string[];
 	/** Main-graph sub-pixel streams; absent in decoder graphs (warp/stream decoders): nested layers there need none. */
 	addStream?: (plan: StreamPlan) => number;
+	/** GPU decode of the stack's own video inputs (the sequence's stack in the main graph only). */
+	hwDecode?: (m: LocalMedia) => string[];
 	sources: NativeSourceResolver;
 	threads: number;
 	exts?: { list: readonly NativeExtension[]; prepared: PreparedExtensions };
@@ -1202,6 +1222,7 @@ function drawStack(ctx: StackContext): string {
 				addInput: ctx.addInput,
 				label,
 				...(composite ? { composite } : {}),
+				...(ctx.hwDecode ? { hwDecode: ctx.hwDecode } : {}),
 				nest: {
 					nested: ctx.nested,
 					path: ctx.path,
@@ -1341,6 +1362,20 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 	});
 	let proc = newProc(false);
 	const waitFor: Promise<OverrideReady>[] = [];
+	// GPU decode: counted, and the device created in the process whose inputs use it
+	const hw = o.hwDecode;
+	let hwDecoded = 0;
+	const hwProcs = new Set<Proc>();
+	const hwDecode = hw
+		? (m: LocalMedia) => {
+				const a = hw.args(m);
+				if (a.length) {
+					hwDecoded++;
+					hwProcs.add(proc);
+				}
+				return a;
+			}
+		: undefined;
 	const segments: BlendSegment[] = [];
 	const stackFrames = R1 - R0 + 1;
 	const ctx: StackContext = {
@@ -1364,6 +1399,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 		trackStreams: o.trackStreams !== false,
 		coverBase: o.coverBase !== false,
 		waitFor,
+		...(hwDecode ? { hwDecode } : {}),
 		blend: {
 			cut: (backdrop, layer, plan, mode) => {
 				const label = `bk${segments.length}`;
@@ -1372,7 +1408,8 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 				);
 				segments.push({
 					args: [
-						...proc.inputs.flat(),
+						...(hwProcs.has(proc) ? ['-init_hw_device', `cuda=${hw!.device}`] : []),
+						...decoderCapped(proc.inputs, o.threads).flat(),
 						'-filter_complex',
 						proc.chains.join(';\n'),
 						'-map',
@@ -1461,21 +1498,19 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 			copiedAudio = addInput(['-i', o.audio.encoded]);
 		} else if (o.audio) {
 			const k = addInput(['-i', o.audio.file]);
-			const rs =
-				o.audio.sampleRate !== output.audioSampleRate
-					? [`aresample=${output.audioSampleRate}:${resamplerArgs(o.audio.soxr ?? false)}`]
-					: [];
-			chains.push(
-				`[${k}:a]${[...rs, `aformat=sample_fmts=fltp:channel_layouts=${layout}`, `apad=whole_len=${totalSamples}`, `atrim=end_sample=${totalSamples}`].join(',')}[aout]`,
-			);
+			chains.push(`[${k}:a]${mixAudioFilters(o.audio, output).join(',')}[aout]`);
 		} else {
 			chains.push(`anullsrc=r=${output.audioSampleRate}:cl=${layout},atrim=end_sample=${totalSamples}[aout]`);
 		}
 	}
 
 	const filter = chains.join(';\n');
-	const args: string[] = [...(enc?.pre ?? [])];
-	for (const inp of inputs) args.push(...inp);
+	const args: string[] = [
+		...(o.filterThreads ? ['-filter_complex_threads', String(Math.max(1, Math.floor(o.filterThreads)))] : []),
+		...(hwProcs.has(proc) ? ['-init_hw_device', `cuda=${hw!.device}`] : []),
+		...(enc?.pre ?? []),
+	];
+	for (const inp of decoderCapped(inputs, o.threads)) args.push(...inp);
 	args.push('-filter_complex', filter, '-map', '[vout]');
 	if (o.still) {
 		args.push('-frames:v', '1', '-update', '1', '-f', 'image2', '-c:v', 'png', o.outputFile);
@@ -1517,6 +1552,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 		args,
 		filter,
 		inputs,
+		hwDecoded,
 		outputFrames: output.frames,
 		durationSec: output.durationSec,
 		streams,
@@ -1524,6 +1560,31 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 		...(waitFor.length ? { waitFor } : {}),
 	};
 }
+/**
+ * The mixdown WAV as the deliverable's audio: resampled with the export's resampler when the delivered rate differs,
+ * the delivered layout, padded / trimmed to exactly the export's samples (every mux of a native picture uses this).
+ */
+export function mixAudioFilters(audio: { sampleRate: number; soxr?: boolean }, output: OutputSpec): string[] {
+	const totalSamples = Math.round(output.durationSec * output.audioSampleRate);
+	const layout = output.audioChannels === 1 ? 'mono' : output.audioChannels === 6 ? '5.1' : 'stereo';
+	return [
+		...(audio.sampleRate !== output.audioSampleRate
+			? [`aresample=${output.audioSampleRate}:${resamplerArgs(audio.soxr ?? false)}`]
+			: []),
+		`aformat=sample_fmts=fltp:channel_layouts=${layout}`,
+		`apad=whole_len=${totalSamples}`,
+		`atrim=end_sample=${totalSamples}`,
+	];
+}
+
+/**
+ * A process's inputs with their decoders' threads capped (memory.ts `decoderThreadsFor`): ffmpeg opens every input at
+ * once and its default thread count per decoder multiplies their frame buffers (≈ 190 MB per input on 24 cores).
+ */
+function decoderCapped(inputs: readonly string[][], threads: number): string[][] {
+	return capDecoderThreads(inputs, decoderThreadsFor(threads, inputs.filter(isFileInput).length));
+}
+
 /** edit-structure: the clip-local frame a frame hold shows (the composition's `pictureLocalFrame`). */
 function heldLocalFrame(c: RenderVisualClip, fps: Rational): number {
 	const hold = c.frameHold;

@@ -85,6 +85,9 @@ type JobListFilter = {
 	dedupeKeys?: ReadonlySet<string>;
 };
 
+/** Job kinds whose diagnostic log is written when they succeed as well as when they fail. */
+const SUCCESS_LOG_KINDS: ReadonlySet<string> = new Set(['export']);
+
 /**
  * Jobs scheduled outside this queue that must still appear in `/api/jobs` and be cancellable/retryable over
  * HTTP (S04 §17): WP-2G's mg-render jobs run on the motion-graphics service's own scheduler.
@@ -414,7 +417,11 @@ export class JobQueue {
 				const result = await runner(ctx);
 				if (e.job.state === 'cancelling' || e.controller?.signal.aborted) {
 					await this.cleanupAndFinish(e, this.stopping ? 'interrupted' : 'cancelled', {});
-				} else await this.cleanupAndFinish(e, 'succeeded', { result });
+				} else {
+					// an export's log is kept when it succeeds too (its phases, segments and audio delivery, for benchmarks)
+					if (SUCCESS_LOG_KINDS.has(e.job.kind)) this.writeLog(e);
+					await this.cleanupAndFinish(e, 'succeeded', { result });
+				}
 			} catch (err) {
 				if (e.job.state === 'cancelling' || (e.controller?.signal.aborted && !this.stopping)) {
 					await this.cleanupAndFinish(e, 'cancelled', {});
