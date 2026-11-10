@@ -97,6 +97,24 @@ const READ_ONLY_RESULT = (revision: number): TransactionResult => ({
 	errors: [{ commandIndex: -1, code: 'E_NOT_OWNER', message: 'This session is read-only' }],
 });
 
+/**
+ * An agent edit in a window whose lease another session took over would be acknowledged but never saved or
+ * journalled: refused (the agent relay routes to the session that holds the lease once this window stops
+ * announcing one).
+ */
+export const leaseLostResult = (revision: number): TransactionResult => ({
+	ok: false,
+	revision,
+	errors: [
+		{
+			commandIndex: -1,
+			code: 'E_NOT_OWNER',
+			message:
+				'This editor window no longer holds the project (another session took over editing), so the edit would not be saved; retry to reach the session that holds it',
+		},
+	],
+});
+
 /** True when some text clip of the document still has an estimated box (`layoutPending`). */
 function hasPendingText(doc: ProjectDocument): boolean {
 	for (const seq of Object.values(doc.sequences))
@@ -265,8 +283,9 @@ export class EditorSession {
 			this.store.setState({ lease: { status: 'held', leaseId: lease.leaseId } });
 			if (store.heartbeatLease) {
 				this.leaseTimer = setInterval(() => {
-					void store.heartbeatLease!(this.projectId, lease.leaseId).catch(() =>
-						this.store.setState({ lease: { status: 'lost', leaseId: lease.leaseId } }),
+					void store.heartbeatLease!(this.projectId, lease.leaseId).then(
+						(next) => this.leaseConfirmed(next.leaseId),
+						(e) => this.leaseHeartbeatFailed(e, lease.leaseId),
 					);
 				}, lease.heartbeatMs);
 				(this.leaseTimer as { unref?: () => void }).unref?.();
@@ -279,6 +298,30 @@ export class EditorSession {
 				});
 			else throw e;
 		}
+	}
+
+	/**
+	 * A heartbeat succeeded: the store holds this session's lease, under `leaseId` (a new id when the engine had
+	 * forgotten the lease — a restart, an expiry while the tab was throttled — and the store re-acquired it). The
+	 * journal and the agent relay present the current id, and a lease that only looked lost is held again.
+	 */
+	private leaseConfirmed(leaseId: string): void {
+		if (this.closed) return;
+		const cur = this.store.getState().lease;
+		if (cur.status === 'read-only' || (cur.status === 'held' && cur.leaseId === leaseId)) return;
+		this.store.setState({ lease: { status: 'held', leaseId } });
+	}
+
+	/**
+	 * Only another session holding the project ends this one's editing (`lost`: nothing it does is saved or
+	 * journalled any more). An engine error or timeout says nothing about the lease: the next heartbeat confirms it,
+	 * re-acquires it or finds the new holder.
+	 */
+	private leaseHeartbeatFailed(e: unknown, leaseId: string): void {
+		if (this.closed || !(e instanceof LeaseHeldError)) return;
+		const cur = this.store.getState().lease;
+		if (cur.status === 'held')
+			this.store.setState({ lease: { status: 'lost', leaseId: cur.leaseId ?? leaseId } });
 	}
 
 	getState(): SessionState {
@@ -341,6 +384,7 @@ export class EditorSession {
 				errors: [{ commandIndex: -1, code: 'E_NO_SESSION', message: 'Session closed' }],
 			};
 		if (s.readOnly) return READ_ONLY_RESULT(s.revision);
+		if (typeof tx.origin === 'object' && s.lease.status === 'lost') return leaseLostResult(s.revision);
 		for (const guard of this.txGuards) {
 			const refused = guard(tx);
 			if (refused) return { ok: false, revision: s.revision, errors: [refused] };
@@ -783,7 +827,23 @@ export class EditorSession {
 		if (this.store.getState().revision === revision) this.store.setState({ dirty: false });
 	}
 
-	/** Cancels any gesture, releases the lease and notifies listeners. Autosave flushing is the caller's job. */
+	private readonly closeHooks = new Set<() => Promise<void>>();
+
+	/**
+	 * Work `close()` finishes before it releases the lease: the persistence controller's last save and journal write
+	 * (the engine accepts a journal only from the lease holder), whoever calls `close()` first. Returns the remover.
+	 */
+	beforeClose(hook: () => Promise<void>): () => void {
+		this.closeHooks.add(hook);
+		return () => {
+			this.closeHooks.delete(hook);
+		};
+	}
+
+	/**
+	 * Cancels any gesture, lets the `beforeClose` work (saving, journalling) finish, releases the lease and notifies
+	 * listeners. Nothing is applied once it starts.
+	 */
 	async close(): Promise<void> {
 		if (this.closed) return;
 		if (this.gestureState) this.endGesture();
@@ -796,6 +856,8 @@ export class EditorSession {
 				revision: this.revision,
 				errors: [{ commandIndex: -1, code: 'E_NO_SESSION', message: 'Session closed' }],
 			});
+		for (const hook of [...this.closeHooks]) await hook().catch(() => undefined);
+		this.closeHooks.clear();
 		if (this.leaseTimer) clearInterval(this.leaseTimer);
 		const lease = this.store.getState().lease;
 		if (lease.status === 'held' && lease.leaseId && this.projectStore?.releaseLease) {

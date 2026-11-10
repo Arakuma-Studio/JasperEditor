@@ -22,7 +22,7 @@ import {
 	type TxInput,
 	unknownCommandKeyIssues,
 } from '@jasper/project';
-import type { EditorSession } from '@jasper/session';
+import { type EditorSession, leaseLostResult } from '@jasper/session';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 import { transitionPreferences } from '../panels/effects/transition-prefs.ts';
 import { runBeforeAgentTransaction } from './hooks.ts';
@@ -96,6 +96,15 @@ export type AgentBridgeOptions = {
 
 let activitySeq = 0;
 
+/**
+ * The lease this window announces to the engine relay: only one it holds. A window whose lease was lost cannot save
+ * what agents send it, so the engine must not route their transactions to it.
+ */
+function announcedLease(session: EditorSession): string | null {
+	const lease = session.getState().lease;
+	return lease.status === 'held' ? lease.leaseId : null;
+}
+
 function fail(revision: number, code: string, message: string): TransactionResult {
 	return { ok: false, revision, errors: [{ commandIndex: -1, code, message }] };
 }
@@ -130,7 +139,7 @@ export class AgentBridge {
 						hello: () => ({
 							projectId: session.projectId,
 							sessionId: session.sessionId,
-							leaseId: session.getState().lease.leaseId ?? null,
+							leaseId: announcedLease(session),
 						}),
 						onRequest: (kind, payload) => this.onRelayRequest(kind, payload),
 						onEvent: (event, payload) => this.onEngineEvent(event, payload),
@@ -221,12 +230,12 @@ export class AgentBridge {
 		this.disposers.push(offTransport, () => {
 			if (trailing) clearTimeout(trailing);
 		});
-		// Re-announce when the lease changes (e.g. taken over), so the engine routes to the holder.
-		let leaseId = s.getState().lease.leaseId;
+		// Re-announce when the lease changes (re-acquired, taken over, lost), so the engine routes to the holder.
+		let leaseId = announcedLease(s);
 		this.disposers.push(
-			s.store.subscribe((st) => {
-				if (st.lease.leaseId !== leaseId) {
-					leaseId = st.lease.leaseId;
+			s.store.subscribe(() => {
+				if (announcedLease(s) !== leaseId) {
+					leaseId = announcedLease(s);
 					this.relay?.sendHello();
 				}
 			}),
@@ -345,6 +354,8 @@ export class AgentBridge {
 
 		const pseudo = historyPseudoCommand(tx);
 		if (pseudo) {
+			if (this.session.getState().lease.status === 'lost')
+				return this.record(tx, via, leaseLostResult(revision));
 			runBeforeAgentTransaction(this.session);
 			return this.record(tx, via, this.historyStep(pseudo, tx.origin.agent), { historyStep: true });
 		}

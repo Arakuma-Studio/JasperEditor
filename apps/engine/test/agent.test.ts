@@ -662,6 +662,19 @@ describe('AgentService timeouts', () => {
 		expect(expired).toMatchObject({ appliedBy: 'headless', result: { ok: true, revision: 1 } });
 	});
 
+	it('does not relay to a window whose lease another session holds now (it would never save the edit)', async () => {
+		const { service, store, socket, projectId } = makeService({ relayTimeoutMs: 0 });
+		// ses_1 still announces lease_1; the engine's lease went to ses_2 (taken over, or acquired after an expiry).
+		store.lease = {
+			sessionId: 'ses_2',
+			leaseId: 'lease_2',
+			expiresAt: new Date(Date.now() + 60_000).toISOString(),
+		};
+		const r = await service.transact(projectId, tx([{ type: 'marker.add', frame: 1, name: 'x' }]));
+		expect(r.result).toMatchObject({ ok: false, errors: [{ code: 'E_NO_SESSION', retryable: true }] });
+		expect(socket.sent.some((m) => m.type === 'request')).toBe(false);
+	});
+
 	it('rejects oversized transactions (limits)', async () => {
 		const { service, projectId } = makeService();
 		const big = await service.transact(

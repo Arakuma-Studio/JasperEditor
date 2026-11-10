@@ -6,7 +6,7 @@ import {
 	defaultRegistries,
 	type TransactionResult,
 } from '@jasper/project';
-import { EditorSession } from '@jasper/session';
+import { EditorSession, MemoryProjectStore } from '@jasper/session';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AgentBridge } from '../src/agent-bridge/bridge.ts';
 
@@ -175,6 +175,51 @@ describe('WS /agent relay client (ARCHITECTURE §11)', () => {
 
 		ws.close();
 		expect(bridge.store.getState().relay).toBe('disconnected');
+	});
+
+	it('stops announcing its lease once another session takes the project over, and refuses agent edits', async () => {
+		vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+		try {
+			const sockets: FakeSocket[] = [];
+			vi.stubGlobal(
+				'WebSocket',
+				class extends FakeSocket {
+					constructor() {
+						super();
+						sockets.push(this);
+					}
+				},
+			);
+			const ids = createCounterIdSource(11);
+			const store = new MemoryProjectStore({ ids });
+			const doc = createEmptyProject({ ids, name: 'Bridge', preset: 'hd-1080p-30' });
+			store.put(doc);
+			const ctx = { ids, now: () => '2026-09-30T00:00:00.000Z', registries: defaultRegistries() };
+			const session = await EditorSession.open({ store, projectId: doc.projectId, ctx, sessionId: 'a' });
+			const engine = { agentWsUrl: () => 'ws://test/agent' } as EngineClient;
+			const bridge = new AgentBridge(session, engine, { relay: true }).start();
+			bridges.push(bridge);
+			const ws = sockets[0]!;
+			ws.open();
+			expect(ws.sent[0]).toMatchObject({ type: 'hello', leaseId: 'lease_a' });
+
+			await store.acquireLease(doc.projectId, 'b', { takeOver: true });
+			await vi.advanceTimersByTimeAsync(10_000); // the next heartbeat finds the new holder
+			expect(ws.sent.filter((m) => m.type === 'hello').at(-1)).toMatchObject({ leaseId: null });
+			ws.server({
+				type: 'request',
+				id: 'l1',
+				kind: 'tx',
+				payload: { transaction: agentTx([{ type: 'marker.add', frame: 7 }]), approved: false },
+			});
+			await vi.advanceTimersByTimeAsync(0);
+			expect(ws.sent.find((m) => m.id === 'l1')).toMatchObject({
+				result: { ok: false, errors: [{ code: 'E_NOT_OWNER' }] },
+			});
+			await session.close();
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it("applies a proposal accept the engine relays for this window's user as the user's own edit (spec 12 §2.5)", async () => {

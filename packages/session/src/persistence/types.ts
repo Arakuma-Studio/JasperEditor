@@ -74,7 +74,11 @@ export interface ProjectStore {
 	importFile(file: Blob): Promise<string>;
 	/** `takeOver` revokes another session's lease ("Take over editing", S01:PER-040). */
 	acquireLease(projectId: string, sessionId?: string, opts?: { takeOver?: boolean }): Promise<Lease>;
-	/** Heartbeat / release (engine leases, S01:PER-040). Optional for stores without leases. */
+	/**
+	 * Heartbeat / release (engine leases, S01:PER-040). Optional for stores without leases. A heartbeat resolves with the
+	 * lease the session now holds (possibly re-acquired under a new id) and throws `LeaseHeldError` when another
+	 * session holds the project; any other failure leaves the lease as it was.
+	 */
 	heartbeatLease?(projectId: string, leaseId: string): Promise<Lease>;
 	releaseLease?(projectId: string, leaseId: string): Promise<void>;
 }

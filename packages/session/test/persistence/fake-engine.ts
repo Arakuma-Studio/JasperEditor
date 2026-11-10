@@ -23,6 +23,8 @@ export type FakeRequest = {
 export class FakeEngine {
 	projects = new Map<string, Stored>();
 	leases = new Map<string, LeaseRec>();
+	/** Crash-recovery journals: `<projectId>/<sessionId>` → the last accepted PUT body. */
+	journals = new Map<string, unknown>();
 	requests: FakeRequest[] = [];
 	/** Fail the next request matching `method path` with this status/body (one shot). */
 	failures: { match: RegExp; status: number; body?: unknown; network?: boolean }[] = [];
@@ -129,6 +131,20 @@ export class FakeEngine {
 			const cur = this.leases.get(id);
 			if (!cur || cur.leaseId !== m[2]) return this.err(404, 'LEASE_NOT_FOUND');
 			this.leases.delete(id);
+			return this.json({ ok: true });
+		}
+		if ((m = path.match(/^\/api\/projects\/([^/]+)\/recovery\/([^/]+)$/)) && method === 'PUT') {
+			// Like the engine: only the session holding the lease, under its current id, writes its journal.
+			const id = decodeURIComponent(m[1]!);
+			const cur = this.leases.get(id);
+			if (!cur || cur.leaseId !== (body as { leaseId?: string }).leaseId)
+				return this.err(404, 'LEASE_NOT_FOUND');
+			if (cur.sessionId !== m[2]) return this.err(409, 'LEASE_HELD');
+			this.journals.set(`${id}/${m[2]}`, body);
+			return this.json({ ok: true, savedAt: new Date(this.nowMs).toISOString() });
+		}
+		if ((m = path.match(/^\/api\/projects\/([^/]+)\/recovery\/([^/]+)$/)) && method === 'DELETE') {
+			this.journals.delete(`${decodeURIComponent(m[1]!)}/${m[2]}`);
 			return this.json({ ok: true });
 		}
 		return this.err(501, 'NOT_IMPLEMENTED');

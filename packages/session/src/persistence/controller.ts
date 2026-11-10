@@ -100,6 +100,9 @@ export function attachPersistence(
 	doc?.addEventListener('visibilitychange', onVisibility);
 
 	let disposed = false;
+	// Closing the session first (the project host unmounts before its subtree) must not release the lease under the
+	// last save and journal write.
+	let offClose = () => {};
 	const controller: PersistenceController = {
 		session,
 		autosaver,
@@ -108,6 +111,7 @@ export function attachPersistence(
 		async dispose(o = {}) {
 			if (disposed) return;
 			disposed = true;
+			offClose();
 			win?.removeEventListener('pagehide', flushQuietly);
 			win?.removeEventListener('beforeunload', onBeforeUnload);
 			doc?.removeEventListener('visibilitychange', onVisibility);
@@ -129,6 +133,7 @@ export function attachPersistence(
 			await journal?.close().catch(() => undefined);
 		},
 	};
+	offClose = session.beforeClose(() => controller.dispose());
 	controllers.set(session, controller);
 	return controller;
 }

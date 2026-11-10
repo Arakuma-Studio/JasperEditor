@@ -235,6 +235,15 @@ opening (TL-020).
   lease over at once when the new page finds it still held, after checking that no live page of the origin holds
   it (a duplicated tab copies the memory). Other tabs and agents wait for the expiry or use Take over
   (`packages/session/src/persistence/tab-leases.ts`, `docs/wp-notes/polish.md` §1).
+- **Losing the lease** ends saving and journalling in that window ("Editing was taken over…" banner). Only another
+  session holding the project does that: a heartbeat that fails with an engine error or a timeout leaves the lease
+  as it was (the next heartbeat confirms it), and a lease the engine forgot (restart, expiry while the tab was
+  throttled) is re-acquired and used under its new id, by the journal and the agent relay alike. A window whose
+  lease is lost refuses agent transactions (`E_NOT_OWNER`) and stops announcing a lease on WS /agent; the engine
+  relays a transaction only to the window of the session that holds the project's lease
+  (`AgentService.relayTarget`), so an edit acknowledged to an agent is one the window can save.
+- **Closing a session** (`EditorSession.close`) first finishes its persistence (the last save and, if that fails,
+  the journal write) and only then releases the lease, whichever of the two the app tears down first.
 
 ## Versions
 
@@ -302,7 +311,15 @@ Routes: `GET /api/projects/:pid/recovery` (candidates), `GET …/recovery/:sessi
 
 Tests: `apps/engine/test/recovery-versions.test.ts` (routes, lock semantics across engine restarts and other
 processes, schema backup, restore), `packages/session/test/persistence/recovery.test.ts` (timing, clearing,
-recovery as an undoable step, Revert), `apps/web/test/project-files.test.tsx` (actions and dialogs).
+recovery as an undoable step, Revert, close order), `packages/session/test/persistence/engine-store.test.ts`
+(leases: transient heartbeat errors, journalling under a re-acquired lease, a lost window refusing agent edits),
+`apps/web/test/agent-bridge.test.ts` and `apps/engine/test/agent.test.ts` (relay only to the lease holder),
+`apps/web/test/project-files.test.tsx` (actions and dialogs).
+
+Known limits: a journal write that fails is reported only on the console (`[recovery] journal write failed`);
+edits made in the last ~1 s before a reload or tab close can be lost when the browser skips the "unsaved changes"
+prompt (`beforeunload`, shown only after the user interacted with the page) and neither the save nor the journal
+request completes during unload (neither is a keepalive request: project bodies exceed its 64 KB limit).
 
 ## Newer files
 

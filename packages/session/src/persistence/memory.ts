@@ -257,7 +257,9 @@ export class MemoryProjectStore implements ProjectStore, RecoveryStore {
 	}
 	async heartbeatLease(projectId: string, leaseId: string): Promise<Lease> {
 		const e = this.entry(projectId);
-		if (!e.lease || e.lease.leaseId !== leaseId) throw new Error('Lease not held');
+		if (e.lease && e.lease.leaseId !== leaseId)
+			throw new LeaseHeldError(projectId, e.lease.sessionId, e.lease.expiresAt);
+		if (!e.lease) throw new Error('Lease not held');
 		e.lease = { ...e.lease, expiresAt: new Date(Date.now() + 30_000).toISOString() };
 		return e.lease;
 	}

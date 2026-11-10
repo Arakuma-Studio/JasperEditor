@@ -473,7 +473,7 @@ export class AgentService {
 			approved = true;
 		}
 
-		const target = this.sessions.holder(projectId);
+		const target = await this.relayTarget(projectId);
 		if (target) {
 			try {
 				const out = await this.sessions.request(
@@ -526,6 +526,20 @@ export class AgentService {
 			commands: tx.commands.slice(0, 50),
 			kind: 'transaction',
 		});
+	}
+
+	/**
+	 * The editor connection a transaction is relayed to: the announced lease holder, unless the store knows that another
+	 * session holds the project now. A window keeps announcing a lease that was taken over or expired until its next
+	 * heartbeat tells it; what it applied meanwhile would be acknowledged and never saved.
+	 */
+	private async relayTarget(projectId: string): Promise<AgentConnection | null> {
+		const conn = this.sessions.holder(projectId);
+		const store = this.opts.store();
+		if (!conn || !store.leaseHolder) return conn;
+		const lease = await store.leaseHolder(projectId);
+		const live = lease && Date.parse(lease.expiresAt) > this.now().getTime();
+		return live && lease.sessionId !== conn.sessionId ? null : conn;
 	}
 
 	/** True when the store reports no live lease (or cannot tell and no session is connected). */

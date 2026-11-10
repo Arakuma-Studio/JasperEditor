@@ -112,6 +112,17 @@ describe('crash-recovery journal (S01:PER-021, AC-18)', () => {
 		await s2.close();
 	});
 
+	it('closing the session before its persistence keeps an unsaved agent edit journalled', async () => {
+		const { store, open, projectId } = await setup();
+		vi.spyOn(store, 'save').mockRejectedValue(new Error('engine gone'));
+		const s = await open('s1');
+		const p = attachPersistence(s, { ...noLifecycle, onError: () => undefined });
+		s.apply({ label: 'Add Solid', origin: { agent: 'bot' }, commands: [solid(0)] });
+		// The web app closes the session (project host) before the persistence of its subtree is disposed.
+		await Promise.all([s.close(), p.dispose()]);
+		expect((await store.readRecovery(projectId, 's1')).info.changes).toEqual(['Agent: Add Solid']);
+	});
+
 	it('a clean close with unsaved changes keeps them journalled; Revert discards them', async () => {
 		const { store, open, projectId } = await setup();
 		vi.spyOn(store, 'save').mockRejectedValue(new Error('engine gone'));

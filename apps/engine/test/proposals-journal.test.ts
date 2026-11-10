@@ -241,9 +241,7 @@ describe('accept journal: a lost relay answer', { timeout: TIMEOUT }, () => {
 		const app = await makeApp();
 		const { projectId, seqId, file } = seed(app);
 		// the editor window holds the project's lease (it may come back with edits it has not saved)
-		const lease = await post(app, `/api/projects/${projectId}/lease`, {
-			sessionId: '00000000-0000-4000-8000-0000000000aa',
-		});
+		const lease = await post(app, `/api/projects/${projectId}/lease`, { sessionId: 'ses_journal' });
 		expect(lease.statusCode, lease.body).toBe(200);
 		const editor = await editorWindow(app, projectId, saved(file));
 		const p = await create(app, projectId, draft(seqId));

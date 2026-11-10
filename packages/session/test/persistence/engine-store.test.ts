@@ -172,6 +172,40 @@ describe('leases (S01:PER-040)', () => {
 		expect(engine.leases.has(projectId)).toBe(false);
 	});
 
+	it('an engine error on one heartbeat does not stop saving: a later agent edit reaches the project', async () => {
+		const { engine, open, projectId } = setup();
+		const a = await open('a');
+		const pa = attachPersistence(a, noLifecycle);
+		engine.failures.push({ match: /heartbeat/, status: 503 });
+		await vi.advanceTimersByTimeAsync(10_000);
+		const r = a.apply({ label: 'Add', origin: { agent: 'bot' }, commands: [solid(0)] });
+		expect(r.ok).toBe(true);
+		await vi.advanceTimersByTimeAsync(1600);
+		expect(engine.projects.get(projectId)!.revision).toBe(a.revision);
+		expect(a.getState().dirty).toBe(false);
+		await pa.dispose();
+		await a.close();
+	});
+
+	it('journals unsaved edits under the lease the store re-acquired after an engine restart', async () => {
+		const { engine, open, store, projectId } = setup();
+		const s = store();
+		const a = await open('a', s);
+		const pa = attachPersistence(a, { ...noLifecycle, onError: () => undefined });
+		engine.leases.clear(); // engine restart: in-memory leases are gone; the next heartbeat re-acquires
+		await vi.advanceTimersByTimeAsync(10_000);
+		vi.spyOn(s, 'save').mockRejectedValue(new Error('engine busy'));
+		a.apply({ label: 'Add', origin: { agent: 'bot' }, commands: [solid(0)] });
+		await vi.advanceTimersByTimeAsync(1100);
+		expect(engine.journals.get(`${projectId}/a`)).toMatchObject({
+			revision: a.revision,
+			changes: ['Agent: Add'],
+		});
+		pa.journal?.dispose();
+		pa.autosaver.dispose();
+		await a.close();
+	});
+
 	it('"Take over" gives the lease to the read-only session; the old holder becomes lost and stops saving', async () => {
 		const { engine, open, projectId } = setup();
 		const a = await open('a');
@@ -193,6 +227,9 @@ describe('leases (S01:PER-040)', () => {
 		a.apply({ label: 'Add', origin: 'user', commands: [solid(0)] });
 		await vi.advanceTimersByTimeAsync(5000);
 		expect(puts()).toBe(before);
+		// An agent edit here would be acknowledged and never saved: refused.
+		const agentEdit = a.apply({ label: 'Add', origin: { agent: 'bot' }, commands: [solid(40)] });
+		expect(agentEdit).toMatchObject({ ok: false, errors: [{ code: 'E_NOT_OWNER' }] });
 
 		attachPersistence(b2, noLifecycle);
 		b2.apply({ label: 'Add', origin: 'user', commands: [solid(0)] });
