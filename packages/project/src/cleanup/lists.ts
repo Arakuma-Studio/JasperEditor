@@ -28,6 +28,12 @@ export type CleanupLanguageLists = {
 	vowels: readonly string[];
 	/** Text the recogniser invents over non-speech (TC-003): flagged when it sits over non-speech. */
 	hallucinations: readonly string[];
+	/**
+	 * Cardinal number words (digits count without a list): a restart or retake must re-say every number of the words
+	 * it removes — "me quedan nueve días" is not a retake of "me quedan seis días". "uno" / "one" are left out (also
+	 * pronouns).
+	 */
+	numbers: readonly string[];
 };
 
 const ES: CleanupLanguageLists = {
@@ -148,6 +154,58 @@ const ES: CleanupLanguageLists = {
 		'gracias',
 		'suscribete',
 	],
+	numbers: [
+		'cero',
+		'dos',
+		'tres',
+		'cuatro',
+		'cinco',
+		'seis',
+		'siete',
+		'ocho',
+		'nueve',
+		'diez',
+		'once',
+		'doce',
+		'trece',
+		'catorce',
+		'quince',
+		'dieciseis',
+		'diecisiete',
+		'dieciocho',
+		'diecinueve',
+		'veinte',
+		'veintiun',
+		'veintiuno',
+		'veintidos',
+		'veintitres',
+		'veinticuatro',
+		'veinticinco',
+		'veintiseis',
+		'veintisiete',
+		'veintiocho',
+		'veintinueve',
+		'treinta',
+		'cuarenta',
+		'cincuenta',
+		'sesenta',
+		'setenta',
+		'ochenta',
+		'noventa',
+		'cien',
+		'ciento',
+		'doscientos',
+		'trescientos',
+		'cuatrocientos',
+		'quinientos',
+		'seiscientos',
+		'setecientos',
+		'ochocientos',
+		'novecientos',
+		'mil',
+		'millon',
+		'millones',
+	],
 };
 
 /** The restart rule's stop words (prototype `autocut.py` `detect`, rule 2): a subset of `ES.stopWords`. */
@@ -260,6 +318,39 @@ const EN: CleanupLanguageLists = {
 	],
 	vowels: ['a', 'i', 'o', 'u', 'e'],
 	hallucinations: ['thanks for watching', 'thank you for watching', 'please subscribe', 'thank you'],
+	numbers: [
+		'zero',
+		'two',
+		'three',
+		'four',
+		'five',
+		'six',
+		'seven',
+		'eight',
+		'nine',
+		'ten',
+		'eleven',
+		'twelve',
+		'thirteen',
+		'fourteen',
+		'fifteen',
+		'sixteen',
+		'seventeen',
+		'eighteen',
+		'nineteen',
+		'twenty',
+		'thirty',
+		'forty',
+		'fifty',
+		'sixty',
+		'seventy',
+		'eighty',
+		'ninety',
+		'hundred',
+		'thousand',
+		'million',
+		'billion',
+	],
 };
 
 const LISTS: Readonly<Record<string, CleanupLanguageLists>> = { es: ES, en: EN };
@@ -294,6 +385,7 @@ export function builtinLists(lang: CleanupLanguage | null): CleanupLanguageLists
 		stopWords: uniq([...ES.stopWords, ...EN.stopWords]),
 		vowels: [],
 		hallucinations: uniq([...ES.hallucinations, ...EN.hallucinations]),
+		numbers: uniq([...ES.numbers, ...EN.numbers]),
 	};
 }
 

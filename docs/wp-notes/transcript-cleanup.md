@@ -222,9 +222,22 @@ Whisper-like timestamp offsets; quantised levels and classes), each run through 
 with the private research (`.prproj-analysis/box/cleanup-port/gen.py`, synthetic inputs only) and through the port with
 the prototype's presets `fast` and `calm` → identical per-word labels, identical guard decisions, kept ranges equal to
 1e-9 s (fixture `test/fixtures/cleanup-port.json`, 419 KB). The check switches off the spec's added rules and the
-strict removal below, which are deliberate differences.
+strict removal below, which are deliberate differences; the restart coverage below changes labels in 3 of the 16
+recordings (seeds 2, 3 and 7), which the test lists word by word with the port's labels (kept ranges unchecked there).
 
 Deliberate differences from the prototype (labelled):
+- **A restart / retake must re-say what it removes** (Clean Up report on a 57-min Spanish video: 29 of 81 restart
+  findings rejected). The prototype's restart rule cut from any earlier copy of a repeated 3-gram (or content 2-gram) up
+  to the repeat, never checking the words in between: lists ("el tema oscuro de Unity, la barra de menús de Unity"),
+  comparisons ("mis juegos en mi motor funcionan mejor que mis juegos en Unity") and a 2-gram said again in the next
+  sentence lost words said once (one finding: 30 s). A restart now needs the continuation (the next 2 × attempt-length
+  words) to repeat all the attempt's content words in order (lexical markers such as "pues" exempt) and
+  every number. The take rule keeps its ≥ 60 % LCS share but the later take must re-say every number (digits or number
+  words, `lists.ts` `numbers`): "Me quedan nueve días" is no retake of "Me quedan seis días y…". In the port fixture the
+  change only drops cross-sentence restarts and keeps the first words of a last take the prototype cut; a true restart
+  that swaps its last word ("y luego le puse, y luego le añadí…") is no longer flagged — not distinguishable by tokens
+  from a list ("o tipo caricatura, o tipo de goma"). Regression test `cleanup-rules.test.ts` "restarts and retakes
+  re-say what they remove".
 - **Strict removal**: the prototype joined kept words across gaps ≤ `maxGapS` before looking at removed words, so a
   removed word closer than 120 ms to kept ones stayed (a short filler glued to words, the first copy of an immediate
   restart). The planner cuts the removed word's own speech frames out of the joined range (kept words' frames ± 50 ms
@@ -399,7 +412,7 @@ sub-frame fades: every format (FCP7, FCPXML, OTIO, EDL, AAF, OMF) names them in 
 
 | Check | Where | Result |
 |---|---|---|
-| Port = prototype (16 synthetic recordings, both presets) | `packages/project/test/cleanup-port.test.ts` | identical labels, guard decisions, kept ranges (1e-9 s) |
+| Port = prototype (16 synthetic recordings, both presets) | `packages/project/test/cleanup-port.test.ts` | identical labels, guard decisions, kept ranges (1e-9 s), except the listed restart-coverage differences (3 recordings) |
 | Golden Fast preset (TC-070): synthetic recording of voiced tones with known word timings (Whisper-like offsets), head chatter, an abandoned take, a false start, a filler between pauses, off-script chatter, an in-line restart, a standalone marker, breaths, long pauses, a cough; real voice-analysis code | `packages/project/test/cleanup-golden.test.ts` | removed words P = 1.00, R = 1.00; removed time P = 1.00, R = 0.96 (thresholds 0.9 / 0.9 / 0.95 / 0.9); largest silence left 0.02 s; last take chosen and named with its script line; cough flagged, kept, removed when accepted; in points within −40…+60 ms of the onset, out points in the decay; without a script P ≥ 0.9 (R 0.46: chatter needs the script); Natural keeps more, lists for review |
 | Planning properties (fast-check, 300 + 200 runs): pieces sorted / disjoint / ≥ min piece, no removed word's sound kept, a kept word's loud core never split (unless the timestamps give part of it to a removed word), no non-speech run > maxGap (+ edge allowance) inside a Fast piece | `cleanup-property.test.ts` | pass |
 | One-pass extract = successive `range.extract` (150 random timelines) + invariants | `cleanup-property.test.ts` | pass |
@@ -424,7 +437,8 @@ A1 and music on a sync-locked A2. Build VM (AMD EPYC-Rome, 16 vCPU, Node 24.22.1
 ### Limitations
 
 - The UI (TC-040 … TC-044) and the MCP tools (TC-050, TC-051): "Clean Up UI and MCP" below.
-- Calibration on the user's material (TC-071): below; it found and fixed the head / tail rule (tail side).
+- Calibration on the user's material (TC-071): below; it found and fixed the head / tail rule (tail side). It predates
+  the restart / retake coverage rule, which is not re-measured there (needs the private harness).
 - Edge placement uses the file's noise floor (as the prototype); the per-60 s window levels are not used yet.
 - "Quietest sample region" snapping works on the 10 ms frames of the voice analysis, not on samples.
 - Mute mode ramps in dB (exponential-like), not equal power; at least 1 ms.

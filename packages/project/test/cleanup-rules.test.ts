@@ -136,6 +136,19 @@ describe('rules (Spanish)', () => {
 		expect(rt.r.findings.find((f) => f.kind === 'retake')!.group).toBe(g.id);
 	});
 
+	it('restarts and retakes re-say what they remove: lists, comparisons and other numbers are kept (Clean Up report)', () => {
+		// a repeated n-gram framing different words: cutting up to its second copy loses words said once
+		for (const text of [
+			'el tema oscuro de Unity, la barra de menús de Unity y los iconos',
+			'o tipo caricatura, o tipo de goma',
+			'mis juegos en mi motor funcionan mejor que mis juegos en Unity',
+			// a different number is a different statement, not a restart or a retake of the line
+			'Me quedan nueve días | Me quedan seis días y quiero terminar el juego',
+			'Me quedan 9 días | Me quedan 6 días y quiero terminar el juego',
+		])
+			expect(kinds(text).byWord.filter(Boolean), text).toEqual([]);
+	});
+
 	it('a script prefers an earlier take that covers the line better', () => {
 		const script = 'Diseñé las curvas cerradas para el circuito de montaña.';
 		const r = kinds(

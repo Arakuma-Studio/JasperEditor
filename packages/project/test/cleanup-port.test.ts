@@ -84,9 +84,37 @@ const KIND: Record<string, FindingKind> = {
 	filler_phrase: 'filler-phrase',
 };
 
+/**
+ * Deliberate differences from the prototype (docs/wp-notes/transcript-cleanup.md "Port of the research prototype"): a
+ * restart must re-say the content words of the attempt it removes (`ruleRestarts`). Per seed (both presets): word
+ * ranges and the port's label there; the prototype's kept ranges do not apply to these cases.
+ */
+const DIFFERENCES: Record<number, Array<[from: number, to: number, kind: FindingKind | null]>> = {
+	// "Primero diseñé la carretera con curvas muy cerradas. Le puse texturas a la carretera…": "la carretera" said in
+	// the next sentence is no restart (the prototype cut "la carretera con curvas muy cerradas. Le puse texturas a").
+	// "Si te gusta el video | a ver | Si te gusta el video suscríbete…": "a ver" as one word is not in the prototype's
+	// single-word markers (the built-in list has it), so it is content said once: the take rule removes the attempt.
+	2: [
+		[14, 23, null],
+		[54, 58, 'retake'],
+		[59, 59, null],
+	],
+	// The first sentence's "la carretera con curvas muy cerradas" stays, and so does the start of the last take
+	// "Le puse texturas a la carretera y ambienté el lugar" (the prototype cut "Le puse texturas a").
+	3: [
+		[20, 25, null],
+		[44, 47, null],
+	],
+	7: [
+		[17, 22, null],
+		[30, 33, null],
+	],
+};
+
 describe('cleanup port vs the research prototype', () => {
 	for (const c of fixture.cases) {
-		it(`seed ${c.seed} ${c.preset}${c.script ? ' with script' : ''}: same labels and kept ranges`, () => {
+		const diff = DIFFERENCES[c.seed];
+		it(`seed ${c.seed} ${c.preset}${c.script ? ' with script' : ''}: same labels${diff ? ' but the deliberate differences' : ' and kept ranges'}`, () => {
 			const level = b64(c.level);
 			const classes = b64(c.classes);
 			const voice: CleanupVoice = {
@@ -119,7 +147,9 @@ describe('cleanup port vs the research prototype', () => {
 					for (let i = f.words[0]; i <= f.words[1]; i++) label.set(i, f.kind);
 			const got = r.words.map((w, k) => (r.guarded[k] ? null : (label.get(w.i) ?? null)));
 			const want = c.expect.reasons.map((x) => (x ? KIND[x]! : null));
+			for (const [a, b, kind] of diff ?? []) want.fill(kind, a, b + 1);
 			expect(got).toEqual(want);
+			if (diff) return;
 			const removed = r.words.map((w, k) => r.guarded[k] || label.has(w.i));
 			const plan = planMediaCuts({ words: r.words, removed, voice, settings, strictRemoval: false });
 			expect(plan.kept.length).toBe(c.expect.kept.length);
