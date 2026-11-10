@@ -425,7 +425,7 @@ export class ExportService {
 		});
 		const comp = planCompositeSize(snap, planned.output);
 		const size = outputSizeSnapshot(snap, comp).settings;
-		// docs/wp-notes/export-performance.md §8: where kernel streams will be drawn (streams that do not fit the OpenCL
+		// docs/wp-notes/export-performance.md §9: where kernel streams will be drawn (streams that do not fit the OpenCL
 		// program are known when the graphs are built: the result names them)
 		const cl = await probeOpenClTaps(this.deps.ff, openClPolicyFromEnv());
 		return {
@@ -1360,7 +1360,7 @@ export class ExportService {
 		 * on whole output pixels; the extensions prepare again at the sequence size). Null = decide by `planCompositeSize`.
 		 */
 		compositeFallback: string[] | null = null,
-		/** docs/wp-notes/export-performance.md §8: the OpenCL kernel failed in an earlier attempt (the CPU draws). */
+		/** docs/wp-notes/export-performance.md §9: the OpenCL kernel failed in an earlier attempt (the CPU draws). */
 		openClFailure: string | null = null,
 	): Promise<number> {
 		// output-size.ts: decided before the extensions prepare (the layer bake renders masters at the composite size)
@@ -1510,7 +1510,7 @@ export class ExportService {
 						reason: still ? 'stills decode on the CPU' : 'GPU decode is off (JASPER_EXPORT_NVDEC=0)',
 					};
 		if (!still) ctx.log(`native: decode ${nvdec.ok ? 'NVDEC (cuda)' : `CPU (${nvdec.reason})`}`);
-		// docs/wp-notes/export-performance.md §8: kernel streams drawn by the OpenCL program when a device passes the probe
+		// docs/wp-notes/export-performance.md §9: kernel streams drawn by the OpenCL program when a device passes the probe
 		const openCl = still
 			? ({ ok: false, reason: 'stills draw on the CPU' } as const)
 			: openClFailure
@@ -1907,7 +1907,7 @@ export class ExportService {
 			const se = streamError as Error | null;
 			if (se instanceof BakeChangedError && !ctx.signal.aborted) return restart(se.message);
 			const consequence = !se || /^layer stream:/.test(se.message);
-			// §8: a composite that failed in the OpenCL kernel (device lost, out of video memory…) is rendered again with
+			// §9: a composite that failed in the OpenCL kernel (device lost, out of video memory…) is rendered again with
 			// the CPU kernel, named in `pipeline.kernel.fallbackReasons`
 			const clError = part.graph.kernel.opencl > 0 && consequence ? openClErrorOf(e) : null;
 			if (clError && !ctx.signal.aborted && bgError === null) {
@@ -3560,7 +3560,7 @@ function overlayCount(filter: string): number {
 }
 
 /**
- * §8: the line of a failed composite's error that names the OpenCL device or the filters around the OpenCL kernel
+ * §9: the line of a failed composite's error that names the OpenCL device or the filters around the OpenCL kernel
  * (`hwupload`, `program_opencl`, `hwdownload`), null when the failure is elsewhere.
  */
 function openClErrorOf(e: unknown): string | null {

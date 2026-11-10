@@ -269,7 +269,7 @@ export const ExportPipelineSchema = z.object({
 	}),
 	/**
 	 * Where kernel streams (the lowered subtitle / text layers, sub-pixel stills) are drawn: `opencl` = by the OpenCL
-	 * program in the composite (docs/wp-notes/export-performance.md §8), `cpu` = by the engine's kernel threads.
+	 * program in the composite (docs/wp-notes/export-performance.md §9), `cpu` = by the engine's kernel threads.
 	 * `streams` counts them per device (job result); `fallbackReasons` name why streams, or the whole export, stayed on
 	 * the CPU (no OpenCL device, a stream that does not fit the program).
 	 */

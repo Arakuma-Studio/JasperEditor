@@ -1,5 +1,5 @@
 // Kernel streams drawn by the OpenCL program in the composite (apps/engine/src/export/stream/opencl.ts; docs/wp-notes/
-// export-performance.md §8). The plan and the result say where kernel streams are drawn and why not on the OpenCL
+// export-performance.md §9). The plan and the result say where kernel streams are drawn and why not on the OpenCL
 // device; the built composite runs `hwupload, program_opencl, hwdownload` on each stream whose frames fit the program
 // (its pipe then carries programs and pictures), and keeps the others on the CPU kernel by name. On a host with an
 // OpenCL device the exported picture matches the CPU kernel's export.

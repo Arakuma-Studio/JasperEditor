@@ -111,7 +111,7 @@ type NativeBuildOptions = {
 	 */
 	hwDecode?: { device: string; args(m: LocalMedia): string[] };
 	/**
-	 * docs/wp-notes/export-performance.md §8: kernel streams are drawn by the OpenCL program in the composite
+	 * docs/wp-notes/export-performance.md §9: kernel streams are drawn by the OpenCL program in the composite
 	 * (stream/opencl.ts; the device and program file `probeOpenClTaps` checked); a stream that does not fit stays on
 	 * the CPU kernel and is named in `kernel.fallbackReasons`. Absent = every stream on the CPU kernel.
 	 */
@@ -1425,7 +1425,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 				return a;
 			}
 		: undefined;
-	// docs/wp-notes/export-performance.md §8: kernel streams on the OpenCL device, which the process creating them opens
+	// docs/wp-notes/export-performance.md §9: kernel streams on the OpenCL device, which the process creating them opens
 	const kernel: NativeGraph['kernel'] = { opencl: 0, cpu: 0, fallbackReasons: [] };
 	const clProcs = new Set<Proc>();
 	// (ffmpeg has one filter device per process: a VAAPI encoder's upload needs it)
