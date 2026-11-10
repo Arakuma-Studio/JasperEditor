@@ -1,5 +1,5 @@
 // Fidelity gate of the OpenCL kernel (JASPER_OPENCL_E2E=1, on a host with an OpenCL GPU; stream/opencl.ts,
-// docs/wp-notes/export-performance.md §9). The OpenCL program computes in float32 where the CPU kernel computes in
+// docs/wp-notes/export-performance.md §10). The OpenCL program computes in float32 where the CPU kernel computes in
 // float64, so its frames are compared with the CPU kernel's:
 // - frames of the user's real project dumped from the kernel (`JASPER_TAPDUMP_DIR`: `<name>.json` with the picture
 //   size `w × h`, the stream size `dw × dh`, `prog`, `rect`, `opacity`, and `<name>.bin` the picture's RGBA), drawn

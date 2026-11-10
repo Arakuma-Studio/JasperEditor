@@ -1178,11 +1178,13 @@ graphics)** and lists one graphics group per baked layer.
   and goes through the Remotion path (a forced **Native** export is not eligible). A compositor killed by the system
   fails the export with `OUT_OF_MEMORY`; on Linux, tool processes are the OOM killer's preferred victims, not the
   engine.
-- Bakes run as child jobs of the export ("Baking graphics 1/3 · 40 %"), several at a time: they share the export's
-  Remotion page budget (its Remotion concurrency, at most half the cores; a still takes one page, a long animated
-  title more) and one render browser; two exports needing the same bake render it once.
-  `JASPER_LAYER_BAKE_PARALLEL=1` bakes one after the other, `JASPER_LAYER_BAKE_SHARED_BROWSER=0` gives every bake
-  its own browser. Bakes are cached under `<appdir>/cache/layers/<key>/`
+- Bakes run as child jobs of the export ("Baking graphics 1/3 · 40 %"), up to 12 at a time: they share the export's
+  bake page budget (a native export: one page per granted CPU slot; the Remotion path: its Remotion concurrency, at
+  most half the cores; a still takes one page, a long animated title more) and a few render browsers (two pages
+  each, at most 8); a bake gives its pages to the next one once its frames are captured; two exports needing the
+  same bake render it once. `JASPER_LAYER_BAKE_PARALLEL=1` bakes one after the other,
+  `JASPER_LAYER_BAKE_SHARED_BROWSER=0` gives every bake its own browser, `JASPER_LAYER_BAKE_PAGES=<n>` sets the page
+  budget and `JASPER_LAYER_BAKE_PAGES_PER_BROWSER=<n>` the pages per browser (docs/wp-notes/export-performance.md). Bakes are cached under `<appdir>/cache/layers/<key>/`
   by a content key (clip, font files, media, compositions bundle, anime.js, Remotion, browser, GL back end);
   re-exports and moving a clip in time reuse them; entries unused for 14 days are removed.
 - Colour effects (Lumetri, LUTs…) on these layers are applied by ffmpeg to the bake (`lut3d`); the Remotion path

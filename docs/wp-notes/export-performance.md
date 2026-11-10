@@ -391,7 +391,116 @@ The encode is still the critical path, CPU-bound at 82–84 %: the sequence-size
 drawn by the node kernel, 6 cores) and the per-segment startup are the next costs; scaling at decode on the GPU is the
 next measured step (see "Not done here").
 
-## 8. Subtitle / text drawing off the CPU (investigation)
+## 8. Layer bake and audio delivery throughput
+
+`layer-bake/service.ts`, `layer-bake/extension.ts`, `remotion/page-pool.ts`, `remotion/service.ts`,
+`audio/deliver.ts`, `audio/mixdown.ts`, `sound-design/measure-core.ts` / `measure-pool.ts`, `export/service.ts`.
+
+After §7 the bake (masters before the composite) and the audio delivery (beside it) were the critical path. Measured
+on the user's PC (RTX 3080 Ti, 24 logical cores, 94 GB, driver 595.99; the user's desktop session running — Chrome,
+Discord, ≈ 30–55 % GPU before the runs —, load1 2.3–3.5 before each run, no foreign ffmpeg; engines in a systemd
+scope `MemoryMax=40G`, `MemorySwapMax=0`, vendor LGPL FFmpeg 7.1.5, appdir copied without `cache/`, layer cache
+empty), the real project (15:31, 1080p60 → `draft-720p-h264`, `normalizeLufs: -14`):
+
+**Where the bake time went** (main 067d90f93, job `base1`, child-job progress sampled every 2 s, utilisation every 5 s):
+- 17 animated title masters (363 frames each) rendered **6 at a time on 1 page each**: the page budget was 12
+  (`remotionConcurrency`), but `pageShares` split it over all 17 masters (`round(12 × 363 / 6171)` = 1 page) while at
+  most 6 renders run at once — 6 pages used of 12. Three waves of ≈ 90 s, ≈ 4.0 frames/s per page.
+- The render pages mostly wait: during the bake the CPU was 32 % busy (Chrome 1.4 cores on average), the node main
+  thread 0.65 core. One page renders ≈ 5 frames/s whatever the load (Remotion's per-frame seek, `waitForReady`
+  polling on `requestAnimationFrame`, `Target.activateTarget` + background override + `Page.captureScreenshot`), so
+  throughput comes from more renders, not more CPU per page. Measured per render: 1 page ≈ 5.2 frames/s (own
+  browser), 2 pages ≈ 10, 4 pages ≈ 11–12; the shared browser's browser and GPU processes ran at ≈ 90 % of a core
+  each with 8 pages (4.0 frames/s per page there, 5.2 with a browser per render).
+- ProRes masters are not stitched while they render: Remotion's parallel encoding only covers H.264/H.265
+  (`canUseParallelEncoding`), so each master's PNG frames are encoded after its last frame. The stitch (prores_ks
+  4444, 363 frames at 1280×720) cost 49 CPU-seconds at ffmpeg's default thread count (one per core) against 35–36
+  with 1–4 threads, and a wave of masters finishing together saturated every core for ≈ 5–25 s while the pages
+  idled: the pool only freed a render's pages when its stitch, remux, frame count and crop check were done.
+
+**Changes (bake).**
+- Shares among the renders in flight (`pageShares(frames, budget, atOnce)`): 17 masters, 12 pages, 6 at once → 2
+  pages each (also for mg pre-renders).
+- The native path's bakes get one page per granted CPU slot (`NativePrepareContext.bakePages` = min(slots, cores):
+  24 here) instead of the Remotion path's half (a bake page is latency-bound, ≈ 0.5 core), and up to 12 bakes in
+  flight (`MAX_BAKES_IN_FLIGHT`): 12 renders × 2 pages ≈ 105 frames/s against 6 × 2 ≈ 60 and 6 × 4 ≈ 66 (bake-only
+  runs, same machine).
+- Several shared render browsers per export (`acquireBrowser`): a render takes the least busy browser of its export
+  or opens one when that would serve more than `pagesPerBrowser` (2) pages, at most 8 browsers (Remotion's launcher
+  adds process signal listeners per browser; Node warns past 10); all are closed with the export's session.
+- A render that captured its frames gives its pages back while it is stitched and checked
+  (`PageGrant.release`, `EnsureMeta.onRendered`, the child job's `framesCaptured`); it no longer counts against the
+  renders in flight. A full-frame re-render after a failed crop check renders on top of the budget (rare).
+- The stitch runs with `2 × pages` threads (at least 2, at most the cores) through Remotion's `ffmpegOverride`:
+  the same bytes (default, 1, 2 and 4 threads gave byte-identical files), ≈ 27 % less CPU.
+- The crop check decodes a master once and splits the alpha into its 1-px strips (was one ffmpeg per strip).
+- Knobs: `JASPER_LAYER_BAKE_PAGES` (bake page budget), `JASPER_LAYER_BAKE_PAGES_PER_BROWSER`, and the existing
+  `JASPER_LAYER_BAKE_PARALLEL` / `JASPER_LAYER_BAKE_SHARED_BROWSER`.
+
+Cache keys and recipes are unchanged: the run of this branch rendered the same 1,752 cache entries (17 masters,
+1,735 stills) **byte for byte** as main (`cmp` of every `master.mov` / `still.png`).
+
+**Where the audio time went.** The arithmetic "≈ 56 s mix + 10 × 13 s passes" left out the decoded checks and the
+encodes, and assumed an idle thread. main's `audio:` line (`base1`): mix 79.3 s (56 s on an idle host: the mixer
+ran on the engine's main thread beside the bake's render orchestration), 10 passes 154.6 s (≈ 15.5 s each, every
+one on the main thread; the 6 converging passes are sequential by construction, and each lower-ceiling candidate
+starts from the points its predecessor measured — `gainAtCeiling` — so they are not independent), decoded checks
+65.9 s (one candidate after the other, on the main thread), 6 AAC encodes 140 s summed (partly overlapped):
+301 s. The live engine's 404 s is the same work under more load (its bake took 377 s too).
+
+**Changes (audio).**
+- The pass-1 mix (`renderPass1`), the delivery's passes (`runDeliveryPassRequest`) and its decoded checks
+  (`measureEncodedAudio`) run on the measurement workers (`exportAudioWorkers`: ops `mixPass1`, `deliveryPass`,
+  `encodedMeasure`, up to 3 workers; in-thread where no worker starts). Same functions, same float operations: a
+  delivery through real worker threads writes a byte-identical WAV, encode and outcome (test below). An audio-only
+  export keeps its mix in-thread (it reports the mix's progress and runs nothing beside it). Each op is bounded by
+  10 minutes or 10 × the audio's duration; a worker crash fails the export (`MEASURE_FAILED`, retryable).
+- The decoded check of each encode starts as soon as the encode is written: a round's candidates are decoded side by
+  side and while its alternatives are converged, and are still judged in order of preference (the same pick).
+- Not changed: the search (the same passes, candidates and encodes), so the delivered audio is the same.
+
+**Full export, before vs after** (same machine and conditions as above; uncached bake):
+
+| | main 067d90f93 (`base1`) | this branch (`new2`) |
+|---|---:|---:|
+| total job (wall) | 554.6 s (565.6 s) | **398.9 s (409.7 s)** |
+| bake (from 0) | 274.7 s | **98.0 s** |
+| plan | 14.3 s @274.7 | 10.0 s @98.0 |
+| encode | 260.1 s @289.1 (215 fps) | 285.3 s @108.0 (196 fps) |
+| audio (from 0) | 301.2 s: mix 79.3 s, passes 154.6 s, encodes 140.3 s summed, decoded checks 65.9 s | 313.1 s: mix 91.8 s, passes 163.1 s, encodes 122.1 s summed, decoded checks 59.2 s (summed) |
+| during the bake | CPU 32 % (max 100), Chrome 1.4 cores, node main 0.65, GPU 27 % (desktop included) | CPU 74 % (max 100), Chrome 6.5 cores, ffmpeg 5.4, node main 0.48, GPU 39 % |
+| during the encode | CPU 81 %, GPU 24 % | CPU 83 %, GPU 22 % |
+| peak scope memory | 15.2 GB | 15.5 GB |
+
+The committed code (286d94920, `new3`, same conditions, load1 2.3 before): 408.5 s job / 419.4 s wall, bake 96.9 s,
+plan 9.4 s @96.9, encode 296.8 s @106.2 (188 fps), audio 323.3 s (mix 91.6 s, passes 168.6 s), CPU 74 % / Chrome 6.3
+cores during the bake; the same file content and cache bytes as main. An earlier run before the stitch-thread cap and
+the browser limit (`new1`): 403.1 s, bake 105.4 s. The encode's spread (285–297 s) follows the audio work beside it.
+The output is the same file content: the video and audio packets of `new2.mp4` and `base1.mp4` have equal MD5s
+(SSIM 1.00000 on all 55,860 frames); `verify_export` on `new2`: every format row passes (decode, streams h264
+1280×720 60 fps + AAC 48 kHz stereo, duration 931 s, A/V skew 0, true peak −2.32 dBTP), no black or flash at 360
+cuts, loudness −13.9 LUFS, no silence; `cut-click` flags the edit's own 19 clicks (§6).
+
+The audio now overlaps the encode instead of the bake and ends at 313 s, 80 s before the encode: off the critical
+path, but its ≈ 1.5 cores slow the CPU-bound encode (285 s against 260 s with the audio mostly done before it).
+The critical path is bake 98 s + plan 10 s + encode 285 s.
+
+**Remaining limits.** One master render still tops out at ≈ 11 frames/s and every frame is captured as a PNG and
+encoded after the render (Remotion's ProRes path); streaming the frames into our own stitcher would overlap the
+stitch with the render (same encoder arguments, to be checked byte-for-byte) but not reduce its CPU, and the bake
+is CPU-bound now (74 % mean, bursts at 100 %). The delivery's search is serial (6 converging passes of ≈ 16 s);
+fewer passes (predicting the gain, lazy candidates) would change the delivered parameters within the tolerances, not
+done. Lowering the audio workers' priority would give the encode its cores back but risks a late sound on machines
+the encode saturates.
+
+Tests: `page-pool.test.ts` ("more masters than renders in flight share the whole budget…", "a render that captured
+its frames gives its pages to the next render…"), `layer-bake.test.ts` ("a native export bakes as many titles at once
+as its CPU slots allow…", "a browser serves at most pagesPerBrowser pages…"), `audio-deliver.test.ts` ("decodes the
+encodes of a round side by side…": the round's two decoded checks run at once, and the outcome equals the
+one-at-a-time delivery) — all fail on main; `sound-design-measure-worker.test.ts` ("a delivery whose passes and
+decoded checks run on worker threads writes the same WAV, encode and outcome", bundled worker).
+
+## 9. Subtitle / text drawing off the CPU (investigation)
 
 After §7 the warm export encodes at 221 fps with the CPU 82–84 % busy; the node kernel streams drawing the lowered
 subtitles take ≈ 5.2 cores of it (uncached run, encode after the audio: node 5.2 cores, ffmpeg 10.8).
@@ -419,9 +528,9 @@ spreads 8–40 taps along that motion.
   picture and a small float "program" frame with that frame's taps, both written by node instead of the drawn frame —
   then `hwdownload` into the CPU overlay; float32 on the GPU instead of float64: an SSIM / text-edge gate against the
   kernel, the kernel kept as the fallback (no OpenCL device, a program that does not fit) and reported in `pipeline`.
-  Built in §9.
+  Built in §10.
 
-## 9. Kernel streams on the OpenCL device (implemented)
+## 10. Kernel streams on the OpenCL device (implemented)
 
 `stream/opencl.ts`, `stream/taps.ts`, `native.ts`, `service.ts`.
 
@@ -486,7 +595,7 @@ kernel within 2 levels per channel. Frames are written little-endian (big-endian
 repeated 50 times (1,950 frames, ≈ 694,000 tap-pixels per frame, input 1059×217, output 822×198) through `hwupload,
 program_opencl, hwdownload` in one ffmpeg: 635 fps, ffmpeg 3.10 s user + 0.77 s system = **≈ 2.0 ms of CPU per
 frame** (NVIDIA's OpenCL waits for each frame's kernel and transfers on the filter thread), against ≈ 17–46 ms of CPU
-per frame for the CPU kernel at 24–66 ns per tap-pixel (§8).
+per frame for the CPU kernel at 24–66 ns per tap-pixel (§9).
 
 Tests: `apps/engine/test/export-opencl.test.ts` — the plan and the result say where kernel streams are drawn (the
 CPU kernel and the probe's reason without a device; on a device, the export against the CPU kernel's, SSIM ≥ 0.999);

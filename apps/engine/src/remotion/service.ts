@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { appendFile, mkdir, rename, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
+import { availableParallelism } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderPagesInOwnWindows } from '@jasper/compositions/render-host';
@@ -29,6 +30,17 @@ const DELAY_RENDER_TIMEOUT_MS = 60_000;
  */
 const BUNDLE_STAMP_FILE = 'jasper-bundle.json';
 export type BundleStamp = { bundleId: string; animejs: string; remotion: string };
+
+/**
+ * Threads of a master's stitch (Remotion encodes its PNG frames to ProRes 4444 once they are all rendered). prores_ks
+ * encodes slices independently: any thread count writes the same bytes (checked: default and 1, 2, 4 threads give
+ * byte-identical files), but its default (one thread per core) spent 49 CPU-seconds on 363 frames at 1280×720 where
+ * 1–4 threads spent 35–36, and twelve concurrent bakes stitching at once saturated every core for ≈ 25 s while their
+ * next renders waited (wp-note export-performance "Layer bake"). Two threads per render page, at least two.
+ */
+function stitchThreads(pages: number, cores = availableParallelism()): number {
+	return Math.max(2, Math.min(cores, 2 * Math.max(1, Math.floor(pages))));
+}
 
 /** Remotion's straight-alpha ProRes 4444 master settings (S08:MGC-030, S11:LBK-003): PNG frames, muted. */
 const ALPHA_MASTER_OPTIONS = {
@@ -945,6 +957,11 @@ export class RemotionService {
 						inputProps: input.inputProps,
 						...ALPHA_MASTER_OPTIONS,
 						...this.binariesOption(),
+						// the stitch's thread count (the same bytes, less CPU: `stitchThreads`), before the output file
+						ffmpegOverride: ({ type, args }) =>
+							type === 'stitcher' && args.length > 0
+								? [...args.slice(0, -1), '-threads', String(stitchThreads(pages)), args.at(-1)!]
+								: args,
 						outputLocation: raw,
 						...(input.scale ? { scale: input.scale } : {}),
 						concurrency: pages,

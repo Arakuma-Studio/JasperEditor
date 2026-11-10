@@ -1,5 +1,6 @@
 // Strips accept track ids, track names, A1… / S1… labels, or Mix.
 import { z } from 'zod';
+import { EDGE_FADE_MAX_MS } from '../../audio-fade.ts';
 import {
 	AudioChannelFormatSchema,
 	AutomationModeSchema,
@@ -7,7 +8,7 @@ import {
 	LoudnessAnalysisCommandSchema,
 } from '../../schema/audio.ts';
 import { AnimNumberSchema } from '../../schema/common.ts';
-import { cmd, IdListSchema, IdRefSchema, RefDeclSchema } from './common.ts';
+import { cmd, IdListSchema, IdRefSchema, RefDeclSchema, TimeInputSchema, TrackRefSchema } from './common.ts';
 
 const StripRef = z.string().min(1);
 /** Sequence time in flicks (sub-frame: automation is sample accurate). */
@@ -179,6 +180,26 @@ export const MixerSetLoudnessCmd = cmd('mixer.setLoudness', {
 	analysis: LoudnessAnalysisCommandSchema.nullable().optional(),
 });
 
+/**
+ * Smooth Audio Joins: Clean Up's equal-power join fade (`edgeFades`) on both sides of every hard audio join in
+ * `[from, to]` of the tracks — two enabled audio clips butted on a track whose sound jumps (another recording or another
+ * moment of it, not a through edit) with no transition over the edit. Sides that already fade keep their fade.
+ */
+export const AudioSmoothJoinsCmd = cmd('audio.smoothJoins', {
+	sequenceId: IdRefSchema.optional(),
+	/** Audio tracks (default every unlocked one). */
+	tracks: z.array(TrackRefSchema).min(1).optional(),
+	from: TimeInputSchema.optional(),
+	to: TimeInputSchema.optional(),
+	/**
+	 * Only the joins within one frame of these sequence times (e.g. the `at.frame` of `verify_export` cut-click rows);
+	 * the result's `unmatched` lists the times with no hard join.
+	 */
+	at: z.array(TimeInputSchema).min(1).max(10_000).optional(),
+	/** Fade length (ms, default 4: Clean Up's join fade). */
+	fadeMs: z.number().positive().max(EDGE_FADE_MAX_MS).optional(),
+});
+
 export const AUDIO_COMMANDS = [
 	MixerUpdateStripCmd,
 	MixerAddSubmixCmd,
@@ -195,4 +216,5 @@ export const AUDIO_COMMANDS = [
 	AudioSetGainCmd,
 	AudioAutoDuckCmd,
 	MixerSetLoudnessCmd,
+	AudioSmoothJoinsCmd,
 ] as const;

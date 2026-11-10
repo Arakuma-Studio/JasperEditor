@@ -12,6 +12,7 @@ import type { Clip } from '../../schema/sequence.ts';
 import { contentSpanFlicks, flicksPerFrame } from '../../time.ts';
 import { isRemapped } from '../../time-remap/model.ts';
 import type { DClip, DDoc, DSeq, DTrack, HandlerContext } from '../context.ts';
+import { audioCutFaces, JOIN_FADE_MS, setJoinFades } from '../join-fades.ts';
 import {
 	allTracksIn,
 	assertKindFits,
@@ -599,11 +600,14 @@ function rangeLiftHandler(doc: DDoc, cmd: CommandOf<'range.lift'>, h: HandlerCon
 	const seq = h.sequence(doc, cmd.sequenceId);
 	const [from, to] = rangeBounds(seq, cmd, h);
 	const tracks = rangeTracks(seq, cmd.tracks, h);
+	const ids = tracks.map((t) => t.id);
+	const faces = audioCutFaces(seq, ids, from, to);
 	const splits: SplitRecord[] = [];
-	for (const t of tracks) splits.push(...clearRange(seq, t.id, from, to, h));
+	for (const id of ids) splits.push(...clearRange(seq, id, from, to, h));
 	relinkSplits(seq, splits, h);
+	const fades = cmd.joinFades === false ? 0 : setJoinFades(seq, faces(splits), JOIN_FADE_MS);
 	cleanupSequence(seq, h);
-	return { from, to, tracks: tracks.map((t) => t.id) };
+	return { from, to, tracks: ids, fades };
 }
 
 function rangeExtractHandler(doc: DDoc, cmd: CommandOf<'range.extract'>, h: HandlerContext) {
@@ -613,13 +617,17 @@ function rangeExtractHandler(doc: DDoc, cmd: CommandOf<'range.extract'>, h: Hand
 	// Targeted tracks plus every sync-locked unlocked track lose the marked range, then it closes.
 	const ids = new Set(tracks.map((t) => t.id));
 	for (const t of syncFollowerTracks(seq, ids)) ids.add(t.id);
+	const faces = audioCutFaces(seq, ids, from, to);
 	const splits: SplitRecord[] = [];
 	for (const id of ids) splits.push(...clearRange(seq, id, from, to, h));
 	relinkSplits(seq, splits, h);
+	// the faces of the cut get Clean Up's join fades (in the same undo step); ids survive the shift
+	const cut = faces(splits);
 	removeShift(seq, ids, from, to - from, h);
 	if (cmd.rippleMarkers !== false) shiftMarkers(seq, from, -(to - from));
+	const fades = cmd.joinFades === false ? 0 : setJoinFades(seq, cut, JOIN_FADE_MS);
 	cleanupSequence(seq, h);
-	return { from, to, tracks: [...ids] };
+	return { from, to, tracks: [...ids], fades };
 }
 
 function gapCloseHandler(doc: DDoc, cmd: CommandOf<'gap.close'>, h: HandlerContext) {

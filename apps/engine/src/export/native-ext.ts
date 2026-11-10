@@ -129,6 +129,12 @@ export type NativePrepareContext = {
 	purpose?: 'native' | 'remotion';
 	concurrency?: number;
 	/**
+	 * Remotion pages of the native path's layer bakes (absent: `concurrency`). A bake page waits on its browser most of
+	 * the time (≈ 5 frames/s and ≈ 0.5 core per page, measured: wp-note export-performance "Layer bake"), so the bakes
+	 * get one page per granted CPU slot instead of the half the Remotion path's CPU-bound pages get.
+	 */
+	bakePages?: number;
+	/**
 	 * M3 (wp-m3-cachegc, additive): holds a cache file (or a file inside a cache entry) for this export/still until the
 	 * job ends — the cache GC never removes it meanwhile, and the export records it as used by its project — and tells
 	 * whether it exists (waiting for a removal in progress, which then counts as missing). Call it BEFORE checking or

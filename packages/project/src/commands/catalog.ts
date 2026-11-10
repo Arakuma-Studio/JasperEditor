@@ -263,6 +263,7 @@ const LABELS: Record<CommandType, string> = {
 	'clipMixer.set': 'Audio Clip Mixer',
 	'audio.setGain': 'Audio Gain',
 	'audio.autoDuck': 'Auto Duck',
+	'audio.smoothJoins': 'Smooth Audio Joins',
 	'mixer.setLoudness': 'Loudness Normalization',
 	'liquify.stroke': 'Liquify',
 	'liquify.reset': 'Reset Liquify Mesh',

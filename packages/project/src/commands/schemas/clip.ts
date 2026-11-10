@@ -25,6 +25,7 @@ import {
 	EditModeSchema,
 	IdListSchema,
 	IdRefSchema,
+	JoinFadesSchema,
 	RefDeclSchema,
 	SyncConflictSchema,
 	TimeInputSchema,
@@ -344,12 +345,15 @@ export const ClipExtractCmd = cmd('clip.extract', {
 	groups: z.boolean().optional(),
 	syncConflict: SyncConflictSchema.optional(),
 	rippleMarkers: z.boolean().optional(),
+	/** Fade the new joins between two pieces of one recording (a jump in its sound); other joins stay as they are. */
+	joinFades: z.boolean().optional(),
 });
 export const RangeLiftCmd = cmd('range.lift', {
 	sequenceId: IdRefSchema.optional(),
 	from: TimeInputSchema,
 	to: TimeInputSchema,
 	tracks: z.array(TrackRefSchema).optional(),
+	joinFades: JoinFadesSchema.optional(),
 });
 export const RangeExtractCmd = cmd('range.extract', {
 	sequenceId: IdRefSchema.optional(),
@@ -357,6 +361,7 @@ export const RangeExtractCmd = cmd('range.extract', {
 	to: TimeInputSchema,
 	tracks: z.array(TrackRefSchema).optional(),
 	rippleMarkers: z.boolean().optional(),
+	joinFades: JoinFadesSchema.optional(),
 });
 export const GapCloseCmd = cmd('gap.close', {
 	sequenceId: IdRefSchema.optional(),

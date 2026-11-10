@@ -26,6 +26,15 @@ import type { Animatable, Keyframe } from '../../schema/common.ts';
 import type { AudioClip, Clip, NestAudioClip } from '../../schema/sequence.ts';
 import { flicksPerFrame, type Rational } from '../../time.ts';
 import type { DDoc, DSeq, DTrack, HandlerContext } from '../context.ts';
+import {
+	type FaceSides,
+	isHardAudioJoin,
+	JOIN_FADE_MS,
+	joinKey,
+	setJoinFades,
+	trackJoins,
+	transitionJoins,
+} from '../join-fades.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { type HandlerMap, idList } from './util.ts';
@@ -523,6 +532,8 @@ export const audioHandlers = {
 		return { keyframes: out };
 	},
 
+	'audio.smoothJoins': smoothJoins,
+
 	'mixer.setLoudness': (doc, cmd: CommandOf<'mixer.setLoudness'>, h) => {
 		const seq = h.sequence(doc, cmd.sequenceId);
 		const cur = seq.master.loudness ?? { enabled: false, targetLufs: -23, truePeakDb: -1 };
@@ -547,4 +558,52 @@ function interp(pts: readonly (readonly [number, number])[], t: number): number 
 		if (t <= tb) return tb === ta ? vb : va + ((vb - va) * (t - ta)) / (tb - ta);
 	}
 	return pts[pts.length - 1]![1];
+}
+
+/** `audio.smoothJoins` (docs/wp-notes/transcript-cleanup.md "Join fades of range cuts"). */
+function smoothJoins(doc: DDoc, cmd: CommandOf<'audio.smoothJoins'>, h: HandlerContext) {
+	const seq = h.sequence(doc, cmd.sequenceId);
+	const rate = seq.settings.frameRate as Rational;
+	const tracks = cmd.tracks
+		? [
+				...new Map(
+					cmd.tracks.map((ref) => {
+						const t = h.track(seq, ref);
+						if (!seq.audioTracks.some((a) => a.id === t.id))
+							h.fail('E_INVALID_PARAM', `Track ${ref} is not an audio track`, { blocking: [t.id] });
+						assertUnlocked(t, h);
+						return [t.id, t] as const;
+					}),
+				).values(),
+			]
+		: seq.audioTracks.filter((t) => !t.locked);
+	const from = cmd.from !== undefined ? h.frame(seq, cmd.from) : Number.NEGATIVE_INFINITY;
+	const to = cmd.to !== undefined ? h.frame(seq, cmd.to) : Number.POSITIVE_INFINITY;
+	if (to < from) h.fail('E_INVALID_PARAM', `Invalid range ${from}–${to}`);
+	const at = cmd.at?.map((t) => h.frame(seq, t));
+	const matched = new Set<number>();
+	const covered = transitionJoins(seq);
+	const faces = new Map<string, FaceSides>();
+	let joins = 0;
+	for (const t of tracks)
+		for (const [a, b] of trackJoins(seq, t.id)) {
+			const j = b.start;
+			if (j < from || j > to) continue;
+			if (!isHardAudioJoin(a as Clip, b as Clip, rate) || covered.has(joinKey(a, b))) continue;
+			if (at) {
+				const hits = at.filter((f) => Math.abs(f - j) <= 1);
+				if (!hits.length) continue;
+				for (const f of hits) matched.add(f);
+			}
+			joins++;
+			faces.set(a.id, { ...faces.get(a.id), out: true });
+			faces.set(b.id, { ...faces.get(b.id), in: true });
+		}
+	const fades = setJoinFades(seq, faces, cmd.fadeMs ?? JOIN_FADE_MS, true);
+	return {
+		joins,
+		fades,
+		fadeMs: cmd.fadeMs ?? JOIN_FADE_MS,
+		...(at ? { unmatched: [...new Set(at.filter((f) => !matched.has(f)))] } : {}),
+	};
 }

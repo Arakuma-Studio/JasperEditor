@@ -481,7 +481,8 @@ user library (below); `resolvePresetSettings`.
 - `transcript.removeFillers` without `fillers`: per word, its transcript language's vocalic list — the sequence's
   edited list, else Spanish's; English and unknown languages keep `DEFAULT_FILLERS` (unchanged for old callers);
   `language` forces one; `fadeMs`. Both commands now ripple through `cutRanges` (the same result as before, in one
-  pass). The MCP `remove_fillers` dry run uses the same default.
+  pass). The MCP `remove_fillers` dry run uses the same default. Both default `fadeMs` to Clean Up's 4 ms join fade
+  ("Join fades of range cuts" below); `fadeMs: 0` keeps hard cuts.
 - New error code `E_UNSUPPORTED` (`commands/types.ts`, MCP hint).
 
 ### Join micro-fades through the audio fade model (TC-024)
@@ -497,6 +498,44 @@ transition plays the transition's fade only. A split gives the left part the fad
 Join Through Edits gives the joined clip the left fade in and the right fade out. Interchange exporters cannot carry
 sub-frame fades: every format (FCP7, FCPXML, OTIO, EDL, AAF, OMF) names them in its report ("not carried", instead
 "hard cuts at its edges").
+
+### Join fades of range cuts
+
+`verify_export` on a user's 15:31 export flagged 19 `cut-click` rows (a sample step 12.5–29.7 dB over the local RMS
+within ±10 ms of the cut). Clean Up's joins did not click; the flagged cuts came from `range.extract` /
+`transcript_extract` and `clip.split` + ripple delete, which left hard butt joins: two moments of a recording meeting
+mid-waveform make a sample step at the cut. Those edits now give the audio edges they cut the same fade as Clean Up
+(`JOIN_FADE_MS` = the Fast preset's `joins.fadeMs`, 4 ms, `commands/join-fades.ts`), as `edgeFades` in the same
+transaction (one undo step), so preview and every export path render them through the fade model above:
+
+- `range.extract`, `range.lift`, `transcript.extract`, `transcript.lift` (`joinFades?`, default true): the new out edge
+  of a piece ending at the range start and the new in edge of a piece starting at its end, on every audio track the
+  cut touches (sync-locked followers included, as Clean Up's extract). Edges the range does not move (a clip that
+  starts or ends exactly at a range bound) keep what they had. The result has `fades` (edges written). Picture
+  clips never get `edgeFades`.
+- `transcript.removeFillers` / `transcript.removePauses`: `fadeMs` defaults to 4 (was 0); `fadeMs: 0` keeps hard cuts.
+- `clip.extract` (ripple delete; `joinFades?`, default true): a new butt join between two pieces of one recording
+  (same media, not a through edit) — what `clip.split` + delete makes — gets the fade on both sides; sides that
+  already fade keep theirs. A join between different recordings is a deliberate edit and stays as it was.
+- `audio.smoothJoins {sequenceId?, tracks?, from?, to?, at?, fadeMs? (default 4, ≤ 30)}` [Smooth Audio Joins] for
+  existing projects: both sides of every hard audio join — two enabled audio clips butted on a track whose sound jumps
+  (another recording, or another moment of one; `isThroughEdit` is false) with no transition over the edit — in
+  `[from, to]` of the tracks (default every unlocked audio track) get the fade; sides that already fade keep theirs.
+  `at` (sequence frames, e.g. the `at.frame` of verify_export's cut-click rows) keeps the joins within one frame of
+  one of them; the result `{joins, fades, fadeMs, unmatched?}` lists the times with no hard join. Refusals: a picture
+  track `E_INVALID_PARAM`, a named locked track `E_TRACK_LOCKED`, `to < from` `E_INVALID_PARAM`. In the editor:
+  Clip ▸ Audio Options ▸ Smooth Audio Joins (In to Out when both are set, else the whole sequence).
+
+The fade is 4 ms on each side of the join, inside the clips (no handles needed): it attenuates at most the 4 ms next
+to the cut and removes nothing. Measured in the offline mixer every export path uses (`join-fades.test.ts`, a 220 Hz
+tone, a 31-frame extract that jumps a third of a cycle; verify_export's step-over-RMS measure): the hard cut is over
+the 12 dB threshold, the faded join under it.
+
+Limits: an edge that meets a gap (after a lift) is faded only when a range cut made it; `audio.smoothJoins` handles
+butt joins only, not a clip that starts or stops abruptly next to silence. Nested-sequence audio and synthetic sound
+clips are not `AudioClip`s and get no fades (a join inside a nest is smoothed by running the command on the nested
+sequence). The click detection itself stays in verify_export: `audio.smoothJoins` does not listen; `at` narrows it to
+the flagged cuts.
 
 ### Engine
 
@@ -530,6 +569,7 @@ sub-frame fades: every format (FCP7, FCPXML, OTIO, EDL, AAF, OMF) names them in 
 | One-pass extract = successive `range.extract` (150 random timelines) + invariants | `cleanup-property.test.ts` | pass |
 | `cleanup.apply` / `cleanup.configure` / removePauses / removeFillers: links, groups, sync lock, locked tracks, source ranges, fades, J / L, lift / mute / markers, 1,500 ranges, undo (previous document untouched) / redo (same timeline), refusals, invariants (`verify` mode) | `cleanup-commands.test.ts` | pass |
 | Mixer: equal-power curve sample by sample over 192 samples at both sides of a join, the same inside a nested sequence, transitions win; INV-CLEANUP and repair (idempotent) | `cleanup-render.test.ts` | pass |
+| Range cuts / `clip.extract` / `audio.smoothJoins` join fades: faces only, untouched edges, opt-outs, existing fades kept, through edits skipped, `at`, refusals, one revision, previous document untouched, invariants; the joins in the offline mixer under verify_export's 12 dB click threshold (hard cut over it) | `join-fades.test.ts` | pass |
 | Preview while playing (headless Chrome, Web Audio) = export across a cleanup join | `packages/compositions/test/audio-preview-mix-oracle.test.ts` "cleanup joins" | worst 3.0e-8 (threshold 1e-4) |
 | Interchange reports edge fades (6 formats) | `packages/interchange/test/cleanup-edge-fades.test.ts` | pass |
 | Engine job = pure analysis of the same samples (16 kHz WAV through FFmpeg), cache reuse, word mode, refusals; preset CRUD, restart, invalid entries, corrupt file, user preset drives the analysis | `apps/engine/test/cleanup.test.ts` | pass |

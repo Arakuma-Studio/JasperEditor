@@ -1,7 +1,7 @@
 import { setImmediate } from 'node:timers/promises';
 import { describe, expect, it } from 'vitest';
 import { JobError } from '../src/jobs/types.ts';
-import { type PageGrant, type PagePoolProgress, runPagePool } from '../src/remotion/page-pool.ts';
+import { type PageGrant, type PagePoolProgress, pageShares, runPagePool } from '../src/remotion/page-pool.ts';
 
 function manual(want: number, weight = want * 30) {
 	let resolve: (v: string) => void = () => {};
@@ -69,6 +69,47 @@ describe('page budget', () => {
 		expect(seq[1]!.grant?.pages).toBe(2);
 		seq[1]!.finish();
 		await q;
+	});
+
+	it('more masters than renders in flight share the whole budget among those running at once', async () => {
+		// the real project's bake: 17 text cards of 363 frames, 12 pages, at most 6 renders at once
+		const shares = pageShares(new Array(17).fill(363), 12, 6);
+		expect(shares).toEqual(new Array(17).fill(2));
+		const ts = shares.map((want) => manual(want));
+		const p = runPagePool(ts, { budget: 12, maxInFlight: 6, signal: new AbortController().signal });
+		await setImmediate();
+		expect(ts.reduce((n, t) => n + (t.grant?.pages ?? 0), 0)).toBe(12);
+		for (const t of ts) if (t.started) t.finish();
+		await setImmediate();
+		for (const t of ts) if (t.started) t.finish();
+		await setImmediate();
+		for (const t of ts) t.finish();
+		await p;
+		// as many masters as may run at once: the plain proportional split
+		expect(pageShares([300, 100], 8, 6)).toEqual(pageShares([300, 100], 8));
+	});
+
+	it('a render that captured its frames gives its pages to the next render while it finishes', async () => {
+		const a = manual(4);
+		const b = manual(4);
+		const c = manual(4);
+		const p = runPagePool([a, b, c], { budget: 4, maxInFlight: 1, signal: new AbortController().signal });
+		await setImmediate();
+		expect([a.started, b.started]).toEqual([true, false]);
+		// a is stitched and checked: b renders on its pages (and no longer waits for a's render slot)
+		a.grant!.release();
+		a.grant!.release();
+		await setImmediate();
+		expect(b.grant?.pages).toBe(4);
+		expect(c.started).toBe(false);
+		a.finish();
+		await setImmediate();
+		expect(c.started).toBe(false);
+		b.finish();
+		await setImmediate();
+		expect(c.grant?.pages).toBe(4);
+		c.finish();
+		await p;
 	});
 
 	it('aggregates progress by weight and counts finished renders', async () => {

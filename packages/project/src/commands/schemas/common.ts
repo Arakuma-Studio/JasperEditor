@@ -47,3 +47,9 @@ export const EditModeSchema = z.enum(['overwrite', 'insert']);
 
 export const cmd = <T extends string, S extends z.ZodRawShape>(type: T, shape: S) =>
 	z.strictObject({ type: z.literal(type), ...shape });
+
+/**
+ * Join fades of a cut (default true): Clean Up's equal-power 4 ms `edgeFades` on the audio edges the cut makes, in the
+ * same undo step; false keeps hard cuts.
+ */
+export const JoinFadesSchema = z.boolean();

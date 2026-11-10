@@ -27,7 +27,7 @@ import {
 import type { JobContext } from '../jobs/types.ts';
 import { JobError } from '../jobs/types.ts';
 import type { MediaRecord } from '../media/registry.ts';
-import { type PageGrant, pageShares, runPagePool } from '../remotion/page-pool.ts';
+import { MAX_RENDERS_IN_FLIGHT, type PageGrant, pageShares, runPagePool } from '../remotion/page-pool.ts';
 import { Ffmpeg } from '../tools/ffmpeg.ts';
 import { atomicWriteJson, readJsonOrNull } from '../tools/fs.ts';
 import { binaryNames } from '../tools/lgpl.ts';
@@ -1107,6 +1107,7 @@ export class MgBundleService {
 		const shares = pageShares(
 			[...todo.values()].map((r) => r.durationFrames),
 			budget,
+			Math.min(budget, MAX_RENDERS_IN_FLIGHT),
 		);
 		await runPagePool(
 			[...todo].map(([key, req], i) => ({

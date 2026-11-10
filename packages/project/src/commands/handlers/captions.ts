@@ -51,6 +51,7 @@ import type { CaptionStyle, CaptionsClip, Clip, Sequence, Track } from '../../sc
 import { CaptionStyleSchema } from '../../schema/sequence.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational, secondsToFlicks } from '../../time.ts';
 import type { DClip, DDoc, DSeq, DTrack, HandlerContext } from '../context.ts';
+import { JOIN_FADE_MS } from '../join-fades.ts';
 import { cutRanges } from '../multi-range.ts';
 import {
 	allTracksIn,
@@ -280,15 +281,15 @@ function wordSpan(words: readonly SeqWord[], from: number, to: number, h: Handle
 
 /**
  * Ripple-delete frame ranges on every unlocked track (FilmCraft `ripple_delete_ranges`): the result of one
- * `range.extract` per range, right to left, computed in one pass (`cutRanges`, spec 14 TC-031), with optional edge
- * micro-fades on the audio cuts.
+ * `range.extract` per range, right to left, computed in one pass (`cutRanges`, spec 14 TC-031), with edge micro-fades
+ * on the audio cuts (default Clean Up's join fade; 0 = hard cuts).
  */
 function rippleDeleteRanges(
 	doc: DDoc,
 	seq: DSeq,
 	ranges: Array<[number, number]>,
 	h: HandlerContext,
-	fadeMs = 0,
+	fadeMs = JOIN_FADE_MS,
 ): number {
 	const merged = mergeRanges(ranges).filter(([a, b]) => b > a);
 	if (!merged.length) return 0;
@@ -1093,20 +1094,24 @@ export const captionHandlers = {
 		const words = sequenceWords(doc, seq);
 		const [a, b] = wordSpan(words, cmd.fromWord, cmd.toWord, h);
 		const r = wordRangeFrames(words, a, b, seq.settings.frameRate)!;
-		clipEditHandlers['range.extract']!(
+		const cut = clipEditHandlers['range.extract']!(
 			doc,
-			{ type: 'range.extract', sequenceId: seq.id, from: r[0], to: r[1] },
+			{ type: 'range.extract', sequenceId: seq.id, from: r[0], to: r[1], joinFades: cmd.joinFades },
 			h,
 		);
-		return { from: r[0], to: r[1] };
+		return { from: r[0], to: r[1], fades: cut.fades };
 	},
 	'transcript.lift': (doc, cmd, h) => {
 		const seq = h.sequence(doc, cmd.sequenceId);
 		const words = sequenceWords(doc, seq);
 		const [a, b] = wordSpan(words, cmd.fromWord, cmd.toWord, h);
 		const r = wordRangeFrames(words, a, b, seq.settings.frameRate)!;
-		clipEditHandlers['range.lift']!(doc, { type: 'range.lift', sequenceId: seq.id, from: r[0], to: r[1] }, h);
-		return { from: r[0], to: r[1] };
+		const cut = clipEditHandlers['range.lift']!(
+			doc,
+			{ type: 'range.lift', sequenceId: seq.id, from: r[0], to: r[1], joinFades: cmd.joinFades },
+			h,
+		);
+		return { from: r[0], to: r[1], fades: cut.fades };
 	},
 	'transcript.insertInto': (doc, cmd, h) => {
 		const seq = h.sequence(doc, cmd.sequenceId);

@@ -3,7 +3,7 @@ import type { LayerOverride, NativeExtension, NativePrepareContext } from '../ex
 import type { PlannedExport } from '../export/planner.ts';
 import { renderParallelism } from '../gaps/render-budget.ts';
 import { JobError } from '../jobs/types.ts';
-import { MAX_RENDERS_IN_FLIGHT, type PageGrant, pageShares, runPagePool } from '../remotion/page-pool.ts';
+import { type PageGrant, pageShares, runPagePool } from '../remotion/page-pool.ts';
 import {
 	effectRunsOrderWarning,
 	hasColorEffects,
@@ -37,6 +37,12 @@ type LayerBakePrepared = Map<string, PreparedLayer>;
 const SPANS = Symbol('spans');
 type Prepared = LayerBakePrepared & { [SPANS]?: Map<string, LayerOverride> };
 
+/**
+ * Bakes rendering at once at most (wp-note export-performance "Layer bake"): one render captures ≈ 5 frames/s on one
+ * page, ≈ 10 on two and ≈ 11–12 on four (measured on 17 animated titles, 1280×720), so a large budget renders more
+ * bakes at once, two pages each, rather than more pages per bake (12 × 2 pages: ≈ 105 frames/s; 6 × 2: ≈ 60).
+ */
+const MAX_BAKES_IN_FLIGHT = 12;
 /** Fixed cost of a render (browser page, bundle, stitch, checks) in frames, for the aggregated progress. */
 const RENDER_FIXED_COST_FRAMES = 30;
 /** spec 13 AS-071: stills per sheet render at most (bounds a sheet's frame size spread and a failed sheet's retry). */
@@ -139,9 +145,9 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 			const env = { ...(await svc.environment()), ...(scale !== 1 ? { scale } : {}) };
 			const single = planned.range.end - planned.range.start === 1 ? planned.range.start : null;
 			// The export's Remotion page budget (S11:LBK-022): its Remotion concurrency, shared by the bakes in flight.
-			const budget = Math.max(1, ctx.concurrency ?? renderParallelism());
 			const par = svc.parallelism;
-			const maxInFlight = Math.max(1, par.maxInFlight ?? Math.min(budget, MAX_RENDERS_IN_FLIGHT));
+			const budget = Math.max(1, par.pages ?? ctx.bakePages ?? ctx.concurrency ?? renderParallelism());
+			const maxInFlight = Math.max(1, par.maxInFlight ?? Math.min(budget, MAX_BAKES_IN_FLIGHT));
 			// Plans first (keys, documents, grades: cheap, in clip order), then the renders side by side.
 			const items: {
 				clip: RenderVisualClip | null;
@@ -223,6 +229,7 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 				concurrency: g.pages,
 				...(release ? { browserGroup: ctx.jobId } : {}),
 				onProgress: g.progress,
+				onRendered: g.release,
 			});
 			/** spec 13 AS-070: layer stills that drew past their border (baked again: grown, then as masters). */
 			const clipped: typeof items = [];
@@ -367,6 +374,7 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 				const masterShares = pageShares(
 					masters.map((m) => m[0]!.plan.frames),
 					budget,
+					maxInFlight,
 				);
 				const shares = new Map(masters.map((g, i) => [g, masterShares[i]!]));
 				// Sheets run first, at most SHEET_IN_FLIGHT side by side on at most SHEET_PAGES pages (their fixed costs

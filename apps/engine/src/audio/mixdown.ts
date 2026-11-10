@@ -31,6 +31,9 @@ import {
 	type DeliveryCodec,
 	type DeliveryOutcome,
 	type DeliveryParams,
+	type DeliveryPassRequest,
+	type DeliveryRunner,
+	measureDeliveryPass,
 	type Pass1,
 	runDeliveryPass,
 	solveDelivery,
@@ -94,6 +97,24 @@ export type MixdownOptions = {
 	 * `loudness`): no meter runs and `loudness` is a silent summary.
 	 */
 	meter?: boolean;
+	/** The pass-1 mix, already rendered (`renderPass1`, e.g. on a worker thread): not mixed again. */
+	pass1?: MixPass1;
+	/** Where the delivery's passes and decoded checks run (deliver.ts `DeliveryRunner`); absent = this thread. */
+	runner?: DeliveryRunner;
+};
+
+/** The mixer's output over the range before normalisation (`renderPass1`): plain data, so a worker can return it. */
+export type MixPass1 = {
+	/** The float32 WAV (null: a measure-only render without normalisation keeps no file). */
+	path: string | null;
+	sampleRate: number;
+	channels: number;
+	samples: number;
+	loudness: LoudnessSummary;
+	/** Wall time of the mix (the mixer, the meter, the file), ms. */
+	mixMs: number;
+	/** SHA-256 of the samples of a normalised mix (the delivery cache key, deliver.ts). */
+	contentHash: string | null;
 };
 
 export type MixdownResult = {
@@ -175,8 +196,11 @@ const BLOCK = 48_000;
 /** The `loudness` of a render without a meter (`meter: false`). */
 const SILENT_SUMMARY: LoudnessSummary = new LoudnessMeter(48_000, 1).summary();
 
-/** Renders the mix of `snapshot` over `range` (see MixdownOptions). */
-export async function renderMixdown(o: MixdownOptions): Promise<MixdownResult> {
+/**
+ * Pass 1 of `renderMixdown`: the mixer over the range, metered (and hashed for normalisation), written as a float32
+ * WAV when it is kept or normalised.
+ */
+export async function renderPass1(o: MixdownOptions): Promise<MixPass1> {
 	const snap = o.snapshot;
 	const mix = snap.audioMix;
 	if (!mix) throw new Error('render snapshot without audioMix');
@@ -266,13 +290,29 @@ export async function renderMixdown(o: MixdownOptions): Promise<MixdownResult> {
 		await fh?.close();
 	}
 	meter?.flush();
-	const before = meter ? meter.summary() : SILENT_SUMMARY;
-	const mixMs = performance.now() - t0;
+	return {
+		path: pass1,
+		sampleRate: sr,
+		channels,
+		samples: total,
+		loudness: meter ? meter.summary() : SILENT_SUMMARY,
+		mixMs: performance.now() - t0,
+		contentHash: hash ? hash.digest('hex') : null,
+	};
+}
+
+/** Renders the mix of `snapshot` over `range` (see MixdownOptions). */
+export async function renderMixdown(o: MixdownOptions): Promise<MixdownResult> {
+	const p1 = o.pass1 ?? (await renderPass1(o));
+	const { path: pass1, sampleRate: sr, channels, samples: total, mixMs } = p1;
+	const before = p1.loudness;
+	const soxr = await hasSoxr(o.ff);
+	const solveOnly = !!o.measureOnly && !!o.normalize;
 	if (!o.normalize || !pass1) {
 		return { path: pass1, sampleRate: sr, channels, samples: total, loudness: before, mixMs };
 	}
 	const norm = o.normalize;
-	const contentHash = hash?.digest('hex');
+	const contentHash = p1.contentHash ?? undefined;
 	if (solveOnly) {
 		// the delivery as an export of this mix would solve it (PCM: no codec), measured, nothing written
 		let outcome: DeliveryOutcome;
@@ -315,13 +355,22 @@ export async function renderMixdown(o: MixdownOptions): Promise<MixdownResult> {
 		};
 	}
 	const out = join(o.scratchDir, 'mix.wav');
+	const runner = o.runner;
 	// one delivery pass written to `out` (the float32 WAV every export path muxes) with its loudness
-	const write = (params: DeliveryParams, path = out) =>
-		writeDeliveryWav({ path: pass1, headerBytes: WAV_F32_HEADER_BYTES }, path, sr, channels, total, params, {
-			blockSize: BLOCK,
-			signal: o.signal,
-			onProgress: (f) => o.onProgress?.(0.6 + f * 0.3, 'Normalizing loudness'),
-		});
+	const write = (params: DeliveryParams, path = out) => {
+		const p1file = { path: pass1, headerBytes: WAV_F32_HEADER_BYTES };
+		if (!runner)
+			return writeDeliveryWav(p1file, path, sr, channels, total, params, {
+				blockSize: BLOCK,
+				signal: o.signal,
+				onProgress: (f) => o.onProgress?.(0.6 + f * 0.3, 'Normalizing loudness'),
+			});
+		o.onProgress?.(0.6, 'Normalizing loudness');
+		return runner.pass(
+			{ pass1: p1file, sampleRate: sr, channels, total, params, out: path, truePeak: true },
+			o.signal,
+		);
+	};
 	let outcome: DeliveryOutcome;
 	try {
 		outcome = await solveDelivery({
@@ -340,6 +389,7 @@ export async function renderMixdown(o: MixdownOptions): Promise<MixdownResult> {
 			outPath: out,
 			contentHash,
 			...(o.parallel ? { parallel: o.parallel } : {}),
+			...(runner ? { runner } : {}),
 			signal: o.signal,
 			...(o.onSpawn ? { onSpawn: o.onSpawn } : {}),
 			onProgress: (f, stage) => o.onProgress?.(0.9 + f * 0.1, stage),
@@ -363,6 +413,21 @@ export async function renderMixdown(o: MixdownOptions): Promise<MixdownResult> {
 			...(o.deliver ? { codec: o.deliver } : {}),
 		},
 	};
+}
+
+/**
+ * One delivery pass as plain data (deliver.ts `DeliveryRunner.pass`; the worker op): written to `out` like the
+ * export's own passes (`writeDeliveryWav`), or measured like the delivery's measuring passes.
+ */
+export function runDeliveryPassRequest(
+	req: DeliveryPassRequest,
+	signal?: AbortSignal,
+): Promise<LoudnessSummary> {
+	if (req.out === null) return measureDeliveryPass(req, signal);
+	return writeDeliveryWav(req.pass1, req.out, req.sampleRate, req.channels, req.total, req.params, {
+		blockSize: BLOCK,
+		signal,
+	});
 }
 
 /** Writes one delivery pass of `pass1` to `out` as a float32 WAV and returns its loudness (`deliver.ts`). */

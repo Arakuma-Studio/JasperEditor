@@ -1,5 +1,5 @@
 // The multi-tap kernel of kernel streams (kernel.ts `drawTaps`) on an OpenCL device, run by the shipped LGPL ffmpeg's
-// `program_opencl` filter inside the composite (docs/wp-notes/export-performance.md §9). Node no longer draws the
+// `program_opencl` filter inside the composite (docs/wp-notes/export-performance.md §10). Node no longer draws the
 // pixels: for every frame it writes one raw RGBA frame of `inW × inH` to the stream's pipe — the frame's tap program
 // in the first `progRows` rows (one little-endian float32 per pixel) and the member's picture below it (top-left,
 // rows of `inW` px) — and the composite runs `hwupload, program_opencl, hwdownload` before its overlay. The OpenCL

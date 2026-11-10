@@ -18,9 +18,18 @@ import type { ProjectTextStyle } from '../../text-styles/model.ts';
 import { diffStyle } from '../../text-styles/patch.ts';
 import { isVerticalText } from '../../text-writing.ts';
 import { newLayer3D } from '../../three-d/model.ts';
-import { FRAME_EPS, flicksPerFrame, supportsDropFrame } from '../../time.ts';
+import { FRAME_EPS, flicksPerFrame, type Rational, supportsDropFrame } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { valuesOf } from '../draft-read.ts';
+import {
+	type FaceSides,
+	isHardAudioJoin,
+	JOIN_FADE_MS,
+	joinKey,
+	setJoinFades,
+	trackJoins,
+	transitionJoins,
+} from '../join-fades.ts';
 import {
 	allTracksIn,
 	assertUnlocked,
@@ -862,19 +871,44 @@ export const clipCoreHandlers = {
 				blocking: clips.map((c) => c.id),
 			});
 		const affected = tracksHolding(seq, ids);
-		for (const c of clips) removeClip(seq, c.id, h);
 		const tracks = new Set([
 			...affected,
 			...allTracksIn(seq)
 				.filter((t) => t.syncLock && !t.locked)
 				.map((t) => t.id),
 		]);
+		const audio = seq.audioTracks.map((t) => t.id).filter((id) => tracks.has(id));
+		const joinedBefore = new Set(audio.flatMap((id) => trackJoins(seq, id).map(([a, b]) => joinKey(a, b))));
+		for (const c of clips) removeClip(seq, c.id, h);
 		for (const r of [...spans].reverse()) {
 			removeShift(seq, tracks, r.start, r.end - r.start, h, { syncConflict: cmd.syncConflict });
 			if (cmd.rippleMarkers !== false) shiftMarkers(seq, r.start, -(r.end - r.start));
 		}
+		// a new join between two pieces of one recording jumps in its sound: Clean Up's join fade on both sides
+		let fades = 0;
+		if (cmd.joinFades !== false) {
+			const rate = seq.settings.frameRate as Rational;
+			const faces = new Map<string, FaceSides>();
+			const covered = transitionJoins(seq);
+			for (const id of audio)
+				for (const [a, b] of trackJoins(seq, id))
+					if (
+						!joinedBefore.has(joinKey(a, b)) &&
+						(a as { mediaId?: string }).mediaId === (b as { mediaId?: string }).mediaId &&
+						isHardAudioJoin(a as Clip, b as Clip, rate) &&
+						!covered.has(joinKey(a, b))
+					) {
+						faces.set(a.id, { ...faces.get(a.id), out: true });
+						faces.set(b.id, { ...faces.get(b.id), in: true });
+					}
+			fades = setJoinFades(seq, faces, JOIN_FADE_MS, true);
+		}
 		cleanupSequence(seq, h);
-		return { removed: clips.map((c) => c.id), ranges: spans.map((r) => ({ start: r.start, end: r.end })) };
+		return {
+			removed: clips.map((c) => c.id),
+			ranges: spans.map((r) => ({ start: r.start, end: r.end })),
+			fades,
+		};
 	},
 	'text.relayout': (doc, cmd: CommandOf<'text.relayout'>, h: HandlerContext) => {
 		// spec 13 SH-004: the listed text clips (one sequence), or every pending text clip of the document.

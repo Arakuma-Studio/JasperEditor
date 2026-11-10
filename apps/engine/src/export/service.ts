@@ -49,7 +49,7 @@ import {
 } from '@jasper/project';
 import { hasSoxr, resamplerArgs } from '../audio/decode.ts';
 import { type DeliveryCodec, measureEncodedAudio, needsDecodedCheck } from '../audio/deliver.ts';
-import { layoutOf, type MixdownResult, renderMixdown } from '../audio/mixdown.ts';
+import { layoutOf, type MixdownResult, type MixSource, renderMixdown } from '../audio/mixdown.ts';
 import type { UrlSigner } from '../auth/signed-url.ts';
 import type { CacheService } from '../cache/service.ts';
 import { writeHdrBoxes } from '../color/hdr-boxes.ts';
@@ -71,6 +71,7 @@ import { assertLgplFilters } from '../processing/proc/filters.ts';
 import { engineTemplateAssets } from '../remote-assets/plan.ts';
 import { appendEncoderArgs, planRemotionExport } from '../remotion/export-plan.ts';
 import type { RemotionService } from '../remotion/service.ts';
+import { exportAudioWorkers } from '../sound-design/measure-pool.ts';
 import { audioEncodeArgs, type EncoderService, pixFmtFor, videoEncodeArgs } from '../tools/encoders.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
 import { exists, randomId } from '../tools/fs.ts';
@@ -161,9 +162,14 @@ class NativePrepareError extends Error {
 /** edit-structure: what the Remotion-path extensions prepared for nested sequences, per top-level preparation. */
 const NESTED_REMOTION = new WeakMap<ReadonlyMap<string, unknown>, Map<string, PreparedExtensions>>();
 
-/** Remotion concurrency of an export with `slots` CPU slots (S04:RR-004; bakes follow it, S11:LBK-022). */
+/** Remotion concurrency of an export with `slots` CPU slots (S04:RR-004; the Remotion path's bakes follow it). */
 function remotionConcurrency(slots: number): number {
 	return Math.max(1, Math.min(slots, Math.floor(availableParallelism() / 2)));
+}
+
+/** Remotion pages of the native path's layer bakes (`NativePrepareContext.bakePages`): one per granted CPU slot. */
+function bakePages(slots: number): number {
+	return Math.max(1, Math.min(slots, availableParallelism()));
 }
 
 export type MgMasterRequest = {
@@ -425,7 +431,7 @@ export class ExportService {
 		});
 		const comp = planCompositeSize(snap, planned.output);
 		const size = outputSizeSnapshot(snap, comp).settings;
-		// docs/wp-notes/export-performance.md §9: where kernel streams will be drawn (streams that do not fit the OpenCL
+		// docs/wp-notes/export-performance.md §10: where kernel streams will be drawn (streams that do not fit the OpenCL
 		// program are known when the graphs are built: the result names them)
 		const cl = await probeOpenClTaps(this.deps.ff, openClPolicyFromEnv());
 		return {
@@ -1360,7 +1366,7 @@ export class ExportService {
 		 * on whole output pixels; the extensions prepare again at the sequence size). Null = decide by `planCompositeSize`.
 		 */
 		compositeFallback: string[] | null = null,
-		/** docs/wp-notes/export-performance.md §9: the OpenCL kernel failed in an earlier attempt (the CPU draws). */
+		/** docs/wp-notes/export-performance.md §10: the OpenCL kernel failed in an earlier attempt (the CPU draws). */
 		openClFailure: string | null = null,
 	): Promise<number> {
 		// output-size.ts: decided before the extensions prepare (the layer bake renders masters at the composite size)
@@ -1416,6 +1422,7 @@ export class ExportService {
 				...(planned.document.projectId ? { projectId: planned.document.projectId } : {}),
 				purpose: 'native' as const,
 				concurrency: remotionConcurrency(ctx.slots),
+				bakePages: bakePages(ctx.slots),
 				...(this.pinFor(ctx) ? { pin: this.pinFor(ctx) } : {}),
 				pipeline: pipeline && !still,
 				backgroundSignal: bgAbort.signal,
@@ -1510,7 +1517,7 @@ export class ExportService {
 						reason: still ? 'stills decode on the CPU' : 'GPU decode is off (JASPER_EXPORT_NVDEC=0)',
 					};
 		if (!still) ctx.log(`native: decode ${nvdec.ok ? 'NVDEC (cuda)' : `CPU (${nvdec.reason})`}`);
-		// docs/wp-notes/export-performance.md §9: kernel streams drawn by the OpenCL program when a device passes the probe
+		// docs/wp-notes/export-performance.md §10: kernel streams drawn by the OpenCL program when a device passes the probe
 		const openCl = still
 			? ({ ok: false, reason: 'stills draw on the CPU' } as const)
 			: openClFailure
@@ -1907,7 +1914,7 @@ export class ExportService {
 			const se = streamError as Error | null;
 			if (se instanceof BakeChangedError && !ctx.signal.aborted) return restart(se.message);
 			const consequence = !se || /^layer stream:/.test(se.message);
-			// §9: a composite that failed in the OpenCL kernel (device lost, out of video memory…) is rendered again with
+			// §10: a composite that failed in the OpenCL kernel (device lost, out of video memory…) is rendered again with
 			// the CPU kernel, named in `pipeline.kernel.fallbackReasons`
 			const clError = part.graph.kernel.opencl > 0 && consequence ? openClErrorOf(e) : null;
 			if (clError && !ctx.signal.aborted && bgError === null) {
@@ -2097,33 +2104,63 @@ export class ExportService {
 		const o = planned.output;
 		const sr = planned.snapshot.audioMix?.sampleRate ?? 48000;
 		const t0 = performance.now();
-		const mix = await this.report(ctx).time('audio', async () =>
-			renderMixdown({
+		// The media the mix plays, as files (plain data: the mix runs on a worker thread).
+		const media: Record<string, MixSource> = {};
+		for (const c of planned.snapshot.audioClips) {
+			const m = planned.media[c.mediaId];
+			if (!m || Object.hasOwn(media, c.mediaId)) continue;
+			media[c.mediaId] = {
+				path: m.path,
+				streams: m.record.probe.streams.filter((x) => x.type === 'audio') as never,
+				container: m.record.container,
+			};
+		}
+		const scratchDir = await ctx.scratchDir();
+		const length = Math.round(o.durationSec * sr);
+		const outputLayout = layoutOf(o.audioChannels);
+		const onProgress = (f: number, stage: string) =>
+			opts.onProgress ? opts.onProgress(f, stage) : ctx.progress(0, { stage });
+		// wp-note export-performance "Audio delivery": the mix and the delivery's passes and decoded checks run on
+		// worker threads (the same functions: the same bytes), off the event loop the layer bake's pages wait on
+		const workers = exportAudioWorkers(
+			{ ff: this.deps.ff, signal: ctx.signal, onSpawn: ctx.trackChild },
+			o.durationSec,
+			(m) => ctx.log(m),
+		);
+		const mix = await this.report(ctx).time('audio', async () => {
+			// (an audio-only export, which reports the mix's progress and runs nothing beside it, mixes here)
+			const pass1 = opts.onProgress
+				? undefined
+				: await workers.mixPass1({
+						// the mixer reads the audio, the Mix and the settings: the picture's tracks stay here
+						snapshot: { ...planned.snapshot, videoTracks: [] },
+						media,
+						range: planned.range,
+						length,
+						outputLayout,
+						normalize: o.normalize ?? null,
+						scratchDir,
+					});
+			return renderMixdown({
 				ff: this.deps.ff,
 				snapshot: planned.snapshot,
-				media: (id) => {
-					const m = planned.media[id];
-					if (!m) return null;
-					return {
-						path: m.path,
-						streams: m.record.probe.streams.filter((x) => x.type === 'audio') as never,
-						container: m.record.container,
-					};
-				},
+				media: (id) => (Object.hasOwn(media, id) ? media[id]! : null),
 				range: planned.range,
-				length: Math.round(o.durationSec * sr),
-				outputLayout: layoutOf(o.audioChannels),
+				length,
+				outputLayout,
 				normalize: o.normalize,
 				// the deliverable's encoding: a lossy codec's limiter headroom and the decoded check (deliver.ts)
 				...(opts.deliver
 					? { deliver: deliveryCodecOf(planned), parallel: Math.min(3, Math.max(1, ctx.slots)) }
 					: {}),
-				scratchDir: await ctx.scratchDir(),
+				scratchDir,
 				signal: ctx.signal,
 				onSpawn: ctx.trackChild,
-				onProgress: (f, stage) => (opts.onProgress ? opts.onProgress(f, stage) : ctx.progress(0, { stage })),
-			}),
-		);
+				onProgress,
+				...(pass1 ? { pass1 } : {}),
+				runner: workers.runner,
+			});
+		});
 		const d = mix.normalized?.delivery;
 		const t = (ms: number) => `${Math.round(ms)} ms`;
 		ctx.log(
@@ -3560,7 +3597,7 @@ function overlayCount(filter: string): number {
 }
 
 /**
- * §9: the line of a failed composite's error that names the OpenCL device or the filters around the OpenCL kernel
+ * §10: the line of a failed composite's error that names the OpenCL device or the filters around the OpenCL kernel
  * (`hwupload`, `program_opencl`, `hwdownload`), null when the failure is elsewhere.
  */
 function openClErrorOf(e: unknown): string | null {

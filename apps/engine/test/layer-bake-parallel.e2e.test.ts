@@ -6,7 +6,7 @@ import type { EngineJob } from '@jasper/api';
 import type { ProjectDocument } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type RunningEngine, startEngine } from '../src/index.ts';
-import type { BakeParallelism, LayerBakeService } from '../src/layer-bake/service.ts';
+import { type BakeParallelism, type LayerBakeService, PAGES_PER_BROWSER } from '../src/layer-bake/service.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { DocBuilder, JSON_H, tempAppdir } from './helpers.ts';
 
@@ -241,8 +241,16 @@ describe.runIf(enabled)('parallel bakes end to end (REMOTION_E2E=1, S11:LBK-022)
 		rmSync(svc.dir, { recursive: true, force: true });
 		mkdirSync(svc.dir, { recursive: true });
 	};
-	const SEQUENTIAL: BakeParallelism = { maxInFlight: 1, sharedBrowser: false };
-	const PARALLEL: BakeParallelism = { maxInFlight: null, sharedBrowser: true };
+	const SEQUENTIAL: BakeParallelism = {
+		maxInFlight: 1,
+		sharedBrowser: false,
+		pagesPerBrowser: PAGES_PER_BROWSER,
+	};
+	const PARALLEL: BakeParallelism = {
+		maxInFlight: null,
+		sharedBrowser: true,
+		pagesPerBrowser: PAGES_PER_BROWSER,
+	};
 
 	it('parallel bakes overlap and produce the same decoded composite as sequential bakes', async () => {
 		const d = layeredDoc();
