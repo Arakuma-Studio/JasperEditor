@@ -249,3 +249,22 @@ export function countVoiced(mask: SpeechMask, from: number, to: number): number 
 	for (let f = Math.max(0, from); f < Math.min(mask.length, to); f++) if (mask[f] > 0) v++;
 	return v;
 }
+
+/**
+ * The first voiced frame of `mask` in [from, limit) that follows at least `minSilence` unvoiced frames (counted from
+ * `from`), or null: voice after a long silence that resuming decoding at `limit` would skip.
+ */
+export function voiceAfterSilence(
+	mask: SpeechMask,
+	from: number,
+	limit: number,
+	minSilence: number,
+): number | null {
+	let silent = 0;
+	for (let f = Math.max(0, from); f < Math.min(limit, mask.length); f++) {
+		if (!(mask[f] > 0)) silent++;
+		else if (silent >= minSilence) return f;
+		else silent = 0;
+	}
+	return null;
+}

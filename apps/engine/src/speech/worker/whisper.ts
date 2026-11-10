@@ -20,7 +20,12 @@
 //    `hallucination_silence_threshold` heuristic (2 s) removes improbable segments surrounded by silence.
 // 5. Long audio — overlap and stitching: the next window starts at the end of the last complete segment, or of
 //    its last word when word timing is on, so the unfinished tail of a window is decoded again (overlapping) in
-//    the next one and the words of consecutive windows join without gaps or duplicates.
+//    the next one and the words of consecutive windows join without gaps or duplicates. Long silences (JasperEditor
+//    addition): digital silence has the log-mel floor (`max − 8`) that the zero padding of Whisper's 30 s training
+//    clips has, so speech after it can be taken for audio past the end — a window never starts with ≥ 2 s of
+//    silence (it moves to 0.5 s before its first voice), and when a decode ends (or finds no speech) the next window
+//    never skips voice that follows ≥ 2 s of silence after the window's last word. Spans still left wordless are
+//    decoded again on their own afterwards (`core/gaps.ts`, `worker/run.ts`).
 // 6. Word timestamps: the window's text tokens are run once more through the decoder (`<|notimestamps|>`) and the
 //    cross-attention of the alignment heads (`generation_config.json`) is normalised, median-filtered and aligned
 //    by DTW (`core/align.ts`), then OpenAI's duration heuristics and punctuation merging apply. Word confidence =
@@ -57,7 +62,7 @@ import { composePrompt, glossaryTokens, normalizeGlossary, repeatedGlossaryTerm 
 import { dropRepeatedTokenRuns, silenceThresholdCut } from '../core/hallucination.ts';
 import { FRAME_HALF, HOP, MelFrameComputer, SAMPLE_RATE } from '../core/mel.ts';
 import { type TokenizerJson, WhisperTokenizer } from '../core/tokenizer.ts';
-import { countVoiced, endOfVoice } from '../core/vad.ts';
+import { countVoiced, endOfVoice, voiceAfterSilence } from '../core/vad.ts';
 import { CancelledError, inputFromSamples, type SpeechInput } from './audio.ts';
 import { createPartSession, type PartSession, type SessionFallback } from './sessions.ts';
 
@@ -73,6 +78,14 @@ const NO_SPEECH_THRESHOLD = 0.6;
 export const HALLUCINATION_SILENCE = 2;
 /** A window with fewer voiced 10 ms frames than this is silence (not decoded). */
 export const MIN_VOICED_FRAMES = 3;
+/**
+ * Silence (10 ms frames, 2 s) a window does not start with and that decoding never jumps over into voice: digital
+ * silence reads as the zero padding of Whisper's training clips (the same `max − 8` mel floor), so a window that
+ * starts with it, or whose decode ends at it, can return no words for the speech that follows.
+ */
+export const LONG_SILENCE_FRAMES = HALLUCINATION_SILENCE * 100;
+/** Silence (10 ms frames, 0.5 s) kept before the voice a window is moved to. */
+export const LEAD_IN_FRAMES = 50;
 /** Decoder steps timed per decoder in the calibration (SG-002, ≈ 1 s on a GPU box). */
 const CALIBRATION_STEPS = 24;
 
@@ -112,6 +125,8 @@ export type WhisperOptions = {
 	glossary?: string[];
 	/** OpenAI's hallucination silence threshold (seconds; default 2, 0 = off). */
 	hallucinationSilence?: number;
+	/** Decode only the content frames [start, end) (10 ms frames), each window zero-padded past `end`. */
+	span?: { start: number; end: number };
 	/** 0..1 progress and stage; return false to cancel. */
 	onProgress?(fraction: number, stage: string): boolean | undefined;
 	signal?: AbortSignal;
@@ -1161,7 +1176,11 @@ export class WhisperModel {
 			if (opts.onProgress?.(f, stage) === false) throw new CancelledError();
 		};
 		progress(0, 'Analysing audio');
-		const contentFrames = Math.max(0, input.mel.frames - N_FRAMES);
+		const allFrames = Math.max(0, input.mel.frames - N_FRAMES);
+		const firstFrame = opts.span ? Math.min(allFrames, Math.max(0, Math.floor(opts.span.start))) : 0;
+		const contentFrames = opts.span
+			? Math.min(allFrames, Math.max(firstFrame, Math.ceil(opts.span.end)))
+			: allFrames;
 		const contentEnd = contentFrames / 100;
 		const mask = input.mask;
 		const db = input.db;
@@ -1179,16 +1198,23 @@ export class WhisperModel {
 		let gloss: { terms: string[]; tokens: number[] } | null = null;
 		let glossGuard: GlossaryGuard | null = null;
 		let promptResetSince = 0;
-		let lastSpeech = 0;
-		let seek = 0;
+		let seek = firstFrame;
+		// a span decodes like the clip cut at its start
+		let lastSpeech = firstFrame / 100;
 		let windowIndex = 0;
 		let windows = 0;
 		const win = new Float32Array(nMels * N_FRAMES);
+		/**
+		 * Where the next window starts after this one, given the decode's choice: never past voice that follows a long
+		 * silence after `from` (the end of the window's last word, else its start) — the window's decode ended at the
+		 * silence or found no speech, and that voice is decoded in a window of its own.
+		 */
+		const resumeBefore = (from: number, next: number) => {
+			const voice = voiceAfterSilence(mask, from, next, LONG_SILENCE_FRAMES);
+			return voice === null ? next : Math.min(next, voice - LEAD_IN_FRAMES);
+		};
 		while (seek < contentFrames) {
-			const frac = seek / Math.max(1, contentFrames);
-			progress(frac * 0.97, `Transcribing ${Math.round(frac * 100)}%`);
-			const timeOffset = (seek * HOP) / SAMPLE_RATE;
-			const segmentFrames = Math.min(N_FRAMES, contentFrames - seek);
+			let segmentFrames = Math.min(N_FRAMES, contentFrames - seek);
 			// SG-011: a window without voice is not decoded (Whisper invents text over silence)
 			if (countVoiced(mask, seek, seek + segmentFrames) < MIN_VOICED_FRAMES) {
 				skippedWindows++;
@@ -1196,9 +1222,18 @@ export class WhisperModel {
 				seek += segmentFrames;
 				continue;
 			}
-			// SG-011: the previous text is not carried over a silence of ≥ 2 s
 			let firstVoiced = seek;
 			while (firstVoiced < seek + segmentFrames && !(mask[firstVoiced] > 0)) firstVoiced++;
+			// a window starts at most 0.5 s before its first voice: after a long (digital) silence Whisper takes the
+			// voice for audio past the end and returns nothing
+			if (firstVoiced - seek >= LONG_SILENCE_FRAMES) {
+				seek = firstVoiced - LEAD_IN_FRAMES;
+				segmentFrames = Math.min(N_FRAMES, contentFrames - seek);
+			}
+			const frac = (seek - firstFrame) / Math.max(1, contentFrames - firstFrame);
+			progress(frac * 0.97, `Transcribing ${Math.round(frac * 100)}%`);
+			const timeOffset = (seek * HOP) / SAMPLE_RATE;
+			// SG-011: the previous text is not carried over a silence of ≥ 2 s
 			let silenceStart = firstVoiced;
 			while (silenceStart > 0 && !(mask[silenceStart - 1] > 0)) silenceStart--;
 			if (firstVoiced - silenceStart >= HALLUCINATION_SILENCE * 100) promptResetSince = allTokens.length;
@@ -1258,7 +1293,7 @@ export class WhisperModel {
 				}
 			}
 			if (!a.parsed) {
-				seek += segmentFrames;
+				seek = resumeBefore(seek, seek + segmentFrames);
 				continue;
 			}
 			removed.push(
@@ -1266,6 +1301,7 @@ export class WhisperModel {
 			);
 			const { parsed, segs, segTokens } = a;
 			let nextSeek = seek + parsed.seekFrames;
+			let lastWordFrame = seek;
 			const text = segs.flatMap((s) => s.textTokens);
 			let kept = segs;
 			if (text.length && a.alignment) {
@@ -1334,14 +1370,16 @@ export class WhisperModel {
 						const a = Math.max(prevEnd, Math.round(Math.min(w.start, windowEnd) * SAMPLE_RATE));
 						const b = Math.max(a, Math.round(Math.min(w.end, windowEnd) * SAMPLE_RATE));
 						const t = w.word.trim();
-						if (t)
+						if (t) {
 							words.push({ text: t, start: a, end: Math.min(b, input.samples), probability: w.probability });
+							lastWordFrame = Math.ceil(Math.min(b, input.samples) / HOP);
+						}
 					}
 					allTokens.push(...(segTokens.get(s) ?? s.textTokens));
 				}
 			}
 			if (!condition || r.temperature > 0.5) promptResetSince = allTokens.length;
-			seek = Math.max(seek + 1, nextSeek);
+			seek = Math.max(seek + 1, resumeBefore(Math.max(seek, lastWordFrame), nextSeek));
 		}
 		progress(0.97, 'Aligning words');
 		const totalMs = performance.now() - t0;

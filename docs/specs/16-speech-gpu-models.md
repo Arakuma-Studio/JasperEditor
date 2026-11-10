@@ -71,7 +71,9 @@ zero on any error.
 - SG-011 Hallucination guards (shared with spec 14 TC-003): skip windows with no voiced frames; reset the previous-text
   prompt after silence ≥ 2 s; drop (don't move) words lying entirely in non-speech; OpenAI's hallucination-silence-
   threshold heuristic (2 s); known-phrase filter; `splitAtPauses` must never move a word across a silence into speech.
-  Regression test from the measured failure ("Gracias por ver el vídeo" over silence).
+  Regression test from the measured failure ("Gracias por ver el vídeo" over silence). Speech after long digital
+  silence is never skipped: windows don't start with ≥ 2 s of silence, decoding never jumps over voice after ≥ 2 s
+  of silence, and spans with ≥ 2 s of voice but no word are decoded again alone (bounded; `guard.recovered`).
 - SG-012 Initial-prompt support (tokenizer encode) for verbatim prompting (spec 14 TC-003).
 - SG-013 JS hot spots: `logSoftmax`, beam top-k, mel FFT, `applyFilters` optimised (typed arrays, partial sort); target
   ≥ 2× less JS time per token on the build VM (measure before/after under the bench lock).
