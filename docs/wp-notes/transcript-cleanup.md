@@ -244,8 +244,9 @@ Deliberate differences from the prototype (labelled):
     lets an attempt of ≥ 6 content words keep up to 15 % (at least one) unmatched;
   - starts the retry where the words before both copies still match, one ASR substitution between two matches allowed
     ("que pueda ser en un mes…" / "¿Que puedo hacer en un mes…"), so the first word of the last take is never cut;
-  - leaves one or two words without content after a pause before the restart point to the retry ("… en un par | En el
-    Jasper Engine": the n-gram matched "el Jasper Engine");
+  - leaves one or two words without content after a pause, said into the restart point (< 0.15 s before it), to the
+    retry ("… en un par | En el Jasper Engine": the n-gram matched "el Jasper Engine"); a word apart from it stays in
+    the attempt (run 4, fragment E: "de" 0.43 s before "¿Que puedo hacer…" was left out of the hidden retake);
   - follows a chain: when an attempt is not said again right after, but its n-gram comes back in later attempts, each
     within the window of the one before, the attempts up to the last copy whose words it says (any order, the same
     garble allowance) are one restart ("…que puedo hacer … dólares. ¿Qué puedo hacer…? ¿Qué puedo hacer…? … ¿Que puedo
@@ -378,20 +379,46 @@ range, "%" as a word, the in / out points and their frames next to a cut; each f
 deliberate repeat is judged by the existing rules only (the allow list).
 
 Real-take corpus (`packages/project/test/cleanup-real-takes.test.ts`, `fixtures/cleanup-real-takes.json`): the
-whisper-large-v3-turbo transcripts of the six ~80 s fragments of the reporter's recording from runs 2 and 3 of the
-hidden-retake test, every mode (re-decode on, `chunking: "vad"`, re-decode off), 24 distinct transcripts, text and
-times only. The spec is written by hand per fragment as the speaker meant it — phrases the edit says exactly once
-(the last clean take of each sentence, and what only one take says: "millones de dólares" on E), phrases it never
-says (asides, garbled takes, cut-off attempts), no run of five words twice, no cut inside a kept word, and no kept
-take of a group losing a word — and runs through the detector and the media planner (Fast preset, speech under every
-word). At 0b492215c 12 of the 24 failed (B ×5, C b, D ×2, E ×4); all pass now. Limit: without the re-decode
+whisper-large-v3-turbo transcripts of the six ~80 s fragments of the reporter's recording from runs 2, 3 and 4 of the
+hidden-retake test, every mode (re-decode on, `chunking: "vad"`, re-decode off), 30 distinct transcripts, text and
+times only, plus the speech without words and the silence inside a word the reporter measured (run 4, fragment E:
+voice at 38.14–39.34 and 39.80–42.10, silence in the stretched "de" after 42.10). The spec is written by hand per
+fragment as the speaker meant it — phrases the edit says exactly once (the last clean take of each sentence, and what
+only one take says: "millones de dólares" on E), phrases it never says (asides, garbled takes, cut-off attempts), no
+run of five words twice, every word all kept or all removed (within a frame), the measured wordless voice of E (an
+attempt) removed, and no kept take of a group losing a word — and two invariants for every case: every second removed
+between the first and the last word lies within a finding that removes (or 0.1 s and a frame of it), and rejecting
+every finding removes nothing there. It runs through `analyzeSequenceCleanup` (Fast preset, 30 fps, speech under every
+word). At 0b492215c 12 of the first 24 failed (B ×5, C b, D ×2, E ×4); at f11b859fb 13 of 30 and the rejection
+invariant failed (the run-4 E cut of 1.8 s without a finding; words split by the kept word's ±50 ms of sound and frame
+snapping; a 0.12 s gap cut without a pause finding); all pass now. Limit: without the re-decode
 (fragment A, mode c) "a" stretched over the second "poder subirlos" (1.03 s) goes as a drawn vowel, so that case
 asserts "poder subirlos" and "la Play Store" apart.
 
 An accepted removal of words takes the voice without words inside it (`sequence.ts`): an untranscribed span kept for
 review never punches a hole into it (run 3, fragment E: "Que puedo hacer en un mes lo mismo" had no words at
-38.14–39.34 inside the hidden retake 31.88–42.48). Test: `cleanup-hidden-retakes.test.ts` "voice without words inside
-a removed retake goes with it".
+38.14–39.34 inside the hidden retake 31.88–42.48), and the detector proposes such voice for removal with the run of
+retries around it (`suggested: remove`, still reviewable). Test: `cleanup-hidden-retakes.test.ts` "voice without words
+inside a removed retake goes with it".
+
+**Nothing is removed without a finding** (run 4, fragment E: a cut of 1.8 s of a take, −11 to −17 dBFS, whose reasons
+read "untranscribed, pause" and that no finding covered — a stretched "de" touched the end of the take's voice run, so
+the run had a word and no untranscribed finding, and the planner dropped the voice no kept word held):
+- untranscribed voice is also the stretch of a voice run that words only partly cover — ≥ 0.5 s more than 0.15 s from
+  every word (`detector.ts` `frameFindings`);
+- the planner takes the ranges of the findings that remove (`covered`) and keeps voice between the first and the last
+  word that the plan drops outside all of them by more than 0.1 s (`UNCOVERED_TOLERANCE_S`; level edges trim word
+  onsets and decays) — one re-plan; `sequence.ts` passes the accepted findings and the words a take choice drops;
+- a piece shorter than `minPieceS` stays when it holds a kept word (strict removal; the prototype dropped it);
+- gaps of exactly `maxGapS` join (float slack), as the pause finding needs more than `maxGapS` of non-speech.
+Asserted in the corpus (above) and in `cleanup-property.test.ts` "every removed second is explained by a finding, and
+rejecting every finding removes nothing".
+
+**No cut splits a word** (strict removal): next to a cut the edge sits on the word boundary — the in point of a kept
+word after removed words is not before the removed word's end, the out point before a removed word not after its
+start (the kept word's ±50 ms of sound had put edges up to 70 ms into removed words) — and frame snapping floors both
+(`MediaPlan.tight`). The F cut now starts at "Windows"' start (4.30, frame 129). The port check uses the prototype's
+edges (`strictRemoval: false`).
 
 Spoken symbols: a word that is only a symbol said as a word and punctuation ("%", "%...", "€", "$", "&", "+", "@",
 "°") is a candidate word with the symbol's name as its token ("porciento" / "percent"), so it covers its sound: the

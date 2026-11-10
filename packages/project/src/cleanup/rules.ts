@@ -231,12 +231,14 @@ export function ruleRestarts(ctx: RuleContext): void {
 			if (hit !== null) break;
 		}
 		if (hit !== null) {
-			// …and starts at its own first word: one or two words without content after a pause before the restart point
-			// begin the retry ("… en un par | En el Jasper Engine": the n-gram matched "el Jasper Engine")
+			// …and starts at its own first word: one or two words without content after a pause, said into the restart
+			// point, begin the retry ("… en un par | En el Jasper Engine": the n-gram matched "el Jasper Engine"); a word
+			// apart from it is left of the attempt (run 4, fragment E: "de" 0.43 s before "¿Que puedo hacer…")
 			let end = j;
 			for (let p = j; p > Math.max(hit + 1, j - 3); p--)
 				if (words[p]!.s - words[p - 1]!.e >= t.takeGapS) {
-					if (!cw(ctx, content(ctx, span(p, j))).length) end = p;
+					const joined = span(p, j).every((q) => words[q + 1]!.s - words[q]!.e < LEAD_IN_JOIN_S);
+					if (joined && !cw(ctx, content(ctx, span(p, j))).length) end = p;
 					break;
 				}
 			const fs = end - hit <= 2;
@@ -247,6 +249,9 @@ export function ruleRestarts(ctx: RuleContext): void {
 		j = Math.max(j, at) + 1;
 	}
 }
+
+/** A lead-in word of a retry is said into it: closer than this (seconds) to the next word. */
+const LEAD_IN_JOIN_S = 0.15;
 
 /** One retake hit of the take rule: unit `from` was said again as unit `to`. */
 export type TakeHit = { from: number; to: number };

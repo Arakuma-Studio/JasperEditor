@@ -1,23 +1,34 @@
 // Clean Up on real transcripts (docs/wp-notes/transcript-cleanup.md "Real-take corpus"): whisper-large-v3-turbo
 // transcripts of six ~80 s fragments of the reporter's 57-minute Spanish talking-head recording, as the hidden-retake
-// test wrote them in its runs 2 and 3 (re-decode on, `chunking: "vad"`, re-decode off; `fixtures/cleanup-real-takes.json`,
-// text and times only). The spec is what the speaker meant, written by hand per fragment: the edit keeps the last
-// complete clean take of every sentence once, removes every earlier attempt, restart and aside, never plays a sentence
-// twice, never loses what only one take says, and no cut starts or ends inside a kept word. The cut runs through the
-// detector and the media planner with a voice analysis that has speech under every word (Fast preset).
+// test wrote them in its runs 2, 3 and 4 (re-decode on, `chunking: "vad"`, re-decode off;
+// `fixtures/cleanup-real-takes.json`, text and times only, plus the speech without words the reporter measured). The
+// spec is what the speaker meant, written by hand per fragment: the edit keeps the last complete clean take of every
+// sentence once, removes every earlier attempt, restart and aside, never plays a sentence twice, never loses what only
+// one take says, and no cut starts or ends inside a word. And for every case: whatever is removed between the first and
+// the last word is explained by a finding, rejecting every finding removes nothing there, and a take marked kept loses
+// no word. The cut is the sequence's (`analyzeSequenceCleanup`, Fast preset) with a voice analysis that has speech
+// under every word and where the reporter measured it.
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { type CleanupVoice, detectCleanup } from '../src/cleanup/detector.ts';
+import type { CleanupVoice } from '../src/cleanup/detector.ts';
 import { cleanupNorm, sameWord } from '../src/cleanup/lists.ts';
-import { planMediaCuts } from '../src/cleanup/plan.ts';
-import { FAST_SETTINGS } from '../src/cleanup/schema.ts';
+import { FAST_SETTINGS, FINDING_KINDS } from '../src/cleanup/schema.ts';
+import { analyzeSequenceCleanup, type CleanupDecisions } from '../src/cleanup/sequence.ts';
+import { transcriptAttachPlan } from '../src/speech/index.ts';
 import { FLICKS_PER_SECOND } from '../src/time.ts';
+import { Harness, videoAsset } from './helpers.ts';
+
+/** Level edges trim a word's quiet onset and decay: removed voice this close (seconds) to a cut edge is the edge. */
+const EDGE_S = 0.1;
 
 type Case = {
 	id: string;
 	fragment: string;
 	from: string[];
 	redecoded: Array<[number, number]>;
+	/** Speech without words / silence inside a word the reporter measured (seconds). */
+	voiced?: Array<[number, number]>;
+	unvoiced?: Array<[number, number]>;
 	words: Array<[string, number, number]>;
 };
 
@@ -98,40 +109,61 @@ const SPEC: Record<string, { once: string[]; never: string[] }> = {
 	},
 };
 
-const S = (x: number) => Math.round(x * FLICKS_PER_SECOND);
+const FPS = 30;
 
-function cut(c: Case) {
-	const words = c.words.map(([text, s, e]) => ({ text, start: S(s), end: S(e), confidence: 0.9 }));
-	const n = Math.ceil(Math.max(...c.words.map((w) => w[2])) * 100) + 200;
+/** The case's cut: removed and kept ranges (seconds), the words heard, the analysis. */
+function cut(c: Case, decisions?: CleanupDecisions) {
+	const end = Math.max(...c.words.map((w) => w[2])) + 2;
+	const n = Math.ceil(end * 100);
 	const classes = new Uint8Array(n);
 	const level = new Uint8Array(n).fill((120 - 64) * 2);
-	for (const [, s, e] of c.words)
-		for (let f = Math.floor(s * 100); f < Math.ceil(e * 100); f++) {
-			classes[f] = 2;
-			level[f] = (120 - 20) * 2;
+	const speech = (a: number, b: number, on: boolean) => {
+		for (let f = Math.floor(a * 100); f < Math.min(n, Math.ceil(b * 100)); f++) {
+			classes[f] = on ? 2 : 0;
+			level[f] = (120 + (on ? -20 : -64)) * 2;
 		}
+	};
+	for (const [, s, e] of c.words) speech(s, e, true);
+	for (const [a, b] of c.voiced ?? []) speech(a, b, true);
+	for (const [a, b] of c.unvoiced ?? []) speech(a, b, false);
 	const voice: CleanupVoice = {
 		classes,
 		level,
 		frameCount: n,
 		levels: { floorDb: -64, speechDb: null, speechThresholdDb: null, breathFloorDb: null },
 	};
-	const r = detectCleanup({
-		mediaId: 'med_real',
-		words,
-		voice,
-		language: 'es',
+	const H = new Harness({ preset: 'hd-1080p-30' });
+	const r0 = H.ok([{ type: 'media.register', asset: videoAsset({ seconds: end, kind: 'audio' }) }]);
+	const mediaId = (r0.results[0] as { mediaId: string }).mediaId;
+	H.ok([{ type: 'clip.place', source: { mediaId }, at: 0, tracks: { audio: ['A1'] }, mode: 'overwrite' }]);
+	const S = (x: number) => Math.round(x * FLICKS_PER_SECOND);
+	const plan = transcriptAttachPlan(
+		H.doc,
+		{
+			target: { type: 'media' },
+			model: 'whisper-large-v3-turbo',
+			language: 'es',
+			task: 'transcribe',
+			words: c.words.map(([text, s, e]) => ({ text, start: S(s), end: S(e), confidence: 0.9 })),
+			speakers: {},
+			guard: { redecoded: { ranges: c.redecoded.map(([start, end]) => ({ start, end, replaced: true })) } },
+		},
+		{ mediaId, replace: true },
+	);
+	if ('error' in plan) throw new Error(plan.error);
+	H.ok(plan.commands);
+	const a = analyzeSequenceCleanup({
+		doc: H.doc,
+		seq: H.seq,
+		voice: () => voice,
 		settings: FAST_SETTINGS,
-		redecoded: c.redecoded.map(([a, b]) => [S(a), S(b)] as const),
+		...(decisions ? { decisions } : {}),
 	});
-	const removedIdx = new Set<number>();
-	for (const f of r.findings)
-		if (f.words && f.suggested === 'remove') for (let i = f.words[0]; i <= f.words[1]; i++) removedIdx.add(i);
-	const removed = r.words.map((w, k) => r.guarded[k]! || removedIdx.has(w.i));
-	const plan = planMediaCuts({ words: r.words, removed, voice, settings: FAST_SETTINGS });
-	const inKept = (t: number) => plan.kept.some(([a, b]) => t >= a && t < b);
-	const heard = r.words.filter((w) => inKept((w.s + w.e) / 2));
-	return { r, plan, heard, removedIdx };
+	if (!a.ok) throw new Error(a.message);
+	const kept = a.plan.kept.map((k) => [k.start / FPS, k.end / FPS] as const);
+	const removed = a.plan.ranges.map((r) => [r.start / FPS, r.end / FPS] as const);
+	const heard = c.words.filter(([, s, e]) => kept.some(([x, y]) => (s + e) / 2 >= x && (s + e) / 2 < y));
+	return { a, kept, removed, heard };
 }
 
 /** How many times `phrase` occurs in a row in `toks` (ASR variants match). */
@@ -142,21 +174,47 @@ function count(toks: readonly string[], phrase: string): number {
 	return n;
 }
 
+const sec = (f: number) => f / FLICKS_PER_SECOND;
+/** Seconds of `[a, b)` outside `spans`. */
+const outside = (a: number, b: number, spans: ReadonlyArray<readonly [number, number]>) => {
+	let left = b - a;
+	for (const [x, y] of spans) left -= Math.max(0, Math.min(b, y) - Math.max(a, x));
+	return left;
+};
+
 describe('Clean Up on real transcripts (corpus)', () => {
 	for (const c of corpus.cases)
 		it(`${c.id}: the last clean take of each sentence, once`, () => {
-			const { r, plan, heard, removedIdx } = cut(c);
-			// a take marked kept is never removed by another rule
-			for (const g of r.groups) {
-				const [w0, w1] = g.takes[g.chosen]!.words;
-				const lost = r.words.filter((w) => w.i >= w0 && w.i <= w1 && removedIdx.has(w.i));
+			const { a, kept, removed, heard } = cut(c);
+			const first = c.words[0]![1];
+			const last = c.words[c.words.length - 1]![2];
+			const inside = removed
+				.map(([x, y]) => [Math.max(x, first), Math.min(y, last)] as const)
+				.filter(([x, y]) => y > x);
+			// every removed second is explained by a finding (its edges within the tolerance and a frame)
+			const tol = EDGE_S + 1 / FPS;
+			const explained = a.findings
+				.filter((f) => f.suggested === 'remove')
+				.map((f) => [sec(f.range.start) - tol, sec(f.range.end) + tol] as const);
+			for (const [x, y] of inside)
 				expect(
-					lost.map((w) => w.text),
+					outside(x, y, explained),
+					`${x.toFixed(2)}–${y.toFixed(2)} removed without a finding`,
+				).toBeLessThan(0.05);
+			// a take marked kept loses no word
+			for (const g of a.groups) {
+				const t = g.takes[g.chosen]!;
+				const lost = c.words.filter(
+					([, s, e], i) =>
+						i >= t.words[0] && i <= t.words[1] && !kept.some(([x, y]) => (s + e) / 2 >= x && (s + e) / 2 < y),
+				);
+				expect(
+					lost.map((w) => w[0]),
 					`kept take ${g.id} removed in part`,
 				).toEqual([]);
 			}
-			const toks = heard.map((w) => cleanupNorm(w.text)).filter(Boolean);
-			const text = heard.map((w) => w.text).join(' ');
+			const toks = heard.map((w) => cleanupNorm(w[0])).filter(Boolean);
+			const text = heard.map((w) => w[0]).join(' ');
 			const spec = SPEC[c.fragment]!;
 			for (const p of spec.once) expect(count(toks, p), `"${p}" once in: ${text}`).toBe(1);
 			for (const p of spec.never) expect(count(toks, p), `"${p}" never in: ${text}`).toBe(0);
@@ -170,11 +228,27 @@ describe('Clean Up on real transcripts (corpus)', () => {
 				[...grams].filter(([, k]) => k > 1).map(([g]) => g),
 				`twice in: ${text}`,
 			).toEqual([]);
-			// no cut inside a kept word
-			for (const w of heard)
+			// no cut inside a word: a word is all kept or all removed (within a frame)
+			const slack = 1 / FPS + 0.01;
+			for (const [t, s, e] of c.words) {
+				const out = outside(s, e, kept);
 				expect(
-					plan.kept.some(([a, b]) => w.s >= a - 0.011 && w.e <= b + 0.011),
-					`"${w.text}" ${w.s}–${w.e} whole`,
+					out < slack || out > e - s - slack,
+					`"${t}" ${s}–${e} split: ${JSON.stringify(kept.filter(([x, y]) => x < e + 1 && y > s - 1))} ${JSON.stringify(a.findings.filter((f) => sec(f.range.start) < e + 0.5 && sec(f.range.end) > s - 0.5).map((f) => [f.kind, f.suggested, sec(f.range.start), sec(f.range.end)]))}`,
 				).toBe(true);
+			}
+			// the speech without words the reporter measured is retries here: it goes
+			for (const [x, y] of c.voiced ?? [])
+				expect(y - x - outside(x, y, kept), `voice ${x}–${y} kept`).toBeLessThan(0.05);
 		});
+
+	it('rejecting every finding removes nothing between the first and the last word', () => {
+		for (const c of corpus.cases) {
+			const { removed } = cut(c, { rejectKinds: [...FINDING_KINDS] });
+			const first = c.words[0]![1];
+			const last = c.words[c.words.length - 1]![2];
+			const inside = removed.filter(([x, y]) => Math.min(y, last) - Math.max(x, first) > 1 / FPS);
+			expect(inside, c.id).toEqual([]);
+		}
+	});
 });

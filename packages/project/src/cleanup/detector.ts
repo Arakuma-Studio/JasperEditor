@@ -727,6 +727,14 @@ export function detectCleanup(input: DetectInput): DetectResult {
 	}
 	// frame findings
 	if (voice) raw.push(...frameFindings(voice, words, settings));
+	// voice without words inside a removed run of retries belongs to it: proposed for removal with it (reviewable;
+	// run 4, fragment E: "Que puedo hacer en un mes lo mismo" without words between two parts of a hidden retake)
+	const retries = raw.filter(
+		(r) => r.suggested === 'remove' && (TAKE_LABELS.has(r.kind) || r.kind === 'hidden-retake'),
+	);
+	for (const r of raw)
+		if (r.kind === 'untranscribed' && retries.some((t) => t.start <= r.start && r.end <= t.end))
+			r.suggested = 'remove';
 
 	raw.sort((x, y) => x.start - y.start || x.end - y.end || x.kind.localeCompare(y.kind));
 	const findings: CleanupFinding[] = [];
@@ -846,6 +854,11 @@ function reasonOf(
 	return { key: `cleanup.reason.${kind}`, params };
 }
 
+/** Voice within this many seconds of a word counts as that word's (timestamps are loose)… */
+const UNCOVERED_MARGIN_S = 0.15;
+/** … and a stretch of a partly covered voice run at least this long (seconds) without words is untranscribed. */
+const UNCOVERED_MIN_S = 0.5;
+
 /** Pauses, breaths and untranscribed voice from the frame classes (between the first and last candidate word). */
 function frameFindings(
 	voice: CleanupVoice,
@@ -904,6 +917,28 @@ function frameFindings(
 			}
 			if (!any && (g - f) * FR >= T.untranscribedMinS - 1e-9)
 				push('untranscribed', settings.rules.untranscribed, f, g);
+			else if (any) {
+				// voice a word only partly covers: its stretch without words (beyond `UNCOVERED_MARGIN` of every word,
+				// at least `UNCOVERED_MIN_S`) is untranscribed voice too — run 4, fragment E: a stretched "de" covered
+				// the end of a 3.6 s attempt, and the 1.8 s before it was cut with no finding to review
+				const margin = Math.round(UNCOVERED_MARGIN_S / FR);
+				const near = (k: number) => {
+					for (let q = Math.max(f, k - margin); q < Math.min(g, k + margin + 1); q++)
+						if (covered[q - lo]) return true;
+					return false;
+				};
+				for (let k = f; k < g; ) {
+					if (near(k)) {
+						k++;
+						continue;
+					}
+					let m = k;
+					while (m < g && !near(m)) m++;
+					if ((m - k) * FR >= UNCOVERED_MIN_S - 1e-9)
+						push('untranscribed', settings.rules.untranscribed, k, m);
+					k = m;
+				}
+			}
 		} else {
 			while (g < hi && voice.classes[g] !== VOICE_CLASS_SPEECH) g++;
 			const between = f > lo && clsAt(voice, f - 1) === VOICE_CLASS_SPEECH && g < hi;

@@ -395,7 +395,11 @@ whisper evaluation (53 configurations; the numbers of spec 16 §0). This section
   `replaceWindowWords`): a word timed inside the word before it takes the second half of that word's time (run 3,
   fragment E: "decenas hacer... de" with "hacer..." at 37.23–37.23). An original word the re-decode wrote nothing over
   stays even next to a stretched one it replaced (run 3, fragment E: "de" at 42.03–42.48 where the chunked fallback
-  wrote no words for the take at 38.14–42.48); Clean Up removes it with the retake around it.
+  wrote no words for the take at 38.14–42.48); Clean Up removes it with the retake around it. Inside the windows a
+  re-decode replaced, voice without words (≥ 2 s) and words still stretched over voice are decoded again alone with
+  0.5 s of context (`recoverReplaced`, ≤ 32 decodes per job; reported with the safety net's `guard.recovered`): run 4's
+  window at 29.79–47.03 kept 53 words where chunked mode wrote 83 and left the take at 38.14–42.15 without words.
+  Test: `speech-hidden-takes.test.ts` "voice a replaced window leaves without words is decoded alone".
   At an edge that found no pause the original words within 0.5 s of it stay
   (`replaceRegion`; measured: a window cut inside "and a foraging" made tiny.en write "far …"). Replacement keeps the
   words sorted, non-overlapping and integer (`replaceWindowWords`), and swaps the window's segments. Bounded: ≤ 96

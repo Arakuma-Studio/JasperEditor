@@ -29,11 +29,21 @@ export type MediaPlanInput = {
 	/** … except these (accepted breath findings) when the policy is `keep`. */
 	removeBreaths?: readonly Span[];
 	/**
-	 * Removed words between kept words closer than `maxGapS` are cut out too (default). `false` = the prototype's
-	 * behaviour (they stay inside the joined range), for the port check.
+	 * Removed words between kept words closer than `maxGapS` are cut out too, edges next to a cut sit on the word
+	 * boundary and a short piece holding a kept word stays (default). `false` = the prototype's behaviour (removed words
+	 * stay inside the joined range, level edges as they fall, short pieces dropped), for the port check.
 	 */
 	strictRemoval?: boolean;
+	/**
+	 * The media ranges (seconds) of the findings that remove time — every one the user can see and toggle. When given,
+	 * voice the plan would remove outside all of them (by more than `UNCOVERED_TOLERANCE_S`) is kept: nothing is cut
+	 * that no finding explains (run 4, fragment E: 1.8 s of a take cut with no finding).
+	 */
+	covered?: readonly Span[];
 };
+
+/** Removed voice this close (seconds) to a finding or a kept piece counts as an edge (level edges trim word decays). */
+export const UNCOVERED_TOLERANCE_S = 0.1;
 
 export type MediaPlan = {
 	/** Kept pieces, sorted, disjoint, seconds. */
@@ -71,6 +81,36 @@ function runsOf(mask: readonly boolean[]): Span[] {
 
 /** Plans the kept pieces of one media (see the module comment). */
 export function planMediaCuts(input: MediaPlanInput): MediaPlan {
+	const plan = planPieces(input);
+	const voice = input.voice;
+	if (!input.covered || !voice?.frameCount || !input.words.length) return plan;
+	// voice between the first and the last word that the plan drops and no finding explains goes back in
+	const tol = Math.round(UNCOVERED_TOLERANCE_S / FR);
+	const lo = Math.max(0, Math.trunc(Math.min(...input.words.map((w) => w.s)) / FR));
+	const hi = Math.min(voice.frameCount, Math.ceil(Math.max(...input.words.map((w) => w.e)) / FR));
+	if (hi <= lo) return plan;
+	const explained = new Uint8Array(hi - lo);
+	const mark = (a: number, b: number) => {
+		for (let f = Math.max(lo, a); f < Math.min(hi, b); f++) explained[f - lo] = 1;
+	};
+	// level edges trim a word's quiet onset and decay: voice that close to a kept piece is its edge
+	for (const [a, b] of plan.kept) mark(Math.floor(a / FR) - tol, Math.ceil(b / FR) + tol);
+	for (const [a, b] of input.covered) mark(Math.floor(a / FR) - tol, Math.ceil(b / FR) + tol);
+	const lost: Span[] = [];
+	for (let f = lo; f < hi; ) {
+		if (voice.classes[f] !== VOICE_CLASS_SPEECH || explained[f - lo]) {
+			f++;
+			continue;
+		}
+		let g = f;
+		while (g < hi && voice.classes[g] === VOICE_CLASS_SPEECH && !explained[g - lo]) g++;
+		if (g - f >= tol) lost.push([f * FR, g * FR]);
+		f = g;
+	}
+	return lost.length ? planPieces({ ...input, keepSpeech: [...(input.keepSpeech ?? []), ...lost] }) : plan;
+}
+
+function planPieces(input: MediaPlanInput): MediaPlan {
 	const P = input.settings;
 	const voice =
 		input.voice && input.voice.frameCount > 0 && input.voice.levels.floorDb !== null ? input.voice : null;
@@ -105,7 +145,7 @@ export function planMediaCuts(input: MediaPlanInput): MediaPlan {
 	const out0: R[] = [];
 	for (const r of rng) {
 		const l = out0[out0.length - 1];
-		if (l && (r.a - l.b <= maxGap || overlaps(input.keepPauses, l.b, r.a))) {
+		if (l && (r.a - l.b <= maxGap + 1e-6 || overlaps(input.keepPauses, l.b, r.a))) {
 			l.b = Math.max(l.b, r.b);
 			if (r.k >= 0 && (l.k < 0 || input.words[r.k]!.e >= input.words[l.k]!.e)) l.k = r.k;
 		} else out0.push({ ...r });
@@ -145,7 +185,11 @@ export function planMediaCuts(input: MediaPlanInput): MediaPlan {
 	for (const r of out) {
 		let { a, b } = r;
 		const first = firstKeptFrom(a);
-		const tightA = first > 0 && !!input.removed[first - 1] && input.words[first]!.s >= a - 0.08;
+		const tightA =
+			first > 0 &&
+			!!input.removed[first - 1] &&
+			input.words[first]!.s >= a - 0.08 &&
+			input.words[first]!.s <= a + 0.15;
 		const next = r.k >= 0 ? input.words[r.k + 1] : undefined;
 		const tightB = !!next && !!input.removed[r.k + 1] && next.s < b + 0.08;
 		if (voice && mode === 'level' && thrOut !== null && thrIn !== null) {
@@ -174,7 +218,16 @@ export function planMediaCuts(input: MediaPlanInput): MediaPlan {
 			// prototype `keep_breath`: a2 = min(a2, (k + 1) · FR) whenever the policy keeps breaths
 			if (m > 0 || keepPolicy) a2 = Math.min(a2, (f + 1) * FR);
 		}
-		res.push({ ...r, a: Math.max(0, a2, r.minA), b: b2, tight: [tightA, tightB] });
+		// next to a cut the edge is the word boundary: the kept word whole, nothing of the removed word beside it (the
+		// kept word's ±50 ms of sound gave the in point up to 70 ms of a removed "Y"; real-take corpus) — with strict
+		// removal, like cutting removed words out of joined ranges
+		let a3 = Math.max(0, a2, r.minA);
+		let b3 = b2;
+		if (input.strictRemoval !== false) {
+			if (tightA) a3 = Math.min(Math.max(a3, input.words[first - 1]!.e), input.words[first]!.s);
+			if (tightB) b3 = Math.max(Math.min(b3, next!.s), a3);
+		}
+		res.push({ ...r, a: a3, b: b3, tight: [tightA, tightB] });
 	}
 	res.sort((x, y) => x.a - y.a);
 
@@ -212,7 +265,11 @@ export function planMediaCuts(input: MediaPlanInput): MediaPlan {
 			if (r.k >= 0) l.k = r.k;
 		} else merged.push({ ...r });
 	}
-	const long = merged.filter((x) => x.b - x.a >= P.guards.minPieceS);
+	// a piece shorter than `minPieceS` goes unless it holds a kept word: no word is cut without a finding (with strict
+	// removal; the prototype dropped it)
+	const holdsWord = (x: R) =>
+		input.strictRemoval !== false && keepIdx.some((k) => input.words[k]!.s < x.b && input.words[k]!.e > x.a);
+	const long = merged.filter((x) => x.b - x.a >= P.guards.minPieceS || holdsWord(x));
 	return {
 		kept: long.map((x) => [x.a, x.b] as Span),
 		mode,
