@@ -1404,13 +1404,10 @@ export class ExportService {
 		} finally {
 			endBake();
 		}
-		// The mixdown (started before the preparation) is an input of the composite.
-		const audio = await report.time('audioWait', () =>
-			Promise.resolve(audioIn).catch(async (e) => {
-				await abandon();
-				throw e;
-			}),
-		);
+		// The mixdown (started before the preparation): an input of a one-graph composite, which waits for it; segments
+		// render while it is delivered (their sound is encoded and joined when it is ready).
+		const audioP = Promise.resolve(audioIn);
+		audioP.catch(() => {});
 		const endPlan = report.begin('plan');
 		await this.pinInputs(ctx, planned, exts, prepared, masters);
 		const pinNested = async (pl: PlannedExport, parent: string): Promise<void> => {
@@ -1451,6 +1448,17 @@ export class ExportService {
 			});
 		}
 		const split = segPlan.segments.length > 1;
+		let audio: MixdownResult | null = null;
+		if (!split) {
+			const endWait = report.begin('audioWait');
+			audio = await audioP
+				.catch(async (e) => {
+					endPlan();
+					await abandon();
+					throw e;
+				})
+				.finally(endWait);
+		}
 		/** Segments rendering at once. */
 		const atOnce = split ? Math.max(1, Math.min(segPlan.concurrency, segPlan.segments.length)) : 1;
 		const fps = snap.settings.fps;
@@ -1652,8 +1660,12 @@ export class ExportService {
 		const done = parts.map(() => 0);
 		let failed: { error: unknown; part: Part } | null = null;
 		// the sound of a segmented export is encoded while the segments render (the join then only copies)
-		const sound = split ? this.segmentSound(planned, audio, soxr, ctx, runAbort.signal) : null;
-		sound?.catch(() => {});
+		const sound = split ? this.segmentSound(planned, audioP, soxr, ctx, runAbort.signal) : null;
+		// a failed mixdown or sound encode fails the export and stops the segments
+		sound?.catch((error: unknown) => {
+			failed ??= { error, part: parts[0]! };
+			runAbort.abort();
+		});
 		const endEncode = report.begin(still ? 'still' : 'encode');
 		// Memory watchdog (AGENTS §0): the composites' resident memory is sampled every second; past the budget the most
 		// recently started segment is stopped and queued again with one segment fewer at a time, and a lone composite
@@ -1661,6 +1673,8 @@ export class ExportService {
 		const budget = still ? 0 : compositeMemoryBudget();
 		const running = new Map<number, { ac: AbortController; pid: number | null; since: number }>();
 		const requeued = new Set<number>();
+		/** Segments the watchdog stopped whose process has not ended yet (their memory is still counted). */
+		const stopping = new Set<number>();
 		const pending = parts.map((_, i) => i);
 		let limit = atOnce;
 		/** Lanes waiting for a running composite to end (a stopped segment may come back). */
@@ -1714,6 +1728,7 @@ export class ExportService {
 				})
 				.finally(() => {
 					running.delete(i);
+					stopping.delete(i);
 					runAbort.signal.removeEventListener('abort', stop);
 					for (const wake of waiting.splice(0)) wake();
 				});
@@ -1723,11 +1738,13 @@ export class ExportService {
 				? setInterval(() => {
 						let rss = 0;
 						for (const r of running.values()) rss += r.pid ? residentBytes(r.pid) : 0;
-						if (rss <= budget) return;
+						// (one stop at a time: the stopped process's memory is counted until it has ended)
+						if (rss <= budget || stopping.size > 0) return;
 						const gbs = (b: number) => `${(b / 1024 ** 3).toFixed(1)} GB`;
 						if (running.size > 1) {
 							const [i, r] = [...running.entries()].sort((a, b) => b[1].since - a[1].since)[0]!;
-							limit = Math.max(1, running.size - 1);
+							limit = Math.max(1, Math.min(limit, running.size) - 1);
+							stopping.add(i);
 							requeued.add(i);
 							ctx.log(
 								`native: composites at ${gbs(rss)}, over the ${gbs(budget)} budget: ${parts[i]!.label} stopped and queued again, ${limit} at a time`,
@@ -1752,6 +1769,11 @@ export class ExportService {
 			const lane = async (lane: number) => {
 				while (failed === null && !runAbort.signal.aborted) {
 					if (lane >= limit) return;
+					if (running.size >= limit) {
+						// (the watchdog lowered the limit while this lane's segment was stopped: wait for a place)
+						await new Promise<void>((wake) => waiting.push(wake));
+						continue;
+					}
 					const i = pending.shift();
 					if (i === undefined) {
 						// a segment may still come back from the watchdog while others run
@@ -1800,7 +1822,7 @@ export class ExportService {
 					'native: the segments were encoded with different parameter sets; rendering one graph instead',
 				);
 				for (const p of parts) await rm(p.file, { force: true });
-				return this.runNative(planned, masters, output, ctx, still, audio, pipeline, true);
+				return this.runNative(planned, masters, output, ctx, still, audioP, pipeline, true);
 			}
 		}
 		const count = await report.time('frameCheck', () =>
@@ -1828,13 +1850,14 @@ export class ExportService {
 	 */
 	private async segmentSound(
 		planned: PlannedExport,
-		audio: MixdownResult | null,
+		audioP: Promise<MixdownResult | null>,
 		soxr: boolean,
 		ctx: JobContext,
 		signal: AbortSignal,
 	): Promise<string | null> {
 		const o = planned.output;
 		if (o.videoOnly) return null;
+		const audio = await audioP;
 		const encoded = deliveredEncode(planned, audio);
 		if (encoded) return encoded;
 		const ext = o.encoder?.container ?? 'mp4';
