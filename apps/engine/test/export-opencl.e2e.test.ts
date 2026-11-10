@@ -182,7 +182,8 @@ describe.runIf(enabled)('OpenCL kernel fidelity (JASPER_OPENCL_E2E=1)', { timeou
 		},
 	);
 
-	it('exports shaken, motion-blurred subtitles with the OpenCL kernel as with the CPU kernel', async () => {
+	/** Subtitle words: Transform pop-in keyframes with a 360° shutter, then S_Shake, one every 20 frames, over a video. */
+	async function subtitleDoc(): Promise<DocBuilder> {
 		const app = engine.app as never;
 		const a = await register(app, fixture('clip-a.mp4'), hostH());
 		const d = new DocBuilder('hd-1080p-30');
@@ -196,7 +197,6 @@ describe.runIf(enabled)('OpenCL kernel fidelity (JASPER_OPENCL_E2E=1)', { timeou
 				sourceRange: { in: { sourceFrames: 0 }, out: { sourceFrames: FRAMES } },
 			},
 		]);
-		// subtitle words: Transform pop-in keyframes with a 360° shutter, then S_Shake, one every 20 frames
 		for (let i = 0; i < FRAMES / 20; i++) {
 			const at = i * 20;
 			const t = d.tx([
@@ -250,40 +250,46 @@ describe.runIf(enabled)('OpenCL kernel fidelity (JASPER_OPENCL_E2E=1)', { timeou
 					},
 				]);
 		}
-		const exportFile = async () => {
-			const settings = {
-				sequenceId: d.seqId,
-				range: { type: 'entire' },
-				container: 'mov',
-				engine: 'auto',
-				video: {
-					codec: 'prores',
-					width: 1280,
-					height: 720,
-					frameRate: { num: 30, den: 1 },
-					scaling: 'fit',
-					quality: { mode: 'crf', value: 10 },
-					encoderSpeed: 'fast',
-				},
-				audio: { codec: 'pcm', sampleRate: 48000, channels: 2 },
-			};
-			const r = await engine.app.inject({
-				method: 'POST',
-				url: '/api/exports',
-				headers: { ...JSON_H, ...hostH() },
-				payload: { envelope: d.envelope(), sequenceId: d.seqId, settings },
-			});
-			expect(r.statusCode, r.body).toBeLessThan(300);
-			const done = await coreServices(engine.app).queue.wait(r.json().id);
-			expect(done.state, JSON.stringify(done.error)).toBe('succeeded');
-			return {
-				file: join(coreServices(engine.app).config.paths.rendersDir, done.id, 'output.mov'),
-				result: ExportResultSchema.parse(done.result),
-			};
+		return d;
+	}
+
+	const exportFile = async (d: DocBuilder) => {
+		const settings = {
+			sequenceId: d.seqId,
+			range: { type: 'entire' },
+			container: 'mov',
+			engine: 'auto',
+			video: {
+				codec: 'prores',
+				width: 1280,
+				height: 720,
+				frameRate: { num: 30, den: 1 },
+				scaling: 'fit',
+				quality: { mode: 'crf', value: 10 },
+				encoderSpeed: 'fast',
+			},
+			audio: { codec: 'pcm', sampleRate: 48000, channels: 2 },
 		};
-		const gpu = await exportFile();
+		const r = await engine.app.inject({
+			method: 'POST',
+			url: '/api/exports',
+			headers: { ...JSON_H, ...hostH() },
+			payload: { envelope: d.envelope(), sequenceId: d.seqId, settings },
+		});
+		expect(r.statusCode, r.body).toBeLessThan(300);
+		const done = await coreServices(engine.app).queue.wait(r.json().id);
+		expect(done.state, JSON.stringify(done.error)).toBe('succeeded');
+		return {
+			file: join(coreServices(engine.app).config.paths.rendersDir, done.id, 'output.mov'),
+			result: ExportResultSchema.parse(done.result),
+		};
+	};
+
+	it('exports shaken, motion-blurred subtitles with the OpenCL kernel as with the CPU kernel', async () => {
+		const d = await subtitleDoc();
+		const gpu = await exportFile(d);
 		process.env.JASPER_EXPORT_OPENCL = '0';
-		const cpu = await exportFile();
+		const cpu = await exportFile(d);
 		delete process.env.JASPER_EXPORT_OPENCL;
 		report(
 			`OpenCL pipeline ${JSON.stringify(gpu.result.pipeline)}; CPU ${JSON.stringify(cpu.result.pipeline)}`,
@@ -304,6 +310,24 @@ describe.runIf(enabled)('OpenCL kernel fidelity (JASPER_OPENCL_E2E=1)', { timeou
 			const within2 = agreement(a, b, 2);
 			report(`subtitles frame ${n}: ${(within2 * 100).toFixed(3)} % of values within 2 levels`);
 			expect(within2, `frame ${n}`).toBeGreaterThanOrEqual(0.995);
+		}
+	});
+
+	it('renders again with the CPU kernel when the OpenCL composite fails', async () => {
+		const d = await subtitleDoc();
+		// (the probe passed; the composite's device then fails to open: no OpenCL platform)
+		const icd = process.env.OCL_ICD_FILENAMES;
+		process.env.OCL_ICD_FILENAMES = join(tmpdir(), 'no-such-opencl-driver.so');
+		try {
+			const r = await exportFile(d);
+			report(`after an OpenCL failure: ${JSON.stringify(r.result.pipeline?.kernel)}`);
+			expect(r.result.pipeline?.kernel).toMatchObject({
+				device: 'cpu',
+				fallbackReasons: [expect.stringMatching(/^the OpenCL kernel failed: .*opencl/i)],
+			});
+		} finally {
+			if (icd === undefined) delete process.env.OCL_ICD_FILENAMES;
+			else process.env.OCL_ICD_FILENAMES = icd;
 		}
 	});
 });
