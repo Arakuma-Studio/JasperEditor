@@ -146,6 +146,12 @@ export function replaceWordRange(t: Transcript, from: number, to: number, text: 
 	const tokens = tokenizeText(text);
 	if (tokens.length) tokens[0]!.breakBefore = a.breakBefore;
 	const fresh = spreadTokens(tokens, a.start, b.end, { speaker: a.speaker });
+	// A range shorter than one unit per token (Whisper's zero-length words) cannot push into the next word.
+	const limit = words[to + 1]?.start ?? Number.POSITIVE_INFINITY;
+	for (const w of fresh) {
+		w.start = Math.min(w.start, limit);
+		w.end = Math.min(w.end, limit);
+	}
 	// Unchanged words keep their confidence; new words have none.
 	const keep = new Map<string, number | null>();
 	for (let i = from; i <= to; i++) keep.set(words[i]!.text, words[i]!.confidence);

@@ -303,6 +303,24 @@ describe('text edits', () => {
 			H.tx([{ type: 'transcript.editText', transcriptId: trs, fromWord: 30, toWord: 31, text: 'x' }]),
 		).toMatchObject({ ok: false, errors: [{ code: 'E_INVALID_PARAM' }] });
 	});
+	it('transcript.editText replaces a zero-length word without overlapping the next one', () => {
+		const H = new Harness();
+		const mediaId = H.registerVideo({ seconds: 3 });
+		const words = [
+			{ text: 'one', start: 0, end: s(1) },
+			{ text: 'two', start: s(1), end: s(1) },
+			{ text: 'three', start: s(1), end: s(2) },
+		];
+		const r = H.ok([{ type: 'transcript.create', mediaId, language: 'en', origin: 'manual', words }]);
+		const trs = (r.results[0] as { transcriptId: string }).transcriptId;
+		H.ok([{ type: 'transcript.editText', transcriptId: trs, fromWord: 1, toWord: 1, text: 'too, 2' }]);
+		expect(H.doc.transcripts[trs]!.words.map((w) => [w.text, w.start, w.end])).toEqual([
+			['one', 0, s(1)],
+			['too,', s(1), s(1)],
+			['2', s(1), s(1)],
+			['three', s(1), s(2)],
+		]);
+	});
 	it('a blank line in caption text starts a new page', () => {
 		const H = new Harness();
 		H.ok([{ type: 'caption.add', at: 0, duration: 120, text: 'one two\n\nthree four' }]);
