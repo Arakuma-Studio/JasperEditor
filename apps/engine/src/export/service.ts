@@ -4,7 +4,7 @@
 // WP-2G registers (`registerMgMasterProvider`).
 
 import type { ChildProcess } from 'node:child_process';
-import { createReadStream } from 'node:fs';
+import { createReadStream, readFileSync } from 'node:fs';
 import {
 	copyFile,
 	type FileHandle,
@@ -1655,16 +1655,32 @@ export class ExportService {
 		const sound = split ? this.segmentSound(planned, audio, soxr, ctx, runAbort.signal) : null;
 		sound?.catch(() => {});
 		const endEncode = report.begin(still ? 'still' : 'encode');
+		// Memory watchdog (AGENTS §0): the composites' resident memory is sampled every second; past the budget the most
+		// recently started segment is stopped and queued again with one segment fewer at a time, and a lone composite
+		// past it fails the export by name — the system's out-of-memory killer (or a frozen machine) never decides.
+		const budget = still ? 0 : compositeMemoryBudget();
+		const running = new Map<number, { ac: AbortController; pid: number | null; since: number }>();
+		const requeued = new Set<number>();
+		const pending = parts.map((_, i) => i);
+		let limit = atOnce;
+		/** Lanes waiting for a running composite to end (a stopped segment may come back). */
+		const waiting: (() => void)[] = [];
 		/** One composite (a segment, or the whole range). */
 		const runPart = (part: Part, i: number): Promise<void> => {
 			const { graph } = part;
 			const pipes = graph.streams.length + (graph.blend ? 1 : 0);
+			const ac = new AbortController();
+			const stop = () => ac.abort();
+			runAbort.signal.addEventListener('abort', stop, { once: true });
+			const slot = { ac, pid: null as number | null, since: Date.now() };
+			running.set(i, slot);
 			return this.deps.ff
 				.run(part.args, {
-					signal: runAbort.signal,
+					signal: ac.signal,
 					...(pipes > 0 ? { pipes } : {}),
 					onSpawn: (child) => {
 						ctx.trackChild(child);
+						slot.pid = child.pid ?? null;
 						if (graph.streams.length > 0) runStreams(child, graph.streams);
 						runBlend(child, graph.blend);
 					},
@@ -1686,25 +1702,72 @@ export class ExportService {
 				})
 				.then(() => {})
 				.catch((error: unknown) => {
+					if (requeued.delete(i)) {
+						// stopped by the watchdog: rendered again when memory allows
+						done[i] = 0;
+						pending.unshift(i);
+						return;
+					}
 					// the first failure is the export's; the other segments are stopped (their cancellation is not)
 					failed ??= { error, part };
 					runAbort.abort();
+				})
+				.finally(() => {
+					running.delete(i);
+					runAbort.signal.removeEventListener('abort', stop);
+					for (const wake of waiting.splice(0)) wake();
 				});
 		};
+		const watchdog =
+			budget > 0 && process.platform === 'linux'
+				? setInterval(() => {
+						let rss = 0;
+						for (const r of running.values()) rss += r.pid ? residentBytes(r.pid) : 0;
+						if (rss <= budget) return;
+						const gbs = (b: number) => `${(b / 1024 ** 3).toFixed(1)} GB`;
+						if (running.size > 1) {
+							const [i, r] = [...running.entries()].sort((a, b) => b[1].since - a[1].since)[0]!;
+							limit = Math.max(1, running.size - 1);
+							requeued.add(i);
+							ctx.log(
+								`native: composites at ${gbs(rss)}, over the ${gbs(budget)} budget: ${parts[i]!.label} stopped and queued again, ${limit} at a time`,
+							);
+							r.ac.abort();
+						} else if (failed === null) {
+							failed = {
+								error: new JobError(
+									'INSUFFICIENT_MEMORY',
+									`Not enough memory: the export's compositor reached ${gbs(rss)}, over the ${gbs(budget)} this machine has available for it; close other applications or export a shorter range`,
+									true,
+									{ rssBytes: rss, budgetBytes: budget },
+								),
+								part: parts[[...running.keys()][0] ?? 0]!,
+							};
+							runAbort.abort();
+						}
+					}, 1000)
+				: null;
 		try {
-			// at most `atOnce` composites at a time, in range order; none starts after a failure or a cancellation
-			let next = 0;
-			const lane = async () => {
-				while (failed === null && !runAbort.signal.aborted && next < parts.length) {
-					const i = next++;
+			// at most `limit` composites at a time, in range order; none starts after a failure or a cancellation
+			const lane = async (lane: number) => {
+				while (failed === null && !runAbort.signal.aborted) {
+					if (lane >= limit) return;
+					const i = pending.shift();
+					if (i === undefined) {
+						// a segment may still come back from the watchdog while others run
+						if (running.size === 0) return;
+						await new Promise<void>((wake) => waiting.push(wake));
+						continue;
+					}
 					await runPart(parts[i]!, i);
 				}
 			};
-			await Promise.all(Array.from({ length: atOnce }, lane));
+			await Promise.all(Array.from({ length: atOnce }, (_, l) => lane(l)));
 			// cancelled between two segments: nothing failed, but the export did not finish
 			if (failed === null && runAbort.signal.aborted)
 				failed = { error: new JobError('JOB_CANCELLED', 'Cancelled'), part: parts[0]! };
 		} finally {
+			if (watchdog) clearInterval(watchdog);
 			endEncode();
 			ctx.signal.removeEventListener('abort', onJobAbort);
 		}
@@ -3315,9 +3378,19 @@ function segmentMemory(snap: PlannedExport['snapshot']): SegmentMemory {
  * log keeps its last 64,000 characters, which whole command lines pushed the segment list and the audio summary out of).
  */
 function commandLine(args: readonly string[]): string {
-	const text = args.join(' ');
+	const text = args.join(' ').replace(/\s*\n\s*/g, ' ');
 	if (text.length <= 2_000) return text;
 	return `${text.slice(0, 700)} … [${args.length} arguments, ${text.length} characters] … ${text.slice(-900)}`;
+}
+
+/** Resident memory of a process (Linux `/proc/<pid>/status` VmRSS; 0 when it is gone). */
+function residentBytes(pid: number): number {
+	try {
+		const m = /^VmRSS:\s+(\d+) kB/m.exec(readFileSync(`/proc/${pid}/status`, 'utf8'));
+		return m ? Number(m[1]) * 1024 : 0;
+	} catch {
+		return 0;
+	}
 }
 
 /** Overlay filters in a filtergraph (each one is traversed by every frame of the composite). */

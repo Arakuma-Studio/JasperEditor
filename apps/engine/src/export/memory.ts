@@ -10,10 +10,13 @@
 // hold their output slots and a few pictures whatever their clip count. The estimate scales the per-input costs by
 // the sequence's pixel count and is deliberately conservative.
 // Media inputs (docs/wp-notes/export-performance.md §6): ffmpeg opens every input of a graph at once and each video
-// decoder keeps frame buffers per thread. Measured on the user's PC (replay of a 100-input composite of 1080p60 H.264,
-// 1,200 frames, peak RSS): ≈ 63 MB per input at 1 decoder thread, 78 MB at 2, 266 MB at ffmpeg's default (16 frame
-// threads on 24 cores) — ≈ 50 MB + 14 MB per thread, scaled by the decoded picture's size. The composite caps each
-// input's decoder threads (`decoderThreadsFor`) and the budget follows the memory actually available.
+// decoder keeps frame buffers per thread. Measured on the user's PC (1080p60 H.264 inputs of an overlay chain, peak
+// RSS): FFmpeg 6.1 ≈ 63 MB per input at 1 decoder thread, 78 MB at 2, 266 MB at its default (16 frame threads);
+// FFmpeg 7.1 (the shipped build, which runs every decoder in its own thread and buffers frames per input) ≈ 181 MB at
+// 1 thread and 200 MB at 2 (59 inputs: 10.7 / 11.9 GB; 20 synthetic inputs: 4.0 GB). The model takes 7.1's numbers,
+// ≈ 170 MB + 14 MB per thread, scaled by the decoded picture's size. The composite caps each input's decoder threads
+// (`decoderThreadsFor`), the budget follows the memory actually available, and a watchdog (service.ts) stops a
+// composite that still grows past it.
 import { readFileSync } from 'node:fs';
 import { freemem, totalmem } from 'node:os';
 import {
@@ -38,7 +41,7 @@ const COST = {
 	stream: 165 * MB,
 };
 /** Measured per 1080p video input (see above): fixed part and per decoder thread. */
-const MEDIA_FIXED = 50 * MB;
+const MEDIA_FIXED = 170 * MB;
 const MEDIA_PER_THREAD = 14 * MB;
 const MEDIA_REF_PIXELS = 1920 * 1080;
 

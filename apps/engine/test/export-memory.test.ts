@@ -20,9 +20,13 @@ import {
 } from './helpers.ts';
 
 let app: TestApp;
+let doc: DocBuilder;
+let planned: Awaited<ReturnType<typeof planOf>>;
 beforeAll(async () => {
 	ensureFixtures();
 	app = await makeApp();
+	doc = await cutsDoc();
+	planned = await planOf(doc);
 }, 180_000);
 afterAll(closeApps);
 
@@ -69,8 +73,7 @@ async function planOf(d: DocBuilder) {
 }
 
 describe('composite memory with many inputs (AS-074)', () => {
-	it('caps the decoder threads of every file input of the composite', async () => {
-		const planned = await planOf(await cutsDoc());
+	it('caps the decoder threads of every file input of the composite', () => {
 		const g = buildNativeGraph({
 			snapshot: planned.snapshot,
 			output: planned.output,
@@ -91,8 +94,7 @@ describe('composite memory with many inputs (AS-074)', () => {
 		}
 	});
 
-	it('splits into more, shorter segments run fewer at a time to fit the budget, or refuses by name', async () => {
-		const planned = await planOf(await cutsDoc());
+	it('splits into more, shorter segments run fewer at a time to fit the budget, or refuses by name', () => {
 		const snap = planned.snapshot;
 		const profile = compositeProfile(snap);
 		const estimate = (r: { start: number; end: number }, threads: number) =>
@@ -124,8 +126,7 @@ describe('composite memory with many inputs (AS-074)', () => {
 	});
 
 	it('plans a range one graph cannot hold as segments instead of refusing it', async () => {
-		const d = await cutsDoc();
-		const planned = await planOf(d);
+		const d = doc;
 		const whole = estimateFrom(planned.snapshot, compositeProfile(planned.snapshot), planned.snapshot.range, {
 			threads: 8,
 		}).bytes;
