@@ -377,6 +377,13 @@ export type RenderVisualClip = {
 	 */
 	expressionPositionShift?: [number, number];
 	/**
+	 * Render-only (never in a document): the clip is drawn on a canvas `outputScale` × the sequence size (an export
+	 * composited at its output size). `resolveLayerProps` multiplies Position, Scale and Scale Width by it after
+	 * evaluation, so the layer matrix is the sequence-space one scaled about the frame origin; the layer box, its effects,
+	 * masks and crops stay in layer pixels.
+	 */
+	outputScale?: number;
+	/**
 	 * fx framework (clip context, additive): what effects may show about the clip's media — the project item name
 	 * (Premiere "Project Item Name"), the file name and the media's embedded start timecode. Set for media clips
 	 * that have effects; absent otherwise.

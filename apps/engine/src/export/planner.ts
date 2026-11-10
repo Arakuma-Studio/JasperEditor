@@ -229,6 +229,11 @@ export type PlannedExport = {
 	smart?: { codec: import('./smart.ts').SmartCodec; pieces: import('./smart.ts').SmartPiece[] };
 	/** previews (Use Previews): the stretches of the range read from render previews, and those rendered. */
 	previews?: import('./use-previews.ts').ExportRun[];
+	/**
+	 * output-size.ts: the size the native composite is drawn at, decided before the extensions prepare (the layer bake
+	 * renders masters at it and aligns rectangles to whole output pixels). Absent = the sequence size.
+	 */
+	composite?: import('./output-size.ts').CompositeSizePlan;
 	/** gaps (`draftUseProxies`): media rendered from their attached proxies (draft exports only). */
 	draftProxies?: string[];
 	/**

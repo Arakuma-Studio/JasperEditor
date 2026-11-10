@@ -68,11 +68,11 @@ describe('GPU decode (NVDEC)', { timeout: 300_000 }, () => {
 		const { d } = await doc();
 		const payload = { envelope: d.envelope(), sequenceId: d.seqId, settings: settings(d.seqId) };
 		const plan = await app.inject({ method: 'POST', url: '/api/exports/plan', headers: JSON_H, payload });
-		expect(RenderPlanSchema.parse(plan.json()).pipeline).toMatchObject({ decode, composite: 'cpu' });
+		expect(RenderPlanSchema.parse(plan.json()).pipeline).toMatchObject({ decode, composite: { device: 'cpu' } });
 		const start = await app.inject({ method: 'POST', url: '/api/exports', headers: JSON_H, payload });
 		const done = await coreServices(app).queue.wait(start.json().id);
 		expect(done.error).toBeUndefined();
-		expect(ExportResultSchema.parse(done.result).pipeline).toMatchObject({ decode, composite: 'cpu' });
+		expect(ExportResultSchema.parse(done.result).pipeline).toMatchObject({ decode, composite: { device: 'cpu' } });
 	});
 
 	it('puts NVDEC in front of the eligible inputs only, one device per process, up to the cap', async () => {

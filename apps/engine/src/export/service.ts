@@ -101,6 +101,7 @@ import {
 	prepareExtensions,
 	prepareNestedExtensions,
 } from './native-ext.ts';
+import { type CompositeSizePlan, outputSizeSnapshot, planCompositeSize } from './output-size.ts';
 import {
 	assertFrameSize,
 	audioCodecOf,
@@ -421,13 +422,19 @@ export class ExportService {
 			policy: segmentPolicyFromEnv(),
 			memory: segmentMemory(snap),
 		});
+		const comp = planCompositeSize(snap, planned.output);
+		const size = outputSizeSnapshot(snap, comp).settings;
 		return {
 			decode: nvdec ? 'nvdec' : 'cpu',
-			composite: 'cpu',
+			composite: {
+				device: 'cpu',
+				size: comp.size,
+				...(comp.fallbackReasons.length ? { fallbackReasons: comp.fallbackReasons } : {}),
+			},
 			segments: segments.length,
 			concurrency,
 			overlays: layersPerSegment(snap, segments),
-			compositeSize: { width: snap.settings.width, height: snap.settings.height },
+			compositeSize: { width: size.width, height: size.height },
 			memoryBytes: peakBytes,
 			...(reason ? { reason } : {}),
 		};
@@ -1343,7 +1350,17 @@ export class ExportService {
 		pipeline = true,
 		/** One graph for the range whatever the segment policy says (segments that could not be joined). */
 		segmentsOff = false,
+		/**
+		 * output-size.ts: composite at the sequence size for these reasons (a picture placed in sequence pixels did not land
+		 * on whole output pixels; the extensions prepare again at the sequence size). Null = decide by `planCompositeSize`.
+		 */
+		compositeFallback: string[] | null = null,
 	): Promise<number> {
+		// output-size.ts: decided before the extensions prepare (the layer bake renders masters at the composite size)
+		const comp0: CompositeSizePlan = compositeFallback
+			? { size: 'sequence', scale: 1, fallbackReasons: compositeFallback }
+			: planCompositeSize(planned.snapshot, planned.output, { still });
+		const plannedC: PlannedExport = { ...planned, composite: comp0 };
 		const exts = this.nativeExtensions.all();
 		let prepared: Map<string, unknown>;
 		let nested: Map<string, PreparedExtensions>;
@@ -1367,7 +1384,17 @@ export class ExportService {
 			await settle();
 			ctx.signal.removeEventListener('abort', onAbortBg);
 			if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
-			return this.runNative(planned, masters, output, ctx, still, audioIn, false, segmentsOff);
+			return this.runNative(
+				planned,
+				masters,
+				output,
+				ctx,
+				still,
+				audioIn,
+				false,
+				segmentsOff,
+				compositeFallback,
+			);
 		};
 		const report = this.report(ctx);
 		const endBake = report.begin('bake');
@@ -1393,7 +1420,7 @@ export class ExportService {
 					background.push(work);
 				},
 			};
-			prepared = await prepareExtensions(exts, planned, pctx);
+			prepared = await prepareExtensions(exts, plannedC, pctx);
 			// edit-structure: nested sequences are drawn in the same graph; their layers get their own preparations
 			// (without pipelined stills: nested stacks have no kernel stream members of their own to wait).
 			nested = await prepareNestedExtensions(exts, planned, { ...pctx, pipeline: false });
@@ -1477,7 +1504,12 @@ export class ExportService {
 		if (!still) ctx.log(`native: decode ${nvdec.ok ? 'NVDEC (cuda)' : `CPU (${nvdec.reason})`}`);
 		type Part = { graph: ReturnType<typeof buildNativeGraph>; file: string; args: string[]; label: string };
 		const parts: Part[] = [];
-		try {
+		// output-size.ts: a downscaled export is composited on an output-size canvas, unless a feature needs the sequence
+		// size — or a picture placed in sequence pixels would not land on whole output pixels (then built again)
+		const comp = comp0;
+		const buildParts = async (): Promise<void> => {
+			parts.length = 0;
+			const drawSnap = outputSizeSnapshot(snap, comp);
 			const scratch = split ? await ctx.scratchDir() : '';
 			const threads = split ? Math.max(1, Math.floor(ctx.slots / atOnce)) : ctx.slots;
 			for (const [i, s] of segPlan.segments.entries()) {
@@ -1485,7 +1517,8 @@ export class ExportService {
 				const file = split ? join(scratch, `segment-${i}.${ext}`) : output;
 				const graph = buildNativeGraph({
 					colorLut,
-					snapshot: split ? { ...snap, range: { start: s.start, end: s.end } } : snap,
+					snapshot: split ? { ...drawSnap, range: { start: s.start, end: s.end } } : drawSnap,
+					...(comp.size === 'output' ? { compositeScale: comp.scale } : {}),
 					output: split
 						? { ...planned.output, frames: n, durationSec: n * frameSec, videoOnly: true }
 						: planned.output,
@@ -1526,16 +1559,42 @@ export class ExportService {
 					label: split ? `segment ${i + 1}/${segPlan.segments.length} [${s.start}, ${s.end})` : '',
 				});
 			}
+		};
+		try {
+			await buildParts();
 		} catch (e) {
 			await abandon();
 			throw e;
 		} finally {
 			endPlan();
 		}
+		const inexact = [...new Set(parts.flatMap((p) => p.graph.inexact))];
+		if (comp.size === 'output' && inexact.length) {
+			// prepared for the output size (masters rendered at it): everything again at the sequence size
+			ctx.log(`native: composited at the sequence size instead: ${inexact.slice(0, 5).join('; ')}`);
+			await settle();
+			ctx.signal.removeEventListener('abort', onAbortBg);
+			if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
+			return this.runNative(
+				planned,
+				masters,
+				output,
+				ctx,
+				still,
+				audioIn,
+				pipeline,
+				segmentsOff,
+				inexact.slice(0, 20),
+			);
+		}
 		if (!still)
 			report.pipeline = {
 				decode: parts.some((p) => p.graph.hwDecoded > 0) ? 'nvdec' : 'cpu',
-				composite: 'cpu',
+				composite: {
+					device: 'cpu',
+					size: comp.size,
+					...(comp.fallbackReasons.length ? { fallbackReasons: comp.fallbackReasons } : {}),
+				},
 				segments: parts.length,
 				concurrency: atOnce,
 				memoryBytes: segPlan.peakBytes,
@@ -1545,9 +1604,13 @@ export class ExportService {
 						...(p.graph.blend?.segments ?? []).map((sg) => overlayCount(sg.filter)),
 					]),
 				),
-				compositeSize: { width: snap.settings.width, height: snap.settings.height },
+				compositeSize: (({ width, height }) => ({ width, height }))(outputSizeSnapshot(snap, comp).settings),
 				...(segPlan.reason ? { reason: segPlan.reason } : {}),
 			};
+		if (!still)
+			ctx.log(
+				`native: composited at the ${comp.size} size (${outputSizeSnapshot(snap, comp).settings.width}×${outputSizeSnapshot(snap, comp).settings.height})${comp.fallbackReasons.length ? `: ${comp.fallbackReasons.join('; ')}` : ''}`,
+			);
 		ctx.log(
 			`native: estimated composite memory ${(segPlan.peakBytes / 1024 ** 3).toFixed(1)} GB of a ${(compositeMemoryBudget() / 1024 ** 3).toFixed(1)} GB budget`,
 		);
@@ -1822,7 +1885,17 @@ export class ExportService {
 					'native: the segments were encoded with different parameter sets; rendering one graph instead',
 				);
 				for (const p of parts) await rm(p.file, { force: true });
-				return this.runNative(planned, masters, output, ctx, still, audioP, pipeline, true);
+				return this.runNative(
+					planned,
+					masters,
+					output,
+					ctx,
+					still,
+					audioP,
+					pipeline,
+					true,
+					compositeFallback,
+				);
 			}
 		}
 		const count = await report.time('frameCheck', () =>

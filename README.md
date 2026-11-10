@@ -1164,7 +1164,10 @@ graphics)** and lists one graphics group per baked layer.
   NVDEC (`JASPER_EXPORT_NVDEC=0` turns it off; `JASPER_EXPORT_NVDEC_MAX_INPUTS`, 16 per export, bounds video memory).
   Segments run a few at a time within the memory available (`JASPER_EXPORT_MAX_SEGMENTS`, 64;
   `JASPER_EXPORT_SEGMENT_MEMORY_MIN_SEC`, 2); a watchdog stops a composite that grows past the budget, and an export no
-  segmentation fits is refused by name instead of running out of memory. The plan and the job result report
+  segmentation fits is refused by name instead of running out of memory. A downscaled export (1080p sequence → 720p)
+  composites at its output size: layer placement is scaled, pictures stay in layer pixels, baked masters render at the
+  output size; `pipeline.composite` says the size and why a feature kept the sequence size
+  (`JASPER_EXPORT_COMPOSITE_SIZE=sequence` forces it). The plan and the job result report
   `pipeline` and the result `timings` per phase; an export's log is kept in `engine/logs/jobs/` when it succeeds too
   (docs/wp-notes/export-performance.md).
 - Before an export starts, the planner estimates the composite's memory; one that would not fit (60 % of the RAM or

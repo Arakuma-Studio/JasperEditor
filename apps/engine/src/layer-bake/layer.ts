@@ -677,6 +677,8 @@ export function cropRect(
 	frames: { f0: number; f1: number },
 	seq: { width: number; height: number; fps: RenderSnapshot['settings']['fps'] },
 	registry: EffectRegistry = defaultEffectRegistry,
+	/** Rectangle edges and sizes are multiples of this (2; output-size exports: `bakeGrid`). */
+	grid = 2,
 ): Rect | null {
 	if (!c.transform) return null;
 	const extra = contentBleed(c, registry, { ...frames, fps: seq.fps });
@@ -711,18 +713,19 @@ export function cropRect(
 	const bleed = tightTextCrop(c) ? 2 : RECT_BLEED_SHARE * seq.height;
 	const W = seq.width;
 	const H = seq.height;
-	let left = Math.max(0, Math.floor((x0 - bleed) / 2) * 2);
-	let top = Math.max(0, Math.floor((y0 - bleed) / 2) * 2);
-	const right = Math.min(W, Math.ceil((x1 + bleed) / 2) * 2);
-	const bottom = Math.min(H, Math.ceil((y1 + bleed) / 2) * 2);
+	const g = grid;
+	let left = Math.max(0, Math.floor((x0 - bleed) / g) * g);
+	let top = Math.max(0, Math.floor((y0 - bleed) / g) * g);
+	const right = Math.min(W, Math.ceil((x1 + bleed) / g) * g);
+	const bottom = Math.min(H, Math.ceil((y1 + bleed) / g) * g);
 	// Entirely outside the frame: a minimal transparent rect.
 	if (right <= left || bottom <= top) {
-		left = Math.min(Math.max(0, left), Math.max(0, W - 2));
-		top = Math.min(Math.max(0, top), Math.max(0, H - 2));
-		return { x: left, y: top, w: 2, h: 2 };
+		left = Math.min(Math.max(0, left), Math.max(0, W - g));
+		top = Math.min(Math.max(0, top), Math.max(0, H - g));
+		return { x: left, y: top, w: g, h: g };
 	}
-	const w = Math.max(2, right - left);
-	const h = Math.max(2, bottom - top);
+	const w = Math.max(g, right - left);
+	const h = Math.max(g, bottom - top);
 	if (w * h >= RECT_MAX_AREA_SHARE * W * H) return null;
 	return { x: left, y: top, w, h };
 }

@@ -237,6 +237,23 @@ describe('render keys (LBK-020)', () => {
 			expect(await keyOfClip(d, t, { ...ENV, ...change })).not.toBe(k2);
 	});
 
+	it('an export composited at its output size bakes masters at it: the scale is in the key, the rect on whole output pixels', async () => {
+		const d = new DocBuilder('hd-1080p-30');
+		inject(d, ANIME_CLIP, { id: 'clp_ANIME00000000009', track: 'V1', start: 0 });
+		const p = await planned(d);
+		const clip = clipOf(p.snapshot, 'clp_ANIME00000000009');
+		const full = await svc.planBake(p, clip, { env: ENV });
+		const small = await svc.planBake(p, clip, { env: { ...ENV, scale: 2 / 3 } });
+		expect(full.variant.recipe).toBe('master');
+		expect(full.material.scale).toBeUndefined();
+		expect(small.material.scale).toBe(2 / 3);
+		expect(small.key).not.toBe(full.key);
+		for (const v of Object.values(small.rect ?? { x: 0, y: 0, w: 1920, h: 1080 })) {
+			expect(v % 2, `rect ${JSON.stringify(small.rect)}`).toBe(0);
+			expect(Number.isInteger((v * 2) / 3), `rect ${JSON.stringify(small.rect)}`).toBe(true);
+		}
+	});
+
 	it('identical titles share a bake unless a text animation or shader seeds them by clip id', async () => {
 		const d = new DocBuilder('hd-720p-30');
 		const a = smallTitle(d, 'Twin', { at: 0, track: 'V1' });

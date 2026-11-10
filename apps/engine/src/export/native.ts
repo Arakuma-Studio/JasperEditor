@@ -51,6 +51,7 @@ import {
 	type OverrideReady,
 	type PreparedExtensions,
 } from './native-ext.ts';
+import { scaledRect } from './output-size.ts';
 import { audioCodecOf, type LocalMedia, type OutputSpec } from './planner.ts';
 import { chainMember, constantSource, loweredMember, stillMember } from './stream/members.ts';
 import { needsSubpixel, planStreamLayer, type StreamLayerPlan } from './stream/plan.ts';
@@ -96,6 +97,11 @@ type NativeBuildOptions = {
 	 * for the main graph's own video inputs. `device` is created once per process (`-init_hw_device cuda=<name>`).
 	 */
 	hwDecode?: { device: string; args(m: LocalMedia): string[] };
+	/**
+	 * output-size.ts: the snapshot is drawn on a canvas this × the sequence size (its settings and clip placement already
+	 * scaled, `outputSizeSnapshot`); sequence-pixel rectangles of extension pictures are scaled here.
+	 */
+	compositeScale?: number;
 	/** Single-frame PNG (stills): no audio, RGB output. */
 	still?: boolean;
 	/** M2 native extensions (ARCHITECTURE §19.6) and what their `prepare` returned for this export. */
@@ -136,6 +142,8 @@ type NativeGraph = {
 	inputs: string[][];
 	/** Video inputs decoded on the GPU (`hwDecode`). */
 	hwDecoded: number;
+	/** output-size.ts: what kept this graph from being exact on the output-size canvas (empty = exact). */
+	inexact: string[];
 	outputFrames: number;
 	durationSec: number;
 	/**
@@ -791,6 +799,10 @@ type StackContext = {
 	path: string;
 	/** spec 13 AS-072: group constant-picture layers into kernel streams. */
 	trackStreams?: boolean;
+	/** output-size.ts: the canvas is this × the sequence size (sequence-pixel rectangles are scaled; top level only). */
+	scale?: number;
+	/** Pictures that would not land on whole output pixels (the graph must not be used at the output size). */
+	inexact?: string[];
 	/** spec 13 AS-076: an opaque full-frame first layer is the base (no blend over the background). */
 	coverBase?: boolean;
 	/** spec 13 AS-076: pipelined stills the composite opens as inputs (awaited before it starts). */
@@ -827,6 +839,20 @@ function drawStack(ctx: StackContext): string {
 	bgChains.push(bgChain);
 	let last = bgLabel;
 	let li = 0;
+	/**
+	 * output-size.ts: a picture placed in sequence pixels (a baked master's rectangle) on the output-size canvas — its
+	 * rectangle scaled, or reported in `ctx.inexact` when it would not land on whole output pixels.
+	 */
+	const onCanvas = (o: LayerOverride | null, what: string): LayerOverride | null => {
+		const s = ctx.scale ?? 1;
+		if (!o || s === 1 || o.space !== 'sequence' || !o.rect) return o;
+		const r = scaledRect(o.rect, s);
+		if (r) return { ...o, rect: r };
+		ctx.inexact?.push(
+			`${what}: a baked picture at ${o.rect.x},${o.rect.y} (${o.rect.w}×${o.rect.h} sequence px) is not on whole output pixels`,
+		);
+		return o;
+	};
 
 	// spec 13 AS-072: a constant-picture layer of the main graph as a kernel stream member (null = drawn on its own).
 	// Members have no transition handles, fades, masks or blend mode, so they never overlap another layer of their
@@ -836,7 +862,7 @@ function drawStack(ctx: StackContext): string {
 		if ((c.blendMode ?? 'normal') !== 'normal' || c.threeD || c.kind === 'adjustment') return null;
 		if (c.fades?.length || c.headHandle || c.tailHandle || c.freezeHead || c.freezeTail) return null;
 		if (maskExportRoute(c) !== 'none' || 'nest' in c.source) return null;
-		const override = pickOverride(exts.list, exts.prepared, c);
+		const override = onCanvas(pickOverride(exts.list, exts.prepared, c), c.name);
 		if (override?.lowered)
 			return loweredMember(
 				c,
@@ -910,8 +936,11 @@ function drawStack(ctx: StackContext): string {
 		}[] = [];
 		for (const t of track.transitions ?? []) {
 			const ov = exts
-				? (exts.list.map((e) => e.transitionOverride?.(t, exts.prepared.get(e.id)) ?? null).find((x) => x) ??
-					null)
+				? onCanvas(
+						exts.list.map((e) => e.transitionOverride?.(t, exts.prepared.get(e.id)) ?? null).find((x) => x) ??
+							null,
+						'a transition',
+					)
 				: null;
 			if (ov) {
 				const sides = new Set([t.outgoingClipId, t.incomingClipId].filter((x): x is string => !!x));
@@ -937,7 +966,9 @@ function drawStack(ctx: StackContext): string {
 		// spec 13 AS-073: layers baked together as one run master are drawn once, as one input over the run's span.
 		const runs = new Map<string, LayerOverride>();
 		for (let i = trackLayers.length - 1; i >= 0; i--) {
-			const ov = exts ? pickOverride(exts.list, exts.prepared, trackLayers[i]!.clip) : null;
+			const ov = exts
+				? onCanvas(pickOverride(exts.list, exts.prepared, trackLayers[i]!.clip), trackLayers[i]!.clip.name)
+				: null;
 			if (!ov?.run) continue;
 			runs.set(ov.run.id, ov);
 			trackLayers.splice(i, 1);
@@ -1063,7 +1094,7 @@ function drawStack(ctx: StackContext): string {
 
 			// M2 (§19.6): a pre-rendered picture from an extension replaces the source ('layer') or the whole placed
 			// layer ('sequence', overlaid at 0,0 with only the transition fades applied here).
-			const override = exts ? pickOverride(exts.list, exts.prepared, c) : null;
+			const override = exts ? onCanvas(pickOverride(exts.list, exts.prepared, c), c.name) : null;
 			if (override?.lowered) {
 				// spec 13 AS-070/073: a still of the layer box drawn through Motion, Transform and S_Shake by the kernel.
 				if (!ctx.addStream)
@@ -1362,6 +1393,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 	});
 	let proc = newProc(false);
 	const waitFor: Promise<OverrideReady>[] = [];
+	const inexact: string[] = [];
 	// GPU decode: counted, and the device created in the process whose inputs use it
 	const hw = o.hwDecode;
 	let hwDecoded = 0;
@@ -1400,6 +1432,8 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 		coverBase: o.coverBase !== false,
 		waitFor,
 		...(hwDecode ? { hwDecode } : {}),
+		...(o.compositeScale && o.compositeScale !== 1 ? { scale: o.compositeScale } : {}),
+		inexact,
 		blend: {
 			cut: (backdrop, layer, plan, mode) => {
 				const label = `bk${segments.length}`;
@@ -1553,6 +1587,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 		filter,
 		inputs,
 		hwDecoded,
+		inexact,
 		outputFrames: output.frames,
 		durationSec: output.durationSec,
 		streams,

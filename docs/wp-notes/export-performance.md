@@ -144,23 +144,11 @@ slice threads; the per-frame CPU cost dominates (§4). On the user's sequence on
 73 fps with ≈ 400–2,000 overlays and hundreds of open inputs per graph, where splitting also cuts the per-frame
 traversal and the open inputs per graph: its gain must be measured there (see "To verify on the GPU PC").
 
-## 4. Composite at output size (evaluated, not implemented)
+## 4. Composite at output size
 
-A downscaled export (1920×1080 sequence → 1280×720 draft) composites at the sequence size and scales at the end. The
-per-frame CPU cost is dominated by full-size pixel work: measured on the user's PC, converting one 1080p H.264 frame
-to RGBA with the composite's swscale flags (`bicubic+accurate_rnd+full_chroma_int+full_chroma_inp`) takes ≈ 34 ms of
-CPU (103.7 user-seconds for 3,000 frames), decoding it ≈ 6 ms. Compositing the same synthetic sequence (120 s,
-3,630 frames, one graph) at 1280×720 instead of 1920×1080 took 16.2 s instead of 29.1 s of encode (measured, user's PC,
-load 6–8): **≈ 1.8× per frame** is the potential.
-
-Not implemented in this change, because every layer kind would have to be placed with the extra output scale and
-compared (SSIM against the full-size composite and the Program preview, AGENTS §4) kind by kind: Motion
-(`P' = s·P`, `scale' = s·scale`) is simple, but `jasper.transform` and `jasper.s.shake` parameters (sequence pixels,
-the user's subtitles), the kernel streams' and lowered layers' per-frame matrices, sequence-space baked rectangles at
-fractional positions (`overlay` places whole pixels), adjustment layers and nested sequences (effects in sequence
-pixels), and the layer bake itself (rendered at sequence size by Remotion) each need their own scaling and their own
-SSIM gate, with the full-size composite kept for any kind that does not pass. This is the largest remaining CPU
-win; recorded as the next step.
+Measured potential before the change: compositing a synthetic sequence at 1280×720 instead of 1920×1080 took 16.2 s
+instead of 29.1 s of encode (≈ 1.8× per frame); converting one 1080p frame to RGBA with the composite's swscale flags
+costs ≈ 34 ms of CPU. Implemented in §7.
 
 ## 5. GPU pipeline
 
@@ -323,3 +311,82 @@ During `encode`: CPU busy 85 % mean / 91 % max (ffmpeg 11.5 cores, node 6.4 core
 but is off the critical path. `verify_export`: every format row passes (duration 931 s, A/V skew 0, true peak
 −2.32 dBTP), no black or flash at the cuts, loudness −13.9 LUFS; `cut-click` flags 19 cuts, the edit's own clicks as
 above. The machine is now CPU-bound in the encode: the next gain is §4 (composite at output size).
+
+## 7. Composite at the output size (implemented)
+
+`output-size.ts`, `native.ts`, `service.ts`, `packages/project` `resolveLayerProps`, the layer bake.
+
+**Model.** Every layer's picture stays in layer pixels — the source scaled to its box, then its effects (Crop, flips,
+colour; everything else is baked), masks (layer-box coordinates) and crops (percent of the box) — and only its
+placement changes: the layer matrix `M = P + R·S·(q − A)` becomes `s·M` on a canvas `s` × the sequence size, i.e.
+Position × s and Scale / Scale Width × s, applied after evaluation (`RenderVisualClip.outputScale`, render-only), so
+keyframes, eases, spatial tangents and expressions are untouched. Transform and S_Shake are layer-space effects
+(their points are fractions of the box, the shake's offsets are box-relative: `registry/fx/...transform.ts`,
+`render/lowered.ts`), so the lowered subtitle path (kernel taps composed with Motion) needs nothing else. The video
+chain's Motion resample is merged with the box scale (`mergeResize`), so a 1080p source goes to its 720p box in one
+swscale pass; the graph's canvas, background, mattes, kernel streams and blend pipeline are 1280×720 and there is no
+final downscale. Nested sequences draw at their own size and the nest clip's Motion places them (exact, no gain inside).
+
+**Pictures placed in sequence pixels.** Baked masters with a crop rectangle, full-frame masters, shake-run masters
+and GPU transition spans are scaled to the output canvas with their rectangles. A rectangle must land on whole output
+pixels: when the export composites at the output size the layer bake aligns rectangles to `bakeGrid` (lcm(2, q) for
+s = p/q: 6 px for 1080p → 720p) and renders masters, runs and spans at the output size (Remotion `scale`; `scale` is
+part of the bake key, rectangles stay in sequence px). Sheet stills and layer stills keep their sizes (downscaled
+in the graph: exact). Any picture still off the grid (an extension that does not align) makes the export prepare and
+composite again at the sequence size, named in the plan / result.
+
+**Fallbacks** (`pipeline.composite = { device, size: 'output' | 'sequence', fallbackReasons }`): an output aspect
+ratio different from the sequence (fit / fill bars), adjustment layers (they process the sequence-size composite with
+crops in sequence-frame percent), `JASPER_EXPORT_COMPOSITE_SIZE=sequence`, and pictures off the output grid. Stills
+and alpha masters are drawn at the sequence size.
+
+**Not done here.** Scaling at decode on the GPU (NVDEC + `scale_cuda`): `scale_cuda` interpolates differently from the
+composite's swscale (bicubic, accurate rounding, full-chroma) and would need its own SSIM gate; NVDEC still downloads
+full-size NV12 frames and swscale converts them straight to the output size. The memory estimate stays at the decode
+size (CPU or NVDEC decode buffers are full size), conservative for the smaller layer frames.
+
+**Fidelity gate.** `apps/engine/test/export-output-size.e2e.test.ts` (REMOTION_E2E=1): 1080p30, 120 frames, a cropped
+video, a nested sequence, a masked sub-pixel still, a baked title card with a keyframed Gaussian blur, subtitle words
+with Transform keyframes (pop-in) and S_Shake, exported 1280×720 ProRes composited at the output size vs at the sequence
+size (then scaled). Measured on the user's PC (RTX 3080 Ti, load ≈ 1.6): composite size `output`, no fallback; SSIM per
+frame min 0.9981, mean 0.9985; PSNR min 46.1 dB; text regions: 99.88–99.99 % (subtitles) and 99.67–100 % (title) of
+channel values within 24 levels. `apps/engine/test/export-output-size.test.ts` (light, footage + sub-pixel still +
+crop + picture-in-picture, 640×360 from 1080p): SSIM ≥ 0.98 per frame; the plan's composite size and fallbacks; the
+built graph scales sources straight to their output boxes with no final downscale. `layer-bake.test.ts`: a master of
+an output-size export has the scale in its key and a rectangle on whole output pixels.
+
+**Full export of the real project at the output size** (user's PC: RTX 3080 Ti, 24 logical cores, 94 GB, driver
+595.99; engine of this branch in a systemd scope `MemoryMax=40G`, `MemorySwapMax=0`, vendor LGPL FFmpeg 7.1.5,
+defaults; the user's desktop — Chrome, Discord — used part of the GPU during the run: 26 % mean / 64 % max over the
+run, desktop-only before it 18–45 %; the idle check ignored GPU load, user approved; load1 1.5 before).
+
+*Bake cache cleared* (the layer cache moved aside: 1,947 layers ready, 17 master renders at 1280×720, 1,202 stills
+rendered; job `mout1`): **succeeded, 518.1 s job / 529 s wall**; composite `output` 1280×720, 24 segments, 4 at a time,
+NVDEC. The original run (sequence-size composite, bake uncached): 19.5 min.
+
+| Phase | Start | Time |
+|---|---:|---:|
+| bake (uncached) | 0 s | 245.1 s |
+| audio (beside the bake and the encode) | 0 s | 258.1 s |
+| plan | 245.1 s | 12.6 s |
+| encode (24 segments, 4 at a time) | 257.7 s | 255.1 s — **219 fps** (sequence-size composite: 489 s, 114 fps) |
+| frameCheck / join / finish | 512.9 s | 3.9 / 0.8 / 0.5 s |
+
+During `encode`: CPU busy 84 % mean / 100 % max (ffmpeg 10.8 cores, node 5.2), load1 26; GPU 21 % / 43 % (desktop
+included), NVENC 14 % / 32 %, NVDEC 16 % / 100 %; peak scope memory 12.7 GB (sequence size: 19.0 GB), composites'
+summed RSS 9.3 GB (largest 3.1 GB); peak video memory 3.9 GB. `verify_export`: every format row passes (duration 931 s,
+A/V skew 0, true peak −2.32 dBTP), no black or flash at the cuts, loudness −13.9 LUFS, `cut-click` the edit's own 19
+clicks as before. Against the previous sequence-size export of the same project (`full3.mp4`, both NVENC): SSIM over
+all 55,860 frames mean 0.9973, 1st percentile 0.9925, min 0.9874, none under 0.98.
+
+*Bake cache warm* (job `mout2`, right after, same engine): **succeeded, 269.9 s job / 280 s wall** (sequence-size
+composite, warm cache: 517.7 s). Bake 3.2 s, plan 9.0 s, **encode 252.5 s from 12.2 s — 221 fps**, audio 198.6 s beside
+the encode (the delivery reused the previous run's solved parameters in this engine process: 1 pass, 1 encode; the mix
+took 138 s sharing the CPU), frameCheck 3.8 s, join 0.8 s, finish 0.5 s. During `encode`: CPU 82 % mean / 89 % max
+(ffmpeg 9.5 cores, node 6.1), GPU 18 % / 30 % (desktop included), NVENC 15 % / 33 %, NVDEC 15 % / 100 %; peak scope
+memory 13.2 GB, composites' summed RSS 9.3 GB; video memory 3.8 GB. `verify_export` as above; SSIM against
+`full3.mp4` identical to the uncached run (the same pictures: mean 0.9973, min 0.9874).
+
+The encode is still the critical path, CPU-bound at 82–84 %: the sequence-size layer pictures (lowered subtitle stills
+drawn by the node kernel, 6 cores) and the per-segment startup are the next costs; scaling at decode on the GPU is the
+next measured step (see "Not done here").

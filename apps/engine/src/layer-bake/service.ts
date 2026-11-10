@@ -47,6 +47,7 @@ import { binaryNames } from '../tools/lgpl.ts';
 import type { CoreServices } from '../tools/services.ts';
 import {
 	type BakeEnvironment,
+	bakeGrid,
 	expressionKeyPart,
 	FileHashCache,
 	KEY_RE,
@@ -679,7 +680,13 @@ export class LayerBakeService {
 			throw new JobError('LAYER_BAKE_FAILED', `"${clip.name}" cannot be baked as a layer still`, false);
 		const rect = picture
 			? { x: 0, y: 0, w: picture.w, h: picture.h }
-			: cropRect(clip, { f0, f1 }, { width: seq.width, height: seq.height, fps: seq.fps });
+			: cropRect(
+					clip,
+					{ f0, f1 },
+					{ width: seq.width, height: seq.height, fps: seq.fps },
+					undefined,
+					bakeGrid(seq.width, env.scale),
+				);
 		const shiftedClip =
 			rect && !picture ? bakeClip(clip, { variant, stripColor: true, shift: rect }) : unshifted;
 		const fonts = clipFonts(unshifted, snap.fonts);
@@ -722,6 +729,8 @@ export class LayerBakeService {
 				return e ? { expressions: `${e}:${clip.start}` } : {};
 			})(),
 			graded: false,
+			// output-size.ts: masters render at the output size
+			...(variant.recipe === 'master' && env.scale && env.scale !== 1 ? { scale: env.scale } : {}),
 		};
 		const docOf = (c: RenderVisualClip, r: Rect | null) =>
 			bakeDoc(snap, this.signedRotos(c), {
@@ -800,6 +809,7 @@ export class LayerBakeService {
 			still: false,
 			rect: null,
 			graded: false,
+			...(o.env.scale && o.env.scale !== 1 ? { scale: o.env.scale } : {}),
 		};
 		const doc: RenderSnapshot = {
 			version: 1,
@@ -913,6 +923,7 @@ export class LayerBakeService {
 			still: single,
 			rect: null,
 			graded: false,
+			...(!single && o.env.scale && o.env.scale !== 1 ? { scale: o.env.scale } : {}),
 		};
 		const doc: RenderSnapshot = {
 			version: 1,
@@ -1408,6 +1419,8 @@ export class LayerBakeService {
 				await this.core.remotion.renderAlphaMaster({
 					inputProps: this.inputProps(doc, plan),
 					output: tmp,
+					// output-size.ts: at the export's output size
+					...(plan.material.scale ? { scale: plan.material.scale } : {}),
 					scratchDir: scratch,
 					signal: ctx.signal,
 					ffmpeg: ff,

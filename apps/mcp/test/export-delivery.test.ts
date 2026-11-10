@@ -139,7 +139,7 @@ describe('lossy export delivery through MCP', () => {
 			codecHeadroomDb: 1.5,
 		});
 		// the expected composite pipeline in the plan; what ran and where the time went in the result
-		expect(started.plan.pipeline).toMatchObject({ composite: 'cpu', segments: 1 });
+		expect(started.plan.pipeline).toMatchObject({ composite: { device: 'cpu' }, segments: 1 });
 		expect(started.result!.pipeline).toMatchObject({ segments: 1 });
 		expect(started.result!.timings!.phases.audio!.ms).toBeGreaterThan(0);
 		expect(started.result!.timings!.phases.encode).toBeDefined();
