@@ -1641,7 +1641,7 @@ export class ExportService {
 		const t = (ms: number) => `${Math.round(ms)} ms`;
 		ctx.log(
 			d
-				? `audio: mixed (${t(mix.mixMs ?? 0)}) and delivered in ${t(performance.now() - t0)} — ${d.passes} passes (${t(d.timings.passesMs)}), ${d.encodePasses} encodes (${t(d.timings.encodeMs)} summed), decoded checks ${t(d.timings.decodeMs)}${d.cached ? ', reused an earlier delivery of this mix' : ''}${d.encoded ? ', the checked encode is muxed as it is' : ''}`
+				? `audio: mixed (${t(mix.mixMs ?? 0)}) and delivered in ${t(performance.now() - t0)} — ${d.passes} passes (${t(d.timings.passesMs)}: ${d.passKinds.converge} converging, ${d.passKinds.alternative} lower-ceiling candidates, ${d.passKinds.rewrite} rewritten), ${d.encodePasses} encodes (${t(d.timings.encodeMs)} summed), decoded checks ${t(d.timings.decodeMs)}${d.cached ? ', reused an earlier delivery of this mix' : ''}${d.encoded ? ', the checked encode is muxed as it is' : ''}`
 				: `audio: mixed in ${t(performance.now() - t0)}`,
 		);
 		return mix;

@@ -216,6 +216,48 @@ describe('delivery speed (wp-note "Fix: preview loudness parity, codec-aware Sou
 		expect(Math.abs(changed.decoded!.integrated + 16)).toBeLessThanOrEqual(0.5);
 	}, 600_000);
 
+	it('writes no pass twice: a lower-ceiling candidate already at the push cap is not passed again', async () => {
+		// quiet speech-like phrases (noise syllables at 4 Hz, 0.8 s pauses): normalised to −14 LUFS the push reaches its
+		// cap (initial gain + 6 dB), where the candidates' secant step gives back the gain just measured
+		const n = 20 * SR;
+		const voice = new Float32Array(n);
+		let seed = 7;
+		let lp = 0;
+		for (let i = 0; i < n; i++) {
+			const t = i / SR;
+			seed = (seed * 1103515245 + 12345) >>> 0;
+			lp = 0.7 * lp + 0.3 * ((seed / 2 ** 32) * 2 - 1);
+			const syllable = Math.max(0, Math.sin(2 * Math.PI * 4 * t)) ** 2 * (t % 3 < 2.2 ? 1 : 0);
+			voice[i] = (0.25 * lp + 0.05 * Math.sin(2 * Math.PI * 150 * t)) * syllable;
+		}
+		const mix = [voice, Float32Array.from(voice)];
+		const p1 = pass1Of('speech.f32', mix);
+		const out = join(dir, 'speech.wav');
+		const writes: string[] = [];
+		const r = await solveDelivery({
+			ff,
+			pass1: p1,
+			sampleRate: SR,
+			channels: 2,
+			total: n,
+			before: measureLoudness(mix, SR),
+			targetLufs: -14,
+			truePeakDb: -1,
+			codec: { codec: 'aac', bitrateKbps: 128, sampleRate: SR, channels: 2 },
+			soxr: false,
+			scratchDir: dir,
+			outPath: out,
+			write: (params, path = out) => {
+				writes.push(`${path} ${params.gainDb} ${params.ceilingDb} ${params.correction?.join(',') ?? ''}`);
+				return writeDeliveryWav(p1, path, SR, 2, n, params);
+			},
+		});
+		expect(r.passKinds.alternative).toBeGreaterThan(0);
+		expect(writes.length).toBe(r.passes);
+		expect(new Set(writes).size).toBe(writes.length);
+		expect(r.truePeakMet).toBe(true);
+	}, 300_000);
+
 	it('an encode failure rejects delivery without an unhandled rejection', async () => {
 		const mix = loudMix(4, SR);
 		const before = measureLoudness(mix, SR);

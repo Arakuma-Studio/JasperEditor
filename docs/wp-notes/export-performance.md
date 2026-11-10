@@ -34,3 +34,41 @@ bake), which `startMs` shows. MCP: `start_export`'s `plan.pipeline`, and `result
 
 Tests: `apps/engine/test/export.test.ts` ("plans and exports a 2-track sequence…") and
 `apps/mcp/test/export-delivery.test.ts`.
+
+## 2. "Normalizing loudness" twice
+
+The label is the progress stage of every written delivery pass (`writeDeliveryWav` in `audio/mixdown.ts`, called by
+`solveDelivery` in `audio/deliver.ts`); `audio/service.ts:532/567` is the per-media Normalize job, not exports. A
+normalised lossy export writes several passes, each a gain + true-peak-limiter pass over the whole mix, and each shows
+the same label. The delivery now counts them by purpose (`DeliveryOutcome.passKinds`, in the job log's `audio:` line):
+
+- `converge`: secant steps of the loudness convergence under the limiter (wp-note sound-design "Fix: lossy-codec
+  true-peak headroom and loudness convergence"). **Necessary**: each runs at new parameters, and the pass that lands
+  is the delivered file. A loud or speech mix pushed to −14 LUFS takes 3–4 (measured below).
+- `alternative`: lower-ceiling candidates written while the round's first AAC encode runs, so that a round whose first
+  encode overshoots the true peak does not need another round. Speculative: wasted when the first encode meets the
+  target (it did in both speech runs below).
+- `rewrite`: parameters measured earlier, written again because a later pass overwrote the output.
+
+**Duplicated work found and removed**: a candidate measured at its predicted gain got a second, "secant" pass when it
+missed the aim, but when the push was at its cap (initial gain + 6 dB, typical for quiet speech normalised to
+−14 LUFS) the secant step returned the gain just measured, and the identical pass was written again (same bytes, same
+measurement). The second pass is now skipped when its gain equals the first's: the first measurement is kept.
+Loudness results are identical (same parameters, same files, same decoded check).
+
+Measured with `node --import tsx` on a scratch driver calling `solveDelivery` (AAC 128 kb/s, −14 LUFS / −1 dBTP,
+`parallel: 3`, the draft preset's delivery), this host (16 logical cores, shared, load ≈ 2 before / ≈ 29 after the
+change, so only pass counts compare):
+
+| Mix | Passes before → after (converge / alternative) | Encodes | Decoded LUFS / dBTP (before = after) |
+|---|---|---:|---|
+| speech-like 20 s | 8 (4 / 4) → 6 (4 / 2) | 3 | −14.197 / −1.405 |
+| speech-like 120 s | 8 (4 / 4) → 6 (4 / 2) | 3 | −14.194 / −1.586 |
+| `loudMix` 60 s (test fixture) | 9 (4 / 5) → 9 (4 / 5) | 6 | −13.982 / −1.727 |
+
+One pass over 120 s of stereo took ≈ 1.65 s at low load here (13.2 s for 8), so ≈ 13 s for the 15:31 sequence
+(estimated: linear in length); the user's PC reported ≈ 2.5 min between the two labels, concurrent with the layer
+bake. Remaining limit: candidates are still written before the first encode is checked; making them lazy would save
+their passes when the first encode meets the target, but changes the encode counters and, where the 8-encode cap is
+reached, the search order — not done here. Test: `apps/engine/test/audio-deliver.test.ts` ("writes no pass twice…",
+fails before the change: 6 distinct of 8 written passes).
