@@ -1155,7 +1155,10 @@ graphics)** and lists one graphics group per baked layer.
   `JASPER_EXPORT_SEGMENT_MIN_SEC` (20), `JASPER_EXPORT_HW_SESSIONS` (hardware encoder sessions, 4),
   `JASPER_EXPORT_SEGMENT_SLOTS` (CPU slots per segment, 3). With a working CUDA device, source video decodes through
   NVDEC (`JASPER_EXPORT_NVDEC=0` turns it off; `JASPER_EXPORT_NVDEC_MAX_INPUTS`, 16 per export, bounds video memory).
-  The plan and the job result report `pipeline` and the result `timings` per phase
+  Segments run a few at a time within the memory available (`JASPER_EXPORT_MAX_SEGMENTS`, 64;
+  `JASPER_EXPORT_SEGMENT_MEMORY_MIN_SEC`, 2); a watchdog stops a composite that grows past the budget, and an export no
+  segmentation fits is refused by name instead of running out of memory. The plan and the job result report
+  `pipeline` and the result `timings` per phase; an export's log is kept in `engine/logs/jobs/` when it succeeds too
   (docs/wp-notes/export-performance.md).
 - Before an export starts, the planner estimates the composite's memory; one that would not fit (60 % of the RAM or
   of the engine's cgroup limit, or `JASPER_EXPORT_MEMORY_BUDGET_MB`) is refused on the native path with the estimate

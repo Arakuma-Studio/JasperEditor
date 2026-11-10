@@ -213,3 +213,113 @@ with an engine on its own port and appdir started from this branch:
 4. `JASPER_EXPORT_SEGMENTS=6` and `=8` (and `JASPER_EXPORT_HW_SESSIONS` to allow them) against the default 4: the
    cores left idle decide whether the cap should rise.
 5. `verify_export` on the result (black / flash frames at cuts and at the segment boundaries listed in the job log).
+
+## 6. Out of memory with many source inputs (fixed)
+
+The coordinator's run of the user's real project (15:31, 1,930 subtitles, 380 inputs of one 57 min recording,
+`draft-720p-h264`) ran out of memory before the first frame on main (one graph of 380 inputs: 75 GB, OOM kill, the PC
+unreachable for ≈ 10 min) and on this branch (4 segments of 90–102 inputs: ≈ 12 GB each under a 48 GB cap, 15–16 GB
+under 60 GB). Cause, measured by replaying segment 0 (100 inputs, 1,200 frames): ffmpeg opens every input at once and
+each decoder used the default thread count (24 cores → 16 H.264 frame threads), each with its frame buffers —
+26.6 GB peak / 47 s with the default, 7.8 GB / 43 s with `-threads 2` per input, 6.3 GB / 58 s with 1. Replaying the
+4 min single graph (104 inputs) with 2 decoder threads: `-filter_complex_threads` 24 (default) 8.3 GB / 39.8 s, 4
+threads 7.8 GB / 46.9 s — filter threads cost little memory, so they are only shared out between segments (§3).
+
+Fix:
+- **Decoder threads** (`memory.ts` `decoderThreadsFor`, `capDecoderThreads`): every file input of a composite process
+  gets `-threads N` before its `-i`, N = round(4 × graph threads / file inputs) clamped to 2…8 (2 in many-input graphs,
+  up to 8 for a few long sources); the warp / sub-pixel decoder processes get 2.
+- **A real estimate** (`compositeProfile`, `estimateFrom`): the first fix run with the shipped FFmpeg 7.1 still ran
+  out of memory (7 segments × 55 inputs, 4 at a time: ≈ 10–11 GB each, killed at 6 s of encoding), although every
+  input had `-threads 2`. Replays on the user's PC: that segment (59 inputs, 600 frames) peaks at 11.9 GB with the
+  vendor FFmpeg 7.1.5 and 4.7 GB with the system FFmpeg 6.1.1; 20 synthetic inputs of an overlay chain 4.0 GB (7.1)
+  vs 1.6 GB (6.1), the same with clips of 0.6, 2.2 or 6.2 s and with 1, 6 or 24 filter threads; the same 20 inputs
+  consumed one after another (`concat`) 1.5 GB vs 1.0 GB. FFmpeg 7.1 runs each decoder in its own thread and holds
+  ≈ 200 MB per 1080p input of an overlay chain from the start (≈ 181 MB at 1 thread). Media inputs are therefore
+  costed at FFmpeg 7.1's 170 MB + 14 MB per decoder thread at 1080p (conservative for 6.1), scaled by the decoded
+  picture; the other inputs keep their earlier measured costs. The budget (`compositeMemoryBudget`) is the smallest of 60 % of the RAM or of the
+  engine's cgroup limit — now found from `/proc/self/cgroup` and its ancestors, so a systemd scope or a container
+  counts —, 80 % of `MemAvailable` and 80 % of the room left in the cgroup.
+- **Segments by memory** (`planPictureSegments`): the graphs running at once must fit; when they do not, the range is
+  cut into more, shorter segments (down to 2 s, at most 64, `JASPER_EXPORT_MAX_SEGMENTS`,
+  `JASPER_EXPORT_SEGMENT_MEMORY_MIN_SEC`) that run `concurrency` at a time (a pool, in range order), fewer at once when
+  even the shortest do not fit. The planner refuses the native path by name (plan blocker; `auto` goes to Remotion)
+  only when no segmentation fits, and the job refuses with `INSUFFICIENT_MEMORY` if the memory was taken between plan
+  and run. Plan and result `pipeline` carry `concurrency` and `memoryBytes` (the estimate).
+- **Watchdog** (`runNative`): the running composites' resident memory (`/proc/<pid>/status`) is sampled every second;
+  past the budget the most recently started segment is stopped and queued again with one segment fewer at a time,
+  and a lone composite past it fails the export with `INSUFFICIENT_MEMORY` (retryable) — the system's OOM killer never
+  decides, whatever the estimate missed.
+- **Job log**: ffmpeg command lines are shortened in the middle past 2,000 characters (they pushed the segment list
+  and the `audio:` line out of the 64,000-character log), the phase summary is logged when an export fails too, and an
+  export's log is written to `engine/logs/jobs/<jobId>.log` when it succeeds as well.
+
+The duplicate-pass fix of §2 does not apply to this project's mix: its 10 passes / 6 encodes are convergence steps,
+lower-ceiling candidates and decoded-check rounds of a loud mix (none repeats parameters); the `audio:` log line now
+survives to show the split.
+
+Tests: `apps/engine/test/export-memory.test.ts` (the built command caps every file input's decoder threads; the plan
+splits into more, shorter segments run fewer at a time to fit, or names the blocker; a range one graph cannot hold is
+planned as segments) — all three fail on the previous commit.
+
+**Full export of the real project after the fix** (measured on the user's PC: RTX 3080 Ti, 24 logical cores, 94 GB,
+driver 595.99, the user's desktop session and live engine running, load1 1.4–1.6 before; engine of this branch in a
+systemd scope `MemoryMax=40G`, `MemorySwapMax=0`, vendor LGPL FFmpeg 7.1.5, perf defaults; layer-bake cache reused
+from earlier runs, so `bake` is 2.2 s instead of minutes; job `job_556227dc22e8094e`): **succeeded, 655.7 s job /
+666 s wall** (the original run: 19.5 min with an uncached bake; the earlier attempts of main and this branch ran out of
+memory). 55,860 frames, `pipeline` = NVDEC decode, CPU composite, 24 segments, 4 at a time, estimate 21.3 GB of a
+24.0 GB budget (the cgroup's 40 GB × 0.6).
+
+| Phase | Start | Time |
+|---|---:|---:|
+| audio (mix 41.2 s + delivery: 10 passes 84.9 s — 6 converging, 4 candidates —, 6 encodes 95.8 s summed, decoded checks 31.3 s) | 0 s | 165.2 s |
+| bake (cached) | 0 s | 2.2 s |
+| audioWait | 2.2 s | 163.0 s |
+| plan | 165.2 s | 8.6 s |
+| encode (24 segments, 4 at a time) | 173.7 s | 476.3 s — **117 fps** (one graph: ≈ 73 fps in the original run) |
+| frameCheck | 650.0 s | 4.2 s |
+| join | 654.1 s | 0.8 s |
+| finish | 655.1 s | 0.6 s |
+
+During `encode` (108 samples): CPU busy 71 % mean / 90 % max (ffmpeg 9.5 cores, node kernel streams 5.2 cores), load1
+21 mean; GPU 8 % mean / 31 % max, NVENC 7 % / 20 %, NVDEC 6 % / 92 %; peak scope memory 18.1 GB, composites' summed
+RSS 14.9 GB (largest single 4.9 GB) — under the 21.3 GB estimate; peak video memory 3.6 GB; host MemAvailable ≥ 58.7 GB.
+`verify_export`: every format row passes (decode, streams h264 1280×720 60 fps + AAC 48 kHz stereo, duration 931 s,
+A/V skew 0, true peak −2.32 dBTP); judgement rows: no black or flash at 360 cuts, loudness −13.9 LUFS, no silence;
+`cut-click` flags 20 cuts — the same clicks main's export of the first 4 min shows at the same cuts (11.5 s, 15.2 s,
+131.4 s, 164.7 s, …), i.e. in the edit's audio, which segmentation does not touch.
+
+The critical path is now the audio delivery (165 s, the composite waits 163 s for it) and the encode, CPU-bound at
+71–90 % with the composite at the sequence size (§4).
+
+**Watchdog, measured** (user's PC, first 4 min of the real project, an engine patched for the test only to the old
+optimistic 50 MB per input and `JASPER_EXPORT_MEMORY_BUDGET_MB=9000`, so that the plan's 7 segments × 4 at a time
+under-estimate the real memory): the composites reached 9.1 GB; the watchdog stopped segment 1 and queued it again
+(3 at a time), then segment 2 at 8.9 GB (2 at a time); the export succeeded, 14,400 frames, peak scope memory 10.2 GB.
+(A first version restarted the stopped segment in its own lane at once and stopped it 54 times — fixed: one stop at a
+time, lanes wait while the lowered limit is reached.)
+
+**Audio overlap**: the full run spent 163 s with the composite waiting for the loudness delivery (`audioWait`). A
+segmented export no longer waits: its segments render while the mix is delivered, and the sound is encoded and joined
+when it is ready (a failed mix fails the export and stops the segments); one graph still waits, as the mix is one of
+its inputs.
+
+**Final full export with the audio overlap** (same machine and conditions as the run above, load1 1.4–1.6 before,
+layer-bake cache reused; engine at f5d1f9993 in a `MemoryMax=40G` scope; job `mfull3`): **succeeded, 517.7 s job /
+528 s wall** (655.7 s before the overlap; 19.5 min in the original run with an uncached bake). 55,860 frames; 24
+segments, 4 at a time, NVDEC.
+
+| Phase | Start | Time |
+|---|---:|---:|
+| bake (cache check) | 0 s | 16.5 s |
+| plan | 16.5 s | 8.8 s |
+| encode (24 segments, 4 at a time) | 25.3 s | 488.7 s — 114 fps |
+| audio (mix 89.7 s + delivery: 10 passes 169.1 s, 6 encodes 146.9 s summed, decoded checks 73.6 s), beside the encode | 0 s | 333.2 s |
+| frameCheck / join / finish | 514.0 s | 2.5 / 0.7 / 0.5 s |
+
+During `encode`: CPU busy 85 % mean / 91 % max (ffmpeg 11.5 cores, node 6.4 cores: mixer and kernel streams), load1
+25 mean; GPU 8 % / 22 %, NVENC 9 % / 17 %, NVDEC 10 % / 67 %; peak scope memory 19.0 GB, composites' summed RSS 16.4 GB
+(largest 5.1 GB), estimate 21.3 GB; peak video memory 3.6 GB. The audio delivery took twice as long sharing the CPU
+but is off the critical path. `verify_export`: every format row passes (duration 931 s, A/V skew 0, true peak
+−2.32 dBTP), no black or flash at the cuts, loudness −13.9 LUFS; `cut-click` flags 19 cuts, the edit's own clicks as
+above. The machine is now CPU-bound in the encode: the next gain is §4 (composite at output size).
