@@ -661,3 +661,96 @@ ProRes e2e above.
 **Not done**: an asynchronous OpenCL route (the filter thread waits per frame; `program_opencl` finishes each frame)
 and moving the sub-pixel video streams (`streamLayer`, decoded per frame) to the GPU; more concurrent segments to turn
 the freed cores into speed.
+
+## 11. Colour conversion on the GPU (investigation; nothing shipped)
+
+Question: after §10 the warm export encodes at ≈ 279 fps with 4 composites at a time, each using ≈ 3.1 cores, and
+6–8 at a time gain nothing. Can the composite's per-pixel CPU work move to the GPU faithfully and make the encode
+measurably (> 5 %) faster? **Answer: no, not with the shipped FFmpeg 7.1.** Faithful GPU conversions were built (≤ 1
+level from swscale), but every GPU stage FFmpeg offers runs synchronously on the composite's single filter-graph thread,
+so the per-composite latency rises more than the CPU falls, and the export gets slower. Nothing is shipped; the data
+follows.
+
+Machine for everything below: the user's PC (RTX 3080 Ti, driver 595.99, 24 logical / 12 physical cores, 94 GB), the
+vendor LGPL FFmpeg 7.1.5, heavy runs in a systemd scope `MemoryMax=40G`, no other ffmpeg running, the user's desktop
+using 17–31 % of the GPU at the start of each run (recorded, not controlled). Scratch scripts were in `/tmp/gc-prof` on
+that PC (not committed).
+
+**Where one composite's CPU goes** (one 1080p60 H.264 window of the real project's recording, 1,200 frames, to a
+1280×720 RGBA layer as `native.ts` builds it; each row adds one step; load1 2.0–3.5; CPU = user + system of the
+process):
+
+| Step | NVDEC decode: CPU / frame | CPU decode: CPU / frame |
+|---|---:|---:|
+| decode (NVDEC: decode + download of NV12) | 1.2 ms | 5.6 ms |
+| + `scale=1280:720:in_color_matrix=bt709:in_range=tv:flags=bicubic+accurate_rnd+full_chroma_int+full_chroma_inp,format=rgba` | + 11.5 ms | + 10.6 ms |
+| + `overlay=format=rgb` onto the 1280×720 background | + 2.8 ms | + 2.5 ms |
+| + output conversion to `yuv420p` (same flags) | + 3.1 ms | + 3.2 ms |
+| + `h264_nvenc` | + 0.9 ms | + 1.8 ms |
+
+The input conversion is ≈ 60 % of the per-frame CPU. Its cost is the accurate full-chroma conversion, not the resize:
+a 720p `yuv444p` → RGBA conversion with the same flags and no resize still costs 8.2 ms (`scale_cuda` resizing on the
+GPU first: 11.3 cpu-s instead of 15.2 for the window; and `scale_cuda`'s 4-tap bicubic is not swscale's widened
+filter). In the real segments (captured command lines of the warm OpenCL export `gt-m-warm-cl`, 24 segments, 4 at a
+time), the filter threads take 69 % of the composites' CPU, the CPU H.264 / ProRes decoders 24 % (most inputs decode on
+the CPU: 16 NVDEC inputs per export, §5), NVENC 2.6 %.
+
+**Faithful GPU conversions built** (reference: the CPU path above over 1,100 frames of the window, RGBA compared per
+channel):
+- *OpenCL* (`program_opencl`): `program_opencl` runs its kernel once per output plane and hands each input's plane of the
+  same index, so an RGBA output sees only the Y plane of a YUV input. The route that works: `format=yuv420p,
+  extractplanes`, the three planes stacked into one gray frame (`hstack` U|V, `vstack` under Y), one `hwupload`, a
+  2×2 RGBA frame split off the same stream as the first input (it sets the output format; a looped constant frame
+  desynchronises the framesync: 460 of 1,100 frames), then `hwdownload`. The kernel is swscale's filter in float:
+  bicubic B = 0, C = 0.6, support widened by the ratio when downscaling, weights normalised per tap row, clamped edges,
+  BT.709 limited → full, centred chroma (vf_scale ignores the stream's `chroma_location=left`: the left-sited variant
+  was off by up to 20 levels). Result: **max 1 level, 0.33 % of values differ**. CPU: 5.1 ms per frame instead of 14.6
+  (NVDEC), of which the copies and transfers alone are 4.4 ms.
+- *Vulkan* (`libplacebo`, in the vendor build): a user shader (mpv hook format) on the `LUMA` and `CHROMA` planes
+  resamples each straight to the layer size with the same filter, libplacebo converts the matrix, `dithering=-1`,
+  `setparams=chroma_location=center` before it (libplacebo honours `left`: Cb off by up to 12 levels otherwise).
+  Fed NVDEC-downloaded (or CPU-decoded) frames: **max 1 level, 9.4 % of values differ** (mean +0.13 on R and B),
+  identical over two runs; CPU 1.6 ms per frame plus ≈ 1.1 s on the main thread per process (Vulkan device start). Fed Vulkan-decoded
+  frames (no download at all) it is wrong: the 1088-row decode surface shifts the luma mapping, and from frame ≈ 1,000
+  of the window on the output no longer matches any reference frame (mean error 1.2–1.6, max 255) although the
+  Vulkan decoder's own frames are bit-identical to the CPU decoder's (`framemd5`).
+- *NVENC fed RGBA* (moving the output conversion into the encoder): the driver converts with BT.601 (FFmpeg tags the
+  stream `bt470bg`): Y off by up to 15 levels, mean +1.06, against the CPU conversion on a lossless encode. Rejected.
+
+**Export throughput** (the 24 captured segments replayed by a scratch pool, the node-fed kernel stream input and its
+overlay removed from every graph, everything else as the engine runs it; wall of the whole pool; CPU summed over the
+composites):
+
+| Variant | At a time | Pool wall | CPU (s) | Filter threads | Decoders | NVIDIA event thread | CPU busy | Failures |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| current CPU conversion | 4 | **168.8 s / 165.8 s** (two runs) | 2,305 / 2,289 | 1,585 | 558 | 16 | 71 % / 70 % | 0 |
+| OpenCL conversion | 4 | 224.6 s (+ 33–35 %) | 2,288 | 1,256 | 660 | 205 | 58 % | 0 |
+| OpenCL conversion | 6 / 8 | 237.3 s / 242.5 s | 3,200 / 3,769 | 1,791 / 2,117 | 867 / 1,004 | 324 / 396 | 76 % / 86 % | 0 |
+| libplacebo conversion | 4 | 217.0 s (+ 29–31 %) | 1,464 | 808 | 449 | 30 | 41 % | 1 |
+| libplacebo conversion | 6 | 190.5 s (with 9 segments failed) | 1,408 | 753 | 428 | 33 | 41 % | 9 |
+| *bound*: CPU conversion with `flags=bilinear` (not faithful) | 4 | 141.0 s (− 15 %) | 1,775 | 955 | — | — | 66 % | 0 |
+
+- **OpenCL**: the filter threads lose 330 cpu-s but NVIDIA's OpenCL waits by spinning — its event-handler thread goes
+  from 16 to 205 cpu-s at 4 at a time and further with more composites, and the filter threads spin in the blocking
+  transfers — so the CPU total does not fall, while each composite's filter thread now waits per layer frame for the
+  upload, the kernel and the download: segments take 36.5 s instead of 27 s each. More at a time only adds spinning.
+- **libplacebo**: the CPU does fall by 36 % (Vulkan waits sleep), but the composites are latency-bound (41 % busy:
+  34.4 s per segment at 4, 44.3 s at 6), and every `libplacebo` instance (one per video layer: 19–90 per segment, all
+  created at graph start) keeps its own textures and upload slabs: `VK_ERROR_OUT_OF_DEVICE_MEMORY` on the 12 GB card
+  with 4–6 composites.
+- **The bound**: removing ≈ 500 cpu-s of conversion without adding latency gives ≈ 15 %; a GPU route has to avoid the
+  synchronous wait on the graph thread to come near it.
+- **Hiding the latency inside one ffmpeg failed**: each layer's conversion in its own `-filter_complex` (each graph
+  has its own thread in 7.1) handed to the composite through `rawvideo` loopback decoders (`-dec`) did not finish with
+  OpenCL (stopped after 5 min; the segment takes 15 s) and crashed (SIGSEGV) with libplacebo.
+
+GPU load was not the limit: during the OpenCL pool at 8 at a time the GPU's SM activity averaged 42 %, NVENC 15 %,
+NVDEC 15 % (`nvidia-smi dmon`, desktop included).
+
+**What could still work** (not attempted; each is a larger change than this investigation): a conversion that does not
+block the graph thread — an asynchronous GPU filter (or a YUV → RGB mode for `scale_cuda`, whose CUDA waits block
+instead of spinning) in our own LGPL FFmpeg build, which would need `--enable-cuda-llvm` (clang; `--enable-cuda-nvcc` is
+nonfree), a manifest and `pnpm ffmpeg:check` provenance; or converting the video track in a separate process per
+segment that feeds the composite RGBA through a pipe, as the kernel streams do. CPU-side, outside this task's GPU
+scope: an opaque full-frame video layer over the opaque background costs the 2.8 ms overlay per frame although the
+result is the layer itself.
