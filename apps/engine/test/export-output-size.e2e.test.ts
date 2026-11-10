@@ -55,7 +55,7 @@ function textAgreement(a: Buffer, b: Buffer, tol: number): number {
 	return n ? ok / n : 1;
 }
 
-describe.runIf(enabled)('output-size composite fidelity (REMOTION_E2E=1)', () => {
+describe.runIf(enabled)('output-size composite fidelity (REMOTION_E2E=1)', { timeout: 1_200_000 }, () => {
 	let engine: RunningEngine;
 	beforeAll(async () => {
 		ensureFixtures();
@@ -81,8 +81,8 @@ describe.runIf(enabled)('output-size composite fidelity (REMOTION_E2E=1)', () =>
 	async function doc() {
 		const app = engine.app as never;
 		const [a, still] = await Promise.all([
-			register(app, fixture('clip-a.mp4')),
-			register(app, fixture('still.png')),
+			register(app, fixture('clip-a.mp4'), hostH()),
+			register(app, fixture('still.png'), hostH()),
 		]);
 		const d = new DocBuilder('hd-1080p-30');
 		const [ma, ms] = [a, still].map((m) => d.addMedia(m));
