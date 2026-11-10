@@ -90,6 +90,7 @@ import { type DeliveryDeps, type DeliveryFrames, runAlphaDelivery } from './deli
 import { runGamutCheck } from './delivery/gamut.ts';
 import { runPsdExport } from './delivery/psd-job.ts';
 import { planPsd } from './delivery/psd-plan.ts';
+import { compositeMemoryBudget, estimateComposite } from './memory.ts';
 import { BT709_FRAME_TAGS, buildNativeGraph, mixAudioFilters, SWS_FLAGS } from './native.ts';
 import {
 	layerOverride,
@@ -400,6 +401,7 @@ export class ExportService {
 			output: planned.output,
 			slots: this.deps.queue.totalSlots,
 			policy: segmentPolicyFromEnv(),
+			fits: segmentsFit(snap),
 		});
 		return {
 			decode: 'cpu',
@@ -1417,6 +1419,7 @@ export class ExportService {
 					output: planned.output,
 					slots: ctx.slots,
 					policy: segmentsOff ? { ...segmentPolicyFromEnv(), count: 1 } : segmentPolicyFromEnv(),
+					fits: segmentsFit(snap),
 				});
 		const split = segPlan.segments.length > 1;
 		const fps = snap.settings.fps;
@@ -1443,6 +1446,7 @@ export class ExportService {
 						mgMaster: (id) => masters.get(id) ?? null,
 					},
 					threads,
+					...(split ? { filterThreads: threads } : {}),
 					still,
 					trackStreams: process.env.JASPER_EXPORT_TRACK_STREAMS !== '0',
 					coverBase: process.env.JASPER_EXPORT_COVER_BASE !== '0',
@@ -1590,6 +1594,9 @@ export class ExportService {
 		};
 		const done = parts.map(() => 0);
 		let failed: { error: unknown; part: Part } | null = null;
+		// the sound of a segmented export is encoded while the segments render (the join then only copies)
+		const sound = split ? this.segmentSound(planned, audio, soxr, ctx, runAbort.signal) : null;
+		sound?.catch(() => {});
 		const endEncode = report.begin(still ? 'still' : 'encode');
 		try {
 			await Promise.allSettled(
@@ -1634,6 +1641,7 @@ export class ExportService {
 		}
 		if (failed !== null) {
 			const { error: e, part } = failed as { error: unknown; part: Part };
+			await sound?.catch(() => {});
 			streamAbort.abort();
 			await Promise.all(producers);
 			// A stream that lost its pipe only reports the composite's death: the composite's own error then wins.
@@ -1654,7 +1662,7 @@ export class ExportService {
 		ctx.signal.removeEventListener('abort', onAbortBg);
 		if (still) return 1;
 		if (split) {
-			const joined = await this.joinSegments(planned, parts, output, audio, soxr, ctx);
+			const joined = await this.joinSegments(planned, parts, output, await sound!, ctx);
 			if (!joined) {
 				ctx.log(
 					'native: the segments were encoded with different parameter sets; rendering one graph instead',
@@ -1682,18 +1690,52 @@ export class ExportService {
 	}
 
 	/**
+	 * The sound stream of a segmented export, as a file the join copies: the delivery's checked encode as it is, else
+	 * the mix WAV (or silence) through the chain and encoder a one-graph export uses (`mixAudioFilters`), encoded into
+	 * the scratch directory while the segments render. Null for a picture-only export.
+	 */
+	private async segmentSound(
+		planned: PlannedExport,
+		audio: MixdownResult | null,
+		soxr: boolean,
+		ctx: JobContext,
+		signal: AbortSignal,
+	): Promise<string | null> {
+		const o = planned.output;
+		if (o.videoOnly) return null;
+		const encoded = deliveredEncode(planned, audio);
+		if (encoded) return encoded;
+		const ext = o.encoder?.container ?? 'mp4';
+		const file = join(await ctx.scratchDir(), `sound.${ext}`);
+		const layout = o.audioChannels === 1 ? 'mono' : o.audioChannels === 6 ? '5.1' : 'stereo';
+		const totalSamples = Math.round(o.durationSec * o.audioSampleRate);
+		const args = [
+			...(audio?.path
+				? ['-i', audio.path, '-af', mixAudioFilters({ sampleRate: audio.sampleRate, soxr }, o).join(',')]
+				: [
+						...['-f', 'lavfi', '-i', `anullsrc=r=${o.audioSampleRate}:cl=${layout}`],
+						...['-af', `atrim=end_sample=${totalSamples}`],
+					]),
+			'-vn',
+			...audioEncodeArgs(audioCodecOf(o.encoder, o), o.audioBitrateKbps, o.audioChannels),
+			...['-ar', String(o.audioSampleRate), '-ac', String(o.audioChannels), '-f', ext, file],
+		];
+		ctx.log(`ffmpeg (sound) ${args.join(' ')}`);
+		await this.report(ctx).time('sound', () => this.deps.ff.run(args, { signal, onSpawn: ctx.trackChild }));
+		return file;
+	}
+
+	/**
 	 * Joins the encoded picture segments by stream copy (concat demuxer: each segment's timestamps continue from the
-	 * previous one's duration; every segment starts with a key frame) with the export's sound — the delivery's checked
-	 * encode copied, or the mix WAV through the same chain as a one-graph export (`mixAudioFilters`) — into `output`.
-	 * Checks each segment's frame count first (FRAME_COUNT_MISMATCH names it). False, without writing, when the
-	 * segments' parameter sets differ (a concatenated stream must share them).
+	 * previous one's duration; every segment starts with a key frame) with the export's sound (`segmentSound`, copied)
+	 * into `output`. Checks each segment's frame count first (FRAME_COUNT_MISMATCH names it). False, without writing,
+	 * when the segments' parameter sets differ (a concatenated stream must share them).
 	 */
 	private async joinSegments(
 		planned: PlannedExport,
 		parts: readonly { graph: { outputFrames: number }; file: string; label: string }[],
 		output: string,
-		audio: MixdownResult | null,
-		soxr: boolean,
+		sound: string | null,
 		ctx: JobContext,
 	): Promise<boolean> {
 		const report = this.report(ctx);
@@ -1734,52 +1776,15 @@ export class ExportService {
 		const scratch = await ctx.scratchDir();
 		const list = join(scratch, 'segments.txt');
 		await writeFile(list, `${parts.map((p) => `file '${p.file.replace(/'/g, "'\\''")}'`).join('\n')}\n`);
-		const totalSamples = Math.round(o.durationSec * o.audioSampleRate);
-		const layout = o.audioChannels === 1 ? 'mono' : o.audioChannels === 6 ? '5.1' : 'stereo';
-		const encoded = deliveredEncode(planned, audio);
-		const sound: string[][] = o.videoOnly
-			? []
-			: encoded
-				? [
-						['-i', encoded],
-						['-c:a', 'copy'],
-					]
-				: audio?.path
-					? [
-							['-i', audio.path],
-							[
-								'-af',
-								mixAudioFilters({ sampleRate: audio.sampleRate, soxr }, o).join(','),
-								...audioEncodeArgs(audioCodecOf(o.encoder, o), o.audioBitrateKbps, o.audioChannels),
-								'-ar',
-								String(o.audioSampleRate),
-								'-ac',
-								String(o.audioChannels),
-							],
-						]
-					: [
-							['-f', 'lavfi', '-i', `anullsrc=r=${o.audioSampleRate}:cl=${layout}`],
-							[
-								'-af',
-								`atrim=end_sample=${totalSamples}`,
-								...audioEncodeArgs(audioCodecOf(o.encoder, o), o.audioBitrateKbps, o.audioChannels),
-								'-ar',
-								String(o.audioSampleRate),
-								'-ac',
-								String(o.audioChannels),
-							],
-						];
 		const args = [
 			...['-f', 'concat', '-safe', '0', '-i', list],
-			...(sound[0] ?? []),
+			...(sound ? ['-i', sound] : []),
 			...['-map', '0:v:0'],
-			...(sound.length ? ['-map', '1:a:0'] : []),
-			...['-c:v', 'copy'],
-			...(sound[1] ?? ['-an']),
+			...(sound ? ['-map', '1:a:0', '-c', 'copy'] : ['-c:v', 'copy', '-an']),
 			...(ext !== 'webm' ? ['-movflags', '+faststart'] : []),
 			...['-f', ext, output],
 		];
-		ctx.progress(0.97, { stage: `Joining ${parts.length} segments${sound.length ? ' and the sound' : ''}` });
+		ctx.progress(0.97, { stage: `Joining ${parts.length} segments${sound ? ' and the sound' : ''}` });
 		ctx.log(`ffmpeg ${args.join(' ')}`);
 		await report.time('join', () => this.deps.ff.run(args, { signal: ctx.signal, onSpawn: ctx.trackChild }));
 		for (const p of parts) await rm(p.file, { force: true });
@@ -3222,6 +3227,13 @@ function dedupeWarnings(w: readonly { code: string; message: string }[]) {
  * spec 13 AS-074: a composite killed by the system (SIGKILL that the job did not send: the OOM killer, a memory
  * limit) becomes an `OUT_OF_MEMORY` job error naming the cause, never a crash; other errors pass unchanged.
  */
+/** Whether segment graphs of `snap` running at once fit the composite memory budget (spec 13 AS-074, memory.ts). */
+function segmentsFit(snap: PlannedExport['snapshot']) {
+	const budget = compositeMemoryBudget();
+	return (segments: readonly { start: number; end: number }[]) =>
+		segments.reduce((t, s) => t + estimateComposite(snap, s).bytes, 0) <= budget;
+}
+
 /** Overlay filters in a filtergraph (each one is traversed by every frame of the composite). */
 function overlayCount(filter: string): number {
 	return filter.match(/\]overlay=/g)?.length ?? 0;

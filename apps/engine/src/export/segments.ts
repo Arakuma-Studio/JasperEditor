@@ -59,6 +59,11 @@ export function planPictureSegments(o: {
 	output: OutputSpec;
 	slots: number;
 	policy: SegmentPolicy;
+	/**
+	 * Whether these segments' graphs, running at once, fit in memory (spec 13 AS-074 budget); fewer segments are planned
+	 * until they do (one graph always fits: the planner refused the export otherwise).
+	 */
+	fits?: (segments: readonly PictureSegment[]) => boolean;
 }): SegmentPlan {
 	const { snapshot: snap, output, policy } = o;
 	const R0 = snap.range.start;
@@ -85,6 +90,18 @@ export function planPictureSegments(o: {
 	n = Math.max(1, Math.min(MAX_SEGMENTS, n));
 	if (n < 2)
 		return one(byLength < 2 ? `shorter than two segments of ${policy.minSec} s` : 'not enough CPU slots');
+	for (; n >= 2; n--) {
+		const segments = split(snap, n);
+		if (!o.fits || o.fits(segments)) return { segments };
+	}
+	return one('segments running at once would not fit in memory');
+}
+
+/** `n` segments of the range, inner boundaries on lowest-track cuts within a quarter segment. */
+function split(snap: RenderSnapshot, n: number): PictureSegment[] {
+	const R0 = snap.range.start;
+	const R1 = snap.range.end;
+	const frames = R1 - R0;
 	// cuts on the lowest video track (clip starts and ends inside the range)
 	const cuts = new Set<number>();
 	for (const c of snap.videoTracks[0]?.clips ?? []) {
@@ -110,7 +127,7 @@ export function planPictureSegments(o: {
 	bounds.push(R1);
 	const segments: PictureSegment[] = [];
 	for (let i = 0; i < n; i++) segments.push({ start: bounds[i]!, end: bounds[i + 1]! });
-	return { segments };
+	return segments;
 }
 
 /** Top-level visual layers (clips with their handles, mattes) of the busiest segment: the plan's overlay estimate. */

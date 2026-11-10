@@ -84,6 +84,11 @@ type NativeBuildOptions = {
 	outputFile: string;
 	sources: NativeSourceResolver;
 	threads: number;
+	/**
+	 * Threads of the filter graph (`-filter_complex_threads`; absent = ffmpeg's default, one per CPU). Parallel picture
+	 * segments (segments.ts) give each graph its share, so N graphs do not each start a thread per CPU.
+	 */
+	filterThreads?: number;
 	/** Single-frame PNG (stills): no audio, RGB output. */
 	still?: boolean;
 	/** M2 native extensions (ARCHITECTURE §19.6) and what their `prepare` returned for this export. */
@@ -1468,7 +1473,10 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 	}
 
 	const filter = chains.join(';\n');
-	const args: string[] = [...(enc?.pre ?? [])];
+	const args: string[] = [
+		...(o.filterThreads ? ['-filter_complex_threads', String(Math.max(1, Math.floor(o.filterThreads)))] : []),
+		...(enc?.pre ?? []),
+	];
 	for (const inp of inputs) args.push(...inp);
 	args.push('-filter_complex', filter, '-map', '[vout]');
 	if (o.still) {

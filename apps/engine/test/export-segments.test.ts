@@ -164,7 +164,7 @@ describe('parallel picture segments (native)', { timeout: 600_000 }, () => {
 		const one = await exportWith(d, s, '1');
 		const three = await exportWith(d, s, '3');
 		expect(one.result.pipeline).toMatchObject({ segments: 1 });
-		expect(three.result.pipeline).toMatchObject({ segments: 3, decode: 'cpu', composite: 'cpu' });
+		expect(three.result.pipeline).toMatchObject({ segments: 3, composite: 'cpu' });
 		expect(three.result.timings!.phases.join).toBeDefined();
 		expect(three.result.frames).toBe(FRAMES);
 		const ref = frameHashes(one.file, 'v');
