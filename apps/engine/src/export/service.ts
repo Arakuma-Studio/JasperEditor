@@ -91,7 +91,7 @@ import { runGamutCheck } from './delivery/gamut.ts';
 import { runPsdExport } from './delivery/psd-job.ts';
 import { planPsd } from './delivery/psd-plan.ts';
 import { gpuDecodePolicyFromEnv, nvdecEligible, nvdecForGraph, probeCudaDecode } from './gpu.ts';
-import { compositeMemoryBudget, estimateComposite } from './memory.ts';
+import { compositeMemoryBudget, compositeProfile, estimateFrom } from './memory.ts';
 import { BT709_FRAME_TAGS, buildNativeGraph, mixAudioFilters, SWS_FLAGS } from './native.ts';
 import {
 	layerOverride,
@@ -112,7 +112,13 @@ import {
 	planExport,
 } from './planner.ts';
 import { ExportRunReport } from './run-report.ts';
-import { layersPerSegment, planPictureSegments, segmentPolicyFromEnv } from './segments.ts';
+import {
+	layersPerSegment,
+	planPictureSegments,
+	type SegmentMemory,
+	type SegmentPlan,
+	segmentPolicyFromEnv,
+} from './segments.ts';
 import {
 	probeSourceFrames,
 	proresProfileMatches,
@@ -408,19 +414,21 @@ export class ExportService {
 			) &&
 			(await probeCudaDecode(this.deps.ff)).ok;
 		// (the export job asks for every CPU slot of the queue: the segments it will plan)
-		const { segments, reason } = planPictureSegments({
+		const { segments, reason, concurrency, peakBytes } = planPictureSegments({
 			snapshot: snap,
 			output: planned.output,
 			slots: this.deps.queue.totalSlots,
 			policy: segmentPolicyFromEnv(),
-			fits: segmentsFit(snap),
+			memory: segmentMemory(snap),
 		});
 		return {
 			decode: nvdec ? 'nvdec' : 'cpu',
 			composite: 'cpu',
 			segments: segments.length,
+			concurrency,
 			overlays: layersPerSegment(snap, segments),
 			compositeSize: { width: snap.settings.width, height: snap.settings.height },
+			memoryBytes: peakBytes,
 			...(reason ? { reason } : {}),
 		};
 	}
@@ -597,7 +605,7 @@ export class ExportService {
 					ext === 'mov' ? 'mov' : 'mp4',
 					file,
 				];
-				ctx.log(`ffmpeg ${args.join(' ')}`);
+				ctx.log(`ffmpeg ${commandLine(args)}`);
 				ctx.progress((done / total) * 0.95, { stage: `Copying frames ${p.start}–${p.end}` });
 				await this.deps.ff.run(args, { signal: ctx.signal, onSpawn: ctx.trackChild });
 				const count = await this.deps.ff.countVideoFrames(file, { signal: ctx.signal });
@@ -735,7 +743,7 @@ export class ExportService {
 				String(o.frames),
 				video,
 			];
-			ctx.log(`ffmpeg ${vargs.join(' ')}`);
+			ctx.log(`ffmpeg ${commandLine(vargs)}`);
 			await this.deps.ff.run(vargs, { signal: ctx.signal, onSpawn: ctx.trackChild });
 			args = [
 				'-y',
@@ -767,7 +775,7 @@ export class ExportService {
 				output,
 			];
 		}
-		ctx.log(`ffmpeg ${args.join(' ')}`);
+		ctx.log(`ffmpeg ${commandLine(args)}`);
 		await this.deps.ff.run(args, { signal: ctx.signal, onSpawn: ctx.trackChild });
 		const count = await this.deps.ff.countVideoFrames(output, { signal: ctx.signal });
 		if (count !== o.frames)
@@ -944,7 +952,7 @@ export class ExportService {
 			o.encoder?.container ?? 'mp4',
 			output,
 		];
-		ctx.log(`ffmpeg ${args.join(' ')}`);
+		ctx.log(`ffmpeg ${commandLine(args)}`);
 		const durationSec = o.durationSec;
 		await this.deps.ff.run(args, {
 			signal: ctx.signal,
@@ -1085,7 +1093,7 @@ export class ExportService {
 			const container = extname(output).slice(1);
 			const tmp = join(dir, `captioned${extname(output)}`);
 			const args = embedArgs(output, files, container, tmp);
-			ctx.log(`ffmpeg ${args.join(' ')}`);
+			ctx.log(`ffmpeg ${commandLine(args)}`);
 			await this.deps.ff.run(args, { signal: ctx.signal, onSpawn: ctx.trackChild });
 			await rename(tmp, output);
 			for (const t of tracks)
@@ -1424,16 +1432,27 @@ export class ExportService {
 		ctx.progress(0, { stage: 'Planning layers' });
 		// Parallel picture segments (segments.ts): each an export of its own sub-range, picture only, joined below.
 		const snap = planned.snapshot;
-		const segPlan = still
-			? { segments: [{ start: snap.range.start, end: snap.range.end }] }
+		const segPlan: SegmentPlan = still
+			? { segments: [{ start: snap.range.start, end: snap.range.end }], concurrency: 1, peakBytes: 0 }
 			: planPictureSegments({
 					snapshot: snap,
 					output: planned.output,
 					slots: ctx.slots,
 					policy: segmentsOff ? { ...segmentPolicyFromEnv(), count: 1 } : segmentPolicyFromEnv(),
-					fits: segmentsFit(snap),
+					memory: segmentMemory(snap),
 				});
+		// spec 13 AS-074 / AGENTS §0: refused by name when even one short segment at a time would not fit (memory taken
+		// since the plan), never an out-of-memory kill
+		if (segPlan.blocker) {
+			endPlan();
+			await abandon();
+			throw new JobError('INSUFFICIENT_MEMORY', `Not enough memory: ${segPlan.blocker}`, true, {
+				estimateBytes: segPlan.peakBytes,
+			});
+		}
 		const split = segPlan.segments.length > 1;
+		/** Segments rendering at once. */
+		const atOnce = split ? Math.max(1, Math.min(segPlan.concurrency, segPlan.segments.length)) : 1;
 		const fps = snap.settings.fps;
 		const frameSec = fps.den / fps.num;
 		const ext = planned.output.encoder?.container ?? 'mp4';
@@ -1452,7 +1471,7 @@ export class ExportService {
 		const parts: Part[] = [];
 		try {
 			const scratch = split ? await ctx.scratchDir() : '';
-			const threads = split ? Math.max(1, Math.floor(ctx.slots / segPlan.segments.length)) : ctx.slots;
+			const threads = split ? Math.max(1, Math.floor(ctx.slots / atOnce)) : ctx.slots;
 			for (const [i, s] of segPlan.segments.entries()) {
 				const n = s.end - s.start;
 				const file = split ? join(scratch, `segment-${i}.${ext}`) : output;
@@ -1470,9 +1489,7 @@ export class ExportService {
 					threads,
 					...(split ? { filterThreads: threads } : {}),
 					// (the export's GPU decoders are shared by its concurrent segments)
-					...(nvdec.ok
-						? { hwDecode: nvdecForGraph(Math.floor(gpuPolicy.maxInputs / segPlan.segments.length)) }
-						: {}),
+					...(nvdec.ok ? { hwDecode: nvdecForGraph(Math.floor(gpuPolicy.maxInputs / atOnce)) } : {}),
 					still,
 					trackStreams: process.env.JASPER_EXPORT_TRACK_STREAMS !== '0',
 					coverBase: process.env.JASPER_EXPORT_COVER_BASE !== '0',
@@ -1512,6 +1529,8 @@ export class ExportService {
 				decode: parts.some((p) => p.graph.hwDecoded > 0) ? 'nvdec' : 'cpu',
 				composite: 'cpu',
 				segments: parts.length,
+				concurrency: atOnce,
+				memoryBytes: segPlan.peakBytes,
 				overlays: Math.max(
 					...parts.flatMap((p) => [
 						overlayCount(p.graph.filter),
@@ -1521,7 +1540,13 @@ export class ExportService {
 				compositeSize: { width: snap.settings.width, height: snap.settings.height },
 				...(segPlan.reason ? { reason: segPlan.reason } : {}),
 			};
-		if (split) ctx.log(`native: ${parts.length} picture segments: ${parts.map((p) => p.label).join(', ')}`);
+		ctx.log(
+			`native: estimated composite memory ${(segPlan.peakBytes / 1024 ** 3).toFixed(1)} GB of a ${(compositeMemoryBudget() / 1024 ** 3).toFixed(1)} GB budget`,
+		);
+		if (split)
+			ctx.log(
+				`native: ${parts.length} picture segments, ${atOnce} at a time${segPlan.reason ? ` (${segPlan.reason})` : ''}: ${parts.map((p) => p.label).join(', ')}`,
+			);
 		else if (segPlan.reason) ctx.log(`native: one graph (${segPlan.reason})`);
 		// Pipelined stills the composite opens as inputs are written first.
 		const waitFor = parts.flatMap((p) => p.graph.waitFor ?? []);
@@ -1553,9 +1578,11 @@ export class ExportService {
 					const k = seg.args.indexOf('-filter_complex');
 					seg.args = [...seg.args.slice(0, k), '-filter_complex_script', script, ...seg.args.slice(k + 2)];
 				}
-				ctx.log(`ffmpeg (${part.label ? `${part.label}, ` : ''}blend layer ${i + 1}) ${seg.args.join(' ')}`);
+				ctx.log(
+					`ffmpeg (${part.label ? `${part.label}, ` : ''}blend layer ${i + 1}) ${commandLine(seg.args)}`,
+				);
 			}
-			ctx.log(`ffmpeg${part.label ? ` (${part.label})` : ''} ${part.args.join(' ')}`);
+			ctx.log(`ffmpeg${part.label ? ` (${part.label})` : ''} ${commandLine(part.args)}`);
 		}
 		const total = parts.reduce((t, p) => t + p.graph.durationSec, 0);
 		const started = Date.now();
@@ -1579,7 +1606,11 @@ export class ExportService {
 				(p.graph.blend?.segments.reduce((m, sg) => m + sg.streams.length + 1, 0) ?? 0),
 			0,
 		);
-		const workers = Math.max(2, Math.floor(Math.max(1, ctx.slots) / Math.max(1, allStreams)));
+		// (the streams of the segments rendering at once share the CPU)
+		const workers = Math.max(
+			2,
+			Math.floor(Math.max(1, ctx.slots) / Math.max(1, Math.ceil((allStreams * atOnce) / parts.length))),
+		);
 		const runStreams = (child: ChildProcess, streams: ReturnType<typeof buildNativeGraph>['streams']) => {
 			for (const s of streams) {
 				const sink = child.stdio[s.fd] as Writable;
@@ -1624,43 +1655,55 @@ export class ExportService {
 		const sound = split ? this.segmentSound(planned, audio, soxr, ctx, runAbort.signal) : null;
 		sound?.catch(() => {});
 		const endEncode = report.begin(still ? 'still' : 'encode');
-		try {
-			await Promise.allSettled(
-				parts.map((part, i) => {
-					const { graph } = part;
-					const pipes = graph.streams.length + (graph.blend ? 1 : 0);
-					return this.deps.ff
-						.run(part.args, {
-							signal: runAbort.signal,
-							...(pipes > 0 ? { pipes } : {}),
-							onSpawn: (child) => {
-								ctx.trackChild(child);
-								if (graph.streams.length > 0) runStreams(child, graph.streams);
-								runBlend(child, graph.blend);
-							},
-							onProgress: (p) => {
-								if (still || total <= 0) return;
-								done[i] = Math.min(graph.durationSec, p.outTimeUs / 1e6);
-								const sum = done.reduce((a, b) => a + b, 0);
-								const elapsed = (Date.now() - started) / 1000;
-								const speed = split
-									? elapsed > 0
-										? sum / elapsed
-										: undefined
-									: (p.speed ?? (elapsed > 0 ? sum / elapsed : undefined));
-								ctx.progress((sum / total) * (split ? 0.96 : 0.98), {
-									stage: split ? `Encoding (native, ${parts.length} segments)` : 'Encoding (native)',
-									...(speed ? { speed, etaSec: (total - sum) / speed } : {}),
-								});
-							},
-						})
-						.catch((error: unknown) => {
-							// the first failure is the export's; the other segments are stopped (their cancellation is not)
-							failed ??= { error, part };
-							runAbort.abort();
+		/** One composite (a segment, or the whole range). */
+		const runPart = (part: Part, i: number): Promise<void> => {
+			const { graph } = part;
+			const pipes = graph.streams.length + (graph.blend ? 1 : 0);
+			return this.deps.ff
+				.run(part.args, {
+					signal: runAbort.signal,
+					...(pipes > 0 ? { pipes } : {}),
+					onSpawn: (child) => {
+						ctx.trackChild(child);
+						if (graph.streams.length > 0) runStreams(child, graph.streams);
+						runBlend(child, graph.blend);
+					},
+					onProgress: (p) => {
+						if (still || total <= 0) return;
+						done[i] = Math.min(graph.durationSec, p.outTimeUs / 1e6);
+						const sum = done.reduce((a, b) => a + b, 0);
+						const elapsed = (Date.now() - started) / 1000;
+						const speed = split
+							? elapsed > 0
+								? sum / elapsed
+								: undefined
+							: (p.speed ?? (elapsed > 0 ? sum / elapsed : undefined));
+						ctx.progress((sum / total) * (split ? 0.96 : 0.98), {
+							stage: split ? `Encoding (native, ${parts.length} segments)` : 'Encoding (native)',
+							...(speed ? { speed, etaSec: (total - sum) / speed } : {}),
 						});
-				}),
-			);
+					},
+				})
+				.then(() => {})
+				.catch((error: unknown) => {
+					// the first failure is the export's; the other segments are stopped (their cancellation is not)
+					failed ??= { error, part };
+					runAbort.abort();
+				});
+		};
+		try {
+			// at most `atOnce` composites at a time, in range order; none starts after a failure or a cancellation
+			let next = 0;
+			const lane = async () => {
+				while (failed === null && !runAbort.signal.aborted && next < parts.length) {
+					const i = next++;
+					await runPart(parts[i]!, i);
+				}
+			};
+			await Promise.all(Array.from({ length: atOnce }, lane));
+			// cancelled between two segments: nothing failed, but the export did not finish
+			if (failed === null && runAbort.signal.aborted)
+				failed = { error: new JobError('JOB_CANCELLED', 'Cancelled'), part: parts[0]! };
 		} finally {
 			endEncode();
 			ctx.signal.removeEventListener('abort', onJobAbort);
@@ -1746,7 +1789,7 @@ export class ExportService {
 			...audioEncodeArgs(audioCodecOf(o.encoder, o), o.audioBitrateKbps, o.audioChannels),
 			...['-ar', String(o.audioSampleRate), '-ac', String(o.audioChannels), '-f', ext, file],
 		];
-		ctx.log(`ffmpeg (sound) ${args.join(' ')}`);
+		ctx.log(`ffmpeg (sound) ${commandLine(args)}`);
 		await this.report(ctx).time('sound', () => this.deps.ff.run(args, { signal, onSpawn: ctx.trackChild }));
 		return file;
 	}
@@ -1811,7 +1854,7 @@ export class ExportService {
 			...['-f', ext, output],
 		];
 		ctx.progress(0.97, { stage: `Joining ${parts.length} segments${sound ? ' and the sound' : ''}` });
-		ctx.log(`ffmpeg ${args.join(' ')}`);
+		ctx.log(`ffmpeg ${commandLine(args)}`);
 		await report.time('join', () => this.deps.ff.run(args, { signal: ctx.signal, onSpawn: ctx.trackChild }));
 		for (const p of parts) await rm(p.file, { force: true });
 		return true;
@@ -1915,7 +1958,7 @@ export class ExportService {
 			ext,
 			output,
 		];
-		ctx.log(`ffmpeg ${args.join(' ')}`);
+		ctx.log(`ffmpeg ${commandLine(args)}`);
 		await this.report(ctx).time('join', () =>
 			this.deps.ff.run(args, { signal: ctx.signal, onSpawn: ctx.trackChild }),
 		);
@@ -1951,7 +1994,7 @@ export class ExportService {
 			o.encoder?.container ?? 'mp4',
 			output,
 		];
-		ctx.log(`ffmpeg ${args.join(' ')}`);
+		ctx.log(`ffmpeg ${commandLine(args)}`);
 		await this.deps.ff.run(args, { signal: ctx.signal, onSpawn: ctx.trackChild });
 	}
 
@@ -2079,7 +2122,7 @@ export class ExportService {
 			choice.container,
 			output,
 		];
-		ctx.log(`ffmpeg ${args.join(' ')}`);
+		ctx.log(`ffmpeg ${commandLine(args)}`);
 		const total = o.durationSec;
 		await this.deps.ff.run(args, {
 			signal: ctx.signal,
@@ -2295,17 +2338,11 @@ export class ExportService {
 		const dir = await this.outDir(ctx);
 		const output = join(dir, `output.${outputExtension(planned)}`);
 		ctx.addPartial(dir);
-		const del = planned.deliverable;
-		const rendered =
-			del?.kind === 'audio'
-				? await this.renderAudioOnly(ctx, planned, output)
-				: del?.kind === 'gif'
-					? await this.renderGif(ctx, req, planned, output)
-					: planned.previews?.some((r) => r.kind === 'preview')
-						? await this.renderWithPreviews(ctx, req, planned, output, planned.previews)
-						: planned.smart
-							? await this.renderSmart(ctx, req, planned, output, planned.smart)
-							: await this.renderPlanned(ctx, req, planned, output);
+		// where the time went, in the log of a failed (or cancelled) export too
+		const rendered = await this.renderExport(ctx, req, planned, output).catch((e: unknown) => {
+			ctx.log(this.report(ctx).summary());
+			throw e;
+		});
 		planned = rendered.planned;
 		const { frames, path, remotionOutput, warnings, audio } = rendered;
 		return this.finishExport(ctx, req, planned, output, dir, {
@@ -2315,6 +2352,17 @@ export class ExportService {
 			warnings,
 			audio,
 		});
+	}
+
+	/** The file of a planned export by its deliverable and path (`runExport`). */
+	private renderExport(ctx: JobContext, req: ExportStartRequest, planned: PlannedExport, output: string) {
+		const del = planned.deliverable;
+		if (del?.kind === 'audio') return this.renderAudioOnly(ctx, planned, output);
+		if (del?.kind === 'gif') return this.renderGif(ctx, req, planned, output);
+		if (planned.previews?.some((r) => r.kind === 'preview'))
+			return this.renderWithPreviews(ctx, req, planned, output, planned.previews);
+		if (planned.smart) return this.renderSmart(ctx, req, planned, output, planned.smart);
+		return this.renderPlanned(ctx, req, planned, output);
 	}
 
 	/** Renders a planned export into `output` (native / hybrid with the Remotion fallback, or Remotion). */
@@ -2539,7 +2587,7 @@ export class ExportService {
 			palette = join(scratch, 'gif-palette.png');
 			ctx.progress(RENDER, { stage: 'GIF 2/2 · Building the palette' });
 			const args = [...input, '-filter_complex', graphs.palette, '-map', '[out]', '-frames:v', '1', palette];
-			ctx.log(`ffmpeg ${args.join(' ')}`);
+			ctx.log(`ffmpeg ${commandLine(args)}`);
 			await this.deps.ff.run(args, { signal: ctx.signal, onSpawn: ctx.trackChild });
 		}
 		const loop = gifMuxLoop(gif.loop);
@@ -2556,7 +2604,7 @@ export class ExportService {
 			'gif',
 			output,
 		];
-		ctx.log(`ffmpeg ${args.join(' ')}`);
+		ctx.log(`ffmpeg ${commandLine(args)}`);
 		const total = planned.output.durationSec;
 		ctx.progress(PALETTE, { stage: 'GIF 2/2 · Writing frames' });
 		await this.deps.ff.run(args, {
@@ -2625,7 +2673,7 @@ export class ExportService {
 			...audioOnlyMuxArgs(del.audio.container),
 			output,
 		];
-		ctx.log(`ffmpeg ${args.join(' ')}`);
+		ctx.log(`ffmpeg ${commandLine(args)}`);
 		const total = planned.output.durationSec;
 		ctx.progress(MIX, { stage: `Writing ${name}` });
 		await this.deps.ff.run(args, {
@@ -3253,11 +3301,23 @@ function dedupeWarnings(w: readonly { code: string; message: string }[]) {
  * spec 13 AS-074: a composite killed by the system (SIGKILL that the job did not send: the OOM killer, a memory
  * limit) becomes an `OUT_OF_MEMORY` job error naming the cause, never a crash; other errors pass unchanged.
  */
-/** Whether segment graphs of `snap` running at once fit the composite memory budget (spec 13 AS-074, memory.ts). */
-function segmentsFit(snap: PlannedExport['snapshot']) {
-	const budget = compositeMemoryBudget();
-	return (segments: readonly { start: number; end: number }[]) =>
-		segments.reduce((t, s) => t + estimateComposite(snap, s).bytes, 0) <= budget;
+/** The memory side of the segment plan of `snap` (spec 13 AS-074, memory.ts): the budget and one graph's estimate. */
+function segmentMemory(snap: PlannedExport['snapshot']): SegmentMemory {
+	const profile = compositeProfile(snap);
+	return {
+		budget: compositeMemoryBudget(),
+		estimate: (range, threads) => estimateFrom(snap, profile, range, { threads }).bytes,
+	};
+}
+
+/**
+ * An ffmpeg command line for the job log, shortened in the middle when long (a composite has hundreds of inputs; the
+ * log keeps its last 64,000 characters, which whole command lines pushed the segment list and the audio summary out of).
+ */
+function commandLine(args: readonly string[]): string {
+	const text = args.join(' ');
+	if (text.length <= 2_000) return text;
+	return `${text.slice(0, 700)} … [${args.length} arguments, ${text.length} characters] … ${text.slice(-900)}`;
 }
 
 /** Overlay filters in a filtergraph (each one is traversed by every frame of the composite). */

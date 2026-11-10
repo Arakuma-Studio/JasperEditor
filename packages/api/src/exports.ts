@@ -251,7 +251,7 @@ export type ExportWarningParams = z.infer<typeof ExportWarningParamsSchema>;
  * How the native / hybrid composite runs (docs/wp-notes/export-performance.md): where source video is decoded
  * (`nvdec` = `-hwaccel cuda`), where layers are composited, how many picture segments render at once (each its own
  * ffmpeg graph with only the layers it shows, joined by stream copy; 1 = one graph for the range), the overlays of the
- * largest graph and the composite frame size. In the plan it is what the engine expects (`overlays` counts the visual
+ * largest graph, the segments rendering at once and their estimated memory, and the composite frame size. In the plan it is what the engine expects (`overlays` counts the visual
  * layers of the busiest segment, an upper bound: kernel streams draw runs of layers through one overlay); in the job
  * result it is what ran. `reason` says why the range was not split.
  */
@@ -259,7 +259,11 @@ export const ExportPipelineSchema = z.object({
 	decode: z.enum(['nvdec', 'cpu']),
 	composite: z.enum(['gpu', 'cpu']),
 	segments: z.number().int().min(1),
+	/** Segments rendering at once (the others wait); fewer than the CPU allows when memory is the limit. */
+	concurrency: z.number().int().min(1).optional(),
 	overlays: z.number().int().min(0),
+	/** Estimated peak memory of the composite processes running at once (bytes, memory.ts model). */
+	memoryBytes: z.number().min(0).optional(),
 	compositeSize: z.object({ width: z.number().int(), height: z.number().int() }).optional(),
 	reason: z.string().max(200).optional(),
 });

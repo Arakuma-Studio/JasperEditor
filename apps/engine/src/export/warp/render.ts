@@ -8,6 +8,7 @@ import type { Rational } from '@jasper/project';
 import type { Ffmpeg } from '../../tools/ffmpeg.ts';
 import { randomId } from '../../tools/fs.ts';
 import { terminateTree } from '../../tools/process.ts';
+import { capDecoderThreads } from '../memory.ts';
 import { BT709_FRAME_TAGS } from '../native.ts';
 import type { PixelRect } from './kernel.ts';
 import { WarpPool, type WarpSlot } from './pool.ts';
@@ -54,7 +55,8 @@ export class WarpRenderError extends Error {
 /** ffmpeg arguments of the decoder: the source chain as raw box-sized RGBA frames on stdout. */
 export function decoderArgs(inputs: string[][], filter: string, frames: number): string[] {
 	return [
-		...inputs.flat(),
+		// (several of these run beside the composite: two decoder threads each, not one per CPU — memory.ts)
+		...capDecoderThreads(inputs, 2).flat(),
 		'-filter_complex',
 		`${filter}[warpsrc]`,
 		'-map',

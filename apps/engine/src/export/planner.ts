@@ -4,6 +4,7 @@
 // `hybrid` = the native composite with layers an extension baked (S11:LBK-002).
 
 import { createHash } from 'node:crypto';
+import { availableParallelism } from 'node:os';
 import type { EncoderChoice, ExportSettings, RenderPlan } from '@jasper/api';
 import { installAudioFxProcessors } from '@jasper/audio-fx';
 import { mgRegistry } from '@jasper/mg-templates';
@@ -82,8 +83,15 @@ import {
 	gifBytes,
 	gifFrames,
 } from './deliverables.ts';
-import { bakeRecipeOf, compositeMemoryBlocker, compositeMemoryBudget, estimateComposite } from './memory.ts';
+import {
+	bakeRecipeOf,
+	compositeMemoryBlocker,
+	compositeMemoryBudget,
+	compositeProfile,
+	estimateFrom,
+} from './memory.ts';
 import { BUILTIN_NATIVE_EFFECTS, type NativeExtension } from './native-ext.ts';
+import { planPictureSegments, segmentPolicyFromEnv } from './segments.ts';
 import { soundPlanWarnings } from './sound-credits.ts';
 import { needsSubpixel } from './stream/plan.ts';
 
@@ -818,11 +826,24 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 
 	// spec 13 AS-074: a composite that cannot fit in memory is refused before anything runs (a bake of an hour that
 	// ends in an OOM kill, or the engine killed with it), with what it would need.
+	// Media decoders count with the threads the composite gives them; a range too big for one graph is split into
+	// segments (segments.ts) that run a few at a time, so only a range no segmentation fits is refused.
 	if (blockers.length === 0 && !video?.alpha && settings.engine !== 'remotion') {
-		const reason = compositeMemoryBlocker(
-			estimateComposite(snapshot, range),
-			deps.memoryBudget ?? compositeMemoryBudget(),
-		);
+		const budget = deps.memoryBudget ?? compositeMemoryBudget();
+		const profile = compositeProfile(snapshot);
+		const whole = estimateFrom(snapshot, profile, range, { threads: availableParallelism() });
+		let reason = compositeMemoryBlocker(whole, budget);
+		if (reason) {
+			const seg = planPictureSegments({
+				snapshot: { ...snapshot, range },
+				output,
+				slots: availableParallelism(),
+				policy: segmentPolicyFromEnv(),
+				memory: { budget, estimate: (r, threads) => estimateFrom(snapshot, profile, r, { threads }).bytes },
+			});
+			if (!seg.blocker) reason = null;
+			else if (seg.segments.length > 1) reason = seg.blocker;
+		}
 		if (reason) blockers.push({ path: 'native', reason });
 	}
 	const nativeEligible = blockers.length === 0;

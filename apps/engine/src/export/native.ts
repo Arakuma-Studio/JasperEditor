@@ -43,6 +43,7 @@ import { audioEncodeArgs, LEGACY_X264_CHOICE, videoEncodeArgs } from '../tools/e
 import { sec } from '../tools/ffmpeg.ts';
 import { adjustmentCropFilters, cropFeatherFilter, hardCropFilter, isFeatheredCrop } from './crop.ts';
 import { CROP_EDGES, mergeResize, motionFilters, motionStage } from './keyframed.ts';
+import { capDecoderThreads, decoderThreadsFor, isFileInput } from './memory.ts';
 import {
 	BUILTIN_NATIVE_EFFECTS,
 	type LayerOverride,
@@ -1408,7 +1409,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 				segments.push({
 					args: [
 						...(hwProcs.has(proc) ? ['-init_hw_device', `cuda=${hw!.device}`] : []),
-						...proc.inputs.flat(),
+						...decoderCapped(proc.inputs, o.threads).flat(),
 						'-filter_complex',
 						proc.chains.join(';\n'),
 						'-map',
@@ -1509,7 +1510,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 		...(hwProcs.has(proc) ? ['-init_hw_device', `cuda=${hw!.device}`] : []),
 		...(enc?.pre ?? []),
 	];
-	for (const inp of inputs) args.push(...inp);
+	for (const inp of decoderCapped(inputs, o.threads)) args.push(...inp);
 	args.push('-filter_complex', filter, '-map', '[vout]');
 	if (o.still) {
 		args.push('-frames:v', '1', '-update', '1', '-f', 'image2', '-c:v', 'png', o.outputFile);
@@ -1574,6 +1575,14 @@ export function mixAudioFilters(audio: { sampleRate: number; soxr?: boolean }, o
 		`apad=whole_len=${totalSamples}`,
 		`atrim=end_sample=${totalSamples}`,
 	];
+}
+
+/**
+ * A process's inputs with their decoders' threads capped (memory.ts `decoderThreadsFor`): ffmpeg opens every input at
+ * once and its default thread count per decoder multiplies their frame buffers (≈ 190 MB per input on 24 cores).
+ */
+function decoderCapped(inputs: readonly string[][], threads: number): string[][] {
+	return capDecoderThreads(inputs, decoderThreadsFor(threads, inputs.filter(isFileInput).length));
 }
 
 /** edit-structure: the clip-local frame a frame hold shows (the composition's `pictureLocalFrame`). */
