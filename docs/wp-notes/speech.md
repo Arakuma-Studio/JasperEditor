@@ -371,18 +371,27 @@ whisper evaluation (53 configurations; the numbers of spec 16 §0). This section
   closer than 100 ms joins; the same scan as the 2 s safety net, `wordlessVoicedSpans` with another shape). Window =
   3 s before to 1.5 s after the trace, each edge moved out to the middle of a pause of ≥ 100 ms within 1 s, then to the
   bounds of a word it cuts; overlapping windows merge while ≤ 30 s. Each window is decoded alone (`span`), verbatim,
-  `conditionOnPreviousText: false`. Acceptance: the re-decode replaces the window's words only when it holds MORE words
-  with letters/digits and ≥ 20 % voiced frames than the original holds words, and re-says the original words in order
-  (LCS of `cleanupNorm` texts ≥ 80 % of them: "Playstore" / "Play Store"); an equal or smaller result never replaces
-  anything, so the pass never drops words. A rejected window that splits into several VAD chunks is decoded once more
-  the `chunking: "vad"` way within it (both passes and the merge below, verbatim, no previous text; ≤ 10 min of audio
-  per job, both passes counted, `REDECODE_CHUNKED_MAX_FRAMES`) and judged by the same rule; its range then reports
-  `chunked` (true when those words replaced the window's, `after` counts them). Reporter's large-v3-turbo run,
-  fragment E: the 17 s window around "miles" 3.89 s / "millones" 2.58 s went from 26 to 33 words and was rejected,
-  while `chunking: "vad"` wrote all three takes there. Why the plain re-decode failed the rule is not known: the job
-  result does not keep a rejected re-decode's words (assumption: it lost or rewrote > 20 % of the original words —
-  the window starts mid-sentence — or its extra words were "..." tokens, which count for nothing), so the rule stays
-  and the fallback decodes the way that worked. A window that is one chunk anyway (≤ 10 s) is not decoded again.
+  `conditionOnPreviousText: false`. Acceptance (`redecodeAccepted`): original words the re-decode does not say again
+  in place stay, merged in time order — "in place" is a one-to-one, in-order alignment of the same word or a variant
+  (`sameWord`, transcript-cleanup.md) over it or within 0.25 s of its middle; a word stays unless it is stretched
+  itself (> 1 s) or the words written over it spell it differently (also joined: "Playstore" / "Play Store"). The
+  result replaces the window's words only when it holds MORE words with letters/digits and ≥ 20 % voiced frames than
+  the original holds words and misses ≤ 20 % of the original words, never three in a row; an equal or smaller result
+  never replaces anything, so the pass never drops words. A rejected window over several of the whole file's VAD
+  chunks is decoded once more over those chunks exactly as `chunking: "vad"` decodes them (energy VAD, both passes
+  and the merge below, the job's options, no previous text; ≤ 10 min of audio per job, both passes counted,
+  `REDECODE_CHUNKED_MAX_FRAMES`) and judged by the same rule; its range then reports `chunked` (true when those words
+  replaced the window's, `after` counts the words placed). Reporter's large-v3-turbo runs, fragment E: the first run
+  rejected the 17 s window around "miles" 3.89 s / "millones" 2.58 s (26 → 33 words) while `chunking: "vad"` wrote
+  all three takes there; why the plain re-decode failed is not known (the job result does not keep a rejected
+  re-decode's words). The second run's fallback — then chunks planned inside the window on the voice analysis and
+  decoded verbatim — wrote 31 words where the whole-file chunking wrote 80, skipped "decenas de miles de millones de
+  dólares." (29.79–31.15, speech at −12 to −25 dBFS) and was accepted because a plain subsequence match took the same
+  phrase said later in the window for it; the in-place alignment and the merge prevent both. Why the in-window
+  chunks wrote so few words is not measured here (no model or audio on this host); its plan differed from the
+  whole-file chunking in the mask (voice analysis vs energy), the chunk edges (the window's edges, mid-sentence) and
+  the verbatim prompt, so the fallback now uses the whole-file plan and options. A window that is one chunk anyway
+  (≤ 10 s) is not decoded again.
   At an edge that found no pause the original words within 0.5 s of it stay
   (`replaceRegion`; measured: a window cut inside "and a foraging" made tiny.en write "far …"). Replacement keeps the
   words sorted, non-overlapping and integer (`replaceWindowWords`), and swaps the window's segments. Bounded: ≤ 96
@@ -424,7 +433,8 @@ whisper evaluation (53 configurations; the numbers of spec 16 §0). This section
   word (reporter's large-v3-turbo re-decodes: "motor ...[13.86-14.04] ...y[14.04-14.08] correr"); OpenAI's
   `merge_punctuations` joins only single marks, so a word of punctuation marks (OpenAI's prepend / append sets,
   ellipses, ¿ ¡ « ») joins the word before it (opening marks the word after) and a leading ellipsis goes to the word
-  before — "motor......", "y"; its time is dropped. "%", "€", "&" are said, so they stay words. Test:
+  before without doubling what it already ends with — "motor...", "y" (the first version wrote "motor......"); its
+  time is dropped. "%", "€", "&" are said, so they stay words. Test:
   `speech-hidden-takes.test.ts` "a re-decode writes no word of punctuation only".
 - Segment scores (TC-003): `avgLogprob`, `noSpeechProb`, `compressionRatio` (and `temperature`) per segment in the
   result; stored as `Transcript.segments` (media-time flicks, project-files.md v10 table), merged inside a mix's coverage.

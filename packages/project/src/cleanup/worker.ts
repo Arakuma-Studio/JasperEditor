@@ -3,6 +3,6 @@
 // root would load the whole model each time (about 7 s), and every feature added to the root would slow it further. Everything
 // here is also exported from the package root.
 
-export { cleanupNorm } from './lists.ts';
+export { cleanupNorm, sameWord } from './lists.ts';
 export { lcs } from './rules.ts';
 export { decodeVoiceAnalysis, VOICE_ANALYSIS_VERSION, VOICE_CLASSES } from './voice-analysis.ts';

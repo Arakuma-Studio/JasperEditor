@@ -531,9 +531,10 @@ async function recoverWordlessSpans(
  * Hidden takes (`core/gaps.ts`, docs/wp-notes/speech.md §11.3 "Hidden takes"): decodes again, each alone, the windows around
  * stretched words and short wordless voice of `r` — verbatim, without the previous text — and replaces a window's
  * words when the re-decode holds more words consistent with the audio and re-says the original ones
- * (`redecodeAccepted`); the window's segments are replaced with it. A rejected window that splits into several VAD
- * chunks is decoded once more the `chunking: "vad"` way within it (both passes, merged; within
- * `REDECODE_CHUNKED_MAX_FRAMES` of audio per job), judged by the same rule. A decoder failure is thrown.
+ * (`redecodeAccepted`; original words it wrote nothing over stay); the window's segments are replaced with it. A
+ * rejected window over several of the whole file's VAD chunks is decoded once more the `chunking: "vad"` way over
+ * those chunks (both passes, merged, the job's options; within `REDECODE_CHUNKED_MAX_FRAMES` of audio per job),
+ * judged by the same rule. A decoder failure is thrown.
  */
 async function redecodeSuspects(
 	model: Pick<WhisperModel, 'transcribe'>,
@@ -561,6 +562,10 @@ async function redecodeSuspects(
 		verbatim: true,
 		conditionOnPreviousText: false,
 	};
+	// the fallback decodes what `chunking: "vad"` decodes there: its chunks of the whole file (energy VAD), with the
+	// job's options — fragment E: chunks planned inside the window on the voice analysis, decoded verbatim, wrote 31
+	// words where the whole-file chunking wrote 80
+	let fileChunks: Chunk[] | null = null;
 	for (const win of windows) {
 		let got = await model.transcribe(input, { ...redecodeOpts, span: { start: win.start, end: win.end } });
 		extra.add(got);
@@ -568,22 +573,34 @@ async function redecodeSuspects(
 		const inside = (w: { start: number; end: number }) => mid(w) >= start && mid(w) < end;
 		const before = words.filter(inside);
 		let after = got.words.filter(inside);
-		let replaced = redecodeAccepted(before, after, mask, MIN_VOICED_FRACTION);
+		let placed = redecodeAccepted(before, after, mask, MIN_VOICED_FRACTION);
 		let chunked: boolean | undefined;
-		// fragment E of the report: a 17 s window re-decoded as one wrote the takes no better, VAD chunks wrote all
-		// three; both passes decode the window once each
-		const cost = 2 * (win.end - win.start);
-		if (!replaced && chunkedFrames + cost <= REDECODE_CHUNKED_MAX_FRAMES && vadChunks(mask, win).length > 1) {
-			chunkedFrames += cost;
-			const c = await transcribeChunked(model, input, mask, redecodeOpts, () => {}, win);
-			got = c.result;
-			extra.add(got);
-			after = got.words.filter(inside);
-			replaced = redecodeAccepted(before, after, mask, MIN_VOICED_FRACTION);
-			chunked = replaced;
+		if (!placed) {
+			fileChunks ??= vadChunks(input.mask);
+			const over = fileChunks.filter((c) => c.end > win.start && c.start < win.end);
+			const range = over.length ? { start: over[0]!.start, end: over[over.length - 1]!.end } : null;
+			// both passes decode the range once each
+			const cost = range ? 2 * (range.end - range.start) : 0;
+			if (range && over.length > 1 && chunkedFrames + cost <= REDECODE_CHUNKED_MAX_FRAMES) {
+				chunkedFrames += cost;
+				const c = await transcribeChunked(
+					model,
+					input,
+					input.mask,
+					{ ...opts, language: r.language, conditionOnPreviousText: false },
+					() => {},
+					range,
+				);
+				got = c.result;
+				extra.add(got);
+				after = got.words.filter(inside);
+				placed = redecodeAccepted(before, after, mask, MIN_VOICED_FRACTION);
+				chunked = !!placed;
+			}
 		}
-		if (replaced) {
-			words = replaceWindowWords(words, start, end, after);
+		const replaced = !!placed;
+		if (placed) {
+			words = replaceWindowWords(words, start, end, placed);
 			const segIn = (sg: WhisperSegment) => {
 				const m = ((sg.start + sg.end) / 2) * SAMPLE_RATE;
 				return m >= start && m < end;
@@ -592,7 +609,8 @@ async function redecodeSuspects(
 			extra.segments.length = 0;
 			extra.segments.push(...keptSegs, ...got.segments.filter(segIn));
 			report.replaced++;
-			report.wordsAdded += after.length - before.length;
+			report.wordsAdded += placed.length - before.length;
+			after = placed;
 		}
 		report.ranges.push({
 			start: start / SAMPLE_RATE,

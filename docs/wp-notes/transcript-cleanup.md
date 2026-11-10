@@ -246,7 +246,11 @@ Deliberate differences from the prototype (labelled):
   removed, the in point is now at most that word's start (no earlier than the search start); after a pause the
   calibrated in point stays. In the port fixture this moves in points of 5 of the 8 `fast` recordings up to 69 ms
   earlier (seen 7–69 ms); the check accepts exactly that — earlier by ≤ 100 ms, at a kept word's start after a
-  removed word — and still compares every other edge to 1e-9 s.
+  removed word — and still compares every other edge to 1e-9 s. On the frame grid such an edge — the in point of a
+  kept word after removed words, the out point before a removed word — takes the boundary at or before it
+  (`MediaPlan.tight` → `keptToFrames`), not the quietest one within 10 ms, which had put the "déjenme" cut end 7 ms
+  into its onset (71.967 s) and the start of the fragment F cut 35 ms into the removed "Windows" (second
+  large-v3-turbo run).
 - **Strict removal**: the prototype joined kept words across gaps ≤ `maxGapS` before looking at removed words, so a
   removed word closer than 120 ms to kept ones stayed (a short filler glued to words, the first copy of an immediate
   restart). The planner cuts the removed word's own speech frames out of the joined range (kept words' frames ± 50 ms
@@ -305,10 +309,21 @@ re-says itself inside says no more: large-v3-turbo fragment E's first take, "¿Q
 words, made the final 18-word take that alone says "de millones de dólares" incomplete, and the cut dropped it).
 Chosen: the last complete take; with a script an earlier take covering ≥ 20 % more of the line wins (its retake /
 false-start / restart labels are cleared and the other takes, the last one included, become retakes). **Safety
-check** (every group, retakes and hidden retakes alike): a cut never removes content words (no stop word, ≥ 3
-letters, or a number) that the kept take does not say (a cut-off last word counts as said by its completion) — else
-the latest take whose choice loses nothing is kept, and with none the takes that would lose words are only
-suggested for review. The kept take starts at its first word: a restart run that goes on from the take before into
+check** (every group, retakes and hidden retakes alike, `losesContent`): a cut never removes real content — content
+words (no stop word, ≥ 3 letters) and numbers — that the kept take does not say — else the latest take whose choice
+loses none is kept, and with none the takes that would lose words are only suggested for review (a later take
+removed then reads "Later take", `reason.params.later`). Words match across ASR variants (`sameWord`, `lists.ts`):
+equal, the same number ("9" / "nueve"), equal after Spanish sound folding (silent h, b/v, c/z/s, qu/k, ll/y, w/u),
+within a third of their length in edits ("Inunity" / "Unity", "vivecoder" / "wavecoder", "pueda" / "puedo"; 4+
+letters), or a cut-off last word as a prefix of its completion; up to 15 % (at least one) of a take's words may stay
+unmatched when it has ≥ 6, never two in a row ("de millones de dólares" on E always counts). Trailing sentences of
+an earlier take that the later kept take mostly does not say are an aside, not content ("… toda su vida. ¿Y por qué
+va a decir puta?"), so a clean last take is kept over the take with the aside. The first version matched words
+exactly and turned the second large-v3-turbo run's good cuts ("las piensas" / "los pies", "Inunity", "vivecoder")
+into review-only takes — leaving one sentence twice in fragment E — and kept fragment B's aside take over the clean
+last take. The kept take is reported as what stays of it: words its own restarts, false starts or fillers remove at
+its edges are trimmed from its range, words and text (fragment A: "… para poder subirlos" said again right after),
+so no finding overlaps it; a restart in its middle still lies inside (limit). The kept take starts at its first word: a restart run that goes on from the take before into
 its first words ("… en un par | En el Jasper Engine": the restart matched "el Jasper Engine") stops there. Only the
 take rule's labels carry the group id; a restart inside a take keeps none, so its reason names the words that re-say
 it. Script (TC-012): lines are sentences (. ? ! … and line breaks); a unit says a
@@ -336,9 +351,15 @@ occur in a row in the attached script loses its label — the script itself says
 Applies to every transcript with a script, not only re-decoded ranges. Test: `packages/project/test/cleanup-hidden-
 retakes.test.ts` (fails without the relabel, the script check or the stored ranges; its second case fails when a
 mark of an earlier recognition still counts); "hidden retakes of a real recording": word lists of the reporter's
-large-v3-turbo runs (fragments A, D, E) — the safety check and distinct-token completeness, the cut-off attempt, the
-reason / range of a group's finding, the in point at a soft onset; each fails without its fix. Limit: without a script a
+large-v3-turbo runs (fragments A, B, C, D, E, F) — the safety check and distinct-token completeness, ASR variants,
+the aside take, the later-take reason, the cut-off attempt, the reason / range of a group's finding, the kept take's
+range, "%" as a word, the in / out points and their frames next to a cut; each fails without its fix. Limit: without a script a
 deliberate repeat is judged by the existing rules only (the allow list).
+
+Spoken symbols: a word that is only a symbol said as a word and punctuation ("%", "%...", "€", "$", "&", "+", "@",
+"°") is a candidate word with the symbol's name as its token ("porciento" / "percent"), so it covers its sound: the
+second large-v3-turbo run left "%" ("por ciento", −10 to −24 dBFS) of a removed restart audible as voice without words
+in every mode, and opened a hole inside an accepted restart.
 
 Frame findings (with a voice analysis): **pause** = a non-speech run longer than `maxGapS` between speech frames inside
 the words' span; **breath** = a breath-like run within 30 ms of speech; **untranscribed** = see above. A rejected pause

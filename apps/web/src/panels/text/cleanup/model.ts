@@ -517,6 +517,11 @@ export function reasonText(f: CleanupFinding): string {
 		case 'false-start':
 			return t('False start “{0}”', text);
 		case 'retake':
+			// a take said after the one that stays (an earlier take was kept: the script, or the later one loses words)
+			if (p.later !== undefined)
+				return p.line !== undefined
+					? t('Later take “{0}” of script line {1} ({2} takes; keeping “{3}”)', text, p.line, p.takes, p.kept)
+					: t('Later take “{0}” ({1} takes; keeping “{2}”)', text, p.takes, p.kept);
 			return p.kept !== undefined
 				? p.line !== undefined
 					? t(

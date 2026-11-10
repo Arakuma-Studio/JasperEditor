@@ -6,7 +6,7 @@
 // breaths kept, the gap policy's air inside / between sentences (`keepGapS`, `keepGapSentenceS`), word mode for media
 // without a voice analysis, and the "avoid harsh cuts" guard. Times are media seconds. Pure.
 import { VOICE_CLASS_BREATH, VOICE_CLASS_SPEECH } from '@jasper/audio-dsp';
-import { type CleanupVoice, FR, levelDbAt } from './detector.ts';
+import { type CleanupVoice, FR, levelDbAt, SENTENCE_END } from './detector.ts';
 import { edgeThreshold, levelInPoint, levelOutPoint } from './edges.ts';
 import type { AWord } from './rules.ts';
 import type { CleanupSettings } from './schema.ts';
@@ -40,6 +40,11 @@ export type MediaPlan = {
 	kept: Span[];
 	/** The edge mode used (`word` when the media has no usable voice analysis). */
 	mode: CleanupSettings['edges']['mode'];
+	/**
+	 * Parallel to `kept`: whether the piece starts at a kept word right after removed words / ends at one right
+	 * before removed words — those edges snap to the frame at or before them (`keptToFrames`), never into the word.
+	 */
+	tight: Array<[start: boolean, end: boolean]>;
 };
 
 const overlaps = (spans: readonly Span[] | undefined, a: number, b: number) =>
@@ -64,8 +69,6 @@ function runsOf(mask: readonly boolean[]): Span[] {
 	return out;
 }
 
-const SENTENCE_END = /[.?!…]["'»”’)]*$/u;
-
 /** Plans the kept pieces of one media (see the module comment). */
 export function planMediaCuts(input: MediaPlanInput): MediaPlan {
 	const P = input.settings;
@@ -74,11 +77,12 @@ export function planMediaCuts(input: MediaPlanInput): MediaPlan {
 	const mode = voice ? P.edges.mode : 'word';
 	const keepIdx: number[] = [];
 	for (let k = 0; k < input.words.length; k++) if (!input.removed[k]) keepIdx.push(k);
-	if (!keepIdx.length && !input.keepSpeech?.length) return { kept: [], mode };
+	if (!keepIdx.length && !input.keepSpeech?.length) return { kept: [], mode, tight: [] };
 	const maxGap = P.gaps.maxGapS;
 
 	// 1. kept word extents (snapped to speech frames)
-	type R = { a: number; b: number; k: number; minA: number; maxB: number }; // k: last kept word (−1: none)
+	// k: last kept word (−1: none); tight: edges next to removed words (MediaPlan.tight)
+	type R = { a: number; b: number; k: number; minA: number; maxB: number; tight?: [boolean, boolean] };
 	const piece = (a: number, b: number, k: number): R => ({
 		a,
 		b,
@@ -140,15 +144,18 @@ export function planMediaCuts(input: MediaPlanInput): MediaPlan {
 	const firstKeptFrom = firstKeptFinder(input.words, keepIdx);
 	for (const r of out) {
 		let { a, b } = r;
+		const first = firstKeptFrom(a);
+		const tightA = first > 0 && !!input.removed[first - 1] && input.words[first]!.s >= a - 0.08;
+		const next = r.k >= 0 ? input.words[r.k + 1] : undefined;
+		const tightB = !!next && !!input.removed[r.k + 1] && next.s < b + 0.08;
 		if (voice && mode === 'level' && thrOut !== null && thrIn !== null) {
 			b = Math.min(levelOutPoint(voice, a, b, thrOut), r.maxB);
 			// after removed words the in point never lands inside the kept word the piece starts with: a soft onset
 			// ("d" at −48 dBFS under a −39 dBFS threshold) stays (deliberate difference from the prototype, which could
 			// start up to 100 ms in; after a pause its in point stays, as calibrated)
 			const inPt = levelInPoint(voice, a, thrIn);
-			const first = firstKeptFrom(a);
-			const onset = first > 0 && input.removed[first - 1] ? input.words[first]!.s : Number.POSITIVE_INFINITY;
-			a = Math.max(onset >= a - 0.08 && onset < inPt ? onset : inPt, r.minA);
+			const onset = tightA ? input.words[first]!.s : Number.POSITIVE_INFINITY;
+			a = Math.max(onset < inPt ? onset : inPt, r.minA);
 		}
 		let a2 = a - P.edges.padBeforeS;
 		const b2 = Math.min(b + P.edges.padAfterS, r.maxB);
@@ -167,7 +174,7 @@ export function planMediaCuts(input: MediaPlanInput): MediaPlan {
 			// prototype `keep_breath`: a2 = min(a2, (k + 1) · FR) whenever the policy keeps breaths
 			if (m > 0 || keepPolicy) a2 = Math.min(a2, (f + 1) * FR);
 		}
-		res.push({ ...r, a: Math.max(0, a2, r.minA), b: b2 });
+		res.push({ ...r, a: Math.max(0, a2, r.minA), b: b2, tight: [tightA, tightB] });
 	}
 	res.sort((x, y) => x.a - y.a);
 
@@ -200,12 +207,17 @@ export function planMediaCuts(input: MediaPlanInput): MediaPlan {
 	for (const r of res) {
 		const l = merged[merged.length - 1];
 		if (l && r.a <= l.b) {
+			if (r.b >= l.b) l.tight = [l.tight?.[0] ?? false, r.tight?.[1] ?? false];
 			l.b = Math.max(l.b, r.b);
 			if (r.k >= 0) l.k = r.k;
 		} else merged.push({ ...r });
 	}
-	const kept = merged.filter((x) => x.b - x.a >= P.guards.minPieceS).map((x) => [x.a, x.b] as Span);
-	return { kept, mode };
+	const long = merged.filter((x) => x.b - x.a >= P.guards.minPieceS);
+	return {
+		kept: long.map((x) => [x.a, x.b] as Span),
+		mode,
+		tight: long.map((x) => x.tight ?? [false, false]),
+	};
 }
 
 /** Speech frames of a word (prototype: its frames ± `pad` frames), as seconds; null without speech. */

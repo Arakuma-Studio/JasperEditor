@@ -9,7 +9,7 @@
 // time order; spans that do not fit are counted as skipped.
 //
 // Frames are 10 ms (160 samples at 16 kHz); word times are 16 kHz samples.
-import { cleanupNorm, lcs } from '@jasper/project/cleanup-worker';
+import { cleanupNorm, sameWord } from '@jasper/project/cleanup-worker';
 import { VAD_FRAME } from './vad.ts';
 
 /** Voiced frames (2 s) a wordless span needs to be decoded again. */
@@ -332,19 +332,31 @@ export function replaceRegion(
 /** Original words a re-decode may write differently (1 in 5: "Playstore" / "Play Store"). */
 export const REDECODE_SPELLING_SLACK = 0.2;
 
+/** Re-decoded words over an original one share more than this many samples (50 ms) with it. */
+const OVERLAP_SAMPLES = 5 * VAD_FRAME;
+/** An original word is said again in place by a re-decoded one whose middle lies this close (0.25 s) to its own. */
+const RESAID_NEAR_SAMPLES = 25 * VAD_FRAME;
+/** At most this many original words in a row may be overwritten by other words. */
+const REDECODE_MAX_RUN = 2;
+
 /**
- * Whether the words a window's re-decode wrote replace the window's original words (`core/gaps.ts` section docs):
- * the re-decode must hold MORE words consistent with the audio than the original — words with letters or digits and
- * at least `minVoiced` of their frames voiced in `mask` — and re-say the original words in order (longest common subsequence
- * of the `cleanupNorm` texts), allowing `REDECODE_SPELLING_SLACK` of them to be written differently. An equal or
- * smaller re-decode never replaces anything, so the pass never drops words.
+ * The words that replace a window's original words after a re-decode (`core/gaps.ts` section docs), or null when
+ * it does not. An original word stays (merged in time order) unless the re-decode says it again in place (one to
+ * one, in order) — the same word or a variant over it
+ * or within 0.25 s of its middle, or a variant of it (`sameWord`, also of the re-decoded words over it joined: "Playstore" / "Play
+ * Store") over it — or it is itself stretched (> 1 s, what the pass decodes again): a decode that skips a stretch of
+ * speech never deletes it (fragment E's chunked re-decode skipped "decenas de miles de millones de dólares." at
+ * 29.79–31.15 and wrote a phrase later in the window that a plain subsequence match took for it). The result must
+ * then hold MORE words consistent with the audio than the original — words with letters or digits and at least
+ * `minVoiced` of their frames voiced in `mask` — and re-say the original words in order and in place, allowing `REDECODE_SPELLING_SLACK` of them, never more than two in a row, to be
+ * written differently. An equal or smaller result never replaces anything, so the pass never drops words.
  */
-export function redecodeAccepted(
-	original: ReadonlyArray<Timed & { text: string }>,
-	redecoded: ReadonlyArray<Timed & { text: string }>,
+export function redecodeAccepted<W extends Timed & { text: string }>(
+	original: readonly W[],
+	redecoded: readonly W[],
 	mask: ArrayLike<number>,
 	minVoiced: number,
-): boolean {
+): W[] | null {
 	const voiced = (w: Timed) => {
 		const a = Math.min(mask.length - 1, Math.max(0, Math.floor(w.start / VAD_FRAME)));
 		const b = Math.min(mask.length, Math.max(a + 1, Math.ceil(w.end / VAD_FRAME)));
@@ -352,12 +364,53 @@ export function redecodeAccepted(
 		for (let f = a; f < b; f++) if (mask[f]! > 0) v++;
 		return b > a && v / (b - a) >= minVoiced;
 	};
-	// punctuation-only words ("…") count for neither
-	const o = original.map((w) => cleanupNorm(w.text)).filter(Boolean);
-	const r = redecoded.map((w) => cleanupNorm(w.text)).filter(Boolean);
-	const consistent = redecoded.filter((w) => cleanupNorm(w.text) && voiced(w)).length;
-	if (consistent <= o.length) return false;
-	return lcs(o, r) >= o.length - Math.floor(o.length * REDECODE_SPELLING_SLACK);
+	// punctuation-only words ("…") count for nothing and say nothing
+	const o = original.filter((w) => cleanupNorm(w.text));
+	const r = redecoded.filter((w) => cleanupNorm(w.text));
+	const on = o.map((w) => cleanupNorm(w.text));
+	const rn = r.map((w) => cleanupNorm(w.text));
+	// which original words the re-decode says again in place: a one-to-one, in-order alignment (longest common
+	// subsequence) of the same word or a variant over it or within 0.25 s of its middle
+	const mid = (w: Timed) => (w.start + w.end) / 2;
+	const same = (i: number, j: number) =>
+		sameWord(on[i]!, rn[j]!) &&
+		(Math.abs(mid(r[j]!) - mid(o[i]!)) <= RESAID_NEAR_SAMPLES ||
+			(r[j]!.start < o[i]!.end && r[j]!.end > o[i]!.start));
+	const dp = Array.from({ length: o.length + 1 }, () => new Array<number>(r.length + 1).fill(0));
+	for (let i = o.length - 1; i >= 0; i--)
+		for (let j = r.length - 1; j >= 0; j--)
+			dp[i]![j] = same(i, j) ? dp[i + 1]![j + 1]! + 1 : Math.max(dp[i + 1]![j]!, dp[i]![j + 1]!);
+	const resaid = new Array<boolean>(o.length).fill(false);
+	for (let i = 0, j = 0; i < o.length && j < r.length; ) {
+		if (same(i, j) && dp[i]![j] === dp[i + 1]![j + 1]! + 1) {
+			resaid[i++] = true;
+			j++;
+		} else if (dp[i + 1]![j]! >= dp[i]![j + 1]!) i++;
+		else j++;
+	}
+	// a word not said again stays, unless it is stretched itself or the words written over it spell it differently
+	const writtenOver = (w: W, n: string) => {
+		const over = r.filter((x) => Math.min(x.end, w.end) - Math.max(x.start, w.start) > OVERLAP_SAMPLES);
+		return (
+			over.some((x) => sameWord(n, cleanupNorm(x.text))) ||
+			(over.length > 1 && sameWord(n, over.map((x) => cleanupNorm(x.text)).join('')))
+		);
+	};
+	const stays = o.map(
+		(w, i) => !resaid[i] && w.end - w.start <= STRETCH_MIN_FRAMES * VAD_FRAME && !writtenOver(w, on[i]!),
+	);
+	const merged = [...redecoded, ...o.filter((_, i) => stays[i])].sort(
+		(a, b) => a.start - b.start || a.end - b.end,
+	);
+	if (merged.filter((w) => cleanupNorm(w.text) && voiced(w)).length <= original.length) return null;
+	// the words the result does not hold: few, never three in a row
+	const missed = resaid.map((x, i) => !x && !stays[i]);
+	let run = 0;
+	for (const x of missed) {
+		run = x ? run + 1 : 0;
+		if (run > REDECODE_MAX_RUN) return null;
+	}
+	return missed.filter(Boolean).length <= Math.floor(o.length * REDECODE_SPELLING_SLACK) ? merged : null;
 }
 
 /**

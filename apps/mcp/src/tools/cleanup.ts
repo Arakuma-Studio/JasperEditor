@@ -315,7 +315,7 @@ export function findingReasonText(f: CleanupFinding): string {
 		case 'false-start':
 			return `False start "${text}"`;
 		case 'retake':
-			return `Earlier take "${text}"${p.takes !== undefined ? ` (${p.takes} takes; keeping "${p.kept ?? ''}"${p.line !== undefined ? `, script line ${p.line}` : ''})` : ''}`;
+			return `${p.later !== undefined ? 'Later' : 'Earlier'} take "${text}"${p.takes !== undefined ? ` (${p.takes} takes; keeping "${p.kept ?? ''}"${p.line !== undefined ? `, script line ${p.line}` : ''})` : ''}`;
 		case 'hidden-retake':
 			return `Hidden retake "${text}"${p.kept !== undefined ? `, said again as "${p.kept}"` : ''}`;
 		case 'stutter':

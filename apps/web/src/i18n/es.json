@@ -4386,6 +4386,8 @@
   "Latch": "Retener",
   "Latency": "Latencia",
   "Latency Offset": "Desfase de latencia",
+  "Later take “{0}” ({1} takes; keeping “{2}”)": "Toma posterior «{0}» ({1} tomas; se conserva «{2}»)",
+  "Later take “{0}” of script line {1} ({2} takes; keeping “{3}”)": "Toma posterior «{0}» de la línea {1} del guion ({2} tomas; se conserva «{3}»)",
   "Latitude": "Latitud",
   "Layer": "Capa",
   "Layer Control": "Control de capa",

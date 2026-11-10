@@ -81,6 +81,17 @@ const NO_SPEECH_THRESHOLD = 0.6;
 const PUNCTUATION_ONLY = /^[.…,;:!?¿¡"'“”‘’«»()[\]{}、。，！？：-]+$/u;
 /** An ellipsis a verbatim decode writes in front of the next word ("...y"): it ends the word before. */
 const LEADING_ELLIPSIS = /^(?:\.{2,}|…)+/u;
+/**
+ * `word` with closing punctuation `p` appended, without doubling what it already ends with: "Barcade..." + "..." stays
+ * "Barcade..." (a verbatim decode writes " ..." and then "...y"), "motor." + "..." becomes "motor...".
+ */
+function joinPunctuation(word: string, p: string): string {
+	const ell = (x: string) => /^(?:\.{2,}|…)+$/u.test(x);
+	if (word.endsWith(p) || (ell(p) && /(?:\.{2,}|…)$/u.test(word))) return word;
+	if (ell(p) && word.endsWith('.')) return word.slice(0, -1) + p;
+	return word + p;
+}
+
 /** Opening punctuation: it joins the next word. */
 const OPENING_ONLY = /^[¿¡“‘«([{]+$/u;
 /** SG-011: OpenAI `hallucination_silence_threshold` and the silence that resets the prompt (seconds). */
@@ -1388,13 +1399,13 @@ export class WhisperModel {
 						// (opening marks to the word after)
 						const prev = words[words.length - 1];
 						if (PUNCTUATION_ONLY.test(t)) {
-							if (prev && !OPENING_ONLY.test(t)) prev.text += t;
+							if (prev && !OPENING_ONLY.test(t)) prev.text = joinPunctuation(prev.text, t);
 							else lead += t;
 							continue;
 						}
 						const ellipsis = LEADING_ELLIPSIS.exec(t)?.[0];
 						if (ellipsis && prev) {
-							prev.text += ellipsis;
+							prev.text = joinPunctuation(prev.text, ellipsis);
 							t = t.slice(ellipsis.length);
 						}
 						words.push({

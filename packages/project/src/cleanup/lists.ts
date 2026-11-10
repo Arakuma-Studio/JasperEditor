@@ -407,6 +407,63 @@ export function cleanupNorm(s: string): string {
 		.replace(/[^a-z0-9ñ]+/g, '');
 }
 
+/** Number words (normalised) and their values, Spanish and English, so "9" and "nueve" match. */
+const NUMBER_VALUES: Readonly<Record<string, number>> = Object.fromEntries(
+	[
+		'cero uno dos tres cuatro cinco seis siete ocho nueve diez once doce trece catorce quince dieciseis diecisiete dieciocho diecinueve veinte',
+		'zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty',
+	].flatMap((l) => l.split(' ').map((w, v) => [w, v] as const)),
+);
+
+/**
+ * Spanish-aware sound folding of a normalised word for matching ASR variants: silent h, b/v, c/z/s before e/i,
+ * qu/k/c, ll/y, w/u, final y as i.
+ */
+function soundFold(t: string): string {
+	return t
+		.replace(/(^|[^c])h/g, '$1')
+		.replace(/v/g, 'b')
+		.replace(/w/g, 'u')
+		.replace(/ll/g, 'y')
+		.replace(/qu/g, 'k')
+		.replace(/c([ei])/g, 's$1')
+		.replace(/z/g, 's')
+		.replace(/c/g, 'k')
+		.replace(/y$/, 'i');
+}
+
+/** Levenshtein distance (words are short; capped at 64 characters each). */
+function editDistance(a: string, b: string): number {
+	const x = a.slice(0, 64);
+	const y = b.slice(0, 64);
+	let prev = Array.from({ length: y.length + 1 }, (_, j) => j);
+	for (let i = 1; i <= x.length; i++) {
+		const cur = [i];
+		for (let j = 1; j <= y.length; j++)
+			cur[j] = Math.min(prev[j]! + 1, cur[j - 1]! + 1, prev[j - 1]! + (x[i - 1] === y[j - 1] ? 0 : 1));
+		prev = cur;
+	}
+	return prev[y.length]!;
+}
+
+/**
+ * Whether two normalised words are the same word as two decodes may write it: equal, the same number ("9" /
+ * "nueve"), equal after `soundFold`, within a third of their length in edits ("Inunity" / "Unity", "vivecoder" /
+ * "wavecoder", "pueda" / "puedo"; words of 4+ letters), or — for a cut-off word (`cut`) — a prefix of it.
+ */
+export function sameWord(a: string, b: string, cut = false): boolean {
+	if (a === b) return true;
+	const na = /^\d+$/.test(a) ? Number(a) : NUMBER_VALUES[a];
+	const nb = /^\d+$/.test(b) ? Number(b) : NUMBER_VALUES[b];
+	if (na !== undefined && na === nb) return true;
+	const fa = soundFold(a);
+	const fb = soundFold(b);
+	if (fa === fb) return true;
+	if (cut && fa.length >= 3 && fb.startsWith(fa)) return true;
+	if (Math.min(fa.length, fb.length) < 4) return false;
+	return editDistance(fa, fb) <= Math.max(fa.length, fb.length) / 3;
+}
+
 /** A list entry ("o sea", "¿sabes?") as normalised tokens (empty entries vanish). */
 export function phraseTokens(entry: string): string[] {
 	return entry

@@ -5,6 +5,7 @@
 // "long" reading (one take, stretched), else the true words.
 import { wordsWellFormed } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
+import { redecodeAccepted } from '../src/speech/core/gaps.ts';
 import { inputFromSamples } from '../src/speech/worker/audio.ts';
 import { runSpeechJob, type SpeechJobSpec } from '../src/speech/worker/run.ts';
 import { EOT, fakeModelDir, fakeOrt, noiseAudio, SPACE, TS_BEGIN } from './speech-fake-ort.ts';
@@ -180,12 +181,42 @@ describe('hidden takes', () => {
 		expect(out.words.map((w) => w.text).slice(4, 12)).toEqual([
 			'ij',
 			'kl',
-			'mn......',
+			'mn...',
 			'ij',
 			'kl',
 			'mn',
 			'op',
 			'qr',
 		]);
+	});
+
+	it('a re-decode never drops words the original had over voice (second run, fragment E 29.79–47.03)', () => {
+		// "text[start-end]" in seconds; the original (plain pass) and what the chunked re-decode wrote there
+		const words = (x: string) =>
+			x
+				.trim()
+				.split(/\s+/)
+				.map((t) => {
+					const m = /^(.*)\[([\d.]+)-([\d.]+)\]$/.exec(t)!;
+					return { text: m[1]!, start: Math.round(Number(m[2]) * SR), end: Math.round(Number(m[3]) * SR) };
+				});
+		const original = words(`decenas[29.79-30.07] de[30.07-30.17] miles[30.17-30.37] de[30.37-30.47]
+			millones[30.47-30.65] de[30.65-30.81] dólares.[30.81-31.15] ¿Que[31.87-31.93] puedo[31.93-32.09]
+			hacer[32.09-32.23] en[32.23-32.39] un[32.39-32.47] mes[32.47-33.50] lo[33.72-34.95] mismo[35.18-36.27]
+			que[36.27-36.39] una[36.39-36.49] empresa[36.49-36.77] de[36.77-36.97] decenas[36.97-37.21] de[37.21-37.55]
+			miles[38.14-42.03] de[42.03-42.48] millones[42.91-45.49] de[45.49-45.65] dólares?[45.65-46.08]`);
+		const redecoded = words(`de[29.55-30.04] ¿Qué[33.00-33.50] puedo[33.72-33.97] hacer[33.97-34.15]
+			en[34.15-34.27] un[34.27-34.95] mes[35.18-35.95] lo[35.95-36.07] mismo[36.07-36.39] una[36.39-36.49]
+			empresa[36.49-36.79] de[36.79-36.97] decenas[36.97-37.23] de...?[37.23-37.55] puedo[38.19-38.35]
+			hacer[38.35-38.51] en[38.51-38.63] un[38.63-38.75] mes[38.75-38.91] lo[38.91-39.01] mismo[39.01-39.34]
+			que[39.79-40.93] una[40.93-41.03] empresa[41.03-41.31] de[41.31-41.51] decenas[41.51-41.79] de[41.79-41.87]
+			miles[41.87-42.48] de[42.91-45.29] millones[45.29-45.45] de[45.45-45.65] dólares?[45.65-46.08]`);
+		// continuous speech (−12 to −25 dBFS) under all of it
+		const mask = new Uint8Array(4800).fill(1);
+		const placed = redecodeAccepted(original, redecoded, mask, 0.2);
+		const kept = (w: { text: string; start: number }) =>
+			placed?.some((p) => p.text === w.text && p.start === w.start) ?? true;
+		// either nothing is replaced, or every original word under 31.15 s is still there
+		expect(original.filter((w) => w.end <= 31.15 * SR).every(kept)).toBe(true);
 	});
 });
