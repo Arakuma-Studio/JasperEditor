@@ -7,10 +7,17 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { detectCleanup } from '../src/cleanup/detector.ts';
 import { planMediaCuts, removedSpans } from '../src/cleanup/plan.ts';
-import { FAST_SETTINGS, mergeCleanupSettings, NATURAL_SETTINGS } from '../src/cleanup/schema.ts';
+import {
+	type CleanupSettings,
+	FAST_SETTINGS,
+	FINDING_KINDS,
+	mergeCleanupSettings,
+	NATURAL_SETTINGS,
+} from '../src/cleanup/schema.ts';
+import { analyzeSequenceCleanup, type CleanupDecisions } from '../src/cleanup/sequence.ts';
 import { checkInvariants, type ProjectDocument, type Sequence } from '../src/index.ts';
 import { FLICKS_PER_SECOND } from '../src/time.ts';
-import { Harness } from './helpers.ts';
+import { Harness, videoAsset } from './helpers.ts';
 
 /** Level edges trim a word's quiet onset and decay: removed voice this close (seconds) to a cut edge is the edge. */
 const EDGE_S = 0.1;
@@ -68,6 +75,8 @@ const recording = fc
 				classes[k] = 2;
 			}
 			for (let k = x.b; k < Math.min(n, x.b + 6); k++) level[k] = (-65 + 18 - (k - x.b) * 3 + 120) * 2;
+			// a rising onset before the word (non-speech, above the floor) where the gap leaves room
+			if (x.gap >= 12) for (let q = 1; q <= 3; q++) level[x.a - q] = (-65 + 13 - 4 * q + 120) * 2;
 			if (x.breath && x.gap > 30) for (let k = x.a - 25; k < x.a - 5; k++) classes[k] = 1;
 		}
 		const words2 = lay.map((x) => ({
@@ -197,6 +206,133 @@ describe('planning properties', () => {
 					expect(inKept(f, all.kept), `${f / 100} removed with every finding off`).toBe(true);
 			}),
 			{ numRuns: 200 },
+		);
+	});
+
+	it('a sequence plan removes nothing outside accepted findings; rejecting them all or reviewing every rule removes nothing', () => {
+		const RULES = Object.keys(FAST_SETTINGS.rules) as Array<keyof CleanupSettings['rules']>;
+		const REVIEW_ONLY = new Set(['fillerLexical', 'untranscribed', 'asrSuspect']);
+		const action = (k: string) =>
+			REVIEW_ONLY.has(k) ? fc.constantFrom('review', 'off') : fc.constantFrom('remove', 'review', 'off');
+		const kinds = fc.subarray([...FINDING_KINDS]);
+		fc.assert(
+			fc.property(
+				recording,
+				fc.record(Object.fromEntries(RULES.map((k) => [k, action(k)]))),
+				fc.record({ acceptKinds: kinds, rejectKinds: kinds }),
+				(r, rules, decisions) => {
+					const settings: CleanupSettings = { ...r.settings, rules: { ...r.settings.rules, ...rules } };
+					const seconds = r.voice.frameCount / 100;
+					const H = new Harness({ preset: 'hd-1080p-30' });
+					const r0 = H.ok([{ type: 'media.register', asset: videoAsset({ seconds, kind: 'audio' }) }]);
+					const mediaId = (r0.results[0] as { mediaId: string }).mediaId;
+					H.ok([
+						{ type: 'clip.place', source: { mediaId }, at: 0, tracks: { audio: ['A1'] }, mode: 'overwrite' },
+					]);
+					H.ok([
+						{
+							type: 'transcript.create',
+							mediaId,
+							language: 'es',
+							origin: 'manual',
+							words: r.words.map((w) => ({
+								text: w.text,
+								start: w.start,
+								end: w.end,
+								confidence: w.confidence,
+							})),
+						},
+					]);
+					const run = (s: CleanupSettings, d: CleanupDecisions) => {
+						const a = analyzeSequenceCleanup({
+							doc: H.doc,
+							seq: H.seq,
+							voice: () => r.voice,
+							settings: s,
+							decisions: d,
+						});
+						if (!a.ok) throw new Error(a.message);
+						return a;
+					};
+					const a = run(settings, decisions);
+					const sec = (f: number) => f / FLICKS_PER_SECOND;
+					// what the user accepted: item decisions aside, a kind decision or the rule's suggestion
+					const covered = a.findings
+						.filter((f) =>
+							decisions.rejectKinds.includes(f.kind)
+								? false
+								: decisions.acceptKinds.includes(f.kind) || f.suggested === 'remove',
+						)
+						.map((f) => [sec(f.range.start), sec(f.range.end)] as const);
+					const frame = 1 / 30;
+					const inCovered = (t: number) => covered.some(([x, y]) => t >= x - 1e-9 && t <= y + 1e-9);
+					const nearCovered = (t: number) =>
+						covered.some(([x, y]) => t >= x - frame - 1e-6 && t <= y + frame + 1e-6);
+					const silent = (k: number) => r.voice.classes[k] !== 2 && r.voice.level[k]! < (-65 + 6 + 120) * 2;
+					for (const range of a.plan.ranges) {
+						// every removed 10 ms of media lies in an accepted finding, or within a frame of one over silence
+						for (
+							let k = Math.floor((range.start * frame) / 0.01);
+							k < Math.ceil((range.end * frame) / 0.01);
+							k++
+						) {
+							const t0 = Math.max(k * 0.01, range.start * frame);
+							const t1 = Math.min((k + 1) * 0.01, range.end * frame);
+							if (t1 - t0 < 1e-9) continue;
+							const ok =
+								(inCovered(t0) && inCovered(t1)) || (silent(k) && nearCovered(t0) && nearCovered(t1));
+							expect(ok, `${t0.toFixed(3)}–${t1.toFixed(3)} removed without an accepted finding`).toBe(true);
+						}
+					}
+					// no cut takes a kept word's rising onset after silence, nor the fading decay after the last kept word: the
+					// edges sit in measured silence (frames inside a removed word's time aside — the timestamps decide there)
+					const removedWords = new Set<number>();
+					for (const f of a.findings)
+						if (f.words && covered.some(([x, y]) => x === sec(f.range.start) && y === sec(f.range.end)))
+							for (let i = f.words[0]; i <= f.words[1]; i++) removedWords.add(i);
+					const inRemovedWord = (k: number) =>
+						r.words.some(
+							(w, i) =>
+								removedWords.has(i) && sec(w.end) > k * 0.01 + 1e-9 && sec(w.start) < (k + 1) * 0.01 - 1e-9,
+						);
+					const removedFrame = (k: number) =>
+						a.plan.ranges.some(
+							(g) => g.start * frame < (k + 1) * 0.01 - 1e-6 && g.end * frame > k * 0.01 + 1e-6,
+						);
+					const speechAt = (k: number) => r.voice.classes[k] === 2;
+					const keptSpeech = r.words
+						.map((w, i) => ({ w, i }))
+						.filter(({ i }) => !removedWords.has(i))
+						.map(({ w }) => w.loud);
+					const n = r.voice.frameCount;
+					for (const [la] of keptSpeech) {
+						let k = la - 1;
+						let mixed = false;
+						for (; k >= 0 && speechAt(k); k--) if (inRemovedWord(k)) mixed = true;
+						if (mixed) continue;
+						const onset: number[] = [];
+						while (k >= 0 && !speechAt(k) && !silent(k)) onset.push(k--);
+						if (k < 0 || speechAt(k)) continue;
+						for (const q of onset)
+							if (!inRemovedWord(q)) expect(removedFrame(q), `onset frame ${q / 100} removed`).toBe(false);
+					}
+					const last = keptSpeech.reduce((m, [, lb]) => Math.max(m, lb), -1);
+					if (last >= 0) {
+						let k = last;
+						let mixed = false;
+						for (; k < n && speechAt(k); k++) if (inRemovedWord(k)) mixed = true;
+						const decay: number[] = [];
+						while (k < n && !speechAt(k) && !silent(k)) decay.push(k++);
+						if (!mixed && k < n && !speechAt(k))
+							for (const q of decay)
+								if (!inRemovedWord(q)) expect(removedFrame(q), `tail frame ${q / 100} removed`).toBe(false);
+					}
+					expect(run(settings, { rejectKinds: [...FINDING_KINDS] }).plan.ranges).toEqual([]);
+					const review = Object.fromEntries(RULES.map((k) => [k, 'review'])) as CleanupSettings['rules'];
+					expect(run({ ...settings, rules: review }, {}).plan.ranges).toEqual([]);
+				},
+			),
+			{ numRuns: 80 },
 		);
 	});
 

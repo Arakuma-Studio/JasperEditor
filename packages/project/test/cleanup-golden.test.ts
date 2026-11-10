@@ -62,15 +62,17 @@ describe('Fast preset on a synthetic recording (golden)', () => {
 		]);
 		// edges: every kept piece starts within 40 ms before a kept word's sound and ends within its decay
 		const kw = rec.words.filter((w) => w.keep);
-		for (const [s, e] of keptSeconds(a)) {
+		const pieces = keptSeconds(a);
+		for (const [s, e] of pieces) {
 			const first = kw.find((w) => w.e > s && w.s < e);
 			if (!first) continue;
 			expect(first.s - s).toBeLessThan(0.06);
 			expect(first.s - s).toBeGreaterThan(-0.04);
 			const last = [...kw].reverse().find((w) => w.s < e && w.e > s)!;
-			// out point inside the decay: after the tone's end, before its tail fades into the floor
+			// out point inside the decay: after the tone's end, before its tail fades into the floor — the last piece keeps
+			// its fading tail up to measured silence (≤ 0.25 s and a frame)
 			expect(e - last.e).toBeGreaterThan(-0.01);
-			expect(e - last.e).toBeLessThan(0.2);
+			expect(e - last.e).toBeLessThan(e === pieces[pieces.length - 1]![1] ? 0.25 + 1 / 30 : 0.2);
 		}
 	});
 

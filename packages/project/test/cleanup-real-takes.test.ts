@@ -1,25 +1,22 @@
 // Clean Up on real transcripts (docs/wp-notes/transcript-cleanup.md "Real-take corpus"): whisper-large-v3-turbo
-// transcripts of six ~80 s fragments of the reporter's 57-minute Spanish talking-head recording, as the hidden-retake
-// test wrote them in its runs 2, 3 and 4 (re-decode on, `chunking: "vad"`, re-decode off;
+// transcripts of ~80 s fragments of the reporter's 57-minute Spanish talking-head recording, as the hidden-retake
+// test wrote them in its runs 2–5 (re-decode on, `chunking: "vad"`, re-decode off; run 5 adds the held-out G–L;
 // `fixtures/cleanup-real-takes.json`, text and times only, plus the speech without words the reporter measured). The
 // spec is what the speaker meant, written by hand per fragment: the edit keeps the last complete clean take of every
 // sentence once, removes every earlier attempt, restart and aside, never plays a sentence twice, never loses what only
-// one take says, and no cut starts or ends inside a word. And for every case: whatever is removed between the first and
-// the last word is explained by a finding, rejecting every finding removes nothing there, and a take marked kept loses
-// no word. The cut is the sequence's (`analyzeSequenceCleanup`, Fast preset) with a voice analysis that has speech
-// under every word and where the reporter measured it.
+// one take says, and no cut starts or ends inside a word. And for every case: whatever is removed, head and tail
+// included, lies inside a finding that removes, rejecting every finding or setting every rule to review removes
+// nothing, and a take marked kept loses no word. The cut is the sequence's (`analyzeSequenceCleanup`, Fast preset)
+// with a voice analysis that has speech under every word and where the reporter measured it.
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { CleanupVoice } from '../src/cleanup/detector.ts';
 import { cleanupNorm, sameWord } from '../src/cleanup/lists.ts';
-import { FAST_SETTINGS, FINDING_KINDS } from '../src/cleanup/schema.ts';
+import { type CleanupSettings, FAST_SETTINGS, FINDING_KINDS } from '../src/cleanup/schema.ts';
 import { analyzeSequenceCleanup, type CleanupDecisions } from '../src/cleanup/sequence.ts';
 import { transcriptAttachPlan } from '../src/speech/index.ts';
 import { FLICKS_PER_SECOND } from '../src/time.ts';
 import { Harness, videoAsset } from './helpers.ts';
-
-/** Level edges trim a word's quiet onset and decay: removed voice this close (seconds) to a cut edge is the edge. */
-const EDGE_S = 0.1;
 
 type Case = {
 	id: string;
@@ -37,7 +34,7 @@ const corpus = JSON.parse(
 ) as { cases: Case[] };
 
 /** Per fragment: phrases the edit says exactly once, phrases it never says (normalised words, ASR variants match). */
-const SPEC: Record<string, { once: string[]; never: string[] }> = {
+const SPEC: Record<string, { once: string[]; never: string[]; allKept?: boolean }> = {
 	A: {
 		once: [
 			'al final del mes debo portear',
@@ -107,12 +104,78 @@ const SPEC: Record<string, { once: string[]; never: string[] }> = {
 		],
 		never: [],
 	},
+	// held out (run 5): written from the listening judgements before the code was changed for them
+	G: {
+		once: [
+			'oh por dios',
+			'es hermoso',
+			'aunque el jaspercito todo bonito',
+			'como una estatua',
+			'por fin lo pudiera mover',
+			'pero atravesaba las paredes',
+			'terminaba en el espacio',
+			'asi que le puse fisicas',
+			'no tengo un titulo',
+			'ni siquiera termine',
+			'librerias ya existentes',
+		],
+		// the end of the abandoned take
+		never: ['paredes no'],
+	},
+	H: {
+		once: [
+			'el procesador tiene que ir saltando',
+			'unity si tiene una forma mas rapida',
+			'que se llama dots',
+			'es tan distinta',
+			'aprender otro unity desde cero',
+			'en jasper engine todo usa',
+			'guarda los objetos ordenados',
+			'todas las posiciones juntas',
+			'todas las velocidades juntas',
+			'el procesador las lea de corrido',
+			'sigue siendo igual',
+			'unity 0 jasper engine 2',
+		],
+		never: [],
+	},
+	I: {
+		once: [
+			'el procesador ya no calcula absolutamente nada',
+			'cada punto de los 500 personajes',
+			'le das al boton',
+			'pones los 500 personajes',
+			'aparecen todos caminando',
+			'es como dibujar un solo personaje',
+			'si uno llega a cambiar de animacion',
+			'el procesador solo le manda 32 bytes',
+			'mas o menos lo que ocupa escribir la frase',
+			'suscribete al canal de jasperdev',
+		],
+		never: [],
+	},
+	J: {
+		once: [
+			'tienes que ir probando',
+			'resolucion por resolucion',
+			'es un infierno',
+			'los menus se hacen con html y css',
+			'igual que en una pagina web',
+			'porque le meti al motor la libreria',
+			'es como un mini navegador',
+			'un monton de cosas',
+			'que entiende un navegador de verdad',
+		],
+		never: [],
+	},
+	// the control fragment: no take, every word stays
+	L: { once: [], never: [], allKept: true },
 };
 
 const FPS = 30;
 
 /** The case's cut: removed and kept ranges (seconds), the words heard, the analysis. */
-function cut(c: Case, decisions?: CleanupDecisions) {
+function cut(c: Case, decisions?: CleanupDecisions, settings: CleanupSettings = FAST_SETTINGS) {
 	const end = Math.max(...c.words.map((w) => w[2])) + 2;
 	const n = Math.ceil(end * 100);
 	const classes = new Uint8Array(n);
@@ -156,7 +219,7 @@ function cut(c: Case, decisions?: CleanupDecisions) {
 		doc: H.doc,
 		seq: H.seq,
 		voice: () => voice,
-		settings: FAST_SETTINGS,
+		settings,
 		...(decisions ? { decisions } : {}),
 	});
 	if (!a.ok) throw new Error(a.message);
@@ -186,21 +249,24 @@ describe('Clean Up on real transcripts (corpus)', () => {
 	for (const c of corpus.cases)
 		it(`${c.id}: the last clean take of each sentence, once`, () => {
 			const { a, kept, removed, heard } = cut(c);
-			const first = c.words[0]![1];
-			const last = c.words[c.words.length - 1]![2];
-			const inside = removed
-				.map(([x, y]) => [Math.max(x, first), Math.min(y, last)] as const)
-				.filter(([x, y]) => y > x);
-			// every removed second is explained by a finding (its edges within the tolerance and a frame)
-			const tol = EDGE_S + 1 / FPS;
-			const explained = a.findings
+			// every removed second, head and tail included, lies within a finding that removes — beyond its edges only
+			// silence, and at most a frame of it (the frame grid)
+			const removing = a.findings
 				.filter((f) => f.suggested === 'remove')
-				.map((f) => [sec(f.range.start) - tol, sec(f.range.end) + tol] as const);
-			for (const [x, y] of inside)
-				expect(
-					outside(x, y, explained),
-					`${x.toFixed(2)}–${y.toFixed(2)} removed without a finding`,
-				).toBeLessThan(0.05);
+				.map((f) => [sec(f.range.start), sec(f.range.end)] as const);
+			const frame = 1 / FPS;
+			const near = removing.map(([x, y]) => [x - frame - 1e-6, y + frame + 1e-6] as const);
+			const voiced = [...c.words.map(([, s, e]) => [s, e] as const), ...(c.voiced ?? [])];
+			for (const [x, y] of removed) {
+				expect(outside(x, y, near), `${x.toFixed(3)}–${y.toFixed(3)} removed without a finding`).toBeLessThan(
+					1e-6,
+				);
+				for (const [p, q] of voiced) {
+					const [u, v] = [Math.max(x, p), Math.min(y, q)];
+					if (v > u)
+						expect(outside(u, v, removing), `voice ${p}–${q} removed beyond a finding`).toBeLessThan(1e-6);
+				}
+			}
 			// a take marked kept loses no word
 			for (const g of a.groups) {
 				const t = g.takes[g.chosen]!;
@@ -216,6 +282,7 @@ describe('Clean Up on real transcripts (corpus)', () => {
 			const toks = heard.map((w) => cleanupNorm(w[0])).filter(Boolean);
 			const text = heard.map((w) => w[0]).join(' ');
 			const spec = SPEC[c.fragment]!;
+			if (spec.allKept) expect(text).toBe(c.words.map((w) => w[0]).join(' '));
 			for (const p of spec.once) expect(count(toks, p), `"${p}" once in: ${text}`).toBe(1);
 			for (const p of spec.never) expect(count(toks, p), `"${p}" never in: ${text}`).toBe(0);
 			// no sentence twice: no run of five words said twice
@@ -242,13 +309,16 @@ describe('Clean Up on real transcripts (corpus)', () => {
 				expect(y - x - outside(x, y, kept), `voice ${x}–${y} kept`).toBeLessThan(0.05);
 		});
 
-	it('rejecting every finding removes nothing between the first and the last word', () => {
-		for (const c of corpus.cases) {
-			const { removed } = cut(c, { rejectKinds: [...FINDING_KINDS] });
-			const first = c.words[0]![1];
-			const last = c.words[c.words.length - 1]![2];
-			const inside = removed.filter(([x, y]) => Math.min(y, last) - Math.max(x, first) > 1 / FPS);
-			expect(inside, c.id).toEqual([]);
-		}
+	it('rejecting every finding removes nothing, head and tail included', () => {
+		for (const c of corpus.cases)
+			expect(cut(c, { rejectKinds: [...FINDING_KINDS] }).removed, c.id).toEqual([]);
+	});
+
+	it('with every rule set to review nothing is removed until accepted', () => {
+		const rules = Object.fromEntries(
+			Object.keys(FAST_SETTINGS.rules).map((k) => [k, 'review']),
+		) as unknown as CleanupSettings['rules'];
+		for (const c of corpus.cases)
+			expect(cut(c, undefined, { ...FAST_SETTINGS, rules }).removed, c.id).toEqual([]);
 	});
 });

@@ -401,18 +401,55 @@ review never punches a hole into it (run 3, fragment E: "Que puedo hacer en un m
 retries around it (`suggested: remove`, still reviewable). Test: `cleanup-hidden-retakes.test.ts` "voice without words
 inside a removed retake goes with it".
 
-**Nothing is removed without a finding** (run 4, fragment E: a cut of 1.8 s of a take, −11 to −17 dBFS, whose reasons
-read "untranscribed, pause" and that no finding covered — a stretched "de" touched the end of the take's voice run, so
-the run had a word and no untranscribed finding, and the planner dropped the voice no kept word held):
-- untranscribed voice is also the stretch of a voice run that words only partly cover — ≥ 0.5 s more than 0.15 s from
-  every word (`detector.ts` `frameFindings`);
-- the planner takes the ranges of the findings that remove (`covered`) and keeps voice between the first and the last
-  word that the plan drops outside all of them by more than 0.1 s (`UNCOVERED_TOLERANCE_S`; level edges trim word
-  onsets and decays) — one re-plan; `sequence.ts` passes the accepted findings and the words a take choice drops;
-- a piece shorter than `minPieceS` stays when it holds a kept word (strict removal; the prototype dropped it);
-- gaps of exactly `maxGapS` join (float slack), as the pause finding needs more than `maxGapS` of non-speech.
-Asserted in the corpus (above) and in `cleanup-property.test.ts` "every removed second is explained by a finding, and
-rejecting every finding removes nothing".
+**Every removal has a finding** — head and tail included, and "review" removes nothing until accepted, on every path.
+History: run 4, fragment E cut 1.8 s of a take that no finding covered (a stretched "de" touched the end of the take's
+voice run). The held-out run 5 (fragments G–L, `/tmp/je-hr5-local/results.json` on the build host) still found cuts
+without a finding: G "un" 27.40–27.53; F voice between two accepted pauses that was only a review finding or none
+(26.07–26.30, 52.13–52.40); J (chunked) a tail trim 66.3–70.96 that took quiet audio and the word "al"; the last word's
+fading tail (40–150 ms) in G, H and L; many 33–67 ms slivers. `analyze_voice` with every rule set to review still cut
+34–50 s per fragment, the same ranges as rejecting every finding. Causes: the planner cut every non-speech run longer
+than `maxGapS`, and the head and tail before the first / after the last word, whatever the findings said — a pause
+stayed only when explicitly rejected; kept pieces shorter than `minPieceS` and slivers under `minSliverFrames` were
+merged into the cut next to them; the coverage check allowed 0.1 s of removed voice next to any finding or kept piece.
+The rules now:
+- **Frame analysis partitions the sound** (`detector.ts` `frameFindings`, over the analysed regions = the clips' media
+  spans, not only between the first and the last word): every speech frame belongs to a word — its time, voice within
+  0.15 s of it (`UNCOVERED_MARGIN_S`) or a shorter wordless rest beside it — to untranscribed voice (a wordless stretch
+  ≥ `untranscribedMinS`), or is a blip (a wordless speech run shorter than that between non-speech) that a pause holds.
+  A gap ≤ `maxGapS` is split between its neighbours. What a word holds is `DetectResult.sound[k]`; a finding that
+  removes words spans their sound (its fingerprint keeps the words' times). So findings that remove two neighbours
+  leave nothing between them, and nothing else is removable.
+- **Pauses at the head and tail too**: a run of non-speech (and blips) longer than `maxGapS` anywhere in a region is a
+  pause finding, so a head / tail trim is a reviewable finding like any pause (without a voice analysis: the time
+  between words, head and tail included, as word mode cuts it). Never over a **quiet word** (a word ≤ `maxWordS` with
+  no speech frame under it: kept as its time, `quietWord`).
+- **Pause edges in measured silence** (`pauseEdges`; silence = a frame that is not speech and < floor + 6 dB,
+  `silentFrame`, the speech threshold's minimum margin): before speech, the pause ends after the last silent frame
+  within 0.25 s of the onset, so no cut clips a rising onset (S3: run 5 H 14.067 took ≈ 50 ms of "Unity", H 51.73 and I
+  47.67 / 56.3 grazed onsets — all edges of pause cuts); after speech followed by speech (a join) it starts where the
+  decay falls below the level edges' out threshold (the calibrated Fast out point inside the decay); at a tail it
+  starts at the first silent frame — no silence within 0.25 s, no tail pause.
+- **Decisions**: a pause is cut only when its finding is accepted. Every path plans through `analyzeSequenceCleanup`
+  (the editor's planner worker, the engine job behind `analyze_voice` / `plan_cleanup`, `apply_cleanup`), so a rule
+  set to review removes nothing anywhere until its findings are accepted.
+- **Final frame check** (`sequence.ts` `keepUnexplained`, after frame snapping and the frame guards): every sequence
+  frame whose media time is not inside an accepted finding or a removed word's sound stays; beyond a finding's edge at
+  most one frame may go, and only over measured silence (the frame grid cannot follow a finding's edge). A short piece
+  or a sliver the guards would drop stays rather than merging into a cut.
+- **The last kept piece keeps its fading tail** (`keepTail`): it grows over the decay after it (frames above measured
+  silence, outside removed words' times) to silence, ≤ 0.25 s — a join may cut inside a decay, the clip's end may not.
+- The planner's own re-plan (`covered`, `UNCOVERED_TOLERANCE_S`) stays as a first pass; a piece shorter than
+  `minPieceS` holding a kept word stays; gaps of exactly `maxGapS` join.
+Tests (all fail on 2557f0b20 — 44 of the 46 corpus cases, both corpus invariants, the property):
+`cleanup-real-takes.test.ts` — every removed second, head and tail included, lies inside a removing finding or within
+a frame of one; measured voice never beyond a finding; rejecting every finding removes nothing at all; with every rule
+on review nothing is removed. `cleanup-property.test.ts` "a sequence plan removes nothing outside accepted findings…":
+random transcripts and voice masks (rising onsets, decays, breaths), random rule actions and kind decisions — every
+removed 10 ms lies in an accepted finding or within a frame of one over silence; reject-all and all-review remove
+nothing; no cut takes a kept word's rising onset after silence nor the last kept word's decay (without `keepTail` it
+fails on the decay). Limits: an onset after more than 0.25 s of non-silent non-speech (a breath, room noise) keeps the
+pause end at its first speech frame; the classes and levels are the voice analysis' (a fade it measures under floor +
+6 dB counts as silence); timestamps that cover another word's onset give it to that word.
 
 **No cut splits a word** (strict removal): next to a cut the edge sits on the word boundary — the in point of a kept
 word after removed words is not before the removed word's end, the out point before a removed word not after its
