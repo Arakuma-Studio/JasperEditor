@@ -208,22 +208,54 @@ export type EnsureMeta = {
 	browserGroup?: string;
 	/** Progress of the bake (0…1), also when it is shared with another export. */
 	onProgress?(p: number): void;
+	/**
+	 * The bake's frames are captured (its pages are idle while it is stitched and checked), or it is rendered by another
+	 * caller: the export may start other bakes on the pages it granted (`PageGrant.release`).
+	 */
+	onRendered?(): void;
 };
 
 /**
  * How the bakes of one export are run (S11:LBK-022). `maxInFlight`: bakes at the same time (null = automatic:
  * `min(page budget, MAX_RENDERS_IN_FLIGHT)`; 1 = one after the other, each with the whole budget, as before).
- * `sharedBrowser`: the bakes of an export render in one browser instead of one each.
+ * `sharedBrowser`: the bakes of an export render in shared browsers instead of one each. `pagesPerBrowser`: pages
+ * one shared browser serves before the next bake opens another (wp-note export-performance "Layer bake"): a render
+ * browser captures every page's frames through its one browser process and one GPU process, which ran at ≈ 90 % of
+ * a core each with 8 pages while the pages idled (≈ 4.4 frames/s per page).
  */
-export type BakeParallelism = { maxInFlight: number | null; sharedBrowser: boolean };
+export type BakeParallelism = {
+	maxInFlight: number | null;
+	sharedBrowser: boolean;
+	pagesPerBrowser: number;
+	/** Remotion pages of an export's bakes (null = the export's Remotion concurrency). */
+	pages?: number | null;
+};
 
-/** Defaults; `JASPER_LAYER_BAKE_PARALLEL` (bakes in flight) and `JASPER_LAYER_BAKE_SHARED_BROWSER` (0/1) override. */
+/**
+ * Pages of one shared render browser (default of `BakeParallelism.pagesPerBrowser`): a two-page bake renders in a
+ * browser of its own (renders sharing a browser of four pages measured ≈ 20 % slower).
+ */
+export const PAGES_PER_BROWSER = 2;
+/**
+ * Shared render browsers of one export at most (each costs a browser and a GPU process, and Remotion's launcher adds
+ * process signal listeners per browser: Node warns past ten).
+ */
+const MAX_BROWSERS = 8;
+
+/**
+ * Defaults; `JASPER_LAYER_BAKE_PARALLEL` (bakes in flight), `JASPER_LAYER_BAKE_SHARED_BROWSER` (0/1) and
+ * `JASPER_LAYER_BAKE_PAGES_PER_BROWSER` override.
+ */
 export function bakeParallelismFromEnv(env: Record<string, string | undefined>): BakeParallelism {
 	const n = Number(env.JASPER_LAYER_BAKE_PARALLEL);
 	const shared = env.JASPER_LAYER_BAKE_SHARED_BROWSER;
+	const per = Number(env.JASPER_LAYER_BAKE_PAGES_PER_BROWSER);
+	const pages = Number(env.JASPER_LAYER_BAKE_PAGES);
 	return {
 		maxInFlight: Number.isInteger(n) && n >= 1 ? n : null,
 		sharedBrowser: shared !== '0',
+		pagesPerBrowser: Number.isInteger(per) && per >= 1 ? per : PAGES_PER_BROWSER,
+		pages: Number.isInteger(pages) && pages >= 1 ? pages : null,
 	};
 }
 
@@ -252,6 +284,9 @@ type LayerBakeOptions = {
 /** A bake or graded entry being rendered by a child job (joined by every other caller that needs it). */
 type InFlight = { jobId: string; done: Promise<void> };
 
+/** One shared render browser of a group and the pages of the renders using it now. */
+type BrowserSlot = { browser: Promise<SharedRenderBrowser | null>; pages: number };
+
 const GL_PROBE_TIMEOUT_MS = 60_000;
 
 export class LayerBakeService {
@@ -267,11 +302,10 @@ export class LayerBakeService {
 	private readonly removing = new Map<string, Promise<void>>();
 	/** Entries rendered right now, by key: a second caller joins the running child job (S11:LBK-022 dedupe). */
 	private readonly inflight = new Map<string, InFlight>();
-	/** Shared render browsers by group (the export/still job id), opened on first use. */
-	private readonly sessions = new Map<
-		string,
-		{ refs: number; browser: Promise<SharedRenderBrowser | null> | null }
-	>();
+	/** `EnsureMeta.onRendered` of the child jobs rendering for a caller, by child job id. */
+	private readonly renderedHooks = new Map<string, () => void>();
+	/** Shared render browsers by group (the export/still job id), opened when the bakes need them. */
+	private readonly sessions = new Map<string, { refs: number; browsers: BrowserSlot[] }>();
 	/**
 	 * Bakes rendered / reused / joined (rendered for another caller at the same time) since start.
 	 */
@@ -1111,9 +1145,11 @@ export class LayerBakeService {
 			const entry: InFlight = { jobId: job.id, done: this.childDone(job.id, missing[0]!) };
 			entry.done.catch(() => undefined);
 			for (const p of missing) this.inflight.set(p.key, entry);
+			if (meta.onRendered) this.renderedHooks.set(job.id, meta.onRendered);
 			try {
 				await this.follow(entry, meta, () => this.core.queue.cancel(job.id));
 			} finally {
+				this.renderedHooks.delete(job.id);
 				for (const p of missing) if (this.inflight.get(p.key) === entry) this.inflight.delete(p.key);
 			}
 			for (const p of missing) {
@@ -1182,6 +1218,8 @@ export class LayerBakeService {
 			if (meta.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
 			const running = this.inflight.get(key);
 			if (running) {
+				// rendered by another caller: this caller's pages stay idle
+				meta.onRendered?.();
 				try {
 					await this.follow(running, meta);
 					this.stats.joined++;
@@ -1197,9 +1235,11 @@ export class LayerBakeService {
 			const entry: InFlight = { jobId: job.id, done: this.childDone(job.id, plan) };
 			entry.done.catch(() => undefined);
 			this.inflight.set(key, entry);
+			if (meta.onRendered) this.renderedHooks.set(job.id, meta.onRendered);
 			try {
 				await this.follow(entry, meta, () => this.core.queue.cancel(job.id));
 			} finally {
+				this.renderedHooks.delete(job.id);
 				if (this.inflight.get(key) === entry) this.inflight.delete(key);
 			}
 			return after();
@@ -1226,6 +1266,14 @@ export class LayerBakeService {
 			input,
 			stage: 'Queued',
 		});
+	}
+
+	/** Child job `jobId` has captured its frames: its caller may use the pages it granted (`EnsureMeta.onRendered`). */
+	private framesCaptured(jobId: string): void {
+		const hook = this.renderedHooks.get(jobId);
+		if (!hook) return;
+		this.renderedHooks.delete(jobId);
+		hook();
 	}
 
 	/** Settles when child `jobId` has finished: resolves on success, throws its error otherwise. */
@@ -1273,12 +1321,12 @@ export class LayerBakeService {
 	}
 
 	/**
-	 * Opens a shared render browser session for the bakes of `group` (the export/still job id): the browser is
-	 * launched when the first bake of the group needs it and closed by the returned release (once every holder
-	 * released it). Bakes of a group without a session open a browser of their own.
+	 * Opens a shared render browser session for the bakes of `group` (the export/still job id): its browsers are
+	 * launched as the bakes of the group need them (`acquireBrowser`) and closed by the returned release (once every
+	 * holder released it). Bakes of a group without a session open a browser of their own.
 	 */
 	browserSession(group: string): () => Promise<void> {
-		const s = this.sessions.get(group) ?? { refs: 0, browser: null };
+		const s = this.sessions.get(group) ?? { refs: 0, browsers: [] };
 		s.refs++;
 		this.sessions.set(group, s);
 		let released = false;
@@ -1288,20 +1336,52 @@ export class LayerBakeService {
 			s.refs--;
 			if (s.refs > 0) return;
 			if (this.sessions.get(group) === s) this.sessions.delete(group);
-			const b = await s.browser?.catch(() => null);
-			await b?.close();
+			await Promise.all(
+				s.browsers.map(async (slot) => {
+					const b = await slot.browser.catch(() => null);
+					await b?.close();
+				}),
+			);
 		};
 	}
 
-	/** The shared browser of `group` (launched on first use), or null (no session, or it could not launch). */
-	private sharedBrowser(group: string | undefined): Promise<SharedRenderBrowser | null> {
+	/**
+	 * A shared browser of `group` for a render of `pages` pages (null without a session): the least busy one, or a new
+	 * one when that would serve more than `pagesPerBrowser` pages (at most MAX_BROWSERS). The browser resolves to null
+	 * when it could not launch (the render then opens its own). `release` when the render ends.
+	 */
+	acquireBrowser(
+		group: string | undefined,
+		pages: number,
+	): { browser: Promise<SharedRenderBrowser | null>; release(): void } | null {
 		const s = group ? this.sessions.get(group) : undefined;
-		if (!s) return Promise.resolve(null);
-		s.browser ??= this.core.remotion.openSharedBrowser().catch((e) => {
-			this.o.log?.(`layer-bake: no shared render browser (${(e as Error).message}); one per bake`);
-			return null;
-		});
-		return s.browser;
+		if (!s) return null;
+		const want = Math.max(1, Math.floor(pages));
+		let slot = s.browsers.reduce<BrowserSlot | null>((a, b) => (!a || b.pages < a.pages ? b : a), null);
+		if (
+			!slot ||
+			(slot.pages > 0 &&
+				slot.pages + want > this.parallelism.pagesPerBrowser &&
+				s.browsers.length < MAX_BROWSERS)
+		) {
+			const browser = this.core.remotion.openSharedBrowser().catch((e) => {
+				this.o.log?.(`layer-bake: no shared render browser (${(e as Error).message}); one per bake`);
+				return null;
+			});
+			slot = { browser, pages: 0 };
+			s.browsers.push(slot);
+		}
+		const held = slot;
+		held.pages += want;
+		let released = false;
+		return {
+			browser: held.browser,
+			release: () => {
+				if (released) return;
+				released = true;
+				held.pages -= want;
+			},
+		};
 	}
 
 	/** `POST /api/layer-bake/preview`: queues (or joins) the graded preview job of a clip. */
@@ -1341,10 +1421,12 @@ export class LayerBakeService {
 		if (input.op === 'sheet') return this.runSheet(ctx, input);
 		// The bake (and the graded entry) are written and read for the whole job.
 		const release = this.lease(input.op === 'grade' ? [input.bake.key, input.grade.key] : [input.bake.key]);
+		let lease: ReturnType<LayerBakeService['acquireBrowser']> = null;
 		try {
 			// A grade's source bake being rendered by another job right now: use that render.
 			if (input.op === 'grade') await this.inflight.get(input.bake.key)?.done.catch(() => undefined);
-			const browser = await this.sharedBrowser(input.browserGroup);
+			lease = this.acquireBrowser(input.browserGroup, input.concurrency ?? 1);
+			const browser = (await lease?.browser) ?? null;
 			const bake = await this.renderBake(ctx, input.bake, {
 				concurrency: input.concurrency,
 				weight: input.op === 'bake' ? 1 : 0.7,
@@ -1362,6 +1444,7 @@ export class LayerBakeService {
 				true,
 			);
 		} finally {
+			lease?.release();
 			release();
 			void this.refreshBytes();
 		}
@@ -1428,14 +1511,17 @@ export class LayerBakeService {
 					...(o.browser ? { browser: o.browser } : {}),
 					log: ctx.log,
 					onSpawn: ctx.trackChild,
-					onProgress: (p) =>
+					onProgress: (p) => {
 						ctx.progress(p.progress * weight * 0.9, {
 							stage: `Rendering ${p.renderedFrames}/${p.totalFrames} frames${concurrency ? ` (${concurrency} ${concurrency === 1 ? 'page' : 'pages'})` : ''}`,
-						}),
+						});
+						if (p.renderedFrames >= p.totalFrames) this.framesCaptured(ctx.job.id);
+					},
 				});
 			}
 		};
 		await render(plan.doc);
+		this.framesCaptured(ctx.job.id);
 		let rect = plan.rect;
 		const seq = { width: plan.material.width, height: plan.material.height };
 		// spec 13 AS-070: every edge of a layer-still is inside the layer's drawing: content there was cut.
@@ -1502,33 +1588,46 @@ export class LayerBakeService {
 		const top = rect.y > 0 ? 1 : 0;
 		const right = rect.x + rect.w < seq.width ? 1 : 0;
 		const bottom = rect.y + rect.h < seq.height ? 1 : 0;
-		// One 1-px strip per inner edge: its largest alpha over all frames (signalstats YMAX of the alpha plane).
+		// One 1-px strip per inner edge: its largest alpha over all frames (signalstats YMAX of the alpha plane). The
+		// strips are split from one decode of the bake (a master's ProRes 4444 decode and RGBA conversion dominate: one
+		// ffmpeg per strip decoded it up to four times).
 		const strips = [
 			top ? 'crop=iw:1:0:0' : null,
 			bottom ? 'crop=iw:1:0:ih-1' : null,
 			left ? 'crop=1:ih:0:0' : null,
 			right ? 'crop=1:ih:iw-1:0' : null,
 		].filter((s): s is string => s !== null);
+		if (strips.length === 0) return false;
 		const scratch = await ctx.scratchDir();
-		for (const [i, crop] of strips.entries()) {
-			const stats = join(scratch, `border-${i}-${Date.now().toString(36)}.txt`);
-			const vf = [
-				'format=rgba',
-				'alphaextract',
-				'format=gray',
-				crop,
-				'signalstats',
-				`metadata=mode=print:key=lavfi.signalstats.YMAX:file=${filterPath(stats)}`,
-			].join(',');
-			await ff.run(['-i', file, '-vf', vf, '-f', 'null', '-'], {
-				signal: ctx.signal,
-				onSpawn: ctx.trackChild,
-			});
-			const text = await readFile(stats, 'utf8').catch(() => '');
-			await rm(stats, { force: true });
-			for (const m of text.matchAll(/YMAX=(\d+(?:\.\d+)?)/g)) if (Number(m[1]) > RECT_CLIP_ALPHA) return true;
+		const tag = Date.now().toString(36);
+		const stats = strips.map((_, i) => join(scratch, `border-${i}-${tag}.txt`));
+		const graph = [
+			`[0:v]format=rgba,alphaextract,format=gray,split=${strips.length}${strips.map((_, i) => `[s${i}]`).join('')}`,
+			...strips.map(
+				(crop, i) =>
+					`[s${i}]${crop},signalstats,metadata=mode=print:key=lavfi.signalstats.YMAX:file=${filterPath(stats[i]!)}[o${i}]`,
+			),
+		].join(';');
+		try {
+			await ff.run(
+				[
+					'-i',
+					file,
+					'-filter_complex',
+					graph,
+					...strips.flatMap((_, i) => ['-map', `[o${i}]`, '-f', 'null', '-']),
+				],
+				{ signal: ctx.signal, onSpawn: ctx.trackChild },
+			);
+			for (const f of stats) {
+				const text = await readFile(f, 'utf8').catch(() => '');
+				for (const m of text.matchAll(/YMAX=(\d+(?:\.\d+)?)/g))
+					if (Number(m[1]) > RECT_CLIP_ALPHA) return true;
+			}
+			return false;
+		} finally {
+			for (const f of stats) await rm(f, { force: true });
 		}
-		return false;
 	}
 
 	/** A `sheet` child job (spec 13 AS-071): its stills, then every still the sheet could not hold alone. */
@@ -1537,9 +1636,11 @@ export class LayerBakeService {
 		input: Extract<LayerBakeJobInput, { op: 'sheet' }>,
 	): Promise<unknown> {
 		const release = this.lease(input.bakes.map((b) => b.key));
+		const lease = this.acquireBrowser(input.browserGroup, input.concurrency ?? 1);
 		try {
-			const browser = await this.sharedBrowser(input.browserGroup);
+			const browser = (await lease?.browser) ?? null;
 			const sheet = await this.renderSheet(ctx, input.bakes, { concurrency: input.concurrency, browser });
+			this.framesCaptured(ctx.job.id);
 			const redo = sheet.redo;
 			// Stills that drew past their crop are rendered alone (full frame when needed, LBK-005).
 			for (const [i, plan] of redo.entries()) {
@@ -1559,6 +1660,7 @@ export class LayerBakeService {
 				true,
 			);
 		} finally {
+			lease?.release();
 			release();
 			void this.refreshBytes();
 		}

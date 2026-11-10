@@ -13,14 +13,23 @@
 //   never hangs. A request is moved at most twice (MEASURE_FAILED after that).
 // - no worker (vitest, `JASPER_SD_MEASURE_WORKER=off`, no bundle, a worker that does not start): the op runs in-thread,
 //   as before, with the job's own ffmpeg and child tracking.
+// Exports run their audio on a second pool of the same workers (`exportAudioWorkers`, up to three).
 // The worker module is `JASPER_SD_MEASURE_WORKER` (a path, or `off`), else `sd-measure-worker.mjs` next to the engine
 // bundle, else — in a dev engine running under tsx — `measure-worker.ts`.
 import { existsSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Worker } from 'node:worker_threads';
+import type { DeliveryRunner } from '../audio/deliver.ts';
+import type { MixPass1 } from '../audio/mixdown.ts';
 import { JobError } from '../jobs/types.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
-import { type MeasureOp, type MeasureOpResult, type RenderEnv, runMeasureOp } from './measure-core.ts';
+import {
+	type MeasureOp,
+	type MeasureOpResult,
+	type MixPass1Request,
+	type RenderEnv,
+	runMeasureOp,
+} from './measure-core.ts';
 
 const SD_MEASURE_WORKER_ENV = 'JASPER_SD_MEASURE_WORKER';
 const IDLE_MS = 30_000;
@@ -91,16 +100,26 @@ export class SoundDesignMeasurer {
 	/** No worker could be started: measure in-thread from now on. */
 	private unavailable = false;
 
+	/** Workers at most. */
+	private readonly size: number;
+
 	constructor(
 		private readonly url: URL | null,
 		private readonly log: (m: string) => void = () => {},
-	) {}
+		o: { size?: number } = {},
+	) {
+		this.size = Math.max(1, Math.floor(o.size ?? DEFAULT_SIZE));
+	}
 
 	/**
-	 * Runs one op. `env.signal` cancels it (`JOB_CANCELLED`); the ten-minute deadline bounds it (`MEASURE_TIMEOUT`). In-thread
-	 * (no worker) the op runs with `env` as given (the job's ffmpeg and child tracking).
+	 * Runs one op. `env.signal` cancels it (`JOB_CANCELLED`); a deadline bounds it (`MEASURE_TIMEOUT`: ten minutes, or
+	 * `timeoutMs`). In-thread (no worker) the op runs with `env` as given (the job's ffmpeg and child tracking).
 	 */
-	async run<O extends MeasureOp>(op: O, env: RenderEnv): Promise<MeasureOpResult<O['kind']>> {
+	async run<O extends MeasureOp>(
+		op: O,
+		env: RenderEnv,
+		opts: { timeoutMs?: number } = {},
+	): Promise<MeasureOpResult<O['kind']>> {
 		const signal = env.signal;
 		if (signal?.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled', true);
 		if (!this.url || this.unavailable) return runMeasureOp(op, env);
@@ -129,7 +148,7 @@ export class SoundDesignMeasurer {
 			};
 			onAbort = () => this.cancel(p);
 			signal?.addEventListener('abort', onAbort, { once: true });
-			const ms = OP_TIMEOUT_MS;
+			const ms = opts.timeoutMs ?? OP_TIMEOUT_MS;
 			if (ms > 0) {
 				timer = setTimeout(
 					() =>
@@ -189,12 +208,12 @@ export class SoundDesignMeasurer {
 		slot.worker.postMessage({ id: p.id, op: p.op, bins: p.bins });
 	}
 
-	/** An idle live worker, else a new one (up to two), else the least busy. Throws when none can be made. */
+	/** An idle live worker, else a new one (up to `size`), else the least busy. Throws when none can be made. */
 	private pick(): Slot {
 		this.slots = this.slots.filter((s) => !s.dead);
 		const idle = this.slots.find((s) => load(s) === 0);
 		if (idle) return idle;
-		if (this.slots.length < DEFAULT_SIZE) return this.start();
+		if (this.slots.length < this.size) return this.start();
 		return this.slots.reduce((a, b) => (load(b) < load(a) ? b : a));
 	}
 
@@ -350,9 +369,50 @@ export function soundDesignMeasurer(log?: (m: string) => void): SoundDesignMeasu
 	shared ??= new SoundDesignMeasurer(resolveMeasureWorker(), log);
 	return shared;
 }
-/** Stops the engine's measurer (engine shutdown). */
+
+/**
+ * Workers of the exports' audio (wp-note export-performance "Audio delivery"): the delivery runs a written pass, the
+ * round's lower-ceiling candidates and the decoded checks of up to three encodes at once.
+ */
+const EXPORT_AUDIO_WORKERS = 3;
+let exportAudio: SoundDesignMeasurer | null = null;
+
+/**
+ * An export's audio off the engine's main thread: its pass-1 mix and its delivery's passes and decoded checks run on
+ * the measurement workers (`mixPass1`, `deliveryPass`, `encodedMeasure` ops; in-thread where no worker starts), so the
+ * layer bake's render pages and the composite's kernel streams never wait behind them. Each op is bounded by ten
+ * minutes or ten times the audio's duration, whichever is longer (a hung worker fails the export, never hangs it).
+ */
+export function exportAudioWorkers(
+	env: RenderEnv,
+	durationSec: number,
+	log?: (m: string) => void,
+): { mixPass1(req: MixPass1Request): Promise<MixPass1>; runner: DeliveryRunner } {
+	exportAudio ??= new SoundDesignMeasurer(resolveMeasureWorker(), log, { size: EXPORT_AUDIO_WORKERS });
+	const m = exportAudio;
+	const timeoutMs = Math.max(
+		OP_TIMEOUT_MS,
+		Math.ceil(10_000 * (Number.isFinite(durationSec) ? durationSec : 0)),
+	);
+	const withSignal = (signal: AbortSignal | undefined): RenderEnv => ({
+		...env,
+		...(signal ? { signal } : {}),
+	});
+	return {
+		mixPass1: (req) => m.run({ kind: 'mixPass1', req }, env, { timeoutMs }),
+		runner: {
+			pass: (req, signal) => m.run({ kind: 'deliveryPass', req }, withSignal(signal), { timeoutMs }),
+			measureEncoded: (req, signal) =>
+				m.run({ kind: 'encodedMeasure', req }, withSignal(signal), { timeoutMs }),
+		},
+	};
+}
+
+/** Stops the engine's measurers (engine shutdown). */
 export async function closeSoundDesignMeasurer(): Promise<void> {
 	const s = shared;
+	const e = exportAudio;
 	shared = null;
-	await s?.close();
+	exportAudio = null;
+	await Promise.all([s?.close(), e?.close()]);
 }

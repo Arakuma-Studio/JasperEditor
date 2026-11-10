@@ -14,6 +14,10 @@
 // running). Output does not depend on the schedule: every frame is rendered on its own (ANM-014 repaint per frame),
 // so a render's pixels are the same at any page count.
 //
+// A render whose frames are all captured gives its pages back (`PageGrant.release`) while it finishes (stitch, remux,
+// frame count, crop check: seconds of ffmpeg, measured ≈ 5–9 s per wave of masters with every page idle); it no longer
+// counts against `maxInFlight` either. A full-frame re-render after a failed crop check renders on top of the budget.
+//
 // Failure: the first failing render aborts the others (their child jobs are cancelled) and, once every render has
 // settled, the pool rejects with that error. Aborting the pool's signal (export cancelled) does the same with
 // `JOB_CANCELLED`. Nothing started by the pool outlives it.
@@ -25,13 +29,18 @@ const MIN_FRAMES_PER_PAGE = 10;
 export const MAX_RENDERS_IN_FLIGHT = 6;
 
 /**
- * Pages each master wants out of `budget`: the budget split in proportion to the masters' frames (rounded, at least 1,
- * at most one page per `MIN_FRAMES_PER_PAGE` frames). Measured on 8 small bakes: a few pages per master and several
- * masters at once beat whole-budget masters one after the other (every page costs a start-up).
+ * Pages each master wants out of `budget`: the budget split in proportion to the masters' frames among the `atOnce`
+ * masters that render at the same time (rounded, at least 1, at most one page per `MIN_FRAMES_PER_PAGE` frames).
+ * Measured on 8 small bakes: a few pages per master and several masters at once beat whole-budget masters one after
+ * the other (every page costs a start-up).
  */
-export function pageShares(frames: readonly number[], budget: number): number[] {
+export function pageShares(frames: readonly number[], budget: number, atOnce = frames.length): number[] {
 	const b = Math.max(1, Math.floor(budget));
-	const total = frames.reduce((s, f) => s + Math.max(1, f), 0);
+	// The budget is split among the masters rendering at the same time: with more masters than `atOnce` renders in
+	// flight, a share of the whole list left most of the budget idle (17 equal masters, 12 pages, 6 at once: 1 page
+	// each, 6 pages used).
+	const running = Math.max(1, Math.min(frames.length, Math.floor(atOnce)));
+	const total = (frames.reduce((s, f) => s + Math.max(1, f), 0) * running) / Math.max(1, frames.length);
 	return frames.map((f) =>
 		Math.max(
 			1,
@@ -48,6 +57,8 @@ export type PageGrant = {
 	signal: AbortSignal;
 	/** This task's progress, 0…1 (aggregated into the pool's progress). */
 	progress(p: number): void;
+	/** The render needs its pages no more (its frames are captured): other renders may start on them. Idempotent. */
+	release(): void;
 };
 
 type PagePoolTask<T> = {
@@ -93,6 +104,8 @@ export function runPagePool<T>(tasks: readonly PagePoolTask<T>[], o: PagePoolOpt
 	const inner = new AbortController();
 	let used = 0;
 	let running = 0;
+	/** Running tasks that released their pages. */
+	let released = 0;
 	let done = 0;
 	let failure: { error: unknown } | null = null;
 
@@ -125,6 +138,14 @@ export function runPagePool<T>(tasks: readonly PagePoolTask<T>[], o: PagePoolOpt
 			used += pages;
 			running++;
 			const task = tasks[i]!;
+			let held = true;
+			const release = () => {
+				if (!held) return;
+				held = false;
+				used -= pages;
+				released++;
+				pump();
+			};
 			let p: Promise<T>;
 			try {
 				p = task.run({
@@ -134,6 +155,7 @@ export function runPagePool<T>(tasks: readonly PagePoolTask<T>[], o: PagePoolOpt
 						progress[i] = v;
 						report();
 					},
+					release,
 				});
 			} catch (e) {
 				p = Promise.reject(e);
@@ -151,7 +173,9 @@ export function runPagePool<T>(tasks: readonly PagePoolTask<T>[], o: PagePoolOpt
 					}
 				},
 			).finally(() => {
-				used -= pages;
+				if (held) used -= pages;
+				else released--;
+				held = false;
 				running--;
 				report();
 				pump();
@@ -160,13 +184,13 @@ export function runPagePool<T>(tasks: readonly PagePoolTask<T>[], o: PagePoolOpt
 		};
 		const pump = () => {
 			if (failure) return;
-			for (let k = 0; k < pending.length && running < maxInFlight; ) {
+			for (let k = 0; k < pending.length && running - released < maxInFlight; ) {
 				const free = budget - used;
 				if (free <= 0) break;
 				const i = pending[k]!;
 				const want = Math.max(1, Math.min(budget, Math.floor(tasks[i]!.want)));
 				// Down to half of what it wants, or whatever is left when it would run alone.
-				const least = running === 0 ? 1 : Math.ceil(want / 2);
+				const least = running - released === 0 ? 1 : Math.ceil(want / 2);
 				if (free >= least) {
 					pending.splice(k, 1);
 					start(i, Math.min(want, free));
