@@ -5,6 +5,7 @@
 // "long" reading (one take, stretched), else the true words.
 import { wordsWellFormed } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
+import { redecodeAccepted, replaceWindowWords } from '../src/speech/core/gaps.ts';
 import { inputFromSamples } from '../src/speech/worker/audio.ts';
 import { runSpeechJob, type SpeechJobSpec } from '../src/speech/worker/run.ts';
 import { EOT, fakeModelDir, fakeOrt, noiseAudio, SPACE, TS_BEGIN } from './speech-fake-ort.ts';
@@ -13,6 +14,8 @@ const SOT = 27;
 const NO_TS = 31;
 const SR = 16_000;
 const SECONDS = 17;
+/** Token id of "..." in a `dot` fake model (replaces 'y'). */
+const DOT = 24;
 type W = { text: string; start: number; end: number };
 
 const at = (text: string, start: number, len = 0.3): W => ({ text, start, end: start + len });
@@ -27,11 +30,15 @@ const TRUTH = [...LEAD, ...TAKE1, ...TAKE2, ...TAIL];
 // what a long window gets: the phrase once, "mn" stretched from the first take to the second take's "op"
 const LONG = [...LEAD, ...TAKE1, ...TAKE2.slice(3), ...TAIL];
 
-const ids = (w: string) => [SPACE, ...[...w].map((c) => c.charCodeAt(0) - 97)];
+const ids = (w: string) => [
+	SPACE,
+	...w.split(/(\.\.\.)/).flatMap((p) => (p === '...' ? [DOT] : [...p].map((c) => c.charCodeAt(0) - 97))),
+];
 
-function hiddenTakeDecoder(audio: Float32Array) {
+/** `long`: what a window holding more than 10 s of audio gets; `truth`: what a shorter one gets. */
+function hiddenTakeDecoder(audio: Float32Array, truth: readonly W[] = TRUTH, long: readonly W[] = LONG) {
 	const input = inputFromSamples(audio, 80);
-	const F = Math.round(SECONDS * 100);
+	const F = Math.round((audio.length / SR) * 100);
 	const full = new Float32Array(80 * F);
 	input.mel.window(0, F, full, F);
 	input.dispose();
@@ -51,7 +58,7 @@ function hiddenTakeDecoder(audio: Float32Array) {
 		offset = o / 100;
 		// a short window loses the words within 80 ms of its edges (a chunk edge cuts them)
 		const edge = n > 1000 ? 0 : 0.08;
-		words = (n > 1000 ? LONG : TRUTH)
+		words = (n > 1000 ? long : truth)
 			.filter((w) => w.start >= offset + edge - 1e-6 && w.end <= offset + n / 100 - edge + 1e-6)
 			.map((w) => ({ ...w, start: w.start - offset, end: w.end - offset }));
 	};
@@ -134,5 +141,112 @@ describe('hidden takes', () => {
 			expect(Math.abs(out.words[k]!.start / SR - w.start)).toBeLessThan(0.06);
 		expect(out.guard.chunked).toMatchObject({ chunks: 2, shiftedChunks: 3 });
 		expect(out.guard.chunked!.replaced).toBeGreaterThan(0);
+	});
+
+	it('a window whose re-decode is rejected is decoded again in VAD chunks (fragment E: 17 s, 26 → 33 words)', async () => {
+		// three restarts in a row, each written once by a long window: their windows merge into one of more than 10 s,
+		// whose re-decode is the long reading again (no more words: rejected); VAD chunks within it write every take
+		const take = (t: string, at0: number) =>
+			t.split(' ').map((x, k) => at(x, at0 + 0.4 * k, k === 2 ? 0.2 : 0.3));
+		const pairs = [
+			[take('ij kl mn', 2.2), take('ij kl mn op qr', 3.32)],
+			[take('st uv wx', 5.5), take('st uv wx ab cd', 6.62)],
+			[take('ef gh ik', 8.8), take('ef gh ik jl km', 9.92)],
+		];
+		const tail = 'ln mo np oq pr qs rt su tv uw ab cd'.split(' ').map((t, k) => at(t, 12.1 + 0.4 * k));
+		const truth = [...LEAD, ...pairs.flatMap(([a, b]) => [...a!, ...b!]), ...tail];
+		const long = [...LEAD, ...pairs.flatMap(([a, b]) => [...a!, ...b!.slice(3)]), ...tail];
+		const audio = noiseAudio(SECONDS, (t) => truth.some((w) => t >= w.start && t < w.end));
+		const out = await runSpeechJob(
+			{ modelDir: fakeModelDir({ encodable: true }), modelId: 'fake', input: { f32: '' }, language: 'en' },
+			{ ort: fakeOrt(hiddenTakeDecoder(audio, truth, long)).ort, audio },
+		);
+		// every take, in order (the window ends in the tail)
+		expect(out.words.map((w) => w.text).slice(0, 28)).toEqual(truth.slice(0, 28).map((w) => w.text));
+		expect(out.guard.redecoded!.ranges).toMatchObject([{ replaced: true, chunked: true }]);
+	});
+
+	it('a re-decode writes no word of punctuation only: an ellipsis joins the word before ("..." and "...y")', async () => {
+		// the re-decode (verbatim) writes "mn ..." at the end of the first take and "...ij" for the second
+		const dotted = [...LEAD, ...TAKE1, at('...', 3.2, 0.1), at('...ij', 3.32), ...TAKE2.slice(1), ...TAIL];
+		const out = await runSpeechJob(
+			{
+				modelDir: fakeModelDir({ encodable: true, dot: true }),
+				modelId: 'fake',
+				input: { f32: '' },
+				language: 'en',
+			},
+			{ ort: fakeOrt(hiddenTakeDecoder(audio, dotted)).ort, audio },
+		);
+		expect(out.words.map((w) => w.text).slice(4, 12)).toEqual([
+			'ij',
+			'kl',
+			'mn...',
+			'ij',
+			'kl',
+			'mn',
+			'op',
+			'qr',
+		]);
+	});
+
+	it('a re-decode never drops words the original had over voice (second run, fragment E 29.79–47.03)', () => {
+		// "text[start-end]" in seconds; the original (plain pass) and what the chunked re-decode wrote there
+		const words = (x: string) =>
+			x
+				.trim()
+				.split(/\s+/)
+				.map((t) => {
+					const m = /^(.*)\[([\d.]+)-([\d.]+)\]$/.exec(t)!;
+					return { text: m[1]!, start: Math.round(Number(m[2]) * SR), end: Math.round(Number(m[3]) * SR) };
+				});
+		const original = words(`decenas[29.79-30.07] de[30.07-30.17] miles[30.17-30.37] de[30.37-30.47]
+			millones[30.47-30.65] de[30.65-30.81] dólares.[30.81-31.15] ¿Que[31.87-31.93] puedo[31.93-32.09]
+			hacer[32.09-32.23] en[32.23-32.39] un[32.39-32.47] mes[32.47-33.50] lo[33.72-34.95] mismo[35.18-36.27]
+			que[36.27-36.39] una[36.39-36.49] empresa[36.49-36.77] de[36.77-36.97] decenas[36.97-37.21] de[37.21-37.55]
+			miles[38.14-42.03] de[42.03-42.48] millones[42.91-45.49] de[45.49-45.65] dólares?[45.65-46.08]`);
+		const redecoded = words(`de[29.55-30.04] ¿Qué[33.00-33.50] puedo[33.72-33.97] hacer[33.97-34.15]
+			en[34.15-34.27] un[34.27-34.95] mes[35.18-35.95] lo[35.95-36.07] mismo[36.07-36.39] una[36.39-36.49]
+			empresa[36.49-36.79] de[36.79-36.97] decenas[36.97-37.23] de...?[37.23-37.55] puedo[38.19-38.35]
+			hacer[38.35-38.51] en[38.51-38.63] un[38.63-38.75] mes[38.75-38.91] lo[38.91-39.01] mismo[39.01-39.34]
+			que[39.79-40.93] una[40.93-41.03] empresa[41.03-41.31] de[41.31-41.51] decenas[41.51-41.79] de[41.79-41.87]
+			miles[41.87-42.48] de[42.91-45.29] millones[45.29-45.45] de[45.45-45.65] dólares?[45.65-46.08]`);
+		// continuous speech (−12 to −25 dBFS) under all of it
+		const mask = new Uint8Array(4800).fill(1);
+		const placed = redecodeAccepted(original, redecoded, mask, 0.2);
+		const kept = (w: { text: string; start: number }) =>
+			placed?.some((p) => p.text === w.text && p.start === w.start) ?? true;
+		// either nothing is replaced, or every original word under 31.15 s is still there
+		expect(original.filter((w) => w.end <= 31.15 * SR).every(kept)).toBe(true);
+	});
+
+	it('a re-decoded word timed inside the word before it gets time of its own (third run, fragment E: "hacer…")', () => {
+		const at2 = (text: string, a: number, b: number) => ({
+			text,
+			start: Math.round(a * SR),
+			end: Math.round(b * SR),
+		});
+		const words = [at2('empresa', 36.49, 36.77), at2('de', 36.77, 36.97), at2('Que', 38.14, 38.2)];
+		// the re-decode wrote "decenas hacer... de miles?" with "hacer..." inside "decenas"
+		const placed = replaceWindowWords(words, 36.7 * SR, 37.6 * SR, [
+			at2('de', 36.77, 37.01),
+			at2('decenas', 37.01, 37.23),
+			at2('hacer...', 37.1, 37.2),
+			at2('de', 37.23, 37.39),
+			at2('miles?', 37.39, 37.55),
+		]);
+		expect(placed.map((w) => w.text)).toEqual([
+			'empresa',
+			'de',
+			'decenas',
+			'hacer...',
+			'de',
+			'miles?',
+			'Que',
+		]);
+		for (const [k, w] of placed.entries()) {
+			expect(w.end, w.text).toBeGreaterThan(w.start);
+			if (k) expect(w.start, w.text).toBeGreaterThanOrEqual(placed[k - 1]!.end);
+		}
 	});
 });

@@ -170,13 +170,19 @@ README tool list updated. Text-based tools take word indices or a `query` + `occ
 
 Stretched words (fix "hidden retakes"): `captions.generate`, `captions.regenerate` (`W_SUBTITLES`) and
 `transcript.createCaptions` (`W_STRETCHED_WORDS`) warn when the words they time cues from hold a word longer than 1 s
-inside continuous speech — every neighbour within 0.3 s, at least one (`stretchedWords`, `captions/words.ts`) — naming
+inside speech — a neighbour within 1.5 s on at least one side; a word with none on either side (said alone between
+pauses) is not flagged (`stretchedWords`, `captions/words.ts`). The first rule (every neighbour within 0.3 s) missed
+most of them: Whisper usually leaves a gap on one side of the stretched word — the reporter's large-v3-turbo runs
+missed "tener" 2.11 s (0.51 s after "quise"), "pones" 6.27 s (1.6 s after "los"), "miles" 3.89 s (0.59 s), "millones"
+2.58 s, "propio" 2.38 s (2.26 s after "su"), "personas" 2.11 s and "y" 3.27 s, each touching its next word; the
+engine's voice-based check found them all. The command handlers have no voice analysis, so the rule uses word gaps
+only (assumption: a > 1 s word next to another word lies over speech after word-bound refinement). Naming
 up to 8 sequence times and suggesting `transcribe {chunking: "vad"}`, then rebuilding the captions (the hidden-take
 re-decode is on by default, so stretched words left in a new transcript are ones it could not split). Speech to text writes a phrase said twice once and stretches its words over both takes, so cues from them
-run ahead of the audio (wp-notes/speech.md §11.3 "Hidden takes"). The 1 s / 0.3 s thresholds follow the report
-(normal words 0.2–0.4 s; stretched ones 1.46–4.3 s), not a measurement here. The warning reaches MCP results
+run ahead of the audio (wp-notes/speech.md §11.3 "Hidden takes"). The 1 s threshold follows the report (normal words
+0.2–0.4 s; stretched ones 1.46–6.3 s), the 1.5 s gap the missed words above, not a measurement here. The warning reaches MCP results
 (`captions_from_transcript`, `regenerate_captions`) as transaction warnings. Test: `subtitles-commands.test.ts`
-"stretched words".
+"stretched words" (the second case, "tener" after a gap, fails with the first rule).
 
 ## 7. Verified behaviour
 

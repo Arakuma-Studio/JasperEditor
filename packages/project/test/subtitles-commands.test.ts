@@ -602,4 +602,21 @@ describe('stretched words (hidden takes)', () => {
 			false,
 		);
 	});
+
+	it('a stretched word after a gap warns too, a word said alone between pauses does not (large-v3-turbo)', () => {
+		// reporter's words, 30 s earlier: "tener" 2.11 s starts 0.51 s after "quise" and touches "en"
+		const words: Array<[string, number, number]> = [
+			['que', 1.32, 1.56],
+			['siempre', 1.56, 1.82],
+			['quise', 1.82, 2.4],
+			['tener', 2.91, 5.02],
+			['en', 5.02, 5.26],
+			['Unity.', 5.26, 5.78],
+			['Bueno.', 7.5, 8.7],
+		];
+		const warnings = shot({ cut: false, words }).H.ok([{ type: 'captions.generate' }]).warnings;
+		expect(warnings.filter((w) => /over 1 s/.test(w.message)).map((w) => w.message)).toEqual([
+			expect.stringMatching(/^1 word\(s\) .*\(0:02\.9–0:05\.0\)/),
+		]);
+	});
 });

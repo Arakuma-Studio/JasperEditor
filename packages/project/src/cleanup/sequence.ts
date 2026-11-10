@@ -405,7 +405,25 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 		const sec = (f: number) => f / FLICKS_PER_SECOND;
 		const spans = (pred: (f: CleanupFinding) => boolean): Span[] =>
 			res.findings.filter(pred).map((f) => [sec(f.range.start), sec(f.range.end)] as Span);
-		const keepSpeech = spans((f) => f.kind === 'untranscribed' && !accepted.has(f));
+		// voice without words is kept unless accepted, but never inside an accepted removal of words: a take the
+		// recogniser wrote no words for, between the words of a removed retake run, goes with it (fragment E, run 3:
+		// "Que puedo hacer en un mes lo mismo" without words at 38.14–39.34 inside the hidden retake 31.88–42.48)
+		const removing = spans((f) => !!f.words && WORD_KINDS.has(f.kind) && accepted.has(f));
+		const keepSpeech = spans((f) => f.kind === 'untranscribed' && !accepted.has(f)).flatMap(([a, b]) => {
+			let parts: Span[] = [[a, b]];
+			for (const [x, y] of removing)
+				parts = parts.flatMap(([p, q]): Span[] =>
+					y <= p || x >= q
+						? [[p, q]]
+						: (
+								[
+									[p, Math.min(q, x)],
+									[Math.max(p, y), q],
+								] as Span[]
+							).filter(([u, v]) => v - u > 1e-9),
+				);
+			return parts;
+		});
 		const keepPauses = spans(
 			(f) =>
 				f.kind === 'pause' &&
@@ -432,9 +450,10 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 					keepPauses: clipSpan(keepPauses),
 					keepBreaths: clipSpan(keepBreaths),
 					removeBreaths: clipSpan(removeBreaths),
-				}).kept;
+				});
 			};
-			let kept = planOnce();
+			let plan = planOnce();
+			let kept = plan.kept;
 			// TC-023 avoid harsh cuts: an accepted filler / stutter whose cut lands on loud sound stays (one re-plan)
 			if (run.voice && settings.guards.avoidHarshCuts) {
 				let any = false;
@@ -454,9 +473,20 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 						any = true;
 					}
 				}
-				if (any) kept = planOnce();
+				if (any) {
+					plan = planOnce();
+					kept = plan.kept;
+				}
 			}
-			const keptFrames = keptToFrames(clip, rate, run.voice, kept, settings.edges.snapWindowS, extent);
+			const keptFrames = keptToFrames(
+				clip,
+				rate,
+				run.voice,
+				kept,
+				settings.edges.snapWindowS,
+				extent,
+				plan.tight,
+			);
 			// frame guards: no cut shorter than minCutFrames, no kept sliver shorter than minSliverFrames
 			const g = settings.guards;
 			const joined: Array<[number, number]> = [];
@@ -650,6 +680,8 @@ export function keptToFrames(
 	kept: readonly Span[],
 	snapWindowS: number,
 	extent: readonly [number, number],
+	/** `MediaPlan.tight`: edges next to removed words snap to the boundary at or before them. */
+	tight?: ReadonlyArray<readonly [boolean, boolean]>,
 ): Array<[number, number]> {
 	const F = flicksPerFrame(rate);
 	const toFrameX = (t: number) => clip.start + (t * FLICKS_PER_SECOND - clip.sourceIn) / F;
@@ -661,9 +693,15 @@ export function keptToFrames(
 		return out;
 	};
 	const out: Array<[number, number]> = [];
-	for (const [a, b] of kept) {
-		const fa = Math.round(toFrameX(snapEdge(voice, a, 'in', snapWindowS, cands(a))));
-		const fb = Math.round(toFrameX(snapEdge(voice, b, 'out', snapWindowS, cands(b))));
+	// the boundary at or before t: the kept word after a cut keeps its onset, the removed word after a piece loses its
+	const floor = (t: number) => Math.floor(toFrameX(t) + 1e-6);
+	for (const [i, [a, b]] of kept.entries()) {
+		const fa = tight?.[i]?.[0]
+			? floor(a)
+			: Math.round(toFrameX(snapEdge(voice, a, 'in', snapWindowS, cands(a))));
+		const fb = tight?.[i]?.[1]
+			? floor(b)
+			: Math.round(toFrameX(snapEdge(voice, b, 'out', snapWindowS, cands(b))));
 		const s = Math.max(extent[0], fa);
 		const e = Math.min(extent[1], fb);
 		if (e <= s) continue;

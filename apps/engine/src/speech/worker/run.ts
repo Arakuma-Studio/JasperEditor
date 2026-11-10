@@ -15,6 +15,7 @@ import { type Chunk, mergeZones, shiftedChunks, vadChunks } from '../core/chunks
 import { DEFAULT_DIARIZE, diarize } from '../core/diarize.ts';
 import {
 	mergeRecoveredWords,
+	REDECODE_CHUNKED_MAX_FRAMES,
 	redecodeAccepted,
 	replaceRegion,
 	replaceWindowWords,
@@ -167,7 +168,18 @@ export type RedecodedReport = {
 	replaced: number;
 	wordsAdded: number;
 	skipped: number;
-	ranges: Array<{ start: number; end: number; before: number; after: number; replaced: boolean }>;
+	/**
+	 * `chunked`: present when the window's re-decode was rejected and the window was decoded again in VAD chunks
+	 * (`after` then counts those words); true when they replaced the window's words.
+	 */
+	ranges: Array<{
+		start: number;
+		end: number;
+		before: number;
+		after: number;
+		replaced: boolean;
+		chunked?: boolean;
+	}>;
 };
 
 /** The VAD-chunked passes: chunks of the first and shifted pass, merge zones, zones that took the shifted words. */
@@ -519,7 +531,10 @@ async function recoverWordlessSpans(
  * Hidden takes (`core/gaps.ts`, docs/wp-notes/speech.md §11.3 "Hidden takes"): decodes again, each alone, the windows around
  * stretched words and short wordless voice of `r` — verbatim, without the previous text — and replaces a window's
  * words when the re-decode holds more words consistent with the audio and re-says the original ones
- * (`redecodeAccepted`); the window's segments are replaced with it. A decoder failure is thrown.
+ * (`redecodeAccepted`; original words it wrote nothing over stay); the window's segments are replaced with it. A
+ * rejected window over several of the whole file's VAD chunks is decoded once more the `chunking: "vad"` way over
+ * those chunks (both passes, merged, the job's options; within `REDECODE_CHUNKED_MAX_FRAMES` of audio per job),
+ * judged by the same rule. A decoder failure is thrown.
  */
 async function redecodeSuspects(
 	model: Pick<WhisperModel, 'transcribe'>,
@@ -539,23 +554,53 @@ async function redecodeSuspects(
 	};
 	const extra = new ExtraDecodes(r);
 	let words = r.words;
+	let chunkedFrames = 0;
 	const mid = (x: { start: number; end: number }) => (x.start + x.end) / 2;
+	const redecodeOpts: WhisperOptions = {
+		...opts,
+		language: r.language,
+		verbatim: true,
+		conditionOnPreviousText: false,
+	};
+	// the fallback decodes what `chunking: "vad"` decodes there: its chunks of the whole file (energy VAD), with the
+	// job's options — fragment E: chunks planned inside the window on the voice analysis, decoded verbatim, wrote 31
+	// words where the whole-file chunking wrote 80
+	let fileChunks: Chunk[] | null = null;
 	for (const win of windows) {
-		const got = await model.transcribe(input, {
-			...opts,
-			language: r.language,
-			verbatim: true,
-			conditionOnPreviousText: false,
-			span: { start: win.start, end: win.end },
-		});
+		let got = await model.transcribe(input, { ...redecodeOpts, span: { start: win.start, end: win.end } });
 		extra.add(got);
 		const { start, end } = replaceRegion(words, win, input.samples);
 		const inside = (w: { start: number; end: number }) => mid(w) >= start && mid(w) < end;
 		const before = words.filter(inside);
-		const after = got.words.filter(inside);
-		const replaced = redecodeAccepted(before, after, mask, MIN_VOICED_FRACTION);
-		if (replaced) {
-			words = replaceWindowWords(words, start, end, after);
+		let after = got.words.filter(inside);
+		let placed = redecodeAccepted(before, after, mask, MIN_VOICED_FRACTION);
+		let chunked: boolean | undefined;
+		if (!placed) {
+			fileChunks ??= vadChunks(input.mask);
+			const over = fileChunks.filter((c) => c.end > win.start && c.start < win.end);
+			const range = over.length ? { start: over[0]!.start, end: over[over.length - 1]!.end } : null;
+			// both passes decode the range once each
+			const cost = range ? 2 * (range.end - range.start) : 0;
+			if (range && over.length > 1 && chunkedFrames + cost <= REDECODE_CHUNKED_MAX_FRAMES) {
+				chunkedFrames += cost;
+				const c = await transcribeChunked(
+					model,
+					input,
+					input.mask,
+					{ ...opts, language: r.language, conditionOnPreviousText: false },
+					() => {},
+					range,
+				);
+				got = c.result;
+				extra.add(got);
+				after = got.words.filter(inside);
+				placed = redecodeAccepted(before, after, mask, MIN_VOICED_FRACTION);
+				chunked = !!placed;
+			}
+		}
+		const replaced = !!placed;
+		if (placed) {
+			words = replaceWindowWords(words, start, end, placed);
 			const segIn = (sg: WhisperSegment) => {
 				const m = ((sg.start + sg.end) / 2) * SAMPLE_RATE;
 				return m >= start && m < end;
@@ -564,7 +609,8 @@ async function redecodeSuspects(
 			extra.segments.length = 0;
 			extra.segments.push(...keptSegs, ...got.segments.filter(segIn));
 			report.replaced++;
-			report.wordsAdded += after.length - before.length;
+			report.wordsAdded += placed.length - before.length;
+			after = placed;
 		}
 		report.ranges.push({
 			start: start / SAMPLE_RATE,
@@ -572,15 +618,17 @@ async function redecodeSuspects(
 			before: before.length,
 			after: after.length,
 			replaced,
+			...(chunked !== undefined ? { chunked } : {}),
 		});
 	}
 	return { result: extra.result(r, words), report };
 }
 
 /**
- * `chunking: "vad"` (`core/chunks.ts`): decodes the chunks of `mask` each alone without the previous text (the
- * language detected on the first chunk when not given), then the shifted chunks, and takes the shifted pass's words
- * in each merge zone where it has at least as many (with its segments there). Progress `onProgress(0…1)`.
+ * `chunking: "vad"` (`core/chunks.ts`): decodes the chunks of `mask` (within `range`, frames; default all) each alone
+ * without the previous text (the language detected on the first chunk when not given), then the shifted chunks, and
+ * takes the shifted pass's words in each merge zone where it has at least as many (with its segments there).
+ * Progress `onProgress(0…1)`.
  */
 async function transcribeChunked(
 	model: Pick<WhisperModel, 'transcribe'>,
@@ -588,9 +636,10 @@ async function transcribeChunked(
 	mask: SpeechMask,
 	opts: WhisperOptions,
 	onProgress: (f: number) => void,
+	range?: Chunk,
 ): Promise<{ result: WhisperResult; report: ChunkedReport }> {
-	const first = vadChunks(mask);
-	const shifted = shiftedChunks(mask, first);
+	const first = vadChunks(mask, range);
+	const shifted = shiftedChunks(mask, first, range);
 	const total = first.length + shifted.length;
 	let language = opts.language ?? null;
 	const results: WhisperResult[] = [];

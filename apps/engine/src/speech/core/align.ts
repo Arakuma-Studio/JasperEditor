@@ -295,3 +295,30 @@ export function addWordTimestamps(
 	}
 	return last;
 }
+
+/**
+ * Appends `w` timed `[start, end)` (samples, start ≥ the last word's end) to `placed` so no word has zero length: a
+ * word timed inside the word before it (`end` ≤ `start`; the alignment gave it no frames of its own, or a re-decode
+ * timed it over the kept neighbour) takes the second half of that word's time — fragment E's re-decode wrote
+ * "decenas hacer... de" with "hacer..." at 37.23–37.23 — or, first of all, one sample.
+ */
+export function placeWord<W extends { start: number; end: number }>(
+	placed: W[],
+	w: W,
+	start: number,
+	end: number,
+): void {
+	if (end > start) {
+		placed.push({ ...w, start, end });
+		return;
+	}
+	const last = placed[placed.length - 1];
+	if (last && last.end === start && last.end - last.start >= 2) {
+		const mid = Math.round((last.start + last.end) / 2);
+		const lastEnd = last.end;
+		last.end = mid;
+		placed.push({ ...w, start: mid, end: lastEnd });
+		return;
+	}
+	placed.push({ ...w, start, end: start + 1 });
+}

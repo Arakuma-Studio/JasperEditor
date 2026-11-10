@@ -36,11 +36,13 @@ export const CHUNK_ZONE_FRAMES = 150;
 
 export type Chunk = { start: number; end: number };
 
-/** Voiced runs of `mask` separated by pauses of at least `CHUNK_PAUSE_FRAMES` (frames `[start, end)`). */
-function voiceRuns(mask: ArrayLike<number>): Chunk[] {
+/**
+ * Voiced runs of `mask` within `range` separated by pauses of at least `CHUNK_PAUSE_FRAMES` (frames `[start, end)`).
+ */
+function voiceRuns(mask: ArrayLike<number>, range: Chunk): Chunk[] {
 	const runs: Chunk[] = [];
-	let f = 0;
-	const n = mask.length;
+	let f = Math.max(0, range.start);
+	const n = Math.min(mask.length, range.end);
 	while (f < n) {
 		while (f < n && !(mask[f]! > 0)) f++;
 		if (f >= n) break;
@@ -70,20 +72,25 @@ function bySilence(runs: readonly Chunk[]): Array<[number, number]> {
 	return groups;
 }
 
-/** Frame bounds of the chunk of runs `[a, b)` of a group `[g0, g1)`: pause middles inside, edges at long silences. */
-function bounds(runs: readonly Chunk[], a: number, b: number, g0: number, g1: number, frames: number): Chunk {
+/**
+ * Frame bounds of the chunk of runs `[a, b)` of a group `[g0, g1)`: pause middles inside, edges at long silences
+ * (within `range`).
+ */
+function bounds(runs: readonly Chunk[], a: number, b: number, g0: number, g1: number, range: Chunk): Chunk {
 	const start =
-		a === g0 ? Math.max(0, runs[a]!.start - CHUNK_EDGE_FRAMES) : (runs[a - 1]!.end + runs[a]!.start) >> 1;
+		a === g0
+			? Math.max(range.start, runs[a]!.start - CHUNK_EDGE_FRAMES)
+			: (runs[a - 1]!.end + runs[a]!.start) >> 1;
 	const end =
 		b === g1
-			? Math.min(frames, runs[b - 1]!.end + CHUNK_EDGE_FRAMES)
+			? Math.min(range.end, runs[b - 1]!.end + CHUNK_EDGE_FRAMES)
 			: (runs[b - 1]!.end + runs[b]!.start) >> 1;
 	return { start, end };
 }
 
-/** The first-pass chunks of `mask` (see the module docs), in time order. */
-export function vadChunks(mask: ArrayLike<number>): Chunk[] {
-	const runs = voiceRuns(mask);
+/** The first-pass chunks of `mask` within `range` (default all; see the module docs), in time order. */
+export function vadChunks(mask: ArrayLike<number>, range: Chunk = { start: 0, end: mask.length }): Chunk[] {
+	const runs = voiceRuns(mask, range);
 	const out: Chunk[] = [];
 	for (const [g0, g1] of bySilence(runs)) {
 		let a = g0;
@@ -91,21 +98,25 @@ export function vadChunks(mask: ArrayLike<number>): Chunk[] {
 			const len = runs[i - 1]!.end - runs[a]!.start;
 			const grown = runs[i]!.end - runs[a]!.start;
 			if ((grown > CHUNK_MAX_FRAMES && len >= CHUNK_MIN_FRAMES) || grown > CHUNK_HARD_MAX_FRAMES) {
-				out.push(bounds(runs, a, i, g0, g1, mask.length));
+				out.push(bounds(runs, a, i, g0, g1, range));
 				a = i;
 			}
 		}
-		out.push(bounds(runs, a, g1, g0, g1, mask.length));
+		out.push(bounds(runs, a, g1, g0, g1, range));
 	}
 	return out;
 }
 
 /**
- * The shifted chunks: boundaries at the interior pause of each first-pass chunk closest to its middle, plus the
- * long silences (see the module docs), in time order.
+ * The shifted chunks within `range` (default all): boundaries at the interior pause of each first-pass chunk closest
+ * to its middle, plus the long silences (see the module docs), in time order.
  */
-export function shiftedChunks(mask: ArrayLike<number>, first: readonly Chunk[]): Chunk[] {
-	const runs = voiceRuns(mask);
+export function shiftedChunks(
+	mask: ArrayLike<number>,
+	first: readonly Chunk[],
+	range: Chunk = { start: 0, end: mask.length },
+): Chunk[] {
+	const runs = voiceRuns(mask, range);
 	const out: Chunk[] = [];
 	for (const [g0, g1] of bySilence(runs)) {
 		const gStart = runs[g0]!.start;
@@ -130,10 +141,10 @@ export function shiftedChunks(mask: ArrayLike<number>, first: readonly Chunk[]):
 		cuts.sort((x, y) => x - y);
 		let a = g0;
 		for (const i of cuts) {
-			out.push(bounds(runs, a, i, g0, g1, mask.length));
+			out.push(bounds(runs, a, i, g0, g1, range));
 			a = i;
 		}
-		out.push(bounds(runs, a, g1, g0, g1, mask.length));
+		out.push(bounds(runs, a, g1, g0, g1, range));
 	}
 	return out;
 }

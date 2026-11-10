@@ -6284,6 +6284,8 @@
   "Latch",
   "Latency",
   "Latency Offset",
+  "Later take “{0}” ({1} takes; keeping “{2}”)",
+  "Later take “{0}” of script line {1} ({2} takes; keeping “{3}”)",
   "Latitude",
   "Lay Ambience Bed",
   "Lay Ambience Bed…",

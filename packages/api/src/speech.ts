@@ -235,8 +235,9 @@ export const SpeechGuardReportSchema = z.object({
 	/**
 	 * Hidden takes (`redecode`): windows around stretched words and short wordless voice decoded again alone (at most
 	 * 96 windows and 10 min per job, in time order): windows decoded, windows whose words were replaced, words that
-	 * added, windows over the budget, and each window (seconds) with its word counts before and after. Absent when
-	 * there was none or the pass was off.
+	 * added, windows over the budget, and each window (seconds) with its word counts before and after. `chunked`:
+	 * present when the window's re-decode was rejected and the window was decoded again in VAD chunks (`after` counts
+	 * those words), true when they replaced its words. Absent when there was none or the pass was off.
 	 */
 	redecoded: z
 		.object({
@@ -252,6 +253,7 @@ export const SpeechGuardReportSchema = z.object({
 						before: z.number().int().min(0),
 						after: z.number().int().min(0),
 						replaced: z.boolean(),
+						chunked: z.boolean().optional(),
 					}),
 				)
 				.max(96),

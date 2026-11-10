@@ -17,10 +17,12 @@ import {
 	cleanupNorm,
 	phraseTokens,
 	restartStopWords,
+	sameWord,
 } from './lists.ts';
 import {
 	type AWord,
 	claimWord,
+	lcs,
 	phrases,
 	type RuleContext,
 	ruleAsrSuspects,
@@ -268,7 +270,8 @@ export function detectCleanup(input: DetectInput): DetectResult {
 		const s = toSec(w.start);
 		const e = toSec(w.end);
 		if (!(e > s - 1e-6)) continue;
-		const n = cleanupNorm(w.text);
+		// a spoken symbol ("%": "por ciento") is a word over its sound, though it normalises to nothing
+		const n = cleanupNorm(w.text) || spokenSymbol(w.text, lang);
 		if (!n) continue;
 		const conf = typeof w.confidence === 'number' && Number.isFinite(w.confidence) ? w.confidence : null;
 		words.push({ i, n, s, e, text: w.text, conf });
@@ -332,8 +335,56 @@ export function detectCleanup(input: DetectInput): DetectResult {
 	// take groups and the script
 	const lines = input.script ? scriptLines(input.script, stop) : [];
 	const index = lines.length ? new ScriptIndex(lines) : null;
-	const unitContent = units.map((u) => u.map((k) => aw[k]!.n).filter((t) => !fillers.has(t)));
+	// a unit as it would be kept: without the attempts its own restarts remove
+	const restarted = (k: number) =>
+		!!labels[k] && labels[k]!.group === undefined && TAKE_LABELS.has(labels[k]!.kind);
+	const surviving = units.map((u) => u.filter((k) => !restarted(k)));
+	const unitContent = surviving.map((u) => u.map((k) => aw[k]!.n).filter((t) => !fillers.has(t)));
 	const unitCw = unitContent.map((c) => c.filter((t) => !stop.has(t) && t.length >= 3));
+	// what a take says: its distinct content tokens (a take that re-says itself inside says no more), and the words a
+	// cut must not lose — content words and numbers — per sentence
+	const unitSays = unitContent.map((c) => new Set(c).size);
+	const numberWords = new Set(lists.numbers);
+	const isKey = (t: string) =>
+		!fillers.has(t) && ((!stop.has(t) && t.length >= 3) || numberWords.has(t) || /^\d+$/.test(t));
+	const unitKey = unitContent.map((c) => c.filter(isKey));
+	const unitSentences = surviving.map((u) => {
+		const out: string[][] = [[]];
+		for (const k of u) {
+			if (isKey(aw[k]!.n)) out[out.length - 1]!.push(aw[k]!.n);
+			if (SENTENCE_END.test(aw[k]!.text.trim())) out.push([]);
+		}
+		return out.filter((x, q) => x.length > 0 || q === 0);
+	});
+	/**
+	 * Whether cutting unit `u` loses real content that unit `kept` does not say (docs/wp-notes/transcript-cleanup.md
+	 * "Take groups"): words match across ASR variants (`sameWord`; a cut-off last word by its completion); trailing
+	 * sentences of an earlier take that the later kept take mostly does not say are an aside, not content; up to
+	 * 15 % (at least one) of the words of a take of ≥ 6 may stay unmatched, never two in a row.
+	 */
+	const losesContent = (u: number, kept: number, group: readonly number[]): boolean => {
+		// what stays: the kept take and the words after it, within the restart window, outside the group's takes
+		const keep = [...unitKey[kept]!];
+		const keptEnd = aw[units[kept]!.at(-1)!]!.e;
+		for (let v = kept + 1; v < units.length && aw[units[v]![0]!]!.s - keptEnd <= T.restartWindowS; v++)
+			if (!group.includes(v)) keep.push(...unitKey[v]!);
+		const said = (x: string, cut: boolean) => keep.some((y) => sameWord(x, y, cut));
+		let sents = unitSentences[u]!;
+		// the longest run of trailing sentences the later kept take mostly does not say is an aside
+		if (kept > u)
+			for (let q = 1; q < sents.length; q++) {
+				const tail = sents.slice(q).flat();
+				if (tail.filter((x) => said(x, false)).length * 2 <= tail.length) {
+					sents = sents.slice(0, q);
+					break;
+				}
+			}
+		const toks = sents.flat();
+		const lost = toks.map((x, q) => !said(x, q === toks.length - 1));
+		if (lost.some((x, q) => x && lost[q + 1])) return true;
+		const allowed = toks.length >= 6 ? Math.max(1, Math.floor(0.15 * toks.length)) : 0;
+		return lost.filter(Boolean).length > allowed;
+	};
 	const unitLine = units.map((_, u) => (index ? index.match(unitCw[u]!, T.scriptLineSimilarity) : null));
 	const uf = new UnionFind(units.length);
 	for (const h of hits) uf.union(h.from, h.to);
@@ -347,18 +398,22 @@ export function detectCleanup(input: DetectInput): DetectResult {
 		}
 	const groups: RetakeGroup[] = [];
 	const unitGroup = new Map<number, number>();
+	const chosenUnit: number[] = [];
+	const unitOf = new Array<number>(aw.length);
+	units.forEach((u, q) => {
+		for (const k of u) unitOf[k] = q;
+	});
 	const retakeAction = settings.rules.retake;
 	for (const list of [...members.values()].sort((a, b) => Math.min(...a) - Math.min(...b))) {
 		list.sort((a, b) => a - b);
 		const gi = groups.length;
-		const maxContent = Math.max(...list.map((u) => unitContent[u]!.length));
+		const maxSays = Math.max(...list.map((u) => unitSays[u]!));
 		const maxCov = Math.max(0, ...list.map((u) => unitLine[u]?.coverage ?? 0));
 		const takes: RetakeTake[] = list.map((u) => {
 			const ws = units[u]!.map((k) => aw[k]!);
 			const probs = ws.map((w) => w.conf).filter((p): p is number => p !== null);
 			const m = unitLine[u];
-			const complete =
-				m && maxCov > 0 ? m.coverage >= 0.6 * maxCov : unitContent[u]!.length >= 0.6 * maxContent;
+			const complete = m && maxCov > 0 ? m.coverage >= 0.6 * maxCov : unitSays[u]! >= 0.6 * maxSays;
 			return {
 				range: { start: input.words[ws[0]!.i]!.start, end: input.words[ws[ws.length - 1]!.i]!.end },
 				words: [ws[0]!.i, ws[ws.length - 1]!.i],
@@ -389,6 +444,14 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			}
 			if (best >= 0) chosen = best;
 		}
+		// a cut never removes real content the kept take does not say (`losesContent`): else the latest take that
+		// loses none is kept, and with none the takes that would lose words are only listed for review
+		const loses = (c: number) => list.some((u, t) => t !== c && losesContent(u, list[c]!, list));
+		if (loses(chosen)) {
+			let alt = takes.length - 1;
+			while (alt >= 0 && loses(alt)) alt--;
+			if (alt >= 0) chosen = alt;
+		}
 		const last = takes.length - 1;
 		if (chosen !== last) {
 			// the chosen take loses its take labels; the other takes (the last one too) become retakes
@@ -400,16 +463,78 @@ export function detectCleanup(input: DetectInput): DetectResult {
 				if (t !== chosen)
 					for (const k of units[list[t]!]!) claimWord(ctx, k, 'retake', retakeAction, list[t]);
 		}
+		for (let t = 0; t < takes.length; t++) {
+			if (t === chosen || !losesContent(list[t]!, list[chosen]!, list)) continue;
+			for (const k of units[list[t]!]!) {
+				const l = labels[k];
+				if (l && l.group !== undefined && (l.kind === 'retake' || l.kind === 'false-start'))
+					labels[k] = { ...l, action: 'review' };
+			}
+		}
 		for (const u of list) unitGroup.set(u, gi);
+		// what lies between the group's first take and the kept take belongs to the retries: fragments of ≤ 2 words and
+		// units whose words the kept take mostly says ("En toda su puta vida", "Y el otro 1 %" between takes of
+		// fragment B; "no." after a take of fragment C), within the restart window of the take before them
+		const keptU = list[chosen]!;
+		for (let u = list[0]! + 1, prevEnd = aw[units[list[0]!]!.at(-1)!]!.e; u < keptU; u++) {
+			if (list.includes(u)) {
+				prevEnd = aw[units[u]!.at(-1)!]!.e;
+				continue;
+			}
+			if (unitGroup.has(u) || aw[units[u]![0]!]!.s - prevEnd > T.restartWindowS) continue;
+			const key = unitKey[u]!;
+			const said = key.filter((x) => unitKey[keptU]!.some((y) => sameWord(x, y))).length;
+			if (unitContent[u]!.length > 2 && (!key.length || said * 2 < key.length)) continue;
+			for (const k of units[u]!) claimWord(ctx, k, 'retake', retakeAction, u);
+			unitGroup.set(u, gi);
+			prevEnd = aw[units[u]!.at(-1)!]!.e;
+		}
+		chosenUnit.push(list[chosen]!);
 		groups.push({ id: `g${gi}`, takes, chosen });
 	}
-	// group ids on the take labels
+	// group ids on the take rule's labels (a restart inside a take is no take of the group: its reason names the words
+	// that re-say it, not the group's kept take)
 	for (let u = 0; u < units.length; u++) {
 		const g = unitGroup.get(u);
 		if (g === undefined) continue;
 		for (const k of units[u]!) {
 			const l = labels[k];
-			if (l && (l.kind === 'retake' || l.kind === 'false-start')) labels[k] = { ...l, group: g };
+			if (l && l.group !== undefined && (l.kind === 'retake' || l.kind === 'false-start'))
+				labels[k] = { ...l, group: g };
+		}
+	}
+
+	// an ending re-said right after a run of retries ("… del mundo que pueda ser [en un mes lo mismo que] | retries |
+	// puedo hacer en un mes lo mismo que …", fragment E): the longest ending (≥ 3 words, 2 of them content words) of
+	// the words before the run that the words after it start with (in order, within 3 more words; ASR variants match)
+	// goes with the retries
+	if (settings.rules.restart !== 'off') {
+		const gone = (k: number) => labels[k]?.action === 'remove';
+		for (let k = 0; k < aw.length; ) {
+			if (!gone(k)) {
+				k++;
+				continue;
+			}
+			let e = k;
+			let retries = false;
+			for (; e < aw.length && gone(e); e++) if (TAKE_LABELS.has(labels[e]!.kind)) retries = true;
+			if (retries && k > 0 && e < aw.length && aw[e]!.s - aw[k - 1]!.e <= T.restartWindowS) {
+				let s0 = k - 1;
+				while (s0 > Math.max(0, k - 30) && !gone(s0 - 1)) s0--;
+				let t1 = e;
+				while (t1 < Math.min(aw.length, e + 40) && !gone(t1)) t1++;
+				const after = aw.slice(e, t1).map((w) => w.n);
+				for (let p = s0; p <= k - 3; p++) {
+					const ending = aw.slice(p, k).map((w) => w.n);
+					if (ending.filter(isKey).length < 2) continue;
+					const near = after.slice(0, ending.length + 3);
+					if (lcs(ending, near, (x, y) => sameWord(x, y)) === ending.length) {
+						for (let q = p; q < k; q++) claimWord(ctx, q, 'restart', settings.rules.restart);
+						break;
+					}
+				}
+			}
+			k = e;
 		}
 	}
 
@@ -471,7 +596,7 @@ export function detectCleanup(input: DetectInput): DetectResult {
 	if (redecoded.length)
 		for (let k = 0; k < aw.length; ) {
 			const l = labels[k];
-			if (!l || !HIDDEN_FROM.has(l.kind)) {
+			if (!l || !TAKE_LABELS.has(l.kind)) {
 				k++;
 				continue;
 			}
@@ -486,6 +611,23 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			k = j + 1;
 		}
 
+	// a kept take is what stays of it: words its own restarts, false starts or fillers remove at its edges are not
+	// part of it ("… para poder subirlos" said again right after), so no finding overlaps the take that stays
+	for (const g of groups) {
+		const take = g.takes[g.chosen]!;
+		const ks = aw.flatMap((w, k) => (w.i >= take.words[0] && w.i <= take.words[1] ? [k] : []));
+		const stays = (k: number) => labels[k]?.action !== 'remove';
+		let lo = 0;
+		let hi = ks.length - 1;
+		while (lo <= hi && !stays(ks[lo]!)) lo++;
+		while (hi >= lo && !stays(ks[hi]!)) hi--;
+		if (lo > hi || (lo === 0 && hi === ks.length - 1)) continue;
+		const ws = ks.slice(lo, hi + 1).map((k) => aw[k]!);
+		take.words = [ws[0]!.i, ws[ws.length - 1]!.i];
+		take.range = { start: input.words[ws[0]!.i]!.start, end: input.words[ws[ws.length - 1]!.i]!.end };
+		take.text = ws.map((w) => w.text.trim()).join(' ');
+	}
+
 	// ---- findings
 	type Raw = {
 		kind: FindingKind;
@@ -498,8 +640,14 @@ export function detectCleanup(input: DetectInput): DetectResult {
 		confidence?: number;
 		/** Hidden retakes outside take groups: the take that stays. */
 		kept?: string;
+		/** A take of a group said after the take that stays. */
+		later?: boolean;
 	};
 	const raw: Raw[] = [];
+	const laterTake = (g: number, i: number) => {
+		const grp = groups[g];
+		return !!grp && grp.takes.findIndex((t) => i >= t.words[0] && i <= t.words[1]) > grp.chosen;
+	};
 	// word findings: runs of analysed words with one label
 	for (let k = 0; k < aw.length; ) {
 		const l = labels[k];
@@ -518,14 +666,21 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			j++;
 		const a = aw[k]!;
 		const b = aw[j]!;
-		// a hidden retake names the take that stays: as many words as it removes, after it
-		const keptTake =
-			l.kind === 'hidden-retake' && l.group === undefined
-				? aw
-						.slice(j + 1, j + 1 + (j - k + 1))
-						.map((w) => w.text.trim())
-						.join(' ')
-				: '';
+		// a hidden retake names the take that stays: in a take group's dropped take the group's kept take, else as
+		// many words as it removes, after it
+		let keptTake = '';
+		if (l.kind === 'hidden-retake' && l.group === undefined) {
+			const u = unitOf[k]!;
+			const gi = unitGroup.get(u) ?? -1;
+			const take = groups[gi]?.takes[groups[gi]!.chosen];
+			keptTake =
+				take && chosenUnit[gi] !== u
+					? take.text
+					: aw
+							.slice(j + 1, j + 1 + (j - k + 1))
+							.map((w) => w.text.trim())
+							.join(' ');
+		}
 		const confs = aw
 			.slice(k, j + 1)
 			.map((w) => w.conf)
@@ -542,6 +697,7 @@ export function detectCleanup(input: DetectInput): DetectResult {
 				.join(' '),
 			...(l.group !== undefined ? { group: l.group } : {}),
 			...(keptTake ? { kept: keptTake } : {}),
+			...(l.group !== undefined && laterTake(l.group, a.i) ? { later: true } : {}),
 			...(l.kind === 'asr-suspect' && confs.length ? { confidence: 1 - Math.min(...confs) } : {}),
 		});
 		k = j + 1;
@@ -586,7 +742,7 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			range: { start: r.start, end: r.end },
 			words: r.words,
 			confidence: Math.round((r.confidence ?? CONFIDENCE[r.kind]) * 1000) / 1000,
-			reason: reasonOf(r.kind, r.text, r.end - r.start, r.group, groups, r.kept),
+			reason: reasonOf(r.kind, r.text, r.end - r.start, r.group, groups, r.kept, r.later),
 			suggested: r.suggested,
 			...(r.group !== undefined ? { group: `g${r.group}` } : {}),
 			fingerprint: fp,
@@ -608,8 +764,30 @@ export function detectCleanup(input: DetectInput): DetectResult {
 	return { mediaId: input.mediaId, stream, language: lang, words, guarded, findings, groups, script };
 }
 
-/** Labels that become hidden retakes inside re-decoded ranges. */
-const HIDDEN_FROM: ReadonlySet<FindingKind> = new Set(['restart', 'false-start', 'retake']);
+/** Symbols said as words (Whisper writes "1 %" for "uno por ciento"), as one normalised token per language. */
+const SPOKEN_SYMBOLS: Readonly<Record<string, readonly [es: string, en: string]>> = {
+	'%': ['porciento', 'percent'],
+	'€': ['euros', 'euros'],
+	$: ['dolares', 'dollars'],
+	'£': ['libras', 'pounds'],
+	'&': ['y', 'and'],
+	'+': ['mas', 'plus'],
+	'@': ['arroba', 'at'],
+	'°': ['grados', 'degrees'],
+};
+
+/** The token of a word that is a spoken symbol and punctuation ("%", "%..."), else ''. */
+function spokenSymbol(text: string, lang: CleanupLanguage | null): string {
+	const sym = [...text.trim()].filter((c) => !/[\p{P}\s]/u.test(c) || c in SPOKEN_SYMBOLS);
+	if (sym.length !== 1 || !(sym[0]! in SPOKEN_SYMBOLS)) return '';
+	return SPOKEN_SYMBOLS[sym[0]!]![lang === 'en' ? 1 : 0];
+}
+
+/** A word that ends a sentence (its closing quote or bracket after the mark). */
+export const SENTENCE_END = /[.?!…]["'»”’)]*$/u;
+
+/** Labels of the take rules (restarts, false starts, retakes); they become hidden retakes inside re-decoded ranges. */
+const TAKE_LABELS: ReadonlySet<FindingKind> = new Set(['restart', 'false-start', 'retake']);
 
 const sameLabel = (x: WordLabel | null | undefined, l: WordLabel) =>
 	!!x && x.kind === l.kind && x.action === l.action && x.group === l.group;
@@ -650,8 +828,10 @@ function reasonOf(
 	group: number | undefined,
 	groups: readonly RetakeGroup[],
 	kept?: string,
+	later?: boolean,
 ): CleanupFinding['reason'] {
 	const params: Record<string, string | number> = { seconds: Math.round(toSec(flicks) * 100) / 100 };
+	if (later) params.later = 1;
 	if (text) params.text = text.length > 120 ? `${text.slice(0, 117)}…` : text;
 	if (kept) params.kept = kept.length > 80 ? `${kept.slice(0, 77)}…` : kept;
 	if (group !== undefined) {

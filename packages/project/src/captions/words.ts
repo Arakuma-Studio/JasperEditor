@@ -159,16 +159,19 @@ export function replaceWordRange(t: Transcript, from: number, to: number, text: 
 	return [...words.slice(0, from), ...fresh, ...words.slice(to + 1)];
 }
 
-/** A word longer than this (seconds) inside continuous speech is stretched over more than it says. */
+/** A word longer than this (seconds) inside speech is stretched over more than it says. */
 export const STRETCHED_WORD_S = 1;
-/** Neighbouring words closer than this (seconds) make continuous speech. */
-const CONTINUOUS_GAP_S = 0.3;
+/** A neighbour this close (seconds) puts a word inside speech. */
+const CONTINUOUS_GAP_S = 1.5;
 
 /**
- * Hidden takes (docs/wp-notes/speech.md §11.3 "Hidden takes"): the words (flicks) longer than 1 s inside continuous speech — every
- * neighbour it has within 0.3 s, and at least one. Speech to text writes a phrase said twice back to back once and
- * stretches its words over both takes, so subtitles timed from them run ahead of the audio. Normal words last
- * 0.2–0.4 s. Returns `{start, end}` of each, in order.
+ * Hidden takes (docs/wp-notes/speech.md §11.3 "Hidden takes"; docs/wp-notes/captions.md): the words (flicks) longer
+ * than 1 s inside speech — a neighbour within 1.5 s on at least one side. Speech to text writes a phrase said twice back
+ * to back once and stretches its words over both takes, so subtitles timed from them run ahead of the audio. Normal
+ * words last 0.2–0.4 s. Whisper usually leaves a gap on one side of the stretched word (measured with large-v3-turbo:
+ * "tener" 2.11 s 0.51 s after "quise", "pones" 6.27 s 1.6 s after "los", both touching the next word), so both sides
+ * close was too strict. A word with no neighbour within 1.5 s on either side (said alone between pauses) is not
+ * flagged. Returns `{start, end}` of each, in order.
  */
 export function stretchedWords(
 	words: ReadonlyArray<{ start: number; end: number }>,
@@ -181,10 +184,8 @@ export function stretchedWords(
 		if (w.end - w.start <= STRETCHED_WORD_S * flicksPerSecond) continue;
 		const prev = words[i - 1];
 		const next = words[i + 1];
-		if (!prev && !next) continue;
-		if (prev && w.start - prev.end >= gap) continue;
-		if (next && next.start - w.end >= gap) continue;
-		out.push({ start: w.start, end: w.end });
+		if ((prev && w.start - prev.end <= gap) || (next && next.start - w.end <= gap))
+			out.push({ start: w.start, end: w.end });
 	}
 	return out;
 }

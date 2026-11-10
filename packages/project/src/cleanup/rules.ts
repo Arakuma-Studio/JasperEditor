@@ -5,7 +5,7 @@
 // (`packages/project/test/cleanup-port.test.ts` checks it against the prototype's own output) — except that a restart
 // or retake must re-say what it removes (`ruleRestarts`, `ruleTakes`; a deliberate difference). The vocalic drawn-out
 // vowel, stutter, lexical-review and ASR-suspect rules are additions from the spec. Pure.
-import type { CleanupLanguageLists } from './lists.ts';
+import { type CleanupLanguageLists, sameWord } from './lists.ts';
 import type { CleanupSettings, FindingKind, RuleAction } from './schema.ts';
 
 /** One analysed word: its transcript index, normalised text and times in seconds (media time). */
@@ -23,15 +23,19 @@ export type AWord = {
 /** A word's label: the rule that claimed it and what the rule does. */
 export type WordLabel = { kind: FindingKind; action: Exclude<RuleAction, 'off'>; group?: number };
 
-/** Prototype `lcs`: longest common subsequence length (one-row DP). */
-export function lcs(a: readonly string[], b: readonly string[]): number {
+/** Prototype `lcs`: longest common subsequence length (one-row DP); `eq` compares words (default: equal). */
+export function lcs(
+	a: readonly string[],
+	b: readonly string[],
+	eq: (x: string, y: string) => boolean = (x, y) => x === y,
+): number {
 	if (!a.length || !b.length) return 0;
 	const dp = new Array<number>(b.length + 1).fill(0);
 	for (const x of a) {
 		let prev = 0;
 		for (let j = 0; j < b.length; j++) {
 			const cur = dp[j + 1]!;
-			dp[j + 1] = x === b[j] ? prev + 1 : Math.max(dp[j + 1]!, dp[j]!);
+			dp[j + 1] = eq(x, b[j]!) ? prev + 1 : Math.max(dp[j + 1]!, dp[j]!);
 			prev = cur;
 		}
 	}
@@ -132,15 +136,57 @@ export function ruleRestarts(ctx: RuleContext): void {
 	const toks = words.map((w) => w.n);
 	// markers as one token: "pues", and "a ver" / "o sea" written as one word ("aver", "osea")
 	const markers = new Set(ctx.lists.markers.map((m) => m.replace(/ /g, '')));
-	const reSaid = (i: number, j: number) => {
+	// words of an attempt the retry may garble (ASR): ≤ 15 % of ≥ 6, at least one
+	const garble = (len: number) => (len >= 6 ? Math.max(1, Math.floor(0.15 * len)) : 0);
+	const attemptAt = (i: number, j: number) => {
 		const attempt = content(ctx, span(i, j));
-		const cont = content(ctx, span(j, Math.min(n, j + 2 * (j - i))));
-		const a = cw(ctx, attempt).filter((x) => !markers.has(x));
-		return lcs(a, cw(ctx, cont)) === a.length && numbersReSaid(ctx, attempt, cont);
+		return { attempt, a: cw(ctx, attempt).filter((x) => !markers.has(x)) };
+	};
+	// the attempt `[i, j)` said again (ASR variants match, `sameWord`) by the next `len` words from `from`
+	const reSaid = (i: number, j: number, from = j, len = 2 * (j - i)) => {
+		const { attempt, a } = attemptAt(i, j);
+		const cont = content(ctx, span(from, Math.min(n, from + len)));
+		const said = cw(ctx, cont);
+		// a cut-off last word ("Y funcionan con cual…") is said again by its completion ("cualquier")
+		const last = attempt[attempt.length - 1];
+		if (a.length && a[a.length - 1] === last && !said.some((y) => sameWord(last, y))) {
+			const whole = said.find((y) => y.startsWith(last));
+			if (whole) a[a.length - 1] = whole;
+		}
+		return (
+			a.length - lcs(a, said, (x, y) => sameWord(x, y)) <= garble(a.length) &&
+			numbersReSaid(ctx, attempt, cont)
+		);
+	};
+	// a chain of attempts `[i, end)` that each start with the same n-gram, said again after the last one (`end`): every
+	// word of them in its next `len` words, ASR garble aside (≤ 15 % of ≥ 6, at least one; never two in a row)
+	const chainReSaid = (i: number, end: number, len: number) => {
+		const { attempt, a } = attemptAt(i, end);
+		const cont = content(ctx, span(end, Math.min(n, end + len)));
+		const said = cw(ctx, cont);
+		const lost = a.map((x) => !said.some((y) => sameWord(x, y, true)));
+		if (lost.some((x, q) => x && lost[q + 1])) return false;
+		return lost.filter(Boolean).length <= garble(a.length) && numbersReSaid(ctx, attempt, cont);
+	};
+	// the retry starts where the words before both copies still match ("que pueda ser en un mes…" / "¿Que puedo hacer
+	// en un mes…": one ASR substitution between two matches is the same word)
+	const extend = (i: number, j: number, floor: number): [number, number] => {
+		const m = (d: number) => i - d >= floor && j - d > i && sameWord(toks[i - d]!, toks[j - d]!);
+		for (;;) {
+			if (m(1)) {
+				i--;
+				j--;
+			} else if (m(2) && m(3)) {
+				i -= 3;
+				j -= 3;
+			} else return [i, j];
+		}
 	};
 	let j = 1;
 	let floor = 0;
 	while (j < n) {
+		// the restart point a hit moves back (`extend`) is rescanned from here on, never again (progress)
+		const at = j;
 		let hit: number | null = null;
 		for (const k of [3, 2]) {
 			if (j + k > n) continue;
@@ -152,23 +198,53 @@ export function ruleRestarts(ctx: RuleContext): void {
 			}
 			const win = k === 3 ? t.restartWindowWords : t.restartWindowWords2;
 			const stop = Math.max(floor - 1, j - win - 1);
+			const gramAt = (p: number, i: number) => {
+				for (let q = 0; q < k; q++) if (toks[i + q] !== toks[p + q]) return false;
+				return true;
+			};
 			for (let i = j - k; i > stop; i--) {
 				if (i < 0) break;
-				let same = true;
-				for (let q = 0; q < k && same; q++) same = toks[i + q] === toks[j + q];
-				if (same && words[j]!.s - words[i]!.s <= t.restartWindowS && reSaid(i, j)) {
-					hit = i;
+				if (!gramAt(j, i) || words[j]!.s - words[i]!.s > t.restartWindowS) continue;
+				const [i2, j2] = extend(i, j, floor);
+				if (reSaid(i2, j2)) {
+					hit = i2;
+					j = j2;
+					break;
+				}
+				// a chain of restarts ("¿Qué puedo hacer…? ¿Qué puedo hacer…? … ¿Que puedo hacer … dólares?", fragment E):
+				// the later copies of the n-gram, each within the window of the one before, and the attempts up to one
+				// of them said again after it — the restart point moves to it
+				const chain: number[] = [];
+				for (let p = j + 1, prev = j; p + k <= n && p - prev <= win + k; p++) {
+					if (words[p]!.s - words[i]!.s > t.restartWindowS) break;
+					if (gramAt(p, i)) {
+						chain.push(p);
+						prev = p;
+					}
+				}
+				const end = chain.reverse().find((p) => chainReSaid(i, p, 2 * (j - i)));
+				if (end !== undefined) {
+					[hit, j] = extend(i, end, floor);
 					break;
 				}
 			}
 			if (hit !== null) break;
 		}
 		if (hit !== null) {
-			const fs = j - hit <= 2;
-			for (let q = hit; q < j; q++) claim(ctx, q, fs ? 'false-start' : 'restart', fs ? falseStart : restart);
+			// …and starts at its own first word: one or two words without content after a pause before the restart point
+			// begin the retry ("… en un par | En el Jasper Engine": the n-gram matched "el Jasper Engine")
+			let end = j;
+			for (let p = j; p > Math.max(hit + 1, j - 3); p--)
+				if (words[p]!.s - words[p - 1]!.e >= t.takeGapS) {
+					if (!cw(ctx, content(ctx, span(p, j))).length) end = p;
+					break;
+				}
+			const fs = end - hit <= 2;
+			for (let q = hit; q < end; q++)
+				claim(ctx, q, fs ? 'false-start' : 'restart', fs ? falseStart : restart);
 			floor = j;
 		}
-		j++;
+		j = Math.max(j, at) + 1;
 	}
 }
 
@@ -190,11 +266,23 @@ export function ruleTakes(ctx: RuleContext): { units: number[][]; hits: TakeHit[
 	const hits: TakeHit[] = [];
 	const { retake, falseStart } = ctx.settings.rules;
 	if (retake === 'off' && falseStart === 'off') return { units, hits };
-	const contents = units.map((u) => content(ctx, u));
+	// what each unit says once its restarts are out (a unit that restarts inside says no more than its last attempt);
+	// a unit a restart removes whole is still a take of what follows, but never the later take of a hit
+	const contents = units.map((u) =>
+		content(
+			ctx,
+			u.filter((k) => !ctx.labels[k] || ctx.labels[k]!.kind === 'filler-vocalic'),
+		),
+	);
+	const fromContents = units.map((u, a) => (contents[a]!.length ? contents[a]! : content(ctx, u)));
+	const eq = (x: string, y: string) => sameWord(x, y);
 	for (let a = 0; a < units.length; a++) {
 		const u = units[a]!;
-		const c = contents[a]!;
+		const c = fromContents[a]!;
 		if (c.length < 1) continue;
+		// the tail of an attempt whose start a restart removed need not start the later unit, only be said in it whole
+		const tail =
+			contents[a]!.length > 0 && !!ctx.labels[u[0]!] && ctx.labels[u[0]!]!.kind !== 'filler-vocalic';
 		const uEnd = ctx.words[u[u.length - 1]!]!.e;
 		for (let b = a + 1; b < units.length; b++) {
 			const q = units[b]!;
@@ -206,9 +294,12 @@ export function ruleTakes(ctx: RuleContext): { units: number[][]; hits: TakeHit[
 			const cj = cw(ctx, cq);
 			let hit: boolean;
 			if (c.length === 1) hit = cq[0] === c[0] && qStart - uEnd < t.falseStartGapS;
-			else if (ci.length >= 2 && cj.length)
-				hit = lcs(ci, cj) / ci.length >= t.retakeSimilarity && cj.slice(0, 3).includes(ci[0]!);
-			else hit = c.length <= 3 && c.every((x, k) => cq[k] === x);
+			else if (ci.length >= 2 && cj.length) {
+				const l = lcs(ci, cj, eq);
+				hit =
+					l / ci.length >= t.retakeSimilarity &&
+					(cj.slice(0, 3).some((y) => eq(ci[0]!, y)) || (tail && l === ci.length));
+			} else hit = c.length <= 3 && c.every((x, k) => cq[k] === x);
 			if (hit && numbersReSaid(ctx, c, cq)) {
 				hits.push({ from: a, to: b });
 				const fs = c.length <= 2;

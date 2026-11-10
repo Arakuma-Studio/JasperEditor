@@ -27,6 +27,7 @@ export {
 	type CleanupLanguageLists,
 	cleanupLanguageOf,
 	cleanupNorm,
+	sameWord,
 } from './lists.ts';
 export { isHarshCut, type MediaPlan, type MediaPlanInput, planMediaCuts } from './plan.ts';
 export {
