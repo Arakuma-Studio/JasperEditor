@@ -1,7 +1,15 @@
 // Caption moves, trims, ripple deletes and sync-lock edits use the ordinary clip commands.
 import { z } from 'zod';
 import { CaptionStandardSchema, CaptionStyleSchema } from '../../schema/sequence.ts';
-import { cmd, IdListSchema, IdRefSchema, RefDeclSchema, TimeInputSchema, TrackRefSchema } from './common.ts';
+import {
+	cmd,
+	IdListSchema,
+	IdRefSchema,
+	JoinFadesSchema,
+	RefDeclSchema,
+	TimeInputSchema,
+	TrackRefSchema,
+} from './common.ts';
 
 export const CAPTION_IMPORT_FORMATS = ['srt', 'vtt', 'scc', 'mcc', 'stl', 'ttml', 'dfxp'] as const;
 const CaptionFormatSchema = z.enum(CAPTION_IMPORT_FORMATS);
@@ -195,8 +203,14 @@ export const TranscriptSetSpeakerCmd = cmd('transcript.setSpeaker', {
 });
 
 export const TranscriptSelectCmd = cmd('transcript.select', { ...TextBasedRangeShape });
-export const TranscriptExtractCmd = cmd('transcript.extract', { ...TextBasedRangeShape });
-export const TranscriptLiftCmd = cmd('transcript.lift', { ...TextBasedRangeShape });
+export const TranscriptExtractCmd = cmd('transcript.extract', {
+	...TextBasedRangeShape,
+	joinFades: JoinFadesSchema.optional(),
+});
+export const TranscriptLiftCmd = cmd('transcript.lift', {
+	...TextBasedRangeShape,
+	joinFades: JoinFadesSchema.optional(),
+});
 
 export const TranscriptInsertIntoCmd = cmd('transcript.insertInto', {
 	...TextBasedRangeShape,
@@ -215,7 +229,7 @@ export const TranscriptRemoveFillersCmd = cmd('transcript.removeFillers', {
 	fillers: z.array(z.string().min(1)).optional(),
 	/** Use this language's list for every word (`es`, `en`…) instead of each transcript's language. */
 	language: z.string().min(1).max(35).optional(),
-	/** Equal-power micro-fade at every audio cut edge (ms, default 0 = none). */
+	/** Equal-power micro-fade at every audio cut edge (ms; default 4, Clean Up's join fade; 0 = hard cuts). */
 	fadeMs: z.number().min(0).max(30).optional(),
 	/** Only these sequence word index ranges (inclusive) — default the whole sequence. */
 	fromWord: z.number().int().min(0).optional(),
@@ -245,7 +259,7 @@ export const TranscriptRemovePausesCmd = cmd('transcript.removePauses', {
 		.array(z.strictObject({ mediaId: IdRefSchema, analysis: z.string().min(1).max(50_000_000) }))
 		.max(64)
 		.optional(),
-	/** Equal-power micro-fade at every audio cut edge (ms, default 0 = none). */
+	/** Equal-power micro-fade at every audio cut edge (ms; default 4, Clean Up's join fade; 0 = hard cuts). */
 	fadeMs: z.number().min(0).max(30).optional(),
 });
 

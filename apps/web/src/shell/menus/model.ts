@@ -158,6 +158,7 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			]),
 			sub('Audio Options', [
 				c('audio.autoDuck', 'Auto Duck…'),
+				c('audio.smoothJoins', 'Smooth Audio Joins'),
 				c('audio.normalizeMedia', 'Normalize Loudness…'),
 				c('audio.measureLoudness', 'Measure Loudness'),
 				sep,
