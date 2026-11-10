@@ -175,7 +175,9 @@ export function clipPictureTime(
 }
 
 export type LayerPropertySource = Pick<RenderVisualClip, 'transform' | 'opacity' | 'intrinsicBox' | 'masks'> &
-	Partial<Pick<RenderVisualClip, 'sequenceLight' | 'start' | 'duration' | 'sourceIn' | 'speed'>> & {
+	Partial<
+		Pick<RenderVisualClip, 'sequenceLight' | 'start' | 'duration' | 'sourceIn' | 'speed' | 'outputScale'>
+	> & {
 		effects: Readonly<RenderVisualClip['effects']>;
 	};
 
@@ -204,12 +206,16 @@ function globalLightField(
 /** Evaluated props of a clip at content time `t` (no caching). */
 export function resolveLayerProps(c: LayerPropertySource, t: number): ResolvedLayerProps {
 	const tr = c.transform;
+	// an export composited at its output size: the placement scaled about the frame origin (M' = k·M)
+	const k =
+		c.outputScale !== undefined && Number.isFinite(c.outputScale) && c.outputScale > 0 ? c.outputScale : 1;
+	const position = tr ? evaluate(tr.position, t) : null;
 	const transform: LayerTransformValues | null = tr
 		? {
-				position: evaluate(tr.position, t),
+				position: k === 1 ? position! : [position![0] * k, position![1] * k],
 				anchor: evaluate(tr.anchor, t),
-				scale: evaluate(tr.scale, t),
-				scaleWidth: evaluate(tr.scaleWidth, t),
+				scale: evaluate(tr.scale, t) * k,
+				scaleWidth: evaluate(tr.scaleWidth, t) * k,
 				uniformScale: tr.uniformScale,
 				rotation: evaluate(tr.rotation, t),
 				flipH: tr.flipH,

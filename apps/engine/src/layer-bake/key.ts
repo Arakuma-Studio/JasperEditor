@@ -22,12 +22,29 @@ export const LAYER_BAKE_VERSION = 1;
 export const KEY_RE = /^[0-9a-f]{40}$/;
 
 /** Environment of the renders (one per engine process; part of every key). */
+/**
+ * output-size.ts: the grid sequence-pixel rectangles align to so that × `scale` they land on whole output pixels (and
+ * stay even): lcm(2, q) for scale = p/q in lowest terms. 2 at scale 1.
+ */
+export function bakeGrid(width: number, scale: number | undefined): number {
+	if (!scale || scale === 1) return 2;
+	const gcd = (a: number, b: number): number => (b ? gcd(b, a % b) : a);
+	const p = Math.round(width * scale);
+	const q = width / gcd(p, width);
+	return q % 2 === 0 ? q : 2 * q;
+}
+
 export type BakeEnvironment = {
 	bundleId: string;
 	animejs: string;
 	remotion: string;
 	browser: string;
 	gl: string;
+	/**
+	 * output-size.ts: the export composites at this × the sequence size — masters render at it (Remotion `scale`) and
+	 * sequence-pixel rectangles align to whole output pixels. Absent = 1.
+	 */
+	scale?: number;
 };
 
 export type KeyFont = { family: string; weight: number; style: string; fileSha256: string | null };
@@ -144,6 +161,11 @@ export type KeyMaterial = {
 	renderVersion?: number | null;
 	/** Wave expressions: hash of the expression world when the clip has expressions (see `expressionKeyPart`). */
 	expressions?: string;
+	/**
+	 * output-size.ts: the picture is rendered at this × the sequence size (masters of an export composited at its output
+	 * size; its rectangle stays in sequence px). Absent = 1.
+	 */
+	scale?: number;
 	/** Graded entries (Remotion path, preview): the colour effects and LUT identities; false = ungraded bake. */
 	graded:
 		| false

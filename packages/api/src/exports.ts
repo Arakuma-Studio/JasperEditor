@@ -257,7 +257,16 @@ export type ExportWarningParams = z.infer<typeof ExportWarningParamsSchema>;
  */
 export const ExportPipelineSchema = z.object({
 	decode: z.enum(['nvdec', 'cpu']),
-	composite: z.enum(['gpu', 'cpu']),
+	/**
+	 * Where and at what size layers are composited: `size: 'output'` = on a canvas of the output size (a downscaled
+	 * export: sources scaled at decode, layer placement scaled), `'sequence'` = at the sequence size and scaled at the
+	 * end; `fallbackReasons` name the features that kept a downscaled export at the sequence size.
+	 */
+	composite: z.object({
+		device: z.enum(['gpu', 'cpu']),
+		size: z.enum(['output', 'sequence']),
+		fallbackReasons: z.array(z.string().max(300)).max(20).optional(),
+	}),
 	segments: z.number().int().min(1),
 	/** Segments rendering at once (the others wait); fewer than the CPU allows when memory is the limit. */
 	concurrency: z.number().int().min(1).optional(),

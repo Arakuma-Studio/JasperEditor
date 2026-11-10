@@ -134,7 +134,9 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 					`Graphics layers need the Remotion renderer to bake: ${reason}`,
 					false,
 				);
-			const env = await svc.environment();
+			// output-size.ts: masters of an export composited at its output size render at it
+			const scale = planned.composite?.size === 'output' ? planned.composite.scale : 1;
+			const env = { ...(await svc.environment()), ...(scale !== 1 ? { scale } : {}) };
 			const single = planned.range.end - planned.range.start === 1 ? planned.range.start : null;
 			// The export's Remotion page budget (S11:LBK-022): its Remotion concurrency, shared by the bakes in flight.
 			const budget = Math.max(1, ctx.concurrency ?? renderParallelism());

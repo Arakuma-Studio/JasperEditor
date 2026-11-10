@@ -98,6 +98,8 @@ type AlphaMasterInput = {
 	onProgress?(p: { renderedFrames: number; totalFrames: number; progress: number }): void;
 	/** Job log (the single-page retry after a timeout is noted there). */
 	log?(line: string): void;
+	/** Render at this × the composition size (Remotion `scale`; output-size layer bakes). */
+	scale?: number;
 };
 
 type RemotionState = 'ready' | 'needs-browser-download' | 'unavailable';
@@ -944,6 +946,7 @@ export class RemotionService {
 						...ALPHA_MASTER_OPTIONS,
 						...this.binariesOption(),
 						outputLocation: raw,
+						...(input.scale ? { scale: input.scale } : {}),
 						concurrency: pages,
 						cancelSignal,
 						timeoutInMilliseconds: DELAY_RENDER_TIMEOUT_MS,
