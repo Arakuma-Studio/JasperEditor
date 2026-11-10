@@ -27,6 +27,7 @@ import { t } from '../../../i18n/runtime.ts';
 /** Kinds in the order the findings list shows them (what removes most first, review-only kinds last). */
 export const KIND_ORDER: readonly FindingKind[] = [
 	'retake',
+	'hidden-retake',
 	'restart',
 	'false-start',
 	'stutter',
@@ -45,6 +46,7 @@ export const KIND_ORDER: readonly FindingKind[] = [
 /** Display names of the finding kinds. */
 export const KIND_LABELS: Record<FindingKind, string> = {
 	retake: 'Retakes',
+	'hidden-retake': 'Hidden retakes',
 	restart: 'Restarts',
 	'false-start': 'False starts',
 	stutter: 'Repeats',
@@ -63,6 +65,7 @@ export const KIND_LABELS: Record<FindingKind, string> = {
 /** Strike-through / marker colour per kind (design tokens). */
 export const KIND_COLOR: Record<FindingKind, string> = {
 	retake: 'var(--pr-marker-red)',
+	'hidden-retake': 'var(--pr-label-iris)',
 	restart: 'var(--pr-marker-orange)',
 	'false-start': 'var(--pr-label-mango)',
 	stutter: 'var(--pr-label-rose)',
@@ -525,6 +528,10 @@ export function reasonText(f: CleanupFinding): string {
 						)
 					: t('Earlier take “{0}” ({1} takes; keeping “{2}”)', text, p.takes, p.kept)
 				: t('Earlier take “{0}”', text);
+		case 'hidden-retake':
+			return p.kept !== undefined
+				? t('Hidden retake “{0}”, said again as “{1}” (found by decoding this part again)', text, p.kept)
+				: t('Hidden retake “{0}” (found by decoding this part again)', text);
 		case 'stutter':
 			return t('Repeat “{0}”', text);
 		case 'off-script':

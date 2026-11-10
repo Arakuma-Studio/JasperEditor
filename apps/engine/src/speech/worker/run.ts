@@ -1,6 +1,6 @@
-// One transcription, in-process: decode (streamed) → Whisper → wordless voiced spans decoded again → word-bound
-// repair (pauses, voice) → hallucination guards → VAD tightening → speakers. Used by the `jasper-speech` child
-// process (cli.ts) and by tests.
+// One transcription, in-process: decode (streamed) → Whisper → wordless voiced spans decoded again → windows around
+// stretched words and short wordless voice decoded again (hidden takes) → word-bound repair (pauses, voice) →
+// hallucination guards → VAD tightening → speakers. Used by the `jasper-speech` child process (cli.ts) and by tests.
 //
 // Execution providers (spec 16 SG-002/SG-003): the job spec says which provider each model part uses (the engine
 // chose it from the cached probe). A part whose GPU session cannot be created runs on the CPU (recorded); when the
@@ -11,12 +11,21 @@ import { readFile } from 'node:fs/promises';
 import { decodeVoiceAnalysis, VOICE_ANALYSIS_VERSION, VOICE_CLASSES } from '@jasper/project/cleanup-worker';
 import type { ProviderId } from '../../tools/ort.ts';
 import { restrictInputs } from '../../tools/protocols.ts';
+import { type Chunk, mergeZones, shiftedChunks, vadChunks } from '../core/chunks.ts';
 import { DEFAULT_DIARIZE, diarize } from '../core/diarize.ts';
-import { mergeRecoveredWords, wordlessVoicedSpans } from '../core/gaps.ts';
+import {
+	mergeRecoveredWords,
+	redecodeAccepted,
+	replaceRegion,
+	replaceWindowWords,
+	suspectWindows,
+	wordlessVoicedSpans,
+} from '../core/gaps.ts';
 import { knownPhraseRuns, phraseOverNonSpeech } from '../core/hallucination.ts';
 import { SAMPLE_RATE } from '../core/mel.ts';
 import {
 	extendWordsIntoSpeech,
+	MIN_VOICED_FRACTION,
 	type SpeechMask,
 	splitAtPauses,
 	tightenWords,
@@ -61,6 +70,16 @@ export type SpeechJobSpec = {
 	verbatim?: boolean;
 	initialPrompt?: string;
 	conditionOnPreviousText?: boolean;
+	/**
+	 * Decode the windows around stretched words and short wordless voice again, alone (hidden takes, `core/gaps.ts`;
+	 * default true).
+	 */
+	redecode?: boolean;
+	/**
+	 * `vad`: decode chunks of 3–10 s split at pauses, each on its own without the previous text, twice with shifted
+	 * boundaries, merged (`core/chunks.ts`). Default: Whisper's 30 s windows.
+	 */
+	chunking?: 'vad';
 	/** Spec 17 SC-074: glossary terms carried into every window's prompt (≤ 40, each ≤ 64 characters). */
 	glossary?: string[];
 	/** Where long-file spectrograms and kept samples go (default: a temporary directory). */
@@ -119,6 +138,10 @@ export type SpeechJobOutput = {
 		glossary?: GlossaryGuard;
 		/** Wordless voiced spans decoded again (`core/gaps.ts`; only when there were any). */
 		recovered?: RecoveredReport;
+		/** Windows around stretched words and short wordless voice decoded again (only when there were any). */
+		redecoded?: RedecodedReport;
+		/** `chunking: "vad"`: chunks of each pass and the merge zones where the shifted pass's words were taken. */
+		chunked?: ChunkedReport;
 	};
 	profile: WhisperResult['profile'];
 };
@@ -133,6 +156,22 @@ export type RecoveredReport = {
 	skipped: number;
 	ranges: Array<{ start: number; end: number; words: number }>;
 };
+
+/**
+ * The hidden-take pass (`core/gaps.ts`): windows decoded again, how many replaced their words, words that added,
+ * windows over the budget, and each decoded window (seconds from the start of the decoded audio) with its word counts
+ * before and after and whether its words were replaced (the ranges downstream marks as decoded again).
+ */
+export type RedecodedReport = {
+	windows: number;
+	replaced: number;
+	wordsAdded: number;
+	skipped: number;
+	ranges: Array<{ start: number; end: number; before: number; after: number; replaced: boolean }>;
+};
+
+/** The VAD-chunked passes: chunks of the first and shifted pass, merge zones, zones that took the shifted words. */
+export type ChunkedReport = { chunks: number; shiftedChunks: number; zones: number; replaced: number };
 
 /**
  * TC-004: the voice analysis' frame classes as masks over our 10 ms frames (frame k = samples [160 k, 160 (k + 1))
@@ -405,6 +444,42 @@ export async function runSpeechJob(spec: SpeechJobSpec, opts: RunOptions = {}): 
 	}
 }
 
+/** What extra decodes add to a result beside words: segments, removed text, time spent, glossary events. */
+class ExtraDecodes {
+	readonly segments: WhisperSegment[];
+	readonly removed: WhisperResult['guard']['removed'];
+	readonly profile: WhisperResult['profile'];
+	readonly glossary: GlossaryGuard | null;
+	constructor(r: WhisperResult) {
+		this.segments = [...r.segments];
+		this.removed = [...r.guard.removed];
+		this.profile = { ...r.profile };
+		this.glossary = r.guard.glossary ? { ...r.guard.glossary } : null;
+	}
+	add(got: WhisperResult): void {
+		this.removed.push(...got.guard.removed);
+		this.profile.encoderMs += got.profile.encoderMs;
+		this.profile.decoderMs += got.profile.decoderMs;
+		this.profile.jsMs += got.profile.jsMs;
+		this.profile.decoderRuns += got.profile.decoderRuns;
+		this.profile.windows += got.profile.windows;
+		if (this.glossary && got.guard.glossary) {
+			this.glossary.events += got.guard.glossary.events;
+			this.glossary.replaced += got.guard.glossary.replaced;
+		}
+	}
+	result(r: WhisperResult, words: WhisperWord[]): WhisperResult {
+		this.segments.sort((a, b) => a.start - b.start);
+		return {
+			...r,
+			words,
+			segments: this.segments,
+			guard: { ...r.guard, removed: this.removed, glossary: this.glossary },
+			profile: this.profile,
+		};
+	}
+}
+
 /**
  * SG-011 safety net (`core/gaps.ts`): decodes again, each on its own, the spans of `mask` that hold ≥ 2 s of voice
  * but no word of `r`, within the retry budget, and merges what they yield into `r` (words and segments in time
@@ -421,10 +496,7 @@ async function recoverWordlessSpans(
 	if (!spans.length && !skipped) return { result: r, report: null };
 	const report: RecoveredReport = { spans: spans.length, words: 0, skipped, ranges: [] };
 	const recovered: Array<{ start: number; end: number; words: WhisperWord[] }> = [];
-	const segments = [...r.segments];
-	const removed = [...r.guard.removed];
-	const profile = { ...r.profile };
-	const glossary = r.guard.glossary ? { ...r.guard.glossary } : null;
+	const extra = new ExtraDecodes(r);
 	for (const span of spans) {
 		const got = await model.transcribe(input, {
 			...opts,
@@ -437,29 +509,151 @@ async function recoverWordlessSpans(
 		recovered.push({ start, end, words });
 		report.words += words.length;
 		report.ranges.push({ start: start / SAMPLE_RATE, end: end / SAMPLE_RATE, words: words.length });
-		segments.push(...got.segments);
-		removed.push(...got.guard.removed);
-		profile.encoderMs += got.profile.encoderMs;
-		profile.decoderMs += got.profile.decoderMs;
-		profile.jsMs += got.profile.jsMs;
-		profile.decoderRuns += got.profile.decoderRuns;
-		profile.windows += got.profile.windows;
-		if (glossary && got.guard.glossary) {
-			glossary.events += got.guard.glossary.events;
-			glossary.replaced += got.guard.glossary.replaced;
-		}
+		extra.segments.push(...got.segments);
+		extra.add(got);
 	}
-	segments.sort((a, b) => a.start - b.start);
-	return {
-		result: {
-			...r,
-			words: mergeRecoveredWords(r.words, recovered),
-			segments,
-			guard: { ...r.guard, removed, glossary },
-			profile,
-		},
-		report,
+	return { result: extra.result(r, mergeRecoveredWords(r.words, recovered)), report };
+}
+
+/**
+ * Hidden takes (`core/gaps.ts`, docs/wp-notes/speech.md §11.3 "Hidden takes"): decodes again, each alone, the windows around
+ * stretched words and short wordless voice of `r` — verbatim, without the previous text — and replaces a window's
+ * words when the re-decode holds more words consistent with the audio and re-says the original ones
+ * (`redecodeAccepted`); the window's segments are replaced with it. A decoder failure is thrown.
+ */
+async function redecodeSuspects(
+	model: Pick<WhisperModel, 'transcribe'>,
+	input: SpeechInput,
+	r: WhisperResult,
+	mask: SpeechMask,
+	opts: WhisperOptions,
+): Promise<{ result: WhisperResult; report: RedecodedReport | null }> {
+	const { windows, skipped } = suspectWindows(r.words, mask);
+	if (!windows.length && !skipped) return { result: r, report: null };
+	const report: RedecodedReport = {
+		windows: windows.length,
+		replaced: 0,
+		wordsAdded: 0,
+		skipped,
+		ranges: [],
 	};
+	const extra = new ExtraDecodes(r);
+	let words = r.words;
+	const mid = (x: { start: number; end: number }) => (x.start + x.end) / 2;
+	for (const win of windows) {
+		const got = await model.transcribe(input, {
+			...opts,
+			language: r.language,
+			verbatim: true,
+			conditionOnPreviousText: false,
+			span: { start: win.start, end: win.end },
+		});
+		extra.add(got);
+		const { start, end } = replaceRegion(words, win, input.samples);
+		const inside = (w: { start: number; end: number }) => mid(w) >= start && mid(w) < end;
+		const before = words.filter(inside);
+		const after = got.words.filter(inside);
+		const replaced = redecodeAccepted(before, after, mask, MIN_VOICED_FRACTION);
+		if (replaced) {
+			words = replaceWindowWords(words, start, end, after);
+			const segIn = (sg: WhisperSegment) => {
+				const m = ((sg.start + sg.end) / 2) * SAMPLE_RATE;
+				return m >= start && m < end;
+			};
+			const keptSegs = extra.segments.filter((sg) => !segIn(sg));
+			extra.segments.length = 0;
+			extra.segments.push(...keptSegs, ...got.segments.filter(segIn));
+			report.replaced++;
+			report.wordsAdded += after.length - before.length;
+		}
+		report.ranges.push({
+			start: start / SAMPLE_RATE,
+			end: end / SAMPLE_RATE,
+			before: before.length,
+			after: after.length,
+			replaced,
+		});
+	}
+	return { result: extra.result(r, words), report };
+}
+
+/**
+ * `chunking: "vad"` (`core/chunks.ts`): decodes the chunks of `mask` each alone without the previous text (the
+ * language detected on the first chunk when not given), then the shifted chunks, and takes the shifted pass's words
+ * in each merge zone where it has at least as many (with its segments there). Progress `onProgress(0…1)`.
+ */
+async function transcribeChunked(
+	model: Pick<WhisperModel, 'transcribe'>,
+	input: SpeechInput,
+	mask: SpeechMask,
+	opts: WhisperOptions,
+	onProgress: (f: number) => void,
+): Promise<{ result: WhisperResult; report: ChunkedReport }> {
+	const first = vadChunks(mask);
+	const shifted = shiftedChunks(mask, first);
+	const total = first.length + shifted.length;
+	let language = opts.language ?? null;
+	const results: WhisperResult[] = [];
+	const pass = async (chunks: readonly Chunk[]) => {
+		const words: WhisperWord[] = [];
+		const segments: WhisperSegment[] = [];
+		for (const c of chunks) {
+			const got = await model.transcribe(input, {
+				...opts,
+				language,
+				conditionOnPreviousText: false,
+				span: { start: c.start, end: c.end },
+			});
+			language = got.language;
+			results.push(got);
+			words.push(...got.words);
+			segments.push(...got.segments);
+			onProgress(results.length / Math.max(1, total));
+		}
+		return { words, segments };
+	};
+	const a = await pass(first);
+	const b = await pass(shifted);
+	const report: ChunkedReport = {
+		chunks: first.length,
+		shiftedChunks: shifted.length,
+		zones: 0,
+		replaced: 0,
+	};
+	let words = a.words;
+	let segments = a.segments;
+	for (const z of mergeZones(first, shifted)) {
+		report.zones++;
+		const start = z.start * VAD_FRAME;
+		const end = Math.min(input.samples, z.end * VAD_FRAME);
+		const inZone = (x: { start: number; end: number }) =>
+			(x.start + x.end) / 2 >= start && (x.start + x.end) / 2 < end;
+		const fromA = words.filter(inZone).length;
+		const fromB = b.words.filter(inZone);
+		if (!fromB.length || fromB.length < fromA) continue;
+		words = replaceWindowWords(words, start, end, fromB);
+		const segIn = (sg: WhisperSegment) =>
+			inZone({ start: sg.start * SAMPLE_RATE, end: sg.end * SAMPLE_RATE });
+		segments = [...segments.filter((sg) => !segIn(sg)), ...b.segments.filter(segIn)];
+		report.replaced++;
+	}
+	// the first chunk's language and its probability; time, removed text and guards of every chunk
+	const r: WhisperResult = {
+		language: results[0]?.language ?? language ?? 'en',
+		languageProbability: results[0]?.languageProbability ?? null,
+		words: [],
+		segments: [],
+		guard: {
+			skippedWindows: results.reduce((n, x) => n + x.guard.skippedWindows, 0),
+			removed: [],
+			glossary: results[0]?.guard.glossary ? { ...results[0].guard.glossary, events: 0, replaced: 0 } : null,
+		},
+		profile: { encoderMs: 0, decoderMs: 0, jsMs: 0, decoderRuns: 0, windows: 0 },
+	};
+	const acc = new ExtraDecodes(r);
+	for (const x of results) acc.add(x);
+	acc.segments.push(...segments);
+	return { result: acc.result(r, words), report };
 }
 
 async function recognise(
@@ -480,20 +674,34 @@ async function recognise(
 		signal: opts.signal,
 	};
 	const ran = await withDeviceFallback(spec, opts, async (model) => {
-		const first = await model.transcribe(input, {
-			...options,
-			onProgress: (f, stage) => {
-				opts.onProgress?.(0.03 + f * 0.92, stage);
-				return true;
-			},
-		});
+		let chunked: ChunkedReport | null = null;
+		let first: WhisperResult;
+		if (spec.chunking === 'vad') {
+			// chunks split at the energy VAD's pauses (the voice analysis may not exist yet)
+			const c = await transcribeChunked(model, input, input.mask, options, (f) =>
+				opts.onProgress?.(0.03 + f * 0.92, `Transcribing ${Math.round(f * 100)}%`),
+			);
+			first = c.result;
+			chunked = c.report;
+		} else
+			first = await model.transcribe(input, {
+				...options,
+				onProgress: (f, stage) => {
+					opts.onProgress?.(0.03 + f * 0.92, stage);
+					return true;
+				},
+			});
 		const va = spec.voiceAnalysis ? await voiceAnalysisMask(spec.voiceAnalysis, input.db.length) : null;
 		opts.onProgress?.(0.95, 'Checking for missed speech');
 		// the voice analysis' speech class tells voice from music and noise; else the energy VAD
-		const again = await recoverWordlessSpans(model, input, first, va?.speech ?? input.mask, options);
-		return { ...again, va };
+		const mask = va?.speech ?? input.mask;
+		const again = await recoverWordlessSpans(model, input, first, mask, options);
+		if (spec.redecode === false) return { ...again, redecoded: null, chunked, va };
+		opts.onProgress?.(0.955, 'Checking for hidden takes');
+		const hidden = await redecodeSuspects(model, input, again.result, mask, options);
+		return { result: hidden.result, report: again.report, redecoded: hidden.report, chunked, va };
 	});
-	const { result: r, report: recovered, va: vaMask } = ran.value;
+	const { result: r, report: recovered, redecoded, chunked, va: vaMask } = ran.value;
 	const { threads, fallbacks, loadMs } = ran;
 	const model = { providers: ran.providers, multilingual: ran.multilingual, calibration: ran.calibration };
 	const refined = refineWords(
@@ -543,6 +751,8 @@ async function recognise(
 			frames: vaMask ? 'voice-analysis' : 'energy',
 			...(r.guard.glossary ? { glossary: r.guard.glossary } : {}),
 			...(recovered ? { recovered } : {}),
+			...(redecoded ? { redecoded } : {}),
+			...(chunked ? { chunked } : {}),
 		},
 		profile: r.profile,
 	};

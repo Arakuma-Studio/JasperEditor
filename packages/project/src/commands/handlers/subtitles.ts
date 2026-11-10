@@ -66,7 +66,7 @@ import {
 	templatePosition,
 	templateStyle,
 } from '../../captions/subtitles/templates.ts';
-import { normalizeWord } from '../../captions/words.ts';
+import { normalizeWord, stretchedWordsWarning } from '../../captions/words.ts';
 import { buildEffectPreset } from '../../effect-presets/build.ts';
 import { createFontRef, createTrack, defaultTransform } from '../../factories.ts';
 import type { ProjectDocument } from '../../schema/document.ts';
@@ -82,7 +82,7 @@ import {
 import { CutMapError } from '../../structure/cuts.ts';
 import { type ProjectTextStyle, ProjectTextStyleSchema, textStyleById } from '../../text-styles/model.ts';
 import { diffStyle } from '../../text-styles/patch.ts';
-import { flicksPerFrame, type Rational } from '../../time.ts';
+import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../../time.ts';
 import type { DClip, DDoc, DSeq, DTrack, HandlerContext } from '../context.ts';
 import { latest } from '../draft-read.ts';
 import {
@@ -302,6 +302,9 @@ function sourceWords(
 		warnings.push(
 			`${remapped} time-remapped video clip(s): their subtitles follow the linked audio's timing, not the remapped picture`,
 		);
+	// hidden takes: words stretched over a take the transcription wrote once time the captions early
+	const stretched = stretchedWordsWarning(ws, FLICKS_PER_SECOND);
+	if (stretched) warnings.push(stretched);
 	const t0 = pdoc.transcripts[ws[0]!.transcriptId];
 	const language = explicitLanguage ?? t0?.language ?? 'und';
 	const words: LayoutWord[] = ws.map((w) => ({

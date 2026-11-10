@@ -10,6 +10,7 @@ import { VOICE_CLASS_BREATH, VOICE_CLASS_SPEECH } from '@jasper/audio-dsp';
 import { transcriptForMedia } from '../captions/sequence-transcript.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Clip, Sequence } from '../schema/sequence.ts';
+import { transcriptRedecoded } from '../speech/index.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../time.ts';
 import { isRemapped } from '../time-remap/model.ts';
 import {
@@ -232,7 +233,7 @@ const HARSH_KINDS: ReadonlySet<FindingKind> = new Set(['filler-vocalic', 'filler
 const WORD_KINDS: ReadonlySet<FindingKind> = new Set(
 	FINDING_KINDS.filter((k) => k !== 'pause' && k !== 'breath' && k !== 'untranscribed'),
 );
-const TAKE_KINDS: ReadonlySet<FindingKind> = new Set(['retake', 'false-start', 'restart']);
+const TAKE_KINDS: ReadonlySet<FindingKind> = new Set(['retake', 'false-start', 'restart', 'hidden-retake']);
 
 export type AnalyzeSequenceInput = {
 	doc: Pick<ProjectDocument, 'transcripts' | 'media'>;
@@ -316,6 +317,7 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 			language,
 			lists: lists ?? null,
 			settings,
+			redecoded: transcriptRedecoded(t),
 			spans: run.clips.map((c) => {
 				const [a, b] = extentOf(c);
 				return { start: toMediaFlicks(c, a), end: toMediaFlicks(c, b) };

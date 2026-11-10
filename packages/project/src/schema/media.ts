@@ -558,6 +558,14 @@ export const TranscriptSchema = z.looseObject({
 	 * leniently (`z.unknown`): `transcriptSegmentsProblem` checks them and `repairDocument` drops malformed entries.
 	 */
 	segments: z.array(z.unknown()).optional(),
+	/**
+	 * Hidden takes (optional; docs/wp-notes/speech.md §11.3 "Hidden takes"): `{createdAt, ranges}` — the media time ranges
+	 * (flicks, sorted, disjoint) whose words the recogniser decoded again alone and replaced, for the recognition of
+	 * `createdAt` (a mark whose `createdAt` is not the transcript's is stale and ignored). A take it had written once is
+	 * there, and transcript cleanup labels restarts and retakes inside them as hidden retakes. Read leniently
+	 * (`z.unknown`): INV-012 checks it, `repairDocument` repairs or drops it, readers use `transcriptRedecoded`.
+	 */
+	redecoded: z.unknown().optional(),
 });
 export type Transcript = DeepStrip<z.infer<typeof TranscriptSchema>>;
 
@@ -575,6 +583,8 @@ export const TranscriptSegmentSchema = z.object({
 export type TranscriptSegment = z.infer<typeof TranscriptSegmentSchema>;
 /** Most segments kept per transcript (≈ 1 per 2–5 s of speech: 100 000 covers days of audio). */
 export const MAX_TRANSCRIPT_SEGMENTS = 100_000;
+/** Most re-decoded ranges kept per transcript (≤ 96 per transcription job). */
+export const MAX_TRANSCRIPT_REDECODED = 10_000;
 
 export const FontSourceSchema = z.discriminatedUnion('type', [
 	z.looseObject({ type: z.literal('bundled') }),

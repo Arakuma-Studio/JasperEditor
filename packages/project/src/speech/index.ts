@@ -14,6 +14,7 @@ import { normalizeWords } from '../captions/words.ts';
 import type { TranscriptAttachCmd } from '../commands/schemas/speech.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import {
+	MAX_TRANSCRIPT_REDECODED,
 	MAX_TRANSCRIPT_SEGMENTS,
 	type Transcript,
 	type TranscriptSegment,
@@ -185,6 +186,40 @@ export function transcriptSegments(t: Pick<Transcript, 'segments'>): TranscriptS
 	return normalizeTranscriptSegments(t.segments);
 }
 
+/**
+ * A transcript's re-decoded ranges (hidden takes, flicks) — `redecoded.ranges` when `redecoded.createdAt` is the
+ * transcript's own `createdAt` (the recognition that decoded them again; a build that predates the field and
+ * re-transcribes the media leaves a mark of the earlier recognition, which is ignored) — well formed
+ * (`normalizeRedecodedRanges`); empty when none are stored.
+ */
+export function transcriptRedecoded(t: {
+	redecoded?: unknown;
+	createdAt?: unknown;
+}): Array<[number, number]> {
+	const r = t.redecoded as { createdAt?: unknown; ranges?: unknown } | null | undefined;
+	if (!r || typeof r !== 'object' || typeof r.createdAt !== 'string' || r.createdAt !== t.createdAt)
+		return [];
+	return normalizeRedecodedRanges(r.ranges);
+}
+
+/**
+ * The well-formed ranges of a list: integer `[start, end]` pairs with `0 ≤ start < end`, sorted and merged, at most
+ * `MAX_TRANSCRIPT_REDECODED`.
+ */
+export function normalizeRedecodedRanges(list: unknown): Array<[number, number]> {
+	if (!Array.isArray(list)) return [];
+	const ok = list.filter(
+		(r): r is [number, number] =>
+			Array.isArray(r) &&
+			r.length === 2 &&
+			Number.isInteger(r[0]) &&
+			Number.isInteger(r[1]) &&
+			r[0] >= 0 &&
+			r[1] > r[0],
+	);
+	return mergeRanges(ok.map(([a, b]): [number, number] => [a, b])).slice(0, MAX_TRANSCRIPT_REDECODED);
+}
+
 /** Segments of `existing` outside `coverage` plus `incoming` (by midpoint, like `mergeTranscriptWords`). */
 export function mergeTranscriptSegments(
 	existing: readonly TranscriptSegment[],
@@ -209,6 +244,18 @@ function segmentOf(s: RecognizedSegment, offset = 0): TranscriptSegment | null {
 	return seg;
 }
 
+/** The replaced re-decoded windows of a recognition (flicks, the time base of the words). */
+function redecodedOf(res: RecognitionResult): Array<{ start: number; end: number }> {
+	const out: Array<{ start: number; end: number }> = [];
+	for (const r of res.guard?.redecoded?.ranges ?? []) {
+		if (!r.replaced || !Number.isFinite(r.start) || !Number.isFinite(r.end)) continue;
+		const start = Math.max(0, Math.round(r.start * FLICKS_PER_SECOND));
+		const end = Math.round(r.end * FLICKS_PER_SECOND);
+		if (end > start) out.push({ start, end });
+	}
+	return out;
+}
+
 /** `en` when translating, else the recognised language. */
 export function transcriptLanguage(language: string, task: 'transcribe' | 'translate' | undefined): string {
 	return task === 'translate' ? 'en' : language;
@@ -231,6 +278,10 @@ export type RecognitionResult = {
 	speakers: Record<string, { name: string }>;
 	/** Segments with decoder scores (seconds, the time base of the words). */
 	segments?: readonly RecognizedSegment[];
+	/** Hidden takes: windows decoded again (seconds, the time base of the words); `replaced` ones are kept. */
+	guard?: {
+		redecoded?: { ranges: ReadonlyArray<{ start: number; end: number; replaced: boolean }> };
+	};
 };
 
 /** A recognised segment (seconds) with the decoder's scores (TC-003). */
@@ -275,6 +326,9 @@ export function transcriptAttachPlan(
 		const mediaId = opts.mediaId;
 		if (!mediaId || !doc.media[mediaId]) return { error: 'The media is no longer in the project' };
 		const segments = (res.segments ?? []).map((s) => segmentOf(s)).filter((s): s is TranscriptSegment => !!s);
+		const redecoded = normalizeRedecodedRanges(
+			redecodedOf(res).map((s): [number, number] => [s.start, s.end]),
+		);
 		return {
 			commands: [
 				{
@@ -284,6 +338,7 @@ export function transcriptAttachPlan(
 					words: res.words.map((w) => ({ ...w })),
 					speakers: res.speakers,
 					...(segments.length ? { segments: normalizeTranscriptSegments(segments) } : {}),
+					...(redecoded.length ? { redecoded } : {}),
 					mode: opts.replace ? 'replace' : 'keep',
 				},
 			],
@@ -301,6 +356,10 @@ export function transcriptAttachPlan(
 	const segs = (res.segments ?? []).map((s) => segmentOf(s)).filter((s): s is TranscriptSegment => !!s);
 	const segWords = segs.map((s, i) => ({ text: String(i), start: s.start, end: s.end }));
 	const segMedia = segWords.length ? distributeSequenceWords(doc, seq.id, segWords, range).media : [];
+	// re-decoded ranges go to the clip media heard at their midpoint, as the segments
+	const red = redecodedOf(res);
+	const redWords = red.map((s, i) => ({ text: String(i), start: s.start, end: s.end }));
+	const redMedia = redWords.length ? distributeSequenceWords(doc, seq.id, redWords, range).media : [];
 	const commands: TranscriptAttachCommand[] = [];
 	const media: Array<{ mediaId: string; words: number }> = [];
 	for (const m of r.media) {
@@ -311,6 +370,9 @@ export function transcriptAttachPlan(
 			const { start: _s, end: _e, ...scores } = src;
 			return { ...scores, start: w.start, end: w.end };
 		});
+		const mediaRed = normalizeRedecodedRanges(
+			(redMedia.find((x) => x.mediaId === m.mediaId)?.words ?? []).map((w) => [w.start, w.end]),
+		);
 		commands.push({
 			type: 'transcript.attach',
 			mediaId: m.mediaId,
@@ -318,6 +380,7 @@ export function transcriptAttachPlan(
 			words: m.words,
 			speakers: res.speakers,
 			...(mediaSegs.length ? { segments: normalizeTranscriptSegments(mediaSegs) } : {}),
+			...(mediaRed.length ? { redecoded: mediaRed } : {}),
 			coverage: m.coverage,
 			mode: existing ? 'merge' : 'replace',
 		});

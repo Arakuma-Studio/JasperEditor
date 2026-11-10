@@ -579,3 +579,27 @@ describe('cut-aware edge cases on documents (AS-013)', () => {
 		}
 	});
 });
+
+describe('stretched words (hidden takes)', () => {
+	it('captions built from a word stretched over a take the transcription wrote once warn with its times', () => {
+		const words: Array<[string, number, number]> = [
+			['para', 0.2, 0.5],
+			['poder', 0.5, 0.8],
+			['subirlos', 0.8, 2.3],
+			['a', 2.3, 2.4],
+			['la', 2.4, 2.5],
+			['Playstore.', 2.5, 3.0],
+		];
+		const stretched = (r: { warnings: Array<{ code: string; message: string }> }) =>
+			r.warnings.filter((w) => /0:00\.8–0:02\.3/.test(w.message) && /chunking "vad"/.test(w.message));
+		const a = shot({ cut: false, words });
+		expect(stretched(a.H.ok([{ type: 'captions.generate' }]))).toHaveLength(1);
+		const b = shot({ cut: false, words });
+		expect(stretched(b.H.ok([{ type: 'transcript.createCaptions' }]))).toHaveLength(1);
+		// normal words: no warning
+		const c = shot({ cut: false });
+		expect(c.H.ok([{ type: 'captions.generate' }]).warnings.some((w) => /over 1 s/.test(w.message))).toBe(
+			false,
+		);
+	});
+});

@@ -531,6 +531,8 @@ export const FINDING_KINDS = [
 	'restart',
 	'false-start',
 	'retake',
+	/** A restart, false start or retake inside a range the recogniser decoded again (a take it had written once). */
+	'hidden-retake',
 	'stutter',
 	'off-script',
 	'head-tail',
