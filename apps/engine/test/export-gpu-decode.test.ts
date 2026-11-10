@@ -1,7 +1,8 @@
 // GPU decode of a native export's video sources (apps/engine/src/export/gpu.ts; docs/wp-notes/export-performance.md
-// §5). This host has no CUDA device: the export decodes on the CPU and says so (plan and result `pipeline.decode`);
-// the GPU command is checked where it is built — NVDEC arguments in front of the eligible inputs only, one CUDA device
-// per process, the per-process cap, and an unchanged filter graph (the composite is the CPU one either way).
+// §5). Without a CUDA device the export decodes on the CPU and says so (plan and result `pipeline.decode`; NVDEC on
+// a host with one); the GPU command is checked where it is built — NVDEC arguments in front of the eligible inputs
+// only, one CUDA device per process, the per-process cap, and an unchanged filter graph (the composite is the CPU one
+// either way).
 import { ExportResultSchema, RenderPlanSchema } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CUDA_DEVICE, nvdecForGraph, probeCudaDecode } from '../src/export/gpu.ts';
@@ -61,17 +62,17 @@ async function doc() {
 }
 
 describe('GPU decode (NVDEC)', { timeout: 300_000 }, () => {
-	it('falls back to CPU decode without a CUDA device, in the plan and the result', async () => {
+	it('decodes on the CPU without a CUDA device (NVDEC with one), as the plan and the result say', async () => {
 		const probe = await probeCudaDecode(coreServices(app).ffmpeg);
-		expect(probe.ok, 'this test expects a host without a CUDA device').toBe(false);
+		const decode = probe.ok ? 'nvdec' : 'cpu';
 		const { d } = await doc();
 		const payload = { envelope: d.envelope(), sequenceId: d.seqId, settings: settings(d.seqId) };
 		const plan = await app.inject({ method: 'POST', url: '/api/exports/plan', headers: JSON_H, payload });
-		expect(RenderPlanSchema.parse(plan.json()).pipeline).toMatchObject({ decode: 'cpu', composite: 'cpu' });
+		expect(RenderPlanSchema.parse(plan.json()).pipeline).toMatchObject({ decode, composite: 'cpu' });
 		const start = await app.inject({ method: 'POST', url: '/api/exports', headers: JSON_H, payload });
 		const done = await coreServices(app).queue.wait(start.json().id);
 		expect(done.error).toBeUndefined();
-		expect(ExportResultSchema.parse(done.result).pipeline).toMatchObject({ decode: 'cpu', composite: 'cpu' });
+		expect(ExportResultSchema.parse(done.result).pipeline).toMatchObject({ decode, composite: 'cpu' });
 	});
 
 	it('puts NVDEC in front of the eligible inputs only, one device per process, up to the cap', async () => {
