@@ -37,6 +37,7 @@ import {
 	createProposal,
 	DEFAULT_FONT_FAMILY,
 	defaultRegistries,
+	diffDocuments,
 	exportAgentQuerySchemas,
 	exportAgentSchema,
 	FACTORY_LOOKS,
@@ -65,6 +66,8 @@ const LOUDNESS = {
 	maxShortTermLufs: -15.2,
 	durationSec: 40,
 };
+
+type HistoryStep = { agent: string; label: string; before: ProjectDocument; after: ProjectDocument };
 
 export type EngineFault = {
 	/** Fails with an engine error, or answers `result` instead of the fake's own answer. */
@@ -384,6 +387,8 @@ export function createFakeEngine(
 	const jobs = new Map<string, Job>();
 	const proposals = new Map<string, Proposal>();
 	const reviewed = new Set<string>();
+	/** Headless undo / redo stacks per project, valid while the project is at `revision` (as the engine's). */
+	const history = new Map<string, { revision: number; undo: HistoryStep[]; redo: HistoryStep[] }>();
 	/** Projects `open_project_in_editor` opened: reads say an editor has them (edits still apply headless). */
 	const opened = new Set<string>();
 	/** Pictures jobs wrote, by the URL the engine would serve them at. */
@@ -945,23 +950,55 @@ export function createFakeEngine(
 						},
 					};
 			}
-			// As the real engine: history is per editor session, and these samples have none open.
-			if (commands.some((c) => c.type === 'history.undo' || c.type === 'history.redo'))
+			const p = project(req.projectId);
+			const agent = normalizeAgentTransaction(req.transaction as never).origin.agent;
+			const kind =
+				commands[0]?.type === 'history.undo' ? 'undo' : commands[0]?.type === 'history.redo' ? 'redo' : null;
+			if (kind && commands.length === 1) {
+				// As the real engine without an editor session: the agent's own headless steps while nothing else changed.
+				const h = history.get(req.projectId);
+				const entry = h?.[kind].at(-1);
+				const refuse = (code: string, message: string) => ({
+					appliedBy: 'headless' as const,
+					result: { ok: false, revision: p.revision, errors: [{ commandIndex: -1, code, message }] },
+				});
+				if (!h || !entry) return refuse('E_NOT_FOUND', `Nothing to ${kind}`);
+				if (entry.agent !== agent) return refuse('E_NOT_OWNER', `The history entry was not made by ${agent}`);
+				if (h.revision !== p.revision) return refuse('E_NOT_OWNER', 'The project was changed after it');
+				const from = p.doc;
+				p.doc = kind === 'undo' ? entry.before : entry.after;
+				p.revision++;
+				h[kind].pop();
+				h[kind === 'undo' ? 'redo' : 'undo'].push(entry);
+				h.revision = p.revision;
+				const diff = diffDocuments(from, p.doc);
 				return {
 					appliedBy: 'headless',
 					result: {
-						ok: false,
-						revision: project(req.projectId).revision,
-						errors: [
-							{
-								commandIndex: -1,
-								code: 'E_NO_SESSION',
-								message: 'history.undo/redo need an open editor session (history is per session)',
-							},
-						],
+						ok: true,
+						revision: p.revision,
+						refs: {},
+						...diff,
+						warnings: [],
+						results: [{ [`history.${kind}`]: entry.label }],
 					},
 				};
-			return { result: applyTo(req.projectId, req.transaction), appliedBy: 'headless' };
+			}
+			const [before, base] = [p.doc, p.revision];
+			const result = applyTo(req.projectId, req.transaction);
+			if (result.ok && p.doc !== before) {
+				const h = history.get(req.projectId);
+				const undo = h && h.revision === base ? h.undo : [];
+				const label = String(req.transaction.label ?? '');
+				undo.push({
+					agent,
+					label: label.startsWith('Agent: ') ? label : `Agent: ${label}`,
+					before,
+					after: p.doc,
+				});
+				history.set(req.projectId, { revision: p.revision, undo, redo: [] });
+			}
+			return { result, appliedBy: 'headless' };
 		},
 		registerMedia: (req: { paths: string[] }) => ({
 			items: req.paths.map((path) => {

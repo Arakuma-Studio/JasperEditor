@@ -457,7 +457,10 @@ JasperEditor has no built-in chat agent. Your own coding agent drives it through
 server (`apps/mcp`, ARCHITECTURE §11): it creates projects, imports media, edits the timeline, renders
 frames to look at, and exports. When the project is open in an editor window the edits appear there live,
 each as one undoable `Agent: …` History entry; deleting tracks or items asks for your approval on a card at
-the top of the window. With the editor closed the same tools work headlessly on the saved project.
+the top of the window. With the editor closed the same tools work headlessly on the saved project, and `undo` /
+`redo` step through the agent's own headless transactions: that history lives in the engine's memory (16 steps per
+project, 32 in all, forgotten when the engine restarts) and is refused (`E_NOT_OWNER`) once anything else has changed the project
+since, so nobody's later edit is discarded.
 
 Build the server once (one bundled file, needs Node 20.19+), and start the editor:
 
