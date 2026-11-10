@@ -194,6 +194,21 @@ export const SpeechGuardReportSchema = z.object({
 			replaced: z.number().int().min(0),
 		})
 		.optional(),
+	/**
+	 * Spans with ≥ 2 s of voice but no word after recognition, decoded again on their own (at most 32 spans and
+	 * 10 min per job, in time order): spans decoded, words they yielded (before the silence guards), spans over the
+	 * budget, and each decoded span (seconds) with its words. Absent when there was none.
+	 */
+	recovered: z
+		.object({
+			spans: z.number().int().min(0),
+			words: z.number().int().min(0),
+			skipped: z.number().int().min(0),
+			ranges: z
+				.array(z.object({ start: z.number(), end: z.number(), words: z.number().int().min(0) }))
+				.max(32),
+		})
+		.optional(),
 });
 export type SpeechGuardReport = z.infer<typeof SpeechGuardReportSchema>;
 

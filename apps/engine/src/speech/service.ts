@@ -951,6 +951,18 @@ export class SpeechService {
 					.map((r) => ({ ...r, start: r.start + offsetSec, end: r.end + offsetSec })),
 				frames: out.guard.frames,
 				...(out.guard.glossary ? { glossary: out.guard.glossary } : {}),
+				...(out.guard.recovered
+					? {
+							recovered: {
+								...out.guard.recovered,
+								ranges: out.guard.recovered.ranges.map((r) => ({
+									...r,
+									start: r.start + offsetSec,
+									end: r.end + offsetSec,
+								})),
+							},
+						}
+					: {}),
 			},
 			accuracy,
 			beamSize,

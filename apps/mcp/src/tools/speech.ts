@@ -268,6 +268,7 @@ async function commit(
 							removed: res.guard.removed.slice(0, 20),
 							...(res.guard.frames ? { frames: res.guard.frames } : {}),
 							...(res.guard.glossary ? { glossary: res.guard.glossary } : {}),
+							...(res.guard.recovered ? { recovered: res.guard.recovered } : {}),
 						},
 					}
 				: {}),

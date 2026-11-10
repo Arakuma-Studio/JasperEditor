@@ -1,5 +1,6 @@
-// One transcription, in-process: decode (streamed) → Whisper → word-bound repair (pauses, voice) → hallucination
-// guards → VAD tightening → speakers. Used by the `jasper-speech` child process (cli.ts) and by tests.
+// One transcription, in-process: decode (streamed) → Whisper → wordless voiced spans decoded again → word-bound
+// repair (pauses, voice) → hallucination guards → VAD tightening → speakers. Used by the `jasper-speech` child
+// process (cli.ts) and by tests.
 //
 // Execution providers (spec 16 SG-002/SG-003): the job spec says which provider each model part uses (the engine
 // chose it from the cached probe). A part whose GPU session cannot be created runs on the CPU (recorded); when the
@@ -11,6 +12,7 @@ import { decodeVoiceAnalysis, VOICE_ANALYSIS_VERSION, VOICE_CLASSES } from '@jas
 import type { ProviderId } from '../../tools/ort.ts';
 import { restrictInputs } from '../../tools/protocols.ts';
 import { DEFAULT_DIARIZE, diarize } from '../core/diarize.ts';
+import { mergeRecoveredWords, wordlessVoicedSpans } from '../core/gaps.ts';
 import { knownPhraseRuns, phraseOverNonSpeech } from '../core/hallucination.ts';
 import { SAMPLE_RATE } from '../core/mel.ts';
 import {
@@ -28,8 +30,10 @@ import {
 	type LoadOptions,
 	SpeechRefusal,
 	WhisperModel,
+	type WhisperOptions,
 	type WhisperResult,
 	type WhisperSegment,
+	type WhisperWord,
 } from './whisper.ts';
 
 export type SpeechDevicePlan = {
@@ -113,8 +117,21 @@ export type SpeechJobOutput = {
 		frames: 'voice-analysis' | 'energy';
 		/** SC-074/SC-075 (only when a glossary was given). */
 		glossary?: GlossaryGuard;
+		/** Wordless voiced spans decoded again (`core/gaps.ts`; only when there were any). */
+		recovered?: RecoveredReport;
 	};
 	profile: WhisperResult['profile'];
+};
+
+/**
+ * The wordless-span pass: spans decoded again, words they yielded (before word-bound refinement), spans over the
+ * budget, and each decoded span (seconds from the start of the decoded audio).
+ */
+export type RecoveredReport = {
+	spans: number;
+	words: number;
+	skipped: number;
+	ranges: Array<{ start: number; end: number; words: number }>;
 };
 
 /**
@@ -388,6 +405,63 @@ export async function runSpeechJob(spec: SpeechJobSpec, opts: RunOptions = {}): 
 	}
 }
 
+/**
+ * SG-011 safety net (`core/gaps.ts`): decodes again, each on its own, the spans of `mask` that hold ≥ 2 s of voice
+ * but no word of `r`, within the retry budget, and merges what they yield into `r` (words and segments in time
+ * order, never over an existing word). A decoder failure is thrown (the job fails or runs again on the CPU).
+ */
+async function recoverWordlessSpans(
+	model: Pick<WhisperModel, 'transcribe'>,
+	input: SpeechInput,
+	r: WhisperResult,
+	mask: SpeechMask,
+	opts: WhisperOptions,
+): Promise<{ result: WhisperResult; report: RecoveredReport | null }> {
+	const { spans, skipped } = wordlessVoicedSpans(r.words, mask);
+	if (!spans.length && !skipped) return { result: r, report: null };
+	const report: RecoveredReport = { spans: spans.length, words: 0, skipped, ranges: [] };
+	const recovered: Array<{ start: number; end: number; words: WhisperWord[] }> = [];
+	const segments = [...r.segments];
+	const removed = [...r.guard.removed];
+	const profile = { ...r.profile };
+	const glossary = r.guard.glossary ? { ...r.guard.glossary } : null;
+	for (const span of spans) {
+		const got = await model.transcribe(input, {
+			...opts,
+			language: r.language,
+			span: { start: span.start, end: span.end },
+		});
+		const start = span.start * VAD_FRAME;
+		const end = Math.min(input.samples, span.end * VAD_FRAME);
+		const words = got.words.filter((w) => Math.round(w.start) < end);
+		recovered.push({ start, end, words });
+		report.words += words.length;
+		report.ranges.push({ start: start / SAMPLE_RATE, end: end / SAMPLE_RATE, words: words.length });
+		segments.push(...got.segments);
+		removed.push(...got.guard.removed);
+		profile.encoderMs += got.profile.encoderMs;
+		profile.decoderMs += got.profile.decoderMs;
+		profile.jsMs += got.profile.jsMs;
+		profile.decoderRuns += got.profile.decoderRuns;
+		profile.windows += got.profile.windows;
+		if (glossary && got.guard.glossary) {
+			glossary.events += got.guard.glossary.events;
+			glossary.replaced += got.guard.glossary.replaced;
+		}
+	}
+	segments.sort((a, b) => a.start - b.start);
+	return {
+		result: {
+			...r,
+			words: mergeRecoveredWords(r.words, recovered),
+			segments,
+			guard: { ...r.guard, removed, glossary },
+			profile,
+		},
+		report,
+	};
+}
+
 async function recognise(
 	spec: SpeechJobSpec,
 	input: SpeechInput,
@@ -395,26 +469,33 @@ async function recognise(
 	t0: number,
 ): Promise<SpeechJobOutput> {
 	const t1 = Date.now();
-	const ran = await withDeviceFallback(spec, opts, (model) =>
-		model.transcribe(input, {
-			language: spec.language ?? null,
-			task: spec.task ?? 'transcribe',
-			beamSize: spec.beamSize ?? 1,
-			...(spec.verbatim ? { verbatim: true } : {}),
-			...(spec.initialPrompt ? { initialPrompt: spec.initialPrompt } : {}),
-			...(spec.glossary?.length ? { glossary: spec.glossary } : {}),
-			...(spec.conditionOnPreviousText === false ? { conditionOnPreviousText: false } : {}),
-			signal: opts.signal,
+	const options: WhisperOptions = {
+		language: spec.language ?? null,
+		task: spec.task ?? 'transcribe',
+		beamSize: spec.beamSize ?? 1,
+		...(spec.verbatim ? { verbatim: true } : {}),
+		...(spec.initialPrompt ? { initialPrompt: spec.initialPrompt } : {}),
+		...(spec.glossary?.length ? { glossary: spec.glossary } : {}),
+		...(spec.conditionOnPreviousText === false ? { conditionOnPreviousText: false } : {}),
+		signal: opts.signal,
+	};
+	const ran = await withDeviceFallback(spec, opts, async (model) => {
+		const first = await model.transcribe(input, {
+			...options,
 			onProgress: (f, stage) => {
 				opts.onProgress?.(0.03 + f * 0.92, stage);
 				return true;
 			},
-		}),
-	);
-	const r = ran.value;
+		});
+		const va = spec.voiceAnalysis ? await voiceAnalysisMask(spec.voiceAnalysis, input.db.length) : null;
+		opts.onProgress?.(0.95, 'Checking for missed speech');
+		// the voice analysis' speech class tells voice from music and noise; else the energy VAD
+		const again = await recoverWordlessSpans(model, input, first, va?.speech ?? input.mask, options);
+		return { ...again, va };
+	});
+	const { result: r, report: recovered, va: vaMask } = ran.value;
 	const { threads, fallbacks, loadMs } = ran;
 	const model = { providers: ran.providers, multilingual: ran.multilingual, calibration: ran.calibration };
-	const vaMask = spec.voiceAnalysis ? await voiceAnalysisMask(spec.voiceAnalysis, input.db.length) : null;
 	const refined = refineWords(
 		// bounds snap to the energy VAD (measured on the LJ fixture: boundary error max 40 ms vs 280 ms with the
 		// voice analysis' speech class, and diarisation unchanged); what keeps a word is speech or breath in the voice
@@ -461,6 +542,7 @@ async function recognise(
 			removed,
 			frames: vaMask ? 'voice-analysis' : 'energy',
 			...(r.guard.glossary ? { glossary: r.guard.glossary } : {}),
+			...(recovered ? { recovered } : {}),
 		},
 		profile: r.profile,
 	};

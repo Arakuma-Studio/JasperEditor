@@ -333,6 +333,31 @@ whisper evaluation (53 configurations; the numbers of spec 16 §0). This section
   < 20 % speech/breath frames are dropped; known phrases (Spanish "Subtítulos realizados por la comunidad de
   Amara.org", "Gracias por ver el video/vídeo", "Gracias.", English "Thanks for watching!"…, `core/hallucination.ts`)
   are removed when they form a sentence of their own over < 50 % speech frames. The result lists what was removed.
+- Speech after long (digital) silence (SG-011 regression, reported on a 57-minute Spanish file with large-v3-turbo:
+  ≈ 45 s of clear speech right after stretches of −120 dB digital silence came back without words, and decoding those
+  ranges alone recovered them). Root cause, as far as it could be established without that file: digital silence
+  has the log-mel floor (`max − 8`) that the zero padding of Whisper's 30 s training clips has, so Whisper can take
+  the speech after it for audio past the end — a window starting with it returns nothing, a decode ends at it
+  (single timestamp ending), and the seek then jumped the whole window, voice included. Assumption (not measured on
+  turbo or the reporter's file): this is the mechanism behind the report. Fixes: (1) a window never starts with ≥ 2 s
+  of silence (energy VAD) — it moves to 0.5 s before its first voice; (2) after a window, decoding never resumes past
+  voice that follows ≥ 2 s of silence after the window's last word (or its start when it gave no words) — it resumes
+  0.5 s before that voice (`worker/whisper.ts`); (3) safety net (`core/gaps.ts`, `worker/run.ts`): after the main
+  pass, every span between two words holding ≥ 2 s of voiced frames (voice-analysis speech class when it exists,
+  else the energy VAD; voice closer than 2 s joins one span; 0.5 s of context each side, never over a word) is
+  decoded again on its own and its words are merged in time order (sorted, non-overlapping, integer samples) before
+  word-bound refinement and the silence guards. Bounded: at most 32 spans and 10 min of audio per job, in time
+  order; spans over the budget are counted, not decoded. Reported as `guard.recovered {spans, words, skipped,
+  ranges[{start, end, words}]}` in the worker output, the job result and the MCP transcribe report (absent when no
+  span qualified). Regression tests: `apps/engine/test/speech-silence-gaps.test.ts` (scripted decoder that reads
+  digital silence as the end of the audio). Measured with tiny.en / tiny (build VM, 2 threads, one-off script over
+  the LJ fixture with digital silence inserted at pauses, `runSpeechJob` before vs after): unchanged on the plain
+  fixture (WER 1.92 % / 8.33 %) and on the 30 s gap for tiny.en (3.21 %); tiny 30 s gap 10.90 → 7.05 %; eleven
+  3–20 s silences tiny.en 10.26 → 6.41 %, tiny 10.90 → 8.97 %; 25 s of leading silence tiny 10.26 → 7.69 %. The
+  safety net found no wordless span in these runs (the main-pass fixes left none); it is exercised only by the fake
+  decoder, and the large-v3-turbo behaviour of the report was not reproduced here (no turbo model on the build VM).
+  Limits: speech the energy VAD calls silence is not retried; voiced non-speech (music, noise) without a voice
+  analysis is retried within the budget and costs decode time; recovered words still pass the silence guards.
 - Verbatim prompts (TC-003): `verbatim` puts the language's filler prompt (Spanish `Eh... em, bueno, o sea, este...
   mmm, ¿vale? Ah, eh, pues...`, English `Um, uh, so, like, you know... hmm, okay? Ah, er, well...` — the English one is
   our assumption) and `initialPrompt` at the start of the running text, OpenAI semantics: it conditions the first
