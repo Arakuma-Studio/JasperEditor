@@ -1,7 +1,8 @@
 // Local Remotion rendering (S04 §13 RR-001…006/011, ARCHITECTURE §9.5, §10.3): one bundle of
 // `@jasper/compositions/remotion-entry` (prebuilt for packaged installs, otherwise bundled once and cached
-// under `<appdir>/remotion/bundle/<sourceHash>`), `selectComposition('JasperSequence')`, then `renderMedia`
-// or `renderStill` with the configured license key and a headless browser.
+// under `<appdir>/remotion/bundle/<sourceHash>`, served to the pages over loopback HTTP), the 'JasperSequence'
+// composition of the document (`sequenceComposition`, else `selectComposition`), then `renderMedia` or `renderStill`
+// with the configured license key in a warm pooled headless browser (wp-note export-performance §13).
 import type { ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
