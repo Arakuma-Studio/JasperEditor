@@ -902,6 +902,41 @@ jasper call get_mixer --json                     # any MCP tool
 `--json` prints one JSON document per line; exit status 0 = ok, 1 = the command failed (its error code, message
 and hint on stderr), 2 = usage error. `jasper --help` is the reference.
 
+#### Scene files: `jasper apply`, `preview`, `export-scene`
+
+A whole sequence — its layers (text, image, SVG, shape, Remotion composition), position, size, style, keyframes
+with eases, text animation presets, effects and masks — described in one YAML or JSON file. `apply` makes the
+sequence match it and changes only what differs, as one undo step (apply the same file twice: nothing happens);
+`preview` applies and renders a labelled contact sheet; `export-scene` writes a sequence back as a file. Format,
+matching and removal rules: [docs/wp-notes/scene-file.md](docs/wp-notes/scene-file.md).
+
+```bash
+jasper apply scene.yaml                          # created / updated (which aspects) / removed per layer
+jasper apply scene.yaml --dry-run                # validate the plan in the engine, change nothing
+jasper preview scene.yaml --times 0.3,1,2.5,6 --out sheet.png           # one still-sheet job, labelled cells
+jasper preview scene.yaml --times 0.3,1,2.5,6 --out sheet.png --watch   # again on every save (Ctrl+C stops)
+jasper export-scene --sequence Promo --out scene.yaml                   # or .json / --format json; stdout without --out
+```
+
+```yaml
+scene: 1
+sequence: { name: Promo, size: [1280, 720], fps: 30, duration: 6 }
+layers:                                   # bottom to top
+  - { id: bg, type: shape, shape: rect, size: [1280, 720], fill: "#1B2A4A" }
+  - id: headline
+    type: text
+    text: Declarative scenes
+    size: 88
+    color: "#FFD166"
+    position: [560, 330]
+    animation: { in: fade, out: fade }
+    keyframes:
+      scale: [{ t: 0, value: 70, ease: ease-out }, { t: 1, value: 100 }]
+```
+
+Errors point into the file (`layers[2].keyframes.position[0].ease: unknown ease "foo"`). Images and Remotion
+folders the file names are imported on the first apply.
+
 ### HTTP API underneath
 
 The MCP tools are thin wrappers over the engine's agent API (protocol `jasper.tx/1`): the JSON Schema of every

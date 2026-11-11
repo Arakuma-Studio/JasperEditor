@@ -12,6 +12,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { parseFriendlyTime } from './arguments.ts';
 import { type EngineConnection, EngineLink, startupTimeoutMs } from './link.ts';
+import { applyScene, exportSceneFile, previewScene, type SceneCliContext } from './scene-cli.ts';
 import { createJasperMcpServer } from './server.ts';
 import { MCP_SERVER_VERSION } from './version.ts';
 
@@ -45,6 +46,14 @@ Commands:
   call <tool> [k=v… | '<json>'] [--out f.png]
                                       call any MCP tool; --out writes the images it returns
                                       (several: f-0.png, f-1.png… in result order)
+  apply <scene.yaml|.json> [--dry-run]
+                                      make a sequence match a scene file: only what differs, one undo step
+                                      (applying it again changes nothing)
+  preview <scene> --times 0.3,1,2.5,6 --out sheet.png [--watch] [--width N] [--columns N] [--timeout s]
+                                      apply, then render those times as one labelled contact sheet;
+                                      --watch does it again on every save
+  export-scene [--sequence <name|id>] [--out scene.yaml|.json] [--format yaml|json]
+                                      a sequence as a scene file (stdout without --out)
 
 Options:
   --project <id|name>    project to work on (env JASPER_PROJECT; default: the project open in the editor
@@ -90,8 +99,20 @@ const VALUE_FLAGS = new Set([
 	'startup-timeout',
 	'timeout',
 	'crf',
+	'times',
+	'format',
+	'columns',
 ]);
-const BOOL_FLAGS = new Set(['json', 'dry-run', 'keep-going', 'start-engine', 'help', 'version', 'h']);
+const BOOL_FLAGS = new Set([
+	'json',
+	'dry-run',
+	'keep-going',
+	'start-engine',
+	'help',
+	'version',
+	'h',
+	'watch',
+]);
 
 type ParsedArgs = { flags: Record<string, string | true>; positional: string[] };
 
@@ -263,8 +284,23 @@ type Ctx = {
 	out: Out;
 	json: boolean;
 	cwd: string;
+	signal?: AbortSignal;
 	projectId(): Promise<string>;
 };
+
+/** The scene commands' view of a CLI invocation (scene-cli.ts). */
+const sceneCtx = (c: Ctx): SceneCliContext => ({
+	call: c.s.call,
+	link: c.s.link,
+	flags: c.flags,
+	out: c.out,
+	json: c.json,
+	cwd: c.cwd,
+	...(c.signal ? { signal: c.signal } : {}),
+	projectId: c.projectId,
+	usage: (m) => new UsageError(m),
+	fail: (body) => new CommandFailed(body),
+});
 
 /** Calls a tool; a tool error becomes CommandFailed with its `{error}` body. */
 async function tool(c: Ctx, name: string, args: Record<string, unknown> = {}, progress = false) {
@@ -582,6 +618,9 @@ const COMMANDS: Record<string, (c: Ctx, args: string[]) => Promise<void>> = {
 			for (const path of writeToolImages(r, resolve(c.cwd, c.flags.out))) c.out.stderr(`wrote ${path}\n`);
 		emit(c, jsonOf(r));
 	},
+	apply: (c, args) => applyScene(sceneCtx(c), args),
+	preview: (c, args) => previewScene(sceneCtx(c), args),
+	'export-scene': (c) => exportSceneFile(sceneCtx(c)),
 };
 
 let toolCache: { name: string; title?: string; inputSchema: unknown }[] | null = null;
@@ -680,6 +719,7 @@ export async function runCli(
 		out: io,
 		json,
 		cwd: io.cwd ?? process.cwd(),
+		...(io.signal ? { signal: io.signal } : {}),
 		projectId: async () => {
 			projectId ??= await resolveProject(s, str('project') ?? env.JASPER_PROJECT);
 			return projectId;
