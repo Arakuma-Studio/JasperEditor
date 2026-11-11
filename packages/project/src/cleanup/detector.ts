@@ -1243,6 +1243,14 @@ function frameFindings(
 		// the word or untranscribed voice at frame x ([−1, −1]: none), and frames given to one
 		const side = (x: number): [number, number] =>
 			x < lo || x >= hi ? [-1, -1] : [owner[x - lo]!, owner[x - lo]! >= 0 ? -1 : utrAt[x - lo]!];
+		// …past a quiet word (no speech under it) to the word whose sound it lies on: a quiet word holds its own time,
+		// not the decay running on after it or the onset rising after it (round 11: a zero-length word written on the first
+		// frame of a kept word's decay took that decay with its removal)
+		const soundSide = (x: number, step: 1 | -1): [number, number] => {
+			let y = x;
+			while (y >= lo && y < hi && quiet[y - lo] === 1) y += step;
+			return y !== x && y >= lo && y < hi && owner[y - lo]! >= 0 && quiet[y - lo] === 0 ? side(y) : side(x);
+		};
 		const attach = (x: number, [w, u]: [number, number]) => {
 			if (owner[x - lo]! >= 0) return;
 			if (w >= 0) own(w, x);
@@ -1268,16 +1276,16 @@ function frameFindings(
 				const [pa, pb] = pauseEdges(voice, settings, lo, hi, f, g, decayFrame);
 				if (pb > pa) push('pause', settings.rules.pause, pa, pb);
 				// the rising onset before the speech after the pause and a tail's fading decay are that speech's sound
-				const r = side(g);
+				const r = soundSide(g, 1);
 				for (let x = Math.max(f, pb); x < g; x++) attach(x, r);
-				const l = side(f - 1);
+				const l = soundSide(f - 1, -1);
 				for (let x = f; x < Math.min(g, pa); x++) attach(x, l);
 			} else {
-				const l = side(f - 1);
-				const r = side(g);
+				const l = soundSide(f - 1, -1);
+				const r = soundSide(g, 1);
 				const hasL = l[0] >= 0 || l[1] >= 0;
 				const hasR = r[0] >= 0 || r[1] >= 0;
-				const mid = hasL && hasR ? f + Math.ceil((g - f) / 2) : hasL ? g : f;
+				const mid = hasL && hasR ? gapSplit(voice, f, g) : hasL ? g : f;
 				for (let x = f; x < g; x++) attach(x, x < mid ? l : r);
 			}
 			f = g;
@@ -1343,6 +1351,27 @@ function frameFindings(
 		}
 	}
 	return { findings: out, sound };
+}
+
+/**
+ * Where a short gap `[f, g)` between two sounds splits: the fading decay before measured silence is the sound before it,
+ * the rising onset after it the sound after it, and the silence between them is halved; with no silent frame, at the
+ * quietest frame (the first of equals). The midpoint alone gave the second half of a short gap — a kept word's decay
+ * above silence — to a removed word after it, so its removal clipped that tail (round 11: the sequence property's
+ * "tail frame removed", ≈ 1 in 2,000 runs).
+ */
+function gapSplit(voice: CleanupVoice, f: number, g: number): number {
+	let s0 = -1;
+	let s1 = -1;
+	for (let x = f; x < g; x++)
+		if (silentFrame(voice, x)) {
+			if (s0 < 0) s0 = x;
+			s1 = x + 1;
+		}
+	if (s0 >= 0) return s0 + Math.ceil((s1 - s0) / 2);
+	let best = f;
+	for (let x = f + 1; x < g; x++) if (levelDbAt(voice, x) < levelDbAt(voice, best)) best = x;
+	return best;
 }
 
 /**

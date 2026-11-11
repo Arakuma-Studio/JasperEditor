@@ -744,6 +744,17 @@ fixes" and `cleanup-property.test.ts`, each failing on 42d6ab3c6):
   measurement. At 42d6ab3c6 AI-r11b, AJ-r11a, AJ-r11b and AM-r11a fail their spec; strict precision 0.984 (62 / 63, the
   "que..." stutter), recall 0.950 (57 / 60 — the pause over AM a's quiet "sé" counted as a hit). After the round:
   12 / 12, precision 1.000 (65 / 65), recall 1.000 (60 / 60); every earlier split unchanged.
+- **A removal of words never takes the kept word's fading decay before it** (the sequence property's "tail frame
+  removed", ≈ 1 in 2,000 runs, also on main; reproduced with fast-check seed −1982316913, run 369, and seed 1227731568).
+  Two detector causes: a short gap (≤ `maxGapS`) was split at its midpoint, so a removed word after a kept one took the
+  last frames of its decay above silence — it now splits at measured silence (decay to the word before, rising onset to
+  the word after, the silence halved; without silence at the quietest frame, `gapSplit`; identical where gaps are
+  silence, so the corpus is unchanged); and a quiet word (no speech under it — a zero-length word on the first frame of
+  a decay, which the hallucination guard removes) took the whole decay after it — a quiet word now keeps its own time,
+  and the sound running on past it goes to the word whose speech it continues (`soundSide`). The property's decay check
+  also expected the last kept word's decay kept when the plan keeps sound after it (voice without words left for
+  review): that is a join, where the Fast style may cut inside a decay, so the check now skips it. Both inputs are
+  pinned as examples (`PINNED_DECAYS`, each fails without its half of the fix); 3 × 10,000 random runs pass.
 - Limits left by round 11: the 30 dB and 12 dB levels are assumptions from this speaker's runs; the real-audio rerun
   must show that join out points stay acceptable (they now keep the tail down to the speech threshold); the corpus voice
   has no voicing plane, so B2 is measured on the unit tests only; a pause still covers measured silence inside a word's
