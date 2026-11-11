@@ -10,7 +10,8 @@
 // with a voice analysis that has speech under every word and where the reporter measured it.
 //
 // Split: the repeat mechanism (`repeats.ts`) was developed against the dev fragments (A–F, M, N, O, Q) and evaluated
-// on the held-out ones (G–L, P, R, S, T) only at the end; `CLEANUP_CORPUS=dev|held-out` runs one split's spec cases.
+// on the held-out ones (G–L, P, R, S, T) only at the end; round 8 held out run 7 (U–AB, `held-out-r7`).
+// `CLEANUP_CORPUS=dev|held-out|held-out-r7` runs one split's spec cases.
 // The last test measures precision and recall of the removals against each case's `dup` reference, per finding kind
 // and per split (`CLEANUP_CORPUS_REPORT=<file>` writes the table).
 import { readFileSync, writeFileSync } from 'node:fs';
