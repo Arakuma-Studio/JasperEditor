@@ -9,7 +9,7 @@
 // time order; spans that do not fit are counted as skipped.
 //
 // Frames are 10 ms (160 samples at 16 kHz); word times are 16 kHz samples.
-import { cleanupNorm, sameWord } from '@jasper/project/cleanup-worker';
+import { cleanupNorm, foreignScriptWord, sameWord } from '@jasper/project/cleanup-worker';
 import { placeWord } from './align.ts';
 import { VAD_FRAME } from './vad.ts';
 
@@ -124,13 +124,16 @@ export function mergeRecoveredWords<W extends { start: number; end: number }>(
 // Hidden takes (docs/wp-notes/speech.md §11.3 "Hidden takes"). Whisper (measured on a 57-minute Spanish file with large-v3-turbo)
 // writes a phrase the speaker says twice back to back — a restart or retake — only once, and stretches that phrase's
 // word times over both takes; decoding a few seconds around it alone, without the previous text, writes every take
-// with correct times. Two traces mark such places:
+// with correct times. Three traces mark such places:
 //
 // - a stretched word: longer than `STRETCH_MIN_FRAMES` (1 s; normal words last 0.2–0.4 s) over continuous speech,
 //   i.e. at least `STRETCH_VOICED_SHARE` of its frames voiced (a word stretched over a pause is not continuous
 //   speech: word-bound refinement trims it, and nothing is hidden there);
 // - short wordless voice: ≥ `SHORT_GAP_MIN_VOICED_FRAMES` (0.35 s) of voiced frames that no word covers within
-//   `COVER_MARGIN_FRAMES` (50 ms), voice closer than `SHORT_GAP_JOIN_FRAMES` (100 ms) joining.
+//   `COVER_MARGIN_FRAMES` (50 ms), voice closer than `SHORT_GAP_JOIN_FRAMES` (100 ms) joining;
+// - a garbled word: one holding letters of another writing system than the transcript's language
+//   (`foreignScriptWord`; round 7, a Spanish take written "janeter … Pen 와 blah blah금u" over a phrase said twice,
+//   no word stretched and no voice left without words).
 //
 // Each trace gives a window from `SUSPECT_BEFORE_FRAMES` (3 s) before it to `SUSPECT_AFTER_FRAMES` (1.5 s) after it,
 // each edge moved out to the middle of the nearest pause (≥ `SUSPECT_EDGE_PAUSE_FRAMES` unvoiced frames) within
@@ -175,6 +178,7 @@ export type SuspectWindow = {
 	end: number;
 	stretched: number;
 	wordless: number;
+	garbled: number;
 	edges: { start: boolean; end: boolean };
 };
 
@@ -191,24 +195,30 @@ export function isStretchedWord(w: Timed, mask: ArrayLike<number>): boolean {
 }
 
 /**
- * The windows around stretched words and short wordless voice of `words` (sorted, non-overlapping samples) over
- * `mask`, in time order within the budget, and how many did not fit (`skipped`).
+ * The windows around stretched words, short wordless voice and garbled words (in `language`; none when unknown) of
+ * `words` (sorted, non-overlapping samples) over `mask`, in time order within the budget, and how many did not fit
+ * (`skipped`).
  */
 export function suspectWindows(
-	words: readonly Timed[],
+	words: ReadonlyArray<Timed & { text: string }>,
 	mask: ArrayLike<number>,
+	language: string | null = null,
 	budget: { windows: number; frames: number } = { windows: SUSPECT_MAX_WINDOWS, frames: SUSPECT_MAX_FRAMES },
 ): { windows: SuspectWindow[]; skipped: number } {
 	const frames = mask.length;
-	const traces: Array<{ start: number; end: number; stretched: number; wordless: number }> = [];
-	for (const w of words)
-		if (isStretchedWord(w, mask))
+	const traces: Array<Omit<SuspectWindow, 'edges'>> = [];
+	for (const w of words) {
+		const stretched = isStretchedWord(w, mask) ? 1 : 0;
+		const garbled = foreignScriptWord(w.text, language) ? 1 : 0;
+		if (stretched || garbled)
 			traces.push({
 				start: Math.floor(w.start / VAD_FRAME),
 				end: Math.ceil(w.end / VAD_FRAME),
-				stretched: 1,
+				stretched,
 				wordless: 0,
+				garbled,
 			});
+	}
 	const gaps = wordlessVoicedSpans(
 		words,
 		mask,
@@ -220,7 +230,7 @@ export function suspectWindows(
 			margin: COVER_MARGIN_FRAMES,
 		},
 	).spans;
-	for (const g of gaps) traces.push({ ...g, stretched: 0, wordless: 1 });
+	for (const g of gaps) traces.push({ ...g, stretched: 0, wordless: 1, garbled: 0 });
 	// the word whose span holds frame f (strictly inside), by binary search
 	const holding = (f: number): Timed | null => {
 		const t = f * VAD_FRAME;
@@ -261,6 +271,7 @@ export function suspectWindows(
 				end,
 				stretched: t.stretched,
 				wordless: t.wordless,
+				garbled: t.garbled,
 				edges: { start: s0.pause, end: e0.pause },
 			};
 		})
@@ -275,11 +286,13 @@ export function suspectWindows(
 				prev.end = Math.max(prev.end, w.end);
 				prev.stretched += w.stretched;
 				prev.wordless += w.wordless;
+				prev.garbled += w.garbled;
 				continue;
 			}
 			if (w.end <= prev.end) {
 				prev.stretched += w.stretched;
 				prev.wordless += w.wordless;
+				prev.garbled += w.garbled;
 				continue;
 			}
 			w.start = prev.end;
@@ -339,6 +352,23 @@ const OVERLAP_SAMPLES = 5 * VAD_FRAME;
 const RESAID_NEAR_SAMPLES = 25 * VAD_FRAME;
 /** At most this many original words in a row may be overwritten by other words. */
 const REDECODE_MAX_RUN = 2;
+/** Words between two garbled words with at most this many words between them are garbage too ("와 blah blah금u"). */
+const GARBLED_GAP_MAX = 2;
+
+/**
+ * Which of a window's original words are garbage (in `language`): garbled words (`foreignScriptWord`) and the words
+ * between two of them with at most `GARBLED_GAP_MAX` words between.
+ */
+function garbageWords(words: ReadonlyArray<{ text: string }>, language: string | null): boolean[] {
+	const out = words.map((w) => foreignScriptWord(w.text, language));
+	let last = -1;
+	for (let i = 0; i < words.length; i++) {
+		if (!foreignScriptWord(words[i]!.text, language)) continue;
+		if (last >= 0 && i - last - 1 <= GARBLED_GAP_MAX) out.fill(true, last + 1, i);
+		last = i;
+	}
+	return out;
+}
 
 /**
  * The words that replace a window's original words after a re-decode (`core/gaps.ts` section docs), or null when
@@ -350,13 +380,17 @@ const REDECODE_MAX_RUN = 2;
  * 29.79–31.15 and wrote a phrase later in the window that a plain subsequence match took for it). The result must
  * then hold MORE words consistent with the audio than the original — words with letters or digits and at least
  * `minVoiced` of their frames voiced in `mask` — and re-say the original words in order and in place, allowing `REDECODE_SPELLING_SLACK` of them, never more than two in a row, to be
- * written differently. An equal or smaller result never replaces anything, so the pass never drops words.
+ * written differently. An equal or smaller result never replaces anything, so the pass never drops words. Original
+ * garbage in `language` (`garbageWords`: words in another writing system and the few between two of them) is no
+ * word: it need not be said again, never stays, and counts neither in the original's words nor in the misses — so a
+ * window without such words is judged as if `language` were unknown.
  */
 export function redecodeAccepted<W extends Timed & { text: string }>(
 	original: readonly W[],
 	redecoded: readonly W[],
 	mask: ArrayLike<number>,
 	minVoiced: number,
+	language: string | null = null,
 ): W[] | null {
 	const voiced = (w: Timed) => {
 		const a = Math.min(mask.length - 1, Math.max(0, Math.floor(w.start / VAD_FRAME)));
@@ -365,8 +399,10 @@ export function redecodeAccepted<W extends Timed & { text: string }>(
 		for (let f = a; f < b; f++) if (mask[f]! > 0) v++;
 		return b > a && v / (b - a) >= minVoiced;
 	};
-	// punctuation-only words ("…") count for nothing and say nothing
-	const o = original.filter((w) => cleanupNorm(w.text));
+	// punctuation-only words ("…") count for nothing and say nothing; garbage is no word
+	const garbage = garbageWords(original, language);
+	const words = original.length - garbage.filter(Boolean).length;
+	const o = original.filter((w, i) => cleanupNorm(w.text) && !garbage[i]);
 	const r = redecoded.filter((w) => cleanupNorm(w.text));
 	const on = o.map((w) => cleanupNorm(w.text));
 	const rn = r.map((w) => cleanupNorm(w.text));
@@ -403,7 +439,7 @@ export function redecodeAccepted<W extends Timed & { text: string }>(
 	const merged = [...redecoded, ...o.filter((_, i) => stays[i])].sort(
 		(a, b) => a.start - b.start || a.end - b.end,
 	);
-	if (merged.filter((w) => cleanupNorm(w.text) && voiced(w)).length <= original.length) return null;
+	if (merged.filter((w) => cleanupNorm(w.text) && voiced(w)).length <= words) return null;
 	// the words the result does not hold: few, never three in a row
 	const missed = resaid.map((x, i) => !x && !stays[i]);
 	let run = 0;
