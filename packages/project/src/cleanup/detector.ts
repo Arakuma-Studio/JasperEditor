@@ -1410,6 +1410,14 @@ const BREATH_MIN_FRAMES = 12;
 /** A word that opens with a fricative or affricate (its unvoiced noise before the voiced part is the word). */
 const FRICATIVE_ONSET = /^(f|s|z|j|x|ch|sh|th|ph|c[ei]|g[ei]|h)/;
 
+/**
+ * Sound rising into an onset belongs to the word when it stays within this many dB of the word's first 100 ms and rises
+ * by steps of at most `RAMP_STEP_DB` (going back, a frame louder than the next by more ends the ramp). *Assumption*,
+ * labelled: run 9 U b's soft "a" sat 10–17 dB under the speech after it.
+ */
+const ONSET_RAMP_DB = 20;
+const RAMP_STEP_DB = 3;
+
 /** How far (seconds) a pause's edges move over sound to the decay threshold or to silence. */
 const PAUSE_EDGE_MAX_S = 0.25;
 
@@ -1448,6 +1456,24 @@ function pauseEdges(
 				first = x;
 				gap = 0;
 			} else gap++;
+		}
+		// …and so is sound rising into the onset within `ONSET_RAMP_DB` of the word's level, voiced or not (run 9, U b:
+		// the same "a" measured voicing 0.13–0.41): going back from the onset, each frame at most `RAMP_STEP_DB` over the
+		// next one and above measured silence
+		if (hi > g) {
+			let peak = Number.NEGATIVE_INFINITY;
+			for (let x = g; x < Math.min(hi, voice.frameCount, g + 10); x++)
+				peak = Math.max(peak, levelDbAt(voice, x));
+			let x = g - 1;
+			while (
+				x >= f &&
+				g - x <= max &&
+				!silentFrame(voice, x) &&
+				levelDbAt(voice, x) >= peak - ONSET_RAMP_DB &&
+				levelDbAt(voice, x) <= levelDbAt(voice, x + 1) + RAMP_STEP_DB
+			)
+				x--;
+			first = Math.min(first, x + 1);
 		}
 		if (first < b) {
 			let q = first - 1;

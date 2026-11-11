@@ -750,6 +750,31 @@ describe('round 10 fixes (docs/wp-notes/transcript-cleanup.md "Round 10")', () =
 		}
 	});
 
+	it('a pause ends before a soft onset rising into the next word, voiced or not (U b "a ver")', () => {
+		// round 7 / run 9, U b: the soft "a" of a missed "a ver" (−42…−31 dBFS) measured voicing 0.13–0.41, so the voicing
+		// test of round 8 never fired and the pause 2.267–2.433 still ended inside it
+		const words: CleanupWordIn[] = [
+			{ text: 'shit.', start: S(1), end: S(1.25), confidence: 0.9 },
+			{ text: 'ver', start: S(2.12), end: S(2.4), confidence: 0.9 },
+		];
+		const v = voiceFor(words);
+		const voicing = new Uint8Array(v.frameCount).fill(30);
+		for (const w of words) voicing.fill(200, Math.floor(sec(w.start) * 100), Math.ceil(sec(w.end) * 100));
+		for (let f = 125; f < 200; f++) {
+			v.classes[f] = 1;
+			v.level[f] = (120 - 50) * 2;
+		}
+		// rising from −42 to −31 dBFS over 120 ms, voicing 0.3
+		for (let f = 200; f < 212; f++) v.level[f] = (120 - 42 + f - 200) * 2;
+		voicing.fill(77, 200, 212);
+		const d = detect(words, { ...v, voicing, flatness: new Uint8Array(v.frameCount).fill(60) });
+		const pauses = d.findings
+			.filter((f) => f.kind === 'pause')
+			.map((f) => [sec(f.range.start), sec(f.range.end)]);
+		expect(pauses.length).toBeGreaterThan(0);
+		for (const [a, b] of pauses) expect(b <= 2 + 1e-9 || a >= 2.12 - 1e-9, `pause ${a}–${b}`).toBe(true);
+	});
+
 	it('slivers: a loud voiced sound between pauses stays for review; a blip over a removed take goes with it', () => {
 		// run 9, AG a: the deliberate mouth sound "Pup." (0.11 s, voiced, −16 dBFS) alone between two removed pauses
 		const words: CleanupWordIn[] = [

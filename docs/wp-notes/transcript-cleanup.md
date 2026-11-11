@@ -644,6 +644,13 @@ rule, and each held-out round found new failures. The mechanism (vocalic fillers
   first or last, never a number) the retry leaves out between two re-said neighbours with no content word between them
   is forgiven. AC's abandoned first take "Bueno, ok, gracias por avisar, hermano, muy amable de tu parte después de
   haber casi… | … después de casi explotar mi puta laptop." (15 words) was only reviewed in both modes.
+- **A pause ends before a soft onset by level, not only by voicing** (round-8 H8 residual): going back from an onset,
+  frames above measured silence within 20 dB of the word's first 100 ms (`ONSET_RAMP_DB`) that rise into it (each at
+  most 3 dB over the next, `RAMP_STEP_DB`), up to 0.25 s, belong to the word; the pause ends before them as before (at
+  the last silent frame within 0.25 s before them, else at their first frame). U b's soft "a" of a missed "a ver"
+  (−42…−31 dBFS) measured voicing 0.13–0.41, under the round-8 voicing test (0.5), so the pause 2.267–2.433 still ended
+  inside it on the real audio. *Assumption*, labelled: the "a" sat 10–17 dB under the speech after it; a breath at that
+  level right before an onset now stays with the pause's edge (its breath finding still decides it).
 
 Kinds follow the structure: ≤ 2 words a false start, a whole clause (clause start, clause end, ≥ 3 content words) a
 retake (with a group), else a restart; inside re-decoded ranges they become hidden retakes as before. The settings keep
