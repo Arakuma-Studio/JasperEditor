@@ -553,6 +553,39 @@ rule, and each held-out round found new failures. The mechanism (vocalic fillers
    a reduplication from a restart is that the run ends its phrase, not the gap ("Ya. Ya me pasó" stays a false start).
    Test: `cleanup-rules.test.ts` "a greeting said twice with a comma pause is deliberate" (fails on 9031bd0f3).
 
+**Round 8 additions** (from the round-7 listening of large-v3-turbo runs; each has a test in `cleanup-rules.test.ts`
+"round 8 fixes" that fails on 11161ed77 — two of them use the reported words of fragment U b / W a):
+- Rule 3, an **inserted word**: a word the recogniser likely inserted (below) is forgiven when the re-said words around
+  it are next to each other in the retry (U b: "Tengo solo 30 días para hacer un ¡Suscríbete! motor…" was kept and the
+  two attempts before it only reviewed — 25 words heard twice).
+- Rule 3, an **ASR doubling**: a word right next to a matched one (≤ `stutterGapS` apart) that sounds like the same retry
+  word is forgiven in place (W a: "crecieron crashean" for one "crashean", said again as "crecían", kept the 17-word
+  "Play Store" sentence for review).
+- Rule 3, a **corrected word**: in an attempt with one aside before its retry, a content word the retry replaces by
+  another one is forgiven when the aside opens — after an optional correction marker ("no", "perdón", "digo", "mejor
+  dicho", "quiero decir", "o sea"; "sorry", "I mean") — with that word, or with the one or two attempt words before it
+  and then that word; at most one per four content words (W: "…dependo completamente de Unity. | No, de ellos, no tengo
+  que repetir tanto. | …completamente de ellos." had no finding in either mode; mode a has no "No,"). An aside that
+  opens with a correction marker over a clause whose retry says most of it from its start (`retakeSimilarity`) gives
+  at least a review link over attempt and aside.
+- Rule 6: a retry counts as removed by another link only where that link's attempt or aside lies — not its whole span
+  up to its retry (a chain's link spans the abandoned copy between, which it does not remove). W a: "Y sí, es cierto,
+  pero tengo mis razones. | sí, es cierto, Y sí, es cierto, pero…" kept "Y" and the abandoned "sí, es cierto," for
+  review because the first copy's link to the third swallowed the third's "Y".
+- **Words the recogniser likely inserted** (`detector.ts`, `RuleContext.inserted`; hallucination findings for review
+  where no removal takes them, else they go with it — the hummed stock phrase inside a removed attempt no longer gets a
+  finding of its own): stock phrases over voice without frication (round 6), a stock phrase **woven** into other speech
+  — its words in order within 10 words and 4 s of its first, not contiguous (U a: the recovery decode wrote "¡Suscríbete
+  | Tengo al solo 30 días para hacer canal! un motor", so the hidden retake started at "un", mid-attempt, in continuous
+  voice) —, **garbage**: words in another writing system than the transcript's language (`foreignScriptWord`; Hangul
+  in Spanish) and the ≤ 2 words between two of them (U a: "Pen 와 blah blah금u"; "와" normalised to nothing and was not
+  a word at all), and words over **unvoiced noise** (below).
+- **Text over unvoiced noise** (H9): words with no voiced frame (`voicedFrame`) in their time ± 30 ms, at least half of
+  it above measured silence — a Spanish or English word holds a vowel — are one hallucination finding per run: removed
+  (the hallucination rule's action) when the run is alone between pauses ≥ `phraseGapS`, else for review (round 7:
+  "¿Qué pasa?" over noise at −27…−49 dBFS, zero-crossing rate 1,500–10,000 /s, stayed as 0.2–0.7 s asr-suspect pieces
+  between removed pauses). Needs the voicing plane. *Assumption*: a whispered word would count as noise.
+
 Kinds follow the structure: ≤ 2 words a false start, a whole clause (clause start, clause end, ≥ 3 content words) a
 retake (with a group), else a restart; inside re-decoded ranges they become hidden retakes as before. The settings keep
 their meaning (the windows, `retakeSimilarity`, `takeGapS`, `phraseGapS`, `falseStartGapS` for false starts by clause);

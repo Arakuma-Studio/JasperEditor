@@ -43,6 +43,17 @@ const LEAD_IN_JOIN_S = 0.15;
 /** An aside between an attempt and its retry: at most this many words and seconds of them (pauses aside). */
 const ASIDE_MAX_WORDS = 16;
 const ASIDE_MAX_S = 5;
+/** Correction markers that open a self-correction aside ("No, de ellos"), normalised tokens. */
+const CORRECTION_MARKERS: ReadonlyArray<readonly string[]> = [
+	['mejor', 'dicho'],
+	['quiero', 'decir'],
+	['o', 'sea'],
+	['i', 'mean'],
+	['no'],
+	['perdon'],
+	['digo'],
+	['sorry'],
+];
 /** Longest attempt (words) the mechanism tries. */
 const MAX_ATTEMPT_WORDS = 80;
 /** The retry an attempt of `len` words is compared with: at most this many words (it may add some). */
@@ -143,8 +154,18 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 				p < c.link.attempt[1],
 		);
 	type Cover = { full: boolean; share: number; prefix: boolean; last: number; other?: boolean };
-	/** How attempt `[a0, a1)` is said again by retry `[r0, r1)`; `after` = the speech after the retry. */
-	const cover = (a0: number, a1: number, r0: number, r1: number, after: () => readonly number[]): Cover => {
+	/**
+	 * How attempt `[a0, a1)` is said again by retry `[r0, r1)`; `after` = the speech after the retry, `aside` = the words
+	 * between them (a correction may name the word the retry changes).
+	 */
+	const cover = (
+		a0: number,
+		a1: number,
+		r0: number,
+		r1: number,
+		after: () => readonly number[],
+		aside?: readonly [number, number],
+	): Cover => {
 		const A = span(a0, a1);
 		const R = span(r0, r1);
 		// words of the attempt an inner restart already removes are said again inside it (a take with a restart)
@@ -178,7 +199,16 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 		const garble = ak.length >= 6 ? Math.max(1, Math.floor(0.15 * ak.length)) : ak.length >= 3 ? 1 : 0;
 		let forgiven = 0;
 		let inPlace = 0;
+		let corrected = 0;
 		let hard = 0;
+		const matchedR = new Set(pairs.map(([, y]) => rk[y]!));
+		/** The retry's words between the matches of the attempt's content words around `x` (its place in the retry). */
+		const slot = (x: number) => {
+			const before = pairs.filter(([p]) => p < x).at(-1);
+			const next = pairs.find(([p]) => p > x);
+			const lo = before ? R.indexOf(rk[before[1]]!) + 1 : 0;
+			return R.slice(lo, next ? R.indexOf(rk[next[1]]!) : lo + 3);
+		};
 		// a number or alphanumeric the retry does not say: another statement ("Me quedan nueve días | … seis días")
 		let other = false;
 		let prev = false;
@@ -193,7 +223,27 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 			if (last && (brokenOff || a1 === r0) && rk.some((p) => same(tx, tok(p), true))) continue;
 			if (last && brokenOff && pairs.length >= 3 && !exact(tx)) continue;
 			let ok = false;
-			if (!exact(tx) && inPlace < Math.ceil(ak.length / 3)) {
+			// a stock phrase the recogniser inserted into the attempt (round 7, U b: "para hacer un ¡Suscríbete! motor…" said
+			// again as "para hacer un motor de videojuegos"): its matched neighbours are next to each other in the retry
+			if (ctx.inserted?.has(S[ak[x]!]!)) {
+				const before = pairs.filter(([p]) => p < x).at(-1);
+				const next = pairs.find(([p]) => p > x);
+				if (before && (!next || next[1] === before[1] + 1)) continue;
+			}
+			// an ASR doubling: the word right next to it (no pause between them) is matched to a retry word it also sounds
+			// like — one word written twice ("crecieron crashean" for one "crashean", said again as "crecían"; round 7 W a)
+			if (!exact(tx) && inPlace < Math.ceil(ak.length / 3))
+				for (const nb of [x - 1, x + 1]) {
+					const y = matched.get(nb);
+					if (y === undefined || Math.abs(ak[nb]! - ak[x]!) !== 1) continue;
+					const [p1, p2] = nb < x ? [ak[nb]!, ak[x]!] : [ak[x]!, ak[nb]!];
+					if (W(p2).s - W(p1).e <= t.stutterGapS && alike(tx, tok(rk[y]!))) {
+						ok = true;
+						inPlace++;
+						break;
+					}
+				}
+			if (!ok && !exact(tx) && inPlace < Math.ceil(ak.length / 3)) {
 				// garbled in place: the retry says a word that sounds like it between the re-said words around it ("La
 				// tarjeta gráfica le lee da esa imagen | la tarjeta gráfica le ves a imagen": "lee" / "ves", "esa" / "a")
 				const before = pairs.filter(([p]) => p < x).at(-1);
@@ -212,6 +262,15 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 					continue;
 				}
 			}
+			// a corrected word: the retry says another content word in its place, and the aside between them opens with that
+			// word (after a correction marker and the attempt's words before it: "…completamente de Unity. | No, de ellos, … |
+			// …completamente de ellos." — round 7, W)
+			if (!ok && aside && corrected < Math.max(1, Math.floor(ak.length / 4))) {
+				ok = slot(x).some(
+					(y) => keyAt[y] && !matchedR.has(y) && !same(tx, tok(y)) && announces(aside, ak[x]!, y),
+				);
+				if (ok) corrected++;
+			}
 			if (ok) prev = false;
 			else {
 				hard++;
@@ -227,6 +286,26 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 		};
 	};
 
+	/** How many words of a correction marker ("No, …", "perdón", "digo") open `aside` (0: none). */
+	const correction = (aside: readonly [number, number]) => {
+		for (const m of CORRECTION_MARKERS)
+			if (aside[0] + m.length <= aside[1] && m.every((x, i) => tok(aside[0] + i) === x)) return m.length;
+		return 0;
+	};
+	/**
+	 * Whether `aside` names `y` in place of the attempt word at `x`: after an optional correction marker it opens with
+	 * `y`, or with the one or two attempt words before `x` and then `y` ("de Unity" → "No, de ellos").
+	 */
+	const announces = (aside: readonly [number, number], x: number, y: number) => {
+		const a = aside[0] + correction(aside);
+		for (let c = 0; c <= 2; c++) {
+			if (a + c >= aside[1] || x - c < 0) break;
+			let fits = true;
+			for (let i = 0; i < c && fits; i++) fits = same(tok(x - c + i), tok(a + i));
+			if (fits && same(tok(a + c), tok(y))) return true;
+		}
+		return false;
+	};
 	/** The next copy after `p` of the opening `tok(p) tok(p + 1)` (n: none). */
 	const nextCopy = (p: number, limit: number) => {
 		for (let x = p + 1; x + 1 < limit; x++)
@@ -325,6 +404,7 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 		// the retry, or a later copy of it when it is abandoned too (a chain of takes)
 		let rp = r;
 		let pp = p;
+		let corrected: { b: number; share: number; last: number } | null = null;
 		for (let c = 0; c < MAX_CHAIN && pp < n; c++) {
 			const r1 = retryEnd(rp, pp, len);
 			let laterList: number[] | null = null;
@@ -364,12 +444,15 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 					if (!clauseStart(b) || crosses(b)) continue;
 					const k = ak.filter((x) => x < b).length;
 					if (k < 3 || best[k]! < k - 1 - Math.floor(0.15 * k)) continue;
-					const c2 = cover(q, b, rp, r1, later);
+					const c2 = cover(q, b, rp, r1, later, [b, r]);
 					if (c2.full) {
 						e = b;
 						cv = c2;
 						break;
 					}
+					// a self-correction ("No, …") between a clause and its corrected retry: reviewed at least
+					if (c === 0 && !corrected && correction([b, r]) && c2.prefix && c2.share >= t.retakeSimilarity)
+						corrected = { b, share: c2.share, last: c2.last };
 				}
 			}
 			// an attempt that starts inside a sentence and finishes it is re-said word for word (an ASR garble in seven
@@ -395,6 +478,20 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 					via: r,
 				};
 			}
+			if (!cv?.full && corrected)
+				return {
+					link: {
+						attempt: [q, corrected.b],
+						aside: [corrected.b, r],
+						retry: rp,
+						retryEnd: rp,
+						kind: 'retake',
+						tier: 'review',
+					},
+					share: corrected.share,
+					last: corrected.last,
+					via: r,
+				};
 			// review: one whole clause, most of it said again from the start of the clause after it
 			const oneClause = span(q + 1, r).every((x) => !clauseStart(x)) && clauseStart(r);
 			if (
@@ -528,7 +625,7 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 			if (!complete || swallowed) l.tier = 'review';
 		}
 		if (l.tier === 'remove') {
-			for (let x = l.attempt[0]; x < l.retry; x++) removed.add(x);
+			for (let x = l.attempt[0]; x < l.aside[1]; x++) removed.add(x);
 			attemptStarts.add(l.attempt[0]);
 			for (let x = l.attempt[0]; x < l.attempt[1]; x++) inAttempt.add(x);
 			for (let x = l.aside[0]; x < l.aside[1]; x++) inAside.add(x);

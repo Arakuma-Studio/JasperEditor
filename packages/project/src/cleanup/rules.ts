@@ -89,6 +89,11 @@ export type RuleContext = {
 	scriptTokens: readonly string[];
 	/** Seconds of speech frames inside a word (null without voice analysis). */
 	voicedSeconds: ((w: AWord) => number) | null;
+	/**
+	 * Words the recogniser likely inserted (positions in `words`): stock phrases over voice without frication or woven
+	 * into other speech, words in another writing system. A repeat's alignment forgives them between two re-said words.
+	 */
+	inserted?: ReadonlySet<number>;
 };
 
 const claim = (ctx: RuleContext, k: number, kind: FindingKind, action: RuleAction, group?: number) => {

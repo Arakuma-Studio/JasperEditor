@@ -15,6 +15,7 @@ import {
 	type CleanupLanguageLists,
 	cleanupLanguageOf,
 	cleanupNorm,
+	foreignScriptWord,
 	phraseTokens,
 	restartStopWords,
 	sameWord,
@@ -253,7 +254,16 @@ export function detectCleanup(input: DetectInput): DetectResult {
 		const e = toSec(w.end);
 		if (!(e > s - 1e-6)) continue;
 		// a spoken symbol ("%": "por ciento") is a word over its sound, though it normalises to nothing
-		const n = cleanupNorm(w.text) || spokenSymbol(w.text, lang);
+		// …and a word in another writing system (Hangul in a Spanish transcript) is a word over its sound: garbage to flag
+		const n =
+			cleanupNorm(w.text) ||
+			spokenSymbol(w.text, lang) ||
+			(foreignScriptWord(w.text, input.language)
+				? w.text
+						.normalize('NFKC')
+						.toLowerCase()
+						.replace(/[\p{P}\p{S}\s]/gu, '')
+				: '');
 		if (!n) continue;
 		const conf = typeof w.confidence === 'number' && Number.isFinite(w.confidence) ? w.confidence : null;
 		words.push({ i, n, s, e, text: w.text, conf });
@@ -282,6 +292,49 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			}
 		}
 	}
+	// words the recogniser likely inserted (round 7): garbage — words in another writing system and the few between two
+	// of them ("Pen 와 blah blah금u") —, a stock phrase woven into other speech ("¡Suscríbete | Tengo al solo 30 días para
+	// hacer canal!"), and words over sound without a voiced frame (no vowel: "¿Qué pasa?" over noise). A repeat's
+	// alignment forgives them between re-said words; one over noise alone in its phrase is a hallucination like the guard's
+	const suspect = new Set<number>(hummed);
+	if (settings.rules.hallucination !== 'off') {
+		let last = -1;
+		for (let k = 0; k < words.length; k++) {
+			if (!foreignScriptWord(words[k]!.text, input.language)) continue;
+			suspect.add(k);
+			if (last >= 0 && k - last - 1 <= GARBLED_GAP_MAX) for (let q = last + 1; q < k; q++) suspect.add(q);
+			last = k;
+		}
+		for (const p of lists.hallucinations.map((h) => h.split(' ')).filter((p) => p.length > 1))
+			for (let k = 0; k < words.length; k++) {
+				if (words[k]!.n !== p[0]) continue;
+				const at = [k];
+				for (let q = k + 1; q < words.length && at.length < p.length; q++) {
+					if (q - k > WOVEN_MAX_WORDS || words[q]!.s - words[k]!.e > WOVEN_MAX_S) break;
+					if (words[q]!.n === p[at.length]) at.push(q);
+				}
+				if (at.length === p.length && at[at.length - 1]! - k >= p.length) for (const q of at) suspect.add(q);
+			}
+		if (voice?.voicing) {
+			const noise = words.map((w, k) => !guarded[k] && unvoicedSound(voice, w));
+			for (let k = 0; k < words.length; ) {
+				if (!noise[k]) {
+					k++;
+					continue;
+				}
+				let j = k;
+				while (j + 1 < words.length && noise[j + 1]) j++;
+				const alone =
+					(k === 0 || words[k]!.s - words[k - 1]!.e >= T.phraseGapS) &&
+					(j === words.length - 1 || words[j + 1]!.s - words[j]!.e >= T.phraseGapS);
+				for (let q = k; q <= j; q++) {
+					if (alone) guarded[q] = true;
+					else suspect.add(q);
+				}
+				k = j + 1;
+			}
+		}
+	}
 	const aw: AWord[] = [];
 	const awIndex: number[] = []; // aw position → words position
 	for (let k = 0; k < words.length; k++)
@@ -303,6 +356,7 @@ export function detectCleanup(input: DetectInput): DetectResult {
 		stop,
 		restartStop: new Set(restartStopWords(lang)),
 		scriptTokens: sTokens,
+		inserted: new Set(aw.flatMap((_, k) => (suspect.has(awIndex[k]!) ? [k] : []))),
 		voicedSeconds: voice
 			? (w) => {
 					const [a, b] = wordFrames(w);
@@ -501,6 +555,11 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			k = j + 1;
 		}
 
+	// what the recogniser likely inserted and no removal takes is a hallucination to review
+	for (let k = 0; k < aw.length; k++)
+		if (suspect.has(awIndex[k]!) && labels[k]?.action !== 'remove')
+			labels[k] = { kind: 'hallucination', action: 'review' };
+
 	// a kept take is what stays of it: words its own restarts, false starts or fillers remove at its edges are not
 	// part of it ("… para poder subirlos" said again right after), so no finding overlaps the take that stays
 	for (const g of groups) {
@@ -650,31 +709,6 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			k = j + 1;
 		}
 	}
-	// a stock phrase over voice without frication: a hallucination finding for review (an uncalibrated measure, so it
-	// never removes by default)
-	if (settings.rules.hallucination !== 'off')
-		for (let k = 0; k < words.length; ) {
-			if (!hummed.has(k) || guarded[k]) {
-				k++;
-				continue;
-			}
-			let j = k;
-			while (j + 1 < words.length && hummed.has(j + 1)) j++;
-			const [hs, he] = soundOf(k, j);
-			raw.push({
-				kind: 'hallucination',
-				suggested: 'review',
-				start: hs,
-				end: he,
-				fp: [input.words[words[k]!.i]!.start, input.words[words[j]!.i]!.end],
-				words: [words[k]!.i, words[j]!.i],
-				text: words
-					.slice(k, j + 1)
-					.map((w) => w.text.trim())
-					.join(' '),
-			});
-			k = j + 1;
-		}
 	// a removal of words that starts in continuous voice right after another word starts at the quietest 10 ms frame
 	// between them, never inside its first word (round 7: cuts started 20–30 ms into a removed "no" / "o" and in loud
 	// voice; the frame grid then takes the boundary at or before that point — docs/wp-notes/transcript-cleanup.md
@@ -1224,6 +1258,28 @@ function noFrication(voice: CleanupVoice, s: number, e: number): boolean {
 		if (voicing[f]! < 115 && flatness[f]! >= 51 && levelDbAt(voice, f) >= floor + 10) return false;
 	}
 	return speech * FR >= 0.3;
+}
+
+/** Words between two words in another writing system with at most this many words between them are garbage too. */
+const GARBLED_GAP_MAX = 2;
+/** A stock phrase woven into other speech: its words in order within this many words and seconds of its first. */
+const WOVEN_MAX_WORDS = 10;
+const WOVEN_MAX_S = 4;
+
+/**
+ * Whether a word lies over sound without one voiced frame (`voicedFrame`) in its time and 30 ms around it, at least
+ * half of it above measured silence: noise — a Spanish or English word holds a vowel. False without the voicing
+ * plane. Round 7: Whisper wrote "¿Qué pasa?" over unvoiced noise at −27…−49 dBFS, zero-crossing rate 1,500–10,000 /s.
+ */
+function unvoicedSound(voice: CleanupVoice, w: { s: number; e: number }): boolean {
+	if (!voice.voicing) return false;
+	const [a, b] = wordFrames(w);
+	let loud = 0;
+	for (let f = Math.max(0, a - 3); f < Math.min(voice.frameCount, b + 3); f++) {
+		if (voicedFrame(voice, f)) return false;
+		if (f >= a && f < b && !silentFrame(voice, f)) loud++;
+	}
+	return b > a && loud * 2 >= b - a;
 }
 
 /** Shortest breath-like run (frames): the voice analysis' class minimum (120 ms). */
