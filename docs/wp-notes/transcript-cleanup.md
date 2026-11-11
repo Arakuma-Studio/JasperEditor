@@ -366,7 +366,7 @@ through `analyzeSequenceCleanup` (Fast preset, 30 fps, speech under every word).
 cuts without a finding) and G, I, K failed their spec (the aside, two missed restarts); at 170f832bb, after round 6,
 the new cases N, O, Q, R, T failed their spec (and P on "Guiño, guiño"); with repeats by alignment all 60 pass (split,
 metrics and the held-out result: "Repeats by alignment" below); run 7 (round 8) adds U–AB as a third split, run 9
-(round 10) AC–AH as a fourth. Limits: without the re-decode (fragment A, mode c) "a" stretched over the second "poder
+(round 10) AC–AH as a fourth, run 11 (round 11) AI–AN as a fifth (regression coverage, below). Limits: without the re-decode (fragment A, mode c) "a" stretched over the second "poder
 subirlos" (1.03 s) goes as a drawn vowel, so that case asserts "poder subirlos" and "la Play Store" apart. Run 5 E
 default ("keeps 40.12–42.10, so that clause plays twice; stray 'de' split at 42.1") passes on this transcript at
 2557f0b20 already — the corpus voice (speech under every word, silence after 42.10) does not reproduce it; the real
@@ -423,9 +423,9 @@ The rules now:
 - **Pause edges in measured silence** (`pauseEdges`; silence = a frame that is not speech and < floor + 6 dB,
   `silentFrame`, the speech threshold's minimum margin): before speech, the pause ends after the last silent frame
   within 0.25 s of the onset, so no cut clips a rising onset (S3: run 5 H 14.067 took ≈ 50 ms of "Unity", H 51.73 and I
-  47.67 / 56.3 grazed onsets — all edges of pause cuts); after speech followed by speech (a join) it starts where the
-  decay falls below the level edges' out threshold (the calibrated Fast out point inside the decay); at a tail it
-  starts at the first silent frame — no silence within 0.25 s, no tail pause. Voiced sound under the speech threshold
+  47.67 / 56.3 grazed onsets — all edges of pause cuts); after speech followed by speech (a join) it takes a word's
+  fading tail only — after the word's time, unvoiced, under the level edges' out threshold and 30 dB under the word's
+  own loudest frame (round 11, below); at a tail it starts at the first silent frame — no silence within 0.25 s, no tail pause. Voiced sound under the speech threshold
   leading into an onset (voicing ≥ 0.5 above measured silence, `voicedFrame`, breaks of ≤ 30 ms) is the onset's: the
   pause ends before it — at the last silent frame within 0.25 s before it, else at its first voiced frame (round 8,
   H8: U b's pause took the soft "a" of a missed "a ver" at −40…−31 dBFS after 0.25 s of other sound; needs the voicing
@@ -654,7 +654,8 @@ rule, and each held-out round found new failures. The mechanism (vocalic fillers
   level right before an onset now stays with the pause's edge (its breath finding still decides it).
 - **Text over noise with stray voiced frames** (round-8 H9 residual): a word holds a vowel only with 3 voiced frames in a
   row (`VOWEL_MIN_FRAMES`, 30 ms); AA b's "¿Qué" over noise had three stray ones (two in a row) and stayed as an
-  ASR-suspect review; AH b's "¿Qué se hace?" (one voiced frame) now reads as one run of noise words.
+  ASR-suspect review; AH b's "¿Qué se hace?" (one voiced frame) now reads as one run of noise words. Round 11 narrowed
+  this to words with strong non-speech evidence (below: it flagged loud real words).
 - **Garbled tokens in a take** (round-8 H3 residual, rule 3): a number written twice next to itself ("30 treinta") is
   one number; and in an attempt of ≥ 6 content words, one word per six that the recogniser marked unsure (confidence
   under `lowConfidence`, an ASR suspect) between two re-said neighbours is forgiven. Fresh U a's re-decode wrote take 1
@@ -688,6 +689,77 @@ rule, and each held-out round found new failures. The mechanism (vocalic fillers
   speaker's few measurements and need the real-audio rerun; the cut-edge limit of round 8 (W a 71.4, Z b 14.567) is
   unchanged.
 
+**Round 11** (from the round-11 real-audio validation of main 42d6ab3c6, large-v3-turbo both modes, fragments AI–AN and
+re-plans of run 9's transcripts, `/tmp/je-hr11-local/` on the build host; tests in `cleanup-rules.test.ts` "round 11
+fixes" and `cleanup-property.test.ts`, each failing on 42d6ab3c6):
+- **A pause never takes a word** (B1, safety). A join's pause took the decay before it while frames were speech of a word
+  (`owner`, which includes the word's own time) under the out threshold — floor + 20 dB, an absolute level. AJ (floor
+  −48 dB → −28 dBFS): accepted pauses removed the quiet off-mic words "las", "3" and "que..." (−28…−35 dBFS, speech,
+  voicing 0.59–0.82) with no word finding and split "y" at 24.000; AK (floor −42 dB → −22 dBFS) trimmed the last vowels
+  of "detalle,", "no?", "teléfono,", "Unity." at −22…−27 dBFS inside their times. Now the decay walk (`decayFrame`)
+  takes only frames after every word's time, unvoiced (`voicedFrame`), held by a word (its margin), under the out
+  threshold **and** 30 dB under that word's own loudest frame (`DECAY_BELOW_PEAK_DB`; *assumption*, labelled: the
+  conservative end of the 25–30 dB the report proposes, not calibrated on the user's cuts). A pause still holds measured
+  silence at a word's edges (loose timestamps, `wordHold`), and a word longer than 1 s is still unprotected (it holds
+  other sound). Effect on Fast: a join's out point now sits where the voice analysis stops calling the tail speech, or
+  30 dB under the word's peak — on the golden synthetic voice (124 dB/s decay, floor −64 dB) 0.22 s after a word's tone
+  instead of ≈ 0.16 s, at its first frame of measured silence (the golden edge bound now says that, not "< 0.2 s").
+  Tests: AJ a's words with the run's levels and AK's "detalle," tail (each fails on 42d6ab3c6); the sequence property
+  now asserts that a kept word's time loses no frame that is not silence unless an accepted removal of the next words
+  starts there (its valley, round 8), and that a pause takes a kept word's running-on speech only 30 dB under its peak
+  (fails on 42d6ab3c6); the corpus asserts that no word's time is removed without a finding that removes it (the frame
+  at or before the start of a removal of the next words aside).
+- **Noise needs strong non-speech evidence** (B2, precision; regression of round 10's 3-frame vowel). The vowel rule
+  alone flagged loud real words: AM "negra" (−11…−21.5 dBFS, speech level −9.5), AK a "megas.", AC "si", the control
+  AA's "que", U a "shit," — hallucination reviews — and AG a's "No." (−22.5 dBFS, speech-classed, voicing 0.31–0.63
+  never three frames in a row), alone between pauses, was **removed**; AG a's "Espera." became a review, so it no
+  longer went with "es...". A word is now noise only when the voice analysis calls most of its frames something else than
+  speech, it stays `LOUD_WORD_DB` (12 dB) under the file's speech level, it holds no vowel run and half of it is above
+  silence (`unvoicedSound`; no levels, no flag). A loud word is never noise, whatever its voicing frames say. Noise
+  words go only alone between pauses that go (the pause rule removes); else review. *Assumption*, labelled: 12 dB from
+  run 11's flagged real words (1.5–11 dB under the speech level) and the noise words of rounds 7–9 (15 dB or more under
+  it). Test: AG a's words ("No.", "Espera.") and AM's "negra" with the run's levels (both fail on 42d6ab3c6). Left as
+  it was: the hummed stock-phrase rule keeps its 6 dB (`HUM_BELOW_SPEECH_DB`, review only, its own frication evidence).
+- **An inserted word over a removed take's tail** (B3): AI b wrote "…miden dos... metros. | y pantallas ultra -wide
+  que miden dos metros." — "metros." (inserted over the decay of "dos") was taken as the retry's lead word ("one content
+  word may lead the retry"), so it stayed with 0.2 s of the abandoned take's tail. A word that ends a sentence is no lead
+  (it is not said into the retry); the attempt is then broken off at "dos..." and "metros." goes as its one-word aside.
+  Test: corpus case AI-r11b (fails on 42d6ab3c6).
+- **One word written as two** (B4): AM a wrote the mumbled attempt "nos e[ncontramos]" as "y aquí no sé", 10.6 s before
+  "aquí nos encontramos con un problema enorme."; mode b ("y aquí nos") was linked. A content 2-gram said again whose
+  second word the attempt wrote as two words that begin with it and sound like it (`splitWord`) is a candidate, and a
+  short attempt's opening counts the pair as that word. Test: corpus case AM-r11a (fails on 42d6ab3c6). Limit: only a
+  word split in two in a short attempt's opening; "Cloudecode" / "Cloud Decode" (round 10, H6) is still not linked.
+- **An off-mic exchange is no filler or stutter** (B5, conservative): a filler phrase with no word within 12 dB of the
+  speech level is reviewed, not removed (AJ's off-mic answer "Sí." at −27 dBFS, speech level −8.5 dBFS), and a stutter's
+  first copy must be said in one go — no pause ≥ `phraseGapS` inside it (AJ b: "que... | Así que, así", 5.7 s apart,
+  was a 2-gram stutter). Test: `cleanup-rules.test.ts` "an off-mic exchange before the takes…" (fails on 42d6ab3c6).
+- Corpus (`CLEANUP_CORPUS=held-out-r11`): run 11's twelve transcripts (AI–AN, both modes) with their `dup` references,
+  `alt` spans (removal right but not required: the "y" of AI's retry, AN's whispered noise word — counted right, not
+  required for recall; a new field of this split's references, defined by the judgements before the evaluation) and
+  `debatable` spans (AJ's off-mic aside), the run's measured levels (`levels`: floor, speech level, threshold; words 6 dB
+  under the speech level) and measured quiet speech (`quiet`: AJ's aside at −30 dBFS, AM's mumbled attempt at −35
+  dBFS), plus a spec per fragment (AJ's aside kept or removed whole: `together`). Its bug reports were read before the
+  fixes, and the recording has no unused gaps left for a blind split: it is regression coverage, not a held-out
+  measurement. At 42d6ab3c6 AI-r11b, AJ-r11a, AJ-r11b and AM-r11a fail their spec; strict precision 0.984 (62 / 63, the
+  "que..." stutter), recall 0.950 (57 / 60 — the pause over AM a's quiet "sé" counted as a hit). After the round:
+  12 / 12, precision 1.000 (65 / 65), recall 1.000 (60 / 60); every earlier split unchanged.
+- **A removal of words never takes the kept word's fading decay before it** (the sequence property's "tail frame
+  removed", ≈ 1 in 2,000 runs, also on main; reproduced with fast-check seed −1982316913, run 369, and seed 1227731568).
+  Two detector causes: a short gap (≤ `maxGapS`) was split at its midpoint, so a removed word after a kept one took the
+  last frames of its decay above silence — it now splits at measured silence (decay to the word before, rising onset to
+  the word after, the silence halved; without silence at the quietest frame, `gapSplit`; identical where gaps are
+  silence, so the corpus is unchanged); and a quiet word (no speech under it — a zero-length word on the first frame of
+  a decay, which the hallucination guard removes) took the whole decay after it — a quiet word now keeps its own time,
+  and the sound running on past it goes to the word whose speech it continues (`soundSide`). The property's decay check
+  also expected the last kept word's decay kept when the plan keeps sound after it (voice without words left for
+  review): that is a join, where the Fast style may cut inside a decay, so the check now skips it. Both inputs are
+  pinned as examples (`PINNED_DECAYS`, each fails without its half of the fix); 3 × 10,000 random runs pass.
+- Limits left by round 11: the 30 dB and 12 dB levels are assumptions from this speaker's runs; the real-audio rerun
+  must show that join out points stay acceptable (they now keep the tail down to the speech threshold); the corpus voice
+  has no voicing plane, so B2 is measured on the unit tests only; a pause still covers measured silence inside a word's
+  loose timestamps and the inside of words longer than 1 s.
+
 Kinds follow the structure: ≤ 2 words a false start, a whole clause (clause start, clause end, ≥ 3 content words) a
 retake (with a group), else a restart; inside re-decoded ranges they become hidden retakes as before. The settings keep
 their meaning (the windows, `retakeSimilarity`, `takeGapS`, `phraseGapS`, `falseStartGapS` for false starts by clause);
@@ -715,6 +787,9 @@ words (fillers aside) removed. Measured (both modes, Fast, corpus voice):
 | … held out (round 6) | 24 / 24 | 1.000 (338 / 338) | 0.973 (327 / 336) |
 | … held-out-r7 | 16 / 16 | 0.998 (479 / 480) | 0.870 (440 / 506); 0.984 with asides proposed for review |
 | … held-out-r9 (no longer blind: it informed these rules) | 11 / 12 + AG-r9a expected failure | 0.992 (260 / 262) (excluding debatable, information only: 1.000) | 0.976 (248 / 254) |
+| round 11: run 11 (AI–AN, both modes) at main 42d6ab3c6 | 8 / 12 | 0.984 (62 / 63) | 0.950 (57 / 60) |
+| round 11 after its fixes: held-out-r11 (regression coverage, not blind) | 12 / 12 | 1.000 (65 / 65) | 1.000 (60 / 60) |
+| … dev, held out, held-out-r7, held-out-r9 | unchanged | 0.997, 1.000, 0.998, 0.992 | 0.960, 0.973, 0.870, 0.976 (with asides proposed: 0.996, 0.973, 0.984, 0.976) |
 
 Per kind at 0108b4021 (dev / held out): hidden-retake 0.997 / 1.000, retake 0.999 / 1.000, restart 0.998 / 1.000,
 false start 1.000 / 1.000, stutter — / 1.000, filler-vocalic 0.943 / —, filler-phrase 1.000 / 1.000, hallucination

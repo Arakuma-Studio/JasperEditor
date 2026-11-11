@@ -136,6 +136,11 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 		return v;
 	};
 	const alike = cached((a, b) => soundsAlike(a, b), 'a');
+	/**
+	 * Whether the recogniser wrote one word `y` as two, `a b`: they begin with it and sound like it (round 11, AM a: "nos
+	 * e[ncontramos]" written "no sé").
+	 */
+	const splitWord = (a: string, b: string, y: string) => a !== y && (a + b).startsWith(y) && alike(a + b, y);
 	const tok = (p: number) => W(p).n;
 	const text = (p: number) => W(p).text.trim();
 	const numbers = new Set(ctx.lists.numbers);
@@ -226,8 +231,15 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 			// a short attempt: its words in order among the retry's first words (one function word may differ, two before a
 			// break-off), its first word first or second
 			const head = R.slice(0, A.length + 2).map(tok);
+			// (one retry word the attempt wrote as two counts as that word: "aquí no sé | aquí nos encontramos")
+			const at: string[] = [];
+			for (let i = 0; i < A.length; i++) {
+				const y = i + 1 < A.length ? head.find((h) => splitWord(tok(A[i]!), tok(A[i + 1]!), h)) : undefined;
+				at.push(y ?? tok(A[i]!));
+				if (y !== undefined) i++;
+			}
 			prefix =
-				lcs(A.map(tok), head, (x, y) => same(x, y)) >= A.length - (cut(a1 - 1) ? 2 : 1) &&
+				lcs(at, head, (x, y) => same(x, y)) >= at.length - (cut(a1 - 1) ? 2 : 1) &&
 				(same(tok(a0), head[0]!) || (head.length > 1 && same(tok(a0), head[1]!)));
 		}
 		const matched = new Map(pairs.map(([x, y]) => [x, y]));
@@ -418,8 +430,10 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 		for (let m = 1; m <= 2; m++) {
 			const r = p - m;
 			if (r <= q) break;
-			// (one content word may lead the retry when it is the only one: "… cerradas | ahora diseñé las curvas …")
-			if ((key(tok(r)) && m > 1) || W(r + 1).s - W(r).e >= LEAD_IN_JOIN_S) break;
+			// (one content word may lead the retry when it is the only one: "… cerradas | ahora diseñé las curvas …"; a word
+			// that ends a sentence is not said into it — round 11, AI b: the inserted "metros." of "…miden dos... metros. | y
+			// pantallas…" stayed as the retry's lead, with 0.2 s of the abandoned take's tail under it)
+			if ((key(tok(r)) && m > 1) || ends(r) || W(r + 1).s - W(r).e >= LEAD_IN_JOIN_S) break;
 			if (r === 0 || ends(r - 1) || cut(r - 1) || gapAfter(r - 1) >= t.phraseGapS) return r;
 		}
 		return p;
@@ -645,6 +659,13 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 				if (garbled < 2) qs.add(q);
 			}
 		}
+		// a content 2-gram said again whose second word the attempt wrote as two that begin with it and sound like it
+		// (round 11, AM a: "y aquí no sé | aquí nos encontramos…" — "nos e[ncontramos]" written "no sé")
+		if (p + 2 <= n && !weak(tok(p)))
+			for (let q = p - 3; q >= Math.max(0, p - t.restartWindowWords2); q--) {
+				if (W(p).s - W(q).s > t.restartWindowS) break;
+				if (sameAt(q, p) && splitWord(tok(q + 1), tok(q + 2), tok(p + 1))) qs.add(q);
+			}
 		// two clause starts whose first words match: the retry may add a lead word ("Y bueno, …" after "bueno, …")
 		if (clauseStart(p)) {
 			const rk = keys(p, Math.min(n, p + 6))

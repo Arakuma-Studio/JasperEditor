@@ -11,10 +11,13 @@
 //
 // Split: the repeat mechanism (`repeats.ts`) was developed against the dev fragments (A–F, M, N, O, Q) and evaluated
 // on the held-out ones (G–L, P, R, S, T) only at the end; round 8 held out run 7 (U–AB, `held-out-r7`), round 10 run 9
-// (AC–AH, `held-out-r9`). `CLEANUP_CORPUS=dev|held-out|held-out-r7|held-out-r9` runs one split's spec cases.
+// (AC–AH, `held-out-r9`); round 11 adds run 11 (AI–AN, `held-out-r11`), mainly regression coverage: its bug reports
+// were read first and the recording has no unused gaps left for a blind split.
+// `CLEANUP_CORPUS=dev|held-out|held-out-r7|held-out-r9|held-out-r11` runs one split's spec cases.
 // The last test measures precision and recall of the removals against each case's `dup` reference, per finding kind
 // and per split (`CLEANUP_CORPUS_REPORT=<file>` writes the table). A word removed in a case's `debatable` span counts
-// as wrong; the precision excluding those is reported for information only, never asserted.
+// as wrong; the precision excluding those is reported for information only, never asserted. A word removed in an
+// `alt` span (run 11's references: removal right but not required) counts as right and is not required for recall.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { CleanupVoice } from '../src/cleanup/detector.ts';
@@ -39,6 +42,12 @@ type Case = {
 	dup: Array<[number, number]>;
 	/** Media time the judgements call editorially debatable: removing it counts as wrong; reported apart for information. */
 	debatable?: Array<[number, number]>;
+	/** Media time whose removal is right but not required (run 11's references). */
+	alt?: Array<[number, number]>;
+	/** The run's measured voice-analysis levels (dBFS): the corpus voice uses them instead of its defaults. */
+	levels?: { floorDb: number; speechDb: number; speechThresholdDb: number };
+	/** Measured speech quieter than the words around it: [start, end, dBFS] (an off-mic aside, a mumbled attempt). */
+	quiet?: Array<[number, number, number]>;
 };
 
 /** Fragments held out while the repeat mechanism was developed (round 6)… */
@@ -47,14 +56,18 @@ const HELD_OUT = new Set(['G', 'H', 'I', 'J', 'K', 'L', 'P', 'R', 'S', 'T']);
 const HELD_OUT_R7 = new Set(['U', 'V', 'W', 'X', 'Y', 'Z', 'AA', 'AB']);
 /** … and while round 10 was developed (run 9; written from its judgements before the development). */
 const HELD_OUT_R9 = new Set(['AC', 'AD', 'AE', 'AF', 'AG', 'AH']);
+/** … and round 11 (run 11): regression coverage written from its judgements before the evaluation; not blind. */
+const HELD_OUT_R11 = new Set(['AI', 'AJ', 'AK', 'AL', 'AM', 'AN']);
 const splitOf = (c: Case) =>
-	HELD_OUT_R9.has(c.fragment)
-		? 'held-out-r9'
-		: HELD_OUT_R7.has(c.fragment)
-			? 'held-out-r7'
-			: HELD_OUT.has(c.fragment)
-				? 'held-out'
-				: 'dev';
+	HELD_OUT_R11.has(c.fragment)
+		? 'held-out-r11'
+		: HELD_OUT_R9.has(c.fragment)
+			? 'held-out-r9'
+			: HELD_OUT_R7.has(c.fragment)
+				? 'held-out-r7'
+				: HELD_OUT.has(c.fragment)
+					? 'held-out'
+					: 'dev';
 /**
  * Spec cases that fail for a documented limit (docs/wp-notes/transcript-cleanup.md "Round 10"): registered as expected
  * failures, so a fix shows up as a failing test to promote.
@@ -75,7 +88,14 @@ const corpus = JSON.parse(
 /** Per fragment: phrases the edit says exactly once, phrases it never says (normalised words, ASR variants match). */
 const SPEC: Record<
 	string,
-	{ once: string[]; never: string[]; allKept?: boolean; gone?: Array<[number, number]> }
+	{
+		once: string[];
+		never: string[];
+		allKept?: boolean;
+		gone?: Array<[number, number]>;
+		/** Spans whose words are all heard or all removed (an aside kept or cut whole, never chopped). */
+		together?: Array<[number, number]>;
+	}
 > = {
 	A: {
 		once: [
@@ -506,6 +526,49 @@ const SPEC: Record<
 		never: ['espera', 'es es', 'y es'],
 	},
 	AH: { once: [], never: [], allKept: true },
+	// round 11 (run 11): written from that run's judgements before the evaluation
+	AI: {
+		once: [
+			'tienes que escribir un shader',
+			'encima tienes que hacer que se vea bien',
+			'tablets y pantallas ultra wide que miden dos metros',
+		],
+		never: [],
+	},
+	AJ: {
+		once: [
+			'como interfaz del juego',
+			'asi que el boton con bordes redondeados degradado brillito y sombra',
+			'cuatro lineas de codigo',
+		],
+		// the first take; the off-mic aside "Sí. (Son) las 3 y que..." is debatable — kept or removed, never chopped
+		never: ['degradado y brillito'],
+		together: [[21.0, 26.0]],
+	},
+	AK: {
+		once: [
+			'pero hay un pequeno detalle',
+			// an ASR doubling over one spoken "megas": kept, no repeat
+			'mb megas',
+			'asi que tecnicamente si lo he cumplido',
+			'no vuelvo a unity',
+			'para que ustedes la puedan descargar',
+		],
+		never: [],
+	},
+	AL: { once: [], never: [], allKept: true },
+	AM: {
+		once: [
+			'una ventana negra',
+			'negra como mi alma',
+			'toca dibujar las cosas',
+			'aqui nos encontramos con un problema enorme',
+		],
+		// the mumbled broken-off attempt (default mode writes it "y aquí no sé", chunked "y aquí nos")
+		never: ['aqui no se aqui', 'nos y aqui nos'],
+	},
+	// no repeat: the whispered noise word ("¡Draw it!" / "Droid.") may go
+	AN: { once: ['box2d para los juegos 2d', 'la fisica que usaba el angry birds'], never: [] },
 };
 
 const FPS = 30;
@@ -536,22 +599,31 @@ function asideReviews(a: { findings: ReadonlyArray<CleanupFinding> }) {
 function cut(c: Case, decisions?: CleanupDecisions, settings: CleanupSettings = FAST_SETTINGS) {
 	const end = Math.max(...c.words.map((w) => w[2])) + 2;
 	const n = Math.ceil(end * 100);
+	// the run's measured levels when the case has them (words 6 dB under the speech level), else the defaults
+	const floorDb = c.levels?.floorDb ?? -64;
+	const wordDb = c.levels ? c.levels.speechDb - 6 : -20;
+	const q = (db: number) => Math.round((120 + db) * 2);
 	const classes = new Uint8Array(n);
-	const level = new Uint8Array(n).fill((120 - 64) * 2);
+	const level = new Uint8Array(n).fill(q(floorDb));
 	const speech = (a: number, b: number, on: boolean) => {
 		for (let f = Math.floor(a * 100); f < Math.min(n, Math.ceil(b * 100)); f++) {
 			classes[f] = on ? 2 : 0;
-			level[f] = (120 + (on ? -20 : -64)) * 2;
+			level[f] = q(on ? wordDb : floorDb);
 		}
 	};
 	for (const [, s, e] of c.words) speech(s, e, true);
 	for (const [a, b] of c.voiced ?? []) speech(a, b, true);
 	for (const [a, b] of c.unvoiced ?? []) speech(a, b, false);
+	for (const [a, b, db] of c.quiet ?? [])
+		for (let f = Math.floor(a * 100); f < Math.min(n, Math.ceil(b * 100)); f++)
+			if (classes[f] === 2) level[f] = q(db);
 	const voice: CleanupVoice = {
 		classes,
 		level,
 		frameCount: n,
-		levels: { floorDb: -64, speechDb: null, speechThresholdDb: null, breathFloorDb: null },
+		levels: c.levels
+			? { ...c.levels, breathFloorDb: c.levels.floorDb + 5 }
+			: { floorDb: -64, speechDb: null, speechThresholdDb: null, breathFloorDb: null },
 	};
 	const H = new Harness({ preset: 'hd-1080p-30' });
 	const r0 = H.ok([{ type: 'media.register', asset: videoAsset({ seconds: end, kind: 'audio' }) }]);
@@ -633,6 +705,25 @@ describe('Clean Up on real transcripts (corpus)', () => {
 							expect(outside(u, v, claims), `voice ${p}–${q} removed beyond a finding`).toBeLessThan(1e-6);
 					}
 				}
+				// no removal of a word's time unless a finding that removes that word is accepted — a pause never takes a
+				// transcribed word (round 11: pauses took the quiet off-mic words "las", "3", "que...") — but where an accepted
+				// removal of the next words starts: the frame at or before its start (continuous voice, the frame grid)
+				c.words.forEach(([t, s, e], i) => {
+					const own = a.findings
+						.filter((f) => f.suggested === 'remove' && f.words && f.words[0] <= i && i <= f.words[1])
+						.map((f) => [sec(f.range.start), sec(f.range.end)] as const);
+					const next = a.findings
+						.filter((f) => f.suggested === 'remove' && f.words && f.words[0] > i)
+						.map((f) => [sec(f.range.start) - frame - 0.01, sec(f.range.end)] as const);
+					for (const [x, y] of removed) {
+						const [u, v] = [Math.max(x, s), Math.min(y, e)];
+						if (v > u)
+							expect(
+								outside(u, v, [...own, ...next]),
+								`"${t}" ${s}–${e} removed without its finding`,
+							).toBeLessThan(1e-6);
+					}
+				});
 				// a take marked kept loses no word to its own group (a restart inside it has its own finding)
 				for (const g of a.groups) {
 					const t = g.takes[g.chosen]!;
@@ -708,6 +799,14 @@ describe('Clean Up on real transcripts (corpus)', () => {
 				for (const p of spec.never) expect(count(toks, p), `"${p}" never in: ${text}`).toBe(0);
 				for (const [x, y] of spec.gone ?? [])
 					expect(outside(x, y, meant.removed), `${x}–${y} kept`).toBeLessThan(1e-6);
+				for (const [x, y] of spec.together ?? []) {
+					const inside = c.words.filter(([, s, e]) => (s + e) / 2 >= x && (s + e) / 2 < y);
+					const heardThere = inside.filter((w) => meant.heard.includes(w));
+					expect(
+						heardThere.length === 0 || heardThere.length === inside.length,
+						`${x}–${y} chopped: heard ${heardThere.map((w) => w[0]).join(' ')} of ${inside.map((w) => w[0]).join(' ')}`,
+					).toBe(true);
+				}
 				// no sentence twice: no run of five words said twice
 				const grams = new Map<string, number>();
 				for (let i = 0; i + 5 <= toks.length; i++) {
@@ -772,6 +871,8 @@ describe('Clean Up on real transcripts (corpus)', () => {
 			const asides = asideReviews(a);
 			const proposed = (i: number) => asides.some((f) => f.words![0] <= i && i <= f.words![1]);
 			const inDup = (s: number, e: number) => c.dup.some(([x, y]) => (s + e) / 2 >= x && (s + e) / 2 < y);
+			const inAlt = (s: number, e: number) =>
+				(c.alt ?? []).some(([x, y]) => (s + e) / 2 >= x && (s + e) / 2 < y);
 			const debatable = (s: number, e: number) =>
 				(c.debatable ?? []).some(([x, y]) => (s + e) / 2 >= x && (s + e) / 2 < y);
 			for (const f of a.findings) {
@@ -780,7 +881,8 @@ describe('Clean Up on real transcripts (corpus)', () => {
 				for (let i = f.words[0]; i <= f.words[1]; i++) {
 					const [text, s, e] = c.words[i]!;
 					if (!gone(s, e)) continue;
-					if (inDup(s, e) || (fillerKinds.has(f.kind) && filler.has(cleanupNorm(text)))) t.right++;
+					if (inDup(s, e) || inAlt(s, e) || (fillerKinds.has(f.kind) && filler.has(cleanupNorm(text))))
+						t.right++;
 					else {
 						t.wrong++;
 						t.wrongWords.push(`${c.id} ${s} ${text}`);

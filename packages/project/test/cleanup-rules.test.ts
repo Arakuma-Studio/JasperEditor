@@ -867,6 +867,174 @@ describe('round 10 fixes (docs/wp-notes/transcript-cleanup.md "Round 10")', () =
 	});
 });
 
+describe('round 11 fixes (docs/wp-notes/transcript-cleanup.md "Round 11")', () => {
+	const sec = (f: number) => f / FLICKS_PER_SECOND;
+	const detect = (words: CleanupWordIn[], voice: CleanupVoice) =>
+		detectCleanup({ mediaId: 'med_r', words, voice, language: 'es', settings: FAST_SETTINGS });
+	const removes = (d: ReturnType<typeof detect>, i: number) =>
+		d.findings.some((f) => f.words && f.suggested === 'remove' && f.words[0] <= i && i <= f.words[1]);
+	const indexOf = (words: readonly CleanupWordIn[], text: string, from = 0) =>
+		words.findIndex((w, i) => i >= from && w.text === text);
+	/** Words written "text[start-end]" (seconds). */
+	const real = (s: string): CleanupWordIn[] =>
+		s
+			.trim()
+			.split(/\s+/)
+			.map((x) => {
+				const m = /^(.*)\[([\d.]+)-([\d.]+)\]$/.exec(x)!;
+				return { text: m[1]!, start: S(Number(m[2])), end: S(Number(m[3])), confidence: 0.9 };
+			});
+	type Levels = { floorDb: number; speechDb: number; speechThresholdDb: number };
+	/**
+	 * A voice analysis with a run's measured levels (`results.json` "voiceAnalysisEvidence"): the floor between words
+	 * (unvoiced), each word's frames speech at `db(word)` and voiced; `put` overwrites frames [a, b) seconds.
+	 */
+	const levelVoice = (words: readonly CleanupWordIn[], lv: Levels, db: (w: CleanupWordIn) => number) => {
+		const n = Math.ceil((Math.max(...words.map((w) => sec(w.end))) + 2) * 100);
+		const q = (x: number) => Math.round((x + 120) * 2);
+		const v = {
+			classes: new Uint8Array(n),
+			level: new Uint8Array(n).fill(q(lv.floorDb)),
+			voicing: new Uint8Array(n).fill(20),
+			flatness: new Uint8Array(n).fill(100),
+			frameCount: n,
+			levels: { ...lv, breathFloorDb: lv.floorDb + 5 },
+		};
+		const put = (
+			a: number,
+			b: number,
+			o: { db?: (f: number) => number; cls?: number; voicing?: (f: number) => number },
+		) => {
+			for (let f = Math.round(a * 100); f < Math.min(n, Math.round(b * 100)); f++) {
+				if (o.db) v.level[f] = q(o.db(f));
+				if (o.cls !== undefined) v.classes[f] = o.cls;
+				if (o.voicing) v.voicing[f] = Math.round(o.voicing(f) * 255);
+			}
+		};
+		for (const w of words) put(sec(w.start), sec(w.end), { db: () => db(w), cls: 2, voicing: () => 0.8 });
+		return { v: v as CleanupVoice, put };
+	};
+	/** Frames [a, b) of a finding (seconds → 10 ms frames). */
+	const framesOf = (f: { range: { start: number; end: number } }) =>
+		[Math.round(sec(f.range.start) * 100), Math.round(sec(f.range.end) * 100)] as const;
+	/**
+	 * No pause holds a frame of a word's time that is not measured silence, and every speech frame a pause takes after a
+	 * word stays `DECAY_BELOW_PEAK_DB` (30 dB) under that word's loudest frame.
+	 */
+	const expectPausesSpareWords = (
+		d: ReturnType<typeof detect>,
+		words: readonly CleanupWordIn[],
+		v: CleanupVoice,
+	) => {
+		const dbAt = (k: number) => v.level[k]! / 2 - 120;
+		const silent = (k: number) => v.classes[k] !== 2 && dbAt(k) < v.levels.floorDb! + 6;
+		const spans = words.map(
+			(w) => [Math.trunc(sec(w.start) * 100), Math.ceil(sec(w.end) * 100 - 1e-9)] as const,
+		);
+		const paused = new Set<number>();
+		for (const p of d.findings.filter((f) => f.kind === 'pause')) {
+			const [a, b] = framesOf(p);
+			for (let k = a; k < b; k++) paused.add(k);
+		}
+		const bad: string[] = [];
+		spans.forEach(([x, y], i) => {
+			let peak = -120;
+			for (let k = x; k < y; k++) {
+				peak = Math.max(peak, dbAt(k));
+				if (paused.has(k) && !silent(k)) bad.push(`"${words[i]!.text}" ${k / 100}`);
+			}
+			// its tail: the speech running on after its time
+			for (let k = y; k < v.frameCount && v.classes[k] === 2 && !spans.some(([p, q]) => k >= p && k < q); k++)
+				if (paused.has(k) && dbAt(k) > peak - 30)
+					bad.push(`"${words[i]!.text}" tail ${k / 100} at ${dbAt(k)} dBFS`);
+		});
+		expect(bad, 'frames of words a pause takes').toEqual([]);
+	};
+
+	it('a pause never takes a quiet word or a word\'s tail inside its time (AJ a "las", "3", "que..."; AK "detalle,")', () => {
+		// run 11, AJ a (floor −48 dB, speech −8.5 dBFS): the off-mic aside "Sí. (Son) las 3 y que..." at −27…−35 dBFS, every
+		// frame of "las" and "3" speech, voicing 0.59–0.82; the out threshold (floor + 20 dB = −28 dBFS) let accepted pauses
+		// take "las", "3" and "que..." whole and split "y" at 24.000
+		const aj = real(`como[6.92-7.22] interfaz[7.22-7.62] del[7.62-7.76] juego.[7.76-8.31] Sí.[21.11-21.26]
+			las[23.16-23.22] 3[23.38-23.51] y[23.69-24.07] que...[25.66-25.84] Así[31.37-31.54] que[31.54-31.82]
+			el[32.14-32.5] botón[32.5-32.88] con[32.88-33.12] bordes[33.12-33.4] redondeados,[33.4-34.22]
+			degradado[34.22-34.72] y[34.72-34.84] brillito...[34.84-35.53] Así[36.38-36.52] que[36.52-36.64]
+			el[36.64-36.78] botón[36.78-37.2] con[37.2-37.46] bordes[37.46-37.74] redondeados,[37.74-38.64]
+			degradado,[38.64-39.22] brillito[39.22-39.66] y[39.66-39.8] sombra[39.8-40.16] son[40.16-40.42]
+			cuatro[40.42-40.74] líneas[40.74-41.08] de[41.08-41.16] código.[41.16-41.61]`);
+		const aside = (w: CleanupWordIn) => sec(w.start) > 20 && sec(w.start) < 26;
+		const j = levelVoice(aj, { floorDb: -48, speechDb: -8.5, speechThresholdDb: -36.15 }, (w) =>
+			w.text === 'Sí.' ? -27 : aside(w) ? -30 : -12,
+		);
+		// the voice of the untranscribed "Son" before "las" (23.07–23.21)
+		j.put(23.07, 23.16, { db: () => -31, cls: 2, voicing: () => 0.7 });
+		expectPausesSpareWords(detect(aj, j.v), aj, j.v);
+		// run 11, AK a (floor −42 dB → out threshold −22 dBFS): "detalle," 2.28–2.80 fades from −23 to −41 dBFS over its
+		// last 130 ms (speech: gaps inside speech closed); the pause after it started at 2.667, inside the word
+		const ak = real(`Pero[1.54-1.68] hay[1.68-1.82] un[1.82-1.96] pequeño[1.96-2.28] detalle,[2.28-2.8]
+			la[2.96-3.12] app[3.12-3.3] con[3.36-3.5] los[3.5-3.7] 11[3.7-3.96] juegos[3.96-4.36]
+			pesa[4.36-4.92]`);
+		const k = levelVoice(ak, { floorDb: -42, speechDb: -8.5, speechThresholdDb: -31.95 }, () => -12);
+		k.put(2.67, 2.8, { db: (f) => -23 - (f - 267) * 1.5, voicing: () => 0.3 });
+		expectPausesSpareWords(detect(ak, k.v), ak, k.v);
+	});
+
+	it('a loud word or a speech-classed one with voiced frames is no noise hallucination (AG a "No.", "Espera."; AM "negra")', () => {
+		// run 11 re-plan of run 9's AG a (floor −51 dB, speech −5.5 dBFS): "No." peaks at −22.5 dBFS, speech-classed over
+		// 18.27–18.38, voicing 0.31–0.63 but never three frames ≥ 0.5 in a row — alone between pauses it was removed as a
+		// hallucination; "Espera." (−22 dBFS, speech) became a hallucination review, so it no longer went with "es..."
+		const ag = real(`Pero[0.18-0.3] es[0.3-0.42] que[0.42-0.52] tengo[0.52-0.7] un[0.7-0.82] amigo[0.82-1.06]
+			que[1.06-1.28] no[1.28-1.48] come,[1.48-2.08] no[2.08-2.18] descansa,[2.18-2.84] ni[2.84-3.06]
+			duerme.[3.06-3.61] es...[4.4-4.75] Espera.[4.95-5.18] es[6.38-6.6] extremadamente[6.6-7.48]
+			rápido.[7.48-8.2] llama[16.68-16.98] Cloud[16.98-17.38] Code.[17.38-17.93] No.[18.24-18.39]
+			Cloud...[18.92-19.21] ¿Cómo[19.55-19.64] lo[19.64-20.12] puedo[20.12-20.34] pronunciar?[20.34-20.84]
+			Cloud[20.94-21.13]`);
+		const g = levelVoice(ag, { floorDb: -51, speechDb: -5.5, speechThresholdDb: -37.35 }, () => -10);
+		// voiced, unvoiced, voiced, voiced, unvoiced…: never three voiced frames in a row
+		const broken = (f: number) => (f % 3 === 0 ? 0.31 : 0.63);
+		g.put(18.24, 18.39, { db: (f) => -22.5 - Math.abs(f - 1831) * 1.2, cls: 0, voicing: broken });
+		g.put(18.27, 18.38, { cls: 2 });
+		g.put(4.95, 5.18, { db: (f) => -22 - Math.abs(f - 506) * 0.8, voicing: broken });
+		const d = detect(ag, g.v);
+		const no = indexOf(ag, 'No.');
+		const espera = indexOf(ag, 'Espera.');
+		expect(d.findings.filter((f) => f.kind === 'hallucination').map((f) => f.reason.params.text)).toEqual([]);
+		// "es... Espera. | es extremadamente rápido.": the aside goes with its attempt (round 10)
+		expect([removes(d, espera - 1), removes(d, espera), removes(d, no)]).toEqual([true, true, false]);
+		// run 11, AM (floor −52 dB, speech −9.5 dBFS): "negra" at −11…−21.5 dBFS, speech, voicing 0.19–0.52 with one frame
+		// at 0.52 and no voiced run within 30 ms of it — a hallucination review on a loud real word in both modes
+		const am = real(`Oh,[41.83-42.34] negra[42.34-42.62] como[42.62-42.84] mi[42.84-43.04] alma,[43.04-43.54]
+			soy[43.54-43.7] muy[43.7-43.92] Edgy,[43.92-44.46] oh...[44.46-44.95] ahora[56.53-56.74]
+			toca[56.74-57.2] dibujar[57.2-57.64] las[57.64-57.82] cosas[57.82-58.35]`);
+		const m = levelVoice(am, { floorDb: -52, speechDb: -9.5, speechThresholdDb: -39.25 }, () => -12);
+		m.put(42.31, 42.65, { voicing: (f) => (f === 4248 ? 0.52 : 0.19 + ((f * 7) % 25) / 100) });
+		m.put(42.34, 42.62, { db: (f) => -11 - (f - 4234) * 0.37 });
+		expect(detect(am, m.v).findings.filter((f) => f.kind === 'hallucination')).toEqual([]);
+	});
+
+	it('an off-mic exchange before the takes is no filler phrase or stutter (AJ b "Sí.", "que...")', () => {
+		// run 11, AJ b: the off-mic answer "Sí." (−27 dBFS, speech level −8.5 dBFS) went as a filler phrase and "que..."
+		// as a stutter of "Así que, así" 5.7 s later; the takes after it still go
+		const aj = real(`como[6.91-7.23] interfaz[7.23-7.63] del[7.63-7.75] juego.[7.75-8.31] Sí.[21.11-21.26]
+			Son[23.07-23.15] las[23.15-23.22] 3[23.38-23.79] y[23.79-24.07] que...[25.66-25.84] Así[31.37-31.55]
+			que,[31.55-31.78] así[32.14-32.31] que[32.31-32.43] el[32.43-32.53] botón[32.53-32.89]
+			con[32.89-33.11] bordes[33.11-33.39] redondeados,[33.39-34.21] degradado[34.21-34.71] y[34.71-34.87]
+			brillito...[34.87-35.54] Así[36.38-36.53] que[36.53-36.65] el[36.65-36.77] botón[36.77-37.19]
+			con[37.19-37.47] bordes[37.47-37.75] redondeados,[37.75-38.59] degradado,[38.59-39.27]
+			brillito[39.27-39.67] y[39.67-39.79] sombra[39.79-40.15] son[40.15-40.43] cuatro[40.43-40.73]
+			líneas[40.73-41.07] de[41.07-41.15] código.[41.15-41.61]`);
+		const aside = (w: CleanupWordIn) => sec(w.start) > 20 && sec(w.start) < 26;
+		const j = levelVoice(aj, { floorDb: -48, speechDb: -8.5, speechThresholdDb: -36.15 }, (w) =>
+			w.text === 'Sí.' ? -27 : aside(w) ? -30 : -12,
+		);
+		const d = detect(aj, j.v);
+		const retry = indexOf(aj, 'Así', indexOf(aj, 'brillito...'));
+		for (let i = 0; i < aj.length; i++)
+			expect(removes(d, i), `${aj[i]!.text} ${sec(aj[i]!.start)}`).toBe(i >= indexOf(aj, 'Así') && i < retry);
+		expect(d.findings.find((f) => f.words?.[0] === indexOf(aj, 'Sí.'))?.suggested).toBe('review');
+	});
+});
+
 describe('rules (English)', () => {
 	it('English fillers, markers and restarts', () => {
 		const r = kinds('so um we built the track | you know | then we we added cars', { language: 'en' });

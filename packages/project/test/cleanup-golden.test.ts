@@ -69,10 +69,19 @@ describe('Fast preset on a synthetic recording (golden)', () => {
 			expect(first.s - s).toBeLessThan(0.06);
 			expect(first.s - s).toBeGreaterThan(-0.04);
 			const last = [...kw].reverse().find((w) => w.s < e && w.e > s)!;
-			// out point inside the decay: after the tone's end, before its tail fades into the floor — the last piece keeps
-			// its fading tail up to measured silence (≤ 0.25 s and a frame)
+			// out point inside the decay: after the tone's end, at the latest where its tail reaches measured silence and
+			// within 0.25 s, plus a frame of the grid — a join takes a word's tail only 30 dB under its peak (round 11; the
+			// floor + 20 dB out point had cut ≈ 0.16 s into this 124 dB/s synthetic decay), and the last piece keeps its
+			// fading tail up to measured silence
+			let silent = Math.ceil(last.e * 100);
+			while (
+				rec.voice.classes[silent] === 2 ||
+				rec.voice.level[silent]! / 2 - 120 >= rec.voice.levels.floorDb! + 6
+			)
+				silent++;
 			expect(e - last.e).toBeGreaterThan(-0.01);
-			expect(e - last.e).toBeLessThan(e === pieces[pieces.length - 1]![1] ? 0.25 + 1 / 30 : 0.2);
+			expect(e).toBeLessThanOrEqual(silent / 100 + 1 / 30 + 1e-9);
+			expect(e - last.e).toBeLessThan(0.25 + 1 / 30);
 		}
 	});
 

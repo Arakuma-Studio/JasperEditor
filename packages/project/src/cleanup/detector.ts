@@ -325,7 +325,9 @@ export function detectCleanup(input: DetectInput): DetectResult {
 				}
 				let j = k;
 				while (j + 1 < words.length && noise[j + 1]) j++;
+				// removed only alone between pauses that go (round 11: else for review)
 				const alone =
+					settings.rules.pause === 'remove' &&
 					(k === 0 || words[k]!.s - words[k - 1]!.e >= T.phraseGapS) &&
 					(j === words.length - 1 || words[j + 1]!.s - words[j]!.e >= T.phraseGapS);
 				for (let q = k; q <= j; q++) {
@@ -559,6 +561,22 @@ export function detectCleanup(input: DetectInput): DetectResult {
 	// every removal of a take — whichever rule found it — is adjacent to what says it again and never takes the end of a
 	// sentence the kept words before it began (round 10, H1)
 	guardRepeats(ctx);
+
+	// a filler phrase said off-mic — no word of it within `LOUD_WORD_DB` of the speech level — is part of an exchange, not
+	// a filler: for review (round 11, B5: AJ's off-mic answer "Sí." at −25…−30 dBFS, speech level −8.5 dBFS, was removed)
+	if (voice && voice.levels.speechDb !== null)
+		for (let k = 0; k < aw.length; ) {
+			const l = labels[k];
+			if (l?.kind !== 'filler-phrase' || l.action !== 'remove') {
+				k++;
+				continue;
+			}
+			let j = k;
+			while (j + 1 < aw.length && sameLabel(labels[j + 1], l)) j++;
+			if (!aw.slice(k, j + 1).some((w) => loudWord(voice, w)))
+				for (let q = k; q <= j; q++) labels[q] = { ...labels[q]!, action: 'review' };
+			k = j + 1;
+		}
 
 	// what the recogniser likely inserted and no removal takes is a hallucination to review
 	for (let k = 0; k < aw.length; k++)
@@ -1107,6 +1125,36 @@ function frameFindings(
 			}
 		});
 		const isSpeech = (f: number) => voice.classes[f] === VOICE_CLASS_SPEECH;
+		// the frames of every word's time (a join's pause never takes any of them: round 11, B1)
+		const timeOf = new Uint8Array(n);
+		for (const w of words) {
+			const [a, b] = wordFrames(w);
+			if (b > lo && a < hi) timeOf.fill(1, Math.max(lo, a) - lo, Math.min(hi, b) - lo);
+		}
+		// a word's loudest frame over its time (the reference of its fading tail)
+		const peaks = new Map<number, number>();
+		const peakOf = (k: number) => {
+			let p = peaks.get(k);
+			if (p === undefined) {
+				const [a, b] = wordFrames(words[k]!);
+				p = Number.NEGATIVE_INFINITY;
+				for (let f = Math.max(0, a); f < Math.min(voice.frameCount, b); f++)
+					p = Math.max(p, levelDbAt(voice, f));
+				peaks.set(k, p);
+			}
+			return p;
+		};
+		// a word's fading tail a join's pause may take: voice after the word's time that the word holds, unvoiced, at
+		// least `DECAY_BELOW_PEAK_DB` under the word's loudest frame (round 11, B1)
+		const decayFrame = (x: number) => {
+			const k = owner[x - lo]!;
+			return (
+				k >= 0 &&
+				timeOf[x - lo] === 0 &&
+				!voicedFrame(voice, x) &&
+				levelDbAt(voice, x) < peakOf(k) - DECAY_BELOW_PEAK_DB
+			);
+		};
 		// a pause never splits a word (round 6: closures and quiet bursts inside "gelatina", "ChatGPT", "Triste." were
 		// cut): the frames of a word's time are the word's, but measured silence at its edges (loose timestamps) and
 		// the inside of a stretched word (it holds other sound)
@@ -1195,6 +1243,14 @@ function frameFindings(
 		// the word or untranscribed voice at frame x ([−1, −1]: none), and frames given to one
 		const side = (x: number): [number, number] =>
 			x < lo || x >= hi ? [-1, -1] : [owner[x - lo]!, owner[x - lo]! >= 0 ? -1 : utrAt[x - lo]!];
+		// …past a quiet word (no speech under it) to the word whose sound it lies on: a quiet word holds its own time,
+		// not the decay running on after it or the onset rising after it (round 11: a zero-length word written on the first
+		// frame of a kept word's decay took that decay with its removal)
+		const soundSide = (x: number, step: 1 | -1): [number, number] => {
+			let y = x;
+			while (y >= lo && y < hi && quiet[y - lo] === 1) y += step;
+			return y !== x && y >= lo && y < hi && owner[y - lo]! >= 0 && quiet[y - lo] === 0 ? side(y) : side(x);
+		};
 		const attach = (x: number, [w, u]: [number, number]) => {
 			if (owner[x - lo]! >= 0) return;
 			if (w >= 0) own(w, x);
@@ -1214,21 +1270,22 @@ function frameFindings(
 			let g = f;
 			while (g < hi && gapAt(g)) g++;
 			if (g - f > mg) {
-				// only a word's decay goes with a pause: voice without words before it stays unless its own finding is
-				// accepted (round 7: a pause took 0.227 s of an unaccepted untranscribed finding at −34…−51 dBFS)
-				const [pa, pb] = pauseEdges(voice, settings, lo, hi, f, g, (x) => owner[x - lo]! >= 0);
+				// only a word's fading tail goes with a pause: voice without words before it stays unless its own finding is
+				// accepted (round 7: a pause took 0.227 s of an unaccepted untranscribed finding at −34…−51 dBFS), and so does
+				// every frame of a word's time (round 11: pauses took the quiet words "las", "3", "que..." whole)
+				const [pa, pb] = pauseEdges(voice, settings, lo, hi, f, g, decayFrame);
 				if (pb > pa) push('pause', settings.rules.pause, pa, pb);
 				// the rising onset before the speech after the pause and a tail's fading decay are that speech's sound
-				const r = side(g);
+				const r = soundSide(g, 1);
 				for (let x = Math.max(f, pb); x < g; x++) attach(x, r);
-				const l = side(f - 1);
+				const l = soundSide(f - 1, -1);
 				for (let x = f; x < Math.min(g, pa); x++) attach(x, l);
 			} else {
-				const l = side(f - 1);
-				const r = side(g);
+				const l = soundSide(f - 1, -1);
+				const r = soundSide(g, 1);
 				const hasL = l[0] >= 0 || l[1] >= 0;
 				const hasR = r[0] >= 0 || r[1] >= 0;
-				const mid = hasL && hasR ? f + Math.ceil((g - f) / 2) : hasL ? g : f;
+				const mid = hasL && hasR ? gapSplit(voice, f, g) : hasL ? g : f;
 				for (let x = f; x < g; x++) attach(x, x < mid ? l : r);
 			}
 			f = g;
@@ -1294,6 +1351,27 @@ function frameFindings(
 		}
 	}
 	return { findings: out, sound };
+}
+
+/**
+ * Where a short gap `[f, g)` between two sounds splits: the fading decay before measured silence is the sound before it,
+ * the rising onset after it the sound after it, and the silence between them is halved; with no silent frame, at the
+ * quietest frame (the first of equals). The midpoint alone gave the second half of a short gap — a kept word's decay
+ * above silence — to a removed word after it, so its removal clipped that tail (round 11: the sequence property's
+ * "tail frame removed", ≈ 1 in 2,000 runs).
+ */
+function gapSplit(voice: CleanupVoice, f: number, g: number): number {
+	let s0 = -1;
+	let s1 = -1;
+	for (let x = f; x < g; x++)
+		if (silentFrame(voice, x)) {
+			if (s0 < 0) s0 = x;
+			s1 = x + 1;
+		}
+	if (s0 >= 0) return s0 + Math.ceil((s1 - s0) / 2);
+	let best = f;
+	for (let x = f + 1; x < g; x++) if (levelDbAt(voice, x) < levelDbAt(voice, best)) best = x;
+	return best;
 }
 
 /**
@@ -1391,17 +1469,39 @@ const WOVEN_MAX_S = 4;
 
 /** A vowel: at least this many voiced frames in a row (30 ms). */
 const VOWEL_MIN_FRAMES = 3;
+/**
+ * A word whose loudest frame comes within this many dB of the file's speech level (95th percentile) is said to the
+ * microphone: never noise the recogniser wrote words over, whatever its voicing frames say (round 11, B2), and a
+ * filler phrase quieter than that is an off-mic exchange (B5). *Assumption*, labelled: run 11's real words flagged as
+ * noise peaked 1.5–11 dB under the speech level ("negra", "megas.", "si", "que"); the noise words of rounds 7–9 stayed
+ * 15 dB or more under it.
+ */
+const LOUD_WORD_DB = 12;
+
+/** Whether a word's loudest frame comes within `LOUD_WORD_DB` of the file's speech level; false without levels. */
+function loudWord(voice: CleanupVoice, w: { s: number; e: number }): boolean {
+	const speech = voice.levels.speechDb;
+	if (speech === null) return false;
+	const [a, b] = wordFrames(w);
+	for (let f = Math.max(0, a); f < Math.min(voice.frameCount, b); f++)
+		if (levelDbAt(voice, f) >= speech - LOUD_WORD_DB) return true;
+	return false;
+}
 
 /**
- * Whether a word lies over sound without a vowel — `VOWEL_MIN_FRAMES` voiced frames (`voicedFrame`) in a row — in its
- * time and 30 ms around it, at least half of it above measured silence: noise — a Spanish or English word holds a
- * vowel. False without the voicing plane. Round 7: Whisper wrote "¿Qué pasa?" over unvoiced noise at −27…−49 dBFS,
- * zero-crossing rate 1,500–10,000 /s; run 9: stray voiced frames in noise (AA b "¿Qué": three, two in a row) are no
- * vowel.
+ * Whether a word lies over noise — strong non-speech evidence only (round 11, B2): the voice analysis calls most of its
+ * frames something else than speech, it stays `LOUD_WORD_DB` under the file's speech level, there is no vowel —
+ * `VOWEL_MIN_FRAMES` voiced frames (`voicedFrame`) in a row — in its time and 30 ms around it, and at least half of it
+ * lies above measured silence (a Spanish or English word holds a vowel). False without the voicing plane or levels.
+ * Round 7: Whisper wrote "¿Qué pasa?" over unvoiced noise at −27…−49 dBFS, zero-crossing rate 1,500–10,000 /s; run 9:
+ * stray voiced frames in noise (AA b "¿Qué": three, two in a row, −41…−44 dBFS, not speech) are no vowel. Run 11: the
+ * vowel rule alone flagged loud real words ("negra" at −11 dBFS) and AG a's "No." / "Espera." (speech-classed, voiced
+ * frames never three in a row).
  */
 function unvoicedSound(voice: CleanupVoice, w: { s: number; e: number }): boolean {
-	if (!voice.voicing) return false;
+	if (!voice.voicing || voice.levels.speechDb === null) return false;
 	const [a, b] = wordFrames(w);
+	if (b <= a || speechShare(voice, w.s, w.e) >= 0.5 || loudWord(voice, w)) return false;
 	let loud = 0;
 	let run = 0;
 	for (let f = Math.max(0, a - 3); f < Math.min(voice.frameCount, b + 3); f++) {
@@ -1409,7 +1509,7 @@ function unvoicedSound(voice: CleanupVoice, w: { s: number; e: number }): boolea
 		if (run >= VOWEL_MIN_FRAMES) return false;
 		if (f >= a && f < b && !silentFrame(voice, f)) loud++;
 	}
-	return b > a && loud * 2 >= b - a;
+	return loud * 2 >= b - a;
 }
 
 /** Shortest breath-like run (frames): the voice analysis' class minimum (120 ms). */
@@ -1427,6 +1527,13 @@ const RAMP_STEP_DB = 3;
 
 /** How far (seconds) a pause's edges move over sound to the decay threshold or to silence. */
 const PAUSE_EDGE_MAX_S = 0.25;
+/**
+ * A join's pause takes a word's fading tail only this far (dB) or more under the word's own loudest frame — never by an
+ * absolute level alone (round 11, B1: with the floor + 20 dB out threshold a pause took whole quiet off-mic words at
+ * −28…−35 dBFS (floor −48 dB), and on a −42 dB floor it trimmed audible tails at −22…−27 dBFS). *Assumption*, labelled:
+ * the conservative end of the 25–30 dB the round-11 report proposes; not calibrated against the user's cuts.
+ */
+const DECAY_BELOW_PEAK_DB = 30;
 
 /**
  * What a pause removes of the gap `[f, g)` (frames) between `lo` and `hi`: before speech that follows, it ends at the
@@ -1434,7 +1541,8 @@ const PAUSE_EDGE_MAX_S = 0.25;
  * where the decay falls below the level edges' out threshold when speech follows (the Fast style's out point inside
  * the decay), and at measured silence at a tail, so a last word keeps its fading tail. Each edge moves at most
  * `PAUSE_EDGE_MAX_S`; with no silence that close an onset edge stays at the gap's end (a tail with none: no pause).
- * The decay a join's pause takes is a word's (`wordFrame`), never voice without words.
+ * The decay a join's pause takes is a word's fading tail (`decayFrame`: after its time, unvoiced, far under the word's
+ * own level), never voice without words and never a frame of a word's time.
  */
 function pauseEdges(
 	voice: CleanupVoice,
@@ -1443,7 +1551,7 @@ function pauseEdges(
 	hi: number,
 	f: number,
 	g: number,
-	wordFrame: (k: number) => boolean,
+	decayFrame: (k: number) => boolean,
 ): [number, number] {
 	if (voice.levels.floorDb === null) return [f, g];
 	const max = Math.round(PAUSE_EDGE_MAX_S / FR);
@@ -1490,14 +1598,14 @@ function pauseEdges(
 	}
 	if (f > lo) {
 		if (g < hi) {
-			// a join: the decay below the out threshold goes with the pause (level edges only)
+			// a join: a word's fading tail below the out threshold goes with the pause (level edges only)
 			const thr = settings.edges.mode === 'level' ? edgeThreshold(voice, settings.edges, 'out') : null;
 			if (thr !== null)
 				while (
 					a > lo &&
 					f - a < max &&
 					voice.classes[a - 1] === VOICE_CLASS_SPEECH &&
-					wordFrame(a - 1) &&
+					decayFrame(a - 1) &&
 					levelDbAt(voice, a - 1) < thr
 				)
 					a--;

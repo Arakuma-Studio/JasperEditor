@@ -267,6 +267,11 @@ export function ruleStutters(ctx: RuleContext): void {
 			for (let q = 0; q < k && same; q++) same = w[j - k + q]!.n === w[j + q]!.n;
 			if (!same) continue;
 			if (w[j]!.s - w[j - 1]!.e >= gap) continue;
+			// the first copy is said in one go (round 11, B5: "que... | Así que, así" 5.7 s apart was no stutter)
+			let together = true;
+			for (let q = j - k; q < j - 1 && together; q++)
+				together = w[q + 1]!.s - w[q]!.e < ctx.settings.thresholds.phraseGapS;
+			if (!together) continue;
 			const gram = w.slice(j, j + k).map((x) => x.n);
 			if (gram.every((x) => allow.has(x))) continue;
 			// a reduplication ("guiño, guiño", "boing, boing, boing") is deliberate: reviewed, never cut by default

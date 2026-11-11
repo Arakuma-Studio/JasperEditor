@@ -46,82 +46,111 @@ const VOCAB = [
  * with `murmurs`, voice without words in some gaps (the direct planner properties leave it out: their planner alone
  * places a word's sound by its speech frames ± 50 ms, not by the detector's partition).
  */
+const rawWord = fc.record({
+	w: fc.constantFrom(...VOCAB),
+	dur: fc.integer({ min: 8, max: 50 }),
+	gap: fc.integer({ min: 0, max: 120 }),
+	breath: fc.boolean(),
+	jitterA: fc.integer({ min: -5, max: 5 }),
+	jitterB: fc.integer({ min: -5, max: 8 }),
+	loud: fc.integer({ min: 30, max: 45 }),
+	// voice without words in the gap before the word: frames after the previous word, length, dB over the floor
+	murmur: fc.record({
+		off: fc.integer({ min: 0, max: 10 }),
+		len: fc.integer({ min: 0, max: 40 }),
+		db: fc.integer({ min: 3, max: 30 }),
+	}),
+});
+type RawWord = typeof rawWord extends fc.Arbitrary<infer T> ? T : never;
 const recordingOf = (murmurs: boolean) =>
 	fc
-		.record({
-			words: fc.array(
-				fc.record({
-					w: fc.constantFrom(...VOCAB),
-					dur: fc.integer({ min: 8, max: 50 }),
-					gap: fc.integer({ min: 0, max: 120 }),
-					breath: fc.boolean(),
-					jitterA: fc.integer({ min: -5, max: 5 }),
-					jitterB: fc.integer({ min: -5, max: 8 }),
-					loud: fc.integer({ min: 30, max: 45 }),
-					// voice without words in the gap before the word: frames after the previous word, length, dB over the floor
-					murmur: fc.record({
-						off: fc.integer({ min: 0, max: 10 }),
-						len: fc.integer({ min: 0, max: 40 }),
-						db: fc.integer({ min: 3, max: 30 }),
-					}),
-				}),
-				{ minLength: 1, maxLength: 60 },
-			),
-			natural: fc.boolean(),
-		})
-		.map(({ words, natural }) => {
-			let f = 20;
-			const lay = words.map((x) => {
-				const a = f + x.gap;
-				const b = a + x.dur;
-				f = b;
-				return { ...x, a, b };
-			});
-			const n = f + 40;
-			const level = new Uint8Array(n).fill((-65 + 120) * 2);
-			const classes = new Uint8Array(n);
-			let prevB = -1;
-			for (const x of lay) {
-				// untranscribed voice inside the pause before the word (round 7: an accepted pause took 0.227 s of it)
-				const m = x.murmur;
-				if (murmurs && prevB >= 0 && m.len > 0 && x.a - prevB >= m.off + m.len + 30)
-					for (let k = prevB + m.off; k < prevB + m.off + m.len; k++) {
-						level[k] = (-65 + m.db + 120) * 2;
-						classes[k] = 2;
-					}
-				prevB = x.b;
-				for (let k = x.a; k < x.b; k++) {
-					const edge = k < x.a + 2 || k >= x.b - 2;
-					level[k] = (-65 + (edge ? 15 : x.loud) + 120) * 2;
+		.record({ words: fc.array(rawWord, { minLength: 1, maxLength: 60 }), natural: fc.boolean() })
+		.map(layOut(murmurs));
+/** Lays the generator's raw words out on the frame grid: the transcript and its voice analysis. */
+function layOut(murmurs: boolean) {
+	return ({ words, natural }: { words: RawWord[]; natural: boolean }) => {
+		let f = 20;
+		const lay = words.map((x) => {
+			const a = f + x.gap;
+			const b = a + x.dur;
+			f = b;
+			return { ...x, a, b };
+		});
+		const n = f + 40;
+		const level = new Uint8Array(n).fill((-65 + 120) * 2);
+		const classes = new Uint8Array(n);
+		let prevB = -1;
+		for (const x of lay) {
+			// untranscribed voice inside the pause before the word (round 7: an accepted pause took 0.227 s of it)
+			const m = x.murmur;
+			if (murmurs && prevB >= 0 && m.len > 0 && x.a - prevB >= m.off + m.len + 30)
+				for (let k = prevB + m.off; k < prevB + m.off + m.len; k++) {
+					level[k] = (-65 + m.db + 120) * 2;
 					classes[k] = 2;
 				}
-				for (let k = x.b; k < Math.min(n, x.b + 6); k++) level[k] = (-65 + 18 - (k - x.b) * 3 + 120) * 2;
-				// a rising onset before the word (non-speech, above the floor) where the gap leaves room
-				if (x.gap >= 12) for (let q = 1; q <= 3; q++) level[x.a - q] = (-65 + 13 - 4 * q + 120) * 2;
-				if (x.breath && x.gap > 30) for (let k = x.a - 25; k < x.a - 5; k++) classes[k] = 1;
+			prevB = x.b;
+			for (let k = x.a; k < x.b; k++) {
+				const edge = k < x.a + 2 || k >= x.b - 2;
+				level[k] = (-65 + (edge ? 15 : x.loud) + 120) * 2;
+				classes[k] = 2;
 			}
-			const words2 = lay.map((x) => ({
-				text: x.w,
-				start: Math.round(((x.a + x.jitterA) / 100) * FLICKS_PER_SECOND),
-				end: Math.round(((x.b + x.jitterB) / 100) * FLICKS_PER_SECOND),
-				confidence: 0.9,
-				loud: [x.a + 2, x.b - 2] as [number, number],
-			}));
-			for (let i = 1; i < words2.length; i++)
-				if (words2[i]!.start < words2[i - 1]!.end) words2[i]!.start = words2[i - 1]!.end;
-			for (const w of words2) if (w.end <= w.start) w.end = w.start + 1;
-			return {
-				words: words2,
-				voice: {
-					classes,
-					level,
-					frameCount: n,
-					levels: { floorDb: -65, speechDb: -25, speechThresholdDb: -53, breathFloorDb: -60 },
-				},
-				settings: natural ? NATURAL_SETTINGS : FAST_SETTINGS,
-			};
-		});
+			for (let k = x.b; k < Math.min(n, x.b + 6); k++) level[k] = (-65 + 18 - (k - x.b) * 3 + 120) * 2;
+			// a rising onset before the word (non-speech, above the floor) where the gap leaves room
+			if (x.gap >= 12) for (let q = 1; q <= 3; q++) level[x.a - q] = (-65 + 13 - 4 * q + 120) * 2;
+			if (x.breath && x.gap > 30) for (let k = x.a - 25; k < x.a - 5; k++) classes[k] = 1;
+		}
+		const words2 = lay.map((x) => ({
+			text: x.w,
+			start: Math.round(((x.a + x.jitterA) / 100) * FLICKS_PER_SECOND),
+			end: Math.round(((x.b + x.jitterB) / 100) * FLICKS_PER_SECOND),
+			confidence: 0.9,
+			loud: [x.a + 2, x.b - 2] as [number, number],
+		}));
+		for (let i = 1; i < words2.length; i++)
+			if (words2[i]!.start < words2[i - 1]!.end) words2[i]!.start = words2[i - 1]!.end;
+		for (const w of words2) if (w.end <= w.start) w.end = w.start + 1;
+		return {
+			words: words2,
+			voice: {
+				classes,
+				level,
+				frameCount: n,
+				levels: { floorDb: -65, speechDb: -25, speechThresholdDb: -53, breathFloorDb: -60 },
+			},
+			settings: natural ? NATURAL_SETTINGS : FAST_SETTINGS,
+		};
+	};
+}
 const recording = recordingOf(false);
+/** A raw word of the generator: 8 frames, said right after the previous one, 30 dB over the floor, exact timestamps. */
+const pinnedWord = (w: string, o: Partial<RawWord> = {}): RawWord => ({
+	w,
+	dur: 8,
+	gap: 0,
+	breath: false,
+	jitterA: 0,
+	jitterB: 0,
+	loud: 30,
+	murmur: { off: 0, len: 0, db: 3 },
+	...o,
+});
+/**
+ * Inputs on which a removal of words took the fading decay of the kept word before it ("tail frame removed", ≈ 1 in
+ * 2,000 runs before round 11; found with seed −1982316913): a short gap split at its midpoint gave the decay's last
+ * frames to the removed "mmm" after it, and a zero-length word written on the decay's first frame (a quiet word the
+ * hallucination guard removes) took the whole decay with it.
+ */
+const PINNED_DECAYS = [
+	{
+		words: [pinnedWord('hola', { gap: 9, dur: 40 }), pinnedWord('mmm', { gap: 6 })],
+		rules: { ...FAST_SETTINGS.rules, pause: 'off' as const },
+	},
+	{ words: [pinnedWord('hola', { jitterB: 8 }), pinnedWord('hola')], rules: FAST_SETTINGS.rules },
+].map(({ words, rules }) => [
+	layOut(true)({ words, natural: false }),
+	rules,
+	{ acceptKinds: [], rejectKinds: [] },
+]);
 
 describe('planning properties', () => {
 	it('kept pieces are sorted, disjoint, inside the media, without removed sound, without split words', () => {
@@ -353,6 +382,51 @@ describe('planning properties', () => {
 						.filter(({ i }) => !removedWords.has(i))
 						.map(({ w }) => w.loud);
 					const n = r.voice.frameCount;
+					// a kept word's time loses no frame that is not measured silence — no pause, breath or untranscribed finding
+					// takes one; only an accepted removal of words right after it may take its quietest end (the start of
+					// that removal and the frame at or before it) — and a pause takes the speech running on from a kept word's
+					// time only 30 dB or more under the word's loudest frame (round 11: pauses took whole quiet words and tails
+					// at floor + 20 dB)
+					const dbAt = (k: number) => r.voice.level[k]! / 2 - 120;
+					const times = r.words.map(
+						(w) => [Math.trunc(sec(w.start) * 100), Math.ceil(sec(w.end) * 100 - 1e-9)] as const,
+					);
+					const removedPart = (k: number) =>
+						a.plan.ranges
+							.map(
+								(g) =>
+									[Math.max(k * 0.01, g.start * frame), Math.min((k + 1) * 0.01, g.end * frame)] as const,
+							)
+							.filter(([t0, t1]) => t1 - t0 > 1e-9);
+					const byWordRemoval = (t0: number, t1: number) =>
+						wordRemovals.some(([x, y]) => t0 >= x - frame - 1e-6 && t1 <= y + 1e-9);
+					const acceptedVoice = a.findings
+						.filter((f) => f.kind === 'untranscribed' && accepted(f))
+						.map(spanOf);
+					times.forEach(([x, y], i) => {
+						if (removedWords.has(i)) return;
+						let peak = -120;
+						for (let k = x; k < y; k++) {
+							peak = Math.max(peak, dbAt(k));
+							if (silent(k)) continue;
+							for (const [t0, t1] of removedPart(k))
+								expect(
+									byWordRemoval(t0, t1),
+									`${t0.toFixed(3)}–${t1.toFixed(3)} of kept "${r.words[i]!.text}" ${sec(r.words[i]!.start)}–${sec(r.words[i]!.end)} removed`,
+								).toBe(true);
+						}
+						for (
+							let k = y;
+							k < n && speechAt(y - 1) && speechAt(k) && !times.some(([p, q]) => k >= p && k < q);
+							k++
+						)
+							for (const [t0, t1] of removedPart(k))
+								if (!byWordRemoval(t0, t1) && !inSpans(t0, t1, acceptedVoice))
+									expect(
+										dbAt(k),
+										`tail ${k / 100} of kept "${r.words[i]!.text}" removed`,
+									).toBeLessThanOrEqual(peak - 30);
+					});
 					for (const [la] of keptSpeech) {
 						let k = la - 1;
 						let mixed = false;
@@ -371,7 +445,18 @@ describe('planning properties', () => {
 						for (; k < n && speechAt(k); k++) if (inRemovedWord(k)) mixed = true;
 						const decay: number[] = [];
 						while (k < n && !speechAt(k) && !silent(k)) decay.push(k++);
-						if (!mixed && k < n && !speechAt(k))
+						// (when the plan keeps sound after it — voice without words left for review — the decay is at a join, where
+						// the Fast style may cut inside it; kept silence after it is no join)
+						const joined = a.plan.kept.some((p) => {
+							for (
+								let q = Math.max(k, Math.floor(p.start * frame * 100));
+								q < Math.min(n, p.end * frame * 100);
+								q++
+							)
+								if (!silent(q)) return true;
+							return false;
+						});
+						if (!mixed && !joined && k < n && !speechAt(k))
 							for (const q of decay)
 								if (!inRemovedWord(q)) expect(removedFrame(q), `tail frame ${q / 100} removed`).toBe(false);
 					}
@@ -380,7 +465,7 @@ describe('planning properties', () => {
 					expect(run({ ...settings, rules: review }, {}).plan.ranges).toEqual([]);
 				},
 			),
-			{ numRuns: 80 },
+			{ numRuns: 80, examples: PINNED_DECAYS as never },
 		);
 	});
 
