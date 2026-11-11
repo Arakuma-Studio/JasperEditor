@@ -73,14 +73,17 @@ export function mgNativeExtension(svc: MgBundleService): NativeExtension {
 					`composition clips need the Remotion renderer to pre-render (${cap.reason ?? 'unavailable'})`,
 				];
 			if (!src.bundle?.key || !svc.record(src.bundle.key))
-				return [`composition clip "${clip.name}": its Remotion bundle is not available on this engine`];
+				return [
+					`composition clip "${clip.name}": its ${src.bundle?.html ? 'HTML composition' : 'Remotion bundle'} is not available on this engine`,
+				];
 			if (src.info === null || src.info === undefined)
 				return [`Composition ${src.compositionId} is not in bundle (clip "${clip.name}")`];
 			return [];
 		},
 		warnings(clip, ctx) {
 			const src = compositionSource(clip);
-			if (!src?.info || !compositionFpsMismatch(src.info, ctx.fps)) return [];
+			// An HTML page is seeked by time (frame / fps): any sequence rate renders it exactly.
+			if (!src?.info || src.bundle?.html || !compositionFpsMismatch(src.info, ctx.fps)) return [];
 			return [
 				{
 					code: 'MG_FPS_MISMATCH',

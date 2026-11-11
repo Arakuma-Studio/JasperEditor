@@ -1,0 +1,15 @@
+/* SPDX-License-Identifier: LicenseRef-JasperEditor — HTML composition test fixture. */
+html,
+body {
+	margin: 0;
+	background: transparent;
+	overflow: hidden;
+}
+#box {
+	position: absolute;
+	left: 0;
+	top: 0;
+	width: 80px;
+	height: 80px;
+	background: rgb(232, 176, 73);
+}
