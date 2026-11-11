@@ -84,30 +84,46 @@ const KIND: Record<string, FindingKind> = {
 	filler_phrase: 'filler-phrase',
 };
 
+/** The take rules' labels compare as one class: the repeat mechanism replaced the prototype's restart and take rules. */
+const REPEAT: ReadonlySet<string> = new Set(['restart', 'false-start', 'retake']);
+const cls = (k: string | null) => (k && REPEAT.has(k) ? 'repeat' : k);
+
 /**
- * Deliberate differences from the prototype (docs/wp-notes/transcript-cleanup.md "Port of the research prototype"): a
- * restart must re-say the content words of the attempt it removes (`ruleRestarts`). Per seed (both presets): word
- * ranges and the port's label there; the prototype's kept ranges do not apply to these cases.
+ * Deliberate differences from the prototype (docs/wp-notes/transcript-cleanup.md "Repeats by alignment"): an attempt is
+ * removed only when its retry says it again in full (`repeats.ts`). Per seed (both presets): word ranges and the port's
+ * label class there; the prototype's kept ranges do not apply to these cases.
  */
-const DIFFERENCES: Record<number, Array<[from: number, to: number, kind: FindingKind | null]>> = {
+const DIFFERENCES: Record<number, Array<[from: number, to: number, kind: string | null]>> = {
 	// "Primero diseñé la carretera con curvas muy cerradas. Le puse texturas a la carretera…": "la carretera" said in
-	// the next sentence is no restart (the prototype cut "la carretera con curvas muy cerradas. Le puse texturas a").
-	// "Si te gusta el video | a ver | Si te gusta el video suscríbete…": "a ver" as one word is not in the prototype's
-	// single-word markers (the built-in list has it); the take rule removes the attempt, and "a ver" between the take
-	// and its retake goes with it (a fragment of ≤ 2 words between takes of a group).
+	// the next sentence is no restart. "Si te gusta el video | a ver | Si te gusta el video suscríbete…": "a ver" written
+	// as one word is no marker of the prototype's list, so the attempt and its retry are not adjacent (the built-in list
+	// has it)
 	2: [
 		[14, 23, null],
-		[54, 59, 'retake'],
+		[54, 59, null],
 	],
 	// The first sentence's "la carretera con curvas muy cerradas" stays, and so does the start of the last take
-	// "Le puse texturas a la carretera y ambienté el lugar" (the prototype cut "Le puse texturas a").
+	// "Le puse texturas a la carretera y ambienté el lugar" (the prototype cut "Le puse texturas a")
 	3: [
 		[20, 25, null],
 		[44, 47, null],
 	],
+	// "Le | Le puse texturas…" is a false start; of two identical "Si te gusta el video suscríbete al canal" the first
+	// goes whole (the prototype cut only its "Si te gusta" and kept the rest of the sentence twice)
+	6: [
+		[32, 32, 'repeat'],
+		[85, 89, 'repeat'],
+	],
 	7: [
 		[17, 22, null],
 		[30, 33, null],
+	],
+	// "espera que se me ha colgado el ordenador" is said once: no take (the prototype's take rule matched it by its
+	// short-unit test); "Primero | Primero diseñé…" is a false start and "Le" a restart's first word
+	8: [
+		[24, 31, null],
+		[32, 32, 'repeat'],
+		[54, 54, 'repeat'],
 	],
 };
 
@@ -145,8 +161,8 @@ describe('cleanup port vs the research prototype', () => {
 			for (const f of r.findings)
 				if (f.words && f.kind !== 'hallucination')
 					for (let i = f.words[0]; i <= f.words[1]; i++) label.set(i, f.kind);
-			const got = r.words.map((w, k) => (r.guarded[k] ? null : (label.get(w.i) ?? null)));
-			const want = c.expect.reasons.map((x) => (x ? KIND[x]! : null));
+			const got = r.words.map((w, k) => (r.guarded[k] ? null : cls(label.get(w.i) ?? null)));
+			const want: Array<string | null> = c.expect.reasons.map((x) => (x ? cls(KIND[x]!) : null));
 			for (const [a, b, kind] of diff ?? []) want.fill(kind, a, b + 1);
 			expect(got).toEqual(want);
 			if (diff) return;

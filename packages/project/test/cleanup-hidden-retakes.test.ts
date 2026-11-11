@@ -399,9 +399,12 @@ describe('hidden retakes of a real recording', () => {
 				levels: { floorDb: -64, speechDb: null, speechThresholdDb: null, breathFloorDb: null },
 			},
 		});
-		// the restart takes "%" with it; no voice without words is left between the cuts
+		// the attempt (a restart, or a retake of the whole clause) takes "%" with it; no voice without words is left
+		// between the cuts
 		expect(r.findings.filter((f) => f.kind === 'untranscribed')).toEqual([]);
-		const restart = r.findings.find((f) => f.kind === 'restart')!;
+		const restart = r.findings.find(
+			(f) => (f.kind === 'restart' || f.kind === 'retake') && f.words?.[0] === 0,
+		)!;
 		expect(restart.range.end).toBeGreaterThanOrEqual(words[4]!.end);
 	});
 });
