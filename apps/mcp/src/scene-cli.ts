@@ -10,15 +10,19 @@ import {
 	createRandomIdSource,
 	defaultRegistries,
 	exportScene,
+	findScenePage,
 	findSceneSequence,
 	formatSceneIssues,
+	isScenePagePath,
 	type MediaAsset,
 	type ProjectDocument,
 	planScene,
 	resolveScene,
 	type SceneFile,
 	type SceneIssue,
+	type ScenePage,
 	type ScenePlan,
+	scenePageOf,
 	sceneSequenceName,
 	validateSceneFile,
 } from '@jasper/project';
@@ -112,14 +116,26 @@ function mediaOfPath(doc: ProjectDocument, abs: string): string | null {
 	return all.find((m) => m.originalName === basename(abs) && m.sizeBytes === size)?.id ?? null;
 }
 
-/** The Remotion bundle of a folder, an id or a name. */
-function bundleOf(doc: ProjectDocument, ref: string, baseDir: string): string | null {
+/**
+ * The bundle a composition layer names: an HTML page import (the page file plus its size, rate and query), else a
+ * Remotion bundle by id, folder or name.
+ */
+export function bundleOf(
+	doc: ProjectDocument,
+	ref: string,
+	baseDir: string,
+	page?: ScenePage,
+): string | null {
 	const bundles = Object.values(doc.media).filter((m) => m.kind === 'mg-bundle');
+	const byId = bundles.find((m) => m.id === ref)?.id;
+	if (byId) return byId;
 	const abs = isAbsolute(ref) ? ref : resolve(baseDir, ref);
+	if (isScenePagePath(ref))
+		return page ? findScenePage(doc, abs, page, (stored) => resolve(stored) === abs) : null;
+	const remotion = bundles.filter((m) => !scenePageOf(m));
 	return (
-		bundles.find((m) => m.id === ref)?.id ??
-		bundles.find((m) => m.mgBundle?.source.path && resolve(m.mgBundle.source.path) === abs)?.id ??
-		bundles.find((m) => m.mgBundle?.source.name === ref || m.originalName === ref)?.id ??
+		remotion.find((m) => m.mgBundle?.source.path && resolve(m.mgBundle.source.path) === abs)?.id ??
+		remotion.find((m) => m.mgBundle?.source.name === ref || m.originalName === ref)?.id ??
 		null
 	);
 }
@@ -193,14 +209,21 @@ async function importMissing(
 ) {
 	const files = new Set<string>();
 	const bundles = new Set<string>();
+	const pages = new Map<string, { path: string; page: ScenePage }>();
 	scene.layers.forEach((l) => {
 		if ((l.type === 'image' || l.type === 'svg') && !looksLikeMediaId(l.src)) {
 			const abs = resolve(baseDir, l.src);
 			if (existsSync(abs) && statSync(abs).isFile() && !mediaOfPath(doc, abs)) files.add(abs);
 		}
-		if (l.type === 'composition' && !bundleOf(doc, l.bundle, baseDir)) {
+		if (l.type === 'composition' && !bundleOf(doc, l.bundle, baseDir, l.page)) {
 			const abs = resolve(baseDir, l.bundle);
-			if (existsSync(abs) && statSync(abs).isDirectory()) bundles.add(abs);
+			if (!existsSync(abs)) return;
+			if (isScenePagePath(l.bundle) && l.page && statSync(abs).isFile())
+				pages.set(JSON.stringify([abs, l.page.width, l.page.height, l.page.fps, l.page.query ?? '']), {
+					path: abs,
+					page: l.page,
+				});
+			else if (statSync(abs).isDirectory()) bundles.add(abs);
 		}
 	});
 	if (files.size) {
@@ -211,7 +234,23 @@ async function importMissing(
 		c.out.stderr(`[jasper] importing Remotion project ${b}\n`);
 		await tool(c, 'import_mg_bundle', { projectId, path: b }, true);
 	}
-	return files.size + bundles.size > 0;
+	for (const { path, page } of pages.values()) {
+		c.out.stderr(`[jasper] importing HTML page ${path}${page.query ? `?${page.query}` : ''}\n`);
+		await tool(
+			c,
+			'import_html_composition',
+			{
+				projectId,
+				path,
+				width: page.width,
+				height: page.height,
+				fps: page.fps,
+				...(page.query ? { query: page.query } : {}),
+			},
+			true,
+		);
+	}
+	return files.size + bundles.size + pages.size > 0;
 }
 
 export type ApplyOutcome = {
@@ -231,9 +270,9 @@ export async function applySceneFile(c: SceneCliContext, file: string): Promise<
 	let { doc, revision } = await loadDocument(c, projectId);
 	if (!c.flags['dry-run'] && (await importMissing(c, projectId, scene, baseDir, doc)))
 		({ doc, revision } = await loadDocument(c, projectId));
-	const mediaFor = (src: string, kind: 'image' | 'bundle') =>
+	const mediaFor = (src: string, kind: 'image' | 'bundle', page?: ScenePage) =>
 		kind === 'bundle'
-			? bundleOf(doc, src, baseDir)
+			? bundleOf(doc, src, baseDir, page)
 			: looksLikeMediaId(src)
 				? (doc.media[src]?.id ?? null)
 				: mediaOfPath(doc, resolve(baseDir, src));

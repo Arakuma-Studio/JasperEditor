@@ -939,8 +939,9 @@ layers:                                   # bottom to top
       scale: [{ t: 0, value: 70, ease: ease-out }, { t: 1, value: 100 }]
 ```
 
-Errors point into the file (`layers[2].keyframes.position[0].ease: unknown ease "foo"`). Images and Remotion
-folders the file names are imported on the first apply.
+Errors point into the file (`layers[2].keyframes.position[0].ease: unknown ease "foo"`). Images, Remotion
+folders and HTML composition pages (`bundle: pano.html` with `page: {width, height, fps, query?}`) the file names
+are imported on the first apply.
 
 ### HTTP API underneath
 

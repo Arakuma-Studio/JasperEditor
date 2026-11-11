@@ -22,6 +22,7 @@ import {
 	type SceneKey,
 	type SceneLayer,
 	type SceneMask,
+	type ScenePage,
 	type ScenePath,
 	type SceneProp,
 	type SceneTime,
@@ -40,13 +41,15 @@ import type {
 	SceneTextR,
 	SceneValueR,
 } from './model.ts';
+import { isScenePagePath, scenePageCompositionId } from './pages.ts';
 import { findSceneSequence } from './sequence.ts';
 
 export type ResolveContext = {
 	doc: ProjectDocument;
 	registries: Registries;
 	/** The media id of an image / svg `src` or a composition `bundle` as written in the file, or null. */
-	mediaFor(src: string, kind: 'image' | 'bundle'): string | null;
+	/** `page`: the HTML page import a composition layer names (its `bundle` is an .html / .htm file). */
+	mediaFor(src: string, kind: 'image' | 'bundle', page?: ScenePage): string | null;
 };
 
 /** Default frame size and rate of a sequence the scene creates without saying. */
@@ -626,10 +629,37 @@ export function resolveScene(
 					out.add([...base, 'radius'], 'an ellipse has no corner radius');
 				break;
 			case 'composition': {
-				const id = ctx.mediaFor(layer.bundle, 'bundle');
+				const isPage = isScenePagePath(layer.bundle);
+				if (isPage && !layer.page) {
+					out.add(
+						[...base, 'page'],
+						'an HTML page needs page: {width, height, fps, query?} (the import to use)',
+					);
+					break;
+				}
+				if (!isPage && layer.page && !/^med_[0-9A-HJKMNP-TV-Z]{16}$/.test(layer.bundle)) {
+					out.add(
+						[...base, 'page'],
+						'page is for HTML pages (a bundle ending in .html or .htm, or its media id)',
+					);
+					break;
+				}
+				if (isPage && layer.composition !== scenePageCompositionId(layer.bundle)) {
+					out.add(
+						[...base, 'composition'],
+						`an HTML page's composition is its file name without the extension: "${scenePageCompositionId(layer.bundle)}"`,
+					);
+					break;
+				}
+				const id = ctx.mediaFor(layer.bundle, 'bundle', layer.page);
 				const m = id ? ctx.doc.media[id] : undefined;
 				if (!id || !m || m.kind !== 'mg-bundle') {
-					out.add([...base, 'bundle'], `no Remotion bundle "${layer.bundle}" in the project`);
+					out.add(
+						[...base, 'bundle'],
+						isPage
+							? `no import of "${layer.bundle}" at ${layer.page!.width}×${layer.page!.height}, ${layer.page!.fps} fps, query "${layer.page!.query ?? ''}" in the project`
+							: `no Remotion bundle "${layer.bundle}" in the project`,
+					);
 					break;
 				}
 				const comps = m.mgBundle?.compositions ?? [];
