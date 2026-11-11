@@ -484,15 +484,13 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 					kept = plan.kept;
 				}
 			}
-			let keptFrames = keptToFrames(
-				clip,
-				rate,
-				run.voice,
-				kept,
-				settings.edges.snapWindowS,
-				extent,
-				plan.tight,
+			// accepted voice without words inside a kept word's time — the voice a stretched word holds — goes too
+			let tight = plan.tight;
+			const cutVoice = spans((f) => f.kind === 'untranscribed' && accepted.has(f)).filter(
+				([a, b]) => b > lo && a < hi,
 			);
+			if (cutVoice.length) ({ kept, tight } = subtractSpans(kept, tight, cutVoice));
+			let keptFrames = keptToFrames(clip, rate, run.voice, kept, settings.edges.snapWindowS, extent, tight);
 			// frame guards: no cut shorter than minCutFrames, no kept sliver shorter than minSliverFrames
 			const g = settings.guards;
 			const joinShort = (pieces: ReadonlyArray<readonly [number, number]>) => {
@@ -732,6 +730,34 @@ export function keptToFrames(
 		else out.push([s, e]);
 	}
 	return out;
+}
+
+/** Kept pieces (seconds) minus `cuts`, with their tight flags (`MediaPlan.tight`; new edges are not tight). */
+function subtractSpans(
+	kept: readonly Span[],
+	tight: ReadonlyArray<[boolean, boolean]>,
+	cuts: readonly Span[],
+): { kept: Span[]; tight: Array<[boolean, boolean]> } {
+	const outK: Span[] = [];
+	const outT: Array<[boolean, boolean]> = [];
+	kept.forEach(([a, b], i) => {
+		let parts: Array<{ a: number; b: number; ta: boolean; tb: boolean }> = [
+			{ a, b, ta: tight[i]?.[0] ?? false, tb: tight[i]?.[1] ?? false },
+		];
+		for (const [x, y] of cuts)
+			parts = parts.flatMap((p) => {
+				if (y <= p.a || x >= p.b) return [p];
+				const r: typeof parts = [];
+				if (x > p.a) r.push({ a: p.a, b: x, ta: p.ta, tb: false });
+				if (y < p.b) r.push({ a: y, b: p.b, ta: false, tb: p.tb });
+				return r.filter((q) => q.b - q.a > 1e-9);
+			});
+		for (const p of parts) {
+			outK.push([p.a, p.b]);
+			outT.push([p.ta, p.tb]);
+		}
+	});
+	return { kept: outK, tight: outT };
 }
 
 /** How far (seconds) the last kept piece of a clip may grow over the decay of its last word. */

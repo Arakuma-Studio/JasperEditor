@@ -335,6 +335,20 @@ describe('Clean Up on real transcripts (corpus)', () => {
 				expect(y - x - outside(x, y, kept), `voice ${x}–${y} kept`).toBeLessThan(0.05);
 		});
 
+	it('speech a stretched word holds is flagged for review, and accepting it removes that speech (H "rápida")', () => {
+		for (const c of corpus.cases.filter((x) => x.fragment === 'H')) {
+			const { a } = cut(c);
+			const f = a.findings.find((x) => x.kind === 'untranscribed' && x.reason.params.text === 'rápida');
+			expect(f, c.id).toBeDefined();
+			expect(f!.suggested).toBe('review');
+			const [s, e] = [sec(f!.range.start), sec(f!.range.end)];
+			expect(s).toBeCloseTo(15.95, 1);
+			expect(e).toBeCloseTo(17.62, 1);
+			const { removed } = cut(c, { accept: [f!.id] });
+			expect(outside(s + 1 / FPS, e - 1 / FPS, removed), c.id).toBeLessThan(1e-6);
+		}
+	});
+
 	it('rejecting every finding removes nothing, head and tail included', () => {
 		for (const c of corpus.cases)
 			expect(cut(c, { rejectKinds: [...FINDING_KINDS] }).removed, c.id).toEqual([]);

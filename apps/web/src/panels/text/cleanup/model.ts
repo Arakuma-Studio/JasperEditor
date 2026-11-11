@@ -505,7 +505,10 @@ export function reasonText(f: CleanupFinding): string {
 		case 'breath':
 			return t('Breath of {0} s', s);
 		case 'untranscribed':
-			return t('Voice without words ({0} s): a dropped filler, a laugh or a mumble', s);
+			// the voice a stretched word holds (`text` = the word)
+			return text
+				? t('Speech inside the stretched word “{0}” ({1} s): maybe a take written once', text, s)
+				: t('Voice without words ({0} s): a dropped filler, a laugh or a mumble', s);
 		case 'filler-vocalic':
 			return t('Filler “{0}”', text);
 		case 'filler-phrase':

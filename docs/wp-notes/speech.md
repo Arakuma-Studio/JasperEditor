@@ -407,7 +407,12 @@ whisper evaluation (53 configurations; the numbers of spec 16 §0). This section
   re-decode replaced, voice without words (≥ 2 s) and words still stretched over voice are decoded again alone with
   0.5 s of context (`recoverReplaced`, ≤ 32 decodes per job; reported with the safety net's `guard.recovered`): run 4's
   window at 29.79–47.03 kept 53 words where chunked mode wrote 83 and left the take at 38.14–42.15 without words.
-  Test: `speech-hidden-takes.test.ts` "voice a replaced window leaves without words is decoded alone".
+  Test: `speech-hidden-takes.test.ts` "voice a replaced window leaves without words is decoded alone". Words still
+  stretched over voice inside a window whose re-decode was rejected are decoded alone the same way (run 5, fragment
+  H: "rápida" stretched over 2.2 s of speech in both modes — its window was one VAD chunk, so the chunked fallback did
+  not run); such a decode is reported in `guard.recovered` only when it placed words. Test: "a stretched word a
+  rejected one-chunk window leaves is decoded alone" (fails before: the stretched word stays). Not measured on the
+  real model: whether turbo writes H's repeat when the word is decoded alone.
   At an edge that found no pause the original words within 0.5 s of it stay
   (`replaceRegion`; measured: a window cut inside "and a foraging" made tiny.en write "far …"). Replacement keeps the
   words sorted, non-overlapping and integer (`replaceWindowWords`), and swaps the window's segments. Bounded: ≤ 96

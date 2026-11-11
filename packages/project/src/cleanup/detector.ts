@@ -912,6 +912,14 @@ function reasonOf(
 /** Voice within this many seconds of a word counts as that word's (timestamps are loose). */
 const UNCOVERED_MARGIN_S = 0.15;
 
+/**
+ * A word longer than this (seconds) over continuous voice is stretched (the speech worker's hidden-take trace,
+ * docs/wp-notes/speech.md §11.3)…
+ */
+const STRETCHED_WORD_S = 1;
+/** … and holds its first this many seconds; the voice after that is flagged. *Assumption* (run 5, H and G). */
+const WORD_HOLD_S = 0.5;
+
 type FrameFinding = {
 	kind: FindingKind;
 	suggested: FindingSuggestion;
@@ -984,7 +992,7 @@ function frameFindings(
 	const out: FrameFinding[] = [];
 	const sound = words.map((): [number, number] => [Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]);
 	const F = FLICKS_PER_SECOND * FR;
-	const push = (kind: FindingKind, action: RuleAction, a: number, b: number) => {
+	const push = (kind: FindingKind, action: RuleAction, a: number, b: number, text = '') => {
 		if (action === 'off') return;
 		out.push({
 			kind,
@@ -992,7 +1000,7 @@ function frameFindings(
 			start: Math.round(a * F),
 			end: Math.round(b * F),
 			words: null,
-			text: '',
+			text,
 		});
 	};
 	const T = settings.thresholds;
@@ -1132,6 +1140,27 @@ function frameFindings(
 			f = g;
 		}
 		for (const [a, b] of utr) push('untranscribed', settings.rules.untranscribed, a, b);
+		// a word stretched over continuous voice (longer than `STRETCHED_WORD_S`, at least half its frames speech) holds
+		// more than a word: its speech after the first `WORD_HOLD_S` may be a take the transcript holds once, which the
+		// re-decode did not fix (run 5, fragment H: "rápida" over 2.2 s of speech at −10 to −24 dBFS) — untranscribed
+		// voice for review, its text the word
+		for (const w of words) {
+			if (w.e - w.s <= STRETCHED_WORD_S) continue;
+			const [a, b] = wordFrames(w);
+			const [x, y] = [Math.max(lo, a), Math.min(hi, b)];
+			let n = 0;
+			for (let f = x; f < y; f++) if (isSpeech(f)) n++;
+			if (y <= x || n * 2 < b - a) continue;
+			let first = -1;
+			let last = -1;
+			for (let f = Math.max(x, Math.round((w.s + WORD_HOLD_S) / FR)); f < y; f++)
+				if (isSpeech(f)) {
+					if (first < 0) first = f;
+					last = f;
+				}
+			if (first >= 0 && last + 1 - first >= minU)
+				push('untranscribed', settings.rules.untranscribed, first, last + 1, w.text.trim());
+		}
 		// breath-like runs touching speech on either side (within 30 ms)
 		for (let f = lo; f < hi; ) {
 			if (isSpeech(f)) {

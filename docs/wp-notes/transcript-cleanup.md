@@ -489,6 +489,17 @@ Spoken symbols: a word that is only a symbol said as a word and punctuation ("%"
 second large-v3-turbo run left "%" ("por ciento", −10 to −24 dBFS) of a removed restart audible as voice without words
 in every mode, and opened a hole inside an accepted restart.
 
+**Speech a stretched word holds** (run 5: H "rápida" stretched 2.2 s over continuous speech at −10 to −24 dBFS,
+G chunked "en" holding 1.4 s; both kept with no finding while the speech likely repeats a phrase): a word longer than
+1 s with at least half its frames speech — the speech worker's hidden-take trace — gets an **untranscribed** finding
+over its speech after the first 0.5 s (`frameFindings`; *assumption*: a word holds at most 0.5 s, from these two
+cases), with the word as `reason.params.text` ("Speech inside the stretched word "…": maybe a take written once" in
+the Review panel and MCP). It follows the untranscribed rule (review in both presets), so nothing changes until it is
+accepted; accepted, its range is cut out of the kept word (`sequence.ts`, before the frame grid). Test:
+`cleanup-real-takes.test.ts` "speech a stretched word holds is flagged…" (fails without the finding and without the
+cut). Limit: the word's midpoint may then lie in the cut, so the Review transcript strikes the word although its own
+first 0.5 s stay. The speech worker now also decodes such words alone (speech.md §11.3).
+
 Frame findings (with a voice analysis): **pause** = a non-speech run longer than `maxGapS` between speech frames inside
 the words' span; **breath** = a breath-like run within 30 ms of speech; **untranscribed** = see above. A rejected pause
 is kept by the planner; a breath is kept before an onset when rejected (Fast) or unless accepted (Natural's `keep`
