@@ -36,11 +36,14 @@ type Case = {
 	dup: Array<[number, number]>;
 };
 
-/** Fragments held out while the repeat mechanism was developed. */
+/** Fragments held out while the repeat mechanism was developed (round 6)… */
 const HELD_OUT = new Set(['G', 'H', 'I', 'J', 'K', 'L', 'P', 'R', 'S', 'T']);
+/** … and while round 8 was developed (run 7; its bug reports were read before, its spec cases evaluated at the end). */
+const HELD_OUT_R7 = new Set(['U', 'V', 'W', 'X', 'Y', 'Z', 'AA', 'AB']);
+const splitOf = (c: Case) =>
+	HELD_OUT_R7.has(c.fragment) ? 'held-out-r7' : HELD_OUT.has(c.fragment) ? 'held-out' : 'dev';
 const SPLIT = process.env.CLEANUP_CORPUS;
-const inSplit = (c: Case) =>
-	SPLIT === 'dev' ? !HELD_OUT.has(c.fragment) : SPLIT === 'held-out' ? HELD_OUT.has(c.fragment) : true;
+const inSplit = (c: Case) => !SPLIT || splitOf(c) === SPLIT;
 
 const corpus = JSON.parse(
 	readFileSync(new URL('./fixtures/cleanup-real-takes.json', import.meta.url), 'utf8'),
@@ -306,6 +309,102 @@ const SPEC: Record<
 	// controls without takes: every word stays (round 6: "¡En mis juegos!" in T was cut as a take of a later sentence)
 	S: { once: [], never: [], allKept: true },
 	T: { once: [], never: [], allKept: true },
+	// held out in round 8 (run 7): written from that run's listening judgements before the evaluation
+	U: {
+		once: [
+			'oh shit',
+			'hola hola',
+			'hoy voy a ser mi propio',
+			'tengo solo 30 dias para hacer un',
+			'para hacer un motor de videojuegos entero',
+			'con fisicas graficos',
+			'todas las cosas que se necesitan',
+		],
+		// the asides inside the run of attempts and what the recogniser inserted into them
+		never: ['espera', 'suscribete', 'canal', 'un video'],
+	},
+	V: {
+		once: [
+			'el motor es esa cocina',
+			'es lo que dibuja',
+			'cuando tocas un boton',
+			'muy complejo de hacer',
+			'si buscas en internet',
+			'deberia ser mi propio motor',
+			'de las respuestas son',
+			'definitivamente no lo hagas',
+			'como todos los demas',
+		],
+		never: [],
+	},
+	W: {
+		once: [
+			'mitad del video',
+			'se lo que',
+			'por que carajo hiciste eso',
+			'te va muy bien',
+			'si es cierto',
+			'es cierto pero tengo mis razones',
+			'literalmente todos los hice en unity',
+			'dependo completamente de',
+			'la play store',
+			'que aparece un bug',
+			'buscando el problema',
+			'el error no es mio',
+		],
+		// the corrected first take and the correction aside
+		never: ['completamente de unity', 'no tengo que repetir'],
+	},
+	X: {
+		once: [
+			'con unos 30 libros',
+			'30 veces manualmente',
+			'una tortura',
+			'seleccionas los 30 libros',
+			'mantienes apretado el espacio',
+			'ronda 2',
+			'objetos a la vez',
+			'monedas girando',
+			'lluvia de meteoritos',
+		],
+		// the joke aside between the takes
+		never: ['ya no soy argentino', 'porque lo puse'],
+	},
+	Y: {
+		once: [
+			'cada intento de arreglar un bug',
+			'me costaba dos horas',
+			'si no arreglaba todo en dos dias',
+			'perderia el reto del video',
+			'tenia que coordinar',
+			'a trabajar toda la noche',
+			'uno por cada bug',
+			'a la manana siguiente',
+			'20 minutos',
+			'estaban arreglados',
+			'todos los que habia encontrado',
+		],
+		never: ['uno por uno'],
+	},
+	Z: {
+		once: [
+			'la base del motor',
+			'me falta el logo',
+			'no puede ser que justo haciendo este video',
+			'una letra j blanca',
+			'cuadrado rojo',
+			'hay que reemplazarlo',
+			'un mes entero',
+			'logo temporal',
+			'voy a pensar en un logo mejor',
+			'completamente gratis',
+			'suscribete',
+		],
+		// the first take ("literalmente es" became "es literalmente")
+		never: ['literalmente es una'],
+	},
+	AA: { once: [], never: [], allKept: true },
+	AB: { once: [], never: [], allKept: true },
 };
 
 const FPS = 30;
@@ -383,7 +482,7 @@ const outside = (a: number, b: number, spans: ReadonlyArray<readonly [number, nu
 
 describe('Clean Up on real transcripts (corpus)', () => {
 	for (const c of corpus.cases.filter(inSplit))
-		it(`${c.id}${HELD_OUT.has(c.fragment) ? ' (held out)' : ''}: the last clean take of each sentence, once`, () => {
+		it(`${c.id}${splitOf(c) === 'dev' ? '' : ` (${splitOf(c)})`}: the last clean take of each sentence, once`, () => {
 			const { a, kept, removed, heard } = cut(c);
 			// every removed second, head and tail included, lies within a finding that removes — beyond its edges only
 			// silence, and at most a frame of it (the frame grid)
@@ -480,7 +579,7 @@ describe('Clean Up on real transcripts (corpus)', () => {
 			{ kinds: Record<string, Tally>; dup: number; hit: number; missed: string[] }
 		> = {};
 		for (const c of corpus.cases) {
-			const split = HELD_OUT.has(c.fragment) ? 'held-out' : 'dev';
+			const split = splitOf(c);
 			const r = (report[split] ??= { kinds: {}, dup: 0, hit: 0, missed: [] });
 			const { a, kept } = cut(c);
 			const gone = (s: number, e: number) => !kept.some(([x, y]) => (s + e) / 2 >= x && (s + e) / 2 < y);

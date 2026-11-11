@@ -365,7 +365,7 @@ through `analyzeSequenceCleanup` (Fast preset, 30 fps, speech under every word).
 24 failed, at f11b859fb 13 of 30; at 2557f0b20 44 of the 46 cases failed the new invariants (head / tail trims and gap
 cuts without a finding) and G, I, K failed their spec (the aside, two missed restarts); at 170f832bb, after round 6,
 the new cases N, O, Q, R, T failed their spec (and P on "Guiño, guiño"); with repeats by alignment all 60 pass (split,
-metrics and the held-out result: "Repeats by alignment" below). Limits: without the re-decode (fragment A, mode c) "a" stretched over the second "poder
+metrics and the held-out result: "Repeats by alignment" below); run 7 (round 8) adds U–AB as a third split. Limits: without the re-decode (fragment A, mode c) "a" stretched over the second "poder
 subirlos" (1.03 s) goes as a drawn vowel, so that case asserts "poder subirlos" and "la Play Store" apart. Run 5 E
 default ("keeps 40.12–42.10, so that clause plays twice; stray 'de' split at 42.1") passes on this transcript at
 2557f0b20 already — the corpus voice (speech under every word, silence after 42.10) does not reproduce it; the real
@@ -604,6 +604,9 @@ words (fillers aside) removed. Measured (both modes, Fast, corpus voice):
 | held out, first evaluation (da2514402) | 19 / 24 | 0.989 (271 / 274) | 0.774 (260 / 336) |
 | held out after its fixes (0108b4021; no longer held out) | 24 / 24 | 1.000 (338 / 338) | 0.973 (327 / 336) |
 | dev at 0108b4021 | 34 / 34 | 0.997 (2394 / 2402) | 0.996 (2294 / 2303) |
+| round 8: run 7 (U–AB, both modes) at main 9031bd0f3 | 12 / 16 | 0.996 (456 / 458) | 0.812 (411 / 506) |
+| round 8: run 7, first evaluation (f6b5d509f; held out) | 16 / 16 | 1.000 (541 / 541) | 0.974 (493 / 506) |
+| round 8: dev / held out of round 6 at f6b5d509f | 34 / 34, 24 / 24 | 0.997 (2393 / 2401), 1.000 (338 / 338) | 0.996, 0.973 |
 
 Per kind at 0108b4021 (dev / held out): hidden-retake 0.997 / 1.000, retake 0.999 / 1.000, restart 0.998 / 1.000,
 false start 1.000 / 1.000, stutter — / 1.000, filler-vocalic 0.943 / —, filler-phrase 1.000 / 1.000, hallucination
@@ -616,6 +619,21 @@ kept). The first held-out evaluation failed G (a take holding its own restart), 
 spec's "never" phrase matched the kept "rehechos" as an ASR variant — a test error, fixed) and R b, where "no lo
 reescribí yo." was removed: the one false removal, fixed by rule 5's word-for-word requirement. The corpus asserts
 precision ≥ 0.99 and recall ≥ 0.95 per split.
+
+Round 8 (`CLEANUP_CORPUS=held-out-r7`): run 7 (main at 9031bd0f3, large-v3-turbo on CUDA, `/tmp/je-hr7-local/` on the
+build host) adds 16 cases — U–Z with takes, AA and AB controls, default and chunked — with their spec and `dup`
+references written from that run's listening judgements and duplicate references before the evaluation, and the
+voice without words the judgements call retries (U, and W a's tail of "rarísimo.") as `voiced`. Development used the
+dev split and round 6's held-out split; run 7 was evaluated once at the end and prompted no further change. Caveat, as
+in round 6: run 7's bug reports (H1–H10) were read before the development and two unit tests use its words (U b, W
+a), so the split measures how the rules generalise over the whole fragments, not blindness to those failures. The
+main baseline reproduces round 7's live numbers (0.996 / 0.811). Missed at f6b5d509f: U a's first take (the default
+run wrote it as garbage, "janeter … Pen 와 blah blah금u": a review finding here, and the speech re-decode now decodes
+that span again — speech.md §11.3), W a's "o" before the removed restart (the retry was written without it) and Z a's
+second "¡Llevo" (the recogniser wrote "Llevo, llevo" once). The one dev change: F's "Oh, | ¿cómo que…" is no longer a
+filler phrase (an interjection that opens an exclamation, round 8 H8). Not measurable on the corpus voice (speech under
+every word, no voicing plane): H5, H8's pause, H9 and the edges — their tests are synthetic (property, rules, cut
+edges).
 
 Round-6 items on this transcript corpus: 1 (N, a sentence twice) fixed by rule 4's aside; 2 (O, "o 3D" lost) by rules
 2 and 5; 3 (Q, missed restart) by rule 3's broken-off last word; 4 (T, false positive) by rules 2 and 4 (no prefix, not
