@@ -480,6 +480,7 @@ Every state-changing engine route and what an agent may do with it:
 | `POST /api/jobs/:id/cancel`, `/retry` (`cancel_job`) | Open | Restartable; partial outputs are the job's own |
 | `POST /api/uploads…`, `DELETE /api/uploads/:id` | Open | An upload is known by its unguessable id to whoever started it |
 | `POST /api/mg-bundles/import`, `/:key/rebuild`, `/scaffold` (`import_mg_bundle`, `scaffold_mg_project`) | Open | Runs the project's build (residual 1): needs an installed project on this machine; gating it would end headless agent workflows |
+| `POST /api/mg-bundles/import-html` (`import_html_composition`) | Open | Local mode only; loads the page in the headless browser from a loopback server confined to the page's folder, under the MG-1 sandbox policy (plus `https:` scripts); copies only files of that folder the page requested |
 | `POST /api/mg-bundles/prerender`, `/measure-texts`, `/api/motion-graphics/render`, `/api/layer-bake/preview`, `/api/previews/render` | Open | Renders into the cache |
 | `POST /api/media/:key/open` (`locate_media`) | Open | Allowlisted types only (ENG-5) |
 | `POST /api/agent/tx` | Gated by command (S01:AGT-011) | — |
