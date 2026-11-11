@@ -609,7 +609,7 @@ export function planScene(
 			createCmds.push(...after);
 			const blend = l.blend && l.blend !== 'normal' ? l.blend : undefined;
 			if (blend) createCmds.push({ type: 'clip.update', clipId, patch: { blendMode: blend } });
-			for (const [p, a] of Object.entries(l.props) as [SceneProp, SceneAnimR][]) {
+			for (const [p, a] of propsInOrder(l.props)) {
 				if (setAtCreate.has(p)) continue;
 				if (
 					a.kind === 'keys' ||
@@ -701,7 +701,8 @@ export function planScene(
 			});
 			aspects.push('src');
 		}
-		for (const [p, a] of Object.entries(l.props) as [SceneProp, SceneAnimR][]) {
+		// the box first: a new size or stroke moves a shape's anchor (keepShapesCentred), a given anchor is set after
+		for (const [p, a] of propsInOrder(l.props)) {
 			const c = cur.props[p] ?? null;
 			if (c && animEqual(c, a)) continue;
 			if (read.omitted.includes(p))
@@ -772,6 +773,19 @@ export function planScene(
 		},
 	};
 }
+
+const PROP_ORDER: readonly SceneProp[] = [
+	'size',
+	'radius',
+	'fill',
+	'position',
+	'anchor',
+	'scale',
+	'rotation',
+	'opacity',
+];
+const propsInOrder = (props: ResolvedSceneLayer['props']) =>
+	PROP_ORDER.flatMap((p) => (props[p] ? [[p, props[p]] as [SceneProp, SceneAnimR]] : []));
 
 /** What a new clip holds before the plan sets anything (what need not be set on a fresh clip). */
 const DEFAULTS = {

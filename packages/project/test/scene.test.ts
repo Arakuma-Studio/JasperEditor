@@ -428,7 +428,10 @@ const common = {
 	rotation: fc.option(fc.integer({ min: -720, max: 720 }), { nil: undefined }),
 	keyframes: fc.option(
 		fc.record(
-			{ opacity: keysArb(fc.integer({ min: 0, max: 100 })), scale: keysArb(fc.integer({ min: 1, max: 400 })) },
+			{
+				opacity: keysArb(fc.integer({ min: 0, max: 100 })),
+				scale: keysArb(fc.integer({ min: 1, max: 400 })),
+			},
 			{ requiredKeys: [] },
 		),
 		{ nil: undefined },

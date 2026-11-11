@@ -6,8 +6,7 @@ import type { Registries } from '../commands/types.ts';
 import { easesToCubic } from '../ease/curve.ts';
 import { spanEases, spanLeaving } from '../ease/segments.ts';
 import { rovingRuns } from '../keyframes.ts';
-import { mediaIntrinsicSize } from '../process/rescale.ts';
-import { sequenceFrameOfContentTime } from '../registry/properties.ts';
+import { intrinsicBoxOf, sequenceFrameOfContentTime } from '../registry/properties.ts';
 import type { Animatable, Keyframe, RGBA, Vec2 } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Mask } from '../schema/mask.ts';
@@ -209,29 +208,14 @@ function readText(doc: ProjectDocument, clip: TextClip, omitted: string[]): Scen
 	return t;
 }
 
-/** The anchor a layer starts with (its box centre): exports leave such an anchor out. */
+/** The anchor a layer starts with (the centre of its box, `intrinsicBoxOf`): exports leave such an anchor out. */
 export function defaultAnchor(doc: ProjectDocument, seq: Sequence, clip: Clip): Vec2 | null {
-	switch (clip.kind) {
-		case 'text':
-			return [clip.box.width / 2, clip.box.height / 2];
-		case 'shape': {
-			const size = (clip as Extract<Clip, { kind: 'shape' }>).shape as { size?: Animatable<Vec2> };
-			return size.size && size.size.keyframes.length === 0
-				? [size.size.value[0] / 2, size.size.value[1] / 2]
-				: null;
-		}
-		case 'still': {
-			const box = mediaIntrinsicSize(doc.media[clip.mediaId]);
-			return box ? [box.width / 2, box.height / 2] : null;
-		}
-		case 'composition': {
-			const box =
-				clip.canvas === 'sequence' ? { width: seq.settings.width, height: seq.settings.height } : clip.canvas;
-			return [box.width / 2, box.height / 2];
-		}
-		default:
-			return null;
+	if (clip.kind === 'shape') {
+		const size = (clip as Extract<Clip, { kind: 'shape' }>).shape as { size?: Animatable<Vec2> };
+		if (!size.size || size.size.keyframes.length > 0) return null;
 	}
+	const box = intrinsicBoxOf({ doc, seq, clip });
+	return [box.width / 2, box.height / 2];
 }
 
 export type ReadLayer = { layer: ResolvedSceneLayer; omitted: string[] };
