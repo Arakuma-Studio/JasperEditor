@@ -311,7 +311,9 @@ as inline styles, so the Player, `renderStill` and parallel `renderMedia` agree 
   `pnpm --filter @jasper/engine build:remotion`,
   `pnpm notices --audit apps/web/dist apps/engine/dist/remotion-bundle` reports shipped packages it misses.
 - New composition projects (`POST /api/mg-bundles/scaffold`, MCP `scaffold_mg_project`) include an `AnimeTitle`
-  example and a README section on driving anime.js from the frame in a Remotion composition.
+  example and a README section on driving anime.js from the frame in a Remotion composition. The engine installs
+  them with `CI=true corepack pnpm@<the repository's pin> install --ignore-workspace` (needs corepack on PATH;
+  150 s limit; errors carry the installer's output: `docs/wp-notes/wp-m2-mg.md` § Install).
 
 ## Text animations
 
