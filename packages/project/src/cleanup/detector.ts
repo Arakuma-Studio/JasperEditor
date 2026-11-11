@@ -284,9 +284,10 @@ export function detectCleanup(input: DetectInput): DetectResult {
 				const s = words[k]!.s;
 				const e = words[k + p.length - 1]!.e;
 				if (speechShare(voice, s, e) < 0.5) for (let q = 0; q < p.length; q++) guarded[k + q] = true;
-				else if (!noFrication(voice, s, e)) break;
-				// over voice without a single fricative (humming): flagged for review (round 6, fragment M:
-				// "¡Suscríbete al canal!" decoded over 4.9 s of humming)
+				else if (!noFrication(voice, s, e) || !belowSpeech(voice, s, e)) break;
+				// over voice without a single fricative, quieter than the speech (humming): flagged for review (round 6,
+				// fragment M: "¡Suscríbete al canal!" decoded over 4.9 s of humming at −17…−30 dBFS; run 9, AC: the phrase
+				// alone flagged a real, loud "gracias")
 				else for (let q = 0; q < p.length; q++) hummed.add(k + q);
 				break;
 			}
@@ -727,21 +728,36 @@ export function detectCleanup(input: DetectInput): DetectResult {
 		}
 	}
 	raw.push(...frameRaw);
-	// a review-only word alone between two removed pauses, shorter than `SLIVER_S`, is a sliver a cut would leave
-	// standing (round 6: "pasa?" 0.10 s, "¿Qué" 0.13 s): its finding proposes removing it (still reviewable)
+	// a review-only word alone between two removals, shorter than `SLIVER_S`, is a sliver a cut would leave standing
+	// (round 6: "pasa?" 0.10 s, "¿Qué" 0.13 s between pauses; run 9, AD a: the recogniser's "Bueno," over the onset of a
+	// removed take's "Así"): its finding proposes removing it (still reviewable) — but a loud voiced sound between two
+	// pauses is said on purpose and stays for review (run 9, AG a: the mouth sound "Pup.", voiced, −16 dBFS)
 	const pauses = frameRaw.filter((r) => r.kind === 'pause' && r.suggested === 'remove');
 	const touches = (x: number, y: number) => Math.abs(x - y) <= FLICKS_PER_SECOND * 0.02;
-	for (const r of raw)
+	const takes = raw.filter((r) => r.words && r.suggested === 'remove');
+	const loudVoiced = (r: Raw) => {
+		const t = voice?.levels.speechThresholdDb;
+		if (!voice || t === null || t === undefined) return false;
+		const [a, b] = wordFrames({ s: toSec(r.start), e: toSec(r.end) });
+		for (let f = Math.max(0, a); f < Math.min(voice.frameCount, b); f++)
+			if (voicedFrame(voice, f) && levelDbAt(voice, f) >= t) return true;
+		return false;
+	};
+	for (const r of raw) {
 		if (
-			r.words &&
-			r.words[0] === r.words[1] &&
-			r.suggested === 'review' &&
-			(r.kind === 'asr-suspect' || r.kind === 'filler-lexical') &&
-			r.end - r.start < SLIVER_S * FLICKS_PER_SECOND &&
-			pauses.some((q) => touches(q.end, r.start)) &&
-			pauses.some((q) => touches(q.start, r.end))
+			!r.words ||
+			r.words[0] !== r.words[1] ||
+			r.suggested !== 'review' ||
+			!(r.kind === 'asr-suspect' || r.kind === 'filler-lexical') ||
+			r.end - r.start >= SLIVER_S * FLICKS_PER_SECOND
 		)
-			r.suggested = 'remove';
+			continue;
+		const before = pauses.some((q) => touches(q.end, r.start));
+		const after = pauses.some((q) => touches(q.start, r.end));
+		const intoTake =
+			(before || after) && takes.some((q) => touches(q.start, r.end) || touches(q.end, r.start));
+		if ((before && after && !loudVoiced(r)) || intoTake) r.suggested = 'remove';
+	}
 	// voice without words inside a removed run of retries belongs to it: proposed for removal with it (reviewable;
 	// run 4, fragment E: "Que puedo hacer en un mes lo mismo" without words between two parts of a hidden retake)
 	// (a run of removed retries may be several findings: the voice between two of them, with no kept word between,
@@ -1347,6 +1363,24 @@ function noFrication(voice: CleanupVoice, s: number, e: number): boolean {
 		if (voicing[f]! < 115 && flatness[f]! >= 51 && levelDbAt(voice, f) >= floor + 10) return false;
 	}
 	return speech * FR >= 0.3;
+}
+
+/** A hummed phrase stays at least this far (dB) under the file's speech level. */
+const HUM_BELOW_SPEECH_DB = 6;
+
+/**
+ * Whether the loudest frame over `[s, e)` (seconds) stays `HUM_BELOW_SPEECH_DB` under the file's speech level (95th
+ * percentile) — the non-speech evidence a stock phrase over voice without frication needs (round 10, H5). False without
+ * levels. *Assumption*, labelled: from two measurements of one speaker — round 6's humming peaked at −17 dBFS, run 9's
+ * real "gracias" at −6…−10 dBFS among words of the same level.
+ */
+function belowSpeech(voice: CleanupVoice, s: number, e: number): boolean {
+	const speech = voice.levels.speechDb;
+	if (speech === null) return false;
+	const [a, b] = wordFrames({ s, e });
+	for (let f = Math.max(0, a); f < Math.min(voice.frameCount, b); f++)
+		if (levelDbAt(voice, f) > speech - HUM_BELOW_SPEECH_DB) return false;
+	return true;
 }
 
 /** Words between two words in another writing system with at most this many words between them are garbage too. */

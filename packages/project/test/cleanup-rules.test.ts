@@ -354,6 +354,8 @@ describe('round 6 local fixes (docs/wp-notes/transcript-cleanup.md "Repeats by a
 		const words = say('vamos | ¡Suscríbete al canal! | Ahora', { pause: 1, dur: 0.6 });
 		const v = voiceFor(words);
 		const n = v.frameCount;
+		// hummed under the speech level (round 6 measured the humming at −17…−30 dBFS; speech peaks around −6…−10)
+		v.level.fill((120 - 35) * 2, Math.floor(sec(words[1]!.start) * 100), Math.ceil(sec(words[3]!.end) * 100));
 		const hum = { ...v, voicing: new Uint8Array(n).fill(200), flatness: new Uint8Array(n).fill(10) };
 		const f = detect(words, hum).findings.find((x) => x.kind === 'hallucination')!;
 		expect(f.words).toEqual([1, 3]);
@@ -494,7 +496,13 @@ describe('round 8 fixes (docs/wp-notes/transcript-cleanup.md "Round 8")', () => 
 		];
 		const words = real.map(([text, a, b]) => ({ text, start: S(a), end: S(b), confidence: 0.9 }));
 		const v = voiceFor(words);
-		// hummed: voiced everywhere, no frication
+		// hummed: voiced everywhere, no frication, the inserted word under the speech level
+		const ins = indexOf(words, '¡Suscríbete!');
+		v.level.fill(
+			(120 - 35) * 2,
+			Math.floor(sec(words[ins]!.start) * 100),
+			Math.ceil(sec(words[ins]!.end) * 100),
+		);
 		const hum = {
 			...v,
 			voicing: new Uint8Array(v.frameCount).fill(200),
@@ -607,6 +615,46 @@ describe('round 10 fixes (docs/wp-notes/transcript-cleanup.md "Round 10")', () =
 			const at = indexOf(words, 'las', indexOf(words, 'y'));
 			expect(removes(d, at) || removes(d, at + 1), `${first} (${pause} s)`).toBe(false);
 		}
+	});
+
+	it('a stock word said as loud as the speech around it is speech, not a hummed hallucination (AC "gracias")', () => {
+		// run 9, fragment AC: "Bueno, ok, gracias por avisar…" at −6…−10 dBFS, voicing 0.78–0.87; its final /s/ measured
+		// flatness 0.10–0.18, under the frication test — the stock phrase alone flagged it
+		const words = say('Bueno, ok, gracias por avisar, hermano.', { dur: 0.32 });
+		const v = voiceFor(words);
+		const n = v.frameCount;
+		const voiced = { ...v, voicing: new Uint8Array(n).fill(210), flatness: new Uint8Array(n).fill(35) };
+		expect(detect(words, voiced).findings.filter((f) => f.kind === 'hallucination')).toEqual([]);
+	});
+
+	it('slivers: a loud voiced sound between pauses stays for review; a blip over a removed take goes with it', () => {
+		const sec = (f: number) => f / FLICKS_PER_SECOND;
+		// run 9, AG a: the deliberate mouth sound "Pup." (0.11 s, voiced, −16 dBFS) alone between two removed pauses
+		const words: CleanupWordIn[] = [
+			...say('La idea que hizo que todo esto fuera posible.'),
+			{ text: 'Pup.', start: S(5.5), end: S(5.61), confidence: 0.2 },
+			...say('Ya que tenía un ejército de agentes.', { t0: 7.5 }),
+		];
+		const v = voiceFor(words);
+		const voicing = new Uint8Array(v.frameCount).fill(210);
+		const pup = detect(words, {
+			...v,
+			voicing,
+			flatness: new Uint8Array(v.frameCount).fill(30),
+		}).findings.find((f) => f.words?.[0] === indexOf(words, 'Pup.'))!;
+		expect(pup.suggested).toBe('review');
+		// run 9, AD a: the recogniser's "Bueno," (0.12 s) over the onset of a removed take's "Así", after a pause
+		const take = 'Así que le puse shaders, que son...';
+		const blip: CleanupWordIn[] = [
+			...say('todo plano?'),
+			{ text: 'Bueno,', start: S(3.96), end: S(4.08), confidence: 0.9 },
+			...say(`${take} | ${take.replace('...', ' la receta que decide de qué color va cada pixel.')}`, {
+				t0: 4.08,
+			}),
+		];
+		const d = detect(blip);
+		const f = d.findings.find((x) => x.words?.[0] === 2)!;
+		expect([f.kind, f.suggested, sec(f.range.end)]).toEqual(['filler-lexical', 'remove', 4.08]);
 	});
 });
 

@@ -610,6 +610,17 @@ rule, and each held-out round found new failures. The mechanism (vocalic fillers
   (each variant fails on a8d587fcc); the property "a removed take never takes the end of a sentence the kept words
   began, unless said again right after it" (random pieces of sentences sharing words, pauses up to 15 s; fails without
   the guard); and the same invariant on every corpus case.
+- **A stock phrase over voiced speech needs non-speech evidence** (H5): over speech without a frame of frication it is a
+  hummed hallucination only when its loudest frame also stays 6 dB under the file's speech level
+  (`HUM_BELOW_SPEECH_DB`, `belowSpeech`; no levels, no flag). Run 9 AC flagged the real "gracias" (−6…−10 dBFS, voicing
+  0.78–0.87; its final /s/ at flatness 0.10–0.18 fell under the frication test). *Assumption*, labelled: two
+  measurements of one speaker — round 6's humming peaked at −17 dBFS, the real word at speech level. The round-6 and
+  round-8 hum tests now hum at −35 dBFS (speech −25 dBFS).
+- **Slivers** (H11, H12): a review-only word shorter than 0.15 s between two removed pauses stays for review when it
+  holds a voiced frame at the speech threshold or louder — a sound said on purpose (AG a: the mouth sound "Pup.", voiced,
+  −16 dBFS, was removed); noise words (round 6 "pasa?", "¿Qué") still go. A review-only sliver after a removed pause
+  that touches a removal of words (within 20 ms) goes with it: AD a kept the recogniser's "Bueno," (0.12 s) written
+  over the onset of a removed take's "Así" as a 0.13 s blip cut in voice.
 
 Kinds follow the structure: ≤ 2 words a false start, a whole clause (clause start, clause end, ≥ 3 content words) a
 retake (with a group), else a restart; inside re-decoded ranges they become hidden retakes as before. The settings keep
