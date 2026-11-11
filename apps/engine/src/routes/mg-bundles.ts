@@ -137,7 +137,7 @@ export default async function mgBundleRoutes(app: FastifyInstance): Promise<void
 
 	app.post(
 		'/api/mg-bundles/scaffold',
-		mgGuarded(async (req) => {
+		mgGuarded(async (req, reply) => {
 			if (!localMode)
 				throw new HttpError(
 					403,
@@ -145,7 +145,16 @@ export default async function mgBundleRoutes(app: FastifyInstance): Promise<void
 					'Creating a project folder is only available in local mode',
 				);
 			const body = parseOr400(MgBundleScaffoldRequestSchema, req.body);
-			const dir = await scaffoldProject(body.dir, body.name, { install: body.install !== false });
+			// A client that disconnects (cancelled MCP call) stops the install.
+			const gone = new AbortController();
+			const onClose = () => {
+				if (!reply.raw.writableEnded) gone.abort();
+			};
+			reply.raw.once('close', onClose);
+			const dir = await scaffoldProject(body.dir, body.name, {
+				install: body.install !== false,
+				signal: gone.signal,
+			}).finally(() => reply.raw.removeListener('close', onClose));
 			return svc.importPath(dir, { ...(body.projectId ? { projectId: body.projectId } : {}), watch: true });
 		}),
 	);

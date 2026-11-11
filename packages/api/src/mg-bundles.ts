@@ -13,6 +13,13 @@ export const MG_BUNDLE_ERROR_CODES = [
 	'MG_NOT_A_BUNDLE',
 	/** The project's node_modules are missing (run the package manager's install). */
 	'MG_NOT_INSTALLED',
+	/**
+	 * Scaffold: `corepack pnpm@<pin> install --ignore-workspace` in the new folder failed (detail: {dir, command,
+	 * reason: corepack-missing | spawn | exit, exitCode?, stderr?, stdout?}; the tails are capped at 4000 chars).
+	 */
+	'MG_INSTALL_FAILED',
+	/** Scaffold: that install did not finish in time and was stopped with its processes (detail adds timeoutSeconds). */
+	'MG_INSTALL_TIMEOUT',
 	/** Metadata (getCompositions) or a pre-render failed in the headless browser. */
 	'MG_RENDER_FAILED',
 ] as const;
@@ -119,7 +126,8 @@ export const MgBundleRebuildRequestSchema = z
 
 /**
  * `POST /api/mg-bundles/scaffold` (S08:MGC-015, P1, local mode): copies the template project into `dir/name`,
- * installs its dependencies and imports it with `watch: true`.
+ * installs its dependencies (`CI=true corepack pnpm@<pin> install --ignore-workspace`, 150 s limit) and imports it
+ * with `watch: true`.
  */
 export const MgBundleScaffoldRequestSchema = z.object({
 	projectId: z.string().optional(),
