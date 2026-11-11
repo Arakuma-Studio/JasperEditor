@@ -5,7 +5,7 @@
 // (`packages/project/test/cleanup-port.test.ts` checks it against the prototype's own output) — except that a restart
 // or retake must re-say what it removes (`ruleRestarts`, `ruleTakes`; a deliberate difference). The vocalic drawn-out
 // vowel, stutter, lexical-review and ASR-suspect rules are additions from the spec. Pure.
-import { type CleanupLanguageLists, sameWord } from './lists.ts';
+import { type CleanupLanguageLists, sameWord, soundsAlike } from './lists.ts';
 import type { CleanupSettings, FindingKind, RuleAction } from './schema.ts';
 
 /** One analysed word: its transcript index, normalised text and times in seconds (media time). */
@@ -40,6 +40,25 @@ export function lcs(
 		}
 	}
 	return dp[b.length]!;
+}
+
+/** The pairs `[index in a, index in b]` of one longest in-order alignment of `a` onto `b`. */
+export function alignment(
+	a: readonly string[],
+	b: readonly string[],
+	eq: (x: string, y: string) => boolean,
+): Array<[number, number]> {
+	const dp = Array.from({ length: a.length + 1 }, () => new Array<number>(b.length + 1).fill(0));
+	for (let x = a.length - 1; x >= 0; x--)
+		for (let y = b.length - 1; y >= 0; y--)
+			dp[x]![y] = eq(a[x]!, b[y]!) ? dp[x + 1]![y + 1]! + 1 : Math.max(dp[x + 1]![y]!, dp[x]![y + 1]!);
+	const out: Array<[number, number]> = [];
+	for (let x = 0, y = 0; x < a.length && y < b.length; ) {
+		if (eq(a[x]!, b[y]!) && dp[x]![y] === dp[x + 1]![y + 1]! + 1) out.push([x++, y++]);
+		else if (dp[x + 1]![y]! >= dp[x]![y + 1]!) x++;
+		else y++;
+	}
+	return out;
 }
 
 /** Prototype `phrases`: runs of words split where the pause before a word is ≥ `gap` seconds. Index lists. */
@@ -142,9 +161,19 @@ export function ruleRestarts(ctx: RuleContext): void {
 		const attempt = content(ctx, span(i, j));
 		return { attempt, a: cw(ctx, attempt).filter((x) => !markers.has(x)) };
 	};
-	// the attempt `[i, j)` said again (ASR variants match, `sameWord`) by the next `len` words from `from`
-	const reSaid = (i: number, j: number, from = j, len = 2 * (j - i)) => {
-		const { attempt, a } = attemptAt(i, j);
+	// the attempt `[i, j)` said again (ASR variants match, `sameWord`) by the next `len` words from `from`; `anchored`:
+	// the attempt starts with the 3-word n-gram the retry starts with
+	const reSaid = (i: number, j: number, from = j, len = 2 * (j - i), anchored = false) => {
+		// the attempt's own last words that the retry starts with — a stutter at the restart point ("… de la las
+		// escena… Resulta… | Resulta que los archivos…", run 5, fragment K) — are said again by the retry's first words
+		let end = j;
+		if (from === j)
+			for (let p = Math.min(3, j - i - 1); p >= 1; p--)
+				if (span(j - p, j).every((q, x) => j + x < n && sameWord(toks[q]!, toks[j + x]!))) {
+					end = j - p;
+					break;
+				}
+		const { attempt, a } = attemptAt(i, end);
 		const cont = content(ctx, span(from, Math.min(n, from + len)));
 		const said = cw(ctx, cont);
 		// a cut-off last word ("Y funcionan con cual…") is said again by its completion ("cualquier")
@@ -153,10 +182,24 @@ export function ruleRestarts(ctx: RuleContext): void {
 			const whole = said.find((y) => y.startsWith(last));
 			if (whole) a[a.length - 1] = whole;
 		}
-		return (
-			a.length - lcs(a, said, (x, y) => sameWord(x, y)) <= garble(a.length) &&
-			numbersReSaid(ctx, attempt, cont)
-		);
+		if (!numbersReSaid(ctx, attempt, cont)) return false;
+		if (!anchored) return a.length - lcs(a, said, (x, y) => sameWord(x, y)) <= garble(a.length);
+		// behind a 3-word anchor a word the retry garbles in place is said again: between the re-said words around it
+		// (after the last one: within 3 words) the retry says a word that sounds like it (`soundsAlike`) — "La tarjeta
+		// gráfica lee esa imagen y puede… | La tarjeta gráfica le da esa imagen y pone…" (run 5, fragment I); a list
+		// ("tengo que hacer los menús…, tengo que hacer los sonidos…") says another word there
+		const saidAt = cont.flatMap((t, q) => (cw(ctx, [t]).length ? [q] : []));
+		const pairs = alignment(a, said, (x, y) => sameWord(x, y));
+		let lost = 0;
+		for (let x = 0; x < a.length; x++) {
+			if (pairs.some(([p]) => p === x)) continue;
+			const prev = pairs.filter(([p]) => p < x).at(-1);
+			const next = pairs.find(([p]) => p > x);
+			const lo = prev ? saidAt[prev[1]]! + 1 : 0;
+			const hi = next ? saidAt[next[1]]! : lo + 3;
+			if (!cont.slice(lo, hi).some((y) => soundsAlike(a[x]!, y))) lost++;
+		}
+		return lost <= garble(a.length);
 	};
 	// a chain of attempts `[i, end)` that each start with the same n-gram, said again after the last one (`end`): every
 	// word of them in its next `len` words, ASR garble aside (≤ 15 % of ≥ 6, at least one; never two in a row)
@@ -206,7 +249,7 @@ export function ruleRestarts(ctx: RuleContext): void {
 				if (i < 0) break;
 				if (!gramAt(j, i) || words[j]!.s - words[i]!.s > t.restartWindowS) continue;
 				const [i2, j2] = extend(i, j, floor);
-				if (reSaid(i2, j2)) {
+				if (reSaid(i2, j2, j2, 2 * (j2 - i2), k === 3)) {
 					hit = i2;
 					j = j2;
 					break;
@@ -241,6 +284,25 @@ export function ruleRestarts(ctx: RuleContext): void {
 					if (joined && !cw(ctx, content(ctx, span(p, j))).length) end = p;
 					break;
 				}
+			// …and one or two words without content said into the restart point (< 0.15 s after the attempt), each
+			// stretched (≥ 0.3 s, long for a function word: the recogniser timed them over other sound) and parted from
+			// the rest of the retry by a pause (≥ `phraseGapS`), end the attempt: the retry starts after them (run 5,
+			// fragment J: "… con HTML y CSS | En el(18.18–18.95) | Jasper Engine…", where "En el" was the stray "igual";
+			// the threshold is an assumption from that one case)
+			if (end === j && j > hit && words[j]!.s - words[j - 1]!.e < LEAD_IN_JOIN_S)
+				for (let p = j; p < Math.min(n - 1, j + 2); p++) {
+					if (
+						cw(ctx, content(ctx, [p])).length ||
+						words[p]!.e - words[p]!.s < STRETCHED_LEAD_S ||
+						(p > j && words[p]!.s - words[p - 1]!.e >= LEAD_IN_JOIN_S)
+					)
+						break;
+					if (words[p + 1]!.s - words[p]!.e >= t.phraseGapS) {
+						end = p + 1;
+						j = p + 1;
+						break;
+					}
+				}
 			const fs = end - hit <= 2;
 			for (let q = hit; q < end; q++)
 				claim(ctx, q, fs ? 'false-start' : 'restart', fs ? falseStart : restart);
@@ -252,6 +314,12 @@ export function ruleRestarts(ctx: RuleContext): void {
 
 /** A lead-in word of a retry is said into it: closer than this (seconds) to the next word. */
 const LEAD_IN_JOIN_S = 0.15;
+
+/** A function word this long (seconds) or longer is stretched over other sound. */
+const STRETCHED_LEAD_S = 0.3;
+
+/** A word the recogniser wrote as broken off: it ends with an ellipsis. */
+export const CUT_OFF = /(\.\.\.|…)[?!]?$/;
 
 /** One retake hit of the take rule: unit `from` was said again as unit `to`. */
 export type TakeHit = { from: number; to: number };
@@ -272,13 +340,15 @@ export function ruleTakes(ctx: RuleContext): { units: number[][]; hits: TakeHit[
 	const { retake, falseStart } = ctx.settings.rules;
 	if (retake === 'off' && falseStart === 'off') return { units, hits };
 	// what each unit says once its restarts are out (a unit that restarts inside says no more than its last attempt);
-	// a unit a restart removes whole is still a take of what follows, but never the later take of a hit
-	const contents = units.map((u) =>
-		content(
+	// a unit a restart removes whole — but for words without content ("Y" before a restart, run 5 / fragment B) — is
+	// still a take of what follows, but never the later take of a hit
+	const contents = units.map((u) => {
+		const c = content(
 			ctx,
 			u.filter((k) => !ctx.labels[k] || ctx.labels[k]!.kind === 'filler-vocalic'),
-		),
-	);
+		);
+		return cw(ctx, c).length || c.length === content(ctx, u).length ? c : [];
+	});
 	const fromContents = units.map((u, a) => (contents[a]!.length ? contents[a]! : content(ctx, u)));
 	const eq = (x: string, y: string) => sameWord(x, y);
 	for (let a = 0; a < units.length; a++) {

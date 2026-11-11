@@ -9,7 +9,7 @@
 import type { ChildProcess } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { decodeVoiceAnalysis, VOICE_ANALYSIS_VERSION, VOICE_CLASSES } from '@jasper/project/cleanup-worker';
-import type { ProviderId } from '../../tools/ort.ts';
+import { CUDA_STATUS, type ProviderId, shortReason } from '../../tools/ort.ts';
 import { restrictInputs } from '../../tools/protocols.ts';
 import { type Chunk, mergeZones, shiftedChunks, vadChunks } from '../core/chunks.ts';
 import { DEFAULT_DIARIZE, diarize } from '../core/diarize.ts';
@@ -329,6 +329,8 @@ export type RunOptions = {
 	audio?: Float32Array;
 	/** Injected ONNX Runtime (tests). */
 	ort?: LoadOptions['ort'];
+	/** Diagnostic lines for the job log (the worker writes them to stderr, which the engine logs). */
+	onLog?(line: string): void;
 };
 
 const isGpu = (p: ProviderId) => p !== 'cpu';
@@ -348,7 +350,7 @@ type ModelSpec = {
  */
 export async function withDeviceFallback<T>(
 	spec: ModelSpec,
-	opts: Pick<RunOptions, 'onProgress' | 'onDevice' | 'signal' | 'ort'>,
+	opts: Pick<RunOptions, 'onProgress' | 'onDevice' | 'signal' | 'ort' | 'onLog'>,
 	use: (model: WhisperModel) => Promise<T>,
 	progressAt = 0.02,
 ): Promise<{
@@ -393,24 +395,46 @@ export async function withDeviceFallback<T>(
 		}
 	};
 	let result: Awaited<ReturnType<typeof attempt>>;
+	const retryable = (e: unknown) =>
+		!(e instanceof CancelledError || e instanceof SpeechRefusal || opts.signal?.aborted);
+	const used = [plan.encoder, plan.decoder, plan.calibrate ?? 'cpu'].filter(isGpu);
+	const full = (e: unknown) => (e instanceof Error ? (e.stack ?? e.message) : String(e)).slice(0, 8000);
+	let n = 1;
 	try {
-		result = await attempt(plan, 1);
+		result = await attempt(plan, n);
 	} catch (e) {
-		if (e instanceof CancelledError || e instanceof SpeechRefusal || opts.signal?.aborted) throw e;
-		const used = [plan.encoder, plan.decoder, plan.calibrate ?? 'cpu'].filter(isGpu);
-		if (!used.length) throw e;
-		// SG-003: a GPU error mid-job → the job once more on the CPU, else the original error
-		const reason = e instanceof Error ? e.message.split('\n')[0].slice(0, 300) : String(e);
-		const gpu = used[0] as ProviderId;
-		try {
-			result = await attempt({ encoder: 'cpu', decoder: 'cpu' }, 2);
-		} catch (e2) {
-			if (e2 instanceof CancelledError || opts.signal?.aborted) throw e2;
-			throw e;
+		if (!retryable(e) || !used.length) throw e;
+		opts.onLog?.(`GPU attempt ${n} failed: ${full(e)}`);
+		let failure: unknown = e;
+		// a CUDA library failure (cuDNN, cuBLAS… — seen under GPU contention) may be transient: once more on the GPU
+		let done = false;
+		if (used.includes('cuda') && CUDA_STATUS.test(e instanceof Error ? e.message : String(e))) {
+			n++;
+			opts.onLog?.('CUDA library failure: running once more on the GPU');
+			try {
+				result = await attempt(plan, n);
+				done = true;
+			} catch (e2) {
+				if (!retryable(e2)) throw e2;
+				opts.onLog?.(`GPU attempt ${n} failed: ${full(e2)}`);
+				failure = e2;
+			}
 		}
-		fallbacks.push({ stage: 'job', part: 'both', from: gpu, to: 'cpu', reason });
+		if (!done) {
+			// SG-003: a GPU error mid-job → the job once more on the CPU, else the original error
+			const reason = shortReason(failure);
+			const gpu = used[0] as ProviderId;
+			opts.onLog?.(`running again on the CPU (${reason})`);
+			try {
+				result = await attempt({ encoder: 'cpu', decoder: 'cpu' }, n + 1);
+			} catch (e3) {
+				if (e3 instanceof CancelledError || opts.signal?.aborted) throw e3;
+				throw e;
+			}
+			fallbacks.push({ stage: 'job', part: 'both', from: gpu, to: 'cpu', reason });
+		}
 	}
-	return { ...result, fallbacks, loadMs, threads };
+	return { ...result!, fallbacks, loadMs, threads };
 }
 
 /**
@@ -532,10 +556,12 @@ async function recoverWordlessSpans(
 
 /**
  * After the hidden-take pass: inside the windows whose words it replaced (`windows`, samples), voice without words
- * (≥ 2 s, `wordlessVoicedSpans`) and words still stretched over voice (`isStretchedWord`) are decoded again alone, with
- * 0.5 s of context — a re-decode can skip a take and time a neighbour over it (run 4, fragment E: no words for the take
- * at 38.14–42.15). A stretch's words replace it when `redecodeAccepted` takes them; a wordless span takes the words
- * decoded there. At most `GAP_MAX_SPANS` decodes. A decoder failure is thrown.
+ * (≥ 2 s, `wordlessVoicedSpans`) — and inside every window it decoded (`visited`), words still stretched over voice
+ * (`isStretchedWord`) — are decoded again alone, with 0.5 s of context: a re-decode can skip a take and time a
+ * neighbour over it (run 4, fragment E: no words for the take at 38.14–42.15), and a rejected window that is one VAD
+ * chunk gets no chunked fallback (run 5, fragment H: "rápida" stretched over 2.2 s of speech in both modes). A
+ * stretch's words replace it when `redecodeAccepted` takes them; a wordless span takes the words decoded there. At most
+ * `GAP_MAX_SPANS` decodes. A decoder failure is thrown.
  */
 async function recoverReplaced(
 	model: Pick<WhisperModel, 'transcribe'>,
@@ -544,21 +570,24 @@ async function recoverReplaced(
 	mask: SpeechMask,
 	opts: WhisperOptions,
 	windows: ReadonlyArray<{ start: number; end: number }>,
+	visited: ReadonlyArray<{ start: number; end: number }> = windows,
 ): Promise<{ result: WhisperResult; report: RecoveredReport | null }> {
-	const inWindow = (a: number, b: number) => windows.some((w) => a < w.end && b > w.start);
+	const over = (ws: typeof windows, a: number, b: number) => ws.some((w) => a < w.end && b > w.start);
 	const pad = REDECODE_EDGE_GUARD_FRAMES;
-	const targets: Array<{ span: Chunk; region: { start: number; end: number } }> = [];
+	// `quiet`: a stretch in a window whose words were not replaced — reported only when its decode places words
+	const targets: Array<{ span: Chunk; region: { start: number; end: number }; quiet?: boolean }> = [];
 	for (const sp of wordlessVoicedSpans(r.words, mask).spans)
-		if (inWindow(sp.start * VAD_FRAME, sp.end * VAD_FRAME))
+		if (over(windows, sp.start * VAD_FRAME, sp.end * VAD_FRAME))
 			targets.push({ span: sp, region: { start: sp.start * VAD_FRAME, end: sp.end * VAD_FRAME } });
 	for (const w of r.words)
-		if (inWindow(w.start, w.end) && isStretchedWord(w, mask))
+		if (over(visited, w.start, w.end) && isStretchedWord(w, mask))
 			targets.push({
 				span: {
 					start: Math.max(0, Math.floor(w.start / VAD_FRAME) - pad),
 					end: Math.min(mask.length, Math.ceil(w.end / VAD_FRAME) + pad),
 				},
 				region: { start: w.start, end: w.end },
+				quiet: !over(windows, w.start, w.end),
 			});
 	if (!targets.length) return { result: r, report: null };
 	targets.sort((a, b) => a.region.start - b.region.start);
@@ -573,7 +602,6 @@ async function recoverReplaced(
 		}
 		const got = await model.transcribe(input, { ...opts, language: r.language, span: t.span });
 		extra.add(got);
-		report.spans++;
 		const inside = (w: { start: number; end: number }) => mid(w) >= t.region.start && mid(w) < t.region.end;
 		const before = words.filter(inside);
 		const after = got.words.filter(inside);
@@ -582,6 +610,8 @@ async function recoverReplaced(
 			: after.length
 				? after
 				: null;
+		if (t.quiet && !placed) continue;
+		report.spans++;
 		report.ranges.push({
 			start: t.region.start / SAMPLE_RATE,
 			end: t.region.end / SAMPLE_RATE,
@@ -594,7 +624,7 @@ async function recoverReplaced(
 			...got.segments.filter((sg) => inside({ start: sg.start * SAMPLE_RATE, end: sg.end * SAMPLE_RATE })),
 		);
 	}
-	return { result: extra.result(r, words), report };
+	return { result: extra.result(r, words), report: report.spans || report.skipped ? report : null };
 }
 
 /** Both safety-net passes in one report (null when neither decoded anything). */
@@ -831,12 +861,23 @@ async function recognise(
 		opts.onProgress?.(0.955, 'Checking for hidden takes');
 		const hidden = await redecodeSuspects(model, input, again.result, mask, options);
 		// a replaced window can leave voice without words where the original had a stretched word over it (run 4,
-		// fragment E: the take at 38.14–42.15): those spans are decoded alone too, like the first safety net
-		const replaced = (hidden.report?.ranges ?? [])
-			.filter((x) => x.replaced)
-			.map((x) => ({ start: x.start * SAMPLE_RATE, end: x.end * SAMPLE_RATE }));
-		const after = replaced.length
-			? await recoverReplaced(model, input, hidden.result, mask, options, replaced)
+		// fragment E: the take at 38.14–42.15), and any window a word still stretched over voice: those are decoded
+		// alone too, like the first safety net
+		const ranges = (hidden.report?.ranges ?? []).map((x) => ({
+			start: x.start * SAMPLE_RATE,
+			end: x.end * SAMPLE_RATE,
+			replaced: x.replaced,
+		}));
+		const after = ranges.length
+			? await recoverReplaced(
+					model,
+					input,
+					hidden.result,
+					mask,
+					options,
+					ranges.filter((x) => x.replaced),
+					ranges,
+				)
 			: { result: hidden.result, report: null };
 		return {
 			result: after.result,

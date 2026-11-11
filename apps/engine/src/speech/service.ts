@@ -44,7 +44,7 @@ import { type JobContext, JobError } from '../jobs/types.ts';
 import type { MediaRecord } from '../media/registry.ts';
 import type { ProcessingService } from '../processing/service.ts';
 import { DownloadError } from '../tools/download.ts';
-import { ortPackageDir, ortVersion, type ProviderId } from '../tools/ort.ts';
+import { ortPackageDir, ortVersion, type ProviderId, shortReason } from '../tools/ort.ts';
 import { terminateTree } from '../tools/process.ts';
 import type { CoreServices } from '../tools/services.ts';
 import type { VoiceAnalysisService } from '../voice/service.ts';
@@ -880,7 +880,7 @@ export class SpeechService {
 			const cpuSpec: SpeechJobSpec = { ...spec, device: { encoder: 'cpu', decoder: 'cpu', calibrate: null } };
 			run = await this.runWorker<SpeechJobOutput>(host, 'transcribe', cpuSpec, scratch, span, {}, gpuName);
 			if (!run.out) throw original;
-			fallbacks.push({ stage: 'job', part: 'both', from, to: 'cpu', reason: original.message.slice(0, 300) });
+			fallbacks.push({ stage: 'job', part: 'both', from, to: 'cpu', reason: shortReason(original.message) });
 		}
 		const out = run.out;
 		fallbacks.push(...out.device.fallbacks);
@@ -1130,7 +1130,7 @@ export class SpeechService {
 					part: 'both',
 					from,
 					to: 'cpu',
-					reason: original.message.slice(0, 300),
+					reason: shortReason(original.message),
 				});
 			}
 			const out = run.out;

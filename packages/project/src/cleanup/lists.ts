@@ -464,6 +464,18 @@ export function sameWord(a: string, b: string, cut = false): boolean {
 	return editDistance(fa, fb) <= Math.max(fa.length, fb.length) / 3;
 }
 
+/**
+ * Whether two words sound alike although `sameWord` tells them apart — an ASR garble of one word said again: within
+ * half their length in edits after sound folding ("lee" / "le", "esa" / "a", "puede" / "pone"; "menús" / "sonidos" are
+ * not).
+ */
+export function soundsAlike(a: string, b: string): boolean {
+	if (sameWord(a, b)) return true;
+	const fa = soundFold(a);
+	const fb = soundFold(b);
+	return editDistance(fa, fb) <= Math.ceil(Math.max(fa.length, fb.length) / 2);
+}
+
 /** A list entry ("o sea", "¿sabes?") as normalised tokens (empty entries vanish). */
 export function phraseTokens(entry: string): string[] {
 	return entry

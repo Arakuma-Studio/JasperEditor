@@ -383,6 +383,49 @@ describe('jobs on a fake binding (SG-002, SG-003, SG-011)', () => {
 		});
 	});
 
+	it('a cuDNN failure runs once more on the GPU, then on the CPU with a readable reason and the full error logged', async () => {
+		// the shape of ONNX Runtime's CUDA error (cuda_call.cc), as run 5 of the hidden-retake test hit it under GPU
+		// contention; the reason then held 300 characters of the C++ signature and no status
+		const cudnn =
+			"Non-zero status code returned while running If node. Name:'optimum::if' Status Message: /onnxruntime_src/onnxruntime/core/providers/cuda/cuda_call.cc:154 std::conditional_t<THRW, void, onnxruntime::common::Status> onnxruntime::CudaCall(ERRTYPE, const char*, const char*, SUCCTYPE, const char*, const char*, int) [with ERRTYPE = cudnnStatus_t; bool THRW = true; SUCCTYPE = cudnnStatus_t; std::conditional_t<THRW, void, onnxruntime::common::Status> = void] CUDNN failure 4: CUDNN_STATUS_INTERNAL_ERROR ; GPU=0 ; hostname=pc ; file=/onnxruntime_src/onnxruntime/core/providers/cuda/nn/conv.cc ; line=456 ; expr=cudnnConvolutionForward(s_.handle, &alpha, s_.x_tensor, s_.x_data, s_.w_desc, s_.w_data, s_.conv_desc, s_.algo, workspace.get(), s_.workspace_bytes, &beta, s_.y_tensor, s_.y_data);";
+		const job = (failures: number) => {
+			let left = failures;
+			const f = fakeOrt({
+				runError: (part, p) => (part === 'encoder' && p === 'cuda' && left-- > 0 ? cudnn : null),
+			});
+			const devices: string[] = [];
+			const log: string[] = [];
+			const run = runSpeechJob(
+				{
+					modelDir: fakeModelDir(),
+					modelId: 'fake',
+					input: { f32: '' },
+					language: 'en',
+					device: { encoder: 'cuda', decoder: 'cpu' },
+				},
+				{
+					ort: f.ort,
+					audio: noiseAudio(3, (t) => t % 1 < 0.6),
+					onDevice: (d) => devices.push(`${d.encoder}/${d.decoder}#${d.attempt}`),
+					onLog: (l) => log.push(l),
+				},
+			);
+			return { run, devices, log };
+		};
+		const once = job(1);
+		const out1 = await once.run;
+		expect(once.devices).toEqual(['cuda/cpu#1', 'cuda/cpu#2']);
+		expect(out1.device).toMatchObject({ encoder: 'cuda', fallbacks: [] });
+		expect(once.log.join('\n')).toContain('expr=cudnnConvolutionForward');
+		const always = job(9);
+		const out2 = await always.run;
+		expect(always.devices).toEqual(['cuda/cpu#1', 'cuda/cpu#2', 'cpu/cpu#3']);
+		const reason = out2.device.fallbacks.find((x) => x.stage === 'job')!.reason;
+		expect(reason.length).toBeLessThanOrEqual(300);
+		expect(reason).toContain('CUDNN failure 4: CUDNN_STATUS_INTERNAL_ERROR');
+		expect(reason).not.toContain('std::conditional_t');
+	});
+
 	it('when the CPU retry fails too, the job fails with the original GPU error', async () => {
 		const dir = fakeModelDir();
 		const f = fakeOrt({

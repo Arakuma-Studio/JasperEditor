@@ -21,6 +21,7 @@ import {
 } from './lists.ts';
 import {
 	type AWord,
+	CUT_OFF,
 	claimWord,
 	lcs,
 	phrases,
@@ -36,6 +37,7 @@ import {
 	type WordLabel,
 } from './rules.ts';
 import type {
+	CleanupEdges,
 	CleanupFinding,
 	CleanupLists,
 	CleanupSettings,
@@ -102,6 +104,8 @@ export type DetectResult = {
 	language: CleanupLanguage | null;
 	/** Candidate words (seconds, media time). `guarded[k]`: dropped by the hallucination guard before the rules. */
 	words: AWord[];
+	/** Parallel to `words`: the word's sound (seconds) — its time and the voice next to it it holds (frame analysis). */
+	sound: Array<[number, number]>;
 	guarded: boolean[];
 	findings: CleanupFinding[];
 	groups: RetakeGroup[];
@@ -472,10 +476,19 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			}
 		}
 		for (const u of list) unitGroup.set(u, gi);
-		// what lies between the group's first take and the kept take belongs to the retries: fragments of ≤ 2 words and
+		// what lies between the group's first take and the kept take belongs to the retries: fragments of ≤ 2 words,
 		// units whose words the kept take mostly says ("En toda su puta vida", "Y el otro 1 %" between takes of
-		// fragment B; "no." after a take of fragment C), within the restart window of the take before them
+		// fragment B; "no." after a take of fragment C) and short broken-off units (≤ 6 words ending on a function word
+		// or an ellipsis, no sentence end: run 5, fragment G "Pero, me falta un" before the kept take), within the
+		// restart window of the take before them
 		const keptU = list[chosen]!;
+		const brokenOff = (u: number) => {
+			const ws = units[u]!;
+			if (ws.length > 6) return false;
+			const last = aw[ws.at(-1)!]!;
+			const text = last.text.trim();
+			return CUT_OFF.test(text) || (stop.has(last.n) && !/[.?!,;:]$/.test(text));
+		};
 		for (let u = list[0]! + 1, prevEnd = aw[units[list[0]!]!.at(-1)!]!.e; u < keptU; u++) {
 			if (list.includes(u)) {
 				prevEnd = aw[units[u]!.at(-1)!]!.e;
@@ -484,7 +497,7 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			if (unitGroup.has(u) || aw[units[u]![0]!]!.s - prevEnd > T.restartWindowS) continue;
 			const key = unitKey[u]!;
 			const said = key.filter((x) => unitKey[keptU]!.some((y) => sameWord(x, y))).length;
-			if (unitContent[u]!.length > 2 && (!key.length || said * 2 < key.length)) continue;
+			if (unitContent[u]!.length > 2 && (!key.length || said * 2 < key.length) && !brokenOff(u)) continue;
 			for (const k of units[u]!) claimWord(ctx, k, 'retake', retakeAction, u);
 			unitGroup.set(u, gi);
 			prevEnd = aw[units[u]!.at(-1)!]!.e;
@@ -628,12 +641,50 @@ export function detectCleanup(input: DetectInput): DetectResult {
 		take.text = ws.map((w) => w.text.trim()).join(' ');
 	}
 
+	// frame analysis: pauses, breaths, untranscribed voice, and the sound each word holds beyond its time (a finding
+	// that removes a word removes its sound: docs/wp-notes/transcript-cleanup.md "Every removal has a finding")
+	const frameRaw: FrameFinding[] = [];
+	const sound: Array<[number, number]> = words.map((w) => [w.s, w.e]);
+	if (voice) {
+		const ff = frameFindings(voice, words, settings, frameRegions(voice, words, spans, voice.frameCount));
+		frameRaw.push(...ff.findings);
+		// the frames of its time (a frame holding its first or last sample is the word's), and the voice it holds
+		ff.sound.forEach(([a, b], k) => {
+			const [wa, wb] = wordFrames(words[k]!);
+			sound[k] = [Math.min(words[k]!.s, wa * FR, a * FR), Math.max(words[k]!.e, wb * FR, b * FR)];
+		});
+	} else {
+		const regions: Array<[number, number]> = [];
+		const rs = spans?.length
+			? spans.map((r) => [toSec(r.start), toSec(r.end)] as [number, number]).sort((x, y) => x[0] - y[0])
+			: words.length
+				? [[words[0]!.s, Math.max(...words.map((w) => w.e))] as [number, number]]
+				: [];
+		for (const r of rs) {
+			const l = regions[regions.length - 1];
+			if (l && r[0] <= l[1]) l[1] = Math.max(l[1], r[1]);
+			else regions.push([r[0], r[1]]);
+		}
+		frameRaw.push(...wordGapPauses(words, settings, regions));
+	}
+	const soundOf = (k: number, k2: number): [number, number] => {
+		let a = Number.POSITIVE_INFINITY;
+		let b = Number.NEGATIVE_INFINITY;
+		for (let q = k; q <= k2; q++) {
+			a = Math.min(a, sound[q]![0]);
+			b = Math.max(b, sound[q]![1]);
+		}
+		return [Math.round(a * FLICKS_PER_SECOND), Math.round(b * FLICKS_PER_SECOND)];
+	};
+
 	// ---- findings
 	type Raw = {
 		kind: FindingKind;
 		suggested: FindingSuggestion;
 		start: number;
 		end: number;
+		/** The words' own times (flicks) for the fingerprint, when the range holds more of their sound. */
+		fp?: [number, number];
 		words: [number, number] | null;
 		text: string;
 		group?: number;
@@ -685,11 +736,13 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			.slice(k, j + 1)
 			.map((w) => w.conf)
 			.filter((c): c is number => c !== null);
+		const [rs, re] = soundOf(awIndex[k]!, awIndex[j]!);
 		raw.push({
 			kind: l.kind,
 			suggested: l.action,
-			start: input.words[a.i]!.start,
-			end: input.words[b.i]!.end,
+			start: Math.min(rs, input.words[a.i]!.start),
+			end: Math.max(re, input.words[b.i]!.end),
+			fp: [input.words[a.i]!.start, input.words[b.i]!.end],
 			words: [a.i, b.i],
 			text: aw
 				.slice(k, j + 1)
@@ -711,11 +764,13 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			}
 			let j = k;
 			while (j + 1 < words.length && guarded[j + 1]) j++;
+			const [hs, he] = soundOf(k, j);
 			raw.push({
 				kind: 'hallucination',
 				suggested: settings.rules.hallucination as FindingSuggestion,
-				start: input.words[words[k]!.i]!.start,
-				end: input.words[words[j]!.i]!.end,
+				start: Math.min(hs, input.words[words[k]!.i]!.start),
+				end: Math.max(he, input.words[words[j]!.i]!.end),
+				fp: [input.words[words[k]!.i]!.start, input.words[words[j]!.i]!.end],
 				words: [words[k]!.i, words[j]!.i],
 				text: words
 					.slice(k, j + 1)
@@ -725,8 +780,7 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			k = j + 1;
 		}
 	}
-	// frame findings
-	if (voice) raw.push(...frameFindings(voice, words, settings));
+	raw.push(...frameRaw);
 	// voice without words inside a removed run of retries belongs to it: proposed for removal with it (reviewable;
 	// run 4, fragment E: "Que puedo hacer en un mes lo mismo" without words between two parts of a hidden retake)
 	const retries = raw.filter(
@@ -740,7 +794,8 @@ export function detectCleanup(input: DetectInput): DetectResult {
 	const findings: CleanupFinding[] = [];
 	const seen = new Map<string, number>();
 	for (const r of raw) {
-		let fp = findingFingerprint(input.mediaId, stream, r.kind, toSec(r.start), toSec(r.end), r.text);
+		const [fa, fb] = r.fp ?? [r.start, r.end];
+		let fp = findingFingerprint(input.mediaId, stream, r.kind, toSec(fa), toSec(fb), r.text);
 		const n = (seen.get(fp) ?? 0) + 1;
 		seen.set(fp, n);
 		if (n > 1) fp = `${fp}~${n}`;
@@ -769,7 +824,7 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			takes: takes[l.index]!,
 		}));
 	}
-	return { mediaId: input.mediaId, stream, language: lang, words, guarded, findings, groups, script };
+	return { mediaId: input.mediaId, stream, language: lang, words, sound, guarded, findings, groups, script };
 }
 
 /** Symbols said as words (Whisper writes "1 %" for "uno por ciento"), as one normalised token per language. */
@@ -854,39 +909,90 @@ function reasonOf(
 	return { key: `cleanup.reason.${kind}`, params };
 }
 
-/** Voice within this many seconds of a word counts as that word's (timestamps are loose)… */
+/** Voice within this many seconds of a word counts as that word's (timestamps are loose). */
 const UNCOVERED_MARGIN_S = 0.15;
-/** … and a stretch of a partly covered voice run at least this long (seconds) without words is untranscribed. */
-const UNCOVERED_MIN_S = 0.5;
 
-/** Pauses, breaths and untranscribed voice from the frame classes (between the first and last candidate word). */
-function frameFindings(
-	voice: CleanupVoice,
-	words: readonly AWord[],
-	settings: CleanupSettings,
-): Array<{
+/**
+ * A word longer than this (seconds) over continuous voice is stretched (the speech worker's hidden-take trace,
+ * docs/wp-notes/speech.md §11.3)…
+ */
+const STRETCHED_WORD_S = 1;
+/** … and holds its first this many seconds; the voice after that is flagged. *Assumption* (run 5, H and G). */
+const WORD_HOLD_S = 0.5;
+
+type FrameFinding = {
 	kind: FindingKind;
 	suggested: FindingSuggestion;
 	start: number;
 	end: number;
 	words: null;
 	text: string;
-}> {
-	const out: Array<{
-		kind: FindingKind;
-		suggested: FindingSuggestion;
-		start: number;
-		end: number;
-		words: null;
-		text: string;
-	}> = [];
+};
+
+/** The analysed regions in frames (the clips' media spans, merged), else the words' span. */
+function frameRegions(
+	voice: CleanupVoice | null,
+	words: readonly AWord[],
+	spans: DetectInput['spans'],
+	frameCount: number,
+): Array<[number, number]> {
+	const out: Array<[number, number]> = [];
+	if (spans?.length) {
+		const rs = spans
+			.map((r) => [
+				Math.max(0, Math.round(toSec(r.start) / FR)),
+				Math.min(frameCount, Math.round(toSec(r.end) / FR)),
+			])
+			.filter(([a, b]) => b! > a!)
+			.sort((x, y) => x[0]! - y[0]!) as Array<[number, number]>;
+		for (const r of rs) {
+			const l = out[out.length - 1];
+			if (l && r[0] <= l[1]) l[1] = Math.max(l[1], r[1]);
+			else out.push([r[0], r[1]]);
+		}
+		return out;
+	}
 	if (!words.length) return out;
-	const F = FLICKS_PER_SECOND * FR;
-	const lo = Math.max(0, wordFrames(words[0]!)[0]);
 	let hi = 0;
 	for (const w of words) hi = Math.max(hi, wordFrames(w)[1]);
-	hi = Math.min(voice.frameCount, hi);
-	const push = (kind: FindingKind, action: RuleAction, a: number, b: number) => {
+	const lo = Math.max(0, wordFrames(words[0]!)[0]);
+	hi = voice ? Math.min(voice.frameCount, hi) : hi;
+	if (hi > lo) out.push([lo, hi]);
+	return out;
+}
+
+/**
+ * Whether the voice analysis hears no speech under a word of plausible length (a quiet word, or one the classes
+ * missed): its time is still a word — no pause covers it and the planner keeps it unless a finding removes it.
+ */
+export function quietWord(voice: CleanupVoice, w: { s: number; e: number }, maxWordS: number): boolean {
+	if (w.e - w.s > maxWordS) return false;
+	const [a, b] = wordFrames(w);
+	for (let f = Math.max(0, a); f < Math.min(voice.frameCount, b); f++)
+		if (voice.classes[f] === VOICE_CLASS_SPEECH) return false;
+	return true;
+}
+
+/**
+ * The frame analysis of the analysed regions (docs/wp-notes/transcript-cleanup.md "Every removal has a finding"):
+ * every speech frame belongs to a word (its time, and voice next to it within `UNCOVERED_MARGIN_S`, or a shorter
+ * wordless rest than `untranscribedMinS` beside it), to untranscribed voice (a wordless stretch at least
+ * `untranscribedMinS` long), or is a blip (a wordless speech run shorter than that, alone between non-speech) that a
+ * pause around it holds. Findings: **pause** = a run of non-speech and blips longer than `maxGapS`, anywhere in a
+ * region — at its head and tail too — except over a quiet word; **breath** = a breath-like run within 30 ms of speech;
+ * **untranscribed** = the wordless stretches. `sound[k]`: the frames of voice beyond its time word k holds (empty:
+ * none).
+ */
+function frameFindings(
+	voice: CleanupVoice,
+	words: readonly AWord[],
+	settings: CleanupSettings,
+	regions: ReadonlyArray<readonly [number, number]>,
+): { findings: FrameFinding[]; sound: Array<[number, number]> } {
+	const out: FrameFinding[] = [];
+	const sound = words.map((): [number, number] => [Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]);
+	const F = FLICKS_PER_SECOND * FR;
+	const push = (kind: FindingKind, action: RuleAction, a: number, b: number, text = '') => {
 		if (action === 'off') return;
 		out.push({
 			kind,
@@ -894,58 +1000,176 @@ function frameFindings(
 			start: Math.round(a * F),
 			end: Math.round(b * F),
 			words: null,
-			text: '',
+			text,
 		});
 	};
 	const T = settings.thresholds;
 	const mg = Math.round(settings.gaps.maxGapS / FR);
-	// word coverage of frames (any candidate word, guarded or not)
-	const covered = new Uint8Array(Math.max(0, hi - lo));
-	for (const w of words) {
-		const [a, b] = wordFrames(w);
-		for (let f = Math.max(lo, a); f < Math.min(hi, b); f++) covered[f - lo] = 1;
-	}
-	let f = lo;
-	while (f < hi) {
-		const c = voice.classes[f]!;
-		let g = f;
-		if (c === VOICE_CLASS_SPEECH) {
+	const margin = Math.round(UNCOVERED_MARGIN_S / FR);
+	const minU = Math.max(1, Math.round(T.untranscribedMinS / FR - 1e-9));
+	const own = (k: number, f: number) => {
+		const s = sound[k]!;
+		if (f < s[0]) s[0] = f;
+		if (f + 1 > s[1]) s[1] = f + 1;
+	};
+	for (const [lo, hi] of regions) {
+		const n = hi - lo;
+		if (n <= 0) continue;
+		// owner of each frame: the word whose time holds it (−1: none); quiet words hold no pause
+		const owner = new Int32Array(n).fill(-1);
+		const quiet = new Uint8Array(n);
+		words.forEach((w, k) => {
+			const [a, b] = wordFrames(w);
+			if (b <= lo || a >= hi) return;
+			const q = quietWord(voice, w, T.maxWordS);
+			for (let f = Math.max(lo, a); f < Math.min(hi, b); f++) {
+				if (owner[f - lo] < 0) owner[f - lo] = k;
+				if (q) quiet[f - lo] = 1;
+			}
+		});
+		const isSpeech = (f: number) => voice.classes[f] === VOICE_CLASS_SPEECH;
+		const blip = new Uint8Array(n);
+		// untranscribed stretches (frames), and which one holds each frame (−1: none)
+		const utr: Array<[number, number]> = [];
+		const utrAt = new Int32Array(n).fill(-1);
+		const untranscribed = (a: number, b: number) => {
+			utrAt.fill(utr.length, a - lo, b - lo);
+			utr.push([a, b]);
+		};
+		for (let f = lo; f < hi; ) {
+			if (!isSpeech(f)) {
+				f++;
+				continue;
+			}
+			let g = f;
 			let any = false;
-			while (g < hi && voice.classes[g] === VOICE_CLASS_SPEECH) {
-				if (covered[g - lo]) any = true;
+			while (g < hi && isSpeech(g)) {
+				if (owner[g - lo] >= 0) any = true;
 				g++;
 			}
-			if (!any && (g - f) * FR >= T.untranscribedMinS - 1e-9)
-				push('untranscribed', settings.rules.untranscribed, f, g);
-			else if (any) {
-				// voice a word only partly covers: its stretch without words (beyond `UNCOVERED_MARGIN` of every word,
-				// at least `UNCOVERED_MIN_S`) is untranscribed voice too — run 4, fragment E: a stretched "de" covered
-				// the end of a 3.6 s attempt, and the 1.8 s before it was cut with no finding to review
-				const margin = Math.round(UNCOVERED_MARGIN_S / FR);
-				const near = (k: number) => {
-					for (let q = Math.max(f, k - margin); q < Math.min(g, k + margin + 1); q++)
-						if (covered[q - lo]) return true;
-					return false;
-				};
-				for (let k = f; k < g; ) {
-					if (near(k)) {
-						k++;
+			if (!any) {
+				if (g - f >= minU) untranscribed(f, g);
+				else blip.fill(1, f - lo, g - lo);
+			} else
+				for (let p = f; p < g; ) {
+					if (owner[p - lo] >= 0) {
+						p++;
 						continue;
 					}
-					let m = k;
-					while (m < g && !near(m)) m++;
-					if ((m - k) * FR >= UNCOVERED_MIN_S - 1e-9)
-						push('untranscribed', settings.rules.untranscribed, k, m);
-					k = m;
+					let q = p;
+					while (q < g && owner[q - lo] < 0) q++;
+					// a wordless stretch of the run: the words beside it own the voice near them
+					const left = p > f ? owner[p - 1 - lo]! : -1;
+					const right = q < g ? owner[q - lo]! : -1;
+					const giveL = (a: number, b: number) => {
+						for (let x = a; x < b; x++) {
+							own(left, x);
+							owner[x - lo] = left;
+						}
+					};
+					const giveR = (a: number, b: number) => {
+						for (let x = a; x < b; x++) {
+							own(right, x);
+							owner[x - lo] = right;
+						}
+					};
+					if (left >= 0 && right >= 0) {
+						if (q - p < 2 * margin + minU) {
+							const mid = p + Math.ceil((q - p) / 2);
+							giveL(p, mid);
+							giveR(mid, q);
+						} else {
+							giveL(p, p + margin);
+							giveR(q - margin, q);
+							untranscribed(p + margin, q - margin);
+						}
+					} else if (left >= 0) {
+						if (q - p < margin + minU) giveL(p, q);
+						else {
+							giveL(p, p + margin);
+							untranscribed(p + margin, q);
+						}
+					} else if (q - p < margin + minU) giveR(p, q);
+					else {
+						giveR(q - margin, q);
+						untranscribed(p, q - margin);
+					}
+					p = q;
 				}
+			f = g;
+		}
+		// pauses: non-speech and blips, never over a quiet word, longer than maxGap — at the head and tail too; a shorter
+		// gap is part of the speech around it: its halves belong to the word or untranscribed voice on either side, so
+		// findings that remove both neighbours leave nothing between them
+		// the word or untranscribed voice at frame x ([−1, −1]: none), and frames given to one
+		const side = (x: number): [number, number] =>
+			x < lo || x >= hi ? [-1, -1] : [owner[x - lo]!, owner[x - lo]! >= 0 ? -1 : utrAt[x - lo]!];
+		const attach = (x: number, [w, u]: [number, number]) => {
+			if (owner[x - lo]! >= 0) return;
+			if (w >= 0) own(w, x);
+			else if (u >= 0) {
+				const r = utr[u]!;
+				r[0] = Math.min(r[0], x);
+				r[1] = Math.max(r[1], x + 1);
 			}
-		} else {
-			while (g < hi && voice.classes[g] !== VOICE_CLASS_SPEECH) g++;
-			const between = f > lo && clsAt(voice, f - 1) === VOICE_CLASS_SPEECH && g < hi;
-			if (between && g - f > mg) push('pause', settings.rules.pause, f, g);
-			// breath-like runs touching speech on either side (within 30 ms)
-			let k = f;
-			while (k < g) {
+		};
+		for (let f = lo; f < hi; ) {
+			const gapAt = (x: number) => (!isSpeech(x) || blip[x - lo] === 1) && quiet[x - lo] === 0;
+			if (!gapAt(f)) {
+				f++;
+				continue;
+			}
+			let g = f;
+			while (g < hi && gapAt(g)) g++;
+			if (g - f > mg) {
+				const [pa, pb] = pauseEdges(voice, settings, lo, hi, f, g);
+				if (pb > pa) push('pause', settings.rules.pause, pa, pb);
+				// the rising onset before the speech after the pause and a tail's fading decay are that speech's sound
+				const r = side(g);
+				for (let x = Math.max(f, pb); x < g; x++) attach(x, r);
+				const l = side(f - 1);
+				for (let x = f; x < Math.min(g, pa); x++) attach(x, l);
+			} else {
+				const l = side(f - 1);
+				const r = side(g);
+				const hasL = l[0] >= 0 || l[1] >= 0;
+				const hasR = r[0] >= 0 || r[1] >= 0;
+				const mid = hasL && hasR ? f + Math.ceil((g - f) / 2) : hasL ? g : f;
+				for (let x = f; x < g; x++) attach(x, x < mid ? l : r);
+			}
+			f = g;
+		}
+		for (const [a, b] of utr) push('untranscribed', settings.rules.untranscribed, a, b);
+		// a word stretched over continuous voice (longer than `STRETCHED_WORD_S`, at least half its frames speech) holds
+		// more than a word: its speech after the first `WORD_HOLD_S` may be a take the transcript holds once, which the
+		// re-decode did not fix (run 5, fragment H: "rápida" over 2.2 s of speech at −10 to −24 dBFS) — untranscribed
+		// voice for review, its text the word
+		for (const w of words) {
+			if (w.e - w.s <= STRETCHED_WORD_S) continue;
+			const [a, b] = wordFrames(w);
+			const [x, y] = [Math.max(lo, a), Math.min(hi, b)];
+			let n = 0;
+			for (let f = x; f < y; f++) if (isSpeech(f)) n++;
+			if (y <= x || n * 2 < b - a) continue;
+			let first = -1;
+			let last = -1;
+			for (let f = Math.max(x, Math.round((w.s + WORD_HOLD_S) / FR)); f < y; f++)
+				if (isSpeech(f)) {
+					if (first < 0) first = f;
+					last = f;
+				}
+			if (first >= 0 && last + 1 - first >= minU)
+				push('untranscribed', settings.rules.untranscribed, first, last + 1, w.text.trim());
+		}
+		// breath-like runs touching speech on either side (within 30 ms)
+		for (let f = lo; f < hi; ) {
+			if (isSpeech(f)) {
+				f++;
+				continue;
+			}
+			let g = f;
+			while (g < hi && !isSpeech(g)) g++;
+			for (let k = f; k < g; ) {
 				if (voice.classes[k] !== VOICE_CLASS_BREATH) {
 					k++;
 					continue;
@@ -958,10 +1182,116 @@ function frameFindings(
 				if (near) push('breath', settings.rules.breath, k, m);
 				k = m;
 			}
+			f = g;
 		}
-		f = g;
+	}
+	return { findings: out, sound };
+}
+
+/** How far (seconds) a pause's edges move over sound to the decay threshold or to silence. */
+const PAUSE_EDGE_MAX_S = 0.25;
+
+/**
+ * What a pause removes of the gap `[f, g)` (frames) between `lo` and `hi`: before speech that follows, it ends at the
+ * last measured silence (`silentFrame`) before the onset, so no cut clips a rising onset; after speech it starts
+ * where the decay falls below the level edges' out threshold when speech follows (the Fast style's out point inside
+ * the decay), and at measured silence at a tail, so a last word keeps its fading tail. Each edge moves at most
+ * `PAUSE_EDGE_MAX_S`; with no silence that close an onset edge stays at the gap's end (a tail with none: no pause).
+ */
+function pauseEdges(
+	voice: CleanupVoice,
+	settings: CleanupSettings,
+	lo: number,
+	hi: number,
+	f: number,
+	g: number,
+): [number, number] {
+	if (voice.levels.floorDb === null) return [f, g];
+	const max = Math.round(PAUSE_EDGE_MAX_S / FR);
+	let a = f;
+	let b = g;
+	if (g < hi) {
+		// the onset: back to the frame after the last silent one
+		let k = g - 1;
+		while (k > f && g - k <= max && !silentFrame(voice, k)) k--;
+		if (silentFrame(voice, k)) b = k + 1;
+	}
+	if (f > lo) {
+		if (g < hi) {
+			// a join: the decay below the out threshold goes with the pause (level edges only)
+			const thr = settings.edges.mode === 'level' ? edgeThreshold(voice, settings.edges, 'out') : null;
+			if (thr !== null)
+				while (
+					a > lo &&
+					f - a < max &&
+					voice.classes[a - 1] === VOICE_CLASS_SPEECH &&
+					levelDbAt(voice, a - 1) < thr
+				)
+					a--;
+		} else {
+			// a tail: from the first silent frame on
+			while (a < b && a - f < max && !silentFrame(voice, a)) a++;
+			if (!silentFrame(voice, a)) return [g, g];
+		}
+	}
+	return [a, b];
+}
+
+/**
+ * Pauses by word timings (media without a voice analysis): the time between words longer than `maxGapS` in each
+ * region (seconds), its head and tail included, as the planner's word mode cuts it.
+ */
+function wordGapPauses(
+	words: readonly AWord[],
+	settings: CleanupSettings,
+	regions: ReadonlyArray<readonly [number, number]>,
+): FrameFinding[] {
+	const out: FrameFinding[] = [];
+	const action = settings.rules.pause;
+	if (action === 'off') return out;
+	const mg = settings.gaps.maxGapS;
+	for (const [lo, hi] of regions) {
+		let t = lo;
+		const gap = (a: number, b: number) => {
+			if (b - a > mg + 1e-6)
+				out.push({
+					kind: 'pause',
+					suggested: action,
+					start: Math.round(a * FLICKS_PER_SECOND),
+					end: Math.round(b * FLICKS_PER_SECOND),
+					words: null,
+					text: '',
+				});
+		};
+		for (const w of words) {
+			if (w.e <= lo || w.s >= hi) continue;
+			if (w.s > t) gap(t, w.s);
+			t = Math.max(t, w.e);
+		}
+		if (hi > t) gap(t, hi);
 	}
 	return out;
+}
+
+/** The level an edge rule compares with: floor + dB, or speech level − dB. Null without levels. */
+export function edgeThreshold(voice: CleanupVoice, edges: CleanupEdges, which: 'in' | 'out'): number | null {
+	const db = which === 'in' ? edges.inDb : edges.outDb;
+	if (edges.reference === 'speech') {
+		const s = voice.levels.speechDb;
+		return s === null ? null : s - db;
+	}
+	const f = voice.levels.floorDb;
+	return f === null ? null : f + db;
+}
+
+/** A voice frame at most this far (dB) above the noise floor is silence (the speech threshold's minimum margin). */
+export const SILENCE_DB = 6;
+
+/** Whether 10 ms voice frame k is silence: not speech, and within `SILENCE_DB` of the noise floor. */
+export function silentFrame(voice: CleanupVoice, k: number): boolean {
+	const floor = voice.levels.floorDb;
+	if (floor === null || k < 0 || k >= voice.frameCount) return false;
+	return voice.classes[k] !== VOICE_CLASS_SPEECH && levelDbAt(voice, k) < floor + SILENCE_DB;
 }
 
 /** dB of the level of frame k (−120 beyond the analysis). */

@@ -99,7 +99,19 @@ export function providerOption(
 	}
 }
 
-/** First line of an error, bounded (reasons are shown to people). */
+/** A CUDA library's failure status in an ONNX Runtime error ("CUDNN failure 4: CUDNN_STATUS_INTERNAL_ERROR"). */
+export const CUDA_STATUS = /\b(?:CUDNN|CUBLAS|CUFFT|CURAND|CUDA) failure \d+: [^;]*[^;\s]/i;
+
+/** The longest reason (characters). */
+const REASON_MAX = 300;
+
+/**
+ * First line of an error, bounded (reasons are shown to people). ONNX Runtime's source locations, failed checks and
+ * the C++ signature it prints before a CUDA status (templates, parameter lists, "[with …]") are dropped; a line still
+ * too long keeps its head and the CUDA status — or its end, where ONNX Runtime puts the status — never the status cut
+ * off (run 5 of the hidden-retake test reported a cuDNN failure as 300 characters of `std::conditional_t<…>
+ * onnxruntime::CudaCall(…)` without the status).
+ */
 export function shortReason(e: unknown): string {
 	const m = e instanceof Error ? e.message : String(e);
 	let line = (m.split('\n').find((l) => l.trim()) ?? m).trim();
@@ -107,8 +119,22 @@ export function shortReason(e: unknown): string {
 	// "/onnxruntime_src/…/webgpu_context.cc:136 … was false. Failed to get a WebGPU adapter: …"
 	const after = /\bwas false\.\s*(.+)$/.exec(line);
 	if (after?.[1]) line = after[1];
-	line = line.replace(/^\S+\.(?:cc|cpp|h):\d+\s+/, '');
-	return line.slice(0, 300) || 'unknown error';
+	line = line
+		.replace(/\S+\.(?:cc|cpp|h):\d+\s+/g, '')
+		.replace(/std::conditional_t<[^>]*>\s*/g, '')
+		.replace(/[\w:]+::\w+\([^()]*\)\s*/g, '')
+		.replace(/\[with [^\]]*\]\s*/g, '')
+		.replace(/\s+/g, ' ')
+		.trim();
+	if (line.length > REASON_MAX) {
+		const status = line.match(CUDA_STATUS)?.[0];
+		const tail =
+			status && status.length < REASON_MAX / 2
+				? status
+				: line.slice(line.length - REASON_MAX * 0.4).trimStart();
+		line = `${line.slice(0, REASON_MAX - tail.length - 3).trimEnd()} … ${tail}`;
+	}
+	return line || 'unknown error';
 }
 
 export type ProviderProbe = { id: ProviderId; available: boolean; reason?: string };

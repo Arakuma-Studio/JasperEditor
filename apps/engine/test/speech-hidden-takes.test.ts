@@ -276,4 +276,24 @@ describe('hidden takes', () => {
 		expect(out.guard.redecoded!.ranges.some((r) => r.replaced)).toBe(true);
 		expect(out.words.map((w) => w.text)).toEqual(truth.map((w) => w.text));
 	});
+
+	it('a stretched word a rejected one-chunk window leaves is decoded alone (run 5, fragment H: "rápida" over 2.2 s of speech)', async () => {
+		// continuous speech (no pause of 100 ms): the window is one VAD chunk, so there is no chunked fallback
+		const seq = (t: string, at0: number) => t.split(' ').map((x, k) => at(x, at0 + 0.4 * k, 0.36));
+		const head = seq('ab cd ij kl mn', 0.5);
+		const rest = seq('ij kl mn op qr st uv wx ya bd ce', 2.5);
+		const tail = seq('df eg fh gi hj ik jl km ln mo np oq', 9);
+		const truth = [...head, ...rest, ...tail];
+		// longer windows write the phrase once, "mn" stretched from the attempt over the second take's "mn"
+		const long = [...head.slice(0, 4), { ...head[4]!, end: rest[2]!.end }, ...rest.slice(3), ...tail];
+		const audio = noiseAudio(SECONDS, (t) => truth.some((w) => t >= w.start && t < w.end));
+		const out = await runSpeechJob(
+			{ modelDir: fakeModelDir({ encodable: true }), modelId: 'fake', input: { f32: '' }, language: 'en' },
+			{ ort: fakeOrt(hiddenTakeDecoder(audio, truth, long, long)).ort, audio },
+		);
+		expect(out.guard.redecoded!.ranges).toMatchObject([{ replaced: false }]);
+		// both takes, each where it was said
+		expect(out.words.map((w) => w.text).slice(0, 12)).toEqual(truth.slice(0, 12).map((w) => w.text));
+		expect(out.guard.recovered).toMatchObject({ spans: 1, words: 3 });
+	});
 });

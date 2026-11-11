@@ -303,7 +303,9 @@ export function findingReasonText(f: CleanupFinding): string {
 		case 'breath':
 			return `Breath of ${s} s`;
 		case 'untranscribed':
-			return `Voice without words (${s} s): a dropped filler, a laugh, a cough or a missed word — listen before cutting`;
+			return text
+				? `Speech inside the stretched word "${text}" (${s} s): maybe a take the transcript wrote once — listen before cutting`
+				: `Voice without words (${s} s): a dropped filler, a laugh, a cough or a missed word — listen before cutting`;
 		case 'filler-vocalic':
 			return `Filler "${text}"`;
 		case 'filler-phrase':

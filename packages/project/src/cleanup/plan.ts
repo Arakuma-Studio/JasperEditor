@@ -6,7 +6,7 @@
 // breaths kept, the gap policy's air inside / between sentences (`keepGapS`, `keepGapSentenceS`), word mode for media
 // without a voice analysis, and the "avoid harsh cuts" guard. Times are media seconds. Pure.
 import { VOICE_CLASS_BREATH, VOICE_CLASS_SPEECH } from '@jasper/audio-dsp';
-import { type CleanupVoice, FR, levelDbAt, SENTENCE_END } from './detector.ts';
+import { type CleanupVoice, FR, levelDbAt, quietWord, SENTENCE_END } from './detector.ts';
 import { edgeThreshold, levelInPoint, levelOutPoint } from './edges.ts';
 import type { AWord } from './rules.ts';
 import type { CleanupSettings } from './schema.ts';
@@ -134,8 +134,12 @@ function planPieces(input: MediaPlanInput): MediaPlan {
 	const speechMode = !!voice && mode !== 'word';
 	if (voice && speechMode) {
 		for (const k of keepIdx) {
-			const ext = speechExtent(voice, input.words[k]!, 5);
-			if (ext) rng.push(piece(ext[0], ext[1], k)); // else: no voice under the word (misplaced time / hallucination)
+			const w = input.words[k]!;
+			const ext = speechExtent(voice, w, 5);
+			if (ext) rng.push(piece(ext[0], ext[1], k));
+			// no speech under a word of plausible length: a quiet word, kept as its time (strict); else misplaced time
+			else if (input.strictRemoval !== false && quietWord(voice, w, P.thresholds.maxWordS))
+				rng.push(piece(w.s, w.e, k));
 		}
 	} else for (const k of keepIdx) rng.push(piece(input.words[k]!.s, input.words[k]!.e, k));
 	for (const [a, b] of input.keepSpeech ?? []) rng.push(piece(a, b, -1));
