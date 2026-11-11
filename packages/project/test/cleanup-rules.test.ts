@@ -297,6 +297,78 @@ describe('rules (Spanish)', () => {
 	});
 });
 
+describe('round 6 local fixes (docs/wp-notes/transcript-cleanup.md "Repeats by alignment")', () => {
+	const sec = (f: number) => f / FLICKS_PER_SECOND;
+	const detect = (words: CleanupWordIn[], voice: CleanupVoice) =>
+		detectCleanup({ mediaId: 'med_r', words, voice, language: 'es', settings: FAST_SETTINGS });
+
+	it('a coordinating "e" said into an i- word is no filler; a held "e" is', () => {
+		expect(kinds('de Godot e incluso en juegos').byWord).toEqual([null, null, null, null, null, null]);
+		expect(kinds('de Godot | e | ahora').label(2)).toBe('filler-vocalic');
+	});
+
+	it('a reduplication is reviewed, never cut by default; a restart of one word is', () => {
+		const g = kinds('que no cuesta nada. Guiño, guiño. | En Unity', {
+			words: say('que no cuesta nada. Guiño, guiño. | En Unity'),
+		});
+		const f = g.r.findings.find((x) => x.kind === 'stutter')!;
+		expect(f.suggested).toBe('review');
+		expect(kinds('y hace boing, boing, boing.').r.findings.filter((x) => x.suggested === 'remove')).toEqual(
+			[],
+		);
+		expect(kinds('Ya. Ya me pasó con Godot').label(0)).toBe('false-start');
+	});
+
+	it('breaths and pauses never cut into a kept word (fricative onset, closure inside)', () => {
+		const words = say('hola | Physics gelatina', { pause: 1 });
+		const v = voiceFor(words);
+		const [ps, pe] = [sec(words[1]!.start), sec(words[1]!.end)];
+		// "Ph": unvoiced breath-like noise over the word's first 120 ms and the 30 ms before it
+		for (let f = Math.round((ps - 0.03) * 100); f < Math.round((ps + 0.12) * 100); f++) {
+			v.classes[f] = 1;
+			v.level[f] = (120 - 28) * 2;
+		}
+		// a 150 ms closure in "gelatina" (silence inside its time)
+		const gs = sec(words[2]!.start);
+		v.classes.fill(0, Math.round((gs + 0.05) * 100), Math.round((gs + 0.2) * 100));
+		v.level.fill((120 - 65) * 2, Math.round((gs + 0.05) * 100), Math.round((gs + 0.2) * 100));
+		const d = detect(words, v);
+		for (const f of d.findings.filter((x) => x.kind === 'breath' || x.kind === 'pause'))
+			for (const w of words.slice(1))
+				expect(
+					sec(f.range.end) <= sec(w.start) + 1e-9 || sec(f.range.start) >= sec(w.end) - 1e-9,
+					`${f.kind} ${sec(f.range.start)}–${sec(f.range.end)} in "${w.text}" (${ps}–${pe})`,
+				).toBe(true);
+	});
+
+	it('a review-only sliver between two removed pauses is proposed for removal', () => {
+		const words = say('hola | pasa? | vamos', { pause: 1 });
+		words[1]!.end = words[1]!.start + S(0.1);
+		words[1]!.confidence = 0.2;
+		const d = detect(words, voiceFor(words));
+		const f = d.findings.find((x) => x.kind === 'asr-suspect')!;
+		expect(f.suggested).toBe('remove');
+	});
+
+	it('a stock phrase over voice without frication is a hallucination to review; with it, speech', () => {
+		const words = say('vamos | ¡Suscríbete al canal! | Ahora', { pause: 1, dur: 0.6 });
+		const v = voiceFor(words);
+		const n = v.frameCount;
+		const hum = { ...v, voicing: new Uint8Array(n).fill(200), flatness: new Uint8Array(n).fill(10) };
+		const f = detect(words, hum).findings.find((x) => x.kind === 'hallucination')!;
+		expect(f.words).toEqual([1, 3]);
+		expect(f.suggested).toBe('review');
+		const flatness = new Uint8Array(n).fill(10);
+		// the "s" of "Suscríbete": 60 ms of unvoiced noise
+		const s0 = Math.round(sec(words[1]!.start) * 100);
+		flatness.fill(120, s0, s0 + 6);
+		const voicing = new Uint8Array(n).fill(200).fill(40, s0, s0 + 6);
+		expect(
+			detect(words, { ...v, voicing, flatness }).findings.filter((x) => x.kind === 'hallucination'),
+		).toEqual([]);
+	});
+});
+
 describe('rules (English)', () => {
 	it('English fillers, markers and restarts', () => {
 		const r = kinds('so um we built the track | you know | then we we added cars', { language: 'en' });

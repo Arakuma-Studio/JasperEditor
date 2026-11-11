@@ -71,7 +71,8 @@ export type CleanupSegmentIn = {
 };
 
 /** The parts of a voice analysis the detector and planner read. */
-export type CleanupVoice = Pick<VoiceAnalysis, 'classes' | 'level' | 'frameCount' | 'levels'>;
+export type CleanupVoice = Pick<VoiceAnalysis, 'classes' | 'level' | 'frameCount' | 'levels'> &
+	Partial<Pick<VoiceAnalysis, 'voicing' | 'flatness'>>;
 
 export type DetectInput = {
 	mediaId: string;
@@ -264,6 +265,7 @@ export function detectCleanup(input: DetectInput): DetectResult {
 		settings.rules.hallucination === 'off'
 			? new Array<boolean>(words.length).fill(false)
 			: hallucinationGuard(words, voice, T.hallucinationRun, T.hallucinationSpeechShare);
+	const hummed = new Set<number>();
 	if (settings.rules.hallucination !== 'off' && voice) {
 		const phrasesH = lists.hallucinations.map((h) => h.split(' ')).sort((a, b) => b.length - a.length);
 		for (let k = 0; k < words.length; k++) {
@@ -272,6 +274,10 @@ export function detectCleanup(input: DetectInput): DetectResult {
 				const s = words[k]!.s;
 				const e = words[k + p.length - 1]!.e;
 				if (speechShare(voice, s, e) < 0.5) for (let q = 0; q < p.length; q++) guarded[k + q] = true;
+				else if (!noFrication(voice, s, e)) break;
+				// over voice without a single fricative (humming): flagged for review (round 6, fragment M:
+				// "¡Suscríbete al canal!" decoded over 4.9 s of humming)
+				else for (let q = 0; q < p.length; q++) hummed.add(k + q);
 				break;
 			}
 		}
@@ -644,7 +650,47 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			k = j + 1;
 		}
 	}
+	// a stock phrase over voice without frication: a hallucination finding for review (an uncalibrated measure, so it
+	// never removes by default)
+	if (settings.rules.hallucination !== 'off')
+		for (let k = 0; k < words.length; ) {
+			if (!hummed.has(k) || guarded[k]) {
+				k++;
+				continue;
+			}
+			let j = k;
+			while (j + 1 < words.length && hummed.has(j + 1)) j++;
+			const [hs, he] = soundOf(k, j);
+			raw.push({
+				kind: 'hallucination',
+				suggested: 'review',
+				start: hs,
+				end: he,
+				fp: [input.words[words[k]!.i]!.start, input.words[words[j]!.i]!.end],
+				words: [words[k]!.i, words[j]!.i],
+				text: words
+					.slice(k, j + 1)
+					.map((w) => w.text.trim())
+					.join(' '),
+			});
+			k = j + 1;
+		}
 	raw.push(...frameRaw);
+	// a review-only word alone between two removed pauses, shorter than `SLIVER_S`, is a sliver a cut would leave
+	// standing (round 6: "pasa?" 0.10 s, "¿Qué" 0.13 s): its finding proposes removing it (still reviewable)
+	const pauses = frameRaw.filter((r) => r.kind === 'pause' && r.suggested === 'remove');
+	const touches = (x: number, y: number) => Math.abs(x - y) <= FLICKS_PER_SECOND * 0.02;
+	for (const r of raw)
+		if (
+			r.words &&
+			r.words[0] === r.words[1] &&
+			r.suggested === 'review' &&
+			(r.kind === 'asr-suspect' || r.kind === 'filler-lexical') &&
+			r.end - r.start < SLIVER_S * FLICKS_PER_SECOND &&
+			pauses.some((q) => touches(q.end, r.start)) &&
+			pauses.some((q) => touches(q.start, r.end))
+		)
+			r.suggested = 'remove';
 	// voice without words inside a removed run of retries belongs to it: proposed for removal with it (reviewable;
 	// run 4, fragment E: "Que puedo hacer en un mes lo mismo" without words between two parts of a hidden retake)
 	// (a run of removed retries may be several findings: the voice between two of them, with no kept word between,
@@ -903,6 +949,16 @@ function frameFindings(
 			}
 		});
 		const isSpeech = (f: number) => voice.classes[f] === VOICE_CLASS_SPEECH;
+		// a pause never splits a word (round 6: closures and quiet bursts inside "gelatina", "ChatGPT", "Triste." were
+		// cut): the frames of a word's time are the word's, but measured silence at its edges (loose timestamps) and
+		// the inside of a stretched word (it holds other sound)
+		const inWord = new Uint8Array(n);
+		for (const w of words) {
+			const h = wordHold(voice, w);
+			if (!h) continue;
+			const [a, b] = [Math.max(lo, h[0]), Math.min(hi, h[1])];
+			if (b > a) inWord.fill(1, a - lo, b - lo);
+		}
 		const blip = new Uint8Array(n);
 		// untranscribed stretches (frames), and which one holds each frame (−1: none)
 		const utr: Array<[number, number]> = [];
@@ -989,7 +1045,8 @@ function frameFindings(
 			}
 		};
 		for (let f = lo; f < hi; ) {
-			const gapAt = (x: number) => (!isSpeech(x) || blip[x - lo] === 1) && quiet[x - lo] === 0;
+			const gapAt = (x: number) =>
+				(!isSpeech(x) || blip[x - lo] === 1) && quiet[x - lo] === 0 && inWord[x - lo] === 0;
 			if (!gapAt(f)) {
 				f++;
 				continue;
@@ -1054,7 +1111,21 @@ function frameFindings(
 				const near =
 					(k - f <= 3 && f > lo && clsAt(voice, f - 1) === VOICE_CLASS_SPEECH) ||
 					(g - m <= 3 && g < hi && clsAt(voice, g) === VOICE_CLASS_SPEECH);
-				if (near) push('breath', settings.rules.breath, k, m);
+				// a kept word's time is the word's (round 6: breaths inside "Physics", "jugando", "chiquita" took their
+				// fricative onsets), and the unvoiced noise right before a word that opens with a fricative or affricate
+				// is its onset: what is left must still be a breath (≥ the class's 120 ms)
+				let a = k;
+				let b = m;
+				for (const w of words) {
+					const [wa, wb] = wordFrames(w);
+					if (wb <= a || wa >= b) {
+						if (wa >= b && wa - b <= 1 && FRICATIVE_ONSET.test(w.n)) b = a;
+						continue;
+					}
+					if (wa <= a) a = Math.max(a, wb);
+					else b = Math.min(b, wa);
+				}
+				if (near && b - a >= BREATH_MIN_FRAMES) push('breath', settings.rules.breath, a, b);
 				k = m;
 			}
 			f = g;
@@ -1062,6 +1133,48 @@ function frameFindings(
 	}
 	return { findings: out, sound };
 }
+
+/**
+ * The frames `[a, b)` a word's time holds against pauses: its time without measured silence at its edges (loose
+ * timestamps); null for a stretched word (longer than `STRETCHED_WORD_S`: it holds other sound) or an empty span.
+ */
+export function wordHold(voice: CleanupVoice, w: { s: number; e: number }): [number, number] | null {
+	if (w.e - w.s > STRETCHED_WORD_S) return null;
+	let [a, b] = wordFrames(w);
+	a = Math.max(0, a);
+	b = Math.min(voice.frameCount, b);
+	while (a < b && silentFrame(voice, a)) a++;
+	while (b > a && silentFrame(voice, b - 1)) b--;
+	return b > a ? [a, b] : null;
+}
+
+/** A kept piece shorter than this (seconds) between two cuts is a sliver. */
+const SLIVER_S = 0.15;
+
+/**
+ * Whether the voice over `[s, e)` (seconds) has no frame of frication — unvoiced noise (voicing < 0.45, flatness ≥ 0.2)
+ * at least 10 dB over the floor — while speech: hummed or sung syllables, where a stock outro phrase is a
+ * hallucination. False without the voicing / flatness planes or levels. *Assumption*, labelled: thresholds from the
+ * voice analysis' own speech / breath classes; uncalibrated against the round-6 humming (only zero-crossing rates
+ * were measured there: 500–800 /s against 3,600–9,700 /s on a real "s").
+ */
+function noFrication(voice: CleanupVoice, s: number, e: number): boolean {
+	const { voicing, flatness } = voice;
+	const floor = voice.levels.floorDb;
+	if (!voicing || !flatness || floor === null) return false;
+	const [a, b] = wordFrames({ s, e });
+	let speech = 0;
+	for (let f = Math.max(0, a); f < Math.min(voice.frameCount, b); f++) {
+		if (voice.classes[f] === VOICE_CLASS_SPEECH) speech++;
+		if (voicing[f]! < 115 && flatness[f]! >= 51 && levelDbAt(voice, f) >= floor + 10) return false;
+	}
+	return speech * FR >= 0.3;
+}
+
+/** Shortest breath-like run (frames): the voice analysis' class minimum (120 ms). */
+const BREATH_MIN_FRAMES = 12;
+/** A word that opens with a fricative or affricate (its unvoiced noise before the voiced part is the word). */
+const FRICATIVE_ONSET = /^(f|s|z|j|x|ch|sh|th|ph|c[ei]|g[ei]|h)/;
 
 /** How far (seconds) a pause's edges move over sound to the decay threshold or to silence. */
 const PAUSE_EDGE_MAX_S = 0.25;

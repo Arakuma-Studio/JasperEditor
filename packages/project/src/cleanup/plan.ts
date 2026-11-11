@@ -6,7 +6,7 @@
 // breaths kept, the gap policy's air inside / between sentences (`keepGapS`, `keepGapSentenceS`), word mode for media
 // without a voice analysis, and the "avoid harsh cuts" guard. Times are media seconds. Pure.
 import { VOICE_CLASS_BREATH, VOICE_CLASS_SPEECH } from '@jasper/audio-dsp';
-import { type CleanupVoice, FR, levelDbAt, quietWord, SENTENCE_END } from './detector.ts';
+import { type CleanupVoice, FR, levelDbAt, quietWord, SENTENCE_END, wordHold } from './detector.ts';
 import { edgeThreshold, levelInPoint, levelOutPoint } from './edges.ts';
 import type { AWord } from './rules.ts';
 import type { CleanupSettings } from './schema.ts';
@@ -136,7 +136,10 @@ function planPieces(input: MediaPlanInput): MediaPlan {
 		for (const k of keepIdx) {
 			const w = input.words[k]!;
 			const ext = speechExtent(voice, w, 5);
-			if (ext) rng.push(piece(ext[0], ext[1], k));
+			// the frames its time holds are the word's too (no pause splits a word: `wordHold`, as the detector)
+			const h = ext && input.strictRemoval !== false && wordHold(voice, w);
+			if (ext && h) rng.push(piece(Math.min(ext[0], h[0] * FR), Math.max(ext[1], h[1] * FR), k));
+			else if (ext) rng.push(piece(ext[0], ext[1], k));
 			// no speech under a word of plausible length: a quiet word, kept as its time (strict); else misplaced time
 			else if (input.strictRemoval !== false && quietWord(voice, w, P.thresholds.maxWordS))
 				rng.push(piece(w.s, w.e, k));
@@ -160,12 +163,20 @@ function planPieces(input: MediaPlanInput): MediaPlan {
 	const lastKeptBefore = lastKeptFinder(input.words, keepIdx);
 	if (voice && speechMode) {
 		const mg = Math.round(maxGap / FR);
+		// a kept word's time is never compressed (closures inside a word: `wordHold`, as the detector's pauses; the
+		// prototype's edges without strict removal)
+		const held = new Set<number>();
+		if (input.strictRemoval !== false)
+			for (const k of keepIdx) {
+				const h = wordHold(voice, input.words[k]!);
+				if (h) for (let f = h[0]; f < h[1]; f++) held.add(f);
+			}
 		for (const r of out0) {
 			const fa = Math.round(r.a / FR);
 			const fb = Math.round(r.b / FR);
 			let cur = fa;
 			const mask: boolean[] = [];
-			for (let f = fa; f < fb; f++) mask.push(voice.classes[f] !== VOICE_CLASS_SPEECH);
+			for (let f = fa; f < fb; f++) mask.push(voice.classes[f] !== VOICE_CLASS_SPEECH && !held.has(f));
 			for (const [x, y] of runsOf(mask)) {
 				if (y - x > mg && x > 0 && fa + y < fb && !overlaps(input.keepPauses, (fa + x) * FR, (fa + y) * FR)) {
 					out.push(piece(cur * FR, (fa + x) * FR, lastKeptBefore((fa + x) * FR)));

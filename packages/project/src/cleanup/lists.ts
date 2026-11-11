@@ -152,6 +152,7 @@ const ES: CleanupLanguageLists = {
 		'gracias por ver el video',
 		'gracias por ver',
 		'gracias',
+		'suscribete al canal',
 		'suscribete',
 	],
 	numbers: [
