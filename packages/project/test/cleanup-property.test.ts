@@ -353,6 +353,47 @@ describe('planning properties', () => {
 						.filter(({ i }) => !removedWords.has(i))
 						.map(({ w }) => w.loud);
 					const n = r.voice.frameCount;
+					// a kept word's time loses no frame that is not measured silence — no pause, breath or untranscribed finding
+					// takes one; only an accepted removal of words right after it may take its quietest end (the start of
+					// that removal and the frame at or before it) — and a pause takes the speech running on from a kept word's
+					// time only 30 dB or more under the word's loudest frame (round 11: pauses took whole quiet words and tails
+					// at floor + 20 dB)
+					const dbAt = (k: number) => r.voice.level[k]! / 2 - 120;
+					const times = r.words.map(
+						(w) => [Math.trunc(sec(w.start) * 100), Math.ceil(sec(w.end) * 100 - 1e-9)] as const,
+					);
+					const removedPart = (k: number) =>
+						a.plan.ranges
+							.map(
+								(g) =>
+									[Math.max(k * 0.01, g.start * frame), Math.min((k + 1) * 0.01, g.end * frame)] as const,
+							)
+							.filter(([t0, t1]) => t1 - t0 > 1e-9);
+					const byWordRemoval = (t0: number, t1: number) =>
+						wordRemovals.some(([x, y]) => t0 >= x - frame - 1e-6 && t1 <= y + 1e-9);
+					const acceptedVoice = a.findings
+						.filter((f) => f.kind === 'untranscribed' && accepted(f))
+						.map(spanOf);
+					times.forEach(([x, y], i) => {
+						if (removedWords.has(i)) return;
+						let peak = -120;
+						for (let k = x; k < y; k++) {
+							peak = Math.max(peak, dbAt(k));
+							if (silent(k)) continue;
+							for (const [t0, t1] of removedPart(k))
+								expect(
+									byWordRemoval(t0, t1),
+									`${t0.toFixed(3)}–${t1.toFixed(3)} of kept "${r.words[i]!.text}" ${sec(r.words[i]!.start)}–${sec(r.words[i]!.end)} removed`,
+								).toBe(true);
+						}
+						for (let k = y; k < n && speechAt(y - 1) && speechAt(k) && !times.some(([p, q]) => k >= p && k < q); k++)
+							for (const [t0, t1] of removedPart(k))
+								if (!byWordRemoval(t0, t1) && !inSpans(t0, t1, acceptedVoice))
+									expect(
+										dbAt(k),
+										`tail ${k / 100} of kept "${r.words[i]!.text}" removed`,
+									).toBeLessThanOrEqual(peak - 30);
+					});
 					for (const [la] of keptSpeech) {
 						let k = la - 1;
 						let mixed = false;
