@@ -55,6 +55,9 @@ export function makeContext(server: McpServer, link: EngineConnection, agentName
 	};
 	// The engine shows this name on the approval card of a destructive operation (security review AGT-3).
 	link.agentName = name;
+	// Waiting for a starting engine is reported to the client as logging, never inside a tool result.
+	link.notify = (message) =>
+		void server.sendLoggingMessage({ level: 'info', logger: 'jasper-mcp', data: message }).catch(() => {});
 	return {
 		server,
 		link,
