@@ -409,6 +409,11 @@ const SPEC: Record<
 };
 
 const FPS = 30;
+/** Kinds that remove words because the speech after them says them again. */
+const REPEATS = new Set(['restart', 'false-start', 'retake', 'hidden-retake', 'stutter']);
+/** A word that ends a sentence: ". ? !" — not the recogniser's "…", which marks a word broken off. */
+const endsSentence = (text: string) =>
+	/[.?!]["'»”’)]*$/u.test(text.trim()) && !/(\.\.\.|…)[?!]?$/.test(text.trim());
 
 /** The case's cut: removed and kept ranges (seconds), the words heard, the analysis. */
 function cut(c: Case, decisions?: CleanupDecisions, settings: CleanupSettings = FAST_SETTINGS) {
@@ -522,6 +527,53 @@ describe('Clean Up on real transcripts (corpus)', () => {
 					lost.map((w) => w[0]),
 					`kept take ${g.id} removed in part`,
 				).toEqual([]);
+			}
+			// a removed take never takes the end of a sentence the kept words before it began (the word before it a function
+			// word, or said into it), unless the kept speech right after it (no silence over 5 s, other removals between) says
+			// that sentence's last content word again
+			const isKept = (i: number) =>
+				kept.some(
+					([x, y]) => (c.words[i]![1] + c.words[i]![2]) / 2 >= x && (c.words[i]![1] + c.words[i]![2]) / 2 < y,
+				);
+			const stop = new Set(builtinLists('es').stopWords);
+			for (const f of a.findings) {
+				if (!f.words || f.suggested !== 'remove' || !REPEATS.has(f.kind)) continue;
+				const [fa, fb] = f.words;
+				let e = fa;
+				while (e < fb && !endsSentence(c.words[e]![0])) e++;
+				const p = fa - 1;
+				if (!endsSentence(c.words[e]![0]) || p < 0 || !isKept(p)) continue;
+				// "¡…" / "¿…" opens a sentence of its own: the one begun before ended unwritten
+				if (c.words.slice(fa + 1, e + 1).some((w) => /^[¡¿]/.test(w[0].trim()))) continue;
+				if (endsSentence(c.words[p]![0])) continue;
+				// the kept words before it began the sentence: a function word, or a word said into it without a pause
+				if (!stop.has(cleanupNorm(c.words[p]![0])) && c.words[fa]![1] - c.words[p]![2] >= 0.3) continue;
+				let q = fb + 1;
+				while (q < c.words.length && !isKept(q)) q++;
+				const silences = c.words.slice(fb, q + 1).map((w, x, all) => (x ? w[1] - all[x - 1]![2] : 0));
+				const last = c.words
+					.slice(fa, e + 1)
+					.map((w) => cleanupNorm(w[0]))
+					.filter((x) => x && !stop.has(x) && x.length >= 3)
+					.at(-1);
+				const after = c.words
+					.slice(q)
+					.filter((_, x) => isKept(q + x))
+					.slice(0, 40)
+					.map((w) => cleanupNorm(w[0]));
+				const said = `${f.reason.params.text}: ${c.words
+					.slice(q, q + 8)
+					.map((w) => w[0])
+					.join(' ')}`;
+				expect(
+					Math.max(...silences),
+					`sentence end taken, nothing said right after: ${said}`,
+				).toBeLessThanOrEqual(5);
+				if (last)
+					expect(
+						after.some((x) => sameWord(x, last)),
+						`sentence end taken, not said again: ${said}`,
+					).toBe(true);
 			}
 			const toks = heard.map((w) => cleanupNorm(w[0])).filter(Boolean);
 			const text = heard.map((w) => w[0]).join(' ');

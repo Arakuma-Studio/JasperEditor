@@ -586,6 +586,31 @@ rule, and each held-out round found new failures. The mechanism (vocalic fillers
   "¿Qué pasa?" over noise at −27…−49 dBFS, zero-crossing rate 1,500–10,000 /s, stayed as 0.2–0.7 s asr-suspect pieces
   between removed pauses). Needs the voicing plane. *Assumption*: a whispered word would count as noise.
 
+**Round 10** (from the round-9 listening of large-v3-turbo runs, `/tmp/je-hr9-local/` on the build host; tests in
+`cleanup-rules.test.ts` "round 10 fixes", each failing on a8d587fcc):
+- **Every removal of a take is guarded centrally** (`detector.ts` `guardRepeats`, after every rule and the hidden-retake
+  relabel; restart, false start, retake, hidden retake, stutter — whichever rule labelled it). Run 9 AD cut "las
+  sombras." — the end of "…se renderizan las luces y las sombras." — as a false start because the next sentence, 15 s
+  later, opened with "las sombras funcionan…": rule 4 bounds *what* lies between attempt and retry (nothing here), not the
+  silence, and rule 5 accepted an attempt that finishes its sentence when its words are re-said in order. A label run
+  becomes a review when it fails either check:
+  - *Adjacency*: the silence after any of its words is ≤ 5 s (`ADJACENT_MAX_S`), unless the run opens a clause and, up
+    to that word, is broken off mid-sentence (no sentence end) or a whole take (≥ 3 content words). *Assumption* from the
+    corpus: the longest silence after a take that starts inside a sentence or is shorter than a clause is 4.55 s (AE
+    "…imagen. | el procesador…"); whole takes wait longer (fragment B, second run: 12 s after "…en toda su vida. ¿Y por
+    qué va a decir puta?"; run 2: 12.5 s after "el otro 1 %…"), so a fixed few seconds for every kind would lose them.
+  - *Sentences*: a run that finishes a sentence the kept words before it began (the kept word before it ends no
+    sentence and is a function word, or is said into the run without a pause ≥ `phraseGapS`) needs the kept speech right
+    after it (other removals between, no silence over 5 s) to say that sentence's last content word again within the
+    retry span; after a function word ("…las luces y | las sombras.") that copy must end a sentence too (W a: "…mucho o |
+    que aparece un bug rarísimo. | que aparece un bug rarísimo." stays removed). The sentence ends at the run's first
+    sentence end (an aside after it may end another); "…" and an inserted stock phrase ("¡Suscríbete!") end none.
+  Fillers, hallucinations, off-script and head / tail findings have no retry and are not guarded (a filler removed at a
+  sentence end takes no word of the sentence). Tests: the AD words with a 15 s and a 1 s pause and without the period
+  (each variant fails on a8d587fcc); the property "a removed take never takes the end of a sentence the kept words
+  began, unless said again right after it" (random pieces of sentences sharing words, pauses up to 15 s; fails without
+  the guard); and the same invariant on every corpus case.
+
 Kinds follow the structure: ≤ 2 words a false start, a whole clause (clause start, clause end, ≥ 3 content words) a
 retake (with a group), else a restart; inside re-decoded ranges they become hidden retakes as before. The settings keep
 their meaning (the windows, `retakeSimilarity`, `takeGapS`, `phraseGapS`, `falseStartGapS` for false starts by clause);

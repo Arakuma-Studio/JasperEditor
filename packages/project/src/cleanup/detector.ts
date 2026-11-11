@@ -555,6 +555,10 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			k = j + 1;
 		}
 
+	// every removal of a take — whichever rule found it — is adjacent to what says it again and never takes the end of a
+	// sentence the kept words before it began (round 10, H1)
+	guardRepeats(ctx);
+
 	// what the recogniser likely inserted and no removal takes is a hallucination to review
 	for (let k = 0; k < aw.length; k++)
 		if (suspect.has(awIndex[k]!) && labels[k]?.action !== 'remove')
@@ -822,6 +826,91 @@ const TAKE_LABELS: ReadonlySet<FindingKind> = new Set(['restart', 'false-start',
 
 const sameLabel = (x: WordLabel | null | undefined, l: WordLabel) =>
 	!!x && x.kind === l.kind && x.action === l.action && x.group === l.group;
+
+/** Kinds that remove words because the speech after them says them again (a take and its retry). */
+const REPEAT_KINDS: ReadonlySet<FindingKind> = new Set([
+	'restart',
+	'false-start',
+	'retake',
+	'hidden-retake',
+	'stutter',
+]);
+/**
+ * The longest silence (seconds) after a word of a removed take — before another attempt of the same retry, an aside or
+ * the retry — unless the take is a clause of its own (round 10, H1). *Assumption*: the corpus' longest such silence
+ * after a take that starts inside a sentence or is shorter than a clause is 4.55 s (AE: "…imagen. | el procesador…");
+ * whole takes wait longer (fragment B, second run: 12 s between "…en toda su vida. ¿Y por qué va a decir puta?" and the
+ * take that stays; run 2: 12.5 s after "el otro 1 %…").
+ */
+const ADJACENT_MAX_S = 5;
+
+/**
+ * The central guard of every removal of a take (restart, false start, retake, hidden retake, stutter — whichever rule
+ * labelled it), run after every rule: a label run that fails it becomes a review.
+ * - Adjacency: the silence after any of its words is at most `ADJACENT_MAX_S`, unless the run opens a clause and, up to
+ *   that word, is broken off mid-sentence (no sentence end there) or a whole take (≥ 3 content words).
+ * - Sentences: a run that finishes a sentence the kept words before it began (the word before ends no sentence and is a
+ *   function word, or is said into the run without a pause) needs the kept speech right after it (other removals between,
+ *   no silence longer than `ADJACENT_MAX_S`) to say the last content word of that sentence again; after a function word
+ *   ("…las luces y | las sombras.") that copy must end a sentence too — else the run is the grammatical end of the
+ *   sentence, not an attempt.
+ * Run 9, AD: "…se renderizan las luces y las sombras." was cut as a false start because "las sombras funcionan…" opened
+ * the next sentence 15 s later: the alignment bounds what lies between two takes, not the silence, and accepted an
+ * attempt that finishes a sentence when its words are re-said in order.
+ */
+function guardRepeats(ctx: RuleContext): void {
+	const w = ctx.words;
+	const L = ctx.labels;
+	const n = w.length;
+	const T = ctx.settings.thresholds;
+	const removed = (k: number) => L[k]?.action === 'remove';
+	const repeat = (k: number) => removed(k) && REPEAT_KINDS.has(L[k]!.kind);
+	const punct = (k: number) => SENTENCE_END.test(w[k]!.text.trim());
+	// a sentence end the speaker made (the recogniser's "…" and an inserted "¡Suscríbete!" are none)
+	const ends = (k: number) => punct(k) && !CUT_OFF.test(w[k]!.text.trim()) && !ctx.inserted?.has(k);
+	const opens = (k: number) => k === 0 || punct(k - 1) || w[k]!.s - w[k - 1]!.e >= T.phraseGapS;
+	const key = (x: string) => !ctx.stop.has(x) && (x.length >= 3 || /\d/.test(x));
+	const ok = (a: number, b: number) => {
+		for (let k = a, keys = 0; k <= b; k++) {
+			if (key(w[k]!.n)) keys++;
+			if (k + 1 < n && w[k + 1]!.s - w[k]!.e > ADJACENT_MAX_S && !(opens(a) && (!ends(k) || keys >= 3)))
+				return false;
+		}
+		// the sentence it finishes ends at its first sentence end (an aside after it may end another)
+		let e = a;
+		while (e < b && !ends(e)) e++;
+		if (!ends(e)) return true;
+		// the kept word before it (removed vocalic fillers are transparent)
+		let p = a - 1;
+		while (p >= 0 && removed(p) && L[p]!.kind === 'filler-vocalic') p--;
+		if (p < 0 || removed(p) || punct(p)) return true;
+		const dangling = ctx.stop.has(w[p]!.n);
+		if (!dangling && opens(a)) return true;
+		// the kept speech after it, other removals between
+		let q = b + 1;
+		while (q < n && removed(q)) q++;
+		if (q >= n) return false;
+		for (let k = b; k < q; k++) if (w[k + 1]!.s - w[k]!.e > ADJACENT_MAX_S) return false;
+		const last = [...w.slice(a, e + 1)].reverse().find((x) => key(x.n)) ?? w[e]!;
+		const len = b - a + 1;
+		for (let k = q, seen = 0; k < n && seen < Math.min(2 * len + 8, len + 24); k++) {
+			if (removed(k)) continue;
+			seen++;
+			if (sameWord(w[k]!.n, last.n)) return !dangling || ends(k);
+		}
+		return false;
+	};
+	for (let k = 0; k < n; ) {
+		if (!repeat(k)) {
+			k++;
+			continue;
+		}
+		let j = k;
+		while (j + 1 < n && sameLabel(L[j + 1], L[k]!)) j++;
+		if (!ok(k, j)) for (let q = k; q <= j; q++) L[q] = { ...L[q]!, action: 'review' };
+		k = j + 1;
+	}
+}
 
 /**
  * Repeats the script itself makes are no restarts, false starts or stutters ("boing boing boing"): a run of one such

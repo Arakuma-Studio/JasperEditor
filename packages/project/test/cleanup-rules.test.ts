@@ -583,6 +583,33 @@ describe('round 8 fixes (docs/wp-notes/transcript-cleanup.md "Round 8")', () => 
 	});
 });
 
+describe('round 10 fixes (docs/wp-notes/transcript-cleanup.md "Round 10")', () => {
+	const detect = (words: CleanupWordIn[], voice: CleanupVoice = voiceFor(words)) =>
+		detectCleanup({ mediaId: 'med_r', words, voice, language: 'es', settings: FAST_SETTINGS });
+	const removes = (d: ReturnType<typeof detect>, i: number) =>
+		d.findings.some((f) => f.words && f.suggested === 'remove' && f.words[0] <= i && i <= f.words[1]);
+	const indexOf = (words: readonly CleanupWordIn[], text: string, from = 0) =>
+		words.findIndex((w, i) => i >= from && w.text === text);
+
+	it('the end of a sentence the next sentence opens with is no false start (AD "…las luces y las sombras.")', () => {
+		// run 9, fragment AD: "las sombras." ended the sentence; the next one opened with "las sombras" 15 s later
+		const end = 'Así que le puse shaders que son la receta, se renderizan las luces y las sombras.';
+		const next = 'las sombras funcionan dibujando la escena desde el punto de vista de la luz.';
+		for (const [first, pause] of [
+			[end, 15],
+			// the sentence rule alone: the retry right after leaves "…las luces y" hanging
+			[end, 1],
+			// adjacency alone: no sentence end written, but 15 s of silence before the words come again
+			[end.replace(/\.$/, ''), 15],
+		] as const) {
+			const words = say(`${first} | ${next}`, { pause });
+			const d = detect(words);
+			const at = indexOf(words, 'las', indexOf(words, 'y'));
+			expect(removes(d, at) || removes(d, at + 1), `${first} (${pause} s)`).toBe(false);
+		}
+	});
+});
+
 describe('rules (English)', () => {
 	it('English fillers, markers and restarts', () => {
 		const r = kinds('so um we built the track | you know | then we we added cars', { language: 'en' });
