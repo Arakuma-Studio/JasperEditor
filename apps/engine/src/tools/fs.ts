@@ -34,14 +34,20 @@ export async function fsyncDir(dir: string): Promise<void> {
 
 /**
  * Atomic replace: write `<file>.<rand>.tmp`, fsync, rename over the target, fsync the directory
- * (S01:PER-016). A crash leaves either the old or the new file, never a torn one.
+ * (S01:PER-016). A crash leaves either the old or the new file, never a torn one. `mode` is applied to the
+ * temporary file before anything is written to it (private files are never readable by others, even briefly).
  */
-export async function atomicWriteFile(file: string, data: string | Uint8Array): Promise<void> {
+export async function atomicWriteFile(
+	file: string,
+	data: string | Uint8Array,
+	opts: { mode?: number } = {},
+): Promise<void> {
 	const dir = dirname(file);
 	await mkdir(dir, { recursive: true });
 	const tmp = join(dir, `.${basename(file)}.${randomBytes(4).toString('hex')}.tmp`);
-	const fh = await open(tmp, 'w');
+	const fh = await open(tmp, 'w', opts.mode);
 	try {
+		if (opts.mode !== undefined) await fh.chmod(opts.mode);
 		await fh.writeFile(data);
 		await fh.sync();
 	} finally {

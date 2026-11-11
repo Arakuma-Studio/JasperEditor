@@ -542,6 +542,14 @@ engine on another port pass `--appdir /abs/path/to/JasperEditor/.stage` (or `--e
 path. The desktop app's per-launch token is read from its `runtime.json` (mode 0600), so nothing has to be
 copied and the token is never shown to the agent.
 
+An engine that is still starting writes `runtime.json` with `"state": "starting"` and a heartbeat before its slow
+startup work, so a server or `jasper` command launched at the same time waits for it (backoff up to 2 s between
+checks, progress such as `engine starting… 3 s` on stderr, and as MCP logging notifications) instead of failing
+with `ENGINE_NOT_FOUND`. The wait is bounded by `--startup-timeout` (default 120 s, then `ENGINE_NOT_READY`) and
+is separate from `--request-timeout`. A file whose process is gone, or whose heartbeat is older than 20 s, is not
+waited for. `--start-engine` likewise waits until its engine is ready; one that exits first fails at once with
+`ENGINE_START_FAILED`, its exit code and the end of its output.
+
 | Option (append after `jasper-mcp.mjs`) | Effect |
 |---|---|
 | `--start-engine` | start a headless engine when none is running, so agents can work with JasperEditor closed (needs `pnpm build`; stops with the server) |
@@ -549,6 +557,7 @@ copied and the token is never shown to the agent.
 | `--engine-url <url>` `--token <t>` | skip discovery |
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
+| `--startup-timeout <s>` | how long to wait for an engine that is still starting, found or `--start-engine`ed (env `JASPER_ENGINE_STARTUP_TIMEOUT`; default 120) |
 | `--toolsets <list>` | toolsets advertised from the start: `all` or a comma list (env `JASPER_MCP_TOOLSETS`; default `core`) |
 
 Tools (`list_toolsets`, `describe_tool`, or MCP `listTools` with `--toolsets all`, give the current catalog and
@@ -869,7 +878,8 @@ every panel in every workspace addressable. Details: `docs/wp-notes/mcp-cli.md`.
 
 Every tool is also one shell call away. `pnpm jasper <command>` from this checkout, or the bundled
 `node apps/mcp/dist/jasper.mjs` after `pnpm mcp:build`. It finds the engine like `jasper-mcp` (`--engine-url`,
-`--appdir`, `--start-engine`), and edits apply live when the project is open in an editor window.
+`--appdir`, `--start-engine`; an engine that is still starting is waited for, see `--startup-timeout`), and
+edits apply live when the project is open in an editor window.
 
 ```bash
 jasper status                                    # engine and capabilities

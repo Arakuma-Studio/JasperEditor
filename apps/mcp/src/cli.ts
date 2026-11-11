@@ -5,7 +5,7 @@
 //              [--engine-entry <engine.mjs>] [--engine-port <port>] [--agent-name <name>] [--toolsets <list>]
 import { ENV, readFlag } from '@jasper/config';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { EngineLink } from './link.ts';
+import { EngineLink, startupTimeoutMs } from './link.ts';
 import { createJasperMcpServer } from './server.ts';
 import { parseToolsets, TOOLSET_NAMES } from './toolsets.ts';
 import { MCP_SERVER_VERSION } from './version.ts';
@@ -21,13 +21,16 @@ Options:
   --engine-port <port>   Port for --start-engine (default: random)
   --agent-name <name>    Name shown in the editor History (default: the MCP client's name)
   --request-timeout <s>  Deadline for one engine request in seconds (default 180)
+  --startup-timeout <s>  How long to wait for an engine that is still starting, found or started with
+                         --start-engine (env ${ENV.ENGINE_STARTUP_TIMEOUT}; default 120)
   --toolsets <list>      Toolsets to advertise: "all" or a comma list (env JASPER_MCP_TOOLSETS; default core,
                          which is always on). Every tool stays reachable with call_tool. Toolsets:
                          ${TOOLSET_NAMES.join(', ')}
   --help, --version
 
 Discovery order: --engine-url/env, then <appdir>/engine/runtime.json for --appdir, ${ENV.APPDIR}, the
-platform appdir and the desktop app's appdir, then http://127.0.0.1:47900.`;
+platform appdir and the desktop app's appdir, then http://127.0.0.1:47900. An engine whose runtime file says it
+is starting is waited for (progress on stderr and as MCP logging notifications) instead of failing.`;
 
 function log(line: string): void {
 	process.stderr.write(`[jasper-mcp] ${line}\n`);
@@ -71,6 +74,7 @@ async function main(): Promise<void> {
 		engineEntry: readFlag(argv, 'engine-entry'),
 		enginePort: readFlag(argv, 'engine-port') ? Number(readFlag(argv, 'engine-port')) : undefined,
 		requestTimeoutMs: Number.isFinite(timeoutSec) && timeoutSec > 0 ? timeoutSec * 1000 : undefined,
+		startupTimeoutMs: startupTimeoutMs(readFlag(argv, 'startup-timeout'), env),
 		env,
 		log,
 	});
