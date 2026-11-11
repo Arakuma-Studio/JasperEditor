@@ -1260,6 +1260,21 @@ function pauseEdges(
 		let k = g - 1;
 		while (k > f && g - k <= max && !silentFrame(voice, k)) k--;
 		if (silentFrame(voice, k)) b = k + 1;
+		// voiced sound under the speech threshold leading into the onset is the onset's (round 7, U b: the soft "a" of
+		// a missed "a ver" at −40…−31 dBFS after 0.25 s of other sound): the pause ends before it, at the last silent
+		// frame within `max` before it, else at its first voiced frame
+		let first = g;
+		for (let x = g - 1, gap = 0; x >= f && !silentFrame(voice, x) && gap <= VOICED_BREAK_FRAMES; x--) {
+			if (voicedFrame(voice, x)) {
+				first = x;
+				gap = 0;
+			} else gap++;
+		}
+		if (first < b) {
+			let q = first - 1;
+			while (q > f && first - q <= max && !silentFrame(voice, q)) q--;
+			b = silentFrame(voice, q) ? q + 1 : first;
+		}
 	}
 	if (f > lo) {
 		if (g < hi) {
@@ -1328,6 +1343,19 @@ export function edgeThreshold(voice: CleanupVoice, edges: CleanupEdges, which: '
 	}
 	const f = voice.levels.floorDb;
 	return f === null ? null : f + db;
+}
+
+/** Unvoiced frames a run of voiced sound may hold (30 ms: a consonant). */
+const VOICED_BREAK_FRAMES = 3;
+
+/**
+ * Whether frame k is voiced sound above measured silence (voicing ≥ 0.5 — the breath class's ceiling — and at least
+ * `SILENCE_DB` over the floor). False without the voicing plane.
+ */
+export function voicedFrame(voice: CleanupVoice, k: number): boolean {
+	const floor = voice.levels.floorDb;
+	if (!voice.voicing || floor === null || k < 0 || k >= voice.frameCount) return false;
+	return voice.voicing[k]! >= 128 && levelDbAt(voice, k) >= floor + SILENCE_DB;
 }
 
 /** A voice frame at most this far (dB) above the noise floor is silence (the speech threshold's minimum margin). */

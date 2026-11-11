@@ -263,6 +263,11 @@ Deliberate differences from the prototype (labelled):
 - Spanish vocalic fillers are the prototype's `STRICT_FILLERS` (eh, em, emm, ehm, mm, mmm, hmm, mhm, ah, aah, eeh, ehh,
   uh, um, eee, ee, aa, m, e). The spec's "a / aa" is read as the drawn-out vowel: the bare preposition "a" is never a
   filler (it would cut "voy a casa").
+- **Interjections that open an exclamation** (round 8, H8): a marker phrase of one interjection (oh, ay, uy, uf, wow,
+  guau) the recogniser wrote with a comma before a word that is no marker or filler is no filler phrase — round 7 U b
+  removed the loud "Oh," of "Oh, | shit, a ver." (0.75 s pause after it); the lexical review still lists it. Test:
+  `cleanup-rules.test.ts` "an interjection written with a comma before a word opens an exclamation" (fails on
+  9031bd0f3).
 - Marker phrases: the spec's Spanish list (este, o sea, pues, bueno, vale, tipo, en plan, a ver, es decir, digamos,
   ¿sabes?, ¿no?, nada, vamos, ok) plus the prototype's standalone tokens (esto, osea, ay, oh, a, ver, okay, sí, no); a
   phrase between pauses ≥ 0.3 s of ≤ 2 words made only of them (and vocalic fillers) is a filler phrase. English
@@ -419,7 +424,12 @@ The rules now:
   within 0.25 s of the onset, so no cut clips a rising onset (S3: run 5 H 14.067 took ≈ 50 ms of "Unity", H 51.73 and I
   47.67 / 56.3 grazed onsets — all edges of pause cuts); after speech followed by speech (a join) it starts where the
   decay falls below the level edges' out threshold (the calibrated Fast out point inside the decay); at a tail it
-  starts at the first silent frame — no silence within 0.25 s, no tail pause.
+  starts at the first silent frame — no silence within 0.25 s, no tail pause. Voiced sound under the speech threshold
+  leading into an onset (voicing ≥ 0.5 above measured silence, `voicedFrame`, breaks of ≤ 30 ms) is the onset's: the
+  pause ends before it — at the last silent frame within 0.25 s before it, else at its first voiced frame (round 8,
+  H8: U b's pause took the soft "a" of a missed "a ver" at −40…−31 dBFS after 0.25 s of other sound; needs the voicing
+  plane). Test: `cleanup-rules.test.ts` "a pause ends before voiced sound under the speech threshold…" (fails on
+  9031bd0f3).
 - **Decisions**: a pause is cut only when its finding is accepted. Every path plans through `analyzeSequenceCleanup`
   (the editor's planner worker, the engine job behind `analyze_voice` / `plan_cleanup`, `apply_cleanup`), so a rule
   set to review removes nothing anywhere until its findings are accepted.
@@ -536,6 +546,12 @@ rule, and each held-out round found new failures. The mechanism (vocalic fillers
    and from its start, but is not re-said in full (never when it holds a number the retry does not say).
 8. **Deliberate repetition** is never an attempt: one content word said again at once, the run ending its phrase or of
    three or more ("Guiño, guiño.", "boing, boing, boing"); the stutter rule only reviews it.
+
+   Round 8 (H7): the copies of a one-word reduplication may be up to 0.5 s apart, inclusive (`REDUPLICATION_GAP_S`, or
+   `stutterGapS` when larger; *assumption*: the upper end of a comma pause). Round 7 cut the first "Hola," of the
+   greeting "Hola, hola." (copies 0.30 s apart) as a retake in both modes because the guard wanted < 0.30 s; what tells
+   a reduplication from a restart is that the run ends its phrase, not the gap ("Ya. Ya me pasó" stays a false start).
+   Test: `cleanup-rules.test.ts` "a greeting said twice with a comma pause is deliberate" (fails on 9031bd0f3).
 
 Kinds follow the structure: ≤ 2 words a false start, a whole clause (clause start, clause end, ≥ 3 content words) a
 retake (with a group), else a restart; inside re-decoded ranges they become hidden retakes as before. The settings keep

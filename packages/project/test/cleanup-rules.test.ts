@@ -369,6 +369,53 @@ describe('round 6 local fixes (docs/wp-notes/transcript-cleanup.md "Repeats by a
 	});
 });
 
+describe('round 8 fixes (docs/wp-notes/transcript-cleanup.md "Round 8")', () => {
+	const sec = (f: number) => f / FLICKS_PER_SECOND;
+	const detect = (words: CleanupWordIn[], voice: CleanupVoice) =>
+		detectCleanup({ mediaId: 'med_r', words, voice, language: 'es', settings: FAST_SETTINGS });
+	const removes = (d: ReturnType<typeof detect>, i: number) =>
+		d.findings.some((f) => f.words && f.suggested === 'remove' && f.words[0] <= i && i <= f.words[1]);
+
+	it('a greeting said twice with a comma pause is deliberate ("Hola, hola." 0.30 s apart)', () => {
+		const words: CleanupWordIn[] = [
+			{ text: 'Hola,', start: S(3.13), end: S(3.59), confidence: 0.9 },
+			{ text: 'hola.', start: S(3.89), end: S(4.43), confidence: 0.9 },
+			...say('Hoy voy a ser mi propio Unity.', { t0: 7.69 }),
+		];
+		expect(removes(detect(words, voiceFor(words)), 0)).toBe(false);
+	});
+
+	it('an interjection written with a comma before a word opens an exclamation, no filler phrase ("Oh, | shit")', () => {
+		const words = say('Oh, | shit, a ver. | Hola.', { pause: 0.75 });
+		const d = detect(words, voiceFor(words));
+		expect(removes(d, 0)).toBe(false);
+		expect(kinds('bueno | oh | vamos').label(1)).toBe('filler-phrase');
+	});
+
+	it('a pause ends before voiced sound under the speech threshold that leads into an onset', () => {
+		const words: CleanupWordIn[] = [
+			{ text: 'shit.', start: S(1), end: S(1.25), confidence: 0.9 },
+			{ text: 'ver', start: S(2.12), end: S(2.4), confidence: 0.9 },
+		];
+		const v = voiceFor(words);
+		const voicing = new Uint8Array(v.frameCount).fill(30);
+		for (const w of words) voicing.fill(200, Math.floor(sec(w.start) * 100), Math.ceil(sec(w.end) * 100));
+		// 0.75 s of breath-like noise, then the soft voiced "a" of a missed "a ver" at −42 dBFS, not speech
+		for (let f = 125; f < 200; f++) {
+			v.classes[f] = 1;
+			v.level[f] = (120 - 50) * 2;
+		}
+		for (let f = 200; f < 212; f++) v.level[f] = (120 - 42) * 2;
+		voicing.fill(200, 200, 212);
+		const d = detect(words, { ...v, voicing, flatness: new Uint8Array(v.frameCount).fill(60) });
+		const pauses = d.findings
+			.filter((f) => f.kind === 'pause')
+			.map((f) => [sec(f.range.start), sec(f.range.end)]);
+		expect(pauses.length).toBeGreaterThan(0);
+		for (const [a, b] of pauses) expect(b <= 2 + 1e-9 || a >= 2.12 - 1e-9, `pause ${a}–${b}`).toBe(true);
+	});
+});
+
 describe('rules (English)', () => {
 	it('English fillers, markers and restarts', () => {
 		const r = kinds('so um we built the track | you know | then we we added cars', { language: 'en' });
