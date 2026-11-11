@@ -365,7 +365,8 @@ through `analyzeSequenceCleanup` (Fast preset, 30 fps, speech under every word).
 24 failed, at f11b859fb 13 of 30; at 2557f0b20 44 of the 46 cases failed the new invariants (head / tail trims and gap
 cuts without a finding) and G, I, K failed their spec (the aside, two missed restarts); at 170f832bb, after round 6,
 the new cases N, O, Q, R, T failed their spec (and P on "Guiño, guiño"); with repeats by alignment all 60 pass (split,
-metrics and the held-out result: "Repeats by alignment" below); run 7 (round 8) adds U–AB as a third split. Limits: without the re-decode (fragment A, mode c) "a" stretched over the second "poder
+metrics and the held-out result: "Repeats by alignment" below); run 7 (round 8) adds U–AB as a third split, run 9
+(round 10) AC–AH as a fourth. Limits: without the re-decode (fragment A, mode c) "a" stretched over the second "poder
 subirlos" (1.03 s) goes as a drawn vowel, so that case asserts "poder subirlos" and "la Play Store" apart. Run 5 E
 default ("keeps 40.12–42.10, so that clause plays twice; stray 'de' split at 42.1") passes on this transcript at
 2557f0b20 already — the corpus voice (speech under every word, silence after 42.10) does not reproduce it; the real
@@ -660,6 +661,11 @@ rule, and each held-out round found new failures. The mechanism (vocalic fillers
   as "Hoy voy a ser mi propio janeter Unity. Tengo solo 30 treinta días. Pen Espérate," and it stayed (15 words heard
   twice). The corpus transcripts carry no confidences (0.9 throughout), so this is measured on the unit test only;
   the run-7 U a transcript in the corpus (Hangul garbage, no re-decode) is unchanged.
+- Limits left by round 10: H6's name variants across a long aside (above, "Round 10 (`held-out-r9`)"); AH b's "pasa?"
+  (no voiced frame, but mostly at measured silence, so not "noise" by the unvoiced-sound test) stays an ASR-suspect
+  review; the hum level (6 dB under the speech level) and the onset ramp (20 dB, 3 dB steps) are assumptions from one
+  speaker's few measurements and need the real-audio rerun; the cut-edge limit of round 8 (W a 71.4, Z b 14.567) is
+  unchanged.
 
 Kinds follow the structure: ≤ 2 words a false start, a whole clause (clause start, clause end, ≥ 3 content words) a
 retake (with a group), else a restart; inside re-decoded ranges they become hidden retakes as before. The settings keep
@@ -682,6 +688,9 @@ words (fillers aside) removed. Measured (both modes, Fast, corpus voice):
 | round 8: run 7 (U–AB, both modes) at main 9031bd0f3 | 12 / 16 | 0.996 (456 / 458) | 0.812 (411 / 506) |
 | round 8: run 7, first evaluation (f6b5d509f; held out) | 16 / 16 | 1.000 (541 / 541) | 0.974 (493 / 506) |
 | round 8: dev / held out of round 6 at f6b5d509f | 34 / 34, 24 / 24 | 0.997 (2393 / 2401), 1.000 (338 / 338) | 0.996, 0.973 |
+| round 10: run 9 (AC–AH, both modes) at main a8d587fcc | 4 / 12 | 0.973 (179 / 184) strict; 0.989 (177 / 179) debatable unscored | 0.689 (175 / 254) |
+| round 10: run 9, first evaluation (e1c59f1c1; held out) | 11 / 12 | 0.959 (260 / 271) strict; 1.000 (258 / 258) debatable unscored | 0.976 (248 / 254) |
+| round 10: dev / held out / held-out-r7 at e1c59f1c1 | 34 / 34, 24 / 24, 16 / 16 | 0.997 (2393 / 2401), 1.000 (338 / 338), 1.000 (541 / 541) | 0.996, 0.973, 0.974 |
 
 Per kind at 0108b4021 (dev / held out): hidden-retake 0.997 / 1.000, retake 0.999 / 1.000, restart 0.998 / 1.000,
 false start 1.000 / 1.000, stutter — / 1.000, filler-vocalic 0.943 / —, filler-phrase 1.000 / 1.000, hallucination
@@ -709,6 +718,23 @@ second "¡Llevo" (the recogniser wrote "Llevo, llevo" once). The one dev change:
 filler phrase (an interjection that opens an exclamation, round 8 H8). Not measurable on the corpus voice (speech under
 every word, no voicing plane): H5, H8's pause, H9 and the edges — their tests are synthetic (property, rules, cut
 edges).
+
+Round 10 (`CLEANUP_CORPUS=held-out-r9`): run 9 (main at a8d587fcc, large-v3-turbo on CUDA, `/tmp/je-hr9-local/` on
+the build host) adds 12 cases — AC–AG with takes, AH the control, default and chunked — with their spec, `dup`
+references and `debatable` spans (media time the judgements call editorially debatable: the AF aside "¿Dónde está el
+enojado?", AG's pronunciation aside, AE's hum) written from that run's judgements before the development. Development
+used the dev, held-out and held-out-r7 splits and unit tests built from the reported words (as in round 8, run 9's bug
+reports were read first); run 9 was evaluated once at the end. Scoring change at that evaluation: words removed in a
+`debatable` span are listed and not scored (the live judgement's "precision without debatable"); strictly, the first
+evaluation's 11 wrong words are all there — the AF aside (8 words, both modes: the new verbatim-attempt link takes its
+aside, as rule 4's asides go in N and W) and AG's false starts "Cloud" / "Cloudcode Cloud," inside the pronunciation
+aside (also removed at main). The 6 missed words are H6's first take of the name, "(Se) llama Cloud Code / Cloudecode
+(No,)" — linked to the later "Se llama Cloud Decode." neither by name nor by aside: the pronunciation aside between
+them (25 words, 15 s) is beyond rule 4's limits; single-token variants such as "Code" / "Decode" already match
+(`sameWord`, a third of the length in edits), one-to-two token variants ("Cloudecode" / "Cloud Decode") do not.
+AG-r9a's spec case is an expected failure (`KNOWN_FAILURES`) for that reason; AG-r9b passes only because the chunked
+run writes the name as one word. Not measurable on the corpus voice: H5 (the hummed-phrase level), H8 (the onset
+ramp), H9 (noise words), the slivers — their tests are synthetic or use the reported words.
 
 Round-6 items on this transcript corpus: 1 (N, a sentence twice) fixed by rule 4's aside; 2 (O, "o 3D" lost) by rules
 2 and 5; 3 (Q, missed restart) by rule 3's broken-off last word; 4 (T, false positive) by rules 2 and 4 (no prefix, not
