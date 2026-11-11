@@ -292,7 +292,15 @@ whisper evaluation (53 configurations; the numbers of spec 16 §0). This section
   reason); a GPU error during recognition runs the job once more on the CPU inside the worker, and a worker that dies
   on the GPU (signal, crash) is run again on the CPU by the engine (`stage: job`); when the CPU run fails too, the job
   fails with the original error. Processor *GPU* without a usable GPU runs on the CPU with `stage: unavailable` and the
-  probe's reasons. The result's `device` (`label`, providers, threads, fallbacks) shows in the Jobs panel ("Ran on: …
+  probe's reasons. A CUDA library failure (ONNX Runtime's "CUDNN / CUBLAS / CUFFT / CURAND / CUDA failure N: …"
+  status) runs the job once more on the GPU before the CPU: run 5 of the hidden-retake test (RTX 3080 Ti, another
+  job on the GPU) hit `CUDNN failure` mid-job and fell back to the CPU, 249 s instead of ≈ 5 s. *Assumption*: such
+  failures under contention are transient (not measured; the retry costs one model load, ≈ 3.5 s for turbo). Every
+  failed GPU attempt is written in full (stack, ≤ 8000 characters) to the worker's stderr, which the job log keeps;
+  the fallback reason (`shortReason`, `tools/ort.ts`, ≤ 300 characters) drops ONNX Runtime's source locations and the
+  C++ signature it prints before a CUDA status, and keeps the status when it shortens (run 5's reason was 300
+  characters of `std::conditional_t<…> onnxruntime::CudaCall(…)` without it). Test: `speech-gpu.test.ts` "a cuDNN
+  failure runs once more on the GPU…" (fails before: the second attempt ran on the CPU). The result's `device` (`label`, providers, threads, fallbacks) shows in the Jobs panel ("Ran on: …
   (fell back: …)"), the job log and MCP.
 - **Threads (SG-005)**: performance cores (macOS `hw.perflevel0.physicalcpu`, Linux hybrid `cpu_core/cpus`, else the
   logical CPUs), at most 8; the job asks for that many CPU slots.

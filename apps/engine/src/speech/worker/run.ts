@@ -9,7 +9,7 @@
 import type { ChildProcess } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { decodeVoiceAnalysis, VOICE_ANALYSIS_VERSION, VOICE_CLASSES } from '@jasper/project/cleanup-worker';
-import type { ProviderId } from '../../tools/ort.ts';
+import { CUDA_STATUS, type ProviderId, shortReason } from '../../tools/ort.ts';
 import { restrictInputs } from '../../tools/protocols.ts';
 import { type Chunk, mergeZones, shiftedChunks, vadChunks } from '../core/chunks.ts';
 import { DEFAULT_DIARIZE, diarize } from '../core/diarize.ts';
@@ -329,6 +329,8 @@ export type RunOptions = {
 	audio?: Float32Array;
 	/** Injected ONNX Runtime (tests). */
 	ort?: LoadOptions['ort'];
+	/** Diagnostic lines for the job log (the worker writes them to stderr, which the engine logs). */
+	onLog?(line: string): void;
 };
 
 const isGpu = (p: ProviderId) => p !== 'cpu';
@@ -348,7 +350,7 @@ type ModelSpec = {
  */
 export async function withDeviceFallback<T>(
 	spec: ModelSpec,
-	opts: Pick<RunOptions, 'onProgress' | 'onDevice' | 'signal' | 'ort'>,
+	opts: Pick<RunOptions, 'onProgress' | 'onDevice' | 'signal' | 'ort' | 'onLog'>,
 	use: (model: WhisperModel) => Promise<T>,
 	progressAt = 0.02,
 ): Promise<{
@@ -393,24 +395,46 @@ export async function withDeviceFallback<T>(
 		}
 	};
 	let result: Awaited<ReturnType<typeof attempt>>;
+	const retryable = (e: unknown) =>
+		!(e instanceof CancelledError || e instanceof SpeechRefusal || opts.signal?.aborted);
+	const used = [plan.encoder, plan.decoder, plan.calibrate ?? 'cpu'].filter(isGpu);
+	const full = (e: unknown) => (e instanceof Error ? (e.stack ?? e.message) : String(e)).slice(0, 8000);
+	let n = 1;
 	try {
-		result = await attempt(plan, 1);
+		result = await attempt(plan, n);
 	} catch (e) {
-		if (e instanceof CancelledError || e instanceof SpeechRefusal || opts.signal?.aborted) throw e;
-		const used = [plan.encoder, plan.decoder, plan.calibrate ?? 'cpu'].filter(isGpu);
-		if (!used.length) throw e;
-		// SG-003: a GPU error mid-job → the job once more on the CPU, else the original error
-		const reason = e instanceof Error ? e.message.split('\n')[0].slice(0, 300) : String(e);
-		const gpu = used[0] as ProviderId;
-		try {
-			result = await attempt({ encoder: 'cpu', decoder: 'cpu' }, 2);
-		} catch (e2) {
-			if (e2 instanceof CancelledError || opts.signal?.aborted) throw e2;
-			throw e;
+		if (!retryable(e) || !used.length) throw e;
+		opts.onLog?.(`GPU attempt ${n} failed: ${full(e)}`);
+		let failure: unknown = e;
+		// a CUDA library failure (cuDNN, cuBLAS… — seen under GPU contention) may be transient: once more on the GPU
+		let done = false;
+		if (used.includes('cuda') && CUDA_STATUS.test(e instanceof Error ? e.message : String(e))) {
+			n++;
+			opts.onLog?.('CUDA library failure: running once more on the GPU');
+			try {
+				result = await attempt(plan, n);
+				done = true;
+			} catch (e2) {
+				if (!retryable(e2)) throw e2;
+				opts.onLog?.(`GPU attempt ${n} failed: ${full(e2)}`);
+				failure = e2;
+			}
 		}
-		fallbacks.push({ stage: 'job', part: 'both', from: gpu, to: 'cpu', reason });
+		if (!done) {
+			// SG-003: a GPU error mid-job → the job once more on the CPU, else the original error
+			const reason = shortReason(failure);
+			const gpu = used[0] as ProviderId;
+			opts.onLog?.(`running again on the CPU (${reason})`);
+			try {
+				result = await attempt({ encoder: 'cpu', decoder: 'cpu' }, n + 1);
+			} catch (e3) {
+				if (e3 instanceof CancelledError || opts.signal?.aborted) throw e3;
+				throw e;
+			}
+			fallbacks.push({ stage: 'job', part: 'both', from: gpu, to: 'cpu', reason });
+		}
 	}
-	return { ...result, fallbacks, loadMs, threads };
+	return { ...result!, fallbacks, loadMs, threads };
 }
 
 /**

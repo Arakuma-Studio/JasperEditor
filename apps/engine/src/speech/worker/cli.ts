@@ -60,6 +60,7 @@ let lastStage = '';
 const runOpts = {
 	signal: ac.signal,
 	onDevice: (d: { encoder: string; decoder: string; attempt: number }) => emit({ type: 'device', ...d }),
+	onLog: (line: string) => process.stderr.write(`${line}\n`),
 	onProgress: (fraction: number, stage: string) => {
 		const f = Math.round(fraction * 1000) / 1000;
 		if (f === last && stage === lastStage) return;
