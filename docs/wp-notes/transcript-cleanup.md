@@ -427,6 +427,15 @@ The rules now:
   frame whose media time is not inside an accepted finding or a removed word's sound stays; beyond a finding's edge at
   most one frame may go, and only over measured silence (the frame grid cannot follow a finding's edge). A short piece
   or a sliver the guards would drop stays rather than merging into a cut.
+- **Voice without words stays unless its own finding is accepted** (round 8, H5): a frame holding speech of an
+  untranscribed finding that is not accepted (outside accepted removals of words around it) stays whatever else covers
+  it — the final frame check protects it — and a join's pause takes only a word's decay below the out threshold, never
+  voice without words. Round 7 (large-v3-turbo, both modes) cut 0.227 s of voiced sound (−34…−51 dBFS) of an
+  unaccepted untranscribed finding in the control AA and 0.07 s in U b: the pause's decay walk went back over it.
+  Test: `cleanup-property.test.ts` "a sequence plan removes nothing outside accepted findings…" now draws voice
+  without words in gaps (murmurs after a word, contiguous or apart, 3–30 dB over the floor) and checks that no removed
+  speech frame of an unaccepted untranscribed finding lies outside an accepted removal of words (fails on 9031bd0f3;
+  either half of the fix alone passes it).
 - **The last kept piece keeps its fading tail** (`keepTail`): it grows over the decay after it (frames above measured
   silence, outside removed words' times) to silence, ≤ 0.25 s — a join may cut inside a decay, the clip's end may not.
 - The planner's own re-plan (`covered`, `UNCOVERED_TOLERANCE_S`) stays as a first pass; a piece shorter than

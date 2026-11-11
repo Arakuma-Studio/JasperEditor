@@ -437,6 +437,7 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 			const extent = extentOf(clip);
 			const [lo, hi] = [sec(toMediaFlicks(clip, extent[0])), sec(toMediaFlicks(clip, extent[1]))];
 			const inClip = words.map((w) => w.s + (w.e - w.s) / 2 >= lo && w.s + (w.e - w.s) / 2 < hi);
+			const clipSpan0 = (s: readonly Span[]) => s.filter(([a, b]) => b > lo && a < hi);
 			const planOnce = () => {
 				const removed = removedFor();
 				const ws = words.filter((_, k) => inClip[k]);
@@ -511,7 +512,9 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 			words.forEach((_, k) => {
 				if (inClip[k] && removedNow[k]) removing.push(res.sound[k]!);
 			});
-			keptFrames = joinShort(keepUnexplained(clip, rate, run.voice, extent, keptFrames, removing));
+			keptFrames = joinShort(
+				keepUnexplained(clip, rate, run.voice, extent, keptFrames, removing, clipSpan0(keepSpeech)),
+			);
 			// the last kept piece keeps its fading decay up to measured silence: a join's out point may sit inside the decay
 			// (the Fast style), but nothing follows the clip's last word
 			if (run.voice && keptFrames.length) {
@@ -792,7 +795,8 @@ function keepTail(
  * The kept frames of a clip with every frame added back that the accepted findings do not explain: a sequence frame
  * may go only when its media time lies inside `removing` (media seconds), or within one frame of it over measured
  * silence (`silentFrame`; the frame grid cannot follow a finding's edge exactly). Without a voice analysis there is
- * no tolerance.
+ * no tolerance. A frame holding speech of `protect` (voice without words whose finding is not accepted, outside
+ * accepted removals of words) stays whatever else covers it: no pause or breath takes it (round 7).
  */
 function keepUnexplained(
 	clip: Pick<Clip, 'start' | 'sourceIn'>,
@@ -801,6 +805,7 @@ function keepUnexplained(
 	extent: readonly [number, number],
 	kept: ReadonlyArray<readonly [number, number]>,
 	removing: readonly Span[],
+	protect: readonly Span[] = [],
 ): Array<[number, number]> {
 	const F = flicksPerFrame(rate);
 	const frameS = F / FLICKS_PER_SECOND;
@@ -837,13 +842,42 @@ function keepUnexplained(
 		const sp = grown[lo - 1];
 		return !!sp && sp[1] >= t1 - 1e-9;
 	};
+	// the protected voice: its speech frames (all of it without a voice analysis), merged
+	const held: Span[] = [];
+	for (const [a, b] of [...protect].sort((x, y) => x[0] - y[0])) {
+		const parts: Span[] = [];
+		if (!voice) parts.push([a, b]);
+		else {
+			const k1 = Math.min(voice.frameCount, Math.ceil(b / FR - 1e-9));
+			for (let k = Math.max(0, Math.floor(a / FR + 1e-9)); k < k1; k++)
+				if (voice.classes[k] === VOICE_CLASS_SPEECH)
+					parts.push([Math.max(a, k * FR), Math.min(b, (k + 1) * FR)]);
+		}
+		for (const p of parts) {
+			const l = held[held.length - 1];
+			if (l && p[0] <= l[1] + 1e-9) l[1] = Math.max(l[1], p[1]);
+			else if (p[1] - p[0] > 1e-9) held.push([p[0], p[1]]);
+		}
+	}
+	const holds = (t0: number, t1: number) => {
+		let lo = 0;
+		let hi = held.length;
+		while (lo < hi) {
+			const m = (lo + hi) >> 1;
+			if (held[m]![1] <= t0 + 1e-9) lo = m + 1;
+			else hi = m;
+		}
+		const sp = held[lo];
+		return !!sp && sp[0] < t1 - 1e-9;
+	};
 	const out: Array<[number, number]> = kept.map(([a, b]) => [a, b]);
 	let ki = 0;
 	let run = -1;
 	for (let f = extent[0]; f <= extent[1]; f++) {
 		while (ki < kept.length && kept[ki]![1] <= f) ki++;
 		const inKept = ki < kept.length && kept[ki]![0] <= f;
-		const keep = f < extent[1] && !inKept && !inside(mediaAt(f), mediaAt(f + 1));
+		const keep =
+			f < extent[1] && !inKept && (!inside(mediaAt(f), mediaAt(f + 1)) || holds(mediaAt(f), mediaAt(f + 1)));
 		if (keep && run < 0) run = f;
 		else if (!keep && run >= 0) {
 			out.push([run, f]);

@@ -1054,7 +1054,9 @@ function frameFindings(
 			let g = f;
 			while (g < hi && gapAt(g)) g++;
 			if (g - f > mg) {
-				const [pa, pb] = pauseEdges(voice, settings, lo, hi, f, g);
+				// only a word's decay goes with a pause: voice without words before it stays unless its own finding is
+				// accepted (round 7: a pause took 0.227 s of an unaccepted untranscribed finding at −34…−51 dBFS)
+				const [pa, pb] = pauseEdges(voice, settings, lo, hi, f, g, (x) => owner[x - lo]! >= 0);
 				if (pb > pa) push('pause', settings.rules.pause, pa, pb);
 				// the rising onset before the speech after the pause and a tail's fading decay are that speech's sound
 				const r = side(g);
@@ -1185,6 +1187,7 @@ const PAUSE_EDGE_MAX_S = 0.25;
  * where the decay falls below the level edges' out threshold when speech follows (the Fast style's out point inside
  * the decay), and at measured silence at a tail, so a last word keeps its fading tail. Each edge moves at most
  * `PAUSE_EDGE_MAX_S`; with no silence that close an onset edge stays at the gap's end (a tail with none: no pause).
+ * The decay a join's pause takes is a word's (`wordFrame`), never voice without words.
  */
 function pauseEdges(
 	voice: CleanupVoice,
@@ -1193,6 +1196,7 @@ function pauseEdges(
 	hi: number,
 	f: number,
 	g: number,
+	wordFrame: (k: number) => boolean,
 ): [number, number] {
 	if (voice.levels.floorDb === null) return [f, g];
 	const max = Math.round(PAUSE_EDGE_MAX_S / FR);
@@ -1213,6 +1217,7 @@ function pauseEdges(
 					a > lo &&
 					f - a < max &&
 					voice.classes[a - 1] === VOICE_CLASS_SPEECH &&
+					wordFrame(a - 1) &&
 					levelDbAt(voice, a - 1) < thr
 				)
 					a--;
