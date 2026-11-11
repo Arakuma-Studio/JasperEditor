@@ -775,6 +775,25 @@ describe('round 10 fixes (docs/wp-notes/transcript-cleanup.md "Round 10")', () =
 		for (const [a, b] of pauses) expect(b <= 2 + 1e-9 || a >= 2.12 - 1e-9, `pause ${a}–${b}`).toBe(true);
 	});
 
+	it('text over noise with a few stray voiced frames is still noise (AA b "¿Qué")', () => {
+		// run 9 (round 7 transcript), AA b: "¿Qué" 43.38–43.59 over noise with voiced frames at 43.41, 43.50, 43.51
+		const words = say('igualito. | ¿Qué | Bien, ya teníamos todo.', { pause: 2 });
+		const v = voiceFor(words);
+		const voicing = new Uint8Array(v.frameCount).fill(200);
+		const k = indexOf(words, '¿Qué');
+		const [f0, f1] = [Math.floor(sec(words[k]!.start) * 100), Math.ceil(sec(words[k]!.end) * 100)];
+		voicing.fill(20, f0 - 5, f1 + 5);
+		for (const f of [f0 + 3, f0 + 12, f0 + 13]) voicing[f] = 145;
+		v.level.fill((120 - 42) * 2, f0, f1);
+		v.classes.fill(1, f0, f1);
+		const hs = detect(words, {
+			...v,
+			voicing,
+			flatness: new Uint8Array(v.frameCount).fill(120),
+		}).findings.filter((x) => x.kind === 'hallucination');
+		expect(hs.map((x) => [x.words, x.suggested])).toEqual([[[k, k], 'remove']]);
+	});
+
 	it('slivers: a loud voiced sound between pauses stays for review; a blip over a removed take goes with it', () => {
 		// run 9, AG a: the deliberate mouth sound "Pup." (0.11 s, voiced, −16 dBFS) alone between two removed pauses
 		const words: CleanupWordIn[] = [

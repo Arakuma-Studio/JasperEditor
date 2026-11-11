@@ -1389,17 +1389,24 @@ const GARBLED_GAP_MAX = 2;
 const WOVEN_MAX_WORDS = 10;
 const WOVEN_MAX_S = 4;
 
+/** A vowel: at least this many voiced frames in a row (30 ms). */
+const VOWEL_MIN_FRAMES = 3;
+
 /**
- * Whether a word lies over sound without one voiced frame (`voicedFrame`) in its time and 30 ms around it, at least
- * half of it above measured silence: noise — a Spanish or English word holds a vowel. False without the voicing
- * plane. Round 7: Whisper wrote "¿Qué pasa?" over unvoiced noise at −27…−49 dBFS, zero-crossing rate 1,500–10,000 /s.
+ * Whether a word lies over sound without a vowel — `VOWEL_MIN_FRAMES` voiced frames (`voicedFrame`) in a row — in its
+ * time and 30 ms around it, at least half of it above measured silence: noise — a Spanish or English word holds a
+ * vowel. False without the voicing plane. Round 7: Whisper wrote "¿Qué pasa?" over unvoiced noise at −27…−49 dBFS,
+ * zero-crossing rate 1,500–10,000 /s; run 9: stray voiced frames in noise (AA b "¿Qué": three, two in a row) are no
+ * vowel.
  */
 function unvoicedSound(voice: CleanupVoice, w: { s: number; e: number }): boolean {
 	if (!voice.voicing) return false;
 	const [a, b] = wordFrames(w);
 	let loud = 0;
+	let run = 0;
 	for (let f = Math.max(0, a - 3); f < Math.min(voice.frameCount, b + 3); f++) {
-		if (voicedFrame(voice, f)) return false;
+		run = voicedFrame(voice, f) ? run + 1 : 0;
+		if (run >= VOWEL_MIN_FRAMES) return false;
 		if (f >= a && f < b && !silentFrame(voice, f)) loud++;
 	}
 	return b > a && loud * 2 >= b - a;

@@ -651,6 +651,9 @@ rule, and each held-out round found new failures. The mechanism (vocalic fillers
   (−42…−31 dBFS) measured voicing 0.13–0.41, under the round-8 voicing test (0.5), so the pause 2.267–2.433 still ended
   inside it on the real audio. *Assumption*, labelled: the "a" sat 10–17 dB under the speech after it; a breath at that
   level right before an onset now stays with the pause's edge (its breath finding still decides it).
+- **Text over noise with stray voiced frames** (round-8 H9 residual): a word holds a vowel only with 3 voiced frames in a
+  row (`VOWEL_MIN_FRAMES`, 30 ms); AA b's "¿Qué" over noise had three stray ones (two in a row) and stayed as an
+  ASR-suspect review; AH b's "¿Qué se hace?" (one voiced frame) now reads as one run of noise words.
 
 Kinds follow the structure: ≤ 2 words a false start, a whole clause (clause start, clause end, ≥ 3 content words) a
 retake (with a group), else a restart; inside re-decoded ranges they become hidden retakes as before. The settings keep
