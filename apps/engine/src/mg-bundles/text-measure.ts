@@ -48,7 +48,9 @@ const CONTENT_TYPES: Record<string, string> = {
  * (unless `bootstrap: false`). `files` serves extra files by their path under the prefix (spec 13 SH-004: the
  * text measurer's font faces). HTML compositions: `entry` is the page (`inject` rewrites it instead of the Remotion
  * bootstrap), `headers(base)` adds headers to every response, `onServe` sees every file request (path under the
- * prefix, whether it was served).
+ * prefix, whether it was served). `immutable`: the files never change while the server runs (a content-addressed
+ * bundle), so they are sent cacheable — a browser that loads the bundle again (another render page) reuses its HTTP
+ * cache and V8's code cache instead of downloading and compiling 12 MB of script (wp-note export-performance §13).
  */
 export async function serveBundleForMeasuring(
 	dir: string,
@@ -59,6 +61,7 @@ export async function serveBundleForMeasuring(
 		inject?: (html: string) => string;
 		headers?: (base: string) => Record<string, string>;
 		onServe?: (rel: string, served: boolean) => void;
+		immutable?: boolean;
 	} = {},
 ): Promise<{ url: string; base: string; close(): Promise<void> }> {
 	const prefix = `/${randomBytes(16).toString('hex')}/`;
@@ -66,6 +69,7 @@ export async function serveBundleForMeasuring(
 	const bootstrap = opts.bootstrap ?? true;
 	const entry = opts.entry ?? 'index.html';
 	let extraHeaders: Record<string, string> = {};
+	const caching = opts.immutable ? { 'cache-control': 'public, max-age=31536000, immutable' } : {};
 	const serve = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
 		const path = decodeURIComponent((req.url ?? '/').split('?')[0]!);
 		if (!path.startsWith(prefix)) {
@@ -92,7 +96,7 @@ export async function serveBundleForMeasuring(
 			if (rel === entry && !extra) {
 				const html = await handle.readFile('utf8');
 				res
-					.writeHead(200, { ...extraHeaders, 'content-type': CONTENT_TYPES['.html']! })
+					.writeHead(200, { ...extraHeaders, 'content-type': CONTENT_TYPES['.html']!, ...caching })
 					.end(opts.inject ? opts.inject(html) : bootstrap ? injectHostBootstrap(html) : html);
 				return;
 			}
@@ -100,6 +104,7 @@ export async function serveBundleForMeasuring(
 				...extraHeaders,
 				'content-type': CONTENT_TYPES[extname(file).toLowerCase()] ?? 'application/octet-stream',
 				'content-length': info.size,
+				...caching,
 			});
 			await pipeline(handle.createReadStream({ autoClose: false }), res);
 		} finally {
@@ -132,6 +137,8 @@ export async function serveBundleForMeasuring(
 		server.once('error', reject);
 		server.listen(0, '127.0.0.1', () => resolve());
 	});
+	// A server kept for the process's lifetime (the renders' bundle) does not keep the process alive.
+	if (opts.immutable) server.unref();
 	const port = (server.address() as AddressInfo).port;
 	const base = `http://127.0.0.1:${port}${prefix}`;
 	extraHeaders = opts.headers?.(base) ?? {};

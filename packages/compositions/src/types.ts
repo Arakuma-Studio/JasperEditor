@@ -167,3 +167,9 @@ export const EMPTY_RENDER_DOC: RenderDoc = {
 	master: { volumeDb: { value: 0, keyframes: [] } },
 	warnings: [],
 };
+
+/** Default props of the `JasperSequence` composition (Root.tsx): a render's props are these, overridden by its own. */
+export const SEQUENCE_DEFAULT_PROPS: SequenceCompositionProps = {
+	doc: EMPTY_RENDER_DOC,
+	options: { ...DEFAULT_RENDER_OPTIONS, isPreview: false },
+};

@@ -1238,7 +1238,11 @@ graphics)** and lists one graphics group per baked layer.
   each, at most 8); a bake gives its pages to the next one once its frames are captured; two exports needing the
   same bake render it once. `JASPER_LAYER_BAKE_PARALLEL=1` bakes one after the other,
   `JASPER_LAYER_BAKE_SHARED_BROWSER=0` gives every bake its own browser, `JASPER_LAYER_BAKE_PAGES=<n>` sets the page
-  budget and `JASPER_LAYER_BAKE_PAGES_PER_BROWSER=<n>` the pages per browser (docs/wp-notes/export-performance.md). Bakes are cached under `<appdir>/cache/layers/<key>/`
+  budget and `JASPER_LAYER_BAKE_PAGES_PER_BROWSER=<n>` the pages per browser (docs/wp-notes/export-performance.md).
+  Render browsers stay open between renders and exports (at most 4 idle, closed after 5 minutes unused, replaced when
+  one stops answering), and load the compositions bundle from their cache: `JASPER_RENDER_BROWSERS_IDLE=<n>` sets
+  how many stay open (0 closes each after its render) and `JASPER_RENDER_BROWSER_IDLE_SEC=<s>` how long. Bakes are
+  cached under `<appdir>/cache/layers/<key>/`
   by a content key (clip, font files, media, compositions bundle, anime.js, Remotion, browser, GL back end);
   re-exports and moving a clip in time reuse them; entries unused for 14 days are removed.
 - Colour effects (Lumetri, LUTs…) on these layers are applied by ffmpeg to the bake (`lut3d`); the Remotion path
