@@ -7,7 +7,9 @@ import { describe, expect, it } from 'vitest';
 import {
 	checkInvariants,
 	defaultRegistries,
+	EMPTY_PROBE,
 	exportScene,
+	findScenePage,
 	findSceneSequence,
 	formatSceneIssues,
 	type ProjectDocument,
@@ -15,17 +17,69 @@ import {
 	repairDocument,
 	resolveScene,
 	SCENE_EXTENSION_KEY,
+	type ScenePage,
 	sceneBindingsOf,
 	validateSceneFile,
 } from '../src/index.ts';
 import { Harness, videoAsset } from './helpers.ts';
+
+const PAGE = '/pages/pano.html';
+/** An import of PAGE (an HTML composition page, schema v13) at 1080×1350 / 30 fps with `query`. */
+function registerPage(h: Harness, query: string, width = 1080): string {
+	const hash = `${query}${width}`.padEnd(64, 'a').slice(0, 64);
+	const r = h.ok([
+		{
+			type: 'media.register',
+			asset: {
+				kind: 'mg-bundle',
+				fingerprint: `q1:${hash}`,
+				originalName: `pano.html${query ? `?${query}` : ''}`,
+				sizeBytes: 1000,
+				container: 'html-page',
+				probe: EMPTY_PROBE,
+				locators: [{ type: 'engine-store', engineId: 'local', key: `mk_${hash.slice(0, 24)}` }],
+				derivation: null,
+				importedAt: '2026-11-11T00:00:00.000Z',
+				mgBundle: {
+					remotionVersion: '4.0.499',
+					bundleHash: hash,
+					builtAt: '2026-11-11T00:00:00.000Z',
+					source: { type: 'html-page', path: PAGE, name: 'pano.html' },
+					compositions: [
+						{
+							id: 'pano',
+							width,
+							height: 1350,
+							fps: 30,
+							durationInFrames: 180,
+							defaultProps: {},
+							propsSchema: null,
+							schemaSource: 'inferred',
+						},
+					],
+					html: { entry: 'pano.html', query },
+				},
+			},
+		},
+	]);
+	return (r.results[0] as { mediaId: string }).mediaId;
+}
+/** The test's `mediaFor` for HTML pages (the CLI resolves paths first; here they are absolute already). */
+const pageOf = (h: Harness, s: string, kind: string, page?: ScenePage) =>
+	kind === 'bundle' && page ? findScenePage(h.doc, s, page) : null;
+/** export-scene's media names: the page file for HTML pages, the media id otherwise. */
+const srcOf = (doc: ProjectDocument) => (id: string) => doc.media[id]?.mgBundle?.source.path ?? id;
 
 const registries = defaultRegistries();
 
 function issuesOf(h: Harness, raw: unknown, media: Record<string, string> = {}): string {
 	const v = validateSceneFile(raw);
 	if (!v.ok) return formatSceneIssues(v.issues);
-	const r = resolveScene(v.scene, { doc: h.doc, registries, mediaFor: (s) => media[s] ?? null });
+	const r = resolveScene(v.scene, {
+		doc: h.doc,
+		registries,
+		mediaFor: (s, kind, page) => media[s] ?? pageOf(h, s, kind, page),
+	});
 	if (!r.ok) return formatSceneIssues(r.issues);
 	const p = planScene(h.doc, r.scene, { registries, newId: (x) => h.ids.next(x) });
 	return p.ok ? '' : formatSceneIssues(p.issues);
@@ -38,7 +92,7 @@ function plan(h: Harness, raw: unknown, media: Record<string, string> = {}) {
 	const r = resolveScene(v.scene, {
 		doc: h.doc,
 		registries,
-		mediaFor: (s) => media[s] ?? (h.doc.media[s] ? s : null),
+		mediaFor: (s, kind, page) => media[s] ?? (h.doc.media[s] ? s : pageOf(h, s, kind, page)),
 	});
 	if (!r.ok) throw new Error(formatSceneIssues(r.issues));
 	const p = planScene(h.doc, r.scene, { registries, newId: (x) => h.ids.next(x) });
@@ -371,6 +425,75 @@ describe('exportScene', () => {
 	});
 });
 
+describe('HTML composition pages', () => {
+	const pageScene = (query?: string, extra: Record<string, unknown> = {}) => ({
+		scene: 1,
+		sequence: { name: 'Promo', duration: 4 },
+		layers: [
+			{
+				id: 'pano',
+				type: 'composition',
+				bundle: PAGE,
+				composition: 'pano',
+				page: { width: 1080, height: 1350, fps: 30, ...(query ? { query } : {}) },
+				...extra,
+			},
+		],
+	});
+
+	it('picks the import with the same query and size; export writes the page back and round-trips', () => {
+		const h = new Harness();
+		const plain = registerPage(h, '');
+		const s2 = registerPage(h, 's=2');
+		registerPage(h, 's=2', 720);
+		apply(h, pageScene('s=2'));
+		const clip = clipNamed(h.doc, 'pano');
+		expect(clip.kind === 'composition' && clip.composition.mediaId).toBe(s2);
+		expect(plan(h, pageScene('s=2')).commands).toEqual([]);
+		// another query is another import: the layer is made again on it
+		const swap = apply(h, pageScene());
+		expect(swap.layers[0]).toMatchObject({ status: 'recreated', why: 'another composition' });
+		expect((clipNamed(h.doc, 'pano') as { composition: { mediaId: string } }).composition.mediaId).toBe(
+			plain,
+		);
+		apply(h, pageScene('s=2'));
+		const file = exportScene(h.doc, seqOf(h.doc, 'Promo').id, { registries, srcOf: srcOf(h.doc) }).file as {
+			layers: Record<string, unknown>[];
+		};
+		expect(file.layers[0]).toMatchObject({
+			bundle: PAGE,
+			composition: 'pano',
+			page: { width: 1080, height: 1350, fps: 30, query: 's=2' },
+		});
+		expect(plan(h, file).commands).toEqual([]);
+		const fresh = new Harness({ seed: 700 });
+		registerPage(fresh, '');
+		registerPage(fresh, 's=2');
+		apply(fresh, file);
+		expect(plan(fresh, pageScene('s=2')).commands).toEqual([]);
+	});
+
+	it('validates the page with paths', () => {
+		const h = new Harness();
+		registerPage(h, '');
+		const noPage = pageScene();
+		delete (noPage.layers[0] as { page?: unknown }).page;
+		expect(issuesOf(h, noPage)).toBe(
+			'layers[0].page: an HTML page needs page: {width, height, fps, query?} (the import to use)',
+		);
+		expect(issuesOf(h, pageScene(undefined, { composition: 'Main' }))).toBe(
+			'layers[0].composition: an HTML page\'s composition is its file name without the extension: "pano"',
+		);
+		expect(issuesOf(h, pageScene('s=9'))).toBe(
+			'layers[0].bundle: no import of "/pages/pano.html" at 1080×1350, 30 fps, query "s=9" in the project',
+		);
+		expect(issuesOf(h, pageScene('a#b'))).toMatch(/^layers\[0\]\.page\.query: a query has no "#"/);
+		expect(
+			issuesOf(h, { ...pageScene(), layers: [{ ...pageScene().layers[0], bundle: './remotion-project' }] }),
+		).toBe('layers[0].page: page is for HTML pages (a bundle ending in .html or .htm, or its media id)');
+	});
+});
+
 describe('scene.bind', () => {
 	it('refuses a missing clip, keeps the previous document, drops an empty value; unreadable bindings are reported and repaired', () => {
 		const h = new Harness();
@@ -484,27 +607,48 @@ const shapeLayer = fc.record(
 	},
 	{ requiredKeys: ['type', 'shape', 'start', 'duration'] },
 );
-const sceneArb = fc.array(fc.oneof(textLayer, shapeLayer), { minLength: 1, maxLength: 5 }).map((layers) => ({
-	scene: 1,
-	sequence: { name: 'Promo', fps: 30, size: [1920, 1080] },
-	layers: layers.map((l, i) => {
-		const o: Record<string, unknown> = { id: `layer-${i}` };
-		for (const [k, v] of Object.entries(l)) if (v !== undefined) o[k] = v;
-		return o;
-	}),
-}));
+/** A layer on one of the two imports of PAGE every property run registers (query "" and "s=2"). */
+const pageLayer = fc.record(
+	{
+		type: fc.constant('composition'),
+		bundle: fc.constant(PAGE),
+		composition: fc.constant('pano'),
+		page: fc.constantFrom(
+			{ width: 1080, height: 1350, fps: 30 },
+			{ width: 1080, height: 1350, fps: 30, query: 's=2' },
+		),
+		...common,
+	},
+	{ requiredKeys: ['type', 'bundle', 'composition', 'page', 'start', 'duration'] },
+);
+const withPages = (h: Harness) => {
+	registerPage(h, '');
+	registerPage(h, 's=2');
+	return h;
+};
+const sceneArb = fc
+	.array(fc.oneof(textLayer, shapeLayer, pageLayer), { minLength: 1, maxLength: 5 })
+	.map((layers) => ({
+		scene: 1,
+		sequence: { name: 'Promo', fps: 30, size: [1920, 1080] },
+		layers: layers.map((l, i) => {
+			const o: Record<string, unknown> = { id: `layer-${i}` };
+			for (const [k, v] of Object.entries(l)) if (v !== undefined) o[k] = v;
+			return o;
+		}),
+	}));
 
 describe('scene properties (fast-check)', () => {
 	it('apply is idempotent and export round-trips', () => {
 		fc.assert(
 			fc.property(sceneArb, (scene) => {
-				const h = new Harness();
+				const h = withPages(new Harness());
 				apply(h, scene);
 				expect(plan(h, scene).commands).toEqual([]);
-				const file = exportScene(h.doc, seqOf(h.doc, 'Promo').id, { registries, srcOf: (id) => id }).file;
+				const file = exportScene(h.doc, seqOf(h.doc, 'Promo').id, { registries, srcOf: srcOf(h.doc) }).file;
 				expect(validateSceneFile(file).ok).toBe(true);
 				expect(plan(h, file).commands).toEqual([]);
-				const fresh = new Harness({ seed: 5000 });
+				const fresh = withPages(new Harness({ seed: 5000 }));
 				apply(fresh, file);
 				expect(plan(fresh, scene).commands).toEqual([]);
 			}),

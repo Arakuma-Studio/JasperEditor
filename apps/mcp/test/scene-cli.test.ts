@@ -1,15 +1,31 @@
 // jasper apply / preview / export-scene, the parts that run in the CLI (docs/wp-notes/scene-file.md): YAML / JSON
 // parsing with line numbers, the YAML the export writes reads back unchanged, the labelled contact sheet keeps every
-// cell's pixels and adds a caption strip, and --watch runs once per burst of saves and survives a failing run.
+// cell's pixels and adds a caption strip, --watch runs once per burst of saves and survives a failing run, and apply
+// imports an HTML page the project lacks (import_html_composition) and finds it again by path, size, rate and query.
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+	applyTransaction,
+	createCounterIdSource,
+	createEmptyProject,
+	defaultRegistries,
+	EMPTY_PROBE,
+	type ProjectDocument,
+} from '@jasper/project';
+import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { describe, expect, it } from 'vitest';
 import { runCli } from '../src/jasper-cli.ts';
+import type { EngineConnection } from '../src/link.ts';
 import { composeGrid, decodePng, encodePng } from '../src/png.ts';
 import {
+	applySceneFile,
 	type FileWatcher,
 	formatSceneText,
 	labelSheet,
 	parseSceneText,
 	parseTimes,
+	type SceneCliContext,
 	watchScene,
 } from '../src/scene-cli.ts';
 
@@ -154,5 +170,120 @@ describe('watchScene', () => {
 		expect(runs).toEqual([1, 2, 3]);
 		ac.abort();
 		await done;
+	});
+});
+
+describe('apply imports what the scene names', () => {
+	it('an HTML page missing from the project is imported with import_html_composition at its size, rate and query', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'jasper-scene-page-'));
+		try {
+			const page = join(dir, 'pano.html');
+			writeFileSync(page, '<!doctype html><title>pano</title>');
+			writeFileSync(
+				join(dir, 'scene.yaml'),
+				[
+					'scene: 1',
+					'sequence: { name: Promo, duration: 4 }',
+					'layers:',
+					'  - { id: pano, type: composition, bundle: pano.html, composition: pano,',
+					'      page: { width: 1080, height: 1350, fps: 30, query: s=2 } }',
+				].join('\n'),
+			);
+			const ids = createCounterIdSource(1);
+			let doc: ProjectDocument = createEmptyProject({ ids, name: 'T', preset: 'hd-1080p-30' });
+			const ctx = {
+				ids,
+				now: () => '2026-11-11T00:00:00.000Z',
+				revision: 0,
+				registries: defaultRegistries(),
+			};
+			const run = (commands: unknown[]) => {
+				const r = applyTransaction(
+					doc,
+					{ protocol: 'jasper.tx/1', label: 't', origin: 'user', commands },
+					ctx,
+				);
+				if (!r.result.ok) throw new Error(JSON.stringify(r.result.errors));
+				doc = r.document;
+			};
+			const calls: { name: string; args: Record<string, unknown> }[] = [];
+			const text = (v: unknown): CallToolResult => ({ content: [{ type: 'text', text: JSON.stringify(v) }] });
+			const c: SceneCliContext = {
+				call: async (name, args = {}) => {
+					calls.push({ name, args });
+					if (name === 'import_html_composition') {
+						const hash = 'c'.repeat(64);
+						run([
+							{
+								type: 'media.register',
+								asset: {
+									kind: 'mg-bundle',
+									fingerprint: `q1:${hash}`,
+									originalName: 'pano.html?s=2',
+									sizeBytes: 10,
+									container: 'html-page',
+									probe: EMPTY_PROBE,
+									locators: [{ type: 'engine-store', engineId: 'local', key: `mk_${hash.slice(0, 24)}` }],
+									derivation: null,
+									importedAt: '2026-11-11T00:00:00.000Z',
+									mgBundle: {
+										remotionVersion: '4.0.499',
+										bundleHash: hash,
+										builtAt: '2026-11-11T00:00:00.000Z',
+										source: { type: 'html-page', path: args.path, name: 'pano.html' },
+										compositions: [
+											{
+												id: 'pano',
+												width: args.width,
+												height: args.height,
+												fps: args.fps,
+												durationInFrames: 180,
+												defaultProps: {},
+												propsSchema: null,
+												schemaSource: 'inferred',
+											},
+										],
+										html: { entry: 'pano.html', query: args.query ?? '' },
+									},
+								},
+							},
+						]);
+						return text({ ok: true });
+					}
+					if (name === 'apply_commands') {
+						run(args.commands as unknown[]);
+						return text({ ok: true, revision: 2 });
+					}
+					throw new Error(`unexpected tool ${name}`);
+				},
+				link: {
+					client: async () => ({ agentQuery: async () => ({ result: doc, revision: 1 }) }),
+				} as unknown as EngineConnection,
+				flags: {},
+				out: { stdout: () => {}, stderr: () => {} },
+				json: false,
+				cwd: dir,
+				projectId: async () => 'prj_0000000000000001',
+				usage: (m) => new Error(m),
+				fail: (b) => new Error(JSON.stringify(b)),
+			};
+			const first = await applySceneFile(c, 'scene.yaml');
+			expect(calls.map((x) => x.name)).toEqual(['import_html_composition', 'apply_commands']);
+			expect(calls[0]!.args).toEqual({
+				projectId: 'prj_0000000000000001',
+				path: page,
+				width: 1080,
+				height: 1350,
+				fps: 30,
+				query: 's=2',
+			});
+			expect(first.plan.layers).toMatchObject([{ id: 'pano', status: 'created' }]);
+			calls.length = 0;
+			const again = await applySceneFile(c, 'scene.yaml');
+			expect(calls).toEqual([]);
+			expect(again.plan.commands).toEqual([]);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });

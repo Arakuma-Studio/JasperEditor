@@ -12,7 +12,7 @@ labelled sheet; `--watch`). Tests: `packages/project/test/scene.test.ts` (valida
 move = one command, removals, moves, images, export round trips, `scene.bind`, a fast-check property: apply twice
 plans nothing, export → apply plans nothing, apply → export → apply on a fresh project then the original plans
 nothing), `apps/mcp/test/scene-cli.test.ts` (YAML/JSON parsing, export YAML reads back, labelled sheet, `--watch`
-debounce and error survival with an injected watcher and timers), `apps/mcp/test/jasper-cli.test.ts` (the CLI
+debounce and error survival with an injected watcher and timers, a missing HTML page imported once and found again), `apps/mcp/test/jasper-cli.test.ts` (the CLI
 against a real engine).
 
 ## Format (`scene: 1`)
@@ -66,6 +66,18 @@ layers:                    # bottom to top: a later layer draws over an earlier 
 - **shape**: `shape: rect | ellipse`, `size`, `fill` (`null` = none), `stroke`, `radius` (rectangles).
 - **composition**: `bundle` (a Remotion project folder — imported with `import_mg_bundle` when missing —, a bundle
   media id or its name), `composition` (id in the bundle), `props` (the whole override object).
+- **HTML composition pages** (schema v13, [html-compositions.md](html-compositions.md)): `bundle` is the page file
+  (`.html` / `.htm`, relative to the scene file) and `page: {width, height, fps, query?}` is required — one page
+  imported at another size, rate or query is another media item, so `page` names which import the layer shows.
+  `composition` is the page's file name without its extension (what `import_html_composition` produces); `page` on a
+  Remotion bundle is an error (a media id `bundle` may carry it). Apply finds the import with the same page path
+  (its `mgBundle.source.path`), size, fps and query (`findScenePage`), else imports it with `import_html_composition
+  {path, width, height, fps, query?}` first; export-scene writes `page` for every HTML page layer.
+
+  ```yaml
+  - { id: pano, type: composition, bundle: pages/pano.html, composition: pano,
+      page: { width: 1080, height: 1350, fps: 30, query: s=2 } }
+  ```
 - Unknown keys are errors; every error names its path: `layers[2].keyframes.position[0].ease: unknown ease "foo"`.
 
 ## Apply

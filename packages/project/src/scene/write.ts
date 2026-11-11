@@ -20,6 +20,7 @@ import {
 	type SceneEaseR,
 	type SceneValueR,
 } from './model.ts';
+import { scenePageOf } from './pages.ts';
 import { defaultAnchor, readSceneLayer } from './read.ts';
 import { SCENE_PROP_KIND } from './resolve.ts';
 import { sceneSequenceName } from './sequence.ts';
@@ -132,6 +133,10 @@ function layerOut(
 			out.type = 'composition';
 			out.bundle = ctx.srcOf(l.composition!.mediaId);
 			out.composition = l.composition!.id;
+			{
+				const page = scenePageOf(ctx.doc.media[l.composition!.mediaId], l.composition!.id);
+				if (page) out.page = page;
+			}
 			if (l.composition!.props && Object.keys(l.composition!.props).length) out.props = l.composition!.props;
 			break;
 	}

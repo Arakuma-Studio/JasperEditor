@@ -2,6 +2,7 @@
 export * from './bindings.ts';
 export * from './format.ts';
 export * from './model.ts';
+export * from './pages.ts';
 export { type LayerOutcome, type PlanContext, planScene, type ScenePlan } from './plan.ts';
 export { readSceneLayer, sceneKindOf } from './read.ts';
 export {

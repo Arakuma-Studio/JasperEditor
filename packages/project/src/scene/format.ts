@@ -241,11 +241,32 @@ const ShapeLayerSchema = z.strictObject({
 	radius: z.number().min(0).max(16384).optional(),
 });
 
+/**
+ * An HTML composition page import (`bundle` = an .html / .htm file, `import_html_composition`): the viewport and
+ * render size, the rate its length is counted in and the query given to it as `location.search` (without `?`).
+ */
+export const ScenePageSchema = z.strictObject({
+	width: z.number().int().min(16).max(8192),
+	height: z.number().int().min(16).max(8192),
+	fps: z.number().min(1).max(240),
+	query: z
+		.string()
+		.max(2048)
+		.regex(/^[^#\0\r\n]*$/, 'a query has no "#" and no line breaks')
+		.optional(),
+});
+export type ScenePage = z.infer<typeof ScenePageSchema>;
+
 const CompositionLayerSchema = z.strictObject({
 	...common,
 	type: z.literal('composition'),
-	/** The Remotion bundle: its folder (relative to the scene file), its media id or its name in the project. */
+	/**
+	 * The Remotion bundle: its folder (relative to the scene file), its media id or its name in the project; or an
+	 * HTML composition page (an .html / .htm file, with `page`).
+	 */
 	bundle: z.string().min(1).max(4096),
+	/** HTML pages only (and required for them): which import of the page — size, rate and query. */
+	page: ScenePageSchema.optional(),
 	/** Composition id inside the bundle (`list_compositions`). */
 	composition: z.string().min(1).max(200),
 	/** Props over the composition's defaults (the whole override object). */
