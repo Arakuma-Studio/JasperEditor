@@ -1155,13 +1155,14 @@ graphics)** and lists one graphics group per baked layer.
 - The constant pictures of a track (those stills, still images with sub-pixel Motion) are drawn into **one input of
   the composite per track**, so memory and speed follow what is on screen, not the clip count (thousands of subtitles
   export on a laptop). `JASPER_EXPORT_TRACK_STREAMS=0` draws one input per layer instead, and
-  `JASPER_EXPORT_COVER_BASE=0` blends a full-frame opaque video over the background instead of using it as the base
-  (diagnostics).
+  `JASPER_EXPORT_COVER_BASE=0` blends full-frame opaque video over the background instead of using it as the base
+  for its frames (diagnostics).
 - A long native export renders its picture in **parallel segments** (each with only the layers it shows, joined by
   stream copy with the sound): `JASPER_EXPORT_SEGMENTS` (`auto`, a number, `1` = one graph),
   `JASPER_EXPORT_SEGMENT_MIN_SEC` (20), `JASPER_EXPORT_HW_SESSIONS` (hardware encoder sessions, 4),
   `JASPER_EXPORT_SEGMENT_SLOTS` (CPU slots per segment, 3). With a working CUDA device, source video decodes through
-  NVDEC (`JASPER_EXPORT_NVDEC=0` turns it off; `JASPER_EXPORT_NVDEC_MAX_INPUTS`, 16 per export, bounds video memory).
+  NVDEC (`JASPER_EXPORT_NVDEC=0` turns it off; `JASPER_EXPORT_NVDEC_MAX_INPUTS`, 16 per export, bounds video memory;
+  the longest inputs of each segment get them).
   With an OpenCL GPU the per-track text and still pictures are drawn by an OpenCL program inside the composite
   instead of the engine's kernel threads (`pipeline.kernel` says where and why not; `JASPER_EXPORT_OPENCL=0` turns it
   off, `JASPER_EXPORT_OPENCL_DEVICE` = `any` or `<platform>.<device>` picks another device than the first GPU).

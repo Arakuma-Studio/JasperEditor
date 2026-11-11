@@ -68,11 +68,17 @@ describe('GPU decode (NVDEC)', { timeout: 300_000 }, () => {
 		const { d } = await doc();
 		const payload = { envelope: d.envelope(), sequenceId: d.seqId, settings: settings(d.seqId) };
 		const plan = await app.inject({ method: 'POST', url: '/api/exports/plan', headers: JSON_H, payload });
-		expect(RenderPlanSchema.parse(plan.json()).pipeline).toMatchObject({ decode, composite: { device: 'cpu' } });
+		expect(RenderPlanSchema.parse(plan.json()).pipeline).toMatchObject({
+			decode,
+			composite: { device: 'cpu' },
+		});
 		const start = await app.inject({ method: 'POST', url: '/api/exports', headers: JSON_H, payload });
 		const done = await coreServices(app).queue.wait(start.json().id);
 		expect(done.error).toBeUndefined();
-		expect(ExportResultSchema.parse(done.result).pipeline).toMatchObject({ decode, composite: { device: 'cpu' } });
+		expect(ExportResultSchema.parse(done.result).pipeline).toMatchObject({
+			decode,
+			composite: { device: 'cpu' },
+		});
 	});
 
 	it('puts NVDEC in front of the eligible inputs only, one device per process, up to the cap', async () => {
@@ -119,5 +125,38 @@ describe('GPU decode (NVDEC)', { timeout: 300_000 }, () => {
 		expect(dev).toBeLessThan(gpu.args.indexOf('-i'));
 		expect(capped.hwDecoded).toBe(2);
 		expect(hwInputs(capped.args)).toHaveLength(2);
+	});
+
+	it('gives the capped GPU decoders to the inputs that decode the longest', async () => {
+		const a = await register(app, fixture('clip-a.mp4'));
+		const b = await register(app, fixture('clip-b.mp4'));
+		const d = new DocBuilder();
+		const [ma, mb] = [a, b].map((m) => d.addMedia(m));
+		const place = (media: string, at: number, frames: number) => ({
+			type: 'clip.place',
+			source: { mediaId: media },
+			at,
+			tracks: { video: 'V1' },
+			sourceRange: { in: { sourceFrames: 0 }, out: { sourceFrames: frames } },
+		});
+		// 10 frames of clip-a, then 40 of clip-b, then 20 of clip-a.
+		d.tx([place(ma!, 0, 10), place(mb!, 10, 40), place(ma!, 50, 20)]);
+		const planned = await coreServices(app).exports.plan({
+			envelope: d.envelope(),
+			sequenceId: d.seqId,
+			settings: settings(d.seqId) as never,
+		});
+		const g = buildNativeGraph({
+			snapshot: planned.snapshot,
+			output: planned.output,
+			outputFile: '/tmp/x.mp4',
+			sources: { media: (id) => planned.media[id] ?? null, mgMaster: () => null },
+			threads: 2,
+			hwDecode: nvdecForGraph(2),
+		});
+		expect(g.hwDecoded).toBe(2);
+		// The inputs in clip order, and whether each decodes on the GPU.
+		const gpu = g.inputs.filter((i) => i.includes('-i')).map((i) => i.includes('-hwaccel'));
+		expect(gpu).toEqual([false, true, true]);
 	});
 });

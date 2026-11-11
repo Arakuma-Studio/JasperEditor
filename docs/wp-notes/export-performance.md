@@ -753,4 +753,118 @@ instead of spinning) in our own LGPL FFmpeg build, which would need `--enable-cu
 nonfree), a manifest and `pnpm ffmpeg:check` provenance; or converting the video track in a separate process per
 segment that feeds the composite RGBA through a pipe, as the kernel streams do. CPU-side, outside this task's GPU
 scope: an opaque full-frame video layer over the opaque background costs the 2.8 ms overlay per frame although the
-result is the layer itself.
+result is the layer itself (removed in §12).
+
+## 12. Exact composite simplifications on the CPU (implemented: the base sliced in time, NVDEC to the longest inputs)
+
+`native.ts` (`drawStack`, `buildNativeGraph`), `gpu.ts`. Question: after §11 (no GPU route), which CPU work of the
+composite can go without changing a single output value? Every change below is exact: the composite's frames are
+byte-identical to the previous graph's (checked per frame, below), so preview parity is unchanged.
+
+**The base, sliced in time.** spec 13 AS-076 made an opaque full-frame video the composite's base only when it covered
+the whole range — never in a cut-heavy edit (each of the real project's 24 segments has 12–20 V1 clips). Now every
+such layer is the base *for its frames*: a layer is `covering` when the document says it is opaque and fills the frame
+exactly — a video clip (no override) whose source has no alpha, Normal blend, no 3D, fades, masks or effects other than
+flips and colour effects, Opacity 100 % (no alpha stage after Motion) and Motion that places it at 0,0 with a constant
+scale to exactly W × H (no pixel test). Its frames replace the background there: the covering layers (disjoint in time)
+are concatenated with the background colour between them (`tpad … stop_mode=add` up to the next piece, a `color`
+source before the first, `concat`, then `settb=1/fps,setpts=N`, the background's own timestamps) and the stack draws
+the other layers over that stream as before. Layers drawn earlier (lower) that overlap a piece are hidden on its
+frames by switching their overlay off there (`enable='…*not(between(t,…))'`); a layer joins only if every lower layer
+overlapping it can be switched off that way (an overlay with an `enable` window) and it overlaps no other piece. A
+blend-mode layer (a process boundary of the blend pipeline) closes the base; nested stacks keep the blend; rates whose
+time base `settb` cannot represent exactly (terms above 100,000) keep it too. Why it is exact (FFmpeg 7.1
+`vf_overlay.c`, `blend_slice_packed_rgb`): a source pixel with alpha 255 is copied (`case 255`), and its alpha too, so
+blending an opaque full-frame layer over anything gives the layer; an overlay whose `enable` is false passes its main
+input through; `eof_action=pass` after a source that ends early shows the composite below, which on a piece's frames
+is the background (`tpad` adds background-coloured frames, `ff_fill_rectangle` writes the same RGBA bytes as `color`).
+`JASPER_EXPORT_COVER_BASE=0` keeps the blends.
+
+On the real project the busiest graph goes from 26 overlays to 3 (`pipeline.overlays`): the V1 clips are no longer
+blended, nor traversed while disabled (every overlay of the old chain ran its framesync and `enable` evaluation on
+every frame of the segment).
+
+**NVDEC to the longest inputs.** The per-segment NVDEC cap (§5: 16 per export / segments at a time = 4) went to the
+first eligible inputs in clip order; the graph now marks every eligible input and gives the cap to the ones that decode
+the most media (their `-t`), the others decode on the CPU as before (the same decoded pictures, §5). From the captured
+command lines of the warm export (decoded frames = `-t` × 60 plus the pre-roll from the keyframe before each seek,
+keyframes every 250 frames in this recording): NVDEC decodes 38.3 % of the 107,013 decoded frames instead of 27.4 %.
+
+**Fidelity.**
+- `apps/engine/test/export-composite-base.test.ts`: 720p, two solids below, full-frame `clip-a` spans, a `clip-b`
+  at 50 %, a `clip-a` span at 60 % opacity, a gap where the (non-black) background shows, a translucent scaled solid
+  above; the built graph has the two spans as base pieces (5 overlays instead of 7), each lower solid switched off on
+  its piece's frames; ProRes 4444 of both graphs decodes to identical frames (56 of 56). Fails on the previous commit.
+- `export-gpu-decode.test.ts` ("gives the capped GPU decoders to the inputs that decode the longest"): 10, 40 and 20
+  frames, cap 2 → the 40- and 20-frame inputs. Fails on the previous commit.
+- Real project, all 24 segments (the warm export's captured command lines, replayed without the node-fed kernel stream,
+  the graph rewritten the way the builder now writes it, `framemd5` of the `yuv420p` frames given to the encoder): all
+  55,860 frames identical. The full exports below: see "Picture".
+
+**Composites alone** (the 24 segments of each build's warm export, captured from the engine and replayed 4 at a time
+as in §11 — kernel stream input and its overlay removed, NVENC output; user's PC: RTX 3080 Ti, driver 595.99, 24
+logical / 12 physical cores, vendor LGPL FFmpeg 7.1.5, load1 12–23 at the start of each pool, desktop GPU 17–29 %):
+
+| Graphs | Pool wall | CPU (s) | Filter threads | CPU H.264 decoders | CPU busy | NVDEC mean |
+|---|---:|---:|---:|---:|---:|---:|
+| main a7b7b099b (2 runs) | 170.2 / 177.1 s | 2,315 / 2,392 | 1,593 / 1,641 | 428 / 446 | 71 / 73 % | 21 % |
+| this branch (2 runs) | 133.6 / 147.5 s | 1,939 / 2,057 | 1,304 / 1,366 | 354 / 385 | 76 / 78 % | 40 % |
+
+−19 % wall and −15 % CPU (means). The filter threads lose ≈ 290 cpu-s, more than the background blend alone (2.8 ms ×
+55,860 frames ≈ 156 cpu-s, §11): the disabled overlays of the old chain cost the rest.
+
+**Full export of the real project** (same machine; engines in a systemd scope `MemoryMax=40G`, `MemorySwapMax=0`,
+appdir `.stage-perf`, defaults: 24 segments, 4 at a time, NVDEC, OpenCL kernel, output-size composite;
+prj_SC0SEK431T1QPQYF, 15:31, 55,860 frames, `draft-720p-h264`, `normalizeLufs: -14`; each run after the idle check —
+load1 < 6, no other ffmpeg, desktop GPU use allowed and recorded; *cold* = layer cache moved aside, first export of a
+new engine; *warm* = the engine's second or third export, the delivery reusing its solved loudness):
+
+| Run | Job | Bake | Encode (start → time) | fps | Audio (beside) | CPU busy mean / max | GPU · NVENC · NVDEC mean | Overlays (largest graph) |
+|---|---:|---:|---|---:|---:|---|---|---:|
+| main, cold | 406.0 s | 116.7 s | 126.4 s → 271.4 s | 205.9 | 292.3 s | 72 / 90 % | 62 · 15 · 12 % | 26 |
+| branch, cold | **351.3 s** | 98.8 s | 108.3 s → **233.7 s** | 239.0 | 284.3 s | 73 / 86 % | 56 · 18 · 22 % | 3 |
+| main, warm (2 runs) | 224.0 / 228.4 s | 1.7 s | 13.7 → 203.3 / 14.0 → 207.5 s | 274.7 / 269.2 | 138.4 / 162.5 s | 73 / 84 % | 38 · 20 · 22 % | 26 |
+| branch, warm (2 runs) | **206.3 / 200.2 s** | 1.8 s | 15.6 → 181.6 / 18.9 → 172.2 s | 307.7 / 324.4 | 193.9 / 189.9 s | 77 / 87 % | 43 · 21 · 29 % | 3 |
+
+- **Warm: the job is 10 % shorter** (means 226.2 → 203.3 s; 223.0 s in §10) and the encode 14 % (205.4 → 176.9 s).
+- **Cold: the encode is 14 % shorter** (271.4 → 233.7 s); the job 13 % (406.0 → 351.3 s), part of which is the bake's
+  run-to-run spread (116.7 vs 98.8 s; one run each).
+- Other phases: plan 9.5–17.0 s, frameCheck 4.0–6.1 s. Peak scope memory 14.6 GB (branch) / 17.6 GB (main), each over
+  its engine's runs; the largest composite's resident memory 3.3–3.5 GB in both builds.
+- An unrelated `node` process outside the engines' scopes (not started by this work) held 2.3–6.5 GB of video memory
+  for ≈ 40 s at a time during several runs of both builds (peak device memory 9.6–11.6 GB in those runs, 5.0–5.5 GB
+  without); it is recorded, not controlled.
+
+**Picture.** The video packets of each branch export are byte-identical to main's under the same conditions (MD5 of
+the stream-copied video: both warm runs of each build `fcb13c07…`, both cold runs `7ee2c881…`; the cold and warm files
+differ from each other because the cold run re-renders the 17 masters), and so are the audio packets. SSIM of the warm
+branch export against `/tmp/je-mine/out2.mp4` (the CPU-kernel export of §7, as in §10) over all 55,860 frames: mean
+0.99937, 1st percentile 0.99506, min 0.98962, none under 0.98 — main's warm export of this session by construction
+(identical packets; §10 measured another OpenCL run: mean 0.99928).
+`verify_export` on the warm branch export: every format row passes (decode, streams h264 1280×720 60 fps + AAC
+48 kHz stereo, duration 931 s, A/V skew 0, true peak −2.32 dBTP), no black or flash at 360 cuts, loudness −13.9 LUFS,
+no silence; `cut-click` flags the edit's own 19 cuts, as before.
+
+**Evaluated, not done.**
+- *One decoder for all the V1 pieces of a segment* (prototype, not shipped): the pieces of one source read by one
+  input through the concat demuxer (`inpoint` / `outpoint` per piece, `duration 1000` so each piece's timestamps sit in
+  their own window, `-seek_timestamp 1` so FFmpeg adds no offset), split back by `trim` on those windows into the
+  unchanged per-piece chains, NVDEC on that one input. Exact: the replayed 24 segments give all 55,860 frames
+  identical (`framemd5`). It decodes every V1 frame on the GPU with one NVDEC session per segment instead of 4 of
+  ≈ 15 inputs: pool CPU 1,508 cpu-s (−23 % from this branch's graphs, −35 % from main's), but NVDEC is then busy 92.5 %
+  on average and the pool takes 137.8 s, no faster than the base alone (133.5 s in the same pool session); decoding
+  every other segment's pieces on the CPU instead: 129.3 s, 1,790 cpu-s. Shipping it would also need each source's
+  container start time (FFmpeg's `-ss` is relative to it, the concat demuxer's `inpoint` is not), which media records
+  do not store. Worth it where the CPU, not the decoder, is the limit.
+- *Continuing to decode across nearby cuts of one source instead of seeking*: of the 337 cut transitions in the
+  segments, 89 jump less far forward in the source than the seek's pre-roll; continuing there saves 8,886 of the
+  107,013 decoded frames (8 %, ≈ 2 % of the composite CPU). 45,016 of the decoded frames are pre-roll (from the
+  keyframe before each seek, every 250 frames here) that the per-clip seeks cannot avoid.
+- *A cheaper exact YUV → RGBA conversion*: not attempted. Assumption, not measured: with `accurate_rnd` and the
+  full-chroma flags swscale converts through its generic C vertical scaler / full-chroma RGB writer, and another
+  route (other pixel format, order or flags) rounds differently, so it would not be bit-identical.
+- *Culling layers hidden or off-screen*: a lower layer hidden by a base piece is still decoded and converted on those
+  frames (only its blend is skipped); skipping its conversion would need its input split around the piece. The real
+  project has no such layer (its 384 full-frame overlays were the V1 clips and the 23 master spans above them), and no
+  layer off the canvas or at 0 % opacity.
+- *Redundant conversions*: none found — each layer is converted to RGBA once, the composite to `yuv420p` once.

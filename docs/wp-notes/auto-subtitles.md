@@ -631,7 +631,8 @@ inputs), one Remotion render per caption (≈ 3.4 s fixed cost per still), a 50 
   frames after its source ends are padded with the background colour, as the blend showed). An ffmpeg experiment on
   the short benchmark's graph (VM, quiet): video + one subtitle input 25.4 s with the background blend, 20.9 s
   without, 20.7 s for the video alone. Frames are identical to the blend path (test `subtitle-export.test.ts`;
-  `JASPER_EXPORT_COVER_BASE=0` keeps the blend).
+  `JASPER_EXPORT_COVER_BASE=0` keeps the blend). Generalised to every span such a video covers, whatever its range
+  (cuts, segments): docs/wp-notes/export-performance.md §12.
 
 ### S.3 Batched still rendering, pipelined (AS-071, AS-076)
 
