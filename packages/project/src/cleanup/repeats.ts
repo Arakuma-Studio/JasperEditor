@@ -214,6 +214,7 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 		let forgiven = 0;
 		let inPlace = 0;
 		let corrected = 0;
+		let dropped = false;
 		let hard = 0;
 		const matchedR = new Set(pairs.map(([, y]) => rk[y]!));
 		/** The retry's words between the matches of the attempt's content words around `x` (its place in the retry). */
@@ -284,6 +285,18 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 				if (ok) {
 					forgiven++;
 					prev = true;
+					continue;
+				}
+			}
+			// a dropped word: an abandoned take (written broken off) of ≥ 6 content words whose retry leaves out one word
+			// between two re-said neighbours with no content word between them ("…después de haber casi… | …después de casi
+			// explotar…", run 9 AC)
+			if (!ok && !exact(tx) && brokenOff && !dropped && ak.length >= 6 && x > 0 && !last) {
+				const before = pairs.filter(([p]) => p < x).at(-1);
+				const next = pairs.find(([p]) => p > x);
+				if (before && next && next[1] === before[1] + 1) {
+					dropped = true;
+					prev = false;
 					continue;
 				}
 			}

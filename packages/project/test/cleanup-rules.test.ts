@@ -722,6 +722,34 @@ describe('round 10 fixes (docs/wp-notes/transcript-cleanup.md "Round 10")', () =
 		}
 	});
 
+	it('an abandoned take the retry says again but for one word it drops goes (AC "…después de haber casi…")', () => {
+		// run 9, AC: the first take (15 words) stayed for review in both modes because "haber" is not said again
+		for (const text of [
+			`Bueno,[0.19-0.7] ok,[0.7-0.96] gracias[0.96-1.18] por[1.18-1.4] avisar[1.4-1.82]
+			hermano,[1.82-2.3] muy[2.3-2.42] amable[2.42-2.72] de[2.72-2.84] tu[2.84-2.94]
+			parte[2.94-3.28] después[3.28-3.54] de[3.55-3.72] haber[3.72-3.86] casi...[3.86-4.22]
+			Bueno,[4.93-5.46] ok,[5.47-5.58] gracias[5.58-5.9] por[5.9-6.1] avisar[6.1-6.54]
+			hermano,[6.54-7.0] muy[7.0-7.12] amable[7.12-7.42] de[7.42-7.56] tu[7.56-7.66]
+			parte[7.66-7.94] después[7.94-8.22] de[8.22-8.38] casi[8.38-8.54] explotar[8.54-8.82]
+			mi[8.82-8.98] puta[8.98-9.18] laptop.[9.18-9.42] los[18.02-18.22] bugs,[18.22-18.61]
+			oh[18.67-18.9] por[18.9-19.2]`,
+			`Bueno,[0.19-0.7] ok,[0.7-0.98] gracias[0.98-1.18] por[1.18-1.4] avisar,[1.4-1.88]
+			hermano,[1.88-2.3] muy[2.3-2.44] amable[2.44-2.7] de[2.7-2.84] tu[2.84-2.94]
+			parte[2.94-3.28] después[3.28-3.54] de[3.55-3.72] haber[3.72-3.88] casi...[3.88-4.22]
+			Bueno,[4.93-5.46] ok,[5.47-5.6] gracias[5.6-5.9] por[5.9-6.1] avisar,[6.1-6.66]
+			hermano,[6.66-7.0] muy[7.0-7.12] amable[7.12-7.42] de[7.42-7.56] tu[7.56-7.66]
+			parte[7.66-7.95] después[7.96-8.2] de[8.2-8.38] casi[8.38-8.54] explotar[8.54-8.84]
+			mi[8.84-8.94] puta[8.94-9.18] laptop.[9.18-9.42] Y[17.94-18.06] los[18.06-18.24]
+			bugs,[18.24-18.61] oh[18.67-19.02]`,
+		]) {
+			const words = real(text);
+			const d = detect(words);
+			const retry = indexOf(words, 'Bueno,', 1);
+			for (let i = 0; i < retry; i++) expect(removes(d, i), words[i]!.text).toBe(true);
+			for (let i = retry; i < words.length; i++) expect(removes(d, i), words[i]!.text).toBe(false);
+		}
+	});
+
 	it('slivers: a loud voiced sound between pauses stays for review; a blip over a removed take goes with it', () => {
 		// run 9, AG a: the deliberate mouth sound "Pup." (0.11 s, voiced, −16 dBFS) alone between two removed pauses
 		const words: CleanupWordIn[] = [

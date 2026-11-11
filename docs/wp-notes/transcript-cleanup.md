@@ -640,6 +640,10 @@ rule, and each held-out round found new failures. The mechanism (vocalic fillers
     before an attempt broken off within two words makes the attempt a candidate; the lead joins it as before.
   - A word ending in a letter and a hyphen ("tor-", chunked AC) is written broken off (`CUT_OFF`), and a retry's lead
     words may follow such a word.
+- **A dropped word** (H5, rule 3): in an attempt written broken off with ≥ 6 content words, one content word (not the
+  first or last, never a number) the retry leaves out between two re-said neighbours with no content word between them
+  is forgiven. AC's abandoned first take "Bueno, ok, gracias por avisar, hermano, muy amable de tu parte después de
+  haber casi… | … después de casi explotar mi puta laptop." (15 words) was only reviewed in both modes.
 
 Kinds follow the structure: ≤ 2 words a false start, a whole clause (clause start, clause end, ≥ 3 content words) a
 retake (with a group), else a restart; inside re-decoded ranges they become hidden retakes as before. The settings keep
