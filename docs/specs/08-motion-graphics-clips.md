@@ -98,8 +98,8 @@ separate audio intermediate), nested JasperEditor sequences inside compositions.
   "Media Offline"-style card "Composition <id> not in bundle" and block export with a clear blocker.
 - **MGC-015 (P1)** **New composition project** (authoring): `POST /api/mg-bundles/scaffold {dir, name}` (local
   mode) copies a template project (`apps/engine/src/mg-bundles/template/`: Remotion 4.0.499, one example
-  composition with a zod schema, `jasper.mg.json`, `jasper-schemas.ts`), runs `pnpm install` (or `npm install`)
-  there, imports it with `watch: true`. Code is edited by the user or their coding agent outside the app.
+  composition with a zod schema, `jasper.mg.json`, `jasper-schemas.ts`), runs
+  `CI=true corepack pnpm@<repository pin> install --ignore-workspace` there, imports it with `watch: true`. Code is edited by the user or their coding agent outside the app.
 
 ## 4. Preview
 

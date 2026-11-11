@@ -109,6 +109,8 @@ export const RETRYABLE_CODES: ReadonlySet<string> = new Set([
 	'DOWNLOAD_TIMEOUT',
 	'ASSET_CACHE_WRITE',
 	'REMOTE_ASSET_FAILED',
+	// A new composition project's dependency install that ran out of time (slow network or registry)
+	'MG_INSTALL_TIMEOUT',
 ]);
 
 export function errorBody(code: string, message: string, detail?: unknown): ErrorShape {
