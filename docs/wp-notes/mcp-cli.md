@@ -136,7 +136,7 @@ previews of an `add_motion_graphic {dryRun, preview}` batch — to `f-0.png`, `f
 CLI, MCP and HTTP behave identically (strict arguments, live editor targeting, approvals, progress on stderr,
 Ctrl+C = MCP cancellation → the export is cancelled and its file deleted). Project: `--project <id|name>`,
 `JASPER_PROJECT`, the project open in an editor window, or the only project. `--json` = one JSON document per
-line; exit status 0 ok, 1 command failed, 2 usage error.
+line; exit status 0 ok, 1 command failed, 2 usage error. Scene files (`apply`, `preview`, `export-scene`): [scene-file.md](scene-file.md).
 
 ## 6. Scenario QA
 
