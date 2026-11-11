@@ -91,6 +91,11 @@ Errors (engine `MgBundleError` → HTTP 4xx → MCP error result, each with a hi
   at load ≈ 35; 60 frames at 1920×1080 with 4 pages 13 s; 60 frames of `pano.html` at 1080×1350 with 4 pages 36 s
   (load ≈ 12); the 3 s carousel export with two HTML clips (150 master frames) 375 s at load ≈ 32–39; a `render_frame`
   still 11–40 s (each still loads the page in a fresh browser).
+- MCP eval (`apps/mcp/eval/cases/compositions.jsonl`, claude-sonnet-5-5, 2 samples each, Orquester account):
+  `html-composition-import` 2/2 (the case cannot pass without the tool); `html-composition-contract-missing` 0/2 on
+  the first text (one sample imported the page with `import_media` and placed a video clip, one retried after editing
+  the page), 2/2 after `import_media` refuses `.html` paths with `HTML_PAGE` naming `import_html_composition`;
+  control `control-media-not-html` 2/2.
 - UI: the editor at port 47202 showed both clips in the Program monitor from their live hosts (state `ready` at frame
   0) and, after the preview WebMs landed, from those (`idle` hosts) at 1 s; the web build typechecks; `pnpm i18n`,
   Spanish strings added (`pnpm i18n:check` covers all strings).
