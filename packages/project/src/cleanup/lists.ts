@@ -413,7 +413,18 @@ const NUMBER_VALUES: Readonly<Record<string, number>> = Object.fromEntries(
 	[
 		'cero uno dos tres cuatro cinco seis siete ocho nueve diez once doce trece catorce quince dieciseis diecisiete dieciocho diecinueve veinte',
 		'zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen twenty',
-	].flatMap((l) => l.split(' ').map((w, v) => [w, v] as const)),
+	]
+		.flatMap((l) => l.split(' ').map((w, v) => [w, v] as const))
+		.concat(
+			[
+				'treinta cuarenta cincuenta sesenta setenta ochenta noventa',
+				'thirty forty fifty sixty seventy eighty ninety',
+			].flatMap((l) => l.split(' ').map((w, v) => [w, 30 + 10 * v] as const)),
+			[
+				['cien', 100],
+				['hundred', 100],
+			] as const,
+		),
 );
 
 /**

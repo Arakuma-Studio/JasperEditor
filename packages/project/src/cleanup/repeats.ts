@@ -54,6 +54,28 @@ const CORRECTION_MARKERS: ReadonlyArray<readonly string[]> = [
 	['digo'],
 	['sorry'],
 ];
+/** A false start's retry clause holds at least this many words (else the link is reviewed). */
+const FALSE_START_RETRY_WORDS = 3;
+/** An aside of at most this many words goes with its attempt by default (longer ones: see `asideGoes`). */
+const ASIDE_GOES_WORDS = 3;
+/** Stock words of an aside that goes with its attempt (normalised): stops, apologies, corrections. */
+const STOCK_ASIDE: ReadonlySet<string> = new Set([
+	'espera',
+	'esperate',
+	'esperen',
+	'perdon',
+	'perdona',
+	'disculpa',
+	'digo',
+	'mejor',
+	'dicho',
+	'quiero',
+	'decir',
+	'wait',
+	'sorry',
+	'mean',
+	'i',
+]);
 /** Longest attempt (words) the mechanism tries. */
 const MAX_ATTEMPT_WORDS = 80;
 /** The retry an attempt of `len` words is compared with: at most this many words (it may add some). */
@@ -135,6 +157,20 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 	/** Whether `[a, b)` holds only discourse-marker words ("a ver", "bueno", "pues"). */
 	const markersOnly = (a: number, b: number) => b > a && span(a, b).every((p) => markerSet.has(tok(p)));
 	const keys = (a: number, b: number) => span(a, b).filter((p) => keyAt[p]);
+	/**
+	 * Where the words `[a, b)` are said again word for word at the start of the speech from `r` (after up to two lead
+	 * words; a cut-off last word as a prefix), or -1.
+	 */
+	const verbatimAt = (a: number, b: number, r: number) => {
+		for (let o = r; o <= r + 2 && o + (b - a) <= n; o++)
+			if (span(a, b).every((x, i) => same(tok(x), tok(o + i), x === b - 1 && cut(x)))) return o;
+		return -1;
+	};
+	/** The end of an attempt from `q` broken off within its first three words (before `r`), else `r`. */
+	const brokenWithin = (q: number, r: number) => {
+		for (let x = q; x < Math.min(r, q + 3); x++) if (cut(x)) return x + 1;
+		return r;
+	};
 
 	/** One content word (or allowed emphasis) said again at once, the repetition ending its phrase: deliberate. */
 	const deliberate = (q: number, len: number) => {
@@ -200,6 +236,8 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 		let forgiven = 0;
 		let inPlace = 0;
 		let corrected = 0;
+		let dropped = false;
+		let unsure = 0;
 		let hard = 0;
 		const matchedR = new Set(pairs.map(([, y]) => rk[y]!));
 		/** The retry's words between the matches of the attempt's content words around `x` (its place in the retry). */
@@ -222,6 +260,17 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 			// a cut-off last word said whole ("cual…" → "cualquier"), or abandoned after three re-said words
 			if (last && (brokenOff || a1 === r0) && rk.some((p) => same(tx, tok(p), true))) continue;
 			if (last && brokenOff && pairs.length >= 3 && !exact(tx)) continue;
+			// …or cut off after three or more words said again word for word ("lo peor es que el tor… | Y lo peor es que el
+			// motor…", run 9 AC)
+			if (
+				last &&
+				brokenOff &&
+				!exact(tx) &&
+				ak[x] === a1 - 1 &&
+				a1 - 1 - a0 >= 3 &&
+				verbatimAt(a0, a1 - 1, r0) >= 0
+			)
+				continue;
 			let ok = false;
 			// a stock phrase the recogniser inserted into the attempt (round 7, U b: "para hacer un ¡Suscríbete! motor…" said
 			// again as "para hacer un motor de videojuegos"): its matched neighbours are next to each other in the retry
@@ -262,6 +311,37 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 					continue;
 				}
 			}
+			// a number written twice ("30 treinta" for one "30"): the word right next to it is the same number and re-said
+			if (!ok && exact(tx))
+				for (const nb of [x - 1, x + 1]) {
+					if (!matched.has(nb) || Math.abs(ak[nb]! - ak[x]!) !== 1 || !same(tx, tok(ak[nb]!))) continue;
+					const [p1, p2] = nb < x ? [ak[nb]!, ak[x]!] : [ak[x]!, ak[nb]!];
+					if (W(p2).s - W(p1).e <= t.stutterGapS) ok = true;
+				}
+			// a word the recogniser was unsure of (confidence under `lowConfidence`) between two re-said neighbours, in an
+			// attempt of ≥ 6 content words, one per six ("Hoy voy a ser mi propio janeter Unity. | Hoy voy a ser mi propio
+			// Unity.", run 9 U a)
+			if (!ok && !exact(tx) && ak.length >= 6 && unsure < Math.max(1, Math.floor(ak.length / 6))) {
+				const c = W(ak[x]!).conf;
+				const before = pairs.filter(([p]) => p < x).at(-1);
+				const next = pairs.find(([p]) => p > x);
+				if (c !== null && c < t.lowConfidence && before && next) {
+					unsure++;
+					ok = true;
+				}
+			}
+			// a dropped word: an abandoned take (written broken off) of ≥ 6 content words whose retry leaves out one word
+			// between two re-said neighbours with no content word between them ("…después de haber casi… | …después de casi
+			// explotar…", run 9 AC)
+			if (!ok && !exact(tx) && brokenOff && !dropped && ak.length >= 6 && x > 0 && !last) {
+				const before = pairs.filter(([p]) => p < x).at(-1);
+				const next = pairs.find(([p]) => p > x);
+				if (before && next && next[1] === before[1] + 1) {
+					dropped = true;
+					prev = false;
+					continue;
+				}
+			}
 			// a corrected word: the retry says another content word in its place, and the aside between them opens with that
 			// word (after a correction marker and the attempt's words before it: "…completamente de Unity. | No, de ellos, … |
 			// …completamente de ellos." — round 7, W)
@@ -278,6 +358,11 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 			}
 		}
 		const lastPair = pairs.at(-1);
+		// the attempt's end is said again: no two content words after its last re-said one (round 10: with the tens as
+		// numbers, "tengo sólo treinta días Pen 와 blah blah금u Unity" of run 7 U a — the end the garbled take that stays —
+		// was forgiven word by word against "Tengo solo 30 días para hacer un motor")
+		const tail = ak.length - 1 - (lastPair ? lastPair[0] : -1);
+		if (tail >= 2) hard++;
 		return {
 			full: prefix && hard === 0,
 			share: other ? 0 : pairs.length / ak.length,
@@ -294,15 +379,18 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 	};
 	/**
 	 * Whether `aside` names `y` in place of the attempt word at `x`: after an optional correction marker it opens with
-	 * `y`, or with the one or two attempt words before `x` and then `y` ("de Unity" → "No, de ellos").
+	 * `y`, or with the one or two attempt words before `x` and then `y` ("de Unity" → "No, de ellos"); one function word
+	 * the recogniser inserted among them is skipped (run 9, AE b: "cada imagen" → "cada La frame, no imagen.").
 	 */
 	const announces = (aside: readonly [number, number], x: number, y: number) => {
 		const a = aside[0] + correction(aside);
-		for (let c = 0; c <= 2; c++) {
-			if (a + c >= aside[1] || x - c < 0) break;
-			let fits = true;
-			for (let i = 0; i < c && fits; i++) fits = same(tok(x - c + i), tok(a + i));
-			if (fits && same(tok(a + c), tok(y))) return true;
+		for (let c = 0; c <= 2 && x - c >= 0; c++) {
+			const want = [...span(x - c, x).map(tok), tok(y)];
+			for (let skip = -1; skip <= c; skip++) {
+				if (skip >= 0 && (a + skip >= aside[1] || !ctx.stop.has(tok(a + skip)))) continue;
+				const at = (i: number) => a + i + (skip >= 0 && i >= skip ? 1 : 0);
+				if (at(c) < aside[1] && want.every((v, i) => same(v, tok(at(i))))) return true;
+			}
 		}
 		return false;
 	};
@@ -332,7 +420,7 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 			if (r <= q) break;
 			// (one content word may lead the retry when it is the only one: "… cerradas | ahora diseñé las curvas …")
 			if ((key(tok(r)) && m > 1) || W(r + 1).s - W(r).e >= LEAD_IN_JOIN_S) break;
-			if (r === 0 || ends(r - 1) || gapAfter(r - 1) >= t.phraseGapS) return r;
+			if (r === 0 || ends(r - 1) || cut(r - 1) || gapAfter(r - 1) >= t.phraseGapS) return r;
 		}
 		return p;
 	};
@@ -370,7 +458,7 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 		if (r - q <= 3 && deliberate(q, r - q)) return null;
 		// every link needs the attempt's opening among the first words after it (cheap refusal before any alignment)
 		{
-			const first = keys(q, Math.min(r, q + 8))
+			const first = keys(q, Math.min(brokenWithin(q, r), q + 8))
 				.slice(0, 2)
 				.map(tok);
 			const opening = first.length ? first : [tok(q)];
@@ -453,6 +541,26 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 					// a self-correction ("No, …") between a clause and its corrected retry: reviewed at least
 					if (c === 0 && !corrected && correction([b, r]) && c2.prefix && c2.share >= t.retakeSimilarity)
 						corrected = { b, share: c2.share, last: c2.last };
+				}
+			}
+			if (!cv?.full && clauseStart(r)) {
+				// an attempt broken off and said again word for word at the retry's start, then an aside (run 9, AF: "Sí, ya sé
+				// que Roblox usa… ¿Dónde está el enojado? | Sí, ya sé que Roblox usa el WoW"; AG: "es… Espera. | es
+				// extremadamente rápido."): a whole clause, ≤ 3 words after an attempt of fewer than four
+				let b = q + 1;
+				while (b < r && !cut(b - 1)) b++;
+				const o = b < r ? verbatimAt(q, b, rp) : -1;
+				let spoken = 0;
+				for (let x = b; x < r; x++) spoken += W(x).e - W(x).s;
+				if (
+					o >= 0 &&
+					!crosses(b) &&
+					r - b <= (b - q >= 4 ? ASIDE_MAX_WORDS : 3) &&
+					spoken <= ASIDE_MAX_S &&
+					span(b, r).every((x) => (retryStarts.get(x) ?? q) >= q)
+				) {
+					e = b;
+					cv = { full: true, share: 1, prefix: true, last: o + (b - q) - 1 };
 				}
 			}
 			// an attempt that starts inside a sentence and finishes it is re-said word for word (an ASR garble in seven
@@ -551,9 +659,23 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 			for (let q = p - 1; q >= Math.max(0, p - MAX_ATTEMPT_WORDS); q--) {
 				if (W(p).s - W(q).s > t.restartWindowS) break;
 				if (!clauseStart(q)) continue;
+				// a lead word without content said into the attempt ("Y es… | es extremadamente"): the attempt starts after it
+				if (
+					!head.some((y) => same(tok(q), y)) &&
+					q + 1 < p &&
+					!keyAt[q] &&
+					W(q + 1).s - W(q).e < LEAD_IN_JOIN_S &&
+					head.some((y) => same(tok(q + 1), y)) &&
+					span(q + 1, Math.min(p, q + 4)).some(cut) &&
+					brokenWithin(q + 1, p) - (q + 1) <= 2 &&
+					!keys(q + 1, brokenWithin(q + 1, p)).length
+				)
+					qs.add(q + 1);
 				if (!head.some((y) => same(tok(q), y))) continue;
-				const first = keys(q, p)[0];
-				if (first === undefined ? p - q <= 2 : rk.some((y) => same(tok(first), y))) qs.add(q);
+				// (an attempt broken off within its first three words is judged by those: "es… Espera. | es extremadamente")
+				const lim = brokenWithin(q, p);
+				const first = keys(q, lim)[0];
+				if (first === undefined ? lim - q <= 2 : rk.some((y) => same(tok(first), y))) qs.add(q);
 			}
 		}
 		let best: Cand | null = null;
@@ -607,6 +729,10 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 		const l = c.link;
 		const ce = clauseEnd(Math.max(c.last, l.retry));
 		l.retryEnd = ce;
+		// a false start restarts a sentence: a retry clause of one or two words is none — a word or a name tried out
+		// (run 9, AG: "¿Cómo lo puedo pronunciar? Cloud | Cloud Code."): reviewed
+		if (l.tier === 'remove' && l.kind === 'false-start' && ce - l.retry + 1 < FALSE_START_RETRY_WORDS)
+			l.tier = 'review';
 		if (l.tier === 'remove') {
 			// a retry said again later is complete only when that later copy removes it (the recogniser's "…" alone
 			// often marks a pause, not a break-off: "… en mi motor…… y correr en todas las plataformas")
@@ -661,22 +787,49 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 			}
 		}
 	}
+	/**
+	 * Whether a link's aside goes with its attempt by default: none of its words inserted by the recogniser, and at most
+	 * `ASIDE_GOES_WORDS` words, or every content word of it a stock word (discourse and correction markers, "espera",
+	 * "perdón"…), a word the recogniser was unsure of, or a word said by the attempt or by the take that stays (its retry
+	 * and the speech right after it) — nothing new is said ("cada La frame, no imagen."; "Tengo solo 30 treinta días. Pen
+	 * Espérate,").
+	 */
+	const asideGoes = (l: RepeatLink) => {
+		const [a, b] = l.aside;
+		// words the recogniser inserted or garbled into another script may hide any speech (run 7 U a: the take that
+		// stays, written "blah blah금u Unity"): such an aside is never short or stock enough
+		if (span(a, b).some((x) => ctx.inserted?.has(S[x]!))) return false;
+		if (b - a <= ASIDE_GOES_WORDS) return true;
+		const said = [
+			...span(l.attempt[0], l.attempt[1]),
+			...span(l.retry, Math.min(n, l.retryEnd + 1 + retrySpan(b - a))),
+		].map(tok);
+		return keys(a, b).every((x) => {
+			const c = W(x).conf;
+			return (
+				markerSet.has(tok(x)) ||
+				STOCK_ASIDE.has(tok(x)) ||
+				(c !== null && c < t.lowConfidence) ||
+				said.some((y) => same(tok(x), y))
+			);
+		});
+	};
 	// labels: attempts and asides (positions → words)
 	for (const l of final) {
-		const action =
-			l.tier === 'review'
-				? 'review'
-				: l.kind === 'retake'
-					? retake
-					: l.kind === 'false-start'
-						? falseStart
-						: restart;
-		if (action === 'off') continue;
+		const rule = l.kind === 'retake' ? retake : l.kind === 'false-start' ? falseStart : restart;
+		// a rule that is off labels nothing, not even for review
+		if (rule === 'off') continue;
+		const action = l.tier === 'review' ? 'review' : rule;
+		// precision first: an aside goes with its attempt only when it is very short, stock words, or said again by the
+		// kept take; any other is speech that may mean something — its own review finding (round 10: AF "¿Dónde está el
+		// enojado?" was removed with the attempt before it)
+		const asideAction = action === 'remove' && !asideGoes(l) ? 'review' : action;
 		for (let x = l.attempt[0]; x < l.aside[1]; x++) {
 			const k = S[x]!;
 			const cur = ctx.labels[k];
-			if (cur && !(cur.action === 'review' && action !== 'review' && TAKE_KINDS.has(cur.kind))) continue;
-			ctx.labels[k] = { kind: l.kind, action };
+			const act = x >= l.aside[0] ? asideAction : action;
+			if (cur && !(cur.action === 'review' && act !== 'review' && TAKE_KINDS.has(cur.kind))) continue;
+			ctx.labels[k] = { kind: l.kind, action: act };
 		}
 	}
 	// positions → word indices

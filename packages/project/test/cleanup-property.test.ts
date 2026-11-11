@@ -5,7 +5,8 @@
 //   on the same tracks (clips, sources, links, groups, markers; ids aside), and the invariants hold.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { detectCleanup } from '../src/cleanup/detector.ts';
+import { detectCleanup, effectiveLists } from '../src/cleanup/detector.ts';
+import { cleanupNorm } from '../src/cleanup/lists.ts';
 import { planMediaCuts, removedSpans } from '../src/cleanup/plan.ts';
 import {
 	type CleanupSettings,
@@ -380,6 +381,126 @@ describe('planning properties', () => {
 				},
 			),
 			{ numRuns: 80 },
+		);
+	});
+
+	it('a removed take never takes the end of a sentence the kept words began, unless said again right after it', () => {
+		// pieces of a few sentences that share words, said whole or from / up to a word, with or without their sentence end,
+		// after pauses up to 20 s: restarts, false starts, retakes and sentences that reuse the last one's words
+		const SENTENCES = [
+			'se renderizan las luces y las sombras',
+			'las sombras funcionan dibujando la escena',
+			'así que le puse shaders a las luces',
+			'el motor guarda la escena y las sombras',
+		].map((x) => x.split(' '));
+		const stop = new Set(effectiveLists('es').stopWords);
+		const ends = (t: string) => /[.?!]$/.test(t);
+		fc.assert(
+			fc.property(
+				fc.array(
+					fc.record({
+						s: fc.integer({ min: 0, max: SENTENCES.length - 1 }),
+						from: fc.integer({ min: 0, max: 7 }),
+						to: fc.integer({ min: 1, max: 8 }),
+						end: fc.boolean(),
+						pause: fc.constantFrom(0.05, 0.4, 1, 3, 6, 15),
+					}),
+					{ minLength: 2, maxLength: 10 },
+				),
+				(parts) => {
+					const words: Array<{ text: string; start: number; end: number; confidence: number }> = [];
+					let t = 1;
+					for (const p of parts) {
+						const all = SENTENCES[p.s]!;
+						const toks = all.slice(
+							Math.min(p.from, all.length - 1),
+							Math.max(p.to, Math.min(p.from, all.length - 1) + 1),
+						);
+						t += p.pause;
+						toks.forEach((x, i) => {
+							const text = p.end && i === toks.length - 1 ? `${x}.` : x;
+							words.push({
+								text,
+								start: Math.round(t * FLICKS_PER_SECOND),
+								end: Math.round((t + 0.25) * FLICKS_PER_SECOND),
+								confidence: 0.9,
+							});
+							t += 0.3;
+						});
+					}
+					const n = Math.ceil((t + 2) * 100);
+					const classes = new Uint8Array(n);
+					const level = new Uint8Array(n).fill((120 - 65) * 2);
+					for (const w of words)
+						for (
+							let f = Math.floor((w.start / FLICKS_PER_SECOND) * 100);
+							f < Math.ceil((w.end / FLICKS_PER_SECOND) * 100);
+							f++
+						) {
+							classes[f] = 2;
+							level[f] = (120 - 25) * 2;
+						}
+					const voice = {
+						classes,
+						level,
+						frameCount: n,
+						levels: { floorDb: -65, speechDb: -25, speechThresholdDb: -53, breathFloorDb: -60 },
+					};
+					const d = detectCleanup({
+						mediaId: 'med_p',
+						words,
+						voice,
+						language: 'es',
+						settings: FAST_SETTINGS,
+					});
+					const gone = new Set<number>();
+					for (const f of d.findings)
+						if (f.words && f.suggested === 'remove')
+							for (let i = f.words[0]; i <= f.words[1]; i++) gone.add(i);
+					const sec = (f: number) => f / FLICKS_PER_SECOND;
+					for (const f of d.findings) {
+						if (
+							!f.words ||
+							f.suggested !== 'remove' ||
+							!['restart', 'false-start', 'retake', 'stutter'].includes(f.kind)
+						)
+							continue;
+						const [a, b] = f.words;
+						let e = a;
+						while (e < b && !ends(words[e]!.text)) e++;
+						const p = a - 1;
+						if (!ends(words[e]!.text) || p < 0 || gone.has(p) || ends(words[p]!.text)) continue;
+						// the kept words before it began the sentence: a function word, or a word said into it without a pause
+						if (!stop.has(cleanupNorm(words[p]!.text)) && sec(words[a]!.start - words[p]!.end) >= 0.3)
+							continue;
+						let q = b + 1;
+						while (q < words.length && gone.has(q)) q++;
+						expect(q < words.length, `"${f.reason.params.text}" takes a sentence end, nothing after it`).toBe(
+							true,
+						);
+						for (let k = b; k < q; k++)
+							expect(
+								sec(words[k + 1]!.start - words[k]!.end),
+								`"${f.reason.params.text}" not said right after`,
+							).toBeLessThanOrEqual(5 + 1e-9);
+						const last = words
+							.slice(a, e + 1)
+							.map((w) => cleanupNorm(w.text))
+							.filter((x) => !stop.has(x) && x.length >= 3)
+							.at(-1);
+						const after = words
+							.slice(q)
+							.filter((_, x) => !gone.has(q + x))
+							.slice(0, 40)
+							.map((w) => cleanupNorm(w.text));
+						if (last)
+							expect(after.includes(last), `"${f.reason.params.text}" sentence end not said again`).toBe(
+								true,
+							);
+					}
+				},
+			),
+			{ numRuns: 300 },
 		);
 	});
 

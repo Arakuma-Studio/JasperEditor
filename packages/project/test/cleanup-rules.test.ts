@@ -354,6 +354,8 @@ describe('round 6 local fixes (docs/wp-notes/transcript-cleanup.md "Repeats by a
 		const words = say('vamos | ¡Suscríbete al canal! | Ahora', { pause: 1, dur: 0.6 });
 		const v = voiceFor(words);
 		const n = v.frameCount;
+		// hummed under the speech level (round 6 measured the humming at −17…−30 dBFS; speech peaks around −6…−10)
+		v.level.fill((120 - 35) * 2, Math.floor(sec(words[1]!.start) * 100), Math.ceil(sec(words[3]!.end) * 100));
 		const hum = { ...v, voicing: new Uint8Array(n).fill(200), flatness: new Uint8Array(n).fill(10) };
 		const f = detect(words, hum).findings.find((x) => x.kind === 'hallucination')!;
 		expect(f.words).toEqual([1, 3]);
@@ -494,7 +496,13 @@ describe('round 8 fixes (docs/wp-notes/transcript-cleanup.md "Round 8")', () => 
 		];
 		const words = real.map(([text, a, b]) => ({ text, start: S(a), end: S(b), confidence: 0.9 }));
 		const v = voiceFor(words);
-		// hummed: voiced everywhere, no frication
+		// hummed: voiced everywhere, no frication, the inserted word under the speech level
+		const ins = indexOf(words, '¡Suscríbete!');
+		v.level.fill(
+			(120 - 35) * 2,
+			Math.floor(sec(words[ins]!.start) * 100),
+			Math.ceil(sec(words[ins]!.end) * 100),
+		);
 		const hum = {
 			...v,
 			voicing: new Uint8Array(v.frameCount).fill(200),
@@ -544,7 +552,8 @@ describe('round 8 fixes (docs/wp-notes/transcript-cleanup.md "Round 8")', () => 
 	it('a self-correction aside between a clause and its corrected retry (W: "de Unity. | No, de ellos, …")', () => {
 		const text = (aside: string) =>
 			`literalmente todos los hice en Unity. eso significa que dependo completamente de Unity. | ${aside} | eso significa que dependo completamente de ellos. Y a veces`;
-		// the aside names the corrected word: the attempt and the aside go, with or without the marker
+		// the aside names the corrected word: the attempt goes, with or without the marker; the aside says new words ("no
+		// tengo que repetir tanto"), so it is its own review finding (round 10)
 		for (const aside of [
 			'No, de ellos, no tengo que repetir tanto.',
 			'de ellos, no tengo que repetir tanto.',
@@ -552,9 +561,14 @@ describe('round 8 fixes (docs/wp-notes/transcript-cleanup.md "Round 8")', () => 
 			const words = say(text(aside));
 			const d = detect(words, voiceFor(words));
 			const first = indexOf(words, 'eso');
+			const end = indexOf(words, 'Unity.', first);
 			const retry = indexOf(words, 'eso', first + 1);
 			for (let i = 0; i < words.length; i++)
-				expect(removes(d, i), `${aside}: ${words[i]!.text}`).toBe(i >= first && i < retry);
+				expect(removes(d, i), `${aside}: ${words[i]!.text}`).toBe(i >= first && i <= end);
+			expect(
+				d.findings.filter((f) => f.words?.[0] === end + 1).map((f) => [f.words, f.suggested]),
+				aside,
+			).toEqual([[[end + 1, retry - 1], 'review']]);
 		}
 		// a correction marker without the word: reviewed
 		const words = say(text('No, perdón, me equivoqué.'));
@@ -580,6 +594,276 @@ describe('round 8 fixes (docs/wp-notes/transcript-cleanup.md "Round 8")', () => 
 		const d = detect(words, voiceFor(words));
 		const retry = indexOf(words, 'Y', 1);
 		for (let i = 0; i < retry; i++) expect(removes(d, i), words[i]!.text).toBe(true);
+	});
+});
+
+describe('round 10 fixes (docs/wp-notes/transcript-cleanup.md "Round 10")', () => {
+	const sec = (f: number) => f / FLICKS_PER_SECOND;
+	const detect = (words: CleanupWordIn[], voice: CleanupVoice = voiceFor(words)) =>
+		detectCleanup({ mediaId: 'med_r', words, voice, language: 'es', settings: FAST_SETTINGS });
+	const removes = (d: ReturnType<typeof detect>, i: number) =>
+		d.findings.some((f) => f.words && f.suggested === 'remove' && f.words[0] <= i && i <= f.words[1]);
+	const indexOf = (words: readonly CleanupWordIn[], text: string, from = 0) =>
+		words.findIndex((w, i) => i >= from && w.text === text);
+	/** Words written "text[start-end]" (seconds). */
+	const real = (s: string): CleanupWordIn[] =>
+		s
+			.trim()
+			.split(/\s+/)
+			.map((x) => {
+				const m = /^(.*)\[([\d.]+)-([\d.]+)\]$/.exec(x)!;
+				return { text: m[1]!, start: S(Number(m[2])), end: S(Number(m[3])), confidence: 0.9 };
+			});
+
+	it('the end of a sentence the next sentence opens with is no false start (AD "…las luces y las sombras.")', () => {
+		// run 9, fragment AD: "las sombras." ended the sentence; the next one opened with "las sombras" 15 s later
+		const end = 'Así que le puse shaders que son la receta, se renderizan las luces y las sombras.';
+		const next = 'las sombras funcionan dibujando la escena desde el punto de vista de la luz.';
+		for (const [first, pause] of [
+			[end, 15],
+			// the sentence rule alone: the retry right after leaves "…las luces y" hanging
+			[end, 1],
+			// adjacency alone: no sentence end written, but 15 s of silence before the words come again
+			[end.replace(/\.$/, ''), 15],
+		] as const) {
+			const words = say(`${first} | ${next}`, { pause });
+			const d = detect(words);
+			const at = indexOf(words, 'las', indexOf(words, 'y'));
+			expect(removes(d, at) || removes(d, at + 1), `${first} (${pause} s)`).toBe(false);
+		}
+	});
+
+	it('a stock word said as loud as the speech around it is speech, not a hummed hallucination (AC "gracias")', () => {
+		// run 9, fragment AC: "Bueno, ok, gracias por avisar…" at −6…−10 dBFS, voicing 0.78–0.87; its final /s/ measured
+		// flatness 0.10–0.18, under the frication test — the stock phrase alone flagged it
+		const words = say('Bueno, ok, gracias por avisar, hermano.', { dur: 0.32 });
+		const v = voiceFor(words);
+		const n = v.frameCount;
+		const voiced = { ...v, voicing: new Uint8Array(n).fill(210), flatness: new Uint8Array(n).fill(35) };
+		expect(detect(words, voiced).findings.filter((f) => f.kind === 'hallucination')).toEqual([]);
+	});
+
+	it('a correction "[new], no [old]" with a word the recogniser inserted keeps the corrected take (AE b)', () => {
+		// run 9, AE chunked: "…en cada imagen del juego. | cada La frame, no imagen. | Y el procesador … en cada frame del
+		// juego." kept the "imagen" take and the correction: 22 words heard twice
+		const words = real(`En[5.53-5.75] Unity[5.75-5.97] por[5.97-6.23] defecto[6.23-6.77] cada[6.77-7.01]
+			personaje[7.01-7.47] se[7.48-7.65] anima[7.65-7.9] con[7.91-8.07] un[8.07-8.23]
+			esqueleto[8.23-8.79] el[9.17-9.27] procesador[9.27-9.79] tiene[9.79-9.97] que[9.97-10.09]
+			calcular[10.09-10.65] dónde[10.65-10.91] está[10.91-11.11] cada[11.11-11.37]
+			hueso...[11.37-11.96] el[13.84-13.96] procesador[13.96-14.48] tiene[14.48-14.78] que[14.78-14.9]
+			calcular[14.9-15.46] dónde[15.46-15.72] está[15.72-15.9] cada[15.9-16.14] hueso[16.14-16.54]
+			de[16.54-16.64] cada[16.64-16.82] personaje[16.82-17.4] en[17.41-17.7] cada[17.7-17.88]
+			imagen[17.88-18.26] del[18.26-18.44] juego.[18.44-18.85] cada[21.27-21.41] La[21.41-21.47]
+			frame,[21.54-21.75] no[22.02-22.11] imagen.[22.11-22.32] Y[26.87-27.07] el[27.07-27.19]
+			procesador[27.19-27.72] tiene[27.72-27.96] que[27.96-28.1] calcular[28.1-28.56]
+			dónde[28.56-28.78] está[28.78-28.94] cada[28.94-29.18] hueso[29.18-29.56] de[29.56-29.68]
+			cada[29.68-29.86] personaje[29.86-30.42] en[30.43-30.7] cada[30.7-30.94] frame[30.94-31.22]
+			del[31.22-31.38] juego.[31.38-31.77] Con[32.94-33.08] uno[33.08-33.34] o[33.34-33.63]
+			diez[33.63-33.77] personajes[33.77-34.22]`);
+		const d = detect(words);
+		const retry = indexOf(words, 'Y');
+		for (let i = indexOf(words, 'el'); i < words.length; i++)
+			expect(removes(d, i), `${words[i]!.text} ${sec(words[i]!.start)}`).toBe(i < retry);
+	});
+
+	it('a broken-off attempt said again word for word: after an aside, a re-said cut-off word, a lead (AF, AC, AG)', () => {
+		// run 9: no finding for any of these in either mode; [first, last] words that go (by start time)
+		const cases: Array<[string, number, number]> = [
+			// AF: "Sí, ya sé que Roblox usa… ¿Dónde está el enojado? Sí, ya sé que Roblox usa el WoW" (the aside says new
+			// words: its own review finding)
+			[
+				`usa[49.12-49.48] en[49.48-49.74] Roblox.[49.74-50.29] Sí,[53.41-53.76] ya[53.76-53.84]
+				sé[53.84-53.98] que[53.98-54.12] Roblox[54.12-54.62] usa...[54.62-54.98] ¿Dónde[57.26-57.52]
+				está[57.52-57.66] el[57.66-57.76] enojado?[57.76-58.06] Sí,[58.49-58.84] ya[58.84-58.92]
+				sé[58.92-59.06] que[59.06-59.2] Roblox[59.2-59.68] usa[59.68-59.88] el[59.88-60.02]
+				WoW,[60.02-60.58] que[60.62-60.68] es[60.68-60.82] distinto,[60.82-61.64] pero[61.65-61.76]
+				no[61.76-61.86] me[61.86-61.96] lo[61.96-62.04] pongan[62.04-62.3] en[62.3-62.38]
+				los[62.38-62.46] comentarios.[62.46-63.13]`,
+				53.41,
+				54.62,
+			],
+			// AC: "lo peor es que el tor… | Y lo peor es que el motor…" (default and chunked)
+			[
+				`te[55.1-55.18] borraba[55.18-55.52] el[55.52-55.62] objeto[55.62-55.88] entero.[55.89-56.39]
+				lo[60.14-60.24] peor[60.24-60.4] es[60.4-60.51] que[60.52-60.6] el[60.6-60.72]
+				tor...[60.72-60.96] Y[61.16-61.34] lo[61.34-61.42] peor[61.42-61.58] es[61.58-61.68]
+				que[61.68-61.76] el[61.76-61.86] motor[61.86-62.12] tardaba[62.12-62.56] como[62.56-62.82]
+				dos[62.82-63.16] horas[63.16-63.48] en[63.48-63.66] compilar.[63.66-64.23]`,
+				60.14,
+				60.72,
+			],
+			[
+				`te[55.1-55.2] borraba[55.2-55.54] el[55.54-55.62] objeto[55.62-55.9] entero.[55.9-56.39]
+				lo[60.14-60.24] peor[60.24-60.42] es[60.42-60.54] que[60.54-60.6] el[60.6-60.72]
+				tor-[60.72-60.96] y[61.16-61.34] lo[61.34-61.46] peor[61.46-61.6] es[61.6-61.7]
+				que[61.7-61.78] el[61.78-61.88] motor[61.88-62.12] tardaba[62.12-62.56] como[62.56-62.82]
+				dos[62.82-63.16] horas[63.16-63.48] en[63.48-63.66] compilar.[63.66-64.23]`,
+				60.14,
+				60.72,
+			],
+			// AG: "es… Espera. es extremadamente rápido." / "Y es… es extremadamente rápido."
+			[
+				`Pero[0.18-0.3] es[0.3-0.42] que[0.42-0.52] tengo[0.52-0.7] un[0.7-0.82] amigo[0.82-1.06]
+				que[1.06-1.28] no[1.28-1.48] come,[1.48-2.08] no[2.08-2.18] descansa,[2.18-2.84]
+				ni[2.84-3.06] duerme.[3.06-3.61] es...[4.4-4.75] Espera.[4.95-5.18] es[6.38-6.6]
+				extremadamente[6.6-7.48] rápido.[7.48-8.2]`,
+				4.4,
+				4.95,
+			],
+			[
+				`Pero[0.18-0.3] es[0.3-0.4] que[0.4-0.52] tengo[0.52-0.7] un[0.7-0.82] amigo[0.82-1.08]
+				que[1.08-1.3] no[1.3-1.48] come,[1.48-2.08] no[2.08-2.18] descansa,[2.18-2.84] ni[2.84-3.06]
+				duerme.[3.06-3.61] Y[4.29-4.42] es...[4.42-4.75] es[6.36-6.6] extremadamente[6.6-7.52]
+				rápido.[7.52-8.2]`,
+				4.29,
+				4.42,
+			],
+		];
+		for (const [text, from, to] of cases) {
+			const words = real(text);
+			const d = detect(words);
+			for (let i = 0; i < words.length; i++) {
+				const s = sec(words[i]!.start);
+				expect(removes(d, i), `${words[i]!.text} ${s}`).toBe(s >= from - 1e-6 && s <= to + 1e-6);
+			}
+			const aside = indexOf(words, '¿Dónde');
+			if (aside >= 0)
+				expect(d.findings.filter((f) => f.words?.[0] === aside).map((f) => [f.words, f.suggested])).toEqual([
+					[[aside, indexOf(words, 'enojado?')], 'review'],
+				]);
+		}
+	});
+
+	it('an abandoned take the retry says again but for one word it drops goes (AC "…después de haber casi…")', () => {
+		// run 9, AC: the first take (15 words) stayed for review in both modes because "haber" is not said again
+		for (const text of [
+			`Bueno,[0.19-0.7] ok,[0.7-0.96] gracias[0.96-1.18] por[1.18-1.4] avisar[1.4-1.82]
+			hermano,[1.82-2.3] muy[2.3-2.42] amable[2.42-2.72] de[2.72-2.84] tu[2.84-2.94]
+			parte[2.94-3.28] después[3.28-3.54] de[3.55-3.72] haber[3.72-3.86] casi...[3.86-4.22]
+			Bueno,[4.93-5.46] ok,[5.47-5.58] gracias[5.58-5.9] por[5.9-6.1] avisar[6.1-6.54]
+			hermano,[6.54-7.0] muy[7.0-7.12] amable[7.12-7.42] de[7.42-7.56] tu[7.56-7.66]
+			parte[7.66-7.94] después[7.94-8.22] de[8.22-8.38] casi[8.38-8.54] explotar[8.54-8.82]
+			mi[8.82-8.98] puta[8.98-9.18] laptop.[9.18-9.42] los[18.02-18.22] bugs,[18.22-18.61]
+			oh[18.67-18.9] por[18.9-19.2]`,
+			`Bueno,[0.19-0.7] ok,[0.7-0.98] gracias[0.98-1.18] por[1.18-1.4] avisar,[1.4-1.88]
+			hermano,[1.88-2.3] muy[2.3-2.44] amable[2.44-2.7] de[2.7-2.84] tu[2.84-2.94]
+			parte[2.94-3.28] después[3.28-3.54] de[3.55-3.72] haber[3.72-3.88] casi...[3.88-4.22]
+			Bueno,[4.93-5.46] ok,[5.47-5.6] gracias[5.6-5.9] por[5.9-6.1] avisar,[6.1-6.66]
+			hermano,[6.66-7.0] muy[7.0-7.12] amable[7.12-7.42] de[7.42-7.56] tu[7.56-7.66]
+			parte[7.66-7.95] después[7.96-8.2] de[8.2-8.38] casi[8.38-8.54] explotar[8.54-8.84]
+			mi[8.84-8.94] puta[8.94-9.18] laptop.[9.18-9.42] Y[17.94-18.06] los[18.06-18.24]
+			bugs,[18.24-18.61] oh[18.67-19.02]`,
+		]) {
+			const words = real(text);
+			const d = detect(words);
+			const retry = indexOf(words, 'Bueno,', 1);
+			for (let i = 0; i < retry; i++) expect(removes(d, i), words[i]!.text).toBe(true);
+			for (let i = retry; i < words.length; i++) expect(removes(d, i), words[i]!.text).toBe(false);
+		}
+	});
+
+	it('a pause ends before a soft onset rising into the next word, voiced or not (U b "a ver")', () => {
+		// round 7 / run 9, U b: the soft "a" of a missed "a ver" (−42…−31 dBFS) measured voicing 0.13–0.41, so the voicing
+		// test of round 8 never fired and the pause 2.267–2.433 still ended inside it
+		const words: CleanupWordIn[] = [
+			{ text: 'shit.', start: S(1), end: S(1.25), confidence: 0.9 },
+			{ text: 'ver', start: S(2.12), end: S(2.4), confidence: 0.9 },
+		];
+		const v = voiceFor(words);
+		const voicing = new Uint8Array(v.frameCount).fill(30);
+		for (const w of words) voicing.fill(200, Math.floor(sec(w.start) * 100), Math.ceil(sec(w.end) * 100));
+		for (let f = 125; f < 200; f++) {
+			v.classes[f] = 1;
+			v.level[f] = (120 - 50) * 2;
+		}
+		// rising from −42 to −31 dBFS over 120 ms, voicing 0.3
+		for (let f = 200; f < 212; f++) v.level[f] = (120 - 42 + f - 200) * 2;
+		voicing.fill(77, 200, 212);
+		const d = detect(words, { ...v, voicing, flatness: new Uint8Array(v.frameCount).fill(60) });
+		const pauses = d.findings
+			.filter((f) => f.kind === 'pause')
+			.map((f) => [sec(f.range.start), sec(f.range.end)]);
+		expect(pauses.length).toBeGreaterThan(0);
+		for (const [a, b] of pauses) expect(b <= 2 + 1e-9 || a >= 2.12 - 1e-9, `pause ${a}–${b}`).toBe(true);
+	});
+
+	it('text over noise with a few stray voiced frames is still noise (AA b "¿Qué")', () => {
+		// run 9 (round 7 transcript), AA b: "¿Qué" 43.38–43.59 over noise with voiced frames at 43.41, 43.50, 43.51
+		const words = say('igualito. | ¿Qué | Bien, ya teníamos todo.', { pause: 2 });
+		const v = voiceFor(words);
+		const voicing = new Uint8Array(v.frameCount).fill(200);
+		const k = indexOf(words, '¿Qué');
+		const [f0, f1] = [Math.floor(sec(words[k]!.start) * 100), Math.ceil(sec(words[k]!.end) * 100)];
+		voicing.fill(20, f0 - 5, f1 + 5);
+		for (const f of [f0 + 3, f0 + 12, f0 + 13]) voicing[f] = 145;
+		v.level.fill((120 - 42) * 2, f0, f1);
+		v.classes.fill(1, f0, f1);
+		const hs = detect(words, {
+			...v,
+			voicing,
+			flatness: new Uint8Array(v.frameCount).fill(120),
+		}).findings.filter((x) => x.kind === 'hallucination');
+		expect(hs.map((x) => [x.words, x.suggested])).toEqual([[[k, k], 'remove']]);
+	});
+
+	it('a take with a garbled word the recogniser was unsure of and a number written twice goes (U a re-decode)', () => {
+		// run 9, fresh U a: the re-decode wrote take 1 as "Hoy voy a ser mi propio janeter Unity. Tengo solo 30 treinta
+		// días. Pen Espérate," ("janeter" and "Pen" ASR suspects): take 1 stayed, 15 words heard twice
+		const words =
+			real(`Hoy[7.69-8.01] voy[8.01-8.15] a[8.15-8.27] ser[8.27-8.41] mi[8.41-8.57] propio[8.57-8.91]
+			janeter[8.91-9.17] Unity.[9.17-9.59] Tengo[9.59-9.81] solo[9.81-10.03] 30[10.03-10.33]
+			treinta[10.33-10.41] días.[10.41-10.77] Pen[10.77-11.03] Espérate,[11.03-11.19]
+			Hoy[13.19-13.47] voy[13.47-13.65] a[13.65-13.79] ser[13.79-13.97] mi[13.97-14.15]
+			propio[14.15-14.51] Unity.[14.51-14.98] Tengo[16.5-16.69] solo[16.69-16.89] 30[16.89-17.23]
+			días[17.23-17.57] para[17.57-17.89] hacer[17.89-18.11] un[18.11-18.23] motor[18.23-18.6]
+			solo[19.63-19.87] 30[19.87-20.03]`).map((w) =>
+				w.text === 'janeter' || w.text === 'Pen' ? { ...w, confidence: 0.2 } : w,
+			);
+		const d = detect(words);
+		const retry = indexOf(words, 'Hoy', 1);
+		for (let i = 0; i < retry; i++) expect(removes(d, i), words[i]!.text).toBe(true);
+		for (let i = retry; i < indexOf(words, 'Tengo', retry); i++)
+			expect(removes(d, i), words[i]!.text).toBe(false);
+	});
+
+	it('a false start whose retry is one or two words is reviewed, not removed (AG "Cloud | Cloud Code.")', () => {
+		// run 9, AG: the name tried out in a pronunciation aside; a restarted sentence still goes ("Primero, | primero
+		// diseñé la carretera" in the golden recording)
+		const words = say('¿Cómo lo puedo pronunciar? Cloud | Cloud Code. | O solo Claude.', { pause: 0.7 });
+		const d = detect(words);
+		const f = d.findings.find((x) => x.words?.[0] === indexOf(words, 'Cloud'))!;
+		expect([f.kind, f.suggested]).toEqual(['false-start', 'review']);
+		const ok = say('Primero, | primero diseñé la carretera con curvas.', { pause: 0.7 });
+		expect(removes(detect(ok), 0)).toBe(true);
+	});
+
+	it('slivers: a loud voiced sound between pauses stays for review; a blip over a removed take goes with it', () => {
+		// run 9, AG a: the deliberate mouth sound "Pup." (0.11 s, voiced, −16 dBFS) alone between two removed pauses
+		const words: CleanupWordIn[] = [
+			...say('La idea que hizo que todo esto fuera posible.'),
+			{ text: 'Pup.', start: S(5.5), end: S(5.61), confidence: 0.2 },
+			...say('Ya que tenía un ejército de agentes.', { t0: 7.5 }),
+		];
+		const v = voiceFor(words);
+		const voicing = new Uint8Array(v.frameCount).fill(210);
+		const pup = detect(words, {
+			...v,
+			voicing,
+			flatness: new Uint8Array(v.frameCount).fill(30),
+		}).findings.find((f) => f.words?.[0] === indexOf(words, 'Pup.'))!;
+		expect(pup.suggested).toBe('review');
+		// run 9, AD a: the recogniser's "Bueno," (0.12 s) over the onset of a removed take's "Así", after a pause
+		const take = 'Así que le puse shaders, que son...';
+		const blip: CleanupWordIn[] = [
+			...say('todo plano?'),
+			{ text: 'Bueno,', start: S(3.96), end: S(4.08), confidence: 0.9 },
+			...say(`${take} | ${take.replace('...', ' la receta que decide de qué color va cada pixel.')}`, {
+				t0: 4.08,
+			}),
+		];
+		const d = detect(blip);
+		const f = d.findings.find((x) => x.words?.[0] === 2)!;
+		expect([f.kind, f.suggested, sec(f.range.end)]).toEqual(['filler-lexical', 'remove', 4.08]);
 	});
 });
 
