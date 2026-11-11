@@ -457,6 +457,24 @@ start (the kept word's ±50 ms of sound had put edges up to 70 ms into removed w
 (`MediaPlan.tight`). The F cut now starts at "Windows"' start (4.30, frame 129). The port check uses the prototype's
 edges (`strictRemoval: false`).
 
+**Cut edges in continuous voice** (round 8, H10 / H6). Round 7's listening heard cuts start inside continuous voice
+and keep 20–30 ms of a removed word ("WTF, | no puede ser" Z b at 14.6 inside "no" 14.57–14.63; "mucho o | que" W b at
+71.1; Z a, W a): the planner's out point before a removed word takes the frame boundary at or before it, but the
+final frame check put that frame back because the part before the finding's start was not silence. Now (1) a removal
+of words that starts right after another word with speech in every frame between them starts at the quietest 10 ms
+frame (the latest of equals) from 80 ms before its first word — after the first 60 % of the word before — up to the
+frame holding its start, never inside the removed word (`startValley`; a fricative onset is quieter than the vowel
+before it, so the search stops at the word); (2) the final frame check lets the frame at or before an accepted removal
+of words' start go whatever it holds: the removed word goes whole, the kept word before it loses less than a frame
+at its quietest point. The corpus and the sequence property allow exactly that frame (before word findings only).
+(3) A word's voice that runs on after its time to the end of its speech run, up to 0.4 s (`WORD_TAIL_S`, *assumption*
+from W a), is the word's sound, not untranscribed voice: W a's removed hidden retake "que aparece un bug rarísimo."
+ended at the word's timestamp 72.63 while the voice ran to 72.97, and the 0.19 s beyond the 0.15 s margin stayed as a
+review finding ("[-mo]"). Tests: `cleanup-cut-edges.test.ts` (both fail on f90d998c6: 17 ms of the removed "no" kept;
+the tail an untranscribed finding). Limits: when the quietest point lies more than a frame before the removed word's
+timestamp, the cut still takes the boundary at or before the timestamp, so up to that distance of what the levels call
+its onset stays; levels are 10 ms frames, the grid 33 ms at 30 fps.
+
 Spoken symbols: a word that is only a symbol said as a word and punctuation ("%", "%...", "€", "$", "&", "+", "@",
 "°") is a candidate word with the symbol's name as its token ("porciento" / "percent"), so it covers its sound: the
 second large-v3-turbo run left "%" ("por ciento", −10 to −24 dBFS) of a removed restart audible as voice without words

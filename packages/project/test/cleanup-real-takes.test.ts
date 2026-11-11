@@ -392,6 +392,11 @@ describe('Clean Up on real transcripts (corpus)', () => {
 				.map((f) => [sec(f.range.start), sec(f.range.end)] as const);
 			const frame = 1 / FPS;
 			const near = removing.map(([x, y]) => [x - frame - 1e-6, y + frame + 1e-6] as const);
+			// at the start of a removal of words the cut takes the frame boundary at or before it, whatever that frame
+			// holds: in continuous voice the grid cannot split two words, and the removed word goes whole
+			const claims = a.findings
+				.filter((f) => f.suggested === 'remove')
+				.map((f) => [sec(f.range.start) - (f.words ? frame + 1e-6 : 0), sec(f.range.end)] as const);
 			const voiced = [...c.words.map(([, s, e]) => [s, e] as const), ...(c.voiced ?? [])];
 			for (const [x, y] of removed) {
 				expect(outside(x, y, near), `${x.toFixed(3)}–${y.toFixed(3)} removed without a finding`).toBeLessThan(
@@ -400,7 +405,7 @@ describe('Clean Up on real transcripts (corpus)', () => {
 				for (const [p, q] of voiced) {
 					const [u, v] = [Math.max(x, p), Math.min(y, q)];
 					if (v > u)
-						expect(outside(u, v, removing), `voice ${p}–${q} removed beyond a finding`).toBeLessThan(1e-6);
+						expect(outside(u, v, claims), `voice ${p}–${q} removed beyond a finding`).toBeLessThan(1e-6);
 				}
 			}
 			// a take marked kept loses no word to its own group (a restart inside it has its own finding)

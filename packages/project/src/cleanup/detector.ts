@@ -675,6 +675,19 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			});
 			k = j + 1;
 		}
+	// a removal of words that starts in continuous voice right after another word starts at the quietest 10 ms frame
+	// between them, never inside its first word (round 7: cuts started 20–30 ms into a removed "no" / "o" and in loud
+	// voice; the frame grid then takes the boundary at or before that point — docs/wp-notes/transcript-cleanup.md
+	// "Cut edges in continuous voice")
+	if (voice) {
+		const posOf = new Map(words.map((w, k) => [w.i, k]));
+		for (const r of raw) {
+			const k = r.words ? posOf.get(r.words[0]) : undefined;
+			if (k === undefined || k === 0) continue;
+			const v = startValley(voice, words[k - 1]!, words[k]!);
+			if (v !== null) r.start = Math.min(r.start, Math.round(v * FR * FLICKS_PER_SECOND));
+		}
+	}
 	raw.push(...frameRaw);
 	// a review-only word alone between two removed pauses, shorter than `SLIVER_S`, is a sliver a cut would leave
 	// standing (round 6: "pasa?" 0.10 s, "¿Qué" 0.13 s): its finding proposes removing it (still reviewable)
@@ -840,6 +853,11 @@ const UNCOVERED_MARGIN_S = 0.15;
 const STRETCHED_WORD_S = 1;
 /** … and holds its first this many seconds; the voice after that is flagged. *Assumption* (run 5, H and G). */
 const WORD_HOLD_S = 0.5;
+/**
+ * Voice running on after a word's time to the end of its speech run, at most this long (seconds), is the word's tail.
+ * *Assumption* from round 7 (W a: 0.34 s of "rarísimo." after its timestamp); a longer run stays untranscribed voice.
+ */
+const WORD_TAIL_S = 0.4;
 
 type FrameFinding = {
 	kind: FindingKind;
@@ -928,6 +946,7 @@ function frameFindings(
 	const mg = Math.round(settings.gaps.maxGapS / FR);
 	const margin = Math.round(UNCOVERED_MARGIN_S / FR);
 	const minU = Math.max(1, Math.round(T.untranscribedMinS / FR - 1e-9));
+	const tail = Math.round(WORD_TAIL_S / FR);
 	const own = (k: number, f: number) => {
 		const s = sound[k]!;
 		if (f < s[0]) s[0] = f;
@@ -1015,7 +1034,9 @@ function frameFindings(
 							untranscribed(p + margin, q - margin);
 						}
 					} else if (left >= 0) {
-						if (q - p < margin + minU) giveL(p, q);
+						// a word's voice that runs on after its time to the end of the speech run is its tail (round 7, W a:
+						// "rarísimo." ended 0.34 s before its voice; a removed retake left that tail as a fragment)
+						if (q - p < margin + minU || q - p <= tail) giveL(p, q);
 						else {
 							giveL(p, p + margin);
 							untranscribed(p + margin, q);
@@ -1148,6 +1169,38 @@ export function wordHold(voice: CleanupVoice, w: { s: number; e: number }): [num
 	while (a < b && silentFrame(voice, a)) a++;
 	while (b > a && silentFrame(voice, b - 1)) b--;
 	return b > a ? [a, b] : null;
+}
+
+/** How far back (seconds) from a removed word's start the quietest point before it is looked for. */
+const VALLEY_BACK_S = 0.08;
+
+/**
+ * Where a removal starting at word `w` begins when `w` follows `prev` in continuous voice (every frame from the end of
+ * `prev`'s time to `w`'s start is speech): the quietest 10 ms frame (the latest of equals) from `VALLEY_BACK_S` before
+ * `w` — but after the first 60 % of `prev` — up to the frame holding `w`'s start. Null with a non-speech frame between
+ * them (the silence and pause rules place that edge).
+ */
+export function startValley(
+	voice: CleanupVoice,
+	prev: { s: number; e: number },
+	w: { s: number },
+): number | null {
+	const end = Math.min(voice.frameCount - 1, Math.floor(w.s / FR + 1e-9));
+	const [pa, pb] = wordFrames(prev);
+	const from = Math.max(0, pa + Math.ceil(0.6 * (pb - pa)), Math.floor((w.s - VALLEY_BACK_S) / FR + 1e-9));
+	if (from > end) return null;
+	for (let k = Math.min(from, pb - 1); k <= end; k++)
+		if (voice.classes[k] !== VOICE_CLASS_SPEECH) return null;
+	let best = from;
+	let bestDb = Number.POSITIVE_INFINITY;
+	for (let k = from; k <= end; k++) {
+		const db = levelDbAt(voice, k);
+		if (db <= bestDb) {
+			best = k;
+			bestDb = db;
+		}
+	}
+	return best;
 }
 
 /** A kept piece shorter than this (seconds) between two cuts is a sliver. */

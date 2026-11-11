@@ -432,6 +432,16 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 		// what may remove time: accepted findings (not skipped as harsh); the planner adds the sound of removed words (a take
 		// choice drops words no accepted finding names)
 		const coveredSpans = () => spans((f) => accepted.has(f) && !harshSkip.has(f));
+		/** Transcript index → start (seconds) of the accepted removals of words that begin at that word. */
+		const startsOf = () => {
+			const out = new Map<number, number>();
+			for (const f of res.findings) {
+				if (!f.words || !WORD_KINDS.has(f.kind) || !accepted.has(f) || harshSkip.has(f)) continue;
+				const t = sec(f.range.start);
+				out.set(f.words[0], Math.min(t, out.get(f.words[0]) ?? t));
+			}
+			return out;
+		};
 		const removeBreaths = spans((f) => f.kind === 'breath' && accepted.has(f));
 		for (const clip of run.clips) {
 			const extent = extentOf(clip);
@@ -513,7 +523,9 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 				if (inClip[k] && removedNow[k]) removing.push(res.sound[k]!);
 			});
 			keptFrames = joinShort(
-				keepUnexplained(clip, rate, run.voice, extent, keptFrames, removing, clipSpan0(keepSpeech)),
+				keepUnexplained(clip, rate, run.voice, extent, keptFrames, removing, clipSpan0(keepSpeech), [
+					...startsOf().values(),
+				]),
 			);
 			// the last kept piece keeps its fading decay up to measured silence: a join's out point may sit inside the decay
 			// (the Fast style), but nothing follows the clip's last word
@@ -795,8 +807,11 @@ function keepTail(
  * The kept frames of a clip with every frame added back that the accepted findings do not explain: a sequence frame
  * may go only when its media time lies inside `removing` (media seconds), or within one frame of it over measured
  * silence (`silentFrame`; the frame grid cannot follow a finding's edge exactly). Without a voice analysis there is
- * no tolerance. A frame holding speech of `protect` (voice without words whose finding is not accepted, outside
- * accepted removals of words) stays whatever else covers it: no pause or breath takes it (round 7).
+ * no tolerance. At the start of an accepted removal of words (`wordStarts`) the frame at or before it may go whatever
+ * it holds: in continuous voice the frame grid cannot split the sound between two words, and the removed word goes
+ * whole — its finding starts at the quietest point before it (`startValley`). A frame holding speech of `protect`
+ * (voice without words whose finding is not accepted, outside accepted removals of words) stays whatever else covers
+ * it: no pause or breath takes it (round 7).
  */
 function keepUnexplained(
 	clip: Pick<Clip, 'start' | 'sourceIn'>,
@@ -806,6 +821,7 @@ function keepUnexplained(
 	kept: ReadonlyArray<readonly [number, number]>,
 	removing: readonly Span[],
 	protect: readonly Span[] = [],
+	wordStarts: readonly number[] = [],
 ): Array<[number, number]> {
 	const F = flicksPerFrame(rate);
 	const frameS = F / FLICKS_PER_SECOND;
@@ -819,13 +835,13 @@ function keepUnexplained(
 	}
 	const grown: Span[] = merged.map(([a, b]) => {
 		if (!voice) return [a, b];
-		let x = a;
+		let x = wordStarts.some((t) => Math.abs(t - a) < 1e-9) ? a - frameS * (1 - 1e-6) : a;
 		for (
 			let k = Math.ceil(a / FR - 1e-9) - 1;
 			k >= 0 && (k + 1) * FR > a - frameS && silentFrame(voice, k);
 			k--
 		)
-			x = Math.max(a - frameS, k * FR);
+			x = Math.min(x, Math.max(a - frameS, k * FR));
 		let y = b;
 		for (let k = Math.floor(b / FR + 1e-9); k * FR < b + frameS && silentFrame(voice, k); k++)
 			y = Math.min(b + frameS, (k + 1) * FR);
