@@ -130,12 +130,25 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 		return len === 1 && reduplicated(ctx, S[q]!);
 	};
 
+	/** Whether position `p` of attempt `[a0, a1)` lies in an attempt (starting after `a0`) removed by a link whose retry is
+	 * inside it: a restart inside a take ("…estatua, hice que por fin lo pudiera mover él con el teclado. | Hice que…"). */
+	const inner = (p: number, a0: number, a1: number) =>
+		links.some(
+			(c) =>
+				c.link.tier === 'remove' &&
+				c.link.retry > a0 &&
+				c.link.retry < a1 &&
+				c.link.attempt[0] > a0 &&
+				c.link.attempt[0] <= p &&
+				p < c.link.attempt[1],
+		);
 	type Cover = { full: boolean; share: number; prefix: boolean; last: number; other?: boolean };
 	/** How attempt `[a0, a1)` is said again by retry `[r0, r1)`; `after` = the speech after the retry. */
 	const cover = (a0: number, a1: number, r0: number, r1: number, after: () => readonly number[]): Cover => {
 		const A = span(a0, a1);
 		const R = span(r0, r1);
-		const ak = A.filter((p) => key(tok(p)));
+		// words of the attempt an inner restart already removes are said again inside it (a take with a restart)
+		const ak = A.filter((p) => key(tok(p)) && !inner(p, a0, a1));
 		const none: Cover = { full: false, share: 0, prefix: false, last: r0 };
 		if (!A.length || !R.length) return none;
 		if (!ak.length) {
@@ -164,6 +177,7 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 		const brokenOff = cut(a1 - 1);
 		const garble = ak.length >= 6 ? Math.max(1, Math.floor(0.15 * ak.length)) : ak.length >= 3 ? 1 : 0;
 		let forgiven = 0;
+		let inPlace = 0;
 		let hard = 0;
 		// a number or alphanumeric the retry does not say: another statement ("Me quedan nueve días | … seis días")
 		let other = false;
@@ -179,20 +193,27 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 			if (last && (brokenOff || a1 === r0) && rk.some((p) => same(tx, tok(p), true))) continue;
 			if (last && brokenOff && pairs.length >= 3 && !exact(tx)) continue;
 			let ok = false;
-			if (!exact(tx) && !prev && forgiven < garble) {
-				// garbled in place: the retry says a word that sounds like it between the re-said words around it
+			if (!exact(tx) && inPlace < Math.ceil(ak.length / 3)) {
+				// garbled in place: the retry says a word that sounds like it between the re-said words around it ("La
+				// tarjeta gráfica le lee da esa imagen | la tarjeta gráfica le ves a imagen": "lee" / "ves", "esa" / "a")
 				const before = pairs.filter(([p]) => p < x).at(-1);
 				const next = pairs.find(([p]) => p > x);
 				const lo = before ? R.indexOf(rk[before[1]]!) + 1 : 0;
 				const hi = next ? R.indexOf(rk[next[1]]!) : lo + 3;
 				ok = R.slice(lo, hi).some((p) => alike(tx, tok(p)));
-				// or, in a long attempt, a word the speech right after the retry says
-				if (!ok && ak.length >= 6 && x > 0) ok = after().some((p) => same(tx, tok(p)));
+				if (ok) inPlace++;
 			}
-			if (ok) {
-				forgiven++;
-				prev = true;
-			} else {
+			// or, in a long attempt, a word the speech right after the retry says (15 %, never two in a row)
+			if (!ok && !exact(tx) && !prev && forgiven < garble && ak.length >= 6 && x > 0) {
+				ok = after().some((p) => same(tx, tok(p)));
+				if (ok) {
+					forgiven++;
+					prev = true;
+					continue;
+				}
+			}
+			if (ok) prev = false;
+			else {
 				hard++;
 				if (exact(tx)) other = true;
 			}
@@ -350,6 +371,14 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 						break;
 					}
 				}
+			}
+			// an attempt that starts inside a sentence and finishes it is re-said word for word (an ASR garble in seven
+			// aside): "Bueno, no lo reescribí yo. | Lo reescribí a mis agentes…" is no restart
+			if (cv?.full && inside && ends(e - 1) && !cut(e - 1)) {
+				const own = span(q, e).filter((x) => !inner(x, q, e));
+				const rt = span(rp, Math.min(n, rp + own.length + 3));
+				if (lcs(own, rt, (x, y) => alike(tok(x), tok(y))) < own.length - Math.floor(own.length / 7))
+					cv = null;
 			}
 			if (cv?.full) {
 				const words = e - q;

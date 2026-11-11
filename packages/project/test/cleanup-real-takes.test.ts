@@ -299,8 +299,9 @@ const SPEC: Record<
 			'de hecho fue mi primer juego',
 			'solo existia chatgpt',
 		],
-		// the abandoned takes ("tres" / "3" are one number)
-		never: ['fueron hechos en html', 'tiempo para y', 'mi primer que'],
+		// the abandoned takes ("tres" / "3" are one number; "hechos" / "rehechos" match as ASR variants, so the
+		// abandoned "fueron hechos en HTML" is checked by "fueron rehechos en html" said once)
+		never: ['tiempo para y', 'mi primer que'],
 	},
 	// controls without takes: every word stays (round 6: "¡En mis juegos!" in T was cut as a take of a later sentence)
 	S: { once: [], never: [], allKept: true },
@@ -516,7 +517,19 @@ describe('Clean Up on real transcripts (corpus)', () => {
 		}
 		if (process.env.CLEANUP_CORPUS_REPORT)
 			writeFileSync(process.env.CLEANUP_CORPUS_REPORT, `${lines.join('\n')}\n`);
-		expect(lines.length).toBeGreaterThan(0);
+		// precision first: at most 1 % of the removed words wrong in either split; the repeats mostly found
+		for (const [split, r] of Object.entries(report)) {
+			let right = 0;
+			let wrong = 0;
+			for (const k of Object.values(r.kinds)) {
+				right += k.right;
+				wrong += k.wrong;
+			}
+			expect(right / Math.max(1, right + wrong), `${split}: ${lines.join('\n')}`).toBeGreaterThanOrEqual(
+				0.99,
+			);
+			expect(r.hit / Math.max(1, r.dup), `${split}: ${lines.join('\n')}`).toBeGreaterThanOrEqual(0.95);
+		}
 	});
 
 	it('rejecting every finding removes nothing, head and tail included', () => {

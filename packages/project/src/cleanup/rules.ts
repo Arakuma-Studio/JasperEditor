@@ -24,10 +24,10 @@ export type AWord = {
 export type WordLabel = { kind: FindingKind; action: Exclude<RuleAction, 'off'>; group?: number };
 
 /** Prototype `lcs`: longest common subsequence length (one-row DP); `eq` compares words (default: equal). */
-export function lcs(
-	a: readonly string[],
-	b: readonly string[],
-	eq: (x: string, y: string) => boolean = (x, y) => x === y,
+export function lcs<T>(
+	a: readonly T[],
+	b: readonly T[],
+	eq: (x: T, y: T) => boolean = (x, y) => x === y,
 ): number {
 	if (!a.length || !b.length) return 0;
 	const dp = new Array<number>(b.length + 1).fill(0);
