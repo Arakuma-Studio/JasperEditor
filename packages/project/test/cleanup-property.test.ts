@@ -314,11 +314,13 @@ describe('planning properties', () => {
 							const t0 = Math.max(k * 0.01, range.start * frame);
 							const t1 = Math.min((k + 1) * 0.01, range.end * frame);
 							if (t1 - t0 < 1e-9) continue;
-							// (or in the frame at or before the start of a removal of words: the grid cannot split two words)
+							// (or speech or silence in the frame at or before the start of a removal of words: the grid cannot
+							// split two words in continuous voice)
 							const ok =
 								(inCovered(t0) && inCovered(t1)) ||
 								(silent(k) && nearCovered(t0) && nearCovered(t1)) ||
-								wordRemovals.some(([x, y]) => t0 >= x - frame - 1e-6 && t1 <= y + 1e-9);
+								((r.voice.classes[k] === 2 || silent(k)) &&
+									wordRemovals.some(([x, y]) => t0 >= x - frame - 1e-6 && t1 <= y + 1e-9));
 							expect(ok, `${t0.toFixed(3)}–${t1.toFixed(3)} removed without an accepted finding`).toBe(true);
 							// voice without words stays unless its own finding (or a removal of words around it) is accepted: an
 							// accepted pause next to it never takes it (round 7: 0.227 s of an unaccepted untranscribed finding)

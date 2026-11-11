@@ -465,8 +465,9 @@ of words that starts right after another word with speech in every frame between
 frame (the latest of equals) from 80 ms before its first word — after the first 60 % of the word before — up to the
 frame holding its start, never inside the removed word (`startValley`; a fricative onset is quieter than the vowel
 before it, so the search stops at the word); (2) the final frame check lets the frame at or before an accepted removal
-of words' start go whatever it holds: the removed word goes whole, the kept word before it loses less than a frame
-at its quietest point. The corpus and the sequence property allow exactly that frame (before word findings only).
+of words' start go when every 10 ms before the start in that frame is speech or silence (continuous voice — never a
+kept word's fading decay): the removed word goes whole, the kept word before it loses less than a frame at its
+quietest point. The corpus and the sequence property allow exactly that frame (before word findings only).
 (3) A word's voice that runs on after its time to the end of its speech run, up to 0.4 s (`WORD_TAIL_S`, *assumption*
 from W a), is the word's sound, not untranscribed voice: W a's removed hidden retake "que aparece un bug rarísimo."
 ended at the word's timestamp 72.63 while the voice ran to 72.97, and the 0.19 s beyond the 0.15 s margin stayed as a

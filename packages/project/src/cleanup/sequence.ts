@@ -807,9 +807,9 @@ function keepTail(
  * The kept frames of a clip with every frame added back that the accepted findings do not explain: a sequence frame
  * may go only when its media time lies inside `removing` (media seconds), or within one frame of it over measured
  * silence (`silentFrame`; the frame grid cannot follow a finding's edge exactly). Without a voice analysis there is
- * no tolerance. At the start of an accepted removal of words (`wordStarts`) the frame at or before it may go whatever
- * it holds: in continuous voice the frame grid cannot split the sound between two words, and the removed word goes
- * whole — its finding starts at the quietest point before it (`startValley`). A frame holding speech of `protect`
+ * no tolerance. At the start of an accepted removal of words (`wordStarts`) in continuous voice (speech or silence in
+ * every 10 ms before it in that frame) the frame at or before it may go: the frame grid cannot split the sound between
+ * two words, and the removed word goes whole — its finding starts at the quietest point before it (`startValley`). A frame holding speech of `protect`
  * (voice without words whose finding is not accepted, outside accepted removals of words) stays whatever else covers
  * it: no pause or breath takes it (round 7).
  */
@@ -835,7 +835,13 @@ function keepUnexplained(
 	}
 	const grown: Span[] = merged.map(([a, b]) => {
 		if (!voice) return [a, b];
-		let x = wordStarts.some((t) => Math.abs(t - a) < 1e-9) ? a - frameS * (1 - 1e-6) : a;
+		// at a removal of words' start in continuous voice (every 10 ms before it in the frame speech or silence; never a
+		// kept word's fading decay) the frame at or before it may go
+		const k0 = Math.max(0, Math.floor((a - frameS) / FR + 1e-9));
+		let voiced = k0 < Math.ceil(a / FR - 1e-9);
+		for (let k = k0; k < Math.ceil(a / FR - 1e-9); k++)
+			if (voice.classes[k] !== VOICE_CLASS_SPEECH && !silentFrame(voice, k)) voiced = false;
+		let x = voiced && wordStarts.some((t) => Math.abs(t - a) < 1e-9) ? a - frameS * (1 - 1e-6) : a;
 		for (
 			let k = Math.ceil(a / FR - 1e-9) - 1;
 			k >= 0 && (k + 1) * FR > a - frameS && silentFrame(voice, k);
