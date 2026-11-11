@@ -923,12 +923,14 @@ So the fixed costs — pages loading the bundle — dominated the short masters,
    addressed: the dev source hash or the prebuilt stamp) is served once per process by `serveBundleForMeasuring`
    (random path prefix, 127.0.0.1, `unref`ed) with `Cache-Control: public, max-age=31536000, immutable`, and every
    render, sheet and still loads it from there (falls back to the directory when the server cannot start).
-2. *Warm render browsers* (`BrowserPool`, `openSharedBrowser`): a browser a render, a bake session, a still, the text
-   measurer, a poster or a PSD export used goes back to a pool instead of being closed: its pages are closed, it loads
-   the bundle once more the first time it is idle (so the next render's pages find V8's code cache), and the next
-   `openSharedBrowser` gets it. At most `JASPER_RENDER_BROWSERS_IDLE` (4) idle, closed after
-   `JASPER_RENDER_BROWSER_IDLE_SEC` (300 s) unused or after 50 holders, or when its launch options (executable, probed
-   `gl`) changed; an idle browser that does not answer a CDP round trip within 3 s (crashed, hung) is closed and a new
+2. *Warm render browsers* (`BrowserPool`, `openSharedBrowser`, `openBrowserWith`): a browser a render, a bake
+   session, a still, the text measurer, a poster, a PSD export or an HTML composition (wp-note html-compositions
+   "Warm browsers") used goes back to a pool instead of being closed: its pages are closed (within 10 s, else it is
+   closed), a render browser loads the bundle once more the first time it is idle (so the next render's pages find
+   V8's code cache), and the next holder with the same launch options gets it — every browser is keyed by its
+   normalised options (executable, mode, probed `gl`), never handed to a holder of other ones. At most
+   `JASPER_RENDER_BROWSERS_IDLE` (4) idle (least recently used out), closed after `JASPER_RENDER_BROWSER_IDLE_SEC`
+   (300 s) unused or after 50 holders; an idle browser that does not answer a CDP round trip within 3 s (crashed, hung) is closed and a new
    one launched; engine shutdown closes them all (`RemotionService.stop` from `CoreServices.stop`). Renders that
    used to let Remotion open a browser of their own (one-page renders, stills without a shared browser) take a pooled
    one. Idle, two warm browsers used 0.35 CPU-s in 20 s. After the engine stopped, none of its Chrome processes was
