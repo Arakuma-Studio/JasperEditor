@@ -3,6 +3,8 @@
 // decoding a few seconds around it alone writes both takes with correct times. The scripted decoder here behaves like
 // that: it finds where its window lies in the audio and, for a window holding more than 10 s of audio, writes the
 // "long" reading (one take, stretched), else the true words.
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { wordsWellFormed } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import { redecodeAccepted, replaceWindowWords } from '../src/speech/core/gaps.ts';
@@ -16,6 +18,8 @@ const SR = 16_000;
 const SECONDS = 17;
 /** Token id of "..." in a `dot` fake model (replaces 'y'). */
 const DOT = 24;
+/** Token id of "와" in the round-7 test's model (replaces 'w'). */
+const HANGUL = 22;
 type W = { text: string; start: number; end: number };
 
 const at = (text: string, start: number, len = 0.3): W => ({ text, start, end: start + len });
@@ -32,7 +36,9 @@ const LONG = [...LEAD, ...TAKE1, ...TAKE2.slice(3), ...TAIL];
 
 const ids = (w: string) => [
 	SPACE,
-	...w.split(/(\.\.\.)/).flatMap((p) => (p === '...' ? [DOT] : [...p].map((c) => c.charCodeAt(0) - 97))),
+	...w
+		.split(/(\.\.\.)/)
+		.flatMap((p) => (p === '...' ? [DOT] : [...p].map((c) => (c === '와' ? HANGUL : c.charCodeAt(0) - 97)))),
 ];
 
 /** `long`: what a window holding more than 10 s of audio gets; `truth`: what a shorter one gets. */
@@ -295,5 +301,40 @@ describe('hidden takes', () => {
 		// both takes, each where it was said
 		expect(out.words.map((w) => w.text).slice(0, 12)).toEqual(truth.slice(0, 12).map((w) => w.text));
 		expect(out.guard.recovered).toMatchObject({ spans: 1, words: 3 });
+	});
+
+	it('a word in another writing system marks a garbled take (round 7: "días Pen 와 blah blah금u Unity")', async () => {
+		// the first pass writes the end of the first take and the whole second take as Hangul-laced garbage — more
+		// tokens than the words they hide, none stretched, no voice left uncovered — decoded alone, the window writes both
+		const seq = (t: string, at0: number) => t.split(' ').map((x, k) => at(x, at0 + 0.4 * k));
+		const lead = seq('ab cd ef gh', 0.5);
+		const take1 = seq('ij kl mn op', 2.2);
+		const take2 = seq('ij kl mn op', 4.3);
+		const tail = seq('st uv ab cd ef gh ij kl mn op qr st uv ab cd ef gh ij kl mn op qr st', 6.3);
+		const truth = [...lead, ...take1, at('qr', 3.8), ...take2, ...tail];
+		const garbage = [at('와', 3.8, 0.4), at('ef', 4.2, 0.4), at('gh와', 4.6, 0.4), at('와', 5.0, 0.45)];
+		const long = [...lead, ...take1, ...garbage, take2[3]!, ...tail];
+		const audio = noiseAudio(SECONDS, (t) => truth.some((w) => t >= w.start && t < w.end));
+		const modelDir = fakeModelDir({ encodable: true });
+		const tokenizer = join(modelDir, 'tokenizer.json');
+		const json = JSON.parse(readFileSync(tokenizer, 'utf8'));
+		delete json.model.vocab.w;
+		// "와" (UTF-8 EC 99 80) in GPT-2's byte stand-ins
+		json.model.vocab['\u00ec\u013b\u0122'] = HANGUL;
+		writeFileSync(tokenizer, JSON.stringify(json));
+		const out = await runSpeechJob(
+			{ modelDir, modelId: 'fake', input: { f32: '' }, language: 'es' },
+			{ ort: fakeOrt(hiddenTakeDecoder(audio, truth, long)).ort, audio },
+		);
+		expect(out.words.map((w) => w.text)).toEqual(truth.map((w) => w.text));
+		// 3 s before "와" (from 0) to 1.5 s after the last one, out to the pause after "uv"; four garbage words became
+		// "qr ij kl mn": no more words than before, taken because garbage counts for nothing
+		expect(out.guard.redecoded).toEqual({
+			windows: 1,
+			replaced: 1,
+			wordsAdded: 0,
+			skipped: 0,
+			ranges: [{ start: 0, end: 7.1, before: 15, after: 15, replaced: true }],
+		});
 	});
 });

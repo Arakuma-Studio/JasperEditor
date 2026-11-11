@@ -263,6 +263,11 @@ Deliberate differences from the prototype (labelled):
 - Spanish vocalic fillers are the prototype's `STRICT_FILLERS` (eh, em, emm, ehm, mm, mmm, hmm, mhm, ah, aah, eeh, ehh,
   uh, um, eee, ee, aa, m, e). The spec's "a / aa" is read as the drawn-out vowel: the bare preposition "a" is never a
   filler (it would cut "voy a casa").
+- **Interjections that open an exclamation** (round 8, H8): a marker phrase of one interjection (oh, ay, uy, uf, wow,
+  guau) the recogniser wrote with a comma before a word that is no marker or filler is no filler phrase — round 7 U b
+  removed the loud "Oh," of "Oh, | shit, a ver." (0.75 s pause after it); the lexical review still lists it. Test:
+  `cleanup-rules.test.ts` "an interjection written with a comma before a word opens an exclamation" (fails on
+  9031bd0f3).
 - Marker phrases: the spec's Spanish list (este, o sea, pues, bueno, vale, tipo, en plan, a ver, es decir, digamos,
   ¿sabes?, ¿no?, nada, vamos, ok) plus the prototype's standalone tokens (esto, osea, ay, oh, a, ver, okay, sí, no); a
   phrase between pauses ≥ 0.3 s of ≤ 2 words made only of them (and vocalic fillers) is a filler phrase. English
@@ -360,7 +365,7 @@ through `analyzeSequenceCleanup` (Fast preset, 30 fps, speech under every word).
 24 failed, at f11b859fb 13 of 30; at 2557f0b20 44 of the 46 cases failed the new invariants (head / tail trims and gap
 cuts without a finding) and G, I, K failed their spec (the aside, two missed restarts); at 170f832bb, after round 6,
 the new cases N, O, Q, R, T failed their spec (and P on "Guiño, guiño"); with repeats by alignment all 60 pass (split,
-metrics and the held-out result: "Repeats by alignment" below). Limits: without the re-decode (fragment A, mode c) "a" stretched over the second "poder
+metrics and the held-out result: "Repeats by alignment" below); run 7 (round 8) adds U–AB as a third split. Limits: without the re-decode (fragment A, mode c) "a" stretched over the second "poder
 subirlos" (1.03 s) goes as a drawn vowel, so that case asserts "poder subirlos" and "la Play Store" apart. Run 5 E
 default ("keeps 40.12–42.10, so that clause plays twice; stray 'de' split at 42.1") passes on this transcript at
 2557f0b20 already — the corpus voice (speech under every word, silence after 42.10) does not reproduce it; the real
@@ -419,7 +424,12 @@ The rules now:
   within 0.25 s of the onset, so no cut clips a rising onset (S3: run 5 H 14.067 took ≈ 50 ms of "Unity", H 51.73 and I
   47.67 / 56.3 grazed onsets — all edges of pause cuts); after speech followed by speech (a join) it starts where the
   decay falls below the level edges' out threshold (the calibrated Fast out point inside the decay); at a tail it
-  starts at the first silent frame — no silence within 0.25 s, no tail pause.
+  starts at the first silent frame — no silence within 0.25 s, no tail pause. Voiced sound under the speech threshold
+  leading into an onset (voicing ≥ 0.5 above measured silence, `voicedFrame`, breaks of ≤ 30 ms) is the onset's: the
+  pause ends before it — at the last silent frame within 0.25 s before it, else at its first voiced frame (round 8,
+  H8: U b's pause took the soft "a" of a missed "a ver" at −40…−31 dBFS after 0.25 s of other sound; needs the voicing
+  plane). Test: `cleanup-rules.test.ts` "a pause ends before voiced sound under the speech threshold…" (fails on
+  9031bd0f3).
 - **Decisions**: a pause is cut only when its finding is accepted. Every path plans through `analyzeSequenceCleanup`
   (the editor's planner worker, the engine job behind `analyze_voice` / `plan_cleanup`, `apply_cleanup`), so a rule
   set to review removes nothing anywhere until its findings are accepted.
@@ -427,6 +437,15 @@ The rules now:
   frame whose media time is not inside an accepted finding or a removed word's sound stays; beyond a finding's edge at
   most one frame may go, and only over measured silence (the frame grid cannot follow a finding's edge). A short piece
   or a sliver the guards would drop stays rather than merging into a cut.
+- **Voice without words stays unless its own finding is accepted** (round 8, H5): a frame holding speech of an
+  untranscribed finding that is not accepted (outside accepted removals of words around it) stays whatever else covers
+  it — the final frame check protects it — and a join's pause takes only a word's decay below the out threshold, never
+  voice without words. Round 7 (large-v3-turbo, both modes) cut 0.227 s of voiced sound (−34…−51 dBFS) of an
+  unaccepted untranscribed finding in the control AA and 0.07 s in U b: the pause's decay walk went back over it.
+  Test: `cleanup-property.test.ts` "a sequence plan removes nothing outside accepted findings…" now draws voice
+  without words in gaps (murmurs after a word, contiguous or apart, 3–30 dB over the floor) and checks that no removed
+  speech frame of an unaccepted untranscribed finding lies outside an accepted removal of words (fails on 9031bd0f3;
+  either half of the fix alone passes it).
 - **The last kept piece keeps its fading tail** (`keepTail`): it grows over the decay after it (frames above measured
   silence, outside removed words' times) to silence, ≤ 0.25 s — a join may cut inside a decay, the clip's end may not.
 - The planner's own re-plan (`covered`, `UNCOVERED_TOLERANCE_S`) stays as a first pass; a piece shorter than
@@ -447,6 +466,25 @@ word after removed words is not before the removed word's end, the out point bef
 start (the kept word's ±50 ms of sound had put edges up to 70 ms into removed words) — and frame snapping floors both
 (`MediaPlan.tight`). The F cut now starts at "Windows"' start (4.30, frame 129). The port check uses the prototype's
 edges (`strictRemoval: false`).
+
+**Cut edges in continuous voice** (round 8, H10 / H6). Round 7's listening heard cuts start inside continuous voice
+and keep 20–30 ms of a removed word ("WTF, | no puede ser" Z b at 14.6 inside "no" 14.57–14.63; "mucho o | que" W b at
+71.1; Z a, W a): the planner's out point before a removed word takes the frame boundary at or before it, but the
+final frame check put that frame back because the part before the finding's start was not silence. Now (1) a removal
+of words that starts right after another word with speech in every frame between them starts at the quietest 10 ms
+frame (the latest of equals) from 80 ms before its first word — after the first 60 % of the word before — up to the
+frame holding its start, never inside the removed word (`startValley`; a fricative onset is quieter than the vowel
+before it, so the search stops at the word); (2) the final frame check lets the frame at or before an accepted removal
+of words' start go when every 10 ms before the start in that frame is speech or silence (continuous voice — never a
+kept word's fading decay): the removed word goes whole, the kept word before it loses less than a frame at its
+quietest point. The corpus and the sequence property allow exactly that frame (before word findings only).
+(3) A word's voice that runs on after its time to the end of its speech run, up to 0.4 s (`WORD_TAIL_S`, *assumption*
+from W a), is the word's sound, not untranscribed voice: W a's removed hidden retake "que aparece un bug rarísimo."
+ended at the word's timestamp 72.63 while the voice ran to 72.97, and the 0.19 s beyond the 0.15 s margin stayed as a
+review finding ("[-mo]"). Tests: `cleanup-cut-edges.test.ts` (both fail on f90d998c6: 17 ms of the removed "no" kept;
+the tail an untranscribed finding). Limits: when the quietest point lies more than a frame before the removed word's
+timestamp, the cut still takes the boundary at or before the timestamp, so up to that distance of what the levels call
+its onset stays; levels are 10 ms frames, the grid 33 ms at 30 fps.
 
 Spoken symbols: a word that is only a symbol said as a word and punctuation ("%", "%...", "€", "$", "&", "+", "@",
 "°") is a candidate word with the symbol's name as its token ("porciento" / "percent"), so it covers its sound: the
@@ -509,6 +547,45 @@ rule, and each held-out round found new failures. The mechanism (vocalic fillers
 8. **Deliberate repetition** is never an attempt: one content word said again at once, the run ending its phrase or of
    three or more ("Guiño, guiño.", "boing, boing, boing"); the stutter rule only reviews it.
 
+   Round 8 (H7): the copies of a one-word reduplication may be up to 0.5 s apart, inclusive (`REDUPLICATION_GAP_S`, or
+   `stutterGapS` when larger; *assumption*: the upper end of a comma pause). Round 7 cut the first "Hola," of the
+   greeting "Hola, hola." (copies 0.30 s apart) as a retake in both modes because the guard wanted < 0.30 s; what tells
+   a reduplication from a restart is that the run ends its phrase, not the gap ("Ya. Ya me pasó" stays a false start).
+   Test: `cleanup-rules.test.ts` "a greeting said twice with a comma pause is deliberate" (fails on 9031bd0f3).
+
+**Round 8 additions** (from the round-7 listening of large-v3-turbo runs; each has a test in `cleanup-rules.test.ts`
+"round 8 fixes" that fails on 11161ed77 — two of them use the reported words of fragment U b / W a):
+- Rule 3, an **inserted word**: a word the recogniser likely inserted (below) is forgiven when the re-said words around
+  it are next to each other in the retry (U b: "Tengo solo 30 días para hacer un ¡Suscríbete! motor…" was kept and the
+  two attempts before it only reviewed — 25 words heard twice).
+- Rule 3, an **ASR doubling**: a word right next to a matched one (≤ `stutterGapS` apart) that sounds like the same retry
+  word is forgiven in place (W a: "crecieron crashean" for one "crashean", said again as "crecían", kept the 17-word
+  "Play Store" sentence for review).
+- Rule 3, a **corrected word**: in an attempt with one aside before its retry, a content word the retry replaces by
+  another one is forgiven when the aside opens — after an optional correction marker ("no", "perdón", "digo", "mejor
+  dicho", "quiero decir", "o sea"; "sorry", "I mean") — with that word, or with the one or two attempt words before it
+  and then that word; at most one per four content words (W: "…dependo completamente de Unity. | No, de ellos, no tengo
+  que repetir tanto. | …completamente de ellos." had no finding in either mode; mode a has no "No,"). An aside that
+  opens with a correction marker over a clause whose retry says most of it from its start (`retakeSimilarity`) gives
+  at least a review link over attempt and aside.
+- Rule 6: a retry counts as removed by another link only where that link's attempt or aside lies — not its whole span
+  up to its retry (a chain's link spans the abandoned copy between, which it does not remove). W a: "Y sí, es cierto,
+  pero tengo mis razones. | sí, es cierto, Y sí, es cierto, pero…" kept "Y" and the abandoned "sí, es cierto," for
+  review because the first copy's link to the third swallowed the third's "Y".
+- **Words the recogniser likely inserted** (`detector.ts`, `RuleContext.inserted`; hallucination findings for review
+  where no removal takes them, else they go with it — the hummed stock phrase inside a removed attempt no longer gets a
+  finding of its own): stock phrases over voice without frication (round 6), a stock phrase **woven** into other speech
+  — its words in order within 10 words and 4 s of its first, not contiguous (U a: the recovery decode wrote "¡Suscríbete
+  | Tengo al solo 30 días para hacer canal! un motor", so the hidden retake started at "un", mid-attempt, in continuous
+  voice) —, **garbage**: words in another writing system than the transcript's language (`foreignScriptWord`; Hangul
+  in Spanish) and the ≤ 2 words between two of them (U a: "Pen 와 blah blah금u"; "와" normalised to nothing and was not
+  a word at all), and words over **unvoiced noise** (below).
+- **Text over unvoiced noise** (H9): words with no voiced frame (`voicedFrame`) in their time ± 30 ms, at least half of
+  it above measured silence — a Spanish or English word holds a vowel — are one hallucination finding per run: removed
+  (the hallucination rule's action) when the run is alone between pauses ≥ `phraseGapS`, else for review (round 7:
+  "¿Qué pasa?" over noise at −27…−49 dBFS, zero-crossing rate 1,500–10,000 /s, stayed as 0.2–0.7 s asr-suspect pieces
+  between removed pauses). Needs the voicing plane. *Assumption*: a whispered word would count as noise.
+
 Kinds follow the structure: ≤ 2 words a false start, a whole clause (clause start, clause end, ≥ 3 content words) a
 retake (with a group), else a restart; inside re-decoded ranges they become hidden retakes as before. The settings keep
 their meaning (the windows, `retakeSimilarity`, `takeGapS`, `phraseGapS`, `falseStartGapS` for false starts by clause);
@@ -527,6 +604,9 @@ words (fillers aside) removed. Measured (both modes, Fast, corpus voice):
 | held out, first evaluation (da2514402) | 19 / 24 | 0.989 (271 / 274) | 0.774 (260 / 336) |
 | held out after its fixes (0108b4021; no longer held out) | 24 / 24 | 1.000 (338 / 338) | 0.973 (327 / 336) |
 | dev at 0108b4021 | 34 / 34 | 0.997 (2394 / 2402) | 0.996 (2294 / 2303) |
+| round 8: run 7 (U–AB, both modes) at main 9031bd0f3 | 12 / 16 | 0.996 (456 / 458) | 0.812 (411 / 506) |
+| round 8: run 7, first evaluation (f6b5d509f; held out) | 16 / 16 | 1.000 (541 / 541) | 0.974 (493 / 506) |
+| round 8: dev / held out of round 6 at f6b5d509f | 34 / 34, 24 / 24 | 0.997 (2393 / 2401), 1.000 (338 / 338) | 0.996, 0.973 |
 
 Per kind at 0108b4021 (dev / held out): hidden-retake 0.997 / 1.000, retake 0.999 / 1.000, restart 0.998 / 1.000,
 false start 1.000 / 1.000, stutter — / 1.000, filler-vocalic 0.943 / —, filler-phrase 1.000 / 1.000, hallucination
@@ -539,6 +619,21 @@ kept). The first held-out evaluation failed G (a take holding its own restart), 
 spec's "never" phrase matched the kept "rehechos" as an ASR variant — a test error, fixed) and R b, where "no lo
 reescribí yo." was removed: the one false removal, fixed by rule 5's word-for-word requirement. The corpus asserts
 precision ≥ 0.99 and recall ≥ 0.95 per split.
+
+Round 8 (`CLEANUP_CORPUS=held-out-r7`): run 7 (main at 9031bd0f3, large-v3-turbo on CUDA, `/tmp/je-hr7-local/` on the
+build host) adds 16 cases — U–Z with takes, AA and AB controls, default and chunked — with their spec and `dup`
+references written from that run's listening judgements and duplicate references before the evaluation, and the
+voice without words the judgements call retries (U, and W a's tail of "rarísimo.") as `voiced`. Development used the
+dev split and round 6's held-out split; run 7 was evaluated once at the end and prompted no further change. Caveat, as
+in round 6: run 7's bug reports (H1–H10) were read before the development and two unit tests use its words (U b, W
+a), so the split measures how the rules generalise over the whole fragments, not blindness to those failures. The
+main baseline reproduces round 7's live numbers (0.996 / 0.811). Missed at f6b5d509f: U a's first take (the default
+run wrote it as garbage, "janeter … Pen 와 blah blah금u": a review finding here, and the speech re-decode now decodes
+that span again — speech.md §11.3), W a's "o" before the removed restart (the retry was written without it) and Z a's
+second "¡Llevo" (the recogniser wrote "Llevo, llevo" once). The one dev change: F's "Oh, | ¿cómo que…" is no longer a
+filler phrase (an interjection that opens an exclamation, round 8 H8). Not measurable on the corpus voice (speech under
+every word, no voicing plane): H5, H8's pause, H9 and the edges — their tests are synthetic (property, rules, cut
+edges).
 
 Round-6 items on this transcript corpus: 1 (N, a sentence twice) fixed by rule 4's aside; 2 (O, "o 3D" lost) by rules
 2 and 5; 3 (Q, missed restart) by rule 3's broken-off last word; 4 (T, false positive) by rules 2 and 4 (no prefix, not

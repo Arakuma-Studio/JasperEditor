@@ -40,66 +40,87 @@ const VOCAB = [
 	'y',
 ];
 
-/** Random words over random sound: each word is speech (loud core + quieter edges), gaps are silence or breath. */
-const recording = fc
-	.record({
-		words: fc.array(
-			fc.record({
-				w: fc.constantFrom(...VOCAB),
-				dur: fc.integer({ min: 8, max: 50 }),
-				gap: fc.integer({ min: 0, max: 120 }),
-				breath: fc.boolean(),
-				jitterA: fc.integer({ min: -5, max: 5 }),
-				jitterB: fc.integer({ min: -5, max: 8 }),
-				loud: fc.integer({ min: 30, max: 45 }),
-			}),
-			{ minLength: 1, maxLength: 60 },
-		),
-		natural: fc.boolean(),
-	})
-	.map(({ words, natural }) => {
-		let f = 20;
-		const lay = words.map((x) => {
-			const a = f + x.gap;
-			const b = a + x.dur;
-			f = b;
-			return { ...x, a, b };
-		});
-		const n = f + 40;
-		const level = new Uint8Array(n).fill((-65 + 120) * 2);
-		const classes = new Uint8Array(n);
-		for (const x of lay) {
-			for (let k = x.a; k < x.b; k++) {
-				const edge = k < x.a + 2 || k >= x.b - 2;
-				level[k] = (-65 + (edge ? 15 : x.loud) + 120) * 2;
-				classes[k] = 2;
+/**
+ * Random words over random sound: each word is speech (loud core + quieter edges), gaps are silence or breath — and,
+ * with `murmurs`, voice without words in some gaps (the direct planner properties leave it out: their planner alone
+ * places a word's sound by its speech frames ± 50 ms, not by the detector's partition).
+ */
+const recordingOf = (murmurs: boolean) =>
+	fc
+		.record({
+			words: fc.array(
+				fc.record({
+					w: fc.constantFrom(...VOCAB),
+					dur: fc.integer({ min: 8, max: 50 }),
+					gap: fc.integer({ min: 0, max: 120 }),
+					breath: fc.boolean(),
+					jitterA: fc.integer({ min: -5, max: 5 }),
+					jitterB: fc.integer({ min: -5, max: 8 }),
+					loud: fc.integer({ min: 30, max: 45 }),
+					// voice without words in the gap before the word: frames after the previous word, length, dB over the floor
+					murmur: fc.record({
+						off: fc.integer({ min: 0, max: 10 }),
+						len: fc.integer({ min: 0, max: 40 }),
+						db: fc.integer({ min: 3, max: 30 }),
+					}),
+				}),
+				{ minLength: 1, maxLength: 60 },
+			),
+			natural: fc.boolean(),
+		})
+		.map(({ words, natural }) => {
+			let f = 20;
+			const lay = words.map((x) => {
+				const a = f + x.gap;
+				const b = a + x.dur;
+				f = b;
+				return { ...x, a, b };
+			});
+			const n = f + 40;
+			const level = new Uint8Array(n).fill((-65 + 120) * 2);
+			const classes = new Uint8Array(n);
+			let prevB = -1;
+			for (const x of lay) {
+				// untranscribed voice inside the pause before the word (round 7: an accepted pause took 0.227 s of it)
+				const m = x.murmur;
+				if (murmurs && prevB >= 0 && m.len > 0 && x.a - prevB >= m.off + m.len + 30)
+					for (let k = prevB + m.off; k < prevB + m.off + m.len; k++) {
+						level[k] = (-65 + m.db + 120) * 2;
+						classes[k] = 2;
+					}
+				prevB = x.b;
+				for (let k = x.a; k < x.b; k++) {
+					const edge = k < x.a + 2 || k >= x.b - 2;
+					level[k] = (-65 + (edge ? 15 : x.loud) + 120) * 2;
+					classes[k] = 2;
+				}
+				for (let k = x.b; k < Math.min(n, x.b + 6); k++) level[k] = (-65 + 18 - (k - x.b) * 3 + 120) * 2;
+				// a rising onset before the word (non-speech, above the floor) where the gap leaves room
+				if (x.gap >= 12) for (let q = 1; q <= 3; q++) level[x.a - q] = (-65 + 13 - 4 * q + 120) * 2;
+				if (x.breath && x.gap > 30) for (let k = x.a - 25; k < x.a - 5; k++) classes[k] = 1;
 			}
-			for (let k = x.b; k < Math.min(n, x.b + 6); k++) level[k] = (-65 + 18 - (k - x.b) * 3 + 120) * 2;
-			// a rising onset before the word (non-speech, above the floor) where the gap leaves room
-			if (x.gap >= 12) for (let q = 1; q <= 3; q++) level[x.a - q] = (-65 + 13 - 4 * q + 120) * 2;
-			if (x.breath && x.gap > 30) for (let k = x.a - 25; k < x.a - 5; k++) classes[k] = 1;
-		}
-		const words2 = lay.map((x) => ({
-			text: x.w,
-			start: Math.round(((x.a + x.jitterA) / 100) * FLICKS_PER_SECOND),
-			end: Math.round(((x.b + x.jitterB) / 100) * FLICKS_PER_SECOND),
-			confidence: 0.9,
-			loud: [x.a + 2, x.b - 2] as [number, number],
-		}));
-		for (let i = 1; i < words2.length; i++)
-			if (words2[i]!.start < words2[i - 1]!.end) words2[i]!.start = words2[i - 1]!.end;
-		for (const w of words2) if (w.end <= w.start) w.end = w.start + 1;
-		return {
-			words: words2,
-			voice: {
-				classes,
-				level,
-				frameCount: n,
-				levels: { floorDb: -65, speechDb: -25, speechThresholdDb: -53, breathFloorDb: -60 },
-			},
-			settings: natural ? NATURAL_SETTINGS : FAST_SETTINGS,
-		};
-	});
+			const words2 = lay.map((x) => ({
+				text: x.w,
+				start: Math.round(((x.a + x.jitterA) / 100) * FLICKS_PER_SECOND),
+				end: Math.round(((x.b + x.jitterB) / 100) * FLICKS_PER_SECOND),
+				confidence: 0.9,
+				loud: [x.a + 2, x.b - 2] as [number, number],
+			}));
+			for (let i = 1; i < words2.length; i++)
+				if (words2[i]!.start < words2[i - 1]!.end) words2[i]!.start = words2[i - 1]!.end;
+			for (const w of words2) if (w.end <= w.start) w.end = w.start + 1;
+			return {
+				words: words2,
+				voice: {
+					classes,
+					level,
+					frameCount: n,
+					levels: { floorDb: -65, speechDb: -25, speechThresholdDb: -53, breathFloorDb: -60 },
+				},
+				settings: natural ? NATURAL_SETTINGS : FAST_SETTINGS,
+			};
+		});
+const recording = recordingOf(false);
 
 describe('planning properties', () => {
 	it('kept pieces are sorted, disjoint, inside the media, without removed sound, without split words', () => {
@@ -217,7 +238,7 @@ describe('planning properties', () => {
 		const kinds = fc.subarray([...FINDING_KINDS]);
 		fc.assert(
 			fc.property(
-				recording,
+				recordingOf(true),
 				fc.record(Object.fromEntries(RULES.map((k) => [k, action(k)]))),
 				fc.record({ acceptKinds: kinds, rejectKinds: kinds }),
 				(r, rules, decisions) => {
@@ -269,6 +290,20 @@ describe('planning properties', () => {
 					const nearCovered = (t: number) =>
 						covered.some(([x, y]) => t >= x - frame - 1e-6 && t <= y + frame + 1e-6);
 					const silent = (k: number) => r.voice.classes[k] !== 2 && r.voice.level[k]! < (-65 + 6 + 120) * 2;
+					const accepted = (f: (typeof a.findings)[number]) =>
+						!decisions.rejectKinds.includes(f.kind) &&
+						(decisions.acceptKinds.includes(f.kind) || f.suggested === 'remove');
+					const spanOf = (f: (typeof a.findings)[number]) => [sec(f.range.start), sec(f.range.end)] as const;
+					const untranscribed = a.findings
+						.filter((f) => f.kind === 'untranscribed' && !accepted(f))
+						.map(spanOf);
+					const wordRemovals = a.findings
+						.filter((f) => f.words && f.kind !== 'pause' && f.kind !== 'breath' && accepted(f))
+						.map(spanOf);
+					const overlaps = (t0: number, t1: number, s: ReadonlyArray<readonly [number, number]>) =>
+						s.some(([x, y]) => x < t1 - 1e-9 && y > t0 + 1e-9);
+					const inSpans = (t0: number, t1: number, s: ReadonlyArray<readonly [number, number]>) =>
+						s.some(([x, y]) => x <= t0 + 1e-9 && y >= t1 - 1e-9);
 					for (const range of a.plan.ranges) {
 						// every removed 10 ms of media lies in an accepted finding, or within a frame of one over silence
 						for (
@@ -279,9 +314,21 @@ describe('planning properties', () => {
 							const t0 = Math.max(k * 0.01, range.start * frame);
 							const t1 = Math.min((k + 1) * 0.01, range.end * frame);
 							if (t1 - t0 < 1e-9) continue;
+							// (or speech or silence in the frame at or before the start of a removal of words: the grid cannot
+							// split two words in continuous voice)
 							const ok =
-								(inCovered(t0) && inCovered(t1)) || (silent(k) && nearCovered(t0) && nearCovered(t1));
+								(inCovered(t0) && inCovered(t1)) ||
+								(silent(k) && nearCovered(t0) && nearCovered(t1)) ||
+								((r.voice.classes[k] === 2 || silent(k)) &&
+									wordRemovals.some(([x, y]) => t0 >= x - frame - 1e-6 && t1 <= y + 1e-9));
 							expect(ok, `${t0.toFixed(3)}–${t1.toFixed(3)} removed without an accepted finding`).toBe(true);
+							// voice without words stays unless its own finding (or a removal of words around it) is accepted: an
+							// accepted pause next to it never takes it (round 7: 0.227 s of an unaccepted untranscribed finding)
+							if (r.voice.classes[k] === 2 && overlaps(t0, t1, untranscribed))
+								expect(
+									inSpans(t0, t1, wordRemovals),
+									`voice ${t0.toFixed(3)}–${t1.toFixed(3)} of an unaccepted untranscribed finding removed`,
+								).toBe(true);
 						}
 					}
 					// no cut takes a kept word's rising onset after silence, nor the fading decay after the last kept word: the

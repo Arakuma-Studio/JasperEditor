@@ -369,6 +369,220 @@ describe('round 6 local fixes (docs/wp-notes/transcript-cleanup.md "Repeats by a
 	});
 });
 
+describe('round 8 fixes (docs/wp-notes/transcript-cleanup.md "Round 8")', () => {
+	const sec = (f: number) => f / FLICKS_PER_SECOND;
+	const detect = (words: CleanupWordIn[], voice: CleanupVoice) =>
+		detectCleanup({ mediaId: 'med_r', words, voice, language: 'es', settings: FAST_SETTINGS });
+	const removes = (d: ReturnType<typeof detect>, i: number) =>
+		d.findings.some((f) => f.words && f.suggested === 'remove' && f.words[0] <= i && i <= f.words[1]);
+
+	it('a greeting said twice with a comma pause is deliberate ("Hola, hola." 0.30 s apart)', () => {
+		const words: CleanupWordIn[] = [
+			{ text: 'Hola,', start: S(3.13), end: S(3.59), confidence: 0.9 },
+			{ text: 'hola.', start: S(3.89), end: S(4.43), confidence: 0.9 },
+			...say('Hoy voy a ser mi propio Unity.', { t0: 7.69 }),
+		];
+		expect(removes(detect(words, voiceFor(words)), 0)).toBe(false);
+	});
+
+	it('an interjection written with a comma before a word opens an exclamation, no filler phrase ("Oh, | shit")', () => {
+		const words = say('Oh, | shit, a ver. | Hola.', { pause: 0.75 });
+		const d = detect(words, voiceFor(words));
+		expect(removes(d, 0)).toBe(false);
+		expect(kinds('bueno | oh | vamos').label(1)).toBe('filler-phrase');
+	});
+
+	it('a pause ends before voiced sound under the speech threshold that leads into an onset', () => {
+		const words: CleanupWordIn[] = [
+			{ text: 'shit.', start: S(1), end: S(1.25), confidence: 0.9 },
+			{ text: 'ver', start: S(2.12), end: S(2.4), confidence: 0.9 },
+		];
+		const v = voiceFor(words);
+		const voicing = new Uint8Array(v.frameCount).fill(30);
+		for (const w of words) voicing.fill(200, Math.floor(sec(w.start) * 100), Math.ceil(sec(w.end) * 100));
+		// 0.75 s of breath-like noise, then the soft voiced "a" of a missed "a ver" at −42 dBFS, not speech
+		for (let f = 125; f < 200; f++) {
+			v.classes[f] = 1;
+			v.level[f] = (120 - 50) * 2;
+		}
+		for (let f = 200; f < 212; f++) v.level[f] = (120 - 42) * 2;
+		voicing.fill(200, 200, 212);
+		const d = detect(words, { ...v, voicing, flatness: new Uint8Array(v.frameCount).fill(60) });
+		const pauses = d.findings
+			.filter((f) => f.kind === 'pause')
+			.map((f) => [sec(f.range.start), sec(f.range.end)]);
+		expect(pauses.length).toBeGreaterThan(0);
+		for (const [a, b] of pauses) expect(b <= 2 + 1e-9 || a >= 2.12 - 1e-9, `pause ${a}–${b}`).toBe(true);
+	});
+
+	/** Indices of the words a finding that removes covers. */
+	const removed = (d: ReturnType<typeof detect>) => d.words.map((w) => w.i).filter((i) => removes(d, i));
+	const indexOf = (words: readonly CleanupWordIn[], text: string, from = 0) =>
+		words.findIndex((w, i) => i >= from && w.text === text);
+
+	it('a stock phrase the recogniser inserted into an attempt does not keep the attempt (U b "¡Suscríbete!")', () => {
+		// round 7, fragment U, chunked mode (16.5–49.8 s): ten attempts of one sentence, the third with an inserted
+		// "¡Suscríbete!" hummed over 0.68 s; the third was kept and the first two only reviewed
+		const real: Array<[string, number, number]> = [
+			['Tengo', 16.5, 16.68],
+			['solo', 16.68, 16.9],
+			['30', 16.9, 17.2],
+			['días', 17.2, 17.56],
+			['para', 17.56, 17.9],
+			['hacer', 17.9, 18.1],
+			['un', 18.1, 18.22],
+			['motor...', 18.22, 18.6],
+			['Tengo', 19.63, 19.72],
+			['solo', 19.72, 19.88],
+			['30', 19.88, 20.02],
+			['días', 20.02, 20.17],
+			['para', 20.24, 20.3],
+			['hacer', 20.3, 20.36],
+			['un', 20.36, 20.44],
+			['motor...', 20.44, 20.72],
+			['Tengo', 22.84, 23.0],
+			['solo', 23.0, 23.16],
+			['30', 23.16, 23.4],
+			['días', 23.4, 23.78],
+			['para', 23.78, 24.02],
+			['hacer', 24.02, 24.16],
+			['un', 24.16, 24.3],
+			['¡Suscríbete!', 24.3, 24.98],
+			['motor...', 24.98, 25.91],
+			['Tengo', 26.88, 27.05],
+			['solo', 27.05, 27.31],
+			['30', 27.31, 27.57],
+			['días', 27.57, 27.94],
+			['para', 27.94, 28.2],
+			['hacer', 28.2, 28.38],
+			['un', 28.38, 28.52],
+			['motor', 28.52, 28.78],
+			['de', 28.78, 28.94],
+			['videojuegos', 28.94, 29.38],
+			['entero.', 29.38, 30.06],
+			['Tengo', 30.52, 30.7],
+			['solo', 30.7, 30.92],
+			['30', 30.92, 31.18],
+			['días', 31.18, 31.56],
+			['para', 31.56, 31.8],
+			['hacer', 31.8, 31.98],
+			['un', 31.98, 32.1],
+			['video...', 32.1, 32.39],
+			['Física', 35.44, 35.64],
+			['de...', 35.64, 35.84],
+			['Tengo', 37.29, 37.49],
+			['solo', 37.49, 37.75],
+			['30', 37.75, 38.05],
+			['días', 38.05, 38.49],
+			['Espera', 38.49, 38.69],
+			['No', 39.24, 40.54],
+			['Aquí', 41.93, 43.63],
+			['Tengo', 45.11, 45.32],
+			['solo', 45.32, 45.58],
+			['30', 45.58, 45.86],
+			['días', 45.86, 46.23],
+			['para', 46.23, 46.49],
+			['hacer', 46.49, 46.67],
+			['un', 46.67, 46.81],
+			['motor', 46.81, 47.07],
+			['de', 47.07, 47.23],
+			['videojuegos', 47.23, 47.63],
+			['entero,', 47.63, 48.19],
+			['con', 48.23, 48.43],
+			['físicas,', 48.43, 49.15],
+			['gráficos...', 49.15, 49.79],
+		];
+		const words = real.map(([text, a, b]) => ({ text, start: S(a), end: S(b), confidence: 0.9 }));
+		const v = voiceFor(words);
+		// hummed: voiced everywhere, no frication
+		const hum = {
+			...v,
+			voicing: new Uint8Array(v.frameCount).fill(200),
+			flatness: new Uint8Array(v.frameCount).fill(10),
+		};
+		const d = detect(words, hum);
+		const kept = indexOf(words, 'Tengo', 50);
+		expect(removed(d)).toEqual(words.slice(0, kept).map((_, i) => i));
+		expect(d.findings.filter((f) => f.kind === 'hallucination')).toEqual([]);
+	});
+
+	it('a stock phrase woven into an attempt does not move its cut inside it (U a "Tengo al … canal!")', () => {
+		const words = say(
+			'Tengo solo 30 días para hacer un motor ¡Suscríbete | Tengo al solo 30 días para hacer canal! un motor | Tengo solo 30 días para hacer un motor de videojuegos entero.',
+		);
+		const d = detect(words, voiceFor(words));
+		const second = indexOf(words, 'Tengo', 1);
+		const kept = indexOf(words, 'Tengo', second + 1);
+		for (let i = 0; i < kept; i++) expect(removes(d, i), words[i]!.text).toBe(true);
+	});
+
+	it('words in another writing system are a hallucination to review (U a "Pen 와 blah blah금u")', () => {
+		const words = say('Hoy voy a ser mi propio janeter tengo sólo treinta días Pen 와 blah blah금u Unity');
+		const f = detect(words, voiceFor(words)).findings.find((x) => x.kind === 'hallucination')!;
+		expect(f.suggested).toBe('review');
+		expect(f.words).toEqual([indexOf(words, '와'), indexOf(words, 'blah금u')]);
+	});
+
+	it('text written over unvoiced noise alone between pauses is one hallucination that goes (V b "¿Qué pasa?")', () => {
+		const words = say('cuando tocas un botón. | ¿Qué pasa? | Es algo muy complejo.', { pause: 2 });
+		const v = voiceFor(words);
+		const voicing = new Uint8Array(v.frameCount).fill(200);
+		const [a, b] = [indexOf(words, '¿Qué'), indexOf(words, 'pasa?')];
+		const f0 = Math.floor(sec(words[a]!.start) * 100);
+		const f1 = Math.ceil(sec(words[b]!.end) * 100);
+		voicing.fill(20, f0 - 5, f1 + 5);
+		v.level.fill((120 - 40) * 2, f0, f1);
+		v.classes.fill(1, f0, f1);
+		const hs = detect(words, {
+			...v,
+			voicing,
+			flatness: new Uint8Array(v.frameCount).fill(120),
+		}).findings.filter((x) => x.kind === 'hallucination');
+		expect(hs.map((x) => [x.words, x.suggested])).toEqual([[[a, b], 'remove']]);
+	});
+
+	it('a self-correction aside between a clause and its corrected retry (W: "de Unity. | No, de ellos, …")', () => {
+		const text = (aside: string) =>
+			`literalmente todos los hice en Unity. eso significa que dependo completamente de Unity. | ${aside} | eso significa que dependo completamente de ellos. Y a veces`;
+		// the aside names the corrected word: the attempt and the aside go, with or without the marker
+		for (const aside of [
+			'No, de ellos, no tengo que repetir tanto.',
+			'de ellos, no tengo que repetir tanto.',
+		]) {
+			const words = say(text(aside));
+			const d = detect(words, voiceFor(words));
+			const first = indexOf(words, 'eso');
+			const retry = indexOf(words, 'eso', first + 1);
+			for (let i = 0; i < words.length; i++)
+				expect(removes(d, i), `${aside}: ${words[i]!.text}`).toBe(i >= first && i < retry);
+		}
+		// a correction marker without the word: reviewed
+		const words = say(text('No, perdón, me equivoqué.'));
+		const d = detect(words, voiceFor(words));
+		const f = d.findings.find((x) => x.words?.[0] === indexOf(words, 'eso'))!;
+		expect(f.suggested).toBe('review');
+	});
+
+	it('a sentence, its abandoned start and the take that stays: both earlier copies go (W a)', () => {
+		const words = say(
+			'te va muy bien. | Y sí, es cierto, pero tengo mis razones. | sí, es cierto, Y sí, es cierto, pero tengo mis razones. | Eh... Desde que',
+		);
+		const d = detect(words, voiceFor(words));
+		const kept = indexOf(words, 'Y', indexOf(words, 'Y') + 1);
+		for (let i = indexOf(words, 'Y'); i < kept; i++) expect(removes(d, i), words[i]!.text).toBe(true);
+		expect(removes(d, kept)).toBe(false);
+	});
+
+	it('one word the recogniser wrote twice does not keep a whole sentence for review (W a "crecieron crashean")', () => {
+		const words = say(
+			'Y a veces la Play Store me dice que mis juegos crecieron crashean mucho o que aparece aparece un bug rarísimo | Y a veces la Play Store me dice que mis juegos crecían mucho o que aparece un bug rarísimo. | Y después',
+		);
+		const d = detect(words, voiceFor(words));
+		const retry = indexOf(words, 'Y', 1);
+		for (let i = 0; i < retry; i++) expect(removes(d, i), words[i]!.text).toBe(true);
+	});
+});
+
 describe('rules (English)', () => {
 	it('English fillers, markers and restarts', () => {
 		const r = kinds('so um we built the track | you know | then we we added cars', { language: 'en' });

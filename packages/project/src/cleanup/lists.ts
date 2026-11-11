@@ -477,6 +477,20 @@ export function soundsAlike(a: string, b: string): boolean {
 	return editDistance(fa, fb) <= Math.ceil(Math.max(fa.length, fb.length) / 2);
 }
 
+/**
+ * Whether a word of a transcript in `language` holds letters of another writing system: a Latin-script language
+ * (Spanish, English) written with Hangul, CJK, Cyrillic… letters. Whisper writes such tokens over speech it could not
+ * decode (round 7, a Spanish take written "janeter … Pen 와 blah blah금u"): no word of the language, so a sign of a
+ * garbled decode. Unknown languages (`und`) never match.
+ */
+export function foreignScriptWord(text: string, language: string | null | undefined): boolean {
+	if (!cleanupLanguageOf(language)) return false;
+	return FOREIGN_LETTER.test(text);
+}
+
+/** A letter outside the Latin script. */
+const FOREIGN_LETTER = /(?=\p{L})\P{Script=Latin}/u;
+
 /** A list entry ("o sea", "¿sabes?") as normalised tokens (empty entries vanish). */
 export function phraseTokens(entry: string): string[] {
 	return entry

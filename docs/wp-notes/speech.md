@@ -376,7 +376,9 @@ whisper evaluation (53 configurations; the numbers of spec 16 §0). This section
   raw Whisper words: traces are (a) stretched words — longer than 1 s with ≥ 50 % of their 10 ms frames voiced
   ("continuous speech": the voice-analysis speech class, else the energy VAD; a word stretched over a pause is not,
   refinement trims it) and (b) short wordless voice — ≥ 0.35 s of voiced frames no word covers within ±50 ms (voice
-  closer than 100 ms joins; the same scan as the 2 s safety net, `wordlessVoicedSpans` with another shape). Window =
+  closer than 100 ms joins; the same scan as the 2 s safety net, `wordlessVoicedSpans` with another shape) and (c)
+  garbled words — letters of another writing system than the transcript's language (`foreignScriptWord`,
+  `@jasper/project/cleanup-worker`; Spanish / English only, other languages never match). Window =
   3 s before to 1.5 s after the trace, each edge moved out to the middle of a pause of ≥ 100 ms within 1 s, then to the
   bounds of a word it cuts; overlapping windows merge while ≤ 30 s. Each window is decoded alone (`span`), verbatim,
   `conditionOnPreviousText: false`. Acceptance (`redecodeAccepted`): original words the re-decode does not say again
@@ -385,7 +387,16 @@ whisper evaluation (53 configurations; the numbers of spec 16 §0). This section
   itself (> 1 s) or the words written over it spell it differently (also joined: "Playstore" / "Play Store"). The
   result replaces the window's words only when it holds MORE words with letters/digits and ≥ 20 % voiced frames than
   the original holds words and misses ≤ 20 % of the original words, never three in a row; an equal or smaller result
-  never replaces anything, so the pass never drops words. A rejected window over several of the whole file's VAD
+  never replaces anything, so the pass never drops words. Garbage in the original — garbled words and the words
+  between two of them with ≤ 2 words between (`garbageWords`) — is no word: it need not be said again, never stays,
+  and counts neither in the original's words (the "MORE" total) nor in the misses; a window without garbled words is
+  judged as before. Round 7 (reporter's turbo run, default mode): the first pass wrote "Hoy voy a ser mi propio
+  janeter[8.89-9.43] tengo sólo treinta días Pen[10.77-11.03] 와[11.03-12.03] blah[13.19-14.15] blah금u[14.15-14.53]
+  Unity" over "Hoy voy a ser mi propio Unity, tengo solo 30 días. Espérate, | Hoy voy a ser mi propio Unity" (chunked
+  mode wrote it right); no window covered 7.7–15 s (windows 0–5.95, 18.11–27.05, 37.19–44.5): no word was stretched
+  over voice and no voice was left without words. Test: "a word in another writing system marks a garbled take"
+  (fails before: no window, the garbage stays; with the trace but without the garbage rule the window is taken with
+  the garbage kept). Not run on the real model or audio. A rejected window over several of the whole file's VAD
   chunks is decoded once more over those chunks exactly as `chunking: "vad"` decodes them (energy VAD, both passes
   and the merge below, the job's options, no previous text; ≤ 10 min of audio per job, both passes counted,
   `REDECODE_CHUNKED_MAX_FRAMES`) and judged by the same rule; its range then reports `chunked` (true when those words
@@ -442,7 +453,10 @@ whisper evaluation (53 configurations; the numbers of spec 16 §0). This section
   report (assumption: they hold for other speakers and languages). Limits: a take the re-decode also writes once stays
   hidden; acceptance needs strictly more words, so a re-decode that fixes timing without adding a word changes nothing
   (captions still warn); a re-decoded word timed across a guarded edge differently from the original may be written
-  twice there; the web Transcribe dialog has no chunking control yet (docs/gaps.md).
+  twice there; the web Transcribe dialog has no chunking control yet (docs/gaps.md). Garbled words are found only
+  as non-Latin letters in a Spanish / English transcript: Latin nonsense ("janeter", "Pen") is not detectable
+  lexically, so such words stay next to the re-decode's words unless they lie between two garbled ones; a real word
+  between two garbled ones is dropped with them.
 - Verbatim prompts (TC-003): `verbatim` puts the language's filler prompt (Spanish `Eh... em, bueno, o sea, este...
   mmm, ¿vale? Ah, eh, pues...`, English `Um, uh, so, like, you know... hmm, okay? Ah, er, well...` — the English one is
   our assumption) and `initialPrompt` at the start of the running text, OpenAI semantics: it conditions the first

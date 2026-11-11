@@ -89,6 +89,11 @@ export type RuleContext = {
 	scriptTokens: readonly string[];
 	/** Seconds of speech frames inside a word (null without voice analysis). */
 	voicedSeconds: ((w: AWord) => number) | null;
+	/**
+	 * Words the recogniser likely inserted (positions in `words`): stock phrases over voice without frication or woven
+	 * into other speech, words in another writing system. A repeat's alignment forgives them between two re-said words.
+	 */
+	inserted?: ReadonlySet<number>;
 };
 
 const claim = (ctx: RuleContext, k: number, kind: FindingKind, action: RuleAction, group?: number) => {
@@ -199,7 +204,15 @@ export function onlyMarkers(
 	return toks.length > 0;
 }
 
-/** The prototype's standalone-phrase rule: a phrase of ≤ `markerPhraseMaxWords` words made only of markers. */
+/** Interjections among the markers: written with a comma before a word, they open an exclamation ("Oh, shit."). */
+const INTERJECTIONS = new Set(['oh', 'ay', 'uy', 'uf', 'wow', 'guau']);
+
+/**
+ * The prototype's standalone-phrase rule: a phrase of ≤ `markerPhraseMaxWords` words made only of markers — but not an
+ * interjection the recogniser wrote with a comma before a word that is no marker or filler, in the same sentence: it
+ * opens an exclamation after a pause (round 7, U b: "Oh, | shit, a ver." lost its loud "Oh"); the lexical review
+ * still lists it.
+ */
 export function ruleMarkerPhrases(
 	ctx: RuleContext,
 	phs: readonly number[][],
@@ -208,10 +221,20 @@ export function ruleMarkerPhrases(
 	const a = ctx.settings.rules.fillerPhrase;
 	if (a === 'off') return;
 	const max = ctx.settings.thresholds.markerPhraseMaxWords;
+	const single = new Set(markers.filter((m) => m.length === 1).map((m) => m[0]!));
 	for (const ph of phs) {
 		const toks = ph.map((k) => ctx.words[k]!.n);
-		if (toks.length && toks.length <= max && onlyMarkers(toks, markers, ctx.fillers))
-			for (const k of ph) claim(ctx, k, 'filler-phrase', a);
+		if (!toks.length || toks.length > max || !onlyMarkers(toks, markers, ctx.fillers)) continue;
+		const last = ctx.words[ph[ph.length - 1]!]!;
+		const next = ctx.words[ph[ph.length - 1]! + 1];
+		const exclamation =
+			toks.length === 1 &&
+			INTERJECTIONS.has(toks[0]!) &&
+			/,$/.test(last.text.trim()) &&
+			!!next &&
+			!single.has(next.n) &&
+			!ctx.fillers.has(next.n);
+		if (!exclamation) for (const k of ph) claim(ctx, k, 'filler-phrase', a);
 	}
 }
 
@@ -255,19 +278,28 @@ export function ruleStutters(ctx: RuleContext): void {
 }
 
 /**
- * Whether word k starts a reduplication: the same content word (or allowed emphasis) said again at once (<
- * `stutterGapS`), the run ending its phrase (sentence end or ≥ `phraseGapS` pause after it) or of three or more —
- * "Guiño, guiño.", "boing, boing, boing" — where a stutter or restart goes on with new words ("Primero, primero diseñé").
+ * Copies of a reduplication are said this close (seconds, inclusive) or closer — or within `stutterGapS` when that is
+ * larger. A deliberate reduplication is two prosodic units, often with a comma pause between them (round 7: "Hola,
+ * hola." with 0.30 s between the copies was cut as a retake because the guard wanted < 0.30 s); what tells it from a
+ * restart is that the run ends its phrase, not the gap. *Assumption*: 0.5 s, the upper end of a comma pause.
+ */
+const REDUPLICATION_GAP_S = 0.5;
+
+/**
+ * Whether word k starts a reduplication: the same content word (or allowed emphasis) said again at once (≤
+ * `REDUPLICATION_GAP_S`), the run ending its phrase (sentence end or ≥ `phraseGapS` pause after it) or of three or more
+ * — "Guiño, guiño.", "Hola, hola.", "boing, boing, boing" — where a stutter or restart goes on with new words ("Primero,
+ * primero diseñé").
  */
 export function reduplicated(ctx: RuleContext, k: number): boolean {
 	const w = ctx.words;
 	const x = w[k]!.n;
 	const content = (!ctx.stop.has(x) && (x.length >= 3 || /\d/.test(x))) || ctx.lists.allow.includes(x);
 	if (!content || k + 1 >= w.length || w[k + 1]!.n !== x) return false;
+	const gap = Math.max(REDUPLICATION_GAP_S, ctx.settings.thresholds.stutterGapS) + 1e-6;
 	let e = k + 1;
-	while (e + 1 < w.length && w[e + 1]!.n === x && w[e + 1]!.s - w[e]!.e < ctx.settings.thresholds.stutterGapS)
-		e++;
-	for (let y = k; y < e; y++) if (w[y + 1]!.s - w[y]!.e >= ctx.settings.thresholds.stutterGapS) return false;
+	while (e + 1 < w.length && w[e + 1]!.n === x && w[e + 1]!.s - w[e]!.e <= gap) e++;
+	for (let y = k; y < e; y++) if (w[y + 1]!.s - w[y]!.e > gap) return false;
 	const next = w[e + 1];
 	return (
 		e - k >= 2 ||

@@ -15,6 +15,7 @@ import {
 	type CleanupLanguageLists,
 	cleanupLanguageOf,
 	cleanupNorm,
+	foreignScriptWord,
 	phraseTokens,
 	restartStopWords,
 	sameWord,
@@ -253,7 +254,16 @@ export function detectCleanup(input: DetectInput): DetectResult {
 		const e = toSec(w.end);
 		if (!(e > s - 1e-6)) continue;
 		// a spoken symbol ("%": "por ciento") is a word over its sound, though it normalises to nothing
-		const n = cleanupNorm(w.text) || spokenSymbol(w.text, lang);
+		// …and a word in another writing system (Hangul in a Spanish transcript) is a word over its sound: garbage to flag
+		const n =
+			cleanupNorm(w.text) ||
+			spokenSymbol(w.text, lang) ||
+			(foreignScriptWord(w.text, input.language)
+				? w.text
+						.normalize('NFKC')
+						.toLowerCase()
+						.replace(/[\p{P}\p{S}\s]/gu, '')
+				: '');
 		if (!n) continue;
 		const conf = typeof w.confidence === 'number' && Number.isFinite(w.confidence) ? w.confidence : null;
 		words.push({ i, n, s, e, text: w.text, conf });
@@ -282,6 +292,49 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			}
 		}
 	}
+	// words the recogniser likely inserted (round 7): garbage — words in another writing system and the few between two
+	// of them ("Pen 와 blah blah금u") —, a stock phrase woven into other speech ("¡Suscríbete | Tengo al solo 30 días para
+	// hacer canal!"), and words over sound without a voiced frame (no vowel: "¿Qué pasa?" over noise). A repeat's
+	// alignment forgives them between re-said words; one over noise alone in its phrase is a hallucination like the guard's
+	const suspect = new Set<number>(hummed);
+	if (settings.rules.hallucination !== 'off') {
+		let last = -1;
+		for (let k = 0; k < words.length; k++) {
+			if (!foreignScriptWord(words[k]!.text, input.language)) continue;
+			suspect.add(k);
+			if (last >= 0 && k - last - 1 <= GARBLED_GAP_MAX) for (let q = last + 1; q < k; q++) suspect.add(q);
+			last = k;
+		}
+		for (const p of lists.hallucinations.map((h) => h.split(' ')).filter((p) => p.length > 1))
+			for (let k = 0; k < words.length; k++) {
+				if (words[k]!.n !== p[0]) continue;
+				const at = [k];
+				for (let q = k + 1; q < words.length && at.length < p.length; q++) {
+					if (q - k > WOVEN_MAX_WORDS || words[q]!.s - words[k]!.e > WOVEN_MAX_S) break;
+					if (words[q]!.n === p[at.length]) at.push(q);
+				}
+				if (at.length === p.length && at[at.length - 1]! - k >= p.length) for (const q of at) suspect.add(q);
+			}
+		if (voice?.voicing) {
+			const noise = words.map((w, k) => !guarded[k] && unvoicedSound(voice, w));
+			for (let k = 0; k < words.length; ) {
+				if (!noise[k]) {
+					k++;
+					continue;
+				}
+				let j = k;
+				while (j + 1 < words.length && noise[j + 1]) j++;
+				const alone =
+					(k === 0 || words[k]!.s - words[k - 1]!.e >= T.phraseGapS) &&
+					(j === words.length - 1 || words[j + 1]!.s - words[j]!.e >= T.phraseGapS);
+				for (let q = k; q <= j; q++) {
+					if (alone) guarded[q] = true;
+					else suspect.add(q);
+				}
+				k = j + 1;
+			}
+		}
+	}
 	const aw: AWord[] = [];
 	const awIndex: number[] = []; // aw position → words position
 	for (let k = 0; k < words.length; k++)
@@ -303,6 +356,7 @@ export function detectCleanup(input: DetectInput): DetectResult {
 		stop,
 		restartStop: new Set(restartStopWords(lang)),
 		scriptTokens: sTokens,
+		inserted: new Set(aw.flatMap((_, k) => (suspect.has(awIndex[k]!) ? [k] : []))),
 		voicedSeconds: voice
 			? (w) => {
 					const [a, b] = wordFrames(w);
@@ -501,6 +555,11 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			k = j + 1;
 		}
 
+	// what the recogniser likely inserted and no removal takes is a hallucination to review
+	for (let k = 0; k < aw.length; k++)
+		if (suspect.has(awIndex[k]!) && labels[k]?.action !== 'remove')
+			labels[k] = { kind: 'hallucination', action: 'review' };
+
 	// a kept take is what stays of it: words its own restarts, false starts or fillers remove at its edges are not
 	// part of it ("… para poder subirlos" said again right after), so no finding overlaps the take that stays
 	for (const g of groups) {
@@ -650,31 +709,19 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			k = j + 1;
 		}
 	}
-	// a stock phrase over voice without frication: a hallucination finding for review (an uncalibrated measure, so it
-	// never removes by default)
-	if (settings.rules.hallucination !== 'off')
-		for (let k = 0; k < words.length; ) {
-			if (!hummed.has(k) || guarded[k]) {
-				k++;
-				continue;
-			}
-			let j = k;
-			while (j + 1 < words.length && hummed.has(j + 1)) j++;
-			const [hs, he] = soundOf(k, j);
-			raw.push({
-				kind: 'hallucination',
-				suggested: 'review',
-				start: hs,
-				end: he,
-				fp: [input.words[words[k]!.i]!.start, input.words[words[j]!.i]!.end],
-				words: [words[k]!.i, words[j]!.i],
-				text: words
-					.slice(k, j + 1)
-					.map((w) => w.text.trim())
-					.join(' '),
-			});
-			k = j + 1;
+	// a removal of words that starts in continuous voice right after another word starts at the quietest 10 ms frame
+	// between them, never inside its first word (round 7: cuts started 20–30 ms into a removed "no" / "o" and in loud
+	// voice; the frame grid then takes the boundary at or before that point — docs/wp-notes/transcript-cleanup.md
+	// "Cut edges in continuous voice")
+	if (voice) {
+		const posOf = new Map(words.map((w, k) => [w.i, k]));
+		for (const r of raw) {
+			const k = r.words ? posOf.get(r.words[0]) : undefined;
+			if (k === undefined || k === 0) continue;
+			const v = startValley(voice, words[k - 1]!, words[k]!);
+			if (v !== null) r.start = Math.min(r.start, Math.round(v * FR * FLICKS_PER_SECOND));
 		}
+	}
 	raw.push(...frameRaw);
 	// a review-only word alone between two removed pauses, shorter than `SLIVER_S`, is a sliver a cut would leave
 	// standing (round 6: "pasa?" 0.10 s, "¿Qué" 0.13 s): its finding proposes removing it (still reviewable)
@@ -840,6 +887,11 @@ const UNCOVERED_MARGIN_S = 0.15;
 const STRETCHED_WORD_S = 1;
 /** … and holds its first this many seconds; the voice after that is flagged. *Assumption* (run 5, H and G). */
 const WORD_HOLD_S = 0.5;
+/**
+ * Voice running on after a word's time to the end of its speech run, at most this long (seconds), is the word's tail.
+ * *Assumption* from round 7 (W a: 0.34 s of "rarísimo." after its timestamp); a longer run stays untranscribed voice.
+ */
+const WORD_TAIL_S = 0.4;
 
 type FrameFinding = {
 	kind: FindingKind;
@@ -928,6 +980,7 @@ function frameFindings(
 	const mg = Math.round(settings.gaps.maxGapS / FR);
 	const margin = Math.round(UNCOVERED_MARGIN_S / FR);
 	const minU = Math.max(1, Math.round(T.untranscribedMinS / FR - 1e-9));
+	const tail = Math.round(WORD_TAIL_S / FR);
 	const own = (k: number, f: number) => {
 		const s = sound[k]!;
 		if (f < s[0]) s[0] = f;
@@ -1015,7 +1068,9 @@ function frameFindings(
 							untranscribed(p + margin, q - margin);
 						}
 					} else if (left >= 0) {
-						if (q - p < margin + minU) giveL(p, q);
+						// a word's voice that runs on after its time to the end of the speech run is its tail (round 7, W a:
+						// "rarísimo." ended 0.34 s before its voice; a removed retake left that tail as a fragment)
+						if (q - p < margin + minU || q - p <= tail) giveL(p, q);
 						else {
 							giveL(p, p + margin);
 							untranscribed(p + margin, q);
@@ -1054,7 +1109,9 @@ function frameFindings(
 			let g = f;
 			while (g < hi && gapAt(g)) g++;
 			if (g - f > mg) {
-				const [pa, pb] = pauseEdges(voice, settings, lo, hi, f, g);
+				// only a word's decay goes with a pause: voice without words before it stays unless its own finding is
+				// accepted (round 7: a pause took 0.227 s of an unaccepted untranscribed finding at −34…−51 dBFS)
+				const [pa, pb] = pauseEdges(voice, settings, lo, hi, f, g, (x) => owner[x - lo]! >= 0);
 				if (pb > pa) push('pause', settings.rules.pause, pa, pb);
 				// the rising onset before the speech after the pause and a tail's fading decay are that speech's sound
 				const r = side(g);
@@ -1148,6 +1205,38 @@ export function wordHold(voice: CleanupVoice, w: { s: number; e: number }): [num
 	return b > a ? [a, b] : null;
 }
 
+/** How far back (seconds) from a removed word's start the quietest point before it is looked for. */
+const VALLEY_BACK_S = 0.08;
+
+/**
+ * Where a removal starting at word `w` begins when `w` follows `prev` in continuous voice (every frame from the end of
+ * `prev`'s time to `w`'s start is speech): the quietest 10 ms frame (the latest of equals) from `VALLEY_BACK_S` before
+ * `w` — but after the first 60 % of `prev` — up to the frame holding `w`'s start. Null with a non-speech frame between
+ * them (the silence and pause rules place that edge).
+ */
+export function startValley(
+	voice: CleanupVoice,
+	prev: { s: number; e: number },
+	w: { s: number },
+): number | null {
+	const end = Math.min(voice.frameCount - 1, Math.floor(w.s / FR + 1e-9));
+	const [pa, pb] = wordFrames(prev);
+	const from = Math.max(0, pa + Math.ceil(0.6 * (pb - pa)), Math.floor((w.s - VALLEY_BACK_S) / FR + 1e-9));
+	if (from > end) return null;
+	for (let k = Math.min(from, pb - 1); k <= end; k++)
+		if (voice.classes[k] !== VOICE_CLASS_SPEECH) return null;
+	let best = from;
+	let bestDb = Number.POSITIVE_INFINITY;
+	for (let k = from; k <= end; k++) {
+		const db = levelDbAt(voice, k);
+		if (db <= bestDb) {
+			best = k;
+			bestDb = db;
+		}
+	}
+	return best;
+}
+
 /** A kept piece shorter than this (seconds) between two cuts is a sliver. */
 const SLIVER_S = 0.15;
 
@@ -1171,6 +1260,28 @@ function noFrication(voice: CleanupVoice, s: number, e: number): boolean {
 	return speech * FR >= 0.3;
 }
 
+/** Words between two words in another writing system with at most this many words between them are garbage too. */
+const GARBLED_GAP_MAX = 2;
+/** A stock phrase woven into other speech: its words in order within this many words and seconds of its first. */
+const WOVEN_MAX_WORDS = 10;
+const WOVEN_MAX_S = 4;
+
+/**
+ * Whether a word lies over sound without one voiced frame (`voicedFrame`) in its time and 30 ms around it, at least
+ * half of it above measured silence: noise — a Spanish or English word holds a vowel. False without the voicing
+ * plane. Round 7: Whisper wrote "¿Qué pasa?" over unvoiced noise at −27…−49 dBFS, zero-crossing rate 1,500–10,000 /s.
+ */
+function unvoicedSound(voice: CleanupVoice, w: { s: number; e: number }): boolean {
+	if (!voice.voicing) return false;
+	const [a, b] = wordFrames(w);
+	let loud = 0;
+	for (let f = Math.max(0, a - 3); f < Math.min(voice.frameCount, b + 3); f++) {
+		if (voicedFrame(voice, f)) return false;
+		if (f >= a && f < b && !silentFrame(voice, f)) loud++;
+	}
+	return b > a && loud * 2 >= b - a;
+}
+
 /** Shortest breath-like run (frames): the voice analysis' class minimum (120 ms). */
 const BREATH_MIN_FRAMES = 12;
 /** A word that opens with a fricative or affricate (its unvoiced noise before the voiced part is the word). */
@@ -1185,6 +1296,7 @@ const PAUSE_EDGE_MAX_S = 0.25;
  * where the decay falls below the level edges' out threshold when speech follows (the Fast style's out point inside
  * the decay), and at measured silence at a tail, so a last word keeps its fading tail. Each edge moves at most
  * `PAUSE_EDGE_MAX_S`; with no silence that close an onset edge stays at the gap's end (a tail with none: no pause).
+ * The decay a join's pause takes is a word's (`wordFrame`), never voice without words.
  */
 function pauseEdges(
 	voice: CleanupVoice,
@@ -1193,6 +1305,7 @@ function pauseEdges(
 	hi: number,
 	f: number,
 	g: number,
+	wordFrame: (k: number) => boolean,
 ): [number, number] {
 	if (voice.levels.floorDb === null) return [f, g];
 	const max = Math.round(PAUSE_EDGE_MAX_S / FR);
@@ -1203,6 +1316,21 @@ function pauseEdges(
 		let k = g - 1;
 		while (k > f && g - k <= max && !silentFrame(voice, k)) k--;
 		if (silentFrame(voice, k)) b = k + 1;
+		// voiced sound under the speech threshold leading into the onset is the onset's (round 7, U b: the soft "a" of
+		// a missed "a ver" at −40…−31 dBFS after 0.25 s of other sound): the pause ends before it, at the last silent
+		// frame within `max` before it, else at its first voiced frame
+		let first = g;
+		for (let x = g - 1, gap = 0; x >= f && !silentFrame(voice, x) && gap <= VOICED_BREAK_FRAMES; x--) {
+			if (voicedFrame(voice, x)) {
+				first = x;
+				gap = 0;
+			} else gap++;
+		}
+		if (first < b) {
+			let q = first - 1;
+			while (q > f && first - q <= max && !silentFrame(voice, q)) q--;
+			b = silentFrame(voice, q) ? q + 1 : first;
+		}
 	}
 	if (f > lo) {
 		if (g < hi) {
@@ -1213,6 +1341,7 @@ function pauseEdges(
 					a > lo &&
 					f - a < max &&
 					voice.classes[a - 1] === VOICE_CLASS_SPEECH &&
+					wordFrame(a - 1) &&
 					levelDbAt(voice, a - 1) < thr
 				)
 					a--;
@@ -1270,6 +1399,19 @@ export function edgeThreshold(voice: CleanupVoice, edges: CleanupEdges, which: '
 	}
 	const f = voice.levels.floorDb;
 	return f === null ? null : f + db;
+}
+
+/** Unvoiced frames a run of voiced sound may hold (30 ms: a consonant). */
+const VOICED_BREAK_FRAMES = 3;
+
+/**
+ * Whether frame k is voiced sound above measured silence (voicing ≥ 0.5 — the breath class's ceiling — and at least
+ * `SILENCE_DB` over the floor). False without the voicing plane.
+ */
+export function voicedFrame(voice: CleanupVoice, k: number): boolean {
+	const floor = voice.levels.floorDb;
+	if (!voice.voicing || floor === null || k < 0 || k >= voice.frameCount) return false;
+	return voice.voicing[k]! >= 128 && levelDbAt(voice, k) >= floor + SILENCE_DB;
 }
 
 /** A voice frame at most this far (dB) above the noise floor is silence (the speech threshold's minimum margin). */

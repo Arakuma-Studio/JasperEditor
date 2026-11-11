@@ -1,5 +1,5 @@
 // One transcription, in-process: decode (streamed) → Whisper → wordless voiced spans decoded again → windows around
-// stretched words and short wordless voice decoded again (hidden takes) → word-bound repair (pauses, voice) →
+// stretched words, short wordless voice and garbled words decoded again (hidden takes) → word-bound repair (pauses, voice) →
 // hallucination guards → VAD tightening → speakers. Used by the `jasper-speech` child process (cli.ts) and by tests.
 //
 // Execution providers (spec 16 SG-002/SG-003): the job spec says which provider each model part uses (the engine
@@ -75,8 +75,8 @@ export type SpeechJobSpec = {
 	initialPrompt?: string;
 	conditionOnPreviousText?: boolean;
 	/**
-	 * Decode the windows around stretched words and short wordless voice again, alone (hidden takes, `core/gaps.ts`;
-	 * default true).
+	 * Decode the windows around stretched words, short wordless voice and garbled words again, alone (hidden takes,
+	 * `core/gaps.ts`; default true).
 	 */
 	redecode?: boolean;
 	/**
@@ -641,9 +641,10 @@ function mergeRecovered(a: RecoveredReport | null, b: RecoveredReport | null): R
 
 /**
  * Hidden takes (`core/gaps.ts`, docs/wp-notes/speech.md §11.3 "Hidden takes"): decodes again, each alone, the windows around
- * stretched words and short wordless voice of `r` — verbatim, without the previous text — and replaces a window's
- * words when the re-decode holds more words consistent with the audio and re-says the original ones
- * (`redecodeAccepted`; original words it wrote nothing over stay); the window's segments are replaced with it. A
+ * stretched words, short wordless voice and garbled words (another writing system than `r.language`) of `r` —
+ * verbatim, without the previous text — and replaces a window's words when the re-decode holds more words consistent
+ * with the audio and re-says the original ones (`redecodeAccepted`; original words it wrote nothing over stay, garbage
+ * never does); the window's segments are replaced with it. A
  * rejected window over several of the whole file's VAD chunks is decoded once more the `chunking: "vad"` way over
  * those chunks (both passes, merged, the job's options; within `REDECODE_CHUNKED_MAX_FRAMES` of audio per job),
  * judged by the same rule. A decoder failure is thrown.
@@ -655,7 +656,7 @@ async function redecodeSuspects(
 	mask: SpeechMask,
 	opts: WhisperOptions,
 ): Promise<{ result: WhisperResult; report: RedecodedReport | null }> {
-	const { windows, skipped } = suspectWindows(r.words, mask);
+	const { windows, skipped } = suspectWindows(r.words, mask, r.language);
 	if (!windows.length && !skipped) return { result: r, report: null };
 	const report: RedecodedReport = {
 		windows: windows.length,
@@ -685,7 +686,7 @@ async function redecodeSuspects(
 		const inside = (w: { start: number; end: number }) => mid(w) >= start && mid(w) < end;
 		const before = words.filter(inside);
 		let after = got.words.filter(inside);
-		let placed = redecodeAccepted(before, after, mask, MIN_VOICED_FRACTION);
+		let placed = redecodeAccepted(before, after, mask, MIN_VOICED_FRACTION, r.language);
 		let chunked: boolean | undefined;
 		if (!placed) {
 			fileChunks ??= vadChunks(input.mask);
@@ -706,7 +707,7 @@ async function redecodeSuspects(
 				got = c.result;
 				extra.add(got);
 				after = got.words.filter(inside);
-				placed = redecodeAccepted(before, after, mask, MIN_VOICED_FRACTION);
+				placed = redecodeAccepted(before, after, mask, MIN_VOICED_FRACTION, r.language);
 				chunked = !!placed;
 			}
 		}
