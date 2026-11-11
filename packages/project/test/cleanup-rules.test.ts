@@ -552,7 +552,8 @@ describe('round 8 fixes (docs/wp-notes/transcript-cleanup.md "Round 8")', () => 
 	it('a self-correction aside between a clause and its corrected retry (W: "de Unity. | No, de ellos, …")', () => {
 		const text = (aside: string) =>
 			`literalmente todos los hice en Unity. eso significa que dependo completamente de Unity. | ${aside} | eso significa que dependo completamente de ellos. Y a veces`;
-		// the aside names the corrected word: the attempt and the aside go, with or without the marker
+		// the aside names the corrected word: the attempt goes, with or without the marker; the aside says new words ("no
+		// tengo que repetir tanto"), so it is its own review finding (round 10)
 		for (const aside of [
 			'No, de ellos, no tengo que repetir tanto.',
 			'de ellos, no tengo que repetir tanto.',
@@ -560,9 +561,14 @@ describe('round 8 fixes (docs/wp-notes/transcript-cleanup.md "Round 8")', () => 
 			const words = say(text(aside));
 			const d = detect(words, voiceFor(words));
 			const first = indexOf(words, 'eso');
+			const end = indexOf(words, 'Unity.', first);
 			const retry = indexOf(words, 'eso', first + 1);
 			for (let i = 0; i < words.length; i++)
-				expect(removes(d, i), `${aside}: ${words[i]!.text}`).toBe(i >= first && i < retry);
+				expect(removes(d, i), `${aside}: ${words[i]!.text}`).toBe(i >= first && i <= end);
+			expect(
+				d.findings.filter((f) => f.words?.[0] === end + 1).map((f) => [f.words, f.suggested]),
+				aside,
+			).toEqual([[[end + 1, retry - 1], 'review']]);
 		}
 		// a correction marker without the word: reviewed
 		const words = say(text('No, perdón, me equivoqué.'));
@@ -663,7 +669,8 @@ describe('round 10 fixes (docs/wp-notes/transcript-cleanup.md "Round 10")', () =
 	it('a broken-off attempt said again word for word: after an aside, a re-said cut-off word, a lead (AF, AC, AG)', () => {
 		// run 9: no finding for any of these in either mode; [first, last] words that go (by start time)
 		const cases: Array<[string, number, number]> = [
-			// AF: "Sí, ya sé que Roblox usa… ¿Dónde está el enojado? Sí, ya sé que Roblox usa el WoW"
+			// AF: "Sí, ya sé que Roblox usa… ¿Dónde está el enojado? Sí, ya sé que Roblox usa el WoW" (the aside says new
+			// words: its own review finding)
 			[
 				`usa[49.12-49.48] en[49.48-49.74] Roblox.[49.74-50.29] Sí,[53.41-53.76] ya[53.76-53.84]
 				sé[53.84-53.98] que[53.98-54.12] Roblox[54.12-54.62] usa...[54.62-54.98] ¿Dónde[57.26-57.52]
@@ -673,7 +680,7 @@ describe('round 10 fixes (docs/wp-notes/transcript-cleanup.md "Round 10")', () =
 				no[61.76-61.86] me[61.86-61.96] lo[61.96-62.04] pongan[62.04-62.3] en[62.3-62.38]
 				los[62.38-62.46] comentarios.[62.46-63.13]`,
 				53.41,
-				57.76,
+				54.62,
 			],
 			// AC: "lo peor es que el tor… | Y lo peor es que el motor…" (default and chunked)
 			[
@@ -719,6 +726,11 @@ describe('round 10 fixes (docs/wp-notes/transcript-cleanup.md "Round 10")', () =
 				const s = sec(words[i]!.start);
 				expect(removes(d, i), `${words[i]!.text} ${s}`).toBe(s >= from - 1e-6 && s <= to + 1e-6);
 			}
+			const aside = indexOf(words, '¿Dónde');
+			if (aside >= 0)
+				expect(d.findings.filter((f) => f.words?.[0] === aside).map((f) => [f.words, f.suggested])).toEqual([
+					[[aside, indexOf(words, 'enojado?')], 'review'],
+				]);
 		}
 	});
 
@@ -812,6 +824,17 @@ describe('round 10 fixes (docs/wp-notes/transcript-cleanup.md "Round 10")', () =
 		for (let i = 0; i < retry; i++) expect(removes(d, i), words[i]!.text).toBe(true);
 		for (let i = retry; i < indexOf(words, 'Tengo', retry); i++)
 			expect(removes(d, i), words[i]!.text).toBe(false);
+	});
+
+	it('a false start whose retry is one or two words is reviewed, not removed (AG "Cloud | Cloud Code.")', () => {
+		// run 9, AG: the name tried out in a pronunciation aside; a restarted sentence still goes ("Primero, | primero
+		// diseñé la carretera" in the golden recording)
+		const words = say('¿Cómo lo puedo pronunciar? Cloud | Cloud Code. | O solo Claude.', { pause: 0.7 });
+		const d = detect(words);
+		const f = d.findings.find((x) => x.words?.[0] === indexOf(words, 'Cloud'))!;
+		expect([f.kind, f.suggested]).toEqual(['false-start', 'review']);
+		const ok = say('Primero, | primero diseñé la carretera con curvas.', { pause: 0.7 });
+		expect(removes(detect(ok), 0)).toBe(true);
 	});
 
 	it('slivers: a loud voiced sound between pauses stays for review; a blip over a removed take goes with it', () => {

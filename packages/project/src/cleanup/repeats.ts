@@ -54,6 +54,28 @@ const CORRECTION_MARKERS: ReadonlyArray<readonly string[]> = [
 	['digo'],
 	['sorry'],
 ];
+/** A false start's retry clause holds at least this many words (else the link is reviewed). */
+const FALSE_START_RETRY_WORDS = 3;
+/** An aside of at most this many words goes with its attempt by default (longer ones: see `asideGoes`). */
+const ASIDE_GOES_WORDS = 3;
+/** Stock words of an aside that goes with its attempt (normalised): stops, apologies, corrections. */
+const STOCK_ASIDE: ReadonlySet<string> = new Set([
+	'espera',
+	'esperate',
+	'esperen',
+	'perdon',
+	'perdona',
+	'disculpa',
+	'digo',
+	'mejor',
+	'dicho',
+	'quiero',
+	'decir',
+	'wait',
+	'sorry',
+	'mean',
+	'i',
+]);
 /** Longest attempt (words) the mechanism tries. */
 const MAX_ATTEMPT_WORDS = 80;
 /** The retry an attempt of `len` words is compared with: at most this many words (it may add some). */
@@ -336,6 +358,11 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 			}
 		}
 		const lastPair = pairs.at(-1);
+		// the attempt's end is said again: no two content words after its last re-said one (round 10: with the tens as
+		// numbers, "tengo sólo treinta días Pen 와 blah blah금u Unity" of run 7 U a — the end the garbled take that stays —
+		// was forgiven word by word against "Tengo solo 30 días para hacer un motor")
+		const tail = ak.length - 1 - (lastPair ? lastPair[0] : -1);
+		if (tail >= 2) hard++;
 		return {
 			full: prefix && hard === 0,
 			share: other ? 0 : pairs.length / ak.length,
@@ -702,6 +729,10 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 		const l = c.link;
 		const ce = clauseEnd(Math.max(c.last, l.retry));
 		l.retryEnd = ce;
+		// a false start restarts a sentence: a retry clause of one or two words is none — a word or a name tried out
+		// (run 9, AG: "¿Cómo lo puedo pronunciar? Cloud | Cloud Code."): reviewed
+		if (l.tier === 'remove' && l.kind === 'false-start' && ce - l.retry + 1 < FALSE_START_RETRY_WORDS)
+			l.tier = 'review';
 		if (l.tier === 'remove') {
 			// a retry said again later is complete only when that later copy removes it (the recogniser's "…" alone
 			// often marks a pause, not a break-off: "… en mi motor…… y correr en todas las plataformas")
@@ -756,22 +787,49 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 			}
 		}
 	}
+	/**
+	 * Whether a link's aside goes with its attempt by default: none of its words inserted by the recogniser, and at most
+	 * `ASIDE_GOES_WORDS` words, or every content word of it a stock word (discourse and correction markers, "espera",
+	 * "perdón"…), a word the recogniser was unsure of, or a word said by the attempt or by the take that stays (its retry
+	 * and the speech right after it) — nothing new is said ("cada La frame, no imagen."; "Tengo solo 30 treinta días. Pen
+	 * Espérate,").
+	 */
+	const asideGoes = (l: RepeatLink) => {
+		const [a, b] = l.aside;
+		// words the recogniser inserted or garbled into another script may hide any speech (run 7 U a: the take that
+		// stays, written "blah blah금u Unity"): such an aside is never short or stock enough
+		if (span(a, b).some((x) => ctx.inserted?.has(S[x]!))) return false;
+		if (b - a <= ASIDE_GOES_WORDS) return true;
+		const said = [
+			...span(l.attempt[0], l.attempt[1]),
+			...span(l.retry, Math.min(n, l.retryEnd + 1 + retrySpan(b - a))),
+		].map(tok);
+		return keys(a, b).every((x) => {
+			const c = W(x).conf;
+			return (
+				markerSet.has(tok(x)) ||
+				STOCK_ASIDE.has(tok(x)) ||
+				(c !== null && c < t.lowConfidence) ||
+				said.some((y) => same(tok(x), y))
+			);
+		});
+	};
 	// labels: attempts and asides (positions → words)
 	for (const l of final) {
-		const action =
-			l.tier === 'review'
-				? 'review'
-				: l.kind === 'retake'
-					? retake
-					: l.kind === 'false-start'
-						? falseStart
-						: restart;
-		if (action === 'off') continue;
+		const rule = l.kind === 'retake' ? retake : l.kind === 'false-start' ? falseStart : restart;
+		// a rule that is off labels nothing, not even for review
+		if (rule === 'off') continue;
+		const action = l.tier === 'review' ? 'review' : rule;
+		// precision first: an aside goes with its attempt only when it is very short, stock words, or said again by the
+		// kept take; any other is speech that may mean something — its own review finding (round 10: AF "¿Dónde está el
+		// enojado?" was removed with the attempt before it)
+		const asideAction = action === 'remove' && !asideGoes(l) ? 'review' : action;
 		for (let x = l.attempt[0]; x < l.aside[1]; x++) {
 			const k = S[x]!;
 			const cur = ctx.labels[k];
-			if (cur && !(cur.action === 'review' && action !== 'review' && TAKE_KINDS.has(cur.kind))) continue;
-			ctx.labels[k] = { kind: l.kind, action };
+			const act = x >= l.aside[0] ? asideAction : action;
+			if (cur && !(cur.action === 'review' && act !== 'review' && TAKE_KINDS.has(cur.kind))) continue;
+			ctx.labels[k] = { kind: l.kind, action: act };
 		}
 	}
 	// positions → word indices

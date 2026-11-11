@@ -330,9 +330,14 @@ describe('hidden retakes of a real recording', () => {
 		const r = detectReal(words);
 		expect(r.groups[0]!.chosen).toBe(1);
 		const removed = removedBy(r);
-		// the whole first take goes, its aside too; the last take stays whole
+		// the whole first take goes; its aside — new words, possibly meant — is its own review finding (round 10); the last
+		// take stays whole
+		const aside = words.findIndex((w) => w.text === '¿Y');
 		const last = words.findIndex((w) => w.start >= 53 * FLICKS_PER_SECOND);
-		expect(words.map((_, i) => removed.has(i))).toEqual(words.map((_, i) => i < last));
+		expect(words.map((_, i) => removed.has(i))).toEqual(words.map((_, i) => i < aside));
+		expect(r.findings.filter((f) => f.words?.[0] === aside).map((f) => [f.words, f.suggested])).toEqual([
+			[[aside, last - 1], 'review'],
+		]);
 	});
 
 	it('a take said after the kept one is named a later take', () => {

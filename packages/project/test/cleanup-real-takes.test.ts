@@ -13,12 +13,13 @@
 // on the held-out ones (G–L, P, R, S, T) only at the end; round 8 held out run 7 (U–AB, `held-out-r7`), round 10 run 9
 // (AC–AH, `held-out-r9`). `CLEANUP_CORPUS=dev|held-out|held-out-r7|held-out-r9` runs one split's spec cases.
 // The last test measures precision and recall of the removals against each case's `dup` reference, per finding kind
-// and per split (`CLEANUP_CORPUS_REPORT=<file>` writes the table); words in a case's `debatable` spans are listed, not
-// scored.
+// and per split (`CLEANUP_CORPUS_REPORT=<file>` writes the table). A word removed in a case's `debatable` span counts
+// as wrong; the precision excluding those is reported for information only, never asserted.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { CleanupVoice } from '../src/cleanup/detector.ts';
 import { builtinLists, cleanupNorm, sameWord } from '../src/cleanup/lists.ts';
+import type { CleanupFinding } from '../src/cleanup/schema.ts';
 import { type CleanupSettings, FAST_SETTINGS, FINDING_KINDS } from '../src/cleanup/schema.ts';
 import { analyzeSequenceCleanup, type CleanupDecisions } from '../src/cleanup/sequence.ts';
 import { transcriptAttachPlan } from '../src/speech/index.ts';
@@ -36,7 +37,7 @@ type Case = {
 	words: Array<[string, number, number]>;
 	/** Media time a correct edit removes as repeats, asides and hallucinations (seconds; fillers and pauses aside). */
 	dup: Array<[number, number]>;
-	/** Media time a correct edit may remove or keep (editorially debatable): neither right nor wrong in the metrics. */
+	/** Media time the judgements call editorially debatable: removing it counts as wrong; reported apart for information. */
 	debatable?: Array<[number, number]>;
 };
 
@@ -514,6 +515,23 @@ const REPEATS = new Set(['restart', 'false-start', 'retake', 'hidden-retake', 's
 const endsSentence = (text: string) =>
 	/[.?!]["'»”’)]*$/u.test(text.trim()) && !/(\.\.\.|…)[?!]?$/.test(text.trim());
 
+/**
+ * Review findings of take chains' asides: repeat findings for review right after a removed one, in a row (the attempt
+ * before them goes, the aside says new words — round 10's default).
+ */
+function asideReviews(a: { findings: ReadonlyArray<CleanupFinding> }) {
+	const take = (f: CleanupFinding) => !!f.words && REPEATS.has(f.kind);
+	const ends = new Set(a.findings.filter((f) => take(f) && f.suggested === 'remove').map((f) => f.words![1]));
+	const out: CleanupFinding[] = [];
+	// in word order: a review right after a removed take, or right after another such review (an aside in pieces)
+	for (const f of [...a.findings].filter(take).sort((x, y) => x.words![0] - y.words![0]))
+		if (f.suggested === 'review' && ends.has(f.words![0] - 1)) {
+			out.push(f);
+			ends.add(f.words![1]);
+		}
+	return out;
+}
+
 /** The case's cut: removed and kept ranges (seconds), the words heard, the analysis. */
 function cut(c: Case, decisions?: CleanupDecisions, settings: CleanupSettings = FAST_SETTINGS) {
 	const end = Math.max(...c.words.map((w) => w[2])) + 2;
@@ -678,14 +696,18 @@ describe('Clean Up on real transcripts (corpus)', () => {
 							`sentence end taken, not said again: ${said}`,
 						).toBe(true);
 				}
-				const toks = heard.map((w) => cleanupNorm(w[0])).filter(Boolean);
-				const text = heard.map((w) => w[0]).join(' ');
+				// the edit the speaker meant, with the asides of take chains accepted: by default an aside that says new words
+				// is its own review finding (round 10, precision first) — the phrases below check the edit once accepted
+				const asides = asideReviews(a);
+				const meant = asides.length ? cut(c, { accept: asides.map((f) => f.id) }) : { heard, removed };
+				const toks = meant.heard.map((w) => cleanupNorm(w[0])).filter(Boolean);
+				const text = meant.heard.map((w) => w[0]).join(' ');
 				const spec = SPEC[c.fragment]!;
 				if (spec.allKept) expect(text).toBe(c.words.map((w) => w[0]).join(' '));
 				for (const p of spec.once) expect(count(toks, p), `"${p}" once in: ${text}`).toBe(1);
 				for (const p of spec.never) expect(count(toks, p), `"${p}" never in: ${text}`).toBe(0);
 				for (const [x, y] of spec.gone ?? [])
-					expect(outside(x, y, removed), `${x}–${y} kept`).toBeLessThan(1e-6);
+					expect(outside(x, y, meant.removed), `${x}–${y} kept`).toBeLessThan(1e-6);
 				// no sentence twice: no run of five words said twice
 				const grams = new Map<string, number>();
 				for (let i = 0; i + 5 <= toks.length; i++) {
@@ -733,13 +755,22 @@ describe('Clean Up on real transcripts (corpus)', () => {
 		type Tally = { right: number; wrong: number; wrongWords: string[] };
 		const report: Record<
 			string,
-			{ kinds: Record<string, Tally>; dup: number; hit: number; missed: string[]; debatable: string[] }
+			{
+				kinds: Record<string, Tally>;
+				dup: number;
+				hit: number;
+				asides: number;
+				missed: string[];
+				debatable: string[];
+			}
 		> = {};
 		for (const c of corpus.cases) {
 			const split = splitOf(c);
-			const r = (report[split] ??= { kinds: {}, dup: 0, hit: 0, missed: [], debatable: [] });
+			const r = (report[split] ??= { kinds: {}, dup: 0, hit: 0, asides: 0, missed: [], debatable: [] });
 			const { a, kept } = cut(c);
 			const gone = (s: number, e: number) => !kept.some(([x, y]) => (s + e) / 2 >= x && (s + e) / 2 < y);
+			const asides = asideReviews(a);
+			const proposed = (i: number) => asides.some((f) => f.words![0] <= i && i <= f.words![1]);
 			const inDup = (s: number, e: number) => c.dup.some(([x, y]) => (s + e) / 2 >= x && (s + e) / 2 < y);
 			const debatable = (s: number, e: number) =>
 				(c.debatable ?? []).some(([x, y]) => (s + e) / 2 >= x && (s + e) / 2 < y);
@@ -749,20 +780,21 @@ describe('Clean Up on real transcripts (corpus)', () => {
 				for (let i = f.words[0]; i <= f.words[1]; i++) {
 					const [text, s, e] = c.words[i]!;
 					if (!gone(s, e)) continue;
-					if (debatable(s, e) && !inDup(s, e)) r.debatable.push(`${c.id} ${s} ${text}`);
-					else if (inDup(s, e) || (fillerKinds.has(f.kind) && filler.has(cleanupNorm(text)))) t.right++;
+					if (inDup(s, e) || (fillerKinds.has(f.kind) && filler.has(cleanupNorm(text)))) t.right++;
 					else {
 						t.wrong++;
 						t.wrongWords.push(`${c.id} ${s} ${text}`);
+						if (debatable(s, e)) r.debatable.push(`${c.id} ${s} ${text}`);
 					}
 				}
 			}
-			for (const [text, s, e] of c.words) {
-				if (!inDup(s, e) || filler.has(cleanupNorm(text))) continue;
+			c.words.forEach(([text, s, e], i) => {
+				if (!inDup(s, e) || filler.has(cleanupNorm(text))) return;
 				r.dup++;
 				if (gone(s, e)) r.hit++;
+				else if (proposed(i)) r.asides++;
 				else r.missed.push(`${c.id} ${s} ${text}`);
-			}
+			});
 		}
 		const lines: string[] = [];
 		for (const [split, r] of Object.entries(report)) {
@@ -776,11 +808,11 @@ describe('Clean Up on real transcripts (corpus)', () => {
 				);
 			}
 			lines.push(
-				`${split} all word removals: precision ${(right / Math.max(1, right + wrong)).toFixed(3)} (${right} / ${right + wrong}); repeats recall ${(r.hit / Math.max(1, r.dup)).toFixed(3)} (${r.hit} / ${r.dup} words; missed: ${r.missed.join('; ')})`,
+				`${split} all word removals: precision ${(right / Math.max(1, right + wrong)).toFixed(3)} (${right} / ${right + wrong}); repeats recall ${(r.hit / Math.max(1, r.dup)).toFixed(3)} (${r.hit} / ${r.dup} words), with asides proposed for review ${((r.hit + r.asides) / Math.max(1, r.dup)).toFixed(3)} (missed: ${r.missed.join('; ')})`,
 			);
 			if (r.debatable.length)
 				lines.push(
-					`${split} removed in debatable spans (not scored): ${r.debatable.length} words (${r.debatable.join('; ')})`,
+					`${split} information only (never the gate): ${r.debatable.length} of the wrong words lie in debatable spans; precision excluding them ${(right / Math.max(1, right + wrong - r.debatable.length)).toFixed(3)} (${r.debatable.join('; ')})`,
 				);
 		}
 		if (process.env.CLEANUP_CORPUS_REPORT)
@@ -796,7 +828,11 @@ describe('Clean Up on real transcripts (corpus)', () => {
 			expect(right / Math.max(1, right + wrong), `${split}: ${lines.join('\n')}`).toBeGreaterThanOrEqual(
 				0.99,
 			);
-			expect(r.hit / Math.max(1, r.dup), `${split}: ${lines.join('\n')}`).toBeGreaterThanOrEqual(0.95);
+			// the repeats mostly found: removed, or — asides of take chains that say new words, round 10 — proposed for review
+			// (the default recall is reported above)
+			expect((r.hit + r.asides) / Math.max(1, r.dup), `${split}: ${lines.join('\n')}`).toBeGreaterThanOrEqual(
+				0.95,
+			);
 		}
 	});
 

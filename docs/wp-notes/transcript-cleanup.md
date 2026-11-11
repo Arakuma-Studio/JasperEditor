@@ -661,6 +661,27 @@ rule, and each held-out round found new failures. The mechanism (vocalic fillers
   as "Hoy voy a ser mi propio janeter Unity. Tengo solo 30 treinta días. Pen Espérate," and it stayed (15 words heard
   twice). The corpus transcripts carry no confidences (0.9 throughout), so this is measured on the unit test only;
   the run-7 U a transcript in the corpus (Hangul garbage, no re-decode) is unchanged.
+- **Asides of take chains** (after the first held-out-r9 evaluation; precision first): an aside between an attempt and
+  its retry goes with the attempt by default only when it holds no word the recogniser inserted (stock phrase, another
+  writing system, noise) and has at most 3 words, or every content word of it is a stock word (discourse and
+  correction markers, "espera", "perdón", "disculpa", "wait", "sorry"), a word the recogniser was unsure of, or a word
+  the attempt or the take that stays says (the retry and the speech right after it) — `asideGoes`. Any other aside is
+  its own review finding (same kind, `suggested: review`) while the attempt is still removed. So AF's "¿Dónde está el
+  enojado?", B's "¿Y por qué va a decir puta? En toda su puta vida", N's "Uf, me quedé sin aire.", W's "No, de ellos, no
+  tengo que repetir tanto." and X's "Ya no soy argentino." are proposed, not cut; AG's "Espera." (1 word), AE b's "cada
+  La frame, no imagen." (said by the attempt and the take) and U a's "Tengo solo 30 treinta días. Pen Espérate," still
+  go. The corpus spec checks the edit with those aside reviews accepted (`asideReviews`) and the default precision on
+  the default; the recall gate counts an aside proposed for review as found, and the default recall is reported apart.
+  Tests: the B, W and AF tests now assert the aside's review finding (each fails on e1c59f1c1).
+- **A false start restarts a sentence**: a false start (≤ 2 words) whose retry clause has one or two words is reviewed
+  (AG: the name tried out, "¿Cómo lo puedo pronunciar? Cloud | Cloud Code."); "Primero, | primero diseñé la carretera"
+  still goes. A rule set to off now labels nothing, not even its review links (it used to label review-tier links).
+  Test: `cleanup-rules.test.ts` "a false start whose retry is one or two words is reviewed" (fails on e1c59f1c1).
+- Numbers: the tens (treinta … noventa, cien; thirty … ninety, hundred) are number words with their values, so "30
+  treinta" is one number. With them, run 7 U a's "tengo sólo treinta días Pen 와 blah blah금u Unity" — whose end is the
+  garbled take that stays — linked to "Tengo solo 30 días…" with its garbage forgiven word by word (4 wrong words on
+  held-out-r7); an attempt with two or more content words after its last re-said one is now no full cover (1 wrong word
+  left: the stretched "와" before the garbled take).
 - Limits left by round 10: H6's name variants across a long aside (above, "Round 10 (`held-out-r9`)"); AH b's "pasa?"
   (no voiced frame, but mostly at measured silence, so not "noise" by the unvoiced-sound test) stays an ASR-suspect
   review; the hum level (6 dB under the speech level) and the onset ramp (20 dB, 3 dB steps) are assumptions from one
@@ -688,9 +709,12 @@ words (fillers aside) removed. Measured (both modes, Fast, corpus voice):
 | round 8: run 7 (U–AB, both modes) at main 9031bd0f3 | 12 / 16 | 0.996 (456 / 458) | 0.812 (411 / 506) |
 | round 8: run 7, first evaluation (f6b5d509f; held out) | 16 / 16 | 1.000 (541 / 541) | 0.974 (493 / 506) |
 | round 8: dev / held out of round 6 at f6b5d509f | 34 / 34, 24 / 24 | 0.997 (2393 / 2401), 1.000 (338 / 338) | 0.996, 0.973 |
-| round 10: run 9 (AC–AH, both modes) at main a8d587fcc | 4 / 12 | 0.973 (179 / 184) strict; 0.989 (177 / 179) debatable unscored | 0.689 (175 / 254) |
-| round 10: run 9, first evaluation (e1c59f1c1; held out) | 11 / 12 | 0.959 (260 / 271) strict; 1.000 (258 / 258) debatable unscored | 0.976 (248 / 254) |
-| round 10: dev / held out / held-out-r7 at e1c59f1c1 | 34 / 34, 24 / 24, 16 / 16 | 0.997 (2393 / 2401), 1.000 (338 / 338), 1.000 (541 / 541) | 0.996, 0.973, 0.974 |
+| round 10: run 9 (AC–AH, both modes) at main a8d587fcc | 4 / 12 | 0.973 (179 / 184) | 0.689 (175 / 254) |
+| round 10: run 9, first evaluation (e1c59f1c1; held out) | 11 / 12 | **0.959 (260 / 271)** (excluding debatable spans, information only: 1.000) | 0.976 (248 / 254) |
+| round 10 after the aside / false-start rules: dev | 34 / 34 | 0.997 (2303 / 2311) | 0.960 (2210 / 2303); 0.996 with asides proposed for review |
+| … held out (round 6) | 24 / 24 | 1.000 (338 / 338) | 0.973 (327 / 336) |
+| … held-out-r7 | 16 / 16 | 0.998 (479 / 480) | 0.870 (440 / 506); 0.984 with asides proposed for review |
+| … held-out-r9 (no longer blind: it informed these rules) | 11 / 12 + AG-r9a expected failure | 0.992 (260 / 262) (excluding debatable, information only: 1.000) | 0.976 (248 / 254) |
 
 Per kind at 0108b4021 (dev / held out): hidden-retake 0.997 / 1.000, retake 0.999 / 1.000, restart 0.998 / 1.000,
 false start 1.000 / 1.000, stutter — / 1.000, filler-vocalic 0.943 / —, filler-phrase 1.000 / 1.000, hallucination
@@ -724,11 +748,13 @@ the build host) adds 12 cases — AC–AG with takes, AH the control, default an
 references and `debatable` spans (media time the judgements call editorially debatable: the AF aside "¿Dónde está el
 enojado?", AG's pronunciation aside, AE's hum) written from that run's judgements before the development. Development
 used the dev, held-out and held-out-r7 splits and unit tests built from the reported words (as in round 8, run 9's bug
-reports were read first); run 9 was evaluated once at the end. Scoring change at that evaluation: words removed in a
-`debatable` span are listed and not scored (the live judgement's "precision without debatable"); strictly, the first
-evaluation's 11 wrong words are all there — the AF aside (8 words, both modes: the new verbatim-attempt link takes its
-aside, as rule 4's asides go in N and W) and AG's false starts "Cloud" / "Cloudcode Cloud," inside the pronunciation
-aside (also removed at main). The 6 missed words are H6's first take of the name, "(Se) llama Cloud Code / Cloudecode
+reports were read first); run 9 was evaluated once, at e1c59f1c1: precision 0.959 (11 wrong words, all in debatable
+spans — the AF aside, 8 words in both modes, which the new verbatim-attempt link took with its attempt as rule 4's
+asides go in N and W, and AG's false starts "Cloud" / "Cloudcode Cloud," inside the pronunciation aside, also removed
+at main), under the 0.99 requirement. A word removed in a debatable span counts as wrong in the asserted precision;
+the precision without them is printed for information only, never as the gate. The first evaluation prompted the
+precision-first rules below ("asides of take chains", "a false start restarts a sentence"), so run 9 is no longer a
+blind split. The 6 missed words are H6's first take of the name, "(Se) llama Cloud Code / Cloudecode
 (No,)" — linked to the later "Se llama Cloud Decode." neither by name nor by aside: the pronunciation aside between
 them (25 words, 15 s) is beyond rule 4's limits; single-token variants such as "Code" / "Decode" already match
 (`sameWord`, a third of the length in edits), one-to-two token variants ("Cloudecode" / "Cloud Decode") do not.
