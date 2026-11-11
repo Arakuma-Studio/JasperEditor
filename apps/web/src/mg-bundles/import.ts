@@ -1,8 +1,9 @@
 // Importing Remotion bundles (M2, S08:MGC-010, MGU-001): a project folder on the engine host (local/desktop;
 // the engine runs the project's own `remotion bundle`, optionally watching it), or a zip of a built bundle
 // uploaded with `purpose: 'mg-bundle'` (web). The RegisteredMedia becomes an `mg-bundle` MediaAsset (with its
-// `mgBundle` header) in one "Import Remotion Project" transaction.
-import type { RegisteredMedia } from '@jasper/api';
+// `mgBundle` header) in one "Import Remotion Project" transaction. HTML composition pages (an `.html` file with
+// window.__duration / __ready / __seek, docs/wp-notes/html-compositions.md) are imported the same way, by path.
+import type { MgHtmlImportRequest, RegisteredMedia } from '@jasper/api';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
 import type { CommandInput, MediaAsset } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
@@ -39,8 +40,13 @@ function commitBundle(
 	const same = Object.values(doc.media).find((m) => m.kind === 'mg-bundle' && mediaKeyOf(m) === reg.mediaKey);
 	if (same) return { mediaId: same.id, reused: true, media: reg };
 	const srcPath = reg.mgBundle?.source.path ?? null;
+	// An HTML page imported with another query is another composition, not a new version of the same one.
+	const query = reg.mgBundle?.html?.query;
 	const previous = srcPath
-		? Object.values(doc.media).find((m) => m.kind === 'mg-bundle' && m.mgBundle?.source.path === srcPath)
+		? Object.values(doc.media).find(
+				(m) =>
+					m.kind === 'mg-bundle' && m.mgBundle?.source.path === srcPath && m.mgBundle?.html?.query === query,
+			)
 		: undefined;
 	const commands: CommandInput[] = previous
 		? [
@@ -88,6 +94,38 @@ export async function importBundleFolder(
 			body: { path, projectId: session.projectId, ...(opts.watch ? { watch: true } : {}) },
 		});
 		const out = commitBundle(session, reg);
+		clientJobs.update(jobId, { state: 'succeeded', progress: 1, stage: 'Imported' });
+		return out;
+	} catch (e) {
+		clientJobs.update(jobId, {
+			state: 'failed',
+			error: {
+				code: e instanceof EngineError ? e.code : 'ERROR',
+				message: bundleErrorText(e),
+				retryable: false,
+			},
+		});
+		throw e;
+	}
+}
+
+/** Imports an HTML composition page on the engine host (local mode); contract errors carry the fix as a hint. */
+export async function importHtmlPage(
+	session: EditorSession,
+	engine: EngineClient,
+	req: Omit<MgHtmlImportRequest, 'projectId'>,
+): Promise<BundleImportResult> {
+	const name = req.path.split(/[\\/]/).filter(Boolean).pop() ?? req.path;
+	const jobId = clientJobs.add({
+		kind: 'mg-bundle',
+		title: `Import HTML composition – ${name}`,
+		projectId: session.projectId,
+		progress: null,
+		stage: 'Loading the page',
+	});
+	try {
+		const reg = await engine.call('mgBundleImportHtml', { body: { ...req, projectId: session.projectId } });
+		const out = commitBundle(session, reg, 'Import HTML Composition');
 		clientJobs.update(jobId, { state: 'succeeded', progress: 1, stage: 'Imported' });
 		return out;
 	} catch (e) {

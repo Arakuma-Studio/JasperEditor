@@ -5,9 +5,8 @@ import { SequenceComposition } from './SequenceComposition.tsx';
 import {
 	ASSET_COMPOSITION_ID,
 	type AssetCompositionProps,
-	DEFAULT_RENDER_OPTIONS,
-	EMPTY_RENDER_DOC,
 	SEQUENCE_COMPOSITION_ID,
+	SEQUENCE_DEFAULT_PROPS,
 } from './types.ts';
 
 const EMPTY_ASSET: AssetCompositionProps = {
@@ -31,7 +30,7 @@ export function RemotionRoot() {
 			<Composition
 				id={SEQUENCE_COMPOSITION_ID}
 				component={SequenceComposition}
-				defaultProps={{ doc: EMPTY_RENDER_DOC, options: { ...DEFAULT_RENDER_OPTIONS, isPreview: false } }}
+				defaultProps={SEQUENCE_DEFAULT_PROPS}
 				calculateMetadata={calculateSequenceMetadata}
 				durationInFrames={1}
 				fps={30}

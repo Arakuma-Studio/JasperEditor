@@ -22,6 +22,7 @@
 
 import { HOST_AGENT_SCRIPT } from './agent.ts';
 import { MG_HOST_QUERY, MG_HOST_TIMEOUT_MS } from './constants.ts';
+import { HTML_HOST_AGENT_SCRIPT } from './html-agent.ts';
 import { TEXT_PROBE_SCRIPT } from './text-probe.ts';
 
 export { HOST_AGENT_SCRIPT, MG_HOST_CONNECT, MG_HOST_PORT_PROTOCOL } from './agent.ts';
@@ -32,11 +33,26 @@ export {
 	MG_HOST_SITE_VERSION,
 	MG_HOST_TIMEOUT_MS,
 } from './constants.ts';
+export {
+	HTML_CONTRACT_GLOBALS,
+	HTML_CONTRACT_GRACE_MS,
+	HTML_HOST_AGENT_SCRIPT,
+	HTML_MAX_DURATION_SEC,
+} from './html-agent.ts';
 
 /** URL of the host page of a bundle served at `bundleBase` (`/mg/bundles/<key>/`). */
 export function hostPageUrl(bundleBase: string): string {
 	const base = bundleBase.endsWith('/') ? bundleBase : `${bundleBase}/`;
 	return `${base}index.html?${MG_HOST_QUERY}=1`;
+}
+
+/**
+ * URL of the host page of an HTML composition served at `bundleBase`: its entry file with the import's query string
+ * (the page reads it as `location.search`) and the host marker. The engine's renders load the same URL shape.
+ */
+export function htmlHostPageUrl(bundleBase: string, page: { entry: string; query: string }): string {
+	const base = bundleBase.endsWith('/') ? bundleBase : `${bundleBase}/`;
+	return `${base}${encodeURIComponent(page.entry)}?${page.query ? `${page.query}&` : ''}${MG_HOST_QUERY}=1`;
 }
 
 /** Serve URL of a bundle (`/mg/bundles/<key>/`). */
@@ -123,6 +139,28 @@ export function injectHostBootstrap(html: string, opts?: { timeoutMs?: number; l
 	const m = /<head[^>]*>/i.exec(html);
 	if (!m) return `${tag}${html}`;
 	return html.slice(0, m.index + m[0].length) + tag + html.slice(m.index + m[0].length);
+}
+
+/**
+ * The script injected at the top of `<head>` of an HTML composition page (before the page's own scripts): the storage
+ * stand-ins of a sandboxed page and the HTML host agent (html-agent.ts). The page's own CSS is kept (its background is
+ * the clip's; a page without one is transparent).
+ */
+export function htmlHostBootstrapScript(): string {
+	return [SANDBOX_STORAGE_SHIM, HTML_HOST_AGENT_SCRIPT].join('');
+}
+
+/** Inserts the HTML host bootstrap right after `<head>` of an HTML composition page (or first, without a head). */
+export function injectHtmlHostBootstrap(html: string): string {
+	// `color-scheme: light` like the iframe (a scheme mismatch paints an opaque backdrop); the page may override it.
+	const script = htmlHostBootstrapScript();
+	const lines = script.split('\n').length - 1;
+	const tag = `<script>window.__jasperHtmlLineShift=${lines};${script}</script><style>:root{color-scheme:light}</style>`;
+	const m = /<head[^>]*>/i.exec(html);
+	if (m) return html.slice(0, m.index + m[0].length) + tag + html.slice(m.index + m[0].length);
+	// No <head>: after the doctype, so the page keeps its standards mode.
+	const d = /^\s*<!doctype[^>]*>/i.exec(html);
+	return d ? html.slice(0, d[0].length) + tag + html.slice(d[0].length) : `${tag}${html}`;
 }
 
 /** The metadata in effect for a mounted composition (after overrides). */

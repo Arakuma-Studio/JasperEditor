@@ -46,6 +46,7 @@ import { jsonResult, ToolError } from '../errors.ts';
 import { clipSummary } from '../format.ts';
 
 export const COMPOSITION_GUIDE = `Motion graphics from Remotion projects (composition clips):
+- import_html_composition {projectId, path, width, height, fps, query?} imports a self-contained HTML page (window.__duration in seconds, window.__ready, window.__seek(t)) as one composition: place it with add_composition like any other; it has no props (page parameters go in query). Missing contract globals fail with HTML_CONTRACT_MISSING and a fix.
 - import_mg_bundle {projectId, path} imports a Remotion project folder (remotion and every @remotion/* package pinned to exactly 4.0.499, dependencies installed; its own remotion.config.ts applies) or a built bundle folder. Each composition becomes placeable; watch: true rebuilds on save and the open editor relinks automatically.
 - list_compositions shows ids, size, fps, length and the props schema (from jasper.mg.json, the project's jasper-schemas.ts zod module, or inferred from defaultProps).
 - add_composition places one (default length = the composition's, at the sequence frame rate); set_composition_props edits its props (validated: wrong types fail with E_INVALID_PARAM); render_frame shows the result.
@@ -241,12 +242,13 @@ function compositionSummary(info: MgCompositionInfo) {
 }
 
 function bundleSummary(m: MediaAsset) {
+	const html = m.mgBundle?.html;
 	return {
 		mediaId: m.id,
 		name: m.mgBundle?.source.name ?? m.originalName,
 		source: m.mgBundle?.source.type,
 		...(m.mgBundle?.source.path ? { path: m.mgBundle.source.path } : {}),
-		remotionVersion: m.mgBundle?.remotionVersion,
+		...(html ? { query: html.query } : { remotionVersion: m.mgBundle?.remotionVersion }),
 		compositions: (m.mgBundle?.compositions ?? []).map((c) => compositionSummary(c)),
 	};
 }
@@ -259,8 +261,13 @@ function importCommand(
 	const same = Object.values(doc.media).find((m) => m.kind === 'mg-bundle' && engineKey(m) === reg.mediaKey);
 	if (same) return { command: null, existing: same.id };
 	const path = reg.mgBundle?.source.path ?? null;
+	// An HTML page imported again with another query is another composition, not a new version of it.
+	const query = reg.mgBundle?.html?.query;
 	const prev = path
-		? Object.values(doc.media).find((m) => m.kind === 'mg-bundle' && m.mgBundle?.source.path === path)
+		? Object.values(doc.media).find(
+				(m) =>
+					m.kind === 'mg-bundle' && m.mgBundle?.source.path === path && m.mgBundle?.html?.query === query,
+			)
 		: undefined;
 	if (prev)
 		return {
@@ -306,10 +313,20 @@ async function commitImport(
 	let mediaId = existing;
 	let tx: ReturnType<typeof txBody> | null = null;
 	if (command) {
+		const html = !!reg.mgBundle?.html;
 		const res = await transact(
 			ctx,
 			projectId,
-			{ label: existing ? 'Update Remotion bundle' : 'Import Remotion project', commands: [command] },
+			{
+				label: existing
+					? html
+						? 'Update HTML composition'
+						: 'Update Remotion bundle'
+					: html
+						? 'Import HTML composition'
+						: 'Import Remotion project',
+				commands: [command],
+			},
 			extra,
 		);
 		const r = requireOk(res);
@@ -405,11 +422,53 @@ export function registerCompositionTools(ctx: ToolContext): void {
 
 	defineTool(
 		ctx,
+		'import_html_composition',
+		{
+			title: 'Import an HTML composition',
+			description:
+				'Imports an HTML page that defines window.__duration (seconds), window.__ready (Promise: fonts and images loaded) and window.__seek(t) as one composition, rendered at width×height and fps by seeking it frame by frame; transparent where the page paints nothing. Place it with add_composition (no props: page parameters go in query). Remotion projects: import_mg_bundle.',
+			input: {
+				projectId: ProjectIdArg,
+				path: z.string().min(1).describe('Absolute path of the .html file on this machine'),
+				width: z.number().int().min(16).max(8192).describe('Viewport and render width (px)'),
+				height: z.number().int().min(16).max(8192).describe('Viewport and render height (px)'),
+				fps: z.number().min(1).max(240).describe('Frame rate the length is counted in'),
+				query: z
+					.string()
+					.max(2048)
+					.optional()
+					.describe('Query string for the page, without "?" (e.g. "s=2")'),
+				watch: z.boolean().optional().describe('Re-import when the page or a file it loads changes'),
+			},
+			annotations: EDIT_IDEMPOTENT,
+		},
+		async ({ projectId, path, width, height, fps, query, watch }, extra) => {
+			const reg = await ctx
+				.engine((c) =>
+					c.call('mgBundleImportHtml', {
+						body: {
+							path,
+							projectId,
+							width,
+							height,
+							fps,
+							...(query ? { query } : {}),
+							...(watch ? { watch: true } : {}),
+						},
+					}),
+				)
+				.catch(engineToolError);
+			return commitImport(ctx, projectId, reg, extra);
+		},
+	);
+
+	defineTool(
+		ctx,
 		'list_compositions',
 		{
 			title: 'List compositions',
 			description:
-				'Lists the Remotion bundles of a project and their compositions: id, size, fps, length, props schema (type, default, constraints) and where the schema comes from.',
+				'Lists the Remotion bundles and HTML pages of a project with their compositions: id, size, fps, length, props schema (type, default, constraints) and where the schema comes from.',
 			input: {
 				projectId: ProjectIdArg,
 				mediaId: IdArg.optional().describe('Only this bundle (mediaId from import_mg_bundle)'),

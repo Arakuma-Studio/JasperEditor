@@ -22,6 +22,7 @@ import { PRESET_COMMANDS } from './preset.ts';
 import { PREVIEWS_COMMANDS } from './previews.ts';
 import { PROJECT_COMMANDS } from './project.ts';
 import { ROTO_COMMANDS } from './roto.ts';
+import { SCENE_COMMANDS } from './scene.ts';
 import { SCRIPT_FIX_COMMANDS } from './script-fix.ts';
 import { SEQUENCE_COMMANDS } from './sequence.ts';
 import { SHAPE_COMMANDS } from './shape.ts';
@@ -67,6 +68,7 @@ export * from './preset.ts';
 export * from './previews.ts';
 export * from './project.ts';
 export * from './roto.ts';
+export * from './scene.ts';
 export * from './script-fix.ts';
 export * from './sequence.ts';
 export * from './shape.ts';
@@ -132,6 +134,7 @@ export const ALL_COMMAND_SCHEMAS = [
 	...STYLE_RECIPE_COMMANDS,
 	...SCRIPT_FIX_COMMANDS,
 	...BRIEF_COMMANDS,
+	...SCENE_COMMANDS,
 ] as const;
 
 export type CommandInput = z.input<(typeof ALL_COMMAND_SCHEMAS)[number]>;

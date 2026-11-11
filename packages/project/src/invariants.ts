@@ -59,10 +59,11 @@ import { defaultEffectRegistry } from './registry/effects.ts';
 import { contentDurationFlicks, isBoundedContent, kindCapabilities, trackKindFor } from './registry/kinds.ts';
 import type { MgTemplateRegistry } from './registry/mg.ts';
 import { ROTO_OBJECT_PARAMS } from './roto/index.ts';
+import { repairSceneBindings, SCENE_EXTENSION_KEY, sceneBindingsIssue } from './scene/bindings.ts';
 import { type Animatable, type Keyframe, SPATIAL_INTERPOLATIONS } from './schema/common.ts';
 import type { ProjectDocument } from './schema/document.ts';
 import { MASK_MODES, type Mask } from './schema/mask.ts';
-import { MAX_TRANSCRIPT_REDECODED } from './schema/media.ts';
+import { MAX_TRANSCRIPT_REDECODED, mgHtmlPageIssue } from './schema/media.ts';
 import { PUPPET_PIN_KINDS, PUPPET_PIN_PROPS, type Puppet } from './schema/puppet.ts';
 import type {
 	AudioClip,
@@ -1476,6 +1477,10 @@ export function runInvariants(
 	// spec 18 AF-BRF-002: agent notes must be readable (INV-AGENT-NOTES).
 	const notesBad = agentNotesIssue((doc as { agentNotes?: unknown }).agentNotes);
 	if (notesBad) issues.push(inv('INV-AGENT-NOTES', `Agent notes: ${notesBad}`, ['agentNotes']));
+	// scene files: the layer → clip bindings `jasper apply` keeps must be readable (INV-SCENE).
+	const sceneBad = sceneBindingsIssue(doc);
+	if (sceneBad)
+		issues.push(inv('INV-SCENE', `Scene bindings: ${sceneBad}`, ['extensions', SCENE_EXTENSION_KEY]));
 	for (const m of Object.values(doc.media)) {
 		if (m.derivation && !doc.media[m.derivation.fromMediaId])
 			issues.push(inv('INV-006', `Derived media ${m.id} references missing source`, ['media', m.id]));
@@ -1485,6 +1490,14 @@ export function runInvariants(
 				issues.push(
 					inv('INV-012', `Media ${m.id} interpretation: ${msg}`, ['media', m.id, 'interpretation']),
 				);
+		// HTML compositions (schema v13): the page header must be readable (it is stored leniently).
+		if (m.mgBundle?.html !== undefined) {
+			const bad = mgHtmlPageIssue(m.mgBundle.html);
+			if (bad)
+				issues.push(
+					inv('INV-MG-HTML', `Media ${m.id} HTML page: ${bad}`, ['media', m.id, 'mgBundle', 'html']),
+				);
+		}
 		// sound-design (spec 12 §2.1): library provenance must be readable (it is stored leniently).
 		if ((m as { library?: unknown }).library !== undefined) {
 			const bad = libraryProvenanceIssue((m as { library?: unknown }).library);
@@ -1962,6 +1975,17 @@ export function repairDocument(
 			fixed ? 'unreadable agent notes dropped or shortened, the rest kept' : 'unreadable agent notes removed',
 		);
 	}
+	// scene files: keep the readable layer → clip bindings.
+	if (sceneBindingsIssue(doc)) {
+		const fixed = repairSceneBindings(doc.extensions[SCENE_EXTENSION_KEY]);
+		if (fixed) doc.extensions[SCENE_EXTENSION_KEY] = fixed;
+		else delete doc.extensions[SCENE_EXTENSION_KEY];
+		note(
+			'repair-scene-bindings',
+			doc.projectId,
+			fixed ? 'unreadable scene bindings dropped, the rest kept' : 'unreadable scene bindings removed',
+		);
+	}
 	for (const seq of Object.values(doc.sequences) as Sequence[])
 		repairSubtitleSequence(seq, () => ids.next('cgp'), note);
 	// spec 19 TL-020: project looks, then what clips hold and link to.
@@ -2129,6 +2153,15 @@ export function repairDocument(
 	for (const look of Object.values((doc as { titleLooks?: Record<string, unknown> }).titleLooks ?? {}))
 		for (const path of clearTitleLookMedia(look, (m) => !doc.media[m]))
 			note('clear-look-media', (look as { id: string }).id, `${path} referenced missing media: cleared`);
+	// HTML compositions (schema v13): an unreadable page header cannot be served or rendered. Its compositions are
+	// dropped with it, so the clips show "Composition … not in bundle" and exports refuse them (re-import the page).
+	for (const m of Object.values(doc.media)) {
+		const b = m.mgBundle as { html?: unknown; compositions: unknown[] } | undefined;
+		if (!b || b.html === undefined || mgHtmlPageIssue(b.html) === null) continue;
+		delete b.html;
+		b.compositions = [];
+		note('drop-html-page', m.id, 'unreadable HTML page header removed: import the page again');
+	}
 	// sound-design: unreadable library provenance is repaired field by field, or dropped without a sound id.
 	for (const m of Object.values(doc.media)) {
 		const r = m as { library?: unknown };

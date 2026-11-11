@@ -1,7 +1,14 @@
 import { join, resolve } from 'node:path';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { appdirPaths, desktopAppdir, parseEngineRuntime, resolveAppdir, resolvePort } from '../src/index.ts';
+import {
+	appdirPaths,
+	desktopAppdir,
+	parseEngineRuntime,
+	parseEngineRuntimeState,
+	resolveAppdir,
+	resolvePort,
+} from '../src/index.ts';
 
 describe('@jasper/config', () => {
 	it('resolves appdir with argv > env > default', () => {
@@ -77,10 +84,18 @@ describe('engine runtime validation', () => {
 		expect(parseEngineRuntime({ ...runtime, host: 42 })).toBeNull();
 	});
 
+	it('reads files without a state as ready, and a starting record only as starting', () => {
+		expect(parseEngineRuntimeState(runtime)).toMatchObject({ state: 'ready', token: 'token' });
+		const starting = { state: 'starting', pid: 12, heartbeatAt: 1_700_000_000_000 };
+		expect(parseEngineRuntimeState(starting)).toMatchObject({ state: 'starting', pid: 12 });
+		expect(parseEngineRuntime(starting)).toBeNull();
+	});
+
 	it('never throws on arbitrary JSON discovery records', () => {
 		fc.assert(
 			fc.property(fc.jsonValue(), (value) => {
 				expect(() => parseEngineRuntime(value)).not.toThrow();
+				expect(() => parseEngineRuntimeState(value)).not.toThrow();
 			}),
 		);
 	});

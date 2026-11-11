@@ -230,6 +230,7 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 				...(release ? { browserGroup: ctx.jobId } : {}),
 				onProgress: g.progress,
 				onRendered: g.release,
+				log: ctx.log,
 			});
 			/** spec 13 AS-070: layer stills that drew past their border (baked again: grown, then as masters). */
 			const clipped: typeof items = [];

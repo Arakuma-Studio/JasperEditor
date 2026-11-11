@@ -213,6 +213,8 @@ export type EnsureMeta = {
 	 * caller: the export may start other bakes on the pages it granted (`PageGrant.release`).
 	 */
 	onRendered?(): void;
+	/** The caller's job log: a master's render phases (`RemotionService.renderAlphaMaster`) are noted there too. */
+	log?(line: string): void;
 };
 
 /**
@@ -304,6 +306,8 @@ export class LayerBakeService {
 	private readonly inflight = new Map<string, InFlight>();
 	/** `EnsureMeta.onRendered` of the child jobs rendering for a caller, by child job id. */
 	private readonly renderedHooks = new Map<string, () => void>();
+	/** `EnsureMeta.log` of the child jobs rendering for a caller, by child job id. */
+	private readonly logHooks = new Map<string, (line: string) => void>();
 	/** Shared render browsers by group (the export/still job id), opened when the bakes need them. */
 	private readonly sessions = new Map<string, { refs: number; browsers: BrowserSlot[] }>();
 	/**
@@ -1236,10 +1240,12 @@ export class LayerBakeService {
 			entry.done.catch(() => undefined);
 			this.inflight.set(key, entry);
 			if (meta.onRendered) this.renderedHooks.set(job.id, meta.onRendered);
+			if (meta.log) this.logHooks.set(job.id, meta.log);
 			try {
 				await this.follow(entry, meta, () => this.core.queue.cancel(job.id));
 			} finally {
 				this.renderedHooks.delete(job.id);
+				this.logHooks.delete(job.id);
 				if (this.inflight.get(key) === entry) this.inflight.delete(key);
 			}
 			return after();
@@ -1509,7 +1515,10 @@ export class LayerBakeService {
 					ffmpeg: ff,
 					...(concurrency ? { concurrency } : {}),
 					...(o.browser ? { browser: o.browser } : {}),
-					log: ctx.log,
+					log: (line) => {
+						ctx.log(line);
+						this.logHooks.get(ctx.job.id)?.(`layer-bake "${plan.clipName}": ${line}`);
+					},
 					onSpawn: ctx.trackChild,
 					onProgress: (p) => {
 						ctx.progress(p.progress * weight * 0.9, {

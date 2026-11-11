@@ -64,6 +64,9 @@ const STEP_CHANGES: Record<string, (from: Rec) => Record<string, unknown>> = {
 	// v11 → v12 (Title Looks, spec 19, with `EffectInstance.patternOrigin`, TL-121): version bump only; v11 builds open
 	// the files read-only.
 	'11→12': () => ({}),
+	// v12 → v13 (HTML compositions: `mgBundle.html`, source type `html-page`): version bump only; v12 builds open the
+	// files read-only.
+	'12→13': () => ({}),
 };
 
 describe('schema history fixtures (S01:MIG-002)', () => {

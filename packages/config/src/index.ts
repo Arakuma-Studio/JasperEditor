@@ -36,6 +36,8 @@ export const ENV = {
 	ENGINE_TOKEN: 'JASPER_ENGINE_TOKEN',
 	/** jasper-mcp: path of the engine bundle to auto-start (`--start-engine`). */
 	ENGINE_ENTRY: 'JASPER_ENGINE_ENTRY',
+	/** jasper-mcp / jasper: seconds to wait for a starting engine (`--startup-timeout`). */
+	ENGINE_STARTUP_TIMEOUT: 'JASPER_ENGINE_STARTUP_TIMEOUT',
 	/** Engine / desktop: path of the jasper-mcp bundle shown in Help ▸ Connect an AI Agent… (default: found next to the engine). */
 	MCP_ENTRY: 'JASPER_MCP_ENTRY',
 } as const;
@@ -229,26 +231,75 @@ export const EngineReadyMessageSchema = z.object({
 	port: listeningPortSchema,
 });
 
-const engineRuntimeSchema = z.object({
+const pidSchema = z
+	.number()
+	.int()
+	.positive()
+	.max(2 ** 31 - 1);
+const epochMsSchema = z.number().finite().nonnegative();
+
+/**
+ * How often a starting engine rewrites `heartbeatAt` in its runtime file, and how old the heartbeat of a live
+ * process may be before local tools stop waiting for it (a hung start). Generous: synchronous startup work
+ * (cache repair on a large appdir) can hold the event loop for seconds.
+ */
+export const ENGINE_HEARTBEAT_INTERVAL_MS = 1000;
+export const ENGINE_HEARTBEAT_STALE_MS = 20_000;
+/**
+ * An engine that wrote `ready` this recently but does not answer `/health` yet is still warming up (its
+ * first requests queue behind startup work): local tools wait for it like for a starting one.
+ */
+export const ENGINE_WARMUP_MS = 30_000;
+
+/**
+ * A listening engine. Files without `state` were written by engines older than the startup lifecycle and
+ * read as ready.
+ */
+const engineRuntimeReadySchema = z.object({
+	state: z.literal('ready').default('ready'),
 	url: z.url({ protocol: /^https?$/ }),
 	host: z.string().default(DEFAULT_ENGINE_HOST),
 	port: listeningPortSchema,
-	pid: z
-		.number()
-		.int()
-		.positive()
-		.max(2 ** 31 - 1),
+	pid: pidSchema,
 	token: z.string().nullable().default(null),
 	version: z.string().default('unknown'),
 	appdir: z.string().default(''),
 	startedAt: z.string().default(''),
+	/** Epoch ms when it started answering (absent in older files). */
+	readyAt: epochMsSchema.optional(),
 });
 
-export type EngineRuntimeInfo = z.infer<typeof engineRuntimeSchema>;
+/**
+ * An engine that has not started listening yet: no address or token. `heartbeatAt` (epoch ms) is rewritten
+ * every ENGINE_HEARTBEAT_INTERVAL_MS while it starts; `port` is set when a fixed port was requested.
+ * Older tools fail to parse this shape (no `url`) and ignore it, as they ignore a missing file.
+ */
+const engineRuntimeStartingSchema = z.object({
+	state: z.literal('starting'),
+	pid: pidSchema,
+	host: z.string().default(DEFAULT_ENGINE_HOST),
+	port: listeningPortSchema.optional(),
+	version: z.string().default('unknown'),
+	appdir: z.string().default(''),
+	startedAt: z.string().default(''),
+	heartbeatAt: epochMsSchema,
+});
 
-/** Parses a runtime file's JSON (null when malformed). */
+const engineRuntimeStateSchema = z.union([engineRuntimeStartingSchema, engineRuntimeReadySchema]);
+
+export type EngineRuntimeInfo = z.infer<typeof engineRuntimeReadySchema>;
+export type EngineRuntimeStarting = z.infer<typeof engineRuntimeStartingSchema>;
+export type EngineRuntimeState = EngineRuntimeInfo | EngineRuntimeStarting;
+
+/** Parses a runtime file's JSON: a ready (or legacy) engine, else null (malformed or still starting). */
 export function parseEngineRuntime(raw: unknown): EngineRuntimeInfo | null {
-	const result = engineRuntimeSchema.safeParse(raw);
+	const state = parseEngineRuntimeState(raw);
+	return state?.state === 'ready' ? state : null;
+}
+
+/** Parses a runtime file's JSON in either lifecycle state (null when malformed). */
+export function parseEngineRuntimeState(raw: unknown): EngineRuntimeState | null {
+	const result = engineRuntimeStateSchema.safeParse(raw);
 	return result.success ? result.data : null;
 }
 

@@ -58,7 +58,7 @@ Transports: **stdio** (primary) and **Streamable HTTP at the engine's `/mcp`** (
 same `createJasperMcpServer`, one instance per MCP session, max 32 sessions, 30 min idle, engine auth).
 
 Engine additions: `<appdir>/engine/runtime.json` (0600; url, host, port, pid, token, version, appdir,
-startedAt; written after listen, removed on stop if it is still ours), `playhead.set` query,
+startedAt; removed on stop if it is still ours), `playhead.set` query,
 `POST /api/agent/open-project`, `GET /api/agent/mcp-info`, `via: session|headless` on query responses.
 
 Discovery order: `--engine-url`/`--token` → `JASPER_ENGINE_URL`/`JASPER_ENGINE_TOKEN` → `runtime.json` in
@@ -66,6 +66,27 @@ Discovery order: `--engine-url`/`--token` → `JASPER_ENGINE_URL`/`JASPER_ENGINE
 `http://127.0.0.1:47900`. Stale files (dead pid or no `/health`) are skipped. With `--start-engine` a headless
 engine is forked (`--engine-entry`, else `apps/engine/dist/engine.mjs` or `resources/engine/engine.mjs` next to
 the bundle) with a per-launch token.
+
+Startup lifecycle (`apps/engine/src/runtime-file.ts`, schema in `@jasper/config`): the engine's `cli.ts` is a small
+launcher that writes `{state: "starting", pid, heartbeatAt, port?}` before the engine bundle is evaluated
+(`serve.ts` is imported dynamically), rewrites `heartbeatAt` every 1 s, and writes `{state: "ready", url, port,
+token, readyAt, …}` once it listens. Writes are atomic (temp, fsync, rename, directory fsync) and serialized, so a
+late heartbeat never overwrites `ready`; a starting record never replaces the file of another live engine. Files
+without `state` (older engines) read as ready; older tools fail to parse a starting record and ignore it.
+Measured on this host under load (16 cores, load average 12–30, other agents' builds): the bundle takes ≈0.9 s to
+parse before the launcher runs, listening took 7–15 s, so the window in which a client sees no file shrank from the
+whole startup to ≈1 s.
+
+Clients (`link.ts` `EngineLink.connect`, shared by `jasper-mcp` and `jasper`): when discovery finds no answering
+engine but a starting one (live pid and heartbeat ≤ 20 s old, or `ready` ≤ 30 s ago without an answer yet), they
+re-discover with backoff 200 ms → ×2 → 2 s cap, log `engine starting… N s` to stderr and send it as MCP
+`notifications/message` (never in a tool result), up to `--startup-timeout` (default 120 s, env
+`JASPER_ENGINE_STARTUP_TIMEOUT`) → `ENGINE_NOT_READY` with that flag as the fix. A dead pid or stale heartbeat is
+not waited for: `ENGINE_NOT_FOUND`, the reason in its hint. A starting engine is waited for rather than a second
+one started on the same appdir. `--start-engine` waits for the child's ready message with the same timeout and
+progress; a child that exits first rejects at once with `ENGINE_START_FAILED` (exit code or signal, last 20 output
+lines). Tests: `apps/mcp/test/startup-wait.test.ts` (injected clock, sleep, pid liveness, `/health`),
+`apps/mcp/test/discovery-start.test.ts`, `apps/engine/test/runtime-file.test.ts`.
 
 ### C. Tools (31)
 
@@ -156,7 +177,7 @@ gained `mcpInfo()` and `focusWindow()` (IPC `jasper:mcp-info`, window action `fo
   appdir) and in `--token` / `JASPER_ENGINE_TOKEN` if the user passes it.
 - **Unbounded waits:** engine requests had no deadline. `guardedFetch` adds one (180 s, `--request-timeout`)
   → `ENGINE_TIMEOUT`. `wait_for_job` ≤ 900 s, `open_project_in_editor` ≤ 60 s, MG preview ≤ 120 s, engine
-  start ≤ 60 s, health probe 1.5 s, shutdown 6 s.
+  start ≤ 120 s (`--startup-timeout`), health probe 1.5 s, shutdown 6 s.
 - **Blind retries:** `withEngine` re-sent any request after a NETWORK error, including transactions that
   may already have been applied. Writes cut off mid-flight now fail with `ENGINE_CONNECTION_LOST` and a hint
   to re-read the project; reads and never-sent writes (ECONNREFUSED…) are still retried once.

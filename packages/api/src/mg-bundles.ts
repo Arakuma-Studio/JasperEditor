@@ -1,5 +1,5 @@
 // Bundles use `/mg/bundles/:key/*`; pre-render masters reuse `/mg/:renderKey/:file`.
-import { MgBundleInfoSchema, MgTextMeasurementSchema } from '@jasper/project';
+import { MG_HTML_QUERY_MAX, MgBundleInfoSchema, MgTextMeasurementSchema } from '@jasper/project';
 import { z } from 'zod';
 import { RationalSchema } from './common.ts';
 
@@ -13,8 +13,27 @@ export const MG_BUNDLE_ERROR_CODES = [
 	'MG_NOT_A_BUNDLE',
 	/** The project's node_modules are missing (run the package manager's install). */
 	'MG_NOT_INSTALLED',
+	/**
+	 * Scaffold: `corepack pnpm@<pin> install --ignore-workspace` in the new folder failed (detail: {dir, command,
+	 * reason: corepack-missing | spawn | exit, exitCode?, stderr?, stdout?}; the tails are capped at 4000 chars).
+	 */
+	'MG_INSTALL_FAILED',
+	/** Scaffold: that install did not finish in time and was stopped with its processes (detail adds timeoutSeconds). */
+	'MG_INSTALL_TIMEOUT',
 	/** Metadata (getCompositions) or a pre-render failed in the headless browser. */
 	'MG_RENDER_FAILED',
+	/** HTML composition: the path is not an `.html` page file (or it is too big to copy). */
+	'HTML_NOT_A_PAGE',
+	/** HTML composition: the page lacks `window.__seek`, `__duration` or `__ready` (detail: {missing, pageErrors}). */
+	'HTML_CONTRACT_MISSING',
+	/** HTML composition: `window.__duration` is not a finite number of seconds > 0 (detail: {duration}). */
+	'HTML_DURATION_INVALID',
+	/** HTML composition: `window.__ready` rejected (detail: {reason}). */
+	'HTML_READY_FAILED',
+	/** HTML composition: `window.__ready` did not settle in time (detail: {timeoutMs}). */
+	'HTML_READY_TIMEOUT',
+	/** HTML composition: `window.__seek(t)` threw (detail: {t, reason}). */
+	'HTML_SEEK_FAILED',
 ] as const;
 
 /**
@@ -32,6 +51,31 @@ export const MgBundleImportRequestSchema = z
 	})
 	.refine((v) => !!v.path !== !!v.uploadId, { message: 'Give exactly one of path or uploadId' });
 export type MgBundleImportRequest = z.infer<typeof MgBundleImportRequestSchema>;
+
+/** Largest side and frame rate of an HTML composition. */
+export const HTML_COMPOSITION_MAX_SIDE = 8192;
+
+/**
+ * `POST /api/mg-bundles/import-html` → RegisteredMedia (kind `mg-bundle` with `mgBundle.html`), local mode only: an
+ * HTML composition page on the engine host (`window.__duration`, `__ready`, `__seek(t)`), rendered at `width`×`height`
+ * and `fps`; `query` is given to the page as `location.search` (no leading `?`). The engine loads the page in its
+ * headless browser, checks the contract and copies the files the page loaded (from its folder) into the bundle
+ * store. `watch`: re-imports when one of those files changes, and relinks the project.
+ */
+export const MgHtmlImportRequestSchema = z.object({
+	projectId: z.string().optional(),
+	path: z.string().min(1),
+	width: z.number().int().min(16).max(HTML_COMPOSITION_MAX_SIDE),
+	height: z.number().int().min(16).max(HTML_COMPOSITION_MAX_SIDE),
+	fps: z.number().min(1).max(240),
+	query: z
+		.string()
+		.max(MG_HTML_QUERY_MAX)
+		.regex(/^[^#\0\r\n]*$/, 'no #, NUL or line breaks')
+		.optional(),
+	watch: z.boolean().optional(),
+});
+export type MgHtmlImportRequest = z.infer<typeof MgHtmlImportRequestSchema>;
 
 /** `POST /api/mg-bundles/prerender` → EngineJob (kind `mg-prerender`). */
 export const MgPrerenderRequestSchema = z.object({
@@ -119,7 +163,8 @@ export const MgBundleRebuildRequestSchema = z
 
 /**
  * `POST /api/mg-bundles/scaffold` (S08:MGC-015, P1, local mode): copies the template project into `dir/name`,
- * installs its dependencies and imports it with `watch: true`.
+ * installs its dependencies (`CI=true corepack pnpm@<pin> install --ignore-workspace`, 150 s limit) and imports it
+ * with `watch: true`.
  */
 export const MgBundleScaffoldRequestSchema = z.object({
 	projectId: z.string().optional(),
