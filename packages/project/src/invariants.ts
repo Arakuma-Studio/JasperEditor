@@ -59,6 +59,7 @@ import { defaultEffectRegistry } from './registry/effects.ts';
 import { contentDurationFlicks, isBoundedContent, kindCapabilities, trackKindFor } from './registry/kinds.ts';
 import type { MgTemplateRegistry } from './registry/mg.ts';
 import { ROTO_OBJECT_PARAMS } from './roto/index.ts';
+import { repairSceneBindings, SCENE_EXTENSION_KEY, sceneBindingsIssue } from './scene/bindings.ts';
 import { type Animatable, type Keyframe, SPATIAL_INTERPOLATIONS } from './schema/common.ts';
 import type { ProjectDocument } from './schema/document.ts';
 import { MASK_MODES, type Mask } from './schema/mask.ts';
@@ -1476,6 +1477,10 @@ export function runInvariants(
 	// spec 18 AF-BRF-002: agent notes must be readable (INV-AGENT-NOTES).
 	const notesBad = agentNotesIssue((doc as { agentNotes?: unknown }).agentNotes);
 	if (notesBad) issues.push(inv('INV-AGENT-NOTES', `Agent notes: ${notesBad}`, ['agentNotes']));
+	// scene files: the layer → clip bindings `jasper apply` keeps must be readable (INV-SCENE).
+	const sceneBad = sceneBindingsIssue(doc);
+	if (sceneBad)
+		issues.push(inv('INV-SCENE', `Scene bindings: ${sceneBad}`, ['extensions', SCENE_EXTENSION_KEY]));
 	for (const m of Object.values(doc.media)) {
 		if (m.derivation && !doc.media[m.derivation.fromMediaId])
 			issues.push(inv('INV-006', `Derived media ${m.id} references missing source`, ['media', m.id]));
@@ -1960,6 +1965,17 @@ export function repairDocument(
 			'repair-agent-notes',
 			doc.projectId,
 			fixed ? 'unreadable agent notes dropped or shortened, the rest kept' : 'unreadable agent notes removed',
+		);
+	}
+	// scene files: keep the readable layer → clip bindings.
+	if (sceneBindingsIssue(doc)) {
+		const fixed = repairSceneBindings(doc.extensions[SCENE_EXTENSION_KEY]);
+		if (fixed) doc.extensions[SCENE_EXTENSION_KEY] = fixed;
+		else delete doc.extensions[SCENE_EXTENSION_KEY];
+		note(
+			'repair-scene-bindings',
+			doc.projectId,
+			fixed ? 'unreadable scene bindings dropped, the rest kept' : 'unreadable scene bindings removed',
 		);
 	}
 	for (const seq of Object.values(doc.sequences) as Sequence[])

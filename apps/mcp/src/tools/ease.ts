@@ -15,7 +15,6 @@ import {
 	EASE_Y_LIMIT,
 	type EaseClip,
 	type EaseCurve,
-	type EasePreset,
 	formatCubicBezier,
 	keyframeEasesView,
 	MAX_EASE_POINTS,
@@ -24,6 +23,7 @@ import {
 	matchEasePreset,
 	type ProjectDocument,
 	PropertyQueryError,
+	parseEaseName,
 } from '@jasper/project';
 import { z } from 'zod';
 import { ProjectIdArg, timeArg } from '../arguments.ts';
@@ -107,17 +107,6 @@ export const CurveArg = z.union([
 		),
 ]);
 
-/** CSS easing keywords → the built-in preset with the same timing. */
-const CSS_KEYWORDS: Record<string, string> = {
-	linear: 'basic.linear',
-	ease: 'basic.ease',
-	'ease-in': 'basic.ease-in',
-	'ease-out': 'basic.ease-out',
-	'ease-in-out': 'basic.ease-in-out',
-};
-
-const NUMBER_RE = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;
-const CUBIC_RE = /^cubic-bezier\s*\(([^()]*)\)$/i;
 const PRESET_HINT = 'list_ease_presets lists the preset ids; or give "cubic-bezier(x1, y1, x2, y2)".';
 
 function invalidCurve(message: string, hint = PRESET_HINT): ToolError {
@@ -126,11 +115,6 @@ function invalidCurve(message: string, hint = PRESET_HINT): ToolError {
 
 function zodMessage(e: z.ZodError): string {
 	return e.issues.map((i) => `${i.path.length ? `${i.path.join('.')}: ` : ''}${i.message}`).join('; ');
-}
-
-function presetById(id: string): EasePreset | undefined {
-	const all = builtinEasePresets();
-	return all.find((p) => p.id === id) ?? all.find((p) => p.name.toLowerCase() === id.trim().toLowerCase());
 }
 
 /** A parsed curve argument: the curve, a History-friendly name and the preset it came from. */
@@ -142,39 +126,12 @@ export type ParsedCurve = { curve: EaseCurve; name: string; presetId?: string };
  */
 export function parseCurveArg(input: unknown): ParsedCurve {
 	if (typeof input === 'string') {
-		const text = input.trim();
-		const m = CUBIC_RE.exec(text);
-		if (m) {
-			const parts = m[1]!.split(',').map((s) => s.trim());
-			if (parts.length !== 4 || parts.some((p) => !NUMBER_RE.test(p)))
-				throw invalidCurve(
-					`Invalid cubic-bezier "${text}": it takes four numbers, e.g. cubic-bezier(0.25, 0.1, 0.25, 1)`,
-				);
-			const [x1, y1, x2, y2] = parts.map(Number) as [number, number, number, number];
-			const parsed = CubicEaseSchema.safeParse({ kind: 'cubic', x1, y1, x2, y2 });
-			if (!parsed.success)
-				throw invalidCurve(
-					`Invalid cubic-bezier "${text}": ${zodMessage(parsed.error)} (x1, x2 must be in 0…1, y1, y2 in −${EASE_Y_LIMIT}…${EASE_Y_LIMIT})`,
-				);
-			const c = parsed.data as CubicEase;
-			return { curve: c, name: formatCubicBezier(c) };
-		}
-		const lower = text.toLowerCase();
-		const keyword = Object.hasOwn(CSS_KEYWORDS, lower) ? CSS_KEYWORDS[lower] : undefined;
-		const preset = presetById(keyword ?? text);
-		if (!preset) {
-			const needle = text.toLowerCase();
-			const near = builtinEasePresets()
-				.filter((p) => p.id.includes(needle) || p.name.toLowerCase().includes(needle))
-				.slice(0, 8)
-				.map((p) => p.id);
-			throw new ToolError(
-				'E_INVALID_PARAM',
-				`Unknown ease preset "${text}"`,
-				near.length ? `Did you mean ${near.join(', ')}? ${PRESET_HINT}` : PRESET_HINT,
-			);
-		}
-		return { curve: preset.curve, name: preset.name, presetId: preset.id };
+		const r = parseEaseName(input);
+		if (!r.ok)
+			throw r.near.length
+				? new ToolError('E_INVALID_PARAM', r.message, `Did you mean ${r.near.join(', ')}? ${PRESET_HINT}`)
+				: invalidCurve(r.message);
+		return { curve: r.curve, name: r.name, ...(r.presetId ? { presetId: r.presetId } : {}) };
 	}
 	if (input && typeof input === 'object' && 'points' in input) {
 		const parsed = MultiEaseSchema.safeParse({ ...(input as object), kind: 'multi' });

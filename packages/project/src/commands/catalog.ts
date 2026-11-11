@@ -31,6 +31,7 @@ import { processHandlers } from './handlers/process.ts';
 import { projectHandlers } from './handlers/project.ts';
 import { ROTO_OWNER, rotoHandlers } from './handlers/roto.ts';
 import { rovingHandlers } from './handlers/roving.ts';
+import { SCENE_OWNER, sceneHandlers } from './handlers/scene.ts';
 import { SCRIPT_FIX_OWNER, scriptFixHandlers } from './handlers/script-fix.ts';
 import { sequenceHandlers } from './handlers/sequence.ts';
 import { keepShapesCentred, SHAPE_BOX_COMMANDS, SHAPE_OWNER, shapeHandlers } from './handlers/shape.ts';
@@ -99,7 +100,8 @@ export type CommandOwner =
 	| 'transcript-cleanup'
 	| 'style-recipes'
 	| 'script-correction'
-	| 'agent-brief';
+	| 'agent-brief'
+	| 'scene-file';
 
 export type CatalogEntry = {
 	type: CommandType;
@@ -474,6 +476,8 @@ const LABELS: Record<CommandType, string> = {
 	'sequence.setBrief': 'Edit Brief',
 	'project.addAgentNote': 'Add Agent Note',
 	'project.removeAgentNote': 'Remove Agent Note',
+	// scene files: the clips `jasper apply` made for a scene's layers.
+	'scene.bind': 'Bind Scene Layers',
 };
 
 const SOURCES: [HandlerMap, CommandOwner][] = [
@@ -531,6 +535,7 @@ const SOURCES: [HandlerMap, CommandOwner][] = [
 	[styleRecipeHandlers, STYLE_RECIPES_OWNER],
 	[scriptFixHandlers, SCRIPT_FIX_OWNER],
 	[briefHandlers, BRIEF_OWNER],
+	[sceneHandlers, SCENE_OWNER],
 ];
 
 function buildCatalog(): Record<CommandType, CatalogEntry> {
@@ -575,7 +580,8 @@ function buildCatalog(): Record<CommandType, CatalogEntry> {
 				owner === CLEANUP_OWNER ||
 				owner === STYLE_RECIPES_OWNER ||
 				owner === SCRIPT_FIX_OWNER ||
-				owner === BRIEF_OWNER
+				owner === BRIEF_OWNER ||
+				owner === SCENE_OWNER
 					? 'M3'
 					: owner === 'M2' ||
 							owner.startsWith('wp-m2-') ||
