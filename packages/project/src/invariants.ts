@@ -62,7 +62,7 @@ import { ROTO_OBJECT_PARAMS } from './roto/index.ts';
 import { type Animatable, type Keyframe, SPATIAL_INTERPOLATIONS } from './schema/common.ts';
 import type { ProjectDocument } from './schema/document.ts';
 import { MASK_MODES, type Mask } from './schema/mask.ts';
-import { MAX_TRANSCRIPT_REDECODED } from './schema/media.ts';
+import { MAX_TRANSCRIPT_REDECODED, mgHtmlPageIssue } from './schema/media.ts';
 import { PUPPET_PIN_KINDS, PUPPET_PIN_PROPS, type Puppet } from './schema/puppet.ts';
 import type {
 	AudioClip,
@@ -1485,6 +1485,14 @@ export function runInvariants(
 				issues.push(
 					inv('INV-012', `Media ${m.id} interpretation: ${msg}`, ['media', m.id, 'interpretation']),
 				);
+		// HTML compositions (schema v13): the page header must be readable (it is stored leniently).
+		if (m.mgBundle?.html !== undefined) {
+			const bad = mgHtmlPageIssue(m.mgBundle.html);
+			if (bad)
+				issues.push(
+					inv('INV-MG-HTML', `Media ${m.id} HTML page: ${bad}`, ['media', m.id, 'mgBundle', 'html']),
+				);
+		}
 		// sound-design (spec 12 §2.1): library provenance must be readable (it is stored leniently).
 		if ((m as { library?: unknown }).library !== undefined) {
 			const bad = libraryProvenanceIssue((m as { library?: unknown }).library);
@@ -2129,6 +2137,15 @@ export function repairDocument(
 	for (const look of Object.values((doc as { titleLooks?: Record<string, unknown> }).titleLooks ?? {}))
 		for (const path of clearTitleLookMedia(look, (m) => !doc.media[m]))
 			note('clear-look-media', (look as { id: string }).id, `${path} referenced missing media: cleared`);
+	// HTML compositions (schema v13): an unreadable page header cannot be served or rendered. Its compositions are
+	// dropped with it, so the clips show "Composition … not in bundle" and exports refuse them (re-import the page).
+	for (const m of Object.values(doc.media)) {
+		const b = m.mgBundle as { html?: unknown; compositions: unknown[] } | undefined;
+		if (!b || b.html === undefined || mgHtmlPageIssue(b.html) === null) continue;
+		delete b.html;
+		b.compositions = [];
+		note('drop-html-page', m.id, 'unreadable HTML page header removed: import the page again');
+	}
 	// sound-design: unreadable library provenance is repaired field by field, or dropped without a sound id.
 	for (const m of Object.values(doc.media)) {
 		const r = m as { library?: unknown };
