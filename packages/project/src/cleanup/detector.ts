@@ -21,6 +21,7 @@ import {
 } from './lists.ts';
 import {
 	type AWord,
+	CUT_OFF,
 	claimWord,
 	lcs,
 	phrases,
@@ -475,10 +476,19 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			}
 		}
 		for (const u of list) unitGroup.set(u, gi);
-		// what lies between the group's first take and the kept take belongs to the retries: fragments of ≤ 2 words and
+		// what lies between the group's first take and the kept take belongs to the retries: fragments of ≤ 2 words,
 		// units whose words the kept take mostly says ("En toda su puta vida", "Y el otro 1 %" between takes of
-		// fragment B; "no." after a take of fragment C), within the restart window of the take before them
+		// fragment B; "no." after a take of fragment C) and short broken-off units (≤ 6 words ending on a function word
+		// or an ellipsis, no sentence end: run 5, fragment G "Pero, me falta un" before the kept take), within the
+		// restart window of the take before them
 		const keptU = list[chosen]!;
+		const brokenOff = (u: number) => {
+			const ws = units[u]!;
+			if (ws.length > 6) return false;
+			const last = aw[ws.at(-1)!]!;
+			const text = last.text.trim();
+			return CUT_OFF.test(text) || (stop.has(last.n) && !/[.?!,;:]$/.test(text));
+		};
 		for (let u = list[0]! + 1, prevEnd = aw[units[list[0]!]!.at(-1)!]!.e; u < keptU; u++) {
 			if (list.includes(u)) {
 				prevEnd = aw[units[u]!.at(-1)!]!.e;
@@ -487,7 +497,7 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			if (unitGroup.has(u) || aw[units[u]![0]!]!.s - prevEnd > T.restartWindowS) continue;
 			const key = unitKey[u]!;
 			const said = key.filter((x) => unitKey[keptU]!.some((y) => sameWord(x, y))).length;
-			if (unitContent[u]!.length > 2 && (!key.length || said * 2 < key.length)) continue;
+			if (unitContent[u]!.length > 2 && (!key.length || said * 2 < key.length) && !brokenOff(u)) continue;
 			for (const k of units[u]!) claimWord(ctx, k, 'retake', retakeAction, u);
 			unitGroup.set(u, gi);
 			prevEnd = aw[units[u]!.at(-1)!]!.e;

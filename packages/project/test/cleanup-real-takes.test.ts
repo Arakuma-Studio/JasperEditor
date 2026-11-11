@@ -34,7 +34,10 @@ const corpus = JSON.parse(
 ) as { cases: Case[] };
 
 /** Per fragment: phrases the edit says exactly once, phrases it never says (normalised words, ASR variants match). */
-const SPEC: Record<string, { once: string[]; never: string[]; allKept?: boolean }> = {
+const SPEC: Record<
+	string,
+	{ once: string[]; never: string[]; allKept?: boolean; gone?: Array<[number, number]> }
+> = {
 	A: {
 		once: [
 			'al final del mes debo portear',
@@ -119,8 +122,8 @@ const SPEC: Record<string, { once: string[]; never: string[]; allKept?: boolean 
 			'ni siquiera termine',
 			'librerias ya existentes',
 		],
-		// the end of the abandoned take
-		never: ['paredes no'],
+		// the aside between the takes ("Pero. Me falta un…"), the end of the abandoned take
+		never: ['me falta', 'paredes no'],
 	},
 	H: {
 		once: [
@@ -142,6 +145,8 @@ const SPEC: Record<string, { once: string[]; never: string[]; allKept?: boolean 
 	I: {
 		once: [
 			'el procesador ya no calcula absolutamente nada',
+			// the restart "La tarjeta gráfica lee esa imagen y puede…" goes: its retry stays
+			'la tarjeta grafica le',
 			'cada punto de los 500 personajes',
 			'le das al boton',
 			'pones los 500 personajes',
@@ -152,7 +157,7 @@ const SPEC: Record<string, { once: string[]; never: string[]; allKept?: boolean 
 			'mas o menos lo que ocupa escribir la frase',
 			'suscribete al canal de jasperdev',
 		],
-		never: [],
+		never: ['grafica lee', 'le lee', 'y puede'],
 	},
 	J: {
 		once: [
@@ -165,6 +170,25 @@ const SPEC: Record<string, { once: string[]; never: string[]; allKept?: boolean 
 			'es como un mini navegador',
 			'un monton de cosas',
 			'que entiende un navegador de verdad',
+		],
+		never: [],
+		// the stray "igual" before the retry (default mode writes it as "En el" at 18.18–18.95)
+		gone: [[18.2, 18.7]],
+	},
+	K: {
+		once: [
+			'de que me sirve el motor',
+			'rehacer todos mis juegos',
+			'en solo 4 dias',
+			'es imposible',
+			'se me ocurrio una idea',
+			'son solo texto',
+			'hice un traductor',
+			'los modelos 3d',
+			'al nuevo engine',
+			'el codigo de los juegos',
+			'estaba en c sharp',
+			'las funciones de unity',
 		],
 		never: [],
 	},
@@ -285,6 +309,8 @@ describe('Clean Up on real transcripts (corpus)', () => {
 			if (spec.allKept) expect(text).toBe(c.words.map((w) => w[0]).join(' '));
 			for (const p of spec.once) expect(count(toks, p), `"${p}" once in: ${text}`).toBe(1);
 			for (const p of spec.never) expect(count(toks, p), `"${p}" never in: ${text}`).toBe(0);
+			for (const [x, y] of spec.gone ?? [])
+				expect(outside(x, y, removed), `${x}–${y} kept`).toBeLessThan(1e-6);
 			// no sentence twice: no run of five words said twice
 			const grams = new Map<string, number>();
 			for (let i = 0; i + 5 <= toks.length; i++) {

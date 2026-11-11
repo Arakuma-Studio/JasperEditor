@@ -251,6 +251,23 @@ Deliberate differences from the prototype (labelled):
     within the window of the one before, the attempts up to the last copy whose words it says (any order, the same
     garble allowance) are one restart ("…que puedo hacer … dólares. ¿Qué puedo hacer…? ¿Qué puedo hacer…? … ¿Que puedo
     hacer … dólares?", fragment E).
+  Since the held-out run 5 (fragments G–L) it also:
+  - lets the attempt end with the retry's own first words — a stutter at the restart point is said again by the
+    retry's start ("Resulta que los archivos de la las escena… Resulta… | Resulta que los archivos de las escenas…",
+    K: before, the second "Resulta" was missing from the re-said words and the attempt stayed);
+  - behind a 3-word anchor, counts an attempt word as said again when the retry, between the re-said words around it
+    (after the last one: within 3 words), says a word that sounds like it (`soundsAlike`, `lists.ts`: within half its
+    length in edits after sound folding — an ASR garble of the same word): "La tarjeta gráfica lee esa imagen y
+    puede… | La tarjeta gráfica le da esa imagen y pone…" (I, both modes; "lee" / "le", "esa" / "a", "puede" /
+    "pone"). A list ("tengo que hacer los menús, tengo que hacer los sonidos") says another word there ("menús" /
+    "sonidos" are 5 edits apart) and stays;
+  - ends the attempt after one or two words without content said into the restart point (< 0.15 s), each stretched
+    (≥ 0.3 s, long for a function word) and parted from the rest of the retry by ≥ `phraseGapS`: J default mode wrote
+    the stray "igual" before the retry as "En el" (18.18–18.95) and stretched "Jasper" over the retry's "En el
+    Jasper". *Assumption*: the 0.3 s comes from that one case; a shorter stray word stays.
+  The take rule no longer lets a unit whose restarts left only words without content ("Y" before a restart) be the
+  later take of another unit (it is treated as removed whole), so such a unit never becomes a group's kept take that
+  its own restart then removes (B, run 3/4 chunked, after the soundalike change).
   An ending re-said right after a run of retries (the longest ending of ≥ 3 words, 2 of them content words, that the
   words after the run start with, within 3 more words) goes with the retries (`detector.ts`).
 - **After removed words the in point never lands inside the first kept word** (level mode): the prototype's in point
@@ -344,8 +361,9 @@ an earlier take of what follows but never the later take of a hit, and the tail 
 removed is a take of a later unit that says all of it. Real content counts what stays after the kept take within the
 restart window too (fragment E's "pueda ser" is said by the last question, not by the kept "Ok, wow…" take). What
 lies between a group's first take and its kept take within the restart window goes with the retries: fragments of
-≤ 2 words ("No,", "a ver", "no.") and units whose words the kept take mostly says ("En toda su puta vida", "Y el otro
-1 %"). The aside of an earlier take is the longest run of its trailing sentences the later kept take mostly does not
+≤ 2 words ("No,", "a ver", "no."), units whose words the kept take mostly says ("En toda su puta vida", "Y el otro
+1 %") and broken-off units of ≤ 6 words that end on a function word or an ellipsis without a sentence end ("Pero, me
+falta un", run 5, G: an aside between the abandoned take and the kept one). The aside of an earlier take is the longest run of its trailing sentences the later kept take mostly does not
 say. Only the
 take rule's labels carry the group id; a restart inside a take keeps none, so its reason names the words that re-say
 it. Script (TC-012): lines are sentences (. ? ! … and line breaks); a unit says a
@@ -379,21 +397,30 @@ range, "%" as a word, the in / out points and their frames next to a cut; each f
 deliberate repeat is judged by the existing rules only (the allow list).
 
 Real-take corpus (`packages/project/test/cleanup-real-takes.test.ts`, `fixtures/cleanup-real-takes.json`): the
-whisper-large-v3-turbo transcripts of the six ~80 s fragments of the reporter's recording from runs 2, 3 and 4 of the
-hidden-retake test, every mode (re-decode on, `chunking: "vad"`, re-decode off), 30 distinct transcripts, text and
-times only, plus the speech without words and the silence inside a word the reporter measured (run 4, fragment E:
-voice at 38.14–39.34 and 39.80–42.10, silence in the stretched "de" after 42.10). The spec is written by hand per
-fragment as the speaker meant it — phrases the edit says exactly once (the last clean take of each sentence, and what
-only one take says: "millones de dólares" on E), phrases it never says (asides, garbled takes, cut-off attempts), no
-run of five words twice, every word all kept or all removed (within a frame), the measured wordless voice of E (an
-attempt) removed, and no kept take of a group losing a word — and two invariants for every case: every second removed
-between the first and the last word lies within a finding that removes (or 0.1 s and a frame of it), and rejecting
-every finding removes nothing there. It runs through `analyzeSequenceCleanup` (Fast preset, 30 fps, speech under every
-word). At 0b492215c 12 of the first 24 failed (B ×5, C b, D ×2, E ×4); at f11b859fb 13 of 30 and the rejection
-invariant failed (the run-4 E cut of 1.8 s without a finding; words split by the kept word's ±50 ms of sound and frame
-snapping; a 0.12 s gap cut without a pause finding); all pass now. Limit: without the re-decode
-(fragment A, mode c) "a" stretched over the second "poder subirlos" (1.03 s) goes as a drawn vowel, so that case
-asserts "poder subirlos" and "la Play Store" apart.
+whisper-large-v3-turbo transcripts of ~80 s fragments of the reporter's recording from runs 2–5 of the hidden-retake
+test, every mode (re-decode on, `chunking: "vad"`, re-decode off), text and times only, plus the speech without words
+and the silence inside a word the reporter measured (run 4, fragment E: voice at 38.14–39.34 and 39.80–42.10, silence
+in the stretched "de" after 42.10). Runs 2–4 give 30 transcripts of fragments A–F; run 5 (code = main at 45ac32f6b,
+large-v3-turbo on CUDA) adds 14 held-out ones — E again and the new G–L (L the control without takes), default and
+chunked — whose spec was written from the listening judgements of that run before the code was changed for them. The
+spec is written by hand per fragment as the speaker meant it — phrases the edit says exactly once (the last clean take
+of each sentence, and what only one take says: "millones de dólares" on E), phrases it never says (asides, garbled
+takes, cut-off attempts), media time that must go (J's stray "igual"), every word kept on L, no run of five words
+twice, every word all kept or all removed (within a frame), the measured wordless voice of E (an attempt) removed, and
+no kept take of a group losing a word — and three invariants for every case: every removed second, head and tail
+included, lies inside a finding that removes (beyond its edge at most a frame of silence) and never takes measured
+voice beyond it; rejecting every finding removes nothing at all; with every rule on review nothing is removed. It runs
+through `analyzeSequenceCleanup` (Fast preset, 30 fps, speech under every word). History: at 0b492215c 12 of the first
+24 failed, at f11b859fb 13 of 30; at 2557f0b20 44 of the 46 cases failed the new invariants (head / tail trims and gap
+cuts without a finding) and G, I, K failed their spec (the aside, two missed restarts: the restart rule above); all 46 pass now. Each detection rule of run
+5 fails its fragment when removed (G: broken-off units; I ×2: `soundsAlike`; K ×2: the stutter at the restart point;
+J a: stretched lead words). Limits: without the re-decode (fragment A, mode c) "a" stretched over the second "poder
+subirlos" (1.03 s) goes as a drawn vowel, so that case asserts "poder subirlos" and "la Play Store" apart. Run 5 E
+default ("keeps 40.12–42.10, so that clause plays twice; stray 'de' split at 42.1") passes on this transcript at
+2557f0b20 already — the corpus voice (speech under every word, silence after 42.10) does not reproduce it; the real
+voice analysis decides which words the hallucination guard drops, and the take groups depend on that. With the
+partitioned sound a removed "de" now goes whole with its finding; whether the clause still plays twice needs the
+real-model rerun. H "rápida" stretched 2.2 s over speech is not resolved by the transcript.
 
 An accepted removal of words takes the voice without words inside it (`sequence.ts`): an untranscribed span kept for
 review never punches a hole into it (run 3, fragment E: "Que puedo hacer en un mes lo mismo" had no words at
