@@ -42,6 +42,7 @@ import { alphaDecoder } from '../media/alpha.ts';
 import { audioEncodeArgs, LEGACY_X264_CHOICE, videoEncodeArgs } from '../tools/encoders.ts';
 import { sec } from '../tools/ffmpeg.ts';
 import { adjustmentCropFilters, cropFeatherFilter, hardCropFilter, isFeatheredCrop } from './crop.ts';
+import { NVDEC_INPUT_ARGS } from './gpu.ts';
 import { CROP_EDGES, mergeResize, motionFilters, motionStage } from './keyframed.ts';
 import { capDecoderThreads, decoderThreadsFor, isFileInput } from './memory.ts';
 import {
@@ -109,7 +110,7 @@ type NativeBuildOptions = {
 	 * (`-hwaccel cuda -hwaccel_device <name>`, frames downloaded for the CPU composite), or none for this input; asked
 	 * for the main graph's own video inputs. `device` is created once per process (`-init_hw_device cuda=<name>`).
 	 */
-	hwDecode?: { device: string; args(m: LocalMedia): string[] };
+	hwDecode?: { device: string; maxInputs: number; eligible(m: LocalMedia): boolean };
 	/**
 	 * docs/wp-notes/export-performance.md §10: kernel streams are drawn by the OpenCL program in the composite
 	 * (stream/opencl.ts; the device and program file `probeOpenClTaps` checked); a stream that does not fit stays on
@@ -141,9 +142,9 @@ type NativeBuildOptions = {
 	 */
 	trackStreams?: boolean;
 	/**
-	 * spec 13 AS-076: an opaque first layer covering the frame is the composite's base instead of a blend over the
-	 * background colour (default true; false = the blend, the comparison path of the tests and
-	 * `JASPER_EXPORT_COVER_BASE=0`).
+	 * spec 13 AS-076, docs/wp-notes/export-performance.md §12: opaque layers covering the frame are the composite's
+	 * base for their frames instead of blends over the background colour (default true; false = the blends, the
+	 * comparison path of the tests and `JASPER_EXPORT_COVER_BASE=0`).
 	 */
 	coverBase?: boolean;
 	/**
@@ -181,6 +182,16 @@ type NativeGraph = {
 	/** spec 13 AS-076: pipelined stills used as inputs: the caller awaits them before spawning the composite. */
 	waitFor?: Promise<OverrideReady>[];
 };
+
+/** Placeholder in a GPU-decodable input's arguments until `assignHwDecode` decides (never left in a command). */
+const HW_DECODE_MARK = '\u0000hwdecode';
+
+/** The media seconds an input decodes after its seek point (its `-t`; 0 without one). */
+function inputSeconds(input: readonly string[]): number {
+	const k = input.indexOf('-t');
+	const v = k >= 0 ? Number(input[k + 1]) : 0;
+	return Number.isFinite(v) ? v : 0;
+}
 
 /** BLEND_MODES indexes of Stencil Alpha … Silhouette Luma. */
 const STENCIL_FIRST = blendModeIndex('stencil-alpha');
@@ -234,6 +245,10 @@ function colorHex([r, g, b, a]: readonly number[]): string {
 			.toString(16)
 			.padStart(2, '0');
 	return `0x${c(r!)}${c(g!)}${c(b!)}${c(a ?? 1)}`;
+}
+
+function gcd(a: number, b: number): number {
+	return b === 0 ? Math.abs(a) || 1 : gcd(b, a % b);
 }
 
 function rate(r: Rational): string {
@@ -824,7 +839,7 @@ type StackContext = {
 	scale?: number;
 	/** Pictures that would not land on whole output pixels (the graph must not be used at the output size). */
 	inexact?: string[];
-	/** spec 13 AS-076: an opaque full-frame first layer is the base (no blend over the background). */
+	/** spec 13 AS-076, §12: opaque full-frame layers are the base for their frames (no blend over the background). */
 	coverBase?: boolean;
 	/** spec 13 AS-076: pipelined stills the composite opens as inputs (awaited before it starts). */
 	waitFor?: Promise<OverrideReady>[];
@@ -857,9 +872,78 @@ function drawStack(ctx: StackContext): string {
 	const bgLabel = `${P}bg`;
 	const bgChain = `color=c=${colorHex(snap.settings.backgroundColor)}:s=${W}x${H}:r=${rate(fps)}:d=${fmt(T + frameSec)},format=rgba[${bgLabel}]`;
 	const bgChains = ctx.chains;
-	bgChains.push(bgChain);
+	const bgIndex = bgChains.push(bgChain) - 1;
 	let last = bgLabel;
 	let li = 0;
+	/**
+	 * docs/wp-notes/export-performance.md §12: the composite's base, sliced in time. A layer that is opaque and covers
+	 * the whole frame (see `covering` below) hides the background and every layer below it for its frames: instead of
+	 * blending it over the background (a copy and a blend of the whole frame per frame), its frames ARE the base there.
+	 * `base` lists such layers (disjoint in time); the background colour fills the frames between them, and the pieces
+	 * are concatenated into the `bgLabel` stream (`closeBase`). The layers drawn before it (lower in the stack) that
+	 * overlap it in time are hidden there: their overlays are switched off on its frames (`enable`), so the composite at
+	 * its frames is the piece and the layers above it, as before. A layer joins only when every layer drawn so far that
+	 * overlaps it can be switched off that way (`drawn[].chain`), and it does not overlap another piece.
+	 */
+	const base: { label: string; f0: number; f1: number }[] = [];
+	/**
+	 * Layers drawn onto the base so far, in stack order: their span, and the overlay chain whose `enable` hides them
+	 * (null: cannot be hidden) with the frames base pieces above them cover.
+	 */
+	const drawn: {
+		f0: number;
+		f1: number;
+		chain: { list: string[]; index: number } | null;
+		hidden: { f0: number; f1: number }[];
+	}[] = [];
+	// (`settb` reads its time base through `av_d2q(…, 100000)`: exact for rates whose terms fit, every rate in use)
+	const g = gcd(fps.num, fps.den);
+	let baseOpen = ctx.coverBase === true && fps.num / g <= 100_000 && fps.den / g <= 100_000;
+	const overlapsIn = (list: readonly { f0: number; f1: number }[], f0: number, f1: number) =>
+		list.some((s) => s.f0 < f1 && f0 < s.f1);
+	/** Writes the base in place of the background chain; no layer joins it afterwards. */
+	const closeBase = (): void => {
+		if (!baseOpen) return;
+		baseOpen = false;
+		if (base.length === 0) return;
+		const bg = colorHex(snap.settings.backgroundColor);
+		const end = R1 + 1;
+		const pieces = [...base].sort((a, b) => a.f0 - b.f0);
+		const chains: string[] = [];
+		const parts: string[] = [];
+		if (pieces[0]!.f0 > R0) {
+			const n = pieces[0]!.f0 - R0;
+			chains.push(
+				`color=c=${bg}:s=${W}x${H}:r=${rate(fps)}:d=${fmt((n + 1) * frameSec)},format=rgba,trim=end_frame=${n}[${P}bgg]`,
+			);
+			parts.push(`[${P}bgg]`);
+		}
+		for (const [i, p] of pieces.entries()) {
+			// Exactly the frames up to the next piece: a source that ends early shows the background, as the overlay's
+			// `eof_action=pass` did.
+			const n = (pieces[i + 1]?.f0 ?? end) - p.f0;
+			chains.push(`[${p.label}]tpad=stop=${n}:stop_mode=add:color=${bg},trim=end_frame=${n}[${P}bgp${i}]`);
+			parts.push(`[${P}bgp${i}]`);
+		}
+		// The background's own timestamps (frame N at N / fps, time base 1 / fps; `concat` outputs microseconds).
+		const stamp = `settb=${fps.den}/${fps.num},setpts=N`;
+		chains.push(
+			parts.length === 1
+				? `${parts[0]}${stamp}[${bgLabel}]`
+				: `${parts.join('')}concat=n=${parts.length}:v=1:a=0,${stamp}[${bgLabel}]`,
+		);
+		bgChains[bgIndex] = chains.join(';\n');
+		for (const d of drawn) {
+			if (!d.chain || d.hidden.length === 0) continue;
+			const window = (h: { f0: number; f1: number }) =>
+				`between(t,${fmt((h.f0 - R0) * frameSec - frameSec / 2)},${fmt((h.f1 - R0) * frameSec - frameSec / 2)})`;
+			const { list, index } = d.chain;
+			list[index] = list[index]!.replace(
+				/:enable='([^']*)'/,
+				(_m, e: string) => `:enable='${e}${d.hidden.map((h) => `*not(${window(h)})`).join('')}'`,
+			);
+		}
+	};
 	/**
 	 * output-size.ts: a picture placed in sequence pixels (a baked master's rectangle) on the output-size canvas — its
 	 * rectangle scaled, or reported in `ctx.inexact` when it would not land on whole output pixels.
@@ -1040,6 +1124,8 @@ function drawStack(ctx: StackContext): string {
 		// keyframes-blend: a layer with a blend mode is drawn onto a transparent frame and handed, with the composite
 		// below it, to the blend kernel between two processes of the pipeline (`ctx.blend.cut`).
 		const blendMode = ctx.blend ? layerBlendMode(layer) : 'normal';
+		/** Set when the layer became a piece of the base (nothing drawn onto `last`). */
+		let asBase = false;
 		let backdrop: string | null = null;
 		if (blendMode !== 'normal' && !('clip' in layer && layer.clip.kind === 'adjustment')) {
 			backdrop = last;
@@ -1301,21 +1387,14 @@ function drawStack(ctx: StackContext): string {
 			});
 			if (!(source.resize && mergeResize(f, source.resize, motion))) f.push(...motionFilters(motion));
 			f.push(...fadeFilters(c.fades, f0));
-			// Shift the layer to its place on the timeline in whole frames. `setpts` truncates its result, so an
-			// offset written in decimal seconds (3.333333 s for frame 100 at 30 fps) landed one frame early.
-			f.push(shift);
-			ctx.chains.push(`${src}${f.join(',')}[${label}]`);
 
 			const { x, y } = motion;
-			const next = `o${label}`;
-			// The first layer of the stack is an opaque picture covering the whole frame for the whole range: it IS the
-			// composite so far — no blend of 1920×1080 RGBA over the background colour every frame (≈ 20 % of a
-			// subtitled export's composite, measured). Frames after its source ends show the background, as before.
-			const covers =
-				ctx.coverBase === true &&
-				last === bgLabel &&
-				f0 <= R0 &&
-				f1 >= R1 &&
+			// §12: an opaque picture covering the whole frame — a video (decided from the document: no alpha in the
+			// source, no override, Normal blend, no 3D, fades, masks or effects that make transparency, Opacity 100 %, no
+			// Motion but an exact scale to the frame) — is the base for its frames instead of a blend over it.
+			const covering =
+				baseOpen &&
+				ctx.chains === bgChains &&
 				!override &&
 				c.kind === 'video' &&
 				source.opaque &&
@@ -1336,26 +1415,53 @@ function drawStack(ctx: StackContext): string {
 				motion.post.length === 0 &&
 				(motion.resize
 					? !motion.resize.perFrame && motion.resize.w === String(W) && motion.resize.h === String(H)
-					: source.width === W && source.height === H);
-			if (covers && bgChains.includes(bgChain)) {
-				// The background is not drawn at all.
-				bgChains.splice(bgChains.indexOf(bgChain), 1);
-				const frames = R1 - R0 + 1;
-				ctx.chains.push(
-					`[${label}]tpad=stop=${frames}:stop_mode=add:color=${colorHex(snap.settings.backgroundColor)},trim=end_frame=${frames}[${next}]`,
-				);
-			} else
-				ctx.chains.push(
-					`[${last}][${label}]overlay=x=${x}:y=${y}:format=rgb:eof_action=pass:${enable}[${next}]`,
-				);
+					: source.width === W && source.height === H) &&
+				!overlapsIn(
+					drawn.filter((d) => !d.chain),
+					f0,
+					f1,
+				) &&
+				!overlapsIn(base, f0, f1);
+			if (covering) {
+				ctx.chains.push(`${src}${f.join(',')}[${label}]`);
+				base.push({ label, f0, f1 });
+				for (const d of drawn)
+					if (d.f0 < f1 && f0 < d.f1) d.hidden.push({ f0: Math.max(f0, d.f0), f1: Math.min(f1, d.f1) });
+				asBase = true;
+				return;
+			}
+			// Shift the layer to its place on the timeline in whole frames. `setpts` truncates its result, so an
+			// offset written in decimal seconds (3.333333 s for frame 100 at 30 fps) landed one frame early.
+			f.push(shift);
+			ctx.chains.push(`${src}${f.join(',')}[${label}]`);
+			const next = `o${label}`;
+			ctx.chains.push(
+				`[${last}][${label}]overlay=x=${x}:y=${y}:format=rgb:eof_action=pass:${enable}[${next}]`,
+			);
 			last = next;
 		};
 		drawLayer();
+		if (!asBase && baseOpen) {
+			// Every way of drawing a layer ends with its overlay (with its `enable` window) onto the composite.
+			const index = ctx.chains.length - 1;
+			const hideable =
+				ctx.chains === bgChains &&
+				/\]overlay=[^;]*:enable='between\(t,[^']*\)'\[[^\]]+\]$/.test(ctx.chains[index] ?? '');
+			drawn.push({
+				f0: layer.f0,
+				f1: layer.f1,
+				chain: hideable ? { list: ctx.chains, index } : null,
+				hidden: [],
+			});
+		}
 		if (blendMode !== 'normal' && ctx.blend) {
 			if (backdrop === null) throw new Error('blend layer without a backdrop');
+			// (the process ends here: its base is complete)
+			closeBase();
 			last = ctx.blend.cut(backdrop, last, layer, blendMode);
 		}
 	}
+	closeBase();
 
 	return last;
 }
@@ -1409,22 +1515,34 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 		backdropFd: backdrop ? 3 : null,
 	});
 	let proc = newProc(false);
+	const procs = [proc];
 	const waitFor: Promise<OverrideReady>[] = [];
 	const inexact: string[] = [];
-	// GPU decode: counted, and the device created in the process whose inputs use it
+	// GPU decode: eligible inputs are marked while the graph is built; `assignHwDecode` then gives the GPU to the ones
+	// that decode the most (docs/wp-notes/export-performance.md §12) and the device to the processes that use it
 	const hw = o.hwDecode;
 	let hwDecoded = 0;
 	const hwProcs = new Set<Proc>();
-	const hwDecode = hw
-		? (m: LocalMedia) => {
-				const a = hw.args(m);
-				if (a.length) {
-					hwDecoded++;
-					hwProcs.add(proc);
-				}
-				return a;
-			}
-		: undefined;
+	const hwDecode = hw ? (m: LocalMedia) => (hw.eligible(m) ? [HW_DECODE_MARK] : []) : undefined;
+	const assignHwDecode = (): void => {
+		const marked = procs.flatMap((p) =>
+			p.inputs.filter((a) => a.includes(HW_DECODE_MARK)).map((input) => ({ p, input })),
+		);
+		const chosen = new Set(
+			[...marked]
+				.sort((a, b) => inputSeconds(b.input) - inputSeconds(a.input))
+				.slice(0, hw?.maxInputs ?? 0)
+				.map((m) => m.input),
+		);
+		for (const { p, input } of marked) {
+			const k = input.indexOf(HW_DECODE_MARK);
+			if (chosen.has(input)) {
+				input.splice(k, 1, ...NVDEC_INPUT_ARGS);
+				hwDecoded++;
+				hwProcs.add(p);
+			} else input.splice(k, 1);
+		}
+	};
 	// docs/wp-notes/export-performance.md §10: kernel streams on the OpenCL device, which the process creating them opens
 	const kernel: NativeGraph['kernel'] = { opencl: 0, cpu: 0, fallbackReasons: [] };
 	const clProcs = new Set<Proc>();
@@ -1439,6 +1557,8 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 		...(clProcs.has(p) ? openClDeviceArgs(openCl!.init) : []),
 	];
 	const segments: BlendSegment[] = [];
+	/** The process and output label of each blend segment (their arguments are written once the GPU decode is known). */
+	const segmentProcs: { proc: Proc; label: string }[] = [];
 	const stackFrames = R1 - R0 + 1;
 	const ctx: StackContext = {
 		snap,
@@ -1481,30 +1601,16 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 				proc.chains.push(
 					`[${backdrop}][${layer}]hstack=inputs=2,trim=end_frame=${stackFrames},setpts=PTS-STARTPTS[${label}]`,
 				);
+				segmentProcs.push({ proc, label });
 				segments.push({
-					args: [
-						...devArgs(proc),
-						...decoderCapped(proc.inputs, o.threads).flat(),
-						'-filter_complex',
-						proc.chains.join(';\n'),
-						'-map',
-						`[${label}]`,
-						'-frames:v',
-						String(stackFrames),
-						'-fps_mode',
-						'passthrough',
-						'-f',
-						'rawvideo',
-						'-pix_fmt',
-						'rgba',
-						'pipe:1',
-					],
+					args: [],
 					filter: proc.chains.join(';\n'),
 					streams: proc.streams,
 					backdropFd: proc.backdropFd,
 					...blendSegmentFrames(plan, mode, R0, stackFrames),
 				});
 				proc = newProc(true);
+				procs.push(proc);
 				ctx.chains = proc.chains;
 				const k = ctx.addInput([
 					...['-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${W}x${H}`],
@@ -1517,6 +1623,25 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 		},
 	};
 	let last = drawStack(ctx);
+	assignHwDecode();
+	for (const [i, sp] of segmentProcs.entries())
+		segments[i]!.args = [
+			...devArgs(sp.proc),
+			...decoderCapped(sp.proc.inputs, o.threads).flat(),
+			'-filter_complex',
+			sp.proc.chains.join(';\n'),
+			'-map',
+			`[${sp.label}]`,
+			'-frames:v',
+			String(stackFrames),
+			'-fps_mode',
+			'passthrough',
+			'-f',
+			'rawvideo',
+			'-pix_fmt',
+			'rgba',
+			'pipe:1',
+		];
 	const { inputs, streams, chains } = proc;
 	const addInput = ctx.addInput;
 	// keyframes-blend: Stencil / Silhouette cut the whole stack below them, the sequence background included; what

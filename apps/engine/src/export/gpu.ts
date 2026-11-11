@@ -46,19 +46,16 @@ export function nvdecEligible(m: LocalMedia): boolean {
 export const NVDEC_INPUT_ARGS: readonly string[] = ['-hwaccel', 'cuda', '-hwaccel_device', CUDA_DEVICE];
 
 /**
- * The GPU decode of one composite process: NVDEC arguments for eligible media until `maxInputs` inputs use it, then
- * none (the CPU decodes the rest).
+ * The GPU decode of one composite process: at most `maxInputs` of its eligible inputs decode through NVDEC — the
+ * builder (`buildNativeGraph`) picks the ones that decode the longest (docs/wp-notes/export-performance.md §12) — and
+ * the CPU decodes the rest.
  */
-export function nvdecForGraph(maxInputs: number): { device: string; args(m: LocalMedia): string[] } {
-	let used = 0;
-	return {
-		device: CUDA_DEVICE,
-		args: (m) => {
-			if (used >= maxInputs || !nvdecEligible(m)) return [];
-			used++;
-			return [...NVDEC_INPUT_ARGS];
-		},
-	};
+export function nvdecForGraph(maxInputs: number): {
+	device: string;
+	maxInputs: number;
+	eligible(m: LocalMedia): boolean;
+} {
+	return { device: CUDA_DEVICE, maxInputs, eligible: nvdecEligible };
 }
 
 const probes = new Map<string, Promise<{ ok: boolean; reason?: string }>>();
