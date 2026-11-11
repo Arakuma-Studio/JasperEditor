@@ -294,15 +294,18 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 	};
 	/**
 	 * Whether `aside` names `y` in place of the attempt word at `x`: after an optional correction marker it opens with
-	 * `y`, or with the one or two attempt words before `x` and then `y` ("de Unity" → "No, de ellos").
+	 * `y`, or with the one or two attempt words before `x` and then `y` ("de Unity" → "No, de ellos"); one function word
+	 * the recogniser inserted among them is skipped (run 9, AE b: "cada imagen" → "cada La frame, no imagen.").
 	 */
 	const announces = (aside: readonly [number, number], x: number, y: number) => {
 		const a = aside[0] + correction(aside);
-		for (let c = 0; c <= 2; c++) {
-			if (a + c >= aside[1] || x - c < 0) break;
-			let fits = true;
-			for (let i = 0; i < c && fits; i++) fits = same(tok(x - c + i), tok(a + i));
-			if (fits && same(tok(a + c), tok(y))) return true;
+		for (let c = 0; c <= 2 && x - c >= 0; c++) {
+			const want = [...span(x - c, x).map(tok), tok(y)];
+			for (let skip = -1; skip <= c; skip++) {
+				if (skip >= 0 && (a + skip >= aside[1] || !ctx.stop.has(tok(a + skip)))) continue;
+				const at = (i: number) => a + i + (skip >= 0 && i >= skip ? 1 : 0);
+				if (at(c) < aside[1] && want.every((v, i) => same(v, tok(at(i))))) return true;
+			}
 		}
 		return false;
 	};

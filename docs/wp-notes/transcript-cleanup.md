@@ -621,6 +621,11 @@ rule, and each held-out round found new failures. The mechanism (vocalic fillers
   −16 dBFS, was removed); noise words (round 6 "pasa?", "¿Qué") still go. A review-only sliver after a removed pause
   that touches a removal of words (within 20 ms) goes with it: AD a kept the recogniser's "Bueno," (0.12 s) written
   over the onset of a removed take's "Así" as a 0.13 s blip cut in voice.
+- **A correction with an inserted word** (H3): the corrected-word rule (round 8) skips one function word among the
+  aside's opening words. AE b (chunked) wrote the correction "cada La frame, no imagen." — "La" inserted —, so the
+  aside did not open with "cada frame" and the take "…en cada imagen del juego." stayed as the kept take of its group
+  with the correction after it (22 words heard twice); mode a wrote "Frame, no imagen." (and the span was re-decoded),
+  which the rule already took.
 
 Kinds follow the structure: ≤ 2 words a false start, a whole clause (clause start, clause end, ≥ 3 content words) a
 retake (with a group), else a restart; inside re-decoded ranges they become hidden retakes as before. The settings keep

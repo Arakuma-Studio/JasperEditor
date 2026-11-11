@@ -592,12 +592,22 @@ describe('round 8 fixes (docs/wp-notes/transcript-cleanup.md "Round 8")', () => 
 });
 
 describe('round 10 fixes (docs/wp-notes/transcript-cleanup.md "Round 10")', () => {
+	const sec = (f: number) => f / FLICKS_PER_SECOND;
 	const detect = (words: CleanupWordIn[], voice: CleanupVoice = voiceFor(words)) =>
 		detectCleanup({ mediaId: 'med_r', words, voice, language: 'es', settings: FAST_SETTINGS });
 	const removes = (d: ReturnType<typeof detect>, i: number) =>
 		d.findings.some((f) => f.words && f.suggested === 'remove' && f.words[0] <= i && i <= f.words[1]);
 	const indexOf = (words: readonly CleanupWordIn[], text: string, from = 0) =>
 		words.findIndex((w, i) => i >= from && w.text === text);
+	/** Words written "text[start-end]" (seconds). */
+	const real = (s: string): CleanupWordIn[] =>
+		s
+			.trim()
+			.split(/\s+/)
+			.map((x) => {
+				const m = /^(.*)\[([\d.]+)-([\d.]+)\]$/.exec(x)!;
+				return { text: m[1]!, start: S(Number(m[2])), end: S(Number(m[3])), confidence: 0.9 };
+			});
 
 	it('the end of a sentence the next sentence opens with is no false start (AD "…las luces y las sombras.")', () => {
 		// run 9, fragment AD: "las sombras." ended the sentence; the next one opened with "las sombras" 15 s later
@@ -627,8 +637,30 @@ describe('round 10 fixes (docs/wp-notes/transcript-cleanup.md "Round 10")', () =
 		expect(detect(words, voiced).findings.filter((f) => f.kind === 'hallucination')).toEqual([]);
 	});
 
+	it('a correction "[new], no [old]" with a word the recogniser inserted keeps the corrected take (AE b)', () => {
+		// run 9, AE chunked: "…en cada imagen del juego. | cada La frame, no imagen. | Y el procesador … en cada frame del
+		// juego." kept the "imagen" take and the correction: 22 words heard twice
+		const words = real(`En[5.53-5.75] Unity[5.75-5.97] por[5.97-6.23] defecto[6.23-6.77] cada[6.77-7.01]
+			personaje[7.01-7.47] se[7.48-7.65] anima[7.65-7.9] con[7.91-8.07] un[8.07-8.23]
+			esqueleto[8.23-8.79] el[9.17-9.27] procesador[9.27-9.79] tiene[9.79-9.97] que[9.97-10.09]
+			calcular[10.09-10.65] dónde[10.65-10.91] está[10.91-11.11] cada[11.11-11.37]
+			hueso...[11.37-11.96] el[13.84-13.96] procesador[13.96-14.48] tiene[14.48-14.78] que[14.78-14.9]
+			calcular[14.9-15.46] dónde[15.46-15.72] está[15.72-15.9] cada[15.9-16.14] hueso[16.14-16.54]
+			de[16.54-16.64] cada[16.64-16.82] personaje[16.82-17.4] en[17.41-17.7] cada[17.7-17.88]
+			imagen[17.88-18.26] del[18.26-18.44] juego.[18.44-18.85] cada[21.27-21.41] La[21.41-21.47]
+			frame,[21.54-21.75] no[22.02-22.11] imagen.[22.11-22.32] Y[26.87-27.07] el[27.07-27.19]
+			procesador[27.19-27.72] tiene[27.72-27.96] que[27.96-28.1] calcular[28.1-28.56]
+			dónde[28.56-28.78] está[28.78-28.94] cada[28.94-29.18] hueso[29.18-29.56] de[29.56-29.68]
+			cada[29.68-29.86] personaje[29.86-30.42] en[30.43-30.7] cada[30.7-30.94] frame[30.94-31.22]
+			del[31.22-31.38] juego.[31.38-31.77] Con[32.94-33.08] uno[33.08-33.34] o[33.34-33.63]
+			diez[33.63-33.77] personajes[33.77-34.22]`);
+		const d = detect(words);
+		const retry = indexOf(words, 'Y');
+		for (let i = indexOf(words, 'el'); i < words.length; i++)
+			expect(removes(d, i), `${words[i]!.text} ${sec(words[i]!.start)}`).toBe(i < retry);
+	});
+
 	it('slivers: a loud voiced sound between pauses stays for review; a blip over a removed take goes with it', () => {
-		const sec = (f: number) => f / FLICKS_PER_SECOND;
 		// run 9, AG a: the deliberate mouth sound "Pup." (0.11 s, voiced, −16 dBFS) alone between two removed pauses
 		const words: CleanupWordIn[] = [
 			...say('La idea que hizo que todo esto fuera posible.'),
