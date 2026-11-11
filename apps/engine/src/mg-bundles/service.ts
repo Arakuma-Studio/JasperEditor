@@ -41,6 +41,7 @@ import {
 	HTML_MAX_BYTES,
 	HTML_MAX_FILES,
 	type HtmlBrowserOptions,
+	type HtmlBrowsers,
 	probeHtmlPage,
 	renderHtmlProRes,
 	renderHtmlStill,
@@ -612,10 +613,14 @@ export class MgBundleService {
 		return media;
 	}
 
-	/** Browser options of the headless pages (the Remotion browser, without the binaries directory). */
-	private htmlBrowser(): HtmlBrowserOptions {
+	/**
+	 * The headless pages' browsers: the Remotion browser's executable and mode (without the binaries directory), from
+	 * the engine's warm pool (wp-note export-performance §13; never a browser launched with other options).
+	 */
+	private htmlBrowser(): HtmlBrowsers {
 		const { binariesDirectory: _b, ...browser } = this.remotionOptions();
-		return browser;
+		const options: HtmlBrowserOptions = browser;
+		return { open: () => this.core.remotion.openBrowserWith(options) };
 	}
 
 	/**
@@ -628,7 +633,6 @@ export class MgBundleService {
 		const entry = basename(input.file);
 		ctx.progress(0.05, { stage: 'Loading the page' });
 		const probe = await probeHtmlPage(
-			await this.renderer(),
 			this.htmlBrowser(),
 			{ dir: root, entry, query: input.query, width: input.width, height: input.height, fps: input.fps },
 			{ signal: ctx.signal },
@@ -1316,7 +1320,6 @@ export class MgBundleService {
 			await this.core.remotion.recordUsage('media', 'mg-prerender');
 			const prores = join(scratch, 'html.mov');
 			await renderHtmlProRes(
-				await this.renderer(),
 				this.htmlBrowser(),
 				ff,
 				{
@@ -1611,7 +1614,7 @@ export class MgBundleService {
 		html: { entry: string; query: string },
 	): Promise<string> {
 		await mkdir(dirname(file), { recursive: true });
-		const png = await renderHtmlStill(await this.renderer(), this.htmlBrowser(), {
+		const png = await renderHtmlStill(this.htmlBrowser(), {
 			dir,
 			entry: html.entry,
 			query: html.query,

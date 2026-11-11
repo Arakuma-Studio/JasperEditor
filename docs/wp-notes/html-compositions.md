@@ -90,7 +90,7 @@ Errors (engine `MgBundleError` → HTTP 4xx → MCP error result, each with a hi
 - Timings (measured, host load average ≈ 12–39 from other agents, so upper bounds): import probe 1–4 s idle-ish, 10–12 s
   at load ≈ 35; 60 frames at 1920×1080 with 4 pages 13 s; 60 frames of `pano.html` at 1080×1350 with 4 pages 36 s
   (load ≈ 12); the 3 s carousel export with two HTML clips (150 master frames) 375 s at load ≈ 32–39; a `render_frame`
-  still 11–40 s (each still loads the page in a fresh browser).
+  still 11–40 s (each still loaded the page in a fresh browser; see "Warm browsers" for the change).
 - MCP eval (`apps/mcp/eval/cases/compositions.jsonl`, claude-sonnet-5-5, 2 samples each, Orquester account):
   `html-composition-import` 2/2 (the case cannot pass without the tool); `html-composition-contract-missing` 0/2 on
   the first text (one sample imported the page with `import_media` and placed a video clip, one retried after editing
@@ -100,6 +100,48 @@ Errors (engine `MgBundleError` → HTTP 4xx → MCP error result, each with a hi
   0) and, after the preview WebMs landed, from those (`idle` hosts) at 1 s; the web build typechecks; `pnpm i18n`,
   Spanish strings added (`pnpm i18n:check` covers all strings).
 
+## Warm browsers (render_frame, renders, import probes)
+
+The probe, the masters (`renderHtmlProRes`) and the stills (`renderHtmlStill`: `render_frame`, posters) used to
+launch a browser of their own each time (`r.openBrowser`) and close it afterwards. They now take a browser from the
+engine's warm pool (`remotion/browser-pool.ts`, wp-note export-performance §13) through
+`RemotionService.openBrowserWith(options)` and give it back:
+
+- **Same launch options as before**: the Remotion browser's executable and chrome mode, no probed `gl` (the renders'
+  browsers carry it). The pool keys every browser by its normalised launch options and hands one out only for the same
+  key, so the HTML pages never get a render browser launched with another `gl`, nor the reverse; where the options
+  are equal (this host: the probe keeps Chrome's default `gl`) the two share warm browsers.
+- **Isolation**: every page a probe, render or still opens is recorded and closed when it ends, fails or is cancelled
+  (cancellation closes the pages, which fails whatever they were waiting for, instead of closing the browser), and the
+  pool closes any page left when the browser comes back (within 10 s, else the browser is closed). Each render serves
+  its page from its own loopback server (random port and prefix; the page's headers — CSP `sandbox allow-scripts`,
+  `no-store` — are the server's), and the sandboxed document has an opaque origin: no cookies, storage or service
+  worker outlives the page. The transparent background is set on each page (`Emulation.setDefaultBackgroundColorOverride`
+  is per target).
+- **Failures and crashes**: errors propagate as before (`HTML_*` / `MG_RENDER_FAILED` / `JOB_CANCELLED`); a browser
+  that died or stopped answering is found by the next `acquire`'s health check, closed and replaced.
+- Tests: `apps/engine/test/html-browser-pool.test.ts` (a stand-in renderer: a second still reuses the first one's
+  browser and both stills' pages are closed although they failed; a browser that died while idle is relaunched; the
+  HTML pages' browser is launched with their own options, not a render browser's), `browser-pool.test.ts` (keys, LRU,
+  a hung reset), and with real Chrome `MG_E2E=1 pnpm exec vitest run apps/engine/test/html-composition.test.ts`: 6/6.
+
+`render_frame` of the fixture page (`fixtures/html-composition`, imported at 1080×1350 @ 30, placed at 0 s; `jasper
+render-frame --at <frame>` at five different frames per engine start, wall time of the CLI call including its own
+start; engine from `555d4e8d1` (before) and from this change (after), alternately, two starts each; this host, 16
+cores, load 2.3–3.1; measured; one earlier start of each, 3 stills: before 2.8–3.7 s, after 1.6–2.0 s):
+
+| | first still after the engine started | stills 2–5 (median) | all 10 (median) |
+|---|---:|---:|---:|
+| before (a browser per still) | 3.32 / 2.93 s | 2.41 s | 2.43 s |
+| after (warm browser) | 2.22 / 2.02 s | 1.93 s | 2.01 s |
+
+≈ 0.45 s saved per still at this load: the browser launch (its page still loads the page and its fonts). The 11–40 s
+of the earlier measurements were at load 12–39, where a launch costs much more; not re-measured at that load. The
+decoded still is identical before and after (frame 15: same `framemd5`). Rerun: start the engine
+(`JASPER_APPDIR=<dir> JASPER_DEV=1 JASPER_FFMPEG_LGPL_ONLY=1 pnpm exec tsx apps/engine/src/cli.ts --port 47501`), then
+`jasper call import_html_composition '{"projectId":…,"path":"<copy of fixtures/html-composition>/page.html","width":1080,"height":1350,"fps":30}'`,
+`jasper call add_composition '{…,"compositionId":"page","at":0}'` and time `jasper render-frame --at <n> --out f.png`.
+
 ## Limits
 
 - No props: a page's parameters are its import query; another query is another import (another media item).
@@ -107,8 +149,8 @@ Errors (engine `MgBundleError` → HTTP 4xx → MCP error result, each with a hi
   requested at another time is missing in renders (404) — the contract asks `__ready` to wait for assets. Remote
   `https:` resources are loaded at render time (network needed; they may change).
 - Files outside the page's folder (`../x.js`) are refused (sandbox); symlinks inside it are followed.
-- Stills are slow (a fresh browser and page load per still); renders capture PNG frames (no faster path for opaque
-  pages, so alpha always works).
+- A still still loads the page (no page is kept between stills: pages are never shared between renders); renders
+  capture PNG frames (no faster path for opaque pages, so alpha always works).
 - The live host is a sandboxed iframe in the editor's browser: GPU / WebGL behaviour may differ from the headless
   renderer the way it does for Remotion bundles; colour effects wait for the preview WebM ("Grade pending").
 - Importing reads a path on the engine's computer: local engines only (the dialog says so; no upload path).

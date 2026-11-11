@@ -3,7 +3,8 @@
 // the page at time t, pure and deterministic) becomes an `mg-bundle` whose one composition is the page.
 //
 // Everything runs in the Remotion headless browser the engine already uses for compositions (same executable, chrome
-// mode and window handling as `renderMedia`), on pages served by a private loopback server (random port, unguessable
+// mode and window handling as `renderMedia`; a warm browser of the engine's pool, wp-note export-performance §13:
+// every page this module opens is closed before the browser goes back), on pages served by a private loopback server (random port, unguessable
 // prefix) with the same sandboxing Content-Security-Policy as the editor's live host and the HTML host agent
 // (`@jasper/compositions/mg-host` html-agent.ts) injected before the page's scripts — so the Program monitor's live
 // host, `render_frame` and exports drive the page identically:
@@ -17,7 +18,6 @@ import type { ChildProcess } from 'node:child_process';
 import { rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { htmlHostPageUrl, injectHtmlHostBootstrap } from '@jasper/compositions/mg-host';
-import { renderPagesInOwnWindows } from '@jasper/compositions/render-host';
 import type { ChromiumOptions } from '@remotion/renderer';
 import { z } from 'zod';
 import { JobError } from '../jobs/types.ts';
@@ -35,6 +35,24 @@ export type HtmlBrowserOptions = {
 	chromeMode: 'headless-shell' | 'chrome-for-testing';
 	chromiumOptions?: ChromiumOptions;
 };
+
+/**
+ * Where the pages' browser comes from: `open()` hands out a browser launched with the HTML pages' options (the
+ * engine's warm pool: `RemotionService.openBrowserWith`, Chrome for Testing pages in their own windows) for one
+ * render, still or probe; its `close()` gives it back.
+ */
+export type HtmlBrowsers = { open(): Promise<{ readonly instance: Browser; close(): Promise<void> }> };
+
+/** The pages a render opened: closed when it ends, fails or is cancelled (a pooled browser keeps no page of it). */
+function pageSet() {
+	const pages: Page[] = [];
+	return {
+		add: (page: Page) => {
+			pages.push(page);
+		},
+		close: () => Promise.all(pages.splice(0).map((p) => p.close().catch(() => undefined))),
+	};
+}
 
 /** The page and its render settings. `fps` is a number (seeks) and `rate` its exact rational (encoders). */
 export type HtmlPageRender = {
@@ -123,18 +141,6 @@ export function serveHtmlPage(
 	});
 }
 
-async function openHtmlBrowser(r: RendererModule, b: HtmlBrowserOptions): Promise<Browser> {
-	const browser = await r.openBrowser('chrome', {
-		...(b.browserExecutable ? { browserExecutable: b.browserExecutable } : {}),
-		chromeMode: b.chromeMode,
-		...(b.chromiumOptions ? { chromiumOptions: b.chromiumOptions } : {}),
-		logLevel: 'error',
-	});
-	// S11:ANM-014: Chrome for Testing paints only visible tabs; parallel pages each get their own window.
-	if (b.chromeMode === 'chrome-for-testing') renderPagesInOwnWindows(browser);
-	return browser;
-}
-
 type Cdp = { send(method: string, params?: Record<string, unknown>): Promise<unknown> };
 const cdp = (page: Page): Cdp => page._client() as unknown as Cdp;
 
@@ -157,6 +163,7 @@ async function openPage(
 	p: Pick<HtmlPageRender, 'width' | 'height' | 'fps'> & { durationInFrames?: number },
 	index: number,
 	timeoutMs: number,
+	pages: ReturnType<typeof pageSet>,
 ): Promise<{ page: Page; meta: HtmlPageMeta }> {
 	const page = await browser.newPage({
 		context: () => null,
@@ -166,6 +173,7 @@ async function openPage(
 		onBrowserLog: null,
 		onLog: () => undefined,
 	});
+	pages.add(page);
 	await page.setViewport({ width: p.width, height: p.height, deviceScaleFactor: 1 });
 	// Alpha: what the page does not paint stays transparent (Remotion's omitBackground).
 	await cdp(page).send('Emulation.setDefaultBackgroundColorOverride', { color: { r: 0, g: 0, b: 0, a: 0 } });
@@ -249,8 +257,7 @@ export type HtmlProbe = {
  * Throws an MgBundleError with an `HTML_*` code and hint.
  */
 export async function probeHtmlPage(
-	r: RendererModule,
-	b: HtmlBrowserOptions,
+	browsers: HtmlBrowsers,
 	p: Omit<HtmlPageRender, 'rate'>,
 	opts: { signal?: AbortSignal; timeoutMs?: number } = {},
 ): Promise<HtmlProbe> {
@@ -262,12 +269,22 @@ export async function probeHtmlPage(
 		lastServe = Date.now();
 		(ok ? files : missing).add(rel);
 	});
-	let browser: Browser | null = null;
-	const onAbort = () => void browser?.close({ silent: true }).catch(() => undefined);
+	let lease: Awaited<ReturnType<HtmlBrowsers['open']>> | null = null;
+	const pages = pageSet();
+	// Closing the page fails what it is waiting for (its CDP session ends).
+	const onAbort = () => void pages.close();
 	opts.signal?.addEventListener('abort', onAbort, { once: true });
 	try {
-		browser = await openHtmlBrowser(r, b);
-		const { page, meta } = await openPage(browser, htmlHostPageUrl(served.base, p), p, 0, timeout);
+		lease = await browsers.open();
+		if (opts.signal?.aborted) throw new MgBundleError('JOB_CANCELLED', 'Cancelled', 499);
+		const { page, meta } = await openPage(
+			lease.instance,
+			htmlHostPageUrl(served.base, p),
+			p,
+			0,
+			timeout,
+			pages,
+		);
 		const last = meta.durationInFrames - 1;
 		for (const f of [...new Set([0, Math.floor(last / 2), last])]) await seekPage(page, f, timeout);
 		// Late loads (lazy images, fetches the seeks started): until the server was idle for 300 ms, at most 3 s.
@@ -296,7 +313,8 @@ export async function probeHtmlPage(
 		);
 	} finally {
 		opts.signal?.removeEventListener('abort', onAbort);
-		await browser?.close({ silent: true }).catch(() => undefined);
+		await pages.close();
+		await lease?.close();
 		await served.close();
 	}
 }
@@ -390,8 +408,7 @@ type SinkOptions = { signal?: AbortSignal; trackChild?: (c: ChildProcess) => voi
  * by a lossless concat. `totalFrames` is the composition length at `fps` (the agent clamps seeks to it).
  */
 export async function renderHtmlProRes(
-	r: RendererModule,
-	b: HtmlBrowserOptions,
+	browsers: HtmlBrowsers,
 	ff: Ffmpeg,
 	p: HtmlPageRender & {
 		totalFrames: number;
@@ -407,21 +424,30 @@ export async function renderHtmlProRes(
 	const ranges = splitFrames(p.startFrame, p.durationFrames, p.pages);
 	const served = await serveHtmlPage(p.dir, p.entry);
 	const url = htmlHostPageUrl(served.base, p);
-	let browser: Browser | null = null;
+	let lease: Awaited<ReturnType<HtmlBrowsers['open']>> | null = null;
+	const pages = pageSet();
 	const sinks: ReturnType<typeof proResSink>[] = [];
 	let done = 0;
 	const onAbort = () => {
 		for (const s of sinks) s.kill();
-		void browser?.close({ silent: true }).catch(() => undefined);
+		void pages.close();
 	};
 	opts.signal?.addEventListener('abort', onAbort, { once: true });
 	const segments = ranges.map((_, i) => join(p.scratch, `html-segment-${i}.mov`));
 	try {
-		browser = await openHtmlBrowser(r, b);
-		const br = browser;
+		lease = await browsers.open();
+		if (opts.signal?.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
+		const br = lease.instance;
 		await Promise.all(
 			ranges.map(async (range, i) => {
-				const { page } = await openPage(br, url, { ...p, durationInFrames: p.totalFrames }, i, timeout);
+				const { page } = await openPage(
+					br,
+					url,
+					{ ...p, durationInFrames: p.totalFrames },
+					i,
+					timeout,
+					pages,
+				);
 				const sink = proResSink(ff, p.rate, segments[i]!, opts);
 				sinks.push(sink);
 				for (let f = range.start; f < range.start + range.count; f++) {
@@ -432,7 +458,6 @@ export async function renderHtmlProRes(
 					opts.onFrames?.(done);
 				}
 				await sink.end();
-				await page.close().catch(() => undefined);
 			}),
 		);
 	} catch (e) {
@@ -442,7 +467,8 @@ export async function renderHtmlProRes(
 		throw e;
 	} finally {
 		opts.signal?.removeEventListener('abort', onAbort);
-		await browser?.close({ silent: true }).catch(() => undefined);
+		await pages.close();
+		await lease?.close();
 		await served.close();
 	}
 	if (segments.length === 1) {
@@ -467,27 +493,29 @@ export async function renderHtmlProRes(
 
 /** One frame of a page as a PNG (straight alpha). */
 export async function renderHtmlStill(
-	r: RendererModule,
-	b: HtmlBrowserOptions,
+	browsers: HtmlBrowsers,
 	p: Omit<HtmlPageRender, 'rate'> & { totalFrames: number; frame: number },
 	opts: { timeoutMs?: number } = {},
 ): Promise<Buffer> {
 	const timeout = opts.timeoutMs ?? HTML_PAGE_TIMEOUT_MS;
 	const served = await serveHtmlPage(p.dir, p.entry);
-	let browser: Browser | null = null;
+	let lease: Awaited<ReturnType<HtmlBrowsers['open']>> | null = null;
+	const pages = pageSet();
 	try {
-		browser = await openHtmlBrowser(r, b);
+		lease = await browsers.open();
 		const { page } = await openPage(
-			browser,
+			lease.instance,
 			htmlHostPageUrl(served.base, p),
 			{ ...p, durationInFrames: p.totalFrames },
 			0,
 			timeout,
+			pages,
 		);
 		await seekPage(page, p.frame, timeout);
 		return await capture(page, p.width, p.height);
 	} finally {
-		await browser?.close({ silent: true }).catch(() => undefined);
+		await pages.close();
+		await lease?.close();
 		await served.close();
 	}
 }

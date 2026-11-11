@@ -249,12 +249,29 @@ const SYSTEM_BROWSERS = [
 
 type RendererModule = typeof import('@remotion/renderer');
 type RenderBrowser = Awaited<ReturnType<RendererModule['openBrowser']>>;
-/** Launch options of a render browser: the executable and mode, and the probed `gl`. */
-type RenderBrowserOptions = {
+/** Launch options of a render browser: the executable and mode, and (renders) the probed `gl`. */
+export type RenderBrowserOptions = {
 	browserExecutable?: string;
 	chromeMode: 'headless-shell' | 'chrome-for-testing';
-	chromiumOptions?: { gl: RemotionGl | null };
+	chromiumOptions?: ChromiumOptions;
 };
+type ChromiumOptions = NonNullable<Parameters<RendererModule['openBrowser']>[1]>['chromiumOptions'];
+
+/**
+ * Identity of launch options, whatever their key order (an absent, `undefined` or `null` option, or an empty
+ * `chromiumOptions`, is Chrome's default either way): one browser serves only holders of the same options.
+ */
+function browserKey(o: RenderBrowserOptions): string {
+	const norm = (v: unknown): unknown => {
+		if (!v || typeof v !== 'object' || Array.isArray(v)) return v ?? undefined;
+		const entries = Object.entries(v as Record<string, unknown>)
+			.map(([k, x]) => [k, norm(x)] as const)
+			.filter(([, x]) => x !== undefined)
+			.sort(([a], [b]) => (a < b ? -1 : 1));
+		return entries.length ? Object.fromEntries(entries) : undefined;
+	};
+	return JSON.stringify(norm(o) ?? {});
+}
 
 /**
  * A render browser opened once and used by several renders at the same time (S11:LBK-022 parallel bakes): with a full
@@ -401,8 +418,6 @@ export class RemotionService {
 	private webgl: RemotionWebglStatus = { state: 'unknown', gl: null };
 	private webglPromise: Promise<RemotionWebglStatus> | null = null;
 	private ffmpegInfoValue: RemotionFfmpegInfo = { lgpl: false, encoders: null, filters: null };
-	/** The launch options of the next pooled browser (set by `openSharedBrowser` before it acquires). */
-	private launch: { r: RendererModule; browser: RenderBrowserOptions; key: string } | null = null;
 	private poolValue: BrowserPool<RenderBrowser> | null = null;
 	/** The bundle served over loopback HTTP for renders (`renderServeUrl`). */
 	private bundleServer: Promise<{ url: string; close(): Promise<void> } | null> | null = null;
@@ -595,17 +610,6 @@ export class RemotionService {
 		const num = (v: string | undefined, d: number) =>
 			v !== undefined && v !== '' && Number.isFinite(Number(v)) ? Math.max(0, Number(v)) : d;
 		this.poolValue = new BrowserPool<RenderBrowser>({
-			key: () => this.launch?.key ?? '',
-			launch: async () => {
-				const l = this.launch;
-				if (!l) throw new JobError('RENDER_FAILED', 'No render browser options', true);
-				const instance = await l.r.openBrowser('chrome', { ...l.browser, logLevel: 'error' });
-				if (l.browser.chromeMode === 'chrome-for-testing' && !renderPagesInOwnWindows(instance)) {
-					await instance.close({ silent: true }).catch(() => undefined);
-					throw new JobError('RENDER_FAILED', 'The render browser does not expose its CDP connection', true);
-				}
-				return instance;
-			},
 			healthy: (b) =>
 				Promise.race([
 					// a cheap, idempotent round trip (set when the browser was created)
@@ -617,7 +621,6 @@ export class RemotionService {
 				await Promise.all((await b.pages()).map((page) => page.close().catch(() => undefined)));
 			},
 			dispose: (b) => b.close({ silent: true }),
-			warm: (b) => this.warmBrowser(b),
 			maxIdle: Math.floor(num(env.JASPER_RENDER_BROWSERS_IDLE, WARM_BROWSERS)),
 			idleMs: num(env.JASPER_RENDER_BROWSER_IDLE_SEC, WARM_BROWSER_IDLE_SEC) * 1000,
 			maxUses: WARM_BROWSER_MAX_USES,
@@ -942,11 +945,38 @@ export class RemotionService {
 	 */
 	async openSharedBrowser(): Promise<SharedRenderBrowser> {
 		this.binariesOption();
+		const browser = { ...this.browserOptions(), ...(await this.chromiumOptions()) };
+		return this.pooledBrowser(browser, (b) => this.warmBrowser(b));
+	}
+
+	/**
+	 * A warm browser launched with exactly `options` (HTML compositions: their own executable, mode and `gl`), from
+	 * the same pool as the renders' (wp-note export-performance §13); `close` gives it back. Browsers of other options
+	 * are never handed out for it.
+	 */
+	async openBrowserWith(options: RenderBrowserOptions): Promise<SharedRenderBrowser> {
+		return this.pooledBrowser(options);
+	}
+
+	private async pooledBrowser(
+		options: RenderBrowserOptions,
+		warm?: (b: RenderBrowser) => Promise<void>,
+	): Promise<SharedRenderBrowser> {
 		if (this.stopped) throw new JobError('RENDER_FAILED', 'The engine is stopping', true);
 		const r = await this.renderer();
-		const browser = { ...this.browserOptions(), ...(await this.chromiumOptions()) };
-		this.launch = { r, browser, key: JSON.stringify(browser) };
-		return this.pool().acquire();
+		return this.pool().acquire({
+			key: browserKey(options),
+			launch: async () => {
+				const instance = await r.openBrowser('chrome', { ...options, logLevel: 'error' });
+				// S11:ANM-014: Chrome for Testing paints only visible tabs; every page gets its own window.
+				if (options.chromeMode === 'chrome-for-testing' && !renderPagesInOwnWindows(instance)) {
+					await instance.close({ silent: true }).catch(() => undefined);
+					throw new JobError('RENDER_FAILED', 'The render browser does not expose its CDP connection', true);
+				}
+				return instance;
+			},
+			...(warm ? { warm } : {}),
+		});
 	}
 
 	/**
