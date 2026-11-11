@@ -154,8 +154,8 @@ function isDrawnVowel(n: string, vowels: ReadonlySet<string>): boolean {
 /** A word that ends a sentence (its closing quote or bracket after the mark). */
 export const SENTENCE_END = /[.?!…]["'»”’)]*$/u;
 
-/** A word the recogniser wrote as broken off: it ends with an ellipsis. */
-export const CUT_OFF = /(\.\.\.|…)[?!]?$/;
+/** A word the recogniser wrote as broken off: it ends with an ellipsis, or a letter and a hyphen ("tor-"). */
+export const CUT_OFF = /(\.\.\.|…)[?!]?$|\p{L}-$/u;
 
 /**
  * Rule 4 of the prototype: phrases with ≥ `offScriptMinTokens` content tokens of which < `offScriptSimilarity` occur in

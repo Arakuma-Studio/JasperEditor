@@ -135,6 +135,20 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 	/** Whether `[a, b)` holds only discourse-marker words ("a ver", "bueno", "pues"). */
 	const markersOnly = (a: number, b: number) => b > a && span(a, b).every((p) => markerSet.has(tok(p)));
 	const keys = (a: number, b: number) => span(a, b).filter((p) => keyAt[p]);
+	/**
+	 * Where the words `[a, b)` are said again word for word at the start of the speech from `r` (after up to two lead
+	 * words; a cut-off last word as a prefix), or -1.
+	 */
+	const verbatimAt = (a: number, b: number, r: number) => {
+		for (let o = r; o <= r + 2 && o + (b - a) <= n; o++)
+			if (span(a, b).every((x, i) => same(tok(x), tok(o + i), x === b - 1 && cut(x)))) return o;
+		return -1;
+	};
+	/** The end of an attempt from `q` broken off within its first three words (before `r`), else `r`. */
+	const brokenWithin = (q: number, r: number) => {
+		for (let x = q; x < Math.min(r, q + 3); x++) if (cut(x)) return x + 1;
+		return r;
+	};
 
 	/** One content word (or allowed emphasis) said again at once, the repetition ending its phrase: deliberate. */
 	const deliberate = (q: number, len: number) => {
@@ -222,6 +236,17 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 			// a cut-off last word said whole ("cual…" → "cualquier"), or abandoned after three re-said words
 			if (last && (brokenOff || a1 === r0) && rk.some((p) => same(tx, tok(p), true))) continue;
 			if (last && brokenOff && pairs.length >= 3 && !exact(tx)) continue;
+			// …or cut off after three or more words said again word for word ("lo peor es que el tor… | Y lo peor es que el
+			// motor…", run 9 AC)
+			if (
+				last &&
+				brokenOff &&
+				!exact(tx) &&
+				ak[x] === a1 - 1 &&
+				a1 - 1 - a0 >= 3 &&
+				verbatimAt(a0, a1 - 1, r0) >= 0
+			)
+				continue;
 			let ok = false;
 			// a stock phrase the recogniser inserted into the attempt (round 7, U b: "para hacer un ¡Suscríbete! motor…" said
 			// again as "para hacer un motor de videojuegos"): its matched neighbours are next to each other in the retry
@@ -335,7 +360,7 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 			if (r <= q) break;
 			// (one content word may lead the retry when it is the only one: "… cerradas | ahora diseñé las curvas …")
 			if ((key(tok(r)) && m > 1) || W(r + 1).s - W(r).e >= LEAD_IN_JOIN_S) break;
-			if (r === 0 || ends(r - 1) || gapAfter(r - 1) >= t.phraseGapS) return r;
+			if (r === 0 || ends(r - 1) || cut(r - 1) || gapAfter(r - 1) >= t.phraseGapS) return r;
 		}
 		return p;
 	};
@@ -373,7 +398,7 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 		if (r - q <= 3 && deliberate(q, r - q)) return null;
 		// every link needs the attempt's opening among the first words after it (cheap refusal before any alignment)
 		{
-			const first = keys(q, Math.min(r, q + 8))
+			const first = keys(q, Math.min(brokenWithin(q, r), q + 8))
 				.slice(0, 2)
 				.map(tok);
 			const opening = first.length ? first : [tok(q)];
@@ -456,6 +481,26 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 					// a self-correction ("No, …") between a clause and its corrected retry: reviewed at least
 					if (c === 0 && !corrected && correction([b, r]) && c2.prefix && c2.share >= t.retakeSimilarity)
 						corrected = { b, share: c2.share, last: c2.last };
+				}
+			}
+			if (!cv?.full && clauseStart(r)) {
+				// an attempt broken off and said again word for word at the retry's start, then an aside (run 9, AF: "Sí, ya sé
+				// que Roblox usa… ¿Dónde está el enojado? | Sí, ya sé que Roblox usa el WoW"; AG: "es… Espera. | es
+				// extremadamente rápido."): a whole clause, ≤ 3 words after an attempt of fewer than four
+				let b = q + 1;
+				while (b < r && !cut(b - 1)) b++;
+				const o = b < r ? verbatimAt(q, b, rp) : -1;
+				let spoken = 0;
+				for (let x = b; x < r; x++) spoken += W(x).e - W(x).s;
+				if (
+					o >= 0 &&
+					!crosses(b) &&
+					r - b <= (b - q >= 4 ? ASIDE_MAX_WORDS : 3) &&
+					spoken <= ASIDE_MAX_S &&
+					span(b, r).every((x) => (retryStarts.get(x) ?? q) >= q)
+				) {
+					e = b;
+					cv = { full: true, share: 1, prefix: true, last: o + (b - q) - 1 };
 				}
 			}
 			// an attempt that starts inside a sentence and finishes it is re-said word for word (an ASR garble in seven
@@ -554,9 +599,23 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 			for (let q = p - 1; q >= Math.max(0, p - MAX_ATTEMPT_WORDS); q--) {
 				if (W(p).s - W(q).s > t.restartWindowS) break;
 				if (!clauseStart(q)) continue;
+				// a lead word without content said into the attempt ("Y es… | es extremadamente"): the attempt starts after it
+				if (
+					!head.some((y) => same(tok(q), y)) &&
+					q + 1 < p &&
+					!keyAt[q] &&
+					W(q + 1).s - W(q).e < LEAD_IN_JOIN_S &&
+					head.some((y) => same(tok(q + 1), y)) &&
+					span(q + 1, Math.min(p, q + 4)).some(cut) &&
+					brokenWithin(q + 1, p) - (q + 1) <= 2 &&
+					!keys(q + 1, brokenWithin(q + 1, p)).length
+				)
+					qs.add(q + 1);
 				if (!head.some((y) => same(tok(q), y))) continue;
-				const first = keys(q, p)[0];
-				if (first === undefined ? p - q <= 2 : rk.some((y) => same(tok(first), y))) qs.add(q);
+				// (an attempt broken off within its first three words is judged by those: "es… Espera. | es extremadamente")
+				const lim = brokenWithin(q, p);
+				const first = keys(q, lim)[0];
+				if (first === undefined ? lim - q <= 2 : rk.some((y) => same(tok(first), y))) qs.add(q);
 			}
 		}
 		let best: Cand | null = null;

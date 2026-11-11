@@ -660,6 +660,68 @@ describe('round 10 fixes (docs/wp-notes/transcript-cleanup.md "Round 10")', () =
 			expect(removes(d, i), `${words[i]!.text} ${sec(words[i]!.start)}`).toBe(i < retry);
 	});
 
+	it('a broken-off attempt said again word for word: after an aside, a re-said cut-off word, a lead (AF, AC, AG)', () => {
+		// run 9: no finding for any of these in either mode; [first, last] words that go (by start time)
+		const cases: Array<[string, number, number]> = [
+			// AF: "Sí, ya sé que Roblox usa… ¿Dónde está el enojado? Sí, ya sé que Roblox usa el WoW"
+			[
+				`usa[49.12-49.48] en[49.48-49.74] Roblox.[49.74-50.29] Sí,[53.41-53.76] ya[53.76-53.84]
+				sé[53.84-53.98] que[53.98-54.12] Roblox[54.12-54.62] usa...[54.62-54.98] ¿Dónde[57.26-57.52]
+				está[57.52-57.66] el[57.66-57.76] enojado?[57.76-58.06] Sí,[58.49-58.84] ya[58.84-58.92]
+				sé[58.92-59.06] que[59.06-59.2] Roblox[59.2-59.68] usa[59.68-59.88] el[59.88-60.02]
+				WoW,[60.02-60.58] que[60.62-60.68] es[60.68-60.82] distinto,[60.82-61.64] pero[61.65-61.76]
+				no[61.76-61.86] me[61.86-61.96] lo[61.96-62.04] pongan[62.04-62.3] en[62.3-62.38]
+				los[62.38-62.46] comentarios.[62.46-63.13]`,
+				53.41,
+				57.76,
+			],
+			// AC: "lo peor es que el tor… | Y lo peor es que el motor…" (default and chunked)
+			[
+				`te[55.1-55.18] borraba[55.18-55.52] el[55.52-55.62] objeto[55.62-55.88] entero.[55.89-56.39]
+				lo[60.14-60.24] peor[60.24-60.4] es[60.4-60.51] que[60.52-60.6] el[60.6-60.72]
+				tor...[60.72-60.96] Y[61.16-61.34] lo[61.34-61.42] peor[61.42-61.58] es[61.58-61.68]
+				que[61.68-61.76] el[61.76-61.86] motor[61.86-62.12] tardaba[62.12-62.56] como[62.56-62.82]
+				dos[62.82-63.16] horas[63.16-63.48] en[63.48-63.66] compilar.[63.66-64.23]`,
+				60.14,
+				60.72,
+			],
+			[
+				`te[55.1-55.2] borraba[55.2-55.54] el[55.54-55.62] objeto[55.62-55.9] entero.[55.9-56.39]
+				lo[60.14-60.24] peor[60.24-60.42] es[60.42-60.54] que[60.54-60.6] el[60.6-60.72]
+				tor-[60.72-60.96] y[61.16-61.34] lo[61.34-61.46] peor[61.46-61.6] es[61.6-61.7]
+				que[61.7-61.78] el[61.78-61.88] motor[61.88-62.12] tardaba[62.12-62.56] como[62.56-62.82]
+				dos[62.82-63.16] horas[63.16-63.48] en[63.48-63.66] compilar.[63.66-64.23]`,
+				60.14,
+				60.72,
+			],
+			// AG: "es… Espera. es extremadamente rápido." / "Y es… es extremadamente rápido."
+			[
+				`Pero[0.18-0.3] es[0.3-0.42] que[0.42-0.52] tengo[0.52-0.7] un[0.7-0.82] amigo[0.82-1.06]
+				que[1.06-1.28] no[1.28-1.48] come,[1.48-2.08] no[2.08-2.18] descansa,[2.18-2.84]
+				ni[2.84-3.06] duerme.[3.06-3.61] es...[4.4-4.75] Espera.[4.95-5.18] es[6.38-6.6]
+				extremadamente[6.6-7.48] rápido.[7.48-8.2]`,
+				4.4,
+				4.95,
+			],
+			[
+				`Pero[0.18-0.3] es[0.3-0.4] que[0.4-0.52] tengo[0.52-0.7] un[0.7-0.82] amigo[0.82-1.08]
+				que[1.08-1.3] no[1.3-1.48] come,[1.48-2.08] no[2.08-2.18] descansa,[2.18-2.84] ni[2.84-3.06]
+				duerme.[3.06-3.61] Y[4.29-4.42] es...[4.42-4.75] es[6.36-6.6] extremadamente[6.6-7.52]
+				rápido.[7.52-8.2]`,
+				4.29,
+				4.42,
+			],
+		];
+		for (const [text, from, to] of cases) {
+			const words = real(text);
+			const d = detect(words);
+			for (let i = 0; i < words.length; i++) {
+				const s = sec(words[i]!.start);
+				expect(removes(d, i), `${words[i]!.text} ${s}`).toBe(s >= from - 1e-6 && s <= to + 1e-6);
+			}
+		}
+	});
+
 	it('slivers: a loud voiced sound between pauses stays for review; a blip over a removed take goes with it', () => {
 		// run 9, AG a: the deliberate mouth sound "Pup." (0.11 s, voiced, −16 dBFS) alone between two removed pauses
 		const words: CleanupWordIn[] = [

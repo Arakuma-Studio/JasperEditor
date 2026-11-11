@@ -626,6 +626,20 @@ rule, and each held-out round found new failures. The mechanism (vocalic fillers
   aside did not open with "cada frame" and the take "…en cada imagen del juego." stayed as the kept take of its group
   with the correction after it (22 words heard twice); mode a wrote "Frame, no imagen." (and the span was re-decoded),
   which the rule already took.
+- **Broken-off attempts said again word for word** (H2, H4, H6; no finding in either mode of run 9):
+  - with an aside (AF: "Sí, ya sé que Roblox usa… ¿Dónde está el enojado? | Sí, ya sé que Roblox usa el WoW" — two content
+    words, under rule 4's three; AG a: "es… Espera. | es extremadamente rápido."): an attempt up to its first cut-off
+    word that the retry opens with word for word (after up to two lead words; the cut-off word as a prefix), then a
+    whole-clause aside — ≤ 3 words after an attempt of fewer than four words, else rule 4's limits — before a retry that
+    starts a clause. Candidates and the opening check judge an attempt broken off within its first three words by those
+    words (the aside's content words are not the attempt's);
+  - with a different cut-off word (AC: "lo peor es que el tor… | Y lo peor es que el motor…"; "tor" is no prefix of
+    "motor" and the attempt has one other content word): rule 3 forgives a cut-off last word after three or more words
+    said again word for word;
+  - a lead word said into the attempt (AG b: "Y es… | es extremadamente rápido."): a clause-start word without content
+    before an attempt broken off within two words makes the attempt a candidate; the lead joins it as before.
+  - A word ending in a letter and a hyphen ("tor-", chunked AC) is written broken off (`CUT_OFF`), and a retry's lead
+    words may follow such a word.
 
 Kinds follow the structure: ≤ 2 words a false start, a whole clause (clause start, clause end, ≥ 3 content words) a
 retake (with a group), else a restart; inside re-decoded ranges they become hidden retakes as before. The settings keep
