@@ -53,9 +53,7 @@ function placed() {
 	const h = new Harness({ preset: 'hd-1080p-30' });
 	const r = h.ok([{ type: 'media.register', asset: htmlAsset(htmlInfo()) }]);
 	const mediaId = (r.results[0] as { mediaId: string }).mediaId;
-	const c = h.ok([
-		{ type: 'clip.addComposition', composition: { mediaId, id: 'pano' }, at: 0, track: 'V2' },
-	]);
+	const c = h.ok([{ type: 'clip.addComposition', composition: { mediaId, id: 'pano' }, at: 0, track: 'V2' }]);
 	return { h, mediaId, clipId: (c.results[0] as { clipId: string }).clipId };
 }
 
@@ -93,7 +91,9 @@ describe('HTML composition pages (schema v13)', () => {
 
 	it('loads a damaged page header, reports it and drops it with its compositions (the clip stays, as a card)', () => {
 		const { h, mediaId, clipId } = placed();
-		const doc = structuredClone(h.doc) as unknown as { media: Record<string, { mgBundle: { html: unknown } }> };
+		const doc = structuredClone(h.doc) as unknown as {
+			media: Record<string, { mgBundle: { html: unknown } }>;
+		};
 		doc.media[mediaId]!.mgBundle.html = { entry: 42 };
 		const r = loadProject(doc, { ids: createRandomIdSource() });
 		expect(r.repairs.map((x) => x.action)).toContain('drop-html-page');
