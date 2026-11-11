@@ -14,6 +14,7 @@ import {
 	GradingScopesResponseSchema,
 	LayerStyleFileSchema,
 	LayerStyleReadQuerySchema,
+	MgHtmlImportRequestSchema,
 	type PsdPlan,
 	PsdPlanSchema,
 	PsdRequestSchema,
@@ -38,6 +39,7 @@ import {
 	DEFAULT_FONT_FAMILY,
 	defaultRegistries,
 	diffDocuments,
+	EMPTY_PROBE,
 	exportAgentQuerySchemas,
 	exportAgentSchema,
 	FACTORY_LOOKS,
@@ -712,6 +714,54 @@ export function createFakeEngine(
 	};
 
 	const routes: Record<string, (opts: { params?: Record<string, string>; body?: never }) => unknown> = {
+		// An HTML composition page: 6 s long, whatever the file says (the contract errors come from `setup.faults`).
+		mgBundleImportHtml: ({ body: raw }) => {
+			const b = body(MgHtmlImportRequestSchema, raw);
+			if (!/\.html?$/i.test(b.path))
+				throw new EngineError('HTML_NOT_A_PAGE', `${b.path} is not an .html file`, {
+					status: 400,
+					detail: { hint: 'Pass the absolute path of the page file (…/page.html), not its folder.' },
+				});
+			const entry = b.path.split('/').pop()!;
+			const query = (b.query ?? '').replace(/^\?/, '');
+			const tag = [...`${b.path}?${query}@${b.width}x${b.height}@${b.fps}`]
+				.reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7)
+				.toString(16)
+				.padStart(8, '0');
+			const name = `${entry}${query ? `?${query}` : ''}`;
+			const frames = Math.round(6 * b.fps);
+			return {
+				mediaKey: `mk_${tag.repeat(3)}`,
+				fingerprint: `q1:${tag}`,
+				originalName: name,
+				sizeBytes: 4096,
+				container: 'html-page',
+				kind: 'mg-bundle',
+				probe: EMPTY_PROBE,
+				locators: [],
+				browserPlayable: 'no',
+				mgBundle: {
+					remotionVersion: '4.0.499',
+					bundleHash: tag,
+					builtAt: NOW,
+					source: { type: 'html-page', path: b.path, name },
+					compositions: [
+						{
+							id: entry.replace(/\.html?$/i, ''),
+							width: b.width,
+							height: b.height,
+							fps: b.fps,
+							durationInFrames: frames,
+							defaultProps: {},
+							propsSchema: { type: 'object', properties: {}, additionalProperties: false },
+							schemaSource: 'inferred',
+							thumbnailFrame: Math.floor((frames - 1) / 2),
+						},
+					],
+					html: { entry, query },
+				},
+			};
+		},
 		mediaTranscribe: ({ params }) =>
 			jobView(
 				newJob(

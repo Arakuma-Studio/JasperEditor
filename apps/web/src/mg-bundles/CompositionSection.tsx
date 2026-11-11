@@ -161,12 +161,17 @@ function OneComposition(props: {
 			</div>
 		);
 	const fpsMismatch = seq ? compositionFpsMismatch(found.info, seq.settings.frameRate) : false;
-	const projectDir = asset?.mgBundle?.source.type === 'project-dir' ? asset.mgBundle.source.path : null;
+	const html = !!asset?.mgBundle?.html;
+	// A project folder (Remotion) or a page file (HTML composition): both rebuild from their source.
+	const projectDir =
+		asset?.mgBundle?.source.type === 'project-dir' || asset?.mgBundle?.source.type === 'html-page'
+			? asset.mgBundle.source.path
+			: null;
 
 	return (
 		<div data-testid="composition-section" data-clip-id={clip.id}>
 			<div className={ROW}>
-				<span className={LABEL}>Bundle</span>
+				<span className={LABEL}>{html ? 'Page' : 'Bundle'}</span>
 				<span className="min-w-0 truncate text-pr-ui text-pr-text" title={projectDir ?? asset?.originalName}>
 					{asset?.mgBundle?.source.name ?? asset?.originalName} · {found.info.id}
 				</span>
@@ -293,16 +298,21 @@ function OneComposition(props: {
 						variant="secondary"
 						onClick={() => {
 							if (!asset || !session.engine) return;
-							setMessage({ kind: 'info', text: 'Rebuilding the bundle…' });
+							setMessage({ kind: 'info', text: html ? 'Reloading the page…' : 'Rebuilding the bundle…' });
 							rebuildBundle(session.engine, asset, session.projectId).then(
 								() =>
-									setMessage({ kind: 'info', text: 'Rebuilding the bundle… (progress in the Jobs panel)' }),
+									setMessage({
+										kind: 'info',
+										text: html
+											? 'Reloading the page… (progress in the Jobs panel)'
+											: 'Rebuilding the bundle… (progress in the Jobs panel)',
+									}),
 								(e) => setMessage({ kind: 'error', text: bundleErrorText(e) }),
 							);
 						}}
 						data-testid="composition-rebuild"
 					>
-						Rebuild bundle
+						{html ? 'Reload page' : 'Rebuild bundle'}
 					</Button>
 				) : null}
 				<Button

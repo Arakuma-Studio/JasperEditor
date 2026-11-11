@@ -39,8 +39,13 @@ import { CaptionStyleSchema, ClipMarkerSchema, type Sequence, SequenceSchema } f
  * open v10 files read-only (docs/project-files.md).
  * v11 (agent footage editing, spec 18 AF-BRF): `Sequence.brief` and `ProjectDocument.agentNotes`; version bump only,
  * so v10 builds — which neither show, check nor repair them, and whose agents cannot read them — open v11 files
- * read-only (docs/project-files.md). */
-export const CURRENT_SCHEMA_VERSION = 12;
+ * read-only (docs/project-files.md).
+ * v12 (Title Looks, spec 19): looks on clips, project looks, the sequence's light and 3D title materials; version bump
+ * only (docs/project-files.md).
+ * v13 (HTML compositions): `mg-bundle` assets may be HTML composition pages (`mgBundle.html`, source type
+ * `html-page`); version bump only, so v12 builds — which would drive such a page with the Remotion page protocol and
+ * fail to preview, render or export it — open v13 files read-only (docs/project-files.md). */
+export const CURRENT_SCHEMA_VERSION = 13;
 
 const markSchema = z.looseObject({ flicks: nonNegInt() });
 export const SourceMarksSchema = z.looseObject({

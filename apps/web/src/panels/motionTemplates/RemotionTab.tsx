@@ -96,9 +96,9 @@ function CompositionCard(props: {
 				)}
 				<span
 					className="absolute top-1 right-1 rounded-pr-pill bg-pr-engine-remotion px-1 text-pr-small text-pr-on-accent"
-					title="Remotion composition"
+					title={asset.mgBundle?.html ? 'HTML composition' : 'Remotion composition'}
 				>
-					R
+					{asset.mgBundle?.html ? 'HTML' : 'R'}
 				</span>
 			</div>
 			<div className="flex items-baseline justify-between gap-1 px-0.5">
@@ -180,19 +180,24 @@ export function RemotionTab(props: { session: EditorSession | null; onImport(): 
 								<span className="shrink-0 text-pr-small text-pr-dim">
 									{b.asset.mgBundle!.compositions.length} compositions
 								</span>
-								{b.asset.mgBundle!.source.type === 'project-dir' && session?.engine ? (
+								{(b.asset.mgBundle!.source.type === 'project-dir' ||
+									b.asset.mgBundle!.source.type === 'html-page') &&
+								session?.engine ? (
 									<button
 										type="button"
 										className="ml-auto rounded-pr-control px-1 text-pr-small text-pr-muted hover:bg-pr-hover hover:text-pr-text"
 										onClick={() => {
-											setMessage({ kind: 'info', text: `Rebuilding ${b.asset.mgBundle!.source.name}…` });
+											setMessage({
+												kind: 'info',
+												text: `${b.asset.mgBundle!.html ? 'Reloading' : 'Rebuilding'} ${b.asset.mgBundle!.source.name}…`,
+											});
 											rebuildBundle(session.engine!, b.asset, session.projectId).catch((e) =>
 												setMessage({ kind: 'error', text: bundleErrorText(e) }),
 											);
 										}}
 										data-testid="remotion-rebuild"
 									>
-										Rebuild
+										{b.asset.mgBundle!.html ? 'Reload' : 'Rebuild'}
 									</button>
 								) : null}
 							</header>
