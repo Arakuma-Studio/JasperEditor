@@ -260,6 +260,11 @@ composition then appears in **Motion Templates ▸ Remotion**; double-click or d
   embedded font and text layers).
 - MCP: `import_mg_bundle`, `list_compositions`, `add_composition`, `set_composition_props`,
   `prerender_composition`, `scaffold_mg_project`, `list_composition_texts`, `set_composition_text`.
+- HTML compositions: a self-contained HTML page (GSAP or anything else) that defines `window.__duration` (seconds),
+  `window.__ready` (a Promise) and `window.__seek(t)` is imported as one composition (File ▸ Import HTML
+  Composition…, MCP `import_html_composition {projectId, path, width, height, fps, query?, watch?}`), placed with
+  `add_composition` and rendered by seeking it frame by frame in the headless browser (transparent where the page
+  paints nothing). Contract, errors and limits: [docs/wp-notes/html-compositions.md](docs/wp-notes/html-compositions.md).
 
 ### Texts inside compositions (hybrid text layers)
 
@@ -574,7 +579,7 @@ schemas):
 - Clip processing: `list_processing_models` `install_processing_model` `process_clip` `use_media_version`
   `get_processing_settings` `set_processing_settings` `test_remote_executor` `replace_footage`
   `set_media_source_range`.
-- Remotion projects: `import_mg_bundle` `list_compositions` `add_composition` `set_composition_props`
+- Remotion projects and HTML compositions: `import_mg_bundle` `import_html_composition` `list_compositions` `add_composition` `set_composition_props`
   `prerender_composition` `scaffold_mg_project` `list_composition_texts` `set_composition_text`.
 - Tracking: `add_tracker` `track` `apply_tracking` `get_tracker` `set_corner_pin` `simplify_keyframes`.
 - Roto Brush, object mattes and faces: `list_roto_models` `install_roto_model` `remove_roto_model` `create_roto`

@@ -1031,6 +1031,11 @@ file (`commands/schemas/<area>.ts`) and registers it in `schemas/index.ts` + `ca
   fps, frame range, renderer version (S08:MGC-031).
 - Export: the `mg` native extension (`kinds: {'composition'}`, `prepare`, `override` space `layer`,
   `prepareForRemotion` + `adaptRemotionDoc` for the Remotion path).
+- HTML compositions (schema v13): an `mg-bundle` with `mgBundle.html {entry, query}` (source `html-page`) is a page
+  implementing `window.__duration` / `__ready` / `__seek(t)`, copied with the files it loaded. Its live host is the page
+  driven by `mg-host/html-agent.ts` over the same port API; masters and previews are rendered by
+  `apps/engine/src/mg-bundles/html.ts` (seek + PNG capture in parallel pages of the Remotion browser → LGPL ProRes 4444
+  segments, lossless concat); everything after the master is shared. `docs/wp-notes/html-compositions.md`.
 
 ### 19.4 Processing contract (D-23…D-25)
 

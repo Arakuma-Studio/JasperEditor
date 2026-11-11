@@ -163,6 +163,11 @@ export const MIGRATIONS: readonly MigrationStep[] = [
 	// unknown effect is bypassed), their orphan collection would drop media only a look layer references, and they
 	// would flatten a title's bands and materials.
 	{ from: 11, to: 12, migrate: (doc) => doc },
+	// v13 (HTML compositions): `mg-bundle` assets may be HTML composition pages (`mgBundle.html`, source type
+	// `html-page`) rendered by seeking the page (`window.__seek`), not Remotion bundles. Existing data needs no changes;
+	// the bump makes v12 builds open v13 files read-only: they would drive such a page with the Remotion page protocol,
+	// so its clips would neither preview, render nor export, and their strict source type would refuse the asset.
+	{ from: 12, to: 13, migrate: (doc) => doc },
 ];
 
 /** Data that is not a loadable project (not an object, an unknown format, no migration path, schema mismatch). */

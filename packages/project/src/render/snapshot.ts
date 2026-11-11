@@ -40,7 +40,7 @@ import { type RenderRotoMatte, rotoIsStale, rotoStorePath } from '../roto/index.
 import type { Animatable, Keyframe, RGBA } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Mask } from '../schema/mask.ts';
-import type { FontRef, MediaAsset } from '../schema/media.ts';
+import { type FontRef, type MediaAsset, mgHtmlPageIssue } from '../schema/media.ts';
 import {
 	type BlendMode,
 	type Clip,
@@ -299,9 +299,16 @@ export type RenderCompositionSource = {
 	canvas: { width: number; height: number };
 	/**
 	 * The bundle: engine media key (`/mg/bundles/<key>/` serves it; null without an engine-store locator), its
-	 * content hash and Remotion version. Null when the asset is missing or not an mg-bundle.
+	 * content hash and Remotion version. Null when the asset is missing or not an mg-bundle. `html` (schema v13): an
+	 * HTML composition page (its file name and query string), driven with `window.__seek` instead of the Remotion page
+	 * protocol; absent for Remotion bundles and for an unreadable header.
 	 */
-	bundle?: { key: string | null; hash: string; remotionVersion: string } | null;
+	bundle?: {
+		key: string | null;
+		hash: string;
+		remotionVersion: string;
+		html?: { entry: string; query: string };
+	} | null;
 	/** The composition's own metadata; null when the bundle no longer has this composition (MGC-014). */
 	info?: { width: number; height: number; fps: number; durationInFrames: number } | null;
 	/**
@@ -1160,6 +1167,9 @@ export function buildRenderSnapshot(
 										key: loc?.type === 'engine-store' ? loc.key : null,
 										hash: asset.mgBundle.bundleHash,
 										remotionVersion: asset.mgBundle.remotionVersion,
+										...(asset.mgBundle.html && mgHtmlPageIssue(asset.mgBundle.html) === null
+											? { html: { entry: asset.mgBundle.html.entry, query: asset.mgBundle.html.query } }
+											: {}),
 									}
 								: null,
 							info: found

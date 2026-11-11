@@ -1,15 +1,21 @@
 import { readFile } from 'node:fs/promises';
 import { join, normalize, sep } from 'node:path';
 import {
+	LOCAL_ENGINE_ID,
 	MgBundleImportRequestSchema,
 	MgBundleRebuildRequestSchema,
+	type MgBundleRebuiltEvent,
 	MgBundleScaffoldRequestSchema,
+	MgHtmlImportRequestSchema,
 	MgPrerenderRequestSchema,
 	MgTextMeasureRequestSchema,
 } from '@jasper/api';
-import { injectHostBootstrap, MG_HOST_QUERY } from '@jasper/compositions/mg-host';
+import { injectHostBootstrap, injectHtmlHostBootstrap, MG_HOST_QUERY } from '@jasper/compositions/mg-host';
+import type { ProjectDocument } from '@jasper/project';
 import type { FastifyInstance, FastifyReply, FastifyRequest, RouteGenericInterface } from 'fastify';
+import type { AgentService } from '../agent/service.ts';
 import { allowedHosts, isLoopbackHost, MG_SANDBOX_PREFIX, mgSandboxScope } from '../context.ts';
+import { mgHostCsp } from '../mg-bundles/csp.ts';
 import { mgNativeExtension } from '../mg-bundles/native-ext.ts';
 import { MgBundleError } from '../mg-bundles/project.ts';
 import { scaffoldProject } from '../mg-bundles/scaffold.ts';
@@ -17,6 +23,8 @@ import { MgBundleService } from '../mg-bundles/service.ts';
 import { serveFile } from '../tools/http.ts';
 import { HttpError, parseOr400, sendServiceError } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
+
+export { mgHostCsp } from '../mg-bundles/csp.ts';
 
 const MG_BUNDLES_SERVICE_KEY = 'mgBundles';
 
@@ -51,7 +59,13 @@ type KeyParams = { Params: { key: string } };
 export default async function mgBundleRoutes(app: FastifyInstance): Promise<void> {
 	const core = coreServices(app);
 	const localMode = core.config.dev || isLoopbackHost(core.config.host);
-	const svc = new MgBundleService({ core, localMode, log: (m) => app.log.info(m) });
+	const svc = new MgBundleService({
+		core,
+		localMode,
+		log: (m) => app.log.info(m),
+		relinkHeadless: (projectId, ev) =>
+			relinkClosedProject(app.jasper.services.agent as AgentService | undefined, projectId, ev),
+	});
 	app.jasper.services[MG_BUNDLES_SERVICE_KEY] = svc;
 	svc.registerRunners();
 	core.registerNativeExtension(mgNativeExtension(svc));
@@ -76,6 +90,17 @@ export default async function mgBundleRoutes(app: FastifyInstance): Promise<void
 		}),
 	);
 
+	app.post(
+		'/api/mg-bundles/import-html',
+		mgGuarded(async (req) => {
+			const body = parseOr400(MgHtmlImportRequestSchema, req.body);
+			return svc.importHtml(body, {
+				...(body.projectId ? { projectId: body.projectId } : {}),
+				...(body.watch ? { watch: true } : {}),
+			});
+		}),
+	);
+
 	app.post<KeyParams>(
 		'/api/mg-bundles/:key/rebuild',
 		mgGuarded<KeyParams>(async (req, reply) => {
@@ -83,7 +108,7 @@ export default async function mgBundleRoutes(app: FastifyInstance): Promise<void
 			const job = svc.rebuild(req.params.key, { ...(body.projectId ? { projectId: body.projectId } : {}) });
 			if (body.watch) {
 				const dir = svc.record(req.params.key)?.mgBundle?.source.path;
-				if (dir) await svc.startWatch(dir, req.params.key, true);
+				if (dir) await svc.startWatch(dir, req.params.key, true, body.projectId);
 			}
 			return reply.code(202).send(job);
 		}),
@@ -174,22 +199,35 @@ export default async function mgBundleRoutes(app: FastifyInstance): Promise<void
 		Params: { key: string; '*': string };
 		Querystring: Record<string, string | undefined>;
 	};
-	const bundleFile = (key: string, rest: string): { dir: string; rel: string; file: string } => {
+	const bundleFile = (
+		key: string,
+		rest: string,
+	): { dir: string; rel: string; file: string; entry: string; html: boolean } => {
 		const dir = svc.bundleDir(key);
 		if (!dir) throw new HttpError(404, 'NOT_FOUND', 'Unknown bundle');
+		// The page: index.html of a Remotion bundle, the entry file of an HTML composition.
+		const record = svc.record(key);
+		const entry = record ? svc.entryOf(record) : 'index.html';
 		let rel: string;
 		try {
-			rel = decodeURIComponent(rest || 'index.html');
+			rel = decodeURIComponent(rest || entry);
 		} catch {
 			throw new HttpError(404, 'NOT_FOUND', 'Not found');
 		}
 		const file = normalize(join(dir, rel));
 		if (rel.includes('\0') || (file !== dir && !file.startsWith(dir + sep)))
 			throw new HttpError(404, 'NOT_FOUND', 'Not found');
-		return { dir, rel, file };
+		return { dir, rel, file, entry, html: !!record?.mgBundle?.html };
 	};
+	/** The query string of a request without the host marker (an HTML page's own parameters). */
+	const pageQuery = (url: string): string =>
+		(url.split('?')[1] ?? '')
+			.split('&')
+			.filter((kv) => kv && kv.split('=')[0] !== MG_HOST_QUERY)
+			.join('&');
 	const bundleTypes = (file: string) => ({
-		...(file.endsWith('.html') ? { contentType: 'text/html; charset=utf-8' } : {}),
+		...(/\.html?$/.test(file) ? { contentType: 'text/html; charset=utf-8' } : {}),
+		...(file.endsWith('.wasm') ? { contentType: 'application/wasm' } : {}),
 		...(file.endsWith('.js') ? { contentType: 'text/javascript; charset=utf-8' } : {}),
 		...(file.endsWith('.map') ? { contentType: 'application/json' } : {}),
 		...(file.endsWith('.css') ? { contentType: 'text/css; charset=utf-8' } : {}),
@@ -199,16 +237,18 @@ export default async function mgBundleRoutes(app: FastifyInstance): Promise<void
 	app.get<FileRoute>(
 		'/mg/bundles/:key/*',
 		mgGuarded<FileRoute>(async (req, reply) => {
-			const { rel, file } = bundleFile(req.params.key, req.params['*']);
-			if ((rel === 'index.html' || rel === '') && req.query[MG_HOST_QUERY] === '1') {
+			const { rel, file, entry, html } = bundleFile(req.params.key, req.params['*']);
+			if ((rel === entry || rel === '') && req.query[MG_HOST_QUERY] === '1') {
 				const cap = core.signer.capability(mgSandboxScope(req.params.key));
+				// HTML compositions keep their query string (the page reads it), host marker last.
+				const q = html ? pageQuery(req.url) : '';
 				return reply
 					.code(302)
 					.header('cache-control', 'no-store')
 					.header('referrer-policy', 'no-referrer')
 					.header(
 						'location',
-						`${MG_SANDBOX_PREFIX}${cap}/${encodeURIComponent(req.params.key)}/index.html?${MG_HOST_QUERY}=1`,
+						`${MG_SANDBOX_PREFIX}${cap}/${encodeURIComponent(req.params.key)}/${encodeURIComponent(entry)}?${q ? `${q}&` : ''}${MG_HOST_QUERY}=1`,
 					)
 					.send();
 			}
@@ -226,21 +266,23 @@ export default async function mgBundleRoutes(app: FastifyInstance): Promise<void
 			// The capability was verified by the auth hook (server.ts); checked again here so the route is safe by itself.
 			if (!core.signer.verifyCapability(mgSandboxScope(req.params.key), req.params.cap))
 				throw new HttpError(403, 'FORBIDDEN', 'Invalid bundle capability');
-			const { dir, rel, file } = bundleFile(req.params.key, req.params['*']);
+			const { dir, rel, file, entry, html } = bundleFile(req.params.key, req.params['*']);
 			const scheme = req.protocol === 'https' ? 'https' : 'http';
 			const host = String(req.headers.host ?? '').toLowerCase();
 			const csp = mgHostCsp({
 				base: `${scheme}://${host}${MG_SANDBOX_PREFIX}${req.params.cap}/${encodeURIComponent(req.params.key)}/`,
 				ancestors: [...allowedHosts(core.config)].map((h) => `${scheme}://${h}`),
+				// HTML compositions: the policy of the engine's headless renders (html.ts), CDN scripts included.
+				remoteScripts: html,
 			});
 			const headers = { 'content-security-policy': csp, 'referrer-policy': 'no-referrer' };
-			if ((rel === 'index.html' || rel === '') && req.query[MG_HOST_QUERY] === '1') {
-				const html = await readFile(join(dir, 'index.html'), 'utf8');
+			if ((rel === entry || rel === '') && req.query[MG_HOST_QUERY] === '1') {
+				const page = await readFile(join(dir, entry), 'utf8');
 				return reply
 					.code(200)
 					.headers({ ...headers, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' })
 					.type('text/html; charset=utf-8')
-					.send(injectHostBootstrap(html));
+					.send(html ? injectHtmlHostBootstrap(page) : injectHostBootstrap(page));
 			}
 			return serveFile(req, reply, file, {
 				cache: 'immutable',
@@ -254,32 +296,45 @@ export default async function mgBundleRoutes(app: FastifyInstance): Promise<void
 }
 
 /**
- * The Content-Security-Policy of a bundle's files (security review MG-1).
- *  - `sandbox allow-scripts`: the document gets an opaque origin wherever it is loaded (the editor's iframe has
- *    the same sandbox attribute; a tab opened on the URL is sandboxed by this header). No cookies, storage,
- *    same-origin access, forms, popups, top navigation or downloads.
- *  - sources: the bundle's own files (`base`, path-scoped: not the rest of the engine), inline and eval'd script
- *    and inline style (Remotion's index.html and many libraries need them; the sandbox is the boundary, not the
- *    script policy), `data:` / `blob:`, and `https:` for what compositions fetch (web fonts, remote media, data).
- *    Plain `http:` is not allowed: no other loopback port, no device on the local network.
- *  - `frame-ancestors`: only the editor may embed the page.
+ * Relinks the asset of a rebuilt bundle in a project no editor has open (watch + headless agents, e.g. an HTML page
+ * saved while an agent works through MCP): one `media.relink` transaction, like the open editor's system relink.
+ * False when an editor holds the project (it relinks on `mgBundle.rebuilt`), or the project does not use the bundle.
  */
-export function mgHostCsp(opts: { base: string; ancestors: string[] }): string {
-	const own = opts.base;
-	return [
-		'sandbox allow-scripts',
-		`default-src ${own} data: blob:`,
-		`script-src ${own} 'unsafe-inline' 'unsafe-eval' blob: data:`,
-		`style-src ${own} 'unsafe-inline' https:`,
-		`font-src ${own} data: blob: https:`,
-		`img-src ${own} data: blob: https:`,
-		`media-src ${own} data: blob: https:`,
-		`connect-src ${own} data: blob: https:`,
-		`worker-src ${own} blob:`,
-		"frame-src 'none'",
-		"object-src 'none'",
-		"form-action 'none'",
-		`base-uri ${own}`,
-		`frame-ancestors ${opts.ancestors.join(' ') || "'none'"}`,
-	].join('; ');
+async function relinkClosedProject(
+	agent: AgentService | undefined,
+	projectId: string,
+	ev: MgBundleRebuiltEvent,
+): Promise<boolean> {
+	if (!agent || agent.isLive(projectId) || !(await agent.projectExists(projectId))) return false;
+	const q = await agent.query({ projectId, query: 'doc.get', args: {} });
+	const doc = q.result as ProjectDocument | undefined;
+	const asset = Object.values(doc?.media ?? {}).find(
+		(m) => m.kind === 'mg-bundle' && m.locators.some((l) => l.type === 'engine-store' && l.key === ev.oldKey),
+	);
+	if (!asset) return false;
+	const loc = asset.locators.find((l) => l.type === 'engine-store');
+	const res = await agent.transact(
+		projectId,
+		{
+			protocol: 'jasper.tx/1',
+			label: ev.mgBundle.html ? 'Reload HTML composition' : 'Rebuild Remotion bundle',
+			origin: { agent: 'watch' },
+			commands: [
+				{
+					type: 'media.relink',
+					mediaId: asset.id,
+					locator: {
+						type: 'engine-store',
+						engineId: loc?.type === 'engine-store' ? loc.engineId : LOCAL_ENGINE_ID,
+						key: ev.newKey,
+					},
+					fingerprint: `q1:${ev.mgBundle.bundleHash}`,
+					mgBundle: ev.mgBundle,
+					...(ev.sizeBytes !== undefined ? { sizeBytes: ev.sizeBytes } : {}),
+				},
+			],
+		} as never,
+		{ fallbackAgent: 'watch' },
+	);
+	return res.result.ok;
 }

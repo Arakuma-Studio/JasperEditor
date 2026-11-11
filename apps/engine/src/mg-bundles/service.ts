@@ -3,13 +3,17 @@
 // `<appdir>/mg-bundles/<bundleHash>/`, composition metadata (getCompositions with the LGPL binaries directory),
 // props schemas, watch + rebuild, pre-render jobs (`mg-prerender`: ProRes 4444 master + VP9-alpha preview +
 // poster under `<appdir>/mg/<renderKey>/`) and posters of the Motion Templates panel.
+// HTML compositions (schema v13, html.ts): a page implementing `__duration` / `__ready` / `__seek` is imported as a
+// bundle of the files it loaded (`mgBundle.html`), watched by those files, and rendered by seeking it frame by frame
+// in the same headless browser; everything downstream (masters, previews, posters, exports) is shared.
 import { createHash } from 'node:crypto';
 import { existsSync, type FSWatcher, watch as fsWatch } from 'node:fs';
-import { cp, mkdir, readdir, realpath, rename, rm, stat } from 'node:fs/promises';
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { copyFile, cp, mkdir, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { basename, dirname, extname, isAbsolute, join, normalize, resolve, sep } from 'node:path';
 import type {
 	EngineJob,
 	MgBundleRebuiltEvent,
+	MgHtmlImportRequest,
 	MgPrerenderRequest,
 	MgPrerenderResult,
 	MgTextMeasureRequest,
@@ -32,7 +36,15 @@ import { Ffmpeg } from '../tools/ffmpeg.ts';
 import { atomicWriteJson, readJsonOrNull } from '../tools/fs.ts';
 import { binaryNames } from '../tools/lgpl.ts';
 import type { CoreServices } from '../tools/services.ts';
-import { hashBundleDir } from './hash.ts';
+import { hashBundleDir, listBundleFiles } from './hash.ts';
+import {
+	HTML_MAX_BYTES,
+	HTML_MAX_FILES,
+	type HtmlBrowserOptions,
+	probeHtmlPage,
+	renderHtmlProRes,
+	renderHtmlStill,
+} from './html.ts';
 import {
 	bundleProject,
 	checkBundleVersion,
@@ -78,10 +90,26 @@ export const prerenderKey = (
 
 type RendererModule = typeof import('@remotion/renderer');
 
+type HtmlImportInput = {
+	file: string;
+	query: string;
+	width: number;
+	height: number;
+	fps: number;
+};
+
 type BundleJobInput =
 	| { op: 'import-dir'; dir: string; watch: boolean; projectId?: string }
 	| { op: 'import-zip'; file: string; name: string; projectId?: string }
+	| ({ op: 'import-html'; watch: boolean; projectId?: string } & HtmlImportInput)
 	| { op: 'rebuild'; key: string; projectId?: string };
+
+/** Props of an HTML composition: none (the page takes its parameters from the import's query string). */
+const HTML_PROPS_SCHEMA = { type: 'object', properties: {}, additionalProperties: false };
+
+/** Identity of an HTML import (the same page, query, size and rate is the same bundle). */
+const canonicalImport = (i: HtmlImportInput) =>
+	JSON.stringify([i.file, i.query, i.width, i.height, Math.round(i.fps * 1e6)]);
 
 type PrerenderJobInput = {
 	req: MgPrerenderRequest;
@@ -91,10 +119,15 @@ type PrerenderJobInput = {
 };
 
 type Watch = {
+	/** Key in the watch map: the folder, or `<page file>?<query>` (one page may be imported with several queries). */
+	id: string;
+	/** Project folder (Remotion) or page file (HTML composition). */
 	dir: string;
 	key: string;
 	watchers: FSWatcher[];
 	timer: NodeJS.Timeout | null;
+	/** Projects that imported it with watch: relinked headlessly when no editor has them open. */
+	projectIds: Set<string>;
 };
 
 type RenderMeta = {
@@ -113,6 +146,11 @@ type MgBundlesOptions = {
 	localMode: boolean;
 	log?(msg: string): void;
 	now?: () => Date;
+	/**
+	 * Relinks a rebuilt bundle in a project no editor has open (an open editor relinks on `mgBundle.rebuilt` itself).
+	 * Resolves true when it relinked.
+	 */
+	relinkHeadless?(projectId: string, event: MgBundleRebuiltEvent): Promise<boolean>;
 };
 
 export class MgBundleService {
@@ -237,7 +275,12 @@ export class MgBundleService {
 		const r = this.record(key);
 		if (!r) return null;
 		const dir = dirname(r.storage.path);
-		return existsSync(join(dir, 'index.html')) ? dir : null;
+		return existsSync(join(dir, this.entryOf(r))) ? dir : null;
+	}
+
+	/** The page of a bundle: `index.html` (Remotion) or the HTML composition's entry file. */
+	entryOf(r: MediaRecord): string {
+		return r.mgBundle?.html?.entry ?? 'index.html';
 	}
 
 	/** `POST /api/mg-bundles/import` with a path (local mode): waits for the `mg-bundle` job. */
@@ -265,6 +308,50 @@ export class MgBundleService {
 				...(opts.projectId ? { projectId: opts.projectId } : {}),
 			},
 			`Import Remotion project – ${basename(dir)}`,
+			opts,
+		);
+	}
+
+	/**
+	 * `POST /api/mg-bundles/import-html` (local mode): an HTML composition page by path. Waits for the `mg-bundle`
+	 * job; contract failures are `HTML_*` errors with a hint.
+	 */
+	async importHtml(
+		req: Omit<MgHtmlImportRequest, 'projectId' | 'watch'>,
+		opts: { projectId?: string; watch?: boolean; origin?: EngineJob['origin'] },
+	): Promise<RegisteredMedia> {
+		if (!this.o.localMode)
+			throw new MgBundleError(
+				'LOCAL_MODE_ONLY',
+				'Importing a page file is only available in local mode',
+				403,
+			);
+		if (!isAbsolute(req.path)) throw new MgBundleError('BAD_REQUEST', 'Paths must be absolute');
+		const file = resolve(req.path);
+		const st = await stat(file).catch(() => null);
+		if (!st) throw new MgBundleError('ASSET_NOT_FOUND', `File not found: ${req.path}`, 404);
+		if (!st.isFile() || !/^\.html?$/i.test(extname(file)))
+			throw new MgBundleError(
+				'HTML_NOT_A_PAGE',
+				`${req.path} is not an .html file`,
+				400,
+				undefined,
+				'Pass the absolute path of the page file (…/page.html), not its folder.',
+			);
+		this.requireReady();
+		const query = (req.query ?? '').replace(/^\?/, '');
+		return this.runAndWait(
+			{
+				op: 'import-html',
+				file,
+				query,
+				width: req.width,
+				height: req.height,
+				fps: req.fps,
+				watch: !!opts.watch,
+				...(opts.projectId ? { projectId: opts.projectId } : {}),
+			},
+			`Import HTML composition – ${basename(file)}${query ? `?${query}` : ''}`,
 			opts,
 		);
 	}
@@ -297,7 +384,7 @@ export class MgBundleService {
 		const r = this.record(key);
 		if (!r) throw new MgBundleError('NOT_FOUND', `Unknown bundle ${key}`, 404);
 		const src = r.mgBundle!.source;
-		if (src.type !== 'project-dir' || !src.path)
+		if ((src.type !== 'project-dir' && src.type !== 'html-page') || !src.path)
 			throw new MgBundleError(
 				'MG_NOT_A_BUNDLE',
 				'Only bundles imported from a project folder can be rebuilt',
@@ -311,7 +398,7 @@ export class MgBundleService {
 			);
 		return this.submitBundleJob(
 			{ op: 'rebuild', key, ...(opts.projectId ? { projectId: opts.projectId } : {}) },
-			`Rebuild Remotion bundle – ${src.name}`,
+			`${src.type === 'html-page' ? 'Reload HTML composition' : 'Rebuild Remotion bundle'} – ${src.name}`,
 			opts,
 		);
 	}
@@ -324,9 +411,11 @@ export class MgBundleService {
 		const dedupe =
 			input.op === 'import-dir'
 				? `mg-bundle:${input.dir}`
-				: input.op === 'rebuild'
-					? `mg-bundle:rebuild:${input.key}`
-					: undefined;
+				: input.op === 'import-html'
+					? `mg-bundle:html:${canonicalImport(input)}`
+					: input.op === 'rebuild'
+						? `mg-bundle:rebuild:${input.key}`
+						: undefined;
 		return this.core.queue.submit({
 			kind: 'mg-bundle',
 			title,
@@ -358,7 +447,8 @@ export class MgBundleService {
 				e?.code === 'MG_REMOTION_VERSION' ||
 					e?.code === 'MG_BUNDLE_FAILED' ||
 					e?.code === 'MG_NOT_INSTALLED' ||
-					e?.code === 'MG_RENDER_FAILED'
+					e?.code === 'MG_RENDER_FAILED' ||
+					(e?.code?.startsWith('HTML_') && e.code !== 'HTML_NOT_A_PAGE')
 					? 422
 					: e?.code === 'MG_UNAVAILABLE'
 						? 503
@@ -377,6 +467,11 @@ export class MgBundleService {
 		try {
 			if (input.op === 'import-dir') return { media: await this.importDir(ctx, input.dir, input.watch) };
 			if (input.op === 'import-zip') return { media: await this.importZip(ctx, input.file, input.name) };
+			if (input.op === 'import-html') {
+				const media = await this.importHtmlPage(ctx, input);
+				if (input.watch) await this.startWatch(input.file, media.mediaKey, true, input.projectId);
+				return { media };
+			}
 			return await this.rebuildJob(ctx, input.key);
 		} catch (e) {
 			if (e instanceof MgBundleError) {
@@ -517,9 +612,100 @@ export class MgBundleService {
 		return media;
 	}
 
-	/** Registry record for a bundle directory (storage = its index.html, so availability checks work). */
+	/** Browser options of the headless pages (the Remotion browser, without the binaries directory). */
+	private htmlBrowser(): HtmlBrowserOptions {
+		const { binariesDirectory: _b, ...browser } = this.remotionOptions();
+		return browser;
+	}
+
+	/**
+	 * Imports an HTML composition page: loads it from its folder in the headless browser (contract check, duration,
+	 * the files it loads), copies those files into a content-addressed bundle directory and registers one
+	 * composition of `width`×`height` at `fps` for `round(__duration × fps)` frames.
+	 */
+	private async importHtmlPage(ctx: JobContext, input: HtmlImportInput): Promise<RegisteredMedia> {
+		const root = dirname(input.file);
+		const entry = basename(input.file);
+		ctx.progress(0.05, { stage: 'Loading the page' });
+		const probe = await probeHtmlPage(
+			await this.renderer(),
+			this.htmlBrowser(),
+			{ dir: root, entry, query: input.query, width: input.width, height: input.height, fps: input.fps },
+			{ signal: ctx.signal },
+		);
+		for (const m of probe.missing) ctx.log(`warning: the page asked for ${m}, which is not in its folder`);
+		for (const u of probe.remote) ctx.log(`warning: the page loads ${u} from the network (renders need it)`);
+		if (probe.files.length > HTML_MAX_FILES)
+			throw new MgBundleError(
+				'HTML_NOT_A_PAGE',
+				`The page loads ${probe.files.length} files (at most ${HTML_MAX_FILES})`,
+				422,
+			);
+		ctx.progress(0.5, { stage: `Copying ${probe.files.length} file(s)` });
+		const out = join(await this.staging(ctx), 'bundle');
+		const realRoot = await realpath(root);
+		let bytes = 0;
+		for (const rel of probe.files) {
+			// The loopback server only served paths inside the folder; checked again before reading.
+			const src = normalize(join(realRoot, rel));
+			const dst = normalize(join(out, rel));
+			if (!src.startsWith(realRoot + sep) || !dst.startsWith(out + sep)) continue;
+			bytes += (await stat(src)).size;
+			if (bytes > HTML_MAX_BYTES)
+				throw new MgBundleError(
+					'HTML_NOT_A_PAGE',
+					`The files the page loads exceed ${HTML_MAX_BYTES / 1024 ** 3} GiB`,
+					422,
+				);
+			await mkdir(dirname(dst), { recursive: true });
+			await copyFile(src, dst);
+		}
+		ctx.progress(0.8, { stage: 'Hashing page files' });
+		const content = await hashBundleDir(out);
+		// The page, its query, size and rate are one bundle (the query may change what the page shows and lasts).
+		const hash = createHash('sha256')
+			.update(JSON.stringify({ html: content.hash, entry, ...input, file: undefined }))
+			.digest('hex');
+		const finalDir = join(this.bundlesDir, hash);
+		if (existsSync(join(finalDir, entry))) await rm(out, { recursive: true, force: true });
+		else {
+			await rm(finalDir, { recursive: true, force: true });
+			await rename(out, finalDir);
+			ctx.addPartial(finalDir);
+		}
+		const id = entry.replace(/\.html?$/i, '').replace(/[^\w.-]/g, '_') || 'page';
+		const frames = probe.meta.durationInFrames;
+		const name = `${entry}${input.query ? `?${input.query}` : ''}`;
+		const info: MgBundleInfo = {
+			remotionVersion: MG_REMOTION_VERSION,
+			bundleHash: hash,
+			builtAt: this.now().toISOString(),
+			source: { type: 'html-page', path: input.file, name },
+			compositions: [
+				{
+					id,
+					width: input.width,
+					height: input.height,
+					fps: input.fps,
+					durationInFrames: frames,
+					defaultProps: {},
+					propsSchema: HTML_PROPS_SCHEMA,
+					schemaSource: 'inferred',
+					// Pages usually animate in: the middle frame shows the design.
+					thumbnailFrame: Math.floor((frames - 1) / 2),
+				},
+			],
+			html: { entry, query: input.query },
+		};
+		const media = await this.registerBundle(finalDir, info);
+		const warn = probe.missing.length + probe.remote.length;
+		ctx.progress(1, { stage: warn ? `Imported with ${warn} warning(s)` : 'Imported' });
+		return media;
+	}
+
+	/** Registry record for a bundle directory (storage = its page, so availability checks work). */
 	private async registerBundle(dir: string, info: MgBundleInfo): Promise<RegisteredMedia> {
-		const index = join(dir, 'index.html');
+		const index = join(dir, info.html?.entry ?? 'index.html');
 		const st = await stat(index);
 		const key = `mk_${info.bundleHash.slice(0, 24)}`;
 		const record: MediaRecord = {
@@ -528,7 +714,7 @@ export class MgBundleService {
 			originalName: info.source.name,
 			sizeBytes: st.size,
 			mtimeMs: st.mtimeMs,
-			container: 'remotion-bundle',
+			container: info.html ? 'html-page' : 'remotion-bundle',
 			kind: 'mg-bundle',
 			probe: EMPTY_PROBE,
 			browserPlayable: 'no',
@@ -582,12 +768,26 @@ export class MgBundleService {
 		if (!r) throw new MgBundleError('NOT_FOUND', `Unknown bundle ${key}`, 404);
 		const dir = r.mgBundle!.source.path;
 		if (!dir) throw new MgBundleError('MG_NOT_A_BUNDLE', 'The bundle has no project folder');
-		const watching = this.watches.has(dir);
-		const media = await this.importDir(ctx, dir, false);
+		const html = r.mgBundle!.html;
+		const comp = r.mgBundle!.compositions[0];
+		const watcher = this.watches.get(this.watchId(dir, key));
+		const media =
+			html && comp
+				? await this.importHtmlPage(ctx, {
+						file: dir,
+						query: html.query,
+						width: comp.width,
+						height: comp.height,
+						fps: comp.fps,
+					})
+				: await this.importDir(ctx, dir, false);
 		if (media.mediaKey !== key) {
-			const watcher = this.watches.get(dir);
-			if (watcher) watcher.key = media.mediaKey;
-			if (watching) await this.saveWatches();
+			if (watcher) {
+				watcher.key = media.mediaKey;
+				// The page may load other files now: watch the new bundle's.
+				if (html) this.watchHtmlFiles(watcher);
+				await this.saveWatches();
+			}
 			const event: MgBundleRebuiltEvent = {
 				oldKey: key,
 				newKey: media.mediaKey,
@@ -595,50 +795,110 @@ export class MgBundleService {
 				sizeBytes: media.sizeBytes,
 			};
 			this.core.broadcaster.publish('mgBundle.rebuilt', event);
+			// Projects that imported it with watch and that no editor has open are relinked here.
+			for (const projectId of watcher?.projectIds ?? []) {
+				const relinked = await this.o.relinkHeadless?.(projectId, event).catch((e: unknown) => {
+					ctx.log(`relinking ${projectId} failed: ${(e as Error).message}`);
+					return false;
+				});
+				if (relinked) ctx.log(`relinked project ${projectId}`);
+			}
 		}
 		return { media, rebuilt: { oldKey: key, newKey: media.mediaKey, changed: media.mediaKey !== key } };
 	}
 
-	/** Watches a project folder (MGC-013): changes of sources rebuild it after 1 s of quiet. */
-	async startWatch(dir: string, key: string, persist: boolean): Promise<void> {
-		const existing = this.watches.get(dir);
+	/**
+	 * Watches a project folder (MGC-013) or an HTML composition page (the files it loads): changes rebuild it after
+	 * 1 s of quiet. `projectId`: a project relinked headlessly after a rebuild when no editor has it open.
+	 */
+	async startWatch(dir: string, key: string, persist: boolean, projectId?: string): Promise<void> {
+		const id = this.watchId(dir, key);
+		const existing = this.watches.get(id);
 		if (existing) {
 			existing.key = key;
+			if (projectId) existing.projectIds.add(projectId);
+			if (this.record(key)?.mgBundle?.html) this.watchHtmlFiles(existing);
 			if (persist) await this.saveWatches();
 			return;
 		}
-		const w: Watch = { dir, key, watchers: [], timer: null };
-		const trigger = () => {
-			if (w.timer) clearTimeout(w.timer);
-			w.timer = setTimeout(() => {
-				w.timer = null;
-				try {
-					this.rebuild(w.key, {});
-				} catch (e) {
-					this.o.log?.(`[mg-bundles] watch rebuild of ${dir} failed: ${(e as Error).message}`);
-				}
-			}, 1000);
-			w.timer.unref?.();
+		const w: Watch = {
+			id,
+			dir,
+			key,
+			watchers: [],
+			timer: null,
+			projectIds: new Set(projectId ? [projectId] : []),
 		};
-		const add = (target: string, recursive: boolean, filter?: (f: string) => boolean) => {
-			if (!existsSync(target)) return;
-			try {
-				const watcher = fsWatch(target, { recursive, persistent: false }, (_e, f) => {
-					const name = String(f ?? '');
-					if (filter && !filter(name)) return;
-					trigger();
-				});
-				watcher.on('error', () => undefined);
-				w.watchers.push(watcher);
-			} catch (e) {
-				this.o.log?.(`[mg-bundles] cannot watch ${target}: ${(e as Error).message}`);
-			}
-		};
-		add(join(dir, 'src'), true);
-		add(join(dir, 'public'), true);
-		add(dir, false, (f) => /^remotion\.config\.|^jasper\.mg\.json$|^package\.json$/.test(f));
-		this.watches.set(dir, w);
+		this.watches.set(id, w);
+		if (this.record(key)?.mgBundle?.html) this.watchHtmlFiles(w);
+		else {
+			this.addWatcher(w, join(dir, 'src'), true);
+			this.addWatcher(w, join(dir, 'public'), true);
+			this.addWatcher(w, dir, false, (f) => /^remotion\.config\.|^jasper\.mg\.json$|^package\.json$/.test(f));
+		}
 		if (persist) await this.saveWatches();
+	}
+
+	/** The watch map key of a folder or page (see `Watch.id`). */
+	private watchId(dir: string, key: string): string {
+		const html = this.record(key)?.mgBundle?.html;
+		return html ? `${dir}?${html.query}` : dir;
+	}
+
+	/** Debounced rebuild of a watch (1 s after the last change). */
+	private trigger(w: Watch): void {
+		if (w.timer) clearTimeout(w.timer);
+		w.timer = setTimeout(() => {
+			w.timer = null;
+			try {
+				this.rebuild(w.key, {});
+			} catch (e) {
+				this.o.log?.(`[mg-bundles] watch rebuild of ${w.dir} failed: ${(e as Error).message}`);
+			}
+		}, 1000);
+		w.timer.unref?.();
+	}
+
+	private addWatcher(w: Watch, target: string, recursive: boolean, filter?: (f: string) => boolean): void {
+		if (!existsSync(target)) return;
+		try {
+			const watcher = fsWatch(target, { recursive, persistent: false }, (_e, f) => {
+				const name = String(f ?? '');
+				if (filter && !filter(name)) return;
+				this.trigger(w);
+			});
+			watcher.on('error', () => undefined);
+			w.watchers.push(watcher);
+		} catch (e) {
+			this.o.log?.(`[mg-bundles] cannot watch ${target}: ${(e as Error).message}`);
+		}
+	}
+
+	/**
+	 * An HTML page is watched by the files of its bundle (what the page loaded), each through its folder: editors
+	 * save by replacing the file, which a watcher on the file itself would miss.
+	 */
+	private watchHtmlFiles(w: Watch): void {
+		for (const x of w.watchers) x.close();
+		w.watchers = [];
+		const bundle = this.bundleDir(w.key);
+		const root = dirname(w.dir);
+		if (!bundle) return;
+		void listBundleFiles(bundle).then(
+			(files) => {
+				const rels = files.map((f) => f.rel);
+				if (this.watches.get(w.id) !== w) return;
+				const byDir = new Map<string, Set<string>>();
+				for (const rel of rels) {
+					const abs = join(root, rel);
+					const names = byDir.get(dirname(abs)) ?? new Set<string>();
+					names.add(basename(abs));
+					byDir.set(dirname(abs), names);
+				}
+				for (const [d, names] of byDir) this.addWatcher(w, d, false, (f) => names.has(basename(f)));
+			},
+			(e: unknown) => this.o.log?.(`[mg-bundles] cannot list ${bundle}: ${(e as Error).message}`),
+		);
 	}
 
 	private closeWatch(w: Watch): void {
@@ -655,8 +915,12 @@ export class MgBundleService {
 		void this.saveWatches();
 	}
 
-	watching(): { dir: string; key: string }[] {
-		return [...this.watches.values()].map((w) => ({ dir: w.dir, key: w.key }));
+	watching(): { dir: string; key: string; projectIds?: string[] }[] {
+		return [...this.watches.values()].map((w) => ({
+			dir: w.dir,
+			key: w.key,
+			...(w.projectIds.size ? { projectIds: [...w.projectIds] } : {}),
+		}));
 	}
 
 	private async saveWatches(): Promise<void> {
@@ -665,9 +929,15 @@ export class MgBundleService {
 	}
 
 	private async restoreWatches(): Promise<void> {
-		const saved = await readJsonOrNull<{ watches?: { dir: string; key: string }[] }>(this.watchesFile);
-		for (const w of saved?.watches ?? []) {
-			if (existsSync(w.dir) && this.record(w.key)) await this.startWatch(w.dir, w.key, false);
+		const saved = await readJsonOrNull<{ watches?: { dir: string; key: string; projectIds?: unknown }[] }>(
+			this.watchesFile,
+		);
+		for (const w of Array.isArray(saved?.watches) ? saved.watches : []) {
+			if (typeof w?.dir !== 'string' || typeof w.key !== 'string') continue;
+			if (!existsSync(w.dir) || !this.record(w.key)) continue;
+			const ids = Array.isArray(w.projectIds) ? w.projectIds.filter((x) => typeof x === 'string') : [];
+			await this.startWatch(w.dir, w.key, false);
+			for (const id of ids.slice(0, 100)) this.watches.get(this.watchId(w.dir, w.key))?.projectIds.add(id);
 		}
 	}
 
@@ -820,6 +1090,7 @@ export class MgBundleService {
 		const record = this.record(req.mediaKey);
 		if (!bundleDir || !record)
 			throw new JobError('ASSET_NOT_FOUND', `Bundle ${req.mediaKey} is not available`, false);
+		if (record.mgBundle!.html) return this.runHtmlPrerender(ctx, record, bundleDir);
 		const r = await this.renderer();
 		const opts = this.remotionOptions();
 		const scratch = await ctx.scratchDir();
@@ -956,29 +1227,7 @@ export class MgBundleService {
 				files.preview = true;
 				if (existsSync(join(dir, 'master.mov'))) files.master = true;
 			}
-			await this.extractPoster(
-				ff,
-				join(dir, req.quality === 'master' ? 'master.mov' : 'preview.webm'),
-				join(dir, 'poster.png'),
-				req,
-				ctx,
-				req.quality === 'master' ? null : 'libvpx-vp9',
-			);
-			files.poster = existsSync(join(dir, 'poster.png'));
-			const t = this.now().toISOString();
-			const prev = await readJsonOrNull<RenderMeta>(join(dir, 'meta.json'));
-			const meta: RenderMeta = {
-				kind: 'composition',
-				renderKey,
-				request: req,
-				bundleHash: record.mgBundle!.bundleHash,
-				files: ['master.mov', 'preview.webm', 'poster.png'].filter((f) => existsSync(join(dir, f))),
-				createdAt: prev?.createdAt ?? t,
-				lastUsedAt: t,
-			};
-			await atomicWriteJson(join(dir, 'meta.json'), meta, true);
-			ctx.progress(1, { stage: 'Done' });
-			return this.resultOf(renderKey, req, files);
+			return await this.finishPrerender(ctx, ff, req, renderKey, record, files);
 		} catch (e) {
 			if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
 			if (e instanceof JobError) throw e;
@@ -991,6 +1240,135 @@ export class MgBundleService {
 		} finally {
 			ctx.signal.removeEventListener('abort', onAbort);
 			await instance?.close({ silent: true }).catch(() => undefined);
+		}
+	}
+
+	/** Poster and `meta.json` of a finished pre-render (both renderers). */
+	private async finishPrerender(
+		ctx: JobContext,
+		ff: Ffmpeg,
+		req: MgPrerenderRequest,
+		renderKey: string,
+		record: MediaRecord,
+		files: { master: boolean; preview: boolean; poster: boolean },
+	): Promise<MgPrerenderResult> {
+		const dir = this.renderDirOf(renderKey);
+		await this.extractPoster(
+			ff,
+			join(dir, req.quality === 'master' ? 'master.mov' : 'preview.webm'),
+			join(dir, 'poster.png'),
+			req,
+			ctx,
+			req.quality === 'master' ? null : 'libvpx-vp9',
+		);
+		files.poster = existsSync(join(dir, 'poster.png'));
+		const t = this.now().toISOString();
+		const prev = await readJsonOrNull<RenderMeta>(join(dir, 'meta.json'));
+		const meta: RenderMeta = {
+			kind: 'composition',
+			renderKey,
+			request: req,
+			bundleHash: record.mgBundle!.bundleHash,
+			files: ['master.mov', 'preview.webm', 'poster.png'].filter((f) => existsSync(join(dir, f))),
+			createdAt: prev?.createdAt ?? t,
+			lastUsedAt: t,
+		};
+		await atomicWriteJson(join(dir, 'meta.json'), meta, true);
+		ctx.progress(1, { stage: 'Done' });
+		return this.resultOf(renderKey, req, files);
+	}
+
+	/**
+	 * `mg-prerender` of an HTML composition: the page seeked frame by frame in parallel pages (html.ts) into ProRes
+	 * 4444 — the master as is, or the source of the half-size VP9-alpha preview — then the shared poster and meta.
+	 */
+	private async runHtmlPrerender(
+		ctx: JobContext,
+		record: MediaRecord,
+		bundleDir: string,
+	): Promise<MgPrerenderResult> {
+		const { req, renderKey, concurrency } = ctx.input as PrerenderJobInput;
+		const html = record.mgBundle!.html!;
+		const comp = record.mgBundle!.compositions.find((c) => c.id === req.compositionId);
+		if (!comp)
+			throw new JobError('ASSET_NOT_FOUND', `Composition ${req.compositionId} is not in the bundle`, false);
+		const fps = req.fps.num / req.fps.den;
+		// Renders run at the requested (sequence) rate: frame f shows the page at f / fps seconds (MGC-005).
+		const total =
+			Math.abs(comp.fps - fps) > 1e-3
+				? Math.max(1, Math.round((comp.durationInFrames * fps) / comp.fps))
+				: comp.durationInFrames;
+		if (req.startFrame + req.durationFrames > total)
+			throw new JobError(
+				'INVALID_SPEC',
+				`Frames ${req.startFrame}…${req.startFrame + req.durationFrames - 1} are outside the composition (${total} frames at ${fps} fps)`,
+				false,
+			);
+		const dir = this.renderDirOf(renderKey);
+		const scratch = await ctx.scratchDir();
+		const ff = this.ffmpeg();
+		const pages = Math.max(1, Math.min(8, concurrency ?? (ctx.slots || MG_PRERENDER_SLOTS)));
+		const files = { master: false, preview: false, poster: false };
+		const what = req.quality === 'master' ? 'master' : 'preview';
+		try {
+			ctx.progress(0, { stage: 'Loading the page' });
+			await mkdir(dir, { recursive: true });
+			await this.core.remotion.recordUsage('media', 'mg-prerender');
+			const prores = join(scratch, 'html.mov');
+			await renderHtmlProRes(
+				await this.renderer(),
+				this.htmlBrowser(),
+				ff,
+				{
+					dir: bundleDir,
+					entry: html.entry,
+					query: html.query,
+					width: req.width,
+					height: req.height,
+					fps,
+					rate: req.fps,
+					totalFrames: total,
+					startFrame: req.startFrame,
+					durationFrames: req.durationFrames,
+					pages,
+					out: prores,
+					scratch,
+				},
+				{
+					signal: ctx.signal,
+					trackChild: ctx.trackChild,
+					onFrames: (n) =>
+						ctx.progress((n / req.durationFrames) * 0.85, {
+							stage: `Rendering ${what} ${n}/${req.durationFrames}`,
+						}),
+				},
+			);
+			const frames = await ff.countVideoFrames(prores, { signal: ctx.signal });
+			if (frames !== req.durationFrames)
+				throw new JobError(
+					'FRAME_COUNT_MISMATCH',
+					`The ${what} has ${frames} frames, expected ${req.durationFrames}`,
+					true,
+				);
+			ctx.progress(0.9, { stage: 'Encoding preview' });
+			if (req.quality === 'master') {
+				await rename(prores, join(dir, 'master.mov'));
+				files.master = true;
+				await this.encodePreview(ff, join(dir, 'master.mov'), join(dir, 'preview.webm'), ctx);
+			} else {
+				await this.encodePreview(ff, prores, join(dir, 'preview.webm'), ctx);
+				files.master = existsSync(join(dir, 'master.mov'));
+			}
+			files.preview = true;
+			return await this.finishPrerender(ctx, ff, req, renderKey, record, files);
+		} catch (e) {
+			if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
+			if (e instanceof JobError) throw e;
+			throw new JobError(
+				'MG_RENDER_FAILED',
+				`Rendering ${record.mgBundle!.source.name} failed: ${String((e as Error)?.message ?? e).slice(0, 1200)}`,
+				true,
+			);
 		}
 	}
 
@@ -1177,7 +1555,7 @@ export class MgBundleService {
 		const prev = [...this.posterJobs.values()].at(-1) ?? Promise.resolve('');
 		const job = prev
 			.catch(() => '')
-			.then(() => this.renderPoster(dir, comp as MgCompositionInfo, frame, file))
+			.then(() => this.renderPoster(dir, comp as MgCompositionInfo, frame, file, r.mgBundle!.html))
 			.finally(() => this.posterJobs.delete(file));
 		this.posterJobs.set(file, job);
 		return job;
@@ -1188,8 +1566,10 @@ export class MgBundleService {
 		comp: MgCompositionInfo,
 		frame: number,
 		file: string,
+		html?: { entry: string; query: string },
 	): Promise<string> {
 		this.requireReady();
+		if (html) return this.renderHtmlPoster(dir, comp, frame, file, html);
 		const r = await this.renderer();
 		const opts = this.remotionOptions();
 		await mkdir(dirname(file), { recursive: true });
@@ -1219,6 +1599,57 @@ export class MgBundleService {
 			...opts,
 		});
 		await rename(tmp, file);
+		return file;
+	}
+
+	/** Motion Templates poster of an HTML composition: the frame at full size, scaled to 480 px wide at most. */
+	private async renderHtmlPoster(
+		dir: string,
+		comp: MgCompositionInfo,
+		frame: number,
+		file: string,
+		html: { entry: string; query: string },
+	): Promise<string> {
+		await mkdir(dirname(file), { recursive: true });
+		const png = await renderHtmlStill(await this.renderer(), this.htmlBrowser(), {
+			dir,
+			entry: html.entry,
+			query: html.query,
+			width: comp.width,
+			height: comp.height,
+			fps: comp.fps,
+			totalFrames: comp.durationInFrames,
+			frame,
+		}).catch((e: unknown) => {
+			throw e instanceof MgBundleError
+				? e
+				: new MgBundleError('MG_RENDER_FAILED', `Poster of ${comp.id} failed: ${(e as Error).message}`, 422);
+		});
+		const full = `${file}.${process.pid}.full.png`;
+		const tmp = `${file}.${process.pid}.tmp.png`;
+		await writeFile(full, png);
+		try {
+			const w = Math.min(480, comp.width);
+			await this.ffmpeg().run(
+				[
+					'-i',
+					full,
+					'-vf',
+					`scale=${w}:-2:flags=bicubic,format=rgba`,
+					'-frames:v',
+					'1',
+					'-update',
+					'1',
+					'-f',
+					'image2',
+					tmp,
+				],
+				{},
+			);
+			await rename(tmp, file);
+		} finally {
+			await rm(full, { force: true });
+		}
 		return file;
 	}
 }

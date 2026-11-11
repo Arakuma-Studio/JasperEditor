@@ -7,6 +7,8 @@
 // (mg-host/agent.ts) over a MessagePort (mg-host/remote.ts). Effects, Motion, opacity and blend apply
 // through LayerBox like for any layer; colour effects need pixels, so they wait for the preview WebM
 // ("Grade pending", MGC-025).
+// HTML compositions (`bundle.html`): the live host is the page itself, driven with `window.__seek` by the HTML host
+// agent (mg-host/html-agent.ts) over the same port API; renders and previews are the engine's masters as above.
 // fx framework: GPU shader effects run on the master (renders) and on the preview WebM (`FxPicture`, fed by
 // the same media elements); the live host (an iframe) cannot be captured, so they wait for the preview like colour
 // effects do ("Grade pending").
@@ -23,7 +25,7 @@ import { OffthreadVideo, Sequence } from 'remotion';
 import { FxPicture } from '../fx/FxPicture.tsx';
 import { FxVideoSources } from '../fx/sources.tsx';
 import { useLayerFx } from '../fx/stage.ts';
-import { bundleServeUrl, hostPageUrl, MG_HOST_SANDBOX } from '../mg-host/protocol.ts';
+import { bundleServeUrl, hostPageUrl, htmlHostPageUrl, MG_HOST_SANDBOX } from '../mg-host/protocol.ts';
 import { connectMgHost, type MgHostRemote } from '../mg-host/remote.ts';
 import { type CompositionPreviewRuntime, useCompositionPreviewRuntime } from '../mg-host/runtime.ts';
 import type { LayerProps } from '../types.ts';
@@ -316,7 +318,7 @@ function LiveHost({
 			<iframe
 				ref={iframeRef}
 				title={`Composition ${src.compositionId}`}
-				src={hostPageUrl(bundleUrl)}
+				src={src.bundle?.html ? htmlHostPageUrl(bundleUrl, src.bundle.html) : hostPageUrl(bundleUrl)}
 				sandbox={MG_HOST_SANDBOX}
 				referrerPolicy="no-referrer"
 				onLoad={onLoad}
