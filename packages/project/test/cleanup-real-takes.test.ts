@@ -1,6 +1,6 @@
 // Clean Up on real transcripts (docs/wp-notes/transcript-cleanup.md "Real-take corpus"): whisper-large-v3-turbo
 // transcripts of ~80 s fragments of the reporter's 57-minute Spanish talking-head recording, as the hidden-retake
-// test wrote them in its runs 2–5 (re-decode on, `chunking: "vad"`, re-decode off; run 5 adds the held-out G–L;
+// test wrote them in its runs 2–6 (re-decode on, `chunking: "vad"`, re-decode off; run 5 adds G–L, run 6 M–T;
 // `fixtures/cleanup-real-takes.json`, text and times only, plus the speech without words the reporter measured). The
 // spec is what the speaker meant, written by hand per fragment: the edit keeps the last complete clean take of every
 // sentence once, removes every earlier attempt, restart and aside, never plays a sentence twice, never loses what only
@@ -8,10 +8,15 @@
 // included, lies inside a finding that removes, rejecting every finding or setting every rule to review removes
 // nothing, and a take marked kept loses no word. The cut is the sequence's (`analyzeSequenceCleanup`, Fast preset)
 // with a voice analysis that has speech under every word and where the reporter measured it.
-import { readFileSync } from 'node:fs';
+//
+// Split: the repeat mechanism (`repeats.ts`) was developed against the dev fragments (A–F, M, N, O, Q) and evaluated
+// on the held-out ones (G–L, P, R, S, T) only at the end; `CLEANUP_CORPUS=dev|held-out` runs one split's spec cases.
+// The last test measures precision and recall of the removals against each case's `dup` reference, per finding kind
+// and per split (`CLEANUP_CORPUS_REPORT=<file>` writes the table).
+import { readFileSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { CleanupVoice } from '../src/cleanup/detector.ts';
-import { cleanupNorm, sameWord } from '../src/cleanup/lists.ts';
+import { builtinLists, cleanupNorm, sameWord } from '../src/cleanup/lists.ts';
 import { type CleanupSettings, FAST_SETTINGS, FINDING_KINDS } from '../src/cleanup/schema.ts';
 import { analyzeSequenceCleanup, type CleanupDecisions } from '../src/cleanup/sequence.ts';
 import { transcriptAttachPlan } from '../src/speech/index.ts';
@@ -27,7 +32,15 @@ type Case = {
 	voiced?: Array<[number, number]>;
 	unvoiced?: Array<[number, number]>;
 	words: Array<[string, number, number]>;
+	/** Media time a correct edit removes as repeats, asides and hallucinations (seconds; fillers and pauses aside). */
+	dup: Array<[number, number]>;
 };
+
+/** Fragments held out while the repeat mechanism was developed. */
+const HELD_OUT = new Set(['G', 'H', 'I', 'J', 'K', 'L', 'P', 'R', 'S', 'T']);
+const SPLIT = process.env.CLEANUP_CORPUS;
+const inSplit = (c: Case) =>
+	SPLIT === 'dev' ? !HELD_OUT.has(c.fragment) : SPLIT === 'held-out' ? HELD_OUT.has(c.fragment) : true;
 
 const corpus = JSON.parse(
 	readFileSync(new URL('./fixtures/cleanup-real-takes.json', import.meta.url), 'utf8'),
@@ -194,6 +207,104 @@ const SPEC: Record<
 	},
 	// the control fragment: no take, every word stays
 	L: { once: [], never: [], allKept: true },
+	// run 6 (written from its listening judgements)
+	M: {
+		once: [
+			'cualquier juego',
+			'funcionar igualito a unity',
+			'porque llevo toda mi vida',
+			'acostumbrarme a otra cosa',
+			'me paso con godot',
+			'un infierno',
+		],
+		// the four earlier takes and the aside between the last two; the false start "Ya. | Ya me pasó"
+		never: ['a porque', 'otra porque', 'puta madre', 'ya ya'],
+	},
+	N: {
+		once: [
+			'physics para los juegos en 3d',
+			'muchisimos juegos de godot',
+			'death stranding 2',
+			'hideo kojima',
+			'de la misma forma',
+			'sistema de sonido',
+			'encontrar el camino',
+			'usa cualquier juego',
+		],
+		// the first take of the sentence and the aside before the second (round 6 kept both: the sentence played twice)
+		never: ['espera', 'sin aire', 'que saben'],
+	},
+	O: {
+		once: [
+			'el tema oscuro de unity',
+			'la barra de menus de unity',
+			'absolutamente todo',
+			'en el mismo lugar que en unity',
+			'una plantilla 2d o 3d',
+			'la imagen por defecto de la plantilla 2d',
+			'naranja sobre un fondo azul',
+			'hagamos una comparacion',
+		],
+		// the abandoned attempts; round 6 cut "o 3D" of the finished sentence instead
+		never: ['imagen de la plantilla', 'imagen por y'],
+	},
+	P: {
+		once: [
+			'suscribete que no cuesta absolutamente nada',
+			// a deliberate repetition, said once in the edit (round 6 cut one "Guiño")
+			'guino guino',
+			'no viene por defecto',
+			'unity 0',
+			'ronda 4',
+			'dentro de unity animar',
+			'pose por pose',
+			'keyframe por keyframe',
+			'muy tieso',
+		],
+		never: [],
+	},
+	Q: {
+		once: [
+			'esto es increible',
+			'simulacion de fluidos',
+			'pintar con el mouse',
+			'se llama literalmente psicodelico',
+			'les juro que me quede como 20 minutos',
+			'en vez de seguir haciendo este video',
+			'tambien tiene un boton que agarra',
+			'como si fuera 3d',
+			'texturas infinitas',
+			'foto chiquita',
+			'reboten como gelatina',
+			'cae al piso',
+			'boing boing boing',
+		],
+		// the restart "… jugando con esto en lugar…" (round 6 kept it: the clause played twice)
+		never: ['en lugar', 'cae al en', 'cae en el'],
+	},
+	R: {
+		once: [
+			'tuve que reescribirlo entero',
+			'no lo reescribi yo',
+			'lo reescribi a mis agentes',
+			'linea por linea',
+			'200 archivos',
+			'33 mil lineas',
+			'fueron rehechos en html',
+			'la parte mas loca',
+			'en menos de un dia',
+			'hasta me sobro tiempo para agregar 3 juegos',
+			'queria meter a la',
+			'monster truck hunter',
+			'de hecho fue mi primer juego',
+			'solo existia chatgpt',
+		],
+		// the abandoned takes ("tres" / "3" are one number)
+		never: ['fueron hechos en html', 'tiempo para y', 'mi primer que'],
+	},
+	// controls without takes: every word stays (round 6: "¡En mis juegos!" in T was cut as a take of a later sentence)
+	S: { once: [], never: [], allKept: true },
+	T: { once: [], never: [], allKept: true },
 };
 
 const FPS = 30;
@@ -270,8 +381,8 @@ const outside = (a: number, b: number, spans: ReadonlyArray<readonly [number, nu
 };
 
 describe('Clean Up on real transcripts (corpus)', () => {
-	for (const c of corpus.cases)
-		it(`${c.id}: the last clean take of each sentence, once`, () => {
+	for (const c of corpus.cases.filter(inSplit))
+		it(`${c.id}${HELD_OUT.has(c.fragment) ? ' (held out)' : ''}: the last clean take of each sentence, once`, () => {
 			const { a, kept, removed, heard } = cut(c);
 			// every removed second, head and tail included, lies within a finding that removes — beyond its edges only
 			// silence, and at most a frame of it (the frame grid)
@@ -291,12 +402,15 @@ describe('Clean Up on real transcripts (corpus)', () => {
 						expect(outside(u, v, removing), `voice ${p}–${q} removed beyond a finding`).toBeLessThan(1e-6);
 				}
 			}
-			// a take marked kept loses no word
+			// a take marked kept loses no word to its own group (a restart inside it has its own finding)
 			for (const g of a.groups) {
 				const t = g.takes[g.chosen]!;
 				const lost = c.words.filter(
 					([, s, e], i) =>
-						i >= t.words[0] && i <= t.words[1] && !kept.some(([x, y]) => (s + e) / 2 >= x && (s + e) / 2 < y),
+						i >= t.words[0] &&
+						i <= t.words[1] &&
+						!kept.some(([x, y]) => (s + e) / 2 >= x && (s + e) / 2 < y) &&
+						!a.findings.some((f) => f.group !== g.id && f.words && f.words[0] <= i && i <= f.words[1]),
 				);
 				expect(
 					lost.map((w) => w[0]),
@@ -347,6 +461,62 @@ describe('Clean Up on real transcripts (corpus)', () => {
 			const { removed } = cut(c, { accept: [f!.id] });
 			expect(outside(s + 1 / FPS, e - 1 / FPS, removed), c.id).toBeLessThan(1e-6);
 		}
+	});
+
+	it('removals: precision per finding kind and recall of the repeats, dev and held out', () => {
+		const es = builtinLists('es');
+		const filler = new Set([...es.fillers, ...es.markers.filter((m) => !m.includes(' '))]);
+		const fillerKinds = new Set(['filler-vocalic', 'filler-phrase', 'filler-lexical']);
+		const frameKinds = new Set(['pause', 'breath', 'untranscribed']);
+		type Tally = { right: number; wrong: number; wrongWords: string[] };
+		const report: Record<
+			string,
+			{ kinds: Record<string, Tally>; dup: number; hit: number; missed: string[] }
+		> = {};
+		for (const c of corpus.cases) {
+			const split = HELD_OUT.has(c.fragment) ? 'held-out' : 'dev';
+			const r = (report[split] ??= { kinds: {}, dup: 0, hit: 0, missed: [] });
+			const { a, kept } = cut(c);
+			const gone = (s: number, e: number) => !kept.some(([x, y]) => (s + e) / 2 >= x && (s + e) / 2 < y);
+			const inDup = (s: number, e: number) => c.dup.some(([x, y]) => (s + e) / 2 >= x && (s + e) / 2 < y);
+			for (const f of a.findings) {
+				if (!f.words || f.suggested !== 'remove' || frameKinds.has(f.kind)) continue;
+				const t = (r.kinds[f.kind] ??= { right: 0, wrong: 0, wrongWords: [] });
+				for (let i = f.words[0]; i <= f.words[1]; i++) {
+					const [text, s, e] = c.words[i]!;
+					if (!gone(s, e)) continue;
+					if (inDup(s, e) || (fillerKinds.has(f.kind) && filler.has(cleanupNorm(text)))) t.right++;
+					else {
+						t.wrong++;
+						t.wrongWords.push(`${c.id} ${s} ${text}`);
+					}
+				}
+			}
+			for (const [text, s, e] of c.words) {
+				if (!inDup(s, e) || filler.has(cleanupNorm(text))) continue;
+				r.dup++;
+				if (gone(s, e)) r.hit++;
+				else r.missed.push(`${c.id} ${s} ${text}`);
+			}
+		}
+		const lines: string[] = [];
+		for (const [split, r] of Object.entries(report)) {
+			let right = 0;
+			let wrong = 0;
+			for (const [kind, t] of Object.entries(r.kinds).sort()) {
+				right += t.right;
+				wrong += t.wrong;
+				lines.push(
+					`${split} ${kind}: precision ${(t.right / Math.max(1, t.right + t.wrong)).toFixed(3)} (${t.right} right, ${t.wrong} wrong)${t.wrong ? ` ${t.wrongWords.join('; ')}` : ''}`,
+				);
+			}
+			lines.push(
+				`${split} all word removals: precision ${(right / Math.max(1, right + wrong)).toFixed(3)} (${right} / ${right + wrong}); repeats recall ${(r.hit / Math.max(1, r.dup)).toFixed(3)} (${r.hit} / ${r.dup} words; missed: ${r.missed.join('; ')})`,
+			);
+		}
+		if (process.env.CLEANUP_CORPUS_REPORT)
+			writeFileSync(process.env.CLEANUP_CORPUS_REPORT, `${lines.join('\n')}\n`);
+		expect(lines.length).toBeGreaterThan(0);
 	});
 
 	it('rejecting every finding removes nothing, head and tail included', () => {

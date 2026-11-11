@@ -9,14 +9,8 @@
 // Bounded: at most 5 000 phrases are compared (E_TOO_LARGE beyond), candidate pairs come from a prefix-filtered
 // token index (exact for this ratio), each phrase compares at most 200 tokens and the LCS work is capped. Pure.
 import { builtinLists, cleanupLanguageOf, cleanupNorm, restartStopWords } from '../cleanup/lists.ts';
-import {
-	type AWord,
-	lcs,
-	type RuleContext,
-	ruleRestarts,
-	ruleStutters,
-	type WordLabel,
-} from '../cleanup/rules.ts';
+import { ruleRepeats } from '../cleanup/repeats.ts';
+import { type AWord, lcs, type RuleContext, ruleStutters, type WordLabel } from '../cleanup/rules.ts';
 import { NATURAL_SETTINGS } from '../cleanup/schema.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import { FLICKS_PER_SECOND } from '../time.ts';
@@ -107,7 +101,7 @@ function isComplete(p: FootagePhrase, language: string | null | undefined): bool
 		scriptTokens: [],
 		voicedSeconds: null,
 	};
-	ruleRestarts(ctx);
+	ruleRepeats(ctx);
 	ruleStutters(ctx);
 	return labels.every((l) => l === null);
 }
