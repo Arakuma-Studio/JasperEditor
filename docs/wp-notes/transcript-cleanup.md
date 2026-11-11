@@ -654,6 +654,12 @@ rule, and each held-out round found new failures. The mechanism (vocalic fillers
 - **Text over noise with stray voiced frames** (round-8 H9 residual): a word holds a vowel only with 3 voiced frames in a
   row (`VOWEL_MIN_FRAMES`, 30 ms); AA b's "¿Qué" over noise had three stray ones (two in a row) and stayed as an
   ASR-suspect review; AH b's "¿Qué se hace?" (one voiced frame) now reads as one run of noise words.
+- **Garbled tokens in a take** (round-8 H3 residual, rule 3): a number written twice next to itself ("30 treinta") is
+  one number; and in an attempt of ≥ 6 content words, one word per six that the recogniser marked unsure (confidence
+  under `lowConfidence`, an ASR suspect) between two re-said neighbours is forgiven. Fresh U a's re-decode wrote take 1
+  as "Hoy voy a ser mi propio janeter Unity. Tengo solo 30 treinta días. Pen Espérate," and it stayed (15 words heard
+  twice). The corpus transcripts carry no confidences (0.9 throughout), so this is measured on the unit test only;
+  the run-7 U a transcript in the corpus (Hangul garbage, no re-decode) is unchanged.
 
 Kinds follow the structure: ≤ 2 words a false start, a whole clause (clause start, clause end, ≥ 3 content words) a
 retake (with a group), else a restart; inside re-decoded ranges they become hidden retakes as before. The settings keep

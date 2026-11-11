@@ -215,6 +215,7 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 		let inPlace = 0;
 		let corrected = 0;
 		let dropped = false;
+		let unsure = 0;
 		let hard = 0;
 		const matchedR = new Set(pairs.map(([, y]) => rk[y]!));
 		/** The retry's words between the matches of the attempt's content words around `x` (its place in the retry). */
@@ -286,6 +287,25 @@ export function ruleRepeats(ctx: RuleContext): RepeatLink[] {
 					forgiven++;
 					prev = true;
 					continue;
+				}
+			}
+			// a number written twice ("30 treinta" for one "30"): the word right next to it is the same number and re-said
+			if (!ok && exact(tx))
+				for (const nb of [x - 1, x + 1]) {
+					if (!matched.has(nb) || Math.abs(ak[nb]! - ak[x]!) !== 1 || !same(tx, tok(ak[nb]!))) continue;
+					const [p1, p2] = nb < x ? [ak[nb]!, ak[x]!] : [ak[x]!, ak[nb]!];
+					if (W(p2).s - W(p1).e <= t.stutterGapS) ok = true;
+				}
+			// a word the recogniser was unsure of (confidence under `lowConfidence`) between two re-said neighbours, in an
+			// attempt of ≥ 6 content words, one per six ("Hoy voy a ser mi propio janeter Unity. | Hoy voy a ser mi propio
+			// Unity.", run 9 U a)
+			if (!ok && !exact(tx) && ak.length >= 6 && unsure < Math.max(1, Math.floor(ak.length / 6))) {
+				const c = W(ak[x]!).conf;
+				const before = pairs.filter(([p]) => p < x).at(-1);
+				const next = pairs.find(([p]) => p > x);
+				if (c !== null && c < t.lowConfidence && before && next) {
+					unsure++;
+					ok = true;
 				}
 			}
 			// a dropped word: an abandoned take (written broken off) of ≥ 6 content words whose retry leaves out one word

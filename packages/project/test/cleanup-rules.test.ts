@@ -794,6 +794,26 @@ describe('round 10 fixes (docs/wp-notes/transcript-cleanup.md "Round 10")', () =
 		expect(hs.map((x) => [x.words, x.suggested])).toEqual([[[k, k], 'remove']]);
 	});
 
+	it('a take with a garbled word the recogniser was unsure of and a number written twice goes (U a re-decode)', () => {
+		// run 9, fresh U a: the re-decode wrote take 1 as "Hoy voy a ser mi propio janeter Unity. Tengo solo 30 treinta
+		// días. Pen Espérate," ("janeter" and "Pen" ASR suspects): take 1 stayed, 15 words heard twice
+		const words =
+			real(`Hoy[7.69-8.01] voy[8.01-8.15] a[8.15-8.27] ser[8.27-8.41] mi[8.41-8.57] propio[8.57-8.91]
+			janeter[8.91-9.17] Unity.[9.17-9.59] Tengo[9.59-9.81] solo[9.81-10.03] 30[10.03-10.33]
+			treinta[10.33-10.41] días.[10.41-10.77] Pen[10.77-11.03] Espérate,[11.03-11.19]
+			Hoy[13.19-13.47] voy[13.47-13.65] a[13.65-13.79] ser[13.79-13.97] mi[13.97-14.15]
+			propio[14.15-14.51] Unity.[14.51-14.98] Tengo[16.5-16.69] solo[16.69-16.89] 30[16.89-17.23]
+			días[17.23-17.57] para[17.57-17.89] hacer[17.89-18.11] un[18.11-18.23] motor[18.23-18.6]
+			solo[19.63-19.87] 30[19.87-20.03]`).map((w) =>
+				w.text === 'janeter' || w.text === 'Pen' ? { ...w, confidence: 0.2 } : w,
+			);
+		const d = detect(words);
+		const retry = indexOf(words, 'Hoy', 1);
+		for (let i = 0; i < retry; i++) expect(removes(d, i), words[i]!.text).toBe(true);
+		for (let i = retry; i < indexOf(words, 'Tengo', retry); i++)
+			expect(removes(d, i), words[i]!.text).toBe(false);
+	});
+
 	it('slivers: a loud voiced sound between pauses stays for review; a blip over a removed take goes with it', () => {
 		// run 9, AG a: the deliberate mouth sound "Pup." (0.11 s, voiced, −16 dBFS) alone between two removed pauses
 		const words: CleanupWordIn[] = [
