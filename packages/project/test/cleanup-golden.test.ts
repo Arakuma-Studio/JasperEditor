@@ -24,7 +24,10 @@ describe('Fast preset on a synthetic recording (golden)', () => {
 		expect(sc.wordPrecision).toBeGreaterThanOrEqual(0.9);
 		expect(sc.wordRecall).toBeGreaterThanOrEqual(0.9);
 		expect(sc.timePrecision).toBeGreaterThanOrEqual(0.95);
-		expect(sc.timeRecall).toBeGreaterThanOrEqual(0.9);
+		// 0.85, was 0.9: the truth cuts inside every decay (the prototype's floor + 20 dB out point), and since round 12 a
+		// sentence-final word keeps its decay to measured silence and 80 ms of air (a user's report of trimmed sentence
+		// ends): ≈ 0.3 s more kept at each of the four sentence ends (measured 0.96 → 0.89)
+		expect(sc.timeRecall).toBeGreaterThanOrEqual(0.85);
 		expect(a.plan.stats.largestSilenceLeft).not.toBeNull();
 		expect(a.plan.stats.largestSilenceLeft!).toBeLessThanOrEqual(0.25);
 		expect(a.plan.stats.joins).toBeGreaterThanOrEqual(4);
@@ -72,7 +75,9 @@ describe('Fast preset on a synthetic recording (golden)', () => {
 			// out point inside the decay: after the tone's end, at the latest where its tail reaches measured silence and
 			// within 0.25 s, plus a frame of the grid — a join takes a word's tail only 30 dB under its peak (round 11; the
 			// floor + 20 dB out point had cut ≈ 0.16 s into this 124 dB/s synthetic decay), and the last piece keeps its
-			// fading tail up to measured silence
+			// fading tail up to measured silence; after a sentence-final word and at the clip's end 80 ms of the silence
+			// after it stay too (round 12)
+			const pad = /[.?!]$/.test(last.text) || e === pieces[pieces.length - 1]![1] ? 0.08 : 0;
 			let silent = Math.ceil(last.e * 100);
 			while (
 				rec.voice.classes[silent] === 2 ||
@@ -80,8 +85,8 @@ describe('Fast preset on a synthetic recording (golden)', () => {
 			)
 				silent++;
 			expect(e - last.e).toBeGreaterThan(-0.01);
-			expect(e).toBeLessThanOrEqual(silent / 100 + 1 / 30 + 1e-9);
-			expect(e - last.e).toBeLessThan(0.25 + 1 / 30);
+			expect(e).toBeLessThanOrEqual(silent / 100 + pad + 1 / 30 + 1e-9);
+			expect(e - last.e).toBeLessThan(0.25 + pad + 1 / 30);
 		}
 	});
 

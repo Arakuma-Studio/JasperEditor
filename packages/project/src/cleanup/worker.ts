@@ -5,4 +5,5 @@
 
 export { cleanupNorm, foreignScriptWord, sameWord } from './lists.ts';
 export { lcs } from './rules.ts';
+export { secondsPerSyllable, stretchedWord } from './stretch.ts';
 export { decodeVoiceAnalysis, VOICE_ANALYSIS_VERSION, VOICE_CLASSES } from './voice-analysis.ts';

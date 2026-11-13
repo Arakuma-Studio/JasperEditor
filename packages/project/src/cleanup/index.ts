@@ -94,3 +94,4 @@ export {
 	transcriptSegments,
 	type VoiceLookup,
 } from './sequence.ts';
+export { secondsPerSyllable, stretchedWord, syllableCount } from './stretch.ts';

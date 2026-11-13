@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { wordsWellFormed } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
-import { redecodeAccepted, replaceWindowWords } from '../src/speech/core/gaps.ts';
+import { redecodeAccepted, replaceWindowWords, suspectWindows } from '../src/speech/core/gaps.ts';
 import { inputFromSamples } from '../src/speech/worker/audio.ts';
 import { runSpeechJob, type SpeechJobSpec } from '../src/speech/worker/run.ts';
 import { EOT, fakeModelDir, fakeOrt, noiseAudio, SPACE, TS_BEGIN } from './speech-fake-ort.ts';
@@ -260,6 +260,27 @@ describe('hidden takes', () => {
 			expect(w.end, w.text).toBeGreaterThan(w.start);
 			if (k) expect(w.start, w.text).toBeGreaterThanOrEqual(placed[k - 1]!.end);
 		}
+	});
+
+	it('a word under 1 s that lasts three times what its syllables take at the speaker’s pace is a trace (Clean Up round 12)', () => {
+		// "y es extra… ¡extremadamente!" written as one word of 0.95 s; the speaker says two syllables in 0.25 s
+		const s = (text: string, a: number, b: number) => ({
+			text,
+			start: Math.round(a * SR),
+			end: Math.round(b * SR),
+		});
+		const lead = Array.from({ length: 30 }, (_, k) =>
+			s(['cosa', 'mesa', 'lado', 'vino', 'tema'][k % 5]!, 0.5 + 0.3 * k, 0.75 + 0.3 * k),
+		);
+		// voice under the words only: no wordless voice
+		const traced = (w: ReturnType<typeof s>) => {
+			const mask = new Uint8Array(1200);
+			for (const x of [...lead, w]) mask.fill(1, Math.floor(x.start / 160), Math.ceil(x.end / 160));
+			return suspectWindows([...lead, w], mask, 'es').windows;
+		};
+		expect(traced(s('es', 10, 10.95)).map((w) => w.stretched)).toEqual([1]);
+		// the speaker's own "extremadamente" at its normal length (0.88 s, run 9 AG) is none
+		expect(traced(s('extremadamente', 10, 10.88))).toEqual([]);
 	});
 
 	it('voice a replaced window leaves without words is decoded alone (run 4, fragment E: the take at 38.14–42.15)', async () => {

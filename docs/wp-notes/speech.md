@@ -393,7 +393,9 @@ whisper evaluation (53 configurations; the numbers of spec 16 §0). This section
   1.5 s after, verbatim, no previous text — wrote every take with correct times; reporter's measurement, not ours).
   **Re-decode pass** (`core/gaps.ts` "Hidden takes", `worker/run.ts redecodeSuspects`; default on, `redecode: false`
   in the transcription options / job spec turns it off; part of the dedupe key). After the wordless-span pass, on the
-  raw Whisper words: traces are (a) stretched words — longer than 1 s with ≥ 50 % of their 10 ms frames voiced
+  raw Whisper words: traces are (a) stretched words — longer than 1 s, or at least 0.6 s and three times what their
+  syllables take at the speaker's median pace measured over the transcript (`stretchedWord`, transcript-cleanup.md
+  "Round 12"; the per-word decode of `recoverReplaced` keeps the 1 s rule), with ≥ 50 % of their 10 ms frames voiced
   ("continuous speech": the voice-analysis speech class, else the energy VAD; a word stretched over a pause is not,
   refinement trims it) and (b) short wordless voice — ≥ 0.35 s of voiced frames no word covers within ±50 ms (voice
   closer than 100 ms joins; the same scan as the 2 s safety net, `wordlessVoicedSpans` with another shape) and (c)

@@ -137,7 +137,10 @@ export const CleanupGuardsSchema = z
 		minPieceS: num(0, 10),
 		/** Removed ranges shorter than this many sequence frames are not cut. */
 		minCutFrames: z.number().int().min(0).max(100),
-		/** Kept slivers shorter than this many sequence frames are dropped. */
+		/**
+		 * Kept pieces shorter than this many sequence frames are slivers: joined to a neighbour across a short silent gap,
+		 * else a `fragment` finding (removed when accepted, else grown over the silence beside it to this length).
+		 */
 		minSliverFrames: z.number().int().min(0).max(100),
 		/** Skip a filler / stutter cut whose edges cannot land below reference + `inDb` within `harshWindowS`. */
 		avoidHarshCuts: z.boolean(),
@@ -235,7 +238,7 @@ export const FAST_SETTINGS: CleanupSettings = {
 		snapWindowS: 0.01,
 	},
 	gaps: { maxGapS: 0.12, keepGapS: 0, keepGapSentenceS: 0, breath: 'remove', breathKeepMaxS: 0.6 },
-	guards: { minPieceS: 0.25, minCutFrames: 2, minSliverFrames: 3, avoidHarshCuts: true, harshWindowS: 0.03 },
+	guards: { minPieceS: 0.25, minCutFrames: 2, minSliverFrames: 10, avoidHarshCuts: true, harshWindowS: 0.03 },
 	joins: { fadeMs: 4, jlFrames: 0 },
 };
 
@@ -268,7 +271,7 @@ export const NATURAL_SETTINGS: CleanupSettings = {
 		snapWindowS: 0.01,
 	},
 	gaps: { maxGapS: 0.45, keepGapS: 0.25, keepGapSentenceS: 0.5, breath: 'keep', breathKeepMaxS: 0.6 },
-	guards: { minPieceS: 0.4, minCutFrames: 2, minSliverFrames: 3, avoidHarshCuts: true, harshWindowS: 0.03 },
+	guards: { minPieceS: 0.4, minCutFrames: 2, minSliverFrames: 10, avoidHarshCuts: true, harshWindowS: 0.03 },
 	joins: { fadeMs: 10, jlFrames: 0 },
 };
 
@@ -539,6 +542,11 @@ export const FINDING_KINDS = [
 	'untranscribed',
 	'asr-suspect',
 	'hallucination',
+	/**
+	 * A kept piece shorter than `guards.minSliverFrames` between cuts that no silent gap joins to a neighbour (a flash
+	 * of another take's picture): its own finding, made by the sequence planner (round 12).
+	 */
+	'fragment',
 ] as const;
 export type FindingKind = (typeof FINDING_KINDS)[number];
 

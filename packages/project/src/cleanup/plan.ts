@@ -6,7 +6,18 @@
 // breaths kept, the gap policy's air inside / between sentences (`keepGapS`, `keepGapSentenceS`), word mode for media
 // without a voice analysis, and the "avoid harsh cuts" guard. Times are media seconds. Pure.
 import { VOICE_CLASS_BREATH, VOICE_CLASS_SPEECH } from '@jasper/audio-dsp';
-import { type CleanupVoice, FR, levelDbAt, quietWord, SENTENCE_END, wordHold } from './detector.ts';
+import {
+	type CleanupVoice,
+	FR,
+	levelDbAt,
+	phraseFinal,
+	phraseTailEnd,
+	phraseTailFrom,
+	quietWord,
+	SENTENCE_END,
+	wordHold,
+	wordPeakDb,
+} from './detector.ts';
 import { edgeThreshold, levelInPoint, levelOutPoint } from './edges.ts';
 import type { AWord } from './rules.ts';
 import type { CleanupSettings } from './schema.ts';
@@ -245,6 +256,31 @@ function planPieces(input: MediaPlanInput): MediaPlan {
 		res.push({ ...r, a: a3, b: b3, tight: [tightA, tightB] });
 	}
 	res.sort((x, y) => x.a - y.a);
+
+	// 4b. a piece ending with a phrase-final word keeps its fading decay to measured silence relative to the word's
+	// level, and some air after it (round 12: joins cut the soft ends of "azul.", "verdad."), up to the next piece, the
+	// next word and removed sound
+	if (voice && speechMode)
+		for (let i = 0; i < res.length; i++) {
+			const r = res[i]!;
+			const w = r.k >= 0 ? input.words[r.k] : undefined;
+			if (!w || r.tight?.[1] || !phraseFinal(w.text)) continue;
+			const peak = wordPeakDb(voice, w);
+			const limit = Math.min(
+				res[i + 1]?.a ?? Number.POSITIVE_INFINITY,
+				r.maxB,
+				input.words[r.k + 1]?.s ?? Number.POSITIVE_INFINITY,
+			);
+			const from = Math.max(Math.round(r.b / FR), phraseTailFrom(voice, w, peak));
+			const end =
+				phraseTailEnd(
+					voice,
+					peak,
+					from,
+					Number.isFinite(limit) ? Math.floor(limit / FR + 1e-9) : voice.frameCount,
+				) * FR;
+			if (end > r.b) r.b = Math.min(end, limit);
+		}
 
 	// 5. the gap policy's air: inside a sentence keepGapS, between sentences keepGapSentenceS
 	const pads = P.edges.padBeforeS + P.edges.padAfterS;
