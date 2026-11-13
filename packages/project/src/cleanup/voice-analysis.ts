@@ -38,7 +38,7 @@ import {
 import { z } from 'zod';
 
 /** Bump when the features or the classes change: cached analyses of other versions are recomputed. */
-export const VOICE_ANALYSIS_VERSION = 1;
+export const VOICE_ANALYSIS_VERSION = 2;
 /** Version of the binary layout. */
 export const VOICE_ANALYSIS_FORMAT = 1;
 /** Frames per level window ("per 60 s window for drifting rooms"). */

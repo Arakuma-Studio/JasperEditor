@@ -165,7 +165,10 @@ difference is listed below.
     `rule: "gap"` is where "script-derived" is recorded. Accepting the proposal applies them in its one undo step.
     Test: `apps/engine/test/transcript-fix.test.ts` "gap rule" (invented Spanish recording: "y" and "que" dropped over
     voice are inserted, "si" dropped where the speaker paused is not; fails before: both went to Maybe). The 0.6 / 3 /
-    0.4 s / 50 % / 0.3 values are assumptions, not measured on real recordings.
+    0.4 s / 50 % / 0.3 values are assumptions, not measured on real recordings. On a loudness-normalised dense mixdown
+    (reporter's `cut_v5.wav`) 22 of 37 leftover deletions failed only on the 50 % share: version 1 of the voice
+    analysis called quiet voiced speech non-speech there; version 2 does (transcript-cleanup.md "Quiet speech"; not
+    re-run on that file).
   - Fixes decided by audio, including the spelling rule, go to the `fix` group. `rule` names which rule applied.
 - **Edits.**
   - Audio-decided words take reading k's forced times, clamped in order into `bounds`: from the previous word's end

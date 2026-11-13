@@ -360,7 +360,12 @@ whisper evaluation (53 configurations; the numbers of spec 16 §0). This section
   mixdown at ≈ −17 / −50 dBFS): `apps/engine/test/speech-dense-speech.test.ts` (both fail before: no word of the
   fast sentence survived; "y", "a" and the word before the pause were dropped). Assumption: these are the paths behind
   the report; words turbo never decodes are not recovered by them (Fix Transcript's gap rule inserts them from the
-  script, script-correction.md).
+  script, script-correction.md). (3) The reporter's rerun at 1da79efd8 left 21 words dropped as `silence` on the
+  mixdown, over voice at −17 … −25 dBFS that its voice analysis called 0–7 % speech (file floor −30.5 dBFS inside the
+  dense speech, threshold −24.5): the presence mask had no voice within 200 ms of them. Voice analysis version 2 calls
+  voiced syllables under the threshold speech (transcript-cleanup.md "Quiet speech"); test: the last case of
+  `speech-dense-speech.test.ts` (the guard over a written and re-read analysis of a dense mixdown; fails on version 1:
+  8 quiet words removed). Not re-run on the reporter's file.
 - Speech after long (digital) silence (SG-011 regression, reported on a 57-minute Spanish file with large-v3-turbo:
   ≈ 45 s of clear speech right after stretches of −120 dB digital silence came back without words, and decoding those
   ranges alone recovered them). Root cause, as far as it could be established without that file: digital silence

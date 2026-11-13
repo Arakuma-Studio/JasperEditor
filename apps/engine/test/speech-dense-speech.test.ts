@@ -3,11 +3,17 @@
 // sentences through OpenAI's `hallucination_silence_threshold` rule (166 words, reason "silence-threshold"), and short
 // words ("y", "a", "que") the alignment timed onto a dip between two words. The scripted decoder here writes the
 // given words with the given times for any window it is shown (no hallucination at all), so every word missing from
-// the result was removed by a guard.
-import { wordsWellFormed } from '@jasper/project';
+// the result was removed by a guard. The last case runs the guard on the voice analysis of a dense mixdown (whose file
+// floor lies inside the speech).
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { voiceFeatures } from '@jasper/audio-dsp';
+import { buildVoiceAnalysis, encodeVoiceAnalysis, wordsWellFormed } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
+import { frameDb, voicedMask } from '../src/speech/core/vad.ts';
 import { inputFromSamples } from '../src/speech/worker/audio.ts';
-import { runSpeechJob } from '../src/speech/worker/run.ts';
+import { refineWords, runSpeechJob, voiceAnalysisMask } from '../src/speech/worker/run.ts';
 import { EOT, fakeModelDir, fakeOrt, SPACE, TS_BEGIN } from './speech-fake-ort.ts';
 
 const SOT = 27;
@@ -148,5 +154,70 @@ describe('dense speech keeps every spoken word (silence guards)', () => {
 		);
 		expect(out.words.map((w) => w.text)).toEqual(truth.slice(0, -1).map((w) => w.text));
 		expect(out.guard.removed).toContainEqual(expect.objectContaining({ text: 'gr', reason: 'silence' }));
+	});
+
+	it('quiet words of a dense, loudness-normalised mixdown are voice in its voice analysis and stay', async () => {
+		// `cut_v5.wav`: file floor −30.5 dBFS (inside the speech), speech level −10.5, threshold −24.5; words peaking at
+		// −17 … −25 dBFS were dropped as lying in silence. Here: syllables back to back (a 140 Hz voiced nucleus of
+		// 180 ms, rising and falling, and a 50 ms unvoiced consonant 8 dB under it); phrases of ten words peaking at
+		// −8 … −10 dBFS trail off into six quiet words at the reported levels; 100 ms pauses at room tone (−52 dBFS)
+		const words: Array<[peakDb: number, syllables: number]> = [];
+		for (let p = 0; p < 6; p++) {
+			for (let k = 0; k < 10; k++) words.push([-8 - (k % 3), 1 + (k % 3)]);
+			words.push([-19, 2], [-21, 2], [-23, 2], [-25, 2], [-24, 1], [-22, 1]);
+		}
+		const x = new Float32Array(Math.round(48 * SR));
+		let seed = 11;
+		const rnd = () => {
+			seed = (seed * 1664525 + 1013904223) >>> 0;
+			return seed / 2147483648 - 1;
+		};
+		for (let i = 0; i < x.length; i++) x[i] = 10 ** (-52 / 20) * Math.sqrt(3) * rnd();
+		const truth: W[] = []; // samples
+		let t = Math.round(0.5 * SR);
+		let phase = 0;
+		words.forEach(([db, syllables], k) => {
+			const start = t;
+			for (let q = 0; q < syllables; q++) {
+				const n = Math.round(0.18 * SR);
+				for (let i = 0; i < n; i++) {
+					phase += (2 * Math.PI * 140) / SR;
+					let v = 0;
+					for (let h = 1; h <= 20; h++) v += Math.sin(h * phase) / h;
+					x[t + i]! += (10 ** (db / 20) / 0.9) * Math.sin((Math.PI * (i + 0.5)) / n) ** 0.6 * v;
+				}
+				t += n;
+				const c = Math.round(0.05 * SR);
+				for (let i = 0; i < c; i++) x[t + i]! += 10 ** ((db - 8) / 20) * Math.sqrt(3) * rnd();
+				t += c;
+			}
+			truth.push({ text: word(k), start, end: t });
+			if (k % 16 === 15) t += Math.round(0.1 * SR);
+		});
+		const audio = x.subarray(0, t + SR);
+		const analysis = buildVoiceAnalysis({
+			fingerprint: 'q1:mix',
+			stream: 0,
+			samples: audio.length,
+			planes: voiceFeatures(audio),
+		});
+		expect(analysis.levels.floorDb).toBeGreaterThan(-32);
+		expect(analysis.levels.speechThresholdDb).toBeGreaterThan(-25.5);
+		const dir = mkdtempSync(join(tmpdir(), 'jasper-dense-'));
+		try {
+			const path = join(dir, 'voice.bin');
+			writeFileSync(path, encodeVoiceAnalysis(analysis));
+			const db = frameDb(audio);
+			const va = await voiceAnalysisMask({ path, fingerprint: 'q1:mix', stream: 0 }, db.length);
+			expect(va).not.toBeNull();
+			const r = refineWords(
+				{ samples: audio.length, db, mask: voicedMask(db), presence: va!.presence },
+				truth.map((w) => ({ ...w })),
+			);
+			expect(r.removed).toEqual([]);
+			expect(r.words.map((w) => w.text)).toEqual(truth.map((w) => w.text));
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });
