@@ -1001,11 +1001,13 @@ policy's air (`keepGapS` inside a sentence, `keepGapSentenceS` after . ? !, neve
 
 | Preset | maxGap | air in / between sentences | edges | pads before / after | breaths | min piece | join fade | retakes, stutters, off-script, marker phrases |
 |---|---|---|---|---|---|---|---|---|
-| Fast (`builtin.fast`) | 0.12 s | 0 / 0 | level, floor + 20 / + 25 dB | 0 / 0 | removed | 0.25 s | 4 ms | removed |
-| Natural (`builtin.natural`) | 0.45 s | 0.25 / 0.5 s | speech frames | 0.10 / 0.15 s | kept ≤ 600 ms | 0.4 s | 10 ms | review (restarts, false starts, vocalic fillers removed) |
+| Fast (`builtin.fast`) | 0.12 s | 0 / 0 | level, floor + 20 / + 25 dB | 0 / 0 | removed | 0.25 s | 0 (hard cuts) | removed |
+| Natural (`builtin.natural`) | 0.45 s | 0.25 / 0.5 s | speech frames | 0.10 / 0.15 s | kept ≤ 600 ms | 0.4 s | 0 (hard cuts) | review (restarts, false starts, vocalic fillers removed) |
 
 User presets: `{id: cup_…, name, description?, basedOn?: builtin.fast | builtin.natural, settings: overrides}` in the
-user library (below); `resolvePresetSettings`.
+user library (below); `resolvePresetSettings`. Join fades are opt-in ("Join fades of range cuts" below): the built-ins'
+`joins.fadeMs` is 0, and Settings ▸ Joins ▸ **Fade joins** (a checkbox; checked = `JOIN_FADE_MS`, 4 ms, with the ms
+value editable beside it, 0–30) stores `joins.fadeMs` as a sequence override like every other setting.
 
 ### Applying (TC-030 … TC-032)
 
@@ -1043,8 +1045,8 @@ user library (below); `resolvePresetSettings`.
 - `transcript.removeFillers` without `fillers`: per word, its transcript language's vocalic list — the sequence's
   edited list, else Spanish's; English and unknown languages keep `DEFAULT_FILLERS` (unchanged for old callers);
   `language` forces one; `fadeMs`. Both commands now ripple through `cutRanges` (the same result as before, in one
-  pass). The MCP `remove_fillers` dry run uses the same default. Both default `fadeMs` to Clean Up's 4 ms join fade
-  ("Join fades of range cuts" below); `fadeMs: 0` keeps hard cuts.
+  pass). The MCP `remove_fillers` dry run uses the same default. Both cut hard by default (`fadeMs` 0); `fadeMs: n`
+  fades every cut edge ("Join fades of range cuts" below).
 - New error code `E_UNSUPPORTED` (`commands/types.ts`, MCP hint).
 
 ### Join micro-fades through the audio fade model (TC-024)
@@ -1064,32 +1066,48 @@ sub-frame fades: every format (FCP7, FCPXML, OTIO, EDL, AAF, OMF) names them in 
 ### Join fades of range cuts
 
 `verify_export` on a user's 15:31 export flagged 19 `cut-click` rows (a sample step 12.5–29.7 dB over the local RMS
-within ±10 ms of the cut). Clean Up's joins did not click; the flagged cuts came from `range.extract` /
-`transcript_extract` and `clip.split` + ripple delete, which left hard butt joins: two moments of a recording meeting
-mid-waveform make a sample step at the cut. Those edits now give the audio edges they cut the same fade as Clean Up
-(`JOIN_FADE_MS` = the Fast preset's `joins.fadeMs`, 4 ms, `commands/join-fades.ts`), as `edgeFades` in the same
-transaction (one undo step), so preview and every export path render them through the fade model above:
+within ±10 ms of the cut): `range.extract` / `transcript_extract` and `clip.split` + ripple delete leave hard butt joins,
+and two moments of a recording meeting mid-waveform make a sample step at the cut. These edits can give the audio edges
+they cut the same fade as Clean Up (`JOIN_FADE_MS`, 4 ms, `cleanup/schema.ts`, re-exported by `commands/join-fades.ts`),
+as `edgeFades` in the same transaction (one undo step), so preview and every export path render them through the fade
+model above.
 
-- `range.extract`, `range.lift`, `transcript.extract`, `transcript.lift` (`joinFades?`, default true): the new out edge
-  of a piece ending at the range start and the new in edge of a piece starting at its end, on every audio track the
-  cut touches (sync-locked followers included, as Clean Up's extract). Edges the range does not move (a clip that
-  starts or ends exactly at a range bound) keep what they had. The result has `fades` (edges written). Picture
-  clips never get `edgeFades`.
-- `transcript.removeFillers` / `transcript.removePauses`: `fadeMs` defaults to 4 (was 0); `fadeMs: 0` keeps hard cuts.
-- `clip.extract` (ripple delete; `joinFades?`, default true): a new butt join between two pieces of one recording
-  (same media, not a through edit) — what `clip.split` + delete makes — gets the fade on both sides; sides that
-  already fade keep theirs. A join between different recordings is a deliberate edit and stays as it was.
-- `audio.smoothJoins {sequenceId?, tracks?, from?, to?, at?, fadeMs? (default 4, ≤ 30)}` [Smooth Audio Joins] for
-  existing projects: both sides of every hard audio join — two enabled audio clips butted on a track whose sound jumps
-  (another recording, or another moment of one; `isThroughEdit` is false) with no transition over the edit — in
-  `[from, to]` of the tracks (default every unlocked audio track) get the fade; sides that already fade keep theirs.
-  `at` (sequence frames, e.g. the `at.frame` of verify_export's cut-click rows) keeps the joins within one frame of
-  one of them; the result `{joins, fades, fadeMs, unmatched?}` lists the times with no hard join. Refusals: a picture
-  track `E_INVALID_PARAM`, a named locked track `E_TRACK_LOCKED`, `to < from` `E_INVALID_PARAM`. In the editor:
-  Clip ▸ Audio Options ▸ Smooth Audio Joins (In to Out when both are set, else the whole sequence).
+**Cuts are hard by default; join fades are opt-in** (the user's decision, 2026-11-13; it supersedes spec 14 TC-024's
+"every audio join gets a micro-fade" and its Fast 4 ms / Natural 10 ms defaults). A fade is written only when asked for:
 
-The fade is 4 ms on each side of the join, inside the clips (no handles needed): it attenuates at most the 4 ms next
-to the cut and removes nothing. Measured in the offline mixer every export path uses (`join-fades.test.ts`, a 220 Hz
+- `range.extract`, `range.lift`, `transcript.extract`, `transcript.lift` (`joinFades?`, default false): with
+  `joinFades: true`, the new out edge of a piece ending at the range start and the new in edge of a piece starting at
+  its end, on every audio track the cut touches (sync-locked followers included, as Clean Up's extract). Edges the range
+  does not move (a clip that starts or ends exactly at a range bound) keep what they had. The result has `fades` (edges
+  written; 0 by default). Picture clips never get `edgeFades`.
+- `transcript.removeFillers` / `transcript.removePauses`: `fadeMs` defaults to 0 (hard cuts); `fadeMs: n` fades every
+  cut edge. In the editor the Remove Filler Words and Remove Pauses bars (Text ▸ Transcript) have a **Fade joins
+  (4 ms)** checkbox, off by default, that sends `fadeMs: JOIN_FADE_MS`.
+- `clip.extract` (ripple delete; `joinFades?`, default false): with `joinFades: true`, a new butt join between two
+  pieces of one recording (same media, not a through edit) — what `clip.split` + delete makes — gets the fade on both
+  sides; sides that already fade keep theirs. A join between different recordings is a deliberate edit and stays as it
+  was.
+- `cleanup.apply` (`fadeMs`, default 0) and Clean Up (editor Apply, MCP `apply_cleanup`, Apply Style's cleanup stage)
+  send the settings' `joins.fadeMs`, 0 in both built-in presets. A user preset or a sequence override that stores
+  `joins.fadeMs` keeps its value: nothing persisted is rewritten. An absent `joins.fadeMs` means the preset's value,
+  so a sequence or user preset that never set it (and relied on Fast's 4 ms or Natural's 10 ms) now cuts hard; turning
+  Fade joins on (or `set_cleanup_settings {settings: {joins: {fadeMs}}}`) brings the fades back. No schema bump or
+  migration: the stored shape and every stored value read the same; only the built-in default changed.
+- In the editor, range and clip cuts (Extract / Lift, Ripple Delete, Extract Text / Lift Text) have no cut settings and
+  cut hard; Clip ▸ Audio Options ▸ Smooth Audio Joins adds the fades afterwards.
+- `audio.smoothJoins {sequenceId?, tracks?, from?, to?, at?, fadeMs? (default 4, ≤ 30)}` [Smooth Audio Joins] (unchanged)
+  is the explicit way to fade existing cuts: both sides of every hard audio join — two enabled audio clips butted on a
+  track whose sound jumps (another recording, or another moment of one; `isThroughEdit` is false) with no transition
+  over the edit — in `[from, to]` of the tracks (default every unlocked audio track) get the fade; sides that already
+  fade keep theirs. `at` (sequence frames, e.g. the `at.frame` of verify_export's cut-click rows) keeps the joins
+  within one frame of one of them; the result `{joins, fades, fadeMs, unmatched?}` lists the times with no hard join.
+  Refusals: a picture track `E_INVALID_PARAM`, a named locked track `E_TRACK_LOCKED`, `to < from` `E_INVALID_PARAM`.
+  In the editor: Clip ▸ Audio Options ▸ Smooth Audio Joins (In to Out when both are set, else the whole sequence).
+- MCP: `apply_cleanup`'s details and the cleanup guide say the cuts are hard unless `settings.joins.fadeMs > 0`
+  (eval cases `cleanup-join-fades`, `cleanup-hard-cuts-control`).
+
+A requested fade is 4 ms on each side of the join by default, inside the clips (no handles needed): it attenuates at
+most the 4 ms next to the cut and removes nothing. Measured in the offline mixer every export path uses (`join-fades.test.ts`, a 220 Hz
 tone, a 31-frame extract that jumps a third of a cycle; verify_export's step-over-RMS measure): the hard cut is over
 the 12 dB threshold, the faded join under it.
 
@@ -1131,7 +1149,9 @@ the flagged cuts.
 | One-pass extract = successive `range.extract` (150 random timelines) + invariants | `cleanup-property.test.ts` | pass |
 | `cleanup.apply` / `cleanup.configure` / removePauses / removeFillers: links, groups, sync lock, locked tracks, source ranges, fades, J / L, lift / mute / markers, 1,500 ranges, undo (previous document untouched) / redo (same timeline), refusals, invariants (`verify` mode) | `cleanup-commands.test.ts` | pass |
 | Mixer: equal-power curve sample by sample over 192 samples at both sides of a join, the same inside a nested sequence, transitions win; INV-CLEANUP and repair (idempotent) | `cleanup-render.test.ts` | pass |
-| Range cuts / `clip.extract` / `audio.smoothJoins` join fades: faces only, untouched edges, opt-outs, existing fades kept, through edits skipped, `at`, refusals, one revision, previous document untouched, invariants; the joins in the offline mixer under verify_export's 12 dB click threshold (hard cut over it) | `join-fades.test.ts` | pass |
+| Range cuts / `clip.extract` / removeFillers / removePauses / `audio.smoothJoins` join fades: hard cuts by default, `joinFades: true` / `fadeMs` opt-in, faces only, untouched edges, existing fades kept, through edits skipped, `at`, refusals, one revision, previous document untouched (undo), re-applying gives the same timeline (redo), invariants; the joins in the offline mixer under verify_export's 12 dB click threshold (hard cut over it) | `join-fades.test.ts` | pass |
+| Clean Up Apply: hard cuts with the built-in presets (Fast, Natural), every cut edge faded at the stored `joins.fadeMs` | `cleanup-review.test.ts` | pass |
+| Editor: Settings ▸ Fade joins off by default (Apply leaves no `edgeFades`), on stores 4 ms, shows the value, Apply fades, undo; Remove Pauses' Fade joins checkbox | `apps/web/test/cleanup-ui.test.tsx`, `apps/web/test/transcript-tab-editing.test.tsx` | pass |
 | Preview while playing (headless Chrome, Web Audio) = export across a cleanup join | `packages/compositions/test/audio-preview-mix-oracle.test.ts` "cleanup joins" | worst 3.0e-8 (threshold 1e-4) |
 | Interchange reports edge fades (6 formats) | `packages/interchange/test/cleanup-edge-fades.test.ts` | pass |
 | Engine job = pure analysis of the same samples (16 kHz WAV through FFmpeg), cache reuse, word mode, refusals; preset CRUD, restart, invalid entries, corrupt file, user preset drives the analysis | `apps/engine/test/cleanup.test.ts` | pass |

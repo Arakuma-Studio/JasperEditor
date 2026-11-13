@@ -112,8 +112,9 @@ LLM-based content judgement (agents may layer it on the MCP tools).
 - TC-023 Guards: minimum kept piece (Fast 0.25 s, Natural 0.4 s); no cut shorter than 2 frames; drop kept slivers
   < 3 frames; "avoid harsh cuts" — skip a filler cut whose edges can't land below `floor + inDb` within 30 ms and report
   it as skipped.
-- TC-024 Join fades: every audio join gets an equal-power micro-fade (Fast 4 ms, Natural 10 ms; 0–30 ms) implemented
-  with the existing audio fade/transition model so preview and every export path render it identically (AGENTS §4);
+- TC-024 Join fades: on request ("Fade joins", `joins.fadeMs` 0–30 ms; 0 = hard cuts, the built-in presets' default
+  by the user's decision, see wp-notes/transcript-cleanup.md "Join fades of range cuts"), every audio join gets an
+  equal-power micro-fade implemented with the existing audio fade/transition model so preview and every export path render it identically (AGENTS §4);
   optional J/L offset in frames (default 0).
 - TC-025 Presets (built in, editable copies): **Fast** (measured on this user) and **Natural** (general) with the values
   above plus: breaths before an onset removed (Fast) / kept ≤ 600 ms (Natural); restarts/false starts removed (both);

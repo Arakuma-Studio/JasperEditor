@@ -605,7 +605,7 @@ function rangeLiftHandler(doc: DDoc, cmd: CommandOf<'range.lift'>, h: HandlerCon
 	const splits: SplitRecord[] = [];
 	for (const id of ids) splits.push(...clearRange(seq, id, from, to, h));
 	relinkSplits(seq, splits, h);
-	const fades = cmd.joinFades === false ? 0 : setJoinFades(seq, faces(splits), JOIN_FADE_MS);
+	const fades = cmd.joinFades ? setJoinFades(seq, faces(splits), JOIN_FADE_MS) : 0;
 	cleanupSequence(seq, h);
 	return { from, to, tracks: ids, fades };
 }
@@ -621,11 +621,11 @@ function rangeExtractHandler(doc: DDoc, cmd: CommandOf<'range.extract'>, h: Hand
 	const splits: SplitRecord[] = [];
 	for (const id of ids) splits.push(...clearRange(seq, id, from, to, h));
 	relinkSplits(seq, splits, h);
-	// the faces of the cut get Clean Up's join fades (in the same undo step); ids survive the shift
+	// with joinFades the faces of the cut get Clean Up's join fades (in the same undo step); ids survive the shift
 	const cut = faces(splits);
 	removeShift(seq, ids, from, to - from, h);
 	if (cmd.rippleMarkers !== false) shiftMarkers(seq, from, -(to - from));
-	const fades = cmd.joinFades === false ? 0 : setJoinFades(seq, cut, JOIN_FADE_MS);
+	const fades = cmd.joinFades ? setJoinFades(seq, cut, JOIN_FADE_MS) : 0;
 	cleanupSequence(seq, h);
 	return { from, to, tracks: [...ids], fades };
 }

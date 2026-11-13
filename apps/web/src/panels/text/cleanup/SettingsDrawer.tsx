@@ -157,10 +157,35 @@ function FieldRow(p: { field: SettingField; value: unknown; edited: boolean; onC
 				/>
 			</>
 		);
+	const value = typeof p.value === 'number' ? p.value : 0;
+	const toggle = f.toggle;
+	if (toggle) {
+		const on = value > 0;
+		return (
+			<>
+				{label}
+				<span className="flex items-center gap-1">
+					<span data-testid={`text.cleanup.setting.${f.group}.${f.key}.toggle`}>
+						<Checkbox
+							id={id}
+							checked={on}
+							onCheckedChange={(v) => p.onChange(v ? toggle.on : 0)}
+							aria-label={f.label}
+						/>
+					</span>
+					{on ? (
+						<NumberCell field={f} id={`${id}-value`} value={value} onChange={p.onChange} />
+					) : (
+						<span className="w-28 text-pr-muted">{t('Hard cuts')}</span>
+					)}
+				</span>
+			</>
+		);
+	}
 	return (
 		<>
 			{label}
-			<NumberCell field={f} id={id} value={typeof p.value === 'number' ? p.value : 0} onChange={p.onChange} />
+			<NumberCell field={f} id={id} value={value} onChange={p.onChange} />
 		</>
 	);
 }
@@ -197,6 +222,7 @@ function NumberCell(p: {
 				step={p.field.step}
 				value={text}
 				invalid={parsed === null}
+				aria-label={p.field.toggle ? t('{0} ({1})', p.field.label, p.field.unit) : undefined}
 				onChange={(e) => setText(e.currentTarget.value)}
 				onBlur={commit}
 				onKeyDown={(e) => {

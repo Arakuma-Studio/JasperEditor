@@ -1,7 +1,8 @@
 import type { Command } from '@jasper/project';
 // Text panel ▸ Transcript — the sequence transcript (words heard through the audio clips, derived on
 // every edit), with the word under the playhead highlighted, click-to-seek, search, word selection (click, Shift-click,
-// drag) → Mark In/Out, Extract, Lift, Insert into another sequence; Remove Fillers / Remove Pauses; speaker labels
+// drag) → Mark In/Out, Extract, Lift, Insert into another sequence; Remove Fillers / Remove Pauses (hard cuts unless
+// "Fade joins" is checked); speaker labels
 // (rename, filter); word corrections (`transcript.editText`) and caption breaks (`transcript.setBreak`); Create
 // Captions; Import Transcript (JSON or a caption file) for a media of the sequence.
 // Spec 17 (docs/wp-notes/script-correction.md "Editor UI"): "Script…" (the Script drawer: attach / replace / detach
@@ -15,6 +16,7 @@ import {
 	findFillers,
 	findPauses,
 	flicksPerFrame,
+	JOIN_FADE_MS,
 	mergeRanges,
 	type ProjectDocument,
 	paragraphs,
@@ -29,6 +31,7 @@ import type { EditorSession } from '@jasper/session';
 import { useStoreSelector, useTransportFrame } from '@jasper/session/react';
 import {
 	Button,
+	Checkbox,
 	EmptyState,
 	openDialog,
 	PointMenu,
@@ -688,8 +691,25 @@ function WordMenu(p: {
 
 type ApplyFn = (label: string, commands: Command[]) => { ok: boolean };
 
+/** "Fade joins" of the cut tools: off = hard cuts (the commands' default); on = Clean Up's join fade at every cut. */
+function FadeJoins(p: { on: boolean; set(on: boolean): void; testId: string }) {
+	return (
+		<span data-testid={p.testId}>
+			<Checkbox
+				checked={p.on}
+				onCheckedChange={p.set}
+				label={t('Fade joins ({0} ms)', JOIN_FADE_MS)}
+				className="text-pr-small text-pr-muted"
+			/>
+		</span>
+	);
+}
+
+const fadeArg = (on: boolean) => (on ? { fadeMs: JOIN_FADE_MS } : {});
+
 function FillersTool(p: { words: SeqWord[]; seq: Sequence; apply: ApplyFn; onDone(): void }) {
 	const [list, setList] = useState(() => loadFillers().join(', '));
+	const [fade, setFade] = useState(false);
 	const fillers = list
 		.split(',')
 		.map((s) => s.trim())
@@ -715,6 +735,7 @@ function FillersTool(p: { words: SeqWord[]; seq: Sequence; apply: ApplyFn; onDon
 			<span data-testid="text.transcript.fillerCount">
 				{hits.length} found · {frames} frames
 			</span>
+			<FadeJoins on={fade} set={setFade} testId="text.transcript.fillersFade" />
 			<Button
 				variant="primary"
 				disabled={!hits.length}
@@ -722,7 +743,7 @@ function FillersTool(p: { words: SeqWord[]; seq: Sequence; apply: ApplyFn; onDon
 					saveFillers(fillers);
 					if (
 						p.apply('Remove Filler Words', [
-							{ type: 'transcript.removeFillers', sequenceId: p.seq.id, fillers },
+							{ type: 'transcript.removeFillers', sequenceId: p.seq.id, fillers, ...fadeArg(fade) },
 						]).ok
 					)
 						p.onDone();
@@ -738,6 +759,7 @@ function FillersTool(p: { words: SeqWord[]; seq: Sequence; apply: ApplyFn; onDon
 function PausesTool(p: { words: SeqWord[]; seq: Sequence; apply: ApplyFn; onDone(): void }) {
 	const [min, setMin] = useState('1');
 	const [keep, setKeep] = useState('0.1');
+	const [fade, setFade] = useState(false);
 	const m = Number(min);
 	const k = Number(keep);
 	const valid = Number.isFinite(m) && m >= 0.04 && Number.isFinite(k) && k >= 0;
@@ -772,12 +794,19 @@ function PausesTool(p: { words: SeqWord[]; seq: Sequence; apply: ApplyFn; onDone
 				data-testid="text.transcript.pauseKeep"
 			/>
 			s<span data-testid="text.transcript.pauseCount">{ranges.length} found</span>
+			<FadeJoins on={fade} set={setFade} testId="text.transcript.pausesFade" />
 			<Button
 				variant="primary"
 				disabled={!ranges.length}
 				onClick={() =>
 					p.apply('Remove Pauses', [
-						{ type: 'transcript.removePauses', sequenceId: p.seq.id, minSeconds: m, keepSeconds: k },
+						{
+							type: 'transcript.removePauses',
+							sequenceId: p.seq.id,
+							minSeconds: m,
+							keepSeconds: k,
+							...fadeArg(fade),
+						},
 					]).ok && p.onDone()
 				}
 				data-testid="text.transcript.pausesApply"

@@ -1,7 +1,7 @@
 // Every Clean Up setting the drawer shows (spec 14 TC-040: all TC-011 / TC-021 / TC-022 / TC-023 / TC-024 values with
 // units), in the groups of `CleanupSettings`. Bounds come from the zod schema (`packages/project/src/cleanup/schema.ts`);
 // `scale` converts stored values to what is shown (shares 0…1 as %, seconds as ms where the spec speaks in ms).
-import type { CleanupSettings } from '@jasper/project';
+import { type CleanupSettings, JOIN_FADE_MS } from '@jasper/project';
 
 export type SettingGroup = keyof CleanupSettings;
 
@@ -18,6 +18,8 @@ export type SettingField =
 			/** Shown = stored × scale. */
 			scale?: number;
 			integer?: boolean;
+			/** Shown as a checkbox (0 = off) with the value beside it when on; checking it sets `on`. */
+			toggle?: { on: number };
 	  }
 	| { group: SettingGroup; key: string; type: 'choice'; label: string; options: readonly string[] }
 	| { group: SettingGroup; key: string; type: 'bool'; label: string };
@@ -488,16 +490,17 @@ export const SETTING_FIELDS: readonly SettingField[] = [
 		step: 5,
 		scale: 1000,
 	},
-	// joins (TC-024)
+	// joins (TC-024): hard cuts by default; the toggle gives every join an equal-power micro-fade
 	{
 		group: 'joins',
 		key: 'fadeMs',
 		type: 'number',
-		label: 'Equal-power micro-fade at every join',
+		label: 'Fade joins',
 		unit: 'ms',
 		min: 0,
 		max: 30,
 		step: 1,
+		toggle: { on: JOIN_FADE_MS },
 	},
 	{
 		group: 'joins',

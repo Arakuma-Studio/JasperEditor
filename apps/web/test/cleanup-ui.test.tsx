@@ -3,10 +3,10 @@
 // statistics, Play result plays a derived timeline (never committed, never in History), Apply is ONE undo step labelled
 // "Clean Up Voice: N cuts" that remembers rejections, Undo restores the sequence, an edit of the analysed clips makes
 // the review stale; the review keys are enabled only during a review and never while typing; Sequence ▸ Clean Up Voice…
-// opens the mode.
+// opens the mode; Apply cuts hard unless Settings ▸ Joins ▸ Fade joins is on.
 import { derivedPreviewFor } from '@jasper/session';
 import { SessionProvider } from '@jasper/session/react';
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getCommand, isCommandEnabled, registerAllCommands } from '../src/commands/index.ts';
 import { DEFAULT_KEYMAP } from '../src/commands/keymap-defaults.ts';
@@ -179,6 +179,58 @@ describe('Clean Up mode', () => {
 		expect(seqOf(session, seqId)).toEqual(seq0);
 		session.redo();
 		expect(seqLength(seqOf(session, seqId))).toBe(seqLength(seq1));
+	});
+
+	it('Apply cuts hard by default; Settings ▸ Fade joins stores 4 ms, shows the value, and Apply fades the joins', async () => {
+		const edgeFades = (session: ReturnType<typeof setup>['session'], seqId: string) =>
+			Object.values(seqOf(session, seqId).clips).flatMap((x) => {
+				const f = (x as { edgeFades?: Record<string, number> }).edgeFades;
+				return f ? [f] : [];
+			});
+		// default (Fast, nothing stored): hard cuts
+		const a = setup();
+		await analyze(a.c);
+		expect(a.c.getState().analysis!.plan.ranges.length).toBeGreaterThan(1);
+		fireEvent.click(screen.getByTestId('text.cleanup.apply'));
+		expect(edgeFades(a.session, a.seqId)).toEqual([]);
+		cleanup();
+
+		const { c, session, seqId, ui } = setup();
+		// the drawer shows the sequence it is given: render it again with the live one after a settings edit
+		const live = () =>
+			ui.rerender(
+				<SessionProvider session={session}>
+					<CleanupMode session={session} seq={seqOf(session, seqId)} />
+				</SessionProvider>,
+			);
+		await analyze(c);
+		fireEvent.click(screen.getByTestId('text.cleanup.settings'));
+		const box = within(screen.getByTestId('text.cleanup.setting.joins.fadeMs.toggle')).getByRole('checkbox');
+		expect(box.getAttribute('aria-checked')).toBe('false');
+		expect(screen.queryByTestId('text.cleanup.setting.joins.fadeMs')).toBeNull();
+		fireEvent.click(box);
+		await settle();
+		live();
+		expect(seqOf(session, seqId).cleanup).toMatchObject({
+			settings: { overrides: { joins: { fadeMs: 4 } } },
+		});
+		expect(c.getState().analysis!.plan.fadeMs).toBe(4);
+		expect((screen.getByTestId('text.cleanup.setting.joins.fadeMs') as HTMLInputElement).value).toBe('4');
+		const seq0 = seqOf(session, seqId);
+		fireEvent.click(screen.getByTestId('text.cleanup.apply'));
+		const got = edgeFades(session, seqId);
+		expect(got.length).toBeGreaterThan(1);
+		for (const f of got) for (const ms of Object.values(f)) expect(ms).toBe(4);
+		session.undo();
+		expect(seqOf(session, seqId)).toEqual(seq0);
+		live();
+		// unchecking is its own undoable settings edit back to hard cuts
+		fireEvent.click(
+			within(screen.getByTestId('text.cleanup.setting.joins.fadeMs.toggle')).getByRole('checkbox'),
+		);
+		expect(seqOf(session, seqId).cleanup).toMatchObject({
+			settings: { overrides: { joins: { fadeMs: 0 } } },
+		});
 	});
 
 	it('an edit of the analysed clips makes the review stale: Apply and the previews refuse with a reason', async () => {

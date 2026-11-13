@@ -887,9 +887,10 @@ export const clipCoreHandlers = {
 			});
 			if (cmd.rippleMarkers !== false) shiftMarkers(seq, r.start, -(r.end - r.start));
 		}
-		// a new join between two pieces of one recording jumps in its sound: Clean Up's join fade on both sides
+		// a new join between two pieces of one recording jumps in its sound: with joinFades, Clean Up's join fade on both
+		// sides (hard cuts by default)
 		let fades = 0;
-		if (cmd.joinFades !== false) {
+		if (cmd.joinFades === true) {
 			const rate = seq.settings.frameRate as Rational;
 			const faces = new Map<string, FaceSides>();
 			const covered = transitionJoins(seq);

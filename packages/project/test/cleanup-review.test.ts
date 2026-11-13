@@ -1,5 +1,6 @@
 // Reviewing a cleanup analysis (spec 14 TC-041…TC-043, TC-050): which media a finding belongs to and where it plays,
-// the rejections Apply remembers and forgets, and the Apply transaction (one undo step) on the golden recording.
+// the rejections Apply remembers and forgets, and the Apply transaction (one undo step) on the golden recording: hard
+// cuts with the built-in presets, join fades when the preset or the sequence's settings ask for them.
 import { describe, expect, it } from 'vitest';
 import {
 	cleanupApplyCommands,
@@ -7,7 +8,13 @@ import {
 	cleanupFindingMedia,
 	cleanupRejectionChanges,
 } from '../src/cleanup/review.ts';
-import { analyzeSequenceCleanup, type CleanupAnalysis, isAccepted } from '../src/cleanup/sequence.ts';
+import { NATURAL_SETTINGS } from '../src/cleanup/schema.ts';
+import {
+	analyzeSequenceCleanup,
+	type CleanupAnalysis,
+	isAccepted,
+	sequenceCleanupSettings,
+} from '../src/cleanup/sequence.ts';
 import { flicksPerFrame } from '../src/time.ts';
 import { GOLDEN_EVENTS, goldenSequence } from './cleanup-golden-fixture.ts';
 import { synthRecording } from './cleanup-synth.ts';
@@ -86,7 +93,7 @@ describe('cleanup review helpers', () => {
 			clipIds: b.plan.clipIds,
 			ranges: b.plan.ranges.map((r) => ({ start: r.start, end: r.end })),
 			mode: 'extract',
-			fadeMs: 4,
+			fadeMs: 0,
 			jlFrames: 0,
 		});
 		const before = H.seq;
@@ -118,5 +125,50 @@ describe('cleanup review helpers', () => {
 				(x) => x.type,
 			),
 		).toEqual(['cleanup.apply']);
+	});
+
+	it('Apply cuts hard with the built-in presets; a fadeMs in the settings fades every audio join', () => {
+		const fades = (H: ReturnType<typeof analyse>['H']) =>
+			Object.values(H.seq.clips).flatMap((c) => {
+				const f = (c as { edgeFades?: { inMs?: number; outMs?: number } }).edgeFades;
+				return f ? [f] : [];
+			});
+		const apply = (H: ReturnType<typeof analyse>['H'], a: CleanupAnalysis) => {
+			const before = H.doc;
+			H.ok(cleanupApplyCommands(H.seq.id, a, {}, new Set()));
+			return before;
+		};
+		// the default (Fast, nothing stored) and Natural: no edge fades anywhere
+		const { a, H } = analyse();
+		expect(a.plan.ranges.length).toBeGreaterThan(2);
+		expect(a.plan.fadeMs).toBe(0);
+		apply(H, a);
+		expect(fades(H)).toEqual([]);
+		const n = goldenSequence(rec);
+		const na = analyzeSequenceCleanup({
+			doc: n.H.doc,
+			seq: n.H.seq,
+			voice: () => rec.voice,
+			settings: NATURAL_SETTINGS,
+		});
+		if (!na.ok) throw new Error(na.message);
+		apply(n.H, na);
+		expect(fades(n.H)).toEqual([]);
+
+		// the sequence's stored settings ask for 6 ms fades: every cut edge of the speech fades, in one undo step
+		const g = goldenSequence(rec);
+		g.H.ok([{ type: 'cleanup.configure', settings: { overrides: { joins: { fadeMs: 6 } } } }]);
+		expect(sequenceCleanupSettings(g.H.seq).joins.fadeMs).toBe(6);
+		const b = analyzeSequenceCleanup({ doc: g.H.doc, seq: g.H.seq, voice: () => rec.voice });
+		if (!b.ok) throw new Error(b.message);
+		expect(b.plan.ranges.map((r) => [r.start, r.end])).toEqual(a.plan.ranges.map((r) => [r.start, r.end]));
+		const before = apply(g.H, b);
+		const got = fades(g.H);
+		expect(got.length).toBeGreaterThan(2);
+		for (const f of got) for (const ms of Object.values(f)) expect(ms).toBe(6);
+		// undo: the previous document has none
+		expect(Object.values(Object.values(before.sequences)[0]!.clips).filter((c) => 'edgeFades' in c)).toEqual(
+			[],
+		);
 	});
 });

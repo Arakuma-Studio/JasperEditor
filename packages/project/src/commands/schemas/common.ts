@@ -49,7 +49,7 @@ export const cmd = <T extends string, S extends z.ZodRawShape>(type: T, shape: S
 	z.strictObject({ type: z.literal(type), ...shape });
 
 /**
- * Join fades of a cut (default true): Clean Up's equal-power 4 ms `edgeFades` on the audio edges the cut makes, in the
- * same undo step; false keeps hard cuts.
+ * Join fades of a cut (default false: hard cuts): true gives the audio edges the cut makes Clean Up's equal-power 4 ms
+ * `edgeFades`, in the same undo step.
  */
 export const JoinFadesSchema = z.boolean();
