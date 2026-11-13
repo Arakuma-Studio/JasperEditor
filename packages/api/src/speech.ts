@@ -266,6 +266,13 @@ export const SpeechGuardReportSchema = z.object({
 });
 export type SpeechGuardReport = z.infer<typeof SpeechGuardReportSchema>;
 
+/**
+ * The model a transcription used instead of the default, which is not installed (the request named no model):
+ * `requested` = the default's id, `reason` in words.
+ */
+export const SpeechModelFallbackSchema = z.object({ requested: z.string(), reason: z.string() });
+export type SpeechModelFallback = z.infer<typeof SpeechModelFallbackSchema>;
+
 /** `EngineJob.result` of a `transcription` job. */
 export const TranscriptionResultSchema = z.object({
 	target: z.discriminatedUnion('type', [
@@ -280,6 +287,8 @@ export const TranscriptionResultSchema = z.object({
 		}),
 	]),
 	model: z.string(),
+	/** Present when `model` replaced the default model, which is not installed. */
+	modelFallback: SpeechModelFallbackSchema.optional(),
 	language: z.string(),
 	/** Probability of the detected language (null when the language was given). */
 	languageProbability: z.number().nullable(),

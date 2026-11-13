@@ -133,7 +133,7 @@ async function speechCall<T>(
 			const code = (e.detail as { code?: string } | undefined)?.code ?? e.code;
 			if (code === 'SPEECH_MODEL_NOT_INSTALLED')
 				throw new ToolError(
-					code,
+					'E_NO_SPEECH_MODEL',
 					e.message,
 					'Install it with install_speech_model (tell the user its size and licence), then retry.',
 				);
@@ -266,6 +266,7 @@ async function commit(
 			language: res.language,
 			languageProbability: res.languageProbability,
 			model: res.model,
+			...(res.modelFallback ? { modelFallback: res.modelFallback } : {}),
 			task: res.task,
 			speakers: Object.keys(res.speakers).length,
 			media: plan.media,

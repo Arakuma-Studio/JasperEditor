@@ -21,6 +21,7 @@ import {
 	type SpeechDeviceReport,
 	type SpeechFallback,
 	type SpeechModel,
+	type SpeechModelFallback,
 	type SpeechProbe,
 	type SpeechScoreRequest,
 	SpeechScoreRequestSchema,
@@ -81,8 +82,13 @@ type MediaInput = {
 	streamIndex: number | null;
 	options: TranscribeOptions;
 	durationSec?: number;
+	modelFallback?: SpeechModelFallback;
 };
-type SequenceInput = { target: 'sequence'; request: TranscribeSequenceRequest };
+type SequenceInput = {
+	target: 'sequence';
+	request: TranscribeSequenceRequest;
+	modelFallback?: SpeechModelFallback;
+};
 
 type WorkerRun<T> = {
 	out: T | null;
@@ -613,8 +619,12 @@ export class SpeechService {
 
 	// ---------------------------------------------------------------- jobs
 
-	/** Validates the model choice (sync errors become HTTP 4xx). */
-	private async checkModel(o: TranscribeOptions): Promise<string> {
+	/**
+	 * Validates the model choice (sync errors become HTTP 4xx). A model the caller named must be installed; when the
+	 * caller named none and the default is not installed, the best installed model that fits is used instead
+	 * (`SpeechModelStore.fallbackFor`) and reported as `fallback`.
+	 */
+	private async checkModel(o: TranscribeOptions): Promise<{ id: string; fallback?: SpeechModelFallback }> {
 		const id = o.model ?? this.models.defaultId();
 		const e = this.models.entry(id);
 		if (!e) throw new JobError('SPEECH_MODEL_UNKNOWN', `Unknown speech model ${id}`, false);
@@ -626,13 +636,26 @@ export class SpeechService {
 				`${e.name} is English-only; choose a multilingual model for "${o.language}"`,
 				false,
 			);
-		if (!(await this.models.installed(e)))
-			throw new JobError(
-				'SPEECH_MODEL_NOT_INSTALLED',
-				`The speech model ${e.name} is not downloaded. Download it in Preferences ▸ Transcription (or install_speech_model).`,
-				false,
-			);
-		return id;
+		if (await this.models.installed(e)) return { id };
+		if (!o.model) {
+			// an English-only model only for English speech; translation needs a multilingual one
+			const fits = (x: SpeechCatalogEntry) =>
+				x.multilingual || (o.language === 'en' && o.task !== 'translate');
+			const alt = await this.models.fallbackFor(id, fits);
+			if (alt)
+				return {
+					id: alt.id,
+					fallback: {
+						requested: id,
+						reason: `the default model ${e.name} is not downloaded; used ${alt.name}, the best installed one`,
+					},
+				};
+		}
+		throw new JobError(
+			'SPEECH_MODEL_NOT_INSTALLED',
+			`The speech model ${e.name} is not downloaded. Download it in Preferences ▸ Transcription (or install_speech_model).`,
+			false,
+		);
 	}
 
 	private audioStreamOf(record: MediaRecord, streamIndex: number | undefined): number {
@@ -650,7 +673,7 @@ export class SpeechService {
 		const record = this.core.registry.get(mediaKey);
 		if (!record) throw new JobError('ASSET_NOT_FOUND', 'Unknown media key', false);
 		const stream = this.audioStreamOf(record, req.streamIndex);
-		const model = await this.checkModel(req);
+		const { id: model, fallback } = await this.checkModel(req);
 		const options: TranscribeOptions = { ...pickOptions(req), model };
 		const duration = Number((record.probe as { duration?: unknown }).duration);
 		const input: MediaInput = {
@@ -659,6 +682,7 @@ export class SpeechService {
 			streamIndex: stream,
 			options,
 			...(Number.isFinite(duration) && duration > 0 ? { durationSec: duration } : {}),
+			...(fallback ? { modelFallback: fallback } : {}),
 		};
 		return this.core.queue.submit({
 			kind: 'transcription',
@@ -680,7 +704,7 @@ export class SpeechService {
 		origin: EngineJob['origin'] = { type: 'user' },
 	): Promise<EngineJob> {
 		const planned = await this.plan(req); // plan errors surface synchronously
-		const model = await this.checkModel(req);
+		const { id: model, fallback } = await this.checkModel(req);
 		const doc = req.envelope.document as {
 			projectId?: string;
 			sequences?: Record<string, { name?: string }>;
@@ -697,7 +721,11 @@ export class SpeechService {
 			origin,
 			...(projectId ? { projectId } : {}),
 			dedupeKey: `transcribe-seq:${req.sequenceId}:${mixFingerprint(planned.document, planned.sequenceId)}:${planned.range.start}-${planned.range.end}:${hashOf(pickOptions(request))}`,
-			input: { target: 'sequence', request } satisfies SequenceInput,
+			input: {
+				target: 'sequence',
+				request,
+				...(fallback ? { modelFallback: fallback } : {}),
+			} satisfies SequenceInput,
 			stage: 'Queued',
 		});
 	}
@@ -915,6 +943,7 @@ export class SpeechService {
 		return {
 			target,
 			model: modelId,
+			...(input.modelFallback ? { modelFallback: input.modelFallback } : {}),
 			language: out.language,
 			languageProbability: out.languageProbability,
 			task: out.task,
@@ -1016,7 +1045,7 @@ export class SpeechService {
 		const record = this.core.registry.get(req.mediaId);
 		if (!record) throw new JobError('ASSET_NOT_FOUND', 'Unknown media key', false);
 		const stream = this.audioStreamOf(record, req.streamIndex);
-		const modelId = await this.checkModel({
+		const { id: modelId } = await this.checkModel({
 			...(req.model ? { model: req.model } : {}),
 			language: req.language,
 		});

@@ -431,6 +431,7 @@ describe('speech MCP tools', () => {
 		expect((await call('transcribe', { mediaId: engine.a, sequenceId: engine.seqId })).isError).toBe(true);
 		const r = await call('transcribe', { mediaId: engine.a, model: 'whisper-small' });
 		expect(r.isError).toBe(true);
+		expect(JSON.stringify(r.body)).toContain('E_NO_SPEECH_MODEL');
 		expect(JSON.stringify(r.body)).toContain('install_speech_model');
 	});
 });

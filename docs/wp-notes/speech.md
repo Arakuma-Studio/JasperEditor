@@ -515,6 +515,15 @@ whisper evaluation (53 configurations; the numbers of spec 16 §0). This section
 - Recommendation (SG-021, `recommendModel`): a usable GPU → turbo (fp16 only with CUDA and ≥ 6 GB VRAM — deviation:
   the spec also lists WebGPU, but with WebGPU the decoder stays on the CPU where fp16 is 2–4× slower); CPU only with
   ≥ 16 GB (≥ 15.5 GiB reported) and ≥ 8 cores → turbo fp32; else small. The engine default follows it.
+- Default not installed (reported: the default became `whisper-large-v3-turbo-fp16` while only the fp32 turbo was
+  downloaded, and every `transcribe` without a model failed): a request that names no model runs on the best
+  installed model that fits (`SpeechModelStore.fallbackFor`: the same model in another precision first — same
+  revision, size and languages, fp32 before fp16 — then the largest installed, GPU-only models last; English-only
+  models only for `language: "en"` without translation), and the result carries `modelFallback {requested, reason}`
+  (the MCP transcribe report too). A request that names an uninstalled model is refused as before
+  (`SPEECH_MODEL_NOT_INSTALLED`, HTTP 409; MCP `E_NO_SPEECH_MODEL` with the `install_speech_model` hint). The web
+  dialogs always name their model, so they are unchanged. Test: `apps/engine/test/speech-model-fallback.test.ts`
+  (fails before: 409).
 - Downloads (SG-022, `tools/download.ts`, shared by the speech, vision and Describe-it stores and the CUDA provider):
   `.partial` files resumed with HTTP Range after a transient error (network, 408/425/429/5xx) with exponential
   backoff (1 s, 2 s, … 5 retries), a server that ignores Range restarts the file (the only restart), the sha256 covers

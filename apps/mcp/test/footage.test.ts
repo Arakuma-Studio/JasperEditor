@@ -362,7 +362,7 @@ describe('import_media transcribe (AF-DIG-003)', () => {
 			imported: Array<{ transcription?: { error?: { code: string } } }>;
 			transcriptionJobs?: unknown;
 		};
-		expect(m.imported[0]!.transcription!.error!.code).toBe('SPEECH_MODEL_NOT_INSTALLED');
+		expect(m.imported[0]!.transcription!.error!.code).toBe('E_NO_SPEECH_MODEL');
 		expect(m.transcriptionJobs).toBeUndefined();
 	});
 
