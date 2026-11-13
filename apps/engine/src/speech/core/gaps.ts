@@ -9,7 +9,13 @@
 // time order; spans that do not fit are counted as skipped.
 //
 // Frames are 10 ms (160 samples at 16 kHz); word times are 16 kHz samples.
-import { cleanupNorm, foreignScriptWord, sameWord } from '@jasper/project/cleanup-worker';
+import {
+	cleanupNorm,
+	foreignScriptWord,
+	sameWord,
+	secondsPerSyllable,
+	stretchedWord,
+} from '@jasper/project/cleanup-worker';
 import { placeWord } from './align.ts';
 import { VAD_FRAME } from './vad.ts';
 
@@ -126,9 +132,11 @@ export function mergeRecoveredWords<W extends { start: number; end: number }>(
 // word times over both takes; decoding a few seconds around it alone, without the previous text, writes every take
 // with correct times. Three traces mark such places:
 //
-// - a stretched word: longer than `STRETCH_MIN_FRAMES` (1 s; normal words last 0.2–0.4 s) over continuous speech,
-//   i.e. at least `STRETCH_VOICED_SHARE` of its frames voiced (a word stretched over a pause is not continuous
-//   speech: word-bound refinement trims it, and nothing is hidden there);
+// - a stretched word: longer than `STRETCH_MIN_FRAMES` (1 s; normal words last 0.2–0.4 s) — or, measured against the
+//   speaker's own pace, at least 0.6 s and three times what its syllables take (`stretchedWord`, shared with Clean Up;
+//   cleanup work note "Round 12") — over continuous speech, i.e. at least `STRETCH_VOICED_SHARE` of its frames voiced
+//   (a word stretched over a pause is not continuous speech: word-bound refinement trims it, and nothing is hidden
+//   there);
 // - short wordless voice: ≥ `SHORT_GAP_MIN_VOICED_FRAMES` (0.35 s) of voiced frames that no word covers within
 //   `COVER_MARGIN_FRAMES` (50 ms), voice closer than `SHORT_GAP_JOIN_FRAMES` (100 ms) joining;
 // - a garbled word: one holding letters of another writing system than the transcript's language
@@ -145,6 +153,8 @@ export function mergeRecoveredWords<W extends { start: number; end: number }>(
 
 /** A word longer than this many frames (1 s) over continuous speech is stretched. */
 export const STRETCH_MIN_FRAMES = 100;
+/** 10 ms VAD frames per second. */
+const FRAMES_PER_SECOND = 100;
 /** Share of a word's frames that must be voiced for it to lie over continuous speech. */
 export const STRETCH_VOICED_SHARE = 0.5;
 /** Voiced frames (0.35 s) wordless voice needs to be suspect. */
@@ -184,11 +194,23 @@ export type SuspectWindow = {
 
 type Timed = { start: number; end: number };
 
-/** Whether `w` (samples) is a stretched word over continuous speech in `mask` (see the section docs). */
-export function isStretchedWord(w: Timed, mask: ArrayLike<number>): boolean {
+/**
+ * Whether `w` (samples) is a stretched word over continuous speech in `mask` (see the section docs); with the
+ * speaker's `pace` (seconds per syllable, `secondsPerSyllable`) and the word's text, also a shorter word that lasts
+ * three times its expected duration.
+ */
+export function isStretchedWord(
+	w: Timed & { text?: string },
+	mask: ArrayLike<number>,
+	pace: number | null = null,
+): boolean {
 	const a = Math.max(0, Math.floor(w.start / VAD_FRAME));
 	const b = Math.min(mask.length, Math.ceil(w.end / VAD_FRAME));
-	if ((w.end - w.start) / VAD_FRAME <= STRETCH_MIN_FRAMES || b <= a) return false;
+	const frames = (w.end - w.start) / VAD_FRAME;
+	const long =
+		frames > STRETCH_MIN_FRAMES ||
+		(w.text !== undefined && stretchedWord(w.text, frames / FRAMES_PER_SECOND, pace));
+	if (!long || b <= a) return false;
 	let v = 0;
 	for (let f = a; f < b; f++) if (mask[f]! > 0) v++;
 	return v >= STRETCH_VOICED_SHARE * (b - a);
@@ -207,8 +229,11 @@ export function suspectWindows(
 ): { windows: SuspectWindow[]; skipped: number } {
 	const frames = mask.length;
 	const traces: Array<Omit<SuspectWindow, 'edges'>> = [];
+	const pace = secondsPerSyllable(
+		words.map((w) => ({ text: w.text, seconds: (w.end - w.start) / VAD_FRAME / FRAMES_PER_SECOND })),
+	);
 	for (const w of words) {
-		const stretched = isStretchedWord(w, mask) ? 1 : 0;
+		const stretched = isStretchedWord(w, mask, pace) ? 1 : 0;
 		const garbled = foreignScriptWord(w.text, language) ? 1 : 0;
 		if (stretched || garbled)
 			traces.push({

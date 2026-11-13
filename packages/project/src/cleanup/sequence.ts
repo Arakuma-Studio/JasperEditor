@@ -19,7 +19,11 @@ import {
 	type DetectResult,
 	detectCleanup,
 	FR,
+	phraseTailEnd,
+	phraseTailFrom,
 	silentFrame,
+	voicedFrame,
+	wordPeakDb,
 } from './detector.ts';
 import { snapEdge } from './edges.ts';
 import { cleanupLanguageOf } from './lists.ts';
@@ -533,7 +537,11 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 				const removedTimes = words
 					.filter((_, k) => inClip[k] && removedNow[k])
 					.map((w) => [w.s, w.e] as Span);
-				keepTail(clip, rate, run.voice, extent, keptFrames[keptFrames.length - 1]!, removedTimes);
+				const lastKept = words.reduce<(typeof words)[number] | null>(
+					(m, w, k) => (inClip[k] && !removedNow[k] && (!m || w.e > m.e) ? w : m),
+					null,
+				);
+				keepTail(clip, rate, run.voice, extent, keptFrames[keptFrames.length - 1]!, removedTimes, lastKept);
 			}
 			clipPlans.push({ clip, run, keptFrames, extent });
 		}
@@ -775,13 +783,11 @@ function subtractSpans(
 	return { kept: outK, tight: outT };
 }
 
-/** How far (seconds) the last kept piece of a clip may grow over the decay of its last word. */
-const TAIL_DECAY_MAX_S = 0.25;
-
 /**
- * Grows the last kept piece `last` (sequence frames, in place) over the fading decay after it — frames above measured
- * silence (`silentFrame`), outside removed words' times — to the frame holding the first silent one,
- * within `TAIL_DECAY_MAX_S` and the clip.
+ * Grows the last kept piece `last` (sequence frames, in place) over the fading decay after it and some air, within
+ * the clip and outside removed words' times: after the clip's last kept word `word` when the piece holds it, its
+ * phrase-final tail (`phraseTailEnd`: to measured silence relative to the word's loudest frame, then up to 80 ms of
+ * silence); else to the first silent frame after the piece and the same air.
  */
 function keepTail(
 	clip: Pick<Clip, 'start' | 'sourceIn'>,
@@ -790,18 +796,25 @@ function keepTail(
 	extent: readonly [number, number],
 	last: [number, number],
 	removedTimes: readonly Span[],
+	word: { s: number; e: number } | null,
 ): void {
 	const F = flicksPerFrame(rate);
-	const t = (clip.sourceIn + (last[1] - clip.start) * F) / FLICKS_PER_SECOND;
-	let k = Math.max(0, Math.floor(t / FR + 1e-9));
-	const max = k + Math.round(TAIL_DECAY_MAX_S / FR);
+	const mediaS = (f: number) => (clip.sourceIn + (f - clip.start) * F) / FLICKS_PER_SECOND;
+	const t = mediaS(last[1]);
+	const inPiece = !!word && word.e > mediaS(last[0]) && word.s < t;
+	const peak = inPiece ? wordPeakDb(voice, word) : Number.POSITIVE_INFINITY;
+	const from = inPiece ? phraseTailFrom(voice, word, peak) : Math.max(0, Math.floor(t / FR + 1e-9));
 	const inRemoved = (x: number) => removedTimes.some(([a, b]) => a < (x + 1) * FR && b > x * FR);
-	while (k < Math.min(max, voice.frameCount) && !silentFrame(voice, k) && !inRemoved(k)) k++;
-	const endS = k * FR;
+	let limit = from;
+	while (limit < voice.frameCount && limit - from < 2 * TAIL_FRAMES && !inRemoved(limit)) limit++;
+	const endS = phraseTailEnd(voice, peak, from, limit) * FR;
 	if (endS <= t + 1e-9) return;
 	const f = clip.start + Math.ceil((endS * FLICKS_PER_SECOND - clip.sourceIn) / F - 1e-9);
 	last[1] = Math.max(last[1], Math.min(extent[1], f));
 }
+
+/** Frames (10 ms) a clip's last piece may grow by: the decay walk's 0.25 s and the air after it. */
+const TAIL_FRAMES = 25;
 
 /**
  * The kept frames of a clip with every frame added back that the accepted findings do not explain: a sequence frame
@@ -809,7 +822,7 @@ function keepTail(
  * silence (`silentFrame`; the frame grid cannot follow a finding's edge exactly). Without a voice analysis there is
  * no tolerance. At the start of an accepted removal of words (`wordStarts`) in continuous voice (speech or silence in
  * every 10 ms before it in that frame) the frame at or before it may go: the frame grid cannot split the sound between
- * two words, and the removed word goes whole — its finding starts at the quietest point before it (`startValley`). A frame holding speech of `protect`
+ * two words, and the removed word goes whole — its finding starts at the quietest point before it (`startValley`). A frame holding speech or voiced sound (quiet speech, round 12) of `protect`
  * (voice without words whose finding is not accepted, outside accepted removals of words) stays whatever else covers
  * it: no pause or breath takes it (round 7).
  */
@@ -872,7 +885,7 @@ function keepUnexplained(
 		else {
 			const k1 = Math.min(voice.frameCount, Math.ceil(b / FR - 1e-9));
 			for (let k = Math.max(0, Math.floor(a / FR + 1e-9)); k < k1; k++)
-				if (voice.classes[k] === VOICE_CLASS_SPEECH)
+				if (voice.classes[k] === VOICE_CLASS_SPEECH || voicedFrame(voice, k))
 					parts.push([Math.max(a, k * FR), Math.min(b, (k + 1) * FR)]);
 		}
 		for (const p of parts) {

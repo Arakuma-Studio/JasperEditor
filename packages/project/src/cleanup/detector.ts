@@ -48,6 +48,7 @@ import type {
 	RuleAction,
 } from './schema.ts';
 import { ScriptIndex, scriptLines, scriptTokens } from './script.ts';
+import { STRETCH_ABS_S, secondsPerSyllable, stretchedWord } from './stretch.ts';
 import type { VoiceAnalysis } from './voice-analysis.ts';
 
 /** Seconds per voice-analysis frame. */
@@ -605,7 +606,13 @@ export function detectCleanup(input: DetectInput): DetectResult {
 	const frameRaw: FrameFinding[] = [];
 	const sound: Array<[number, number]> = words.map((w) => [w.s, w.e]);
 	if (voice) {
-		const ff = frameFindings(voice, words, settings, frameRegions(voice, words, spans, voice.frameCount));
+		const ff = frameFindings(
+			voice,
+			words,
+			settings,
+			frameRegions(voice, words, spans, voice.frameCount),
+			secondsPerSyllable(words.map((w) => ({ text: w.text, seconds: w.e - w.s }))),
+		);
 		frameRaw.push(...ff.findings);
 		// the frames of its time (a frame holding its first or last sample is the word's), and the voice it holds
 		ff.sound.forEach(([a, b], k) => {
@@ -767,7 +774,8 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			r.words[0] !== r.words[1] ||
 			r.suggested !== 'review' ||
 			!(r.kind === 'asr-suspect' || r.kind === 'filler-lexical') ||
-			r.end - r.start >= SLIVER_S * FLICKS_PER_SECOND
+			// the word's own time (its sound holds the decay and air a phrase-final word keeps: round 12)
+			(r.fp ? r.fp[1] - r.fp[0] : r.end - r.start) >= SLIVER_S * FLICKS_PER_SECOND
 		)
 			continue;
 		const before = pauses.some((q) => touches(q.end, r.start));
@@ -1004,11 +1012,11 @@ function reasonOf(
 const UNCOVERED_MARGIN_S = 0.15;
 
 /**
- * A word longer than this (seconds) over continuous voice is stretched (the speech worker's hidden-take trace,
- * docs/wp-notes/speech.md §11.3)…
+ * A word longer than this (seconds) holds other sound: no pause protects its inside (`wordHold`). The stretched-word
+ * finding uses the speaker's pace as well (`stretchedWord`, round 12).
  */
-const STRETCHED_WORD_S = 1;
-/** … and holds its first this many seconds; the voice after that is flagged. *Assumption* (run 5, H and G). */
+const STRETCHED_WORD_S = STRETCH_ABS_S;
+/** A stretched word holds its first this many seconds; the voice after that is flagged. *Assumption* (run 5, H and G). */
 const WORD_HOLD_S = 0.5;
 /**
  * Voice running on after a word's time to the end of its speech run, at most this long (seconds), is the word's tail.
@@ -1084,6 +1092,8 @@ function frameFindings(
 	words: readonly AWord[],
 	settings: CleanupSettings,
 	regions: ReadonlyArray<readonly [number, number]>,
+	/** The speaker's median seconds per syllable (`secondsPerSyllable`), null when unmeasured. */
+	pace: number | null = null,
 ): { findings: FrameFinding[]; sound: Array<[number, number]> } {
 	const out: FrameFinding[] = [];
 	const sound = words.map((): [number, number] => [Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]);
@@ -1125,6 +1135,9 @@ function frameFindings(
 			}
 		});
 		const isSpeech = (f: number) => voice.classes[f] === VOICE_CLASS_SPEECH;
+		// quiet speech is voice too: never a pause, untranscribed voice unless a word holds it (round 12)
+		const qs = quietSpeech(voice, lo, hi, minU);
+		const isVoice = (f: number) => isSpeech(f) || qs[f - lo] === 1;
 		// the frames of every word's time (a join's pause never takes any of them: round 11, B1)
 		const timeOf = new Uint8Array(n);
 		for (const w of words) {
@@ -1174,13 +1187,13 @@ function frameFindings(
 			utr.push([a, b]);
 		};
 		for (let f = lo; f < hi; ) {
-			if (!isSpeech(f)) {
+			if (!isVoice(f)) {
 				f++;
 				continue;
 			}
 			let g = f;
 			let any = false;
-			while (g < hi && isSpeech(g)) {
+			while (g < hi && isVoice(g)) {
 				if (owner[g - lo] >= 0) any = true;
 				g++;
 			}
@@ -1262,7 +1275,7 @@ function frameFindings(
 		};
 		for (let f = lo; f < hi; ) {
 			const gapAt = (x: number) =>
-				(!isSpeech(x) || blip[x - lo] === 1) && quiet[x - lo] === 0 && inWord[x - lo] === 0;
+				(!isVoice(x) || blip[x - lo] === 1) && quiet[x - lo] === 0 && inWord[x - lo] === 0;
 			if (!gapAt(f)) {
 				f++;
 				continue;
@@ -1273,7 +1286,12 @@ function frameFindings(
 				// only a word's fading tail goes with a pause: voice without words before it stays unless its own finding is
 				// accepted (round 7: a pause took 0.227 s of an unaccepted untranscribed finding at −34…−51 dBFS), and so does
 				// every frame of a word's time (round 11: pauses took the quiet words "las", "3", "que..." whole)
-				const [pa, pb] = pauseEdges(voice, settings, lo, hi, f, g, decayFrame);
+				let [pa, pb] = pauseEdges(voice, settings, lo, hi, f, g, decayFrame);
+				// a phrase-final word — one ending a sentence, or the last before a region's tail — keeps its fading decay to
+				// measured silence relative to its own level and some air after it (round 12)
+				const k = soundSide(f - 1, -1)[0];
+				if (k >= 0 && f > lo && pb > pa && (g === hi || phraseFinal(words[k]!.text)))
+					pa = Math.max(pa, phraseTailEnd(voice, peakOf(k), f, pb));
 				if (pb > pa) push('pause', settings.rules.pause, pa, pb);
 				// the rising onset before the speech after the pause and a tail's fading decay are that speech's sound
 				const r = soundSide(g, 1);
@@ -1291,12 +1309,13 @@ function frameFindings(
 			f = g;
 		}
 		for (const [a, b] of utr) push('untranscribed', settings.rules.untranscribed, a, b);
-		// a word stretched over continuous voice (longer than `STRETCHED_WORD_S`, at least half its frames speech) holds
-		// more than a word: its speech after the first `WORD_HOLD_S` may be a take the transcript holds once, which the
-		// re-decode did not fix (run 5, fragment H: "rápida" over 2.2 s of speech at −10 to −24 dBFS) — untranscribed
-		// voice for review, its text the word
+		// a word stretched over continuous voice (longer than 1 s, or three times what its syllables take at the speaker's
+		// pace — `stretchedWord`, round 12: a restart written as one word under 1 s; at least half its frames
+		// speech) holds more than a word: its speech after the first `WORD_HOLD_S` may be a take the transcript holds once,
+		// which the re-decode did not fix (run 5, fragment H: "rápida" over 2.2 s of speech at −10 to −24 dBFS) —
+		// untranscribed voice for review, its text the word
 		for (const w of words) {
-			if (w.e - w.s <= STRETCHED_WORD_S) continue;
+			if (!stretchedWord(w.text, w.e - w.s, pace)) continue;
 			const [a, b] = wordFrames(w);
 			const [x, y] = [Math.max(lo, a), Math.min(hi, b)];
 			let n = 0;
@@ -1351,6 +1370,73 @@ function frameFindings(
 		}
 	}
 	return { findings: out, sound };
+}
+
+/** Quiet speech peaks within this many dB of the file's speech level (round 12: "es un keke." ≈ 20 dB under it). */
+const QUIET_SPEECH_DB = 25;
+/** Between two syllables the level dips at least this far under both vowels. */
+const SYLLABLE_DIP_DB = 6;
+
+/**
+ * Speech the classes call non-speech because it is quiet (round 12: the phrase "es un keke.", spoken ≈ 20 dB under the
+ * speech level, was cut as a pause): over `[lo, hi)`, a run of frames that are not speech and above measured silence
+ * (measured silence of at most `VOICED_BREAK_FRAMES` inside), at least `minFrames` long, peaking within
+ * `QUIET_SPEECH_DB` of the file's speech level, holding two vowels (`VOWEL_MIN_FRAMES` voiced frames in a row) with a
+ * dip of `SYLLABLE_DIP_DB` under both between them — rising and falling like syllables, unlike a hum, a breath or a
+ * decay. 1 per frame of such runs. Nothing without the voicing plane or levels. *Assumption*, labelled: one reported
+ * phrase; the thresholds are the reporter's description (voiced, rising / falling, 15–25 dB under the speech level).
+ */
+function quietSpeech(voice: CleanupVoice, lo: number, hi: number, minFrames: number): Uint8Array {
+	const out = new Uint8Array(Math.max(0, hi - lo));
+	const speech = voice.levels.speechDb;
+	if (!voice.voicing || speech === null || voice.levels.floorDb === null) return out;
+	const cand = (k: number) => voice.classes[k] !== VOICE_CLASS_SPEECH && !silentFrame(voice, k);
+	for (let f = lo; f < hi; ) {
+		if (!cand(f)) {
+			f++;
+			continue;
+		}
+		// the run, with short silences inside, ending at its last candidate frame
+		let g = f + 1;
+		let end = g;
+		for (let gap = 0; g < hi && voice.classes[g] !== VOICE_CLASS_SPEECH && gap <= VOICED_BREAK_FRAMES; g++) {
+			if (cand(g)) {
+				gap = 0;
+				end = g + 1;
+			} else gap++;
+		}
+		if (end - f >= minFrames) {
+			let peak = Number.NEGATIVE_INFINITY;
+			for (let k = f; k < end; k++) peak = Math.max(peak, levelDbAt(voice, k));
+			// the vowels: their loudest frame, and the quietest frame since the vowel before
+			const vowels: Array<{ peak: number; dip: number }> = [];
+			let run = 0;
+			let dip = Number.POSITIVE_INFINITY;
+			let cur: { peak: number; dip: number } | null = null;
+			for (let k = f; k < end; k++) {
+				const db = levelDbAt(voice, k);
+				if (voicedFrame(voice, k)) {
+					run++;
+					if (run === VOWEL_MIN_FRAMES) {
+						cur = { peak: Number.NEGATIVE_INFINITY, dip };
+						for (let x = k - run + 1; x <= k; x++) cur.peak = Math.max(cur.peak, levelDbAt(voice, x));
+						vowels.push(cur);
+					} else if (cur && run > VOWEL_MIN_FRAMES) cur.peak = Math.max(cur.peak, db);
+				} else {
+					if (run >= VOWEL_MIN_FRAMES) dip = Number.POSITIVE_INFINITY;
+					run = 0;
+					cur = null;
+					dip = Math.min(dip, db);
+				}
+			}
+			const syllables = vowels.some(
+				(v, i) => i > 0 && v.dip <= Math.min(v.peak, vowels[i - 1]!.peak) - SYLLABLE_DIP_DB,
+			);
+			if (syllables && peak >= speech - QUIET_SPEECH_DB) out.fill(1, f - lo, end - lo);
+		}
+		f = Math.max(end, f + 1);
+	}
+	return out;
 }
 
 /**
@@ -1534,6 +1620,58 @@ const PAUSE_EDGE_MAX_S = 0.25;
  * the conservative end of the 25–30 dB the round-11 report proposes; not calibrated against the user's cuts.
  */
 const DECAY_BELOW_PEAK_DB = 30;
+
+/** Air (seconds) kept after a phrase-final word's decay where measured silence follows (round 12; 60–100 ms asked). */
+const TAIL_PAD_S = 0.08;
+
+/** Whether a word ends a sentence (". ? !"), not written broken off ("…", "..."). */
+export function phraseFinal(text: string): boolean {
+	const t = text.trim();
+	return /[.?!]["'»”’)]*$/u.test(t) && !/(\.\.\.|…)["'»”’)]*[?!]?$/u.test(t);
+}
+
+/** The loudest frame (dB) over a word's time. */
+export function wordPeakDb(voice: CleanupVoice, w: { s: number; e: number }): number {
+	const [a, b] = wordFrames(w);
+	let p = Number.NEGATIVE_INFINITY;
+	for (let f = Math.max(0, a); f < Math.min(voice.frameCount, b); f++) p = Math.max(p, levelDbAt(voice, f));
+	return p;
+}
+
+/**
+ * The frame (exclusive) where the kept end of a phrase-final word lies (round 12: joins cut 30–180 ms of the soft ends
+ * of "azul.", "verdad.", "lo arreglen."). From frame `from` it keeps the word's fading decay — frames that are not both
+ * measured silence and `DECAY_BELOW_PEAK_DB` under the word's loudest frame `peak` (a quiet word's tail near the floor
+ * still sounds), never rising more than `SILENCE_DB` over the quietest frame so far (an onset), within
+ * `PAUSE_EDGE_MAX_S` — then `TAIL_PAD_S` of the measured silence after it (at most half of it, so a cut stays), never
+ * at or past frame `limit`.
+ */
+export function phraseTailEnd(voice: CleanupVoice, peak: number, from: number, limit: number): number {
+	const end = Math.min(limit, voice.frameCount);
+	const max = Math.round(PAUSE_EDGE_MAX_S / FR);
+	const quiet = (k: number) => silentFrame(voice, k) && levelDbAt(voice, k) < peak - DECAY_BELOW_PEAK_DB;
+	let x = Math.max(0, from);
+	let low = Number.POSITIVE_INFINITY;
+	while (x < end && x - from < max && !quiet(x) && levelDbAt(voice, x) <= low + SILENCE_DB) {
+		low = Math.min(low, levelDbAt(voice, x));
+		x++;
+	}
+	const pad = Math.round(TAIL_PAD_S / FR);
+	let run = 0;
+	while (x + run < end && run < 2 * pad && silentFrame(voice, x + run)) run++;
+	return x + Math.min(pad, Math.floor(run / 2));
+}
+
+/**
+ * The first frame after a phrase-final word's time that its kept end starts from: past the last frame of its time that
+ * is not both measured silence and `DECAY_BELOW_PEAK_DB` under its loudest frame (`phraseTailEnd`).
+ */
+export function phraseTailFrom(voice: CleanupVoice, w: { s: number; e: number }, peak: number): number {
+	const [a, b] = wordFrames(w);
+	let k = Math.min(b, voice.frameCount);
+	while (k > a && silentFrame(voice, k - 1) && levelDbAt(voice, k - 1) < peak - DECAY_BELOW_PEAK_DB) k--;
+	return k;
+}
 
 /**
  * What a pause removes of the gap `[f, g)` (frames) between `lo` and `hi`: before speech that follows, it ends at the
