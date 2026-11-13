@@ -508,7 +508,13 @@ export function reasonText(f: CleanupFinding): string {
 		case 'breath':
 			return t('Breath of {0} s', s);
 		case 'untranscribed':
-			// the voice a stretched word holds (`text` = the word)
+			// the voice a stretched word holds, or the fragment of a restart inside a word (`restart`; `text` = the word)
+			if (p.restart)
+				return t(
+					'Possible restart inside the word “{0}” ({1} s): its start may be an abandoned attempt',
+					text,
+					s,
+				);
 			return text
 				? t('Speech inside the stretched word “{0}” ({1} s): maybe a take written once', text, s)
 				: t('Voice without words ({0} s): a dropped filler, a laugh or a mumble', s);

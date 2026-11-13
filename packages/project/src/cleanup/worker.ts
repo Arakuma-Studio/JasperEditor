@@ -3,6 +3,7 @@
 // root would load the whole model each time (about 7 s), and every feature added to the root would slow it further. Everything
 // here is also exported from the package root.
 
+export { wordDip } from './dip.ts';
 export { cleanupNorm, foreignScriptWord, sameWord } from './lists.ts';
 export { lcs } from './rules.ts';
 export { secondsPerSyllable, stretchedWord } from './stretch.ts';

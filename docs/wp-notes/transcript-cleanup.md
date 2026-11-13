@@ -819,7 +819,7 @@ editing it; tests in `cleanup-slivers-tails.test.ts` and `apps/engine/test/speec
   take 0.72 s at the speaker's pace, so 0.95 s is 1.3× — and the same speaker's clean "extremadamente" in run 9 (AG)
   lasted 0.88 / 0.92 s (1.22 / 1.28×). Duration cannot separate them; a ratio that low would flag hundreds of normal
   words. A restart inside a word needs another trace (a pause or a level dip inside the word's time, a second onset),
-  which this round does not add.
+  which this round does not add (round 13 adds the level dip).
 - Corpus at the end of the round (Fast, corpus voice): dev 0.997 (2303 / 2311) / 0.960 (0.996 with asides proposed),
   held out 1.000 (338 / 338) / 0.973, held-out-r7 0.998 (479 / 480) / 0.870 (0.984), held-out-r9 0.992 (260 / 262) /
   0.976, held-out-r11 1.000 (65 / 65) / 1.000 — identical to round 11 (the corpus voice has speech under every word
@@ -828,6 +828,61 @@ editing it; tests in `cleanup-slivers-tails.test.ts` and `apps/engine/test/speec
   removals, or rejected) stays shorter than the minimum; the 80 ms pad, the 25 dB / 6 dB quiet-speech thresholds and
   the 3× / 0.6 s stretch rule need the real-audio rerun on the reporter's project; the syllable count is a vowel-group
   approximation (digits have none: the 1 s rule only).
+
+**Round 13** (the round-12 limit: "y es extra… ¡extremadamente!", reporter's file 244.7–245.8 s, written as one
+"extremadamente" of 0.95 s at 244.76–245.75 — the same length as the speaker's clean one). Reporter's envelope
+measurement: −15 to −24 dBFS from 244.71 to 245.04 (the "extra-" fragment), −41 dBFS at 245.05–245.06, the whole word
+loud from 245.09; on the cut mixdown the VAD-chunked decode wrote "extra… ¡Extremadamente!" as two words.
+- **Restart dip** (`wordDip`, `packages/project/src/cleanup/dip.ts`, shared by the speech worker and Clean Up; levels
+  per 10 ms frame). Inside a word of ≥ 3 syllables (vowel groups), a run of ≥ 2 frames (20 ms) at least 15 dB under the
+  word's median level, none within 60 ms of the word's edges and at least 150 ms into it, entered from a frame within
+  6 dB of the median within the 30 ms before it (the fragment breaks off at full voice), followed within 40 ms by a rise
+  of ≥ 10 dB over the dip's floor, with at least 0.75 × syllables × the speaker's pace (`secondsPerSyllable`; none
+  without a pace) left after it — time for the whole word again. The reported word: depth ≈ 22 dB, fragment 0.29 s of
+  the word, 0.68 s after the dip = 0.94 of six syllables at 0.12 s.
+- *Measured* false trips on clean speech (no restarts expected; one-off script over the shipped function, word times
+  of whisper-tiny / tiny.en after refinement, both level measures — the worker's 10 ms frame RMS and the voice
+  analysis' 25 ms level; build host, CPU): three LibriVox Spanish readings (public domain, "Relatos y Cuentos Vol. 001"
+  chapters 2, 7, 10, 22 min, 3,119 words, pace 0.16 s) and `fixtures/media/lj-long.flac` (1,727 words, the 71.6 s LJ
+  composite 11 times, pace 0.17 s):
+
+  | Rule | Spanish, 10 ms / 25 ms | LJ, 10 ms / 25 ms |
+  |---|---|---|
+  | depth 15 dB, 20 ms, onset 10 dB within 40 ms, 60 ms edges (the brief) | 506 (16.2 %) / 495 (15.9 %) | 552 (32.0 %) / 520 (30.1 %) |
+  | + 150 ms fragment, 0.75 × the word after the dip, ≥ 3 syllables | 21 (0.67 %) / 22 (0.71 %) | 11 (0.64 %) / 11 |
+  | + entered within 6 dB of the median (shipped) | **8 (0.26 %) / 11 (0.35 %)** | **11 (0.64 %) / 11**: one word, "tablespoonful", every repeat |
+
+  The tripping consonants: plosive closures (LJ "in", "beaten", "types."; Spanish "despacio", "respondió") and the
+  silence a loose word time covers between two words; the shipped rule's remaining trips are closures after a loud
+  nasal or /s/ ("compañero", "tempestades", "respondió", "contara"). A 3 dB break tolerance would cut the Spanish trips
+  to 6 / 2, but the reported fragment's last 30 ms are only known to lie within −15…−24 dBFS, so 6 dB is kept (the
+  real-audio rerun can tighten it). On the corpus voice (flat word levels) no word trips: the corpus is unchanged.
+- **Speech worker**: such a word is a fourth hidden-take trace (`suspectWindows` with the frame levels, `core/gaps.ts`;
+  speech.md §11.3): its window is decoded again like the others, a rejected window over several VAD chunks once more as
+  `chunking: "vad"` decodes it, accepted by the same rule within the same budgets.
+- **Clean Up**: a word that still holds such a dip (the re-decode did not split it) gets an `untranscribed` finding for
+  review over its fragment and the dip — word start to the new onset — with the word as `text` and `restart: 1` in the
+  reason ("Possible restart inside the word “…”"; MCP reason text likewise). It is never removed unless accepted;
+  accepted, the fragment goes and the whole word stays.
+- **Cut-off words with an ellipsis** (rules, `cutOff`): Whisper writes a fragment as "extra…", and the existing cut-off
+  rule knew only "jue-" and an exact prefix, so the split result above kept "extra…". A word ending in "…" / "..." is
+  now a cut-off when the next word (within `stutterGapS`) starts with it — from 4 letters on all but its last letter
+  suffice (the recogniser guesses a fragment's last sound: "extra" / "extremadamente") — unless it is a stop word ("lo
+  que… quedó"). Corpus unchanged.
+- Tests (each fails before): `apps/engine/test/speech-hidden-takes.test.ts` "a restart inside one word…" (synthetic
+  levels from the measured envelope over the scripted decoder: windows over 5 s write one word, VAD chunks two; the
+  window is decoded again, the chunked fallback writes both takes in place, Clean Up then removes "extra..." as a
+  cut-off; a clean long word and a closure after /s/ in the same audio open no window); `cleanup-slivers-tails.test.ts`
+  "round 13" (the review finding, its acceptance; the clean word and the closure give none); `cleanup-rules.test.ts`
+  stutters (the ellipsis fragment; the stop-word hesitation stays).
+- Corpus at the end of the round: every split unchanged (dev 0.997 / 0.960, held out 1.000 / 0.973, held-out-r7 0.998
+  / 0.870, held-out-r9 0.992 / 0.976, held-out-r11 1.000 / 1.000).
+- Limits: not run on the reporter's audio or large-v3-turbo (no model or file on this host); the fragment's last level
+  and the rise in the test fixture are assumptions within the measured description; a fragment that fades more than
+  6 dB under the word's median in its last 30 ms, a restart inside a word of fewer than three syllables, or one whose
+  dip is shallower than 15 dB is not found; ≈ 1 false trip per 300–400 words of read Spanish (more with loose word
+  times) costs a re-decode and a review finding each; the pace is measured on the raw words in the worker (gaps after
+  phrase-final words lengthen them; the median absorbs a few).
 
 Kinds follow the structure: ≤ 2 words a false start, a whole clause (clause start, clause end, ≥ 3 content words) a
 retake (with a group), else a restart; inside re-decoded ranges they become hidden retakes as before. The settings keep
@@ -860,6 +915,7 @@ words (fillers aside) removed. Measured (both modes, Fast, corpus voice):
 | round 11 after its fixes: held-out-r11 (regression coverage, not blind) | 12 / 12 | 1.000 (65 / 65) | 1.000 (60 / 60) |
 | … dev, held out, held-out-r7, held-out-r9 | unchanged | 0.997, 1.000, 0.998, 0.992 | 0.960, 0.973, 0.870, 0.976 (with asides proposed: 0.996, 0.973, 0.984, 0.976) |
 | round 12 (slivers, sentence-end tails, quiet speech, stretch by pace): every split | unchanged | 0.997, 1.000, 0.998, 0.992, 1.000 | 0.960, 0.973, 0.870, 0.976, 1.000 |
+| round 13 (restart dip, ellipsis cut-offs): every split | unchanged | 0.997, 1.000, 0.998, 0.992, 1.000 | 0.960, 0.973, 0.870, 0.976, 1.000 |
 
 Per kind at 0108b4021 (dev / held out): hidden-retake 0.997 / 1.000, retake 0.999 / 1.000, restart 0.998 / 1.000,
 false start 1.000 / 1.000, stutter — / 1.000, filler-vocalic 0.943 / —, filler-phrase 1.000 / 1.000, hallucination
