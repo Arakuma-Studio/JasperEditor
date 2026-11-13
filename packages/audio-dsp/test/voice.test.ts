@@ -9,6 +9,7 @@ import {
 	quantiseUnit,
 	quantiseVoiceLevel,
 	speechThresholdDb,
+	unitOf,
 	VOICE_CLASS_BREATH,
 	VOICE_CLASS_SILENCE,
 	VOICE_CLASS_SPEECH,
@@ -344,5 +345,101 @@ describe('frame classes (TC-001)', () => {
 				flatness: new Uint8Array(3),
 			}),
 		).toThrow(RangeError);
+	});
+});
+
+/**
+ * Dense, loudness-normalised speech: the shape of `cut_v5.wav` (a mixdown of a cut with its pauses removed). Phrases of
+ * 8–14 words with 60–140 ms pauses at the room tone (−52 dBFS); a syllable is a voiced nucleus of 120–220 ms (a
+ * harmonic complex rising and falling) and a 30–70 ms unvoiced consonant 12 dB under it; loud words peak at
+ * −7 … −10 dBFS and every third word is quiet, peaking at −17 … −25 dBFS (the words the reported analysis lost). After
+ * the speech: a steady hum (100 Hz and two harmonics) for 1 s and white noise for 0.6 s, both at −27 dBFS — the quiet
+ * words' level, under the file's speech threshold. Ranges are in samples.
+ */
+function denseMix(seed: number) {
+	const r = new Rng(seed);
+	const u = () => (r.uniform() + 1) / 2;
+	const x = noise(48 * SR, -52, seed + 1);
+	const quietNuclei: Array<[number, number]> = [];
+	const quietWords: Array<[number, number]> = [];
+	const loudNuclei: Array<[number, number]> = [];
+	let t = Math.round(0.3 * SR);
+	let phase = 0;
+	const word = (peakDb: number, syllables: number, f0: number, nuclei: Array<[number, number]>) => {
+		for (let k = 0; k < syllables; k++) {
+			const n = Math.round((0.12 + 0.1 * u()) * SR);
+			const harmonics = Math.floor(2999 / f0);
+			let power = 0;
+			for (let h = 1; h <= harmonics; h++) power += 1 / (2 * h * h);
+			const g = dbToAmp(peakDb - 2 * u()) / Math.sqrt(power);
+			for (let i = 0; i < n; i++) {
+				phase += (2 * Math.PI * f0 * (1 + 0.05 * (i / n - 0.5))) / SR;
+				let s = 0;
+				for (let h = 1; h <= harmonics; h++) s += Math.sin(h * phase) / h;
+				x[t + i]! += g * Math.sin((Math.PI * (i + 0.5)) / n) ** 0.6 * s;
+			}
+			nuclei.push([t, t + n]);
+			t += n;
+			const c = Math.round((0.03 + 0.04 * u()) * SR);
+			const ca = dbToAmp(peakDb - 12) * Math.sqrt(3);
+			for (let i = 0; i < c; i++) x[t + i]! += ca * r.uniform();
+			t += c;
+		}
+	};
+	for (let phrase = 0; t < 42 * SR; phrase++) {
+		const words = 8 + Math.floor(u() * 7);
+		const f0 = 110 + 40 * u();
+		for (let w = 0; w < words; w++) {
+			if ((w + phrase) % 3 !== 2) word(-7 - 3 * u(), 1 + Math.floor(u() * 3), f0, loudNuclei);
+			else {
+				const a = t;
+				word(-17 - 8 * u(), 1 + Math.floor(u() * 2), f0, quietNuclei);
+				quietWords.push([a, t]);
+			}
+		}
+		t += Math.round((0.06 + 0.08 * u()) * SR);
+	}
+	t += Math.round(0.2 * SR);
+	const humGain = (dbToAmp(-27) * Math.SQRT2) / Math.sqrt(1 + 1 / 4 + 1 / 9);
+	for (let i = 0; i < SR; i++) {
+		const p = (2 * Math.PI * 100 * i) / SR;
+		x[t + i]! += humGain * (Math.sin(p) + Math.sin(2 * p) / 2 + Math.sin(3 * p) / 3);
+	}
+	const hum: [number, number] = [t, t + SR];
+	t += Math.round(1.3 * SR);
+	const bed = noise(Math.round(0.6 * SR), -27, seed + 2);
+	for (let i = 0; i < bed.length; i++) x[t + i]! += bed[i]!;
+	const hiss: [number, number] = [t, t + bed.length];
+	return { x: x.subarray(0, t + bed.length + SR), quietNuclei, quietWords, loudNuclei, hum, hiss };
+}
+
+describe('frame classes of dense, loudness-normalised speech (analysis version 2)', () => {
+	const mix = denseMix(7);
+	const planes = voiceFeatures(mix.x);
+	const { classes, levels } = classifyVoiceFrames(planes);
+	const frames = ([a, b]: [number, number], margin: number) => {
+		const out: number[] = [];
+		for (let k = Math.ceil(a / VOICE_HOP) + margin; k < Math.floor(b / VOICE_HOP) - margin; k++) out.push(k);
+		return out;
+	};
+	const speechShare = (ks: number[]) =>
+		ks.filter((k) => classes[k] === VOICE_CLASS_SPEECH).length / ks.length;
+
+	it('quiet voiced syllables under the speech threshold are speech; a hum and a noise bed at their level are not', () => {
+		// the reported file's levels: the floor lies inside the speech, the threshold above the quiet words
+		expect(levels!.floorDb).toBeGreaterThan(-32);
+		expect(levels!.floorDb).toBeLessThan(-29);
+		expect(levels!.speechDb).toBeGreaterThan(-11);
+		expect(levels!.speechThresholdDb).toBeGreaterThan(-25.5);
+		const voicedQuiet = mix.quietNuclei
+			.flatMap((r) => frames(r, 2))
+			.filter((k) => unitOf(planes.voicing[k]!) >= 0.45);
+		expect(speechShare(voicedQuiet)).toBeGreaterThan(0.98);
+		// every quiet word holds at least half speech frames (Fix Transcript's gap rule; the speech guard needs 20 %)
+		const words = mix.quietWords.map((r) => speechShare(frames(r, 0)));
+		expect(Math.min(...words)).toBeGreaterThanOrEqual(0.5);
+		expect(speechShare(mix.loudNuclei.flatMap((r) => frames(r, 2)))).toBe(1);
+		expect(speechShare(frames(mix.hum, 3))).toBe(0);
+		expect(speechShare(frames(mix.hiss, 3))).toBe(0);
 	});
 });

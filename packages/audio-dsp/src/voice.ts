@@ -60,6 +60,36 @@ export const VOICE_CLASS_RULES = {
 	speechBlipFrames: 4,
 	/** Gaps shorter than this (frames) inside breath-like runs are closed (prototype: < 30 ms). */
 	breathHoleFrames: 3,
+	/**
+	 * Quiet speech (analysis version 2, see `quietSpeechFrames`): voiced syllables under the speech threshold are
+	 * speech down to this many dB under the speech level (de Jong & Wempe 2009 count syllable nuclei down to 25 dB
+	 * under the 99th-percentile intensity; our speech level is the 95th percentile, ≈ 3 dB lower)…
+	 */
+	quietBelowSpeechDb: 28,
+	/** … and at least this many dB over the local noise floor (the threshold's own minimum margin). */
+	quietAboveFloorDb: 6,
+	/**
+	 * Local noise floor: this percentile (lower nearest rank) of the frames above digital silence (the quietest
+	 * 120 ms of 6 s: the gaps between words and the stop closures of dense speech) …
+	 */
+	localFloorPercentile: 0.02,
+	/** … over this many frames centred on the frame (6 s), evaluated per `localFloorStep` frames. */
+	localFloorFrames: 600,
+	localFloorStep: 50,
+	/**
+	 * A syllable nucleus is a level peak at least this many dB over the dip on one side of it (the cleanup detector's
+	 * syllable dip, round 12) …
+	 */
+	syllableDipDb: 6,
+	/**
+	 * … and this many over the dip on the other (a syllable next to a louder one or a loud consonant; de Jong &
+	 * Wempe ask 2 dB; a hum's ±2 dB flutter is no syllable) …
+	 */
+	syllableSideDipDb: 3,
+	/** … found within this many frames of it (250 ms: half a long syllable) … */
+	syllableReachFrames: 25,
+	/** … with another nucleus within this many frames (600 ms: syllabic rhythm, ≥ ≈ 1.7 syllables per second). */
+	syllableRhythmFrames: 60,
 } as const;
 
 /** Frames of `samples` samples (the last frame may be partial). */
@@ -327,10 +357,140 @@ function openRuns(mask: Uint8Array, n: number): void {
 	}
 }
 
+/** Level byte of the digital-silence limit: frames at or under it never count towards a floor. */
+const DIGITAL_SILENCE_Q = quantiseVoiceLevel(DIGITAL_SILENCE_DB);
+
+/**
+ * The local noise floor of each frame (dB): the `localFloorPercentile` (lower nearest rank) of the quantised levels
+ * above digital silence over `localFloorFrames` frames centred on it, evaluated once per `localFloorStep` frames
+ * (a sliding byte histogram). −Infinity where the window holds only digital silence.
+ *
+ * The file floor (10th percentile) is the level of the pauses only when a recording has pauses; in dense speech — a
+ * cut with its pauses removed, a loudness-normalised or compressed mixdown — a tenth of the frames is quiet speech,
+ * so the file floor lies inside the speech. The quietest few percent of a few seconds still reach the gaps between
+ * words and the stop closures, which sit at the room's level (minimum statistics, Martin 2001).
+ */
+function localNoiseFloor(level: Uint8Array): Float32Array {
+	const R = VOICE_CLASS_RULES;
+	const n = level.length;
+	const out = new Float32Array(n);
+	const hist = new Int32Array(256);
+	let count = 0;
+	let lo = 0;
+	let hi = 0;
+	const half = R.localFloorFrames >> 1;
+	for (let b = 0; b < n; b += R.localFloorStep) {
+		const centre = Math.min(n - 1, b + (R.localFloorStep >> 1));
+		const from = Math.max(0, centre - half);
+		const to = Math.min(n, centre + half);
+		for (; hi < to; hi++) {
+			const q = level[hi]!;
+			if (q > DIGITAL_SILENCE_Q) {
+				hist[q]!++;
+				count++;
+			}
+		}
+		for (; lo < from; lo++) {
+			const q = level[lo]!;
+			if (q > DIGITAL_SILENCE_Q) {
+				hist[q]!--;
+				count--;
+			}
+		}
+		let db = Number.NEGATIVE_INFINITY;
+		if (count > 0) {
+			const rank = Math.floor((count - 1) * R.localFloorPercentile);
+			let seen = 0;
+			for (let q = DIGITAL_SILENCE_Q + 1; q < 256; q++) {
+				seen += hist[q]!;
+				if (seen > rank) {
+					db = voiceLevelDb(q);
+					break;
+				}
+			}
+		}
+		out.fill(db, b, Math.min(n, b + R.localFloorStep));
+	}
+	return out;
+}
+
+/**
+ * Quiet speech (analysis version 2): voiced frames of syllables that are too quiet for the level threshold. Reported
+ * on `cut_v5.wav`, a loudness-normalised mixdown of a dense cut: file floor −30.5 dBFS (inside the speech), speech
+ * level −10.5, threshold −24.5 — words peaking at −17 … −25 dBFS had 0–7 % speech frames, and the speech guard and
+ * Fix Transcript's gap rule both lost them. Level alone cannot separate them there, so this path asks for what
+ * speech has and a hum, a noise bed or a breath has not (syllable-nucleus detection after de Jong & Wempe 2009:
+ * intensity peaks with a dip on both sides, voiced, above a level relative to the loudest speech):
+ * - level: above `quietBelowSpeechDb` under the speech level and `quietAboveFloorDb` over the local noise floor
+ *   (`localNoiseFloor`) — whichever is higher;
+ * - periodicity: voicing ≥ `voicedMin` (noise and breaths are unvoiced);
+ * - syllabic modulation: the frame lies within the rise and fall of a syllable nucleus — a voiced peak of the level
+ *   envelope (the 25 ms RMS level, clamped at the local floor) standing `syllableDipDb` over the lowest level on
+ *   one side and `syllableSideDipDb` on the other within `syllableReachFrames`, with another such peak within `syllableRhythmFrames` (≈ 4–8 syllables per
+ *   second in running speech). A steady hum or tone has no such peaks; a lone voiced blip has no rhythm.
+ * Spectral flatness is not needed beyond the voicing test (voiced frames are harmonic) and no plane is added, so the
+ * classes stay computable from the stored planes. 1 per quiet-speech frame.
+ */
+function quietSpeechFrames(planes: VoiceFeaturePlanes, levels: VoiceLevels): Uint8Array {
+	const R = VOICE_CLASS_RULES;
+	const n = planes.level.length;
+	const out = new Uint8Array(n);
+	if (n < 3) return out;
+	const floor = localNoiseFloor(planes.level);
+	const gate = new Float32Array(n);
+	// the level envelope, clamped at the local floor (digital silence and dropouts make no dips)
+	const env = new Float32Array(n);
+	let any = false;
+	for (let i = 0; i < n; i++) {
+		gate[i] = Math.max(levels.speechDb - R.quietBelowSpeechDb, floor[i]! + R.quietAboveFloorDb);
+		if (gate[i]! < levels.speechThresholdDb) any = true;
+		env[i] = Math.max(voiceLevelDb(planes.level[i]!), floor[i]!);
+	}
+	// gates at or above the threshold add nothing the level rule does not already take
+	if (!any) return out;
+	const voiced = (k: number) => unitOf(planes.voicing[k]!) >= R.voicedMin;
+	// syllable nuclei: [peak, first frame, end frame) of the rise and fall around each
+	const nuclei: Array<[number, number, number]> = [];
+	for (let i = 1; i + 1 < n; i++) {
+		const e = env[i]!;
+		if (!(e >= env[i - 1]! && e > env[i + 1]!) || !(e > gate[i]!) || !voiced(i)) continue;
+		let minL = e;
+		let argL = i;
+		for (let j = i - 1; j >= Math.max(0, i - R.syllableReachFrames); j--) {
+			if (env[j]! > e) break;
+			if (env[j]! < minL) {
+				minL = env[j]!;
+				argL = j;
+			}
+		}
+		let minR = e;
+		let argR = i;
+		for (let j = i + 1; j <= Math.min(n - 1, i + R.syllableReachFrames); j++) {
+			if (env[j]! > e) break;
+			if (env[j]! < minR) {
+				minR = env[j]!;
+				argR = j;
+			}
+		}
+		if (e - Math.min(minL, minR) >= R.syllableDipDb && e - Math.max(minL, minR) >= R.syllableSideDipDb)
+			nuclei.push([i, argL, argR + 1]);
+	}
+	for (let k = 0; k < nuclei.length; k++) {
+		const [p, a, b] = nuclei[k]!;
+		const rhythm =
+			(k > 0 && p - nuclei[k - 1]![0] <= R.syllableRhythmFrames) ||
+			(k + 1 < nuclei.length && nuclei[k + 1]![0] - p <= R.syllableRhythmFrames);
+		if (!rhythm) continue;
+		for (let f = a; f < b; f++) if (voiced(f) && voiceLevelDb(planes.level[f]!) > gate[f]!) out[f] = 1;
+	}
+	return out;
+}
+
 /**
  * Frame classes (TC-001) of quantised planes, against the levels of the whole file:
- * - speech: level > threshold (`speechThresholdDb`) and voiced (≥ 0.45), or ≥ 10 dB above the threshold; gaps under
- *   60 ms inside speech are closed, then speech runs under 40 ms dropped;
+ * - speech: level > threshold (`speechThresholdDb`) and voiced (≥ 0.45), or ≥ 10 dB above the threshold, or quiet
+ *   speech (`quietSpeechFrames`: voiced syllables under the threshold); gaps under 60 ms inside speech are closed,
+ *   then speech runs under 40 ms dropped;
  * - breath-like: not speech, level > floor + 5 dB, voicing < 0.5, flatness > 0.15; gaps under 30 ms closed; only runs
  *   of 120–900 ms stay breath-like;
  * - silence: the rest (everything when the file is digital silence).
@@ -346,7 +506,7 @@ export function classifyVoiceFrames(planes: VoiceFeaturePlanes): {
 	const levels = voiceLevels(planes.level);
 	if (!levels) return { classes, levels: null };
 	const R = VOICE_CLASS_RULES;
-	const sp = new Uint8Array(n);
+	const sp = quietSpeechFrames(planes, levels);
 	const br = new Uint8Array(n);
 	for (let i = 0; i < n; i++) {
 		const db = voiceLevelDb(planes.level[i]!);

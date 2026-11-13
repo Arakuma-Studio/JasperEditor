@@ -51,8 +51,9 @@ when every frame is digital silence.
 
 **Classes** (computed on the quantised planes, so anyone can recompute them from the file):
 
-1. speech: level > threshold and voicing ≥ 0.45, or level ≥ threshold + 10 dB; gaps < 60 ms (6 frames) inside speech
-   closed, then speech runs < 40 ms (4 frames) dropped (prototype post-processing);
+1. speech: level > threshold and voicing ≥ 0.45, or level ≥ threshold + 10 dB, or **quiet speech** (version 2, below);
+   gaps < 60 ms (6 frames) inside speech closed, then speech runs < 40 ms (4 frames) dropped (prototype
+   post-processing);
 2. breath-like: not speech, level > floor + 5 dB, voicing < 0.5, flatness > 0.15; gaps < 30 ms closed; only runs of
    120–900 ms (12–90 frames) stay breath-like;
 3. silence: the rest (everything when the stream is digital silence).
@@ -61,8 +62,36 @@ Classes use the **file** levels (as calibrated by the prototype); the per-window
 consumers that need a local floor (edge placement in drifting rooms, TC-021). *Assumption*, labelled: the prototype
 used only file levels; using window levels for the classes is not calibrated.
 
-`VOICE_ANALYSIS_VERSION` (1) must be bumped whenever any of this changes: cached files of another version are
-recomputed.
+**Quiet speech** (version 2, `quietSpeechFrames` in `voice.ts`). Reported on `cut_v5.wav`, a loudness-normalised
+mixdown of the user's dense cut (large-v3-turbo run at main 1da79efd8, `/tmp/je-words-local/results.json` on the
+build host): its stored analysis had floor −30.5 dBFS, speech level −10.5, threshold −24.5, and the 21 words the
+speech guard still dropped as `silence` ("sistema de", "con física", "que mis", "su", "un", "Así"…) lay over voice at
+−17 … −25 dBFS with 0–7 % speech frames; 22 of the 37 deletions Fix Transcript's gap rule left failed only on its
+50 % speech share. Cause: with the pauses cut and the dynamics compressed, a tenth of the frames is quiet speech, so
+the 10th-percentile floor lies inside the speech and the level threshold above the quieter words (on the raw source
+the same analysis works). A frame under the threshold is now speech when it is all of:
+- above max(speech level − 28 dB, local floor + 6 dB). The local floor is the 2nd percentile of the frames above
+  digital silence over 6 s centred on the frame (per 50 frames, sliding byte histogram): the quietest 120 ms of 6 s
+  reach the gaps between words and the stop closures even in dense speech (minimum statistics, R. Martin, "Noise
+  power spectral density estimation based on optimal smoothing and minimum statistics", IEEE TSAP 9(5), 2001). 28 dB:
+  de Jong & Wempe ("Praat script to detect syllable nuclei and measure speech rate automatically", Behavior Research
+  Methods 41(2), 2009) count nuclei down to 25 dB under the 99th-percentile intensity, and our speech level is the
+  95th (≈ 3 dB lower); 6 dB is the threshold's own minimum margin;
+- voiced (≥ 0.45, the speech rule's voicing): noise beds, rumble and breaths are not;
+- inside a syllable: between the dips around a voiced peak of the level (clamped at the local floor) that stands
+  6 dB over the dip on one side and 3 dB over the dip on the other within 250 ms (the cleanup detector's syllable dip;
+  de Jong & Wempe ask 2 dB; the asymmetry keeps a quiet syllable next to a louder one or a loud consonant), with
+  another such peak within 600 ms (syllabic rhythm). A steady hum or tone has no such peak, a ±2 dB flutter is too
+  shallow, a lone voiced blip has no rhythm.
+Spectral flatness is not used beyond the voicing test, and no plane is added: the classes stay computable from the
+stored planes and the file format is unchanged. Where max(speech − 28, local floor + 6) is at or above the threshold
+— every recording with pauses and a speech level ≥ ≈ 40 dB over its floor — nothing changes. The header's levels
+(floor, speech level, threshold) keep their definitions (TC-002 is unchanged; the speech worker's energy VAD still
+uses the level rule alone). *Assumptions*, labelled: 28 / 6 / 6 / 3 dB, 6 s, 2 %, 250 / 600 ms come from the cited
+methods and synthetic signals, not from the reporter's file.
+
+`VOICE_ANALYSIS_VERSION` (2) must be bumped whenever any of this changes: cached files of another version are
+recomputed (the cache file name hashes the version; the engine and the speech worker refuse other versions).
 
 ### TC-002: one floor / threshold rule
 
@@ -142,8 +171,8 @@ voicing / flatness and majority class per point, class runs in seconds, `nextFro
   in = first frame at the onset reaching floor + 25 dB).
 - Times: frame k starts at k / 100 s of media time (`voiceFrameSeconds`, `voiceFrameAt`); transcripts are in flicks of
   the same media timeline.
-- The type and the file are stable for version 1; a change of features or classes bumps `VOICE_ANALYSIS_VERSION`, a
-  change of layout bumps `VOICE_ANALYSIS_FORMAT`.
+- The type and the file layout are stable (format 1; analysis version 2 since quiet speech); a change of features or
+  classes bumps `VOICE_ANALYSIS_VERSION`, a change of layout bumps `VOICE_ANALYSIS_FORMAT`.
 
 ### Validation (rerunnable)
 
@@ -156,6 +185,8 @@ voicing / flatness and majority class per point, class runs in seconds, `nextFro
 | VAD threshold follows independently specified floor / speech vectors | `apps/engine/test/speech-core.test.ts`, `packages/audio-dsp/test/voice.test.ts` | pass |
 | Job = pure analysis of the same samples, byte for byte (in-thread, bundled worker threads over 65 s / 7 blocks, missing-worker fallback); cache hit; damaged cache file replaced; stream choice in a 2-stream 48 kHz Matroska file (silent stream → null levels); request validation; cancel (no file, next job fine); decoder failure `TOOL_FAILED`; offline `ASSET_NOT_FOUND`; crashing worker `VOICE_ANALYSIS_FAILED` retryable, engine still serving; cache entry kind `media-cache` | `apps/engine/test/voice-analysis.test.ts` | pass |
 | Real speech (LJ Speech, public domain, `fixtures/speech/lj-composite.flac`): > 70 % of utterance-core frames speech, < 2 % speech between utterances | same | pass |
+| Dense, loudness-normalised speech (synthetic: syllables back to back, file floor −30.5 dBFS inside the speech, quiet words peaking at −17 … −25): > 98 % of the quiet syllables' voiced frames speech, every quiet word ≥ 50 % speech; a steady hum and a noise bed at −27 dBFS (under the threshold): no speech frame. Fails on version 1 (53 % of those frames) | `packages/audio-dsp/test/voice.test.ts` | pass |
+| The speech guard over that kind of mixdown's voice analysis (file written, read back through `voiceAnalysisMask`): six trailing quiet words per phrase at the reported levels all stay. Fails on version 1 (8 words removed as `silence`) | `apps/engine/test/speech-dense-speech.test.ts` | pass |
 | Client fetch / validation / errors | `packages/engine-client/test/voice.test.ts` | pass |
 | MCP tool: cached read, on-demand job, pages, refusals, failed job, annotations, guide | `apps/mcp/test/voice.test.ts` | pass |
 
@@ -179,7 +210,16 @@ Target ≤ 2 min per hour: met with margin. File: 360,000 frames, 1,446,302 byte
 
 - The stream is downmixed to mono before analysis: speech on one channel of a stereo pair is measured 6 dB lower (the
   thresholds are relative, so the classes hold unless the other channel carries loud unrelated sound).
-- Classes use file-level thresholds; per-window levels are reported but not used for classes (see above).
+- Classes use file-level thresholds; per-window levels are reported but not used for classes (see above); quiet
+  speech uses a local floor.
+- Quiet speech needs voicing and syllables: whispered or unvoiced quiet words stay non-speech; voiced, rhythmic
+  non-speech at a level within 28 dB of the speech — a melodic music bed, a background talker — becomes speech
+  where it is ≥ 6 dB over the local floor (the level rule already called such sound speech above the threshold).
+  The 21 reported words have not been re-measured on `cut_v5.wav` with version 2 (no audio on this host).
+- Measured on the LJ fixture (system FFmpeg for the variants, one-off script): raw, and compressed + loudness-normalised
+  with its pauses kept, version 2 changes no frame; with its pauses cut (silenceremove 60 ms) and compressed +
+  normalised (floor −27.5, threshold −21.5 dBFS — the reported shape) it adds 279 of 5525 frames (5 %) as speech and
+  removes none; with every other utterance 14 dB down, pauses cut, the speech share rises from 69.6 to 76.3 %.
 - The thresholds come from one user's microphone and room (prototype calibration); the calibration on their material
   is in "Calibration on the user's material (TC-071)" below.
 - The Clean Up UI and the cleanup MCP tools are described in "Clean Up UI and MCP" below.
