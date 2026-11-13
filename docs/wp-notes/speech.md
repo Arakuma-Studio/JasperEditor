@@ -405,7 +405,11 @@ whisper evaluation (53 configurations; the numbers of spec 16 §0). This section
   refinement trims it) and (b) short wordless voice — ≥ 0.35 s of voiced frames no word covers within ±50 ms (voice
   closer than 100 ms joins; the same scan as the 2 s safety net, `wordlessVoicedSpans` with another shape) and (c)
   garbled words — letters of another writing system than the transcript's language (`foreignScriptWord`,
-  `@jasper/project/cleanup-worker`; Spanish / English only, other languages never match). Window =
+  `@jasper/project/cleanup-worker`; Spanish / English only, other languages never match) and (d) a restart inside one
+  word — in the energy VAD's 10 ms frame levels a fragment broken off at full voice, a dip ≥ 15 dB under the word's
+  median for ≥ 20 ms and a new onset, then time for the whole word at the speaker's pace (`wordDip`, shared with Clean
+  Up; transcript-cleanup.md "Round 13": "extra… ¡extremadamente!" written as one word as long as the speaker's clean
+  one; measured ≈ 0.26 % of clean read-Spanish words trip it). Window =
   3 s before to 1.5 s after the trace, each edge moved out to the middle of a pause of ≥ 100 ms within 1 s, then to the
   bounds of a word it cuts; overlapping windows merge while ≤ 30 s. Each window is decoded alone (`span`), verbatim,
   `conditionOnPreviousText: false`. Acceptance (`redecodeAccepted`): original words the re-decode does not say again

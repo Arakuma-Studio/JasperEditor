@@ -15,6 +15,7 @@ import {
 	sameWord,
 	secondsPerSyllable,
 	stretchedWord,
+	wordDip,
 } from '@jasper/project/cleanup-worker';
 import { placeWord } from './align.ts';
 import { VAD_FRAME } from './vad.ts';
@@ -130,7 +131,7 @@ export function mergeRecoveredWords<W extends { start: number; end: number }>(
 // Hidden takes (docs/wp-notes/speech.md §11.3 "Hidden takes"). Whisper (measured on a 57-minute Spanish file with large-v3-turbo)
 // writes a phrase the speaker says twice back to back — a restart or retake — only once, and stretches that phrase's
 // word times over both takes; decoding a few seconds around it alone, without the previous text, writes every take
-// with correct times. Three traces mark such places:
+// with correct times. Four traces mark such places:
 //
 // - a stretched word: longer than `STRETCH_MIN_FRAMES` (1 s; normal words last 0.2–0.4 s) — or, measured against the
 //   speaker's own pace, at least 0.6 s and three times what its syllables take (`stretchedWord`, shared with Clean Up;
@@ -141,7 +142,11 @@ export function mergeRecoveredWords<W extends { start: number; end: number }>(
 //   `COVER_MARGIN_FRAMES` (50 ms), voice closer than `SHORT_GAP_JOIN_FRAMES` (100 ms) joining;
 // - a garbled word: one holding letters of another writing system than the transcript's language
 //   (`foreignScriptWord`; round 7, a Spanish take written "janeter … Pen 와 blah blah금u" over a phrase said twice,
-//   no word stretched and no voice left without words).
+//   no word stretched and no voice left without words);
+// - a restart inside one word: in the frame levels, a fragment broken off at full voice, a dip and a new onset, then
+//   time for the whole word at the speaker's pace (`wordDip`, shared with Clean Up; cleanup work note "Round 13":
+//   "extra… ¡extremadamente!" written as one word as long as the speaker's clean one, a 20 ms dip to −41 dBFS between
+//   the fragment and the whole word).
 //
 // Each trace gives a window from `SUSPECT_BEFORE_FRAMES` (3 s) before it to `SUSPECT_AFTER_FRAMES` (1.5 s) after it,
 // each edge moved out to the middle of the nearest pause (≥ `SUSPECT_EDGE_PAUSE_FRAMES` unvoiced frames) within
@@ -189,6 +194,7 @@ export type SuspectWindow = {
 	stretched: number;
 	wordless: number;
 	garbled: number;
+	dipped: number;
 	edges: { start: boolean; end: boolean };
 };
 
@@ -217,14 +223,29 @@ export function isStretchedWord(
 }
 
 /**
- * The windows around stretched words, short wordless voice and garbled words (in `language`; none when unknown) of
- * `words` (sorted, non-overlapping samples) over `mask`, in time order within the budget, and how many did not fit
- * (`skipped`).
+ * Whether `w` (samples) holds a restart in `levels` (dBFS per frame): the fragment broken off, a dip, and the whole
+ * word after it at the speaker's `pace` (`wordDip`).
+ */
+export function isDippedWord(
+	w: Timed & { text: string },
+	levels: ArrayLike<number>,
+	pace: number | null,
+): boolean {
+	const a = Math.max(0, Math.floor(w.start / VAD_FRAME));
+	const b = Math.min(levels.length, Math.ceil(w.end / VAD_FRAME));
+	return wordDip((f) => levels[f]!, a, b, w.text, pace) !== null;
+}
+
+/**
+ * The windows around stretched words, short wordless voice, garbled words (in `language`; none when unknown) and words
+ * holding a dip in `levels` (frame dBFS; none without) of `words` (sorted, non-overlapping samples) over `mask`, in
+ * time order within the budget, and how many did not fit (`skipped`).
  */
 export function suspectWindows(
 	words: ReadonlyArray<Timed & { text: string }>,
 	mask: ArrayLike<number>,
 	language: string | null = null,
+	levels: ArrayLike<number> | null = null,
 	budget: { windows: number; frames: number } = { windows: SUSPECT_MAX_WINDOWS, frames: SUSPECT_MAX_FRAMES },
 ): { windows: SuspectWindow[]; skipped: number } {
 	const frames = mask.length;
@@ -235,13 +256,15 @@ export function suspectWindows(
 	for (const w of words) {
 		const stretched = isStretchedWord(w, mask, pace) ? 1 : 0;
 		const garbled = foreignScriptWord(w.text, language) ? 1 : 0;
-		if (stretched || garbled)
+		const dipped = levels && isDippedWord(w, levels, pace) ? 1 : 0;
+		if (stretched || garbled || dipped)
 			traces.push({
 				start: Math.floor(w.start / VAD_FRAME),
 				end: Math.ceil(w.end / VAD_FRAME),
 				stretched,
 				wordless: 0,
 				garbled,
+				dipped,
 			});
 	}
 	const gaps = wordlessVoicedSpans(
@@ -255,7 +278,7 @@ export function suspectWindows(
 			margin: COVER_MARGIN_FRAMES,
 		},
 	).spans;
-	for (const g of gaps) traces.push({ ...g, stretched: 0, wordless: 1, garbled: 0 });
+	for (const g of gaps) traces.push({ ...g, stretched: 0, wordless: 1, garbled: 0, dipped: 0 });
 	// the word whose span holds frame f (strictly inside), by binary search
 	const holding = (f: number): Timed | null => {
 		const t = f * VAD_FRAME;
@@ -297,6 +320,7 @@ export function suspectWindows(
 				stretched: t.stretched,
 				wordless: t.wordless,
 				garbled: t.garbled,
+				dipped: t.dipped,
 				edges: { start: s0.pause, end: e0.pause },
 			};
 		})
@@ -312,12 +336,14 @@ export function suspectWindows(
 				prev.stretched += w.stretched;
 				prev.wordless += w.wordless;
 				prev.garbled += w.garbled;
+				prev.dipped += w.dipped;
 				continue;
 			}
 			if (w.end <= prev.end) {
 				prev.stretched += w.stretched;
 				prev.wordless += w.wordless;
 				prev.garbled += w.garbled;
+				prev.dipped += w.dipped;
 				continue;
 			}
 			w.start = prev.end;

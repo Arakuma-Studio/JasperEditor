@@ -5,7 +5,7 @@
 // "long" reading (one take, stretched), else the true words.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { wordsWellFormed } from '@jasper/project';
+import { detectCleanup, FAST_SETTINGS, FLICKS_PER_SECOND, wordsWellFormed } from '@jasper/project';
 import { describe, expect, it } from 'vitest';
 import { redecodeAccepted, replaceWindowWords, suspectWindows } from '../src/speech/core/gaps.ts';
 import { inputFromSamples } from '../src/speech/worker/audio.ts';
@@ -357,5 +357,102 @@ describe('hidden takes', () => {
 			skipped: 0,
 			ranges: [{ start: 0, end: 7.1, before: 15, after: 15, replaced: true }],
 		});
+	});
+
+	it('a restart inside one word (a dip in its level) is decoded again in VAD chunks; Clean Up removes the fragment', async () => {
+		// "y es extra… ¡extremadamente!" (round 13; the reporter's 244.71–245.75 s here 235.96 s earlier): windows of
+		// more than 5 s write one "extremadamente" of 0.95 s, as long as the speaker's clean one; VAD chunks write both.
+		// Phrases of words of two syllables in 0.24 s: the speaker's pace, 0.12 s per syllable
+		const two =
+			'bado cafe dime fuga gato jale kilo luna mapa nube pato rama sapo tela vaso bote cama dedo foca gula jefe lago mole nido pelo remo seda toro vela mesa lima cubo duna faro gema hilo lobo mudo'.split(
+				' ',
+			);
+		let next = 0;
+		const phrase = (t0: number, n: number) =>
+			Array.from({ length: n }, (_, k) => at(two[next++]!, t0 + 0.25 * k, 0.24));
+		// silences of over 2 s around "es extra… extremadamente …" make it a VAD chunk of its own, shorter than the
+		// window around the restart
+		const lead = [...[0.5, 1.8, 3.1, 4.4].flatMap((t0) => phrase(t0, 4)), ...phrase(5.7, 2)];
+		const tail = [
+			...phrase(9.78, 4),
+			...phrase(12.9, 2),
+			at('despacio', 13.6, 0.84),
+			...phrase(14.47, 2),
+			at('extremadamente', 15.2, 0.88),
+			...phrase(16.12, 3),
+		];
+		const truth = [
+			...lead,
+			at('es', 8.35, 0.22),
+			at('extra...', 8.75, 0.33),
+			at('extremadamente', 9.13, 0.62),
+			...tail,
+		];
+		const one = [...lead, at('es', 8.35, 0.22), at('extremadamente', 8.8, 0.95), ...tail];
+		// words at −15 dBFS (every window the decoder reads has the same loudest level); the measured envelope: the fragment
+		// at −15 to −24, 20 ms at −41, the whole word loud 30 ms later (the fragment's last syllable at −18 and the rise at
+		// −27, −22 are assumptions within it); a clean "extremadamente" whose consonants stay 9 dB under its vowels;
+		// "despacio" with its /s/ at −28 and the /p/ closure at −50 for 40 ms
+		const envelope: Array<[number, number, number]> = [
+			[8.75, 8.85, -15],
+			[8.85, 8.94, -24],
+			[8.94, 9.09, -18],
+			[9.09, 9.11, -41],
+			[9.11, 9.12, -27],
+			[9.12, 9.13, -22],
+			[13.72, 13.82, -28],
+			[13.82, 13.86, -50],
+			...Array.from({ length: 6 }, (_, k): [number, number, number] => [
+				15.28 + 0.147 * k,
+				15.347 + 0.147 * k,
+				-24,
+			]),
+		];
+		const db = (t: number) =>
+			envelope.find(([a, b]) => t >= a && t < b)?.[2] ??
+			(truth.some((w) => t >= w.start && t < w.end) ? -15 : -77);
+		const n = SECONDS * SR;
+		const audio = new Float32Array(n);
+		let seed = 7;
+		for (let i = 0; i < n; i++) {
+			seed = (seed * 1664525 + 1013904223) >>> 0;
+			// uniform noise of RMS 1/√12 at the level
+			audio[i] = (seed / 4294967296 - 0.5) * Math.sqrt(12) * 10 ** (db(i / SR) / 20);
+		}
+		const out = await runSpeechJob(
+			{
+				modelDir: fakeModelDir({ encodable: true, dot: true }),
+				modelId: 'fake',
+				input: { f32: '' },
+				language: 'es',
+			},
+			{ ort: fakeOrt(hiddenTakeDecoder(audio, truth, one, one)).ort, audio },
+		);
+		// one window, around the restart only; decoded alone it is the one word again, VAD chunks write both takes
+		expect(out.guard.redecoded).toMatchObject({ windows: 1, replaced: 1 });
+		expect(out.guard.redecoded!.ranges).toMatchObject([{ replaced: true, chunked: true }]);
+		expect(out.words.map((w) => w.text)).toEqual(truth.map((w) => w.text));
+		// each take where it was said (±60 ms)
+		const fragment = truth.findIndex((w) => w.text === 'extra...');
+		for (const k of [fragment, fragment + 1]) {
+			expect(Math.abs(out.words[k]!.start / SR - truth[k]!.start)).toBeLessThan(0.06);
+			expect(Math.abs(out.words[k]!.end / SR - truth[k]!.end)).toBeLessThan(0.06);
+		}
+		// Clean Up removes the fragment as a cut-off word, said whole right after
+		const flicks = (x: number) => Math.round((x / SR) * FLICKS_PER_SECOND);
+		const cleanup = detectCleanup({
+			mediaId: 'med_restart',
+			words: out.words.map((w) => ({
+				text: w.text,
+				start: flicks(w.start),
+				end: flicks(w.end),
+				confidence: 0.9,
+			})),
+			language: 'es',
+			settings: FAST_SETTINGS,
+		});
+		expect(cleanup.findings.filter((f) => f.suggested === 'remove' && f.words).map((f) => f.words)).toEqual([
+			[fragment, fragment],
+		]);
 	});
 });

@@ -273,3 +273,64 @@ describe('round 12: sentence ends and quiet speech', () => {
 		expect(plan(words, hum.v).a.findings.some((f) => f.kind === 'pause' && overlaps(f))).toBe(true);
 	});
 });
+
+describe('round 13: a restart inside one word', () => {
+	// "y es extra… ¡extremadamente!" (244.71–245.75 s of the reporter's file, here 234 s earlier): one word of 0.99 s,
+	// as long as the speaker's clean one. Measured: the fragment at −15 to −24 dBFS until 245.04, −41 dBFS at
+	// 245.05–245.06, the whole word loud from 245.09; the fragment's last syllable (−18) and the rise (−30, −22) are
+	// assumptions within that description
+	const restart = (put: ReturnType<typeof voiceOf>['put']) => {
+		put(10.71, 10.81, { db: () => -15, cls: 2 });
+		put(10.81, 10.9, { db: () => -24 });
+		put(10.9, 11.05, { db: () => -18 });
+		put(11.05, 11.07, { db: () => -41 });
+		put(11.07, 11.08, { db: () => -30 });
+		put(11.08, 11.09, { db: () => -22 });
+	};
+	const words = [...pace(1), ...real('es[10.4-10.6] extremadamente[10.76-11.75] rápido.[11.8-12.2]')];
+
+	it('the fragment before the dip is voice for review, removed only when accepted', () => {
+		const { v, put } = voiceOf(words);
+		restart(put);
+		const r = plan(words, v);
+		const f = r.a.findings.find((x) => x.reason.params.restart === 1);
+		expect(f).toMatchObject({ kind: 'untranscribed', suggested: 'review' });
+		expect(f!.reason.params.text).toBe('extremadamente');
+		expect([sec(f!.range.start), sec(f!.range.end)]).toEqual([10.76, 11.07]);
+		// never auto-removed: all of the word plays
+		expect(keptOf(r.kept, 10.76, 11.75)).toBeGreaterThan(0.99 - 1e-6);
+		// accepted, the fragment goes (on the 30 fps grid) and the whole word stays
+		const gone = plan(words, v, { accept: [f!.id] });
+		expect(keptOf(gone.kept, 10.8, 11.04)).toBe(0);
+		expect(keptOf(gone.kept, 11.1, 11.75)).toBeGreaterThan(0.65 - 1e-6);
+		expectExplained(gone, { accept: [f!.id] });
+	});
+
+	it('a clean long word and a closure after a fricative are no restart', () => {
+		const { v, put } = voiceOf(words);
+		// "extremadamente" said whole in 0.88 s (run 9, AG): vowels at −15, consonants 9 dB under them
+		for (let k = 0; k < 6; k++) {
+			put(10.76 + 0.147 * k, 10.84 + 0.147 * k, { db: () => -15 });
+			put(10.84 + 0.147 * k, 10.906 + 0.147 * k, { db: () => -24 });
+		}
+		const clean = [...pace(1), ...real('es[10.4-10.6] extremadamente[10.76-11.64] rápido.[11.8-12.2]')];
+		// "despacio": the /s/ at −30 dBFS, then the /p/ closure at −50 dBFS for 40 ms, the burst and "pacio" loud
+		const closure = [...pace(1), ...real('es[10.4-10.6] despacio[10.76-11.6] rápido.[11.8-12.2]')];
+		const c = voiceOf(closure);
+		c.put(10.88, 10.98, { db: () => -30 });
+		c.put(10.98, 11.02, { db: () => -50 });
+		for (const [ws, voice] of [
+			[clean, v],
+			[closure, c.v],
+		] as const) {
+			const d = detectCleanup({
+				mediaId: 'med_d',
+				words: ws,
+				voice,
+				language: 'es',
+				settings: FAST_SETTINGS,
+			});
+			expect(d.findings.filter((f) => f.reason.params.restart === 1)).toEqual([]);
+		}
+	});
+});

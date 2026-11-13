@@ -303,6 +303,8 @@ export function findingReasonText(f: CleanupFinding): string {
 		case 'breath':
 			return `Breath of ${s} s`;
 		case 'untranscribed':
+			if (p.restart)
+				return `Possible restart inside the word "${text}" (${s} s): its start may be an abandoned attempt written as one word — listen before cutting`;
 			return text
 				? `Speech inside the stretched word "${text}" (${s} s): maybe a take the transcript wrote once — listen before cutting`
 				: `Voice without words (${s} s): a dropped filler, a laugh, a cough or a missed word — listen before cutting`;

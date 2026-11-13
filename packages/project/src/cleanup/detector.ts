@@ -9,6 +9,7 @@
 // stutters, head / tail, lexical review, ASR suspects; plus the frame findings: pauses, breaths, untranscribed voice.
 import { VOICE_CLASS_BREATH, VOICE_CLASS_SPEECH, voiceLevelDb } from '@jasper/audio-dsp';
 import { FLICKS_PER_SECOND } from '../time.ts';
+import { wordDip } from './dip.ts';
 import {
 	builtinLists,
 	type CleanupLanguage,
@@ -660,6 +661,8 @@ export function detectCleanup(input: DetectInput): DetectResult {
 		kept?: string;
 		/** A take of a group said after the take that stays. */
 		later?: boolean;
+		/** Voice for review that is a restart's fragment inside the word `text`. */
+		restart?: true;
 	};
 	const raw: Raw[] = [];
 	const laterTake = (g: number, i: number) => {
@@ -821,7 +824,7 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			range: { start: r.start, end: r.end },
 			words: r.words,
 			confidence: Math.round((r.confidence ?? CONFIDENCE[r.kind]) * 1000) / 1000,
-			reason: reasonOf(r.kind, r.text, r.end - r.start, r.group, groups, r.kept, r.later),
+			reason: reasonOf(r.kind, r.text, r.end - r.start, r.group, groups, r.kept, r.later, r.restart),
 			suggested: r.suggested,
 			...(r.group !== undefined ? { group: `g${r.group}` } : {}),
 			fingerprint: fp,
@@ -992,9 +995,11 @@ function reasonOf(
 	groups: readonly RetakeGroup[],
 	kept?: string,
 	later?: boolean,
+	restart?: boolean,
 ): CleanupFinding['reason'] {
 	const params: Record<string, string | number> = { seconds: Math.round(toSec(flicks) * 100) / 100 };
 	if (later) params.later = 1;
+	if (restart) params.restart = 1;
 	if (text) params.text = text.length > 120 ? `${text.slice(0, 117)}…` : text;
 	if (kept) params.kept = kept.length > 80 ? `${kept.slice(0, 77)}…` : kept;
 	if (group !== undefined) {
@@ -1032,6 +1037,8 @@ type FrameFinding = {
 	end: number;
 	words: null;
 	text: string;
+	/** Voice for review: the fragment of a restart inside the word `text` (`wordDip`, round 13). */
+	restart?: true;
 };
 
 /** The analysed regions in frames (the clips' media spans, merged), else the words' span. */
@@ -1099,7 +1106,7 @@ function frameFindings(
 	const out: FrameFinding[] = [];
 	const sound = words.map((): [number, number] => [Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]);
 	const F = FLICKS_PER_SECOND * FR;
-	const push = (kind: FindingKind, action: RuleAction, a: number, b: number, text = '') => {
+	const push = (kind: FindingKind, action: RuleAction, a: number, b: number, text = '', restart = false) => {
 		if (action === 'off') return;
 		out.push({
 			kind,
@@ -1108,6 +1115,7 @@ function frameFindings(
 			end: Math.round(b * F),
 			words: null,
 			text,
+			...(restart ? { restart: true as const } : {}),
 		});
 	};
 	const T = settings.thresholds;
@@ -1331,6 +1339,23 @@ function frameFindings(
 				}
 			if (first >= 0 && last + 1 - first >= minU)
 				push('untranscribed', settings.rules.untranscribed, first, last + 1, w.text.trim());
+		}
+		// a restart inside one word — the fragment broken off at full voice, a dip, then time for the whole word at the
+		// speaker's pace (`wordDip`, round 13: "extra… ¡extremadamente!" written as one word as long as the speaker's
+		// clean one, which the re-decode did not split): the fragment and the dip are voice for review, its text the word
+		for (const w of words) {
+			const [a, b] = wordFrames(w);
+			if (b <= lo || a >= hi) continue;
+			const d = wordDip((f) => levelDbAt(voice, f), a, b, w.text, pace);
+			if (d && Math.min(hi, d.end) > Math.max(lo, a))
+				push(
+					'untranscribed',
+					settings.rules.untranscribed,
+					Math.max(lo, a),
+					Math.min(hi, d.end),
+					w.text.trim(),
+					true,
+				);
 		}
 		// breath-like runs touching speech on either side (within 30 ms)
 		for (let f = lo; f < hi; ) {

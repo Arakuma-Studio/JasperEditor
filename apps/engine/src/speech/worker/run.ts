@@ -662,7 +662,8 @@ function mergeRecovered(a: RecoveredReport | null, b: RecoveredReport | null): R
 
 /**
  * Hidden takes (`core/gaps.ts`, docs/wp-notes/speech.md §11.3 "Hidden takes"): decodes again, each alone, the windows around
- * stretched words, short wordless voice and garbled words (another writing system than `r.language`) of `r` —
+ * stretched words, short wordless voice, garbled words (another writing system than `r.language`) and words holding
+ * a dip and a new onset (a restart inside the word) of `r` —
  * verbatim, without the previous text — and replaces a window's words when the re-decode holds more words consistent
  * with the audio and re-says the original ones (`redecodeAccepted`; original words it wrote nothing over stay, garbage
  * never does); the window's segments are replaced with it. A
@@ -677,7 +678,8 @@ async function redecodeSuspects(
 	mask: SpeechMask,
 	opts: WhisperOptions,
 ): Promise<{ result: WhisperResult; report: RedecodedReport | null }> {
-	const { windows, skipped } = suspectWindows(r.words, mask, r.language);
+	// a restart inside a word is a dip in the frame levels (the energy VAD's 10 ms RMS)
+	const { windows, skipped } = suspectWindows(r.words, mask, r.language, input.db);
 	if (!windows.length && !skipped) return { result: r, report: null };
 	const report: RedecodedReport = {
 		windows: windows.length,
