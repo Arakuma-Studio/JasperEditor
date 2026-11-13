@@ -170,12 +170,17 @@ const ROUTES: Record<string, Route> = {
 			['image_split', { projectId: v.project, clipId: v.still }],
 		],
 	},
+	'cleanup-keep-fragments': {
+		calls: (v) => [
+			['plan_cleanup', { projectId: v.project, preset: 'fast', decisions: { rejectKinds: ['fragment'] } }],
+		],
+	},
 	'delivery-split-clip-control': {
 		calls: (v) => [['split_at', { projectId: v.project, clipIds: [v.clip], at: '10s' }]],
 	},
 };
 
-const SPEC_19_PREFIXES = ['titles-', 'effects-', 'three-d-', 'delivery-'];
+const SPEC_19_PREFIXES = ['titles-', 'effects-', 'three-d-', 'delivery-', 'cleanup-'];
 const cases = loadCases().filter((c) => SPEC_19_PREFIXES.some((p) => c.id.startsWith(p)));
 
 async function runRoute(c: EvalCase, route: Route) {

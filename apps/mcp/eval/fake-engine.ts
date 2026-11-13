@@ -29,7 +29,10 @@ import {
 import { EngineError as DefaultEngineError } from '@jasper/engine-client';
 import { mgRegistry } from '@jasper/mg-templates';
 import {
+	analyzeSequenceCleanup,
 	applyTransaction,
+	builtinCleanupSettings,
+	type CleanupAnalysis,
 	type Clip,
 	colorSpace,
 	createCounterIdSource,
@@ -42,6 +45,7 @@ import {
 	exportAgentSchema,
 	FACTORY_LOOKS,
 	type MediaAsset,
+	mergeCleanupSettings,
 	normalizeAgentTransaction,
 	type ProjectDocument,
 	type Proposal,
@@ -49,6 +53,7 @@ import {
 	resolveAgentAddresses,
 	runAgentQuery,
 	type Sequence,
+	sequenceCleanupSettings,
 	sequenceColorInfo,
 	type Transcript,
 } from '@jasper/project';
@@ -565,6 +570,10 @@ export function createFakeEngine(
 		}
 	}
 
+	const cleanups = new Map<
+		string,
+		{ projectId: string; sequenceId: string; analysis: CleanupAnalysis; sent: boolean }
+	>();
 	const newJob = (kind: string, title: string, polls: number, result: unknown, failure?: unknown): Job => {
 		const job: Job = { id: `job_${String(++jobN).padStart(4, '0')}`, kind, title, polls, result, failure };
 		jobs.set(job.id, job);
@@ -1023,6 +1032,84 @@ export function createFakeEngine(
 			templates: mgRegistry.catalogJson().map((d) => ({ ...d, native: false })),
 			renderer: { status: 'unavailable', reason: 'eval: no native renderer' },
 		}),
+		// Clean Up: the real detector and planner on the project's document, in word mode (the fake has no audio: every
+		// media is a voice analysis `missing`)
+		analyzeCleanup: (req: {
+			projectId: string;
+			sequenceId?: string;
+			document?: unknown;
+			clipIds?: string[];
+			range?: { from: number; to: number };
+			presetId?: string;
+			overrides?: Parameters<typeof mergeCleanupSettings>[1];
+			script?: string | null;
+			language?: string;
+			decisions?: Parameters<typeof analyzeSequenceCleanup>[0]['decisions'];
+		}) => {
+			const p = project(req.projectId);
+			const sent = req.document as { document?: ProjectDocument } | ProjectDocument | undefined;
+			const doc = sent
+				? ((sent as { document?: ProjectDocument }).document ?? (sent as ProjectDocument))
+				: p.doc;
+			const seq = doc.sequences[req.sequenceId ?? Object.keys(doc.sequences)[0]!];
+			if (!seq) throw new EngineError('SEQUENCE_NOT_FOUND', `No sequence ${req.sequenceId}`, { status: 404 });
+			const base = builtinCleanupSettings(req.presetId) ?? sequenceCleanupSettings(seq);
+			const a = analyzeSequenceCleanup({
+				doc,
+				seq,
+				voice: () => null,
+				settings: mergeCleanupSettings(base, req.overrides),
+				...(req.script !== undefined ? { script: req.script } : {}),
+				...(req.language ? { language: req.language } : {}),
+				...(req.decisions ? { decisions: req.decisions } : {}),
+				scope: {
+					...(req.clipIds ? { clipIds: req.clipIds } : {}),
+					...(req.range ? { range: req.range } : {}),
+				},
+			});
+			if (!a.ok)
+				return jobView(
+					newJob('cleanup-analysis', 'Clean Up analysis', 0, null, { code: a.code, message: a.message }),
+				);
+			const analysisId = `cla_${String(cleanups.size + 1).padStart(4, '0')}`;
+			cleanups.set(analysisId, { projectId: req.projectId, sequenceId: seq.id, analysis: a, sent: !!sent });
+			const byKind: Record<string, number> = {};
+			for (const f of a.findings) byKind[f.kind] = (byKind[f.kind] ?? 0) + 1;
+			return jobView(
+				newJob('cleanup-analysis', 'Clean Up analysis', 0, {
+					analysisId,
+					url: `/api/cleanup/analyses/${analysisId}`,
+					projectId: req.projectId,
+					sequenceId: seq.id,
+					findings: a.findings.length,
+					byKind,
+					groups: a.groups.length,
+					ranges: a.plan.ranges.length,
+					stats: a.plan.stats,
+					voice: {
+						cached: [],
+						analysed: [],
+						missing: a.media.map((m) => ({ mediaId: m.mediaId, reason: 'eval: no audio' })),
+					},
+					elapsedMs: 1,
+				}),
+			);
+		},
+		getCleanupAnalysis: (analysisId: string) => {
+			const c = cleanups.get(analysisId);
+			if (!c)
+				throw new EngineError('CLEANUP_ANALYSIS_NOT_FOUND', `No analysis ${analysisId}`, { status: 404 });
+			return {
+				format: 'jasper-cleanup-analysis',
+				version: 1,
+				analysisId,
+				projectId: c.projectId,
+				sequenceId: c.sequenceId,
+				revision: c.sent ? -1 : project(c.projectId).revision,
+				createdAt: NOW,
+				analysis: c.analysis,
+			};
+		},
 		getJob: (id: string) => {
 			const job = jobs.get(id);
 			if (!job) throw new EngineError('NOT_FOUND', `No job ${id}`, { status: 404 });
