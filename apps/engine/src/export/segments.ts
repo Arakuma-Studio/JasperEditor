@@ -209,21 +209,3 @@ function split(snap: RenderSnapshot, n: number): PictureSegment[] {
 	for (let i = 0; i < n; i++) segments.push({ start: bounds[i]!, end: bounds[i + 1]! });
 	return segments;
 }
-
-/** Top-level visual layers (clips with their handles, mattes) of the busiest segment: the plan's overlay estimate. */
-export function layersPerSegment(snap: RenderSnapshot, segments: readonly PictureSegment[]): number {
-	let most = 0;
-	for (const s of segments) {
-		let n = 0;
-		for (const t of snap.videoTracks) {
-			for (const c of t.clips) {
-				const f0 = c.start - (c.headHandle ?? 0);
-				const f1 = c.start + c.duration + (c.tailHandle ?? 0);
-				if (f1 > s.start && f0 < s.end) n++;
-			}
-			for (const m of t.mattes ?? []) if (m.start + m.duration > s.start && m.start < s.end) n++;
-		}
-		most = Math.max(most, n);
-	}
-	return most;
-}

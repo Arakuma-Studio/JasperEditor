@@ -21,6 +21,12 @@
 //    and the target / codec): a second delivery of the same mix (Sound Check before export, then the export; a
 //    re-export) writes and encodes once, still checked on the decoded audio. Measure-only passes skip the true-peak
 //    meter (only their integrated loudness is read).
+// 4. Fewer rounds and passes (docs/wp-notes/export-performance.md §14): the first pass starts at the gain of the aim, with
+//    a measured probe 0.5 dB higher beside it where the limiter will act (the first step has the curve's slope); every
+//    pass is a point of the limiter's scale-free curve, so a later round starts at the gain the curve predicts; a
+//    round's candidates are written side by side; and the first round also encodes the target without the codec's
+//    typical loss, so material the codec barely quietens is delivered without a second round.
+import { createHash } from 'node:crypto';
 import { open, rename, rm } from 'node:fs/promises';
 import { endianness } from 'node:os';
 import { join } from 'node:path';
@@ -443,9 +449,10 @@ export type DeliveryOutcome = {
 	/**
 	 * What the passes were (logs and benchmarks): `converge` = a loudness step at new parameters; `rewrite` = parameters
 	 * an earlier pass measured, written again because a later pass overwrote `outPath`; `alternative` = a lower-ceiling
-	 * candidate written while the first encode of a round runs.
+	 * candidate written while the first encode of a round runs; `probe` = a measured (not written) second gain beside the
+	 * first pass, for the first step's slope (export-performance §14).
 	 */
-	passKinds: { converge: number; rewrite: number; alternative: number };
+	passKinds: { converge: number; rewrite: number; alternative: number; probe: number };
 	encodePasses: number;
 	/** The limiter took the push: the target cannot be reached under the ceiling (loudness ±0.5 LU not met). */
 	ceilingLimited: boolean;
@@ -593,10 +600,27 @@ export async function solveDelivery(o: {
 	const hit = key ? cacheGet(key) : undefined;
 	let params: DeliveryParams = { gainDb: initialGainDb, ceilingDb: tpTarget - headroom, correction: null };
 	let passes = 0;
-	const passKinds = { converge: 0, rewrite: 0, alternative: 0 };
+	const passKinds = { converge: 0, rewrite: 0, alternative: 0, probe: 0 };
 	let encodePasses = 0;
 	/** The parameters `outPath` was last written with (identity). */
 	let writtenWith: DeliveryParams | null = null;
+	/**
+	 * docs/wp-notes/export-performance.md §14: every pass measured so far as a point of the limiter's scale-free curve
+	 * (`gainAtCeiling`), by correction (one curve per correction): later steps start from it instead of slope 1.
+	 */
+	const curve = new Map<string, { p: number; f: number }[]>();
+	const keys = new WeakMap<Float32Array, string>();
+	const corrKey = (c: Float32Array | null): string => {
+		if (!c) return '';
+		let k = keys.get(c);
+		if (k === undefined) {
+			k = createHash('sha1')
+				.update(Buffer.from(c.buffer, c.byteOffset, c.byteLength))
+				.digest('hex');
+			keys.set(c, k);
+		}
+		return k;
+	};
 
 	const measure = async (
 		p: DeliveryParams,
@@ -609,32 +633,58 @@ export async function solveDelivery(o: {
 		if (o.signal?.aborted) throw new Error('aborted');
 		const t0 = performance.now();
 		try {
+			let s: LoudnessSummary;
 			if (write && o.write) {
-				const s = await o.write(p, path ?? o.outPath);
+				s = await o.write(p, path ?? o.outPath);
 				if (!path || path === o.outPath) writtenWith = p;
-				return s;
+			} else {
+				// with a writer only the integrated loudness of a measuring pass is read (the written pass reports the true
+				// peak): no true-peak meter; measure-only deliveries report the true peak of their passes
+				const req = { pass1: o.pass1, sampleRate: sr, channels: o.channels, total: o.total, params: p };
+				s = o.runner
+					? await o.runner.pass({ ...req, out: null, truePeak: !o.write }, o.signal)
+					: await measureDeliveryPass({ ...req, truePeak: !o.write }, o.signal);
 			}
-			// with a writer only the integrated loudness of a measuring pass is read (the written pass reports the true
-			// peak): no true-peak meter; measure-only deliveries report the true peak of their passes
-			const req = { pass1: o.pass1, sampleRate: sr, channels: o.channels, total: o.total, params: p };
-			return o.runner
-				? await o.runner.pass({ ...req, out: null, truePeak: !o.write }, o.signal)
-				: await measureDeliveryPass({ ...req, truePeak: !o.write }, o.signal);
+			if (Number.isFinite(s.integrated)) {
+				const k = corrKey(p.correction);
+				const list = curve.get(k) ?? [];
+				list.push({ p: p.gainDb - p.ceilingDb, f: s.integrated - p.ceilingDb });
+				curve.set(k, list);
+			}
+			return s;
 		} finally {
 			timings.passesMs += performance.now() - t0;
 		}
 	};
 
 	/** Loudness convergence at a ceiling / correction: the gain that lands `aim` (PCM), ≤ maxLoudnessPasses. */
-	const converge = async (start: DeliveryParams, aim: number, writeFirst: boolean): Promise<Converged> => {
+	const converge = async (
+		start: DeliveryParams,
+		aim: number,
+		writeFirst: boolean,
+		/** §14: a point measured before on this curve (gain, loudness at `start`'s ceiling): the first step's slope. */
+		seed: { g: number; i: number } | null = null,
+		/**
+		 * §14: no point known yet: measure a second gain `probe` dB higher beside the first pass (another worker), so the
+		 * first step already has the curve's slope (one pass less on the way to the aim).
+		 */
+		probe = 0,
+	): Promise<Converged> => {
 		let p = start;
-		let s = await measure(p, writeFirst);
+		const second = probe > 0 ? { ...p, gainDb: p.gainDb + probe } : null;
+		const [first, extra] = await Promise.all([
+			measure(p, writeFirst),
+			second ? measure(second, false, undefined, 'probe') : Promise.resolve(null),
+		]);
+		let s = first;
 		const points: { g: number; i: number }[] = [];
 		if (!Number.isFinite(s.integrated) || !Number.isFinite(o.before.integrated))
 			return { params: p, pcm: s, limited: false, points };
 		points.push({ g: p.gainDb, i: s.integrated });
 		let best = { params: p, pcm: s };
-		let prev: { g: number; i: number } | null = null;
+		let prev: { g: number; i: number } | null = seed && Math.abs(seed.g - p.gainDb) > 1e-6 ? seed : null;
+		if (second && extra && Number.isFinite(extra.integrated))
+			prev = { g: second.gainDb, i: extra.integrated };
 		let limited = false;
 		for (let k = 1; k < L.maxLoudnessPasses; k++) {
 			const err = aim - s.integrated;
@@ -701,7 +751,13 @@ export async function solveDelivery(o: {
 		aim = hit.aim;
 		r = { params, pcm: await measure(params, true), limited: hit.limited, points: [] };
 	} else {
-		r = await converge(params, aim, true);
+		// §14: the first pass at the gain that lands the aim where nothing is limited; where the limiter will act (the mix's
+		// true peak at that gain passes the ceiling) a probe 0.5 dB higher beside it (on the runner's workers, or
+		// interleaved here) gives the first step the curve's slope
+		params = { ...params, gainDb: initialGainDb + (aim - target) };
+		const limiting =
+			!Number.isFinite(o.before.truePeakDb) || o.before.truePeakDb + params.gainDb > params.ceilingDb;
+		r = await converge(params, aim, true, null, parallel > 1 && limiting ? 0.5 : 0);
 		params = r.params;
 	}
 	let decoded: LoudnessSummary | null = null;
@@ -830,51 +886,79 @@ export async function solveDelivery(o: {
 			ceiling: number,
 			aimAt: number,
 			tag: string,
+			/** §14: a first round also tries the target without the codec's typical loss. */
+			lossAlternative: boolean,
 		): Promise<Cand[]> => {
-			const out: Cand[] = [];
-			// the base's passes as points on the scale-free loudness curve (see gainAtCeiling)
+			// the base's passes as points on the scale-free loudness curve (see gainAtCeiling), with every pass measured
+			// with this correction so far (§14)
 			const pts = base.points.map((x) => ({ p: x.g - ceiling, f: x.i - ceiling }));
 			if (Number.isFinite(base.pcm.integrated))
 				pts.push({ p: base.params.gainDb - ceiling, f: base.pcm.integrated - ceiling });
-			if (!pts.length) return out;
+			if (!pts.length) return [];
+			for (const x of curve.get(corrKey(withCorrection(base.params, raw, ceiling).correction)) ?? [])
+				if (!pts.some((y) => Math.abs(y.p - x.p) < 1e-9 && Math.abs(y.f - x.f) < 1e-9)) pts.push(x);
+			/** The candidates: lower ceilings at the round's aim, and (§14, a first round) the target without the codec's
+			 * typical loss at the first lower ceiling, so a codec that loses less than the table still lands in this round. */
+			const specs: { ceil: number; aim: number; tag: string }[] = [];
+			let room = Math.min(parallel - 1, L.maxEncodePasses - encodePasses);
 			for (const [n, step] of DELIVERY_CEILING_STEPS_DB.entries()) {
-				if (out.length + 1 >= parallel || encodePasses >= L.maxEncodePasses) break;
 				const ceil = Math.max(tpTarget - L.maxCodecHeadroomDb, ceiling - step);
 				if (!(ceil < ceiling) || !(base.pcm.truePeakDb > ceil + 0.01)) continue;
-				const wav = `${outPath}.alt-${tag}-${n}.wav`;
-				made.push(wav);
-				// one written pass at the predicted gain; a second (secant on the curve) when it misses the aim
-				let p = withCorrection({ ...base.params, gainDb: gainAtCeiling(pts, ceil, aimAt) }, raw, ceil);
-				let pcm = await measure(p, true, wav, 'alternative');
-				if (Number.isFinite(pcm.integrated)) {
-					pts.push({ p: p.gainDb - ceil, f: pcm.integrated - ceil });
-					// (a gain at the push cap is the one just measured: the same pass again would write the same bytes)
-					const next = gainAtCeiling(pts, ceil, aimAt);
-					if (Math.abs(aimAt - pcm.integrated) > L.loudnessTolLu && next !== p.gainDb) {
-						p = { ...p, gainDb: next };
-						pcm = await measure(p, true, wav, 'alternative');
-						if (Number.isFinite(pcm.integrated)) pts.push({ p: p.gainDb - ceil, f: pcm.integrated - ceil });
+				if (room-- <= 0) break;
+				specs.push({ ceil, aim: aimAt, tag: `${tag}${'bcd'[n]}` });
+				const plain = clampAim(target);
+				if (
+					lossAlternative &&
+					n === 0 &&
+					Math.abs(aimAt - plain) > L.decodedTolLu &&
+					encodePasses + specs.length < L.maxEncodePasses
+				)
+					specs.push({ ceil, aim: plain, tag: `${tag}t` });
+			}
+			// side by side (each its own WAV; the encodes start as each is written), in order of preference
+			const settled = await Promise.allSettled(
+				specs.map(async ({ ceil, aim: a, tag: t }) => {
+					const wav = `${outPath}.alt-${t}.wav`;
+					made.push(wav);
+					const mine = [...pts];
+					// one written pass at the predicted gain; a second (secant on the curve) when it misses the aim
+					let p = withCorrection({ ...base.params, gainDb: gainAtCeiling(mine, ceil, a) }, raw, ceil);
+					let pcm = await measure(p, true, wav, 'alternative');
+					if (Number.isFinite(pcm.integrated)) {
+						mine.push({ p: p.gainDb - ceil, f: pcm.integrated - ceil });
+						// (a gain at the push cap is the one just measured: the same pass again would write the same bytes)
+						const next = gainAtCeiling(mine, ceil, a);
+						if (Math.abs(a - pcm.integrated) > L.loudnessTolLu && next !== p.gainDb) {
+							p = { ...p, gainDb: next };
+							pcm = await measure(p, true, wav, 'alternative');
+						}
 					}
-				}
-				out.push(
-					start(
+					return start(
 						{
 							params: p,
 							r: { params: p, pcm, limited: base.limited, points: [] },
 							raw,
 							ceiling: ceil,
-							aim: aimAt,
+							aim: a,
 							wav,
 						},
-						`${tag}${'bcd'[n]}`,
-					),
-				);
+						t,
+					);
+				}),
+			);
+			const out = settled.flatMap((x) => (x.status === 'fulfilled' ? [x.value] : []));
+			const failed = settled.find((x) => x.status === 'rejected');
+			if (failed) {
+				// (the siblings' encodes stop with the failure)
+				for (const c of out) c.ac.abort();
+				await Promise.allSettled(out.map((c) => c.measured));
+				throw failed.reason;
 			}
 			return out;
 		};
 		let round: Cand[] = [start({ params, r, raw: raw0, ceiling: params.ceilingDb, aim, wav: outPath }, '0')];
 		// a cached delivery met the target before: no alternatives
-		if (!hit) for (const c of await alternatives(r, raw0, params.ceilingDb, aim, '0')) round.push(c);
+		if (!hit) for (const c of await alternatives(r, raw0, params.ceilingDb, aim, '0', true)) round.push(c);
 		let met: Cand | null = null;
 		try {
 			for (let k = 0; ; k++) {
@@ -919,14 +1003,27 @@ export async function solveDelivery(o: {
 				}
 				let nextAim = from.aim;
 				if (!from.r.limited) nextAim = clampAim(from.aim + roundBest.loudErr);
-				let rc = await converge(withCorrection(from.params, raw, ceiling), nextAim, true);
+				// §14: the passes measured so far with this correction predict the gain (one pass where the codec only
+				// missed the loudness, instead of converging from the last gain at slope 1)
+				let p0 = withCorrection(from.params, raw, ceiling);
+				let seed: { g: number; i: number } | null = null;
+				const known = curve.get(corrKey(p0.correction)) ?? [];
+				if (known.length) {
+					p0 = { ...p0, gainDb: gainAtCeiling(known, ceiling, nextAim) };
+					const g0 = p0.gainDb;
+					const q = [...known]
+						.sort((a, b) => Math.abs(a.p + ceiling - g0) - Math.abs(b.p + ceiling - g0))
+						.find((x) => Math.abs(x.p + ceiling - g0) > 1e-6);
+					if (q) seed = { g: q.p + ceiling, i: q.f + ceiling };
+				}
+				let rc = await converge(p0, nextAim, true, seed);
 				// `outPath` holds the converged pass (the encode reads it)
 				if (writtenWith !== rc.params)
 					rc = { ...rc, pcm: await measure(rc.params, true, undefined, 'rewrite') };
 				const next: Cand[] = [
 					start({ params: rc.params, r: rc, raw, ceiling, aim: nextAim, wav: outPath }, `${k + 1}a`),
 				];
-				for (const c of await alternatives(rc, raw, ceiling, nextAim, `${k + 1}`)) next.push(c);
+				for (const c of await alternatives(rc, raw, ceiling, nextAim, `${k + 1}`, false)) next.push(c);
 				round = next;
 			}
 		} finally {

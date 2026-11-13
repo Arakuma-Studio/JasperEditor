@@ -39,11 +39,13 @@ import {
 } from '@jasper/api';
 import {
 	buildRenderSnapshot,
+	clipContentTime,
 	copyableRuns,
 	type MediaHandle,
 	mediaDecodeHints,
 	type RenderSnapshot,
 	type RenderVisualClip,
+	resolveLayerProps,
 	rotoStorePath,
 	writeCaptionFile,
 } from '@jasper/project';
@@ -64,6 +66,7 @@ import {
 } from '../color/output.ts';
 import type { Broadcaster } from '../events/broadcaster.ts';
 import type { FontCatalogService } from '../fonts/catalog.ts';
+import { variantHasAlpha } from '../imports/variants.ts';
 import type { JobQueue } from '../jobs/queue.ts';
 import { type JobContext, JobError } from '../jobs/types.ts';
 import type { MediaRegistry } from '../media/registry.ts';
@@ -92,10 +95,20 @@ import { runGamutCheck } from './delivery/gamut.ts';
 import { runPsdExport } from './delivery/psd-job.ts';
 import { planPsd } from './delivery/psd-plan.ts';
 import { gpuDecodePolicyFromEnv, nvdecEligible, nvdecForGraph, probeCudaDecode } from './gpu.ts';
-import { compositeMemoryBudget, compositeProfile, estimateFrom } from './memory.ts';
-import { BT709_FRAME_TAGS, buildNativeGraph, mixAudioFilters, SWS_FLAGS } from './native.ts';
+import { motionStage } from './keyframed.ts';
+import { compositeMemoryBudget, compositeProfile, estimateFrom, overlaysFrom } from './memory.ts';
 import {
+	BT709_FRAME_TAGS,
+	buildNativeGraph,
+	coverCandidate,
+	mixAudioFilters,
+	motionCovers,
+	SWS_FLAGS,
+} from './native.ts';
+import {
+	type DeferredLayer,
 	layerOverride,
+	layerSpan,
 	type NativeExtension,
 	NativeExtensionRegistry,
 	type PreparedExtensions,
@@ -115,7 +128,6 @@ import {
 } from './planner.ts';
 import { ExportRunReport } from './run-report.ts';
 import {
-	layersPerSegment,
 	planPictureSegments,
 	type SegmentMemory,
 	type SegmentPlan,
@@ -430,7 +442,38 @@ export class ExportService {
 			memory: segmentMemory(snap),
 		});
 		const comp = planCompositeSize(snap, planned.output);
-		const size = outputSizeSnapshot(snap, comp).settings;
+		const drawSnap = outputSizeSnapshot(snap, comp);
+		const size = drawSnap.settings;
+		// The builder's graphs (§12, AS-072): base pieces draw no overlay, a track's constant-picture layers one per kernel
+		// stream, which the plain layer count did not know (345 planned, 5 built on the real project).
+		const exts = this.nativeExtensions.all();
+		const fps = drawSnap.settings.fps;
+		const covers = (c: RenderVisualClip): boolean => {
+			if (!coverCandidate(c) || exts.some((e) => e.claimsLayer?.(c) || e.retimes?.(c))) return false;
+			const m = 'mediaId' in c.source ? planned.media[c.source.mediaId] : undefined;
+			if (!m || variantHasAlpha(m.record, m.pixel ?? null)) return false;
+			const [f0, f1] = layerSpan(c, drawSnap.range);
+			if (f1 <= f0) return false;
+			const bw = Math.max(1, Math.round(c.intrinsicBox.width));
+			const bh = Math.max(1, Math.round(c.intrinsicBox.height));
+			const { width: W, height: H } = drawSnap.settings;
+			const props = resolveLayerProps(c, clipContentTime(c, f0, fps));
+			const motion = motionStage({
+				clip: c,
+				f0,
+				f1,
+				R0: drawSnap.range.start,
+				fps,
+				props,
+				bw,
+				bh,
+				W,
+				H,
+				label: 'p',
+			});
+			return motionCovers(motion, bw, bh, W, H);
+		};
+		const profile = compositeProfile(drawSnap, covers);
 		// docs/wp-notes/export-performance.md §10: where kernel streams will be drawn (streams that do not fit the OpenCL
 		// program are known when the graphs are built: the result names them)
 		const cl = await probeOpenClTaps(this.deps.ff, openClPolicyFromEnv());
@@ -444,7 +487,7 @@ export class ExportService {
 			kernel: cl.ok ? { device: 'opencl' } : { device: 'cpu', fallbackReasons: [cl.reason] },
 			segments: segments.length,
 			concurrency,
-			overlays: layersPerSegment(snap, segments),
+			overlays: Math.max(0, ...segments.map((s) => overlaysFrom(drawSnap, profile, s))),
 			compositeSize: { width: size.width, height: size.height },
 			memoryBytes: peakBytes,
 			...(reason ? { reason } : {}),
@@ -1284,10 +1327,13 @@ export class ExportService {
 		exts: readonly NativeExtension[],
 		prepared: ReadonlyMap<string, unknown>,
 		masters: ReadonlyMap<string, string> = new Map(),
+		/** The clips to pin (default: all; §13: a deferred bake's once it is ready). */
+		only: (clipId: string) => boolean = () => true,
 	): Promise<void> {
 		if (!this.cache) return;
 		const paths = new Set(masters.values());
 		for (const clip of planned.snapshot.videoTracks.flatMap((t) => t.clips)) {
+			if (!only(clip.clipId)) continue;
 			const o = layerOverride(exts, prepared, clip);
 			if (o) paths.add(o.path);
 		}
@@ -1412,6 +1458,18 @@ export class ExportService {
 		};
 		const report = this.report(ctx);
 		const endBake = report.begin('bake');
+		/**
+		 * docs/wp-notes/export-performance.md §13: bakes that continue beside the composite (`NativePrepareContext.defer`).
+		 * A segment is built and started once those drawn in its frames are ready.
+		 */
+		const deferred: DeferredLayer[] = [];
+		/** Deferred bakes that are done. */
+		const baked = new Set<DeferredLayer>();
+		/** Lanes waiting for a composite to end, a bake to be ready or the export to stop. */
+		const waiting: (() => void)[] = [];
+		const wake = () => {
+			for (const w of waiting.splice(0)) w();
+		};
 		try {
 			const pctx = {
 				signal: ctx.signal,
@@ -1434,24 +1492,41 @@ export class ExportService {
 					});
 					background.push(work);
 				},
+				...(pipeline && !still
+					? {
+							defer: (d: DeferredLayer) => {
+								deferred.push(d);
+								d.ready.then(
+									() => {
+										baked.add(d);
+										wake();
+									},
+									() => wake(),
+								);
+							},
+						}
+					: {}),
 			};
 			prepared = await prepareExtensions(exts, plannedC, pctx);
 			// edit-structure: nested sequences are drawn in the same graph; their layers get their own preparations
-			// (without pipelined stills: nested stacks have no kernel stream members of their own to wait).
+			// (without pipelined stills or deferred bakes: nested stacks have no kernel stream members of their own to wait).
 			nested = await prepareNestedExtensions(exts, planned, { ...pctx, pipeline: false });
 		} catch (e) {
 			await abandon();
 			if (ctx.signal.aborted) throw e;
 			throw new NativePrepareError(e);
 		} finally {
-			endBake();
+			// (the bake phase lasts until the deferred bakes are done)
+			if (deferred.length) void Promise.allSettled(deferred.map((d) => d.ready)).then(endBake);
+			else endBake();
 		}
+		const deferredClips = new Set(deferred.flatMap((d) => d.clipIds));
 		// The mixdown (started before the preparation): an input of a one-graph composite, which waits for it; segments
 		// render while it is delivered (their sound is encoded and joined when it is ready).
 		const audioP = Promise.resolve(audioIn);
 		audioP.catch(() => {});
 		const endPlan = report.begin('plan');
-		await this.pinInputs(ctx, planned, exts, prepared, masters);
+		await this.pinInputs(ctx, planned, exts, prepared, masters, (id) => !deferredClips.has(id));
 		const pinNested = async (pl: PlannedExport, parent: string): Promise<void> => {
 			for (const c of pl.snapshot.videoTracks.flatMap((t) => t.clips)) {
 				if (!('nest' in c.source)) continue;
@@ -1524,75 +1599,159 @@ export class ExportService {
 				? ({ ok: false, reason: openClFailure } as const)
 				: await probeOpenClTaps(this.deps.ff, openClPolicyFromEnv());
 		type Part = { graph: ReturnType<typeof buildNativeGraph>; file: string; args: string[]; label: string };
-		const parts: Part[] = [];
+		/** The segments' composites, built once the bakes they draw are ready (§13). */
+		const parts: (Part | undefined)[] = segPlan.segments.map(() => undefined);
+		const labels = segPlan.segments.map((s, i) =>
+			split ? `segment ${i + 1}/${segPlan.segments.length} [${s.start}, ${s.end})` : '',
+		);
+		/** The deferred bakes drawn in each segment's frames. */
+		const needs = segPlan.segments.map((s) => deferred.filter((d) => d.start < s.end && d.end > s.start));
+		const isReady = (i: number) => needs[i]!.every((d) => baked.has(d));
+		/**
+		 * §13: the pipelined stills each segment draws (rendered in time order beside the composites): a segment starts
+		 * once they are written, except the earliest one left, which streams behind them (a composite that started ahead
+		 * of them would hold its place while it waits).
+		 */
+		const stillsWritten = new Set<Promise<unknown>>();
+		const stills = segPlan.segments.map((s) => {
+			const list = new Set<Promise<unknown>>();
+			for (const c of snap.videoTracks.flatMap((t) => t.clips)) {
+				if (deferredClips.has(c.clipId)) continue;
+				const [f0, f1] = layerSpan(c, s);
+				const ready = f1 > f0 ? layerOverride(exts, prepared, c)?.ready : undefined;
+				if (ready) list.add(ready);
+			}
+			return [...list];
+		});
+		for (const r of new Set(stills.flat()))
+			r.then(
+				() => {
+					stillsWritten.add(r);
+					wake();
+				},
+				() => wake(),
+			);
+		const stillsReady = (i: number) => stills[i]!.every((r) => stillsWritten.has(r));
 		// output-size.ts: a downscaled export is composited on an output-size canvas, unless a feature needs the sequence
 		// size — or a picture placed in sequence pixels would not land on whole output pixels (then built again)
 		const comp = comp0;
-		const buildParts = async (): Promise<void> => {
-			parts.length = 0;
-			const drawSnap = outputSizeSnapshot(snap, comp);
-			const scratch = split ? await ctx.scratchDir() : '';
-			const threads = split ? Math.max(1, Math.floor(ctx.slots / atOnce)) : ctx.slots;
-			for (const [i, s] of segPlan.segments.entries()) {
-				const n = s.end - s.start;
-				const file = split ? join(scratch, `segment-${i}.${ext}`) : output;
-				const graph = buildNativeGraph({
-					colorLut,
-					snapshot: split ? { ...drawSnap, range: { start: s.start, end: s.end } } : drawSnap,
-					...(comp.size === 'output' ? { compositeScale: comp.scale } : {}),
-					output: split
-						? { ...planned.output, frames: n, durationSec: n * frameSec, videoOnly: true }
-						: planned.output,
-					outputFile: file,
-					sources: {
-						media: (id) => planned.media[id] ?? null,
-						mgMaster: (id) => masters.get(id) ?? null,
-					},
-					threads,
-					...(split ? { filterThreads: threads } : {}),
-					// (the export's GPU decoders are shared by its concurrent segments)
-					...(nvdec.ok ? { hwDecode: nvdecForGraph(Math.floor(gpuPolicy.maxInputs / atOnce)) } : {}),
-					...(openCl.ok ? { openCl: openCl.taps } : {}),
-					still,
-					trackStreams: process.env.JASPER_EXPORT_TRACK_STREAMS !== '0',
-					coverBase: process.env.JASPER_EXPORT_COVER_BASE !== '0',
-					extensions: { list: exts, prepared },
-					...(audio?.path && !split
-						? {
-								audio: {
-									file: audio.path,
-									sampleRate: audio.sampleRate,
-									soxr,
-									// the delivery's checked encode: muxed by stream copy
-									...(deliveredEncode(planned, audio) ? { encoded: deliveredEncode(planned, audio)! } : {}),
-								},
-							}
-						: {}),
-					nested,
-				});
-				// AF-SEC-003: no GPL-only filter in the composite's or a blend segment's graph, before anything starts (a
-				// long graph goes to a -filter_complex_script file, which Ffmpeg.run's own argument check cannot see).
-				assertLgplFilters(graph.filter);
-				for (const seg of graph.blend?.segments ?? []) assertLgplFilters(seg.filter);
-				parts.push({
-					graph,
-					file,
-					args: graph.args,
-					label: split ? `segment ${i + 1}/${segPlan.segments.length} [${s.start}, ${s.end})` : '',
-				});
+		const drawSnap = outputSizeSnapshot(snap, comp);
+		const threads = split ? Math.max(1, Math.floor(ctx.slots / atOnce)) : ctx.slots;
+		/** Pins the cache files of the deferred bakes a segment draws (they were ready after `pinInputs`). */
+		const pinned = new Set<DeferredLayer>();
+		const buildPart = async (i: number): Promise<Part> => {
+			for (const d of needs[i]!) {
+				if (pinned.has(d)) continue;
+				pinned.add(d);
+				await this.pinInputs(ctx, planned, exts, prepared, new Map(), (id) => d.clipIds.includes(id));
 			}
+			const s = segPlan.segments[i]!;
+			const n = s.end - s.start;
+			const file = split ? join(await ctx.scratchDir(), `segment-${i}.${ext}`) : output;
+			const graph = buildNativeGraph({
+				colorLut,
+				snapshot: split ? { ...drawSnap, range: { start: s.start, end: s.end } } : drawSnap,
+				...(comp.size === 'output' ? { compositeScale: comp.scale } : {}),
+				output: split
+					? { ...planned.output, frames: n, durationSec: n * frameSec, videoOnly: true }
+					: planned.output,
+				outputFile: file,
+				sources: {
+					media: (id) => planned.media[id] ?? null,
+					mgMaster: (id) => masters.get(id) ?? null,
+				},
+				threads,
+				...(split ? { filterThreads: threads } : {}),
+				// (the export's GPU decoders are shared by its concurrent segments)
+				...(nvdec.ok ? { hwDecode: nvdecForGraph(Math.floor(gpuPolicy.maxInputs / atOnce)) } : {}),
+				...(openCl.ok ? { openCl: openCl.taps } : {}),
+				still,
+				trackStreams: process.env.JASPER_EXPORT_TRACK_STREAMS !== '0',
+				coverBase: process.env.JASPER_EXPORT_COVER_BASE !== '0',
+				extensions: { list: exts, prepared },
+				...(audio?.path && !split
+					? {
+							audio: {
+								file: audio.path,
+								sampleRate: audio.sampleRate,
+								soxr,
+								// the delivery's checked encode: muxed by stream copy
+								...(deliveredEncode(planned, audio) ? { encoded: deliveredEncode(planned, audio)! } : {}),
+							},
+						}
+					: {}),
+				nested,
+			});
+			// AF-SEC-003: no GPL-only filter in the composite's or a blend segment's graph, before anything starts (a
+			// long graph goes to a -filter_complex_script file, which Ffmpeg.run's own argument check cannot see).
+			assertLgplFilters(graph.filter);
+			for (const seg of graph.blend?.segments ?? []) assertLgplFilters(seg.filter);
+			const part: Part = { graph, file, args: graph.args, label: labels[i]! };
+			if (graph.filter.length > 60_000) {
+				const script = join(await ctx.scratchDir(), `graph-${i}.txt`);
+				await writeFile(script, graph.filter);
+				const k = part.args.indexOf('-filter_complex');
+				part.args = [...part.args.slice(0, k), '-filter_complex_script', script, ...part.args.slice(k + 2)];
+			}
+			for (const [k, seg] of (graph.blend?.segments ?? []).entries()) {
+				if (seg.filter.length > 60_000) {
+					const script = join(await ctx.scratchDir(), `blend-${i}-${k}.txt`);
+					await writeFile(script, seg.filter);
+					const a = seg.args.indexOf('-filter_complex');
+					seg.args = [...seg.args.slice(0, a), '-filter_complex_script', script, ...seg.args.slice(a + 2)];
+				}
+				ctx.log(
+					`ffmpeg (${part.label ? `${part.label}, ` : ''}blend layer ${k + 1}) ${commandLine(seg.args)}`,
+				);
+			}
+			ctx.log(`ffmpeg${part.label ? ` (${part.label})` : ''} ${commandLine(part.args)}`);
+			parts[i] = part;
+			if (parts.every((p) => p !== undefined)) reportPipeline(parts as Part[]);
+			return part;
 		};
-		try {
-			await buildParts();
-		} catch (e) {
-			await abandon();
-			throw e;
-		} finally {
-			endPlan();
-		}
-		const inexact = [...new Set(parts.flatMap((p) => p.graph.inexact))];
-		if (comp.size === 'output' && inexact.length) {
-			// prepared for the output size (masters rendered at it): everything again at the sequence size
+		/** The result's `pipeline`, once every composite is built. */
+		const reportPipeline = (built: readonly Part[]): void => {
+			const kernel = {
+				opencl: built.reduce((n, p) => n + p.graph.kernel.opencl, 0),
+				cpu: built.reduce((n, p) => n + p.graph.kernel.cpu, 0),
+				fallbackReasons: [
+					...new Set([
+						...(openCl.ok ? [] : [openCl.reason]),
+						...built.flatMap((p) => p.graph.kernel.fallbackReasons),
+					]),
+				].slice(0, 20),
+			};
+			if (still) return;
+			report.pipeline = {
+				decode: built.some((p) => p.graph.hwDecoded > 0) ? 'nvdec' : 'cpu',
+				composite: {
+					device: 'cpu',
+					size: comp.size,
+					...(comp.fallbackReasons.length ? { fallbackReasons: comp.fallbackReasons } : {}),
+				},
+				...(kernel.opencl + kernel.cpu > 0
+					? {
+							kernel: {
+								device: kernel.opencl > 0 ? ('opencl' as const) : ('cpu' as const),
+								streams: { opencl: kernel.opencl, cpu: kernel.cpu },
+								...(kernel.fallbackReasons.length ? { fallbackReasons: kernel.fallbackReasons } : {}),
+							},
+						}
+					: {}),
+				segments: built.length,
+				concurrency: atOnce,
+				memoryBytes: segPlan.peakBytes,
+				overlays: Math.max(...built.map(graphOverlays)),
+				compositeSize: { width: drawSnap.settings.width, height: drawSnap.settings.height },
+				...(segPlan.reason ? { reason: segPlan.reason } : {}),
+			};
+			if (kernel.opencl + kernel.cpu > 0)
+				ctx.log(
+					`native: kernel streams: ${kernel.opencl} on the OpenCL device, ${kernel.cpu} on the CPU${kernel.fallbackReasons.length ? ` (${kernel.fallbackReasons.join('; ')})` : ''}`,
+				);
+		};
+		/** Composited at the sequence size instead (prepared for the output size: masters rendered at it). */
+		const atSequenceSize = async (inexact: string[]): Promise<number> => {
 			ctx.log(`native: composited at the sequence size instead: ${inexact.slice(0, 5).join('; ')}`);
 			await settle();
 			ctx.signal.removeEventListener('abort', onAbortBg);
@@ -1609,99 +1768,38 @@ export class ExportService {
 				inexact.slice(0, 20),
 				openClFailure,
 			);
-		}
-		const kernel = {
-			opencl: parts.reduce((n, p) => n + p.graph.kernel.opencl, 0),
-			cpu: parts.reduce((n, p) => n + p.graph.kernel.cpu, 0),
-			fallbackReasons: [
-				...new Set([
-					...(openCl.ok ? [] : [openCl.reason]),
-					...parts.flatMap((p) => p.graph.kernel.fallbackReasons),
-				]),
-			].slice(0, 20),
 		};
-		if (!still)
-			report.pipeline = {
-				decode: parts.some((p) => p.graph.hwDecoded > 0) ? 'nvdec' : 'cpu',
-				composite: {
-					device: 'cpu',
-					size: comp.size,
-					...(comp.fallbackReasons.length ? { fallbackReasons: comp.fallbackReasons } : {}),
-				},
-				...(kernel.opencl + kernel.cpu > 0
-					? {
-							kernel: {
-								device: kernel.opencl > 0 ? ('opencl' as const) : ('cpu' as const),
-								streams: { opencl: kernel.opencl, cpu: kernel.cpu },
-								...(kernel.fallbackReasons.length ? { fallbackReasons: kernel.fallbackReasons } : {}),
-							},
-						}
-					: {}),
-				segments: parts.length,
-				concurrency: atOnce,
-				memoryBytes: segPlan.peakBytes,
-				overlays: Math.max(
-					...parts.flatMap((p) => [
-						overlayCount(p.graph.filter),
-						...(p.graph.blend?.segments ?? []).map((sg) => overlayCount(sg.filter)),
-					]),
-				),
-				compositeSize: (({ width, height }) => ({ width, height }))(outputSizeSnapshot(snap, comp).settings),
-				...(segPlan.reason ? { reason: segPlan.reason } : {}),
-			};
+		const inexactOf = (p: Part) => (comp.size === 'output' ? p.graph.inexact : []);
+		try {
+			for (const i of segPlan.segments.keys()) if (isReady(i)) await buildPart(i);
+		} catch (e) {
+			await abandon();
+			throw e;
+		} finally {
+			endPlan();
+		}
+		const inexact = [...new Set(parts.flatMap((p) => (p ? inexactOf(p) : [])))];
+		if (inexact.length) return atSequenceSize(inexact);
 		if (!still)
 			ctx.log(
-				`native: composited at the ${comp.size} size (${outputSizeSnapshot(snap, comp).settings.width}×${outputSizeSnapshot(snap, comp).settings.height})${comp.fallbackReasons.length ? `: ${comp.fallbackReasons.join('; ')}` : ''}`,
-			);
-		if (!still && kernel.opencl + kernel.cpu > 0)
-			ctx.log(
-				`native: kernel streams: ${kernel.opencl} on the OpenCL device, ${kernel.cpu} on the CPU${kernel.fallbackReasons.length ? ` (${kernel.fallbackReasons.join('; ')})` : ''}`,
+				`native: composited at the ${comp.size} size (${drawSnap.settings.width}×${drawSnap.settings.height})${comp.fallbackReasons.length ? `: ${comp.fallbackReasons.join('; ')}` : ''}`,
 			);
 		ctx.log(
 			`native: estimated composite memory ${(segPlan.peakBytes / 1024 ** 3).toFixed(1)} GB of a ${(compositeMemoryBudget() / 1024 ** 3).toFixed(1)} GB budget`,
 		);
 		if (split)
 			ctx.log(
-				`native: ${parts.length} picture segments, ${atOnce} at a time${segPlan.reason ? ` (${segPlan.reason})` : ''}: ${parts.map((p) => p.label).join(', ')}`,
+				`native: ${segPlan.segments.length} picture segments, ${atOnce} at a time${segPlan.reason ? ` (${segPlan.reason})` : ''}: ${labels.join(', ')}`,
 			);
 		else if (segPlan.reason) ctx.log(`native: one graph (${segPlan.reason})`);
-		// Pipelined stills the composite opens as inputs are written first.
-		const waitFor = parts.flatMap((p) => p.graph.waitFor ?? []);
-		if (waitFor.length) {
-			const unique = new Set(waitFor).size;
-			ctx.progress(0, { stage: `Waiting for ${unique} baked graphic${unique === 1 ? '' : 's'}` });
-			const ready = await report
-				.time('bakeWait', () => Promise.all(waitFor))
-				.catch(async (e) => {
-					await abandon();
-					// Only a failed background bake rejects these.
-					throw new NativePrepareError(bgError ?? e);
-				});
-			const changed = ready.find((r) => !r.ok);
-			if (changed && !changed.ok) return restart(changed.reason);
-		}
-		for (const [pi, part] of parts.entries()) {
-			const { graph } = part;
-			if (graph.filter.length > 60_000) {
-				const script = join(await ctx.scratchDir(), `graph-${pi}.txt`);
-				await writeFile(script, graph.filter);
-				const i = part.args.indexOf('-filter_complex');
-				part.args = [...part.args.slice(0, i), '-filter_complex_script', script, ...part.args.slice(i + 2)];
-			}
-			for (const [i, seg] of (graph.blend?.segments ?? []).entries()) {
-				if (seg.filter.length > 60_000) {
-					const script = join(await ctx.scratchDir(), `blend-${pi}-${i}.txt`);
-					await writeFile(script, seg.filter);
-					const k = seg.args.indexOf('-filter_complex');
-					seg.args = [...seg.args.slice(0, k), '-filter_complex_script', script, ...seg.args.slice(k + 2)];
-				}
-				ctx.log(
-					`ffmpeg (${part.label ? `${part.label}, ` : ''}blend layer ${i + 1}) ${commandLine(seg.args)}`,
-				);
-			}
-			ctx.log(`ffmpeg${part.label ? ` (${part.label})` : ''} ${commandLine(part.args)}`);
-		}
-		const total = parts.reduce((t, p) => t + p.graph.durationSec, 0);
+		if (deferred.length > baked.size)
+			ctx.log(
+				`native: ${deferred.length - baked.size} bake(s) still rendering; ${segPlan.segments.filter((_, i) => !isReady(i)).length} segment(s) start when theirs are ready`,
+			);
+		const total = segPlan.segments.reduce(
+			(t, s) => t + (split ? (s.end - s.start) * frameSec : planned.output.durationSec),
+			0,
+		);
 		const started = Date.now();
 		// Sub-pixel layers stream into the composite's pipes while it runs (stream/run.ts). A failed stream stops the
 		// composite and is the reported error.
@@ -1719,19 +1817,25 @@ export class ExportService {
 		// (streams the OpenCL kernel draws use no kernel threads)
 		const cpuStreams = (streams: ReturnType<typeof buildNativeGraph>['streams']) =>
 			streams.filter((s) => !('kind' in s.plan && s.plan.kind === 'taps' && s.plan.gpu)).length;
-		const allStreams = parts.reduce(
-			(n, p) =>
-				n +
-				cpuStreams(p.graph.streams) +
-				(p.graph.blend?.segments.reduce((m, sg) => m + cpuStreams(sg.streams) + 1, 0) ?? 0),
-			0,
-		);
 		// (the streams of the segments rendering at once share the CPU)
-		const workers = Math.max(
-			2,
-			Math.floor(Math.max(1, ctx.slots) / Math.max(1, Math.ceil((allStreams * atOnce) / parts.length))),
-		);
-		const runStreams = (child: ChildProcess, streams: ReturnType<typeof buildNativeGraph>['streams']) => {
+		const workersFor = (graph: Part['graph']) =>
+			Math.max(
+				2,
+				Math.floor(
+					Math.max(1, ctx.slots) /
+						Math.max(
+							1,
+							(cpuStreams(graph.streams) +
+								(graph.blend?.segments.reduce((m, sg) => m + cpuStreams(sg.streams) + 1, 0) ?? 0)) *
+								atOnce,
+						),
+				),
+			);
+		const runStreams = (
+			child: ChildProcess,
+			streams: ReturnType<typeof buildNativeGraph>['streams'],
+			workers: number,
+		) => {
 			for (const s of streams) {
 				const sink = child.stdio[s.fd] as Writable;
 				const run = { workers, signal: streamAbort.signal, onSpawn: ctx.trackChild };
@@ -1748,7 +1852,11 @@ export class ExportService {
 			}
 		};
 		// keyframes-blend: the processes before the composite run while it runs; the last kernel feeds its pipe:3.
-		const runBlend = (child: ChildProcess, blend: ReturnType<typeof buildNativeGraph>['blend']) => {
+		const runBlend = (
+			child: ChildProcess,
+			blend: ReturnType<typeof buildNativeGraph>['blend'],
+			workers: number,
+		) => {
 			if (!blend) return;
 			producers.push(
 				runBlendPipeline(
@@ -1760,7 +1868,7 @@ export class ExportService {
 						workers,
 						signal: streamAbort.signal,
 						onSpawn: ctx.trackChild,
-						runStreams: (c, streams) => runStreams(c, streams),
+						runStreams: (c, streams) => runStreams(c, streams, workers),
 					},
 				).catch((e: Error) => {
 					if (streamAbort.signal.aborted) return;
@@ -1769,36 +1877,57 @@ export class ExportService {
 				}),
 			);
 		};
-		const done = parts.map(() => 0);
-		let failed: { error: unknown; part: Part } | null = null;
+		const done = segPlan.segments.map(() => 0);
+		const fraction = () =>
+			still || total <= 0 ? 0 : (done.reduce((a, b) => a + b, 0) / total) * (split ? 0.96 : 0.98);
+		/**
+		 * What ended the composites early: a failure (`part` = the composite it came from, if any), or the export to run
+		 * again another way (`again`: a pipelined still changed, a picture off the output grid).
+		 */
+		let failed: { error: unknown; part?: Part; again?: () => Promise<number> } | null = null;
+		runAbort.signal.addEventListener('abort', wake, { once: true });
+		const fail = (f: NonNullable<typeof failed>) => {
+			failed ??= f;
+			runAbort.abort();
+		};
+		// §13: a failed deferred bake fails the export with its error, stopping the composites (a cancelled one is the
+		// job's cancellation).
+		for (const d of deferred)
+			d.ready.catch((e: unknown) => {
+				if (!bgAbort.signal.aborted) fail({ error: new NativePrepareError(bgError ?? e) });
+			});
 		// the sound of a segmented export is encoded while the segments render (the join then only copies)
 		const sound = split ? this.segmentSound(planned, audioP, soxr, ctx, runAbort.signal) : null;
 		// a failed mixdown or sound encode fails the export and stops the segments
-		sound?.catch((error: unknown) => {
-			failed ??= { error, part: parts[0]! };
-			runAbort.abort();
-		});
+		sound?.catch((error: unknown) => fail({ error }));
 		const endEncode = report.begin(still ? 'still' : 'encode');
 		// Memory watchdog (AGENTS §0): the composites' resident memory is sampled every second; past the budget the most
 		// recently started segment is stopped and queued again with one segment fewer at a time, and a lone composite
 		// past it fails the export by name — the system's out-of-memory killer (or a frozen machine) never decides.
 		const budget = still ? 0 : compositeMemoryBudget();
-		const running = new Map<number, { ac: AbortController; pid: number | null; since: number }>();
+		const running = new Map<number, { ac: AbortController; pid: number | null; since: number; part: Part }>();
 		const requeued = new Set<number>();
 		/** Segments the watchdog stopped whose process has not ended yet (their memory is still counted). */
 		const stopping = new Set<number>();
-		const pending = parts.map((_, i) => i);
+		const pending = segPlan.segments.map((_, i) => i);
 		let limit = atOnce;
-		/** Lanes waiting for a running composite to end (a stopped segment may come back). */
-		const waiting: (() => void)[] = [];
+		/**
+		 * §13: composites at once while deferred bakes still render (their render browsers and stitches take cores);
+		 * `JASPER_EXPORT_BAKE_OVERLAP` (default: all of them).
+		 */
+		const overlap = bakeOverlapFromEnv(atOnce);
+		const limitNow = () => (baked.size < deferred.length ? Math.min(limit, overlap) : limit);
+		/** Lanes between taking a segment and the end of its composite. */
+		let active = 0;
 		/** One composite (a segment, or the whole range). */
 		const runPart = (part: Part, i: number): Promise<void> => {
 			const { graph } = part;
 			const pipes = graph.streams.length + (graph.blend ? 1 : 0);
+			const workers = workersFor(graph);
 			const ac = new AbortController();
 			const stop = () => ac.abort();
 			runAbort.signal.addEventListener('abort', stop, { once: true });
-			const slot = { ac, pid: null as number | null, since: Date.now() };
+			const slot = { ac, pid: null as number | null, since: Date.now(), part };
 			running.set(i, slot);
 			return this.deps.ff
 				.run(part.args, {
@@ -1807,8 +1936,8 @@ export class ExportService {
 					onSpawn: (child) => {
 						ctx.trackChild(child);
 						slot.pid = child.pid ?? null;
-						if (graph.streams.length > 0) runStreams(child, graph.streams);
-						runBlend(child, graph.blend);
+						if (graph.streams.length > 0) runStreams(child, graph.streams, workers);
+						runBlend(child, graph.blend, workers);
 					},
 					onProgress: (p) => {
 						if (still || total <= 0) return;
@@ -1821,12 +1950,18 @@ export class ExportService {
 								: undefined
 							: (p.speed ?? (elapsed > 0 ? sum / elapsed : undefined));
 						ctx.progress((sum / total) * (split ? 0.96 : 0.98), {
-							stage: split ? `Encoding (native, ${parts.length} segments)` : 'Encoding (native)',
+							stage: split ? `Encoding (native, ${segPlan.segments.length} segments)` : 'Encoding (native)',
 							...(speed ? { speed, etaSec: (total - sum) / speed } : {}),
 						});
 					},
 				})
-				.then(() => {})
+				.then(() => {
+					// (§13: when each segment ran, beside the bakes)
+					if (split)
+						ctx.log(
+							`native: ${part.label} encoded in ${((Date.now() - slot.since) / 1000).toFixed(1)} s, from ${((slot.since - started) / 1000).toFixed(1)} s`,
+						);
+				})
 				.catch((error: unknown) => {
 					if (requeued.delete(i)) {
 						// stopped by the watchdog: rendered again when memory allows
@@ -1835,14 +1970,13 @@ export class ExportService {
 						return;
 					}
 					// the first failure is the export's; the other segments are stopped (their cancellation is not)
-					failed ??= { error, part };
-					runAbort.abort();
+					fail({ error, part });
 				})
 				.finally(() => {
 					running.delete(i);
 					stopping.delete(i);
 					runAbort.signal.removeEventListener('abort', stop);
-					for (const wake of waiting.splice(0)) wake();
+					wake();
 				});
 		};
 		const watchdog =
@@ -1859,64 +1993,102 @@ export class ExportService {
 							stopping.add(i);
 							requeued.add(i);
 							ctx.log(
-								`native: composites at ${gbs(rss)}, over the ${gbs(budget)} budget: ${parts[i]!.label} stopped and queued again, ${limit} at a time`,
+								`native: composites at ${gbs(rss)}, over the ${gbs(budget)} budget: ${labels[i]} stopped and queued again, ${limit} at a time`,
 							);
 							r.ac.abort();
 						} else if (failed === null) {
-							failed = {
+							fail({
 								error: new JobError(
 									'INSUFFICIENT_MEMORY',
 									`Not enough memory: the export's compositor reached ${gbs(rss)}, over the ${gbs(budget)} this machine has available for it; close other applications or export a shorter range`,
 									true,
 									{ rssBytes: rss, budgetBytes: budget },
 								),
-								part: parts[[...running.keys()][0] ?? 0]!,
-							};
-							runAbort.abort();
+								...([...running.values()][0] ? { part: [...running.values()][0]!.part } : {}),
+							});
 						}
 					}, 1000)
 				: null;
 		try {
-			// at most `limit` composites at a time, in range order; none starts after a failure or a cancellation
+			// at most `limit` composites at a time, the first ready segment in range order (§13: a segment waits for the
+			// deferred bakes it draws); none starts after a failure or a cancellation
 			const lane = async (lane: number) => {
 				while (failed === null && !runAbort.signal.aborted) {
 					if (lane >= limit) return;
-					if (running.size >= limit) {
-						// (the watchdog lowered the limit while this lane's segment was stopped: wait for a place)
-						await new Promise<void>((wake) => waiting.push(wake));
+					const k =
+						active < limitNow() ? pending.findIndex((i, n) => isReady(i) && (n === 0 || stillsReady(i))) : -1;
+					if (k < 0) {
+						// nothing left (a segment may still come back from the watchdog while others run), or waiting for a
+						// place, a bake or a stopped segment
+						if (pending.length === 0 && active === 0) return;
+						if (active === 0 && deferred.length > baked.size)
+							ctx.progress(fraction(), { stage: `Baking graphics: ${baked.size}/${deferred.length} ready` });
+						await new Promise<void>((resolve) => waiting.push(resolve));
 						continue;
 					}
-					const i = pending.shift();
-					if (i === undefined) {
-						// a segment may still come back from the watchdog while others run
-						if (running.size === 0) return;
-						await new Promise<void>((wake) => waiting.push(wake));
-						continue;
+					const i = pending.splice(k, 1)[0]!;
+					active++;
+					try {
+						let part = parts[i];
+						if (!part) {
+							part = await report.time('plan', () => buildPart(i));
+							const off = inexactOf(part);
+							if (off.length) {
+								fail({ error: null, again: () => atSequenceSize(off) });
+								return;
+							}
+						}
+						// Pipelined stills the composite opens as inputs are written first.
+						const waitFor = part.graph.waitFor ?? [];
+						if (waitFor.length) {
+							const unique = new Set(waitFor).size;
+							if (running.size === 0)
+								ctx.progress(fraction(), {
+									stage: `Waiting for ${unique} baked graphic${unique === 1 ? '' : 's'}`,
+								});
+							const ready = await report
+								.time('bakeWait', () => Promise.all(waitFor))
+								.catch((e: unknown) => {
+									// Only a failed background bake rejects these.
+									fail({ error: new NativePrepareError(bgError ?? e) });
+									return null;
+								});
+							const changed = ready?.find((r) => !r.ok);
+							if (changed && !changed.ok) fail({ error: null, again: () => restart(changed.reason) });
+							if (!ready || failed !== null || runAbort.signal.aborted) return;
+						}
+						await runPart(part, i);
+					} catch (e) {
+						fail({ error: e });
+					} finally {
+						active--;
+						wake();
 					}
-					await runPart(parts[i]!, i);
 				}
 			};
 			await Promise.all(Array.from({ length: atOnce }, (_, l) => lane(l)));
 			// cancelled between two segments: nothing failed, but the export did not finish
 			if (failed === null && runAbort.signal.aborted)
-				failed = { error: new JobError('JOB_CANCELLED', 'Cancelled'), part: parts[0]! };
+				failed = { error: new JobError('JOB_CANCELLED', 'Cancelled') };
 		} finally {
 			if (watchdog) clearInterval(watchdog);
 			endEncode();
 			ctx.signal.removeEventListener('abort', onJobAbort);
+			runAbort.signal.removeEventListener('abort', wake);
 		}
 		if (failed !== null) {
-			const { error: e, part } = failed as { error: unknown; part: Part };
+			const { error: e, part, again } = failed as NonNullable<typeof failed>;
 			await sound?.catch(() => {});
 			streamAbort.abort();
 			await Promise.all(producers);
+			if (again && !ctx.signal.aborted) return again();
 			// A stream that lost its pipe only reports the composite's death: the composite's own error then wins.
 			const se = streamError as Error | null;
 			if (se instanceof BakeChangedError && !ctx.signal.aborted) return restart(se.message);
 			const consequence = !se || /^layer stream:/.test(se.message);
 			// §10: a composite that failed in the OpenCL kernel (device lost, out of video memory…) is rendered again with
 			// the CPU kernel, named in `pipeline.kernel.fallbackReasons`
-			const clError = part.graph.kernel.opencl > 0 && consequence ? openClErrorOf(e) : null;
+			const clError = part && part.graph.kernel.opencl > 0 && consequence ? openClErrorOf(e) : null;
 			if (clError && !ctx.signal.aborted && bgError === null) {
 				const why = `the OpenCL kernel failed: ${clError}`;
 				ctx.log(`native: ${why}; rendering again with the CPU kernel`);
@@ -1938,7 +2110,8 @@ export class ExportService {
 			}
 			await abandon();
 			if (bgError !== null && !ctx.signal.aborted) throw failure(e);
-			throw consequence ? killedComposite(e, part.graph.inputs.length, ctx.signal.aborted) : se;
+			if (e === null) throw new JobError('JOB_CANCELLED', 'Cancelled');
+			throw consequence ? killedComposite(e, part?.graph.inputs.length ?? 0, ctx.signal.aborted) : se;
 		}
 		// The composite succeeded (and the frame count is checked below): a stream it stopped reading ends here.
 		streamAbort.abort();
@@ -1950,12 +2123,14 @@ export class ExportService {
 		ctx.signal.removeEventListener('abort', onAbortBg);
 		if (still) return 1;
 		if (split) {
-			const joined = await this.joinSegments(planned, parts, output, await sound!, ctx);
+			// (every segment was built: the lanes ran them all)
+			const built = parts as Part[];
+			const joined = await this.joinSegments(planned, built, output, await sound!, ctx);
 			if (!joined) {
 				ctx.log(
 					'native: the segments were encoded with different parameter sets; rendering one graph instead',
 				);
-				for (const p of parts) await rm(p.file, { force: true });
+				for (const p of built) await rm(p.file, { force: true });
 				return this.runNative(
 					planned,
 					masters,
@@ -2165,7 +2340,7 @@ export class ExportService {
 		const t = (ms: number) => `${Math.round(ms)} ms`;
 		ctx.log(
 			d
-				? `audio: mixed (${t(mix.mixMs ?? 0)}) and delivered in ${t(performance.now() - t0)} — ${d.passes} passes (${t(d.timings.passesMs)}: ${d.passKinds.converge} converging, ${d.passKinds.alternative} lower-ceiling candidates, ${d.passKinds.rewrite} rewritten), ${d.encodePasses} encodes (${t(d.timings.encodeMs)} summed), decoded checks ${t(d.timings.decodeMs)}${d.cached ? ', reused an earlier delivery of this mix' : ''}${d.encoded ? ', the checked encode is muxed as it is' : ''}`
+				? `audio: mixed (${t(mix.mixMs ?? 0)}) and delivered in ${t(performance.now() - t0)} — ${d.passes} passes (${t(d.timings.passesMs)}: ${d.passKinds.converge} converging, ${d.passKinds.alternative} lower-ceiling candidates, ${d.passKinds.probe} probes, ${d.passKinds.rewrite} rewritten), ${d.encodePasses} encodes (${t(d.timings.encodeMs)} summed), decoded checks ${t(d.timings.decodeMs)}${d.cached ? ', reused an earlier delivery of this mix' : ''}${d.encoded ? ', the checked encode is muxed as it is' : ''}`
 				: `audio: mixed in ${t(performance.now() - t0)}`,
 		);
 		return mix;
@@ -3592,6 +3767,23 @@ function residentBytes(pid: number): number {
 }
 
 /** Overlay filters in a filtergraph (each one is traversed by every frame of the composite). */
+/** Overlays of a composite's largest graph (the main one or a blend segment's): `pipeline.overlays`. */
+function graphOverlays(p: { graph: ReturnType<typeof buildNativeGraph> }): number {
+	return Math.max(
+		overlayCount(p.graph.filter),
+		...(p.graph.blend?.segments ?? []).map((sg) => overlayCount(sg.filter)),
+	);
+}
+
+/**
+ * docs/wp-notes/export-performance.md §13: composites at once while deferred bakes still render
+ * (`JASPER_EXPORT_BAKE_OVERLAP`, at most `atOnce`; default `atOnce`).
+ */
+function bakeOverlapFromEnv(atOnce: number): number {
+	const n = Number(process.env.JASPER_EXPORT_BAKE_OVERLAP);
+	return Number.isInteger(n) && n >= 1 ? Math.min(atOnce, n) : atOnce;
+}
+
 function overlayCount(filter: string): number {
 	return filter.match(/\]overlay=/g)?.length ?? 0;
 }
