@@ -846,7 +846,8 @@ editing it; tests in `cleanup-slivers-tails.test.ts` and `apps/engine/test/speec
   (`quietSpeech`): never a pause, untranscribed voice for review unless a word beside it holds it; the final frame
   check protects its voiced frames like speech. *Assumption*, labelled: one reported phrase, the reporter's description
   (voiced, rising and falling, 15–25 dB under the speech level); needs the voicing plane (the corpus voice has none, so
-  the corpus is unchanged). The hallucination guard still judges words by the speech / breath classes only.
+  the corpus is unchanged). How the hallucination guard weighs the classes: "Hallucinations need non-speech evidence"
+  below.
 - **Stretched words by the speaker's pace** (S3). "y es extra… ¡extremadamente!" was written as one "extremadamente"
   of 0.95 s (244.76–245.75); the > 1 s rule missed it. A word now also counts as stretched when it lasts at least 0.6 s
   and `STRETCH_RATIO` (3) times its syllables (vowel groups) × the speaker's median seconds per syllable over the
@@ -868,6 +869,61 @@ editing it; tests in `cleanup-slivers-tails.test.ts` and `apps/engine/test/speec
   removals, or rejected) stays shorter than the minimum; the 80 ms pad, the 25 dB / 6 dB quiet-speech thresholds and
   the 3× / 0.6 s stretch rule need the real-audio rerun on the reporter's project; the syllable count is a vowel-group
   approximation (digits have none: the 1 s rule only).
+
+**Hallucinations need non-speech evidence; head / tail on the script alignment** (round 13: real large-v3-turbo + Clean
+Up of `cut_v5.wav`, the loudness-normalised mixdown of the user's 15:31 cut, at main 37fd05e43 with voice analysis v2,
+`/tmp/je-words2-local/` on the build host; tests in `cleanup-mixdown.test.ts`, each failing on 37fd05e43):
+- **Script words removed as hallucinations** (precision). Clean Up removed 21.8 s by default with 41 hallucination
+  findings, all accepted: 37 were script words over audible voice ("que", "tarjeta", "hizo", "lo arreglen.", "su",
+  "aparezcan", "fue"…, peaks −9.0…−27.7 dBFS, speech level −10.5, confidence 0.876–1.0). The prototype guard (TC-003)
+  drops a word whose frames are under 20 % speech or breath, and voice analysis v2 still gives these short words 0–40 %.
+  On a mixdown a low share is no evidence. Now a word is never dropped or flagged by the guard's share test, a known
+  phrase over non-speech or the noise rule when the script says it in sequence (`ScriptAligner`, `script.ts`: at least
+  3 of its 6 neighbours found in order around one occurrence of its token, the script side allowing one token more per
+  side — `ALIGNED_SUPPORT`). The share test also spares a word the recogniser is sure of (confidence ≥ 0.8,
+  `CONFIDENT_WORD`) and one whose loudest frame comes within 20 dB of the speech level around it (the lower of the
+  file's speech level and the median loudest frame of up to 4 words each side within 10 s that are not over
+  non-speech themselves — `NEAR_SPEECH_DB`, `nearSpeechLevel`). What is left is removed only over positive evidence:
+  over measured silence (half its frames `silentFrame`) or outside the audio; any other share-test word is a
+  hallucination for review. A known phrase over non-speech near the speech level (a real "gracias", or music) is for
+  review; the noise rule (no vowel run, `LOUD_WORD_DB`) removes a confident word no more (review). Stock phrases,
+  other writing systems, woven phrases and identical runs are unchanged. *Measured* basis: confidence — the 37 script
+  words 0.876–1.0 (36 ≥ 0.976), the four flagged words without a script counterpart 0.18, 0.29, 0.77, 0.99 ("the",
+  over voice), the raw source's clear inventions ("кстати.", a stretched "Y", "Ok,", "No,") 0–0.61, and the noise words
+  of runs 6–9 were ASR suspects; level — the 37 sat at most 17.2 dB under the speech level. *Assumption*, labelled: the
+  noise rule keeps 12 dB, not 20, because runs 7–9's noise words peaked ≈ 17–33 dB under that speaker's speech level
+  (run 7's level was not recorded; run 11's −5.5…−9.5 dBFS), and the noise rule has its own vowel evidence. The V b and
+  AA b noise tests now give their words confidence 0.3 (both were ASR suspects in the runs); a sure word over noise is
+  reviewed.
+- **Head / tail over scripted speech** (precision). With voice analysis v1 the same cut lost 681 s of 931 s: three
+  head findings covered 0–666 s of scripted speech. Units are phrases split at `takeGapS` (0.6 s); a dense cut has no
+  such pause, so no unit says one line (v2: no line said at all), and the first unit that did came into being only
+  where the guard dropped words. The head now ends at the first word on script and the tail starts after the last —
+  a said unit, or a word with `ALIGNED_SUPPORT` over every transcript word, the guard's included (never the voice
+  classes), with the words before / after it that have 2 neighbours on script (`LOOSE_SUPPORT`: the transcript's
+  first "Hoy" before "voy a ser mi propio Unity.") — and the unit holding that word stays whole (the closing
+  "Suscríbete. ¡Chao!", "chau" in the script). The tail's off-script-share extension is unchanged. A head or tail
+  longer than a quarter of the transcript's span (`HEAD_TAIL_MAX_SHARE`) or holding 5 words with 2 neighbours on script
+  is only reviewed. *Assumption*, labelled: a quarter, from the TC-071 shorts' ≈ 10 s of pre-roll over 13 recordings.
+- Offline replay (`/tmp/hm-replay/replay.mts` on the build host: the run's words, confidences and script with a
+  synthetic voice — every word speech at −12 dBFS, the flagged words at their measured peak and speech share; the
+  real voice file was not available): 37fd05e43 gives 39 hallucination removals (the run: 41) and no head / tail;
+  with the 128 words v1 dropped (level unknown, −20 dBFS assumed) it gives v1's three head findings exactly
+  (0.01–40.66, 41.04–464.13, 465.5–666.48 s). This round gives no hallucination finding and no head / tail in both
+  (with the 128 at −40 dBFS — over silence, far under the speech — only the unsure, off-script "Y", "C.", "Mmm...",
+  "un" and "eh." go, plus "suscríbete," and "Si" without the script);
+  the only flagged word still removed is "eh." (a vocalic filler). The real-file rerun is pending.
+- Raw source (600–1500 s, words and script of the same run, no voice): 37fd05e43's three head findings (2.71–6.33 and
+  11.26–16.88 s, script lines said in a unit holding two; 52.54–54.41 s, the aside "¿Cómo que Linux no tiene
+  esto... No puede ser") are gone — the aside comes after the first word on script and is no longer cut (its words
+  are in the script's vocabulary, so the off-script rule does not take it either).
+- Corpus (Fast, corpus voice) identical to round 12: dev 0.997 (2303 / 2311) / 0.960, held out 1.000 (338 / 338) /
+  0.973, held-out-r7 0.998 (479 / 480) / 0.870, held-out-r9 0.992 (260 / 262) / 0.976, held-out-r11 1.000 (65 / 65) /
+  1.000; the port fixture's guarded words and labels unchanged. Limits: the replay's voice is synthetic; the aligner matches
+  exact normalised tokens (a misrecognised word counts against its neighbours, "ser" for "hacer"); a dense cut is one
+  unit, so pre-roll said without a 0.6 s pause before the first line is never head; on a mixdown the floor lies
+  within 6 dB of quiet words (−31.6 dBFS here), so an unsure, off-script, quiet word reads as over silence and goes;
+  the 0.8 confidence and 20 dB levels come from one speaker's runs.
 
 Kinds follow the structure: ≤ 2 words a false start, a whole clause (clause start, clause end, ≥ 3 content words) a
 retake (with a group), else a restart; inside re-decoded ranges they become hidden retakes as before. The settings keep
@@ -900,6 +956,7 @@ words (fillers aside) removed. Measured (both modes, Fast, corpus voice):
 | round 11 after its fixes: held-out-r11 (regression coverage, not blind) | 12 / 12 | 1.000 (65 / 65) | 1.000 (60 / 60) |
 | … dev, held out, held-out-r7, held-out-r9 | unchanged | 0.997, 1.000, 0.998, 0.992 | 0.960, 0.973, 0.870, 0.976 (with asides proposed: 0.996, 0.973, 0.984, 0.976) |
 | round 12 (slivers, sentence-end tails, quiet speech, stretch by pace): every split | unchanged | 0.997, 1.000, 0.998, 0.992, 1.000 | 0.960, 0.973, 0.870, 0.976, 1.000 |
+| round 13 (hallucinations need non-speech evidence, head / tail on the script alignment): every split | unchanged | 0.997, 1.000, 0.998, 0.992, 1.000 | 0.960, 0.973, 0.870, 0.976, 1.000 |
 
 Per kind at 0108b4021 (dev / held out): hidden-retake 0.997 / 1.000, retake 0.999 / 1.000, restart 0.998 / 1.000,
 false start 1.000 / 1.000, stutter — / 1.000, filler-vocalic 0.943 / —, filler-phrase 1.000 / 1.000, hallucination

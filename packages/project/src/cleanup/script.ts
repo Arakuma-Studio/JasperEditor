@@ -51,6 +51,46 @@ export function scriptTokens(text: string): string[] {
 		.filter((x) => x.length > 0);
 }
 
+/** Neighbours (transcript words each side) a word's script alignment looks at; the script side gets one more. */
+const ALIGN_WINDOW = 3;
+
+/**
+ * Where transcript words sit in a script, word by word: a word's support is the number of its neighbours (up to
+ * `ALIGN_WINDOW` each side) found in order next to one occurrence of its token in the script (the script side may
+ * hold one extra or missing token per side). A word the recogniser got right inside a scripted sentence has support
+ * up to 6; a word it invented, or a script word said alone in other talk, has little. Exact normalised tokens; the
+ * time is linear in the occurrences of the word's token.
+ */
+export class ScriptAligner {
+	private readonly at = new Map<string, number[]>();
+	constructor(private readonly script: readonly string[]) {
+		script.forEach((t, p) => {
+			const list = this.at.get(t);
+			if (list) list.push(p);
+			else this.at.set(t, [p]);
+		});
+	}
+
+	/** The support of word `k` of `tokens` (0 when its token is not in the script). */
+	support(tokens: readonly string[], k: number): number {
+		const t = tokens[k];
+		const ps = t === undefined ? undefined : this.at.get(t);
+		if (!ps) return 0;
+		const left = tokens.slice(Math.max(0, k - ALIGN_WINDOW), k);
+		const right = tokens.slice(k + 1, k + 1 + ALIGN_WINDOW);
+		const most = left.length + right.length;
+		let best = 0;
+		for (const p of ps) {
+			const n =
+				lcs(left, this.script.slice(Math.max(0, p - ALIGN_WINDOW - 1), p)) +
+				lcs(right, this.script.slice(p + 1, p + 2 + ALIGN_WINDOW));
+			if (n > best) best = n;
+			if (best >= most) break;
+		}
+		return best;
+	}
+}
+
 export type LineMatch = { line: number; similarity: number; coverage: number };
 
 /**
