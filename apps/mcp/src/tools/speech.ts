@@ -217,6 +217,14 @@ export async function queueImportTranscriptions(
 
 type Pending = { jobId: string; mediaId?: string };
 
+/** Words the guards removed, per reason (the list shows the first 20 entries only). */
+function removedWords(removed: ReadonlyArray<{ text: string; reason: string }>): Record<string, number> {
+	const out: Record<string, number> = {};
+	for (const r of removed)
+		out[r.reason] = (out[r.reason] ?? 0) + (r.text.split(/\s+/).filter(Boolean).length || 1);
+	return out;
+}
+
 /** Commits finished transcription jobs (one transaction). */
 async function commit(
 	ctx: ToolContext,
@@ -272,6 +280,7 @@ async function commit(
 							skippedWindows: res.guard.skippedWindows,
 							droppedWords: res.guard.droppedWords,
 							removed: res.guard.removed.slice(0, 20),
+							...(res.guard.removed.length ? { removedWords: removedWords(res.guard.removed) } : {}),
 							...(res.guard.frames ? { frames: res.guard.frames } : {}),
 							...(res.guard.glossary ? { glossary: res.guard.glossary } : {}),
 							...(res.guard.recovered ? { recovered: res.guard.recovered } : {}),

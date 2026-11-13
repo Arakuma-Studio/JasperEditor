@@ -232,15 +232,40 @@ export function voicedFraction(w: TimedWord, mask: SpeechMask): number {
 /** Spec 14 TC-003: minimum share of speech/breath frames a word keeps (below it the word lies in silence). */
 export const MIN_VOICED_FRACTION = 0.2;
 
-/** Indices (ascending) of words whose frames are less than `minFraction` speech — words lying in silence. */
+/**
+ * Indices (ascending) of words lying in silence: less than `minFraction` of their frames are speech once their
+ * silent edges are left out (like `tightenWords`, keeping ≥ 60 ms). The alignment ends the last word before a pause at
+ * the next word's start, so a word stretched over a long pause is mostly silence while its own frames are voice.
+ */
 export function unvoicedWords(
 	words: readonly TimedWord[],
 	mask: SpeechMask,
 	minFraction = MIN_VOICED_FRACTION,
 ): number[] {
 	const out: number[] = [];
-	for (let i = 0; i < words.length; i++) if (voicedFraction(words[i], mask) < minFraction) out.push(i);
+	const on = (f: number) => mask[f]! > 0;
+	for (let i = 0; i < words.length; i++) {
+		const w = words[i]!;
+		let a = Math.min(Math.max(0, mask.length - 1), Math.max(0, Math.floor(w.start / VAD_FRAME)));
+		let b = Math.min(mask.length, Math.max(a + 1, Math.ceil(w.end / VAD_FRAME)));
+		while (b - a > MIN_WORD_FRAMES && !on(a)) a++;
+		while (b - a > MIN_WORD_FRAMES && !on(b - 1)) b--;
+		if (!mask.length || countVoiced(mask, a, b) / (b - a) < minFraction) out.push(i);
+	}
 	return out;
+}
+
+/**
+ * Whether `w` sits inside running speech: `mask` has voice within a pause (`SPLIT_PAUSE_FRAMES`, 200 ms) before its
+ * start and within one after its end. Such a word is never dropped as lying in silence — text Whisper invents over
+ * silence needs a silence, and a short word ("y", "a", "que") of running speech that the alignment timed onto the
+ * dip between two words is real (reported on a 57-minute Spanish talking head: ≈ 150 such words in 15 min were
+ * missing, with gaps of 0.1–0.5 s between their neighbours).
+ */
+export function amidVoice(w: TimedWord, mask: SpeechMask, reach = SPLIT_PAUSE_FRAMES): boolean {
+	const a = Math.floor(w.start / VAD_FRAME);
+	const b = Math.max(a + 1, Math.ceil(w.end / VAD_FRAME));
+	return countVoiced(mask, a - reach, a) > 0 && countVoiced(mask, b, b + reach) > 0;
 }
 
 /** Voiced frames of `mask` in [from, to) (10 ms frames). */

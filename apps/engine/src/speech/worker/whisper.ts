@@ -17,7 +17,8 @@
 //    −1; windows whose `<|nospeech|>` probability is above 0.6 while the text is improbable are skipped.
 // 4. Hallucination guards (SG-011): windows without voiced frames are not decoded; the previous-text prompt is
 //    reset after ≥ 2 s of silence; runs of ≥ 4 identical tokens are dropped; OpenAI's
-//    `hallucination_silence_threshold` heuristic (2 s) removes improbable segments surrounded by silence.
+//    `hallucination_silence_threshold` heuristic (2 s) removes improbable segments surrounded by silence — never a
+//    segment over voiced audio (JasperEditor addition, `core/hallucination.ts`).
 // 5. Long audio — overlap and stitching: the next window starts at the end of the last complete segment, or of
 //    its last word when word timing is on, so the unfinished tail of a window is decoded again (overlapping) in
 //    the next one and the words of consecutive windows join without gaps or duplicates. Long silences (JasperEditor
@@ -1357,6 +1358,11 @@ export class WhisperModel {
 						lastSpeech: lastBefore,
 						singleTimestampEnding: parsed.singleTimestampEnding,
 						seek: nextSeek / 100,
+						voicedShare: (start, end) => {
+							const a = Math.max(0, Math.floor(start * 100));
+							const b = Math.min(mask.length, Math.ceil(end * 100));
+							return b > a ? countVoiced(mask, a, b) / (b - a) : 0;
+						},
 					});
 					if (cut.skipTo !== null) {
 						// a likely hallucination after a long leading silence: decode again from where it starts

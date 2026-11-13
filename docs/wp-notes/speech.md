@@ -341,6 +341,26 @@ whisper evaluation (53 configurations; the numbers of spec 16 §0). This section
   < 20 % speech/breath frames are dropped; known phrases (Spanish "Subtítulos realizados por la comunidad de
   Amara.org", "Gracias por ver el video/vídeo", "Gracias.", English "Thanks for watching!"…, `core/hallucination.ts`)
   are removed when they form a sentence of their own over < 50 % speech frames. The result lists what was removed.
+- Dense speech (reported on a 57-minute Spanish talking head with large-v3-turbo and on `cut_v5.wav`, a
+  loudness-normalised mixdown of its cut; not reproduced here — no turbo model or audio on this host). (1) OpenAI's
+  silence-threshold rule judges "silence" by word times only and counts a window edge as silence, and its anomaly
+  score counts every word under 0.133 s: fast Spanish with several short function words in a segment's first 8
+  words scores as an anomaly, and the rule cut 166 spoken words (whole script sentences) on the mixdown. A segment is
+  now cut only when less than half of its frames are voiced (`SILENCE_MAX_VOICED`, energy VAD — threshold 30 % of the
+  way from the file's measured noise floor to its speech level), and a voiced lead-in is never skipped. (2) ≈ 150
+  script words in 15 min ("que", "y", "a", "cosas", "objetos") were missing with 0.1–0.5 s gaps between their
+  neighbours — gaps over voiced audio mean the word was decoded and then dropped after alignment (a word never decoded
+  leaves its neighbours stretched over its voice, which tightening keeps). Two drop paths in `refineWords` matched:
+  a short word timed onto the dip between two abutting words has no voiced frame and no free voice to move to
+  (`splitAtPauses` orphan) or < 20 % voiced frames, and the last word before a pause, ended by the alignment at the
+  next word's start, is mostly pause. Now a word with voice within 200 ms on both sides (`amidVoice`) is never dropped
+  as lying in silence (it stays where the alignment put it), and the 20 % share is measured without the word's silent
+  edges (as `tightenWords` trims them, ≥ 60 ms kept). Words dropped in silence are listed in `guard.removed` as runs
+  (reason `silence`; the MCP transcribe report adds `removedWords` per reason). Tests (scripted decoder, synthetic
+  mixdown at ≈ −17 / −50 dBFS): `apps/engine/test/speech-dense-speech.test.ts` (both fail before: no word of the
+  fast sentence survived; "y", "a" and the word before the pause were dropped). Assumption: these are the paths behind
+  the report; words turbo never decodes are not recovered by them (Fix Transcript's gap rule inserts them from the
+  script, script-correction.md).
 - Speech after long (digital) silence (SG-011 regression, reported on a 57-minute Spanish file with large-v3-turbo:
   ≈ 45 s of clear speech right after stretches of −120 dB digital silence came back without words, and decoding those
   ranges alone recovered them). Root cause, as far as it could be established without that file: digital silence

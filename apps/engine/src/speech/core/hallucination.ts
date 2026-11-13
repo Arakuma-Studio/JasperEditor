@@ -6,7 +6,9 @@
 // - `wordAnomalyScore` / `isSegmentAnomaly` / `silenceThresholdCut`: OpenAI Whisper's
 //   `hallucination_silence_threshold` heuristic (`transcribe.py`, MIT, v20231117+): a segment of improbable,
 //   too-short or too-long words surrounded by ≥ `threshold` seconds of silence (or more anomalies) is dropped
-//   with everything after it in the window, and decoding resumes at its start.
+//   with everything after it in the window, and decoding resumes at its start. OpenAI judges "silence" by the word
+//   times alone (a window edge counts as silence); JasperEditor adds the audio: a segment over voiced audio is never
+//   dropped, and a voiced lead-in is never skipped (`voicedShare`; dense speech, see `SILENCE_MAX_VOICED`).
 // - `knownPhraseRuns`: phrases Whisper is known to produce over non-speech; the caller drops them when they sit
 //   over non-speech (`phraseOverNonSpeech`).
 import { APPEND_PUNCTUATIONS, PREPEND_PUNCTUATIONS } from './tokenizer.ts';
@@ -61,6 +63,15 @@ export function isSegmentAnomaly(seg: ScoredSegment | null | undefined): boolean
 }
 
 /**
+ * A stretch of audio is silence for the silence-threshold rule only when less than this share of its 10 ms frames
+ * is voiced (the energy VAD, whose threshold sits between the file's measured noise floor and speech level). Reported
+ * on a loudness-normalised mixdown of a 57-minute Spanish talking head (large-v3-turbo): fast speech with many short
+ * function words scores as an anomaly (OpenAI: words under 0.133 s), a window edge counts as silence, and the rule
+ * removed 166 spoken words, whole sentences among them.
+ */
+export const SILENCE_MAX_VOICED = 0.5;
+
+/**
  * OpenAI's `hallucination_silence_threshold` step for one window (times in seconds): returns how many segments to
  * keep and where to seek next (seconds), or `skipTo` when the first segment is an anomaly after a long leading
  * silence (the window is then decoded again from there). `lastSpeech` = end of the last kept speech before this
@@ -77,9 +88,17 @@ export function silenceThresholdCut(
 		singleTimestampEnding: boolean;
 		/** The seek OpenAI's word-timestamp rule chose (seconds). */
 		seek: number;
+		/**
+		 * Share of voiced 10 ms frames in [start, end) (seconds). A segment over voice (≥ `SILENCE_MAX_VOICED`) is never
+		 * dropped, and a lead-in that is voice is never skipped. Absent: OpenAI's rule on word times alone.
+		 */
+		voicedShare?: (start: number, end: number) => number;
 	},
 ): { keep: number; seek: number; skipTo: number | null } {
 	const { threshold, windowStart, windowEnd } = opts;
+	const voiced = (start: number, end: number) =>
+		!!opts.voicedShare && end > start && opts.voicedShare(start, end) >= SILENCE_MAX_VOICED;
+	const overVoice = (seg: ScoredSegment) => voiced(seg.words[0]!.start, seg.words[seg.words.length - 1]!.end);
 	let seek = opts.seek;
 	const withWords = segments.filter((s) => s.words.length);
 	const lastWordEnd = withWords.length ? withWords[withWords.length - 1].words.at(-1)?.end : undefined;
@@ -90,7 +109,8 @@ export function silenceThresholdCut(
 	const first = withWords[0];
 	if (first && isSegmentAnomaly(first)) {
 		const gap = first.start - windowStart;
-		if (gap > threshold) return { keep: 0, seek: windowStart + gap, skipTo: windowStart + gap };
+		if (gap > threshold && !overVoice(first) && !voiced(windowStart, first.start))
+			return { keep: 0, seek: windowStart + gap, skipTo: windowStart + gap };
 	}
 	let halLastEnd = opts.lastSpeech;
 	for (let si = 0; si < segments.length; si++) {
@@ -103,7 +123,7 @@ export function silenceThresholdCut(
 				seg.start - halLastEnd > threshold || seg.start < threshold || seg.start - windowStart < 2;
 			const silenceAfter =
 				halNextStart - seg.end > threshold || isSegmentAnomaly(next) || windowEnd - seg.end < 2;
-			if (silenceBefore && silenceAfter) {
+			if (silenceBefore && silenceAfter && !overVoice(seg)) {
 				let s = Math.max(windowStart + 1, seg.start);
 				if (opts.contentEnd - seg.end < threshold) s = opts.contentEnd;
 				return { keep: si, seek: s, skipTo: null };

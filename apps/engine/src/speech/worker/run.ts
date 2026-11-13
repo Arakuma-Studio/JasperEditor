@@ -28,6 +28,7 @@ import {
 import { knownPhraseRuns, phraseOverNonSpeech } from '../core/hallucination.ts';
 import { SAMPLE_RATE } from '../core/mel.ts';
 import {
+	amidVoice,
 	extendWordsIntoSpeech,
 	MIN_VOICED_FRACTION,
 	type SpeechMask,
@@ -263,9 +264,10 @@ type RefinableWord = { start: number; end: number; text?: string };
 
 /**
  * Word-bound refinement after alignment (spec 14 TC-004, spec 16 SG-011; see core/vad.ts): repair at pauses
- * (never moving a word across a silence), grow into voice, drop words lying in silence (< 20 % speech frames) and
- * known hallucination phrases over non-speech, tighten over silence. Returns the kept words (a new array; the kept
- * word objects are the same) and what was removed.
+ * (never moving a word across a silence), grow into voice, drop words lying in silence (< 20 % speech frames without
+ * their silent edges; never a word inside running speech, `amidVoice`) and known hallucination phrases over
+ * non-speech, tighten over silence. Returns the kept words (a new array; the kept word objects are the same) and what
+ * was removed (words in silence as runs, reason `silence`).
  */
 export function refineWords<W extends RefinableWord>(
 	src: FrameSource,
@@ -285,8 +287,27 @@ export function refineWords<W extends RefinableWord>(
 	const len = { length: samples };
 	const orphans = new Set(splitAtPauses(len, words, db, mask));
 	extendWordsIntoSpeech(len, words, db, 25, mask);
-	const drop = new Set<number>(opts.keepAll ? [] : [...orphans, ...unvoicedWords(words, presence)]);
+	// words in silence — never a word inside running speech (`amidVoice`: a short word timed onto a dip)
+	const silent = opts.keepAll
+		? []
+		: [...new Set([...orphans, ...unvoicedWords(words, presence)])]
+				.filter((i) => !amidVoice(words[i]!, presence))
+				.sort((a, b) => a - b);
+	const drop = new Set<number>(silent);
 	const removed: Array<{ text: string; start: number; end: number; reason: string }> = [];
+	// what the silence guard removed, as runs of consecutive words
+	for (let k = 0; k < silent.length; ) {
+		let e = k + 1;
+		while (e < silent.length && silent[e] === silent[e - 1]! + 1) e++;
+		const run = silent.slice(k, e).map((i) => words[i]!);
+		removed.push({
+			text: run.map((w) => w.text ?? '').join(' '),
+			start: run[0]!.start / SAMPLE_RATE,
+			end: run[run.length - 1]!.end / SAMPLE_RATE,
+			reason: 'silence',
+		});
+		k = e;
+	}
 	// known hallucination phrases over non-speech (TC-003), judged over the whole phrase
 	const phrases = opts.keepAll ? [] : knownPhraseRuns(words.map((w) => ({ text: w.text ?? '' })));
 	for (const [a, b] of phrases) {
