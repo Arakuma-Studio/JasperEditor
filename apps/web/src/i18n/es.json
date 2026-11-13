@@ -13744,5 +13744,9 @@
   "The job could not be cancelled: {0}": "No se pudo cancelar el trabajo: {0}",
   "The text could not be written: {0}. Your text: {1}": "No se pudo escribir el texto: {0}. Tu texto: {1}",
   "This dialog stopped working": "Este cuadro de diálogo dejó de funcionar",
-  "My Looks: {0}": "Mis aspectos: {0}"
+  "My Looks: {0}": "Mis aspectos: {0}",
+  "Isolated fragments": "Fragmentos aislados",
+  "Isolated fragment between cuts ({0} frames)": "Fragmento aislado entre cortes ({0} fotogramas)",
+  "Isolated fragment between cuts ({0} frames): “{1}”": "Fragmento aislado entre cortes ({0} fotogramas): «{1}»",
+  "Isolated fragment between removed words ({0} frames): “{1}”": "Fragmento aislado entre palabras eliminadas ({0} fotogramas): «{1}»"
 }

@@ -131,6 +131,7 @@ const CONFIDENCE: Record<FindingKind, number> = {
 	untranscribed: 0.5,
 	'asr-suspect': 0.4,
 	hallucination: 0.9,
+	fragment: 0.6,
 };
 
 /** FNV-1a (32 bit) of a string, 8 hex digits. */
@@ -1642,20 +1643,15 @@ export function wordPeakDb(voice: CleanupVoice, w: { s: number; e: number }): nu
  * The frame (exclusive) where the kept end of a phrase-final word lies (round 12: joins cut 30–180 ms of the soft ends
  * of "azul.", "verdad.", "lo arreglen."). From frame `from` it keeps the word's fading decay — frames that are not both
  * measured silence and `DECAY_BELOW_PEAK_DB` under the word's loudest frame `peak` (a quiet word's tail near the floor
- * still sounds), never rising more than `SILENCE_DB` over the quietest frame so far (an onset), within
- * `PAUSE_EDGE_MAX_S` — then `TAIL_PAD_S` of the measured silence after it (at most half of it, so a cut stays), never
- * at or past frame `limit`.
+ * still sounds), within `PAUSE_EDGE_MAX_S` — then `TAIL_PAD_S` of the measured silence after it (at most half of it,
+ * so a cut stays), never at or past frame `limit` (the next onset, kept piece or removed word).
  */
 export function phraseTailEnd(voice: CleanupVoice, peak: number, from: number, limit: number): number {
 	const end = Math.min(limit, voice.frameCount);
 	const max = Math.round(PAUSE_EDGE_MAX_S / FR);
 	const quiet = (k: number) => silentFrame(voice, k) && levelDbAt(voice, k) < peak - DECAY_BELOW_PEAK_DB;
 	let x = Math.max(0, from);
-	let low = Number.POSITIVE_INFINITY;
-	while (x < end && x - from < max && !quiet(x) && levelDbAt(voice, x) <= low + SILENCE_DB) {
-		low = Math.min(low, levelDbAt(voice, x));
-		x++;
-	}
+	while (x < end && x - from < max && !quiet(x)) x++;
 	const pad = Math.round(TAIL_PAD_S / FR);
 	let run = 0;
 	while (x + run < end && run < 2 * pad && silentFrame(voice, x + run)) run++;

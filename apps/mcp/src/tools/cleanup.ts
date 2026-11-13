@@ -330,6 +330,8 @@ export function findingReasonText(f: CleanupFinding): string {
 			return `The transcription may be wrong here: "${text}"`;
 		case 'hallucination':
 			return `Likely invented by speech to text: "${text}"`;
+		case 'fragment':
+			return `${p.frames} frames kept alone between ${p.between === 'words' ? 'removed words' : 'cuts'}${text ? `: "${text}"` : ''} — a flash of another moment; cut it or keep it`;
 	}
 }
 

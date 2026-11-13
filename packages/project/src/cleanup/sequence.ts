@@ -19,6 +19,7 @@ import {
 	type DetectResult,
 	detectCleanup,
 	FR,
+	findingFingerprint,
 	phraseTailEnd,
 	phraseTailFrom,
 	silentFrame,
@@ -28,6 +29,7 @@ import {
 import { snapEdge } from './edges.ts';
 import { cleanupLanguageOf } from './lists.ts';
 import { isHarshCut, planMediaCuts, type Span } from './plan.ts';
+import type { AWord } from './rules.ts';
 import {
 	builtinCleanupSettings,
 	type CleanupFinding,
@@ -365,6 +367,13 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 	};
 	const clipPlans: ClipPlan[] = [];
 	const skipped: CleanupPlan['skipped'] = [];
+	// the planner's own findings: kept slivers (`resolveSlivers`), fingerprints unique per media run
+	const fragments: Array<{ run: MediaRun; f: CleanupFinding }> = [];
+	const fragmentFingerprint = (run: MediaRun, a: number, b: number, text: string) => {
+		const fp = findingFingerprint(run.mediaId, run.stream, 'fragment', a, b, text);
+		const n = fragments.filter((x) => x.run === run && x.f.fingerprint.startsWith(fp)).length;
+		return n ? `${fp}~${n + 1}` : fp;
+	};
 	const accepted = new Set<CleanupFinding>();
 	for (const f of findings) if (isAccepted(f, decisions, rejected)) accepted.add(f);
 	// retake choices
@@ -533,16 +542,67 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 			);
 			// the last kept piece keeps its fading decay up to measured silence: a join's out point may sit inside the decay
 			// (the Fast style), but nothing follows the clip's last word
-			if (run.voice && keptFrames.length) {
-				const removedTimes = words
-					.filter((_, k) => inClip[k] && removedNow[k])
-					.map((w) => [w.s, w.e] as Span);
+			const removedTimes = words.filter((_, k) => inClip[k] && removedNow[k]).map((w) => [w.s, w.e] as Span);
+			const tail = () => {
+				if (!run.voice || !keptFrames.length) return;
+				// the last word the kept pieces play
+				const plays = (w: (typeof words)[number]) =>
+					keptFrames.some(
+						([a, b]) =>
+							(w.s + w.e) / 2 >= sec(toMediaFlicks(clip, a)) && (w.s + w.e) / 2 < sec(toMediaFlicks(clip, b)),
+					);
 				const lastKept = words.reduce<(typeof words)[number] | null>(
-					(m, w, k) => (inClip[k] && !removedNow[k] && (!m || w.e > m.e) ? w : m),
+					(m, w, k) => (inClip[k] && !removedNow[k] && (!m || w.e > m.e) && plays(w) ? w : m),
 					null,
 				);
 				keepTail(clip, rate, run.voice, extent, keptFrames[keptFrames.length - 1]!, removedTimes, lastKept);
-			}
+			};
+			tail();
+			// no kept sliver flashes between cuts (round 12): joined across a short silent gap, else a `fragment` finding —
+			// removed when accepted, else grown over the silence beside it
+			keptFrames = joinShort(
+				resolveSlivers({
+					clip,
+					rate,
+					voice: run.voice,
+					extent,
+					kept: keptFrames,
+					minFrames: g.minSliverFrames,
+					words: words.filter((_, k) => inClip[k] && !removedNow[k]),
+					removedTimes,
+					removedSound: words.flatMap((_, k) => (inClip[k] && removedNow[k] ? [res.sound[k]!] : [])),
+					protect: clipSpan0(keepSpeech),
+					decide: (c) => {
+						const text = c.words.map((w) => w.text.trim()).join(' ');
+						const a = Math.max(0, Math.round(c.start * FLICKS_PER_SECOND));
+						const f: CleanupFinding = {
+							id: `f${findings.length}`,
+							kind: 'fragment',
+							range: { start: a, end: Math.max(a, Math.round(c.end * FLICKS_PER_SECOND)) },
+							words: c.words.length ? [c.words[0]!.i, c.words[c.words.length - 1]!.i] : null,
+							confidence: 0.6,
+							reason: {
+								key: 'cleanup.reason.fragment',
+								params: {
+									text,
+									seconds: Math.round((c.end - c.start) * 1000) / 1000,
+									frames: c.frames,
+									between: c.betweenWords ? 'words' : 'cuts',
+								},
+							},
+							suggested: c.suggested,
+							fingerprint: fragmentFingerprint(run, c.start, c.end, text),
+						};
+						findings.push(f);
+						fragments.push({ run, f });
+						const on = isAccepted(f, decisions, rejected);
+						if (on) accepted.add(f);
+						return on;
+					},
+				}),
+			);
+			// an accepted fragment at the end leaves another piece last: it keeps its tail too
+			tail();
 			clipPlans.push({ clip, run, keptFrames, extent });
 		}
 	}
@@ -583,8 +643,9 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 	for (const run of runs.values()) {
 		const n = run.voice?.frameCount ?? 0;
 		const arr = new Int8Array(n).fill(-1);
-		for (const f of run.result.findings) {
-			if (!f.words || !WORD_KINDS.has(f.kind) || !accepted.has(f)) continue;
+		const own = fragments.filter((x) => x.run === run).map((x) => x.f);
+		for (const f of [...run.result.findings, ...own]) {
+			if (!accepted.has(f) || (f.kind !== 'fragment' && (!f.words || !WORD_KINDS.has(f.kind)))) continue;
 			const a = Math.max(0, Math.floor(f.range.start / FLICKS_PER_SECOND / FR));
 			const b = Math.min(n, Math.ceil(f.range.end / FLICKS_PER_SECOND / FR));
 			const ki = FINDING_KINDS.indexOf(f.kind);
@@ -811,6 +872,152 @@ function keepTail(
 	if (endS <= t + 1e-9) return;
 	const f = clip.start + Math.ceil((endS * FLICKS_PER_SECOND - clip.sourceIn) / F - 1e-9);
 	last[1] = Math.max(last[1], Math.min(extent[1], f));
+}
+
+/** A kept sliver the planner offers as a `fragment` finding (media seconds). */
+type SliverCandidate = {
+	start: number;
+	end: number;
+	frames: number;
+	/** The kept words whose midpoint lies in it. */
+	words: AWord[];
+	/** Removed words' times lie in the removed gaps on both sides of it (a piece of another take, say). */
+	betweenWords: boolean;
+	suggested: 'remove' | 'review';
+};
+
+/**
+ * Kept pieces of a clip (sequence frames) without slivers (round 12: 35 kept pieces of 1–7 frames flashed another take's
+ * picture at the cut). A piece shorter than `minFrames` that does not span the clip's extent:
+ * 1. joins its neighbour across the removed gap between them when that gap is at most `minFrames` long and holds only
+ *    silence or pause — no removed word's time, no speech or breath, nothing of a removed word's sound above measured
+ *    silence (the smaller such gap wins);
+ * 2. else, unless it holds only voice without words left for review (`protect`: its own finding decides, round 7),
+ *    becomes a `fragment` finding (`decide` makes it and says whether it is accepted) — suggested for removal when it
+ *    holds no word and no voice, or lies between removed words (a piece of another take); else for review (a word
+ *    alone between pauses);
+ * 3. an accepted fragment goes; any other sliver grows over the silent frames beside it (after it first) to
+ *    `minFrames` when there are enough, never into the neighbour or out of the extent.
+ * Nothing is dropped without an accepted finding, and keeping more never removes anything.
+ */
+function resolveSlivers(o: {
+	clip: Pick<Clip, 'start' | 'sourceIn'>;
+	rate: Rational;
+	voice: CleanupVoice | null;
+	extent: readonly [number, number];
+	kept: ReadonlyArray<readonly [number, number]>;
+	minFrames: number;
+	/** The clip's kept words. */
+	words: readonly AWord[];
+	removedTimes: readonly Span[];
+	removedSound: readonly Span[];
+	protect: readonly Span[];
+	decide: (c: SliverCandidate) => boolean;
+}): Array<[number, number]> {
+	const out: Array<[number, number]> = o.kept.map(([a, b]) => [a, b]);
+	if (o.minFrames <= 1 || !out.length) return out;
+	const F = flicksPerFrame(o.rate);
+	const mediaAt = (f: number) => (o.clip.sourceIn + (f - o.clip.start) * F) / FLICKS_PER_SECOND;
+	const overlaps = (spans: readonly Span[], t0: number, t1: number) =>
+		spans.some(([x, y]) => x < t1 - 1e-9 && y > t0 + 1e-9);
+	const v = o.voice;
+	/** The 10 ms voice frames a sequence frame covers. */
+	const tens = (f: number): [number, number] =>
+		v
+			? [
+					Math.max(0, Math.floor(mediaAt(f) / FR + 1e-9)),
+					Math.min(v.frameCount, Math.ceil(mediaAt(f + 1) / FR - 1e-9)),
+				]
+			: [0, 0];
+	/** A removed sequence frame holding only silence or pause. */
+	const quietFrame = (f: number) => {
+		if (overlaps(o.removedTimes, mediaAt(f), mediaAt(f + 1))) return false;
+		if (!v) return true;
+		const [k0, k1] = tens(f);
+		for (let k = k0; k < k1; k++) {
+			if (silentFrame(v, k)) continue;
+			if (v.classes[k] === VOICE_CLASS_SPEECH || v.classes[k] === VOICE_CLASS_BREATH || voicedFrame(v, k))
+				return false;
+			if (overlaps(o.removedSound, k * FR, (k + 1) * FR)) return false;
+		}
+		return true;
+	};
+	const quietRun = (a: number, b: number) => {
+		for (let f = a; f < b; f++) if (!quietFrame(f)) return false;
+		return true;
+	};
+	/** Voice in a sequence frame: speech or voiced sound (without a voice analysis: none known). */
+	const voiceIn = (f: number) => {
+		if (!v) return false;
+		const [k0, k1] = tens(f);
+		for (let k = k0; k < k1; k++) if (v.classes[k] === VOICE_CLASS_SPEECH || voicedFrame(v, k)) return true;
+		return false;
+	};
+	for (let i = 0; i < out.length; i++) {
+		const p = out[i]!;
+		const len = p[1] - p[0];
+		const atStart = p[0] <= o.extent[0];
+		const atEnd = p[1] >= o.extent[1];
+		if (len >= o.minFrames || (atStart && atEnd)) continue;
+		const prev = i > 0 ? out[i - 1]! : null;
+		const next = i + 1 < out.length ? out[i + 1]! : null;
+		// 1. join a neighbour across a short gap of silence
+		const gapL = prev ? p[0] - prev[1] : Number.POSITIVE_INFINITY;
+		const gapR = next ? next[0] - p[1] : Number.POSITIVE_INFINITY;
+		const left = !!prev && gapL <= o.minFrames && quietRun(prev[1], p[0]);
+		const right = !!next && gapR <= o.minFrames && quietRun(p[1], next[0]);
+		if (left && (!right || gapL <= gapR)) {
+			prev![1] = p[1];
+			out.splice(i, 1);
+			i -= 2;
+			continue;
+		}
+		if (right) {
+			next![0] = p[0];
+			out.splice(i, 1);
+			i--;
+			continue;
+		}
+		// 2. a finding, unless it is voice without words that waits for its own finding
+		const [t0, t1] = [mediaAt(p[0]), mediaAt(p[1])];
+		const words = o.words.filter((w) => (w.s + w.e) / 2 >= t0 && (w.s + w.e) / 2 < t1);
+		let voice = false;
+		for (let f = p[0]; f < p[1] && !voice; f++) voice = voiceIn(f);
+		const waits = !words.length && voice && overlaps(o.protect, t0, t1);
+		const lo = prev ? prev[1] : o.extent[0];
+		const hi = next ? next[0] : o.extent[1];
+		const betweenWords =
+			!atStart &&
+			!atEnd &&
+			overlaps(o.removedTimes, mediaAt(lo), t0) &&
+			overlaps(o.removedTimes, t1, mediaAt(hi));
+		if (
+			!waits &&
+			o.decide({
+				start: t0,
+				end: t1,
+				frames: len,
+				words,
+				betweenWords,
+				suggested: (!words.length && !voice) || betweenWords ? 'remove' : 'review',
+			})
+		) {
+			out.splice(i, 1);
+			i--;
+			continue;
+		}
+		// 3. grow over the silence beside it to the minimum
+		const need = o.minFrames - len;
+		let after = 0;
+		while (after < need && p[1] + after < hi - 1 && quietFrame(p[1] + after)) after++;
+		let before = 0;
+		while (before < need - after && p[0] - before > lo + 1 && quietFrame(p[0] - before - 1)) before++;
+		if (after + before >= need) {
+			p[1] += after;
+			p[0] -= before;
+		}
+	}
+	return out;
 }
 
 /** Frames (10 ms) a clip's last piece may grow by: the decay walk's 0.25 s and the air after it. */

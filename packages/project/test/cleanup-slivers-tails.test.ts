@@ -4,7 +4,7 @@
 // rule missed. Synthetic words over hand-made voice analyses, planned through `analyzeSequenceCleanup` at 30 fps.
 import { describe, expect, it } from 'vitest';
 import { type CleanupVoice, type CleanupWordIn, detectCleanup } from '../src/cleanup/detector.ts';
-import { FAST_SETTINGS } from '../src/cleanup/schema.ts';
+import { FAST_SETTINGS, FINDING_KINDS } from '../src/cleanup/schema.ts';
 import { analyzeSequenceCleanup, type CleanupDecisions } from '../src/cleanup/sequence.ts';
 import { FLICKS_PER_SECOND } from '../src/time.ts';
 import { Harness, videoAsset } from './helpers.ts';
@@ -103,6 +103,102 @@ const pace = (t0: number) =>
 		gap: 0.05,
 		pause: 0,
 	});
+
+/** Every removed range lies inside the accepted findings (the suggested removals, `accept` added, `reject` dropped). */
+function expectExplained(r: ReturnType<typeof plan>, decisions: CleanupDecisions = {}) {
+	const on = r.a.findings.filter(
+		(f) =>
+			!decisions.reject?.includes(f.id) &&
+			!decisions.reject?.includes(f.fingerprint) &&
+			(f.suggested === 'remove' || !!decisions.accept?.includes(f.id)),
+	);
+	const spans = on.map(
+		(f) => [sec(f.range.start) - 1 / FPS - 1e-6, sec(f.range.end) + 1 / FPS + 1e-6] as const,
+	);
+	for (const [x, y] of r.removed)
+		expect(keptOf(spans, x, y), `${x.toFixed(3)}–${y.toFixed(3)} removed without a finding`).toBeGreaterThan(
+			y - x - 1e-6,
+		);
+}
+
+describe('round 12: no kept sliver between cuts', () => {
+	// "…mi propio | Unity | Tengo solo 30 días": a short kept word between two removed takes, in continuous voice
+	const words = say('Hoy voy a crear Unity un juego de carreras con física ahora mismo y luego más', {
+		t0: 1,
+		dur: 0.25,
+		gap: 0,
+		pause: 0,
+	});
+	for (const k of [2, 3, 5, 6]) words[k]!.confidence = 0.2;
+	const { v } = voiceOf(words);
+	const removals = (r: ReturnType<typeof plan>) =>
+		r.a.findings.filter((f) => f.kind === 'asr-suspect').map((f) => f.id);
+
+	it('a kept word under the minimum between two removed takes is a fragment finding, never a silent drop', () => {
+		const accept = removals(plan(words, v));
+		expect(accept).toHaveLength(2);
+		const r = plan(words, v, { accept });
+		const f = r.a.findings.find((x) => x.kind === 'fragment');
+		expect(f?.words).toEqual([4, 4]);
+		expect(f?.suggested).toBe('remove');
+		expect(f?.reason.params).toMatchObject({ text: 'Unity', between: 'words' });
+		// accepted by default: "Unity" goes with its finding, nothing removed outside the accepted findings
+		expect(keptOf(r.kept, sec(words[4]!.start), sec(words[4]!.end))).toBeLessThan(1e-6);
+		expectExplained(r, { accept });
+		// rejected: it stays whole (no silence beside it to grow over)
+		const kept = plan(words, v, { accept, reject: [f!.fingerprint] });
+		// (less a frame at most at the start of the removal after it: continuous voice, round 8)
+		expect(keptOf(kept.kept, sec(words[4]!.start), sec(words[4]!.end))).toBeGreaterThan(0.25 - 1 / FPS);
+		expectExplained(kept, { accept, reject: [f!.fingerprint] });
+		// rejecting every finding removes nothing
+		expect(plan(words, v, { rejectKinds: [...FINDING_KINDS] }).removed).toEqual([]);
+	});
+
+	it('a sliver joins its neighbour across a short silent gap', () => {
+		// "Pero" after the removed words, then 0.2 s of silence (a pause, cut) before the kept speech
+		const ws = say('Hola a todos hoy voy a crear Pero | seguimos con esto ahora mismo y luego más', {
+			t0: 1,
+			dur: 0.2,
+			gap: 0,
+			pause: 0.2,
+		});
+		for (const k of [4, 5, 6]) ws[k]!.confidence = 0.2;
+		const vv = voiceOf(ws).v;
+		const accept = removals(plan(ws, vv));
+		const r = plan(ws, vv, { accept });
+		expect(r.a.findings.filter((f) => f.kind === 'fragment')).toEqual([]);
+		const pero = ws[7]!;
+		const piece = r.kept.find(([x, y]) => x < sec(pero.end) && y > sec(pero.start))!;
+		expect(piece[0]).toBeLessThanOrEqual(sec(pero.start) + 1e-6);
+		expect(piece[1]).toBeGreaterThan(sec(ws[8]!.end));
+		expectExplained(r, { accept });
+	});
+
+	it('a word alone between long pauses is a fragment to review, grown over the silence to the minimum', () => {
+		const ws = say('Vamos a ver si lo arreglen | ¡Viva! | Sigue el video ahora', {
+			t0: 1,
+			dur: 0.25,
+			gap: 0.05,
+			pause: 2,
+		});
+		const viva = ws.find((w) => w.text === '¡Viva!')!;
+		viva.end = viva.start + S(0.08);
+		const vv = voiceOf(ws).v;
+		const r = plan(ws, vv);
+		const f = r.a.findings.find((x) => x.kind === 'fragment');
+		expect(f?.suggested).toBe('review');
+		expect(f?.reason.params).toMatchObject({ text: '¡Viva!', between: 'cuts' });
+		const piece = r.kept.find(([x, y]) => x < sec(viva.end) && y > sec(viva.start))!;
+		expect(piece[0]).toBeLessThanOrEqual(sec(viva.start) + 1e-6);
+		expect(piece[1]).toBeGreaterThanOrEqual(sec(viva.end) - 1e-6);
+		expect((piece[1] - piece[0]) * FPS).toBeGreaterThanOrEqual(FAST_SETTINGS.guards.minSliverFrames - 1e-6);
+		for (const [x, y] of r.kept) expect((y - x) * FPS).toBeGreaterThanOrEqual(10 - 1e-6);
+		// accepted, it goes with its finding
+		const gone = plan(ws, vv, { accept: [f!.id] });
+		expect(keptOf(gone.kept, sec(viva.start), sec(viva.end))).toBeLessThan(1e-6);
+		expectExplained(gone, { accept: [f!.id] });
+	});
+});
 
 describe('round 12: stretched words against the speaker’s pace', () => {
 	it('a 0.95 s word whose syllables take 0.125 s is stretched; a long word said at its normal length is not', () => {

@@ -41,6 +41,7 @@ export const KIND_ORDER: readonly FindingKind[] = [
 	'untranscribed',
 	'asr-suspect',
 	'hallucination',
+	'fragment',
 ];
 
 /** Display names of the finding kinds. */
@@ -60,6 +61,7 @@ export const KIND_LABELS: Record<FindingKind, string> = {
 	untranscribed: 'Voice without words',
 	'asr-suspect': 'Transcription suspects',
 	hallucination: 'Hallucinations',
+	fragment: 'Isolated fragments',
 };
 
 /** Strike-through / marker colour per kind (design tokens). */
@@ -79,6 +81,7 @@ export const KIND_COLOR: Record<FindingKind, string> = {
 	untranscribed: 'var(--pr-marker-yellow)',
 	'asr-suspect': 'var(--pr-warning)',
 	hallucination: 'var(--pr-label-magenta)',
+	fragment: 'var(--pr-label-brown)',
 };
 
 /** The user's decisions in a review (finding ids of one analysis; retake group id → kept take). */
@@ -550,6 +553,13 @@ export function reasonText(f: CleanupFinding): string {
 			return t('The transcription may be wrong here: “{0}”', text);
 		case 'hallucination':
 			return t('Likely invented by speech to text: “{0}”', text);
+		case 'fragment':
+			// a kept sliver between cuts (`frames` long; `between: 'words'` when removed words surround it; no text without
+			// a word)
+			if (!text) return t('Isolated fragment between cuts ({0} frames)', p.frames);
+			return p.between === 'words'
+				? t('Isolated fragment between removed words ({0} frames): “{1}”', p.frames, text)
+				: t('Isolated fragment between cuts ({0} frames): “{1}”', p.frames, text);
 	}
 }
 
