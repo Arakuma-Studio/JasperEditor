@@ -154,8 +154,9 @@ describe('native export (S03:ENG-030, S04:RN-021/022, QA-005)', () => {
 		});
 		expect(plan.planId).toMatch(/^pln_/);
 		expect(plan.estimate.seconds).toBeGreaterThan(0);
-		// the expected composite pipeline: three layers on the CPU in one graph (a 3 s range is never split)
-		expect(plan.pipeline).toMatchObject({ composite: { device: 'cpu' }, segments: 1, overlays: 3 });
+		// the expected composite pipeline: on the CPU in one graph (a 3 s range is never split); clip-a is the base
+		// (export-performance §12), the still and the solid are blended
+		expect(plan.pipeline).toMatchObject({ composite: { device: 'cpu' }, segments: 1, overlays: 2 });
 		const again = await app.inject({
 			method: 'POST',
 			url: '/api/exports/plan',
@@ -193,7 +194,7 @@ describe('native export (S03:ENG-030, S04:RN-021/022, QA-005)', () => {
 		// what ran, and where the time went
 		const ran = ExportResultSchema.parse(done.result);
 		expect(ran.pipeline).toMatchObject({ composite: { device: 'cpu' }, segments: 1 });
-		expect(ran.pipeline!.overlays).toBeGreaterThanOrEqual(2);
+		expect(ran.pipeline!.overlays).toBe(plan.pipeline!.overlays);
 		for (const phase of ['audio', 'bake', 'plan', 'encode', 'frameCheck', 'finish'])
 			expect(ran.timings!.phases[phase], phase).toBeDefined();
 		expect(ran.timings!.phases.encode!.startMs).toBeGreaterThanOrEqual(ran.timings!.phases.plan!.startMs);

@@ -81,6 +81,27 @@ export type LayerOverride = {
 	run?: { id: string; f0: number; f1: number };
 };
 
+/**
+ * docs/wp-notes/export-performance.md §13: layers whose entries an extension's prepared state holds only once `ready`
+ * resolves (a rejection is the bake's failure). The export builds no graph that draws a frame of `[start, end)` before
+ * then and reads nothing of `clipIds` (their `override` throws `LayerPendingError` meanwhile).
+ */
+export type DeferredLayer = {
+	clipIds: readonly string[];
+	/** Sequence frames the layers are drawn on (transition handles included). */
+	start: number;
+	end: number;
+	ready: Promise<void>;
+};
+
+/** A layer's override was read before its deferred bake was ready (a scheduling bug, never drawn without it). */
+export class LayerPendingError extends Error {
+	constructor(clipName: string) {
+		super(`The baked layer "${clipName}" was read before its bake was ready`);
+		this.name = 'LayerPendingError';
+	}
+}
+
 export type OverrideReady =
 	| { ok: true; picture?: { x: number; y: number; w: number; h: number } }
 	| { ok: false; reason: string };
@@ -148,6 +169,11 @@ export type NativePrepareContext = {
 	background?(work: Promise<void>): void;
 	/** false = no pipelined work (a restart after a pipelined still changed). */
 	pipeline?: boolean;
+	/**
+	 * docs/wp-notes/export-performance.md §13: a bake that continues after `prepare` returned (registered with
+	 * `background` too). Absent = such bakes finish in `prepare`.
+	 */
+	defer?(layer: DeferredLayer): void;
 	/** Aborts the background work (the job ended, or the export failed and nothing waits for it). */
 	backgroundSignal?: AbortSignal;
 };

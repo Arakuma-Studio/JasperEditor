@@ -1150,7 +1150,10 @@ graphics)** and lists one graphics group per baked layer.
   templates' pop-in and shake) — bakes **one PNG of its layer box** and the native kernel draws it frame by frame
   through Motion, the Transform and the shake (spec 13 AS-070/073). Every still of an export (static layers and these)
   is rendered in **sheets**: up to 128 stills per Remotion render, identical words sharing one; a native export
-  starts its composite while they render. Shaken text with S_Shake's motion blur, RGB split or wrap stays an animated
+  starts its composite while they render (each segment once its stills are written; the earliest one follows them).
+  The animated masters of text, shape and caption layers render beside the composite too: segments without one start
+  right after planning, the others as soon as theirs are ready (`JASPER_EXPORT_BAKE_OVERLAP` caps the segments
+  rendering while masters still render). Shaken text with S_Shake's motion blur, RGB split or wrap stays an animated
   master, one per run of such clips on a track.
 - The constant pictures of a track (those stills, still images with sub-pixel Motion) are drawn into **one input of
   the composite per track**, so memory and speed follow what is on screen, not the clip count (thousands of subtitles

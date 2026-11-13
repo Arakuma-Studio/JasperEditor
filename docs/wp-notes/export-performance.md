@@ -25,8 +25,8 @@ the graph runs on few threads, so more than half the CPU and nearly all of the G
 Every export job result now carries `timings` (`ExportTimingsSchema`: `totalMs` and, per phase, `startMs` from the
 job's start and the summed `ms`) and, on the native / hybrid paths, `pipeline` (`ExportPipelineSchema`: `decode`
 `nvdec | cpu`, `composite` `gpu | cpu`, `segments`, `overlays` of the largest graph, `compositeSize`, `reason` when the
-range was not split). The plan carries the expected `pipeline` (its `overlays` is the number of top-level visual
-layers of the busiest segment, an upper bound: kernel streams draw a run of constant layers through one overlay).
+range was not split). The plan carries the expected `pipeline` (its `overlays` estimates the busiest segment's graph
+from the layers, §13).
 The job log ends with one `timings (total …)` line. Phases: `masters`, `audio`, `bake`, `audioWait`, `plan`,
 `bakeWait`, `encode` (or `still`), `join`, `frameCheck`, `remotion`, `finish`; they overlap (the mix runs while layers
 bake), which `startMs` shows. MCP: `start_export`'s `plan.pipeline`, and `result.pipeline` / `result.timings` in
@@ -868,3 +868,143 @@ no silence; `cut-click` flags the edit's own 19 cuts, as before.
   project has no such layer (its 384 full-frame overlays were the V1 clips and the 23 master spans above them), and no
   layer off the canvas or at 0 % opacity.
 - *Redundant conversions*: none found — each layer is converted to RGBA once, the composite to `yuv420p` once.
+
+## 13. Masters beside the composite; the plan's overlays (implemented)
+
+`service.ts` (`runNative`), `layer-bake/extension.ts`, `native-ext.ts` (`DeferredLayer`, `NativePrepareContext.defer`),
+`memory.ts` (`compositeProfile`, `overlaysFrom`), `native.ts` (`coverCandidate`, `motionCovers`).
+
+**Where a cold export waited** (main 4e2dd3342, user's PC, run `main-1`): the 17 title masters baked 99 s before
+planning started, then 24 segments encoded 4 at a time for 237 s; the composite started nothing during the bake.
+
+**Change.**
+- The layer bake defers the uncached masters of DOM layers (titles, shapes, captions: no other extension reads their
+  entries) when the export offers `defer`: `prepare` returns with the clips marked pending, the masters render in a
+  background page pool in time order (same budget, pages and 12 renders in flight as before), and each group of clips
+  resolves its own `ready` when its bake is written. Reading a pending clip's override throws `LayerPendingError` (a
+  scheduling bug fails loudly; the builder never draws a layer without its bake). Cached masters, layer stills, media
+  bakes, graded entries, transition spans, nested sequences, stills and restarts (`pipeline = false`) prepare as before.
+- `runNative` plans the segments after the synchronous part of `prepare`, builds each segment's graph only once the
+  deferred bakes whose frames meet its range are written (its cache files are pinned then), and runs the lanes on the
+  first startable segment in range order. A segment also waits for the pipelined stills it draws, except the earliest
+  one left, which streams behind them: the stills render one sheet at a time in time order over most of the encode
+  (≈ 260 s of the cold run), and a composite started ahead of them held its lane while it waited (variant `v1`
+  below: segments 8 and 9 started at once and took 170 s instead of ≈ 40 s).
+- Failure and cancellation: a failed deferred bake fails the export with its error (`NativePrepareError`, so `auto`
+  still falls back to Remotion) and stops the running composites; cancelling aborts the background pool and every
+  composite; the memory watchdog, OpenCL fallback, sequence-size and pipelined-still restarts are unchanged (a late
+  segment that comes out off the output grid stops the others and the export runs again at the sequence size).
+- Phases: `bake` lasts until the deferred bakes are written; late segment builds add to `plan`; the job log names each
+  segment's encode time and start (`native: segment i/n … encoded in … s, from … s`).
+  `JASPER_EXPORT_BAKE_OVERLAP` caps the composites at once while masters still render (default: the plan's
+  concurrency, see the measurements).
+
+**Plan overlays.** The plan counted every top-level layer of the busiest segment (113 on this configuration's segments,
+345 on the live engine's 7) while the built graphs had 3–5: the base pieces (§12) and the kernel streams (AS-072) draw
+no overlay per layer. `compositeProfile` (the memory estimate's model of the builder) now marks the media layers that
+will be base pieces — `coverCandidate` (the builder's document conditions, shared), not claimed by an extension, the
+media without alpha, and `motionStage` placing them exactly on the canvas at the composite size (`motionCovers`,
+shared with the builder), without overlapping another piece and before any blend-mode layer — and `overlaysFrom` counts
+one overlay per drawn layer, none per base piece, one per track of kernel-stream members, one per run master, plus the
+mattes. Not counted: nested stacks' own layers and baked transition spans. Plan and result now agree: 3 = 3 on the real
+project, and the `export-composite-base` and `export.test.ts` cases.
+
+**Measured** (user's PC: RTX 3080 Ti, 24 logical cores, 94 GB, driver 595.99; engines in a systemd scope
+`MemoryMax=40G`, `MemorySwapMax=0`, vendor LGPL FFmpeg 7.1.5, appdir `.stage-perf`, defaults; prj_SC0SEK431T1QPQYF,
+15:31, `draft-720p-h264`, `normalizeLufs: −14`; each session after the idle check — load1 < 8, no ffmpeg of the user's
+live engine (one session waited while it exported) —, the desktop's GPU use recorded, not controlled; *cold* = layer
+cache moved aside (restored after each session), the first export of a new engine; *warm* = its second export, the
+delivery reusing its solved loudness). In this scope the memory budget is 24.0 GB (estimate 21.3 GB): **24 segments,
+4 at a time** — the live engine, without the 40 GB scope, plans 7, so its segments wait for more masters each.
+
+| Build (run) | Cold job | Bake (masters) | Encode (start → end) | Audio | Warm job |
+|---|---:|---:|---|---:|---:|
+| main (`main-1…4`) | 351.4 / 340.5 / 338.3 / 355.0 s (mean 346.3) | 95–110 s, before planning | 104–120 → 333–349 s | 265–303 s | 210.8 / 183.7 / 181.4 / 183.3 s |
+| this branch (`br3-1`, `br3-2`) | **328.5 / 327.2 s** (mean 327.9) | 122–124 s, beside the encode | 7–9 → 322–323 s | 177–178 s (§14) | 186.0 / 182.9 s |
+
+The first main session (`main-0`, the session's first export: 395.1 s cold / 230.5 s warm) is left out of the means.
+- **Cold: −18 s (−5 %)**: the slowest branch run is 10 s under the fastest main run. Warm exports (no bake) are
+  unchanged within their spread.
+- Why not more: the overlap shares the CPU (CPU busy 90–96 % while masters render beside four composites, against
+  74–89 % in main's bake), so the first segments take 80–110 s instead of ≈ 35 s and the masters 123 s instead of 98 s;
+  the composites then follow the pipelined stills, written one sheet at a time until ≈ 262 s in both builds, and four
+  composites of ≈ 30–40 s each bound the rest. The encode is the critical path in both builds.
+- Concurrency while masters render (`JASPER_EXPORT_BAKE_OVERLAP`, one cold run each): 4 (default) 327–329 s, 3 331.6 s,
+  2 362.8 s — fewer composites leave cores idle that the bake does not take; the default stays the plan's concurrency.
+- Variants measured and dropped: segments started without waiting for their stills (`br-1`, 347.6 s: segments 8–9
+  waited 170 s for stills in their lanes); stills baked in the segments' start order, four streams interleaved
+  (`br2-1`, 418.1 s: every segment then waited); two pipelined sheets side by side (`br4-1`, 347.6 s: stills done at
+  226 s instead of 262 s, but the masters took 155 s and the composites no less).
+- Peak scope memory (cold + warm of one engine): main 16.6–17.0 GB, branch 16.8–17.6 GB.
+
+**Picture and checks.** The video packets are byte-identical to main's in every run (stream-copied MD5: cold
+`7ee2c881…`, warm `fcb13c07…`, the values of §12); the audio packets equal main's for the bake-only variants
+(`94ac735b…`) and differ for the final branch, whose loudness delivery changed (§14: `af033869…`). Plan and result
+overlays: main 113 vs 3, branch 3 = 3. `verify_export` (full) on the branch's cold export: decode, streams, duration
+931 s, A/V skew 0, no black or flash at 360 cuts, loudness −14 LUFS, true peak −2.07 dBTP, no silence; `cut-click`
+flags 21 cuts against 19 on main's cold export of this session — 16 the same, 4 more (27.1, 223.7, 464.2, 542.0 s:
+12.2–17.1 dB) and 2 fewer (11.5, 671.4 s): the edit's clicks measured on another delivery (−3.0 dBTP ceiling and
+0.56 dB less gain, so less limiting of the steps at the cuts, and another AAC encode), not new edits.
+
+Tests: `apps/engine/test/export-bake-overlap.test.ts` (a test extension defers a layer's bake: the segments that do
+not draw it start before the bake ends and the export equals the waited one frame for frame; a failed bake fails the
+export with its error, stops the running segments and never starts its own; cancelling stops the bake and the
+segments) and `export-composite-base.test.ts` ("the plan's overlay count is the built graph's"): all four fail on
+main (no `defer`; plan 10 vs 6 overlays).
+
+## 14. Loudness delivery: fewer rounds and passes (implemented)
+
+`audio/deliver.ts` (`solveDelivery`). Once the masters overlap the composite (§13), the loudness delivery beside it
+(265–303 s from the job's start in the cold runs below; 259 s on the live engine's warm export of a new revision) is
+as long as the encode.
+
+**Where its time went** (the real project's pass-1 mix captured from an audio-only export, delivered by a scratch
+driver calling `solveDelivery` as an export does — AAC 128 kb/s stereo 48 kHz, −14 LUFS / −1 dBTP, the export's worker
+threads, 3 encodes at once —; user's PC idle, load1 < 2): 107.5 s after the mix.
+- Round 1: 3 converging passes (aim −13.6 LUFS: the table's typical AAC 128 loss of 0.4 LU over the target), then
+  the candidates' encodes at the round's ceiling −2.5 dBTP and the alternatives −3.0 / −3.5 (their passes one after
+  the other). Decoded: −2.5 overshoots the true peak (−0.65 dBTP); −3.0 and −3.5 meet it but decode at −13.64 /
+  −13.66 LUFS — this voice loses ≈ 0.03 LU through AAC, not 0.4 — so all miss the ±0.2 LU tolerance.
+- Round 2: 3 more converging passes from the last gain at slope 1 (the first a duplicate of round 1's −3.5 pass),
+  alternatives, and the encode that met (−13.904 LUFS, −2.324 dBTP).
+- Each pass ≈ 6–8 s idle (≈ 15 s in the export under load), each encode ≈ 19 s, each decoded check ≈ 7 s.
+
+**Changes** (the loudness tolerances and the search's rules are unchanged; the delivered parameters may differ):
+- The first pass runs at the gain of the aim (not the plain normalisation gain), with a measured probe 0.5 dB higher
+  beside it where the limiter will act (the mix's true peak at that gain passes the ceiling): the first step uses the
+  curve's measured slope (`passKinds.probe`).
+- Every pass is recorded as a point of the limiter's scale-free curve (`gainAtCeiling`), by correction: a later round
+  starts at the gain the points predict, seeded with the nearest point's slope, and the alternatives predict from all
+  points (one pass each where two were needed).
+- A round's alternatives are written side by side (each its own WAV, the encodes start as each is written; a failure
+  stops the siblings).
+- The first round also encodes the target without the codec's typical loss at the first lower ceiling (judged after
+  the same-ceiling candidate): material the codec barely quietens lands in the first round.
+
+**Measured.**
+
+| | Delivery after the mix (driver, idle) | Passes (converge / alternative / probe) | Encodes | Delivered (decoded) |
+|---|---:|---|---:|---|
+| main | 107.5 s | 10 (6 / 4 / 0) | 6 | −13.904 LUFS, −2.324 dBTP |
+| this branch (2 runs, identical) | **46.0 / 46.1 s** | 6 (2 / 3 / 1) | 4 | −14.025 LUFS, −2.067 dBTP |
+
+In the full cold exports (table in §13's measurements) the audio phase went from 265–303 s to 177–178 s, now ending
+≈ 145 s before the encode; the warm exports reuse the engine's solved delivery (1 pass) and are unchanged. The mix
+itself (86–98 s under the export's load, 44 s idle) is now most of the audio phase.
+
+Fidelity: the delivered audio differs from main's (other gain and ceiling) within the tolerances — integrated
+−14.025 LUFS (±0.2 LU of −14), true peak −2.067 dBTP (target −1, margin 0.1) on the decoded file; the PCM pass
+−13.999 LUFS. Tests: `audio-deliver.test.ts` ("a mix the codec barely quietens lands in the first round": harmonic
+speech-like phrases under 1 kHz; main needs 6 encodes and 12 passes, decoding at −13.81 LUFS) fails on main; the
+suite, `export-lossy-true-peak.test.ts` (the AAC/Opus decoded matrix), `sound-design-delivery`, `sound-check` and
+the worker-thread identity test (`sound-design-measure-worker.test.ts`) pass; two assertions changed with the
+behaviour (the probe is measured, not written; the first round decodes three candidates).
+
+**Evaluated, not done.**
+- *Prefetching the mixer's clip decoders* (start each clip's ffmpeg a few seconds of timeline before it plays, the
+  mix runs ≈ 20× real time): the sample-exact tail tests (`sound-tail.test.ts`) failed — a decoder started early gave
+  different first samples than one started when reached, with identical arguments; not understood, reverted.
+- *Lower priority or fewer threads for the audio*: not done — in the cold exports of main the delivery ended 30–70 s
+  before the encode, but on the live engine's configuration (7 segments) and in warm exports of a new revision it was
+  the last phase; after the changes above it ends ≈ 145 s before the encode in a cold export, but the warm exports' audio (150–177 s,
+  mostly the mix) still ends close to their encode (≈ 177 s), so slowing it would lengthen warm jobs.

@@ -84,6 +84,8 @@ type PagePoolOptions = {
 	budget: number;
 	/** Renders in flight at most (default `min(budget, MAX_RENDERS_IN_FLIGHT)`; 1 = one after the other). */
 	maxInFlight?: number;
+	/** Start tasks in input order (a deadline order) instead of the largest share first. */
+	inOrder?: boolean;
 	signal: AbortSignal;
 	onProgress?(p: PagePoolProgress): void;
 };
@@ -100,7 +102,9 @@ export function runPagePool<T>(tasks: readonly PagePoolTask<T>[], o: PagePoolOpt
 	const totalWeight = tasks.reduce((s, t) => s + Math.max(0, t.weight), 0) || 1;
 	const pending = tasks
 		.map((_, i) => i)
-		.sort((a, b) => tasks[b]!.want - tasks[a]!.want || tasks[b]!.weight - tasks[a]!.weight || a - b);
+		.sort((a, b) =>
+			o.inOrder ? a - b : tasks[b]!.want - tasks[a]!.want || tasks[b]!.weight - tasks[a]!.weight || a - b,
+		);
 	const inner = new AbortController();
 	let used = 0;
 	let running = 0;

@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ExportResultSchema } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildNativeGraph } from '../src/export/native.ts';
 import { coreServices } from '../src/tools/services.ts';
@@ -13,6 +14,7 @@ import {
 	DocBuilder,
 	ensureFixtures,
 	fixture,
+	JSON_H,
 	makeApp,
 	register,
 	TEST_FFMPEG,
@@ -147,5 +149,46 @@ describe('composite base sliced in time (export-performance §12)', () => {
 		expect(fa).toHaveLength(FRAMES);
 		expect(fb).toHaveLength(FRAMES);
 		for (let f = 0; f < FRAMES; f++) expect(fa[f]!.equals(fb[f]!), `frame ${f}`).toBe(true);
+	}, 300_000);
+
+	it("the plan's overlay count is the built graph's: no overlay for base pieces, one per kernel stream", async () => {
+		const d = await doc();
+		// V4: three sub-pixel stills one after the other (one kernel stream)
+		const still = d.addMedia(await register(app, fixture('still.png')));
+		const { refs } = d.tx(
+			[0, 18, 36].map((at, i) => ({
+				type: 'clip.place',
+				source: { mediaId: still },
+				at,
+				tracks: { video: 'V4' },
+				sourceRange: { in: { seconds: 0 }, out: { seconds: (at === 36 ? 20 : 18) / 30 } },
+				ref: `$st${i}`,
+			})),
+		);
+		d.tx(
+			Object.values(refs).flatMap((id, i) => [
+				{ type: 'param.set', target: ['clip', id, 'transform', 'scale'], value: 30 },
+				{ type: 'param.set', target: ['clip', id, 'transform', 'position'], value: [300.3 + i * 100, 200.7] },
+			]),
+		);
+		const core = coreServices(app);
+		const planned = await core.exports.plan({
+			envelope: d.envelope(),
+			sequenceId: d.seqId,
+			settings: settings(d.seqId) as never,
+		});
+		const r = await app.inject({
+			method: 'POST',
+			url: '/api/exports',
+			headers: JSON_H,
+			payload: { envelope: d.envelope(), sequenceId: d.seqId, settings: settings(d.seqId) },
+		});
+		expect(r.statusCode, r.body).toBe(202);
+		const done = await core.queue.wait(r.json().id);
+		expect(done.error, JSON.stringify(done.error)).toBeUndefined();
+		const result = ExportResultSchema.parse(done.result);
+		// 2 solids below + 2 blended V2 clips + the solid above + 1 kernel stream (10 layers)
+		expect(result.pipeline?.overlays).toBe(6);
+		expect(planned.plan.pipeline?.overlays).toBe(result.pipeline?.overlays);
 	}, 300_000);
 });

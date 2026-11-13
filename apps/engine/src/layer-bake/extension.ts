@@ -1,5 +1,11 @@
 import type { RenderSnapshot, RenderTransition, RenderVisualClip } from '@jasper/project';
-import type { LayerOverride, NativeExtension, NativePrepareContext } from '../export/native-ext.ts';
+import {
+	type LayerOverride,
+	LayerPendingError,
+	layerSpan,
+	type NativeExtension,
+	type NativePrepareContext,
+} from '../export/native-ext.ts';
 import type { PlannedExport } from '../export/planner.ts';
 import { renderParallelism } from '../gaps/render-budget.ts';
 import { JobError } from '../jobs/types.ts';
@@ -31,6 +37,8 @@ type PreparedLayer = {
 		startFrame: number;
 		frames: number;
 	};
+	/** docs/wp-notes/export-performance.md §13: baking beside the composite (the clip's name); no entry yet. */
+	pending?: string;
 };
 type LayerBakePrepared = Map<string, PreparedLayer>;
 /** Span bakes of GPU transitions (wave1c), by transition id: the `sequence` override of the span. */
@@ -238,6 +246,7 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 				group: typeof items,
 				bake: BakeResult,
 				graded: { key: string; path: string; rect: Rect | null } | null,
+				into: Prepared = out,
 			) => {
 				for (const it of group) {
 					if (bake.clipped && it.clip) {
@@ -248,7 +257,7 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 						// One input for the run: every clip points at it; the builder draws it once.
 						const run = { id: it.plan.key, f0: it.plan.startFrame, f1: it.plan.startFrame + it.plan.frames };
 						for (const c of it.run)
-							out.set(c.clipId, {
+							into.set(c.clipId, {
 								override: {
 									path: bake.path,
 									space: 'sequence',
@@ -260,10 +269,10 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 						continue;
 					}
 					const entry = entryOf(it.plan, bake, it.grade, graded);
-					if (it.clip) out.set(it.clip.clipId, entry);
+					if (it.clip) into.set(it.clip.clipId, entry);
 					else if (entry.override) {
-						out[SPANS] ??= new Map();
-						out[SPANS].set(it.plan.clipId, entry.override);
+						into[SPANS] ??= new Map();
+						into[SPANS].set(it.plan.clipId, entry.override);
 					}
 				}
 			};
@@ -297,7 +306,7 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 						out.set(it.clip!.clipId, { override: { ...entry.override!, ready } });
 					}
 				}
-				// Time order: the stream needs the earliest subtitles first.
+				// Time order: the stream needs the earliest subtitles first (§13: segments wait for theirs, the earliest streams).
 				const groups = [...pending.values()].sort(
 					(a, b) => Math.min(...a.map((x) => x.clip!.start)) - Math.min(...b.map((x) => x.clip!.start)),
 				);
@@ -351,6 +360,76 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 					},
 				);
 				pool.finally(() => releaseBackground?.()).catch(() => undefined);
+			};
+			/**
+			 * docs/wp-notes/export-performance.md §13: the masters rendered after `prepare` returned, earliest first (the
+			 * segments at the start of the range wait for them), side by side as in `round`. Each group's entries go into
+			 * `into` when its bake is done, then the export hears of it (`ctx.defer`); a failure rejects the groups not done.
+			 */
+			const deferMasters = (
+				list: (typeof items)[],
+				into: Prepared,
+				releaseLater: (() => Promise<void>) | null,
+			) => {
+				const clipsOf = (group: typeof items) => group.flatMap((it) => it.run ?? [it.clip!]);
+				const groups = list
+					.map((group) => {
+						const spans = clipsOf(group).map((c) => layerSpan(c, planned.range));
+						return {
+							group,
+							start: Math.min(...spans.map((x) => x[0])),
+							end: Math.max(...spans.map((x) => x[1])),
+						};
+					})
+					.sort((a, b) => a.start - b.start || a.end - b.end);
+				const shares = pageShares(
+					groups.map((g) => g.group[0]!.plan.frames),
+					budget,
+					maxInFlight,
+				);
+				const settle = groups.map(() => {
+					const s = {} as { ready: Promise<void>; resolve(): void; reject(e: unknown): void };
+					s.ready = new Promise<void>((resolve, reject) => {
+						s.resolve = resolve;
+						s.reject = reject;
+					});
+					s.ready.catch(() => undefined);
+					return s;
+				});
+				const pool = runPagePool(
+					groups.map(({ group }, i) => ({
+						want: maxInFlight === 1 ? budget : shares[i]!,
+						weight: group[0]!.plan.frames + RENDER_FIXED_COST_FRAMES,
+						run: async (g: PageGrant) => {
+							const bake = await svc.ensureBake(group[0]!.plan, metaOf(g));
+							if (bake.clipped)
+								throw new JobError(
+									'LAYER_BAKE_FAILED',
+									`The master of "${group[0]!.plan.clipName}" is clipped`,
+									true,
+								);
+							finish(group, bake, null, into);
+							settle[i]!.resolve();
+						},
+					})),
+					{ budget, maxInFlight, inOrder: true, signal: ctx.backgroundSignal ?? ctx.signal },
+				);
+				// Registered first: the export hears of a failure before the segments waiting for these bakes do.
+				ctx.background!(pool.then(() => undefined));
+				pool.then(
+					() => undefined,
+					(e) => {
+						for (const s of settle) s.reject(e);
+					},
+				);
+				pool.finally(() => releaseLater?.()).catch(() => undefined);
+				for (const [i, g] of groups.entries())
+					ctx.defer!({
+						clipIds: clipsOf(g.group).map((c) => c.clipId),
+						start: g.start,
+						end: g.end,
+						ready: settle[i]!.ready,
+					});
 			};
 			/** One round: one render per entry (identical layers share a bake key; graded entries have their own). */
 			const round = async (list: typeof items) => {
@@ -443,9 +522,9 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 			// out different (clipped, re-cropped) makes the export restart without the pipeline (`ready` → not ok).
 			const pipelined = !remotion && single === null && ctx.pipeline !== false && !!ctx.background;
 			let now = items;
+			const pending = new Map<string, typeof items>();
 			if (pipelined) {
 				now = [];
-				const pending = new Map<string, typeof items>();
 				for (const it of items) {
 					const { plan, grade } = it;
 					const sheetable =
@@ -460,8 +539,24 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 					}
 					pending.set(plan.key, [it]);
 				}
-				if (pending.size > 0) background(pending);
 			}
+			// docs/wp-notes/export-performance.md §13 — masters beside the composite: the uncached masters of DOM layers
+			// (titles, shapes, captions: no other extension reads their entries) render after `prepare` returned, the
+			// earliest first; the export starts each segment once the masters it draws are ready.
+			const later: typeof items = [];
+			if (pipelined && ctx.defer) {
+				const kept: typeof items = [];
+				for (const it of now) {
+					const dom = it.run ? it.run.every((c) => isDomLayer(c)) : !!it.clip && isDomLayer(it.clip);
+					const deferrable = dom && !it.grade && !it.plan.span && it.plan.variant.recipe === 'master';
+					if (deferrable && !(await svc.lookup(it.plan.key))) later.push(it);
+					else kept.push(it);
+				}
+				now = kept;
+			}
+			if (pending.size > 0) background(pending);
+			// (their own hold on the shared render browser, taken before `prepare`'s ends)
+			const releaseLater = later.length && release ? svc.browserSession(ctx.jobId) : null;
 			try {
 				await round(now);
 				// spec 13 AS-070: a layer still that touched its border is baked with a grown region (sheets again),
@@ -486,20 +581,34 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 						`The master of "${clipped[0]!.plan.clipName}" is clipped`,
 						true,
 					);
+			} catch (e) {
+				await releaseLater?.();
+				throw e;
 			} finally {
 				await release?.();
+			}
+			/** The deferred masters by key (identical layers share a render). */
+			const deferred = new Map<string, typeof items>();
+			for (const it of later) {
+				const group = deferred.get(it.plan.key);
+				if (group) group.push(it);
+				else deferred.set(it.plan.key, [it]);
+				for (const c of it.run ?? [it.clip!]) out.set(c.clipId, { pending: c.name });
 			}
 			// Clip order of the snapshot (the composite does not depend on it; logs and tests read it).
 			const ordered: Prepared = new Map();
 			for (const clip of clips) ordered.set(clip.clipId, out.get(clip.clipId)!);
 			if (out[SPANS]) ordered[SPANS] = out[SPANS];
+			if (deferred.size > 0) deferMasters([...deferred.values()], ordered, releaseLater);
 			ctx.log(
-				`layer-bake: ${ordered.size} layer(s) and ${out[SPANS]?.size ?? 0} transition span(s) ready (${renderCount} render(s), budget ${budget} pages, ≤ ${maxInFlight} at once${release ? ', shared browser' : ''}; engine totals ${svc.stats.rendered} rendered, ${svc.stats.reused} reused, ${svc.stats.joined} joined)`,
+				`layer-bake: ${ordered.size - later.reduce((n, it) => n + (it.run?.length ?? 1), 0)} layer(s) and ${out[SPANS]?.size ?? 0} transition span(s) ready (${renderCount} render(s), budget ${budget} pages, ≤ ${maxInFlight} at once${release ? ', shared browser' : ''}; engine totals ${svc.stats.rendered} rendered, ${svc.stats.reused} reused, ${svc.stats.joined} joined)${deferred.size ? `; ${deferred.size} master render(s) beside the composite` : ''}`,
 			);
 			return ordered;
 		},
 		override(clip: RenderVisualClip, prepared): LayerOverride | null {
-			return (prepared as LayerBakePrepared | undefined)?.get(clip.clipId)?.override ?? null;
+			const entry = (prepared as LayerBakePrepared | undefined)?.get(clip.clipId);
+			if (entry?.pending) throw new LayerPendingError(entry.pending);
+			return entry?.override ?? null;
 		},
 		prepareForRemotion: true,
 		adaptRemotionDoc(doc: RenderSnapshot, prepared, { signUrl }): RenderSnapshot {

@@ -123,16 +123,34 @@ function kindOf(c: RenderVisualClip, fps: RenderSnapshot['settings']['fps']): Ki
 	return 'media';
 }
 
-/** One layer of a composite profile: its drawn span, how it is drawn, its track and (media) decoded pixels. */
-type ProfileItem = { f0: number; f1: number; kind: Kind; track: number; pixels: number; run: number | null };
+/**
+ * One layer of a composite profile: its drawn span, how it is drawn, its track and (media) decoded pixels; `covers`: a
+ * piece of the composite's base (decoded like any media, drawn without an overlay, native.ts §12).
+ */
+type ProfileItem = {
+	f0: number;
+	f1: number;
+	kind: Kind;
+	track: number;
+	pixels: number;
+	run: number | null;
+	covers?: boolean;
+};
 
 /**
  * How each top-level layer of `snap` is drawn (computed once; `estimateFrom` then counts any range cheaply). Masters
- * in one run of shaken masters share a `run` id (one input, AS-073).
+ * in one run of shaken masters share a `run` id (one input, AS-073). `covers`: the media layers that would be a piece
+ * of the composite's base (opaque, filling the frame: decided by the caller from the media and the Motion); as in the
+ * builder, pieces do not overlap and a blend-mode layer closes the base.
  */
-export function compositeProfile(snap: RenderSnapshot): ProfileItem[] {
+export function compositeProfile(
+	snap: RenderSnapshot,
+	covers: (c: RenderVisualClip) => boolean = () => false,
+): ProfileItem[] {
 	const items: ProfileItem[] = [];
 	let runId = 0;
+	let baseOpen = true;
+	const pieces: ProfileItem[] = [];
 	for (const [ti, t] of snap.videoTracks.entries()) {
 		const masters: RenderVisualClip[] = [];
 		const byClip = new Map<RenderVisualClip, ProfileItem>();
@@ -146,6 +164,11 @@ export function compositeProfile(snap: RenderSnapshot): ProfileItem[] {
 				pixels: Math.max(1, c.intrinsicBox.width) * Math.max(1, c.intrinsicBox.height),
 				run: null,
 			};
+			if ((c.blendMode ?? 'normal') !== 'normal') baseOpen = false;
+			if (baseOpen && k === 'media' && !pieces.some((p) => p.f0 < item.f1 && item.f0 < p.f1) && covers(c)) {
+				item.covers = true;
+				pieces.push(item);
+			}
 			items.push(item);
 			byClip.set(c, item);
 			if (k === 'master') masters.push(c);
@@ -206,6 +229,30 @@ export function estimateFrom(
 		mediaPixels.reduce((t, px) => t + mediaInputBytes(px, threads), 0) +
 		inputs.kernelStreams * (tapStreamBytes({ outW: W, outH: H, picture: W * H, workers }) + 50 * MB);
 	return { bytes: Math.round(bytes), inputs };
+}
+
+/**
+ * The overlays of one composite graph over `range` (the plan's `pipeline.overlays`, the result counting the built
+ * graph's): one per drawn layer, none for a base piece, one per kernel stream of a track's constant-picture members,
+ * one per run master, and the mattes. Nested stacks and pre-rendered transition spans are not counted.
+ */
+export function overlaysFrom(
+	snap: RenderSnapshot,
+	profile: readonly ProfileItem[],
+	range: { start: number; end: number },
+): number {
+	let n = 0;
+	const memberTracks = new Set<number>();
+	const runs = new Set<number>();
+	for (const it of profile) {
+		if (it.f1 <= range.start || it.f0 >= range.end || it.covers) continue;
+		if (it.kind === 'member') memberTracks.add(it.track);
+		else if (it.run !== null) runs.add(it.run);
+		else n++;
+	}
+	for (const t of snap.videoTracks)
+		for (const m of t.mattes ?? []) if (m.start + m.duration > range.start && m.start < range.end) n++;
+	return n + memberTracks.size + runs.size;
 }
 
 /** Estimated peak memory of the native composite of `snap` over `range` (top-level tracks; nests count as media). */

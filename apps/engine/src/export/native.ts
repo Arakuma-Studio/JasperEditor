@@ -43,7 +43,7 @@ import { audioEncodeArgs, LEGACY_X264_CHOICE, videoEncodeArgs } from '../tools/e
 import { sec } from '../tools/ffmpeg.ts';
 import { adjustmentCropFilters, cropFeatherFilter, hardCropFilter, isFeatheredCrop } from './crop.ts';
 import { NVDEC_INPUT_ARGS } from './gpu.ts';
-import { CROP_EDGES, mergeResize, motionFilters, motionStage } from './keyframed.ts';
+import { CROP_EDGES, type MotionStage, mergeResize, motionFilters, motionStage } from './keyframed.ts';
 import { capDecoderThreads, decoderThreadsFor, isFileInput } from './memory.ts';
 import {
 	BUILTIN_NATIVE_EFFECTS,
@@ -857,6 +857,45 @@ type StackContext = {
  * edit-structure: adjustment layers process the composite so far (`split`), nest clips draw their nested stack
  * (recursively, `layerSourceChain`).
  */
+/**
+ * §12: the document's side of a base piece — a video drawn Normal, without 3D, fades, masks or effects other than flips
+ * and colour (also the plan's overlay estimate, memory.ts `compositeProfile`).
+ */
+export function coverCandidate(c: RenderVisualClip): boolean {
+	return (
+		c.kind === 'video' &&
+		(c.blendMode ?? 'normal') === 'normal' &&
+		!c.threeD &&
+		!c.fades?.length &&
+		maskExportRoute(c) === 'none' &&
+		c.effects.every(
+			(fx) =>
+				!fx.enabled ||
+				fx.effectId === 'jasper.flip-horizontal' ||
+				fx.effectId === 'jasper.flip-vertical' ||
+				!!defaultEffectRegistry.get(fx.effectId, fx.effectVersion)?.color,
+		)
+	);
+}
+
+/** §12: Motion places a `bw × bh` layer at 0,0 with a constant scale to exactly `W × H` and no alpha stage. */
+export function motionCovers(
+	motion: Pick<MotionStage, 'x' | 'y' | 'post' | 'resize'>,
+	bw: number,
+	bh: number,
+	W: number,
+	H: number,
+): boolean {
+	return (
+		motion.x === '0' &&
+		motion.y === '0' &&
+		motion.post.length === 0 &&
+		(motion.resize
+			? !motion.resize.perFrame && motion.resize.w === String(W) && motion.resize.h === String(H)
+			: bw === W && bh === H)
+	);
+}
+
 function drawStack(ctx: StackContext): string {
 	// keyframes-blend: `ctx.chains` / `ctx.addInput` / `ctx.addStream` are read at each use: a blend cut (`ctx.blend`)
 	// moves the rest of the stack to the next process of the pipeline.
@@ -1396,26 +1435,10 @@ function drawStack(ctx: StackContext): string {
 				baseOpen &&
 				ctx.chains === bgChains &&
 				!override &&
-				c.kind === 'video' &&
+				coverCandidate(c) &&
 				source.opaque &&
 				blendMode === 'normal' &&
-				(c.blendMode ?? 'normal') === 'normal' &&
-				!c.threeD &&
-				!c.fades?.length &&
-				maskExportRoute(c) === 'none' &&
-				c.effects.every(
-					(fx) =>
-						!fx.enabled ||
-						fx.effectId === 'jasper.flip-horizontal' ||
-						fx.effectId === 'jasper.flip-vertical' ||
-						!!defaultEffectRegistry.get(fx.effectId, fx.effectVersion)?.color,
-				) &&
-				x === '0' &&
-				y === '0' &&
-				motion.post.length === 0 &&
-				(motion.resize
-					? !motion.resize.perFrame && motion.resize.w === String(W) && motion.resize.h === String(H)
-					: source.width === W && source.height === H) &&
+				motionCovers(motion, source.width, source.height, W, H) &&
 				!overlapsIn(
 					drawn.filter((d) => !d.chain),
 					f0,

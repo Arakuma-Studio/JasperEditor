@@ -258,7 +258,8 @@ describe('delivery speed (wp-note "Fix: preview loudness parity, codec-aware Sou
 			},
 		});
 		expect(r.passKinds.alternative).toBeGreaterThan(0);
-		expect(writes.length).toBe(r.passes);
+		// (every pass but the first convergence's measured probe is written)
+		expect(writes.length).toBe(r.passes - r.passKinds.probe);
 		expect(new Set(writes).size).toBe(writes.length);
 		expect(r.truePeakMet).toBe(true);
 	}, 300_000);
@@ -323,7 +324,9 @@ describe('delivery speed (wp-note "Fix: preview loudness parity, codec-aware Sou
 			});
 		const r = await delivery({ ff: gated, runner });
 		expect(r.passKinds.alternative).toBeGreaterThan(0);
-		expect(mostAtOnce).toBe(2);
+		// (the first round decodes its candidates together: the converged pass, a lower ceiling and, §14, the target
+		// without the codec's typical loss)
+		expect(mostAtOnce).toBeGreaterThanOrEqual(2);
 		// the same delivery as one decode at a time in this thread
 		const plain = await delivery({ ff });
 		expect({ ...r.params, correction: r.params.correction && [...r.params.correction] }).toEqual({
@@ -332,6 +335,48 @@ describe('delivery speed (wp-note "Fix: preview loudness parity, codec-aware Sou
 		});
 		expect(r.decoded).toEqual(plain.decoded);
 		expect([r.passes, r.encodePasses]).toEqual([plain.passes, plain.encodePasses]);
+	}, 300_000);
+
+	it('a mix the codec barely quietens lands in the first round (the target is tried without the typical loss)', async () => {
+		// harmonic speech-like phrases under 1 kHz: AAC at 128 kb/s keeps nearly all of their loudness, so the table's
+		// typical loss (≈ 0.4 LU, the first aim's offset) overshoots the target; the first round also encodes the target
+		// itself, so no second round (a convergence, an encode and a decoded check more) is needed
+		const n = 20 * SR;
+		const voice = new Float32Array(n);
+		for (let i = 0; i < n; i++) {
+			const t = i / SR;
+			const syllable = Math.max(0, Math.sin(2 * Math.PI * 4 * t)) ** 2 * (t % 3 < 2.2 ? 1 : 0);
+			let v = 0;
+			for (let h = 1; h <= 5; h++) v += Math.sin(2 * Math.PI * 140 * h * t + h) / h;
+			voice[i] = 0.3 * v * syllable;
+		}
+		const mix = [voice, Float32Array.from(voice)];
+		const p1 = pass1Of('harmonic.f32', mix);
+		const out = join(dir, 'harmonic.wav');
+		const r = await solveDelivery({
+			ff,
+			pass1: p1,
+			sampleRate: SR,
+			channels: 2,
+			total: n,
+			before: measureLoudness(mix, SR),
+			targetLufs: -14,
+			truePeakDb: -1,
+			codec: { codec: 'aac', bitrateKbps: 128, sampleRate: SR, channels: 2 },
+			soxr: false,
+			scratchDir: dir,
+			outPath: out,
+			parallel: 3,
+			write: (params, path = out) => writeDeliveryWav(p1, path, SR, 2, n, params),
+		});
+		console.info(
+			`harmonic: ${JSON.stringify({ passes: r.passes, kinds: r.passKinds, encodes: r.encodePasses, decoded: r.decoded?.integrated, tp: r.decoded?.truePeakDb })}`,
+		);
+		expect(r.truePeakMet).toBe(true);
+		expect(Math.abs(r.decoded!.integrated + 14)).toBeLessThanOrEqual(0.2);
+		// one round: its candidates' encodes only, one convergence
+		expect(r.encodePasses).toBeLessThanOrEqual(4);
+		expect(r.passKinds.converge).toBeLessThanOrEqual(3);
 	}, 300_000);
 
 	it('an encode failure rejects delivery without an unhandled rejection', async () => {
