@@ -63,7 +63,7 @@ export const TX_ERROR_HINTS: Record<string, string> = {
 		'The edit would overlap another clip. Use mode "overwrite", pick a free spot, or move the other clip.',
 	E_OUT_OF_MEDIA: 'The trim/extend goes past the start or end of the source media.',
 	E_SYNC_CONFLICT:
-		'Sync-locked tracks block this ripple. Pass syncConflict: "cut" or unlock sync on those tracks.',
+		'Sync-locked tracks hold clips in the frames this ripple removes. Do what the message says: the option differs per command (clip.trim: clampToSyncLock; clip.extract: syncConflict "cut").',
 	E_NOT_OWNER:
 		'Agents may only undo/redo their own history entries; the top entry was made by the user or another agent. Tell the user the undo was refused.',
 	E_NOT_IMPLEMENTED:

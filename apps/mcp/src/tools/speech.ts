@@ -133,7 +133,7 @@ async function speechCall<T>(
 			const code = (e.detail as { code?: string } | undefined)?.code ?? e.code;
 			if (code === 'SPEECH_MODEL_NOT_INSTALLED')
 				throw new ToolError(
-					code,
+					'E_NO_SPEECH_MODEL',
 					e.message,
 					'Install it with install_speech_model (tell the user its size and licence), then retry.',
 				);
@@ -217,6 +217,14 @@ export async function queueImportTranscriptions(
 
 type Pending = { jobId: string; mediaId?: string };
 
+/** Words the guards removed, per reason (the list shows the first 20 entries only). */
+function removedWords(removed: ReadonlyArray<{ text: string; reason: string }>): Record<string, number> {
+	const out: Record<string, number> = {};
+	for (const r of removed)
+		out[r.reason] = (out[r.reason] ?? 0) + (r.text.split(/\s+/).filter(Boolean).length || 1);
+	return out;
+}
+
 /** Commits finished transcription jobs (one transaction). */
 async function commit(
 	ctx: ToolContext,
@@ -258,6 +266,7 @@ async function commit(
 			language: res.language,
 			languageProbability: res.languageProbability,
 			model: res.model,
+			...(res.modelFallback ? { modelFallback: res.modelFallback } : {}),
 			task: res.task,
 			speakers: Object.keys(res.speakers).length,
 			media: plan.media,
@@ -272,6 +281,7 @@ async function commit(
 							skippedWindows: res.guard.skippedWindows,
 							droppedWords: res.guard.droppedWords,
 							removed: res.guard.removed.slice(0, 20),
+							...(res.guard.removed.length ? { removedWords: removedWords(res.guard.removed) } : {}),
 							...(res.guard.frames ? { frames: res.guard.frames } : {}),
 							...(res.guard.glossary ? { glossary: res.guard.glossary } : {}),
 							...(res.guard.recovered ? { recovered: res.guard.recovered } : {}),

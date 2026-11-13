@@ -636,9 +636,14 @@ export function insertShift(
 	return splits;
 }
 
+/** What gets a ripple past sync-locked content when the command has no option for it. */
+const SYNC_CONFLICT_REMEDY =
+	'turn their sync lock off (track.update {patch: {syncLock: false}}) or clear those frames on them first (range.lift)';
+
 /**
  * Ripple removal (S02 A.5): `[f, f+n)` must be empty on every track (else E_SYNC_CONFLICT with the
- * blocking clips, unless `cut`), then everything at/after `f+n` shifts left by `n`.
+ * blocking clips, unless `cut`), then everything at/after `f+n` shifts left by `n`. The refusal names `remedy`: what
+ * the calling command accepts to get past them (default: sync lock off, or clearing the frames first).
  */
 export function removeShift(
 	seq: DSeq,
@@ -646,7 +651,7 @@ export function removeShift(
 	f: number,
 	n: number,
 	h: HandlerContext,
-	opts: { syncConflict?: 'refuse' | 'cut' } = {},
+	opts: { syncConflict?: 'refuse' | 'cut'; remedy?: string } = {},
 ): void {
 	if (n <= 0) return;
 	const ids = [...trackIds];
@@ -654,7 +659,11 @@ export function removeShift(
 	for (const trackId of ids) for (const c of contentInRange(seq, trackId, f, n)) blocking.push(c.id);
 	if (blocking.length > 0) {
 		if (opts.syncConflict !== 'cut') {
-			h.fail('E_SYNC_CONFLICT', `Frames ${f}–${f + n} are not empty on sync-locked tracks`, { blocking });
+			h.fail(
+				'E_SYNC_CONFLICT',
+				`Frames ${f}–${f + n} are not empty on sync-locked tracks: ${opts.remedy ?? SYNC_CONFLICT_REMEDY}`,
+				{ blocking },
+			);
 		}
 		for (const trackId of ids) relinkSplits(seq, clearRange(seq, trackId, f, f + n, h), h);
 	}

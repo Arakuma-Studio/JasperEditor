@@ -32,6 +32,7 @@ import {
 	transcriptFixRefresher,
 	transcriptFixRejectListener,
 } from '../transcript-fix/run.ts';
+import type { VoiceAnalysisService } from '../voice/service.ts';
 
 type R = {
 	Params: { projectId: string; sequenceId: string };
@@ -46,6 +47,7 @@ export default async function transcriptFixRoutes(app: FastifyInstance): Promise
 		proposals: () => services.proposals as ProposalService | undefined,
 		speech: () => services.speech as FixSpeech | undefined,
 		glossary: () => services.speechGlossary as FixGlossary | undefined,
+		voice: () => services.voiceAnalysis as VoiceAnalysisService | undefined,
 		costs: new FixCostStore(join(core.config.paths.engineDir, 'transcript-fix-costs.json'), (m) =>
 			app.log.warn(m),
 		),

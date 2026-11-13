@@ -42,6 +42,7 @@ import {
 	transcriptFixItemId,
 	transcriptForMedia,
 } from '@jasper/project';
+import { VOICE_CLASSES } from '@jasper/project/cleanup-worker';
 import {
 	type AlignmentReport,
 	alignTranscript,
@@ -52,6 +53,7 @@ import {
 	type FixCandidate,
 	type FixDecision,
 	findFixCandidates,
+	type GapEvidence,
 	type GlossaryEntryInput,
 	type ParsedScript,
 	parseScript,
@@ -61,6 +63,7 @@ import {
 	type StrictnessPreset,
 	scoreRequestWindows,
 	scriptFixLanguage,
+	speakingRate,
 	unusedScriptLines,
 } from '@jasper/project/script-fix';
 import type { AgentService } from '../agent/service.ts';
@@ -71,6 +74,7 @@ import { engineMediaKey } from '../sound-design/voice.ts';
 import type { SpeechGlossary } from '../speech/glossary.ts';
 import type { SpeechScoreOptions } from '../speech/service.ts';
 import { HttpError } from '../tools/reply.ts';
+import type { VoiceAnalysisService } from '../voice/service.ts';
 import { type FixCostStore, REFERENCE_COST } from './costs.ts';
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -96,12 +100,16 @@ export type FixSpeech = {
 };
 /** The personal glossary library (SC-070, `speech/glossary.ts`; its entries are the SC-073 source). */
 export type FixGlossary = Pick<SpeechGlossary, 'list'>;
+/** The stored voice analyses (`voice/service.ts`; the gap rule reads their speech frames). */
+export type FixVoice = Pick<VoiceAnalysisService, 'target' | 'read'>;
 
 export type TranscriptFixDeps = {
 	agent: () => AgentService | undefined;
 	proposals: () => ProposalService | undefined;
 	speech: () => FixSpeech | undefined;
 	glossary: () => FixGlossary | undefined;
+	/** Voice analyses for the gap rule (absent: the rule does not run). */
+	voice?: () => FixVoice | undefined;
 	costs?: FixCostStore;
 	log?: (m: string) => void;
 };
@@ -516,6 +524,51 @@ function itemOf(c: FixCandidate, d: FixDecision, edit: ReplaceWordsEdit): Propos
 }
 
 /** Runs steps 3–4 for every media of `p` (one at a time). */
+/**
+ * The gap rule's evidence for the `del` candidates of one media (`GapEvidence`, script-correction.md "Gap rule"): the
+ * speaker's rate from its transcript and the share of speech frames of its stored voice analysis in each gap. Without
+ * an analysis (none yet, offline media) the rule does not run for the media, and `warn` says why.
+ */
+async function gapEvidence(
+	deps: TranscriptFixDeps,
+	mediaKey: string | null,
+	transcript: Transcript,
+	decided: readonly Decided[],
+	warn: (message: string) => void,
+): Promise<(c: FixCandidate) => GapEvidence | null> {
+	const none = () => null;
+	const gaps = decided.filter((d) => d.candidate.kind === 'del' && !d.candidate.anchor).length;
+	if (!gaps) return none;
+	const svc = deps.voice?.();
+	let classes: Uint8Array | null = null;
+	if (svc && mediaKey) {
+		try {
+			const { rec, streamIndex } = svc.target(mediaKey);
+			classes = (await svc.read(rec, streamIndex))?.classes ?? null;
+		} catch {
+			classes = null;
+		}
+	}
+	if (!classes) {
+		warn(
+			`${gaps} missing script word group(s) were judged by the audio check only: the media has no voice analysis yet (Clean Up or a new transcription makes one)`,
+		);
+		return none;
+	}
+	const secondsPerLetter = speakingRate(transcript.words);
+	const speech = VOICE_CLASSES.speech;
+	const frameAt = (flicks: number) => Math.floor((flicks / FLICKS_PER_SECOND) * 100);
+	return (c) => {
+		if (c.kind !== 'del') return null;
+		const a = Math.max(0, frameAt(c.start));
+		const b = Math.min(classes.length, Math.max(a + 1, frameAt(c.end)));
+		if (b <= a) return { secondsPerLetter, voicedShare: 0 };
+		let n = 0;
+		for (let f = a; f < b; f++) if (classes[f] === speech) n++;
+		return { secondsPerLetter, voicedShare: n / (b - a) };
+	};
+}
+
 export async function runPipeline(
 	deps: TranscriptFixDeps,
 	p: Prepared,
@@ -764,9 +817,17 @@ export async function runPipeline(
 				});
 			}
 			const d0 = Date.now();
+			const gapOf = await gapEvidence(deps, key, x.m.transcript, x.run.decided, (m) =>
+				warnings.push({ code: 'W_GAP_RULE', message: `${x.m.name}: ${m}`.slice(0, 400) }),
+			);
 			for (const d of x.run.decided)
 				if (d.candidate.needsAudio)
-					d.decision = decideFix(d.candidate, scores.get(d.candidate.id) ?? null, strictness);
+					d.decision = decideFix(
+						d.candidate,
+						scores.get(d.candidate.id) ?? null,
+						strictness,
+						gapOf(d.candidate),
+					);
 			timings.decideMs += Date.now() - d0;
 		}
 	}

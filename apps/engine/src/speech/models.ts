@@ -173,6 +173,37 @@ export class SpeechModelStore {
 		return (this.entries.find((e) => e.default) ?? this.entries[0])?.id ?? 'whisper-small';
 	}
 
+	/**
+	 * The installed model to use instead of `id` when the caller named none and `id` (the default) is not installed:
+	 * the same model in another precision first (fp32 for the fp16 turbo: same revision, size and languages), else the
+	 * largest installed model, models meant for GPUs last. Only models `fits` accepts (language, task). Null: none.
+	 */
+	async fallbackFor(
+		id: string,
+		fits: (e: SpeechCatalogEntry) => boolean,
+	): Promise<SpeechCatalogEntry | null> {
+		const want = this.entry(id);
+		const same = (e: SpeechCatalogEntry) =>
+			!!want &&
+			e.revision === want.revision &&
+			e.parameters === want.parameters &&
+			e.multilingual === want.multilingual;
+		const rank = (e: SpeechCatalogEntry) => [
+			same(e) ? 0 : 1,
+			e.gpuOnly || e.precision === 'fp16' ? 1 : 0,
+			-e.parameters,
+		];
+		const order = this.entries
+			.filter((e) => e.id !== id && fits(e))
+			.map((e, i) => ({ e, key: [...rank(e), i] }))
+			.sort((a, b) => {
+				for (let k = 0; k < a.key.length; k++) if (a.key[k] !== b.key[k]) return a.key[k]! - b.key[k]!;
+				return 0;
+			});
+		for (const { e } of order) if (await this.installed(e)) return e;
+		return null;
+	}
+
 	dirOf(e: Pick<SpeechCatalogEntry, 'id'>): string {
 		return join(this.modelsDir, e.id);
 	}

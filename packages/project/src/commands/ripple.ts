@@ -255,9 +255,11 @@ export function rippleTrimGroup(
 	let planned = planRipple(seq, members, d);
 	if (!planned.ok) {
 		if (!opts.clampToSyncLock)
-			h.fail('E_SYNC_CONFLICT', 'Sync-locked tracks have content in the trimmed range', {
-				blocking: planned.blocking,
-			});
+			h.fail(
+				'E_SYNC_CONFLICT',
+				'Sync-locked tracks have content in the trimmed range: pass clampToSyncLock: true to trim as far as they allow, or range.extract the trimmed frames to cut every track',
+				{ blocking: planned.blocking },
+			);
 		// Gesture behaviour (S02:TL-543): the largest amount every sync-locked track allows. Feasibility is
 		// monotone in the size of the removal, so a binary search finds it.
 		const sign = Math.sign(d);

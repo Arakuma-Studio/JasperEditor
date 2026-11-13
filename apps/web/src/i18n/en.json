@@ -10331,6 +10331,7 @@
   "Script name",
   "Script spelling of a split or glued name (no audio check)",
   "Script text",
+  "Script word in a voiced gap the transcript left (not confirmed by the audio check)",
   "Script: {0}",
   "Script: {0} of {1} lines said",
   "Script: a take says a line at",

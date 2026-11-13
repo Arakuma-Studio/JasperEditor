@@ -189,7 +189,11 @@ export const SpeechGuardReportSchema = z.object({
 	skippedWindows: z.number().int().min(0),
 	/** Words dropped because they lay in silence (< 20 % voiced frames, or in a pause with no voice nearby). */
 	droppedWords: z.number().int().min(0),
-	/** Known hallucination phrases removed over non-speech, and runs of ≥ 4 identical tokens. */
+	/**
+	 * What the guards removed (≤ 200 entries), by `reason`: `silence` (runs of words lying in silence), `silence-threshold`
+	 * (segments OpenAI's hallucination rule cut, never over voiced audio), `known-phrase` (known hallucination phrases
+	 * over non-speech), `repeated-tokens` (runs of ≥ 4 identical tokens).
+	 */
 	removed: z
 		.array(z.object({ text: z.string(), start: z.number(), end: z.number(), reason: z.string() }))
 		.max(200),
@@ -262,6 +266,13 @@ export const SpeechGuardReportSchema = z.object({
 });
 export type SpeechGuardReport = z.infer<typeof SpeechGuardReportSchema>;
 
+/**
+ * The model a transcription used instead of the default, which is not installed (the request named no model):
+ * `requested` = the default's id, `reason` in words.
+ */
+export const SpeechModelFallbackSchema = z.object({ requested: z.string(), reason: z.string() });
+export type SpeechModelFallback = z.infer<typeof SpeechModelFallbackSchema>;
+
 /** `EngineJob.result` of a `transcription` job. */
 export const TranscriptionResultSchema = z.object({
 	target: z.discriminatedUnion('type', [
@@ -276,6 +287,8 @@ export const TranscriptionResultSchema = z.object({
 		}),
 	]),
 	model: z.string(),
+	/** Present when `model` replaced the default model, which is not installed. */
+	modelFallback: SpeechModelFallbackSchema.optional(),
 	language: z.string(),
 	/** Probability of the detected language (null when the language was given). */
 	languageProbability: z.number().nullable(),
