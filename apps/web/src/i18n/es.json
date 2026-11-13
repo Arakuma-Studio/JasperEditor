@@ -13098,6 +13098,7 @@
   "Script (none attached: use Script… in the Transcript tab)": "Guion (ninguno adjunto: use Guion… en la pestaña Transcripción)",
   "Script + glossary": "Guion + glosario",
   "Script spelling of a split or glued name (no audio check)": "Ortografía del guion de un nombre separado o unido (sin comprobación con el audio)",
+  "Script word in a voiced gap the transcript left (not confirmed by the audio check)": "Palabra del guion en un hueco con voz que dejó la transcripción (sin confirmar con el audio)",
   "Short word": "Palabra corta",
   "Short words": "Palabras cortas",
   "Show fixes I rejected before ({0}, offered unselected)": "Mostrar correcciones que rechacé antes ({0}, se ofrecen sin seleccionar)",

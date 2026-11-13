@@ -5,7 +5,8 @@
 // between their neighbours; spelling fixes without audio keep the region's span and split it by character count.
 // Pure.
 import { spreadTokens } from '../captions/words.ts';
-import type { FixCandidate } from './candidates.ts';
+import { FLICKS_PER_SECOND } from '../time.ts';
+import type { FixCandidate, FixWord } from './candidates.ts';
 import { ASR_READING_ID, type ScoreWindow, type ScoreWindowResult, type ScoreWordResult } from './windows.ts';
 
 /** SC-034 strictness presets (default `standard`). */
@@ -120,6 +121,7 @@ export type FixRule =
 	| 'del'
 	| 'join'
 	| 'glossary-spelling'
+	| 'gap'
 	| 'maybe'
 	| 'below-margin'
 	| 'unscored';
@@ -145,6 +147,64 @@ export type FixDecision = {
 	/** The new words after SC-040 / SC-042 timing ([] when kept). */
 	words: FixedWord[];
 };
+
+/**
+ * The gap rule (spec addition; reported on a 57-minute Spanish talking head with large-v3-turbo: ≈ 150 script words in
+ * 15 min — "que", "y", "a", "cosas", "objetos" — were missing, with 0.1–0.5 s gaps between their neighbours, and the
+ * audio check left them out because the model that dropped them scores them low too). A `del` is fixed without the
+ * audio check's support when the alignment is unambiguous — script words only, at most `maxWords`, both neighbours
+ * exact matches (every `del` candidate sits between exact anchors), a gap of at least `DEL_MIN_GAP_SECONDS` (no
+ * neighbour is re-timed) — the gap fits them at the speaker's rate (`minFit` … `maxFit` × the expected duration,
+ * + `slackSeconds`), and the voice analysis calls at least `minVoiced` of the gap speech. The new words are script
+ * words the audio check did not confirm: they carry `confidence` (below Clean Up's 0.4 low-confidence mark, so its
+ * ASR-suspect review lists them). Values are assumptions (not measured on real recordings).
+ */
+export const GAP_RULE = Object.freeze({
+	maxWords: 3,
+	minVoiced: 0.5,
+	minFit: 0.6,
+	maxFit: 3,
+	slackSeconds: 0.4,
+	confidence: 0.3,
+});
+
+/** What the gap rule reads (engine side): the speaker's rate, and the share of speech frames in the candidate's gap. */
+export type GapEvidence = { secondsPerLetter: number | null; voicedShare: number | null };
+
+const LETTER = /[\p{L}\p{N}]/gu;
+const lettersOf = (t: string) => t.match(LETTER)?.length ?? 0;
+const MIN_RATE_WORDS = 20;
+
+/**
+ * The speaker's rate in seconds per letter: the median over the transcript's words of two or more letters that last
+ * more than 0 and at most 2 s (null with fewer than 20 such words).
+ */
+export function speakingRate(words: readonly FixWord[]): number | null {
+	const rates: number[] = [];
+	for (const w of Array.isArray(words) ? words : []) {
+		const n = lettersOf(typeof w?.text === 'string' ? w.text : '');
+		const d = (w.end - w.start) / FLICKS_PER_SECOND;
+		if (n >= 2 && finite(d) && d > 0 && d <= 2) rates.push(d / n);
+	}
+	if (rates.length < MIN_RATE_WORDS) return null;
+	rates.sort((a, b) => a - b);
+	return rates[rates.length >> 1]!;
+}
+
+/** Whether the gap rule inserts `candidate`'s words (see `GAP_RULE`). */
+export function gapFits(candidate: FixCandidate, gap: GapEvidence | null | undefined): boolean {
+	if (!gap || candidate.kind !== 'del' || candidate.anchor || candidate.mixed) return false;
+	const { secondsPerLetter: rate, voicedShare } = gap;
+	if (!finite(rate) || rate <= 0 || !finite(voicedShare) || voicedShare < GAP_RULE.minVoiced) return false;
+	if (!candidate.script.length || candidate.script.length > GAP_RULE.maxWords) return false;
+	const letters = candidate.script.reduce((n, t) => n + lettersOf(t), 0);
+	if (!letters) return false;
+	const expected = letters * rate;
+	const seconds = (candidate.end - candidate.start) / FLICKS_PER_SECOND;
+	return (
+		seconds >= GAP_RULE.minFit * expected && seconds <= GAP_RULE.maxFit * expected + GAP_RULE.slackSeconds
+	);
+}
 
 /** The SC-050 `transcript.replaceWords` edit of one fix. */
 export type ReplaceWordsEdit = { start: number; end: number; expect: string[]; words: FixedWord[] };
@@ -246,12 +306,14 @@ export function retimedWords(candidate: FixCandidate, score: CandidateScore): Fi
 
 /**
  * Decides one candidate (SC-034) and builds its new words. `score` is its audio evidence (absent: not scored).
- * Joins and glossary spelling fixes (`needsAudio: false`) are fixed without audio, in the Spelling group.
+ * Joins and glossary spelling fixes (`needsAudio: false`) are fixed without audio, in the Spelling group. A `del` the
+ * audio check does not fix is fixed by the gap rule when `gap` fits it (`gapFits`; rule `gap`, low confidence).
  */
 export function decideFix(
 	candidate: FixCandidate,
 	score: CandidateScore | null | undefined,
 	strictness: StrictnessPreset | DecisionThresholds = 'standard',
+	gap?: GapEvidence | null,
 ): FixDecision {
 	const th = thresholdsOf(strictness);
 	const base = { candidateId: candidate.id, fingerprint: candidate.fingerprint };
@@ -278,8 +340,23 @@ export function decideFix(
 			end: candidate.end,
 			words: splitByCharacters(candidate),
 		};
-	if (!score || !finite(score.deltaTok)) return keep('unscored', null);
-	const d = score.deltaTok;
+	const scored = !!score && finite(score.deltaTok);
+	const byGap = (deltaTok: number | null): FixDecision => ({
+		...base,
+		decision: 'fix',
+		group: 'fix',
+		rule: 'gap',
+		deltaTok,
+		selected: !candidate.rejected,
+		start: candidate.bounds.start,
+		end: candidate.bounds.end,
+		words: (scored ? retimedWords(candidate, score!) : splitByCharacters(candidate)).map((w) => ({
+			...w,
+			confidence: GAP_RULE.confidence,
+		})),
+	});
+	if (!scored) return gapFits(candidate, gap) ? byGap(null) : keep('unscored', null);
+	const d = score!.deltaTok;
 	let rule: FixRule | null = null;
 	if (candidate.kind === 'del') {
 		if (d >= th.del) rule = 'del';
@@ -290,10 +367,11 @@ export function decideFix(
 		d >= th.spelling
 	)
 		rule = 'spelling';
+	if (!rule && gapFits(candidate, gap)) return byGap(d);
 	const timed = () => ({
 		start: candidate.bounds.start,
 		end: candidate.bounds.end,
-		words: retimedWords(candidate, score),
+		words: retimedWords(candidate, score!),
 	});
 	if (rule)
 		return {

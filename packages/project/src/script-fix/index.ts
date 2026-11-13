@@ -43,11 +43,13 @@ export {
 	type FixedWord,
 	type FixGroup,
 	type FixRule,
+	type GapEvidence,
 	type ReplaceWordsEdit,
 	replaceWordsEdit,
 	retimedWords,
 	STRICTNESS_PRESETS,
 	type StrictnessPreset,
+	speakingRate,
 	splitByCharacters,
 } from './decide.ts';
 export { PSIM_INDEL_COSTS, PSIM_SUBSTITUTION_COSTS, phoneticKey, psim } from './phonetic.ts';

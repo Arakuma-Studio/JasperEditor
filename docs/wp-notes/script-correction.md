@@ -149,6 +149,23 @@ difference is listed below.
   - `sub`, `merge`, `glossary`: fixed when Δ_tok ≥ the audio margin. Otherwise the spelling rule applies: a `proper`
     or `english` candidate with psim ≥ 0.8 is fixed when Δ_tok ≥ the spelling margin.
   - Otherwise: Maybe (unselected) when Δ_tok ≥ the Maybe margin, else keep.
+  - **Gap rule** (spec addition, `GAP_RULE` in `decide.ts`; reported on a 57-minute Spanish talking head with
+    large-v3-turbo: ≈ 150 script words in 15 min — "que", "y", "a", "cosas", "objetos" — were missing, with
+    0.1–0.5 s gaps between their neighbours, and the audio check, run by the model that dropped them, scored them
+    low, so they ended in Maybe or keep and the agent filled them with `transcript.replaceWords` by hand). A `del`
+    the audio check does not fix (or could not score) is fixed (`fix` group, rule `gap`) when the alignment is
+    unambiguous — ≤ 3 script words, not part of a mixed region, a gap ≥ `DEL_MIN_GAP_SECONDS` so no neighbour is
+    re-timed (every `del` already sits between exact anchors) — the gap lasts 0.6–3 × the duration the speaker's rate
+    gives the words (+ 0.4 s; rate = median seconds per letter of the transcript's words of ≥ 2 letters, `speakingRate`,
+    ≥ 20 such words), and ≥ 50 % of the gap's 10 ms frames are speech in the media's stored voice analysis (engine,
+    `gapEvidence` in `transcript-fix/run.ts`; no analysis → the rule does not run for that media and the report warns
+    `W_GAP_RULE`). Its words take reading k's forced times clamped into the gap (else the character split) and
+    `confidence` 0.3 — script-derived words below Clean Up's 0.4 low-confidence mark, so its ASR-suspect review lists
+    them; the transcript has no per-word provenance field (adding one needs a schema bump), so the proposal item's
+    `rule: "gap"` is where "script-derived" is recorded. Accepting the proposal applies them in its one undo step.
+    Test: `apps/engine/test/transcript-fix.test.ts` "gap rule" (invented Spanish recording: "y" and "que" dropped over
+    voice are inserted, "si" dropped where the speaker paused is not; fails before: both went to Maybe). The 0.6 / 3 /
+    0.4 s / 50 % / 0.3 values are assumptions, not measured on real recordings.
   - Fixes decided by audio, including the spelling rule, go to the `fix` group. `rule` names which rule applied.
 - **Edits.**
   - Audio-decided words take reading k's forced times, clamped in order into `bounds`: from the previous word's end

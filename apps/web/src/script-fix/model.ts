@@ -318,6 +318,7 @@ export const FIX_RULE_LABELS: Record<string, string> = {
 	audio: 'Audio check',
 	spelling: 'Spelling rule: a name or English word that sounds alike',
 	del: 'Audio check: a word the transcript missed',
+	gap: 'Script word in a voiced gap the transcript left (not confirmed by the audio check)',
 	join: 'Script spelling of a split or glued name (no audio check)',
 	'glossary-spelling': 'Your glossary’s spelling (no audio check)',
 	maybe: 'Below the fix margin: listen and decide',

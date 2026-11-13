@@ -27,6 +27,7 @@ import {
 	type ProjectDocument,
 	type Proposal,
 } from '@jasper/project';
+import { VOICE_CLASSES } from '@jasper/project/cleanup-worker';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { JobError } from '../src/jobs/types.ts';
 import { coreServices } from '../src/tools/services.ts';
@@ -122,12 +123,21 @@ type Seeded = {
  * A saved project: one voice recording with its transcript on A1 (`clipSeconds`: only that much of it; default all),
  * the script attached unless `script: null`.
  */
-function seed(o: { script?: string | null; clipSeconds?: number; inOut?: [number, number] } = {}): Seeded {
+function seed(
+	o: {
+		script?: string | null;
+		clipSeconds?: number;
+		inOut?: [number, number];
+		/** Another recording (default the invented English one, `asrWords`). */
+		material?: ReturnType<typeof asrWords> & { language: string };
+	} = {},
+): Seeded {
 	const ids = createCounterIdSource(7);
 	let doc: ProjectDocument = createEmptyProject({ ids, name: 'Fix', preset: 'hd-1080p-30' });
 	doc = { ...doc, projectId: `prj_T${(++projects).toString().padStart(15, '0')}` };
 	const seqId = Object.keys(doc.sequences)[0]!;
-	const { words, sentences, seconds } = asrWords();
+	const { words, sentences, seconds } = o.material ?? asrWords();
+	const language = o.material?.language ?? 'en';
 	const clipSec = o.clipSeconds ?? seconds;
 	const r = applyTransaction(
 		doc,
@@ -137,7 +147,7 @@ function seed(o: { script?: string | null; clipSeconds?: number; inOut?: [number
 			sequenceId: seqId,
 			commands: [
 				{ type: 'media.register', asset: AUDIO(`mk_voice${projects}`, seconds), ref: '$a' },
-				{ type: 'transcript.create', mediaId: '$a', language: 'en', origin: 'whisper-local', words },
+				{ type: 'transcript.create', mediaId: '$a', language, origin: 'whisper-local', words },
 				{
 					type: 'clip.place',
 					source: { mediaId: '$a' },
@@ -606,5 +616,77 @@ describe('accept extension', () => {
 		]);
 		const two = transcriptFixAcceptExtension({ doc: s.doc, proposal: p, itemIds: [b!.id, c!.id] });
 		expect(two).toEqual({ label: 'Fix transcript: 2 fixes', commands: [] });
+	});
+});
+
+describe('gap rule', () => {
+	// reported on a 57-minute Spanish talking head (large-v3-turbo): short script words were missing with 0.1–0.5 s
+	// gaps between their neighbours, and the audio check (the same model) scores them low, so they stayed out
+	const SCRIPT_ES = [
+		'Hoy vamos a ver las cosas y objetos que necesitas para grabar en casa.',
+		'Primero hablamos de la luz, después del sonido y al final de la cámara.',
+		'Con muy poco dinero puedes conseguir un resultado profesional si sabes dónde mirar.',
+	].join('\n');
+	// what the recogniser wrote: "y" and "que" dropped over voice, "si" dropped where the speaker paused instead
+	const MISSING: Record<string, { gap: number; voiced: boolean }> = {
+		y: { gap: 0.15, voiced: true },
+		que: { gap: 0.2, voiced: true },
+		si: { gap: 0.18, voiced: false },
+	};
+	function spanish() {
+		const words: { text: string; start: number; end: number; confidence: number }[] = [];
+		const voiced: Array<[number, number]> = [];
+		let t = 0.5;
+		for (const line of SCRIPT_ES.split('\n')) {
+			for (const w of line.split(' ')) {
+				const miss = MISSING[w];
+				if (miss) {
+					if (miss.voiced) voiced.push([t - 0.03, t + miss.gap]);
+					t += miss.gap;
+					continue;
+				}
+				const d = Math.max(0.1, 0.07 * w.replace(/[^\p{L}]/gu, '').length);
+				words.push({ text: w, start: Math.round(t * F), end: Math.round((t + d) * F), confidence: 0.85 });
+				voiced.push([t, t + d]);
+				t += d + 0.03;
+			}
+			t += 1.2;
+		}
+		return { words, sentences: [] as Array<[number, number]>, seconds: t + 1, language: 'es', voiced };
+	}
+
+	it('inserts script words that fit a voiced gap, low confidence, in the accepted step; a silent gap stays', async () => {
+		const material = spanish();
+		const classes = new Uint8Array(Math.ceil(material.seconds * 100));
+		for (const [a, b] of material.voiced)
+			classes.fill(VOICE_CLASSES.speech, Math.round(a * 100), Math.round(b * 100));
+		const voice = {
+			target: () => ({ rec: {}, streamIndex: 0 }),
+			read: async () => ({ classes }),
+		};
+		const before = app.jasper.services.voiceAnalysis;
+		app.jasper.services.voiceAnalysis = voice;
+		try {
+			const s = seed({ script: SCRIPT_ES, material });
+			const { result } = await runFix(s, { mode: 'propose' }, AGENT_H);
+			const p = await proposal(s, result.proposalId!);
+			const item = (word: string) => p.items.find((it) => it.label.endsWith(`→ ${word}`));
+			expect(item('y')).toMatchObject({ group: 'fix', meta: { rule: 'gap', kind: 'del' } });
+			expect(item('que')).toMatchObject({ group: 'fix', meta: { rule: 'gap', kind: 'del' } });
+			expect(item('si')?.group).not.toBe('fix');
+			const r = await post(
+				`/api/projects/${s.projectId}/proposals/${p.id}/accept`,
+				{ itemIds: 'all' },
+				AGENT_H,
+			);
+			expect(r.statusCode, r.body).toBe(200);
+			const words = Object.values(saved(s.file).transcripts)[0]!.words;
+			const text = words.map((w) => w.text).join(' ');
+			expect(text).toContain('cosas y objetos que necesitas');
+			expect(text).toContain('profesional sabes');
+			for (const w of words.filter((x) => x.text === 'y' || x.text === 'que')) expect(w.confidence).toBe(0.3);
+		} finally {
+			app.jasper.services.voiceAnalysis = before;
+		}
 	});
 });
