@@ -132,6 +132,23 @@ describe('clip.trim (S02 §11, AC-11a, AC-11c)', () => {
 		expect(h.spans('V2')).toEqual([[70, 95]]);
 	});
 
+	it('an E_SYNC_CONFLICT refusal names the option of its own command, and that option gets past it', () => {
+		// reported: the hint said syncConflict: "cut" for clip.trim, whose schema refuses that key
+		const h = new Harness();
+		h.ok([solid(0, 100, 'V1'), solid(100, 100, 'V1'), solid(70, 25, 'V2')]);
+		const [a, b] = h.clips('V1');
+		const message = (r: ReturnType<Harness['tx']>) => (r.ok ? '' : r.errors[0]!.message);
+		const trim = { type: 'clip.trim', clipId: a!.id, edge: 'out', deltaFrames: -20, mode: 'ripple' } as const;
+		const trimmed = message(h.tx([trim]));
+		expect(trimmed).toMatch(/clampToSyncLock: true/);
+		expect(trimmed).not.toMatch(/syncConflict/);
+		h.ok([{ ...trim, clampToSyncLock: true }]);
+		const extract = { type: 'clip.extract', clipIds: [b!.id] } as const;
+		const extracted = message(h.tx([solid(120, 20, 'V2'), extract]));
+		expect(extracted).toMatch(/syncConflict: "cut"/);
+		h.ok([solid(120, 20, 'V2'), { ...extract, syncConflict: 'cut' }]);
+	});
+
 	it('ripple lengthening splits straddling clips on sync-locked tracks', () => {
 		const h = new Harness();
 		h.ok([solid(0, 100, 'V1'), solid(100, 50, 'V1'), solid(50, 100, 'V2')]);

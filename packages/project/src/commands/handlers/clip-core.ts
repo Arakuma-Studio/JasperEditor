@@ -881,7 +881,10 @@ export const clipCoreHandlers = {
 		const joinedBefore = new Set(audio.flatMap((id) => trackJoins(seq, id).map(([a, b]) => joinKey(a, b))));
 		for (const c of clips) removeClip(seq, c.id, h);
 		for (const r of [...spans].reverse()) {
-			removeShift(seq, tracks, r.start, r.end - r.start, h, { syncConflict: cmd.syncConflict });
+			removeShift(seq, tracks, r.start, r.end - r.start, h, {
+				syncConflict: cmd.syncConflict,
+				remedy: 'pass syncConflict: "cut" to cut them too, or turn their sync lock off',
+			});
 			if (cmd.rippleMarkers !== false) shiftMarkers(seq, r.start, -(r.end - r.start));
 		}
 		// a new join between two pieces of one recording jumps in its sound: Clean Up's join fade on both sides
