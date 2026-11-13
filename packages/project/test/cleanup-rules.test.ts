@@ -239,6 +239,10 @@ describe('rules (Spanish)', () => {
 		expect(kinds('no no quiero eso', { settings: { rules: { restart: 'off' } } }).label(0)).toBeNull();
 		const cut = kinds('jue- juego nuevo');
 		expect(cut.label(0)).toBe('stutter');
+		// Whisper writes a fragment with an ellipsis and guesses its last letter (round 13); a stop word before an
+		// ellipsis is a hesitation, not a fragment
+		expect(kinds('y es extra… ¡extremadamente! difícil').label(2)).toBe('stutter');
+		expect(kinds('lo que... quedó claro').label(1)).toBeNull();
 		// a pause ≥ 0.3 s between the copies is not a stutter
 		expect(
 			kinds('el | el juego', { settings: { rules: { falseStart: 'off', retake: 'off' } } }).label(0),

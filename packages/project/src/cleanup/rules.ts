@@ -238,9 +238,26 @@ export function ruleMarkerPhrases(
 	}
 }
 
+/** A cut-off word of at least this many letters may differ from the word said whole in its last letter. */
+const CUT_OFF_SLACK_MIN = 4;
+
+/**
+ * Whether `a` is a cut-off attempt at `b`: marked by a dash ("jue-") or an ellipsis ("jue…", how Whisper writes a
+ * fragment; a stop word before an ellipsis is a hesitation on that word: "lo que… quedó") and the start of `b`. The
+ * recogniser guesses a fragment's last sound: from `CUT_OFF_SLACK_MIN` letters on, all but its last letter suffice
+ * (round 13: "y es extra… ¡extremadamente!").
+ */
+function cutOff(ctx: RuleContext, a: { text: string; n: string }, b: { n: string }): boolean {
+	const t = a.text.trim();
+	const dash = /[-‐‑–—]$/.test(t);
+	const ellipsis = /(\.\.\.|…)$/.test(t) && a.n.length >= 3 && !ctx.stop.has(a.n);
+	if (!(dash || ellipsis) || !a.n || b.n.length <= a.n.length) return false;
+	return b.n.startsWith(a.n) || (a.n.length >= CUT_OFF_SLACK_MIN && b.n.startsWith(a.n.slice(0, -1)));
+}
+
 /**
  * Repeat / stutter (spec): 1–3 words said twice in a row with less than `stutterGapS` between the copies (not an
- * allowed emphasis such as "no no"), or a cut-off word ("jue-") whose next word starts with it. The first copy goes —
+ * allowed emphasis such as "no no"), or a cut-off word ("jue-", `cutOff`) whose next word starts with it. The first copy goes —
  * but a reduplication (`reduplicated`; round 6: "Guiño, guiño", "boing, boing, boing" were cut) is only reviewed.
  */
 export function ruleStutters(ctx: RuleContext): void {
@@ -250,14 +267,9 @@ export function ruleStutters(ctx: RuleContext): void {
 	const allow = new Set(ctx.lists.allow);
 	const w = ctx.words;
 	for (let j = 1; j < w.length; j++) {
-		// cut-off word: "jue- juego"
+		// cut-off word: "jue- juego", "jue… juego", "extra… ¡extremadamente!"
 		const prev = w[j - 1]!;
-		if (
-			/[-‐‑–—]$/.test(prev.text.trim()) &&
-			w[j]!.n.startsWith(prev.n) &&
-			w[j]!.n !== prev.n &&
-			w[j]!.s - prev.e < gap
-		) {
+		if (cutOff(ctx, prev, w[j]!) && w[j]!.s - prev.e < gap) {
 			claim(ctx, j - 1, 'stutter', a);
 			continue;
 		}
