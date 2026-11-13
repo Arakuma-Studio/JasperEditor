@@ -297,8 +297,8 @@ Deliberate differences from the prototype (labelled):
 label (or a frame run): `{id, kind, range (media flicks), words [first, last] | null, confidence, reason {key:
 'cleanup.reason.<kind>', params: {text, seconds, takes?, kept?, line?}}, suggested, group?, fingerprint}`. Kinds: pause,
 breath, filler-vocalic, filler-phrase, filler-lexical, restart, false-start, retake, hidden-retake, stutter, off-script,
-head-tail, untranscribed, asr-suspect, hallucination. `suggested` is the rule's action (`remove` / `review`); `off` rules do not
-run.
+head-tail, untranscribed, asr-suspect, hallucination, and **fragment** — made by the sequence planner, not the detector
+(round 12, below). `suggested` is the rule's action (`remove` / `review`); `off` rules do not run.
 
 Fingerprint (TC-013): `<mediaId>~<stream>~<kind>~<round(start × 10)>~<round(end × 10)>~<fnv1a(normalised text)>` —
 100 ms resolution; a repeated identical one gets `~2`, `~3`. Rejected fingerprints persist in `Sequence.cleanup.rejected`
@@ -449,6 +449,8 @@ The rules now:
   either half of the fix alone passes it).
 - **The last kept piece keeps its fading tail** (`keepTail`): it grows over the decay after it (frames above measured
   silence, outside removed words' times) to silence, ≤ 0.25 s — a join may cut inside a decay, the clip's end may not.
+  Since round 12 the decay ends where it is measured silence **and** 30 dB under the last word's peak, and 80 ms of the
+  silence after it stay (`phraseTailEnd`).
 - The planner's own re-plan (`covered`, `UNCOVERED_TOLERANCE_S`) stays as a first pass; a piece shorter than
   `minPieceS` holding a kept word stays; gaps of exactly `maxGapS` join.
 Tests (all fail on 2557f0b20 — 44 of the 46 corpus cases, both corpus invariants, the property):
@@ -494,7 +496,8 @@ in every mode, and opened a hole inside an accepted restart.
 
 **Speech a stretched word holds** (run 5: H "rápida" stretched 2.2 s over continuous speech at −10 to −24 dBFS,
 G chunked "en" holding 1.4 s; both kept with no finding while the speech likely repeats a phrase): a word longer than
-1 s with at least half its frames speech — the speech worker's hidden-take trace — gets an **untranscribed** finding
+1 s — or, since round 12, at least 0.6 s and three times what its syllables take at the speaker's pace (`stretchedWord`)
+— with at least half its frames speech — the speech worker's hidden-take trace — gets an **untranscribed** finding
 over its speech after the first 0.5 s (`frameFindings`; *assumption*: a word holds at most 0.5 s, from these two
 cases), with the word as `reason.params.text` ("Speech inside the stretched word "…": maybe a take written once" in
 the Review panel and MCP). It follows the untranscribed rule (review in both presets), so nothing changes until it is
@@ -760,6 +763,72 @@ fixes" and `cleanup-property.test.ts`, each failing on 42d6ab3c6):
   has no voicing plane, so B2 is measured on the unit tests only; a pause still covers measured silence inside a word's
   loose timestamps and the inside of words longer than 1 s.
 
+**Round 12** (a user's real cut of the 57-minute Spanish talking head made with main 4e2dd3342, reported by the agent
+editing it; tests in `cleanup-slivers-tails.test.ts` and `apps/engine/test/speech-hidden-takes.test.ts`, each failing on
+4e2dd3342):
+- **No kept sliver between cuts** (S1). Applying left 35 V1 / A1 clips of 1–7 frames, cut from far-away moments (a 1–2
+  frame flash of another pose: "…mi propio | Unity | Tengo solo 30 días"); some held no word, others one short word
+  ("Y", "Unity", "En", "No"). Cause: a short planner piece holding a kept word stays (round 5, strict removal: a word
+  alone between removed pauses or takes), and the frame guards' `minSliverFrames` drop was undone by the final frame
+  check (round 5, "Every removal has a finding"), which puts back every frame no accepted finding explains — nothing
+  reconciled the two. On the corpus 26 such pieces (3–9 frames: "pasa?", "¡Viva!", "No.", "las", "3", "Pero"…). Now,
+  after the final frame check and the tail, `resolveSlivers` (`sequence.ts`) takes each kept piece shorter than
+  `guards.minSliverFrames` (10, a preset setting; was 3) that does not span its clip: (1) joined to a neighbour across
+  the removed gap when that gap is ≤ `minSliverFrames` long and holds only silence or pause (no removed word's time, no
+  speech, breath or voiced frame, nothing of a removed word's sound above measured silence); else (2) a **fragment**
+  finding over it (`range` = the sliver's media time, `words` = the kept words whose midpoint lies in it, reason
+  params `text`, `frames`, `between: words | cuts`) — suggested for removal when it holds no word and no voice, or
+  when removed words lie on both sides of it (a piece of another take); else for review (a word alone between pauses);
+  never for voice without words left for review (its own untranscribed finding decides, round 7); (3) an accepted
+  fragment goes; any other sliver grows over the silent frames beside it (after it first) to `minSliverFrames` when
+  there are enough. Nothing goes without an accepted finding: the fragment is a finding like the others (Review panel
+  "Isolated fragments", MCP `analyze_voice` / `plan_cleanup` findings with the reason "N frames kept alone between
+  removed words / cuts", accept / reject by id or fingerprint). The clip's new last piece keeps its tail after an
+  accepted fragment at the end. Corpus after the change: no kept piece under 10 frames; 13 review fragments (the words
+  alone between pauses, grown), none removed by default; precision / recall unchanged.
+- **Sentence ends keep their tail and some air** (S2). About 30 kept clips ended 30–180 ms before the last word
+  finished ("azul.", "lo arreglen.", "verdad.", "web.", "romper.", "espacio."). Cause (from the code; the reporter's
+  audio was not re-measured here): a join's pause took every non-speech frame after the speech class ended — a soft or
+  unvoiced word end under the speech threshold — and, inside the word's time, any frame within 6 dB of the floor. Now a word that ends a sentence (". ? !", not "…"), and the clip's last kept
+  word, keeps its fading decay until a frame is both measured silence and `DECAY_BELOW_PEAK_DB` (30 dB) under the
+  word's own peak — the round-11 relative bound, so a quiet word's tail near the floor still counts — ≤ 0.25 s and
+  never past the next onset (the pause's end, the next kept piece or word, removed words); then `TAIL_PAD_S` (80 ms, of the 60–100 ms asked) of
+  the measured silence after it stay, at most half of it (so a cut remains): `phraseTailEnd` in the planner (step 4b),
+  the detector's pause edges and `keepTail`. Inside a sentence the Fast join style is unchanged (it still cuts inside
+  the decay). Golden: removed-time recall 0.96 → 0.89 (the truth cuts inside the four sentence-final decays; bound
+  lowered to 0.85 with that reason), out points after a sentence end or at the clip's end may lie 80 ms past measured
+  silence. Review sliver rule (round 6 / 10): it measures the word's own time, not its sound (which now holds that air).
+- **Quiet speech is voice, not a pause** (S2). A whole phrase without words, "es un keke." about 20 dB under normal
+  speech (332.4–333.05 s), was cut as a pause: the classes call it non-speech (under the speech threshold) and the
+  transcript has no words there. A run of non-speech frames above measured silence (≤ 30 ms of silence inside), at
+  least `untranscribedMinS` long, peaking within 25 dB of the file's speech level, holding two vowels (three voiced
+  frames in a row) with a dip of 6 dB under both between them — syllables, unlike a hum, a breath or a decay — is voice
+  (`quietSpeech`): never a pause, untranscribed voice for review unless a word beside it holds it; the final frame
+  check protects its voiced frames like speech. *Assumption*, labelled: one reported phrase, the reporter's description
+  (voiced, rising and falling, 15–25 dB under the speech level); needs the voicing plane (the corpus voice has none, so
+  the corpus is unchanged). The hallucination guard still judges words by the speech / breath classes only.
+- **Stretched words by the speaker's pace** (S3). "y es extra… ¡extremadamente!" was written as one "extremadamente"
+  of 0.95 s (244.76–245.75); the > 1 s rule missed it. A word now also counts as stretched when it lasts at least 0.6 s
+  and `STRETCH_RATIO` (3) times its syllables (vowel groups) × the speaker's median seconds per syllable over the
+  transcript's words of two or more syllables up to 1 s (`stretch.ts`, ≥ 20 such words, else the 1 s rule only) —
+  for the Clean Up finding (`frameFindings`) and the speech worker's hidden-take trigger (`suspectWindows` in
+  `core/gaps.ts`; its per-word decode in `run.ts` keeps 1 s); `wordHold` keeps 1 s (a word's inside stays protected).
+  *Measured* on the corpus (11,736 words of this speaker, pace 0.11–0.16 s per syllable, median 0.12): 56 words
+  qualify at 3× (drawn-out "un", "mi", "de", "y", the stretched words of fragment E's hidden takes, phrase-final names
+  such as "DirectX,"), 157 at 2×, 305 at 1.5×. **Limit**: the reported word itself is not caught. Its six syllables
+  take 0.72 s at the speaker's pace, so 0.95 s is 1.3× — and the same speaker's clean "extremadamente" in run 9 (AG)
+  lasted 0.88 / 0.92 s (1.22 / 1.28×). Duration cannot separate them; a ratio that low would flag hundreds of normal
+  words. A restart inside a word needs another trace (a pause or a level dip inside the word's time, a second onset),
+  which this round does not add.
+- Corpus at the end of the round (Fast, corpus voice): dev 0.997 (2303 / 2311) / 0.960 (0.996 with asides proposed),
+  held out 1.000 (338 / 338) / 0.973, held-out-r7 0.998 (479 / 480) / 0.870 (0.984), held-out-r9 0.992 (260 / 262) /
+  0.976, held-out-r11 1.000 (65 / 65) / 1.000 — identical to round 11 (the corpus voice has speech under every word
+  and no voicing plane, so the tails and quiet speech do not move word removals; the fragments are all for review).
+- Limits left by round 12: a fragment for review that has no silence beside it (a word between two kept-for-review
+  removals, or rejected) stays shorter than the minimum; the 80 ms pad, the 25 dB / 6 dB quiet-speech thresholds and
+  the 3× / 0.6 s stretch rule need the real-audio rerun on the reporter's project; the syllable count is a vowel-group
+  approximation (digits have none: the 1 s rule only).
+
 Kinds follow the structure: ≤ 2 words a false start, a whole clause (clause start, clause end, ≥ 3 content words) a
 retake (with a group), else a restart; inside re-decoded ranges they become hidden retakes as before. The settings keep
 their meaning (the windows, `retakeSimilarity`, `takeGapS`, `phraseGapS`, `falseStartGapS` for false starts by clause);
@@ -790,6 +859,7 @@ words (fillers aside) removed. Measured (both modes, Fast, corpus voice):
 | round 11: run 11 (AI–AN, both modes) at main 42d6ab3c6 | 8 / 12 | 0.984 (62 / 63) | 0.950 (57 / 60) |
 | round 11 after its fixes: held-out-r11 (regression coverage, not blind) | 12 / 12 | 1.000 (65 / 65) | 1.000 (60 / 60) |
 | … dev, held out, held-out-r7, held-out-r9 | unchanged | 0.997, 1.000, 0.998, 0.992 | 0.960, 0.973, 0.870, 0.976 (with asides proposed: 0.996, 0.973, 0.984, 0.976) |
+| round 12 (slivers, sentence-end tails, quiet speech, stretch by pace): every split | unchanged | 0.997, 1.000, 0.998, 0.992, 1.000 | 0.960, 0.973, 0.870, 0.976, 1.000 |
 
 Per kind at 0108b4021 (dev / held out): hidden-retake 0.997 / 1.000, retake 0.999 / 1.000, restart 0.998 / 1.000,
 false start 1.000 / 1.000, stutter — / 1.000, filler-vocalic 0.943 / —, filler-phrase 1.000 / 1.000, hallucination
@@ -871,8 +941,9 @@ the document):
    (`plan.skipped`, one re-plan).
 5. Frames: each edge snaps to a frame boundary of the clip's placement — boundaries within `snapWindowS` (10 ms)
    compete on the level of their 10 ms frame (quietest wins), else an in point snaps down and an out point up (never
-   into the word); then removed ranges shorter than `minCutFrames` (2) are not cut and kept slivers shorter than
-   `minSliverFrames` (3) are dropped.
+   into the word); then removed ranges shorter than `minCutFrames` (2) are not cut, the final frame check puts back
+   what no accepted finding explains, and a kept piece shorter than `minSliverFrames` (10 since round 12, was 3) is
+   joined to a neighbour, offered as a `fragment` finding or grown over silence (`resolveSlivers`, round 12).
 6. A sequence range is removed only where **every** speech clip covering it removes it (two microphones on two tracks
    keep each other's speech).
 7. `plan = {sequenceId, clipIds, ranges [{start, end, reasons}], kept, stats, skipped, fadeMs, jlFrames}`; reasons per
@@ -1015,7 +1086,7 @@ the flagged cuts.
 | Check | Where | Result |
 |---|---|---|
 | Port = prototype (16 synthetic recordings, both presets) | `packages/project/test/cleanup-port.test.ts` | identical labels, guard decisions, kept ranges (1e-9 s), except the listed restart-coverage differences (3 recordings) |
-| Golden Fast preset (TC-070): synthetic recording of voiced tones with known word timings (Whisper-like offsets), head chatter, an abandoned take, a false start, a filler between pauses, off-script chatter, an in-line restart, a standalone marker, breaths, long pauses, a cough; real voice-analysis code | `packages/project/test/cleanup-golden.test.ts` | removed words P = 1.00, R = 1.00; removed time P = 1.00, R = 0.96 (thresholds 0.9 / 0.9 / 0.95 / 0.9); largest silence left 0.02 s; last take chosen and named with its script line; cough flagged, kept, removed when accepted; in points within −40…+60 ms of the onset, out points in the decay; without a script P ≥ 0.9 (R 0.46: chatter needs the script); Natural keeps more, lists for review |
+| Golden Fast preset (TC-070): synthetic recording of voiced tones with known word timings (Whisper-like offsets), head chatter, an abandoned take, a false start, a filler between pauses, off-script chatter, an in-line restart, a standalone marker, breaths, long pauses, a cough; real voice-analysis code | `packages/project/test/cleanup-golden.test.ts` | removed words P = 1.00, R = 1.00; removed time P = 1.00, R = 0.89 (thresholds 0.9 / 0.9 / 0.95 / 0.85; 0.96 / 0.9 before round 12's sentence-end tails); largest silence left 0.02 s; last take chosen and named with its script line; cough flagged, kept, removed when accepted; in points within −40…+60 ms of the onset, out points in the decay; without a script P ≥ 0.9 (R 0.46: chatter needs the script); Natural keeps more, lists for review |
 | Planning properties (fast-check, 300 + 200 runs): pieces sorted / disjoint / ≥ min piece, no removed word's sound kept, a kept word's loud core never split (unless the timestamps give part of it to a removed word), no non-speech run > maxGap (+ edge allowance) inside a Fast piece | `cleanup-property.test.ts` | pass |
 | One-pass extract = successive `range.extract` (150 random timelines) + invariants | `cleanup-property.test.ts` | pass |
 | `cleanup.apply` / `cleanup.configure` / removePauses / removeFillers: links, groups, sync lock, locked tracks, source ranges, fades, J / L, lift / mute / markers, 1,500 ranges, undo (previous document untouched) / redo (same timeline), refusals, invariants (`verify` mode) | `cleanup-commands.test.ts` | pass |
@@ -1089,7 +1160,7 @@ selection refuses with a reason) and **Analyze** / **Analyze Again**.
   fillers kept by "avoid harsh cuts", script lines said.
 - **Findings list**, grouped by kind in a fixed order (retakes, restarts, false starts, repeats, fillers, filler
   phrases, discourse markers, off-script, head / tail, pauses, breaths, voice without words, transcription suspects,
-  hallucinations) with "n of m cut" per kind, **Cut all / Keep all** per kind (clears the item decisions of the kind),
+  hallucinations, isolated fragments) with "n of m cut" per kind, **Cut all / Keep all** per kind (clears the item decisions of the kind),
   and per row ✂ cut / ↺ keep / ▶ play 1 s around it, the time, the reason in the user's language, the confidence.
   Virtualised: fixed row heights, only the rows in view (± 240 px) are in the DOM; the current row is kept in view.
 - **Transcript** (the analysed words, virtualised in blocks of ≤ 80 words measured as they render): what the plan
