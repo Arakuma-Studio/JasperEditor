@@ -540,17 +540,22 @@ describe('round 8 fixes (docs/wp-notes/transcript-cleanup.md "Round 8")', () => 
 		const v = voiceFor(words);
 		const voicing = new Uint8Array(v.frameCount).fill(200);
 		const [a, b] = [indexOf(words, '¿Qué'), indexOf(words, 'pasa?')];
+		// the recogniser was unsure of them (run 7 listed them as ASR suspects); a word it is sure of is only reviewed
+		for (const i of [a, b]) words[i]!.confidence = 0.3;
 		const f0 = Math.floor(sec(words[a]!.start) * 100);
 		const f1 = Math.ceil(sec(words[b]!.end) * 100);
 		voicing.fill(20, f0 - 5, f1 + 5);
 		v.level.fill((120 - 40) * 2, f0, f1);
 		v.classes.fill(1, f0, f1);
-		const hs = detect(words, {
-			...v,
-			voicing,
-			flatness: new Uint8Array(v.frameCount).fill(120),
-		}).findings.filter((x) => x.kind === 'hallucination');
-		expect(hs.map((x) => [x.words, x.suggested])).toEqual([[[a, b], 'remove']]);
+		const hs = () =>
+			detect(words, {
+				...v,
+				voicing,
+				flatness: new Uint8Array(v.frameCount).fill(120),
+			}).findings.filter((x) => x.kind === 'hallucination');
+		expect(hs().map((x) => [x.words, x.suggested])).toEqual([[[a, b], 'remove']]);
+		for (const i of [a, b]) words[i]!.confidence = 0.9;
+		expect(hs().map((x) => [x.words, x.suggested])).toEqual([[[a, b], 'review']]);
 	});
 
 	it('a self-correction aside between a clause and its corrected retry (W: "de Unity. | No, de ellos, …")', () => {
@@ -797,6 +802,7 @@ describe('round 10 fixes (docs/wp-notes/transcript-cleanup.md "Round 10")', () =
 		const v = voiceFor(words);
 		const voicing = new Uint8Array(v.frameCount).fill(200);
 		const k = indexOf(words, '¿Qué');
+		words[k]!.confidence = 0.3; // an ASR suspect in runs 7 and 9
 		const [f0, f1] = [Math.floor(sec(words[k]!.start) * 100), Math.ceil(sec(words[k]!.end) * 100)];
 		voicing.fill(20, f0 - 5, f1 + 5);
 		for (const f of [f0 + 3, f0 + 12, f0 + 13]) voicing[f] = 145;

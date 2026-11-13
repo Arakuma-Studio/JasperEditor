@@ -48,7 +48,7 @@ import type {
 	RetakeTake,
 	RuleAction,
 } from './schema.ts';
-import { ScriptIndex, scriptLines, scriptTokens } from './script.ts';
+import { ScriptAligner, ScriptIndex, scriptLines, scriptTokens } from './script.ts';
 import { STRETCH_ABS_S, secondsPerSyllable, stretchedWord } from './stretch.ts';
 import type { VoiceAnalysis } from './voice-analysis.ts';
 
@@ -189,23 +189,26 @@ export function wordFrames(w: { s: number; e: number }): [number, number] {
 }
 
 /**
- * The hallucination guard (`common.py clean_words`, TC-003): runs of ≥ `run` identical tokens, and — with a voice
- * analysis — words whose frames are less than `share` speech or breath-like (an empty frame span counts as none).
+ * The hallucination guard's candidates (`common.py clean_words`, TC-003): `runs` — runs of ≥ `run` identical tokens —
+ * and, with a voice analysis, `lowShare` — words outside a run whose frames are less than `share` speech or breath-like
+ * (an empty frame span counts as none). A low share alone is no evidence on dense, loudness-normalised audio, where
+ * the voice analysis calls short real words non-speech: the detector weighs it (`detectCleanup`).
  */
-export function hallucinationGuard(
+function hallucinationCandidates(
 	words: readonly AWord[],
 	voice: CleanupVoice | null | undefined,
 	run: number,
 	share: number,
-): boolean[] {
-	const out = new Array<boolean>(words.length).fill(false);
+): { runs: boolean[]; lowShare: boolean[] } {
+	const runs = new Array<boolean>(words.length).fill(false);
+	const lowShare = new Array<boolean>(words.length).fill(false);
 	const n = words.length;
 	let i = 0;
 	while (i < n) {
 		let j = i;
 		while (j + 1 < n && words[j + 1]!.n === words[i]!.n) j++;
 		if (j - i + 1 >= run) {
-			for (let k = i; k <= j; k++) out[k] = true;
+			for (let k = i; k <= j; k++) runs[k] = true;
 			i = j + 1;
 			continue;
 		}
@@ -216,12 +219,12 @@ export function hallucinationGuard(
 				const hi = Math.min(voice.frameCount, b);
 				let on = 0;
 				for (let f = lo; f < hi; f++) if (voice.classes[f]! > 0) on++;
-				if (hi <= lo || on / (hi - lo) < share) out[k] = true;
+				if (hi <= lo || on / (hi - lo) < share) lowShare[k] = true;
 			}
 		}
 		i = j + 1;
 	}
-	return out;
+	return { runs, lowShare };
 }
 
 function speechShare(voice: CleanupVoice, s: number, e: number): number {
@@ -273,21 +276,58 @@ export function detectCleanup(input: DetectInput): DetectResult {
 	}
 	words.sort((a, b) => a.s - b.s || a.i - b.i);
 
-	// hallucination guard: runs, words over non-speech, known phrases over non-speech
-	const guarded =
-		settings.rules.hallucination === 'off'
-			? new Array<boolean>(words.length).fill(false)
-			: hallucinationGuard(words, voice, T.hallucinationRun, T.hallucinationSpeechShare);
+	// hallucination guard: runs, words over non-speech, known phrases over non-speech. A word the script says in
+	// sequence, one the recogniser is sure of or one said near the speech level around it is no hallucination over
+	// non-speech, whatever the voice classes say (docs/wp-notes/transcript-cleanup.md "Hallucinations need non-speech
+	// evidence": on a loudness-normalised mixdown the classes gave real script words 0–40 % speech frames)
+	const hallOn = settings.rules.hallucination !== 'off';
+	const sTokens = input.script ? scriptTokens(input.script) : [];
+	const aligner = sTokens.length ? new ScriptAligner(sTokens) : null;
+	const allTokens = words.map((w) => w.n);
+	const supportMemo = new Map<number, number>();
+	/** In-order neighbours the script has around word k (0 without a script). */
+	const scriptSupport = (k: number) => {
+		if (!aligner) return 0;
+		let v = supportMemo.get(k);
+		if (v === undefined) {
+			v = aligner.support(allTokens, k);
+			supportMemo.set(k, v);
+		}
+		return v;
+	};
+	const onScriptWord = (k: number) => scriptSupport(k) >= ALIGNED_SUPPORT;
+	const confident = (k: number) => words[k]!.conf !== null && words[k]!.conf! >= CONFIDENT_WORD;
+	const cand = hallOn
+		? hallucinationCandidates(words, voice, T.hallucinationRun, T.hallucinationSpeechShare)
+		: null;
+	const guarded = cand ? [...cand.runs] : new Array<boolean>(words.length).fill(false);
+	const nearSpeech = voice && cand ? nearSpeechLevel(voice, words, cand.lowShare) : () => false;
+	const suspect = new Set<number>();
+	if (cand && voice)
+		for (let k = 0; k < words.length; k++) {
+			if (!cand.lowShare[k] || onScriptWord(k) || confident(k) || nearSpeech(k)) continue;
+			// positive evidence: the word lies over measured silence (or outside the audio); else only for review
+			if (overSilence(voice, words[k]!)) guarded[k] = true;
+			else suspect.add(k);
+		}
 	const hummed = new Set<number>();
-	if (settings.rules.hallucination !== 'off' && voice) {
+	if (hallOn && voice) {
 		const phrasesH = lists.hallucinations.map((h) => h.split(' ')).sort((a, b) => b.length - a.length);
 		for (let k = 0; k < words.length; k++) {
 			for (const p of phrasesH) {
 				if (k + p.length > words.length || !p.every((x, q) => words[k + q]!.n === x)) continue;
 				const s = words[k]!.s;
 				const e = words[k + p.length - 1]!.e;
-				if (speechShare(voice, s, e) < 0.5) for (let q = 0; q < p.length; q++) guarded[k + q] = true;
-				else if (!noFrication(voice, s, e) || !belowSpeech(voice, s, e)) break;
+				const at = p.map((_, q) => k + q);
+				// the script says it ("Suscríbete, chau."): speech
+				if (at.some(onScriptWord)) break;
+				if (speechShare(voice, s, e) < 0.5) {
+					// over audible sound near the speech level (a real word the classes missed, or music): for review
+					const audible = at.some(nearSpeech);
+					for (const q of at)
+						if (audible) suspect.add(q);
+						else guarded[q] = true;
+				} else if (!noFrication(voice, s, e) || !belowSpeech(voice, s, e)) break;
 				// over voice without a single fricative, quieter than the speech (humming): flagged for review (round 6,
 				// fragment M: "¡Suscríbete al canal!" decoded over 4.9 s of humming at −17…−30 dBFS; run 9, AC: the phrase
 				// alone flagged a real, loud "gracias")
@@ -300,8 +340,8 @@ export function detectCleanup(input: DetectInput): DetectResult {
 	// of them ("Pen 와 blah blah금u") —, a stock phrase woven into other speech ("¡Suscríbete | Tengo al solo 30 días para
 	// hacer canal!"), and words over sound without a voiced frame (no vowel: "¿Qué pasa?" over noise). A repeat's
 	// alignment forgives them between re-said words; one over noise alone in its phrase is a hallucination like the guard's
-	const suspect = new Set<number>(hummed);
-	if (settings.rules.hallucination !== 'off') {
+	for (const k of hummed) suspect.add(k);
+	if (hallOn) {
 		let last = -1;
 		for (let k = 0; k < words.length; k++) {
 			if (!foreignScriptWord(words[k]!.text, input.language)) continue;
@@ -320,7 +360,8 @@ export function detectCleanup(input: DetectInput): DetectResult {
 				if (at.length === p.length && at[at.length - 1]! - k >= p.length) for (const q of at) suspect.add(q);
 			}
 		if (voice?.voicing) {
-			const noise = words.map((w, k) => !guarded[k] && unvoicedSound(voice, w));
+			// …but never a word the script says in sequence, and one the recogniser is sure of only for review
+			const noise = words.map((w, k) => !guarded[k] && !onScriptWord(k) && unvoicedSound(voice, w));
 			for (let k = 0; k < words.length; ) {
 				if (!noise[k]) {
 					k++;
@@ -334,7 +375,7 @@ export function detectCleanup(input: DetectInput): DetectResult {
 					(k === 0 || words[k]!.s - words[k - 1]!.e >= T.phraseGapS) &&
 					(j === words.length - 1 || words[j + 1]!.s - words[j]!.e >= T.phraseGapS);
 				for (let q = k; q <= j; q++) {
-					if (alone) guarded[q] = true;
+					if (alone && !confident(q)) guarded[q] = true;
 					else suspect.add(q);
 				}
 				k = j + 1;
@@ -351,7 +392,6 @@ export function detectCleanup(input: DetectInput): DetectResult {
 
 	const fillers = new Set(lists.fillers);
 	const stop = new Set(lists.stopWords);
-	const sTokens = input.script ? scriptTokens(input.script) : [];
 	const labels: (WordLabel | null)[] = new Array(aw.length).fill(null);
 	const ctx: RuleContext = {
 		words: aw,
@@ -499,10 +539,14 @@ export function detectCleanup(input: DetectInput): DetectResult {
 	// and cutting them as tail chatter was the largest error on the user's material (TC-071 calibration). The head side
 	// stays strict: pre-roll talk before the first line is usually on topic, and the user cuts it (measured: a
 	// symmetric rule left 25 s of pre-roll on 13 shorts against 10 s).
+	// Anchored on the script alignment of every transcript word too — words the guard dropped included, so never on
+	// the voice classes: a word the script says in sequence is neither head nor tail (a dense cut has no pause of
+	// `takeGapS` to make a unit of one line, so no unit said a line until the voice classes dropped words, and the head
+	// took 0–666 s of a 931 s scripted cut). A long head or tail, or one holding many script words, is only reviewed.
 	if (index && settings.rules.headTail !== 'off') {
 		const said = units.map((_, u) => unitLine[u] !== null);
 		const first = said.indexOf(true);
-		let lastU = said.lastIndexOf(true);
+		const lastU = said.lastIndexOf(true);
 		const vocab = new Set(sTokens);
 		const onScript = (u: number) => {
 			const c = unitContent[u]!;
@@ -511,15 +555,45 @@ export function detectCleanup(input: DetectInput): DetectResult {
 				c.filter((x) => vocab.has(x)).length / c.length >= T.offScriptSimilarity
 			);
 		};
-		if (first >= 0) {
-			for (let u = units.length - 1; u > lastU; u--)
+		// the anchors: the starts of the first and the last word on script (seconds)
+		let headAt = first >= 0 ? aw[units[first]![0]!]!.s : Number.POSITIVE_INFINITY;
+		let tailAt = lastU >= 0 ? aw[units[lastU]![units[lastU]!.length - 1]!]!.s : Number.NEGATIVE_INFINITY;
+		// (the words right before / after a word on script that follow the script with fewer neighbours to show —
+		// the transcript's first word "Hoy" before "voy a ser mi propio Unity." — are on script too)
+		let fa = words.findIndex((w, k) => w.s < headAt && onScriptWord(k));
+		while (fa > 0 && scriptSupport(fa - 1) >= LOOSE_SUPPORT) fa--;
+		if (fa >= 0) headAt = words[fa]!.s;
+		for (let k = words.length - 1; k >= 0 && words[k]!.s > tailAt; k--)
+			if (onScriptWord(k)) {
+				while (k + 1 < words.length && scriptSupport(k + 1) >= LOOSE_SUPPORT) k++;
+				tailAt = Math.max(tailAt, words[k]!.s);
+				break;
+			}
+		if (Number.isFinite(headAt)) {
+			// …and the units they lie in are kept whole (the cut's closing "Suscríbete. ¡Chao!" — "chau" in the script)
+			const unitAt = (t: number) => units.findIndex((u) => aw[u[0]!]!.s <= t && t <= aw[u[u.length - 1]!]!.s);
+			const hu = unitAt(headAt);
+			if (hu >= 0) headAt = aw[units[hu]![0]!]!.s;
+			const tu = unitAt(tailAt);
+			if (tu >= 0) tailAt = aw[units[tu]![units[tu]!.length - 1]!]!.s;
+			// after the last word on script, the last unit whose words come from the script
+			for (let u = units.length - 1; u >= 0 && aw[units[u]![0]!]!.s > tailAt; u--)
 				if (onScript(u)) {
-					lastU = u;
+					tailAt = aw[units[u]![units[u]!.length - 1]!]!.s;
 					break;
 				}
-			for (let k = 0; k < units[first]![0]!; k++) claimWord(ctx, k, 'head-tail', settings.rules.headTail);
-			const end = units[lastU]![units[lastU]!.length - 1]!;
-			for (let k = end + 1; k < aw.length; k++) claimWord(ctx, k, 'head-tail', settings.rules.headTail);
+			const t0 = words[0]!.s;
+			const span = Math.max(...words.map((w) => w.e)) - t0;
+			const claim = (ks: number[], seconds: number) => {
+				const scripted = ks.filter((k) => scriptSupport(awIndex[k]!) >= LOOSE_SUPPORT).length;
+				const capped = seconds > HEAD_TAIL_MAX_SHARE * span || scripted >= HEAD_TAIL_MAX_SCRIPT_WORDS;
+				const action = capped && settings.rules.headTail === 'remove' ? 'review' : settings.rules.headTail;
+				for (const k of ks) claimWord(ctx, k, 'head-tail', action);
+			};
+			const head = aw.flatMap((w, k) => (w.s < headAt ? [k] : []));
+			if (head.length) claim(head, headAt - t0);
+			const tail = aw.flatMap((w, k) => (w.s > tailAt ? [k] : []));
+			if (tail.length) claim(tail, t0 + span - aw[tail[0]!]!.s);
 		}
 	}
 	ruleLexicalReview(ctx, phs, markers);
@@ -1589,6 +1663,88 @@ const VOWEL_MIN_FRAMES = 3;
  * 15 dB or more under it.
  */
 const LOUD_WORD_DB = 12;
+
+/**
+ * A word with at least this many in-order script neighbours (`ScriptAligner`, of up to 6) is said in sequence with the
+ * script: never a hallucination, never head / tail chatter. *Assumption*, labelled: 3 = half the window, so a script
+ * word alone in other talk ("que", "de") does not count.
+ */
+const ALIGNED_SUPPORT = 3;
+/** Words with this support count towards the head / tail cap (`HEAD_TAIL_MAX_SCRIPT_WORDS`). */
+const LOOSE_SUPPORT = 2;
+/**
+ * A head or tail longer than this share of the transcript's span, or holding this many words with `LOOSE_SUPPORT`,
+ * is only reviewed: pre-roll and outro chatter are short and off script. *Assumption*, labelled: the TC-071 shorts had
+ * ≈ 10 s of pre-roll over 13 recordings; a quarter of a clip is no longer chatter around a script.
+ */
+const HEAD_TAIL_MAX_SHARE = 0.25;
+const HEAD_TAIL_MAX_SCRIPT_WORDS = 5;
+/**
+ * A word the recogniser is at least this sure of is not invented over non-speech. *Measured* on the loudness-normalised
+ * mixdown `cut_v5.wav` (large-v3-turbo, voice analysis v2): the 37 real script words flagged as hallucinations had
+ * 0.876–1.0 (36 of them ≥ 0.976), the four without a script counterpart 0.18, 0.29, 0.77 and 0.99 ("the", over
+ * audible voice); on its raw source the clear inventions ("кстати.", a stretched "Y", "Ok,", "No,") had 0–0.61. The
+ * noise words of runs 6–9 were ASR suspects (confidence under 0.4 or a poor segment score).
+ */
+const CONFIDENT_WORD = 0.8;
+/**
+ * A word whose loudest frame comes within this many dB of the speech level around it (the lower of the file's and
+ * the neighbouring words' — `nearSpeechLevel`) is audible speech, not a word invented over non-speech. *Measured* on
+ * `cut_v5.wav`: the flagged script words peaked at −9.0…−27.7 dBFS, at most 17.2 dB under the file's speech level
+ * (−10.5 dBFS). The noise rule (`unvoicedSound`) keeps its own vowel evidence and `LOUD_WORD_DB`: the noise words of
+ * runs 7–9 peaked at −27…−41 dBFS, ≈ 17–33 dB under that speaker's speech level (−5.5…−9.5 dBFS in run 11; run 7's
+ * was not recorded), so 20 dB would spare some of them.
+ */
+const NEAR_SPEECH_DB = 20;
+/** Neighbouring words (each side, within `LOCAL_S`) whose loudest frames give the local speech level. */
+const LOCAL_WORDS = 4;
+const LOCAL_S = 10;
+
+/**
+ * Whether word k comes within `NEAR_SPEECH_DB` of the speech level around it: the lower of the file's speech level and
+ * the median loudest frame of up to `LOCAL_WORDS` words each side within `LOCAL_S` that are not themselves over
+ * non-speech (`lowShare`) — a mixdown compresses everything, and a quiet passage has its own level. False without
+ * the file's speech level.
+ */
+function nearSpeechLevel(
+	voice: CleanupVoice,
+	words: readonly AWord[],
+	lowShare: readonly boolean[],
+): (k: number) => boolean {
+	const file = voice.levels.speechDb;
+	if (file === null) return () => false;
+	return (k) => {
+		const w = words[k]!;
+		const peaks: number[] = [];
+		for (const dir of [-1, 1]) {
+			let n = 0;
+			for (let q = k + dir; q >= 0 && q < words.length && n < LOCAL_WORDS; q += dir) {
+				const o = words[q]!;
+				if (dir < 0 ? w.s - o.e > LOCAL_S : o.s - w.e > LOCAL_S) break;
+				if (lowShare[q]) continue;
+				peaks.push(wordPeakDb(voice, o));
+				n++;
+			}
+		}
+		peaks.sort((a, b) => a - b);
+		const local = peaks.length ? peaks[Math.floor((peaks.length - 1) / 2)]! : file;
+		return wordPeakDb(voice, w) >= Math.min(file, local) - NEAR_SPEECH_DB;
+	};
+}
+
+/**
+ * Whether a word lies over measured silence — at least half of its frames silent (`silentFrame`) — or outside the
+ * analysed audio: the recogniser wrote it over nothing.
+ */
+function overSilence(voice: CleanupVoice, w: { s: number; e: number }): boolean {
+	const [a, b] = wordFrames(w);
+	const lo = Math.max(0, a);
+	const hi = Math.min(voice.frameCount, b);
+	if (hi <= lo) return true;
+	let quiet = 0;
+	for (let f = lo; f < hi; f++) if (silentFrame(voice, f)) quiet++;
+	return quiet * 2 >= hi - lo;
+}
 
 /** Whether a word's loudest frame comes within `LOUD_WORD_DB` of the file's speech level; false without levels. */
 function loudWord(voice: CleanupVoice, w: { s: number; e: number }): boolean {
