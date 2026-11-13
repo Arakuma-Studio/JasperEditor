@@ -229,7 +229,7 @@ export const TranscriptRemoveFillersCmd = cmd('transcript.removeFillers', {
 	fillers: z.array(z.string().min(1)).optional(),
 	/** Use this language's list for every word (`es`, `en`…) instead of each transcript's language. */
 	language: z.string().min(1).max(35).optional(),
-	/** Equal-power micro-fade at every audio cut edge (ms; default 4, Clean Up's join fade; 0 = hard cuts). */
+	/** Equal-power micro-fade at every audio cut edge (ms; default 0 = hard cuts; Clean Up's join fade is 4). */
 	fadeMs: z.number().min(0).max(30).optional(),
 	/** Only these sequence word index ranges (inclusive) — default the whole sequence. */
 	fromWord: z.number().int().min(0).optional(),
@@ -259,7 +259,7 @@ export const TranscriptRemovePausesCmd = cmd('transcript.removePauses', {
 		.array(z.strictObject({ mediaId: IdRefSchema, analysis: z.string().min(1).max(50_000_000) }))
 		.max(64)
 		.optional(),
-	/** Equal-power micro-fade at every audio cut edge (ms; default 4, Clean Up's join fade; 0 = hard cuts). */
+	/** Equal-power micro-fade at every audio cut edge (ms; default 0 = hard cuts; Clean Up's join fade is 4). */
 	fadeMs: z.number().min(0).max(30).optional(),
 });
 

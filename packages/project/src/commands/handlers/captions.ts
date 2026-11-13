@@ -51,7 +51,6 @@ import type { CaptionStyle, CaptionsClip, Clip, Sequence, Track } from '../../sc
 import { CaptionStyleSchema } from '../../schema/sequence.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational, secondsToFlicks } from '../../time.ts';
 import type { DClip, DDoc, DSeq, DTrack, HandlerContext } from '../context.ts';
-import { JOIN_FADE_MS } from '../join-fades.ts';
 import { cutRanges } from '../multi-range.ts';
 import {
 	allTracksIn,
@@ -282,14 +281,14 @@ function wordSpan(words: readonly SeqWord[], from: number, to: number, h: Handle
 /**
  * Ripple-delete frame ranges on every unlocked track (FilmCraft `ripple_delete_ranges`): the result of one
  * `range.extract` per range, right to left, computed in one pass (`cutRanges`, spec 14 TC-031), with edge micro-fades
- * on the audio cuts (default Clean Up's join fade; 0 = hard cuts).
+ * on the audio cuts (`fadeMs`; default 0 = hard cuts).
  */
 function rippleDeleteRanges(
 	doc: DDoc,
 	seq: DSeq,
 	ranges: Array<[number, number]>,
 	h: HandlerContext,
-	fadeMs = JOIN_FADE_MS,
+	fadeMs = 0,
 ): number {
 	const merged = mergeRanges(ranges).filter(([a, b]) => b > a);
 	if (!merged.length) return 0;

@@ -175,6 +175,14 @@ const ROUTES: Record<string, Route> = {
 			['plan_cleanup', { projectId: v.project, preset: 'fast', decisions: { rejectKinds: ['fragment'] } }],
 		],
 	},
+	'cleanup-join-fades': {
+		calls: (v) => [
+			['apply_cleanup', { projectId: v.project, preset: 'fast', settings: { joins: { fadeMs: 4 } } }],
+		],
+	},
+	'cleanup-hard-cuts-control': {
+		calls: (v) => [['apply_cleanup', { projectId: v.project, preset: 'fast' }]],
+	},
 	'delivery-split-clip-control': {
 		calls: (v) => [['split_at', { projectId: v.project, clipIds: [v.clip], at: '10s' }]],
 	},

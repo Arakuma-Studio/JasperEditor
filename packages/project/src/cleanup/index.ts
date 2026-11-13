@@ -64,6 +64,7 @@ export {
 	type FindingKind,
 	type FindingReason,
 	type FindingSuggestion,
+	JOIN_FADE_MS,
 	mergeCleanupSettings,
 	NATURAL_SETTINGS,
 	type RetakeGroup,

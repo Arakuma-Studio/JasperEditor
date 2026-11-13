@@ -149,9 +149,15 @@ export const CleanupGuardsSchema = z
 	.strict();
 export type CleanupGuards = z.infer<typeof CleanupGuardsSchema>;
 
+/**
+ * Join fade (ms) used when a fade is asked for without a length: Clean Up's "Fade joins" toggle, `audio.smoothJoins`,
+ * `joinFades: true` on range cuts. Cuts are hard by default (the built-in presets' `joins.fadeMs` is 0).
+ */
+export const JOIN_FADE_MS = 4;
+
 export const CleanupJoinsSchema = z
 	.object({
-		/** Equal-power micro-fade at every audio join (ms; 0 = none). */
+		/** Equal-power micro-fade at every audio join (ms; 0 = none, the built-in presets' default: hard cuts). */
 		fadeMs: num(0, 30),
 		/** J / L offset of the sound at every join (frames; > 0 the incoming sound leads, < 0 the outgoing lags). */
 		jlFrames: z.number().int().min(-30).max(30),
@@ -239,7 +245,7 @@ export const FAST_SETTINGS: CleanupSettings = {
 	},
 	gaps: { maxGapS: 0.12, keepGapS: 0, keepGapSentenceS: 0, breath: 'remove', breathKeepMaxS: 0.6 },
 	guards: { minPieceS: 0.25, minCutFrames: 2, minSliverFrames: 10, avoidHarshCuts: true, harshWindowS: 0.03 },
-	joins: { fadeMs: 4, jlFrames: 0 },
+	joins: { fadeMs: 0, jlFrames: 0 },
 };
 
 /** Natural: calmer general preset (prototype `calm` + spec 14: gaps 0.25 / 0.5 s, breaths ≤ 600 ms kept). */
@@ -272,7 +278,7 @@ export const NATURAL_SETTINGS: CleanupSettings = {
 	},
 	gaps: { maxGapS: 0.45, keepGapS: 0.25, keepGapSentenceS: 0.5, breath: 'keep', breathKeepMaxS: 0.6 },
 	guards: { minPieceS: 0.4, minCutFrames: 2, minSliverFrames: 10, avoidHarshCuts: true, harshWindowS: 0.03 },
-	joins: { fadeMs: 10, jlFrames: 0 },
+	joins: { fadeMs: 0, jlFrames: 0 },
 };
 
 export const CleanupPresetSchema = z

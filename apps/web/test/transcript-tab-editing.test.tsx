@@ -3,14 +3,15 @@
 // of the recogniser's spelling, ONE transaction and one undo step) and "Remember" (the personal glossary); no offer
 // when nothing changes in spelling; the offer is dismissable and never applies itself. The toolbar's Script… opens
 // the Script drawer with its summary and Fix Transcript… the Fix dialog. While a fix proposal is under review its
-// words are marked and a click selects its Review row.
+// words are marked and a click selects its Review row. Remove Pauses / Remove Fillers cut hard unless "Fade joins" is
+// checked.
 import { EngineClient } from '@jasper/engine-client';
 import type { ProjectDocument, Sequence } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { proposalsFor } from '@jasper/session';
 import { SessionProvider, useStoreSelector } from '@jasper/session/react';
 import { closeAllDialogs, DialogHost } from '@jasper/ui';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { FakeEngine } from '../../../packages/session/test/fake-proposals-engine.ts';
 import { registerAllCommands } from '../src/commands/index.ts';
@@ -259,5 +260,37 @@ describe('proposed fixes in the transcript (SC-083)', () => {
 		c.exit();
 		await act(async () => Promise.resolve());
 		expect(word(2).getAttribute('data-fix-item')).toBeNull();
+	});
+});
+
+describe('cut tools: hard cuts unless Fade joins is checked', () => {
+	it('Remove Pauses leaves no edge fades by default; with Fade joins every cut edge fades, in one undo step', () => {
+		const run = (fade: boolean) => {
+			const f = setup(WORDS);
+			fireEvent.click(screen.getByTestId('text.transcript.pauses'));
+			fireEvent.change(screen.getByTestId('text.transcript.pauseMin'), { target: { value: '0.15' } });
+			fireEvent.change(screen.getByTestId('text.transcript.pauseKeep'), { target: { value: '0' } });
+			const box = within(screen.getByTestId('text.transcript.pausesFade')).getByRole('checkbox');
+			expect(box.getAttribute('aria-checked')).toBe('false');
+			if (fade) fireEvent.click(box);
+			const entries = f.session.getState().history.entries.length;
+			fireEvent.click(screen.getByTestId('text.transcript.pausesApply'));
+			expect(f.session.getState().history.entries.length).toBe(entries + 1);
+			const fades = (doc: ProjectDocument) =>
+				Object.values(doc.sequences[f.seqId]!.clips)
+					.filter((c) => c.kind === 'audio')
+					.map((c) => (c as { edgeFades?: Record<string, number> }).edgeFades ?? null);
+			const after = fades(f.session.getCommitted() as ProjectDocument);
+			f.session.undo();
+			expect(fades(f.session.getCommitted() as ProjectDocument)).toEqual([null]);
+			cleanup();
+			return after;
+		};
+		const hard = run(false);
+		expect(hard.length).toBeGreaterThan(1);
+		expect(hard.every((x) => x === null)).toBe(true);
+		const faded = run(true);
+		expect(faded).toHaveLength(hard.length);
+		expect(faded.every((x) => x !== null && Object.values(x).every((ms) => ms === 4))).toBe(true);
 	});
 });

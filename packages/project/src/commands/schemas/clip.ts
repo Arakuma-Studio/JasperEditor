@@ -345,8 +345,11 @@ export const ClipExtractCmd = cmd('clip.extract', {
 	groups: z.boolean().optional(),
 	syncConflict: SyncConflictSchema.optional(),
 	rippleMarkers: z.boolean().optional(),
-	/** Fade the new joins between two pieces of one recording (a jump in its sound); other joins stay as they are. */
-	joinFades: z.boolean().optional(),
+	/**
+	 * Fade the new joins between two pieces of one recording (a jump in its sound; default false: hard cuts); other joins
+	 * stay as they are.
+	 */
+	joinFades: JoinFadesSchema.optional(),
 });
 export const RangeLiftCmd = cmd('range.lift', {
 	sequenceId: IdRefSchema.optional(),

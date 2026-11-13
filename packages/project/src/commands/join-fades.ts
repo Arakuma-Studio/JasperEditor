@@ -1,17 +1,17 @@
-// Join micro-fades of cut audio (docs/wp-notes/transcript-cleanup.md "Join fades of range cuts"): the faces a range
-// cut leaves in an audio clip, and the hard audio joins of a track, get Clean Up's equal-power edge fades
-// (`AudioClip.edgeFades`, spec 14 TC-024), which preview and every export path render as the same audio fades.
+// Join micro-fades of cut audio (docs/wp-notes/transcript-cleanup.md "Join fades of range cuts"): when asked for, the
+// faces a range cut leaves in an audio clip, and the hard audio joins of a track, get Clean Up's equal-power edge fades
+// (`AudioClip.edgeFades`, spec 14 TC-024), which preview and every export path render as the same audio fades. Cuts are
+// hard by default.
 
 import { readEdgeFades } from '../audio-fade.ts';
-import { FAST_SETTINGS } from '../cleanup/schema.ts';
+import { JOIN_FADE_MS } from '../cleanup/schema.ts';
 import { isThroughEdit } from '../derive/index.ts';
 import type { Clip } from '../schema/sequence.ts';
 import type { Rational } from '../time.ts';
 import type { DClip, DSeq } from './context.ts';
 import { end, type SplitRecord, trackClipIds } from './placement.ts';
 
-/** Default join fade (ms): Clean Up's (the Fast preset's `joins.fadeMs`). */
-export const JOIN_FADE_MS = FAST_SETTINGS.joins.fadeMs;
+export { JOIN_FADE_MS };
 
 /** The sides of an audio clip that get a fade. */
 export type FaceSides = { in?: true; out?: true };

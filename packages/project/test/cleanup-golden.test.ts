@@ -116,8 +116,9 @@ describe('Fast preset on a synthetic recording (golden)', () => {
 		});
 		if (!fast.ok) throw new Error(fast.message);
 		expect(a.plan.stats.outputDuration).toBeGreaterThan(fast.plan.stats.outputDuration);
-		expect(a.plan.fadeMs).toBe(10);
-		expect(fast.plan.fadeMs).toBe(4);
+		// both built-ins cut hard (join fades are opt-in)
+		expect(a.plan.fadeMs).toBe(0);
+		expect(fast.plan.fadeMs).toBe(0);
 	});
 
 	it('is deterministic and maps to frames inside the clip', () => {
