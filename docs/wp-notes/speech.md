@@ -669,3 +669,13 @@ prompts").
   is kept when it differs; `guard.glossary {terms, tokens, events, replaced}` in the result and MCP.
 - Measured on the build VM (turbo, CPU, LJ fixture, packed windows): scoring 19.0 s per speech minute without the
   once-per-job model load (27.1 s with it), transcription without previous text 35.4 s per speech minute.
+
+## 13. Merge edges never keep a word twice
+
+`replaceWindowWords` (`core/gaps.ts`; used by the VAD-chunk merge zones, the hidden-take re-decode and the
+wordless-span pass): an outside word next to the replaced window is dropped when the incoming edge word
+already says it — the same word overlapping it in time, or a symbol / punctuation within 0.25 s that the incoming word
+holds at that end. The reporter's transcript read "El 99% % de las", "el otro 1% % %" and "Una tortura. tortura.": one
+pass wrote "99 %", the other "99%", and the "%" (its midpoint just past the window) stayed beside the glued word,
+clamped to the time left. Test: `apps/engine/test/speech-hidden-takes.test.ts` "a replaced window never keeps a neighbour its edge word already
+says" (fails before: `El 99% % de`).
