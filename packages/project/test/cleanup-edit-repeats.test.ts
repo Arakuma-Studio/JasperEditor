@@ -1074,4 +1074,45 @@ describe('restarts the span decodes miss and the stored transcript writes (round
 		expect(sec(c.start)).toBe(sec(spans[0]!.mediaStart));
 		expect(sec(c.end)).toBeLessThanOrEqual(3215.663);
 	});
+
+	// "psicodélico, y le- | Y les juro": the clip ends at 2596.633 inside a dropped take; both span decodes write how that
+	// take went on past the out point ("juro que…"), like the next clip (2603.18) starts
+	const psico = {
+		spans: [span('A', 0, 2594.4, 2596.633), span('B', 134, 2603.183, 2606.8)],
+		words: {
+			A: 'llama@2595.1-2595.3 literalmente@2595.3-2595.78 psicodérico@2595.78-2596.46 y@2596.46-2596.58 le@2596.58-2596.66 juro@2596.66-2596.77 que...@2596.77-2596.84',
+			B: 'Y@2603.187-2603.247 les@2603.247-2603.407 juro@2603.407-2603.587 que@2603.587-2603.727 me@2603.727-2603.847 quedé@2603.847-2604.107',
+		},
+		alt: {
+			A: 'llama@2595.097-2595.297 literalmente@2595.297-2595.777 psicodérico@2595.777-2596.457 y@2596.457-2596.577 le@2596.577-2596.697 juro@2596.697-2596.887 que...@2596.897-2596.937',
+			B: 'Y@2603.19-2603.25 les@2603.25-2603.41 juro@2603.41-2603.59 que@2603.59-2603.73 me@2603.73-2603.85 quedé@2603.85-2604.11',
+		},
+		stored:
+			'literalmente@2595.293-2595.773 psicodélico,@2595.773-2596.567 y@2596.567-2596.633 juro@2596.7-2596.86 que@2596.86-2597.09 les@2603.263-2603.403 juro@2603.403-2603.583 que@2603.583-2603.723',
+	};
+
+	it('P: an attempt the decodes hear going on past the out point like the next clip starts goes', () => {
+		const reps = run(psico.spans, psico);
+		expect(reps.map(brief)).toEqual([['cut', 'y le', 'remove', [[2596.46, sec(psico.spans[0]!.mediaEnd)]]]]);
+	});
+
+	it('P: shown by one decode only, it is reviewed', () => {
+		const alt = {
+			...psico.alt,
+			A: 'llama@2595.097-2595.297 literalmente@2595.297-2595.777 psicodérico@2595.777-2596.62',
+		};
+		expect(run(psico.spans, { ...psico, alt }).map((r) => [r.text, r.suggested, r.held])).toEqual([
+			['y le', 'review', 'decode'],
+		]);
+	});
+
+	it('P: when the next clip is the audio right after the out point, the padding is that clip, no attempt', () => {
+		// the second clip starts 0.1 s after the first one's out point in the source (and says the phrase there)
+		const spans = [span('A', 0, 2594.4, 2596.633), span('B', 134, 2596.733, 2600.0)];
+		const words = {
+			A: psico.words.A,
+			B: 'Y@2596.74-2596.8 les@2596.8-2596.9 juro@2596.9-2597.0 que@2597.0-2597.1',
+		};
+		expect(run(spans, { ...psico, words, alt: { A: psico.alt.A, B: words.B } })).toEqual([]);
+	});
 });
