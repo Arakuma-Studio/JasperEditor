@@ -68,7 +68,7 @@ describe('engine discovery', () => {
 	});
 
 	it.skipIf(process.platform !== 'linux')(
-		'reads <appdir>/engine/runtime.json (token included) and skips stale or dead entries',
+		'reads <appdir>/engine/runtime.json (token included) and skips stale or silent entries of the searched appdirs',
 		async () => {
 			const stale = mkdtempSync(join(tmpdir(), 'jasper-mcp-stale-'));
 			const down = mkdtempSync(join(tmpdir(), 'jasper-mcp-down-'));
@@ -78,12 +78,12 @@ describe('engine discovery', () => {
 			writeRuntime(down, { url: 'http://127.0.0.1:4', port: 4, pid: process.pid, token: 'y' });
 			writeRuntime(live, { url: 'http://127.0.0.1:5', port: 5, pid: process.pid, token: 'secret' });
 			const env = { JASPER_APPDIR: down, XDG_DATA_HOME: data, XDG_CONFIG_HOME: data };
-			const t = await discoverEngine({
-				appdir: stale,
-				env,
-				fetch: fakeFetch(['http://127.0.0.1:5']),
-			});
+			const t = await discoverEngine({ env, fetch: fakeFetch(['http://127.0.0.1:5']) });
 			expect(t).toMatchObject({ url: 'http://127.0.0.1:5', token: 'secret', source: 'runtime-file' });
+			// an --appdir with a stale file is not answered by another engine either
+			expect(
+				await discoverEngine({ appdir: stale, env, fetch: fakeFetch(['http://127.0.0.1:5']) }),
+			).toBeNull();
 			expect(t?.detail).toBe(join(live, 'engine', 'runtime.json'));
 			const t2 = await discoverEngine({
 				token: 'mine',
@@ -91,6 +91,24 @@ describe('engine discovery', () => {
 				fetch: fakeFetch(['http://127.0.0.1:5']),
 			});
 			expect(t2?.token).toBe('mine');
+		},
+	);
+
+	it.skipIf(process.platform !== 'linux')(
+		'never leaves an --appdir whose engine does not answer for another engine',
+		async () => {
+			// a test engine frozen or busy must not hand its calls to the user's engine on the default port
+			const mine = mkdtempSync(join(tmpdir(), 'jasper-mcp-mine-'));
+			const empty = mkdtempSync(join(tmpdir(), 'jasper-mcp-empty-'));
+			writeRuntime(mine, { url: 'http://127.0.0.1:6', port: 6, pid: process.pid, token: 'mine' });
+			const others = fakeFetch(['http://127.0.0.1:47900']);
+			const env = { XDG_DATA_HOME: '/nonexistent', XDG_CONFIG_HOME: '/nonexistent', HOME: '/nonexistent' };
+			expect(await discoverEngine({ appdir: mine, env, fetch: others })).toMatchObject({
+				url: 'http://127.0.0.1:6',
+				token: 'mine',
+				source: 'runtime-file',
+			});
+			expect(await discoverEngine({ appdir: empty, env, fetch: others })).toBeNull();
 		},
 	);
 

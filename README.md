@@ -533,9 +533,9 @@ Then ask the agent, for example: *"Call engine_status, create a project called T
 /tmp/teaser.mp4."*
 
 How the server finds the engine, in order: `--engine-url` / `--token` (or `JASPER_ENGINE_URL` /
-`JASPER_ENGINE_TOKEN`); the `engine/runtime.json` a running engine writes into its appdir, looked up for
-`--appdir`, `JASPER_APPDIR`, the platform appdir and the desktop app's appdir; then
-`http://127.0.0.1:47900`. `pnpm dev` keeps its appdir in `./.stage`, which the last step covers; for an
+`JASPER_ENGINE_TOKEN`); the `engine/runtime.json` a running engine writes into its appdir, looked up in
+`--appdir` alone when it is given (an engine there that does not answer is still the one used, never another),
+else in `JASPER_APPDIR`, the platform appdir and the desktop app's appdir; then `http://127.0.0.1:47900`. `pnpm dev` keeps its appdir in `./.stage`, which the last step covers; for an
 engine on another port pass `--appdir /abs/path/to/JasperEditor/.stage` (or `--engine-url`) after the script
 path. The desktop app's per-launch token is read from its `runtime.json` (mode 0600), so nothing has to be
 copied and the token is never shown to the agent.
@@ -543,7 +543,7 @@ copied and the token is never shown to the agent.
 | Option (append after `jasper-mcp.mjs`) | Effect |
 |---|---|
 | `--start-engine` | start a headless engine when none is running, so agents can work with JasperEditor closed (needs `pnpm build`; stops with the server) |
-| `--appdir <dir>` | look for `<dir>/engine/runtime.json` first (and use it for `--start-engine`) |
+| `--appdir <dir>` | use only the engine of `<dir>/engine/runtime.json`, never another one (and that appdir for `--start-engine`) |
 | `--engine-url <url>` `--token <t>` | skip discovery |
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |

@@ -1,6 +1,7 @@
 // Finds a running JasperEditor engine for jasper-mcp (docs/wp-notes/wp-mcp.md):
 //   1. explicit `--engine-url` / `--token`, else JASPER_ENGINE_URL / JASPER_ENGINE_TOKEN
-//   2. `<appdir>/engine/runtime.json` written by a running engine, for `--appdir`, JASPER_APPDIR, the
+//   2. `<appdir>/engine/runtime.json` written by a running engine: only `--appdir` when given (never another
+//      engine, even when that one does not answer); otherwise JASPER_APPDIR, the
 //      platform default appdir and the desktop app's appdir (`<Electron userData>/jasper`)
 //   3. the default dev engine on http://127.0.0.1:47900 (its token: from the runtime file its /health names)
 // and, with `--start-engine`, forks a headless engine (random port, per-launch token) when none answers.
@@ -146,6 +147,28 @@ export async function discoverEngine(opts: DiscoveryOptions = {}): Promise<Engin
 			token: token || found?.token || null,
 			source: 'explicit',
 			...(found ? { detail: found.file } : {}),
+			...(h.ok ? { version: h.version } : {}),
+		};
+	}
+
+	// `--appdir` names the engine to use: one that does not answer (frozen, busy) is still the target, so the error
+	// names it, and no other engine (the user's own on the default port) receives calls meant for it.
+	if (opts.appdir) {
+		const dir = resolve(opts.appdir);
+		const info = readRuntimeFile(dir);
+		if (!info || !pidAlive(info.pid)) {
+			log(
+				info ? `stale runtime file in ${dir} (pid ${info.pid} is gone)` : `no engine runtime file in ${dir}`,
+			);
+			return null;
+		}
+		const h = await probe(info.url);
+		if (!h.ok) log(`engine from ${dir} (${info.url}) is not answering: ${h.reason}`);
+		return {
+			url: info.url,
+			token: token || info.token,
+			source: 'runtime-file',
+			detail: appdirPaths(dir).runtimeFile,
 			...(h.ok ? { version: h.version } : {}),
 		};
 	}
