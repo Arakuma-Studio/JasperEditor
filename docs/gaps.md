@@ -136,7 +136,9 @@ result, Apply) and MCP `analyze_voice` / `plan_cleanup` / `apply_cleanup` / `set
 see [wp-notes/transcript-cleanup.md](wp-notes/transcript-cleanup.md). Measured on the user's 16 recordings (Fast,
 shipped code): removed-word precision / recall 0.89 / 0.81 (shorts), 0.88 / 0.82 (long); user edit points within
 50 ms 0.64 / 0.70 (the prototype 0.72, deliberate differences documented). Limits: English lists not measured; the
-Timeline does not draw the derived timeline during Play result.
+Timeline does not draw the derived timeline during Play result; a restart said inside one transcribed word ("extra…
+¡extremadamente!" written as one word) is not found — the level-dip trace is off by default, its real-file trips were
+consonant closures (wp-note "Round 15").
 **Script-guided transcript correction (spec 17):** model, apply, scoring, glossary, job / route / MCP and the editor UI
 (Text ▸ Transcript ▸ Script… and Fix Transcript…, Text ▸ / Sequence ▸ entries, the Fix dialog with its dry run,
 text-diff rows in the Review panel, marks in the transcript, the patch report, "Replace all N" / "Remember", the

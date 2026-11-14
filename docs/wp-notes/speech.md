@@ -409,7 +409,11 @@ whisper evaluation (53 configurations; the numbers of spec 16 §0). This section
   word — in the energy VAD's 10 ms frame levels a fragment broken off at full voice, a dip ≥ 15 dB under the word's
   median for ≥ 20 ms and a new onset, then time for the whole word at the speaker's pace (`wordDip`, shared with Clean
   Up; transcript-cleanup.md "Round 13": "extra… ¡extremadamente!" written as one word as long as the speaker's clean
-  one; measured ≈ 0.26 % of clean read-Spanish words trip it). Window =
+  one; measured ≈ 0.26 % of clean read-Spanish words trip it) — **off by default since round 15**
+  (`RESTART_DIP_DEFAULT`; the job's `RunOptions.restartDip` turns it on): on the reporter's real source with
+  large-v3-turbo it missed the reported word (its fragment fades 12 dB under the word's median before the dip) and its
+  9 trips were stop closures and pauses ("descansa,", "distinto.", "exportarlo,"…; transcript-cleanup.md "Round 15").
+  Window =
   3 s before to 1.5 s after the trace, each edge moved out to the middle of a pause of ≥ 100 ms within 1 s, then to the
   bounds of a word it cuts; overlapping windows merge while ≤ 30 s. Each window is decoded alone (`span`), verbatim,
   `conditionOnPreviousText: false`. Acceptance (`redecodeAccepted`): original words the re-decode does not say again

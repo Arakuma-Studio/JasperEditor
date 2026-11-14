@@ -13,8 +13,22 @@
 // still trip: closures after a loud nasal or /s/ ("compañero", "respondió", "tempestades").
 //
 // Levels are dBFS per 10 ms frame (the speech worker's frame RMS, or the voice analysis' level plane); frame bounds are
-// half-open.
+// half-open. Off by default (`RESTART_DIP_DEFAULT`, round 15): on real audio it missed the reported restart and
+// tripped only on closures.
 import { syllableCount } from './stretch.ts';
+
+/**
+ * Whether the restart dip runs by default — the speech worker's fourth hidden-take trace and Clean Up's review finding
+ * (`restartDip` on `DetectInput`, `AnalyzeSequenceInput` and the speech job's `RunOptions` override it). Off since round
+ * 15 (docs/wp-notes/transcript-cleanup.md "Round 15"; *measured* on the reporter's real 57-minute source with
+ * large-v3-turbo): the reported "extremadamente" does not trip it — its fragment's last 30 ms lie at −27…−28 dBFS,
+ * more than `DIP_BREAK_DB` under the word's median (−15.8) — while every one of the 7 review findings it raised there
+ * was a stop closure ("des-[k]ansa", "dis-[t]into" twice, "ex-[p]ortarlo", "en-[t]eros") or a silent stretch inside
+ * "¡Suscríbete"; loosening the break to 13 dB catches the word at the cost of 30 trips. The level alone cannot tell a
+ * closure from a restart: it needs a better signal (a plosive-burst / spectral-onset detector, or a second voicing
+ * onset) before it is turned back on.
+ */
+export const RESTART_DIP_DEFAULT = false;
 
 /** 10 ms frames per second. */
 const FRAMES_PER_SECOND = 100;

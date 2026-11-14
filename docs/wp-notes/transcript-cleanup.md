@@ -877,10 +877,11 @@ editing it; tests in `cleanup-slivers-tails.test.ts` and `apps/engine/test/speec
 measurement: −15 to −24 dBFS from 244.71 to 245.04 (the "extra-" fragment), −41 dBFS at 245.05–245.06, the whole word
 loud from 245.09; on the cut mixdown the VAD-chunked decode wrote "extra… ¡Extremadamente!" as two words.
 - **Restart dip** (`wordDip`, `packages/project/src/cleanup/dip.ts`, shared by the speech worker and Clean Up; levels
-  per 10 ms frame). Inside a word of ≥ 3 syllables (vowel groups), a run of ≥ 2 frames (20 ms) at least 15 dB under the
-  word's median level, none within 60 ms of the word's edges and at least 150 ms into it, entered from a frame within
-  6 dB of the median within the 30 ms before it (the fragment breaks off at full voice), followed within 40 ms by a rise
-  of ≥ 10 dB over the dip's floor, with at least 0.75 × syllables × the speaker's pace (`secondsPerSyllable`; none
+  per 10 ms frame; **off by default since round 15**, `RESTART_DIP_DEFAULT`: on the real file it missed the reported
+  word and tripped on closures only). Inside a word of ≥ 3 syllables (vowel groups), a run of ≥ 2 frames (20 ms) at
+  least 15 dB under the word's median level, none within 60 ms of the word's edges and at least 150 ms into it, entered
+  from a frame within 6 dB of the median within the 30 ms before it (the fragment breaks off at full voice), followed
+  within 40 ms by a rise of ≥ 10 dB over the dip's floor, with at least 0.75 × syllables × the speaker's pace (`secondsPerSyllable`; none
   without a pace) left after it — time for the whole word again. The reported word: depth ≈ 22 dB, fragment 0.29 s of
   the word, 0.68 s after the dip = 0.94 of six syllables at 0.12 s.
 - *Measured* false trips on clean speech (no restarts expected; one-off script over the shipped function, word times
@@ -982,9 +983,10 @@ Up of `cut_v5.wav`, the loudness-normalised mixdown of the user's 15:31 cut, at 
   within 6 dB of quiet words (−31.6 dBFS here), so an unsure, off-script, quiet word reads as over silence and goes;
   the 0.8 confidence and 20 dB levels come from one speaker's runs.
 
-**A pause never covers a word's time** (round 15: real large-v3-turbo + Clean Up of `cut_v5.wav` at main 30d91f090,
-Fast, script attached, `/tmp/je-words3-local/` on the build host; tests in `cleanup-mixdown.test.ts` and
-`cleanup-property.test.ts`, each failing on 30d91f090):
+**A pause never covers a word's time; the restart dip off** (round 15: real large-v3-turbo + Clean Up of `cut_v5.wav`
+and the 57-minute source at main 30d91f090, Fast, script attached, `/tmp/je-words3-local/` on the build host; tests in
+`cleanup-mixdown.test.ts`, `cleanup-property.test.ts`, `cleanup-slivers-tails.test.ts` and
+`apps/engine/test/speech-hidden-takes.test.ts`, each failing on 30d91f090):
 - **Accepted pauses removed real words** (safety). On the cut, four words went with no word finding: "Tienes [que] ir"
   (pause 505.40–505.55 over the word 505.50–505.56), "casi [todo] lo" (590.21–590.40 over 590.30–590.48; "casi" lost its
   last 0.09 s too), "Funcionan [con] cuentas" (683.62–683.90 over 683.60–683.69) and "juegos [crecían]" (306.18–306.44
@@ -1028,12 +1030,30 @@ Fast, script attached, `/tmp/je-words3-local/` on the build host; tests in `clea
 - Effect: silence inside a word's loose timestamps now stays (on the cut at most the 1.74 s above, and a pause that
   shrinks to `maxGapS` or less is gone); the corpus voice has speech under every word, so the corpus is unchanged, and
   the golden synthetic recording scores the same (word P / R 1.00 / 1.00, time P 1.00, R 0.89).
+- **The restart dip is off by default** (`RESTART_DIP_DEFAULT = false` in `dip.ts`: the speech worker's fourth
+  hidden-take trace and Clean Up's "Possible restart inside the word" review finding; `restartDip` on `DetectInput`,
+  `AnalyzeSequenceInput` and the speech job's `RunOptions` turns it on, as round 13's tests do; the code and its tests
+  stay). *Measured* on the real 57-minute source (large-v3-turbo, 4,960 words, pace 0.125 s per syllable, 10 ms RMS of
+  the 48 kHz mono extraction): the reported "extremadamente" (244.81–245.71, median −15.8 dBFS) has its dip
+  (245.04–245.07, −39.4 dBFS, 23.6 dB deep, rising to −7.7 at 245.10) but its fragment's last 30 ms lie at −28.3,
+  −27.4, −27.6 dBFS, 12 dB under the median — the "breaks off at full voice" condition needs ≥ −21.8 (`DIP_BREAK_DB`
+  6), so no trip, no re-decode window and no finding. The trace tripped on 9 words (`descansa,`, `distinto.`,
+  `distinto,`, `exportarlo,`, `cascada.`, `Barcade.`, `descargar.`, `¡Esperen!`, `¡Suscríbete!`); a break of 9 dB
+  gives 16 trips, 13 dB (which catches the word) 30. Clean Up raised 7 dip review findings, all false: stop closures
+  "des-[k]ansa", "dis-[t]into" ×2, "ex-[p]ortarlo", "en-[t]eros", and a silent stretch inside "¡Suscríbete" (the
+  seventh, "hicieron" 433.24, lay inside a restart removed anyway). The level envelope cannot tell a stop closure
+  (silence, then a burst) from a broken-off fragment (silence, then a new onset). A better signal would need a
+  plosive-burst / spectral-onset detector to exclude closures (a closure ends in a short broadband burst into the same
+  syllable; a restart's new onset starts a voiced syllable with its own formant onset), or a second voicing onset (the
+  voicing plane falling to unvoiced and rising again with a new pitch onset), measured on this file's 9 + 30 trips and
+  the reported word before it is turned back on. Round 13's ellipsis cut-off rule ("extra…" before "extremadamente")
+  is independent and stays on.
 - Corpus (Fast, corpus voice), unchanged: dev 0.997 (2303 / 2311) / 0.960, held out 1.000 (338 / 338) / 0.973,
   held-out-r7 0.998 (479 / 480) / 0.870, held-out-r9 0.992 (260 / 262) / 0.976, held-out-r11 1.000 (65 / 65) / 1.000.
 - Limits: the regression test's frame levels inside the words are reconstructed from the run's pause extents and
   word measurements, not read from the voice-analysis file; the real-file rerun is pending (how much dead air the
   protected word times leave on the cut, and whether the four words now play); a word longer than 1 s still holds
-  pauses inside it.
+  pauses inside it; a restart said inside one word is no longer found unless the re-decode splits it on another trace.
 
 Kinds follow the structure: ≤ 2 words a false start, a whole clause (clause start, clause end, ≥ 3 content words) a
 retake (with a group), else a restart; inside re-decoded ranges they become hidden retakes as before. The settings keep
@@ -1068,7 +1088,7 @@ words (fillers aside) removed. Measured (both modes, Fast, corpus voice):
 | round 12 (slivers, sentence-end tails, quiet speech, stretch by pace): every split | unchanged | 0.997, 1.000, 0.998, 0.992, 1.000 | 0.960, 0.973, 0.870, 0.976, 1.000 |
 | round 13 (restart dip, ellipsis cut-offs): every split | unchanged | 0.997, 1.000, 0.998, 0.992, 1.000 | 0.960, 0.973, 0.870, 0.976, 1.000 |
 | round 14 (hallucinations need non-speech evidence, head / tail on the script alignment): every split | unchanged | 0.997, 1.000, 0.998, 0.992, 1.000 | 0.960, 0.973, 0.870, 0.976, 1.000 |
-| round 15 (no pause over a word's time): every split | unchanged | 0.997, 1.000, 0.998, 0.992, 1.000 | 0.960, 0.973, 0.870, 0.976, 1.000 |
+| round 15 (no pause over a word's time, restart dip off): every split | unchanged | 0.997, 1.000, 0.998, 0.992, 1.000 | 0.960, 0.973, 0.870, 0.976, 1.000 |
 
 Per kind at 0108b4021 (dev / held out): hidden-retake 0.997 / 1.000, retake 0.999 / 1.000, restart 0.998 / 1.000,
 false start 1.000 / 1.000, stutter — / 1.000, filler-vocalic 0.943 / —, filler-phrase 1.000 / 1.000, hallucination

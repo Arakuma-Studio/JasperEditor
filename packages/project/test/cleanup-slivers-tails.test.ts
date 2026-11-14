@@ -69,7 +69,12 @@ function voiceOf(words: readonly CleanupWordIn[], seconds?: number) {
 }
 
 /** The plan of one 30 fps clip holding the media: kept pieces (seconds), removed ranges (seconds), the analysis. */
-function plan(words: CleanupWordIn[], voice: CleanupVoice, decisions?: CleanupDecisions) {
+function plan(
+	words: CleanupWordIn[],
+	voice: CleanupVoice,
+	decisions?: CleanupDecisions,
+	restartDip?: boolean,
+) {
 	const H = new Harness({ preset: 'hd-1080p-30' });
 	const r0 = H.ok([
 		{ type: 'media.register', asset: videoAsset({ seconds: voice.frameCount / 100, kind: 'audio' }) },
@@ -83,6 +88,7 @@ function plan(words: CleanupWordIn[], voice: CleanupVoice, decisions?: CleanupDe
 		voice: () => voice,
 		settings: FAST_SETTINGS,
 		...(decisions ? { decisions } : {}),
+		...(restartDip !== undefined ? { restartDip } : {}),
 	});
 	if (!a.ok) throw new Error(a.message);
 	return {
@@ -274,7 +280,7 @@ describe('round 12: sentence ends and quiet speech', () => {
 	});
 });
 
-describe('round 13: a restart inside one word', () => {
+describe('round 13: a restart inside one word (the dip switched on; off by default since round 15)', () => {
 	// "y es extra… ¡extremadamente!" (244.71–245.75 s of the reporter's file, here 234 s earlier): one word of 0.99 s,
 	// as long as the speaker's clean one. Measured: the fragment at −15 to −24 dBFS until 245.04, −41 dBFS at
 	// 245.05–245.06, the whole word loud from 245.09; the fragment's last syllable (−18) and the rise (−30, −22) are
@@ -292,7 +298,9 @@ describe('round 13: a restart inside one word', () => {
 	it('the fragment before the dip is voice for review, removed only when accepted', () => {
 		const { v, put } = voiceOf(words);
 		restart(put);
-		const r = plan(words, v);
+		// off by default (round 15: on real audio it tripped on closures only)
+		expect(plan(words, v).a.findings.filter((x) => x.reason.params.restart === 1)).toEqual([]);
+		const r = plan(words, v, undefined, true);
 		const f = r.a.findings.find((x) => x.reason.params.restart === 1);
 		expect(f).toMatchObject({ kind: 'untranscribed', suggested: 'review' });
 		expect(f!.reason.params.text).toBe('extremadamente');
@@ -300,7 +308,7 @@ describe('round 13: a restart inside one word', () => {
 		// never auto-removed: all of the word plays
 		expect(keptOf(r.kept, 10.76, 11.75)).toBeGreaterThan(0.99 - 1e-6);
 		// accepted, the fragment goes (on the 30 fps grid) and the whole word stays
-		const gone = plan(words, v, { accept: [f!.id] });
+		const gone = plan(words, v, { accept: [f!.id] }, true);
 		expect(keptOf(gone.kept, 10.8, 11.04)).toBe(0);
 		expect(keptOf(gone.kept, 11.1, 11.75)).toBeGreaterThan(0.65 - 1e-6);
 		expectExplained(gone, { accept: [f!.id] });
@@ -329,6 +337,7 @@ describe('round 13: a restart inside one word', () => {
 				voice,
 				language: 'es',
 				settings: FAST_SETTINGS,
+				restartDip: true,
 			});
 			expect(d.findings.filter((f) => f.reason.params.restart === 1)).toEqual([]);
 		}

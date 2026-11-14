@@ -146,7 +146,8 @@ export function mergeRecoveredWords<W extends { start: number; end: number }>(
 // - a restart inside one word: in the frame levels, a fragment broken off at full voice, a dip and a new onset, then
 //   time for the whole word at the speaker's pace (`wordDip`, shared with Clean Up; cleanup work note "Round 13":
 //   "extra… ¡extremadamente!" written as one word as long as the speaker's clean one, a 20 ms dip to −41 dBFS between
-//   the fragment and the whole word).
+//   the fragment and the whole word) — only when the caller passes `levels`; the speech job does not by default
+//   (`RESTART_DIP_DEFAULT`, cleanup work note "Round 15": on real audio it tripped on stop closures only).
 //
 // Each trace gives a window from `SUSPECT_BEFORE_FRAMES` (3 s) before it to `SUSPECT_AFTER_FRAMES` (1.5 s) after it,
 // each edge moved out to the middle of the nearest pause (≥ `SUSPECT_EDGE_PAUSE_FRAMES` unvoiced frames) within

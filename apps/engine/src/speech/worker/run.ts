@@ -8,7 +8,12 @@
 // that fails too.
 import type { ChildProcess } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
-import { decodeVoiceAnalysis, VOICE_ANALYSIS_VERSION, VOICE_CLASSES } from '@jasper/project/cleanup-worker';
+import {
+	decodeVoiceAnalysis,
+	RESTART_DIP_DEFAULT,
+	VOICE_ANALYSIS_VERSION,
+	VOICE_CLASSES,
+} from '@jasper/project/cleanup-worker';
 import { CUDA_STATUS, type ProviderId, shortReason } from '../../tools/ort.ts';
 import { restrictInputs } from '../../tools/protocols.ts';
 import { type Chunk, mergeZones, shiftedChunks, vadChunks } from '../core/chunks.ts';
@@ -352,6 +357,11 @@ export type RunOptions = {
 	ort?: LoadOptions['ort'];
 	/** Diagnostic lines for the job log (the worker writes them to stderr, which the engine logs). */
 	onLog?(line: string): void;
+	/**
+	 * Words holding a restart-shaped level dip are a hidden-take trace (`wordDip`; default `RESTART_DIP_DEFAULT`, off:
+	 * docs/wp-notes/transcript-cleanup.md "Round 15").
+	 */
+	restartDip?: boolean;
 };
 
 const isGpu = (p: ProviderId) => p !== 'cpu';
@@ -662,8 +672,8 @@ function mergeRecovered(a: RecoveredReport | null, b: RecoveredReport | null): R
 
 /**
  * Hidden takes (`core/gaps.ts`, docs/wp-notes/speech.md §11.3 "Hidden takes"): decodes again, each alone, the windows around
- * stretched words, short wordless voice, garbled words (another writing system than `r.language`) and words holding
- * a dip and a new onset (a restart inside the word) of `r` —
+ * stretched words, short wordless voice, garbled words (another writing system than `r.language`) and, with
+ * `restartDip`, words holding a dip and a new onset (a restart inside the word) of `r` —
  * verbatim, without the previous text — and replaces a window's words when the re-decode holds more words consistent
  * with the audio and re-says the original ones (`redecodeAccepted`; original words it wrote nothing over stay, garbage
  * never does); the window's segments are replaced with it. A
@@ -677,9 +687,10 @@ async function redecodeSuspects(
 	r: WhisperResult,
 	mask: SpeechMask,
 	opts: WhisperOptions,
+	restartDip: boolean,
 ): Promise<{ result: WhisperResult; report: RedecodedReport | null }> {
-	// a restart inside a word is a dip in the frame levels (the energy VAD's 10 ms RMS)
-	const { windows, skipped } = suspectWindows(r.words, mask, r.language, input.db);
+	// a restart inside a word is a dip in the frame levels (the energy VAD's 10 ms RMS) — when the dip trace is on
+	const { windows, skipped } = suspectWindows(r.words, mask, r.language, restartDip ? input.db : null);
 	if (!windows.length && !skipped) return { result: r, report: null };
 	const report: RedecodedReport = {
 		windows: windows.length,
@@ -883,7 +894,14 @@ async function recognise(
 		const again = await recoverWordlessSpans(model, input, first, mask, options);
 		if (spec.redecode === false) return { ...again, redecoded: null, chunked, va };
 		opts.onProgress?.(0.955, 'Checking for hidden takes');
-		const hidden = await redecodeSuspects(model, input, again.result, mask, options);
+		const hidden = await redecodeSuspects(
+			model,
+			input,
+			again.result,
+			mask,
+			options,
+			opts.restartDip ?? RESTART_DIP_DEFAULT,
+		);
 		// a replaced window can leave voice without words where the original had a stretched word over it (run 4,
 		// fragment E: the take at 38.14–42.15), and any window a word still stretched over voice: those are decoded
 		// alone too, like the first safety net

@@ -254,6 +254,8 @@ export type AnalyzeSequenceInput = {
 	language?: string | null;
 	decisions?: CleanupDecisions;
 	scope?: CleanupScope;
+	/** Look for a restart inside one word by its level dip (default `RESTART_DIP_DEFAULT`, off: `cleanup/dip.ts`). */
+	restartDip?: boolean;
 };
 
 /** Detects and plans the cleanup of a sequence (dry run). */
@@ -325,6 +327,7 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 			lists: lists ?? null,
 			settings,
 			redecoded: transcriptRedecoded(t),
+			...(input.restartDip !== undefined ? { restartDip: input.restartDip } : {}),
 			spans: run.clips.map((c) => {
 				const [a, b] = extentOf(c);
 				return { start: toMediaFlicks(c, a), end: toMediaFlicks(c, b) };

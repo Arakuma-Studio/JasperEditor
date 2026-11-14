@@ -9,7 +9,7 @@
 // stutters, head / tail, lexical review, ASR suspects; plus the frame findings: pauses, breaths, untranscribed voice.
 import { VOICE_CLASS_BREATH, VOICE_CLASS_SPEECH, voiceLevelDb } from '@jasper/audio-dsp';
 import { FLICKS_PER_SECOND } from '../time.ts';
-import { wordDip } from './dip.ts';
+import { RESTART_DIP_DEFAULT, wordDip } from './dip.ts';
 import {
 	builtinLists,
 	type CleanupLanguage,
@@ -97,6 +97,8 @@ export type DetectInput = {
 	 * retakes there are hidden retakes — takes the first decode had written once.
 	 */
 	redecoded?: ReadonlyArray<readonly [number, number]> | null;
+	/** Look for a restart inside one word by its level dip (`wordDip`; default `RESTART_DIP_DEFAULT`, off). */
+	restartDip?: boolean;
 };
 
 export type ScriptLineReport = { index: number; text: string; said: boolean; takes: number };
@@ -688,6 +690,7 @@ export function detectCleanup(input: DetectInput): DetectResult {
 			settings,
 			frameRegions(voice, words, spans, voice.frameCount),
 			secondsPerSyllable(words.map((w) => ({ text: w.text, seconds: w.e - w.s }))),
+			input.restartDip ?? RESTART_DIP_DEFAULT,
 		);
 		frameRaw.push(...ff.findings);
 		// the frames of its time (a frame holding its first or last sample is the word's), and the voice it holds
@@ -1177,6 +1180,8 @@ function frameFindings(
 	regions: ReadonlyArray<readonly [number, number]>,
 	/** The speaker's median seconds per syllable (`secondsPerSyllable`), null when unmeasured. */
 	pace: number | null = null,
+	/** Look for restarts inside words by their level dip (`RESTART_DIP_DEFAULT`). */
+	restartDip = RESTART_DIP_DEFAULT,
 ): { findings: FrameFinding[]; sound: Array<[number, number]> } {
 	const out: FrameFinding[] = [];
 	const sound = words.map((): [number, number] => [Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]);
@@ -1433,7 +1438,8 @@ function frameFindings(
 		// a restart inside one word — the fragment broken off at full voice, a dip, then time for the whole word at the
 		// speaker's pace (`wordDip`, round 13: "extra… ¡extremadamente!" written as one word as long as the speaker's
 		// clean one, which the re-decode did not split): the fragment and the dip are voice for review, its text the word
-		for (const w of words) {
+		// — off by default since round 15 (`RESTART_DIP_DEFAULT`: on real audio it tripped on closures only)
+		for (const w of restartDip ? words : []) {
 			const [a, b] = wordFrames(w);
 			if (b <= lo || a >= hi) continue;
 			const d = wordDip((f) => levelDbAt(voice, f), a, b, w.text, pace);
