@@ -942,3 +942,136 @@ describe('repeats the decodes of the real cut wrote differently (rev 144, rev 54
 		]);
 	});
 });
+
+describe('restarts the span decodes miss and the stored transcript writes (round 3: the decodes of the real cut)', () => {
+	const span = (id: string, seqStart: number, from: number, to: number): EditSpan => ({
+		clipId: id,
+		mediaId: 'm',
+		stream: 1,
+		seqStart,
+		seqEnd: seqStart + Math.round((to - from) * 60),
+		mediaStart: S(from),
+		mediaEnd: S(from) + Math.round((to - from) * 60) * F60,
+	});
+	const ws = (t: string): EditWord[] =>
+		t
+			.trim()
+			.split(/\s+/)
+			.map((x) => {
+				const m = /^(.*)@([\d.]+)-([\d.]+)$/.exec(x)!;
+				return { text: m[1]!, start: S(Number(m[2])), end: S(Number(m[3])), confidence: 0.9 };
+			});
+	const byClip =
+		(m: Record<string, string>) =>
+		(sp: EditSpan): EditWord[] | null =>
+			m[sp.clipId] !== undefined ? ws(m[sp.clipId]!) : null;
+	const speech = (spans: EditSpan[], from?: number): CleanupVoice => {
+		const n = Math.ceil(sec(Math.max(...spans.map((s) => s.mediaEnd))) * 100) + 200;
+		const classes = new Uint8Array(n);
+		for (const s of spans)
+			for (let k = Math.ceil(sec(s.mediaStart) * 100); k < Math.floor(sec(s.mediaEnd) * 100); k++)
+				if (from === undefined || k >= from * 100) classes[k] = 2;
+		return {
+			classes,
+			level: new Uint8Array(n),
+			frameCount: n,
+			levels: { floorDb: -50, speechDb: -6, speechThresholdDb: -34.7, breathFloorDb: -42 },
+		};
+	};
+	const run = (
+		spans: EditSpan[],
+		d: {
+			words: Record<string, string>;
+			alt: Record<string, string>;
+			stored: string;
+			windows?: Array<{ clip: string; dip: [number, number]; words: string }>;
+		},
+	) =>
+		findEditRepeats({
+			spans,
+			rate: RATE60,
+			words: byClip(d.words),
+			alt: [byClip(d.alt)],
+			stored: () => ws(d.stored),
+			...(d.windows
+				? {
+						windows: d.windows.map((w) => {
+							const sp = spans.find((s) => s.clipId === w.clip)!;
+							const start = S((w.dip[0] + w.dip[1]) / 2);
+							return {
+								clipId: w.clip,
+								mediaId: 'm',
+								stream: 1,
+								dip: [S(w.dip[0]), S(w.dip[1])] as [number, number],
+								start,
+								end: Math.min(sp.mediaEnd, start + S(3)),
+								words: ws(w.words),
+							};
+						}),
+					}
+				: {}),
+			voice: () => speech(spans),
+			settings: FAST_SETTINGS,
+			language: 'es',
+		});
+	const brief = (r: EditRepeat) => [
+		r.where,
+		r.text,
+		r.suggested,
+		r.cuts.map((c) => [sec(c.start), sec(c.end)]),
+	];
+
+	// "tengo que | Pero | Pero de qué": the 0.37 s fragment written "arrear" and "arreglar." (ASR-alike, not the same)
+	const pero = {
+		spans: [span('A', 0, 3078.933, 3079.3), span('B', 22, 3079.7, 3085.067)],
+		words: {
+			A: 'tengo@3078.727-3078.847 que@3078.847-3079.007 arrear@3079.007-3079.277',
+			B: 'Pero@3079.71-3079.83 de@3079.83-3079.95 que@3079.95-3080.05 me@3080.05-3080.17 sirve@3080.17-3080.43 el@3080.43-3080.51',
+		},
+		alt: {
+			A: 'tengo@3078.67-3078.79 que@3078.79-3078.99 arreglar.@3078.99-3079.28 Pero@3079.71-3079.85',
+			B: 'Pero@3079.713-3079.813 de@3079.813-3079.953 que@3079.953-3080.053 me@3080.053-3080.173 sirve@3080.173-3080.433',
+		},
+		stored:
+			'si@3078.14-3078.54 tengo@3078.54-3078.8 que@3078.8-3078.943 Pero@3078.943-3079.3 de@3079.813-3079.993 qué@3079.993-3080.053 me@3080.053-3080.173 sirve@3080.173-3080.413',
+	};
+
+	it('E1: a short clip whose decodes only look alike is read from the stored transcript, for review', () => {
+		expect(run(pero.spans, pero).map(brief)).toEqual([
+			['cut', 'Pero', 'review', [[3078.933, sec(pero.spans[0]!.mediaEnd)]]],
+		]);
+	});
+
+	it('E1: two decodes agreeing on another word than the stored transcript do not confirm it ("Des-" written "y")', () => {
+		const spans = [span('A', 0, 1312.1, 1312.45), span('B', 21, 1317.4, 1320.867)];
+		const B =
+			'Desde@1317.41-1317.55 que@1317.55-1317.71 empecé@1317.71-1318.01 a@1318.01-1318.07 hacer@1318.07-1318.21';
+		const reps = run(spans, {
+			words: { A: 'y@1312.09-1312.45', B },
+			alt: { A: 'y@1312.09-1312.45', B },
+			stored:
+				'razones.@1310.163-1310.603 Desde@1312.153-1312.45 que@1317.523-1317.703 empecé@1317.703-1317.983 a@1317.983-1318.063',
+		});
+		expect(reps.map(brief)).toEqual([['cut', 'Desde', 'review', [[1312.1, sec(spans[0]!.mediaEnd)]]]]);
+	});
+
+	it('E4: a voiced stretch no span decode writes, said again by the first decoded word, is reviewed', () => {
+		// "…mi primer | que | que de hecho fue": the span decodes start at the retry, the stored transcript drops its "que"
+		const spans = [span('S', 0, 3215.167, 3220.2)];
+		const d = {
+			words: {
+				S: 'que@3215.663-3215.723 de@3215.723-3215.843 hecho@3215.843-3216.003 fue@3216.003-3216.163 mi@3216.163-3216.303',
+			},
+			alt: { S: 'De@3215.69-3215.76 hecho@3215.76-3216.02 fue@3216.02-3216.16 mi@3216.16-3216.3' },
+			stored:
+				'que@3215.2-3215.67 de@3215.67-3215.84 hecho@3215.84-3216.0 fue@3216.0-3216.12 mi@3216.12-3216.22',
+		};
+		const reps = run(spans, d);
+		expect(reps.map((r) => [r.where, r.kind, r.text, r.suggested])).toEqual([
+			['span', 'stutter', 'que', 'review'],
+		]);
+		const c = reps[0]!.cuts[0]!;
+		expect(sec(c.start)).toBe(sec(spans[0]!.mediaStart));
+		expect(sec(c.end)).toBeLessThanOrEqual(3215.663);
+	});
+});
