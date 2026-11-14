@@ -15,7 +15,7 @@ const HELP = `jasper-mcp ${MCP_SERVER_VERSION} — JasperEditor MCP server (stdi
 Options:
   --engine-url <url>     Engine origin (default: discovered; env ${ENV.ENGINE_URL})
   --token <token>        Engine token (env ${ENV.ENGINE_TOKEN}; read from the runtime file otherwise)
-  --appdir <dir>         Look for <dir>/engine/runtime.json first (env ${ENV.APPDIR})
+  --appdir <dir>         Use only the engine of <dir>/engine/runtime.json
   --start-engine         Start a headless engine when none is running (env JASPER_MCP_START_ENGINE=1)
   --engine-entry <file>  Engine bundle to start (env ${ENV.ENGINE_ENTRY}; default: next to this file)
   --engine-port <port>   Port for --start-engine (default: random)
@@ -26,8 +26,8 @@ Options:
                          ${TOOLSET_NAMES.join(', ')}
   --help, --version
 
-Discovery order: --engine-url/env, then <appdir>/engine/runtime.json for --appdir, ${ENV.APPDIR}, the
-platform appdir and the desktop app's appdir, then http://127.0.0.1:47900.`;
+Discovery order: --engine-url/env, then <appdir>/engine/runtime.json for --appdir alone (never another engine),
+else ${ENV.APPDIR}, the platform appdir and the desktop app's appdir, then http://127.0.0.1:47900.`;
 
 function log(line: string): void {
 	process.stderr.write(`[jasper-mcp] ${line}\n`);

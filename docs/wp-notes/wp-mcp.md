@@ -62,7 +62,8 @@ startedAt; written after listen, removed on stop if it is still ours), `playhead
 `POST /api/agent/open-project`, `GET /api/agent/mcp-info`, `via: session|headless` on query responses.
 
 Discovery order: `--engine-url`/`--token` → `JASPER_ENGINE_URL`/`JASPER_ENGINE_TOKEN` → `runtime.json` in
-`--appdir`, `JASPER_APPDIR`, the platform appdir, the desktop appdir (`<Electron userData>/jasper`) →
+`--appdir` alone when given (its engine is used even when it does not answer: a frozen or busy test engine once
+handed a CLI call to the user's engine on the default port) → else `JASPER_APPDIR`, the platform appdir, the desktop appdir (`<Electron userData>/jasper`) →
 `http://127.0.0.1:47900`. Stale files (dead pid or no `/health`) are skipped. With `--start-engine` a headless
 engine is forked (`--engine-entry`, else `apps/engine/dist/engine.mjs` or `resources/engine/engine.mjs` next to
 the bundle) with a per-launch token.
