@@ -307,6 +307,108 @@ describe('cleanup.apply', () => {
 	});
 });
 
+describe('cleanup.apply extend (edge repair)', () => {
+	/** 30 fps: two cut takes of a 20 s recording on V1 + A1 (linked; media 0–5 s at 0, 8–12 s at 150), subtitles, a title on V2. */
+	function cut() {
+		const H = new Harness({ preset: 'hd-1080p-30' });
+		const mediaId = H.registerVideo({ seconds: 20 });
+		const place = (a: number, b: number, at: number) => ({
+			type: 'clip.place',
+			source: { mediaId },
+			sourceRange: { in: { seconds: a }, out: { seconds: b } },
+			at,
+			tracks: { video: 'V1', audio: ['A1'] },
+			mode: 'overwrite',
+		});
+		H.ok([place(0, 5, 0), place(8, 12, 150)]);
+		const words = ['uno', 'dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve', 'diez'].map(
+			(text, i) => ({ text, start: s(3 + i * 0.6), end: s(3.5 + i * 0.6), confidence: 0.9 }),
+		);
+		H.ok([{ type: 'transcript.create', mediaId, language: 'es', origin: 'manual', words }]);
+		H.ok([{ type: 'captions.generate' }]);
+		H.ok([{ type: 'clip.addText', at: 120, duration: 60, track: 'V2', content: { text: 'Día 1' } }]);
+		return { H, a1: H.clips('A1')[0]!.id };
+	}
+	const subtitleHoles = (H: Harness) => {
+		const t = H.seq.videoTracks.find((x) => x.name === 'Subtitles')!;
+		const c = H.clips(t.id);
+		return c
+			.slice(1)
+			.filter((x, i) => x.start > c[i]!.start + c[i]!.duration)
+			.map((x) => x.start);
+	};
+
+	it('grows the clip and its picture into the media; later material, ranges and sync-locked tracks move; undo / redo', () => {
+		const { H, a1 } = cut();
+		const before = H.doc;
+		const snap = clone(before);
+		const holes = subtitleHoles(H);
+		const title = H.clips('V2')[0]!;
+		const r = H.ok([
+			{
+				type: 'cleanup.apply',
+				clipIds: [a1],
+				ranges: [{ start: 200, end: 210 }],
+				extend: [{ clipId: a1, side: 'out', frames: 6 }],
+			},
+		]);
+		expect((r.results[0] as { extended: unknown }).extended).toEqual([
+			{ clipId: a1, side: 'out', frames: 6 },
+		]);
+		// the first take plays 6 frames more of its media, sound and picture; the range moved with the second take
+		expect(H.spans('A1')).toEqual([
+			[0, 156],
+			[156, 206],
+			[206, 266],
+		]);
+		expect(H.spans('V1')).toEqual(H.spans('A1'));
+		expect(H.clips('A1').map((c) => c.sourceIn)).toEqual(H.clips('V1').map((c) => c.sourceIn));
+		// the title across the edge is lengthened over the inserted frames, the subtitles keep no new hole
+		expect(H.clips('V2').map((c) => [c.start, c.duration])).toEqual([[title.start, title.duration + 6]]);
+		expect(subtitleHoles(H).length).toBe(holes.length);
+		expect(checkInvariants(H.doc)).toEqual([]);
+		expect(before).toEqual(snap);
+		const again = cut();
+		again.H.ok([
+			{
+				type: 'cleanup.apply',
+				clipIds: [again.a1],
+				ranges: [{ start: 200, end: 210 }],
+				extend: [{ clipId: again.a1, side: 'out', frames: 6 }],
+			},
+		]);
+		const layout = (x: Harness) =>
+			Object.values(x.seq.clips)
+				.map((c) => [c.id, c.trackId, c.start, c.duration, c.sourceIn, c.linkId])
+				.sort((p, q) => String(p[0]).localeCompare(String(q[0])));
+		expect(layout(again.H)).toEqual(layout(H));
+	});
+
+	it('refuses extend outside extract, a range over the extended edge, and an empty apply', () => {
+		const { H, a1 } = cut();
+		const codes = [
+			{
+				type: 'cleanup.apply',
+				clipIds: [a1],
+				ranges: [],
+				extend: [{ clipId: a1, side: 'out', frames: 3 }],
+				mode: 'lift',
+			},
+			{
+				type: 'cleanup.apply',
+				clipIds: [a1],
+				ranges: [{ start: 140, end: 150 }],
+				extend: [{ clipId: a1, side: 'out', frames: 3 }],
+			},
+			{ type: 'cleanup.apply', clipIds: [a1], ranges: [] },
+		].map((c) => {
+			const r = H.tx([c]);
+			return r.ok ? 'ok' : r.errors[0]!.code;
+		});
+		expect(codes).toEqual(['E_INVALID_PARAM', 'E_INVALID_PARAM', 'E_INVALID_PARAM']);
+	});
+});
+
 describe('cleanup.configure', () => {
 	it('stores settings, script, lists and rejected fingerprints; merges and resets', () => {
 		const { H } = talk();

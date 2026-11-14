@@ -142,11 +142,15 @@ export function FindingsList({
 									type="button"
 									className={`rounded-pr-control px-1 ${kindOn ? 'bg-pr-selected text-pr-strong' : 'text-pr-muted hover:text-pr-text'}`}
 									onClick={() => c.decideKind(kindOn ? 'clear' : 'accept', g.kind)}
-									title={t('Cut every {0}', KIND_LABELS[g.kind])}
+									title={
+										g.kind === 'edge'
+											? t('Repair every {0}', KIND_LABELS[g.kind])
+											: t('Cut every {0}', KIND_LABELS[g.kind])
+									}
 									aria-pressed={kindOn}
 									data-testid={`text.cleanup.kind.${g.kind}.accept`}
 								>
-									Cut all
+									{g.kind === 'edge' ? t('Repair all') : t('Cut all')}
 								</button>
 								<button
 									type="button"
@@ -170,6 +174,8 @@ export function FindingsList({
 							: null;
 					const current = st.current === f.id;
 					const skipped = a.plan.skipped.some((s) => s.findingId === f.id);
+					// an edge repair moves an edit (the clip grows or is trimmed), it does not cut a passage
+					const repair = f.kind === 'edge';
 					return (
 						<li
 							key={f.id}
@@ -194,17 +200,21 @@ export function FindingsList({
 									style={{ color: on ? KIND_COLOR[f.kind] : undefined }}
 									title={
 										on
-											? t('Cut')
+											? repair
+												? t('Repaired')
+												: t('Cut')
 											: f.suggested === 'review'
-												? t('For review: kept unless you cut it')
+												? repair
+													? t('For review: left as cut unless you repair it')
+													: t('For review: kept unless you cut it')
 												: t('Kept')
 									}
 								>
-									{on ? '✂' : f.suggested === 'review' ? '?' : '○'}
+									{on ? (repair ? '⇥' : '✂') : f.suggested === 'review' ? '?' : '○'}
 								</span>
 								<span className="pr-tabular w-12 shrink-0 text-pr-muted">{timeOf(f)}</span>
 								<span
-									className={`min-w-0 flex-1 truncate ${on ? 'text-pr-text line-through' : 'text-pr-text'}`}
+									className={`min-w-0 flex-1 truncate ${on && !repair ? 'text-pr-text line-through' : 'text-pr-text'}`}
 									title={reasonText(f)}
 								>
 									{reasonText(f)}
@@ -222,11 +232,11 @@ export function FindingsList({
 									c.decide(item === 'accept' ? 'clear' : 'accept', f.id);
 								}}
 								aria-pressed={item === 'accept'}
-								aria-label={t('Cut this')}
-								title={t('Cut this (Enter)')}
+								aria-label={repair ? t('Repair this') : t('Cut this')}
+								title={repair ? t('Repair this (Enter)') : t('Cut this (Enter)')}
 								data-testid={`text.cleanup.finding.${f.id}.accept`}
 							>
-								✂
+								{repair ? '⇥' : '✂'}
 							</button>
 							<button
 								type="button"

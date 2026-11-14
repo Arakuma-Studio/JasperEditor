@@ -553,6 +553,11 @@ export const FINDING_KINDS = [
 	 * of another take's picture): its own finding, made by the sequence planner (round 12).
 	 */
 	'fragment',
+	/**
+	 * A cut edge that cuts a word, moved to the word's whole decay / onset (the clip grows into its media) or off another
+	 * word's onset: made by the sequence planner from the cut-edge audit (edge-findings.ts).
+	 */
+	'edge',
 ] as const;
 export type FindingKind = (typeof FINDING_KINDS)[number];
 

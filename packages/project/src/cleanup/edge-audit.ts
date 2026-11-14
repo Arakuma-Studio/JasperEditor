@@ -1,24 +1,24 @@
 // Audit of a sequence's cut edges (docs/wp-notes/transcript-cleanup.md "Cut edges outside speech"): every edge of an
 // audio clip that is a cut — not the recording's own start or end, not a through edit with the clip beside it — and
 // cuts sound on its cut-away side (speech, or a decay / onset over quiet + 6 dB) or lands inside a word (`edgeInsideWord`: a closure), with the
-// word it cuts and the frame the snapper would move it to. Whoever made the cut (Clean Up, a text cut, a manual trim),
-// the audit sees it. Pure: the caller supplies the voice analyses.
+// word it cuts and the frame its repair moves it to (`repairCut`: the cut word's whole decay or onset, or back off
+// another word's onset). Whoever made the cut (Clean Up, a text cut, a manual trim), the audit sees it; Clean Up offers
+// the repairs as `edge` findings (sequence.ts). Pure: the caller supplies the voice analyses.
 import { transcriptForMedia } from '../captions/sequence-transcript.ts';
 import type { Sequence } from '../schema/sequence.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../time.ts';
 import { isRemapped } from '../time-remap/model.ts';
 import type { CleanupVoice } from './detector.ts';
+import { type EdgeRepair, repairCut } from './edge-repair.ts';
 import {
 	awayLevel,
 	EDGE_DECAY_S,
 	type EdgeSide,
-	edgeBounds,
 	edgeCutsSpeech,
 	edgeInsideWord,
 	edgeLevelsOf,
 	edgeScore,
 	edgeThresholds,
-	snapCut,
 } from './edge-snap.ts';
 
 export type CutEdgeAudit = {
@@ -41,8 +41,13 @@ export type CutEdgeAudit = {
 	awayDb: number;
 	/** The transcript word the cut-away sound belongs to (or the one the edge is inside), if any. */
 	word: string | null;
-	/** The sequence frame the edge would move to so it cuts no speech (`snapCut` within its bounds); null: none. */
+	/**
+	 * The sequence frame the edge's repair moves it to (`repairCut`; null: none). Safe repairs land on a clean boundary
+	 * and add or remove only the cut word's own sound.
+	 */
 	fixFrame: number | null;
+	/** The repair (absent without one, and in analyses of older builds). */
+	repair?: Pick<EdgeRepair, 'kind' | 'safe' | 'review'>;
 };
 
 type VoiceLookup = (mediaId: string, stream: number) => CleanupVoice | null | undefined;
@@ -104,14 +109,17 @@ export function auditCutEdges(
 				: side === 'out'
 					? (near.find((w) => w.e > t)?.text ?? null)
 					: ([...near].reverse().find((w) => w.s < t)?.text ?? null);
-			// the frame the snapper would take (one clip frame at a time, never across the clip's other edge)
+			// the repair, over the clip's frame boundaries inside the media (never across the clip's other edge)
 			const reach = Math.ceil((EDGE_DECAY_S * FLICKS_PER_SECOND) / F) + 1;
 			const candidates: number[] = [];
-			for (let f = frame - reach; f <= frame + reach; f++)
-				if (side === 'in' ? f < c.start + c.duration && mediaS(f) >= 0 : f > c.start)
-					candidates.push(mediaS(f));
-			const s = snapCut(L, { t, side, ...edgeBounds(near, t, side), candidates, words: near });
-			const fix = Math.round(c.start + (s.t * FLICKS_PER_SECOND - c.sourceIn) / F);
+			const mediaEnd = v.frameCount * 0.01;
+			for (let f = frame - reach; f <= frame + reach; f++) {
+				const m = mediaS(f);
+				if (m < 0 || m > mediaEnd + 1e-9) continue;
+				if (side === 'in' ? f < c.start + c.duration : f > c.start) candidates.push(m);
+			}
+			const r = repairCut(L, { t, side, candidates, words: near });
+			const fix = r ? Math.round(c.start + (r.t * FLICKS_PER_SECOND - c.sourceIn) / F) : null;
 			out.push({
 				clipId: c.id,
 				trackId: c.trackId,
@@ -122,7 +130,10 @@ export function auditCutEdges(
 				reason: inside ? 'inside-word' : speech ? 'speech' : 'sound',
 				awayDb: Math.round(awayLevel(L, t, side) * 10) / 10,
 				word: word?.trim() ?? null,
-				fixFrame: s.clean && fix !== frame ? fix : null,
+				fixFrame: fix !== null && fix !== frame ? fix : null,
+				...(r && fix !== frame
+					? { repair: { kind: r.kind, safe: r.safe, ...(r.review ? { review: r.review } : {}) } }
+					: {}),
 			});
 		}
 	}

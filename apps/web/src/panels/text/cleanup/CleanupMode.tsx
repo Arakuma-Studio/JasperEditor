@@ -330,7 +330,9 @@ function Review({ session, seq, st }: { session: EditorSession; seq: Sequence; s
 					disabledReason={blocker ?? undefined}
 					data-testid="text.cleanup.apply"
 				>
-					{t('Apply {0} cuts', a.plan.ranges.length)}
+					{a.plan.extend?.length
+						? t('Apply {0} cuts and {1} edge repairs', a.plan.ranges.length, a.plan.extend.length)
+						: t('Apply {0} cuts', a.plan.ranges.length)}
 				</Button>
 			</div>
 			{st.stale ? (

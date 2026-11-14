@@ -28,6 +28,8 @@ import {
 	wordPeakDb,
 } from './detector.ts';
 import { auditCutEdges, type CutEdgeAudit } from './edge-audit.ts';
+import { planEdgeRepairs } from './edge-findings.ts';
+import { boundingToken } from './edge-repair.ts';
 import { EDGE_DECAY_S, edgeBounds, edgeLevelsOf, onsetBound, snapCut } from './edge-snap.ts';
 import { snapEdge } from './edges.ts';
 import { type EditRepeat, editRepeatCuts } from './edit-repeats.ts';
@@ -109,6 +111,11 @@ export type CleanupPlan = {
 	skipped: Array<{ findingId: string; reason: 'harsh-cut' }>;
 	fadeMs: number;
 	jlFrames: number;
+	/**
+	 * Accepted edge extensions (`edge` findings): the clip's edge (sequence frames of the analysed timeline) grows by
+	 * `frames` into its media, its linked picture with it (`cleanup.apply` `extend`). Absent when there are none.
+	 */
+	extend?: Array<{ clipId: string; side: 'in' | 'out'; frames: number; findingId: string }>;
 };
 
 export type CleanupMediaReport = {
@@ -251,7 +258,7 @@ export function isAccepted(f: CleanupFinding, d: CleanupDecisions, rejected: Rea
 
 const HARSH_KINDS: ReadonlySet<FindingKind> = new Set(['filler-vocalic', 'filler-phrase', 'stutter']);
 const WORD_KINDS: ReadonlySet<FindingKind> = new Set(
-	FINDING_KINDS.filter((k) => k !== 'pause' && k !== 'breath' && k !== 'untranscribed'),
+	FINDING_KINDS.filter((k) => k !== 'pause' && k !== 'breath' && k !== 'untranscribed' && k !== 'edge'),
 );
 const TAKE_KINDS: ReadonlySet<FindingKind> = new Set(['retake', 'false-start', 'restart', 'hidden-retake']);
 
@@ -851,6 +858,74 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 		});
 	}
 
+	// ---- cut edges the plan keeps that cut a word: an `edge` finding each (edge-findings.ts) — a trim when accepted
+	// shortens the piece, an extension goes to `cleanup.apply` as `extend` (the clip and its linked picture grow into
+	// their media)
+	const speech = new Set(sc.clips.map((c) => c.id));
+	const voiceOf = (m: string, st: number) =>
+		[...runs.values()].find((r) => r.mediaId === m && r.stream === st)?.voice ?? null;
+	const cutEdges = auditCutEdges(doc, seq, voiceOf, range).filter((e) => speech.has(e.clipId));
+	const edgeFindings: Array<{ run: MediaRun; f: CleanupFinding }> = [];
+	const extend: NonNullable<CleanupPlan['extend']> = [];
+	for (const r of planEdgeRepairs({
+		doc,
+		seq,
+		rows: cutEdges,
+		clips: clipPlans.map((cp) => ({ clip: cp.clip, extent: cp.extent, kept: cp.keptFrames })),
+	})) {
+		const cp = clipPlans.find((x) => x.clip.id === r.clipId)!;
+		// the word the edit cuts: the kept word beside the edge (the audit's `word` is the cut-away sound's)
+		const t0 = r.row.mediaSeconds;
+		const ws = cp.run.result.words.filter((w) => boundingToken(w.text));
+		const kept = r.side === 'out' ? ws.filter((w) => w.s < t0 - 0.03).pop() : ws.find((w) => w.e > t0 + 0.03);
+		const text = (r.frames > 0 ? kept?.text : r.row.word)?.trim() ?? '';
+		const fp0 = findingFingerprint(
+			cp.run.mediaId,
+			cp.run.stream,
+			'edge',
+			r.media[0],
+			r.media[1],
+			`${r.side} ${text}`,
+		);
+		const f: CleanupFinding = {
+			id: `f${findings.length}`,
+			kind: 'edge',
+			range: {
+				start: Math.max(0, Math.round(r.media[0] * FLICKS_PER_SECOND)),
+				end: Math.max(0, Math.round(r.media[1] * FLICKS_PER_SECOND)),
+			},
+			words: null,
+			confidence: r.safe ? 0.8 : 0.5,
+			reason: {
+				key: 'cleanup.reason.edge',
+				params: {
+					text,
+					side: r.side,
+					frames: r.frames,
+					seconds: round3(r.media[1] - r.media[0]),
+					clipId: r.clipId,
+					frame: r.row.frame,
+					cut: r.row.reason,
+					...(r.review ? { review: r.review } : {}),
+				},
+			},
+			suggested: r.safe ? 'remove' : 'review',
+			fingerprint: edgeFindings.some((x) => x.f.fingerprint === fp0) ? `${fp0}~${r.clipId}` : fp0,
+		};
+		findings.push(f);
+		edgeFindings.push({ run: cp.run, f });
+		if (!isAccepted(f, decisions, rejected)) continue;
+		accepted.add(f);
+		if (r.frames > 0) {
+			extend.push({ clipId: r.clipId, side: r.side, frames: r.frames, findingId: f.id });
+			continue;
+		}
+		const k = r.side === 'out' ? cp.keptFrames.length - 1 : 0;
+		const piece = cp.keptFrames[k]!;
+		if (r.side === 'out') piece[1] += r.frames;
+		else piece[0] -= r.frames;
+	}
+
 	// ---- removed ranges: where every speech clip covering a frame removes it
 	const events = new Set<number>();
 	for (const cp of clipPlans) {
@@ -889,9 +964,13 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 		const arr = new Int8Array(n).fill(-1);
 		const own = fragments.filter((x) => x.run === run).map((x) => x.f);
 		const edits = edit.filter((e) => run.clips.some((c) => e.cuts.some((x) => x.clipId === c.id)));
-		for (const f of [...run.result.findings, ...own, ...edits.map((e) => e.finding)]) {
+		const edges = edgeFindings.filter((x) => x.run === run).map((x) => x.f);
+		for (const f of [...run.result.findings, ...own, ...edits.map((e) => e.finding), ...edges]) {
 			const byEdit = edits.some((e) => e.finding === f);
-			if (!accepted.has(f) || (f.kind !== 'fragment' && !byEdit && (!f.words || !WORD_KINDS.has(f.kind))))
+			if (
+				!accepted.has(f) ||
+				(f.kind !== 'fragment' && f.kind !== 'edge' && !byEdit && (!f.words || !WORD_KINDS.has(f.kind)))
+			)
 				continue;
 			const a = Math.max(0, Math.floor(f.range.start / FLICKS_PER_SECOND / FR));
 			const b = Math.min(n, Math.ceil(f.range.end / FLICKS_PER_SECOND / FR));
@@ -947,7 +1026,8 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 	const fps = rate.num / rate.den;
 	const inputFrames = union.reduce((s, [a, b]) => s + b - a, 0);
 	const removedFrames = removedRanges.reduce((s, [a, b]) => s + b - a, 0);
-	const outputDuration = (inputFrames - removedFrames) / fps;
+	const extendedFrames = extend.reduce((n, e) => n + e.frames, 0);
+	const outputDuration = (inputFrames - removedFrames + extendedFrames) / fps;
 	const atEdge = (a: number, b: number) => union.some(([x, y]) => a === x || b === y);
 	const joins = removedRanges.filter(([a, b]) => !atEdge(a, b)).length;
 
@@ -1013,14 +1093,8 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 		skipped,
 		fadeMs: settings.joins.fadeMs,
 		jlFrames: settings.joins.jlFrames,
+		...(extend.length ? { extend } : {}),
 	};
-	const speech = new Set(sc.clips.map((c) => c.id));
-	const cutEdges = auditCutEdges(
-		doc,
-		seq,
-		(m, st) => [...runs.values()].find((r) => r.mediaId === m && r.stream === st)?.voice ?? null,
-		range,
-	).filter((e) => speech.has(e.clipId));
 	return {
 		ok: true,
 		settings,

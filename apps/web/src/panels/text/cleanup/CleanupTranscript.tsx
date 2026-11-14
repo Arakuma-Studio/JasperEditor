@@ -66,18 +66,22 @@ export function CleanupTranscript({ session, st }: { session: EditorSession; st:
 	const chip = (f: CleanupFinding) => {
 		const on = findingAccepted(f, st.decisions, remembered);
 		const secs = typeof f.reason.params.seconds === 'number' ? f.reason.params.seconds : 0;
-		const glyph = f.kind === 'pause' ? '‖' : f.kind === 'breath' ? '≈' : '♪';
+		const glyph = f.kind === 'pause' ? '‖' : f.kind === 'breath' ? '≈' : f.kind === 'edge' ? '⇥' : '♪';
+		const repair = f.kind === 'edge';
 		return (
 			<button
 				key={f.id}
 				type="button"
-				className={`mx-[2px] inline-flex items-center rounded-pr-pill border px-1 align-baseline text-pr-small leading-none ${st.current === f.id ? 'bg-pr-selected text-pr-strong' : 'text-pr-muted'} ${on ? 'line-through' : ''}`}
+				className={`mx-[2px] inline-flex items-center rounded-pr-pill border px-1 align-baseline text-pr-small leading-none ${st.current === f.id ? 'bg-pr-selected text-pr-strong' : 'text-pr-muted'} ${on && !repair ? 'line-through' : ''}`}
 				style={{ borderColor: KIND_COLOR[f.kind], textDecorationColor: KIND_COLOR[f.kind] }}
 				onClick={() => c.select(f.id)}
-				title={`${KIND_LABELS[f.kind]} · ${secs.toFixed(2)} s · ${on ? t('Cut') : t('Kept')}`}
+				title={`${KIND_LABELS[f.kind]} · ${secs.toFixed(2)} s · ${on ? (repair ? t('Repaired') : t('Cut')) : t('Kept')}`}
 				data-testid={`text.cleanup.chip.${f.id}`}
 			>
-				{glyph} {secs.toFixed(1)}
+				{glyph}{' '}
+				{repair
+					? `${Number(f.reason.params.frames) > 0 ? '+' : '−'}${Math.abs(Number(f.reason.params.frames))}`
+					: secs.toFixed(1)}
 			</button>
 		);
 	};
