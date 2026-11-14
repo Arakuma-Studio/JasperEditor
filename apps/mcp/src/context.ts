@@ -531,9 +531,9 @@ export async function waitJob(
 		try {
 			job = await ctx.engine((c) => c.getJob(jobId));
 		} catch (e) {
-			// the engine took the poll and went quiet (busy or paused): the job is not known to have ended or vanished
+			// the engine took the poll and went quiet (busy or paused) for a whole request deadline: the job is not known to
+			// have ended or vanished
 			if (!(e instanceof EngineRequestAborted) || e.kind !== 'timeout') throw e;
-			if (Date.now() < until || signal?.aborted) continue;
 			throw new ToolError(
 				'ENGINE_TIMEOUT',
 				`The engine did not answer while job ${jobId} was awaited; the job may still be running`,
