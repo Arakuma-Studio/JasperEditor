@@ -1,7 +1,7 @@
 // Overlay slides planner (spec 15 EA-024, EA-030, EA-032): one-sided Smooth Slide transitions (`jasper.smooth-slide`)
 // at the free heads and tails of overlay clips — pictures (images, B-roll video) on the video tracks above the A-roll.
 // Measured on the user's projects (FINDINGS §3, research events.csv): 30-frame slides, one-sided, at 166 overlay heads
-// and 57 tails of 312 overlays (shares 0.53 / 0.18), directions down 47 % / up 33 % / left 13 % / right 8 %, Ease In
+// and 57 tails of 312 overlays (shares 0.53 / 0.18), directions up 47 % / down 33 % / left 13 % / right 8 %, Ease In
 // Out Quad 68 % / Cubic 32 %, motion blur High over a 360° shutter, no dolly or reflection. A head (tail) is free when
 // no clip of the same track ends (starts) there and it has no transition: `transition.add {clipId, edge}` then makes a
 // one-sided transition (from / to transparent over the clip's own frames). Each edge draws whether it slides, its

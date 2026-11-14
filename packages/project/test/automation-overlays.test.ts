@@ -640,8 +640,8 @@ describe('overlay slides (EA-024)', () => {
 		expect(tails).toBeLessThan(0.22);
 		const n = plan.slides.length;
 		const share = (d: string) => plan.slides.filter((s) => s.choice.direction === d).length / n;
-		expect(share('down')).toBeGreaterThan(0.41);
-		expect(share('down')).toBeLessThan(0.53);
+		expect(share('up')).toBeGreaterThan(0.41);
+		expect(share('up')).toBeLessThan(0.53);
 		expect(share('right')).toBeLessThan(0.13);
 		const quad = plan.slides.filter((s) => s.choice.easing === 'easeInOutQuad').length / n;
 		expect(quad).toBeGreaterThan(0.6);

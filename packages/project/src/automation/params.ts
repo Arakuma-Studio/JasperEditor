@@ -248,7 +248,7 @@ export const SlideParamsSchema = z.strictObject({
 	/** Share of overlay heads that slide in (default 0.53) and of tails that slide out (default 0.18). */
 	heads: z.number().min(0).max(1).optional(),
 	tails: z.number().min(0).max(1).optional(),
-	/** Direction weights (default down 47, up 33, left 13, right 8). */
+	/** Direction weights (default down 33, up 47, left 13, right 8). */
 	directions: z.record(z.enum(SLIDE_DIRECTIONS), z.number().min(0).max(1e6)).optional(),
 	/** Easing weights (default ease in-out quad 68, cubic 32). */
 	easings: z.record(z.enum(SLIDE_EASINGS), z.number().min(0).max(1e6)).optional(),
@@ -360,7 +360,7 @@ export const AUTOMATION_DEFAULTS = {
 	slideFrames: 30,
 	slideHeads: 0.53,
 	slideTails: 0.18,
-	slideDirections: { down: 47, up: 33, left: 13, right: 8 },
+	slideDirections: { down: 33, up: 47, left: 13, right: 8 },
 	slideEasings: { easeInOutQuad: 68, easeInOutCubic: 32 },
 	slideMotionBlur: 'high',
 	slideShutterAngle: 360,
