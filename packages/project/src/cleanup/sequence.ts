@@ -862,7 +862,23 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 					if (p.edge === 'tail') piece[1] = p.cut[0];
 					else piece[0] = p.cut[1];
 				}
+			const lastEnd = cp.keptFrames[cp.keptFrames.length - 1]?.[1];
 			cp.keptFrames = cp.keptFrames.filter((x, pi) => !drop.has(`${ci}:${pi}`) && x[1] > x[0]);
+			// a dropped piece at the end leaves another piece last: it keeps the fading decay of its last word too (the
+			// join's cut may lie inside it; nothing follows it now)
+			const last = cp.keptFrames[cp.keptFrames.length - 1];
+			if (v && last && lastEnd !== undefined && last[1] < lastEnd) {
+				const sec = (f: number) => (cp.clip.sourceIn + (f - cp.clip.start) * F) / FLICKS_PER_SECOND;
+				const word = cp.words.reduce<AWord | null>(
+					(m, w) =>
+						(!m || w.e > m.e) &&
+						cp.keptFrames.some(([a, b]) => (w.s + w.e) / 2 >= sec(a) && (w.s + w.e) / 2 < sec(b))
+							? w
+							: m,
+					null,
+				);
+				keepTail(cp.clip, rate, v, cp.extent, last, cp.removedTimes, word);
+			}
 		});
 	}
 
@@ -1456,6 +1472,9 @@ const TAIL_FRAMES = 25;
  * around it (`prev` = the end of the last kept word before, `next` = the start of the first after). Returns the
  * extended span.
  */
+/** How near (s) the next kept word's time a speech frame is that word's: its timestamp may start a little late or early. */
+const ONSET_NEAR_S = 0.03;
+
 function removedRamps(voice: CleanupVoice, [a, b]: Span, prev: number, next: number): Span {
 	const ramp = (k: number) =>
 		k >= 0 && k < voice.frameCount && voice.classes[k] !== VOICE_CLASS_SPEECH && !silentFrame(voice, k);
@@ -1467,12 +1486,18 @@ function removedRamps(voice: CleanupVoice, [a, b]: Span, prev: number, next: num
 		if (ramp(k)) hi = k + 1;
 		else if (voice.classes[k] === VOICE_CLASS_SPEECH || k - hi >= BRIDGE) break;
 	}
+	// sound that runs on without a silent frame into the kept word's speech is that word's rising onset, not this
+	// word's decay (after a quiet consonant read as silence, the frames before the next word's speech)
+	const speech = (k: number) => k >= 0 && k < voice.frameCount && voice.classes[k] === VOICE_CLASS_SPEECH;
+	if (hi > h0 && speech(hi) && hi * FR >= next - ONSET_NEAR_S - 1e-9) while (hi > h0 && ramp(hi - 1)) hi--;
 	let lo = Math.floor(a / FR + 1e-9);
 	const l0 = lo;
 	for (let k = lo - 1; k >= 0 && l0 - k <= TAIL_FRAMES && k * FR >= prev - 1e-9; k--) {
 		if (ramp(k)) lo = k;
 		else if (voice.classes[k] === VOICE_CLASS_SPEECH || lo - 1 - k >= BRIDGE) break;
 	}
+	// …and sound that runs on from the kept word's speech is its fading decay
+	if (lo < l0 && speech(lo - 1) && lo * FR <= prev + ONSET_NEAR_S + 1e-9) while (lo < l0 && ramp(lo)) lo++;
 	return [Math.min(a, lo * FR), Math.max(b, hi * FR)];
 }
 
