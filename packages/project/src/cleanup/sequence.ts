@@ -27,6 +27,7 @@ import {
 	voicedFrame,
 	wordPeakDb,
 } from './detector.ts';
+import { auditCutEdges, type CutEdgeAudit } from './edge-audit.ts';
 import { EDGE_DECAY_S, edgeBounds, edgeLevelsOf, onsetBound, snapCut } from './edge-snap.ts';
 import { snapEdge } from './edges.ts';
 import { type FragmentContext, findShortPieces, shortPieceFinding } from './fragments.ts';
@@ -129,6 +130,11 @@ export type CleanupAnalysis = {
 	script: DetectResult['script'];
 	media: CleanupMediaReport[];
 	plan: CleanupPlan;
+	/**
+	 * The sequence's current cut edges (speech clips in the scope) that cut speech or land inside a word (absent in
+	 * analyses of older builds).
+	 */
+	cutEdges?: CutEdgeAudit[];
 };
 
 export type VoiceLookup = (mediaId: string, stream: number) => CleanupVoice | null | undefined;
@@ -916,7 +922,14 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 		fadeMs: settings.joins.fadeMs,
 		jlFrames: settings.joins.jlFrames,
 	};
-	return { ok: true, settings, findings, groups, script: script0, media, plan };
+	const speech = new Set(sc.clips.map((c) => c.id));
+	const cutEdges = auditCutEdges(
+		doc,
+		seq,
+		(m, st) => [...runs.values()].find((r) => r.mediaId === m && r.stream === st)?.voice ?? null,
+		range,
+	).filter((e) => speech.has(e.clipId));
+	return { ok: true, settings, findings, groups, script: script0, media, plan, cutEdges };
 }
 
 const round3 = (x: number) => Math.round(x * 1000) / 1000;

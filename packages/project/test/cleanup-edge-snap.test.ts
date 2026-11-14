@@ -5,6 +5,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { CleanupVoice } from '../src/cleanup/detector.ts';
+import { auditCutEdges } from '../src/cleanup/edge-audit.ts';
 import {
 	edgeBounds,
 	edgeInsideWord,
@@ -252,5 +253,42 @@ describe('the review of v8 (source envelopes)', () => {
 		expect(s).toBeGreaterThanOrEqual(171.68);
 		expect(s).toBeLessThanOrEqual(171.73);
 		expect(e).toBeGreaterThanOrEqual(171.88);
+	});
+});
+
+describe('the cut-edge audit', () => {
+	it("lists a manual cut inside a word's decay and a closure, with the word and a frame that fixes it", () => {
+		// "es de Uni|ty": the window's first second as one clip ending at 1351.083 (an over-tight trim), then the rest
+		const w = FIX.unity;
+		const voice = voiceOf(w);
+		const H = new Harness({ preset: 'hd-1080p-60' });
+		const r0 = H.ok([
+			{ type: 'media.register', asset: videoAsset({ seconds: voice.frameCount / 100, kind: 'audio' }) },
+		]);
+		const mediaId = (r0.results[0] as { mediaId: string }).mediaId;
+		const cutAt = 1351.083 - w.from;
+		const place = (a: number, b: number, at: number) => ({
+			type: 'clip.place',
+			source: { mediaId },
+			sourceRange: { in: { flicks: S(a) }, out: { flicks: S(b) } },
+			at,
+			tracks: { audio: ['A1'] },
+			mode: 'overwrite',
+		});
+		H.ok([place(0, cutAt, 0), place(1.3, 1.4, Math.round(cutAt * FPS))]);
+		const words = w.words.map(([text, s0, e, c]) => ({
+			text,
+			start: S(s0),
+			end: S(e),
+			confidence: c ?? 0.95,
+		}));
+		H.ok([{ type: 'transcript.create', mediaId, language: 'es', origin: 'manual', words }]);
+		const rows = auditCutEdges(H.doc, H.seq, () => voice);
+		const first = Object.values(H.seq.clips).find((c) => c.start === 0)!;
+		const out = rows.find((r) => r.side === 'out' && r.clipId === first.id);
+		expect(out).toMatchObject({ reason: 'sound' });
+		// the fix keeps the decay of "-ty" to ≈ 1351.28
+		expect(out!.fixFrame).not.toBeNull();
+		expect(out!.fixFrame! / FPS + w.from).toBeGreaterThanOrEqual(1351.27);
 	});
 });

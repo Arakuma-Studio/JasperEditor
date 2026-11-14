@@ -1149,6 +1149,18 @@ rev 267; the source recording, 16 kHz mono, measured on the build host, `/tmp/je
   transcript, trim and split cuts, the previous document untouched, the same command giving the same timeline,
   refusal, warning; invariants after every transaction), `apps/mcp/test/cut-levels.test.ts`. The editor's Extract
   Text / Lift Text buttons send no levels yet (they cut at the words' frames, as before).
+- **Audit** (`cleanup/edge-audit.ts` `auditCutEdges`, a cleanup check): every cut edge of the speech clips — not the
+  recording's own start or end, not a through edit — that cuts speech in the 50 ms cut away (`speech`), cuts a word's
+  decay or onset over quiet + 6 dB (`sound`, ≈ −35 dBFS on the source) without being clean, or lands in a closure
+  inside a word (`inside-word`), with the word it cuts and the frame the snapper would move it to (`fixFrame`), whoever
+  made the cut. Clean Up analyses carry it (`CleanupAnalysis.cutEdges`, optional in the analysis schema: older files
+  lack it) and the MCP `analyze_voice` / `plan_cleanup` bodies page it as `cutEdges` (clip, edge, frame, timecode,
+  reason, word, level, fixFrame) — result text only, no tool text changed. Measured on the A1 track: rev 152 522 edges
+  (38 out / 119 in `speech`, 244 / 98 `sound`, 10 / 13 `inside-word`; 394 with a fix frame), rev 267 413 (16 / 97,
+  211 / 88, 1 / 0). Not in `verify_export`: that check judges the exported file and records the timeline's cuts at
+  export time without the voice analyses; the audit runs where the analyses are (Clean Up's job). The editor shows no
+  list yet. Test: `cleanup-edge-snap.test.ts` "the cut-edge audit" (an over-tight trim at "Uni|ty" listed with a fix
+  frame that keeps the decay to 1351.30 s).
 - **Measured** (Fast, the script attached, default decisions; whole source as one clip, one-off script over the shipped
   functions): main b7b06eda9 places 780 cut edges, 127 of them with more than −33 dBFS cut away (56 over −28; 49 were
   join out points inside a decay, the Fast style's floor + 20 dB out point); at the end of the round (breaths, closures,
