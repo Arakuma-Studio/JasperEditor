@@ -1008,3 +1008,74 @@ behaviour (the probe is measured, not written; the first round decodes three can
   before the encode, but on the live engine's configuration (7 segments) and in warm exports of a new revision it was
   the last phase; after the changes above it ends ≈ 145 s before the encode in a cold export, but the warm exports' audio (150–177 s,
   mostly the mix) still ends close to their encode (≈ 177 s), so slowing it would lengthen warm jobs.
+
+## 15. Engine responsiveness during an export (implemented: interactive headroom, event-loop line)
+
+`jobs/queue.ts`. Reported on the user's PC (RTX 3080 Ti, 24 cores) during exports of the real project: `import_media`
+did not return within 120 s; during another export (load ≈ 18, test runs beside it) the job took ≈ 2× as long and
+showed 0.1 % for minutes in the bake.
+
+**Cause: an import's probe queued behind the whole export.** An export asks for every CPU slot (`cpuSlots: cores`,
+at least half), the import's `probe` job for 1 slot in the `interactive` lane — and lanes only ordered the queue: with
+0 slots free nothing started, so `import_media` (media register → probe job → wait) waited for the export to end. No
+project mutex is held by an export (it renders a stored request), and the probe's own work is small.
+Measured (this host: 16 logical cores, shared with other agents, load1 27–56 during the runs; a scratch driver, not
+committed — an engine from `makeApp` with 8 slots, a 40 s 720p30 native export: a V1 cut every second over two H.264
+sources, a sub-pixel keyframed still per second on V2 drawn by a kernel stream, a tone bed delivered at −14 LUFS
+through the export's audio workers; a file never registered before imported 5 s into the export, `GET
+/api/capabilities` every 250 ms, `monitorEventLoopDelay` at 10 ms resolution, an in-process CPU profile):
+
+| | Import 5 s into the export | Export |
+|---|---:|---:|
+| main | **61.0 s** — it returned after the export had finished | 66.8 s |
+| this branch | **0.42–0.61 s**, the export still running | 42–52 s |
+
+**Change.** The queue keeps ⌈slots / 8⌉ slots (at least 1; 3 of 24 on the user's PC) above the total that only the
+`interactive` lane may use: a probe, a still, a verify frame or a short track start while an export holds every slot;
+other lanes still see the total, so an export on an idle engine gets exactly the slots it got before, and the
+headroom is at most ⌈slots / 8⌉ CPU-bound threads over the cores while an interactive job runs. Test:
+`jobs.test.ts` ("starts an import's probe while an export holds every CPU slot": the real `POST /api/exports` slot
+request and `POST /api/media/register`; the stand-in export ends once the import's probe is queued, so on main the
+probe runs after the export has succeeded, here while it is running — an order check, no time bound); the lane-order
+test now expects an interactive job to start beside a job holding every slot.
+
+**Event loop.** Every export's log (kept on success and failure) now ends with `event loop delay: p50 … ms, p99 … ms,
+max … ms` over the job; `GET /api/perf` / MCP `perf_stats` already report the delay since their last read. On the run
+above: idle p99 16–20 ms; during the export p50 10 ms (the resolution), p99 70–72 ms, max 513–601 ms; `GET
+/api/capabilities` p50 61–65 ms (18–30 ms idle). The longest main-thread tasks (CPU profile):
+- **`spawn`**: every tool start forks the engine on the main thread — 80–140 ms per start here (≈ 9 ms on an idle
+  machine, `stream/png.ts`), up to ≈ 400–600 ms when the segments, their kernel-stream decoders and the audio's
+  decoders start together. Kernel streams decode a member's picture in-process when it is an unscaled PNG and
+  start one ffmpeg per other picture (scaled mip levels, other formats). Not changed (a spawner process or fewer
+  decodes would be needed).
+- **Remotion's `prepareServer`** (hybrid exports): each `selectComposition` / `renderFrames` / `renderMedia` of a
+  master or still sheet reads the bundle (`bundle.js` 12.6 MB) and its source map (17.8 MB) synchronously and parses
+  the map, ≈ 1–4 s per call at this load (a hybrid run of the driver with 40 text clips: blocks of 1.5–2.7 s in the
+  bake). It is Remotion's error symbolication; not changed (dropping the map from the bundle would remove the
+  read and parse, and the symbolicated stacks).
+- **A dev engine's first bake bundles the compositions with webpack in-process**: one ≈ 20 s block on the main
+  thread (once per composition source change; packaged engines ship the bundle).
+- The audio's mix and delivery passes run on the measurement workers in an engine (a vitest engine without the
+  worker module runs them in-thread: ≈ 9 s of DSP on the main thread in the same export).
+- `GET /api/capabilities` stats every catalogued model file (≈ 60 async stats) on each call: not export work.
+
+The same driver with 40 text clips (a hybrid export: 10 masters and stills baked by Chrome in a dev engine, the
+compositions bundled by the job): the import 55 s in, during `Baking graphics: 7/10 ready`, returned in 0.58 s with
+the export still running (export 117.5 s); the event loop's max was 5.1 s and `GET /api/capabilities`' max 5.2 s —
+the webpack bundle and Remotion's source-map reads above.
+
+**libuv threadpool: not the bottleneck here, unchanged.** An `fs.stat` round trip every 100 ms during the native
+export (two runs each, alternating): `UV_THREADPOOL_SIZE` 4 — p50 0.5 ms, p99 27–31 ms, import 424 / 746 ms; 16 —
+p50 0.3 ms, p99 29–36 ms, import 610 / 556 ms (idle p99 4–14 ms either way). In the hybrid run the round trip
+reached p99 53 ms, max 1.3 s, which coincides with the main-thread blocks (a stat's callback runs on the main
+thread). Raising the pool would have to be set in each launcher's environment (`utilityProcess.fork` in
+`apps/desktop`, `pnpm dev:engine`, `node dist/engine.mjs`) before the process starts; with no measured gain it is
+not done.
+
+**Priority of the export's processes: unchanged.** ffmpeg, Chrome and the workers of an export run at the engine's
+own priority (nice 0, `tools/process.ts`; only background derivative jobs use nice 10), with one thread per granted
+slot. On an idle machine an export keeps every core; beside other processes (the user's test runs at load ≈ 18) it
+shares the CPU with them, which is where the ≈ 2× came from — lowering the export's priority would lengthen it
+further, and raising the engine's needs privileges. The 0.1 % shown during the bake is the native path's progress:
+it counts encoded frames, and the composite waits for the masters it needs (`bakeWait`), so it stays near 0 while the
+stage text counts the masters (`Baking graphics: n/m ready`); a display matter, not a stall.
