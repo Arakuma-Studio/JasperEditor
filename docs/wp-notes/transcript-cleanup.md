@@ -1689,6 +1689,43 @@ Limits: the held-out half was diagnosed after its blind score, so its round-2 fi
 fragment every decode reads wrongly or alike, a restart word stretched over its own dip, a stutter with no window
 there); review findings are about 40 % right on this cut.
 
+#### Acoustic echo (round 3: the five remaining misses)
+
+Rules written before they were run on the recording (the five places are all diagnosed above, so nothing here is
+blind; the guard against overfitting is the review / false-positive count over the whole cut and the corpus gate).
+
+**Echo test** (`echo.ts`, pure): whether a stretch of audio is said again right after — the acoustic trace of a restart
+that no decode writes twice. Features: 40-band log-mel energies of the 16 kHz audio (25 ms Hann window, 10 ms hop,
+512-point FFT, 64–7,600 Hz, natural log of power + 1e-10), each band's mean over the segment removed (level and
+channel do not count). Distance: dynamic time warping with Euclidean frame distances, steps (1,0) (0,1) (1,1), the path
+cost divided by the two lengths' sum. Two segments of length L each (L clamped to 0.12–0.6 s, in 50 ms steps). The
+threshold calibrates itself on the recording: the same distance between `[t − L, t)` and `[t, t + L)` at up to 300
+positions t drawn deterministically from the speech frames of the kept spans (both halves speech) is the null — two
+consecutive stretches of speech, which are different words; an **echo** is a distance under the null's 1st percentile
+(no echo with fewer than 100 null samples). A dip scan, where L is unknown, takes the smallest distance over L = 0.15,
+0.25, 0.35, 0.5 s, and its null takes the same minimum.
+
+**Rules** (all in the check of the cuts; only E1 may remove):
+- **E1 — a short clip the span decodes do not confirm.** A kept clip of at most 1 s whose span decodes confirm none of
+  the stored transcript's words in it — no stored word written, exactly (normalised, not ASR-tolerant), by every span
+  decode — is read from the stored transcript (before: only when the two span decodes shared no word, ASR-tolerantly,
+  so "arrear" / "arreglar" counted as agreeing and two decodes both writing "y" for "Des-" too). Its words said again by
+  the span decode at the next clip's start, where the stored transcript wrote nothing (it merged the retry), are a
+  restart: reviewed; **removed** when the clip's voice echoes the start of the next clip.
+- **E2 — echo-guided windows.** Every level dip of the restart-window shape inside a kept span (not only the first
+  after a phrase onset) whose surroundings echo (dip scan: the audio before the dip's start against the audio from its
+  end) gets a restart window decode too.
+- **E3 — a re-said word stretched over its dip.** A window repeat whose re-said word a span decode writes over the dip
+  was dropped as a closure inside that word; it is kept when the dip echoes (a closure's two sides are different
+  sounds: "mos|trar", "pi|xel", "tie|ne"). Reviewed; removed only with a measured pause, as before.
+- **E4 — a voiced stretch no span decode writes.** At least 0.15 s of speech frames at a phrase's start (a span's start
+  or after ≥ 0.3 s without speech) before the span decode's first word, where the stored transcript writes a word the
+  span decode's first word says again: when the stretch echoes the decoded word's onset, a stutter, reviewed, cut from
+  the stretch's start to the quietest frame before the decoded word.
+
+The engine reads the kept spans' audio once (16 kHz mono, the voice analysis' decode), only when the check of the cuts
+runs, and refuses the echo (the rules fall back to the text-only ones) above 2 h of kept audio.
+
 ### Planning (TC-020 … TC-026)
 
 `analyzeSequenceCleanup({doc, seq, voice, settings?, script?, language?, decisions?, scope?})` (dry run, never changes
