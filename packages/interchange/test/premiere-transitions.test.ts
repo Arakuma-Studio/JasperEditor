@@ -79,7 +79,7 @@ describe('Premiere MatchName transitions', () => {
 		const report = new Report();
 		const p = premiereTransitionParams(UNIVERSE_SLIDE_MATCH_NAME, universeParams(), report);
 		expect(p).toEqual({
-			direction: { value: 'down', keyframes: [] },
+			direction: { value: 'up', keyframes: [] },
 			animation: { value: 'easeInOutQuad', keyframes: [] },
 			dolly: { value: 0, keyframes: [] },
 			reflection: { value: false, keyframes: [] },
@@ -207,7 +207,7 @@ describe('Premiere MatchName transitions', () => {
 		const t = Object.values(p.sequences)[0]!.video[0]!.transitions[0]!;
 		expect(t.effectId).toBe('jasper.smooth-slide');
 		expect(t.from).toBeNull();
-		expect(t.params.direction!.value).toBe('up');
+		expect(t.params.direction!.value).toBe('down');
 		expect(t.params.animation!.value).toBe('easeInOutCubic');
 		expect(t.params.reflection!.value).toBe(true);
 		expect(t.params.motionBlur!.value).toBe('medium');
@@ -228,7 +228,7 @@ describe('Premiere MatchName transitions', () => {
 		expect(checkInvariants(target.doc, { effects: defaultRegistries().effects })).toEqual([]);
 		const tr = Object.values((target.doc.sequences[seqId] as Sequence).transitions)[0]!;
 		expect(tr).toMatchObject({ effectId: 'jasper.smooth-slide', outgoingClipId: null, duration: 15 });
-		expect(tr.params.direction!.value).toBe('up');
+		expect(tr.params.direction!.value).toBe('down');
 		// Premiere's own Slide (no Universe MatchName) keeps its mapping.
 		const own = importFcp7(
 			xml(
