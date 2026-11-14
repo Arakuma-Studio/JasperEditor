@@ -39,7 +39,7 @@ Aspect / Motion Blur / Edge Smoothing, the reflection opacity, what fills the ex
 | Blurriness (`blurriness`) | 0…100; **10** | Gaussian blur of the reflected pictures, σ = 0.4 px × value at 1080 lines (scaled with the sequence height). |
 | Falloff (`falloff`) | 0…1; **0.1** | Reflection opacity `0.6 · clamp(1 − d · falloff · 8)` at `d` picture heights below the edge: 0 = even (S3 Falloff 0.0), 0.6 fades out within ≈ 0.2 heights (S3 Falloff 0.6). |
 | Aspect (`aspect`) | 0.01…20; **1** | Width:height of the reflection relative to the picture: the reflection is `1 / aspect` picture heights tall (samples at `1 − d · aspect`). |
-| Motion Blur (`motionBlur`) | Off, Low, Medium, High; **High** | 1 / 4 / 8 / 16 poses evenly spread (stratum centres) over the shutter and averaged: discrete instances along the real eased path, dolly included (S1 "more instances … between frames"; S3 High shows visible ghosts). |
+| Motion Blur (`motionBlur`) | Off, Low, Medium, High; **High** | The framework's adaptive shutter (`planMotionBlur`, fx-shader-framework.md §19) along the real eased path, dolly included: 32 key poses, about one tap per pixel the pictures' corners travel, capped by the level — Low / Medium / High = the Draft / Auto / High qualities (2.5 px apart, ≤ 16 taps / 1 px, ≤ 64 / 1 px, ≤ 96), per-pixel jitter beyond the cap or on eased (non-uniform) moves. A continuous smear (S1 "more instances … between frames": the higher the level, the more taps). |
 | Shutter Angle (`shutterAngle`) | 90…720°; **360** | Shutter of `angle / 360` frames centred on the frame (`angleShutter`), in progress space (`step` = 1/(d+1) two-sided, 1/d one-sided, × the Start→End span), shrunk symmetrically near the ends so progress 0 / 1 sample only themselves. |
 | Edge Smoothing (`edgeSmoothing`) | None, Low, Medium, High; **None** | Box filter 0 / 1 / 2 / 3 px wide over each picture's and reflection's rectangle, clipped to the frame (a picture at rest stays exact at the frame borders; None = point sampled). |
 | Start, End, Custom Completion, Transition Completion, Reverse | framework standard | As every GPU transition (fx-transition-framework.md §3, §13.5); Reverse plays B → A backwards (sides swapped, `1 − p`). |
@@ -50,7 +50,8 @@ all 292 instances use 360°. Direction is spread across all four values in S4 (�
 direction of S1's demo clip.
 
 Rendering: one stage pass (plus four separable blur passes when Reflection is on with Blurriness > 0). Poses are
-computed in TS (`gpu.uniforms`: `u_slPoses` vec4[16], `u_slCount`, `u_slDir`, `u_slAa`), so the Player, stills, the
+computed in TS (`gpu.uniforms`: `u_slPose`, `u_slDir`, `u_slAa` and the motion blur plan `u_mbPlan` / `u_mbKeys` /
+`u_mbWarp`), so the Player, stills, the
 Remotion export and the hybrid span bakes evaluate the same poses. Timing, one-sided spans (the missing side is
 transparent), alignment and default durations are the framework's.
 
@@ -92,7 +93,10 @@ and `#10` ignored.
    Falloff (fits S3's 0.6 picture), Aspect as the reflection's width:height ratio (S1 says only "stretch horizontally
    or vertically"; it may instead be the blur's aspect), uniform blur with σ = 0.4 px per unit at 1080 lines, and the
    lower-picture-only rule for vertical moves.
-5. **Motion blur** sample counts 4 / 8 / 16, evenly spaced, box shutter centred on the frame, shrunk at the ends.
+5. **Motion blur** box shutter centred on the frame, shrunk at the ends. The plug-in's own sample counts are not
+   documented and S3's High picture shows separate ghosts; the earlier fixed 4 / 8 / 16 evenly spaced poses
+   reproduced those ghosts (16 copies ≈ 4.5 px apart on a 72 px/frame push at 1080p), which users read as a defect,
+   so the levels now cap an adaptive, continuous smear instead (a deliberate departure from S3).
 6. **Edge smoothing** as a 0 / 1 / 2 / 3 px box filter (the plug-in probably supersamples; S1 says High costs render
    time).
 7. **Exposed background** is transparent (S3's preset thumbnails show black; the demo's grey is assumed to be a
@@ -103,13 +107,17 @@ and `#10` ignored.
 ## 5. Validation
 
 - `packages/project/test/transition-smooth-slide.test.ts`: independent easing laws (ends, monotonicity, closed forms,
-  mirror symmetry and fallback); literal exposure sample counts/shutter widths, end shrink and frame step; dolly and
+  mirror symmetry and fallback); shutter widths, taps per pixel of travel and the Low / Medium / High caps, end
+  shrink and frame step; dolly and
   reflection blur scaling; public document commands with `E_INVALID_PARAM`, clamping, keyframes and invariants.
   Registry inventories, packed-uniform/pass counts and the unused CPU shader duplicate were removed.
 - `packages/compositions/test/transition-smooth-slide-gl.test.ts` (WebGL2, SwiftShader): actual rendered pixels have
   independent physical witnesses for directions, missing head/tail transparency, Reverse, dolly/reflection and edge
   smoothing; motion-blur smear grows with shutter angle and Blurriness affects the reflection. No expected pixel
   comes from a parallel production CPU shader. Generic transition goldens own the default fingerprints.
+  `packages/compositions/test/fx-motion-blur-gl.test.ts` (`smooth-slide` smear): the default High blur of a fast push
+  (≈ 50 px/frame) leaves no notches between copies, no holes and a max/min below 1.6 along the smear (14 notches with
+  the former 16 fixed poses).
 - `packages/compositions/test/transition-smooth-slide-parity.e2e.test.ts` (REMOTION_E2E=1): Player (preview) vs
   `renderStill` (export) per pixel.
 - `apps/engine/test/smooth-slide-export.test.ts`: the planner bakes the span (hybrid) or routes to Remotion with a
@@ -126,6 +134,13 @@ and `#10` ignored.
 
 ## 6. Limitations
 
+- Motion blur cost grows with the travel, up to 96 taps per pixel at High (was a flat 16). Measured 2026-11-14 on
+  the user's PC (RTX 3080 Ti, 24 threads, a user render running concurrently; all jobs at nice 19): one 1920×1080
+  Smooth Slide pass in headless-Chrome SwiftShader (fx-motion-blur GL entry, mean of 3) at High took 447 → 2330 ms
+  on a 30-frame Up push mid-move (≈ 70 px of travel: 16 → 70 taps) and 467 → 3430 ms on a 15-frame Left push
+  (≈ 240 px: 16 → 96 taps); Low / Medium cap at 16 / 64 taps. On the GPU export paths the pass is not measurable
+  in wall time: a 14-frame 1080p ProRes 422 HQ export over the span took 9.0 → 8.8 s (hybrid, warm) and
+  18.3 → 17.8 s (Remotion), within run-to-run noise.
 - Behaviour beyond the documented wording is approximated (§4); compare against the plug-in before relying on exact
   pixel matches with Premiere renders.
 - The `.prproj` reader does not exist yet; `premiereTransitionParams` is the conversion it should call.

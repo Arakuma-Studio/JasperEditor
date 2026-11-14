@@ -576,6 +576,24 @@ const SMEARS: [string, 'effect' | 'transition', EffectArgs | TransitionArgs, Lim
 		{ minLength: 20 },
 	],
 	[
+		// Smooth Slide's default High blur through the fastest stretch of its eased push (≈ 50 px per frame): one
+		// smear, not a row of separate copies.
+		'smooth-slide',
+		'transition',
+		{
+			id: 'jasper.smooth-slide',
+			width: W,
+			height: H,
+			frame: 4,
+			duration: 10,
+			row,
+			png,
+			to: 'none',
+			params: { direction: 'left' },
+		},
+		{ minLength: 40, maxRatio: 1.6 },
+	],
+	[
 		'earthquake',
 		'transition',
 		{

@@ -14,15 +14,25 @@
 //   of the reflection, so it is 1 / Aspect picture heights tall), at SMOOTH_SLIDE_REFLECTION_OPACITY fading linearly
 //   to 0 over 1 / (SMOOTH_SLIDE_FALLOFF_RATE · Falloff) picture heights, blurred by Blurriness (σ = 0.4 px × value at
 //   1080 lines). Vertical moves show only the lower picture's reflection (the upper one's is behind the lower picture).
-// - Motion blur: Off / Low / Medium / High = 1 / 4 / 8 / 16 poses evenly spread over a box shutter of Shutter Angle
-//   / 360 frames centred on the frame (in progress space, shrunk at the ends so p = 0 is exactly A and 1 exactly B),
-//   averaged — discrete instances along the real eased path, the same in the Player and in every export.
+// - Motion blur: a box shutter of Shutter Angle / 360 frames centred on the frame (in progress space, shrunk at the
+//   ends so p = 0 is exactly A and 1 exactly B) through the framework's adaptive shutter (`planMotionBlur`): 32 key
+//   poses along the real eased path, and about one tap per pixel the pictures travel, up to a cap set by the level
+//   (Low / Medium / High = the Draft / Auto / High motion blur qualities: 16 / 64 / 96 taps), jittered per pixel
+//   beyond it — a continuous smear rather than separate copies, the same in the Player and in every export.
 // - Edge Smoothing: None (point sampled) / Low / Medium / High = a box filter 0 / 1 / 2 / 3 px wide over each
 //   picture's (and reflection's) rectangle, clipped to the frame so a picture at rest stays exact at the borders.
 import type { ParamValue } from '../../../schema/common.ts';
 import type { TransitionSpec } from '../../../transitions.ts';
 import type { EffectParams, ParamSpec } from '../../effects.ts';
-import { angleShutter } from '../../fx/motion-blur.ts';
+import { GLSL_MB_POSES } from '../../fx/glsl/motion-blur.ts';
+import {
+	angleShutter,
+	type MbPlan,
+	type MbQuality,
+	mbStaticPlan,
+	mbUniforms,
+	planMotionBlur,
+} from '../../fx/motion-blur.ts';
 import { fxParam } from '../../fx/params.ts';
 import { gaussianBlurPasses } from '../../fx/passes.ts';
 import type { ShaderPass } from '../../fx/shader.ts';
@@ -62,15 +72,13 @@ export const SMOOTH_SLIDE_EASING_LABELS: readonly string[] = [
 
 export const SMOOTH_SLIDE_MOTION_BLUR = ['off', 'low', 'medium', 'high'] as const;
 export const SMOOTH_SLIDE_MOTION_BLUR_LABELS = ['Off', 'Low', 'Medium', 'High'] as const;
-/** Poses averaged per frame for each Motion Blur level. */
-const SMOOTH_SLIDE_SAMPLES: Record<(typeof SMOOTH_SLIDE_MOTION_BLUR)[number], number> = {
-	off: 1,
-	low: 4,
-	medium: 8,
-	high: 16,
+/** The motion blur quality (tap spacing and cap, `mbQuality`) of each Motion Blur level; Off = no blur. */
+const SMOOTH_SLIDE_QUALITY: Record<(typeof SMOOTH_SLIDE_MOTION_BLUR)[number], MbQuality | null> = {
+	off: null,
+	low: 'draft',
+	medium: 'auto',
+	high: 'high',
 };
-/** The most poses (the size of the `u_slPoses` array). */
-const SMOOTH_SLIDE_MAX_SAMPLES = 16;
 
 export const SMOOTH_SLIDE_EDGE_SMOOTHING = ['none', 'low', 'medium', 'high'] as const;
 export const SMOOTH_SLIDE_EDGE_SMOOTHING_LABELS = ['None', 'Low', 'Medium', 'High'] as const;
@@ -175,27 +183,53 @@ export function smoothSlideFrameStep(
 }
 
 /**
- * The poses averaged at a frame: as many as the Motion Blur level asks for, evenly spread (stratum centres) over
- * the shutter — Shutter Angle / 360 frames centred on the frame, in progress space, shrunk symmetrically near the
- * ends so progress 0 / 1 sample only themselves.
+ * The frame's pose and motion blur plan. The shutter is Shutter Angle / 360 frames centred on the frame, in progress
+ * space, shrunk symmetrically near the ends so progress 0 / 1 sample only themselves; `plan.times` are its key
+ * poses' progress values. The taps follow the travel of both pictures' corners in stage pixels (dolly included).
+ * Off, a still frame or no travel → `plan.taps` 1: the single pose.
  */
-export function smoothSlidePoses(
+export function smoothSlideMotionBlur(
 	p: EffectParams,
-	ctx: Pick<TrFrameContext, 'progress' | 'duration' | 'hasFrom' | 'hasTo'>,
-): SmoothSlidePose[] {
-	const level = str(p.motionBlur, SMOOTH_SLIDE_DEFAULTS.motionBlur) as keyof typeof SMOOTH_SLIDE_SAMPLES;
-	const n = SMOOTH_SLIDE_SAMPLES[level] ?? SMOOTH_SLIDE_SAMPLES[SMOOTH_SLIDE_DEFAULTS.motionBlur];
-	const prog = clamp(Number.isFinite(ctx.progress) ? ctx.progress : 0, 0, 1);
-	const w = angleShutter(clamp(num(p.shutterAngle, SMOOTH_SLIDE_DEFAULTS.shutterAngle), 90, 720));
-	const half = n > 1 ? Math.min(((w.end - w.start) / 2) * smoothSlideFrameStep(p, ctx), prog, 1 - prog) : 0;
+	ctx: Pick<TrFrameContext, 'progress' | 'duration' | 'hasFrom' | 'hasTo' | 'width' | 'height'>,
+): { pose: SmoothSlidePose; plan: MbPlan } {
 	const dolly = num(p.dolly, 0);
-	const out: SmoothSlidePose[] = [];
-	for (let k = 0; k < n; k++) {
-		const t = n > 1 ? prog + half * ((2 * k + 1) / n - 1) : prog;
+	const poseAt = (t: number): SmoothSlidePose => {
 		const e = smoothSlideEase(p.animation, t);
-		out.push({ e, s: smoothSlideScale(e, dolly) });
-	}
-	return out;
+		return { e, s: smoothSlideScale(e, dolly) };
+	};
+	const prog = clamp(Number.isFinite(ctx.progress) ? ctx.progress : 0, 0, 1);
+	const pose = poseAt(prog);
+	const level = str(p.motionBlur, SMOOTH_SLIDE_DEFAULTS.motionBlur) as keyof typeof SMOOTH_SLIDE_QUALITY;
+	const quality = Object.hasOwn(SMOOTH_SLIDE_QUALITY, level) ? SMOOTH_SLIDE_QUALITY[level] : 'high';
+	if (!quality) return { pose, plan: mbStaticPlan(1) };
+	const w = angleShutter(clamp(num(p.shutterAngle, SMOOTH_SLIDE_DEFAULTS.shutterAngle), 90, 720));
+	const half = Math.min(((w.end - w.start) / 2) * smoothSlideFrameStep(p, ctx), prog, 1 - prog);
+	const [dx, dy] = smoothSlideDirection(p.direction);
+	const W = Math.max(1, ctx.width);
+	const H = Math.max(1, ctx.height);
+	// Picture corners (frame units, before the offset) of A (offset dir·e) and B (dir·(e − 1)).
+	const corners: [number, number][] = [
+		[0, 0],
+		[1, 0],
+		[1, 1],
+		[0, 1],
+	];
+	const plan = planMotionBlur<SmoothSlidePose>({
+		frame: prog,
+		window: { start: -half, end: half },
+		poseAt,
+		points: ({ e, s }) =>
+			[e, e - 1].flatMap((o) =>
+				corners.map(([x, y]): [number, number] => [
+					((dx * o + x - 0.5) * s + 0.5) * W,
+					((dy * o + y - 0.5) * s + 0.5) * H,
+				]),
+			),
+		pack: ({ e, s }) => [e, s, 0, 0],
+		stride: 1,
+		quality,
+	});
+	return { pose, plan };
 }
 
 /** Edge Smoothing filter width (px) of a param value. */
@@ -265,16 +299,27 @@ vec4 sl_pose(vec2 px, float e, float s) {
 }
 void main() {
   vec2 px = tr_px();
-  int n = clamp(u_slCount, 1, ${SMOOTH_SLIDE_MAX_SAMPLES});
-  vec4 acc = vec4(0.0);
-  for (int i = 0; i < ${SMOOTH_SLIDE_MAX_SAMPLES}; i++) {
-    if (i >= n) break;
-    vec4 pose = u_slPoses[i];
-    acc += sl_pose(px, pose.x, pose.y);
+  vec4 acc;
+  if (fx_mbOn()) {
+    // The planned shutter: adaptive taps along the eased path (linear between the key poses), box-shutter weights.
+    int n = fx_mbTaps();
+    float j = fx_mbPlanJitter();
+    acc = vec4(0.0);
+    float wsum = 0.0;
+    for (int i = 0; i < fx_mbDyn(FX_MB_TAP_LIMIT); i++) {
+      if (i >= n) break;
+      vec2 t = fx_mbTap(i, n, j);
+      vec4 q = fx_mbPose(0, t.x);
+      acc += sl_pose(px, q.x, q.y) * t.y;
+      wsum += t.y;
+    }
+    acc /= max(wsum, 1e-6);
+  } else {
+    acc = sl_pose(px, u_slPose.x, u_slPose.y);
   }
-  acc /= float(n);
   fragColor = vec4(min(acc.rgb, vec3(acc.a)), min(acc.a, 1.0));
 }`,
+		include: [GLSL_MB_POSES],
 	};
 }
 
@@ -289,17 +334,12 @@ function slidePasses(p: EffectParams, ctx: TrPlanContext): ShaderPass[] {
 }
 
 function slideUniforms(p: EffectParams, ctx: TrFrameContext) {
-	const poses = smoothSlidePoses(p, ctx);
-	const packed: number[] = [];
-	for (let i = 0; i < SMOOTH_SLIDE_MAX_SAMPLES; i++) {
-		const q = poses[Math.min(i, poses.length - 1)]!;
-		packed.push(q.e, q.s, 0, 0);
-	}
+	const { pose, plan } = smoothSlideMotionBlur(p, ctx);
 	return {
 		u_slDir: smoothSlideDirection(p.direction),
-		u_slPoses: { vec4s: packed },
-		u_slCount: { int: poses.length },
+		u_slPose: [pose.e, pose.s] as [number, number],
 		u_slAa: smoothSlideEdgeWidth(p.edgeSmoothing),
+		...mbUniforms(plan),
 	};
 }
 
