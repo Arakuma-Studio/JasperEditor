@@ -5,6 +5,7 @@
 // - locked tracks are never edited or shifted (ARCHITECTURE §2.3), sync-locked tracks follow ripples.
 
 import type { Draft } from 'immer';
+import { setCaptionLocked } from '../../captions/subtitles/model.ts';
 import { type Box, scaleForMode } from '../../factories.ts';
 import { mediaIntrinsicSize } from '../../process/rescale.ts';
 import { kindCapabilities } from '../../registry/kinds.ts';
@@ -163,6 +164,8 @@ export function rollTrim(doc: DDoc, cmd: CommandOf<'clip.trim'>, h: HandlerConte
 		if (p.out) setClipRange(seq, p.out, p.out.start, next);
 		if (d < 0 && p.inc) setClipRange(seq, p.inc, next, end(p.inc));
 	}
+	// subtitles retimed by hand are kept by captions.regenerate
+	for (const p of plans) for (const c of [p.out, p.inc]) if (c) setCaptionLocked(c as Clip, true);
 	cleanupSequence(seq, h);
 	return { deltaFrames: d };
 }

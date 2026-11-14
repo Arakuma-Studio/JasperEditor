@@ -4,6 +4,7 @@
 // copy of the document) and Create: one `captions.generate` transaction, one History entry.
 import {
 	type CutAwareInput,
+	MAX_OWN_WORDS,
 	type Sequence,
 	type SubtitleRulesInput,
 	type SubtitleTemplate,
@@ -123,6 +124,7 @@ function CreateSubtitlesDialog(props: HostedDialogProps<CreateSubtitlesProps>) {
 	const [opts, setOpts] = useState<CreateSubtitlesOptions>(() => loadCreateOptions());
 	const [raw, setRaw] = useState<Record<string, string>>({});
 	const [profanity, setProfanity] = useState('');
+	const [ownWords, setOwnWords] = useState('');
 	const [source, setSource] = useState<SubtitleSourceChoice>(() => props.source ?? { kind: 'sequence' });
 	const [preview, setPreview] = useState<GenerationPreview | null>(null);
 	const [busy, setBusy] = useState(false);
@@ -155,6 +157,8 @@ function CreateSubtitlesDialog(props: HostedDialogProps<CreateSubtitlesProps>) {
 		else if (p.value !== undefined) (rules as Record<string, unknown>)[r.key] = p.value;
 	}
 	if (opts.rules.punctuation) rules.punctuation = opts.rules.punctuation;
+	const own = parseWordList(ownWords).slice(0, MAX_OWN_WORDS);
+	if (own.length) rules.ownWords = own;
 	const cutInput: CutAwareInput = { ...opts.cutAware };
 	for (const [key, min, max] of [
 		['lookBackSeconds', 0, 2],
@@ -422,6 +426,21 @@ function CreateSubtitlesDialog(props: HostedDialogProps<CreateSubtitlesProps>) {
 								onChange={(e) => setProfanity(e.currentTarget.value)}
 								aria-label="Words to mask"
 								data-testid="subtitles-profanity"
+							/>
+						</RuleRow>
+						<RuleRow
+							label={t('Own-subtitle words')}
+							generic={t('none')}
+							tmpl={cols.template.ownWords?.length ? cols.template.ownWords.join(', ') : t('none')}
+						>
+							<TextField
+								className="w-full"
+								value={ownWords}
+								placeholder={t('comma-separated words, e.g. boing')}
+								title={t('Each of these words always gets a subtitle of its own')}
+								onChange={(e) => setOwnWords(e.currentTarget.value)}
+								aria-label="Own-subtitle words"
+								data-testid="subtitles-ownWords"
 							/>
 						</RuleRow>
 					</div>

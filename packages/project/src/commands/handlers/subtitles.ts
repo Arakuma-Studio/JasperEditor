@@ -31,6 +31,8 @@ import {
 	type LayoutWord,
 	layoutSubtitles,
 	prepareCutEvents,
+	type SubtitleLayout,
+	type SubtitleLayoutInput,
 	type WorkCaption,
 	workCaptionText,
 } from '../../captions/subtitles/layout.ts';
@@ -40,11 +42,13 @@ import {
 	captionGroupOf,
 	captionOf,
 	groupClips,
+	isCaptionLocked,
 	MAX_CAPTION_WORDS,
 	MAX_PROJECT_TEMPLATES,
 	NO_HIGHLIGHT,
 	type SubtitleHighlight,
 	type SubtitleSourceRef,
+	setCaptionLocked,
 	type TextClipCaption,
 } from '../../captions/subtitles/model.ts';
 import {
@@ -447,6 +451,14 @@ function placeTextSubtitles(
 	return ids;
 }
 
+/**
+ * Placed subtitles whose text was shrunk to fit their box (`layoutText`): linking the template style resets the size,
+ * so they are laid out (and fitted) again after it.
+ */
+function shrunkToFit(seq: DSeq, ids: readonly string[], style: TextStyle): Set<string> {
+	return new Set(ids.filter((id) => (seq.clips[id] as DText).content.style.sizePx < style.sizePx));
+}
+
 /** Template animation, effects and highlight on text clips (one pass; keys anchored to each In). */
 function applyTemplateMotion(
 	doc: DDoc,
@@ -704,11 +716,13 @@ function generate(doc: DDoc, cmd: CommandOf<'captions.generate'>, h: HandlerCont
 		origin,
 	);
 	applyTemplateMotion(doc, seq, ids, template, h);
+	const shrunk = shrunkToFit(seq, ids, style);
 	const linked = linkTemplateStyle(doc, seq, template, style, ids, h);
 	for (const id of ids) {
 		const c = seq.clips[id] as DText;
 		if (JSON.stringify(latest(c.content.style)) !== JSON.stringify(linked))
 			c.content.style = clone(linked) as never;
+		if (shrunk.has(id)) layoutText(doc, c, h, seq.settings.width);
 		applyHighlight(c as unknown as TextClip, highlight, () => h.ids.next('kf'));
 	}
 	cleanupSequence(seq, h);
@@ -748,6 +762,63 @@ function generate(doc: DDoc, cmd: CommandOf<'captions.generate'>, h: HandlerCont
 
 const normText = (s: string) => s.split(/\s+/).map(normalizeWord).filter(Boolean).join(' ');
 
+/** The frames a locked subtitle holds: its clip and its words (sequence frames, `[start, end)`). */
+function lockedSpan(c: Clip, rate: Rational): { start: number; end: number } {
+	const F = flicksPerFrame(rate);
+	const ws = wordsInSequence(c, rate);
+	const a = ws.length ? Math.floor(ws[0]!.start / F) : c.start;
+	const b = ws.length ? Math.ceil(ws[ws.length - 1]!.end / F) : c.start + c.duration;
+	return { start: Math.min(c.start, a), end: Math.max(c.start + c.duration, b) };
+}
+
+/**
+ * The layout around locked subtitles: the words they hold (midpoint inside their clip or their own words' span) are
+ * left out, and each stretch between them is laid out on its own, limited to that stretch, so no new subtitle
+ * overlaps a locked one. Without locked subtitles this is the plain layout.
+ */
+function layoutAroundLocked(
+	input: SubtitleLayoutInput,
+	locked: readonly Clip[],
+	rate: Rational,
+): SubtitleLayout {
+	if (!locked.length) return layoutSubtitles(input);
+	const F = flicksPerFrame(rate);
+	const spans = locked.map((c) => lockedSpan(c, rate)).sort((a, b) => a.start - b.start);
+	const midFrame = (w: LayoutWord) => (w.start + Math.floor((w.end - w.start) / 2)) / F;
+	const free = input.words.filter(
+		(w) => !spans.some((sp) => midFrame(w) >= sp.start && midFrame(w) < sp.end),
+	);
+	const lo = input.limit?.start ?? 0;
+	const hi = input.limit?.end ?? Number.POSITIVE_INFINITY;
+	const gaps: { start: number; end: number }[] = [];
+	let from = lo;
+	for (const sp of spans) {
+		if (sp.start > from) gaps.push({ start: from, end: Math.min(sp.start, hi) });
+		from = Math.max(from, sp.end);
+	}
+	if (from < hi) gaps.push({ start: from, end: hi });
+	const out: SubtitleLayout = { captions: [], stats: emptyStats(), events: [] };
+	for (const gap of gaps) {
+		if (gap.end <= gap.start) continue;
+		const words = free.filter((w) => midFrame(w) >= gap.start && midFrame(w) < gap.end);
+		if (!words.length) continue;
+		const part = layoutSubtitles({ ...input, words, limit: gap });
+		out.captions.push(...part.captions);
+		out.events = part.events;
+		const st = out.stats;
+		st.count += part.stats.count;
+		st.snappedToCuts += part.stats.snappedToCuts;
+		st.splitAtCuts += part.stats.splitAtCuts;
+		st.belowMinimum += part.stats.belowMinimum;
+		st.dropped += part.stats.dropped;
+		st.crossing += part.stats.crossing;
+		// every stretch merges the same cuts into zones
+		st.merged = Math.max(st.merged, part.stats.merged);
+		for (const w of part.stats.warnings) if (!st.warnings.includes(w)) st.warnings.push(w);
+	}
+	return out;
+}
+
 function regenerate(doc: DDoc, cmd: CommandOf<'captions.regenerate'>, h: HandlerContext) {
 	const seq = sequenceOfGroup(doc, cmd.groupId, h);
 	const group = groupOrFail(seq, cmd.groupId, h);
@@ -768,22 +839,44 @@ function regenerate(doc: DDoc, cmd: CommandOf<'captions.regenerate'>, h: Handler
 	if (typeof source === 'object' && 'clipIds' in source && !source.clipIds?.length)
 		h.fail('E_NOT_FOUND', 'The clips the group was made from are gone');
 	const src = sourceWords(doc, seq, source as never, range, h, group.language);
-	const old = groupClips(plainSeq(seq), group.id).filter(
-		(c) => !range || (c.start < range.end && c.start + c.duration > range.start),
-	);
+	const members = groupClips(plainSeq(seq), group.id);
+	// locked subtitles (edited by hand, or `lock`) stay as they are; `unlock` gives them back to the layout
+	const lockedIds = new Set(members.filter((c) => isCaptionLocked(c)).map((c) => c.id));
+	const memberIds = new Set(members.map((c) => c.id));
+	for (const [list, on] of [
+		[cmd.lock, true],
+		[cmd.unlock, false],
+	] as const)
+		for (const id of list ?? []) {
+			if (!memberIds.has(id))
+				h.fail('E_INVALID_PARAM', `${id} is not a subtitle of group ${group.id}`, {
+					path: [on ? 'lock' : 'unlock'],
+				});
+			if (on) lockedIds.add(id);
+			else lockedIds.delete(id);
+		}
+	const inRange = (c: Clip) => !range || (c.start < range.end && c.start + c.duration > range.start);
+	const locked = members.filter((c) => lockedIds.has(c.id) && inRange(c));
+	const old = members.filter((c) => !lockedIds.has(c.id) && inRange(c));
 	const trackId =
-		group.trackId && findTrackIn(seq, group.trackId) ? group.trackId : (old[0]?.trackId ?? null);
+		group.trackId && findTrackIn(seq, group.trackId)
+			? group.trackId
+			: (old[0]?.trackId ?? locked[0]?.trackId ?? null);
 	const cuts = cutAware.enabled ? cutEventsOrFail(doc, seq, trackId, cutAware, h) : null;
-	const layout = layoutSubtitles({
-		words: src.words,
-		rules,
-		text,
-		language: src.language,
+	const layout = layoutAroundLocked(
+		{
+			words: src.words,
+			rules,
+			text,
+			language: src.language,
+			rate,
+			cuts: cuts?.events ?? null,
+			cutAware,
+			...(range ? { limit: range } : {}),
+		},
+		locked,
 		rate,
-		cuts: cuts?.events ?? null,
-		cutAware,
-		...(range ? { limit: range } : {}),
-	});
+	);
 	layout.stats.warnings.unshift(...src.warnings, ...(cuts?.warnings ?? []));
 	// keep clips that still match: same words (case and punctuation ignored) overlapping in time
 	const used = new Set<string>();
@@ -811,7 +904,13 @@ function regenerate(doc: DDoc, cmd: CommandOf<'captions.regenerate'>, h: Handler
 			kept: reuse.size,
 			created: layout.captions.length - reuse.size,
 			removed: removed.length,
+			locked: locked.length,
 		};
+	for (const id of [...(cmd.lock ?? []), ...(cmd.unlock ?? [])]) {
+		const t = findTrackIn(seq, seq.clips[id]!.trackId)?.track;
+		if (t) assertUnlocked(t, h);
+		setCaptionLocked(seq.clips[id] as Clip, lockedIds.has(id));
+	}
 	for (const o of removed) {
 		const t = findTrackIn(seq, o.trackId)?.track;
 		if (t) assertUnlocked(t, h);
@@ -858,10 +957,12 @@ function regenerate(doc: DDoc, cmd: CommandOf<'captions.regenerate'>, h: Handler
 			CAPTION_CONTENT_ORIGIN,
 		);
 		applyTemplateMotion(doc, seq, created, template, h);
+		const shrunk = shrunkToFit(seq, created, style);
 		const linked = linkTemplateStyle(doc, seq, template, style, created, h);
 		for (const id of created) {
 			const c = seq.clips[id] as DText;
 			c.content.style = clone(linked) as never;
+			if (shrunk.has(id)) layoutText(doc, c, h, seq.settings.width);
 			applyHighlight(c as unknown as TextClip, hl, () => h.ids.next('kf'));
 		}
 	}
@@ -873,8 +974,28 @@ function regenerate(doc: DDoc, cmd: CommandOf<'captions.regenerate'>, h: Handler
 		kept: kept.length,
 		created: created.length,
 		removed: removed.length,
+		locked: locked.length,
 		clipIds: [...kept, ...created],
 	};
+}
+
+function lockClips(doc: DDoc, cmd: CommandOf<'captions.lock'>, h: HandlerContext) {
+	const ids = idList(cmd.clipIds);
+	if (!ids.length) h.fail('E_INVALID_PARAM', 'clipIds is empty');
+	const { seq, clips } = h.clipsOf(doc, ids);
+	const bad = clips.filter((c) => !captionOf(latest(c) as Clip));
+	if (bad.length)
+		h.fail(
+			'E_INVALID_PARAM',
+			`Not subtitle clips: ${bad
+				.slice(0, 8)
+				.map((c) => c.id)
+				.join(', ')}`,
+			{ blocking: bad.map((c) => c.id) },
+		);
+	for (const c of clips) assertUnlocked(findTrackIn(seq, c.trackId)!.track, h);
+	const changed = clips.filter((c) => setCaptionLocked(c as Clip, cmd.locked)).map((c) => c.id);
+	return { clipIds: changed, locked: cmd.locked };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1453,6 +1574,7 @@ function applyTemplate(doc: DDoc, cmd: CommandOf<'subtitleTemplate.apply'>, h: H
 export const subtitleHandlers = {
 	'captions.generate': generate,
 	'captions.regenerate': regenerate,
+	'captions.lock': lockClips,
 	'captions.alignToCuts': alignToCuts,
 	'captions.convert': convert,
 	'captions.updateGroup': (doc, cmd, h) => {

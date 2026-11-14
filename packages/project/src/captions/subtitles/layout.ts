@@ -14,6 +14,7 @@
 // Words are in sequence flicks; subtitle bounds are integer sequence frames `[start, end)`.
 import { FLICKS_PER_SECOND, type Rational } from '../../time.ts';
 import { frameAt, tickOf } from '../formats/rate.ts';
+import { normalizeWord } from '../words.ts';
 import {
 	type CutAwareOptions,
 	MIN_WORDLESS_PIECE_FRAMES,
@@ -30,6 +31,7 @@ import {
 	subtitleText,
 	transformWords,
 	weakWordsFor,
+	wordPieces,
 } from './text.ts';
 
 /** A transcript word to lay out (sequence time, flicks). */
@@ -39,6 +41,8 @@ export type LayoutWord = {
 	end: number;
 	speaker?: string | null;
 	breakBefore?: string;
+	/** A piece of a word longer than a line (`wordPieces`): it continues the previous piece without a space. */
+	glue?: boolean;
 };
 
 /** A cut as the layout sees it: the edit point (first frame of the new picture) and its cut zone, if any. */
@@ -48,7 +52,7 @@ export type CutEvent = { frame: number; zone?: { start: number; end: number } | 
 export type WorkCaption = {
 	start: number;
 	end: number;
-	words: { text: string; start: number; end: number }[];
+	words: { text: string; start: number; end: number; glue?: boolean }[];
 	speaker: string | null;
 	/** Index of the first word of each line after the first (within `words`). */
 	lineStarts: number[];
@@ -105,16 +109,18 @@ function fitsLines(
 	maxChars: number,
 	lines: number,
 	weak: ReadonlySet<string> | null,
+	glued?: readonly boolean[],
 ) {
-	const starts = breakLines(words, maxChars, Number.POSITIVE_INFINITY, weak);
+	const starts = breakLines(words, maxChars, Number.POSITIVE_INFINITY, weak, glued);
 	if (starts.length + 1 > lines) return false;
 	return true;
 }
 
 /**
  * Groups words into subtitles (half-open word index ranges): `captionBlocks`' rules plus maximum words, the
- * punctuation mode and weak words. `display` holds the displayed text of each word (lengths count on it);
- * punctuation is read from the spoken text.
+ * punctuation mode, weak words and the words that get a subtitle of their own (`ownWords`: a hard break before and
+ * after each). `display` holds the displayed text of each word (lengths count on it); punctuation is read from the
+ * spoken text. Pieces of a split word (`glue`) join the previous piece without a space.
  */
 export function groupSubtitleWords(
 	words: readonly LayoutWord[],
@@ -129,17 +135,22 @@ export function groupSubtitleWords(
 	const weak = weakWordsFor(language);
 	const breakPause = Math.round(rules.breakPauseSeconds * FLICKS_PER_SECOND);
 	const maxDuration = Math.round(rules.maxSeconds * FLICKS_PER_SECOND);
+	const own = new Set((rules.ownWords ?? []).map(normalizeWord).filter(Boolean));
+	const isOwn = (w: LayoutWord) => own.size > 0 && !w.glue && own.has(normalizeWord(w.text));
+	const glued = words.map((w) => !!w.glue);
 	const groups: Array<[number, number]> = [];
 	let a = 0;
 	const blockFits = (from: number, to: number) => {
 		const shown = display.slice(from, to);
-		return fitsLines(shown, maxChars, lines, weak) || to - from === 1;
+		return fitsLines(shown, maxChars, lines, weak, glued.slice(from, to)) || to - from === 1;
 	};
 	for (let i = 0; i < words.length; i++) {
 		if (i === a) continue;
 		const w = words[i]!;
 		const prev = words[i - 1]!;
-		const used = display.slice(a, i).reduce((s, x) => s + charCount(x), 0) + (i - a - 1);
+		let spaces = 0;
+		for (let k = a + 1; k < i; k++) if (!glued[k]) spaces++;
+		const used = display.slice(a, i).reduce((s, x) => s + charCount(x), 0) + spaces;
 		const punct =
 			rules.punctuation === 'always'
 				? endsSentence(prev.text) || endsClause(prev.text)
@@ -151,7 +162,9 @@ export function groupSubtitleWords(
 			w.start - prev.end >= breakPause ||
 			w.end - words[a]!.start > maxDuration ||
 			punct ||
-			w.breakBefore === 'segment';
+			w.breakBefore === 'segment' ||
+			isOwn(w) ||
+			(isOwn(prev) && !w.glue);
 		const soft = !blockFits(a, i + 1) || (rules.maxWords !== null && i - a >= rules.maxWords);
 		if (!hard && !soft) continue;
 		// A soft break after a weak word moves the weak word to the next subtitle when that one can take it.
@@ -205,9 +218,17 @@ export function captionsFromGroups(
 		return {
 			start,
 			end,
-			words: words.slice(g0, g1).map((w, k) => ({ text: shown[k]!, start: w.start, end: w.end })),
+			words: words
+				.slice(g0, g1)
+				.map((w, k) => ({ text: shown[k]!, start: w.start, end: w.end, ...(w.glue ? { glue: true } : {}) })),
 			speaker: words[g0]!.speaker ?? null,
-			lineStarts: breakLines(shown, rules.maxChars, rules.lines, weak),
+			lineStarts: breakLines(
+				shown,
+				rules.maxChars,
+				rules.lines,
+				weak,
+				words.slice(g0, g1).map((w) => !!w.glue),
+			),
 			key: String(g0),
 			wordStart: start,
 		};
@@ -542,9 +563,10 @@ export function layoutSubtitles(input: SubtitleLayoutInput): SubtitleLayout {
 	);
 	if (valid.length < words.length)
 		stats.warnings.push(`${words.length - valid.length} unusable word(s) skipped`);
-	const display = displayWords(valid, text, language);
-	const groups = groupSubtitleWords(valid, display, rules, rate, language);
-	let caps = captionsFromGroups(valid, display, groups, rules, text, rate, language);
+	const split = splitLongWords(valid, displayWords(valid, text, language), rules.maxChars);
+	const display = split.display;
+	const groups = groupSubtitleWords(split.words, display, rules, rate, language);
+	let caps = captionsFromGroups(split.words, display, groups, rules, text, rate, language);
 	const fps = rate.num / rate.den;
 	const minF = Math.max(1, Math.round(rules.minSeconds * fps));
 	const events = input.cuts && input.cutAware.enabled ? prepareCutEvents(input.cuts, minF, stats) : [];
@@ -571,12 +593,78 @@ export function layoutSubtitles(input: SubtitleLayoutInput): SubtitleLayout {
 			rules.maxChars,
 			rules.lines,
 			weak,
+			c.words.map((w) => !!w.glue),
 		);
+		joinGluedPieces(c);
 		if (c.start !== c.wordStart && cutFrames.has(c.start)) stats.snappedToCuts++;
 	}
 	stats.crossing = countCrossings(caps, events);
 	stats.count = caps.length;
 	return { captions: caps, stats, events };
+}
+
+/**
+ * Words longer than a line split at their natural boundaries (`wordPieces`: CamelCase, hyphens, letter / digit
+ * transitions), never inside a stretch of letters: each piece is a word of its own for grouping and line breaking
+ * (`glue`: no space before it on a shared line), timed by its share of the word's characters. The display text is
+ * split; so is the spoken text when it has the same characters (else the pieces read as displayed).
+ */
+function splitLongWords(
+	words: readonly LayoutWord[],
+	display: readonly string[],
+	maxChars: number,
+): { words: LayoutWord[]; display: string[] } {
+	const outWords: LayoutWord[] = [];
+	const outDisplay: string[] = [];
+	words.forEach((w, i) => {
+		const shown = display[i]!;
+		const pieces = wordPieces(shown, maxChars);
+		if (pieces.length === 1) {
+			outWords.push(w);
+			outDisplay.push(shown);
+			return;
+		}
+		const spoken = [...w.text];
+		const sameShape = spoken.length === [...shown].length;
+		const total = [...shown].length;
+		let at = 0;
+		pieces.forEach((piece, k) => {
+			const n = [...piece].length;
+			const start = w.start + Math.round(((w.end - w.start) * at) / total);
+			const end =
+				k === pieces.length - 1 ? w.end : w.start + Math.round(((w.end - w.start) * (at + n)) / total);
+			const piecesText = sameShape ? spoken.slice(at, at + n).join('') : piece;
+			const next: LayoutWord = { ...w, text: piecesText, start, end };
+			if (k > 0) {
+				next.glue = true;
+				delete next.breakBefore;
+			}
+			outWords.push(next);
+			outDisplay.push(piece);
+			at += n;
+		});
+	});
+	return { words: outWords, display: outDisplay };
+}
+
+/** Pieces of a split word that end up on one line become one word again (mutates; lines re-indexed). */
+function joinGluedPieces(c: WorkCaption): void {
+	if (!c.words.some((w) => w.glue)) return;
+	const words: WorkCaption['words'] = [];
+	const starts: number[] = [];
+	c.words.forEach((w, k) => {
+		const newLine = k > 0 && c.lineStarts.includes(k);
+		if (w.glue && words.length && !newLine) {
+			const last = words[words.length - 1]!;
+			last.text += w.text;
+			last.end = Math.max(last.end, w.end);
+			return;
+		}
+		if (newLine) starts.push(words.length);
+		words.push({ text: w.text, start: w.start, end: w.end });
+	});
+	c.words = words;
+	c.lineStarts = starts;
 }
 
 /** The text a laid-out subtitle shows (its display words on its lines). */

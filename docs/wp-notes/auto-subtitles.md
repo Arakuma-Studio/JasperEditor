@@ -186,6 +186,22 @@ Layout is pure (`packages/project/src/captions/subtitles/layout.ts`, `layoutSubt
    conjunction moves that word to the next subtitle when the next one can take it (Spanish list `es`: el la los las un
    una … de del en por para con sin y e ni o u que si …; the same rule for `en`; other languages: none). Lines inside a
    subtitle (`breakLines`) follow the same rule. **Assumption**: subtitling convention (no source states exact lists).
+   **Own-subtitle words** (`rules.ownWords`, schema v13): each listed word (case and punctuation ignored, compared with
+   `normalizeWord`) gets a hard break before and after it, so it is a subtitle of its own ("y hace boing boing boing."
+   → "y hace" | "boing" | "boing" | "boing."); stored with the group, so every later regeneration keeps it.
+   **Words longer than a line are never broken inside a word** (`splitLongWords`, `wordPieces` in `text.ts`): a word
+   with more than `maxChars` characters is split, before grouping, at its natural boundaries only — CamelCase
+   ("Entity|Component|System", acronym ends "HTTP|Server"), after a hyphen, slash or underscore, letter / digit
+   transitions — into the fewest pieces of at most `maxChars` (greedy: the farthest boundary that fits). Each piece is a
+   word for grouping and line breaking (timed by its share of the word's characters), marked `glue` so that pieces
+   sharing a line join without a space (and become one word again in the subtitle's words: `joinGluedPieces`). A
+   stretch with no boundary stays whole (it takes a subtitle of its own, as before); the text clip then shrinks it to
+   fit (§2 output, "fit"). Root cause of the reported "EntityComponentSyst" / "em": the layout left the 21-character
+   word whole on its own subtitle (`maxChars` 13, `lines` 1 only budget characters), and the text renderer's
+   paragraph CSS (`overflow-wrap: break-word`, `packages/compositions/src/layers/text/block.ts`) wrapped it by
+   characters at the 1440 px box width onto a second line (the stored box was 2 lines high). Preview, Remotion and the
+   native layer bake all draw the clip through that same composition, so the fix is in the data they draw (the text
+   and, for unsplittable words, the size), not in one render path.
 4. **Cut awareness** (§3), then **timing** (`finishTiming`): hold until the next subtitle (up to `holdSeconds`, never
    past a cut), minimum duration (into the silence after, else — when the start is not on a cut — before; else
    counted in `belowMinimum`), maximum duration (never cutting words), gap, no overlaps (a start on a cut wins), frame
@@ -205,13 +221,19 @@ ones; stored resolved in the group):
 | `breakPauseSeconds` | 0.05–10 | 1 | 0.3 |
 | `holdSeconds` | 0–10 / null | null (off) | 0.5 |
 | `punctuation` | never / half / always | half | always |
+| `ownWords` | ≤ 200 words of ≤ 64 characters | none | none |
 | text: case / strip trailing / replace glyphs | | as spoken / off / off | as spoken / off / on (… “ ” ‘ ’ « » – —) |
 
 **Output = text clips** (default; AS-003). A new top video track "Subtitles" (or `trackId`, which must be an unlocked
 video track: `E_TRACK_KIND`, `E_TRACK_LOCKED`), one text clip per subtitle placed with overwrite. Each clip:
 `sourceIn` = one hour of content time (`CAPTION_CONTENT_ORIGIN`, like caption clips) so heads can be extended by
 trims and by alignment; `content.text` = the subtitle's lines; `content.style` = the template style scaled to the
-frame; box = paragraph text (`autoSize: 'height'`) `box.widthPct` of the frame width; Motion position = the
+frame; box = paragraph text (`autoSize: 'height'`) `box.widthPct` of the frame width (**fit**: a subtitle whose
+widest line measures wider than the box — a word with no natural boundary, wide glyphs — gets a smaller font size so the
+line fits, `fitSubtitleWidth` in `layoutText`, measured as point text with the same measurer as the box, margin 2 %;
+only shrinks; without a measurer the clip stays `layoutPending` and `text.relayout` fits it; the size is a deviation
+from the linked style, kept when the style is edited; no template has an auto-fit switch, so splitting at natural
+boundaries comes first and the shrink is the last resort); Motion position = the
 template's box centre for the nearest aspect (16:9, 9:16, 1:1, 4:5), anchor = box centre; the template's text
 animation and effect preset (§6); `caption = {groupId, words (content time), speaker?, anchorIn}`. The group record
 `Sequence.captionGroups[cgp_…] = {name, templateId, rules, text, language, cutAware, sourceRef, range, trackId,
@@ -296,10 +318,24 @@ of ≥ 1 frame holding every word once, no hard cut crossed, zones crossed only 
   re-anchors template keys (§6). A subtitle pasted into a sequence without its group gets the group (copied from the
   sequence it came from, else default rules).
 - **Ripple edits** move subtitles as ordinary clips (sync lock); words are content time, so moves and ripples keep them.
-- `captions.regenerate {groupId, range?, rules?, text?, cutAware?, dryRun?}` rebuilds a group (or a range) from the
-  current transcript with the stored (or patched) rules; a new subtitle whose words equal an old clip's (case and
-  punctuation ignored) and that overlaps it in time keeps that clip (its style, effects, transform and manual
+- `captions.regenerate {groupId, range?, rules?, text?, cutAware?, lock?, unlock?, dryRun?}` rebuilds a group (or a
+  range) from the current transcript with the stored (or patched) rules; a new subtitle whose words equal an old clip's
+  (case and punctuation ignored) and that overlaps it in time keeps that clip (its style, effects, transform and manual
   overrides; only its range and words change); other old clips are removed, new ones are created from the template.
+- **Locked subtitles** (`caption.locked`, schema v13). A subtitle edited by hand is locked by the command that edits
+  it: a text edit the upkeep re-times (`normalize.ts`: Properties, the Program monitor, the Subtitles tab, `clip.update`,
+  `param.set`), `clip.split` on named clips or tracks (both pieces; a razor through every unlocked track —
+  `scope: 'all-unlocked'`, Add Edit to All Tracks — is a picture edit and locks nothing), `clip.trim` in every mode
+  (regular / ripple: the trimmed clip; roll: both sides) and `clip.move` (the clips named, not their group). Lock and
+  unlock by hand: `captions.lock {clipIds, locked}` (one undo step) or `captions.regenerate {lock, unlock}` (applied
+  first; a dry run counts them without storing). The subtitle machinery never locks: generation, regeneration, Align
+  to Cuts (`splitClipAt` directly), conversions, template application and the script fix (`transcript.replaceWords`
+  sets text and words together). Regenerate keeps locked clips exactly as they are (never moved, re-timed or
+  removed) and lays the transcript out around them: words whose midpoint lies inside a locked clip or inside the span
+  of its own words are its own, and each stretch between locked clips is laid out alone, limited to that stretch, so
+  no new subtitle overlaps a locked one (`layoutAroundLocked`). It returns `locked` (count). **Design choice**: a flag
+  on the subtitle (caption-level data) instead of a transcript change; the reported workflow (each "boing" its own
+  subtitle) is also solved without hand edits by the group rule `ownWords` (§2).
 - `captions.updateGroup {groupId, name?, language?}`, `captions.deleteGroup {groupId, clips: delete | keep}` (keep =
   ordinary text clips). `sequence.duplicate` gives the copy's groups new ids.
 
@@ -430,7 +466,10 @@ upkeep rebuilds its Source Text keys after any style change so they never hold a
   Select, Apply Template…, Export (SRT, VTT, TTML, SCC, STL from `captionCuesForGroup`), To Caption Track, Captions to
   Text Clips, Save as Template… (also on text clips' timeline context menu; "Save to library" option), Rename, Delete;
   a virtualised list of a group's clips (a 2,000-clip group draws < 60 rows), click to seek, inline text edits (one
-  undo step; words re-time).
+  undo step; words re-time; the edit locks the subtitle), a lock toggle per row (`subtitles.rowLock`: `captions.lock`,
+  "Lock Subtitle" / "Unlock Subtitle"), and **Own Words…** (`subtitles.ownWords`: the group's own-subtitle words,
+  comma-separated, then one Regenerate). The Create Subtitles dialog has an "Own-subtitle words" rule
+  (`subtitles-ownWords`).
 - Selection helpers **Subtitle Group** and **Same Template** in the Select menu registry (styling's
   `selectionHelpers`); no new default shortcuts (keymap test).
 - Export dialog: the captions section also appears for sequences with subtitle groups only; a group can be the sidecar
@@ -458,7 +497,10 @@ or timecode; guide text `SUBTITLES_GUIDE` with the recommended flow transcribe �
 - `list_caption_groups {sequenceId?, groupId?, offset?, limit?}` (groups: name, template, language, rules, track,
   clip count; with `groupId` a paged list of its clips with frames, timecodes, text and word counts),
   `align_captions_to_cuts {groupId | clipIds, options?, dryRun?}`, `regenerate_captions {groupId, range?, rules?, text?,
-  cutAware?, dryRun?}`, `convert_captions {groupId | clipIds | captionTrackId, to, keepSource?, template?}`.
+  cutAware?, lock?, unlock?, dryRun?}` (locked subtitles stay as they are; `rules.ownWords`), `convert_captions
+  {groupId | clipIds | captionTrackId, to, keepSource?, template?}`. `list_caption_groups {groupId}` marks locked
+  subtitles (`locked: true`). Eval cases (`apps/mcp/eval`): `subtitles-own-words` (bad: hand splits that regenerate
+  undid), `subtitles-regenerate-keeps-one` (guard: `lock`), control `subtitles-regenerate-plain`.
 - Templates: `list_subtitle_templates` (built-ins, project copies and the user library, each with whether its font
   family is installed), `save_subtitle_template {clipId, name, toLibrary?}` (project copy, then the library),
   `apply_subtitle_template {template, groupId | clipIds, parts?}`, `delete_subtitle_template {templateId, from:
@@ -525,6 +567,16 @@ crossings, met for every hard cut — the 4 run-throughs are §3 step 5 montage 
 minimum duration), allowed by the spec's zone rule. Layout time for all 26 projects: 81 ms.
 
 ## 11. Limitations
+
+- Long words: only CamelCase, hyphen / slash / underscore and letter / digit boundaries count; a long word without
+  one (Spanish "internacionalización" at 13 characters) stays whole and is shrunk only when it measures wider than the
+  box. The shrink needs a text measurer (the editor, or the engine's headless browser); a headless command without one
+  leaves the clip `layoutPending` until `text.relayout`. Shrinking never grows back when the text is later shortened.
+  Caption-track output (`output: 'caption-track'`) gets the split pieces but no shrink: `CaptionsLayer` still wraps an
+  unsplittable over-wide word with `overflow-wrap: break-word`.
+- An own-subtitle word longer than a line is split first and then no longer matches the list.
+- Locks: moving a whole selection that includes subtitles locks them (a manual retime by definition); unlock them in
+  the Subtitles tab or with `regenerate_captions {unlock}`.
 
 - Montage zones let a subtitle started before a burst of cuts closer than the minimum duration run through it (spec
   rule); `minSeconds` lower than the shortest shot avoids that.
