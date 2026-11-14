@@ -58,6 +58,18 @@ does. Unreferenced caption transcripts are collected (INV-014).
 the first enabled, non-reversed audio clip whose range covers its midpoint (mapped through speed); cut words are
 clamped; duplicated dialogue on lower tracks reads once. It therefore follows every edit.
 
+**Words cut off at an In** (`heardFromCutStart`, `CUT_START_MIN_SHARE` = 0.2): a word whose midpoint lies before a
+clip's In also belongs to that clip when no clip of the track plays its cut-off part and the clip plays at least a
+fifth of it. Speech to text starts the first word after a pause early (it takes in the breath or silence before it), so
+the In a restart cut puts at the kept take's voice onset often lands past that word's midpoint, and the kept take lost
+its first word in the subtitles (the reporter's cut, rev 144: "Y si alguno de ellos…" read "si alguno…", "Pero",
+"El", "No", "Lo reescribieron"…). Measured on that cut (rev 144's transcript over rev 144's and rev 267's clips, 33
+straddling first words): every word the clip plays ≥ 20 % of was the kept take's own; the removed takes' words that
+reach into a kept clip do so by ≤ 10 % ("funciona," 6 %, "%" 10 %) and stay out. Words cut at a clip's Out keep the
+midpoint rule: there the straddling word is the next take's early-started first word ("El", "al", "60", 25–34 % inside).
+The 20 % is an assumption beyond that recording. Test: `packages/project/test/sequence-transcript.test.ts` "a kept
+take's first word cut off at the In…" (fails before: the take read "si alguno no").
+
 ### Invariants and repair
 
 INV-012 transcript words sorted / non-overlapping / integer flicks; INV-014 a caption transcript is used by one clip;

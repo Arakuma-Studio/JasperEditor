@@ -8,6 +8,11 @@
 //   once;
 // - a word belongs to a clip when its midpoint, mapped through the clip's speed, falls inside the clip; its
 //   timeline bounds are clamped to the clip, so a word cut by an edit is shown cut;
+// - a word whose start a clip's In cuts off also belongs to that clip when the cut-off part (holding its midpoint) is
+//   played by no clip of the track and the clip plays at least `CUT_START_MIN_SHARE` of it (`heardFromCutStart`):
+//   speech to text starts a word after a pause early (it takes in the silence or breath before it), so the In a cut
+//   puts at the voice onset of a kept take often lands past the word's midpoint and the take lost its first word
+//   (the reporter's cut: "Y si alguno…" read "si alguno…"; measured on that cut, docs/wp-notes/captions.md);
 // - disabled clips and reversed clips contribute no words.
 // Word ranges become timeline ranges (`wordRangeFrames`) snapped outward to frames; pause and filler removal
 // produce many ranges that are ripple-deleted in one pass, right to left. Captions come from `captionBlocks`.
@@ -35,6 +40,34 @@ export type SeqWord = {
 	speaker: string | null;
 	confidence: number | null;
 };
+
+/**
+ * Share of a word a clip must play for the word to follow the clip when the clip's In cuts off its start and nothing
+ * plays the cut-off part (see `heardFromCutStart`). Measured on the reporter's cut (rev 144 → rev 267, 33 kept-take
+ * first words straddling an In): every word kept at ≥ 20 % was the take's own; the removed takes' words reaching into
+ * a kept clip did so by ≤ 10 %. An assumption beyond that recording.
+ */
+export const CUT_START_MIN_SHARE = 0.2;
+
+/**
+ * Whether a word (media flicks) cut off at a clip's In (`clipIn`) is heard through that clip although its midpoint lies
+ * before the In: the clip plays at least `CUT_START_MIN_SHARE` of it and `playedElsewhere(midpoint)` is false (no other
+ * clip of the track plays the cut-off part). Words cut at a clip's Out keep the midpoint rule: there the early start of
+ * the next take's first word reaches into the clip.
+ */
+export function heardFromCutStart(
+	w: { start: number; end: number },
+	clipIn: number,
+	clipOut: number,
+	playedElsewhere: (mediaTime: number) => boolean,
+): boolean {
+	const len = w.end - w.start;
+	if (!(len > 0) || !(w.start < clipIn) || !(w.end > clipIn)) return false;
+	const mid = w.start + len / 2;
+	if (mid >= clipIn) return false;
+	const inside = Math.min(w.end, clipOut) - clipIn;
+	return inside >= CUT_START_MIN_SHARE * len && !playedElsewhere(mid);
+}
 
 /** The transcript used for a media: the most recently added one with that `mediaId`. */
 export function transcriptForMedia(
@@ -89,11 +122,20 @@ export function sequenceWords(
 		if (list) list.push(c);
 		else byTrack.set(c.trackId, [c]);
 	}
+	const plays = (c: Clip) => c.kind === 'audio' && c.enabled && !c.speed.reverse && c.speed.rate > 0;
 	seq.audioTracks.forEach((track, ti) => {
 		const mine: Array<[number, number]> = [];
 		const clips = (byTrack.get(track.id) ?? []).sort((a, b) => a.start - b.start);
+		// media ranges each media's clips on this track play (for words cut off at an In)
+		const played = new Map<string, Array<[number, number]>>();
 		for (const c of clips) {
-			if (c.kind !== 'audio' || !c.enabled || c.speed.reverse || !(c.speed.rate > 0)) continue;
+			if (c.kind !== 'audio' || !plays(c)) continue;
+			const list = played.get(c.mediaId) ?? [];
+			list.push([c.sourceIn, c.sourceIn + Math.round(c.duration * F * c.speed.rate)]);
+			played.set(c.mediaId, list);
+		}
+		for (const c of clips) {
+			if (c.kind !== 'audio' || !plays(c)) continue;
 			const tr = transcriptForMedia(doc, c.mediaId);
 			if (!tr) continue;
 			const speed = c.speed.rate;
@@ -109,7 +151,14 @@ export function sequenceWords(
 				if (w.start >= mediaEnd) break;
 				const a = toTl(w.start);
 				const b = toTl(Math.max(w.end, w.start));
-				const mid = a + Math.floor((b - a) / 2);
+				let mid = a + Math.floor((b - a) / 2);
+				if (
+					mid < clipStart &&
+					heardFromCutStart(w, c.sourceIn, mediaEnd, (m) =>
+						(played.get(c.mediaId) ?? []).some(([s, e]) => m >= s && m < e),
+					)
+				)
+					mid = clipStart + Math.floor((Math.min(b, clipEnd) - clipStart) / 2);
 				if (mid < clipStart || mid >= clipEnd || claimed.some(([s, e]) => mid >= s && mid < e)) continue;
 				const s = Math.max(a, clipStart);
 				out.push({

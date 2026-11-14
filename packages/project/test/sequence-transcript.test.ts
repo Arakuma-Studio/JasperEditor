@@ -115,6 +115,44 @@ describe('sequence transcript', () => {
 		expect(w[0]!.start).toBe(0);
 		expect(w[0]!.end).toBe(s(0.3));
 	});
+	it("a kept take's first word cut off at the In stays with the take; a removed take's word reaching in does not", () => {
+		// a restart cut (the reporter's rev 144 → 267 cut): the removed take ends "…pero"; the kept take "Y si alguno"
+		// starts at the voice onset, but speech to text started "Y" early (over the breath before it), so its midpoint
+		// lies before the In. "pero" reaches 0.05 s (8 %) past the second In.
+		const words: Array<[string, number, number]> = [
+			['funciona,', 1.0, 1.7],
+			['Y', 1.7, 2.1],
+			['si', 2.1, 2.3],
+			['alguno', 2.3, 2.8],
+			['pero', 3.4, 4.0],
+			['no', 4.0, 4.3],
+		];
+		const doc = {
+			transcripts: {
+				trs_take: {
+					...interviewTranscript('trs_take'),
+					words: words.map(([text, a, b]) => ({
+						text,
+						start: s(a),
+						end: s(b),
+						confidence: null,
+						speaker: null,
+						breakBefore: 'none' as const,
+					})),
+				},
+			},
+		};
+		// kept: media 0–1.0 (before the restart), 1.96–2.8 (the kept take, In inside "Y"), 3.96–4.3
+		const seq = seqWith(
+			audioClip('c1', 0, 1, 0),
+			audioClip('c2', 1, 0.84, 1.96),
+			audioClip('c3', 1.84, 0.36, 3.96),
+		);
+		const w = sequenceWords(doc, seq);
+		expect(texts(w)).toEqual(['Y', 'si', 'alguno', 'no']);
+		expect(w[0]!.clipId).toBe('c2');
+		expect(w[0]!.start).toBe(s(1));
+	});
 	it('scales word times by speed', () => {
 		const w = sequenceWords(docT, seqWith(audioClip('c100', 0, 5, 0, { rate: 2 })));
 		expect(w).toHaveLength(20);
@@ -133,10 +171,10 @@ describe('sequence transcript', () => {
 		expect(sequenceWords(docT, q)).toEqual([]);
 	});
 	it('repeats words of two clips of the same media in edit order', () => {
-		// "rivers." twice: media 5.3–5.9 at 0 s and again at 1 s
-		const w = sequenceWords(docT, seqWith(audioClip('c100', 0, 1, 5.2), audioClip('c101', 1, 1, 5.2)));
+		// "rivers." twice: media 5.3–5.9 at 0 s and again at 1 s (the In plays the last 14 % of "about": not heard)
+		const w = sequenceWords(docT, seqWith(audioClip('c100', 0, 1, 5.25), audioClip('c101', 1, 1, 5.25)));
 		expect(texts(w)).toEqual(['rivers.', 'rivers.']);
-		expect(w[1]!.start).toBe(s(1.1));
+		expect(w[1]!.start).toBe(s(1.05));
 		expect(w[1]!.clipId).toBe('c101');
 	});
 	it('search, word at and paragraphs', () => {
