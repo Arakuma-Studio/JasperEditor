@@ -155,11 +155,14 @@ export class HandlerContext {
 		return this.frame(seq, input);
 	}
 
-	/** Content time input → flicks; `sourceFrames` uses the asset's nominal rate (else `fallbackRate`). */
+	/**
+	 * Content time input → flicks; `sourceFrames` uses the asset's nominal rate, else `fallbackRate` (a still has no
+	 * rate of its own: the rate ffprobe reports for an image, 25 fps, is not one).
+	 */
 	flicks(input: ContentTimeInput, asset: MediaAsset | null | undefined, fallbackRate: Rational): number {
 		if ('flicks' in input) return input.flicks;
 		if ('seconds' in input) return secondsToFlicks(input.seconds);
-		const vs = asset?.probe.streams.find((s) => s.type === 'video');
+		const vs = asset?.kind === 'image' ? undefined : asset?.probe.streams.find((s) => s.type === 'video');
 		// media frames count at the interpreted (assumed) frame rate.
 		const rate =
 			vs && vs.type === 'video' && asset ? (interpretedFrameRate(asset) ?? vs.frameRate) : fallbackRate;

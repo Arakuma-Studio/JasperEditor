@@ -331,15 +331,37 @@ export function replaceMediaFile(
 			.map((t) => t.id),
 	);
 	const before = new Map(Object.values(doc.sequences).map((seq) => [seq.id, transitionFits(doc, seq)]));
+	const oldSize = mediaIntrinsicSize(mediaOf(doc, mediaId, h));
 	update();
 	const asset = mediaOf(doc, mediaId, h);
+	const newSize = mediaIntrinsicSize(asset);
+	// A file of another pixel size keeps every clip's framing, as a version switch does (S07:PRC-006).
+	const resized =
+		!!oldSize && !!newSize && (oldSize.width !== newSize.width || oldSize.height !== newSize.height);
 	const mode: SourceFit = fit === 'trim' ? 'trim' : 'refuse';
 	for (const seq of Object.values(doc.sequences)) {
 		for (const clip of Object.values(seq.clips)) {
 			const ref = clip as { mediaId?: string; transcriptId?: string };
 			const uses = ref.mediaId === mediaId || (!!ref.transcriptId && transcripts.has(ref.transcriptId));
 			if (!uses) continue;
-			const r = retimeClipForFile(doc, seq, clip, shift, asset, mode, h, () => undefined);
+			const reframe = resized && ref.mediaId === mediaId && 'transform' in clip;
+			const r = retimeClipForFile(doc, seq, clip, shift, asset, mode, h, () => {
+				if (!reframe) return;
+				const d = clip as unknown as VideoClip;
+				const next = rescaleClipForSource(plain(d), oldSize!, newSize!, {
+					newKeyframeId: () => h.ids.next('kf'),
+				});
+				d.transform = next.transform;
+				if (next.trackers) d.trackers = next.trackers;
+				retargetRotos(d.rotos as never, {
+					to: {
+						mediaId,
+						rate: rotoRateOf(asset, seq.settings.frameRate as Rational),
+						scaleX: newSize!.width / oldSize!.width,
+						scaleY: newSize!.height / oldSize!.height,
+					},
+				});
+			});
 			if (r.kind === 'ok') {
 				if (shift !== 0 || r.trimmed) out.clipIds.push(clip.id);
 				if (r.trimmed) out.trimmed.push(clip.id);

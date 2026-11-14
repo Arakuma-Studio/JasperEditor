@@ -237,7 +237,9 @@ function sourceEditHandler(doc: DDoc, cmd: CommandOf<'clip.sourceEdit'>, h: Hand
 	);
 	// Source marks and window, in content flicks.
 	const asset = src.kind === 'media' ? src.asset : null;
-	const conv = (v: Parameters<typeof h.flicks>[0]) => h.flicks(v, asset, FALLBACK_RATE);
+	// a still is placed in sequence frames: its source frames are too.
+	const convRate = asset?.kind === 'image' ? rate : FALLBACK_RATE;
+	const conv = (v: Parameters<typeof h.flicks>[0]) => h.flicks(v, asset, convRate);
 	let marks: { in: number | null; out: number | null } = { in: null, out: null };
 	let window: { start: number; end: number | null } = { start: 0, end: null };
 	let splitMarks: SourceMarks['split'] | undefined;
