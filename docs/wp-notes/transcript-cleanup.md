@@ -1503,8 +1503,13 @@ wrote differently", from these decodes):
 - A clip both span decodes fail on (no word in common) is read from the stored transcript when its words are said again
   at the next clip's start in a stretch the stored transcript left empty (it merged the retry): review only.
 - In connected speech the end of an in-span removal is the quietest frame before the retry, not its decoded onset.
+- The planner (`sequence.ts` `cutMediaSpans`) lets the take after an accepted repeat keep its attack at most
+  `EDGE_INTO_WORD_S` (80 ms) into the cut: the stored transcript's merged "si" (408.18–408.58) ran over the gap, so the
+  snapper took the in point back to 408.25 s, inside the attempt; it is now 408.367 s, where the user cut.
 
-**Figures** (measured from the cached decodes; per half; findings are the check's own, `remove` / `review`):
+**Figures** (per half; findings are the check's own, `remove` / `review`; main and round 1 measured from the cached
+decodes of the main run, "now" also measured by a fresh engine run of this branch on a clone of rev 144 — port 47931,
+its own appdir, nice 19 — which transcribed all 353 spans and gave the same 26 repeats, 5 suggested):
 
 | | main 8657fd267 | round 1 (frozen on the first half) | now |
 |---|---|---|---|
@@ -1522,8 +1527,11 @@ The other `remove` is "¿Qué" at 2724.15 (three slivers rev 549 removes too). R
 **Cost and default.** The check decodes ≈ 3,054 s of audio for this cut (1,070 s at 0.2 s padding, 1,352 s at 0.6 s,
 633 s of restart windows) for 928 s kept; VAD chunking decodes about twice (speech.md §11.3). A window of ±2 s around
 each boundary is no cheaper here: 79 % of the 353 spans are under 4 s (median 2.57 s), so the last 2 s and first 2 s of
-each span is 979 s against 1,070 s. On the RTX 3080 Ti the main run took ≈ 18 min of transcription (the report's
-figure, freezes excluded). So the check is offered, not run by default: Clean Up's toolbar has a **Repeats at cuts**
+each span is 979 s against 1,070 s. Measured on the reporter's PC (RTX 3080 Ti, CUDA; the user's engine idle,
+load ≈ 2): the transcription job of the fresh run took 16 min 9 s and the whole analysis 16 min 40 s; the re-analysis
+with every span cached took 5 s. The planned removals on rev 144 are 408.083–408.367 ("Y si…", the user's cut to the
+frame), 827.45–827.967 ("Aunque el jero…"), 2296.533–2296.817 ("Así que…"), the "¿Qué" slivers at 2724–2728 and "No"
+(already a fragment finding). So the check is offered, not run by default: Clean Up's toolbar has a **Repeats at cuts**
 toggle (remembered in the browser, off until turned on), the review's notes say what it did ("N clips checked (M
 transcribed now), F found, R suggested for removal", or why it could not run), and re-plans keep its findings — the
 local planner gets the analysis's `editRepeats`, an engine re-plan asks for the check again (all cached). MCP
