@@ -231,6 +231,11 @@ export type PlannedExport = {
 	/** previews (Use Previews): the stretches of the range read from render previews, and those rendered. */
 	previews?: import('./use-previews.ts').ExportRun[];
 	/**
+	 * ranges.ts: the ranges of a multi-range export in file order, each with its own plan's snapshot. `range` is then
+	 * their span and `snapshot` the first range's.
+	 */
+	joined?: import('./ranges.ts').JoinedPart[];
+	/**
 	 * output-size.ts: the size the native composite is drawn at, decided before the extensions prepare (the layer bake
 	 * renders masters at it and aligns rectangles to whole output pixels). Absent = the sequence size.
 	 */
@@ -280,6 +285,9 @@ function exportRange(
 		case 'custom':
 			r = { start: settings.range.startFrame, end: settings.range.endFrame };
 			break;
+		case 'ranges':
+			// ExportService.plan plans each range as a `custom` export and joins the plans (ranges.ts)
+			throw new PlanError('VALIDATION_FAILED', 400, 'A multi-range export is planned one range at a time');
 		default:
 			r = { start: 0, end };
 	}

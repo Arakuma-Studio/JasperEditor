@@ -1,9 +1,9 @@
 import { isAbsolute } from 'node:path';
 import type { ExportSettings } from '@jasper/api';
-import { GIF_DITHERS, GIF_LIMITS, GIF_PALETTES } from '@jasper/api';
+import { GIF_DITHERS, GIF_LIMITS, GIF_PALETTES, MAX_EXPORT_RANGES } from '@jasper/api';
 import { defaultCreditsSidecar, sequenceTimecode } from '@jasper/project';
 import { z } from 'zod';
-import { ProjectIdArg, SequenceIdArg, timeArg } from '../arguments.ts';
+import { ProjectIdArg, SequenceIdArg, TimeArgSchema, timeArg } from '../arguments.ts';
 import {
 	cancelIfAborted,
 	captureStill,
@@ -42,6 +42,18 @@ import {
 import { fastVerification } from './verify.ts';
 
 const JobIdArg = z.string().min(1);
+
+// (times as the instructions say: frames, "3s", "00:03" or timecode)
+const RangeArg = z.strictObject({ from: TimeArgSchema, to: TimeArgSchema });
+
+/** A `{from, to}` range as sequence frames, refused by name when empty or before the start. */
+function rangeFrames(seq: Parameters<typeof frameOf>[0], r: z.infer<typeof RangeArg>, which = '') {
+	const startFrame = frameOf(seq, r.from);
+	const endFrame = frameOf(seq, r.to);
+	if (startFrame < 0) throw new ToolError('E_INVALID_PARAM', `${which}\`from\` is before the sequence start`);
+	if (endFrame <= startFrame) throw new ToolError('E_INVALID_PARAM', `${which}\`to\` must be after \`from\``);
+	return { startFrame, endFrame };
+}
 
 /** What an export writes and reports: the `export` guide, reference an agent reads when it needs a detail. */
 export const EXPORT_GUIDE =
@@ -343,15 +355,9 @@ export function registerRenderTools(ctx: ToolContext): void {
 					.optional()
 					.describe('M4A. Default 192, or 384 for 5.1.'),
 				range: z
-					.union([
-						z.enum(['entire', 'in-out']),
-						z.strictObject({
-							from: timeArg('Start of the range'),
-							to: timeArg('End of the range (exclusive)'),
-						}),
-					])
+					.union([z.enum(['entire', 'in-out']), RangeArg, z.array(RangeArg).max(MAX_EXPORT_RANGES)])
 					.optional()
-					.describe('Default entire; in-out uses the sequence marks.'),
+					.describe('Default entire; in-out = marks; {from, to} or a list: one file in order.'),
 				engine: z.enum(['auto', 'native', 'remotion']).optional().describe('Default auto.'),
 				crf: z
 					.number()
@@ -372,7 +378,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 					.boolean()
 					.optional()
 					.describe('Replace an existing file at outputPath. Default false: a new name.'),
-				wait: z.boolean().optional().describe('Block until written. Default false.'),
+				wait: z.boolean().optional(),
 				timeoutSeconds: z.number().int().min(1).max(3600).optional().describe('With `wait`. Default 900.'),
 				// audio-mix
 				audioChannels: z
@@ -514,12 +520,13 @@ export function registerRenderTools(ctx: ToolContext): void {
 						'Set them with apply_commands sequence.setInOut, or export "entire".',
 					);
 				r = { type: 'in-out' };
-			} else if (range && typeof range === 'object') {
-				const startFrame = frameOf(seq, range.from);
-				const endFrame = frameOf(seq, range.to);
-				if (endFrame <= startFrame) throw new ToolError('E_INVALID_PARAM', '`to` must be after `from`');
-				r = { type: 'custom', startFrame, endFrame };
-			}
+			} else if (Array.isArray(range)) {
+				if (!range.length)
+					throw new ToolError('E_INVALID_PARAM', 'range is an empty list', 'Give at least one {from, to}.');
+				// several ranges: one file, joined in this order by the engine (each rendered as its own range export)
+				const ranges = range.map((x, i) => rangeFrames(seq, x, range.length > 1 ? `range[${i}]: ` : ''));
+				r = ranges.length === 1 ? { type: 'custom', ...ranges[0]! } : { type: 'ranges', ranges };
+			} else if (range && typeof range === 'object') r = { type: 'custom', ...rangeFrames(seq, range) };
 			// spec 18 AF-VER-004: a platform preset never crops a sequence of another shape
 			const refusal = kind === 'video' ? deliveryPresetRefusal(seq, p) : null;
 			if (refusal)

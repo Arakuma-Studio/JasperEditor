@@ -73,6 +73,14 @@ recorded in `licenses/ported/mcp-cli-effectcraft.md` and `licenses/ported/mcp-cl
   `get_job`) repeats `path` at the top with a `pathNote` naming the kept file and `overwrite: true`. `overwrite`
   without `outputPath` is refused (`E_INVALID_PARAM`). Eval cases `export-overwrite-asked` (bad),
   `export-kept-file-reported` (guard) and `export-new-path-plain` (control).
+- An export needs an explicit project. MCP `start_export` always required `projectId`; the CLI's `call` filled it in
+  from the editor window (or the only project), so `jasper call start_export '{}'`, meant as a look at the arguments,
+  queued a 15-minute export of the open project. `call` now never guesses the project for `start_export`
+  (`NAMED_PROJECT_TOOLS`): it needs `projectId`, `--project` or `JASPER_PROJECT`, and otherwise gets the server's
+  refusal naming `projectId` (exit 1). `outputPath` stays optional: without it the file is the job's download
+  (`/renders/:jobId/output`), the only output an engine outside local mode allows (`LOCAL_MODE_ONLY` refuses export
+  paths there) and the one a linked engine on another machine can hand back; requiring it would only make agents
+  invent paths. `jasper export` keeps its own guess (it requires `--out`, an explicit intent to export).
 - Engine: an audit of every job runner that writes files (export, still, layer-bake, mg-bundle import,
   mg-prerender, process, model-download, derivatives, warp, cache-move, the mg-render scheduler). Gaps fixed:
   the export's copy to the user's destination (and caption sidecars) — `copyNoOverwrite` now claims the name with an

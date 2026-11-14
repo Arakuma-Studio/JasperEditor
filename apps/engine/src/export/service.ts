@@ -5,7 +5,7 @@
 
 import type { ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { createReadStream, readFileSync } from 'node:fs';
+import { createReadStream, readdirSync, readFileSync, statSync } from 'node:fs';
 import {
 	copyFile,
 	type FileHandle,
@@ -127,6 +127,7 @@ import {
 	type PlannedExport,
 	planExport,
 } from './planner.ts';
+import { joinedRanges, joinPlans, joinRefusal } from './ranges.ts';
 import { ExportRunReport } from './run-report.ts';
 import {
 	planPictureSegments,
@@ -150,6 +151,7 @@ import {
 	creditsFileName,
 	exportSoundCredits,
 	resultSoundWarnings,
+	soundPlanWarnings,
 } from './sound-credits.ts';
 import { convertStill, stillCurveFor } from './still-formats.ts';
 import { openClPolicyFromEnv, probeOpenClTaps } from './stream/opencl.ts';
@@ -329,7 +331,15 @@ export class ExportService {
 		if (req.target && deliverableOfContainer(container) !== 'video')
 			throw new PlanError('TARGET_NOT_APPLICABLE', 400, targetRefusal(container));
 		const checks = req.checks ?? 'full';
-		return this.deps.queue.submit({
+		// The same checks of the same file give the same rows: a verification this engine ran on the export's output
+		// as it still is (size and modification time) is returned again instead of measuring it a second time. Only
+		// this process's verifications count, so a newer build with other checks measures again.
+		const stamp = this.outputStamp(exportId);
+		const key = `export-verify:${exportId}:${checks}:${req.target ?? ''}:${stamp}`;
+		const earlier = stamp ? this.verifications.get(key) : undefined;
+		const reused = earlier ? this.deps.queue.get(earlier) : null;
+		if (reused?.state === 'succeeded') return reused;
+		const submitted = this.deps.queue.submit({
 			kind: 'export-verify',
 			title: `Verify – ${job.title.replace(/^Export – /, '')}${req.target ? ` (${req.target})` : ''}`,
 			priority: checks === 'fast' ? 'interactive' : 'user',
@@ -338,10 +348,28 @@ export class ExportService {
 			origin,
 			...(job.projectId ? { projectId: job.projectId } : {}),
 			parentId: exportId,
-			dedupeKey: `export-verify:${exportId}:${checks}:${req.target ?? ''}`,
+			dedupeKey: key,
 			stage: 'Queued',
 			input: { exportId, checks, ...(req.target ? { target: req.target } : {}) },
 		});
+		if (stamp) this.verifications.set(key, submitted.id);
+		return submitted;
+	}
+
+	/** Verification jobs of this process by what they measured (`verify`). */
+	private readonly verifications = new Map<string, string>();
+
+	/** Size and modification time of a finished export's output file, or '' when it cannot be read. */
+	private outputStamp(exportId: string): string {
+		try {
+			const dir = join(this.deps.rendersDir, exportId);
+			const name = readdirSync(dir).find((n) => n.startsWith('output.'));
+			if (!name) return '';
+			const st = statSync(join(dir, name));
+			return `${st.size}:${st.mtimeMs}`;
+		} catch {
+			return '';
+		}
 	}
 
 	/**
@@ -390,6 +418,8 @@ export class ExportService {
 		sequenceId: string;
 		settings: ExportSettings;
 	}): Promise<PlannedExport> {
+		const ranges = joinedRanges(req.settings);
+		if (ranges) return this.planJoined(req, ranges);
 		const caps = await this.deps.capabilities();
 		const planned = await planExport(
 			{
@@ -418,6 +448,46 @@ export class ExportService {
 		if ((planned.plan.path === 'native' || planned.plan.path === 'hybrid') && kind !== 'audio')
 			planned.plan.pipeline = await this.expectedPipeline(planned);
 		return planned;
+	}
+
+	/**
+	 * ranges.ts: a multi-range export, planned as one `custom` range export per range (picture only: the sound is mixed
+	 * per range and joined by `renderAudio`) and joined into the plan of the file. Use Previews and smart rendering do
+	 * not apply (each range renders through its own path).
+	 */
+	private async planJoined(
+		req: { envelope: { revision: number; document: unknown }; sequenceId: string; settings: ExportSettings },
+		ranges: readonly { start: number; end: number }[],
+	): Promise<PlannedExport> {
+		const parts: PlannedExport[] = [];
+		for (const r of ranges)
+			parts.push(
+				await this.plan({
+					...req,
+					settings: {
+						...req.settings,
+						range: { type: 'custom', startFrame: r.start, endFrame: r.end },
+						usePreviews: false,
+						smartRender: false,
+					},
+				}),
+			);
+		const first = parts[0]!;
+		const refusal = joinRefusal(req.settings, first);
+		if (refusal) throw new PlanError('VALIDATION_FAILED', 400, refusal);
+		const sound = soundPlanWarnings(
+			first.document,
+			first.sequenceId,
+			{ audioClips: parts.flatMap((p) => p.snapshot.audioClips) },
+			req.settings,
+		);
+		const joined = joinPlans(parts, req.settings, sound);
+		if (req.settings.usePreviews)
+			joined.plan.warnings.push({
+				code: 'PREVIEWS_UNUSED',
+				message: 'Several ranges render through their own paths: render previews are not used',
+			});
+		return joined;
 	}
 
 	/** How the composite of a native / hybrid export is expected to run (plan `pipeline`; the result's is what ran). */
@@ -892,7 +962,8 @@ export class ExportService {
 
 	/**
 	 * Use Previews: renders the stretches without a preview to ProRes intermediates (the export's own path), then
-	 * encodes previews + intermediates with the export's encoder and mix.
+	 * encodes previews + intermediates with the export's encoder and mix. A multi-range export (ranges.ts) renders every
+	 * range so, to ProRes 4444 (4:4:4, no chroma loss before the one encode), joined in the order given.
 	 */
 	private async renderWithPreviews(
 		ctx: JobContext,
@@ -914,7 +985,11 @@ export class ExportService {
 		const counts: number[] = [];
 		const warnings: { code: string; message: string }[] = [];
 		let path: 'native' | 'hybrid' | 'remotion' = 'native';
-		const total = Math.max(1, planned.range.end - planned.range.start);
+		const total = Math.max(
+			1,
+			runs.reduce((n, r) => n + r.end - r.start, 0),
+		);
+		const proresProfile = planned.joined ? '4444' : 'hq';
 		let done = 0;
 		// Preview files are cache entries: held for the job (and waited for when a cleaning pass is removing them).
 		const present = this.pinFor(ctx) ?? exists;
@@ -946,7 +1021,7 @@ export class ExportService {
 							range: { type: 'custom', startFrame: r.start, endFrame: r.end },
 							video: {
 								codec: 'prores',
-								proresProfile: 'hq',
+								proresProfile,
 								width: seq.width,
 								height: seq.height,
 								frameRate: { num: seq.fps.num, den: seq.fps.den },
@@ -984,6 +1059,8 @@ export class ExportService {
 			fps: seq.fps,
 			output: o,
 			encoderFilters: enc.filters,
+			// ProRes 4444 intermediates of joined ranges: no 8-bit rounding (and its dither) before the one encode
+			...(planned.joined ? { pixFmt: 'yuv444p12le' } : {}),
 		});
 		assertLgplFilters(filter); // AF-SEC-003: the script file is not an argument Ffmpeg.run can check
 		const script = join(await ctx.scratchDir(), 'previews-graph.txt');
@@ -1199,7 +1276,11 @@ export class ExportService {
 		const format = settings.credits?.sidecar as CreditsFormat | null | undefined;
 		if (!format || planned.output.videoOnly || planned.output.alpha) return null;
 		const scope = settings.credits?.scope === 'attribution' ? 'attribution' : 'all';
-		const credits = exportSoundCredits(planned.document, planned.sequenceId, planned.snapshot, scope);
+		// ranges.ts: the sounds heard in any of a multi-range export's ranges
+		const heard = planned.joined
+			? { audioClips: planned.joined.flatMap((p) => p.snapshot.audioClips) }
+			: planned.snapshot;
+		const credits = exportSoundCredits(planned.document, planned.sequenceId, heard, scope);
 		const bytes = creditsFileBytes(credits, format);
 		if (!bytes) {
 			ctx.log('credits: no library sound is heard in the exported range; no credits file');
@@ -1238,6 +1319,7 @@ export class ExportService {
 					document: planned.document,
 					sequenceId: planned.sequenceId,
 					range: planned.range,
+					...(planned.joined ? { pieces: planned.joined.map((p) => p.range) } : {}),
 					output: { ...o, encoder: enc ? { container: enc.container, codec: enc.codec } : null },
 					pixFmt: enc
 						? o.alpha
@@ -2282,7 +2364,12 @@ export class ExportService {
 		const t0 = performance.now();
 		// The media the mix plays, as files (plain data: the mix runs on a worker thread).
 		const media: Record<string, MixSource> = {};
-		for (const c of planned.snapshot.audioClips) {
+		// ranges.ts: a multi-range export mixes each range from its own snapshot and joins the mixes (`pieces`)
+		const pieces = planned.joined?.map((p) => ({
+			snapshot: { ...p.snapshot, videoTracks: [] },
+			range: p.range,
+		}));
+		for (const c of planned.joined?.flatMap((p) => p.snapshot.audioClips) ?? planned.snapshot.audioClips) {
 			const m = planned.media[c.mediaId];
 			if (!m || Object.hasOwn(media, c.mediaId)) continue;
 			media[c.mediaId] = {
@@ -2312,6 +2399,7 @@ export class ExportService {
 						snapshot: { ...planned.snapshot, videoTracks: [] },
 						media,
 						range: planned.range,
+						...(pieces ? { pieces } : {}),
 						length,
 						outputLayout,
 						normalize: o.normalize ?? null,
@@ -2322,6 +2410,7 @@ export class ExportService {
 				snapshot: planned.snapshot,
 				media: (id) => (Object.hasOwn(media, id) ? media[id]! : null),
 				range: planned.range,
+				...(pieces ? { pieces } : {}),
 				length,
 				outputLayout,
 				normalize: o.normalize,
@@ -2796,10 +2885,19 @@ export class ExportService {
 		const del = planned.deliverable;
 		if (del?.kind === 'audio') return this.renderAudioOnly(ctx, planned, output);
 		if (del?.kind === 'gif') return this.renderGif(ctx, req, planned, output);
-		if (planned.previews?.some((r) => r.kind === 'preview'))
-			return this.renderWithPreviews(ctx, req, planned, output, planned.previews);
+		const runs = this.renderRuns(planned);
+		if (runs) return this.renderWithPreviews(ctx, req, planned, output, runs);
 		if (planned.smart) return this.renderSmart(ctx, req, planned, output, planned.smart);
 		return this.renderPlanned(ctx, req, planned, output);
+	}
+
+	/**
+	 * The runs a planned export's picture is joined from: the ranges of a multi-range export (each rendered), or the
+	 * preview files and rendered stretches of a Use Previews export; null = one render.
+	 */
+	private renderRuns(planned: PlannedExport): ExportRun[] | null {
+		if (planned.joined) return planned.joined.map(({ range }) => ({ kind: 'render', ...range }));
+		return planned.previews?.some((r) => r.kind === 'preview') ? planned.previews : null;
 	}
 
 	/** Renders a planned export into `output` (native / hybrid with the Remotion fallback, or Remotion). */
@@ -3010,8 +3108,9 @@ export class ExportService {
 		};
 		// the render paths and their fallbacks plan the intermediate's own settings
 		const renderReq: ExportStartRequest = { ...req, settings: del.render };
-		const rendered = planned.previews?.some((r) => r.kind === 'preview')
-			? await this.renderWithPreviews(sub, renderReq, planned, source, planned.previews)
+		const runs = this.renderRuns(planned);
+		const rendered = runs
+			? await this.renderWithPreviews(sub, renderReq, planned, source, runs)
 			: await this.renderPlanned(sub, renderReq, planned, source);
 		const color = rendered.planned.output.color;
 		const matrix = color?.swsMatrix === 'bt2020' ? 'bt2020' : 'bt709';

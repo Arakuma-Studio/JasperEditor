@@ -20,6 +20,7 @@ import { frameToSample, type Rational, type RenderSnapshot } from '@jasper/proje
 import { type DeliveryPassRequest, type EncodedMeasure, measureEncodedAudio } from '../audio/deliver.ts';
 import {
 	type MixPass1,
+	type MixPiece,
 	type MixSource,
 	renderMixdown,
 	renderPass1,
@@ -216,6 +217,8 @@ export type MixPass1Request = {
 	snapshot: RenderSnapshot;
 	media: Record<string, MixSource>;
 	range: { start: number; end: number };
+	/** A multi-range export's ranges (mixdown.ts `MixdownOptions.pieces`). */
+	pieces?: readonly MixPiece[];
 	length: number;
 	outputLayout?: Layout;
 	normalize: { targetLufs: number; truePeakDb: number } | null;
@@ -262,6 +265,7 @@ export async function runMeasureOp<O extends MeasureOp>(
 				snapshot: req.snapshot,
 				media: (id) => (Object.hasOwn(req.media, id) ? req.media[id]! : null),
 				range: req.range,
+				...(req.pieces ? { pieces: req.pieces } : {}),
 				length: req.length,
 				...(req.outputLayout ? { outputLayout: req.outputLayout } : {}),
 				normalize: req.normalize,

@@ -49,7 +49,7 @@ Commands:
 
 Options:
   --project <id|name>    project to work on (env JASPER_PROJECT; default: the project open in the editor
-                         window, else the only project)
+                         window, else the only project; call start_export never guesses it)
   --sequence <id>        sequence (default: the project's first / the editor's active one)
   --at <time>            time for get / props / render-frame: frames, 2.5s, 250ms, 00:03, 1:02:03 or HH:MM:SS:FF
   --label <text>         History label for exec (default: the command type)
@@ -275,7 +275,16 @@ type Ctx = {
 	json: boolean;
 	cwd: string;
 	projectId(): Promise<string>;
+	/** Whether --project / JASPER_PROJECT names the project (else `projectId()` guesses it). */
+	namedProject: boolean;
 };
+
+/**
+ * Tools `call` never runs on a guessed project (the editor window's, or the only one): `call start_export '{}'`, meant
+ * as a look at its arguments, exported the open project for 15 minutes. They take projectId, --project or
+ * JASPER_PROJECT; without one the server refuses the call naming projectId.
+ */
+const NAMED_PROJECT_TOOLS = new Set(['start_export']);
 
 /** Calls a tool; a tool error becomes CommandFailed with its `{error}` body. */
 async function tool(c: Ctx, name: string, args: Record<string, unknown> = {}, progress = false) {
@@ -588,7 +597,12 @@ const COMMANDS: Record<string, (c: Ctx, args: string[]) => Promise<void>> = {
 		const def = tools.find((t) => t.name === args[0]);
 		if (!def) throw new UsageError(`Unknown tool "${args[0]}" (jasper tools lists them)`);
 		const props = (def.inputSchema as { properties?: Record<string, unknown> }).properties ?? {};
-		if ('projectId' in props && params.projectId === undefined) params.projectId = await c.projectId();
+		if (
+			'projectId' in props &&
+			params.projectId === undefined &&
+			(c.namedProject || !NAMED_PROJECT_TOOLS.has(args[0]!))
+		)
+			params.projectId = await c.projectId();
 		// --timeout: how long a waiting tool may wait (its own timeoutSeconds wins; capped at the tool's maximum)
 		const wait = props.timeoutSeconds as { maximum?: number } | undefined;
 		if (wait && params.timeoutSeconds === undefined && typeof c.flags.timeout === 'string') {
@@ -702,6 +716,7 @@ export async function runCli(
 			projectId ??= await resolveProject(s, str('project') ?? env.JASPER_PROJECT);
 			return projectId;
 		},
+		namedProject: !!(str('project') ?? env.JASPER_PROJECT),
 	};
 	try {
 		await run(ctx, rest);
