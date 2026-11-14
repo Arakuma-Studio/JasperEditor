@@ -13752,5 +13752,10 @@
   "Isolated fragments": "Fragmentos aislados",
   "Isolated fragment between cuts ({0} frames)": "Fragmento aislado entre cortes ({0} fotogramas)",
   "Isolated fragment between cuts ({0} frames): “{1}”": "Fragmento aislado entre cortes ({0} fotogramas): «{1}»",
-  "Isolated fragment between removed words ({0} frames): “{1}”": "Fragmento aislado entre palabras eliminadas ({0} fotogramas): «{1}»"
+  "Isolated fragment between removed words ({0} frames): “{1}”": "Fragmento aislado entre palabras eliminadas ({0} fotogramas): «{1}»",
+  "Voice without words between cuts ({0} frames)": "Voz sin palabras entre cortes ({0} fotogramas)",
+  "Sound without its picture between cuts ({0} frames): “{1}”": "Sonido sin su imagen entre cortes ({0} fotogramas): «{1}»",
+  "Sound without its picture between cuts ({0} frames)": "Sonido sin su imagen entre cortes ({0} fotogramas)",
+  "Short piece between cuts ({0} frames), a filler: “{1}”": "Trozo corto entre cortes ({0} fotogramas), una muletilla: «{1}»",
+  "Short piece between cuts ({0} frames), not in the script: “{1}”": "Trozo corto entre cortes ({0} fotogramas), fuera del guion: «{1}»"
 }

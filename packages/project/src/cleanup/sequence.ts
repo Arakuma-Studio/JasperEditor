@@ -18,6 +18,7 @@ import {
 	type CleanupVoice,
 	type DetectResult,
 	detectCleanup,
+	effectiveLists,
 	FR,
 	findingFingerprint,
 	phraseTailEnd,
@@ -28,6 +29,7 @@ import {
 } from './detector.ts';
 import { EDGE_DECAY_S, edgeBounds, edgeLevelsOf, snapCut } from './edge-snap.ts';
 import { snapEdge } from './edges.ts';
+import { type FragmentContext, findShortPieces, shortPieceFinding } from './fragments.ts';
 import { cleanupLanguageOf } from './lists.ts';
 import { isHarshCut, planMediaCuts, type Span } from './plan.ts';
 import type { AWord } from './rules.ts';
@@ -42,6 +44,7 @@ import {
 	type RetakeGroup,
 	readSequenceCleanup,
 } from './schema.ts';
+import { ScriptAligner, scriptTokens } from './script.ts';
 
 export type CleanupDecisions = {
 	/** Finding ids or fingerprints to remove (over their suggestion). */
@@ -368,6 +371,10 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 		run: MediaRun;
 		keptFrames: Array<[number, number]>;
 		extent: [number, number];
+		/** The clip's kept words, removed words' times and voice without words left for review (media seconds). */
+		words: AWord[];
+		removedTimes: Span[];
+		protect: Span[];
 	};
 	const clipPlans: ClipPlan[] = [];
 	const skipped: CleanupPlan['skipped'] = [];
@@ -642,8 +649,103 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 			);
 			// an accepted fragment at the end leaves another piece last: it keeps its tail too
 			tail();
-			clipPlans.push({ clip, run, keptFrames, extent });
+			clipPlans.push({
+				clip,
+				run,
+				keptFrames,
+				extent,
+				words: words.filter((_, k) => inClip[k] && !removedNow[k]),
+				removedTimes,
+				protect: clipSpan0(keepSpeech),
+			});
 		}
+	}
+
+	// ---- short kept pieces between cuts (fragments.ts): a `fragment` finding each, the piece removed when accepted
+	for (const run of runs.values()) {
+		const cps = clipPlans.filter((cp) => cp.run === run);
+		const lang = cleanupLanguageOf(run.language);
+		const sTokens = script ? scriptTokens(script) : [];
+		const context: FragmentContext = {
+			fillers: new Set(effectiveLists(lang, lang ? stored.lists?.[lang] : null).fillers),
+			aligner: sTokens.length ? new ScriptAligner(sTokens) : null,
+			output: [],
+		};
+		const v = run.voice;
+		const found = findShortPieces({
+			seq,
+			rate,
+			clips: cps.map((cp) => ({ ...cp, kept: cp.keptFrames })),
+			scope: range,
+			voiceIn: (t0, t1) => {
+				if (!v) return false;
+				for (
+					let k = Math.max(0, Math.floor(t0 / FR + 1e-9));
+					k < Math.min(v.frameCount, Math.ceil(t1 / FR - 1e-9));
+					k++
+				)
+					if (v.classes[k] === VOICE_CLASS_SPEECH || voicedFrame(v, k)) return true;
+				return false;
+			},
+		});
+		context.output = found.output;
+		const drop = new Set<string>();
+		for (const p of found.pieces) {
+			const cp = cps[p.clip]!;
+			const overlapsSpan = ([x, y]: Span) => x < p.end - 1e-9 && y > p.start + 1e-9;
+			// voice without words that waits for its own finding is not judged here
+			if (!p.tokens.length && cp.protect.some(overlapsSpan)) continue;
+			const d = shortPieceFinding(p, context);
+			if (!d) continue;
+			// a sliver round 12 already offers keeps its finding; this rule may only make it a removal (sound without its
+			// picture, a filler)
+			const prior = fragments.find(
+				(x) =>
+					x.run === run &&
+					overlapsSpan([x.f.range.start / FLICKS_PER_SECOND, x.f.range.end / FLICKS_PER_SECOND]),
+			);
+			if (prior) {
+				if (d.suggested === 'remove' && prior.f.suggested !== 'remove') {
+					prior.f.suggested = 'remove';
+					prior.f.reason.params.why = d.why;
+					if (!accepted.has(prior.f) && isAccepted(prior.f, decisions, rejected)) {
+						accepted.add(prior.f);
+						drop.add(`${p.clip}:${p.piece}`);
+					}
+				}
+				continue;
+			}
+			const text = p.words.map((w) => w.text.trim()).join(' ');
+			const a = Math.max(0, Math.round(p.start * FLICKS_PER_SECOND));
+			const f: CleanupFinding = {
+				id: `f${findings.length}`,
+				kind: 'fragment',
+				range: { start: a, end: Math.max(a, Math.round(p.end * FLICKS_PER_SECOND)) },
+				words: p.words.length ? [p.words[0]!.i, p.words[p.words.length - 1]!.i] : null,
+				confidence: d.suggested === 'remove' ? 0.7 : 0.5,
+				reason: {
+					key: 'cleanup.reason.fragment',
+					params: {
+						text,
+						seconds: Math.round((p.end - p.start) * 1000) / 1000,
+						frames: p.frames,
+						between: p.betweenWords ? 'words' : 'cuts',
+						why: d.why,
+					},
+				},
+				suggested: d.suggested,
+				fingerprint: fragmentFingerprint(run, p.start, p.end, text),
+			};
+			findings.push(f);
+			fragments.push({ run, f });
+			if (isAccepted(f, decisions, rejected)) {
+				accepted.add(f);
+				drop.add(`${p.clip}:${p.piece}`);
+			}
+		}
+		cps.forEach((cp, ci) => {
+			cp.keptFrames = cp.keptFrames.filter((_, pi) => !drop.has(`${ci}:${pi}`));
+		});
 	}
 
 	// ---- removed ranges: where every speech clip covering a frame removes it
@@ -853,7 +955,9 @@ export function keptToFrames(
 		const reach = Math.ceil((EDGE_DECAY_S * FLICKS_PER_SECOND) / F) + 1;
 		const candidates: number[] = [];
 		for (let g = Math.max(lo, f - reach); g <= Math.min(hi, f + reach); g++) candidates.push(boundaryAt(g));
-		return Math.round(toFrameX(snapCut(levels, { t, side, keepMore, keepSoft, cutMore, candidates, words }).t));
+		return Math.round(
+			toFrameX(snapCut(levels, { t, side, keepMore, keepSoft, cutMore, candidates, words }).t),
+		);
 	};
 	const out: Array<[number, number]> = [];
 	// the boundary at or before t: the kept word after a cut keeps its onset, the removed word after a piece loses its

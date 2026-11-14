@@ -1127,6 +1127,45 @@ rev 267; the source recording, 16 kHz mono, measured on the build host, `/tmp/je
   without a 20 ms dip under the quiet level keeps its edge (reported, not moved); the real-file rerun of Apply on the
   GPU PC is the coordinator's.
 
+**Stray fragments and A / V slivers** (round 16, same review):
+- **Reported**: 47 kept A1 clips under 0.7 s of rev 152 held no script word — "mmm", "eeeh", a laugh heard as "y",
+  "¡Ah!", "puta madre", syllables of other takes; and a hidden V1 sliver kept its A1 audio, which then played under the
+  next shot (an "eeh" after "Appstore" heard as "y"). Round 12's fragment rule covered pieces under 10 frames *inside*
+  a clip only; an already cut sequence keeps every piece as its own clip, and a clip that spans its own extent was
+  never judged. Measured on rev 152: 67 A1 clips under 0.7 s, 34 of them unlinked slivers of 1–7 frames lying under
+  the tail of the previous shot's picture (an agent deleted their picture and stretched the shot before over it).
+- **Rule** (`cleanup/fragments.ts`, hook after the per-clip planning in `sequence.ts`): every kept piece of at most
+  `FRAGMENT_MAX_S` (0.7 s: the review's stray pieces lasted 0.02–0.68 s, its kept scripted short pieces — "Eso es
+  todo.", "Mis juegos," — 0.42–0.68 s, so length alone cannot separate them) with a cut on both sides — a removed
+  range inside the clip, or a clip edge that is not a through edit with the clip beside it on the track and not the
+  scope's edge — is judged: voice without words (`why: voice`; removed when removed words lie on both sides or the
+  sound has no picture, else review; skipped while its own untranscribed finding waits), only vocalic fillers
+  (`filler`, removed), sound playing without its own picture (`orphan`: the media's picture is in the sequence but no
+  linked picture clip shows that moment; removed unless the script holds its words in output order, review without a
+  script), words most of which do not align to the script *in the order the output plays them* (`off-script`:
+  `ScriptAligner` support ≥ 3 of 6 neighbours over the kept words in sequence order; removed when removed words lie on
+  both sides, a piece of another take, else review). Anything else stays without a finding. The finding is a
+  `fragment` like round 12's (reason params `text`, `frames`, `between`, `why`; Review panel "Isolated fragments",
+  MCP reason text); an accepted one removes the piece's frames — on every target track, so the picture above an
+  orphan sliver loses the same frames (the shot's overhang) and no audio is left without its picture. Where a round-12
+  sliver finding covers the piece, it keeps its id and may only become a removal (`why` set). No audio goes without an
+  accepted finding.
+- **Measured** (Clean Up, Fast, script attached, default decisions, over rev 152's main sequence as it is, one-off
+  script): 33 fragment findings, 28 suggested for removal (the 27 wordless orphan slivers rev 267 removed, and one
+  wordless orphan it kept, 2210.57 s), 5 for review (orphan "Y", "Aunque", "Me" — removed in rev 267 — and "y",
+  "Unity" — kept); of the 45 short clips rev 267 removed, 30 now have a fragment finding, 7 an untranscribed review
+  finding, 2 another finding and 6 none: single script words that align in output order ("Desde", "Hubo", "Pero",
+  "como", "el", "que el") — rev 267 replaced several of them by the same word of another take, which a level and
+  script rule cannot hear.
+- Tests (`cleanup-fragments.test.ts`, each failing on b7b06eda9 except the control): a whole 12-frame clip holding a
+  laugh written "ja" between two scripted shots is an off-script fragment for review, and accepted it goes with its
+  picture (no audio without its picture after Apply); a scripted short phrase between cuts gets no finding; a 4-frame
+  A1 sliver whose picture was deleted under the stretched previous shot is removed by default together with the
+  shot's 4-frame overhang. Corpus unchanged (the corpus has one clip per case and speech under every word).
+- Limits: a whole short clip of a picture-less media (audio-only edit) is judged only by fillers and the script; a
+  scripted word spliced from another take is not found; orphan *picture* slivers (video without its audio) are not
+  planned — Clean Up plans the speech clips and applies every range to the picture with them, so it never makes one.
+
 Kinds follow the structure: ≤ 2 words a false start, a whole clause (clause start, clause end, ≥ 3 content words) a
 retake (with a group), else a restart; inside re-decoded ranges they become hidden retakes as before. The settings keep
 their meaning (the windows, `retakeSimilarity`, `takeGapS`, `phraseGapS`, `falseStartGapS` for false starts by clause);

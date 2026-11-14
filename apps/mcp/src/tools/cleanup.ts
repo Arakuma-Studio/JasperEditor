@@ -332,8 +332,19 @@ export function findingReasonText(f: CleanupFinding): string {
 			return `The transcription may be wrong here: "${text}"`;
 		case 'hallucination':
 			return `Likely invented by speech to text: "${text}"`;
-		case 'fragment':
-			return `${p.frames} frames kept alone between ${p.between === 'words' ? 'removed words' : 'cuts'}${text ? `: "${text}"` : ''} — a flash of another moment; cut it or keep it`;
+		case 'fragment': {
+			const why =
+				p.why === 'voice'
+					? ', voice without words'
+					: p.why === 'orphan'
+						? ', sound playing without its own picture'
+						: p.why === 'filler'
+							? ', a filler'
+							: p.why === 'off-script'
+								? ', not in the script'
+								: '';
+			return `${p.frames} frames kept alone between ${p.between === 'words' ? 'removed words' : 'cuts'}${why}${text ? `: "${text}"` : ''} — a flash of another moment; cut it or keep it`;
+		}
 	}
 }
 
