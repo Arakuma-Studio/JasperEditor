@@ -363,6 +363,7 @@ export function findingReasonText(f: CleanupFinding): string {
 				word: 'it would take most of another word — listen first',
 				sound: 'a separate sound comes before the word — listen first',
 				faded: 'the word had already faded — optional',
+				onset: "it may be the next word's start — listen first",
 				picture: 'the linked picture cannot follow (or another video clip crosses the edit)',
 				'other-sound': "another track's sound runs across the edit",
 				doubled: 'another clip already plays that sound',

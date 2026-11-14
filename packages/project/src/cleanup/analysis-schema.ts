@@ -131,7 +131,7 @@ export const CleanupAnalysisSchema = z.object({
 					.object({
 						kind: z.enum(['extend', 'trim']),
 						safe: z.boolean(),
-						review: z.enum(['speech-left', 'word', 'sound', 'faded']).optional(),
+						review: z.enum(['speech-left', 'word', 'sound', 'faded', 'onset']).optional(),
 					})
 					.optional(),
 			}),

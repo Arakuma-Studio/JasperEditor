@@ -130,6 +130,7 @@
   "(G) White Input Level",
   "(G) White Output Level",
   "(hidden)",
+  "(it may be the next word’s start: listen first)",
   "(it would take most of another word: listen first)",
   "(kept: harsh cut)",
   "(nothing)",

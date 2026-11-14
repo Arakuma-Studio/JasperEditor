@@ -633,6 +633,8 @@ function edgeReviewText(review: unknown): string {
 			return ` ${t('(a separate sound comes before the word: listen first)')}`;
 		case 'faded':
 			return ` ${t('(the word had already faded: optional)')}`;
+		case 'onset':
+			return ` ${t('(it may be the next word’s start: listen first)')}`;
 		case 'picture':
 			return ` ${t('(the picture cannot follow the sound here)')}`;
 		case 'other-sound':

@@ -13804,5 +13804,6 @@
   "The edit cuts a word’s start: keep 1 more frame": "El corte corta el inicio de una palabra: conservar 1 fotograma más",
   "The edit cuts the end of “{0}”: keep 1 more frame": "El corte corta el final de «{0}»: conservar 1 fotograma más",
   "The edit cuts the start of “{0}”: keep 1 more frame": "El corte corta el inicio de «{0}»: conservar 1 fotograma más",
-  "Trim 1 frame of another word’s sound at the edit": "Recortar 1 fotograma del sonido de otra palabra en el corte"
+  "Trim 1 frame of another word’s sound at the edit": "Recortar 1 fotograma del sonido de otra palabra en el corte",
+  "(it may be the next word’s start: listen first)": "(puede ser el inicio de la palabra siguiente: escucha primero)"
 }

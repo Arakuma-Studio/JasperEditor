@@ -24,7 +24,14 @@ type Window = {
 };
 const FIX = JSON.parse(
 	readFileSync(new URL('./fixtures/cleanup-edge-repair-source.json', import.meta.url), 'utf8'),
-) as { ellipsis: Window; el: Window; no: Window; levels: CleanupVoice['levels'] };
+) as {
+	ellipsis: Window;
+	el: Window;
+	no: Window;
+	boton: Window;
+	pue: Window;
+	levels: CleanupVoice['levels'];
+};
 const bytes = (b64: string) => new Uint8Array(Buffer.from(b64, 'base64'));
 const S = (x: number) => Math.round(x * FLICKS_PER_SECOND);
 const FPS = 60;
@@ -117,6 +124,32 @@ describe('the cut-edge audit repairs the word it cuts', () => {
 		expect(reach).toBeGreaterThanOrEqual(0);
 		expect(reach).toBeLessThanOrEqual(2);
 		expect(row!.repair).toMatchObject({ kind: 'extend', safe: true });
+	});
+});
+
+describe('a repair adds only the word up to −38 dBFS, never the next syllable', () => {
+	const fixOf = (w: Window, cut: number, later: [number, number]) => {
+		const { H, voice, clip } = cutTimeline(w, cut, later, { side: 'out' });
+		const row = auditCutEdges(H.doc, H.seq, () => voice).find(
+			(r) => r.clipId === clip.id && r.side === 'out',
+		)!;
+		const frame =
+			row.fixFrame === null ? null : row.fixFrame - clip.start + clip.sourceIn / (FLICKS_PER_SECOND / FPS);
+		return { row, frame };
+	};
+
+	it('ends where the decay reaches −38 dBFS, not in the deeper silence beyond (“botón.|” at 376.45)', () => {
+		// the decay of "botón." falls under −38 dBFS two frames after the cut; the snapper's clean boundary lay 6 frames out
+		const { row, frame } = fixOf(FIX.boton, 33, [0.9, 1.15]);
+		expect(row.repair).toMatchObject({ kind: 'extend', safe: true });
+		expect(frame).toBe(35);
+	});
+
+	it('never extends into the next word’s onset after a dip; offers the trim back to the dip (“que | pue-” at 2714.03)', () => {
+		const { row, frame } = fixOf(FIX.pue, 44, [1.0, 1.25]);
+		expect(row.repair).toMatchObject({ kind: 'trim', safe: false, review: 'onset' });
+		// back to 2713.967, where the hand-fixed revision 549 cut "pue-"
+		expect(frame).toBe(40);
 	});
 });
 
