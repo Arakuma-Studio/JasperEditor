@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ExportVerifyResult } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { buildVerifyContext } from '../src/export/verify-context.ts';
 import { coreServices } from '../src/tools/services.ts';
 import {
 	closeApps,
@@ -139,6 +140,10 @@ describe('POST /api/exports/:jobId/verify', () => {
 		expect(r.rows.find((x) => x.id === 'target-loudness')).toMatchObject({ status: 'warn', expected: -14 });
 		expect(r.rows.find((x) => x.id === 'cut-black')!.message).toMatch(/^3 cuts checked/);
 		expect(r.rows.find((x) => x.id === 'av-skew')!.status).toBe('pass');
+		// the 15-frame gap is silent too: listed as a warning (it may be meant), not a failure
+		expect(r.rows.filter((x) => x.id === 'uncovered-video')).toMatchObject([
+			{ status: 'warn', measured: 15, at: { frame: 90 } },
+		]);
 		expect(r.verified).toBe(false);
 
 		const fast = await app.inject({
@@ -152,7 +157,49 @@ describe('POST /api/exports/:jobId/verify', () => {
 			'streams',
 			'duration',
 			'av-skew',
+			'uncovered-video',
 		]);
+	});
+
+	it('a picture lifted alone leaves black under its sound: the plan warns and verify.json records it', async () => {
+		const a = await register(app, shot('hole.mp4', '0x707070', 440));
+		const d = new DocBuilder();
+		d.tx([
+			{
+				type: 'clip.place',
+				source: { mediaId: d.addMedia(a) },
+				at: 0,
+				sourceRange: { in: { sourceFrames: 0 }, out: { sourceFrames: 45 } },
+			},
+		]);
+		const v1 = d.doc.sequences[d.seqId]!.videoTracks[0]!.id;
+		d.tx([{ type: 'range.lift', from: 20, to: 27, tracks: [v1] }]);
+		const plan = await app.inject({
+			method: 'POST',
+			url: '/api/exports/plan',
+			headers: JSON_H,
+			payload: { envelope: d.envelope(), sequenceId: d.seqId, settings: settings(d.seqId) },
+		});
+		expect(plan.statusCode, plan.body).toBe(200);
+		const w = (plan.json() as { warnings: { code: string; message: string }[] }).warnings;
+		expect(w.find((x) => x.code === 'UNCOVERED_VIDEO')?.message).toMatch(/^7 frames .*frames 20–27/);
+		const ctx = buildVerifyContext({
+			document: d.doc,
+			sequenceId: d.seqId,
+			range: { start: 0, end: 45 },
+			output: {
+				width: 1920,
+				height: 1080,
+				fps: { num: 30, den: 1 },
+				audioChannels: 2,
+				audioSampleRate: 48000,
+				normalize: null,
+				encoder: { container: 'mp4', codec: 'h264' },
+			},
+			pixFmt: 'yuv420p',
+			audioEncoder: 'aac',
+		});
+		expect(ctx.uncovered).toEqual([{ start: 20, end: 27, audible: true }]);
 	});
 
 	it('refuses unknown jobs, other kinds and bad bodies', { timeout: 60_000 }, async () => {

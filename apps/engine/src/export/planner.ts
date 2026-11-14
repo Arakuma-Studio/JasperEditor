@@ -42,6 +42,7 @@ import {
 	snapshotGlNeeds,
 	THREE_D_ASSET_MISSING,
 	transitionSpec,
+	uncoveredPicture,
 	warpExportIssues,
 } from '@jasper/project';
 import { codecHeadroomDb } from '../audio/deliver.ts';
@@ -489,6 +490,18 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 				code: 'FIELDS_PROGRESSIVE',
 				message: `The sequence is ${f.fieldOrder} field first; exports are progressive (field-rendered interlaced output is not available)`,
 			});
+	}
+	// frames with no picture on any video track while audio plays export black (a hole left by a lift or a trim)
+	if (!input.still && !settings.video?.alpha) {
+		const holes = uncoveredPicture(document, seq, range).filter((r) => r.audible);
+		if (holes.length) {
+			const n = holes.reduce((t, r) => t + r.end - r.start, 0);
+			const list = holes.slice(0, 5).map((r) => `${r.start}–${r.end}`);
+			warnings.push({
+				code: 'UNCOVERED_VIDEO',
+				message: `${n} frame${n === 1 ? ' has' : 's have'} no picture on any video track while audio plays (frames ${list.join(', ')}${holes.length > 5 ? ` and ${holes.length - 5} more ranges` : ''}): they export black. Extend a neighbouring video clip over them, or ask the user`,
+			});
+		}
 	}
 	// spec 12 §2.11: sounds heard that need a credit without a credits sidecar; a stale / failed Sound Check (info).
 	warnings.push(

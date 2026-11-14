@@ -21,6 +21,7 @@ import type { DClip, DDoc, HandlerContext } from '../context.ts';
 import { assertUnlocked, cleanupSequence, end, findTrackIn, setClipRange } from '../placement.ts';
 import { contentWindow, rippleTrimGroup, trimLimits } from '../ripple.ts';
 import type { CommandOf } from '../schemas/index.ts';
+import { holesBefore, warnNewHoles } from '../uncovered-guard.ts';
 import { placeSource } from './clip-core.ts';
 import { rollRange, rollTrim } from './clip-edit.ts';
 import { insertItem, parentBinOf } from './project-items.ts';
@@ -409,8 +410,9 @@ function trimEditsHandler(doc: DDoc, cmd: CommandOf<'clip.trimEdits'>, h: Handle
 			h.fail('E_INVALID_PARAM', 'Select at most one edit point per track', { blocking: [e.clipId] });
 		used.add(e.clip.trackId);
 	}
-	// Coincident link partners of each edit point (Linked Selection), one per track.
-	const pickFrame = (c: DClip, edge: 'in' | 'out') => (edge === 'in' ? c.start : end(c));
+	const holes = holesBefore(doc, seq);
+	// Link partners of each edit point (Linked Selection), one per track: their same-side edge moves by the same delta
+	// even when it is apart (a split edit keeps its offset), so no sound outgrows its picture.
 	const ripple: { clip: DClip; edge: 'in' | 'out' }[] = [];
 	const regular: { clip: DClip; edge: 'in' | 'out' }[] = [];
 	const rolls: { clip: DClip; edge: 'in' | 'out' }[] = [];
@@ -421,7 +423,6 @@ function trimEditsHandler(doc: DDoc, cmd: CommandOf<'clip.trimEdits'>, h: Handle
 		for (const id of seq.links[e.clip.linkId]?.members ?? []) {
 			const p = seq.clips[id];
 			if (!p || p.id === e.clip.id || used.has(p.trackId)) continue;
-			if (pickFrame(p, e.edge) !== pickFrame(e.clip, e.edge)) continue;
 			if (findTrackIn(seq, p.trackId)?.track.locked) continue;
 			used.add(p.trackId);
 			group.push({ clip: p, edge: e.edge });
@@ -482,6 +483,7 @@ function trimEditsHandler(doc: DDoc, cmd: CommandOf<'clip.trimEdits'>, h: Handle
 			);
 	}
 	cleanupSequence(seq, h);
+	warnNewHoles(doc, seq, holes, h);
 	return { deltaFrames: d };
 }
 

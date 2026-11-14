@@ -61,6 +61,7 @@ import {
 import { rippleDeleteSpans, rippleTrimGroup, tracksHolding, trimLimits } from '../ripple.ts';
 import type { ClipPatch } from '../schemas/clip.ts';
 import type { CommandOf } from '../schemas/index.ts';
+import { holesBefore, warnNewHoles } from '../uncovered-guard.ts';
 import {
 	applyTransformPatch,
 	commonFields,
@@ -603,11 +604,14 @@ function trimHandler(doc: DDoc, cmd: CommandOf<'clip.trim'>, h: HandlerContext) 
 	const { seq, clip } = h.clip(doc, cmd.clipId);
 	assertUnlocked(findTrackIn(seq, clip.trackId)!.track, h);
 	const edgeFrame = (c: DClip) => (cmd.edge === 'in' ? c.start : end(c));
+	const holes = holesBefore(doc, seq);
 	const members: DClip[] = [clip];
+	// Linked Selection: every link partner's same-side edge moves by the same delta, also when the edges are apart
+	// (a split edit keeps its offset), so the sound never grows or ripples away from its picture (black frames).
 	if (cmd.linked !== false && clip.linkId && seq.links[clip.linkId]) {
 		for (const id of seq.links[clip.linkId]!.members) {
 			const p = seq.clips[id];
-			if (!p || p.id === clip.id || edgeFrame(p) !== edgeFrame(clip)) continue;
+			if (!p || p.id === clip.id) continue;
 			if (findTrackIn(seq, p.trackId)?.track.locked) continue;
 			if (members.some((m) => m.trackId === p.trackId)) continue;
 			members.push(p);
@@ -640,6 +644,7 @@ function trimHandler(doc: DDoc, cmd: CommandOf<'clip.trim'>, h: HandlerContext) 
 			// a subtitle retimed by hand is kept by captions.regenerate
 			setCaptionLocked(clip as Clip, true);
 			cleanupSequence(seq, h);
+			warnNewHoles(doc, seq, holes, h);
 		}
 		return { deltaFrames: d };
 	}
@@ -661,6 +666,7 @@ function trimHandler(doc: DDoc, cmd: CommandOf<'clip.trim'>, h: HandlerContext) 
 	// a subtitle retimed by hand is kept by captions.regenerate
 	setCaptionLocked(clip as Clip, true);
 	cleanupSequence(seq, h);
+	warnNewHoles(doc, seq, holes, h);
 	return { deltaFrames: d };
 }
 
@@ -909,8 +915,10 @@ export const clipCoreHandlers = {
 		const seq = found.seq;
 		const clips = cmd.groups === false ? found.clips : expandGroups(seq, found.clips);
 		for (const c of clips) assertUnlocked(findTrackIn(seq, c.trackId)!.track, h);
+		const holes = holesBefore(doc, seq);
 		for (const c of clips) removeClip(seq, c.id, h);
 		cleanupSequence(seq, h);
+		warnNewHoles(doc, seq, holes, h);
 		return { removed: clips.map((c) => c.id) };
 	},
 	'clip.extract': (doc, cmd, h: HandlerContext) => {

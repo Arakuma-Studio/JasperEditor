@@ -307,7 +307,10 @@ export const ClipTrimCmd = cmd('clip.trim', {
 	edge: z.enum(['in', 'out']),
 	deltaFrames: z.number().int(),
 	mode: z.enum(['regular', 'ripple', 'roll']).optional(),
-	/** Trim link partners whose same edge coincides (S01:CLP-010). Default true. */
+	/**
+	 * Trim link partners at the same side (in / out), by the same delta also when their edge is apart (a split edit
+	 * keeps its offset; S01:CLP-010). Default true.
+	 */
 	linked: z.boolean().optional(),
 	/**
 	 * edit-structure (Premiere groups): trimming the outer edge of a clip group (the first In / the last Out) trims

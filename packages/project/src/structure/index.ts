@@ -5,3 +5,4 @@ export * from './generators.ts';
 export * from './nest.ts';
 export * from './synthetic.ts';
 export * from './through.ts';
+export * from './uncovered.ts';

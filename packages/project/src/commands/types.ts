@@ -110,6 +110,8 @@ export const WARNING_CODES = [
 	'W_SCENE3D_KEPT',
 	/** a generated clip (title, shape, motion graphic…) spanning a ripple on another track was kept whole and refitted. */
 	'W_OVERLAY_FITTED',
+	/** an edit left frames with no picture on any shown video track while audio plays (they export black). */
+	'W_UNCOVERED_VIDEO',
 ] as const;
 
 /** A problem report. `commandIndex` is -1 for transaction-level issues (invariants, revision). */

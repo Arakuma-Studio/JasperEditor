@@ -42,6 +42,7 @@ import {
 } from '../placement.ts';
 import { contentHandles, contentWindow } from '../ripple.ts';
 import type { CommandOf } from '../schemas/index.ts';
+import { holesBefore, warnNewHoles } from '../uncovered-guard.ts';
 import { type HandlerMap, idList, clone as snapshotClip } from './util.ts';
 
 function trackOf(seq: DSeq, clip: DClip, h: HandlerContext): DTrack {
@@ -610,12 +611,15 @@ function rangeLiftHandler(doc: DDoc, cmd: CommandOf<'range.lift'>, h: HandlerCon
 	const [from, to] = rangeBounds(seq, cmd, h);
 	const tracks = rangeTracks(seq, cmd.tracks, h);
 	const ids = tracks.map((t) => t.id);
+	const holes = holesBefore(doc, seq);
 	const faces = audioCutFaces(seq, ids, from, to);
 	const splits: SplitRecord[] = [];
 	for (const id of ids) splits.push(...clearRange(seq, id, from, to, h));
 	relinkSplits(seq, splits, h);
 	const fades = cmd.joinFades ? setJoinFades(seq, faces(splits), JOIN_FADE_MS) : 0;
 	cleanupSequence(seq, h);
+	// lifting the picture alone leaves black under the sound it kept: say so (it may be meant: something goes there)
+	warnNewHoles(doc, seq, holes, h);
 	return { from, to, tracks: ids, fades };
 }
 

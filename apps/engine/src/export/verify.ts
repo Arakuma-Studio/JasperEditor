@@ -921,6 +921,66 @@ function targetRows(input: JudgeInput, t: DeliveryTarget): VerifyRow[] {
 	return rows;
 }
 
+/**
+ * `uncovered-video`: frames of the range with no picture on any shown video track (recorded at export, verify.json
+ * `uncovered`), one row per range — `fail` where audio plays under them (black under kept sound: a hole left by a lift
+ * or a trim), `warn` where it is silent (may be an intended black). Timeline facts: in `fast` and `full` checks.
+ */
+function uncoveredRows(ctx: ExportVerifyContext | null): VerifyRow[] {
+	if (!ctx?.uncovered)
+		return [
+			{
+				id: 'uncovered-video',
+				kind: 'judgement',
+				status: 'unverified',
+				measured: null,
+				expected: null,
+				tolerance: null,
+				message:
+					'This export did not record its uncovered frames (an older build): export again to check them.',
+			},
+		];
+	const fps = fpsOf(ctx.fps);
+	const listed: VerifyRow[] = ctx.uncovered.map((r) => {
+		const n = r.end - r.start;
+		const at = atOf(ctx, fps, (r.start - ctx.range.start) / fps);
+		return {
+			id: 'uncovered-video',
+			kind: 'judgement',
+			status: r.audible ? 'fail' : 'warn',
+			measured: n,
+			expected: 0,
+			tolerance: null,
+			at,
+			message: r.audible
+				? `Frames ${r.start}–${r.end} (${n} frame${n === 1 ? '' : 's'}, from ${at.timecode}) have no picture on any video track while audio plays: black in the file under the sound (a hole left by a lift or a trim). Extend a neighbouring video clip over them, or ask the user.`
+				: `Frames ${r.start}–${r.end} (${n} frame${n === 1 ? '' : 's'}, from ${at.timecode}) have no picture on any video track (silent): black in the file. Ask the user whether it is meant.`,
+		};
+	});
+	const rows = capped(listed, 'uncovered-video', 'judgement', 'uncovered ranges');
+	if (ctx.uncoveredMore)
+		rows.push({
+			id: 'uncovered-video',
+			kind: 'judgement',
+			status: 'warn',
+			measured: ctx.uncoveredMore,
+			expected: 0,
+			tolerance: null,
+			message: `${ctx.uncoveredMore} more uncovered ranges not listed.`,
+		});
+	if (!rows.length)
+		rows.push({
+			id: 'uncovered-video',
+			kind: 'judgement',
+			status: 'pass',
+			measured: 0,
+			expected: 0,
+			tolerance: null,
+			message: 'Every frame of the range has a picture on a video track.',
+		});
+	return rows;
+}
+
 /** The rows of a verification (see the file comment), in check order. */
 export function judgeExport(input: JudgeInput): VerifyRow[] {
 	const rows: VerifyRow[] = [];
@@ -929,6 +989,7 @@ export function judgeExport(input: JudgeInput): VerifyRow[] {
 	if (input.full) rows.push(decodeRow(input.full, input.context));
 	rows.push(streamsRow(input), durationRow(input));
 	if (what === 'video') rows.push(skewRow(input));
+	if (what !== 'audio') rows.push(...uncoveredRows(input.context));
 	if (input.full) {
 		rows.push(...cutRows(input, input.full));
 		if (what !== 'gif') {

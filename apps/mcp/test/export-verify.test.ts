@@ -153,6 +153,8 @@ describe('export verification through MCP', () => {
 			['streams', 'pass'],
 			['duration', 'pass'],
 			['av-skew', 'pass'],
+			// the silent 15-frame gap: listed (it may be meant), not a failure
+			['uncovered-video', 'warn'],
 		]);
 		expect(started.verified).toBe(true);
 		expect(started.output.streams.map((s) => s.type)).toEqual(['video', 'audio']);
@@ -170,6 +172,7 @@ describe('export verification through MCP', () => {
 			'streams',
 			'duration',
 			'av-skew',
+			'uncovered-video',
 			'cut-black',
 			'cut-flash',
 			'cut-click',
@@ -234,6 +237,7 @@ describe('export verification through MCP', () => {
 		expect(gif.rows.map((r) => [r.id, r.status])).toEqual([
 			['streams', 'pass'],
 			['duration', 'pass'],
+			['uncovered-video', 'warn'],
 		]);
 		expect(gif.verified).toBe(true);
 		expect(gif.output.streams.map((s) => [s.type, s.codec, s.frames])).toEqual([['video', 'gif', 65]]);
@@ -243,6 +247,7 @@ describe('export verification through MCP', () => {
 			'decode',
 			'streams',
 			'duration',
+			'uncovered-video',
 			'cut-black',
 			'cut-flash',
 		]);
