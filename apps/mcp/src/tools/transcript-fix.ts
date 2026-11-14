@@ -36,7 +36,7 @@ Rebuild: when the subtitles of a finished cut must read like the script and the 
 const ModeArg = z
 	.enum(['propose', 'dryRun', 'rebuild'])
 	.describe(
-		'"dryRun": the fast pre-run report (nothing stored, no audio check); "propose": the audio check and one proposal; "rebuild": re-transcribe the kept speech and rewrite it from the script (one proposal)',
+		'"dryRun": report, nothing stored; "propose": audio-checked fixes; "rebuild": the kept speech from the script',
 	);
 
 type Args = {

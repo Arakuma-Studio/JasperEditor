@@ -38,7 +38,7 @@ import {
 	sequenceTimecode,
 } from '@jasper/project';
 import { z } from 'zod';
-import { ProjectIdArg, SequenceIdArg, timeArg } from '../arguments.ts';
+import { ProjectIdArg, SequenceIdArg, TimeArgSchema, timeArg } from '../arguments.ts';
 import {
 	DESTRUCTIVE,
 	defineTool,
@@ -117,15 +117,13 @@ const TargetShape = {
 			'A whole media file, analysed on its own (times = media time); analyze_voice / plan_cleanup only',
 		),
 	preset: PresetArg.optional().describe("Default: the sequence's preset (Fast when none)"),
-	settings: CleanupOverridesSchema.optional().describe(
-		'Overrides over the preset: {rules?, thresholds?, edges?, gaps?, guards?, joins?} — see set_cleanup_settings',
-	),
+	settings: CleanupOverridesSchema.optional().describe('Overrides over the preset; see set_cleanup_settings'),
 	script: z
 		.string()
 		.max(CLEANUP_SCRIPT_MAX_BYTES)
 		.nullable()
 		.optional()
-		.describe('Script text for this run; null = analyse without a script; default the attached script'),
+		.describe('Script for this run (null: none; default: the attached one)'),
 	language: z
 		.string()
 		.min(1)
@@ -133,13 +131,13 @@ const TargetShape = {
 		.optional()
 		.describe('Override the transcripts\' language ("es", "en"…)'),
 	from: timeArg('Only from this sequence time').optional(),
-	to: timeArg('Only up to this sequence time').optional(),
+	to: TimeArgSchema.describe('Only up to this sequence time').optional(),
 	inOut: z.boolean().optional().describe("Only between the sequence's In and Out marks"),
 	checkCuts: z
 		.enum(['spans', 'mix', 'both'])
 		.optional()
 		.describe(
-			'Repeats at cuts the transcript merged: transcribe each kept clip alone ("spans", cached) and/or the mix ("mix", review only)',
+			'Repeats merged at cuts: transcribe kept clips alone ("spans", cached) or the mix ("mix", review only)',
 		),
 };
 
