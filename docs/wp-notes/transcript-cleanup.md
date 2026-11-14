@@ -1135,11 +1135,16 @@ rev 267; the source recording, 16 kHz mono, measured on the build host, `/tmp/je
   `PINNED_IN_EDGE` (fails before).
 - **Six more property counterexamples** (main 2141f993e, 6 of 40 random runs on the build PC; all fail as far back as
   the test runs, 4be5524b6 — older than edge repair, the precision fixes and the restart rules):
-  - *onset frame removed* (seeds 1216570419, 1652480306, 2003660094: "eh | hola", "hola | hola", a removed word
-    one frame of measured silence before the kept one): `removedRamps` took the frames after the removed word's quiet
-    end up to the kept word's timestamp — its rising onset, which runs without a silent frame into its speech. Sound that
-    runs on into the next kept word's speech (its timestamp within 30 ms) is now that word's onset; sound that runs on
-    from the previous kept word's speech is its decay.
+  - *onset frame removed* (seeds 1216570419, 1652480306, 2003660094, and from the random runs of the fix
+    −1313524539, −1636771487, −1220098669: "eh | hola", "hola | hola", "hola | vamos", a removed word a frame or so
+    before the kept one): the removed word's ramp, or its finding's range, ran over the frames that rise without a
+    silent frame into the kept word's speech (with a late timestamp, before it). `keptOnsets` now marks those frames — the
+    non-speech frames over measured silence running into a kept word's first speech, searched from 50 ms before its
+    timestamp, outside removed words' times — and no removal takes them (the planner's `covered` and the frame check's
+    `removing` both lose them).
+  - *kept word's time removed* (seed −1955077281: "hola" whose timestamp runs 10 ms over a removed "eh"): `removedRamps`
+    bounded a ramp only by kept words that end before the removed word's sound starts; one whose time ran over it did
+    not count, and the ramp took its decay. A ramp now stops at any kept word's time.
   - *tail frame removed* (seeds −751042478, −191722100, −837575305: a kept word, a pause, then a short wordless or
     filler piece the fragment rule removes): the join before the dropped piece may cut inside the decay (the Fast
     style), and once the piece goes the word is the clip's last with nothing after it. After the fragment pass drops
