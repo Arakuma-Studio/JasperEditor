@@ -1689,6 +1689,60 @@ Limits: the held-out half was diagnosed after its blind score, so its round-2 fi
 fragment every decode reads wrongly or alike, a restart word stretched over its own dip, a stutter with no window
 there); review findings are about 40 % right on this cut.
 
+#### Round 3: the five remaining misses
+
+Rules written before they were run on the recording (commit a42333fe5; the five places are all diagnosed above, so
+nothing here is blind — the guard against overfitting is the review / false-positive count over the whole cut and the
+corpus gate). Four used an **acoustic echo**; checked on the recording, it does not work and is not shipped. Two text
+rules are.
+
+**The acoustic echo, checked and dropped.** Planned test: 40-band log-mel energies (25 ms Hann, 10 ms hop, 512-point
+FFT, 64–7,600 Hz), each band's mean over the segment removed, DTW distance (Euclidean frames, steps (1,0) (0,1) (1,1),
+cost over the lengths' sum) of two segments of length L; an echo = a distance under the 1st percentile of a null drawn
+from 300 positions of the cut's own speech (`[t − L, t)` against `[t, t + L)`). It was to confirm a short clip against
+the next clip's start (E1 removal), add windows at every dip whose sides echo (E2), keep a window repeat whose re-said
+word is stretched over its dip (E3), and confirm E4. Measured on rev 144 (source-16k.flac, the shipped voice analysis):
+the null's 1st / 5th / 50th percentiles are 4.10 / 4.85 / 6.49 for the dip scan and 5.81 / 6.45 / 8.19 for pairs of
+0.35 s; the real restarts scored "Lo…" 8.62 (above the null's median), "y si" 5.51, "Y después" 4.30, "Desde" 6.12,
+"Pero" 7.79, "que" 6.83 (0.5 s, null 1 % 6.24), while the closures "mostrar" and "tiene" scored 6.56 and 5.51 — real
+restarts and closures overlap. Without the per-segment mean removal it is worse (the null's 1 % at 5.57, "Lo" 9.42,
+"Desde" 10.18). So no echo rule ships: E2 and E3 are dropped (3171.95 "Lo" and 3224.43 "un montón" stay missed), E1
+never removes, E4 runs on text alone.
+
+**Rules shipped** (`edit-repeats.ts`; tests `cleanup-edit-repeats.test.ts` "restarts the span decodes miss and the stored
+transcript writes", from the recording's decodes):
+- **E1 — a short clip the span decodes do not confirm.** A kept clip of at most 1 s whose span decodes confirm none of
+  the stored transcript's words in it — no stored word written exactly (normalised, not ASR-tolerantly) by every span
+  decode — is read from the stored transcript. Before, the clip had to have span decodes that shared no word
+  ASR-tolerantly, so "arrear" / "arreglar" counted as agreeing, and two decodes both writing "y" for "Des-" too. Its
+  words said again by the span decode at the next clip's start, where the stored transcript wrote nothing (it merged
+  the retry), are a restart: reviewed, never removed by default.
+- **E4 — a voiced stretch no span decode writes.** At a phrase's start (a span's start, or speech after ≥ 0.3 s
+  without), at least 0.15 s of speech frames before the span decode's first word, in which no span decode writes a
+  word, and in which the stored transcript writes a word that the first decoded word says again: a stutter for review,
+  cut from the stretch's start (the clip's, for its first phrase) to the quietest frame before the decoded word. (The
+  rule as written also asked for the echo; it runs without it, so it is a revision after the check.)
+
+**Figures** (a fresh engine run of this branch on the clone of rev 144, port 47931, all spans cached; same scoring as
+round 2):
+
+| | round 2 (main 89b58019f) | round 3 |
+|---|---|---|
+| < 1720 s: found / suggested of 4 | 3 / 3 | 4 / 3 ("Desde" review) |
+| ≥ 1720 s: found / suggested of 10 | 6 / 1 | 8 / 1 ("Pero", "que" review) |
+| false suggestions | 0 | 0 |
+| negatives suggested / reviewed | 0 / 0 | 0 / 0 |
+| findings remove / review | 5 / 21 | 5 / 26 |
+| reviews rev 549 does not remove | 13 | 13 |
+
+The five new findings are all places rev 549 removes: "Desde" (1312.10–1312.45), "Pero" (3078.93–3079.30), "que"
+(3215.167–3215.65, the user's cut to the frame), and two clips that are not scored positives — the orphan "Aunque" at
+822.68 and the "Unity" sliver at 1685.05. Analysis time with every span cached: 5 s.
+
+Limits: of the five, three are found and none is fixed by default (review); "Lo…" (3171.95) and "un montón de…"
+(3224.43) stay missed — every decode writes the re-said word once over the gap, which no text rule tells from a
+consonant closure, and the acoustic test above could not either.
+
 ### Planning (TC-020 … TC-026)
 
 `analyzeSequenceCleanup({doc, seq, voice, settings?, script?, language?, decisions?, scope?})` (dry run, never changes

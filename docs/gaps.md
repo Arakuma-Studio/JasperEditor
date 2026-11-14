@@ -143,10 +143,11 @@ consonant closures (wp-note "Round 15").
 transcript holds once, is found from VAD-chunked transcriptions of each kept span (two decodes, one job, cached per media
 range) and / or of the mixdown — API `POST /api/cleanup/analyze` `editRepeats`, MCP `checkCuts` on `analyze_voice` /
 `plan_cleanup` / `apply_cleanup`, the Clean Up toolbar's **Repeats at cuts** toggle (off by default: ≈ 3 s of decoded
-audio per kept second; wp-note "Repeats at cuts"). Gaps: on the reporter's cut (rev 144 against rev 549) 9 of 14 real
-restarts are found and 4 suggested for removal, with no wrong suggestion; five are missed — a fragment every decode reads
-wrongly or alike, a restart word stretched over its own dip, a stutter with no window decode there; about 60 % of its
-review findings are not restarts; the MCP eval case was not run with a model.
+audio per kept second; wp-note "Repeats at cuts"). Gaps: on the reporter's cut (rev 144 against rev 549) 12 of 14 real
+restarts are found and 4 suggested for removal, with no wrong suggestion; two are missed — a restart word every decode
+writes once over its own dip ("Lo…", "un montón de…"), which neither the text rules nor a log-mel DTW echo tell from a
+consonant closure; half of its review findings (13 of 26) are not restarts; the MCP eval case was not run with a
+model.
 **Script-guided transcript correction (spec 17):** model, apply, scoring, glossary, job / route / MCP and the editor UI
 (Text ▸ Transcript ▸ Script… and Fix Transcript…, Text ▸ / Sequence ▸ entries, the Fix dialog with its dry run,
 text-diff rows in the Review panel, marks in the transcript, the patch report, "Replace all N" / "Remember", the

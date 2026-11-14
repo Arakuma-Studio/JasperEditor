@@ -52,6 +52,8 @@ const ATTEMPT_WINDOW_S = 3;
 const WORD_GAP_S = 1.5;
 /** Inside a span, a verbatim repeat or a cut-off attempt is followed by its retry within this many seconds. */
 const SPAN_RETRY_GAP_S = 1.0;
+/** A clip this short (seconds) whose span decodes do not confirm the stored transcript is read from it (rule E1). */
+const SHORT_CLIP_S = 1;
 /** Two spans are adjacent when the sequence gap between them is at most this many seconds. */
 const ADJACENT_GAP_S = 2;
 /**
@@ -313,8 +315,9 @@ export function findEditRepeats(input: EditRepeatsInput): EditRepeat[] {
 		for (const r of rs) add(decide(r, i));
 	});
 	// a clip the span decodes fail on, read from the stored transcript, which merged the retry after the cut into it
-	for (const r of storedRestarts(input, decodes))
-		add({ ...r, suggested: 'review', confidence: 0.5, held: 'decode' });
+	for (const r of storedRestarts(input, decodes)) add(r);
+	// a voiced stretch at a phrase's start that no span decode writes, said again by the first decoded word
+	for (const r of unheardRestarts(input, decodes)) add(r);
 	// mixdown repeats the span decodes did not find (the same removal once)
 	for (const r of mix) if (!out.some((x) => sameRemoval(r, x))) out.push(decide(r, -1));
 	// restarts at a phrase's start that only a decode from the dip shows
@@ -334,33 +337,117 @@ function spanTokens(lookup: EditWordsLookup, sp: EditSpan): string[] {
 }
 
 /**
- * Restarts across a cut whose attempt is a clip the span decodes fail on — they share no word (a fragment too short
- * for a chunk decode: "Hubo" written "Me decía…" and "es siempre") — read from the stored transcript instead: its words
- * in that clip said again by the span decode at the start of the next clip, where the stored transcript wrote nothing
- * (the long-form decode keeps the first copy of a restart and drops the retry: "Hubo … otro en el que"). One decode
- * hears each copy: reviewed, never removed by default.
+ * E1 — restarts across a cut whose attempt is a short clip (≤ `SHORT_CLIP_S`) the span decodes do not confirm: no word
+ * the stored transcript writes in it is written, exactly, by every span decode (a fragment too short for a chunk
+ * decode: "Hubo" written "Me decía…" and "es siempre", "Pero" written "arrear" and "arreglar", "Des-" written "y" by
+ * both). It is read from the stored transcript instead: its words said again by the span decode at the start of the
+ * next clip, where the stored transcript wrote nothing (the long-form decode keeps the first copy of a restart and drops
+ * the retry: "Hubo … otro en el que"). One decode hears each copy: reviewed, never removed by default.
  */
 function storedRestarts(input: EditRepeatsInput, decodes: readonly EditWordsLookup[]): EditRepeat[] {
 	const stored = input.stored;
 	const primary = decodes[0];
 	if (!stored || !primary || decodes.length < 2) return [];
-	const failed = input.spans.map((sp) => {
+	const contested = input.spans.map((sp) => {
+		if (toSec(sp.mediaEnd - sp.mediaStart) > SHORT_CLIP_S) return false;
+		const said = spanTokens(stored, sp);
+		if (!said.length) return false;
 		const sets = decodes.map((l) => spanTokens(l, sp));
-		if (!sets.some((t) => t.length) || !spanTokens(stored, sp).length) return false;
-		const [a, ...rest] = sets;
-		return rest.every((b) => !a!.some((n) => b.some((m) => sameWord(n, m))));
+		return !said.some((n) => sets.every((t) => t.includes(n)));
 	});
-	if (!failed.some(Boolean)) return [];
-	const lookup: EditWordsLookup = (sp) => (failed[input.spans.indexOf(sp)] ? stored(sp) : primary(sp));
+	if (!contested.some(Boolean)) return [];
+	const lookup: EditWordsLookup = (sp) => (contested[input.spans.indexOf(sp)] ? stored(sp) : primary(sp));
 	return repeatsOf(input, { lookup }).flatMap(({ trace, ...r }) => {
-		if (!trace || r.where !== 'cut' || !failed[trace.span] || failed[trace.retrySpan]) return [];
+		if (!trace || r.where !== 'cut' || !contested[trace.span] || contested[trace.retrySpan]) return [];
 		const b = input.spans[trace.retrySpan]!;
 		const onset = trace.gap[1];
 		const merged = !(stored(b) ?? []).some(
 			(w) => w.start <= onset + 0.05 * FLICKS_PER_SECOND && w.end > onset,
 		);
-		return merged ? [r] : [];
+		if (!merged) return [];
+		return [{ ...r, suggested: 'review' as const, confidence: 0.5, held: 'decode' as const }];
 	});
+}
+
+/** A voiced stretch no span decode writes is at least this many seconds of speech frames (rule E4). */
+const UNHEARD_MIN_S = 0.15;
+
+/**
+ * E4 — at a phrase's start (a span's start, or speech after ≥ 0.3 s without), at least `UNHEARD_MIN_S` of speech that
+ * no span decode writes a word in, before the span decode's first word, where the stored transcript writes a word that
+ * first word says again ("que | que de hecho fue": the span decodes drop the fragment, the stored transcript drops the
+ * retry's copy): a stutter for review, never removed by default, cut from the stretch's start (the clip's, for its
+ * first phrase) to the quietest frame before the decoded word.
+ */
+function unheardRestarts(input: EditRepeatsInput, decodes: readonly EditWordsLookup[]): EditRepeat[] {
+	const { stored } = input;
+	const primary = decodes[0];
+	if (!stored || !primary || !input.voice || decodes.length < 2) return [];
+	const lists = effectiveLists(cleanupLanguageOf(input.language ?? null), input.lists ?? null);
+	const fillers = new Set(lists.fillers);
+	const F = flicksPerFrame(input.rate);
+	const slack = 0.03 * FLICKS_PER_SECOND;
+	const ok = (w: EditWord) => finite(w.start) && finite(w.end) && w.end >= w.start;
+	const out: EditRepeat[] = [];
+	for (const sp of input.spans) {
+		const v = input.voice(sp.mediaId, sp.stream);
+		if (!v) continue;
+		const f0 = Math.max(0, Math.ceil(toSec(sp.mediaStart) / VOICE_FRAME_S));
+		const f1 = Math.min(v.frameCount, Math.floor(toSec(sp.mediaEnd) / VOICE_FRAME_S));
+		const all = decodes.map((l) => (l(sp) ?? []).filter(ok));
+		const inSpan = (w: EditWord) => {
+			const mid = (w.start + w.end) / 2;
+			return mid >= sp.mediaStart && mid < sp.mediaEnd;
+		};
+		const own = all[0]!.filter(inSpan).sort((a, b) => a.start - b.start);
+		const said = (stored(sp) ?? []).filter((w) => ok(w) && inSpan(w));
+		const at = sp.seqStart * F - sp.mediaStart;
+		const frameOf = (m: number) => Math.floor((m + at) / F + 1e-6);
+		const onsets = phraseOnsets(v, f0, f1);
+		for (const o of onsets) {
+			const from = frameFlicks(o);
+			// the clip's first phrase goes from the clip's start (no sliver before it)
+			const cutFrom = o === onsets[0] ? sp.mediaStart : from;
+			const k = own.findIndex((w) => w.start >= from - slack);
+			const w = own[k];
+			if (!w || w.start - from < UNHEARD_MIN_S * FLICKS_PER_SECOND) continue;
+			const n = cleanupNorm(w.text);
+			if (!n || fillers.has(n)) continue;
+			// no span decode writes a word in the stretch
+			if (all.some((ws) => ws.some((x) => x.start < w.start - slack && x.end > from + slack))) continue;
+			let voiced = 0;
+			for (let f = o; f < Math.floor(toSec(w.start) / VOICE_FRAME_S); f++)
+				if (v.classes[f] === SPEECH_CLASS) voiced++;
+			if (voiced * VOICE_FRAME_S < UNHEARD_MIN_S - 1e-9) continue;
+			const copy = said.find(
+				(x) => x.start >= from - slack && x.start < w.start && sameWord(cleanupNorm(x.text), n),
+			);
+			if (!copy) continue;
+			const end = Math.max(
+				from,
+				quietestFrame(v, Math.max(from, w.start - UNHEARD_MIN_S * FLICKS_PER_SECOND), w.start) ?? w.start,
+			);
+			if (end <= from) continue;
+			out.push({
+				source: 'spans',
+				where: 'span',
+				kind: 'stutter',
+				suggested: 'review',
+				held: 'decode',
+				text: copy.text.trim(),
+				kept: own
+					.slice(k, k + 3)
+					.map((x) => x.text.trim())
+					.join(' '),
+				range: [frameOf(cutFrom), Math.max(frameOf(cutFrom), frameOf(end))],
+				cuts: [
+					{ clipId: sp.clipId, mediaId: sp.mediaId, stream: sp.stream, start: cutFrom, end: Math.round(end) },
+				],
+				confidence: 0.5,
+			});
+		}
+	}
+	return out;
 }
 
 /**
@@ -453,7 +540,6 @@ export function restartWindows(
 		const f1 = Math.min(v.frameCount, Math.floor(toSec(sp.mediaEnd) / VOICE_FRAME_S));
 		const thr = v.levels.speechThresholdDb ?? Number.NEGATIVE_INFINITY;
 		const db = (k: number) => (k >= 0 && k < v.frameCount ? -120 + v.level[k]! / 2 : -120);
-		const speech = (k: number) => v.classes[k] === SPEECH_CLASS;
 		const sideMax = (a: number, b: number) => {
 			let m = Number.NEGATIVE_INFINITY;
 			for (let k = Math.max(f0, a); k < Math.min(f1, b); k++) m = Math.max(m, db(k));
@@ -464,14 +550,7 @@ export function restartWindows(
 			const after = sideMax(k + 1, k + 1 + DIP_SIDE_FRAMES);
 			return before > thr && after > thr && db(k) <= Math.min(before, after) - DIP_DEPTH_DB;
 		};
-		const onsets: number[] = [];
-		for (let k = f0; k < f1; k++) {
-			if (!speech(k)) continue;
-			let quiet = 0;
-			while (quiet < ONSET_PAUSE_FRAMES && k - 1 - quiet >= 0 && !speech(k - 1 - quiet)) quiet++;
-			if (k === f0 || quiet >= ONSET_PAUSE_FRAMES || (onsets.length === 0 && k - f0 < ONSET_PAUSE_FRAMES))
-				if (onsets[onsets.length - 1] !== k) onsets.push(k);
-		}
+		const onsets = phraseOnsets(v, f0, f1);
 		for (const o of onsets) {
 			for (let k = o + 1; k < Math.min(f1 - DIP_MIN_FRAMES, o + ONSET_SEARCH_FRAMES); k++) {
 				if (!dipFrame(k)) continue;
@@ -494,6 +573,23 @@ export function restartWindows(
 		}
 	}
 	return out;
+}
+
+/**
+ * The phrase onsets of a span (10 ms frames `[f0, f1)`): its first speech frame, and speech after at least
+ * `ONSET_PAUSE_FRAMES` without.
+ */
+function phraseOnsets(v: CleanupVoice, f0: number, f1: number): number[] {
+	const speech = (k: number) => v.classes[k] === SPEECH_CLASS;
+	const onsets: number[] = [];
+	for (let k = f0; k < f1; k++) {
+		if (!speech(k)) continue;
+		let quiet = 0;
+		while (quiet < ONSET_PAUSE_FRAMES && k - 1 - quiet >= 0 && !speech(k - 1 - quiet)) quiet++;
+		if (k === f0 || quiet >= ONSET_PAUSE_FRAMES || (onsets.length === 0 && k - f0 < ONSET_PAUSE_FRAMES))
+			if (onsets[onsets.length - 1] !== k) onsets.push(k);
+	}
+	return onsets;
 }
 
 /**
