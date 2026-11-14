@@ -28,16 +28,18 @@ if (enabled)
 		import('@jasper/project'),
 		import('../../../packages/compositions/test/golden/scenes.ts'),
 	]);
-/** As golden-parity: 8-bit graphs and our kernel vs Chrome's GL sampling differ by a few levels at edges. */
+/** As golden-parity: 8-bit graphs and our kernel vs Chrome's GL sampling differ by a few levels. */
 const PARITY: Tolerance = { minPsnr: 45, maxAbs: 32, p99: 3 };
 /**
- * Motion blur: the kernel takes the shader's taps at their strata centres where the shader jitters them per pixel
- * (lowered layers, docs/wp-notes/auto-subtitles.md), which moves smeared edges by a few levels.
+ * Where the Transform draws the composite's edge inside the frame (rotation, zoom out), the shader's hard box test and
+ * the kernel's ½ px coverage ramp (the lowered layers' documented difference, docs/wp-notes/auto-subtitles.md) differ
+ * on the pixels the edge crosses: those pixels (`edge`) are left out of the comparison (their count and the
+ * all-pixel figures are logged), every other pixel must be within PARITY.
  */
-const BLUR: Tolerance = { minPsnr: 38, maxAbs: 64, p99: 8 };
+type Pose = { anchor: [number, number]; position: [number, number]; scale: number; rotation: number };
 
 type Cmd = Record<string, unknown>;
-type Scene = { name: string; frame: number; tolerance: Tolerance; commands: Cmd[] };
+type Scene = { name: string; frame: number; tolerance: Tolerance; commands: Cmd[]; edge?: Pose };
 const TF = (params: Record<string, unknown>): Cmd => ({
 	type: 'effect.add',
 	target: { clipId: '$a' },
@@ -52,15 +54,23 @@ const key = (param: string, frame: number, value: unknown): Cmd => ({
 	value,
 	interpolation: 'linear',
 });
-const STATIC = TF({ anchorPoint: [0.6, 0.4], position: [0.5, 0.55], scaleHeight: 150, rotation: 8 });
+const POSE: Pose = { anchor: [0.6, 0.4], position: [0.5, 0.55], scale: 150, rotation: 8 };
+const STATIC = TF({
+	anchorPoint: POSE.anchor,
+	position: POSE.position,
+	scaleHeight: POSE.scale,
+	rotation: POSE.rotation,
+});
+const ZOOM_OUT: Pose = { anchor: [0.5, 0.5], position: [0.45, 0.5], scale: 70, rotation: -12 };
 const BLURRED = { useCompShutterAngle: false, shutterAngle: 360 };
 
 const SCENES: Scene[] = [
-	{ name: 'static', frame: 10, tolerance: PARITY, commands: [STATIC] },
+	{ name: 'static', frame: 10, tolerance: PARITY, edge: POSE, commands: [STATIC] },
 	{
 		name: 'opacity-crop-after',
 		frame: 10,
 		tolerance: PARITY,
+		edge: POSE,
 		commands: [
 			STATIC,
 			{ type: 'effect.add', target: { clipId: '$a' }, effectId: 'jasper.crop', params: { right: 25 } },
@@ -71,18 +81,20 @@ const SCENES: Scene[] = [
 		name: 'zoom-out',
 		frame: 10,
 		tolerance: PARITY,
-		commands: [TF({ scaleHeight: 70, rotation: -12, position: [0.45, 0.5] })],
+		edge: ZOOM_OUT,
+		commands: [TF({ scaleHeight: ZOOM_OUT.scale, rotation: ZOOM_OUT.rotation, position: ZOOM_OUT.position })],
 	},
 	{
 		name: 'blend-screen',
 		frame: 10,
 		tolerance: PARITY,
+		edge: POSE,
 		commands: [STATIC, { type: 'clip.update', clipId: '$a', patch: { blendMode: 'screen' } }],
 	},
 	{
 		name: 'keyframed-blur',
 		frame: 6,
-		tolerance: BLUR,
+		tolerance: PARITY,
 		commands: [
 			TF({ anchorPoint: [0.62, 0.32], position: [0.62, 0.32], ...BLURRED }),
 			key('scaleHeight', 0, 100),
@@ -95,7 +107,7 @@ const SCENES: Scene[] = [
 		// The S5 punch-in's shape (100 → 180 % in 7 frames, then slower): many taps on the first frames.
 		name: 'punch-in-blur',
 		frame: 3,
-		tolerance: BLUR,
+		tolerance: PARITY,
 		commands: [
 			TF({ anchorPoint: [0.79, 0.52], position: [0.79, 0.52], ...BLURRED }),
 			key('scaleHeight', 0, 100),
@@ -105,7 +117,61 @@ const SCENES: Scene[] = [
 			key('position', 7, [0.66, 0.5]),
 		],
 	},
+	{
+		// 100 → 400 % in 3 frames: more travel than the shutter's taps (capped: the shader jitters its taps per pixel,
+		// the kernel takes the strata centres).
+		name: 'capped-blur',
+		frame: 1,
+		tolerance: PARITY,
+		commands: [
+			TF({ anchorPoint: [0.62, 0.32], position: [0.62, 0.32], ...BLURRED }),
+			key('scaleHeight', 0, 100),
+			key('scaleHeight', 3, 400),
+		],
+	},
 ];
+
+/**
+ * The pixels the Transform's picture edge crosses: the output pixel centre maps back (src = anchor + (R·S)⁻¹ · (out −
+ * position)) to within one output pixel of the composite's border.
+ */
+function edgePixels(pose: Pose, W: number, H: number): boolean[] {
+	const s = pose.scale / 100;
+	const t = (pose.rotation * Math.PI) / 180;
+	const out: boolean[] = [];
+	for (let y = 0; y < H; y++)
+		for (let x = 0; x < W; x++) {
+			const dx = x + 0.5 - pose.position[0] * W;
+			const dy = y + 0.5 - pose.position[1] * H;
+			const u = pose.anchor[0] * W + (Math.cos(t) * dx + Math.sin(t) * dy) / s;
+			const v = pose.anchor[1] * H + (-Math.sin(t) * dx + Math.cos(t) * dy) / s;
+			out.push(Math.min(Math.abs(u), Math.abs(W - u), Math.abs(v), Math.abs(H - v)) * s < 1);
+		}
+	return out;
+}
+
+/** Copies `from`'s pixels into `img` where `mask` is set. */
+function withPixels(img: Rgba8, from: Rgba8, mask: readonly boolean[]): Rgba8 {
+	const data = img.data.slice();
+	mask.forEach((m, i) => {
+		if (m) data.set(from.data.subarray(i * 4, i * 4 + 4), i * 4);
+	});
+	return { ...img, data };
+}
+
+/**
+ * A frame as an export delivers it: over black, opaque. The native still is opaque already; Remotion leaves what a
+ * zoomed-out Transform uncovers transparent, which every video encode of that path turns into black.
+ */
+function onBlack(img: Rgba8): Rgba8 {
+	const data = new Uint8Array(img.data.length);
+	for (let i = 0; i < data.length; i += 4) {
+		const a = img.data[i + 3]!;
+		for (let k = 0; k < 3; k++) data[i + k] = Math.round((img.data[i + k]! * a) / 255);
+		data[i + 3] = 255;
+	}
+	return { ...img, data };
+}
 
 describe.runIf(enabled)(
 	'Transform on adjustment layers: native export = preview renderer (REMOTION_E2E=1)',
@@ -223,9 +289,12 @@ describe.runIf(enabled)(
 				const d = build(scene);
 				const exp = await exportStill(d, scene.frame);
 				expect(exp.path).toBe('native');
-				const rem = await remotionStill(d, scene.frame);
-				const diff = diffImages(exp.img, rem);
-				const line = `[adjustment transform parity] ${scene.name} (${exp.path}): export vs Remotion ${formatDiff(diff)}`;
+				const rem = onBlack(await remotionStill(d, scene.frame));
+				const got = onBlack(exp.img);
+				const edge = scene.edge ? edgePixels(scene.edge, golden.GW, golden.GH) : null;
+				const diff = diffImages(edge ? withPixels(got, rem, edge) : got, rem);
+				const all = diffImages(got, rem);
+				const line = `[adjustment transform parity] ${scene.name} (${exp.path}): export vs Remotion ${formatDiff(diff)}${edge ? ` off the picture edge; ${edge.filter(Boolean).length} edge pixels, all pixels ${formatDiff(all)}` : ''}`;
 				console.info(line);
 				const dir = testResultsDir('adjustment-transform');
 				mkdirSync(dir, { recursive: true });
