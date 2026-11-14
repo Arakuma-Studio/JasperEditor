@@ -233,6 +233,168 @@
 			]
 		]
 	},
+	"breathNo": {
+		"from": 1154.6,
+		"level": "vbu6uLWxrqqnpaWps7q8vLWuq6mtrqyppa67wcPCv727u7q6urayramnp6qqqaSgnqKorKyppaKioJ6bnZ+fnJ2cmpqcnZ2dnJ2en6GhoaKnqKekpaaop6Wko6KjoqGfn56eoqSin52doa20ub7CxMTFyMzS19rd3t7c3d7e3drTzsrR1dbV1dTU1Nbd39zQycrP1Nrd3+Lk5+bi1cnJxMC7ura1wdfj5ubj3tna3N3b3N3d2tXR1NfZ29rY1tfY1tbY2NfX2dk=",
+		"voicing": "q6mfl4+dpZ2YgGlAJIeln42Sk3g+OCgrLys8fpaicUZfW4aniomGZ3NAMTE5KzcjIzVSaoCMfmJobFtQYX5mT0wuNy05KDEvKTQeIDYpLSZVUDYwNkZLPUlWZkdPXEA2P1RKcHtcVTk0KI6xvMDMzcHDxL68ysLSzcPHztLU2MjUt3u6xsWuut7IzMC428Gao82fwL/EusG9xtK/fbGjfXRaM212MXrM2dHOwLy+3M7dztfg08K+1NbS1tnSusnPur7U0sbKzc8=",
+		"flatness": "OEE1KFpXSUhDSy83FAMEBiNCMk9VSU5zWVQZBwcJDAsMDgsKDhAhP1tgRUItTUheZzUtIylFXTsuLzlTQyRBNjFUWFtRVWFthl9eSVNFVkY/JU9NSjs4QVFUYkRFQGdqXEdnV0pSQVpdQTMgDQUDAgIBAQEBAAAAAAABAAAAAAEBAgQCAQIFCQMEAwIBAAABAgABAQAAAAAAAAABAQAAAAEBAgICHAwBAQEAAAEAAAAAAAAAAQEBAQEBAQEBBAIDAgICAQEBAQE=",
+		"classes": "AgICAgICAgICAgICAgICAgICAgIAAAAAAAACAgICAgICAgICAgICAgIAAAAAAAAAAAAAAAAAAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=",
+		"words": [
+			[
+				"escucha",
+				-0.02,
+				0.3,
+				null
+			],
+			[
+				"eso.",
+				0.3,
+				0.46,
+				null
+			],
+			[
+				"No",
+				0.8,
+				1.19,
+				null
+			],
+			[
+				"había",
+				1.19,
+				1.37,
+				null
+			],
+			[
+				"botones,",
+				1.37,
+				2.14,
+				null
+			]
+		]
+	},
+	"breathY": {
+		"from": 1872.4,
+		"level": "vrm4uLq6vb/AwL++vL3IztHRzsvMztHU2Nzc29vc2dHN0dLPyMK7vL/L0tfY1tXV1tfY2NbSysG3s7Gss7Wysr7Cwb26s66rqainp6SlqailoqOkpaSkoqKio6Ggnp+hoqCeobW3ur7BwMLEyNDY3+Tl5N/Z19XSz8vFxcXGxcPAv7y6traxsbCtss/Y3dza19XS0c/OyMfGxsTHztTa3uHi4uHd2NbUz8nFw8TEwcDEys7T",
+		"voicing": "NC8zU3SMe3BnVEVCOCmUqrKwp7yvvbidm7PFuMXVwXaevcetk7V+oous0dfe0M7a1dXc2tW8xJJ9i6OCxN61kLfXvLC8sLt+yJuyuU1piZNYIjg5KjErITU2RVAzPG+eoIFsFoOWi8utt6m8r6u+wMvPzbipy8jAxKKRmKyroaNXUHJOhH9YU41AMZnJ0NHF1dLYtcGpmZGWnJmuvNDJys3Oyda9ptfMur/CzM7Yz5JsvLDJ",
+		"flatness": "YVtSUFpPZUpGRUlKT1gpBwcHBQMDAgEBAAAAAAAAAAEEAQEEAgQHESMKAwIBAQEAAAAAAAABAQIHEBEUAgEBAgAAAAEBCgIEAQoGCCwiLCVMRT5IRU1dS1I5Rj9DPEk9MxgIEQQCCgkSDSU7TiwEAQAAAAABAQABAgQECwcHBAQGBAcHBQQEBQgODgMBAAABAQEBAQEBAgIBAQMBAAAAAAAAAAAAAQECAQAAAAAAAR8XDAUB",
+		"classes": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIBAQEBAQEBAQEBAQEBAQEAAAAAAAICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIC",
+		"words": [
+			[
+				"procesador",
+				-0.157,
+				0.323,
+				null
+			],
+			[
+				"y",
+				0.323,
+				0.383,
+				null
+			],
+			[
+				"Y",
+				0.72,
+				1.05,
+				null
+			],
+			[
+				"en",
+				1.126,
+				1.226,
+				null
+			],
+			[
+				"el",
+				1.226,
+				1.286,
+				null
+			],
+			[
+				"juego,",
+				1.396,
+				1.666,
+				null
+			],
+			[
+				"el",
+				1.666,
+				1.706,
+				null
+			],
+			[
+				"procesador",
+				1.706,
+				2.156,
+				null
+			]
+		]
+	},
+	"closureMostrar": {
+		"from": 1645.6,
+		"level": "4eTm5uTf3t/f3Nvc2dPN0ODj4+Dg4eHg3tjNx9HY3N3d3dzc3Nza1tLOycfGw8C+vLq7vr64sLC5wMLAvbu+wcLBu7exrKahm5qXmaq/1Nvd2NHQ1NbW19jZ2tra2trUz9TW09PX1szR09HMzszFwsC6ubezrbGyvsHAsKyssLK7x9DW19XRy8K6u77AwL++vb26tbvCyczP0tjc3uHj4+Pi4N7d3d3i5uU=",
+		"voicing": "ztDX2tHIv97bzNbf1MWOb63Uuq96daaMjnxAZ22swcnGw8S6urysnYpjT1NhZFhre3motL2XQ42BkaGDpY6QeFhOb4Simop2gnNZJh5Kn9DLsoKLwcrDucXAvbqwx8i1gLvRn6/Ds3OqzqWa0r6dmn5tZ5BlPG9ga7OAPjVYS2h/n6/N0ce0ln92Yod2XV5CQzo+TI2pucm7xcLJzMjY0NbZ0s7Y0NOx0r4=",
+		"flatness": "AAABAAAAAAAAAAAAAAAUBQEBAQECBAICAgIDAwIBAQEBAQEBAQEBAgIFBhQmKiIZISkfDQkIDgcGAAACBBcnQC0uNUA/Ni1DS0xcVWZNAwEBAgQCAQECAgMCAgICAQEBBQEAAgIBAQMDAAADBQICAgEBAQEDAgMQOBsrRjxDaUIhBwIBAQICBhYWFxAPFSYrHBooLEETBgMCAQECBAMBAQEAAQMBAQMCAQE=",
+		"classes": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAAAAAAAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=",
+		"words": [
+			[
+				"Ronda",
+				-0.097,
+				0.193,
+				null
+			],
+			[
+				"2:",
+				0.193,
+				0.453,
+				null
+			],
+			[
+				"mostrar",
+				0.573,
+				0.993,
+				null
+			],
+			[
+				"10.000",
+				0.993,
+				1.633,
+				null
+			],
+			[
+				"objetos",
+				1.633,
+				1.973,
+				null
+			]
+		]
+	},
+	"closurePixel": {
+		"from": 740.9,
+		"level": "xMC8uba0tLS6wsXHx8fHxsXEw8PCw8K9tKulpKOfnKa2wMPEvrGppKWpq62utrm7vLq4uLe7y9XZ2trb3N3c2tjV0s/MycjHxsTExsfJycrGw8LFxsbEwb66r6afnJqYnJ6dmpeTkJGRjY2MjY2OjIuLjYyOjYuPj42IiI2NiYmHgA==",
+		"voicing": "oamorKmgeUg/eGihnZigoJmfpqmmp5tWTmtHhHSJiStEVZ21gFx8foCAhVs4PEgwOjI5ODE6erbOx8XLzM3Kx8TBwba5uLbKt725vcq3yMC+hKvCy8bByci4oZRGj4gsRWFnYGVMKEJfWS1eMzlMPyYxLCg6P1ZsjHxUQXNXLnh6NQ==",
+		"flatness": "AgMFBwQDDRAHBAQGAwICAgIDAgIBAgECAgMFAgMEBA0hAgEBAw0IBQUOJkMtIRIXFxUdJh4qCQICAgEBAQEBAgMEBQcHCAkFBgYGBQIDAwICBAIBAQABAQEBAgQFBA8TBgYHCAkOFA4VFxgTFg4TDxMjDxINDQwMBRweHgkKDAYKFA==",
+		"classes": "AgICAgICAgICAgICAgICAgICAgICAgICAAAAAAAAAAAAAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+		"words": [
+			[
+				"va",
+				-0.2,
+				0.01,
+				null
+			],
+			[
+				"cada",
+				0.09,
+				0.18,
+				null
+			],
+			[
+				"pixel,",
+				0.18,
+				0.81,
+				null
+			]
+		]
+	},
 	"levels": {
 		"floorDb": -50,
 		"speechDb": -9,

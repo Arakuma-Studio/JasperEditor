@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { CleanupVoice } from '../src/cleanup/detector.ts';
-import { edgeBounds, edgeLevelsOf, edgeScore, snapCut } from '../src/cleanup/edge-snap.ts';
+import { edgeBounds, edgeInsideWord, edgeLevelsOf, edgeScore, snapCut } from '../src/cleanup/edge-snap.ts';
 import { FAST_SETTINGS } from '../src/cleanup/schema.ts';
 import { analyzeSequenceCleanup } from '../src/cleanup/sequence.ts';
 import { FLICKS_PER_SECOND } from '../src/time.ts';
@@ -129,9 +129,48 @@ describe('snapCut', () => {
 		];
 		const b = edgeBounds(words, 0.32, 'in');
 		const s = snapCut(L, { t: 0.32, side: 'in', ...b });
-		expect(s.t).toBeCloseTo(0.26, 5);
+		expect(s.t).toBeCloseTo(0.27, 5); // the end of the dip: the attack
 		// without the dip (a level wobble of 2 dB) the edge stays at the word boundary
 		const wobble = env([...word(25, -14), -16, -16, ...word(30, -14)]);
 		expect(snapCut(wobble, { t: 0.32, side: 'in', ...b }).t).toBeCloseTo(0.32, 5);
+	});
+});
+
+describe('snapCut on the source: breaths stay out, closures stay in the word (review of v7)', () => {
+	/** The window's envelope and words in source seconds. */
+	const source = (w: Window) => {
+		const v = voiceOf(w);
+		const L = edgeLevelsOf(v);
+		const shifted = { ...L, db: (k: number) => L.db(k - Math.round(w.from * 100)) };
+		const breath = (k: number) => L.breath!(k - Math.round(w.from * 100));
+		const words = w.words.map(([, s, e]) => ({ s: s + w.from, e: e + w.from }));
+		return { L: { ...shifted, frameCount: v.frameCount + Math.round(w.from * 100), breath }, words };
+	};
+
+	it('an in edge stops at the attack of "No había botones", not before the breath (1155.38–1155.65)', () => {
+		const { L, words } = source(FIX.breathNo);
+		// the edge at the word's (early) timestamp, inside the breath
+		const s = snapCut(L, { t: 1155.4, side: 'in', ...edgeBounds(words, 1155.4, 'in'), words });
+		expect(s.t).toBeGreaterThanOrEqual(1155.63);
+		expect(s.t).toBeLessThanOrEqual(1155.67);
+		expect(s.clean).toBe(true);
+	});
+
+	it('an in edge before "Y en el juego" leaves the breath (1873.20–1873.34) out', () => {
+		const { L, words } = source(FIX.breathY);
+		const s = snapCut(L, { t: 1873.12, side: 'in', ...edgeBounds(words, 1873.12, 'in'), words });
+		expect(s.t).toBeGreaterThanOrEqual(1873.35);
+		expect(s.t).toBeLessThanOrEqual(1873.41);
+	});
+
+	it('a closure inside a word is never a clean cut ("mos|trar" 1646.30–1646.36, "pi|xel" 741.44)', () => {
+		const m = source(FIX.closureMostrar);
+		expect(edgeInsideWord(m.L, m.words, 1646.36)).toBe(true);
+		const s = snapCut(m.L, { t: 1646.36, side: 'in', ...edgeBounds(m.words, 1646.36, 'in'), words: m.words });
+		expect(s.clean).toBe(false);
+		const p = source(FIX.closurePixel);
+		expect(edgeInsideWord(p.L, p.words, 741.44)).toBe(true);
+		// between words a short gap is still a place to cut
+		expect(edgeInsideWord(m.L, m.words, 1646.17)).toBe(false);
 	});
 });

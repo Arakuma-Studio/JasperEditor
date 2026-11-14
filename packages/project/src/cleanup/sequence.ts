@@ -853,7 +853,7 @@ export function keptToFrames(
 		const reach = Math.ceil((EDGE_DECAY_S * FLICKS_PER_SECOND) / F) + 1;
 		const candidates: number[] = [];
 		for (let g = Math.max(lo, f - reach); g <= Math.min(hi, f + reach); g++) candidates.push(boundaryAt(g));
-		return Math.round(toFrameX(snapCut(levels, { t, side, keepMore, keepSoft, cutMore, candidates }).t));
+		return Math.round(toFrameX(snapCut(levels, { t, side, keepMore, keepSoft, cutMore, candidates, words }).t));
 	};
 	const out: Array<[number, number]> = [];
 	// the boundary at or before t: the kept word after a cut keeps its onset, the removed word after a piece loses its

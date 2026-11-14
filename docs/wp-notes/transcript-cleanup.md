@@ -1081,6 +1081,22 @@ rev 267; the source recording, 16 kHz mono, measured on the build host, `/tmp/je
   keeping more to the least bad boundary — inside the cut-away word's time only for a dip at least `EDGE_DIP_GAIN_DB`
   (6 dB) better than outside it (a gap between two words said into each other, not a wobble). `edgeBounds` derives
   the bounds from the words around the edge (a word belongs to the side its midpoint lies on).
+- **Breaths stay out, closures stay in the word** (the review of v7, same source): extending an in point back to a
+  word's onset pulled in the breath before "No había botones" (1155.38–1155.65, −34…−42 dBFS; the voice analysis
+  classes 1155.20–1155.65 breath and the word's timestamp starts at 1155.40, 0.26 s before its attack) and before "Y
+  en el juego" (1873.20–1873.34 breath); and cuts landed in closures inside one word ("mos|trar": 60 ms under −40
+  dBFS at 1646.30–1646.36; "pi|xel" at 741.44). Now: the cut-away side's first frame decides "quiet" and a breath
+  frame counts as quiet there (a cut may end a breath, at the word's attack); a breath on the kept side right at the
+  edge is never clean; no move towards keeping more passes over a breath frame; and towards cutting more an edge may
+  pass over a breath and the quiet sound around it (frames ≤ quiet + 6 dB, ≤ 0.9 s, the breath class's maximum) to the
+  attack or the decay, whatever the timestamps say — only when a breath lies in that stretch, so a soft first word
+  without a breath after it stays. A boundary more than `EDGE_INTO_WORD_S` inside one word's time is never taken unless
+  a quiet run of `EDGE_CLOSURE_S` (80 ms) holds it (`edgeInsideWord`: a closure belongs to the word; a longer quiet
+  run is a pause a loose timestamp covers). *Assumption*, labelled: a breath after a soft first word ("y [breath]
+  entonces") lets an in edge drop that word; the breath class is the voice analysis' (unvoiced, flat, 120–900 ms).
+  Tests (each fails on the previous snapper): `cleanup-edge-snap.test.ts` "breaths stay out, closures stay in the
+  word" — the source's planes around the four reported places (fixture windows `breathNo`, `breathY`,
+  `closureMostrar`, `closurePixel`).
 - **Clean Up**: `keptToFrames` snaps every edge of a kept piece inside the clip's extent onto the clip's frame
   boundaries (after the level edges, the tight word-boundary edges and the 10 ms quietest-boundary snap), never
   across the piece's other edge or into the neighbouring pieces. A removed word now goes with its rising onset and
