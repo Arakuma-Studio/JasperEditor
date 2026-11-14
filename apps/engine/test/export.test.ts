@@ -1,5 +1,13 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	utimesSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ExportResultSchema, RenderPlanSchema } from '@jasper/api';
@@ -653,12 +661,12 @@ describe('export destinations and render outputs', () => {
 		d.tx([{ type: 'clip.place', source: { mediaId: d.addMedia(clipA) }, at: 0 }]);
 		const outDir = mkdtempSync(join(tmpdir(), 'jasper-dest-'));
 		const dest = join(outDir, 'out.mp4');
-		const body = (path: string) => ({
+		const body = (path: string, overwrite?: boolean) => ({
 			envelope: d.envelope(),
 			sequenceId: d.seqId,
 			settings: settings(d.seqId, {
 				range: { type: 'custom', startFrame: 0, endFrame: 15 },
-				destination: { type: 'path', path },
+				destination: { type: 'path', path, ...(overwrite ? { overwrite } : {}) },
 			}),
 		});
 		const bad = await app.inject({
@@ -684,6 +692,20 @@ describe('export destinations and render outputs', () => {
 		expect(probe(join(outDir, 'out (2).mp4')).find((x) => x.codec_type === 'video')?.nb_read_frames).toBe(
 			'15',
 		);
+		expect(done.result).toMatchObject({ requestedPath: dest });
+		// overwrite: the existing file is replaced in place (temporary file renamed over it, none left behind)
+		const again = await app.inject({
+			method: 'POST',
+			url: '/api/exports',
+			headers: JSON_H,
+			payload: body(dest, true),
+		});
+		const replaced = await coreServices(app).queue.wait(again.json().id);
+		expect(replaced.state).toBe('succeeded');
+		expect(replaced.result).toMatchObject({ path: dest, replaced: true });
+		expect((replaced.result as { requestedPath?: string }).requestedPath).toBeUndefined();
+		expect(probe(dest).find((x) => x.codec_type === 'video')?.nb_read_frames).toBe('15');
+		expect(readdirSync(outDir).sort()).toEqual(['out (2).mp4', 'out.mp4']);
 	}, 60_000);
 
 	it('removes the stored request of an export that failed for good; sweeps stale requests (WP-3I)', async () => {

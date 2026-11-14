@@ -643,7 +643,8 @@ const SYNC_CONFLICT_REMEDY =
 /**
  * Ripple removal (S02 A.5): `[f, f+n)` must be empty on every track (else E_SYNC_CONFLICT with the
  * blocking clips, unless `cut`), then everything at/after `f+n` shifts left by `n`. The refusal names `remedy`: what
- * the calling command accepts to get past them (default: sync lock off, or clearing the frames first).
+ * the calling command accepts to get past them (default: sync lock off, or clearing the frames first). `except` clips
+ * neither block nor get cut (overlays the caller refits, overlay-ripple.ts).
  */
 export function removeShift(
 	seq: DSeq,
@@ -651,12 +652,14 @@ export function removeShift(
 	f: number,
 	n: number,
 	h: HandlerContext,
-	opts: { syncConflict?: 'refuse' | 'cut'; remedy?: string } = {},
+	opts: { syncConflict?: 'refuse' | 'cut'; remedy?: string; except?: ReadonlySet<string> } = {},
 ): void {
 	if (n <= 0) return;
 	const ids = [...trackIds];
+	const except = opts.except ?? new Set<string>();
 	const blocking: string[] = [];
-	for (const trackId of ids) for (const c of contentInRange(seq, trackId, f, n)) blocking.push(c.id);
+	for (const trackId of ids)
+		for (const c of contentInRange(seq, trackId, f, n)) if (!except.has(c.id)) blocking.push(c.id);
 	if (blocking.length > 0) {
 		if (opts.syncConflict !== 'cut') {
 			h.fail(
@@ -665,7 +668,7 @@ export function removeShift(
 				{ blocking },
 			);
 		}
-		for (const trackId of ids) relinkSplits(seq, clearRange(seq, trackId, f, f + n, h), h);
+		for (const trackId of ids) relinkSplits(seq, clearRange(seq, trackId, f, f + n, h, except), h);
 	}
 	for (const trackId of ids)
 		for (const id of trackClipIds(seq, trackId, (c) => c.start >= f + n)) seq.clips[id]!.start -= n;

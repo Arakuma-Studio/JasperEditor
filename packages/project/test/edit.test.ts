@@ -22,6 +22,18 @@ const solid = (at: number, duration: number, track: string) => ({
 	color: [0, 1, 0, 1],
 });
 
+/** A video clip (footage: ripples on other tracks cut it, unlike generated clips such as solids). */
+function footage(h: Harness, at: number, frames: number, track: string) {
+	const m = h.registerVideo({ seconds: 20, audio: false });
+	return {
+		type: 'clip.place',
+		source: { mediaId: m },
+		at,
+		sourceRange: { in: { sourceFrames: 0 }, out: { sourceFrames: frames } },
+		tracks: { video: track },
+	};
+}
+
 function patchDoc(h: Harness, fn: (doc: ProjectDocument) => void) {
 	const copy = JSON.parse(JSON.stringify(h.doc)) as ProjectDocument;
 	fn(copy);
@@ -105,7 +117,7 @@ describe('clip.trim (S02 §11, AC-11a, AC-11c)', () => {
 
 	it('AC-11c: content on a sync-locked track refuses the command (E_SYNC_CONFLICT) or stops the gesture', () => {
 		const h = new Harness();
-		h.ok([solid(0, 100, 'V1'), solid(100, 100, 'V1'), solid(70, 25, 'V2')]);
+		h.ok([solid(0, 100, 'V1'), solid(100, 100, 'V1'), footage(h, 70, 25, 'V2')]);
 		const a = h.clips('V1')[0]!.id;
 		const blocker = h.clips('V2')[0]!.id;
 		const r = h.tx([{ type: 'clip.trim', clipId: a, edge: 'out', deltaFrames: -20, mode: 'ripple' }]);
@@ -135,7 +147,7 @@ describe('clip.trim (S02 §11, AC-11a, AC-11c)', () => {
 	it('an E_SYNC_CONFLICT refusal names the option of its own command, and that option gets past it', () => {
 		// reported: the hint said syncConflict: "cut" for clip.trim, whose schema refuses that key
 		const h = new Harness();
-		h.ok([solid(0, 100, 'V1'), solid(100, 100, 'V1'), solid(70, 25, 'V2')]);
+		h.ok([solid(0, 100, 'V1'), solid(100, 100, 'V1'), footage(h, 70, 25, 'V2')]);
 		const [a, b] = h.clips('V1');
 		const message = (r: ReturnType<Harness['tx']>) => (r.ok ? '' : r.errors[0]!.message);
 		const trim = { type: 'clip.trim', clipId: a!.id, edge: 'out', deltaFrames: -20, mode: 'ripple' } as const;
@@ -144,14 +156,14 @@ describe('clip.trim (S02 §11, AC-11a, AC-11c)', () => {
 		expect(trimmed).not.toMatch(/syncConflict/);
 		h.ok([{ ...trim, clampToSyncLock: true }]);
 		const extract = { type: 'clip.extract', clipIds: [b!.id] } as const;
-		const extracted = message(h.tx([solid(120, 20, 'V2'), extract]));
+		const extracted = message(h.tx([footage(h, 120, 20, 'V2'), extract]));
 		expect(extracted).toMatch(/syncConflict: "cut"/);
-		h.ok([solid(120, 20, 'V2'), { ...extract, syncConflict: 'cut' }]);
+		h.ok([footage(h, 120, 20, 'V2'), { ...extract, syncConflict: 'cut' }]);
 	});
 
 	it('ripple lengthening splits straddling clips on sync-locked tracks', () => {
 		const h = new Harness();
-		h.ok([solid(0, 100, 'V1'), solid(100, 50, 'V1'), solid(50, 100, 'V2')]);
+		h.ok([solid(0, 100, 'V1'), solid(100, 50, 'V1'), footage(h, 50, 100, 'V2')]);
 		h.ok([{ type: 'clip.trim', clipId: h.clips('V1')[0]!.id, edge: 'out', deltaFrames: 20, mode: 'ripple' }]);
 		expect(h.spans('V1')).toEqual([
 			[0, 120],
@@ -319,7 +331,7 @@ describe('lift / extract (S02 AC-13b, Appendix A.5)', () => {
 
 	it('AC-13b: ripple delete is refused when a sync-locked track has content in the range', () => {
 		const h = new Harness();
-		h.ok([solid(0, 100, 'V1'), solid(100, 100, 'V1'), solid(200, 100, 'V1'), solid(150, 100, 'V2')]);
+		h.ok([solid(0, 100, 'V1'), solid(100, 100, 'V1'), solid(200, 100, 'V1'), footage(h, 150, 100, 'V2')]);
 		const b = h.clips('V1')[1]!;
 		const r = h.tx([{ type: 'clip.extract', clipIds: [b.id] }]);
 		expect(r.ok).toBe(false);

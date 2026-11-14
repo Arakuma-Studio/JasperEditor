@@ -36,8 +36,9 @@ Commands:
   import <file…>                      import media files (absolute or relative paths)
   render-frame --at <time> --out <file.png> [--width N]
                                       render the Program output at a time to a PNG
-  export --out <file> [--preset ID] [--range from..to] [--engine auto|native|remotion]
-                                      export and wait (progress on stderr; Ctrl+C cancels and deletes the file)
+  export --out <file> [--preset ID] [--range from..to] [--engine auto|native|remotion] [--overwrite]
+                                      export and wait (progress on stderr; Ctrl+C cancels and deletes the file);
+                                      an existing file is kept (" (2)" is appended) unless --overwrite
   query <name> [k=v…]                 an agent query (doc.get, sequence.at, clip.properties…)
   ui <action> [k=v…] [--out f.png]    live UI of the open editor window: state, elements, screenshot,
                                       click, drag, scroll, key, type, set, locate, hit, commands, command
@@ -58,6 +59,10 @@ Options:
   --engine-url <url> --token <t> --appdir <dir> --start-engine --engine-entry <file> --engine-port <n>
   --agent-name <name>    name in the editor History (default "jasper-cli")
   --request-timeout <s>  deadline for one engine request (default 180)
+  --timeout <s>          how long a waiting tool waits (export: default 3600; call: the tool's timeoutSeconds
+                         when not given, capped at its maximum); waits poll the engine, so they outlast
+                         --request-timeout. Set it under any limit around the jasper process, so a long job
+                         answers with how to finish it instead of being killed
   --help, --version
 
 k=v values are JSON when they parse (3, true, [1,2], {"a":1}), else strings; dotted keys nest (at.seconds=2).
@@ -88,7 +93,16 @@ const VALUE_FLAGS = new Set([
 	'timeout',
 	'crf',
 ]);
-const BOOL_FLAGS = new Set(['json', 'dry-run', 'keep-going', 'start-engine', 'help', 'version', 'h']);
+const BOOL_FLAGS = new Set([
+	'json',
+	'dry-run',
+	'keep-going',
+	'start-engine',
+	'help',
+	'version',
+	'h',
+	'overwrite',
+]);
 
 type ParsedArgs = { flags: Record<string, string | true>; positional: string[] };
 
@@ -499,7 +513,7 @@ const COMMANDS: Record<string, (c: Ctx, args: string[]) => Promise<void>> = {
 	async export(c) {
 		if (typeof c.flags.out !== 'string')
 			throw new UsageError(
-				'Usage: jasper export --out <file> [--preset ID] [--range from..to] [--engine auto|native|remotion]',
+				'Usage: jasper export --out <file> [--preset ID] [--range from..to] [--engine auto|native|remotion] [--overwrite]',
 			);
 		let range: unknown;
 		if (typeof c.flags.range === 'string') {
@@ -516,6 +530,7 @@ const COMMANDS: Record<string, (c: Ctx, args: string[]) => Promise<void>> = {
 			{
 				projectId: await c.projectId(),
 				outputPath: resolve(c.cwd, c.flags.out),
+				...(c.flags.overwrite ? { overwrite: true } : {}),
 				wait: true,
 				timeoutSeconds: typeof c.flags.timeout === 'string' ? Number(c.flags.timeout) : 3600,
 				...(typeof c.flags.preset === 'string' ? { preset: c.flags.preset } : {}),
@@ -526,12 +541,12 @@ const COMMANDS: Record<string, (c: Ctx, args: string[]) => Promise<void>> = {
 			},
 			true,
 		);
-		const body = jsonOf(r) as { timedOut?: boolean; result?: { path?: string } };
+		const body = jsonOf(r) as { timedOut?: boolean; path?: string; pathNote?: string };
 		if (body.timedOut)
 			throw new CommandFailed({
 				error: { code: 'TIMEOUT', message: 'The export is still running', details: body },
 			});
-		emit(c, body, `wrote ${body.result?.path ?? '(see result)'}`);
+		emit(c, body, `wrote ${body.path ?? '(see result)'}${body.pathNote ? `\n${body.pathNote}` : ''}`);
 	},
 	async query(c, args) {
 		needArgs(args, 1, 'query <name> [k=v…]');
@@ -574,6 +589,13 @@ const COMMANDS: Record<string, (c: Ctx, args: string[]) => Promise<void>> = {
 		if (!def) throw new UsageError(`Unknown tool "${args[0]}" (jasper tools lists them)`);
 		const props = (def.inputSchema as { properties?: Record<string, unknown> }).properties ?? {};
 		if ('projectId' in props && params.projectId === undefined) params.projectId = await c.projectId();
+		// --timeout: how long a waiting tool may wait (its own timeoutSeconds wins; capped at the tool's maximum)
+		const wait = props.timeoutSeconds as { maximum?: number } | undefined;
+		if (wait && params.timeoutSeconds === undefined && typeof c.flags.timeout === 'string') {
+			const sec = Number(c.flags.timeout);
+			if (!Number.isInteger(sec) || sec < 1) throw new UsageError('--timeout takes whole seconds (≥ 1)');
+			params.timeoutSeconds = typeof wait.maximum === 'number' ? Math.min(sec, wait.maximum) : sec;
+		}
 		const r = await tool(c, args[0]!, params, true);
 		if (typeof c.flags.out === 'string')
 			for (const path of writeToolImages(r, resolve(c.cwd, c.flags.out))) c.out.stderr(`wrote ${path}\n`);

@@ -30,6 +30,7 @@ import {
 	trackJoins,
 	transitionJoins,
 } from '../join-fades.ts';
+import { finishOverlayFits, fitOverlay, type OverlayFit, overlayRemovalFits } from '../overlay-ripple.ts';
 import {
 	allTracksIn,
 	assertUnlocked,
@@ -880,13 +881,21 @@ export const clipCoreHandlers = {
 		const audio = seq.audioTracks.map((t) => t.id).filter((id) => tracks.has(id));
 		const joinedBefore = new Set(audio.flatMap((id) => trackJoins(seq, id).map(([a, b]) => joinKey(a, b))));
 		for (const c of clips) removeClip(seq, c.id, h);
+		// generated overlays on the sync-locked tracks stay whole, refitted (overlay-ripple.ts)
+		const followers = [...tracks].filter((id) => !affected.has(id));
+		const fitted: OverlayFit[] = [];
 		for (const r of [...spans].reverse()) {
+			const fits = overlayRemovalFits(seq, followers, r.start, r.end);
+			for (const f of fits) fitOverlay(seq, f);
+			fitted.push(...fits);
 			removeShift(seq, tracks, r.start, r.end - r.start, h, {
 				syncConflict: cmd.syncConflict,
 				remedy: 'pass syncConflict: "cut" to cut them too, or turn their sync lock off',
+				except: new Set(fits.map((f) => f.clipId)),
 			});
 			if (cmd.rippleMarkers !== false) shiftMarkers(seq, r.start, -(r.end - r.start));
 		}
+		finishOverlayFits(seq, fitted, h);
 		// a new join between two pieces of one recording jumps in its sound: with joinFades, Clean Up's join fade on both
 		// sides (hard cuts by default)
 		let fades = 0;

@@ -201,7 +201,16 @@ export const ExportSettingsSchema = z.object({
 	destination: z
 		.discriminatedUnion('type', [
 			z.object({ type: z.literal('download') }),
-			z.object({ type: z.literal('path'), path: z.string() }),
+			z.object({
+				type: z.literal('path'),
+				path: z.string(),
+				/**
+				 * Replace an existing file at `path` (and its caption / credits sidecars) atomically: the new file is written
+				 * to a temporary file in the same folder, synced and renamed over the old one, so the old file stays until the
+				 * new one is complete. Absent / false: an existing file is kept and " (2)", " (3)"… is appended.
+				 */
+				overwrite: z.boolean().optional(),
+			}),
 		])
 		.default({ type: 'download' }),
 	/** Burn-in, embedded streams and sidecar files (absent = burn in the visible tracks). */
@@ -419,6 +428,10 @@ export const ExportResultSchema = z.object({
 	durationSec: z.number(),
 	frames: z.number().int(),
 	path: z.string().optional(),
+	/** The destination asked for, when the file went elsewhere (a file existed there and `overwrite` was off). */
+	requestedPath: z.string().optional(),
+	/** True when `overwrite` replaced an existing file at `path`. */
+	replaced: z.boolean().optional(),
 	/** FFmpeg video encoder and container actually used (D-13). */
 	encoder: z.string().optional(),
 	container: z.enum(EXPORT_CONTAINERS).optional(),

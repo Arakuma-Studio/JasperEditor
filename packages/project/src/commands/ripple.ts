@@ -5,7 +5,8 @@
 // Ported from FilmCraft crates/edit/src/lib.rs (`ripple_trim_group`, `ripple_delete_spans`,
 // `ripple_delete_items`, `set_speed_group`), MIT OR Apache-2.0, Copyright (c) 2026 ArtCraft Team and the FilmCraft
 // contributors — adapted to Jasper's sync-lock rules (S01:TRK-006, S02 Appendix A.5): sync-locked tracks get the
-// same insert (splitting clips that straddle the edit) or removal (which must be empty) as the edited track.
+// same insert (splitting clips that straddle the edit) or removal (which must be empty) as the edited track — except
+// generated overlays (titles, shapes, motion graphics…) spanning the edit, which stay whole (overlay-ripple.ts).
 //
 // A **split-edit follower** is a clip on a rippling track that straddles the edit, linked to a later clip that
 // shifts (its sound leads the cut, a J cut). It moves with its picture instead of being split or blocking the edit;
@@ -17,6 +18,12 @@ import { FRAME_EPS, flicksPerFrame, type Rational } from '../time.ts';
 import { remapRoom } from '../time-remap/bounds.ts';
 import { isRemapped } from '../time-remap/model.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from './context.ts';
+import {
+	applyOverlayFits,
+	type OverlayFit,
+	overlayInsertFits,
+	overlayRemovalFits,
+} from './overlay-ripple.ts';
 import {
 	allTracksIn,
 	contentInRange,
@@ -129,6 +136,8 @@ type Plan = {
 	moves: Map<string, number>;
 	/** Clips that must be split at `at` (insert, shift > 0) before moving. */
 	splits: { trackId: string; at: number; except: Set<string> }[];
+	/** Generated overlays on sync-locked tracks kept whole across the edit (overlay-ripple.ts). */
+	overlays: OverlayFit[];
 };
 
 /**
@@ -155,6 +164,7 @@ function planRipple(
 	const ownLinks = new Set(members.map((m) => m.clip.linkId).filter((l): l is string => !!l));
 	const moves = new Map<string, number>();
 	const splits: Plan['splits'] = [];
+	const overlays: OverlayFit[] = [];
 
 	// Which clips shift (and so which link groups pull their split-edit partners along).
 	const shifting = new Map<string, number>();
@@ -186,12 +196,18 @@ function planRipple(
 		const follows = (c: DClip) =>
 			linkedToShift(c) && (pShift > 0 ? c.start < P && end(c) > P : c.start < r1 && end(c) > r0);
 		const followers = new Set(clips.filter(follows).map((c) => c.id));
+		// generated overlays that span the edit stay whole: lengthened / shortened instead of split or blocking
+		const fits = (
+			pShift > 0 ? overlayInsertFits(seq, [t.id], P, pn) : overlayRemovalFits(seq, [t.id], r0, r1)
+		).filter((f) => !followers.has(f.clipId));
+		overlays.push(...fits);
+		const kept = new Set(fits.map((f) => f.clipId));
 		if (pShift > 0) {
-			splits.push({ trackId: t.id, at: P, except: new Set([...followers, ...memberIds]) });
+			splits.push({ trackId: t.id, at: P, except: new Set([...followers, ...memberIds, ...kept]) });
 			for (const c of clips) if (c.start >= P || followers.has(c.id)) moves.set(c.id, c.start + pShift);
 		} else if (pShift < 0) {
 			for (const c of contentInRange(seq, t.id, r0, pn))
-				if (!followers.has(c.id) && !memberIds.has(c.id)) blocking.push(c.id);
+				if (!followers.has(c.id) && !memberIds.has(c.id) && !kept.has(c.id)) blocking.push(c.id);
 			for (const c of clips) if (c.start >= r1 || followers.has(c.id)) moves.set(c.id, c.start + pShift);
 			// A follower needs room where it lands (no other clip, not before frame 0).
 			for (const f of followers) {
@@ -209,7 +225,7 @@ function planRipple(
 		}
 	}
 	if (blocking.length) return { ok: false, blocking: [...new Set(blocking)] };
-	return { ok: true, plan: { moves, splits } };
+	return { ok: true, plan: { moves, splits, overlays } };
 }
 
 /** Applies the members' edge changes for a ripple trim by `d` (the clip keeps its start, S02:TL-540). */
@@ -298,6 +314,7 @@ export function rippleTrimGroup(
 				plan.moves.set(c.id, c.start + pShift);
 	}
 	for (const [id, start] of plan.moves) seq.clips[id]!.start = start;
+	applyOverlayFits(seq, plan.overlays, h);
 	applyMemberEdges(seq, members, d);
 	if (opts.rippleMarkers !== false) {
 		if (pShift > 0) shiftMarkers(seq, P, n);

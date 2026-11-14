@@ -191,6 +191,8 @@ export function buildExportSettings(
 		range: ExportSettings['range'];
 		engine: ExportSettings['engine'];
 		outputPath?: string;
+		/** Replace an existing file at `outputPath` (atomically, in the engine). */
+		overwrite?: boolean;
 		/** Overrides of the preset's quality. */
 		crf?: number;
 		videoBitrateKbps?: number;
@@ -240,7 +242,9 @@ export function buildExportSettings(
 			...(normalize !== undefined ? { normalize } : {}),
 		},
 		engine: opts.engine,
-		destination: opts.outputPath ? { type: 'path', path: opts.outputPath } : { type: 'download' },
+		destination: opts.outputPath
+			? { type: 'path', path: opts.outputPath, ...(opts.overwrite ? { overwrite: true } : {}) }
+			: { type: 'download' },
 		...(preset.alpha ? { videoOnly: true } : {}),
 	};
 }
@@ -260,6 +264,8 @@ export function buildDeliverableSettings(
 		range: ExportSettings['range'];
 		engine: ExportSettings['engine'];
 		outputPath?: string;
+		/** Replace an existing file at `outputPath` (atomically, in the engine). */
+		overwrite?: boolean;
 		gif?: ExportSettings['gif'];
 		audioChannels?: 1 | 2 | 6;
 		audioSampleRate?: 44100 | 48000 | 96000;
@@ -277,7 +283,7 @@ export function buildDeliverableSettings(
 		presetId: format === 'gif' ? 'animated-gif' : `audio-${format}`,
 		engine: opts.engine,
 		destination: opts.outputPath
-			? { type: 'path' as const, path: opts.outputPath }
+			? { type: 'path' as const, path: opts.outputPath, ...(opts.overwrite ? { overwrite: true } : {}) }
 			: { type: 'download' as const },
 	};
 	if (format === 'gif') return { ...base, container: 'gif', ...(opts.gif ? { gif: opts.gif } : {}) };

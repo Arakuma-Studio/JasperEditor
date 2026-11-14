@@ -567,7 +567,17 @@ describe('clip.fitToFrame (S01:FX-004)', () => {
 describe('range.lift / range.extract (S02:TL-690, AC-13d, AC-16b)', () => {
 	it('AC-13d: extract In=100 Out=199 removes exactly 100 frames from targeted and sync-locked tracks', () => {
 		const h = new Harness();
-		h.ok([solid(0, 300, 'V1'), solid(50, 300, 'V2')]);
+		const v = h.registerVideo({ seconds: 20, audio: false });
+		h.ok([
+			solid(0, 300, 'V1'),
+			{
+				type: 'clip.place',
+				source: { mediaId: v },
+				at: 50,
+				sourceRange: { in: { sourceFrames: 0 }, out: { sourceFrames: 300 } },
+				tracks: { video: 'V2' },
+			},
+		]);
 		const m = h.registerVideo({ seconds: 20, kind: 'audio' });
 		h.ok([{ type: 'clip.place', source: { mediaId: m }, at: 0, tracks: { audio: 'A1' } }]);
 		const before = sequenceDuration(h.seq);
