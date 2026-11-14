@@ -31,6 +31,7 @@ import {
 	TimeInputSchema,
 	TrackRefSchema,
 } from './common.ts';
+import { CutLevelsSchema, SnapToSilenceSchema } from './cut-levels.ts';
 
 const canvas = z.union([
 	z.literal('sequence'),
@@ -320,6 +321,10 @@ export const ClipTrimCmd = cmd('clip.trim', {
 	/** Ripple only: stop at the largest shift sync-locked tracks allow (gesture behaviour, S02:TL-543). */
 	clampToSyncLock: z.boolean().optional(),
 	rippleMarkers: z.boolean().optional(),
+	/** Move the cut off speech (default false: exact frames stay exact); needs `levels`. */
+	snapToSilence: SnapToSilenceSchema.optional(),
+	/** Voice-analysis windows around the cut (`cutLevelWindows`); the MCP server attaches them. */
+	levels: CutLevelsSchema.optional(),
 });
 export const ClipSlipCmd = cmd('clip.slip', { clipIds: IdListSchema, deltaFrames: z.number().int() });
 export const ClipSlideCmd = cmd('clip.slide', {
@@ -336,6 +341,10 @@ export const ClipSplitCmd = cmd('clip.split', {
 	scope: z.literal('all-unlocked').optional(),
 	/** Split link partners too (default true; Alt = false). */
 	linked: z.boolean().optional(),
+	/** Move the cut off speech (default false: exact frames stay exact); needs `levels`. */
+	snapToSilence: SnapToSilenceSchema.optional(),
+	/** Voice-analysis windows around the cut (`cutLevelWindows`); the MCP server attaches them. */
+	levels: CutLevelsSchema.optional(),
 });
 export const ClipLiftCmd = cmd('clip.lift', {
 	clipIds: IdListSchema,
@@ -360,6 +369,10 @@ export const RangeLiftCmd = cmd('range.lift', {
 	to: TimeInputSchema,
 	tracks: z.array(TrackRefSchema).optional(),
 	joinFades: JoinFadesSchema.optional(),
+	/** Move the cut off speech (default false: exact frames stay exact); needs `levels`. */
+	snapToSilence: SnapToSilenceSchema.optional(),
+	/** Voice-analysis windows around the cut (`cutLevelWindows`); the MCP server attaches them. */
+	levels: CutLevelsSchema.optional(),
 });
 export const RangeExtractCmd = cmd('range.extract', {
 	sequenceId: IdRefSchema.optional(),
@@ -368,6 +381,10 @@ export const RangeExtractCmd = cmd('range.extract', {
 	tracks: z.array(TrackRefSchema).optional(),
 	rippleMarkers: z.boolean().optional(),
 	joinFades: JoinFadesSchema.optional(),
+	/** Move the cut off speech (default false: exact frames stay exact); needs `levels`. */
+	snapToSilence: SnapToSilenceSchema.optional(),
+	/** Voice-analysis windows around the cut (`cutLevelWindows`); the MCP server attaches them. */
+	levels: CutLevelsSchema.optional(),
 });
 export const GapCloseCmd = cmd('gap.close', {
 	sequenceId: IdRefSchema.optional(),

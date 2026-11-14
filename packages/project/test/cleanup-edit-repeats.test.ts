@@ -417,6 +417,39 @@ describe('Clean Up plans the repeats in the edit', () => {
 		expect(keptB[0]!.start).toBe(54);
 	});
 
+	it('the cut of an accepted repeat keeps the fading decay of the word before it (edge-snap.ts)', () => {
+		const { H, chunked, voice } = setup();
+		// "hacer," fades out over 0.16 s (−14 → −46 dBFS) into the attempt's timestamp; the attempt "y" sounds from 2.68 s
+		for (let k = 250; k < 268; k++) {
+			voice.classes[k] = k < 256 ? 2 : 0;
+			voice.level[k] = (k < 266 ? -14 - (k - 250) * 2 + 120 : -60 + 120) * 2;
+		}
+		const sp = editSpans(H.doc, H.seq);
+		if (!sp.ok) throw new Error(sp.message);
+		const editRepeats = findEditRepeats({
+			spans: sp.spans,
+			rate: H.seq.settings.frameRate,
+			words: lookup(chunked),
+			confirm: [lookup(chunked)],
+			voice: () => voice,
+			settings: FAST_SETTINGS,
+			language: 'es',
+		});
+		const a = analyzeSequenceCleanup({
+			doc: H.doc,
+			seq: H.seq,
+			voice: () => voice,
+			settings: FAST_SETTINGS,
+			editRepeats,
+		});
+		if (!a.ok) throw new Error(a.message);
+		expect(a.findings.find((x) => x.reason.params.cut === 1)?.suggested).toBe('remove');
+		const clipA = sp.spans[0]!.clipId;
+		const end = Math.max(...a.plan.kept.filter((k) => k.clipId === clipA).map((k) => k.end));
+		// the cut's frame grid put the edge at 2.6 s (frame 48), 22 dB into the decay; it now waits for the quiet at 2.633 s
+		expect(end).toBe(49);
+	});
+
 	it('the closed loop maps the mixdown words back to clips, for review', () => {
 		const { H } = setup();
 		const sp = editSpans(H.doc, H.seq);

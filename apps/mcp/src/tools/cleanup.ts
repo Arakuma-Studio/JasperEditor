@@ -340,8 +340,19 @@ export function findingReasonText(f: CleanupFinding): string {
 			return `The transcription may be wrong here: "${text}"`;
 		case 'hallucination':
 			return `Likely invented by speech to text: "${text}"`;
-		case 'fragment':
-			return `${p.frames} frames kept alone between ${p.between === 'words' ? 'removed words' : 'cuts'}${text ? `: "${text}"` : ''} — a flash of another moment; cut it or keep it`;
+		case 'fragment': {
+			const why =
+				p.why === 'voice'
+					? ', voice without words'
+					: p.why === 'orphan'
+						? ', sound playing without its own picture'
+						: p.why === 'filler'
+							? ', a filler'
+							: p.why === 'off-script'
+								? ', not in the script'
+								: '';
+			return `${p.frames} frames kept alone between ${p.between === 'words' ? 'removed words' : 'cuts'}${why}${text ? `: "${text}"` : ''} — a flash of another moment; cut it or keep it`;
+		}
 	}
 }
 
@@ -450,6 +461,30 @@ function analysisBody(
 		cuts: a.plan.ranges.length,
 		byKind,
 		skipped: a.plan.skipped.length,
+		// the current timeline's cut edges that cut speech (whoever made them): where, the word, a frame that fixes it
+		...(a.cutEdges?.length
+			? {
+					cutEdges: page(
+						a.cutEdges.map((e) => ({
+							clipId: e.clipId,
+							edge: e.side,
+							frame: e.frame,
+							timecode: sequenceTimecode(seq, e.frame),
+							reason:
+								e.reason === 'speech'
+									? 'speech in the 50 ms cut away'
+									: e.reason === 'sound'
+										? 'a decay or onset cut'
+										: 'inside a word',
+							word: e.word,
+							awayDb: e.awayDb,
+							...(e.fixFrame !== null ? { fixFrame: e.fixFrame } : {}),
+						})),
+						offset,
+						limit,
+					),
+				}
+			: {}),
 		...(want.has('findings') ? { findings: page(findings, offset, limit) } : {}),
 		...(want.has('groups') ? { groups: page(groups, offset, limit) } : {}),
 		...(want.has('ranges') ? { ranges: page(ranges, offset, limit) } : {}),

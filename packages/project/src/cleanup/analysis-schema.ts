@@ -102,5 +102,22 @@ export const CleanupAnalysisSchema = z.object({
 		}),
 	),
 	plan: CleanupPlanSchema,
+	/** Absent in analyses of older builds. */
+	cutEdges: z
+		.array(
+			z.object({
+				clipId: z.string(),
+				trackId: z.string(),
+				side: z.enum(['in', 'out']),
+				frame: z.number().int(),
+				mediaId: z.string(),
+				mediaSeconds: z.number(),
+				reason: z.enum(['speech', 'sound', 'inside-word']),
+				awayDb: z.number(),
+				word: z.string().nullable(),
+				fixFrame: z.number().int().nullable(),
+			}),
+		)
+		.optional(),
 	editRepeats: z.array(EditRepeatSchema).max(100_000).optional(),
 });

@@ -13,6 +13,7 @@ import type { Clip } from '../../schema/sequence.ts';
 import { contentSpanFlicks, flicksPerFrame } from '../../time.ts';
 import { isRemapped } from '../../time-remap/model.ts';
 import type { DClip, DDoc, DSeq, DTrack, HandlerContext } from '../context.ts';
+import { cutSnapLevels, snapCutRange } from '../cut-snap.ts';
 import { audioCutFaces, JOIN_FADE_MS, setJoinFades } from '../join-fades.ts';
 import {
 	applyOverlayFits,
@@ -608,8 +609,12 @@ function rangeBounds(
 
 function rangeLiftHandler(doc: DDoc, cmd: CommandOf<'range.lift'>, h: HandlerContext) {
 	const seq = h.sequence(doc, cmd.sequenceId);
-	const [from, to] = rangeBounds(seq, cmd, h);
+	let [from, to] = rangeBounds(seq, cmd, h);
 	const tracks = rangeTracks(seq, cmd.tracks, h);
+	// opt-in: the edges move off speech, picture and sound together (cut-snap.ts)
+	const levels = cutSnapLevels(cmd, cmd.snapToSilence === true, h);
+	const snapped = levels ? snapCutRange(doc, seq, from, to, levels) : null;
+	if (snapped) [from, to] = [snapped.from, snapped.to];
 	const ids = tracks.map((t) => t.id);
 	const holes = holesBefore(doc, seq);
 	const faces = audioCutFaces(seq, ids, from, to);
@@ -620,13 +625,17 @@ function rangeLiftHandler(doc: DDoc, cmd: CommandOf<'range.lift'>, h: HandlerCon
 	cleanupSequence(seq, h);
 	// lifting the picture alone leaves black under the sound it kept: say so (it may be meant: something goes there)
 	warnNewHoles(doc, seq, holes, h);
-	return { from, to, tracks: ids, fades };
+	return { from, to, tracks: ids, fades, ...(snapped ? { snapped: { clean: snapped.clean } } : {}) };
 }
 
 function rangeExtractHandler(doc: DDoc, cmd: CommandOf<'range.extract'>, h: HandlerContext) {
 	const seq = h.sequence(doc, cmd.sequenceId);
-	const [from, to] = rangeBounds(seq, cmd, h);
+	let [from, to] = rangeBounds(seq, cmd, h);
 	const tracks = rangeTracks(seq, cmd.tracks, h);
+	// opt-in: the edges move off speech, picture and sound together (cut-snap.ts)
+	const levels = cutSnapLevels(cmd, cmd.snapToSilence === true, h);
+	const snapped = levels ? snapCutRange(doc, seq, from, to, levels) : null;
+	if (snapped) [from, to] = [snapped.from, snapped.to];
 	// Targeted tracks plus every sync-locked unlocked track lose the marked range, then it closes.
 	const ids = new Set(tracks.map((t) => t.id));
 	for (const t of syncFollowerTracks(seq, ids)) ids.add(t.id);
@@ -649,7 +658,7 @@ function rangeExtractHandler(doc: DDoc, cmd: CommandOf<'range.extract'>, h: Hand
 	if (cmd.rippleMarkers !== false) shiftMarkers(seq, from, -(to - from));
 	const fades = cmd.joinFades ? setJoinFades(seq, cut, JOIN_FADE_MS) : 0;
 	cleanupSequence(seq, h);
-	return { from, to, tracks: [...ids], fades };
+	return { from, to, tracks: [...ids], fades, ...(snapped ? { snapped: { clean: snapped.clean } } : {}) };
 }
 
 function gapCloseHandler(doc: DDoc, cmd: CommandOf<'gap.close'>, h: HandlerContext) {

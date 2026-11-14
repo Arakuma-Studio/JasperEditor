@@ -1055,6 +1055,181 @@ and the 57-minute source at main 30d91f090, Fast, script attached, `/tmp/je-word
   protected word times leave on the cut, and whether the four words now play); a word longer than 1 s still holds
   pauses inside it; a restart said inside one word is no longer found unless the re-decode splits it on another trace.
 
+**Cut edges outside speech** (round 16: the user's by-ear review of their 57-minute Spanish cut — rev 152 of the
+project, made with Clean Up v6 plus an agent's manual trims — and the same project after 41 problems were fixed by hand,
+rev 267; the source recording, 16 kHz mono, measured on the build host, `/tmp/je-v7ref/`):
+- **Reported**: on rev 152, measuring the source's 10 ms RMS at every A1 clip edge, 255 out points and 181 in points had
+  speech above −33 dBFS on the cut-away side (re-measured here: 426 of 702 cut edges have more than −33 dBFS in the
+  50 ms cut away; 136 more than −28). Heard: "más optimiza|", "Asset|" (missing "Store"), "tor|tura", "lap|top",
+  "|hau" (chau), "es|tremadamente"; restart / stutter removal clipped the kept word's onset ("mostrar" → "-trar",
+  "un montón" → "…n montón"). Some came from an agent's over-tight manual trims, so the rule applies to every cut.
+- **One rule** (`cleanup/edge-snap.ts`, pure). A cut edge is an *out* edge (the kept span ends, the cut-away sound
+  follows) or an *in* edge (it starts, the cut-away sound precedes). It is **clean** when the level at the cut (the
+  louder of the 10 ms frames on either side of the boundary) is at most the *quiet* level and the 50 ms of cut-away
+  sound beside it (`EDGE_AWAY_S`) stays at most the *speech* level. Levels: quiet = speech level − 31 dB, speech =
+  speech level − 19 dB (`EDGE_QUIET_UNDER_SPEECH_DB`, `EDGE_LOUD_UNDER_SPEECH_DB`; the voice analysis' 95th-percentile
+  speech level, −9 dBFS on the source, gives the −40 / −28 dBFS of the report), quiet at least floor + 6 dB where the
+  floor is high (a loudness-normalised mixdown), speech at least quiet + 6 dB; without levels −40 / −28 dBFS.
+  *Assumption*, labelled: the two margins come from one recording (the reporter's absolute levels); relative to the
+  speech level so a quiet recording is judged the same way.
+- **Snapping** (`snapCut`): a clean edge stays; else it moves to the nearest clean boundary (ties towards keeping
+  more), within bounds: towards keeping more (an out edge later, an in edge earlier) up to `EDGE_DECAY_S` (0.3 s: the
+  source's decays ran up to 0.4 s past the timestamp) for an out edge and `EDGE_SEARCH_S` (0.15 s) for an in edge,
+  entering the cut-away neighbour word's time by at most `EDGE_INTO_WORD_S` (80 ms, the attack a late timestamp
+  covers) and half the word; towards cutting more 0.15 s, never past the kept neighbour word's edge, and only onto a
+  clean boundary. With no clean boundary it never shortens the kept span: it keeps the edge or moves it towards
+  keeping more to the least bad boundary — inside the cut-away word's time only for a dip at least `EDGE_DIP_GAIN_DB`
+  (6 dB) better than outside it (a gap between two words said into each other, not a wobble). `edgeBounds` derives
+  the bounds from the words around the edge (a word belongs to the side its midpoint lies on).
+- **Breaths stay out, closures stay in the word** (the review of v7, same source): extending an in point back to a
+  word's onset pulled in the breath before "No había botones" (1155.38–1155.65, −34…−42 dBFS; the voice analysis
+  classes 1155.20–1155.65 breath and the word's timestamp starts at 1155.40, 0.26 s before its attack) and before "Y
+  en el juego" (1873.20–1873.34 breath); and cuts landed in closures inside one word ("mos|trar": 60 ms under −40
+  dBFS at 1646.30–1646.36; "pi|xel" at 741.44). Now: the cut-away side's first frame decides "quiet" and a breath
+  frame counts as quiet there (a cut may end a breath, at the word's attack); a breath on the kept side right at the
+  edge is never clean; no move towards keeping more passes over a breath frame; and towards cutting more an edge may
+  pass over a breath and the quiet sound around it (frames ≤ quiet + 6 dB, ≤ 0.9 s, the breath class's maximum) to the
+  attack or the decay, whatever the timestamps say — only when a breath lies in that stretch, so a soft first word
+  without a breath after it stays. A boundary more than `EDGE_INTO_WORD_S` inside one word's time is never taken unless
+  a quiet run of `EDGE_CLOSURE_S` (80 ms) holds it (`edgeInsideWord`: a closure belongs to the word; a longer quiet
+  run is a pause a loose timestamp covers). *Assumption*, labelled: a breath after a soft first word ("y [breath]
+  entonces") lets an in edge drop that word; the breath class is the voice analysis' (unvoiced, flat, 120–900 ms).
+  Tests (each fails on the previous snapper): `cleanup-edge-snap.test.ts` "breaths stay out, closures stay in the
+  word" — the source's planes around the four reported places (fixture windows `breathNo`, `breathY`,
+  `closureMostrar`, `closurePixel`).
+- **The review of v8** (the project at ≈ rev 475; levels re-measured here from the source):
+  - *Removals ended inside onsets*: "más | skins" — the stutter removal of the first "skins" ran to its timestamp end
+    3227.64, over the unvoiced /s/ of the kept one (−29…−36 dBFS from 3227.58); 1685.13–1685.50 and 1808.22–1808.43
+    likewise. A clean edge now also needs `EDGE_QUIET_RUN_S` (30 ms) of the cut-away sound beside it within 2 dB of
+    the quiet level (−38…−40 dBFS on the source: the review's "below −38 for ≥ 30 ms"), by level only (an /s/ is
+    unvoiced); an in edge may cut a removed word's whole decay (`EDGE_DECAY_S`, as an out edge keeps a kept word's).
+  - *Out points while the word still sounds* ("es de Uni|ty" at 1351.083: −22 dBFS before, −30…−37 after until
+    1351.28). The reviewer's criterion (last 40 ms before > −26 dBFS, first 40 ms after > −36, −38 reached within 0.25
+    s; and for in points: the 30 ms before > −34) over 10 ms RMS: rev 152's 702 cut edges fail it at 190 out points
+    and 73 in points; snapped (the snapper alone, bounds from the words, 60 fps grid) 24 and 39; rev 267's edges 155 /
+    49 → 7 / 14. Clean Up over the whole source: main b7b06eda9 60 out / 15 in, this round 21 / 13 (what is left: a
+    breath right after the word, left out on purpose, and continuous speech into a removed restart).
+  - *Extensions pulled in foreign onsets* ("del mundo, que | pue-"): every move towards keeping more — the snapper,
+    the planner's phrase tail and the clip's last-piece tail (`keepTail`) — stops at the next syllable onset after a
+    dip (`onsetBound`: a rise of `EDGE_ONSET_RISE_DB`, 8 dB, to above the speech level from a dip within 3 dB of the
+    quiet level, or from any dip under the speech level where a word on the cut-away side begins). A shallower bump
+    that stays under the speech level is the word's own decay ("Uni-ty", −39 → −31 dBFS) and is kept.
+  - *A "Y" on a tail fragment* ("Appstore! | Y si", 171.72–171.88: breath-like, mean voicing 0.37, after a 20 ms dip
+    to −40 dBFS): a longer kept piece's head or tail next to a cut that is a burst of ≤ 0.3 s after a dip of ≥ 20 ms
+    within 2 dB of the quiet level, mostly unvoiced (mean voicing < 0.5), not quiet, and not after a closure inside a
+    word (`edgeInsideWord`) is a `fragment` finding (`why: voice`) for review; accepted, the piece is shortened to the
+    dip. On rev 152 as cut: 8 such review findings (2 of them on the end of a word whose last syllable is breathy:
+    "patas.", "sentido,").
+  - `transcript.removePauses` in level mode now snaps its edges the same way.
+  - Tests (`cleanup-edge-snap.test.ts` "the review of v8", fixture windows `skins`, `unity`, `appstore`, `pue`):
+    "más | skins" keeps the /s/ with 30 ms under −38 dBFS before the in edge (fails on b7b06eda9's planner); the out
+    edge after "Uni-ty" waits for the decay; `onsetBound` stops at "pue-" and not inside "Uni-ty"; the "Appstore!"
+    burst (with the v8 transcript's words) is a review fragment (both fail on the previous commit).
+- **Clean Up**: `keptToFrames` snaps every edge of a kept piece inside the clip's extent onto the clip's frame
+  boundaries (after the level edges, the tight word-boundary edges and the 10 ms quietest-boundary snap), never
+  across the piece's other edge or into the neighbouring pieces. A removed word now goes with its rising onset and
+  fading decay (`removedRamps`: non-speech frames above measured silence beside its sound, across at most two frames
+  of silence, ≤ 0.25 s, never into kept words) — the pause beside it held them, so a rejected or reviewed pause kept a
+  removed word's tail and the next piece started while it still sounded. The final frame check (`keepUnexplained`)
+  still puts back everything no accepted finding (or a removed word's sound and ramps) explains, so snapping never
+  removes unexplained audio; where that check holds an edge, the edge stays.
+- **Text and manual cuts** (`commands/cut-snap.ts`, schema `commands/schemas/cut-levels.ts`): `transcript.extract` /
+  `transcript.lift` move both edges off speech when the command carries `levels` (default on then; `snapToSilence:
+  false` cuts at the words' frames); `range.extract` / `range.lift`, `clip.trim` and `clip.split` only with
+  `snapToSilence: true` (exact frames stay exact by default). `levels` are windows of the media's voice analysis (level
+  and class bytes, base64, ≤ 60 s each, ≤ 256) around the cut — commands are pure, so the caller sends them
+  (`cutLevelWindows`); the edge is judged on the first audio clip (A1 first) under it whose media they cover, bounded
+  by that media's transcript words, and the one frame applies to every track (picture and sound stay together). A
+  split takes the nearest boundary that is clean as an out and as an in edge and not inside a word. Snapping without
+  levels warns `W_NO_LEVELS` and cuts exactly; malformed levels refuse `E_INVALID_PARAM`; results carry `snapped:
+  {clean}`. The MCP server attaches the windows to every agent transaction's cut commands that ask for them
+  (`apps/mcp/src/cut-levels.ts`, in `transact`: text cuts always, range / trim / split cuts with `snapToSilence: true`)
+  from the engine's cached voice analyses (never computed there; none → the cut stays exact). No tool text changed:
+  `apply_commands` / `describe_commands` show the commands' fields. Tests: `cut-snap-commands.test.ts` (range,
+  transcript, trim and split cuts, the previous document untouched, the same command giving the same timeline,
+  refusal, warning; invariants after every transaction), `apps/mcp/test/cut-levels.test.ts`. The editor's Extract
+  Text / Lift Text buttons send no levels yet (they cut at the words' frames, as before).
+- **Repeats at cuts** (merged with feat/boundary-repeats): the edges an accepted edit repeat cuts (`cutMediaSpans`,
+  on the clip's frame grid at or before the attempt's start and the retry's onset) then move off speech through the
+  same snapper (`frameSnapper`), only towards keeping more — the cut's own span stays its finding's, so nothing
+  unexplained goes; the short pieces such cuts leave are judged by the fragment rules, and the plan's ranges cut picture
+  and sound together. Test: `cleanup-edit-repeats.test.ts` "the cut of an accepted repeat keeps the fading decay of the
+  word before it" (frame 47, inside the decay, without the hook; 49 with it).
+- **Audit** (`cleanup/edge-audit.ts` `auditCutEdges`, a cleanup check): every cut edge of the speech clips — not the
+  recording's own start or end, not a through edit — that cuts speech in the 50 ms cut away (`speech`), cuts a word's
+  decay or onset over quiet + 6 dB (`sound`, ≈ −35 dBFS on the source) without being clean, or lands in a closure
+  inside a word (`inside-word`), with the word it cuts and the frame the snapper would move it to (`fixFrame`), whoever
+  made the cut. Clean Up analyses carry it (`CleanupAnalysis.cutEdges`, optional in the analysis schema: older files
+  lack it) and the MCP `analyze_voice` / `plan_cleanup` bodies page it as `cutEdges` (clip, edge, frame, timecode,
+  reason, word, level, fixFrame) — result text only, no tool text changed. Measured on the A1 track: rev 152 522 edges
+  (38 out / 119 in `speech`, 244 / 98 `sound`, 10 / 13 `inside-word`; 394 with a fix frame), rev 267 413 (16 / 97,
+  211 / 88, 1 / 0). Not in `verify_export`: that check judges the exported file and records the timeline's cuts at
+  export time without the voice analyses; the audit runs where the analyses are (Clean Up's job). The editor shows no
+  list yet. Test: `cleanup-edge-snap.test.ts` "the cut-edge audit" (an over-tight trim at "Uni|ty" listed with a fix
+  frame that keeps the decay to 1351.30 s).
+- **Measured** (Fast, the script attached, default decisions; whole source as one clip, one-off script over the shipped
+  functions): main b7b06eda9 places 780 cut edges, 127 of them with more than −33 dBFS cut away (56 over −28; 49 were
+  join out points inside a decay, the Fast style's floor + 20 dB out point); at the end of the round (breaths, closures,
+  the v8 rules and fragments included) 770 edges, 63 over −33 (47 over −28; what is left is continuous speech between a
+  removed restart and the kept take, no quiet boundary within the bounds), output 1075.4 s against 1068.3 s (the kept
+  decays and onsets). The snapper alone over rev 152's 702 edges: 426 → 123 over −33 dBFS (136 → 70 over −28), 137
+  without a clean boundary within the bounds, 23 → 20 edges inside a word's time (closures; bounded moves cannot
+  leave a word they are deep inside); over rev 267's 612 edges (the hand-fixed target): 334 → 60 over −33 (85 → 26
+  over −28), 1 → 0 inside a word — the target itself still had 334 edges over −33 by this measure, most of them quiet
+  decays the review accepted.
+- Tests (each fails on b7b06eda9): `cleanup-edge-snap.test.ts` — the source's own voice analysis planes and words
+  around a join ("complejo de hacer, | Y si", the out point now in measured quiet after the decay) and a stutter
+  ("Y | Y lo peor": the kept "Y" keeps its onset; fixture `test/fixtures/cleanup-cut-edges-source.json`, 13 s of
+  planes); `cleanup-property.test.ts` "a sequence plan removes nothing…" now also asserts that no kept piece ends or
+  starts with speech in the 50 ms cut away where the edge lies in a non-speech stretch of ≥ 0.2 s, unless the cut
+  itself is quiet and that speech is removed by an accepted finding whose edge bounds it (the clip's ends are no cuts);
+  its coverage clause accepts a removed word's onset and decay (fails on b7b06eda9 in about half the runs: an in edge
+  right after a removed filler's last frame). Corpus (Fast, corpus voice) unchanged: dev 0.997 (2303 / 2311) / 0.960,
+  held out 1.000 / 0.973, held-out-r7 0.998 / 0.870, held-out-r9 0.992 / 0.976, held-out-r11 1.000 / 1.000.
+- Limits: the bounds follow the transcript's timestamps — a word whose timestamp is far off still bounds the edge; a
+  stop closure longer than 50 ms inside a word reads as a clean place if no word bound excludes it; continuous speech
+  without a 20 ms dip under the quiet level keeps its edge (reported, not moved); the real-file rerun of Apply on the
+  GPU PC is the coordinator's.
+
+**Stray fragments and A / V slivers** (round 16, same review):
+- **Reported**: 47 kept A1 clips under 0.7 s of rev 152 held no script word — "mmm", "eeeh", a laugh heard as "y",
+  "¡Ah!", "puta madre", syllables of other takes; and a hidden V1 sliver kept its A1 audio, which then played under the
+  next shot (an "eeh" after "Appstore" heard as "y"). Round 12's fragment rule covered pieces under 10 frames *inside*
+  a clip only; an already cut sequence keeps every piece as its own clip, and a clip that spans its own extent was
+  never judged. Measured on rev 152: 67 A1 clips under 0.7 s, 34 of them unlinked slivers of 1–7 frames lying under
+  the tail of the previous shot's picture (an agent deleted their picture and stretched the shot before over it).
+- **Rule** (`cleanup/fragments.ts`, hook after the per-clip planning in `sequence.ts`): every kept piece of at most
+  `FRAGMENT_MAX_S` (0.7 s: the review's stray pieces lasted 0.02–0.68 s, its kept scripted short pieces — "Eso es
+  todo.", "Mis juegos," — 0.42–0.68 s, so length alone cannot separate them) with a cut on both sides — a removed
+  range inside the clip, or a clip edge that is not a through edit with the clip beside it on the track and not the
+  scope's edge — is judged: voice without words (`why: voice`; removed when removed words lie on both sides or the
+  sound has no picture, else review; skipped while its own untranscribed finding waits), only vocalic fillers
+  (`filler`, removed), sound playing without its own picture (`orphan`: the media's picture is in the sequence but no
+  linked picture clip shows that moment; removed unless the script holds its words in output order, review without a
+  script), words most of which do not align to the script *in the order the output plays them* (`off-script`:
+  `ScriptAligner` support ≥ 3 of 6 neighbours over the kept words in sequence order; removed when removed words lie on
+  both sides, a piece of another take, else review). Anything else stays without a finding. The finding is a
+  `fragment` like round 12's (reason params `text`, `frames`, `between`, `why`; Review panel "Isolated fragments",
+  MCP reason text); an accepted one removes the piece's frames — on every target track, so the picture above an
+  orphan sliver loses the same frames (the shot's overhang) and no audio is left without its picture. Where a round-12
+  sliver finding covers the piece, it keeps its id and may only become a removal (`why` set). No audio goes without an
+  accepted finding.
+- **Measured** (Clean Up, Fast, script attached, default decisions, over rev 152's main sequence as it is, one-off
+  script): 33 fragment findings, 28 suggested for removal (the 27 wordless orphan slivers rev 267 removed, and one
+  wordless orphan it kept, 2210.57 s), 5 for review (orphan "Y", "Aunque", "Me" — removed in rev 267 — and "y",
+  "Unity" — kept); of the 45 short clips rev 267 removed, 30 now have a fragment finding, 7 an untranscribed review
+  finding, 2 another finding and 6 none: single script words that align in output order ("Desde", "Hubo", "Pero",
+  "como", "el", "que el") — rev 267 replaced several of them by the same word of another take, which a level and
+  script rule cannot hear.
+- Tests (`cleanup-fragments.test.ts`, each failing on b7b06eda9 except the control): a whole 12-frame clip holding a
+  laugh written "ja" between two scripted shots is an off-script fragment for review, and accepted it goes with its
+  picture (no audio without its picture after Apply); a scripted short phrase between cuts gets no finding; a 4-frame
+  A1 sliver whose picture was deleted under the stretched previous shot is removed by default together with the
+  shot's 4-frame overhang. Corpus unchanged (the corpus has one clip per case and speech under every word).
+- Limits: a whole short clip of a picture-less media (audio-only edit) is judged only by fillers and the script; a
+  scripted word spliced from another take is not found; orphan *picture* slivers (video without its audio) are not
+  planned — Clean Up plans the speech clips and applies every range to the picture with them, so it never makes one.
+
 Kinds follow the structure: ≤ 2 words a false start, a whole clause (clause start, clause end, ≥ 3 content words) a
 retake (with a group), else a restart; inside re-decoded ranges they become hidden retakes as before. The settings keep
 their meaning (the windows, `retakeSimilarity`, `takeGapS`, `phraseGapS`, `falseStartGapS` for false starts by clause);
@@ -1089,6 +1264,7 @@ words (fillers aside) removed. Measured (both modes, Fast, corpus voice):
 | round 13 (restart dip, ellipsis cut-offs): every split | unchanged | 0.997, 1.000, 0.998, 0.992, 1.000 | 0.960, 0.973, 0.870, 0.976, 1.000 |
 | round 14 (hallucinations need non-speech evidence, head / tail on the script alignment): every split | unchanged | 0.997, 1.000, 0.998, 0.992, 1.000 | 0.960, 0.973, 0.870, 0.976, 1.000 |
 | round 15 (no pause over a word's time, restart dip off): every split | unchanged | 0.997, 1.000, 0.998, 0.992, 1.000 | 0.960, 0.973, 0.870, 0.976, 1.000 |
+| round 16 (cut edges outside speech): every split | unchanged | 0.997, 1.000, 0.998, 0.992, 1.000 | 0.960, 0.973, 0.870, 0.976, 1.000 |
 
 Per kind at 0108b4021 (dev / held out): hidden-retake 0.997 / 1.000, retake 0.999 / 1.000, restart 0.998 / 1.000,
 false start 1.000 / 1.000, stutter — / 1.000, filler-vocalic 0.943 / —, filler-phrase 1.000 / 1.000, hallucination

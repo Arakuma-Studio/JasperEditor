@@ -10,6 +10,7 @@ import {
 	TimeInputSchema,
 	TrackRefSchema,
 } from './common.ts';
+import { CutLevelsSchema, SnapToSilenceSchema } from './cut-levels.ts';
 
 export const CAPTION_IMPORT_FORMATS = ['srt', 'vtt', 'scc', 'mcc', 'stl', 'ttml', 'dfxp'] as const;
 const CaptionFormatSchema = z.enum(CAPTION_IMPORT_FORMATS);
@@ -205,11 +206,19 @@ export const TranscriptSetSpeakerCmd = cmd('transcript.setSpeaker', {
 export const TranscriptSelectCmd = cmd('transcript.select', { ...TextBasedRangeShape });
 export const TranscriptExtractCmd = cmd('transcript.extract', {
 	...TextBasedRangeShape,
-	joinFades: JoinFadesSchema.optional(),
+	joinFades:
+		JoinFadesSchema.optional() /** Move the cut off speech (default true when `levels` are given); `false` cuts at the words' frames. */,
+	snapToSilence: SnapToSilenceSchema.optional(),
+	/** Voice-analysis windows around the cut (`cutLevelWindows`); the MCP server attaches them. */
+	levels: CutLevelsSchema.optional(),
 });
 export const TranscriptLiftCmd = cmd('transcript.lift', {
 	...TextBasedRangeShape,
-	joinFades: JoinFadesSchema.optional(),
+	joinFades:
+		JoinFadesSchema.optional() /** Move the cut off speech (default true when `levels` are given); `false` cuts at the words' frames. */,
+	snapToSilence: SnapToSilenceSchema.optional(),
+	/** Voice-analysis windows around the cut (`cutLevelWindows`); the MCP server attaches them. */
+	levels: CutLevelsSchema.optional(),
 });
 
 export const TranscriptInsertIntoCmd = cmd('transcript.insertInto', {

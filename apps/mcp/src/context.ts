@@ -22,6 +22,7 @@ import type {
 } from '@modelcontextprotocol/sdk/types.js';
 import type { z } from 'zod';
 import { normalizeTimeArg, TIME_HINT } from './arguments.ts';
+import { withCutLevels } from './cut-levels.ts';
 import { toolEnvelope } from './envelope.ts';
 import {
 	cancelledResult,
@@ -314,6 +315,14 @@ export async function transact(
 		tick();
 		timer = setInterval(tick, 5000);
 	}
+	// cut commands that move their edges off speech carry the voice analysis around them (cut-levels.ts)
+	const commands = await withCutLevels(
+		ctx,
+		() => loadDoc(ctx, projectId),
+		input.commands,
+		input.sequenceId,
+		extra?.signal,
+	);
 	const send = (sequenceId: string | undefined) =>
 		ctx.engine((c) =>
 			c.agentTx({
@@ -322,7 +331,7 @@ export async function transact(
 					protocol: 'jasper.tx/1',
 					label: input.label,
 					origin: { agent: ctx.agentName() },
-					commands: input.commands as never,
+					commands: commands as never,
 					...(input.dryRun ? { dryRun: true } : {}),
 					...(input.expectedRevision !== undefined ? { expectedRevision: input.expectedRevision } : {}),
 					...(sequenceId ? { sequenceId } : {}),

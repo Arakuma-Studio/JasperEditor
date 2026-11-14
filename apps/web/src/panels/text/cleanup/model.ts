@@ -562,6 +562,16 @@ export function reasonText(f: CleanupFinding): string {
 		case 'fragment':
 			// a kept sliver between cuts (`frames` long; `between: 'words'` when removed words surround it; no text without
 			// a word)
+			// a short piece between cuts judged by the script and the picture (`why`: fragments.ts)
+			if (p.why === 'voice') return t('Voice without words between cuts ({0} frames)', p.frames);
+			if (p.why === 'orphan')
+				return text
+					? t('Sound without its picture between cuts ({0} frames): “{1}”', p.frames, text)
+					: t('Sound without its picture between cuts ({0} frames)', p.frames);
+			if (p.why === 'filler')
+				return t('Short piece between cuts ({0} frames), a filler: “{1}”', p.frames, text);
+			if (p.why === 'off-script')
+				return t('Short piece between cuts ({0} frames), not in the script: “{1}”', p.frames, text);
 			if (!text) return t('Isolated fragment between cuts ({0} frames)', p.frames);
 			return p.between === 'words'
 				? t('Isolated fragment between removed words ({0} frames): “{1}”', p.frames, text)
