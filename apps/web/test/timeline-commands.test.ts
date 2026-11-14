@@ -13,6 +13,26 @@ const engine = new EngineClient({ fetch: (async () => new Response('{}')) as unk
 
 beforeAll(() => registerAllCommands());
 
+/** A video clip on `track` (footage: ripples on other tracks cut it; generated clips such as solids stay whole). */
+function footage(
+	t: { apply(c: unknown[]): { results: unknown[] } },
+	at: number,
+	frames: number,
+	track: string,
+) {
+	const r = t.apply([{ type: 'media.register', asset: videoAsset(20) }]);
+	const mediaId = (r.results[0] as { mediaId: string }).mediaId;
+	t.apply([
+		{
+			type: 'clip.place',
+			source: { mediaId },
+			at,
+			sourceRange: { in: { sourceFrames: 0 }, out: { sourceFrames: frames } },
+			tracks: { video: track },
+		},
+	]);
+}
+
 function harness(opts: Parameters<typeof setupTimeline>[0] = {}) {
 	const t = setupTimeline(opts);
 	const toasts: ToastRequest[] = [];
@@ -257,7 +277,9 @@ describe('In/Out, lift and extract (TL-690…766, AC-13d, AC-15a/b)', () => {
 
 	it('AC-13d: Extract with In=100 Out=199 removes exactly 100 frames and clears In/Out', async () => {
 		const h = harness();
-		h.apply([solid(0, 300, 'V1'), solid(50, 300, 'V2'), { type: 'sequence.setInOut', in: 100, out: 200 }]);
+		h.apply([solid(0, 300, 'V1')]);
+		footage(h, 50, 300, 'V2');
+		h.apply([{ type: 'sequence.setInOut', in: 100, out: 200 }]);
 		h.target(['V1']);
 		await h.run('timeline.extract');
 		expect(h.spans('V1')).toEqual([

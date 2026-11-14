@@ -13,6 +13,7 @@ import { contentSpanFlicks, flicksPerFrame } from '../../time.ts';
 import { isRemapped } from '../../time-remap/model.ts';
 import type { DClip, DDoc, DSeq, DTrack, HandlerContext } from '../context.ts';
 import { audioCutFaces, JOIN_FADE_MS, setJoinFades } from '../join-fades.ts';
+import { applyOverlayFits, overlayRemovalFits } from '../overlay-ripple.ts';
 import {
 	allTracksIn,
 	assertKindFits,
@@ -618,12 +619,21 @@ function rangeExtractHandler(doc: DDoc, cmd: CommandOf<'range.extract'>, h: Hand
 	const ids = new Set(tracks.map((t) => t.id));
 	for (const t of syncFollowerTracks(seq, ids)) ids.add(t.id);
 	const faces = audioCutFaces(seq, ids, from, to);
+	// generated overlays on tracks the command does not name stay whole, refitted (overlay-ripple.ts)
+	const named = new Set(cmd.tracks ? tracks.map((t) => t.id) : []);
+	const fits = overlayRemovalFits(
+		seq,
+		[...ids].filter((id) => !named.has(id)),
+		from,
+		to,
+	);
+	const kept = applyOverlayFits(seq, fits, h);
 	const splits: SplitRecord[] = [];
-	for (const id of ids) splits.push(...clearRange(seq, id, from, to, h));
+	for (const id of ids) splits.push(...clearRange(seq, id, from, to, h, kept));
 	relinkSplits(seq, splits, h);
 	// with joinFades the faces of the cut get Clean Up's join fades (in the same undo step); ids survive the shift
 	const cut = faces(splits);
-	removeShift(seq, ids, from, to - from, h);
+	removeShift(seq, ids, from, to - from, h, { except: kept });
 	if (cmd.rippleMarkers !== false) shiftMarkers(seq, from, -(to - from));
 	const fades = cmd.joinFades ? setJoinFades(seq, cut, JOIN_FADE_MS) : 0;
 	cleanupSequence(seq, h);

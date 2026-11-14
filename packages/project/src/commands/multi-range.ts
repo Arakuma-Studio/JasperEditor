@@ -3,10 +3,19 @@
 // document (property-tested against right-to-left `range.extract`, ids aside) in one pass: each clip is cut by the
 // ranges that overlap it (found by binary search, right to left, so the original keeps the leftmost piece), the
 // pieces right after range k are relinked per original link group (as each `range.extract` relinks its splits),
-// then every clip and marker moves left by the removed frames before it (prefix sums). Then the cut edges of audio
+// then every clip and marker moves left by the removed frames before it (prefix sums). A ripple keeps generated
+// overlays (titles, shapes…) whole instead of cutting them (overlay-ripple.ts). Then the cut edges of audio
 // clips get edge micro-fades and the sound's J / L offset. O((clips + ranges) · log ranges) plus the splits.
 
+import type { Clip } from '../schema/sequence.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from './context.ts';
+import {
+	finishOverlayFits,
+	fitOverlay,
+	isRippleOverlay,
+	type OverlayFit,
+	removalFit,
+} from './overlay-ripple.ts';
 import {
 	cleanupSequence,
 	end,
@@ -59,6 +68,29 @@ function firstEndingAfter(ranges: ReadonlyArray<readonly [number, number]>, x: n
 	return lo;
 }
 
+/**
+ * Refits overlay `c` for the ranges that hit it, right to left; false (nothing changed) when one of them covers what
+ * is left of it, so it is cut (removed) as before.
+ */
+function keepOverlay(
+	seq: DSeq,
+	c: DClip,
+	hits: ReadonlyArray<readonly [number, number]>,
+	out: OverlayFit[],
+): boolean {
+	const fits: OverlayFit[] = [];
+	let probe = { id: c.id, start: c.start, duration: c.duration } as Clip;
+	for (let q = hits.length - 1; q >= 0; q--) {
+		const fit = removalFit(probe, hits[q]![0], hits[q]![1]);
+		if (!fit) return false;
+		fits.push(fit);
+		probe = { ...probe, start: fit.start, duration: fit.duration };
+	}
+	for (const f of fits) fitOverlay(seq, f);
+	out.push(...fits);
+	return true;
+}
+
 /** Cuts `ranges` out of the given tracks in one pass (see the module comment). */
 export function cutRanges(doc: DDoc, seq: DSeq, h: HandlerContext, o: CutRangesOptions): CutRangesResult {
 	const ranges = o.ranges;
@@ -84,6 +116,7 @@ export function cutRanges(doc: DDoc, seq: DSeq, h: HandlerContext, o: CutRangesO
 	const outCut = new Set<string>();
 	// pieces created right after range k, by original link group → relinked per (link, k)
 	const relink = new Map<string, string[]>();
+	const overlays: OverlayFit[] = [];
 	for (const trackId of tracks) {
 		for (const id of trackClipIds(seq, trackId)) {
 			const c0 = seq.clips[id];
@@ -94,6 +127,19 @@ export function cutRanges(doc: DDoc, seq: DSeq, h: HandlerContext, o: CutRangesO
 			const hits: number[] = [];
 			while (k < ranges.length && ranges[k]![0] < ce) hits.push(k++);
 			if (!hits.length) continue;
+			// a ripple keeps generated overlays whole (overlay-ripple.ts): refitted range by range, right to left, as
+			// successive `range.extract`s do; one the ranges cover entirely goes below as before
+			if (
+				o.ripple &&
+				isRippleOverlay(c0) &&
+				keepOverlay(
+					seq,
+					c0,
+					hits.map((q) => ranges[q]!),
+					overlays,
+				)
+			)
+				continue;
 			const linkId = c0.linkId;
 			let cur: DClip | null = c0;
 			// right to left, as successive `range.extract`s (clearRange): split, trim the end, trim the start, remove
@@ -156,6 +202,7 @@ export function cutRanges(doc: DDoc, seq: DSeq, h: HandlerContext, o: CutRangesO
 			seq.markers.sort((a, b) => a.frame - b.frame);
 		}
 	}
+	finishOverlayFits(seq, overlays, h);
 	cleanupSequence(seq, h);
 
 	// joins (ripple): where an out-cut piece meets an in-cut piece on an edited track

@@ -108,6 +108,8 @@ export const WARNING_CODES = [
 	'W_SCENE3D_SET',
 	/** spec 19 TL-078: a 3D title template kept the sequence's own tone mapping, exposure or glints (named). */
 	'W_SCENE3D_KEPT',
+	/** a generated clip (title, shape, motion graphic…) spanning a ripple on another track was kept whole and refitted. */
+	'W_OVERLAY_FITTED',
 ] as const;
 
 /** A problem report. `commandIndex` is -1 for transaction-level issues (invariants, revision). */
