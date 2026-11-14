@@ -10860,3 +10860,72 @@ skips), and a separate 14/14 transport repeat with no retries. Root lint, actual
 TypeScript, the complete required default suite and fresh production/Remotion
 builds also passed. See the [final test-cleanup report](../test-cleanup/README.md#validation-and-limitations)
 for commands, retained failure evidence, timings and unavailable native/model coverage.
+
+## Fix: start_export and verify_export report the same true peak
+
+**Reported.** For one export (AAC 128 kb/s in MP4, loudness normalisation off) `start_export`'s
+`result.audioLoudness` said `truePeakDbtp: 1.045` while `verify_export` of the same file said 0.08 dBTP (pass).
+
+**Cause (measured on the reported export, read-only, LGPL ffmpeg n7.1.5 at nice 19).** The two numbers measure
+different stages with the same meter:
+
+- `start_export` decoded its own file only for a *normalised* lossy export; otherwise `audioLoudness` was the PCM mix
+  (`measuredOn: "pcm"`, which callers read as the file's number). The mix really peaked at +1.045 dBTP: an ffmpeg
+  re-creation of the mix (voice at 0 dB, the effect at −10 dB) reached sample peaks of 1.127 (+1.04 dBFS) and
+  −6.7 LUFS, matching the result's −6.746 LUFS / 1.045 dBTP. Its AAC encode is the delivered file, matching to the
+  sample (astats −1.002853 / +1.007741).
+- `verify_export` decodes the delivered file (ffmpeg → f32le, the audio DSP package's BS.1770 meter). The file peaks at
+  +0.07 dBTP / −7.4 LUFS. ffmpeg's own `ebur128=peak=true` also gives 0.1 dBTP.
+- ffmpeg's native AAC encoder has **clip avoidance**: `libavcodec/aacenc.c` takes the input peak of every window. When
+  one exceeds `CLIP_AVOIDANCE_FACTOR` it scales that frame's MDCT coefficients by `CLIP_AVOIDANCE_FACTOR / peak`
+  (`avoid_clipping`). The frames over full scale were turned down by 0.4–1.5 dB (RMS per 100 ms against the mix:
+  −1.51 dB at 1.5 s, where the mix peaked), which removed the +1 dB. The integrated loudness fell by 0.65 LU.
+  Frames under full scale are unchanged (±0.05 dB). This is *not* the usual AAC overshoot, which raises the true peak
+  (see "Fix: lossy-codec true-peak headroom" above). Both effects mean the PCM's true peak is not the file's.
+
+Both meters are BS.1770-4/5 Annex 2 true-peak meters: 4× oversampling at 48 kHz (`truePeakFactor`; the Recommendation
+asks for ≥ 192 kHz in effect and accepts 4× at 48 kHz). The interpolation kernel matches ffmpeg's `ebur128`
+(oversample.ts). They read the same channels and the whole decoded stream (AAC priming included) and report
+dBTP = 20·log10(max |x̂|) over every channel. There was no unit or sign error.
+
+**Which is right.** "The delivered file's true peak" is verify_export's 0.08 dBTP, and what a delivery target is met
+on. Neither number was wrong; the result's top-level field was answering a different question.
+
+**Change.** `apps/engine/src/export/service.ts` decodes the written file for `audioLoudness` whenever the deliverable is
+lossy or resampled (`needsDecodedCheck`), normalised or not. The top-level `integratedLufs` / `truePeakDbtp` / `lra` are then the
+file's (`measuredOn: "decoded-file"`, the same decode and meter as verify_export), and the mix stays in `pcm`. An
+un-normalised export whose file cannot be decoded keeps the file and reports the PCM mix (`measuredOn: "pcm"`). A
+normalised one still fails, as before. PCM deliverables at the mix's rate are unchanged (no decode). Cost: one audio-only
+decode of the file per lossy export, already paid by every normalised lossy export.
+
+**Not a delivery bug.** Normalisation was off, so there is no limiter ceiling. verify_export's default ceiling of
+0 dBTP (+0.1 tolerance) passes the file at 0.08 dBTP. Normalised lossy exports were already decoded and checked
+against their ceiling (`export-lossy-true-peak.test.ts`).
+
+**Tests.** `apps/engine/test/export-lossy-true-peak.test.ts` "un-normalised lossy exports report the true peak
+verify_export measures" covers two un-normalised AAC 128 kb/s exports with known PCM true peaks:
+
+- a 200 Hz tone at 0.95, then 1.25 (over full scale, the reported case);
+- an fs/4 tone at 45° phase, whose samples sit at ±0.707·A and whose inter-sample peaks are exactly A = 0.9
+  (−0.915 dBTP).
+
+For each, the test runs the export, then `POST /api/exports/:id/verify`. The result's true peak must equal the
+verify row's within 0.01 dB and ffmpeg `ebur128` on the file within 0.15 dB. `pcm.truePeakDbtp` must be the known PCM
+peak within 0.02 dB. Both cases failed before the change: the result reported the PCM
+(`measuredOn: "pcm"`) at 1.938 dBTP while verify said −0.27 dBTP (2.21 dB apart), and −0.814 dBTP while verify said −0.52 dBTP
+(the fs/4 fixture then had no fades; its abrupt start rang 0.1 dB over A, so the fixture now fades in and out over 20 ms
+and measures −0.915 dBTP exactly). After the change both pass.
+
+```sh
+cd apps/engine && pnpm exec vitest run test/export-lossy-true-peak.test.ts -t "un-normalised" --maxWorkers=2 --testTimeout=900000
+```
+
+**Limits.**
+
+- ffmpeg's clip avoidance still changes the level of an un-normalised mix that goes over full scale. It is the same on
+  every export path, because all of them mux the same mix WAV through the same encoder. The preview's audio output
+  clips such a mix instead. Loudness normalisation (its true-peak limiter) or lowering the mix avoids both.
+- Nothing warns about an un-normalised mix over 0 dBTP at export; Sound Check's OVERLOAD ("clipping without
+  normalisation") does.
+- MCP tool text is unchanged. `start_export`'s description already says `audioLoudness` reports the decoded file
+  under normalisation and still holds.

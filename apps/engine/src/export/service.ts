@@ -3231,26 +3231,38 @@ export class ExportService {
 		const formatChanges = planned.plan.warnings
 			.filter((w) => w.code === 'OUTPUT_CONTAINER_CHANGED' || w.code === 'AUDIO_CODEC_CHANGED')
 			.map((w) => ({ code: w.code, message: w.message, ...(w.params ? { params: w.params } : {}) }));
-		// a normalised export's delivered audio itself, decoded from the file, when it is not the PCM mix (lossy codec or
-		// another rate): the numbers the delivery target is met on
+		// the delivered audio itself, decoded from the file, whenever it is not the PCM mix (lossy codec or another rate),
+		// normalised or not: the numbers a delivery target is met on and the ones verify_export measures (same decode,
+		// same meter). A lossy encoder moves the true peak (AAC overshoots; ffmpeg's AAC turns frames over full scale
+		// down), so the mix's numbers stay in `pcm`.
 		// (when the file's audio stream is the delivery's checked encode, copied, its decoded numbers are the check's: the
 		// same bits, decoded by the same ffmpeg — no second decode)
 		const copied = audio ? deliveredEncode(planned, audio) : null;
 		const checked = copied ? audio?.normalized?.delivery.decoded : null;
+		const decodeFile = async () => {
+			try {
+				return await measureEncodedAudio({
+					ff: this.deps.ff,
+					file: output,
+					channels: planned.output.audioChannels,
+					sampleRate: planned.output.audioSampleRate,
+					signal: ctx.signal,
+					onSpawn: ctx.trackChild,
+				});
+			} catch (e) {
+				// a normalised delivery is only met on the decoded file; without a target the written file is kept and
+				// the result reports the PCM mix, labelled as such (`measuredOn: 'pcm'`)
+				if (audio?.normalized || ctx.signal.aborted) throw e;
+				return null;
+			}
+		};
 		const audioLoudness = audio
 			? audioLoudnessOf(
 					audio,
 					checked
 						? { loudness: checked }
-						: audio.normalized && needsDecodedCheck(deliveryCodecOf(planned), audio.sampleRate)
-							? await measureEncodedAudio({
-									ff: this.deps.ff,
-									file: output,
-									channels: planned.output.audioChannels,
-									sampleRate: planned.output.audioSampleRate,
-									signal: ctx.signal,
-									onSpawn: ctx.trackChild,
-								})
+						: needsDecodedCheck(deliveryCodecOf(planned), audio.sampleRate)
+							? await decodeFile()
 							: null,
 					!!copied,
 				)

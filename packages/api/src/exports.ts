@@ -489,11 +489,11 @@ export const ExportResultSchema = z.object({
 		})
 		.optional(),
 	/**
-	 * Loudness of the delivered audio (BS.1770-4): of a normalised lossy (or resampled) export the file's own audio,
-	 * decoded (`measuredOn: 'decoded-file'`, the PCM it was encoded from in `pcm`); else the PCM mix. With normalisation:
-	 * the gain, the target, the limiter ceiling in front of the encoder (target − the codec's headroom), how many
-	 * loudness passes and encodes it took, the local corrections where the codec still overshot, and whether the target
-	 * was met (`AUDIO_TRUE_PEAK_OVER` / `AUDIO_LOUDNESS_CEILING` warnings when not).
+	 * Loudness of the delivered audio (BS.1770-4): of a lossy (or resampled) export the file's own audio, decoded
+	 * (`measuredOn: 'decoded-file'`, what verify_export measures; the PCM it was encoded from in `pcm`); else the PCM
+	 * mix. With normalisation: the gain, the target, the limiter ceiling in front of the encoder (target − the codec's
+	 * headroom), how many loudness passes and encodes it took, the local corrections where the codec still overshot, and
+	 * whether the target was met (`AUDIO_TRUE_PEAK_OVER` / `AUDIO_LOUDNESS_CEILING` warnings when not).
 	 */
 	audioLoudness: z
 		.object({
