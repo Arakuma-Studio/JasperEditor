@@ -32,6 +32,7 @@ import {
 	type ProjectDocument,
 	readSequenceCleanup,
 	resolvePresetSettings,
+	restartWindows,
 	type Sequence,
 	sequenceCleanupSettings,
 	speechClipsOf,
@@ -43,7 +44,7 @@ import { type JobContext, JobError } from '../jobs/types.ts';
 import { HttpError } from '../tools/reply.ts';
 import type { CoreServices } from '../tools/services.ts';
 import type { VoiceAnalysisService } from '../voice/service.ts';
-import { type EditWordsService, spanKey } from './edit-words.ts';
+import { type EditWordsService, spanKey, windowKey } from './edit-words.ts';
 import type { CleanupPresetLibrary } from './presets.ts';
 
 /** Analyses kept for `GET /api/cleanup/analyses/:id`. */
@@ -303,6 +304,9 @@ export class CleanupAnalysisService {
 		const reason = (e: unknown) => (e instanceof Error ? e.message : String(e));
 		let words: Map<string, EditWord[]> | null = null;
 		let second: Map<string, EditWord[]> | null = null;
+		// restart windows from the voice analyses: a restart at a phrase's start the span decodes merge
+		const windows = restartWindows(sp.spans, voice);
+		let windowWords: Map<string, EditWord[]> | null = null;
 		let mix: EditWord[] | null = null;
 		if (wantSpans) {
 			if (!svc)
@@ -310,11 +314,17 @@ export class CleanupAnalysisService {
 			else
 				try {
 					ctx.progress(0.9, { stage: 'Transcribing the kept spans' });
-					const r = await svc.spanWords(doc, seq, sp.spans, options, ctx, [
-						EDIT_SPAN_PAD_S,
-						EDIT_SPAN_CONFIRM_PAD_S,
-					]);
+					const r = await svc.spanWords(
+						doc,
+						seq,
+						sp.spans,
+						options,
+						ctx,
+						[EDIT_SPAN_PAD_S, EDIT_SPAN_CONFIRM_PAD_S],
+						windows,
+					);
 					[words, second] = [r.words[0] ?? null, r.words[1] ?? null];
+					windowWords = r.windows;
 					Object.assign(report, { cached: r.report.cached, transcribed: r.report.transcribed });
 					if (r.report.jobId) report.jobIds.push(r.report.jobId);
 				} catch (e) {
@@ -346,6 +356,9 @@ export class CleanupAnalysisService {
 			...(words ? { words: (s) => words!.get(spanKey(s)) ?? null } : {}),
 			confirm: [...(second ? [(s: EditSpan) => second!.get(spanKey(s)) ?? null] : []), stored],
 			...(mix ? { mix } : {}),
+			...(windowWords
+				? { windows: windows.map((w) => ({ ...w, words: windowWords!.get(windowKey(w)) ?? null })) }
+				: {}),
 			voice,
 			settings,
 			language: options.language ?? null,

@@ -27,6 +27,7 @@ import {
 	makeEnvelope,
 	type ProjectDocument,
 	type Rational,
+	type RestartWindow,
 	type Sequence,
 } from '@jasper/project';
 import { z } from 'zod';
@@ -141,7 +142,13 @@ export class EditWordsService {
 		options: { model?: string; language?: string; projectId?: string },
 		ctx: JobContext,
 		pads: readonly number[] = [EDIT_SPAN_PAD_S],
-	): Promise<{ words: Array<Map<string, EditWord[]>>; report: EditWordsReport }> {
+		windows: readonly RestartWindow[] = [],
+	): Promise<{
+		words: Array<Map<string, EditWord[]>>;
+		/** Words of each restart window (`windowKey`), decoded in the same job. */
+		windows: Map<string, EditWord[]>;
+		report: EditWordsReport;
+	}> {
 		const key = JSON.stringify({
 			model: options.model ?? null,
 			language: options.language ?? null,
@@ -149,11 +156,12 @@ export class EditWordsService {
 		});
 		// one decode per padding (the second confirms the first: other context, other chunk boundaries), all in one job
 		const out = pads.map(() => new Map<string, EditWord[]>());
+		const win = new Map<string, EditWord[]>();
 		const todo: Array<{
 			span: EditSpan;
-			pad: number;
 			r: ReturnType<typeof editSpanRequest>;
 			path: string | null;
+			put: (words: EditWord[]) => void;
 		}> = [];
 		const seen = new Set<string>();
 		let cached = 0;
@@ -166,12 +174,24 @@ export class EditWordsService {
 				const r = clampRequest(doc, editSpanRequest(span, padS));
 				const path = this.cachePath(doc, r, key);
 				const hit = await this.readCache(path);
+				const put = (words: EditWord[]) => out[pad]!.set(k, words);
 				if (hit) {
-					out[pad]!.set(k, hit);
+					put(hit);
 					hits++;
-				} else todo.push({ span, pad, r, path });
+				} else todo.push({ span, r, path, put });
 			}
 			if (hits === pads.length) cached++;
+		}
+		// restart windows: from inside a dip after a phrase onset, no padding before (the fragment stays out)
+		for (const w of windows) {
+			const span = spans.find((s) => s.clipId === w.clipId);
+			if (!span) continue;
+			const r = clampRequest(doc, { mediaId: w.mediaId, stream: w.stream, start: w.start, end: w.end });
+			const path = this.cachePath(doc, r, key);
+			const hit = await this.readCache(path);
+			const put = (words: EditWord[]) => win.set(windowKey(w), words);
+			if (hit) put(hit);
+			else todo.push({ span, r, path, put });
 		}
 		const report: EditWordsReport = {
 			spans: seen.size,
@@ -179,7 +199,7 @@ export class EditWordsService {
 			transcribed: seen.size - cached,
 			jobId: null,
 		};
-		if (!todo.length) return { words: out, report };
+		if (!todo.length) return { words: out, windows: win, report };
 		if (todo.length > EDIT_MAX_SPANS)
 			throw new JobError(
 				'EDIT_CHECK_TOO_LARGE',
@@ -222,13 +242,13 @@ export class EditWordsService {
 			});
 		}
 		for (const [i, t] of todo.entries()) {
-			out[t.pad]!.set(spanKey(t.span), per[i]!);
+			t.put(per[i]!);
 			if (t.path)
 				await atomicWriteFile(t.path, JSON.stringify({ version: SPAN_WORDS_VERSION, words: per[i] })).catch(
 					() => undefined,
 				);
 		}
-		return { words: out, report };
+		return { words: out, windows: win, report };
 	}
 
 	/** Chunked words of the sequence's own mixdown (sequence flicks): the closed loop. */
@@ -257,6 +277,9 @@ const SYNTH_TRACK = 'trk_EDTCHECK00000000';
 
 const envelopeOf = (document: ProjectDocument) =>
 	makeEnvelope(document, { revision: 0, savedAt: new Date(0).toISOString(), platform: 'engine' });
+
+/** The key of a restart window's words. */
+export const windowKey = (w: RestartWindow) => `${w.clipId}\u0000${w.start}\u0000${w.end}`;
 
 /** The key of a span's words (its media range). */
 export const spanKey = (s: EditSpan) =>

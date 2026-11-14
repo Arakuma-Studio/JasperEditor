@@ -32,6 +32,9 @@ export {
 	editSpanRequest,
 	findEditRepeats,
 	MIN_CUT_PAUSE_S,
+	RESTART_WINDOW_S,
+	type RestartWindow,
+	restartWindows,
 } from './edit-repeats.ts';
 export { editSpans } from './edit-spans.ts';
 export { languageFillerHits } from './fillers.ts';
