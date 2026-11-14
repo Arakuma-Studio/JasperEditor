@@ -1252,15 +1252,17 @@ case and punctuation included). The re-transcription is stood in for by a transc
 | Input | Sequence words | Script words matched, same text | normalised |
 |---|---|---|---|
 | rev 144 as saved (main's mapping) | 3512 | 3398 | 3430 |
-| rev 144, this branch's mapping | 3531 | 3401 | 3433 |
-| rev 267 (the agent's hand rebuild, the reference) | 3528 | 3452 | 3475 |
-| rebuild of rev 144, heard = rev 267's transcript words (the coordinator's stand-in) | 3538 | **3472** | 3473 |
-| rebuild of rev 144, heard = rev 144's own transcript (alignment only, no re-transcription) | 3519 | 3468 | 3468 |
+| rev 144, this branch's mapping (In-edge rule, zero-length words and tail fragments out) | 3484 | 3360 | 3394 |
+| rev 267 (the agent's hand rebuild, the reference; this branch's mapping) | 3527 | 3451 | 3474 |
+| rebuild of rev 144, heard = rev 267's transcript words (the coordinator's stand-in) | 3534 | **3472** | 3473 |
+| rebuild of rev 144, heard = rev 144's own transcript (alignment only, no re-transcription) | 3476 | 3427 | 3427 |
 
 The reported "3348 of 3526" uses another tokenisation and count; on this measure the hand rebuild scores 3452 and the
 built-in one 3472 from the same words (301 of 340 spans changed; 3481 exact cells, 6 emoticons carried, 8 heard words
 dropped, 50 kept in spans with nothing of the script — the parenthesised asides the speaker says). With rev 144's own
-transcript as the heard words, 113 spans change (21 replaced, 18 inserted, 32 dropped). Alignment and edits for the
+transcript as the heard words, 113 spans change (21 replaced, 18 inserted, 32 dropped); its sentence starts keep their
+squeezed timing at clip tails, so the tail-fragment rule (captions.md) leaves them out of the captions (41 fewer
+script words matched than before that rule) — the re-transcription is what gives them the next clip's timing. Alignment and edits for the
 whole cut take 0.4–0.7 s (shared 16-core host, load average 7–10). The rev 267 stand-in is already script-spelled, so
 this measures the alignment and the writing, not recognition: what the rebuild matches on a real cut depends on the
 chunked re-transcription (the coordinator's real-model run).

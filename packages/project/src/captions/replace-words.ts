@@ -839,6 +839,9 @@ function patchSubtitle(
 	if (!words.length) return 'split';
 	clampBetween(words, fresh);
 	if (words.length > MAX_CAPTION_WORDS) return 'split';
+	// a subtitle word the sequence transcript no longer hears (a zero-length leftover, a tail fragment) sits among
+	// the new words: the clip is left as it is rather than written with overlapping words
+	for (let k = 1; k < words.length; k++) if (words[k]!.start < words[k - 1]!.end) return 'edited';
 	let content = spliceContent(clip.content as TextContent, splices);
 	content = spliceContent(
 		content,

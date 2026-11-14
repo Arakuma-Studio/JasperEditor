@@ -153,6 +153,65 @@ describe('sequence transcript', () => {
 		expect(w[0]!.clipId).toBe('c2');
 		expect(w[0]!.start).toBe(s(1));
 	});
+	it("a short word stranded at a clip's tail after a sentence end, and zero-length leftovers, reach no caption", () => {
+		// the reporter's v8: "…y Appstore! | Y si alguno…" — "Y" (0.2 s) on a sound at the end of the Appstore clip, a
+		// fragment of another take; the kept take starts in the next clip, its own "Y" cut off at the In (40 % inside).
+		// A zero-length "En" left by an edit, a 60 ms "y." after "watafak." in a tail an edge extension exposed, and a
+		// short word that only continues the sentence into the next clip ("en la | mesa") for contrast.
+		const words: Array<[string, number, number]> = [
+			['y', 2.29, 2.44],
+			['Appstore!', 2.44, 2.63],
+			['Y', 2.64, 2.84],
+			['Y', 23.7, 24.0],
+			['si', 24.12, 24.3],
+			['alguno', 24.3, 24.62],
+			['En', 24.7, 24.7],
+			['de', 24.72, 24.8],
+			['Kojima,', 30.0, 30.6],
+			['watafak.', 30.6, 31.01],
+			['y.', 31.09, 31.15],
+			['en', 40.0, 40.2],
+			['la', 40.2, 40.32],
+			['mesa', 50.0, 50.4],
+		];
+		const doc = {
+			transcripts: {
+				trs_take: {
+					...interviewTranscript('trs_take'),
+					words: words.map(([text, a, b]) => ({
+						text,
+						start: s(a),
+						end: s(b),
+						confidence: null,
+						speaker: null,
+						breakBefore: 'none' as const,
+					})),
+				},
+			},
+		};
+		const seq = seqWith(
+			audioClip('a', 0, 0.6, 2.3), // media 2.3–2.9: "y Appstore! Y"
+			audioClip('b', 0.6, 1.0, 23.88), // 23.88–24.88: the kept take
+			audioClip('c', 1.6, 1.2, 30.0), // 30.0–31.2: "Kojima, watafak. y."
+			audioClip('d', 2.8, 0.4, 39.96), // 39.96–40.36: "en la"
+			audioClip('e', 3.2, 0.6, 49.96), // 49.96–50.56: "mesa"
+		);
+		const w = sequenceWords(doc, seq);
+		expect(texts(w)).toEqual([
+			'y',
+			'Appstore!',
+			'Y',
+			'si',
+			'alguno',
+			'de',
+			'Kojima,',
+			'watafak.',
+			'en',
+			'la',
+			'mesa',
+		]);
+		expect(w[2]!.clipId).toBe('b');
+	});
 	it('scales word times by speed', () => {
 		const w = sequenceWords(docT, seqWith(audioClip('c100', 0, 5, 0, { rate: 2 })));
 		expect(w).toHaveLength(20);

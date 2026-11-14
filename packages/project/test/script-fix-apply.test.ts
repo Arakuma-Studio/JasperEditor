@@ -427,6 +427,49 @@ describe('subtitle patch (SC-051)', () => {
 		valid(H.doc);
 	});
 
+	it('a subtitle holding a word the sequence no longer hears is skipped, never written with overlapping words', () => {
+		// the reporter's rev 144: a subtitle "y su propio" made when the zero-length "propio" (a leftover of an edit)
+		// still reached the captions; Rebuild from script writes "su propio" heard later — the whole accept was refused
+		// (INV-SUBTITLE: overlapping words)
+		const { H, transcriptId } = talk([
+			['y', 0.2, 0.3],
+			['su', 0.3, 0.45],
+			['propio', 0.6, 0.6],
+			['ritmo,', 1.0, 1.4],
+			['y', 1.4, 1.5],
+			['luego', 1.5, 1.9],
+		]);
+		gen(H, { rules: { maxWords: 3 } });
+		const c0 = containing(H, 'su');
+		edit(H, c0.id, (c) => {
+			c.content.text = c.content.text.replace('su', 'su propio');
+			const cap = (c as { caption: { words: { text: string; start: number; end: number }[] } }).caption;
+			const k = cap.words.findIndex((x) => x.text === 'su');
+			const at = cap.words[k]!.end + Math.round(0.15 * FLICKS_PER_SECOND);
+			cap.words.splice(k + 1, 0, { text: 'propio', start: at, end: at });
+		});
+		valid(H.doc);
+		const r = H.tx([
+			{
+				type: 'transcript.replaceWords',
+				transcriptId,
+				edits: [
+					{
+						start: sec(0.3),
+						end: sec(1.0),
+						expect: ['su', 'propio'],
+						words: [w('su', 0.3, 0.48), w('propio', 0.65, 0.95)],
+					},
+				],
+			},
+		]);
+		expect(r.ok, JSON.stringify((r as { errors?: unknown }).errors)).toBe(true);
+		expect(texts(H, transcriptId)).toEqual(['y', 'su', 'propio', 'ritmo,', 'y', 'luego']);
+		const res = (r as { results: Array<{ skipped: Array<{ clipId: string; reason: string }> }> }).results[0]!;
+		expect(res.skipped).toEqual([expect.objectContaining({ clipId: c0.id, reason: 'edited' })]);
+		valid(H.doc);
+	});
+
 	it('patches nothing with subtitles: "none"; a locked subtitle track is skipped', () => {
 		const { H, transcriptId } = talk(WORDS);
 		const r0 = gen(H, { rules: { maxWords: 4 } });

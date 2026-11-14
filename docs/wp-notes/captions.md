@@ -70,6 +70,28 @@ midpoint rule: there the straddling word is the next take's early-started first 
 The 20 % is an assumption beyond that recording. Test: `packages/project/test/sequence-transcript.test.ts` "a kept
 take's first word cut off at the In…" (fails before: the take read "si alguno no").
 
+**Zero-length leftovers and tail fragments** (`MIN_HEARD_WORD_SECONDS` = 0.02, `tailFragmentIndex`): a word shorter than
+20 ms (a leftover of an edit: "En" 7 ms at 2038.46, "Resulta" 0 ms at the end of a clip) is heard through no clip. A
+clip's last word is not heard through that clip when it is short (< 0.25 s played), ends within 0.15 s of the Out, comes
+within 0.12 s after a word of the same clip that ends a sentence (. ! ?, not an ellipsis; speech to text squeezed it
+against the sentence end — a sentence really started there has a pause before it, so "…me. I uh love" with the filler
+cut keeps "I"), does not end a sentence itself
+unless it is under 0.1 s ("y." 60 ms), and the next clip on the track starts where this one ends and speaks. That word is
+a fragment of another take, a breath written as a word, or the squeezed start of the phrase the next clip says (the
+reporter's v8: "…Appstore! | Y si alguno…" showed "Y", 0.2 s at the end of the Appstore clip, in the previous scene); the
+next clip shows its own copy when it has one (a "Y" cut off at its In follows it by the rule above), else the word
+reaches no caption. A clip that is only that word (a sliver) keeps it. Measured: on rev 144's transcript and cut 30 such
+words leave the previous scene ("sombra. | Y", "MEJOR. | Entonces", "tan fácil. | Unity" — 30–180 ms sentence starts
+squeezed into the tail) and 17 zero-length leftovers go; on rev 267's rebuilt transcript only the reported "Y". These
+words are also left out of text-based editing (they are what the sequence transcript lists). The thresholds are
+assumptions beyond that recording. Test: "a short word stranded at a clip's tail after a sentence end, and zero-length
+leftovers, reach no caption" (fails before: "Appstore! Y Y si", "En", "y.").
+
+`transcript.replaceWords`' subtitle patch skips (`edited`) a subtitle whose words would overlap after the splice — a
+subtitle made when a word the sequence no longer hears still reached the captions: the whole accept of a Rebuild from
+script proposal over rev 144 was refused with `INV-SUBTITLE` ("y su propio", zero-length "propio"). Test:
+`script-fix-apply.test.ts` "a subtitle holding a word the sequence no longer hears is skipped…" (fails before).
+
 ### Invariants and repair
 
 INV-012 transcript words sorted / non-overlapping / integer flicks; INV-014 a caption transcript is used by one clip;
