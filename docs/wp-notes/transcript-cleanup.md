@@ -1751,6 +1751,64 @@ Limits: of the five, three are found and none is fixed by default (review); "Lo�
 (3224.43) stay missed — every decode writes the re-said word once over the gap, which no text rule tells from a
 consonant closure, and the acoustic test above could not either.
 
+#### Round 4: forced readings and verbatim decodes for the two merged restarts (measured, not shipped)
+
+Question: can the speech stack the engine already ships (Whisper large-v3-turbo on ONNX Runtime, `speech/worker`)
+tell "Lo… | Lo reescribieron" (3171.95) and "un montón de… | un montón de" (3224.43) from the five confirmed
+non-restarts (70.66, 741.44, 1646.30, 2158.9, 2360.35)? Three ways to beat Whisper's habit of dropping repetitions,
+each run offline on the rev 144 edit as heard (its 353 kept spans laid end to end), with no code change. The decision
+rules were written down before the seven places were looked at (`/tmp/je-rvd/RULES.txt` on the reporter's PC, with the
+scripts in `/tmp/je-rvd/bin` and outputs in `/tmp/je-rvd/run1`). Labels: NULL = a place with no rev 549 removal within
+0.5 s (rev 549 keeps it, so it is no restart); dev = the 12 restarts round 3 already finds or reviews.
+
+- **A — teacher-forced doubled readings.** The engine's scorer (`WhisperModel.scoreReadings`, spec 17 SC-032): windows
+  of 20 s every 15 s; at every word boundary of the stored transcript (3,511), readings that say the last k ≤ 3 words
+  twice against the base reading; feature D = max_k LL(doubled) − LL(base). Threshold fixed on the NULL boundaries
+  (3,436): the 6th highest, T = −4.45, so 6 NULL boundaries reach it (NULL median −12.08, 99th percentile −6.95). Dev recall at T: **0 of 12** (best
+  "y si" −4.85; the others −7.5 … −13.7, i.e. inside the NULL bulk — "Hubo" −13.71 has 2,396 NULL boundaries above it).
+- **B — verbatim decode of the edit.** VAD-chunked, the language's verbatim filler prompt plus a generic Spanish prompt
+  with repeated words ("Es que, es que yo... la, la verdad... o sea, o sea..."), greedy, no previous text. A place is
+  found when the decode writes an adjacent repeat (k ≤ 3 words, retry within 1 s, not fillers only) within 0.3 s.
+- **C — short verbatim windows.** As B, but ±1.5 s windows of the edit around every level dip inside a span (the
+  restart-window dip rule anywhere, 899) and every cut (352), each decoded alone (2.5 s of silence apart).
+
+| Source s | Place | Truth | A: D (T = −4.45) | B | C |
+|---|---|---|---|---|---|
+| 3171.95 | Lo… \| Lo reescribieron | restart | no boundary (stored transcript mistimed, below); −3.59 / −5.57 with the span decode's words, by window | not written ("mis agentes" only) | "no lo, lo reescribieron": 2 of the 3 "lo" heard — the "no lo \| Lo" join, not the fragment |
+| 3224.43 | un montón de… \| un montón de | restart | −11.01 (1,195 NULL above) | once | once |
+| 70.66 | tiene que | said once | −9.26 | **"tiene que... Que verse"** (false) | once |
+| 741.44 | pi\|xel | said once | −14.94 | once | once |
+| 1646.30 | most\|trar | said once | −13.64 | not written | once |
+| 2158.9 | tienes que | said once | −8.64 | once | once |
+| 2360.35 | en una | said once | −10.18 | once | once |
+| 2596.57 | y le- \| Y les juro (held out, rev 605) | restart | −6.41 | once ("y,") | once ("y les juro") |
+| | dev restarts found | | 0 / 12 | 3 / 12 | 3 / 12 |
+| | NULL places flagged, whole cut | | 6 (by construction of T) | 12 | 8 |
+
+B's and C's three dev hits ("y si", "aunque el", "así que el") are restarts the span check already removes; their NULL
+repeats are mostly deliberate repetition rev 549 keeps ("No, no, no", "Guiño, guiño", "boing, boing", "¡Evil!" ×5,
+"y, y, y"). A non-restart scores above a target in A ("tienes que" −8.64 > "un montón de" −11.01), and "Lo" crosses T
+in one window only, so no threshold separates the targets from the non-restarts while finding the dev restarts. The
+stored transcript there is wrong in time: it crams "Bueno, no lo reescribí yo XD. Lo reescribieron" into
+3158.86–3159.38 (the 0.53 s clip before the span) and has no word in 3171.95–3172.74, so A's stored-transcript base had
+no boundary at the fragment; the separate run with the span decode's words gave the −3.59 / −5.57 above. Measured
+before the held-out case was announced, A had already listed its boundary as a NULL (rev 549 keeps it) at −6.41, and
+B had written no repeat there.
+
+Outcome: nothing is shipped. The two merged restarts stay missed: neither forced likelihoods nor verbatim prompts
+(long or ±1.5 s windows) make the model hear the fragment as a second copy, and both add false repeats elsewhere. Main's
+span check has no finding at the held-out place either. Diagnosis only (not blind, not run as a rule): both span decodes
+write, in the padding past the clip's out point (2596.633), "y le juro que…" — the dropped take going on — which the
+next clip says again ("Y les juro que"); the words past the out point are dropped (midpoint outside the span), and what
+stays in the clip ("y", "le") is a one-word stop-word attempt and a two-letter cut-off, which the matcher does not take.
+
+Cost (reporter's PC, RTX 3080 Ti, CUDA, nice 19; the user's engine idle, load 1.5–5): A 2,382 s wall for 10,721
+readings (GPU ≈ 1–20 % busy: the per-reading JavaScript log-softmax and DTW bound it), B 228 s, C 1,385 s, the "Lo"
+re-score 29 s.
+
+Limits: one model (the transcript's); B and C ran greedy only (beam 5 and sampling not tried); the NULL label trusts
+rev 549, which may keep real stutters; A's base is the stored transcript, wrong in places (above).
+
 ### Planning (TC-020 … TC-026)
 
 `analyzeSequenceCleanup({doc, seq, voice, settings?, script?, language?, decisions?, scope?})` (dry run, never changes
