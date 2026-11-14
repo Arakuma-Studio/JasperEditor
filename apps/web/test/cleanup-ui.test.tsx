@@ -85,6 +85,28 @@ describe('Clean Up mode', () => {
 		);
 	});
 
+	it('Repeats at cuts: the toggle asks the engine to check the cuts, the review reports it, re-plans keep its findings', async () => {
+		const { c, engine } = setup();
+		fireEvent.click(within(screen.getByTestId('text.cleanup.checkCuts')).getByRole('switch'));
+		expect(c.getState().checkCuts).toBe(true);
+		await analyze(c);
+		expect(engine.calls.find((x) => x.startsWith('analyze'))).toContain('"editRepeats":"spans"');
+		expect(screen.getByTestId('text.cleanup.notes').textContent).toContain(
+			'1 found, 1 suggested for removal',
+		);
+		const restart = () => c.getState().analysis!.findings.find((f) => f.reason.params?.cut === 1);
+		expect(restart()?.suggested).toBe('remove');
+		// a decision re-plans (worker or main thread): the repeat at the cut is still there
+		const other = c.getState().analysis!.findings.find((x) => x.suggested === 'remove' && x.words)!;
+		act(() => {
+			c.decide('reject', other.id);
+		});
+		await settle();
+		expect(c.getState().planning).toBe(false);
+		expect(restart()).toBeTruthy();
+		c.setCheckCuts(false);
+	});
+
 	it('decisions, retake choices and settings re-plan the live statistics', async () => {
 		const { c, session, seqId } = setup();
 		await analyze(c);

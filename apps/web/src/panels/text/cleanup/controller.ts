@@ -15,7 +15,12 @@
 //
 // Nothing here throws to the caller: failures land in `state.error` (shown by the panel) or come back as
 // `{ok: false, reason}`.
-import { CleanupAnalysisJobResultSchema, type EngineJob, TERMINAL_JOB_STATES } from '@jasper/api';
+import {
+	type CleanupAnalysisJobResult,
+	CleanupAnalysisJobResultSchema,
+	type EngineJob,
+	TERMINAL_JOB_STATES,
+} from '@jasper/api';
 import { type EngineClient, EngineError } from '@jasper/engine-client';
 import {
 	type CleanupAnalysis,
@@ -94,7 +99,24 @@ export type CleanupUiState = {
 	preview: 'result' | 'removed' | null;
 	/** Elapsed time of the analysis job (ms). */
 	elapsedMs: number | null;
+	/**
+	 * Check the cuts for repeats ("y si | y si buscas"): the analysis transcribes every kept clip again on its own
+	 * (cached per clip; docs/wp-notes/transcript-cleanup.md "Repeats at cuts"). Remembered in this browser.
+	 */
+	checkCuts: boolean;
+	/** What the last analysis's check of the cuts did (null: not run). */
+	editCheck: NonNullable<CleanupAnalysisJobResult['editRepeats']> | null;
 };
+
+const CHECK_CUTS_KEY = 'jasper.cleanup.checkCuts';
+/** The remembered "check the cuts" choice (off until turned on: the first run decodes every kept clip). */
+function storedCheckCuts(): boolean {
+	try {
+		return globalThis.localStorage?.getItem(CHECK_CUTS_KEY) === '1';
+	} catch {
+		return false;
+	}
+}
 
 const initial = (): CleanupUiState => ({
 	mode: 'edit',
@@ -119,6 +141,8 @@ const initial = (): CleanupUiState => ({
 	userPresets: [],
 	preview: null,
 	elapsedMs: null,
+	checkCuts: storedCheckCuts(),
+	editCheck: null,
 });
 
 type Result = { ok: true } | { ok: false; reason: string };
@@ -173,6 +197,16 @@ export class CleanupController {
 
 	setAutoAdvance(autoAdvance: boolean): void {
 		this.set({ autoAdvance });
+	}
+
+	/** Whether the next analysis checks the cuts for repeats (remembered in this browser). */
+	setCheckCuts(checkCuts: boolean): void {
+		this.set({ checkCuts });
+		try {
+			globalThis.localStorage?.setItem(CHECK_CUTS_KEY, checkCuts ? '1' : '0');
+		} catch {
+			/* private mode: the choice lasts for this session */
+		}
 	}
 
 	clearError(): void {
@@ -291,6 +325,7 @@ export class CleanupController {
 			current: null,
 			voice: null,
 			elapsedMs: null,
+			editCheck: null,
 		});
 		const engineClient = this.engine;
 		try {
@@ -306,6 +341,7 @@ export class CleanupController {
 				document: envelope,
 				...(sc.scope.clipIds ? { clipIds: [...sc.scope.clipIds] } : {}),
 				...(sc.scope.range ? { range: sc.scope.range } : {}),
+				...(st.checkCuts ? { editRepeats: 'spans' as const } : {}),
 			});
 			if (my !== this.run) return { ok: false, reason: 'superseded' };
 			this.set({ jobId: job.id });
@@ -354,6 +390,7 @@ export class CleanupController {
 					doc: { transcripts: doc.transcripts, media: doc.media },
 					seq,
 					voices: [...this.voices],
+					...(file.analysis.editRepeats ? { editRepeats: file.analysis.editRepeats } : {}),
 				});
 			}
 			this.plannedCleanup = seq.cleanup;
@@ -364,6 +401,7 @@ export class CleanupController {
 				analysis: file.analysis,
 				voice: res.data.voice,
 				elapsedMs: res.data.elapsedMs,
+				editCheck: res.data.editRepeats ?? null,
 				planner: local ? (this.planner?.inWorker ? 'worker' : 'main') : 'engine',
 				current: order[0] ?? null,
 				progress: null,
@@ -478,6 +516,8 @@ export class CleanupController {
 				...(req.scope.range ? { range: req.scope.range } : {}),
 				decisions: req.decisions as never,
 				analyzeVoice: false,
+				// the check of the cuts again: its transcriptions are cached, so it decodes nothing new
+				...(st.editCheck ? { editRepeats: 'spans' as const } : {}),
 			});
 			while (!TERMINAL_JOB_STATES.has(job.state)) {
 				await new Promise((r) => setTimeout(r, POLL_MS));

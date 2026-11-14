@@ -11,6 +11,7 @@ import {
 	type CleanupScope,
 	type CleanupSettings,
 	type CleanupVoice,
+	type EditRepeat,
 	type ProjectDocument,
 	type Sequence,
 } from '@jasper/project';
@@ -21,6 +22,8 @@ export type PlanBase = {
 	seq: Sequence;
 	/** `${mediaId}\u0000${stream}` → analysis (absent / null = word mode, as in the engine job). */
 	voices: Array<[string, CleanupVoice | null]>;
+	/** The repeats in the edit the engine's analysis found (its check of the cuts), kept by every re-plan. */
+	editRepeats?: EditRepeat[];
 };
 
 export type PlanRequest = {
@@ -55,6 +58,7 @@ export function runPlan(base: PlanBase, req: PlanRequest): PlanResult {
 			...(req.language ? { language: req.language } : {}),
 			decisions: req.decisions,
 			scope: req.scope,
+			...(base.editRepeats ? { editRepeats: base.editRepeats } : {}),
 		});
 	} catch (e) {
 		return { ok: false, code: 'E_INTERNAL', message: e instanceof Error ? e.message : String(e) };

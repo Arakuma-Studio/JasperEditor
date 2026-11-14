@@ -21,6 +21,7 @@
 // "Guiño, guiño."), or what the script itself says twice — is never proposed when its copies were said one after the
 // other in the recording; when a cut joined copies said apart, it is only reviewed. Closed-loop findings (mixdown
 // words) are always for review.
+import { heardFromCutStart } from '../captions/sequence-transcript.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../time.ts';
 import {
 	type CleanupVoice,
@@ -122,6 +123,16 @@ export type EditRepeatsInput = {
 	/** Chunked words per kept span (span-based check). */
 	words?: EditWordsLookup;
 	/**
+	 * Other chunked decodes of the spans (another padding: other chunk boundaries and context): they find repeats like
+	 * `words`, and each confirms the others.
+	 */
+	alt?: ReadonlyArray<EditWordsLookup>;
+	/**
+	 * The stored (long-form) transcript: it confirms like `confirm`, and stands for a clip whose span decodes share no
+	 * word (a fragment too short for a chunk decode).
+	 */
+	stored?: EditWordsLookup;
+	/**
 	 * Other independent decodes of the same spans (a chunked decode with other chunk boundaries, the stored transcript):
 	 * a repeat is removed by default only when one of them, or the mixdown, says the words twice too.
 	 */
@@ -202,13 +213,28 @@ function streamOf(
 			if (!ws) return;
 			known[i] = true;
 			const at = sp.seqStart * F - sp.mediaStart; // media flicks → sequence flicks
-			const own = ws
-				.filter((w) => finite(w.start) && finite(w.end) && w.end >= w.start)
+			const valid = ws.filter((w) => finite(w.start) && finite(w.end) && w.end >= w.start);
+			const own = valid
 				.filter((w) => {
 					const mid = (w.start + w.end) / 2;
 					return mid >= sp.mediaStart && mid < sp.mediaEnd;
 				})
 				.sort((a, b) => a.start - b.start);
+			// the word the clip's in point cuts into ("Así" of "…sí que el botón"): heard through the clip by the sequence
+			// transcript's rule (`heardFromCutStart`)
+			const elsewhere = (m: number) =>
+				spans.some(
+					(o) =>
+						o !== sp &&
+						o.mediaId === sp.mediaId &&
+						o.stream === sp.stream &&
+						m >= o.mediaStart &&
+						m < o.mediaEnd,
+				);
+			const head = valid
+				.filter((w) => heardFromCutStart(w, sp.mediaStart, sp.mediaEnd, elsewhere))
+				.sort((x, y) => y.start - x.start)[0];
+			if (head) own.unshift(head);
 			for (const w of own) push(w, i, w.start, w.end, toSec(w.start + at), toSec(w.end + at));
 		});
 		return { words: out, known };
@@ -228,29 +254,158 @@ function streamOf(
 	return { words: out, known };
 }
 
+/** What the matcher saw of a repeat, for the checks between decodes (never part of the result). */
+type Trace = {
+	/** Normalised attempt words. */
+	att: string[];
+	/** Media flicks from the attempt's last word's end to the retry's onset (the gap between the copies). */
+	gap: [number, number];
+	/** Span index of the attempt's last word, and whether it is that span's last word in its decode. */
+	span: number;
+	endsSpan: boolean;
+	/** Span index of the retry's first word. */
+	retrySpan: number;
+};
+type Traced = EditRepeat & { trace?: Trace };
+
 /**
- * Finds the repeats of the edit (both passes, see the file comment), in every decode on its own. A repeat of the span
- * decode (or of the mixdown) is removed by default only when another decode — `confirm`, the mixdown, the span decode
- * — finds a repeat over the same media time (two decodes agree the words are said twice) and every edge inside a span
- * lies in a pause of `MIN_CUT_PAUSE_S`; else it is reviewed (`held`). Mixdown repeats are always reviewed.
+ * Finds the repeats of the edit (both passes, see the file comment) in every chunked decode of the spans (`words`,
+ * `alt`) and in the mixdown. A repeat is removed by default only when another source agrees — another span decode, a
+ * confirming decode (`confirm`, `stored`), the mixdown, a window decode, or every span decode writing the clip before
+ * the cut ending cut off — else `held: 'decode'`; an in-span repeat that another span decode hears as one attempt word
+ * across the gap between its copies, or an edge inside a span without a pause of `MIN_CUT_PAUSE_S` (a dip shorter than
+ * that), is `held: 'closure'`. Mixdown repeats and clips read from the stored transcript are always reviewed.
  */
 export function findEditRepeats(input: EditRepeatsInput): EditRepeat[] {
-	const primary = input.words ? repeatsOf(input, { lookup: input.words }) : [];
+	const decodes = [input.words, ...(input.alt ?? [])].filter((l): l is EditWordsLookup => !!l);
+	const per = decodes.map((lookup) => repeatsOf(input, { lookup }));
 	const mix = input.mix ? repeatsOf(input, { mix: input.mix }) : [];
-	const others = (input.confirm ?? []).map((lookup) => repeatsOf(input, { lookup }));
+	const others = [...(input.confirm ?? []), ...(input.stored ? [input.stored] : [])].map((lookup) =>
+		repeatsOf(input, { lookup }),
+	);
+	const windows = input.windows?.length ? decodes.map((lookup) => windowRepeats(input, lookup)) : [];
 	const agree = (r: EditRepeat, pool: readonly EditRepeat[]) => pool.some((x) => sameRemoval(r, x));
+	const lists = effectiveLists(cleanupLanguageOf(input.language ?? null), input.lists ?? null);
+	const stop = new Set(lists.stopWords);
+	/** Another source agrees: another span decode, a confirming decode, the mixdown, a window decode. */
+	const agrees = (r: Traced, own: number) =>
+		agree(r, mix) ||
+		others.some((o) => agree(r, o)) ||
+		per.some((p, j) => j !== own && agree(r, p)) ||
+		windows.some((w) => agree(r, w)) ||
+		(own >= 0 && cutOffAtCut(r, decodes, input.spans));
+	const decide = (r: Traced, own: number): EditRepeat => {
+		const { trace, ...rep } = r;
+		if (rep.suggested !== 'remove' || rep.held) return rep;
+		if (!agrees(r, own)) return { ...rep, suggested: 'review', confidence: 0.5, held: 'decode' };
+		if (trace && rep.where === 'span' && vetoed(trace, decodes, own, input.spans, stop))
+			return { ...rep, suggested: 'review', confidence: 0.5, held: 'closure' };
+		return rep;
+	};
 	const out: EditRepeat[] = [];
-	for (const r of primary) {
-		if (r.suggested === 'remove' && !r.held && !agree(r, mix) && !others.some((o) => agree(r, o)))
-			out.push({ ...r, suggested: 'review', confidence: 0.5, held: 'decode' });
-		else out.push(r);
-	}
-	// mixdown repeats the span decode did not find (the same removal once)
-	for (const r of mix) if (!agree(r, primary)) out.push(r);
+	const add = (r: EditRepeat) => {
+		const i = out.findIndex((x) => sameRemoval(r, x));
+		if (i < 0) out.push(r);
+		// the same repeat from two decodes: the one that may go by default
+		else if (out[i]!.suggested !== 'remove' && r.suggested === 'remove') out[i] = r;
+	};
+	per.forEach((rs, i) => {
+		for (const r of rs) add(decide(r, i));
+	});
+	// a clip the span decodes fail on, read from the stored transcript, which merged the retry after the cut into it
+	for (const r of storedRestarts(input, decodes))
+		add({ ...r, suggested: 'review', confidence: 0.5, held: 'decode' });
+	// mixdown repeats the span decodes did not find (the same removal once)
+	for (const r of mix) if (!out.some((x) => sameRemoval(r, x))) out.push(decide(r, -1));
 	// restarts at a phrase's start that only a decode from the dip shows
-	if (input.words && input.windows?.length)
-		for (const r of windowRepeats(input, input.words)) if (!out.some((x) => sameRemoval(r, x))) out.push(r);
+	for (const rs of windows) for (const r of rs) if (!out.some((x) => sameRemoval(r, x))) out.push(r);
 	return out;
+}
+
+/** The normalised words of a decode inside a span's own media range (by midpoint). */
+function spanTokens(lookup: EditWordsLookup, sp: EditSpan): string[] {
+	return (lookup(sp) ?? [])
+		.filter((w) => {
+			const mid = (w.start + w.end) / 2;
+			return finite(mid) && mid >= sp.mediaStart && mid < sp.mediaEnd;
+		})
+		.map((w) => cleanupNorm(w.text))
+		.filter((n) => n.length > 0);
+}
+
+/**
+ * Restarts across a cut whose attempt is a clip the span decodes fail on — they share no word (a fragment too short
+ * for a chunk decode: "Hubo" written "Me decía…" and "es siempre") — read from the stored transcript instead: its words
+ * in that clip said again by the span decode at the start of the next clip, where the stored transcript wrote nothing
+ * (the long-form decode keeps the first copy of a restart and drops the retry: "Hubo … otro en el que"). One decode
+ * hears each copy: reviewed, never removed by default.
+ */
+function storedRestarts(input: EditRepeatsInput, decodes: readonly EditWordsLookup[]): EditRepeat[] {
+	const stored = input.stored;
+	const primary = decodes[0];
+	if (!stored || !primary || decodes.length < 2) return [];
+	const failed = input.spans.map((sp) => {
+		const sets = decodes.map((l) => spanTokens(l, sp));
+		if (!sets.some((t) => t.length) || !spanTokens(stored, sp).length) return false;
+		const [a, ...rest] = sets;
+		return rest.every((b) => !a!.some((n) => b.some((m) => sameWord(n, m))));
+	});
+	if (!failed.some(Boolean)) return [];
+	const lookup: EditWordsLookup = (sp) => (failed[input.spans.indexOf(sp)] ? stored(sp) : primary(sp));
+	return repeatsOf(input, { lookup }).flatMap(({ trace, ...r }) => {
+		if (!trace || r.where !== 'cut' || !failed[trace.span] || failed[trace.retrySpan]) return [];
+		const b = input.spans[trace.retrySpan]!;
+		const onset = trace.gap[1];
+		const merged = !(stored(b) ?? []).some(
+			(w) => w.start <= onset + 0.05 * FLICKS_PER_SECOND && w.end > onset,
+		);
+		return merged ? [r] : [];
+	});
+}
+
+/**
+ * Every span decode writes the clip before the cut ending in a cut-off word ("jero…", "el…"), and the attempt ends that
+ * clip: the decodes agree the take was abandoned mid-word where the next clip says it again.
+ */
+function cutOffAtCut(r: Traced, decodes: readonly EditWordsLookup[], spans: readonly EditSpan[]): boolean {
+	const t = r.trace;
+	if (!t || r.where !== 'cut' || !t.endsSpan || decodes.length < 2) return false;
+	const sp = spans[t.span]!;
+	return decodes.every((lookup) => {
+		const own = (lookup(sp) ?? []).filter((w) => {
+			const mid = (w.start + w.end) / 2;
+			return finite(mid) && mid >= sp.mediaStart && mid < sp.mediaEnd;
+		});
+		const last = own.reduce<EditWord | null>((a, w) => (!a || w.start > a.start ? w : a), null);
+		return !!last && CUT_OFF.test(last.text.trim());
+	});
+}
+
+/**
+ * Another span decode writes one word of the attempt over the gap between the copies of an in-span repeat: that decode
+ * hears the word go on through the gap — a closure inside it, not a restart ("tiene que" written twice by one decode,
+ * "tiene" across the dip in the other).
+ */
+function vetoed(
+	t: Trace,
+	decodes: readonly EditWordsLookup[],
+	own: number,
+	spans: readonly EditSpan[],
+	stop: ReadonlySet<string>,
+): boolean {
+	const sp = spans[t.span]!;
+	const [g0, g1] = t.gap;
+	const mid = (g0 + g1) / 2;
+	const slack = 0.03 * FLICKS_PER_SECOND;
+	return decodes.some(
+		(lookup, j) =>
+			j !== own &&
+			(lookup(sp) ?? []).some((w) => {
+				if (!(w.start < Math.min(mid, g0 + slack) && w.end > Math.max(mid, g1 - slack))) return false;
+				const n = cleanupNorm(w.text);
+				return t.att.some((a) => sameWord(a, n) || (!stop.has(a) && a.length >= 3 && n.startsWith(a)));
+			}),
+	);
 }
 
 /**
@@ -365,7 +520,15 @@ function windowRepeats(input: EditRepeatsInput, lookup: EditWordsLookup): EditRe
 		if (!sp || !w.words) continue;
 		const [d0, d1] = w.dip;
 		const own = words.map((x, k) => [x, k] as const).filter(([x]) => x.span === si);
-		if (own.some(([x]) => x.ms < d0 && x.me > d1)) continue; // a word over the dip: a closure inside it
+		// a word of the span decode over the dip: a closure inside it when it is one of the words said again
+		// ("mostrar", "tiene"); a later word stretched over a merged restart ("y si buscas", "ejército") is not
+		const over = own.filter(([x]) => x.ms < d0 && x.me > d1).map(([x]) => x.n);
+		const inside = (ns: readonly string[]) =>
+			over.some((o) =>
+				ns.some(
+					(n) => sameWord(o, n) || (n.length >= 3 && o.startsWith(n)) || (o.length >= 3 && n.startsWith(o)),
+				),
+			);
 		const before = own.filter(
 			([x]) => !x.filler && x.ms < d0 && x.me <= d0 + near && x.ms >= d0 - FLICKS_PER_SECOND,
 		);
@@ -402,6 +565,7 @@ function windowRepeats(input: EditRepeatsInput, lookup: EditWordsLookup): EditRe
 			const qi = Q.map((_, i) => att.length + i);
 			const m = reSaid(tmp, ai, qi, stop);
 			if (m?.first !== 0) continue;
+			if (inside([...att.map((x) => x.n), ...Q.slice(0, k).map((x) => x.n)])) break;
 			if (
 				deliberateRepeat(tmp, ai, qi, {
 					allow,
@@ -509,7 +673,17 @@ function pauseIn(voice: CleanupVoice, a: number, b: number): [number, number] | 
 	];
 }
 
-function repeatsOf(input: EditRepeatsInput, src: Source): EditRepeat[] {
+/** The quietest 10 ms frame (the latest of equals) in the media range `[a, b)` (flicks), or null without levels. */
+function quietestFrame(voice: CleanupVoice, a: number, b: number): number | null {
+	if (!voice.level) return null;
+	const f0 = Math.max(0, Math.floor(toSec(a) / VOICE_FRAME_S));
+	const f1 = Math.min(voice.frameCount, Math.ceil(toSec(b) / VOICE_FRAME_S));
+	let best = -1;
+	for (let f = f0; f < f1; f++) if (best < 0 || voice.level[f]! <= voice.level[best]!) best = f;
+	return best < 0 ? null : Math.min(b, Math.max(a, frameFlicks(best)));
+}
+
+function repeatsOf(input: EditRepeatsInput, src: Source): Traced[] {
 	const mix = 'mix' in src;
 	const lang = cleanupLanguageOf(input.language ?? null);
 	const lists = effectiveLists(lang, input.lists ?? null);
@@ -646,10 +820,18 @@ function repeatsOf(input: EditRepeatsInput, src: Source): EditRepeat[] {
 	}
 
 	found.sort((x, y) => x.a - y.a);
-	return found.map((r): EditRepeat => {
+	return found.map((r): Traced => {
 		const first = words[r.a]!;
 		const retry = words[r.b]!; // the word right after the attempt: what follows the cut
 		const att = words.slice(r.a, r.b);
+		const lastW = words[r.b - 1]!;
+		const trace: Trace = {
+			att: att.filter((w) => !w.filler).map((w) => w.n),
+			gap: [lastW.me, retry.ms],
+			span: lastW.span,
+			endsSpan: words[r.b]?.span !== lastW.span,
+			retrySpan: retry.span,
+		};
 		const where = first.span === retry.span ? 'span' : 'cut';
 		// what goes: from the attempt's first word (never before the kept word before it ends) to the cut — every span in
 		// between whole — or, inside a span, to the retry's onset
@@ -674,6 +856,9 @@ function repeatsOf(input: EditRepeatsInput, src: Source): EditRepeat[] {
 			const p = voice ? pauseIn(voice, lastAtt.me - slack, retry.ms) : null;
 			if (Array.isArray(p)) end = p[1];
 			else if (p !== 'continuous') closure = true;
+			// connected speech: the quietest frame before the retry, not its decoded onset (loose timestamps would cut
+			// into the onset of the word that stays)
+			else if (voice) end = quietestFrame(voice, lastAtt.me - slack, retry.ms) ?? end;
 		}
 		// across a cut the take after it stays whole: everything from the attempt to the end of the span before the retry's
 		const lastSpan = where === 'cut' ? retry.span - 1 : retry.span;
@@ -733,6 +918,7 @@ function repeatsOf(input: EditRepeatsInput, src: Source): EditRepeat[] {
 					range: [frameOf(first.s), Math.max(frameOf(first.s), frameOf(next?.s ?? lz.e))],
 					cuts: laterCuts,
 					confidence: r.tier === 'remove' ? 0.8 : 0.5,
+					trace,
 				};
 			}
 		}
@@ -748,6 +934,7 @@ function repeatsOf(input: EditRepeatsInput, src: Source): EditRepeat[] {
 			range: [frameOf(first.s), Math.max(frameOf(first.s), frameOf(retry.s))],
 			cuts,
 			confidence: r.tier === 'remove' && !held ? 0.8 : 0.5,
+			trace,
 		};
 	});
 }
@@ -791,6 +978,19 @@ function reSaid(
 			q++;
 		}
 		if (pairs.length === att.length) return { pairs, first };
+		// the abandoned word the recogniser wrote cut off is a guess at a fragment ("Aunque el jero… | Aunque el
+		// jaspercito"): the words before it, said again word for word from the retry's first, make the attempt — two or
+		// more of them, or one that is no stop word
+		const rest = att.length - 1;
+		if (
+			first === 0 &&
+			rest >= 1 &&
+			pairs.length === rest &&
+			CUT_OFF.test(words[att[rest]!]!.text.trim()) &&
+			pairs.every((q, x) => q === Q[x]) &&
+			(rest >= 2 || !stop.has(words[att[0]!]!.n))
+		)
+			return { pairs, first };
 	}
 	return null;
 }

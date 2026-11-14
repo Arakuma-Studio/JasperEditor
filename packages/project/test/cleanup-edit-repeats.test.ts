@@ -91,7 +91,8 @@ const EXPECT: Record<string, { text: string; where: 'cut' | 'span' } | 'review' 
 	'y si | y si buscas': { text: 'y', where: 'cut' },
 	'aunque el | aunque el Jaspersito': { text: 'Aunque el', where: 'cut' },
 	'No | no había': { text: 'No', where: 'cut' },
-	'así que el… | así que el botón': { text: 'que el...', where: 'cut' },
+	// the clip's In cuts into "Así" and plays the rest of it (`heardFromCutStart`): the attempt starts with it
+	'así que el… | así que el botón': { text: 'Así que el...', where: 'cut' },
 	'y que | y que mi': { text: 'y que', where: 'span' },
 	'y los… | y después los puse': { text: 'Y los...', where: 'span' },
 	'como | como un': { text: 'como', where: 'cut' },
@@ -163,14 +164,16 @@ describe('repeats in the edit of a real cut (rev 144)', () => {
 		expect(reps.map((r) => [r.text, r.suggested, r.held])).toEqual([['most...', 'review', 'closure']]);
 	});
 
-	it('the stored transcript alone finds none of the cut repeats', () => {
-		// the reason for chunked words: the merged words hold one copy, or put the retry's first word before the clip
+	it('the stored transcript alone finds one of the cut repeats', () => {
+		// the reason for chunked words: the merged words hold one copy, or put the retry's first word before the clip;
+		// only "No" is found: the stored retry "No" (1155.40–1155.79) starts before the clip's In (1155.683), which plays
+		// 27 % of it, so it is heard through the clip (`heardFromCutStart`)
 		const found = fixture.cases
 			.filter((c) => typeof EXPECT[c.name] === 'object' && EXPECT[c.name] !== null)
 			.filter((c) => (EXPECT[c.name] as { where: string }).where === 'cut')
 			.filter((c) => run(c, c.stored as W, c.stored as W).length > 0)
 			.map((c) => c.name);
-		expect(found).toEqual([]);
+		expect(found).toEqual(['No | no había']);
 	});
 });
 
@@ -450,6 +453,90 @@ describe('Clean Up plans the repeats in the edit', () => {
 		expect(end).toBe(49);
 	});
 
+	it('the take after an accepted stutter keeps its onset, but the attempt does not come back ("Y si… | y si buscas")', () => {
+		// rev 144 at 408 s, moved to 10 s (60 fps, the source's voice analysis): the stored transcript merged the copies
+		// ("si" 10.176–10.576 runs over the gap); the check removes 10.083 → 10.38 (the quietest frame before the retry)
+		const H = new Harness({ preset: 'hd-1080p-60' });
+		const r0 = H.ok([{ type: 'media.register', asset: videoAsset({ seconds: 30, kind: 'audio' }) }]);
+		const mediaId = (r0.results[0] as { mediaId: string }).mediaId;
+		H.ok([
+			{
+				type: 'clip.place',
+				source: { mediaId },
+				sourceRange: { in: { seconds: 10.083333 }, out: { seconds: 13.083333 } },
+				at: 0,
+				tracks: { audio: ['A1'] },
+				mode: 'overwrite',
+			},
+		]);
+		const stored: Array<[string, number, number]> = [
+			['y', 10.096, 10.166],
+			['si', 10.176, 10.576],
+			['buscas', 10.576, 10.876],
+			['en', 10.876, 11.036],
+			['internet', 11.036, 11.476],
+			['debería', 11.516, 11.956],
+		];
+		H.ok([
+			{
+				type: 'transcript.create',
+				mediaId,
+				language: 'es',
+				origin: 'manual',
+				words: stored.map(([text, s, e]) => ({ text, start: S(s), end: S(e), confidence: 0.9 })),
+			},
+		]);
+		// 10.00–10.70 s: the levels of 408.00–408.70 (speech from 408.07, the dip at 408.36–408.40 down to −29.5 dBFS)
+		const env = [
+			-51, -52.5, -53.5, -53, -54.5, -58, -64, -36.5, -24, -17, -13.5, -11.5, -10.5, -12, -16, -17.5, -18,
+			-19.5, -19.5, -20, -19.5, -16.5, -16, -16, -18.5, -15, -11.5, -9, -8, -7.5, -7.5, -8.5, -9.5, -11.5,
+			-14, -18.5, -24.5, -28.5, -29.5, -29, -24, -17.5, -13.5, -10, -7.5, -5.5, -4.5, -4.5, -7, -11.5, -15,
+			-14, -13, -13, -13.5, -14.5, -15.5, -17, -12.5, -7.5, -4, -4, -5.5, -9.5, -12, -10, -6, -2, -0.5, 0.5,
+		];
+		const n = 3000;
+		const classes = new Uint8Array(n);
+		const level = new Uint8Array(n).fill((-50 + 120) * 2);
+		for (let k = 1000; k < 1310; k++) {
+			level[k] = ((env[k - 1000] ?? -10) + 120) * 2;
+			classes[k] = k >= 1007 ? 2 : 0;
+		}
+		const voice: CleanupVoice = {
+			classes,
+			level,
+			frameCount: n,
+			levels: { floorDb: -47, speechDb: -6, speechThresholdDb: -34.7, breathFloorDb: -42 },
+		};
+		const sp = editSpans(H.doc, H.seq);
+		if (!sp.ok) throw new Error(sp.message);
+		const c0 = sp.spans[0]!;
+		const editRepeats: EditRepeat[] = [
+			{
+				source: 'spans',
+				where: 'span',
+				kind: 'stutter',
+				suggested: 'remove',
+				text: 'Y si...',
+				kept: 'y si buscas',
+				range: [0, 17],
+				cuts: [{ clipId: c0.clipId, mediaId, stream: c0.stream, start: c0.mediaStart, end: S(10.38) }],
+				confidence: 0.8,
+			},
+		];
+		const a = analyzeSequenceCleanup({
+			doc: H.doc,
+			seq: H.seq,
+			voice: () => voice,
+			settings: FAST_SETTINGS,
+			editRepeats,
+		});
+		if (!a.ok) throw new Error(a.message);
+		const kept = a.plan.kept.filter((k) => k.clipId === c0.clipId);
+		// the cut ends on the 60 fps grid at 10.367 s (frame 17); the take may keep up to 80 ms more of its onset (frame
+		// 13), never go back to 10.25 s (frame 10) inside the attempt's "si", where the merged stored "si" would let it
+		expect(Math.min(...kept.map((k) => k.start))).toBeGreaterThanOrEqual(13);
+		expect(Math.min(...kept.map((k) => k.start))).toBeLessThanOrEqual(17);
+	});
+
 	it('the closed loop maps the mixdown words back to clips, for review', () => {
 		const { H } = setup();
 		const sp = editSpans(H.doc, H.seq);
@@ -649,5 +736,209 @@ describe('a restart at the start of a phrase that the span decodes merge (v8 rev
 			language: 'es',
 		});
 		expect(reps).toEqual([]);
+	});
+});
+
+describe('repeats the decodes of the real cut wrote differently (rev 144, rev 549 the reference)', () => {
+	// The decodes of the user's recording as the engine wrote them (span decodes padded 0.2 s and 0.6 s, the stored
+	// transcript, window decodes), one list per clip: docs/wp-notes/transcript-cleanup.md "Repeats at cuts", diagnosis.
+	const span = (id: string, seqStart: number, from: number, to: number): EditSpan => ({
+		clipId: id,
+		mediaId: 'm',
+		stream: 1,
+		seqStart,
+		seqEnd: seqStart + Math.round((to - from) * 60),
+		mediaStart: S(from),
+		mediaEnd: S(from) + Math.round((to - from) * 60) * F60,
+	});
+	/** Words from "text@start-end" lists. */
+	const ws = (s: string): EditWord[] =>
+		s
+			.trim()
+			.split(/\s+/)
+			.map((x) => {
+				const m = /^(.*)@([\d.]+)-([\d.]+)$/.exec(x)!;
+				return {
+					text: m[1]!.replace(/_/g, ' '),
+					start: S(Number(m[2])),
+					end: S(Number(m[3])),
+					confidence: 0.9,
+				};
+			});
+	const byClip =
+		(m: Record<string, string>) =>
+		(sp: EditSpan): EditWord[] | null =>
+			m[sp.clipId] !== undefined ? ws(m[sp.clipId]!) : null;
+	/** Connected speech over every span (no pause the voice analysis would measure). */
+	const speechOver = (spans: EditSpan[]): CleanupVoice => {
+		const n = Math.ceil(sec(Math.max(...spans.map((s) => s.mediaEnd))) * 100) + 200;
+		const classes = new Uint8Array(n);
+		for (const s of spans)
+			for (let k = Math.floor(sec(s.mediaStart) * 100) - 30; k < Math.ceil(sec(s.mediaEnd) * 100) + 30; k++)
+				classes[Math.max(0, k)] = 2;
+		return {
+			classes,
+			level: new Uint8Array(n),
+			frameCount: n,
+			levels: { floorDb: -50, speechDb: -9, speechThresholdDb: -37.7, breathFloorDb: -45 },
+		};
+	};
+	const find = (
+		spans: EditSpan[],
+		d: {
+			words: Record<string, string>;
+			alt?: Record<string, string>;
+			stored?: string;
+			windows?: Array<{ clip: string; dip: [number, number]; words: string }>;
+		},
+	) =>
+		findEditRepeats({
+			spans,
+			rate: RATE60,
+			words: byClip(d.words),
+			...(d.alt ? { alt: [byClip(d.alt)] } : {}),
+			...(d.stored ? { stored: () => ws(d.stored!) } : {}),
+			...(d.windows
+				? {
+						windows: d.windows.map((w) => {
+							const sp = spans.find((s) => s.clipId === w.clip)!;
+							const start = S((w.dip[0] + w.dip[1]) / 2);
+							return {
+								clipId: w.clip,
+								mediaId: sp.mediaId,
+								stream: sp.stream,
+								dip: [S(w.dip[0]), S(w.dip[1])] as [number, number],
+								start,
+								end: Math.min(sp.mediaEnd, start + S(3)),
+								words: ws(w.words),
+							};
+						}),
+					}
+				: {}),
+			voice: () => speechOver(spans),
+			settings: FAST_SETTINGS,
+			language: 'es',
+		});
+	const cutsOf = (r: EditRepeat) => r.cuts.map((c) => [c.clipId, sec(c.start), sec(c.end)]);
+
+	it('an abandoned word the decodes write cut off still makes the attempt ("Aunque el jero… | Aunque el jaspercito")', () => {
+		const spans = [span('A', 0, 827.45, 827.967), span('B', 31, 828.15, 833.133)];
+		const reps = find(spans, {
+			words: {
+				A: 'Aunque@827.467-827.687 el@827.687-827.787 jero...@827.787-827.957',
+				B: 'Aunque@828.153-828.333 el@828.333-828.473 jaspercito@828.473-828.943 todo@828.953-829.173 bonito@829.173-829.403 estaba@829.453-829.713',
+			},
+			alt: {
+				A: 'Aunque@827.47-827.69 el...@827.69-827.96 Aunque@828.16-828.35 el@828.35-828.45 has...@828.45-828.57',
+				B: 'Aunque@827.55-827.96 el@828.16-828.45 jaspercito@828.45-828.94 todo@828.95-829.17 bonito@829.17-829.4',
+			},
+			stored: 'el@827.667-827.967 Jaspersito@828.43-828.94 todo@828.96-829.17 bonito@829.17-829.4',
+		});
+		expect(reps.map((r) => [r.where, r.text, r.suggested, cutsOf(r)])).toEqual([
+			['cut', 'Aunque el jero...', 'remove', [['A', 827.45, sec(spans[0]!.mediaEnd)]]],
+		]);
+	});
+
+	it('a restart one span decode merges goes when the other decode and the window decode say it twice ("Y si… y si buscas")', () => {
+		const spans = [span('B', 0, 408.083, 411.083)];
+		const reps = find(spans, {
+			// the 0.2 s decode stretches "buscas" over the 50 ms dip; the 0.6 s decode writes both copies
+			words: {
+				B: 'Y@408.09-408.19 si@408.19-408.35 buscas@408.35-408.89 en@408.89-409.03 internet,@409.03-409.57 debería@409.57-409.97 ser@409.97-410.17',
+			},
+			alt: {
+				B: 'Y@408.09-408.17 si...@408.17-408.36 y@408.41-408.53 si@408.53-408.61 buscas@408.61-408.89 en@408.89-409.03 internet,@409.03-409.57 debería@409.57-409.95',
+			},
+			stored:
+				'y@408.096-408.166 si@408.176-408.576 buscas@408.576-408.876 en@408.876-409.036 internet@409.036-409.476',
+			windows: [
+				{
+					clip: 'B',
+					dip: [408.36, 408.41],
+					words:
+						'Y@408.403-408.483 si@408.483-408.643 buscas@408.643-408.903 en@408.903-409.023 internet,@409.023-409.563',
+				},
+			],
+		});
+		const rm = reps.filter((r) => r.suggested === 'remove');
+		expect(rm.map((r) => [r.where, r.text])).toEqual([['span', 'Y si...']]);
+		// from the clip's start to the dip, before the retry's onset (the user cut at 408.367)
+		const [, a, b] = cutsOf(rm[0]!)[0]! as [string, number, number];
+		expect(a).toBe(sec(spans[0]!.mediaStart));
+		expect(b).toBeGreaterThanOrEqual(408.36);
+		expect(b).toBeLessThanOrEqual(408.41);
+	});
+
+	it('a stutter one decode writes over a word the other decode hears through the gap is only reviewed ("tiene que", said once)', () => {
+		const spans = [span('S', 0, 70.133, 73.167)];
+		const reps = find(spans, {
+			words: {
+				S: 'Y@70.14-70.2 mi@70.2-70.34 motor@70.34-70.64 tiene@70.64-70.9 que@70.9-71.12 verse@71.12-71.46 y@71.46-71.62 funcionar@71.62-72.08',
+			},
+			// a decode that doubles it, both copies around the 50 ms dip, and the window decode from the dip agreeing
+			alt: {
+				S: 'Y@70.137-70.197 mi@70.197-70.337 motor@70.337-70.637 tiene@70.637-70.7 que@70.7-70.74 tiene@70.79-70.92 que@70.92-71.117 verse@71.117-71.457 y@71.457-71.637 funcionar@71.637-72.097',
+			},
+			windows: [
+				{
+					clip: 'S',
+					dip: [70.74, 70.79],
+					words: 'Tiene@70.76-70.94 que@70.94-71.12 verse@71.12-71.46 y@71.46-71.62',
+				},
+			],
+		});
+		expect(reps.filter((r) => r.suggested === 'remove')).toEqual([]);
+	});
+
+	it('a word the clip’s in point cuts into belongs to the clip ("…sí que… | Así que el botón")', () => {
+		const spans = [span('A', 0, 2296.533, 2296.817), span('B', 17, 2301.433, 2306.7)];
+		const reps = find(spans, {
+			words: {
+				A: 'Así@2296.42-2296.61 que...@2296.66-2296.81',
+				B: 'Así@2301.433-2301.573 que@2301.573-2301.693 el@2301.693-2301.833 botón@2301.833-2302.233 con@2302.233-2302.513 bordes@2302.513-2302.743',
+			},
+			alt: {
+				A: 'así@2296.427-2296.607 que@2296.657-2296.807 así@2297.197-2297.327 que@2297.327-2297.417',
+				B: 'Así@2301.437-2301.577 que@2301.577-2301.697 el@2301.697-2301.837 botón@2301.837-2302.237 con@2302.237-2302.497',
+			},
+			stored:
+				'Así@2296.41-2296.58 que@2296.686-2296.746 el@2296.746-2296.78 ...@2296.78-2296.87 Así@2297.19-2297.36 que@2297.36-2297.48 el@2297.48-2297.58 botón@2301.823-2302.223 con@2302.223-2302.523',
+		});
+		expect(reps.map((r) => [r.where, cutsOf(r)])).toEqual([
+			['cut', [['A', sec(spans[0]!.mediaStart), sec(spans[0]!.mediaEnd)]]],
+		]);
+	});
+
+	it('a restart at a phrase’s start shows in the window decode when the span decodes stretch a later word over the dip ("Y que mi | y que mi ejército")', () => {
+		const spans = [span('S', 0, 2734.35, 2737.167)];
+		const reps = find(spans, {
+			words: {
+				S: 'Y@2734.347-2734.407 que@2734.437-2734.507 mi@2734.507-2734.627 ejército@2734.627-2735.507 de@2735.507-2735.647 cláudas@2735.647-2735.967 nunca@2735.967-2736.227',
+			},
+			windows: [
+				{
+					clip: 'S',
+					dip: [2734.94, 2734.98],
+					words:
+						'y@2734.97-2735.03 que@2735.07-2735.13 mi@2735.13-2735.27 ejército@2735.27-2735.51 de@2735.51-2735.66',
+				},
+			],
+		});
+		expect(reps.map((r) => [r.where, r.text, r.suggested])).toEqual([['span', 'Y que mi', 'review']]);
+	});
+
+	it('a fragment the span decodes cannot read is read from the stored transcript, for review ("Hubo | Hubo otro")', () => {
+		const spans = [span('A', 0, 2936.033, 2936.333), span('B', 18, 2937.0, 2942.2)];
+		const B =
+			'Hubo@2937.003-2937.243 otro@2937.243-2937.423 en@2937.423-2937.563 el@2937.563-2937.643 que@2937.643-2937.783 en@2937.783-2937.883';
+		const reps = find(spans, {
+			words: { A: 'Me@2935.827-2935.927 decía...@2935.927-2936.247', B },
+			alt: { A: 'animación@2935.437-2935.817 es@2935.817-2936.037 siempre@2936.037-2936.247', B },
+			stored:
+				'animaciones@2935.34-2935.88 ...@2935.88-2936.093 Hubo@2936.093-2936.333 otro@2937.2-2937.42 en@2937.42-2937.56 el@2937.56-2937.62 que,@2937.63-2937.74',
+		});
+		expect(reps.map((r) => [r.where, r.text, r.suggested, cutsOf(r)])).toEqual([
+			['cut', 'Hubo', 'review', [['A', sec(spans[0]!.mediaStart), sec(spans[0]!.mediaEnd)]]],
+		]);
 	});
 });

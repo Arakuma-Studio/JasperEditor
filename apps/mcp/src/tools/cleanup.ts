@@ -240,6 +240,15 @@ async function resolveTarget(
 	return { doc, revision, seq, scratch: false, ...(clipIds ? { clipIds } : {}), ...(range ? { range } : {}) };
 }
 
+/** The check of the cuts an analysis ran, from the repeats it found (none found: nothing to keep). */
+function checkOf(
+	repeats: ReadonlyArray<{ source: 'spans' | 'mix' }> | undefined,
+): 'spans' | 'mix' | 'both' | undefined {
+	const spans = repeats?.some((r) => r.source === 'spans');
+	const mix = repeats?.some((r) => r.source === 'mix');
+	return spans && mix ? 'both' : spans ? 'spans' : mix ? 'mix' : undefined;
+}
+
 /** Runs the engine's analysis and reads its file. */
 async function runAnalysis(
 	ctx: ToolContext,
@@ -598,6 +607,7 @@ export function registerCleanupTools(ctx: ToolContext): void {
 					'Use plan_cleanup and tell the user what to apply in Text ▸ Transcript ▸ Clean Up, or ask them to allow it.',
 				);
 			const decisions = (a.decisions ?? {}) as CleanupDecisions;
+			let checkCuts = a.checkCuts;
 			if (a.analysisId) {
 				let before: CleanupAnalysisFile;
 				try {
@@ -616,8 +626,16 @@ export function registerCleanupTools(ctx: ToolContext): void {
 						'Call analyze_voice / plan_cleanup again, or pass decisions by fingerprint without analysisId.',
 						{ analysisRevision: before.revision, revision: t.revision ?? null },
 					);
+				// the analysis checked the cuts: check them again (cached), so its repeat findings and their decisions stay
+				checkCuts ??= checkOf(before.analysis.editRepeats);
 			}
-			const { file } = await runAnalysis(ctx, a.projectId, t, { ...a, decisions }, extra);
+			const { file } = await runAnalysis(
+				ctx,
+				a.projectId,
+				t,
+				{ ...a, decisions, ...(checkCuts ? { checkCuts } : {}) },
+				extra,
+			);
 			const analysis = file.analysis as CleanupAnalysis;
 			const remembered = new Set(readSequenceCleanup(t.seq).rejected ?? []);
 			const commands = cleanupApplyCommands(t.seq.id, analysis, decisions, remembered, {

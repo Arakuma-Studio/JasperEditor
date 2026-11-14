@@ -142,9 +142,11 @@ consonant closures (wp-note "Round 15").
 **Repeats at cuts:** a phrase heard twice where two kept clips join, or a stutter left inside a kept clip, that the
 transcript holds once, is found from VAD-chunked transcriptions of each kept span (two decodes, one job, cached per media
 range) and / or of the mixdown — API `POST /api/cleanup/analyze` `editRepeats`, MCP `checkCuts` on `analyze_voice` /
-`plan_cleanup` / `apply_cleanup` (wp-note "Repeats at cuts"). Gaps: the Clean Up panel has no control to ask for it
-(API / MCP only); not run on large-v3-turbo or the reporter's audio (fixtures from known words and times, the shipped
-voice analysis of the source); the MCP eval case was not run with a model.
+`plan_cleanup` / `apply_cleanup`, the Clean Up toolbar's **Repeats at cuts** toggle (off by default: ≈ 3 s of decoded
+audio per kept second; wp-note "Repeats at cuts"). Gaps: on the reporter's cut (rev 144 against rev 549) 9 of 14 real
+restarts are found and 4 suggested for removal, with no wrong suggestion; five are missed — a fragment every decode reads
+wrongly or alike, a restart word stretched over its own dip, a stutter with no window decode there; about 60 % of its
+review findings are not restarts; the MCP eval case was not run with a model.
 **Script-guided transcript correction (spec 17):** model, apply, scoring, glossary, job / route / MCP and the editor UI
 (Text ▸ Transcript ▸ Script… and Fix Transcript…, Text ▸ / Sequence ▸ entries, the Fix dialog with its dry run,
 text-diff rows in the Review panel, marks in the transcript, the patch report, "Replace all N" / "Remember", the

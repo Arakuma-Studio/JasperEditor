@@ -30,7 +30,14 @@ import {
 import { auditCutEdges, type CutEdgeAudit } from './edge-audit.ts';
 import { planEdgeRepairs } from './edge-findings.ts';
 import { boundingToken } from './edge-repair.ts';
-import { EDGE_DECAY_S, edgeBounds, edgeLevelsOf, onsetBound, snapCut } from './edge-snap.ts';
+import {
+	EDGE_DECAY_S,
+	EDGE_INTO_WORD_S,
+	edgeBounds,
+	edgeLevelsOf,
+	onsetBound,
+	snapCut,
+} from './edge-snap.ts';
 import { snapEdge } from './edges.ts';
 import { type EditRepeat, editRepeatCuts } from './edit-repeats.ts';
 import { type FragmentContext, findShortPieces, shortPieceFinding } from './fragments.ts';
@@ -1155,6 +1162,7 @@ function cutMediaSpans(
 ): Array<[number, number]> {
 	const F = flicksPerFrame(rate);
 	const frame = (m: number) => clip.start + Math.floor((m - clip.sourceIn) / F + 1e-6);
+	const back = Math.ceil((EDGE_INTO_WORD_S * FLICKS_PER_SECOND) / F - 1e-6);
 	let out = kept.map(([a, b]) => [a, b] as [number, number]);
 	for (const c of cuts) {
 		const x = frame(c.start);
@@ -1166,8 +1174,10 @@ function cutMediaSpans(
 			const left: [number, number] = [a, Math.min(b, x)];
 			const right: [number, number] = [Math.max(a, y), b];
 			if (snap && left[1] > left[0] && left[1] === x) left[1] = snap(x, 'out', x, Math.max(x, y - 1));
+			// the take after it keeps its attack, at most EDGE_INTO_WORD_S into the cut: a transcript word that merged
+			// both copies runs over the gap ("si" of "Y si… | y si buscas") and would bring the attempt back
 			if (snap && right[1] > right[0] && right[0] === y)
-				right[0] = snap(y, 'in', Math.min(y, left[1] + 1), y);
+				right[0] = snap(y, 'in', Math.max(Math.min(y, left[1] + 1), y - back), y);
 			return [left, right].filter(([p, q]) => q > p);
 		});
 	}

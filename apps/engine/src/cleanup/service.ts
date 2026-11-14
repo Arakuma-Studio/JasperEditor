@@ -348,13 +348,14 @@ export class CleanupAnalysisService {
 		}
 		const cleanup = readSequenceCleanup(seq);
 		const lang = cleanupLanguageOf(options.language ?? null);
-		// the confirming decodes: the span decode with other padding, and the stored transcript
+		// the second span decode (other padding) and the stored transcript
 		const stored = (s: { mediaId: string }) => transcriptForMedia(doc, s.mediaId)?.words ?? null;
 		const repeats = findEditRepeats({
 			spans: sp.spans,
 			rate: seq.settings.frameRate,
 			...(words ? { words: (s) => words!.get(spanKey(s)) ?? null } : {}),
-			confirm: [...(second ? [(s: EditSpan) => second!.get(spanKey(s)) ?? null] : []), stored],
+			...(second ? { alt: [(s: EditSpan) => second!.get(spanKey(s)) ?? null] } : {}),
+			stored,
 			...(mix ? { mix } : {}),
 			...(windowWords
 				? { windows: windows.map((w) => ({ ...w, words: windowWords!.get(windowKey(w)) ?? null })) }

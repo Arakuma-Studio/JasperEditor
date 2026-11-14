@@ -312,6 +312,17 @@ describe('Clean Up MCP tools', () => {
 		expect(len(after)).toBeLessThan(len(before));
 	});
 
+	it('apply_cleanup with the analysisId of a check of the cuts checks them again, so its repeat findings stay', async () => {
+		const { call, engine } = await connect();
+		const p = (await call('plan_cleanup', { include: [] })).body as Body;
+		// the engine's check of the cuts found a repeat (the fake engine does not transcribe)
+		const file = await (await engine.link.client()).getCleanupAnalysis(p.analysisId);
+		file.analysis.editRepeats = [{ source: 'spans' } as never];
+		const r = await call('apply_cleanup', { analysisId: p.analysisId });
+		expect(r.isError, JSON.stringify(r.body)).toBe(false);
+		expect(engine.requests.at(-1)?.editRepeats).toBe('spans');
+	});
+
 	it('apply_cleanup respects "Allow agents to apply transcript-cleanup proposals"', async () => {
 		const { call, engine } = await connect();
 		engine.setAgentProposals({ 'transcript-cleanup': false });
