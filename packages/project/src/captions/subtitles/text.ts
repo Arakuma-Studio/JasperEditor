@@ -108,38 +108,92 @@ const charCount = (s: string) => [...s].length;
 /**
  * Lines of a subtitle: words fill lines of at most `maxChars` (a longer single word gets a line of its own), at most
  * `lines` lines (the last line takes the rest). With weak words, a line does not end on a weak word when the word
- * fits on the next line instead. Returns the index (within `words`) of the first word of each line after the first.
+ * fits on the next line instead. `glued[i]` marks a piece of a split word (`wordPieces`) that continues the previous
+ * one without a space when they share a line. Returns the index (within `words`) of the first word of each line
+ * after the first.
  */
 export function breakLines(
 	words: readonly string[],
 	maxChars: number,
 	lines: number,
 	weak: ReadonlySet<string> | null,
+	glued?: readonly boolean[],
 ): number[] {
 	const starts: number[] = [];
+	const gap = (k: number) => (glued?.[k] ? 0 : 1);
 	let len = 0;
 	for (let i = 0; i < words.length; i++) {
 		const n = charCount(words[i]!);
 		if (i === 0 || starts.length + 1 >= lines) {
-			len = len ? len + 1 + n : n;
+			len = len ? len + gap(i) + n : n;
 			continue;
 		}
-		if (len + 1 + n <= maxChars) {
-			len += 1 + n;
+		if (len + gap(i) + n <= maxChars) {
+			len += gap(i) + n;
 			continue;
 		}
 		// break before word i; keep a weak line end with it when the next line has room
 		let at = i;
 		const lineStart = starts.length ? starts[starts.length - 1]! : 0;
-		if (weak && at - 1 > lineStart && isWeakWord(words[at - 1]!, weak)) {
-			const moved = charCount(words[at - 1]!) + 1 + n;
+		if (weak && at - 1 > lineStart && !glued?.[at - 1] && isWeakWord(words[at - 1]!, weak)) {
+			const moved = charCount(words[at - 1]!) + gap(i) + n;
 			if (moved <= maxChars) at -= 1;
 		}
 		starts.push(at);
 		len = 0;
-		for (let k = at; k <= i; k++) len = len ? len + 1 + charCount(words[k]!) : charCount(words[k]!);
+		for (let k = at; k <= i; k++) len = len ? len + gap(k) + charCount(words[k]!) : charCount(words[k]!);
 	}
 	return starts;
+}
+
+/** Characters that end a piece of a long word (it is split after them): hyphens, slash, underscore. */
+const PIECE_END = /[-\u2010\u2011\u2013\u2014/_]/u;
+const LETTER_OR_DIGIT = /[\p{L}\p{N}]/u;
+const LOWER = /\p{Ll}/u;
+const UPPER = /\p{Lu}/u;
+const LETTER = /\p{L}/u;
+const DIGIT = /\p{N}/u;
+
+/**
+ * A word longer than `maxChars` split at its natural boundaries — CamelCase ("Entity|Component|System", "HTTP|Server"),
+ * after a hyphen, slash or underscore ("pre-|production"), letter / digit transitions ("COVID|19") — into the fewest
+ * pieces of at most `maxChars` characters (a stretch without a boundary stays whole, longer if it must). A word is
+ * never cut anywhere else. Words that fit come back as they are.
+ */
+export function wordPieces(word: string, maxChars: number): string[] {
+	const chars = [...word];
+	const max = Math.max(1, Math.floor(maxChars));
+	if (chars.length <= max) return [word];
+	const cand: number[] = [];
+	let seen = false;
+	for (let k = 1; k < chars.length; k++) {
+		const a = chars[k - 1]!;
+		const b = chars[k]!;
+		if (LETTER_OR_DIGIT.test(a)) seen = true;
+		// a piece holds a letter or digit on each side of the boundary
+		if (!seen || !LETTER_OR_DIGIT.test(b) || !chars.slice(k).some((c) => LETTER_OR_DIGIT.test(c))) continue;
+		const c = chars[k + 1];
+		if (
+			PIECE_END.test(a) ||
+			(LOWER.test(a) && UPPER.test(b)) ||
+			(UPPER.test(a) && UPPER.test(b) && c !== undefined && LOWER.test(c)) ||
+			(LETTER.test(a) && DIGIT.test(b)) ||
+			(DIGIT.test(a) && LETTER.test(b))
+		)
+			cand.push(k);
+	}
+	const out: string[] = [];
+	let s = 0;
+	while (chars.length - s > max) {
+		let at = -1;
+		for (const k of cand) if (k > s && k - s <= max) at = k;
+		if (at < 0) at = cand.find((k) => k > s) ?? -1;
+		if (at < 0) break;
+		out.push(chars.slice(s, at).join(''));
+		s = at;
+	}
+	out.push(chars.slice(s).join(''));
+	return out;
 }
 
 /** The text of a subtitle: its display words on lines (`\n`), the trailing punctuation stripped when asked. */

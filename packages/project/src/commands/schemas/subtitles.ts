@@ -59,7 +59,17 @@ export const CaptionsRegenerateCmd = cmd('captions.regenerate', {
 	rules: SubtitleRulesSchema.optional(),
 	text: SubtitleTextSchema.optional(),
 	cutAware: CutAwareArg.optional(),
+	/** Subtitle clips of the group to lock first (kept as they are, now and by later regenerations). */
+	lock: z.array(IdRefSchema).min(1).max(MAX_SUBTITLE_CLIPS).optional(),
+	/** Locked subtitle clips of the group to unlock first (rebuilt from the transcript). */
+	unlock: z.array(IdRefSchema).min(1).max(MAX_SUBTITLE_CLIPS).optional(),
 	dryRun: z.boolean().optional(),
+});
+
+/** Locks or unlocks subtitle text clips: `captions.regenerate` keeps locked ones as they are. */
+export const CaptionsLockCmd = cmd('captions.lock', {
+	clipIds: ClipIds,
+	locked: z.boolean(),
 });
 
 export const CaptionsAlignToCutsCmd = cmd('captions.alignToCuts', {
@@ -130,6 +140,7 @@ export const SubtitleTemplateApplyCmd = cmd('subtitleTemplate.apply', {
 export const SUBTITLE_COMMANDS = [
 	CaptionsGenerateCmd,
 	CaptionsRegenerateCmd,
+	CaptionsLockCmd,
 	CaptionsAlignToCutsCmd,
 	CaptionsConvertCmd,
 	CaptionsUpdateGroupCmd,

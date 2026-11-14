@@ -743,7 +743,12 @@ export const COMMAND_EXAMPLES: Record<string, unknown> = {
 		ref: '$subs',
 	},
 	'captions.alignToCuts': { type: 'captions.alignToCuts', groupId: '$subs' },
-	'captions.regenerate': { type: 'captions.regenerate', groupId: '$subs', rules: { maxWords: 2 } },
+	'captions.regenerate': {
+		type: 'captions.regenerate',
+		groupId: '$subs',
+		rules: { maxWords: 2, ownWords: ['boing'] },
+	},
+	'captions.lock': { type: 'captions.lock', clipIds: '$selection', locked: true },
 	'subtitleTemplate.apply': {
 		type: 'subtitleTemplate.apply',
 		template: 'builtin:bold-pop',

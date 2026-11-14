@@ -179,7 +179,7 @@ export function registerSubtitleTools(ctx: ToolContext): void {
 		{
 			title: 'List subtitle groups',
 			description:
-				"The sequence's subtitle groups (text-clip subtitles made by captions_from_transcript): name, template, language, number of clips, track, highlight and the stored rules / text transforms / cut awareness. With groupId, a page of its subtitles (clip id, in / out frames and timecodes, track, text, words, linked text style).",
+				"The sequence's subtitle groups (text-clip subtitles made by captions_from_transcript): name, template, language, number of clips, track, highlight and the stored rules / text transforms / cut awareness. With groupId, a page of its subtitles (clip id, in / out frames and timecodes, track, text, words, locked, linked text style).",
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -213,6 +213,7 @@ export function registerSubtitleTools(ctx: ToolContext): void {
 				track: trackLabel(seq, c.trackId),
 				text: c.kind === 'text' ? c.content.text : '',
 				words: captionOf(c)?.words.length ?? 0,
+				...(captionOf(c)?.locked ? { locked: true } : {}),
 				...((c as { styleId?: string }).styleId ? { styleId: (c as { styleId?: string }).styleId } : {}),
 				...(c.enabled ? {} : { enabled: false }),
 			}));
@@ -318,7 +319,7 @@ export function registerSubtitleTools(ctx: ToolContext): void {
 		{
 			title: 'Regenerate subtitles',
 			description:
-				"Rebuilds a subtitle group (or a range of it) from the current transcript with the group's stored rules (or changed ones), keeping the clips whose text still matches (their own style, effects and position stay), removing the others and creating new ones with the group's template. One undo step; dryRun reports kept / created / removed.",
+				"Rebuilds a subtitle group (or a range) from the current transcript with the group's stored rules (or changed ones), keeping the clips whose text still matches (their style, effects and position stay) and replacing the others from the group's template. Locked subtitles (edited by hand) stay as they are. One undo step; dryRun reports kept / created / removed.",
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -327,6 +328,9 @@ export function registerSubtitleTools(ctx: ToolContext): void {
 				rules: SubtitleRulesSchema.optional(),
 				text: SubtitleTextSchema.optional(),
 				cutAware: CutAwareArg.optional(),
+				// bounds: the command's schema
+				lock: z.array(z.string()).optional().describe('Clip ids to keep as they are (stay locked)'),
+				unlock: z.array(z.string()).optional().describe('Locked clip ids to rebuild'),
 				dryRun: z.boolean().optional(),
 			},
 			annotations: DESTRUCTIVE,
@@ -343,6 +347,8 @@ export function registerSubtitleTools(ctx: ToolContext): void {
 					rules: a.rules,
 					text: a.text,
 					cutAware: a.cutAware,
+					lock: a.lock,
+					unlock: a.unlock,
 					dryRun: a.dryRun,
 				}),
 				extra,

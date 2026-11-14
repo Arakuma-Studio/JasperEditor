@@ -2,7 +2,8 @@
 // clips made by Create Subtitles) with their actions (Align to Cuts, Regenerate, Apply Template, Save as Template,
 // Convert to a caption track and back, Export SRT / VTT, Select, Rename, Delete) and a virtualised list of the
 // group's subtitles (thousands of rows): click a time to go there, edit a text inline (the unchanged words keep their
-// timing). Every change is one undoable transaction.
+// timing), lock or unlock a subtitle (a locked one — any edited by hand — is kept by Regenerate). Own Words… sets the
+// words that always get a subtitle of their own and regenerates. Every change is one undoable transaction.
 import {
 	CAPTION_FORMAT_INFO,
 	type CaptionFileFormat,
@@ -13,6 +14,7 @@ import {
 	captionOf,
 	findSubtitleTemplate,
 	groupClips,
+	MAX_OWN_WORDS,
 	type ProjectDocument,
 	type Sequence,
 	supportsDropFrame,
@@ -20,12 +22,12 @@ import {
 } from '@jasper/project';
 import type { EditorSession } from '@jasper/session';
 import { useStoreSelector, useTransportFrame } from '@jasper/session/react';
-import { Button, confirmDialog, EmptyState, Select, toast } from '@jasper/ui';
+import { Button, confirmDialog, EmptyState, IconButton, Select, toast } from '@jasper/ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatTimecode } from '../gaps/time-display.ts';
 import { t } from '../i18n/runtime.ts';
 import { downloadBytes } from '../panels/text/state.ts';
-import { availableTemplates } from './model.ts';
+import { availableTemplates, parseWordList } from './model.ts';
 import { openApplyTemplate, openCreateSubtitles, openSaveTemplate } from './open.ts';
 import { useSubtitleLibrary } from './store.ts';
 import { templateIdName, templateName } from './templates.ts';
@@ -184,11 +186,31 @@ export function SubtitlesTab({ session, seq }: Props) {
 					disabled={readOnly}
 					onClick={() => apply('Regenerate Subtitles', [{ type: 'captions.regenerate', groupId: group.id }])}
 					title={t(
-						'Make the subtitles again from the current transcript (clips that still match keep their edits)',
+						'Make the subtitles again from the current transcript (locked subtitles, and clips that still match, keep their edits)',
 					)}
 					data-testid="subtitles.regenerate"
 				>
 					Regenerate
+				</Button>
+				<Button
+					disabled={readOnly}
+					onClick={() => {
+						const typed = globalThis.prompt?.(
+							t('Words that always get a subtitle of their own (comma-separated, e.g. boing)'),
+							(group.rules.ownWords ?? []).join(', '),
+						);
+						if (typed === undefined || typed === null) return;
+						const ownWords = parseWordList(typed).slice(0, MAX_OWN_WORDS);
+						apply('Regenerate Subtitles', [
+							{ type: 'captions.regenerate', groupId: group.id, rules: { ownWords } },
+						]);
+					}}
+					title={t('Words that always get a subtitle of their own; the subtitles are regenerated')}
+					data-testid="subtitles.ownWords"
+				>
+					{group.rules.ownWords?.length
+						? t('Own Words ({0})…', group.rules.ownWords.length)
+						: t('Own Words…')}
 				</Button>
 				<Button
 					disabled={readOnly}
@@ -332,6 +354,7 @@ export function SubtitleList(props: {
 								{formatTimecode(c.start, rate)}
 							</button>
 							<RowText session={session} seq={seq} clip={c} readOnly={props.readOnly} />
+							<RowLock session={session} seq={seq} clip={c} readOnly={props.readOnly} />
 							<span className="w-8 shrink-0 text-right text-pr-dim" title={t('Words with timing')}>
 								{captionOf(c)?.words.length ?? 0}
 							</span>
@@ -340,6 +363,36 @@ export function SubtitleList(props: {
 				})}
 			</div>
 		</div>
+	);
+}
+
+/** The lock of one subtitle: a locked subtitle (edited by hand, or locked here) is kept as it is by Regenerate. */
+function RowLock(props: { session: EditorSession; seq: Sequence; clip: TextClip; readOnly: boolean }) {
+	const locked = captionOf(props.clip)?.locked === true;
+	const label = locked ? 'Unlock Subtitle' : 'Lock Subtitle';
+	return (
+		<IconButton
+			size="small"
+			icon={locked ? 'track.lock' : 'track.unlock'}
+			label={
+				locked
+					? 'Locked: Regenerate keeps this subtitle. Click to unlock'
+					: 'Lock: Regenerate keeps this subtitle'
+			}
+			toggled={locked ? 'on' : 'off'}
+			disabledReason={props.readOnly ? 'The project is read-only' : undefined}
+			onClick={() => {
+				const r = props.session.apply({
+					label,
+					origin: 'user',
+					sequenceId: props.seq.id,
+					commands: [{ type: 'captions.lock', clipIds: [props.clip.id], locked: !locked }],
+				});
+				if (!r.ok)
+					toast({ kind: 'warning', title: t('{0}: not possible', label), detail: r.errors[0]?.message });
+			}}
+			data-testid="subtitles.rowLock"
+		/>
 	);
 }
 
