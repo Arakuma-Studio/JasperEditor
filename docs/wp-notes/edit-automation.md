@@ -523,6 +523,22 @@ are in `AUTOMATION_DEFAULTS`.
   clip, the stages `in` / `out`, no handles, clamped to a short clip, two-sided where a clip abuts, one transition per
   edge, undo = the document before and redo identical, refusals: not an edit point, no edge, an audio transition on
   video, a locked track) — no command change was needed.
+- Single-sided transitions next to another clip (`transition.add {clipId, edge, oneSided: true}`): Premiere's
+  single-sided transition, how the user's overlay Slides are applied. The transition stores only that clip (the other
+  side null, alignment start-at-cut / end-at-cut) and renders exactly as at a free edge, since
+  `resolveVideoTransitions` builds a one-sided stage from the clip alone: from / to transparency over the clip's own
+  frames, so the tracks below show through (on the bottom track, the black background). The clip that touches the
+  edge cuts straight and gets no handles. Preview and every export path read the same resolved stages from the render
+  snapshot. The result names the touching clip (`adjacentClipId`). An `alignment` other than the fixed one, or a
+  `cutOffset`, at such an edge is refused with the edit-point route (`trackId` + `at`), because it asks for a
+  transition between both clips. Without `oneSided`, a video clip edge where another clip touches it still joins
+  both clips: the editor, the planners and the existing tests depend on that. MCP `add_transition` always sends
+  `oneSided` for `clipId` + `edge`, and its result adds a `note` when a clip touches the edge. So a call that names one
+  clip never changes another; a transition between two clips is addressed by `track` + `at`. The default is
+  one-sided because the call names one clip, the guide already called a clip-edge transition a fade, and audio clip
+  edges were always one-sided. Covered by `transition-one-sided.test.ts` ("with oneSided …": the result, stages
+  without handles on either clip, undo/redo, invariants and the alignment / cutOffset refusals) and
+  `apps/mcp/test/transitions.test.ts`. The slides planner still uses free edges only (`edgeFree`).
 - Overlays: picture clips (video, still, animated image, nest) on the video tracks above the base picture, except
   tracks named "Reactions", "FX", "ZOOM", "Stingers" (other passes' output; `overlayTracks` names tracks explicitly),
   not full-length layers. Each free edge draws (its own seed) whether it slides (heads / tails shares), the
@@ -619,7 +635,7 @@ face data only.
   edges, accept → one-sided transitions and their stages, colour-matte base, other passes' tracks), music (switch on
   the first cut ≥ 52 s, short songs, no cut, vertical intro split, accept with contiguous source and ducking keys,
   shuffle, Reroll), stingers (pairing, snapping, rate, spacing, unmeasured warning, accept: matte + Noise on a
-  Stingers track and the generated sound's needs); `transition-one-sided.test.ts` (4).
+  Stingers track and the generated sound's needs); `transition-one-sided.test.ts` (5).
 - `apps/engine/test/automation-overlays.test.ts` (5, real engine with an indexed kit and Jasper Synth): reactions from
   a folder of generated PNGs (dry run stores nothing, proposal, agent accept as one revision, Reactions bin, hybrid
   export route, Refresh after a ripple re-times to the moved cut), folder refusals (relative 400, missing 404, unknown

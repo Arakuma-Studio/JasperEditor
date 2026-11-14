@@ -1,8 +1,10 @@
 // A transition sits on one track at one edit point (TRN-001). Two-sided video transitions (cross dissolve,
 // dip to black) join two adjacent clips and need handles (TRN-003); one-sided ones are fades at a clip's
 // head or tail (TRN-004). Audio tracks take one-sided fades and two-sided crossfades (constant gain /
-// constant power, S10:TUI-052; handles as for a cross dissolve); `transition.add` with `clipId` + `edge` on an
-// audio clip is always a fade of that clip, an edit point given by `trackId` + `at` a crossfade. Durations are
+// constant power, S10:TUI-052; handles as for a cross dissolve). `transition.add` with `clipId` + `edge` on an
+// audio clip, or with `oneSided`, is a transition of that clip only (Premiere's single-sided transition), also where
+// another clip touches the edge (that clip cuts straight); otherwise a video clip edge where another clip touches it,
+// like an edit point given by `trackId` + `at`, joins the two clips. Durations are
 // shortened to what the clips and their media handles allow (`handles: 'shorten'`, the agent default), or — video
 // transitions with `handles: 'freeze'` (Premiere's "Insufficient media… repeated frames") — kept, the missing
 // handle frames repeating the clips' edge frames (`Transition.freezeHandles`, edit-structure). Audio transitions
@@ -301,20 +303,30 @@ export const transitionHandlers = {
 		if (cmd.clipId !== undefined) {
 			if (!cmd.edge) h.fail('E_INVALID_PARAM', 'edge ("in" or "out") is required with clipId');
 			const r = h.clip(doc, cmd.clipId);
+			const clip = r.clip as Clip;
 			seq = r.seq;
-			trackId = r.clip.trackId;
-			cut = cmd.edge === 'in' ? r.clip.start : end(r.clip);
-			// An audio clip edge is always a fade of that clip, also when another clip touches it.
-			if (trackOf(seq, trackId, h).kind === 'audio') {
+			trackId = clip.trackId;
+			cut = cmd.edge === 'in' ? clip.start : end(clip);
+			// An audio clip edge is always a fade of that clip; `oneSided` makes a video clip edge one too, also where
+			// another clip touches it (that clip cuts straight, without handles: Premiere's single-sided transition).
+			if (cmd.oneSided || trackOf(seq, trackId, h).kind === 'audio') {
+				const at = clipsAtEditPoint(seq as Sequence, trackId, cut);
+				const adjacent = cmd.edge === 'in' ? at.outgoing : at.incoming;
+				const fixed = cmd.edge === 'in' ? 'start-at-cut' : 'end-at-cut';
+				if (adjacent && (cmd.cutOffset !== undefined || (cmd.alignment ?? fixed) !== fixed))
+					h.fail(
+						'E_INVALID_PARAM',
+						`A transition at one clip edge is one-sided (fixed alignment): ${adjacent.id} cuts straight. For a transition between both clips, give the track and at ${cut} instead of clipId + edge.`,
+					);
 				if (cmd.cutOffset !== undefined)
 					h.fail('E_INVALID_PARAM', 'A fade at a single clip edge has a fixed alignment (no cutOffset)');
-				return addTransition(
+				const added = addTransition(
 					doc,
 					{
 						seq,
 						trackId,
-						outgoing: cmd.edge === 'out' ? (r.clip as Clip) : null,
-						incoming: cmd.edge === 'in' ? (r.clip as Clip) : null,
+						outgoing: cmd.edge === 'out' ? clip : null,
+						incoming: cmd.edge === 'in' ? clip : null,
 						effectId: cmd.effectId,
 						duration: cmd.duration,
 						handles: cmd.handles,
@@ -323,6 +335,7 @@ export const transitionHandlers = {
 					},
 					h,
 				);
+				return adjacent ? { ...added, adjacentClipId: adjacent.id } : added;
 			}
 		} else {
 			if (cmd.trackId === undefined || cmd.at === undefined)

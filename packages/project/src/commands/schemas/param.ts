@@ -144,6 +144,13 @@ export const TransitionAddCmd = cmd('transition.add', {
 	at: z.number().int().min(0).optional(),
 	clipId: IdRefSchema.optional(),
 	edge: z.enum(['in', 'out']).optional(),
+	/**
+	 * With `clipId` + `edge`: a transition of that clip only (Premiere's single-sided transition), also where another
+	 * clip touches the edge — that clip cuts straight (the result names it, `adjacentClipId`); alignment and cutOffset
+	 * are refused there. Without it a video clip edge where another clip touches it joins both clips, as `trackId` +
+	 * `at` does. Audio clip edges are always one-sided.
+	 */
+	oneSided: z.boolean().optional(),
 	effectId: z.string().min(1),
 	duration: z.number().int().min(1).optional(),
 	alignment: z.enum(['center', 'start-at-cut', 'end-at-cut']).optional(),

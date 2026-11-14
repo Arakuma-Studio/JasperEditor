@@ -59,7 +59,11 @@ export async function applyHelper(
 	label: string,
 	commands: unknown[],
 	extra: Parameters<typeof transact>[3],
-	opts: { sequenceId?: string } = {},
+	opts: {
+		sequenceId?: string;
+		/** Extra result fields from the applied transaction. */
+		more?: (r: ReturnType<typeof requireOk>) => Record<string, unknown>;
+	} = {},
 ) {
 	const res = await transact(ctx, projectId, { label, commands, sequenceId: opts.sequenceId }, extra);
 	const r = requireOk(res);
@@ -71,7 +75,19 @@ export async function applyHelper(
 			const clip = seq.clips[id];
 			if (clip) clips.push(clipSummary(doc, seq, clip));
 		}
-	return jsonResult({ ...txBody(res, r), ...(clips.length ? { clips } : {}) });
+	return jsonResult({ ...txBody(res, r), ...(clips.length ? { clips } : {}), ...opts.more?.(r) });
+}
+
+/** add_transition: what a one-sided transition next to another clip did, in words (none at a free edge). */
+function oneSidedNote(result: unknown): { note?: string } {
+	const t = result as
+		| { adjacentClipId?: string; incomingClipId?: string | null; outgoingClipId?: string | null }
+		| undefined;
+	const clip = t?.incomingClipId ?? t?.outgoingClipId;
+	if (!t?.adjacentClipId || !clip) return {};
+	return {
+		note: `One-sided: only ${clip} transitions, from/to transparency (the tracks below show through); ${t.adjacentClipId}, which touches this edge, cuts straight. For a transition between both clips, call add_transition with track + at instead of clipId + edge.`,
+	};
 }
 
 export function hexToRgba(hex: string): [number, number, number, number] {
@@ -544,31 +560,35 @@ export function registerEditingTools(ctx: ToolContext): void {
 		{
 			title: 'Add transition',
 			description:
-				'Add a transition at an edit point, or a fade at a clip edge. Address by `clipId` + `edge`, or `track` + `at`. Types: `list_transition_types`.',
+				'Add a transition between the clips at an edit point (`track` + `at`), or a one-sided one at a clip edge (`clipId` + `edge`). Types: `list_transition_types`.',
 			details:
-				'Adds a transition at an edit point or a fade at a clip edge (transition.add). Address it by clipId + edge ("in" = head, "out" = tail) or by track + at (the frame where one clip ends and the next begins). Video: cross-dissolve (the incoming clip fades in over the outgoing one; needs media beyond the cut, "handles") or dip-to-black; at a free clip edge they are fades from/to transparent or black; or any GPU transition of list_transition_types (push, iris-round, cross-zoom, s.dissolve-luma, …; params e.g. {"direction": "eastToWest"}; a GPU transition at a free clip edge transitions from/to transparency). Audio tracks: constant-gain (linear), constant-power (quarter sine), exponential-fade or custom-fade (Premiere\'s Custom Fade: params fadeShape "linear" | "cosine", fadeValue −100…100 — Cosine at 19 is constant power, Linear at 0 constant gain; symmetry "symmetric" | "asymmetric" with outFadeShape / outFadeValue for the outgoing clip) fades at a clip edge (clipId + edge), or crossfades between two audio clips at an edit point (track + at). cutOffset places the cut off-centre (Premiere\'s Custom Start: frames of the span before the cut). The duration is shortened (with a warning) to what the clips and their handles allow.',
+				'Adds a transition (transition.add). By clipId + edge ("in" = head, "out" = tail) it is one-sided, Premiere\'s single-sided transition: only that clip transitions, from/to transparency (the tracks below show through), over its own frames and without handles, also where another clip touches the edge (that clip cuts straight; the result names it in adjacentClipId); alignment and cutOffset are refused there. By track + at (the frame where one clip ends and the next begins) it joins both clips (a fade where only one clip is). Video: cross-dissolve (the incoming clip fades in over the outgoing one; needs media beyond the cut, "handles") or dip-to-black; one-sided they fade from/to transparent or black; or any GPU transition of list_transition_types (push, iris-round, cross-zoom, smooth-slide, s.dissolve-luma, …; params e.g. {"direction": "eastToWest"}). Audio tracks: constant-gain (linear), constant-power (quarter sine), exponential-fade or custom-fade (Premiere\'s Custom Fade: params fadeShape "linear" | "cosine", fadeValue −100…100 — Cosine at 19 is constant power, Linear at 0 constant gain; symmetry "symmetric" | "asymmetric" with outFadeShape / outFadeValue for the outgoing clip): fades at a clip edge (clipId + edge), crossfades between two audio clips at an edit point (track + at). cutOffset places the cut off-centre (Premiere\'s Custom Start: frames of the span before the cut). The duration is shortened (with a warning) to what the clips and their handles allow.',
 			input: {
 				projectId: ProjectIdArg,
 				type: z
 					.string()
 					.min(1)
 					.describe(
-						'Transition type: cross-dissolve, dip-to-black, constant-gain, constant-power, exponential-fade, custom-fade, or any type of list_transition_types (short name, effect id or label)',
+						'Transition type: cross-dissolve, dip-to-black, constant-power, … or any type of list_transition_types (short name, effect id or label)',
 					),
 				params: z
 					.record(z.string(), z.unknown())
 					.optional()
 					.describe('Param values {name: value} of the type (list_transition_types lists them)'),
 				durationFrames: z.number().int().min(1).max(600).describe('Length in frames'),
-				clipId: z.string().min(1).optional().describe('Clip id ("clp_…"), with edge'),
+				clipId: z
+					.string()
+					.min(1)
+					.optional()
+					.describe('Clip id ("clp_…"), with edge: one-sided, a touching clip cuts straight'),
 				edge: z.enum(['in', 'out']).optional().describe('in = the clip head, out = the clip tail'),
-				track: TrackRefSchema.optional().describe('Track label or id, with at (instead of clipId)'),
+				track: TrackRefSchema.optional().describe('Track label or id, with at: between both clips'),
 				at: z.number().int().min(0).optional().describe('Frame of the edit point on that track'),
 				alignment: z
 					.enum(['center', 'start-at-cut', 'end-at-cut'])
 					.optional()
 					.describe(
-						'Where a transition between two clips sits (default center); start-at-cut needs handles only on the outgoing clip, end-at-cut only on the incoming one',
+						'With track + at (default center); start-at-cut needs handles only on the outgoing clip, end-at-cut only on the incoming one',
 					),
 				cutOffset: z
 					.number()
@@ -577,7 +597,7 @@ export function registerEditingTools(ctx: ToolContext): void {
 					.max(600)
 					.optional()
 					.describe(
-						"Custom Start (transitions between two clips): frames of the span before the cut, 0…durationFrames, instead of alignment (Premiere's off-centre crossfades)",
+						'Custom Start (with track + at): frames of the span before the cut, instead of alignment',
 					),
 				sequenceId: SequenceIdArg,
 			},
@@ -592,24 +612,44 @@ export function registerEditingTools(ctx: ToolContext): void {
 				);
 			const effectId = transitionEffectId(a.type);
 			const spec = transitionSpec(effectId);
-			return applyHelper(
-				ctx,
-				a.projectId,
-				spec ? (spec.appliesTo === 'audio' ? 'Audio Fade' : spec.label) : 'Add Transition',
-				[
-					{
-						type: 'transition.add',
-						effectId,
-						duration: a.durationFrames,
-						...(a.params ? { params: a.params } : {}),
-						...(a.clipId ? { clipId: a.clipId, edge: a.edge } : { trackId: a.track, at: a.at }),
-						...(a.alignment ? { alignment: a.alignment } : {}),
-						...(a.cutOffset !== undefined ? { cutOffset: a.cutOffset } : {}),
-						...(a.sequenceId ? { sequenceId: a.sequenceId } : {}),
-					},
-				],
-				extra,
-			);
+			try {
+				return await applyHelper(
+					ctx,
+					a.projectId,
+					spec ? (spec.appliesTo === 'audio' ? 'Audio Fade' : spec.label) : 'Add Transition',
+					[
+						{
+							type: 'transition.add',
+							effectId,
+							duration: a.durationFrames,
+							...(a.params ? { params: a.params } : {}),
+							...(a.clipId
+								? { clipId: a.clipId, edge: a.edge, oneSided: true }
+								: { trackId: a.track, at: a.at }),
+							...(a.alignment ? { alignment: a.alignment } : {}),
+							...(a.cutOffset !== undefined ? { cutOffset: a.cutOffset } : {}),
+							...(a.sequenceId ? { sequenceId: a.sequenceId } : {}),
+						},
+					],
+					extra,
+					{ more: (r) => oneSidedNote(r.results[0]) },
+				);
+			} catch (e) {
+				// alignment / cutOffset at a clip edge: the edge is one-sided; between two clips is the edit point
+				if (
+					e instanceof ToolError &&
+					e.code === 'E_INVALID_PARAM' &&
+					a.clipId &&
+					(a.alignment || a.cutOffset !== undefined)
+				)
+					throw new ToolError(
+						e.code,
+						e.message,
+						'Drop alignment and cutOffset (a clip edge is one-sided), or give track + at instead of clipId + edge.',
+						e.details,
+					);
+				throw e;
+			}
 		},
 	);
 
