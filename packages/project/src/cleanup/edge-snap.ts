@@ -48,6 +48,23 @@ export const EDGE_DIP_GAIN_DB = 6;
  * 1646.30–1646.36 of the source; "pi|xel"), never a place to cut; a longer one is a pause a loose timestamp covers.
  */
 export const EDGE_CLOSURE_S = 0.08;
+/**
+ * The cut-away sound right beside a clean edge stays this long (s) within `EDGE_QUIET_RUN_MARGIN_DB` of the quiet
+ * level: the review of v8 asked a removed pause to end only after ≥ 30 ms under ≈ −38 dBFS ("más (cut)-ins": the
+ * unvoiced /s/ of "skins" at −29…−36 dBFS).
+ */
+export const EDGE_QUIET_RUN_S = 0.03;
+const EDGE_QUIET_RUN_MARGIN_DB = 2;
+/**
+ * A move towards keeping more stops at the next syllable onset after a dip: a rise to the speech level, at least this
+ * much (dB) over the lowest level since the edge (v8: a tail extended into "pue-" of the next, removed take).
+ */
+export const EDGE_ONSET_RISE_DB = 8;
+/**
+ * The dip before such an onset reaches this close (dB) to the quiet level (−38 dBFS on the source): a shallower dip
+ * is a syllable of the word itself ("importan-te:" dips to −35 dBFS before its last syllable).
+ */
+const EDGE_ONSET_DIP_DB = 3;
 /** The longest breath an edge passes over to reach a word's attack or decay (s): the breath class's 900 ms. */
 const EDGE_BREATH_MAX_S = 0.9;
 
@@ -102,15 +119,19 @@ export function awayLevel(l: EdgeLevels, b: number, side: EdgeSide): number {
 }
 
 /**
- * How badly an edge at `b` cuts (≤ 0: clean): the worse of the first cut-away frame over the quiet level (a breath
- * counts as quiet: the cut may end a breath, never keep it) and the cut-away sound over the speech level, in dB; a
+ * How badly an edge at `b` cuts (≤ 0: clean): the worse of the cut-away sound beside it over the quiet level (its
+ * first 10 ms; the rest of its first `EDGE_QUIET_RUN_S` 2 dB over it; a breath counts as quiet: the cut may end a
+ * breath, never keep it) and the cut-away sound over the speech level, in dB; a
  * breath on the kept side right at the edge is never clean (the kept span would start or end with it).
  */
 export function edgeScore(l: EdgeLevels, b: number, side: EdgeSide): number {
 	const { quiet, loud } = edgeThresholds(l);
 	const k = frameAt(b);
-	const cutAway = side === 'out' ? k : k - 1;
-	const at = isBreath(l, cutAway) ? -120 : l.db(cutAway);
+	let at = -120;
+	for (let i = 0; i < Math.round(EDGE_QUIET_RUN_S / FR); i++) {
+		const q = side === 'out' ? k + i : k - 1 - i;
+		if (!isBreath(l, q)) at = Math.max(at, l.db(q) - (i === 0 ? 0 : EDGE_QUIET_RUN_MARGIN_DB));
+	}
 	const score = Math.max(at - quiet, awayLevel(l, b, side) - loud);
 	return isBreath(l, side === 'out' ? k - 1 : k) ? Math.max(score, EDGE_FLOOR_MARGIN_DB) : score;
 }
@@ -144,7 +165,7 @@ export type SnapInput = {
 	/**
 	 * Hard bounds (media seconds): towards keeping more (an out edge later, an in edge earlier) the edge may go to
 	 * `keepMore`, towards cutting more to `cutMore` (only onto a clean boundary). Each is clamped to `EDGE_SEARCH_S`
-	 * (an out edge's decay to `EDGE_DECAY_S`).
+	 * (to `EDGE_DECAY_S` where the move follows a decay: an out edge keeping more, an in edge cutting more).
 	 */
 	keepMore: number;
 	cutMore: number;
@@ -169,8 +190,12 @@ export type SnapResult = { t: number; clean: boolean; score: number };
 export function snapCut(l: EdgeLevels, o: SnapInput): SnapResult {
 	const out = o.side === 'out';
 	const reachKeep = out ? EDGE_DECAY_S : EDGE_SEARCH_S;
-	const keepB = out ? Math.min(o.keepMore, o.t + reachKeep) : Math.max(o.keepMore, o.t - reachKeep);
-	let cutB = out ? Math.max(o.cutMore, o.t - EDGE_SEARCH_S) : Math.min(o.cutMore, o.t + EDGE_SEARCH_S);
+	let keepB = out ? Math.min(o.keepMore, o.t + reachKeep) : Math.max(o.keepMore, o.t - reachKeep);
+	keepB = out
+		? Math.min(keepB, onsetBound(l, o.t, 'out', o.words))
+		: Math.max(keepB, onsetBound(l, o.t, 'in', o.words));
+	// an in edge may cut a removed word's whole decay (as an out edge keeps a kept word's)
+	let cutB = out ? Math.max(o.cutMore, o.t - EDGE_SEARCH_S) : Math.min(o.cutMore, o.t + EDGE_DECAY_S);
 	// a breath beside the kept side is never the kept word's: the edge may cut past it (and the quiet sound around it)
 	// to the word's attack or decay, whatever the timestamps say (an early timestamp covered the breath before "No")
 	const { quiet } = edgeThresholds(l);
@@ -232,6 +257,39 @@ export function snapCut(l: EdgeLevels, o: SnapInput): SnapResult {
 	if (clean) return { t: clean.t, clean: true, score: clean.score };
 	if (dip && dip.score <= least.score - EDGE_DIP_GAIN_DB) return { t: dip.t, clean: false, score: dip.score };
 	return { t: least.t, clean: false, score: least.score };
+}
+
+/**
+ * How far an edge at `t` may move towards keeping more before the next syllable onset after a dip (media seconds):
+ * walking away from the kept side, the boundary before the frame where the level rises `EDGE_ONSET_RISE_DB` over the
+ * lowest level since the edge, from a dip within `EDGE_ONSET_DIP_DB` of the quiet level (or under the speech level
+ * where a word on the cut-away side begins, with `words`) (`EDGE_DECAY_S` at most). Used by every extension of a kept span.
+ */
+export function onsetBound(l: EdgeLevels, t: number, side: EdgeSide, words?: readonly BoundWord[]): number {
+	const { quiet, loud } = edgeThresholds(l);
+	// a shallower dip counts where a word on the cut-away side begins (out) or ends (in) at the rise ("que | pue-")
+	const atWord = (k: number) =>
+		!!words?.some((w) =>
+			side === 'out'
+				? w.s >= t - 0.03 && k * FR >= w.s - 0.03 && k * FR < w.e
+				: w.e <= t + 0.03 && k * FR <= w.e + 0.03 && k * FR >= w.s,
+		);
+	const n = Math.round(EDGE_DECAY_S / FR);
+	const k0 = frameAt(t);
+	let min = Number.POSITIVE_INFINITY;
+	for (let i = 0; i < n; i++) {
+		const k = side === 'out' ? k0 + i : k0 - 1 - i;
+		if (k < 0 || k >= l.frameCount) break;
+		const d = isBreath(l, k) ? -120 : l.db(k);
+		if (d < min) min = d;
+		else if (
+			(min <= quiet + EDGE_ONSET_DIP_DB || (min <= loud && atWord(k))) &&
+			d >= min + EDGE_ONSET_RISE_DB &&
+			d > loud
+		)
+			return side === 'out' ? k * FR : (k + 1) * FR;
+	}
+	return side === 'out' ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
 }
 
 /**

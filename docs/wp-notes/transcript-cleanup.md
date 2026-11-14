@@ -1097,6 +1097,34 @@ rev 267; the source recording, 16 kHz mono, measured on the build host, `/tmp/je
   Tests (each fails on the previous snapper): `cleanup-edge-snap.test.ts` "breaths stay out, closures stay in the
   word" — the source's planes around the four reported places (fixture windows `breathNo`, `breathY`,
   `closureMostrar`, `closurePixel`).
+- **The review of v8** (the project at ≈ rev 475; levels re-measured here from the source):
+  - *Removals ended inside onsets*: "más | skins" — the stutter removal of the first "skins" ran to its timestamp end
+    3227.64, over the unvoiced /s/ of the kept one (−29…−36 dBFS from 3227.58); 1685.13–1685.50 and 1808.22–1808.43
+    likewise. A clean edge now also needs `EDGE_QUIET_RUN_S` (30 ms) of the cut-away sound beside it within 2 dB of
+    the quiet level (−38…−40 dBFS on the source: the review's "below −38 for ≥ 30 ms"), by level only (an /s/ is
+    unvoiced); an in edge may cut a removed word's whole decay (`EDGE_DECAY_S`, as an out edge keeps a kept word's).
+  - *Out points while the word still sounds* ("es de Uni|ty" at 1351.083: −22 dBFS before, −30…−37 after until
+    1351.28). The reviewer's criterion (last 40 ms before > −26 dBFS, first 40 ms after > −36, −38 reached within 0.25
+    s; and for in points: the 30 ms before > −34) over 10 ms RMS: rev 152's 702 cut edges fail it at 190 out points
+    and 73 in points; snapped (the snapper alone, bounds from the words, 60 fps grid) 24 and 39; rev 267's edges 155 /
+    49 → 7 / 14. Clean Up over the whole source: main b7b06eda9 60 out / 15 in, this round 21 / 13 (what is left: a
+    breath right after the word, left out on purpose, and continuous speech into a removed restart).
+  - *Extensions pulled in foreign onsets* ("del mundo, que | pue-"): every move towards keeping more — the snapper,
+    the planner's phrase tail and the clip's last-piece tail (`keepTail`) — stops at the next syllable onset after a
+    dip (`onsetBound`: a rise of `EDGE_ONSET_RISE_DB`, 8 dB, to above the speech level from a dip within 3 dB of the
+    quiet level, or from any dip under the speech level where a word on the cut-away side begins). A shallower bump
+    that stays under the speech level is the word's own decay ("Uni-ty", −39 → −31 dBFS) and is kept.
+  - *A "Y" on a tail fragment* ("Appstore! | Y si", 171.72–171.88: breath-like, mean voicing 0.37, after a 20 ms dip
+    to −40 dBFS): a longer kept piece's head or tail next to a cut that is a burst of ≤ 0.3 s after a dip of ≥ 20 ms
+    within 2 dB of the quiet level, mostly unvoiced (mean voicing < 0.5), not quiet, and not after a closure inside a
+    word (`edgeInsideWord`) is a `fragment` finding (`why: voice`) for review; accepted, the piece is shortened to the
+    dip. On rev 152 as cut: 8 such review findings (2 of them on the end of a word whose last syllable is breathy:
+    "patas.", "sentido,").
+  - `transcript.removePauses` in level mode now snaps its edges the same way.
+  - Tests (`cleanup-edge-snap.test.ts` "the review of v8", fixture windows `skins`, `unity`, `appstore`, `pue`):
+    "más | skins" keeps the /s/ with 30 ms under −38 dBFS before the in edge (fails on b7b06eda9's planner); the out
+    edge after "Uni-ty" waits for the decay; `onsetBound` stops at "pue-" and not inside "Uni-ty"; the "Appstore!"
+    burst (with the v8 transcript's words) is a review fragment (both fail on the previous commit).
 - **Clean Up**: `keptToFrames` snaps every edge of a kept piece inside the clip's extent onto the clip's frame
   boundaries (after the level edges, the tight word-boundary edges and the 10 ms quietest-boundary snap), never
   across the piece's other edge or into the neighbouring pieces. A removed word now goes with its rising onset and
@@ -1123,12 +1151,14 @@ rev 267; the source recording, 16 kHz mono, measured on the build host, `/tmp/je
   Text / Lift Text buttons send no levels yet (they cut at the words' frames, as before).
 - **Measured** (Fast, the script attached, default decisions; whole source as one clip, one-off script over the shipped
   functions): main b7b06eda9 places 780 cut edges, 127 of them with more than −33 dBFS cut away (56 over −28; 49 were
-  join out points inside a decay, the Fast style's floor + 20 dB out point); this round 766 edges, 58 over −33 (44
-  over −28; what is left is continuous speech between a removed restart and the kept take, no quiet boundary within
-  the bounds), output 1081.2 s against 1068.3 s (the kept decays and onsets). The snapper alone over rev 152's 702
-  edges: 426 → 117 over −33 dBFS (136 → 72 over −28), 140 without a clean boundary within the bounds; over rev 267's
-  612 edges (the hand-fixed target): 334 → 52 over −33 (85 → 28 over −28) — the target itself still had 334 edges over
-  −33 by this measure, most of them quiet decays the review accepted.
+  join out points inside a decay, the Fast style's floor + 20 dB out point); at the end of the round (breaths, closures,
+  the v8 rules and fragments included) 770 edges, 63 over −33 (47 over −28; what is left is continuous speech between a
+  removed restart and the kept take, no quiet boundary within the bounds), output 1075.4 s against 1068.3 s (the kept
+  decays and onsets). The snapper alone over rev 152's 702 edges: 426 → 123 over −33 dBFS (136 → 70 over −28), 137
+  without a clean boundary within the bounds, 23 → 20 edges inside a word's time (closures; bounded moves cannot
+  leave a word they are deep inside); over rev 267's 612 edges (the hand-fixed target): 334 → 60 over −33 (85 → 26
+  over −28), 1 → 0 inside a word — the target itself still had 334 edges over −33 by this measure, most of them quiet
+  decays the review accepted.
 - Tests (each fails on b7b06eda9): `cleanup-edge-snap.test.ts` — the source's own voice analysis planes and words
   around a join ("complejo de hacer, | Y si", the out point now in measured quiet after the decay) and a stutter
   ("Y | Y lo peor": the kept "Y" keeps its onset; fixture `test/fixtures/cleanup-cut-edges-source.json`, 13 s of

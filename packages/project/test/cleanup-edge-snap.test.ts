@@ -5,7 +5,14 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { CleanupVoice } from '../src/cleanup/detector.ts';
-import { edgeBounds, edgeInsideWord, edgeLevelsOf, edgeScore, snapCut } from '../src/cleanup/edge-snap.ts';
+import {
+	edgeBounds,
+	edgeInsideWord,
+	edgeLevelsOf,
+	edgeScore,
+	onsetBound,
+	snapCut,
+} from '../src/cleanup/edge-snap.ts';
 import { FAST_SETTINGS } from '../src/cleanup/schema.ts';
 import { analyzeSequenceCleanup } from '../src/cleanup/sequence.ts';
 import { FLICKS_PER_SECOND } from '../src/time.ts';
@@ -24,6 +31,14 @@ const FIX = JSON.parse(
 ) as {
 	decay: Window;
 	stutter: Window;
+	breathNo: Window;
+	breathY: Window;
+	closureMostrar: Window;
+	closurePixel: Window;
+	skins: Window;
+	unity: Window;
+	appstore: Window;
+	pue: Window;
 	levels: CleanupVoice['levels'];
 };
 const bytes = (b64: string) => new Uint8Array(Buffer.from(b64, 'base64'));
@@ -120,8 +135,8 @@ describe('snapCut', () => {
 	});
 
 	it('finds the attack before an in edge, inside the removed word only at a real dip', () => {
-		// removed "mos" to 0.25 (its timestamp runs to 0.32), a 20 ms dip, the kept word's attack from 0.27
-		const db = [...word(25, -14), -38, -38, ...word(30, -12)];
+		// removed "mos" to 0.25 (its timestamp runs to 0.32), a 30 ms dip, the kept word's attack from 0.28
+		const db = [...word(25, -14), -42, -42, -42, ...word(30, -12)];
 		const L = env(db);
 		const words = [
 			{ s: 0, e: 0.32 },
@@ -129,9 +144,9 @@ describe('snapCut', () => {
 		];
 		const b = edgeBounds(words, 0.32, 'in');
 		const s = snapCut(L, { t: 0.32, side: 'in', ...b });
-		expect(s.t).toBeCloseTo(0.27, 5); // the end of the dip: the attack
+		expect(s.t).toBeCloseTo(0.28, 5); // the end of the dip: the attack
 		// without the dip (a level wobble of 2 dB) the edge stays at the word boundary
-		const wobble = env([...word(25, -14), -16, -16, ...word(30, -14)]);
+		const wobble = env([...word(25, -14), -16, -16, -16, ...word(30, -14)]);
 		expect(snapCut(wobble, { t: 0.32, side: 'in', ...b }).t).toBeCloseTo(0.32, 5);
 	});
 });
@@ -172,5 +187,70 @@ describe('snapCut on the source: breaths stay out, closures stay in the word (re
 		expect(edgeInsideWord(p.L, p.words, 741.44)).toBe(true);
 		// between words a short gap is still a place to cut
 		expect(edgeInsideWord(m.L, m.words, 1646.17)).toBe(false);
+	});
+});
+
+describe('the review of v8 (source envelopes)', () => {
+	const shift = (w: Window) => {
+		const v = voiceOf(w);
+		const L = edgeLevelsOf(v);
+		const o = Math.round(w.from * 100);
+		return {
+			L: {
+				...L,
+				frameCount: v.frameCount + o,
+				db: (k: number) => L.db(k - o),
+				breath: (k: number) => L.breath!(k - o),
+			},
+			words: w.words.map(([, s, e]) => ({ s: s + w.from, e: e + w.from })),
+		};
+	};
+
+	it('a removal never ends inside the next word\'s onset: "más | skins" keeps the unvoiced /s/', () => {
+		const { voice, edges } = planOf(FIX.skins);
+		const L = edgeLevelsOf(voice);
+		// the second "skins" (its /s/ from 3227.58 s) is kept after the first one is removed
+		const inn = edges.find((e) => e.side === 'in' && e.t > 0.85 && e.t < 1.1);
+		expect(inn).toBeDefined();
+		expect(inn!.t).toBeLessThanOrEqual(3227.585 - FIX.skins.from);
+		const k = Math.round(inn!.t * 100);
+		for (const q of [k - 3, k - 2, k - 1]) expect(L.db(q)).toBeLessThanOrEqual(-38);
+	});
+
+	it('an out edge waits for the decay of "Uni-ty" (1351.083 had −22 dBFS before and −30…−37 after)', () => {
+		const { L, words } = shift(FIX.unity);
+		const s = snapCut(L, { t: 1351.083, side: 'out', ...edgeBounds(words, 1351.083, 'out'), words });
+		expect(s.t).toBeGreaterThanOrEqual(1351.28);
+		const k = Math.round(s.t * 100);
+		const after = Math.max(L.db(k), L.db(k + 1), L.db(k + 2), L.db(k + 3));
+		expect(after).toBeLessThanOrEqual(-36);
+	});
+
+	it('an extension stops at the next syllable onset after a dip ("que | pue-"), not inside its own word', () => {
+		const p = shift(FIX.pue);
+		// from the end of "que" (2714.04): "pue-" rises again from −31 dBFS at 2714.13
+		expect(onsetBound(p.L, 2714.04, 'out', p.words)).toBeLessThanOrEqual(2714.14);
+		// the last syllable of a kept word after a shallow dip is no foreign onset
+		const u = shift(FIX.unity);
+		expect(onsetBound(u.L, 1351.04, 'out', [])).toBe(Number.POSITIVE_INFINITY);
+	});
+
+	it('a breath-like burst at the end of a kept piece is a fragment ("Appstore! | Y si", 171.71–171.91)', () => {
+		// the words as the v8 transcript wrote them: "Appstore!" ends before the burst, "Y" sits on it
+		const words = FIX.appstore.words.map((w): Window['words'][number] =>
+			w[0] === 'Appstore!' ? [w[0], w[1], 171.7 - FIX.appstore.from, w[3]] : w,
+		);
+		words.push(['Y', 171.72 - FIX.appstore.from, 171.88 - FIX.appstore.from, null]);
+		words.sort((x, y) => x[1] - y[1]);
+		const { a } = planOf({ ...FIX.appstore, words });
+		const f = a.findings.find((x) => x.kind === 'fragment');
+		expect(f).toMatchObject({ suggested: 'review', reason: { params: { why: 'voice' } } });
+		const [s, e] = [
+			f!.range.start / FLICKS_PER_SECOND + FIX.appstore.from,
+			f!.range.end / FLICKS_PER_SECOND + FIX.appstore.from,
+		];
+		expect(s).toBeGreaterThanOrEqual(171.68);
+		expect(s).toBeLessThanOrEqual(171.73);
+		expect(e).toBeGreaterThanOrEqual(171.88);
 	});
 });

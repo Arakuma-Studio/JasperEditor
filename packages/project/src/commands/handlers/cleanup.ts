@@ -411,7 +411,17 @@ export function levelPauseRanges(
 		});
 		const plan = planMediaCuts({ words: aw, removed: aw.map(() => false), voice, settings });
 		const extent: [number, number] = [clip.start, end(clip)];
-		const kept = keptToFrames(clip, rate, voice, plan.kept, settings.edges.snapWindowS, extent);
+		// every edge off speech, as Clean Up's (cleanup/edge-snap.ts)
+		const kept = keptToFrames(
+			clip,
+			rate,
+			voice,
+			plan.kept,
+			settings.edges.snapWindowS,
+			extent,
+			undefined,
+			aw,
+		);
 		for (let i = 0; i + 1 < kept.length; i++)
 			if (kept[i + 1]![0] > kept[i]![1]) out.push([kept[i]![1], kept[i + 1]![0]]);
 	}

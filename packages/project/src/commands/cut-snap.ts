@@ -198,7 +198,7 @@ export function cutLevelWindows(
 			const near = Math.ceil(WINDOW_S * fps) + 1;
 			if (f < a.start - near || f > a.start + a.duration + near) continue;
 			const v = voice(a.mediaId, a.channels.streamIndex);
-			if (!v || !v.frameCount) continue;
+			if (!v?.frameCount) continue;
 			const t = (a.sourceIn + (f - a.start) * F) / FLICKS_PER_SECOND;
 			const k0 = Math.max(0, Math.floor((t - WINDOW_S) / FR));
 			const k1 = Math.min(v.frameCount, Math.ceil((t + WINDOW_S) / FR));

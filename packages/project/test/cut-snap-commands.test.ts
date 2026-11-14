@@ -36,7 +36,15 @@ function setup() {
 	const H = new Harness({ preset: 'hd-1080p-30' });
 	const r0 = H.ok([{ type: 'media.register', asset: videoAsset({ seconds: 10 }) }]);
 	const mediaId = (r0.results[0] as { mediaId: string }).mediaId;
-	H.ok([{ type: 'clip.place', source: { mediaId }, at: 0, tracks: { video: 'V1', audio: ['A1'] }, mode: 'overwrite' }]);
+	H.ok([
+		{
+			type: 'clip.place',
+			source: { mediaId },
+			at: 0,
+			tracks: { video: 'V1', audio: ['A1'] },
+			mode: 'overwrite',
+		},
+	]);
 	H.ok([
 		{
 			type: 'transcript.create',
@@ -82,16 +90,19 @@ describe('cut commands off speech', () => {
 		H.ok(cut);
 		expect(starts(H)).toEqual(after);
 		H.doc = before;
-		expect(H.ok([{ type: 'range.extract', from: 45, to: 60 }]).results[0]).toMatchObject({ from: 45, to: 60 });
+		expect(H.ok([{ type: 'range.extract', from: 45, to: 60 }]).results[0]).toMatchObject({
+			from: 45,
+			to: 60,
+		});
 	});
 
 	it('transcript.extract snaps by default when given levels: the next word keeps its onset, the removed word goes with its decay', () => {
 		const { H, levels } = setup();
 		const before = H.doc;
 		// "dos" (word 1): frames 60–75; the out edge leaves 50 ms of silence before its onset, the in edge takes its
-		// decay (quiet from 2.62 s)
+		// decay (30 ms under the quiet level from 2.64 s)
 		const r = H.ok([{ type: 'transcript.extract', fromWord: 1, toWord: 1, levels: levels([60, 75]) }]);
-		expect(r.results[0]).toMatchObject({ from: 58, to: 79, snapped: { clean: true } });
+		expect(r.results[0]).toMatchObject({ from: 58, to: 80, snapped: { clean: true } });
 		H.doc = before;
 		expect(H.ok([{ type: 'transcript.extract', fromWord: 1, toWord: 1 }]).results[0]).toMatchObject({
 			from: 60,
@@ -104,13 +115,21 @@ describe('cut commands off speech', () => {
 		const before = H.doc;
 		const a = Object.values(H.seq.clips).find((c) => c.kind === 'audio')!;
 		H.ok([{ type: 'clip.split', at: 46, scope: 'all-unlocked', snapToSilence: true, levels: levels([46]) }]);
+		// a split is clean on both sides: 30 ms of quiet before it too
 		expect(starts(H).filter((c) => c[0] === 'audio')).toEqual([
-			['audio', 0, 49],
-			['audio', 49, 251],
+			['audio', 0, 50],
+			['audio', 50, 250],
 		]);
 		H.doc = before;
 		const r = H.ok([
-			{ type: 'clip.trim', clipId: a.id, edge: 'out', deltaFrames: 46 - 300, snapToSilence: true, levels: levels([46]) },
+			{
+				type: 'clip.trim',
+				clipId: a.id,
+				edge: 'out',
+				deltaFrames: 46 - 300,
+				snapToSilence: true,
+				levels: levels([46]),
+			},
 		]);
 		expect(r.results[0]).toBeDefined();
 		expect(starts(H)).toEqual([
@@ -122,7 +141,9 @@ describe('cut commands off speech', () => {
 	it('refuses malformed levels and warns when snapping has none', () => {
 		const { H, levels } = setup();
 		const bad = levels([45]).map((w) => ({ ...w, level: '!!!' }));
-		expect(H.tx([{ type: 'range.extract', from: 45, to: 60, snapToSilence: true, levels: bad }])).toMatchObject({
+		expect(
+			H.tx([{ type: 'range.extract', from: 45, to: 60, snapToSilence: true, levels: bad }]),
+		).toMatchObject({
 			ok: false,
 			errors: [{ code: 'E_INVALID_PARAM' }],
 		});

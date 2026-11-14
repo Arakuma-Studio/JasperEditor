@@ -27,7 +27,7 @@ import {
 	voicedFrame,
 	wordPeakDb,
 } from './detector.ts';
-import { EDGE_DECAY_S, edgeBounds, edgeLevelsOf, snapCut } from './edge-snap.ts';
+import { EDGE_DECAY_S, edgeBounds, edgeLevelsOf, onsetBound, snapCut } from './edge-snap.ts';
 import { snapEdge } from './edges.ts';
 import { type FragmentContext, findShortPieces, shortPieceFinding } from './fragments.ts';
 import { cleanupLanguageOf } from './lists.ts';
@@ -675,6 +675,7 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 		const found = findShortPieces({
 			seq,
 			rate,
+			voice: run.voice,
 			clips: cps.map((cp) => ({ ...cp, kept: cp.keptFrames })),
 			scope: range,
 			voiceIn: (t0, t1) => {
@@ -740,11 +741,18 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 			fragments.push({ run, f });
 			if (isAccepted(f, decisions, rejected)) {
 				accepted.add(f);
-				drop.add(`${p.clip}:${p.piece}`);
+				drop.add(p.edge ? `${p.clip}:${p.piece}:${p.edge}` : `${p.clip}:${p.piece}`);
 			}
 		}
 		cps.forEach((cp, ci) => {
-			cp.keptFrames = cp.keptFrames.filter((_, pi) => !drop.has(`${ci}:${pi}`));
+			// an accepted head / tail burst shortens its piece; an accepted piece goes
+			for (const p of found.pieces)
+				if (p.clip === ci && p.cut && drop.has(`${ci}:${p.piece}:${p.edge}`)) {
+					const piece = cp.keptFrames[p.piece]!;
+					if (p.edge === 'tail') piece[1] = p.cut[0];
+					else piece[0] = p.cut[1];
+				}
+			cp.keptFrames = cp.keptFrames.filter((x, pi) => !drop.has(`${ci}:${pi}`) && x[1] > x[0]);
 		});
 	}
 
@@ -1035,7 +1043,10 @@ function keepTail(
 	const from = inPiece ? phraseTailFrom(voice, word, peak) : Math.max(0, Math.floor(t / FR + 1e-9));
 	const inRemoved = (x: number) => removedTimes.some(([a, b]) => a < (x + 1) * FR && b > x * FR);
 	let limit = from;
-	while (limit < voice.frameCount && limit - from < 2 * TAIL_FRAMES && !inRemoved(limit)) limit++;
+	// never into the next syllable onset after a dip (a removed take's "pue-", a leftover word)
+	const onset = Math.floor(onsetBound(edgeLevelsOf(voice), from * FR, 'out') / FR + 1e-9);
+	while (limit < Math.min(voice.frameCount, onset) && limit - from < 2 * TAIL_FRAMES && !inRemoved(limit))
+		limit++;
 	const endS = phraseTailEnd(voice, peak, from, limit) * FR;
 	if (endS <= t + 1e-9) return;
 	const f = clip.start + Math.ceil((endS * FLICKS_PER_SECOND - clip.sourceIn) / F - 1e-9);

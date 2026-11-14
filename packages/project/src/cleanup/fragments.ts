@@ -7,6 +7,8 @@
 // sides) or sound without its picture that the script does not hold; else for review. Pure.
 import type { Sequence } from '../schema/sequence.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../time.ts';
+import type { CleanupVoice } from './detector.ts';
+import { edgeInsideWord, edgeLevelsOf, edgeThresholds } from './edge-snap.ts';
 import type { AWord } from './rules.ts';
 import type { ScriptAligner } from './script.ts';
 
@@ -35,6 +37,8 @@ export type ShortPiece = {
 	 * that moment (a picture sliver deleted or covered after the cut).
 	 */
 	orphan: boolean;
+	/** Breath-like sound after a dip at the end (`tail`) or start (`head`) of a longer kept piece next to a cut. */
+	edge?: 'head' | 'tail';
 };
 
 export type FragmentContext = {
@@ -60,6 +64,8 @@ export function shortPieceFinding(
 	p: ShortPiece,
 	c: FragmentContext,
 ): { why: FragmentWhy; suggested: 'remove' | 'review' } | null {
+	// a breath-like burst at a piece's end next to a cut (v8: "Appstore! | Y si", a fragment of another take written "Y")
+	if (p.edge) return { why: 'voice', suggested: 'review' };
 	if (!p.tokens.length) {
 		if (p.voice) return { why: 'voice', suggested: p.betweenWords || p.orphan ? 'remove' : 'review' };
 		return p.orphan ? { why: 'orphan', suggested: 'remove' } : null;
@@ -96,6 +102,8 @@ export type ShortPieceAt = ShortPiece & {
 	end: number;
 	frames: number;
 	words: AWord[];
+	/** For a head / tail burst: the sequence frames it removes from its piece. */
+	cut?: [number, number];
 };
 
 /**
@@ -110,6 +118,8 @@ export function findShortPieces(o: {
 	clips: readonly ClipPieces[];
 	scope: { from: number; to: number } | null;
 	voiceIn: (t0: number, t1: number) => boolean;
+	/** The media's voice analysis: breath-like bursts at the ends of longer pieces (none without). */
+	voice?: CleanupVoice | null;
 }): { pieces: ShortPieceAt[]; output: string[] } {
 	const F = flicksPerFrame(o.rate);
 	const fps = o.rate.num / o.rate.den;
@@ -166,7 +176,6 @@ export function findShortPieces(o: {
 	o.clips.forEach((cp, ci) => {
 		cp.kept.forEach(([a, b], pi) => {
 			const frames = b - a;
-			if (frames <= 0 || frames / fps > FRAGMENT_MAX_S + 1e-9) return;
 			const atScope = (f: number) => !!o.scope && (f === o.scope.from || f === o.scope.to);
 			const cutL =
 				a > cp.extent[0] ||
@@ -174,7 +183,36 @@ export function findShortPieces(o: {
 			const cutR =
 				b < cp.extent[1] ||
 				(b === cp.clip.start + cp.clip.duration && !atScope(b) && !through(cp.clip, 'out'));
-			if (!cutL || !cutR) return;
+			if (frames > 0 && frames / fps > FRAGMENT_MAX_S + 1e-9) {
+				// a longer piece: a breath-like burst after a dip at an end next to a cut
+				for (const edge of ['tail', 'head'] as const) {
+					if (!o.voice || !(edge === 'tail' ? cutR : cutL)) continue;
+					const burst = edgeBurst(o.voice, mediaAt(cp.clip, a), mediaAt(cp.clip, b), edge, cp.words);
+					if (!burst) continue;
+					const f = Math.round(cp.clip.start + (burst * FLICKS_PER_SECOND - cp.clip.sourceIn) / F);
+					const [x, y] = edge === 'tail' ? [f, b] : [a, f];
+					if (y - x <= 0 || x <= a - (edge === 'head' ? 1 : 0) - 1) continue;
+					const [u0, u1] = [mediaAt(cp.clip, x), mediaAt(cp.clip, y)];
+					const ws = cp.words.filter((w) => (w.s + w.e) / 2 >= u0 && (w.s + w.e) / 2 < u1);
+					pieces.push({
+						clip: ci,
+						piece: pi,
+						start: u0,
+						end: u1,
+						frames: y - x,
+						words: ws,
+						tokens: ws.map((w) => w.n),
+						at: ws.length ? (indexOf.get(ws[0]!) ?? 0) : 0,
+						voice: true,
+						betweenWords: false,
+						orphan: false,
+						edge,
+						cut: [x, y],
+					});
+				}
+				return;
+			}
+			if (frames <= 0 || !cutL || !cutR) return;
 			const [t0, t1] = [mediaAt(cp.clip, a), mediaAt(cp.clip, b)];
 			const words = cp.words.filter((w) => (w.s + w.e) / 2 >= t0 && (w.s + w.e) / 2 < t1);
 			const lo = pi > 0 ? cp.kept[pi - 1]![1] : cp.extent[0];
@@ -198,4 +236,49 @@ export function findShortPieces(o: {
 		});
 	});
 	return { pieces, output };
+}
+
+/** Longest breath-like burst at a piece's end judged (s). */
+const BURST_MAX_S = 0.3;
+
+/**
+ * Where a breath-like burst at the `edge` of a kept piece `[t0, t1)` (media seconds) begins (tail) or ends (head): the
+ * sound after (before) the last (first) dip of ≥ 20 ms within 2 dB of the quiet level, at most `BURST_MAX_S` long,
+ * mostly unvoiced (mean voicing under 0.5), not quiet, and not after a closure inside a word (`edgeInsideWord`); null
+ * when there is none.
+ */
+function edgeBurst(
+	v: CleanupVoice,
+	t0: number,
+	t1: number,
+	edge: 'head' | 'tail',
+	words: readonly AWord[],
+): number | null {
+	if (!v.voicing) return null;
+	const L = edgeLevelsOf(v);
+	const { quiet } = edgeThresholds(L);
+	const n = Math.round(BURST_MAX_S / 0.01);
+	const k0 = Math.round(t0 / 0.01);
+	const k1 = Math.round(t1 / 0.01);
+	const dip = (k: number) => L.db(k) <= quiet + 2;
+	for (let i = 2; i <= n && k1 - i - 2 > k0; i++) {
+		// the burst: frames [k1 - i, k1) (tail) or [k0, k0 + i) (head); the dip: the two frames beyond it
+		const [b0, b1] = edge === 'tail' ? [k1 - i, k1] : [k0, k0 + i];
+		const [d0, d1] = edge === 'tail' ? [b0 - 2, b0] : [b1, b1 + 2];
+		if (!dip(d0) || !dip(d1 - 1)) continue;
+		let voicing = 0;
+		let loud = -120;
+		for (let k = b0; k < b1; k++) {
+			voicing += (v.voicing[k] ?? 0) / 255;
+			loud = Math.max(loud, L.db(k));
+		}
+		// only the decay so far: look further for the burst; a voiced syllable is no breath
+		if (loud <= quiet + 6) continue;
+		if (voicing / (b1 - b0) >= 0.5) return null;
+		// a closure inside a word is that word's ("pa|tas.", "espa|cio."): its last syllable, no burst
+		const at = (edge === 'tail' ? b0 : b1) * 0.01;
+		if (edgeInsideWord(L, words, at)) return null;
+		return at;
+	}
+	return null;
 }

@@ -18,6 +18,7 @@ import {
 	wordHold,
 	wordPeakDb,
 } from './detector.ts';
+import { edgeLevelsOf, onsetBound } from './edge-snap.ts';
 import { edgeThreshold, levelInPoint, levelOutPoint } from './edges.ts';
 import type { AWord } from './rules.ts';
 import type { CleanupSettings } from './schema.ts';
@@ -266,12 +267,14 @@ function planPieces(input: MediaPlanInput): MediaPlan {
 			const w = r.k >= 0 ? input.words[r.k] : undefined;
 			if (!w || r.tight?.[1] || !phraseFinal(w.text)) continue;
 			const peak = wordPeakDb(voice, w);
+			const from = Math.max(Math.round(r.b / FR), phraseTailFrom(voice, w, peak));
+			// never into the next syllable onset after a dip (edge-snap.ts `onsetBound`)
 			const limit = Math.min(
 				res[i + 1]?.a ?? Number.POSITIVE_INFINITY,
 				r.maxB,
 				input.words[r.k + 1]?.s ?? Number.POSITIVE_INFINITY,
+				onsetBound(edgeLevelsOf(voice), from * FR, 'out'),
 			);
-			const from = Math.max(Math.round(r.b / FR), phraseTailFrom(voice, w, peak));
 			const end =
 				phraseTailEnd(
 					voice,
