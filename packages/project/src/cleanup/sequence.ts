@@ -1549,7 +1549,19 @@ function keepUnexplained(
 		let voiced = k0 < Math.ceil(a / FR - 1e-9);
 		for (let k = k0; k < Math.ceil(a / FR - 1e-9); k++)
 			if (voice.classes[k] !== VOICE_CLASS_SPEECH && !silentFrame(voice, k)) voiced = false;
-		const valley = voiced && wordStarts.some((t) => Math.abs(t - a) < 1e-9) ? a - frameS * (1 - 1e-6) : a;
+		// (never a frame that holds a kept word's speech: the kept word stays whole, the grid keeps a bit of the removed one)
+		const keptVoice = keptTimes.some(([s, e]) => {
+			if (!(s < a - 1e-9 && e > a - frameS + 1e-9)) return false;
+			for (
+				let k = Math.max(0, Math.floor(Math.max(s, a - frameS) / FR + 1e-9));
+				k * FR < Math.min(e, a) - 1e-9;
+				k++
+			)
+				if (voice.classes[k] === VOICE_CLASS_SPEECH) return true;
+			return false;
+		});
+		const valley =
+			voiced && !keptVoice && wordStarts.some((t) => Math.abs(t - a) < 1e-9) ? a - frameS * (1 - 1e-6) : a;
 		let x = a;
 		for (
 			let k = Math.ceil(a / FR - 1e-9) - 1;
