@@ -189,6 +189,13 @@ describe('editing automation tools', () => {
 		expect(t.engine.calls[1]!.args[1]).toBe('ken-burns');
 	});
 
+	it('add_punch_ins start "caption" reaches the pass', async () => {
+		const t = await connect();
+		const p = await t.call('add_punch_ins', { projectId: P, start: 'caption', mode: 'dryRun' });
+		expect(p.r.isError).toBeFalsy();
+		expect(t.engine.calls[0]!.args[2]).toMatchObject({ mode: 'dryRun', params: { start: 'caption' } });
+	});
+
 	it('strict arguments: unknown keys and bad values are refused before the engine is called', async () => {
 		const t = await connect();
 		const a = await t.call('decorate_cuts', { projectId: P, covrage: 1 });

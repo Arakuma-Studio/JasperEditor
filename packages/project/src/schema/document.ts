@@ -42,8 +42,11 @@ import { CaptionStyleSchema, ClipMarkerSchema, type Sequence, SequenceSchema } f
  * read-only (docs/project-files.md).
  * v13 (subtitle locks, own-subtitle words): `caption.locked` on subtitle text clips and `rules.ownWords` on subtitle
  * groups; version bump only, so v12 builds — whose regenerate would replace hand-edited subtitles and whose strict
- * rules reader would reset such a group — open v13 files read-only (docs/project-files.md). */
-export const CURRENT_SCHEMA_VERSION = 13;
+ * rules reader would reset such a group — open v13 files read-only (docs/project-files.md).
+ * v14 (punch-ins on caption starts): style recipes may hold punch-ins `start: 'caption'`; version bump only, so v13
+ * builds — whose strict recipe reader would drop such a recipe on load — open v14 files read-only
+ * (docs/project-files.md). */
+export const CURRENT_SCHEMA_VERSION = 14;
 
 const markSchema = z.looseObject({ flicks: nonNegInt() });
 export const SourceMarksSchema = z.looseObject({

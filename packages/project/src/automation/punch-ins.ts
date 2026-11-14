@@ -2,11 +2,12 @@
 // (1.5 s) whose Motion is not keyframed (no Ken Burns, no earlier zoom) and that no effect already moves; `density`
 // (0.7) of them get a punch-in, clips whose phrases end in "!" or "?" first (measured: 55–57 % of such phrases sit
 // under a zoom vs 29 % overall), then in a seeded order. The zoom starts at the clip's midpoint (52 % of the user's sit
-// there ±1 frame) or the transcript word start nearest it, ramps linearly to `scale` (180 %) in `rampFrames` (7) and
-// holds to the clip's end. It zooms about the frame centre, a point, or the subject (a faces roto on the clip, else
-// the engine's face / saliency analysis given in `subjects`); zooming in about any point of the frame keeps a clip
-// that covered the frame covering it. Default output: Motion scale (and position) keys on the clip — exported
-// natively; option: a Transform adjustment clip on a "ZOOM" track right above the A-roll. Pure.
+// there ±1 frame), at the transcript word start nearest it, or on a caption start chosen by the user's measured rule
+// (`punch-caption.ts`; the midpoint when no caption starts in the clip's window), ramps linearly to `scale` (180 %) in
+// `rampFrames` (7) and holds to the clip's end. It zooms about the frame centre, a point, or the subject (a faces roto
+// on the clip, else the engine's face / saliency analysis given in `subjects`); zooming in about any point of the frame
+// keeps a clip that covered the frame covering it. Default output: Motion scale (and position) keys on the clip —
+// exported natively; option: a Transform adjustment clip on a "ZOOM" track right above the A-roll. Pure.
 import { sequenceWords } from '../captions/sequence-transcript.ts';
 import type { BatchEffect } from '../commands/schemas/batch.ts';
 import { trackLabel } from '../derive/index.ts';
@@ -30,7 +31,14 @@ import {
 	timecodeOf,
 	trackSpans,
 } from './common.ts';
-import { AUTOMATION_DEFAULTS, type PunchInParams, PunchInParamsSchema, type PunchTarget } from './params.ts';
+import {
+	AUTOMATION_DEFAULTS,
+	type PunchInParams,
+	PunchInParamsSchema,
+	type PunchStart,
+	type PunchTarget,
+} from './params.ts';
+import { type CaptionCue, type CaptionStartRule, captionCues, captionStart } from './punch-caption.ts';
 import { itemSeed, seededRandom } from './rng.ts';
 
 export const PUNCH_PASS = 'punch-ins' as const;
@@ -68,7 +76,9 @@ export type PunchPlacement = {
 	};
 	/** The clip's phrases end in "!" or "?" (ranked first). */
 	emphasis: boolean;
-	start: 'midpoint' | 'word';
+	/** Where it starts: a caption start (and the rule's tier that chose it), a word start, or the clip midpoint. */
+	start: 'caption' | 'midpoint' | 'word';
+	startRule?: CaptionStartRule;
 	motion: MotionPlan;
 	/** The adjustment-layer form (method `adjustment`). */
 	adjustment: { start: number; length: number; name: string; effects: BatchEffect[] };
@@ -81,7 +91,7 @@ export type ResolvedPunchParams = {
 	density: number;
 	scale: number;
 	rampFrames: number;
-	start: 'midpoint' | 'word';
+	start: PunchStart;
 	target: PunchTarget;
 	method: 'motion' | 'adjustment';
 	exclude: Set<string>;
@@ -174,10 +184,26 @@ function wordStarts(doc: ProjectDocument, seq: Sequence): number[] {
 	}
 }
 
-/** The start frame of a punch-in on `c`: the midpoint, or the word start nearest it (inside the clip, ramp fits). */
-function startOf(c: Clip, mode: 'midpoint' | 'word', ramp: number, words: readonly number[]) {
+/** What the start modes read: word starts (sequence frames, sorted) and caption cues. */
+type StartInputs = { words: readonly number[]; cues: readonly CaptionCue[]; fps: number };
+
+/**
+ * The start frame of a punch-in on `c`: a caption start (`punch-caption.ts`), the midpoint, or the word start nearest
+ * it (inside the clip, ramp fits); the midpoint when the mode finds nothing.
+ */
+function startOf(
+	c: Clip,
+	mode: PunchStart,
+	ramp: number,
+	inputs: StartInputs,
+): { frame: number; kind: PunchPlacement['start']; rule?: CaptionStartRule } {
 	const mid = c.start + Math.floor(c.duration / 2);
 	const latest = c.start + c.duration - ramp;
+	if (mode === 'caption') {
+		const s = captionStart(c, inputs.cues, inputs.fps, latest);
+		if (s) return { frame: s.frame, kind: 'caption', rule: s.rule };
+	}
+	const words = inputs.words;
 	if (mode === 'word') {
 		let best: number | null = null;
 		for (const w of words) {
@@ -187,6 +213,14 @@ function startOf(c: Clip, mode: 'midpoint' | 'word', ramp: number, words: readon
 		if (best !== null) return { frame: best, kind: 'word' as const };
 	}
 	return { frame: Math.min(Math.max(mid, c.start + 1), latest), kind: 'midpoint' as const };
+}
+
+function startInputs(doc: ProjectDocument, seq: Sequence, mode: PunchStart): StartInputs {
+	return {
+		words: mode === 'word' ? wordStarts(doc, seq) : [],
+		cues: mode === 'caption' ? captionCues(doc, seq) : [],
+		fps: fpsValue(frameGeometry(seq).fps),
+	};
 }
 
 type TransformValues = {
@@ -372,11 +406,11 @@ function placeOne(
 	params: ResolvedPunchParams,
 	seed: number,
 	emphasis: boolean,
-	words: readonly number[],
+	inputs: StartInputs,
 	ctx: PunchContext,
 ): PunchPlacement {
 	const geo = frameGeometry(seq);
-	const st = startOf(c, params.start, params.rampFrames, words);
+	const st = startOf(c, params.start, params.rampFrames, inputs);
 	const end = c.start + c.duration;
 	const ramp = Math.max(1, Math.min(params.rampFrames, end - st.frame));
 	const m = motionOf(c) ?? {
@@ -415,6 +449,7 @@ function placeOne(
 		target,
 		emphasis,
 		start: st.kind,
+		...(st.rule ? { startRule: st.rule } : {}),
 		motion: zoomMotion(m, params.scale / 100, p, a, a + ramp),
 		adjustment: adjustmentOf(geo, st.frame, end, ramp, params.scale, p),
 		alternative: {
@@ -444,7 +479,7 @@ export function planPunchIns(
 		...(params.range ? { range: params.range } : {}),
 	});
 	const emph = emphasisClips(doc, seq, cand.clips);
-	const words = params.start === 'word' ? wordStarts(doc, seq) : [];
+	const inputs = startInputs(doc, seq, params.start);
 	const ranked = cand.clips
 		.map((c) => {
 			const seed = itemSeed(params.seed, PUNCH_PASS, c.id);
@@ -453,7 +488,7 @@ export function planPunchIns(
 		.sort((a, b) => Number(b.emphasis) - Number(a.emphasis) || a.draw - b.draw || a.c.start - b.c.start);
 	const count = Math.round(params.density * ranked.length);
 	const chosen = ranked.slice(0, count).sort((a, b) => a.c.start - b.c.start);
-	const punches = chosen.map((x) => placeOne(doc, seq, x.c, params, x.seed, x.emphasis, words, ctx));
+	const punches = chosen.map((x) => placeOne(doc, seq, x.c, params, x.seed, x.emphasis, inputs, ctx));
 	const skipped = [
 		...cand.skipped,
 		...ranked.slice(count).map((x) => ({
@@ -471,11 +506,24 @@ export function planPunchIns(
 			code: 'W_NO_SUBJECT',
 			message: `${punches.filter((p) => p.target.source === 'center-fallback').length} punch-in(s) zoom to the centre: no face tracking or saliency result for their clip`,
 		});
-	if (params.start === 'word' && words.length === 0)
+	if (params.start === 'word' && inputs.words.length === 0)
 		warnings.push({
 			code: 'W_NO_WORDS',
 			message: 'No transcript words: the zooms start at the clip midpoints',
 		});
+	if (params.start === 'caption' && punches.length) {
+		const atMid = punches.filter((p) => p.start === 'midpoint').length;
+		if (inputs.cues.length === 0)
+			warnings.push({
+				code: 'W_NO_CAPTIONS',
+				message: 'No subtitles or transcript words: the zooms start at the clip midpoints',
+			});
+		else if (atMid)
+			warnings.push({
+				code: 'W_CAPTION_FALLBACK',
+				message: `${atMid} punch-in(s) start at the clip midpoint: no caption starts between max(0.8 s, 25 %) into the clip and 0.6 s before its cut`,
+			});
+	}
 	const trackIndex = seq.videoTracks.findIndex((t) => t.id === track.id);
 	return {
 		pass: PUNCH_PASS,
@@ -532,7 +580,7 @@ export function replanPunchIns(
 	});
 	const byId = new Map(cand.clips.map((c) => [c.id, c]));
 	const why = new Map(cand.skipped.map((s) => [s.clipId, s.reason]));
-	const words = params.start === 'word' ? wordStarts(doc, seq) : [];
+	const inputs = startInputs(doc, seq, params.start);
 	return targets.map((t) => {
 		const c = byId.get(t.clipId);
 		if (!c)
@@ -544,7 +592,7 @@ export function replanPunchIns(
 					: 'its clip is gone from the A-roll track',
 			};
 		const emph = emphasisClips(doc, seq, [c]).has(c.id);
-		const punch = placeOne(doc, seq, c, params, t.seed, emph, words, ctx);
+		const punch = placeOne(doc, seq, c, params, t.seed, emph, inputs, ctx);
 		return { itemId: t.itemId, ok: true as const, punch: { ...punch, id: t.itemId } };
 	});
 }

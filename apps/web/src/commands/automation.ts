@@ -91,7 +91,7 @@ export const automationCommands: UiCommand[] = [
 		id: 'automation.punchIns',
 		label: 'Punch-ins…',
 		description:
-			'Zoom into the A-roll clips of the active sequence: density, shortest clip, zoom size and ramp, start (midpoint or word), target (centre, subject, point), Motion keys or a Transform adjustment clip, whoosh and seed, with a dry-run summary; Propose stores a proposal and opens review',
+			'Zoom into the A-roll clips of the active sequence: density, shortest clip, zoom size and ramp, start (midpoint, word or subtitle start), target (centre, subject, point), Motion keys or a Transform adjustment clip, whoosh and seed, with a dry-run summary; Propose stores a proposal and opens review',
 	},
 	{
 		...passCommand('ken-burns'),
