@@ -1,11 +1,14 @@
 // Clean Up on a dense, loudness-normalised mixdown (docs/wp-notes/transcript-cleanup.md "Hallucinations need non-speech
 // evidence"): the real words, confidences and levels of `cut_v5.wav` (large-v3-turbo, voice analysis v2, main
 // 37fd05e43), where 37 recovered script words were removed as hallucinations over non-speech and, with voice analysis
-// v1, the head took 0–666 s of the 931 s scripted cut.
+// v1, the head took 0–666 s of the 931 s scripted cut; and (main 30d91f090) where accepted pauses removed four real
+// words whose quiet frames read as measured silence on the mixdown's high floor.
 import { describe, expect, it } from 'vitest';
 import { type CleanupVoice, type CleanupWordIn, detectCleanup } from '../src/cleanup/detector.ts';
 import { type CleanupOverrides, FAST_SETTINGS, mergeCleanupSettings } from '../src/cleanup/schema.ts';
+import { analyzeSequenceCleanup } from '../src/cleanup/sequence.ts';
 import { FLICKS_PER_SECOND } from '../src/time.ts';
+import { Harness, videoAsset } from './helpers.ts';
 
 const S = (x: number) => Math.round(x * FLICKS_PER_SECOND);
 const sec = (f: number) => f / FLICKS_PER_SECOND;
@@ -255,5 +258,113 @@ describe('head and tail anchored on the script alignment (cut_v5.wav)', () => {
 			const f = headTail(detect(words, null, script));
 			expect(f.map((x) => [x.words, x.suggested])).toEqual([[[0, pre.length - 1], suggested]]);
 		}
+	});
+});
+
+describe('a pause never covers a word on the mixdown (cut_v5.wav)', () => {
+	// Clean Up of the cut at main 30d91f090 (Fast, script attached; /tmp/je-words3-local/ on the build host): accepted
+	// pauses removed "Tienes [que] ir" (pause 505.40–505.55 over the word 505.50–505.56), "casi [todo] lo" (590.21–590.40
+	// over 590.30–590.48), "Funcionan [con] cuentas" (683.62–683.90 over 683.60–683.69) and "juegos [crecían]"
+	// (306.18–306.44 over 306.24–306.54). On the mixdown the floor is −31.6 dBFS, so a word's quiet frames under −25.6
+	// dBFS that the classes call non-speech are measured silence: "que" peaked at −25.2 dBFS with 2 of its 7 frames
+	// speech (cut_hallucinations_new.json). The words and times are the run's; each word's frames that its pause took
+	// are non-speech at −28 dBFS (the measured extent of each pause inside the word), the rest of every word speech at
+	// −12 dBFS (−25.2 for "que"), the floor between words.
+	const cases: Array<{
+		word: string;
+		words: string;
+		quiet: Array<[number, number]>;
+		db?: Array<[number, number, number]>;
+	}> = [
+		{
+			word: 'que',
+			words: `bien[503.70-503.92] lleva[503.92-504.26]@0.997 muchísimo[504.26-504.61]@0.999 tiempo.[504.63-505.03]
+				Tienes[505.31-505.40] que[505.50-505.56] ir[505.57-505.65] pose[505.77-505.92]@0.997 por[505.92-506.10]@0.997
+				pose,[506.10-506.50]`,
+			quiet: [[505.5, 505.55]],
+			db: [[505.55, 505.56, -25.2]],
+		},
+		{
+			word: 'todo',
+			words: `montón[588.14-588.40] de[588.40-588.58] cosas[588.58-588.84] para[588.84-589.12]@0.982 que[589.12-589.18]
+				igual[589.30-589.54]@0.999 entienda[589.54-590.00]@0.999 casi[590.00-590.30]@0.999 todo[590.30-590.48]
+				lo[590.48-590.63] que[590.70-590.76] entiende[590.76-591.16] un[591.16-591.43]@0.999`,
+			quiet: [[590.21, 590.4]],
+		},
+		{
+			word: 'con',
+			words: `Resulta[681.53-681.86]@0.999 que[681.86-681.98] estas[681.98-682.14] sillas[682.14-682.42]@0.993
+				no[682.42-682.72] son[682.85-682.94] gratis.[682.94-683.25]@0.999 Funcionan[683.30-683.60]@0.999
+				con[683.60-683.69] cuentas[683.91-684.26] que[684.26-684.38]@0.999 tienen[684.38-684.58] un[684.58-684.78]`,
+			quiet: [[683.62, 683.69]],
+		},
+		{
+			word: 'crecían',
+			words: `veces,[304.61-305.02] la[305.03-305.10]@0.991 Play[305.18-305.24]@0.361 Store[305.30-305.36]@0.935
+				me[305.36-305.50] dice[305.50-305.64] que[305.66-305.72] mis[305.86-305.92]@0.998 juegos[306.01-306.12]
+				crecían[306.24-306.54]@0.996 mucho[306.54-306.94] o[306.94-307.26]@0.084 que[307.32-307.48]@0.998
+				aparece[307.48-307.76]@0.997`,
+			quiet: [[306.24, 306.44]],
+		},
+	];
+
+	it('the words whose quiet frames read as silence keep their whole time; no pause overlaps a word', () => {
+		const q = (db: number) => Math.round((db + 120) * 2);
+		const problems: string[] = [];
+		for (const c of cases) {
+			// the excerpt from about 1 s (whole seconds earlier: the frame grid is unchanged)
+			const t0 = Math.floor(Number(/\[([\d.]+)-/.exec(c.words)![1]!)) - 1;
+			const words = real(c.words, -t0);
+			const at = (x: number) => (x / FLICKS_PER_SECOND + t0).toFixed(2);
+			const n = Math.ceil((sec(words[words.length - 1]!.end) + 2) * 100);
+			const classes = new Uint8Array(n);
+			const level = new Uint8Array(n).fill(q(CUT.floorDb));
+			const put = (a: number, b: number, db: number, cls: number) => {
+				for (let k = Math.round((a - t0) * 100); k < Math.round((b - t0) * 100); k++) {
+					level[k] = q(db);
+					classes[k] = cls;
+				}
+			};
+			for (const w of words) put(sec(w.start) + t0, sec(w.end) + t0, -12, 2);
+			for (const [a, b] of c.quiet) put(a, b, -28, 0);
+			for (const [a, b, db] of c.db ?? []) put(a, b, db, 2);
+			const voice: CleanupVoice = {
+				classes,
+				level,
+				frameCount: n,
+				levels: { ...CUT, breathFloorDb: CUT.floorDb + 5 },
+			};
+			const H = new Harness({ preset: 'hd-1080p-30' });
+			const r0 = H.ok([{ type: 'media.register', asset: videoAsset({ seconds: n / 100, kind: 'audio' }) }]);
+			const mediaId = (r0.results[0] as { mediaId: string }).mediaId;
+			H.ok([
+				{ type: 'clip.place', source: { mediaId }, at: 0, tracks: { audio: ['A1'] }, mode: 'overwrite' },
+			]);
+			H.ok([{ type: 'transcript.create', mediaId, language: 'es', origin: 'manual', words }]);
+			const a = analyzeSequenceCleanup({
+				doc: H.doc,
+				seq: H.seq,
+				voice: () => voice,
+				settings: FAST_SETTINGS,
+			});
+			if (!a.ok) throw new Error(a.message);
+			for (const f of a.findings.filter((x) => x.kind === 'pause'))
+				for (const w of words)
+					if (Math.min(f.range.end, w.end) > Math.max(f.range.start, w.start))
+						problems.push(
+							`pause ${at(f.range.start)}–${at(f.range.end)} over "${w.text}" ${at(w.start)}–${at(w.end)}`,
+						);
+			// every word's time plays whole (no finding removes one here)
+			for (const w of words) {
+				const [s, e] = [w.start / FLICKS_PER_SECOND, w.end / FLICKS_PER_SECOND];
+				const kept = a.plan.kept.reduce(
+					(t, k) => t + Math.max(0, Math.min(e, k.end / 30) - Math.max(s, k.start / 30)),
+					0,
+				);
+				if (kept < e - s - 1e-6)
+					problems.push(`"${w.text}" ${at(w.start)}–${at(w.end)} kept ${kept.toFixed(3)} s`);
+			}
+		}
+		expect(problems).toEqual([]);
 	});
 });

@@ -254,6 +254,8 @@ export type AnalyzeSequenceInput = {
 	language?: string | null;
 	decisions?: CleanupDecisions;
 	scope?: CleanupScope;
+	/** Look for a restart inside one word by its level dip (default `RESTART_DIP_DEFAULT`, off: `cleanup/dip.ts`). */
+	restartDip?: boolean;
 };
 
 /** Detects and plans the cleanup of a sequence (dry run). */
@@ -325,6 +327,7 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 			lists: lists ?? null,
 			settings,
 			redecoded: transcriptRedecoded(t),
+			...(input.restartDip !== undefined ? { restartDip: input.restartDip } : {}),
 			spans: run.clips.map((c) => {
 				const [a, b] = extentOf(c);
 				return { start: toMediaFlicks(c, a), end: toMediaFlicks(c, b) };
@@ -536,9 +539,17 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 				if (inClip[k] && removedNow[k]) removing.push(res.sound[k]!);
 			});
 			keptFrames = joinShort(
-				keepUnexplained(clip, rate, run.voice, extent, keptFrames, removing, clipSpan0(keepSpeech), [
-					...startsOf().values(),
-				]),
+				keepUnexplained(
+					clip,
+					rate,
+					run.voice,
+					extent,
+					keptFrames,
+					removing,
+					clipSpan0(keepSpeech),
+					[...startsOf().values()],
+					words.filter((_, k) => inClip[k] && !removedNow[k]).map((w) => [w.s, w.e] as Span),
+				),
 			);
 			// the last kept piece keeps its fading decay up to measured silence: a join's out point may sit inside the decay
 			// (the Fast style), but nothing follows the clip's last word
@@ -1031,7 +1042,8 @@ const TAIL_FRAMES = 25;
  * every 10 ms before it in that frame) the frame at or before it may go: the frame grid cannot split the sound between
  * two words, and the removed word goes whole — its finding starts at the quietest point before it (`startValley`). A frame holding speech or voiced sound (quiet speech, round 12) of `protect`
  * (voice without words whose finding is not accepted, outside accepted removals of words) stays whatever else covers
- * it: no pause or breath takes it (round 7).
+ * it: no pause or breath takes it (round 7). The silence tolerance never reaches into `keptTimes` (the kept words'
+ * times, media seconds): on a mixdown a word's quiet edge reads as measured silence (round 15).
  */
 function keepUnexplained(
 	clip: Pick<Clip, 'start' | 'sourceIn'>,
@@ -1042,6 +1054,7 @@ function keepUnexplained(
 	removing: readonly Span[],
 	protect: readonly Span[] = [],
 	wordStarts: readonly number[] = [],
+	keptTimes: readonly Span[] = [],
 ): Array<[number, number]> {
 	const F = flicksPerFrame(rate);
 	const frameS = F / FLICKS_PER_SECOND;
@@ -1061,7 +1074,8 @@ function keepUnexplained(
 		let voiced = k0 < Math.ceil(a / FR - 1e-9);
 		for (let k = k0; k < Math.ceil(a / FR - 1e-9); k++)
 			if (voice.classes[k] !== VOICE_CLASS_SPEECH && !silentFrame(voice, k)) voiced = false;
-		let x = voiced && wordStarts.some((t) => Math.abs(t - a) < 1e-9) ? a - frameS * (1 - 1e-6) : a;
+		const valley = voiced && wordStarts.some((t) => Math.abs(t - a) < 1e-9) ? a - frameS * (1 - 1e-6) : a;
+		let x = a;
 		for (
 			let k = Math.ceil(a / FR - 1e-9) - 1;
 			k >= 0 && (k + 1) * FR > a - frameS && silentFrame(voice, k);
@@ -1071,7 +1085,12 @@ function keepUnexplained(
 		let y = b;
 		for (let k = Math.floor(b / FR + 1e-9); k * FR < b + frameS && silentFrame(voice, k); k++)
 			y = Math.min(b + frameS, (k + 1) * FR);
-		return [x, y];
+		// …but never over a kept word's time
+		for (const [s, e] of keptTimes) {
+			if (s < a && e > x) x = Math.min(a, e);
+			if (e > b && s < y) y = Math.max(b, s);
+		}
+		return [Math.min(x, valley), y];
 	});
 	const inside = (t0: number, t1: number) => {
 		let lo = 0;

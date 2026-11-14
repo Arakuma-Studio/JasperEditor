@@ -359,7 +359,8 @@ describe('hidden takes', () => {
 		});
 	});
 
-	it('a restart inside one word (a dip in its level) is decoded again in VAD chunks; Clean Up removes the fragment', async () => {
+	/** A restart inside one word: the words as said (`truth`), as one long window writes them (`one`), the speech job. */
+	function restartInsideWord() {
 		// "y es extra… ¡extremadamente!" (round 13; the reporter's 244.71–245.75 s here 235.96 s earlier): windows of
 		// more than 5 s write one "extremadamente" of 0.95 s, as long as the speaker's clean one; VAD chunks write both.
 		// Phrases of words of two syllables in 0.24 s: the speaker's pace, 0.12 s per syllable
@@ -419,15 +420,31 @@ describe('hidden takes', () => {
 			// uniform noise of RMS 1/√12 at the level
 			audio[i] = (seed / 4294967296 - 0.5) * Math.sqrt(12) * 10 ** (db(i / SR) / 20);
 		}
-		const out = await runSpeechJob(
-			{
-				modelDir: fakeModelDir({ encodable: true, dot: true }),
-				modelId: 'fake',
-				input: { f32: '' },
-				language: 'es',
-			},
-			{ ort: fakeOrt(hiddenTakeDecoder(audio, truth, one, one)).ort, audio },
-		);
+		const job = (restartDip?: boolean) =>
+			runSpeechJob(
+				{
+					modelDir: fakeModelDir({ encodable: true, dot: true }),
+					modelId: 'fake',
+					input: { f32: '' },
+					language: 'es',
+				},
+				{
+					ort: fakeOrt(hiddenTakeDecoder(audio, truth, one, one)).ort,
+					audio,
+					...(restartDip !== undefined ? { restartDip } : {}),
+				},
+			);
+		return { truth, one, job };
+	}
+
+	it('the restart dip is off by default (round 15: on real audio it tripped on stop closures only)', async () => {
+		const { one, job } = restartInsideWord();
+		expect((await job()).words.map((w) => w.text)).toEqual(one.map((w) => w.text));
+	});
+
+	it('a restart inside one word (a dip in its level; the trace switched on) is decoded again in VAD chunks; Clean Up removes the fragment', async () => {
+		const { truth, job } = restartInsideWord();
+		const out = await job(true);
 		// one window, around the restart only; decoded alone it is the one word again, VAD chunks write both takes
 		expect(out.guard.redecoded).toMatchObject({ windows: 1, replaced: 1 });
 		expect(out.guard.redecoded!.ranges).toMatchObject([{ replaced: true, chunked: true }]);

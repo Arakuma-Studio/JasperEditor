@@ -18,7 +18,7 @@ export {
 	findingFingerprint,
 	type ScriptLineReport,
 } from './detector.ts';
-export { type WordDip, wordDip } from './dip.ts';
+export { RESTART_DIP_DEFAULT, type WordDip, wordDip } from './dip.ts';
 export { edgeThreshold, levelInPoint, levelOutPoint, snapEdge } from './edges.ts';
 export { languageFillerHits } from './fillers.ts';
 export {
