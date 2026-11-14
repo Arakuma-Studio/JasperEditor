@@ -27,6 +27,7 @@ import {
 	wordPeakDb,
 } from './detector.ts';
 import { snapEdge } from './edges.ts';
+import { type EditRepeat, editRepeatCuts } from './edit-repeats.ts';
 import { cleanupLanguageOf } from './lists.ts';
 import { isHarshCut, planMediaCuts, type Span } from './plan.ts';
 import type { AWord } from './rules.ts';
@@ -125,6 +126,8 @@ export type CleanupAnalysis = {
 	script: DetectResult['script'];
 	media: CleanupMediaReport[];
 	plan: CleanupPlan;
+	/** The repeats in the edit the analysis was given (`AnalyzeSequenceInput.editRepeats`), for re-plans. */
+	editRepeats?: EditRepeat[];
 };
 
 export type VoiceLookup = (mediaId: string, stream: number) => CleanupVoice | null | undefined;
@@ -256,6 +259,8 @@ export type AnalyzeSequenceInput = {
 	scope?: CleanupScope;
 	/** Look for a restart inside one word by its level dip (default `RESTART_DIP_DEFAULT`, off: `cleanup/dip.ts`). */
 	restartDip?: boolean;
+	/** Repeats in the edit from chunked transcriptions (`findEditRepeats`): findings, cut when accepted. */
+	editRepeats?: readonly EditRepeat[];
 };
 
 /** Detects and plans the cleanup of a sequence (dry run). */
@@ -359,6 +364,14 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 			edgeMode: run.voice && run.voice.levels.floorDb !== null ? settings.edges.mode : 'word',
 			clipIds: run.clips.map((c) => c.id),
 		});
+	}
+
+	// repeats in the edit (chunked words; docs/wp-notes/transcript-cleanup.md "Repeats at cuts"): findings like the
+	// others, each with the media time it cuts per clip; one the media detection already found is left out
+	const edit = editRepeatCuts(input.editRepeats ?? [], findings);
+	for (const e of edit) {
+		e.finding.id = `f${findings.length}`;
+		findings.push(e.finding);
 	}
 
 	// ---- decisions → per-media plan inputs, per clip pieces
@@ -553,7 +566,16 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 			);
 			// the last kept piece keeps its fading decay up to measured silence: a join's out point may sit inside the decay
 			// (the Fast style), but nothing follows the clip's last word
-			const removedTimes = words.filter((_, k) => inClip[k] && removedNow[k]).map((w) => [w.s, w.e] as Span);
+			// accepted repeats in the edit go whatever the word plan kept (edges on the clip's frame grid at or before the
+			// attempt's start and the retry's onset)
+			const editCuts = edit.flatMap((e) =>
+				accepted.has(e.finding) ? e.cuts.filter((c) => c.clipId === clip.id) : [],
+			);
+			keptFrames = cutMediaSpans(clip, rate, keptFrames, editCuts);
+			const removedTimes = words
+				.filter((_, k) => inClip[k] && removedNow[k])
+				.map((w) => [w.s, w.e] as Span)
+				.concat(editCuts.map((c) => [sec(c.start), sec(c.end)] as Span));
 			const tail = () => {
 				if (!run.voice || !keptFrames.length) return;
 				// the last word the kept pieces play
@@ -655,8 +677,11 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 		const n = run.voice?.frameCount ?? 0;
 		const arr = new Int8Array(n).fill(-1);
 		const own = fragments.filter((x) => x.run === run).map((x) => x.f);
-		for (const f of [...run.result.findings, ...own]) {
-			if (!accepted.has(f) || (f.kind !== 'fragment' && (!f.words || !WORD_KINDS.has(f.kind)))) continue;
+		const edits = edit.filter((e) => run.clips.some((c) => e.cuts.some((x) => x.clipId === c.id)));
+		for (const f of [...run.result.findings, ...own, ...edits.map((e) => e.finding)]) {
+			const byEdit = edits.some((e) => e.finding === f);
+			if (!accepted.has(f) || (f.kind !== 'fragment' && !byEdit && (!f.words || !WORD_KINDS.has(f.kind))))
+				continue;
 			const a = Math.max(0, Math.floor(f.range.start / FLICKS_PER_SECOND / FR));
 			const b = Math.min(n, Math.ceil(f.range.end / FLICKS_PER_SECOND / FR));
 			const ki = FINDING_KINDS.indexOf(f.kind);
@@ -778,10 +803,51 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 		fadeMs: settings.joins.fadeMs,
 		jlFrames: settings.joins.jlFrames,
 	};
-	return { ok: true, settings, findings, groups, script: script0, media, plan };
+	return {
+		ok: true,
+		settings,
+		findings,
+		groups,
+		script: script0,
+		media,
+		plan,
+		...(input.editRepeats ? { editRepeats: [...input.editRepeats] } : {}),
+	};
 }
 
 const round3 = (x: number) => Math.round(x * 1000) / 1000;
+
+/**
+ * Kept frames of a clip without the media spans `cuts` (flicks): each edge on the clip's frame grid at or before its
+ * media time (a cut ends at or before the onset of the take after it).
+ */
+function cutMediaSpans(
+	clip: Pick<Clip, 'start' | 'sourceIn'>,
+	rate: Rational,
+	kept: ReadonlyArray<readonly [number, number]>,
+	cuts: ReadonlyArray<{ start: number; end: number }>,
+): Array<[number, number]> {
+	const F = flicksPerFrame(rate);
+	const frame = (m: number) => clip.start + Math.floor((m - clip.sourceIn) / F + 1e-6);
+	let out = kept.map(([a, b]) => [a, b] as [number, number]);
+	for (const c of cuts) {
+		const x = frame(c.start);
+		const y = frame(c.end);
+		if (y <= x) continue;
+		out = out.flatMap(
+			([a, b]): Array<[number, number]> =>
+				y <= a || x >= b
+					? [[a, b]]
+					: (
+							[
+								[a, Math.min(b, x)],
+								[Math.max(a, y), b],
+							] as Array<[number, number]>
+						).filter(([p, q]) => q > p),
+		);
+	}
+	return out;
+}
 
 /**
  * Kept pieces of a clip's media (seconds) as sequence frames: each edge snapped to a frame boundary of the clip's

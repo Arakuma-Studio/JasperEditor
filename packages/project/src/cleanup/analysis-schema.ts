@@ -55,6 +55,31 @@ export const CleanupPlanSchema = z.object({
 	jlFrames: z.number().int(),
 });
 
+/** A repeat in the edit (`EditRepeat`, `edit-repeats.ts`). */
+export const EditRepeatSchema = z.object({
+	source: z.enum(['spans', 'mix']),
+	where: z.enum(['cut', 'span']),
+	kind: z.enum(['restart', 'false-start', 'retake', 'stutter']),
+	suggested: z.enum(['remove', 'review']),
+	text: z.string().max(2000),
+	kept: z.string().max(2000),
+	range: z.tuple([z.number().int(), z.number().int()]),
+	cuts: z
+		.array(
+			z.object({
+				clipId: z.string(),
+				mediaId: z.string(),
+				stream: z.number().int().min(0),
+				start: Flicks,
+				end: Flicks,
+			}),
+		)
+		.max(1000),
+	confidence: z.number().min(0).max(1),
+	held: z.enum(['decode', 'closure']).optional(),
+	copy: z.literal('later').optional(),
+});
+
 export const CleanupAnalysisSchema = z.object({
 	ok: z.literal(true),
 	settings: CleanupSettingsSchema,
@@ -77,4 +102,5 @@ export const CleanupAnalysisSchema = z.object({
 		}),
 	),
 	plan: CleanupPlanSchema,
+	editRepeats: z.array(EditRepeatSchema).max(100_000).optional(),
 });
