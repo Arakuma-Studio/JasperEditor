@@ -536,6 +536,13 @@ export function detectCleanup(input: DetectInput): DetectResult {
 	ruleMarkerPhrases(ctx, phs, markers);
 	ruleStutters(ctx);
 	if (sTokens.length) dropScriptRepeats(ctx);
+	// a filler the script says in sequence is scripted speech ("físicas… eh, Nada raro ehh." with the line "eh Nada raro
+	// ehh!!!!" lost its "eh"): the filler rules match the token alone, so the script alignment overrides them
+	for (let k = 0; k < aw.length; k++) {
+		const kind = labels[k]?.kind;
+		if ((kind === 'filler-vocalic' || kind === 'filler-phrase') && onScriptWord(awIndex[k]!))
+			labels[k] = null;
+	}
 	// head / tail: before the first unit that says a script line / after the last unit on script — one that says a line
 	// or, after it, one whose words come from the script by the prototype's off-script share (over all non-filler tokens,
 	// as calibrated; the off-script rule itself now judges content words): closing lines are often paraphrased,

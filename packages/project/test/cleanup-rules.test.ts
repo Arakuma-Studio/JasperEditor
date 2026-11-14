@@ -120,6 +120,16 @@ describe('rules (Spanish)', () => {
 		expect(kinds('voy a casa').label(1)).toBeNull();
 	});
 
+	it('a filler the script says in sequence is no filler', () => {
+		// the real recording: "este tipo de físicas… eh, Nada raro ehh." with the script line "eh Nada raro ehh!!!!"
+		const script = 'No pregunten para qué más se usan este tipo de físicas…\neh Nada raro ehh!!!!\nOk wow.';
+		const r = kinds('ese tipo de físicas… eh, Nada raro ehh. | hoy eh vamos', { script });
+		expect(r.label(4)).toBeNull();
+		expect(r.label(7)).toBeNull();
+		// an "eh" said elsewhere stays a filler
+		expect(r.label(9)).toBe('filler-vocalic');
+	});
+
 	it('restarts, false starts and retakes with a take group (last take kept)', () => {
 		const r = kinds('le puse texturas le puse texturas a la carretera');
 		expect(r.byWord.slice(0, 3)).toEqual(['restart', 'restart', 'restart']);

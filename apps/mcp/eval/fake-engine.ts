@@ -59,6 +59,7 @@ import {
 	type Transcript,
 } from '@jasper/project';
 import type { z } from 'zod';
+import { EngineRequestAborted } from '../src/link.ts';
 import { encodePng } from '../src/png.ts';
 
 const S = 705_600_000;
@@ -81,8 +82,11 @@ export type EngineFault = {
 	result?: unknown;
 	/** How many calls it applies to (default: all). */
 	times?: number;
-	/** Cuts the request off like a lost connection; with `afterApply`, after the engine applied it. */
-	abort?: 'connection-lost';
+	/**
+	 * Cuts the request off like a lost connection (with `afterApply`, after the engine applied it), or like an engine
+	 * that took it and never answered (`timeout`).
+	 */
+	abort?: 'connection-lost' | 'timeout';
 	afterApply?: boolean;
 };
 
@@ -1401,10 +1405,12 @@ export function createFakeEngine(
 					const method = methods[prop];
 					if (f?.abort) {
 						if (f.afterApply) await method?.(...args);
-						throw Object.assign(new Error('The connection to the engine was lost'), {
-							name: 'AbortError',
-							kind: f.abort,
-						});
+						throw new EngineRequestAborted(
+							f.abort,
+							f.abort === 'timeout'
+								? 'The engine accepted the request but did not answer in time'
+								: 'The connection to the engine was lost',
+						);
 					}
 					if (method) return method(...args);
 					unmodelled.push(prop);

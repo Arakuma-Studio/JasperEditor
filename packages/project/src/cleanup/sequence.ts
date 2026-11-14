@@ -718,10 +718,22 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 			output: [],
 		};
 		const v = run.voice;
+		const tw = transcriptForMedia(doc, run.mediaId)?.words ?? [];
 		const found = findShortPieces({
 			seq,
 			rate,
 			voice: run.voice,
+			// one take: `b` after `a` by less than a take's pause, and no other word of the transcript between two words
+			saidNext: (x, y) => {
+				if (y.s < x.s || y.s - x.e >= settings.thresholds.takeGapS) return false;
+				if (x.i === undefined || y.i === undefined) return true;
+				if (y.i <= x.i) return false;
+				for (let j = x.i + 1; j < y.i; j++) {
+					const w = tw[j];
+					if (w && w.end > w.start && /[\p{L}\p{N}]/u.test(w.text)) return false;
+				}
+				return true;
+			},
 			clips: cps.map((cp) => ({ ...cp, kept: cp.keptFrames })),
 			scope: range,
 			voiceIn: (t0, t1) => {
@@ -740,9 +752,53 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 		for (const p of found.pieces) {
 			const cp = cps[p.clip]!;
 			const overlapsSpan = ([x, y]: Span) => x < p.end - 1e-9 && y > p.start + 1e-9;
-			// voice without words that waits for its own finding is not judged here
-			if (!p.tokens.length && cp.protect.some(overlapsSpan)) continue;
-			const d = shortPieceFinding(p, context);
+			const waits = !p.tokens.length && cp.protect.some(overlapsSpan);
+			const d = shortPieceFinding(p, context, waits);
+			// voice without words that waits for its own finding is not judged here, unless the script runs on across the
+			// piece: then that finding, inside the piece, becomes the piece's fragment finding — removed unless that voice
+			// was kept before (a stored rejection or a decision)
+			if (waits) {
+				const own = run.result.findings.filter(
+					(f) =>
+						f.kind === 'untranscribed' &&
+						!accepted.has(f) &&
+						overlapsSpan([f.range.start / FLICKS_PER_SECOND, f.range.end / FLICKS_PER_SECOND]),
+				);
+				const f = own.length === 1 ? own[0]! : null;
+				if (
+					!d ||
+					!f ||
+					f.range.start / FLICKS_PER_SECOND < p.start - FR ||
+					f.range.end / FLICKS_PER_SECOND > p.end + FR
+				)
+					continue;
+				const kept = !isAccepted({ ...f, suggested: 'remove' }, decisions, rejected);
+				const a = Math.max(0, Math.round(p.start * FLICKS_PER_SECOND));
+				Object.assign(f, {
+					kind: 'fragment',
+					range: { start: a, end: Math.max(a, Math.round(p.end * FLICKS_PER_SECOND)) },
+					words: null,
+					confidence: 0.7,
+					reason: {
+						key: 'cleanup.reason.fragment',
+						params: {
+							text: '',
+							seconds: Math.round((p.end - p.start) * 1000) / 1000,
+							frames: p.frames,
+							between: p.betweenWords ? 'words' : 'cuts',
+							why: d.why,
+						},
+					},
+					suggested: 'remove',
+					fingerprint: fragmentFingerprint(run, p.start, p.end, ''),
+				} satisfies Partial<CleanupFinding>);
+				fragments.push({ run, f });
+				if (!kept && isAccepted(f, decisions, rejected)) {
+					accepted.add(f);
+					drop.add(`${p.clip}:${p.piece}`);
+				}
+				continue;
+			}
 			if (!d) continue;
 			// a sliver round 12 already offers keeps its finding; this rule may only make it a removal (sound without its
 			// picture, a filler)
