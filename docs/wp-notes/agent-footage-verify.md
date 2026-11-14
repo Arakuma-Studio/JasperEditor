@@ -20,7 +20,16 @@ tolerances and pinning documented thresholds to code by a test — [`licenses/po
   `ExportVerifyResult` in `packages/api/src/exports.ts`). 404 `NOT_FOUND` for an unknown or non-export job, 409
   `EXPORT_NOT_FINISHED` for one that has not succeeded; a job whose file was cleaned up fails `NOT_FOUND`
   (non-retryable) with "export again". Jobs dedupe per export, check set and target, show in the Jobs panel as children
-  of the export (`parentId`), and carry `origin: agent` when an agent asked.
+  of the export (`parentId`), and carry `origin: agent` when an agent asked. A finished verification is returned again
+  for the same export, check set and target while the export's `output.*` keeps its size and modification time (the
+  same file and checks give the same rows); only verifications of the running engine process count, so a newer build
+  measures again.
+- **MCP `verify_export`** takes `exportId` or `outputPath` (absolute; resolved to the newest succeeded export of the
+  project whose `result.path` is that file — a file is judged against what its export recorded in `verify.json`, so a
+  file no export of this engine wrote is refused `E_NOT_FOUND` with the project's recent exports in `details.exports`).
+  With neither it lists the project's 10 most recent export jobs (`jobId`, `state`, `title`, `path`, `durationSec`,
+  time); the engine keeps its last 500 finished jobs and all of the last 7 days (`JobQueue.prune`). The result keeps
+  the overall verdict `verified` and `counts` per status.
 - **Rows.** `{id, kind: 'format' | 'judgement', status: 'pass' | 'warn' | 'fail' | 'unverified', measured, expected,
   tolerance, at?: {sec, frame, timecode}, message}`; `verified` = no `fail` row and no `unverified` format row; `counts`
   per status. A check with findings lists one row per finding (at most 50, then one row counting the rest); a clean

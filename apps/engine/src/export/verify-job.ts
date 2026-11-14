@@ -20,7 +20,7 @@ import {
 	VERIFY_THRESHOLDS,
 	type VerifyChecks,
 } from './verify.ts';
-import { type ExportVerifyContext, readVerifyContext } from './verify-context.ts';
+import { type ExportVerifyContext, fileOffsetOf, readVerifyContext } from './verify-context.ts';
 import { measureAudio, measureVideo, probeOutput } from './verify-measure.ts';
 
 export const EXPORT_JOB_ID_RE = /^job_[0-9a-f]{16}$/;
@@ -66,7 +66,7 @@ export function framesAroundCuts(ctx: ExportVerifyContext): Set<number> {
 	const keep = new Set<number>();
 	for (const c of ctx.cuts) {
 		// the file frame of the cut (the file's rate may differ from the sequence's: a GIF, a platform preset)
-		const f = Math.round(((c.frame - ctx.range.start) / seqFps) * fps);
+		const f = Math.round((fileOffsetOf(ctx, c) / seqFps) * fps);
 		for (let i = Math.max(0, f - reach); i <= f + reach; i++) keep.add(i);
 	}
 	return keep;
@@ -161,7 +161,7 @@ export async function verifyExportFile(o: {
 		if (a?.sampleRate && a.channels) {
 			o.progress?.(0.6, 'Measuring the sound');
 			const fps = context ? context.fps.num / context.fps.den : 1;
-			const cutSecs = context ? context.cuts.map((c) => (c.frame - context.range.start) / fps) : [];
+			const cutSecs = context ? context.cuts.map((c) => fileOffsetOf(context, c) / fps) : [];
 			const m = await measureAudio(
 				o.ff,
 				o.file,

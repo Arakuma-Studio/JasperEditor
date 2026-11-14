@@ -6,7 +6,13 @@
 // (MIT; licenses/ported/ffmpeg-skill.md; no code copied). Pure: the measurements come from verify-measure.ts.
 import type { ExportOutputInfo, ExportOutputStream, VerifyAt, VerifyRow } from '@jasper/api';
 import { type DeliveryTarget, formatTimecode } from '@jasper/project';
-import type { ExportVerifyContext, VerifyCut } from './verify-context.ts';
+import {
+	type ExportVerifyContext,
+	fileOffsetOf,
+	renderedFrames,
+	sequenceFrameAt,
+	type VerifyCut,
+} from './verify-context.ts';
 
 /** Every threshold of the checks (the wp-note's "Thresholds" table is pinned to these by a test). */
 export const VERIFY_THRESHOLDS = {
@@ -245,7 +251,7 @@ const fpsOf = (q: { num: number; den: number }) => q.num / q.den;
 function atOf(ctx: ExportVerifyContext | null, videoFps: number | null, sec: number): VerifyAt {
 	if (ctx) {
 		const fps = fpsOf(ctx.fps);
-		const frame = ctx.range.start + Math.max(0, Math.floor(sec * fps + 1e-6));
+		const frame = sequenceFrameAt(ctx, Math.max(0, Math.floor(sec * fps + 1e-6)));
 		return {
 			sec: r2(sec, 3),
 			frame,
@@ -370,9 +376,7 @@ function durationRow(input: JudgeInput): VerifyRow {
 		};
 	}
 	const file = output.durationSec;
-	const want = ctx
-		? ((ctx.range.end - ctx.range.start) * ctx.fps.den) / ctx.fps.num
-		: input.fallback.durationSec;
+	const want = ctx ? (renderedFrames(ctx) * ctx.fps.den) / ctx.fps.num : input.fallback.durationSec;
 	const tol = ctx ? Math.max(ctx.fps.den / ctx.fps.num, T.durationToleranceSec) : T.durationToleranceSec;
 	if (file === null || want === undefined)
 		return {
@@ -513,7 +517,7 @@ function cutRows(input: JudgeInput, full: FullMeasurements): VerifyRow[] {
 	const hasVideo = full.videoFrames > 0;
 	for (const [i, cut] of ctx.cuts.entries()) {
 		// the cut's first frame in the file (the file may run at another rate: a GIF, a platform preset)
-		const fileFrame = Math.round(((cut.frame - ctx.range.start) / seqFps) * fps);
+		const fileFrame = Math.round((fileOffsetOf(ctx, cut) / seqFps) * fps);
 		if (hasVideo) {
 			const found = cutPictureFindings((f) => full.luma.get(f), { ...cut, fileFrame }, fps, full.videoFrames);
 			for (const f of found) {
@@ -943,7 +947,7 @@ function uncoveredRows(ctx: ExportVerifyContext | null): VerifyRow[] {
 	const fps = fpsOf(ctx.fps);
 	const listed: VerifyRow[] = ctx.uncovered.map((r) => {
 		const n = r.end - r.start;
-		const at = atOf(ctx, fps, (r.start - ctx.range.start) / fps);
+		const at = atOf(ctx, fps, fileOffsetOf(ctx, r) / fps);
 		return {
 			id: 'uncovered-video',
 			kind: 'judgement',

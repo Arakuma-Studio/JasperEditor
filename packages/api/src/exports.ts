@@ -86,6 +86,13 @@ export const ExportGifSchema = z.object({
 });
 export type ExportGif = z.infer<typeof ExportGifSchema>;
 
+/** Most sequence ranges one export joins (`range.type: 'ranges'`; each is planned and rendered on its own). */
+export const MAX_EXPORT_RANGES = 50;
+
+const FrameRangeSchema = z
+	.object({ startFrame: z.number().int().min(0), endFrame: z.number().int().min(1) })
+	.refine((r) => r.endFrame > r.startFrame, 'endFrame must be after startFrame');
+
 /** If H.264 is unavailable, the render plan names the codec and container the engine will use. */
 export const ExportSettingsSchema = z.object({
 	sequenceId: z.string(),
@@ -98,6 +105,12 @@ export const ExportSettingsSchema = z.object({
 			startFrame: z.number().int().min(0),
 			endFrame: z.number().int().min(1),
 		}),
+		/**
+		 * Several sequence ranges joined into one file in this order (a review cut): each range is rendered as a range
+		 * export of its own, to a picture intermediate, and the file is encoded once; the sound is the mix of each range
+		 * joined with the 4 ms equal-power join fade (`JOIN_FADE_MS`). One range is `custom`.
+		 */
+		z.object({ type: z.literal('ranges'), ranges: z.array(FrameRangeSchema).min(2).max(MAX_EXPORT_RANGES) }),
 	]),
 	presetId: z.string().optional(),
 	/**

@@ -120,6 +120,8 @@ export type EngineSetup = {
 	pendingTranscription?: { polls: number };
 	/** What an export's verification finds. */
 	verify?: { failRow?: string };
+	/** A finished export of the project wrote this path in an earlier session (its job id is not in the chat). */
+	pastExport?: string;
 	/** A still `logo.png` (three letters with gaps between them) on V2 at 0: `{{still}}`. */
 	logo?: boolean;
 };
@@ -1191,6 +1193,7 @@ export function createFakeEngine(
 				analysis: c.analysis,
 			};
 		},
+		listJobs: () => ({ jobs: [...jobs.values()].reverse().map(jobView) }),
 		getJob: (id: string) => {
 			const job = jobs.get(id);
 			if (!job) throw new EngineError('NOT_FOUND', `No job ${id}`, { status: 404 });
@@ -1471,6 +1474,8 @@ export function createFakeEngine(
 			},
 		},
 	);
+	if (setup.pastExport)
+		newJob('export', 'Export – Sequence 1', 0, { path: setup.pastExport, sizeBytes: 48_000_000 });
 	if (setup.pendingTranscription) {
 		const view = routes.mediaTranscribe!({ params: { key: 'mk_c' } }) as { id: string };
 		jobs.get(view.id)!.polls = setup.pendingTranscription.polls;

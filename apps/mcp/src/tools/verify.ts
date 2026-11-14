@@ -2,7 +2,8 @@
 // `verify_export` runs the engine's `export-verify` job on a finished export and returns its rows; `fastVerification`
 // gives start_export / wait_for_job the probe-only rows (AF-VER-002). The agent reads the rows instead of claiming the
 // export is fine: `format` rows it may fix unasked (export again), `judgement` rows it asks the user about.
-import { type ExportVerifyResult, ExportVerifyResultSchema } from '@jasper/api';
+import { isAbsolute, resolve } from 'node:path';
+import { type EngineJob, type ExportVerifyResult, ExportVerifyResultSchema } from '@jasper/api';
 import { DELIVERY_TARGET_IDS } from '@jasper/project';
 import { z } from 'zod';
 import { ProjectIdArg } from '../arguments.ts';
@@ -50,6 +51,35 @@ export async function fastVerification(
 	}
 }
 
+/** Most recent export jobs `verify_export` lists without an export. */
+const LISTED_EXPORTS = 10;
+
+/** The file a finished export wrote (`result.path`), if it wrote one to a path. */
+const pathOf = (job: EngineJob): string | null => {
+	const p = (job.result as { path?: unknown } | undefined)?.path;
+	return typeof p === 'string' ? p : null;
+};
+
+/** The project's export jobs, newest first (the engine keeps its last 500 finished jobs, and every one of 7 days). */
+async function exportJobs(ctx: ToolContext, projectId: string): Promise<EngineJob[]> {
+	const { jobs } = await ctx.engine((c) => c.listJobs({ projectId }));
+	return jobs.filter((j) => j.kind === 'export' && (!j.projectId || j.projectId === projectId));
+}
+
+/** One line of the export list: what an agent needs to pick it. */
+const exportSummary = (j: EngineJob) => {
+	const r = (j.result ?? {}) as { durationSec?: unknown };
+	const path = pathOf(j);
+	return {
+		jobId: j.id,
+		state: j.state,
+		title: j.title,
+		...(path ? { path } : {}),
+		...(typeof r.durationSec === 'number' ? { durationSec: r.durationSec } : {}),
+		...(j.finishedAt ? { finishedAt: j.finishedAt } : { createdAt: j.createdAt }),
+	};
+};
+
 export function registerVerifyTools(ctx: ToolContext): void {
 	defineTool(
 		ctx,
@@ -57,12 +87,13 @@ export function registerVerifyTools(ctx: ToolContext): void {
 		{
 			title: 'Verify export',
 			description:
-				'Measure a finished export (`exportId`: its job id): decode, streams, duration, A/V skew, black or flash frames and clicks at cuts, loudness, true peak, silence. `target` adds a platform\'s limits. `checks: "fast"` probes only.',
+				"Measure a finished export (job id `exportId`, or the `outputPath` it wrote; neither lists recent exports): decode, streams, duration, A/V skew, black or flash frames and clicks at cuts, loudness, true peak, silence. `target` adds a platform's limits.",
 			input: {
 				projectId: ProjectIdArg,
-				exportId: z.string().min(1).max(64).describe('The job id of `start_export`.'),
+				exportId: z.string().min(1).max(64).optional(),
+				outputPath: z.string().min(1).optional(),
 				target: z.enum(DELIVERY_TARGET_IDS).optional(),
-				checks: z.enum(['full', 'fast']).optional().describe('Default full.'),
+				checks: z.enum(['full', 'fast']).optional().describe('Default full; fast probes only.'),
 				timeoutSeconds: z
 					.number()
 					.int()
@@ -73,7 +104,43 @@ export function registerVerifyTools(ctx: ToolContext): void {
 			},
 			annotations: READ_ONLY,
 		},
-		async ({ projectId, exportId, target, checks, timeoutSeconds }, extra) => {
+		async ({ projectId, exportId: givenId, outputPath, target, checks, timeoutSeconds }, extra) => {
+			if (givenId && outputPath)
+				throw new ToolError('E_INVALID_PARAM', 'Pass exportId or outputPath, not both', 'Drop outputPath.');
+			if (!givenId && !outputPath) {
+				const recent = (await exportJobs(ctx, projectId)).slice(0, LISTED_EXPORTS);
+				return jsonResult({
+					exports: recent.map(exportSummary),
+					next: recent.length
+						? 'Call verify_export with the exportId (or outputPath) of a succeeded export.'
+						: 'This project has no exports: export it with start_export.',
+				});
+			}
+			let exportId = givenId ?? '';
+			if (outputPath) {
+				if (!isAbsolute(outputPath))
+					throw new ToolError(
+						'E_INVALID_PARAM',
+						'outputPath must be absolute',
+						'Pass the full path the export wrote.',
+					);
+				// a file is checked against what its export recorded (range, cuts, settings): the job that wrote it
+				const want = resolve(outputPath);
+				const written = (await exportJobs(ctx, projectId)).filter(
+					(j) => j.state === 'succeeded' && pathOf(j) !== null,
+				);
+				const found = written.find((j) => resolve(pathOf(j)!) === want);
+				if (!found)
+					throw new ToolError(
+						'E_NOT_FOUND',
+						`No finished export of this project wrote ${want}: a file is verified against the range, cuts and settings its export recorded`,
+						written.length
+							? 'Pass a path from details.exports, or export again with start_export.'
+							: 'Export again with start_export.',
+						{ exports: written.slice(0, LISTED_EXPORTS).map(exportSummary) },
+					);
+				exportId = found.id;
+			}
 			const exportJob = await ctx.engine((c) => c.getJob(exportId));
 			if (exportJob.kind !== 'export')
 				throw new ToolError(

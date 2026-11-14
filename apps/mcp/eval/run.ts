@@ -160,6 +160,7 @@ async function runSample(input: {
 				? { pendingTranscription: testCase.setup.pendingTranscription }
 				: {}),
 			...(testCase.setup?.verify ? { verify: testCase.setup.verify } : {}),
+			...(testCase.setup?.pastExport ? { pastExport: testCase.setup.pastExport } : {}),
 			...(testCase.setup?.logo ? { logo: true } : {}),
 		};
 		// The ids are deterministic, so the same setup here gives the stub's ids to the prompt and history.

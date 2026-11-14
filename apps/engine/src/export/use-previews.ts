@@ -50,6 +50,8 @@ export function concatFilter(o: {
 		scaling: 'fit' | 'fill' | 'stretch';
 	};
 	encoderFilters: readonly string[];
+	/** Pixel format the pieces are joined in (default 8-bit 4:4:4: previews; deeper intermediates keep their depth). */
+	pixFmt?: string;
 }): string {
 	const rate = (r: { num: number; den: number }) => `${r.num}/${r.den}`;
 	const { width: W, height: H } = o.size;
@@ -57,7 +59,7 @@ export function concatFilter(o: {
 	o.frames.forEach((n, i) => {
 		// Every piece as exactly `n` CFR frames at the sequence size (half-size previews are never used).
 		chains.push(
-			`[${i}:v]setpts=N/(${rate(o.fps)})/TB,scale=${W}:${H}:${SWS_FLAGS},setsar=1,format=yuv444p,trim=end_frame=${n}[p${i}]`,
+			`[${i}:v]setpts=N/(${rate(o.fps)})/TB,scale=${W}:${H}:${SWS_FLAGS},setsar=1,format=${o.pixFmt ?? 'yuv444p'},trim=end_frame=${n}[p${i}]`,
 		);
 	});
 	const vout: string[] = [];

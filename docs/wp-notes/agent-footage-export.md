@@ -71,6 +71,36 @@ Workstream AF-EXP of [spec 18](../specs/18-agent-footage-editing.md) §2.7. No c
   by name (`E_INVALID_PARAM`); `plan.deliverable` and `result.gif` / `result.container` / `result.audioCodec` describe
   the file.
 
+## 4b. Several ranges in one file (`range: {type: 'ranges'}`)
+
+Reported in a real cut (2026-11-14): a review cut of several ranges needed one export per range plus an outside
+concat, because `start_export` took one `range`.
+
+- **Settings.** `ExportSettings.range` takes `{type: 'ranges', ranges: [{startFrame, endFrame}, …]}` (2 to
+  `MAX_EXPORT_RANGES` = 50; one range is `custom`). The ranges are joined in the order given; they may be out of
+  sequence order and may overlap. MCP `start_export {range: [{from, to}, …]}` sends it (a one-item list is `custom`;
+  an empty or negative item is refused as `range[i]`).
+- **Plan** (`apps/engine/src/export/ranges.ts`, `ExportService.planJoined`). Each range is planned as a `custom` range
+  export of its own, picture only, so each gets exactly the path, blockers and warnings that range alone would. The file's
+  plan adds up frames, duration and estimate, takes the slowest part's path, lists every part's blockers and warnings
+  once, recomputes the W_SOUND_* warnings over every range's sound, and adds `RANGES_JOINED` (info). Smart rendering
+  and Use Previews do not apply (`plan.smart.reasons`, `PREVIEWS_UNUSED`).
+- **Refusals** (`VALIDATION_FAILED`, by name): embedded or sidecar captions (their cues are timed on the sequence),
+  alpha masters, and output colour spaces other than BT.709 (the concatenation below is BT.709). Burned-in captions,
+  draft proxies, GIF and audio-only files join like a video file.
+- **Picture.** The Use Previews machinery (`renderWithPreviews`): every range is rendered by `renderToFile` (its own
+  planning, path, fallbacks and frame-count check) to a ProRes 4444 intermediate at the sequence size, and the
+  concatenation is encoded once with the export's encoder (`concatFilter`, joined in 12-bit 4:4:4 so no 8-bit rounding
+  and dither precede the one encode). The file has one more generation than a one-range export (ProRes 4444).
+- **Sound.** `renderPass1` mixes each range from its own snapshot (`MixdownOptions.pieces`), each starting as a range
+  export of it starts, and joins the mixes with the equal-power join fade Clean Up gives a hard cut (`JOIN_FADE_MS`
+  = 4 ms out before every join and 4 ms in after it, `joinFadeGain`). Loudness normalisation, the delivery passes and
+  the decoded check run on the joined mix, as for any export, so every path (video, GIF has none, audio-only) carries
+  the same samples.
+- **Verification.** `verify.json` version 2 records `pieces` (the ranges in file order); cuts and uncovered runs carry
+  `at` (frames from the file start) and every join is a cut (black intended on a side where the timeline has no
+  picture). `range` is the span. A build that reads only version 1 then reports `unverified` instead of misreading.
+
 ## 5. Validation (measured 2026-10-31 / 11-01, shared 4-core host under load from 10 agents, ffmpeg 6.1 system build with `JASPER_FFMPEG_LGPL_ONLY=1`)
 
 | Check | Result | Rerun |
@@ -89,6 +119,11 @@ Workstream AF-EXP of [spec 18](../specs/18-agent-footage-editing.md) §2.7. No c
 | Running dev engine: `start_export {format: flac, audioBitDepth 16, normalizeLufs −16}` → FLAC 16-bit 48 kHz stereo, 4.000 s; `ebur128` of the file −16.0 LUFS | pass | — |
 
 ## 6. Limits
+
+- Several ranges in one file: one more encode (from ProRes 4444) than a one-range export; no smart rendering or
+  render previews; caption streams / sidecars, alpha masters and non-BT.709 outputs are refused (export each range).
+  A join is a hard cut with 4 ms fades, not a crossfade. Each range's sound starts fresh as a range export does
+  (reverb or delay tails from before the range are not carried in).
 
 - The automated GIF tests exercise the native path; the hybrid and Remotion paths were verified by hand in the running
   app (§5), not by a test in the default gate (they need a headless browser).

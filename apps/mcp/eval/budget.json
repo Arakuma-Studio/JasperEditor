@@ -1,6 +1,6 @@
 {
   "contexts": {
-    "core": 25789,
+    "core": 25788,
     "+project": 11910,
     "+media": 15917,
     "+processing": 6277,
@@ -27,7 +27,7 @@
     "+automation": 27587,
     "+export": 13017,
     "+ui": 13941,
-    "all": 507894
+    "all": 507893
   },
   "tool": 10493
 }

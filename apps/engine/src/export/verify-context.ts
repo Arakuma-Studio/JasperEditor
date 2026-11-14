@@ -5,7 +5,7 @@
 // a graphic / adjustment layer over the cut). `verify_export` judges the file against it later, whatever the document
 // has become since. Pure except for the file helpers at the end.
 import { join } from 'node:path';
-import { EXPORT_CONTAINERS } from '@jasper/api';
+import { EXPORT_CONTAINERS, MAX_EXPORT_RANGES } from '@jasper/api';
 import {
 	analyzePictureCuts,
 	type Clip,
@@ -42,19 +42,29 @@ export const VerifyCutSchema = z.object({
 	blackAfter: z.boolean(),
 	/** A transition or a graphic / adjustment layer is over the cut: a flash there may be designed. */
 	effect: z.boolean(),
+	/** Frames from the file's start (sequence rate) where it is; absent = `frame − range.start` (`fileOffsetOf`). */
+	at: z.number().int().min(0).optional(),
 });
 export type VerifyCut = z.infer<typeof VerifyCutSchema>;
 
+const FrameSpanSchema = z
+	.object({ start: z.number().int().min(0), end: z.number().int().min(1) })
+	.refine((r) => r.end > r.start, 'empty range');
+
 export const ExportVerifyContextSchema = z.object({
-	version: z.literal(1),
+	/** 2 = a multi-range export (`pieces`, `at`): a build that reads only 1 then verifies nothing instead of misreading. */
+	version: z.union([z.literal(1), z.literal(2)]),
 	projectId: z.string().max(200).optional(),
 	sequenceId: z.string().max(200),
 	/** What the export wrote (AF-EXP): a video file, a GIF (picture only) or an audio-only file. Absent = video. */
 	deliverable: z.enum(['video', 'gif', 'audio']).optional(),
-	/** Sequence frames `[start, end)` the export rendered. */
-	range: z
-		.object({ start: z.number().int().min(0), end: z.number().int().min(1) })
-		.refine((r) => r.end > r.start, 'empty range'),
+	/** Sequence frames `[start, end)` the export rendered (several ranges: their span). */
+	range: FrameSpanSchema,
+	/**
+	 * export/ranges.ts: the sequence ranges joined into the file, in file order (absent = `range` alone). Cuts and
+	 * uncovered frames then carry `at`, and every join is a cut.
+	 */
+	pieces: z.array(FrameSpanSchema).min(2).max(MAX_EXPORT_RANGES).optional(),
 	/** The sequence rate (range, cut frames and timecodes); the file's own rate is `expected.video.frameRate`. */
 	fps: RationalSchema,
 	dropFrame: z.boolean(),
@@ -96,13 +106,46 @@ export const ExportVerifyContextSchema = z.object({
 	 * at most graphics over it); `audible`: audio plays under them. Absent = not recorded (an older build).
 	 */
 	uncovered: z
-		.array(z.object({ start: z.number().int().min(0), end: z.number().int().min(1), audible: z.boolean() }))
+		.array(
+			z.object({
+				start: z.number().int().min(0),
+				end: z.number().int().min(1),
+				audible: z.boolean(),
+				/** As a cut's `at`. */
+				at: z.number().int().min(0).optional(),
+			}),
+		)
 		.max(MAX_VERIFY_UNCOVERED)
 		.optional(),
 	/** More uncovered ranges than recorded. */
 	uncoveredMore: z.number().int().min(1).optional(),
 });
 export type ExportVerifyContext = z.infer<typeof ExportVerifyContextSchema>;
+
+/** Frames from the file's start (sequence rate) of a cut or uncovered run the context records. */
+export function fileOffsetOf(
+	ctx: Pick<ExportVerifyContext, 'range'>,
+	x: { start?: number; frame?: number; at?: number | undefined },
+): number {
+	return x.at ?? (x.frame ?? x.start ?? ctx.range.start) - ctx.range.start;
+}
+
+/** Frames (sequence rate) the export rendered: the range, or the joined ranges added up. */
+export function renderedFrames(ctx: Pick<ExportVerifyContext, 'range' | 'pieces'>): number {
+	return ctx.pieces ? ctx.pieces.reduce((n, p) => n + p.end - p.start, 0) : ctx.range.end - ctx.range.start;
+}
+
+/** The sequence frame the file shows `offset` frames (sequence rate) from its start. */
+export function sequenceFrameAt(ctx: Pick<ExportVerifyContext, 'range' | 'pieces'>, offset: number): number {
+	if (!ctx.pieces) return ctx.range.start + offset;
+	let left = offset;
+	for (const p of ctx.pieces) {
+		if (left < p.end - p.start) return p.start + left;
+		left -= p.end - p.start;
+	}
+	const last = ctx.pieces[ctx.pieces.length - 1]!;
+	return last.end - 1;
+}
 
 /** ffprobe's name of an export audio encoder. */
 export function probeAudioCodecName(encoder: string): string {
@@ -263,7 +306,55 @@ export type VerifyContextSource = {
 	pixFmt: string | null;
 	/** The ffmpeg audio encoder written (`aac`, `libopus`, `pcm_s24le`…), null without audio. */
 	audioEncoder: string | null;
+	/** export/ranges.ts: the ranges a multi-range export joined, in file order (`range` is their span). */
+	pieces?: readonly { start: number; end: number }[];
 };
+
+/**
+ * The cuts and uncovered frames of a multi-range export: each range's own, placed where the range starts in the file
+ * (`at`), and a cut at every join — black is intended on a side of it where the timeline has no picture.
+ */
+function joinedCutsOf(
+	doc: ProjectDocument,
+	sequenceId: string,
+	seq: Seq | undefined,
+	pieces: readonly { start: number; end: number }[],
+	withUncovered: boolean,
+): Pick<ExportVerifyContext, 'cuts' | 'cutsNote' | 'uncovered' | 'uncoveredMore'> {
+	const cuts: VerifyCut[] = [];
+	const notes = new Set<string>();
+	const uncovered: NonNullable<ExportVerifyContext['uncovered']> = [];
+	let more = 0;
+	const noPicture = (f: number) => !!seq && uncoveredPicture(doc, seq, { start: f, end: f + 1 }).length > 0;
+	let at = 0;
+	pieces.forEach((p, i) => {
+		if (i > 0)
+			cuts.push({
+				frame: p.start,
+				kind: 'cut',
+				blackBefore: noPicture(pieces[i - 1]!.end - 1),
+				blackAfter: noPicture(p.start),
+				effect: false,
+				at,
+			});
+		const own = verifyCutsOf(doc, sequenceId, p);
+		if (own.note) notes.add(own.note);
+		for (const c of own.cuts) cuts.push({ ...c, at: at + c.frame - p.start });
+		if (seq && withUncovered)
+			for (const r of uncoveredPicture(doc, seq, p)) {
+				if (uncovered.length < MAX_VERIFY_UNCOVERED) uncovered.push({ ...r, at: at + r.start - p.start });
+				else more++;
+			}
+		at += p.end - p.start;
+	});
+	if (cuts.length > MAX_VERIFY_CUTS) notes.add(`Only the first ${MAX_VERIFY_CUTS} cuts are checked`);
+	const note = [...notes].join('; ').slice(0, 500);
+	return {
+		cuts: cuts.slice(0, MAX_VERIFY_CUTS),
+		...(note ? { cutsNote: note } : {}),
+		...(withUncovered && seq ? { uncovered, ...(more ? { uncoveredMore: more } : {}) } : {}),
+	};
+}
 
 /** The verification context of a finished export (see the file comment). */
 /** The range's frames with no picture (structure/uncovered.ts), capped. */
@@ -281,24 +372,32 @@ export function uncoveredOf(
 
 export function buildVerifyContext(s: VerifyContextSource): ExportVerifyContext {
 	const seq = s.document.sequences?.[s.sequenceId];
-	const { cuts, note } = verifyCutsOf(s.document, s.sequenceId, s.range);
 	const o = s.output;
 	const seqFps = seq?.settings.frameRate;
 	const fps = seqFps && seqFps.num > 0 && seqFps.den > 0 ? seqFps : o.fps;
+	// a transparent master's empty frames are meant (alpha); an audio file has no picture
+	const withUncovered = s.deliverable?.kind !== 'audio' && !s.output.alpha;
+	const joined = s.pieces && s.pieces.length > 1 ? s.pieces : null;
+	const marks = joined
+		? joinedCutsOf(s.document, s.sequenceId, seq, joined, withUncovered)
+		: (() => {
+				const { cuts, note } = verifyCutsOf(s.document, s.sequenceId, s.range);
+				return {
+					cuts,
+					...(note ? { cutsNote: note } : {}),
+					...(seq && withUncovered ? uncoveredOf(s.document, seq, s.range) : {}),
+				};
+			})();
 	const common = {
-		version: 1 as const,
+		version: joined ? (2 as const) : (1 as const),
 		...(typeof s.document.projectId === 'string' ? { projectId: s.document.projectId } : {}),
 		sequenceId: s.sequenceId,
 		range: { start: s.range.start, end: s.range.end },
+		...(joined ? { pieces: joined.map((p) => ({ start: p.start, end: p.end })) } : {}),
 		fps: { num: fps.num, den: fps.den },
 		dropFrame: seq?.settings.dropFrame === true,
 		startTimecodeFrames: Math.max(0, Math.trunc(seq?.settings.startTimecodeFrames ?? 0)),
-		cuts,
-		...(note ? { cutsNote: note } : {}),
-		// a transparent master's empty frames are meant (alpha); an audio file has no picture
-		...(seq && s.deliverable?.kind !== 'audio' && !s.output.alpha
-			? uncoveredOf(s.document, seq, s.range)
-			: {}),
+		...marks,
 	};
 	const d = s.deliverable;
 	if (d?.kind === 'gif')

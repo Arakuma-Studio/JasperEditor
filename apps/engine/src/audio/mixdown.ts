@@ -20,7 +20,9 @@ import { installAudioFxProcessors } from '@jasper/audio-fx';
 import {
 	type AudioStream,
 	type ClipReader,
+	fadeCurve,
 	frameToSample,
+	JOIN_FADE_MS,
 	OfflineMixer,
 	type RenderAudioClip,
 	type RenderSnapshot,
@@ -55,6 +57,12 @@ export type MixdownOptions = {
 	media(mediaId: string): MixSource | null;
 	/** Sequence frames to render. */
 	range: { start: number; end: number };
+	/**
+	 * Multi-range exports (export/ranges.ts): sequence ranges joined in this order, each mixed from its own snapshot
+	 * (as a range export of it starts) and joined with JOIN_FADE_MS equal-power fades (`joinFadeGain`). Replaces
+	 * `range`; `snapshot` still gives the Mix's rate.
+	 */
+	pieces?: readonly MixPiece[];
 	/** Exact output length in samples (export duration); default the range length. */
 	length?: number;
 	outputLayout?: Layout;
@@ -102,6 +110,29 @@ export type MixdownOptions = {
 	/** Where the delivery's passes and decoded checks run (deliver.ts `DeliveryRunner`); absent = this thread. */
 	runner?: DeliveryRunner;
 };
+
+/** One range of a joined mix (`MixdownOptions.pieces`). */
+export type MixPiece = { snapshot: RenderSnapshot; range: { start: number; end: number } };
+
+/**
+ * Gain of sample `k` of a `length`-sample piece of a joined mix: the equal-power join fade Clean Up gives both sides
+ * of a hard cut (JOIN_FADE_MS, `fadeCurve('equal-power')`), in over the first `fade` samples after a join (`fadeIn`)
+ * and out over the last `fade` before one (`fadeOut`), so the joined waveform has no step. 1 elsewhere.
+ */
+export function joinFadeGain(
+	k: number,
+	length: number,
+	fade: number,
+	fadeIn: boolean,
+	fadeOut: boolean,
+): number {
+	const f = Math.min(fade, Math.floor(length / 2));
+	if (f <= 0) return 1;
+	let g = 1;
+	if (fadeIn && k < f) g *= fadeCurve('equal-power', k / f);
+	if (fadeOut && k >= length - f) g *= fadeCurve('equal-power', (length - k) / f);
+	return g;
+}
 
 /** The mixer's output over the range before normalisation (`renderPass1`): plain data, so a worker can return it. */
 export type MixPass1 = {
@@ -206,8 +237,17 @@ export async function renderPass1(o: MixdownOptions): Promise<MixPass1> {
 	if (!mix) throw new Error('render snapshot without audioMix');
 	const sr = mix.sampleRate;
 	const fps = snap.settings.fps;
-	const start = frameToSample(o.range.start, fps, sr);
-	const total = o.length ?? frameToSample(o.range.end, fps, sr) - start;
+	const pieces: readonly MixPiece[] = o.pieces?.length ? o.pieces : [{ snapshot: snap, range: o.range }];
+	// each piece's first output sample: its first frame in the joined file (the pieces' lengths added up)
+	const bounds = [0];
+	for (const p of pieces) bounds.push(bounds[bounds.length - 1]! + p.range.end - p.range.start);
+	const outSample = bounds.map((f) => frameToSample(f, fps, sr));
+	const total =
+		o.length ??
+		(pieces.length > 1
+			? outSample[outSample.length - 1]!
+			: frameToSample(o.range.end, fps, sr) - frameToSample(o.range.start, fps, sr));
+	const joinFade = pieces.length > 1 ? Math.round((JOIN_FADE_MS / 1000) * sr) : 0;
 	const soxr = await hasSoxr(o.ff);
 	const openClip = (clip: RenderAudioClip, at: { offset: number; length: number; sampleRate: number }) => {
 		if (o.onlyClips && !o.onlyClips.has(clip.clipId)) return null;
@@ -235,19 +275,22 @@ export async function renderPass1(o: MixdownOptions): Promise<MixPass1> {
 		return new PcmStreamReader(channels, child) as ClipReader;
 	};
 	const sourceLevels = o.clipLevels === 'source';
-	let snapshot = sourceLevels ? withSourceLevels(snap) : snap;
-	if (o.withoutLoudness && snapshot.audioMix?.loudness)
-		snapshot = { ...snapshot, audioMix: { ...snapshot.audioMix, loudness: null } };
-	const mixer = new OfflineMixer({
-		snapshot,
-		openClip,
-		startSample: start,
-		...(o.outputLayout ? { outputLayout: o.outputLayout } : {}),
-		...(o.mixdown ? { mixdown: o.mixdown } : {}),
-		...(o.onlyTracks ? { onlyTracks: o.onlyTracks } : {}),
-		...(sourceLevels || o.tap === 'track-inputs' ? { tap: 'track-inputs' as const } : {}),
-		...(o.skipSilentStrips && o.onlyClips ? { audibleClips: o.onlyClips } : {}),
-	});
+	const mixerFor = (piece: MixPiece) => {
+		let snapshot = sourceLevels ? withSourceLevels(piece.snapshot) : piece.snapshot;
+		if (o.withoutLoudness && snapshot.audioMix?.loudness)
+			snapshot = { ...snapshot, audioMix: { ...snapshot.audioMix, loudness: null } };
+		return new OfflineMixer({
+			snapshot,
+			openClip,
+			startSample: frameToSample(piece.range.start, fps, sr),
+			...(o.outputLayout ? { outputLayout: o.outputLayout } : {}),
+			...(o.mixdown ? { mixdown: o.mixdown } : {}),
+			...(o.onlyTracks ? { onlyTracks: o.onlyTracks } : {}),
+			...(sourceLevels || o.tap === 'track-inputs' ? { tap: 'track-inputs' as const } : {}),
+			...(o.skipSilentStrips && o.onlyClips ? { audibleClips: o.onlyClips } : {}),
+		});
+	};
+	let mixer = mixerFor(pieces[0]!);
 	const channels = mixer.outputLayout === 'mono' ? 1 : mixer.outputLayout === '5.1' ? 6 : 2;
 	const keep = !o.measureOnly;
 	// a measure-only render with normalisation keeps its pass 1 while the delivery is solved
@@ -270,11 +313,28 @@ export async function renderPass1(o: MixdownOptions): Promise<MixPass1> {
 	try {
 		if (fh) await fh.write(wavHeaderF32(channels, sr, total));
 		const block = Array.from({ length: channels }, () => new Float32Array(BLOCK));
+		let piece = 0;
 		for (let done = 0; done < total; ) {
 			if (o.signal?.aborted) throw new Error('aborted');
-			const n = Math.min(BLOCK, total - done);
+			// the last piece runs to `total` (an explicit length may differ from the frames' samples by rounding)
+			const last = piece === pieces.length - 1;
+			const pieceEnd = last ? total : Math.min(total, outSample[piece + 1]!);
+			if (done >= pieceEnd && !last) {
+				mixer.close();
+				mixer = mixerFor(pieces[++piece]!);
+				continue;
+			}
+			const n = Math.min(BLOCK, pieceEnd - done);
 			const view = block.map((c) => c.subarray(0, n));
 			await mixer.render(view, n);
+			if (joinFade > 0) {
+				const p0 = outSample[piece]!;
+				const len = pieceEnd - p0;
+				for (let i = 0; i < n; i++) {
+					const g = joinFadeGain(done - p0 + i, len, joinFade, piece > 0, !last);
+					if (g !== 1) for (const c of view) c[i] = c[i]! * g;
+				}
+			}
 			meter?.process(view, 0, n);
 			o.onBlock?.(view, n);
 			if (fh) {

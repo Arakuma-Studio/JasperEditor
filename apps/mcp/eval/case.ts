@@ -87,6 +87,8 @@ export const CaseSchema = z.strictObject({
 			/** A queued transcription still running for `polls` reads: `{{pendingJob}}` (`EngineSetup.pendingTranscription`). */
 			pendingTranscription: z.strictObject({ polls: z.number().int().min(1) }).optional(),
 			verify: z.strictObject({ failRow: z.string().optional() }).optional(),
+			/** A finished export wrote this path in an earlier session (`fake-engine.ts` `EngineSetup.pastExport`). */
+			pastExport: z.string().optional(),
 			/** A still logo.png on V2: `{{still}}` (`fake-engine.ts` `EngineSetup.logo`). */
 			logo: z.boolean().optional(),
 		})
