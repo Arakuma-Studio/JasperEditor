@@ -383,9 +383,15 @@ export function applyLabel(cuts: number, repairs = 0): string {
 export function resultPreview(
 	seq: Sequence,
 	analysis: CleanupAnalysis,
-): { commands: Command[]; omitted: Array<[number, number]> } | null {
+): { commands: Command[]; omitted: Array<[number, number]>; inserted: Array<[number, number]> } | null {
 	const plan = analysis.plan;
 	const extend = cleanupExtends(plan);
+	// edge repairs insert their frames at the clip's edge (committed frames)
+	const inserted: Array<[number, number]> = [];
+	for (const e of extend) {
+		const c = seq.clips[e.clipId];
+		if (c) inserted.push([e.side === 'out' ? c.start + c.duration : c.start, e.frames]);
+	}
 	if (!plan.ranges.length && !extend.length) return null;
 	return {
 		commands: [
@@ -401,6 +407,7 @@ export function resultPreview(
 			} as Command,
 		],
 		omitted: plan.ranges.map((r) => [r.start, r.end]),
+		inserted: inserted.sort((a, b) => a[0] - b[0]),
 	};
 }
 
@@ -592,13 +599,26 @@ export function reasonText(f: CleanupFinding): string {
 /** What an edge repair does (`frames` > 0: the clip grows into its media; < 0: it is trimmed). */
 function edgeText(p: CleanupFinding['reason']['params'], text: string): string {
 	const n = Math.abs(Number(p.frames));
-	if (Number(p.frames) < 0) return t('Trim {0} frames of another word’s sound at the edit', n);
-	if (p.side === 'in')
-		return text
-			? t('The edit cuts the start of “{0}”: keep {1} more frames', text, n)
+	const one = n === 1;
+	if (Number(p.frames) < 0)
+		return one
+			? t('Trim 1 frame of another word’s sound at the edit')
+			: t('Trim {0} frames of another word’s sound at the edit', n);
+	if (p.side === 'in') {
+		if (text)
+			return one
+				? t('The edit cuts the start of “{0}”: keep 1 more frame', text)
+				: t('The edit cuts the start of “{0}”: keep {1} more frames', text, n);
+		return one
+			? t('The edit cuts a word’s start: keep 1 more frame')
 			: t('The edit cuts a word’s start: keep {0} more frames', n);
-	return text
-		? t('The edit cuts the end of “{0}”: keep {1} more frames', text, n)
+	}
+	if (text)
+		return one
+			? t('The edit cuts the end of “{0}”: keep 1 more frame', text)
+			: t('The edit cuts the end of “{0}”: keep {1} more frames', text, n);
+	return one
+		? t('The edit cuts a word’s end: keep 1 more frame')
 		: t('The edit cuts a word’s end: keep {0} more frames', n);
 }
 

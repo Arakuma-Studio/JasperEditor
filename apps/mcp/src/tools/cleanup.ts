@@ -356,8 +356,8 @@ export function findingReasonText(f: CleanupFinding): string {
 			const n = Math.abs(Number(p.frames));
 			const what =
 				Number(p.frames) < 0
-					? `Trim ${n} frames of another word's sound at the edit`
-					: `The edit cuts the ${p.side === 'in' ? 'start' : 'end'} of ${text ? `"${text}"` : 'a word'}: accepting extends the clip and its linked picture ${n} frames into the media`;
+					? `Trim ${n} ${n === 1 ? 'frame' : 'frames'} of another word's sound at the edit`
+					: `The edit cuts the ${p.side === 'in' ? 'start' : 'end'} of ${text ? `"${text}"` : 'a word'}: accepting extends the clip and its linked picture ${n} ${n === 1 ? 'frame' : 'frames'} into the media`;
 			const review: Record<string, string> = {
 				'speech-left': 'still not a quiet place — listen first',
 				word: 'it would take most of another word — listen first',

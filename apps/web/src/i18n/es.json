@@ -13798,5 +13798,11 @@
   "The edit cuts the end of “{0}”: keep {1} more frames": "El corte corta el final de «{0}»: conservar {1} fotogramas más",
   "The edit cuts the start of “{0}”: keep {1} more frames": "El corte corta el inicio de «{0}»: conservar {1} fotogramas más",
   "Trim {0} frames of another word’s sound at the edit": "Recortar {0} fotogramas del sonido de otra palabra en el corte",
-  "Words cut at an edit": "Palabras cortadas en un corte"
+  "Words cut at an edit": "Palabras cortadas en un corte",
+  "Apply {0} cuts and 1 edge repair": "Aplicar {0} cortes y 1 reparación de corte",
+  "The edit cuts a word’s end: keep 1 more frame": "El corte corta el final de una palabra: conservar 1 fotograma más",
+  "The edit cuts a word’s start: keep 1 more frame": "El corte corta el inicio de una palabra: conservar 1 fotograma más",
+  "The edit cuts the end of “{0}”: keep 1 more frame": "El corte corta el final de «{0}»: conservar 1 fotograma más",
+  "The edit cuts the start of “{0}”: keep 1 more frame": "El corte corta el inicio de «{0}»: conservar 1 fotograma más",
+  "Trim 1 frame of another word’s sound at the edit": "Recortar 1 fotograma del sonido de otra palabra en el corte"
 }

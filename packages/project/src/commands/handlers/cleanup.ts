@@ -253,6 +253,7 @@ function extendEdges(
 	});
 	edits.sort((x, y) => y.P - x.P || (x.side === y.side ? 0 : x.side === 'in' ? -1 : 1));
 	const done: Array<{ clipId: string; side: 'in' | 'out'; frames: number }> = [];
+	const warned = h.warnings.length;
 	for (const e of edits) {
 		const c = e.c;
 		const offset = c.sourceIn - c.start * F;
@@ -296,7 +297,28 @@ function extendEdges(
 			}
 		done.push({ clipId: c.id, side: e.side, frames: n });
 	}
+	foldOverlayWarnings(h, warned, done.length);
 	return done;
+}
+
+/**
+ * The `W_OVERLAY_FITTED` warnings of many inserts (one per extension inside a day card or title) as one: each overlay
+ * with the net frames it gained, and how many edits fitted it.
+ */
+function foldOverlayWarnings(h: HandlerContext, from: number, edits: number): void {
+	const fitted = h.warnings.slice(from).filter((w) => w.code === 'W_OVERLAY_FITTED');
+	if (fitted.length < 2) return;
+	const net = new Map<string, number>();
+	for (const w of fitted)
+		for (const m of w.message.matchAll(/(\S+) \(([+−])(\d+) frames\)/g))
+			net.set(m[1]!, (net.get(m[1]!) ?? 0) + (m[2] === '−' ? -1 : 1) * Number(m[3]));
+	const rest = h.warnings.slice(from).filter((w) => w.code !== 'W_OVERLAY_FITTED');
+	h.warnings.splice(from, h.warnings.length - from, ...rest);
+	const list = [...net].map(([id, n]) => `${id} (${n >= 0 ? '+' : '−'}${Math.abs(n)} frames)`);
+	h.warn(
+		'W_OVERLAY_FITTED',
+		`Generated clips kept whole across ${fitted.length} of the ${edits} edge extensions, their keyframes moved with their ends: ${list.slice(0, 20).join(', ')}${list.length > 20 ? ` and ${list.length - 20} more` : ''}`,
+	);
 }
 
 /**
