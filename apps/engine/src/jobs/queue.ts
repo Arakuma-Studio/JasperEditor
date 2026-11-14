@@ -1,11 +1,13 @@
 // Engine job queue (S04 §17, ARCHITECTURE §9.3): lanes (interactive > user > background, FIFO within a
-// lane), a CPU-slot scheduler, dedupe keys, cancel (process-tree kill, partials removed, `cancelled`
-// within 5 s), retry, a jobs.jsonl journal with restart recovery and throttled `job.updated` events.
+// lane), a CPU-slot scheduler with headroom only the interactive lane may use, dedupe keys, cancel (process-tree
+// kill, partials removed, `cancelled` within 5 s), retry, a jobs.jsonl journal with restart recovery and throttled
+// `job.updated` events.
 import type { ChildProcess } from 'node:child_process';
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { mkdir, rm } from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
 import { dirname, join } from 'node:path';
+import { monitorEventLoopDelay } from 'node:perf_hooks';
 import {
 	type EngineJob,
 	EngineJobSchema,
@@ -104,6 +106,11 @@ type ExternalJobSource = {
 
 export class JobQueue {
 	readonly totalSlots: number;
+	/**
+	 * Slots above `totalSlots` only the interactive lane may use (one per 8, at least 1), so a job holding every slot
+	 * (an export) never starves a probe, a still or a verify frame.
+	 */
+	private readonly interactiveSlots: number;
 	private readonly entries = new Map<string, Entry>();
 	private readonly entriesByDedupeKey = new Map<string, Set<string>>();
 	private readonly runners = new Map<JobKind, JobRunner>();
@@ -116,6 +123,7 @@ export class JobQueue {
 
 	constructor(private readonly opts: JobQueueOptions) {
 		this.totalSlots = Math.max(1, opts.totalSlots ?? availableParallelism());
+		this.interactiveSlots = Math.max(1, Math.ceil(this.totalSlots / 8));
 		this.now = opts.now ?? (() => new Date());
 	}
 
@@ -368,7 +376,8 @@ export class JobQueue {
 		for (const e of queued) {
 			if (pauseBg && e.job.priority === 'background') continue;
 			if (!this.runners.has(e.job.kind)) continue;
-			const avail = this.totalSlots - used;
+			// interactive jobs may also use the headroom: they start while an export holds every slot (S04:JB-012)
+			const avail = this.totalSlots + (e.job.priority === 'interactive' ? this.interactiveSlots : 0) - used;
 			let grant: number;
 			if (avail >= e.job.cpuSlots) grant = e.job.cpuSlots;
 			else if (avail >= e.minSlots && avail > 0) grant = avail;
@@ -412,6 +421,17 @@ export class JobQueue {
 				if (e.logLines.length > 400) e.logLines.splice(0, e.logLines.length - 400);
 			},
 		};
+		// the engine's event-loop delay while the job ran, in the kept log (a busy loop answers every request late)
+		const loop = SUCCESS_LOG_KINDS.has(e.job.kind) ? monitorEventLoopDelay({ resolution: 20 }) : null;
+		loop?.enable();
+		const logLoop = () => {
+			if (!loop) return;
+			loop.disable();
+			const ms = (v: number) => (Number.isFinite(v) ? Math.round(v / 1e6) : 0);
+			ctx.log(
+				`event loop delay: p50 ${ms(loop.percentile(50))} ms, p99 ${ms(loop.percentile(99))} ms, max ${ms(loop.max)} ms`,
+			);
+		};
 		e.settled = (async () => {
 			try {
 				const result = await runner(ctx);
@@ -419,7 +439,10 @@ export class JobQueue {
 					await this.cleanupAndFinish(e, this.stopping ? 'interrupted' : 'cancelled', {});
 				} else {
 					// an export's log is kept when it succeeds too (its phases, segments and audio delivery, for benchmarks)
-					if (SUCCESS_LOG_KINDS.has(e.job.kind)) this.writeLog(e);
+					if (SUCCESS_LOG_KINDS.has(e.job.kind)) {
+						logLoop();
+						this.writeLog(e);
+					}
 					await this.cleanupAndFinish(e, 'succeeded', { result });
 				}
 			} catch (err) {
@@ -455,11 +478,14 @@ export class JobQueue {
 					)
 						ctx.log(detail.stderr);
 					ctx.log(`${code}: ${message}`);
+					logLoop();
 					const logRef = this.writeLog(e);
 					await this.cleanupAndFinish(e, 'failed', {
 						error: { code, message: message.slice(0, 2000), retryable, ...(logRef ? { logRef } : {}) },
 					});
 				}
+			} finally {
+				loop?.disable();
 			}
 		})();
 	}

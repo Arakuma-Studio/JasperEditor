@@ -672,7 +672,7 @@ Events (`{id, type, createdAt, projectId?, payload}`): `engine.heartbeat`, `capa
 
 ### 9.3 Jobs (S04 §17)
 
-`EngineJob` exactly S04 §17.1. M1 implements: lanes (`interactive`, `user`, `background`), CPU slots = cores (probe 1, peaks 1, sprite 1, poster 1, proxy 4, export all-remaining ≥ half, mg-render 4), dedupe keys (`proxy:720:<fp>`), cancel (SIGTERM then SIGKILL after 3 s, delete partials), retry, journal + `interrupted` on restart, events. Derivative jobs complete immediately when the artifact exists (content-addressed, S04:CA-001).
+`EngineJob` exactly S04 §17.1. M1 implements: lanes (`interactive`, `user`, `background`), CPU slots = cores (probe 1, peaks 1, sprite 1, poster 1, proxy 4, export all-remaining ≥ half, mg-render 4) plus ⌈cores / 8⌉ slots only the `interactive` lane may use (an export holding every slot never starves an import's probe, a still or a verify frame), dedupe keys (`proxy:720:<fp>`), cancel (SIGTERM then SIGKILL after 3 s, delete partials), retry, journal + `interrupted` on restart, events. Derivative jobs complete immediately when the artifact exists (content-addressed, S04:CA-001).
 
 ### 9.4 Derivatives (M1)
 

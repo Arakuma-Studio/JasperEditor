@@ -9,7 +9,18 @@ import { JobQueue } from '../src/jobs/queue.ts';
 import { type JobContext, JobError, type JobRunner } from '../src/jobs/types.ts';
 import { Ffmpeg, resolveBinaries } from '../src/tools/ffmpeg.ts';
 import { spawnTool } from '../src/tools/process.ts';
-import { closeApps, H, makeApp, tempAppdir } from './helpers.ts';
+import { coreServices } from '../src/tools/services.ts';
+import {
+	closeApps,
+	DocBuilder,
+	ensureFixtures,
+	fixture,
+	H,
+	JSON_H,
+	makeApp,
+	register,
+	tempAppdir,
+} from './helpers.ts';
 
 const drain = () => new Promise<void>((resolve) => setImmediate(resolve));
 
@@ -187,7 +198,9 @@ describe('scheduling (S04:JB-011/012/014)', () => {
 			dedupeKey: 'k',
 		});
 		expect(d2.id).toBe(d1.id);
-		expect(q.usedSlots).toBe(2);
+		// int-1 takes the interactive headroom (one slot of two) while bg-1 holds both slots
+		expect(order).toEqual(['bg-1', 'int-1']);
+		expect(q.usedSlots).toBe(3);
 		gates.get('bg-1')!();
 		await q.wait(a.id);
 		await drain();
@@ -227,6 +240,57 @@ describe('scheduling (S04:JB-011/012/014)', () => {
 		expect(started).toHaveLength(3);
 		expect(backgroundSawExport).toEqual([false]);
 		for (const g of gates) g();
+	});
+
+	it("starts an import's probe while an export holds every CPU slot", async () => {
+		ensureFixtures();
+		const app = await makeApp({ totalSlots: 4 });
+		const core = coreServices(app);
+		const d = new DocBuilder('hd-720p-30');
+		d.tx([{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V1', color: [0.2, 0.4, 1, 1] }]);
+		// the export holds its slots until the import's probe is queued, then ends
+		let release: () => void = () => undefined;
+		core.queue.registerRunner('export', () => new Promise<void>((res) => (release = res)));
+		const exportStateWhenProbeRan: string[] = [];
+		let exportId = '';
+		core.broadcaster.subscribe((e) => {
+			const j = e.payload as EngineJob;
+			if (j.kind !== 'probe') return;
+			if (e.type === 'job.created') setImmediate(() => release());
+			if (e.type === 'job.updated' && j.state === 'running')
+				exportStateWhenProbeRan.push(core.queue.get(exportId)!.state);
+		});
+		const r = await app.inject({
+			method: 'POST',
+			url: '/api/exports',
+			headers: JSON_H,
+			payload: {
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				settings: {
+					sequenceId: d.seqId,
+					range: { type: 'entire' },
+					container: 'mp4',
+					engine: 'native',
+					video: {
+						codec: 'h264',
+						width: 640,
+						height: 360,
+						frameRate: { num: 30, den: 1 },
+						scaling: 'fit',
+						quality: { mode: 'crf', value: 23 },
+						encoderSpeed: 'fast',
+					},
+					audio: { codec: 'aac', sampleRate: 48000, channels: 2 },
+				},
+			},
+		});
+		expect(r.statusCode, r.body).toBe(202);
+		exportId = r.json().id;
+		expect(core.queue.usedSlots).toBe(core.queue.totalSlots);
+		await register(app, fixture('clip-b.mp4'));
+		expect(exportStateWhenProbeRan).toEqual(['running']);
+		await core.queue.wait(exportId);
 	});
 
 	it('fails with a retryable error, keeps a log, and retries as a new job', async () => {
