@@ -10888,6 +10888,16 @@ asks for ≥ 192 kHz in effect and accepts 4× at 48 kHz). The interpolation ker
 (oversample.ts). They read the same channels and the whole decoded stream (AAC priming included) and report
 dBTP = 20·log10(max |x̂|) over every channel. There was no unit or sign error.
 
+**Not a stale value.** A second export (job_59e84fe1e1b4ad9a: 31.3 s, S1–S8, AAC 128 kb/s, Remotion path) also
+reported `truePeakDbtp: 1.045`, and that suggested a cache. It is not one. Its result's integrated loudness and LRA
+are its own: −9.029 LUFS / 2.42 LU, against −6.746 / 0 for job_1f84762cadaa683d. Its first 2.03 s are S1, sample for
+sample: the decoded files correlate at r = 1.0000 at lag 0 with equal RMS. So the PCM's loudest moment (the effect over
+the clipped voice at 1.52 s, +1.045 dBTP) is in both programmes, and a true peak is the maximum over the programme.
+Each export mixes into its own job scratch directory. The only cross-job audio cache is the delivery cache, keyed on
+the mix's SHA-256, target and codec, and only normalised exports use it. Verify's 0.27 dBTP / −9.4 LUFS for that file
+are again the file after AAC clip avoidance; its file peak is at 4.8 s, not in S1. With this change both exports
+report their files' numbers.
+
 **Which is right.** "The delivered file's true peak" is verify_export's 0.08 dBTP, and what a delivery target is met
 on. Neither number was wrong; the result's top-level field was answering a different question.
 
