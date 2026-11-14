@@ -503,6 +503,32 @@ export function redecodeAccepted<W extends Timed & { text: string }>(
 }
 
 /**
+ * Whether an incoming edge word already says the outside word next to it (`side`: the outside word lies at the incoming
+ * word's end or start), so the two must not both stay: they overlap in time and say the same word, or the outside word
+ * is only a symbol or punctuation, within 0.25 s, that the incoming word holds at that end ("%" after "99%": the 30 s windows and the VAD
+ * chunk passes write "99 %" and "99%" for one "noventa y nueve por ciento").
+ */
+function saysAgain(
+	w: Timed & { text?: string },
+	o: Timed & { text?: string },
+	side: 'start' | 'end',
+): boolean {
+	const overlap = Math.min(w.end, o.end) - Math.max(w.start, o.start);
+	const wt = String(w.text ?? '').trim();
+	const ot = String(o.text ?? '').trim();
+	const on = cleanupNorm(ot);
+	if (on) return overlap > 0 && on === cleanupNorm(wt);
+	// a symbol touching the word (within 0.25 s) is its own: Whisper times "%" from where the number ends
+	if (-overlap > RESAID_NEAR_SAMPLES) return false;
+	const core = [...ot].filter((c) => !/\s/u.test(c)).join('');
+	if (!core) return false;
+	const bare = side === 'end' ? wt.replace(/[.,;:!?…»”’)\]]+$/u, '') : wt.replace(/^[¿¡«“‘([]+/u, '');
+	return side === 'end'
+		? bare.endsWith(core) || wt.endsWith(core)
+		: bare.startsWith(core) || wt.startsWith(core);
+}
+
+/**
  * `words` (sorted, non-overlapping) with the words whose midpoint lies in `[start, end)` (samples) replaced by
  * `incoming`: those of it whose midpoint lies there too, clamped between the kept neighbours, so the result stays
  * sorted with integer, non-overlapping times.
@@ -517,6 +543,12 @@ export function replaceWindowWords<W extends Timed>(
 	const inside = (w: Timed) => mid(w) >= start && mid(w) < end;
 	const before = words.filter((w) => !inside(w) && mid(w) < start);
 	const after = words.filter((w) => !inside(w) && mid(w) >= end);
+	// an outside neighbour the incoming edge word already says is not kept twice ("99%" over "99" "%" → "99% %")
+	const coming = [...incoming].filter(inside).sort((a, b) => a.start - b.start);
+	const first = coming[0];
+	const last = coming[coming.length - 1];
+	while (last && after.length && saysAgain(last, after[0]!, 'end')) after.shift();
+	while (first && before.length && saysAgain(first, before[before.length - 1]!, 'start')) before.pop();
 	let prev = before.length ? before[before.length - 1]!.end : 0;
 	const limit = after.length ? after[0]!.start : Number.POSITIVE_INFINITY;
 	const placed: W[] = [];

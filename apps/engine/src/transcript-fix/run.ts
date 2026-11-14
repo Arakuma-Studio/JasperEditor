@@ -72,10 +72,12 @@ import type { ProposalService, Requester } from '../proposals/service.ts';
 import { liveDocument } from '../sound-design/plan.ts';
 import { engineMediaKey } from '../sound-design/voice.ts';
 import type { SpeechGlossary } from '../speech/glossary.ts';
+import type { SpanTranscriber } from '../speech/kept-spans.ts';
 import type { SpeechScoreOptions } from '../speech/service.ts';
 import { HttpError } from '../tools/reply.ts';
 import type { VoiceAnalysisService } from '../voice/service.ts';
 import { type FixCostStore, REFERENCE_COST } from './costs.ts';
+import { isRebuildReport, runRebuild } from './rebuild.ts';
 
 // ---------------------------------------------------------------------------------------------------------------
 // Dependencies (structural, so tests fake them at the service boundary)
@@ -97,6 +99,8 @@ export type FixSpeech = {
 		signal: AbortSignal,
 		opts?: SpeechScoreOptions,
 	): Promise<SpeechScoreResult>;
+	/** Rebuild from script: the kept spans transcribed again (`speech/kept-spans.ts`). */
+	transcribeSpans?: SpanTranscriber['transcribeSpans'];
 };
 /** The personal glossary library (SC-070, `speech/glossary.ts`; its entries are the SC-073 source). */
 export type FixGlossary = Pick<SpeechGlossary, 'list'>;
@@ -166,7 +170,7 @@ export type Prepared = {
 	revision: number | null;
 	seq: Sequence;
 	settings: FixSettings;
-	mode: 'propose' | 'dryRun';
+	mode: 'propose' | 'dryRun' | 'rebuild';
 	device?: 'auto' | 'cpu' | 'gpu';
 	scriptText: string | null;
 	glossary: GlossaryEntryInput[];
@@ -285,12 +289,22 @@ export async function prepare(
 	if (!seq) return refuse(404, 'NOT_FOUND', `Sequence not found: ${sequenceId}`, 'E_NOT_FOUND');
 	const settings = fixSettings(seq, req);
 	const mode = req.mode ?? 'propose';
+	const rebuild = mode === 'rebuild';
 	const warnings: Prepared['warnings'] = [];
-	// sources (SC-001, SC-073)
+	// sources (SC-001, SC-073); a rebuild writes from the script alone
 	const script = readSequenceCleanup(seq).script;
-	const scriptText = settings.sources.includes('script') && script?.text?.trim() ? script.text : null;
+	const scriptText =
+		(rebuild || settings.sources.includes('script')) && script?.text?.trim() ? script.text : null;
+	if (rebuild && !scriptText)
+		return refuse(
+			409,
+			'NO_FIX_SOURCE',
+			'Rebuild from script needs the script: attach it to the sequence first',
+			'E_NO_SOURCE',
+			{ sources: ['script'] },
+		);
 	let glossary: GlossaryEntryInput[] = [];
-	if (settings.sources.includes('glossary')) {
+	if (!rebuild && settings.sources.includes('glossary')) {
 		const g = deps.glossary();
 		if (!g)
 			warnings.push({
@@ -324,12 +338,12 @@ export async function prepare(
 			'E_NO_SOURCE',
 			{ sources: settings.sources },
 		);
-	if (settings.sources.includes('script') && !scriptText)
+	if (!rebuild && settings.sources.includes('script') && !scriptText)
 		warnings.push({
 			code: 'W_NO_SCRIPT',
 			message: 'No script is attached: only the personal glossary is used',
 		});
-	if (settings.scope === 'inOut' && seq.inPoint === null && seq.outPoint === null)
+	if (!rebuild && settings.scope === 'inOut' && seq.inPoint === null && seq.outPoint === null)
 		return refuse(
 			400,
 			'VALIDATION_FAILED',
@@ -337,7 +351,8 @@ export async function prepare(
 			'E_INVALID_PARAM',
 		);
 	// scope (SC-063)
-	const all = scopeMedia(doc, seq, settings.scope);
+	// a rebuild covers what the sequence keeps (its own spans), whatever the scope setting
+	const all = scopeMedia(doc, seq, rebuild ? 'recordings' : settings.scope);
 	const media: ScopeMedia[] = [];
 	for (const m of all) {
 		if (m.transcript.task === 'translate') {
@@ -372,7 +387,7 @@ export async function prepare(
 	if (!modelProblem && media.every((m) => !models.get(m.mediaId)))
 		modelProblem =
 			'No speech model that can score these transcripts is downloaded (Preferences ▸ Transcription, or install_speech_model)';
-	if (mode === 'propose' && modelProblem)
+	if ((mode === 'propose' || rebuild) && modelProblem)
 		return refuse(409, 'SPEECH_MODEL_NOT_INSTALLED', modelProblem, 'E_NO_SPEECH_MODEL');
 	return {
 		doc,
@@ -1123,6 +1138,7 @@ async function runJob(ctx: JobContext, deps: TranscriptFixDeps): Promise<Transcr
 	const { doc, revision } = await liveDocument(agent, input.projectId);
 	const p = await prepare(deps, doc, revision, input.sequenceId, input.request);
 	const readMs = Date.now() - t0;
+	if (p.mode === 'rebuild') return runRebuild(deps, p, input, ctx, { t0, readMs });
 	const r = await runPipeline(deps, p, {
 		signal: ctx.signal,
 		progress: (f, stage) => ctx.progress(f, { stage }),
@@ -1176,6 +1192,15 @@ export function transcriptFixRefresher(deps: TranscriptFixDeps) {
 		doc: ProjectDocument;
 		revision: number;
 	}) => {
+		// a rebuild is not re-planned item by item: its spans were transcribed together
+		if (isRebuildReport(input.proposal.report))
+			return {
+				items: [],
+				dropped: input.itemIds.map((itemId) => ({
+					itemId,
+					reason: 'The transcript changed since the rebuild: run Rebuild from script again',
+				})),
+			};
 		const rep = fixReportOf(input.proposal);
 		const seqId = input.proposal.sequenceId;
 		if (!rep || !seqId)
@@ -1285,6 +1310,8 @@ export function transcriptFixAcceptExtension(input: {
 	itemIds: readonly string[];
 }): { label: string; commands: Record<string, unknown>[] } {
 	const n = input.itemIds.length;
+	if (isRebuildReport(input.proposal.report))
+		return { label: `Rebuild transcript from script: ${plural(n, 'span', 'spans')}`, commands: [] };
 	const cmd = rejectionCommand(input.doc, input.proposal, input.itemIds);
 	return { label: `Fix transcript: ${plural(n, 'fix', 'fixes')}`, commands: cmd ? [cmd] : [] };
 }

@@ -8,6 +8,15 @@
 //   once;
 // - a word belongs to a clip when its midpoint, mapped through the clip's speed, falls inside the clip; its
 //   timeline bounds are clamped to the clip, so a word cut by an edit is shown cut;
+// - a word whose start a clip's In cuts off also belongs to that clip when the cut-off part (holding its midpoint) is
+//   played by no clip of the track and the clip plays at least `CUT_START_MIN_SHARE` of it (`heardFromCutStart`):
+//   speech to text starts a word after a pause early (it takes in the silence or breath before it), so the In a cut
+//   puts at the voice onset of a kept take often lands past the word's midpoint and the take lost its first word
+//   (the reporter's cut: "Y si alguno…" read "si alguno…"; measured on that cut, docs/wp-notes/captions.md);
+// - a word shorter than `MIN_HEARD_WORD_SECONDS` (a zero-length leftover of an edit) is heard through no clip;
+// - a short word stranded at a clip's tail right after the clip's sentence end, when the next clip on the track follows
+//   straight on and speaks, is not heard through that clip (`tailFragmentIndex`): a fragment of another take, a breath written as
+//   a word, or the start of the next scene's phrase ("Appstore! | Y si alguno…": "Y" showed in the previous scene);
 // - disabled clips and reversed clips contribute no words.
 // Word ranges become timeline ranges (`wordRangeFrames`) snapped outward to frames; pause and filler removal
 // produce many ranges that are ripple-deleted in one pass, right to left. Captions come from `captionBlocks`.
@@ -35,6 +44,87 @@ export type SeqWord = {
 	speaker: string | null;
 	confidence: number | null;
 };
+
+/**
+ * Share of a word a clip must play for the word to follow the clip when the clip's In cuts off its start and nothing
+ * plays the cut-off part (see `heardFromCutStart`). Measured on the reporter's cut (rev 144 → rev 267, 33 kept-take
+ * first words straddling an In): every word kept at ≥ 20 % was the take's own; the removed takes' words reaching into
+ * a kept clip did so by ≤ 10 %. An assumption beyond that recording.
+ */
+export const CUT_START_MIN_SHARE = 0.2;
+
+/**
+ * Whether a word (media flicks) cut off at a clip's In (`clipIn`) is heard through that clip although its midpoint lies
+ * before the In: the clip plays at least `CUT_START_MIN_SHARE` of it and `playedElsewhere(midpoint)` is false (no other
+ * clip of the track plays the cut-off part). Words cut at a clip's Out keep the midpoint rule: there the early start of
+ * the next take's first word reaches into the clip.
+ */
+export function heardFromCutStart(
+	w: { start: number; end: number },
+	clipIn: number,
+	clipOut: number,
+	playedElsewhere: (mediaTime: number) => boolean,
+): boolean {
+	const len = w.end - w.start;
+	if (!(len > 0) || !(w.start < clipIn) || !(w.end > clipIn)) return false;
+	const mid = w.start + len / 2;
+	if (mid >= clipIn) return false;
+	const inside = Math.min(w.end, clipOut) - clipIn;
+	return inside >= CUT_START_MIN_SHARE * len && !playedElsewhere(mid);
+}
+
+/** Words shorter than this (seconds) are no sound: zero-length leftovers of edits ("En" 7 ms, "tortura." 10 ms). */
+export const MIN_HEARD_WORD_SECONDS = 0.02;
+/** A clip's last word this short (seconds, played)… */
+const TAIL_FRAGMENT_SECONDS = 0.25;
+/** …ending this close to the clip's Out (seconds), after a sentence end, is a fragment when the next clip speaks. */
+const TAIL_GAP_SECONDS = 0.15;
+/**
+ * …and follows that sentence end this closely (seconds): speech to text squeezed it against the sentence end. A
+ * sentence really started there has a pause before it ("…me. I uh love" with the filler cut keeps "I").
+ */
+const TAIL_SQUEEZE_SECONDS = 0.12;
+/** A tail word this short is a fragment even with its own sentence end ("y." 60 ms). */
+const FRAGMENT_SECONDS = 0.1;
+/** A word that ends a sentence: . ! ? (an ellipsis suspends it: "de todas… es que"). */
+const endsSentence = (t: string) => {
+	const x = t.trim();
+	return /[.!?]["'»”’)\]]*$/u.test(x) && !/(\.\.\.|…)["'»”’)\]]*$/u.test(x);
+};
+
+/**
+ * The transcript index of a clip's last heard word when it is a tail fragment (see the file comment), else −1. `words`
+ * are the clip's transcript words; `clipIn` / `clipOut` its media range; `speed` its rate.
+ */
+function tailFragmentIndex(
+	words: Transcript['words'],
+	clipIn: number,
+	clipOut: number,
+	speed: number,
+): number {
+	const fps = FLICKS_PER_SECOND;
+	const minLen = MIN_HEARD_WORD_SECONDS * fps;
+	const inClip = (k: number) => {
+		const w = words[k];
+		if (!w || w.end - w.start < minLen) return false;
+		const mid = w.start + (w.end - w.start) / 2;
+		return mid >= clipIn && mid < clipOut;
+	};
+	let k = Math.min(words.length - 1, firstEndingAfter(words, clipOut));
+	while (k >= 0 && words[k]!.end > clipIn && !inClip(k)) k--;
+	if (k < 0 || !inClip(k)) return -1;
+	const w = words[k]!;
+	const played = (Math.min(w.end, clipOut) - Math.max(w.start, clipIn)) / speed;
+	if (played >= TAIL_FRAGMENT_SECONDS * fps) return -1;
+	if ((clipOut - Math.min(w.end, clipOut)) / speed > TAIL_GAP_SECONDS * fps) return -1;
+	let p = k - 1;
+	while (p >= 0 && words[p]!.end - words[p]!.start < minLen) p--;
+	// the clip says something before it that ends a sentence (a clip that is only this word is its own scene)
+	if (p < 0 || !inClip(p) || !endsSentence(words[p]!.text)) return -1;
+	if ((w.start - words[p]!.end) / speed > TAIL_SQUEEZE_SECONDS * fps) return -1;
+	if (endsSentence(w.text) && played >= FRAGMENT_SECONDS * fps) return -1;
+	return k;
+}
 
 /** The transcript used for a media: the most recently added one with that `mediaId`. */
 export function transcriptForMedia(
@@ -89,11 +179,34 @@ export function sequenceWords(
 		if (list) list.push(c);
 		else byTrack.set(c.trackId, [c]);
 	}
+	const plays = (c: Clip) => c.kind === 'audio' && c.enabled && !c.speed.reverse && c.speed.rate > 0;
 	seq.audioTracks.forEach((track, ti) => {
 		const mine: Array<[number, number]> = [];
 		const clips = (byTrack.get(track.id) ?? []).sort((a, b) => a.start - b.start);
+		// media ranges each media's clips on this track play (for words cut off at an In)
+		const played = new Map<string, Array<[number, number]>>();
 		for (const c of clips) {
-			if (c.kind !== 'audio' || !c.enabled || c.speed.reverse || !(c.speed.rate > 0)) continue;
+			if (c.kind !== 'audio' || !plays(c)) continue;
+			const list = played.get(c.mediaId) ?? [];
+			list.push([c.sourceIn, c.sourceIn + Math.round(c.duration * F * c.speed.rate)]);
+			played.set(c.mediaId, list);
+		}
+		// a clip's tail fragment is not heard when the next clip on the track follows straight on and speaks
+		const speaks = (c: Clip | undefined): boolean => {
+			if (c?.kind !== 'audio' || !plays(c)) return false;
+			const t = transcriptForMedia(doc, c.mediaId);
+			if (!t) return false;
+			const a = c.sourceIn;
+			const b = c.sourceIn + Math.round(c.duration * F * c.speed.rate);
+			for (let k = firstEndingAfter(t.words, a); k < t.words.length && t.words[k]!.start < b; k++) {
+				const w = t.words[k]!;
+				const mid = w.start + (w.end - w.start) / 2;
+				if (w.end - w.start >= MIN_HEARD_WORD_SECONDS * FLICKS_PER_SECOND && mid >= a && mid < b) return true;
+			}
+			return false;
+		};
+		for (const [ci, c] of clips.entries()) {
+			if (c.kind !== 'audio' || !plays(c)) continue;
 			const tr = transcriptForMedia(doc, c.mediaId);
 			if (!tr) continue;
 			const speed = c.speed.rate;
@@ -103,13 +216,26 @@ export function sequenceWords(
 			const mediaEnd = c.sourceIn + Math.round(c.duration * F * speed);
 			const toTl = (m: number) => clipStart + Math.round((m - c.sourceIn) / speed);
 			if (only && only.transcriptId !== tr.id) continue;
+			const next = clips[ci + 1];
+			const fragment =
+				next && next.start === c.start + c.duration && speaks(next)
+					? tailFragmentIndex(tr.words, c.sourceIn, mediaEnd, speed)
+					: -1;
 			const last = only ? Math.min(only.to, tr.words.length) : tr.words.length;
 			for (let wi = Math.max(firstEndingAfter(tr.words, c.sourceIn), only?.from ?? 0); wi < last; wi++) {
 				const w = tr.words[wi]!;
 				if (w.start >= mediaEnd) break;
+				if (wi === fragment || w.end - w.start < MIN_HEARD_WORD_SECONDS * FLICKS_PER_SECOND) continue;
 				const a = toTl(w.start);
 				const b = toTl(Math.max(w.end, w.start));
-				const mid = a + Math.floor((b - a) / 2);
+				let mid = a + Math.floor((b - a) / 2);
+				if (
+					mid < clipStart &&
+					heardFromCutStart(w, c.sourceIn, mediaEnd, (m) =>
+						(played.get(c.mediaId) ?? []).some(([s, e]) => m >= s && m < e),
+					)
+				)
+					mid = clipStart + Math.floor((Math.min(b, clipEnd) - clipStart) / 2);
 				if (mid < clipStart || mid >= clipEnd || claimed.some(([s, e]) => mid >= s && mid < e)) continue;
 				const s = Math.max(a, clipStart);
 				out.push({

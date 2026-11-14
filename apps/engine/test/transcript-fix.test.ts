@@ -30,6 +30,7 @@ import {
 import { VOICE_CLASSES } from '@jasper/project/cleanup-worker';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { JobError } from '../src/jobs/types.ts';
+import type { SpanTranscriptionRequest, SpanTranscriptionResult } from '../src/speech/kept-spans.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { transcriptFixAcceptExtension } from '../src/transcript-fix/run.ts';
 import { closeApps, makeApp } from './helpers.ts';
@@ -189,8 +190,29 @@ const saved = (file: string) => loadProject(JSON.parse(readFileSync(file, 'utf8'
 // ---------------------------------------------------------------------------------------------------------------
 // The fake scorer
 
+/** What the re-transcription of Rebuild from script hears (`transcribeSpans`): the script said with its slips. */
+const HEARD = [
+	'Welcome to Glimmer box, the channel about editing.',
+	'Today we um test the timeline tool of Pixelforge.',
+	ASR[2]!,
+	ASR[3]!,
+];
+function timed(lines: readonly string[]) {
+	const words: { text: string; start: number; end: number; confidence: number }[] = [];
+	let t = 0.5;
+	for (const s of lines) {
+		for (const w of s.split(' ')) {
+			words.push({ text: w, start: Math.round(t * F), end: Math.round((t + 0.4) * F), confidence: 0.7 });
+			t += 0.45;
+		}
+		t += 1.5;
+	}
+	return words;
+}
+
 type Fake = {
 	calls: SpeechScoreRequest[];
+	spanCalls?: SpanTranscriptionRequest[];
 	installed: boolean;
 	mode: 'ok' | 'block' | 'fail' | 'offline';
 	onScore?: (signal: AbortSignal) => void;
@@ -205,6 +227,19 @@ const fakeSpeech = {
 		installed: async () => fake.installed,
 	},
 	threads: () => 2,
+	async transcribeSpans(req: SpanTranscriptionRequest): Promise<SpanTranscriptionResult> {
+		(fake.spanCalls ??= []).push(req);
+		const inRange = (w: { start: number; end: number }) =>
+			req.ranges.some((r) => (w.start + w.end) / 2 >= r.start && (w.start + w.end) / 2 < r.end);
+		return {
+			model: req.model ?? 'whisper-fake',
+			language: req.language ?? 'en',
+			words: timed(HEARD).filter(inRange),
+			device: { encoder: 'cpu', decoder: 'cpu', label: 'CPU', threads: 2 },
+			timings: { decodeMs: 10, loadMs: 10, transcribeMs: 100 },
+			chunked: { chunks: 2, shiftedChunks: 1, zones: 1, replaced: 0 },
+		};
+	},
 	async score(
 		req: SpeechScoreRequest,
 		signal: AbortSignal,
@@ -307,6 +342,7 @@ beforeAll(async () => {
 afterAll(async () => closeApps());
 beforeEach(() => {
 	fake.calls = [];
+	fake.spanCalls = [];
 	delete fake.onScore;
 	fake.installed = true;
 	fake.mode = 'ok';
@@ -374,6 +410,42 @@ describe('dry run', () => {
 			headers: EDITOR_H,
 		});
 		expect(list.json().proposals ?? []).toHaveLength(0);
+	});
+});
+
+describe('rebuild from script for the kept speech', () => {
+	it('refuses without a script', async () => {
+		const s = seed({ script: null });
+		const r = await post(fixUrl(s), { mode: 'rebuild' });
+		expect(r.statusCode, r.body).toBe(409);
+		expect(r.body).toContain('E_NO_SOURCE');
+	});
+
+	it('transcribes the kept span again (one call, padded, best accuracy) and accepting writes it from the script in one step', async () => {
+		const { sentences, words } = asrWords();
+		// the sequence keeps the first two sentences only
+		const third = words[sentences[2]![0]]!.start / F;
+		const s = seed({ clipSeconds: third - 0.5 });
+		const { result } = await runFix(s, { mode: 'rebuild' });
+		expect(fake.spanCalls).toHaveLength(1);
+		const call = fake.spanCalls![0]!;
+		expect(call.accuracy).toBe('best');
+		expect(call.mediaKey).toMatch(/^mk_voice/);
+		expect(call.ranges).toEqual([{ start: 0, end: Math.round((third - 0.5) * F) + Math.round(0.2 * F) }]);
+		expect(fake.calls).toHaveLength(0); // no audio check
+		expect(result.mode).toBe('rebuild');
+		expect(result.report.rebuild).toMatchObject({ spans: 1, changedSpans: 1, offScript: 'drop' });
+		expect(result.report.rebuild!.counts).toMatchObject({ dropped: 1 });
+		const p = await proposal(s, result.proposalId!);
+		expect(p.title).toBe('Rebuild transcript from script');
+		expect(p.items).toHaveLength(1);
+		const r = await post(`/api/projects/${s.projectId}/proposals/${p.id}/accept`, { itemIds: 'all' });
+		expect(r.statusCode, r.body).toBe(200);
+		const after = Object.values(saved(s.file).transcripts)[0]!.words.map((w) => w.text);
+		expect(after.join(' ')).toBe([SCRIPT.split('\n')[0], SCRIPT.split('\n')[1], ASR[2], ASR[3]].join(' '));
+		expect(
+			transcriptFixAcceptExtension({ doc: saved(s.file), proposal: p, itemIds: [p.items[0]!.id] }),
+		).toEqual({ label: 'Rebuild transcript from script: 1 span', commands: [] });
 	});
 });
 
