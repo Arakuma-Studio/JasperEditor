@@ -3,7 +3,10 @@
 //     → 202 a `transcript-fix` job (identical requests while one runs return that job); its result is
 //       `TranscriptFixResult`. `mode: 'dryRun'` = the fast pre-run (alignment, candidates, the fixes decided without
 //       audio, the patch report, the windows to score and an estimated scoring time; nothing stored); `propose` = the
-//       full run (the audio decides each candidate) storing ONE proposal of feature `transcript-correction`.
+//       full run (the audio decides each candidate) storing ONE proposal of feature `transcript-correction`;
+//       `rebuild` = Rebuild from script for the kept speech: the media spans the sequence's audio clips play are
+//       transcribed again from the raw audio (VAD chunks, best accuracy), aligned to the script span by span, and
+//       ONE proposal writes them back (an item per span, each one `transcript.replaceWords`).
 // Unset fields take the sequence's stored Fix Transcript settings (`Sequence.scriptFix.settings`, SC-055), else the
 // defaults (script + glossary, whole recordings, Standard).
 import { z } from 'zod';
@@ -12,7 +15,9 @@ export const TRANSCRIPT_FIX_SOURCES = ['script', 'glossary'] as const;
 /** SC-063: whole recordings / only the words the sequence uses / the words used inside In–Out. */
 export const TRANSCRIPT_FIX_SCOPES = ['recordings', 'used', 'inOut'] as const;
 export const TRANSCRIPT_FIX_STRICTNESS = ['careful', 'standard', 'generous'] as const;
-export const TRANSCRIPT_FIX_MODES = ['propose', 'dryRun'] as const;
+export const TRANSCRIPT_FIX_MODES = ['propose', 'dryRun', 'rebuild'] as const;
+/** Rebuild: words heard that the script does not have are dropped (default) or kept as heard. */
+export const TRANSCRIPT_FIX_OFF_SCRIPT = ['drop', 'keep'] as const;
 
 export const TranscriptFixRequestSchema = z.strictObject({
 	sources: z
@@ -26,6 +31,8 @@ export const TranscriptFixRequestSchema = z.strictObject({
 	/** Offer the fixes the user rejected before (SC-055), unselected. */
 	showRejected: z.boolean().optional(),
 	mode: z.enum(TRANSCRIPT_FIX_MODES).optional(),
+	/** `rebuild` only: heard words the script does not have are dropped (default) or kept (off-script speech). */
+	offScript: z.enum(TRANSCRIPT_FIX_OFF_SCRIPT).optional(),
 	/** Speech processor for the audio check (default: the Transcription preference). */
 	device: z.enum(['auto', 'cpu', 'gpu']).optional(),
 });
@@ -157,6 +164,29 @@ export const TranscriptFixReportSchema = z.object({
 			})
 			.optional(),
 	}),
+	/** `rebuild`: what was transcribed again and written from the script. */
+	rebuild: z
+		.object({
+			offScript: z.enum(TRANSCRIPT_FIX_OFF_SCRIPT),
+			/** Kept spans (merged per media) and how many change. */
+			spans: z.number().int().min(0),
+			changedSpans: z.number().int().min(0),
+			/** Seconds of kept speech transcribed again. */
+			seconds: z.number(),
+			/** Words heard / written; per rule (exact, replaced, inserted, emoticons, dropped, kept). */
+			heardWords: z.number().int().min(0),
+			writtenWords: z.number().int().min(0),
+			counts: Counts,
+			/** Spans with nothing of the script heard (their heard words are written as heard). */
+			offScriptSpans: z.number().int().min(0),
+			/** Spans where nothing was heard (their words are left as they are). */
+			silentSpans: z.number().int().min(0),
+			/** Spans that could not be written in ≤ 64-word edits (left as they are). */
+			unwritableSpans: z.number().int().min(0),
+			/** Speech model, language and device of the re-transcription. */
+			model: z.string().nullable(),
+		})
+		.optional(),
 	/** What the bounded-memory caps cut short (absent when nothing was). */
 	guard: z
 		.object({

@@ -1,4 +1,5 @@
 import type { Draft } from 'immer';
+import { setCaptionLocked } from '../../captions/subtitles/model.ts';
 import { anim, defaultTextStyle, defaultTransform } from '../../factories.ts';
 import { mediaDurationFlicks } from '../../interpret/model.ts';
 import { mediaIntrinsicSize } from '../../process/rescale.ts';
@@ -32,6 +33,13 @@ import {
 	transitionJoins,
 } from '../join-fades.ts';
 import {
+	finishOverlayFits,
+	fitOverlay,
+	insertShiftKeeping,
+	type OverlayFit,
+	overlayRemovalFits,
+} from '../overlay-ripple.ts';
+import {
 	allTracksIn,
 	assertUnlocked,
 	cleanupSequence,
@@ -39,7 +47,6 @@ import {
 	end,
 	ensureTrackAt,
 	findTrackIn,
-	insertShift,
 	relinkSplits,
 	removeClip,
 	removeShift,
@@ -491,6 +498,7 @@ export function layoutText(
 		delete clip.layoutPending;
 		return;
 	}
+	if ((clip as { caption?: unknown }).caption !== undefined) fitSubtitleWidth(doc, clip, h);
 	const before = { width: box.width, height: box.height };
 	let m: { width: number; height: number } | null = null;
 	try {
@@ -516,6 +524,40 @@ export function layoutText(
 		clip.layoutPending = true;
 	}
 	followBoxCentre(clip, before);
+}
+
+/** Fitted subtitle text keeps this margin to the box width (glyph advances do not scale exactly with the size). */
+const FIT_MARGIN = 0.98;
+
+/**
+ * Spec 13 (subtitles never break inside a word nor add a line): a subtitle text clip (paragraph text) whose widest
+ * line is wider than its box — a word with no natural boundary to split at, or wide glyphs — gets a smaller font size
+ * so the line fits, instead of the paragraph wrapping it inside a word or onto a line the subtitle does not have.
+ * Measured as point text (no wrapping); without a measurer, or before the fonts load, nothing changes here
+ * (`text.relayout` measures and fits later). Only shrinks.
+ */
+function fitSubtitleWidth(
+	doc: Pick<DDoc, 'fonts'>,
+	clip: Draft<Extract<Clip, { kind: 'text' }>>,
+	h: HandlerContext,
+): void {
+	const box = clip.box as TextBox;
+	const content = clip.content as TextContent;
+	if (box.autoSize !== 'height' || isVerticalText(content) || !h.ctx.textMeasurer) return;
+	let m: { width: number; height: number } | null = null;
+	try {
+		m = h.ctx.textMeasurer.measure(
+			content,
+			{ ...box, autoSize: 'width' },
+			doc.fonts as Readonly<Record<string, FontRef>>,
+		);
+	} catch {
+		m = null;
+	}
+	if (!m || !Number.isFinite(m.width) || m.width <= box.width || m.width > MAX_MEASURED_SIDE) return;
+	const size = content.style.sizePx;
+	const next = Math.floor(size * (box.width / m.width) * FIT_MARGIN * 100) / 100;
+	if (next > 0 && next < size) clip.content.style.sizePx = next;
 }
 
 /** The default anchor (the box centre, not keyframed) follows the box when its size changes. */
@@ -611,7 +653,11 @@ function trimHandler(doc: DDoc, cmd0: CommandOf<'clip.trim'>, h: HandlerContext)
 			cmd.deltaFrames,
 			{ clampToSyncLock: cmd.clampToSyncLock, rippleMarkers: cmd.rippleMarkers },
 		);
-		if (d !== 0) cleanupSequence(seq, h);
+		if (d !== 0) {
+			// a subtitle retimed by hand is kept by captions.regenerate
+			setCaptionLocked(clip as Clip, true);
+			cleanupSequence(seq, h);
+		}
 		return { deltaFrames: d };
 	}
 	const memberIds = new Set(members.map((m) => m.id));
@@ -629,6 +675,8 @@ function trimHandler(doc: DDoc, cmd0: CommandOf<'clip.trim'>, h: HandlerContext)
 		if (cmd.edge === 'in') setClipRange(seq, m, m.start + d, end(m));
 		else setClipRange(seq, m, m.start, end(m) + d);
 	}
+	// a subtitle retimed by hand is kept by captions.regenerate
+	setCaptionLocked(clip as Clip, true);
 	cleanupSequence(seq, h);
 	return { deltaFrames: d };
 }
@@ -808,14 +856,17 @@ export const clipCoreHandlers = {
 			const at = Math.min(...plan.map((p) => p.start));
 			const n = Math.max(...plan.map((p) => p.end)) - at;
 			const edited = new Set(plan.map((p) => p.dest.id));
-			const tracks = [...edited, ...syncFollowerTracks(seq, edited).map((t) => t.id)];
-			relinkSplits(seq, insertShift(seq, tracks, at, n, h, moving), h);
+			const followers = syncFollowerTracks(seq, edited).map((t) => t.id);
+			// generated overlays on sync-locked tracks are lengthened whole, not split (overlay-ripple.ts)
+			relinkSplits(seq, insertShiftKeeping(seq, edited, followers, at, n, h, moving), h);
 			if (cmd.rippleMarkers !== false) shiftMarkers(seq, at, n);
 		}
 		for (const p of plan) {
 			p.clip.trackId = p.dest.id;
 			p.clip.start = p.start;
 		}
+		// subtitles moved by hand (the clips named, not their group) are kept by captions.regenerate
+		if (cmd.deltaFrames !== 0) for (const c of found.clips) setCaptionLocked(c as Clip, true);
 		cleanupSequence(seq, h);
 		return { clipIds: plan.map((p) => p.clip.id) };
 	},
@@ -865,6 +916,10 @@ export const clipCoreHandlers = {
 		const splits: SplitRecord[] = [];
 		for (const c of set.values())
 			splits.push({ originalLinkId: c.linkId, rightId: splitClipAt(seq, c, at, h).id });
+		// subtitles split by hand (named clips or tracks, not "every unlocked track") are kept by captions.regenerate
+		if (cmd.scope === undefined)
+			for (const id of [...set.keys(), ...splits.map((x) => x.rightId)])
+				if (seq.clips[id]) setCaptionLocked(seq.clips[id] as Clip, true);
 		relinkSplits(seq, splits, h);
 		cleanupSequence(seq, h);
 		return { left: [...set.keys()], right: splits.map((s) => s.rightId) };
@@ -900,13 +955,21 @@ export const clipCoreHandlers = {
 		const audio = seq.audioTracks.map((t) => t.id).filter((id) => tracks.has(id));
 		const joinedBefore = new Set(audio.flatMap((id) => trackJoins(seq, id).map(([a, b]) => joinKey(a, b))));
 		for (const c of clips) removeClip(seq, c.id, h);
+		// generated overlays on the sync-locked tracks stay whole, refitted (overlay-ripple.ts)
+		const followers = [...tracks].filter((id) => !affected.has(id));
+		const fitted: OverlayFit[] = [];
 		for (const r of [...spans].reverse()) {
+			const fits = overlayRemovalFits(seq, followers, r.start, r.end);
+			for (const f of fits) fitOverlay(seq, f);
+			fitted.push(...fits);
 			removeShift(seq, tracks, r.start, r.end - r.start, h, {
 				syncConflict: cmd.syncConflict,
 				remedy: 'pass syncConflict: "cut" to cut them too, or turn their sync lock off',
+				except: new Set(fits.map((f) => f.clipId)),
 			});
 			if (cmd.rippleMarkers !== false) shiftMarkers(seq, r.start, -(r.end - r.start));
 		}
+		finishOverlayFits(seq, fitted, h);
 		// a new join between two pieces of one recording jumps in its sound: with joinFades, Clean Up's join fade on both
 		// sides (hard cuts by default)
 		let fades = 0;

@@ -5,6 +5,7 @@ export {
 	CleanupFindingSchema,
 	CleanupPlanSchema,
 	CleanupStatsSchema,
+	EditRepeatSchema,
 	RetakeGroupSchema,
 } from './analysis-schema.ts';
 export {
@@ -21,6 +22,19 @@ export {
 export { RESTART_DIP_DEFAULT, type WordDip, wordDip } from './dip.ts';
 export { auditCutEdges, type CutEdgeAudit } from './edge-audit.ts';
 export { edgeThreshold, levelInPoint, levelOutPoint, snapEdge } from './edges.ts';
+export {
+	EDIT_SPAN_CONFIRM_PAD_S,
+	EDIT_SPAN_PAD_S,
+	type EditRepeat,
+	type EditRepeatsInput,
+	type EditSpan,
+	type EditWord,
+	type EditWordsLookup,
+	editSpanRequest,
+	findEditRepeats,
+	MIN_CUT_PAUSE_S,
+} from './edit-repeats.ts';
+export { editSpans } from './edit-spans.ts';
 export { languageFillerHits } from './fillers.ts';
 export {
 	builtinLists,

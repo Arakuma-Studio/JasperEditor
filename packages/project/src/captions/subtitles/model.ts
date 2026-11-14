@@ -6,8 +6,11 @@
 //   (`splitCaptionWords`) and a text edit re-times the unchanged ones (LCS, `normalizeSubtitleClips`).
 //   `anchorIn`: the content time of the In the template's animation keys were laid out from; the effect instances
 //   the template added carry `EffectInstance.subtitleTemplate`, and their keys follow the In after trims and splits.
+//   `locked` (schema v13): the subtitle was edited by hand (text, razor, trim, move) or locked in the Subtitles tab;
+//   `captions.regenerate` keeps it as it is and lays the transcript out around it.
 // - `Sequence.captionGroups[id]` = {name, templateId, rules, text, language, cutAware, sourceRef, range, trackId,
 //   highlight}: one generated subtitle group (its members are the text clips whose `caption.groupId` is the id).
+//   `rules.ownWords` (schema v13): words that always get a subtitle of their own.
 // - `ProjectDocument.subtitleTemplates[id]`: templates copied into the project when used (templates.ts).
 // All three are read leniently (any value loads); INV-SUBTITLE checks them, `repairSubtitleSequence` / `repairSubtitleTemplates` repair them on load.
 import { z } from 'zod';
@@ -42,6 +45,8 @@ export type TextClipCaption = {
 	words: CaptionWord[];
 	speaker?: string | null;
 	anchorIn?: number;
+	/** Edited by hand or locked: regenerate keeps the clip (schema v13). */
+	locked?: boolean;
 };
 
 export const CaptionWordSchema = z.looseObject({
@@ -55,6 +60,7 @@ export const TextClipCaptionSchema = z.looseObject({
 	words: z.array(CaptionWordSchema).max(MAX_CAPTION_WORDS),
 	speaker: z.string().max(200).nullable().optional(),
 	anchorIn: z.number().int().optional(),
+	locked: z.boolean().optional(),
 });
 
 export const HIGHLIGHT_MODES = ['none', 'word', 'karaoke', 'keywords'] as const;
@@ -164,6 +170,24 @@ export function captionGroupProblem(key: string, v: unknown): string | null {
 	if (!isValidId(key) || idPrefixOf(key) !== CAPTION_GROUP_PREFIX) return `malformed id ${key}`;
 	if (!r.data.name.trim()) return 'empty name';
 	return null;
+}
+
+/** Whether a subtitle clip is locked (edited by hand): `captions.regenerate` keeps it. */
+export function isCaptionLocked(clip: Clip | undefined | null): boolean {
+	return captionOf(clip)?.locked === true;
+}
+
+/**
+ * Locks a subtitle clip (edited by hand: `captions.regenerate` keeps it) or unlocks it. Mutates the clip (a draft);
+ * returns whether it changed. Clips that are not readable subtitles are left alone.
+ */
+export function setCaptionLocked(clip: Clip, locked: boolean): boolean {
+	if (!captionOf(clip)) return false;
+	const cap = (clip as { caption: TextClipCaption }).caption;
+	if (locked === (cap.locked === true)) return false;
+	if (locked) cap.locked = true;
+	else delete cap.locked;
+	return true;
 }
 
 /** The readable subtitle groups of a sequence, by id (unreadable entries skipped; the invariant reports them). */
@@ -306,6 +330,16 @@ export function repairSubtitleSequence(seq: Sequence, newGroupId: () => string, 
 		}
 		for (const key of Object.keys(rec)) {
 			const v = rec[key];
+			// unreadable own words alone are dropped (the other rules stay)
+			const rules = isPlain(v) ? v.rules : undefined;
+			if (
+				isPlain(rules) &&
+				rules.ownWords !== undefined &&
+				!(CaptionGroupSchema.shape.rules.shape.ownWords as z.ZodType).safeParse(rules.ownWords).success
+			) {
+				delete rules.ownWords;
+				note('repair-caption-group', key, 'unreadable own-subtitle words removed');
+			}
 			if (!captionGroupProblem(key, v)) continue;
 			// keep what is readable: the name and language; reset the rest to defaults
 			const old = isPlain(v) ? v : {};
@@ -372,6 +406,10 @@ export function repairSubtitleSequence(seq: Sequence, newGroupId: () => string, 
 		if (cap.anchorIn !== undefined && !Number.isInteger(cap.anchorIn)) {
 			delete cap.anchorIn;
 			note('repair-caption', c.id, 'unreadable template anchor removed');
+		}
+		if (cap.locked !== undefined && typeof cap.locked !== 'boolean') {
+			delete cap.locked;
+			note('repair-caption', c.id, 'unreadable subtitle lock removed');
 		}
 		if (clipCaptionProblem(c)) {
 			delete r.caption;

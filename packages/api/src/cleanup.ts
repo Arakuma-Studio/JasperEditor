@@ -50,6 +50,15 @@ export const CleanupAnalyzeRequestSchema = z
 			.optional(),
 		/** Run missing voice analyses (default true); false = media without one are planned in word mode. */
 		analyzeVoice: z.boolean().optional(),
+		/**
+		 * Repeats in the edit (docs/wp-notes/transcript-cleanup.md "Repeats at cuts"): `spans` transcribes each kept span
+		 * of the dialogue track on its own (VAD-chunked, one job, cached per media range) and finds phrases said twice
+		 * across a cut or left inside a span; `mix` transcribes the sequence's mixdown and reports the repeats left in it
+		 * for review (the closed loop); `both`. Default: off (it runs speech to text).
+		 */
+		editRepeats: z.enum(['spans', 'mix', 'both']).optional(),
+		/** Speech model of those transcriptions (default: the model of the media's transcript, else the default). */
+		editModel: z.string().min(1).max(200).optional(),
 	})
 	.strict();
 export type CleanupAnalyzeRequest = z.infer<typeof CleanupAnalyzeRequestSchema>;
@@ -72,6 +81,22 @@ export const CleanupAnalysisJobResultSchema = z.object({
 		missing: z.array(z.object({ mediaId: z.string(), reason: z.string() })),
 	}),
 	elapsedMs: z.number().min(0),
+	/**
+	 * The repeats-in-the-edit check, when asked: kept spans, spans whose words came from the cache / were transcribed
+	 * now, the transcription jobs, repeats found (and suggested for removal), or why it could not run (the analysis
+	 * still completes without it).
+	 */
+	editRepeats: z
+		.object({
+			spans: z.number().int().min(0),
+			cached: z.number().int().min(0),
+			transcribed: z.number().int().min(0),
+			jobIds: z.array(z.string()),
+			found: z.number().int().min(0),
+			suggestedRemove: z.number().int().min(0),
+			missing: z.array(z.object({ source: z.enum(['spans', 'mix']), reason: z.string() })),
+		})
+		.optional(),
 });
 export type CleanupAnalysisJobResult = z.infer<typeof CleanupAnalysisJobResultSchema>;
 

@@ -1,6 +1,7 @@
 // Fix Transcript through the engine (spec 17 SC-090; docs/wp-notes/script-correction.md "Fix job, API and MCP" and
 // "Editor UI"): the dry run (a fast `transcript-fix` job without the audio check, waited for) and the proposal (the
-// full job followed here and in the Jobs panel; Cancel cancels it). Every failure comes back as a `FixRunError` with
+// full job followed here and in the Jobs panel; Cancel cancels it), and Rebuild from script (the kept speech transcribed
+// again and written from the script, followed the same way). Every failure comes back as a `FixRunError` with
 // the engine's code (`E_NO_SOURCE`, `E_NO_TRANSCRIPT`, `E_NO_SPEECH_MODEL`, `E_LIMIT`, a job's error code…), never a
 // throw of something else; job results are validated with zod before use.
 import {
@@ -106,11 +107,33 @@ export async function proposeFix(
 	req: FixRequest,
 	opts: { signal?: AbortSignal; onJob?(job: EngineJob): void } = {},
 ): Promise<FixResult> {
+	return followFix(engine, projectId, sequenceId, { ...req, mode: 'propose' }, opts);
+}
+
+/**
+ * Rebuild from script for the kept speech: the speech the sequence keeps is transcribed again and written from the
+ * script into ONE proposal (`offScript`: heard words the script lacks are dropped or kept). Followed like `proposeFix`.
+ */
+export async function rebuildFix(
+	engine: FixEngine,
+	projectId: string,
+	sequenceId: string,
+	req: { offScript: 'drop' | 'keep' },
+	opts: { signal?: AbortSignal; onJob?(job: EngineJob): void } = {},
+): Promise<FixResult> {
+	return followFix(engine, projectId, sequenceId, { mode: 'rebuild', offScript: req.offScript }, opts);
+}
+
+async function followFix(
+	engine: FixEngine,
+	projectId: string,
+	sequenceId: string,
+	body: TranscriptFixRequest,
+	opts: { signal?: AbortSignal; onJob?(job: EngineJob): void },
+): Promise<FixResult> {
 	let job: EngineJob | null;
 	try {
-		job = jobOf(
-			await engine.transcriptFix(projectId, sequenceId, { ...req, mode: 'propose' }, { signal: opts.signal }),
-		);
+		job = jobOf(await engine.transcriptFix(projectId, sequenceId, body, { signal: opts.signal }));
 	} catch (e) {
 		if (opts.signal?.aborted) throw new FixRunError('E_CANCELLED', t('Cancelled'));
 		throw asError(e);

@@ -124,6 +124,16 @@ const transcribe = (spec: Partial<SpeechJobSpec> = {}) =>
 	);
 
 describe('hidden takes', () => {
+	it('kept spans (Rebuild from script): only the spans are decoded, in VAD chunks, and only their words come back', async () => {
+		// the cut keeps the second take only (3.2–5.4 s, padding included): the first take and the tail stay out
+		const out = await transcribe({ spans: [{ start: Math.round(3.2 * SR), end: Math.round(5.4 * SR) }] });
+		expect(out.words.map((w) => w.text)).toEqual(['ij', 'kl', 'mn', 'op', 'qr']);
+		for (const [k, w] of TAKE2.entries())
+			expect(Math.abs(out.words[k]!.start / SR - w.start)).toBeLessThan(0.06);
+		expect(out.guard.chunked?.chunks).toBeGreaterThan(0);
+		expect(out.guard.redecoded).toBeUndefined();
+	});
+
 	it('a stretched word is decoded again alone and both takes are written with their times', async () => {
 		const out = await transcribe();
 		expect(
@@ -260,6 +270,35 @@ describe('hidden takes', () => {
 			expect(w.end, w.text).toBeGreaterThan(w.start);
 			if (k) expect(w.start, w.text).toBeGreaterThanOrEqual(placed[k - 1]!.end);
 		}
+	});
+
+	it('a replaced window never keeps a neighbour its edge word already says: "99%" over "99 %", "tortura." twice (rev 144)', () => {
+		// the reporter's transcript read "El 99% % de las" and "Una tortura. tortura.": the window's words were replaced
+		// by a decode that glued the symbol (or wrote the word once more), and the outside word next to the window stayed
+		const w = (text: string, a: number, b: number) => ({
+			text,
+			start: Math.round(a * SR),
+			end: Math.round(b * SR),
+		});
+		const pct = replaceWindowWords(
+			[w('El', 410.9, 411.44), w('99', 411.44, 411.92), w('%', 411.92, 412.34), w('de', 412.34, 412.48)],
+			410.8 * SR,
+			412.0 * SR,
+			[w('El', 410.9, 411.44), w('99%', 411.47, 411.93)],
+		);
+		expect(pct.map((x) => x.text)).toEqual(['El', '99%', 'de']);
+		const twice = replaceWindowWords(
+			[w('Una', 1578.16, 1578.3), w('tortura.', 1578.3, 1578.94), w('En', 1582.4, 1582.72)],
+			1578.0 * SR,
+			1578.6 * SR,
+			[w('Una', 1578.13, 1578.3), w('tortura.', 1578.31, 1578.85)],
+		);
+		expect(twice.map((x) => x.text)).toEqual(['Una', 'tortura.', 'En']);
+		expect(
+			wordsWellFormed(
+				twice.map((x) => ({ ...x, confidence: null, speaker: null, breakBefore: 'none' as const })),
+			),
+		).toBeNull();
 	});
 
 	it('a word under 1 s that lasts three times what its syllables take at the speaker’s pace is a trace (Clean Up round 12)', () => {

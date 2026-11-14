@@ -669,3 +669,35 @@ prompts").
   is kept when it differs; `guard.glossary {terms, tokens, events, replaced}` in the result and MCP.
 - Measured on the build VM (turbo, CPU, LJ fixture, packed windows): scoring 19.0 s per speech minute without the
   once-per-job model load (27.1 s with it), transcription without previous text 35.4 s per speech minute.
+
+## 13. Merge edges never keep a word twice
+
+`replaceWindowWords` (`core/gaps.ts`; used by the VAD-chunk merge zones, the hidden-take re-decode and the
+wordless-span pass): an outside word next to the replaced window is dropped when the incoming edge word
+already says it — the same word overlapping it in time, or a symbol / punctuation within 0.25 s that the incoming word
+holds at that end. The reporter's transcript read "El 99% % de las", "el otro 1% % %" and "Una tortura. tortura.": one
+pass wrote "99 %", the other "99%", and the "%" (its midpoint just past the window) stayed beside the glued word,
+clamped to the time left. Test: `apps/engine/test/speech-hidden-takes.test.ts` "a replaced window never keeps a neighbour its edge word already
+says" (fails before: `El 99% % de`).
+
+## 14. Kept spans: chunked transcription of what a sequence keeps
+
+`apps/engine/src/speech/kept-spans.ts` (engine-internal, reusable by any job: Rebuild from script uses it; the
+restarts-across-clip-boundaries work can call it with its own job context). `transcribeKeptSpans(speech, {mediaKey,
+streamIndex?, spans, language?, model?, accuracy (default best), device?, padSeconds (default 0.2), duration?}, signal,
+opts)`:
+
+- the spans (media flicks, e.g. `keptSpans` of `@jasper/project/script-fix`) are padded by `padSeconds` either side,
+  clamped to the media and merged where the padding overlaps (`paddedRanges`);
+- ONE worker run (`SpeechService.transcribeSpans`): the media decoded once, the model loaded once, each range
+  transcribed the `chunking: "vad"` way within it (VAD chunks decoded alone, a second pass with shifted boundaries,
+  merged — `transcribeSpans` in `worker/run.ts`, spec field `spans` in samples); the language is detected on the first
+  range with voice and kept for the others; no safety passes (wordless spans, hidden takes: the VAD chunks already write
+  restarts); the usual word-bound refinement; GPU → CPU fallback as transcription; cancellation through the signal;
+- the words come back per requested span by the sequence transcript's rule (midpoint, or a word whose start the span's
+  start cuts off, `heardInSpans`) and clamped into it, so words heard only in the padding (a removed take next to the
+  cut) are never returned.
+
+Test: `apps/engine/test/speech-hidden-takes.test.ts` "kept spans (Rebuild from script)…" (fake decoder: only the kept
+take's words, chunked, no re-decode pass). Not measured with a real model here (no Whisper on this host): the speed is
+the `chunking: "vad"` figure of §11.3 over the kept audio only.

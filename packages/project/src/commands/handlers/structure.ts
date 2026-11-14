@@ -18,6 +18,7 @@ import { SYNTHETIC_INFO, syntheticFromParams } from '../../structure/synthetic.t
 import { clipToRange } from '../../structure/through.ts';
 import { flicksPerFrame, type Rational, rationalEquals } from '../../time.ts';
 import type { DClip, DDoc, DSeq, DTrack, HandlerContext } from '../context.ts';
+import { insertShiftKeeping } from '../overlay-ripple.ts';
 import {
 	allTracksIn,
 	assertUnlocked,
@@ -25,7 +26,6 @@ import {
 	end,
 	ensureTrackAt,
 	findTrackIn,
-	insertShift,
 	joinEdgeFades,
 	reidentifyClipChildren,
 	relinkSplits,
@@ -804,8 +804,9 @@ function insertFrameHoldSegment(doc: DDoc, cmd: CommandOf<'clip.insertFrameHoldS
 	const hold = clip.frameHold ? clip.frameHold.flicks : movingTime(clip as Clip, at, rate);
 	const segment = plain(clip) as Clip;
 	const edited = new Set([track.id]);
-	const tracks = [track.id, ...syncFollowerTracks(seq, edited).map((t) => t.id)];
-	relinkSplits(seq, insertShift(seq, tracks, at, n, h), h);
+	const followers = syncFollowerTracks(seq, edited).map((t) => t.id);
+	// generated overlays on sync-locked tracks are lengthened whole, not split (overlay-ripple.ts)
+	relinkSplits(seq, insertShiftKeeping(seq, edited, followers, at, n, h), h);
 	if (cmd.rippleMarkers !== false) shiftMarkers(seq, at, n);
 	reidentifyClipChildren(segment, h);
 	segment.id = h.ids.next('clp');

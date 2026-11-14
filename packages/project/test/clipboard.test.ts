@@ -181,8 +181,16 @@ describe('clip.paste (CLB-003/004)', () => {
 
 	it('overwrites what is under the pasted clips, and Paste Insert ripples instead (TRK-006)', () => {
 		const h = new Harness();
+		// footage on V1 (generated clips such as solids are lengthened whole by inserts: overlay-ripple.test.ts)
+		const bg = h.registerVideo({ seconds: 10, audio: false });
 		h.ok([
-			{ type: 'clip.addSolid', at: 0, duration: 100, track: 'V1', color: [0, 0, 1, 1], ref: '$bg' },
+			{
+				type: 'clip.place',
+				source: { mediaId: bg },
+				at: 0,
+				sourceRange: { in: { sourceFrames: 0 }, out: { sourceFrames: 100 } },
+				tracks: { video: 'V1' },
+			},
 			{ type: 'clip.addSolid', at: 0, duration: 100, track: 'V2', color: [0, 1, 0, 1] },
 			{ type: 'clip.addText', at: 0, duration: 20, track: 'V3', content: { text: 'x' }, ref: '$t' },
 		]);

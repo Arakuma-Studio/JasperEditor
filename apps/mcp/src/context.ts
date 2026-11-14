@@ -416,11 +416,20 @@ export const isTerminal = (job: EngineJob) => TERMINAL.has(job.state);
 export function jobBody(job: EngineJob, baseUrl: string) {
 	const result = job.result as Record<string, unknown> | undefined;
 	const abs = (u: unknown) => (typeof u === 'string' && u.startsWith('/') ? `${baseUrl}${u}` : u);
+	// the file written, up front; when it is not the one asked for (a file was there), say so
+	const path = typeof result?.path === 'string' ? result.path : undefined;
+	const requested = typeof result?.requestedPath === 'string' ? result.requestedPath : undefined;
 	return {
 		jobId: job.id,
 		kind: job.kind,
 		title: job.title,
 		state: job.state,
+		...(path ? { path } : {}),
+		...(path && requested
+			? {
+					pathNote: `${requested} already existed and was kept: the file is ${path}. To replace it, export again with overwrite: true.`,
+				}
+			: {}),
 		progress: job.progress === null ? null : Math.round(job.progress * 1000) / 10,
 		...(job.stage ? { stage: job.stage } : {}),
 		...(job.etaSec !== undefined ? { etaSec: Math.round(job.etaSec) } : {}),

@@ -44,6 +44,50 @@ refused; a ripple speed change of a linked group with a split edit moved later m
 - `contentWindow` / `trimLimits` / `contentHandles` are shared by trim, roll, slip, slide and speed: media length,
   composition length, nested sequence length, frame holds (edit-structure: unbounded) and subclip limits.
 
+### Overlays across ripple edits (`commands/overlay-ripple.ts`)
+
+Before: a ripple on one track gave every sync-locked track the same insert or removal, razoring whatever spanned the
+edit. On a real cut (`range.extract` / Clean Up cuts and ripple trims on V1, sync-locked V2) six of seventeen
+363-frame day cards — text clips that pop in, shrink to a corner and pop out at their end — broke into pieces with
+gaps and lost their shrink keyframes; a ripple trim shortening under a card was refused (`E_SYNC_CONFLICT`). Now a
+**generated overlay** (`text` other than subtitles, `solid`, `adjustment`, `shape`, `motion-graphic`, `camera`,
+`light`: no media frames tied to the time) that spans a ripple on a track the edit does not name stays one clip:
+
+- **Default: refit as a whole.** A removal that overlaps it shortens it by the overlapped frames; an insert inside it
+  lengthens it. It starts where it started (or at the cut, when it started inside the removed time). The frames are
+  taken from / added to a **still stretch** — where every keyframed property holds one value (equal values on a
+  straight path; Hold segments) — so the animation before that stretch stays relative to the clip's start and the
+  one after it relative to its end: the cut's own place when it is still, else the longest still stretch (as near
+  the cut as it fits). Without a still stretch long enough every key time scales with the duration. Keys landing on
+  one time merge (the first key's incoming side, the last key's outgoing side). Clip markers move the same way;
+  transitions on the clip are shortened to fit (`W_TRANSITION_SHORTENED`).
+- One `W_OVERLAY_FITTED` warning names each refitted clip and its frames (e.g. `clp_… (−30 frames)`).
+- A removal that covers the whole overlay removes it with the range (`range.extract`, `clip.extract {syncConflict:
+  "cut"}`, Clean Up), and a ripple trim that would remove it is refused as before (`E_SYNC_CONFLICT`).
+- Covered edits: `range.extract` (overlays on every track the command's `tracks` does not list; with no `tracks`,
+  every track — so `transcript.extract` and the transcript tools keep them), `clip.extract` (sync-locked tracks),
+  ripple trims (`clip.trim {mode: "ripple"}`, `clip.trimEdits`, the timeline's ripple gestures: non-member tracks),
+  the one-pass cuts of `cleanup.apply`, `transcript.removeFillers` and the other transcript removals (`cutRanges`),
+  and on sync-locked tracks the insert edits — insert placement (`clip.place {mode: "insert"}`, source inserts),
+  insert moves (`clip.move {mode: "insert"}`, Ctrl-drag), Paste Insert, Insert Frame Hold Segment — ripple speed
+  changes (`clip.setSpeed {ripple: true}` and time-remap edits with `ripple`: lengthened or shortened) and `gap.close`
+  (shortened instead of refusing). `insertShiftKeeping` / `removeShiftKeeping` wrap `insertShift` / `removeShift`
+  for those callers. A track listed in `range.extract {tracks}` is cut as before, overlays included.
+- Not overlays: media-backed clips (video, audio, stills, animated images, 3D models), nests and compositions
+  (their content has its own timeline, like footage), and subtitle text clips (their words belong to the time).
+
+Why this default (assumption, not a documented Premiere behaviour): Premiere's sync lock razors every clip on a
+sync-locked track, which is what broke the cards. Final Cut Pro keeps connected clips (titles, generators) whole and
+moves them with the storyline clip they are attached to, keeping their duration (Apple's Final Cut Pro User Guide on
+connected clips; from prior knowledge, not fetched for this change). Keeping the overlay's duration
+would leave its end animation late against the material it was cut to, so the overlay is refitted instead and its
+animations are preserved at both ends. Skipping overlays with a warning was the alternative; it leaves them over the
+wrong material.
+
+No per-track "protect from ripple" option was added: it would be a new stored track field (a schema bump with
+migration, fixture and compatibility tests, AGENTS §0) while other agents are changing the schema in parallel, and the
+refit above already protects every overlay on every track; footage that must not move can keep using sync lock off.
+
 ## 2. Trim mode and the Trim Monitor (`apps/web`)
 
 - **Selecting edit points**: click an edge (TL-547, Ctrl/Cmd adds), **Shift+T Trim Edit** (nearest cut on the
@@ -205,6 +249,15 @@ the exported frames show the fade (black first frame, picture later).
   `edit-ux-monitors.test.tsx`, `edit-ux-lanes.test.tsx` — components, dialogs, layouts (conflict-free on every
   platform/runtime), store, spring tools, guides, comparison, dropped frames, Button Editor, lanes and fades.
 - `apps/mcp/test/edit-ux.test.ts` — the MCP tools over the protocol.
+- `packages/project/test/overlay-ripple.test.ts` — the reported 363-frame day card (pop-in, shrink to a corner,
+  pop-out) through `range.extract` in its hold and in its shrink, two Clean Up cuts, ripple trims both ways and
+  `clip.extract` (each failed before: the card was split or the edit refused), the refusal that remains and a named
+  track cut as before; and insert placement, an insert move, Paste Insert, Insert Frame Hold Segment, ripple speed
+  changes both ways and `gap.close` under the card (each failed before: split or refused);
+  `packages/session/test/overlay-ripple-history.test.ts` — undo / redo of one refit. Checked on the reported project
+  (rev 267, 17 day cards, not in the repository): a +24-frame ripple trim of the V1 edit inside each card, then an
+  Insert Frame Hold Segment (30 frames) in each card and 15 ripple speed changes (80 %) under them, keep 17 whole
+  cards with their pop-out on their end; the same holds and speed changes on the previous build gave 40 pieces.
 
 ## 11. Comparison with FilmCraft
 

@@ -453,6 +453,7 @@ const LABELS: Record<CommandType, string> = {
 	// spec 13 AS-001…AS-020: automatic subtitles and subtitle templates.
 	'captions.generate': 'Create Subtitles',
 	'captions.regenerate': 'Regenerate Subtitles',
+	'captions.lock': 'Lock Subtitles',
 	'captions.alignToCuts': 'Align Subtitles to Cuts',
 	'captions.convert': 'Convert Subtitles',
 	'captions.updateGroup': 'Subtitle Group Settings',

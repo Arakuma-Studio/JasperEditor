@@ -39,8 +39,11 @@ import { CaptionStyleSchema, ClipMarkerSchema, type Sequence, SequenceSchema } f
  * open v10 files read-only (docs/project-files.md).
  * v11 (agent footage editing, spec 18 AF-BRF): `Sequence.brief` and `ProjectDocument.agentNotes`; version bump only,
  * so v10 builds — which neither show, check nor repair them, and whose agents cannot read them — open v11 files
- * read-only (docs/project-files.md). */
-export const CURRENT_SCHEMA_VERSION = 12;
+ * read-only (docs/project-files.md).
+ * v13 (subtitle locks, own-subtitle words): `caption.locked` on subtitle text clips and `rules.ownWords` on subtitle
+ * groups; version bump only, so v12 builds — whose regenerate would replace hand-edited subtitles and whose strict
+ * rules reader would reset such a group — open v13 files read-only (docs/project-files.md). */
+export const CURRENT_SCHEMA_VERSION = 13;
 
 const markSchema = z.looseObject({ flicks: nonNegInt() });
 export const SourceMarksSchema = z.looseObject({

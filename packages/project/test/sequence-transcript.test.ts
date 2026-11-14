@@ -115,6 +115,103 @@ describe('sequence transcript', () => {
 		expect(w[0]!.start).toBe(0);
 		expect(w[0]!.end).toBe(s(0.3));
 	});
+	it("a kept take's first word cut off at the In stays with the take; a removed take's word reaching in does not", () => {
+		// a restart cut (the reporter's rev 144 → 267 cut): the removed take ends "…pero"; the kept take "Y si alguno"
+		// starts at the voice onset, but speech to text started "Y" early (over the breath before it), so its midpoint
+		// lies before the In. "pero" reaches 0.05 s (8 %) past the second In.
+		const words: Array<[string, number, number]> = [
+			['funciona,', 1.0, 1.7],
+			['Y', 1.7, 2.1],
+			['si', 2.1, 2.3],
+			['alguno', 2.3, 2.8],
+			['pero', 3.4, 4.0],
+			['no', 4.0, 4.3],
+		];
+		const doc = {
+			transcripts: {
+				trs_take: {
+					...interviewTranscript('trs_take'),
+					words: words.map(([text, a, b]) => ({
+						text,
+						start: s(a),
+						end: s(b),
+						confidence: null,
+						speaker: null,
+						breakBefore: 'none' as const,
+					})),
+				},
+			},
+		};
+		// kept: media 0–1.0 (before the restart), 1.96–2.8 (the kept take, In inside "Y"), 3.96–4.3
+		const seq = seqWith(
+			audioClip('c1', 0, 1, 0),
+			audioClip('c2', 1, 0.84, 1.96),
+			audioClip('c3', 1.84, 0.36, 3.96),
+		);
+		const w = sequenceWords(doc, seq);
+		expect(texts(w)).toEqual(['Y', 'si', 'alguno', 'no']);
+		expect(w[0]!.clipId).toBe('c2');
+		expect(w[0]!.start).toBe(s(1));
+	});
+	it("a short word stranded at a clip's tail after a sentence end, and zero-length leftovers, reach no caption", () => {
+		// the reporter's v8: "…y Appstore! | Y si alguno…" — "Y" (0.2 s) on a sound at the end of the Appstore clip, a
+		// fragment of another take; the kept take starts in the next clip, its own "Y" cut off at the In (40 % inside).
+		// A zero-length "En" left by an edit, a 60 ms "y." after "watafak." in a tail an edge extension exposed, and a
+		// short word that only continues the sentence into the next clip ("en la | mesa") for contrast.
+		const words: Array<[string, number, number]> = [
+			['y', 2.29, 2.44],
+			['Appstore!', 2.44, 2.63],
+			['Y', 2.64, 2.84],
+			['Y', 23.7, 24.0],
+			['si', 24.12, 24.3],
+			['alguno', 24.3, 24.62],
+			['En', 24.7, 24.7],
+			['de', 24.72, 24.8],
+			['Kojima,', 30.0, 30.6],
+			['watafak.', 30.6, 31.01],
+			['y.', 31.09, 31.15],
+			['en', 40.0, 40.2],
+			['la', 40.2, 40.32],
+			['mesa', 50.0, 50.4],
+		];
+		const doc = {
+			transcripts: {
+				trs_take: {
+					...interviewTranscript('trs_take'),
+					words: words.map(([text, a, b]) => ({
+						text,
+						start: s(a),
+						end: s(b),
+						confidence: null,
+						speaker: null,
+						breakBefore: 'none' as const,
+					})),
+				},
+			},
+		};
+		const seq = seqWith(
+			audioClip('a', 0, 0.6, 2.3), // media 2.3–2.9: "y Appstore! Y"
+			audioClip('b', 0.6, 1.0, 23.88), // 23.88–24.88: the kept take
+			audioClip('c', 1.6, 1.2, 30.0), // 30.0–31.2: "Kojima, watafak. y."
+			audioClip('d', 2.8, 0.4, 39.96), // 39.96–40.36: "en la"
+			audioClip('e', 3.2, 0.6, 49.96), // 49.96–50.56: "mesa"
+		);
+		const w = sequenceWords(doc, seq);
+		expect(texts(w)).toEqual([
+			'y',
+			'Appstore!',
+			'Y',
+			'si',
+			'alguno',
+			'de',
+			'Kojima,',
+			'watafak.',
+			'en',
+			'la',
+			'mesa',
+		]);
+		expect(w[2]!.clipId).toBe('b');
+	});
 	it('scales word times by speed', () => {
 		const w = sequenceWords(docT, seqWith(audioClip('c100', 0, 5, 0, { rate: 2 })));
 		expect(w).toHaveLength(20);
@@ -133,10 +230,10 @@ describe('sequence transcript', () => {
 		expect(sequenceWords(docT, q)).toEqual([]);
 	});
 	it('repeats words of two clips of the same media in edit order', () => {
-		// "rivers." twice: media 5.3–5.9 at 0 s and again at 1 s
-		const w = sequenceWords(docT, seqWith(audioClip('c100', 0, 1, 5.2), audioClip('c101', 1, 1, 5.2)));
+		// "rivers." twice: media 5.3–5.9 at 0 s and again at 1 s (the In plays the last 14 % of "about": not heard)
+		const w = sequenceWords(docT, seqWith(audioClip('c100', 0, 1, 5.25), audioClip('c101', 1, 1, 5.25)));
 		expect(texts(w)).toEqual(['rivers.', 'rivers.']);
-		expect(w[1]!.start).toBe(s(1.1));
+		expect(w[1]!.start).toBe(s(1.05));
 		expect(w[1]!.clipId).toBe('c101');
 	});
 	it('search, word at and paragraphs', () => {

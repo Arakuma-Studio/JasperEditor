@@ -18,12 +18,12 @@ const doc: ProjectDocument = createEmptyProject({
 });
 const SEQ = Object.keys(doc.sequences)[0]!;
 
-const result = (mode: 'propose' | 'dryRun'): TranscriptFixResult => ({
+const result = (mode: 'propose' | 'dryRun' | 'rebuild'): TranscriptFixResult => ({
 	mode,
 	projectId: P,
 	sequenceId: SEQ,
-	proposalId: mode === 'propose' ? 'prp_0000000000000009' : null,
-	itemCount: mode === 'propose' ? 2 : 0,
+	proposalId: mode !== 'dryRun' ? 'prp_0000000000000009' : null,
+	itemCount: mode !== 'dryRun' ? 2 : 0,
 	revision: 3,
 	report: {
 		settings: {
@@ -108,7 +108,7 @@ function fakeEngine(
 ) {
 	const calls: { name: string; args: unknown[] }[] = [];
 	let polls = 0;
-	let mode: 'propose' | 'dryRun' = 'propose';
+	let mode: 'propose' | 'dryRun' | 'rebuild' = 'propose';
 	let cancelled = false;
 	const job = (): EngineJob => {
 		polls++;
@@ -129,7 +129,11 @@ function fakeEngine(
 	};
 	const client = {
 		agentQuery: async () => ({ result: doc, revision: 3, via: 'headless' }),
-		transcriptFix: async (projectId: string, sequenceId: string, req: { mode: 'propose' | 'dryRun' }) => {
+		transcriptFix: async (
+			projectId: string,
+			sequenceId: string,
+			req: { mode: 'propose' | 'dryRun' | 'rebuild' },
+		) => {
 			calls.push({ name: 'transcriptFix', args: [projectId, sequenceId, req] });
 			mode = req.mode;
 			return { ...job(), state: 'queued' };
@@ -222,6 +226,15 @@ describe('fix_transcript', () => {
 			perMedia: [{ alignedShare: 0.91, offScriptShare: 0.03 }],
 		});
 		expect(json.next).toContain('mode "propose"');
+	});
+
+	it('rebuild: asks the engine to rebuild the kept speech (off-script words kept) and names the proposal', async () => {
+		const t = await connect();
+		const { r, json } = await t.call({ projectId: P, mode: 'rebuild', offScript: 'keep' });
+		expect(r.isError).toBeFalsy();
+		expect(t.engine.calls[0]!.args[2]).toEqual({ mode: 'rebuild', offScript: 'keep' });
+		expect(json).toMatchObject({ mode: 'rebuild', proposalId: 'prp_0000000000000009' });
+		expect(json.next).toContain('rewrites 2 kept spans');
 	});
 
 	it('propose: waits for the job with progress notifications and names the proposal', async () => {

@@ -15,6 +15,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { afterEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
+import { runCli } from '../src/jasper-cli.ts';
 import type { EngineConnection } from '../src/link.ts';
 import { createJasperMcpServer } from '../src/server.ts';
 import { readToolResponse } from './tool-response.ts';
@@ -135,10 +136,14 @@ function fakeEngine() {
 	});
 	if (!placed.ok) throw new Error(JSON.stringify(placed.errors));
 	const jobs = new Map<string, Record<string, unknown>>();
+	// jobs still running for this many more polls (Infinity: until `hold` changes it)
+	const held = new Map<string, number>();
+	const cancelled: string[] = [];
 	const posts: Array<{ name: EngineRoute; opts: EngineCallOptions }> = [];
 	let n = 0;
 	const newJob = (result: unknown, state = 'succeeded') => {
 		const id = `job_${++n}`;
+		if (holdNext) held.set(id, holdNext);
 		jobs.set(id, {
 			id,
 			kind: 'transcription',
@@ -185,11 +190,21 @@ function fakeEngine() {
 	});
 	const client = {
 		agentQuery: async () => ({ result: doc, revision, via: 'headless' }),
+		listProjects: async () => ({ projects: [{ projectId: 'prj_test', name: 'Speech' }] }),
 		agentTx: async (req: { transaction: Record<string, unknown> }) => ({
 			result: apply(req.transaction),
 			appliedBy: 'headless',
 		}),
-		getJob: async (id: string) => jobs.get(id),
+		getJob: async (id: string) => {
+			const left = held.get(id);
+			if (!left) return jobs.get(id);
+			held.set(id, left - 1);
+			return { ...jobs.get(id), state: 'running', progress: 0.5, result: undefined };
+		},
+		cancelJob: async (id: string) => {
+			cancelled.push(id);
+			return { ...jobs.get(id), state: 'cancelled' };
+		},
 		call: async (name: EngineRoute, opts: EngineCallOptions = {}) => {
 			posts.push({ name, opts });
 			if (name === 'speechModels')
@@ -259,7 +274,13 @@ function fakeEngine() {
 		invalidate: () => {},
 		close: async () => {},
 	};
-	return { link, doc: () => doc, seqId, a, b, posts };
+	let holdNext = 0;
+	/** New jobs run for `polls` polls; a job id: that job runs for `polls` more polls. */
+	const hold = (polls: number, id?: string) => {
+		if (id) held.set(id, polls);
+		else holdNext = polls;
+	};
+	return { link, doc: () => doc, seqId, a, b, posts, hold, cancelled };
 }
 
 let open: Client[] = [];
@@ -423,6 +444,41 @@ describe('speech MCP tools', () => {
 		expect(ta.words.map((w) => [w.text, w.start / S])).toEqual([['mixA', 2]]);
 		expect(tb.words.map((w) => [w.text, w.start / S])).toEqual([['mixB', 13]]);
 		expect(tb.coverage).toEqual([[10 * S, 20 * S]]);
+	});
+
+	it('a transcription that outlives the wait is kept running and uncommitted; the error names the call that waits and commits', async () => {
+		// reported: ~30 min of audio outlived `transcribe {wait: true}` and its words were never committed
+		const { call, engine } = await connect();
+		engine.hold(Number.POSITIVE_INFINITY);
+		const r = await call('transcribe', { mediaId: engine.a, timeoutSeconds: 1 });
+		expect(r.isError).toBe(true);
+		const err = JSON.stringify(r.body);
+		expect(err).toContain('E_TIMEOUT');
+		expect(err).toContain(
+			JSON.stringify('transcribe {"projectId":"prj_test","jobIds":["job_1"]}').slice(1, -1),
+		);
+		expect(engine.cancelled).toEqual([]);
+		expect(Object.values(engine.doc().transcripts)).toHaveLength(0);
+		engine.hold(2, 'job_1');
+		const c = await call('transcribe', { jobIds: ['job_1'] });
+		expect(c.isError, JSON.stringify(c.body)).toBe(false);
+		expect(Object.values(engine.doc().transcripts).map((t) => t.mediaId)).toEqual([engine.a]);
+	});
+
+	it('the CLI --timeout bounds the wait of `call transcribe`, and the error names the commit call', async () => {
+		const engine = fakeEngine();
+		engine.hold(Number.POSITIVE_INFINITY);
+		const out: string[] = [];
+		const err: string[] = [];
+		const code = await runCli(
+			['--project', 'prj_test', '--timeout', '1', 'call', 'transcribe', `mediaId=${engine.a}`],
+			{ stdout: (t) => out.push(t), stderr: (t) => err.push(t), link: engine.link },
+		);
+		expect(code).toBe(1);
+		const text = err.join('');
+		expect(text).toContain('E_TIMEOUT');
+		expect(text).toContain('transcribe {"projectId":"prj_test","jobIds":["job_1"]}');
+		expect(engine.cancelled).toEqual([]);
 	});
 
 	it('refuses bad targets and an uninstalled model with a hint', async () => {

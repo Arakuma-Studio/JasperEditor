@@ -1980,7 +1980,8 @@ export const ROUTES = {
 	},
 	/**
 	 * Spec 17 SC-090: Fix Transcript — a `transcript-fix` job (`dryRun`: the fast pre-run; `propose`: the audio check and
-	 * one `transcript-correction` proposal); the job result is `TranscriptFixResult`.
+	 * one `transcript-correction` proposal; `rebuild`: the kept speech transcribed again and written from the script, one
+	 * proposal); the job result is `TranscriptFixResult`.
 	 */
 	transcriptFix: {
 		method: 'POST',

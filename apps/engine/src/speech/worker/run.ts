@@ -92,6 +92,12 @@ export type SpeechJobSpec = {
 	chunking?: 'vad';
 	/** Spec 17 SC-074: glossary terms carried into every window's prompt (≤ 40, each ≤ 64 characters). */
 	glossary?: string[];
+	/**
+	 * Only these ranges (16 kHz samples, sorted, disjoint), each transcribed the `chunking: "vad"` way within it; words
+	 * whose midpoint lies outside every range are dropped. The safety passes (wordless spans, hidden takes) do not
+	 * run: VAD chunks already write restarts. Rebuild from script (`speech/kept-spans.ts`).
+	 */
+	spans?: Array<{ start: number; end: number }>;
 	/** Where long-file spectrograms and kept samples go (default: a temporary directory). */
 	scratch?: string;
 	/** Audio duration hint (seconds) for decode progress. */
@@ -852,6 +858,81 @@ async function transcribeChunked(
 	return { result: acc.result(r, words), report };
 }
 
+/**
+ * `spans` (samples): each range transcribed the `chunking: "vad"` way within it (`transcribeChunked`), the language
+ * detected on the first range that has voice and kept for the others; the words whose midpoint lies inside their range.
+ */
+async function transcribeSpans(
+	model: Pick<WhisperModel, 'transcribe'>,
+	input: SpeechInput,
+	spans: ReadonlyArray<{ start: number; end: number }>,
+	opts: WhisperOptions,
+	onProgress: (f: number) => void,
+): Promise<{ result: WhisperResult; report: ChunkedReport }> {
+	const ranges = spans
+		.map((s) => ({
+			s,
+			range: {
+				start: Math.max(0, Math.floor(s.start / VAD_FRAME)),
+				end: Math.min(input.mask.length, Math.ceil(s.end / VAD_FRAME)),
+			},
+		}))
+		.filter((x) => x.range.end > x.range.start);
+	const total = ranges.reduce((n, x) => n + (x.range.end - x.range.start), 0);
+	const report: ChunkedReport = { chunks: 0, shiftedChunks: 0, zones: 0, replaced: 0 };
+	const parts: WhisperResult[] = [];
+	const words: WhisperWord[] = [];
+	const segments: WhisperSegment[] = [];
+	let language = opts.language ?? null;
+	let done = 0;
+	for (const { s, range } of ranges) {
+		const len = range.end - range.start;
+		const c = await transcribeChunked(
+			model,
+			input,
+			input.mask,
+			{ ...opts, language },
+			(f) => onProgress((done + f * len) / Math.max(1, total)),
+			range,
+		);
+		done += len;
+		if (c.report.chunks) language ??= c.result.language;
+		report.chunks += c.report.chunks;
+		report.shiftedChunks += c.report.shiftedChunks;
+		report.zones += c.report.zones;
+		report.replaced += c.report.replaced;
+		parts.push(c.result);
+		const inRange = (x: { start: number; end: number }) => {
+			const m = (x.start + x.end) / 2;
+			return m >= s.start && m < s.end;
+		};
+		words.push(...c.result.words.filter(inRange));
+		segments.push(
+			...c.result.segments.filter((sg) =>
+				inRange({ start: sg.start * SAMPLE_RATE, end: sg.end * SAMPLE_RATE }),
+			),
+		);
+	}
+	words.sort((a, b) => a.start - b.start || a.end - b.end);
+	const base = parts.find((p) => p.words.length) ?? parts[0];
+	const r: WhisperResult = {
+		language: language ?? base?.language ?? 'en',
+		languageProbability: base?.languageProbability ?? null,
+		words: [],
+		segments: [],
+		guard: {
+			skippedWindows: parts.reduce((n, x) => n + x.guard.skippedWindows, 0),
+			removed: [],
+			glossary: base?.guard.glossary ? { ...base.guard.glossary, events: 0, replaced: 0 } : null,
+		},
+		profile: { encoderMs: 0, decoderMs: 0, jsMs: 0, decoderRuns: 0, windows: 0 },
+	};
+	const acc = new ExtraDecodes(r);
+	for (const x of parts) acc.add(x);
+	acc.segments.push(...segments);
+	return { result: acc.result(r, words), report };
+}
+
 async function recognise(
 	spec: SpeechJobSpec,
 	input: SpeechInput,
@@ -872,6 +953,13 @@ async function recognise(
 	const ran = await withDeviceFallback(spec, opts, async (model) => {
 		let chunked: ChunkedReport | null = null;
 		let first: WhisperResult;
+		if (spec.spans?.length) {
+			const va = spec.voiceAnalysis ? await voiceAnalysisMask(spec.voiceAnalysis, input.db.length) : null;
+			const c = await transcribeSpans(model, input, spec.spans, options, (f) =>
+				opts.onProgress?.(0.03 + f * 0.92, `Transcribing the kept speech ${Math.round(f * 100)}%`),
+			);
+			return { result: c.result, report: null, redecoded: null, chunked: c.report, va };
+		}
 		if (spec.chunking === 'vad') {
 			// chunks split at the energy VAD's pauses (the voice analysis may not exist yet)
 			const c = await transcribeChunked(model, input, input.mask, options, (f) =>

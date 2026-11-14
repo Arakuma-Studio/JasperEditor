@@ -5,6 +5,7 @@
 // - locked tracks are never edited or shifted (ARCHITECTURE §2.3), sync-locked tracks follow ripples.
 
 import type { Draft } from 'immer';
+import { setCaptionLocked } from '../../captions/subtitles/model.ts';
 import { type Box, scaleForMode } from '../../factories.ts';
 import { mediaIntrinsicSize } from '../../process/rescale.ts';
 import { kindCapabilities } from '../../registry/kinds.ts';
@@ -15,6 +16,12 @@ import type { DClip, DDoc, DSeq, DTrack, HandlerContext } from '../context.ts';
 import { cutSnapLevels, snapCutRange } from '../cut-snap.ts';
 import { audioCutFaces, JOIN_FADE_MS, setJoinFades } from '../join-fades.ts';
 import {
+	applyOverlayFits,
+	insertShiftKeeping,
+	overlayRemovalFits,
+	removeShiftKeeping,
+} from '../overlay-ripple.ts';
+import {
 	allTracksIn,
 	assertKindFits,
 	assertUnlocked,
@@ -23,7 +30,6 @@ import {
 	end,
 	ensureTrackAt,
 	findTrackIn,
-	insertShift,
 	reidentifyClipChildren,
 	relinkSplits,
 	removeShift,
@@ -164,6 +170,8 @@ export function rollTrim(doc: DDoc, cmd: CommandOf<'clip.trim'>, h: HandlerConte
 		if (p.out) setClipRange(seq, p.out, p.out.start, next);
 		if (d < 0 && p.inc) setClipRange(seq, p.inc, next, end(p.inc));
 	}
+	// subtitles retimed by hand are kept by captions.regenerate
+	for (const p of plans) for (const c of [p.out, p.inc]) if (c) setCaptionLocked(c as Clip, true);
 	cleanupSequence(seq, h);
 	return { deltaFrames: d };
 }
@@ -265,8 +273,9 @@ export function rippleAfterEnd(
 	if (done.has(key)) return;
 	done.add(key);
 	const followers = syncFollowerTracks(seq, edited).map((t) => t.id);
-	if (delta > 0) relinkSplits(seq, insertShift(seq, followers, oldEnd, delta, h), h);
-	else removeShift(seq, followers, oldEnd + delta, -delta, h);
+	// generated overlays on sync-locked tracks are lengthened / shortened whole, not split (overlay-ripple.ts)
+	if (delta > 0) relinkSplits(seq, insertShiftKeeping(seq, [], followers, oldEnd, delta, h), h);
+	else removeShiftKeeping(seq, [], followers, oldEnd + delta, -delta, h);
 	shiftMarkers(seq, delta > 0 ? oldEnd : oldEnd + delta, delta);
 }
 
@@ -391,8 +400,8 @@ function setSpeedHandler(doc: DDoc, cmd: CommandOf<'clip.setSpeed'>, h: HandlerC
 		});
 		const from = oldEnds[0]!;
 		const followers = syncFollowerTracks(seq, new Set(g.map((c) => c.trackId))).map((t) => t.id);
-		if (shift > 0) relinkSplits(seq, insertShift(seq, followers, from, shift, h), h);
-		else removeShift(seq, followers, from + shift, -shift, h);
+		if (shift > 0) relinkSplits(seq, insertShiftKeeping(seq, [], followers, from, shift, h), h);
+		else removeShiftKeeping(seq, [], followers, from + shift, -shift, h);
 		shiftMarkers(seq, shift > 0 ? from : from + shift, shift);
 	}
 	cleanupSequence(seq, h);
@@ -627,12 +636,21 @@ function rangeExtractHandler(doc: DDoc, cmd: CommandOf<'range.extract'>, h: Hand
 	const ids = new Set(tracks.map((t) => t.id));
 	for (const t of syncFollowerTracks(seq, ids)) ids.add(t.id);
 	const faces = audioCutFaces(seq, ids, from, to);
+	// generated overlays on tracks the command does not name stay whole, refitted (overlay-ripple.ts)
+	const named = new Set(cmd.tracks ? tracks.map((t) => t.id) : []);
+	const fits = overlayRemovalFits(
+		seq,
+		[...ids].filter((id) => !named.has(id)),
+		from,
+		to,
+	);
+	const kept = applyOverlayFits(seq, fits, h);
 	const splits: SplitRecord[] = [];
-	for (const id of ids) splits.push(...clearRange(seq, id, from, to, h));
+	for (const id of ids) splits.push(...clearRange(seq, id, from, to, h, kept));
 	relinkSplits(seq, splits, h);
 	// with joinFades the faces of the cut get Clean Up's join fades (in the same undo step); ids survive the shift
 	const cut = faces(splits);
-	removeShift(seq, ids, from, to - from, h);
+	removeShift(seq, ids, from, to - from, h, { except: kept });
 	if (cmd.rippleMarkers !== false) shiftMarkers(seq, from, -(to - from));
 	const fades = cmd.joinFades ? setJoinFades(seq, cut, JOIN_FADE_MS) : 0;
 	cleanupSequence(seq, h);
@@ -656,8 +674,9 @@ function gapCloseHandler(doc: DDoc, cmd: CommandOf<'gap.close'>, h: HandlerConte
 	if (!gap) return h.fail('E_INVALID_PARAM', `No gap at frame ${at} on track ${cmd.trackId}`);
 	const n = gap.end - gap.start;
 	const edited = new Set([track.id]);
-	const ids = [track.id, ...syncFollowerTracks(seq, edited).map((t) => t.id)];
-	removeShift(seq, ids, gap.start, n, h);
+	// generated overlays on sync-locked tracks that span the gap are shortened whole (overlay-ripple.ts)
+	const followers = syncFollowerTracks(seq, edited).map((t) => t.id);
+	removeShiftKeeping(seq, edited, followers, gap.start, n, h);
 	shiftMarkers(seq, gap.start, -n);
 	cleanupSequence(seq, h);
 	return { start: gap.start, end: gap.end, trackId: track.id };

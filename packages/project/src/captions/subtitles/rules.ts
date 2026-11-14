@@ -20,6 +20,10 @@ export const GENERIC_SUBTITLE_RULES = {
 export const PUNCTUATION_BREAKS = ['never', 'half', 'always'] as const;
 export type PunctuationBreak = (typeof PUNCTUATION_BREAKS)[number];
 
+/** Most words of `ownWords` and their length. */
+export const MAX_OWN_WORDS = 200;
+export const MAX_OWN_WORD_CHARS = 64;
+
 /** Layout and timing rules (AS-002). Ranges are the dialog's. */
 export const SubtitleRulesSchema = z.strictObject({
 	maxChars: z
@@ -76,9 +80,15 @@ export const SubtitleRulesSchema = z.strictObject({
 		.enum(PUNCTUATION_BREAKS)
 		.optional()
 		.describe('Break after punctuation: never, once the subtitle is half full ("half", default), or always'),
+	ownWords: z
+		.array(z.string().trim().min(1).max(MAX_OWN_WORD_CHARS))
+		.max(MAX_OWN_WORDS)
+		.optional()
+		.describe('Words given their own subtitle, e.g. ["boing"]'),
 });
 export type SubtitleRulesInput = z.infer<typeof SubtitleRulesSchema>;
-export type SubtitleRules = typeof GENERIC_SUBTITLE_RULES;
+/** Resolved rules; `ownWords` (schema v13) is absent when no word gets a subtitle of its own. */
+export type SubtitleRules = typeof GENERIC_SUBTITLE_RULES & { ownWords?: string[] };
 
 export const TEXT_CASES = ['as-spoken', 'upper', 'lower', 'sentence'] as const;
 export type TextCase = (typeof TEXT_CASES)[number];
@@ -215,6 +225,10 @@ export function resolveSubtitleRules(
 ): SubtitleRules {
 	const r = { ...GENERIC_SUBTITLE_RULES, ...defined(base), ...defined(input) } as SubtitleRules;
 	if (r.maxSeconds < r.minSeconds) r.maxSeconds = r.minSeconds;
+	// own words: trimmed, without repeats; none = the field is left out (groups without it read as before)
+	const own = [...new Set((r.ownWords ?? []).map((w) => w.trim()).filter(Boolean))];
+	if (own.length) r.ownWords = own;
+	else delete r.ownWords;
 	return r;
 }
 
@@ -246,6 +260,7 @@ export const StoredSubtitleRulesSchema = z.strictObject({
 	breakPauseSeconds: z.number().min(0.05).max(10),
 	holdSeconds: z.number().min(0).max(10).nullable(),
 	punctuation: z.enum(PUNCTUATION_BREAKS),
+	ownWords: z.array(z.string().min(1).max(MAX_OWN_WORD_CHARS)).max(MAX_OWN_WORDS).optional(),
 });
 export const StoredSubtitleTextSchema = z.strictObject({
 	case: z.enum(TEXT_CASES),

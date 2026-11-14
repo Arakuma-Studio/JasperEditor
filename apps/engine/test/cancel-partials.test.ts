@@ -1,9 +1,9 @@
 // The export destination is the only output outside the appdir: its name is claimed exclusively,
 // registered as a partial before any byte is written, and copying stops on cancellation.
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { copyNoOverwrite } from '../src/export/service.ts';
+import { copyNoOverwrite, copyReplacing } from '../src/export/service.ts';
 import { JobQueue } from '../src/jobs/queue.ts';
 import { tempAppdir } from './temp.ts';
 
@@ -52,6 +52,35 @@ describe('copyNoOverwrite', () => {
 		).rejects.toMatchObject({ name: 'AbortError', code: 'ABORT_ERR' });
 		expect(claimed).toEqual([dest]);
 		expect(existsSync(dest)).toBe(false);
+	});
+});
+
+describe('copyReplacing (start_export overwrite)', () => {
+	it('replaces the file through a claimed temporary file; an aborted copy leaves the old file untouched', async () => {
+		const dir = tempAppdir('jasper-copy-');
+		const src = join(dir, 'render.mp4');
+		writeFileSync(src, 'new video');
+		const dest = join(dir, 'out', 'cut.mp4');
+		const ac = new AbortController();
+		const claimed: string[] = [];
+		await copyNoOverwrite(src, dest);
+		writeFileSync(dest, 'old video');
+		await expect(
+			copyReplacing(src, dest, {
+				signal: ac.signal,
+				claimed: (p) => {
+					claimed.push(p);
+					ac.abort();
+				},
+			}),
+		).rejects.toMatchObject({ name: 'AbortError' });
+		expect(claimed).toHaveLength(1);
+		expect(claimed[0]).not.toBe(dest);
+		expect(readFileSync(dest, 'utf8')).toBe('old video');
+		expect(readdirSync(join(dir, 'out'))).toEqual(['cut.mp4']);
+		expect(await copyReplacing(src, dest)).toEqual({ path: dest, replaced: true });
+		expect(readFileSync(dest, 'utf8')).toBe('new video');
+		expect(readdirSync(join(dir, 'out'))).toEqual(['cut.mp4']);
 	});
 });
 

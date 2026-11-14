@@ -5,12 +5,15 @@
 // off-script share, candidates by group and category, the subtitles a fix could not update, an estimated time for the
 // audio check on this machine); Run (the `transcript-fix` job with progress, Cancel cancels it) opens the proposal in
 // Review. Disabled with the reason when there is no transcript, no script and no glossary, or no speech model.
+// "Rebuild from script for the kept speech" (same dialog): the speech the sequence keeps transcribed again and written
+// from the script (keep or drop words the script lacks) into one proposal opened in Review; disabled without a script,
+// a transcript or a speech model.
 // Every failure (a refusal, a job error, an unreadable result) is shown in the dialog; nothing is ever blank.
 import type { EngineJob } from '@jasper/api';
 import type { EngineClient } from '@jasper/engine-client';
 import type { EditorSession } from '@jasper/session';
 import { useStoreSelector } from '@jasper/session/react';
-import { Checkbox, Dialog, type HostedDialogProps, registerDialog, Select, toast } from '@jasper/ui';
+import { Button, Checkbox, Dialog, type HostedDialogProps, registerDialog, Select, toast } from '@jasper/ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDialogClose } from '../extensions/dialog.ts';
 import { t } from '../i18n/runtime.ts';
@@ -23,6 +26,7 @@ import {
 	FixRunError,
 	fixErrorText,
 	proposeFix,
+	rebuildFix,
 } from './engine.ts';
 import {
 	alignmentShares,
@@ -218,6 +222,7 @@ export function FixTranscriptDialog(props: HostedDialogProps<FixTranscriptDialog
 	const glossary = useGlossarySize(engine);
 	const [settings, setSettings] = useState<FixSettings | null>(() => inputs?.settings ?? null);
 	const [showRejected, setShowRejected] = useState(false);
+	const [rebuildKeep, setRebuildKeep] = useState(false);
 	const [dry, setDry] = useState<FixResult | null>(null);
 	const [dryError, setDryError] = useState<string | null>(null);
 	const [running, setRunning] = useState<{ progress: number | null; stage: string } | null>(null);
@@ -238,6 +243,19 @@ export function FixTranscriptDialog(props: HostedDialogProps<FixTranscriptDialog
 				? (fixBlocker(inputs, sources, glossary.entries, models, { forRun: true }) ??
 					(dry?.report.speech.problem ? dry.report.speech.problem : null))
 				: t('Open a sequence first');
+	const rebuildBlocker = !engine
+		? t('The engine is not connected')
+		: readOnly
+			? t('The project is read-only')
+			: !inputs
+				? t('Open a sequence first')
+				: !inputs.transcripts
+					? t('The sequence has no transcript yet: generate or import one in Text ▸ Transcript first')
+					: !inputs.script
+						? t('Attach the video script (Script…) first: the rebuild writes from it')
+						: models && !models.some((m) => m.installed)
+							? t('No speech model is installed: download one in Preferences ▸ Transcription')
+							: null;
 	const request = useMemo(
 		() =>
 			settings && inputs
@@ -334,6 +352,54 @@ export function FixTranscriptDialog(props: HostedDialogProps<FixTranscriptDialog
 			toast({
 				kind: 'success',
 				title: r.itemCount === 1 ? t('1 fix to review') : t('{0} fixes to review', r.itemCount),
+			});
+			props.onReview?.();
+			return true;
+		} catch (e) {
+			setRunning(null);
+			if (e instanceof FixRunError && e.code === 'E_CANCELLED') {
+				setMessage({ text: t('Cancelled: nothing was proposed'), tone: 'info' });
+				return false;
+			}
+			setMessage({ text: fixErrorText(e), tone: 'warning' });
+			return false;
+		} finally {
+			abort.current = null;
+		}
+	};
+
+	const rebuild = async (): Promise<boolean> => {
+		if (!engine || rebuildBlocker) return false;
+		setMessage(null);
+		const ac = new AbortController();
+		abort.current = ac;
+		setRunning({ progress: null, stage: t('Starting…') });
+		try {
+			const r = await rebuildFix(
+				engine,
+				session.projectId,
+				sequenceId,
+				{ offScript: rebuildKeep ? 'keep' : 'drop' },
+				{
+					signal: ac.signal,
+					onJob: (j: EngineJob) => setRunning({ progress: j.progress, stage: j.stage ?? j.title }),
+				},
+			);
+			setRunning(null);
+			if (!r.proposalId) {
+				setMessage({
+					text: t('The kept speech already reads like the script: nothing to rewrite'),
+					tone: 'info',
+				});
+				return false;
+			}
+			await openReview(session, r.proposalId);
+			toast({
+				kind: 'success',
+				title:
+					r.itemCount === 1
+						? t('1 span rewritten from the script to review')
+						: t('{0} spans rewritten from the script to review', r.itemCount),
 			});
 			props.onReview?.();
 			return true;
@@ -459,6 +525,39 @@ export function FixTranscriptDialog(props: HostedDialogProps<FixTranscriptDialog
 							}
 						/>
 					</Row>
+					<div
+						className="flex flex-col gap-1 border-t border-pr-border-subtle pt-3"
+						data-testid="fix-rebuild"
+					>
+						<span className="text-pr-text">{t('Rebuild from script for the kept speech')}</span>
+						<p className="text-pr-small text-pr-muted">
+							{t(
+								'For a finished cut whose subtitles must read like the script when the transcript is wrong beyond single words (missing phrases, words of removed takes): the speech the sequence keeps is transcribed again from the original audio and written from the script. One proposal in Review; accepting it is one undo step.',
+							)}
+						</p>
+						<div className="flex items-center justify-between gap-3">
+							<Checkbox
+								checked={rebuildKeep}
+								disabled={!!running}
+								onCheckedChange={setRebuildKeep}
+								label={t('Keep words that are not in the script')}
+							/>
+							<Button
+								disabled={!!running || !!rebuildBlocker}
+								onClick={() => {
+									void rebuild().then((ok) => ok && finish(true));
+								}}
+								data-testid="fix-rebuild-run"
+							>
+								{t('Rebuild from Script')}
+							</Button>
+						</div>
+						{rebuildBlocker && !running ? (
+							<span className="text-pr-small text-pr-muted" data-testid="fix-rebuild-blocker">
+								{rebuildBlocker}
+							</span>
+						) : null}
+					</div>
 					<div aria-live="polite" className="flex flex-col gap-1">
 						{blocker ? (
 							<span className="text-pr-small text-pr-warning" data-testid="fix-blocker">

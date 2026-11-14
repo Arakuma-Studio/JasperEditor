@@ -17,6 +17,7 @@ import {
 	resolveSubtitleText,
 	transformWords,
 	weakWordsFor,
+	wordPieces,
 	workCaptionText,
 } from '../src/index.ts';
 
@@ -149,6 +150,56 @@ describe('rules (AS-002)', () => {
 			expect(workCaptionText(c)).not.toContain('\n');
 			if (c.words.length > 1) expect([...workCaptionText(c)].length).toBeLessThanOrEqual(13);
 		}
+	});
+});
+
+describe('words longer than a line (never broken inside a word)', () => {
+	it('"EntityComponentSystem" at 13 characters × 1 line splits at CamelCase, one line per subtitle', () => {
+		const text = 'todo usa el EntityComponentSystem por defecto,'.split(' ');
+		const ws = words(text.map((t, i) => [t, i * 12, i * 12 + 10] as [string, number, number]));
+		const r = lay(ws, { base: PIXEL_POP_RULES, language: 'es' });
+		const shown = r.captions.map((c) => workCaptionText(c));
+		for (const t of shown) {
+			expect(t).not.toContain('\n');
+			expect([...t].length).toBeLessThanOrEqual(13);
+		}
+		// the pieces are whole CamelCase parts, in order, and nothing is lost
+		expect(shown.join(' ').split(' ')).toEqual([
+			'todo',
+			'usa',
+			'el',
+			'Entity',
+			'Component',
+			'System',
+			'por',
+			'defecto,',
+		]);
+		// a piece keeps its share of the word's time
+		const sys = r.captions.flatMap((c) => c.words).find((w) => w.text === 'System')!;
+		expect(sys.end).toBe(ws[3]!.end);
+	});
+	it('natural boundaries only: CamelCase, acronyms, hyphens, letter / digit; a word without one stays whole', () => {
+		expect(wordPieces('EntityComponentSystem', 13)).toEqual(['Entity', 'Component', 'System']);
+		expect(wordPieces('EntityComponentSystem', 42)).toEqual(['EntityComponentSystem']);
+		expect(wordPieces('HTTPServerFactory', 12)).toEqual(['HTTPServer', 'Factory']);
+		expect(wordPieces('postproducción-exprés', 15)).toEqual(['postproducción-', 'exprés']);
+		expect(wordPieces('Windows11Pro', 8)).toEqual(['Windows', '11Pro']);
+		expect(wordPieces('internacionalización', 13)).toEqual(['internacionalización']);
+		expect(wordPieces('¿EntityComponent?', 10)).toEqual(['¿Entity', 'Component?']);
+	});
+	it('pieces sharing a line join without a space', () => {
+		const r = lay(words([['EntityComponentSystem', 0, 40]]), { rules: { maxChars: 16, lines: 2 } });
+		expect(r.captions.map((c) => workCaptionText(c))).toEqual(['EntityComponent\nSystem']);
+		expect(r.captions[0]!.words.map((w) => w.text)).toEqual(['EntityComponent', 'System']);
+	});
+});
+
+describe('own-subtitle words (rules.ownWords)', () => {
+	it('each listed word gets a subtitle of its own (case and punctuation ignored)', () => {
+		const text = 'y hace boing boing Boing.'.split(' ');
+		const ws = words(text.map((t, i) => [t, i * 12, i * 12 + 10] as [string, number, number]));
+		const r = lay(ws, { base: PIXEL_POP_RULES, rules: { ownWords: ['boing'] }, language: 'es' });
+		expect(r.captions.map((c) => workCaptionText(c))).toEqual(['y hace', 'boing', 'boing', 'Boing.']);
 	});
 });
 

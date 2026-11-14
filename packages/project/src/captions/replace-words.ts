@@ -205,7 +205,7 @@ export function replaceWordsEditsProblem(edits: readonly ReplaceWordsEdit[]): st
 }
 
 /** Whether a transcript word lies in an edit's span (see the file comment). */
-function inSpan(w: { start: number; end: number }, start: number, end: number): boolean {
+export function wordInReplaceSpan(w: { start: number; end: number }, start: number, end: number): boolean {
 	if (start === end) return w.start < start && w.end > start;
 	if (w.start === w.end) return w.start >= start && w.start < end;
 	return w.start < end && w.end > start;
@@ -224,7 +224,7 @@ function spanRange(words: readonly TranscriptWord[], start: number, end: number)
 	let from = -1;
 	let to = -1;
 	for (let i = lo; i < words.length && words[i]!.start <= end; i++) {
-		if (inSpan(words[i]!, start, end)) {
+		if (wordInReplaceSpan(words[i]!, start, end)) {
 			if (from < 0) from = i;
 			to = i + 1;
 		} else if (from >= 0) break;
@@ -839,6 +839,9 @@ function patchSubtitle(
 	if (!words.length) return 'split';
 	clampBetween(words, fresh);
 	if (words.length > MAX_CAPTION_WORDS) return 'split';
+	// a subtitle word the sequence transcript no longer hears (a zero-length leftover, a tail fragment) sits among
+	// the new words: the clip is left as it is rather than written with overlapping words
+	for (let k = 1; k < words.length; k++) if (words[k]!.start < words[k - 1]!.end) return 'edited';
 	let content = spliceContent(clip.content as TextContent, splices);
 	content = spliceContent(
 		content,

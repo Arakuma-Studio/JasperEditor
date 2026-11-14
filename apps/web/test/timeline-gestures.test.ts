@@ -1,6 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import { setupTimeline, solid, videoAsset } from './timeline-helpers.ts';
 
+/** A video clip on `track` (footage: ripples on other tracks cut it; generated clips such as solids stay whole). */
+function footage(
+	t: { apply(c: unknown[]): { results: unknown[] } },
+	at: number,
+	frames: number,
+	track: string,
+) {
+	const r = t.apply([{ type: 'media.register', asset: videoAsset(20) }]);
+	const mediaId = (r.results[0] as { mediaId: string }).mediaId;
+	t.apply([
+		{
+			type: 'clip.place',
+			source: { mediaId },
+			at,
+			sourceRange: { in: { sourceFrames: 0 }, out: { sourceFrames: frames } },
+			tracks: { video: track },
+		},
+	]);
+}
+
 function withMovie(t: ReturnType<typeof setupTimeline>, at = 0, seconds = 20) {
 	const r = t.apply([{ type: 'media.register', asset: videoAsset(seconds) }]);
 	const mediaId = (r.results[0] as { mediaId: string }).mediaId;
@@ -55,7 +75,8 @@ describe('move gestures (TL-480…491)', () => {
 	it('Ctrl at release performs an insert move (AC-10b through the gesture)', () => {
 		const t = setupTimeline({ pxPerFrame: 1 });
 		t.session.setToggles({ snapping: false });
-		t.apply([solid(0, 400, 'V1'), solid(250, 200, 'V2'), solid(700, 60, 'V3')]);
+		t.apply([solid(0, 400, 'V1'), solid(700, 60, 'V3')]);
+		footage(t, 250, 200, 'V2');
 		t.drag(t.x(710), t.rowY('V3'), t.x(310), t.rowY('V1'), { ctrl: true });
 		expect(t.spans('V1')).toEqual([
 			[0, 300],
@@ -242,7 +263,8 @@ describe('trim tools — one history entry each (TL-530…549, TL-610…632)', (
 	it('AC-11c: ripple trim stops at the largest amount a sync-locked track allows', () => {
 		const t = setupTimeline({ pxPerFrame: 4 });
 		t.session.setToggles({ snapping: false, activeTool: 'ripple' });
-		t.apply([solid(0, 100, 'V1'), solid(100, 50, 'V1'), solid(0, 90, 'V2')]);
+		t.apply([solid(0, 100, 'V1'), solid(100, 50, 'V1')]);
+		footage(t, 0, 90, 'V2');
 		t.drag(t.x(100) - 2, t.rowY('V1'), t.x(70) - 2, t.rowY('V1'));
 		expect(t.spans('V1')).toEqual([
 			[0, 90],

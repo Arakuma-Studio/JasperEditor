@@ -1180,3 +1180,117 @@ ones. WebGPU vs CPU: every decision of every preset equal (2,070 candidates), |�
 - Audio came from 16 kHz extractions, not the original media containers; no voice analysis was available to the
   re-timing.
 - Rerun: harness in the private research folder `sccalib` (`mkinputs.py`, `sccalib.ts`, `run.sh`, `scfinal.py`).
+
+## Rebuild from script (kept speech)
+
+Reported on a 15-minute Spanish cut (revision 152 → 267 of the reporter's project, `HiceMiPropioUnity`): the subtitles
+read "tienes ir a dibujarlo" (the audio: "tienes que abrir Photoshop, dibujarlo", and "degradado y brillito" had no
+subtitle), "99% %" and "1% %", "sepan el mapa" (the audio: "sepan encontrar el camino por el mapa"), and after restart
+cuts the kept takes lost their first words or showed words of the removed takes. Fix candidates cannot reach these
+(whole phrases missing from the transcript, hidden restarts written once), so an agent re-transcribed every kept
+span from the raw audio and aligned it to the script by hand. This is that, built in.
+
+### Pipeline
+
+Mode `rebuild` of the `transcript-fix` job (`fix_transcript {mode: "rebuild", offScript?: "drop" | "keep"}`; route body
+`{mode: "rebuild", offScript?, device?}`); code `packages/project/src/script-fix/rebuild.ts` (pure),
+`apps/engine/src/transcript-fix/rebuild.ts` (job), `apps/engine/src/speech/kept-spans.ts` (re-transcription, reusable;
+speech.md §13).
+
+1. **Kept spans** (`keptSpans`): every enabled, forward audio clip on an audio track whose media has a transcript (not a
+   translation), as media ranges merged per media when they overlap, lie within one frame or share a transcript word
+   (one word is replaced by one edit only). The scope setting does not apply: a rebuild covers what the sequence keeps.
+2. **Re-transcription** (`transcribeKeptSpans`): per media one speech worker run over the spans padded by 0.2 s,
+   VAD-chunked, best accuracy (beam 5), the transcript's language and model when installed; the words go to the span by
+   the sequence transcript's rule (`heardInSpans`) and are clamped into it — padding is context only.
+3. **Alignment** (`rebuildSpans`): all spans of a media aligned in ONE pass, in media order, with the existing aligner
+   (`alignTranscript`, jumps allowed, so retakes and restarts in different spans re-use script words), then cut back
+   into spans. Aligning span by span picked other occurrences of short phrases (case and punctuation of another line:
+   "Suscríbete," / "imposible!"): 3465 → 3472 script words with the same text on the measure below (first harness,
+   difflib blocks). Rules per span:
+   - an exact cell → the script word as written, the heard timing;
+   - a non-exact cell (replaced inside the span) → the script text with the heard timing (n : m cells spread by
+     characters over the heard words' span);
+   - heard words not in the script (`ins`, `off`) → dropped, or kept as heard with `offScript: "keep"`;
+   - script words skipped between two cells of the span (missing) → inserted between their neighbours, ≥ 80 ms each,
+     the longer neighbour (then the other) lending up to half of itself when the gap is shorter; confidence 0.3 (the
+     gap rule's script-derived mark, below Clean Up's 0.4); never across a span boundary or after a jump;
+   - symbol-only heard words fold into the word before them first ("99" "%" → "99%", covering the symbol's sound), so a
+     script "99%" replaces both;
+   - emoticons ("XD"): written in the script right after a word → attached after it (60 ms slice, borrowed from the word
+     when the next is closer); present in the current transcript (added by hand, never heard — the reporter's cut kept
+     seven) → carried over after the rebuilt word before them;
+   - a span with no cell at all (nothing of the script heard: an aside in parentheses, an ad-lib) keeps its heard words.
+4. **Edits** (`rebuildEdits`): each span becomes `transcript.replaceWords` edits over its old words (index-free, the
+   SC-050 command), cut where no old or new word straddles so no edit holds more than 64 words; unchanged edits are left
+   out; a span that cannot be cut that fine (an old word stretched over > 64 new words) is left as it is
+   (`W_SPAN_UNWRITABLE`); a span where nothing was heard keeps its words.
+5. **Proposal**: ONE `transcript-correction` proposal "Rebuild transcript from script", an item per changed span (group
+   `fix`, label "m:ss–m:ss: new text", meta `before` / `after` / counts), the subtitles and caption tracks patched by
+   the command; accepting is one transaction, History "Rebuild transcript from script: N spans" (no fingerprints:
+   nothing is remembered on reject). Refresh drops the items ("run Rebuild from script again"): the spans were
+   transcribed together. Report `report.rebuild` (spans, changed spans, seconds, heard / written words, counts per rule,
+   off-script / silent / unwritable spans, model).
+6. Refusals: no script → `E_NO_SOURCE`; no transcribed audio clip → `E_NO_TRANSCRIPT`; no installed speech model →
+   `E_NO_SPEECH_MODEL`. A media missing from the engine store, offline or without audio is left out (`W_NOT_REBUILT`).
+
+Editor: Fix Transcript… dialog ▸ "Rebuild from script for the kept speech" — "Keep words that are not in the script" and
+**Rebuild from Script** (progress and Cancel shared with the dialog; the proposal opens in Review); disabled with the
+reason without an engine, read-only, without a transcript, a script or an installed model. MCP: `fix_transcript` mode
+`rebuild` and `offScript`; eval cases `transcript-rebuild-kept-speech` (bad: fails on the old text, which has no rebuild
+mode) and `transcript-rebuild-control`.
+
+### Measurement (offline, this host; no Whisper here)
+
+`pnpm exec tsx packages/project/bench/rebuild-reference.ts <rev144.project.jasper> [<heard.project.jasper>]` over the
+reporter's files (private, not in the repository): rev 144's sequence (340 kept spans after merging), its attached script
+parsed (3478 spoken word tokens), the sequence words compared with the script words in order (longest common
+subsequence of normalised words — lower case, accents and punctuation removed — and how many of those have the same text,
+case and punctuation included). The re-transcription is stood in for by a transcript's words inside each kept span
+(`heardInSpans`), the edits applied with the real command:
+
+| Input | Sequence words | Script words matched, same text | normalised |
+|---|---|---|---|
+| rev 144 as saved (main's mapping) | 3512 | 3398 | 3430 |
+| rev 144, this branch's mapping (In-edge rule, zero-length words and tail fragments out) | 3484 | 3360 | 3394 |
+| rev 267 (the agent's hand rebuild, the reference; this branch's mapping) | 3527 | 3451 | 3474 |
+| rebuild of rev 144, heard = rev 267's transcript words (the coordinator's stand-in) | 3534 | **3472** | 3473 |
+| rebuild of rev 144, heard = rev 144's own transcript (alignment only, no re-transcription) | 3476 | 3427 | 3427 |
+
+The reported "3348 of 3526" uses another tokenisation and count; on this measure the hand rebuild scores 3452 and the
+built-in one 3472 from the same words (301 of 340 spans changed; 3481 exact cells, 6 emoticons carried, 8 heard words
+dropped, 50 kept in spans with nothing of the script — the parenthesised asides the speaker says). With rev 144's own
+transcript as the heard words, 113 spans change (21 replaced, 18 inserted, 32 dropped); its sentence starts keep their
+squeezed timing at clip tails, so the tail-fragment rule (captions.md) leaves them out of the captions (41 fewer
+script words matched than before that rule) — the re-transcription is what gives them the next clip's timing. Alignment and edits for the
+whole cut take 0.4–0.7 s (shared 16-core host, load average 7–10). The rev 267 stand-in is already script-spelled, so
+this measures the alignment and the writing, not recognition: what the rebuild matches on a real cut depends on the
+chunked re-transcription (the coordinator's real-model run).
+
+Remaining differences on the stand-in run: real repeats in the audio of the cut (restarts across clip boundaries:
+"Aunque el Aunque el", "Hubo Hubo", "Pero Pero" — the cut keeps both), "1%" lost where rev 144's cut removes the middle of
+"uno por ciento", "como gelatina" (not said), two "y" said and not written in the script.
+
+### Tests
+
+`packages/project/test/script-fix-rebuild.test.ts`: the rules on excerpts of the reporter's transcripts and script
+lines (replaced + missing "tienes que abrir Photoshop", the whole missing phrase "encontrar el camino por", extra words
+dropped / kept, script spelling of equal words, "1 %" → "1%", emoticons from the transcript and from the script, no
+insertion across a span boundary), kept spans (touching, shared word, separate takes), ≤ 64-word edits written in one
+transaction (invariants, the sequence reads the new words, the previous document untouched, nothing to write the second
+time). `apps/engine/test/transcript-fix.test.ts` "rebuild from script…" (refusal without a script; one padded, best-
+accuracy call; accept writes the kept span from the script and leaves the rest; the History label).
+`apps/mcp/test/transcript-fix.test.ts` (mode and offScript passed, the proposal named), `apps/web/test/script-fix-
+dialog.test.tsx` (disabled without a script; the button runs the rebuild with offScript and opens Review).
+
+### Limitations
+
+- Not run with a real model here: the re-transcription's accuracy and speed on the reporter's cut are the coordinator's
+  check.
+- Missing script words at the very start or end of a span are not inserted (no neighbour on both sides inside the span);
+  the speaker may not have said them in the kept audio.
+- Words inside a merged span's removed gap (spans merged because one word straddles both) are written too; the
+  sequence does not play them.
+- Repeats left in the cut (a restart split over two clips) are written as heard: removing them is Clean Up's job.
+- A rebuild replaces timing as well as text; a span edited by hand afterwards makes its item stale (`E_STALE`), and the
+  rebuild has to run again (no per-item refresh).

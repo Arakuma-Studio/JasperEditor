@@ -314,6 +314,29 @@ describe('regenerate, align to cuts (AS-006, AS-012)', () => {
 		expect(subs(H).some((c) => c.content.text.includes('Puertas'))).toBe(true);
 		valid(H.doc);
 	});
+	it('a ranged regenerate rebuilds subtitles that cross the range edges whole, never drops them', () => {
+		const { H } = shot({
+			cut: false,
+			words: [
+				['uno', 0.2, 0.5],
+				['entero,', 0.5, 1.0],
+				['dos', 1.4, 1.7],
+				['tres', 1.7, 2.0],
+				['cosa,', 2.0, 2.6],
+				['para', 3.0, 3.3],
+				['poder', 3.3, 3.8],
+			],
+		});
+		const r = gen(H, { rules: { maxWords: 3, minSeconds: 0.2, punctuation: 'always' }, cutAware: false });
+		const before = spans(H).map((x) => x[2]);
+		expect(before).toEqual(['uno entero,', 'dos tres cosa,', 'para poder']);
+		// the range starts inside "uno entero," (frame 20 = 0.67 s) and ends inside "para poder" (frame 100 = 3.33 s)
+		H.ok([{ type: 'captions.regenerate', groupId: r.groupId, range: { start: 20, end: 100 } }]);
+		expect(spans(H).map((x) => x[2])).toEqual(before);
+		const shown = subs(H).flatMap((c) => captionOf(c)!.words.map((w) => w.text));
+		expect(shown).toEqual(['uno', 'entero,', 'dos', 'tres', 'cosa,', 'para', 'poder']);
+		valid(H.doc);
+	});
 	it('align to cuts after the picture is re-edited', () => {
 		const { H } = shot({
 			cut: false,
@@ -618,5 +641,165 @@ describe('stretched words (hidden takes)', () => {
 		expect(warnings.filter((w) => /over 1 s/.test(w.message)).map((w) => w.message)).toEqual([
 			expect.stringMatching(/^1 word\(s\) .*\(0:02\.9–0:05\.0\)/),
 		]);
+	});
+});
+
+describe('locked subtitles and own-subtitle words (schema v13)', () => {
+	const BOING: Array<[string, number, number]> = [
+		['y', 0.2, 0.4],
+		['hace', 0.45, 0.8],
+		['boing', 0.8, 1.4],
+		['boing', 1.45, 1.8],
+		['boing.', 1.85, 2.6],
+		['Y', 3.5, 3.7],
+		['no,', 3.7, 4.0],
+	];
+	const texts = (H: Harness) => subs(H).map((c) => c.content.text);
+	const boingGroup = () => {
+		const { H } = shot({ cut: false, words: BOING });
+		const r = gen(H, { template: 'builtin:pixel-pop', cutAware: false });
+		return { H, groupId: r.groupId };
+	};
+	const noOverlaps = (H: Harness) => {
+		const s = subs(H);
+		for (let i = 1; i < s.length; i++)
+			expect(s[i]!.start).toBeGreaterThanOrEqual(s[i - 1]!.start + s[i - 1]!.duration);
+	};
+	const startOfWord = (H: Harness, text: string, nth = 0) => {
+		const all = subs(H).flatMap((c) => wordsInSequence(c, H.seq.settings.frameRate));
+		return Math.round(all.filter((w) => w.text === text)[nth]!.start / F30);
+	};
+
+	it('regenerate keeps subtitles split and edited by hand, and lays the rest out around them', () => {
+		const { H, groupId } = boingGroup();
+		expect(texts(H)).toEqual(['y hace boing', 'boing boing.', 'Y no,']);
+		// each "boing" its own subtitle, by hand: two razor cuts and a text edit
+		const [first, second] = subs(H);
+		H.ok([{ type: 'clip.split', at: startOfWord(H, 'boing', 0), clipIds: [first!.id] }]);
+		H.ok([{ type: 'clip.split', at: startOfWord(H, 'boing.', 0), clipIds: [second!.id] }]);
+		const last = subs(H).find((c) => c.content.text === 'boing.')!;
+		H.ok([{ type: 'clip.update', clipId: last.id, patch: { content: { text: '¡boing!' } } }]);
+		const hand = subs(H).map((c) => [c.id, c.content.text]);
+		expect(hand.map((x) => x[1])).toEqual(['y hace', 'boing', 'boing', '¡boing!', 'Y no,']);
+		const r = H.ok([{ type: 'captions.regenerate', groupId }]).results[0] as { locked: number };
+		expect(subs(H).map((c) => [c.id, c.content.text])).toEqual(hand);
+		expect(r.locked).toBe(4);
+		noOverlaps(H);
+		valid(H.doc);
+		// and again: nothing drifts
+		H.ok([{ type: 'captions.regenerate', groupId }]);
+		expect(subs(H).map((c) => [c.id, c.content.text])).toEqual(hand);
+	});
+
+	it('ownWords gives each "boing" its own subtitle, stored with the group for later regenerations', () => {
+		const { H, groupId } = boingGroup();
+		H.ok([{ type: 'captions.regenerate', groupId, rules: { ownWords: ['boing'] } }]);
+		expect(texts(H)).toEqual(['y hace', 'boing', 'boing', 'boing.', 'Y no,']);
+		expect(captionGroupsOf(H.seq)[groupId]!.rules.ownWords).toEqual(['boing']);
+		H.ok([{ type: 'captions.regenerate', groupId }]);
+		expect(texts(H)).toEqual(['y hace', 'boing', 'boing', 'boing.', 'Y no,']);
+		noOverlaps(H);
+		valid(H.doc);
+	});
+
+	it('text edits, razor cuts, trims and moves lock a subtitle; a razor through every track does not', () => {
+		const locked = (H: Harness) => subs(H).map((c) => captionOf(c)!.locked === true);
+		const a = boingGroup().H;
+		expect(locked(a)).toEqual([false, false, false]);
+		a.ok([{ type: 'clip.update', clipId: subs(a)[0]!.id, patch: { content: { text: 'y hace BOING' } } }]);
+		a.ok([{ type: 'clip.trim', clipId: subs(a)[2]!.id, edge: 'out', deltaFrames: -2 }]);
+		expect(locked(a)).toEqual([true, false, true]);
+		const b = boingGroup().H;
+		b.ok([{ type: 'clip.move', clipIds: [subs(b)[2]!.id], deltaFrames: 6 }]);
+		b.ok([{ type: 'clip.split', at: startOfWord(b, 'boing.', 0), scope: 'all-unlocked' }]);
+		expect(locked(b)).toEqual([false, false, false, true]);
+	});
+
+	it('captions.lock locks and unlocks (undo / redo), refuses other clips; regenerate {unlock} rebuilds', () => {
+		const { H, groupId } = boingGroup();
+		const ids = subs(H).map((c) => c.id);
+		const before = H.doc;
+		H.ok([{ type: 'captions.lock', clipIds: [ids[0], ids[1]], locked: true }]);
+		const after = H.doc;
+		expect(subs(H).map((c) => captionOf(c)!.locked === true)).toEqual([true, true, false]);
+		// undo / redo (History restores document snapshots)
+		H.doc = before;
+		expect(subs(H).some((c) => captionOf(c)!.locked)).toBe(false);
+		H.doc = after;
+		expect(subs(H).map((c) => captionOf(c)!.locked === true)).toEqual([true, true, false]);
+		const video = Object.values(H.seq.clips).find((c) => c.kind === 'video')!;
+		const bad = H.tx([{ type: 'captions.lock', clipIds: [video.id], locked: true }]);
+		expect(bad.ok ? null : bad.errors[0]!.code).toBe('E_INVALID_PARAM');
+		// a locked subtitle survives a rules change; unlock gives it back to the layout
+		H.ok([{ type: 'captions.regenerate', groupId, rules: { ownWords: ['boing'] } }]);
+		expect(texts(H)).toEqual(['y hace boing', 'boing boing.', 'Y no,']);
+		const dry = H.ok([{ type: 'captions.regenerate', groupId, unlock: [ids[0]!, ids[1]!], dryRun: true }])
+			.results[0] as { locked: number };
+		expect(dry.locked).toBe(0);
+		expect(subs(H).filter((c) => captionOf(c)!.locked).length).toBe(2);
+		H.ok([{ type: 'captions.regenerate', groupId, unlock: [ids[0]!, ids[1]!] }]);
+		expect(texts(H)).toEqual(['y hace', 'boing', 'boing', 'boing.', 'Y no,']);
+		valid(H.doc);
+		H.ok([{ type: 'captions.lock', clipIds: [subs(H)[1]!.id], locked: false }]);
+		expect(subs(H).some((c) => captionOf(c)!.locked)).toBe(false);
+	});
+
+	it('a word with no natural boundary wider than the box shrinks to fit instead of wrapping inside it', () => {
+		const { H } = shot({
+			cut: false,
+			words: [
+				['internacionalización', 0.2, 1.5],
+				['de', 1.6, 1.7],
+			],
+		});
+		// a measurer like the browser's: 0.75 em per character, paragraph text wraps at the box width
+		const lines = (c: { text: string; style: { sizePx: number } }, width: number | null) =>
+			c.text
+				.split('\n')
+				.reduce(
+					(n, l) =>
+						n +
+						(width === null ? 1 : Math.max(1, Math.ceil(([...l].length * 0.75 * c.style.sizePx) / width))),
+					0,
+				);
+		const widest = (c: { text: string; style: { sizePx: number } }) =>
+			Math.max(...c.text.split('\n').map((l) => [...l].length * 0.75 * c.style.sizePx));
+		H.extra = {
+			textMeasurer: {
+				measure: (content, box) => ({
+					width: Math.ceil(box.autoSize === 'width' ? widest(content) : box.width),
+					height: Math.ceil(
+						lines(content, box.autoSize === 'width' ? null : box.width) *
+							content.style.sizePx *
+							content.style.lineHeight,
+					),
+				}),
+			},
+		};
+		gen(H, { template: 'builtin:pixel-pop', cutAware: false });
+		const [word, de] = subs(H);
+		expect(word!.content.text).toBe('internacionalización');
+		expect(word!.content.style.sizePx).toBeLessThan(98);
+		expect(widest(word!.content)).toBeLessThanOrEqual(word!.box.width);
+		expect(word!.box.height).toBe(Math.ceil(word!.content.style.sizePx * word!.content.style.lineHeight));
+		expect(de!.content.style.sizePx).toBe(98);
+		valid(H.doc);
+	});
+
+	it('load repair drops unreadable own words and locks, keeping the other rules', () => {
+		const { H, groupId } = boingGroup();
+		const doc = JSON.parse(JSON.stringify(H.doc)) as ProjectDocument;
+		const seq = doc.sequences[H.seqId]!;
+		const groups = (seq as unknown as { captionGroups: Record<string, { rules: Record<string, unknown> }> })
+			.captionGroups;
+		groups[groupId]!.rules.ownWords = [42];
+		const c = Object.values(seq.clips).find((x) => captionOf(x))!;
+		(c as { caption: Record<string, unknown> }).caption.locked = 'yes';
+		const a = repairDocument(doc, createCounterIdSource(900));
+		const g = captionGroupsOf(a.document.sequences[H.seqId]!)[groupId]!;
+		expect(g.rules.maxChars).toBe(13);
+		expect(g.rules.ownWords).toBeUndefined();
+		expect(captionOf(a.document.sequences[H.seqId]!.clips[c.id]!)!.locked).toBeUndefined();
+		expect(checkInvariants(a.document)).toEqual([]);
 	});
 });

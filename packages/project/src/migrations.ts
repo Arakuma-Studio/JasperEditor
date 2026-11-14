@@ -163,6 +163,11 @@ export const MIGRATIONS: readonly MigrationStep[] = [
 	// unknown effect is bypassed), their orphan collection would drop media only a look layer references, and they
 	// would flatten a title's bands and materials.
 	{ from: 11, to: 12, migrate: (doc) => doc },
+	// v13 (subtitle locks and own-subtitle words): `caption.locked` on subtitle text clips (edited by hand, kept by
+	// `captions.regenerate`) and `rules.ownWords` on subtitle groups. Existing data needs no changes; the bump makes v12
+	// builds open v13 files read-only: their regenerate would replace the hand-edited subtitles, and their strict rules
+	// reader would reset a group with own words to the default rules.
+	{ from: 12, to: 13, migrate: (doc) => doc },
 ];
 
 /** Data that is not a loadable project (not an object, an unknown format, no migration path, schema mismatch). */

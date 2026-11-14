@@ -1,6 +1,7 @@
 // Spec 13 AS-006 / AS-020: per-transaction upkeep of subtitle text clips, whatever command changed them (Properties,
 // the Program monitor, clip.update, param.set, paste, trims, razor cuts, ripples):
-// - a text edit re-times the unchanged words (LCS) when the command did not set the words itself;
+// - a text edit re-times the unchanged words (LCS) when the command did not set the words itself, and locks the
+//   subtitle (`caption.locked`: edited by hand, kept by `captions.regenerate`);
 // - the template's animation keys follow the clip's In (trims and razor cuts move the In: `reanchorTemplateKeys`);
 // - the group's highlight (Source Text keys / runs) is rebuilt from the words when the text, style or words changed;
 // - a subtitle pasted into a sequence without its group gets the group (copied from the sequence it came from when
@@ -76,7 +77,11 @@ function upkeep(
 			(latest(clip) as TextClip).content.text,
 			clipContentSpan(latest(clip) as TextClip, rate),
 		);
-		(clip as { caption: TextClipCaption }).caption = { ...(latest(clip.caption) as TextClipCaption), words };
+		(clip as { caption: TextClipCaption }).caption = {
+			...(latest(clip.caption) as TextClipCaption),
+			words,
+			locked: true,
+		};
 	}
 	if (moved) reanchorTemplateKeys(clip as TextClip);
 	if (contentChanged || needsRetime) applyHighlight(clip as TextClip, hl ?? undefined, newKeyId);

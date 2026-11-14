@@ -85,13 +85,27 @@ export default async function transcriptFixRoutes(app: FastifyInstance): Promise
 			const mode = p.mode;
 			const dedupe = createHash('sha256')
 				.update(
-					JSON.stringify([projectId, sequenceId, revision, mode, p.settings, body.device ?? null, editor]),
+					JSON.stringify([
+						projectId,
+						sequenceId,
+						revision,
+						mode,
+						p.settings,
+						body.device ?? null,
+						editor,
+						...(mode === 'rebuild' ? [body.offScript ?? 'drop'] : []),
+					]),
 				)
 				.digest('hex')
 				.slice(0, 24);
 			const job = await core.queue.submit({
 				kind: 'transcript-fix',
-				title: mode === 'dryRun' ? 'Fix Transcript (dry run)' : 'Fix Transcript',
+				title:
+					mode === 'dryRun'
+						? 'Fix Transcript (dry run)'
+						: mode === 'rebuild'
+							? 'Rebuild transcript from script (kept speech)'
+							: 'Fix Transcript',
 				priority: 'user',
 				// the audio check runs the speech worker with the job's slots (as transcription: the speech thread cap)
 				cpuSlots: mode === 'dryRun' ? 1 : Math.max(1, deps.speech()?.threads?.() ?? 4),

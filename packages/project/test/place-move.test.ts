@@ -113,7 +113,19 @@ describe('clip.place (S01 AC-02…04, S02 TL-493)', () => {
 		const h = new Harness();
 		const a = h.registerVideo({ seconds: 10 });
 		const b = h.registerVideo({ seconds: 2 });
-		h.ok([{ type: 'clip.place', source: { mediaId: a }, at: 0 }, solid(30, 90, 'V2'), solid(200, 50, 'V3')]);
+		// footage on V2 (generated clips such as solids are lengthened whole instead: overlay-ripple.test.ts)
+		const c = h.registerVideo({ seconds: 10, audio: false });
+		h.ok([
+			{ type: 'clip.place', source: { mediaId: a }, at: 0 },
+			{
+				type: 'clip.place',
+				source: { mediaId: c },
+				at: 30,
+				sourceRange: { in: { sourceFrames: 0 }, out: { sourceFrames: 90 } },
+				tracks: { video: 'V2' },
+			},
+			solid(200, 50, 'V3'),
+		]);
 		h.ok([{ type: 'clip.place', source: { mediaId: b }, at: 60, mode: 'insert' }]);
 		expect(h.spans('V1')).toEqual([
 			[0, 60],
