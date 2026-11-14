@@ -34,6 +34,7 @@ import {
 	EDGE_DECAY_S,
 	EDGE_INTO_WORD_S,
 	edgeBounds,
+	edgeCutsSpeech,
 	edgeLevelsOf,
 	onsetBound,
 	snapCut,
@@ -1507,6 +1508,14 @@ function keepUnexplained(
 		if (l && a <= l[1] + 1e-9) l[1] = Math.max(l[1], b);
 		else merged.push([a, b]);
 	}
+	const levels = voice && voice.frameCount > 0 ? edgeLevelsOf(voice) : null;
+	/** Frame k holds sound no removal takes (not measured silence). */
+	const soundAt = (k: number) =>
+		!!voice &&
+		k >= 0 &&
+		k < voice.frameCount &&
+		!silentFrame(voice, k) &&
+		!merged.some(([a, b]) => a <= k * FR + 1e-9 && b >= (k + 1) * FR - 1e-9);
 	const grown: Span[] = merged.map(([a, b]) => {
 		if (!voice) return [a, b];
 		// at a removal of words' start in continuous voice (every 10 ms before it in the frame speech or silence; never a
@@ -1526,6 +1535,10 @@ function keepUnexplained(
 		let y = b;
 		for (let k = Math.floor(b / FR + 1e-9); k * FR < b + frameS && silentFrame(voice, k); k++)
 			y = Math.min(b + frameS, (k + 1) * FR);
+		// …but not up to sound that stays (a decay after the removed word's quiet end, voice left for review): the piece put
+		// back there would start on that sound with the removed speech in the 50 ms before it, a cut that is not quiet; it
+		// starts in the silence instead (on a coarse frame grid, at the frame the removed speech ends in)
+		if (y > b && levels && soundAt(Math.floor(y / FR + 1e-9)) && edgeCutsSpeech(levels, y, 'in')) y = b;
 		// …but never over a kept word's time
 		for (const [s, e] of keptTimes) {
 			if (s < a && e > x) x = Math.min(a, e);
