@@ -1828,6 +1828,19 @@ kept word before it ends, into a measured pause, else held as a closure) to A's 
 both span decodes show it on their own and the repetition is not deliberate (script, allow list, reduplication: as for
 any repeat at a cut); with one decode, reviewed. A repeat the other rules found over the same time is not added twice.
 
+As run, the word the out point cuts through may sit on either side of it (the 0.6 s decode puts "le" 2596.577–2596.697
+past the out point by its midpoint); everything else is as written. Tests: `cleanup-edit-repeats.test.ts` "P: …" (the
+decodes of this place): both decodes → removed, one decode → reviewed, and a next clip that is the audio right after
+the out point gives nothing.
+
+**Measured** (a fresh engine run on the clone of rev 144, port 47931, every span cached): "y le" 2596.46–2596.633 is
+found and suggested for removal (both decodes); the planner's edge puts the cut at 2596.583–2596.633, within one 60 fps
+frame of rev 605's trim from 2596.57. Over the whole cut the rule adds two findings: that one (rev 549 keeps it, rev 605
+cuts it, so the scorer against rev 549 counts it as a false suggestion; by the user's later fix it is right), and a
+review at 1343.09–1343.47 ("mucho, o | O que aparece": the clip's last "o" and the padding "que aparece", one decode)
+that neither rev 549 nor rev 605 cuts — unverified by ear. Totals: 33 findings (6 remove, 27 review, of which 14 rev 549
+does not cut, 13 before); the five non-restarts stay unsuggested and unreviewed; no other suggestion changed.
+
 ### Planning (TC-020 … TC-026)
 
 `analyzeSequenceCleanup({doc, seq, voice, settings?, script?, language?, decisions?, scope?})` (dry run, never changes

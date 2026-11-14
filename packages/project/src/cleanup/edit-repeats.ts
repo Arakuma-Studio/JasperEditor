@@ -318,6 +318,8 @@ export function findEditRepeats(input: EditRepeatsInput): EditRepeat[] {
 	for (const r of storedRestarts(input, decodes)) add(r);
 	// a voiced stretch at a phrase's start that no span decode writes, said again by the first decoded word
 	for (const r of unheardRestarts(input, decodes)) add(r);
+	// an attempt whose take went on past the clip's out point like the next clip starts
+	for (const r of paddingRestarts(input, decodes)) add(r);
 	// mixdown repeats the span decodes did not find (the same removal once)
 	for (const r of mix) if (!out.some((x) => sameRemoval(r, x))) out.push(decide(r, -1));
 	// restarts at a phrase's start that only a decode from the dip shows
@@ -367,6 +369,121 @@ function storedRestarts(input: EditRepeatsInput, decodes: readonly EditWordsLook
 		if (!merged) return [];
 		return [{ ...r, suggested: 'review' as const, confidence: 0.5, held: 'decode' as const }];
 	});
+}
+
+/** Words matched over a cut, across the out point, for a padding continuation (rule P). */
+const CONTINUATION_MIN_WORDS = 3;
+/** At most this many of the clip's last words begin the abandoned attempt. */
+const CONTINUATION_MAX_ATTEMPT = 4;
+
+/**
+ * P — an attempt that continued past the out point ("psicodélico, y le- | Y les juro"): for clips A, B one after the
+ * other where B's audio does not follow A's out point in the source, a span decode of A writes, in its padding past the
+ * out point, words that with A's last words (`j ≥ 1`; the word the out point cuts through possibly a 2+ letter prefix
+ * of its copy) say B's first words again word for word (`CONTINUATION_MIN_WORDS` or more): A's last `j` words began an
+ * abandoned take of B's phrase. They go, from the first of them to A's out point; removed by default when every span
+ * decode shows it (two or more) and the edge before them is clean, else reviewed; never when the script says it so.
+ */
+function paddingRestarts(input: EditRepeatsInput, decodes: readonly EditWordsLookup[]): EditRepeat[] {
+	const primary = decodes[0];
+	if (!primary) return [];
+	const lists = effectiveLists(cleanupLanguageOf(input.language ?? null), input.lists ?? null);
+	const fillers = new Set(lists.fillers);
+	const allow = new Set(lists.allow);
+	const scriptToks = scriptTokenList(input.script ?? null);
+	const F = flicksPerFrame(input.rate);
+	const pad = EDIT_SPAN_PAD_S * FLICKS_PER_SECOND;
+	const slack = EDGE_SLACK_S * FLICKS_PER_SECOND;
+	type W = { text: string; n: string; start: number; end: number };
+	const wordsOf = (lookup: EditWordsLookup, sp: EditSpan): W[] =>
+		(lookup(sp) ?? [])
+			.filter((w) => finite(w.start) && finite(w.end) && w.end >= w.start)
+			.map((w) => ({ text: w.text, n: cleanupNorm(w.text), start: w.start, end: w.end }))
+			.filter((w) => w.n && !fillers.has(w.n))
+			.sort((a, b) => a.start - b.start);
+	const mid = (w: W) => (w.start + w.end) / 2;
+	const out: EditRepeat[] = [];
+	for (let i = 0; i + 1 < input.spans.length; i++) {
+		const A = input.spans[i]!;
+		const B = input.spans[i + 1]!;
+		if (toSec((B.seqStart - A.seqEnd) * F) > ADJACENT_GAP_S) continue;
+		const follows =
+			A.mediaId === B.mediaId &&
+			A.stream === B.stream &&
+			B.mediaStart >= A.mediaEnd - slack &&
+			B.mediaStart - A.mediaEnd <= pad;
+		if (follows) continue;
+		const Q = wordsOf(primary, B)
+			.filter((w) => mid(w) >= B.mediaStart && mid(w) < B.mediaEnd)
+			.slice(0, RETRY_WORDS);
+		if (!Q.length) continue;
+		// per decode: the longest run of A's last words and its padding words that says B's start again
+		const hits = decodes.map((lookup) => {
+			const ws = wordsOf(lookup, A);
+			const own = ws.filter((w) => mid(w) >= A.mediaStart && mid(w) < A.mediaEnd);
+			const past = ws.filter((w) => mid(w) >= A.mediaEnd);
+			for (let j = Math.min(own.length, CONTINUATION_MAX_ATTEMPT); j >= 1; j--) {
+				const att = own.slice(own.length - j);
+				for (let m = Math.min(past.length, Q.length - j); m >= 1 && j + m >= CONTINUATION_MIN_WORDS; m--) {
+					const run = [...att, ...past.slice(0, m)];
+					const together = run.every((w, k) => k === 0 || toSec(w.start - run[k - 1]!.end) <= WORD_GAP_S);
+					const said = run.every((w, k) => {
+						const q = Q[k]!;
+						if (sameWord(w.n, q.n)) return true;
+						// the word the out point cuts through: a prefix of its copy ("le-" / "les")
+						return w.start < A.mediaEnd && w.end > A.mediaEnd && w.n.length >= 2 && q.n.startsWith(w.n);
+					});
+					if (together && said) return { att, prev: own[own.length - j - 1] ?? null, j, m };
+				}
+			}
+			return null;
+		});
+		const found = hits.filter((h) => h !== null);
+		const h = hits[0] ?? found[0];
+		if (!h) continue;
+		// said twice on purpose: the script says the attempt and its copy in a row, or allowed emphasis
+		const ns = h.att.map((w) => w.n);
+		if (ns.every((n) => allow.has(n))) continue;
+		if (scriptToks.length) {
+			const seq = [...ns, ...Q.slice(0, h.att.length + 1).map((q) => q.n)];
+			let inScript = false;
+			for (let k = 0; !inScript && k + seq.length <= scriptToks.length; k++)
+				inScript = seq.every((t, x) => scriptToks[k + x] === t);
+			if (inScript) continue;
+		}
+		const first = h.att[0]!;
+		let start = h.prev ? Math.max(first.start, h.prev.end) : A.mediaStart;
+		let closure = false;
+		const voice = input.voice?.(A.mediaId, A.stream) ?? null;
+		if (h.prev) {
+			const p = voice ? pauseIn(voice, h.prev.end, first.start + slack) : null;
+			if (Array.isArray(p)) start = p[0];
+			else if (p !== 'continuous') closure = true;
+		}
+		start = Math.max(A.mediaStart, Math.min(start, A.mediaEnd));
+		if (start >= A.mediaEnd) continue;
+		const both = decodes.length >= 2 && found.length === decodes.length;
+		const remove = both && !closure;
+		const at = A.seqStart * F - A.mediaStart;
+		const frameOf = (m0: number) => Math.floor((m0 + at) / F + 1e-6);
+		out.push({
+			source: 'spans',
+			where: 'cut',
+			kind: 'restart',
+			suggested: remove ? 'remove' : 'review',
+			...(remove ? {} : { held: closure ? ('closure' as const) : ('decode' as const) }),
+			text: h.att.map((w) => w.text.trim()).join(' '),
+			kept: Q.slice(0, Math.max(3, h.att.length + 1))
+				.map((w) => w.text.trim())
+				.join(' '),
+			range: [frameOf(start), B.seqStart],
+			cuts: [
+				{ clipId: A.clipId, mediaId: A.mediaId, stream: A.stream, start: Math.round(start), end: A.mediaEnd },
+			],
+			confidence: remove ? 0.8 : 0.5,
+		});
+	}
+	return out;
 }
 
 /** A voiced stretch no span decode writes is at least this many seconds of speech frames (rule E4). */
