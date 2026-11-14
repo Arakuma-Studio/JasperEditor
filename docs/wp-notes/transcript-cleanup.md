@@ -1153,6 +1153,98 @@ luego le añadí") stays (review at most); an aside longer than 16 words or 5 s 
 frication test is uncalibrated (review only); kind names changed for some links (a whole-clause restart is now a retake
 with a group).
 
+### Repeats at cuts (edit-repeat check)
+
+Reported by the user's by-ear review of a real cut (rev 144, revision field 152, of the 57-minute Spanish talking head;
+reference data `/tmp/je-v7ref/` on the build host): a clip ends with the start of a phrase and the next clip says it
+again — "y si | y si buscas", "aunque el | aunque el Jaspersito", "No | no había", "así que el… | así que el botón",
+"Hubo | Hubo otro"… — and stutters stay inside kept clips. The stored transcript holds one copy (Whisper merges
+back-to-back takes, or writes the retry's first word before the clip's in point), so the media-level detector cannot
+see them: on rev 144 the check below finds **none** of them from the stored transcript.
+
+**Where it runs.** `packages/project/src/cleanup/edit-repeats.ts` (pure) and `edit-spans.ts`; the hook in
+`analyzeSequenceCleanup` takes `editRepeats` (precomputed), adds them as findings (kinds `restart` across a cut,
+`stutter` inside a span; `words: null`; reason params `text`, `kept`, `seconds`, `cut: 1`, `mix: 1`; one the media
+detection already found — ≥ 50 % inside its removing finding — is left out) and, when accepted, cuts their media spans
+per clip after the final frame check (edges on the clip's frame grid at or before the attempt's start and the retry's
+onset; the clip's tail and slivers see them as removed time). The analysis echoes `editRepeats` for re-plans. The
+engine's `cleanup-analysis` job runs it on request: `editRepeats: 'spans' | 'mix' | 'both'` (API), MCP `checkCuts` on
+`analyze_voice` / `plan_cleanup` / `apply_cleanup`; the job result reports spans, cached / transcribed spans, job ids,
+repeats found and suggested, and why a source could not run (`missing`; the analysis still completes).
+
+**Words.** `apps/engine/src/cleanup/edit-words.ts`. The kept spans of the dialogue track (the audio track whose speech
+clips play the most frames) are laid on a synthetic sequence — each span padded `EDIT_SPAN_PAD_S` (0.2 s) and again
+`EDIT_SPAN_CONFIRM_PAD_S` (0.6 s), 2.5 s of silence apart (the VAD chunker always ends a chunk at 2 s of silence, so
+each copy is decoded on its own) — and transcribed as **one** `chunking: "vad"` sequence-mix job of the speech service
+(the transcript's model and language unless `editModel` / `language` say otherwise). Words map back to media time per
+slot and are cached per media range and padding (`<cache>/<fingerprint>/span-words-<hash>.json`, a `media-cache`
+entry), so a re-run decodes only new spans. `mix` transcribes the sequence's own mixdown (`chunking: "vad"`). Cost
+(estimated, ≈): the decoded audio is twice the kept audio plus 0.8 s per span (silence is skipped by the chunker), and
+VAD chunking decodes about twice (speech.md §11.3) — for rev 144 (928 s, 353 spans) ≈ 2 × (928 + 282) s of audio per
+full run, nothing for cached spans. Refused above 5,000 decodes or 4 h of padded audio (`EDIT_CHECK_TOO_LARGE`).
+
+**Detection** (both on the edit's word stream: the spans' words in sequence order and time):
+1. At every position, the last ≤ 5 words before it (within 3 s, words ≤ 1.5 s apart) against the first ≤ 6 after it:
+   every attempt word said again in order (`sameWord`: ASR variants, digits ≡ number words; the attempt's last word may
+   be cut off — "most…" / "mostrar", from 3 letters, never a stop word: "lo que… quedó"), its first among the retry's
+   first two words. Across a cut (spans ≤ 2 s apart, every span between transcribed) that suffices; one word must start
+   a clause (its span's first word, after ". ? ! … , ; :" or a pause: rev 144's "Bueno, no lo | Lo reescribieron" cut a
+   phrase, it restarted nothing). Inside a span it needs the recogniser's trace of a restart: the attempt's last word
+   written cut off, or two or more words repeated verbatim, the retry within 1 s.
+2. The detector's own rules over the stream (`detectCleanup`), their removing tier only: inside a span any repeat kind;
+   across a cut only restarts / retakes of three or more words (the first pass owns the short ones).
+Removed by default only when the attempt is said again in full, the retry goes on (two more words after a one-word
+attempt), it does not end a sentence, and it is not deliberate: words of the allow list ("no, no") or a reduplication
+("boing, boing", "Guiño. Guiño.") said one after the other in the recording (≤ 1 s apart in the same media) give
+nothing; what the script says (the attempt, its copy and the next word in a row) gives nothing; a reduplication a cut
+joined from two moments is reviewed. Mixdown repeats are always reviewed.
+
+**Two decodes and no closure** (the user's v7 review: an agent's energy-dip stutter cuts made four errors — "mos|trar"
+cut at a 30 ms closure, "pi|xel" whose stressed "-xel" looked like another phrase, "tienes que" and "en una" said once
+but written twice by one decode). A repeat is removed by default only when **another independent decode** finds the
+same repeat (overlapping sequence range or ≥ 50 % of the removal): the 0.6 s-padded span decode, the stored transcript,
+or the mixdown; else `held: 'decode'`, review. And every edge inside a span must lie in a pause of ≥ `MIN_CUT_PAUSE_S`
+(80 ms) of non-speech frames of the voice analysis between the words (the edge moves into it), or at the word boundary
+of connected speech (no non-speech frame there); a shorter dip is a closure, possibly inside one word: `held:
+'closure'`, review; without a voice analysis an inside edge cannot be told and is reviewed. When the earlier copy has no
+clean edge but the retry repeats it word for word at its clip's start, the later copy goes instead if that has one
+(`copy: 'later'`; rev 144 "Appstore! Y | Y | si alguno": the 3-frame "Y" goes, as the user cut it).
+
+**Validation** (`packages/project/test/cleanup-edit-repeats.test.ts`, fixture `fixtures/edit-repeats-rev144.json`:
+rev 144's spans around each case, one chunked decode built from the rev 267 transcript — both copies of each boundary
+repeat at measured times — with the doubled words a single agent decode wrote at the times rev 267 removed; the second
+decode either agreeing (*assumption*, labelled: a decode with other chunk boundaries says the words twice too; the
+project's own cut-window decodes win11 / win12 wrote "aunque el… aunque el", "y si, y si buscas", "¿Y qué me ejerce? ¿Y
+qué me ejerce?", "Y después los puse… Y después los puse") or the stored transcript (once); non-speech runs of the
+shipped voice analysis (version 2) of `source-16k.flac`, floor −50, speech −9, threshold −37.7 dBFS):
+- removed as the user removed them, word for word: "aunque el" (three slivers), "No", "así que el…" (whole clip),
+  "como", "Hubo", "Pero", "y que" and "Y los…" (inside the retry's clip, from its start to the retry's onset); "y si":
+  the clip's trailing "y" goes where the user cut the retry's "y" (the phrase plays once either way);
+- never removed by default: "most… mostrar" (one decode, and the 60 ms closure at 1646.31 s), "en una", "tienes que",
+  "pixel" (one decode), "tiene que… tiene que" and "un montón de…" (the stored transcript and the cut's per-span decode
+  write them once: review), "boing, boing, boing";
+- deliberate repetition, clause start, stop-word hesitation, the script, a sentence end, a single decode, a closure
+  under two decodes, the plan (accepted: the earlier copy goes, the retry's clip plays as without the finding; rejected:
+  the plan of the stored transcript alone), the closed loop (mixdown words mapped back to clips, review);
+- precision on the real-take corpus (each fragment one kept span, two agreeing decodes, speech under every word): 0.997
+  (3074 / 3084 removed words in the `dup` reference; the wrong words are the detector's own known ones: E r5a "que
+  pueda ser", M "¡No!", AG r9b "Cloud" in a debatable span, U a "와", AI "y"); gate ≥ 0.99. The detector and its corpus
+  gate are unchanged.
+- `apps/engine/test/cleanup-edit-words.test.ts`: one job for every span and padding (a fake speech service that loads
+  the synthetic envelope as a project), words back in media time, cache hits without a job, the cache entry kind, a
+  check that cannot transcribe reported while the analysis completes.
+Whole rev 144 (offline, 353 spans, the rev 267 transcript standing in for the chunked decode, the shipped voice
+analysis): stored transcript alone 0 repeats; one chunked decode 13 repeats (11 at cuts, 2 in spans), all held for
+review when only the stored transcript can confirm them; with an agreeing second decode 13 suggested for removal — 12
+exactly as the user fixed them, 1 ("y si") the other copy of the same word; of the 15 hand-fixed word removals of
+rev 267 at cuts and clip heads, 14 covered (the "y si" one through its other copy), 1 missed ("que | que de hecho":
+needs the decode's "…" on the first "que").
+
+Limits: not run with large-v3-turbo on the reporter's audio (the coordinator's GPU run is pending); the second decode
+is the same model on nearly the same audio — two decodes that double a word alike agree (the stored transcript does
+not veto, since it merges real takes too); the agreeing second decode of the fixture is an assumption; repeats at cuts
+the plan itself creates need a second run after applying; the Clean Up panel has no control for it (docs/gaps.md).
+
 ### Planning (TC-020 … TC-026)
 
 `analyzeSequenceCleanup({doc, seq, voice, settings?, script?, language?, decisions?, scope?})` (dry run, never changes
