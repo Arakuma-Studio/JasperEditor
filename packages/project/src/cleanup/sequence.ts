@@ -515,8 +515,16 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 				words.forEach((_, k) => {
 					if (removed[k] && inClip[k]) covered.push(res.sound[k]!);
 				});
+				// no removal takes a kept word's rising onset
+				const onsets = run.voice
+					? keptOnsets(
+							run.voice,
+							words.filter((_, k) => inClip[k] && !removed[k]),
+							words.filter((_, k) => inClip[k] && removed[k]).map((w) => [w.s, w.e] as Span),
+						)
+					: [];
 				return planMediaCuts({
-					covered: clipSpan(covered),
+					covered: clipSpan(minusSpans(covered, onsets)),
 					words: ws,
 					removed: rm,
 					voice: run.voice,
@@ -595,12 +603,13 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 				const snd = res.sound[k]!;
 				removing.push(snd);
 				if (!run.voice) return;
+				// never into a kept word's time, also one whose time runs over this word's sound
 				const next = keptWords.reduce(
-					(m, w) => (w.s >= snd[1] - 1e-9 && w.s < m ? w.s : m),
+					(m, w) => (w.e > snd[1] + 1e-9 && w.s < m ? Math.max(snd[1], w.s) : m),
 					Number.POSITIVE_INFINITY,
 				);
 				const prev = keptWords.reduce(
-					(m, w) => (w.e <= snd[0] + 1e-9 && w.e > m ? w.e : m),
+					(m, w) => (w.s < snd[0] - 1e-9 && w.e > m ? Math.min(snd[0], w.e) : m),
 					Number.NEGATIVE_INFINITY,
 				);
 				const [from, to] = removedRamps(run.voice, snd, prev, next);
@@ -614,7 +623,16 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 					run.voice,
 					extent,
 					keptFrames,
-					removing,
+					run.voice
+						? minusSpans(
+								removing,
+								keptOnsets(
+									run.voice,
+									keptWords,
+									words.filter((_, k) => inClip[k] && removedNow[k]).map((w) => [w.s, w.e] as Span),
+								),
+							)
+						: removing,
 					clipSpan0(keepSpeech),
 					[...startsOf().values()],
 					words.filter((_, k) => inClip[k] && !removedNow[k]).map((w) => [w.s, w.e] as Span),
@@ -862,7 +880,23 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 					if (p.edge === 'tail') piece[1] = p.cut[0];
 					else piece[0] = p.cut[1];
 				}
+			const lastEnd = cp.keptFrames[cp.keptFrames.length - 1]?.[1];
 			cp.keptFrames = cp.keptFrames.filter((x, pi) => !drop.has(`${ci}:${pi}`) && x[1] > x[0]);
+			// a dropped piece at the end leaves another piece last: it keeps the fading decay of its last word too (the
+			// join's cut may lie inside it; nothing follows it now)
+			const last = cp.keptFrames[cp.keptFrames.length - 1];
+			if (v && last && lastEnd !== undefined && last[1] < lastEnd) {
+				const sec = (f: number) => (cp.clip.sourceIn + (f - cp.clip.start) * F) / FLICKS_PER_SECOND;
+				const word = cp.words.reduce<AWord | null>(
+					(m, w) =>
+						(!m || w.e > m.e) &&
+						cp.keptFrames.some(([a, b]) => (w.s + w.e) / 2 >= sec(a) && (w.s + w.e) / 2 < sec(b))
+							? w
+							: m,
+					null,
+				);
+				keepTail(cp.clip, rate, v, cp.extent, last, cp.removedTimes, word);
+			}
 		});
 	}
 
@@ -1456,6 +1490,52 @@ const TAIL_FRAMES = 25;
  * around it (`prev` = the end of the last kept word before, `next` = the start of the first after). Returns the
  * extended span.
  */
+/** How far before its timestamp (s) a kept word's speech is looked for: a timestamp may start late. */
+const ONSET_LOOK_S = 0.05;
+
+/**
+ * The rising onsets of the kept words (media seconds): the non-speech frames over measured silence that run, without
+ * a silent frame, into the first speech of the word (from `ONSET_LOOK_S` before its timestamp), outside removed words'
+ * times. No removal takes them — not a removed word's ramp, not a finding whose range runs on past its word.
+ */
+function keptOnsets(voice: CleanupVoice, kept: readonly AWord[], removed: readonly Span[]): Span[] {
+	const inRemoved = (k: number) => removed.some(([a, b]) => a < (k + 1) * FR - 1e-9 && b > k * FR + 1e-9);
+	const out: Span[] = [];
+	for (const w of kept) {
+		let k = Math.max(0, Math.floor((w.s - ONSET_LOOK_S) / FR + 1e-9));
+		const end = Math.min(voice.frameCount, Math.ceil(w.e / FR - 1e-9));
+		while (k < end && (voice.classes[k] !== VOICE_CLASS_SPEECH || inRemoved(k))) k++;
+		if (k >= end) continue;
+		let q = k;
+		while (
+			q > 0 &&
+			voice.classes[q - 1] !== VOICE_CLASS_SPEECH &&
+			!silentFrame(voice, q - 1) &&
+			!inRemoved(q - 1)
+		)
+			q--;
+		if (q < k) out.push([q * FR, k * FR]);
+	}
+	return out;
+}
+
+/** `spans` without `holes`. */
+function minusSpans(spans: readonly Span[], holes: readonly Span[]): Span[] {
+	let out: Span[] = spans.map(([a, b]) => [a, b]);
+	for (const [x, y] of holes)
+		out = out.flatMap(([a, b]): Span[] =>
+			y <= a || x >= b
+				? [[a, b]]
+				: (
+						[
+							[a, Math.min(b, x)],
+							[Math.max(a, y), b],
+						] as Span[]
+					).filter(([p, q]) => q - p > 1e-9),
+		);
+	return out;
+}
+
 function removedRamps(voice: CleanupVoice, [a, b]: Span, prev: number, next: number): Span {
 	const ramp = (k: number) =>
 		k >= 0 && k < voice.frameCount && voice.classes[k] !== VOICE_CLASS_SPEECH && !silentFrame(voice, k);
@@ -1524,7 +1604,19 @@ function keepUnexplained(
 		let voiced = k0 < Math.ceil(a / FR - 1e-9);
 		for (let k = k0; k < Math.ceil(a / FR - 1e-9); k++)
 			if (voice.classes[k] !== VOICE_CLASS_SPEECH && !silentFrame(voice, k)) voiced = false;
-		const valley = voiced && wordStarts.some((t) => Math.abs(t - a) < 1e-9) ? a - frameS * (1 - 1e-6) : a;
+		// (never a frame that holds a kept word's speech: the kept word stays whole, the grid keeps a bit of the removed one)
+		const keptVoice = keptTimes.some(([s, e]) => {
+			if (!(s < a - 1e-9 && e > a - frameS + 1e-9)) return false;
+			for (
+				let k = Math.max(0, Math.floor(Math.max(s, a - frameS) / FR + 1e-9));
+				k * FR < Math.min(e, a) - 1e-9;
+				k++
+			)
+				if (voice.classes[k] === VOICE_CLASS_SPEECH) return true;
+			return false;
+		});
+		const valley =
+			voiced && !keptVoice && wordStarts.some((t) => Math.abs(t - a) < 1e-9) ? a - frameS * (1 - 1e-6) : a;
 		let x = a;
 		for (
 			let k = Math.ceil(a / FR - 1e-9) - 1;

@@ -1133,6 +1133,23 @@ rev 267; the source recording, 16 kHz mono, measured on the build host, `/tmp/je
   to sound that stays when the cut there would cut speech (`edgeCutsSpeech`); the piece starts in the silence (on a 30
   fps grid, at the frame boundary inside the removed speech's last 10 ms frame). Test: `cleanup-property.test.ts`
   `PINNED_IN_EDGE` (fails before).
+- **Six more property counterexamples** (main 2141f993e, 6 of 40 random runs on the build PC; all fail as far back as
+  the test runs, 4be5524b6 — older than edge repair, the precision fixes and the restart rules):
+  - *onset frame removed* (seeds 1216570419, 1652480306, 2003660094, and from the random runs of the fix
+    −1313524539, −1636771487, −1220098669: "eh | hola", "hola | hola", "hola | vamos", a removed word a frame or so
+    before the kept one): the removed word's ramp, or its finding's range, ran over the frames that rise without a
+    silent frame into the kept word's speech (with a late timestamp, before it). `keptOnsets` now marks those frames — the
+    non-speech frames over measured silence running into a kept word's first speech, searched from 50 ms before its
+    timestamp, outside removed words' times — and no removal takes them (the planner's `covered` and the frame check's
+    `removing` both lose them).
+  - *kept word's time removed* (seed −1955077281: "hola" whose timestamp runs 10 ms over a removed "eh"): `removedRamps`
+    bounded a ramp only by kept words that end before the removed word's sound starts; one whose time ran over it did
+    not count, and the ramp took its decay. A ramp now stops at any kept word's time.
+  - *tail frame removed* (seeds −751042478, −191722100, −837575305: a kept word, a pause, then a short wordless or
+    filler piece the fragment rule removes): the join before the dropped piece may cut inside the decay (the Fast
+    style), and once the piece goes the word is the clip's last with nothing after it. After the fragment pass drops
+    the last piece, the new last piece keeps its last word's decay (`keepTail`), as the planner's own sliver pass did.
+  Tests: `cleanup-property.test.ts` `PINNED_SEEDS` (each fails before).
 - **Clean Up**: `keptToFrames` snaps every edge of a kept piece inside the clip's extent onto the clip's frame
   boundaries (after the level edges, the tight word-boundary edges and the 10 ms quietest-boundary snap), never
   across the piece's other edge or into the neighbouring pieces. A removed word now goes with its rising onset and
