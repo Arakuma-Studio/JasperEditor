@@ -54,6 +54,7 @@ import { titleLookProblem } from '../../title-looks/validate.ts';
 import { reidItems } from '../../vector/defaults.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { peekIn, valuesOf } from '../draft-read.ts';
+import { insertShiftKeeping } from '../overlay-ripple.ts';
 import {
 	assertKindFits,
 	assertUnlocked,
@@ -61,7 +62,6 @@ import {
 	clearRange,
 	ensureTrackAt,
 	findTrackIn,
-	insertShift,
 	reidentifyClipChildren,
 	relinkSplits,
 	resolveOrCreateTrack,
@@ -498,8 +498,9 @@ function pasteClips(doc: DDoc, cmd: CommandOf<'clip.paste'>, h: HandlerContext) 
 		relinkSplits(seq, splits, h);
 	} else {
 		const edited = new Set(dest.map((t) => t.id));
-		const tracks = [...edited, ...syncFollowerTracks(seq, edited).map((t) => t.id)];
-		relinkSplits(seq, insertShift(seq, tracks, at, span, h), h);
+		const followers = syncFollowerTracks(seq, edited).map((t) => t.id);
+		// generated overlays on sync-locked tracks are lengthened whole, not split (overlay-ripple.ts)
+		relinkSplits(seq, insertShiftKeeping(seq, edited, followers, at, span, h), h);
 		if (cmd.rippleMarkers !== false) shiftMarkers(seq, at, span);
 	}
 

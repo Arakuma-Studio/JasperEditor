@@ -66,9 +66,13 @@ gaps and lost their shrink keyframes; a ripple trim shortening under a card was 
   "cut"}`, Clean Up), and a ripple trim that would remove it is refused as before (`E_SYNC_CONFLICT`).
 - Covered edits: `range.extract` (overlays on every track the command's `tracks` does not list; with no `tracks`,
   every track — so `transcript.extract` and the transcript tools keep them), `clip.extract` (sync-locked tracks),
-  ripple trims (`clip.trim {mode: "ripple"}`, `clip.trimEdits`, the timeline's ripple gestures: non-member tracks)
-  and the one-pass cuts of `cleanup.apply`, `transcript.removeFillers` and the other transcript removals
-  (`cutRanges`). A track listed in `range.extract {tracks}` is cut as before, overlays included.
+  ripple trims (`clip.trim {mode: "ripple"}`, `clip.trimEdits`, the timeline's ripple gestures: non-member tracks),
+  the one-pass cuts of `cleanup.apply`, `transcript.removeFillers` and the other transcript removals (`cutRanges`),
+  and on sync-locked tracks the insert edits — insert placement (`clip.place {mode: "insert"}`, source inserts),
+  insert moves (`clip.move {mode: "insert"}`, Ctrl-drag), Paste Insert, Insert Frame Hold Segment — ripple speed
+  changes (`clip.setSpeed {ripple: true}` and time-remap edits with `ripple`: lengthened or shortened) and `gap.close`
+  (shortened instead of refusing). `insertShiftKeeping` / `removeShiftKeeping` wrap `insertShift` / `removeShift`
+  for those callers. A track listed in `range.extract {tracks}` is cut as before, overlays included.
 - Not overlays: media-backed clips (video, audio, stills, animated images, 3D models), nests and compositions
   (their content has its own timeline, like footage), and subtitle text clips (their words belong to the time).
 
@@ -248,7 +252,12 @@ the exported frames show the fade (black first frame, picture later).
 - `packages/project/test/overlay-ripple.test.ts` — the reported 363-frame day card (pop-in, shrink to a corner,
   pop-out) through `range.extract` in its hold and in its shrink, two Clean Up cuts, ripple trims both ways and
   `clip.extract` (each failed before: the card was split or the edit refused), the refusal that remains and a named
-  track cut as before; `packages/session/test/overlay-ripple-history.test.ts` — undo / redo of one refit.
+  track cut as before; and insert placement, an insert move, Paste Insert, Insert Frame Hold Segment, ripple speed
+  changes both ways and `gap.close` under the card (each failed before: split or refused);
+  `packages/session/test/overlay-ripple-history.test.ts` — undo / redo of one refit. Checked on the reported project
+  (rev 267, 17 day cards, not in the repository): a +24-frame ripple trim of the V1 edit inside each card, then an
+  Insert Frame Hold Segment (30 frames) in each card and 15 ripple speed changes (80 %) under them, keep 17 whole
+  cards with their pop-out on their end; the same holds and speed changes on the previous build gave 40 pieces.
 
 ## 11. Comparison with FilmCraft
 
@@ -278,9 +287,6 @@ takeover and an FCP 7 layout, MCP tools for every operation.
 
 ## 13. Limits
 
-- Insert edits (`clip.place {mode: "insert"}`, paste insert, Insert Frame Hold Segment) and `clip.setSpeed {ripple}`
-  still split overlays on sync-locked tracks; `gap.close` and ripple speed shortening still refuse when an overlay is
-  in the way (no split).
 - The Trim Monitor shows each side's clip alone (not the composite of other tracks) and steps aside while playing.
 - The comparison view renders frames with Remotion `<Thumbnail>`s and is shown while paused.
 - Guides and keyboard layouts live in browser storage, not in the project.
