@@ -819,6 +819,24 @@ function layoutAroundLocked(
 	return out;
 }
 
+/**
+ * A regenerated range widened to the subtitles that cross its edges: such a subtitle is rebuilt whole (its words on
+ * both sides of the edge), never cut off at the edge and dropped with the words outside the range.
+ */
+function widenToSubtitles(
+	range: { start: number; end: number } | null,
+	clips: readonly Clip[],
+): { start: number; end: number } | null {
+	if (!range) return null;
+	let { start, end: stop } = range;
+	for (const c of clips) {
+		const e = c.start + c.duration;
+		if (c.start < start && e > start) start = c.start;
+		if (c.start < stop && e > stop) stop = e;
+	}
+	return { start, end: stop };
+}
+
 function regenerate(doc: DDoc, cmd: CommandOf<'captions.regenerate'>, h: HandlerContext) {
 	const seq = sequenceOfGroup(doc, cmd.groupId, h);
 	const group = groupOrFail(seq, cmd.groupId, h);
@@ -829,7 +847,8 @@ function regenerate(doc: DDoc, cmd: CommandOf<'captions.regenerate'>, h: Handler
 	const rules = resolveSubtitleRules(cmd.rules, group.rules);
 	const text = resolveSubtitleText(cmd.text, group.text);
 	const cutAware = resolveCutAware(cmd.cutAware, group.cutAware);
-	const range = rangeFrames(seq, cmd.range, h) ?? group.range;
+	const members = groupClips(plainSeq(seq), group.id);
+	const range = widenToSubtitles(rangeFrames(seq, cmd.range, h) ?? group.range, members);
 	const source =
 		group.sourceRef.kind === 'media'
 			? { mediaId: group.sourceRef.mediaId }
@@ -839,7 +858,6 @@ function regenerate(doc: DDoc, cmd: CommandOf<'captions.regenerate'>, h: Handler
 	if (typeof source === 'object' && 'clipIds' in source && !source.clipIds?.length)
 		h.fail('E_NOT_FOUND', 'The clips the group was made from are gone');
 	const src = sourceWords(doc, seq, source as never, range, h, group.language);
-	const members = groupClips(plainSeq(seq), group.id);
 	// locked subtitles (edited by hand, or `lock`) stay as they are; `unlock` gives them back to the layout
 	const lockedIds = new Set(members.filter((c) => isCaptionLocked(c)).map((c) => c.id));
 	const memberIds = new Set(members.map((c) => c.id));

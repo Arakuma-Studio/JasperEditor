@@ -314,6 +314,29 @@ describe('regenerate, align to cuts (AS-006, AS-012)', () => {
 		expect(subs(H).some((c) => c.content.text.includes('Puertas'))).toBe(true);
 		valid(H.doc);
 	});
+	it('a ranged regenerate rebuilds subtitles that cross the range edges whole, never drops them', () => {
+		const { H } = shot({
+			cut: false,
+			words: [
+				['uno', 0.2, 0.5],
+				['entero,', 0.5, 1.0],
+				['dos', 1.4, 1.7],
+				['tres', 1.7, 2.0],
+				['cosa,', 2.0, 2.6],
+				['para', 3.0, 3.3],
+				['poder', 3.3, 3.8],
+			],
+		});
+		const r = gen(H, { rules: { maxWords: 3, minSeconds: 0.2, punctuation: 'always' }, cutAware: false });
+		const before = spans(H).map((x) => x[2]);
+		expect(before).toEqual(['uno entero,', 'dos tres cosa,', 'para poder']);
+		// the range starts inside "uno entero," (frame 20 = 0.67 s) and ends inside "para poder" (frame 100 = 3.33 s)
+		H.ok([{ type: 'captions.regenerate', groupId: r.groupId, range: { start: 20, end: 100 } }]);
+		expect(spans(H).map((x) => x[2])).toEqual(before);
+		const shown = subs(H).flatMap((c) => captionOf(c)!.words.map((w) => w.text));
+		expect(shown).toEqual(['uno', 'entero,', 'dos', 'tres', 'cosa,', 'para', 'poder']);
+		valid(H.doc);
+	});
 	it('align to cuts after the picture is re-edited', () => {
 		const { H } = shot({
 			cut: false,

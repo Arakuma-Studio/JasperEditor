@@ -322,6 +322,11 @@ of ≥ 1 frame holding every word once, no hard cut crossed, zones crossed only 
   range) from the current transcript with the stored (or patched) rules; a new subtitle whose words equal an old clip's
   (case and punctuation ignored) and that overlaps it in time keeps that clip (its style, effects, transform and manual
   overrides; only its range and words change); other old clips are removed, new ones are created from the template.
+  A `range` is first widened to the subtitles that cross its edges (`widenToSubtitles`): such a subtitle is rebuilt
+  whole, with its words on both sides of the edge. Before, it was removed with the rest of the range while only the
+  words whose midpoint lay inside the range were laid out again, so the words outside the edge vanished (the user's
+  "entero,", "cosa," and "para poder" at the from / to boundaries); test "a ranged regenerate rebuilds subtitles that
+  cross the range edges whole".
 - **Locked subtitles** (`caption.locked`, schema v13). A subtitle edited by hand is locked by the command that edits
   it: a text edit the upkeep re-times (`normalize.ts`: Properties, the Program monitor, the Subtitles tab, `clip.update`,
   `param.set`), `clip.split` on named clips or tracks (both pieces; a razor through every unlocked track —
