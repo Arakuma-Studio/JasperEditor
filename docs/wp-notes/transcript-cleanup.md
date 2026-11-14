@@ -1230,6 +1230,54 @@ rev 267; the source recording, 16 kHz mono, measured on the build host, `/tmp/je
   scripted word spliced from another take is not found; orphan *picture* slivers (video without its audio) are not
   planned — Clean Up plans the speech clips and applies every range to the picture with them, so it never makes one.
 
+**Scripted fillers, sub-syllable slivers, wordless shots** (round 17: the measured comparison of Clean Up on rev 152 of
+the same recording; ground truth rev 549, the user's current cut — rev 267 was not). Precision first: a wrongly removed
+word is worse than a kept sliver.
+- **Scripted filler.** "este tipo de físicas… eh, Nada raro ehh." lost its "eh" (2664.28 s) although the script line is
+  "eh Nada raro ehh!!!!": the vocalic-filler and filler-phrase rules match the token alone and never asked the script.
+  Not the normalisation (`cleanupNorm` gives "eh" and "ehh" on both sides) nor the window (support 6 of 6). Now a word
+  those rules claim loses its label when `ScriptAligner` support reaches `ALIGNED_SUPPORT` (3) (`detector.ts`, after
+  the word rules). The same rule keeps the orphan "No" at 1151.33 s ("código. | No | había botones") from being removed
+  as a filler phrase. Rev 549 removed it as a sliver of another take. It is now a `fragment` for review, because it lasts
+  7 frames, over the sub-syllable limit below.
+- **Criteria for short pieces, fixed before the rerun** (`fragments.ts`; developed on source < 1720 s, the rest held out
+  — but the held-out cases' rev 549 outcome was read before development, so that split is not blind):
+  - Sound without its own picture (`orphan`) is removed even when the script holds its words. It must be at most
+    `SUB_SYLLABLE_S` (0.1 s; *assumption*: half a syllable at ≈ 5–7 syllables/s). It must also be `detached`: the
+    transcript has another word, or a pause of `takeGapS`, between its words and the kept words played beside it. The
+    recogniser's word for a fragment of another take ("Appstore! | Y | si alguno…") aligns with the script as well as
+    the word itself, so alignment alone cannot decide.
+  - Voice without words whose untranscribed finding waits for review is removed only when the piece is a whole short
+    clip between cuts (`ownShot`: the edit left it alone, not this plan's cuts; a cough between two pauses this plan
+    removes stays, round 8 H5). The piece must also be `detached`: no kept word within `takeGapS` of its voice. The
+    script must say the kept words either side of it in a row (`ScriptAligner.joins` ≥ 3: the pair plus in-order
+    neighbours), so no script word can be lost. The untranscribed finding, which must lie inside the piece, becomes the
+    piece's `fragment` finding (`why: voice`) with the same id. A stored rejection or a decision against the old
+    finding keeps the piece.
+  - Removing a piece between cuts makes no new edit point: both of its sides are already cuts. So "cuts into a
+    neighbouring word" can only mean voice that belongs to a kept word, which the `takeGapS` test covers. Example:
+    "Una tortura. tortura." The transcript put both words before 1578.50 s, and the second word's voice is the 0.27 s
+    shot after it. The first version, without that test, removed it; rev 549 keeps it.
+- **Measured** (PC, test engine on port 47941 at nice 19, clone of `~/je-backup-pre-v7-20261113-230234` (file revision
+  152), `analyze_voice` defaults then `apply_cleanup` with no decisions; `/tmp/je-cps/measure.py` with the fixed
+  criteria of `/tmp/je-cmp267/README.txt`; dev / held-out):
+  - Stray fragments (< 0.7 s, no script word): rev 152 18 / 18, previous Clean Up 4 / 4, now 1 / 2. Left:
+    1578.63 (kept on purpose, rev 549 keeps it), 2693.20 (the script has "ehh" between the neighbours) and 3328.70
+    (an "así que | así que" restart within `takeGapS`, left to the boundary-restart work).
+  - A1 slivers under another shot's picture: 14 / 10 runs, then 4 / 1 (17 / 4 frames), now 2 / 0 (11 / 0 frames).
+    Left: 1387.90 "y", said on from the shot before (rev 549 extends that shot; Clean Up cannot add material), and the
+    7-frame "No" at 1151.33.
+  - Removals against rev 549: every removed range is also removed there (dev 20 ranges 2.13 s, held out 18 ranges 1.48
+    s, 0.000 s of either kept in rev 549). No script word is wrongly removed (previously 1, the "eh").
+- Tests (each fails before the change): `cleanup-rules.test.ts` "a filler the script says in sequence is no filler";
+  `cleanup-fragments.test.ts` "a sliver too short for a word…" (removed when apart, kept for review when said on from
+  the shot before) and "a whole short clip of voice without words goes when the script runs on across it" (kept when
+  the script says a word between its neighbours). The corpus gate is unchanged and still passes.
+- Limits: "Unity" at 1685.05 s goes because the next kept word starts 0.65 s after it, just over `takeGapS` (0.6 s).
+  Rev 549 removes that sliver too. The real "Unity" may lie in the gap: nobody listened. A wordless shot next to a kept
+  word, or one whose neighbours the script does not say in a row, stays for review. Without a script, wordless shots
+  are never removed by this rule.
+
 Kinds follow the structure: ≤ 2 words a false start, a whole clause (clause start, clause end, ≥ 3 content words) a
 retake (with a group), else a restart; inside re-decoded ranges they become hidden retakes as before. The settings keep
 their meaning (the windows, `retakeSimilarity`, `takeGapS`, `phraseGapS`, `falseStartGapS` for false starts by clause);

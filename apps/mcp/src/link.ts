@@ -42,6 +42,9 @@ const NEVER_SENT = new Set([
 	'EADDRNOTAVAIL',
 ]);
 
+/** Error codes of a request the engine accepted but did not answer in time (Node's fetch gives up after 300 s). */
+const NO_ANSWER = new Set(['UND_ERR_HEADERS_TIMEOUT', 'UND_ERR_BODY_TIMEOUT']);
+
 function causeCode(e: unknown): string | undefined {
 	const cause = (e as { cause?: { code?: unknown; errors?: { code?: unknown }[] } })?.cause;
 	const code = cause?.code ?? cause?.errors?.[0]?.code;
@@ -69,6 +72,12 @@ function guardedFetch(
 				);
 			const method = (init?.method ?? 'GET').toUpperCase();
 			const code = causeCode(e);
+			// the engine took the request and went quiet (busy or paused): no other engine may be asked instead
+			if (code && NO_ANSWER.has(code) && !init?.signal?.aborted)
+				throw new EngineRequestAborted(
+					'timeout',
+					'The engine accepted the request but did not answer in time',
+				);
 			if (method !== 'GET' && !(code && NEVER_SENT.has(code)) && !init?.signal?.aborted)
 				throw new EngineRequestAborted(
 					'connection-lost',
@@ -225,6 +234,9 @@ export class EngineLink implements EngineConnection {
  * Runs `fn` with the engine client; a network failure (engine restarted on another port, desktop app
  * reopened) or a rejected token (the engine restarted on the same port: every start has a new token, dev engines
  * included) re-discovers once before giving up. A 401 means the request was not processed, so re-sending is safe.
+ * The retry goes only to the same engine (its runtime file or address): another engine found instead has other
+ * jobs and projects (a job id asked there is "unknown" while it still runs), so the failure is reported and the
+ * next call uses the new engine.
  */
 export async function withEngine<T>(link: EngineConnection, fn: (c: EngineClient) => Promise<T>): Promise<T> {
 	const c = await link.client();
@@ -233,9 +245,12 @@ export async function withEngine<T>(link: EngineConnection, fn: (c: EngineClient
 	} catch (e) {
 		if (!(e instanceof EngineError) || (e.code !== 'NETWORK' && e.code !== 'UNAUTHORIZED')) throw e;
 		const before = link.target?.token ?? null;
+		const was = link.target;
 		link.invalidate();
 		const c2 = await link.client();
 		if (c2 === c) throw e;
+		const now = link.target;
+		if (was && now && (was.detail ?? was.url) !== (now.detail ?? now.url)) throw e;
 		// Same engine, same token: asking again would be refused again.
 		if (e.code === 'UNAUTHORIZED' && (link.target?.token ?? null) === before) throw e;
 		return fn(c2);

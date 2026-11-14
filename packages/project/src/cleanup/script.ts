@@ -89,6 +89,32 @@ export class ScriptAligner {
 		}
 		return best;
 	}
+
+	/**
+	 * The support of words `k - 1` and `k` of `tokens` said next to each other in the script: at one place where the
+	 * script has the two tokens in a row, 1 for the pair plus the in-order neighbours beyond it (up to `ALIGN_WINDOW`
+	 * each side, as `support`); 0 when the script never has them in a row. Removing something between the two loses no
+	 * script word when it is high.
+	 */
+	joins(tokens: readonly string[], k: number): number {
+		const a = tokens[k - 1];
+		const ps = k < 1 || a === undefined ? undefined : this.at.get(tokens[k]!);
+		if (!ps) return 0;
+		const left = tokens.slice(Math.max(0, k - 1 - ALIGN_WINDOW), k - 1);
+		const right = tokens.slice(k + 1, k + 1 + ALIGN_WINDOW);
+		const most = 1 + left.length + right.length;
+		let best = 0;
+		for (const p of ps) {
+			if (p < 1 || this.script[p - 1] !== a) continue;
+			const n =
+				1 +
+				lcs(left, this.script.slice(Math.max(0, p - 2 - ALIGN_WINDOW), p - 1)) +
+				lcs(right, this.script.slice(p + 1, p + 2 + ALIGN_WINDOW));
+			if (n > best) best = n;
+			if (best >= most) break;
+		}
+		return best;
+	}
 }
 
 export type LineMatch = { line: number; similarity: number; coverage: number };
