@@ -9,6 +9,7 @@ import {
 	clipHasMasks,
 	cropMayFeather,
 	defaultEffectRegistry,
+	gaussianBlurRepeatsEdge,
 	isCssBlend,
 	type MediaHandle,
 	matteTrackIds,
@@ -144,8 +145,9 @@ export function clipDrawsThroughCanvas(clip: Clip, media: MediaLike, tapped = fa
 		if (spec?.appliesTo !== 'video') continue;
 		if (spec.gpu) return true;
 		if (spec.color && CHAIN_KINDS.has(clip.kind)) return true;
-		// crop-order: Edge Feather runs in the canvas chain (fx/builtins.ts `CROP_FEATHER_GPU`).
+		// crop-order: Edge Feather runs in the canvas chain (fx/builtins.ts `CROP_FEATHER_GPU`), so does a Repeat Edge blur.
 		if (fx.effectId === 'jasper.crop' && cropMayFeather(fx.params)) return true;
+		if (gaussianBlurRepeatsEdge(fx)) return true;
 	}
 	return false;
 }

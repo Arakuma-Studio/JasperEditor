@@ -5,7 +5,7 @@
 // scope; the scope's element structure never changes over time (no remounts of the layers below).
 // Two ways, decided per track from all its adjustment clips (static, so the DOM stays stable):
 // - `css`: every effect is a CSS filter / SVG filter at full opacity, Normal blend and no crop — the scope element
-//   gets the filter (exact; works in every browser);
+//   gets the filter (exact; works in every browser; not a Repeat Edge blur, which Chrome's SVG filter cannot draw);
 // - `canvas`: the composite is drawn through Remotion's `<HtmlInCanvas>` and the canvas effect chain: `stash` (keep
 //   the original) → the effects (shader passes, colour runs, CSS filters, flips) → `mix` (adjusted over original with
 //   opacity, blend and the crop region). Renders always have HTML-in-Canvas; a Player without it shows the composite
@@ -22,6 +22,7 @@ import {
 	defaultEffectRegistry,
 	dissolveSeed,
 	fadeFactor,
+	gaussianBlurRepeatsEdge,
 	type RenderVisualClip,
 	type ResolvedEffect,
 	resolveCachedLayerProps,
@@ -52,6 +53,8 @@ export function cssExactAdjustment(clip: RenderVisualClip): boolean {
 		const spec = defaultEffectRegistry.get(fx.effectId, fx.effectVersion);
 		if (spec?.appliesTo !== 'video') continue;
 		if (fx.effectId === CROP || spec.gpu || spec.color) return false;
+		// No SVG filter repeats the edge pixels in Chrome: the canvas chain's stand-in does.
+		if (gaussianBlurRepeatsEdge(fx)) return false;
 		// Only filter-type CSS (or an SVG filter): anything else (transforms, clip paths) changes geometry.
 		const probe = spec.preview.css?.(Object.fromEntries(spec.params.map((p) => [p.name, p.default])));
 		if (probe && Object.keys(probe).some((k) => k !== 'filter')) return false;

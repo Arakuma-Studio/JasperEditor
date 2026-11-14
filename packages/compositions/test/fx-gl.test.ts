@@ -204,6 +204,13 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 				expect(r.above[3]).toBeLessThan(r.onLine[3]);
 			});
 
+			it('a Repeat Edge Gaussian Blur alone takes the chain and keeps a flat picture flat to its edges', async () => {
+				const r = await call<Record<'corner' | 'left' | 'top' | 'centre', Px> | null>('blurRepeatEdge');
+				expect(r).not.toBeNull();
+				expect(near(r!.centre, [140, 65, 194, 255], 1)).toBe(true);
+				for (const edge of [r!.corner, r!.left, r!.top]) expect(near(edge, r!.centre, 1)).toBe(true);
+			});
+
 			it('Transform: Shutter Angle motion blur from the params at sub-frame times', async () => {
 				const r = await call<{ sharpEdge: Px; blurredEdge: Px; blurredMid: Px }>('transformBlur');
 				expect(r.sharpEdge[3]).toBe(255);

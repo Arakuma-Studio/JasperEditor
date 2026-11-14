@@ -327,7 +327,12 @@ CSS-filter effects (2D canvas filter), crop and flips run in exact order. Built-
 at their params (Gaussian Blur with one direction or Repeat Edge Pixels) run as GPU stand-ins in the chain
 (`compositions/src/fx/builtins.ts`), so their order is exact too; `reordered` now only lists effects with other
 style fragments (none of the built-ins). Effects after the chain stay CSS/SVG wrapper stages. The corner pin is the
-layer matrix (always last). Layers without shader effects keep the exact M1/M2 behaviour.
+layer matrix (always last). Layers without shader effects keep the exact M1/M2 behaviour, except a Gaussian Blur with
+Repeat Edge Pixels: Chrome ignores feGaussianBlur's `edgeMode` (measured on Chrome 156: `duplicate` renders like
+`none`, a flat frame's border falls to ≈ 52 %), so that blur needs the chain by itself (`gaussianBlurRepeatsEdge`:
+clips, DOM pictures through HTML-in-Canvas, composition previews wait for the preview WebM, adjustment layers take
+the canvas scope, and `snapshotGlNeeds` lists it). Without the GPU (preview) it falls back to the SVG blur with the
+"GPU effects unavailable" chip; renders fail `WEBGL_UNAVAILABLE` rather than draw dark edges.
 
 ## 13. Families, ids, bins, badges
 
@@ -496,6 +501,9 @@ time dependent (the picture plays). The composition (re-render per frame), the s
 
 - One-direction Gaussian Blur / Repeat Edge Pixels inside an fx chain run as a GPU stand-in in stack order
   (`chainGpuStandIn`, per-axis σ, Repeat Edge = clamped sampling in the box, otherwise padded by 3σ).
+  Repeat Edge always takes the chain, also as the layer's only effect and at radius 0 (one path while the radius
+  animates). `apps/engine/test/blur-repeat-edge.e2e.test.ts` (`REMOTION_E2E=1`) checks a flat frame blurred on a
+  clip and through adjustment layers: edges equal the centre on the layer bake, Remotion and preview stills.
 - `RenderOptions.fxPreviewScale` (the Program monitor's playback resolution) scales the canvases; `u_pxScale`
   follows. Renders ignore it.
 

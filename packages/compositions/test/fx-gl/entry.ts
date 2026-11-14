@@ -23,7 +23,7 @@ import { TRANSFORM } from '../../../project/src/registry/fx/premiere-adjust-colo
 import { chainGpuStandIn } from '../../src/fx/builtins.ts';
 import { FxShaderError, fxHost, runLutPass, runShaderPlan } from '../../src/fx/host.ts';
 import { fxLowered, loweredCanvasProgram } from '../../src/fx/lowered.ts';
-import { fxCanvasLayout } from '../../src/fx/plan.ts';
+import { fxCanvasLayout, planLayerFx } from '../../src/fx/plan.ts';
 import { TEST_FX } from '../fx-examples.ts';
 
 type Px = [number, number, number, number];
@@ -691,6 +691,32 @@ const followups = {
 		return {
 			onLine: px(out, b.x + 10, b.y + 10),
 			above: px(out, b.x + 10, b.y + 8),
+		};
+	},
+	/**
+	 * A Repeat Edge Gaussian Blur alone on a layer, planned as the layers plan it, over a box filled with one colour:
+	 * the edges keep that colour (Chrome's SVG blur ignores `edgeMode` and fades them; null = no chain step).
+	 */
+	blurRepeatEdge() {
+		const builtin = defaultEffectRegistry.get('jasper.gaussian-blur')!;
+		const params = { radius: 12, dimensions: 'both', repeatEdge: true };
+		const box = { width: 64, height: 48 };
+		const plan = planLayerFx(
+			[{ id: 'fx1', effectId: builtin.id, effectVersion: builtin.version, enabled: true, params }],
+			{ registry: defaultEffectRegistry, gpu: 'ok', ctx: { ...box, pxScale: 1, fps: 30, frame: 0 } },
+		);
+		const step = plan?.active ? plan.steps[0] : undefined;
+		if (step?.kind !== 'gpu') return null;
+		const { out, layout } = run(step.spec, params, box, (ctx, b) => {
+			ctx.fillStyle = 'rgb(140, 65, 194)';
+			ctx.fillRect(b.x, b.y, b.w, b.h);
+		});
+		const b = layout.box;
+		return {
+			corner: px(out, b.x, b.y),
+			left: px(out, b.x, b.y + 24),
+			top: px(out, b.x + 32, b.y),
+			centre: px(out, b.x + 32, b.y + 24),
 		};
 	},
 	/** Transform with a Shutter Angle and a moving position (paramsAt): the edge is smeared. */

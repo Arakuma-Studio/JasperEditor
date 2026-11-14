@@ -15,6 +15,7 @@ import {
 	type EffectSpec,
 	GLSL_BLUR,
 	type GpuEffect,
+	gaussianBlurRepeatsEdge,
 	gaussianBlurSigmas,
 	type ResolvedEffect,
 	type ShaderPass,
@@ -70,12 +71,14 @@ const STAND_INS: Readonly<Record<string, GpuEffect>> = { 'jasper.gaussian-blur':
 
 /**
  * The GPU stand-in of a built-in effect for the fx chain when its preview needs an SVG filter at these params (its
- * `preview.css` returns null), or null. The returned spec is the built-in with `gpu` added.
+ * `preview.css` returns null) or no SVG filter draws them (`gaussianBlurRepeatsEdge`, also at radius 0 so the layer
+ * keeps one path while the radius animates), or null. The returned spec is the built-in with `gpu` added.
  */
 export function chainGpuStandIn(spec: EffectSpec, params: EffectParams): EffectSpec | null {
 	const gpu = STAND_INS[spec.id];
 	if (!gpu || spec.gpu) return null;
-	if (spec.preview.css?.(params) !== null) return null;
+	if (spec.preview.css?.(params) !== null && !gaussianBlurRepeatsEdge({ effectId: spec.id, params }))
+		return null;
 	return { ...spec, gpu };
 }
 
