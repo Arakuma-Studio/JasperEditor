@@ -108,7 +108,7 @@ Premiere counts time in a very fine tick unit and snaps edits to the sequence fr
   - seconds → flicks: `round(s × 705,600,000)`.
   - Remotion needs a number: `fps = num / den`.
 - **TIME-005 (P0)** Timecode: `HH:MM:SS:FF` for non-drop rates and `HH;MM;SS;FF` (drop-frame) for 29.97 and 59.94 when the sequence says `dropFrame: true`. The sequence start timecode (SEQ-004) is added for display. Timecode strings are a display/input format only. The document stores frames.
-- **TIME-006 (P0)** Time inputs from commands (section 16) accept four forms and normalize to frames of the target sequence: an integer (frames), `{frames: n}`, `{seconds: x}` (snapped with `round`), or a timecode string (drop-frame aware). Content-time inputs accept `{flicks: n}`, `{seconds: x}` or `{sourceFrames: n}` (source frames at the asset's nominal rate).
+- **TIME-006 (P0)** Time inputs from commands (section 16) accept four forms and normalize to frames of the target sequence: an integer (frames), `{frames: n}`, `{seconds: x}` (snapped with `round`), or a timecode string (drop-frame aware). Content-time inputs accept `{flicks: n}`, `{seconds: x}` or `{sourceFrames: n}` (source frames at the asset's nominal rate; a still image has none: commands on a sequence count its source frames at the sequence rate, Project-item commands (marks, markers, subclips) at 30 fps).
 - **TIME-007 (P0)** The **sequence duration** is derived, never stored: the maximum clip end across all tracks, or 0 for an empty sequence.
 
 Beyond the template: the template used one fixed frame rate for everything and stored source offsets as floating-point seconds. We support multiple rational sequence rates, including NTSC rates, and store content time as exact integers.

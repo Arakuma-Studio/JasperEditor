@@ -55,6 +55,24 @@ describe('clip.place (S01 AC-02…04, S02 TL-493)', () => {
 		expect(h.seq.clips[c]!.duration).toBe(58);
 	});
 
+	it("counts a still's sourceFrames at the sequence rate, not the 25 fps ffprobe reports for images", () => {
+		const h = new Harness({ preset: 'hd-1080p-60' });
+		const mediaId = h.registerVideo({ kind: 'image', fps: { num: 25, den: 1 } });
+		const sourceRange = { in: { sourceFrames: 0 }, out: { sourceFrames: 60 } };
+		const placed = h.ok([{ type: 'clip.place', source: { mediaId }, sourceRange, at: 0 }]);
+		const edited = h.ok([
+			{
+				type: 'clip.sourceEdit',
+				source: { mediaId },
+				sourceIn: sourceRange.in,
+				sourceOut: sourceRange.out,
+				playhead: 100,
+			},
+		]);
+		const ids = [placed, edited].map((r) => (r.results[0] as { clipIds: string[] }).clipIds[0]!);
+		expect(ids.map((id) => h.seq.clips[id]!.duration)).toEqual([60, 60]);
+	});
+
 	it('DT-021: linked A/V halves get the Movie label on video and the Audio label on audio', () => {
 		const h = new Harness();
 		const av = h.ok([{ type: 'media.register', asset: videoAsset({ seconds: 4 }) }]).results[0] as {

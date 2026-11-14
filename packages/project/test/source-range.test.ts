@@ -784,6 +784,39 @@ describe('Replace Footage with "keep source timing" (S07:PRC-018)', () => {
 		h.ok([relinkCmd(mediaId, replacement(300, { tc: '01:00:05:00' }), { keepSourceTiming: true })]);
 		expect(vclip(h, videoId).sourceIn).toBe(30 * F30);
 	});
+
+	it('keeps every clip framed as before when the new file has another pixel size (stills and video)', () => {
+		const h = new Harness();
+		const still = h.registerVideo({ kind: 'image', width: 3000, height: 3000 });
+		const video = h.registerVideo({ width: 960, height: 540, audio: false });
+		h.ok([
+			{ type: 'clip.place', source: { mediaId: still }, at: 0, scaling: 'fit' },
+			{ type: 'clip.place', source: { mediaId: video }, at: 0, tracks: { video: 'V2' }, scaling: 'fit' },
+		]);
+		const ids = [h.clips('V1')[0]!.id, h.clips('V2')[0]!.id];
+		const framing = (doc: ProjectDocument) =>
+			ids.map((id) => {
+				const t = (doc.sequences[h.seqId]!.clips[id] as VideoClip).transform;
+				return { scale: t.scale.value, anchor: t.anchor.value, position: t.position.value };
+			});
+		const placed = [
+			{ scale: 36, anchor: [1500, 1500], position: [960, 540] },
+			{ scale: 200, anchor: [480, 270], position: [960, 540] },
+		];
+		const before = h.doc;
+		expect(framing(before)).toEqual(placed);
+		h.ok([
+			relinkCmd(still, videoAsset({ kind: 'image', width: 1500, height: 1500 }), {}),
+			relinkCmd(video, videoAsset({ width: 1920, height: 1080, audio: false }), {}),
+		]);
+		expect(framing(h.doc)).toEqual([
+			{ scale: 72, anchor: [750, 750], position: [960, 540] },
+			{ scale: 100, anchor: [960, 540], position: [960, 540] },
+		]);
+		expect(checkInvariants(h.doc)).toEqual([]);
+		// undo restores the previous document, untouched
+		expect(framing(before)).toEqual(placed);
+	});
 });
 
 describe('schema v5 migration (S07:PRC-015)', () => {

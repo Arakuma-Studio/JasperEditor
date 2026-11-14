@@ -44,6 +44,10 @@ S01 command table; ARCHITECTURE D-33 and §19.4.
   with `W_VERSION_DETACHED` when they hold frames before it. Processed versions are not "replaced" (process again).
   Choice: Replace Footage replaces for every clip (Premiere semantics); per-clip switching between renders is the
   Media Version dropdown, because a sidecar-declared render becomes a **version** of its source.
+  A new file of another pixel size keeps every clip framed as before (`rescaleClipForSource`, as a version switch
+  does: scale ×= old/new, anchor ×= new/old, trackers and roto strokes scaled), so a 1500² still replacing a 3000²
+  one stays the same size and place. MCP `replace_footage` sends `keepSourceTiming` only for video and audio: a
+  still has no source frames, so the option is ignored there (the command still refuses an explicit one).
 - **Sidecars** (`parseSourceSidecar`): `<file>.json` or `<stem>.json`; `first_src_frame` | `firstFrame`, `frames`,
   `fps`, `handles` `[pre, post]` | `{pre, post}`, `source` | `src` | `spec.src` (the trailer's grade format as is),
   and jasper-proc's own sidecar (`input.range`). Read by the engine for files registered by path

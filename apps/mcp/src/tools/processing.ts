@@ -555,7 +555,9 @@ export function registerProcessingTools(ctx: ToolContext): void {
 							originalName: item.originalName,
 							container: item.container,
 							sourceRange,
-							keepSourceTiming: keepSourceTiming ?? true,
+							// only video and audio have source frames to keep: a still shows the same picture anyway.
+							keepSourceTiming:
+								(asset.kind === 'video' || asset.kind === 'audio') && (keepSourceTiming ?? true),
 							...(fit ? { fit } : {}),
 						},
 					],
