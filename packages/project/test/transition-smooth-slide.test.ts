@@ -8,7 +8,7 @@ import {
 	SMOOTH_SLIDE_EASINGS,
 	smoothSlideEase,
 	smoothSlideFrameStep,
-	smoothSlidePoses,
+	smoothSlideMotionBlur,
 	smoothSlideReflectionSigma,
 	smoothSlideScale,
 	type Transition,
@@ -76,43 +76,48 @@ describe('Smooth Slide: poses, shutter and dolly', () => {
 		duration: 15,
 		hasFrom: true,
 		hasTo: true,
+		width: 1920,
+		height: 1080,
 		...o,
 	});
 
-	it('takes 1 / 4 / 8 / 16 poses spread over Shutter Angle / 360 frames, centred on the frame', () => {
-		const p = { ...defaults(), animation: 'linear' };
-		for (const [level, n] of [
-			['off', 1],
-			['low', 4],
-			['medium', 8],
-			['high', 16],
-		] as const) {
-			const poses = smoothSlidePoses({ ...p, motionBlur: level }, ctx(0.5));
-			expect(poses, level).toHaveLength(n);
-			const mean = poses.reduce((s, q) => s + q.e, 0) / n;
-			expect(mean).toBeCloseTo(0.5, 12);
-		}
-		// Linear easing: the poses span (1 − 1/n) of the shutter (stratum centres), 360° = 1 frame = 1/16 progress.
+	it('blurs over Shutter Angle / 360 frames centred on the frame, about one tap per pixel of travel', () => {
+		const p = { ...defaults(), animation: 'linear', direction: 'up' };
+		// Linear easing, 15 frames two-sided: 1/16 progress per frame = 1080 / 16 = 67.5 px of travel at 360°.
 		const step = 1 / 16;
-		const hi = smoothSlidePoses({ ...p, motionBlur: 'high', shutterAngle: 360 }, ctx(0.5));
-		expect(hi.at(-1)!.e - hi[0]!.e).toBeCloseTo(step * (15 / 16), 12);
-		const wide = smoothSlidePoses({ ...p, motionBlur: 'high', shutterAngle: 720 }, ctx(0.5));
-		expect(wide.at(-1)!.e - wide[0]!.e).toBeCloseTo(2 * step * (15 / 16), 12);
+		const at = (q: Record<string, unknown>, progress = 0.5) =>
+			smoothSlideMotionBlur({ ...p, ...q }, ctx(progress));
+		const hi = at({ shutterAngle: 360 });
+		expect(hi.pose.e).toBeCloseTo(0.5, 12);
+		expect(hi.plan.times.at(-1)! - hi.plan.times[0]!).toBeCloseTo(step, 12);
+		expect(hi.plan.extentPx).toBeCloseTo(67.5, 6);
+		expect(hi.plan.taps).toBe(68);
+		const wide = at({ shutterAngle: 720 });
+		expect(wide.plan.times.at(-1)! - wide.plan.times[0]!).toBeCloseTo(2 * step, 12);
 		// Out-of-range angles are clamped to 90 … 720.
-		const tiny = smoothSlidePoses({ ...p, motionBlur: 'high', shutterAngle: 1 }, ctx(0.5));
-		expect(tiny.at(-1)!.e - tiny[0]!.e).toBeCloseTo(0.25 * step * (15 / 16), 12);
+		const tiny = at({ shutterAngle: 1 });
+		expect(tiny.plan.times.at(-1)! - tiny.plan.times[0]!).toBeCloseTo(0.25 * step, 12);
+		expect(at({ motionBlur: 'off' }).plan.taps).toBe(1);
+	});
+
+	it('Low / Medium / High cap the taps of a fast push at 16 / 64 / 96', () => {
+		// Left over 1920 px in 15 frames: 120 px of travel per frame.
+		const fast = (motionBlur: string) =>
+			smoothSlideMotionBlur({ ...defaults(), animation: 'linear', direction: 'left', motionBlur }, ctx(0.5))
+				.plan;
+		expect([fast('low').taps, fast('medium').taps, fast('high').taps]).toEqual([16, 64, 96]);
+		expect(fast('high').jitter).toBe(true);
 	});
 
 	it('shrinks the shutter at the ends: progress 0 is exactly A and 1 exactly B', () => {
 		for (const progress of [0, 1]) {
-			const poses = smoothSlidePoses({ ...defaults(), dolly: 1 }, ctx(progress));
-			for (const q of poses) {
-				expect(q.e).toBe(progress);
-				expect(q.s).toBeCloseTo(1, 12);
-			}
+			const { pose, plan } = smoothSlideMotionBlur({ ...defaults(), dolly: 1 }, ctx(progress));
+			expect(plan.taps).toBe(1);
+			expect(pose.e).toBe(progress);
+			expect(pose.s).toBeCloseTo(1, 12);
 		}
-		const near = smoothSlidePoses({ ...defaults(), animation: 'linear' }, ctx(0.01));
-		for (const q of near) expect(q.e).toBeGreaterThanOrEqual(0);
+		const near = smoothSlideMotionBlur({ ...defaults(), animation: 'linear' }, ctx(0.01));
+		for (const t of near.plan.times) expect(t).toBeGreaterThanOrEqual(0);
 	});
 
 	it('the frame step follows the span (two-sided 1 / (d + 1), one-sided 1 / d) and Start / End', () => {
