@@ -29,6 +29,8 @@ export type EdgeReview =
 	| 'sound'
 	/** The word had faded on the kept side: the repair keeps a soft tail (adds time at the join). */
 	| 'faded'
+	/** The kept span ends with the next word's onset: a trim back to the dip before it. */
+	| 'onset'
 	/** A linked picture cannot follow (out of sync, other media, no handle), or another video clip touches the edge. */
 	| 'picture'
 	/** Another audio clip on a rippling track touches the edge. */

@@ -384,6 +384,26 @@ describe('cleanup.apply extend (edge repair)', () => {
 		expect(layout(again.H)).toEqual(layout(H));
 	});
 
+	it('one overlay warning for all the extensions of an apply, with the net frames per overlay', () => {
+		const { H, a1 } = cut();
+		const b1 = H.clips('A1')[1]!.id;
+		const title = H.clips('V2')[0]!;
+		const r = H.ok([
+			{
+				type: 'cleanup.apply',
+				clipIds: [a1],
+				ranges: [],
+				extend: [
+					{ clipId: a1, side: 'out', frames: 6 },
+					{ clipId: b1, side: 'in', frames: 4 },
+				],
+			},
+		]);
+		const fitted = r.warnings.filter((w) => w.code === 'W_OVERLAY_FITTED');
+		expect(fitted).toHaveLength(1);
+		expect(fitted[0]!.message).toContain(`${title.id} (+10 frames)`);
+	});
+
 	it('refuses extend outside extract, a range over the extended edge, and an empty apply', () => {
 		const { H, a1 } = cut();
 		const codes = [

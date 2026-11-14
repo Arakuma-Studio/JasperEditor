@@ -22,6 +22,7 @@ import {
 	type EdgeLevels,
 	type EdgeSide,
 	edgeBounds,
+	edgeInsideWord,
 	edgeScore,
 	edgeThresholds,
 	snapCut,
@@ -33,8 +34,6 @@ export const REPAIR_BREATH_MIN_S = 0.05;
 const FOREIGN_WORD_SHARE = 0.5;
 
 const FR = 0.01;
-/** A dip this close (dB) to the quiet level separates two words (`onsetBound`'s). */
-const FOREIGN_DIP_DB = 3;
 
 type Word = { s: number; e: number; text?: string };
 
@@ -101,12 +100,13 @@ export function repairBoundWords(l: EdgeLevels, words: readonly Word[], t: numbe
 /**
  * How far a repair may keep more before another word's sound (media seconds): walking away from the kept side within
  * `EDGE_DECAY_S`, the boundary before a frame that lies in the time of a word on the cut-away side (one that begins after
- * an out edge / ends before an in edge, ±30 ms) and rises `EDGE_ONSET_RISE_DB` over a dip within `FOREIGN_DIP_DB` of
- * the quiet level — however soft that word is (`onsetBound` asks a rise over the speech level there; the soft "y" of
- * "y | y que", 764.53–764.58 at −27 dBFS after a dip to −39, was pulled back in front of the kept "y").
+ * an out edge / ends before an in edge, ±30 ms) and rises `EDGE_ONSET_RISE_DB` over any dip under the speech level —
+ * however soft that word is (`onsetBound` asks a rise over the speech level there; the soft "y" of "y | y que",
+ * 764.53–764.58 at −27 dBFS after a dip to −39, was pulled back in front of the kept "y"). A repair never brings in the
+ * next syllable after a dip.
  */
 export function foreignSoundBound(l: EdgeLevels, t: number, side: EdgeSide, words: readonly Word[]): number {
-	const { quiet } = edgeThresholds(l);
+	const { loud } = edgeThresholds(l);
 	const out = side === 'out';
 	const away = words.filter((w) => (out ? w.s >= t - 0.03 : w.e <= t + 0.03));
 	const inAway = (k: number) => away.some((w) => (k + 1) * FR > w.s - 0.03 && k * FR < w.e + 0.03);
@@ -117,8 +117,7 @@ export function foreignSoundBound(l: EdgeLevels, t: number, side: EdgeSide, word
 		if (k < 0 || k >= l.frameCount) break;
 		const d = l.db(k);
 		if (d < min) min = d;
-		else if (min <= quiet + FOREIGN_DIP_DB && d >= min + EDGE_ONSET_RISE_DB && inAway(k))
-			return out ? k * FR : (k + 1) * FR;
+		else if (min <= loud && d >= min + EDGE_ONSET_RISE_DB && inAway(k)) return out ? k * FR : (k + 1) * FR;
 	}
 	return out ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
 }
@@ -139,6 +138,94 @@ function separateSound(l: EdgeLevels, a: number, b: number): boolean {
 		max = Math.max(max, d);
 	}
 	return false;
+}
+
+/**
+ * Where a repair ends: a word's decay is done (an out edge) or its attack begins (an in edge) at the first boundary
+ * whose cut-away 10 ms lie at most this far (dB) over the quiet level — the review's "reaching −38 dBFS" (the quiet level
+ * is −40 dBFS on the reporter's source) — the 40 ms after at most `REPAIR_AFTER_OVER_QUIET_DB` over it, and no speech in
+ * the 50 ms beyond.
+ */
+export const REPAIR_END_OVER_QUIET_DB = 2;
+/** Beyond a repair's end, the next `REPAIR_AFTER_S` stay at most this far over the quiet level (−36 dBFS on the source). */
+export const REPAIR_AFTER_OVER_QUIET_DB = 4;
+const REPAIR_AFTER_S = 0.04;
+/** An in edge's safe extension keeps at most a word's attack (s): the review's ≈ 80 ms look-back, plus half a frame. */
+export const REPAIR_ATTACK_S = 0.088;
+/** How far before an out edge a kept onset of the next word is looked for (s), and how close that word starts. */
+const KEPT_ONSET_S = 0.08;
+const NEXT_WORD_S = 0.03;
+/** The kept onset rises at least this much (dB) from its dip to the edge (the "pue-" of 2714.03: −22.5 → −4 dBFS). */
+const KEPT_ONSET_RISE_DB = 12;
+
+/**
+ * The first boundary from `t` towards the clean boundary `to` where the decay is done / the attack begins
+ * (`REPAIR_END_OVER_QUIET_DB`), never inside a word; `to` when none comes first. The snapper's clean boundary may lie
+ * past a quiet run of 30 ms or in deeper silence: a repair adds only the word's own sound up to −38 dBFS.
+ */
+function decayEnd(
+	l: EdgeLevels,
+	t: number,
+	to: number,
+	side: EdgeSide,
+	candidates: readonly number[],
+	words: readonly Word[],
+): number {
+	const { quiet, loud } = edgeThresholds(l);
+	const out = side === 'out';
+	const between = candidates
+		.filter((c) => (out ? c > t + 1e-9 && c < to - 1e-9 : c < t - 1e-9 && c > to + 1e-9))
+		.sort((a, b) => (out ? a - b : b - a));
+	for (const c of between) {
+		const k = Math.round(c / FR - 1e-9);
+		const first = l.db(out ? k : k - 1);
+		if (first > quiet + REPAIR_END_OVER_QUIET_DB || awayLevel(l, c, side) > loud) continue;
+		// and nothing sounds again right beyond it (the review's "first 40 ms after over −36 dBFS" is still a cut word:
+		// "Uni|ty" dips to −39 dBFS before its soft "-ty")
+		let again = false;
+		for (let i = 1; i < Math.round(REPAIR_AFTER_S / FR); i++)
+			if (l.db(out ? k + i : k - 1 - i) > quiet + REPAIR_AFTER_OVER_QUIET_DB) again = true;
+		if (again) continue;
+		if (edgeInsideWord(l, words, c)) continue;
+		return c;
+	}
+	return to;
+}
+
+/**
+ * The boundary an out edge goes back to when its last `KEPT_ONSET_S` hold the next word's onset: the next word (by its
+ * timestamp) starts within `NEXT_WORD_S` of the edge, the kept sound right before the edge is over the speech level,
+ * and walking back the level falls `KEPT_ONSET_RISE_DB` to a dip — the boundary before the rise ("del mundo, que |
+ * pue-": the edge at 2714.03 kept "pue-" rising from a dip at 2713.96–2713.97 (−22.5 dBFS on the voice analysis, −30
+ * on the 10 ms RMS); rev 549 cut it at 2713.967).
+ * Such an edge is never extended.
+ * Null when there is no such onset.
+ */
+function keptOnset(
+	l: EdgeLevels,
+	t: number,
+	words: readonly Word[],
+	candidates: readonly number[],
+): number | null {
+	if (!words.some((w) => Math.abs(w.s - t) <= NEXT_WORD_S && w.e > t)) return null;
+	const { loud } = edgeThresholds(l);
+	const k0 = Math.round(t / FR - 1e-9);
+	const top = l.db(k0 - 1);
+	if (top <= loud) return null;
+	let dip = -1;
+	let min = top;
+	for (let k = k0 - 1; k >= Math.max(0, k0 - Math.round(KEPT_ONSET_S / FR)); k--) {
+		const d = l.db(k);
+		if (d < min) {
+			min = d;
+			dip = k;
+		} else if (d > min + EDGE_ONSET_RISE_DB / 2) break; // rising again: the kept word before the dip
+	}
+	if (dip < 0 || top < min + KEPT_ONSET_RISE_DB) return null;
+	// the boundary at the end of the dip frame, or the nearest one before it
+	const at = (dip + 1) * FR;
+	const c = candidates.filter((x) => x <= at + 1e-9 && x < t - 1e-9).sort((a, b) => b - a)[0];
+	return c === undefined ? null : c;
 }
 
 /** The kept sound beside an edge judged for `faded` (s): the review's "last 40 ms before the out point". */
@@ -167,7 +254,7 @@ export type EdgeRepair = {
 	/** Whether it lands on a clean boundary and adds (or removes) only the cut word's own sound. */
 	safe: boolean;
 	/** Why a repair is left for review (absent when safe). */
-	review?: 'speech-left' | 'word' | 'sound' | 'faded';
+	review?: 'speech-left' | 'word' | 'sound' | 'faded' | 'onset';
 };
 
 /**
@@ -192,7 +279,15 @@ export function repairCut(
 		keepMore: out ? Math.min(b0.keepMore, stop) : Math.max(b0.keepMore, stop),
 		keepSoft: out ? Math.min(b0.keepSoft, stop) : Math.max(b0.keepSoft, stop),
 	};
-	const s = snapCut(l, { t: o.t, side: o.side, ...bounds, candidates: o.candidates, words });
+	// an out edge that keeps the next word's onset ("del mundo, que | pue-"): back to the dip before it
+	if (out) {
+		const back = keptOnset(l, o.t, words, o.candidates);
+		// never extended (that keeps more of the next word); the trim is for review: the same envelope is the kept word's
+		// own last syllable after a closure ("mun-do") when the timestamps cannot tell them apart
+		if (back !== null) return { t: back, kind: 'trim', safe: false, review: 'onset' };
+	}
+	const s0 = snapCut(l, { t: o.t, side: o.side, ...bounds, candidates: o.candidates, words });
+	const s = s0.clean ? { ...s0, t: decayEnd(l, o.t, s0.t, o.side, o.candidates, words) } : s0;
 	if (Math.abs(s.t - o.t) < 1e-6) return null;
 	const kind = (out ? s.t > o.t : s.t < o.t) ? 'extend' : 'trim';
 	const [a, b] = o.t < s.t ? [o.t, s.t] : [s.t, o.t];
@@ -205,7 +300,7 @@ export function repairCut(
 	});
 	if (s.clean) {
 		if (inside) return { t: s.t, kind, safe: false, review: 'word' };
-		if (kind === 'extend' && !out && separateSound(l, s.t, o.t))
+		if (kind === 'extend' && !out && (o.t - s.t > REPAIR_ATTACK_S + 1e-9 || separateSound(l, s.t, o.t)))
 			return { t: s.t, kind, safe: false, review: 'sound' };
 		if (kind === 'extend' && faded(l, o.t, o.side)) return { t: s.t, kind, safe: false, review: 'faded' };
 		return { t: s.t, kind, safe: true };

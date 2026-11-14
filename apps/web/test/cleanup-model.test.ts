@@ -1,6 +1,7 @@
 // Clean Up review model (spec 14 TC-040…TC-043): decisions per item / kind / retake, the word marks (what the plan
 // cuts, coloured by why; review; lexical fillers), viewport coverage, timeline bands and request scope.
 import { analyzeSequenceCleanup, type CleanupAnalysis, sequenceWords } from '@jasper/project';
+import { derivedPreviewFor, toDerivedFrame, toOriginalFrame } from '@jasper/session';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
@@ -13,6 +14,7 @@ import {
 	inlineFindings,
 	listLayout,
 	overlayBands,
+	resultPreview,
 	scopeOf,
 	toCleanupDecisions,
 	visibleEntries,
@@ -111,6 +113,50 @@ describe('Clean Up review model', () => {
 			expect(b.end).toBeGreaterThan(b.start);
 		}
 		expect(overlayBands(seq, a, () => null).padding).toEqual([]);
+	});
+
+	it('"Play result" maps the playhead through the frames edge repairs insert as well as the removed ranges', () => {
+		const { session, a } = analysed();
+		const seqId = a.plan.sequenceId;
+		// cut the recording at frame 300 and close a 30-frame gap: the first take now ends with a handle in its media
+		const first = Object.values(seqOf(session, seqId).clips)[0]!.id;
+		const cut = session.apply({
+			label: 'cut',
+			origin: 'user',
+			sequenceId: seqId,
+			commands: [
+				{ type: 'clip.split', at: 300, clipIds: [first] },
+				{ type: 'clip.trim', clipId: first, edge: 'out', deltaFrames: -30, mode: 'ripple' },
+			] as never[],
+		});
+		if (!cut.ok) throw new Error(JSON.stringify(cut.errors));
+		const seq = seqOf(session, seqId);
+		const plan = {
+			...a.plan,
+			ranges: [{ start: 500, end: 510, reasons: ['pause' as const] }],
+			extend: [{ clipId: first, side: 'out' as const, frames: 6, findingId: 'f0' }],
+		};
+		const built = resultPreview(seq, { ...a, plan })!;
+		const r = derivedPreviewFor(session).start({
+			label: 'R',
+			kind: 'cleanup.result',
+			sequenceId: seqId,
+			...built,
+		});
+		if (!r.ok) throw new Error(r.message);
+		// media time an A1 frame plays
+		const mediaAt = (doc: typeof r.preview.document, f: number) => {
+			const c = Object.values(doc.sequences[seqId]!.clips).find(
+				(x) => x.kind === 'audio' && x.start <= f && f < x.start + x.duration,
+			)!;
+			return c.sourceIn + (f - c.start) * (705_600_000 / 30);
+		};
+		for (const from of [100, 400, 600]) {
+			const d = toDerivedFrame(r.preview.omitted, from, r.preview.inserted);
+			expect(mediaAt(r.preview.document, d), `frame ${from}`).toBe(mediaAt(session.getCommitted(), from));
+			expect(toOriginalFrame(r.preview.omitted, d, r.preview.inserted)).toBe(from);
+		}
+		derivedPreviewFor(session).stop();
 	});
 
 	it('resolves sequence, In/Out and selected-clip scopes', () => {

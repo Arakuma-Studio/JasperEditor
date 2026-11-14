@@ -39,5 +39,31 @@
       ["había", 1.19, 1.37, null],
       ["botones,", 1.37, 2.14, null]
     ]
+  },
+  "boton": {
+    "from": 375.9,
+    "level": "wsfIx8S7tLOytsLIzc7O0NHR0dDNysfO0tXU0M7Kxbq6tbO/09rb29vZ1tXV0s3GxcnKycO/vbWvramjqKinp6ikoJubnZ6dm5yblY6SlpmVlZKWl5aVlJWTlI+Ni4qJiIaLjo6KgXRvYVQKAQAAAAAAAAAAAAAA",
+    "voicing": "RIFseI1aSz87RXqbtK2fp7CtrK+ppJFVlqGbd6lqUV45ZEg8jsbQz9XNu7mBj2pXbJWfup2ZjqxsfV9/o690pZ+qgoWEf6aQcZCebU9KiZqFbZFlYlJmg09oPg8zQ002Gz0jYo5cLzgzZ1ggAQAAAAAAAAAAAAAA",
+    "flatness": "BQQGAwYWOy5DNQcEAwMCAQEAAAAAAAEBAAAAAQEBAQEBAQIcAgEBAQEBAQECAgIBAgEDBgYLBAMDAggGAwIEAwUDBwgIBgUJBwQMHBERDA4WGA0gChQVDhkOEx4dFBoZGwwkJw4VEA8VDA0Q4P//////////////",
+    "classes": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "words": [["tocás", -0.175, 0.074, null], ["un", 0.106, 0.176, null], ["botón.", 0.176, 0.476, null]]
+  },
+  "pue": {
+    "from": 2713.3,
+    "level": "1N3m6+3s6OHa1tbZ3dvX29vV0Njg5OTh3d3Z2djV0tLS0tTY3N/j5OTj4uDd3NrU1NTW1M/M0dfg6O3u6dzRz8vKw8XP3OTo6Ofi2sfGxMC+urjBztzh4uHh4uTk4dnLyMrKy8vV3OLj4t/c3eHk4d3d3t7f3+Dg397d2dfa3+Df3A==",
+    "voicing": "xr7M19zWzs2k0LLM2dajvst4t6+/yMikucC5r8GUvsi+y77Dw83L1MjUz9nK1M6quMPR4K97orrBzdPUuXWHaq/Oo0xapMW6sLa+q2mklmqklUFdfLfZy8rQ0s3Uw6VoUoyddEyVysrXztvSv83gy7nW09fT1NXW1NXUzZ/C1tbUxg==",
+    "flatness": "AQAAAAAAAAABAQEBAAADAQADAwEAAAEBAQAAAAAAAQECAQECAAAAAAAAAAAAAAAAAAAAAAAIAQEBAQEBAQMBAQAAAUYxDwQCAwMBAgUCAwQLDDggAgAAAAABAQEEAw0fLxwdOloRBAIBAQEAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+    "classes": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg==",
+    "words": [
+      ["vibecoder", -0.317, 0.123, null],
+      ["del", 0.123, 0.283, null],
+      ["mundo,", 0.283, 0.483, null],
+      ["que", 0.52, 0.74, null],
+      ["puedo", 0.74, 0.92, null],
+      ["hacer", 0.92, 1.06, null],
+      ["en", 1.06, 1.18, null],
+      ["un", 1.18, 1.28, null],
+      ["mes", 1.28, 1.46, null]
+    ]
   }
 }

@@ -6,8 +6,9 @@
 // the session closes.
 //
 // The frames of the derived sequence differ from the committed one by the `omitted` ranges (sequence frames of the
-// committed sequence the commands remove), so callers map the playhead in (`toDerivedFrame`) when it starts and back
-// (`toOriginalFrame`) when it ends. Nothing here throws: `start` resolves to `{ok: true}` or `{ok: false, code, …}`.
+// committed sequence the commands remove) and the `inserted` frames (edge repairs: frames a clip grows by, inserted at
+// a committed frame), so callers map the playhead in (`toDerivedFrame`) when it starts and back (`toOriginalFrame`)
+// when it ends. Nothing here throws: `start` resolves to `{ok: true}` or `{ok: false, code, …}`.
 import {
 	applyTransaction,
 	type Command,
@@ -20,6 +21,8 @@ import type { EditorSession } from './session.ts';
 
 /** Sorted, disjoint `[start, end)` sequence-frame ranges. */
 export type FrameRanges = ReadonlyArray<readonly [number, number]>;
+/** Frames inserted into the committed sequence: `[at, frames]` — `frames` new frames before committed frame `at`. */
+export type FrameInserts = ReadonlyArray<readonly [number, number]>;
 
 export type DerivedPreview = {
 	/** Bumped at every start (a new preview, even of the same commands). */
@@ -37,6 +40,8 @@ export type DerivedPreview = {
 	document: ProjectDocument;
 	/** Frames of the committed sequence the derived one leaves out (sorted, disjoint). */
 	omitted: FrameRanges;
+	/** Frames the derived one adds (sorted by `at`; empty without edge repairs). */
+	inserted: FrameInserts;
 };
 
 export type DerivedPreviewState = {
@@ -66,10 +71,10 @@ export function normalizeFrameRanges(ranges: FrameRanges): Array<[number, number
 }
 
 /**
- * The derived frame of a committed frame: minus every omitted frame before it; a frame inside an omitted range maps
- * to where the range was (its start, minus what was omitted before it). O(log n).
+ * The derived frame of a committed frame: minus every omitted frame before it, plus every frame inserted at or before
+ * it; a frame inside an omitted range maps to where the range was (its start, minus what was omitted before it).
  */
-export function toDerivedFrame(omitted: FrameRanges, frame: number): number {
+export function toDerivedFrame(omitted: FrameRanges, frame: number, inserted: FrameInserts = []): number {
 	let removed = 0;
 	let lo = 0;
 	let hi = omitted.length;
@@ -82,18 +87,35 @@ export function toDerivedFrame(omitted: FrameRanges, frame: number): number {
 	// prefix sums would be O(1) per call; ranges are few hundred at most, and this runs at start / stop only
 	for (let i = 0; i < lo; i++) removed += omitted[i]![1] - omitted[i]![0];
 	const r = omitted[lo];
-	if (r && r[0] <= frame) return r[0] - removed;
-	return frame - removed;
+	const at = r && r[0] <= frame ? r[0] : frame;
+	let added = 0;
+	for (const [p, n] of inserted) if (p <= at) added += n;
+	return at - removed + added;
 }
 
-/** The committed frame a derived frame plays: plus every omitted range that starts at or before it (inverse). */
-export function toOriginalFrame(omitted: FrameRanges, derived: number): number {
-	let f = derived;
-	for (const [a, b] of omitted) {
-		if (a <= f) f += b - a;
-		else break;
+/**
+ * The committed frame a derived frame plays (inverse of `toDerivedFrame`): the last committed frame that maps at or
+ * before it — after an omitted range its end, inside inserted frames the committed frame before them (the clip they
+ * extend).
+ */
+export function toOriginalFrame(omitted: FrameRanges, derived: number, inserted: FrameInserts = []): number {
+	if (!inserted.length) {
+		let f = derived;
+		for (const [a, b] of omitted) {
+			if (a <= f) f += b - a;
+			else break;
+		}
+		return f;
 	}
-	return f;
+	// toDerivedFrame is non-decreasing: the largest frame mapping at or before `derived`
+	let lo = 0;
+	let hi = Math.max(0, derived) + omitted.reduce((n, [a, b]) => n + b - a, 0) + 1;
+	while (lo < hi) {
+		const mid = (lo + hi + 1) >> 1;
+		if (toDerivedFrame(omitted, mid, inserted) <= derived) lo = mid;
+		else hi = mid - 1;
+	}
+	return lo;
 }
 
 export class DerivedPreviewController {
@@ -126,6 +148,7 @@ export class DerivedPreviewController {
 		sequenceId: string;
 		commands: Command[];
 		omitted: FrameRanges;
+		inserted?: FrameInserts;
 	}): DerivedPreviewResult {
 		const s = this.session.getState();
 		if (this.session.gestureActive)
@@ -172,6 +195,10 @@ export class DerivedPreviewController {
 			base,
 			document: out.document,
 			omitted: normalizeFrameRanges(input.omitted),
+			inserted: (input.inserted ?? [])
+				.filter(([at, n]) => Number.isFinite(at) && Number.isFinite(n) && n > 0)
+				.map(([at, n]) => [Math.round(at), Math.round(n)] as const)
+				.sort((x, y) => x[0] - y[0]),
 		};
 		this.store.setState({ active: preview, ended: null });
 		return { ok: true, preview };

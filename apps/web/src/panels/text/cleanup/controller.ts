@@ -679,12 +679,13 @@ export class CleanupController {
 			sequenceId: seq.id,
 			commands: built.commands,
 			omitted: built.omitted,
+			...('inserted' in built ? { inserted: built.inserted } : {}),
 		});
 		if (!r.ok) return { ok: false, reason: r.message };
 		this.previewStartFrame = from;
 		this.set({ preview: kind });
 		transport.pause();
-		transport.seek(kind === 'result' ? toDerivedFrame(r.preview.omitted, from) : 0);
+		transport.seek(kind === 'result' ? toDerivedFrame(r.preview.omitted, from, r.preview.inserted) : 0);
 		transport.play(1);
 		return { ok: true };
 	}
@@ -699,7 +700,9 @@ export class CleanupController {
 		const frame = transport.getState().frame;
 		dp.stop();
 		const target =
-			active.kind === 'cleanup.result' ? toOriginalFrame(active.omitted, frame) : this.previewStartFrame;
+			active.kind === 'cleanup.result'
+				? toOriginalFrame(active.omitted, frame, active.inserted)
+				: this.previewStartFrame;
 		transport.seek(target);
 		this.set({ preview: null });
 		// The Player still holds the shorter derived document until the Program monitor re-renders: it clamps the seek

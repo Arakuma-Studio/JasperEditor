@@ -287,8 +287,8 @@ describe('the cut-edge audit', () => {
 		const first = Object.values(H.seq.clips).find((c) => c.start === 0)!;
 		const out = rows.find((r) => r.side === 'out' && r.clipId === first.id);
 		expect(out).toMatchObject({ reason: 'sound' });
-		// the fix keeps the decay of "-ty" to ≈ 1351.28
+		// the fix keeps the soft "-ty" after the dip to −39 dBFS, to where its decay reaches −38 (≈ 1351.27)
 		expect(out!.fixFrame).not.toBeNull();
-		expect(out!.fixFrame! / FPS + w.from).toBeGreaterThanOrEqual(1351.27);
+		expect(out!.fixFrame! / FPS + w.from).toBeGreaterThanOrEqual(1351.26);
 	});
 });
