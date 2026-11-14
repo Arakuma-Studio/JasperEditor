@@ -18,7 +18,7 @@ import { renderParallelism } from '../gaps/render-budget.ts';
 import { JobError } from '../jobs/types.ts';
 import { selfCheck } from '../tools/ffmpeg.ts';
 import { binaryNames, type RemotionBinaries } from '../tools/lgpl.ts';
-import { hideSourceMapReferences, renderErrorSource } from './bundle-source-map.ts';
+import { hideSourceMapReferences, withRenderErrorSource } from './bundle-source-map.ts';
 import type { RemotionFfmpegInfo } from './export-plan.ts';
 import { webglRefusal } from './webgl-refusal.ts';
 
@@ -1167,15 +1167,7 @@ async function renderFailure(e: unknown, signal: AbortSignal, serveDir: string):
 	const mapped = mapRenderError(e, signal);
 	if (!(mapped instanceof JobError) || (mapped.code !== 'RENDER_FAILED' && mapped.code !== 'RENDER_TIMEOUT'))
 		return mapped;
-	const source = await renderErrorSource(mapped.cause ?? e, serveDir).catch(() => []);
-	if (source.length === 0) return mapped;
-	const detail = mapped.detail && typeof mapped.detail === 'object' ? mapped.detail : {};
-	return new JobError(
-		mapped.code,
-		`${mapped.message}\n${source.map((s) => `    at ${s}`).join('\n')}`,
-		mapped.retryable,
-		{ ...detail, source },
-	);
+	return withRenderErrorSource(mapped, mapped.cause ?? e, serveDir);
 }
 
 /** The engine's error for a render failure; a new JobError keeps Remotion's error (its browser stack) as `cause`. */

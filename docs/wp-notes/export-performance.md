@@ -1009,7 +1009,7 @@ behaviour (the probe is measured, not written; the first round decodes three can
   the last phase; after the changes above it ends ≈ 145 s before the encode in a cold export, but the warm exports' audio (150–177 s,
   mostly the mix) still ends close to their encode (≈ 177 s), so slowing it would lengthen warm jobs.
 
-## 15. Engine responsiveness during an export (implemented: interactive headroom, event-loop line, unreferenced source map)
+## 15. Engine responsiveness during an export (implemented: interactive headroom, event-loop line, unreferenced source maps)
 
 `jobs/queue.ts`. Reported on the user's PC (RTX 3080 Ti, 24 cores) during exports of the real project: `import_media`
 did not return within 120 s; during another export (load ≈ 18, test runs beside it) the job took ≈ 2× as long and
@@ -1092,8 +1092,24 @@ above the line before the failing one (the map's own imprecision: `fps:` on line
 Bundle id and cached masters: unchanged. A packaged bundle's id is hashed before the references are hidden (checked:
 the stamp of a build equals the hash of its directory with the 5 bytes restored), and a dev bundle's id is the source
 hash. Only a prebuilt bundle built before this change (an older `dist/remotion-bundle`, `JASPER_REMOTION_BUNDLE`) is
-not rewritten (it may be read-only or signed) and still has its map read until it is rebuilt. Imported mg bundles
-(`mg-bundles/`, content-addressed) are not changed either.
+not rewritten (it may be read-only or signed) and still has its map read until it is rebuilt.
+
+Imported motion-graphics bundles (`mg-bundles/service.ts`; a project's composition clips are rendered from them —
+masters, previews, posters, `getCompositions` at import — each call through the same `prepareServer`) get the same
+treatment in the engine's stored copy `<appdir>/mg-bundles/<hash>/`: an import (project folder bundled into the
+staging directory, built folder copied there, zip unpacked there; a watch rebuild is an import) hashes the staging
+copy, hides its references, then moves it into place, so the key (`mk_<hash>`) is the hash of the bundle as imported
+and an unchanged bundle keeps its key and its cached masters. The user's folder (`~/mg/daycard/`) is only read. A
+bundle stored before this change is rewritten in place the first time this process serves it (`servableDir`, once
+per directory and process; keys and render keys come from the registry record and are never re-hashed from the
+directory). A failed pre-render (`MG_RENDER_FAILED`, the export's master renders) gets the same source lines from
+the bundle's side-car map. Not symbolicated: posters and the import's `getCompositions` (their errors keep their
+current text). Test: `mg-bundle-source-map.test.ts` — importing a built folder through `POST /api/mg-bundles/import`
+keeps the folder's bytes and the folder's hash as key, and Remotion's lookup on what `getCompositions` is given finds
+no map; a bundle stored with its references is served to the pre-render without them, and the failed pre-render
+names `src/Title.tsx:12` (both fail before the change). `MG_E2E=1` "tests 5 + 6" (the fixture project imported with its own
+`remotion bundle`, a master pre-rendered and exported natively, frame-exact) passes on this branch; its stored copy's
+bytes were not inspected.
 
 Measured (indicative: this host, 16 logical cores shared with other agents, load1 33–42 during the runs; a scratch
 driver, not committed: `RemotionService.renderStill` of an empty 720p30 snapshot through a shared browser, 12 stills

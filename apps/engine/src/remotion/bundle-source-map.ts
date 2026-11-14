@@ -1,4 +1,5 @@
-// The compositions bundle's source map, kept beside `bundle.js` but unreferenced (wp-note export-performance §15).
+// Source maps of the bundles Remotion renders (the compositions bundle, stored mg bundles), kept beside `bundle.js`
+// but unreferenced (wp-note export-performance §15).
 //
 // Remotion 4.0.499 runs `getSourceMapFromLocalFile(<serveDir>/bundle.js)` in `prepareServer` (renderer
 // `src/prepare-server.ts`, `src/symbolicate-stacktrace.ts`) for every `selectComposition`, `renderMedia`,
@@ -9,11 +10,12 @@
 // `hideSourceMapReferences` neutralizes every line Remotion's lookup would follow (webpack's own last line and the
 // `sourceMappingURL` comments left in bundled modules, e.g. immer's — removing only the last one would make Remotion
 // read a map that does not exist and fail every render), and a failed render is symbolicated here, from the side-car
-// `bundle.js.map`, only when it fails (`renderErrorSource`).
+// `bundle.js.map`, only when it fails (`withRenderErrorSource`).
 import { readFile, stat } from 'node:fs/promises';
 import { SourceMap } from 'node:module';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { JobError } from '../jobs/types.ts';
 import { atomicWriteFile } from '../tools/fs.ts';
 
 /** Remotion's `extractSourceMapUrl` pattern (the lines its local source-map lookup follows). */
@@ -122,7 +124,7 @@ function bundleFrames(err: unknown): BundleFrame[] {
  * First-party sources come first; node_modules frames are named only when there is no other. Empty when the error
  * has no bundle frames or there is no map. Loads each map only here, on failure.
  */
-export async function renderErrorSource(err: unknown, serveDir: string): Promise<string[]> {
+async function renderErrorSource(err: unknown, serveDir: string): Promise<string[]> {
 	const frames = bundleFrames(err);
 	const byFile = new Map<string, BundleFrame[]>();
 	for (const f of frames) byFile.set(f.file, [...(byFile.get(f.file) ?? []), f]);
@@ -147,4 +149,27 @@ export async function renderErrorSource(err: unknown, serveDir: string): Promise
 		});
 	const own = all.filter((f) => f.own);
 	return (own.length > 0 ? own : all).slice(0, MAX_FRAMES).map((f) => f.text);
+}
+
+/**
+ * `err` with the original source lines of `cause`'s browser stack (`renderErrorSource`) appended to its message
+ * (`    at fn (src/…:12)`) and listed in `detail.source`; `err` itself when there are none.
+ */
+export async function withRenderErrorSource(
+	err: JobError,
+	cause: unknown,
+	serveDir: string,
+): Promise<JobError> {
+	const source = await renderErrorSource(cause, serveDir).catch(() => []);
+	if (source.length === 0) return err;
+	const detail = err.detail && typeof err.detail === 'object' ? err.detail : {};
+	return new JobError(
+		err.code,
+		`${err.message}\n${source.map((s) => `    at ${s}`).join('\n')}`,
+		err.retryable,
+		{
+			...detail,
+			source,
+		},
+	);
 }
