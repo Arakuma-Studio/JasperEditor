@@ -284,6 +284,33 @@ describe('Fix Transcript dialog (SC-081)', () => {
 		expect(screen.queryByTestId('fix-transcript-dialog')).toBeNull();
 	});
 
+	it('Rebuild from Script runs the rebuild (keeping off-script words when asked) and opens its proposal; disabled without a script', async () => {
+		const none = fakeEngine({ glossary: 2 });
+		setup({ engine: none });
+		await advance(300);
+		const off = screen.getByTestId('fix-rebuild-run') as HTMLButtonElement;
+		expect(off.disabled).toBe(true);
+		expect(screen.getByTestId('fix-rebuild-blocker').textContent).toMatch(/Attach the video script/);
+		closeAllDialogs();
+		cleanup();
+		const e = fakeEngine({ glossary: 0 });
+		setup({ script: true, engine: e });
+		await advance(300);
+		const box = within(screen.getByTestId('fix-rebuild')).getByRole('checkbox');
+		act(() => {
+			fireEvent.click(box);
+		});
+		const go = screen.getByTestId('fix-rebuild-run') as HTMLButtonElement;
+		expect(go.disabled).toBe(false);
+		act(() => {
+			fireEvent.click(go);
+		});
+		await drain();
+		expect(e.requests.at(-1)!.body).toEqual({ mode: 'rebuild', offScript: 'keep' });
+		expect(openReview).toHaveBeenCalledWith(expect.anything(), 'prp_1');
+		expect(screen.queryByTestId('fix-transcript-dialog')).toBeNull();
+	});
+
 	it('Cancel while running cancels the job', async () => {
 		const e = fakeEngine({ glossary: 2 });
 		const { run, dialog } = setup({ script: true, engine: e });

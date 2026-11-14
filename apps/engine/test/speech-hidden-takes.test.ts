@@ -124,6 +124,16 @@ const transcribe = (spec: Partial<SpeechJobSpec> = {}) =>
 	);
 
 describe('hidden takes', () => {
+	it('kept spans (Rebuild from script): only the spans are decoded, in VAD chunks, and only their words come back', async () => {
+		// the cut keeps the second take only (3.2–5.4 s, padding included): the first take and the tail stay out
+		const out = await transcribe({ spans: [{ start: Math.round(3.2 * SR), end: Math.round(5.4 * SR) }] });
+		expect(out.words.map((w) => w.text)).toEqual(['ij', 'kl', 'mn', 'op', 'qr']);
+		for (const [k, w] of TAKE2.entries())
+			expect(Math.abs(out.words[k]!.start / SR - w.start)).toBeLessThan(0.06);
+		expect(out.guard.chunked?.chunks).toBeGreaterThan(0);
+		expect(out.guard.redecoded).toBeUndefined();
+	});
+
 	it('a stretched word is decoded again alone and both takes are written with their times', async () => {
 		const out = await transcribe();
 		expect(

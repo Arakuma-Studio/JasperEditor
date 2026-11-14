@@ -24,6 +24,7 @@ import {
 	StillSheetRequestSchema,
 	StillSheetResultSchema,
 	TitleLookLibraryResponseSchema,
+	TranscriptFixResultSchema,
 	TranscriptionResultSchema,
 } from '@jasper/api';
 import { EngineError as DefaultEngineError } from '@jasper/engine-client';
@@ -910,6 +911,69 @@ export function createFakeEngine(
 	};
 
 	const methods: Record<string, (...args: never[]) => unknown> = {
+		/** Fix Transcript: a finished job; nothing to fix or rewrite (no proposal), the report for the mode asked. */
+		transcriptFix: (projectId: string, sequenceId: string, body: { mode?: string; offScript?: string }) => {
+			const p = project(projectId);
+			const t = Object.values(p.doc.transcripts)[0];
+			const mode = body.mode === 'dryRun' || body.mode === 'rebuild' ? body.mode : 'propose';
+			const report = {
+				settings: { sources: ['script'], scope: 'recordings', strictness: 'standard', showRejected: false },
+				sourcesUsed: ['script'],
+				perMedia: t
+					? [
+							{
+								mediaId: t.mediaId ?? 'med_a',
+								transcriptId: t.id,
+								name: 'interview-a.mp4',
+								language: t.language,
+								words: t.words.length,
+								wordsInScope: t.words.length,
+								alignment: null,
+								candidates: 0,
+								windows: 0,
+								readings: 0,
+							},
+						]
+					: [],
+				candidates: { total: 0, byGroup: {}, byCategory: {}, byKind: {} },
+				decisions: [],
+				decisionsTruncated: false,
+				skipped: {},
+				unusedLines: [],
+				patch: { edits: 0, patched: 0, skipped: [], stale: 0 },
+				speech: { model: 'whisper-base' },
+				device: null,
+				timings: { readMs: 1, alignMs: 1, scoreMs: 0, decideMs: 0, totalMs: 2, speechSeconds: 30 },
+				...(mode === 'rebuild'
+					? {
+							rebuild: {
+								offScript: body.offScript === 'keep' ? 'keep' : 'drop',
+								spans: 2,
+								changedSpans: 0,
+								seconds: 30,
+								heardWords: 40,
+								writtenWords: 40,
+								counts: { exact: 40 },
+								offScriptSpans: 0,
+								silentSpans: 0,
+								unwritableSpans: 0,
+								model: 'whisper-base',
+							},
+						}
+					: {}),
+				warnings: [],
+			};
+			const result = TranscriptFixResultSchema.parse({
+				mode,
+				projectId,
+				sequenceId,
+				proposalId: null,
+				itemCount: 0,
+				revision: p.revision,
+				report,
+			});
+			return jobView(newJob('transcript-fix', 'Fix Transcript', 1, result));
+		},
 		capabilities: () => ({
 			engine: { version: 'eval' },
 			render: { native: true, remotionLocal: true, fframes: true },

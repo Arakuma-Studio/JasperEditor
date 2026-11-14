@@ -52,6 +52,7 @@ import type { VoiceAnalysisService } from '../voice/service.ts';
 import { normalizeGlossary } from './core/glossary.ts';
 import { CudaError, CudaProvider } from './cuda.ts';
 import { speechCommand } from './entry.ts';
+import type { SpanTranscriptionRequest, SpanTranscriptionResult } from './kept-spans.ts';
 import { type SpeechCatalogEntry, SpeechModelError, type SpeechModelStore } from './models.ts';
 import {
 	bestGpu,
@@ -1206,6 +1207,148 @@ export class SpeechService {
 					readings: out.profile.readings,
 					windowSec: out.profile.windowSec,
 				},
+			};
+		} finally {
+			if (owned) await rm(scratch, { recursive: true, force: true }).catch(() => undefined);
+		}
+	}
+
+	/**
+	 * Media ranges transcribed in one worker run (`speech/kept-spans.ts`): each range the `chunking: "vad"` way, best
+	 * accuracy unless asked otherwise, no safety passes; the words whose midpoint lies inside a range, in media flicks.
+	 * Engine-internal (a job calls it with its context, like `score`): device plan and GPU → CPU fallback as
+	 * transcription, cancellation through `signal`, failures as `JobError` (`ASSET_NOT_FOUND`, `NO_AUDIO`,
+	 * `MEDIA_OFFLINE`, `SPEECH_MODEL_*`, `BINARY_MISSING`, `INVALID_SPEC`, `TRANSCRIPTION_FAILED`, `JOB_CANCELLED`).
+	 */
+	async transcribeSpans(
+		req: SpanTranscriptionRequest,
+		signal: AbortSignal,
+		opts: SpeechScoreOptions = {},
+	): Promise<SpanTranscriptionResult> {
+		if (signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
+		const ranges = (req.ranges ?? []).filter(
+			(r) => Number.isFinite(r.start) && Number.isFinite(r.end) && r.end > r.start && r.start >= 0,
+		);
+		if (!ranges.length) throw new JobError('INVALID_SPEC', 'No range to transcribe', false);
+		const record = this.core.registry.get(req.mediaKey);
+		if (!record) throw new JobError('ASSET_NOT_FOUND', 'Unknown media key', false);
+		const stream = this.audioStreamOf(record, req.streamIndex);
+		const language = req.language && req.language !== 'auto' ? req.language : undefined;
+		const { id: modelId } = await this.checkModel({
+			...(req.model ? { model: req.model } : {}),
+			...(language ? { language } : {}),
+		});
+		let modelDir: string;
+		let entry: SpeechCatalogEntry;
+		try {
+			const r = await this.models.resolve(modelId);
+			modelDir = r.dir;
+			entry = r.entry;
+		} catch (e) {
+			if (e instanceof SpeechModelError) throw new JobError(e.code, e.message, false);
+			throw e;
+		}
+		const file = await this.core.registry.resolvePath(req.mediaKey);
+		if (!file) throw new JobError('MEDIA_OFFLINE', 'The media file is not available on the engine', false);
+		const ffmpeg = this.core.ffmpeg.bins.ffmpeg;
+		if (!ffmpeg) throw new JobError('BINARY_MISSING', 'ffmpeg was not found', false);
+		const { beamSize, request: processor } = await this.decodingOf({
+			accuracy: req.accuracy ?? 'best',
+			...(req.device ? { device: req.device } : {}),
+		});
+		const { plan, env, gpuName } = await this.devicePlan(modelId, processor, beamSize);
+		const threads = Math.max(1, Math.min(opts.threads ?? this.threads(), this.threads()));
+		const owned = !opts.scratchDir;
+		const scratch =
+			opts.scratchDir ?? join(this.core.config.paths.tmpDir, `speech-spans-${process.pid}-${randomUUID()}`);
+		await mkdir(scratch, { recursive: true });
+		const host: WorkerHost = {
+			signal,
+			progress: (f, stage) => opts.onProgress?.(Math.min(1, Math.max(0, f)), stage),
+			log: (t) => opts.log?.(t),
+			...(opts.trackChild ? { trackChild: opts.trackChild } : {}),
+		};
+		try {
+			const duration = Number((record.probe as { duration?: unknown }).duration);
+			const voiceAnalysis = await this.existingVoiceAnalysis(record, stream);
+			const spec: SpeechJobSpec = {
+				modelDir,
+				modelId,
+				input: { path: file, ffmpeg, stream },
+				language: language ?? null,
+				task: 'transcribe',
+				beamSize,
+				threads,
+				device: { encoder: plan.encoder, decoder: plan.decoder, calibrate: plan.calibrate },
+				...(entry.encoderFile || entry.decoderFile
+					? {
+							files: {
+								...(entry.encoderFile ? { encoder: entry.encoderFile } : {}),
+								...(entry.decoderFile ? { decoder: entry.decoderFile } : {}),
+							},
+						}
+					: {}),
+				scratch,
+				chunking: 'vad',
+				redecode: false,
+				conditionOnPreviousText: false,
+				spans: ranges.map((r) => ({
+					start: Math.floor(r.start / FLICKS_PER_SAMPLE),
+					end: Math.ceil(r.end / FLICKS_PER_SAMPLE),
+				})),
+				...(Number.isFinite(duration) && duration > 0 ? { durationSec: duration } : {}),
+				...(voiceAnalysis ? { voiceAnalysis } : {}),
+			};
+			let run = await this.runWorker<SpeechJobOutput>(
+				host,
+				'transcribe',
+				spec,
+				scratch,
+				[0, 1],
+				env,
+				gpuName,
+			);
+			if (!run.out) {
+				const original = new JobError('TRANSCRIPTION_FAILED', run.error ?? 'jasper-speech failed', false);
+				const from = gpuOfFailedRun(run, plan);
+				if (!from || signal.aborted)
+					throw signal.aborted ? new JobError('JOB_CANCELLED', 'Cancelled') : original;
+				host.log(`GPU attempt failed (${run.error}); transcribing again on the CPU`);
+				const cpuSpec: SpeechJobSpec = {
+					...spec,
+					device: { encoder: 'cpu', decoder: 'cpu', calibrate: null },
+				};
+				run = await this.runWorker<SpeechJobOutput>(
+					host,
+					'transcribe',
+					cpuSpec,
+					scratch,
+					[0, 1],
+					{},
+					gpuName,
+				);
+				if (!run.out) throw original;
+			}
+			const out = run.out;
+			return {
+				model: modelId,
+				language: out.language,
+				words: out.words
+					.filter((w) => typeof w.text === 'string' && Number.isFinite(w.start) && Number.isFinite(w.end))
+					.map((w) => ({
+						text: w.text,
+						start: Math.round(w.start * FLICKS_PER_SAMPLE),
+						end: Math.round(Math.max(w.start, w.end) * FLICKS_PER_SAMPLE),
+						confidence: Number.isFinite(w.confidence) ? Math.min(1, Math.max(0, w.confidence)) : null,
+					})),
+				device: {
+					encoder: out.device.encoder,
+					decoder: out.device.decoder,
+					label: deviceLabel(out.device, gpuName),
+					threads: out.device.threads,
+				},
+				timings: out.timings,
+				chunked: out.guard.chunked ?? null,
 			};
 		} finally {
 			if (owned) await rm(scratch, { recursive: true, force: true }).catch(() => undefined);

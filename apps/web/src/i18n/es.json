@@ -13752,5 +13752,13 @@
   "Isolated fragments": "Fragmentos aislados",
   "Isolated fragment between cuts ({0} frames)": "Fragmento aislado entre cortes ({0} fotogramas)",
   "Isolated fragment between cuts ({0} frames): “{1}”": "Fragmento aislado entre cortes ({0} fotogramas): «{1}»",
-  "Isolated fragment between removed words ({0} frames): “{1}”": "Fragmento aislado entre palabras eliminadas ({0} fotogramas): «{1}»"
+  "Isolated fragment between removed words ({0} frames): “{1}”": "Fragmento aislado entre palabras eliminadas ({0} fotogramas): «{1}»",
+  "{0} spans rewritten from the script to review": "{0} fragmentos reescritos desde el guion para revisar",
+  "1 span rewritten from the script to review": "1 fragmento reescrito desde el guion para revisar",
+  "Attach the video script (Script…) first: the rebuild writes from it": "Adjunta primero el guion del vídeo (Guion…): la reconstrucción escribe a partir de él",
+  "For a finished cut whose subtitles must read like the script when the transcript is wrong beyond single words (missing phrases, words of removed takes): the speech the sequence keeps is transcribed again from the original audio and written from the script. One proposal in Review; accepting it is one undo step.": "Para un montaje terminado cuyos subtítulos deben coincidir con el guion cuando la transcripción falla en algo más que palabras sueltas (frases que faltan, palabras de tomas quitadas): el habla que conserva la secuencia se vuelve a transcribir desde el audio original y se escribe a partir del guion. Una propuesta en Revisión; aceptarla es un solo paso de deshacer.",
+  "Keep words that are not in the script": "Conservar las palabras que no están en el guion",
+  "Rebuild from Script": "Reconstruir desde el guion",
+  "Rebuild from script for the kept speech": "Reconstruir desde el guion el habla conservada",
+  "The kept speech already reads like the script: nothing to rewrite": "El habla conservada ya coincide con el guion: no hay nada que reescribir"
 }

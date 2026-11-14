@@ -205,7 +205,7 @@ export function replaceWordsEditsProblem(edits: readonly ReplaceWordsEdit[]): st
 }
 
 /** Whether a transcript word lies in an edit's span (see the file comment). */
-function inSpan(w: { start: number; end: number }, start: number, end: number): boolean {
+export function wordInReplaceSpan(w: { start: number; end: number }, start: number, end: number): boolean {
 	if (start === end) return w.start < start && w.end > start;
 	if (w.start === w.end) return w.start >= start && w.start < end;
 	return w.start < end && w.end > start;
@@ -224,7 +224,7 @@ function spanRange(words: readonly TranscriptWord[], start: number, end: number)
 	let from = -1;
 	let to = -1;
 	for (let i = lo; i < words.length && words[i]!.start <= end; i++) {
-		if (inSpan(words[i]!, start, end)) {
+		if (wordInReplaceSpan(words[i]!, start, end)) {
 			if (from < 0) from = i;
 			to = i + 1;
 		} else if (from >= 0) break;

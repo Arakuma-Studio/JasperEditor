@@ -3,6 +3,7 @@
 //
 // Flow per media transcript: parseScript → alignTranscript → findFixCandidates → buildScoreWindows →
 // (engine: SC-092 score of scoreRequestWindows) → candidateScores → decideFix → replaceWordsEdit.
+// Rebuild from script (kept speech): keptSpans → (engine: kept spans re-transcribed) → rebuildSpan → rebuildEdits.
 
 export {
 	ALIGN_DEFAULTS,
@@ -53,6 +54,24 @@ export {
 	splitByCharacters,
 } from './decide.ts';
 export { PSIM_INDEL_COSTS, PSIM_SUBSTITUTION_COSTS, phoneticKey, psim } from './phonetic.ts';
+export {
+	foldSymbolWords,
+	type HeardWord,
+	heardInSpans,
+	type KeptSpan,
+	keptSpans,
+	REBUILD_DEFAULTS,
+	type RebuildEdit,
+	type RebuildSpanInput,
+	type RebuildSpansInput,
+	type RebuiltOrigin,
+	type RebuiltWord,
+	rebuildEdits,
+	rebuildSpan,
+	rebuildSpans,
+	type SpanRebuild,
+	type SpanRebuildCounts,
+} from './rebuild.ts';
 export {
 	isBrandLike,
 	isHeadingLine,
