@@ -59,6 +59,10 @@ Options:
   --engine-url <url> --token <t> --appdir <dir> --start-engine --engine-entry <file> --engine-port <n>
   --agent-name <name>    name in the editor History (default "jasper-cli")
   --request-timeout <s>  deadline for one engine request (default 180)
+  --timeout <s>          how long a waiting tool waits (export: default 3600; call: the tool's timeoutSeconds
+                         when not given, capped at its maximum); waits poll the engine, so they outlast
+                         --request-timeout. Set it under any limit around the jasper process, so a long job
+                         answers with how to finish it instead of being killed
   --help, --version
 
 k=v values are JSON when they parse (3, true, [1,2], {"a":1}), else strings; dotted keys nest (at.seconds=2).
@@ -585,6 +589,13 @@ const COMMANDS: Record<string, (c: Ctx, args: string[]) => Promise<void>> = {
 		if (!def) throw new UsageError(`Unknown tool "${args[0]}" (jasper tools lists them)`);
 		const props = (def.inputSchema as { properties?: Record<string, unknown> }).properties ?? {};
 		if ('projectId' in props && params.projectId === undefined) params.projectId = await c.projectId();
+		// --timeout: how long a waiting tool may wait (its own timeoutSeconds wins; capped at the tool's maximum)
+		const wait = props.timeoutSeconds as { maximum?: number } | undefined;
+		if (wait && params.timeoutSeconds === undefined && typeof c.flags.timeout === 'string') {
+			const sec = Number(c.flags.timeout);
+			if (!Number.isInteger(sec) || sec < 1) throw new UsageError('--timeout takes whole seconds (≥ 1)');
+			params.timeoutSeconds = typeof wait.maximum === 'number' ? Math.min(sec, wait.maximum) : sec;
+		}
 		const r = await tool(c, args[0]!, params, true);
 		if (typeof c.flags.out === 'string')
 			for (const path of writeToolImages(r, resolve(c.cwd, c.flags.out))) c.out.stderr(`wrote ${path}\n`);

@@ -50,6 +50,20 @@ recorded in `licenses/ported/mcp-cli-effectcraft.md` and `licenses/ported/mcp-cl
   `render_frame` and `render_frames` (now rendered as a still job the tool owns, `captureStill`, same document and
   path as `frame.capture`), `render_motion_graphic_preview`, `process_clip`, `track`, `prerender_composition`,
   `set_cache_location`, `track_mask`, `normalize_media_loudness` — every tool that waits uses `waitJob`.
+- Long waits that commit (`transcribe`): the wait polls the engine with short `getJob` requests (`waitJob`, every
+  250 ms), never one long HTTP request, so `--request-timeout` / the link's request deadline never ends it; it ends at
+  `timeoutSeconds` (default 600, max 3600). Reported: about 30 min of batched windows outlived a CLI `transcribe
+  {wait: true}` and its words were never committed. Now the jobs keep running when the wait ends early — the
+  timeout, or a cancelled request (a client's own tool timeout, Ctrl+C) — and are never cancelled by it (`cancel_job`
+  stops them); the first progress message names them and the call that commits them; a timeout is an error
+  (`E_TIMEOUT`, nothing committed) whose hint is that exact call, `transcribe {"projectId": …, "jobIds": […]}`;
+  and that call now waits for jobs still running (up to `timeoutSeconds`) and commits, instead of refusing
+  (`E_NOT_READY` only with `wait: false`). CLI: `--timeout <s>` becomes the `timeoutSeconds` of any `call` whose tool
+  has one (capped at its maximum), so a wrapper with its own limit gets that error before it kills `jasper`. Eval case
+  `transcribe-commit-after-timeout` (bad). Other waiting tools checked: `process_clip` and `derive_media` resubmit to
+  the same engine job or reuse its finished file (dedupe key / recipe hash), so "call again" commits it;
+  `start_export`, `render_previews`, `wait_for_job` commit nothing; `normalize_media_loudness` has no dedupe, so
+  calling it again after its `E_TIMEOUT` runs the job again (limit).
 - Export destinations (`start_export {outputPath}`; CLI `export --out`): an existing file is kept and the export goes to
   `name (2).ext`… (`copyNoOverwrite`) unless `overwrite: true` (CLI `--overwrite`): then `copyReplacing` writes a hidden
   `.<name>.<random>.partial` in the same folder (claimed as the job's partial, so a cancel or failure deletes it and

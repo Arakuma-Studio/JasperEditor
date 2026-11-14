@@ -102,6 +102,11 @@ export type EngineSetup = {
 	exportPolls?: number;
 	/** A file is already at every export's outputPath: kept as the engine does (" (2)") unless `overwrite`. */
 	outputExists?: boolean;
+	/**
+	 * A transcription of broll-workshop.mp4 (`interview`) already queued, still running for `polls` job reads:
+	 * `{{pendingJob}}` (the job a timed-out `transcribe` named).
+	 */
+	pendingTranscription?: { polls: number };
 	/** What an export's verification finds. */
 	verify?: { failRow?: string };
 	/** A still `logo.png` (three letters with gaps between them) on V2 at 0: `{{still}}`. */
@@ -1344,5 +1349,10 @@ export function createFakeEngine(
 			},
 		},
 	);
+	if (setup.pendingTranscription) {
+		const view = routes.mediaTranscribe!({ params: { key: 'mk_c' } }) as { id: string };
+		jobs.get(view.id)!.polls = setup.pendingTranscription.polls;
+		vars.pendingJob = view.id;
+	}
 	return { client, vars, takeUnmodelled: () => unmodelled.splice(0) };
 }

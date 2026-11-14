@@ -156,6 +156,9 @@ async function runSample(input: {
 			...(testCase.setup?.seed ? { seed: testCase.setup.seed } : {}),
 			...(testCase.setup?.exportPolls ? { exportPolls: testCase.setup.exportPolls } : {}),
 			...(testCase.setup?.outputExists ? { outputExists: true } : {}),
+			...(testCase.setup?.pendingTranscription
+				? { pendingTranscription: testCase.setup.pendingTranscription }
+				: {}),
 			...(testCase.setup?.verify ? { verify: testCase.setup.verify } : {}),
 			...(testCase.setup?.logo ? { logo: true } : {}),
 		};

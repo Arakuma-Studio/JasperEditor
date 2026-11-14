@@ -883,6 +883,9 @@ jasper set clip/clp_123/transform.position '[640,200]'
 jasper inspect                                   # the timeline table (--json: the sequence summary)
 jasper render-frame --at 00:00:02:00 --out f.png --width 960
 jasper export --out cut.mp4 --range 0..10s       # waits with progress; Ctrl+C cancels and deletes the file
+jasper export --out cut.mp4 --overwrite          # replace cut.mp4 (else an existing file is kept: "cut (2).mp4")
+jasper --timeout 540 call transcribe mediaId=med_1  # wait at most 9 min; past that the error names the
+                                                 # transcribe {projectId, jobIds} call that waits and commits
 jasper ui elements panel=timeline                # the live window (ui click id=…, ui screenshot --out w.png)
 jasper call get_mixer --json                     # any MCP tool
 ```

@@ -18,8 +18,11 @@ import {
 	DESTRUCTIVE,
 	defineTool,
 	EDIT,
+	type Extra,
+	isTerminal,
 	jobBody,
 	loadDoc,
+	progressReporter,
 	READ_ONLY,
 	requireOk,
 	type ToolContext,
@@ -314,6 +317,49 @@ async function commit(
 	});
 }
 
+/** The call that commits finished (or still running) transcription jobs. */
+function commitCall(projectId: string, jobIds: readonly string[]): string {
+	return `transcribe ${JSON.stringify({ projectId, jobIds })}`;
+}
+
+/**
+ * Waits for transcription jobs by polling the engine (short requests, `waitJob`) until all are done or `deadlineMs`
+ * passes. The jobs run on when the wait ends early — a timeout here, or a cancelled request (a client's own timeout,
+ * Ctrl+C in the CLI) — and the first progress message and the timeout error name the call that commits them.
+ */
+async function waitAll(
+	ctx: ToolContext,
+	projectId: string,
+	jobs: ReadonlyArray<{ jobId: string; mediaId?: string; job?: EngineJob }>,
+	deadlineMs: number,
+	extra: Extra | undefined,
+): Promise<Array<{ job: EngineJob; mediaId?: string }>> {
+	const ids = jobs.map((j) => j.jobId);
+	const call = commitCall(projectId, ids);
+	if (extra) {
+		const report = progressReporter(extra);
+		report(0, 1, `Transcribing (${ids.join(', ')}); if this wait ends early, ${call} commits the words`);
+		await report.flush();
+	}
+	const until = Date.now() + deadlineMs;
+	const done: Array<{ job: EngineJob; mediaId?: string }> = [];
+	for (const j of jobs) {
+		const r =
+			j.job && isTerminal(j.job)
+				? { job: j.job, timedOut: false }
+				: await waitJob(ctx, j.jobId, Math.max(1, until - Date.now()), extra, { cancelJobOnAbort: false });
+		if (r.timedOut)
+			throw new ToolError(
+				'E_TIMEOUT',
+				`The transcription is still running after ${Math.round(deadlineMs / 1000)} s: nothing is committed yet`,
+				`The jobs keep running. Call ${call}: it waits for them (timeoutSeconds) and commits the transcript.`,
+				{ jobIds: ids, job: jobBody(r.job, ctx.link.target?.url ?? '') },
+			);
+		done.push({ job: r.job, ...(j.mediaId ? { mediaId: j.mediaId } : {}) });
+	}
+	return done;
+}
+
 export function registerSpeechTools(ctx: ToolContext): void {
 	defineTool(
 		ctx,
@@ -395,20 +441,23 @@ export function registerSpeechTools(ctx: ToolContext): void {
 		async (args, extra) => {
 			const { projectId } = args;
 			const base = ctx.link.target?.url ?? '';
+			const deadline = (args.timeoutSeconds ?? 600) * 1000;
 			if (args.jobIds?.length) {
+				const ids = [...new Set(args.jobIds)];
 				const jobs = await Promise.all(
-					args.jobIds.map(async (id) => ({ job: (await ctx.engine((c) => c.getJob(id))) as EngineJob })),
+					ids.map(async (id) => ({ jobId: id, job: (await ctx.engine((c) => c.getJob(id))) as EngineJob })),
 				);
-				const running = jobs.filter(
-					(j) => !['succeeded', 'failed', 'cancelled', 'interrupted'].includes(j.job.state),
-				);
-				if (running.length)
+				const running = jobs.filter((j) => !isTerminal(j.job));
+				if (running.length && args.wait === false)
 					throw new ToolError(
 						'E_NOT_READY',
 						`${running.length} job(s) still running`,
-						'Call wait_for_job first.',
+						`Call ${commitCall(projectId, ids)} without wait: false: it waits for them and commits.`,
 					);
-				return commit(ctx, projectId, jobs, args.replace ?? true, extra);
+				const done = running.length
+					? await waitAll(ctx, projectId, jobs, deadline, extra)
+					: jobs.map(({ job }) => ({ job }));
+				return commit(ctx, projectId, done, args.replace ?? true, extra);
 			}
 			const targets = [args.mediaId, args.clipId, args.sequenceId].filter(Boolean).length;
 			if (targets !== 1)
@@ -465,24 +514,19 @@ export function registerSpeechTools(ctx: ToolContext): void {
 					for (const id of media) await submitMedia(id);
 				}
 			}
+			const ids = pending.map((p) => p.jobId);
 			if (args.wait === false)
 				return jsonResult({
 					jobs: pending,
-					next: `Call wait_for_job for each job, then transcribe {projectId, jobIds: [${pending.map((p) => `"${p.jobId}"`).join(', ')}]} to commit.`,
+					next: `Call ${commitCall(projectId, ids)}: it waits for them and commits.`,
 				});
-			const deadline = (args.timeoutSeconds ?? 600) * 1000;
-			const done: Array<{ job: EngineJob; mediaId?: string }> = [];
-			for (const p of pending) {
-				const { job, timedOut } = await waitJob(ctx, p.jobId, deadline, extra);
-				if (timedOut)
-					return jsonResult({
-						...jobBody(job, base),
-						timedOut: true,
-						jobs: pending,
-						next: `Call wait_for_job, then transcribe {projectId, jobIds: [${pending.map((x) => `"${x.jobId}"`).join(', ')}]}.`,
-					});
-				done.push({ job, ...(p.mediaId ? { mediaId: p.mediaId } : {}) });
-			}
+			const done = await waitAll(
+				ctx,
+				projectId,
+				pending.map((p) => ({ jobId: p.jobId, ...(p.mediaId ? { mediaId: p.mediaId } : {}) })),
+				deadline,
+				extra,
+			);
 			const failed = done.filter((d) => d.job.state !== 'succeeded');
 			if (failed.length === done.length) {
 				const j = failed[0]!.job;
