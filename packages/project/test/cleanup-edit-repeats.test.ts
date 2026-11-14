@@ -453,6 +453,90 @@ describe('Clean Up plans the repeats in the edit', () => {
 		expect(end).toBe(49);
 	});
 
+	it('the take after an accepted stutter keeps its onset, but the attempt does not come back ("Y si… | y si buscas")', () => {
+		// rev 144 at 408 s, moved to 10 s (60 fps, the source's voice analysis): the stored transcript merged the copies
+		// ("si" 10.176–10.576 runs over the gap); the check removes 10.083 → 10.38 (the quietest frame before the retry)
+		const H = new Harness({ preset: 'hd-1080p-60' });
+		const r0 = H.ok([{ type: 'media.register', asset: videoAsset({ seconds: 30, kind: 'audio' }) }]);
+		const mediaId = (r0.results[0] as { mediaId: string }).mediaId;
+		H.ok([
+			{
+				type: 'clip.place',
+				source: { mediaId },
+				sourceRange: { in: { seconds: 10.083333 }, out: { seconds: 13.083333 } },
+				at: 0,
+				tracks: { audio: ['A1'] },
+				mode: 'overwrite',
+			},
+		]);
+		const stored: Array<[string, number, number]> = [
+			['y', 10.096, 10.166],
+			['si', 10.176, 10.576],
+			['buscas', 10.576, 10.876],
+			['en', 10.876, 11.036],
+			['internet', 11.036, 11.476],
+			['debería', 11.516, 11.956],
+		];
+		H.ok([
+			{
+				type: 'transcript.create',
+				mediaId,
+				language: 'es',
+				origin: 'manual',
+				words: stored.map(([text, s, e]) => ({ text, start: S(s), end: S(e), confidence: 0.9 })),
+			},
+		]);
+		// 10.00–10.70 s: the levels of 408.00–408.70 (speech from 408.07, the dip at 408.36–408.40 down to −29.5 dBFS)
+		const env = [
+			-51, -52.5, -53.5, -53, -54.5, -58, -64, -36.5, -24, -17, -13.5, -11.5, -10.5, -12, -16, -17.5, -18,
+			-19.5, -19.5, -20, -19.5, -16.5, -16, -16, -18.5, -15, -11.5, -9, -8, -7.5, -7.5, -8.5, -9.5, -11.5,
+			-14, -18.5, -24.5, -28.5, -29.5, -29, -24, -17.5, -13.5, -10, -7.5, -5.5, -4.5, -4.5, -7, -11.5, -15,
+			-14, -13, -13, -13.5, -14.5, -15.5, -17, -12.5, -7.5, -4, -4, -5.5, -9.5, -12, -10, -6, -2, -0.5, 0.5,
+		];
+		const n = 3000;
+		const classes = new Uint8Array(n);
+		const level = new Uint8Array(n).fill((-50 + 120) * 2);
+		for (let k = 1000; k < 1310; k++) {
+			level[k] = ((env[k - 1000] ?? -10) + 120) * 2;
+			classes[k] = k >= 1007 ? 2 : 0;
+		}
+		const voice: CleanupVoice = {
+			classes,
+			level,
+			frameCount: n,
+			levels: { floorDb: -47, speechDb: -6, speechThresholdDb: -34.7, breathFloorDb: -42 },
+		};
+		const sp = editSpans(H.doc, H.seq);
+		if (!sp.ok) throw new Error(sp.message);
+		const c0 = sp.spans[0]!;
+		const editRepeats: EditRepeat[] = [
+			{
+				source: 'spans',
+				where: 'span',
+				kind: 'stutter',
+				suggested: 'remove',
+				text: 'Y si...',
+				kept: 'y si buscas',
+				range: [0, 17],
+				cuts: [{ clipId: c0.clipId, mediaId, stream: c0.stream, start: c0.mediaStart, end: S(10.38) }],
+				confidence: 0.8,
+			},
+		];
+		const a = analyzeSequenceCleanup({
+			doc: H.doc,
+			seq: H.seq,
+			voice: () => voice,
+			settings: FAST_SETTINGS,
+			editRepeats,
+		});
+		if (!a.ok) throw new Error(a.message);
+		const kept = a.plan.kept.filter((k) => k.clipId === c0.clipId);
+		// the cut ends on the 60 fps grid at 10.367 s (frame 17); the take may keep up to 80 ms more of its onset (frame
+		// 13), never go back to 10.25 s (frame 10) inside the attempt's "si", where the merged stored "si" would let it
+		expect(Math.min(...kept.map((k) => k.start))).toBeGreaterThanOrEqual(13);
+		expect(Math.min(...kept.map((k) => k.start))).toBeLessThanOrEqual(17);
+	});
+
 	it('the closed loop maps the mixdown words back to clips, for review', () => {
 		const { H } = setup();
 		const sp = editSpans(H.doc, H.seq);
