@@ -421,9 +421,10 @@ retries around it (`suggested: remove`, still reviewable). Test: `cleanup-hidden
 inside a removed retake goes with it".
 
 **No cut inside a kept word; breaths spare onsets; slivers; hummed stock phrases** (round 6). A pause never covers the
-frames of a word's time (`wordHold`: the word's frames but measured silence at its edges; a word longer than 1 s holds
-other sound and is not protected), and the planner's pause compression and kept extents follow the same frames — the
-round-6 cuts inside "gelatina", "ChatGPT", "reescribirlo" and the bursts of "Triste." are gone. A breath finding never
+frames of a word's time (`wordHold`: the word's frames — since round 15 all of them, measured silence at its edges
+included; a word longer than 1 s holds other sound and is not protected), and the planner's pause compression and kept
+extents follow the same frames — the round-6 cuts inside "gelatina", "ChatGPT", "reescribirlo" and the bursts of
+"Triste." are gone. A breath finding never
 covers a kept word's time, and a breath-like run ending right at the onset of a word spelled with a fricative or
 affricate (f, s, z, j, x, ch, sh, th, ph, c/g before e/i, h) is that word's frication (round 6: breaths took the onsets of
 "Physics", "jugando", "chiquita" at −22 to −31 dBFS); what is left must still be ≥ 120 ms (the breath class's minimum).
@@ -452,7 +453,8 @@ The rules now:
 - **Frame analysis partitions the sound** (`detector.ts` `frameFindings`, over the analysed regions = the clips' media
   spans, not only between the first and the last word): every speech frame belongs to a word — its time, voice within
   0.15 s of it (`UNCOVERED_MARGIN_S`) or a shorter wordless rest beside it — to untranscribed voice (a wordless stretch
-  ≥ `untranscribedMinS`), or is a blip (a wordless speech run shorter than that between non-speech) that a pause holds.
+  ≥ `untranscribedMinS`), or is a blip (a wordless speech run shorter than that between non-speech, more than 0.15 s
+  from every word's time since round 15) that a pause holds.
   A gap ≤ `maxGapS` is split between its neighbours. What a word holds is `DetectResult.sound[k]`; a finding that
   removes words spans their sound (its fingerprint keeps the words' times). So findings that remove two neighbours
   leave nothing between them, and nothing else is removable.
@@ -980,6 +982,59 @@ Up of `cut_v5.wav`, the loudness-normalised mixdown of the user's 15:31 cut, at 
   within 6 dB of quiet words (−31.6 dBFS here), so an unsure, off-script, quiet word reads as over silence and goes;
   the 0.8 confidence and 20 dB levels come from one speaker's runs.
 
+**A pause never covers a word's time** (round 15: real large-v3-turbo + Clean Up of `cut_v5.wav` at main 30d91f090,
+Fast, script attached, `/tmp/je-words3-local/` on the build host; tests in `cleanup-mixdown.test.ts` and
+`cleanup-property.test.ts`, each failing on 30d91f090):
+- **Accepted pauses removed real words** (safety). On the cut, four words went with no word finding: "Tienes [que] ir"
+  (pause 505.40–505.55 over the word 505.50–505.56), "casi [todo] lo" (590.21–590.40 over 590.30–590.48; "casi" lost its
+  last 0.09 s too), "Funcionan [con] cuentas" (683.62–683.90 over 683.60–683.69) and "juegos [crecían]" (306.18–306.44
+  over 306.24–306.54). Cause: `wordHold` (`detector.ts`, the frames of a word's time a pause may not take) left
+  **measured silence at a word's edges** to pauses — round 6's allowance for loose timestamps, which round 11 kept
+  ("a pause still holds measured silence at a word's edges"), and the sequence property allowed it by name ("a kept
+  word's time loses no frame that is not measured silence"). On this loudness-normalised mixdown the floor is −31.6
+  dBFS, so silence is anything non-speech under −25.6 dBFS: "que" peaked at −25.2 dBFS with 2 of its 7 frames
+  speech-classed (voice analysis v2), so 5 of its 7 frames were "silence" and the pause ran over them; the planner's
+  pause compression and kept extents followed the same `wordHold`, and the final frame check's one-frame silence
+  tolerance (`keepUnexplained`) could add up to a 30 fps frame more into a kept word. Across the cut, 37 of the 100
+  accepted pauses overlapped some word's time, 1.74 s of 16.54 s in all ("un" 0.13 s, "que" 0.12 s inside a 0.49 s
+  word, "teclado." 0.10 s…). Now `wordHold` is the word's whole time (words up to 1 s; a longer one still holds other
+  sound), so no pause finding covers any part of a transcribed word's time, the planner keeps it whole, and the final
+  frame check's silence tolerance never reaches into a kept word's time (`keptTimes`; the round-8 frame at a removal
+  of words' start in continuous voice is unchanged — a removal of words, not a pause).
+- Regression test: `cleanup-mixdown.test.ts` "a pause never covers a word on the mixdown" — the run's words, times and
+  confidences around the four words, the cut's levels (floor −31.6, speech −10.5, threshold −38.5 dBFS), "que" at its
+  measured −25.2 dBFS peak with its measured speech share; the frames each pause took inside its word non-speech at
+  −28 dBFS (the measured pause extents — the voice-analysis file itself was not copied off the PC), the rest of every
+  word speech at −12 dBFS. On 30d91f090 it reproduces the run's pauses (505.40–505.55 and 590.21–590.40 exactly,
+  683.62–683.91, 306.12–306.44) and the words kept 0.027 / 0.080 / 0.033 / 0.107 s; with the detector half alone "con"
+  still loses 23 ms to the frame tolerance.
+- **Why the property missed it**: its assertion skipped measured-silence frames inside a kept word's time by design
+  (the round-6 allowance), and its generator only made such frames through loose timestamps (silence outside a word's
+  sound), never inside the sound. Now the generator (the sequence property's recordings) also draws words whose first
+  or last 1–8 frames are non-speech within 0–5 dB of the floor (a quiet consonant on a mixdown), and the property
+  asserts that no pause finding overlaps a word of up to 1 s and that no part of a kept word's time is removed except by
+  an accepted removal of the words after it (its round-8 frame) or an accepted non-pause, non-breath finding over the
+  word itself (stretched-word voice, a fragment). On 30d91f090 it fails in every run (3 / 3 random seeds; shrunk to a
+  word whose timestamp starts one frame before its sound, and with the overlap check removed, to the plan removing that
+  frame).
+- **A word's voice just outside its time is the word's** (found by the new generator, seed −1541513801): a word whose
+  timestamp starts 30 ms after its sound, the rest of the sound reading as silence — its 20 ms of speech before its
+  time, separated from it by a silent frame, was a blip (a wordless speech run under `untranscribedMinS`), and the
+  head pause held it and took the onset ramp before it. A run of speech without words shorter than
+  `untranscribedMinS` within `UNCOVERED_MARGIN_S` (0.15 s) of a word's time now belongs to the nearest such word (its
+  sound: kept with it, removed with it), as voice in the same run already did; farther, it is a blip as before.
+  Pinned as an example of the sequence property (`PINNED_ONSETS`, fails without it). After both fixes 6 × the whole
+  property file (80 runs of the sequence property, 200–300 of the others, random seeds) pass.
+- Effect: silence inside a word's loose timestamps now stays (on the cut at most the 1.74 s above, and a pause that
+  shrinks to `maxGapS` or less is gone); the corpus voice has speech under every word, so the corpus is unchanged, and
+  the golden synthetic recording scores the same (word P / R 1.00 / 1.00, time P 1.00, R 0.89).
+- Corpus (Fast, corpus voice), unchanged: dev 0.997 (2303 / 2311) / 0.960, held out 1.000 (338 / 338) / 0.973,
+  held-out-r7 0.998 (479 / 480) / 0.870, held-out-r9 0.992 (260 / 262) / 0.976, held-out-r11 1.000 (65 / 65) / 1.000.
+- Limits: the regression test's frame levels inside the words are reconstructed from the run's pause extents and
+  word measurements, not read from the voice-analysis file; the real-file rerun is pending (how much dead air the
+  protected word times leave on the cut, and whether the four words now play); a word longer than 1 s still holds
+  pauses inside it.
+
 Kinds follow the structure: ≤ 2 words a false start, a whole clause (clause start, clause end, ≥ 3 content words) a
 retake (with a group), else a restart; inside re-decoded ranges they become hidden retakes as before. The settings keep
 their meaning (the windows, `retakeSimilarity`, `takeGapS`, `phraseGapS`, `falseStartGapS` for false starts by clause);
@@ -1013,6 +1068,7 @@ words (fillers aside) removed. Measured (both modes, Fast, corpus voice):
 | round 12 (slivers, sentence-end tails, quiet speech, stretch by pace): every split | unchanged | 0.997, 1.000, 0.998, 0.992, 1.000 | 0.960, 0.973, 0.870, 0.976, 1.000 |
 | round 13 (restart dip, ellipsis cut-offs): every split | unchanged | 0.997, 1.000, 0.998, 0.992, 1.000 | 0.960, 0.973, 0.870, 0.976, 1.000 |
 | round 14 (hallucinations need non-speech evidence, head / tail on the script alignment): every split | unchanged | 0.997, 1.000, 0.998, 0.992, 1.000 | 0.960, 0.973, 0.870, 0.976, 1.000 |
+| round 15 (no pause over a word's time): every split | unchanged | 0.997, 1.000, 0.998, 0.992, 1.000 | 0.960, 0.973, 0.870, 0.976, 1.000 |
 
 Per kind at 0108b4021 (dev / held out): hidden-retake 0.997 / 1.000, retake 0.999 / 1.000, restart 0.998 / 1.000,
 false start 1.000 / 1.000, stutter — / 1.000, filler-vocalic 0.943 / —, filler-phrase 1.000 / 1.000, hallucination

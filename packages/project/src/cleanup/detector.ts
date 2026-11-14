@@ -1163,9 +1163,10 @@ export function quietWord(voice: CleanupVoice, w: { s: number; e: number }, maxW
  * The frame analysis of the analysed regions (docs/wp-notes/transcript-cleanup.md "Every removal has a finding"):
  * every speech frame belongs to a word (its time, and voice next to it within `UNCOVERED_MARGIN_S`, or a shorter
  * wordless rest than `untranscribedMinS` beside it), to untranscribed voice (a wordless stretch at least
- * `untranscribedMinS` long), or is a blip (a wordless speech run shorter than that, alone between non-speech) that a
- * pause around it holds. Findings: **pause** = a run of non-speech and blips longer than `maxGapS`, anywhere in a
- * region — at its head and tail too — except over a quiet word; **breath** = a breath-like run within 30 ms of speech;
+ * `untranscribedMinS` long), or is a blip (a wordless speech run shorter than that, alone between non-speech, farther
+ * than `UNCOVERED_MARGIN_S` from every word's time: nearer, it is that word's) that a pause around it holds. Findings:
+ * **pause** = a run of non-speech and blips longer than `maxGapS`, anywhere in a region — at its head and tail too —
+ * except over a word's time (`wordHold`) or a quiet word; **breath** = a breath-like run within 30 ms of speech;
  * **untranscribed** = the wordless stretches. `sound[k]`: the frames of voice beyond its time word k holds (empty:
  * none).
  */
@@ -1251,9 +1252,9 @@ function frameFindings(
 				levelDbAt(voice, x) < peakOf(k) - DECAY_BELOW_PEAK_DB
 			);
 		};
-		// a pause never splits a word (round 6: closures and quiet bursts inside "gelatina", "ChatGPT", "Triste." were
-		// cut): the frames of a word's time are the word's, but measured silence at its edges (loose timestamps) and
-		// the inside of a stretched word (it holds other sound)
+		// a pause never covers a word's time (round 6: closures and quiet bursts inside "gelatina", "ChatGPT", "Triste."
+		// were cut; round 15: on a mixdown a word's quiet edges read as measured silence and pauses took "que", "todo"):
+		// the frames of a word's time are the word's, but the inside of a stretched word (it holds other sound)
 		const inWord = new Uint8Array(n);
 		for (const w of words) {
 			const h = wordHold(voice, w);
@@ -1281,7 +1282,22 @@ function frameFindings(
 				g++;
 			}
 			if (!any) {
+				// a short run within `margin` of a word's time is that word's voice (a timestamp late or early over its
+				// quiet edge: round 15's property, a word's onset 30 ms before its time taken by the pause before it);
+				// else a blip a pause holds
+				let k = -1;
+				if (g - f < minU)
+					for (let d = 1; d <= margin && k < 0; d++) {
+						const l = f - d >= lo ? owner[f - d - lo]! : -1;
+						const r = g - 1 + d < hi ? owner[g - 1 + d - lo]! : -1;
+						k = l >= 0 ? l : r;
+					}
 				if (g - f >= minU) untranscribed(f, g);
+				else if (k >= 0)
+					for (let x = f; x < g; x++) {
+						own(k, x);
+						owner[x - lo] = k;
+					}
 				else blip.fill(1, f - lo, g - lo);
 			} else
 				for (let p = f; p < g; ) {
@@ -1561,17 +1577,18 @@ function gapSplit(voice: CleanupVoice, f: number, g: number): number {
 }
 
 /**
- * The frames `[a, b)` a word's time holds against pauses: its time without measured silence at its edges (loose
- * timestamps); null for a stretched word (longer than `STRETCHED_WORD_S`: it holds other sound) or an empty span.
+ * The frames `[a, b)` a word's time holds against pauses: all of it, measured silence included; null for a stretched
+ * word (longer than `STRETCHED_WORD_S`: it holds other sound) or an empty span. Until round 15 measured silence at its
+ * edges was left to pauses (loose timestamps), but on a loudness-normalised mixdown the floor lies within 6 dB of a
+ * real word's quiet frames, so that "silence" was the word: accepted pauses removed "que", "todo", "con" and
+ * "crecían" of `cut_v5.wav` (docs/wp-notes/transcript-cleanup.md "Round 15").
  */
 export function wordHold(voice: CleanupVoice, w: { s: number; e: number }): [number, number] | null {
 	if (w.e - w.s > STRETCHED_WORD_S) return null;
-	let [a, b] = wordFrames(w);
-	a = Math.max(0, a);
-	b = Math.min(voice.frameCount, b);
-	while (a < b && silentFrame(voice, a)) a++;
-	while (b > a && silentFrame(voice, b - 1)) b--;
-	return b > a ? [a, b] : null;
+	const [a, b] = wordFrames(w);
+	const x = Math.max(0, a);
+	const y = Math.min(voice.frameCount, b);
+	return y > x ? [x, y] : null;
 }
 
 /** How far back (seconds) from a removed word's start the quietest point before it is looked for. */

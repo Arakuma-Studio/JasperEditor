@@ -44,7 +44,9 @@ const VOCAB = [
 /**
  * Random words over random sound: each word is speech (loud core + quieter edges), gaps are silence or breath — and,
  * with `murmurs`, voice without words in some gaps (the direct planner properties leave it out: their planner alone
- * places a word's sound by its speech frames ± 50 ms, not by the detector's partition).
+ * places a word's sound by its speech frames ± 50 ms, not by the detector's partition), and words whose first or last
+ * frames are non-speech within 6 dB of the floor — measured silence inside the word's sound, as a real word's quiet
+ * consonant reads on a loudness-normalised mixdown (round 15: pauses took "que", "todo", "con" of `cut_v5.wav`).
  */
 const rawWord = fc.record({
 	w: fc.constantFrom(...VOCAB),
@@ -59,6 +61,12 @@ const rawWord = fc.record({
 		off: fc.integer({ min: 0, max: 10 }),
 		len: fc.integer({ min: 0, max: 40 }),
 		db: fc.integer({ min: 3, max: 30 }),
+	}),
+	// (with `murmurs`) frames of the word's sound at its start / end that read as measured silence, dB over the floor
+	quiet: fc.record({
+		a: fc.oneof(fc.constant(0), fc.integer({ min: 1, max: 8 })),
+		b: fc.oneof(fc.constant(0), fc.integer({ min: 1, max: 8 })),
+		db: fc.integer({ min: 0, max: 5 }),
 	}),
 });
 type RawWord = typeof rawWord extends fc.Arbitrary<infer T> ? T : never;
@@ -89,10 +97,12 @@ function layOut(murmurs: boolean) {
 					classes[k] = 2;
 				}
 			prevB = x.b;
+			const [qa, qb] = quietOf(x, murmurs);
 			for (let k = x.a; k < x.b; k++) {
 				const edge = k < x.a + 2 || k >= x.b - 2;
-				level[k] = (-65 + (edge ? 15 : x.loud) + 120) * 2;
-				classes[k] = 2;
+				const quiet = k < x.a + qa || k >= x.b - qb;
+				level[k] = (-65 + (quiet ? x.quiet.db : edge ? 15 : x.loud) + 120) * 2;
+				classes[k] = quiet ? 0 : 2;
 			}
 			for (let k = x.b; k < Math.min(n, x.b + 6); k++) level[k] = (-65 + 18 - (k - x.b) * 3 + 120) * 2;
 			// a rising onset before the word (non-speech, above the floor) where the gap leaves room
@@ -104,7 +114,10 @@ function layOut(murmurs: boolean) {
 			start: Math.round(((x.a + x.jitterA) / 100) * FLICKS_PER_SECOND),
 			end: Math.round(((x.b + x.jitterB) / 100) * FLICKS_PER_SECOND),
 			confidence: 0.9,
-			loud: [x.a + 2, x.b - 2] as [number, number],
+			loud: [x.a + Math.max(2, quietOf(x, murmurs)[0]), x.b - Math.max(2, quietOf(x, murmurs)[1])] as [
+				number,
+				number,
+			],
 		}));
 		for (let i = 1; i < words2.length; i++)
 			if (words2[i]!.start < words2[i - 1]!.end) words2[i]!.start = words2[i - 1]!.end;
@@ -121,6 +134,12 @@ function layOut(murmurs: boolean) {
 		};
 	};
 }
+/** The quiet frames at a laid-out word's start and end (none without `murmurs`); at least 2 speech frames stay. */
+function quietOf(x: RawWord & { a: number; b: number }, murmurs: boolean): [number, number] {
+	if (!murmurs) return [0, 0];
+	const qa = Math.min(x.quiet.a, Math.max(0, x.b - x.a - 2));
+	return [qa, Math.min(x.quiet.b, Math.max(0, x.b - x.a - 2 - qa))];
+}
 const recording = recordingOf(false);
 /** A raw word of the generator: 8 frames, said right after the previous one, 30 dB over the floor, exact timestamps. */
 const pinnedWord = (w: string, o: Partial<RawWord> = {}): RawWord => ({
@@ -132,6 +151,7 @@ const pinnedWord = (w: string, o: Partial<RawWord> = {}): RawWord => ({
 	jitterB: 0,
 	loud: 30,
 	murmur: { off: 0, len: 0, db: 3 },
+	quiet: { a: 0, b: 0, db: 0 },
 	...o,
 });
 /**
@@ -151,6 +171,25 @@ const PINNED_DECAYS = [
 	rules,
 	{ acceptKinds: [], rejectKinds: [] },
 ]);
+
+/**
+ * A word whose timestamp starts 30 ms after its sound and whose last 6 frames read as measured silence (round 15's
+ * generator; found with seed −1541513801): its 20 ms of speech before its time was a blip, and the head pause took it
+ * with its onset.
+ */
+const PINNED_ONSETS = [
+	[
+		layOut(true)({
+			words: [
+				pinnedWord('hola', { gap: 12, jitterA: 3, quiet: { a: 0, b: 6, db: 0 } }),
+				pinnedWord('hola', { quiet: { a: 0, b: 1, db: 0 } }),
+			],
+			natural: false,
+		}),
+		FAST_SETTINGS.rules,
+		{ acceptKinds: [], rejectKinds: [] },
+	],
+];
 
 describe('planning properties', () => {
 	it('kept pieces are sorted, disjoint, inside the media, without removed sound, without split words', () => {
@@ -307,6 +346,15 @@ describe('planning properties', () => {
 					};
 					const a = run(settings, decisions);
 					const sec = (f: number) => f / FLICKS_PER_SECOND;
+					// no pause covers any part of a word's time (words of up to 1 s: a longer one holds other sound)
+					for (const f of a.findings)
+						if (f.kind === 'pause')
+							for (const w of r.words)
+								if (w.end - w.start <= FLICKS_PER_SECOND)
+									expect(
+										Math.min(f.range.end, w.end) - Math.max(f.range.start, w.start),
+										`pause ${sec(f.range.start)}–${sec(f.range.end)} over "${w.text}" ${sec(w.start)}–${sec(w.end)}`,
+									).toBeLessThanOrEqual(0);
 					// what the user accepted: item decisions aside, a kind decision or the rule's suggestion
 					const covered = a.findings
 						.filter((f) =>
@@ -382,11 +430,12 @@ describe('planning properties', () => {
 						.filter(({ i }) => !removedWords.has(i))
 						.map(({ w }) => w.loud);
 					const n = r.voice.frameCount;
-					// a kept word's time loses no frame that is not measured silence — no pause, breath or untranscribed finding
-					// takes one; only an accepted removal of words right after it may take its quietest end (the start of
-					// that removal and the frame at or before it) — and a pause takes the speech running on from a kept word's
-					// time only 30 dB or more under the word's loudest frame (round 11: pauses took whole quiet words and tails
-					// at floor + 20 dB)
+					// a kept word's time loses nothing to a pause or breath, measured silence included (round 15: on a mixdown
+					// a word's quiet frames read as silence, and pauses took "que", "todo"); only an accepted removal of words
+					// right after it may take its quietest end (the start of that removal and the frame at or before it), or an
+					// accepted finding over the word itself (voice a stretched word holds, a fragment) — and a pause takes the
+					// speech running on from a kept word's time only 30 dB or more under the word's loudest frame (round 11:
+					// pauses took whole quiet words and tails at floor + 20 dB)
 					const dbAt = (k: number) => r.voice.level[k]! / 2 - 120;
 					const times = r.words.map(
 						(w) => [Math.trunc(sec(w.start) * 100), Math.ceil(sec(w.end) * 100 - 1e-9)] as const,
@@ -403,17 +452,23 @@ describe('planning properties', () => {
 					const acceptedVoice = a.findings
 						.filter((f) => f.kind === 'untranscribed' && accepted(f))
 						.map(spanOf);
+					const acceptedOver = a.findings
+						.filter((f) => f.kind !== 'pause' && f.kind !== 'breath' && accepted(f))
+						.map(spanOf);
 					times.forEach(([x, y], i) => {
 						if (removedWords.has(i)) return;
+						const [ws, we] = [sec(r.words[i]!.start), sec(r.words[i]!.end)];
 						let peak = -120;
 						for (let k = x; k < y; k++) {
 							peak = Math.max(peak, dbAt(k));
-							if (silent(k)) continue;
-							for (const [t0, t1] of removedPart(k))
-								expect(
-									byWordRemoval(t0, t1),
-									`${t0.toFixed(3)}–${t1.toFixed(3)} of kept "${r.words[i]!.text}" ${sec(r.words[i]!.start)}–${sec(r.words[i]!.end)} removed`,
-								).toBe(true);
+							for (const [t0, t1] of removedPart(k)) {
+								const [u0, u1] = [Math.max(t0, ws), Math.min(t1, we)];
+								if (u1 - u0 > 1e-9)
+									expect(
+										byWordRemoval(u0, u1) || inSpans(u0, u1, acceptedOver),
+										`${u0.toFixed(3)}–${u1.toFixed(3)} of kept "${r.words[i]!.text}" ${ws}–${we} removed`,
+									).toBe(true);
+							}
 						}
 						for (
 							let k = y;
@@ -465,7 +520,7 @@ describe('planning properties', () => {
 					expect(run({ ...settings, rules: review }, {}).plan.ranges).toEqual([]);
 				},
 			),
-			{ numRuns: 80, examples: PINNED_DECAYS as never },
+			{ numRuns: 80, examples: [...PINNED_DECAYS, ...PINNED_ONSETS] as never },
 		);
 	});
 
