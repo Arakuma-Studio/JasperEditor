@@ -193,6 +193,91 @@ const PINNED_ONSETS = [
 	],
 ];
 
+/** Uint8Array of run-length pairs `[value, count]`. */
+const runs = (rs: ReadonlyArray<readonly [number, number]>) =>
+	Uint8Array.from(rs.flatMap(([v, n]) => Array.from({ length: n }, () => v)));
+const S = (frames: number) => Math.round((frames / 100) * FLICKS_PER_SECOND);
+/**
+ * Five "hola" (the second a long one over 67–116, then three said into each other over 146–169, a 20 ms dip at
+ * 153–154) with pauses for review and the hallucination guard off (seed −544609716 on main fdb28cc34): an in edge at
+ * 1.200 s cut the speech before it.
+ */
+const PINNED_IN_EDGE = [
+	[
+		{
+			words: (
+				[
+					[66, 74, 68, 72],
+					[74, 117, 76, 117],
+					[147, 155, 149, 153],
+					[155, 163, 157, 161],
+					[163, 171, 165, 169],
+				] as const
+			).map(([a, b, la, lb]) => ({
+				text: 'hola',
+				start: S(a),
+				end: S(b),
+				confidence: 0.9,
+				loud: [la, lb] as [number, number],
+			})),
+			voice: {
+				classes: runs([
+					[0, 67],
+					[2, 50],
+					[0, 30],
+					[2, 7],
+					[0, 2],
+					[2, 15],
+					[0, 40],
+				]),
+				level: runs([
+					[110, 63],
+					[112, 1],
+					[120, 1],
+					[128, 1],
+					[110, 1],
+					[140, 1],
+					[170, 4],
+					[140, 4],
+					[170, 41],
+					[110, 3],
+					[146, 1],
+					[140, 1],
+					[134, 1],
+					[128, 1],
+					[122, 1],
+					[116, 1],
+					[110, 18],
+					[112, 1],
+					[120, 1],
+					[128, 1],
+					[140, 2],
+					[170, 4],
+					[140, 1],
+					[110, 2],
+					[140, 1],
+					[170, 4],
+					[140, 4],
+					[170, 4],
+					[140, 2],
+					[146, 1],
+					[140, 1],
+					[134, 1],
+					[128, 1],
+					[122, 1],
+					[116, 1],
+					[110, 34],
+				]),
+				frameCount: 211,
+				levels: { floorDb: -65, speechDb: -25, speechThresholdDb: -53, breathFloorDb: -60 },
+			},
+			settings: FAST_SETTINGS,
+		},
+		{ ...FAST_SETTINGS.rules, pause: 'review' as const, hallucination: 'off' as const },
+		{ acceptKinds: [], rejectKinds: [] },
+	],
+];
+
 describe('planning properties', () => {
 	it('kept pieces are sorted, disjoint, inside the media, without removed sound, without split words', () => {
 		fc.assert(
@@ -580,7 +665,7 @@ describe('planning properties', () => {
 					expect(run({ ...settings, rules: review }, {}).plan.ranges).toEqual([]);
 				},
 			),
-			{ numRuns: 80, examples: [...PINNED_DECAYS, ...PINNED_ONSETS] as never },
+			{ numRuns: 80, examples: [...PINNED_DECAYS, ...PINNED_ONSETS, ...PINNED_IN_EDGE] as never },
 		);
 	});
 

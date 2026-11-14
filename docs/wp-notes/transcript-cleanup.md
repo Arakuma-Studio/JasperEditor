@@ -1125,6 +1125,14 @@ rev 267; the source recording, 16 kHz mono, measured on the build host, `/tmp/je
     "más | skins" keeps the /s/ with 30 ms under −38 dBFS before the in edge (fails on b7b06eda9's planner); the out
     edge after "Uni-ty" waits for the decay; `onsetBound` stops at "pue-" and not inside "Uni-ty"; the "Appstore!"
     burst (with the v8 transcript's words) is a review fragment (both fail on the previous commit).
+- **Pieces the frame check puts back** (seed −544609716 on main fdb28cc34; latent since the in-edge clause of the
+  property arrived with this round, 4be5524b6): `keepUnexplained` grows each removal over measured silence by up to a
+  frame, so a piece it puts back after a removed word started at the first sound beyond that silence — a decay after the
+  removed word's quiet end (three silent frames, one more than `removedRamps` bridges), left in a pause for review — with
+  the removed speech in the 50 ms before it: an in edge that cuts speech, never snapped. The removal no longer grows up
+  to sound that stays when the cut there would cut speech (`edgeCutsSpeech`); the piece starts in the silence (on a 30
+  fps grid, at the frame boundary inside the removed speech's last 10 ms frame). Test: `cleanup-property.test.ts`
+  `PINNED_IN_EDGE` (fails before).
 - **Clean Up**: `keptToFrames` snaps every edge of a kept piece inside the clip's extent onto the clip's frame
   boundaries (after the level edges, the tight word-boundary edges and the 10 ms quietest-boundary snap), never
   across the piece's other edge or into the neighbouring pieces. A removed word now goes with its rising onset and
