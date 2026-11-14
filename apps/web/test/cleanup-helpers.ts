@@ -10,6 +10,8 @@ import {
 	createCounterIdSource,
 	createEmptyProject,
 	defaultRegistries,
+	type EditRepeat,
+	flicksPerFrame,
 	type ProjectDocument,
 	type Sequence,
 	sequenceCleanupSettings,
@@ -62,7 +64,7 @@ export function fakeCleanupEngine(): FakeCleanupEngine {
 	const client = {
 		analyzeCleanup: async (req: CleanupAnalyzeRequest) => {
 			calls.push(
-				`analyze ${JSON.stringify({ clipIds: req.clipIds, range: req.range, decisions: req.decisions })}`,
+				`analyze ${JSON.stringify({ clipIds: req.clipIds, range: req.range, decisions: req.decisions, editRepeats: req.editRepeats })}`,
 			);
 			const id = `job_${++n}`;
 			if (state.failNext) {
@@ -73,6 +75,34 @@ export function fakeCleanupEngine(): FakeCleanupEngine {
 			}
 			const doc = (req.document as { document: ProjectDocument }).document;
 			const seq = doc.sequences[req.sequenceId!] as Sequence;
+			// the check of the cuts (the engine transcribes the kept clips): one restart at the start of the first clip
+			const first = Object.values(seq.clips)
+				.flatMap((x) => ('mediaId' in x && 'channels' in x ? [x] : []))
+				.sort((x, y) => x.start - y.start)[0];
+			const editRepeats: EditRepeat[] =
+				req.editRepeats && first
+					? [
+							{
+								source: 'spans',
+								where: 'cut',
+								kind: 'restart',
+								suggested: 'remove',
+								text: 'y si',
+								kept: 'y si buscas',
+								range: [first.start, first.start + 9],
+								cuts: [
+									{
+										clipId: first.id,
+										mediaId: first.mediaId,
+										stream: first.channels.streamIndex,
+										start: first.sourceIn,
+										end: first.sourceIn + 9 * flicksPerFrame(seq.settings.frameRate),
+									},
+								],
+								confidence: 0.8,
+							},
+						]
+					: [];
 			const a = analyzeSequenceCleanup({
 				doc,
 				seq,
@@ -83,6 +113,7 @@ export function fakeCleanupEngine(): FakeCleanupEngine {
 					...(req.clipIds ? { clipIds: req.clipIds } : {}),
 					...(req.range ? { range: req.range } : {}),
 				},
+				...(req.editRepeats ? { editRepeats } : {}),
 			});
 			if (!a.ok) {
 				jobs.set(
@@ -119,6 +150,19 @@ export function fakeCleanupEngine(): FakeCleanupEngine {
 				stats: a.plan.stats,
 				voice: { cached: [], analysed: a.media.map((m) => m.mediaId), missing: [] },
 				elapsedMs: 12,
+				...(req.editRepeats
+					? {
+							editRepeats: {
+								spans: Object.keys(seq.clips).length,
+								cached: 0,
+								transcribed: Object.keys(seq.clips).length,
+								jobIds: ['job_speech'],
+								found: editRepeats.length,
+								suggestedRemove: editRepeats.length,
+								missing: [],
+							},
+						}
+					: {}),
 			};
 			jobs.set(id, job(id, { state: 'running', result } as never));
 			return jobs.get(id)!;

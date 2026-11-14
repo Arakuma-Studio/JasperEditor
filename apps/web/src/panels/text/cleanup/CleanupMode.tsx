@@ -157,6 +157,19 @@ function Toolbar(p: {
 				disabled={p.busy}
 			/>
 			<span className="flex-1" />
+			<span
+				title={t(
+					'Transcribe every kept clip again on its own to find a phrase said twice across a cut ("y si | y si buscas") or a stutter inside a clip. Slower the first time (minutes per hour of speech on a GPU); clips already checked are cached.',
+				)}
+				data-testid="text.cleanup.checkCuts"
+			>
+				<Toggle
+					checked={p.st.checkCuts}
+					onCheckedChange={(v) => c.setCheckCuts(v)}
+					label={t('Repeats at cuts')}
+					disabled={p.busy}
+				/>
+			</span>
 			<Button
 				variant="primary"
 				onClick={p.onAnalyze}
@@ -225,6 +238,12 @@ function Intro({ busy, otherSeq }: { busy: boolean; otherSeq: boolean }) {
 				<p className="m-0">
 					Choose a preset (Fast = tight jump cuts, Natural = calmer pacing), attach the script if you have
 					one, then Analyze.
+				</p>
+			)}
+			{busy ? null : (
+				<p className="m-0 mt-2">
+					Turn on Repeats at cuts to also find a phrase said twice where two clips meet, or a stutter inside a
+					clip: every kept clip is transcribed again on its own.
 				</p>
 			)}
 		</div>
@@ -443,6 +462,19 @@ function Notes({ st }: { st: CleanupUiState }) {
 				'{0} media without a voice analysis are cut at word timings: {1}',
 				st.voice.missing.length,
 				st.voice.missing.map((m) => m.reason).join('; '),
+			),
+		);
+	const ec = st.editCheck;
+	if (ec?.missing.length)
+		lines.push(t('Repeats at cuts were not checked: {0}', ec.missing.map((m) => m.reason).join('; ')));
+	else if (ec)
+		lines.push(
+			t(
+				'Repeats at cuts: {0} clips checked ({1} transcribed now), {2} found, {3} suggested for removal',
+				ec.spans,
+				ec.transcribed,
+				ec.found,
+				ec.suggestedRemove,
 			),
 		);
 	if (a.plan.skipped.length)
