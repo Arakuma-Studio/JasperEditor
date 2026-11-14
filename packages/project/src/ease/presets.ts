@@ -1,8 +1,10 @@
 // Built-in ease presets (keyframe assistant). Our own catalog, built from public math: the CSS easing keywords
 // (W3C css-easing-1), Robert Penner's easing equations (MIT, licenses/ported/easing-penner.md), Material Design 3
 // motion tokens (published values) and our own physics (overshoot by peak, elastic, bounce, spring). Curves that
-// are not given as cubic-beziers are fitted from their source function with `fitEaseCurve` (within 0.002) the
-// first time the catalog is read. Formulas and sources: docs/wp-notes/easing.md "Built-in presets".
+// are not given as cubic-beziers are fitted from their source function with `fitEaseCurve` the first time the
+// catalog is read: a monotone curve one cubic-bezier matches within PRESET_CUBIC_TOLERANCE is that cubic (applied as
+// the handles of the existing keys, so moving a key rescales the ease), anything else a multi curve within 0.002.
+// Formulas and sources: docs/wp-notes/easing.md "Built-in presets".
 import {
 	type CubicEase,
 	type EaseCurve,
@@ -326,6 +328,13 @@ function specs(): Spec[] {
 	return out;
 }
 
+/**
+ * Largest max |curve − source| a preset may have as one cubic-bezier (1 % of the value change) instead of a multi
+ * curve. A cubic preset sets the handles of the selected keys; a multi one bakes keys at its points, which then do
+ * not rescale when the outer keys move. Measured errors: docs/wp-notes/easing.md "Measured accuracy".
+ */
+const PRESET_CUBIC_TOLERANCE = 0.01;
+
 let catalog: { presets: readonly EasePreset[]; sources: ReadonlyMap<string, EaseFunction> } | undefined;
 
 function build() {
@@ -334,7 +343,11 @@ function build() {
 	const sources = new Map<string, EaseFunction>();
 	for (const s of specs()) {
 		const curve =
-			s.curve ?? fitEaseCurve(s.fn as EaseFunction, s.derivative ? { derivative: s.derivative } : undefined);
+			s.curve ??
+			fitEaseCurve(s.fn as EaseFunction, {
+				cubicTolerance: PRESET_CUBIC_TOLERANCE,
+				...(s.derivative ? { derivative: s.derivative } : {}),
+			});
 		// Not re-validated here (zod's first parse costs more than the fitting); the tests parse every preset with
 		// EasePresetSchema, and the fitter only emits curves inside the schema's bounds.
 		presets.push(Object.freeze({ id: s.id, name: s.name, group: s.group, curve }));

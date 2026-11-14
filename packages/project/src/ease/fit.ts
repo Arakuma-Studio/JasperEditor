@@ -30,6 +30,13 @@ export class EaseFitError extends Error {
 export type EaseFitOptions = {
 	/** Largest accepted |curve(x) − f(x)| (default 0.002). */
 	tolerance?: number;
+	/**
+	 * Largest |curve(x) − f(x)| accepted for a single cubic-bezier when f is monotone (no turning point with a swing
+	 * ≥ `tolerance`; default `tolerance`, raised to it when below). A cubic within this bound is preferred to a multi
+	 * curve: one segment's handles rescale with its keys, a multi curve's interior keys do not. Curves that turn
+	 * (overshoot, anticipation) keep `tolerance`: their peak is the feature, and an absolute bound would distort it.
+	 */
+	cubicTolerance?: number;
 	/** Most points of a multi-segment result, endpoints included (default and cap `MAX_EASE_POINTS`, at least 3). */
 	maxPoints?: number;
 	/** f′(x), used for the handle slopes instead of one-sided finite differences. */
@@ -112,6 +119,18 @@ function tolOf(opts: EaseFitOptions | undefined): number {
 	if (typeof tol !== 'number' || !Number.isFinite(tol) || tol <= 0 || tol > 1)
 		throw new EaseFitError('E_INVALID_PARAM', 'options', `tolerance must be in (0, 1], got ${String(tol)}`);
 	return tol;
+}
+
+function cubicTolOf(opts: EaseFitOptions | undefined, tol: number): number {
+	const c = opts?.cubicTolerance;
+	if (c === undefined) return tol;
+	if (typeof c !== 'number' || !Number.isFinite(c) || c <= 0 || c > 1)
+		throw new EaseFitError(
+			'E_INVALID_PARAM',
+			'options',
+			`cubicTolerance must be in (0, 1], got ${String(c)}`,
+		);
+	return Math.max(tol, c);
 }
 
 function maxPointsOf(opts: EaseFitOptions | undefined): number {
@@ -264,6 +283,75 @@ export function fitCubicEase(fn: (x: number) => number): CubicEase {
 	return cubicLeastSquares(sample(fn)) as CubicEase;
 }
 
+/** Curve parameters the minimax search scores a cubic at (the result is then checked on the whole grid). */
+const MINIMAX_SAMPLES = 128;
+/** The 80 directions of the minimax pattern search: every nonzero combination of −1, 0, +1 over (x1, y1, x2, y2). */
+const MINIMAX_DIRECTIONS: readonly (readonly [number, number, number, number])[] = (() => {
+	const out: [number, number, number, number][] = [];
+	for (const a of [-1, 0, 1])
+		for (const b of [-1, 0, 1])
+			for (const c of [-1, 0, 1]) for (const d of [-1, 0, 1]) if (a || b || c || d) out.push([a, b, c, d]);
+	return out;
+})();
+
+/**
+ * True when the cubic's progress y(t) never decreases: y′(t)/3 = (1−t)²·a + 2(1−t)t·b + t²·c with a = y1,
+ * b = y2 − y1, c = 1 − y2 is ≥ 0 on [0, 1] iff a ≥ 0, c ≥ 0 and (b ≥ 0 or b² ≤ a·c). x(t) is monotone for any
+ * x1, x2 in [0, 1], so this is "progress never steps back".
+ */
+function isMonotoneCubic(c: CubicEase): boolean {
+	const a = c.y1;
+	const b = c.y2 - c.y1;
+	const d = 1 - c.y2;
+	return a >= 0 && d >= 0 && (b >= 0 || b * b <= a * d);
+}
+
+/**
+ * Minimax refinement of a cubic for a monotone f (least squares spreads the error; the max error is what the
+ * tolerance bounds), keeping the cubic monotone too: an unconstrained fit of an in-out curve dips below 0 and
+ * overshoots 1 by a fraction of a percent, a visible step back. A pattern search over all 80 unit moves of
+ * (x1, y1, x2, y2) — the coordinates move together, so a handle pinned at x = 0 or 1 can still trade its y against
+ * the other handle — with steps 1/32 … 2⁻¹², scored by `scoreByT` on f itself, from `start` clamped to y1 ≥ 0,
+ * y2 ≤ 1 (the linear cubic when that is still not monotone).
+ */
+function cubicMinimax(s: Samples, start: CubicEase): CubicEase {
+	const seg = (c: CubicEase): Bez => [
+		[0, 0],
+		[c.x1, c.y1],
+		[c.x2, c.y2],
+		[1, 1],
+	];
+	const clamped: CubicEase = { ...start, y1: Math.max(0, start.y1), y2: Math.min(1, start.y2) };
+	let best: CubicEase = isMonotoneCubic(clamped)
+		? clamped
+		: { kind: 'cubic', x1: 1 / 3, y1: 1 / 3, x2: 2 / 3, y2: 2 / 3 };
+	// f evaluated directly, not from the grid: near a vertical tangent (Penner circ) the grid's chords are too coarse.
+	let bestErr = scoreByT(s, seg(best), true, Number.POSITIVE_INFINITY, MINIMAX_SAMPLES);
+	const unitX = (v: number) => Math.min(1, Math.max(0, v));
+	let step = 1 / 32;
+	while (step >= 2 ** -12) {
+		let moved = false;
+		for (const [a, b, c, d] of MINIMAX_DIRECTIONS) {
+			const next: CubicEase = {
+				kind: 'cubic',
+				x1: unitX(best.x1 + a * step),
+				y1: clampY(best.y1 + b * step),
+				x2: unitX(best.x2 + c * step),
+				y2: clampY(best.y2 + d * step),
+			};
+			if (!isMonotoneCubic(next)) continue;
+			const err = scoreByT(s, seg(next), true, bestErr, MINIMAX_SAMPLES);
+			if (err < bestErr) {
+				best = next;
+				bestErr = err;
+				moved = true;
+			}
+		}
+		if (!moved) step /= 2;
+	}
+	return best;
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // Multi-segment
 
@@ -383,14 +471,20 @@ function bezMaxError(
 }
 
 /**
- * Max |y(t) − f(x(t))| at SEARCH_SAMPLES evenly spaced interior t (no x → t solve), f from the grid, or evaluated
+ * Max |y(t) − f(x(t))| at `samples` evenly spaced interior t (no x → t solve), f from the grid, or evaluated
  * directly in a piece too narrow for the grid; returns as soon as it exceeds `stopAbove`.
  */
-function scoreByT(s: Samples, seg: Bez, direct: boolean, stopAbove = Number.POSITIVE_INFINITY): number {
+function scoreByT(
+	s: Samples,
+	seg: Bez,
+	direct: boolean,
+	stopAbove = Number.POSITIVE_INFINITY,
+	samples = SEARCH_SAMPLES,
+): number {
 	const [p0, p1, p2, p3] = seg;
 	let worst = 0;
-	for (let j = 1; j <= SEARCH_SAMPLES; j++) {
-		const t = j / (SEARCH_SAMPLES + 1);
+	for (let j = 1; j <= samples; j++) {
+		const t = j / (samples + 1);
 		const x = cube(t, p0[0], p1[0], p2[0], p3[0]);
 		const f = direct ? call(s.fn, x) : gridAt(s, x);
 		const e = Math.abs(cube(t, p0[1], p1[1], p2[1], p3[1]) - f);
@@ -485,13 +579,15 @@ function fitPiece(
 
 /**
  * Fits an ease curve to the progress function `fn` on [0, 1]: a `cubic` when one cubic-bezier is within
- * `tolerance` (max |error| over a 1025-sample grid), otherwise a `multi` curve with points at the endpoints, the
- * function's turning points (swing ≥ tolerance) and midpoints of pieces still above the tolerance. The ends are
+ * `tolerance` (max |error| over a 1025-sample grid) or, for a monotone f after a monotone minimax refinement,
+ * within `cubicTolerance`; otherwise a `multi` curve with points at the endpoints, the function's turning points
+ * (swing ≥ tolerance) and midpoints of pieces still above the tolerance. The ends are
  * pinned to (0, 0) and (1, 1). Throws `EaseFitError` when f is nonfinite or leaves ±EASE_Y_LIMIT, when f(0) or f(1)
  * is farther than the tolerance from 0 / 1, or when the tolerance needs more than `maxPoints` points.
  */
 export function fitEaseCurve(fn: (x: number) => number, opts?: EaseFitOptions): EaseCurve {
 	const tol = tolOf(opts);
+	const cubicTol = cubicTolOf(opts, tol);
 	const maxPoints = maxPointsOf(opts);
 	const deriv = opts?.derivative;
 	if (deriv !== undefined && typeof deriv !== 'function')
@@ -510,8 +606,13 @@ export function fitEaseCurve(fn: (x: number) => number, opts?: EaseFitOptions): 
 	if (turns.length <= 2) {
 		const hermite = hermiteCubic(s, deriv);
 		if (cubicMaxError(hermite, s, tol) <= tol) return hermite;
-		const ls = cubicLeastSquares(s, 2 * tol);
+		const monotoneTol = turns.length === 0 ? cubicTol : tol;
+		const ls = cubicLeastSquares(s, 2 * monotoneTol);
 		if (ls && cubicMaxError(ls, s, tol) <= tol) return ls;
+		if (ls && monotoneTol > tol) {
+			const mm = cubicMinimax(s, ls);
+			if (cubicMaxError(mm, s, monotoneTol) <= monotoneTol) return mm;
+		}
 	}
 	const breaks = [0, ...turns, 1];
 	const yAt = (x: number) => (x === 0 ? 0 : x === 1 ? 1 : call(s.fn, x));

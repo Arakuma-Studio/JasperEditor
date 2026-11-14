@@ -2,11 +2,13 @@
 // redo the exact result (docs/wp-notes/easing.md).
 import {
 	type Animatable,
+	builtinEasePresets,
 	type CommandInput,
 	copyEase,
 	createCounterIdSource,
 	createEmptyProject,
 	defaultRegistries,
+	evaluate,
 	type ProjectDocument,
 	type SolidClip,
 } from '@jasper/project';
@@ -102,5 +104,63 @@ describe('ease commands in the session history', () => {
 			expect(s.getCommitted()).toEqual(afterSnapshot);
 			expect(s.undo().ok).toBe(true);
 		}
+	});
+
+	it('a Penner in-out preset sets the handles of the two keys, so moving a key rescales the ease in time', async () => {
+		const { s, clipId } = await open();
+		const rotation = ['clip', clipId, 'transform', 'rotation'];
+		s.apply({
+			label: 'Rotation keys',
+			origin: 'user',
+			commands: [
+				{ type: 'param.setAnimated', target: rotation, animated: true, at: { sequenceFrame: 0 } },
+				{ type: 'param.set', target: rotation, value: 0, at: { sequenceFrame: 0 } },
+				{ type: 'param.set', target: rotation, value: 90, at: { sequenceFrame: 30 } },
+			],
+		});
+		const anim = (doc: ProjectDocument) =>
+			(Object.values(doc.sequences)[0]!.clips[clipId] as SolidClip).transform.rotation as Animatable<number>;
+		const ids = anim(s.getCommitted()).keyframes.map((k) => k.id);
+		// The curve apply_ease and the Easing panel send for "Cubic In-Out".
+		const preset = builtinEasePresets().find((p) => p.id === 'penner.cubic-in-out')!;
+		const applied = s.apply({
+			label: 'Ease',
+			origin: 'user',
+			commands: [{ type: 'keyframe.applyEase', keyframeIds: ids, curve: preset.curve } as CommandInput],
+		});
+		expect(applied.ok, JSON.stringify(applied)).toBe(true);
+		const eased = s.getCommitted();
+		const keys = anim(eased).keyframes;
+		expect(keys.map((k) => k.id)).toEqual(ids);
+		expect([keys[0]!.interpolation, keys[1]!.inInterpolation]).toEqual(['bezier', 'bezier']);
+
+		// Penner's easeInOutCubic; the shared evaluator (preview and every export path sample it) stays within 1 % of
+		// the 90° change over the key span, before and after the second key moves 30 frames later.
+		const penner = (x: number) => (x < 0.5 ? 4 * x ** 3 : 1 - (-2 * x + 2) ** 3 / 2);
+		const worstError = (a: Animatable<number>) => {
+			const [t0, t1] = [a.keyframes[0]!.time, a.keyframes[1]!.time];
+			let worst = 0;
+			for (let i = 0; i <= 200; i++)
+				worst = Math.max(worst, Math.abs(evaluate(a, t0 + ((t1 - t0) * i) / 200) - 90 * penner(i / 200)));
+			return worst;
+		};
+		expect(worstError(anim(eased))).toBeLessThanOrEqual(0.9);
+		const span = keys[1]!.time - keys[0]!.time;
+		const moved = s.apply({
+			label: 'Move',
+			origin: 'user',
+			commands: [{ type: 'keyframe.move', keyframeIds: [ids[1]!], delta: { frames: 30 } }],
+		});
+		expect(moved.ok, JSON.stringify(moved)).toBe(true);
+		const after = anim(s.getCommitted());
+		expect(after.keyframes[1]!.time - after.keyframes[0]!.time).toBe(2 * span);
+		expect(worstError(after)).toBeLessThanOrEqual(0.9);
+
+		expect(s.undo().ok).toBe(true);
+		expect(s.getCommitted()).toBe(eased);
+		expect(s.undo().ok).toBe(true);
+		expect(anim(s.getCommitted()).keyframes.map((k) => k.interpolation)).toEqual(['linear', 'linear']);
+		expect(s.redo().ok).toBe(true);
+		expect(s.getCommitted()).toEqual(eased);
 	});
 });

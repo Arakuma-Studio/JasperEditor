@@ -115,6 +115,8 @@ describe('fitEaseCurve', () => {
 			expect(refusal(() => fitEaseCurve((x) => x, { tolerance })).reason).toBe('options');
 		for (const maxPoints of [2, Number.NaN, -5])
 			expect(refusal(() => fitEaseCurve((x) => x, { maxPoints })).reason).toBe('options');
+		for (const cubicTolerance of [0, Number.NaN, 2])
+			expect(refusal(() => fitEaseCurve((x) => x, { cubicTolerance })).reason).toBe('options');
 		expect(refusal(() => fitEaseCurve(42 as unknown as (x: number) => number)).reason).toBe('options');
 	});
 

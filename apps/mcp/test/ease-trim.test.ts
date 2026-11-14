@@ -206,10 +206,13 @@ describe('ease read-back', () => {
 		for (const id of [
 			'basic.ease',
 			'penner.cubic-out',
+			// An in-out Penner curve is one segment's handles too: no keys baked between the two (the outer keys rescale it).
+			'penner.cubic-in-out',
 			'material.standard',
 			'overshoot.overshoot-out-light',
 		]) {
-			await t.ok('apply_ease', { keyframeIds: [k[0], k[1]], curve: id });
+			const applied = await t.ok('apply_ease', { keyframeIds: [k[0], k[1]], curve: id });
+			expect(applied.results[0].created, id).toEqual([]);
 			const v = await t.ok('get_keyframe_eases', { keyframeIds: [k[0], k[1]] });
 			expect(prop(v, /opacity/i).segments.find((s: Json) => s.section === 'middle').preset, id).toBe(id);
 		}
