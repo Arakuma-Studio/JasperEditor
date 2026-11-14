@@ -78,7 +78,10 @@ export function CleanupTranscript({ session, st }: { session: EditorSession; st:
 				title={`${KIND_LABELS[f.kind]} · ${secs.toFixed(2)} s · ${on ? (repair ? t('Repaired') : t('Cut')) : t('Kept')}`}
 				data-testid={`text.cleanup.chip.${f.id}`}
 			>
-				{glyph} {secs.toFixed(1)}
+				{glyph}{' '}
+				{repair
+					? `${Number(f.reason.params.frames) > 0 ? '+' : '−'}${Math.abs(Number(f.reason.params.frames))}`
+					: secs.toFixed(1)}
 			</button>
 		);
 	};

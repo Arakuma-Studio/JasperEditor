@@ -625,6 +625,8 @@ export function registerCleanupTools(ctx: ToolContext): void {
 			});
 			const cuts = analysis.plan.ranges.length;
 			const repairs = analysis.plan.extend?.length ?? 0;
+			const fr = t.seq.settings.frameRate;
+			const added = (analysis.plan.extend ?? []).reduce((n, e) => n + e.frames, 0) / (fr.num / fr.den);
 			if (!commands.length)
 				return jsonResult({
 					ok: true,
@@ -652,8 +654,12 @@ export function registerCleanupTools(ctx: ToolContext): void {
 				...(repairs ? { edgeRepairs: repairs } : {}),
 				analysisId: file.analysisId,
 				stats: analysis.plan.stats,
+				// edge repairs add their frames: removed = input − output + added
 				removedSeconds:
-					Math.round((analysis.plan.stats.inputDuration - analysis.plan.stats.outputDuration) * 1000) / 1000,
+					Math.round(
+						(analysis.plan.stats.inputDuration - analysis.plan.stats.outputDuration + added) * 1000,
+					) / 1000,
+				...(added ? { addedSeconds: Math.round(added * 1000) / 1000 } : {}),
 				note: 'One undo step: undo reverts the whole clean up.',
 			});
 		},

@@ -1158,14 +1158,14 @@ rev 267; the source recording, 16 kHz mono, measured on the build host, `/tmp/je
 - **Audit** (`cleanup/edge-audit.ts` `auditCutEdges`, a cleanup check): every cut edge of the speech clips — not the
   recording's own start or end, not a through edit — that cuts speech in the 50 ms cut away (`speech`), cuts a word's
   decay or onset over quiet + 6 dB (`sound`, ≈ −35 dBFS on the source) without being clean, or lands in a closure
-  inside a word (`inside-word`), with the word it cuts and the frame the snapper would move it to (`fixFrame`), whoever
-  made the cut. Clean Up analyses carry it (`CleanupAnalysis.cutEdges`, optional in the analysis schema: older files
+  inside a word (`inside-word`), with the word it cuts and the frame its repair moves it to (`fixFrame`, `repair`;
+  round 17 "Edge repair"), whoever made the cut. Clean Up analyses carry it (`CleanupAnalysis.cutEdges`, optional in the analysis schema: older files
   lack it) and the MCP `analyze_voice` / `plan_cleanup` bodies page it as `cutEdges` (clip, edge, frame, timecode,
   reason, word, level, fixFrame) — result text only, no tool text changed. Measured on the A1 track: rev 152 522 edges
   (38 out / 119 in `speech`, 244 / 98 `sound`, 10 / 13 `inside-word`; 394 with a fix frame), rev 267 413 (16 / 97,
   211 / 88, 1 / 0). Not in `verify_export`: that check judges the exported file and records the timeline's cuts at
-  export time without the voice analyses; the audit runs where the analyses are (Clean Up's job). The editor shows no
-  list yet. Test: `cleanup-edge-snap.test.ts` "the cut-edge audit" (an over-tight trim at "Uni|ty" listed with a fix
+  export time without the voice analyses; the audit runs where the analyses are (Clean Up's job). Clean Up offers its
+  repairs as `edge` findings ("Edge repair" below). Test: `cleanup-edge-snap.test.ts` "the cut-edge audit" (an over-tight trim at "Uni|ty" listed with a fix
   frame that keeps the decay to 1351.30 s).
 - **Measured** (Fast, the script attached, default decisions; whole source as one clip, one-off script over the shipped
   functions): main b7b06eda9 places 780 cut edges, 127 of them with more than −33 dBFS cut away (56 over −28; 49 were
@@ -1190,6 +1190,91 @@ rev 267; the source recording, 16 kHz mono, measured on the build host, `/tmp/je
   stop closure longer than 50 ms inside a word reads as a clean place if no word bound excludes it; continuous speech
   without a 20 ms dip under the quiet level keeps its edge (reported, not moved); the real-file rerun of Apply on the
   GPU PC is the coordinator's.
+
+**Edge repair** (round 17: Clean Up repairs cut edges it did not make; the same source and project — rev 144, cut by
+hand and by earlier passes — against the hand-fixed rev 549, which supersedes rev 267: several of rev 267's restart
+cuts and its 1155.38 breath in point were reverted later; measured on the build host and the GPU PC, `/tmp/cer/`):
+- **Why the audit's fix fell short** (re-measured on main 10c6275bf; the comparison report's 39 / 21 / 8 came from a
+  looser match that also counted restorations over 1 s): of rev 267's 33 edge extensions up to 1 s the audit listed
+  31, gave a fix frame for 18 and reached rev 267's edge at 11. Ten of the 33 put whole words back ("para | por toda
+  la memoria", "el otro 1 %", "y", "yo.", "guiño.") — content, not an edge: a repair never pulls in another word; others
+  reach through a breath (1155.38, "meteoritos" + breath), refused on purpose (rev 549 moved 1155.38 to 1155.65). The
+  rest were three faults of the bounds, fixed here (`cleanup/edge-repair.ts` `repairCut`, the audit's `fixFrame` now):
+  - tokens with no letter or digit bound nothing ("es …|" at 242.90: the "…" token over the decay held the edge);
+  - a word whose time holds the edge belongs to the side holding most of its sound, not of its midpoint ("No" at
+    1155.40–1155.79 holds the in edge at 1155.68 with all its sound after it: it is the kept word);
+  - a breath-class run shorter than 50 ms beside the word is the word's unvoiced decay or attack ("el|" at 1191.67), and
+    where a kept span would start or end with a breath, the breath frame right beside other sound over the quiet level
+    is that sound's (the breath before "No había" ends one 10 ms frame before the attack; a 60 fps grid cannot cut
+    there) — a separate reading for the kept side only (`EdgeLevels.keptBreath`); the cut-away side still skips it.
+  New limits on keeping more: another word's soft onset after a dip near quiet stops it even under the speech level
+  (`foreignSoundBound`: the soft restart "y | y que" at 764.53), and an in edge's extension over a separate burst
+  before the attack (a dip under the speech level 6 dB below an earlier frame) is for review: the same envelope is a
+  restart the transcript wrote once ("y | y que") and the word's own first syllable before a closure ("e|xtremadamente").
+- **Findings** (`cleanup/edge-findings.ts` `planEdgeRepairs`, kind `edge`, made in `analyzeSequenceCleanup` after the
+  plan): every audited edge of a speech clip that the plan keeps where it is (its kept pieces reach it, inside the
+  scope) and that `repairCut` moves. `range` = the media span added or trimmed; params `side`, `frames` (> 0 the clip
+  grows into its media, < 0 a trim), `clipId`, `frame`, `text` (the cut word), `cut` (the audit reason), `review`.
+  Accepted by default (`suggested: remove`) only when safe: the repair lands on a clean boundary and adds only the cut
+  word's own sound (no other word's time ≥ 50 %, no breath ≥ 50 ms, no onset after a dip); the kept side was still
+  loud at the edge (any of the 40 ms beside it over the speech level, or speech in the 50 ms cut away — the review's
+  criterion for "cut word": last 40 ms before over −26 dBFS; a faded word's soft tail is `review: faded`); the media
+  has the handle (else no finding); every linked partner on a video track plays the same media in sync with the handle
+  (it is extended with the sound at its own edge, so a J / L cut keeps its offset; else `picture`); no other clip on a
+  rippling track runs across the edge or is butted at it (a picture hole, or silence inside music: `picture` /
+  `other-sound`; generated overlays are lengthened and captions held over the frames, so they do not count); no other
+  clip of the media plays the added sound, and no two extensions add the same sound (`doubled`). Everything else is
+  for review (`speech-left`: no clean boundary within reach but ≥ 6 dB better; `word`; `sound`). Accepted trims shorten
+  the piece in the plan's ranges (reason `edge`); accepted extensions go to `plan.extend` and count in
+  `outputDuration`. Rejecting every finding (or the `edge` kind) leaves the plan as before.
+- **Apply** (`cleanup.apply` `extend: [{clipId, side, frames}]`, extract only; `cleanupApplyCommands` and the editor's
+  "Play result" send `plan.extend`): latest edge first, each a ripple trim (`rippleTrimGroup`) of the clip's edge with
+  its synced linked partners; sync-locked tracks get the frames inserted at the edge (day cards and titles lengthened
+  with their keyframes, `W_OVERLAY_FITTED`); a caption that ran up to or across the edge is held over the inserted
+  frames; `ranges` are moved through them; a range that takes the extended edge refuses `E_INVALID_PARAM`, so do
+  `extend` outside extract and an apply with neither ranges nor extend; `W_UNCOVERED_VIDEO` if picture holes grew. One
+  undo step, as before. History label "Clean Up Voice: N cuts, M edge repairs".
+- **UI / MCP**: the findings list groups them as "Words cut at an edit" (repair glyph ⇥, "Repair all" / "Repair this",
+  no strike-through); the Apply button names the repairs. MCP: the findings carry the reason text ("The edit cuts the
+  end of "Unity.": accepting extends the clip and its linked picture 10 frames into the media (…)"), the bodies
+  `edgeRepairs`; apply_cleanup applies them (`cleanupApplyCommands`). The kind stays out of the advertised `kinds` /
+  `acceptKinds` / `rejectKinds` enums (42 model-visible bytes, no eval case): agents decide repairs by id or
+  fingerprint. No tool text changed.
+- **Measured on the real file** (criteria fixed before results, development on source < 1720 s only, held out ≥ 1720 s;
+  envelope = 10 ms RMS of the source, edges = A1 pieces; "wrong" = the added span holds ≥ 50 % of another stored word, ≥
+  50 ms of breath class, or a rise ≥ 8 dB to over −28 dBFS after a dip ≤ −38 dBFS; the test engine on the GPU PC applied
+  the default plan through apply_cleanup):
+
+  | half | edges with > −33 dBFS cut away, in / out (> −28) | rev 144 | Clean Up main 8657fd267 | Clean Up now | rev 549 |
+  |---|---|---|---|---|---|
+  | < 1720 s | in | 73 (41) of 158 | 61 (34) of 143 | 14 (8) of 138 | 51 (28) of 131 |
+  | < 1720 s | out | 120 (19) | 106 (13) | 24 (9) | 35 (4) |
+  | ≥ 1720 s | in | 101 (53) of 193 | 89 (43) of 181 | 22 (12) of 177 | 70 (27) of 167 |
+  | ≥ 1720 s | out | 132 (23) | 121 (18) | 41 (14) | 49 (8) |
+
+  Accepted repairs on rev 144: < 1720 s 162 (160 extensions, 2 trims), 69 on edges rev 549 extended (61 reaching its
+  edge) of its 79 extensions that are not restorations, 0 wrong; ≥ 1720 s 198 (189 / 9), 74 matched (69 reaching) of
+  96, 0 wrong. Second set — the 145 out points the editor extended between revisions 323 and 475 (2–13 frames, the
+  review's −26 / −36 / −38 dBFS criterion): the repairs on rev 323 find 58 of 68 (< 1720 s; 54 reaching) and 63 of
+  76 plus a −4 frame trim (≥ 1720 s; 59 reaching), 0 wrong. Review findings that the criterion calls wrong (never
+  applied by default): 462.18 "Y | el" (an onset after a dip), 764.60 "y | y que" (rev 323's rebuilt transcript has
+  no first "y"), 3224.43 "un montón de… | un montón" (would pull "montón" of the restart back). Output 944.4 s against
+  925.9 s (main) and 936.4 s (rev 549): 20.2 s of decays and attacks at 349 edges (median 3 frames); A1 frames
+  without V1 picture 0, out-of-sync A / V frames 11 (rev 144: 123; main: 21).
+- Tests (the first two files fail on main 81efd3eae; the property holds there with no edge findings):
+  `cleanup-edge-repair.test.ts` — the audit's repair of the three places above
+  (source planes and stored words, `fixtures/cleanup-edge-repair-source.json`), the accepted finding extending clip
+  and picture in sync through Apply (rejected: nothing), review when the sound lies under another picture clip;
+  `cleanup-commands.test.ts` "cleanup.apply extend" — the extension with ranges moved, a title lengthened, captions
+  held, undo / redo, refusals; `cleanup-property.test.ts` "edge repairs of an already cut timeline" — random cut
+  timelines: rejecting changes nothing, each extension is an accepted finding's, trims only beside their edge, after
+  Apply sound and picture in sync, no frame without picture, the planned length.
+- Limits: a repair moves an edge to its word's decay or attack, never puts back words a cut removed (rev 549's
+  restorations); a word whose timestamp is far off still bounds; continuous speech without a quiet boundary within
+  0.3 s keeps its edge (for review at best); judged by envelope and stored words, not by ear. Apply Style's clean-up
+  item (automation) still sends ranges only. "Play result" starts from the playhead mapped through the removed
+  ranges only (the inserted frames before it shift it by up to their sum). Every insertion inside a day card warns
+  `W_OVERLAY_FITTED` once.
 
 **Stray fragments and A / V slivers** (round 16, same review):
 - **Reported**: 47 kept A1 clips under 0.7 s of rev 152 held no script word — "mmm", "eeeh", a laugh heard as "y",
