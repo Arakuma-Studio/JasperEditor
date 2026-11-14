@@ -1438,10 +1438,102 @@ the "mostrar" closure gives a window but no finding even when the window decode 
 lies over the dip); without the window the decodes miss it. `apps/engine/test/cleanup-edit-words.test.ts`: windows
 decoded in the same job and cached.
 
-Limits: not run with large-v3-turbo on the reporter's audio (the coordinator's GPU run is pending); the second decode
-is the same model on nearly the same audio — two decodes that double a word alike agree (the stored transcript does
-not veto, since it merges real takes too); the agreeing second decode of the fixture is an assumption; repeats at cuts
-the plan itself creates need a second run after applying; the Clean Up panel has no control for it (docs/gaps.md).
+Limits: the second decode is the same model on nearly the same audio — two decodes that double a word alike agree
+(the stored transcript does not veto, since it merges real takes too); repeats at cuts the plan itself creates need a
+second run after applying. Measured on the reporter's audio below.
+
+#### On the real recording (rev 144 base, rev 549 the reference)
+
+A run of the check on rev 144 (main 8657fd267, large-v3-turbo, `checkCuts: spans`) transcribed all 353 kept spans and
+found 8 repeats; 16 places rev 267 cut had no finding. Rev 267 is not the reference: five of its restart cuts were
+reverted by ear (rev ~305), and rev 549 (`/tmp/je-v7ref/rev549.project.jasper` and `TRUTH.md` on the reporter's PC) is.
+
+**Scoring criteria** (fixed before the new rules were run; `/tmp/je-cbr/CRITERIA.txt`, `positives.json`, `score.py` on
+the PC). Positives: the restarts confirmed by ear in `TRUTH.md` that rev 144 still keeps, the 16-miss items rev 549
+still removes whose removed words the next words say again, and the requester's issue-3 examples rev 549 removes —
+14 places (4 before 1720 s, 10 after). TRUTH items rev 144 already cut ("y es… | extremadamente", "otro que…", "ok voy
+a…", "Y en el juego…") are no target on this base; 461.65 "Y" (a laugh) and 1849.98 (17 ms) are rev 549 removals
+without a repeat and are not scored. Negatives: the five TRUTH "not restarts" (70.66 "tiene que", 741.44 "pi|xel",
+1646.30 "most|trar", 2158.9 "tienes que", 2360.35 "en una"). Found = a finding whose cuts overlap the place (0.1 s
+slack); suggested = such a finding with `suggested: remove`; a false suggestion = a `remove` whose removed time rev 549
+keeps (≥ 50 %). The rules were developed on the first half (< 1720 s source) and scored on the second half held out;
+after that score (round 1) the held-out cases were diagnosed too, so the round-2 held-out figures are no longer blind.
+
+**Diagnosis** (what the decodes wrote around each place; 0.2 s and 0.6 s span decodes, the stored transcript, window
+decodes; `diag.mts` on the PC re-runs `findEditRepeats` from the cached decodes of that run, which are the same requests
+this code makes):
+
+| Source s | Place | Truth | What the decodes wrote | Cause | Now |
+|---|---|---|---|---|---|
+| 70.66 | tiene que | said once | one copy; "tiene" over the 50 ms dip in every decode | — | nothing (right) |
+| 408.08 | y si \| y si buscas | restart | 0.2 s: "Y si buscas", "buscas" stretched over the dip; 0.6 s: "Y si… y si buscas"; window: "Y si buscas" from the dip | only the 0.2 s decode could find; the window repeat was dropped for a word over the dip | **removed**, to 408.38 (user 408.367) |
+| 461.65 | Y | laugh | "¡Hahahaha!" / "jajajaja" | not a repeat (a fragment) | review |
+| 741.44 | pi\|xel | one word | "pixel." | — | nothing (right) |
+| 827.45 | aunque el \| aunque el | restart | clip: "Aunque el jero…" / "Aunque el…"; next: "Aunque el jaspercito" | the guessed cut-off "jero…" had to be said again | **removed**, the whole clip |
+| 1151.33 | No \| no había | restart | as before | — | removed (as before) |
+| 1312.10 | Desde \| Desde que | restart | 0.35 s fragment: both span decodes "y"; stored "Desde", the retry's copy dropped | the span decodes agree on a wrong word | missed |
+| 1646.30 | most\|trar | closure | "Mostrar" over the 60 ms dip everywhere | — | nothing (right) |
+| 2158.9 | tienes que | said once | one copy | — | nothing (right) |
+| 2296.53 | así que el… \| así que el | restart | the clip's In cuts into "Así" (its midpoint before the In) | the clip's words lost "Así" | **removed**, the whole clip |
+| 2360.35 | en una | said once | one copy | — | nothing (right) |
+| 2651.67 | como \| como un | restart | 0.22 s fragment: "…cada en el…" / "caen"; stored "como", retry dropped | span decodes fail on the fragment | review |
+| 2734.35 | y que mi \| y que mi | restart | every decode "Y que mi ejército", "ejército" stretched over the dip; window "y que mi ejército" | window repeat dropped for the stretched word | review (no measured pause) |
+| 2936.03 | Hubo \| Hubo otro | restart | fragment: "Me decía…" / "es siempre"; stored "Hubo" | span decodes fail | review |
+| 3028.50 | Y \| Y después | restart | "después" stretched over the dip; window "Y después" | as 2734 | review |
+| 3078.93 | Pero \| Pero de qué | restart | fragment: "arrear" / "arreglar."; stored "Pero" | the two wrong words count as one (`sameWord`), so the clip is not "unreadable" | missed |
+| 3171.95 | Lo… \| Lo reescribieron | restart | "Lo" itself stretched over the dip (3171.85–3172.29) in every decode | the same picture as the "mostrar" closure | missed |
+| 3215.17 | que \| que de hecho fue | restart | span decodes drop the leading "que"; stored has it, at another time | no decode writes both copies | missed |
+| 3224.43 | un montón de… \| un montón de | restart | one copy everywhere; no window there (only after phrase onsets) | merged, nothing to compare | missed |
+| 3328.70 | así que \| así que | restart | the retry clip's In cuts into "Así" | as 2296; one decode | review |
+
+**Rules changed** (`edit-repeats.ts`; tests in `cleanup-edit-repeats.test.ts` "repeats the decodes of the real cut
+wrote differently", from these decodes):
+- Both span decodes (0.2 s and 0.6 s padding, `alt`) find repeats, and each confirms the other; window decodes confirm
+  too. The confirming sources are another span decode, `confirm` / the stored transcript, the mixdown, a window decode.
+- An attempt whose last word the recogniser wrote cut off ("jero…") is the words before it, said again word for word
+  from the retry's start (two or more, or one that is no stop word). Across a cut, every span decode writing the clip
+  ending cut off confirms it (the take was abandoned mid-word).
+- A word the clip's In cuts into belongs to the clip by the sequence transcript's rule (`heardFromCutStart`, ≥ 20 % of
+  it played, no other clip plays it).
+- An in-span repeat is reviewed (`held: 'closure'`) when another span decode writes one attempt word over the gap
+  between the copies ("tiene que" doubled by one decode, "tiene" across the dip in the other).
+- A window repeat is dropped for a span-decode word over the dip only when that word is one of the words said again
+  ("mostrar", "tiene", "Lo"); a later word stretched over a merged restart ("buscas", "ejército", "después") no longer
+  hides it.
+- A clip both span decodes fail on (no word in common) is read from the stored transcript when its words are said again
+  at the next clip's start in a stretch the stored transcript left empty (it merged the retry): review only.
+- In connected speech the end of an in-span removal is the quietest frame before the retry, not its decoded onset.
+
+**Figures** (measured from the cached decodes; per half; findings are the check's own, `remove` / `review`):
+
+| | main 8657fd267 | round 1 (frozen on the first half) | now |
+|---|---|---|---|
+| < 1720 s: found / suggested of 4 | 1 / 1 | 3 / 3 | 3 / 3 |
+| ≥ 1720 s: found / suggested of 10 | 0 / 0 | 1 / 0 (held out) | 6 / 1 (diagnosed) |
+| false suggestions (both halves) | 0 | 0 | 0 |
+| negatives suggested / reviewed | 0 / 0 | 0 / 0 | 0 / 0 |
+| findings < 1720 s remove / review | 1 / 0 | 3 / 2 | 3 / 5 |
+| findings ≥ 1720 s remove / review | 1 / 6 | 1 / 10 | 2 / 16 |
+
+The other `remove` is "¿Qué" at 2724.15 (three slivers rev 549 removes too). Review findings rev 549 does not remove:
+3 of 5 before 1720 s ("Al", 1387.9 "y", 61.85 "Y") and 10 of 16 after (one-word window stutters such as "el | El código",
+"la | La parte", and "No", "Todo", "los"): reviews cost a decision each, never a cut.
+
+**Cost and default.** The check decodes ≈ 3,054 s of audio for this cut (1,070 s at 0.2 s padding, 1,352 s at 0.6 s,
+633 s of restart windows) for 928 s kept; VAD chunking decodes about twice (speech.md §11.3). A window of ±2 s around
+each boundary is no cheaper here: 79 % of the 353 spans are under 4 s (median 2.57 s), so the last 2 s and first 2 s of
+each span is 979 s against 1,070 s. On the RTX 3080 Ti the main run took ≈ 18 min of transcription (the report's
+figure, freezes excluded). So the check is offered, not run by default: Clean Up's toolbar has a **Repeats at cuts**
+toggle (remembered in the browser, off until turned on), the review's notes say what it did ("N clips checked (M
+transcribed now), F found, R suggested for removal", or why it could not run), and re-plans keep its findings — the
+local planner gets the analysis's `editRepeats`, an engine re-plan asks for the check again (all cached). MCP
+`apply_cleanup` with the `analysisId` of an analysis whose check found repeats checks the cuts again (cached) when
+`checkCuts` is left out, so the repeats and the decisions on them are not dropped.
+
+Limits: the held-out half was diagnosed after its blind score, so its round-2 figures are not blind; the positives are
+14 places, too few for a rate; five real restarts are still missed (1312.10, 3078.93, 3171.95, 3215.17, 3224.43: a
+fragment every decode reads wrongly or alike, a restart word stretched over its own dip, a stutter with no window
+there); review findings are about 40 % right on this cut.
 
 ### Planning (TC-020 … TC-026)
 
@@ -1691,6 +1783,9 @@ selection refuses with a reason) and **Analyze** / **Analyze Again**.
 - Analyze sends the committed document (an envelope) to the engine's `cleanup-analysis` job, so the analysis is of
   exactly what the editor holds; progress and stage come from the job (polled every 300 ms) with **Cancel** (cancels the
   job and its voice-analysis children). The editor stays usable: the long part runs in the engine.
+- **Repeats at cuts** (toolbar toggle, remembered in the browser, off by default): the analysis also runs the check of
+  the cuts (`editRepeats: 'spans'`, "Repeats at cuts" above) — every kept clip transcribed again on its own, cached per
+  clip; the notes report clips checked, transcribed now, found and suggested, or why it could not run.
 
 ### Review (TC-041, TC-042)
 
