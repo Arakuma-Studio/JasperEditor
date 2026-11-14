@@ -73,7 +73,7 @@ import {
 	useLayerFontsReady,
 } from './fonts.ts';
 import { type FrameSpan, FrameWindow } from './frame-window.tsx';
-import { CanvasOwnerContext } from './fx/canvas-scope.tsx';
+import { CanvasOwnerContext, usePagePixelDensity } from './fx/canvas-scope.tsx';
 import { installCaptureSafeCanvases } from './fx/capture-safe-canvas.ts';
 import {
 	BlendFallback,
@@ -805,6 +805,9 @@ export function VideoTracks({
 	const requestFlat = useCallback(() => setFlatRequested(true), []);
 	// Layer renders (bakes of single clips) composite nothing; a nest's canvas source always draws its picture.
 	const canFlat = gpu === 'ok' && htmlInCanvas && (!options.layerFilter || !!flatOutput);
+	// A scope captures the canvases below it (video frames, effect pictures) right only at a pixel density of 1: a
+	// `render_frame` / export at another size than the sequence's, or a HiDPI / zoomed Player, draws flat.
+	const density = usePagePixelDensity();
 	const flatReason = useMemo(() => {
 		if (!canFlat) return null;
 		const scopes: StackScope[] = [];
@@ -827,8 +830,8 @@ export function VideoTracks({
 			});
 			if (canvas) canvasTracks.push(i);
 		});
-		return flatStackReason(scopes, canvasTracks);
-	}, [canFlat, tracks, blendTracks, gpu3d, scene3d, matteContext, doc.media]);
+		return flatStackReason(scopes, canvasTracks, density);
+	}, [canFlat, tracks, blendTracks, gpu3d, scene3d, matteContext, doc.media, density]);
 	const flat =
 		canFlat && (!!flatOutput || flatRequested || (!nested && !!flatDisplay) || flatReason !== null);
 	const flatHub = useRef<CompositeHub | null>(null);

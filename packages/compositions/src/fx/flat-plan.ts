@@ -158,11 +158,17 @@ export type StackScope = { track: number; kind: 'adjustment' | 'blend' | 'linear
  * keeps, pixel for pixel). Scopes capture everything below their track, so two scopes nest, and so does anything below
  * the topmost scope that draws through HTML-in-Canvas itself (`canvasTracks`: track indexes holding such layers; a
  * nested sequence that contains a scope or such a layer counts).
+ * `density` = device pixels per CSS pixel of the page (the render `scale`, the Player's `devicePixelRatio`): Chrome's
+ * capture draws each `<canvas>` it captures (video frames, effect pictures) at one backing pixel per device pixel from
+ * the canvas's corner instead of over its CSS box (measured on Chrome 156), so a scope's capture is right only at 1.
  */
 export function flatStackReason(
 	scopes: readonly StackScope[],
 	canvasTracks: readonly number[],
+	density = 1,
 ): string | null {
+	if (scopes.length >= 1 && density !== 1)
+		return `${SCOPE_NAMES[scopes[0]!.kind]} at a pixel density of ${density} (HTML-in-Canvas captures canvases at their backing size)`;
 	if (scopes.length >= 2) {
 		const names = [...new Set(scopes.map((s) => SCOPE_NAMES[s.kind]))].join(', ');
 		return `${scopes.length} canvas scopes (${names})`;
