@@ -12,6 +12,9 @@
 //   long enough every key time is scaled with the duration instead;
 // - a removal that covers the whole overlay removes it (it showed only removed time), as before;
 // - `W_OVERLAY_FITTED` names each overlay kept whole.
+// Removals: range.extract, clip.extract, ripple trims, cutRanges, gap.close, ripple speed changes (`removeShiftKeeping`).
+// Inserts: ripple trims, insert placement / moves, paste insert, Insert Frame Hold Segment, ripple speed changes
+// (`insertShiftKeeping`).
 // Subtitle text clips (a `caption`) and media-backed clips are cut as before: their words / frames belong to the time.
 
 import type { Keyframe } from '../schema/common.ts';
@@ -19,7 +22,7 @@ import type { Clip } from '../schema/sequence.ts';
 import { flicksPerFrame } from '../time.ts';
 import type { DClip, DSeq, HandlerContext } from './context.ts';
 import { valuesOf } from './draft-read.ts';
-import { end, trackClipIds } from './placement.ts';
+import { end, insertShift, removeShift, type SplitRecord, trackClipIds } from './placement.ts';
 
 /** Kinds drawn by the app itself (no media frames): they are kept whole by ripples on other tracks. */
 const OVERLAY_KINDS: ReadonlySet<string> = new Set([
@@ -287,4 +290,48 @@ export function applyOverlayFits(seq: DSeq, fits: readonly OverlayFit[], h: Hand
 	for (const fit of fits) if (fitOverlay(seq, fit)) ids.add(fit.clipId);
 	finishOverlayFits(seq, fits, h);
 	return ids;
+}
+
+/**
+ * `insertShift` of an edit on `edited` tracks whose sync-locked `followers` get the same insert: overlays on the
+ * followers that straddle `at` are lengthened whole instead of split. Returns the split records (for `relinkSplits`).
+ */
+export function insertShiftKeeping(
+	seq: DSeq,
+	edited: Iterable<string>,
+	followers: Iterable<string>,
+	at: number,
+	n: number,
+	h: HandlerContext,
+	except: ReadonlySet<string> = new Set(),
+): SplitRecord[] {
+	const follow = [...followers];
+	const fits = overlayInsertFits(seq, follow, at, n).filter((f) => !except.has(f.clipId));
+	const keep = new Set([...except, ...fits.map((f) => f.clipId)]);
+	const splits = insertShift(seq, [...edited, ...follow], at, n, h, keep);
+	applyOverlayFits(seq, fits, h);
+	return splits;
+}
+
+/**
+ * `removeShift` of `[f, f+n)` on `edited` tracks and their sync-locked `followers`: overlays on the followers that
+ * overlap the removal are shortened whole instead of blocking (or being cut).
+ */
+export function removeShiftKeeping(
+	seq: DSeq,
+	edited: Iterable<string>,
+	followers: Iterable<string>,
+	f: number,
+	n: number,
+	h: HandlerContext,
+	opts: Parameters<typeof removeShift>[5] = {},
+): void {
+	const follow = [...followers];
+	const fits = overlayRemovalFits(seq, follow, f, f + n);
+	for (const fit of fits) fitOverlay(seq, fit);
+	removeShift(seq, [...edited, ...follow], f, n, h, {
+		...opts,
+		except: new Set([...(opts.except ?? []), ...fits.map((x) => x.clipId)]),
+	});
+	finishOverlayFits(seq, fits, h);
 }

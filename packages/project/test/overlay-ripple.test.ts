@@ -4,7 +4,7 @@
 // the other part. A card spanning a ripple on another track now stays one clip: shortened / lengthened inside its
 // still stretch, so the pop-in and shrink stay on its start and the pop-out on its end.
 import { describe, expect, it } from 'vitest';
-import { checkInvariants, flicksPerFrame, RATES } from '../src/index.ts';
+import { buildClipsPayload, checkInvariants, flicksPerFrame, RATES } from '../src/index.ts';
 import { Harness } from './helpers.ts';
 
 const F = flicksPerFrame(RATES.r30);
@@ -163,5 +163,95 @@ describe('generated overlays across ripple edits', () => {
 			[S, S + 200],
 			[S + 200, S + LEN - 30],
 		]);
+	});
+});
+
+/** V1 footage: [0, S+150), a 30-frame shot [S+150, S+180), [S+180, …) — each a separate video clip. */
+function shots(h: Harness, gap = false) {
+	const m = h.registerVideo({ seconds: 60, audio: false });
+	const place = (at: number, from: number, frames: number) => ({
+		type: 'clip.place',
+		source: { mediaId: m },
+		at,
+		sourceRange: { in: { sourceFrames: from }, out: { sourceFrames: from + frames } },
+		tracks: { video: 'V1' },
+	});
+	return [place(0, 0, S + 150), ...(gap ? [] : [place(S + 150, 600, 30)]), place(S + 180, 900, 600)];
+}
+
+describe('generated overlays across insert edits', () => {
+	it('insert placement inside the card lengthens it instead of splitting it', () => {
+		const h = new Harness();
+		const card = dayCard(h);
+		const m = h.registerVideo({ seconds: 10, audio: false });
+		h.ok([
+			{
+				type: 'clip.place',
+				source: { mediaId: m },
+				at: S + 180,
+				mode: 'insert',
+				sourceRange: { in: { sourceFrames: 0 }, out: { sourceFrames: 30 } },
+				tracks: { video: 'V1' },
+			},
+		]);
+		expectWholeCard(h, card, S, LEN + 30);
+		expect(keysOf(h, card, 'scale')).toEqual(moved(SCALE, 354, 30));
+		expect(keysOf(h, card, 'position')).toEqual(POSITION);
+	});
+
+	it('paste insert inside the card lengthens it', () => {
+		const h = new Harness();
+		const card = dayCard(h);
+		h.ok([solid(3000, 30, 'V3')]);
+		const copied = buildClipsPayload(h.doc, h.seqId, [h.clips('V3')[0]!.id]);
+		const payload = JSON.parse(JSON.stringify(copied));
+		h.ok([{ type: 'clip.paste', payload, at: S + 180, mode: 'insert', tracks: { video: 'V1' } }]);
+		expectWholeCard(h, card, S, LEN + 30);
+		expect(keysOf(h, card, 'scale')).toEqual(moved(SCALE, 354, 30));
+	});
+
+	it('an insert move onto V1 inside the card lengthens it', () => {
+		const h = new Harness();
+		const card = dayCard(h);
+		h.ok([solid(3000, 30, 'V3')]);
+		h.ok([
+			{
+				type: 'clip.move',
+				clipIds: [h.clips('V3')[0]!.id],
+				deltaFrames: S + 180 - 3000,
+				deltaTracks: -2,
+				mode: 'insert',
+			},
+		]);
+		expectWholeCard(h, card, S, LEN + 30);
+		expect(keysOf(h, card, 'scale')).toEqual(moved(SCALE, 354, 30));
+	});
+
+	it('Insert Frame Hold Segment inside the card lengthens it', () => {
+		const h = new Harness();
+		const card = dayCard(h);
+		h.ok([{ type: 'clip.insertFrameHoldSegment', clipId: h.clips('V1')[0]!.id, at: S + 180, duration: 30 }]);
+		expectWholeCard(h, card, S, LEN + 30);
+		expect(keysOf(h, card, 'scale')).toEqual(moved(SCALE, 354, 30));
+	});
+
+	it('a ripple speed change under the card lengthens or shortens it', () => {
+		const h = new Harness();
+		const card = dayCard(h, shots(h));
+		const shot = h.clips('V1')[1]!.id;
+		h.ok([{ type: 'clip.setSpeed', clipIds: [shot], rate: 0.5, ripple: true }]);
+		expectWholeCard(h, card, S, LEN + 30);
+		expect(keysOf(h, card, 'scale')).toEqual(moved(SCALE, 354, 30));
+		h.ok([{ type: 'clip.setSpeed', clipIds: [shot], rate: 2, ripple: true }]);
+		expectWholeCard(h, card, S, LEN - 15);
+		expect(keysOf(h, card, 'scale')).toEqual(moved(SCALE, 354, -15));
+	});
+
+	it('gap.close under the card shortens it instead of refusing', () => {
+		const h = new Harness();
+		const card = dayCard(h, shots(h, true));
+		h.ok([{ type: 'gap.close', trackId: 'V1', at: S + 160 }]);
+		expectWholeCard(h, card, S, LEN - 30);
+		expect(keysOf(h, card, 'scale')).toEqual(moved(SCALE, 354, -30));
 	});
 });

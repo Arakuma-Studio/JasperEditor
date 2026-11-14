@@ -30,7 +30,13 @@ import {
 	trackJoins,
 	transitionJoins,
 } from '../join-fades.ts';
-import { finishOverlayFits, fitOverlay, type OverlayFit, overlayRemovalFits } from '../overlay-ripple.ts';
+import {
+	finishOverlayFits,
+	fitOverlay,
+	insertShiftKeeping,
+	type OverlayFit,
+	overlayRemovalFits,
+} from '../overlay-ripple.ts';
 import {
 	allTracksIn,
 	assertUnlocked,
@@ -39,7 +45,6 @@ import {
 	end,
 	ensureTrackAt,
 	findTrackIn,
-	insertShift,
 	relinkSplits,
 	removeClip,
 	removeShift,
@@ -792,8 +797,9 @@ export const clipCoreHandlers = {
 			const at = Math.min(...plan.map((p) => p.start));
 			const n = Math.max(...plan.map((p) => p.end)) - at;
 			const edited = new Set(plan.map((p) => p.dest.id));
-			const tracks = [...edited, ...syncFollowerTracks(seq, edited).map((t) => t.id)];
-			relinkSplits(seq, insertShift(seq, tracks, at, n, h, moving), h);
+			const followers = syncFollowerTracks(seq, edited).map((t) => t.id);
+			// generated overlays on sync-locked tracks are lengthened whole, not split (overlay-ripple.ts)
+			relinkSplits(seq, insertShiftKeeping(seq, edited, followers, at, n, h, moving), h);
 			if (cmd.rippleMarkers !== false) shiftMarkers(seq, at, n);
 		}
 		for (const p of plan) {

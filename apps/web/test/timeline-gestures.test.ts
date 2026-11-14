@@ -75,7 +75,8 @@ describe('move gestures (TL-480…491)', () => {
 	it('Ctrl at release performs an insert move (AC-10b through the gesture)', () => {
 		const t = setupTimeline({ pxPerFrame: 1 });
 		t.session.setToggles({ snapping: false });
-		t.apply([solid(0, 400, 'V1'), solid(250, 200, 'V2'), solid(700, 60, 'V3')]);
+		t.apply([solid(0, 400, 'V1'), solid(700, 60, 'V3')]);
+		footage(t, 250, 200, 'V2');
 		t.drag(t.x(710), t.rowY('V3'), t.x(310), t.rowY('V1'), { ctrl: true });
 		expect(t.spans('V1')).toEqual([
 			[0, 300],

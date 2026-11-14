@@ -2,12 +2,12 @@ import { anim, type Box, createFontRef, DEFAULT_FONT_FAMILY, defaultSpeed } from
 import type { Animatable, LabelColor, Vec2 } from '../../schema/common.ts';
 import type { Transform } from '../../schema/sequence.ts';
 import type { DDoc, DSeq, DTrack, HandlerContext } from '../context.ts';
+import { insertShiftKeeping } from '../overlay-ripple.ts';
 import {
 	assertKindFits,
 	assertUnlocked,
 	clearRange,
 	firstFreeTrack,
-	insertShift,
 	relinkSplits,
 	resolveOrCreateTrack,
 	type SplitRecord,
@@ -89,8 +89,9 @@ export function makeRoom(
 		for (const t of dest) splits.push(...clearRange(seq, t.id, at, at + n, h));
 	} else {
 		const edited = new Set(dest.map((t) => t.id));
-		const tracks = [...edited, ...syncFollowerTracks(seq, edited).map((t) => t.id)];
-		splits = insertShift(seq, tracks, at, n, h);
+		const followers = syncFollowerTracks(seq, edited).map((t) => t.id);
+		// generated overlays on sync-locked tracks are lengthened whole, not split (overlay-ripple.ts)
+		splits = insertShiftKeeping(seq, edited, followers, at, n, h);
 		if (rippleMarkers) shiftMarkers(seq, at, n);
 	}
 	relinkSplits(seq, splits, h);
