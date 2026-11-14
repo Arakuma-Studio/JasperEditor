@@ -26,6 +26,7 @@ import {
 	voicedFrame,
 	wordPeakDb,
 } from './detector.ts';
+import { EDGE_DECAY_S, edgeBounds, edgeLevelsOf, snapCut } from './edge-snap.ts';
 import { snapEdge } from './edges.ts';
 import { cleanupLanguageOf } from './lists.ts';
 import { isHarshCut, planMediaCuts, type Span } from './plan.ts';
@@ -517,7 +518,16 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 				([a, b]) => b > lo && a < hi,
 			);
 			if (cutVoice.length) ({ kept, tight } = subtractSpans(kept, tight, cutVoice));
-			let keptFrames = keptToFrames(clip, rate, run.voice, kept, settings.edges.snapWindowS, extent, tight);
+			let keptFrames = keptToFrames(
+				clip,
+				rate,
+				run.voice,
+				kept,
+				settings.edges.snapWindowS,
+				extent,
+				tight,
+				words.filter((_, k) => inClip[k]),
+			);
 			// frame guards: no cut shorter than minCutFrames, no kept sliver shorter than minSliverFrames
 			const g = settings.guards;
 			const joinShort = (pieces: ReadonlyArray<readonly [number, number]>) => {
@@ -535,8 +545,26 @@ export function analyzeSequenceCleanup(input: AnalyzeSequenceInput): CleanupAnal
 			// (docs/wp-notes/transcript-cleanup.md "Every removal has a finding")
 			const removing = coveredSpans();
 			const removedNow = removedFor();
+			// a removed word goes with its rising onset and its fading decay (the pause beside it holds them, so a rejected or
+			// reviewed pause would keep them: a cut that ends a piece while the removed word already sounds, or starts the
+			// next one while it still does)
+			const keptWords = words.filter((_, k) => inClip[k] && !removedNow[k]);
 			words.forEach((_, k) => {
-				if (inClip[k] && removedNow[k]) removing.push(res.sound[k]!);
+				if (!inClip[k] || !removedNow[k]) return;
+				const snd = res.sound[k]!;
+				removing.push(snd);
+				if (!run.voice) return;
+				const next = keptWords.reduce(
+					(m, w) => (w.s >= snd[1] - 1e-9 && w.s < m ? w.s : m),
+					Number.POSITIVE_INFINITY,
+				);
+				const prev = keptWords.reduce(
+					(m, w) => (w.e <= snd[0] + 1e-9 && w.e > m ? w.e : m),
+					Number.NEGATIVE_INFINITY,
+				);
+				const [from, to] = removedRamps(run.voice, snd, prev, next);
+				if (from < snd[0]) removing.push([from, snd[0]]);
+				if (to > snd[1]) removing.push([snd[1], to]);
 			});
 			keptFrames = joinShort(
 				keepUnexplained(
@@ -797,6 +825,11 @@ export function keptToFrames(
 	extent: readonly [number, number],
 	/** `MediaPlan.tight`: edges next to removed words snap to the boundary at or before them. */
 	tight?: ReadonlyArray<readonly [boolean, boolean]>,
+	/**
+	 * The clip's words (media seconds, sorted; kept and removed): with a voice analysis, every edge inside the extent is
+	 * then moved off speech (`snapCut` over the clip's frame boundaries, bounded by these words: `edgeBounds`).
+	 */
+	words?: ReadonlyArray<{ s: number; e: number }>,
 ): Array<[number, number]> {
 	const F = flicksPerFrame(rate);
 	const toFrameX = (t: number) => clip.start + (t * FLICKS_PER_SECOND - clip.sourceIn) / F;
@@ -807,16 +840,36 @@ export function keptToFrames(
 		for (let f = x - 1; f <= x + 2; f++) out.push(boundaryAt(f));
 		return out;
 	};
+	const levels = voice && words && voice.frameCount > 0 ? edgeLevelsOf(voice) : null;
+	/** Frame `f` as a cut edge moved off speech, within `[lo, hi]` frames and the words' bounds. */
+	const offSpeech = (f: number, side: 'in' | 'out', lo: number, hi: number) => {
+		if (!levels || !words) return f;
+		const t = boundaryAt(f);
+		const b = edgeBounds(words, t, side);
+		const [kLo, kHi] = [boundaryAt(lo), boundaryAt(hi)];
+		const keepMore = side === 'out' ? Math.min(b.keepMore, kHi) : Math.max(b.keepMore, kLo);
+		const keepSoft = side === 'out' ? Math.min(b.keepSoft, kHi) : Math.max(b.keepSoft, kLo);
+		const cutMore = side === 'out' ? Math.max(b.cutMore, kLo) : Math.min(b.cutMore, kHi);
+		const reach = Math.ceil((EDGE_DECAY_S * FLICKS_PER_SECOND) / F) + 1;
+		const candidates: number[] = [];
+		for (let g = Math.max(lo, f - reach); g <= Math.min(hi, f + reach); g++) candidates.push(boundaryAt(g));
+		return Math.round(toFrameX(snapCut(levels, { t, side, keepMore, keepSoft, cutMore, candidates }).t));
+	};
 	const out: Array<[number, number]> = [];
 	// the boundary at or before t: the kept word after a cut keeps its onset, the removed word after a piece loses its
 	const floor = (t: number) => Math.floor(toFrameX(t) + 1e-6);
 	for (const [i, [a, b]] of kept.entries()) {
-		const fa = tight?.[i]?.[0]
+		let fa = tight?.[i]?.[0]
 			? floor(a)
 			: Math.round(toFrameX(snapEdge(voice, a, 'in', snapWindowS, cands(a))));
-		const fb = tight?.[i]?.[1]
+		let fb = tight?.[i]?.[1]
 			? floor(b)
 			: Math.round(toFrameX(snapEdge(voice, b, 'out', snapWindowS, cands(b))));
+		// off speech: never before the previous piece or after the next one, never across the piece's other edge
+		const prevEnd = out.length ? out[out.length - 1]![1] : extent[0];
+		const nextStart = i + 1 < kept.length ? Math.round(toFrameX(kept[i + 1]![0])) : extent[1];
+		if (fa > extent[0] && fa < fb) fa = offSpeech(fa, 'in', Math.max(extent[0], prevEnd), fb - 1);
+		if (fb < extent[1] && fb > fa) fb = offSpeech(fb, 'out', fa + 1, Math.min(extent[1], nextStart));
 		const s = Math.max(extent[0], fa);
 		const e = Math.min(extent[1], fb);
 		if (e <= s) continue;
@@ -1033,6 +1086,32 @@ function resolveSlivers(o: {
 
 /** Frames (10 ms) a clip's last piece may grow by: the decay walk's 0.25 s and the air after it. */
 const TAIL_FRAMES = 25;
+
+/**
+ * The rising onset before and the fading decay after a removed word's sound `[a, b)` (media seconds): the non-speech
+ * frames above measured silence beside it (across at most two frames of silence: a quiet consonant), up to `TAIL_FRAMES` each and never into the kept words
+ * around it (`prev` = the end of the last kept word before, `next` = the start of the first after). Returns the
+ * extended span.
+ */
+function removedRamps(voice: CleanupVoice, [a, b]: Span, prev: number, next: number): Span {
+	const ramp = (k: number) =>
+		k >= 0 && k < voice.frameCount && voice.classes[k] !== VOICE_CLASS_SPEECH && !silentFrame(voice, k);
+	// a word's quiet last or first consonant may read as one or two frames of measured silence between it and its ramp
+	const BRIDGE = 2;
+	let hi = Math.ceil(b / FR - 1e-9);
+	const h0 = hi;
+	for (let k = hi; k < voice.frameCount && k - h0 < TAIL_FRAMES && (k + 1) * FR <= next + 1e-9; k++) {
+		if (ramp(k)) hi = k + 1;
+		else if (voice.classes[k] === VOICE_CLASS_SPEECH || k - hi >= BRIDGE) break;
+	}
+	let lo = Math.floor(a / FR + 1e-9);
+	const l0 = lo;
+	for (let k = lo - 1; k >= 0 && l0 - k <= TAIL_FRAMES && k * FR >= prev - 1e-9; k--) {
+		if (ramp(k)) lo = k;
+		else if (voice.classes[k] === VOICE_CLASS_SPEECH || lo - 1 - k >= BRIDGE) break;
+	}
+	return [Math.min(a, lo * FR), Math.max(b, hi * FR)];
+}
 
 /**
  * The kept frames of a clip with every frame added back that the accepted findings do not explain: a sequence frame

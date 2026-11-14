@@ -6,6 +6,7 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { detectCleanup, effectiveLists } from '../src/cleanup/detector.ts';
+import { edgeCutsSpeech, edgeLevelsOf, edgeThresholds } from '../src/cleanup/edge-snap.ts';
 import { cleanupNorm } from '../src/cleanup/lists.ts';
 import { planMediaCuts, removedSpans } from '../src/cleanup/plan.ts';
 import {
@@ -382,6 +383,29 @@ describe('planning properties', () => {
 						s.some(([x, y]) => x < t1 - 1e-9 && y > t0 + 1e-9);
 					const inSpans = (t0: number, t1: number, s: ReadonlyArray<readonly [number, number]>) =>
 						s.some(([x, y]) => x <= t0 + 1e-9 && y >= t1 - 1e-9);
+					// a removed word's rising onset and fading decay go with it: non-speech frames above silence that run into an
+					// accepted removal of words (across at most two frames of silence: a quiet consonant; at most 0.25 s)
+					const rampOfRemoval = (k: number) => {
+						const ramp = (q: number) =>
+							q >= 0 && q < r.voice.frameCount && r.voice.classes[q] !== 2 && !silent(q);
+						if (!ramp(k)) return false;
+						const touches = (q: number) =>
+							wordRemovals.some(([x, y]) => q / 100 >= x - 1e-9 && q / 100 < y - 1e-9);
+						for (const dir of [1, -1]) {
+							let gap = 0;
+							for (let q = k; Math.abs(q - k) < 26 && q >= 0 && q < r.voice.frameCount; q += dir) {
+								if (touches(q)) return true;
+								if (ramp(q)) gap = 0;
+								else if (r.voice.classes[q] === 2 || ++gap > 2) break;
+							}
+						}
+						return false;
+					};
+					const nearRamp = (t0: number, t1: number) => {
+						for (let q = Math.floor((t0 - frame) * 100); q < Math.ceil((t1 + frame) * 100); q++)
+							if (rampOfRemoval(q)) return true;
+						return false;
+					};
 					for (const range of a.plan.ranges) {
 						// every removed 10 ms of media lies in an accepted finding, or within a frame of one over silence
 						for (
@@ -396,6 +420,8 @@ describe('planning properties', () => {
 							// split two words in continuous voice)
 							const ok =
 								(inCovered(t0) && inCovered(t1)) ||
+								rampOfRemoval(k) ||
+								(silent(k) && nearRamp(t0, t1)) ||
 								(silent(k) && nearCovered(t0) && nearCovered(t1)) ||
 								((r.voice.classes[k] === 2 || silent(k)) &&
 									wordRemovals.some(([x, y]) => t0 >= x - frame - 1e-6 && t1 <= y + 1e-9));
@@ -515,6 +541,39 @@ describe('planning properties', () => {
 							for (const q of decay)
 								if (!inRemovedWord(q)) expect(removedFrame(q), `tail frame ${q / 100} removed`).toBe(false);
 					}
+					// no kept piece ends while the sound it cuts away is speech, nor starts while the sound before it is, where the
+					// edge lies in a non-speech stretch of at least 0.2 s (room for a quiet cut) — unless the cut itself is quiet and
+					// that speech is removed by an accepted finding whose edge (and the frame of silence beyond it) bounds the cut; the
+					// clip's own ends are no cuts
+					const L = edgeLevelsOf(r.voice);
+					const { quiet, loud } = edgeThresholds(L);
+					const clipFrames = Object.values(H.seq.clips)[0]!.duration;
+					const stretch = (k: number) => {
+						let lo = k;
+						let hi = k;
+						while (lo > 0 && !speechAt(lo - 1)) lo--;
+						while (hi < n && !speechAt(hi)) hi++;
+						return hi - lo;
+					};
+					const removedSound = (q: number) =>
+						rampOfRemoval(q) || covered.some(([x, y]) => (q + 0.5) / 100 >= x && (q + 0.5) / 100 < y);
+					for (const p of a.plan.kept)
+						for (const [side, f] of [
+							['in', p.start],
+							['out', p.end],
+						] as const) {
+							if (f <= 0 || f >= clipFrames) continue;
+							const t = f * frame;
+							const k = Math.round(t * 100);
+							if (speechAt(k) || speechAt(k - 1) || stretch(k) < 20 || !edgeCutsSpeech(L, t, side)) continue;
+							const away =
+								side === 'out' ? [k, k + 1, k + 2, k + 3, k + 4] : [k - 5, k - 4, k - 3, k - 2, k - 1];
+							expect(
+								Math.max(dbAt(k - 1), dbAt(k)) <= quiet &&
+									away.every((q) => dbAt(q) <= loud || removedSound(q)),
+								`${side} edge ${t.toFixed(3)} cuts speech`,
+							).toBe(true);
+						}
 					expect(run(settings, { rejectKinds: [...FINDING_KINDS] }).plan.ranges).toEqual([]);
 					const review = Object.fromEntries(RULES.map((k) => [k, 'review'])) as CleanupSettings['rules'];
 					expect(run({ ...settings, rules: review }, {}).plan.ranges).toEqual([]);
