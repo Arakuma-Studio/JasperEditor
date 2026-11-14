@@ -1,6 +1,7 @@
 // Transcript cleanup commands (spec 14 TC-030, TC-031): `cleanup.apply` cuts any number of ranges as one edit (one
 // undo step) and `cleanup.configure` edits the sequence's persisted cleanup state. docs/wp-notes/transcript-cleanup.md
 // "Commands".
+
 import type { Draft } from 'immer';
 import { type SeqWord, transcriptForMedia } from '../../captions/sequence-transcript.ts';
 import type { CleanupVoice } from '../../cleanup/detector.ts';
@@ -23,6 +24,7 @@ import type { Animatable } from '../../schema/common.ts';
 import type { Clip } from '../../schema/sequence.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational } from '../../time.ts';
 import { isRemapped } from '../../time-remap/model.ts';
+import { base64Bytes } from '../base64.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { cutRanges } from '../multi-range.ts';
 import { end, findTrackIn } from '../placement.ts';
@@ -337,29 +339,6 @@ export const cleanupHandlers = {
 
 // ---------------------------------------------------------------------------------------------------------------
 // transcript.removePauses `mode: 'level'` (spec 14 TC-032)
-
-const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-const B64_INDEX = new Map([...B64].map((c, i) => [c, i] as const));
-
-/** Bytes of a base64 string (whitespace ignored); null when it is not base64. */
-export function base64Bytes(b64: string): Uint8Array | null {
-	const clean = b64.replace(/\s+/g, '');
-	if (!/^[A-Za-z0-9+/]*={0,2}$/.test(clean) || clean.replace(/=+$/, '').length % 4 === 1) return null;
-	const body = clean.replace(/=+$/, '');
-	const out = new Uint8Array(Math.floor((body.length * 3) / 4));
-	let buf = 0;
-	let bits = 0;
-	let n = 0;
-	for (const ch of body) {
-		buf = ((buf << 6) | B64_INDEX.get(ch)!) & 0xffffff;
-		bits += 6;
-		if (bits >= 8) {
-			bits -= 8;
-			out[n++] = (buf >> bits) & 0xff;
-		}
-	}
-	return out.subarray(0, n);
-}
 
 /** Decoded voice analyses of a `voice` argument, by media id (refused when one does not decode). */
 export function voiceArgument(

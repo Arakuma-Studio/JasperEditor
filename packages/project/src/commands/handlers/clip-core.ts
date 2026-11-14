@@ -20,6 +20,7 @@ import { isVerticalText } from '../../text-writing.ts';
 import { newLayer3D } from '../../three-d/model.ts';
 import { FRAME_EPS, flicksPerFrame, type Rational, supportsDropFrame } from '../../time.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
+import { cutSnapLevels, snapCutFrame, snapSplitFrame } from '../cut-snap.ts';
 import { valuesOf } from '../draft-read.ts';
 import {
 	type FaceSides,
@@ -555,7 +556,23 @@ function validateMgParams(
 	return r.params;
 }
 
-function trimHandler(doc: DDoc, cmd: CommandOf<'clip.trim'>, h: HandlerContext) {
+function trimHandler(doc: DDoc, cmd0: CommandOf<'clip.trim'>, h: HandlerContext) {
+	let cmd = cmd0;
+	// opt-in: the trimmed edge moves off speech (cut-snap.ts); the delta follows it
+	const levels = cutSnapLevels(cmd, cmd.snapToSilence === true, h);
+	if (levels) {
+		const { seq, clip: c } = h.clip(doc, cmd.clipId);
+		const at = (cmd.edge === 'in' ? c.start : end(c)) + cmd.deltaFrames;
+		const s = snapCutFrame(
+			doc,
+			seq,
+			at,
+			cmd.edge,
+			levels,
+			cmd.edge === 'out' ? { lo: c.start + 1 } : { hi: end(c) - 1 },
+		);
+		if (s) cmd = { ...cmd, deltaFrames: s.frame - (cmd.edge === 'in' ? c.start : end(c)) };
+	}
 	const mode = cmd.mode ?? 'regular';
 	if (mode === 'roll') return rollTrim(doc, cmd, h);
 	const { seq, clip } = h.clip(doc, cmd.clipId);
@@ -815,7 +832,10 @@ export const clipCoreHandlers = {
 			seq = r.seq;
 			targets = r.clips;
 		} else seq = h.sequence(doc, cmd.sequenceId);
-		const at = h.frame(seq, cmd.at);
+		let at = h.frame(seq, cmd.at);
+		// opt-in: the split moves to a boundary where neither side cuts speech (cut-snap.ts)
+		const levels = cutSnapLevels(cmd, cmd.snapToSilence === true, h);
+		if (levels) at = snapSplitFrame(doc, seq, at, levels)?.frame ?? at;
 		const crosses = (c: DClip) => c.start < at && at < end(c);
 		if (cmd.clipIds !== undefined) {
 			targets = targets!.filter(crosses);

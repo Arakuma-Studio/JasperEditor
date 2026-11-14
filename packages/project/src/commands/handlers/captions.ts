@@ -51,6 +51,7 @@ import type { CaptionStyle, CaptionsClip, Clip, Sequence, Track } from '../../sc
 import { CaptionStyleSchema } from '../../schema/sequence.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame, type Rational, secondsToFlicks } from '../../time.ts';
 import type { DClip, DDoc, DSeq, DTrack, HandlerContext } from '../context.ts';
+import { cutSnapLevels, snapCutRange } from '../cut-snap.ts';
 import { cutRanges } from '../multi-range.ts';
 import {
 	allTracksIn,
@@ -1093,24 +1094,42 @@ export const captionHandlers = {
 		const words = sequenceWords(doc, seq);
 		const [a, b] = wordSpan(words, cmd.fromWord, cmd.toWord, h);
 		const r = wordRangeFrames(words, a, b, seq.settings.frameRate)!;
+		// with levels the edges move off speech (default on: a word's decay and attack stay, breaths go; cut-snap.ts)
+		const levels = cutSnapLevels(cmd, cmd.snapToSilence ?? !!cmd.levels?.length, h);
+		const snapped = levels ? snapCutRange(doc, seq, r[0], r[1], levels) : null;
+		if (snapped) [r[0], r[1]] = [snapped.from, snapped.to];
 		const cut = clipEditHandlers['range.extract']!(
 			doc,
 			{ type: 'range.extract', sequenceId: seq.id, from: r[0], to: r[1], joinFades: cmd.joinFades },
 			h,
 		);
-		return { from: r[0], to: r[1], fades: cut.fades };
+		return {
+			from: r[0],
+			to: r[1],
+			fades: cut.fades,
+			...(snapped ? { snapped: { clean: snapped.clean } } : {}),
+		};
 	},
 	'transcript.lift': (doc, cmd, h) => {
 		const seq = h.sequence(doc, cmd.sequenceId);
 		const words = sequenceWords(doc, seq);
 		const [a, b] = wordSpan(words, cmd.fromWord, cmd.toWord, h);
 		const r = wordRangeFrames(words, a, b, seq.settings.frameRate)!;
+		// with levels the edges move off speech (default on: a word's decay and attack stay, breaths go; cut-snap.ts)
+		const levels = cutSnapLevels(cmd, cmd.snapToSilence ?? !!cmd.levels?.length, h);
+		const snapped = levels ? snapCutRange(doc, seq, r[0], r[1], levels) : null;
+		if (snapped) [r[0], r[1]] = [snapped.from, snapped.to];
 		const cut = clipEditHandlers['range.lift']!(
 			doc,
 			{ type: 'range.lift', sequenceId: seq.id, from: r[0], to: r[1], joinFades: cmd.joinFades },
 			h,
 		);
-		return { from: r[0], to: r[1], fades: cut.fades };
+		return {
+			from: r[0],
+			to: r[1],
+			fades: cut.fades,
+			...(snapped ? { snapped: { clean: snapped.clean } } : {}),
+		};
 	},
 	'transcript.insertInto': (doc, cmd, h) => {
 		const seq = h.sequence(doc, cmd.sequenceId);

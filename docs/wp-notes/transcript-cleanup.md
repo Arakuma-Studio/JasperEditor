@@ -1105,6 +1105,22 @@ rev 267; the source recording, 16 kHz mono, measured on the build host, `/tmp/je
   removed word's tail and the next piece started while it still sounded. The final frame check (`keepUnexplained`)
   still puts back everything no accepted finding (or a removed word's sound and ramps) explains, so snapping never
   removes unexplained audio; where that check holds an edge, the edge stays.
+- **Text and manual cuts** (`commands/cut-snap.ts`, schema `commands/schemas/cut-levels.ts`): `transcript.extract` /
+  `transcript.lift` move both edges off speech when the command carries `levels` (default on then; `snapToSilence:
+  false` cuts at the words' frames); `range.extract` / `range.lift`, `clip.trim` and `clip.split` only with
+  `snapToSilence: true` (exact frames stay exact by default). `levels` are windows of the media's voice analysis (level
+  and class bytes, base64, ≤ 60 s each, ≤ 256) around the cut — commands are pure, so the caller sends them
+  (`cutLevelWindows`); the edge is judged on the first audio clip (A1 first) under it whose media they cover, bounded
+  by that media's transcript words, and the one frame applies to every track (picture and sound stay together). A
+  split takes the nearest boundary that is clean as an out and as an in edge and not inside a word. Snapping without
+  levels warns `W_NO_LEVELS` and cuts exactly; malformed levels refuse `E_INVALID_PARAM`; results carry `snapped:
+  {clean}`. The MCP server attaches the windows to every agent transaction's cut commands that ask for them
+  (`apps/mcp/src/cut-levels.ts`, in `transact`: text cuts always, range / trim / split cuts with `snapToSilence: true`)
+  from the engine's cached voice analyses (never computed there; none → the cut stays exact). No tool text changed:
+  `apply_commands` / `describe_commands` show the commands' fields. Tests: `cut-snap-commands.test.ts` (range,
+  transcript, trim and split cuts, the previous document untouched, the same command giving the same timeline,
+  refusal, warning; invariants after every transaction), `apps/mcp/test/cut-levels.test.ts`. The editor's Extract
+  Text / Lift Text buttons send no levels yet (they cut at the words' frames, as before).
 - **Measured** (Fast, the script attached, default decisions; whole source as one clip, one-off script over the shipped
   functions): main b7b06eda9 places 780 cut edges, 127 of them with more than −33 dBFS cut away (56 over −28; 49 were
   join out points inside a decay, the Fast style's floor + 20 dB out point); this round 766 edges, 58 over −33 (44
