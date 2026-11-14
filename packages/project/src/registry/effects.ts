@@ -383,6 +383,21 @@ export function gaussianBlurSigmas(p: EffectParams): { x: number; y: number; rep
 	};
 }
 
+/**
+ * Gaussian Blur with Repeat Edge Pixels on: no SVG filter draws it (Chrome ignores feGaussianBlur's `edgeMode`, so
+ * `duplicate` fades the edges to transparent like `none`; measured on Chrome 156), so every renderer draws it with the
+ * clamped GPU stand-in of the canvas chain (compositions/src/fx/builtins.ts). `params`: evaluated values or the clip's
+ * Animatables (the param is not animatable).
+ */
+export function gaussianBlurRepeatsEdge(fx: {
+	effectId: string;
+	params: Readonly<Record<string, unknown>>;
+}): boolean {
+	if (fx.effectId !== 'jasper.gaussian-blur') return false;
+	const v = fx.params.repeatEdge;
+	return v === true || (!!v && typeof v === 'object' && (v as { value?: unknown }).value === true);
+}
+
 const pct = (name: string, label: string, def = 0): ParamSpec => ({
 	name,
 	label,

@@ -6,7 +6,8 @@
 //   effects → 2D `css` steps, a hard crop → `crop`, a feathered crop → its GPU stand-in (fx/builtins.ts), flips →
 //   `flip`; the corner pin stays the layer matrix (D-27: always last);
 //   built-ins whose preview needs an SVG filter at their params (one-direction Gaussian Blur, Repeat Edge Pixels)
-//   run as GPU stand-ins (fx/builtins.ts) in stack order; anything else there (other style fragments) cannot run on
+//   run as GPU stand-ins (fx/builtins.ts) in stack order; a Repeat Edge blur needs the chain by itself (no SVG filter
+//   repeats the edge in Chrome, `gaussianBlurRepeatsEdge`); anything else there (other style fragments) cannot run on
 //   a canvas and is drawn after the chain as a CSS/SVG stage — listed in `reordered` (an order approximation);
 // - effects after the chain stay CSS/SVG stages, in order (a hard crop there is a `clip-path` wrapper at its place).
 // Layers without an enabled, known shader effect keep their regular layer renderers.
@@ -23,6 +24,7 @@ import {
 	type FxParamsAt,
 	type FxPlanContext,
 	type FxStructures,
+	gaussianBlurRepeatsEdge,
 	gpuIsTimeDependent,
 	gpuPadding,
 	lumetriSpatialInstanceId,
@@ -145,9 +147,10 @@ export function planLayerFx(
 	const masked = opacityMasks.length > 0 || ordered.some((fx) => effectMasks(fx).length > 0);
 	const whole = !!opts.capture || masked;
 	// Crops the CSS/colour-stage paths cannot draw exactly (Edge Feather; a crop before a pixel-mixing effect that the
-	// colour stage would move into its chain) need the chain like shader effects do.
+	// colour stage would move into its chain) need the chain like shader effects do, and so does a Repeat Edge blur.
 	const chainCrops = cropNeedsChain(ordered, (fx) => specOf(fx), opts.featheredCrops);
-	const needsChain = (fx: ResolvedEffect) => !!specOf(fx)!.gpu || chainCrops.has(fx.id);
+	const needsChain = (fx: ResolvedEffect) =>
+		!!specOf(fx)!.gpu || chainCrops.has(fx.id) || gaussianBlurRepeatsEdge(fx);
 	if (!whole && !ordered.some(needsChain)) return null;
 	const bypassed: FxBypass[] = [];
 	if (opts.gpu !== 'ok') {
@@ -183,7 +186,7 @@ export function planLayerFx(
 	let last = -1;
 	runnable.forEach((fx, i) => {
 		const spec = specOf(fx)!;
-		if (spec.gpu || spec.color || chainCrops.has(fx.id)) last = i;
+		if (spec.color || needsChain(fx)) last = i;
 	});
 	if (whole) last = runnable.length - 1;
 	else if (last < 0 || !runnable.slice(0, last + 1).some(needsChain))
@@ -213,9 +216,16 @@ export function planLayerFx(
 		// Built-ins whose preview would be an SVG filter run as GPU stand-ins, in stack order.
 		const fm = effectMasks(fx);
 		const withMasks = <T extends object>(step: T): T => (fm.length ? { ...step, masks: fm } : step);
+		if (!spec.gpu && gaussianBlurRepeatsEdge(fx) && opts.failed?.(fx.effectId)) {
+			// The stand-in's shader failed: the SVG blur (edges not repeated) as a CSS stage, with the failure chip.
+			bypassed.push({ fxId: fx.id, effectId: fx.effectId, reason: 'shader-failed' });
+			cssEffects.push(fx);
+			reordered.push(fx.id);
+			return;
+		}
 		const gpuSpec = spec.gpu
 			? spec
-			: (i < last || whole) && !opts.failed?.(fx.effectId)
+			: (i <= last || whole) && !opts.failed?.(fx.effectId)
 				? chainGpuStandIn(spec, fx.params as EffectParams)
 				: null;
 		if (gpuSpec) {

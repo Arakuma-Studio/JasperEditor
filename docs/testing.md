@@ -100,6 +100,8 @@ tips and trims), `apps/engine/test/golden-parity.e2e.test.ts` (static compositor
 by Remotion, compared with each other and with goldens), `apps/engine/test/crop-order-parity.e2e.test.ts` (Crop in
 stack order and Edge Feather, export vs Remotion and vs the shared feather profile; `REMOTION_E2E=1`) and
 `apps/engine/test/crop-order-native.test.ts` (the same on the native path against computed pixels, no Chrome).
+`apps/engine/test/blur-repeat-edge.e2e.test.ts` (`REMOTION_E2E=1`: Gaussian Blur with Repeat Edge Pixels on a clip and
+on adjustment layers — edge pixels of a flat frame equal its centre, and the export equals Remotion and preview stills).
 `apps/engine/test/fps-conform.e2e.test.ts` (`REMOTION_E2E=1`: frame-coded sources at five frame-rate conversions, a speed and a hold, exported natively, through the layer bake and by Remotion and rendered as preview stills — every frame's source frame equals the time model's, and patch colours agree; `fps-conform-native.test.ts` is its native half in the default suite).
 `apps/engine/test/blend-export.test.ts` checks a native
 Multiply / half-opacity Normal / Difference stack against independently calculated pixels, plus literal kernel

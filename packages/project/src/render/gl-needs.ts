@@ -7,7 +7,7 @@
 // The document is read structurally: it arrives as untrusted JSON (`inputProps.doc`), a clip, track or nested
 // snapshot of another shape is skipped, recursion is bounded and cycle-safe.
 import { isCssBlend } from '../blend-modes.ts';
-import { defaultEffectRegistry, type EffectRegistry } from '../registry/effects.ts';
+import { defaultEffectRegistry, type EffectRegistry, gaussianBlurRepeatsEdge } from '../registry/effects.ts';
 import { fxFloatRefusal } from '../registry/fx/shader.ts';
 import { advancedNeedsFloat, THREE_D_FLOAT_MESSAGE, THREE_D_NEEDS_FLOAT } from '../three-d/scene-look.ts';
 import { transitionSpec } from '../transitions.ts';
@@ -47,7 +47,7 @@ function hasActiveMask(masks: unknown): boolean {
 
 /**
  * Everything in render document `doc` (a `RenderSnapshot`, its nested snapshots and matte tracks included) that needs
- * WebGL2: enabled colour and GPU shader effects (also on adjustment layers and nested sequences), enabled effects with
+ * WebGL2: enabled colour and GPU shader effects and Repeat Edge blurs (also on adjustment layers and nested sequences), enabled effects with
  * masks, layers with Opacity masks, GPU transitions, blend modes CSS cannot draw, and 3D layers. Empty for a document that needs none.
  */
 export function snapshotGlNeeds(doc: unknown, registry: EffectRegistry = defaultEffectRegistry): GlNeed[] {
@@ -69,7 +69,12 @@ export function snapshotGlNeeds(doc: unknown, registry: EffectRegistry = default
 				);
 				if (!spec) continue;
 				const float = fxFloatRefusal(spec);
-				if (spec.color || spec.gpu)
+				// A Repeat Edge blur runs as the chain's GPU stand-in (`gaussianBlurRepeatsEdge`).
+				if (
+					spec.color ||
+					spec.gpu ||
+					gaussianBlurRepeatsEdge({ effectId: spec.id, params: isObj(fx.params) ? fx.params : {} })
+				)
 					out.push({ kind: 'effect', id: spec.id, label: spec.label, ...at, ...(float ? { float } : {}) });
 				else if (hasActiveMask(fx.masks))
 					out.push({ kind: 'effect-masks', id: spec.id, label: `${spec.label} (masked)`, ...at });

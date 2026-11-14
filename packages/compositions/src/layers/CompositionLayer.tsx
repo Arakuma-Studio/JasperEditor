@@ -14,6 +14,7 @@
 import {
 	defaultEffectRegistry,
 	FLICKS_PER_SECOND,
+	gaussianBlurRepeatsEdge,
 	type RenderCompositionSource,
 	type RenderVisualClip,
 } from '@jasper/project';
@@ -48,7 +49,7 @@ export function hasPixelEffects(clip: RenderVisualClip): boolean {
 	return clip.effects.some((fx) => {
 		if (!fx.enabled) return false;
 		const spec = defaultEffectRegistry.get(fx.effectId, fx.effectVersion);
-		return !!spec?.color || !!spec?.gpu;
+		return !!spec?.color || !!spec?.gpu || gaussianBlurRepeatsEdge(fx);
 	});
 }
 
