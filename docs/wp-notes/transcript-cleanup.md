@@ -1809,6 +1809,25 @@ re-score 29 s.
 Limits: one model (the transcript's); B and C ran greedy only (beam 5 and sampling not tried); the NULL label trusts
 rev 549, which may keep real stutters; A's base is the stored transcript, wrong in places (above).
 
+#### Round 5: an attempt that continued past the out point
+
+Reported by the user: "psicodélico, y le- | Y les juro" — the clip ending at 2596.633 s keeps "y le-" of a dropped take,
+the next clip (2603.18 s) says "Y les juro que". Both span decodes write "y le juro que…" running past the out point
+(their padding), and those padding words were dropped (outside the clip). Rule written before it was run on the
+recording (the place itself was found by looking, so it is not blind):
+
+**P — padding continuation.** For two kept clips A, B one after the other in the edit (sequence gap ≤ 2 s) where B's
+audio does not follow A's out point in the source (other media, B before A, or more than the 0.2 s span padding
+between A's out point and B's in point — so what a decode hears past A's out point is cut-away audio), take each span
+decode of A with the words it writes in its padding past the out point (midpoint after it). When A's last `j ≥ 1`
+words, followed by the first `m ≥ 1` padding words, are said again word for word (`sameWord`) from B's first word —
+`j + m ≥ 3` — the dropped take went on like B: A's last `j` words are the beginning of an abandoned attempt of B's
+phrase. The word A's out point cuts through (its end past the out point) may be a prefix of 2+ letters of its copy
+("le-" / "les"). What goes: those `j` words, from the first one (edges as for any repeat at a cut: never before the
+kept word before it ends, into a measured pause, else held as a closure) to A's out point. Removed by default only when
+both span decodes show it on their own and the repetition is not deliberate (script, allow list, reduplication: as for
+any repeat at a cut); with one decode, reviewed. A repeat the other rules found over the same time is not added twice.
+
 ### Planning (TC-020 … TC-026)
 
 `analyzeSequenceCleanup({doc, seq, voice, settings?, script?, language?, decisions?, scope?})` (dry run, never changes
