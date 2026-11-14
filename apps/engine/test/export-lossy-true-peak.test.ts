@@ -7,7 +7,7 @@
 // one-pass delivery sample for sample (24-bit).
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
-import type { ExportResult } from '@jasper/api';
+import type { ExportResult, ExportVerifyResult } from '@jasper/api';
 import { measureLoudness } from '@jasper/audio-dsp';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
@@ -41,7 +41,7 @@ async function exportOf(
 	d: DocBuilder,
 	audio: Record<string, unknown>,
 	container: 'mp4' | 'webm' | 'mov',
-): Promise<{ file: string; result: ExportResult; plan: Record<string, unknown> }> {
+): Promise<{ id: string; file: string; result: ExportResult; plan: Record<string, unknown> }> {
 	const settings = {
 		sequenceId: d.seqId,
 		range: { type: 'entire' },
@@ -76,6 +76,7 @@ async function exportOf(
 	const done = await coreServices(app).queue.wait(start.json().id);
 	expect(done.error, JSON.stringify(done.error)).toBeUndefined();
 	return {
+		id: start.json().id,
 		file: (await coreServices(app).exports.outputFile(start.json().id))!,
 		result: done.result as ExportResult,
 		plan: planned.json() as Record<string, unknown>,
@@ -146,7 +147,6 @@ describe('lossy exports meet the delivery target on the decoded file', { timeout
 			if (a.ceilingLimited) expect(result.warnings?.map((w) => w.code)).toContain('AUDIO_LOUDNESS_CEILING');
 			else expect(Math.abs(ff.I - lufs), JSON.stringify({ ff, a })).toBeLessThanOrEqual(0.5);
 			// the result reports the decoded file, the ceiling and how it got there
-			expect(a.measuredOn).toBe('decoded-file');
 			expect(a.truePeakMet).toBe(true);
 			expect(a.targetLufs).toBe(lufs);
 			expect(a.truePeakTargetDbtp).toBe(tp);
@@ -193,4 +193,50 @@ describe('PCM exports', { timeout: 600_000 }, () => {
 		expect(maxLsb).toBeLessThanOrEqual(1);
 		expect(Math.abs(a.integratedLufs! + 16)).toBeLessThanOrEqual(0.01);
 	});
+});
+
+// Reported: an un-normalised AAC export's result said 1.045 dBTP (the PCM mix) while verify_export of the same file
+// said 0.08 dBTP (the file). Both now report the delivered file, decoded; the mix stays in `pcm`. Known PCM true peaks:
+// a 200 Hz tone at 0.95 then 1.25 (over full scale: ffmpeg's AAC encoder turns those frames down) and an fs/4 tone
+// at 45° phase (samples at ±0.707 A, inter-sample peaks of exactly A; 20 ms raised-cosine fades, so its abrupt start
+// does not ring over A).
+const fade = (t: number) => 0.5 - 0.5 * Math.cos(Math.PI * Math.min(1, t / 0.02, (2 - t) / 0.02));
+const OVER_FULL_SCALE: [string, (t: number) => number, number][] = [
+	['a mix over full scale', (t) => (t < 1 ? 0.95 : 1.25) * Math.sin(2 * Math.PI * 200 * t), 1.25],
+	[
+		'an fs/4 tone with inter-sample peaks',
+		(t) => 0.9 * fade(t) * Math.sin(2 * Math.PI * 12_000 * t + Math.PI / 4),
+		0.9,
+	],
+];
+
+describe('un-normalised lossy exports report the true peak verify_export measures', {
+	timeout: 600_000,
+}, () => {
+	for (const [name, wave, peak] of OVER_FULL_SCALE)
+		it(name, async () => {
+			const x = Float32Array.from({ length: 2 * 48_000 }, (_, i) => wave(i / 48_000));
+			const d = await docOf(writeMixWav(join(dir, `${name.replace(/\W+/g, '-')}.wav`), [x, x]));
+			const { id, file, result } = await exportOf(d, { codec: 'aac', bitrateKbps: 128 }, 'mp4');
+			const a = result.audioLoudness as Audio;
+			const start = await app.inject({
+				method: 'POST',
+				url: `/api/exports/${id}/verify`,
+				headers: JSON_H,
+				payload: {},
+			});
+			expect(start.statusCode, start.body).toBe(202);
+			const done = await coreServices(app).queue.wait(start.json().id);
+			expect(done.error, JSON.stringify(done.error)).toBeUndefined();
+			const row = (done.result as ExportVerifyResult).rows.find((r) => r.id === 'true-peak')!;
+			// the same quantity: the delivered file's true peak, decoded (the result has 3 decimals, the row 2)
+			expect(
+				Math.abs(a.truePeakDbtp! - (row.measured as number)),
+				JSON.stringify({ a, row }),
+			).toBeLessThanOrEqual(0.01);
+			expect(a.measuredOn).toBe('decoded-file');
+			expect(Math.abs(a.truePeakDbtp! - ebur128(file).TP)).toBeLessThanOrEqual(0.15);
+			// the mix it was encoded from, labelled as such: its known true peak
+			expect(Math.abs(a.pcm!.truePeakDbtp! - 20 * Math.log10(peak))).toBeLessThanOrEqual(0.02);
+		});
 });
