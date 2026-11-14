@@ -9,6 +9,7 @@ import {
 	type EditWord,
 	editSpanRequest,
 	findEditRepeats,
+	restartWindows,
 } from '../src/cleanup/edit-repeats.ts';
 import { editSpans } from '../src/cleanup/edit-spans.ts';
 import { FAST_SETTINGS } from '../src/cleanup/schema.ts';
@@ -16,6 +17,7 @@ import { analyzeSequenceCleanup } from '../src/cleanup/sequence.ts';
 import { FLICKS_PER_SECOND, flicksPerFrame } from '../src/time.ts';
 import corpus from './fixtures/cleanup-real-takes.json' with { type: 'json' };
 import fixture from './fixtures/edit-repeats-rev144.json' with { type: 'json' };
+import spanStart from './fixtures/edit-repeats-span-start.json' with { type: 'json' };
 import { Harness, videoAsset } from './helpers.ts';
 
 const S = (x: number) => Math.round(x * FLICKS_PER_SECOND);
@@ -494,5 +496,125 @@ describe('precision on the real-take corpus', () => {
 		}
 		expect(right + wrong).toBeGreaterThan(1000);
 		expect(right / (right + wrong)).toBeGreaterThanOrEqual(0.99);
+	});
+});
+
+describe('a restart at the start of a phrase that the span decodes merge (v8 review)', () => {
+	// "Lo… | Lo reescribieron mis agentes": a decode from before the fragment writes "Lo reescribí a mis agentes", one
+	// from inside the dip "Lo reescribieron mis agentes"; the user cut at 3172.167
+	type Region = { from: number; level: number[]; speech: string };
+	const voiceAt = (r: Region, pauseAt?: [number, number]): CleanupVoice => {
+		const n = Math.round((r.from + r.level.length / 100 + 1) * 100);
+		const classes = new Uint8Array(n);
+		const level = new Uint8Array(n);
+		const k0 = Math.round(r.from * 100);
+		r.level.forEach((db, i) => {
+			level[k0 + i] = Math.round((db + 120) * 2);
+			classes[k0 + i] = r.speech[i] === 'S' ? 2 : 0;
+		});
+		if (pauseAt)
+			for (let k = Math.round(pauseAt[0] * 100); k < Math.round(pauseAt[1] * 100); k++) classes[k] = 0;
+		return {
+			classes,
+			level,
+			frameCount: n,
+			levels: { floorDb: -50, speechDb: -9, speechThresholdDb: -37.7, breathFloorDb: -45 },
+		};
+	};
+	const span = (id: string, seqStart: number, from: number, to: number): EditSpan => ({
+		clipId: id,
+		mediaId: 'm',
+		stream: 1,
+		seqStart,
+		seqEnd: seqStart + Math.round((to - from) * 60),
+		mediaStart: S(from),
+		mediaEnd: S(from) + Math.round((to - from) * 60) * F60,
+	});
+	const analyse = (spans: EditSpan[], voice: CleanupVoice, decodes: { merged: W; window: W; stored: W }) => {
+		const windows = restartWindows(spans, () => voice);
+		return {
+			windows,
+			reps: findEditRepeats({
+				spans,
+				rate: RATE60,
+				words: lookup(decodes.merged),
+				confirm: [lookup(decodes.merged), lookup(decodes.stored)],
+				windows: windows.map((w) => ({
+					...w,
+					words: decodes.window
+						.filter(([, s]) => S(s) >= w.start - S(0.03) && S(s) < w.end)
+						.map(([text, s, e]) => ({ text, start: S(s), end: S(e), confidence: 0.9 })),
+				})),
+				voice: () => voice,
+				settings: FAST_SETTINGS,
+				language: 'es',
+			}),
+		};
+	};
+	const ss = spanStart as unknown as {
+		merged: W;
+		window: W;
+		stored: W;
+		voice: Region;
+		mostrarStored: W;
+		mostrarWindow: W;
+		mostrarVoice: Region;
+	};
+	const decodes = { merged: ss.merged, window: ss.window, stored: ss.stored };
+
+	for (const [variant, spans] of [
+		['at the start of a kept span', [span('A', 0, 3159.0, 3160.08), span('B', 65, 3171.95, 3179.2)]],
+		['inside a kept span, after a pause', [span('B', 0, 3170.5, 3179.2)]],
+	] as const) {
+		it(`${variant}: a review finding cutting the fragment up to the dip`, () => {
+			const voice = voiceAt(ss.voice);
+			const { windows, reps } = analyse([...spans], voice, decodes);
+			// one window, from inside the dip (3172.12–3172.19)
+			expect(windows.map((w) => [sec(w.dip[0]), sec(w.dip[1])])).toEqual([[3172.12, 3172.19]]);
+			expect(reps.map((r) => [r.where, r.text, r.kept, r.suggested, r.held])).toEqual([
+				['span', 'Lo', 'Lo reescribieron mis', 'review', 'decode'],
+			]);
+			// accepted, it cuts from the fragment's onset (the span's start, or the start of its voice) to the dip's quietest
+			// frame (3172.15; the user cut at 3172.167)
+			const c = reps[0]!.cuts[0]!;
+			expect([c.clipId, sec(c.start), sec(c.end)]).toEqual([
+				'B',
+				variant.startsWith('at') ? 3171.95 : 3171.84,
+				3172.15,
+			]);
+		});
+	}
+
+	it('with a measured pause at the dip the fragment goes by default', () => {
+		const voice = voiceAt(ss.voice, [3172.11, 3172.2]);
+		const { reps } = analyse([span('B', 0, 3171.95, 3179.2)], voice, decodes);
+		expect(reps.map((r) => [r.text, r.suggested, sec(r.cuts[0]!.end)])).toEqual([['Lo', 'remove', 3172.2]]);
+	});
+
+	it('a closure inside a word gives nothing even when the window decode says the word again', () => {
+		// "mostrar": the stored word lies over the 50 ms closure at 1646.31; a decode from the closure writes "mostrar"
+		const voice = voiceAt(ss.mostrarVoice);
+		const spans = [span('C', 0, 1645.45, 1648.117)];
+		const { windows, reps } = analyse(spans, voice, {
+			merged: ss.mostrarStored,
+			window: ss.mostrarWindow,
+			stored: ss.mostrarStored,
+		});
+		expect(windows.length).toBeGreaterThan(0);
+		expect(reps).toEqual([]);
+	});
+
+	it('without the window decode the merged decodes miss it', () => {
+		const voice = voiceAt(ss.voice);
+		const reps = findEditRepeats({
+			spans: [span('B', 0, 3171.95, 3179.2)],
+			rate: RATE60,
+			words: lookup(ss.merged),
+			confirm: [lookup(ss.stored)],
+			voice: () => voice,
+			settings: FAST_SETTINGS,
+			language: 'es',
+		});
+		expect(reps).toEqual([]);
 	});
 });

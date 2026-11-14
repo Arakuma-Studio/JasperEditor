@@ -1240,6 +1240,28 @@ exactly as the user fixed them, 1 ("y si") the other copy of the same word; of t
 rev 267 at cuts and clip heads, 14 covered (the "y si" one through its other copy), 1 missed ("que | que de hecho":
 needs the decode's "…" on the first "que").
 
+**A restart at a phrase's start that every span decode merges** (v8 review: the span from 3171.95 s began "Lo… | Lo
+reescribieron mis agentes" — the first "Lo" 3171.91–3172.11, a dip at 3172.12–3172.19 of −36…−40 dBFS, the take
+from 3172.20; a window decoded from 3171.7 writes "Lo reescribí a mis agentes", one from 3172.15 "Lo reescribieron mis
+agentes"; the user cut at 3172.167). Both span decodes start before the fragment, so they merge it, and the check missed
+it. Now `restartWindows` (pure, from the voice analysis alone) finds, within 1 s after each phrase onset — a span's
+start, or speech after ≥ 0.3 s without — the first level dip of 4–25 frames at least 15 dB under the loudest frame of
+the 150 ms on each side (both sides over the speech threshold), and the engine decodes a 3 s window from the dip's
+middle in the same job (cached like the spans; rev 144: 212 windows, 485 s of extra audio, ≈ 20 % more decoding). A
+window repeat (`windowRepeats`): the last ≤ 3 words of the span decode before the dip — no word of it over the dip,
+which would make the dip a closure inside that word — said again word for word from the first word of the window,
+which starts within 0.15 s of the dip's end. Outcome decided: **review** unless the gap between the fragment and the
+re-onset is a measured pause (≥ `MIN_CUT_PAUSE_S` of non-speech): no single decode writes the word twice, and the dip
+here is 70–80 ms at −36…−40 dBFS, which the voice analysis calls speech (threshold −37.7 dBFS) — the same depth and
+length class as the "mos|trar" closure (60 ms at −40…−44 dBFS); one wrongly removed word costs more than one review.
+Accepted, it cuts from the fragment's onset (the span's start, or the start of its voice after a pause) to the dip's
+quietest frame: 3172.15, one 60 fps frame from the user's 3172.167. Tests: `cleanup-edit-repeats.test.ts` "a restart at
+the start of a phrase…" (fixture `edit-repeats-span-start.json`: the decodes above, the voice analysis' levels and
+classes): the span-start and the in-span variants give that review finding; with a measured pause it goes by default;
+the "mostrar" closure gives a window but no finding even when the window decode writes "mostrar" again (the stored word
+lies over the dip); without the window the decodes miss it. `apps/engine/test/cleanup-edit-words.test.ts`: windows
+decoded in the same job and cached.
+
 Limits: not run with large-v3-turbo on the reporter's audio (the coordinator's GPU run is pending); the second decode
 is the same model on nearly the same audio — two decodes that double a word alike agree (the stored transcript does
 not veto, since it merges real takes too); the agreeing second decode of the fixture is an assumption; repeats at cuts

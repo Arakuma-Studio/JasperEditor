@@ -21,11 +21,12 @@ import {
 	findEditRepeats,
 	flicksPerFrame,
 	loadProject,
+	type RestartWindow,
 	type Sequence,
 } from '@jasper/project';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { entryOfPath } from '../src/cache/layout.ts';
-import { EditWordsService, type SequenceTranscriber, spanKey } from '../src/cleanup/edit-words.ts';
+import { EditWordsService, type SequenceTranscriber, spanKey, windowKey } from '../src/cleanup/edit-words.ts';
 import type { JobContext } from '../src/jobs/types.ts';
 import { closeApps, DocBuilder, H, JSON_H, makeApp, register, TEST_FFMPEG } from './helpers.ts';
 
@@ -187,6 +188,34 @@ describe.skipIf(!HAVE_FFMPEG)('chunked words of the kept spans', () => {
 		// another model is another cache entry
 		await svc.spanWords(b.doc, seq, sp.spans, { language: 'es', model: 'whisper-small' }, ctx);
 		expect(calls).toHaveLength(2);
+	});
+
+	it('decodes the restart windows in the same job and caches them', async () => {
+		const { b } = await cut('windows.wav');
+		const seq = b.doc.sequences[b.seqId] as Sequence;
+		const sp = editSpans(b.doc, seq);
+		if (!sp.ok) throw new Error(sp.message);
+		const calls: TranscribeSequenceRequest[] = [];
+		const svc = new EditWordsService(join(dir, 'cache-windows'), fakeTranscriber(calls));
+		const B = sp.spans[1]!;
+		const w: RestartWindow = {
+			clipId: B.clipId,
+			mediaId: B.mediaId,
+			stream: B.stream,
+			dip: [S(10.15), S(10.2)],
+			start: S(10.18),
+			end: S(11.8),
+		};
+		const r = await svc.spanWords(b.doc, seq, sp.spans, {}, ctx, [EDIT_SPAN_PAD_S], [w]);
+		expect(calls).toHaveLength(1);
+		const synth = (calls[0]!.envelope.document as { sequences: Record<string, Sequence> }).sequences[
+			calls[0]!.sequenceId
+		]!;
+		expect(Object.values(synth.clips).map((c) => c.sourceIn / FLICKS_PER_SECOND)).toContain(10.18);
+		expect(r.windows.get(windowKey(w))!.map((x) => x.text)).toEqual(['si', 'buscas', 'en', 'internet.']);
+		const again = await svc.spanWords(b.doc, seq, sp.spans, {}, ctx, [EDIT_SPAN_PAD_S], [w]);
+		expect(calls).toHaveLength(1);
+		expect(again.windows).toEqual(r.windows);
 	});
 
 	it('the analysis completes and says why when the check cannot transcribe', async () => {

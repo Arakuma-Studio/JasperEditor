@@ -128,6 +128,11 @@ export type EditRepeatsInput = {
 	confirm?: ReadonlyArray<EditWordsLookup>;
 	/** Chunked words of the sequence's mixdown, sequence flicks (closed loop). */
 	mix?: readonly EditWord[] | null;
+	/**
+	 * Decodes of `restartWindows` (each from inside a dip right after a phrase's onset): a restart the span decodes merged
+	 * ("Lo… Lo reescribieron" written "Lo reescribí") shows as the fragment before the dip said again from the dip.
+	 */
+	windows?: ReadonlyArray<RestartWindow & { words: readonly EditWord[] | null | undefined }>;
 	/** Voice analysis of a media (10 ms classes): an edge inside a span must lie in a pause of `MIN_CUT_PAUSE_S`. */
 	voice?: (mediaId: string, stream: number) => CleanupVoice | null | undefined;
 	settings: CleanupSettings;
@@ -242,6 +247,222 @@ export function findEditRepeats(input: EditRepeatsInput): EditRepeat[] {
 	}
 	// mixdown repeats the span decode did not find (the same removal once)
 	for (const r of mix) if (!agree(r, primary)) out.push(r);
+	// restarts at a phrase's start that only a decode from the dip shows
+	if (input.words && input.windows?.length)
+		for (const r of windowRepeats(input, input.words)) if (!out.some((x) => sameRemoval(r, x))) out.push(r);
+	return out;
+}
+
+/**
+ * A window to decode for a restart at a phrase's start: from the middle of a level dip within 1 s after the phrase's
+ * onset (a span's start, or speech after ≥ 0.3 s without), `RESTART_WINDOW_S` long. Media flicks.
+ */
+export type RestartWindow = {
+	clipId: string;
+	mediaId: string;
+	stream: number;
+	/** The dip `[start, end)`. */
+	dip: [number, number];
+	start: number;
+	end: number;
+};
+
+/** Seconds decoded from a restart dip. */
+export const RESTART_WINDOW_S = 3;
+/** A phrase starts at a span's start or after this many frames (0.3 s) without speech. */
+const ONSET_PAUSE_FRAMES = 30;
+/** The dip lies within this many frames (1 s) after the onset. */
+const ONSET_SEARCH_FRAMES = 100;
+/**
+ * A dip frame lies this many dB under the louder of the quieter side — the loudest frame of the `DIP_SIDE_FRAMES` before
+ * it and of those after it, both over the speech threshold — for `DIP_MIN_FRAMES` … `DIP_MAX_FRAMES` frames. Loose on
+ * purpose: a window only costs a decode; the decode must re-say the fragment for any finding.
+ */
+const DIP_DEPTH_DB = 15;
+const DIP_SIDE_FRAMES = 15;
+const DIP_MIN_FRAMES = 4;
+const DIP_MAX_FRAMES = 25;
+
+const frameFlicks = (k: number) => Math.round(k * VOICE_FRAME_S * FLICKS_PER_SECOND);
+
+/** The restart windows of the spans (the first qualifying dip after each phrase onset). */
+export function restartWindows(
+	spans: readonly EditSpan[],
+	voice: (mediaId: string, stream: number) => CleanupVoice | null | undefined,
+): RestartWindow[] {
+	const out: RestartWindow[] = [];
+	for (const sp of spans) {
+		const v = voice(sp.mediaId, sp.stream);
+		if (!v?.level) continue;
+		const f0 = Math.max(0, Math.ceil(toSec(sp.mediaStart) / VOICE_FRAME_S));
+		const f1 = Math.min(v.frameCount, Math.floor(toSec(sp.mediaEnd) / VOICE_FRAME_S));
+		const thr = v.levels.speechThresholdDb ?? Number.NEGATIVE_INFINITY;
+		const db = (k: number) => (k >= 0 && k < v.frameCount ? -120 + v.level[k]! / 2 : -120);
+		const speech = (k: number) => v.classes[k] === SPEECH_CLASS;
+		const sideMax = (a: number, b: number) => {
+			let m = Number.NEGATIVE_INFINITY;
+			for (let k = Math.max(f0, a); k < Math.min(f1, b); k++) m = Math.max(m, db(k));
+			return m;
+		};
+		const dipFrame = (k: number) => {
+			const before = sideMax(k - DIP_SIDE_FRAMES, k);
+			const after = sideMax(k + 1, k + 1 + DIP_SIDE_FRAMES);
+			return before > thr && after > thr && db(k) <= Math.min(before, after) - DIP_DEPTH_DB;
+		};
+		const onsets: number[] = [];
+		for (let k = f0; k < f1; k++) {
+			if (!speech(k)) continue;
+			let quiet = 0;
+			while (quiet < ONSET_PAUSE_FRAMES && k - 1 - quiet >= 0 && !speech(k - 1 - quiet)) quiet++;
+			if (k === f0 || quiet >= ONSET_PAUSE_FRAMES || (onsets.length === 0 && k - f0 < ONSET_PAUSE_FRAMES))
+				if (onsets[onsets.length - 1] !== k) onsets.push(k);
+		}
+		for (const o of onsets) {
+			for (let k = o + 1; k < Math.min(f1 - DIP_MIN_FRAMES, o + ONSET_SEARCH_FRAMES); k++) {
+				if (!dipFrame(k)) continue;
+				let e = k;
+				while (e < f1 && dipFrame(e)) e++;
+				if (e - k >= DIP_MIN_FRAMES && e - k <= DIP_MAX_FRAMES) {
+					const start = frameFlicks(Math.floor((k + e) / 2));
+					out.push({
+						clipId: sp.clipId,
+						mediaId: sp.mediaId,
+						stream: sp.stream,
+						dip: [frameFlicks(k), frameFlicks(e)],
+						start,
+						end: Math.min(sp.mediaEnd, start + Math.round(RESTART_WINDOW_S * FLICKS_PER_SECOND)),
+					});
+					break;
+				}
+				k = e;
+			}
+		}
+	}
+	return out;
+}
+
+/**
+ * Restarts at a phrase's start from a window decode: the last ≤ 3 words of the span decode before the dip (none of its
+ * words over the dip — a dip inside a word is a closure) said again word for word from the start of the window's words,
+ * which begin right at the dip's end ("Lo | Lo reescribieron"). Two decodes, but neither writes the words twice: the
+ * fragment goes by default only when the dip is a measured pause (`MIN_CUT_PAUSE_S` of non-speech); else it is
+ * reviewed (`held: 'decode'`), its cut ending at the dip's quietest frame.
+ */
+function windowRepeats(input: EditRepeatsInput, lookup: EditWordsLookup): EditRepeat[] {
+	const lang = cleanupLanguageOf(input.language ?? null);
+	const lists = effectiveLists(lang, input.lists ?? null);
+	const fillers = new Set(lists.fillers);
+	const stop = new Set(lists.stopWords);
+	const allow = new Set(lists.allow);
+	const scriptToks = scriptTokenList(input.script ?? null);
+	const { words } = streamOf(input, fillers, { lookup });
+	const F = flicksPerFrame(input.rate);
+	const out: EditRepeat[] = [];
+	const near = 0.03 * FLICKS_PER_SECOND;
+	for (const w of input.windows ?? []) {
+		const si = input.spans.findIndex((s) => s.clipId === w.clipId);
+		const sp = input.spans[si];
+		if (!sp || !w.words) continue;
+		const [d0, d1] = w.dip;
+		const own = words.map((x, k) => [x, k] as const).filter(([x]) => x.span === si);
+		if (own.some(([x]) => x.ms < d0 && x.me > d1)) continue; // a word over the dip: a closure inside it
+		const before = own.filter(
+			([x]) => !x.filler && x.ms < d0 && x.me <= d0 + near && x.ms >= d0 - FLICKS_PER_SECOND,
+		);
+		const X = before.slice(-3);
+		if (!X.length) continue;
+		const at = sp.seqStart * F - sp.mediaStart;
+		const Q: SWord[] = w.words
+			.filter((x) => Number.isFinite(x.start) && Number.isFinite(x.end) && x.start >= d0 - near)
+			.sort((a, b) => a.start - b.start)
+			.flatMap((x) => {
+				const n = cleanupNorm(x.text);
+				return n && !fillers.has(n)
+					? [
+							{
+								text: x.text,
+								n,
+								s: toSec(x.start + at),
+								e: toSec(x.end + at),
+								ms: x.start,
+								me: x.end,
+								span: si,
+								conf: x.confidence,
+								filler: false,
+							},
+						]
+					: [];
+			})
+			.slice(0, RETRY_WORDS);
+		if (!Q.length || Q[0]!.ms > d1 + 0.15 * FLICKS_PER_SECOND) continue;
+		for (let k = X.length; k >= 1; k--) {
+			const att = X.slice(X.length - k).map(([x]) => x);
+			const tmp = [...att, ...Q];
+			const ai = att.map((_, i) => i);
+			const qi = Q.map((_, i) => att.length + i);
+			const m = reSaid(tmp, ai, qi, stop);
+			if (m?.first !== 0) continue;
+			if (
+				deliberateRepeat(tmp, ai, qi, {
+					allow,
+					stop,
+					scriptToks,
+					phraseGapS: input.settings.thresholds.phraseGapS,
+				})
+			)
+				break;
+			const voice = input.voice?.(sp.mediaId, sp.stream) ?? null;
+			// a measured pause between the fragment and the re-onset (the dip itself may be shorter than the gap)
+			const pause = voice
+				? pauseIn(voice, att[att.length - 1]!.me - EDGE_SLACK_S * FLICKS_PER_SECOND, Q[0]!.ms)
+				: null;
+			const remove = Array.isArray(pause);
+			// the cut: from the fragment's onset (the kept word before it, or the start of its voice) to the re-onset
+			const firstK = X[X.length - k]![1];
+			const prev = firstK > 0 && words[firstK - 1]!.span === si ? words[firstK - 1]! : null;
+			let start = sp.mediaStart;
+			if (prev) start = Math.max(att[0]!.ms, prev.me);
+			else if (voice) {
+				let f = Math.floor(toSec(att[0]!.ms) / VOICE_FRAME_S);
+				while (f > 0 && voice.classes[f - 1] === SPEECH_CLASS && frameFlicks(f - 1) >= sp.mediaStart) f--;
+				start = Math.max(sp.mediaStart, frameFlicks(f));
+			}
+			let end = remove ? (pause as [number, number])[1] : d1;
+			if (!remove && voice?.level) {
+				// the dip's quietest frame (the latest of equals): where the hand fix cut
+				let best = Math.floor(toSec(d0) / VOICE_FRAME_S);
+				for (let f = best; f < Math.ceil(toSec(d1) / VOICE_FRAME_S); f++)
+					if (voice.level[f]! <= voice.level[best]!) best = f;
+				end = frameFlicks(best);
+			}
+			end = Math.min(sp.mediaEnd, Math.max(end, start));
+			if (end <= start) break;
+			const frameOf = (m0: number) => Math.floor((m0 + at) / F + 1e-6);
+			out.push({
+				source: 'spans',
+				where: 'span',
+				kind: 'stutter',
+				suggested: remove ? 'remove' : 'review',
+				...(remove ? {} : { held: 'decode' as const }),
+				text: att.map((x) => x.text.trim()).join(' '),
+				kept: Q.slice(0, Math.max(3, k + 1))
+					.map((x) => x.text.trim())
+					.join(' '),
+				range: [frameOf(start), Math.max(frameOf(start), frameOf(end))],
+				cuts: [
+					{
+						clipId: sp.clipId,
+						mediaId: sp.mediaId,
+						stream: sp.stream,
+						start: Math.round(start),
+						end: Math.round(end),
+					},
+				],
+				confidence: remove ? 0.8 : 0.5,
+			});
+			break;
+		}
+	}
 	return out;
 }
 
