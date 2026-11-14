@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "cross-env JASPER_APPDIR=../../.stage JASPER_DEV=1 tsx watch src/cli.ts --port 47900",
     "build": "node scripts/build.mjs",
-    "build:remotion": "node scripts/build-remotion.mjs",
+    "build:remotion": "tsx scripts/build-remotion.mjs",
     "start": "node dist/engine.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"

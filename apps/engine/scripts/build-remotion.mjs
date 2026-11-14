@@ -1,6 +1,7 @@
 // Pre-bundles @jasper/compositions for packaged engines (S04:RR-001, R-OMS §8.6): writes the Remotion serve
 // folder to dist/remotion-bundle and copies the bundled font files to dist/fonts, so a packaged engine never
 // runs webpack and never needs node_modules for fonts. Dev engines bundle on demand into <appdir>/remotion.
+// Run through tsx (`pnpm build:remotion`): it shares the engine's source-map handling (src/remotion/bundle-source-map.ts).
 import { createHash } from 'node:crypto';
 import {
 	cpSync,
@@ -17,6 +18,7 @@ import { createRequire } from 'node:module';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bundle } from '@remotion/bundler';
+import { hideSourceMapReferences } from '../src/remotion/bundle-source-map.ts';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(join(root, 'package.json'));
@@ -72,12 +74,17 @@ await bundle({
 	},
 });
 // M2 (S11:LBK-020, ANM-011): stamp the bundle with its content hash and the anime.js version inside it. Layer
-// bakes key their cached masters by these (the packaged engine has no sources to hash).
+// bakes key their cached masters by these (the packaged engine has no sources to hash). The hash is taken over the
+// bundle as Remotion wrote it, before its source-map references are hidden, so the same sources keep the bundle id
+// (and the cached masters) of builds made before that step.
 const stamp = {
 	bundleId: bundleContentHash(tmp),
 	animejs: animejsVersion(),
 	remotion: JSON.parse(readFileSync(require.resolve('remotion/package.json'), 'utf8')).version,
 };
+// Remotion reads and parses the map named in bundle.js on the main thread for every render: keep the map beside the
+// bundle (render errors are symbolicated from it) but unreferenced.
+await hideSourceMapReferences(tmp);
 writeFileSync(join(tmp, 'jasper-bundle.json'), `${JSON.stringify(stamp, null, 2)}\n`);
 rmSync(out, { recursive: true, force: true });
 renameSync(tmp, out);

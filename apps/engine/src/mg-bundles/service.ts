@@ -27,6 +27,7 @@ import {
 import type { JobContext } from '../jobs/types.ts';
 import { JobError } from '../jobs/types.ts';
 import type { MediaRecord } from '../media/registry.ts';
+import { hideSourceMapReferences, withRenderErrorSource } from '../remotion/bundle-source-map.ts';
 import { MAX_RENDERS_IN_FLIGHT, type PageGrant, pageShares, runPagePool } from '../remotion/page-pool.ts';
 import { Ffmpeg } from '../tools/ffmpeg.ts';
 import { atomicWriteJson, readJsonOrNull } from '../tools/fs.ts';
@@ -122,6 +123,8 @@ export class MgBundleService {
 	private readonly watchesFile: string;
 	private readonly watches = new Map<string, Watch>();
 	private readonly posterJobs = new Map<string, Promise<string>>();
+	/** Stored bundle directories whose source-map references were checked in this process (`servableDir`). */
+	private readonly servable = new Map<string, Promise<string>>();
 	private rendererPromise: Promise<RendererModule> | null = null;
 	/** Error detail and hint of failed bundle jobs (EngineJob.error carries code + message only). */
 	private readonly jobErrors = new Map<string, { detail?: unknown; hint?: string }>();
@@ -238,6 +241,32 @@ export class MgBundleService {
 		if (!r) return null;
 		const dir = dirname(r.storage.path);
 		return existsSync(join(dir, 'index.html')) ? dir : null;
+	}
+
+	/**
+	 * A stored bundle directory as Remotion may serve it: with its source-map references hidden, so that Remotion's
+	 * `prepareServer` does not read and parse a map on the main thread for every render (remotion/bundle-source-map.ts).
+	 * Imports hide them before the bundle is stored; a bundle stored before that is rewritten here, once per process.
+	 * Its key and cached renders stay: they come from the hash taken at import, never recomputed from the directory.
+	 */
+	private servableDir(dir: string): Promise<string> {
+		let p = this.servable.get(dir);
+		if (!p) {
+			p = this.hideSourceMap(dir).then(() => dir);
+			this.servable.set(dir, p);
+		}
+		return p;
+	}
+
+	/** Not fatal: a bundle that keeps its references still renders, only with that cost. */
+	private async hideSourceMap(dir: string): Promise<void> {
+		try {
+			await hideSourceMapReferences(dir);
+		} catch (e) {
+			this.o.log?.(
+				`[mg-bundles] could not hide the source-map references of ${dir}: ${(e as Error).message}`,
+			);
+		}
 	}
 
 	/** `POST /api/mg-bundles/import` with a path (local mode): waits for the `mg-bundle` job. */
@@ -474,10 +503,14 @@ export class MgBundleService {
 		},
 	): Promise<RegisteredMedia> {
 		ctx.progress(0.62, { stage: 'Hashing bundle' });
+		// The key is the hash of the bundle as built or imported, taken before its source-map references are hidden:
+		// the same bundle keeps the key (and the cached masters) it had before that step.
 		const { hash } = await hashBundleDir(built);
 		const finalDir = join(this.bundlesDir, hash);
 		if (existsSync(join(finalDir, 'index.html'))) await rm(built, { recursive: true, force: true });
 		else {
+			// `built` is the staging copy, never the user's project or bundle folder.
+			await this.hideSourceMap(built);
 			await rm(finalDir, { recursive: true, force: true });
 			await rename(built, finalDir);
 			// A new bundle directory belongs to this import until it is registered: a cancelled or failed
@@ -547,7 +580,7 @@ export class MgBundleService {
 	private async readCompositions(dir: string, signal: AbortSignal): Promise<RawComposition[]> {
 		const r = await this.renderer();
 		try {
-			const comps = await r.getCompositions(dir, {
+			const comps = await r.getCompositions(await this.servableDir(dir), {
 				...this.remotionOptions(),
 				inputProps: {},
 				timeoutInMilliseconds: MG_DELAY_RENDER_TIMEOUT_MS,
@@ -816,10 +849,11 @@ export class MgBundleService {
 			void this.markUsed(renderKey);
 			return hit;
 		}
-		const bundleDir = this.bundleDir(req.mediaKey);
+		const stored = this.bundleDir(req.mediaKey);
 		const record = this.record(req.mediaKey);
-		if (!bundleDir || !record)
+		if (!stored || !record)
 			throw new JobError('ASSET_NOT_FOUND', `Bundle ${req.mediaKey} is not available`, false);
+		const bundleDir = await this.servableDir(stored);
 		const r = await this.renderer();
 		const opts = this.remotionOptions();
 		const scratch = await ctx.scratchDir();
@@ -983,10 +1017,15 @@ export class MgBundleService {
 			if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
 			if (e instanceof JobError) throw e;
 			const msg = String((e as Error)?.message ?? e);
-			throw new JobError(
-				'MG_RENDER_FAILED',
-				`Pre-rendering ${req.compositionId} failed: ${msg.slice(0, 1200)}`,
-				true,
+			// The composition's source lines, from the bundle's side-car map (loaded only now).
+			throw await withRenderErrorSource(
+				new JobError(
+					'MG_RENDER_FAILED',
+					`Pre-rendering ${req.compositionId} failed: ${msg.slice(0, 1200)}`,
+					true,
+				),
+				e,
+				bundleDir,
 			);
 		} finally {
 			ctx.signal.removeEventListener('abort', onAbort);
@@ -1192,6 +1231,7 @@ export class MgBundleService {
 		this.requireReady();
 		const r = await this.renderer();
 		const opts = this.remotionOptions();
+		dir = await this.servableDir(dir);
 		await mkdir(dirname(file), { recursive: true });
 		const tmp = `${file}.${process.pid}.tmp.png`;
 		// S11:LBK-026 (wp-m2-layer-bake): posters are Remotion renders too.

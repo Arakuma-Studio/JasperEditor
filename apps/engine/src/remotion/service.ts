@@ -18,6 +18,7 @@ import { renderParallelism } from '../gaps/render-budget.ts';
 import { JobError } from '../jobs/types.ts';
 import { selfCheck } from '../tools/ffmpeg.ts';
 import { binaryNames, type RemotionBinaries } from '../tools/lgpl.ts';
+import { hideSourceMapReferences, withRenderErrorSource } from './bundle-source-map.ts';
 import type { RemotionFfmpegInfo } from './export-plan.ts';
 import { webglRefusal } from './webgl-refusal.ts';
 
@@ -605,13 +606,18 @@ export class RemotionService {
 		const hash = this.sourceHash(entry);
 		this.bundleIdValue = hash;
 		const outDir = join(this.opts.bundleCacheDir, hash);
-		if (existsSync(join(outDir, 'index.html'))) return outDir;
+		if (existsSync(join(outDir, 'index.html'))) {
+			// A bundle cached before its map references were hidden (once; the same bundle id, so no re-bake).
+			await this.hideSourceMap(outDir);
+			return outDir;
+		}
 		await mkdir(this.opts.bundleCacheDir, { recursive: true });
 		const tmp = `${outDir}.partial-${process.pid}`;
 		await rm(tmp, { recursive: true, force: true });
 		this.opts.log?.(`[remotion] bundling compositions (${hash})…`);
 		const { bundle } = await import('@remotion/bundler');
 		await bundle({ entryPoint: entry, outDir: tmp, enableCaching: true });
+		await this.hideSourceMap(tmp);
 		await rm(outDir, { recursive: true, force: true });
 		await rename(tmp, outDir);
 		// Keep only the newest few bundles.
@@ -622,6 +628,20 @@ export class RemotionService {
 		for (const o of others.slice(2))
 			await rm(join(this.opts.bundleCacheDir, o.n), { recursive: true, force: true });
 		return outDir;
+	}
+
+	/**
+	 * Renders must not read and parse the bundle's source map on the main thread (bundle-source-map.ts). Not fatal: a
+	 * bundle that keeps its references still renders, only with that cost.
+	 */
+	private async hideSourceMap(dir: string): Promise<void> {
+		try {
+			await hideSourceMapReferences(dir);
+		} catch (e) {
+			this.opts.log?.(
+				`[remotion] could not hide the source-map references of ${dir}: ${(e as Error).message}`,
+			);
+		}
 	}
 
 	private browserOptions(): {
@@ -790,8 +810,8 @@ export class RemotionService {
 				...browser,
 				...(shared ? { puppeteerInstance: shared.instance } : {}),
 			})
-			.catch((e: unknown) => {
-				throw mapRenderError(e, signal);
+			.catch(async (e: unknown) => {
+				throw await renderFailure(e, signal, serveUrl);
 			});
 		return { r, serveUrl, composition, browser };
 	}
@@ -918,7 +938,7 @@ export class RemotionService {
 			);
 			return { frames: composition.durationInFrames };
 		} catch (e) {
-			throw mapRenderError(e, input.signal);
+			throw await renderFailure(e, input.signal, serveUrl);
 		} finally {
 			input.signal.removeEventListener('abort', onAbort);
 			await instance?.close({ silent: true }).catch(() => undefined);
@@ -982,7 +1002,7 @@ export class RemotionService {
 					.then(() => undefined),
 			);
 		} catch (e) {
-			throw mapRenderError(e, input.signal);
+			throw await renderFailure(e, input.signal, serveUrl);
 		} finally {
 			input.signal.removeEventListener('abort', onAbort);
 			await instance?.close({ silent: true }).catch(() => undefined);
@@ -1056,7 +1076,7 @@ export class RemotionService {
 			});
 			return { frames: total, selectMs, renderMs: Math.round(performance.now() - t0) - selectMs };
 		} catch (e) {
-			throw mapRenderError(e, input.signal);
+			throw await renderFailure(e, input.signal, serveUrl);
 		} finally {
 			input.signal.removeEventListener('abort', onAbort);
 			await instance?.close({ silent: true }).catch(() => undefined);
@@ -1107,7 +1127,7 @@ export class RemotionService {
 				...(input.browser ? { puppeteerInstance: input.browser.instance } : {}),
 			});
 		} catch (e) {
-			throw mapRenderError(e, input.signal);
+			throw await renderFailure(e, input.signal, serveUrl);
 		} finally {
 			input.signal.removeEventListener('abort', onAbort);
 		}
@@ -1138,9 +1158,28 @@ async function withSinglePageRetry(
 	}
 }
 
+/**
+ * A failed render's error: `mapRenderError`, and for `RENDER_FAILED` / `RENDER_TIMEOUT` the original source lines of
+ * the browser stack (`detail.source`, and in the message), symbolicated now from the side-car map in `serveDir`
+ * (renders themselves never load it: bundle-source-map.ts).
+ */
+async function renderFailure(e: unknown, signal: AbortSignal, serveDir: string): Promise<Error> {
+	const mapped = mapRenderError(e, signal);
+	if (!(mapped instanceof JobError) || (mapped.code !== 'RENDER_FAILED' && mapped.code !== 'RENDER_TIMEOUT'))
+		return mapped;
+	return withRenderErrorSource(mapped, mapped.cause ?? e, serveDir);
+}
+
+/** The engine's error for a render failure; a new JobError keeps Remotion's error (its browser stack) as `cause`. */
 function mapRenderError(e: unknown, signal: AbortSignal): Error {
 	if (signal.aborted) return new JobError('JOB_CANCELLED', 'Cancelled');
 	if (e instanceof JobError) return e;
+	const mapped = mapRemotionError(e);
+	mapped.cause = e;
+	return mapped;
+}
+
+function mapRemotionError(e: unknown): JobError {
 	const msg = (e as Error)?.message ?? String(e);
 	// The compositions' colour stage cancels the render with this code when WebGL2 is missing (S06:CG-042).
 	if (/WEBGL_UNAVAILABLE/.test(msg)) return new JobError('WEBGL_UNAVAILABLE', msg.slice(0, 1500), false);

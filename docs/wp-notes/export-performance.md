@@ -1009,7 +1009,7 @@ behaviour (the probe is measured, not written; the first round decodes three can
   the last phase; after the changes above it ends ≈ 145 s before the encode in a cold export, but the warm exports' audio (150–177 s,
   mostly the mix) still ends close to their encode (≈ 177 s), so slowing it would lengthen warm jobs.
 
-## 15. Engine responsiveness during an export (implemented: interactive headroom, event-loop line)
+## 15. Engine responsiveness during an export (implemented: interactive headroom, event-loop line, unreferenced source maps)
 
 `jobs/queue.ts`. Reported on the user's PC (RTX 3080 Ti, 24 cores) during exports of the real project: `import_media`
 did not return within 120 s; during another export (load ≈ 18, test runs beside it) the job took ≈ 2× as long and
@@ -1048,11 +1048,11 @@ above: idle p99 16–20 ms; during the export p50 10 ms (the resolution), p99 70
   decoders start together. Kernel streams decode a member's picture in-process when it is an unscaled PNG and
   start one ffmpeg per other picture (scaled mip levels, other formats). Not changed (a spawner process or fewer
   decodes would be needed).
-- **Remotion's `prepareServer`** (hybrid exports): each `selectComposition` / `renderFrames` / `renderMedia` of a
-  master or still sheet reads the bundle (`bundle.js` 12.6 MB) and its source map (17.8 MB) synchronously and parses
-  the map, ≈ 1–4 s per call at this load (a hybrid run of the driver with 40 text clips: blocks of 1.5–2.7 s in the
-  bake). It is Remotion's error symbolication; not changed (dropping the map from the bundle would remove the
-  read and parse, and the symbolicated stacks).
+- **Remotion's `prepareServer`** (hybrid exports): each `selectComposition` / `renderFrames` / `renderMedia` /
+  `renderStill` of a master or still sheet read the bundle (`bundle.js` 12.6 MB) and its source map (17.8 MB)
+  synchronously and parsed the map, ≈ 1–4 s per call at this load (a hybrid run of the driver with 40 text clips:
+  blocks of 1.5–2.7 s in the bake). The map is no longer read: see "Remotion's source map" below; the read of
+  `bundle.js` remains.
 - **A dev engine's first bake bundles the compositions with webpack in-process**: one ≈ 20 s block on the main
   thread (once per composition source change; packaged engines ship the bundle).
 - The audio's mix and delivery passes run on the measurement workers in an engine (a vitest engine without the
@@ -1063,6 +1063,70 @@ The same driver with 40 text clips (a hybrid export: 10 masters and stills baked
 compositions bundled by the job): the import 55 s in, during `Baking graphics: 7/10 ready`, returned in 0.58 s with
 the export still running (export 117.5 s); the event loop's max was 5.1 s and `GET /api/capabilities`' max 5.2 s —
 the webpack bundle and Remotion's source-map reads above.
+
+**Remotion's source map: kept beside the bundle, no longer read per render.** `remotion/bundle-source-map.ts`.
+Where (Remotion 4.0.499, read-only): `prepareServer` (`@remotion/renderer` `dist/prepare-server.js`, the same code in
+`dist/esm/index.mjs`) calls `getSourceMapFromLocalFile(<serveDir>/bundle.js)` (`dist/symbolicate-stacktrace.js`) for
+every `selectComposition`, `renderMedia`, `renderFrames` and `renderStill` (a still is two: `selectComposition`, then
+`renderStill`). It `readFileSync`s `bundle.js`, takes the **last** line matching `//[#@] ?sourceMappingURL=…` anywhere
+in it, `readFileSync`s that map and builds a `SourceMapConsumer` (`JSON.parse` of the 17.8 MB map on the main thread),
+destroyed when the render's server closes. Remotion uses that consumer only for the location tag of browser console
+lines; errors reach the caller unsymbolicated (`SymbolicateableError`: a browser stack in `bundle.js` coordinates;
+`symbolicateError` is the CLI's, never called by the renderer), so the engine's render errors carried no source
+location before either.
+
+Change: the bundles renders use name no map. `hideSourceMapReferences` turns every line that lookup would follow into a
+plain comment (`//# sourceMappingURL=` → `//  sourceMappingURL=`, same length: positions and the map stay valid) —
+webpack's last line **and** the comments left in bundled modules (immer, path-bool and two `index.mjs` in our bundle).
+Dropping only webpack's line (or building with `hidden-source-map`) would make Remotion follow `index.mjs.map`, which
+is not in the bundle: its `readFileSync` throws synchronously inside `prepareServer` and every render would fail.
+`build:remotion` (now run through tsx, to share the helper) hides them after stamping; a dev engine hides them in a
+new bundle before it enters `<appdir>/remotion/bundle/` and, once, in a bundle cached before this change. A failed
+render (`RENDER_FAILED`, `RENDER_TIMEOUT`) is symbolicated by the engine afterwards: the browser frames of Remotion's
+error (`http://localhost:<port>/<file>.js:line:col`, also a `delayRender()` call stack) are looked up in the side-car
+`<file>.js.map` of the served directory (Node's `module.SourceMap`, loaded only then, shared by failures that overlap)
+and the first-party lines are appended to the job error (`at calculateSequenceMetadata (./src/metadata.ts:8)`) and
+listed in `detail.source`. The map is Remotion's production `cheap-module-source-map`: lines only, and in the case
+above the line before the failing one (the map's own imprecision: `fps:` on line 9 is mapped to 8).
+
+Bundle id and cached masters: unchanged. A packaged bundle's id is hashed before the references are hidden (checked:
+the stamp of a build equals the hash of its directory with the 5 bytes restored), and a dev bundle's id is the source
+hash. Only a prebuilt bundle built before this change (an older `dist/remotion-bundle`, `JASPER_REMOTION_BUNDLE`) is
+not rewritten (it may be read-only or signed) and still has its map read until it is rebuilt.
+
+Imported motion-graphics bundles (`mg-bundles/service.ts`; a project's composition clips are rendered from them —
+masters, previews, posters, `getCompositions` at import — each call through the same `prepareServer`) get the same
+treatment in the engine's stored copy `<appdir>/mg-bundles/<hash>/`: an import (project folder bundled into the
+staging directory, built folder copied there, zip unpacked there; a watch rebuild is an import) hashes the staging
+copy, hides its references, then moves it into place, so the key (`mk_<hash>`) is the hash of the bundle as imported
+and an unchanged bundle keeps its key and its cached masters. The user's folder (`~/mg/daycard/`) is only read. A
+bundle stored before this change is rewritten in place the first time this process serves it (`servableDir`, once
+per directory and process; keys and render keys come from the registry record and are never re-hashed from the
+directory). A failed pre-render (`MG_RENDER_FAILED`, the export's master renders) gets the same source lines from
+the bundle's side-car map. Not symbolicated: posters and the import's `getCompositions` (their errors keep their
+current text). Test: `mg-bundle-source-map.test.ts` — importing a built folder through `POST /api/mg-bundles/import`
+keeps the folder's bytes and the folder's hash as key, and Remotion's lookup on what `getCompositions` is given finds
+no map; a bundle stored with its references is served to the pre-render without them, and the failed pre-render
+names `src/Title.tsx:12` (both fail before the change). `MG_E2E=1` "tests 5 + 6" (the fixture project imported with its own
+`remotion bundle`, a master pre-rendered and exported natively, frame-exact) passes on this branch; its stored copy's
+bytes were not inspected.
+
+Measured (indicative: this host, 16 logical cores shared with other agents, load1 33–42 during the runs; a scratch
+driver, not committed: `RemotionService.renderStill` of an empty 720p30 snapshot through a shared browser, 12 stills
+3 at a time after a warm-up still, the same fresh `build:remotion` bundle with the references restored (before) and as
+built (after), alternated; gaps of a 5 ms interval timer):
+
+| | wall | gaps > 100 ms (sum) | longest gap | `getSourceMapFromLocalFile` per call (CPU profile) |
+|---|---:|---:|---:|---:|
+| before (3 runs) | 23–35 s | 7.2 / 11.8 / 11.1 s | 0.95 / 1.6 / 1.2 s | 358 ms (of its 9.3 s in 26 calls: ≈ 3.4 s reading the map, 2.2 s `JSON.parse`) |
+| after (3 runs) | 27–32 s | 4.7 / 4.2 / 4.7 s | 0.55 / 0.56 / 0.59 s | 140 ms (3.6 s in 26 calls, no map) |
+
+What remains of the per-call block is Remotion's `readFileSync` of the 12.7 MB `bundle.js` (≈ 110 ms per call here)
+and its regex over it (≈ 30 ms); further gaps of ≈ 250–300 ms per still are the compositor's and Chrome's start-up
+(`spawn`, module compilation, GC). Removing the `bundle.js` read would need a small `bundle.js` (e.g. the real entry
+under another name in `index.html`): not done. Tests: `remotion-source-map.test.ts` — Remotion's own lookup
+(`getSourceMapFromLocalFile`) on the bundle a dev engine serves finds no map (a cached bundle with webpack's reference
+and a module's); a render failing with a browser stack in `bundle.js` names `src/titles/TitleCard.tsx:12`.
 
 **libuv threadpool: not the bottleneck here, unchanged.** An `fs.stat` round trip every 100 ms during the native
 export (two runs each, alternating): `UV_THREADPOOL_SIZE` 4 — p50 0.5 ms, p99 27–31 ms, import 424 / 746 ms; 16 —
