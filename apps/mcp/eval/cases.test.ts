@@ -198,9 +198,15 @@ const ROUTES: Record<string, Route> = {
 	'delivery-split-clip-control': {
 		calls: (v) => [['split_at', { projectId: v.project, clipIds: [v.clip], at: '10s' }]],
 	},
+	'automation-punch-caption-start': {
+		calls: (v) => [['add_punch_ins', { projectId: v.project, start: 'caption' }]],
+	},
+	'automation-punch-midpoint-control': {
+		calls: (v) => [['add_punch_ins', { projectId: v.project, start: 'midpoint' }]],
+	},
 };
 
-const ROUTED_PREFIXES = ['titles-', 'effects-', 'three-d-', 'delivery-', 'cleanup-', 'job-'];
+const ROUTED_PREFIXES = ['titles-', 'effects-', 'three-d-', 'delivery-', 'cleanup-', 'job-', 'automation-'];
 const cases = loadCases().filter((c) => ROUTED_PREFIXES.some((p) => c.id.startsWith(p)));
 
 async function runRoute(c: EvalCase, route: Route) {

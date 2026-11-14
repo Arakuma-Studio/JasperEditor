@@ -168,6 +168,10 @@ export const MIGRATIONS: readonly MigrationStep[] = [
 	// builds open v13 files read-only: their regenerate would replace the hand-edited subtitles, and their strict rules
 	// reader would reset a group with own words to the default rules.
 	{ from: 12, to: 13, migrate: (doc) => doc },
+	// v14 (punch-ins on caption starts): style recipes may hold punch-ins `start: 'caption'`. Existing data needs no
+	// changes; the bump makes v13 builds open v14 files read-only: their strict recipe reader would read such a recipe
+	// as unreadable and drop it on load.
+	{ from: 13, to: 14, migrate: (doc) => doc },
 ];
 
 /** Data that is not a loadable project (not an object, an unknown format, no migration path, schema mismatch). */

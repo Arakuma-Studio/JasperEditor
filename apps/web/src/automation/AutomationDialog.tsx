@@ -346,6 +346,7 @@ function PunchFields(p: { seq: Sequence; params: Params; set(k: string, v: unkno
 					options={[
 						{ value: 'midpoint', label: t('The clip midpoint') },
 						{ value: 'word', label: t('The word start nearest the midpoint') },
+						{ value: 'caption', label: t('A subtitle start, as you place them') },
 					]}
 				/>
 			</Row>

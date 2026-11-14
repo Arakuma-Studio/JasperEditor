@@ -66,6 +66,8 @@ const STEP_CHANGES: Record<string, (from: Rec) => Record<string, unknown>> = {
 	'11→12': () => ({}),
 	// v12 → v13 (subtitle locks, own-subtitle words): version bump only; v12 builds open the files read-only.
 	'12→13': () => ({}),
+	// v13 → v14 (punch-ins `start: 'caption'` in style recipes): version bump only; v13 builds open the files read-only.
+	'13→14': () => ({}),
 };
 
 describe('schema history fixtures (S01:MIG-002)', () => {

@@ -28,7 +28,7 @@ import { pickSequence } from '../format.ts';
 
 export const AUTOMATION_GUIDE = `Editing automation (spec 15): passes that decorate the edit the way the user's videos are cut, each as ONE proposal (feature "edit-automation", Review groups Cut kits / Punch-ins / Ken Burns / Reactions / Overlay slides / Music beds / Stingers) the user reviews in the Review panel (timeline ghosts, ✓ / ✕ per item, ⇄ alternatives, ↻ Refresh proposal after edits, Reroll per item) and applies as one undo step.
 - decorate_cuts: a cut kit at every picture cut (the cut map, list_cuts): an adjustment clip on an "FX" track above the picture (created when needed), centred on the cut exactly — vertical sequences get the shorts kit (S_Shake 10 + 10 frames, Amplitude 0.5, Frequency 6, Motion Blur), others the long-form pack (Jolt 49 %, Whip 17 %, Zoom blur 17 %, Zoom through 9 %, Spin 8 %, few repeats: P(same as previous) 0.23) — with 2-key eased curves; kits never overlap (close cuts take a shorter family or are skipped, reported), plus a whoosh exactly as long as the kit with its peak on the cut, placed through sound design (a cue anchored to the edit + soundDesign.place; a library sound of type sfx.type, default whoosh, from the starter kit / packs / your folders). Kits render through the Remotion export path (their shader effects have no native route): the dry run says so.
-- add_punch_ins: Motion zooms on the A-roll clips ≥ 1.5 s (density 0.7 of them, "!" / "?" phrases first): from the clip's midpoint (or nearest word start), 7 frames linear 100 → 180 %, held to the cut; target centre, a point, or the subject (face tracking / saliency); method "motion" (default, Motion keys: native export) or "adjustment" (a Transform clip on a ZOOM track right above the A-roll); optional whoosh.
+- add_punch_ins: Motion zooms on the A-roll clips ≥ 1.5 s (density 0.7 of them, "!" / "?" phrases first): from the clip's midpoint (or nearest word start, or start "caption": the subtitle start the user would pick), 7 frames linear 100 → 180 %, held to the cut; target centre, a point, or the subject (face tracking / saliency); method "motion" (default, Motion keys: native export) or "adjustment" (a Transform clip on a ZOOM track right above the A-roll); optional whoosh.
 - add_ken_burns: slow zooms over 15 % of the remaining A-roll clips, keys on the first and last frame, 100 ↔ 118 % (vertical) / 130 %, zoom-in : zoom-out 2 : 1. Native export.
 - place_reactions: the user's reaction pictures (assets: {bin} name or id, {folder} absolute path, or {mediaIds}; nothing is shipped — ask the user which bin or folder holds them) on a "Reactions" track (below an FX track so kits shake them too) where the edit asks for one: markers whose name contains "reaction" or names a picture, calls to action and exclamations of the transcript (built-in Spanish / English lists, editable: words.cta, words.exclamations; any word with "!"), and optionally where face tracking finds no face on the A-roll (triggers.speakerNotVisible; run track_faces first). Each starts on a cut within 0.5 s, lasts 2.1 s (vertical) / 2.6 s, at a measured slot (shorts: bottom left / centre / right; long form: mid height at 15 / 50 / 83 %), flipped on the left slots, 60–65 % Motion scale (capped at 45 % of the frame height), S_Shake wobble (Amplitude 0.8, Frequency 2), never over subtitles, at most maxPerMinute (12 vertical, 1 landscape); 3 other pictures per item (⇄). Exports natively with the wobbled pictures baked (hybrid).
 - slide_overlays: one-sided Smooth Slide transitions (30 frames) at free heads (53 % of them) and tails (18 %) of overlay clips (pictures on the tracks above the A-roll), directions down 47 / up 33 / left 13 / right 8 %, ease in-out quad / cubic, motion blur high. A head or tail is free when no clip of its track touches it and it has no transition (transition.add {clipId, edge} at a free edge makes a one-sided transition). Exports natively with the slide spans baked (hybrid).
@@ -341,7 +341,7 @@ export function registerAutomationTools(ctx: ToolContext): void {
 			title: 'Add punch-in zooms (propose)',
 			description: 'Add zooms on A-roll clips, phrases ending in ! or ? first.',
 			details:
-				'Spec 15 punch-ins: on the A-roll clips of at least minClipSeconds (1.5 s) whose Motion is not keyed, density (0.7) of them get a zoom — clips whose phrases end in "!" or "?" first — from the clip midpoint (or the nearest word start with start "word"), rampFrames (7) linear from 100 % to scale (180 %) of the clip\'s own scale, held to the cut, toward the centre, a point {x, y} (0…1 of the frame) or the subject (a faces roto on the clip, else the engine\'s face / saliency analysis). method "motion" (default) writes Motion keys on the clip (native export); "adjustment" puts a Transform adjustment clip on a ZOOM track right above the A-roll. Optional whoosh at the zoom (sfx). As a PROPOSAL (mode "propose") or a dry run.',
+				'Spec 15 punch-ins: on the A-roll clips of at least minClipSeconds (1.5 s) whose Motion is not keyed, density (0.7) of them get a zoom — clips whose phrases end in "!" or "?" first — from the clip midpoint (start "word": the nearest word start; "caption": the user\'s caption-start rule — subtitles, else the words grouped like the user\'s subtitles — pero / aunque / sino, else a clause start at 40–80 % of the clip nearest 60 %, else the caption nearest 60 %, from max(0.8 s, 25 %) in to 0.6 s before the cut; midpoint when none), rampFrames (7) linear from 100 % to scale (180 %) of the clip\'s own scale, held to the cut, toward the centre, a point {x, y} (0…1 of the frame) or the subject (a faces roto on the clip, else the engine\'s face / saliency analysis). method "motion" (default) writes Motion keys on the clip (native export); "adjustment" puts a Transform adjustment clip on a ZOOM track right above the A-roll. Optional whoosh at the zoom (sfx). As a PROPOSAL (mode "propose") or a dry run.',
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -364,9 +364,9 @@ export function registerAutomationTools(ctx: ToolContext): void {
 					.optional()
 					.describe('Frames of the linear ramp (default 7)'),
 				start: z
-					.enum(['midpoint', 'word'])
+					.enum(['midpoint', 'word', 'caption'])
 					.optional()
-					.describe('"midpoint" (default) or "word": the transcript word start nearest the midpoint'),
+					.describe('Default midpoint; word: nearest word start; caption: the subtitle start the user picks'),
 				target: z
 					.union([
 						z.literal('center'),
@@ -374,13 +374,11 @@ export function registerAutomationTools(ctx: ToolContext): void {
 						z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1) }),
 					])
 					.optional()
-					.describe('"center" (default), "subject" or a point {x, y} (0…1 of the frame)'),
+					.describe('center (default), subject or a point {x, y} (0…1 of the frame)'),
 				method: z
 					.enum(['motion', 'adjustment'])
 					.optional()
-					.describe(
-						'"motion" (default: Motion keys, native export) or "adjustment" (Transform adjustment clip)',
-					),
+					.describe('motion (default: Motion keys, native export) or adjustment (Transform adjustment clip)'),
 				sfx: SfxArg,
 				skipReframed: z
 					.boolean()

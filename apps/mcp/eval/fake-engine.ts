@@ -30,6 +30,8 @@ import {
 import { EngineError as DefaultEngineError } from '@jasper/engine-client';
 import { mgRegistry } from '@jasper/mg-templates';
 import {
+	AutomationInputError,
+	type AutomationPass,
 	analyzeSequenceCleanup,
 	applyTransaction,
 	builtinCleanupSettings,
@@ -50,6 +52,10 @@ import {
 	normalizeAgentTransaction,
 	type ProjectDocument,
 	type Proposal,
+	passDraft,
+	passItems,
+	passSummary,
+	planPass,
 	proposalItemFailures,
 	resolveAgentAddresses,
 	runAgentQuery,
@@ -1369,6 +1375,52 @@ export function createFakeEngine(
 				evicted: [],
 				expiresAt: '2026-12-02T10:00:00.000Z',
 			};
+		},
+		/** An automation pass planned by the real planners, without sounds (the eval has no sound library). */
+		automationPass: (
+			projectId: string,
+			pass: AutomationPass,
+			body: { sequenceId?: string; mode?: 'propose' | 'dryRun'; params?: Record<string, unknown> },
+		) => {
+			const p = project(projectId);
+			let plan: ReturnType<typeof planPass>;
+			try {
+				plan = planPass(p.doc, pass, body.sequenceId, body.params ?? {}, {});
+			} catch (e) {
+				if (e instanceof AutomationInputError)
+					throw new EngineError('VALIDATION_FAILED', e.message, { status: 400, detail: { code: e.code } });
+				throw e;
+			}
+			const items = passItems(p.doc, plan);
+			const summary = passSummary(plan, items);
+			const mode = body.mode ?? 'propose';
+			const base = {
+				mode,
+				pass,
+				projectId,
+				sequenceId: plan.sequenceId,
+				summary,
+				sfx: null,
+				budget: { fits: true, items: items.items.length, commands: items.items.length },
+				invalid: [],
+				warnings: summary.warnings,
+			};
+			if (mode === 'dryRun')
+				return { ...base, proposalId: null, revision: p.revision, itemCount: items.items.length };
+			const draft = passDraft(plan, items, body.params ?? {});
+			const stored = draft
+				? (methods.createProposal as (id: string, req: Record<string, unknown>) => { proposal: Proposal })(
+						projectId,
+						draft as unknown as Record<string, unknown>,
+					)
+				: null;
+			const result = {
+				...base,
+				proposalId: stored?.proposal.id ?? null,
+				revision: p.revision,
+				itemCount: stored?.proposal.items.length ?? 0,
+			};
+			return jobView(newJob('edit-automation', `Automation: ${pass}`, 0, result));
 		},
 		getProposal: (projectId: string, proposalId: string) => {
 			const proposal = reviewedProposal(proposalId);

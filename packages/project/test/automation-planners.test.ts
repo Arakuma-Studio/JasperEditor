@@ -5,6 +5,7 @@
 // = one transaction = one undo step, invariants), refresh and reroll.
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { captionStart } from '../src/automation/punch-caption.ts';
 import {
 	type AdjustmentClip,
 	type Animatable,
@@ -19,6 +20,7 @@ import {
 	EDIT_AUTOMATION_FEATURE,
 	type EffectInstance,
 	evaluate,
+	FLICKS_PER_SECOND,
 	flicksPerFrame,
 	LONG_PACK,
 	type Proposal,
@@ -508,6 +510,111 @@ describe('punch-ins planner', () => {
 		const tf = fxOf(adj[0]!)[0]!;
 		expect(tf.effectId).toBe('jasper.transform');
 		expect((tf.params.anchorPoint as Animatable<number[]>).value).toEqual([0.25, 0.25]);
+	});
+});
+
+describe('punch-in caption start', () => {
+	// 60 fps, a 10 s clip at frame 600: window [600 + max(48, 150), 1200 − 36] = [750, 1164], clauses 840…1080, 60 % = 960
+	const clip = { start: 600, duration: 600 };
+	const at = (cues: Array<[number, string]>, c = clip) =>
+		captionStart(
+			c,
+			cues.map(([frame, text]) => ({ frame, text })),
+			60,
+			c.start + c.duration - 7,
+		);
+
+	it('starts on the first pero / aunque / sino in the window, else a clause start at 40–80 % nearest 60 %, else the nearest', () => {
+		const cues: Array<[number, string]> = [
+			[700, 'pero antes'], // before the window
+			[800, 'en el nivel'],
+			[900, 'aunque nadie'],
+			[950, 'lo sabía,'],
+			[970, 'mucho tiempo'],
+			[1100, 'sino otra'],
+		];
+		expect(at(cues)).toEqual({ frame: 900, rule: 'contrast' });
+		// no contrast: 1000 follows a full stop (a clause start); 961 and 990 open none
+		const noContrast: Array<[number, string]> = [
+			[800, 'en el nivel'],
+			[961, 'mucho'],
+			[990, 'pasó.'],
+			[1000, 'tiempo después'],
+		];
+		expect(at(noContrast)).toEqual({ frame: 1000, rule: 'clause' });
+		// a clause opener (connector, capital) outside 40–80 % is not a clause candidate; the nearest caption wins
+		expect(
+			at([
+				[760, 'Y entonces'],
+				[940, 'de la'],
+				[990, 'cueva'],
+			]),
+		).toEqual({ frame: 940, rule: 'nearest' });
+	});
+
+	it('reads only caption starts from max(0.8 s, 25 %) after the clip start to 0.6 s before the cut', () => {
+		expect(at([[749, 'casi']])).toBeNull();
+		expect(at([[750, 'casi']])).toEqual({ frame: 750, rule: 'nearest' });
+		expect(at([[1164, 'tarde']])).toEqual({ frame: 1164, rule: 'nearest' });
+		expect(at([[1165, 'tarde']])).toBeNull();
+		expect(at([[900, '…']])).toBeNull(); // a caption without words
+		// a 2 s clip: 0.8 s (48 frames) is more than 25 % (30)
+		const short = { start: 0, duration: 120 };
+		expect(at([[47, 'casa']], short)).toBeNull();
+		expect(at([[48, 'casa']], short)).toEqual({ frame: 48, rule: 'nearest' });
+	});
+
+	it('plans on the subtitles, else the transcript words grouped like the user’s subtitles, else the midpoint', () => {
+		// 30 fps, one 10 s clip on V1 / A1: window frames 75…282, clauses 120…240, 60 % = 180 (a lone full-length take
+		// is no A-roll by default: the track is named)
+		const P = { density: 1, start: 'caption', track: 'V1' };
+		const h = new Harness({ preset: 'hd-1080p-30' });
+		const a = h.registerVideo({ seconds: 10 });
+		h.ok([{ type: 'clip.place', source: { mediaId: a }, at: 0, tracks: { video: 'V1', audio: ['A1'] } }]);
+		const clipId = Object.keys(h.seq.clips).find((id) => h.seq.clips[id]!.kind === 'video')!;
+		const none = planPunchIns(h.doc, h.seqId, P);
+		expect(none.punches[0]).toMatchObject({ frame: 150, start: 'midpoint' });
+		expect(none.warnings.map((w) => w.code)).toContain('W_NO_CAPTIONS');
+		const sec = (x: number) => Math.round(x * FLICKS_PER_SECOND);
+		const words: Array<[string, number, number]> = [
+			['Hoy', 0.2, 0.5],
+			['sí.', 0.5, 0.9],
+			['Esto', 3.0, 3.3],
+			['es', 3.3, 3.4],
+			['raro', 3.4, 3.8],
+			['mucho', 5.9, 6.2],
+			['tiempo', 6.2, 6.6],
+			['y', 7.0, 7.1],
+			['luego', 7.1, 7.4],
+			['nada', 7.4, 7.8],
+		];
+		h.ok([
+			{
+				type: 'transcript.create',
+				mediaId: a,
+				language: 'es',
+				origin: 'manual',
+				words: words.map(([text, s, e]) => ({ text, start: sec(s), end: sec(e) })),
+			},
+		]);
+		// from the words: "mucho tiempo" (177) is nearest 60 %, "y luego nada" (210) opens a clause
+		const fromWords = planPunchIns(h.doc, h.seqId, P);
+		expect(fromWords.punches[0]).toMatchObject({ clipId, frame: 210, start: 'caption', startRule: 'clause' });
+		expect(fromWords.warnings).toEqual([]);
+		// the subtitles win over the words: "Pero mucho tiempo" exists only in the subtitle
+		h.ok([{ type: 'captions.generate', template: 'builtin:pixel-pop', cutAware: false }]);
+		const sub = Object.values(h.seq.clips).find(
+			(c) => c.kind === 'text' && (c as { content: { text: string } }).content.text === 'mucho tiempo',
+		)!;
+		h.ok([{ type: 'clip.update', clipId: sub.id, patch: { content: { text: 'Pero mucho tiempo' } } }]);
+		const fromSubs = planPunchIns(h.doc, h.seqId, P);
+		expect(fromSubs.punches[0]).toMatchObject({ frame: sub.start, start: 'caption', startRule: 'contrast' });
+		// a clip whose window holds no caption start: the midpoint, said in the result
+		// (90 frames: window 24…72; "Hoy sí." starts at 6, "Esto es raro" at 90)
+		h.ok([{ type: 'clip.trim', clipId, edge: 'out', deltaFrames: 90 - 300 }]);
+		const short = planPunchIns(h.doc, h.seqId, P);
+		expect(short.punches[0]).toMatchObject({ clipId, frame: 45, start: 'midpoint' });
+		expect(short.warnings.map((w) => w.code)).toEqual(['W_CAPTION_FALLBACK']);
 	});
 });
 

@@ -57,6 +57,7 @@ crash recovery).
 | 11 | agent footage editing (spec 18 AF-BRF) | `Sequence.brief` (what the video should be: text, platform, target length, aspect) and `ProjectDocument.agentNotes` (notes agents keep) | `v10→v11`: version bump only, so v10 builds open v11 files read-only. Why: a v10 build neither shows, checks nor repairs the brief and notes, and its agents cannot read them; it would keep them on save (loose objects) but edit a project whose brief it ignores |
 | 12 | Title Looks (spec 19) | looks on clips (`EffectInstance.appearance` on the internal `jasper.title-look` effect), project looks (`ProjectDocument.titleLooks`), the sequence's light (`Sequence.settings.globalLight`), the seeded-pattern identity of effects (`EffectInstance.patternOrigin`, TL-121), vertical text (`TextContent.writingMode`, `tateChuYoko`, TL-111), per-letter finishes on runs (`runs[].finish`, TL-093) and 3D titles (surfaces, bands, inflate, backplates, tone mapping, glints, environment presets, `hdri` media) | `v11→v12`: version bump only, so v11 builds open v12 files read-only. Why: a v11 build bypasses the unknown effect and draws the clip without its look, its orphan collection, item delete and Project Manager would drop media referenced only by a look layer, it ignores `patternOrigin`, so a razor cut's seeded pattern would restart, and it would draw vertical text in lines at a box measured for columns |
 | 13 | subtitle locks and own-subtitle words (spec 13) | `caption.locked` on subtitle text clips (edited by hand: text, razor, trim, move, or locked in Text ▸ Subtitles / `regenerate_captions {lock}`) and `rules.ownWords` on subtitle groups | `v12→v13`: version bump only, so v12 builds open v13 files read-only. Why: a v12 build's `captions.regenerate` ignores the lock and would replace the hand-edited subtitles, and its strict stored-rules reader would read a group with `ownWords` as unreadable and reset its rules to the defaults on load |
+| 14 | punch-ins on caption starts (spec 15 EA-021) | punch-ins `start: 'caption'` in the style recipes' pass parameters (`ProjectDocument.styleRecipes`) | `v13→v14`: version bump only, so v13 builds open v14 files read-only. Why: a v13 build's strict recipe reader would read a recipe holding `start: 'caption'` as unreadable and drop it on load (`drop-style-recipe`) |
 
 Every version has a hand-made fixture, `packages/project/test/fixtures/schema-v<N>.jasper`, that must load
 forever (S01:MIG-002), and `packages/project/test/schema-history.test.ts` checks that:
@@ -230,6 +231,15 @@ v13 files read-only (the v13 bump above).
 |---|---|---|---|
 | `TextClip.caption.locked` (boolean) | spec 13 AS-006 | part of the loose `caption` object; absent = not locked. Set by the commands that edit a subtitle by hand (a text edit the upkeep re-times, `clip.split` on named clips or tracks, `clip.trim` in every mode, `clip.move`) and by `captions.lock` / `captions.regenerate {lock, unlock}`; copied to both pieces of a razor cut. `captions.regenerate` keeps a locked clip exactly as it is and lays the transcript out around it | `repair-caption`: a non-boolean value is removed. Idempotent |
 | `CaptionGroup.rules.ownWords` (1…64-character strings, at most 200) | spec 13 AS-002 | optional in the strict stored-rules schema; absent = no word gets its own subtitle (resolved rules leave the field out when the list is empty, so groups without it are unchanged) | `repair-caption-group`: an unreadable list is removed and the other rules stay (before, any unreadable rule reset every rule). Idempotent |
+
+### Fields added in v14
+
+Punch-ins on caption starts ([wp-notes/edit-automation.md](wp-notes/edit-automation.md) "Caption start"); v13 builds open
+v14 files read-only (the v14 bump above).
+
+| Field | Since | Read leniently | Repair |
+|---|---|---|---|
+| `StyleRecipe.passes['punch-ins'].params.start` value `caption` | spec 15 EA-021 | part of the strict recipe schema (`PunchInParamsSchema`: `caption`, `midpoint`, `word`; absent = `midpoint`). The style recipe library (`<appdir>/style-recipes/`, app state) is not versioned with the project: a v13 engine sets such a recipe file aside (`set-aside`, renamed, never deleted) | as every recipe: `drop-style-recipe` when unreadable. Idempotent |
 
 ## Saving
 

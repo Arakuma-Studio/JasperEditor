@@ -95,6 +95,10 @@ export const PunchTargetSchema = z.union([
 ]);
 export type PunchTarget = z.infer<typeof PunchTargetSchema>;
 
+/** Where a punch-in starts (see `PunchInParamsSchema.start`). */
+export const PunchStartSchema = z.enum(['caption', 'midpoint', 'word']);
+export type PunchStart = z.infer<typeof PunchStartSchema>;
+
 export const PunchInParamsSchema = z.strictObject({
 	/** The A-roll track (id or label); default the video track carrying most of the picture. */
 	track: TrackRef.optional(),
@@ -107,8 +111,11 @@ export const PunchInParamsSchema = z.strictObject({
 	scale: z.number().min(101).max(1000).optional(),
 	/** Frames of the linear ramp (default 7). */
 	rampFrames: z.number().int().min(1).max(600).optional(),
-	/** `midpoint` (default) or `word`: the word start nearest the midpoint when the transcript has words. */
-	start: z.enum(['midpoint', 'word']).optional(),
+	/**
+	 * `midpoint` (default); `word`: the word start nearest the midpoint; `caption` (schema v14): a caption start by the
+	 * user's measured rule (punch-caption.ts). `word` and `caption` fall back to the midpoint when they find nothing.
+	 */
+	start: PunchStartSchema.optional(),
 	target: PunchTargetSchema.optional(),
 	/** `motion` (default): Motion keys on the clip (native export); `adjustment`: a Transform adjustment clip. */
 	method: z.enum(['motion', 'adjustment']).optional(),

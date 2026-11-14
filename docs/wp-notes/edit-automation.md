@@ -250,7 +250,8 @@ the research's rule) of at least `minClipSeconds` (1.5) and `rampFrames + 2`, Mo
 (Transform, S_Shake, Corner Pin, Warp Stabilizer), not in `excludeClipIds`, and (`skipReframed`, default on) no static
 reframing of their own (a scale other than 100 % / fit / fill, a position off centre or a rotation: the user zooms
 such clips 17 % of the time vs 66 %, `simulate.py`). `density` (0.7) of them, clips whose phrases hold "!" / "?" (or ¡ ¿)
-first, then a seeded order. Start: the midpoint, or the transcript word start nearest it (`start: 'word'`); ramp
+first, then a seeded order. Start: the midpoint, the transcript word start nearest it (`start: 'word'`), or a caption
+start (`start: 'caption'`, below); ramp
 `rampFrames` (7) linear to `scale` (180 %) of the clip's own scale, held to the cut. Zoom about a point p: scale × k and
 position' = p + k (position − p) on the same two linear keys, which is the same zoom about p on every frame between;
 zooming in about any point of the frame keeps a covering picture covering it (property-tested), so p is only clamped to
@@ -260,6 +261,57 @@ centre (warning `W_NO_SUBJECT`). Method `motion` (default): `keyframe.addBatch` 
 `adjustment`: a Transform adjustment clip (anchor = position = p, shutter 360° like the user's) on a "ZOOM" track
 inserted right above the A-roll (a setup item). Optional whoosh (`sfx`, on by default) with its start on the zoom
 start. Alternative: the other measured size (180 % ↔ 140 %).
+
+#### Caption start (`start: 'caption'`, schema v14)
+
+Asked for because the user's newer long-form projects (D, E, f, G) often start a punch-in on a caption's first frame
+instead of the clip midpoint. The rule (`packages/project/src/automation/punch-caption.ts`), as measured by the editing
+agent (`/tmp/jstyle/rules.py`, `combo3`, 2026-11-14):
+
+- window: caption starts from max(0.8 s, 25 % of the clip) after the clip start to 0.6 s before the cut (and no later
+  than the ramp fits);
+- 1. the first caption in the window whose first word is *pero*, *aunque* or *sino*;
+- 2. else a clause start — the previous caption ends in `, . ! ? … ; :`, or this one opens with a connector (*y, e,
+  entonces, luego, después, ahora, también, además, porque, pues, o, bueno, cuando, hasta, ya, así, como, si,
+  literalmente, obviamente, básicamente, incluso, encima* or a contrast word) or a capital — at 40–80 % of the clip,
+  nearest 60 %;
+- 3. else the caption start nearest 60 % of the clip;
+- else the clip midpoint, reported as `W_CAPTION_FALLBACK` (some clips) or `W_NO_CAPTIONS` (no subtitles and no
+  transcript words). Each item's `why` names the tier ("on “pero / aunque / sino”", "opening a clause").
+
+Captions: the sequence's subtitle text clips (the largest subtitle group; their start frame and text), else the
+sequence transcript's words grouped with the Pixel Pop rules (≤ 13 characters, ≤ 3 words, a break at punctuation and at
+0.3 s pauses: what Create Subtitles would make with the user's template). Caption-track captions are not read (their
+pages are long; a transcribed source falls back to its words). The connector lists are Spanish (the user's language);
+in other languages only the punctuation and capital tests of tier 2 and tier 3 apply (assumption, not measured).
+
+Agreement with the user's zooms (hit = the planned start within ±3 frames of the user's zoom start; clip bounds and
+caption starts rounded to frames as in the editor, the exact-seconds figure in brackets where it differs). Data: the
+editing agent's `punchlex.json` (667 punch-in zooms of 10 long videos, from `.prproj-analysis/research/auto/events.csv`),
+the user's captions `.prproj-analysis/research/auto/captions.json` and `words_tl.json` (transcript words on the
+timeline of E, G, f); copies and the rerunnable scripts are in `.prproj-analysis/research/punch-caption/` (private, not
+committed; `eval.mts` runs this module, `results.txt` is its output):
+
+| Zooms | n | `caption` | `midpoint` (default) | `word` |
+|---|---|---|---|---|
+| "word-placed": > 1 frame off the midpoint, a caption start within ±3 frames (the editing agent's subset) | 196 | 66.3 % (66.8 %, = `rules.py`'s 67 %) | 1.5 % (excluded by the selection) | — |
+| … projects D/E/f/G | 120 | 72.5 % | 0 % | — |
+| all zooms | 667 | 27.3 % | 54.6 % | — |
+| all zooms, projects D/E/f/G | 295 | 37.6 % | 48.5 % | — |
+| all zooms, older projects | 372 | 19.1 % | 59.4 % | — |
+| all zooms, E/G/f (transcript words available) | 227 | 39.6 % | 46.7 % | 23.8 % |
+
+The 67 % reproduces exactly (131 of 196; the editing agent's contrast list also had *mientras*, *sin embargo*, *en
+cambio*, which change no hit). It is measured on a subset that leaves out the midpoint zooms, so it is not comparable
+with the midpoint's agreement: over all of the user's zooms the midpoint still agrees more, also in D/E/f/G, where 39–58 %
+of each project's zooms sit within ±3 frames of the midpoint (±1 frame: `caption` 32.9 %, `midpoint` 46.4 %). That is why
+`midpoint` stays the default here; `caption` is the choice when the user asks for zooms on the subtitles. No tested mix
+beats the midpoint: "contrast word, else midpoint" 48.8 % vs 48.5 % on D/E/f/G (`explore.py`).
+
+Captions from words: with the Pixel Pop grouping of `words_tl.json` instead of the user's captions, `caption` agrees
+14.1 % on E/G/f. That figure is bounded by the timing of the two transcriptions, not the grouping: only 25–29 % of the
+user's caption starts have any transcript word onset within ±3 frames (interquartile range of the offset about ±4
+frames, `offset.py`), so it says little about subtitles made in the editor, whose clips start on the words they show.
 
 ### Ken Burns (EA-022)
 
@@ -356,7 +408,8 @@ default.
   invariants hold, the document before untouched; whip curves evaluated relative to the cut; Refresh of a moved cut
   (same id, frame moved, swapped in by `refreshProposalItems`), Reroll = next seed, gone cut dropped; punch-ins
   (candidates, midpoint, 7-frame linear ramp, hold, a second pass skips them, reframed clips, coverage property,
-  adjustment method on a ZOOM track above the A-roll); Ken Burns (share, keys on first / last frame, in : out, per
+  adjustment method on a ZOOM track above the A-roll; caption start: the three tiers, the window bounds, subtitles
+  before words, the midpoint fallback and its warnings); Ken Burns (share, keys on first / last frame, in : out, per
   aspect, exclusions, native keys).
 - `apps/engine/test/automation.test.ts` (6, real engine with an indexed generated kit): dry run stores nothing;
   refusals; Decorate Cuts proposal with whooshes placed through sound design, accepted by an agent as one

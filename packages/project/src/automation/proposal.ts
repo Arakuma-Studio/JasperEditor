@@ -354,7 +354,13 @@ export function punchItem(
 			: p.target.source === 'point'
 				? 'the chosen point'
 				: 'the subject';
-	const why = `Punch-in to ${p.scale} % toward ${target} at ${p.timecode} (${p.start === 'word' ? 'word start' : 'clip midpoint'}${p.emphasis ? ', "!" / "?" phrase' : ''}), held to the cut${s?.title ? ` + whoosh “${s.title}”` : ''}`;
+	const where =
+		p.start === 'caption'
+			? `caption start${p.startRule === 'contrast' ? ' on “pero / aunque / sino”' : p.startRule === 'clause' ? ' opening a clause' : ''}`
+			: p.start === 'word'
+				? 'word start'
+				: 'clip midpoint';
+	const why = `Punch-in to ${p.scale} % toward ${target} at ${p.timecode} (${where}${p.emphasis ? ', "!" / "?" phrase' : ''}), held to the cut${s?.title ? ` + whoosh “${s.title}”` : ''}`;
 	return {
 		id: p.id,
 		label: `Punch-in ${p.scale} % at ${p.timecode}`.slice(0, 200),
