@@ -38,6 +38,17 @@ CANVAS_NESTED and the Player showed the content without the inner chain; the HDR
     their scope would run (`FlatAdjustment`, `FlatRun3D` → `FlatRegistry`).
 
   These elements are siblings: none lies inside another canvas, so nothing can nest.
+- *A pixel density other than 1* (`flatStackReason(…, density)`, `usePagePixelDensity`): a stack with any canvas scope
+  is drawn flat too. The density is the page's device pixels per CSS pixel — the Remotion `scale` of a render
+  (`render_frame` / Export Frame at another width than the sequence's, Remotion exports at another output size; Remotion
+  forces it with `--force-device-scale-factor`) and `devicePixelRatio` in the Player (HiDPI screens, browser zoom;
+  re-read when it changes). Measured on Chrome 156: under a forced device scale factor `s`, HTML-in-Canvas draws each
+  `<canvas>` it captures (the frame canvas of `<Video>`, `FxPicture` canvases) at one backing pixel per device pixel
+  from the canvas's corner, clipped to its CSS box, instead of stretching the backing over the box — a canvas whose
+  backing equals its CSS size comes out zoomed by 1/s into its top-left corner. A Transform (or any effect) on an
+  adjustment layer then worked on that zoomed capture: identity rendered `render_frame` at width 320 of a 640 sequence
+  as a 2× zoom into the top-left. CDP's emulated device scale factor (Playwright `deviceScaleFactor` alone) does not
+  show it; a forced one does, as a real HiDPI screen does. At density 1 nothing changes.
 
 **The compositor** (`FlatCompositor`, `fx/flat.tsx`) builds the frame on canvases, bottom to top, in the order the
 nested structure applies (`flatOpsAt`): the background; per track its adjustment layer, its transition mattes, the 3D
@@ -119,6 +130,14 @@ through Remotion, against the formulas.
   `COMPOSITOR_ELECTRON=1 xvfb-run -a …` runs the same four Players in the desktop app's **Electron 44** (Chrome 152,
   `CanvasDrawElement` as `apps/desktop` sets it; SwiftShader for WebGL2 because xvfb has no GPU): 4 / 4 pass.
 - **`apps/engine/test/compositor-export.e2e.test.ts`** (REMOTION_E2E=1, real engine): see §3.
+- **`adjustment-transform.e2e.test.ts`** (REMOTION_E2E=1, Remotion stills in Chrome 156): an identity Transform on an
+  adjustment layer over video equals the frame without it at `scale` 0.5 and 1.5, and Transform 180 % about
+  (0.5, 0.38) on the adjustment layer equals it on the video clip at `scale` 0.5 (`Tolerance.BROWSER`). All three
+  failed before the density rule (PSNR ≈ 4–5 dB). Checked once by hand, not kept as tests: the add_punch_ins
+  `adjustment` form (keyframed 100 → 180 %, 360° shutter) against the same keyframed Transform on the clip at
+  `scale` 0.5 — frames 5 and 15 identical, frame 0 PSNR 56 dB (max 9); Players at a forced device scale factor of 2
+  and 1.25: identity and 180 % screenshots byte-identical to their references (at 2 the adjusted picture was shrunk
+  into the top-left quarter before).
 - `color-mgmt.test.tsx`: the nested guard asks the owner to flatten instead of failing.
 - Historical validation: the former mocked compositor property test failed immediately with the flat path
   disabled. It was removed in favour of the rendered-pixel owners above.
@@ -161,6 +180,10 @@ fix landed concurrently on `integrate/parity` (with `derive-draft.test.ts`); the
   composited by Chrome. Normal layers with opacity can differ by one code value between the two paths.
 - The Player draws a flat stack once per animation frame from the latest pictures (like every scope); renders hold
   each frame until every picture of that frame arrived.
+- The density rule (§2) removes captures of media canvases by scopes. Captures that remain at a density other than 1
+  — a DOM layer's own `FxDomPicture`, `FlatDomCapture`, the Program monitor's `DisplayStage` — draw a `<canvas>` inside
+  the captured DOM the same way (assumption from the measurement in §2, not exercised: e.g. a shape layer drawn on a
+  canvas with a GPU effect, rendered at another width than the sequence's).
 - Performance: only stacks that could not render before are flat; their cost is a capture per DOM layer and one GPU
   pass per layer per frame (the blend group's cost model). `pnpm perf` is unchanged (§6).
 

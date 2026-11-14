@@ -20,6 +20,7 @@ import {
 	useContext,
 	useEffect,
 	useLayoutEffect,
+	useSyncExternalStore,
 } from 'react';
 import {
 	AbsoluteFill,
@@ -101,6 +102,35 @@ function Flattening({ flatten, children }: { flatten: () => void; children?: Rea
 		};
 	}, [flatten]);
 	return <div data-canvas-scope-flattening="">{children}</div>;
+}
+
+/** Notifies when `devicePixelRatio` changes (browser zoom, a window moved to another monitor). */
+function subscribePixelDensity(onChange: () => void): () => void {
+	if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return () => {};
+	let query: MediaQueryList | null = null;
+	const changed = () => {
+		listen();
+		onChange();
+	};
+	const listen = () => {
+		query?.removeEventListener('change', changed);
+		query = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+		query.addEventListener('change', changed);
+	};
+	listen();
+	return () => query?.removeEventListener('change', changed);
+}
+
+/**
+ * Device pixels per CSS pixel of the page: the render `scale` in Remotion renders (its forced device scale factor),
+ * `devicePixelRatio` in the Player. A canvas scope's capture is exact only at 1 (`flatStackReason`).
+ */
+export function usePagePixelDensity(): number {
+	return useSyncExternalStore(
+		subscribePixelDensity,
+		() => (typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1),
+		() => 1,
+	);
 }
 
 /** A small preview-only note in the corner of the area. */
