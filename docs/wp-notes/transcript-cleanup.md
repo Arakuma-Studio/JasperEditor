@@ -1269,12 +1269,25 @@ cuts and its 1155.38 breath in point were reverted later; measured on the build 
   held, undo / redo, refusals; `cleanup-property.test.ts` "edge repairs of an already cut timeline" — random cut
   timelines: rejecting changes nothing, each extension is an accepted finding's, trims only beside their edge, after
   Apply sound and picture in sync, no frame without picture, the planned length.
+- **Pacing follow-up** (the editing agent: +8 s over rev 549 at 349 edges). A safe extension now ends at the first
+  boundary where the decay reaches −38 dBFS — its cut-away 10 ms within `REPAIR_END_OVER_QUIET_DB` (2 dB) of the quiet
+  level and the 40 ms after within 4 dB (the review's −38 / −36 dBFS) — instead of the snapper's clean boundary, which
+  asks a 30 ms quiet run and could lie in deeper silence; an in edge keeps at most an 88 ms attack (else review).
+  Another word's onset after any dip under the speech level stops an extension (`foreignSoundBound`), and an out edge
+  whose last 80 ms rise ≥ 12 dB into the next word is never extended: a review trim back to the dip ("que | pue-" at
+  2714.03 → 2713.967, where rev 549 cut it; `review: onset` — the same envelope can be the kept word's own last
+  syllable). Re-measured (criteria fixed before): added by accepted extensions 8.80 s (< 1720 s, was 10.20) and 8.18 s
+  (≥ 1720 s, was 10.02); added frames per extension median 3 / p90 7 and median 2 / p90 5, against rev 549's median 4 /
+  p90 11 and 4 / 9; output 941.2 s against 936.4 s (rev 549; was 944.4). Matches: < 1720 s 69 of 79 (58 reaching), ≥
+  1720 s 74 of 96 (63 reaching); set 323 → 475 58 / 68 and 63 / 76; accepted wrong 0. Edges flagged after Apply in / out
+  (> −33 dBFS): 14 / 24 and 24 / 41. Tests: `cleanup-edge-repair.test.ts` "a repair adds only the word up to −38 dBFS"
+  ("botón.|" at 376.45 ends 2 frames out, not 6; "que | pue-" is a review trim to 2713.967), both failing before.
+- "Play result" maps the playhead through the frames edge repairs insert (`DerivedPreview.inserted`, `toDerivedFrame`
+  / `toOriginalFrame`); one `W_OVERLAY_FITTED` per apply for all the extensions. Test: `cleanup-model.test.ts`.
 - Limits: a repair moves an edge to its word's decay or attack, never puts back words a cut removed (rev 549's
   restorations); a word whose timestamp is far off still bounds; continuous speech without a quiet boundary within
   0.3 s keeps its edge (for review at best); judged by envelope and stored words, not by ear. Apply Style's clean-up
-  item (automation) still sends ranges only. "Play result" starts from the playhead mapped through the removed
-  ranges only (the inserted frames before it shift it by up to their sum). Every insertion inside a day card warns
-  `W_OVERLAY_FITTED` once.
+  item (automation) still sends ranges only.
 
 **Stray fragments and A / V slivers** (round 16, same review):
 - **Reported**: 47 kept A1 clips under 0.7 s of rev 152 held no script word — "mmm", "eeeh", a laugh heard as "y",
