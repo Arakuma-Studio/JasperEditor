@@ -8,7 +8,7 @@
     "+structure": 13089,
     "+time": 6996,
     "+multicam": 11496,
-    "+transitions": 7072,
+    "+transitions": 7010,
     "+color": 17181,
     "+effects": 21241,
     "+keyframes": 20660,
@@ -27,7 +27,7 @@
     "+automation": 27587,
     "+export": 13017,
     "+ui": 13941,
-    "all": 507956
+    "all": 507894
   },
   "tool": 10493
 }

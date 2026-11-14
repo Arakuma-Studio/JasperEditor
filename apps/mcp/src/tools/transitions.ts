@@ -32,7 +32,7 @@ import { jsonResult, ToolError } from '../errors.ts';
 import { pickSequence, transitionPlacement } from '../format.ts';
 
 export const TRANSITION_GUIDE = `Transitions:
-- add_transition adds one at an edit point (track + at) or a fade at a clip edge (clipId + edge). apply_default_transitions puts the default transitions on every edge of the given clips in one step (the editor user's default types and alignment from Preferences ▸ Timeline when the editor is open, else cross-dissolve / constant-power, center; the project's default length per medium); pass media: ["video", "audio"] to include the linked audio.
+- add_transition adds one between the clips at an edit point (track + at) or a one-sided one at a clip edge (clipId + edge: only that clip transitions, from/to transparency; a clip touching that edge cuts straight). apply_default_transitions puts the default transitions on every edge of the given clips in one step (the editor user's default types and alignment from Preferences ▸ Timeline when the editor is open, else cross-dissolve / constant-power, center; the project's default length per medium); pass media: ["video", "audio"] to include the linked audio.
 - set_transition_defaults changes the project's default lengths (video and audio transitions, stills); the default types and alignment are the user's preferences in the editor and can only be overridden per call.
 - list_transitions shows each transition's id, type, track, cut, span and the media handles of its clips; get_timeline lists them per track too. update_transition changes the length, alignment or type (within video or within audio); remove_transitions deletes them.
 - A transition between two clips needs media beyond the cut ("handles"): center needs both, start-at-cut only the outgoing clip's tail handle, end-at-cut only the incoming clip's head handle. Durations are shortened to what fits (warning W_TRANSITION_SHORTENED); E_OUT_OF_MEDIA means nothing fits: try another alignment or trim the clips.
@@ -315,6 +315,27 @@ async function run(
 	}
 }
 
+/** Optional sequenceId of the tools addressing transitions by id: checked, not needed (ids are project-wide). */
+const OwnSequenceArg = z.string().optional();
+
+/** Refuses transition ids that are not in the given sequence (ids are project-wide, so it is only a check). */
+async function requireInSequence(
+	ctx: ToolContext,
+	projectId: string,
+	sequenceId: string | undefined,
+	ids: readonly string[],
+) {
+	if (sequenceId === undefined) return;
+	const seq = pickSequence((await loadDoc(ctx, projectId)).doc, sequenceId);
+	const stray = ids.filter((id) => !seq.transitions[id]);
+	if (stray.length)
+		throw new ToolError(
+			'E_NOT_FOUND',
+			`Not in sequence ${seq.id}: ${stray.join(', ')}`,
+			`list_transitions {"sequenceId": "${seq.id}"} lists its transition ids.`,
+		);
+}
+
 /** Summaries of the given transition ids in the current document (those that still exist). */
 async function summariesOf(ctx: ToolContext, projectId: string, ids: readonly string[]) {
 	const { doc } = await loadDoc(ctx, projectId);
@@ -428,10 +449,14 @@ export function registerTransitionTools(ctx: ToolContext): void {
 					.describe(
 						"Param values {name: value} (list_transition_types lists each type's params; a type change resets them first)",
 					),
+				sequenceId: OwnSequenceArg,
 			},
 			annotations: EDIT_IDEMPOTENT,
 		},
-		async ({ projectId, transitionId, duration, alignment, cutOffset, effectId, params }, extra) => {
+		async (
+			{ projectId, transitionId, duration, alignment, cutOffset, effectId, params, sequenceId },
+			extra,
+		) => {
 			if (
 				duration === undefined &&
 				alignment === undefined &&
@@ -444,6 +469,7 @@ export function registerTransitionTools(ctx: ToolContext): void {
 					'Nothing to change',
 					'Pass duration, alignment, cutOffset, effectId and/or params.',
 				);
+			await requireInSequence(ctx, projectId, sequenceId, [transitionId]);
 			const id = effectId !== undefined ? transitionEffectId(effectId) : undefined;
 			const spec = id ? transitionSpec(id) : null;
 			const { res, r } = await run(
@@ -462,6 +488,7 @@ export function registerTransitionTools(ctx: ToolContext): void {
 					},
 				],
 				extra,
+				sequenceId,
 			);
 			const [transition] = await summariesOf(ctx, projectId, [transitionId]);
 			return jsonResult({ ...txBody(res, r), ...(transition ? { transition } : {}) });
@@ -473,8 +500,7 @@ export function registerTransitionTools(ctx: ToolContext): void {
 		'remove_transitions',
 		{
 			title: 'Remove transitions',
-			description:
-				'Deletes transitions and fades (transition.remove) by id; the clips stay and cut straight again. Undoable in the editor.',
+			description: 'Deletes transitions and fades by id; the clips stay and cut straight again.',
 			input: {
 				projectId: ProjectIdArg,
 				transitionIds: z
@@ -482,10 +508,12 @@ export function registerTransitionTools(ctx: ToolContext): void {
 					.min(1)
 					.max(1000)
 					.describe('Transition ids ("trn_…") from list_transitions or get_timeline'),
+				sequenceId: OwnSequenceArg,
 			},
 			annotations: DESTRUCTIVE_IDEMPOTENT,
 		},
-		async ({ projectId, transitionIds }, extra) => {
+		async ({ projectId, transitionIds, sequenceId }, extra) => {
+			await requireInSequence(ctx, projectId, sequenceId, transitionIds);
 			const n = transitionIds.length;
 			const { res, r } = await run(
 				ctx,
@@ -493,6 +521,7 @@ export function registerTransitionTools(ctx: ToolContext): void {
 				n === 1 ? 'Remove transition' : `Remove ${n} transitions`,
 				[{ type: 'transition.remove', transitionIds }],
 				extra,
+				sequenceId,
 			);
 			const removed = (r.results[0] as { removed?: string[] } | undefined)?.removed ?? transitionIds;
 			return jsonResult({ ...txBody(res, r), removed });

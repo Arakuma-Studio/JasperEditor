@@ -2,9 +2,10 @@
 // transition — Smooth Slide — at a clip head or tail no other clip touches). Verified: `transition.add {clipId, edge}`
 // at a free edge stores a transition with the other side null (alignment start-at-cut / end-at-cut), clamps its
 // length to the clip, renders as a one-sided shader stage (from / to transparent over the clip's own frames, no
-// handles), becomes two-sided where another clip abuts the edge, replaces an earlier transition on the same edge
-// (INV-010), keeps invariants, undoes to the document before and redoes identically; refusals for a frame that is not
-// an edit point, a missing edge, an audio transition on video and a locked track.
+// handles), becomes two-sided where another clip abuts the edge unless `oneSided` (then that clip cuts straight, and an
+// alignment or cutOffset there is refused), replaces an earlier transition on the same edge (INV-010), keeps
+// invariants, undoes to the document before and redoes identically; refusals for a frame that is not an edit point, a
+// missing edge, an audio transition on video and a locked track.
 import { describe, expect, it } from 'vitest';
 import { checkInvariants, flicksPerFrame, resolveVideoTransitions } from '../src/index.ts';
 import { Harness, videoAsset } from './helpers.ts';
@@ -18,7 +19,8 @@ function setup(kind: 'image' | 'video' = 'image') {
 		}
 	).mediaId;
 	const F = flicksPerFrame(h.seq.settings.frameRate);
-	const place = (at: number, len: number, track = 'V2') =>
+	/** `from`: the source frame of the clip's in-point (frames before it are its head handle). */
+	const place = (at: number, len: number, track = 'V2', from = 0) =>
 		(
 			h.ok([
 				{
@@ -28,7 +30,7 @@ function setup(kind: 'image' | 'video' = 'image') {
 					tracks: { video: track },
 					video: true,
 					audio: false,
-					sourceRange: { in: { flicks: 0 }, out: { flicks: len * F } },
+					sourceRange: { in: { flicks: from * F }, out: { flicks: (from + len) * F } },
 				},
 			]).results[0] as { clipIds: string[] }
 		).clipIds[0]!;
@@ -102,6 +104,57 @@ describe('one-sided transitions at free clip edges', () => {
 		expect(onHead[0]!.id).toBe((again.results[0] as { transitionId: string }).transitionId);
 		expect(onHead[0]!.params.direction!.value).toBe('left');
 		expect(checkInvariants(h.doc)).toEqual([]);
+	});
+
+	it('with oneSided stays one-sided where another clip touches the edge: that clip cuts straight, no handles', () => {
+		const { h, place } = setup('video');
+		// both clips have media beyond the cut, so a two-sided transition would fit
+		const a = place(363, 38, 'V2', 100);
+		const b = place(401, 116, 'V2', 300);
+		const before = h.doc;
+		const one = { oneSided: true };
+		const r = h.ok([slide(b, 'in', { ...one, params: { direction: 'up' } }), slide(a, 'out', one)]);
+		expect(r.results).toEqual([
+			expect.objectContaining({
+				alignment: 'start-at-cut',
+				outgoingClipId: null,
+				incomingClipId: b,
+				adjacentClipId: a,
+			}),
+			expect.objectContaining({
+				alignment: 'end-at-cut',
+				outgoingClipId: a,
+				incomingClipId: null,
+				adjacentClipId: b,
+			}),
+		]);
+		expect(checkInvariants(h.doc)).toEqual([]);
+		const resolved = resolveVideoTransitions(h.doc, h.seq);
+		expect(
+			[...resolved.stages.values()]
+				.flat()
+				.map((s) => [s.sides, s.start, s.duration, s.outgoingClipId, s.incomingClipId]),
+		).toEqual([
+			['out', 371, 30, a, null],
+			['in', 401, 30, null, b],
+		]);
+		for (const c of [a, b]) {
+			expect(resolved.clips.get(c)?.headHandle ?? 0).toBe(0);
+			expect(resolved.clips.get(c)?.tailHandle ?? 0).toBe(0);
+		}
+		const after = h.doc;
+		h.doc = before;
+		expect(Object.keys(h.seq.transitions)).toHaveLength(0);
+		h.ok([slide(b, 'in', { ...one, params: { direction: 'up' } }), slide(a, 'out', one)]);
+		const strip = (d: typeof h.doc) =>
+			Object.values(d.sequences[h.seqId]!.transitions).map(({ id: _id, ...t }) => t);
+		expect(strip(h.doc)).toEqual(strip(after));
+		// an alignment or Custom Start asks for a transition between both clips: refused with the edit-point route
+		for (const extra of [{ alignment: 'center' }, { cutOffset: 10 }]) {
+			const two = h.tx([slide(b, 'in', { ...one, ...extra })]);
+			expect(two.ok).toBe(false);
+			if (!two.ok) expect(two.errors[0]!.message).toMatch(/at 401/);
+		}
 	});
 
 	it('refusals: not an edit point, no edge, wrong medium, locked track', () => {

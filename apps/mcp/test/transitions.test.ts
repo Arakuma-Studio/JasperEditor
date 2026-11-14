@@ -115,7 +115,12 @@ function fakeEngine(editor: Record<string, unknown> | null) {
 		invalidate: () => {},
 		close: async () => {},
 	};
-	return { link, outgoing: placed[0]!.clipIds[0]! };
+	return {
+		link,
+		outgoing: placed[0]!.clipIds[0]!,
+		incoming: placed[1]!.clipIds[0]!,
+		sequenceId: Object.keys(doc.sequences)[0]!,
+	};
 }
 
 let open: Client[] = [];
@@ -367,5 +372,77 @@ describe('Premiere audio crossfades through MCP (Custom Fade, Custom Start)', ()
 		});
 		expect(bad.r.isError).toBe(true);
 		expect(JSON.parse(bad.text).error.code).toBe('E_INVALID_PARAM');
+	});
+});
+
+describe('one-sided transitions and sequenceId through MCP', () => {
+	async function connect() {
+		const engine = fakeEngine(null);
+		const { server } = createJasperMcpServer({ link: engine.link, agentName: 'transitions-test' });
+		const [a, b] = InMemoryTransport.createLinkedPair();
+		await server.connect(a);
+		const client = new Client({ name: 'transitions-test', version: '1' });
+		await client.connect(b);
+		open.push(client);
+		const raw = async (name: string, args: Record<string, unknown>) => {
+			const r = (await client.callTool({ name, arguments: args })) as CallToolResult;
+			const text = (r.content.find((c) => c.type === 'text') as { text: string } | undefined)?.text ?? '';
+			return { r, body: JSON.parse(text) };
+		};
+		return { engine, raw };
+	}
+
+	it('a clip edge next to another clip stays one-sided, and the result says the neighbour cuts straight', async () => {
+		const { engine, raw } = await connect();
+		const { r, body } = await raw('add_transition', {
+			projectId: 'prj_test',
+			type: 'smooth-slide',
+			durationFrames: 30,
+			clipId: engine.incoming,
+			edge: 'in',
+			params: { direction: 'up' },
+		});
+		expect(r.isError, JSON.stringify(body)).toBeFalsy();
+		expect(body.results[0]).toMatchObject({
+			alignment: 'start-at-cut',
+			outgoingClipId: null,
+			incomingClipId: engine.incoming,
+			adjacentClipId: engine.outgoing,
+		});
+		expect(body.note).toContain('track + at');
+	});
+
+	it('remove_transitions and update_transition take the sequenceId and check the ids against it', async () => {
+		const { engine, raw } = await connect();
+		const added = await raw('add_transition', {
+			projectId: 'prj_test',
+			type: 'cross-dissolve',
+			durationFrames: 10,
+			track: 'V1',
+			at: 100,
+			sequenceId: engine.sequenceId,
+		});
+		const id = added.body.results[0].transitionId as string;
+		const wrong = await raw('remove_transitions', {
+			projectId: 'prj_test',
+			transitionIds: [id],
+			sequenceId: 'seq_other',
+		});
+		expect(wrong.r.isError).toBe(true);
+		expect(wrong.body.error.code).toBe('E_NOT_FOUND');
+		const up = await raw('update_transition', {
+			projectId: 'prj_test',
+			transitionId: id,
+			duration: 8,
+			sequenceId: engine.sequenceId,
+		});
+		expect(up.r.isError, JSON.stringify(up.body)).toBeFalsy();
+		const removed = await raw('remove_transitions', {
+			projectId: 'prj_test',
+			transitionIds: [id],
+			sequenceId: engine.sequenceId,
+		});
+		expect(removed.r.isError, JSON.stringify(removed.body)).toBeFalsy();
+		expect(removed.body.removed).toEqual([id]);
 	});
 });
