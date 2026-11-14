@@ -79,7 +79,7 @@ export const ClipTrimEditsCmd = cmd('clip.trimEdits', {
 		.min(1),
 	/** Movement of every edit point (positive = later). */
 	deltaFrames: z.number().int(),
-	/** Link partners whose same edge coincides move too (default true). */
+	/** Link partners' same-side edges move too, by the same delta also when apart (default true). */
 	linked: z.boolean().optional(),
 	/** Stop at what sync-locked tracks allow instead of refusing (gesture / dynamic trimming). */
 	clampToSyncLock: z.boolean().optional(),

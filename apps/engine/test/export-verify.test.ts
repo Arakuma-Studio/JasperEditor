@@ -87,6 +87,7 @@ function context(over: Partial<ExportVerifyContext> = {}): ExportVerifyContext {
 		},
 		normalize: { targetLufs: -21, truePeakDb: -1 },
 		cuts: [{ frame: CUT, kind: 'cut', blackBefore: false, blackAfter: false, effect: false }],
+		uncovered: [],
 		...over,
 	};
 }
@@ -103,6 +104,7 @@ describe('verify_export on fixture exports with known defects', () => {
 			['streams', 'format', 'pass'],
 			['duration', 'format', 'pass'],
 			['av-skew', 'format', 'pass'],
+			['uncovered-video', 'judgement', 'pass'],
 			['cut-black', 'judgement', 'pass'],
 			['cut-flash', 'judgement', 'pass'],
 			['cut-click', 'judgement', 'pass'],
@@ -111,7 +113,7 @@ describe('verify_export on fixture exports with known defects', () => {
 			['silence', 'judgement', 'pass'],
 		]);
 		expect(r.verified).toBe(true);
-		expect(r.counts).toEqual({ pass: 10, warn: 0, fail: 0, unverified: 0 });
+		expect(r.counts).toEqual({ pass: 11, warn: 0, fail: 0, unverified: 0 });
 		expect(r.output).toMatchObject({ durationSec: expect.any(Number), sizeBytes: expect.any(Number) });
 		expect(r.output.streams.map((s) => s.type)).toEqual(['video', 'audio']);
 		const loud = rowsOf(r.rows, 'loudness')[0]!;
@@ -120,11 +122,39 @@ describe('verify_export on fixture exports with known defects', () => {
 		expect(loud).toMatchObject({ expected: -21, tolerance: 1 });
 	});
 
-	it('the fast checks probe only: streams, duration, A/V skew', { timeout: 30_000 }, async () => {
+	it("the fast checks probe only: streams, duration, A/V skew (and the timeline's uncovered frames)", {
+		timeout: 30_000,
+	}, async () => {
 		const file = join(dir, 'clean.mp4');
 		const r = await verifyExportFile({ ff, file, context: context(), target: null, checks: 'fast' });
-		expect(r.rows.map((x) => x.id)).toEqual(['streams', 'duration', 'av-skew']);
+		expect(r.rows.map((x) => x.id)).toEqual(['streams', 'duration', 'av-skew', 'uncovered-video']);
 		expect(r.verified).toBe(true);
+	});
+
+	it('lists frames with no picture: fail under audio (black under the sound), warn when silent', {
+		timeout: 30_000,
+	}, async () => {
+		// reported: two 7-frame V1 holes under kept audio exported as the subtitle over black and passed the checks
+		const file = join(dir, 'clean.mp4');
+		const uncovered = [
+			{ start: 20, end: 27, audible: true },
+			{ start: 70, end: 75, audible: false },
+		];
+		const r = await verifyExportFile({
+			ff,
+			file,
+			context: context({ uncovered }),
+			target: null,
+			checks: 'fast',
+		});
+		expect(rowsOf(r.rows, 'uncovered-video')).toMatchObject([
+			{ status: 'fail', kind: 'judgement', measured: 7, at: { frame: 20, timecode: '00:00:00:20' } },
+			{ status: 'warn', measured: 5, at: { frame: 70 } },
+		]);
+		expect(rowsOf(r.rows, 'uncovered-video')[0]!.message).toMatch(
+			/Frames 20–27 \(7 frames.*while audio plays/,
+		);
+		expect(r.verified).toBe(false);
 	});
 
 	it('finds black frames at a cut where the timeline shows a picture', { timeout: 60_000 }, async () => {
@@ -267,6 +297,7 @@ describe('verify_export on fixture exports with known defects', () => {
 			['streams', 'unverified'],
 			['duration', 'unverified'],
 			['av-skew', 'pass'],
+			['uncovered-video', 'unverified'],
 		]);
 		expect(old.verified).toBe(false);
 	});

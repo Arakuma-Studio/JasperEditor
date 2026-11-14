@@ -44,6 +44,26 @@ refused; a ripple speed change of a linked group with a split edit moved later m
 - `contentWindow` / `trimLimits` / `contentHandles` are shared by trim, roll, slip, slide and speed: media length,
   composition length, nested sequence length, frame holds (edit-structure: unbounded) and subclip limits.
 
+### Linked trims and uncovered video (`clip-core.ts` `trimHandler`, `edit-ux.ts` `trimEditsHandler`, `uncovered-guard.ts`)
+
+Before: a linked trim (`clip.trim` / `clip.trimEdits` with `linked` on, the timeline's trim and ripple gestures) took
+only the link partners whose same-side edge was at the same frame. After a picture edge had moved apart from its
+sound (a V1 sliver lifted with `range.lift tracks: ["V1"]`, the clip before it extended with `linked: false`), a
+linked ripple trim of the sound grew and rippled the sound alone: sync-locked V1 got an insert inside the extended
+picture and two 7-frame holes exported as a subtitle over black (reported at ≈ 6:48, rev 479).
+
+- **Choice: trim both.** Every unlocked link partner on another track moves its same-side edge by the same delta,
+  whether or not its edge is at the same frame: a split edit keeps its offset (Premiere's Linked Selection moves both
+  edges of a J / L cut the same way — from prior knowledge, not fetched). Ripple trims take the partners as group
+  members (`rippleTrimGroup`: each shifts later material on its own track), so neither side outruns the other; all
+  members move by the most restrictive delta (media handles, neighbours), with `W_DURATION_CLAMPED`. `linked: false`
+  trims one side alone. Refusing diverged pairs was the alternative; it blocks the common J / L-cut trim.
+- **Never silent.** `range.lift`, `clip.lift`, `clip.trim` and `clip.trimEdits` compare the frames with no picture on
+  any shown video track while audio plays (structure/uncovered.ts) before and after; when they grew, the result warns
+  `W_UNCOVERED_VIDEO` with the frame ranges and the remedy (extend a neighbouring video clip, or `range.extract`).
+  A lift of the picture alone is allowed (something may go there next): it warns. Exports flag the same frames
+  (`uncovered-video` rows, plan warning `UNCOVERED_VIDEO`; agent-footage-verify.md).
+
 ### Overlays across ripple edits (`commands/overlay-ripple.ts`)
 
 Before: a ripple on one track gave every sync-locked track the same insert or removal, razoring whatever spanned the
@@ -249,6 +269,10 @@ the exported frames show the fade (black first frame, picture later).
   `edit-ux-monitors.test.tsx`, `edit-ux-lanes.test.tsx` — components, dialogs, layouts (conflict-free on every
   platform/runtime), store, spring tools, guides, comparison, dropped frames, Button Editor, lanes and fades.
 - `apps/mcp/test/edit-ux.test.ts` — the MCP tools over the protocol.
+- `packages/project/test/linked-trim-coverage.test.ts` — the reported sequence (lift a V1 sliver, extend the picture
+  with `linked: false`, then linked ripple trims +7 on a sound tail and −5 on the next onset): no frame without picture
+  under the sound (before: 12 frames, 100–112), the split edit keeps its offset; `W_UNCOVERED_VIDEO` on the lift and on
+  a picture-only regular trim.
 - `packages/project/test/overlay-ripple.test.ts` — the reported 363-frame day card (pop-in, shrink to a corner,
   pop-out) through `range.extract` in its hold and in its shrink, two Clean Up cuts, ripple trims both ways and
   `clip.extract` (each failed before: the card was split or the edit refused), the refusal that remains and a named

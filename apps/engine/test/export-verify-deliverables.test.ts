@@ -125,6 +125,7 @@ describe('verify_export on GIF and audio-only exports', () => {
 			['decode', 'format', 'pass'],
 			['streams', 'format', 'pass'],
 			['duration', 'format', 'pass'],
+			['uncovered-video', 'judgement', 'pass'],
 			['cut-black', 'judgement', 'pass'],
 			['cut-flash', 'judgement', 'pass'],
 		]);
@@ -138,6 +139,7 @@ describe('verify_export on GIF and audio-only exports', () => {
 		expect(ids(fast)).toEqual([
 			['streams', 'format', 'pass'],
 			['duration', 'format', 'pass'],
+			['uncovered-video', 'judgement', 'pass'],
 		]);
 	});
 

@@ -34,6 +34,15 @@ tolerances and pinning documented thresholds to code by a test — [`licenses/po
   - `duration` (format): |format duration − range| ≤ max(1 frame, 50 ms).
   - `av-skew` (format): |audio end − video end| ≤ 250 ms; ends are the last packets' pts + duration, read from the last
     10 s of the file only. A file with one kind of stream passes ("nothing to compare").
+  - `uncovered-video` (judgement; in `fast` and `full`): the range's frames with no picture on any shown video track
+    (structure/uncovered.ts: no enabled video, still, animated-image, nest-video or opaque solid — text, shapes,
+    graphics and captions draw over black), recorded at export in `verify.json` `uncovered` (≤ 500 ranges, then
+    `uncoveredMore`). One row per range with its frames (`measured`), `at` its first frame: `fail` where audio plays
+    under it (black under kept sound: a hole left by a lift or a trim), `warn` where it is silent (may be an intended
+    black); `pass` when every frame has a picture; `unverified` for exports of older builds. Not recorded for
+    audio-only files and transparent (alpha) masters. Reported: two 7-frame V1 holes under kept audio exported as the
+    subtitle over black and passed `cut-black` (a gap is "intended black" there). The planner also warns
+    `UNCOVERED_VIDEO` (frames and ranges) when audio plays over frames with no picture.
   - `cut-black` (judgement, fail): a run of black frames (the normalised mean luma of every cell of a 4 × 4 grid
     < 16/255: a picture smaller than the frame, on black, is not black — measured: a 640 × 360 shot in a 1080p frame
     has a whole-frame mean of ≈ 0.05, under 16/255) lasting ≥ 100 ms that touches the
@@ -57,7 +66,8 @@ tolerances and pinning documented thresholds to code by a test — [`licenses/po
     fail outside the platform's range; judgement warn for an accepted rate it does not recommend; 23.976 / 29.97 / 59.94
     count as 24 / 30 / 60), `target-size` (format: under the upload limit) and `target-loudness` (judgement warn more
     than 1 LU off the level the platform plays at; `unverified` for platforms that publish none, or under `fast`).
-- **Fast checks** (`checks: 'fast'`): probe only — `streams`, `duration`, `av-skew` (+ the target rows). MCP
+- **Fast checks** (`checks: 'fast'`): probe only — `streams`, `duration`, `av-skew`, `uncovered-video` (from the record)
+  (+ the target rows). MCP
   `start_export {wait: true}` and `wait_for_job` on a finished export run them and return `output` (container, duration,
   streams with their ends, size), `rows` and `verified` beside the job body (AF-VER-002); when the fast job cannot run
   they return `verificationError` instead and the export result stands.

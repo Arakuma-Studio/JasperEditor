@@ -694,6 +694,7 @@ export const VERIFY_CHECK_IDS = [
 	'cut-black',
 	'cut-flash',
 	'cut-click',
+	'uncovered-video',
 	'loudness',
 	'true-peak',
 	'silence',

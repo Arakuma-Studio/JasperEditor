@@ -12,6 +12,7 @@ import {
 	type ProjectDocument,
 	type SyntheticSource,
 	syntheticPicture,
+	uncoveredPicture,
 } from '@jasper/project';
 import { z } from 'zod';
 import { atomicWriteJson, readJsonOrNull } from '../tools/fs.ts';
@@ -19,6 +20,8 @@ import { atomicWriteJson, readJsonOrNull } from '../tools/fs.ts';
 export const VERIFY_CONTEXT_FILE = 'verify.json';
 /** Most cuts recorded per export (a longer cut list is truncated and the cut rows say so). */
 export const MAX_VERIFY_CUTS = 5000;
+/** Most uncovered (no-picture) ranges recorded per export. */
+export const MAX_VERIFY_UNCOVERED = 500;
 /** Least frame coverage of a picture layer the verification cut list follows (the cut map's minimum). */
 export const VERIFY_CUT_COVERAGE = 0.01;
 /** Frames on each side of a cut searched for an effect (transition, graphic or adjustment layer) over it. */
@@ -88,6 +91,16 @@ export const ExportVerifyContextSchema = z.object({
 	cuts: z.array(VerifyCutSchema).max(MAX_VERIFY_CUTS),
 	/** Why the cut list is incomplete or missing (cut rows are then `unverified` / say so). */
 	cutsNote: z.string().max(500).optional(),
+	/**
+	 * Sequence frames `[start, end)` of the range with no picture on any shown video track (they render black, with
+	 * at most graphics over it); `audible`: audio plays under them. Absent = not recorded (an older build).
+	 */
+	uncovered: z
+		.array(z.object({ start: z.number().int().min(0), end: z.number().int().min(1), audible: z.boolean() }))
+		.max(MAX_VERIFY_UNCOVERED)
+		.optional(),
+	/** More uncovered ranges than recorded. */
+	uncoveredMore: z.number().int().min(1).optional(),
 });
 export type ExportVerifyContext = z.infer<typeof ExportVerifyContextSchema>;
 
@@ -253,6 +266,19 @@ export type VerifyContextSource = {
 };
 
 /** The verification context of a finished export (see the file comment). */
+/** The range's frames with no picture (structure/uncovered.ts), capped. */
+export function uncoveredOf(
+	doc: ProjectDocument,
+	seq: Seq,
+	range: { start: number; end: number },
+): Pick<ExportVerifyContext, 'uncovered' | 'uncoveredMore'> {
+	const all = uncoveredPicture(doc, seq, range);
+	return {
+		uncovered: all.slice(0, MAX_VERIFY_UNCOVERED),
+		...(all.length > MAX_VERIFY_UNCOVERED ? { uncoveredMore: all.length - MAX_VERIFY_UNCOVERED } : {}),
+	};
+}
+
 export function buildVerifyContext(s: VerifyContextSource): ExportVerifyContext {
 	const seq = s.document.sequences?.[s.sequenceId];
 	const { cuts, note } = verifyCutsOf(s.document, s.sequenceId, s.range);
@@ -269,6 +295,10 @@ export function buildVerifyContext(s: VerifyContextSource): ExportVerifyContext 
 		startTimecodeFrames: Math.max(0, Math.trunc(seq?.settings.startTimecodeFrames ?? 0)),
 		cuts,
 		...(note ? { cutsNote: note } : {}),
+		// a transparent master's empty frames are meant (alpha); an audio file has no picture
+		...(seq && s.deliverable?.kind !== 'audio' && !s.output.alpha
+			? uncoveredOf(s.document, seq, s.range)
+			: {}),
 	};
 	const d = s.deliverable;
 	if (d?.kind === 'gif')
