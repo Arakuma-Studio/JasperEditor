@@ -52,8 +52,8 @@ const EngineFault = z.strictObject({
 		.optional(),
 	result: z.unknown().optional(),
 	times: z.number().int().optional(),
-	/** Cuts the request off like a lost connection; with `afterApply`, after the engine applied it. */
-	abort: z.literal('connection-lost').optional(),
+	/** Cuts the request off like a lost connection (`afterApply`: after the engine applied it), or never answers. */
+	abort: z.enum(['connection-lost', 'timeout']).optional(),
 	afterApply: z.boolean().optional(),
 });
 

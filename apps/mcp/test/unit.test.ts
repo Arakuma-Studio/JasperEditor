@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { EngineError } from '@jasper/engine-client';
 import { createCounterIdSource, createEmptyProject } from '@jasper/project';
 import { describe, expect, it, vi } from 'vitest';
+import { makeContext, waitJob } from '../src/context.ts';
 import { discoverEngine } from '../src/discovery.ts';
 import { ToolError, toErrorResult } from '../src/errors.ts';
 import { buildExportSettings, findExportPreset } from '../src/export-presets.ts';
@@ -198,6 +199,59 @@ describe('engine request guard (no unbounded waits, no blind re-apply)', () => {
 			timeout.mockRestore();
 			vi.useRealTimers();
 		}
+	});
+
+	describe('waiting on a job of an engine that stops answering', () => {
+		// the CLI's engine (its --appdir) froze mid-wait; the dev engine on the default port answered instead and did
+		// not know the job: "JOB_NOT_FOUND Unknown job" for a job that was still running
+		const json = (body: unknown, status = 200) =>
+			new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+		const running = {
+			id: 'job_1',
+			kind: 'probe',
+			title: 'Clean Up',
+			origin: { type: 'user' },
+			state: 'running',
+			progress: 0.5,
+			createdAt: '2026-11-14T00:00:00.000Z',
+			priority: 'user',
+			cpuSlots: 1,
+		};
+		const setup = () => {
+			const appdir = mkdtempSync(join(tmpdir(), 'jasper-quiet-'));
+			writeRuntime(appdir, { url: 'http://127.0.0.1:5', port: 5, pid: process.pid, token: 'own' });
+			const own = { fail: null as string | null };
+			const fetchImpl = (async (input: string | URL) => {
+				const url = String(input);
+				if (url.startsWith('http://127.0.0.1:5/')) {
+					if (own.fail) throw Object.assign(new TypeError('fetch failed'), { cause: { code: own.fail } });
+					return url.endsWith('/health') ? json({ ok: true }) : json(running);
+				}
+				if (url === 'http://127.0.0.1:47900/health') return json({ ok: true });
+				if (url.startsWith('http://127.0.0.1:47900/'))
+					return json({ code: 'JOB_NOT_FOUND', message: 'Unknown job', retryable: false }, 404);
+				throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNREFUSED' } });
+			}) as typeof fetch;
+			const link = new EngineLink({ appdir, env: {}, fetch: fetchImpl, healthTimeoutMs: 40, log: () => {} });
+			return { own, ctx: makeContext({} as never, link, 'test') };
+		};
+
+		it('a poll the engine never answers says the job may still be running', async () => {
+			const { own, ctx } = setup();
+			expect((await waitJob(ctx, 'job_1', 0)).job.state).toBe('running');
+			own.fail = 'UND_ERR_HEADERS_TIMEOUT';
+			const err = await waitJob(ctx, 'job_1', 0).catch((e) => e);
+			expect(err).toBeInstanceOf(ToolError);
+			expect(err).toMatchObject({ code: 'ENGINE_TIMEOUT', hint: expect.stringContaining('wait_for_job') });
+			expect(err.message).toContain('may still be running');
+		});
+
+		it('a lost engine is never replaced by another one mid-call', async () => {
+			const { own, ctx } = setup();
+			await waitJob(ctx, 'job_1', 0);
+			own.fail = 'ECONNRESET';
+			await expect(waitJob(ctx, 'job_1', 0)).rejects.toMatchObject({ code: 'NETWORK' });
+		});
 	});
 
 	it('a write cut off mid-flight is reported, not retried (it may have been applied)', async () => {

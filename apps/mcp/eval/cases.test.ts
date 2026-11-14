@@ -1,6 +1,6 @@
-// Each spec 19 case can pass: its intended route, run through the stub with the case's own setup, grades as a pass
-// and reaches no engine call the fake leaves unmodelled. A case that no route can pass, or whose right answer marks
-// the sample invalid, would prove nothing about the text it is there for (AGENTS.md §10).
+// Each spec 19 case (and each `job-` case) can pass: its intended route, run through the stub with the case's own
+// setup, grades as a pass and reaches no engine call the fake leaves unmodelled. A case that no route can pass, or
+// whose right answer marks the sample invalid, would prove nothing about the text it is there for (AGENTS.md §10).
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -18,7 +18,9 @@ const dir = mkdtempSync(join(tmpdir(), 'jasper-eval-cases-'));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 type Vars = Record<string, string>;
-type Route = { calls: (v: Vars) => [string, Record<string, unknown>][]; reply?: string };
+/** A route call; `error`: the call is refused with that code (the case is about what the agent does next). */
+type RouteCall = [string, Record<string, unknown>] | [string, Record<string, unknown>, { error: string }];
+type Route = { calls: (v: Vars) => RouteCall[]; reply?: string };
 
 /** The intended route of each case: the calls a good sample makes (ids from the setup's vars; `{{text}}` is the clip add_text made). */
 const ROUTES: Record<string, Route> = {
@@ -186,13 +188,20 @@ const ROUTES: Record<string, Route> = {
 	'cleanup-hard-cuts-control': {
 		calls: (v) => [['apply_cleanup', { projectId: v.project, preset: 'fast' }]],
 	},
+	'job-wait-engine-silent': {
+		calls: (v) => [
+			['wait_for_job', { jobId: v.pendingJob }, { error: 'ENGINE_TIMEOUT' }],
+			['wait_for_job', { jobId: v.pendingJob }],
+		],
+		reply: 'The transcription job is done.',
+	},
 	'delivery-split-clip-control': {
 		calls: (v) => [['split_at', { projectId: v.project, clipIds: [v.clip], at: '10s' }]],
 	},
 };
 
-const SPEC_19_PREFIXES = ['titles-', 'effects-', 'three-d-', 'delivery-', 'cleanup-'];
-const cases = loadCases().filter((c) => SPEC_19_PREFIXES.some((p) => c.id.startsWith(p)));
+const ROUTED_PREFIXES = ['titles-', 'effects-', 'three-d-', 'delivery-', 'cleanup-', 'job-'];
+const cases = loadCases().filter((c) => ROUTED_PREFIXES.some((p) => c.id.startsWith(p)));
 
 async function runRoute(c: EvalCase, route: Route) {
 	const cwd = mkdtempSync(join(dir, `${c.id}-`));
@@ -215,13 +224,14 @@ async function runRoute(c: EvalCase, route: Route) {
 	await client.connect(b);
 	const vars: Vars = { ...engine.vars, cwd };
 	try {
-		for (const [tool, args] of route.calls(vars)) {
+		for (const [tool, args, refused] of route.calls(vars)) {
 			const r = (await client.callTool({
 				name: 'call_tool',
 				arguments: { name: tool, arguments: fillVars(args, vars) },
 			})) as CallToolResult;
 			const text = (r.content.find((x) => x.type === 'text') as { text: string }).text;
-			expect(r.isError, `${c.id} ${tool}: ${text.slice(0, 400)}`).not.toBe(true);
+			expect(r.isError === true, `${c.id} ${tool}: ${text.slice(0, 400)}`).toBe(!!refused);
+			if (refused) expect(text).toContain(refused.error);
 			if (tool === 'add_text') {
 				const made = JSON.parse(text) as { clipId?: string; created: string[] };
 				vars.text = made.clipId ?? made.created.find((id) => id.startsWith('clp_'))!;

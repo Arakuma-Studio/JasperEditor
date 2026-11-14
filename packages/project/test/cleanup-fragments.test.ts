@@ -173,4 +173,73 @@ describe('short kept pieces between cuts', () => {
 			[30, 30],
 		]);
 	});
+
+	it('a sliver too short for a word, under another shot, goes unless it is said on from a shot beside it', () => {
+		// v7 review: "Appstore! | Y | si alguno…" — two frames of another take the recogniser wrote as the next line's
+		// first word, so the script alignment holds it; rev 549 removed it, and kept "optimizados, | y" said on
+		const sliver = (at: number, w: string) => {
+			const { H } = cutOf(
+				[
+					[1.2, 2.2],
+					[at, at + 2 / 30],
+					[8.2, 9.2],
+				],
+				words(`Hola@1.2-1.5 a@1.5-1.6 todos.@1.6-2.2 ${w} es@8.2-8.5 un@8.5-8.7 juego@8.7-9.2`),
+			);
+			const [firstV, sliverV] = clipsOn(H.seq, 'video');
+			H.ok([{ type: 'clip.unlink', clipIds: [clipsOn(H.seq, 'audio')[1]!.id] }]);
+			H.ok([{ type: 'clip.lift', clipIds: [sliverV!.id] }]);
+			H.ok([{ type: 'clip.trim', clipId: firstV!.id, edge: 'out', deltaFrames: 2, linked: false }]);
+			const a = analyzeSequenceCleanup({
+				doc: H.doc,
+				seq: H.seq,
+				voice: () =>
+					voiceOf(20, [
+						[1.2, 2.2],
+						[at, at + 2 / 30],
+						[8.2, 9.2],
+					]),
+				settings: FAST_SETTINGS,
+				script: SCRIPT,
+			});
+			if (!a.ok) throw new Error(a.message);
+			return a;
+		};
+		const apart = sliver(5.0, 'Esto@5.0-5.06');
+		expect(apart.findings.find((x) => x.kind === 'fragment')).toMatchObject({
+			suggested: 'remove',
+			reason: { params: { why: 'orphan', text: 'Esto' } },
+		});
+		expect(apart.plan.ranges.map((r) => [r.start, r.end])).toEqual([[30, 32]]);
+		const saidOn = sliver(2.4, 'Esto@2.4-2.46');
+		expect(saidOn.findings.find((x) => x.kind === 'fragment')).toMatchObject({ suggested: 'review' });
+		expect(saidOn.plan.ranges).toEqual([]);
+	});
+
+	it('a whole short clip of voice without words goes when the script runs on across it', () => {
+		// v7 review: "…fuera posible, | (0.33 s of voice) | ya que tenía…" stayed as its own shot for review
+		const plan = (script: string) => {
+			const { H } = cutOf(shots, said(''));
+			const a = analyzeSequenceCleanup({
+				doc: H.doc,
+				seq: H.seq,
+				voice: () => voice,
+				settings: FAST_SETTINGS,
+				script,
+			});
+			if (!a.ok) throw new Error(a.message);
+			return a;
+		};
+		const on = plan(SCRIPT);
+		expect(on.findings.filter((x) => x.kind === 'untranscribed')).toEqual([]);
+		expect(on.findings.find((x) => x.kind === 'fragment')).toMatchObject({
+			suggested: 'remove',
+			reason: { params: { why: 'voice' } },
+		});
+		expect(on.plan.ranges.map((r) => [r.start, r.end])).toEqual([[30, 42]]);
+		// the script says a word between them: the voice may be that word, and waits for its own finding
+		const off = plan('Hola a todos. Mira. Esto es un juego de carreras.');
+		expect(off.findings.find((x) => x.kind === 'untranscribed')).toMatchObject({ suggested: 'review' });
+		expect(off.plan.ranges).toEqual([]);
+	});
 });

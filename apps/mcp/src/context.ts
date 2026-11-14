@@ -33,7 +33,7 @@ import {
 	toErrorResult,
 } from './errors.ts';
 import { persistenceFields } from './format.ts';
-import { type EngineConnection, withEngine } from './link.ts';
+import { type EngineConnection, EngineRequestAborted, withEngine } from './link.ts';
 import { strictInputSchema } from './strict.ts';
 
 export type Extra = RequestHandlerExtra<ServerRequest, ServerNotification>;
@@ -527,7 +527,19 @@ export async function waitJob(
 			if (opts.cancelJobOnAbort !== false) await cancelJobAndWait(ctx, jobId);
 			throw new RequestCancelled(jobId);
 		}
-		const job = await ctx.engine((c) => c.getJob(jobId));
+		let job: EngineJob;
+		try {
+			job = await ctx.engine((c) => c.getJob(jobId));
+		} catch (e) {
+			// the engine took the poll and went quiet (busy or paused) for a whole request deadline: the job is not known to
+			// have ended or vanished
+			if (!(e instanceof EngineRequestAborted) || e.kind !== 'timeout') throw e;
+			throw new ToolError(
+				'ENGINE_TIMEOUT',
+				`The engine did not answer while job ${jobId} was awaited; the job may still be running`,
+				`Call wait_for_job {jobId: "${jobId}"} again.`,
+			);
+		}
 		if (isTerminal(job)) {
 			report?.(1, 1, `${job.title}: ${job.state}`);
 			await report?.flush();

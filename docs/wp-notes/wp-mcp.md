@@ -159,7 +159,17 @@ gained `mcpInfo()` and `focusWindow()` (IPC `jasper:mcp-info`, window action `fo
   start ≤ 60 s, health probe 1.5 s, shutdown 6 s.
 - **Blind retries:** `withEngine` re-sent any request after a NETWORK error, including transactions that
   may already have been applied. Writes cut off mid-flight now fail with `ENGINE_CONNECTION_LOST` and a hint
-  to re-read the project; reads and never-sent writes (ECONNREFUSED…) are still retried once.
+  to re-read the project; reads and never-sent writes (ECONNREFUSED…) are still retried once, and only on the
+  same engine (same runtime file or address). When the CLI's own engine was frozen, Node's fetch gave up after 300 s
+  (`UND_ERR_HEADERS_TIMEOUT`, measured: 302 s against a server that never answers). That read became a retryable
+  NETWORK error. Re-discovery skipped the silent engine and reached the dev engine on port 47900, which answered
+  `JOB_NOT_FOUND "Unknown job"` for a job still running elsewhere. Now that timeout is `ENGINE_TIMEOUT` like the
+  deadline, and a retry never goes to a different engine. A job poll that times out (a whole request deadline of
+  silence) ends the wait with `ENGINE_TIMEOUT`: "…the job may still be running", hint "Call wait_for_job {jobId}
+  again." (`apps/mcp/test/unit.test.ts` "waiting on a job of an engine that stops answering", both cases failing
+  before the change with that `JOB_NOT_FOUND`). Eval case `job-wait-engine-silent` (`cases/errors.jsonl`; the fake's
+  `abort: "timeout"` fault, route checked in `eval/cases.test.ts`). No model sample was run, so that it fails on
+  the old text is unverified. Model-visible bytes unchanged (`eval:measure` equals `budget.json`).
 - **stdout:** only the SDK transport writes to stdout (`--version` aside, which exits). `console.log/info/debug`
   are redirected to stderr at startup; the started engine's output is piped to stderr. A raw stdio session
   (initialize, tools/list, two tool calls with no engine running) produced four stdout lines, all JSON-RPC.
