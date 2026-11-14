@@ -5,7 +5,7 @@
 //
 // Red Giant Universe "Slide" (`AE.Universe_Transitions_Slide`) → Smooth Slide (`jasper.smooth-slide`). Parameter
 // conversion (research, decoded value ranges and assumptions: docs/wp-notes/smooth-slide.md):
-//   Direction 0…3 → right, left, up, down · Animation 0…21 → SMOOTH_SLIDE_EASINGS (Linear, Ease In × 7, Ease Out × 7,
+//   Direction 0…3 → right, left, down, up · Animation 0…21 → SMOOTH_SLIDE_EASINGS (Linear, Ease In × 7, Ease Out × 7,
 //   Ease In Out × 7) · Dolly 0…1.2 · Reflection (checkbox; "Reflect" is its group header) · Bluriness 0…100 ·
 //   Falloff 0…1 · Aspect 0.01…20 · Motion Blur 0…3 → off, low, medium, high · Motion Blur Shutter 90…720 ° ·
 //   Edge Smoothing 0…3 → none, low, medium, high. "Input" (the compositor's Transition B layer picker) and the

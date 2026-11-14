@@ -30,7 +30,7 @@ the user's decorations follow a near-fixed recipe placed **on the cut frame** wi
   start on a cut; S_Shake wobble (Amplitude 0.8, Frequency 2) on 89–96 %; flipped when on the left; scale 60–65 %;
   fixed slots; words explain ≤ 30 % of placements (CTA "suscríbete/descárgalo", exclamations); inferred trigger:
   the speaker avatar is not visible.
-- Overlay slides: one-sided 30-frame Smooth Slide at overlay heads (166) and tails (57); directions down 47 % / up 33 % /
+- Overlay slides: one-sided 30-frame Smooth Slide at overlay heads (166) and tails (57); directions up 47 % / down 33 % /
   left 13 % / right 8 %; ease in-out quad/cubic.
 - Music: long form ≈ 7 beds of ≈ 52 s switching on cuts (74 %), constant −33 dB clip gain, no ducking; shorts one bed,
   often −25 → −33 dB with the step at the first cut.

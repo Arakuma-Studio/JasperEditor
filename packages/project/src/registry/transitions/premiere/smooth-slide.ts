@@ -30,9 +30,12 @@ import { booleanParam as bool, clamp, numberParam as num, stringParam as str } f
 import { defineShaderTransition, TRANSITION_BINS } from '../define.ts';
 import type { TrFrameContext, TrPlanContext } from '../shader.ts';
 
-/** Directions (the way both pictures travel; B enters from the opposite edge), in the reference's menu order. */
-export const SMOOTH_SLIDE_DIRECTIONS = ['right', 'left', 'up', 'down'] as const;
-export const SMOOTH_SLIDE_DIRECTION_LABELS = ['Right', 'Left', 'Up', 'Down'] as const;
+/**
+ * Directions (the way both pictures travel; B enters from the opposite edge), in the reference's menu order: its
+ * Direction popup 0…3 = right, left, down, up (verified against renders, docs/wp-notes/smooth-slide.md §4).
+ */
+export const SMOOTH_SLIDE_DIRECTIONS = ['right', 'left', 'down', 'up'] as const;
+export const SMOOTH_SLIDE_DIRECTION_LABELS = ['Right', 'Left', 'Down', 'Up'] as const;
 const DIR_VECTORS: Record<string, [number, number]> = {
 	right: [1, 0],
 	left: [-1, 0],
