@@ -10,12 +10,13 @@ source functions, `matchEasePreset`) and `packages/project/src/ease/fit.ts` (cur
 The catalog is our own selection and naming, built only from public math: the CSS easing keywords (W3C), Robert
 Penner's easing equations (MIT / BSD-3-Clause, port record `licenses/ported/easing-penner.md`), Material Design 3
 motion tokens (published numbers) and our own physics (overshoot by peak amount, elastic, bounce, spring). No
-third-party preset collection was consulted or copied.
+third-party preset collection was copied; two published cubic-bezier tables are cited below only to compare accuracy
+(§ Single-cubic presets).
 
 ### API
 
 ```ts
-fitEaseCurve(fn: (x: number) => number, opts?: { tolerance?: number; maxPoints?: number; derivative?: (x: number) => number }): EaseCurve
+fitEaseCurve(fn: (x: number) => number, opts?: { tolerance?: number; cubicTolerance?: number; maxPoints?: number; derivative?: (x: number) => number }): EaseCurve
 fitCubicEase(fn: (x: number) => number): CubicEase
 easeCurveMaxError(curve: EaseCurve, fn: (x: number) => number, samples = 2000): number
 class EaseFitError extends Error { code: 'E_INVALID_PARAM' | 'E_LIMIT'; reason: 'options' | 'nonfinite' | 'range' | 'endpoints' | 'points' }
@@ -44,7 +45,13 @@ unchanged. `EasePreset.group` is a group id (`basic`, `penner`, …); the displa
    curve is linear in y1, y2 (y(t) = 3(1−t)²t·y1 + 3(1−t)t²·y2 + t³), solved by 2×2 normal equations over 64
    evenly spaced t; x1, x2 by a 4 × 4 grid on [0, 1]² and a compass search (steps 1/6 … 2⁻¹⁰). Accepted when the
    max error on the grid is ≤ the tolerance. The least-squares search gives up early when the RMS after the
-   coarse steps exceeds 2 × tolerance (then no cubic can pass).
+   coarse steps exceeds 2 × the bound being tested (then no cubic can pass). With `cubicTolerance` above the
+   tolerance and a monotone f (no turning point), a minimax refinement follows: a pattern search over all 80 unit
+   moves of (x1, y1, x2, y2) (steps 1/32 … 2⁻¹², scored at 128 evenly spaced t on f itself), starting from the
+   least-squares cubic clamped to y1 ≥ 0, y2 ≤ 1 and accepting only monotone cubics — y′(t)/3 =
+   (1−t)²·y1 + 2(1−t)t·(y2 − y1) + t²·(1 − y2) ≥ 0 on [0, 1] iff y1 ≥ 0, y2 ≤ 1 and (y2 ≥ y1 or (y2 − y1)² ≤
+   y1(1 − y2)). The result is accepted when its max error on the grid is ≤ `cubicTolerance`. Without the
+   constraint the best Cubic In-Out cubic dips 0.15 % below 0 before moving (a visible step back).
 4. Otherwise a `multi` curve over pieces between [0, turning points…, 1]. Each piece starts with Hermite handles
    point ± (dx/3, f′·dx/3) (dx = piece width; one-sided slopes inside the piece from a 3-point difference with
    h = min(1e-5, dx/4), or `opts.derivative`). Steep handles are shortened along their tangent so their |Δy| ≤
@@ -58,6 +65,62 @@ unchanged. `EasePreset.group` is a group id (`basic`, `penner`, …); the displa
    (same curve) because a multi curve needs ≥ 3 points.
 
 Deterministic: fixed grids and search orders, no randomness (tested with representative curve fits).
+
+### Single-cubic presets
+
+A cubic preset is stored as the handles of the two keys of each segment it is applied to (`{influence, slope}`
+per side, slope normalised by the segment's average speed, `cubicToEases`), so moving either key later rescales the
+ease in time and value. A multi curve bakes keys at its interior points, which keep their own times when the outer
+keys move. Before this change the fitter accepted a single cubic only within 0.002, so in-out power curves (Cubic
+In-Out, the reported case, has a best least-squares cubic error of 0.0028) were stored as multi curves and `apply_ease`
+baked extra keys.
+
+Rule (`PRESET_CUBIC_TOLERANCE` in `presets.ts`, `cubicTolerance` above): a fitted preset whose source is monotone is
+one cubic-bezier when the best monotone cubic is within **0.01 of the value change** (max |cubic(x) − f(x)|);
+everything else stays a multi curve within 0.002. Measured (10 000 samples, rerun with the command under § Measured
+accuracy; `fitEaseCurve(fn, { cubicTolerance: 1 })` gives the best monotone cubic of the rejected ones):
+
+| Preset | Before | Now | Best monotone cubic error |
+|---|---|---|---|
+| `penner.quad-in-out` | multi, 3 pts | cubic (0.483, 0.0403, 0.517, 0.9597) | 3.10e-3 |
+| `penner.cubic-in-out` | multi, 3 pts | cubic (0.6602, 0, 0.3398, 1) | 8.39e-3 |
+| `penner.quint-in` / `-out` | multi, 4 pts | cubic | 8.42e-4 |
+| `penner.circ-in` / `-out` | multi, 7 pts | cubic | 4.07e-4 / 2.70e-4 |
+| `penner.quart-in-out` | multi, 4 pts | multi, 4 pts | 1.96e-2 (rejected) |
+| `penner.circ-in-out` | multi, 11 pts | multi, 11 pts | 1.98e-2 (rejected) |
+| `spring.critical` | multi, 6 pts | multi, 6 pts | 2.64e-2 (rejected) |
+| `penner.quint-in-out` | multi, 4 pts | multi, 4 pts | 3.00e-2 (rejected) |
+| `penner.expo-in-out` | multi, 7 pts | multi, 7 pts | 3.18e-2 (rejected) |
+
+Quint In / Out already had a least-squares cubic within 0.002 (8.42e-4); the early give-up of step 3 (RMS after the
+coarse steps above 2 × 0.002) rejected it before the fine steps. The bound sits in a gap of the measured errors:
+the largest accepted is 8.39e-3, the smallest rejected 1.96e-2.
+
+Why 1 %: it is no looser than the cubic-beziers commonly used for these curves on the web. Published
+approximations, measured the same way against Penner's equations (values read on 2026-11-14; cited for comparison
+only, nothing copied):
+
+| Curve | easings.net ([`src/easings.yml`](https://raw.githubusercontent.com/ai/easings.net/master/src/easings.yml), GPL-3.0 site) | Bourbon 4.3.4 ([`_timing-functions.scss`](https://raw.githubusercontent.com/thoughtbot/bourbon/v4.3.4/app/assets/stylesheets/addons/_timing-functions.scss), MIT; credits jquery.easie) | Ours |
+|---|---|---|---|
+| Quad In-Out | (0.45, 0, 0.55, 1): 5.26e-3 | (0.455, 0.03, 0.515, 0.955): 1.92e-2 | 3.10e-3 |
+| Cubic In-Out | (0.65, 0, 0.35, 1): 9.54e-3 | (0.645, 0.045, 0.355, 1): 2.47e-2 | 8.39e-3 |
+| Quint In | (0.64, 0, 0.78, 0): 1.13e-2 | (0.755, 0.05, 0.855, 0.06): 1.01e-1 | 8.42e-4 |
+| Circ In | (0.55, 0, 1, 0.45): 1.80e-3 | (0.6, 0.04, 0.98, 0.335): 4.49e-2 | 4.07e-4 |
+
+In pixels, 1 % is at most 19 px on a full-width 1920 px move at the worst frame, 2 px on a 200 px move (Cubic
+In-Out: 16 px and 1.7 px). Curves that turn (Back In-Out, Anticipate & Overshoot, elastic, bounce, underdamped
+springs) keep the 0.002 bound: their peak is the visible feature, and 1 % absolute would be a fifth of a 5 %
+overshoot. Their best single cubics miss by about 1.0e-2 (Anticipate & Overshoot Light, the closest), 3.0e-2 (Back
+In-Out) and 0.03–0.7 (elastic, bounce, springs), so they stay baked.
+
+Alternative not taken: storing the preset as a named easing on the segment (an analytic `easeFn` evaluated by the
+shared evaluator). It would be exact and rescale too, but it changes the persisted keyframe model (schema bump,
+migration, `repairDocument`) and every consumer of `{influence, slope}`: the graph and velocity editors,
+Continuous / Auto Bezier neighbour updates, `get_keyframe_eases`, ease copy / paste, Lottie and interchange
+exporters (which would still have to bake for other apps). A within-1 % cubic gives the rescaling behaviour with
+none of that; the rejected curves keep their exact multi shape. Limits: a span baked by an older build (e.g. Cubic
+In-Out as 3 keys) is no longer named after that preset by `get_keyframe_eases` (its curve is 8.4e-3 from the new
+cubic, above the 2e-3 span match); the keys and their animation are unchanged.
 
 ### Catalog: formulas and sources
 
@@ -142,21 +205,21 @@ a diagnostic against the production source functions, not an independent regress
 | `penner.sine-in-out` | Sine In-Out | cubic | 2.84e-4 |
 | `penner.quad-in` | Quad In | cubic | < 1e-9 |
 | `penner.quad-out` | Quad Out | cubic | < 1e-9 |
-| `penner.quad-in-out` | Quad In-Out | multi, 3 pts | < 1e-9 |
+| `penner.quad-in-out` | Quad In-Out | cubic | 3.10e-3 |
 | `penner.cubic-in` | Cubic In | cubic | < 1e-9 |
 | `penner.cubic-out` | Cubic Out | cubic | < 1e-9 |
-| `penner.cubic-in-out` | Cubic In-Out | multi, 3 pts | < 1e-9 |
+| `penner.cubic-in-out` | Cubic In-Out | cubic | 8.39e-3 |
 | `penner.quart-in` | Quart In | cubic | 6.82e-4 |
 | `penner.quart-out` | Quart Out | cubic | 5.05e-4 |
 | `penner.quart-in-out` | Quart In-Out | multi, 4 pts | 1.95e-3 |
-| `penner.quint-in` | Quint In | multi, 4 pts | 1.07e-3 |
-| `penner.quint-out` | Quint Out | multi, 4 pts | 1.07e-3 |
+| `penner.quint-in` | Quint In | cubic | 8.42e-4 |
+| `penner.quint-out` | Quint Out | cubic | 8.42e-4 |
 | `penner.quint-in-out` | Quint In-Out | multi, 4 pts | 1.53e-3 |
 | `penner.expo-in` | Expo In | cubic | 1.18e-3 |
 | `penner.expo-out` | Expo Out | cubic | 1.18e-3 |
 | `penner.expo-in-out` | Expo In-Out | multi, 7 pts | 1.51e-3 |
-| `penner.circ-in` | Circ In | multi, 7 pts | 1.25e-3 |
-| `penner.circ-out` | Circ Out | multi, 7 pts | 1.25e-3 |
+| `penner.circ-in` | Circ In | cubic | 4.07e-4 |
+| `penner.circ-out` | Circ Out | cubic | 2.70e-4 |
 | `penner.circ-in-out` | Circ In-Out | multi, 11 pts | 9.67e-4 |
 | `penner.back-in` | Back In | cubic | < 1e-9 |
 | `penner.back-out` | Back Out | cubic | < 1e-9 |

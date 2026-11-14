@@ -70,11 +70,29 @@ const cubicOf = (p: EasePreset) => {
 };
 
 describe('built-in ease catalog', () => {
-	it('Penner presets match independently written Penner equations within 0.002', () => {
+	it('Penner presets match independent Penner equations: multi curves within 0.002, single cubics within 1 % that never step back', () => {
 		for (const [name, fn] of Object.entries(PENNER)) {
 			const p = byId(`penner.${name}`);
-			expect(easeCurveMaxError(p.curve, fn, 1999), name).toBeLessThanOrEqual(0.002);
+			const err = easeCurveMaxError(p.curve, fn, 1999);
+			if (p.curve.kind === 'multi') {
+				expect(err, name).toBeLessThanOrEqual(0.002);
+				continue;
+			}
+			expect(err, name).toBeLessThanOrEqual(0.01);
+			if (name.startsWith('back')) continue;
+			// A monotone equation stays monotone (to 1e-5, far below a pixel): an in-out cubic must not dip below 0 or
+			// overshoot 1 (an unconstrained Cubic In-Out fit dips by 0.15 %).
+			let prev = 0;
+			let stepBack = 0;
+			for (let i = 1; i <= 2000; i++) {
+				const y = evaluateEaseCurve(p.curve, i / 2000);
+				stepBack = Math.max(stepBack, prev - y);
+				prev = y;
+			}
+			expect(stepBack, name).toBeLessThanOrEqual(1e-5);
 		}
+		// The in-out power curves one cubic matches within 1 % are cubics, so applying them sets the two keys' handles.
+		expect(byId('penner.cubic-in-out').curve.kind).toBe('cubic');
 		// Polynomials of degree ≤ 3 convert exactly.
 		expect(cubicOf(byId('penner.quad-in'))).toMatchObject({ x1: 1 / 3, x2: 2 / 3 });
 		expect(
