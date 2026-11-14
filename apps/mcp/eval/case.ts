@@ -82,6 +82,8 @@ export const CaseSchema = z.strictObject({
 			brief: z.record(z.string(), z.unknown()).optional(),
 			seed: z.array(z.record(z.string(), z.unknown())).optional(),
 			exportPolls: z.number().int().optional(),
+			/** A file is already at every export's outputPath (`fake-engine.ts` `EngineSetup.outputExists`). */
+			outputExists: z.boolean().optional(),
 			verify: z.strictObject({ failRow: z.string().optional() }).optional(),
 			/** A still logo.png on V2: `{{still}}` (`fake-engine.ts` `EngineSetup.logo`). */
 			logo: z.boolean().optional(),

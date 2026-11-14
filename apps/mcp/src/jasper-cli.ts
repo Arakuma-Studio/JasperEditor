@@ -36,8 +36,9 @@ Commands:
   import <file…>                      import media files (absolute or relative paths)
   render-frame --at <time> --out <file.png> [--width N]
                                       render the Program output at a time to a PNG
-  export --out <file> [--preset ID] [--range from..to] [--engine auto|native|remotion]
-                                      export and wait (progress on stderr; Ctrl+C cancels and deletes the file)
+  export --out <file> [--preset ID] [--range from..to] [--engine auto|native|remotion] [--overwrite]
+                                      export and wait (progress on stderr; Ctrl+C cancels and deletes the file);
+                                      an existing file is kept (" (2)" is appended) unless --overwrite
   query <name> [k=v…]                 an agent query (doc.get, sequence.at, clip.properties…)
   ui <action> [k=v…] [--out f.png]    live UI of the open editor window: state, elements, screenshot,
                                       click, drag, scroll, key, type, set, locate, hit, commands, command
@@ -88,7 +89,16 @@ const VALUE_FLAGS = new Set([
 	'timeout',
 	'crf',
 ]);
-const BOOL_FLAGS = new Set(['json', 'dry-run', 'keep-going', 'start-engine', 'help', 'version', 'h']);
+const BOOL_FLAGS = new Set([
+	'json',
+	'dry-run',
+	'keep-going',
+	'start-engine',
+	'help',
+	'version',
+	'h',
+	'overwrite',
+]);
 
 type ParsedArgs = { flags: Record<string, string | true>; positional: string[] };
 
@@ -499,7 +509,7 @@ const COMMANDS: Record<string, (c: Ctx, args: string[]) => Promise<void>> = {
 	async export(c) {
 		if (typeof c.flags.out !== 'string')
 			throw new UsageError(
-				'Usage: jasper export --out <file> [--preset ID] [--range from..to] [--engine auto|native|remotion]',
+				'Usage: jasper export --out <file> [--preset ID] [--range from..to] [--engine auto|native|remotion] [--overwrite]',
 			);
 		let range: unknown;
 		if (typeof c.flags.range === 'string') {
@@ -516,6 +526,7 @@ const COMMANDS: Record<string, (c: Ctx, args: string[]) => Promise<void>> = {
 			{
 				projectId: await c.projectId(),
 				outputPath: resolve(c.cwd, c.flags.out),
+				...(c.flags.overwrite ? { overwrite: true } : {}),
 				wait: true,
 				timeoutSeconds: typeof c.flags.timeout === 'string' ? Number(c.flags.timeout) : 3600,
 				...(typeof c.flags.preset === 'string' ? { preset: c.flags.preset } : {}),
@@ -526,12 +537,12 @@ const COMMANDS: Record<string, (c: Ctx, args: string[]) => Promise<void>> = {
 			},
 			true,
 		);
-		const body = jsonOf(r) as { timedOut?: boolean; result?: { path?: string } };
+		const body = jsonOf(r) as { timedOut?: boolean; path?: string; pathNote?: string };
 		if (body.timedOut)
 			throw new CommandFailed({
 				error: { code: 'TIMEOUT', message: 'The export is still running', details: body },
 			});
-		emit(c, body, `wrote ${body.result?.path ?? '(see result)'}`);
+		emit(c, body, `wrote ${body.path ?? '(see result)'}${body.pathNote ? `\n${body.pathNote}` : ''}`);
 	},
 	async query(c, args) {
 		needArgs(args, 1, 'query <name> [k=v…]');

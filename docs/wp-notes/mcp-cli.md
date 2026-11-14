@@ -50,6 +50,15 @@ recorded in `licenses/ported/mcp-cli-effectcraft.md` and `licenses/ported/mcp-cl
   `render_frame` and `render_frames` (now rendered as a still job the tool owns, `captureStill`, same document and
   path as `frame.capture`), `render_motion_graphic_preview`, `process_clip`, `track`, `prerender_composition`,
   `set_cache_location`, `track_mask`, `normalize_media_loudness` — every tool that waits uses `waitJob`.
+- Export destinations (`start_export {outputPath}`; CLI `export --out`): an existing file is kept and the export goes to
+  `name (2).ext`… (`copyNoOverwrite`) unless `overwrite: true` (CLI `--overwrite`): then `copyReplacing` writes a hidden
+  `.<name>.<random>.partial` in the same folder (claimed as the job's partial, so a cancel or failure deletes it and
+  the old file stays), fsyncs it, renames it over the old file and fsyncs the folder; caption and credits sidecars
+  follow the same choice. The job result has `path` (the file written), `requestedPath` when that is not the path
+  asked for, `replaced: true` after an overwrite; every MCP job view (`start_export {wait}`, `wait_for_job`,
+  `get_job`) repeats `path` at the top with a `pathNote` naming the kept file and `overwrite: true`. `overwrite`
+  without `outputPath` is refused (`E_INVALID_PARAM`). Eval cases `export-overwrite-asked` (bad),
+  `export-kept-file-reported` (guard) and `export-new-path-plain` (control).
 - Engine: an audit of every job runner that writes files (export, still, layer-bake, mg-bundle import,
   mg-prerender, process, model-download, derivatives, warp, cache-move, the mg-render scheduler). Gaps fixed:
   the export's copy to the user's destination (and caption sidecars) — `copyNoOverwrite` now claims the name with an

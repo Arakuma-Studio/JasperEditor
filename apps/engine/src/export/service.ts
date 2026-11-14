@@ -4,6 +4,7 @@
 // WP-2G registers (`registerMgMasterProvider`).
 
 import type { ChildProcess } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { createReadStream, readFileSync } from 'node:fs';
 import {
 	copyFile,
@@ -77,7 +78,7 @@ import type { RemotionService } from '../remotion/service.ts';
 import { exportAudioWorkers } from '../sound-design/measure-pool.ts';
 import { audioEncodeArgs, type EncoderService, pixFmtFor, videoEncodeArgs } from '../tools/encoders.ts';
 import type { Ffmpeg } from '../tools/ffmpeg.ts';
-import { exists, randomId } from '../tools/fs.ts';
+import { exists, fsyncDir, randomId } from '../tools/fs.ts';
 import { ToolError, terminateTree } from '../tools/process.ts';
 import { LOCAL_PROTOCOLS } from '../tools/protocols.ts';
 import { runBlendPipeline } from './blend/run.ts';
@@ -3190,28 +3191,41 @@ export class ExportService {
 		const byteSize = (await stat(output)).size;
 		const downloadUrl = `/renders/${ctx.job.id}/output`;
 		let finalPath: string | undefined;
+		let requestedPath: string | undefined;
+		let replaced = false;
 		if (req.settings.destination?.type === 'path') {
-			// The destination is a partial until the job succeeds: a cancel during (or right after) the copy deletes it.
-			finalPath = await copyNoOverwrite(
-				output,
-				withExtension(req.settings.destination.path, extname(output)),
-				{ signal: ctx.signal, claimed: (p) => ctx.addPartial(p) },
-			);
+			// Without overwrite the destination is a partial until the job succeeds: a cancel during (or right after) the
+			// copy deletes it. With overwrite the new file is a temporary partial renamed over the old one when complete.
+			const overwrite = req.settings.destination.overwrite === true;
+			const place = async (src: string, dest: string) => {
+				if (!overwrite)
+					return copyNoOverwrite(src, dest, { signal: ctx.signal, claimed: (p) => ctx.addPartial(p) });
+				return (await copyReplacing(src, dest, { signal: ctx.signal, claimed: (p) => ctx.addPartial(p) }))
+					.path;
+			};
+			const wanted = withExtension(req.settings.destination.path, extname(output));
+			if (overwrite) {
+				const r = await copyReplacing(output, wanted, {
+					signal: ctx.signal,
+					claimed: (p) => ctx.addPartial(p),
+				});
+				finalPath = r.path;
+				replaced = r.replaced;
+			} else finalPath = await place(output, wanted);
+			if (finalPath !== wanted) requestedPath = wanted;
 			const stem = basename(finalPath, extname(finalPath));
 			for (const sc of captionResult?.sidecars ?? []) {
 				const ext = extname(sc.name);
 				const rest = sc.name.slice(sc.name.indexOf('.'), -ext.length || undefined);
-				sc.path = await copyNoOverwrite(
+				sc.path = await place(
 					join(dir, 'captions', sc.name),
 					join(dirname(finalPath), `${stem}${rest}${ext}`),
-					{ signal: ctx.signal, claimed: (p) => ctx.addPartial(p) },
 				);
 			}
 			if (creditsResult?.name)
-				creditsResult.path = await copyNoOverwrite(
+				creditsResult.path = await place(
 					join(dir, CREDITS_DIR, creditsResult.name),
 					join(dirname(finalPath), creditsFileName(stem, creditsResult.format)),
-					{ signal: ctx.signal, claimed: (p) => ctx.addPartial(p) },
 				);
 		}
 		const formatChanges = planned.plan.warnings
@@ -3272,6 +3286,8 @@ export class ExportService {
 			durationSec: planned.output.durationSec,
 			frames,
 			path: finalPath,
+			...(requestedPath ? { requestedPath } : {}),
+			...(replaced ? { replaced: true } : {}),
 			renderPath: path,
 			...(remotionOutput ? { remotionOutput } : {}),
 			...(allWarnings.length ? { warnings: allWarnings } : {}),
@@ -3962,6 +3978,47 @@ function withExtension(dest: string, ext: string): string {
 	return /^\.(mp4|webm|mov|m4v|mkv|gif|wav|flac|m4a)$/i.test(cur)
 		? dest.slice(0, -cur.length) + ext
 		: dest + ext;
+}
+
+/**
+ * Copies to `dest`, replacing a file there atomically (start_export `overwrite`): the bytes go to a hidden temporary
+ * file in the same folder (claimed through `claimed` first, so a cancelled job deletes it), are synced, and the
+ * temporary file is renamed over `dest`, then the folder is synced. The old file stays until the new one is complete;
+ * a failure or cancel leaves it untouched. `replaced`: a file was there.
+ */
+export async function copyReplacing(
+	src: string,
+	dest: string,
+	opts: { signal?: AbortSignal; claimed?(path: string): void } = {},
+): Promise<{ path: string; replaced: boolean }> {
+	const dir = dirname(dest);
+	await mkdir(dir, { recursive: true });
+	opts.signal?.throwIfAborted();
+	const tmp = join(dir, `.${basename(dest)}.${randomBytes(6).toString('hex')}.partial`);
+	const out = await open(tmp, 'wx');
+	opts.claimed?.(tmp);
+	try {
+		// the stream closes `out` when it ends (a FileHandle cannot close under an open stream); sync through a new handle
+		await pipeline(createReadStream(src), out.createWriteStream(), { signal: opts.signal });
+		const fh = await open(tmp, 'r+');
+		try {
+			await fh.sync();
+		} finally {
+			await fh.close();
+		}
+		opts.signal?.throwIfAborted();
+		const replaced = await stat(dest).then(
+			(st) => st.isFile(),
+			() => false,
+		);
+		await rename(tmp, dest);
+		await fsyncDir(dir);
+		return { path: dest, replaced };
+	} catch (e) {
+		await out.close().catch(() => undefined);
+		await rm(tmp, { force: true }).catch(() => undefined);
+		throw e;
+	}
 }
 
 /**

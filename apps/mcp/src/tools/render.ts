@@ -275,7 +275,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 		{
 			title: 'Start export',
 			description:
-				'Render a sequence to a file: a video `preset`, or `format` gif, wav, flac or m4a. Returns a job id; `wait: true` blocks until it is written, else `wait_for_job`. Platform presets are `delivery-youtube`, `delivery-tiktok`… (`list_export_presets`). Never overwrites a file. Tell the user any warning in the result. A finished export returns fast checks; `verify_export` runs the full ones.',
+				'Render a sequence to a file: a video `preset`, or `format` gif, wav, flac or m4a. Returns a job id; `wait: true` blocks until it is written, else `wait_for_job`. Platform presets are `delivery-youtube`, `delivery-tiktok`… (`list_export_presets`). Never overwrites a file unless `overwrite: true`. Tell the user any warning in the result. A finished export returns fast checks; `verify_export` runs the full ones.',
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -367,10 +367,11 @@ export function registerRenderTools(ctx: ToolContext): void {
 					.max(200_000)
 					.optional()
 					.describe('Target of bitrate-driven encoders, a ceiling for x264; ignored by ProRes.'),
-				outputPath: z
-					.string()
+				outputPath: z.string().optional().describe('Absolute. The extension follows the container.'),
+				overwrite: z
+					.boolean()
 					.optional()
-					.describe('Absolute. The extension follows the container; `result.path` is the real path.'),
+					.describe('Replace an existing file at outputPath. Default false: a new name.'),
 				wait: z.boolean().optional().describe('Block until written. Default false.'),
 				timeoutSeconds: z.number().int().min(1).max(3600).optional().describe('With `wait`. Default 900.'),
 				// audio-mix
@@ -447,6 +448,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 				range,
 				engine,
 				outputPath,
+				overwrite,
 				crf,
 				videoBitrateKbps,
 				audioChannels,
@@ -488,6 +490,12 @@ export function registerRenderTools(ctx: ToolContext): void {
 					'E_NOT_FOUND',
 					`Unknown export preset "${preset}"`,
 					`Use one of ${EXPORT_PRESETS.map((x) => x.id).join(', ')}.`,
+				);
+			if (overwrite && !outputPath)
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					'overwrite needs outputPath',
+					'Pass the absolute outputPath of the file to replace.',
 				);
 			if (outputPath && !isAbsolute(outputPath))
 				throw new ToolError(
@@ -537,6 +545,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 							range: r,
 							engine: engine ?? 'auto',
 							outputPath,
+							...(overwrite ? { overwrite } : {}),
 							...(crf !== undefined ? { crf } : {}),
 							...(videoBitrateKbps !== undefined ? { videoBitrateKbps } : {}),
 							...(audioChannels !== undefined ? { audioChannels } : {}),
@@ -547,6 +556,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 							range: r,
 							engine: engine ?? 'auto',
 							outputPath,
+							...(overwrite ? { overwrite } : {}),
 							...(gif ? { gif } : {}),
 							...(audioChannels !== undefined ? { audioChannels } : {}),
 							...(audioSampleRate !== undefined ? { audioSampleRate } : {}),

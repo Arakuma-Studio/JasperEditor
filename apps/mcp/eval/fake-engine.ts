@@ -100,6 +100,8 @@ export type EngineSetup = {
 	seed?: Record<string, unknown>[];
 	/** Polls an export takes to finish; default 1. */
 	exportPolls?: number;
+	/** A file is already at every export's outputPath: kept as the engine does (" (2)") unless `overwrite`. */
+	outputExists?: boolean;
 	/** What an export's verification finds. */
 	verify?: { failRow?: string };
 	/** A still `logo.png` (three letters with gaps between them) on V2 at 0: `{{still}}`. */
@@ -1128,13 +1130,28 @@ export function createFakeEngine(
 			warnings: [],
 			audio: {},
 		}),
-		startExport: (req: { settings?: { outputPath?: string; format?: string } }) =>
-			jobView(
+		startExport: (req: {
+			settings?: {
+				outputPath?: string;
+				format?: string;
+				destination?: { type: string; path?: string; overwrite?: boolean };
+			};
+		}) => {
+			const dest = req.settings?.destination;
+			const asked = dest?.type === 'path' ? dest.path : undefined;
+			const kept = !!asked && setup.outputExists && !dest?.overwrite;
+			const path = kept
+				? asked.replace(/(\.[^./]+)?$/, (ext) => ` (2)${ext}`)
+				: (asked ?? req.settings?.outputPath ?? `/home/user/exports/cut.${req.settings?.format ?? 'mp4'}`);
+			return jobView(
 				newJob('export', 'Export', setup.exportPolls ?? 1, {
-					path: req.settings?.outputPath ?? `/home/user/exports/cut.${req.settings?.format ?? 'mp4'}`,
+					path,
+					...(kept ? { requestedPath: asked } : {}),
+					...(asked && setup.outputExists && dest?.overwrite ? { replaced: true } : {}),
 					sizeBytes: 48_000_000,
 				}),
-			),
+			);
+		},
 		deriveMedia: (key: string, req: { recipe: { op: string; format?: string } }) => {
 			const { recipe } = req;
 			const name = `derived-${recipe.op}.${recipe.format ?? 'wav'}`;
