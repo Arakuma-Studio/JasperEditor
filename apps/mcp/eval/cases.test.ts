@@ -180,6 +180,9 @@ const ROUTES: Record<string, Route> = {
 			['apply_cleanup', { projectId: v.project, preset: 'fast', settings: { joins: { fadeMs: 4 } } }],
 		],
 	},
+	'cleanup-check-cuts': {
+		calls: (v) => [['plan_cleanup', { projectId: v.project, checkCuts: 'spans' }]],
+	},
 	'cleanup-hard-cuts-control': {
 		calls: (v) => [['apply_cleanup', { projectId: v.project, preset: 'fast' }]],
 	},

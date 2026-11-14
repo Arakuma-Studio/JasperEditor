@@ -139,6 +139,12 @@ shipped code): removed-word precision / recall 0.89 / 0.81 (shorts), 0.88 / 0.82
 Timeline does not draw the derived timeline during Play result; a restart said inside one transcribed word ("extra…
 ¡extremadamente!" written as one word) is not found — the level-dip trace is off by default, its real-file trips were
 consonant closures (wp-note "Round 15").
+**Repeats at cuts:** a phrase heard twice where two kept clips join, or a stutter left inside a kept clip, that the
+transcript holds once, is found from VAD-chunked transcriptions of each kept span (two decodes, one job, cached per media
+range) and / or of the mixdown — API `POST /api/cleanup/analyze` `editRepeats`, MCP `checkCuts` on `analyze_voice` /
+`plan_cleanup` / `apply_cleanup` (wp-note "Repeats at cuts"). Gaps: the Clean Up panel has no control to ask for it
+(API / MCP only); not run on large-v3-turbo or the reporter's audio (fixtures from known words and times, the shipped
+voice analysis of the source); the MCP eval case was not run with a model.
 **Script-guided transcript correction (spec 17):** model, apply, scoring, glossary, job / route / MCP and the editor UI
 (Text ▸ Transcript ▸ Script… and Fix Transcript…, Text ▸ / Sequence ▸ entries, the Fix dialog with its dry run,
 text-diff rows in the Review panel, marks in the transcript, the patch report, "Replace all N" / "Remember", the

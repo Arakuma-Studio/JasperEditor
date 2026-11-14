@@ -135,6 +135,12 @@ const TargetShape = {
 	from: timeArg('Only from this sequence time').optional(),
 	to: timeArg('Only up to this sequence time').optional(),
 	inOut: z.boolean().optional().describe("Only between the sequence's In and Out marks"),
+	checkCuts: z
+		.enum(['spans', 'mix', 'both'])
+		.optional()
+		.describe(
+			'Repeats at cuts the transcript merged: transcribe each kept clip alone ("spans", cached) and/or the mix ("mix", review only)',
+		),
 };
 
 const PageShape = {
@@ -246,6 +252,7 @@ async function runAnalysis(
 		script?: string | null;
 		language?: string;
 		decisions?: CleanupDecisions;
+		checkCuts?: 'spans' | 'mix' | 'both';
 	},
 	extra: Extra,
 ): Promise<{ file: CleanupAnalysisFile; job: EngineJob }> {
@@ -262,6 +269,7 @@ async function runAnalysis(
 		...(opts.script !== undefined ? { script: opts.script } : {}),
 		...(opts.language ? { language: opts.language } : {}),
 		...(opts.decisions ? { decisions: opts.decisions as never } : {}),
+		...(opts.checkCuts ? { editRepeats: opts.checkCuts } : {}),
 	};
 	let job = await ctx.engine((c) => c.analyzeCleanup(req));
 	if (!isTerminal(job)) {

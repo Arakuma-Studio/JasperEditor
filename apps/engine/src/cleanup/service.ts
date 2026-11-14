@@ -19,13 +19,23 @@ import {
 	type CleanupSettings,
 	type CleanupVoice,
 	CROCKFORD_ALPHABET,
+	cleanupLanguageOf,
+	EDIT_SPAN_CONFIRM_PAD_S,
+	EDIT_SPAN_PAD_S,
+	type EditRepeat,
+	type EditSpan,
+	type EditWord,
+	editSpans,
+	findEditRepeats,
 	loadProject,
 	mergeCleanupSettings,
 	type ProjectDocument,
+	readSequenceCleanup,
 	resolvePresetSettings,
 	type Sequence,
 	sequenceCleanupSettings,
 	speechClipsOf,
+	transcriptForMedia,
 } from '@jasper/project';
 import type { AgentService } from '../agent/service.ts';
 import { mediaKeyOf } from '../export/planner.ts';
@@ -33,6 +43,7 @@ import { type JobContext, JobError } from '../jobs/types.ts';
 import { HttpError } from '../tools/reply.ts';
 import type { CoreServices } from '../tools/services.ts';
 import type { VoiceAnalysisService } from '../voice/service.ts';
+import { type EditWordsService, spanKey } from './edit-words.ts';
 import type { CleanupPresetLibrary } from './presets.ts';
 
 /** Analyses kept for `GET /api/cleanup/analyses/:id`. */
@@ -49,6 +60,8 @@ export class CleanupAnalysisService {
 			voice: () => VoiceAnalysisService | undefined;
 			agent: () => AgentService | undefined;
 			presets: CleanupPresetLibrary;
+			/** Chunked transcriptions for the repeats-in-the-edit check (absent: the check reports it cannot run). */
+			editWords?: () => EditWordsService | undefined;
 			now?: () => Date;
 		},
 	) {}
@@ -199,6 +212,12 @@ export class CleanupAnalysisService {
 			done++;
 		}
 		ctx.signal.throwIfAborted();
+		const edit = req.editRepeats
+			? await this.editRepeats(req, doc, seq, scope, settings, ctx, (mediaId, stream) =>
+					voices.get(`${mediaId}\u0000${stream}`),
+				)
+			: null;
+		ctx.signal.throwIfAborted();
 		ctx.progress(0.92, { stage: 'Detecting and planning' });
 		const analysis = analyzeSequenceCleanup({
 			doc,
@@ -209,6 +228,7 @@ export class CleanupAnalysisService {
 			...(req.language ? { language: req.language } : {}),
 			...(req.decisions ? { decisions: req.decisions } : {}),
 			scope,
+			...(edit ? { editRepeats: edit.repeats } : {}),
 		});
 		if (!analysis.ok)
 			throw new JobError(analysis.code, analysis.message, false, { clipIds: analysis.clipIds });
@@ -240,6 +260,100 @@ export class CleanupAnalysisService {
 			stats: analysis.plan.stats,
 			voice,
 			elapsedMs: Date.now() - t0,
+			...(edit ? { editRepeats: edit.report } : {}),
 		};
+	}
+
+	/**
+	 * The repeats-in-the-edit check (docs/wp-notes/transcript-cleanup.md "Repeats at cuts"): chunked words of the kept
+	 * spans and / or of the mixdown, then `findEditRepeats`. A source that cannot run (no speech service, a failed
+	 * transcription, a check too large) is reported in `missing`; the analysis goes on without it.
+	 */
+	private async editRepeats(
+		req: CleanupAnalyzeRequest,
+		doc: ProjectDocument,
+		seq: Sequence,
+		scope: { clipIds?: string[]; range?: { from: number; to: number } },
+		settings: CleanupSettings,
+		ctx: JobContext,
+		voice: (mediaId: string, stream: number) => CleanupVoice | null | undefined,
+	): Promise<{ repeats: EditRepeat[]; report: NonNullable<CleanupAnalysisJobResult['editRepeats']> }> {
+		const report: NonNullable<CleanupAnalysisJobResult['editRepeats']> = {
+			spans: 0,
+			cached: 0,
+			transcribed: 0,
+			jobIds: [],
+			found: 0,
+			suggestedRemove: 0,
+			missing: [],
+		};
+		const sp = editSpans(doc, seq, scope);
+		if (!sp.ok) throw new JobError(sp.code, sp.message, false, { clipIds: sp.clipIds });
+		report.spans = sp.spans.length;
+		const svc = this.deps.editWords?.();
+		const wantSpans = req.editRepeats === 'spans' || req.editRepeats === 'both';
+		const wantMix = req.editRepeats === 'mix' || req.editRepeats === 'both';
+		// the transcript's model and language, unless the request names them
+		const t = sp.spans[0] ? transcriptForMedia(doc, sp.spans[0].mediaId) : null;
+		const options = {
+			...((req.editModel ?? t?.model) ? { model: req.editModel ?? t?.model ?? undefined } : {}),
+			...((req.language ?? t?.language) ? { language: req.language ?? t?.language ?? undefined } : {}),
+			projectId: req.projectId,
+		};
+		const reason = (e: unknown) => (e instanceof Error ? e.message : String(e));
+		let words: Map<string, EditWord[]> | null = null;
+		let second: Map<string, EditWord[]> | null = null;
+		let mix: EditWord[] | null = null;
+		if (wantSpans) {
+			if (!svc)
+				report.missing.push({ source: 'spans', reason: 'speech to text is not available in this engine' });
+			else
+				try {
+					ctx.progress(0.9, { stage: 'Transcribing the kept spans' });
+					const r = await svc.spanWords(doc, seq, sp.spans, options, ctx, [
+						EDIT_SPAN_PAD_S,
+						EDIT_SPAN_CONFIRM_PAD_S,
+					]);
+					[words, second] = [r.words[0] ?? null, r.words[1] ?? null];
+					Object.assign(report, { cached: r.report.cached, transcribed: r.report.transcribed });
+					if (r.report.jobId) report.jobIds.push(r.report.jobId);
+				} catch (e) {
+					if (ctx.signal.aborted) throw e;
+					report.missing.push({ source: 'spans', reason: reason(e) });
+				}
+		}
+		if (wantMix) {
+			if (!svc)
+				report.missing.push({ source: 'mix', reason: 'speech to text is not available in this engine' });
+			else
+				try {
+					ctx.progress(0.91, { stage: 'Transcribing the mixdown' });
+					const r = await svc.mixWords(doc, seq, options, ctx);
+					mix = r.words;
+					if (r.jobId) report.jobIds.push(r.jobId);
+				} catch (e) {
+					if (ctx.signal.aborted) throw e;
+					report.missing.push({ source: 'mix', reason: reason(e) });
+				}
+		}
+		const cleanup = readSequenceCleanup(seq);
+		const lang = cleanupLanguageOf(options.language ?? null);
+		// the confirming decodes: the span decode with other padding, and the stored transcript
+		const stored = (s: { mediaId: string }) => transcriptForMedia(doc, s.mediaId)?.words ?? null;
+		const repeats = findEditRepeats({
+			spans: sp.spans,
+			rate: seq.settings.frameRate,
+			...(words ? { words: (s) => words!.get(spanKey(s)) ?? null } : {}),
+			confirm: [...(second ? [(s: EditSpan) => second!.get(spanKey(s)) ?? null] : []), stored],
+			...(mix ? { mix } : {}),
+			voice,
+			settings,
+			language: options.language ?? null,
+			lists: lang ? (cleanup.lists?.[lang] ?? null) : null,
+			script: req.script === undefined ? (cleanup.script?.text ?? null) : req.script,
+		});
+		report.found = repeats.length;
+		report.suggestedRemove = repeats.filter((r) => r.suggested === 'remove').length;
+		return { repeats, report };
 	}
 }

@@ -13,9 +13,11 @@ import {
 import type { FastifyInstance } from 'fastify';
 import type { AgentService } from '../agent/service.ts';
 import { requireUserApproval } from '../agent/user-approval.ts';
+import { EditWordsService, speechTranscriber } from '../cleanup/edit-words.ts';
 import { CleanupPresetLibrary } from '../cleanup/presets.ts';
 import { CleanupAnalysisService } from '../cleanup/service.ts';
 import { replyWithJob } from '../jobs/reply.ts';
+import type { SpeechService } from '../speech/service.ts';
 import { guarded, HttpError, parseOr400 } from '../tools/reply.ts';
 import { coreServices } from '../tools/services.ts';
 import type { VoiceAnalysisService } from '../voice/service.ts';
@@ -30,10 +32,20 @@ export default async function cleanupRoutes(app: FastifyInstance): Promise<void>
 		onChange: (revision) => core.broadcaster.publish('cleanupPresets.changed', { revision }),
 		log: (m) => app.log.warn(m),
 	});
+	let editWords: EditWordsService | undefined;
 	const svc = new CleanupAnalysisService(core, {
 		voice: () => services.voiceAnalysis as VoiceAnalysisService | undefined,
 		agent: () => services.agent as AgentService | undefined,
 		presets,
+		editWords: () => {
+			const speech = services.speech as SpeechService | undefined;
+			if (!speech) return undefined;
+			editWords ??= new EditWordsService(
+				core.config.paths.cacheDir,
+				speechTranscriber((req, origin) => speech.submitSequence(req, origin), core.queue),
+			);
+			return editWords;
+		},
 	});
 	svc.registerRunner();
 	services.cleanupPresets = presets;
