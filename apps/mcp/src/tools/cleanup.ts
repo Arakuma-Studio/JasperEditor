@@ -78,7 +78,8 @@ const PresetArg = z
 const presetId = (p: string | undefined) =>
 	p === undefined ? undefined : p === 'fast' ? 'builtin.fast' : p === 'natural' ? 'builtin.natural' : p;
 
-const KindArg = z.enum(FINDING_KINDS);
+// edge repairs are decided by id or fingerprint: their kind stays out of the advertised enums (model-visible bytes)
+const KindArg = z.enum(FINDING_KINDS.filter((k) => k !== 'edge') as [string, ...string[]]);
 
 const DecisionsArg = z
 	.object({
@@ -351,6 +352,23 @@ export function findingReasonText(f: CleanupFinding): string {
 								: '';
 			return `${p.frames} frames kept alone between ${p.between === 'words' ? 'removed words' : 'cuts'}${why}${text ? `: "${text}"` : ''} — a flash of another moment; cut it or keep it`;
 		}
+		case 'edge': {
+			const n = Math.abs(Number(p.frames));
+			const what =
+				Number(p.frames) < 0
+					? `Trim ${n} frames of another word's sound at the edit`
+					: `The edit cuts the ${p.side === 'in' ? 'start' : 'end'} of ${text ? `"${text}"` : 'a word'}: accepting extends the clip and its linked picture ${n} frames into the media`;
+			const review: Record<string, string> = {
+				'speech-left': 'still not a quiet place — listen first',
+				word: 'it would take most of another word — listen first',
+				sound: 'a separate sound comes before the word — listen first',
+				faded: 'the word had already faded — optional',
+				picture: 'the linked picture cannot follow (or another video clip crosses the edit)',
+				'other-sound': "another track's sound runs across the edit",
+				doubled: 'another clip already plays that sound',
+			};
+			return `${what}${typeof p.review === 'string' && review[p.review] ? ` (${review[p.review]})` : ''}`;
+		}
 	}
 }
 
@@ -457,6 +475,7 @@ function analysisBody(
 		})),
 		stats: a.plan.stats,
 		cuts: a.plan.ranges.length,
+		...(a.plan.extend?.length ? { edgeRepairs: a.plan.extend.length } : {}),
 		byKind,
 		skipped: a.plan.skipped.length,
 		// the current timeline's cut edges that cut speech (whoever made them): where, the word, a frame that fixes it
@@ -605,6 +624,7 @@ export function registerCleanupTools(ctx: ToolContext): void {
 				...(a.rememberRejections === false ? { rememberRejections: false } : {}),
 			});
 			const cuts = analysis.plan.ranges.length;
+			const repairs = analysis.plan.extend?.length ?? 0;
 			if (!commands.length)
 				return jsonResult({
 					ok: true,
@@ -612,7 +632,7 @@ export function registerCleanupTools(ctx: ToolContext): void {
 					note: 'Nothing to cut or remember',
 					stats: analysis.plan.stats,
 				});
-			const label = `Clean Up Voice: ${cuts} ${cuts === 1 ? 'cut' : 'cuts'}`;
+			const label = `Clean Up Voice: ${cuts} ${cuts === 1 ? 'cut' : 'cuts'}${repairs ? `, ${repairs} edge ${repairs === 1 ? 'repair' : 'repairs'}` : ''}`;
 			const res = await transact(
 				ctx,
 				a.projectId,
@@ -629,6 +649,7 @@ export function registerCleanupTools(ctx: ToolContext): void {
 				...txBody(res, r),
 				label,
 				cuts,
+				...(repairs ? { edgeRepairs: repairs } : {}),
 				analysisId: file.analysisId,
 				stats: analysis.plan.stats,
 				removedSeconds:

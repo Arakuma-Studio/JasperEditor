@@ -626,7 +626,7 @@ export class CleanupController {
 		this.set({ phase: 'applying' });
 		const cuts = st.analysis.plan.ranges.length;
 		const r = this.session.apply({
-			label: applyLabel(cuts),
+			label: applyLabel(cuts, st.analysis.plan.extend?.length ?? 0),
 			origin: 'user',
 			sequenceId: seq.id,
 			commands,

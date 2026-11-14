@@ -27,8 +27,10 @@ import { isRemapped } from '../../time-remap/model.ts';
 import { base64Bytes } from '../base64.ts';
 import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
 import { cutRanges } from '../multi-range.ts';
-import { end, findTrackIn } from '../placement.ts';
+import { end, findTrackIn, trackClips } from '../placement.ts';
+import { type RippleMember, rippleTrimGroup } from '../ripple.ts';
 import type { CommandOf } from '../schemas/index.ts';
+import { holesBefore, warnNewHoles } from '../uncovered-guard.ts';
 import { newKeyframe } from './param.ts';
 import type { HandlerMap } from './util.ts';
 
@@ -133,15 +135,27 @@ function applyCleanup(doc: DDoc, cmd: CommandOf<'cleanup.apply'>, h: HandlerCont
 		h.fail('E_TRACK_LOCKED', 'A speech clip or a clip linked or grouped with it is on a locked track', {
 			blocking: lockedBy,
 		});
+	const extendCmd = cmd.extend ?? [];
+	if (extendCmd.length && mode !== 'extract')
+		h.fail(
+			'E_INVALID_PARAM',
+			'extend inserts frames: it needs mode "extract" (drop extend for lift, mute or markers)',
+		);
+	if (!cmd.ranges.length && !extendCmd.length)
+		h.fail('E_INVALID_PARAM', 'Nothing to apply: give ranges to remove or edges to extend');
+	const holes = extendCmd.length ? holesBefore(doc, seq) : 0;
+	const extended = extendEdges(doc, seq, h, extendCmd, ranges);
 	const base = {
 		mode,
 		ranges: results,
 		merged: ranges.length,
 		clipIds: [...speech],
+		...(extendCmd.length ? { extended } : {}),
 	};
 	if (!ranges.length) {
 		if (cmd.pieceRefs && (mode === 'extract' || mode === 'lift'))
 			definePieceRefs(seq, [...trackIds], new Map(), cmd.pieceRefs, h);
+		if (extendCmd.length) warnNewHoles(doc, seq, holes, h);
 		return { ...base, frames: 0, joins: 0, tracks: [], fades: 0 };
 	}
 	if (mode === 'extract' || mode === 'lift') {
@@ -153,6 +167,7 @@ function applyCleanup(doc: DDoc, cmd: CommandOf<'cleanup.apply'>, h: HandlerCont
 			jlFrames: cmd.jlFrames ?? 0,
 		});
 		if (cmd.pieceRefs) definePieceRefs(seq, r.tracks, r.origins, cmd.pieceRefs, h);
+		if (extendCmd.length) warnNewHoles(doc, seq, holes, h);
 		return { ...base, frames: r.frames, joins: r.joins, tracks: r.tracks, fades: r.fades, jl: r.jl };
 	}
 	if (mode === 'markers') {
@@ -195,6 +210,93 @@ function applyCleanup(doc: DDoc, cmd: CommandOf<'cleanup.apply'>, h: HandlerCont
 			},
 		);
 	return { ...base, frames: 0, joins: 0, tracks: [...trackIds], fades: 0, mutedClips: muted };
+}
+
+/**
+ * Extends clip edges into their media (`cleanup.apply` `extend`, accepted `edge` findings; docs/wp-notes/
+ * transcript-cleanup.md "Edge repair"), latest edge first so the frames of the earlier ones stay put: each is one
+ * ripple trim (`rippleTrimGroup`) of the clip's edge with its linked clips on other tracks that play the same media in
+ * sync (each at its own edge — a J / L cut keeps its offset), sync-locked tracks getting the frames inserted at the
+ * edge; a caption that ran up to or across the edge is held over the inserted frames instead of leaving them empty.
+ * `ranges` (sorted, merged, frames of the timeline before) are moved through the inserted frames in place; a range that
+ * takes the extended edge itself is refused.
+ */
+function extendEdges(
+	doc: DDoc,
+	seq: DSeq,
+	h: HandlerContext,
+	list: ReadonlyArray<{ clipId: string; side: 'in' | 'out'; frames: number }>,
+	ranges: Array<[number, number]>,
+): Array<{ clipId: string; side: 'in' | 'out'; frames: number }> {
+	if (!list.length) return [];
+	const F = flicksPerFrame(seq.settings.frameRate as Rational);
+	const seen = new Set<string>();
+	const edits = list.map((e) => {
+		const c = seq.clips[e.clipId];
+		if (!c) return h.fail('E_NOT_FOUND', `Clip ${e.clipId} (extend) is not in sequence ${seq.id}`);
+		const key = `${e.clipId}:${e.side}`;
+		if (seen.has(key)) h.fail('E_INVALID_PARAM', `The ${e.side} edge of ${e.clipId} is extended twice`);
+		seen.add(key);
+		if (c.speed.reverse || c.speed.rate !== 1 || isRemapped(c as Clip))
+			h.fail('E_UNSUPPORTED', `extend needs clips at 100 % speed, not reversed or time-remapped: ${c.id}`, {
+				blocking: [c.id],
+			});
+		const P = e.side === 'out' ? end(c) : c.start;
+		for (const [a, b] of ranges)
+			if (e.side === 'out' ? a < P && b >= P : a <= P && b > P)
+				h.fail(
+					'E_INVALID_PARAM',
+					`Range ${a}–${b} removes the ${e.side} edge of ${c.id} that extend moves: remove it or extend, not both`,
+					{ blocking: [c.id] },
+				);
+		return { c, side: e.side, frames: e.frames, P };
+	});
+	edits.sort((x, y) => y.P - x.P || (x.side === y.side ? 0 : x.side === 'in' ? -1 : 1));
+	const done: Array<{ clipId: string; side: 'in' | 'out'; frames: number }> = [];
+	for (const e of edits) {
+		const c = e.c;
+		const offset = c.sourceIn - c.start * F;
+		const members: RippleMember[] = [{ clip: c, edge: e.side }];
+		const tracks = new Set([c.trackId]);
+		for (const id of c.linkId ? (seq.links[c.linkId]?.members ?? []) : []) {
+			const p = seq.clips[id];
+			if (!p || p.id === c.id || tracks.has(p.trackId) || findTrackIn(seq, p.trackId)?.track.locked) continue;
+			if ((p as { mediaId?: string }).mediaId !== (c as { mediaId?: string }).mediaId) continue;
+			if (p.speed.rate !== 1 || p.speed.reverse || isRemapped(p as Clip)) continue;
+			if (Math.abs(p.sourceIn - p.start * F - offset) >= F / 2) continue;
+			members.push({ clip: p, edge: e.side });
+			tracks.add(p.trackId);
+		}
+		// captions running up to or across the edge on tracks that get the frames inserted
+		const held = Object.values(seq.clips)
+			.filter(
+				(x) =>
+					!tracks.has(x.trackId) &&
+					x.kind === 'text' &&
+					(x as { caption?: unknown }).caption !== undefined &&
+					x.start < e.P &&
+					end(x) >= e.P,
+			)
+			.map((x) => x.id);
+		const d = rippleTrimGroup(doc, seq, h, members, e.side === 'out' ? e.frames : -e.frames);
+		const n = Math.abs(d);
+		if (!n) continue;
+		for (const id of held) {
+			const x = seq.clips[id];
+			if (!x || end(x) !== e.P) continue;
+			const free = !trackClips(seq, x.trackId).some(
+				(y) => y.id !== x.id && y.start < e.P + n && end(y) > e.P,
+			);
+			if (free) x.duration += n;
+		}
+		for (const r of ranges)
+			if (r[0] >= e.P) {
+				r[0] += n;
+				r[1] += n;
+			}
+		done.push({ clipId: c.id, side: e.side, frames: n });
+	}
+	return done;
 }
 
 /**

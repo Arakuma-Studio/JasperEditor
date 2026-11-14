@@ -135,6 +135,7 @@ const CONFIDENCE: Record<FindingKind, number> = {
 	'asr-suspect': 0.4,
 	hallucination: 0.9,
 	fragment: 0.6,
+	edge: 0.8,
 };
 
 /** FNV-1a (32 bit) of a string, 8 hex digits. */

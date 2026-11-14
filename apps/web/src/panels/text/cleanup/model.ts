@@ -11,6 +11,7 @@ import {
 	type CleanupScope,
 	type CleanupVoice,
 	type Command,
+	cleanupExtends,
 	cleanupFindingFrames,
 	cleanupFindingMedia,
 	type FindingKind,
@@ -42,6 +43,7 @@ export const KIND_ORDER: readonly FindingKind[] = [
 	'asr-suspect',
 	'hallucination',
 	'fragment',
+	'edge',
 ];
 
 /** Display names of the finding kinds. */
@@ -62,6 +64,7 @@ export const KIND_LABELS: Record<FindingKind, string> = {
 	'asr-suspect': 'Transcription suspects',
 	hallucination: 'Hallucinations',
 	fragment: 'Isolated fragments',
+	edge: 'Words cut at an edit',
 };
 
 /** Strike-through / marker colour per kind (design tokens). */
@@ -82,6 +85,7 @@ export const KIND_COLOR: Record<FindingKind, string> = {
 	'asr-suspect': 'var(--pr-warning)',
 	hallucination: 'var(--pr-label-magenta)',
 	fragment: 'var(--pr-label-brown)',
+	edge: 'var(--pr-label-forest)',
 };
 
 /** The user's decisions in a review (finding ids of one analysis; retake group id → kept take). */
@@ -368,9 +372,11 @@ export function stepFinding(order: readonly string[], current: string | null, di
 // ---------------------------------------------------------------------------------------------------------------
 // Apply and previews
 
-/** The History label of an Apply ("Clean Up Voice: 214 cuts"). */
-export function applyLabel(cuts: number): string {
-	return cuts === 1 ? t('Clean Up Voice: 1 cut') : t('Clean Up Voice: {0} cuts', cuts);
+/** The History label of an Apply ("Clean Up Voice: 214 cuts", "… 214 cuts, 30 edge repairs"). */
+export function applyLabel(cuts: number, repairs = 0): string {
+	const base = cuts === 1 ? t('Clean Up Voice: 1 cut') : t('Clean Up Voice: {0} cuts', cuts);
+	if (!repairs) return base;
+	return repairs === 1 ? t('{0}, 1 edge repair', base) : t('{0}, {1} edge repairs', base, repairs);
 }
 
 /** The derived timeline of "Play result": the plan applied exactly as Apply would cut it. */
@@ -379,7 +385,8 @@ export function resultPreview(
 	analysis: CleanupAnalysis,
 ): { commands: Command[]; omitted: Array<[number, number]> } | null {
 	const plan = analysis.plan;
-	if (!plan.ranges.length) return null;
+	const extend = cleanupExtends(plan);
+	if (!plan.ranges.length && !extend.length) return null;
 	return {
 		commands: [
 			{
@@ -387,6 +394,7 @@ export function resultPreview(
 				sequenceId: seq.id,
 				clipIds: plan.clipIds,
 				ranges: plan.ranges.map((r) => ({ start: r.start, end: r.end })),
+				...(extend.length ? { extend } : {}),
 				mode: 'extract',
 				fadeMs: plan.fadeMs,
 				jlFrames: plan.jlFrames,
@@ -576,6 +584,43 @@ export function reasonText(f: CleanupFinding): string {
 			return p.between === 'words'
 				? t('Isolated fragment between removed words ({0} frames): “{1}”', p.frames, text)
 				: t('Isolated fragment between cuts ({0} frames): “{1}”', p.frames, text);
+		case 'edge':
+			return `${edgeText(p, text)}${edgeReviewText(p.review)}`;
+	}
+}
+
+/** What an edge repair does (`frames` > 0: the clip grows into its media; < 0: it is trimmed). */
+function edgeText(p: CleanupFinding['reason']['params'], text: string): string {
+	const n = Math.abs(Number(p.frames));
+	if (Number(p.frames) < 0) return t('Trim {0} frames of another word’s sound at the edit', n);
+	if (p.side === 'in')
+		return text
+			? t('The edit cuts the start of “{0}”: keep {1} more frames', text, n)
+			: t('The edit cuts a word’s start: keep {0} more frames', n);
+	return text
+		? t('The edit cuts the end of “{0}”: keep {1} more frames', text, n)
+		: t('The edit cuts a word’s end: keep {0} more frames', n);
+}
+
+/** Why an edge repair waits for review (empty when it is safe). */
+function edgeReviewText(review: unknown): string {
+	switch (review) {
+		case 'speech-left':
+			return ` ${t('(still not a quiet place: listen first)')}`;
+		case 'word':
+			return ` ${t('(it would take most of another word: listen first)')}`;
+		case 'sound':
+			return ` ${t('(a separate sound comes before the word: listen first)')}`;
+		case 'faded':
+			return ` ${t('(the word had already faded: optional)')}`;
+		case 'picture':
+			return ` ${t('(the picture cannot follow the sound here)')}`;
+		case 'other-sound':
+			return ` ${t('(another track’s sound runs across the edit)')}`;
+		case 'doubled':
+			return ` ${t('(another clip already plays that sound)')}`;
+		default:
+			return '';
 	}
 }
 

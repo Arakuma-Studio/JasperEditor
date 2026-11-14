@@ -11,6 +11,15 @@ import { cmd, IdRefSchema } from './common.ts';
 
 /** Most ranges one `cleanup.apply` takes. */
 export const CLEANUP_APPLY_MAX_RANGES = 100_000;
+/** Longest edge extension (frames): a word's decay or onset, far under a second at any frame rate. */
+export const CLEANUP_EXTEND_MAX_FRAMES = 240;
+
+/** A clip edge extended into its media (an accepted `edge` finding), in frames of the timeline before the command. */
+export const CleanupExtendSchema = z.strictObject({
+	clipId: IdRefSchema,
+	side: z.enum(['in', 'out']),
+	frames: z.number().int().min(1).max(CLEANUP_EXTEND_MAX_FRAMES),
+});
 
 /** A range in sequence frames `[start, end)`… */
 export const CleanupSequenceRangeSchema = z.strictObject({
@@ -28,10 +37,17 @@ export const CleanupApplyCmd = cmd('cleanup.apply', {
 	sequenceId: IdRefSchema.optional(),
 	/** The speech clips (default: the clips of source ranges, else every transcribed audio clip). */
 	clipIds: z.array(IdRefSchema).min(1).optional(),
+	/** The ranges to remove (frames of the timeline before the command); may be empty when `extend` is given. */
 	ranges: z
 		.array(z.union([CleanupSourceRangeSchema, CleanupSequenceRangeSchema]))
-		.min(1)
 		.max(CLEANUP_APPLY_MAX_RANGES),
+	/**
+	 * Clip edges to extend first (extract only): the clip grows by `frames` into its media, with its linked clips on
+	 * other tracks that play the same media in sync (each at its own edge); later material on their tracks moves by
+	 * `frames`, sync-locked tracks get the frames inserted at the edge (generated overlays lengthened, captions held
+	 * over them). `ranges` are mapped through the inserted frames.
+	 */
+	extend: z.array(CleanupExtendSchema).max(CLEANUP_APPLY_MAX_RANGES).optional(),
 	/**
 	 * `extract` (default): ripple delete on the speech clips' tracks, their linked partners' and clip groups' tracks;
 	 * unlocked sync-locked tracks follow. `lift`: leave gaps. `mute`: Volume keys down to −∞ dB over the ranges (with

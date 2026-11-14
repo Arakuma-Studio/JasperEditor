@@ -9,6 +9,7 @@ import { detectCleanup, effectiveLists } from '../src/cleanup/detector.ts';
 import { edgeCutsSpeech, edgeLevelsOf, edgeThresholds } from '../src/cleanup/edge-snap.ts';
 import { cleanupNorm } from '../src/cleanup/lists.ts';
 import { planMediaCuts, removedSpans } from '../src/cleanup/plan.ts';
+import { cleanupApplyCommands } from '../src/cleanup/review.ts';
 import {
 	type CleanupSettings,
 	FAST_SETTINGS,
@@ -758,6 +759,135 @@ function shape(seq: Sequence) {
 		markers: seq.markers.map((m) => m.frame),
 	};
 }
+
+describe('edge repairs of an already cut timeline', () => {
+	// a recording cut into takes by hand (cut points anywhere, picture and sound linked on V1 + A1): Clean Up's `edge`
+	// findings repair the edges that cut a word
+	it('rejecting them changes nothing; accepted, each grows its clip with its picture in sync, no picture hole, the planned length', () => {
+		fc.assert(
+			fc.property(
+				recordingOf(true),
+				fc.uniqueArray(fc.integer({ min: 1, max: 999 }), { minLength: 2, maxLength: 8 }),
+				fc.subarray(['accept', 'reject'] as const, { maxLength: 1 }),
+				(r, cuts, mode) => {
+					const fps = 30;
+					const seconds = r.voice.frameCount / 100;
+					const H = new Harness({ preset: 'hd-1080p-30' });
+					const mediaId = H.registerVideo({ seconds });
+					// kept takes: every other stretch between the cut points (media frames at 30 fps)
+					const n = Math.floor(seconds * fps) - 1;
+					const pts = [...new Set(cuts.map((c) => Math.round((c / 1000) * n)))].sort((a, b) => a - b);
+					let at = 0;
+					for (let i = 0; i + 1 < pts.length; i += 2) {
+						const [a, b] = [pts[i]!, pts[i + 1]!];
+						if (b <= a) continue;
+						H.ok([
+							{
+								type: 'clip.place',
+								source: { mediaId },
+								sourceRange: {
+									in: { flicks: (a * FLICKS_PER_SECOND) / fps },
+									out: { flicks: (b * FLICKS_PER_SECOND) / fps },
+								},
+								at,
+								tracks: { video: 'V1', audio: ['A1'] },
+								mode: 'overwrite',
+							},
+						]);
+						at += b - a;
+					}
+					if (!at) return;
+					H.ok([
+						{
+							type: 'transcript.create',
+							mediaId,
+							language: 'es',
+							origin: 'manual',
+							words: r.words.map((w) => ({
+								text: w.text,
+								start: w.start,
+								end: w.end,
+								confidence: w.confidence,
+							})),
+						},
+					]);
+					const run = (d: CleanupDecisions) => {
+						const a = analyzeSequenceCleanup({
+							doc: H.doc,
+							seq: H.seq,
+							voice: () => r.voice,
+							settings: r.settings,
+							decisions: d,
+						});
+						if (!a.ok) throw new Error(a.message);
+						return a;
+					};
+					const d: CleanupDecisions =
+						mode[0] === 'accept'
+							? { acceptKinds: ['edge'] }
+							: mode[0] === 'reject'
+								? { rejectKinds: ['edge'] }
+								: {};
+					const a = run(d);
+					const off = run({ ...d, acceptKinds: [], rejectKinds: ['edge'] });
+					const none = run({ rejectKinds: [...FINDING_KINDS] });
+					expect(none.plan.ranges).toEqual([]);
+					expect(none.plan.extend).toBeUndefined();
+					expect(off.plan.extend).toBeUndefined();
+					const edges = a.findings.filter((f) => f.kind === 'edge');
+					const on = (f: (typeof edges)[number]) =>
+						mode[0] === 'accept' || (mode[0] !== 'reject' && f.suggested === 'remove');
+					// every extension is an accepted edge finding's, as many frames as it says
+					for (const e of a.plan.extend ?? []) {
+						const f = edges.find((x) => x.id === e.findingId)!;
+						expect(f && on(f)).toBe(true);
+						expect([f.reason.params.clipId, f.reason.params.side, f.reason.params.frames]).toEqual([
+							e.clipId,
+							e.side,
+							e.frames,
+						]);
+					}
+					// what accepted trims remove besides: frames of the trimmed clip beside its edge
+					const offRemoved = new Set(
+						off.plan.ranges.flatMap((g) => Array.from({ length: g.end - g.start }, (_, i) => g.start + i)),
+					);
+					for (const g of a.plan.ranges)
+						for (let q = g.start; q < g.end; q++) {
+							if (offRemoved.has(q)) continue;
+							const trim = edges.some((f) => {
+								if (!on(f) || Number(f.reason.params.frames) >= 0) return false;
+								const c = H.seq.clips[String(f.reason.params.clipId)]!;
+								const k = -Number(f.reason.params.frames);
+								return f.reason.params.side === 'out'
+									? q >= c.start + c.duration - k && q < c.start + c.duration
+									: q >= c.start && q < c.start + k;
+							});
+							expect(trim, `frame ${q} removed without an edge trim`).toBe(true);
+						}
+					// applied: sound and picture stay in sync, nothing plays without its picture, the planned length
+					const cmds = cleanupApplyCommands(H.seqId, a, d, new Set(), { rememberRejections: false });
+					if (!cmds.length) return;
+					H.ok(cmds);
+					expect(checkInvariants(H.doc)).toEqual([]);
+					const F = FLICKS_PER_SECOND / fps;
+					const sync = (c: { sourceIn: number; start: number }) => c.sourceIn - c.start * F;
+					const a1 = H.clips('A1');
+					const v1 = H.clips('V1');
+					for (const c of a1) {
+						const p = v1.find((v) => v.linkId === c.linkId);
+						expect(p && Math.abs(sync(p) - sync(c)) < 1).toBe(true);
+					}
+					const covered = (q: number) => v1.some((v) => v.start <= q && q < v.start + v.duration);
+					for (const c of a1)
+						for (let q = c.start; q < c.start + c.duration; q++)
+							expect(covered(q), `frame ${q} without picture`).toBe(true);
+					expect(a1.reduce((m, c) => m + c.duration, 0)).toBe(Math.round(a.plan.stats.outputDuration * fps));
+				},
+			),
+			{ numRuns: 60 },
+		);
+	});
+});
 
 describe('one-pass extract = successive range.extract', () => {
 	const scenario = fc.record({

@@ -53,6 +53,17 @@ export const CleanupPlanSchema = z.object({
 	skipped: z.array(z.object({ findingId: z.string(), reason: z.literal('harsh-cut') })),
 	fadeMs: z.number(),
 	jlFrames: z.number().int(),
+	/** Absent in analyses of older builds. */
+	extend: z
+		.array(
+			z.object({
+				clipId: z.string(),
+				side: z.enum(['in', 'out']),
+				frames: z.number().int(),
+				findingId: z.string(),
+			}),
+		)
+		.optional(),
 });
 
 /** A repeat in the edit (`EditRepeat`, `edit-repeats.ts`). */
@@ -116,6 +127,13 @@ export const CleanupAnalysisSchema = z.object({
 				awayDb: z.number(),
 				word: z.string().nullable(),
 				fixFrame: z.number().int().nullable(),
+				repair: z
+					.object({
+						kind: z.enum(['extend', 'trim']),
+						safe: z.boolean(),
+						review: z.enum(['speech-left', 'word', 'sound', 'faded']).optional(),
+					})
+					.optional(),
 			}),
 		)
 		.optional(),

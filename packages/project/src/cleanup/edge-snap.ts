@@ -76,6 +76,8 @@ export type EdgeLevels = {
 	readonly speechDb: number | null;
 	/** Whether frame k is breath-like (the voice analysis' class): never kept by an edge's move, quiet for a cut. */
 	breath?(k: number): boolean;
+	/** Whether frame k counts as breath where a kept span would start or end with it, or keep it (default `breath`). */
+	keptBreath?(k: number): boolean;
 };
 
 export function edgeLevelsOf(voice: CleanupVoice): EdgeLevels {
@@ -89,6 +91,7 @@ export function edgeLevelsOf(voice: CleanupVoice): EdgeLevels {
 }
 
 const isBreath = (l: EdgeLevels, k: number) => !!l.breath?.(k);
+const isKeptBreath = (l: EdgeLevels, k: number) => (l.keptBreath ? l.keptBreath(k) : isBreath(l, k));
 
 /** The quiet and speech levels of an envelope (dBFS). */
 export function edgeThresholds(l: Pick<EdgeLevels, 'floorDb' | 'speechDb'>): { quiet: number; loud: number } {
@@ -133,7 +136,7 @@ export function edgeScore(l: EdgeLevels, b: number, side: EdgeSide): number {
 		if (!isBreath(l, q)) at = Math.max(at, l.db(q) - (i === 0 ? 0 : EDGE_QUIET_RUN_MARGIN_DB));
 	}
 	const score = Math.max(at - quiet, awayLevel(l, b, side) - loud);
-	return isBreath(l, side === 'out' ? k - 1 : k) ? Math.max(score, EDGE_FLOOR_MARGIN_DB) : score;
+	return isKeptBreath(l, side === 'out' ? k - 1 : k) ? Math.max(score, EDGE_FLOOR_MARGIN_DB) : score;
 }
 
 /**
@@ -213,7 +216,7 @@ export function snapCut(l: EdgeLevels, o: SnapInput): SnapResult {
 	/** Frames a move to `c` would add to the kept span hold a breath. */
 	const keepsBreath = (c: number) => {
 		const [a, b] = out ? [k0, frameAt(c)] : [frameAt(c), k0];
-		for (let q = a; q < b; q++) if (isBreath(l, q)) return true;
+		for (let q = a; q < b; q++) if (isKeptBreath(l, q)) return true;
 		return false;
 	};
 	const ownScore = edgeScore(l, o.t, o.side);

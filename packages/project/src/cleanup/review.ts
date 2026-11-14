@@ -32,8 +32,17 @@ export function cleanupFindingMedia(
 export function cleanupFindingFrames(
 	seq: Pick<Sequence, 'clips' | 'settings'>,
 	analysis: Pick<CleanupAnalysis, 'media'>,
-	f: Pick<CleanupFinding, 'fingerprint' | 'range'>,
+	f: Pick<CleanupFinding, 'fingerprint' | 'range'> & Partial<Pick<CleanupFinding, 'kind' | 'reason'>>,
 ): { start: number; end: number; clipId: string } | null {
+	// an edge repair sits at its clip's edge (the span it adds lies outside the clip): the frame beside the edge
+	if (f.kind === 'edge' && f.reason) {
+		const { clipId, frame, side } = f.reason.params;
+		const c = typeof clipId === 'string' ? seq.clips[clipId] : undefined;
+		if (c && typeof frame === 'number') {
+			const start = side === 'out' ? Math.max(c.start, frame - 1) : frame;
+			return { start, end: start + 1, clipId: c.id };
+		}
+	}
 	const m = cleanupFindingMedia(analysis, f);
 	if (!m) return null;
 	const F = flicksPerFrame(seq.settings.frameRate);
@@ -73,10 +82,17 @@ export function cleanupRejectionChanges(
 	return { reject: [...reject], unreject: [...unreject] };
 }
 
+/** The plan's accepted edge extensions as `cleanup.apply` `extend` items. */
+export function cleanupExtends(
+	plan: Pick<CleanupAnalysis['plan'], 'extend'>,
+): Array<{ clipId: string; side: 'in' | 'out'; frames: number }> {
+	return (plan.extend ?? []).map((e) => ({ clipId: e.clipId, side: e.side, frames: e.frames }));
+}
+
 /**
  * The Apply transaction of an analysis (TC-031, TC-043): the rejections to remember / forget (`cleanup.configure`)
- * and the cuts (one `cleanup.apply` over `plan.ranges` with the plan's fade and J / L offset). Empty when there is
- * nothing to cut or remember.
+ * and the edit (one `cleanup.apply` over `plan.ranges` and, in extract mode, the accepted edge extensions, with the
+ * plan's fade and J / L offset). Empty when there is nothing to cut, extend or remember.
  */
 export function cleanupApplyCommands(
 	sequenceId: string,
@@ -97,15 +113,19 @@ export function cleanupApplyCommands(
 				...(unreject.length ? { unreject } : {}),
 			});
 	}
-	if (plan.ranges.length)
+	const mode = opts.mode ?? 'extract';
+	// edge extensions insert frames: extract only (lift / mute / markers keep the timeline's length)
+	const extend = mode === 'extract' ? cleanupExtends(plan) : [];
+	if (plan.ranges.length || extend.length)
 		out.push({
 			type: 'cleanup.apply',
 			sequenceId,
 			clipIds: plan.clipIds,
 			ranges: plan.ranges.map((r) => ({ start: r.start, end: r.end })),
-			mode: opts.mode ?? 'extract',
+			...(extend.length ? { extend } : {}),
+			mode,
 			fadeMs: plan.fadeMs,
-			jlFrames: (opts.mode ?? 'extract') === 'extract' ? plan.jlFrames : 0,
+			jlFrames: mode === 'extract' ? plan.jlFrames : 0,
 		});
 	return out;
 }

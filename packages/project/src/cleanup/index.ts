@@ -52,6 +52,7 @@ export {
 export { isHarshCut, type MediaPlan, type MediaPlanInput, planMediaCuts } from './plan.ts';
 export {
 	cleanupApplyCommands,
+	cleanupExtends,
 	cleanupFindingFrames,
 	cleanupFindingMedia,
 	cleanupRejectionChanges,
