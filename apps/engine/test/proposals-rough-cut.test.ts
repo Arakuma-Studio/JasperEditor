@@ -27,16 +27,16 @@ import {
 	roughCutDraft,
 } from '@jasper/project';
 import { afterAll, describe, expect, it } from 'vitest';
-import { closeApps, makeApp } from './helpers.ts';
+import { closeApps, editorCookie, makeApp, TEST_HOST } from './helpers.ts';
 
 afterAll(closeApps);
 
 const TIMEOUT = 20_000 * Math.max(1, Math.ceil(loadavg()[0]! / Math.max(1, cpus().length)));
-const HOST = { host: '127.0.0.1:47900' };
+const HOST = { host: TEST_HOST };
 const TOKEN = 'tok_roughcut_0123456789abcdefg';
 const KEY = 'key_roughcut_0123456789abcdefg';
 const AGENT_H = { ...HOST, authorization: `Bearer ${TOKEN}`, [AGENT_NAME_HEADER]: 'cut-agent' };
-const EDITOR_H = { ...HOST, cookie: `jasper_session_47900=${TOKEN}; jasper_editor_47900=${KEY}` };
+const EDITOR_H = { ...HOST, cookie: editorCookie(TOKEN, KEY) };
 const json = (h: Record<string, string>) => ({ ...h, 'content-type': 'application/json' });
 type App = Awaited<ReturnType<typeof makeApp>>;
 const secured = () => makeApp({ dev: false, token: TOKEN, editorKey: KEY });

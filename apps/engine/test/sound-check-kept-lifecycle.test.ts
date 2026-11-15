@@ -12,13 +12,13 @@ import { makeEnvelope, type ProjectDocument } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { SoundCheckReportStore } from '../src/sound-design/report-store.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, DocBuilder, makeApp, type TestApp } from './helpers.ts';
+import { closeApps, DocBuilder, editorCookie, makeApp, TEST_HOST, type TestApp } from './helpers.ts';
 import { keptReportFixture } from './sound-check-fixture.ts';
 
-const HOST = { host: '127.0.0.1:47900' };
+const HOST = { host: TEST_HOST };
 const TOKEN = 'tok_life_0123456789abcdef0123';
 const KEY = 'key_life_0123456789abcdef0123';
-const EDITOR_H = { ...HOST, cookie: `jasper_session_47900=${TOKEN}; jasper_editor_47900=${KEY}` };
+const EDITOR_H = { ...HOST, cookie: editorCookie(TOKEN, KEY) };
 const json = (h: Record<string, string>) => ({ ...h, 'content-type': 'application/json' });
 
 let app: TestApp;

@@ -31,7 +31,7 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { planExport } from '../src/export/planner.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, makeApp, tempAppdir } from './helpers.ts';
+import { closeApps, editorCookie, makeApp, TEST_HOST, tempAppdir } from './helpers.ts';
 import { PACK, writeWav } from './sound-fixtures.ts';
 
 const ENV_KEYS = [
@@ -40,11 +40,11 @@ const ENV_KEYS = [
 	'JASPER_SOUND_AUTO_INDEX',
 ] as const;
 const savedEnv = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
-const HOST = { host: '127.0.0.1:47900' };
+const HOST = { host: TEST_HOST };
 const TOKEN = 'tok_styl_0123456789abcdef012345';
 const KEY = 'key_styl_0123456789abcdef012345';
 const AGENT_H = { ...HOST, authorization: `Bearer ${TOKEN}`, 'x-jasper-agent': 'style-agent' };
-const EDITOR_H = { ...HOST, cookie: `jasper_session_47900=${TOKEN}; jasper_editor_47900=${KEY}` };
+const EDITOR_H = { ...HOST, cookie: editorCookie(TOKEN, KEY) };
 const json = (h: Record<string, string>) => ({ ...h, 'content-type': 'application/json' });
 
 type App = Awaited<ReturnType<typeof makeApp>>;

@@ -39,7 +39,7 @@ import {
 } from '../src/sound-design/plan.ts';
 import { provenanceOf } from '../src/sounds/service.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, makeApp, tempAppdir } from './helpers.ts';
+import { closeApps, editorCookie, makeApp, TEST_HOST, tempAppdir } from './helpers.ts';
 import { asset, fixture } from './sound-design-fixture.ts';
 import { PACK, writeWav } from './sound-fixtures.ts';
 
@@ -449,11 +449,11 @@ const ENV_KEYS = [
 	'JASPER_SOUND_AUTO_INDEX',
 ] as const;
 const savedEnv = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
-const HOST = { host: '127.0.0.1:47900' };
+const HOST = { host: TEST_HOST };
 const TOKEN = 'tok_plan_0123456789abcdef0123';
 const KEY = 'key_plan_0123456789abcdef0123';
 const AGENT_H = { ...HOST, authorization: `Bearer ${TOKEN}`, 'x-jasper-agent': 'plan-agent' };
-const EDITOR_H = { ...HOST, cookie: `jasper_session_47900=${TOKEN}; jasper_editor_47900=${KEY}` };
+const EDITOR_H = { ...HOST, cookie: editorCookie(TOKEN, KEY) };
 const json = (h: Record<string, string>) => ({ ...h, 'content-type': 'application/json' });
 
 function makeKit(dir: string): string {
@@ -792,7 +792,7 @@ async function fuzzPost(body: unknown) {
 	const r = await a.inject({
 		method: 'POST',
 		url: '/api/sound-design/plan',
-		headers: { host: '127.0.0.1:47900', 'content-type': 'application/json' },
+		headers: { host: TEST_HOST, 'content-type': 'application/json' },
 		payload: JSON.stringify(body),
 	});
 	if (r.statusCode >= 500) throw new Error(`${r.statusCode} ${r.body.slice(0, 300)}`);

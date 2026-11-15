@@ -25,12 +25,12 @@ import type WebSocket from 'ws';
 import type { AgentService } from '../src/agent/service.ts';
 import { AcceptIntentSchema, prepareIntent, reconcileEvidence } from '../src/proposals/journal.ts';
 import type { ProposalService } from '../src/proposals/service.ts';
-import { closeApps, makeApp } from './helpers.ts';
+import { closeApps, makeApp, TEST_HOST } from './helpers.ts';
 
 afterAll(closeApps);
 
 const TIMEOUT = 30_000 * Math.max(1, Math.ceil(loadavg()[0]! / Math.max(1, cpus().length)));
-const HOST = { host: '127.0.0.1:47900' };
+const HOST = { host: TEST_HOST };
 const json = { ...HOST, 'content-type': 'application/json' };
 type App = Awaited<ReturnType<typeof makeApp>>;
 

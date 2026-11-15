@@ -45,7 +45,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished } from 'vitest';
 import type { WebSocket } from 'ws';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, H, JSON_H, makeApp, TEST_FFMPEG, tempAppdir } from './helpers.ts';
+import { closeApps, editorCookie, H, JSON_H, makeApp, TEST_FFMPEG, tempAppdir } from './helpers.ts';
 import { makeStarter, SR, samples, writeWav } from './sound-fixtures.ts';
 
 /** Interleaved f32 samples of a file's first audio stream (the engine tests' ffmpeg). */
@@ -388,7 +388,7 @@ describe('agents and folders (approval gate, security review AGT-3)', { timeout:
 	};
 	const EDITOR = {
 		...H,
-		cookie: `jasper_session_47900=${TOKEN}; jasper_editor_47900=${KEY}`,
+		cookie: editorCookie(TOKEN, KEY),
 		'content-type': 'application/json',
 	};
 

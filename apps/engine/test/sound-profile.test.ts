@@ -23,17 +23,26 @@ import { appdirPaths } from '@jasper/config';
 import { makeEnvelope, type ProjectDocument } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, DocBuilder, makeApp, register, TEST_FFMPEG, type TestApp } from './helpers.ts';
+import {
+	closeApps,
+	DocBuilder,
+	editorCookie,
+	makeApp,
+	register,
+	TEST_FFMPEG,
+	TEST_HOST,
+	type TestApp,
+} from './helpers.ts';
 
 const SR = 48_000;
 const FPS = 25;
 const DUR = 20;
 const CUTS = Array.from({ length: 10 }, (_, i) => 1 + 2 * i);
-const HOST = { host: '127.0.0.1:47900' };
+const HOST = { host: TEST_HOST };
 const TOKEN = 'tok_prof_0123456789abcdef0123';
 const KEY = 'key_prof_0123456789abcdef0123';
 const AGENT_H = { ...HOST, authorization: `Bearer ${TOKEN}`, 'x-jasper-agent': 'profile-agent' };
-const EDITOR_H = { ...HOST, cookie: `jasper_session_47900=${TOKEN}; jasper_editor_47900=${KEY}` };
+const EDITOR_H = { ...HOST, cookie: editorCookie(TOKEN, KEY) };
 const json = (h: Record<string, string>) => ({ ...h, 'content-type': 'application/json' });
 
 let app: TestApp;

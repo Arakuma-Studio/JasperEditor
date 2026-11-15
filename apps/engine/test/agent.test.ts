@@ -24,8 +24,9 @@ import {
 import { findMcpEntry } from '../src/agent/mcp-entry.ts';
 import { createServer, engineConfig } from '../src/index.ts';
 import { ProjectStoreFs } from '../src/projects/store.ts';
+import { TEST_HOST, TEST_PORT } from './helpers.ts';
 
-const H = { host: '127.0.0.1:47900' };
+const H = { host: TEST_HOST };
 const apps: FastifyInstance[] = [];
 const services: AgentService[] = [];
 afterEach(async () => {
@@ -46,7 +47,7 @@ function seedProject(projectFile: (id: string) => string) {
 
 async function makeEngine(token: string | null = null) {
 	const appdir = mkdtempSync(join(tmpdir(), 'jasper-agent-'));
-	const config = engineConfig({ appdir, port: 47900, dev: true, token, webDir: null, env: {} });
+	const config = engineConfig({ appdir, port: TEST_PORT, dev: true, token, webDir: null, env: {} });
 	const app = await createServer(config);
 	apps.push(app);
 	await app.ready();

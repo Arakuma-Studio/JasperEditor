@@ -9,8 +9,9 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { createServer, engineConfig } from '../src/index.ts';
 import { createMgService, type MgService, resolveMgBinary } from '../src/mg/index.ts';
 import { coreServices } from '../src/tools/services.ts';
+import { TEST_HOST, TEST_PORT } from './helpers.ts';
 
-const H = { host: '127.0.0.1:47900' };
+const H = { host: TEST_HOST };
 const apps: { close(): Promise<unknown> }[] = [];
 afterEach(async () => {
 	for (const a of apps.splice(0)) await a.close();
@@ -26,7 +27,7 @@ async function makeServer(env: Record<string, string | undefined>) {
 	try {
 		const appdir = mkdtempSync(join(tmpdir(), 'jasper-mg-engine-'));
 		const app = await createServer(
-			engineConfig({ appdir, port: 47900, dev: true, token: null, webDir: null, env: {} }),
+			engineConfig({ appdir, port: TEST_PORT, dev: true, token: null, webDir: null, env: {} }),
 		);
 		apps.push(app);
 		return { app, appdir };

@@ -16,7 +16,16 @@ import { decodeAudio } from '../src/speech/worker/run.ts';
 import { VERBATIM_PROMPTS } from '../src/speech/worker/whisper.ts';
 import { resolveBinaries } from '../src/tools/ffmpeg.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, DocBuilder, JSON_H, makeApp, ROOT, register, type TestApp } from './helpers.ts';
+import {
+	closeApps,
+	DocBuilder,
+	JSON_H,
+	makeApp,
+	ROOT,
+	register,
+	TEST_HOST,
+	type TestApp,
+} from './helpers.ts';
 import { wordErrorRate } from './speech-wer.ts';
 
 const CACHE = process.env.JASPER_SPEECH_MODELS_DIR ?? join(ROOT, 'target', 'speech-models');
@@ -54,7 +63,7 @@ type Truth = {
 };
 const truth = JSON.parse(readFileSync(FIXTURE.replace(/\.flac$/, '.json'), 'utf8')) as Truth;
 const reference = truth.utterances.map((u) => u.text).join(' ');
-const H = { host: '127.0.0.1:47900' };
+const H = { host: TEST_HOST };
 
 let app: TestApp;
 

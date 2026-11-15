@@ -1,4 +1,5 @@
 import type { RegisteredMedia } from '@jasper/api';
+import { DEFAULT_ENGINE_PORT } from '@jasper/config';
 import {
 	applyTransaction,
 	createCounterIdSource,
@@ -10,12 +11,25 @@ import {
 } from '@jasper/project';
 import type { FastifyInstance } from 'fastify';
 import { createServer, engineConfig } from '../src/index.ts';
+import { coreServices } from '../src/tools/services.ts';
 import { tempAppdir } from './temp.ts';
 
 export { ensureFixtures, FIXTURES, fixture, ROOT, TEST_FFMPEG, TEST_FFPROBE } from './fixtures.ts';
 export { tempAppdir } from './temp.ts';
 
-export const H = { host: '127.0.0.1:47900' } as const;
+/**
+ * The port test engines are configured with (`makeApp`; inject-only engines never listen). Port 1 has no server:
+ * binding it needs root and Chrome refuses it as an unsafe port, so a URL a test engine signs for a headless renderer
+ * or a child process (`origin()`) can never reach a real engine — the default dev port (47900) is the user's live
+ * engine on their machine. Tests that need a reachable engine use `startEngine({ port: 0 })` (the actual port).
+ */
+export const TEST_PORT = 1;
+/** `127.0.0.1:<TEST_PORT>`: the Host header a test engine accepts. */
+export const TEST_HOST = `127.0.0.1:${TEST_PORT}`;
+/** The editor's session cookies (their port-scoped names) for a test engine with `token` and `editorKey`. */
+export const editorCookie = (token: string, key: string): string =>
+	`jasper_session_${TEST_PORT}=${token}; jasper_editor_${TEST_PORT}=${key}`;
+export const H = { host: TEST_HOST } as const;
 export const JSON_H = { ...H, 'content-type': 'application/json' } as const;
 
 export type TestApp = FastifyInstance & { appdir: string };
@@ -39,7 +53,7 @@ export async function makeApp(
 	prepareAppdir(appdir);
 	const config = engineConfig({
 		appdir,
-		port: 47900,
+		port: TEST_PORT,
 		dev: opts.dev ?? true,
 		token: opts.token ?? null,
 		editorKey: opts.editorKey ?? null,
@@ -52,7 +66,19 @@ export async function makeApp(
 	});
 	await app.ready();
 	opened.push(app);
+	assertNotDevPort(coreServices(app).origin());
 	return Object.assign(app, { appdir });
+}
+
+/**
+ * Fails when a test engine would sign URLs on the default dev port: a headless renderer or a child process handed such
+ * a URL reaches whatever runs there (the user's live engine).
+ */
+function assertNotDevPort(origin: string): void {
+	if (new URL(origin).port === String(DEFAULT_ENGINE_PORT))
+		throw new Error(
+			`test engine origin ${origin} is the default dev port; use TEST_PORT or startEngine({ port: 0 })`,
+		);
 }
 
 export async function closeApps(): Promise<void> {

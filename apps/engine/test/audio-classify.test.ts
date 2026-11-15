@@ -27,10 +27,19 @@ import {
 } from '../../../packages/audio-fx/test/category-fixtures.ts';
 import { testMusic } from '../../../packages/audio-fx/test/music.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, DocBuilder, makeApp, ROOT, register, TEST_FFMPEG, type TestApp } from './helpers.ts';
+import {
+	closeApps,
+	DocBuilder,
+	makeApp,
+	ROOT,
+	register,
+	TEST_FFMPEG,
+	TEST_HOST,
+	type TestApp,
+} from './helpers.ts';
 
 const HAVE_FFMPEG = spawnSync(TEST_FFMPEG, ['-version'], { encoding: 'utf8' }).status === 0;
-const JSON_H = { host: '127.0.0.1:47900', 'content-type': 'application/json' };
+const JSON_H = { host: TEST_HOST, 'content-type': 'application/json' };
 const LJ = join(ROOT, 'fixtures', 'speech', 'lj-composite.flac');
 const LJ_TRUTH = JSON.parse(readFileSync(join(ROOT, 'fixtures', 'speech', 'lj-composite.json'), 'utf8')) as {
 	utterances: { start: number; end: number }[];

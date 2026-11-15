@@ -24,6 +24,7 @@ import {
 	JSON_H,
 	makeApp,
 	register,
+	TEST_HOST,
 	type TestApp,
 } from './helpers.ts';
 
@@ -577,14 +578,14 @@ describe('cache, capability and preview route (LBK-021, LBK-030)', () => {
 		const r = await app.inject({
 			method: 'GET',
 			url: `/mg/layers/${fresh}/still.png`,
-			headers: { host: '127.0.0.1:47900' },
+			headers: { host: TEST_HOST },
 		});
 		expect(r.statusCode).toBe(200);
 		expect(r.headers['content-type']).toBe('image/png');
 		const bad = await app.inject({
 			method: 'GET',
 			url: `/mg/layers/${fresh}/meta.json`,
-			headers: { host: '127.0.0.1:47900' },
+			headers: { host: TEST_HOST },
 		});
 		expect(bad.statusCode).toBe(404);
 	});
@@ -633,7 +634,7 @@ describe('cache, capability and preview route (LBK-021, LBK-030)', () => {
 			app.inject({
 				method: 'GET',
 				url: `/mg/layers/${key}/graded.png${q}`,
-				headers: { host: '127.0.0.1:47900' },
+				headers: { host: TEST_HOST },
 			});
 		const r1 = await get('?n=1');
 		expect(r1.statusCode).toBe(200);

@@ -23,7 +23,7 @@ import { SoundAnalyzer } from '../src/sounds/analysis.ts';
 import type { AnalysisJob, AnalysisResult } from '../src/sounds/analysis-core.ts';
 import type { SoundService } from '../src/sounds/service.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, H, JSON_H, makeApp, tempAppdir } from './helpers.ts';
+import { closeApps, editorCookie, H, JSON_H, makeApp, tempAppdir } from './helpers.ts';
 import { makeStarter, SR, samples, writeWav } from './sound-fixtures.ts';
 
 type App = Awaited<ReturnType<typeof makeApp>>;
@@ -119,7 +119,7 @@ const AGENT = {
 };
 const EDITOR = {
 	...H,
-	cookie: `jasper_session_47900=${TOKEN}; jasper_editor_47900=${KEY}`,
+	cookie: editorCookie(TOKEN, KEY),
 	'content-type': 'application/json',
 };
 

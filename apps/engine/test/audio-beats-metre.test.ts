@@ -8,9 +8,9 @@ import { join } from 'node:path';
 import { BeatsResultSchema } from '@jasper/api';
 import { encodeWav } from '@jasper/audio-dsp';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { closeApps, makeApp, register, type TestApp } from './helpers.ts';
+import { closeApps, makeApp, register, TEST_HOST, type TestApp } from './helpers.ts';
 
-const HOST = { host: '127.0.0.1:47900' };
+const HOST = { host: TEST_HOST };
 const JSON_H = { ...HOST, 'content-type': 'application/json' };
 const SR = 48000;
 

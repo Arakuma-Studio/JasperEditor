@@ -25,7 +25,15 @@ import { appdirPaths } from '@jasper/config';
 import { type LibraryProvenance, makeEnvelope, type ProjectDocument } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, DocBuilder, makeApp, register, type TestApp } from './helpers.ts';
+import {
+	closeApps,
+	DocBuilder,
+	editorCookie,
+	makeApp,
+	register,
+	TEST_HOST,
+	type TestApp,
+} from './helpers.ts';
 import { provenance, SR } from './sound-bed-fixture.ts';
 import {
 	buildCheckDoc,
@@ -35,11 +43,11 @@ import {
 	registerCheckMedia,
 } from './sound-check-fixture.ts';
 
-const HOST = { host: '127.0.0.1:47900' };
+const HOST = { host: TEST_HOST };
 const TOKEN = 'tok_check_0123456789abcdef012';
 const KEY = 'key_check_0123456789abcdef012';
 const AGENT_H = { ...HOST, authorization: `Bearer ${TOKEN}`, 'x-jasper-agent': 'check-agent' };
-const EDITOR_H = { ...HOST, cookie: `jasper_session_47900=${TOKEN}; jasper_editor_47900=${KEY}` };
+const EDITOR_H = { ...HOST, cookie: editorCookie(TOKEN, KEY) };
 const json = (h: Record<string, string>) => ({ ...h, 'content-type': 'application/json' });
 
 let app: TestApp;

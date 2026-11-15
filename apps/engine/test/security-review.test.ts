@@ -15,7 +15,17 @@ import { ProcessingSettingsStore } from '../src/processing/settings.ts';
 import { SpeechModelStore } from '../src/speech/models.ts';
 import { resolveBinaries } from '../src/tools/ffmpeg.ts';
 import { filterPath } from '../src/tools/filter-text.ts';
-import { closeApps, DocBuilder, H, makeApp, ROOT, register, tempAppdir } from './helpers.ts';
+import {
+	closeApps,
+	DocBuilder,
+	H,
+	makeApp,
+	ROOT,
+	register,
+	TEST_HOST,
+	TEST_PORT,
+	tempAppdir,
+} from './helpers.ts';
 
 /** An HTTP server whose every response is an endless body (stops after 256 MiB); counts the bytes it wrote. */
 async function endlessServer(): Promise<{ url: string; sent: () => number; close: () => Promise<void> }> {
@@ -388,10 +398,10 @@ describe('WS /agent goes through the same Host, Origin and token checks as HTTP'
 	it('refuses a foreign Origin and a foreign Host (a web page cannot attach as an editor session)', async () => {
 		const app = await makeApp();
 		expect(await open(app, { ...H })).toBe('open');
-		expect(await open(app, { ...H, origin: 'http://127.0.0.1:47900' })).toBe('open');
+		expect(await open(app, { ...H, origin: `http://${TEST_HOST}` })).toBe('open');
 		expect(await open(app, { ...H, origin: 'https://evil.example' })).toMatch(/^refused/);
 		expect(await open(app, { ...H, origin: 'null' })).toMatch(/^refused/);
-		expect(await open(app, { host: 'evil.example:47900' })).toMatch(/^refused/);
+		expect(await open(app, { host: `evil.example:${TEST_PORT}` })).toMatch(/^refused/);
 	});
 
 	it('needs the token in token mode', async () => {

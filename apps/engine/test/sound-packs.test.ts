@@ -41,7 +41,7 @@ import { audioWorld } from '../src/sound-design/bed.ts';
 import builtin from '../src/sounds/packs.json' with { type: 'json' };
 import { filesDigest, parsePackCatalog, partialName, SoundPackStore, safeJoin } from '../src/sounds/packs.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, DocBuilder, H, JSON_H, makeApp, tempAppdir } from './helpers.ts';
+import { closeApps, DocBuilder, editorCookie, H, JSON_H, makeApp, TEST_HOST, tempAppdir } from './helpers.ts';
 import { makeStarter, SR, samples } from './sound-fixtures.ts';
 
 const sha = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
@@ -879,7 +879,7 @@ describe('downloading over HTTP (a local server; no network)', { timeout: 300_00
 			download: { type: 'files' },
 			files: f.files.slice(0, 2).map((x, i) => ({
 				path: `${i}.wav`,
-				url: `http://127.0.0.1:47900/f/${i}.wav`,
+				url: `http://${TEST_HOST}/f/${i}.wav`,
 				sha256: sha(x.data),
 				sizeBytes: x.data.length,
 				title: x.title,
@@ -1024,7 +1024,7 @@ describe('removing a pack', { timeout: 300_000 }, () => {
 	};
 	const EDITOR = {
 		...H,
-		cookie: `jasper_session_47900=${TOKEN}; jasper_editor_47900=${KEY}`,
+		cookie: editorCookie(TOKEN, KEY),
 		'content-type': 'application/json',
 	};
 

@@ -12,10 +12,10 @@ import { analyzeSound } from '@jasper/audio-fx';
 import { appdirPaths } from '@jasper/config';
 import { FLICKS_PER_SECOND, makeEnvelope, type ProjectDocument } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { closeApps, DocBuilder, makeApp, register, TEST_FFMPEG, type TestApp } from './helpers.ts';
+import { closeApps, DocBuilder, makeApp, register, TEST_FFMPEG, TEST_HOST, type TestApp } from './helpers.ts';
 
 const HAVE_FFMPEG = spawnSync(TEST_FFMPEG, ['-version'], { encoding: 'utf8' }).status === 0;
-const JSON_H = { host: '127.0.0.1:47900', 'content-type': 'application/json' };
+const JSON_H = { host: TEST_HOST, 'content-type': 'application/json' };
 const SR = 48_000;
 
 let app: TestApp;
