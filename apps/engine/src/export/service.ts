@@ -127,7 +127,7 @@ import {
 	type PlannedExport,
 	planExport,
 } from './planner.ts';
-import { joinedRanges, joinPlans, joinRefusal } from './ranges.ts';
+import { joinedRanges, joinPlans, joinRefusal, overlapRefusal } from './ranges.ts';
 import { ExportRunReport } from './run-report.ts';
 import {
 	planPictureSegments,
@@ -419,7 +419,12 @@ export class ExportService {
 		settings: ExportSettings;
 	}): Promise<PlannedExport> {
 		const ranges = joinedRanges(req.settings);
-		if (ranges) return this.planJoined(req, ranges);
+		if (ranges?.length === 1) return this.plan(asOneRange(req));
+		if (ranges) {
+			const overlap = overlapRefusal(ranges);
+			if (overlap) throw new PlanError('VALIDATION_FAILED', 400, overlap);
+			return this.planJoined(req, ranges);
+		}
 		const caps = await this.deps.capabilities();
 		const planned = await planExport(
 			{
@@ -1136,6 +1141,8 @@ export class ExportService {
 				throw new PlanError('VALIDATION_FAILED', 400, 'The export destination must be an absolute file path');
 			}
 		}
+		// touching ranges that merge into one are stored as the plain range export they are (fallbacks re-plan it)
+		req = asOneRange(req);
 		const planned = await this.plan(req);
 		const file = await this.storeRequest({ kind: 'export', request: req });
 		const cores = this.deps.queue.totalSlots;
@@ -3978,6 +3985,17 @@ function audioStream(
 			'-ac',
 			String(o.audioChannels),
 		],
+	};
+}
+
+/** ranges.ts: a multi-range request whose ranges merge into one range, as that plain `custom` range export. */
+function asOneRange<T extends { settings: ExportSettings }>(req: T): T {
+	const ranges = joinedRanges(req.settings);
+	if (ranges?.length !== 1) return req;
+	const [r] = ranges;
+	return {
+		...req,
+		settings: { ...req.settings, range: { type: 'custom', startFrame: r!.start, endFrame: r!.end } },
 	};
 }
 

@@ -4,10 +4,10 @@
 // of each range is joined with the 4 ms equal-power join fade (a 440 Hz tone cut at opposite phases would click), the
 // verification context records the join as a cut, and the audio-only and GIF deliverables join the same way.
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { EngineJob, ExportResult, ExportSettings, ExportVerifyResult } from '@jasper/api';
+import type { EngineJob, ExportResult, ExportSettings, ExportVerifyResult, RenderPlan } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
 import {
@@ -220,6 +220,62 @@ describe('several ranges in one file', () => {
 		};
 		expect(step(47_000, 49_000)).toBeLessThanOrEqual(step(10_000, 12_000) * 1.05);
 		expect(Math.abs(x[48_000]!)).toBeLessThan(peak * 0.05);
+	});
+
+	it('touching ranges are one range: the same file, no join fade or join cut; an overlapping continuation is refused', async () => {
+		// reported: 1869–3000, 3000–6000, 6000–8346 got a 4 ms fade at every join and the intermediate encode
+		const wav = { container: 'wav', video: undefined, audio: undefined } as const;
+		const touching = settings({
+			...wav,
+			range: {
+				type: 'ranges',
+				ranges: [
+					{ startFrame: 46, endFrame: 60 },
+					{ startFrame: 60, endFrame: 76 },
+				],
+			},
+		});
+		const plan = async (s: ExportSettings) =>
+			app.inject({
+				method: 'POST',
+				url: '/api/exports/plan',
+				headers: JSON_H,
+				payload: { envelope: d.envelope(), sequenceId: d.seqId, settings: s },
+			});
+		const planned = await plan(touching);
+		expect((planned.json() as RenderPlan).warnings.map((w) => w.code)).not.toContain('RANGES_JOINED');
+		const joined = await exportFile(touching);
+		const one = await exportFile(
+			settings({ ...wav, range: { type: 'custom', startFrame: 46, endFrame: 76 } }),
+		);
+		const a = samples(joined.file);
+		const b = samples(one.file);
+		expect(a.length).toBe(b.length);
+		expect(
+			Buffer.from(a.buffer, a.byteOffset, a.byteLength).equals(
+				Buffer.from(b.buffer, b.byteOffset, b.byteLength),
+			),
+		).toBe(true);
+		const ctx = JSON.parse(readFileSync(join(app.appdir, 'renders', joined.job.id, 'verify.json'), 'utf8'));
+		expect(ctx).toMatchObject({ version: 1, range: { start: 46, end: 76 }, cuts: [] });
+		expect(ctx.pieces).toBeUndefined();
+		const stutter = await plan(
+			settings({
+				...wav,
+				range: {
+					type: 'ranges',
+					ranges: [
+						{ startFrame: 46, endFrame: 61 },
+						{ startFrame: 60, endFrame: 76 },
+					],
+				},
+			}),
+		);
+		expect(stutter.statusCode).toBe(400);
+		expect(stutter.json()).toMatchObject({
+			code: 'VALIDATION_FAILED',
+			message: expect.stringMatching(/start it at 61/),
+		});
 	});
 
 	it('a GIF joins the ranges too; outputs that cannot be joined are refused by name', async () => {
