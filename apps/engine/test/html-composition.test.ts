@@ -8,10 +8,11 @@ import { join } from 'node:path';
 import type { EngineJob, RegisteredMedia } from '@jasper/api';
 import { EMPTY_PROBE, type MgBundleInfo, type ProjectDocument } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { type RunningEngine, startEngine } from '../src/index.ts';
 import type { MgBundleService } from '../src/mg-bundles/service.ts';
 import { mgBundleService } from '../src/routes/mg-bundles.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, DocBuilder, H, JSON_H, makeApp, ROOT } from './helpers.ts';
+import { closeApps, DocBuilder, H, JSON_H, makeApp, ROOT, tempAppdir } from './helpers.ts';
 
 const FIXTURE = join(ROOT, 'fixtures', 'html-composition');
 const E2E = process.env.MG_E2E === '1';
@@ -353,5 +354,97 @@ describe.runIf(E2E)('HTML compositions end to end (MG_E2E=1)', () => {
 			m.locators.flatMap((l) => (l.type === 'engine-store' ? [l.key] : [])),
 		);
 		expect(keys).toContain(ev.newKey);
+	}, 600_000);
+});
+
+// AGENTS §4: the Remotion path renders composition masters first and draws them (its headless page fetches the signed
+// master, so this engine listens).
+describe.runIf(E2E)('HTML compositions on the Remotion path (MG_E2E=1)', () => {
+	let engine: RunningEngine;
+	let host: Record<string, string>;
+	beforeAll(async () => {
+		engine = await startEngine({
+			appdir: tempAppdir(),
+			port: 0,
+			// This test drives the engine itself, not its authentication.
+			insecure: true,
+			dev: true,
+			env: {
+				PATH: process.env.PATH,
+				...(process.env.JASPER_BROWSER_EXECUTABLE
+					? { JASPER_BROWSER_EXECUTABLE: process.env.JASPER_BROWSER_EXECUTABLE }
+					: {}),
+			},
+		});
+		host = { host: `127.0.0.1:${engine.port}` };
+	}, 120_000);
+	afterAll(async () => {
+		await engine?.stop();
+	});
+
+	it('draws the rendered master, never the offline card', async () => {
+		const imported = await engine.app.inject({
+			method: 'POST',
+			url: '/api/mg-bundles/import-html',
+			headers: { ...JSON_H, ...host },
+			payload: {
+				path: join(FIXTURE, 'page.html'),
+				width: 1920,
+				height: 1080,
+				fps: 30,
+				query: 'color=%2322aa66',
+			},
+		});
+		expect(imported.statusCode, imported.body).toBe(200);
+		const d = new DocBuilder('hd-1080p-30');
+		const mediaId = d.addMedia(imported.json());
+		d.tx([
+			{
+				type: 'sequence.updateSettings',
+				sequenceId: d.seqId,
+				settings: { backgroundColor: [0.5, 0.5, 0.5, 1] },
+			},
+		]);
+		d.tx([{ type: 'clip.addComposition', composition: { mediaId, id: 'page' }, at: 15, track: 'V1' }]);
+		const started = await engine.app.inject({
+			method: 'POST',
+			url: '/api/exports',
+			headers: { ...JSON_H, ...host },
+			payload: {
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				settings: {
+					sequenceId: d.seqId,
+					range: { type: 'custom', startFrame: 45, endFrame: 47 },
+					container: 'mov',
+					engine: 'remotion',
+					video: {
+						codec: 'prores',
+						proresProfile: 'hq',
+						width: 1920,
+						height: 1080,
+						frameRate: { num: 30, den: 1 },
+						scaling: 'fit',
+						quality: { mode: 'crf', value: 10 },
+						encoderSpeed: 'fast',
+					},
+				},
+			},
+		});
+		expect(started.statusCode, started.body).toBe(202);
+		const done = await coreServices(engine.app).queue.wait(started.json().id);
+		expect(done.state, JSON.stringify(done.error)).toBe('succeeded');
+		expect((done.result as { renderPath?: string }).renderPath).toBe('remotion');
+		const out = join(coreServices(engine.app).config.paths.rendersDir, done.id, 'output.mov');
+		// Export frame 0 = sequence frame 45 = t 1 s, like the still and the native export above.
+		expect(
+			boxShare(rgba(out, 0), {
+				width: 1920,
+				height: 1080,
+				t: 1,
+				box: [0x22, 0xaa, 0x66],
+				bg: [128, 128, 128],
+			}),
+		).toBeGreaterThan(0.99);
 	}, 600_000);
 });

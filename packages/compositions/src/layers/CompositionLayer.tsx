@@ -58,11 +58,30 @@ export function hasPixelEffects(clip: RenderVisualClip): boolean {
 export function CompositionLayer(layer: LayerProps) {
 	const { clip, options } = layer;
 	const src = 'composition' in clip.source ? clip.source.composition : null;
-	if (!src?.bundle) return <CompositionCard layer={layer} title="Composition bundle missing" />;
+	if (!src?.bundle)
+		return <Offline layer={layer} code="MG_BUNDLE_MISSING" title="Composition bundle missing" />;
 	if (src.info === null || src.info === undefined)
-		return <CompositionCard layer={layer} title={`Composition ${src.compositionId} not in bundle`} />;
+		return (
+			<Offline
+				layer={layer}
+				code="MG_COMPOSITION_MISSING"
+				title={`Composition ${src.compositionId} not in bundle`}
+			/>
+		);
 	if (!options.isPreview) return <MasterLayer layer={layer} src={src} />;
 	return <PreviewLayer layer={layer} src={src} />;
+}
+
+/**
+ * AGENTS §4: the offline card is the Program monitor's (preview) only. A render (`isPreview: false`: exports, stills,
+ * bakes) never encodes it in place of the composition: it fails with the reason. The export planner refuses such
+ * clips before rendering (MG_BUNDLE_MISSING / MG_COMPOSITION_MISSING) and renders missing masters first; this catches
+ * whatever still reaches a render without its master.
+ */
+function Offline({ layer, code, title }: { layer: LayerProps; code: string; title: string }) {
+	if (!layer.options.isPreview)
+		throw new Error(`${code}: ${title} (composition clip "${layer.clip.name}", ${layer.clip.clipId})`);
+	return <CompositionCard layer={layer} title={title} />;
 }
 
 /** Engine renders: the master (frame 0 = sequence frame `prerender.startFrame`). */
@@ -70,7 +89,7 @@ function MasterLayer({ layer, src }: { layer: LayerProps; src: RenderComposition
 	const { clip } = layer;
 	const fx = useLayerFx(layer);
 	const url = src.prerender?.masterUrl;
-	if (!url) return <CompositionCard layer={layer} title="Composition master not rendered" />;
+	if (!url) return <Offline layer={layer} code="MG_RENDER_FAILED" title="Composition master not rendered" />;
 	const layerStart = clip.start - (clip.headHandle ?? 0);
 	const offset = (src.prerender?.startFrame ?? layerStart) - layerStart;
 	if (fx.mode === 'active')

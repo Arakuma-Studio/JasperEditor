@@ -495,6 +495,24 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 				assets: issues,
 			});
 	}
+	// AGENTS §4: content an extension provides that is missing on this engine (a composition clip's bundle or
+	// composition) blocks every path, Remotion included: no export or still may contain the preview's offline card.
+	{
+		const refused = unresolvedClips(allVisualClips(snapshot), deps.extensions ?? []);
+		if (refused.length > 0)
+			throw new PlanError(
+				refused[0]!.code,
+				409,
+				`Clips cannot be drawn on any path: ${refused
+					.slice(0, 5)
+					.map((r) => r.reason)
+					.join('; ')}${refused.length > 5 ? ` and ${refused.length - 5} more` : ''}`,
+				{
+					blockers: refused.map((r) => ({ itemId: r.clipId, path: 'native' as const, reason: r.reason })),
+					hint: [...new Set(refused.map((r) => r.hint))].join(' '),
+				},
+			);
+	}
 	const blockers: RenderPlan['blockers'] = [];
 	const warnings: RenderPlan['warnings'] = [];
 	{
@@ -1503,6 +1521,29 @@ export function nativeBlockers(
 		if (support === false)
 			out.push(`${label} uses effect ${fx.effectId}, which the native path cannot render`);
 		else if (support === 'static' && animated) out.push(`${label} has an animated ${fx.effectId}`);
+	}
+	return out;
+}
+
+/**
+ * AGENTS §4: clips no path can draw because what an extension provides for them is missing on this engine
+ * (`refusals`), and composition clips no extension provides at all (their masters can never exist).
+ */
+function unresolvedClips(
+	clips: readonly RenderVisualClip[],
+	exts: readonly NativeExtension[],
+): { clipId: string; code: string; reason: string; hint: string }[] {
+	const out: { clipId: string; code: string; reason: string; hint: string }[] = [];
+	for (const c of clips) {
+		const providers = exts.filter((e) => e.kinds?.has(c.kind));
+		if (c.kind === 'composition' && providers.length === 0)
+			out.push({
+				clipId: c.clipId,
+				code: 'MG_UNAVAILABLE',
+				reason: `composition clip "${c.name}" (${c.clipId}) needs composition masters, which this engine cannot render`,
+				hint: 'Export on an engine with composition bundles (features.mgBundles), or delete the clip.',
+			});
+		for (const e of providers) for (const r of e.refusals?.(c) ?? []) out.push({ clipId: c.clipId, ...r });
 	}
 	return out;
 }

@@ -205,6 +205,12 @@ export type NativeExtension = {
 	/** Reasons this extension cannot render a clip it claims / provides (capability missing…). */
 	blockers?(clip: RenderVisualClip): string[];
 	/**
+	 * AGENTS §4: why a clip of a kind this extension provides cannot be drawn on ANY path (its content is missing on
+	 * this engine), with an error code and the step that fixes it. The planner refuses every export and still with
+	 * them before anything renders (no path may draw the preview's placeholder instead).
+	 */
+	refusals?(clip: RenderVisualClip): { code: string; reason: string; hint: string }[];
+	/**
 	 * Plan warnings for a clip this extension claims / provides (e.g. MG_FPS_MISMATCH
 	 * for a composition at another frame rate). Added to the RenderPlan with the clip as item.
 	 */
