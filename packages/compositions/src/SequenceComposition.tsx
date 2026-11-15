@@ -57,13 +57,23 @@ import {
 	useRef,
 	useState,
 } from 'react';
-import { AbsoluteFill, Freeze, Internals, Sequence, useBufferState, useCurrentFrame } from 'remotion';
+import {
+	AbsoluteFill,
+	cancelRender,
+	Freeze,
+	getRemotionEnvironment,
+	Internals,
+	Sequence,
+	useBufferState,
+	useCurrentFrame,
+} from 'remotion';
 import { MixGraphContext } from './audio/context.ts';
 import { type MixGraph, mixGraphFor } from './audio/graph.ts';
 import { installSerialAudioContext } from './audio/serial-audio-context.ts';
 import { ColorDocContext, type ColorDocValue } from './color/chain.ts';
 import { DisplayStage } from './color/DisplayStage.tsx';
 import { canUseFloatTargets } from './color/gl.ts';
+import { useColorStageStatus } from './color/status.ts';
 import { useExpressionSnapshot, useTextExpressionHosts } from './expressions.ts';
 import {
 	EmojiTableContext,
@@ -804,7 +814,13 @@ export function VideoTracks({
 	const [flatRequested, setFlatRequested] = useState(false);
 	const requestFlat = useCallback(() => setFlatRequested(true), []);
 	// Layer renders (bakes of single clips) composite nothing; a nest's canvas source always draws its picture.
-	const canFlat = gpu === 'ok' && htmlInCanvas && (!options.layerFilter || !!flatOutput);
+	const canFlatNow = gpu === 'ok' && htmlInCanvas && (!options.layerFilter || !!flatOutput);
+	// A render keeps drawing flat once it could: a GPU context lost mid-render (the GPU process crashed or ran out of
+	// memory) fails the render with WEBGL_CONTEXT_LOST (`RenderGpuGuard`); remounting the stack nested would put its
+	// scopes inside one another (CANVAS_NESTED) instead.
+	const couldFlat = useRef(false);
+	if (canFlatNow) couldFlat.current = true;
+	const canFlat = canFlatNow || (couldFlat.current && getRemotionEnvironment().isRendering);
 	// A scope captures the canvases below it (video frames, effect pictures) right only at a pixel density of 1: a
 	// `render_frame` / export at another size than the sequence's, or a HiDPI / zoomed Player, draws flat.
 	const density = usePagePixelDensity();
@@ -1186,6 +1202,24 @@ export function VideoTracks({
 }
 
 /**
+ * Renders: the browser lost a GPU context (fx host or colour stage) — its GPU process crashed or ran out of memory.
+ * The frame cannot be drawn; the render fails at once with WEBGL_CONTEXT_LOST naming the frame (retryable: a new render
+ * gets a new GPU process), before any layer reports the missing GPU as an effect it cannot draw.
+ */
+function RenderGpuGuard({ offset }: { offset: number }) {
+	const fx = useFxStatus();
+	const color = useColorStageStatus();
+	const frame = useCurrentFrame() + offset;
+	if ((fx === 'lost' || color === 'lost') && getRemotionEnvironment().isRendering)
+		cancelRender(
+			new Error(
+				`WEBGL_CONTEXT_LOST: the render browser lost its GPU context at sequence frame ${frame} (its GPU process crashed or ran out of memory); export again`,
+			),
+		);
+	return null;
+}
+
+/**
  * audio-mix: drives the preview mix graph at the composition's frame (lane values, live overrides) — every rendered
  * frame during playback, and on every document change while paused.
  */
@@ -1344,6 +1378,8 @@ export function SequenceComposition({ doc: raw, options }: SequenceCompositionPr
 							<ColorDocContext.Provider value={color}>
 								<NestTracksContext.Provider value={VideoTracks}>
 									<AbsoluteFill ref={root} style={{ overflow: 'hidden', isolation: 'isolate' }}>
+										{/* First child: it reports a lost GPU context before the layers that need it. */}
+										<RenderGpuGuard offset={offset} />
 										{/* color-mgmt: the monitor shows the working signal through the display transform. */}
 										<DisplayStage
 											working={doc.settings.color}

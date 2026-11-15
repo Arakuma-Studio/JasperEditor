@@ -267,6 +267,13 @@ export function useAdjustmentChain(
 	return { layer, fx, stage, descriptors };
 }
 
+/** The scope of an adjustment track in error messages: its clips' ids (a track can hold many: the first few). */
+function adjustmentScopeName(clips: readonly RenderVisualClip[]): string {
+	const ids = clips.slice(0, 4).map((c) => c.clipId);
+	if (clips.length > ids.length) ids.push(`${clips.length - ids.length} more`);
+	return `The adjustment layer${clips.length > 1 ? 's' : ''} ${ids.join(', ')}`;
+}
+
 function CanvasScope({
 	clips,
 	active,
@@ -296,6 +303,7 @@ function CanvasScope({
 		props,
 		canRun,
 	);
+	const scope = useMemo(() => adjustmentScopeName(clips), [clips]);
 	if (!canRun)
 		return (
 			<>
@@ -318,7 +326,8 @@ function CanvasScope({
 	return (
 		<>
 			<ScopedHtmlInCanvas
-				scope="An adjustment layer"
+				scope={scope}
+				frame={frame}
 				width={L?.cssWidth ?? W}
 				height={L?.cssHeight ?? H}
 				pixelDensity={L?.pxScale ?? 1}

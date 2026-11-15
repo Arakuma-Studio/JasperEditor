@@ -46,11 +46,41 @@ import { type FxGpuState, fxStatus } from './status.ts';
 
 type HubPicture = { canvas: HTMLCanvasElement; version: number; frame: number; pic: CompositePicture };
 
-/** The pictures a track's layers delivered (latest per layer, with the sequence frame it shows). */
+/** How many of the latest distinct frames a hub keeps pictures of (`RecentFrames`). */
+const RECENT_FRAMES = 8;
+
+/**
+ * The latest distinct sequence frames a hub received pictures of. A captured layer delivers on every frame it is drawn
+ * (its tap, and so its tap step's key, is per frame), so a picture of a frame that left this window belongs to a layer
+ * no longer drawn. A hub keeps one canvas per layer key: without this, a long render (a flat stack, where every layer
+ * is captured) kept a canvas for every clip it ever drew on each page, until the GPU process ran out of memory.
+ */
+export class RecentFrames {
+	private readonly frames: number[] = [];
+
+	/** Notes a delivery at `frame`; true when a frame left the window (the hub then drops its pictures). */
+	note(frame: number): boolean {
+		if (this.frames.at(-1) === frame) return false;
+		const i = this.frames.indexOf(frame);
+		if (i >= 0) this.frames.splice(i, 1);
+		this.frames.push(frame);
+		if (this.frames.length <= RECENT_FRAMES) return false;
+		this.frames.shift();
+		return true;
+	}
+
+	/** Drops the pictures of frames outside the window. */
+	prune(pictures: Map<string, { frame: number }>): void {
+		for (const [key, p] of pictures) if (!this.frames.includes(p.frame)) pictures.delete(key);
+	}
+}
+
+/** The pictures a track's layers delivered (latest per layer, with the sequence frame it shows; `RecentFrames`). */
 export class CompositeHub {
 	readonly pictures = new Map<string, HubPicture>();
 	private readonly listeners = new Set<() => void>();
 	private readonly taps = new Map<string, LayerTap>();
+	private readonly recent = new RecentFrames();
 	private version = 0;
 
 	/** The tap of layer `key` at sequence frame `frame` (stable per key and frame). */
@@ -83,6 +113,7 @@ export class CompositeHub {
 		height: number,
 		meta: { compToCanvas: readonly number[] | null; opacity: number },
 	): void {
+		if (this.recent.note(frame)) this.recent.prune(this.pictures);
 		const prev = this.pictures.get(key);
 		const canvas = prev?.canvas ?? document.createElement('canvas');
 		const w = Math.max(1, Math.round(width));

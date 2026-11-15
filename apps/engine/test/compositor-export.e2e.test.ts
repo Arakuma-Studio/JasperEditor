@@ -11,9 +11,13 @@ const W = 640;
 const H = 360;
 type Rgb = [number, number, number];
 
-const settings = (seqId: string, engine: 'auto' | 'native' | 'remotion') => ({
+const settings = (
+	seqId: string,
+	engine: 'auto' | 'native' | 'remotion',
+	range: { type: 'entire' } | { type: 'custom'; startFrame: number; endFrame: number } = { type: 'entire' },
+) => ({
 	sequenceId: seqId,
-	range: { type: 'entire' },
+	range,
 	container: 'mp4',
 	video: {
 		codec: 'h264',
@@ -70,12 +74,17 @@ describe.runIf(enabled)('stacks that used to nest canvas scopes, exported (REMOT
 	async function exportDoc(
 		d: DocBuilder,
 		engineChoice: 'auto' | 'native' | 'remotion',
+		range?: { type: 'custom'; startFrame: number; endFrame: number },
 	): Promise<{ file: string; path: string }> {
 		const start = await engine.app.inject({
 			method: 'POST',
 			url: '/api/exports',
 			headers: { ...JSON_H, ...hostH },
-			payload: { envelope: d.envelope(), sequenceId: d.seqId, settings: settings(d.seqId, engineChoice) },
+			payload: {
+				envelope: d.envelope(),
+				sequenceId: d.seqId,
+				settings: settings(d.seqId, engineChoice, range),
+			},
 		});
 		expect(start.statusCode, start.body).toBe(202);
 		const done = await coreServices(engine.app).queue.wait(start.json().id);
@@ -93,8 +102,8 @@ describe.runIf(enabled)('stacks that used to nest canvas scopes, exported (REMOT
 		return [r.stdout[0]!, r.stdout[1]!, r.stdout[2]!];
 	}
 	const near = (a: Rgb, b: Rgb, tol: number) => a.every((v, i) => Math.abs(v - b[i]!) <= tol);
-	const check = (file: string, x: number, y: number, want: Rgba, tol = 5) => {
-		const got = pixel(file, 3, x, y);
+	const check = (file: string, x: number, y: number, want: Rgba, tol = 5, frame = 3) => {
+		const got = pixel(file, frame, x, y);
 		expect(near(got, to8(want), tol), `(${x}, ${y}) ${got} want ${to8(want)}`).toBe(true);
 	};
 
@@ -195,6 +204,45 @@ describe.runIf(enabled)('stacks that used to nest canvas scopes, exported (REMOT
 		}
 		expect(inGlyph).toBeGreaterThan(3);
 		expect(differ / n).toBeLessThanOrEqual(0.1);
+	}, 900_000);
+
+	it('adjustment layers on two tracks, apart in time and overlapping: one Remotion export over all of them', async () => {
+		const at = (track: string, ref: string, start: number, duration: number) => ({
+			type: 'clip.addAdjustment',
+			at: start,
+			duration,
+			track,
+			ref,
+		});
+		const d = doc([
+			{ ...solid('V1', base, '$a'), duration: 40 },
+			at('V2', '$p', 0, 10),
+			effect('$p', 'jasper.invert'),
+			at('V3', '$q', 15, 10),
+			effect('$q', 'jasper.black-white'),
+			at('V2', '$r', 30, 10),
+			effect('$r', 'jasper.invert'),
+			at('V3', '$s', 30, 10),
+			effect('$s', 'jasper.black-white'),
+		]);
+		// Black & White: Rec. 709 luma of the encoded values.
+		const bw = (c: Rgba): Rgba => {
+			const y = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+			return [y, y, y, 1];
+		};
+		const whole = await exportDoc(d, 'remotion');
+		expect(whole.path).toBe('remotion');
+		const want: [number, Rgba][] = [
+			[5, invert(base)],
+			[12, base],
+			[20, bw(base)],
+			[27, base],
+			[35, bw(invert(base))],
+		];
+		for (const [frame, c] of want) check(whole.file, W / 2, H / 2, c, 5, frame);
+		// The range of one layer alone draws the same pixels as the export over all of them.
+		const alone = await exportDoc(d, 'remotion', { type: 'custom', startFrame: 15, endFrame: 25 });
+		expect(near(pixel(alone.file, 5, W / 2, H / 2), pixel(whole.file, 20, W / 2, H / 2), 2)).toBe(true);
 	}, 900_000);
 
 	it('a 3D run between GL blend tracks and linear light around an adjustment layer: Remotion path', async () => {
