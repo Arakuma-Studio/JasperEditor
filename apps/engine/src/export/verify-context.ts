@@ -2,7 +2,8 @@
 // A finished export writes `verify.json` next to its output: what it was asked to write (container, streams, frame
 // rate, loudness normalisation) and the picture cuts of the sequence range it rendered, with what the timeline
 // intends on each side of every cut (black: a gap, a dark solid, a fade or a dip transition; an effect: a transition or
-// a graphic / adjustment layer over the cut). `verify_export` judges the file against it later, whatever the document
+// a graphic / adjustment layer over the cut; whether the sound has an edit on the cut's frame or plays straight
+// through it). `verify_export` judges the file against it later, whatever the document
 // has become since. Pure except for the file helpers at the end.
 import { join } from 'node:path';
 import { EXPORT_CONTAINERS, MAX_EXPORT_RANGES } from '@jasper/api';
@@ -46,6 +47,12 @@ export const VerifyCutSchema = z.object({
 	effect: z.boolean(),
 	/** Frames from the file's start (sequence rate) where it is; absent = `frame − range.start` (`fileOffsetOf`). */
 	at: z.number().int().min(0).optional(),
+	/**
+	 * The sound plays straight through the cut: no audible audio clip starts or ends on its frame, so the samples there
+	 * are the source's own and `cut-click` does not judge them (a plosive under a picture-only cut is not an edit).
+	 * Absent: the sound has an edit there (a join of several ranges always has), or the build did not record it.
+	 */
+	soundThrough: z.literal(true).optional(),
 });
 export type VerifyCut = z.infer<typeof VerifyCutSchema>;
 
@@ -334,7 +341,31 @@ export type VerifyContextSource = {
 	pieces?: readonly { start: number; end: number }[];
 	/** The clips the render drew with offline media (`media-guard.ts` `offlineUsesOf`); absent = not known. */
 	offline?: readonly OfflineSpan[];
+	/**
+	 * Sequence frames where an audible audio clip of the render starts or ends (`soundEditsOf`); a cut on any other frame
+	 * is `soundThrough`. Absent = not known (no cut is marked).
+	 */
+	soundEdits?: ReadonlySet<number>;
 };
+
+/** The frames where the render's sound has an edit: every audible audio clip's first and one-past-last frame. */
+export function soundEditsOf(
+	snapshots: readonly { audioClips: readonly { start: number; duration: number }[] }[],
+): Set<number> {
+	const out = new Set<number>();
+	for (const s of snapshots)
+		for (const c of s.audioClips) {
+			out.add(c.start);
+			out.add(c.start + c.duration);
+		}
+	return out;
+}
+
+/** `cuts` with `soundThrough` on those whose frame is not a sound edit (unchanged when the edits are not known). */
+function markSoundThrough(cuts: VerifyCut[], edits: ReadonlySet<number> | undefined): VerifyCut[] {
+	if (!edits) return cuts;
+	return cuts.map((c) => (edits.has(c.frame) ? c : { ...c, soundThrough: true as const }));
+}
 
 export type OfflineSpan = NonNullable<ExportVerifyContext['offline']>[number];
 
@@ -367,6 +398,7 @@ function joinedCutsOf(
 	seq: Seq | undefined,
 	pieces: readonly { start: number; end: number }[],
 	withUncovered: boolean,
+	soundEdits: ReadonlySet<number> | undefined,
 ): Pick<ExportVerifyContext, 'cuts' | 'cutsNote' | 'uncovered' | 'uncoveredMore'> {
 	const cuts: VerifyCut[] = [];
 	const notes = new Set<string>();
@@ -386,7 +418,7 @@ function joinedCutsOf(
 			});
 		const own = verifyCutsOf(doc, sequenceId, p);
 		if (own.note) notes.add(own.note);
-		for (const c of own.cuts) cuts.push({ ...c, at: at + c.frame - p.start });
+		for (const c of markSoundThrough(own.cuts, soundEdits)) cuts.push({ ...c, at: at + c.frame - p.start });
 		if (seq && withUncovered)
 			for (const r of uncoveredPicture(doc, seq, p)) {
 				if (uncovered.length < MAX_VERIFY_UNCOVERED) uncovered.push({ ...r, at: at + r.start - p.start });
@@ -426,11 +458,11 @@ export function buildVerifyContext(s: VerifyContextSource): ExportVerifyContext 
 	const withUncovered = s.deliverable?.kind !== 'audio' && !s.output.alpha;
 	const joined = s.pieces && s.pieces.length > 1 ? s.pieces : null;
 	const marks = joined
-		? joinedCutsOf(s.document, s.sequenceId, seq, joined, withUncovered)
+		? joinedCutsOf(s.document, s.sequenceId, seq, joined, withUncovered, s.soundEdits)
 		: (() => {
 				const { cuts, note } = verifyCutsOf(s.document, s.sequenceId, s.range);
 				return {
-					cuts,
+					cuts: markSoundThrough(cuts, s.soundEdits),
 					...(note ? { cutsNote: note } : {}),
 					...(seq && withUncovered ? uncoveredOf(s.document, seq, s.range) : {}),
 				};

@@ -496,6 +496,93 @@ describe('shared render browsers (S11:LBK-022)', () => {
 		expect(pages).toEqual(new Array(17).fill(2));
 	});
 
+	it('reports its progress as the bakes report frames and finish: renders done, the layer rendering, the fraction', async () => {
+		// reported: the export showed no progress for 3.5 min of bakes ("Baking graphics 0/74", bar at 0)
+		const clips = ['Card 0', 'Card 1'].map(
+			(name, i) =>
+				({
+					clipId: `card${i}`,
+					name,
+					kind: 'text',
+					engine: 'remotion',
+					effects: [],
+					masks: [],
+					trackId: 'V2',
+					start: i * 100,
+					duration: 60,
+				}) as unknown as RenderVisualClip,
+		);
+		const planned = {
+			range: { start: 0, end: 200 },
+			snapshot: { videoTracks: [{ trackId: 'V2', clips }] },
+		} as unknown as PlannedExport;
+		const deferred = () => {
+			let resolve!: () => void;
+			const promise = new Promise<void>((r) => {
+				resolve = r;
+			});
+			return { promise, resolve };
+		};
+		// each fake bake reports half its frames, then waits for its gate
+		const halfway = clips.map(deferred);
+		const gates = clips.map(deferred);
+		const svc = {
+			unavailableReason: () => null,
+			environment: async () => ({}),
+			parallelism: { maxInFlight: 1, sharedBrowser: false, pagesPerBrowser: 2 },
+			stats: { rendered: 0, reused: 0, joined: 0 },
+			planBake: async (_p: unknown, clip: RenderVisualClip) => ({
+				clipId: clip.clipId,
+				clipName: clip.name,
+				key: `key-${clip.clipId}`,
+				variant: { recipe: 'master' },
+				rect: null,
+				frames: 60,
+				startFrame: clip.start,
+				colorRuns: false,
+				material: {},
+			}),
+			lookup: async () => null,
+			ensureBake: async (plan: { key: string }, meta: { onProgress?(p: number): void }) => {
+				const i = plan.key === 'key-card0' ? 0 : 1;
+				meta.onProgress?.(0.5);
+				halfway[i]!.resolve();
+				await gates[i]!.promise;
+				return {
+					key: plan.key,
+					path: '/bake.mov',
+					still: false,
+					rect: null,
+					frames: 60,
+					width: 1280,
+					height: 720,
+				};
+			},
+		} as unknown as LayerBakeService;
+		const reports: [number, string][] = [];
+		const prepare = layerBakeExtension(svc).prepare!(planned, {
+			signal: new AbortController().signal,
+			stage: () => undefined,
+			progress: (f, text) => reports.push([f, text]),
+			scratchDir: async () => '/tmp',
+			log: () => undefined,
+			jobId: 'job_bake',
+			purpose: 'native',
+			bakePages: 2,
+		});
+		await halfway[0]!.promise;
+		expect(reports.at(-1)).toEqual([0.25, 'Baking graphics 0/2 (Card 0) · 25 %']);
+		gates[0]!.resolve();
+		await halfway[1]!.promise;
+		expect(reports.slice(-2)).toEqual([
+			[0.5, 'Baking graphics 1/2 · 50 %'],
+			[0.75, 'Baking graphics 1/2 (Card 1) · 75 %'],
+		]);
+		gates[1]!.resolve();
+		await prepare;
+		expect(reports.at(-1)).toEqual([1, 'Baking graphics 2/2']);
+	});
+
 	it('a browser serves at most pagesPerBrowser pages: more bakes in flight open more browsers, closed with the session', async () => {
 		const app = await makeApp();
 		const svc = app.jasper.services.layerBake as LayerBakeService;

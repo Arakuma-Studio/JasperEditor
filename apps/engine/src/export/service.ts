@@ -169,7 +169,7 @@ import { streamLayer } from './stream/run.ts';
 import { BakeChangedError, streamTaps } from './stream/taps.ts';
 import { createSyntheticExtension } from './synthetic.ts';
 import { concatFilter, type ExportRun, exportRuns, fallbackRuns, type PreviewPiece } from './use-previews.ts';
-import { buildVerifyContext, type OfflineSpan, writeVerifyContext } from './verify-context.ts';
+import { buildVerifyContext, type OfflineSpan, soundEditsOf, writeVerifyContext } from './verify-context.ts';
 import { deliverableOfContainer, EXPORT_JOB_ID_RE, runExportVerify, targetRefusal } from './verify-job.ts';
 
 /**
@@ -190,6 +190,12 @@ const NESTED_REMOTION = new WeakMap<ReadonlyMap<string, unknown>, Map<string, Pr
 const FALLBACK_MERGE_SEC = 2;
 /** Remotion stretches of an export whose layer bakes failed at most; more: the whole range on the Remotion path. */
 const MAX_FALLBACK_STRETCHES = 8;
+/**
+ * The share of a native export's bar its preparation's bakes fill while they report (`NativePrepareContext.progress`);
+ * the composite fills the rest. An estimate (≈): the bakes of a measured graphics-heavy export took 222 of 487 s
+ * (job log of a 20 270-frame hybrid export, 121 renders), and exports whose bakes are cached take none.
+ */
+const BAKE_SHARE = 0.3;
 
 /** Remotion concurrency of an export with `slots` CPU slots (S04:RR-004; the Remotion path's bakes follow it). */
 function remotionConcurrency(slots: number): number {
@@ -1360,6 +1366,7 @@ export class ExportService {
 					sequenceId: planned.sequenceId,
 					range: planned.range,
 					...(planned.joined ? { pieces: planned.joined.map((p) => p.range) } : {}),
+					soundEdits: soundEditsOf(planned.joined?.map((p) => p.snapshot) ?? [planned.snapshot]),
 					offline,
 					output: { ...o, encoder: enc ? { container: enc.container, codec: enc.codec } : null },
 					pixFmt: enc
@@ -1594,10 +1601,16 @@ export class ExportService {
 		const wake = () => {
 			for (const w of waiting.splice(0)) w();
 		};
+		/** Where the preparation's bakes moved the bar (`BAKE_SHARE` once done; 0 without any): the composite goes on from it. */
+		let bakeBar = 0;
 		try {
 			const pctx = {
 				signal: ctx.signal,
-				stage: (text: string) => ctx.progress(0, { stage: text }),
+				stage: (text: string) => ctx.progress(bakeBar, { stage: text }),
+				progress: (f: number, text: string) => {
+					bakeBar = Math.max(bakeBar, BAKE_SHARE * Math.min(1, Math.max(0, Number.isFinite(f) ? f : 0)));
+					ctx.progress(bakeBar, { stage: text });
+				},
 				scratchDir: () => ctx.scratchDir(),
 				log: (text: string) => ctx.log(text),
 				jobId: ctx.job.id,
@@ -1645,6 +1658,7 @@ export class ExportService {
 			if (deferred.length) void Promise.allSettled(deferred.map((d) => d.ready)).then(endBake);
 			else endBake();
 		}
+		if (bakeBar > 0) bakeBar = BAKE_SHARE;
 		const deferredClips = new Set(deferred.flatMap((d) => d.clipIds));
 		// The mixdown (started before the preparation): an input of a one-graph composite, which waits for it; segments
 		// render while it is delivered (their sound is encoded and joined when it is ready).
@@ -1668,7 +1682,7 @@ export class ExportService {
 			: planned.output.color
 				? await outputLutFilter(planned.output.color, await ctx.scratchDir())
 				: null;
-		ctx.progress(0, { stage: 'Planning layers' });
+		ctx.progress(bakeBar, { stage: 'Planning layers' });
 		// Parallel picture segments (segments.ts): each an export of its own sub-range, picture only, joined below.
 		const snap = planned.snapshot;
 		const segPlan: SegmentPlan = still
@@ -2006,8 +2020,9 @@ export class ExportService {
 			);
 		};
 		const done = segPlan.segments.map(() => 0);
-		const fraction = () =>
-			still || total <= 0 ? 0 : (done.reduce((a, b) => a + b, 0) / total) * (split ? 0.96 : 0.98);
+		/** The bar at `encoded` seconds of `total`: from where the bakes left it to 96 % (segments: joined after) or 98 %. */
+		const bar = (encoded: number) => bakeBar + (encoded / total) * ((split ? 0.96 : 0.98) - bakeBar);
+		const fraction = () => (still || total <= 0 ? bakeBar : bar(done.reduce((a, b) => a + b, 0)));
 		/**
 		 * What ended the composites early: a failure (`part` = the composite it came from, if any), or the export to run
 		 * again another way (`again`: a pipelined still changed, a picture off the output grid).
@@ -2091,7 +2106,7 @@ export class ExportService {
 								? sum / elapsed
 								: undefined
 							: (p.speed ?? (elapsed > 0 ? sum / elapsed : undefined));
-						ctx.progress((sum / total) * (split ? 0.96 : 0.98), {
+						ctx.progress(bar(sum), {
 							stage: split ? `Encoding (native, ${segPlan.segments.length} segments)` : 'Encoding (native)',
 							...(speed ? { speed, etaSec: (total - sum) / speed } : {}),
 						});

@@ -14,7 +14,9 @@ tolerances and pinning documented thresholds to code by a test — [`licenses/po
   frame still has its cuts; the cut map's default 50 % found no cut in a 1280 × 720 cut in a 1080p sequence —, ≤ 5 000) with what the timeline intends at each: black before / after (no picture on
   that side — a gap or a cut to / from nothing —, a solid darker than 16/255, a one-sided transition (fade) on either
   clip, or a dip / fade-to-black transition) and an effect over it (a two-sided transition, or a graphic / adjustment
-  layer within ±3 frames). Verification judges the file against this record, whatever the document has become since.
+  layer within ±3 frames), and `soundThrough` on a cut where the sound plays straight through (no audible audio clip of
+  the render's snapshots starts or ends on its frame: `soundEditsOf`; a join of several ranges never has it).
+  Verification judges the file against this record, whatever the document has become since.
   Writing it never fails an export (a failure is logged; the checks that need it then say `unverified`).
 - **Engine job `export-verify`** (`POST /api/exports/:jobId/verify {target?, checks?: 'fast' | 'full'}` → 202 job; result
   `ExportVerifyResult` in `packages/api/src/exports.ts`). 404 `NOT_FOUND` for an unknown or non-export job, 409
@@ -70,7 +72,10 @@ tolerances and pinning documented thresholds to code by a test — [`licenses/po
     direction (a stray white or black frame); `fail`, or `warn` when an effect is over the cut (it may be designed).
   - `cut-click` (judgement, fail): within ±10 ms of a cut, a sample-to-sample step more than 12 dB over the local RMS
     of the steps (centred 20 ms, without ±2 ms around the step), at least −60 dBFS, and isolated (no other step ≥ half of
-    it outside ±2 ms in the window). See "Click definition" for why the RMS is of the steps.
+    it outside ±2 ms in the window). See "Click definition" for why the RMS is of the steps. Cuts marked `soundThrough`
+    are not judged: the samples there are the source's own, so a step is not an edit's (reported: a picture cut at a
+    range join over one unbroken voice clip was flagged at 19.2 dB on the plosive of a word, a 0.110 step where the raw
+    recording steps 0.104). The pass row then counts the audio edits checked and the cuts the sound plays through.
   - `loudness` (judgement, fail when off): BS.1770-4 integrated loudness (the audio DSP package's `LoudnessMeter`, the
     meter of every export and Sound Check) within 1.0 LU of the export's normalisation target, else of the delivery
     target's level; `unverified` when there is neither, or the audio is too short or quiet to gate.
@@ -196,6 +201,11 @@ Tests (run with `JASPER_FFMPEG_LGPL_ONLY=1`):
   not decoded.
 - `cut-click` looks only within ±10 ms of picture cuts; audio-only edits (J / L cuts) are not cut points of the cut map.
   Sound Check's CLICK finding covers clip edges of the mix before export.
+- At a cut that is an audio edit, the step is judged against the output's own local level only: the source's step at
+  the same media time is not measured, so a transient of the incoming material on the edit's first sample can still be
+  flagged. A razor split of one continuous clip counts as an audio edit (judged); a volume step from a hold keyframe on
+  the cut's frame of an unbroken clip does not (straight through, not judged).
+  `verify.json` files of older builds carry no `soundThrough`: every cut is judged, as before.
 - Platform limits change; the table records what the official pages said on 2026-10-31. YouTube's level (−14 LUFS) is
   community measurement, not published. X's in-app (140 s) and Instagram's in-app (3 min) limits could not be confirmed
   from official pages; the API limits are used. The Export dialog remembers the platform preset per sequence with the
