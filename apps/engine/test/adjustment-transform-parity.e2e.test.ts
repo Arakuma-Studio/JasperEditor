@@ -204,13 +204,13 @@ const SCENES: Scene[] = [
 		],
 	},
 	{
-		name: 'shake-zoom-desaturate',
+		name: 'shake-desaturate-crop',
 		frame: 12,
 		tolerance: PARITY,
 		commands: [
 			FX('jasper.s.shake', { ...STRONG_SHAKE, amplitude: 1, wrapX: 'no', wrapY: 'no' }, '$sh'),
-			TF({ scaleHeight: 130 }),
 			FX('jasper.hue-saturation', { saturation: -60 }, '$hs'),
+			FX('jasper.crop', { left: 20 }, '$cr'),
 		],
 	},
 	{

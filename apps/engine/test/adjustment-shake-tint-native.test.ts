@@ -137,7 +137,8 @@ describe.runIf(enabled)('S_Shake and Tint on adjustment layers (native)', () => 
 		const reflectAndZoom = await plan(
 			scene([fx('jasper.s.shake', S19_SHAKE, '$sh'), fx('jasper.transform', { scaleHeight: 120 }, '$tf')]).d,
 		);
-		expect(reasons(reflectAndZoom)).toMatch(/S_Shake that wraps with Reflect with another Transform/);
+		// The preview resamples after each effect; one kernel pass would resample once.
+		expect(reasons(reflectAndZoom)).toMatch(/has 2 Transform \/ S_Shake effects/);
 	}, 120_000);
 
 	it('draws a keyframed Tint of the composite below', async () => {

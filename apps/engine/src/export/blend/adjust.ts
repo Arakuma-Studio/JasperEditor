@@ -6,7 +6,8 @@
 // and taps (`drawTaps`, `planLoweredFrames`, shared with the Program preview's 2D path), with the composite as the
 // picture — and the next process receives `2W×H` frames, the composite ‖ the drawn composite. There the layer is drawn
 // by the usual adjustment chain (its effects after the kernel's — colour runs, flips —, crop region, opacity, fades,
-// blend mode) with the drawn half as its source and the original half as what it mixes over. An S_Shake that wraps
+// blend mode) with the drawn half as its source and the original half as what it mixes over. One Transform or one
+// S_Shake per layer (the preview resamples after every effect; one kernel pass resamples once). An S_Shake that wraps
 // with Reflect gets the composite padded with its mirror image (`fillborders` mirror = the shader's continuous
 // reflection about the frame edge, sampled bilinearly), as far as its taps reach.
 //
@@ -56,13 +57,6 @@ const values = (fx: Effect, name: string): unknown[] => {
 	return a ? [a.value, ...a.keyframes.map((k) => k.value)] : [];
 };
 
-/** True when a Transform blurs somewhere in the clip (Shutter Angle on: Use Composition's Shutter Angle off). */
-function transformBlurs(fx: Effect): boolean {
-	if (fx.effectId !== TRANSFORM_EFFECT) return false;
-	if (!values(fx, 'useCompShutterAngle').some((v) => v === false)) return false;
-	return values(fx, 'shutterAngle').some((v) => typeof v === 'number' && v > 0);
-}
-
 /** True when an S_Shake wraps with Reflect on an axis somewhere in the clip (a missing param is the default, Reflect). */
 function shakeReflects(fx: Effect): boolean {
 	if (fx.effectId !== SHAKE_EFFECT) return false;
@@ -98,12 +92,12 @@ export function kernelAdjustmentRefusals(c: RenderVisualClip): string[] {
 	}
 	if (kernel.some((fx) => deepExpression(fx.params)))
 		out.push(`${name} has expressions on its Transform or S_Shake (not sampled by the native kernel)`);
-	if (kernel.filter(transformBlurs).length > 1)
-		out.push(`${name} has more than one motion-blurred Transform`);
-	// The mirror padding reflects the composite, i.e. the input of the first effect only, and only where the effect's
-	// output is inside the frame (no Transform after it can show its padding).
-	if (kernel.some(shakeReflects) && kernel.length > 1)
-		out.push(`${name} combines an S_Shake that wraps with Reflect with another Transform or S_Shake`);
+	// One effect per kernel pass: the preview resamples after every effect, the kernel would compose them into one
+	// resample (measured: 37 dB against the preview for S_Shake then Transform 130 %).
+	if (kernel.length > 1)
+		out.push(
+			`${name} has ${kernel.length} Transform / S_Shake effects (the native kernel draws one per adjustment layer)`,
+		);
 	if (c.intrinsicBox.width > MAX_SIDE || c.intrinsicBox.height > MAX_SIDE)
 		out.push(`${name} draws Transform / S_Shake on a frame larger than ${MAX_SIDE} px`);
 	return out;
