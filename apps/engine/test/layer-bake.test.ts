@@ -11,6 +11,7 @@ import {
 } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { PlanCapabilities, PlannedExport } from '../src/export/planner.ts';
+import { JobError } from '../src/jobs/types.ts';
 import { layerBakeExtension } from '../src/layer-bake/extension.ts';
 import type { BakeEnvironment } from '../src/layer-bake/key.ts';
 import { bakeClip, effectRunsOrderWarning, isStaticLayer } from '../src/layer-bake/layer.ts';
@@ -526,6 +527,81 @@ describe('shared render browsers (S11:LBK-022)', () => {
 		expect(svc.acquireBrowser('job_other', 1)).toBeNull();
 		await release();
 		expect(closed.sort()).toEqual([0, 1]);
+	});
+});
+
+describe('failed bakes', () => {
+	it('a retryable failure is baked again in a browser of its own, and the export warns with the clip', async () => {
+		const clip = {
+			clipId: 'title',
+			name: 'dev (1).png',
+			kind: 'text',
+			engine: 'remotion',
+			effects: [],
+			masks: [],
+			trackId: 'V2',
+			start: 100,
+			duration: 62,
+		} as unknown as RenderVisualClip;
+		const planned = {
+			range: { start: 0, end: 300 },
+			snapshot: { videoTracks: [{ trackId: 'V2', clips: [clip] }] },
+		} as unknown as PlannedExport;
+		const metas: { browserGroup?: string }[] = [];
+		const svc = {
+			unavailableReason: () => null,
+			environment: async () => ({}),
+			parallelism: { maxInFlight: null, sharedBrowser: true, pagesPerBrowser: 2 },
+			stats: { rendered: 0, reused: 0, joined: 0 },
+			browserSession: () => async () => undefined,
+			planBake: async () => ({
+				clipId: 'title',
+				clipName: 'dev (1).png',
+				key: 'key-title',
+				variant: { recipe: 'master' },
+				rect: null,
+				frames: 62,
+				startFrame: 100,
+				colorRuns: false,
+				material: {},
+			}),
+			lookup: async () => null,
+			ensureBake: async (plan: { key: string }, meta: { browserGroup?: string }) => {
+				metas.push(meta);
+				if (metas.length === 1) throw new JobError('RENDER_FAILED', 'Invalid message', true);
+				return {
+					key: plan.key,
+					path: '/bake.mov',
+					still: false,
+					rect: null,
+					frames: 62,
+					width: 1280,
+					height: 720,
+				};
+			},
+		} as unknown as LayerBakeService;
+		const warnings: { code: string; message: string }[] = [];
+		const prepared = await layerBakeExtension(svc).prepare!(planned, {
+			signal: new AbortController().signal,
+			stage: () => undefined,
+			scratchDir: async () => '/tmp',
+			log: () => undefined,
+			jobId: 'job_bake',
+			purpose: 'native',
+			concurrency: 4,
+			bakePages: 4,
+			warn: (w) => warnings.push(w),
+		});
+		expect((prepared as Map<string, unknown>).has('title')).toBe(true);
+		expect(metas.map((m) => m.browserGroup)).toEqual(['job_bake', undefined]);
+		expect(warnings).toEqual([
+			{
+				code: 'LAYER_BAKE_RETRIED',
+				message: expect.stringMatching(
+					/"dev \(1\)\.png" \(frames 100–162\) failed \(RENDER_FAILED: Invalid message\)/,
+				),
+			},
+		]);
 	});
 });
 

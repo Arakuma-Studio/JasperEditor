@@ -1,5 +1,9 @@
 import type { RenderSnapshot, RenderTransition, RenderVisualClip } from '@jasper/project';
 import {
+	describeLayers,
+	type FailedLayer,
+	failureText,
+	LayerBakeError,
 	type LayerOverride,
 	LayerPendingError,
 	layerSpan,
@@ -22,6 +26,7 @@ import { runEligible, shakeRuns } from './runs.ts';
 import {
 	type BakePlan,
 	type BakeResult,
+	type EnsureMeta,
 	type GradePlan,
 	type LayerBakeService,
 	layerFileUrl,
@@ -64,6 +69,12 @@ const FIRST_SHEET = 16;
 const SHEET_IN_FLIGHT = 1;
 /** Progress weight of one sheet frame (a still costs ≈ 0.1 s in a sheet against ≈ 3.4 s alone, textperf). */
 const SHEET_FRAME_COST = 1;
+/**
+ * Renders of one bake at most: a retryable failure (e.g. a browser that broke mid-render: the shared-browser
+ * frame-extraction cross-talk of docs/wp-notes/wp-m2-layer-bake.md "Failed bakes") is baked again, in a browser of its
+ * own; still failing, the export renders the layer's frames on the Remotion path (`LayerBakeError`).
+ */
+const BAKE_ATTEMPTS = 3;
 
 /** What the native builder (override) or the Remotion path (graded master) gets for one clip. */
 function entryOf(
@@ -163,14 +174,32 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 				grade: GradePlan | null;
 				/** spec 13 AS-073: the layers a run master (`planRun`) draws. */
 				run?: RenderVisualClip[];
+				/** The layers this render draws and their frames (what a failure names). */
+				layers: FailedLayer[];
 			}[] = [];
+			const layerOf = (c: RenderVisualClip): FailedLayer => {
+				const [start, end] = layerSpan(c, planned.range);
+				return { clipId: c.clipId, name: c.name, start, end };
+			};
 			for (const { trackId, t } of spans) {
 				if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
 				let plan = await svc.planSpan(planned, trackId, t, { env });
 				// A still inside the span: its cached master, else one frame.
 				if (single !== null && !(await svc.lookup(plan.key)))
 					plan = await svc.planSpan(planned, trackId, t, { env, frame: single });
-				items.push({ clip: null, plan, grade: null });
+				items.push({
+					clip: null,
+					plan,
+					grade: null,
+					layers: [
+						{
+							clipId: t.id,
+							name: plan.clipName,
+							start: Math.max(t.start, planned.range.start),
+							end: Math.min(t.start + t.duration, planned.range.end),
+						},
+					],
+				});
 			}
 			for (const clip of clips) {
 				if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
@@ -185,7 +214,7 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 							jobId: ctx.jobId,
 						})
 					: null;
-				items.push({ clip, plan, grade });
+				items.push({ clip, plan, grade, layers: [layerOf(clip)] });
 			}
 			// spec 13 AS-073: shaken layers the kernel cannot draw (S_Shake with motion blur, RGB split or wrap) are
 			// masters; those of a track that follow each other render as ONE master per run (one render's fixed cost and
@@ -207,7 +236,7 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 						for (const it of group) inRun.add(it);
 						const clipsOfRun = group.map((it) => it.clip!);
 						const plan = await svc.planRun(planned, trackId, clipsOfRun, { env });
-						runs.push({ clip: null, plan, grade: null, run: clipsOfRun });
+						runs.push({ clip: null, plan, grade: null, run: clipsOfRun, layers: clipsOfRun.map(layerOf) });
 					}
 				}
 				if (runs.length) {
@@ -240,6 +269,44 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 				onRendered: g.release,
 				log: ctx.log,
 			});
+			/**
+			 * One bake (`render`) of `groups`, rendered again after a retryable failure (BAKE_ATTEMPTS) in a browser of its
+			 * own: a bake that succeeded on a retry is a warning of the export, one that still fails a `LayerBakeError`
+			 * naming its layers and frames.
+			 */
+			const withRetries = async <R>(
+				groups: readonly (typeof items)[],
+				g: PageGrant,
+				render: (meta: EnsureMeta) => Promise<R>,
+			): Promise<R> => {
+				const layers = groups.flatMap((group) => group.flatMap((it) => it.layers));
+				let first: unknown = null;
+				for (let attempt = 1; ; attempt++) {
+					let meta: EnsureMeta = metaOf(g);
+					if (attempt > 1) {
+						// (the first attempt gave its pages back once it had captured its frames: no second release)
+						const { browserGroup: _shared, onRendered: _released, ...own } = meta;
+						meta = own;
+					}
+					try {
+						const r = await render(meta);
+						if (attempt > 1) {
+							const message = `Baking ${describeLayers(layers)} failed (${failureText(first)}); it was baked again on attempt ${attempt}`;
+							ctx.log(`warning LAYER_BAKE_RETRIED: ${message}`);
+							ctx.warn?.({ code: 'LAYER_BAKE_RETRIED', message });
+						}
+						return r;
+					} catch (e) {
+						if (ctx.signal.aborted || g.signal.aborted || (e as JobError)?.code === 'JOB_CANCELLED') throw e;
+						first ??= e;
+						const again = attempt < BAKE_ATTEMPTS && (e as JobError)?.retryable !== false;
+						ctx.log(
+							`layer-bake: ${describeLayers(layers)} failed on attempt ${attempt} (${failureText(e)})${again ? '; baking again in a browser of its own' : ''}`,
+						);
+						if (!again) throw new LayerBakeError(layers, e, attempt);
+					}
+				}
+			};
 			/** spec 13 AS-070: layer stills that drew past their border (baked again: grown, then as masters). */
 			const clipped: typeof items = [];
 			/** The entries of a group from its bake. */
@@ -327,9 +394,11 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 						// The pool starts heavier tasks first: decreasing weights keep the time order.
 						weight: sheets.length - i,
 						run: async (g: PageGrant) => {
-							const bakes = await svc.ensureSheet(
-								sheet.map((group) => group[0]!.plan),
-								metaOf(g),
+							const bakes = await withRetries(sheet, g, (meta) =>
+								svc.ensureSheet(
+									sheet.map((group) => group[0]!.plan),
+									meta,
+								),
 							);
 							for (const group of sheet) {
 								const { plan } = group[0]!;
@@ -402,12 +471,16 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 						want: maxInFlight === 1 ? budget : shares[i]!,
 						weight: group[0]!.plan.frames + RENDER_FIXED_COST_FRAMES,
 						run: async (g: PageGrant) => {
-							const bake = await svc.ensureBake(group[0]!.plan, metaOf(g));
+							const bake = await withRetries([group], g, (meta) => svc.ensureBake(group[0]!.plan, meta));
 							if (bake.clipped)
-								throw new JobError(
-									'LAYER_BAKE_FAILED',
-									`The master of "${group[0]!.plan.clipName}" is clipped`,
-									true,
+								throw new LayerBakeError(
+									group.flatMap((it) => it.layers),
+									new JobError(
+										'LAYER_BAKE_FAILED',
+										`The master of "${group[0]!.plan.clipName}" is clipped`,
+										true,
+									),
+									1,
 								);
 							finish(group, bake, null, into);
 							settle[i]!.resolve();
@@ -474,9 +547,11 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 						want: maxInFlight === 1 ? sheetBudget : perSheet,
 						weight: sheet.length * SHEET_FRAME_COST + RENDER_FIXED_COST_FRAMES,
 						run: async (g: PageGrant) => {
-							const bakes = await svc.ensureSheet(
-								sheet.map((group) => group[0]!.plan),
-								metaOf(g),
+							const bakes = await withRetries(sheet, g, (meta) =>
+								svc.ensureSheet(
+									sheet.map((group) => group[0]!.plan),
+									meta,
+								),
 							);
 							for (const group of sheet) {
 								const bake = bakes.get(group[0]!.plan.key);
@@ -505,9 +580,10 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 								want: !isMaster(group) ? 1 : maxInFlight === 1 ? budget : shares.get(group)!,
 								weight: plan.frames + RENDER_FIXED_COST_FRAMES,
 								run: async (g: PageGrant) => {
-									const meta = metaOf(g);
-									const bake = await svc.ensureBake(plan, meta);
-									const graded = grade ? await svc.ensureGraded(plan, grade, meta) : null;
+									const [bake, graded] = await withRetries([group], g, async (meta) => {
+										const bake = await svc.ensureBake(plan, meta);
+										return [bake, grade ? await svc.ensureGraded(plan, grade, meta) : null] as const;
+									});
 									finish(group, bake, graded);
 								},
 							};
@@ -572,15 +648,19 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 							frame: single,
 							...(master ? { master: true } : { grow: true }),
 						});
-						again.push({ clip: it.clip, plan, grade: null });
+						again.push({ clip: it.clip, plan, grade: null, layers: it.layers });
 					}
 					await round(again);
 				}
 				if (clipped.length)
-					throw new JobError(
-						'LAYER_BAKE_FAILED',
-						`The master of "${clipped[0]!.plan.clipName}" is clipped`,
-						true,
+					throw new LayerBakeError(
+						clipped.flatMap((it) => it.layers),
+						new JobError(
+							'LAYER_BAKE_FAILED',
+							`The master of "${clipped[0]!.plan.clipName}" is clipped`,
+							true,
+						),
+						1,
 					);
 			} catch (e) {
 				await releaseLater?.();

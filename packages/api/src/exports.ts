@@ -473,7 +473,8 @@ export const ExportResultSchema = z.object({
 		.optional(),
 	/**
 	 * run-time warnings, e.g. `NATIVE_FALLBACK` when a native preparation step failed
-	 * and an `auto` export was rendered on the Remotion path instead; also the plan's sound warnings
+	 * and an `auto` export was rendered on the Remotion path instead, `LAYER_BAKE_FALLBACK` when only the frames of
+	 * layers whose bake failed were, `LAYER_BAKE_RETRIED` when a bake succeeded on a retry; also the plan's sound warnings
 	 * (`W_SOUND_CREDITS`, `W_SOUND_CHECK_STALE` with `level: 'info'`) and, when the file is not in the requested
 	 * container or audio codec, `OUTPUT_CONTAINER_CHANGED` / `AUDIO_CODEC_CHANGED` (WP6.5a, AGENTS §4).
 	 */
