@@ -1285,3 +1285,89 @@ cold (no code cache yet); a re-export of an unchanged design reuses the cached b
 dependence of the halftone frames above is the compositions' (a page's earlier frames change later ones): which frame
 a page starts at already depends on the page count (the budget follows the cores); the new floor gives short masters
 fewer pages, and the four designs came out identical.
+
+## 17. Memory peaks of long exports: the composite held ahead of adjustment layers; a budget that counts everything (implemented)
+
+`export/native.ts` (adjustment layers), `export/memory.ts` (`memoryRoom`, `compositeMemoryBudget`, `memoryFloor`),
+`export/service.ts` (watchdog). Test: `apps/engine/test/export-memory.test.ts` ("does not hold the composite ahead of
+an adjustment layer that starts late in the graph", fails on the previous commit).
+
+**What the user's PC showed** (measured; Ryzen 9 5900X, 24 threads, 94 GB RAM, 512 MB swap, RTX 3080 Ti 12 GB; a
+30 s RAM monitor and the job logs; all times local):
+- *04:22, 66.7 GB used* (job `job_e8910e04d6361ed5`, range 8346–20089 of `prj_SC0SEK431T1QPQYF`, native, 4 segments at
+  once): the encode phase exactly (04:20:30–04:22:58); render browsers 3.5 GB, engine 1.9 GB. No other render ran in
+  that window (journal, process list). Reproduced below: one composite held ≈ 34 GB.
+- *04:10, 43.6 GB used* (job `job_50f844f8f5cbaa3c`, the same range on the Remotion path after a failed bake): the
+  render browser of the Remotion render, 25–31 GB over 16 processes (12 pages), flat for 18 min, then gone with the
+  frames: bounded, not a leak.
+- *00:26, global OOM kill* (job `job_f36b9b0fbb168562`, Remotion path, a build before ceba3f642): a headless Chrome
+  process with 59 GB `shmem-rss` killed after 46 min, the engine's event loop stalled 33 s — the picture-store growth
+  ceba3f642 fixed (flat-compositor picture stores keep only recent frames). The job ended `CANVAS_NESTED`.
+
+**Cause of the native peaks.** An adjustment layer reads the composite below it: `[composite]split[keep][adj]`, the
+`adj` branch trimmed to the layer's span (`trim=start_frame=N`) and overlaid back onto `keep`. The overlay needs the
+layer's first frame before it passes any `keep` frame; the trim reaches it only by pulling N frames through the split,
+and the split queues each of them for `keep` (libavfilter links are unbounded). In a segment, N is the layer's start
+inside the segment: the user's segment 2 had a Transform adjustment layer (its composite and the drawn composite side
+by side, 3840×1080 RGBA, 16.6 MB per frame) at N = 2,117: ≈ 35 GB in that one process. A later run of the same range
+with 4 adjustment layers (`job_76f270602a4c666e`, N = 163, 1,793 and 2,541) reached 39.8 GB in one composite and
+91 of 94 GB on the machine. Layers that are their own inputs (media, masters, streams; timestamps offset) do not queue.
+
+Peak RSS of one composite against N (measured on the PC under the user's load, vendor FFmpeg 7.1.5, 640×360 RGBA =
+0.88 MB per frame, 40 s @ 60 fps, a 90-frame layer from frame N; `je-rssvsn.sh`, the frames compared with `framemd5`):
+
+| N | split + trim (before) | bypass (now) | own input, offset (control) |
+|---:|---:|---:|---:|
+| 0 | 69 MB | 66 MB | 97 MB |
+| 250 | 298 MB | 65 MB | 103 MB |
+| 500 | 523 MB | 67 MB | 108 MB |
+| 1,000 | 961 MB | 65 MB | 104 MB |
+| 2,000 | 1,844 MB | 64 MB | 98 MB |
+
+Before: + 0.89 MB per frame of N, one held frame each. Now and control: flat. The bypass output has the same pixels
+and timestamps as before at every N.
+
+**Fix.** An adjustment layer that starts after the stack's first frame (N > 0, Normal blend, a rate whose time base
+`settb` writes exactly) bypasses it: `[composite]segment=frames=N[ahead][rest]`, the split and the overlay run on
+`rest` only (its frames start at the layer: the trim starts at 0), and `[ahead][overlay]concat=n=2,settb=…,setpts=N`
+joins the frames again with the stack's own timestamps (as the base pieces of §12). A Transform / S_Shake adjustment
+layer cuts the pair the same way and crops the `ahead` frames to the composite half.
+
+**Budget and watchdog.**
+- The budget is half the memory limit (RAM or the engine's cgroup), at most 80 % of what is available when planned
+  (was 60 % of the limit); `JASPER_EXPORT_MEMORY_BUDGET_MB` still sets it.
+- The watchdog counted only each segment's own ffmpeg. It now counts each composite with the decoder and blend-stage
+  processes that feed it (the blend stage of segment 2 held 6.5 GB, uncounted), and takes the larger of that and what
+  the machine has taken since the composites started (`MemTotal − MemAvailable`, or the cgroup's: render browsers of
+  bakes still running, GPU driver memory, other applications). Past the budget it stops the newest segment and runs
+  one fewer at a time; a lone composite past the budget on its own fails with `INSUFFICIENT_MEMORY`, else no other
+  segment starts.
+- A floor: with less than 10 % of the limit still available the watchdog acts whatever the budget (stops the newest
+  segment, or fails a lone composite with `INSUFFICIENT_MEMORY`, retryable), so a configured budget cannot freeze the
+  machine.
+
+**Before / after** (measured on the user's PC, test engine on port 47993 in its own systemd unit at nice 19 / idle I/O,
+its own appdir, a copy of the project, layer-bake cache copied (bake 20–66 s), the same range 8346–20089 with the
+project's export settings: 1920×1080 H.264 NVENC p4 cq 18, 4 segments at once; sampled every ≈ 2.5 s):
+
+| Run | Machine | Unit anon peak | Largest composite | Composites summed | Lowest MemAvailable |
+|---|---|---:|---:|---:|---:|
+| before (f3ad4ea76) | load1 3, 11.2 GB used before | 45.3 GB | 34.3 GB | 44.4 GB | 38.6 GB |
+| before, again | load1 30 (other renders), 34.5 GB used before | ≥ 51.2 GB, stopped by the test's own guard at MemAvailable 13.5 GB (the engine's watchdog did not act: 50 GB < its 56.5 GB budget) | ≥ 30.3 GB, growing | ≥ 50.3 GB | 13.5 GB |
+| after | load1 17–22 (other renders), 25.5 GB used before | 25.1 GB | 6.5 GB (a blend stage) | 23.3 GB | 43.1 GB |
+| after, again | load1 30–69 (other renders, Unity), 30.7 GB used before | 26.3 GB | 6.8 GB | 24.8 GB | 39.6 GB |
+
+A shorter range of the same project (12800–14240, one graph, the Transform adjustment layer at N = 569; load1 38–50
+from other renders): the composite 9.4 GB → 0.84 GB (569 × 16.6 MB ≈ 9.4 GB), unit anon peak 15.3 → 7.4 GB; the two
+outputs decode to identical frames (1,440 `framemd5` lines, the same file size). (The full-range outputs cannot be
+compared: a source file of the project, `S33_lua_roblox.mp4`, was replaced on disk between the runs.)
+
+The segment with the adjustment layer: 34.3 GB → 1.4 GB. The other composites are unchanged (4.7–6.2 GB each, within
+the plan's 24.9 GB estimate for the four).
+
+**Limits.**
+- An adjustment layer with a blend mode still hands a composite that waits for its first frame to the blend kernel:
+  not bypassed (none in this project); the watchdog bounds it.
+- The Remotion path has no memory budget; its render browser held 25–31 GB here (12 pages), under the half.
+- The watchdog's machine-wide measure is conservative: memory other applications take during an export counts
+  against it (the export slows down to fewer segments rather than the machine running out).

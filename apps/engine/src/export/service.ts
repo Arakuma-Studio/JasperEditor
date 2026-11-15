@@ -98,7 +98,14 @@ import { planPsd } from './delivery/psd-plan.ts';
 import { gpuDecodePolicyFromEnv, nvdecEligible, nvdecForGraph, probeCudaDecode } from './gpu.ts';
 import { motionStage } from './keyframed.ts';
 import { guardMediaDuring, offlineUsesOf } from './media-guard.ts';
-import { compositeMemoryBudget, compositeProfile, estimateFrom, overlaysFrom } from './memory.ts';
+import {
+	compositeMemoryBudget,
+	compositeProfile,
+	estimateFrom,
+	memoryFloor,
+	memoryRoom,
+	overlaysFrom,
+} from './memory.ts';
 import {
 	BT709_FRAME_TAGS,
 	buildNativeGraph,
@@ -1949,14 +1956,16 @@ export class ExportService {
 						),
 				),
 			);
+		/** `onSpawn`: each decoder process the streams start (the job tracks it; the watchdog counts its memory). */
 		const runStreams = (
 			child: ChildProcess,
 			streams: ReturnType<typeof buildNativeGraph>['streams'],
 			workers: number,
+			onSpawn: (c: ChildProcess) => void,
 		) => {
 			for (const s of streams) {
 				const sink = child.stdio[s.fd] as Writable;
-				const run = { workers, signal: streamAbort.signal, onSpawn: ctx.trackChild };
+				const run = { workers, signal: streamAbort.signal, onSpawn };
 				producers.push(
 					('kind' in s.plan && s.plan.kind === 'taps'
 						? streamTaps(this.deps.ff, s.plan, sink, run)
@@ -1974,6 +1983,7 @@ export class ExportService {
 			child: ChildProcess,
 			blend: ReturnType<typeof buildNativeGraph>['blend'],
 			workers: number,
+			onSpawn: (c: ChildProcess) => void,
 		) => {
 			if (!blend) return;
 			producers.push(
@@ -1985,8 +1995,8 @@ export class ExportService {
 					{
 						workers,
 						signal: streamAbort.signal,
-						onSpawn: ctx.trackChild,
-						runStreams: (c, streams) => runStreams(c, streams, workers),
+						onSpawn,
+						runStreams: (c, streams) => runStreams(c, streams, workers, onSpawn),
 					},
 				).catch((e: Error) => {
 					if (streamAbort.signal.aborted) return;
@@ -2019,11 +2029,20 @@ export class ExportService {
 		// a failed mixdown or sound encode fails the export and stops the segments
 		sound?.catch((error: unknown) => fail({ error }));
 		const endEncode = report.begin(still ? 'still' : 'encode');
-		// Memory watchdog (AGENTS §0): the composites' resident memory is sampled every second; past the budget the most
-		// recently started segment is stopped and queued again with one segment fewer at a time, and a lone composite
-		// past it fails the export by name — the system's out-of-memory killer (or a frozen machine) never decides.
+		// Memory watchdog (AGENTS §0): sampled every second, the export's memory is the larger of the composites' own
+		// (each composite with the decoder and blend processes that feed it) and what the machine has taken since the
+		// composites started (render browsers of bakes still running, GPU driver memory and anything else outside the
+		// composites: MemAvailable). Past the budget, or with less than the floor still available, the most recently
+		// started segment is stopped and queued again with one segment fewer at a time; a lone composite fails the export
+		// by name when its own memory is past the budget or the machine runs short — the system's out-of-memory killer
+		// (or a frozen machine) never decides.
 		const budget = still ? 0 : compositeMemoryBudget();
-		const running = new Map<number, { ac: AbortController; pid: number | null; since: number; part: Part }>();
+		const floor = memoryFloor();
+		const takenAtStart = memoryRoom().taken;
+		const running = new Map<
+			number,
+			{ ac: AbortController; pid: number | null; helpers: Set<number>; since: number; part: Part }
+		>();
 		const requeued = new Set<number>();
 		/** Segments the watchdog stopped whose process has not ended yet (their memory is still counted). */
 		const stopping = new Set<number>();
@@ -2045,8 +2064,13 @@ export class ExportService {
 			const ac = new AbortController();
 			const stop = () => ac.abort();
 			runAbort.signal.addEventListener('abort', stop, { once: true });
-			const slot = { ac, pid: null as number | null, since: Date.now(), part };
+			const slot = { ac, pid: null as number | null, helpers: new Set<number>(), since: Date.now(), part };
 			running.set(i, slot);
+			/** A process feeding this composite (decoder, blend stage): tracked by the job, counted with the composite. */
+			const helper = (c: ChildProcess) => {
+				ctx.trackChild(c);
+				if (c.pid) slot.helpers.add(c.pid);
+			};
 			return this.deps.ff
 				.run(part.args, {
 					signal: ac.signal,
@@ -2054,8 +2078,8 @@ export class ExportService {
 					onSpawn: (child) => {
 						ctx.trackChild(child);
 						slot.pid = child.pid ?? null;
-						if (graph.streams.length > 0) runStreams(child, graph.streams, workers);
-						runBlend(child, graph.blend, workers);
+						if (graph.streams.length > 0) runStreams(child, graph.streams, workers, helper);
+						runBlend(child, graph.blend, workers, helper);
 					},
 					onProgress: (p) => {
 						if (still || total <= 0) return;
@@ -2101,29 +2125,40 @@ export class ExportService {
 			budget > 0 && process.platform === 'linux'
 				? setInterval(() => {
 						let rss = 0;
-						for (const r of running.values()) rss += r.pid ? residentBytes(r.pid) : 0;
+						for (const r of running.values())
+							for (const pid of [r.pid, ...r.helpers]) rss += pid ? residentBytes(pid) : 0;
+						const room = memoryRoom();
+						const used = Math.max(rss, room.taken - takenAtStart);
+						const short = room.available < floor;
 						// (one stop at a time: the stopped process's memory is counted until it has ended)
-						if (rss <= budget || stopping.size > 0) return;
+						if ((used <= budget && !short) || stopping.size > 0) return;
 						const gbs = (b: number) => `${(b / 1024 ** 3).toFixed(1)} GB`;
+						const why = short
+							? `${gbs(room.available)} of memory left on the machine, under the ${gbs(floor)} floor`
+							: `export at ${gbs(used)} (composites ${gbs(rss)}), over the ${gbs(budget)} budget`;
 						if (running.size > 1) {
 							const [i, r] = [...running.entries()].sort((a, b) => b[1].since - a[1].since)[0]!;
 							limit = Math.max(1, Math.min(limit, running.size) - 1);
 							stopping.add(i);
 							requeued.add(i);
-							ctx.log(
-								`native: composites at ${gbs(rss)}, over the ${gbs(budget)} budget: ${labels[i]} stopped and queued again, ${limit} at a time`,
-							);
+							ctx.log(`native: ${why}: ${labels[i]} stopped and queued again, ${limit} at a time`);
 							r.ac.abort();
-						} else if (failed === null) {
+						} else if (failed === null && (rss > budget || short)) {
 							fail({
 								error: new JobError(
 									'INSUFFICIENT_MEMORY',
-									`Not enough memory: the export's compositor reached ${gbs(rss)}, over the ${gbs(budget)} this machine has available for it; close other applications or export a shorter range`,
+									short
+										? `Not enough memory: only ${gbs(room.available)} of memory is left on this machine while the export composites; close other applications or export a shorter range`
+										: `Not enough memory: the export's compositor reached ${gbs(rss)}, over the ${gbs(budget)} this machine has available for it; close other applications or export a shorter range`,
 									true,
-									{ rssBytes: rss, budgetBytes: budget },
+									{ rssBytes: rss, budgetBytes: budget, availableBytes: room.available },
 								),
 								...([...running.values()][0] ? { part: [...running.values()][0]!.part } : {}),
 							});
+						} else if (limit > 1) {
+							// a lone composite within the budget while other processes took the rest: no other one starts
+							limit = 1;
+							ctx.log(`native: ${why}: 1 at a time`);
 						}
 					}, 1000)
 				: null;

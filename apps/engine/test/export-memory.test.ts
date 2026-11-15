@@ -125,6 +125,38 @@ describe('composite memory with many inputs (AS-074)', () => {
 		expect(none.blocker).toMatch(/native composite needs ≈ \d+\.\d GB of memory/);
 	});
 
+	it('does not hold the composite ahead of an adjustment layer that starts late in the graph', async () => {
+		// The user's segment held 2,117 frames (34 GB) in one composite: the layer's `trim` reached its first frame only by
+		// pulling every frame before it through the `split`, which kept them all for the overlay's other input.
+		const d = new DocBuilder();
+		d.tx([
+			{ type: 'clip.addSolid', at: 0, duration: 300, track: 'V1', color: [1, 0.5, 0, 1] },
+			{ type: 'clip.addAdjustment', at: 240, duration: 30, track: 'V2', ref: '$a' },
+			{ type: 'effect.add', target: { clipId: '$a' }, effectId: 'jasper.black-white' },
+		]);
+		const p = await planOf(d);
+		const g = buildNativeGraph({
+			snapshot: p.snapshot,
+			output: p.output,
+			outputFile: '/tmp/x.mp4',
+			sources: { media: (id) => p.media[id] ?? null, mgMaster: () => null },
+			threads: 8,
+		});
+		const chains = g.filter.split(/;\s*/);
+		const splitOutputs = new Set(
+			chains.flatMap((ch) =>
+				[...(/split((?:\[[^\]]+\])+)$/.exec(ch)?.[1].matchAll(/\[([^\]]+)\]/g) ?? [])].map((m) => m[1]!),
+			),
+		);
+		expect(splitOutputs.size).toBeGreaterThan(0);
+		// a split output whose chain drops frames at its start: the split holds them for its other output
+		const held = chains.filter((ch) => {
+			const m = /^\[([^\]]+)\]trim=start_frame=(\d+)/.exec(ch);
+			return m !== null && splitOutputs.has(m[1]!) && Number(m[2]) > 0;
+		});
+		expect(held).toEqual([]);
+	});
+
 	it('plans a range one graph cannot hold as segments instead of refusing it', async () => {
 		const d = doc;
 		const whole = estimateFrom(planned.snapshot, compositeProfile(planned.snapshot), planned.snapshot.range, {

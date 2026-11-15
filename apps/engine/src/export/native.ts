@@ -955,7 +955,10 @@ function drawStack(ctx: StackContext): string {
 	}[] = [];
 	// (`settb` reads its time base through `av_d2q(…, 100000)`: exact for rates whose terms fit, every rate in use)
 	const g = gcd(fps.num, fps.den);
-	let baseOpen = ctx.coverBase === true && fps.num / g <= 100_000 && fps.den / g <= 100_000;
+	const exactTb = fps.num / g <= 100_000 && fps.den / g <= 100_000;
+	/** The stack's own timestamps again after a `concat` (frame N at N / fps; `concat` outputs microseconds). */
+	const stamp = `settb=${fps.den}/${fps.num},setpts=N`;
+	let baseOpen = ctx.coverBase === true && exactTb;
 	const overlapsIn = (list: readonly { f0: number; f1: number }[], f0: number, f1: number) =>
 		list.some((s) => s.f0 < f1 && f0 < s.f1);
 	/** Writes the base in place of the background chain; no layer joins it afterwards. */
@@ -982,8 +985,6 @@ function drawStack(ctx: StackContext): string {
 			chains.push(`[${p.label}]tpad=stop=${n}:stop_mode=add:color=${bg},trim=end_frame=${n}[${P}bgp${i}]`);
 			parts.push(`[${P}bgp${i}]`);
 		}
-		// The background's own timestamps (frame N at N / fps, time base 1 / fps; `concat` outputs microseconds).
-		const stamp = `settb=${fps.den}/${fps.num},setpts=N`;
 		chains.push(
 			parts.length === 1
 				? `${parts[0]}${stamp}[${bgLabel}]`
@@ -1184,6 +1185,14 @@ function drawStack(ctx: StackContext): string {
 		/** Set when the layer became a piece of the base (nothing drawn onto `last`). */
 		let asBase = false;
 		let backdrop: string | null = null;
+		/**
+		 * AGENTS §0: the composite's frames before an adjustment layer that starts after the stack's first frame. They
+		 * bypass the layer (`segment`) and are joined back after its overlay (`concat`): fed through the `split` instead,
+		 * every one of them was held in memory until the layer's first frame (its overlay waits for that frame, and the
+		 * layer's `trim` reaches it only by pulling them all through the split) — 2,117 frames of 3840×1080 RGBA, 34 GB,
+		 * in one composite on the user's PC (docs/wp-notes/export-performance.md §17).
+		 */
+		let ahead: string | null = null;
 		if (blendMode !== 'normal' && !('clip' in layer && layer.clip.kind === 'adjustment')) {
 			backdrop = last;
 			last = transparentBase(ctx, `${P}tb${li}`);
@@ -1392,6 +1401,20 @@ function drawStack(ctx: StackContext): string {
 			if (c.kind === 'adjustment') {
 				const keep = `${label}k`;
 				const adj = `${label}s`;
+				// (a blend-mode adjustment layer hands its backdrop to the blend kernel instead of an overlay: not bypassed)
+				const lead = blendMode === 'normal' && exactTb ? f0 - R0 : 0;
+				/** The frames from the layer's first one on (`from`); those before it go to `ahead`. */
+				const bypass = (from: string, pair: boolean): string => {
+					if (lead <= 0) return from;
+					ahead = `${label}b`;
+					if (!pair) ctx.chains.push(`[${from}]segment=frames=${lead}[${ahead}][${label}b1]`);
+					else
+						ctx.chains.push(
+							`[${from}]segment=frames=${lead}[${label}b0][${label}b1]`,
+							`[${label}b0]crop=${W}:${H}:0:0[${ahead}]`,
+						);
+					return `${label}b1`;
+				};
 				if (isKernelAdjustment(c)) {
 					// Transform / S_Shake on an adjustment layer (blend/adjust.ts): the process ends here; the kernel draws the
 					// composite through them and the layer's other effects, crop, opacity and blend run on that half below.
@@ -1405,7 +1428,7 @@ function drawStack(ctx: StackContext): string {
 					);
 					// (the process ends here: its base is complete)
 					closeBase();
-					const pair = ctx.blend.adjust(last, frames, planned.pad);
+					const pair = bypass(ctx.blend.adjust(last, frames, planned.pad), true);
 					ctx.chains.push(
 						`[${pair}]split[${label}p0][${label}p1]`,
 						`[${label}p0]crop=${W}:${H}:0:0[${keep}]`,
@@ -1417,14 +1440,15 @@ function drawStack(ctx: StackContext): string {
 							isKernelEffect(fx.effectId) ? { ...fx, enabled: false } : fx,
 						),
 					};
-				} else ctx.chains.push(`[${last}]split[${keep}][${adj}]`);
+				} else ctx.chains.push(`[${bypass(last, false)}]split[${keep}][${adj}]`);
 				last = keep;
 				// keyframes-blend: an adjustment layer with a blend mode: its output goes to the kernel with the composite.
 				if (blendMode !== 'normal') {
 					backdrop = keep;
 					last = transparentBase(ctx, `${label}tb`);
 				}
-				composite = { label: adj, R0 };
+				// (bypassed: the split's frames start at the layer's first frame)
+				composite = { label: adj, R0: lead > 0 ? f0 : R0 };
 			}
 			// Source decode, source chain and effects (shared with the warp stage), then Motion.
 			const source = layerSourceChain({
@@ -1520,6 +1544,10 @@ function drawStack(ctx: StackContext): string {
 				chain: hideable ? { list: ctx.chains, index } : null,
 				hidden: [],
 			});
+		}
+		if (ahead) {
+			ctx.chains.push(`[${ahead}][${last}]concat=n=2:v=1:a=0,${stamp}[${last}j]`);
+			last = `${last}j`;
 		}
 		if (blendMode !== 'normal' && ctx.blend) {
 			if (backdrop === null) throw new Error('blend layer without a backdrop');

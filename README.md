@@ -1235,9 +1235,13 @@ graphics)** and lists one graphics group per baked layer.
   (`JASPER_EXPORT_COMPOSITE_SIZE=sequence` forces it). The plan and the job result report
   `pipeline` and the result `timings` per phase; an export's log is kept in `engine/logs/jobs/` when it succeeds too
   (docs/wp-notes/export-performance.md).
-- Before an export starts, the planner estimates the composite's memory; one that would not fit (60 % of the RAM or
-  of the engine's cgroup limit, or `JASPER_EXPORT_MEMORY_BUDGET_MB`) is refused on the native path with the estimate
-  and goes through the Remotion path (a forced **Native** export is not eligible). A compositor killed by the system
+- Before an export starts, the planner estimates the composite's memory; one that would not fit (half the RAM or
+  of the engine's cgroup limit, at most 80 % of what is available, or `JASPER_EXPORT_MEMORY_BUDGET_MB`) is refused on
+  the native path with the estimate and goes through the Remotion path (a forced **Native** export is not eligible).
+  While it composites, a watchdog counts the composites with the decoder and blend processes feeding them and
+  everything the machine took since they started; past the budget, or with less than 10 % of the RAM still
+  available whatever the budget, it stops a segment and queues it again (fewer at a time), or fails a lone composite
+  with `INSUFFICIENT_MEMORY`. A compositor killed by the system
   fails the export with `OUT_OF_MEMORY`; on Linux, tool processes are the OOM killer's preferred victims, not the
   engine.
 - Bakes run as child jobs of the export ("Baking graphics 1/3 · 40 %"), up to 12 at a time: they share the export's
