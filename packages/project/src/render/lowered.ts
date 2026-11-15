@@ -89,15 +89,22 @@ function paramValues(fx: RenderVisualClip['effects'][number], name: string): unk
 
 /**
  * Why an effect cannot be lowered (null = it can): only Transform and S_Shake without motion blur, RGB split or
- * wrap; no effect masks.
+ * wrap; no effect masks. `reflect`: S_Shake may also wrap with Reflect (the caller's picture holds the reflection,
+ * see `loweredLayerTaps`).
  */
-function effectRefusal(fx: RenderVisualClip['effects'][number]): string | null {
+export function loweredEffectRefusal(
+	fx: RenderVisualClip['effects'][number],
+	opts: { reflect?: boolean } = {},
+): string | null {
 	if (fx.masks?.length) return 'effect masks';
 	if (fx.effectId === TRANSFORM) return null;
 	if (fx.effectId === SHAKE) {
 		const all = (n: string, ok: (v: unknown) => boolean) => paramValues(fx, n).every(ok);
 		if (!all('motionBlur', (v) => v === false || v === undefined)) return 'S_Shake motion blur';
-		for (const w of ['wrapX', 'wrapY']) if (!all(w, (v) => v === 'no')) return 'S_Shake wrap';
+		const wraps = opts.reflect ? ['no', 'reflect'] : ['no'];
+		for (const w of ['wrapX', 'wrapY'] as const)
+			if (!shakeWraps(fx, w).every((v) => wraps.includes(v)))
+				return opts.reflect ? 'S_Shake Tile wrap' : 'S_Shake wrap';
 		const one = (n: string, d: number) => {
 			const vs = paramValues(fx, n);
 			return vs.length === 0 ? [d] : vs.map((v) => num(v, d));
@@ -111,6 +118,12 @@ function effectRefusal(fx: RenderVisualClip['effects'][number]): string | null {
 		return null;
 	}
 	return `effect ${fx.effectId}`;
+}
+
+/** The wrap modes an S_Shake axis takes over the clip (a missing param is the effect's default, Reflect). */
+function shakeWraps(fx: RenderVisualClip['effects'][number], axis: 'wrapX' | 'wrapY'): string[] {
+	const vs = paramValues(fx, axis);
+	return vs.length === 0 ? ['reflect'] : vs.map((v) => (typeof v === 'string' ? v : 'reflect'));
 }
 
 /** True when a Transform effect blurs (Shutter Angle on, not the sequence's shutter) somewhere in the clip. */
@@ -138,7 +151,7 @@ export function loweredRefusal(c: RenderVisualClip): string | null {
 		return 'expressions';
 	const fxs = c.effects.filter((fx) => fx.enabled);
 	for (const fx of fxs) {
-		const r = effectRefusal(fx);
+		const r = loweredEffectRefusal(fx);
 		if (r) return r;
 	}
 	if (fxs.filter(transformBlurs).length > 1) return 'more than one motion-blurred Transform';
@@ -270,9 +283,26 @@ export function loweredLayerTaps(o: {
 			taps = next;
 		} else if (fx.effectId === SHAKE) {
 			const sh = shakeInverse(u, box, num(fx.params.zDist, 1));
+			// Wrap No samples the effect canvas; with a Reflect axis (`dw_tap`) the axes that do not wrap are cut at the
+			// box and the reflecting ones are unbounded: the picture must hold the reflection there (the adjustment
+			// kernel pads the composite with its mirror image), so only an S_Shake whose input is the picture may reflect.
+			const wrap = (v: unknown) => (v === 'no' || v === 'tile' ? v : 'reflect');
+			const wx = wrap(fx.params.wrapX);
+			const wy = wrap(fx.params.wrapY);
+			if (wx === 'tile' || wy === 'tile') throw new Error(`lowered layer ${c.clipId}: S_Shake Tile wrap`);
+			const far = 1e7;
+			const rect: [number, number, number, number] =
+				wx === 'no' && wy === 'no'
+					? canvas
+					: [
+							wx === 'reflect' ? -far : 0,
+							wy === 'reflect' ? -far : 0,
+							wx === 'reflect' ? far : box.width,
+							wy === 'reflect' ? far : box.height,
+						];
 			taps = taps.map((tap) => {
 				const map = composeAffine(sh, tap.map);
-				return { w: tap.w, map, stages: [...tap.stages, { map, rect: canvas }] };
+				return { w: tap.w, map, stages: [...tap.stages, { map, rect }] };
 			});
 		} else throw new Error(`lowered layer ${c.clipId}: ${fx.effectId} cannot be lowered`);
 	}

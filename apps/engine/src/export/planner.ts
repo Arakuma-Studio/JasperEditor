@@ -73,7 +73,12 @@ import {
 	LEGACY_X264_CHOICE,
 	outputFormatChanges,
 } from '../tools/encoders.ts';
-import { isTransformAdjustment, TRANSFORM_EFFECT, transformAdjustmentRefusals } from './blend/adjust.ts';
+import {
+	adjustmentPadRefusal,
+	isKernelAdjustment,
+	isKernelEffect,
+	kernelAdjustmentRefusals,
+} from './blend/adjust.ts';
 import { CaptionExportError, captionBurnMode, captionPlanWarnings } from './captions.ts';
 import {
 	type AudioOnlySpec,
@@ -586,6 +591,11 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	for (const c of visual) {
 		for (const reason of nativeBlockers(c, deps.capabilities, deps.extensions ?? [], deps.effects))
 			blockers.push({ itemId: c.clipId, path: 'native', reason });
+		// An S_Shake reflecting farther than the frame: the kernel's mirror padding cannot hold it (blend/adjust.ts).
+		if (isKernelAdjustment(c) && kernelAdjustmentRefusals(c).length === 0) {
+			const pad = adjustmentPadRefusal(c, snapshot.settings.fps);
+			if (pad) blockers.push({ itemId: c.clipId, path: 'native', reason: pad });
+		}
 		const bakeEngine = (deps.extensions ?? []).map((e) => e.bakes?.(c) ?? null).find((x) => x !== null);
 		if (bakeEngine)
 			baked.push({
@@ -1475,14 +1485,14 @@ export function nativeBlockers(
 	// `nestBlockers` refuses them inside nested sequences.
 	const rb = retimeBlocker();
 	if (rb) out.push(rb);
-	// Transform on an adjustment layer: drawn on the composite by the multi-tap kernel (blend/adjust.ts).
-	const adjustTransform = isTransformAdjustment(c);
-	if (adjustTransform) out.push(...transformAdjustmentRefusals(c));
+	// Transform / S_Shake on an adjustment layer: drawn on the composite by the multi-tap kernel (blend/adjust.ts).
+	const adjustKernel = isKernelAdjustment(c);
+	if (adjustKernel) out.push(...kernelAdjustmentRefusals(c));
 	for (const fx of c.effects) {
 		if (!fx.enabled) continue;
 		// Built-in effects (crop, flips) render with keyframes too (crop edges per frame, `layerSourceChain`).
 		if (BUILTIN_NATIVE_EFFECTS.has(fx.effectId)) continue;
-		if (adjustTransform && fx.effectId === TRANSFORM_EFFECT) continue;
+		if (adjustKernel && isKernelEffect(fx.effectId)) continue;
 		const animated = Object.values(fx.params).some((p) => isAnimated(p));
 		const spec = effects.get(fx.effectId, fx.effectVersion);
 		let support: false | 'static' | 'animated' = false;
@@ -1550,10 +1560,10 @@ function nestBlockers(snap: RenderSnapshot): { clipId: string; reason: string }[
 						clipId: x.clipId,
 						reason: `${x.kind} clip "${x.name}" inside nested sequence clip "${c.name}" uses blend mode "${blendModeInfo(x.blendMode)?.label ?? x.blendMode}" (native blend modes apply to the sequence's own layers)`,
 					});
-				if (isTransformAdjustment(x))
+				if (isKernelAdjustment(x))
 					out.push({
 						clipId: x.clipId,
-						reason: `adjustment clip "${x.name}" inside nested sequence clip "${c.name}" uses Transform (native Transform adjustment layers apply to the sequence's own stack)`,
+						reason: `adjustment clip "${x.name}" inside nested sequence clip "${c.name}" uses Transform or S_Shake (native Transform / S_Shake adjustment layers apply to the sequence's own stack)`,
 					});
 			}
 			out.push(...nestBlockers(sub));
