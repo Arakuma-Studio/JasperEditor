@@ -256,8 +256,6 @@ describe.runIf(PACG_GL)('fx family premiere-adjust-color-keying in WebGL2', { ti
 				O,
 			),
 		).toBe(true);
-		expect(grey(await px('jasper.tint', {}, ORANGE))).toBe(true);
-		expect(near(await px('jasper.tint', { amountToTint: 0 }, ORANGE), O)).toBe(true);
 		const lim = await px(
 			'jasper.video-limiter',
 			{ clipLevel: 90, compressionBeforeClip: 'none' },

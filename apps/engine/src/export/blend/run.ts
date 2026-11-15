@@ -84,13 +84,14 @@ async function blendSegment(
 	const W = size.width;
 	const H = size.height;
 	const adjust = seg.adjust;
-	// Blend layers read `2W×H` frames (composite ‖ layer); a Transform adjustment reads the composite alone (`W×H`).
-	const frameBytes = W * H * (adjust ? 4 : 8);
+	// Blend layers read `2W×H` frames (composite ‖ layer); a kernel adjustment reads the composite alone (padded).
+	const pad = adjust?.pad ?? 0;
+	const frameBytes = adjust ? (W + 2 * pad) * (H + 2 * pad) * 4 : W * H * 8;
 	const what = adjust ? 'adjustment layer' : 'blend layer';
 	let pool: { slots: Slot[]; close(): Promise<void> };
 	let runSlot: (slot: Slot, i: number) => Promise<void>;
 	if (adjust) {
-		const p = new AdjustPool({ W, H }, opts);
+		const p = new AdjustPool({ W, H, pad }, opts);
 		pool = p;
 		runSlot = (slot, i) => {
 			const f = adjust.frames[i] ?? null;

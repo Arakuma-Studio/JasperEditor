@@ -110,7 +110,7 @@ time, `clipContentTime` = held only with Hold Filters. Freeze handles: `freezeHe
   its range); its effects (built-ins, extension filters incl. colour LUTs), then `premultiply` + alpha 1 (the result
   replaces the composite, as in the preview), the crop (transparency = outside the region), opacity and fades, then
   `overlay` back (= the premultiplied lerp of the preview). Blend modes other than Normal route to Remotion like any layer.
-- Transform on adjustment layers (`export/blend/adjust.ts`): an adjustment clip with an enabled `jasper.transform`
+- Transform and S_Shake on adjustment layers (`export/blend/adjust.ts`): an adjustment clip with an enabled `jasper.transform`
   ends the composite's process at its place in the stack, as a blend layer does (a segment of the blend pipeline,
   `blend/run.ts`). The segment writes the composite (`W×H` raw RGBA); a worker pool draws it through the Transform with
   the lowered layers' multi-tap kernel (`drawTaps`) and programs (`planLoweredFrames` → `loweredLayerTaps`: the
@@ -118,10 +118,19 @@ time, `clipContentTime` = held only with Hold Filters. Freeze handles: `freezeHe
   warp, weights `t.y × opacity`), the composite being the picture; the next process gets `2W×H` frames, composite ‖
   transformed composite, splits them (`crop`) and draws the layer with the chain above, the transformed half as its
   source and the Transform disabled there: effects after the Transform, crop region, opacity, fades and blend mode
-  are the existing adjustment code. Frames outside the clip are copied (the kernel runs only inside it). The planner
-  refuses by name: an effect before (or between) Transforms, expressions on a Transform, two motion-blurred
-  Transforms, a frame side over 4096 px (the lowered canvas limit) and Transform adjustment layers inside nested
-  sequences (no pipeline there); masked adjustment layers stay refused as before. Differences to the preview, as for
+  are the existing adjustment code. Frames outside the clip are copied (the kernel runs only inside it). S_Shake is
+  drawn the same way (its pose from the shader's `uniforms`, `shakeInverse`); with Wrap Reflect the segment pads the
+  composite with its mirror image (`pad` + `fillborders=mode=mirror`, half-sample symmetric = the shader's continuous
+  `dw_wrap1` reflection sampled bilinearly) by the farthest any tap samples beyond the frame, and the stage of a
+  reflecting axis is unbounded (`loweredLayerTaps`; a non-wrapping axis is cut at the box, as `dw_tap` does). Tint is a
+  colour op (`TINT_OP`, fused into the colour run's LUT on every path; its GLSL shader is gone — the op reproduces the
+  shader's blessed fingerprints within 0.3 levels, `fx-tint-color-op.test.ts`), so it, Hue/Saturation and Black &
+  White after the kernel effect run as colour runs, keyframes included. The planner refuses by name: an effect before
+  the kernel effect, more than one Transform / S_Shake on the layer (the preview resamples after each; one kernel pass
+  composes them into one resample — S_Shake then Transform 130 % measured 36.9 dB against the preview), S_Shake motion
+  blur, RGB split or Tile wrap, expressions on them, a reflection reaching farther than the frame's smaller side, a
+  frame side over 4096 px (the lowered canvas limit) and kernel adjustment layers inside nested sequences (no pipeline
+  there); masked adjustment layers stay refused as before. Differences to the preview, as for
   lowered text layers: the picture edge (zoom out, rotation) is a ½ px coverage ramp where the shader's box test is
   hard, and capped shutters take the strata centres where the shader jitters per pixel. Measured
   (`adjustment-transform-parity.e2e.test.ts`, Chrome 156, 256×144, export still vs Remotion, both over black):
@@ -133,7 +142,13 @@ time, `clipContentTime` = held only with Hold Filters. Freeze handles: `freezeHe
   punch-in at 1037–1095, H.264 1280×720, Ryzen 9 5900X 24 threads / 94 GB / RTX 3080 Ti, engine at nice 19 and idle
   I/O beside the user's own processes, load 5–17): before (44f7518bb, Remotion path) 151 s and 138 s, after (native)
   43.1 s and 45.1 s; a still at frame 1040: 4.1 s (Remotion, both runs) vs 6.1 s and 5.6 s (native: one frame of up to
-  64 taps at 1920×1080 on one kernel worker).
+  64 taps at 1920×1080 on one kernel worker). S_Shake and colour effects (same test, same conditions): S19's shake +
+  keyframed Tint 60.1 dB (max 3), a strong Reflect shake 60.9 dB (max 3), the same without wrap 60.9 dB (max 3), a
+  keyframed two-colour Tint 61.9 dB (max 6), shake + Hue/Saturation + crop 59.6 dB (max 8), shake + keyframed Black &
+  White at 80 % opacity 56.5 dB (max 3). Export time with `BENCH_CASE=s19` (the same sequence with S19's adjustment
+  layer — S_Shake amplitude 0.4, frequency 30, Reflect, Tint eased 0 → 100 % — over 1037–1227; same machine and
+  conditions, load 5–16): before (ec093bea2, Remotion path) 300.9 s and 324.2 s, after (native) 60.5 s and 59.8 s; a
+  still at frame 1040: 4.7 s and 4.6 s vs 1.1 s and 0.9 s.
 - Frame holds (video, animated image, motion-graphic masters, layer overrides): seek to the held time, one frame
   looped. Freeze handles: the source is built for the real frames, then `tpad … clone`.
 - Synthetics (`synthetic.ts` extension, always registered): bars → PNG (`still` layer override), leader → PNG-in-MOV
@@ -238,8 +253,8 @@ time, `clipContentTime` = held only with Hold Filters. Freeze handles: `freezeHe
 - Reverse playback of nests is a native blocker (as for every reversed clip); preview audio does not reverse (as for
   every audio clip).
 - Adjustment layers have no Motion (the S01 model, KND-012); their crop limits the region.
-- A Transform adjustment layer runs natively only in the sequence's own stack, with the Transform first among its
-  effects; a still inside one is not faster natively (one kernel worker per frame), and the kernel is CPU only (no
+- A Transform / S_Shake adjustment layer runs natively only in the sequence's own stack, with one of them first among
+  its effects (S_Shake with Reflect or no wrap, without motion blur or RGB split); a still inside one is not faster natively (one kernel worker per frame), and the kernel is CPU only (no
   OpenCL path as for kernel streams).
 - Masks (merged with the masks workstream): an adjustment layer's Opacity masks limit where it applies — the mix
   step uses their coverage, `lerp(original, adjusted, opacity × coverage)` (Premiere: masking an adjustment layer

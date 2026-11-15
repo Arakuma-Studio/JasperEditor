@@ -2,8 +2,10 @@
 // Export time of a sequence shaped like the S5 punch-in that sent whole exports to Remotion (docs/wp-notes/
 // edit-structure.md "Native Transform on adjustment layers"): 1880 frames of 1080p30 video with a scaled overlay, an
 // adjustment layer at 1037–1095 whose keyframed Transform (100 → 180 → 215 %, 360° shutter) punches in, exported at
-// 1280×720 H.264; then a still inside the punch-in. Requires ffmpeg (and Chrome when the export plans Remotion).
-// `BENCH_PORT` (default 0) and `BENCH_APPDIR` choose the engine's port and appdir. Prints one JSON line.
+// 1280×720 H.264; then a still inside the punch-in. `BENCH_CASE=s19`: S19's adjustment layer instead (ASSEMBLY_S9_S23:
+// a fast, low-amplitude S_Shake wrapping with Reflect and Tint ramping to black and white, eased, over 1037–1227).
+// Requires ffmpeg (and Chrome when the export plans Remotion). `BENCH_PORT` (default 0) and `BENCH_APPDIR` choose the
+// engine's port and appdir. Prints one JSON line.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -91,6 +93,55 @@ function edit(video: unknown, overlay: unknown) {
 		interpolation: 'linear',
 	});
 	// The S5 zoom (ASSEMBLY_S3_S7 §3): anchor on the face, 100 → 180 % in 7 frames then → 215 %, position eased in.
+	const s5 = [
+		{ type: 'clip.addAdjustment', at: 1037, duration: 58, track: 'V3', ref: '$a' },
+		{
+			type: 'effect.add',
+			target: { clipId: '$a' },
+			effectId: 'jasper.transform',
+			params: {
+				anchorPoint: [0.79, 0.52],
+				position: [0.79, 0.52],
+				useCompShutterAngle: false,
+				shutterAngle: 360,
+			},
+			ref: '$tf',
+		},
+		key('scaleHeight', 1037, 100),
+		key('scaleHeight', 1044, 180),
+		key('scaleHeight', 1094, 215),
+		key('position', 1037, [0.79, 0.52]),
+		key('position', 1044, [0.66, 0.5]),
+	];
+	// S19 (ASSEMBLY_S9_S23 §S19): the "edgy shake + B&W" adjustment layer.
+	const s19 = [
+		{ type: 'clip.addAdjustment', at: 1037, duration: 190, track: 'V3', ref: '$a' },
+		{
+			type: 'effect.add',
+			target: { clipId: '$a' },
+			effectId: 'jasper.s.shake',
+			params: {
+				amplitude: 0.4,
+				frequency: 30,
+				xRandAmp: 0.052,
+				yRandAmp: 0.052,
+				tiltRandAmp: 0.1,
+				seed: 0,
+				motionBlur: false,
+				wrapX: 'reflect',
+				wrapY: 'reflect',
+			},
+		},
+		{
+			type: 'effect.add',
+			target: { clipId: '$a' },
+			effectId: 'jasper.tint',
+			params: { amountToTint: 0 },
+			ref: '$tf',
+		},
+		{ ...key('amountToTint', 1037, 0), interpolation: 'bezier' },
+		key('amountToTint', 1224, 100),
+	];
 	transact([
 		{
 			type: 'clip.place',
@@ -110,24 +161,7 @@ function edit(video: unknown, overlay: unknown) {
 		},
 		{ type: 'param.set', target: ['clip', '$o', 'transform', 'scale'], value: 80 },
 		{ type: 'param.set', target: ['clip', '$o', 'transform', 'position'], value: [1518, 648] },
-		{ type: 'clip.addAdjustment', at: 1037, duration: 58, track: 'V3', ref: '$a' },
-		{
-			type: 'effect.add',
-			target: { clipId: '$a' },
-			effectId: 'jasper.transform',
-			params: {
-				anchorPoint: [0.79, 0.52],
-				position: [0.79, 0.52],
-				useCompShutterAngle: false,
-				shutterAngle: 360,
-			},
-			ref: '$tf',
-		},
-		key('scaleHeight', 1037, 100),
-		key('scaleHeight', 1044, 180),
-		key('scaleHeight', 1094, 215),
-		key('position', 1037, [0.79, 0.52]),
-		key('position', 1044, [0.66, 0.5]),
+		...(process.env.BENCH_CASE === 's19' ? s19 : s5),
 	]);
 	return {
 		envelope: makeEnvelope(doc, { revision, savedAt: new Date().toISOString(), platform: 'benchmark' }),
@@ -182,7 +216,7 @@ try {
 	});
 	out.still1040 = await timed('/api/stills', { envelope: d.envelope, sequenceId: d.seqId, frame: 1040 });
 	out.loadAfter = loadavg().map((x) => Math.round(x * 100) / 100);
-	console.info(`[adjustment transform bench] ${JSON.stringify(out)}`);
+	console.info(`[adjustment ${process.env.BENCH_CASE ?? 's5'} bench] ${JSON.stringify(out)}`);
 	writeFileSync(join(media, 'result.json'), `${JSON.stringify(out, null, 2)}\n`);
 } finally {
 	await engine.stop();

@@ -1,6 +1,6 @@
 // Worker-thread pools of the blend pipeline's kernels (keyframes-blend; like stream/pool.ts): each worker runs
 // `blendStackedFrame` with `makeBlendKernel` (blend layers), or `adjustStackedFrame` with `drawTaps` (Transform
-// adjustment layers, adjust.ts), from their source text on frame slots that live in SharedArrayBuffers, no copies
+// / S_Shake adjustment layers, adjust.ts), from their source text on frame slots that live in SharedArrayBuffers, no copies
 // across threads.
 import { Worker } from 'node:worker_threads';
 import { makeBlendKernel } from '@jasper/project';
@@ -66,7 +66,10 @@ export class BlendPool {
 	}
 }
 
-/** One frame slot of a Transform adjustment cut: `src` (the composite, `W×H` RGBA) and `out` (`2W×H` RGBA). */
+/**
+ * One frame slot of a Transform / S_Shake adjustment cut: `src` (the composite with `pad` px of padding on every side)
+ * and `out` (`2W×H` RGBA).
+ */
 export type AdjustSlot = { index: number; src: Uint8Array; out: Uint8Array };
 
 const ADJUST_WORKER_SOURCE = `
@@ -75,12 +78,13 @@ var __name = (f) => f;
 const { parentPort, workerData } = require('node:worker_threads');
 const drawTaps = ${drawTaps.toString()};
 const adjustStackedFrame = ${adjustStackedFrame.toString()};
-const len = workerData.W * workerData.H * 4;
+const { W, H, pad } = workerData;
+const srcLen = (W + 2 * pad) * (H + 2 * pad) * 4;
 const slots = workerData.slots.map((buf) => ({
-	src: new Uint8Array(buf, 0, len),
-	out: new Uint8Array(buf, len, 2 * len),
+	src: new Uint8Array(buf, 0, srcLen),
+	out: new Uint8Array(buf, srcLen, 2 * W * H * 4),
 }));
-const tmp = new Uint8Array(len);
+const tmp = new Uint8Array(W * H * 4);
 let acc = new Float32Array(0);
 parentPort.on('message', (m) => {
 	const s = slots[m.slot];
@@ -88,32 +92,37 @@ parentPort.on('message', (m) => {
 		const need = Math.max(1, (m.rect[2] - m.rect[0]) * (m.rect[3] - m.rect[1]) * 4);
 		if (acc.length < need) acc = new Float32Array(need);
 	}
-	adjustStackedFrame(drawTaps, s.src, workerData.W, workerData.H, m.prog, m.rect, s.out, tmp, acc);
+	adjustStackedFrame(drawTaps, s.src, W, H, pad, m.prog, m.rect, s.out, tmp, acc);
 	parentPort.postMessage(m.slot);
 });
 `;
 
 type AdjustMsg = { slot: number; prog: readonly number[] | null; rect: readonly number[] | null };
 
-/** Worker pool of the Transform adjustment kernel (`adjustStackedFrame`), slots in SharedArrayBuffers. */
+/** Worker pool of the Transform / S_Shake adjustment kernel (`adjustStackedFrame`), slots in SharedArrayBuffers. */
 export class AdjustPool {
 	readonly slots: AdjustSlot[] = [];
 	private readonly pool: ExportWorkerPool<AdjustMsg, number>;
 
-	constructor(size: { W: number; H: number }, opts: { workers: number; slots: number }) {
+	constructor(size: { W: number; H: number; pad: number }, opts: { workers: number; slots: number }) {
 		const counts = framePoolSize(opts);
-		const len = size.W * size.H * 4;
+		const { W, H, pad } = size;
+		const srcLen = (W + 2 * pad) * (H + 2 * pad) * 4;
+		const outLen = 2 * W * H * 4;
 		const bufs: SharedArrayBuffer[] = [];
 		for (let i = 0; i < counts.slots; i++) {
-			const buf = new SharedArrayBuffer(len * 3);
+			const buf = new SharedArrayBuffer(srcLen + outLen);
 			bufs.push(buf);
-			this.slots.push({ index: i, src: new Uint8Array(buf, 0, len), out: new Uint8Array(buf, len, 2 * len) });
+			this.slots.push({
+				index: i,
+				src: new Uint8Array(buf, 0, srcLen),
+				out: new Uint8Array(buf, srcLen, outLen),
+			});
 		}
 		this.pool = new ExportWorkerPool(
 			'adjust',
 			opts.workers,
-			() =>
-				new Worker(ADJUST_WORKER_SOURCE, { eval: true, workerData: { slots: bufs, W: size.W, H: size.H } }),
+			() => new Worker(ADJUST_WORKER_SOURCE, { eval: true, workerData: { slots: bufs, W, H, pad } }),
 		);
 	}
 

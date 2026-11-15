@@ -1,8 +1,8 @@
 // Premiere Pro "Color Correction" video effects (fx family premiere-adjust-color-keying): Change Color, Change to
 // Color, Channel Mixer, Color Balance, Color Balance (HLS), Equalize (./analysis.ts), Leave Color, Tint, Video
 // Limiter. (Brightness & Contrast, Hue/Saturation, Black & White and Lumetri Color already exist.) All work on straight
-// colour; alpha is kept.
-import type { EffectParams, EffectSpec, ParamSpec } from '../../effects.ts';
+// colour; alpha is kept. Tint is a colour op (fused into colour runs: preview LUT, native `lut3d`), the others shaders.
+import type { ColorOp, EffectParams, EffectSpec, ParamSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
 import { fxParam } from '../params.ts';
 import type { GlslChunk } from '../shader.ts';
@@ -330,10 +330,37 @@ void main() {
 	},
 });
 
-export const TINT = defineShaderEffect({
+/**
+ * Tint as a colour op: `mix(c, mix(black, white, Y(c)), amount)` with Rec. 709 luma Y, clamped. A pointwise map of the
+ * straight colour, so consecutive colour effects fuse it into their LUT run: the preview samples the run's LUT and the
+ * native export applies it with `lut3d` (an affine map: the LUT's interpolation reproduces it exactly).
+ */
+export const TINT_OP: ColorOp = {
+	build(p) {
+		const a = num(p.amountToTint, 100) / 100;
+		if (a === 0) return null;
+		const rgb = (v: unknown, d: number) =>
+			[0, 1, 2].map((k) =>
+				Array.isArray(v) && typeof v[k] === 'number' && Number.isFinite(v[k]) ? v[k] : d,
+			);
+		const [b0, b1, b2] = rgb(p.mapBlackTo, 0) as [number, number, number];
+		const [w0, w1, w2] = rgb(p.mapWhiteTo, 1) as [number, number, number];
+		const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
+		return (c) => {
+			const y = 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+			c[0] = clamp01(c[0] + (b0 + (w0 - b0) * y - c[0]) * a);
+			c[1] = clamp01(c[1] + (b1 + (w1 - b1) * y - c[1]) * a);
+			c[2] = clamp01(c[2] + (b2 + (w2 - b2) * y - c[2]) * a);
+		};
+	},
+};
+
+export const TINT: EffectSpec = {
 	id: 'jasper.tint',
+	version: 1,
 	label: 'Tint',
 	category: 'Color Correction',
+	appliesTo: 'video',
 	description:
 		'Maps the dark pixels to one colour and the bright pixels to another (a two-colour gradient map).',
 	keywords: ['duotone', 'gradient map', 'colorize', 'monochrome', 'sepia'],
@@ -342,22 +369,12 @@ export const TINT = defineShaderEffect({
 		fxParam.color('mapWhiteTo', 'Map White To', [1, 1, 1, 1]),
 		fxParam.percent('amountToTint', 'Amount to Tint', 100),
 	],
-	gpu: {
-		timeInvariant: true,
-		passes: [
-			{
-				include: [GLSL_PACG],
-				frag: /* glsl */ `
-void main() {
-  vec4 src = texture(u_source, v_uv);
-  vec3 c = pacg_straight(src);
-  vec3 r = fx_tint(c, u_mapBlackTo.rgb, u_mapWhiteTo.rgb, u_amountToTint / 100.0);
-  fragColor = fx_premultiply(vec4(clamp(r, 0.0, 1.0), src.a));
-}`,
-			},
-		],
-	},
-});
+	// The colour stage (the run's LUT) realizes it in the preview, on the Remotion path and natively.
+	preview: {},
+	native: null,
+	color: TINT_OP,
+	capabilities: { preview: 'webgl', export: ['remotion', 'native'] },
+};
 
 /** Video Limiter's Compression Before Clip options (fraction of the range below the clip level). */
 export const VIDEO_LIMITER_COMPRESSION = { none: 0, '3': 0.03, '5': 0.05, '10': 0.1, '20': 0.2 } as const;

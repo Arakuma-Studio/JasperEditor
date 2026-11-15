@@ -102,10 +102,11 @@ stack order and Edge Feather, export vs Remotion and vs the shared feather profi
 `apps/engine/test/crop-order-native.test.ts` (the same on the native path against computed pixels, no Chrome).
 `apps/engine/test/blur-repeat-edge.e2e.test.ts` (`REMOTION_E2E=1`: Gaussian Blur with Repeat Edge Pixels on a clip and
 on adjustment layers — edge pixels of a flat frame equal its centre, and the export equals Remotion and preview stills).
-`apps/engine/test/adjustment-transform-parity.e2e.test.ts` (`REMOTION_E2E=1`, a Chrome with HTML-in-Canvas: Transform on
-adjustment layers — static, zoomed out, with opacity / crop / Screen, keyframed with a 360° shutter, capped — exported
-natively vs Remotion, off the picture edge; `adjustment-transform-native.test.ts` is its native half against computed
-pixels and the planner's choice, no Chrome).
+`apps/engine/test/adjustment-transform-parity.e2e.test.ts` (`REMOTION_E2E=1`, a Chrome with HTML-in-Canvas: Transform and
+S_Shake on adjustment layers — static, zoomed out, with opacity / crop / Screen, keyframed with a 360° shutter, capped;
+S_Shake with Reflect or no wrap, with keyframed Tint, Hue/Saturation, Black & White — exported natively vs Remotion,
+off the picture edge; `adjustment-transform-native.test.ts` and `adjustment-shake-tint-native.test.ts` are its native
+half against computed pixels and the planner's choice, no Chrome).
 `apps/engine/test/fps-conform.e2e.test.ts` (`REMOTION_E2E=1`: frame-coded sources at five frame-rate conversions, a speed and a hold, exported natively, through the layer bake and by Remotion and rendered as preview stills — every frame's source frame equals the time model's, and patch colours agree; `fps-conform-native.test.ts` is its native half in the default suite).
 `apps/engine/test/blend-export.test.ts` checks a native
 Multiply / half-opacity Normal / Difference stack against independently calculated pixels, plus literal kernel

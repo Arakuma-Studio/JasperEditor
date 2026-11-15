@@ -1,6 +1,7 @@
-// Transform on adjustment layers: the native path (blend/adjust.ts) against the Program preview's renderer. Each scene
-// is rendered by the engine's still route (it must plan `native`) and by Remotion (the compositions the Player draws:
-// the adjustment scope's canvas chain runs the Transform shader on the composite below), compared per pixel.
+// Transform and S_Shake (with colour effects: Tint, Hue/Saturation, Black & White) on adjustment layers: the native path
+// (blend/adjust.ts) against the Program preview's renderer. Each scene is rendered by the engine's still route (it
+// must plan `native`) and by Remotion (the compositions the Player draws: the adjustment scope's canvas chain runs the
+// shaders and colour runs on the composite below), compared per pixel.
 // REMOTION_E2E=1 requires FFmpeg and a Chrome with HTML-in-Canvas (JASPER_BROWSER_EXECUTABLE).
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -63,6 +64,41 @@ const STATIC = TF({
 });
 const ZOOM_OUT: Pose = { anchor: [0.5, 0.5], position: [0.45, 0.5], scale: 70, rotation: -12 };
 const BLURRED = { useCompShutterAngle: false, shutterAngle: 360 };
+const FX = (effectId: string, params: Record<string, unknown>, ref: string): Cmd => ({
+	type: 'effect.add',
+	target: { clipId: '$a' },
+	effectId,
+	params,
+	ref,
+});
+const fxKey = (ref: string, param: string, frame: number, value: unknown): Cmd => ({
+	type: 'keyframe.add',
+	target: ['effect', ref, param],
+	at: { sequenceFrame: frame },
+	value,
+	interpolation: 'linear',
+});
+/** S19's "edgy shake" (ASSEMBLY_S9_S23): fast, low amplitude, Reflect wrap. */
+const S19_SHAKE = {
+	amplitude: 0.4,
+	frequency: 30,
+	xRandAmp: 0.052,
+	yRandAmp: 0.052,
+	tiltRandAmp: 0.1,
+	seed: 0,
+	motionBlur: false,
+	wrapX: 'reflect',
+	wrapY: 'reflect',
+};
+/** A strong shake (tens of px of move, a degree of tilt): wide reflections at the frame edges. */
+const STRONG_SHAKE = {
+	...S19_SHAKE,
+	amplitude: 3,
+	frequency: 4,
+	xRandAmp: 0.3,
+	yRandAmp: 0.3,
+	tiltRandAmp: 1,
+};
 
 const SCENES: Scene[] = [
 	{ name: 'static', frame: 10, tolerance: PARITY, edge: POSE, commands: [STATIC] },
@@ -127,6 +163,66 @@ const SCENES: Scene[] = [
 			TF({ anchorPoint: [0.62, 0.32], position: [0.62, 0.32], ...BLURRED }),
 			key('scaleHeight', 0, 100),
 			key('scaleHeight', 3, 400),
+		],
+	},
+	// S_Shake and colour effects (Tint, Hue/Saturation, Black & White) on adjustment layers.
+	{
+		name: 's19-shake-tint',
+		frame: 15,
+		tolerance: PARITY,
+		commands: [
+			FX('jasper.s.shake', S19_SHAKE, '$sh'),
+			FX('jasper.tint', { amountToTint: 0 }, '$ti'),
+			fxKey('$ti', 'amountToTint', 0, 0),
+			fxKey('$ti', 'amountToTint', 29, 100),
+		],
+	},
+	{
+		name: 'shake-reflect-strong',
+		frame: 7,
+		tolerance: PARITY,
+		commands: [FX('jasper.s.shake', STRONG_SHAKE, '$sh')],
+	},
+	{
+		name: 'shake-no-wrap',
+		frame: 7,
+		tolerance: PARITY,
+		commands: [FX('jasper.s.shake', { ...STRONG_SHAKE, wrapX: 'no', wrapY: 'no' }, '$sh')],
+	},
+	{
+		name: 'tint-keyframed-colours',
+		frame: 10,
+		tolerance: PARITY,
+		commands: [
+			FX(
+				'jasper.tint',
+				{ mapBlackTo: [0.1, 0.05, 0.3, 1], mapWhiteTo: [1, 0.9, 0.6, 1], amountToTint: 0 },
+				'$ti',
+			),
+			fxKey('$ti', 'amountToTint', 0, 0),
+			fxKey('$ti', 'amountToTint', 20, 100),
+		],
+	},
+	{
+		name: 'shake-desaturate-crop',
+		frame: 12,
+		tolerance: PARITY,
+		commands: [
+			FX('jasper.s.shake', { ...STRONG_SHAKE, amplitude: 1, wrapX: 'no', wrapY: 'no' }, '$sh'),
+			FX('jasper.hue-saturation', { saturation: -60 }, '$hs'),
+			FX('jasper.crop', { left: 25 }, '$cr'),
+		],
+	},
+	{
+		name: 'shake-black-white-opacity',
+		frame: 12,
+		tolerance: PARITY,
+		commands: [
+			FX('jasper.s.shake', STRONG_SHAKE, '$sh'),
+			FX('jasper.black-white', { amount: 0 }, '$bw'),
+			fxKey('$bw', 'amount', 0, 0),
+			fxKey('$bw', 'amount', 24, 100),
+			{ type: 'param.set', target: ['clip', '$a', 'opacity'], value: 80 },
 		],
 	},
 ];

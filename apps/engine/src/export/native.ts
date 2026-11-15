@@ -41,7 +41,7 @@ import { variantHasAlpha } from '../imports/variants.ts';
 import { alphaDecoder } from '../media/alpha.ts';
 import { audioEncodeArgs, LEGACY_X264_CHOICE, videoEncodeArgs } from '../tools/encoders.ts';
 import { sec } from '../tools/ffmpeg.ts';
-import { isTransformAdjustment, planAdjustmentFrames, TRANSFORM_EFFECT } from './blend/adjust.ts';
+import { isKernelAdjustment, isKernelEffect, planAdjustmentFrames } from './blend/adjust.ts';
 import { adjustmentCropFilters, cropFeatherFilter, hardCropFilter, isFeatheredCrop } from './crop.ts';
 import { NVDEC_INPUT_ARGS } from './gpu.ts';
 import { CROP_EDGES, type MotionStage, mergeResize, motionFilters, motionStage } from './keyframed.ts';
@@ -176,8 +176,9 @@ type NativeGraph = {
 	 */
 	streams: { fd: number; plan: StreamPlan }[];
 	/**
-	 * keyframes-blend: the processes before this one when the stack has blend layers or Transform adjustment layers
-	 * (in order). Segment i's raw output (`2W×H` RGBA: composite ‖ layer; `W×H` for an adjustment) goes through its
+	 * keyframes-blend: the processes before this one when the stack has blend layers or Transform / S_Shake adjustment
+	 * layers (in order). Segment i's raw output (`2W×H` RGBA: composite ‖ layer; the padded composite for an adjustment)
+	 * goes through its
 	 * kernel into the next process's `pipe:3` (segment i + 1, or this graph: `backdropFd`; spawn it with
 	 * `pipes: 1 + streams.length`, streams from fd 4).
 	 */
@@ -217,10 +218,11 @@ export type BlendSegment = {
 	active: boolean[];
 	seeds: number[];
 	/**
-	 * A Transform adjustment layer (blend/adjust.ts) instead of a blend: stdout carries the composite alone (`W×H`) and
-	 * the kernel writes the composite ‖ the composite drawn through each frame's program (`2W×H`; null = not drawn).
+	 * A Transform / S_Shake adjustment layer (blend/adjust.ts) instead of a blend: stdout carries the composite alone,
+	 * with `pad` px of its mirror image on every side (`(W + 2·pad) × (H + 2·pad)`), and the kernel writes the composite
+	 * ‖ the picture drawn through each frame's program (`2W×H`; null = not drawn).
 	 */
-	adjust?: { frames: (TapFrame | null)[] };
+	adjust?: { frames: (TapFrame | null)[]; pad: number };
 };
 
 /** The frames a blend layer is drawn on (relative to the stack's first frame) and its Dissolve seeds. */
@@ -859,11 +861,11 @@ type StackContext = {
 	blend?: {
 		cut(backdrop: string, layer: string, plan: LayerPlan, mode: string): string;
 		/**
-		 * A Transform adjustment layer (blend/adjust.ts): ends the current process with the composite `composite`; the
-		 * kernel draws `frames` (one per stack frame) and the label returned, in the next process, carries `2W×H` frames:
-		 * the composite ‖ the transformed composite.
+		 * A Transform / S_Shake adjustment layer (blend/adjust.ts): ends the current process with the composite
+		 * `composite` (padded with `pad` px of its mirror image); the kernel draws `frames` (one per stack frame) and the
+		 * label returned, in the next process, carries `2W×H` frames: the composite ‖ the drawn composite.
 		 */
-		adjust(composite: string, frames: (TapFrame | null)[]): string;
+		adjust(composite: string, frames: (TapFrame | null)[], pad: number): string;
 	};
 };
 
@@ -1390,20 +1392,20 @@ function drawStack(ctx: StackContext): string {
 			if (c.kind === 'adjustment') {
 				const keep = `${label}k`;
 				const adj = `${label}s`;
-				if (isTransformAdjustment(c)) {
-					// Transform on an adjustment layer (blend/adjust.ts): the process ends here; the kernel draws the composite
-					// through the Transform and the layer's other effects, crop, opacity and blend run on that half below.
+				if (isKernelAdjustment(c)) {
+					// Transform / S_Shake on an adjustment layer (blend/adjust.ts): the process ends here; the kernel draws the
+					// composite through them and the layer's other effects, crop, opacity and blend run on that half below.
 					if (!ctx.blend)
 						throw new Error(
-							`Adjustment clip ${c.clipId} with Transform inside a nested sequence (the planner routes it through Remotion)`,
+							`Adjustment clip ${c.clipId} with Transform or S_Shake inside a nested sequence (the planner routes it through Remotion)`,
 						);
 					const planned = planAdjustmentFrames({ clip: c, f0, f1, fps, W, H });
 					const frames = Array.from({ length: R1 - R0 + 1 }, (_, j) =>
-						R0 + j >= f0 && R0 + j < f1 ? planned[R0 + j - f0]! : null,
+						R0 + j >= f0 && R0 + j < f1 ? planned.frames[R0 + j - f0]! : null,
 					);
 					// (the process ends here: its base is complete)
 					closeBase();
-					const pair = ctx.blend.adjust(last, frames);
+					const pair = ctx.blend.adjust(last, frames, planned.pad);
 					ctx.chains.push(
 						`[${pair}]split[${label}p0][${label}p1]`,
 						`[${label}p0]crop=${W}:${H}:0:0[${keep}]`,
@@ -1412,7 +1414,7 @@ function drawStack(ctx: StackContext): string {
 					sourceProps = {
 						...props,
 						effects: props.effects.map((fx) =>
-							fx.effectId === TRANSFORM_EFFECT ? { ...fx, enabled: false } : fx,
+							isKernelEffect(fx.effectId) ? { ...fx, enabled: false } : fx,
 						),
 					};
 				} else ctx.chains.push(`[${last}]split[${keep}][${adj}]`);
@@ -1696,9 +1698,22 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 				);
 				return endProc(label, blendSegmentFrames(plan, mode, R0, stackFrames), W);
 			},
-			adjust: (composite, frames) => {
+			adjust: (composite, frames, pad) => {
 				const label = `bk${segments.length}`;
-				proc.chains.push(`[${composite}]trim=end_frame=${stackFrames},setpts=PTS-STARTPTS[${label}]`);
+				// An S_Shake reflecting at the frame edge: the composite with its mirror image around it (`fillborders`
+				// mirror = half-sample symmetric, the shader's continuous reflection; planar for fillborders, lossless).
+				const mirror =
+					pad > 0
+						? [
+								`pad=${W + 2 * pad}:${H + 2 * pad}:${pad}:${pad}:color=black@0`,
+								'format=gbrap',
+								`fillborders=left=${pad}:right=${pad}:top=${pad}:bottom=${pad}:mode=mirror`,
+								'format=rgba',
+							]
+						: [];
+				proc.chains.push(
+					`[${composite}]${[...mirror, `trim=end_frame=${stackFrames}`, 'setpts=PTS-STARTPTS'].join(',')}[${label}]`,
+				);
 				return endProc(
 					label,
 					{
@@ -1706,7 +1721,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 						mode: 0,
 						active: frames.map((f) => f !== null),
 						seeds: [],
-						adjust: { frames },
+						adjust: { frames, pad },
 					},
 					2 * W,
 				);
