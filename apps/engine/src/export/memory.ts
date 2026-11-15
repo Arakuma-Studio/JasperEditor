@@ -320,21 +320,45 @@ function availableMemory(): number {
 }
 
 /**
- * Memory the native composite may use (bytes): `JASPER_EXPORT_MEMORY_BUDGET_MB` when set, else the smallest of 60 % of
- * the physical memory or the engine's cgroup limit (containers, systemd units and scopes, found from
- * `/proc/self/cgroup`), 80 % of the memory available now (`MemAvailable`) and 80 % of the room left in the cgroup.
+ * The memory the engine may use (bytes): `limit` = the physical memory or the engine's cgroup limit (containers,
+ * systemd units and scopes, found from `/proc/self/cgroup`), whichever is smaller; `available` = what is left under it
+ * now (`MemAvailable`, or the room left in the cgroup when that is less); `taken` = `limit − available`.
+ */
+export function memoryRoom(): { limit: number; available: number; taken: number } {
+	let limit = totalmem();
+	let available = availableMemory();
+	const cg = cgroupLimit() as { limit: number; room: number } | null;
+	if (cg) {
+		limit = Math.min(limit, cg.limit);
+		available = Math.min(available, cg.room);
+	}
+	return { limit, available, taken: Math.max(0, limit - available) };
+}
+
+/**
+ * Share of the memory limit an export may take by default: the rest stays with the desktop and the applications open
+ * beside it (docs/wp-notes/export-performance.md §17).
+ */
+const BUDGET_SHARE = 0.5;
+
+/**
+ * Memory the native composite may use (bytes): `JASPER_EXPORT_MEMORY_BUDGET_MB` when set, else the smaller of half
+ * the memory limit (`memoryRoom`) and 80 % of what is available under it now.
  */
 export function compositeMemoryBudget(env: Record<string, string | undefined> = process.env): number {
 	const set = Number(env.JASPER_EXPORT_MEMORY_BUDGET_MB);
 	if (Number.isFinite(set) && set > 0) return set * MB;
-	let limit = totalmem();
-	let room = availableMemory();
-	const cg = cgroupLimit() as { limit: number; room: number } | null;
-	if (cg) {
-		limit = Math.min(limit, cg.limit);
-		room = Math.min(room, cg.room);
-	}
-	return Math.round(Math.min(limit * 0.6, room * 0.8));
+	const { limit, available } = memoryRoom();
+	return Math.round(Math.min(limit * BUDGET_SHARE, available * 0.8));
+}
+
+/**
+ * Memory that must stay available to the machine while an export composites (bytes): 10 % of the memory limit. Below
+ * it the export stops segments (or fails), whatever budget is configured: the desktop and other applications keep
+ * working instead of the machine thrashing into a freeze.
+ */
+export function memoryFloor(): number {
+	return Math.round(memoryRoom().limit * 0.1);
 }
 
 const gb = (b: number) => `${(b / 1024 ** 3).toFixed(1)} GB`;
