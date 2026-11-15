@@ -17,7 +17,7 @@ import {
 	type ProjectItem,
 	type SourceMarks,
 } from '../../schema/document.ts';
-import type { MediaAsset, Transcript } from '../../schema/media.ts';
+import { type MediaAsset, mgHtmlPageIssue, type Transcript } from '../../schema/media.ts';
 import type { Clip, EffectInstance, Sequence } from '../../schema/sequence.ts';
 import type { LibraryProvenance } from '../../sound/provenance.ts';
 import { libraryDescriptorIssue } from '../../sound/provenance.ts';
@@ -353,6 +353,11 @@ export const projectHandlers = {
 			const bad = libraryDescriptorIssue(cmd.asset.library as LibraryProvenance);
 			if (bad) h.fail('E_INVALID_PARAM', bad, { path: ['asset', 'library', 'descriptors'] });
 		}
+		// HTML compositions (schema v15): the page header is stored leniently, so it is checked here.
+		if (cmd.asset.mgBundle?.html !== undefined) {
+			const bad = mgHtmlPageIssue(cmd.asset.mgBundle.html);
+			if (bad) h.fail('E_SCHEMA', `HTML page header: ${bad}`, { path: ['asset', 'mgBundle', 'html'] });
+		}
 		// the pages of one PDF share the file's fingerprint and are different media.
 		const page = (a: { vector?: { page?: number } | null }) => a.vector?.page ?? 1;
 		const existing = Object.values(doc.media).find(
@@ -404,6 +409,10 @@ export const projectHandlers = {
 			);
 		if (cmd.lut && asset.kind !== 'lut')
 			h.fail('E_INVALID_PARAM', `lut only applies to lut assets (${cmd.mediaId} is ${asset.kind})`);
+		if (cmd.mgBundle?.html !== undefined) {
+			const bad = mgHtmlPageIssue(cmd.mgBundle.html);
+			if (bad) h.fail('E_SCHEMA', `HTML page header: ${bad}`, { path: ['mgBundle', 'html'] });
+		}
 		const fingerprintChanges = !!cmd.fingerprint && cmd.fingerprint !== asset.fingerprint;
 		// A rebuilt Remotion bundle is new content by definition (S08:MGC-013), and Replace Footage (S07:PRC-018)
 		// says so explicitly: no force needed.

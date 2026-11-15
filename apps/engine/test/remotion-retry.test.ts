@@ -125,3 +125,42 @@ describe('the Remotion intermediate (AGENTS §4)', () => {
 		expect(renderer.renderMedia.mock.calls.at(-1)![0]).not.toHaveProperty('pixelFormat');
 	});
 });
+
+describe('the sequence composition (wp-note export-performance §16)', () => {
+	it('comes from the document, without loading the bundle in a page of its own', async () => {
+		renderer.renderMedia.mockResolvedValue(undefined);
+		const doc = {
+			settings: { width: 1080, height: 1350, fps: { num: 30000, den: 1001 } },
+			durationFrames: 0,
+			videoTracks: [],
+		};
+		const options = { isPreview: false, useProxies: false, transparentBackground: true };
+		const service = new RemotionService({
+			bundleCacheDir: bundle,
+			prebuiltBundleDir: bundle,
+			usageLog: null,
+			env: { JASPER_REMOTION_GL: 'off', JASPER_BROWSER_EXECUTABLE: join(bundle, 'missing-browser') },
+		});
+		await expect(
+			service.renderMedia({
+				inputProps: { doc, options },
+				output: join(bundle, 'output.mov'),
+				signal: new AbortController().signal,
+				concurrency: 1,
+				intermediate: true,
+			}),
+		).resolves.toEqual({ frames: 1 });
+		expect(renderer.selectComposition).not.toHaveBeenCalled();
+		expect(renderer.renderMedia.mock.calls.at(-1)![0]).toMatchObject({
+			composition: {
+				id: 'JasperSequence',
+				width: 1080,
+				height: 1350,
+				fps: 30000 / 1001,
+				durationInFrames: 1,
+				props: { doc, options },
+			},
+		});
+		await service.stop();
+	});
+});

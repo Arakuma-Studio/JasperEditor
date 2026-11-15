@@ -1,21 +1,38 @@
 // The MCP server's connection to the engine: discovered lazily on the first tool call (so the server
 // starts and lists its tools even when the editor is closed), re-discovered after network failures, and
-// optionally backed by an engine this process started (`--start-engine`).
+// optionally backed by an engine this process started (`--start-engine`). An engine that is still starting
+// (its runtime file says so, discovery.ts) is waited for with capped exponential backoff, with progress on the
+// log and as MCP logging notifications, up to the startup timeout — a budget separate from --request-timeout.
 import { AGENT_NAME_HEADER } from '@jasper/api';
-import { platformDefaultAppdir } from '@jasper/config';
+import { ENV, platformDefaultAppdir } from '@jasper/config';
 import { EngineClient, EngineError } from '@jasper/engine-client';
 import {
 	type DiscoveryOptions,
-	discoverEngine,
 	type EngineTarget,
+	findEngine,
 	findEngineEntry,
 	type StartedEngine,
+	type StartingEngine,
 	startHeadlessEngine,
 } from './discovery.ts';
 import { ToolError } from './errors.ts';
 
 /** No engine request may hang a tool call: the longest legitimate wait is a 60 s approval. */
 const DEFAULT_REQUEST_TIMEOUT_MS = 180_000;
+/** How long a starting engine (found or started) is waited for: a cold start on a loaded machine takes tens of seconds. */
+export const DEFAULT_STARTUP_TIMEOUT_MS = 120_000;
+/** Backoff between discovery attempts while an engine starts: doubles from the first delay up to the cap. */
+const STARTUP_POLL_FIRST_MS = 200;
+const STARTUP_POLL_MAX_MS = 2000;
+
+/** `--startup-timeout <s>` / JASPER_ENGINE_STARTUP_TIMEOUT in ms (undefined: the default). */
+export function startupTimeoutMs(
+	flag: string | undefined,
+	env: Record<string, string | undefined>,
+): number | undefined {
+	const sec = Number(flag ?? env[ENV.ENGINE_STARTUP_TIMEOUT]);
+	return Number.isFinite(sec) && sec > 0 ? Math.min(sec, 3600) * 1000 : undefined;
+}
 
 /**
  * Thrown (as an `AbortError`, so the engine client does not turn it into a retryable NETWORK error) when a
@@ -97,6 +114,10 @@ type LinkOptions = DiscoveryOptions & {
 	enginePort?: number;
 	/** Deadline per engine request (default DEFAULT_REQUEST_TIMEOUT_MS). */
 	requestTimeoutMs?: number;
+	/** How long to wait for a starting engine, found or started (default DEFAULT_STARTUP_TIMEOUT_MS). */
+	startupTimeoutMs?: number;
+	/** Waits between discovery attempts (default: a timer). */
+	sleep?: (ms: number) => Promise<void>;
 };
 
 /**
@@ -120,6 +141,8 @@ export interface EngineConnection {
 	close(): Promise<void>;
 	/** The name shown on approval cards for this connection's requests (set by the server once it knows its client). */
 	agentName?: () => string;
+	/** Where progress while waiting for the engine also goes (the server sets MCP logging notifications). */
+	notify?: (message: string) => void;
 }
 
 /** A fixed engine (the engine's own `/mcp` endpoint talks to itself). */
@@ -149,6 +172,7 @@ export class EngineLink implements EngineConnection {
 	private started: StartedEngine | null = null;
 	private readonly log: (line: string) => void;
 	agentName?: () => string;
+	notify?: (message: string) => void;
 
 	constructor(private readonly opts: LinkOptions = {}) {
 		this.log = opts.log ?? ((l) => process.stderr.write(`[jasper-mcp] ${l}\n`));
@@ -171,15 +195,55 @@ export class EngineLink implements EngineConnection {
 		return this.current.client;
 	}
 
+	/** Progress while waiting: the log (stderr) and, through the server, MCP logging notifications. */
+	private progress(message: string): void {
+		this.log(message);
+		this.notify?.(message);
+	}
+
 	private async connect(): Promise<{ target: EngineTarget; client: EngineClient }> {
-		const reasons: string[] = [];
-		let target = await discoverEngine({
-			...this.opts,
-			log: (l) => {
-				reasons.push(l);
-				this.log(l);
-			},
-		});
+		const now = this.opts.now ?? Date.now;
+		const sleep = this.opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+		const timeoutMs = this.opts.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS;
+		const t0 = now();
+		let delay = STARTUP_POLL_FIRST_MS;
+		let waitingFor: StartingEngine | null = null;
+		let lastSecond = -1;
+		let reasons: string[] = [];
+		let target: EngineTarget | null = null;
+		for (;;) {
+			// The reasons nothing answered are logged on the first attempt only; later ones go to the final error.
+			const first = waitingFor === null;
+			reasons = [];
+			const found = await findEngine({
+				...this.opts,
+				log: (l) => {
+					reasons.push(l);
+					if (first) this.log(l);
+				},
+			});
+			target = found.target;
+			if (target || !found.starting) break;
+			const elapsed = now() - t0;
+			if (elapsed >= timeoutMs)
+				throw new ToolError(
+					'ENGINE_NOT_READY',
+					`The JasperEditor engine (pid ${found.starting.pid}, ${found.starting.file}) is still starting after ${Math.round(elapsed / 1000)} s.`,
+					`Retry once it has started, or wait longer with --startup-timeout <seconds> (env ${ENV.ENGINE_STARTUP_TIMEOUT}).`,
+				);
+			if (!waitingFor || waitingFor.pid !== found.starting.pid)
+				this.progress(
+					`the engine (pid ${found.starting.pid}, ${found.starting.file}) is ${found.starting.phase === 'starting' ? 'starting' : 'warming up'}; waiting up to ${Math.round(timeoutMs / 1000)} s`,
+				);
+			else if (Math.floor(elapsed / 1000) > lastSecond)
+				this.progress(`engine starting… ${Math.floor(elapsed / 1000)} s`);
+			lastSecond = Math.floor(elapsed / 1000);
+			waitingFor = found.starting;
+			await sleep(Math.min(delay, Math.max(0, timeoutMs - elapsed)));
+			delay = Math.min(delay * 2, STARTUP_POLL_MAX_MS);
+		}
+		if (target && waitingFor)
+			this.progress(`engine ready on ${target.url} after ${Math.round((now() - t0) / 1000)} s`);
 		if (!target && this.opts.startEngine) {
 			if (this.started) {
 				// Our own engine died: start a fresh one.
@@ -194,16 +258,18 @@ export class EngineLink implements EngineConnection {
 					'Build it with `pnpm build` (apps/engine/dist/engine.mjs) or pass --engine-entry <path>.',
 				);
 			const appdir = this.opts.appdir ?? this.opts.env?.JASPER_APPDIR ?? platformDefaultAppdir(this.opts.env);
-			this.log(`starting a headless engine (${entry}, appdir ${appdir})`);
+			this.progress(`starting a headless engine (${entry}, appdir ${appdir})`);
 			this.started = await startHeadlessEngine({
 				entry,
 				appdir,
 				port: this.opts.enginePort,
 				env: this.opts.env,
+				readyTimeoutMs: timeoutMs,
 				log: this.log,
+				progress: (ms) => this.progress(`engine starting… ${Math.floor(ms / 1000)} s`),
 			});
 			target = this.started;
-			this.log(`engine ready on ${target.url}`);
+			this.progress(`engine ready on ${target.url}`);
 		}
 		if (!target)
 			throw new ToolError(

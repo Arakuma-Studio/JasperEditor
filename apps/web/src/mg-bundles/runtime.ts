@@ -434,7 +434,7 @@ export class MgRuntime implements CompositionPreviewRuntime {
 		const loc = asset.locators.find((l) => l.type === 'engine-store');
 		const engineId = loc && loc.type === 'engine-store' ? loc.engineId : 'local';
 		this.session.apply({
-			label: 'Rebuild Remotion bundle',
+			label: ev.mgBundle.html ? 'Reload HTML composition' : 'Rebuild Remotion bundle',
 			origin: 'system',
 			commands: [
 				{

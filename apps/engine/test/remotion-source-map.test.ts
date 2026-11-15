@@ -109,4 +109,32 @@ describe('Remotion bundle source map', () => {
 			message: expect.stringContaining('at TitleCard (src/titles/TitleCard.tsx:12)'),
 		});
 	});
+
+	it('serves renders the bundle over HTTP without its map, and names the source line of a frame served there', async () => {
+		const bundle = join(root, 'prebuilt-http');
+		writeBundle(bundle);
+		const s = service({ prebuiltBundleDir: bundle, bundleCacheDir: join(root, 'unused-http') });
+		const url = await s.renderServeUrl();
+		const base = url.slice(0, url.lastIndexOf('/') + 1);
+		expect(base).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/[0-9a-f]{32}\/$/);
+		// Given an HTTP serve URL, Remotion downloads and parses `<serveUrl>/bundle.js.map` for every render.
+		expect((await fetch(`${base}bundle.js.map`)).status).toBe(404);
+		expect((await fetch(`${base}bundle.js`)).status).toBe(200);
+		const err = new Error("Cannot read properties of undefined (reading 'x')");
+		err.stack = [
+			"TypeError: Cannot read properties of undefined (reading 'x')",
+			`    at TitleCard (${base}bundle.js:3:31)`,
+		].join('\n');
+		renderer.renderStill.mockRejectedValueOnce(err);
+		const render = s.renderStill({
+			inputProps: { doc: { videoTracks: [] } },
+			output: join(root, 'still-http.png'),
+			frame: 0,
+			signal: new AbortController().signal,
+		});
+		await expect(render).rejects.toMatchObject({
+			message: expect.stringContaining('at TitleCard (src/titles/TitleCard.tsx:12)'),
+		});
+		await s.stop();
+	});
 });

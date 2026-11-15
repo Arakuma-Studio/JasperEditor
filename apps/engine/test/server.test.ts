@@ -186,6 +186,7 @@ describe('engine server (ARCHITECTURE §9.1, §4.2)', () => {
 		const file = join(appdir, 'engine', 'runtime.json');
 		const info = JSON.parse(readFileSync(file, 'utf8'));
 		expect(info).toMatchObject({
+			state: 'ready',
 			url: engine.url,
 			port: engine.port,
 			pid: process.pid,

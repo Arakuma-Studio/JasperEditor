@@ -11,6 +11,7 @@ import { notices } from '../home/notices.tsx';
 import { CanvasTextEditorHost } from '../mg-bundles/CanvasTextEditor.tsx';
 import { CompositionSection } from '../mg-bundles/CompositionSection.tsx';
 import { MG_IMPORT_DIALOG, registerImportRemotionDialog } from '../mg-bundles/ImportDialog.tsx';
+import { MG_IMPORT_HTML_DIALOG, registerImportHtmlDialog } from '../mg-bundles/ImportHtmlDialog.tsx';
 import { bundleErrorText, rebuildBundle } from '../mg-bundles/import.ts';
 import { insertComposition } from '../mg-bundles/insert.ts';
 import { MgRuntimeHost } from '../mg-bundles/RuntimeHost.tsx';
@@ -58,6 +59,17 @@ export const compositionCommands: UiCommand[] = [
 		when: (ctx) => !!ctx.session && !ctx.session.getState().readOnly,
 		disabledReason: (ctx) => (!ctx.session ? 'Open a project first' : undefined),
 		run: (ctx) => ctx.ui.openDialog(MG_IMPORT_DIALOG, { session: ctx.session, engine: ctx.engine }),
+	},
+	{
+		id: 'mg.importHtmlComposition',
+		label: 'Import HTML Composition…',
+		description:
+			'Imports a self-contained HTML page that defines window.__duration, window.__ready and window.__seek(t) as a composition clip, rendered by seeking it frame by frame (local engines).',
+		icon: 'panel.motionTemplates',
+		scope: 'global',
+		when: (ctx) => !!ctx.session && !ctx.session.getState().readOnly,
+		disabledReason: (ctx) => (!ctx.session ? 'Open a project first' : undefined),
+		run: (ctx) => ctx.ui.openDialog(MG_IMPORT_HTML_DIALOG, { session: ctx.session, engine: ctx.engine }),
 	},
 	{
 		id: 'mg.insertComposition',
@@ -123,6 +135,7 @@ export const compositionCommands: UiCommand[] = [
 ];
 
 registerImportRemotionDialog();
+registerImportHtmlDialog();
 
 clipSections.register({
 	id: 'composition',
@@ -195,11 +208,12 @@ projectItemMenuExtensions.register({
 		if (bundles.length !== 1) return [];
 		const asset = bundles[0]!;
 		const engine = session.engine;
+		const html = asset.mgBundle?.source.type === 'html-page';
 		return [
 			{
 				kind: 'item',
-				label: 'Rebuild Remotion Bundle',
-				disabled: readOnly || !engine || asset.mgBundle?.source.type !== 'project-dir',
+				label: html ? 'Reload HTML Composition' : 'Rebuild Remotion Bundle',
+				disabled: readOnly || !engine || (asset.mgBundle?.source.type !== 'project-dir' && !html),
 				run: () => {
 					if (engine)
 						void rebuildBundle(engine, asset, session.projectId).catch((error) =>

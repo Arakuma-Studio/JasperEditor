@@ -62,6 +62,7 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			sep,
 			c('project.import', 'Import…'),
 			c('mg.importRemotionProject', 'Import Remotion Project…'),
+			c('mg.importHtmlComposition', 'Import HTML Composition…'),
 			c('project.importFromMediaBrowser', 'Import from Media Browser'),
 			c('captions.import', 'Import Captions…'),
 			c('mg.bulkImport', 'Import Motion Graphics from Spreadsheet…'),

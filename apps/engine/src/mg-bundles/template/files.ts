@@ -3,12 +3,19 @@
 // Kept as data (not files) so packaged engines ship it inside the engine bundle. `{{name}}` is replaced.
 // M2 (S11:ANM-016, wp-m2-anime-core): `AnimeTitle` shows anime.js driven by the frame (paused timeline over
 // plain objects, canonical seek, no autoplay/timers/randomness) and the README explains the rule.
+/**
+ * The package manager the project declares (`packageManager`) and the engine installs it with (scaffold.ts):
+ * the repository's own pin (root package.json), so corepack never picks an enclosing project's or its default.
+ */
+export const TEMPLATE_PACKAGE_MANAGER = 'pnpm@10.34.5';
+
 export const TEMPLATE_FILES: Record<string, string> = {
 	'package.json': `{
   "name": "{{name}}",
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "${TEMPLATE_PACKAGE_MANAGER}",
   "description": "Motion graphics for JasperEditor (Remotion 4.0.499). Edit src/, JasperEditor rebuilds on save.",
   "scripts": {
     "studio": "remotion studio",

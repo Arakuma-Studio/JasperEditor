@@ -89,6 +89,11 @@ describe('page budget', () => {
 		expect(pageShares([300, 100], 8, 6)).toEqual(pageShares([300, 100], 8));
 	});
 
+	it('a short master renders on few pages: each page costs a bundle load and its window (export-performance §16)', () => {
+		// the 2 s title of the report: 60 frames with a 16-page budget rendered on 6 pages
+		expect(pageShares([60, 180], 16)).toEqual([2, 6]);
+	});
+
 	it('a render that captured its frames gives its pages to the next render while it finishes', async () => {
 		const a = manual(4);
 		const b = manual(4);

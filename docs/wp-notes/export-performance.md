@@ -1,4 +1,4 @@
-# Export performance: phases, loudness passes, parallel segments, GPU
+# Export performance: phases, loudness passes, parallel segments, GPU, warm render browsers
 
 Work note for the native / hybrid export speed-up (`apps/engine/src/export/service.ts`, `segments.ts`,
 `run-report.ts`). Figures are labelled **measured** (with machine and load) or **estimated** (`≈`, with a basis).
@@ -1143,3 +1143,139 @@ shares the CPU with them, which is where the ≈ 2× came from — lowering the 
 further, and raising the engine's needs privileges. The 0.1 % shown during the bake is the native path's progress:
 it counts encoded frames, and the composite waits for the masters it needs (`bakeWait`), so it stays near 0 while the
 stage text counts the masters (`Baking graphics: n/m ready`); a display matter, not a stall.
+
+## 16. Short motion-graphics exports: warm render browsers, the bundle over HTTP, no composition page, fewer pages (implemented)
+
+`remotion/service.ts`, `remotion/browser-pool.ts`, `remotion/page-pool.ts`, `mg-bundles/text-measure.ts`
+(`serveBundleForMeasuring`), `compositions/src/render-host.ts` (`sequenceComposition`), `layer-bake/service.ts`.
+
+**Report.** Through the headless engine and the CLI, a 1080×1350 @ 30 fps design (a photo with an eased push-in and a
+fade, a two-line Oswald title with the `mask-reveal` per-character preset; optionally the photo with Sapphire
+Halftone + Noise) took ≈ 7 s per second of video: 2 s without effects 22–25 s, 6 s with halftone + noise 42.8 s, against
+2.4–4.6 s for the same design as an HTML page rendered by headless Chrome (8 browsers, PNG screenshots, x264). The
+user's own test projects (`soffy-stuff/work/tooltest/jasper-editor`, same host) show where: the export is hybrid; the
+title and, with effects, the photo are layer-bake masters (Remotion renders, ProRes 4444), and those bakes were 17 of
+the 24 s (2 s) and 31–36 s of the 42 s (6 s, both masters at once). An identical re-export (bakes cached) took 5.7 s.
+
+**Bench.** This host (16 logical cores, 61 GB, no GPU: WebGL is SwiftShader; shared with other agents, so the load is
+reported with every figure), LGPL FFmpeg 7.1.5 (`JASPER_FFMPEG_LGPL_ONLY=1`), system Google Chrome, dev engine
+(`tsx apps/engine/src/cli.ts`), OpenH264. The four designs are rebuilt by a script of CLI calls copied from the user's
+`make-test.sh` (2 s / 6 s × without / with halftone + noise; the noise's amount stays at its default 0) and exported
+with `jasper export --out … --json`, the layer cache emptied before each export (`rm -rf <appdir>/cache/layers/*`):
+`apps/engine/bench/mg-export.sh` (the same CLI calls and measurements; the figures here used the report's own photo,
+an 800×1000 PNG, passed with `--image`; the script defaults to the `pnpm fixtures` still).
+
+**Where the time went (measured, before).** Phases of one cold 2 s export without effects (load 1.9 → 4.2): job
+21.9 s = bake 17.5 s, then plan 0.1, encode 4.0, frame check 0.2 s (the 3.9 s mix runs beside the bake). Inside the
+bake of the 60-frame title master (976×702, 6 pages; temporary instrumentation, load 17–22): shared browser launch
+0.9 s, `selectComposition` 4.6 s, frames 11.3 s, stitch (Remotion's ProRes 4444) 3.8 s, BT.709 remux 0.2 s, frame
+count 0.3 s, crop check 1.5 s. The photo master with halftone + noise (1080×1350, 60 frames, 6 pages, load 9–19):
+`selectComposition` 8.7 s, frames 43.4 s, stitch 9.4 s. A render's frames, timed in isolation (`renderFrames`, the same
+props, a browser of its own, load ≈ 9): the first frame after 10.2 s, the other 59 in 2.4 s (24.5 frames/s).
+So the fixed costs — pages loading the bundle — dominated the short masters, not the per-frame work:
+
+- *A page loading the compositions bundle* (`bundle.js` 12.6 MB plus chunks, measured over CDP: `Performance.getMetrics`
+  and a CPU profile of the load): 2.8–6.6 s until Remotion's globals exist, 1.7–4.2 s of it script (compile and the
+  modules' top-level evaluation), with 4 pages loading at once (3 runs, load 5–10). Remotion serves the bundle from
+  its own server on a new port per render with `Cache-Control: no-store`, and opens a fresh browser per render (or
+  per export with the shared bake browsers), so every page of every render paid it again: `selectComposition` (one
+  page, only to compute the size, fps and duration) and then each of the render's pages.
+- The same bundle served cacheable at a stable URL, after two loads in the browser (Chrome writes V8's code cache on a
+  script's second load): 1.8–2.7 s with 4 at once, ≈ 1.0–1.25 s of script (3 runs interleaved with the above).
+- *Too many pages for short masters*: `pageShares` gave a page per 10 frames (60 frames → 6 pages, 180 → 16), each
+  page loading the bundle and keeping a 1080×1350 window composited in software. Measured (`renderFrames`, the
+  title's props, warm browser with the cacheable bundle, load 9–12, the third of three runs each): 2 pages 5.2 s,
+  3 pages 6.2 s, 6 pages 7.4 s.
+- *Per-frame work of the halftone layer* (SwiftShader runs the shaders in the browser's one GPU process): one browser,
+  2 pages 4.2 frames/s, 6 pages 4.6 frames/s; three browsers of 2 pages each 6.6 frames/s (load 8–15).
+- *Remotion's ProRes 4444 stitch* of the halftone frames: `prores_ks`'s rate control searches quantisers per slice,
+  ≈ 1.4 CPU-s per 1080×1350 frame (60 frames: 83–90 CPU-s, 21–24 s at 4 threads; load ≈ 25). Sampled over a whole
+  cold 6 s export with effects (CPU of every process of the engine's tree, load 10–19): the stitch 261 CPU-s (before)
+  / 303 (after) of ≈ 1,000 / 930 in all, Chrome (SwiftShader) ≈ 620 / 510, the composite ffmpeg 89 / 97, node 30 / 23.
+
+**Changes.**
+1. *The bundle over loopback HTTP, cacheable* (`RemotionService.renderServeUrl`): the serve-URL directory (content
+   addressed: the dev source hash or the prebuilt stamp) is served once per process by `serveBundleForMeasuring`
+   (random path prefix, 127.0.0.1, `unref`ed) with `Cache-Control: public, max-age=31536000, immutable`, and every
+   render, sheet and still loads it from there (falls back to the directory when the server cannot start).
+   The directory is the one §15 serves (source-map references hidden), and the server answers 404 for `.map` files
+   (`withholdSourceMaps`): given an HTTP serve URL, Remotion 4.0.499's `prepareServer` downloads
+   `<serveUrl>/bundle.js.map` (`getSourceMapFromRemoteUrl`) and parses it on the engine's main thread for every render,
+   whatever `bundle.js` references — the cost §15 removed. A failed render still names its source lines: they are read
+   from the directory's side-car map (`withRenderErrorSource`), and stack frames under the server's random prefix are
+   recognised. Added when the two lines of work were merged; not re-measured.
+2. *Warm render browsers* (`BrowserPool`, `openSharedBrowser`, `openBrowserWith`): a browser a render, a bake
+   session, a still, the text measurer, a poster, a PSD export or an HTML composition (wp-note html-compositions
+   "Warm browsers") used goes back to a pool instead of being closed: its pages are closed (within 10 s, else it is
+   closed), a render browser loads the bundle once more the first time it is idle (so the next render's pages find
+   V8's code cache), and the next holder with the same launch options gets it — every browser is keyed by its
+   normalised options (executable, mode, probed `gl`), never handed to a holder of other ones. At most
+   `JASPER_RENDER_BROWSERS_IDLE` (4) idle (least recently used out), closed after `JASPER_RENDER_BROWSER_IDLE_SEC`
+   (300 s) unused or after 50 holders; an idle browser that does not answer a CDP round trip within 3 s (crashed, hung) is closed and a new
+   one launched; engine shutdown closes them all (`RemotionService.stop` from `CoreServices.stop`). Renders that
+   used to let Remotion open a browser of their own (one-page renders, stills without a shared browser) take a pooled
+   one. Idle, two warm browsers used 0.35 CPU-s in 20 s. After the engine stopped, none of its Chrome processes was
+   left.
+3. *The sequence composition from the document* (`sequenceComposition`, the `calculateSequenceMetadata` of the
+   bundle, the default props overridden by the input props, like `remotion_calculateComposition`): no
+   `selectComposition` page. Props without a document with settings and a duration still ask the bundle. Checked
+   against the real `selectComposition` (`remotion-warm.e2e.test.ts`: equal `VideoConfig`s for a 1080×1350 @ 30 and
+   an empty 29.97 document).
+4. *A page renders at least 30 frames* (`MIN_FRAMES_PER_PAGE` 10 → 30): a 60-frame master renders on 2 pages, a
+   180-frame one on 6; long masters keep their share of the budget (the 17 × 363-frame bake of §8: 2 pages each, as
+   before). With changes 1–3 in place, bake medians of 3 interleaved runs, floor 10 → 30 (load 12–23): 2 s 6.4 → 4.5 s,
+   2 s with effects 31.5 → 25.8 s, 6 s 18.7 → 12.0 s, 6 s with effects 97.2 → 81.9 s.
+5. The bake job's and the export's logs get each master's phases: `layer-bake "SOFFY": remotion master: 180 frames
+   880×702 on 6 page(s): setup 0 ms, frames 13494 ms, stitch 9362 ms, remux + count 511 ms`.
+
+**Output.** Every frame is the same: the decoded video of the four exports after the change has the same `framemd5`
+as before (2 s / 6 s, with and without effects; three runs each), and so does every intermediate variant measured.
+
+**Result (measured).** Three interleaved rounds (main 4e2dd3342 in a detached checkout, then this branch, each
+round restarting the engine and making one unmeasured warm-up export first; this host as above, other agents' load
+8–20), each design exported once per round with an empty layer cache; wall = the CLI call (`jasper export`), job /
+bake = the job result's `timings`, CPU = every process of the engine's tree sampled each 0.5 s (Chrome's processes
+included; medians):
+
+| Design | Before: wall (median of 3) | After: wall (median of 3) | Before → after: job, bake | Sampled CPU before → after | Load (1-min) before / after |
+|---|---:|---:|---|---|---|
+| 2 s, no effects | **26.0 s** (14.5, 36.7, 26.0) | **15.9 s** (10.3, 20.5, 15.9) | 23.3 → 13.9 s, 18.4 → 9.0 s | 173 → 82 CPU-s | 9, 18, 16 / 16, 13, 15 |
+| 2 s, halftone + noise | **48.1 s** (44.7, 68.8, 48.1) | **36.7 s** (26.1, 47.3, 36.7) | 46.2 → 34.6 s, 42.2 → 31.7 s | 448 → 240 CPU-s | 8, 16, 13 / 14, 12, 13 |
+| 6 s, no effects | **50.2 s** (50.2, 76.5, 50.2) | **27.5 s** (22.8, 34.7, 27.5) | 47.9 → 25.7 s, 36.4 → 14.0 s | 488 → 248 CPU-s | 13, 16, 12 / 11, 13, 10 |
+| 6 s, halftone + noise | **95.8 s** (92.9, 139.3, 95.8) | **79.9 s** (79.9, 101.1, 75.4) | 93.5 → 78.3 s, 84.4 → 69.4 s | 1028 → 808 CPU-s | 16, 20, 14 / 13, 19, 13 |
+
+So ≈ 13 → 8 s per second of video without effects at 2 s, 8.4 → 4.6 s at 6 s, and 16.0 → 13.3 s with halftone + noise
+at 6 s (whose floor is its SwiftShader frames and ProRes stitch, below). The first export after an engine start
+launches its browsers cold (not in the table). Rerun: `ENGINE_PID=<engine pid> apps/engine/bench/mg-export.sh --appdir
+<its appdir> --image <png> --runs 1` against an engine started from main, then from this branch, alternately (the
+script's header has the engine command line).
+
+**Evaluated, not shipped.**
+- *Frame ranges of one master in separate browsers* (each range a Remotion render with `frameRange`, joined by stream
+  copy: ProRes is intra-only): more GPU processes for SwiftShader (6.6 against 4.2–4.6 frames/s above) and the
+  stitches overlap the rendering. Not exact: the halftone photo's frames from 45 on (the first frame of the second
+  range) came out ±1 on 0.16 % of their channel values (max difference 1; frames rendered by a page that started at
+  frame 45 rather than before it, where the layer's scale keyframes end). The title layer was identical. Under this
+  host's load (25–40) two runs each gave no wall-time gain (bake 107 / 124 s split against 125 / 91 s whole).
+- *JPEG intermediates*: every Remotion render here is an alpha master (straight-alpha ProRes 4444 for the native
+  composite), so PNG captures stay (JPEG has no alpha). The Remotion export path already captures PNG on purpose
+  (`renderMedia`: JPEG's 4:2:0 and ringing blurred thin strokes past Program preview).
+- *A cheaper master codec*: the ProRes 4444 stitch is now the largest single cost of a heavy master (above). UtVideo
+  (`gbrap`, lossless, LGPL FFmpeg's own encoder) encoded the same 60 halftone frames in 13.6 CPU-s instead of 83–90,
+  into 33 MB instead of 49 MB, and is exact where ProRes is lossy; `prores_ks -qscale:v 4` took 24 CPU-s but lost
+  quality (PSNR against the PNG frames 55.6 dB, the default 72.9 dB); `-filter_threads` changes nothing (same bytes,
+  same time). Changing the master format changes S11:LBK-003's ProRes 4444 master, the bake recipe (cache version),
+  the composite's input conversion and the graded path: a decision of its own, not made here.
+- *The crop check* (`clippedAtBorder`): cropping the 1-px strips before the RGBA conversion gives the same YMAX values
+  (checked on a 180-frame master) in 9.4–10.4 instead of 16.7–17.3 CPU-s; the ProRes decode is most of the rest.
+  Small next to the above; not done.
+- *The export's own encode* (composite + OpenH264): 1.3–13 s here; the photo is drawn by a node kernel stream
+  (`pipe:3`, 5.9 MB per frame) and composited by ffmpeg (≈ 1.6 s of the 4 s for 60 frames with a synthetic input).
+  Unchanged.
+
+**Remaining limits.** Without a GPU the halftone layer's frames (SwiftShader) and their ProRes stitch remain: ≈ 87 % of
+the sampled CPU of a cold 6 s export with effects after the change (Chrome 510 + stitch 303 of 930 CPU-s, one run). The first export after the engine starts launches its browsers and loads the bundle
+cold (no code cache yet); a re-export of an unchanged design reuses the cached bakes (≈ 5 s). The ±1 history
+dependence of the halftone frames above is the compositions' (a page's earlier frames change later ones): which frame
+a page starts at already depends on the page count (the budget follows the cores); the new floor gives short masters
+fewer pages, and the four designs came out identical.

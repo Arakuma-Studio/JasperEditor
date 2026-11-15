@@ -44,6 +44,10 @@ function openUrl(url: string): void {
 	child.unref();
 }
 
+/** An HTML page is not media: it becomes a composition (import_html_composition). */
+const HTML_PAGE_MESSAGE =
+	'An .html page is not a media file: import it with import_html_composition {projectId, path, width, height, fps}.';
+
 export function registerProjectTools(ctx: ToolContext): void {
 	defineTool(
 		ctx,
@@ -254,13 +258,17 @@ export function registerProjectTools(ctx: ToolContext): void {
 				if (!isAbsolute(p)) problems.push({ path: p, code: 'NOT_ABSOLUTE', message: 'Use an absolute path' });
 				else if (!existsSync(p) || !statSync(p).isFile())
 					problems.push({ path: p, code: 'FILE_NOT_FOUND', message: 'No such file on this machine' });
+				else if (/\.html?$/i.test(p))
+					problems.push({ path: p, code: 'HTML_PAGE', message: HTML_PAGE_MESSAGE });
 				else ok.push(p);
 			}
 			if (!ok.length)
 				throw new ToolError(
 					'NO_FILES',
 					'None of the paths can be imported',
-					'Pass absolute paths of existing files.',
+					problems.every((x) => x.code === 'HTML_PAGE')
+						? HTML_PAGE_MESSAGE
+						: 'Pass absolute paths of existing files.',
 					{
 						errors: problems,
 					},

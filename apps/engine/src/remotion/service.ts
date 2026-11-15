@@ -1,7 +1,8 @@
 // Local Remotion rendering (S04 §13 RR-001…006/011, ARCHITECTURE §9.5, §10.3): one bundle of
 // `@jasper/compositions/remotion-entry` (prebuilt for packaged installs, otherwise bundled once and cached
-// under `<appdir>/remotion/bundle/<sourceHash>`), `selectComposition('JasperSequence')`, then `renderMedia`
-// or `renderStill` with the configured license key and a headless browser.
+// under `<appdir>/remotion/bundle/<sourceHash>`, served to the pages over loopback HTTP), the 'JasperSequence'
+// composition of the document (`sequenceComposition`, else `selectComposition`), then `renderMedia` or `renderStill`
+// with the configured license key in a warm pooled headless browser (wp-note export-performance §16).
 import type { ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -10,14 +11,16 @@ import { createRequire } from 'node:module';
 import { availableParallelism } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { renderPagesInOwnWindows } from '@jasper/compositions/render-host';
+import { renderPagesInOwnWindows, sequenceComposition } from '@jasper/compositions/render-host';
 import { ENV } from '@jasper/config';
 import { snapshotGlNeeds } from '@jasper/project';
 import { animejsVersion } from '../anime/index.ts';
 import { renderParallelism } from '../gaps/render-budget.ts';
 import { JobError } from '../jobs/types.ts';
+import { serveBundleForMeasuring } from '../mg-bundles/text-measure.ts';
 import { selfCheck } from '../tools/ffmpeg.ts';
 import { binaryNames, type RemotionBinaries } from '../tools/lgpl.ts';
+import { BrowserPool } from './browser-pool.ts';
 import { hideSourceMapReferences, withRenderErrorSource } from './bundle-source-map.ts';
 import type { RemotionFfmpegInfo } from './export-plan.ts';
 import { webglRefusal } from './webgl-refusal.ts';
@@ -25,6 +28,16 @@ import { webglRefusal } from './webgl-refusal.ts';
 const COMPOSITION_ID = 'JasperSequence';
 export const REMOTION_VERSION = '4.0.499';
 const DELAY_RENDER_TIMEOUT_MS = 60_000;
+/**
+ * Warm render browsers (wp-note export-performance §16, `browser-pool.ts`): idle browsers kept at most
+ * (`JASPER_RENDER_BROWSERS_IDLE`, 0 = close every browser after its render), how long an idle one stays open
+ * (`JASPER_RENDER_BROWSER_IDLE_SEC`), and how many holders one serves before it is closed.
+ */
+const WARM_BROWSERS = 4;
+const WARM_BROWSER_IDLE_SEC = 300;
+const WARM_BROWSER_MAX_USES = 50;
+/** A warm browser that does not answer a CDP round trip within this is replaced. */
+const BROWSER_HEALTH_MS = 3_000;
 /**
  * M2 (S11:LBK-020): identity of a prebuilt compositions bundle, written next to it by `scripts/build-remotion.mjs`
  * (`bundleId` = content hash of the bundle files, `animejs` = the anime.js version inside it).
@@ -237,6 +250,29 @@ const SYSTEM_BROWSERS = [
 
 type RendererModule = typeof import('@remotion/renderer');
 type RenderBrowser = Awaited<ReturnType<RendererModule['openBrowser']>>;
+/** Launch options of a render browser: the executable and mode, and (renders) the probed `gl`. */
+export type RenderBrowserOptions = {
+	browserExecutable?: string;
+	chromeMode: 'headless-shell' | 'chrome-for-testing';
+	chromiumOptions?: ChromiumOptions;
+};
+type ChromiumOptions = NonNullable<Parameters<RendererModule['openBrowser']>[1]>['chromiumOptions'];
+
+/**
+ * Identity of launch options, whatever their key order (an absent, `undefined` or `null` option, or an empty
+ * `chromiumOptions`, is Chrome's default either way): one browser serves only holders of the same options.
+ */
+function browserKey(o: RenderBrowserOptions): string {
+	const norm = (v: unknown): unknown => {
+		if (!v || typeof v !== 'object' || Array.isArray(v)) return v ?? undefined;
+		const entries = Object.entries(v as Record<string, unknown>)
+			.map(([k, x]) => [k, norm(x)] as const)
+			.filter(([, x]) => x !== undefined)
+			.sort(([a], [b]) => (a < b ? -1 : 1));
+		return entries.length ? Object.fromEntries(entries) : undefined;
+	};
+	return JSON.stringify(norm(o) ?? {});
+}
 
 /**
  * A render browser opened once and used by several renders at the same time (S11:LBK-022 parallel bakes): with a full
@@ -383,6 +419,10 @@ export class RemotionService {
 	private webgl: RemotionWebglStatus = { state: 'unknown', gl: null };
 	private webglPromise: Promise<RemotionWebglStatus> | null = null;
 	private ffmpegInfoValue: RemotionFfmpegInfo = { lgpl: false, encoders: null, filters: null };
+	private poolValue: BrowserPool<RenderBrowser> | null = null;
+	/** The bundle served over loopback HTTP for renders (`renderServeUrl`). */
+	private bundleServer: Promise<{ url: string; close(): Promise<void> } | null> | null = null;
+	private stopped = false;
 
 	/**
 	 * Probes the binaries directory's ffmpeg (license, encoders, filters). A directory whose ffmpeg is not
@@ -524,6 +564,98 @@ export class RemotionService {
 			throw e;
 		});
 		return this.serveUrlPromise;
+	}
+
+	/**
+	 * The bundle URL renders load (wp-note export-performance §16): the serve-URL directory served over loopback HTTP
+	 * once per process with immutable caching (the directory is content-addressed and the URL prefix is random per
+	 * process), so the pages of a warm browser load it from their HTTP cache with V8's code cache. Remotion's own
+	 * server sends `no-store` on a new port per render. Falls back to the directory when the server cannot start.
+	 */
+	async renderServeUrl(): Promise<string> {
+		const dir = await this.serveUrl();
+		// The side-car source maps stay unserved: given an HTTP serve URL, Remotion would download and parse
+		// `bundle.js.map` on the main thread for every render (bundle-source-map.ts); failures read it from `dir`.
+		this.bundleServer ??= serveBundleForMeasuring(dir, {
+			bootstrap: false,
+			immutable: true,
+			withholdSourceMaps: true,
+		}).catch((e) => {
+			this.opts.log?.(
+				`[remotion] bundle server failed (${(e as Error).message}); renders serve the bundle themselves`,
+			);
+			return null;
+		});
+		const served = await this.bundleServer;
+		if (served && this.stopped) await served.close();
+		return served && !this.stopped ? served.url : dir;
+	}
+
+	/** Closes the warm render browsers and the bundle server (engine shutdown). Renders started later fail. */
+	async stop(): Promise<void> {
+		this.stopped = true;
+		await this.poolValue?.stop();
+		const served = await this.bundleServer?.catch(() => null);
+		await served?.close();
+	}
+
+	/** Counters of the warm browser pool (tests, logs). */
+	get browserPoolStats(): {
+		launched: number;
+		reused: number;
+		replaced: number;
+		closed: number;
+		idle: number;
+	} {
+		const p = this.pool();
+		return { ...p.stats, idle: p.idleCount };
+	}
+
+	private pool(): BrowserPool<RenderBrowser> {
+		if (this.poolValue) return this.poolValue;
+		const env = this.env;
+		const num = (v: string | undefined, d: number) =>
+			v !== undefined && v !== '' && Number.isFinite(Number(v)) ? Math.max(0, Number(v)) : d;
+		this.poolValue = new BrowserPool<RenderBrowser>({
+			healthy: (b) =>
+				Promise.race([
+					// a cheap, idempotent round trip (set when the browser was created)
+					b.connection.send('Target.setDiscoverTargets', { discover: true }).then(() => true),
+					new Promise<boolean>((resolve) => setTimeout(() => resolve(false), BROWSER_HEALTH_MS).unref?.()),
+				]),
+			// A render's own cleanup may still be closing its pages ("Target closed" then): only what stays open counts.
+			reset: async (b) => {
+				await Promise.all((await b.pages()).map((page) => page.close().catch(() => undefined)));
+			},
+			dispose: (b) => b.close({ silent: true }),
+			maxIdle: Math.floor(num(env.JASPER_RENDER_BROWSERS_IDLE, WARM_BROWSERS)),
+			idleMs: num(env.JASPER_RENDER_BROWSER_IDLE_SEC, WARM_BROWSER_IDLE_SEC) * 1000,
+			maxUses: WARM_BROWSER_MAX_USES,
+			...(this.opts.log ? { log: this.opts.log } : {}),
+		});
+		return this.poolValue;
+	}
+
+	/**
+	 * Loads the render bundle once in an idle browser: Chrome writes V8's code cache of a script on its second load, so
+	 * the pages of the next render (the third load) start from compiled code (wp-note export-performance §16).
+	 */
+	private async warmBrowser(b: RenderBrowser): Promise<void> {
+		const url = await this.renderServeUrl();
+		if (!url.startsWith('http')) return;
+		const page = await b.newPage({
+			context: () => null,
+			logLevel: 'error',
+			indent: false,
+			pageIndex: 0,
+			onBrowserLog: null,
+			onLog: () => undefined,
+		});
+		try {
+			await page.goto({ url, timeout: DELAY_RENDER_TIMEOUT_MS });
+		} finally {
+			await page.close().catch(() => undefined);
+		}
 	}
 
 	/** The stamp of the prebuilt bundle (`jasper-bundle.json`), or null (dev bundles, unstamped builds). */
@@ -795,70 +927,84 @@ export class RemotionService {
 		const binaries = this.binariesOption();
 		await this.assertWebglFor(inputProps);
 		const r = await this.renderer();
-		const serveUrl = await this.serveUrl();
+		const serveUrl = await this.renderServeUrl();
+		// The bundle directory behind `serveUrl` (its side-car source maps name a failed render's source lines).
+		const serveDir = await this.serveUrl();
 		if (signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
 		// The WebGL-capable `gl` of the start-up probe (S06:CG-042) applies to every page of the render.
 		const browser = { ...this.browserOptions(), ...(await this.chromiumOptions()) };
-		const composition = await r
-			.selectComposition({
-				serveUrl,
-				id: COMPOSITION_ID,
-				inputProps,
-				timeoutInMilliseconds: DELAY_RENDER_TIMEOUT_MS,
-				logLevel: 'error',
-				...binaries,
-				...browser,
-				...(shared ? { puppeteerInstance: shared.instance } : {}),
-			})
-			.catch(async (e: unknown) => {
-				throw await renderFailure(e, signal, serveUrl);
-			});
-		return { r, serveUrl, composition, browser };
+		// The sequence composition is a pure function of its document: resolved here instead of by a page of its own
+		// (a whole bundle load, 3–6 s before the render's own pages start; wp-note export-performance §16).
+		const composition =
+			sequenceComposition(inputProps) ??
+			(await r
+				.selectComposition({
+					serveUrl,
+					id: COMPOSITION_ID,
+					inputProps,
+					timeoutInMilliseconds: DELAY_RENDER_TIMEOUT_MS,
+					logLevel: 'error',
+					...binaries,
+					...browser,
+					...(shared ? { puppeteerInstance: shared.instance } : {}),
+				})
+				.catch(async (e: unknown) => {
+					throw await renderFailure(e, signal, serveDir);
+				}));
+		return { r, serveUrl, serveDir, composition, browser };
 	}
 
 	/**
-	 * S11:ANM-014: the browser of a render with `concurrency` pages, or null to let Remotion open its own. A full
-	 * Chrome (`chrome-for-testing`, new headless mode) would open the pages as tabs of one window, hidden while
-	 * another tab is in front, and Remotion captured a page's first frame right after showing it, before Chrome had
-	 * painted it (a black or partial frame). Here every page gets its own window (`renderPagesInOwnWindows`).
-	 * Remotion's chrome-headless-shell has no tabs: null.
+	 * The browser of a render that was given none: a warm pooled browser (export-performance §16; `close` gives it
+	 * back), or null to let Remotion open its own when none can be opened here. S11:ANM-014: a full Chrome
+	 * (`chrome-for-testing`, new headless mode) would open the pages as tabs of one window, hidden while another tab is
+	 * in front, and Remotion captured a page's first frame right after showing it, before Chrome had painted it (a black
+	 * or partial frame); pooled browsers open every page in its own window (`renderPagesInOwnWindows`).
 	 */
-	private async renderBrowser(
-		r: RendererModule,
-		browser: Awaited<ReturnType<RemotionService['composition']>>['browser'],
-		concurrency: number,
-	): Promise<RenderBrowser | null> {
-		if (concurrency <= 1 || browser.chromeMode !== 'chrome-for-testing') return null;
-		const instance = await r.openBrowser('chrome', { ...browser, logLevel: 'error' });
-		if (!renderPagesInOwnWindows(instance)) {
-			await instance.close({ silent: true }).catch(() => undefined);
-			return null;
-		}
-		return instance;
+	private async renderBrowser(): Promise<SharedRenderBrowser | null> {
+		return this.openSharedBrowser().catch(() => null);
 	}
 
 	/**
 	 * S11:LBK-022: one render browser for several renders running at the same time (the bakes of an export): the probed
 	 * `gl`, and with a full Chrome every page in its own window (S11:ANM-014). Pass it as `browser` to
-	 * `renderAlphaMaster` / `renderStill`; the caller closes it.
+	 * `renderAlphaMaster` / `renderStill`; the caller closes it. A warm browser of an earlier render when one is idle
+	 * (`close` gives it back to the pool: wp-note export-performance §16).
 	 */
 	async openSharedBrowser(): Promise<SharedRenderBrowser> {
 		this.binariesOption();
-		const r = await this.renderer();
 		const browser = { ...this.browserOptions(), ...(await this.chromiumOptions()) };
-		const instance = await r.openBrowser('chrome', { ...browser, logLevel: 'error' });
-		if (browser.chromeMode === 'chrome-for-testing' && !renderPagesInOwnWindows(instance)) {
-			await instance.close({ silent: true }).catch(() => undefined);
-			throw new JobError('RENDER_FAILED', 'The render browser does not expose its CDP connection', true);
-		}
-		let closed: Promise<void> | null = null;
-		return {
-			instance,
-			close: () => {
-				closed ??= instance.close({ silent: true }).catch(() => undefined);
-				return closed;
+		return this.pooledBrowser(browser, (b) => this.warmBrowser(b));
+	}
+
+	/**
+	 * A warm browser launched with exactly `options` (HTML compositions: their own executable, mode and `gl`), from
+	 * the same pool as the renders' (wp-note export-performance §16); `close` gives it back. Browsers of other options
+	 * are never handed out for it.
+	 */
+	async openBrowserWith(options: RenderBrowserOptions): Promise<SharedRenderBrowser> {
+		return this.pooledBrowser(options);
+	}
+
+	private async pooledBrowser(
+		options: RenderBrowserOptions,
+		warm?: (b: RenderBrowser) => Promise<void>,
+	): Promise<SharedRenderBrowser> {
+		if (this.stopped) throw new JobError('RENDER_FAILED', 'The engine is stopping', true);
+		const r = await this.renderer();
+		return this.pool().acquire({
+			key: browserKey(options),
+			launch: async () => {
+				const instance = await r.openBrowser('chrome', { ...options, logLevel: 'error' });
+				// S11:ANM-014: Chrome for Testing paints only visible tabs; every page gets its own window.
+				if (options.chromeMode === 'chrome-for-testing' && !renderPagesInOwnWindows(instance)) {
+					await instance.close({ silent: true }).catch(() => undefined);
+					throw new JobError('RENDER_FAILED', 'The render browser does not expose its CDP connection', true);
+				}
+				return instance;
 			},
-		};
+			...(warm ? { warm } : {}),
+		});
 	}
 
 	/**
@@ -866,14 +1012,17 @@ export class RemotionService {
 	 * (dev with Remotion's GPL build only) H.264/AAC — see export-plan.ts.
 	 */
 	async renderMedia(input: RemotionRenderInput): Promise<{ frames: number }> {
-		const { r, serveUrl, composition, browser } = await this.composition(input.inputProps, input.signal);
+		const { r, serveUrl, serveDir, composition, browser } = await this.composition(
+			input.inputProps,
+			input.signal,
+		);
 		const { cancelSignal, cancel } = r.makeCancelSignal();
 		const onAbort = () => cancel();
 		input.signal.addEventListener('abort', onAbort, { once: true });
 		const concurrency = input.concurrency ?? renderParallelism();
-		let instance: RenderBrowser | null = null;
+		let instance: SharedRenderBrowser | null = null;
 		try {
-			instance = await this.renderBrowser(r, browser, concurrency);
+			instance = await this.renderBrowser();
 			await this.recordUsage('media', 'export');
 			await withSinglePageRetry(concurrency, input.signal, input.log, (pages) =>
 				r
@@ -920,7 +1069,7 @@ export class RemotionService {
 						overwrite: true,
 						...(input.scale ? { scale: input.scale } : {}),
 						...browser,
-						...(instance ? { puppeteerInstance: instance } : {}),
+						...(instance ? { puppeteerInstance: instance.instance } : {}),
 						onProgress: (p) =>
 							input.onProgress?.({
 								progress: p.progress,
@@ -938,10 +1087,10 @@ export class RemotionService {
 			);
 			return { frames: composition.durationInFrames };
 		} catch (e) {
-			throw await renderFailure(e, input.signal, serveUrl);
+			throw await renderFailure(e, input.signal, serveDir);
 		} finally {
 			input.signal.removeEventListener('abort', onAbort);
-			await instance?.close({ silent: true }).catch(() => undefined);
+			await instance?.close();
 		}
 	}
 
@@ -951,7 +1100,8 @@ export class RemotionService {
 	 * Returns the frame count.
 	 */
 	async renderAlphaMaster(input: AlphaMasterInput): Promise<{ frames: number }> {
-		const { r, serveUrl, composition, browser } = await this.composition(
+		const t0 = performance.now();
+		const { r, serveUrl, serveDir, composition, browser } = await this.composition(
 			input.inputProps,
 			input.signal,
 			input.browser,
@@ -963,11 +1113,13 @@ export class RemotionService {
 		const raw = join(input.scratchDir, `alpha-${process.pid}-${Date.now().toString(36)}-raw.mov`);
 		const tagged = `${raw.slice(0, -'-raw.mov'.length)}.mov`;
 		const concurrency = input.concurrency ?? renderParallelism();
-		// Own browser (closed below) unless the caller shares one.
-		let instance: RenderBrowser | null = null;
+		const tStart = performance.now();
+		let tFrames = 0;
+		// Own browser (given back below) unless the caller shares one.
+		let instance: SharedRenderBrowser | null = null;
 		try {
-			if (!input.browser) instance = await this.renderBrowser(r, browser, concurrency);
-			const puppeteer = input.browser?.instance ?? instance;
+			if (!input.browser) instance = await this.renderBrowser();
+			const puppeteer = input.browser?.instance ?? instance?.instance;
 			await this.recordUsage('media', 'layer-bake');
 			await withSinglePageRetry(concurrency, input.signal, input.log, (pages) =>
 				r
@@ -992,27 +1144,35 @@ export class RemotionService {
 						overwrite: true,
 						...browser,
 						...(puppeteer ? { puppeteerInstance: puppeteer } : {}),
-						onProgress: (p) =>
+						onProgress: (p) => {
+							if (tFrames === 0 && p.renderedFrames >= total) tFrames = performance.now();
 							input.onProgress?.({
 								renderedFrames: p.renderedFrames,
 								totalFrames: total,
 								progress: p.progress,
-							}),
+							});
+						},
 					})
 					.then(() => undefined),
 			);
 		} catch (e) {
-			throw await renderFailure(e, input.signal, serveUrl);
+			throw await renderFailure(e, input.signal, serveDir);
 		} finally {
 			input.signal.removeEventListener('abort', onAbort);
-			await instance?.close({ silent: true }).catch(() => undefined);
+			await instance?.close();
 		}
+		const tRendered = performance.now();
 		await input.ffmpeg.run(bt709RemuxArgs(raw, tagged), {
 			signal: input.signal,
 			...(input.onSpawn ? { onSpawn: input.onSpawn } : {}),
 		});
 		await rm(raw, { force: true });
 		const frames = await input.ffmpeg.countVideoFrames(tagged, { signal: input.signal });
+		// Phase times of the master in the bake's job log (wp-note export-performance §16).
+		const ms = (a: number, b: number) => Math.round(b - a);
+		input.log?.(
+			`remotion master: ${total} frames ${composition.width}×${composition.height} on ${concurrency} page(s): setup ${ms(t0, tStart)} ms, frames ${ms(tStart, tFrames || tRendered)} ms, stitch ${tFrames ? ms(tFrames, tRendered) : 0} ms, remux + count ${ms(tRendered, performance.now())} ms`,
+		);
 		if (frames !== total)
 			throw new JobError('FRAME_COUNT_MISMATCH', `The master has ${frames} frames, expected ${total}`, true, {
 				expected: total,
@@ -1038,7 +1198,7 @@ export class RemotionService {
 		onProgress?: (p: { renderedFrames: number; totalFrames: number }) => void;
 	}): Promise<{ frames: number; selectMs: number; renderMs: number }> {
 		const t0 = performance.now();
-		const { r, serveUrl, composition, browser } = await this.composition(
+		const { r, serveUrl, serveDir, composition, browser } = await this.composition(
 			input.inputProps,
 			input.signal,
 			input.browser,
@@ -1049,10 +1209,10 @@ export class RemotionService {
 		const total = composition.durationInFrames;
 		const selectMs = Math.round(performance.now() - t0);
 		const concurrency = Math.max(1, Math.min(input.concurrency ?? renderParallelism(), total));
-		let instance: RenderBrowser | null = null;
+		let instance: SharedRenderBrowser | null = null;
 		try {
-			if (!input.browser) instance = await this.renderBrowser(r, browser, concurrency);
-			const puppeteer = input.browser?.instance ?? instance;
+			if (!input.browser) instance = await this.renderBrowser();
+			const puppeteer = input.browser?.instance ?? instance?.instance;
 			await this.recordUsage('still', 'layer-bake');
 			await withSinglePageRetry(concurrency, input.signal, input.log, async (pages) => {
 				await r.renderFrames({
@@ -1076,10 +1236,10 @@ export class RemotionService {
 			});
 			return { frames: total, selectMs, renderMs: Math.round(performance.now() - t0) - selectMs };
 		} catch (e) {
-			throw await renderFailure(e, input.signal, serveUrl);
+			throw await renderFailure(e, input.signal, serveDir);
 		} finally {
 			input.signal.removeEventListener('abort', onAbort);
-			await instance?.close({ silent: true }).catch(() => undefined);
+			await instance?.close();
 		}
 	}
 
@@ -1098,7 +1258,7 @@ export class RemotionService {
 		/** Render in this shared browser (S11:LBK-022; it stays open) instead of a browser of its own. */
 		browser?: SharedRenderBrowser;
 	}): Promise<void> {
-		const { r, serveUrl, composition, browser } = await this.composition(
+		const { r, serveUrl, serveDir, composition, browser } = await this.composition(
 			input.inputProps,
 			input.signal,
 			input.browser,
@@ -1106,7 +1266,11 @@ export class RemotionService {
 		const { cancelSignal, cancel } = r.makeCancelSignal();
 		const onAbort = () => cancel();
 		input.signal.addEventListener('abort', onAbort, { once: true });
+		// A warm browser (given back below) unless the caller shares one.
+		let instance: SharedRenderBrowser | null = null;
 		try {
+			if (!input.browser) instance = await this.renderBrowser();
+			const puppeteer = input.browser?.instance ?? instance?.instance;
 			await this.recordUsage('still', input.purpose ?? 'still');
 			await r.renderStill({
 				serveUrl,
@@ -1124,12 +1288,13 @@ export class RemotionService {
 				...this.binariesOption(),
 				...(input.scale ? { scale: input.scale } : {}),
 				...browser,
-				...(input.browser ? { puppeteerInstance: input.browser.instance } : {}),
+				...(puppeteer ? { puppeteerInstance: puppeteer } : {}),
 			});
 		} catch (e) {
-			throw await renderFailure(e, input.signal, serveUrl);
+			throw await renderFailure(e, input.signal, serveDir);
 		} finally {
 			input.signal.removeEventListener('abort', onAbort);
+			await instance?.close();
 		}
 	}
 }

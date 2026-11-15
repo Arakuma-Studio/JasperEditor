@@ -16,6 +16,10 @@ import type { ChromiumOptions } from '@remotion/renderer';
 
 const CONTENT_TYPES: Record<string, string> = {
 	'.html': 'text/html; charset=utf-8',
+	'.htm': 'text/html; charset=utf-8',
+	'.txt': 'text/plain; charset=utf-8',
+	'.wasm': 'application/wasm',
+	'.avif': 'image/avif',
 	'.js': 'text/javascript; charset=utf-8',
 	'.mjs': 'text/javascript; charset=utf-8',
 	'.css': 'text/css; charset=utf-8',
@@ -42,45 +46,69 @@ const CONTENT_TYPES: Record<string, string> = {
 /**
  * A loopback static server for one bundle directory, under `/<random>/`; `index.html` gets the host bootstrap
  * (unless `bootstrap: false`). `files` serves extra files by their path under the prefix (spec 13 SH-004: the
- * text measurer's font faces).
+ * text measurer's font faces). HTML compositions: `entry` is the page (`inject` rewrites it instead of the Remotion
+ * bootstrap), `headers(base)` adds headers to every response, `onServe` sees every file request (path under the
+ * prefix, whether it was served). `immutable`: the files never change while the server runs (a content-addressed
+ * bundle), so they are sent cacheable — a browser that loads the bundle again (another render page) reuses its HTTP
+ * cache and V8's code cache instead of downloading and compiling 12 MB of script (wp-note export-performance §16).
+ * `withholdSourceMaps`: `.map` files answer 404 — Remotion fetches and parses `<serveUrl>/bundle.js.map` on the
+ * engine's main thread for every render given an HTTP serve URL (wp-note export-performance §15).
  */
 export async function serveBundleForMeasuring(
 	dir: string,
-	opts: { bootstrap?: boolean; files?: ReadonlyMap<string, string> } = {},
+	opts: {
+		bootstrap?: boolean;
+		files?: ReadonlyMap<string, string>;
+		entry?: string;
+		inject?: (html: string) => string;
+		headers?: (base: string) => Record<string, string>;
+		onServe?: (rel: string, served: boolean) => void;
+		immutable?: boolean;
+		withholdSourceMaps?: boolean;
+	} = {},
 ): Promise<{ url: string; base: string; close(): Promise<void> }> {
 	const prefix = `/${randomBytes(16).toString('hex')}/`;
 	const root = await realpath(dir);
 	const bootstrap = opts.bootstrap ?? true;
+	const entry = opts.entry ?? 'index.html';
+	let extraHeaders: Record<string, string> = {};
+	const caching = opts.immutable ? { 'cache-control': 'public, max-age=31536000, immutable' } : {};
 	const serve = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
 		const path = decodeURIComponent((req.url ?? '/').split('?')[0]!);
 		if (!path.startsWith(prefix)) {
 			res.writeHead(404).end();
 			return;
 		}
-		const rel = path.slice(prefix.length) || 'index.html';
+		const rel = path.slice(prefix.length) || entry;
 		const extra = opts.files?.get(rel);
 		const file = extra ?? normalize(join(root, rel));
-		if ((!extra && !file.startsWith(root + sep)) || !(await stat(file)).isFile()) {
-			res.writeHead(404).end();
+		const withheld = opts.withholdSourceMaps && extname(file).toLowerCase() === '.map';
+		if (withheld || (!extra && !file.startsWith(root + sep)) || !(await stat(file)).isFile()) {
+			opts.onServe?.(rel, false);
+			res.writeHead(404, extraHeaders).end();
 			return;
 		}
 		const handle = await open(file, 'r');
 		try {
 			const info = await handle.stat();
 			if (!info.isFile()) {
-				res.writeHead(404).end();
+				opts.onServe?.(rel, false);
+				res.writeHead(404, extraHeaders).end();
 				return;
 			}
-			if (rel === 'index.html' && !extra) {
+			opts.onServe?.(rel, true);
+			if (rel === entry && !extra) {
 				const html = await handle.readFile('utf8');
 				res
-					.writeHead(200, { 'content-type': CONTENT_TYPES['.html']! })
-					.end(bootstrap ? injectHostBootstrap(html) : html);
+					.writeHead(200, { ...extraHeaders, 'content-type': CONTENT_TYPES['.html']!, ...caching })
+					.end(opts.inject ? opts.inject(html) : bootstrap ? injectHostBootstrap(html) : html);
 				return;
 			}
 			res.writeHead(200, {
+				...extraHeaders,
 				'content-type': CONTENT_TYPES[extname(file).toLowerCase()] ?? 'application/octet-stream',
 				'content-length': info.size,
+				...caching,
 			});
 			await pipeline(handle.createReadStream({ autoClose: false }), res);
 		} finally {
@@ -113,10 +141,14 @@ export async function serveBundleForMeasuring(
 		server.once('error', reject);
 		server.listen(0, '127.0.0.1', () => resolve());
 	});
+	// A server kept for the process's lifetime (the renders' bundle) does not keep the process alive.
+	if (opts.immutable) server.unref();
 	const port = (server.address() as AddressInfo).port;
+	const base = `http://127.0.0.1:${port}${prefix}`;
+	extraHeaders = opts.headers?.(base) ?? {};
 	return {
-		url: `http://127.0.0.1:${port}${prefix}index.html`,
-		base: `http://127.0.0.1:${port}${prefix}`,
+		url: `${base}${encodeURIComponent(entry)}`,
+		base,
 		close: () =>
 			new Promise<void>((resolve) => {
 				server.closeAllConnections?.();
