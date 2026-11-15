@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { runCli, writeToolImages } from '../src/jasper-cli.ts';
+import type { EngineConnection } from '../src/link.ts';
 import { decodePng } from '../src/png.ts';
 import { cleanEnv, engineReady, stopEngine, testPort } from './helpers.ts';
 
@@ -31,6 +32,38 @@ describe('argument parsing', () => {
 		expect(await runCli(['--version'], d)).toBe(0);
 		const e = io();
 		expect(await runCli(['query', 'not-a-query'], e)).toBe(2);
+	});
+});
+
+describe('describe without an engine', () => {
+	it('describes MCP tools of any toolset like describe_tool, and names both catalogues for an unknown name', async () => {
+		const link: EngineConnection = {
+			target: null,
+			client: async () => {
+				throw new Error('describing a tool needs no engine');
+			},
+			invalidate: () => {},
+			close: async () => {},
+		};
+		const run = async (...args: string[]) => {
+			const out: string[] = [];
+			const err: string[] = [];
+			const code = await runCli(args, { stdout: (s) => out.push(s), stderr: (s) => err.push(s), link });
+			return { code, out: out.join(''), err: err.join('') };
+		};
+		const tool = await run('describe', 'add_adjustment_layer', '--json');
+		expect(tool.code, tool.err).toBe(0);
+		expect(JSON.parse(tool.out)).toMatchObject({
+			name: 'add_adjustment_layer',
+			toolset: 'structure',
+			inputSchema: { properties: { projectId: {} } },
+		});
+		const full = await run('describe', 'add_adjustment_layer', '--full', '--json');
+		expect(JSON.parse(full.out)).toMatchObject({ name: 'add_adjustment_layer', advertised: true });
+		const unknown = await run('describe', 'add_adjustmnet_layer');
+		expect(unknown.code).toBe(1);
+		expect(unknown.err).toContain('E_NOT_FOUND');
+		expect(unknown.err).toContain('jasper tools');
 	});
 });
 

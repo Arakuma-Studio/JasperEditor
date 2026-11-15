@@ -159,8 +159,11 @@ Properties/Lumetri section toggles, job rows, dockview tab strips and floating t
 ## 5. `jasper` CLI
 
 `apps/mcp/src/jasper-cli.ts` (bin `jasper`, bundled to `apps/mcp/dist/jasper.mjs`; `pnpm jasper` from source).
-Commands: `status`, `projects`, `describe [type…]`, `exec <type> k=v… | '<json>'`, `run <file.jsonl|->`, `get
-<path>`, `set <path> <value>`, `props <clip>`, `inspect [seq]`, `import <file…>`, `render-frame --at --out
+Commands: `status`, `projects`, `describe [name…] [--full]` (no name: the command catalogue; a command type:
+`describe_commands`; an MCP tool of any toolset: what `describe_tool` returns, one document per tool; a name that is
+both prints both, with a note on stderr; neither is `E_NOT_FOUND`, resolved without the engine),
+`exec <type> k=v… | '<json>'`, `run <file.jsonl|->`, `get <path>`, `set <path> <value>`, `props <clip>`,
+`inspect [seq]`, `import <file…>`, `render-frame --at --out
 [--width]`, `export --out [--preset --range --engine]`, `query <name> k=v…`, `ui <action> k=v…`, `tools`, `call
 <tool> k=v… [--out f.png]` (`--out` writes every image the tool returns: one to the path, several — e.g. the
 previews of an `add_motion_graphic {dryRun, preview}` batch — to `f-0.png`, `f-1.png`… in result order). It runs the very same tools in process (`createJasperMcpServer` + an in-memory MCP client), so the
@@ -203,10 +206,13 @@ effect points' auto-bezier eases in their layer-box metric (`resolvePropertyAt`'
 not run the matcher, so tracking data and plain fades cost nothing extra; matches are memoised per curve within a
 listing. Speeds and influences are left to `get_keyframe_eases` to keep the listing small.
 
-**Key selection** (all ease tools except `transfer_*` / `set_keyframe_velocity`): `keyframeIds`, or `clipId` +
-`properties?` (keys or prefixes as `get_clip_properties` lists them; unknown ones are `E_NOT_FOUND`) + `from?` /
-`to?` (sequence times, inclusive). `create_path_controller` and `cleanup_motion_path` default to
-`["transform.position"]`. The tools read the stored document (no expression binding) so ids are the stored ones.
+**Key selection** (all ease tools except `transfer_*` / `set_keyframe_velocity`): one of `keyframeIds`, `clipId` +
+`properties?` (keys or prefixes as `get_clip_properties` lists them; unknown ones are `E_NOT_FOUND`), or
+`effectInstanceId` + `param?` (the effect param as `set_effect_param` / `get_param` address it, `["effect", id,
+param]`, on a clip, track or master effect; without `param` every keyframed param of the instance; resolved by the
+`param.get` query, so an unknown instance or param is `E_NOT_FOUND`); `from?` / `to?` (sequence times, inclusive) narrow the last two. `create_path_controller` and
+`cleanup_motion_path` default to `["transform.position"]`. The tools read the stored document (no expression
+binding) so ids are the stored ones.
 
 | Tool | Arguments | Command / notes |
 |---|---|---|

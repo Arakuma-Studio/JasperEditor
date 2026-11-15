@@ -16,6 +16,7 @@ import {
 	type EaseClip,
 	type EaseCurve,
 	type EasePreset,
+	type EffectInstance,
 	formatCubicBezier,
 	keyframeEasesView,
 	MAX_EASE_POINTS,
@@ -24,6 +25,7 @@ import {
 	matchEasePreset,
 	type ProjectDocument,
 	PropertyQueryError,
+	paramGetQuery,
 } from '@jasper/project';
 import { z } from 'zod';
 import { ProjectIdArg, timeArg } from '../arguments.ts';
@@ -43,9 +45,9 @@ import {
 import { jsonResult, ToolError } from '../errors.ts';
 
 export const EASE_GUIDE = `Keyframe easing (curves, presets, velocity):
-- Read eases back: get_clip_properties lists each key with the segment leaving it — ease "hold" | "linear" | "cubic-bezier(x1, y1, x2, y2)" and easePreset when it matches a built-in preset (roving keys: roving: true, their run is eased on its first key). get_keyframe_eases {keyframeIds | clipId + properties? + from? + to?} gives the detail: per key in / out side type, influence % and speed (property units per second; sequence px/s along the path for Motion points, layer px/s for effect points), per segment the cubic-bezier, its two side types, the matched preset and average speed, and for 3+ keys of a property the preset the whole run matches (span.preset, e.g. a bounce). Every number is what renders: a segment uses its first key's outgoing side and its last key's incoming side (inInterpolation); it is linear only when both are Linear, and a Linear side of a curved segment counts as influence 16.67 % at the average speed.
+- Read eases back: get_clip_properties lists each key with the segment leaving it — ease "hold" | "linear" | "cubic-bezier(x1, y1, x2, y2)" and easePreset when it matches a built-in preset (roving keys: roving: true, their run is eased on its first key). get_keyframe_eases {keyframeIds | clipId + properties? | effectInstanceId + param?, from?, to?} gives the detail: per key in / out side type, influence % and speed (property units per second; sequence px/s along the path for Motion points, layer px/s for effect points), per segment the cubic-bezier, its two side types, the matched preset and average speed, and for 3+ keys of a property the preset the whole run matches (span.preset, e.g. a bounce). Every number is what renders: a segment uses its first key's outgoing side and its last key's incoming side (inInterpolation); it is linear only when both are Linear, and a Linear side of a curved segment counts as influence 16.67 % at the average speed.
 - list_ease_presets {group?}: built-in curves by group (basic, penner, overshoot, elastic, bounce, spring, material); cubic ones carry their cubic-bezier, multi ones a point count.
-- apply_ease {keyframeIds | clipId + properties? + from? + to?, curve, sections?}: curve = a preset id ("basic.easy-ease", "bounce.out-3"), "cubic-bezier(0.25, 0.1, 0.25, 1)", a CSS keyword (linear, ease, ease-in, ease-out, ease-in-out), {x1, y1, x2, y2} (x in 0…1, y in −${EASE_Y_LIMIT}…${EASE_Y_LIMIT}) or {points: [{x, y, in?, out?}…]} from (0,0) to (1,1). sections per property: "middle" = between consecutive selected keys (default for 2+ keys), "in" = into the first selected key, "out" = after the last (default for one key: in + out).
+- apply_ease {the same selection, curve, sections?}: curve = a preset id ("basic.easy-ease", "bounce.out-3"), "cubic-bezier(0.25, 0.1, 0.25, 1)", a CSS keyword (linear, ease, ease-in, ease-out, ease-in-out), {x1, y1, x2, y2} (x in 0…1, y in −${EASE_Y_LIMIT}…${EASE_Y_LIMIT}) or {points: [{x, y, in?, out?}…]} from (0,0) to (1,1). sections per property: "middle" = between consecutive selected keys (default for 2+ keys), "in" = into the first selected key, "out" = after the last (default for one key: in + out).
 - A cubic curve shapes each chosen segment exactly (its first key's outgoing side and its last key's incoming side become Bezier; segments you did not choose keep their shape). A multi-point curve (bounce, elastic, overshoot, spring… or points) REBUILDS the span first … last selected key of each property: the keys strictly inside are deleted and new keys are made at the curve's points (point properties keep their drawn path and may get extra keys). It needs 2+ keys per property with different first / last values and numeric values (not paths); pieces whose ends have equal values are made linear (W_EASE_FLAT_SEGMENT); hold-only properties are skipped (W_EASE_SKIPPED).
 - transfer_ease {fromKeyframeIds, toKeyframeIds, sections?, mode?}: copies eases and pastes them in one step — one source key → both of its sides (types and eases) onto every target key, as keyframe.setInterpolation would set them (Auto Bezier re-derives its eases on the target, Continuous Bezier keeps equal speeds on both sides); 2+ keys → their segment curves onto the target segments in order (one curve → all); 3+ keys of one property also carry the whole run as a curve, applied like a multi-point apply_ease unless mode "segments". transfer_keyframe_values {fromKeyframeIds, toKeyframeIds} pastes values in order (property, then time), keeping times and eases.
 - set_keyframe_velocity {keyframeId, side in|out|both, speed?, influence? %}: the numeric velocity editor (a segment whose value does not change cannot take a nonzero speed).
@@ -215,49 +217,56 @@ const selectionShape = (defaultProperties: string) => ({
 		.min(1)
 		.max(MAX_SELECTED)
 		.optional()
-		.describe('Keyframe ids ("kf_…") from get_clip_properties / get_keyframe_eases'),
-	clipId: z
-		.string()
-		.min(1)
-		.optional()
-		.describe('Instead of keyframeIds: select the keys of this clip (narrow with properties, from, to)'),
+		.describe('Keyframe ids ("kf_…") from get_clip_properties'),
+	clipId: z.string().min(1).optional().describe('Or the keys of this clip'),
 	properties: z
 		.array(z.string().min(1))
 		.min(1)
 		.max(200)
 		.optional()
 		.describe(
-			`With clipId: property keys or key prefixes as get_clip_properties lists them, e.g. ["opacity"], ["transform.position"], ["shape.items.shp_…"] (default: ${defaultProperties})`,
+			`With clipId: property keys or prefixes from get_clip_properties, e.g. ["opacity"] (default: ${defaultProperties})`,
 		),
-	from: timeArg('With clipId: only keys at or after this sequence time').optional(),
-	to: timeArg('With clipId: only keys at or before this sequence time').optional(),
+	effectInstanceId: z.string().min(1).max(64).optional().describe('Or effect instance ("fx_…")'),
+	param: z.string().min(1).max(128).optional().describe('Its param (default: every keyframed one)'),
+	from: timeArg('Only keys at or after this sequence time').optional(),
+	to: timeArg('Only keys at or before this sequence time').optional(),
 });
 
 type Selection = {
 	keyframeIds?: string[];
 	clipId?: string;
 	properties?: string[];
+	effectInstanceId?: string;
+	param?: string;
 	from?: unknown;
 	to?: unknown;
 };
 
+const SELECTION_HINT =
+	'Pass one of keyframeIds, clipId (+ properties) or effectInstanceId (+ param); from / to narrow the last two.';
+
 /** Resolves a key selection to keyframe ids (document order is the commands' business). */
 function selectedIds(doc: ProjectDocument, a: Selection, defaultProperties?: string[]): string[] {
-	if (!!a.keyframeIds === !!a.clipId)
+	const by = [a.keyframeIds, a.clipId, a.effectInstanceId].filter((v) => v !== undefined).length;
+	if (by !== 1)
 		throw new ToolError(
 			'E_INVALID_PARAM',
-			'Give keyframeIds, or clipId (with optional properties / from / to)',
-			'get_clip_properties lists keyframe ids per property.',
+			'Give keyframeIds, clipId or effectInstanceId (one of them)',
+			'get_clip_properties lists keyframe ids, property keys and effect instance ids.',
 		);
 	if (a.keyframeIds) {
-		if (a.properties || a.from !== undefined || a.to !== undefined)
+		if (a.properties || a.param !== undefined || a.from !== undefined || a.to !== undefined)
 			throw new ToolError(
 				'E_INVALID_PARAM',
-				'properties / from / to narrow a clipId selection; they do not apply to keyframeIds',
-				'Pass either keyframeIds alone or clipId with properties / from / to.',
+				'properties / param / from / to do not apply to keyframeIds',
+				SELECTION_HINT,
 			);
 		return [...new Set(a.keyframeIds)];
 	}
+	if (a.effectInstanceId) return effectParamIds(doc, a.effectInstanceId, a);
+	if (a.param !== undefined)
+		throw new ToolError('E_INVALID_PARAM', 'param goes with effectInstanceId', SELECTION_HINT);
 	let r: ReturnType<typeof clipKeyframesQuery>;
 	try {
 		const seq = Object.values(doc.sequences).find((s) => s.clips[a.clipId!]);
@@ -287,6 +296,71 @@ function selectedIds(doc: ProjectDocument, a: Selection, defaultProperties?: str
 			'E_NOT_FOUND',
 			`No keyframes selected on clip ${a.clipId}${a.from !== undefined || a.to !== undefined ? ' in that time range' : ''}`,
 			'get_clip_properties shows which properties are keyframed and where.',
+		);
+	return ids;
+}
+
+/** The stored params of an effect instance on a clip, track or master stack; null when there is none. */
+function storedEffectParams(doc: ProjectDocument, fxId: string): Record<string, unknown> | null {
+	for (const seq of Object.values(doc.sequences)) {
+		const stacks = [
+			...Object.values(seq.clips).map((c) => (c as { effects?: EffectInstance[] }).effects ?? []),
+			...[...seq.videoTracks, ...seq.audioTracks, ...(seq.submixTracks ?? [])].map((t) => t.effects ?? []),
+			seq.master.effects,
+		];
+		for (const stack of stacks) {
+			const fx = stack.find((e) => e.id === fxId);
+			if (fx) return fx.params;
+		}
+	}
+	return null;
+}
+
+/**
+ * The keys of an effect's params (one with `param`, else every keyframed one), addressed as set_effect_param and
+ * get_param address them (["effect", id, param]: clip, track or master effects) and resolved by get_param's query.
+ */
+function effectParamIds(doc: ProjectDocument, fxId: string, a: Selection): string[] {
+	if (a.properties)
+		throw new ToolError('E_INVALID_PARAM', 'properties narrow a clipId selection', SELECTION_HINT);
+	const stored = storedEffectParams(doc, fxId);
+	if (!stored)
+		throw new ToolError(
+			'E_NOT_FOUND',
+			`Effect instance not found: ${fxId}`,
+			'get_clip_properties lists the effect instance ids of a clip.',
+		);
+	const names =
+		a.param !== undefined
+			? [a.param]
+			: Object.keys(stored).filter(
+					(k) => ((stored[k] as { keyframes?: unknown[] } | undefined)?.keyframes?.length ?? 0) > 0,
+				);
+	type Keys = { keyframes?: { id: string; frame: number }[] };
+	const ids: string[] = [];
+	for (const name of names) {
+		let r: Keys & { sequenceId: string; property?: Keys };
+		try {
+			// A clip effect answers as its clip's property (`property`), a track or master effect at the top level.
+			r = paramGetQuery(
+				{ doc, effects: REGISTRIES.effects, mgTemplates: REGISTRIES.mgTemplates },
+				{ target: ['effect', fxId, name] },
+			) as typeof r;
+		} catch (e) {
+			if (e instanceof PropertyQueryError)
+				throw new ToolError(e.code, e.message, 'list_effects {effectId} lists the param names of an effect.');
+			throw e;
+		}
+		const seq = doc.sequences[r.sequenceId];
+		const lo = seq && a.from !== undefined ? frameOf(seq, a.from) : Number.NEGATIVE_INFINITY;
+		const hi = seq && a.to !== undefined ? frameOf(seq, a.to) : Number.POSITIVE_INFINITY;
+		for (const k of (r.property ?? r).keyframes ?? []) if (k.frame >= lo && k.frame <= hi) ids.push(k.id);
+	}
+	if (!ids.length)
+		throw new ToolError(
+			'E_NOT_FOUND',
+			`No keyframes selected on ${a.param ?? 'the params'} of ${fxId}${a.from !== undefined || a.to !== undefined ? ' in that time range' : ''}`,
+			'set_effect_param {keyframe: true, at} adds keys.',
 		);
 	return ids;
 }
@@ -402,7 +476,7 @@ export function registerEaseTools(ctx: ToolContext): void {
 		{
 			title: 'Get keyframe eases',
 			description: 'Read the eases of keyframes, per property, as they evaluate.',
-			details: `The eases of keyframes, per property, exactly as they evaluate (each segment uses its first key's outgoing side and its last key's incoming side): each selected key (id, sequence frame, timecode, value, interpolation = outgoing type, inInterpolation = its own incoming type when it has one, roving) with in / out side type, influence %, speed (property units per second; sequence px/s along the path for Motion points, layer px/s for effect points; signed for numbers) and slope (1 = the segment's average speed); the segments into, between and out of the selection (fromId → toId, section, ease "hold" | "linear" | "cubic-bezier(…)", outInterpolation / inInterpolation = the two side types shaping it, the matched built-in preset id, average speed); and for 3+ keys of one property span.preset when the whole run matches a multi-point preset. Select by keyframeIds or clipId (+ properties, from, to). At most ${MAX_VIEW_KEYS} keys.`,
+			details: `The eases of keyframes, per property, exactly as they evaluate (each segment uses its first key's outgoing side and its last key's incoming side): each selected key (id, sequence frame, timecode, value, interpolation = outgoing type, inInterpolation = its own incoming type when it has one, roving) with in / out side type, influence %, speed (property units per second; sequence px/s along the path for Motion points, layer px/s for effect points; signed for numbers) and slope (1 = the segment's average speed); the segments into, between and out of the selection (fromId → toId, section, ease "hold" | "linear" | "cubic-bezier(…)", outInterpolation / inInterpolation = the two side types shaping it, the matched built-in preset id, average speed); and for 3+ keys of one property span.preset when the whole run matches a multi-point preset. Select by keyframeIds, clipId (+ properties) or effectInstanceId (+ param, default every keyframed param; clip, track or master effects); from / to narrow the last two. At most ${MAX_VIEW_KEYS} keys.`,
 			input: { projectId: ProjectIdArg, ...selectionShape('every keyframed property') },
 			annotations: READ_ONLY,
 		},

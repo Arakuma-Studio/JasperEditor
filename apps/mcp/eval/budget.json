@@ -11,7 +11,7 @@
     "+transitions": 7010,
     "+color": 17181,
     "+effects": 21241,
-    "+keyframes": 20660,
+    "+keyframes": 20628,
     "+text": 29596,
     "+titles": 6635,
     "+graphics": 19709,
@@ -27,7 +27,7 @@
     "+automation": 27587,
     "+export": 13017,
     "+ui": 13941,
-    "all": 507893
+    "all": 507861
   },
   "tool": 10493
 }

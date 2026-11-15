@@ -3,7 +3,7 @@
 export * from './agent/addressing.ts';
 export * from './agent/guard.ts';
 export * from './agent/keyframe-eases.ts';
-export { clipKeyframesQuery, PropertyQueryError } from './agent/properties-query.ts';
+export { clipKeyframesQuery, PropertyQueryError, paramGetQuery } from './agent/properties-query.ts';
 export * from './agent/queries.ts';
 export * from './agent/schema-export.ts';
 export * from './agent/strict.ts';
