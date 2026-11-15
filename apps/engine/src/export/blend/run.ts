@@ -1,6 +1,7 @@
 // The blend pipeline of the native export (keyframes-blend): the processes before the composite (`NativeGraph.blend`
 // segments), each one's raw output (composite below ‖ blend layer) through the blend kernel (pool.ts) into the next
-// process's backdrop pipe (`pipe:3`), the last kernel into the composite. Every process also gets its own sub-pixel
+// process's backdrop pipe (`pipe:3`), the last kernel into the composite. A Transform adjustment layer's segment
+// (`seg.adjust`, adjust.ts) outputs the composite alone and its kernel writes the composite ‖ its transformed copy. Every process also gets its own sub-pixel
 // streams. Backpressure: a fixed set of shared frame slots; a process's stdout is paused while none is free, a slot
 // is reused once the sink accepted its frame. A failure anywhere stops the whole pipeline and is reported.
 import type { ChildProcess } from 'node:child_process';
@@ -8,7 +9,7 @@ import type { Writable } from 'node:stream';
 import type { Ffmpeg } from '../../tools/ffmpeg.ts';
 import { terminateTree } from '../../tools/process.ts';
 import type { BlendSegment } from '../native.ts';
-import { BlendPool, type BlendSlot } from './pool.ts';
+import { AdjustPool, BlendPool } from './pool.ts';
 
 export class BlendPipelineError extends Error {
 	constructor(
@@ -66,6 +67,9 @@ export async function runBlendPipeline(
 	}
 }
 
+/** A frame slot of either kernel: its input frame and its output frame. */
+type Slot = { index: number; src: Uint8Array; out: Uint8Array };
+
 /** One process's frames through the kernel into `sink`. */
 async function blendSegment(
 	child: ChildProcess,
@@ -76,11 +80,27 @@ async function blendSegment(
 	signal: AbortSignal,
 ): Promise<void> {
 	const total = seg.frames;
-	const frameBytes = size.width * size.height * 8;
-	const pool = new BlendPool(
-		{ W: size.width, H: size.height },
-		{ workers: Math.max(1, Math.min(workers, total)), slots: Math.min(total, workers + 3) },
-	);
+	const opts = { workers: Math.max(1, Math.min(workers, total)), slots: Math.min(total, workers + 3) };
+	const W = size.width;
+	const H = size.height;
+	const adjust = seg.adjust;
+	// Blend layers read `2W×H` frames (composite ‖ layer); a Transform adjustment reads the composite alone (`W×H`).
+	const frameBytes = W * H * (adjust ? 4 : 8);
+	const what = adjust ? 'adjustment layer' : 'blend layer';
+	let pool: { slots: Slot[]; close(): Promise<void> };
+	let runSlot: (slot: Slot, i: number) => Promise<void>;
+	if (adjust) {
+		const p = new AdjustPool({ W, H }, opts);
+		pool = p;
+		runSlot = (slot, i) => {
+			const f = adjust.frames[i] ?? null;
+			return p.run(p.slots[slot.index]!, f?.rect ? f.prog : null, f?.rect ?? null);
+		};
+	} else {
+		const p = new BlendPool({ W, H }, opts);
+		pool = p;
+		runSlot = (slot, i) => p.run(p.slots[slot.index]!, seg.mode, seg.seeds[i] ?? 0, seg.active[i] ?? false);
+	}
 	try {
 		await new Promise<void>((resolve, reject) => {
 			let failed = false;
@@ -98,21 +118,21 @@ async function blendSegment(
 			child.stderr!.setEncoding('utf8').on('data', (c: string) => {
 				stderr = (stderr + c).slice(-8000);
 			});
-			child.on('error', (e) => fail(new BlendPipelineError('TOOL_FAILED', `blend layer: ${e.message}`)));
+			child.on('error', (e) => fail(new BlendPipelineError('TOOL_FAILED', `${what}: ${e.message}`)));
 
-			const free: BlendSlot[] = [...pool.slots].reverse();
-			const ready = new Map<number, BlendSlot>();
+			const free: Slot[] = [...pool.slots].reverse();
+			const ready = new Map<number, Slot>();
 			let dispatched = 0;
 			let nextWrite = 0;
 			let accepted = 0;
-			let cur: BlendSlot | null = null;
+			let cur: Slot | null = null;
 			let curOff = 0;
 			let stash: Buffer | null = null;
 			let closed = false;
 
-			const dispatch = (slot: BlendSlot) => {
+			const dispatch = (slot: Slot) => {
 				const i = dispatched++;
-				pool.run(slot, seg.mode, seg.seeds[i] ?? 0, seg.active[i] ?? false).then(
+				runSlot(slot, i).then(
 					() => {
 						ready.set(i, slot);
 						flush();
@@ -184,7 +204,7 @@ async function blendSegment(
 					return fail(
 						new BlendPipelineError(
 							'TOOL_FAILED',
-							`blend layer process exited ${code ?? sig}: ${stderr.trim().slice(-1500)}`,
+							`${what} process exited ${code ?? sig}: ${stderr.trim().slice(-1500)}`,
 						),
 					);
 				// Every frame must have come out of the process (it renders exactly `frames`).
@@ -195,7 +215,7 @@ async function blendSegment(
 						fail(
 							new BlendPipelineError(
 								'TOOL_FAILED',
-								`blend layer process produced ${dispatched} of ${total} frames: ${stderr.trim().slice(-500)}`,
+								`${what} process produced ${dispatched} of ${total} frames: ${stderr.trim().slice(-500)}`,
 							),
 						);
 				};

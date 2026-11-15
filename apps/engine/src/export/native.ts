@@ -41,6 +41,7 @@ import { variantHasAlpha } from '../imports/variants.ts';
 import { alphaDecoder } from '../media/alpha.ts';
 import { audioEncodeArgs, LEGACY_X264_CHOICE, videoEncodeArgs } from '../tools/encoders.ts';
 import { sec } from '../tools/ffmpeg.ts';
+import { isTransformAdjustment, planAdjustmentFrames, TRANSFORM_EFFECT } from './blend/adjust.ts';
 import { adjustmentCropFilters, cropFeatherFilter, hardCropFilter, isFeatheredCrop } from './crop.ts';
 import { NVDEC_INPUT_ARGS } from './gpu.ts';
 import { CROP_EDGES, type MotionStage, mergeResize, motionFilters, motionStage } from './keyframed.ts';
@@ -54,6 +55,7 @@ import {
 } from './native-ext.ts';
 import { scaledRect } from './output-size.ts';
 import { audioCodecOf, type LocalMedia, type OutputSpec } from './planner.ts';
+import type { TapFrame } from './stream/lowered.ts';
 import { chainMember, constantSource, loweredMember, stillMember } from './stream/members.ts';
 import { gpuTapFilters, gpuTapLayout, type OpenClTaps, openClDeviceArgs } from './stream/opencl.ts';
 import { needsSubpixel, planStreamLayer, type StreamLayerPlan } from './stream/plan.ts';
@@ -174,9 +176,10 @@ type NativeGraph = {
 	 */
 	streams: { fd: number; plan: StreamPlan }[];
 	/**
-	 * keyframes-blend: the processes before this one when the stack has blend layers (in order). Segment i's raw
-	 * output (`2W×H` RGBA: composite ‖ layer) goes through the blend kernel into the next process's `pipe:3`
-	 * (segment i + 1, or this graph: `backdropFd`; spawn it with `pipes: 1 + streams.length`, streams from fd 4).
+	 * keyframes-blend: the processes before this one when the stack has blend layers or Transform adjustment layers
+	 * (in order). Segment i's raw output (`2W×H` RGBA: composite ‖ layer; `W×H` for an adjustment) goes through its
+	 * kernel into the next process's `pipe:3` (segment i + 1, or this graph: `backdropFd`; spawn it with
+	 * `pipes: 1 + streams.length`, streams from fd 4).
 	 */
 	blend?: { segments: BlendSegment[]; backdropFd: number; width: number; height: number };
 	/** spec 13 AS-076: pipelined stills used as inputs: the caller awaits them before spawning the composite. */
@@ -213,6 +216,11 @@ export type BlendSegment = {
 	/** Per output frame: the layer is drawn (else the composite passes through) and its Dissolve seed. */
 	active: boolean[];
 	seeds: number[];
+	/**
+	 * A Transform adjustment layer (blend/adjust.ts) instead of a blend: stdout carries the composite alone (`W×H`) and
+	 * the kernel writes the composite ‖ the composite drawn through each frame's program (`2W×H`; null = not drawn).
+	 */
+	adjust?: { frames: (TapFrame | null)[] };
 };
 
 /** The frames a blend layer is drawn on (relative to the stack's first frame) and its Dissolve seeds. */
@@ -848,7 +856,15 @@ type StackContext = {
 	 * `backdrop` (the composite below) and `layer` (the layer on transparency) go to the blend kernel — and returns the
 	 * label of the kernel's output in the next process, where the stack continues.
 	 */
-	blend?: { cut(backdrop: string, layer: string, plan: LayerPlan, mode: string): string };
+	blend?: {
+		cut(backdrop: string, layer: string, plan: LayerPlan, mode: string): string;
+		/**
+		 * A Transform adjustment layer (blend/adjust.ts): ends the current process with the composite `composite`; the
+		 * kernel draws `frames` (one per stack frame) and the label returned, in the next process, carries `2W×H` frames:
+		 * the composite ‖ the transformed composite.
+		 */
+		adjust(composite: string, frames: (TapFrame | null)[]): string;
+	};
 };
 
 /**
@@ -1370,10 +1386,36 @@ function drawStack(ctx: StackContext): string {
 			// edit-structure (KND-012): an adjustment layer's source is the composite so far; its output (effects,
 			// crop as transparency, opacity, fades) goes back over that composite.
 			let composite: { label: string; R0: number } | undefined;
+			let sourceProps = props;
 			if (c.kind === 'adjustment') {
 				const keep = `${label}k`;
 				const adj = `${label}s`;
-				ctx.chains.push(`[${last}]split[${keep}][${adj}]`);
+				if (isTransformAdjustment(c)) {
+					// Transform on an adjustment layer (blend/adjust.ts): the process ends here; the kernel draws the composite
+					// through the Transform and the layer's other effects, crop, opacity and blend run on that half below.
+					if (!ctx.blend)
+						throw new Error(
+							`Adjustment clip ${c.clipId} with Transform inside a nested sequence (the planner routes it through Remotion)`,
+						);
+					const planned = planAdjustmentFrames({ clip: c, f0, f1, fps, W, H });
+					const frames = Array.from({ length: R1 - R0 + 1 }, (_, j) =>
+						R0 + j >= f0 && R0 + j < f1 ? planned[R0 + j - f0]! : null,
+					);
+					// (the process ends here: its base is complete)
+					closeBase();
+					const pair = ctx.blend.adjust(last, frames);
+					ctx.chains.push(
+						`[${pair}]split[${label}p0][${label}p1]`,
+						`[${label}p0]crop=${W}:${H}:0:0[${keep}]`,
+						`[${label}p1]crop=${W}:${H}:${W}:0[${adj}]`,
+					);
+					sourceProps = {
+						...props,
+						effects: props.effects.map((fx) =>
+							fx.effectId === TRANSFORM_EFFECT ? { ...fx, enabled: false } : fx,
+						),
+					};
+				} else ctx.chains.push(`[${last}]split[${keep}][${adj}]`);
 				last = keep;
 				// keyframes-blend: an adjustment layer with a blend mode: its output goes to the kernel with the composite.
 				if (blendMode !== 'normal') {
@@ -1388,7 +1430,7 @@ function drawStack(ctx: StackContext): string {
 				f0,
 				f1,
 				fps,
-				props,
+				props: sourceProps,
 				sources: srcs,
 				override,
 				...(exts ? { extensions: exts } : {}),
@@ -1583,6 +1625,34 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 	/** The process and output label of each blend segment (their arguments are written once the GPU decode is known). */
 	const segmentProcs: { proc: Proc; label: string }[] = [];
 	const stackFrames = R1 - R0 + 1;
+	/**
+	 * Ends the current process with its output `label` (a segment of the pipeline: `kernel` says what draws its frames)
+	 * and starts the next one, whose first input is the kernel's output (`inW×H` raw RGBA on `pipe:3`); returns its label.
+	 */
+	const endProc = (
+		label: string,
+		kernel: Pick<BlendSegment, 'frames' | 'mode' | 'active' | 'seeds' | 'adjust'>,
+		inW: number,
+	): string => {
+		segmentProcs.push({ proc, label });
+		segments.push({
+			args: [],
+			filter: proc.chains.join(';\n'),
+			streams: proc.streams,
+			backdropFd: proc.backdropFd,
+			...kernel,
+		});
+		proc = newProc(true);
+		procs.push(proc);
+		ctx.chains = proc.chains;
+		const k = ctx.addInput([
+			...['-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${inW}x${H}`],
+			...['-framerate', rate(fps), '-i', 'pipe:3'],
+		]);
+		const out = `bd${segments.length}`;
+		proc.chains.push(`[${k}:v:0]setpts=PTS-STARTPTS[${out}]`);
+		return out;
+	};
 	const ctx: StackContext = {
 		snap,
 		P: '',
@@ -1624,24 +1694,22 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 				proc.chains.push(
 					`[${backdrop}][${layer}]hstack=inputs=2,trim=end_frame=${stackFrames},setpts=PTS-STARTPTS[${label}]`,
 				);
-				segmentProcs.push({ proc, label });
-				segments.push({
-					args: [],
-					filter: proc.chains.join(';\n'),
-					streams: proc.streams,
-					backdropFd: proc.backdropFd,
-					...blendSegmentFrames(plan, mode, R0, stackFrames),
-				});
-				proc = newProc(true);
-				procs.push(proc);
-				ctx.chains = proc.chains;
-				const k = ctx.addInput([
-					...['-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', `${W}x${H}`],
-					...['-framerate', rate(fps), '-i', 'pipe:3'],
-				]);
-				const out = `bd${segments.length}`;
-				proc.chains.push(`[${k}:v:0]setpts=PTS-STARTPTS[${out}]`);
-				return out;
+				return endProc(label, blendSegmentFrames(plan, mode, R0, stackFrames), W);
+			},
+			adjust: (composite, frames) => {
+				const label = `bk${segments.length}`;
+				proc.chains.push(`[${composite}]trim=end_frame=${stackFrames},setpts=PTS-STARTPTS[${label}]`);
+				return endProc(
+					label,
+					{
+						frames: stackFrames,
+						mode: 0,
+						active: frames.map((f) => f !== null),
+						seeds: [],
+						adjust: { frames },
+					},
+					2 * W,
+				);
 			},
 		},
 	};

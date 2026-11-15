@@ -28,6 +28,7 @@ import {
 } from '@jasper/project';
 import { bakeClip, isStaticLayer, layerStill, needsBake } from '../layer-bake/layer.ts';
 import { runEligible, shakeRuns } from '../layer-bake/runs.ts';
+import { isTransformAdjustment } from './blend/adjust.ts';
 import { tapStreamBytes } from './stream/limits.ts';
 import { needsSubpixel } from './stream/plan.ts';
 
@@ -141,7 +142,7 @@ type ProfileItem = {
  * How each top-level layer of `snap` is drawn (computed once; `estimateFrom` then counts any range cheaply). Masters
  * in one run of shaken masters share a `run` id (one input, AS-073). `covers`: the media layers that would be a piece
  * of the composite's base (opaque, filling the frame: decided by the caller from the media and the Motion); as in the
- * builder, pieces do not overlap and a blend-mode layer closes the base.
+ * builder, pieces do not overlap and a blend-mode layer or a Transform adjustment layer closes the base.
  */
 export function compositeProfile(
 	snap: RenderSnapshot,
@@ -164,7 +165,7 @@ export function compositeProfile(
 				pixels: Math.max(1, c.intrinsicBox.width) * Math.max(1, c.intrinsicBox.height),
 				run: null,
 			};
-			if ((c.blendMode ?? 'normal') !== 'normal') baseOpen = false;
+			if ((c.blendMode ?? 'normal') !== 'normal' || isTransformAdjustment(c)) baseOpen = false;
 			if (baseOpen && k === 'media' && !pieces.some((p) => p.f0 < item.f1 && item.f0 < p.f1) && covers(c)) {
 				item.covers = true;
 				pieces.push(item);

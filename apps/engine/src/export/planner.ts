@@ -73,6 +73,7 @@ import {
 	LEGACY_X264_CHOICE,
 	outputFormatChanges,
 } from '../tools/encoders.ts';
+import { isTransformAdjustment, TRANSFORM_EFFECT, transformAdjustmentRefusals } from './blend/adjust.ts';
 import { CaptionExportError, captionBurnMode, captionPlanWarnings } from './captions.ts';
 import {
 	type AudioOnlySpec,
@@ -1474,10 +1475,14 @@ export function nativeBlockers(
 	// `nestBlockers` refuses them inside nested sequences.
 	const rb = retimeBlocker();
 	if (rb) out.push(rb);
+	// Transform on an adjustment layer: drawn on the composite by the multi-tap kernel (blend/adjust.ts).
+	const adjustTransform = isTransformAdjustment(c);
+	if (adjustTransform) out.push(...transformAdjustmentRefusals(c));
 	for (const fx of c.effects) {
 		if (!fx.enabled) continue;
 		// Built-in effects (crop, flips) render with keyframes too (crop edges per frame, `layerSourceChain`).
 		if (BUILTIN_NATIVE_EFFECTS.has(fx.effectId)) continue;
+		if (adjustTransform && fx.effectId === TRANSFORM_EFFECT) continue;
 		const animated = Object.values(fx.params).some((p) => isAnimated(p));
 		const spec = effects.get(fx.effectId, fx.effectVersion);
 		let support: false | 'static' | 'animated' = false;
@@ -1538,13 +1543,19 @@ function nestBlockers(snap: RenderSnapshot): { clipId: string; reason: string }[
 					reason: `nested sequence clip "${c.name}" has animated, sub-pixel or corner-pinned Motion and contains sub-pixel or masked layers`,
 				});
 			// keyframes-blend: a nested stack is drawn inside one process, where a blend layer cannot reach the blend
-			// kernel (the nest clip itself may have any blend mode).
-			for (const x of sub.videoTracks.flatMap((t) => t.clips))
+			// kernel (the nest clip itself may have any blend mode); nor can a Transform adjustment layer reach its kernel.
+			for (const x of sub.videoTracks.flatMap((t) => t.clips)) {
 				if ((x.blendMode ?? 'normal') !== 'normal')
 					out.push({
 						clipId: x.clipId,
 						reason: `${x.kind} clip "${x.name}" inside nested sequence clip "${c.name}" uses blend mode "${blendModeInfo(x.blendMode)?.label ?? x.blendMode}" (native blend modes apply to the sequence's own layers)`,
 					});
+				if (isTransformAdjustment(x))
+					out.push({
+						clipId: x.clipId,
+						reason: `adjustment clip "${x.name}" inside nested sequence clip "${c.name}" uses Transform (native Transform adjustment layers apply to the sequence's own stack)`,
+					});
+			}
 			out.push(...nestBlockers(sub));
 		}
 	return out;
