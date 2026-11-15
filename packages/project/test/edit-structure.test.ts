@@ -198,9 +198,8 @@ describe('placing sequences', () => {
 		const { h, inner } = withNested();
 		const r = h.ok([{ type: 'clip.place', source: { sequenceId: inner }, at: 0, tracks: { video: 'V1' } }]);
 		const [v] = (r.results[0] as { clipIds: string[] }).clipIds;
-		const t = h.ok([{ type: 'clip.trim', clipId: v, edge: 'out', deltaFrames: 100, linked: false }]);
-		expect((t.results[0] as { deltaFrames: number }).deltaFrames).toBe(0);
-		expect(t.warnings.some((w) => w.code === 'W_DURATION_CLAMPED')).toBe(true);
+		const t = h.tx([{ type: 'clip.trim', clipId: v, edge: 'out', deltaFrames: 100, linked: false }]);
+		expect(t.ok ? null : t.errors[0]!.code).toBe('E_OUT_OF_MEDIA');
 	});
 });
 

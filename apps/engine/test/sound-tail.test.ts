@@ -326,35 +326,19 @@ async function check(b: DocBuilder) {
 describe('Sound Check finds cut tails in existing projects and fixes them safely', {
 	timeout: 300_000,
 }, () => {
-	it('a head-only copy cut at its peak: OUT_OF_SYNC "cut" with a safe re-register + swap; applied, the sound plays whole', async () => {
+	it('a head-only copy cut at its peak: OUT_OF_SYNC "cut" with a safe trim into its last partial frame; applied, the sound plays whole', async () => {
 		const b = new DocBuilder('hd-1080p-30', 300);
 		const old = await oldPlacement(b, 'tick 30', 40);
-		const before = b.doc.sequences[b.seqId]!.clips[old.clipId]!;
 		const report = await check(b);
 		const issue = report.issues.find((i) => i.code === 'OUT_OF_SYNC' && i.clipIds?.includes(old.clipId));
 		expect(issue, JSON.stringify(report.issues.map((i) => i.message.text))).toBeDefined();
 		expect(issue!.message.key).toMatch(/^\{0\} is cut/);
-		expect(issue!.fix).toMatchObject({
-			kind: 'swap',
-			safe: true,
-			tool: 'swap_sound',
-			args: { projectId, clipId: old.clipId, to: old.e.id },
-			swap: { clipId: old.clipId, soundId: old.e.id },
-		});
-		// applied as the editor and MCP do: register the sound (a copy with trailing silence now) and swap it in
-		const reg = await registerSound(old.e.id);
-		expect(reg.library.trailSilenceSec).toBe(LIBRARY_TRAIL_SILENCE_SEC);
-		const { mediaKey: _k, browserPlayable: _b, library, existingMediaId: _x, ...asset } = reg;
-		const r = b.tx([
-			{ type: 'media.register', asset: { ...asset, derivation: null, library }, ref: '$m' },
-			{ type: 'soundDesign.swap', clipId: old.clipId, mediaId: '$m' },
+		// the clip may run into the frame that holds its media's end (silence after it): lengthening it is the fix
+		expect(issue!.fix).toMatchObject({ kind: 'commands', safe: true });
+		expect(issue!.fix!.commands).toEqual([
+			{ type: 'clip.trim', clipId: old.clipId, edge: 'out', deltaFrames: 1 },
 		]);
-		const swapped = (r.results[1] as { alignedFrame: number }).alignedFrame;
-		expect(swapped).toBe(40);
-		const after = b.doc.sequences[b.seqId]!.clips[old.clipId] as AudioClip & { sfx?: { role: string } };
-		expect(after.trackId).toBe(before.trackId);
-		expect(after.gainDb).toBe((before as AudioClip).gainDb);
-		expect(after.mediaId).not.toBe(old.mediaId);
+		b.tx(issue!.fix!.commands as never);
 		const again = await check(b);
 		expect(
 			again.issues.filter(
@@ -367,7 +351,7 @@ describe('Sound Check finds cut tails in existing projects and fixes them safely
 		await expectWhole(b, [old.placed], 'after the fix');
 	});
 
-	it('a tail cut after the peak: TRUNCATED; a sound gone from the library is re-planned on its own media instead', async () => {
+	it('a tail cut after the peak: TRUNCATED, also for a sound gone from the library; the trim fix runs it past its media', async () => {
 		const b = new DocBuilder('hd-1080p-60', 300);
 		// 40 ms click at 60 fps: the old rule ends it inside its last 16.7 ms, ≥ 20 ms after the peak
 		const old = await oldPlacement(b, 'tick 40', 50);
@@ -381,11 +365,13 @@ describe('Sound Check finds cut tails in existing projects and fixes them safely
 		expect(t1!.category).toBe('sync');
 		expect(t1!.measured!.missingMs as number).toBeGreaterThan(0);
 		expect(t1!.measured!.missingMs as number).toBeLessThan(1000 / 60);
-		expect(t1!.fix).toMatchObject({ kind: 'swap', safe: true, swap: { soundId: old.e.id } });
-		expect(t2!.fix).toMatchObject({ kind: 'commands', safe: true });
-		expect(t2!.fix!.commands).toEqual([
-			{ type: 'soundDesign.swap', clipId: gone.clipId, mediaId: gone.mediaId },
-		]);
+		for (const [t, clipId] of [
+			[t1, old.clipId],
+			[t2, gone.clipId],
+		] as const) {
+			expect(t!.fix).toMatchObject({ kind: 'commands', safe: true });
+			expect(t!.fix!.commands).toEqual([{ type: 'clip.trim', clipId, edge: 'out', deltaFrames: 1 }]);
+		}
 		// the commands fix as given (one transaction): the clip now runs to the end of its sound, past its media
 		b.tx(t2!.fix!.commands as never);
 		const c = b.doc.sequences[b.seqId]!.clips[gone.clipId] as AudioClip;

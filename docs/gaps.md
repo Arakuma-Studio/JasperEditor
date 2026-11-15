@@ -490,9 +490,9 @@ keyframed motion only (pixel motion is P6). Found by its real run and fixed sinc
 wp-note): short library sounds placed on a cue ended at their peak (whole-frame clips inside media padded only in front).
 Registration now pads 50 ms of trailing silence, placement rounds every clip up to the end of its sound (under one frame
 past media that has no room), and Sound Check reports clips of older projects that still end inside their sound
-(OUT_OF_SYNC "cut", TRUNCATED) with a safe fix (re-register + swap, or re-plan on the same media) — measured sample-exact on
+(OUT_OF_SYNC "cut", TRUNCATED) with a safe fix (a trim into the media's last partial frame; else re-register + swap, or re-plan on the same media) — measured sample-exact on
 rendered audio at 23.976 / 29.97 / 30 / 60 fps. Limits: a clip faster than +19 % at 23.976 fps, a sound over 120 s or project
-audio ends past its media by under a frame (silence; later trims clamp to the media and can cut that frame again);
+audio ends past its media by under a frame (silence);
 TRUNCATED needs the clip to reach its media's last whole frame (a clip shortened on purpose is not reported).
 Phase 5 → WP5.2 ([wp-notes/sound-design.md](wp-notes/sound-design.md) "Phase 5 → WP5.2"): the Sound Check panel
 (delivery target — the presets or a custom LUFS / dBTP target, also on the job and MCP — and "Use as sequence target";

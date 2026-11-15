@@ -88,8 +88,45 @@ export function contentHandles(doc: DDoc, seq: DSeq, c: DClip): { head: number; 
 	const after =
 		w.end === null
 			? Number.POSITIVE_INFINITY
-			: Math.max(0, Math.floor((w.end - c.sourceIn) / step + FRAME_EPS) - c.duration);
+			: Math.max(
+					0,
+					(roundsUpToMediaEnd(doc, c, w.end)
+						? Math.ceil((w.end - c.sourceIn) / step - FRAME_EPS)
+						: Math.floor((w.end - c.sourceIn) / step + FRAME_EPS)) - c.duration,
+				);
 	return c.speed.reverse ? { head: after, tail: before } : { head: before, tail: after };
+}
+
+/**
+ * Whether a clip may end inside the frame that holds the end of its media: a sound clip (not reversed) whose window
+ * ends at the media's end. Its media need not be a whole number of frames, and its last partial frame plays to the
+ * last sample and then silence (INV-005 tolerates less than one frame past the end; every mixer pads with silence),
+ * so a sound effect is never cut. Pictures keep whole frames inside the media (no held or black last frame).
+ */
+function roundsUpToMediaEnd(doc: DDoc, c: DClip | Clip, windowEnd: number): boolean {
+	return c.kind === 'audio' && !c.speed.reverse && windowEnd === contentDurationFlicks(doc, c as Clip);
+}
+
+/**
+ * Refuses a trim that would extend an edge (`delta` frames, nothing of it applicable) of a clip whose content has no
+ * more frames that way — the end (or start) of its media, subclip or nested sequence — instead of a silent no-op.
+ */
+export function refuseExtendPastContent(
+	doc: DDoc,
+	seq: DSeq,
+	h: HandlerContext,
+	members: readonly { clip: DClip; edge: 'in' | 'out' }[],
+	delta: number,
+): void {
+	for (const { clip: c, edge } of members) {
+		const room = contentHandles(doc, seq, c);
+		if (edge === 'out' ? delta > 0 && room.tail === 0 : delta < 0 && room.head === 0)
+			h.fail(
+				'E_OUT_OF_MEDIA',
+				`Clip ${c.id} cannot be extended: its source has nothing left ${edge === 'out' ? 'after its Out' : 'before its In'}`,
+				{ blocking: [c.id] },
+			);
+	}
 }
 
 export type TrimLimits = { min: number; max: number };
@@ -266,6 +303,7 @@ export function rippleTrimGroup(
 	const lo = Math.max(...lim.map((l) => l.min));
 	const hi = Math.min(...lim.map((l) => l.max));
 	let d = lo > hi ? 0 : Math.min(hi, Math.max(lo, delta));
+	if (d === 0) refuseExtendPastContent(doc, seq, h, members, delta);
 	if (d !== delta) h.warn('W_DURATION_CLAMPED', `Trim clamped from ${delta} to ${d} frames`);
 	if (d === 0) return 0;
 	let planned = planRipple(seq, members, d);
