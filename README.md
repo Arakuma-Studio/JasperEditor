@@ -1256,8 +1256,10 @@ graphics)** and lists one graphics group per baked layer.
 - Colour effects (Lumetri, LUTs…) on these layers are applied by ffmpeg to the bake (`lut3d`); the Remotion path
   plays a graded copy; in the Program monitor the layer shows **Grade pending** until a graded preview arrives
   (about 2 s after the last change, then the bake time).
-- Stills and the MCP `render_frame` tool take the same path. If a bake fails, an **Auto** export falls back to the
-  Remotion path (warning `NATIVE_FALLBACK` in the job result); a forced **Native** export fails with the error.
+- Stills and the MCP `render_frame` tool take the same path. A failed bake is rendered again (up to three attempts,
+  warning `LAYER_BAKE_RETRIED`). Still failing, an **Auto** export renders only that layer's frames on the Remotion
+  path and the rest natively (warning `LAYER_BAKE_FALLBACK` naming the clip, frames and error), or the whole range
+  when the layer cannot be split off (warning `NATIVE_FALLBACK`); a forced **Native** export fails with the error.
 - Without the Remotion renderer (no browser / no LGPL FFmpeg directory in a packaged engine) these layers block
   the native path and the plan explains why; `GET /api/capabilities` reports `features.layerBake`.
 - **Transparent background:** Export mode ▸ Format **ProRes 422 HQ** ▸ Background **Transparent** (MCP: `start_export

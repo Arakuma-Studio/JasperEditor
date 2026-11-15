@@ -17,7 +17,7 @@ Branch `wp/m2-layer-bake` (from `main` a7f1f47, contracts merge 3ece27f). Spec: 
 | LBK-020 | `layer-bake/key.ts`, `remotion/service.ts` (`bundleId`, `animejsVersion`, `browserIdentity`, `renderGl`) | `sha256(canonicalJson({v, recipe, frame?, clip, span, width, height, fps, fonts: [{family, weight, style, fileSha256}], media: [{mediaId, fingerprint, size, mtime}], bundleId, animejs, remotion, browser, gl, still, rect, graded}))[:40]`. `clip` = the clip as baked (span-relative times, only enabled non-colour effects, text content/style/runs/box, animator params and compressed window frames, shape data, template params) without name/track; the clip id is a constant **except for seed-bearing layers** (text with an animator, anime templates: `hash32(clipId, …)` seeds, S11:ANM-007) — two identical seeded clips never share a bake. Fonts: the faces the clip draws with (style and styled runs; review fix 5), hashed by file content (cached per path+size+mtime). `bundleId` = dev source hash, or the `jasper-bundle.json` stamp of a prebuilt bundle (content hash otherwise). `gl` = the probed `chromiumOptions.gl`. Anime templates add `renderVersion` (registry `MgAnimeTemplateDefinition.renderVersion`; `null` while not installed); their params and `paramKeyframes` are in the snapshot source, hence in `clip`. |
 | LBK-021 | `service.ts` (`gc`, `lookup`, `markUsed`), route `GET /mg/layers/:key/:file` | `<appdir>/cache/layers/<key>/{master.mov \| still.png, graded/NNNNNN.png, preview.webm, meta.json}`; graded entries are their own keys (bake key + colour effects + LUT identities + timing). `meta.json` `lastUsedAt` refreshed on use; GC at start and daily removes entries unused for 14 days (and orphan dirs by mtime). Files are served under `/mg/layers/` (signable prefix, Range, immutable). |
 | LBK-022 | `service.ts` (`ensureBake`, `ensureGraded`, `ensureEntry`, `submitChild`, runner), `remotion/page-pool.ts` | Job kind `layer-bake`, child of the export/still (`cpuSlots: 0`, `minSlots: 0`, dedupe `layer-bake:<key>:<parentId>`, parent abort cancels the child; queue cancel cascades). Parent stage "Baking graphics i/n", child "Rendering i/N frames". The export's Remotion concurrency (`remotionConcurrency(ctx.slots)` via `NativePrepareContext.concurrency`) is a page budget shared by the bakes running side by side (see "Parallel bakes"; before: one bake at a time with all of it). |
-| LBK-023 | `export/service.ts` (`NativePrepareError`, `fallbackToRemotion`) | Any extension `prepare` failure on the native/hybrid path of an `auto` export or still → re-plan with `engine: 'remotion'` (only when that plan succeeds) and render there; result `renderPath: 'remotion'`, `warnings: [{code: 'NATIVE_FALLBACK'}]`, job log line. Forced `native`: fails with the original error (code kept). |
+| LBK-023 | `export/service.ts` (`NativePrepareError`, `renderAroundFailedLayers`, `fallbackToRemotion`), `layer-bake/extension.ts` (`withRetries`) | A failed bake is rendered again (see "Failed bakes"); a `LayerBakeError` that remains renders only its layers' frames on the Remotion path (`LAYER_BAKE_FALLBACK`). Any other extension `prepare` failure on the native/hybrid path of an `auto` export or still, or failed layers that cannot be split off → re-plan with `engine: 'remotion'` (only when that plan succeeds) and render there; result `renderPath: 'remotion'`, `warnings: [{code: 'NATIVE_FALLBACK'}]`, job log line. Forced `native`: fails with the original error (code kept). |
 | LBK-024 | `extension.ts` (`blockers`), `planner.ts` | `remotionLocal: 'unavailable'` or binaries refused → "graphics layers need the Remotion renderer to bake (reason)" per DOM layer; `needs-browser-download` is ready with warning `BROWSER_DOWNLOAD`. DOM-layer colour never needs WebGL (dropped from Remotion docs, applied by ffmpeg). |
 | LBK-025 | `export/service.ts` (`runStill`), `extension.ts`, `service.ts` (`planBake` frame variant) | `POST /api/stills` (and MCP `render_frame`, which uses it) take the export's path: a cached full master/still is reused; otherwise a static layer bakes its still, a non-static one a one-frame bake keyed by the frame. |
 | LBK-026 | `remotion/service.ts` (`recordUsage(kind, purpose)` public), `mg-bundles/service.ts` (2 lines) | Every bake (`media`/`still`, purpose `layer-bake`), every mg pre-render (`mg-prerender`, master/preview and posters) and exports/stills log one line in `<logs>/remotion-usage.jsonl`. |
@@ -43,6 +43,40 @@ SDK Error. After the fix, all seven retry-suite cases pass; targeted Biome and d
 These SDK fault tests do not establish real-browser rendering success or resolve the host's setup timeouts.
 Integrated typecheck/gates and browser reruns remain pending. Detailed before-edit evidence and six-bar retention rationale are
 in [the cleanup ledger](../test-cleanup/compositions2.md#composition-setup-error-normalization--before-edit-record).
+
+## Failed bakes
+
+A bake whose child job fails with a retryable error (anything but a cancel or `retryable: false`) renders again, up
+to three attempts, in a browser of its own (no `browserGroup`): `layer-bake/extension.ts` `withRetries`, around every
+`ensureBake` / `ensureSheet` / `ensureGraded`. A bake that succeeds on a retry adds `LAYER_BAKE_RETRIED` to the result,
+naming the clip, its frames and the first error. Still failing (or a clipped master), the extension throws
+`LayerBakeError` (`export/native-ext.ts`: code `LAYER_BAKE_FAILED`, the layers with their frames `[start, end)`, the
+last error and its `retryable`). An `auto` export (video or GIF) then renders those frames on the Remotion path and the rest of
+the range on its own path (`service.ts` `renderAroundFailedLayers`, runs from `use-previews.ts` `fallbackRuns`: spans
+closer than 2 s merged, at most 8 Remotion stretches), joined as Use Previews joins its runs (frame-exact ProRes
+intermediates at the sequence size, one encode with the export's mix); result `renderPath: 'hybrid'` and
+`LAYER_BAKE_FALLBACK` naming the clip, frames and error. The whole range goes to the Remotion path, with the reason in
+`NATIVE_FALLBACK`, when the stretches would cover the range or be more than 8, for alpha and colour-managed outputs,
+and for stills. When a stretch cannot be planned on the Remotion path, the whole-range rule applies, which fails
+with the `LayerBakeError` when the range cannot be planned there either. A forced `native` export fails with it
+after the retries. Not measured: the cost of a split export over a plain hybrid one (its native runs encode ProRes
+at the sequence size, not the output size, and the range is encoded once more, as Use Previews does); a sheet of
+stills fails as one bake, so all its stills' frames leave the native path.
+
+Cause of the user's failure (export `job_50f844f8f5cbaa3c`, 8346–20089, 2026-11-15): the bakes of `dev (1).png` and
+`XD.png` failed within 5 s with `RENDER_FAILED: Invalid message: {"type":"response-success",…,"frame":{},…}` at
+`@remotion/media` 4.0.499 `dist/esm/index.mjs:4575`, and the export re-planned on the Remotion path (44 min instead of
+≈ 6 min hybrid, the next export's 360 s). The Remotion renderer gives every page
+`BroadcastChannel('remotion-video-frame-extraction')`; a render's main tab answers its other pages' frame `request`s
+and throws on every other message type (`addBroadcastChannelListener`). The channel reaches every page of a browser on
+one origin, the engine serves one bundle to all renders (`renderServeUrl`), and an export's bakes share browsers (past
+8 browsers, more than `pagesPerBrowser` pages per browser), so a one-page image bake's main tab received the answer of
+another render's main tab to one of that render's pages (inferred from the code: the logs do not name the answering
+render). Transient: it needs a multi-page media render and another
+render's main tab in one browser at once. `packages/compositions/src/remotion-channel.ts` (imported first by the
+bundle entry) gives a main tab a channel that only delivers `request` and `main-tab-ready`; main tabs of other renders
+still answer a page's requests (correct frames, extra decode work). The image itself was not involved: the same bake
+succeeded in the next export.
 
 ## Contract changes (additive; `Contract-Change:` in the commits)
 

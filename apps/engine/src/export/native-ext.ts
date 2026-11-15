@@ -8,6 +8,7 @@ import type {
 	RenderVisualClip,
 	ResolvedEffect,
 } from '@jasper/project';
+import { JobError } from '../jobs/types.ts';
 import type { PlannedExport } from './planner.ts';
 
 /** First drawn / one-past-last frame of a clip in an export range, including transition handles. */
@@ -102,6 +103,47 @@ export class LayerPendingError extends Error {
 	}
 }
 
+/** A layer whose preparation failed, and the sequence frames [start, end) of the export it is drawn on. */
+export type FailedLayer = { clipId: string; name: string; start: number; end: number };
+
+/** `"a" (frames 10–40)`, `"a", "b" and 3 more (frames 10–40, 90–120 …)`: the layers of a failure for messages. */
+export function describeLayers(layers: readonly FailedLayer[]): string {
+	const names = [...new Set(layers.map((l) => `"${l.name}"`))];
+	const shown =
+		names.length > 3 ? `${names.slice(0, 2).join(', ')} and ${names.length - 2} more` : names.join(', ');
+	const spans = [...new Set(layers.map((l) => `${l.start}–${l.end}`))];
+	return `${shown} (frames ${spans.slice(0, 3).join(', ')}${spans.length > 3 ? ' …' : ''})`;
+}
+
+/** `CODE: message` of a failure (capped), for the warnings and errors that name it. */
+export function failureText(e: unknown): string {
+	const code = (e as { code?: unknown })?.code;
+	const message = String((e as Error)?.message ?? e).slice(0, 400);
+	return typeof code === 'string' && !message.startsWith(code) ? `${code}: ${message}` : message;
+}
+
+/**
+ * A layer bake still failed after its retries (layer-bake extension). `layers` name the clips and the frames they are
+ * drawn on: an `auto` export renders those frames on the Remotion path and the rest natively (service.ts
+ * `renderAroundFailedLayers`); a forced `native` export fails with this error.
+ */
+export class LayerBakeError extends JobError {
+	constructor(
+		readonly layers: readonly FailedLayer[],
+		/** The last attempt's error. */
+		readonly failure: unknown,
+		readonly attempts: number,
+	) {
+		super(
+			'LAYER_BAKE_FAILED',
+			`Baking ${describeLayers(layers)} failed${attempts > 1 ? ` ${attempts} times` : ''}: ${failureText(failure)}`,
+			(failure as JobError)?.retryable ?? true,
+			{ layers, attempts, cause: failureText(failure) },
+		);
+		this.name = 'LayerBakeError';
+	}
+}
+
 export type OverrideReady =
 	| { ok: true; picture?: { x: number; y: number; w: number; h: number } }
 	| { ok: false; reason: string };
@@ -176,6 +218,8 @@ export type NativePrepareContext = {
 	defer?(layer: DeferredLayer): void;
 	/** Aborts the background work (the job ended, or the export failed and nothing waits for it). */
 	backgroundSignal?: AbortSignal;
+	/** A warning of the export's result (a bake that failed and succeeded on a retry). Absent = logged only. */
+	warn?(w: { code: string; message: string }): void;
 };
 
 export type NativeExtension = {

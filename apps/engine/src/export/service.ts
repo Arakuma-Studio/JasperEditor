@@ -108,6 +108,7 @@ import {
 } from './native.ts';
 import {
 	type DeferredLayer,
+	LayerBakeError,
 	layerOverride,
 	layerSpan,
 	type NativeExtension,
@@ -159,7 +160,7 @@ import type { StreamLayerPlan } from './stream/plan.ts';
 import { streamLayer } from './stream/run.ts';
 import { BakeChangedError, streamTaps } from './stream/taps.ts';
 import { createSyntheticExtension } from './synthetic.ts';
-import { concatFilter, type ExportRun, exportRuns, type PreviewPiece } from './use-previews.ts';
+import { concatFilter, type ExportRun, exportRuns, fallbackRuns, type PreviewPiece } from './use-previews.ts';
 import { buildVerifyContext, writeVerifyContext } from './verify-context.ts';
 import { deliverableOfContainer, EXPORT_JOB_ID_RE, runExportVerify, targetRefusal } from './verify-job.ts';
 
@@ -176,6 +177,11 @@ class NativePrepareError extends Error {
 
 /** edit-structure: what the Remotion-path extensions prepared for nested sequences, per top-level preparation. */
 const NESTED_REMOTION = new WeakMap<ReadonlyMap<string, unknown>, Map<string, PreparedExtensions>>();
+
+/** Seconds at most between the frames of failed layer bakes rendered as one Remotion stretch (`fallbackRuns`). */
+const FALLBACK_MERGE_SEC = 2;
+/** Remotion stretches of an export whose layer bakes failed at most; more: the whole range on the Remotion path. */
+const MAX_FALLBACK_STRETCHES = 8;
 
 /** Remotion concurrency of an export with `slots` CPU slots (S04:RR-004; the Remotion path's bakes follow it). */
 function remotionConcurrency(slots: number): number {
@@ -928,6 +934,21 @@ export class ExportService {
 		return { planned, frames: count, path: 'copy', remotionOutput: undefined, warnings, audio };
 	}
 
+	/** Warnings of the extensions' preparations (`NativePrepareContext.warn`) by job, until the render takes them. */
+	private readonly prepareWarnings = new Map<string, { code: string; message: string }[]>();
+	private prepareWarn(ctx: JobContext): (w: { code: string; message: string }) => void {
+		return (w) => {
+			const list = this.prepareWarnings.get(ctx.job.id) ?? [];
+			list.push(w);
+			this.prepareWarnings.set(ctx.job.id, list);
+		};
+	}
+	private takePrepareWarnings(ctx: JobContext): { code: string; message: string }[] {
+		const list = this.prepareWarnings.get(ctx.job.id) ?? [];
+		this.prepareWarnings.delete(ctx.job.id);
+		return list;
+	}
+
 	private previewSource: PreviewSource | null = null;
 	/** previews: where an export finds the render previews of a document (the preview service registers it). */
 	registerPreviewSource(fn: PreviewSource | null): void {
@@ -976,6 +997,8 @@ export class ExportService {
 		planned: PlannedExport,
 		output: string,
 		runs: ExportRun[],
+		/** The export's mix when it was started already (a render that left the native path). */
+		mix?: Promise<MixdownResult | null>,
 	): Promise<{
 		planned: PlannedExport;
 		frames: number;
@@ -984,7 +1007,7 @@ export class ExportService {
 		warnings: { code: string; message: string }[];
 		audio: MixdownResult | null;
 	}> {
-		const audio = planned.output.videoOnly ? null : await this.renderAudio(planned, ctx);
+		const audio = planned.output.videoOnly ? null : await (mix ?? this.renderAudio(planned, ctx));
 		const seq = planned.snapshot.settings;
 		const files: string[] = [];
 		const counts: number[] = [];
@@ -1024,6 +1047,7 @@ export class ExportService {
 							videoOnly: true,
 							container: 'mov',
 							range: { type: 'custom', startFrame: r.start, endFrame: r.end },
+							...(r.engine ? { engine: r.engine } : {}),
 							video: {
 								codec: 'prores',
 								proresProfile,
@@ -1574,6 +1598,7 @@ export class ExportService {
 				...(this.pinFor(ctx) ? { pin: this.pinFor(ctx) } : {}),
 				pipeline: pipeline && !still,
 				backgroundSignal: bgAbort.signal,
+				warn: this.prepareWarn(ctx),
 				background: (work: Promise<void>) => {
 					// A failure of the work itself (not our abort): the export fails as a preparation does (LBK-023
 					// fallback to the Remotion path for `auto`).
@@ -2680,6 +2705,7 @@ export class ExportService {
 			jobId: ctx.job.id,
 			...(planned.document.projectId ? { projectId: planned.document.projectId } : {}),
 			purpose: 'remotion' as const,
+			warn: this.prepareWarn(ctx),
 			concurrency: remotionConcurrency(ctx.slots),
 			...(this.pinFor(ctx) ? { pin: this.pinFor(ctx) } : {}),
 		};
@@ -2700,6 +2726,8 @@ export class ExportService {
 		input: Parameters<typeof planExport>[0],
 		ctx: JobContext,
 		warnings: { code: string; message: string }[],
+		/** Why the failed layers' frames alone could not be rendered on the Remotion path (`renderAroundFailedLayers`). */
+		whole: string | null = null,
 	): Promise<PlannedExport | null> {
 		if (!(e instanceof NativePrepareError) || ctx.signal.aborted || input.settings.engine === 'native')
 			return null;
@@ -2712,11 +2740,71 @@ export class ExportService {
 		} catch {
 			return null;
 		}
-		const message = `The native path could not be prepared (${e.message.slice(0, 300)}); rendered with Remotion instead`;
+		const message = `The native path could not be prepared (${e.message.slice(0, 600)}); rendered with Remotion instead${whole ? ` (${whole})` : ''}`;
 		warnings.push({ code: 'NATIVE_FALLBACK', message });
 		ctx.log(`warning NATIVE_FALLBACK: ${message}`);
 		ctx.progress(0, { stage: 'Falling back to Remotion' });
 		return planned;
+	}
+
+	/**
+	 * A layer bake still failed after its retries (`LayerBakeError`) in an `auto` export: the frames its layers are
+	 * drawn on are rendered on the Remotion path (the whole stack, exactly as a Remotion export draws them) and the rest
+	 * of the range on the native path, joined as Use Previews joins its runs (ProRes intermediates, one encode with the
+	 * export's mix). Returns the render; or why it cannot (the caller then renders the whole range on the Remotion path);
+	 * or null when the failure is not a layer bake's or the export may not leave the native path.
+	 */
+	private async renderAroundFailedLayers(
+		e: unknown,
+		ctx: JobContext,
+		req: ExportStartRequest,
+		planned: PlannedExport,
+		output: string,
+		audioIn: Promise<MixdownResult | null>,
+		warnings: { code: string; message: string }[],
+	): Promise<Awaited<ReturnType<ExportService['renderWithPreviews']>> | string | null> {
+		const failure = e instanceof NativePrepareError ? e.failure : null;
+		if (!(failure instanceof LayerBakeError) || ctx.signal.aborted || req.settings.engine === 'native')
+			return null;
+		if (planned.deliverable?.kind === 'audio') return null;
+		if (planned.output.alpha) return 'an alpha output is rendered as one Remotion master';
+		if (!isPlainRec709Output(planned.output.color)) return 'colour-managed outputs are rendered in one piece';
+		const fps = planned.snapshot.settings.fps;
+		const runs = fallbackRuns(planned.range, failure.layers, {
+			mergeFrames: Math.max(1, Math.round((FALLBACK_MERGE_SEC * fps.num) / Math.max(1, fps.den))),
+			maxStretches: MAX_FALLBACK_STRETCHES,
+		});
+		if (!runs) return 'the layers that could not be baked are drawn across most of the range';
+		const stretches = runs.filter((r) => r.kind === 'render' && r.engine === 'remotion');
+		// Each stretch must be renderable on the Remotion path; else the whole range cannot be either (the caller fails
+		// with the bake's error).
+		const caps = await this.deps.capabilities();
+		for (const r of stretches) {
+			try {
+				await planExport(
+					{
+						envelope: req.envelope,
+						sequenceId: req.sequenceId,
+						settings: {
+							...req.settings,
+							sequenceId: req.sequenceId,
+							engine: 'remotion',
+							range: { type: 'custom', startFrame: r.start, endFrame: r.end },
+						},
+					},
+					this.planDeps(caps),
+				);
+			} catch {
+				return null;
+			}
+		}
+		const frames = stretches.map((r) => `${r.start}–${r.end}`).join(', ');
+		const message = `${failure.message.slice(0, 600)}; frames ${frames} were rendered on the Remotion path, the rest of the range on the native path`;
+		warnings.push({ code: 'LAYER_BAKE_FALLBACK', message });
+		ctx.log(`warning LAYER_BAKE_FALLBACK: ${message}`);
+		ctx.progress(0, { stage: `Rendering frames ${frames} with Remotion` });
+		const res = await this.renderWithPreviews(ctx, req, planned, output, runs, audioIn);
+		return { ...res, path: 'hybrid', warnings: [...warnings, ...res.warnings] };
 	}
 
 	private planDeps(caps: PlanCapabilities): Parameters<typeof planExport>[1] {
@@ -2874,6 +2962,7 @@ export class ExportService {
 		// where the time went, in the log of a failed (or cancelled) export too
 		const rendered = await this.renderExport(ctx, req, planned, output).catch((e: unknown) => {
 			ctx.log(this.report(ctx).summary());
+			this.prepareWarnings.delete(ctx.job.id);
 			throw e;
 		});
 		planned = rendered.planned;
@@ -2953,7 +3042,12 @@ export class ExportService {
 					frames = await this.runNative(planned, masters, output, ctx, false, audioP);
 					audio = await audioP;
 				}
+				warnings.push(...this.takePrepareWarnings(ctx));
 			} catch (e) {
+				warnings.push(...this.takePrepareWarnings(ctx));
+				// A layer bake that still failed after its retries: only its frames on the Remotion path.
+				const around = await this.renderAroundFailedLayers(e, ctx, req, planned, output, audioP, warnings);
+				if (around && typeof around === 'object') return around;
 				// S11:LBK-023: a failed preparation (bake, warp, pre-render…) of an `auto` export → Remotion path.
 				const replanned = await this.fallbackToRemotion(
 					e,
@@ -2964,6 +3058,7 @@ export class ExportService {
 					},
 					ctx,
 					warnings,
+					around,
 				);
 				if (!replanned) throw this.unwrap(e);
 				planned = replanned;
@@ -3071,6 +3166,8 @@ export class ExportService {
 			frames = count;
 		}
 		endRemotion();
+		// (a graded master the Remotion path's preparation baked again)
+		warnings.push(...this.takePrepareWarnings(ctx));
 		return {
 			planned,
 			frames,
@@ -3498,7 +3595,9 @@ export class ExportService {
 			// (or its cached master / still) — and fall back to Remotion like `auto` exports (LBK-023).
 			try {
 				await this.runNative(planned, masters, output, ctx, true);
+				warnings.push(...this.takePrepareWarnings(ctx));
 			} catch (e) {
+				warnings.push(...this.takePrepareWarnings(ctx));
 				const replanned = await this.fallbackToRemotion(e, input, ctx, warnings);
 				if (!replanned) throw this.unwrap(e);
 				planned = replanned;
@@ -3524,6 +3623,7 @@ export class ExportService {
 				});
 				await rename(tmp, output);
 			}
+			warnings.push(...this.takePrepareWarnings(ctx));
 		}
 		return { planned, path, warnings };
 	}
