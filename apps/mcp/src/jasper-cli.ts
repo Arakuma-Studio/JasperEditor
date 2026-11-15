@@ -7,6 +7,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { extname, isAbsolute, resolve } from 'node:path';
 import { AgentQueryNameSchema } from '@jasper/api';
+import { isCommandType } from '@jasper/project';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
@@ -22,7 +23,9 @@ Usage: jasper [options] <command> [arguments]
 Commands:
   status                              engine, discovery and render capabilities
   projects                            list projects
-  describe [type…]                    command catalogue, or one command's JSON Schema and example
+  describe [name…] [--full]           command catalogue; a command type's JSON Schema and example (clip.place),
+                                      or an MCP tool's description and arguments (add_transition; --full: every
+                                      nested field and its reference text). A name that is both prints both
   exec <type> [k=v…] | exec <type> '<json>' | exec '<command json>'
                                       apply one document command (one undo step)
   run <file.jsonl | ->                one transaction per line: a command {"type": …} or
@@ -102,6 +105,7 @@ const BOOL_FLAGS = new Set([
 	'version',
 	'h',
 	'overwrite',
+	'full',
 ]);
 
 type ParsedArgs = { flags: Record<string, string | true>; positional: string[] };
@@ -323,8 +327,28 @@ const COMMANDS: Record<string, (c: Ctx, args: string[]) => Promise<void>> = {
 		for (const t of list) c.out.stdout(`${t.name}\t${t.title ?? ''}\n`);
 	},
 	async describe(c, args) {
-		const r = await tool(c, 'describe_commands', args.length ? { types: args } : {});
-		emit(c, jsonOf(r));
+		if (!args.length) return emit(c, jsonOf(await tool(c, 'describe_commands', {})));
+		// A name is a document command (clip.place) or an MCP tool of any toolset (add_transition); one that is both
+		// prints both. Tools print what describe_tool returns, one document each; the commands one describe_commands.
+		const toolNames = new Set((await listTools(c)).map((t) => t.name));
+		const unknown = args.filter((a) => !toolNames.has(a) && !isCommandType(a));
+		if (unknown.length)
+			throw new CommandFailed({
+				error: {
+					code: 'E_NOT_FOUND',
+					message: `No command type or MCP tool named ${unknown.map((n) => `"${n}"`).join(', ')}`,
+					hint: '`jasper describe` lists the command types; `jasper tools` lists every MCP tool.',
+				},
+			});
+		const tools = args.filter((a) => toolNames.has(a));
+		const types = args.filter((a) => isCommandType(a));
+		for (const name of tools.filter((n) => isCommandType(n)))
+			c.out.stderr(
+				`jasper: "${name}" is both an MCP tool and a command type; both are shown, the tool first\n`,
+			);
+		for (const name of tools)
+			emit(c, jsonOf(await tool(c, 'describe_tool', { name, ...(c.flags.full ? { full: true } : {}) })));
+		if (types.length) emit(c, jsonOf(await tool(c, 'describe_commands', { types })));
 	},
 	async exec(c, args) {
 		needArgs(args, 1, "exec <type> [k=v…] | exec '<command json>'");

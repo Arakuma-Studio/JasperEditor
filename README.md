@@ -877,6 +877,7 @@ jasper exec marker.add frame=30 name=Intro       # one command, one undo step (k
 jasper exec '{"type":"clip.addText","at":0,"duration":90,"track":"V2","content":{"text":"Hi"}}'
 jasper run edit.jsonl                            # a command or {"commands": [...]} per line; JSON line per result
 jasper describe clip.place                       # schema and an example
+jasper describe add_transition                   # an MCP tool's arguments, any toolset (--full: every field)
 jasper props clp_123 --at 2s                     # value, evaluated, keyframes
 jasper get clip/clp_123/opacity --at 45          # one parameter
 jasper set clip/clp_123/transform.position '[640,200]'

@@ -125,6 +125,16 @@ const ROUTES: Record<string, Route> = {
 			],
 		],
 	},
+	'effects-param-eases': {
+		calls: (v) => [
+			['get_keyframe_eases', { projectId: v.project, effectInstanceId: v.seed_fx, param: 'radius' }],
+		],
+	},
+	'effects-clip-eases-control': {
+		calls: (v) => [
+			['get_keyframe_eases', { projectId: v.project, clipId: v.seed_t, properties: ['opacity'] }],
+		],
+	},
 	'three-d-extruded-title': {
 		calls: (v) => [
 			['add_text', { projectId: v.project, text: 'LAUNCH DAY', at: 0, duration: 90 }],

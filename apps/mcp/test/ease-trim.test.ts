@@ -200,6 +200,52 @@ describe('ease read-back', () => {
 		expect(op.segments[1].averageSpeed).toBeCloseTo(-80, 6);
 	});
 
+	it('selects the keys of an effect param by effectInstanceId + param, on clip and track effects', async () => {
+		const t = await connect();
+		const keys = (fx: string, frames: number[], prefix: string) =>
+			frames.map((f, i) => ({
+				type: 'keyframe.add',
+				target: ['effect', fx, 'radius'],
+				at: { sequenceFrame: f },
+				value: i * 20,
+				ref: `$${prefix}${i}`,
+			}));
+		const setup = await t.ok('apply_commands', {
+			label: 'Setup',
+			commands: [
+				{ type: 'clip.addText', at: 0, duration: 90, track: 'V2', content: { text: 'Fx' }, ref: '$t' },
+				{ type: 'effect.add', target: { clipId: '$t' }, effectId: 'jasper.gaussian-blur', ref: '$fx' },
+				{ type: 'effect.add', target: { trackId: 'V1' }, effectId: 'jasper.gaussian-blur', ref: '$tfx' },
+				...keys('$fx', [0, 30], 'c'),
+				...keys('$tfx', [0, 30, 60], 'v'),
+			],
+		});
+		const refs = setup.refs as Record<string, string>;
+		const onClip = await t.ok('get_keyframe_eases', { effectInstanceId: refs.$fx, param: 'radius' });
+		expect(onClip.properties.flatMap((p: Json) => p.keys.map((k: Json) => k.id))).toEqual([
+			refs.$c0,
+			refs.$c1,
+		]);
+		const onTrack = await t.ok('get_keyframe_eases', {
+			effectInstanceId: refs.$tfx,
+			param: 'radius',
+			from: 30,
+		});
+		expect(onTrack.properties.flatMap((p: Json) => p.keys.map((k: Json) => k.id))).toEqual([
+			refs.$v1,
+			refs.$v2,
+		]);
+		const eased = await t.ok('apply_ease', {
+			effectInstanceId: refs.$tfx,
+			param: 'radius',
+			curve: 'basic.ease',
+		});
+		expect(eased.eases[0].segments.map((s: Json) => s.preset)).toEqual(['basic.ease', 'basic.ease']);
+		const allParams = await t.ok('get_keyframe_eases', { effectInstanceId: refs.$fx });
+		expect(allParams.selected).toBe(2);
+		expect((await t.fail('get_keyframe_eases', { effectInstanceId: 'fx_nope' })).code).toBe('E_NOT_FOUND');
+	});
+
 	it('apply preset → read back the same preset id, for cubic segments and multi-point runs', async () => {
 		const t = await connect();
 		const { clipId, k } = await animatedTitle(t);
