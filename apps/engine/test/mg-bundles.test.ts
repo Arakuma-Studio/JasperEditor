@@ -601,6 +601,76 @@ describe('mg-bundles routes (no browser)', () => {
 		await taken.release();
 		await expect(core.uploads.take(up.uploadId, 'mg-bundle')).rejects.toThrow();
 	});
+
+	it('exports and stills of a composition clip whose bundle or composition is missing are refused at plan time on every path', async () => {
+		const app = await makeApp();
+		const reg = await registerFake(app, fakeBundle(tempAppdir('jasper-fake-refuse-')));
+		const docWith = (media: RegisteredMedia) => {
+			const d = new DocBuilder('hd-1080p-30');
+			const mediaId = d.addMedia(media);
+			const { clipId } = d.tx([
+				{ type: 'clip.addComposition', composition: { mediaId, id: 'Title' }, at: 0, track: 'V1' },
+			]).results[0] as { clipId: string };
+			return { d, mediaId, clipId };
+		};
+		const plan = (d: DocBuilder) =>
+			app.inject({
+				method: 'POST',
+				url: '/api/exports/plan',
+				headers: JSON_H,
+				payload: {
+					envelope: d.envelope(),
+					sequenceId: d.seqId,
+					settings: { sequenceId: d.seqId, range: { type: 'entire' }, container: 'mp4', engine: 'remotion' },
+				},
+			});
+		const still = async (d: DocBuilder) => {
+			const r = await app.inject({
+				method: 'POST',
+				url: '/api/stills',
+				headers: JSON_H,
+				payload: { envelope: d.envelope(), sequenceId: d.seqId, frame: 10 },
+			});
+			expect(r.statusCode, r.body).toBe(202);
+			return coreServices(app).queue.wait(r.json().id);
+		};
+
+		const valid = docWith(reg);
+		const ok = await plan(valid.d);
+		expect(ok.statusCode, ok.body).toBe(200);
+		expect(ok.json().path).toBe('remotion');
+
+		// A bundle this engine does not have (another engine's import).
+		const elsewhere = docWith({
+			...reg,
+			locators: reg.locators.map((l) =>
+				l.type === 'engine-store' ? { ...l, key: `mk_${'f'.repeat(24)}` } : l,
+			),
+		});
+		// A rebuilt bundle without the clip's composition (MGC-014).
+		const rebuilt = docWith(reg);
+		const locator = reg.locators.find((l) => l.type === 'engine-store')!;
+		const info = reg.mgBundle!;
+		rebuilt.d.tx([
+			{
+				type: 'media.relink',
+				mediaId: rebuilt.mediaId,
+				locator,
+				mgBundle: { ...info, compositions: info.compositions.map((c) => ({ ...c, id: 'Other' })) },
+			},
+		]);
+		for (const [{ d, clipId }, code] of [
+			[elsewhere, 'MG_BUNDLE_MISSING'],
+			[rebuilt, 'MG_COMPOSITION_MISSING'],
+		] as const) {
+			const r = await plan(d);
+			expect([r.statusCode, r.json().code]).toEqual([409, code]);
+			expect(r.json().detail.blockers).toEqual([expect.objectContaining({ itemId: clipId })]);
+			const s = await still(d);
+			expect([s.state, s.error?.code]).toEqual(['failed', code]);
+			expect(s.error?.message).toContain(clipId);
+		}
+	});
 });
 
 function decode(

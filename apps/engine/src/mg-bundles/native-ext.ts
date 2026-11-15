@@ -14,7 +14,15 @@ import {
 	type RenderVisualClip,
 } from '@jasper/project';
 import type { LayerOverride, NativeExtension } from '../export/native-ext.ts';
+import { JobError } from '../jobs/types.ts';
 import type { MgBundleService } from './service.ts';
+
+/** Plan refusals (every path): the clip's bundle is not on this engine / its composition is not in the bundle. */
+export const MG_BUNDLE_MISSING = 'MG_BUNDLE_MISSING';
+export const MG_COMPOSITION_MISSING = 'MG_COMPOSITION_MISSING';
+
+const REIMPORT_HINT =
+	'Import the bundle or HTML page on this engine again (File ▸ Import Remotion Project… / Import HTML Composition…), or delete the clip.';
 
 type PreparedMasters = Map<string, { path: string; renderKey: string; layerStart: number }>;
 
@@ -60,26 +68,53 @@ export function masterRequests(
 }
 
 export function mgNativeExtension(svc: MgBundleService): NativeExtension {
+	// AGENTS §4: without its bundle or composition no path can draw the clip (the compositions would draw the
+	// preview's offline card instead): the planner refuses every export and still.
+	const refusalsOf = (clip: RenderVisualClip): { code: string; reason: string; hint: string }[] => {
+		if (clip.kind !== 'composition') return [];
+		const src = compositionSource(clip);
+		if (!src?.bundle)
+			return [
+				{
+					code: MG_BUNDLE_MISSING,
+					reason: `composition clip "${clip.name}" (${clip.clipId}) has no bundle in the project`,
+					hint: REIMPORT_HINT,
+				},
+			];
+		const what = src.bundle.html ? 'HTML composition page' : 'Remotion bundle';
+		if (!src.bundle.key || !svc.record(src.bundle.key))
+			return [
+				{
+					code: MG_BUNDLE_MISSING,
+					reason: `composition clip "${clip.name}" (${clip.clipId}): its ${what} is not available on this engine`,
+					hint: REIMPORT_HINT,
+				},
+			];
+		if (src.info === null || src.info === undefined)
+			return [
+				{
+					code: MG_COMPOSITION_MISSING,
+					reason: `composition clip "${clip.name}" (${clip.clipId}): composition ${src.compositionId} is not in its ${what}`,
+					hint: 'Rebuild the bundle so it has the composition again, or delete or replace the clip.',
+				},
+			];
+		return [];
+	};
 	return {
 		id: 'mg',
 		kinds: new Set(['composition']),
 		blockers(clip) {
-			const src = compositionSource(clip);
 			if (clip.kind !== 'composition') return [];
-			if (!src) return [`composition clip "${clip.name}" has no Remotion bundle`];
+			const refused = refusalsOf(clip);
+			if (refused.length) return refused.map((r) => r.reason);
 			const cap = svc.capability();
 			if (cap.status !== 'ready')
 				return [
 					`composition clips need the Remotion renderer to pre-render (${cap.reason ?? 'unavailable'})`,
 				];
-			if (!src.bundle?.key || !svc.record(src.bundle.key))
-				return [
-					`composition clip "${clip.name}": its ${src.bundle?.html ? 'HTML composition' : 'Remotion bundle'} is not available on this engine`,
-				];
-			if (src.info === null || src.info === undefined)
-				return [`Composition ${src.compositionId} is not in bundle (clip "${clip.name}")`];
 			return [];
 		},
+		refusals: refusalsOf,
 		warnings(clip, ctx) {
 			const src = compositionSource(clip);
 			// An HTML page is seeked by time (frame / fps): any sequence rate renders it exactly.
@@ -125,10 +160,17 @@ export function mgNativeExtension(svc: MgBundleService): NativeExtension {
 					stage: (t) => ctx.stage(t),
 				},
 			);
+			// AGENTS §4: a clip without its master would be drawn as the preview's placeholder: the export fails instead.
 			for (const w of wanted) {
-				const key = svc.renderKeyOf(w.req)!;
-				const path = paths.get(key);
-				if (path) out.set(w.clip.clipId, { path, renderKey: key, layerStart: w.layerStart });
+				const key = svc.renderKeyOf(w.req);
+				const path = key ? paths.get(key) : undefined;
+				if (!key || !path)
+					throw new JobError(
+						'MG_RENDER_FAILED',
+						`The master of composition clip "${w.clip.name}" (${w.req.compositionId}) was not rendered`,
+						true,
+					);
+				out.set(w.clip.clipId, { path, renderKey: key, layerStart: w.layerStart });
 			}
 			ctx.log(`mg: ${out.size} composition master(s) ready`);
 			return out;
