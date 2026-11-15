@@ -135,6 +135,12 @@ const ROUTES: Record<string, Route> = {
 			['get_keyframe_eases', { projectId: v.project, clipId: v.seed_t, properties: ['opacity'] }],
 		],
 	},
+	'effects-list-filters-same-names': {
+		calls: () => [
+			['list_effects', { query: 'blur' }],
+			['list_transition_types', { category: 'Iris' }],
+		],
+	},
 	'three-d-extruded-title': {
 		calls: (v) => [
 			['add_text', { projectId: v.project, text: 'LAUNCH DAY', at: 0, duration: 90 }],

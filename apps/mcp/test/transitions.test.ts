@@ -222,6 +222,14 @@ describe('GPU transitions through MCP (transition framework)', () => {
 		return { call };
 	}
 
+	it('list_transition_types filters by category and query, the names list_effects uses', async () => {
+		const { call } = await connect();
+		type Listed = { types: { effectId: string; category: string }[] };
+		const iris = await call<Listed>('list_transition_types', { category: 'Iris', query: 'round' });
+		expect(iris.types.map((t) => t.effectId)).toEqual(['jasper.iris-round']);
+		expect(iris.types[0]!.category).toBe('Iris');
+	});
+
 	it('adds a GPU transition by label with params and updates its params', async () => {
 		const { call } = await connect();
 		await call('add_transition', {

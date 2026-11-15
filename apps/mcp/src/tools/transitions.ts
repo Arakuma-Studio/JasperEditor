@@ -69,7 +69,7 @@ function transitionTypeSummary(s: TransitionSpec) {
 		type: shortType(s.id),
 		label: s.label,
 		medium: s.appliesTo,
-		bin: s.subBin ? `${s.bin}/${s.subBin}` : s.bin,
+		category: s.subBin ? `${s.bin}/${s.subBin}` : s.bin,
 		gpu: !!s.gpu,
 		export: s.gpu ? 'remotion' : 'native',
 		...(s.expensive ? { expensive: true } : {}),
@@ -355,24 +355,23 @@ export function registerTransitionTools(ctx: ToolContext): void {
 		{
 			title: 'List transition types',
 			description:
-				'The transition catalogue: every type with its effect id, short type name, label, medium (video/audio), Effects-panel bin (Premiere bins: 3D Motion, Dissolve, Iris, Page Peel, Slide, Wipe, Zoom; "Sapphire Transitions/<sub-bin>"; Crossfade), gpu (a shader transition, exported through Remotion) or native, expensive (heavy in the preview), description and params (name, type, default, range, options, animatable). Filter by medium, bin or a search text.',
+				'The transition catalogue: every type with its effect id, short type name, label, medium (video/audio), category = Effects-panel bin (Premiere bins: 3D Motion, Dissolve, Iris, Page Peel, Slide, Wipe, Zoom; "Sapphire Transitions/<sub-bin>"; Crossfade), gpu (a shader transition, exported through Remotion) or native, expensive (heavy in the preview), description and params (name, type, default, range, options, animatable). Filter by medium, category or query.',
 			input: {
 				medium: z.enum(['video', 'audio']).optional().describe('Only video or audio transitions'),
-				bin: z
-					.string()
-					.optional()
-					.describe('Only this bin (prefix match, e.g. "Iris" or "Sapphire Transitions")'),
-				search: z.string().optional().describe('Text in the label, id, description or keywords'),
+				category: z.string().max(64).optional().describe('Category prefix, e.g. "Iris"'),
+				query: z.string().max(200).optional().describe('Words to look for, e.g. "wipe"'),
 			},
 			annotations: READ_ONLY,
 		},
-		async ({ medium, bin, search }) => {
-			const q = search?.trim().toLowerCase();
+		async ({ medium, category, query }) => {
+			const words = (query ?? '').toLowerCase().split(/\s+/).filter(Boolean);
 			const types = TRANSITION_SPECS.filter(
 				(s) =>
 					(!medium || s.appliesTo === medium) &&
-					(!bin || `${s.bin}/${s.subBin ?? ''}`.toLowerCase().startsWith(bin.toLowerCase())) &&
-					(!q || [s.id, s.label, s.description, ...(s.keywords ?? [])].join(' ').toLowerCase().includes(q)),
+					(!category || `${s.bin}/${s.subBin ?? ''}`.toLowerCase().startsWith(category.toLowerCase())) &&
+					words.every((w) =>
+						[s.id, s.label, s.description, ...(s.keywords ?? [])].join(' ').toLowerCase().includes(w),
+					),
 			).map(transitionTypeSummary);
 			return jsonResult({ count: types.length, types });
 		},
