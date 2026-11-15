@@ -297,3 +297,82 @@ describe('several ranges in one file', () => {
 		expect(r.json()).toMatchObject({ code: 'VALIDATION_FAILED', message: expect.stringMatching(/captions/) });
 	});
 });
+
+describe('clicks at the cuts of a joined export', () => {
+	it('a join inside continuous sound is not a click, even on a transient there; a hard audio cut with a step is', async () => {
+		// reported: 3 touching ranges, a picture cut at a join over one unbroken voice clip, flagged as a 19 dB click
+		// (the plosive of a word, the same step as the raw recording's)
+		const make = (name: string, input: string[]) => {
+			const out = join(work, name);
+			const r = spawnSync(TEST_FFMPEG, ['-hide_banner', '-loglevel', 'error', '-y', ...input, out]);
+			if (r.status !== 0) throw new Error(r.stderr.toString());
+			return out;
+		};
+		const pic = (src: string, name: string) =>
+			make(name, ['-f', 'lavfi', '-i', `${src}=s=320x180:r=30:d=3`, '-c:v', 'mpeg4', '-q:v', '2']);
+		// a quiet 110 Hz tone with a 0.4 step at 1 s and back at 1.5 s: transients of the source itself
+		const voice = make('voice.wav', [
+			...['-f', 'lavfi', '-i', 'aevalsrc=0.05*sin(2*PI*110*t)+0.4*between(t\\,1\\,1.5):s=48000:d=3'],
+			...['-c:a', 'pcm_s16le'],
+		]);
+		const v = new DocBuilder('hd-1080p-30', 901);
+		v.tx([{ type: 'sequence.updateSettings', settings: { width: 320, height: 180 } }]);
+		const [p, q, s] = await Promise.all(
+			[pic('testsrc2', 'p.mov'), pic('testsrc', 'q.mov'), voice].map(async (f) =>
+				v.addMedia(await register(app, f)),
+			),
+		);
+		const place = (media: string, at: number, from: number, to: number, track: Record<string, string>) => ({
+			type: 'clip.place',
+			source: { mediaId: media },
+			at,
+			sourceRange: { in: { seconds: from }, out: { seconds: to } },
+			tracks: track,
+		});
+		v.tx([
+			// picture cuts at frames 30 and 60
+			place(p!, 0, 0, 1, { video: 'V1' }),
+			place(q!, 30, 0, 1, { video: 'V1' }),
+			place(p!, 60, 2, 2.2, { video: 'V1' }),
+			// the sound runs unbroken through frame 30 (its own step at 1 s), then cuts hard at 60 from ≈ 0 to ≈ 0.4
+			place(s!, 0, 0, 2, { audio: 'A1' }),
+			place(s!, 60, 1.2, 1.4, { audio: 'A1' }),
+		]);
+		const r = await app.inject({
+			method: 'POST',
+			url: '/api/exports',
+			headers: JSON_H,
+			payload: {
+				envelope: v.envelope(),
+				sequenceId: v.seqId,
+				settings: {
+					sequenceId: v.seqId,
+					destination: { type: 'download' },
+					// touching ranges: one range, the join at 30 is the picture cut
+					range: {
+						type: 'ranges',
+						ranges: [
+							{ startFrame: 0, endFrame: 30 },
+							{ startFrame: 30, endFrame: 66 },
+						],
+					},
+					container: 'wav',
+					engine: 'auto',
+				},
+			},
+		});
+		expect(r.statusCode, r.body).toBe(202);
+		const job = await coreServices(app).queue.wait((r.json() as EngineJob).id);
+		expect(job.error, JSON.stringify(job.error)).toBeUndefined();
+		const verify = await app.inject({
+			method: 'POST',
+			url: `/api/exports/${job.id}/verify`,
+			headers: JSON_H,
+			payload: {},
+		});
+		expect(verify.statusCode, verify.body).toBe(202);
+		const done = await coreServices(app).queue.wait((verify.json() as EngineJob).id);
+		const clicks = (done.result as ExportVerifyResult).rows.filter((x) => x.id === 'cut-click');
+		expect(clicks.map((x) => [x.status, x.at?.frame])).toEqual([['fail', 60]]);
+	});
+});

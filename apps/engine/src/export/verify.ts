@@ -548,7 +548,8 @@ function cutRows(input: JudgeInput, full: FullMeasurements): VerifyRow[] {
 				}
 			}
 		}
-		const c = full.clicks?.[i];
+		// a cut the sound plays straight through is no audio edit: a step there is the source's own (a plosive)
+		const c = cut.soundThrough ? null : full.clicks?.[i];
 		if (c)
 			click.push({
 				id: 'cut-click',
@@ -598,13 +599,23 @@ function cutRows(input: JudgeInput, full: FullMeasurements): VerifyRow[] {
 				: [passRow('cut-flash', 'single-frame flash')]),
 		);
 	}
+	const through = ctx.cuts.filter((c) => c.soundThrough).length;
 	if (what === 'gif') {
 		// a GIF has no sound rows
 	} else if (full.clicks === null) rows.push(unverified('cut-click', 'The file has no audio to check.'));
-	else
+	else if (click.length) rows.push(...capped(click, 'cut-click', 'judgement', 'clicks'));
+	else {
+		const pass = passRow('cut-click', 'click');
+		const k = n - through;
 		rows.push(
-			...(click.length ? capped(click, 'cut-click', 'judgement', 'clicks') : [passRow('cut-click', 'click')]),
+			through
+				? {
+						...pass,
+						message: `${k} audio edit${k === 1 ? '' : 's'} at cuts checked: no click (the sound plays straight through the other ${through} cut${through === 1 ? '' : 's'}).${note}`,
+					}
+				: pass,
 		);
+	}
 	return rows;
 }
 

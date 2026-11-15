@@ -537,16 +537,44 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 					1,
 					Math.floor(sheetBudget / Math.min(SHEET_IN_FLIGHT, Math.max(1, sheets.length))),
 				);
-				const progress = (p: { done: number; total: number; fraction: number }) =>
-					ctx.stage(
-						`Baking graphics ${p.done}/${p.total}${p.done < p.total ? ` · ${Math.floor(p.fraction * 100)} %` : ''}`,
-					);
+				// One count over both pools (the sheets, then the rest): renders done, their weighted progress (child bakes
+				// report their frames) and the layers rendering now, as the export's progress.
+				const sheetWeight = (sheet: (typeof items)[]) =>
+					sheet.length * SHEET_FRAME_COST + RENDER_FIXED_COST_FRAMES;
+				const singleWeight = (group: typeof items) => group[0]!.plan.frames + RENDER_FIXED_COST_FRAMES;
+				const sheetsWeight = sheets.reduce((n, sheet) => n + sheetWeight(sheet), 0);
+				const allWeight = sheetsWeight + singles.reduce((n, group) => n + singleWeight(group), 0) || 1;
+				const total = sheets.length + singles.length;
+				const rendering: string[] = [];
+				const named =
+					<T>(label: string, run: (g: PageGrant) => Promise<T>) =>
+					async (g: PageGrant): Promise<T> => {
+						rendering.push(label);
+						try {
+							return await run(g);
+						} finally {
+							rendering.splice(rendering.indexOf(label), 1);
+						}
+					};
+				const progress = (pool: 'sheets' | 'singles') => (p: { done: number; fraction: number }) => {
+					const done = pool === 'sheets' ? p.done : sheets.length + p.done;
+					const fraction =
+						pool === 'sheets'
+							? (p.fraction * sheetsWeight) / allWeight
+							: (sheetsWeight + p.fraction * (allWeight - sheetsWeight)) / allWeight;
+					const now = rendering.length
+						? ` (${rendering[0]}${rendering.length > 1 ? ` +${rendering.length - 1}` : ''})`
+						: '';
+					const text = `Baking graphics ${done}/${total}${now}${done < total ? ` · ${Math.floor(fraction * 100)} %` : ''}`;
+					if (ctx.progress) ctx.progress(fraction, text);
+					else ctx.stage(text);
+				};
 				await runPagePool(
 					sheets.map((sheet) => ({
 						// A sheet spreads its frames over every page it is granted.
 						want: maxInFlight === 1 ? sheetBudget : perSheet,
-						weight: sheet.length * SHEET_FRAME_COST + RENDER_FIXED_COST_FRAMES,
-						run: async (g: PageGrant) => {
+						weight: sheetWeight(sheet),
+						run: named(`${sheet.length} still${sheet.length === 1 ? '' : 's'}`, async (g: PageGrant) => {
 							const bakes = await withRetries(sheet, g, (meta) =>
 								svc.ensureSheet(
 									sheet.map((group) => group[0]!.plan),
@@ -563,13 +591,13 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 									);
 								finish(group, bake, null);
 							}
-						},
+						}),
 					})),
 					{
 						budget: sheetBudget,
 						maxInFlight: Math.min(maxInFlight, SHEET_IN_FLIGHT),
 						signal: ctx.signal,
-						onProgress: progress,
+						onProgress: progress('sheets'),
 					},
 				);
 				await runPagePool(
@@ -578,18 +606,18 @@ export function layerBakeExtension(svc: LayerBakeService): NativeExtension {
 							const { plan, grade } = group[0]!;
 							return {
 								want: !isMaster(group) ? 1 : maxInFlight === 1 ? budget : shares.get(group)!,
-								weight: plan.frames + RENDER_FIXED_COST_FRAMES,
-								run: async (g: PageGrant) => {
+								weight: singleWeight(group),
+								run: named(plan.clipName, async (g: PageGrant) => {
 									const [bake, graded] = await withRetries([group], g, async (meta) => {
 										const bake = await svc.ensureBake(plan, meta);
 										return [bake, grade ? await svc.ensureGraded(plan, grade, meta) : null] as const;
 									});
 									finish(group, bake, graded);
-								},
+								}),
 							};
 						}),
 					],
-					{ budget, maxInFlight, signal: ctx.signal, onProgress: progress },
+					{ budget, maxInFlight, signal: ctx.signal, onProgress: progress('singles') },
 				);
 			};
 			// spec 13 AS-076 — pipelined stills: a native export does not wait for the still bakes its kernel streams draw

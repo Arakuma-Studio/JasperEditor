@@ -247,3 +247,66 @@ describe('bakes beside the composite (native segments)', { timeout: 600_000 }, (
 		expect(await core.exports.outputFile(id)).toBeNull();
 	});
 });
+
+describe('bake progress on the export job', { timeout: 600_000 }, () => {
+	it('the job moves its bar and names the bake as the bakes report, and the composite goes on from there', async () => {
+		// reported: `get_job` showed no progress for the 3.5 min bake phase of an export (a stall looked the same)
+		const { d, baked } = await doc();
+		const core = coreServices(app);
+		const deferred = () => {
+			let resolve!: () => void;
+			const promise = new Promise<void>((r) => {
+				resolve = r;
+			});
+			return { promise, resolve };
+		};
+		// two fake child bakes: each reports, then waits for the test to have read the job
+		const reported = [deferred(), deferred()];
+		const read = [deferred(), deferred()];
+		const ext: NativeExtension = {
+			id: 'test-reporting-bake',
+			claimsLayer: (c) => c.clipId === baked,
+			async prepare(planned, ctx) {
+				const clip = planned.snapshot.videoTracks.flatMap((t) => t.clips).find((c) => c.clipId === baked)!;
+				for (const [i, text] of [
+					'Baking graphics 0/2 (Solid) · 40 %',
+					'Baking graphics 1/2 (Solid) · 80 %',
+				].entries()) {
+					if (ctx.progress) ctx.progress((i + 1) * 0.4, text);
+					else ctx.stage(text);
+					reported[i]!.resolve();
+					await read[i]!.promise;
+				}
+				return new Map([
+					[baked, { path: fixture('still.png'), space: 'sequence', startFrame: clip.start, still: true }],
+				]);
+			},
+			override: (c, prepared) => (prepared as Map<string, LayerOverride>).get(c.clipId) ?? null,
+		};
+		onTestFinished(core.exports.registerNativeExtension(ext));
+		let atComposite: number | null = null;
+		let id = '';
+		watchSegments(() => {
+			atComposite = core.queue.get(id)!.progress;
+		});
+		id = await start(d);
+		const seen: { progress: number | null; stage?: string }[] = [];
+		for (const i of [0, 1]) {
+			await reported[i]!.promise;
+			const job = core.queue.get(id)!;
+			seen.push({ progress: job.progress, stage: job.stage });
+			read[i]!.resolve();
+		}
+		const done = await core.queue.wait(id);
+		expect(done.error, JSON.stringify(done.error)).toBeUndefined();
+		expect(seen.map((s) => s.stage)).toEqual([
+			'Baking graphics 0/2 (Solid) · 40 %',
+			'Baking graphics 1/2 (Solid) · 80 %',
+		]);
+		const [first, second] = seen.map((s) => s.progress ?? 0);
+		expect(first).toBeGreaterThan(0);
+		expect(second).toBeGreaterThan(first!);
+		// the bar does not go back when the composite starts
+		expect(atComposite).toBeGreaterThanOrEqual(second!);
+	});
+});

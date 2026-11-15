@@ -172,6 +172,11 @@ export type NativePrepareContext = {
 	signal: AbortSignal;
 	/** Job progress text (the bar stays where the export is; stages are shown in the Jobs panel). */
 	stage(text: string): void;
+	/**
+	 * The preparation's own progress, 0…1, with its stage text: the export moves its bar over the preparation's share
+	 * with it. Absent: `stage` alone.
+	 */
+	progress?(fraction: number, text: string): void;
 	/** Per-job scratch directory (removed when the job ends). */
 	scratchDir(): Promise<string>;
 	log(text: string): void;
