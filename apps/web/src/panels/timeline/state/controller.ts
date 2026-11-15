@@ -796,6 +796,12 @@ export class TimelineController {
 			d.gesture = this.session.beginGesture(label);
 		}
 		let r = d.gesture.update(this.edgeCommands(d, base, delta));
+		// a trim with no source left that way is refused (E_OUT_OF_MEDIA): the drag holds the edge at its limit
+		const atSourceEnd = !r.ok && d.kind !== 'stretch' && r.errors.some((e) => e.code === 'E_OUT_OF_MEDIA');
+		if (atSourceEnd) {
+			delta = 0;
+			r = d.gesture.update(this.edgeCommands(d, base, 0));
+		}
 		if (r.ok && d.kind !== 'stretch' && r.results.length > 1) {
 			// TL-536: lockstep — the most restrictive clamp wins for every trimmed clip.
 			const actual = r.results.map((x) => (x as { deltaFrames?: number })?.deltaFrames ?? delta);
@@ -810,7 +816,7 @@ export class TimelineController {
 		let actualDelta = delta;
 		if (r.ok && d.kind !== 'stretch')
 			actualDelta = (r.results[0] as { deltaFrames?: number })?.deltaFrames ?? delta;
-		const clamped = r.ok && r.warnings.some((w) => w.code === 'W_DURATION_CLAMPED');
+		const clamped = atSourceEnd || (r.ok && r.warnings.some((w) => w.code === 'W_DURATION_CLAMPED'));
 		const now = drawn?.clips[d.clip.id];
 		const lines = [signed(actualDelta, rate, base.settings.dropFrame)];
 		if (now)

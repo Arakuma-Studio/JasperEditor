@@ -59,7 +59,13 @@ import {
 	trackCandidates,
 	tracksOfKind,
 } from '../placement.ts';
-import { rippleDeleteSpans, rippleTrimGroup, tracksHolding, trimLimits } from '../ripple.ts';
+import {
+	refuseExtendPastContent,
+	rippleDeleteSpans,
+	rippleTrimGroup,
+	tracksHolding,
+	trimLimits,
+} from '../ripple.ts';
 import type { ClipPatch } from '../schemas/clip.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { holesBefore, warnNewHoles } from '../uncovered-guard.ts';
@@ -178,6 +184,9 @@ export function placeSource(
 	const plans: Plan[] = [];
 	let frames: number;
 	let sourceIn: number;
+	// Frames of a sound-only placement that reaches the media's end: rounded up to the frame holding that end, so the
+	// whole sound plays (its last partial frame ends in silence: ripple.ts `roundsUpToMediaEnd`).
+	let soundFrames: number | null = null;
 
 	if (mediaId) {
 		const asset = doc.media[mediaId] as MediaAsset | undefined;
@@ -208,6 +217,7 @@ export function placeSource(
 			if (outF <= inF) h.fail('E_INVALID_PARAM', 'Source out must be after source in');
 			if (inF < 0 || outF > dur + F) h.fail('E_OUT_OF_MEDIA', 'Source range is outside the media');
 			frames = Math.max(1, Math.floor(Math.min(outF, dur) / F - inF / F + FRAME_EPS));
+			if (outF >= dur) soundFrames = Math.max(1, Math.ceil(dur / F - inF / F - FRAME_EPS));
 		} else if (o.sourceRange) {
 			frames = Math.max(1, Math.round((o.sourceRange.out - o.sourceRange.in) / F));
 		} else frames = stillFrames;
@@ -354,6 +364,8 @@ export function placeSource(
 			});
 		}
 		if (plans.length === 0) h.fail('E_INVALID_PARAM', 'Nothing to place from this source');
+		// linked picture and sound keep the picture's whole frames (the same edges)
+		if (soundFrames !== null && plans.every((p) => p.kind === 'audio')) frames = soundFrames;
 	} else if (syntheticId) {
 		const syn = doc.synthetics[syntheticId] as SyntheticSource | undefined;
 		if (!syn) h.fail('E_NOT_FOUND', `Synthetic source not found: ${syntheticId}`);
@@ -671,6 +683,14 @@ function trimHandler(doc: DDoc, cmd0: CommandOf<'clip.trim'>, h: HandlerContext)
 	const lo = Math.max(...lim.map((l) => l.min));
 	const hi = Math.min(...lim.map((l) => l.max));
 	const clamped = lo > hi ? 0 : Math.min(hi, Math.max(lo, d));
+	if (clamped === 0)
+		refuseExtendPastContent(
+			doc,
+			seq,
+			h,
+			members.map((m) => ({ clip: m, edge: cmd.edge })),
+			d,
+		);
 	if (clamped !== d) {
 		h.warn('W_DURATION_CLAMPED', `Trim clamped from ${d} to ${clamped} frames`);
 		d = clamped;

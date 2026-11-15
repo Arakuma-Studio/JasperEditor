@@ -282,8 +282,8 @@ describe('subclips', () => {
 		const e = edit(h, { source: { projectItemId: sub }, playhead: 0 });
 		const [v] = clipsOf(h, e.clipIds) as [Clip];
 		expect([v.duration, v.sourceIn, v.subclipId]).toEqual([60, 60 * F, sub]);
-		const t = h.ok([{ type: 'clip.trim', clipId: v.id, edge: 'out', deltaFrames: 30 }]);
-		expect((t.results[0] as { deltaFrames: number }).deltaFrames).toBe(0);
+		const t = h.tx([{ type: 'clip.trim', clipId: v.id, edge: 'out', deltaFrames: 30 }]);
+		expect(t.ok ? null : t.errors[0]!.code).toBe('E_OUT_OF_MEDIA');
 		h.ok([{ type: 'item.updateSubclip', itemId: sub, restrictTrims: false }]);
 		const t2 = h.ok([{ type: 'clip.trim', clipId: v.id, edge: 'out', deltaFrames: 30 }]);
 		expect((t2.results[0] as { deltaFrames: number }).deltaFrames).toBe(30);

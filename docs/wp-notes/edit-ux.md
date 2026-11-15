@@ -44,6 +44,31 @@ refused; a ripple speed change of a linked group with a split edit moved later m
 - `contentWindow` / `trimLimits` / `contentHandles` are shared by trim, roll, slip, slide and speed: media length,
   composition length, nested sequence length, frame holds (edit-structure: unbounded) and subclip limits.
 
+### Sound clips cover their whole media (`ripple.ts` `roundsUpToMediaEnd`, `clip-core.ts` `placeSource`)
+
+Before: clip lengths were whole frames inside the media (floored), so a sound that is not a whole number of frames
+long lost its last partial frame: a 1.128 s MP3 at 60 fps (67.68 frames) placed as 67 frames, and a +1 frame trim
+returned `ok` with `deltaFrames: 0` and only `W_DURATION_CLAMPED` (the last 11 ms could never play; on a sound effect
+that cuts its tail).
+
+- An `audio` clip (not reversed) whose window ends at the media's end may run into the frame that holds that end:
+  its tail handle is rounded **up** (`contentHandles`). `clip.place` of sound only (an audio file, or a video with
+  `video: false`) reaching the media's end places the rounded-up length (68 frames above). The remaining frame plays
+  the media's last samples, then silence: INV-005 already allows under one frame past the end (no schema change, no
+  repair; a project with the 67-frame clip loads unchanged), and the offline mixer behind every export path pads
+  with silence (`audio/decode.ts` `apad`), like the sound library's rounded-up inserts (`sound/insert.ts`).
+- **Choice: pictures keep whole frames.** Video, linked A/V placements (both clips keep the picture's length and
+  edges) and reversed sound are unchanged, so no clip shows a held or black last frame. A linked trim is bounded by
+  its picture; `linked: false` extends the sound alone.
+- `clip.trim` (regular and ripple) that would extend an edge with no source left that way — nothing of the delta
+  applicable — is refused with `E_OUT_OF_MEDIA` ("its source has nothing left after its Out") instead of a silent
+  no-op. Partial clamps still apply with `W_DURATION_CLAMPED`. The timeline's trim drag holds the edge at its limit on
+  that refusal (`controller.ts` `updateEdge`). Sound Check's tail fix (`sound-design/check.ts` `tailFix`) now finds
+  its first option, the trim, reaches the end of such sounds.
+- Limits: `clip.sourceEdit` (Source monitor Insert/Overwrite) and `clip.trimEdits` still floor to whole frames
+  inside the media (a sound edited in that way can be extended by one frame afterwards); `clip.trimEdits`, roll,
+  slip and slide still clamp silently to zero at the media's end.
+
 ### Linked trims and uncovered video (`clip-core.ts` `trimHandler`, `edit-ux.ts` `trimEditsHandler`, `uncovered-guard.ts`)
 
 Before: a linked trim (`clip.trim` / `clip.trimEdits` with `linked` on, the timeline's trim and ripple gestures) took

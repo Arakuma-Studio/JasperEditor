@@ -781,8 +781,8 @@ export async function checkSequence(
 		return c ? c.sourceIn + c.duration * F * (c.speed?.rate || 1) : null;
 	};
 	/**
-	 * The safe fix of a clip that ends inside its sound, in order: lengthen it inside its media (`clip.trim`); register
-	 * its library sound again — a copy made before the tail fix has no trailing silence, the new one does — and swap it
+	 * The safe fix of a clip that ends inside its sound, in order: lengthen it (`clip.trim`: a sound clip may run into
+	 * the frame holding its media's end); register its library sound again — a copy made before the tail fix has no trailing silence, the new one does — and swap it
 	 * in (`swap_sound` to the same sound: aligned frame, track, role, pan and gain kept), dry-run on a copy of the media
 	 * as the engine will write it; else re-plan the clip on its own media (`soundDesign.swap`), which rounds it up to the
 	 * end of the sound, under one frame past its media (silence there). Each only when it really reaches the end.
