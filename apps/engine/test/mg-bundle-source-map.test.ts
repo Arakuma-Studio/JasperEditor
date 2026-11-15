@@ -1,12 +1,13 @@
 // wp-note export-performance §15: imported motion-graphics bundles are served to Remotion without a source-map
 // reference (Remotion would read and parse the map on the main thread for every render), under the key of the bundle
 // as imported, without touching the user's folder; a failed pre-render names its original source line.
-import { cpSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import type { EngineJob } from '@jasper/api';
 import { EMPTY_PROBE, MG_REMOTION_VERSION } from '@jasper/project';
 import { afterAll, describe, expect, it, vi } from 'vitest';
+import { writeStoredZip } from '../src/imports/zip.ts';
 import { hashBundleDir } from '../src/mg-bundles/hash.ts';
 import { mgBundleService } from '../src/routes/mg-bundles.ts';
 import { coreServices } from '../src/tools/services.ts';
@@ -85,6 +86,56 @@ describe('mg bundle source maps', () => {
 		expect(r.json().mediaKey).toBe(`mk_${hash.slice(0, 24)}`);
 		expect(lookups).toEqual([null]);
 		expect(readFileSync(join(folder, 'bundle.js'))).toEqual(before);
+	});
+
+	it('a zip of a stored bundle (its references hidden) imports under the key of the original', async () => {
+		const app = await makeApp();
+		const folder = builtBundle(join(tempAppdir('jasper-mg-zip-'), 'daycard'));
+		const first = await app.inject({
+			method: 'POST',
+			url: '/api/mg-bundles/import',
+			headers: JSON_H,
+			payload: { path: folder },
+		});
+		expect(first.statusCode, first.body).toBe(200);
+		const key: string = first.json().mediaKey;
+		const stored = mgBundleService(app)!.bundleDir(key)!;
+		expect(readFileSync(join(stored, 'bundle.js'), 'latin1')).not.toContain('//# sourceMappingURL');
+		const zip = writeStoredZip(
+			readdirSync(stored).map((name) => ({
+				name: `daycard/${name}`,
+				data: readFileSync(join(stored, name)),
+			})),
+		);
+		const up = (
+			await app.inject({
+				method: 'POST',
+				url: '/api/uploads',
+				headers: JSON_H,
+				payload: {
+					projectId: 'prj_x',
+					fileName: 'daycard.zip',
+					byteSize: zip.length,
+					mimeType: 'application/zip',
+					purpose: 'mg-bundle',
+				},
+			})
+		).json();
+		const put = await app.inject({
+			method: 'PUT',
+			url: `/api/uploads/${up.uploadId}?offset=0`,
+			headers: { ...JSON_H, 'content-type': 'application/octet-stream' },
+			payload: zip,
+		});
+		expect(put.statusCode, put.body).toBe(200);
+		const r = await app.inject({
+			method: 'POST',
+			url: '/api/mg-bundles/import',
+			headers: JSON_H,
+			payload: { uploadId: up.uploadId },
+		});
+		expect(r.statusCode, r.body).toBe(200);
+		expect(r.json().mediaKey).toBe(key);
 	});
 
 	it('serves a bundle stored before without a map reference; a failed pre-render names its source line', async () => {

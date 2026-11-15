@@ -1107,7 +1107,13 @@ the bundle's side-car map. Not symbolicated: posters and the import's `getCompos
 current text). Test: `mg-bundle-source-map.test.ts` — importing a built folder through `POST /api/mg-bundles/import`
 keeps the folder's bytes and the folder's hash as key, and Remotion's lookup on what `getCompositions` is given finds
 no map; a bundle stored with its references is served to the pre-render without them, and the failed pre-render
-names `src/Title.tsx:12` (both fail before the change). `MG_E2E=1` "tests 5 + 6" (the fixture project imported with its own
+names `src/Title.tsx:12` (both fail before the change). The stored copy is what a user zips or copies to import it
+again, so `hashBundleDir` hashes `bundle.js` with the hidden lines (`// sourceMappingURL=`, `//  sourceMappingURL=`)
+turned back into `//# sourceMappingURL=` (same length): the stored copy hashes like the bundle it came from, and a
+bundle without hidden lines hashes exactly as before (existing keys unchanged). Limit: a reference originally
+written `//@` (legacy syntax; webpack writes `//#`) is restored as `//#`, so a re-import of such a stored copy gets a
+new key. Test: a zip of the stored copy uploaded through the web path gets the original key (fails before).
+`MG_E2E=1` "tests 5 + 6" (the fixture project imported with its own
 `remotion bundle`, a master pre-rendered and exported natively, frame-exact) passes on this branch; its stored copy's
 bytes were not inspected.
 

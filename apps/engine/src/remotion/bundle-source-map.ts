@@ -20,6 +20,8 @@ import { atomicWriteFile } from '../tools/fs.ts';
 
 /** Remotion's `extractSourceMapUrl` pattern (the lines its local source-map lookup follows). */
 const REMOTION_MAP_REFERENCE = /\/\/[#@] ?sourceMappingURL=([^\s'"]+)\s*$/gm;
+/** The same lines as `hideSourceMapReferences` leaves them (`#` or `@` turned into a space). */
+const HIDDEN_MAP_REFERENCE = /\/\/ {1,2}sourceMappingURL=([^\s'"]+)\s*$/gm;
 /** Maps larger than this are not loaded for a failure's location (ours is ≈ 18 MB). */
 const MAX_MAP_BYTES = 256 * 1024 * 1024;
 /** Source lines named in a failure. */
@@ -47,6 +49,22 @@ export async function hideSourceMapReferences(dir: string): Promise<number> {
 	}
 	if (changed > 0) await atomicWriteFile(file, bytes);
 	return changed;
+}
+
+/**
+ * `bundle.js` bytes with the lines `hideSourceMapReferences` hid turned back into `//# sourceMappingURL=` (same length),
+ * for the content hash: a stored bundle (references hidden) hashes like the bundle it was imported from, so zipping or
+ * copying it and importing it again gives the same key. Bytes without hidden lines are returned unchanged. A reference
+ * that was written `//@` is restored as `//#` (Remotion's and webpack's bundles write `//#`).
+ */
+export function restoreHiddenSourceMapReferences(bytes: Buffer): Buffer {
+	const text = bytes.toString('latin1');
+	let out: Buffer | null = null;
+	for (const m of text.matchAll(HIDDEN_MAP_REFERENCE)) {
+		out ??= Buffer.from(bytes);
+		out[m.index + 2] = 0x23;
+	}
+	return out ?? bytes;
 }
 
 const MapPayload = z.object({

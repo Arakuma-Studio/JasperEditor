@@ -600,7 +600,8 @@ export class MgBundleService {
 	): Promise<RegisteredMedia> {
 		ctx.progress(0.62, { stage: 'Hashing bundle' });
 		// The key is the hash of the bundle as built or imported, taken before its source-map references are hidden:
-		// the same bundle keeps the key (and the cached masters) it had before that step.
+		// the same bundle keeps the key (and the cached masters) it had before that step. The hash restores hidden
+		// references (hash.ts), so a stored bundle zipped or copied and imported again keeps that key too.
 		const { hash } = await hashBundleDir(built);
 		const finalDir = join(this.bundlesDir, hash);
 		if (existsSync(join(finalDir, 'index.html'))) await rm(built, { recursive: true, force: true });
