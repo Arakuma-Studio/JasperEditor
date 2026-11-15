@@ -53,17 +53,20 @@ export const CanvasOwnerContext = createContext<(() => void) | null>(null);
 export type ScopedHtmlInCanvasProps = ComponentProps<typeof HtmlInCanvas> & {
 	/** What this canvas draws, e.g. "Blend modes of track V2" (error messages and chips). */
 	scope: string;
+	/** The sequence frame being drawn, when the owner knows it (error messages). */
+	frame?: number;
 	children?: ReactNode;
 };
 
 /** Error code of a render that would nest HTML-in-Canvas scopes (the engine maps it to a job error). */
 export const CANVAS_NESTED = 'CANVAS_NESTED';
 
-function nestedScopeMessage(inner: string, outer: string): string {
-	return `${CANVAS_NESTED}: ${inner} cannot be drawn inside ${outer} (the browser cannot nest HTML-in-Canvas scopes)`;
+function nestedScopeMessage(inner: string, outer: string, frame: number | undefined): string {
+	const at = frame === undefined ? '' : ` at sequence frame ${frame}`;
+	return `${CANVAS_NESTED}: ${inner} cannot be drawn inside ${outer}${at} (the browser cannot nest HTML-in-Canvas scopes)`;
 }
 
-export function ScopedHtmlInCanvas({ scope, children, ...props }: ScopedHtmlInCanvasProps) {
+export function ScopedHtmlInCanvas({ scope, frame, children, ...props }: ScopedHtmlInCanvasProps) {
 	const enclosing = useContext(CanvasScopeContext);
 	const owner = useContext(CanvasOwnerContext);
 	const nested = enclosing?.kind === 'scope' ? enclosing.name : null;
@@ -73,7 +76,8 @@ export function ScopedHtmlInCanvas({ scope, children, ...props }: ScopedHtmlInCa
 	}, [enclosing]);
 	if (nested !== null && flatten) return <Flattening flatten={flatten}>{children}</Flattening>;
 	if (nested !== null) {
-		if (getRemotionEnvironment().isRendering) cancelRender(new Error(nestedScopeMessage(scope, nested)));
+		if (getRemotionEnvironment().isRendering)
+			cancelRender(new Error(nestedScopeMessage(scope, nested, frame)));
 		const width = typeof props.width === 'number' ? props.width : undefined;
 		const height = typeof props.height === 'number' ? props.height : undefined;
 		return (

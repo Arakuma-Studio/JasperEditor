@@ -69,7 +69,7 @@ import {
 	useCurrentFrame,
 } from 'remotion';
 import { ScopedHtmlInCanvas } from '../fx/canvas-scope.tsx';
-import { CompositeChip } from '../fx/composite.tsx';
+import { CompositeChip, RecentFrames } from '../fx/composite.tsx';
 import { usePublishFlatChain } from '../fx/flat.tsx';
 import { fxHost } from '../fx/host.ts';
 import type { FxGpuState } from '../fx/status.ts';
@@ -101,6 +101,8 @@ export class Scene3DHub {
 	readonly pictures = new Map<string, HubPicture>();
 	private readonly listeners = new Set<() => void>();
 	private readonly taps = new Map<string, LayerTap>();
+	/** Only the pictures of the latest frames are kept (a long render drew many clips). */
+	private readonly recent = new RecentFrames();
 	private version = 0;
 
 	tap(key: string, frame: number): LayerTap {
@@ -112,6 +114,7 @@ export class Scene3DHub {
 			// Per frame: the layer's tap step (keyed by `side`) re-runs and delivers every frame, even when its picture is static.
 			side: id,
 			deliver: (picture, width, height, meta) => {
+				if (this.recent.note(frame)) this.recent.prune(this.pictures);
 				const prev = this.pictures.get(key);
 				const canvas = prev?.canvas ?? document.createElement('canvas');
 				const w = Math.max(1, Math.round(width));

@@ -910,6 +910,7 @@ export class RemotionService {
 										x264Preset: input.x264Preset ?? 'medium',
 									}),
 						...this.binariesOption(),
+						...browserLogOption(),
 						outputLocation: input.output,
 						...(input.muted ? { muted: true } : {}),
 						concurrency: pages,
@@ -1183,6 +1184,10 @@ function mapRemotionError(e: unknown): JobError {
 	const msg = (e as Error)?.message ?? String(e);
 	// The compositions' colour stage cancels the render with this code when WebGL2 is missing (S06:CG-042).
 	if (/WEBGL_UNAVAILABLE/.test(msg)) return new JobError('WEBGL_UNAVAILABLE', msg.slice(0, 1500), false);
+	const frame = /frame[^\d]{0,12}(\d+)/i.exec(msg)?.[1];
+	const at = { frame: frame ? Number(frame) : undefined };
+	// The render browser's GPU process crashed or ran out of memory mid-render: a new render gets a new one.
+	if (/WEBGL_CONTEXT_LOST/.test(msg)) return new JobError('WEBGL_CONTEXT_LOST', msg.slice(0, 1500), true, at);
 	// Wave 1 (fx framework): a GPU effect whose shader does not compile, or that a layer kind cannot run.
 	// color-mgmt: a scope drawn through HTML-in-Canvas inside another one (the browser cannot nest them).
 	// TL-123: an effect that requires float render targets (FX_NEEDS_FLOAT, TITLE_LOOK_NEEDS_FLOAT…) is refused.
@@ -1190,19 +1195,14 @@ function mapRemotionError(e: unknown): JobError {
 		/\b(FX_SHADER_ERROR|FX_LAYER_UNSUPPORTED|CANVAS_NESTED|[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*_NEEDS_FLOAT)\b/.exec(
 			msg,
 		)?.[1];
-	if (fx) return new JobError(fx, msg.slice(0, 1500), false);
-	const frame = /frame[^\d]{0,12}(\d+)/i.exec(msg)?.[1];
+	if (fx) return new JobError(fx, msg.slice(0, 1500), false, at);
 	if (/delayRender|timeout|timed out/i.test(msg)) {
 		return new JobError(
 			'RENDER_TIMEOUT',
 			`Render timed out${frame ? ` at frame ${frame}` : ''}: ${msg.slice(0, 600)}`,
 			true,
-			{
-				frame: frame ? Number(frame) : undefined,
-			},
+			at,
 		);
 	}
-	return new JobError('RENDER_FAILED', msg.slice(0, 1500), true, {
-		frame: frame ? Number(frame) : undefined,
-	});
+	return new JobError('RENDER_FAILED', msg.slice(0, 1500), true, at);
 }

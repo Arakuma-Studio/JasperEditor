@@ -100,6 +100,19 @@ describe('RemotionService timeout recovery', () => {
 	});
 });
 
+it('reports a GPU context lost mid-render as retryable WEBGL_CONTEXT_LOST at its frame', async () => {
+	renderer.renderMedia.mockRejectedValueOnce(
+		new Error(
+			'WEBGL_CONTEXT_LOST: the render browser lost its GPU context at sequence frame 5843 (its GPU process crashed or ran out of memory); export again',
+		),
+	);
+	await expect(render()).rejects.toMatchObject({
+		code: 'WEBGL_CONTEXT_LOST',
+		retryable: true,
+		detail: { frame: 5843 },
+	});
+});
+
 describe('the Remotion intermediate (AGENTS §4)', () => {
 	it('keeps full chroma for a 4:4:4 output: ProRes 4444 at yuv444p10le, not 422 HQ', async () => {
 		renderer.selectComposition.mockResolvedValue({

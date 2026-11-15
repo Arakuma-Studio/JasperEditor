@@ -82,6 +82,25 @@ until the owner redrew. CANVAS_NESTED remains only where no owner can flatten �
 which no composition of a render snapshot produces. It also needs WebGL2 and HTML-in-Canvas: without them the scopes
 were never canvases (Player fallback with chips, renders refuse as before), so nothing nests.
 
+**Long renders.** A hub (`CompositeHub`, `Scene3DHub`) keeps one canvas per layer key, and a flat stack captures
+every drawn layer. Since every captured layer delivers on every frame it is drawn (its tap is per frame), a hub keeps
+only the pictures of its 8 latest distinct frames (`RecentFrames`; a frame seen again moves to the end, so scrubbing
+back never drops the frame on screen). Before, each render page kept a canvas for every clip it had ever drawn: a
+1080p60 export of 8347 frames with adjustment layers on two tracks (≈ 2600 clips in an earlier copy of the project,
+Remotion path, NVIDIA GPU) failed after 46 minutes at 59.5 %. In the minute it failed the kernel OOM-killed a Chrome process
+with `oom_score_adj` 200 and shmem-rss ≈ 59 GB (`journalctl -k` on that machine; 200 is Chrome's GPU process, so
+inferred to be the render browser's), and the GPU context loss surfaced as CANVAS_NESTED (below). Measured with a
+temporary browser-console probe on a 300-clip flat stack (Remotion export on the shared CPU host): up to 42 pictures
+per page, growing with the clips, before; at most 8 after. `JASPER_REMOTION_BROWSER_LOG=1` now also covers
+`renderMedia` (exports), as its comment always said.
+
+**GPU context lost mid-render.** `VideoTracks` drew flat only while the GPU status was `ok`, so a lost context
+remounted a flat stack nested and its scopes refused at once with CANVAS_NESTED (reproduced by losing the fx host's
+context at frame 150 of the probe's render). A render now keeps drawing flat once it could, and `RenderGpuGuard` (the
+composition's first child, so it runs before the layers) fails it with `WEBGL_CONTEXT_LOST … at sequence frame N`,
+which the engine reports as a retryable job error with `detail.frame`. CANVAS_NESTED from an adjustment layer names
+its clips and the sequence frame.
+
 ### Options evaluated (prototypes in real Chrome)
 
 1. **Nested HTML-in-Canvas with repaint tricks** — prototype `/tmp/compositor-proto/e1.mjs`: the inner canvas never
@@ -184,6 +203,10 @@ fix landed concurrently on `integrate/parity` (with `derive-draft.test.ts`); the
   — a DOM layer's own `FxDomPicture`, `FlatDomCapture`, the Program monitor's `DisplayStage` — draw a `<canvas>` inside
   the captured DOM the same way (assumption from the measurement in §2, not exercised: e.g. a shape layer drawn on a
   canvas with a GPU effect, rendered at another width than the sequence's).
+- Long renders: the track-matte hubs and the transition hubs still keep their latest pictures per matte clip / per
+  GPU transition for the life of a page (not measured; the composite and 3D hubs were the ones holding a canvas per
+  drawn clip). A GPU context lost mid-render fails the render (`WEBGL_CONTEXT_LOST`, retryable) instead of waiting for
+  the browser to restore it. The fixed export itself was not re-run on the GPU machine.
 - Performance: only stacks that could not render before are flat; their cost is a capture per DOM layer and one GPU
   pass per layer per frame (the blend group's cost model). `pnpm perf` is unchanged (§6).
 
