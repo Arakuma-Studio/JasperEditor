@@ -708,6 +708,7 @@ export const VERIFY_CHECK_IDS = [
 	'cut-flash',
 	'cut-click',
 	'uncovered-video',
+	'offline-media',
 	'loudness',
 	'true-peak',
 	'silence',

@@ -311,7 +311,8 @@ function swapClipSource(
  * Replace Footage (S07:PRC-018): `update()` puts the new file into media `mediaId`; then every clip, project-item
  * mark and transcript of the media moves by `shift` flicks of content time (0 = keep content time) and every
  * clip is checked against the new file: clips it does not cover follow `fit` (`skip` is not possible here — a
- * clip cannot stay on the old file — and acts like `refuse`). Returns the clips that changed / were trimmed.
+ * clip cannot stay on the old file — and acts like `refuse`). Returns every clip now on the new file (with the
+ * transcript clips the shift moved) and those trimmed.
  */
 export function replaceMediaFile(
 	doc: DDoc,
@@ -363,7 +364,8 @@ export function replaceMediaFile(
 				});
 			});
 			if (r.kind === 'ok') {
-				if (shift !== 0 || r.trimmed) out.clipIds.push(clip.id);
+				// every clip now showing the new file, retimed or not (and transcript clips the shift moved)
+				if (ref.mediaId === mediaId || shift !== 0 || r.trimmed) out.clipIds.push(clip.id);
 				if (r.trimmed) out.trimmed.push(clip.id);
 			}
 		}

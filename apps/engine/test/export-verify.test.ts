@@ -88,6 +88,7 @@ function context(over: Partial<ExportVerifyContext> = {}): ExportVerifyContext {
 		normalize: { targetLufs: -21, truePeakDb: -1 },
 		cuts: [{ frame: CUT, kind: 'cut', blackBefore: false, blackAfter: false, effect: false }],
 		uncovered: [],
+		offline: [],
 		...over,
 	};
 }
@@ -153,6 +154,28 @@ describe('verify_export on fixture exports with known defects', () => {
 		]);
 		expect(rowsOf(r.rows, 'uncovered-video')[0]!.message).toMatch(
 			/Frames 20–27 \(7 frames.*while audio plays/,
+		);
+		expect(r.verified).toBe(false);
+	});
+
+	it('fails the frames the export recorded as drawn from offline media (the Media Offline card)', async () => {
+		// reported: 277 frames of a source rewritten mid-export showed the Media Offline card and verify_export passed
+		const file = join(dir, 'clean.mp4');
+		const offline = [
+			{ start: 30, end: 60, clipId: 'clp_s34', name: 'S34.mp4', mediaId: 'med_s34', sound: false },
+		];
+		const r = await verifyExportFile({
+			ff,
+			file,
+			context: context({ offline }),
+			target: null,
+			checks: 'fast',
+		});
+		expect(rowsOf(r.rows, 'offline-media')).toMatchObject([
+			{ status: 'fail', kind: 'format', measured: 30, at: { frame: 30, timecode: '00:00:01:00' } },
+		]);
+		expect(rowsOf(r.rows, 'offline-media')[0]!.message).toMatch(
+			/Frames 30–60 .*clip "S34\.mp4".*med_s34.*Media Offline card/,
 		);
 		expect(r.verified).toBe(false);
 	});

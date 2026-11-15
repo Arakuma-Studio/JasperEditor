@@ -52,6 +52,15 @@ tolerances and pinning documented thresholds to code by a test — [`licenses/po
     audio-only files and transparent (alpha) masters. Reported: two 7-frame V1 holes under kept audio exported as the
     subtitle over black and passed `cut-black` (a gap is "intended black" there). The planner also warns
     `UNCOVERED_VIDEO` (frames and ranges) when audio plays over frames with no picture.
+  - `offline-media` (format, fail; in `fast` and `full`): frames the render drew from a clip whose media was offline —
+    the "Media Offline" card in the picture, silence in the sound — recorded at export in `verify.json` `offline`
+    (`{start, end, clipId, name, mediaId, sound, at?}`, ≤ 200, then `offlineMore`; computed from the snapshot the
+    export actually rendered, after any Remotion fallback). One `fail` row per clip with its frames; no row when the
+    record lists none. The plan refuses offline media (`MEDIA_OFFLINE`) and a file that changes during the render fails
+    the job (`MEDIA_CHANGED_DURING_EXPORT`, `apps/engine/src/export/media-guard.ts`), so an export of this build records
+    `[]`; exports of older builds recorded nothing and get no row (the check reads the record, it does not recognise
+    the card in the picture). Reported: a source rewritten mid-export rendered 277 frames as the card, the export
+    succeeded and `verify_export` passed it.
   - `cut-black` (judgement, fail): a run of black frames (the normalised mean luma of every cell of a 4 × 4 grid
     < 16/255: a picture smaller than the frame, on black, is not black — measured: a 640 × 360 shot in a 1080p frame
     has a whole-frame mean of ≈ 0.05, under 16/255) lasting ≥ 100 ms that touches the

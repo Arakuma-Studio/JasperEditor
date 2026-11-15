@@ -1,5 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import {
+	appendFileSync,
+	copyFileSync,
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
@@ -11,7 +13,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ExportResultSchema, RenderPlanSchema } from '@jasper/api';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
 import { frameCodes } from './frame-codes.ts';
 import {
@@ -25,6 +27,7 @@ import {
 	register,
 	type TestApp,
 } from './helpers.ts';
+import { tempAppdir } from './temp.ts';
 
 let app: TestApp;
 beforeAll(async () => {
@@ -122,24 +125,82 @@ async function twoTrackDoc() {
 }
 
 describe('planner (S04:RP-001/008/010)', () => {
-	it('warns when an export refers to offline media', async () => {
+	it('refuses an export of offline media, naming the clips and the file (never the Media Offline card)', async () => {
 		const d = new DocBuilder();
 		const clip = await register(app, fixture('clip-b.mp4'));
 		const offline = d.addMedia({
 			...clip,
 			locators: [{ type: 'engine-store', engineId: 'x', key: 'mk_ffffffffffffffffffffffff' }],
 		});
-		d.tx([{ type: 'clip.place', source: { mediaId: offline }, at: 0 }]);
-		const response = await app.inject({
-			method: 'POST',
-			url: '/api/exports/plan',
-			headers: JSON_H,
-			payload: { envelope: d.envelope(), sequenceId: d.seqId, settings: settings(d.seqId) },
+		const placed = d.tx([{ type: 'clip.place', source: { mediaId: offline }, at: 0, ref: '$v' }]);
+		const video = placed.refs.$v!;
+		for (const engine of ['auto', 'native']) {
+			const response = await app.inject({
+				method: 'POST',
+				url: '/api/exports/plan',
+				headers: JSON_H,
+				payload: { envelope: d.envelope(), sequenceId: d.seqId, settings: settings(d.seqId, { engine }) },
+			});
+			expect(response.statusCode, response.body).toBe(409);
+			const body = response.json() as {
+				code: string;
+				message: string;
+				detail: { blockers: { itemId?: string; reason: string }[]; hint: string };
+			};
+			expect(body.code).toBe('MEDIA_OFFLINE');
+			expect(body.message).toContain(clip.originalName);
+			// the video clip and its linked audio clip, each by id
+			expect(body.detail.blockers.map((b) => b.itemId)).toContain(video);
+			expect(body.detail.blockers).toHaveLength(2);
+			expect(body.detail.hint).toMatch(/Relink/);
+		}
+	});
+});
+
+describe('a source file that changes while the export renders (AGENTS §0, §4)', () => {
+	it('fails the job by name (media, clip, frames), retryable, instead of finishing the file', async () => {
+		// reported: a source rewritten by another process during an export was rendered as the Media Offline card and
+		// the job succeeded. The file changes once the render wrote the picture, at its frame-count check (ffmpeg seam, no
+		// timing): every frame is in the file, yet the job must not finish it.
+		const src = join(tempAppdir('jasper-changing-'), 'S34.mp4');
+		copyFileSync(fixture('clip-b.mp4'), src);
+		// its own content (the registry keys files by content: an identical copy would resolve to the fixture's path)
+		appendFileSync(src, 'S34');
+		const media = await register(app, src);
+		const d = new DocBuilder();
+		const id = d.addMedia(media);
+		const placed = d.tx([{ type: 'clip.place', source: { mediaId: id }, at: 0, ref: '$v' }]);
+		const clipId = placed.refs.$v!;
+		const ff = coreServices(app).ffmpeg;
+		const count = ff.countVideoFrames.bind(ff);
+		let rewritten = false;
+		const spy = vi.spyOn(ff, 'countVideoFrames').mockImplementation(async (file, opts) => {
+			const n = await count(file, opts);
+			if (!rewritten) {
+				rewritten = true;
+				appendFileSync(src, Buffer.alloc(4096));
+			}
+			return n;
 		});
-		expect(response.statusCode).toBe(200);
-		expect(RenderPlanSchema.parse(response.json()).warnings.map((warning) => warning.code)).toContain(
-			'OFFLINE_MEDIA',
-		);
+		try {
+			const start = await app.inject({
+				method: 'POST',
+				url: '/api/exports',
+				headers: JSON_H,
+				payload: { envelope: d.envelope(), sequenceId: d.seqId, settings: settings(d.seqId) },
+			});
+			expect(start.statusCode, start.body).toBe(202);
+			const done = await coreServices(app).queue.wait(start.json().id);
+			expect(rewritten).toBe(true);
+			expect(done.state).toBe('failed');
+			expect(done.error).toMatchObject({ code: 'MEDIA_CHANGED_DURING_EXPORT', retryable: true });
+			// the file (with its path on a local engine), the clip by id with its frames, and the step that fixes it
+			expect(done.error!.message).toContain(src);
+			expect(done.error!.message).toContain(`${clipId}, frames 0–`);
+			expect(done.error!.message).toMatch(/relink it \(Replace Footage/);
+		} finally {
+			spy.mockRestore();
+		}
 	});
 });
 

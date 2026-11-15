@@ -985,6 +985,43 @@ function uncoveredRows(ctx: ExportVerifyContext | null): VerifyRow[] {
 	return rows;
 }
 
+/**
+ * `offline-media` (S03:RND-032): frames where the render drew a clip whose media was offline — the "Media Offline" card
+ * in the picture, silence in the sound (recorded at export, verify.json `offline`). A `fail` per clip: the file holds
+ * a placeholder instead of the footage. No row when none is recorded (the plan refuses offline media, so an export of
+ * this build records none; an older build did not record them).
+ */
+function offlineRows(ctx: ExportVerifyContext | null): VerifyRow[] {
+	if (!ctx?.offline) return [];
+	const fps = fpsOf(ctx.fps);
+	const listed: VerifyRow[] = ctx.offline.map((r) => {
+		const n = r.end - r.start;
+		const at = atOf(ctx, fps, fileOffsetOf(ctx, r) / fps);
+		return {
+			id: 'offline-media',
+			kind: 'format',
+			status: 'fail',
+			measured: n,
+			expected: 0,
+			tolerance: null,
+			at,
+			message: `Frames ${r.start}–${r.end} (${n} frame${n === 1 ? '' : 's'}, from ${at.timecode}): clip "${r.name}" was rendered with its media ${r.mediaId} offline — ${r.sound ? 'silence in the sound' : 'the Media Offline card in the picture'} instead of the footage. Relink the media, then export again.`,
+		};
+	});
+	const rows = capped(listed, 'offline-media', 'format', 'offline clips');
+	if (ctx.offlineMore)
+		rows.push({
+			id: 'offline-media',
+			kind: 'format',
+			status: 'fail',
+			measured: ctx.offlineMore,
+			expected: 0,
+			tolerance: null,
+			message: `${ctx.offlineMore} more clips rendered with offline media, not listed.`,
+		});
+	return rows;
+}
+
 /** The rows of a verification (see the file comment), in check order. */
 export function judgeExport(input: JudgeInput): VerifyRow[] {
 	const rows: VerifyRow[] = [];
@@ -994,6 +1031,7 @@ export function judgeExport(input: JudgeInput): VerifyRow[] {
 	rows.push(streamsRow(input), durationRow(input));
 	if (what === 'video') rows.push(skewRow(input));
 	if (what !== 'audio') rows.push(...uncoveredRows(input.context));
+	rows.push(...offlineRows(input.context));
 	if (input.full) {
 		rows.push(...cutRows(input, input.full));
 		if (what !== 'gif') {

@@ -880,6 +880,17 @@ per area are in [wp-notes/agent-footage.md](wp-notes/agent-footage.md). Limits t
   an export of more inputs or by a worker (jasper-proc, roto, speech, CLAP); the shipped LGPL 7.1 build refuses it.
 - Hybrid and Remotion GIF exports were checked by hand (SSIM 0.986 / 0.954 against Program); the automated GIF tests
   cover the native path.
+- **Offline media refuses the export; a source that changes during it fails the job.** A clip (video, still, audio,
+  matte or inside a nest) whose media is offline refuses every export path, still and preview segment at plan time
+  (`MEDIA_OFFLINE`, a blocker per clip naming the file; S03:RND-032's "unless the user opts to render the placeholder"
+  has no opt-in). A planned media file that is changed, replaced or removed while the export renders (size / mtime
+  against the plan's registry record) fails the job `MEDIA_CHANGED_DURING_EXPORT` (retryable; the message names the file,
+  the clips by id with their frames, and the fix: relink with Replace Footage, then export again), also when the change
+  made the render itself fail or fall back to Remotion. Limits: the check runs when the render ends or fails, not between
+  segments, so a long export runs to its end before it fails; stills (one frame) are not checked after rendering; a
+  file rewritten with the same size and mtime (`rsync -t` of other content) is not detected. `verify_export` fails the
+  frames an export recorded as drawn from offline media (`offline-media`, verify.json `offline`); older exports recorded
+  none, and the card is not recognised in the picture.
 
 ### Title Looks (spec 19): limits
 

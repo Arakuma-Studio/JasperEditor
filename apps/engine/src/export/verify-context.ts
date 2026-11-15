@@ -22,6 +22,8 @@ export const VERIFY_CONTEXT_FILE = 'verify.json';
 export const MAX_VERIFY_CUTS = 5000;
 /** Most uncovered (no-picture) ranges recorded per export. */
 export const MAX_VERIFY_UNCOVERED = 500;
+/** Most offline-media spans recorded per export. */
+export const MAX_VERIFY_OFFLINE = 200;
 /** Least frame coverage of a picture layer the verification cut list follows (the cut map's minimum). */
 export const VERIFY_CUT_COVERAGE = 0.01;
 /** Frames on each side of a cut searched for an effect (transition, graphic or adjustment layer) over it. */
@@ -119,6 +121,28 @@ export const ExportVerifyContextSchema = z.object({
 		.optional(),
 	/** More uncovered ranges than recorded. */
 	uncoveredMore: z.number().int().min(1).optional(),
+	/**
+	 * S03:RND-032: sequence frames `[start, end)` where the render drew a clip whose media was offline (the "Media
+	 * Offline" card; `sound`: an audio clip, silent). The plan refuses offline media, so an export of this build
+	 * records `[]`; absent = not recorded (an older build).
+	 */
+	offline: z
+		.array(
+			z.object({
+				start: z.number().int().min(0),
+				end: z.number().int().min(1),
+				clipId: z.string().max(200),
+				name: z.string().max(200),
+				mediaId: z.string().max(200),
+				sound: z.boolean(),
+				/** As a cut's `at`. */
+				at: z.number().int().min(0).optional(),
+			}),
+		)
+		.max(MAX_VERIFY_OFFLINE)
+		.optional(),
+	/** More offline spans than recorded. */
+	offlineMore: z.number().int().min(1).optional(),
 });
 export type ExportVerifyContext = z.infer<typeof ExportVerifyContextSchema>;
 
@@ -308,7 +332,30 @@ export type VerifyContextSource = {
 	audioEncoder: string | null;
 	/** export/ranges.ts: the ranges a multi-range export joined, in file order (`range` is their span). */
 	pieces?: readonly { start: number; end: number }[];
+	/** The clips the render drew with offline media (`media-guard.ts` `offlineUsesOf`); absent = not known. */
+	offline?: readonly OfflineSpan[];
 };
+
+export type OfflineSpan = NonNullable<ExportVerifyContext['offline']>[number];
+
+/** The offline spans of the parts the file holds (no picture in an audio file, no sound in a picture-only one), capped. */
+function offlineOf(s: VerifyContextSource): Pick<ExportVerifyContext, 'offline' | 'offlineMore'> {
+	if (!s.offline) return {};
+	const picture = s.deliverable?.kind !== 'audio';
+	const sound = s.deliverable?.kind !== 'gif' && !s.output.videoOnly && !s.output.alpha;
+	const kept = s.offline
+		.filter((u) => (u.sound ? sound : picture))
+		.map((u) => ({
+			...u,
+			clipId: u.clipId.slice(0, 200),
+			name: u.name.slice(0, 200),
+			mediaId: u.mediaId.slice(0, 200),
+		}));
+	return {
+		offline: kept.slice(0, MAX_VERIFY_OFFLINE),
+		...(kept.length > MAX_VERIFY_OFFLINE ? { offlineMore: kept.length - MAX_VERIFY_OFFLINE } : {}),
+	};
+}
 
 /**
  * The cuts and uncovered frames of a multi-range export: each range's own, placed where the range starts in the file
@@ -398,6 +445,7 @@ export function buildVerifyContext(s: VerifyContextSource): ExportVerifyContext 
 		dropFrame: seq?.settings.dropFrame === true,
 		startTimecodeFrames: Math.max(0, Math.trunc(seq?.settings.startTimecodeFrames ?? 0)),
 		...marks,
+		...offlineOf(s),
 	};
 	const d = s.deliverable;
 	if (d?.kind === 'gif')
