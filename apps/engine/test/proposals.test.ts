@@ -27,18 +27,18 @@ import {
 import { afterAll, describe, expect, it } from 'vitest';
 import type WebSocket from 'ws';
 import type { Broadcaster } from '../src/events/broadcaster.ts';
-import { closeApps, makeApp } from './helpers.ts';
+import { closeApps, editorCookie, makeApp, TEST_HOST } from './helpers.ts';
 
 afterAll(closeApps);
 
 /** Each test starts an engine app (cold the first time): the timeout follows the shared host's load. */
 const TIMEOUT = 20_000 * Math.max(1, Math.ceil(loadavg()[0]! / Math.max(1, cpus().length)));
 
-const HOST = { host: '127.0.0.1:47900' };
+const HOST = { host: TEST_HOST };
 const TOKEN = 'tok_proposals_0123456789abcdef';
 const KEY = 'key_proposals_0123456789abcdef';
 const AGENT_H = { ...HOST, authorization: `Bearer ${TOKEN}`, [AGENT_NAME_HEADER]: 'sound-agent' };
-const EDITOR_H = { ...HOST, cookie: `jasper_session_47900=${TOKEN}; jasper_editor_47900=${KEY}` };
+const EDITOR_H = { ...HOST, cookie: editorCookie(TOKEN, KEY) };
 const json = (h: Record<string, string>) => ({ ...h, 'content-type': 'application/json' });
 
 type App = Awaited<ReturnType<typeof makeApp>>;

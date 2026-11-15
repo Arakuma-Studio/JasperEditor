@@ -32,7 +32,7 @@ import { loadCatalog } from '../src/processing/models.ts';
 import { SpeechModelStore } from '../src/speech/models.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { transcriptFixAcceptExtension } from '../src/transcript-fix/run.ts';
-import { closeApps, JSON_H, makeApp, ROOT, register, type TestApp } from './helpers.ts';
+import { closeApps, JSON_H, makeApp, ROOT, register, TEST_HOST, type TestApp } from './helpers.ts';
 import { corrupt, scriptOf, transcriptFixDocument, type Word } from './transcript-fix-fixture.ts';
 
 const CACHE = process.env.JASPER_SPEECH_MODELS_DIR ?? join(ROOT, 'target', 'speech-models');
@@ -42,7 +42,7 @@ const enabled = process.env.SPEECH_E2E === '1' || (await store.installed(store.e
 const MODELS = [MODEL];
 
 const FIXTURE = join(ROOT, 'fixtures', 'speech', 'lj-composite.flac');
-const H = { host: '127.0.0.1:47900' };
+const H = { host: TEST_HOST };
 const F = FLICKS_PER_SECOND;
 
 let app: TestApp;

@@ -23,7 +23,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type WebSocket from 'ws';
 import { SpeechGlossary } from '../src/speech/glossary.ts';
 import * as fsTools from '../src/tools/fs.ts';
-import { closeApps, H, JSON_H, makeApp, tempAppdir } from './helpers.ts';
+import { closeApps, editorCookie, H, JSON_H, makeApp, tempAppdir } from './helpers.ts';
 
 vi.mock('../src/tools/fs.ts', async (importOriginal) => {
 	const m = await importOriginal<typeof import('../src/tools/fs.ts')>();
@@ -324,7 +324,7 @@ describe('glossary and agents (approval gate, security review AGT-3)', { timeout
 	const TOKEN = 'tok_glossary_0123456789abcdef';
 	const KEY = 'key_glossary_0123456789abcdef';
 	const AGENT = { ...H, authorization: `Bearer ${TOKEN}`, [AGENT_NAME_HEADER]: 'glossary-agent' };
-	const EDITOR = { ...H, cookie: `jasper_session_47900=${TOKEN}; jasper_editor_47900=${KEY}` };
+	const EDITOR = { ...H, cookie: editorCookie(TOKEN, KEY) };
 	const json = (h: Record<string, string>) => ({ ...h, 'content-type': 'application/json' });
 
 	async function editorWindow(app: Awaited<ReturnType<typeof makeApp>>) {

@@ -33,13 +33,13 @@ import { JobError } from '../src/jobs/types.ts';
 import type { SpanTranscriptionRequest, SpanTranscriptionResult } from '../src/speech/kept-spans.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { transcriptFixAcceptExtension } from '../src/transcript-fix/run.ts';
-import { closeApps, makeApp } from './helpers.ts';
+import { closeApps, editorCookie, makeApp, TEST_HOST } from './helpers.ts';
 
-const HOST = { host: '127.0.0.1:47900' };
+const HOST = { host: TEST_HOST };
 const TOKEN = 'tok_tfix_0123456789abcdef01234';
 const KEY = 'key_tfix_0123456789abcdef01234';
 const AGENT_H = { ...HOST, authorization: `Bearer ${TOKEN}`, 'x-jasper-agent': 'fix-agent' };
-const EDITOR_H = { ...HOST, cookie: `jasper_session_47900=${TOKEN}; jasper_editor_47900=${KEY}` };
+const EDITOR_H = { ...HOST, cookie: editorCookie(TOKEN, KEY) };
 const json = (h: Record<string, string>) => ({ ...h, 'content-type': 'application/json' });
 const F = FLICKS_PER_SECOND;
 

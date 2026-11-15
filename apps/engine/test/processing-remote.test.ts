@@ -19,10 +19,19 @@ import type { EngineJob, ProcessResult, RemoteProbeResult } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 import { SshRemote } from '../src/processing/remote.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, ensureFixtures, fixture, JSON_H, makeApp, register, type TestApp } from './helpers.ts';
+import {
+	closeApps,
+	ensureFixtures,
+	fixture,
+	JSON_H,
+	makeApp,
+	register,
+	TEST_HOST,
+	type TestApp,
+} from './helpers.ts';
 import { SSH_SHIM } from './ssh-shim.ts';
 
-const H = { host: '127.0.0.1:47900' };
+const H = { host: TEST_HOST };
 
 /** scp shim: copies local ⇄ "remote" paths (user@host:/path → /path). */
 const SCP_SHIM = `#!/usr/bin/env bash

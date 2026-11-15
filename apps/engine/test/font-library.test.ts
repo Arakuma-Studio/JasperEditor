@@ -20,7 +20,7 @@ import type { WebSocket } from 'ws';
 import { FontLibrary } from '../src/fonts/library.ts';
 import { coreServices } from '../src/tools/services.ts';
 import { makeTestTtc, makeTestTtf, toWoff, toWoff2 } from './font-fixtures.ts';
-import { closeApps, DocBuilder, H, JSON_H, makeApp, tempAppdir } from './helpers.ts';
+import { closeApps, DocBuilder, editorCookie, H, JSON_H, makeApp, TEST_HOST, tempAppdir } from './helpers.ts';
 
 afterAll(closeApps);
 
@@ -355,10 +355,10 @@ describe('font library routes', () => {
 		expect(r.statusCode, r.body).toBe(201);
 		const url = `/fonts/library/${r.json().installed[0].id}.ttf`;
 		expect((await app.inject({ method: 'GET', url, headers: H })).statusCode).toBe(401);
-		const signed = coreServices(app).signer.signUrl('http://127.0.0.1:47900', url);
+		const signed = coreServices(app).signer.signUrl(`http://${TEST_HOST}`, url);
 		const viaSig = await app.inject({
 			method: 'GET',
-			url: signed.replace('http://127.0.0.1:47900', ''),
+			url: signed.replace(`http://${TEST_HOST}`, ''),
 			headers: H,
 		});
 		expect(viaSig.statusCode).toBe(200);
@@ -446,7 +446,7 @@ describe('removing a library font', () => {
 	const TOKEN = 'tok_fonts_0123456789abcdef';
 	const KEY = 'key_fonts_0123456789abcdef';
 	const AGENT = { ...H, authorization: `Bearer ${TOKEN}`, [AGENT_NAME_HEADER]: 'font-agent' };
-	const EDITOR = { ...H, cookie: `jasper_session_47900=${TOKEN}; jasper_editor_47900=${KEY}` };
+	const EDITOR = { ...H, cookie: editorCookie(TOKEN, KEY) };
 
 	async function editorWindow(
 		app: FastifyInstance & { appdir: string },

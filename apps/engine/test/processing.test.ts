@@ -13,11 +13,12 @@ import {
 	JSON_H,
 	makeApp,
 	register,
+	TEST_HOST,
 	type TestApp,
 } from './helpers.ts';
 import { writeTinySrModel } from './tiny-model.ts';
 
-const H = { host: '127.0.0.1:47900' };
+const H = { host: TEST_HOST };
 let app: TestApp;
 let catalogDir: string;
 

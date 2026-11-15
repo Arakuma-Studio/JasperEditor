@@ -18,11 +18,11 @@ import { appdirPaths } from '@jasper/config';
 import { makeEnvelope, type ProjectDocument } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, type DocBuilder, makeApp, register, type TestApp } from './helpers.ts';
+import { closeApps, type DocBuilder, makeApp, register, TEST_HOST, type TestApp } from './helpers.ts';
 import { hitSamples, musicSamples, SR, speechSamples } from './sound-bed-fixture.ts';
 import { buildCheckDoc, type FixtureMedia, fpsOf, registerCheckMedia } from './sound-check-fixture.ts';
 
-const HOST = { host: '127.0.0.1:47900' };
+const HOST = { host: TEST_HOST };
 const TOKEN = 'tok_listen_0123456789abcdef01';
 const KEY = 'key_listen_0123456789abcdef01';
 const AGENT_H = { ...HOST, authorization: `Bearer ${TOKEN}`, 'x-jasper-agent': 'listen-agent' };

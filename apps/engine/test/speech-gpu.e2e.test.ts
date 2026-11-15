@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import type { EngineJob, SpeechProbe, TranscriptionResult } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, JSON_H, makeApp, ROOT, register, type TestApp } from './helpers.ts';
+import { closeApps, JSON_H, makeApp, ROOT, register, TEST_HOST, type TestApp } from './helpers.ts';
 import { wordErrorRate } from './speech-wer.ts';
 
 const MODELS = process.env.JASPER_SPEECH_MODELS_DIR ?? '';
@@ -23,7 +23,7 @@ const truth = JSON.parse(readFileSync(FIXTURE.replace(/\.flac$/, '.json'), 'utf8
 	utterances: Array<{ text: string }>;
 };
 const reference = truth.utterances.map((u) => u.text).join(' ');
-const H = { host: '127.0.0.1:47900' };
+const H = { host: TEST_HOST };
 let app: TestApp;
 let mediaKey = '';
 

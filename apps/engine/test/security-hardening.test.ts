@@ -18,17 +18,17 @@ import { startEngine } from '../src/index.ts';
 import { mgHostCsp } from '../src/routes/mg-bundles.ts';
 import { isEditorRequest } from '../src/server.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, makeApp, tempAppdir } from './helpers.ts';
+import { closeApps, editorCookie, makeApp, TEST_HOST, TEST_PORT, tempAppdir } from './helpers.ts';
 
 afterAll(closeApps);
 
-const HOST = { host: '127.0.0.1:47900' };
+const HOST = { host: TEST_HOST };
 const TOKEN = 'tok_hardening_0123456789abcdef';
 const KEY = 'key_hardening_0123456789abcdef';
 /** What jasper-mcp, the CLI and every script that read runtime.json send: the token, nothing else. */
 const AGENT = { ...HOST, authorization: `Bearer ${TOKEN}`, [AGENT_NAME_HEADER]: 'test-agent' };
 /** What the editor window sends: the HttpOnly session and editor cookies. */
-const EDITOR = { ...HOST, cookie: `jasper_session_47900=${TOKEN}; jasper_editor_47900=${KEY}` };
+const EDITOR = { ...HOST, cookie: editorCookie(TOKEN, KEY) };
 const json = (h: Record<string, string>) => ({ ...h, 'content-type': 'application/json' });
 
 type App = Awaited<ReturnType<typeof makeApp>>;
@@ -120,22 +120,22 @@ const postTx = (app: App, projectId: string, headers: Record<string, string> = A
 
 describe('AGT-2: the editor is told apart from everything else that holds the token', () => {
 	it('classifies a request by the editor key cookie, never by the token', () => {
-		const config = { token: TOKEN, editorKey: KEY, port: 47900 } as never;
-		expect(isEditorRequest({ cookie: `jasper_editor_47900=${KEY}` }, config)).toBe(true);
+		const config = { token: TOKEN, editorKey: KEY, port: TEST_PORT } as never;
+		expect(isEditorRequest({ cookie: `jasper_editor_${TEST_PORT}=${KEY}` }, config)).toBe(true);
 		expect(isEditorRequest({ cookie: `a=b; jasper_editor=${KEY}` }, config)).toBe(true);
 		// The token is what agents have: it proves nothing about being the editor.
 		expect(isEditorRequest({ authorization: `Bearer ${TOKEN}` }, config)).toBe(false);
-		expect(isEditorRequest({ cookie: `jasper_session_47900=${TOKEN}` }, config)).toBe(false);
-		expect(isEditorRequest({ cookie: `jasper_editor_47900=${TOKEN}` }, config)).toBe(false);
-		expect(isEditorRequest({ cookie: `jasper_editor_47900=${KEY}x` }, config)).toBe(false);
-		expect(isEditorRequest({ cookie: 'jasper_editor_47900=' }, config)).toBe(false);
+		expect(isEditorRequest({ cookie: `jasper_session_${TEST_PORT}=${TOKEN}` }, config)).toBe(false);
+		expect(isEditorRequest({ cookie: `jasper_editor_${TEST_PORT}=${TOKEN}` }, config)).toBe(false);
+		expect(isEditorRequest({ cookie: `jasper_editor_${TEST_PORT}=${KEY}x` }, config)).toBe(false);
+		expect(isEditorRequest({ cookie: `jasper_editor_${TEST_PORT}=` }, config)).toBe(false);
 		// Another engine's cookie (same host, another port) is not this engine's.
 		expect(isEditorRequest({ cookie: `jasper_editor_48000=${KEY}` }, config)).toBe(false);
-		expect(isEditorRequest({ cookie: 'jasper_editor_47900=%E0%A4%A' }, config)).toBe(false);
+		expect(isEditorRequest({ cookie: `jasper_editor_${TEST_PORT}=%E0%A4%A` }, config)).toBe(false);
 		// The editor itself says when it acts on an agent's live-UI input.
-		expect(isEditorRequest({ cookie: `jasper_editor_47900=${KEY}`, [AGENT_INPUT_HEADER]: '1' }, config)).toBe(
-			false,
-		);
+		expect(
+			isEditorRequest({ cookie: `jasper_editor_${TEST_PORT}=${KEY}`, [AGENT_INPUT_HEADER]: '1' }, config),
+		).toBe(false);
 	});
 
 	it('tells an /agent connection whether it is the editor', async () => {
@@ -144,7 +144,7 @@ describe('AGT-2: the editor is told apart from everything else that holds the to
 		expect((await session(app, EDITOR, projectId)).welcome).toMatchObject({ editor: true });
 		expect((await session(app, AGENT, projectId, 'ses_2')).welcome).toMatchObject({ editor: false });
 		// The session cookie alone (a browser that was not paired as the editor) is not the editor either.
-		const cookieOnly = { ...HOST, cookie: `jasper_session_47900=${TOKEN}` };
+		const cookieOnly = { ...HOST, cookie: `jasper_session_${TEST_PORT}=${TOKEN}` };
 		expect((await session(app, cookieOnly, projectId, 'ses_3')).welcome).toMatchObject({ editor: false });
 	});
 });
@@ -817,7 +817,7 @@ describe('MG-1: bundle pages are served for a sandboxed iframe with an opaque or
 		expect(page.body).toContain('__jasperMgAgent');
 		expect(page.headers['access-control-allow-origin']).toBe('*');
 		const csp = String(page.headers['content-security-policy']);
-		const base = `http://127.0.0.1:47900${location.split('index.html')[0]}`;
+		const base = `http://${TEST_HOST}${location.split('index.html')[0]}`;
 		expect(csp.split('; ')[0]).toBe('sandbox allow-scripts');
 		expect(csp).not.toMatch(/allow-same-origin|allow-top-navigation|allow-popups|allow-forms/);
 		expect(csp).toContain(`default-src ${base} data: blob:`);
@@ -826,7 +826,7 @@ describe('MG-1: bundle pages are served for a sandboxed iframe with an opaque or
 		expect(csp).not.toMatch(/\shttp:(\s|;|$)/);
 		expect(csp).toContain("frame-src 'none'");
 		expect(csp).toContain("form-action 'none'");
-		expect(csp).toContain('frame-ancestors http://127.0.0.1:47900 http://localhost:47900');
+		expect(csp).toContain(`frame-ancestors http://${TEST_HOST} http://localhost:${TEST_PORT}`);
 
 		const prefix = location.split('index.html')[0]!;
 		const js = await app.inject({ method: 'GET', url: `${prefix}bundle.js`, headers: opaque });

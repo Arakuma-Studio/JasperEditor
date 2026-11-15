@@ -6,7 +6,16 @@ import { type BrowseList, browseCategoryOf } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createServer, engineConfig } from '../src/index.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, ensureFixtures, FIXTURES, fixture, H, makeApp, tempAppdir } from './helpers.ts';
+import {
+	closeApps,
+	ensureFixtures,
+	FIXTURES,
+	fixture,
+	H,
+	makeApp,
+	TEST_PORT,
+	tempAppdir,
+} from './helpers.ts';
 
 beforeAll(() => ensureFixtures(), 180_000);
 afterAll(() => closeApps());
@@ -344,7 +353,7 @@ describe('Media Browser routes', () => {
 		prepareAppdir(appdir);
 		const config = engineConfig({
 			appdir,
-			port: 47900,
+			port: TEST_PORT,
 			host: '0.0.0.0',
 			dev: false,
 			token: 'tok',

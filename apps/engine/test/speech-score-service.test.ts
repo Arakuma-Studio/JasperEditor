@@ -14,9 +14,9 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { JobError } from '../src/jobs/types.ts';
 import type { SpeechService } from '../src/speech/service.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, JSON_H, makeApp, ROOT, register, type TestApp } from './helpers.ts';
+import { closeApps, JSON_H, makeApp, ROOT, register, TEST_HOST, type TestApp } from './helpers.ts';
 
-const H = { host: '127.0.0.1:47900' };
+const H = { host: TEST_HOST };
 const FIXTURE = join(ROOT, 'fixtures', 'speech', 'lj-composite.flac');
 const FPS = FLICKS_PER_SECOND / 16_000;
 let app: TestApp;

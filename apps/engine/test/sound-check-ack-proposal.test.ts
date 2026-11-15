@@ -24,14 +24,14 @@ import type { AgentService } from '../src/agent/service.ts';
 import type { Broadcaster } from '../src/events/broadcaster.ts';
 import { soundCheckDelta } from '../src/sound-design/check-proposal.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, makeApp, type TestApp } from './helpers.ts';
+import { closeApps, editorCookie, makeApp, TEST_HOST, type TestApp } from './helpers.ts';
 import { buildCheckDoc, type FixtureMedia, registerCheckMedia } from './sound-check-fixture.ts';
 
-const HOST = { host: '127.0.0.1:47900' };
+const HOST = { host: TEST_HOST };
 const TOKEN = 'tok_ackp_0123456789abcdef0123';
 const KEY = 'key_ackp_0123456789abcdef0123';
 const AGENT_H = { ...HOST, authorization: `Bearer ${TOKEN}`, 'x-jasper-agent': 'ack-agent' };
-const EDITOR_H = { ...HOST, cookie: `jasper_session_47900=${TOKEN}; jasper_editor_47900=${KEY}` };
+const EDITOR_H = { ...HOST, cookie: editorCookie(TOKEN, KEY) };
 const json = (h: Record<string, string>) => ({ ...h, 'content-type': 'application/json' });
 
 let app: TestApp;

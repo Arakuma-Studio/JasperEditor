@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createServer, engineConfig, startEngine } from '../src/index.ts';
+import { TEST_HOST, TEST_PORT } from './helpers.ts';
 
 const apps: { close(): Promise<unknown> }[] = [];
 afterEach(async () => {
@@ -13,7 +14,7 @@ async function make(opts: { token?: string | null; dev?: boolean; webDir?: strin
 	const appdir = mkdtempSync(join(tmpdir(), 'jasper-engine-'));
 	const config = engineConfig({
 		appdir,
-		port: 47900,
+		port: TEST_PORT,
 		dev: opts.dev ?? true,
 		token: opts.token ?? null,
 		webDir: opts.webDir ?? null,
@@ -23,7 +24,7 @@ async function make(opts: { token?: string | null; dev?: boolean; webDir?: strin
 	apps.push(app);
 	return app;
 }
-const H = { host: '127.0.0.1:47900' };
+const H = { host: TEST_HOST };
 
 describe('engine server (ARCHITECTURE §9.1, §4.2)', () => {
 	it('GET /health returns ok with the API header', async () => {
@@ -36,11 +37,16 @@ describe('engine server (ARCHITECTURE §9.1, §4.2)', () => {
 
 	it('rejects foreign Host headers (DNS-rebinding defense)', async () => {
 		const app = await make();
-		const r = await app.inject({ method: 'GET', url: '/health', headers: { host: 'evil.example:47900' } });
+		const r = await app.inject({
+			method: 'GET',
+			url: '/health',
+			headers: { host: `evil.example:${TEST_PORT}` },
+		});
 		expect(r.statusCode).toBe(403);
 		expect(r.json()).toMatchObject({ code: 'FORBIDDEN_HOST' });
 		expect(
-			(await app.inject({ method: 'GET', url: '/health', headers: { host: 'localhost:47900' } })).statusCode,
+			(await app.inject({ method: 'GET', url: '/health', headers: { host: `localhost:${TEST_PORT}` } }))
+				.statusCode,
 		).toBe(200);
 		expect(
 			(await app.inject({ method: 'GET', url: '/health', headers: { host: '127.0.0.1:5173' } })).statusCode,
@@ -161,7 +167,7 @@ describe('engine server (ARCHITECTURE §9.1, §4.2)', () => {
 		expect(evil.json()).toMatchObject({ code: 'FORBIDDEN_ORIGIN' });
 		expect((await post('null')).statusCode).toBe(403);
 		// Allowed origins reach the route (404: the job does not exist).
-		expect((await post('http://127.0.0.1:47900')).statusCode).toBe(404);
+		expect((await post(`http://${TEST_HOST}`)).statusCode).toBe(404);
 		expect((await post('http://localhost:5173')).statusCode).toBe(404);
 		expect((await post()).statusCode).toBe(404);
 	});

@@ -6,8 +6,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { animeLicense } from '../src/anime/index.ts';
 import { createServer, engineConfig } from '../src/index.ts';
 import { RemotionService } from '../src/remotion/service.ts';
+import { TEST_HOST, TEST_PORT } from './helpers.ts';
 
-const H = { host: '127.0.0.1:47900' };
+const H = { host: TEST_HOST };
 
 const apps: { close(): Promise<unknown> }[] = [];
 afterEach(async () => {
@@ -16,7 +17,7 @@ afterEach(async () => {
 
 async function make() {
 	const appdir = mkdtempSync(join(tmpdir(), 'jasper-anime-'));
-	const config = engineConfig({ appdir, port: 47900, dev: true, token: null, webDir: null, env: {} });
+	const config = engineConfig({ appdir, port: TEST_PORT, dev: true, token: null, webDir: null, env: {} });
 	const app = await createServer(config, { env: { PATH: process.env.PATH } });
 	apps.push(app);
 	return app;

@@ -14,7 +14,7 @@ import { appdirPaths } from '@jasper/config';
 import { makeEnvelope } from '@jasper/project';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, DocBuilder, makeApp, register, type TestApp } from './helpers.ts';
+import { closeApps, DocBuilder, makeApp, register, TEST_HOST, type TestApp } from './helpers.ts';
 
 type Seen = { aborted: boolean };
 const hooks = vi.hoisted(() => ({
@@ -87,7 +87,7 @@ function post(
 		port,
 		path,
 		method: 'POST',
-		headers: { host: '127.0.0.1:47900', 'content-type': 'application/json' },
+		headers: { host: TEST_HOST, 'content-type': 'application/json' },
 	});
 	const done = new Promise<{ status: number; body: string }>((resolve, reject) => {
 		req.on('response', (res) => {

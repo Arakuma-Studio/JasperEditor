@@ -34,10 +34,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { JobContext } from '../src/jobs/types.ts';
 import { editFrames, MotionService, planMotion } from '../src/sound-design/motion.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, DocBuilder, makeApp, register, TEST_FFMPEG, type TestApp } from './helpers.ts';
+import { closeApps, DocBuilder, makeApp, register, TEST_FFMPEG, TEST_HOST, type TestApp } from './helpers.ts';
 
 const HAVE_FFMPEG = spawnSync(TEST_FFMPEG, ['-version'], { encoding: 'utf8' }).status === 0;
-const HOST = { host: '127.0.0.1:47900' };
+const HOST = { host: TEST_HOST };
 const JSON_H = { ...HOST, 'content-type': 'application/json' };
 
 let app: TestApp;

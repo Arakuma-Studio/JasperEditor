@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { builtinStyleRecipe, type StyleRecipe } from '@jasper/project';
 import { afterAll, describe, expect, it } from 'vitest';
 import { StyleRecipeLibrary } from '../src/style-recipes/library.ts';
-import { closeApps, makeApp } from './helpers.ts';
+import { closeApps, editorCookie, makeApp, TEST_HOST } from './helpers.ts';
 
 const NOW = '2026-10-26T12:00:00.000Z';
 const dirOf = () => join(mkdtempSync(join(tmpdir(), 'jasper-recipes-')), 'style-recipes');
@@ -174,7 +174,7 @@ describe('StyleRecipeLibrary (persistence)', () => {
 describe('style recipe routes', { timeout: 120_000 }, () => {
 	const TOKEN = 'tok_style_0123456789abcdef0123';
 	const KEY = 'key_style_0123456789abcdef0123';
-	const HOST = { host: '127.0.0.1:47900' };
+	const HOST = { host: TEST_HOST };
 	const AGENT_H = {
 		...HOST,
 		authorization: `Bearer ${TOKEN}`,
@@ -183,7 +183,7 @@ describe('style recipe routes', { timeout: 120_000 }, () => {
 	};
 	const EDITOR_H = {
 		...HOST,
-		cookie: `jasper_session_47900=${TOKEN}; jasper_editor_47900=${KEY}`,
+		cookie: editorCookie(TOKEN, KEY),
 		'content-type': 'application/json',
 	};
 	const noBody = (h: Record<string, string>) =>

@@ -27,9 +27,18 @@ import {
 } from '../src/processing/derive-plan.ts';
 import { assertLgplFilters } from '../src/processing/proc/filters.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, JSON_H, makeApp, register, TEST_FFMPEG, TEST_FFPROBE, type TestApp } from './helpers.ts';
+import {
+	closeApps,
+	JSON_H,
+	makeApp,
+	register,
+	TEST_FFMPEG,
+	TEST_FFPROBE,
+	TEST_HOST,
+	type TestApp,
+} from './helpers.ts';
 
-const H = { host: '127.0.0.1:47900' };
+const H = { host: TEST_HOST };
 let app: TestApp;
 let dir: string;
 const media: Record<string, string> = {};
