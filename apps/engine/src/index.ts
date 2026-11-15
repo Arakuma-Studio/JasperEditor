@@ -2,19 +2,12 @@
 import { randomBytes } from 'node:crypto';
 import { chmodSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import {
-	appdirPaths,
-	DEFAULT_ENGINE_HOST,
-	DEV_WEB_PORT,
-	ENV,
-	type EngineRuntimeInfo,
-	isTruthyEnv,
-	parseEngineRuntime,
-} from '@jasper/config';
+import { appdirPaths, DEFAULT_ENGINE_HOST, DEV_WEB_PORT, ENV, isTruthyEnv } from '@jasper/config';
 import { setInvariantMode } from '@jasper/project';
 import type { FastifyInstance } from 'fastify';
 import { repairCacheLocation } from './cache/location.ts';
 import { type EngineConfig, isLoopbackHost } from './context.ts';
+import { type RuntimeFile, startRuntimeFile } from './runtime-file.ts';
 import { createServer } from './server.ts';
 import { ENGINE_VERSION } from './version.ts';
 
@@ -36,6 +29,8 @@ type StartEngineOptions = {
 	webDir?: string | null;
 	logger?: boolean;
 	env?: Record<string, string | undefined>;
+	/** The runtime file, already `starting` (cli.ts marks it before loading the engine); default: started here. */
+	runtime?: RuntimeFile;
 };
 
 export type RunningEngine = {
@@ -136,30 +131,56 @@ export async function startEngine(opts: StartEngineOptions): Promise<RunningEngi
 			`Refusing to bind ${config.host} without ${ENV.LOCAL_TOKEN}: remote mode is M2 and the engine would be unauthenticated`,
 		);
 	}
-	prepareAppdir(opts.appdir);
-	// Security review DEV-1: an engine that listens always has a token. There is no unauthenticated mode short of
-	// asking for one by name.
-	const env = opts.env ?? process.env;
+	// The runtime file says "starting" before the slow part (cache repair, services, routes), so local tools started
+	// meanwhile wait for this engine instead of reporting that none is running (runtime-file.ts).
+	mkdirSync(config.paths.engineDir, { recursive: true });
+	const runtime =
+		opts.runtime ??
+		(await startRuntimeFile(config.paths.runtimeFile, {
+			host: config.host,
+			port: opts.port,
+			version: config.version,
+			appdir: config.appdir,
+		}));
+	let app: FastifyInstance | null = null;
 	let ownEditorKey = false;
-	if (!config.token) {
-		if (opts.insecure || isTruthyEnv(env[ENV.INSECURE_DEV])) {
-			config.editorKey = null;
-			if (!opts.insecure) console.warn(INSECURE_WARNING);
-		} else config.token = newSecret();
+	try {
+		prepareAppdir(opts.appdir);
+		// Security review DEV-1: an engine that listens always has a token. There is no unauthenticated mode short of
+		// asking for one by name.
+		const env = opts.env ?? process.env;
+		if (!config.token) {
+			if (opts.insecure || isTruthyEnv(env[ENV.INSECURE_DEV])) {
+				config.editorKey = null;
+				if (!opts.insecure) console.warn(INSECURE_WARNING);
+			} else config.token = newSecret();
+		}
+		if (config.token && !config.editorKey) {
+			config.editorKey = config.dev ? devEditorKey(config.paths.devEditorKeyFile) : newSecret();
+			ownEditorKey = !config.dev;
+		}
+		app = await createServer(config, { logger: opts.logger, env: opts.env });
+		await app.listen({ host: config.host, port: opts.port });
+	} catch (e) {
+		await app?.close().catch(() => {});
+		await runtime.remove();
+		throw e;
 	}
-	if (config.token && !config.editorKey) {
-		config.editorKey = config.dev ? devEditorKey(config.paths.devEditorKeyFile) : newSecret();
-		ownEditorKey = !config.dev;
-	}
-	const app = await createServer(config, { logger: opts.logger, env: opts.env });
-	await app.listen({ host: config.host, port: opts.port });
 	const addr = app.server.address();
 	const port = typeof addr === 'object' && addr ? addr.port : opts.port;
 	config.port = port;
 	const url = `http://${config.host}:${port}`;
-	const runtimeFile = writeRuntimeFile(config, url);
+	await runtime.ready({
+		url,
+		host: config.host,
+		port,
+		token: config.token,
+		version: config.version,
+		appdir: config.appdir,
+	});
+	const running = app;
 	return {
-		app,
+		app: running,
 		port,
 		host: config.host,
 		url,
@@ -169,8 +190,8 @@ export async function startEngine(opts: StartEngineOptions): Promise<RunningEngi
 				? `${url}/pair?key=${encodeURIComponent(config.editorKey)}`
 				: null,
 		stop: async () => {
-			removeRuntimeFile(runtimeFile);
-			await app.close();
+			await runtime.remove();
+			await running.close();
 		},
 	};
 }
@@ -185,47 +206,5 @@ const INSECURE_WARNING = [
 	'  ******************************************************************************',
 	'',
 ].join('\n');
-
-/**
- * `<appdir>/engine/runtime.json` (0600): lets local tools on the same machine (jasper-mcp, scripts) find
- * this engine's port and token (docs/wp-notes/wp-mcp.md). The appdir is the user's own data directory, so
- * the file is as private as the projects next to it. Failures are logged, never fatal. The editor key is never
- * written here: what reads this file is an agent, not the editor (security review AGT-2).
- */
-function writeRuntimeFile(config: EngineConfig, url: string): string | null {
-	const file = config.paths.runtimeFile;
-	const info: EngineRuntimeInfo = {
-		url,
-		host: config.host,
-		port: config.port,
-		pid: process.pid,
-		token: config.token,
-		version: config.version,
-		appdir: config.appdir,
-		startedAt: new Date().toISOString(),
-	};
-	try {
-		const tmp = `${file}.${process.pid}.tmp`;
-		writeFileSync(tmp, `${JSON.stringify(info, null, 2)}\n`, { mode: 0o600 });
-		chmodSync(tmp, 0o600);
-		renameSync(tmp, file);
-		return file;
-	} catch (e) {
-		console.warn(`[engine] could not write ${file}: ${(e as Error).message}`);
-		return null;
-	}
-}
-
-/** Removes the runtime file if it still describes this process (another engine may have replaced it). */
-function removeRuntimeFile(file: string | null): void {
-	if (!file) return;
-	try {
-		const cur = parseEngineRuntime(JSON.parse(readFileSync(file, 'utf8')));
-		if (cur && cur.pid !== process.pid) return;
-		rmSync(file, { force: true });
-	} catch {
-		// already gone
-	}
-}
 
 export { createServer };

@@ -260,6 +260,11 @@ composition then appears in **Motion Templates ▸ Remotion**; double-click or d
   embedded font and text layers).
 - MCP: `import_mg_bundle`, `list_compositions`, `add_composition`, `set_composition_props`,
   `prerender_composition`, `scaffold_mg_project`, `list_composition_texts`, `set_composition_text`.
+- HTML compositions: a self-contained HTML page (GSAP or anything else) that defines `window.__duration` (seconds),
+  `window.__ready` (a Promise) and `window.__seek(t)` is imported as one composition (File ▸ Import HTML
+  Composition…, MCP `import_html_composition {projectId, path, width, height, fps, query?, watch?}`), placed with
+  `add_composition` and rendered by seeking it frame by frame in the headless browser (transparent where the page
+  paints nothing). Contract, errors and limits: [docs/wp-notes/html-compositions.md](docs/wp-notes/html-compositions.md).
 
 ### Texts inside compositions (hybrid text layers)
 
@@ -311,7 +316,9 @@ as inline styles, so the Player, `renderStill` and parallel `renderMedia` agree 
   `pnpm --filter @jasper/engine build:remotion`,
   `pnpm notices --audit apps/web/dist apps/engine/dist/remotion-bundle` reports shipped packages it misses.
 - New composition projects (`POST /api/mg-bundles/scaffold`, MCP `scaffold_mg_project`) include an `AnimeTitle`
-  example and a README section on driving anime.js from the frame in a Remotion composition.
+  example and a README section on driving anime.js from the frame in a Remotion composition. The engine installs
+  them with `CI=true corepack pnpm@<the repository's pin> install --ignore-workspace` (needs corepack on PATH;
+  150 s limit; errors carry the installer's output: `docs/wp-notes/wp-m2-mg.md` § Install).
 
 ## Text animations
 
@@ -540,6 +547,15 @@ engine on another port pass `--appdir /abs/path/to/JasperEditor/.stage` (or `--e
 path. The desktop app's per-launch token is read from its `runtime.json` (mode 0600), so nothing has to be
 copied and the token is never shown to the agent.
 
+An engine that is still starting writes `runtime.json` with `"state": "starting"` and a heartbeat before its slow
+startup work, so a server or `jasper` command launched at the same time waits for it (backoff up to 2 s between
+checks, progress such as `engine starting… 3 s` on stderr, and as MCP logging notifications) instead of failing
+with `ENGINE_NOT_FOUND`. The wait is bounded by `--startup-timeout` (default 120 s, then `ENGINE_NOT_READY`) and
+is separate from `--request-timeout`. A file whose process is gone, or whose heartbeat is older than 20 s, is not
+waited for. With `--appdir`, only that appdir's engine is waited for; another engine that answers meanwhile (on
+the default port, say) is never used instead. `--start-engine` likewise waits until its engine is ready; one that exits first fails at once with
+`ENGINE_START_FAILED`, its exit code and the end of its output.
+
 | Option (append after `jasper-mcp.mjs`) | Effect |
 |---|---|
 | `--start-engine` | start a headless engine when none is running, so agents can work with JasperEditor closed (needs `pnpm build`; stops with the server) |
@@ -547,6 +563,7 @@ copied and the token is never shown to the agent.
 | `--engine-url <url>` `--token <t>` | skip discovery |
 | `--agent-name <name>` | name shown in History and on approval cards (default: the MCP client's name) |
 | `--request-timeout <s>` | deadline for one engine request (default 180) |
+| `--startup-timeout <s>` | how long to wait for an engine that is still starting, found or `--start-engine`ed (env `JASPER_ENGINE_STARTUP_TIMEOUT`; default 120) |
 | `--toolsets <list>` | toolsets advertised from the start: `all` or a comma list (env `JASPER_MCP_TOOLSETS`; default `core`) |
 
 Tools (`list_toolsets`, `describe_tool`, or MCP `listTools` with `--toolsets all`, give the current catalog and
@@ -563,7 +580,7 @@ schemas):
 - Clip processing: `list_processing_models` `install_processing_model` `process_clip` `use_media_version`
   `get_processing_settings` `set_processing_settings` `test_remote_executor` `replace_footage`
   `set_media_source_range`.
-- Remotion projects: `import_mg_bundle` `list_compositions` `add_composition` `set_composition_props`
+- Remotion projects and HTML compositions: `import_mg_bundle` `import_html_composition` `list_compositions` `add_composition` `set_composition_props`
   `prerender_composition` `scaffold_mg_project` `list_composition_texts` `set_composition_text`.
 - Tracking: `add_tracker` `track` `apply_tracking` `get_tracker` `set_corner_pin` `simplify_keyframes`.
 - Roto Brush, object mattes and faces: `list_roto_models` `install_roto_model` `remove_roto_model` `create_roto`
@@ -867,7 +884,8 @@ every panel in every workspace addressable. Details: `docs/wp-notes/mcp-cli.md`.
 
 Every tool is also one shell call away. `pnpm jasper <command>` from this checkout, or the bundled
 `node apps/mcp/dist/jasper.mjs` after `pnpm mcp:build`. It finds the engine like `jasper-mcp` (`--engine-url`,
-`--appdir`, `--start-engine`), and edits apply live when the project is open in an editor window.
+`--appdir`, `--start-engine`; an engine that is still starting is waited for, see `--startup-timeout`), and
+edits apply live when the project is open in an editor window.
 
 ```bash
 jasper status                                    # engine and capabilities
@@ -893,6 +911,42 @@ jasper call get_mixer --json                     # any MCP tool
 
 `--json` prints one JSON document per line; exit status 0 = ok, 1 = the command failed (its error code, message
 and hint on stderr), 2 = usage error. `jasper --help` is the reference.
+
+#### Scene files: `jasper apply`, `preview`, `export-scene`
+
+A whole sequence — its layers (text, image, SVG, shape, Remotion composition), position, size, style, keyframes
+with eases, text animation presets, effects and masks — described in one YAML or JSON file. `apply` makes the
+sequence match it and changes only what differs, as one undo step (apply the same file twice: nothing happens);
+`preview` applies and renders a labelled contact sheet; `export-scene` writes a sequence back as a file. Format,
+matching and removal rules: [docs/wp-notes/scene-file.md](docs/wp-notes/scene-file.md).
+
+```bash
+jasper apply scene.yaml                          # created / updated (which aspects) / removed per layer
+jasper apply scene.yaml --dry-run                # validate the plan in the engine, change nothing
+jasper preview scene.yaml --times 0.3,1,2.5,6 --out sheet.png           # one still-sheet job, labelled cells
+jasper preview scene.yaml --times 0.3,1,2.5,6 --out sheet.png --watch   # again on every save (Ctrl+C stops)
+jasper export-scene --sequence Promo --out scene.yaml                   # or .json / --format json; stdout without --out
+```
+
+```yaml
+scene: 1
+sequence: { name: Promo, size: [1280, 720], fps: 30, duration: 6 }
+layers:                                   # bottom to top
+  - { id: bg, type: shape, shape: rect, size: [1280, 720], fill: "#1B2A4A" }
+  - id: headline
+    type: text
+    text: Declarative scenes
+    size: 88
+    color: "#FFD166"
+    position: [560, 330]
+    animation: { in: fade, out: fade }
+    keyframes:
+      scale: [{ t: 0, value: 70, ease: ease-out }, { t: 1, value: 100 }]
+```
+
+Errors point into the file (`layers[2].keyframes.position[0].ease: unknown ease "foo"`). Images, Remotion
+folders and HTML composition pages (`bundle: pano.html` with `page: {width, height, fps, query?}`) the file names
+are imported on the first apply.
 
 ### HTTP API underneath
 
@@ -1192,7 +1246,11 @@ graphics)** and lists one graphics group per baked layer.
   each, at most 8); a bake gives its pages to the next one once its frames are captured; two exports needing the
   same bake render it once. `JASPER_LAYER_BAKE_PARALLEL=1` bakes one after the other,
   `JASPER_LAYER_BAKE_SHARED_BROWSER=0` gives every bake its own browser, `JASPER_LAYER_BAKE_PAGES=<n>` sets the page
-  budget and `JASPER_LAYER_BAKE_PAGES_PER_BROWSER=<n>` the pages per browser (docs/wp-notes/export-performance.md). Bakes are cached under `<appdir>/cache/layers/<key>/`
+  budget and `JASPER_LAYER_BAKE_PAGES_PER_BROWSER=<n>` the pages per browser (docs/wp-notes/export-performance.md).
+  Render browsers stay open between renders and exports (at most 4 idle, closed after 5 minutes unused, replaced when
+  one stops answering), and load the compositions bundle from their cache: `JASPER_RENDER_BROWSERS_IDLE=<n>` sets
+  how many stay open (0 closes each after its render) and `JASPER_RENDER_BROWSER_IDLE_SEC=<s>` how long. Bakes are
+  cached under `<appdir>/cache/layers/<key>/`
   by a content key (clip, font files, media, compositions bundle, anime.js, Remotion, browser, GL back end);
   re-exports and moving a clip in time reuse them; entries unused for 14 days are removed.
 - Colour effects (Lumetri, LUTs…) on these layers are applied by ffmpeg to the bake (`lut3d`); the Remotion path

@@ -378,7 +378,7 @@ export const TOOLSETS = [
 	{
 		name: 'graphics',
 		description:
-			'Motion-graphic templates (social comments, lower thirds…), Remotion compositions, Essential Graphics templates.',
+			'Motion-graphic templates (social comments, lower thirds…), Remotion and HTML compositions, Essential Graphics templates.',
 		guides: ['templates', 'compositions', 'delivery'],
 		tools: [
 			'import_layer_styles',
@@ -390,6 +390,7 @@ export const TOOLSETS = [
 			'render_motion_graphic_preview',
 			'set_motion_graphic_params',
 			'import_mg_bundle',
+			'import_html_composition',
 			'list_compositions',
 			'add_composition',
 			'set_composition_props',

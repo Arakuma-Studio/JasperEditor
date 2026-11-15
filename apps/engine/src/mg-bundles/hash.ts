@@ -9,7 +9,7 @@ import { join, relative, sep } from 'node:path';
 type BundleFile = { rel: string; abs: string; size: number };
 
 /** Every regular file under `root` (following symlinks), sorted by relative POSIX path. */
-async function listBundleFiles(
+export async function listBundleFiles(
 	root: string,
 	opts: { skip?: (rel: string) => boolean } = {},
 ): Promise<BundleFile[]> {

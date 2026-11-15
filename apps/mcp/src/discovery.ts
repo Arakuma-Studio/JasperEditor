@@ -5,6 +5,8 @@
 //      platform default appdir and the desktop app's appdir (`<Electron userData>/jasper`)
 //   3. the default dev engine on http://127.0.0.1:47900 (its token: from the runtime file its /health names)
 // and, with `--start-engine`, forks a headless engine (random port, per-launch token) when none answers.
+// A runtime file in the `starting` state (live pid, fresh heartbeat), or one that turned `ready` moments ago but
+// does not answer yet, is reported as a starting engine: link.ts waits for it with backoff instead of failing.
 // Everything here logs to stderr only: stdout belongs to the MCP stdio transport.
 import { type ChildProcess, fork } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -16,12 +18,18 @@ import {
 	DEFAULT_ENGINE_HOST,
 	DEFAULT_ENGINE_PORT,
 	desktopAppdir,
+	ENGINE_HEARTBEAT_STALE_MS,
+	ENGINE_WARMUP_MS,
 	ENV,
+	EngineReadyMessageSchema,
 	type EngineRuntimeInfo,
+	type EngineRuntimeState,
 	type Env,
 	parseEngineRuntime,
+	parseEngineRuntimeState,
 	platformDefaultAppdir,
 } from '@jasper/config';
+import { ToolError } from './errors.ts';
 
 export type EngineTarget = {
 	url: string;
@@ -42,7 +50,22 @@ export type DiscoveryOptions = {
 	fetch?: typeof fetch;
 	healthTimeoutMs?: number;
 	log?(line: string): void;
+	/** Clock for heartbeat ages (default Date.now). */
+	now?: () => number;
+	/** Whether a process exists (default: signal 0). */
+	pidAlive?: (pid: number) => boolean;
 };
+
+/** An engine whose runtime file says it is on its way: worth waiting for. */
+export type StartingEngine = {
+	pid: number;
+	/** The runtime file. */
+	file: string;
+	/** `starting`: not listening yet; `warming`: listening moments ago, not answering yet. */
+	phase: 'starting' | 'warming';
+};
+
+export type Discovery = { target: EngineTarget | null; starting: StartingEngine | null };
 
 type HealthResult = { ok: true; version: string; runtimeFile: string | null } | { ok: false; reason: string };
 
@@ -74,7 +97,7 @@ async function probeHealth(
 	}
 }
 
-function pidAlive(pid: number): boolean {
+function defaultPidAlive(pid: number): boolean {
 	try {
 		process.kill(pid, 0);
 		return true;
@@ -95,16 +118,47 @@ function candidateAppdirs(opts: Pick<DiscoveryOptions, 'appdir' | 'env'> = {}): 
 	return out;
 }
 
-function readRuntime(file: string): EngineRuntimeInfo | null {
+function readJson(file: string): unknown {
 	try {
-		return parseEngineRuntime(JSON.parse(readFileSync(file, 'utf8')));
+		return JSON.parse(readFileSync(file, 'utf8'));
 	} catch {
 		return null;
 	}
 }
 
-function readRuntimeFile(appdir: string): EngineRuntimeInfo | null {
-	return readRuntime(appdirPaths(appdir).runtimeFile);
+function readRuntime(file: string): EngineRuntimeInfo | null {
+	return parseEngineRuntime(readJson(file));
+}
+
+function readRuntimeState(file: string): EngineRuntimeState | null {
+	return parseEngineRuntimeState(readJson(file));
+}
+
+const seconds = (ms: number) => `${Math.max(0, Math.round(ms / 1000))} s`;
+
+/**
+ * Whether a live engine's runtime file promises an answer soon: `starting` with a fresh heartbeat, or `ready`
+ * within ENGINE_WARMUP_MS. A heartbeat older than ENGINE_HEARTBEAT_STALE_MS means a hung start (logged, not waited for).
+ */
+function startingFrom(
+	info: EngineRuntimeState,
+	file: string,
+	now: number,
+	log: (line: string) => void,
+): StartingEngine | null {
+	if (info.state === 'starting') {
+		const age = now - info.heartbeatAt;
+		if (age > ENGINE_HEARTBEAT_STALE_MS) {
+			log(
+				`the engine in ${file} (pid ${info.pid}) stopped starting (no heartbeat for ${seconds(age)}): stop that process and start the engine again`,
+			);
+			return null;
+		}
+		return { pid: info.pid, file, phase: 'starting' };
+	}
+	if (info.readyAt !== undefined && now - info.readyAt <= ENGINE_WARMUP_MS)
+		return { pid: info.pid, file, phase: 'warming' };
+	return null;
 }
 
 /**
@@ -116,6 +170,7 @@ function readRuntimeFile(appdir: string): EngineRuntimeInfo | null {
 function tokenFromRuntimeFile(
 	url: string,
 	runtimeFile: string | null,
+	pidAlive: (pid: number) => boolean,
 ): { token: string; file: string } | null {
 	if (!runtimeFile || !isAbsolute(runtimeFile)) return null;
 	const info = readRuntime(runtimeFile);
@@ -131,82 +186,144 @@ function tokenFromRuntimeFile(
 
 /** Finds a reachable engine, or null (the reasons are passed to `log`). */
 export async function discoverEngine(opts: DiscoveryOptions = {}): Promise<EngineTarget | null> {
+	return (await findEngine(opts)).target;
+}
+
+/**
+ * Finds a reachable engine; when there is none, also reports the first engine that is still starting (see
+ * `startingFrom`), so the caller can wait for it. The reasons nothing answered are passed to `log`.
+ */
+export async function findEngine(opts: DiscoveryOptions = {}): Promise<Discovery> {
 	const env = opts.env ?? process.env;
 	const log = opts.log ?? (() => {});
+	const now = opts.now ?? Date.now;
+	const pidAlive = opts.pidAlive ?? defaultPidAlive;
 	const probe = (url: string) => probeHealth(url, { fetch: opts.fetch, timeoutMs: opts.healthTimeoutMs });
 
 	const url = opts.url ?? env[ENV.ENGINE_URL];
 	const token = opts.token ?? env[ENV.ENGINE_TOKEN] ?? null;
 	if (url) {
 		const h = await probe(url);
-		if (!h.ok) log(`engine at ${url} (explicit) is not answering: ${h.reason}`);
-		const found = !token && h.ok ? tokenFromRuntimeFile(url, h.runtimeFile) : null;
+		let starting: StartingEngine | null = null;
+		if (!h.ok) {
+			log(`engine at ${url} (explicit) is not answering: ${h.reason}`);
+			starting = startingOnPort(url, candidateAppdirs(opts), now(), pidAlive, log);
+		}
+		const found = !token && h.ok ? tokenFromRuntimeFile(url, h.runtimeFile, pidAlive) : null;
 		// Explicit targets are used even when down: the error then names the configured URL.
-		return {
+		const target: EngineTarget = {
 			url: url.replace(/\/$/, ''),
 			token: token || found?.token || null,
 			source: 'explicit',
 			...(found ? { detail: found.file } : {}),
 			...(h.ok ? { version: h.version } : {}),
 		};
+		return starting ? { target: null, starting } : { target, starting: null };
 	}
 
+	let starting: StartingEngine | null = null;
 	// `--appdir` names the engine to use: one that does not answer (frozen, busy) is still the target, so the error
-	// names it, and no other engine (the user's own on the default port) receives calls meant for it.
+	// names it, and no other engine (the user's own on the default port) receives calls meant for it. One that is
+	// still starting, or warming up, is reported as starting, so link.ts waits for that engine (and only that one).
 	if (opts.appdir) {
 		const dir = resolve(opts.appdir);
-		const info = readRuntimeFile(dir);
+		const file = appdirPaths(dir).runtimeFile;
+		const info = readRuntimeState(file);
 		if (!info || !pidAlive(info.pid)) {
 			log(
 				info ? `stale runtime file in ${dir} (pid ${info.pid} is gone)` : `no engine runtime file in ${dir}`,
 			);
-			return null;
+			return { target: null, starting: null };
 		}
+		if (info.state === 'starting') return { target: null, starting: startingFrom(info, file, now(), log) };
 		const h = await probe(info.url);
-		if (!h.ok) log(`engine from ${dir} (${info.url}) is not answering: ${h.reason}`);
+		if (!h.ok) {
+			log(`engine from ${dir} (${info.url}) is not answering: ${h.reason}`);
+			const warming = startingFrom(info, file, now(), log);
+			if (warming) return { target: null, starting: warming };
+		}
 		return {
-			url: info.url,
-			token: token || info.token,
-			source: 'runtime-file',
-			detail: appdirPaths(dir).runtimeFile,
-			...(h.ok ? { version: h.version } : {}),
+			target: {
+				url: info.url,
+				token: token || info.token,
+				source: 'runtime-file',
+				detail: file,
+				...(h.ok ? { version: h.version } : {}),
+			},
+			starting: null,
 		};
 	}
 
 	for (const dir of candidateAppdirs(opts)) {
-		const info = readRuntimeFile(dir);
+		const file = appdirPaths(dir).runtimeFile;
+		const info = readRuntimeState(file);
 		if (!info) continue;
 		if (!pidAlive(info.pid)) {
 			log(`stale runtime file in ${dir} (pid ${info.pid} is gone)`);
 			continue;
 		}
+		if (info.state === 'starting') {
+			starting ??= startingFrom(info, file, now(), log);
+			continue;
+		}
 		const h = await probe(info.url);
 		if (!h.ok) {
 			log(`engine from ${dir} (${info.url}) is not answering: ${h.reason}`);
+			starting ??= startingFrom(info, file, now(), log);
 			continue;
 		}
 		return {
-			url: info.url,
-			token: token || info.token,
-			source: 'runtime-file',
-			detail: appdirPaths(dir).runtimeFile,
-			version: h.version,
+			target: {
+				url: info.url,
+				token: token || info.token,
+				source: 'runtime-file',
+				detail: file,
+				version: h.version,
+			},
+			starting: null,
 		};
 	}
 
 	const def = `http://${DEFAULT_ENGINE_HOST}:${DEFAULT_ENGINE_PORT}`;
 	const h = await probe(def);
 	if (h.ok) {
-		const found = token ? null : tokenFromRuntimeFile(def, h.runtimeFile);
+		const found = token ? null : tokenFromRuntimeFile(def, h.runtimeFile, pidAlive);
 		return {
-			url: def,
-			token: token || found?.token || null,
-			source: 'default-port',
-			...(found ? { detail: found.file } : {}),
-			version: h.version,
+			target: {
+				url: def,
+				token: token || found?.token || null,
+				source: 'default-port',
+				...(found ? { detail: found.file } : {}),
+				version: h.version,
+			},
+			starting: null,
 		};
 	}
 	log(`no engine on the default port ${DEFAULT_ENGINE_PORT}: ${h.reason}`);
+	return { target: null, starting };
+}
+
+/** A starting engine whose runtime file names the port of an explicit URL that does not answer yet. */
+function startingOnPort(
+	url: string,
+	dirs: string[],
+	now: number,
+	pidAlive: (pid: number) => boolean,
+	log: (line: string) => void,
+): StartingEngine | null {
+	let port: number;
+	try {
+		port = Number(new URL(url).port);
+	} catch {
+		return null;
+	}
+	for (const dir of dirs) {
+		const file = appdirPaths(dir).runtimeFile;
+		const info = readRuntimeState(file);
+		if (!info || info.port !== port || !pidAlive(info.pid)) continue;
+		const s = startingFrom(info, file, now, log);
+		if (s) return s;
+	}
 	return null;
 }
 
@@ -227,9 +344,15 @@ export function findEngineEntry(
 
 export type StartedEngine = EngineTarget & { child: ChildProcess; stop(): Promise<void> };
 
+/** Lines of the started engine's output kept for the error when it exits before it is ready. */
+const OUTPUT_TAIL_LINES = 20;
+const OUTPUT_LINE_MAX = 500;
+
 /**
  * Forks a headless engine (`--port 0`, per-launch JASPER_LOCAL_TOKEN) on `appdir` and resolves when it
- * reports ready. It lives as long as this process (stopped on exit).
+ * reports ready (it listens and has checked its tools). `progress` is called once a second meanwhile. An engine
+ * that exits first rejects with its exit code and the end of its output; one that is not ready within
+ * `readyTimeoutMs` is stopped. It lives as long as this process (stopped on exit).
  */
 export function startHeadlessEngine(opts: {
 	entry: string;
@@ -239,8 +362,10 @@ export function startHeadlessEngine(opts: {
 	env?: Env;
 	readyTimeoutMs?: number;
 	log?(line: string): void;
+	progress?(elapsedMs: number): void;
 }): Promise<StartedEngine> {
 	const log = opts.log ?? ((l: string) => process.stderr.write(`[jasper-mcp] ${l}\n`));
+	const readyTimeoutMs = opts.readyTimeoutMs ?? 60_000;
 	const token = randomBytes(24).toString('base64url');
 	mkdirSync(opts.appdir, { recursive: true });
 	const child = fork(opts.entry, ['--port', String(opts.port ?? 0), '--appdir', opts.appdir], {
@@ -253,9 +378,15 @@ export function startHeadlessEngine(opts: {
 		stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
 	});
 	// Engine output goes to our stderr: stdout is the MCP channel.
+	const tail: string[] = [];
 	const pipe = (s: NodeJS.ReadableStream | null) =>
 		s?.on('data', (d: Buffer) => {
-			for (const line of d.toString('utf8').split('\n')) if (line.trim()) log(`engine: ${line}`);
+			for (const line of d.toString('utf8').split('\n')) {
+				if (!line.trim()) continue;
+				log(`engine: ${line}`);
+				tail.push(line.length > OUTPUT_LINE_MAX ? `${line.slice(0, OUTPUT_LINE_MAX)}…` : line);
+				if (tail.length > OUTPUT_TAIL_LINES) tail.shift();
+			}
 		});
 	pipe(child.stdout);
 	pipe(child.stderr);
@@ -266,17 +397,31 @@ export function startHeadlessEngine(opts: {
 		await Promise.race([exited, new Promise((r) => setTimeout(r, 5000))]);
 		if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
 	};
+	const startedAt = Date.now();
 	return new Promise((resolvePromise, reject) => {
-		const timer = setTimeout(() => {
-			void stop();
-			reject(new Error(`the engine did not report ready within ${opts.readyTimeoutMs ?? 60_000} ms`));
-		}, opts.readyTimeoutMs ?? 60_000);
-		child.on('message', (m: unknown) => {
-			const msg = m as { type?: string; port?: number };
-			if (msg?.type !== 'ready' || typeof msg.port !== 'number') return;
+		const ticker = setInterval(() => opts.progress?.(Date.now() - startedAt), 1000);
+		ticker.unref?.();
+		const settle = () => {
 			clearTimeout(timer);
+			clearInterval(ticker);
+		};
+		const timer = setTimeout(() => {
+			settle();
+			void stop();
+			reject(
+				new ToolError(
+					'ENGINE_START_FAILED',
+					`The headless engine (${opts.entry}) did not report ready within ${seconds(readyTimeoutMs)}; it was stopped.`,
+					`Allow it longer with --startup-timeout <seconds> (env ${ENV.ENGINE_STARTUP_TIMEOUT}).`,
+				),
+			);
+		}, readyTimeoutMs);
+		child.on('message', (m: unknown) => {
+			const msg = EngineReadyMessageSchema.safeParse(m);
+			if (!msg.success) return;
+			settle();
 			resolvePromise({
-				url: `http://${DEFAULT_ENGINE_HOST}:${msg.port}`,
+				url: `http://${DEFAULT_ENGINE_HOST}:${msg.data.port}`,
 				token,
 				source: 'started',
 				detail: opts.appdir,
@@ -285,12 +430,20 @@ export function startHeadlessEngine(opts: {
 			});
 		});
 		child.once('error', (error) => {
-			clearTimeout(timer);
+			settle();
 			reject(error);
 		});
-		child.once('exit', (code) => {
-			clearTimeout(timer);
-			reject(new Error(`the engine exited with code ${code} before it was ready`));
+		child.once('exit', (code, signal) => {
+			settle();
+			const how = signal ? `was killed by ${signal}` : `exited with code ${code}`;
+			reject(
+				new ToolError(
+					'ENGINE_START_FAILED',
+					`The headless engine ${how} before it was ready.${tail.length ? ` Its last output:\n${tail.join('\n')}` : ''}`,
+					`Fix what it reported, then retry; \`node ${opts.entry} --appdir ${opts.appdir}\` shows its full output.`,
+					{ exitCode: code, signal, output: [...tail] },
+				),
+			);
 		});
 	});
 }

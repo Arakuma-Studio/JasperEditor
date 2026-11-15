@@ -163,15 +163,24 @@ export const MIGRATIONS: readonly MigrationStep[] = [
 	// unknown effect is bypassed), their orphan collection would drop media only a look layer references, and they
 	// would flatten a title's bands and materials.
 	{ from: 11, to: 12, migrate: (doc) => doc },
-	// v13 (subtitle locks and own-subtitle words): `caption.locked` on subtitle text clips (edited by hand, kept by
-	// `captions.regenerate`) and `rules.ownWords` on subtitle groups. Existing data needs no changes; the bump makes v12
-	// builds open v13 files read-only: their regenerate would replace the hand-edited subtitles, and their strict rules
-	// reader would reset a group with own words to the default rules.
+	// v13: two features were introduced at v13 on parallel lines, so a v13 file may hold either: subtitle locks and
+	// own-subtitle words (`caption.locked` on subtitle text clips, kept by `captions.regenerate`, and `rules.ownWords`
+	// on subtitle groups), or HTML composition pages (`mgBundle.html`, source type `html-page`, rendered by seeking the
+	// page with `window.__seek`). Existing data needs no changes; the bump makes v12 builds open v13 files read-only:
+	// their regenerate would replace the hand-edited subtitles, their strict rules reader would reset a group with own
+	// words to the default rules, and they would drive an HTML page with the Remotion page protocol (no preview, render
+	// or export) while their strict source type refuses the asset.
 	{ from: 12, to: 13, migrate: (doc) => doc },
 	// v14 (punch-ins on caption starts): style recipes may hold punch-ins `start: 'caption'`. Existing data needs no
 	// changes; the bump makes v13 builds open v14 files read-only: their strict recipe reader would read such a recipe
 	// as unreadable and drop it on load.
 	{ from: 13, to: 14, migrate: (doc) => doc },
+	// v15 (HTML composition pages on the v14 line): `mg-bundle` assets may be HTML composition pages (`mgBundle.html`,
+	// source type `html-page`), which the v13→v14 line never knew. Existing data needs no changes; the bump makes v14
+	// builds (the subtitle-lock line) open v15 files read-only: they would drive such a page with the Remotion page
+	// protocol, so its clips would neither preview, render nor export, and their strict source type would refuse the
+	// asset.
+	{ from: 14, to: 15, migrate: (doc) => doc },
 ];
 
 /** Data that is not a loadable project (not an object, an unknown format, no migration path, schema mismatch). */

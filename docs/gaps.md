@@ -1086,6 +1086,17 @@ Limits that stay open:
 - `schema v12` has to carry `EffectInstance.patternOrigin` (the Title Looks bump); this work adds the field and its
   fields-table row but not the version step.
 
+### html-compositions
+Self-contained HTML/GSAP pages (`window.__duration` / `__ready` / `__seek(t)`) as composition clips.
+**Done when:** a page imports by path (MCP `import_html_composition`, File ▸ Import HTML Composition…) with clear errors
+for a missing contract, places like a Remotion composition, previews in the Program monitor, renders in `render_frame`
+and exports exactly (alpha included), and reloads on save with `watch`.
+**Status (done on `feat/html-composition`):** see [wp-notes/html-compositions.md](wp-notes/html-compositions.md)
+(schema v15; verification with the Instagram carousel page and `apps/engine/test/html-composition.test.ts`,
+`MG_E2E=1`). Limits: no props (parameters are the import's query string); only files the page loads up to `__ready`
+and three probe seeks are copied; remote `https:` resources need the network at render time; local engines only
+(the import dialog says why); stills load the page in a fresh browser (≈ 11–40 s measured at load ≈ 12–39).
+
 ## For agents choosing work
 
 1. Read [CLAUDE.md](../CLAUDE.md), then this file. Prefer a gap in a feature parity.md marks as done over a new

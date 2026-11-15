@@ -282,6 +282,8 @@ export async function createCoreServices(
 			await queue.shutdown();
 			await cache.stop();
 			await textMeasurer.close();
+			// The warm render browsers (export-performance §16) after the measurer gave its browser back.
+			await remotion.stop();
 		},
 	};
 }

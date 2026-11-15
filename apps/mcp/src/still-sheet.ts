@@ -163,7 +163,8 @@ export type SheetMeta = {
 	shown: { cell: number; timecode?: string; label?: string }[];
 };
 
-const SHEET_GAP = 4;
+/** Pixels between the cells of a sheet and around them (`composeGrid`). */
+export const SHEET_GAP = 4;
 
 /** One PNG of the cells `meta` shows, and the JSON that says what each is. */
 export async function composeSheet(ctx: ToolContext, r: StillSheetResult, images?: readonly RgbaImage[]) {

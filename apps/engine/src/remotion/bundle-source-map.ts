@@ -98,8 +98,13 @@ async function withSourceMap<T>(file: string, use: (map: SourceMap | null) => T)
 
 type BundleFrame = { fn: string | null; file: string; line: number; column: number };
 
-/** `at fn (http://localhost:3000/bundle.js:12:34)` lines of a browser stack (V8 format: 1-based line and column). */
-const BUNDLE_FRAME = /^\s*at (?:(.+?) \()?https?:\/\/[^/\s]+\/([\w.-]+\.js):(\d+):(\d+)\)?\s*$/;
+/**
+ * `at fn (http://localhost:3000/bundle.js:12:34)` lines of a browser stack (V8 format: 1-based line and column): a
+ * file of the bundle served by Remotion, or by the engine's render bundle server under its random prefix
+ * (`http://127.0.0.1:<port>/<32 hex>/bundle.js:12:34`, `RemotionService.renderServeUrl`).
+ */
+const BUNDLE_FRAME =
+	/^\s*at (?:(.+?) \()?https?:\/\/[^/\s]+\/(?:[0-9a-f]{32}\/)?([\w.-]+\.js):(\d+):(\d+)\)?\s*$/;
 
 function bundleFrames(err: unknown): BundleFrame[] {
 	const texts: string[] = [];

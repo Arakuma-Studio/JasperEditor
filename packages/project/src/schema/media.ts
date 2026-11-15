@@ -317,19 +317,59 @@ export const MgCompositionInfoSchema = z.looseObject({
 });
 export type MgCompositionInfo = DeepStrip<z.infer<typeof MgCompositionInfoSchema>>;
 
+/** Longest query string of an HTML composition (without the leading `?`). */
+export const MG_HTML_QUERY_MAX = 2048;
+
+/**
+ * HTML composition page (schema v15, first introduced at v13 on a parallel line; `docs/wp-notes/html-compositions.md`):
+ * a self-contained HTML page that implements `window.__duration` (seconds), `window.__ready` (a Promise) and
+ * `window.__seek(t)` (pure, deterministic), rendered by seeking it frame by frame. `entry` is the page's file name in the bundle directory (a copy of the
+ * files the page loaded); `query` is given to it as `location.search` (without the `?`).
+ */
+export const MgHtmlPageSchema = z.strictObject({
+	entry: z
+		.string()
+		.min(1)
+		.max(255)
+		.regex(/^[^/\\\0]+\.html?$/i),
+	query: z
+		.string()
+		.max(MG_HTML_QUERY_MAX)
+		.regex(/^[^#\0\r\n]*$/),
+});
+export type MgHtmlPage = DeepStrip<z.infer<typeof MgHtmlPageSchema>>;
+
+/** Why a stored `mgBundle.html` value is unreadable (null when it is fine). */
+export function mgHtmlPageIssue(v: unknown): string | null {
+	const r = MgHtmlPageSchema.safeParse(v);
+	return r.success
+		? null
+		: r.error.issues.map((i) => `${i.path.join('.') || 'html'}: ${i.message}`).join('; ');
+}
+
 /** Header of an `mg-bundle` asset (M2, S08:MGC-001). */
 export const MgBundleInfoSchema = z.looseObject({
+	/** The Remotion version of the bundle (HTML pages: the version whose headless browser renders them). */
 	remotionVersion: z.string(),
 	/** sha256 of the bundle directory (content address; part of every pre-render cache key). */
 	bundleHash: z.string(),
 	builtAt: z.string(),
 	source: z.looseObject({
-		type: z.enum(['project-dir', 'bundle-upload']),
-		/** Project directory on the engine host (local mode) — used for rebuilds and watching. */
+		/** `html-page` (schema v15): an HTML composition imported from a page file. */
+		type: z.enum(['project-dir', 'bundle-upload', 'html-page']),
+		/**
+		 * Project directory on the engine host (local mode) — used for rebuilds and watching. `html-page`: the page
+		 * file.
+		 */
 		path: z.string().nullable(),
 		name: z.string(),
 	}),
 	compositions: z.array(MgCompositionInfoSchema),
+	/**
+	 * Schema v15: the bundle is an HTML composition page (one composition, rendered with `__seek`), not a Remotion
+	 * bundle. Read leniently (a damaged value never fails a load); INV-MG-HTML checks it, repair drops it.
+	 */
+	html: z.custom<MgHtmlPage>(() => true).optional(),
 });
 export type MgBundleInfo = DeepStrip<z.infer<typeof MgBundleInfoSchema>>;
 

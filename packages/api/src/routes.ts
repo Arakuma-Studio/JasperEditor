@@ -168,6 +168,7 @@ import {
 	MgBundleImportRequestSchema,
 	MgBundleRebuildRequestSchema,
 	MgBundleScaffoldRequestSchema,
+	MgHtmlImportRequestSchema,
 	MgPrerenderRequestSchema,
 	MgPrerenderResultSchema,
 	MgTextMeasureRequestSchema,
@@ -847,6 +848,13 @@ export const ROUTES = {
 		method: 'POST',
 		path: '/api/mg-bundles/import',
 		body: MgBundleImportRequestSchema,
+		response: RegisteredMediaSchema,
+	},
+	/** HTML composition page (`window.__seek`) → an `mg-bundle` with one composition (local mode). */
+	mgBundleImportHtml: {
+		method: 'POST',
+		path: '/api/mg-bundles/import-html',
+		body: MgHtmlImportRequestSchema,
 		response: RegisteredMediaSchema,
 	},
 	mgBundleRebuild: {

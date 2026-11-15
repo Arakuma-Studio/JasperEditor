@@ -266,6 +266,51 @@ describe('jasper against a real engine', () => {
 		expect(e.err).toMatch(/\[jasper\] \d+%/);
 	});
 
+	it('apply a scene file, apply again (nothing), move a title 40 px (one command), export-scene round trip', async () => {
+		const scene = (x: number) =>
+			[
+				'scene: 1',
+				'sequence: { name: Teaser, size: [1280, 720], fps: 30, duration: 3 }',
+				'layers:',
+				'  - { id: card, type: shape, shape: rect, size: [600, 200], fill: "#204060" }',
+				`  - id: title`,
+				'    type: text',
+				'    text: Hello',
+				`    position: [${x}, 360]`,
+				'    animation: { in: fade }',
+				'    keyframes:',
+				'      opacity: [{ t: 0, value: 0, ease: ease-out }, { t: 0.5, value: 100 }]',
+			].join('\n');
+		writeFileSync(join(work, 'scene.yaml'), scene(560));
+		const first = await jasper('apply', 'scene.yaml', '--json');
+		expect(first.code, first.err).toBe(0);
+		expect(first.lines[0]).toMatchObject({
+			createdSequence: true,
+			layers: [{ status: 'created' }, { status: 'created' }],
+		});
+		const again = await jasper('apply', 'scene.yaml', '--json');
+		expect(again.code, again.err).toBe(0);
+		expect(again.lines[0]).toMatchObject({ commands: 0 });
+		writeFileSync(join(work, 'scene.yaml'), scene(600));
+		const moved = await jasper('apply', 'scene.yaml', '--json');
+		expect(moved.lines[0]).toMatchObject({
+			commands: 1,
+			layers: [{ status: 'unchanged' }, { status: 'updated', aspects: ['position'] }],
+		});
+		const ex = await jasper('export-scene', '--sequence', 'Teaser', '--out', 'back.json');
+		expect(ex.code, ex.err).toBe(0);
+		expect(JSON.parse(readFileSync(join(work, 'back.json'), 'utf8')).layers[1]).toMatchObject({
+			id: 'title',
+			position: [600, 360],
+		});
+		const back = await jasper('apply', 'back.json', '--json');
+		expect(back.lines[0]).toMatchObject({ commands: 0 });
+		writeFileSync(join(work, 'bad.yaml'), scene(600).replace('ease-out', 'eas-out'));
+		const bad = await jasper('apply', 'bad.yaml');
+		expect(bad.code).toBe(1);
+		expect(bad.err).toContain('layers[1].keyframes.opacity[0].ease: unknown ease "eas-out"');
+	});
+
 	it('the bin entry runs and returns the exit status', () => {
 		const r = spawnSync(
 			process.execPath,

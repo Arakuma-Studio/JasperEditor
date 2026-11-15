@@ -17,7 +17,7 @@ protocol), M1 `/mg/:key/:file` store. Remotion pinned at 4.0.499.
 | MGC-012 | `routes/mg-bundles.ts` | `GET /mg/bundles/:key/*` (immutable, Range, same auth); `?jasper-host=1` on `index.html` injects the host bootstrap (`injectHostBootstrap`). |
 | MGC-013 | `service.ts` (`watch`, `restoreWatches`, `rebuild`) | `watch: true` on project directories: debounced rebuild on `src/`/`public/`/config changes, new hash → `media.relink` (fingerprint change allowed for `mg-bundle`) and the `mgBundle.rebuilt` event; the web runtime relinks open projects as a system edit. Watches persist in `<appdir>/mg-bundles/watches.json`. Manual: `POST /api/mg-bundles/:key/rebuild`. |
 | MGC-014 (P1) | `CompositionLayer.tsx` (`CompositionCard`), `native-ext.ts` (`blockers`) | "Composition <id> not in bundle" / "Composition bundle missing" card; export blocker. |
-| MGC-015 (P1) | `apps/engine/src/mg-bundles/scaffold.ts`, `template/files.ts`, route `POST /api/mg-bundles/scaffold`, MCP `scaffold_mg_project` | Writes a Remotion 4.0.499 project with one example composition, `jasper.mg.json`, schema module. Unit-tested without the install step (see gaps). |
+| MGC-015 (P1) | `apps/engine/src/mg-bundles/scaffold.ts`, `template/files.ts`, route `POST /api/mg-bundles/scaffold`, MCP `scaffold_mg_project` | Writes a Remotion 4.0.499 project with one example composition, `jasper.mg.json`, schema module, `packageManager` = the repository's pnpm pin (`TEMPLATE_PACKAGE_MANAGER`). Installs with `CI=true corepack pnpm@<pin> install --ignore-workspace` (see Install below). |
 | MGC-020 | `packages/compositions/src/layers/CompositionLayer.tsx` | Order: master (renders) → live host (edit/paused) → preview WebM (idle, unchanged props) → idle card. Status chips (spinner, "Grade pending", error). A warm hidden host stays configured under the preview WebM so an edit switches back without a reload. |
 | MGC-021 | `packages/compositions/src/mg-host/protocol.ts` | Same-origin iframe on the bundle page; `MgFrameHostDriver` uses the renderer-page protocol: `remotion_puppeteerTimeout` marker, `NODE_ENV=production` (`isRendering`), `remotion_setBundleMode({type:'evaluation'})` → `remotion_calculateComposition` → `setBundleMode({type:'composition', …})` → `remotion_setFrame` / `remotion_renderReady`, `remotion_getCompositionNames` polling. `checkHostProtocol` fails loudly on a version or protocol change (Playwright contract test). `color-scheme: light` on iframe and page (a mismatch paints an opaque backdrop). |
 | MGC-022 | `CompositionLayer.tsx`, `apps/web/src/mg-bundles/runtime.ts` | Paused: exact playhead frame; playing: preview WebM when ready, live host otherwise. |
@@ -89,6 +89,31 @@ Results (engine 48140, web 52140):
 - MGC-024: live-host budget is first-come, not ranked by distance to the playhead.
 - `OffthreadVideo` / `<Video>` inside a composition is not shown in the live host (the renderer serves those frames; the preview WebM and masters are correct).
 - Props edit latency in the dev build is ~270 ms with the host visible but ~600 ms when switching from the preview WebM (an editor-wide synchronous commit in dev React; the production E2E stays under 500 ms).
-- Scaffold (MGC-015) is unit-tested for the files it writes and the version pin, not for `pnpm install` + bundle of the result.
+- Scaffold (MGC-015) install: unit tests (`apps/engine/test/mg-scaffold-install.test.ts`) run a stand-in corepack, so the real `pnpm install` + bundle is exercised only by hand (see Install below). The install needs corepack on the engine's PATH (Node.js 20–24 bundle it; later Node releases need `npm install -g corepack`) and network access for pnpm's first download and the packages.
 - Desktop folder selection uses the shared `DesktopBridge.pickFolder()` contract; browser users can enter a host path. Dropping a folder on the Project panel is not implemented.
 - Posters use `thumbnailFrame` from the manifest, else frame 0 (as specified) — overlays that animate in are empty at frame 0, so set `thumbnailFrame` (the `"*"` entry works) for useful thumbnails.
+
+## Install (MGC-015 scaffold)
+
+`apps/engine/src/mg-bundles/scaffold.ts` runs `CI=true corepack pnpm@<pin> install --ignore-workspace` in the new
+folder, where `<pin>` is `TEMPLATE_PACKAGE_MANAGER` (template/files.ts), the repository's own `packageManager`
+(`apps/engine/test/mg-scaffold-install.test.ts` keeps them equal), and the generated `package.json` declares it too.
+Measured on this host before the fix (2026-11-11, the engine's former `pnpm install --ignore-workspace` through the
+corepack shim on PATH): under a foreign workspace whose `package.json` pins `pnpm@9.15.0` the install ran with pnpm
+9.15.0; under one pinning `yarn@4.5.0` it exited 1 ("This project is configured to use yarn"); in a clean directory
+corepack's default pnpm 12.14.0 exited 1 with `ERR_PNPM_IGNORED_BUILDS` (esbuild) — and the error said only "exit 1".
+After the fix all three install with pnpm 10.34.5 and import (via `jasper call scaffold_mg_project`, 23–45 s each).
+
+- Environment: CI=true and COREPACK_ENABLE_DOWNLOAD_PROMPT=0 (no prompts). The run context a `pnpm run` exports
+  (`npm_lifecycle_*`, `npm_package_*`, `INIT_CWD`…) is dropped, and when the engine itself was started by a script
+  (`pnpm dev`), so are that project's `npm_config_*` / `pnpm_config_*` settings; otherwise a user's
+  `npm_config_registry` and similar stay.
+- Limit 150 s, so the error reaches MCP and CLI callers within their 180 s request deadline (the import's bundle
+  follows the install). On timeout, abort (the client disconnects) or engine exit the install's process group is
+  killed. Errors: `MG_INSTALL_FAILED` (`detail.reason` corepack-missing | spawn | exit, `exitCode`, `stderr` and
+  `stdout` tails of at most 4000 characters each — pnpm 10 prints its `ERR_PNPM_*` errors on stdout) and
+  `MG_INSTALL_TIMEOUT` (retryable, `timeoutSeconds`); the message names the error line and the hint the command to
+  rerun in the folder (a corepack download failure names the network / COREPACK_NPM_REGISTRY).
+- Not written: a `pnpm-workspace.yaml` in the project. `--ignore-workspace` covers the engine's install; a user who
+  runs `pnpm add` inside a folder that a foreign workspace's `packages` globs include must pass `--ignore-workspace`
+  too.

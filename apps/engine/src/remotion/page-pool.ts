@@ -23,8 +23,13 @@
 // `JOB_CANCELLED`. Nothing started by the pool outlives it.
 import { JobError } from '../jobs/types.ts';
 
-/** A page renders at least this many frames (below it, a page's start-up — creation, bundle, fonts — dominates). */
-const MIN_FRAMES_PER_PAGE = 10;
+/**
+ * A page renders at least this many frames: below it, a page's start-up (creation, bundle, fonts) and the CPU every
+ * open page costs its browser outweigh what it adds (wp-note export-performance §16: a 60-frame title's bake on 2
+ * pages instead of 6, 6.4 → 4.5 s on a 16-core host without a GPU; a browser's GPU process saturates at about two
+ * pages, §8). A long master still takes its share of the budget.
+ */
+const MIN_FRAMES_PER_PAGE = 30;
 /** Renders in flight at most (whatever the budget). */
 export const MAX_RENDERS_IN_FLIGHT = 6;
 
