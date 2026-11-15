@@ -61,6 +61,23 @@ type IndexFile = { version: 1; engineId: string; items: Record<string, MediaReco
 
 type Availability = 'online' | 'missing';
 
+/**
+ * The file of a record is still the one registered: it exists with the recorded size and, for the user's own files,
+ * the recorded mtime (S04:AS-010). An export checks the records it planned with against it when it ends.
+ */
+export async function fileMatches(
+	r: Pick<MediaRecord, 'storage' | 'sizeBytes' | 'mtimeMs'>,
+): Promise<boolean> {
+	try {
+		const s = await stat(r.storage.path);
+		if (!s.isFile() || s.size !== r.sizeBytes) return false;
+		// Managed copies are ours: only the size matters. User files must keep their mtime.
+		return r.storage.type !== 'path' || Math.abs(s.mtimeMs - r.mtimeMs) <= 1;
+	} catch {
+		return false;
+	}
+}
+
 export class MediaRegistry {
 	private readonly mutex = new KeyedMutex();
 	private constructor(
@@ -107,16 +124,7 @@ export class MediaRegistry {
 	/** `online` when the file exists with the recorded size and mtime (S04:AS-010). */
 	async availability(mediaKey: string): Promise<Availability> {
 		const r = this.get(mediaKey);
-		if (!r) return 'missing';
-		try {
-			const s = await stat(r.storage.path);
-			if (!s.isFile() || s.size !== r.sizeBytes) return 'missing';
-			// Managed copies are ours: only the size matters. User files must keep their mtime.
-			if (r.storage.type === 'path' && Math.abs(s.mtimeMs - r.mtimeMs) > 1) return 'missing';
-			return 'online';
-		} catch {
-			return 'missing';
-		}
+		return r && (await fileMatches(r)) ? 'online' : 'missing';
 	}
 
 	/** Engine-local path of an online media file, or null (offline or unknown key). */

@@ -90,6 +90,7 @@ import {
 	gifBytes,
 	gifFrames,
 } from './deliverables.ts';
+import { describeUse, offlineUsesOf } from './media-guard.ts';
 import {
 	bakeRecipeOf,
 	compositeMemoryBlocker,
@@ -445,7 +446,8 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		},
 		templateAssets: engineTemplateAssets(deps.fonts),
 	});
-	if (deliverable.kind === 'audio')
+	if (deliverable.kind === 'audio') {
+		refuseOfflineMedia(snapshot, document, { picture: false, sound: true });
 		return planAudioOnly({
 			input,
 			deps,
@@ -459,6 +461,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			captionWarnings,
 			spec: deliverable.audio,
 		});
+	}
 
 	// Frame buffers are sized by these numbers (`width × height × 4` per layer in the
 	// compositing kernels and in ffmpeg). Commands keep sequences within 8192 px; a hostile document or request is
@@ -690,17 +693,6 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			reason: 'no usable video encoder (H.264, AV1 or VP9) in this ffmpeg build',
 		});
 
-	const offlineUsed = new Set<string>();
-	for (const c of visual)
-		if ('mediaId' in c.source && snapshot.media[c.source.mediaId] === null) offlineUsed.add(c.clipId);
-	for (const a of snapshot.audioClips) if (snapshot.media[a.mediaId] === null) offlineUsed.add(a.clipId);
-	if (offlineUsed.size > 0) {
-		warnings.push({
-			code: 'OFFLINE_MEDIA',
-			message: `${offlineUsed.size} clip(s) use offline media and render as "Media Offline"`,
-			itemIds: [...offlineUsed],
-		});
-	}
 	// Template media params (avatars) that are offline: the template draws its placeholder there, so the export says so.
 	const templateOffline = new Set<string>();
 	for (const c of visual)
@@ -1002,6 +994,11 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 				hint: 'Relink the picture, or pick another one (or None) in the look layer.',
 			},
 		);
+	// (after the refusals naming a particular kind of missing media: 3D models, look pictures, compositions)
+	refuseOfflineMedia(snapshot, document, {
+		picture: true,
+		sound: deliverable.kind !== 'gif' && !settings.videoOnly && !input.still,
+	});
 
 	// S11:LBK-024: baking needs the browser too; a pending download is not a blocker.
 	if (path === 'hybrid' && deps.capabilities.remotionLocal === 'needs-browser-download')
@@ -1213,13 +1210,6 @@ function planAudioOnly(o: {
 			message: `${o.proxiesOffline.length} proxies are offline: those media render at full resolution`,
 			itemIds: o.proxiesOffline,
 		});
-	const offline = snapshot.audioClips.filter((a) => snapshot.media[a.mediaId] === null).map((a) => a.clipId);
-	if (offline.length)
-		warnings.push({
-			code: 'OFFLINE_MEDIA',
-			message: `${offline.length} clip(s) use offline media and are silent in the mix`,
-			itemIds: offline,
-		});
 	// caption sidecars may go with the sound; burned-in captions have no picture to go into
 	warnings.push(...o.captionWarnings);
 	if (settings.usePreviews)
@@ -1385,6 +1375,8 @@ export function localHandle(asset: MediaAsset, m: LocalMedia): MediaHandle {
 export const TEMPLATE_MEDIA_UNDRAWABLE = 'TEMPLATE_MEDIA_UNDRAWABLE';
 /** Spec 19 TL-021: a look layer's picture (reflection environment, pattern tile…) is offline; the export refuses. */
 export const LOOK_MEDIA_OFFLINE = 'LOOK_MEDIA_OFFLINE';
+/** A clip's media is offline: the export refuses (`refuseOfflineMedia`). */
+export const MEDIA_OFFLINE = 'MEDIA_OFFLINE';
 
 /** Clips whose look reads a picture that is offline, one entry per clip and picture, labelled for the blocker. */
 export function lookMediaOfflineItems(
@@ -1546,6 +1538,44 @@ function unresolvedClips(
 		for (const e of providers) for (const r of e.refusals?.(c) ?? []) out.push({ clipId: c.clipId, ...r });
 	}
 	return out;
+}
+
+/**
+ * S03:RND-032, AGENTS §4: clips whose media is offline would draw the preview's "Media Offline" card (or play
+ * silence), so every path refuses them by name before anything renders (`MEDIA_OFFLINE`). `picture` / `sound`: the
+ * parts the file holds (an audio-only file has no picture; a picture-only file no sound).
+ */
+function refuseOfflineMedia(
+	snapshot: RenderSnapshot,
+	document: ProjectDocument,
+	parts: { picture: boolean; sound: boolean },
+): void {
+	const clips = document.sequences[snapshot.sequenceId]?.clips;
+	const offline = offlineUsesOf(snapshot, (id) => clips?.[id]?.name).filter((u) =>
+		u.sound ? parts.sound : parts.picture,
+	);
+	if (offline.length === 0) return;
+	const fileOf = (id: string) => document.media[id]?.originalName ?? id;
+	const files = [...new Set(offline.map((u) => fileOf(u.mediaId)))];
+	throw new PlanError(
+		MEDIA_OFFLINE,
+		409,
+		`Media is offline: ${files.slice(0, 5).join(', ')}${files.length > 5 ? ` and ${files.length - 5} more` : ''} (used by ${offline
+			.slice(0, 5)
+			.map(describeUse)
+			.join(
+				', ',
+			)}${offline.length > 5 ? ` and ${offline.length - 5} more clip(s)` : ''}). An export never draws the Media Offline card.`,
+		{
+			blockers: offline.map((u) => ({
+				itemId: u.clipId,
+				path: 'native' as const,
+				reason: `${u.sound ? 'audio' : 'video'} clip ${describeUse(u)} uses offline media ${fileOf(u.mediaId)} (${u.mediaId})`,
+			})),
+			media: [...new Set(offline.map((u) => u.mediaId))].map((id) => ({ mediaId: id, name: fileOf(id) })),
+			hint: 'Relink the media (Link Media, or Replace Footage for a new file), or remove or disable those clips, then export again.',
+		},
+	);
 }
 
 /** Visual clips of a snapshot and of every nested snapshot drawn in it. */

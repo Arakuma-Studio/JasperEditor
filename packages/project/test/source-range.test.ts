@@ -727,9 +727,13 @@ describe('Replace Footage with "keep source timing" (S07:PRC-018)', () => {
 		expect([vclip(h, videoId).start, vclip(h, videoId).duration]).toEqual([0, 54]);
 		expect(checkInvariants(h.doc)).toEqual([]);
 		// Plain replace (no keep timing): content time unchanged; still checked against the new file.
-		const { h: h2, mediaId: m2, videoId: v2 } = replaceSetup();
+		const { h: h2, mediaId: m2, videoId: v2, audioId: a2 } = replaceSetup();
 		const plain = h2.ok([relinkCmd(m2, replacement(1800, { name: 'crudo-v2.mp4' }), {})]);
-		expect(plain.results[0]).toMatchObject({ shiftFrames: 0, clipIds: [] });
+		// every clip now on the new file is listed, though none moved
+		expect(plain.results[0]).toMatchObject({ shiftFrames: 0 });
+		const listed = (plain.results[0] as { clipIds: string[] }).clipIds;
+		expect(listed).toHaveLength(2);
+		expect(listed).toEqual(expect.arrayContaining([v2, a2]));
 		expect(vclip(h2, v2).sourceIn).toBe(180 * F30);
 		const tooShort = h2.tx([relinkCmd(m2, replacement(100, { name: 'x.mov' }), {})]);
 		expect(!tooShort.ok && tooShort.errors[0]!.code).toBe('E_OUT_OF_MEDIA');

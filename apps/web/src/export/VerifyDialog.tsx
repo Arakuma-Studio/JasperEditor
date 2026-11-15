@@ -40,6 +40,7 @@ const CHECK_LABELS: Record<VerifyRow['id'], string> = {
 	'cut-flash': 'Flash frames at cuts',
 	'cut-click': 'Clicks at cuts',
 	'uncovered-video': 'Frames without picture',
+	'offline-media': 'Media Offline frames',
 	loudness: 'Loudness',
 	'true-peak': 'True peak',
 	silence: 'Silence',

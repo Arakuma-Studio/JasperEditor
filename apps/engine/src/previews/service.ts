@@ -43,7 +43,6 @@ const BPP = { 'h264-iframe': 0.6, h264: 0.25, vp9: 0.2 } as const;
 
 /** Warnings of a segment's plan that would make its preview differ from the document once they clear. */
 const UNSTABLE_WARNINGS: Record<string, string> = {
-	OFFLINE_MEDIA: 'media offline',
 	FONT_FALLBACK: 'a font is missing',
 	UNKNOWN_TEXT_ANIMATION: 'a text animation is not installed',
 	NEST_UNAVAILABLE: 'a nested sequence is unavailable',

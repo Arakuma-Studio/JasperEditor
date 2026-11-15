@@ -104,9 +104,10 @@ FilmCraft's table and this box's measurements (§7), not a calibrated model.
   planning and paths (native, hybrid layer bakes, Remotion, their fallbacks and frame-count check), picture only
   (`ExportSettings.videoOnly`), with `keyframeInterval` — into `<hash>.part.<ext>`, fsyncs it and renames it to
   `<hash>.<ext>` under `cache/previews/<formatKey>/`. A cancel or crash never leaves a file that looks valid; the
-  cache scan sweeps `.part.` files. Identical segments render once. Segments whose plan warns OFFLINE_MEDIA,
-  FONT_FALLBACK, UNKNOWN_TEXT_ANIMATION or NEST_UNAVAILABLE are skipped with the reason (the file would keep the
-  fallback picture after the media comes back, since its hash would not change).
+  cache scan sweeps `.part.` files. Identical segments render once. Segments whose plan is refused (offline media:
+  `MEDIA_OFFLINE`) or warns FONT_FALLBACK, UNKNOWN_TEXT_ANIMATION or NEST_UNAVAILABLE are skipped with the reason (the
+  file would keep the fallback picture after the media comes back, since its hash would not change); a segment whose
+  media file changes while it renders fails `MEDIA_CHANGED_DURING_EXPORT` and is never cached.
 - **Render Audio** writes each audio segment's offline mix (`renderMixdown`, the export's mixer) as a 32-bit float
   stereo WAV at the sequence rate.
 - **Status** (`POST /api/previews/status`) answers which hashes have files (directory listings cached for 1 s, kept

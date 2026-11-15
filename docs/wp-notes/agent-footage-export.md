@@ -45,7 +45,7 @@ Workstream AF-EXP of [spec 18](../specs/18-agent-footage-editing.md) §2.7. No c
 
 - The planner returns before anything visual is checked (`planAudioOnly`): visual blockers, missing templates, roto or
   warp analysis do not refuse an audio file; audio effects without a processor still do (`AUDIO_EFFECT_UNSUPPORTED`),
-  as on every path. Offline audio clips warn `OFFLINE_MEDIA`.
+  as on every path. Offline audio clips refuse it (`MEDIA_OFFLINE`), as offline media refuses every export.
 - The mix is `renderAudio` → `renderMixdown`, the one offline mixer every export path uses, over the export range at
   the export's channels (1 / 2 / 6, 5.1 folded by BS.775), rate (44.1 / 48 / 96 kHz, SoX when present) and loudness
   normalisation (the Mix's, or `audio.normalize`), with the delivery's decoded check for M4A (lossy) and for any

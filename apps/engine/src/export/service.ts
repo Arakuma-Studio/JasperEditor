@@ -97,6 +97,7 @@ import { runPsdExport } from './delivery/psd-job.ts';
 import { planPsd } from './delivery/psd-plan.ts';
 import { gpuDecodePolicyFromEnv, nvdecEligible, nvdecForGraph, probeCudaDecode } from './gpu.ts';
 import { motionStage } from './keyframed.ts';
+import { guardMediaDuring, offlineUsesOf } from './media-guard.ts';
 import { compositeMemoryBudget, compositeProfile, estimateFrom, overlaysFrom } from './memory.ts';
 import {
 	BT709_FRAME_TAGS,
@@ -161,7 +162,7 @@ import { streamLayer } from './stream/run.ts';
 import { BakeChangedError, streamTaps } from './stream/taps.ts';
 import { createSyntheticExtension } from './synthetic.ts';
 import { concatFilter, type ExportRun, exportRuns, fallbackRuns, type PreviewPiece } from './use-previews.ts';
-import { buildVerifyContext, writeVerifyContext } from './verify-context.ts';
+import { buildVerifyContext, type OfflineSpan, writeVerifyContext } from './verify-context.ts';
 import { deliverableOfContainer, EXPORT_JOB_ID_RE, runExportVerify, targetRefusal } from './verify-job.ts';
 
 /**
@@ -1339,6 +1340,7 @@ export class ExportService {
 		hasAudio: boolean,
 		frames: number,
 		ctx: JobContext,
+		offline: readonly OfflineSpan[],
 	): Promise<void> {
 		const del = planned.deliverable;
 		try {
@@ -1351,6 +1353,7 @@ export class ExportService {
 					sequenceId: planned.sequenceId,
 					range: planned.range,
 					...(planned.joined ? { pieces: planned.joined.map((p) => p.range) } : {}),
+					offline,
 					output: { ...o, encoder: enc ? { container: enc.container, codec: enc.codec } : null },
 					pixFmt: enc
 						? o.alpha
@@ -2917,7 +2920,10 @@ export class ExportService {
 			throw e;
 		}
 		if (opts.noBFrames) planned.output.noBFrames = true;
-		const r = await this.renderPlanned(ctx, req, planned, output);
+		// (a preview file is cached by its document hash: it must never hold frames of a file that changed meanwhile)
+		const r = await guardMediaDuring(planned, this.mediaGuardOpts(ctx), () =>
+			this.renderPlanned(ctx, req, planned, output),
+		);
 		return { frames: r.frames, renderPath: r.path, warnings: r.warnings };
 	}
 
@@ -2959,8 +2965,14 @@ export class ExportService {
 		const dir = await this.outDir(ctx);
 		const output = join(dir, `output.${outputExtension(planned)}`);
 		ctx.addPartial(dir);
-		// where the time went, in the log of a failed (or cancelled) export too
-		const rendered = await this.renderExport(ctx, req, planned, output).catch((e: unknown) => {
+		// where the time went, in the log of a failed (or cancelled) export too; a media file that changed while it
+		// rendered fails it by name (media-guard.ts)
+		const first = planned;
+		const rendered = await guardMediaDuring(
+			first,
+			this.mediaGuardOpts(ctx),
+			async () => await this.renderExport(ctx, req, first, output),
+		).catch((e: unknown) => {
 			ctx.log(this.report(ctx).summary());
 			this.prepareWarnings.delete(ctx.job.id);
 			throw e;
@@ -2974,6 +2986,10 @@ export class ExportService {
 			warnings,
 			audio,
 		});
+	}
+
+	private mediaGuardOpts(ctx: JobContext): { exposePaths: boolean; signal: AbortSignal } {
+		return { exposePaths: this.deps.localMode, signal: ctx.signal };
 	}
 
 	/** The file of a planned export by its deliverable and path (`runExport`). */
@@ -3389,8 +3405,10 @@ export class ExportService {
 		const captionResult = await this.writeCaptionOutputs(planned, output, dir, ctx);
 		// spec 12 §2.11: the sound credits sidecar.
 		const creditsResult = await this.writeCreditsSidecar(planned, req.settings, dir, ctx);
-		// spec 18 AF-VER-001: what was asked and the cuts of the range, for verify_export
-		await this.writeVerifyContext(planned, dir, !!audio, frames, ctx);
+		// spec 18 AF-VER-001: what was asked and the cuts of the range, for verify_export (with the frames drawn from
+		// offline media, which the plan refuses: never encoded unsaid)
+		const offline = offlineSpansOf(planned);
+		await this.writeVerifyContext(planned, dir, !!audio, frames, ctx, offline);
 		const byteSize = (await stat(output)).size;
 		const downloadUrl = `/renders/${ctx.job.id}/output`;
 		let finalPath: string | undefined;
@@ -3473,6 +3491,17 @@ export class ExportService {
 		const allWarnings = [
 			...formatChanges,
 			...warnings,
+			...(offline.length
+				? [
+						{
+							code: 'OFFLINE_MEDIA',
+							message: `${offline.length} clip(s) rendered with offline media (the Media Offline card or silence): ${offline
+								.slice(0, 5)
+								.map((u) => `"${u.name}" frames ${u.start}–${u.end}`)
+								.join(', ')}`,
+						},
+					]
+				: []),
 			...(audioLoudness ? deliveryWarnings(audioLoudness) : []),
 			...resultSoundWarnings(planned.plan, !!creditsResult?.name),
 		];
@@ -4284,4 +4313,26 @@ export async function copyNoOverwrite(
 		}
 		return candidate;
 	}
+}
+
+/** The clips a planned export draws with offline media, as verify.json records them (`at` in a multi-range file). */
+function offlineSpansOf(planned: PlannedExport): OfflineSpan[] {
+	const clips = planned.document.sequences[planned.sequenceId]?.clips;
+	const names = (id: string) => clips?.[id]?.name;
+	const out: OfflineSpan[] = [];
+	let at = 0;
+	for (const part of planned.joined ?? [{ range: planned.range, snapshot: planned.snapshot }]) {
+		for (const u of offlineUsesOf(part.snapshot, names))
+			out.push({
+				start: u.start,
+				end: u.end,
+				clipId: u.clipId,
+				name: u.name,
+				mediaId: u.mediaId,
+				sound: u.sound,
+				...(planned.joined ? { at: at + u.start - part.range.start } : {}),
+			});
+		at += part.range.end - part.range.start;
+	}
+	return out;
 }
