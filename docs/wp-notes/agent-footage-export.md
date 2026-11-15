@@ -77,8 +77,15 @@ Reported in a real cut (2026-11-14): a review cut of several ranges needed one e
 concat, because `start_export` took one `range`.
 
 - **Settings.** `ExportSettings.range` takes `{type: 'ranges', ranges: [{startFrame, endFrame}, …]}` (2 to
-  `MAX_EXPORT_RANGES` = 50; one range is `custom`). The ranges are joined in the order given; they may be out of
-  sequence order and may overlap. MCP `start_export {range: [{from, to}, …]}` sends it (a one-item list is `custom`;
+  `MAX_EXPORT_RANGES` = 50; one range is `custom`). The ranges are joined in the order given, never reordered: a later
+  range may go back in the sequence or repeat a moment.
+- **Normalised first** (`joinedRanges`, `overlapRefusal`). Ranges that touch (one ends on the frame the next starts,
+  e.g. 1869–3000, 3000–6000, 6000–8346) are one continuous stretch and merge into one piece: no join fade, no join cut in
+  `verify.json`, no intermediate. A list that merges into one range is planned, stored and rendered as that plain
+  `custom` range export (smart rendering and previews apply again). A range that starts inside the one before it and
+  runs on past its end is refused (`VALIDATION_FAILED`, "start it at <end> to continue"): the overlap would play twice
+  in a row with a join between, which reads as a stutter, not an edit. A range that goes back and ends within or before
+  the previous one is a deliberate replay and is joined; non-adjacent repeats are joined. MCP `start_export {range: [{from, to}, …]}` sends it (a one-item list is `custom`;
   an empty or negative item is refused as `range[i]`).
 - **Plan** (`apps/engine/src/export/ranges.ts`, `ExportService.planJoined`). Each range is planned as a `custom` range
   export of its own, picture only, so each gets exactly the path, blockers and warnings that range alone would. The file's

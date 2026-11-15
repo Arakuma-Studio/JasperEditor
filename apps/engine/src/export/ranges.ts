@@ -14,12 +14,40 @@ import type { PlannedExport } from './planner.ts';
 /** One range of a multi-range export: the sequence frames it shows and the snapshot its own plan built. */
 export type JoinedPart = { range: { start: number; end: number }; snapshot: RenderSnapshot };
 
-/** The sequence ranges a multi-range export joins (null for every other range type). */
+/**
+ * The pieces a multi-range export joins, in the order given (null for every other range type). Ranges that touch — one
+ * ends on the frame the next starts — are one continuous stretch of the sequence: they merge into one piece, so it
+ * gets no join fade, no join cut and no intermediate (a list that merges into one range is a plain range export).
+ * The order is never changed: a later range may go back in the sequence or repeat a moment on purpose.
+ */
 export function joinedRanges(
 	settings: Pick<ExportSettings, 'range'>,
 ): { start: number; end: number }[] | null {
 	const r = settings.range;
-	return r.type === 'ranges' ? r.ranges.map((x) => ({ start: x.startFrame, end: x.endFrame })) : null;
+	if (r.type !== 'ranges') return null;
+	const out: { start: number; end: number }[] = [];
+	for (const x of r.ranges) {
+		const last = out[out.length - 1];
+		if (last && x.startFrame === last.end) last.end = x.endFrame;
+		else out.push({ start: x.startFrame, end: x.endFrame });
+	}
+	return out;
+}
+
+/**
+ * Why the pieces cannot be joined as given, or null: a piece that starts inside the one before it and runs on past its
+ * end continues it with an overlap, so the frames in between would play twice in a row with a join between them (a
+ * stutter, such as 1869–3001 then 3000–6000). A piece that goes back and ends within or before the previous one is a
+ * deliberate replay and is joined.
+ */
+export function overlapRefusal(pieces: readonly { start: number; end: number }[]): string | null {
+	for (let i = 1; i < pieces.length; i++) {
+		const a = pieces[i - 1]!;
+		const b = pieces[i]!;
+		if (b.start > a.start && b.start < a.end && b.end > a.end)
+			return `The range ${b.start}–${b.end} starts inside the one before it (${a.start}–${a.end}) and continues past it, so frames ${b.start}–${a.end} would play twice in a row: start it at ${a.end} to continue`;
+	}
+	return null;
 }
 
 /**
