@@ -210,7 +210,7 @@ const SCENES: Scene[] = [
 		commands: [
 			FX('jasper.s.shake', { ...STRONG_SHAKE, amplitude: 1, wrapX: 'no', wrapY: 'no' }, '$sh'),
 			FX('jasper.hue-saturation', { saturation: -60 }, '$hs'),
-			FX('jasper.crop', { left: 20 }, '$cr'),
+			FX('jasper.crop', { left: 25 }, '$cr'),
 		],
 	},
 	{
