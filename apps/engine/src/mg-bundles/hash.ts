@@ -1,10 +1,12 @@
 // Content address of a bundle directory (S08:MGC-001): sha256 over the sorted relative paths (POSIX
 // separators) and file contents. Symlinks are followed (a bundle's `public/` may be a symlink); cycles and
-// special files are skipped.
+// special files are skipped. `bundle.js` is hashed with its hidden source-map references restored
+// (remotion/bundle-source-map.ts): a stored bundle hashes like the bundle it was imported from.
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { readdir, realpath, stat } from 'node:fs/promises';
+import { readdir, readFile, realpath, stat } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
+import { restoreHiddenSourceMapReferences } from '../remotion/bundle-source-map.ts';
 
 type BundleFile = { rel: string; abs: string; size: number };
 
@@ -38,7 +40,7 @@ export async function listBundleFiles(
 	return out.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0));
 }
 
-/** sha256 hex of a bundle directory's content (paths + bytes). */
+/** sha256 hex of a bundle directory's content (paths + bytes; `bundle.js` as before its source-map references were hidden). */
 export async function hashBundleDir(
 	root: string,
 	opts: { skip?: (rel: string) => boolean } = {},
@@ -48,12 +50,14 @@ export async function hashBundleDir(
 	let bytes = 0;
 	for (const f of files) {
 		h.update(`${f.rel}\0${f.size}\0`);
-		await new Promise<void>((resolve, reject) => {
-			const rs = createReadStream(f.abs);
-			rs.on('data', (c) => h.update(c));
-			rs.on('end', () => resolve());
-			rs.on('error', reject);
-		});
+		if (f.rel === 'bundle.js') h.update(restoreHiddenSourceMapReferences(await readFile(f.abs)));
+		else
+			await new Promise<void>((resolve, reject) => {
+				const rs = createReadStream(f.abs);
+				rs.on('data', (c) => h.update(c));
+				rs.on('end', () => resolve());
+				rs.on('error', reject);
+			});
 		h.update('\0');
 		bytes += f.size;
 	}
