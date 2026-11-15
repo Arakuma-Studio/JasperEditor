@@ -1,7 +1,7 @@
 // Premiere Pro "Color Correction" video effects (fx family premiere-adjust-color-keying): Change Color, Change to
 // Color, Channel Mixer, Color Balance, Color Balance (HLS), Equalize (./analysis.ts), Leave Color, Tint, Video
 // Limiter. (Brightness & Contrast, Hue/Saturation, Black & White and Lumetri Color already exist.) All work on straight
-// colour; alpha is kept.
+// colour; alpha is kept. Tint is a colour op (fused into colour runs: preview LUT, native `lut3d`), the others shaders.
 import type { ColorOp, EffectParams, EffectSpec, ParamSpec } from '../../effects.ts';
 import { defineShaderEffect } from '../define.ts';
 import { fxParam } from '../params.ts';
