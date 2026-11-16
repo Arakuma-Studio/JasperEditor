@@ -149,6 +149,18 @@ export const SoundLayerSchema = z.strictObject({
 	/** Which point of the sound lands on the cue: `auto` (default: the cue's `align`, else the sound type's). */
 	align: z.enum([...CUE_ALIGNS, 'auto']).optional(),
 	/**
+	 * Place only `[fromSec, toSec)` of the media (content seconds; a whoosh cut from a longer recording), aligned as if it
+	 * were the file: `peakSec` (seconds of the media, inside the slice) is its peak; without it align by start or end.
+	 */
+	slice: z
+		.strictObject({
+			fromSec: z.number().min(0).max(86_400),
+			toSec: z.number().min(0).max(86_400),
+			peakSec: z.number().min(0).max(86_400).optional(),
+		})
+		.refine((s) => s.toSec > s.fromSec, 'slice.toSec must be after slice.fromSec')
+		.optional(),
+	/**
 	 * Clip gain (dB). Default: the sound's default level — its loudest 400 ms (`maxMomentaryLufs`) to the role's
 	 * momentary target at the sequence's delivery (web: hero −16, support −22, layer −24, beds −30 LUFS) under the
 	 * role's true-peak ceiling (−6 / −12 / −16 / −20 dBTP), within −30…+12 dB; recorded as `sfx.level`.

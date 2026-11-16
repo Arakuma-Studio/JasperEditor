@@ -39,6 +39,7 @@ import {
 	resolveSoundAlign,
 	type SoundTiming,
 	type SoundTrackSequence,
+	sliceTiming,
 	soundTimingOf,
 } from '../../sound/insert.ts';
 import { sfxGainOwner } from '../../sound/level.ts';
@@ -640,17 +641,35 @@ function place(doc: DDoc, cmd: CommandOf<'soundDesign.place'>, h: HandlerContext
 		const types = prov?.types?.length ? prov.types : (cue?.types ?? []);
 		const requested = layer.align && layer.align !== 'auto' ? layer.align : (cue?.align ?? 'auto');
 		const align = resolveSoundAlign(types, requested);
-		const dur =
+		const mediaDur =
 			mediaDurationFlicks(asset as MediaAsset) ??
 			(prov?.descriptors ? Math.round(prov.descriptors.durationSec * FLICKS_PER_SECOND) : null);
-		if (!dur || !(dur > 0)) return h.fail('E_INVALID_PARAM', `Media ${asset.id} has no length`, { path });
-		let timing = timingOfMedia(prov, dur);
+		if (!mediaDur || !(mediaDur > 0))
+			return h.fail('E_INVALID_PARAM', `Media ${asset.id} has no length`, { path });
+		// a slice is placed as if it were the file: its timing and length, its In point shifted by its start
+		let dur = mediaDur;
+		let sliceOffset = 0;
+		let timing: SoundTiming | null;
+		if (layer.slice) {
+			const st = sliceTiming(layer.slice, mediaDur);
+			if (!st)
+				return h.fail(
+					'E_OUT_OF_MEDIA',
+					`slice ${layer.slice.fromSec}–${layer.slice.toSec} s is outside media ${asset.id} (${(mediaDur / FLICKS_PER_SECOND).toFixed(3)} s)`,
+					{ path: [...path, 'slice'] },
+				);
+			dur = st.durationFlicks;
+			sliceOffset = st.offsetFlicks;
+			timing = Number.isFinite(st.timing.peakSec) ? st.timing : null;
+		} else timing = timingOfMedia(prov, dur);
 		if (!timing) {
 			if (align === 'peak')
 				h.fail(
 					'E_INVALID_PARAM',
-					`Media ${asset.id} has no peak descriptor (not a Sound Library sound): align it by its start or end, or set its library info`,
-					{ path: [...path, 'align'] },
+					layer.slice
+						? `slice of media ${asset.id} has no peakSec inside it: give slice.peakSec or align it by its start or end`
+						: `Media ${asset.id} has no peak descriptor (not a Sound Library sound): align it by its start or end, or set its library info`,
+					{ path: [...path, layer.slice ? 'slice' : 'align'] },
 				);
 			timing = { peakSec: 0, onsetSec: 0, headQuietSec: 0, durationSec: dur / FLICKS_PER_SECOND };
 		}
@@ -684,7 +703,7 @@ function place(doc: DDoc, cmd: CommandOf<'soundDesign.place'>, h: HandlerContext
 			audioMapping: 'stereo',
 			matchSequence: 'keep',
 			createTracks: false,
-			fitted: { rate: pp.rate, audio: { in: p.sourceInFlicks, offset: 0, frames: p.frames } },
+			fitted: { rate: pp.rate, audio: { in: p.sourceInFlicks + sliceOffset, offset: 0, frames: p.frames } },
 			...(layer.ref ? { ref: layer.ref } : {}),
 		});
 		const clipId = res.clipIds[0]!;
@@ -726,7 +745,7 @@ function place(doc: DDoc, cmd: CommandOf<'soundDesign.place'>, h: HandlerContext
 			layer: index,
 			role,
 			...(i === 0 && cmd.alternatives?.length ? { alternatives: [...new Set(cmd.alternatives)] } : {}),
-			placement: { align, peakFlicks: p.alignFlicks, errorFlicks: p.errorFlicks },
+			placement: { align, peakFlicks: p.alignFlicks + sliceOffset, errorFlicks: p.errorFlicks },
 			...(level ? { level } : {}),
 			// the shift and the speed under it: a later reset or re-pitch is exact (`clipPitchOf`); none at 0 st, speed 1
 			...(pitchSt !== 0 || baseRate !== 1 ? { pitch: { st: pitchSt, baseRate } } : {}),
@@ -743,7 +762,7 @@ function place(doc: DDoc, cmd: CommandOf<'soundDesign.place'>, h: HandlerContext
 			start: clip.start,
 			duration: clip.duration,
 			sourceInFlicks: clip.sourceIn,
-			alignFlicks: p.alignFlicks,
+			alignFlicks: p.alignFlicks + sliceOffset,
 			errorFlicks: p.errorFlicks,
 			rate: pp.rate,
 			pitchSt,

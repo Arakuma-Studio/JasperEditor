@@ -110,24 +110,24 @@ async function decodePiece(
 }
 
 /**
- * Measures the peak of a planned span: each file piece decoded and joined (every piece has the same time scale, so the
- * joined file samples map linearly onto content time), `analyzeSound` on them. `SILENT` when nothing sounds.
+ * The audio of file pieces at PEAK_RATE (at most stereo), decoded and joined (pieces of one time scale: the joined
+ * samples map linearly onto content time), with its loudest absolute sample. Decode failures are `HttpError`s.
  */
-export async function measurePeak(
-	plan: PeakPlan,
+export async function decodePieces(
+	pieces: readonly FilePiece[],
 	deps: { ff: Ffmpeg; path: string; channels: number },
-	revision: number | null,
+	streamIndex: number | null,
 	signal?: AbortSignal,
-): Promise<SoundPeakResponse> {
+): Promise<{ data: Float32Array[]; loud: number }> {
 	const ch = Math.max(1, Math.min(2, Math.round(deps.channels) || 1));
 	const parts: Float32Array[][] = [];
 	try {
-		for (const p of plan.pieces)
+		for (const p of pieces)
 			parts.push(
 				await decodePiece(
 					deps.ff,
 					deps.path,
-					plan.streamIndex,
+					streamIndex,
 					ch,
 					p.fileFrom / FLICKS_PER_SECOND,
 					p.fileTo / FLICKS_PER_SECOND,
@@ -159,7 +159,22 @@ export async function measurePeak(
 		}
 		at += len;
 	}
-	if (n === 0) throw new HttpError(422, 'DECODE_FAILED', 'The clip’s audio could not be decoded');
+	return { data, loud };
+}
+
+/**
+ * Measures the peak of a planned span: its file pieces decoded and joined (`decodePieces`), `analyzeSound` on them.
+ * `SILENT` when nothing sounds.
+ */
+export async function measurePeak(
+	plan: PeakPlan,
+	deps: { ff: Ffmpeg; path: string; channels: number },
+	revision: number | null,
+	signal?: AbortSignal,
+): Promise<SoundPeakResponse> {
+	const { data, loud } = await decodePieces(plan.pieces, deps, plan.streamIndex, signal);
+	if ((data[0]?.length ?? 0) === 0)
+		throw new HttpError(422, 'DECODE_FAILED', 'The clip’s audio could not be decoded');
 	if (!(loud > 0)) throw new HttpError(422, 'SILENT', 'No peak found (the clip is silent)');
 	const d = analyzeSound(data, PEAK_RATE);
 	// joined file seconds → content seconds (÷ scale)

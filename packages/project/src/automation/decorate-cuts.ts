@@ -31,11 +31,18 @@ import {
 	KitPackSchema,
 	type KitVariant,
 	kitPackIssues,
+	kitRefsOf,
 	resolveKitEase,
+	selectKits,
 	transitionRow,
 	variantSpan,
 } from './kits.ts';
-import { AUTOMATION_DEFAULTS, type DecorateCutsParams, DecorateCutsParamsSchema } from './params.ts';
+import {
+	AUTOMATION_DEFAULTS,
+	type DecorateCutsParams,
+	DecorateCutsParamsSchema,
+	type WhooshMedia,
+} from './params.ts';
 import { itemSeed, seededRandom, weightedIndex } from './rng.ts';
 
 export const DECORATE_PASS = 'decorate-cuts' as const;
@@ -96,6 +103,10 @@ export type ResolvedDecorateParams = {
 	track?: string;
 	fxTrack?: string;
 	range?: { start: number; end: number };
+	/** Explicit cut frames (sorted, unique): exactly these cuts are decorated. */
+	cuts?: number[];
+	/** Whooshes cut from a project media instead of library sounds. */
+	whoosh?: WhooshMedia;
 };
 
 export type DecoratePlan = {
@@ -105,7 +116,7 @@ export type DecoratePlan = {
 	seed: number;
 	kits: KitPlacement[];
 	skipped: DecorateSkip[];
-	/** Cuts of the cut map considered (after the kind filters). */
+	/** Cuts of the cut map considered (after the kind filters; the explicit cuts when a cut list is given). */
 	considered: number;
 	/** Where the kits go: an existing video track, or a new one created above the picture. */
 	fxTrack: { trackId: string; label: string; create: false } | { create: true; name: string };
@@ -143,9 +154,26 @@ export function resolveDecorateParams(
 					'E_INVALID_PARAM',
 					`families: the pack "${pack.id}" has no family "${id}" (it has ${pack.families.map((f) => f.id).join(', ')})`,
 				);
+	if (p.kits) {
+		const sel = selectKits(pack, p.kits);
+		if (!sel.ok)
+			throw new AutomationInputError(
+				'E_INVALID_PARAM',
+				`kits: the pack "${pack.id}" has no kit ${sel.unknown
+					.slice(0, 5)
+					.map((r) => `"${r}"`)
+					.join(', ')} (it has ${kitRefsOf(pack).join(', ')})`,
+			);
+		pack = sel.pack;
+	}
 	const weights = pack.families.map((f) => p.families?.[f.id] ?? f.weight);
 	if (!weights.some((w) => w > 0))
-		throw new AutomationInputError('E_INVALID_PARAM', 'families: at least one family needs a weight above 0');
+		throw new AutomationInputError(
+			'E_INVALID_PARAM',
+			p.kits
+				? 'kits / families: every chosen kit has weight 0'
+				: 'families: at least one family needs a weight above 0',
+		);
 	return {
 		pack,
 		weights,
@@ -159,6 +187,8 @@ export function resolveDecorateParams(
 		...(p.track !== undefined ? { track: p.track } : {}),
 		...(p.fxTrack !== undefined ? { fxTrack: p.fxTrack } : {}),
 		...(p.range ? { range: p.range } : {}),
+		...(p.cuts ? { cuts: [...new Set(p.cuts)].sort((a, b) => a - b) } : {}),
+		...(p.sfx?.media ? { whoosh: p.sfx.media } : {}),
 	};
 }
 
@@ -342,14 +372,16 @@ function adjustmentSpans(seq: Sequence): [number, number][] {
 	return out.sort((a, b) => a[0] - b[0]);
 }
 
+/** The cut map of the pass: every kind for an explicit cut list (any real edit point), else the kind filters. */
 function cutsOf(doc: ProjectDocument, seq: Sequence, params: ResolvedDecorateParams): PictureCut[] {
 	const trackIds = params.track !== undefined ? [videoTrackOf(seq, params.track).id] : undefined;
+	const all = params.cuts !== undefined;
 	let cuts: PictureCut[];
 	try {
 		cuts = pictureCuts(doc, seq.id, {
 			...(trackIds ? { trackIds } : {}),
-			includeJumpCuts: params.includeJumpCuts,
-			includeOverlays: params.includeInsertEdges,
+			includeJumpCuts: all || params.includeJumpCuts,
+			includeOverlays: all || params.includeInsertEdges,
 			...(params.range ? { range: params.range } : {}),
 		});
 	} catch (e) {
@@ -357,6 +389,54 @@ function cutsOf(doc: ProjectDocument, seq: Sequence, params: ResolvedDecoratePar
 		throw e;
 	}
 	return cuts;
+}
+
+/** The cuts of the cut map an explicit list names; `E_NOT_A_CUT` naming the frames that are none (and the nearest). */
+function explicitCuts(
+	seq: Sequence,
+	map: readonly PictureCut[],
+	params: ResolvedDecorateParams,
+): PictureCut[] {
+	const byFrame = new Map(map.map((c) => [c.frame, c]));
+	const wanted = params.cuts ?? [];
+	const missing = wanted.filter((f) => !byFrame.has(f));
+	if (missing.length) {
+		const nearest = (f: number) => {
+			let best: number | null = null;
+			for (const c of map) if (best === null || Math.abs(c.frame - f) < Math.abs(best - f)) best = c.frame;
+			return best;
+		};
+		const where = [
+			params.track !== undefined ? ` on ${params.track}` : '',
+			params.range ? ` in [${params.range.start}, ${params.range.end})` : '',
+		].join('');
+		const list = missing
+			.slice(0, 10)
+			.map((f) => {
+				const n = nearest(f);
+				return n === null ? String(f) : `${f} (nearest cut ${n}, ${timecodeOf(seq, n)})`;
+			})
+			.join(', ');
+		throw new AutomationInputError(
+			'E_NOT_A_CUT',
+			`cuts: ${missing.length} frame(s) are not picture cuts${where}: ${list}${missing.length > 10 ? ', …' : ''}. Take the frames from list_cuts.`,
+		);
+	}
+	return wanted.map((f) => byFrame.get(f)!);
+}
+
+/** The whoosh media must be a project media with sound (`E_NOT_FOUND` / `E_INVALID_PARAM`). */
+function checkWhooshMedia(doc: ProjectDocument, whoosh: WhooshMedia | undefined): void {
+	if (!whoosh) return;
+	const m = Object.hasOwn(doc.media ?? {}, whoosh.mediaId) ? doc.media[whoosh.mediaId] : undefined;
+	if (!m)
+		throw new AutomationInputError('E_NOT_FOUND', `sfx.media: no media ${whoosh.mediaId} in the project`);
+	const streams = (m as { probe?: { streams?: { type?: string }[] } }).probe?.streams ?? [];
+	if (!streams.some((x) => x.type === 'audio'))
+		throw new AutomationInputError(
+			'E_INVALID_PARAM',
+			`sfx.media: ${m.originalName || whoosh.mediaId} has no sound`,
+		);
 }
 
 function context(seq: Sequence, params: ResolvedDecorateParams): PlanContext {
@@ -379,7 +459,10 @@ export function planDecorateCuts(
 	const seq = automationSequence(doc, sequenceId);
 	const params = resolveDecorateParams(rawParams, frameGeometry(seq));
 	const ctx = context(seq, params);
-	const cuts = cutsOf(doc, seq, params);
+	checkWhooshMedia(doc, params.whoosh);
+	const map = cutsOf(doc, seq, params);
+	const explicit = params.cuts !== undefined;
+	const cuts = explicit ? explicitCuts(seq, map, params) : map;
 	const decorated = params.skipDecorated ? adjustmentSpans(seq) : [];
 	const kits: KitPlacement[] = [];
 	const skipped: DecorateSkip[] = [];
@@ -412,7 +495,8 @@ export function planDecorateCuts(
 		}
 		const seed = itemSeed(params.seed, DECORATE_PASS, f);
 		const rng = seededRandom(seed);
-		if (rng() >= params.coverage) {
+		// an explicit cut list decorates every listed cut (the draw still happens: the same stream as a refresh)
+		if (rng() >= params.coverage && !explicit) {
 			skip(f, 'coverage', 'left out by the coverage setting');
 			continue;
 		}

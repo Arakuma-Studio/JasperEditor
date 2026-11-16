@@ -172,6 +172,40 @@ export function soundTimingOf(
 	return fallback;
 }
 
+/** A part of a media placed on its own (a whoosh cut from a longer recording): `[fromSec, toSec)`, its peak inside. */
+export type SoundSlice = { fromSec: number; toSec: number; peakSec?: number };
+
+/**
+ * What placement reads of a slice of a media `mediaDurationFlicks` long: the slice as if it were the file (timing
+ * relative to its start, peak NaN when unknown, at most the library's lead silence skippable before it), its length and
+ * its content offset. Null for a slice outside the media or without length. Shared by `soundDesign.place` and the planners that predict its span.
+ */
+export function sliceTiming(
+	slice: SoundSlice,
+	mediaDurationFlicks: number,
+): { timing: SoundTiming; durationFlicks: number; offsetFlicks: number } | null {
+	const fin = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+	if (!fin(slice.fromSec) || !fin(slice.toSec) || !(mediaDurationFlicks > 0)) return null;
+	const offsetFlicks = Math.max(0, Math.round(slice.fromSec * FLICKS_PER_SECOND));
+	const endFlicks = Math.min(Math.round(mediaDurationFlicks), Math.round(slice.toSec * FLICKS_PER_SECOND));
+	const durationFlicks = endFlicks - offsetFlicks;
+	if (!(durationFlicks > 0)) return null;
+	const durationSec = durationFlicks / FLICKS_PER_SECOND;
+	const rel = fin(slice.peakSec) ? slice.peakSec - offsetFlicks / FLICKS_PER_SECOND : Number.NaN;
+	const peakSec = rel >= 0 && rel <= durationSec ? rel : Number.NaN;
+	return {
+		timing: {
+			peakSec,
+			onsetSec: 0,
+			// up to the library's lead (and never past the peak) may be skipped so the peak lands on the frame exactly
+			headQuietSec: Number.isFinite(peakSec) ? Math.min(LIBRARY_LEAD_SILENCE_SEC, peakSec) : 0,
+			durationSec,
+		},
+		durationFlicks,
+		offsetFlicks,
+	};
+}
+
 export type SoundInsertPlacement = {
 	/** Sequence frame of the clip's first frame. */
 	start: number;

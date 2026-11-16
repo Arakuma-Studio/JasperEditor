@@ -799,7 +799,7 @@ adjustment layers (one Transform or S_Shake, keyframed, with colour effects afte
 wp-note); the punch-in
 accuracy on the user's projects is F1 0.62 at the pass's default density 0.7 (0.68 with Fast Long-form's tuned
 parameters, 0.71 at density 1.0 with every clip ≥ 1.5 s) against the spec's ≥ 0.75 target, which the stripped edit
-cannot reach (the user's Ken Burns clips are not predictable; with them known 0.78); trimmed whooshes have hard edges. Overlay passes built (spec 15 EA-023…EA-026, wp-note "Reactions, overlay slides, music
+cannot reach (the user's Ken Burns clips are not predictable; with them known 0.78); trimmed whooshes have hard edges. `decorate_cuts` also takes an explicit cut list, a kit selection and whooshes sliced from a project media (wp-note "Decorate Cuts inputs"); the Decorate Cuts dialog does not offer them yet, and only a media's first 120 s are searched for whooshes. Overlay passes built (spec 15 EA-023…EA-026, wp-note "Reactions, overlay slides, music
 beds, stingers"): **Reactions**, **Slide Overlays**, **Music Bed**, **Stingers** (Sequence ▸ Automate, MCP
 `place_reactions` / `slide_overlays` / `lay_music_bed` / `add_stingers`); limits: reactions skip animated images and
 avoid only spec 13 subtitle text clips, their word triggers reproduce few of the user's placements (harness in the

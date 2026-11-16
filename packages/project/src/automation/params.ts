@@ -4,7 +4,7 @@
 // user's projects (FINDINGS §3; the aspect of the sequence picks the shorts or the long-form values). Strict: unknown
 // keys are refused at the entry points. Pure.
 import { z } from 'zod';
-import { KitPackSchema } from './kits.ts';
+import { KitPackSchema, KitRefSchema } from './kits.ts';
 
 /** The passes this module plans (the recipes work package combines them). */
 export const AUTOMATION_PASSES = [
@@ -60,7 +60,11 @@ export const AutomationSfxSchema = z.strictObject({
 });
 export type AutomationSfx = z.infer<typeof AutomationSfxSchema>;
 
-export const DecorateCutsParamsSchema = z.strictObject({
+/**
+ * Decorate Cuts' parameters a style recipe may carry (EA-010): everything but the project-specific inputs below (an
+ * explicit cut list, a kit selection, a whoosh media of the project), so recipes stay readable by earlier builds.
+ */
+export const DecorateCutsRecipeParamsSchema = z.strictObject({
 	/** A built-in kit pack id or a pack (data). Default: `shorts-shake` for vertical sequences, `long-pack` otherwise. */
 	pack: z.union([z.enum(['shorts-shake', 'long-pack']), KitPackSchema]).optional(),
 	/** Family weights over the pack's (target shares; 0 turns a family off). */
@@ -84,6 +88,37 @@ export const DecorateCutsParamsSchema = z.strictObject({
 	fxTrack: TrackRef.optional(),
 	sfx: AutomationSfxSchema.optional(),
 	seed: Seed.optional(),
+});
+
+/** Most cuts an explicit cut list names (a proposal holds at most 2 000 items). */
+export const MAX_DECORATE_CUTS = 5000;
+/** Most slices of a whoosh media (given, or found by auto-detection). */
+export const MAX_WHOOSH_SLICES = 256;
+
+const MediaSeconds = z.number().min(0).max(86_400);
+/** A slice of the whoosh media: [from, to) in seconds of the media. */
+export const WhooshSliceSchema = z
+	.strictObject({ from: MediaSeconds, to: MediaSeconds })
+	.refine((s) => s.to > s.from, 'slice.to must be after slice.from');
+
+/**
+ * Whooshes cut from one media of the project instead of library sounds: the given slices, or without them the sounds
+ * the engine finds in it (separated by quiet). `match` `length` (default): each kit gets the slice whose length is
+ * nearest its own (neighbours differ when several are as near); `rotate`: the slices in turn.
+ */
+export const WhooshMediaSchema = z.strictObject({
+	mediaId: z.string().min(1).max(128),
+	slices: z.array(WhooshSliceSchema).min(1).max(MAX_WHOOSH_SLICES).optional(),
+	match: z.enum(['length', 'rotate']).optional(),
+});
+export type WhooshMedia = z.infer<typeof WhooshMediaSchema>;
+
+export const DecorateCutsParamsSchema = DecorateCutsRecipeParamsSchema.extend({
+	/** Decorate exactly these picture cuts (frames of the cut map; any kind, `track` and `range` still apply). */
+	cuts: z.array(Frame).min(1).max(MAX_DECORATE_CUTS).optional(),
+	/** Only these kits of the pack: family ids, or `family/variant` for single variants (directions). */
+	kits: z.array(KitRefSchema).min(1).max(256).optional(),
+	sfx: AutomationSfxSchema.extend({ media: WhooshMediaSchema.optional() }).optional(),
 });
 export type DecorateCutsParams = z.infer<typeof DecorateCutsParamsSchema>;
 

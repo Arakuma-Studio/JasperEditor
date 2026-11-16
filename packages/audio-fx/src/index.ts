@@ -16,6 +16,7 @@ export * from './analysis/loop-window.ts';
 export * from './analysis/masking.ts';
 export * from './analysis/profile-metrics.ts';
 export * from './analysis/remix.ts';
+export * from './analysis/segments.ts';
 export * from './analysis/sound-descriptors.ts';
 export * from './analysis/sound-judge.ts';
 export * from './analysis/takes.ts';

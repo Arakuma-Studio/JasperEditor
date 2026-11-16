@@ -245,6 +245,33 @@ The dialog shows the resulting probability live; the harness measured 0.241 on t
 - Item: id `kit:<frame>` (kept by Refresh / Reroll), `meta {group 'cut-kits', frame, range, why, seed, rerollable,
   family, variant, kitFrames, anchorOn {cuts, clips}, cut, cost, sound}`, requires the FX track and sound setup items.
 
+### Decorate Cuts inputs (EA-020; explicit cuts, kit selection, whooshes from a media)
+
+Requested by the video team, who placed 183 `LONG_PACK` kits by other means because `decorate_cuts` took none of these.
+Defaults are unchanged when the inputs are absent.
+
+- `cuts: [frame…]` (MCP: frames, `{seconds}`, `"3s"` or timecode): exactly these cuts are decorated. They are matched
+  against the cut map of every kind (cut, jump, overlay; `track` and `range` still apply, the kind filters do not) and
+  the coverage draw is ignored (the draw still happens, so Refresh keeps the same stream). A frame that is no cut is
+  refused at once with `E_NOT_A_CUT` naming up to 10 frames and the nearest cut of each. Transitions, existing
+  adjustment clips, spacing and overlap still skip a listed cut (reported).
+- `kits: ["whip", "whip/left", …]`: the part of the pack the refs select (`selectKits`, kits.ts: a family ref keeps all
+  its variants, `family/variant` only those); weights, repeat penalty and alternatives work inside the selection;
+  `families` weights still apply. Unknown refs are refused listing every kit of the pack.
+- `sfx.media: {mediaId, slices?, match?}`: whooshes cut from one project media instead of library sounds. The engine
+  (`apps/engine/src/automation/whoosh.ts`) decodes the media through its time map and measures each slice's peak with
+  `analyzeSound` (Detect Peak's measurement). Without `slices` it finds the media's sounds separated by quiet in its first
+  120 s (`soundSegments`, `@jasper/audio-fx`: 10 ms level over max(loudest − 40 dB, 10th-percentile floor + 12 dB), gaps
+  < 80 ms bridged, segments < 50 ms dropped, 10 ms pad). Assumption, unmeasured: whooshes swell in, so the library's
+  attack-led take detection (`analyzeTakes`) found none in a synthetic swell file and is not used. `match: length`
+  (default) gives each kit the slice whose length is nearest the kit's (among slices within a frame of the best, the
+  least used, never the previous kit's when another is as near); `rotate` takes them in turn. The slice is placed by
+  `soundDesign.place` with the new layer `slice {fromSec, toSec, peakSec}` (placed as if it were the file: In point
+  shifted by `fromSec`; up to 50 ms before the peak may be skipped so the peak lands on the frame), then trimmed to the
+  kit like a library whoosh. A slice shorter than the kit's run-up starts late (it is never stretched).
+- Style recipes keep `DecorateCutsRecipeParamsSchema` (without these three inputs): they are project specific, and an
+  earlier build reading a recipe with them would drop it on load.
+
 ### Punch-ins (EA-021)
 
 Candidates: picture clips of the A-roll track (`track`, else the lowest track carrying ≥ 60 % of the most picture —
@@ -447,6 +474,8 @@ default.
 - Kits export through the Remotion path (whole export); a hybrid route that bakes only the kit spans of the composite
   does not exist (the cost is in the export bench below).
 - The whoosh is cut to the kit's span with hard edges (like the user's slices of a compilation); no fade is added.
+- `sfx.media`: only the first 120 s of the media are searched for sounds; silent given slices are dropped (warned);
+  the Decorate Cuts dialog in the editor does not offer the cut list, kit selection or whoosh media (agents only).
 - `subject` targets need a faces roto or the engine's Reframe analysis; headless refresh of subject punch-ins
   re-measures the refreshed clips only.
 - Style recipes, `apply_style` and Style Check: see "Style recipes, Apply Style and Style Check" below; reactions,

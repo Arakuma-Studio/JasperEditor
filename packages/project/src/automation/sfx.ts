@@ -7,7 +7,13 @@
 // computed with the placement's own function (`planSoundInsert`), so the trims are exact. Pure.
 import { mediaDurationFlicks } from '../interpret/model.ts';
 import type { Sequence } from '../schema/sequence.ts';
-import { planSoundInsert, resolveSoundAlign, soundTimingOf } from '../sound/insert.ts';
+import {
+	planSoundInsert,
+	resolveSoundAlign,
+	type SoundSlice,
+	sliceTiming,
+	soundTimingOf,
+} from '../sound/insert.ts';
 import { type LibraryProvenance, readLibraryProvenance } from '../sound/provenance.ts';
 import { type RankableSound, rankSounds } from '../sound/rank.ts';
 import type { VisualKind } from '../sound/taxonomy.ts';
@@ -143,6 +149,74 @@ export function placedSpan(
 	return plan.ok ? { start: plan.placement.start, frames: plan.placement.frames } : null;
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// Whooshes cut from one media (Decorate Cuts `sfx.media`)
+
+/** A slice of the whoosh media with its peak (seconds of the media; the engine measures the peak). */
+export type WhooshSlice = { from: number; to: number; peak: number };
+
+/**
+ * The slice of each kit (in time order, `frames` = the kit's length): `rotate` takes the slices in turn; `length` the
+ * slice whose length is nearest the kit's, and among slices as near (within a frame) the least used, never the previous
+ * kit's when another is as near, then the first. Deterministic. Pure.
+ */
+export function assignWhooshSlices(
+	items: readonly { id: string; frames: number }[],
+	slices: readonly WhooshSlice[],
+	opts: { match: 'length' | 'rotate'; fps: number },
+): Map<string, number> {
+	const out = new Map<string, number>();
+	const n = slices.length;
+	if (!n) return out;
+	const fps = Number.isFinite(opts.fps) && opts.fps > 0 ? opts.fps : 30;
+	const used = new Array<number>(n).fill(0);
+	let prev = -1;
+	items.forEach((it, i) => {
+		let pick: number;
+		if (opts.match === 'rotate') pick = i % n;
+		else {
+			const want = it.frames / fps;
+			const d = slices.map((x) => Math.abs(x.to - x.from - want));
+			const best = Math.min(...d);
+			const near = d.flatMap((x, j) => (x <= best + 1 / fps + 1e-9 ? [j] : []));
+			const pool = near.length > 1 ? near.filter((j) => j !== prev) : near;
+			pick = pool.reduce((a, j) => (used[j]! < used[a]! ? j : a), pool[0]!);
+		}
+		out.set(it.id, pick);
+		used[pick]!++;
+		prev = pick;
+	});
+	return out;
+}
+
+/** The slice of a whoosh in `soundDesign.place`'s terms. */
+export const soundSliceOf = (s: WhooshSlice): SoundSlice => ({
+	fromSec: s.from,
+	toSec: s.to,
+	peakSec: s.peak,
+});
+
+/** Where `soundDesign.place` puts a slice of a media `mediaDurationFlicks` long with its peak on `cueFrame`, or null. */
+export function placedSliceSpan(
+	slice: SoundSlice,
+	mediaDurationFlicks: number | null,
+	cueFrame: number,
+	fps: Rational,
+): { start: number; frames: number } | null {
+	const st = mediaDurationFlicks ? sliceTiming(slice, mediaDurationFlicks) : null;
+	if (!st || !Number.isFinite(st.timing.peakSec)) return null;
+	const plan = planSoundInsert({
+		cueFrame,
+		fps,
+		align: 'peak',
+		timing: st.timing,
+		mediaDurationFlicks: st.durationFlicks,
+		rate: 1,
+		clampStart: true,
+	});
+	return plan.ok ? { start: plan.placement.start, frames: plan.placement.frames } : null;
+}
+
 /** The anchor of a cue on an edit between two abutting clips of one track (else none: the cue keeps its frame). */
 export function editAnchor(
 	seq: Sequence,
@@ -174,6 +248,8 @@ export function sfxCommands(o: {
 	anchor: Record<string, unknown> | null;
 	gainDb?: number;
 	gainOffsetDb?: number;
+	/** Only this part of the media (a whoosh slice). */
+	slice?: SoundSlice;
 	expected: { start: number; frames: number } | null;
 	trim?: { start: number; end: number };
 }): Record<string, unknown>[] {
@@ -205,6 +281,7 @@ export function sfxCommands(o: {
 				{
 					mediaId: o.mediaId,
 					align: o.align,
+					...(o.slice ? { slice: o.slice } : {}),
 					...(o.gainDb !== undefined
 						? { gainDb: o.gainDb }
 						: o.gainOffsetDb

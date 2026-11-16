@@ -17,7 +17,7 @@ import {
 	AutomationAssetsSchema,
 	type AutomationPass,
 	AutomationSfxSchema,
-	DecorateCutsParamsSchema,
+	DecorateCutsRecipeParamsSchema,
 	KenBurnsParamsSchema,
 	MusicParamsSchema,
 	PunchInParamsSchema,
@@ -90,7 +90,7 @@ const RecipeMusicParams = MusicParamsSchema.extend({ assets: AutomationAssetsSch
 export const RecipePassesSchema = z.strictObject({
 	cleanup: RecipeCleanupSchema.optional(),
 	subtitles: RecipeSubtitlesSchema.optional(),
-	'decorate-cuts': passEntry(DecorateCutsParamsSchema).optional(),
+	'decorate-cuts': passEntry(DecorateCutsRecipeParamsSchema).optional(),
 	'punch-ins': passEntry(PunchInParamsSchema).optional(),
 	'ken-burns': passEntry(KenBurnsParamsSchema).optional(),
 	reactions: passEntry(RecipeReactionParams).optional(),

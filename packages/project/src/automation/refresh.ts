@@ -67,6 +67,10 @@ function soundOf(
 	const layer = (place?.layers as Record<string, unknown>[] | undefined)?.[0];
 	const asset = mediaId.startsWith('$') ? assetOfRef(p, mediaId) : doc.media?.[mediaId];
 	if (!asset) return null;
+	const slice = layer?.slice as { fromSec?: unknown; toSec?: unknown; peakSec?: unknown } | undefined;
+	const from = num(slice?.fromSec);
+	const to = num(slice?.toSec);
+	const peak = num(slice?.peakSec);
 	return {
 		mediaId,
 		info: sfxMediaInfo(asset),
@@ -75,6 +79,10 @@ function soundOf(
 		type,
 		...(gainDb !== undefined ? { gainDb } : {}),
 		gainOffsetDb: num(layer?.gainOffsetDb) ?? 0,
+		// a whoosh cut from a media keeps its slice
+		...(from !== null && to !== null
+			? { slice: { fromSec: from, toSec: to, ...(peak !== null ? { peakSec: peak } : {}) } }
+			: {}),
 	};
 }
 

@@ -168,6 +168,40 @@ describe('editing automation tools', () => {
 		expect(json.next).toContain('mode "propose"');
 	});
 
+	it('decorate_cuts: explicit cuts (times → frames), a kit selection and whooshes sliced from a media reach the pass', async () => {
+		const t = await connect();
+		const { r } = await t.call('decorate_cuts', {
+			projectId: P,
+			mode: 'dryRun',
+			cuts: [300, '25s', '00:00:40:00'],
+			kits: ['whip/left', 'spin'],
+			sfx: { media: { mediaId: 'med_w', slices: [{ from: 0.5, to: 1.4 }], match: 'rotate' } },
+		});
+		expect(r.isError).toBeFalsy();
+		expect(t.engine.calls[0]!.args[2]).toEqual({
+			sequenceId: SEQ,
+			mode: 'dryRun',
+			params: {
+				kits: ['whip/left', 'spin'],
+				sfx: { media: { mediaId: 'med_w', slices: [{ from: 0.5, to: 1.4 }], match: 'rotate' } },
+				cuts: [300, 750, 1200],
+			},
+		});
+		const auto = await t.call('decorate_cuts', {
+			projectId: P,
+			mode: 'dryRun',
+			sfx: { media: { mediaId: 'med_w' } },
+		});
+		expect(auto.r.isError).toBeFalsy();
+		const bad = await t.call('decorate_cuts', {
+			projectId: P,
+			sfx: { media: { mediaId: 'med_w', slices: [{ form: 1, to: 2 }] } },
+		});
+		// refused before the engine: a misspelt slice key
+		expect(bad.r.isError).toBe(true);
+		expect(t.engine.calls).toHaveLength(2);
+	});
+
 	it('add_punch_ins / add_ken_burns propose: the job is waited for and the proposal named', async () => {
 		const t = await connect();
 		const p = await t.call('add_punch_ins', {

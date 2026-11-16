@@ -9,10 +9,13 @@ import { flicksPerFrame, type Rational } from '../time.ts';
 import { formatTimecode } from '../timecode.ts';
 import type { AutomationRange } from './params.ts';
 
-/** A refusal of a pass's input: `E_NOT_FOUND` (sequence, track) or `E_INVALID_PARAM`. */
+/**
+ * A refusal of a pass's input: `E_NOT_FOUND` (sequence, track, media), `E_INVALID_PARAM`, `E_TRACK_LOCKED` or
+ * `E_NOT_A_CUT` (an explicit cut list names a frame that is not a picture cut).
+ */
 export class AutomationInputError extends Error {
 	constructor(
-		readonly code: 'E_NOT_FOUND' | 'E_INVALID_PARAM' | 'E_TRACK_LOCKED',
+		readonly code: 'E_NOT_FOUND' | 'E_INVALID_PARAM' | 'E_TRACK_LOCKED' | 'E_NOT_A_CUT',
 		message: string,
 	) {
 		super(message);

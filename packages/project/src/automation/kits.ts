@@ -573,6 +573,49 @@ export function builtinKitPack(id: string): KitPack | undefined {
 	return BUILTIN_KIT_PACKS.find((p) => p.id === id);
 }
 
+/** A kit of a pack: its family id, or `family/variant` for one variant (direction) of it. */
+export const KitRefSchema = z
+	.string()
+	.regex(/^[a-z][a-z0-9-]{0,47}(?:\/[a-z][a-z0-9-]{0,47})?$/, 'a kit id like "whip" or "whip/left"');
+
+/** Every kit ref of a pack (families, then `family/variant`), for refusals that list them. */
+export function kitRefsOf(pack: KitPack): string[] {
+	return pack.families.flatMap((f) => [f.id, ...f.variants.map((v) => `${f.id}/${v.id}`)]);
+}
+
+/**
+ * The part of `pack` that `refs` select (same id, weights and repeat penalty): a family ref keeps the family with all its
+ * variants, `family/variant` refs keep only those variants of it. `{unknown}` lists refs the pack does not have. Pure.
+ */
+export function selectKits(
+	pack: KitPack,
+	refs: readonly string[],
+): { ok: true; pack: KitPack } | { ok: false; unknown: string[] } {
+	const whole = new Set<string>();
+	const parts = new Map<string, Set<string>>();
+	const unknown: string[] = [];
+	for (const ref of refs) {
+		const [fid, vid] = ref.split('/') as [string, string | undefined];
+		const f = pack.families.find((x) => x.id === fid);
+		if (!f || (vid !== undefined && !f.variants.some((v) => v.id === vid))) {
+			unknown.push(ref);
+			continue;
+		}
+		if (vid === undefined) whole.add(fid);
+		else parts.set(fid, (parts.get(fid) ?? new Set()).add(vid));
+	}
+	if (unknown.length) return { ok: false, unknown };
+	const families: KitFamily[] = [];
+	for (const f of pack.families) {
+		if (whole.has(f.id)) families.push(f);
+		else if (parts.has(f.id)) {
+			const keep = parts.get(f.id)!;
+			families.push({ ...f, variants: f.variants.filter((v) => keep.has(v.id)) });
+		}
+	}
+	return { ok: true, pack: { ...pack, families } };
+}
+
 /** Labels the editor translates (pack, family and variant names). */
 export const KIT_MODEL_STRINGS: readonly string[] = BUILTIN_KIT_PACKS.flatMap((p) => [
 	p.label,
