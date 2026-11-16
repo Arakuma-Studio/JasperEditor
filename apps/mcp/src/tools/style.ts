@@ -155,7 +155,7 @@ function compact(r: ApplyStyleResult) {
 					? 'Native: the ffmpeg export draws everything.'
 					: r.cost === 'hybrid'
 						? 'Hybrid: the export stays native; layers with GPU effects (subtitle animation, reactions, slides, stingers) are pre-rendered by the layer bake.'
-						: 'Remotion: the cut kits (adjustment clips with GPU effects) send the whole export through the Remotion renderer (slower; measured in docs/wp-notes/edit-automation.md).',
+						: 'Remotion: adjustment clips with effects the native export cannot draw on them (e.g. S_Shake with motion blur) send the whole export through the Remotion renderer (slower).',
 		},
 		budget: r.budget,
 		proposalId: r.proposalId,

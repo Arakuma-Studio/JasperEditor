@@ -260,7 +260,8 @@ describe('editing automation passes (real engine, indexed kit)', { timeout: 600_
 		expect(r.statusCode, r.body).toBe(200);
 		const out = AutomationPassResultSchema.parse(r.json());
 		expect(out.summary).toMatchObject({ pass: 'decorate-cuts', count: 4, considered: 4, coverage: 1 });
-		expect(out.summary.cost.class).toBe('remotion');
+		// the long-form kits' effects run on the native adjustment kernel (blend/adjust.ts)
+		expect(out.summary.cost.class).toBe('native');
 		expect(out.summary.track).toBe('new track FX');
 		expect(out.sfx).toMatchObject({ enabled: true, type: 'whoosh', placed: 4 });
 		expect(out.sfx!.available).toBeGreaterThanOrEqual(4);
@@ -340,10 +341,10 @@ describe('editing automation passes (real engine, indexed kit)', { timeout: 600_
 			expect(Math.abs(peak - m.frame * F)).toBeLessThanOrEqual(F);
 		}
 		expect(clips.length).toBe(4);
-		// the export planner sends kits to the Remotion path and says why
+		// the export planner keeps the kits native, as the dry run's cost class said
 		const plan = await exportPath(after.doc, seqId);
-		expect(plan.path).toBe('remotion');
-		expect(JSON.stringify(plan.blockers)).toMatch(/adjustment clip .* uses effect jasper\./);
+		expect(plan.blockers).toEqual([]);
+		expect(plan.path).toBe('native');
 	});
 
 	it('Refresh proposal re-plans a kit whose cut moved; Reroll draws it again with the next seed', async () => {

@@ -793,10 +793,10 @@ ranges and transitions, `meta.anchorOn` (decorated clips, cut frames), Refresh p
 commands, `list_proposal_features` / `refresh_proposal`. Producers built (spec 15 EA-020…EA-022, wp-note "Decorate
 Cuts, punch-ins, Ken Burns"): **Decorate Cuts**, **Punch-ins** and **Ken Burns** — pure planners, the `edit-automation`
 job and dry run, Sequence ▸ Automate dialogs, MCP `decorate_cuts` / `add_punch_ins` / `add_ken_burns`, Refresh proposal
-and per-item **Reroll** (`refresh_proposal {reroll}`), whooshes through sound design. Limits: cut kits export through the
-Remotion path (no hybrid route bakes only an adjustment layer's span; cost measured in the wp-note), while punch-in
-adjustment layers (one Transform or S_Shake, keyframed, with colour effects after it) export natively (edit-structure
-wp-note); the punch-in
+and per-item **Reroll** (`refresh_proposal {reroll}`), whooshes through sound design. Limits: the Shorts shake kit (S_Shake
+motion blur) exports through the Remotion path — the long-form kits and adjustment punch-ins are native (the
+adjustment kernel runs Replicate, Mirror, Offset, Directional Blur and Transforms as the preview's GL chain,
+edit-structure wp-note); the punch-in
 accuracy on the user's projects is F1 0.62 at the pass's default density 0.7 (0.68 with Fast Long-form's tuned
 parameters, 0.71 at density 1.0 with every clip ≥ 1.5 s) against the spec's ≥ 0.75 target, which the stripped edit
 cannot reach (the user's Ken Burns clips are not predictable; with them known 0.78); trimmed whooshes have hard edges. Overlay passes built (spec 15 EA-023…EA-026, wp-note "Reactions, overlay slides, music
