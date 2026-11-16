@@ -6,6 +6,7 @@ import { measureLoudness } from '@jasper/testkit/oracle';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, DocBuilder, JSON_H, makeApp, register, type TestApp } from './helpers.ts';
+import { asset } from './sound-design-fixture.ts';
 
 let app: TestApp;
 let dir: string;
@@ -209,6 +210,43 @@ describe('audio analysis and loudness normalisation jobs', () => {
 		const act = await run({ type: 'tracks', trackIds: ['A1'] }, { activity: { sensitivity: 6 } });
 		expect(act.activity.regions.length).toBe(1);
 		expect(act.activity.regions[0][0]).toBeLessThan(705_600_000 * 0.1);
+	}, 300_000);
+
+	it('a sequence with an offline picture is measured; offline sound refuses the analysis (MEDIA_OFFLINE)', async () => {
+		// the analysis used to plan a video export: any offline picture refused it, though it reads only the sound
+		const analyze = (d: DocBuilder) =>
+			app.inject({
+				method: 'POST',
+				url: '/api/audio/analyze?wait=1',
+				headers: JSON_H,
+				payload: { envelope: d.envelope(), sequenceId: d.seqId, scope: { type: 'sequence' } },
+			});
+		const d = await toneDoc();
+		d.tx([
+			{ type: 'media.register', asset: asset('image'), ref: '$pic' },
+			{
+				type: 'clip.place',
+				source: { mediaId: '$pic' },
+				at: 0,
+				tracks: { video: 'V1' },
+				video: true,
+				audio: false,
+				sourceRange: { in: { flicks: 0 }, out: { seconds: 1 } },
+			},
+		]);
+		const ok = await analyze(d);
+		expect(ok.statusCode, ok.body).toBe(200);
+		expect(ok.json().result.loudness.integratedLufs).toBeLessThan(0);
+		const tone = await register(app, join(dir, 'tone-1k.wav'));
+		const off = new DocBuilder();
+		const m = off.addMedia({
+			...tone,
+			locators: [{ type: 'engine-store', engineId: 'x', key: 'mk_ffffffffffffffffffffffff' }],
+		});
+		off.tx([{ type: 'clip.place', source: { mediaId: m }, at: 0, tracks: { audio: 'A1' } }]);
+		const refused = await analyze(off);
+		expect(refused.statusCode, refused.body).toBe(409);
+		expect(refused.json().code).toBe('MEDIA_OFFLINE');
 	}, 300_000);
 
 	it('refuses to normalise audio shorter than one 400 ms gating block as too short, not as silent', async () => {

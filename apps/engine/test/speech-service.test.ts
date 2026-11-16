@@ -9,7 +9,17 @@ import { pathToFileURL } from 'node:url';
 import type { EngineJob, SpeechModel, SpeechProbe, TranscriptionResult } from '@jasper/api';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, JSON_H, makeApp, ROOT, register, TEST_HOST, type TestApp } from './helpers.ts';
+import {
+	closeApps,
+	DocBuilder,
+	JSON_H,
+	makeApp,
+	ROOT,
+	register,
+	TEST_HOST,
+	type TestApp,
+} from './helpers.ts';
+import { asset } from './sound-design-fixture.ts';
 
 const H = { host: TEST_HOST };
 const FIXTURE = join(ROOT, 'fixtures', 'speech', 'lj-composite.flac');
@@ -296,4 +306,53 @@ describe('speech on the GPU (spec 16) with a fake worker', () => {
 		expect(st).toMatchObject({ ortVersion: '1.30.0', downloadBytes: 236_037_232 });
 		expect(st.license).toMatch(/MIT/);
 	});
+});
+
+describe('sequence transcription with offline media (AGENTS §0, §4)', () => {
+	it('an offline picture does not refuse the sequence mix; offline sound does (MEDIA_OFFLINE)', async () => {
+		// the transcription used to plan a video export: any offline picture refused it, though it reads only the sound
+		const transcribe = (d: DocBuilder) =>
+			app.inject({
+				method: 'POST',
+				url: '/api/speech/transcribe-sequence',
+				headers: JSON_H,
+				payload: { envelope: d.envelope(), sequenceId: d.seqId, model: 'test-turbo', device: 'cpu' },
+			});
+		const voice = await register(app, FIXTURE);
+		const d = new DocBuilder();
+		const m = d.addMedia(voice);
+		d.tx([
+			{
+				type: 'clip.place',
+				source: { mediaId: m },
+				at: 0,
+				tracks: { audio: 'A1' },
+				sourceRange: { in: { seconds: 0 }, out: { seconds: 4 } },
+			},
+			{ type: 'media.register', asset: asset('image'), ref: '$pic' },
+			{
+				type: 'clip.place',
+				source: { mediaId: '$pic' },
+				at: 0,
+				tracks: { video: 'V1' },
+				video: true,
+				audio: false,
+				sourceRange: { in: { flicks: 0 }, out: { seconds: 1 } },
+			},
+		]);
+		const ok = await transcribe(d);
+		expect(ok.statusCode, ok.body).toBe(202);
+		const done = await waitJob((ok.json() as EngineJob).id);
+		expect(done.state, JSON.stringify(done.error)).toBe('succeeded');
+		const off = new DocBuilder();
+		const o = off.addMedia({
+			...voice,
+			locators: [{ type: 'engine-store', engineId: 'x', key: 'mk_ffffffffffffffffffffffff' }],
+		});
+		off.tx([{ type: 'clip.place', source: { mediaId: o }, at: 0, tracks: { audio: 'A1' } }]);
+		const refused = await transcribe(off);
+		// (the speech routes answer a refused submission 422)
+		expect(refused.statusCode, refused.body).toBe(422);
+		expect(refused.json().code).toBe('MEDIA_OFFLINE');
+	}, 120_000);
 });

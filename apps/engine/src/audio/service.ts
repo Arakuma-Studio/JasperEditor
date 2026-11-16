@@ -173,13 +173,14 @@ export class AudioService {
 		}
 		if (req.activity?.startFrame !== undefined && req.activity.endFrame !== undefined && s.type !== 'range')
 			range = { type: 'custom', startFrame: req.activity.startFrame, endFrame: req.activity.endFrame };
+		// the sound alone (an audio-only deliverable): an offline picture never refuses the analysis; offline sound does
 		return this.core.exports.plan({
 			envelope: req.envelope as never,
 			sequenceId: req.sequenceId,
 			settings: {
 				sequenceId: req.sequenceId,
 				range,
-				container: 'mp4',
+				container: 'wav',
 				engine: 'auto',
 				destination: { type: 'download' },
 			},
