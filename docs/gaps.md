@@ -794,7 +794,7 @@ commands, `list_proposal_features` / `refresh_proposal`. Producers built (spec 1
 Cuts, punch-ins, Ken Burns"): **Decorate Cuts**, **Punch-ins** and **Ken Burns** — pure planners, the `edit-automation`
 job and dry run, Sequence ▸ Automate dialogs, MCP `decorate_cuts` / `add_punch_ins` / `add_ken_burns`, Refresh proposal
 and per-item **Reroll** (`refresh_proposal {reroll}`), whooshes through sound design. Limits: the Shorts shake kit (S_Shake
-motion blur) exports through the Remotion path — the long-form kits and adjustment punch-ins are native (the
+motion blur) renders its spans through the Remotion path (dry run cost class `hybrid`) — the long-form kits and adjustment punch-ins are native (the
 adjustment kernel runs Replicate, Mirror, Offset, Directional Blur and Transforms as the preview's GL chain,
 edit-structure wp-note); the punch-in
 accuracy on the user's projects is F1 0.62 at the pass's default density 0.7 (0.68 with Fast Long-form's tuned

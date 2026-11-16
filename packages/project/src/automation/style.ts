@@ -1078,7 +1078,7 @@ export async function planStyle(
 	hooks.progress?.(0.92, 'Proposal');
 	const planned = reports.filter((r) => r.status === 'planned');
 	const parts = planned.map((r) => `${r.count} ${r.name.toLowerCase()}`);
-	const summary = `${recipe.name}: ${parts.length ? parts.join(', ') : 'nothing to propose'}${cost !== 'native' ? `; export: ${cost === 'remotion' ? 'Remotion path' : 'native with baked layers'}` : ''}`;
+	const summary = `${recipe.name}: ${parts.length ? parts.join(', ') : 'nothing to propose'}${cost !== 'native' ? `; export: ${cost === 'remotion' ? 'Remotion path' : 'native with some layers or spans on Remotion'}` : ''}`;
 	const styleReport: StyleReport = {
 		pass: STYLE_REPORT_PASS,
 		version: 1,

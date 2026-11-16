@@ -374,10 +374,13 @@ one proposal (≈ 55 min of long form at 17.9 cuts / min).
 
 Export cost class (dry run `summary.cost`): `native` for Motion keys (punch-ins, Ken Burns), adjustment punch-ins and
 the long-form kits — the export's adjustment kernel runs their geometric effects (edit-structure wp-note), and
-`adjustmentRemoteEffects` (render/adjustment-native.ts, the engine's effect list) estimates it; `remotion` for the
-Shorts shake kit (S_Shake with motion blur: the export planner names it and the whole export goes through the
-Remotion renderer). Tested in `apps/engine/test/automation.test.ts` (long-form kits → path `native`, as the dry run
-said; punch-ins + Ken Burns → `native`).
+`adjustmentRemoteEffects` (render/adjustment-native.ts, the engine's effect list) estimates it; `hybrid` for the
+Shorts shake kit (S_Shake with motion blur: the export planner names it, and its span routing renders only the kits'
+spans on Remotion, the rest natively — [export-span-routing.md](export-span-routing.md)). The passes no longer give
+`remotion` (the whole export on Remotion); results stored before keep it. The estimate does not price the cost model:
+kits over most of a short edit can make the planner route the whole export to Remotion while the dry run says `hybrid`.
+Tested in `apps/engine/test/automation.test.ts` (long-form kits → path `native`, the shorts kit → `hybrid`, as the dry
+run said; punch-ins + Ken Burns → `native`).
 
 ### Export cost of 100 kits (EA-033, measured)
 
@@ -444,7 +447,7 @@ default.
 - `apps/engine/test/automation.test.ts` (6, real engine with an indexed generated kit): dry run stores nothing;
   refusals; Decorate Cuts proposal with whooshes placed through sound design, accepted by an agent as one
   transaction, kits exactly on their ranges, whoosh trimmed to the kit with its peak on the cut, export planner path
-  `remotion` naming the effect; Refresh after a ripple and Reroll through the route; punch-ins and Ken Burns accepted,
+  `native` for the long-form kits and `hybrid` for the shorts kit (its spans on Remotion, as the dry run says); Refresh after a ripple and Reroll through the route; punch-ins and Ken Burns accepted,
   export path `native`; policy off → 403. `apps/engine/test/proposals-features.test.ts` updated (the built-in refresher).
 - `apps/engine/test/automation-kits-export.test.ts` (REMOTION_E2E=1, 6): one kit of each family, exported through the
   route the planner chooses (Remotion) and compared with the Program composition's Remotion still of the same frames:
@@ -608,6 +611,10 @@ are in `AUTOMATION_DEFAULTS`.
 - The loudness is measured when proposing (and on Refresh) by `AudioService.momentaryCurve`; a dry run reuses a
   measurement of the same mix (memory cache keyed by `mixFingerprint`) or says `W_NO_LOUDNESS` (the dialog then still
   allows Propose with a count of 0).
+- `momentaryCurve` plans the mix as an audio-only deliverable (`container: 'wav'`), so the export planner reads no
+  picture: an offline picture (B-roll, an overlay) does not stop the measurement. Offline sound anywhere in the sequence
+  still refuses it (`MEDIA_OFFLINE`, reported as `W_LOUDNESS_FAILED`, no stinger from loudness), also on audio tracks
+  the dialogue measurement does not read.
 
 ### Export cost (EA-033)
 

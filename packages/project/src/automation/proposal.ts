@@ -35,11 +35,11 @@ import {
 /** Export cost class of a pass's output (EA-033). */
 export type AutomationCost = {
 	/**
-	 * `native`: Motion keys, clips and audio the native ffmpeg export draws; `hybrid`: the export stays native with the
-	 * decorated layers or transition spans pre-rendered by the layer bake (Remotion) — clips with GPU effects (S_Shake,
-	 * Noise) and GPU transitions (Smooth Slide); without the layer bake the export takes the Remotion path; `remotion`:
-	 * adjustment clips with effects the native export cannot draw on them (`adjustmentRemoteEffects`: e.g. S_Shake with
-	 * motion blur, other shader effects) — the export planner sends the whole export through the Remotion renderer.
+	 * `native`: Motion keys, clips, audio and adjustment clips the native ffmpeg export draws; `hybrid`: the export stays
+	 * native with some layers or spans rendered by Remotion — clips with GPU effects (S_Shake, Noise) and GPU transitions
+	 * (Smooth Slide) baked by the layer bake, adjustment clips with effects the native export cannot draw on them
+	 * (`adjustmentRemoteEffects`: e.g. S_Shake with motion blur) on their own spans (the planner's span routing);
+	 * `remotion`: the whole export on Remotion (results stored before span routing; the passes no longer give it).
 	 */
 	class: 'native' | 'hybrid' | 'remotion';
 	/** Frames the decorations cover. */
@@ -57,7 +57,7 @@ const ZOOM_TRACK_REF = '$zoomTrack';
 /** The cost of adjustment clips (their effects in stack order, one list per clip): native unless one cannot be drawn. */
 function effectsCost(clips: readonly (readonly BatchEffect[])[], frames: number): AutomationCost {
 	const remote = [...new Set(clips.flatMap((effects) => adjustmentRemoteEffects(effects)))];
-	return { class: remote.length ? 'remotion' : 'native', frames, effects: remote };
+	return { class: remote.length ? 'hybrid' : 'native', frames, effects: remote };
 }
 
 /** Library sounds a pass places: the registered media (from the engine) and the pick per item id. */

@@ -11,7 +11,9 @@ import {
 	AutomationPassResultSchema,
 	type EngineJob,
 	type EnvelopeJson,
+	mediaRegisterCommand,
 	ProposalRefreshResponseSchema,
+	type RegisteredMedia,
 } from '@jasper/api';
 import { appdirPaths } from '@jasper/config';
 import {
@@ -32,8 +34,8 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { planExport } from '../src/export/planner.ts';
 import { coreServices } from '../src/tools/services.ts';
+import { writeSolidVideo } from './fixtures.ts';
 import { closeApps, editorCookie, makeApp, TEST_HOST, tempAppdir } from './helpers.ts';
-import { asset } from './sound-design-fixture.ts';
 import { PACK, writeWav } from './sound-fixtures.ts';
 
 const ENV_KEYS = [
@@ -84,8 +86,11 @@ function makeKit(dir: string): string {
 	return dir;
 }
 
+/** The A-roll's two camera files, in the engine store (`beforeAll`): the export planner refuses offline media. */
+let sources: [RegisteredMedia, RegisteredMedia];
+
 let projects = 0;
-/** A saved project (revision 3): V1 an A-roll of fake video clips of `lengths` frames alternating two sources. */
+/** A saved project (revision 3): V1 an A-roll of video clips of `lengths` frames alternating the two `sources`. */
 function seed(lengths: number[], preset = 'hd-1080p-30') {
 	const ids = createCounterIdSource(5);
 	let doc: ProjectDocument = createEmptyProject({ ids, name: 'Automation', preset });
@@ -100,8 +105,8 @@ function seed(lengths: number[], preset = 'hd-1080p-30') {
 			origin: 'user',
 			sequenceId: seqId,
 			commands: [
-				{ type: 'media.register', asset: asset('video', 3600), ref: '$a' },
-				{ type: 'media.register', asset: asset('video', 3600), ref: '$b' },
+				mediaRegisterCommand(sources[0], '$a', '$ai'),
+				mediaRegisterCommand(sources[1], '$b', '$bi'),
 				...lengths.map((len, i) => {
 					const c = {
 						type: 'clip.place',
@@ -236,6 +241,13 @@ describe('editing automation passes (real engine, indexed kit)', { timeout: 600_
 		process.env.JASPER_SOUND_SYNTH_VARIANTS = '1';
 		process.env.JASPER_SOUND_AUTO_INDEX = '0';
 		app = await makeApp({ dev: false, token: TOKEN, editorKey: KEY });
+		// 30 s each: the longest A-roll below reads 580 frames of source
+		const dir = tempAppdir('jasper-auto-src-');
+		const media = coreServices(app).media;
+		sources = [
+			await media.registerPath(writeSolidVideo(join(dir, 'cam-a.mp4'), 30, { color: '0x305070' })),
+			await media.registerPath(writeSolidVideo(join(dir, 'cam-b.mp4'), 30, { color: '0x705030' })),
+		];
 		const r = await post('/api/sounds/index', {}, EDITOR_H);
 		expect(r.statusCode, r.body).toBe(202);
 		const job = await coreServices(app).queue.wait((r.json() as EngineJob).id);
@@ -345,6 +357,21 @@ describe('editing automation passes (real engine, indexed kit)', { timeout: 600_
 		const plan = await exportPath(after.doc, seqId);
 		expect(plan.blockers).toEqual([]);
 		expect(plan.path).toBe('native');
+	});
+
+	it('the shorts kit (S_Shake with motion blur) exports hybrid, only its spans on Remotion, as the dry run says', async () => {
+		const { projectId, seqId } = seed([120, 120, 120, 120]);
+		const body = { sequenceId: seqId, params: { pack: 'shorts-shake', seed: 4, sfx: { enabled: false } } };
+		const dry = await post(url(projectId, 'decorate-cuts'), { ...body, mode: 'dryRun' });
+		expect(dry.statusCode, dry.body).toBe(200);
+		expect(AutomationPassResultSchema.parse(dry.json()).summary.cost).toMatchObject({
+			class: 'hybrid',
+			effects: ['jasper.s.shake'],
+		});
+		const { result } = await propose(projectId, 'decorate-cuts', body);
+		await acceptAll(projectId, result.proposalId!);
+		const { doc } = await savedDoc(projectId);
+		expect((await exportPath(doc, seqId)).path).toBe('hybrid');
 	});
 
 	it('Refresh proposal re-plans a kit whose cut moved; Reroll draws it again with the next seed', async () => {

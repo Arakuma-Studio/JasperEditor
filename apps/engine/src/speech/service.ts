@@ -733,13 +733,15 @@ export class SpeechService {
 
 	private async plan(req: TranscribeSequenceRequest): Promise<PlannedExport> {
 		try {
+			// the sound alone (an audio-only deliverable): an offline picture never refuses the transcription; offline
+			// sound does
 			return await this.core.exports.plan({
 				envelope: req.envelope as never,
 				sequenceId: req.sequenceId,
 				settings: {
 					sequenceId: req.sequenceId,
 					range: req.range === 'in-out' ? { type: 'in-out' } : { type: 'entire' },
-					container: 'mp4',
+					container: 'wav',
 					engine: 'auto',
 					destination: { type: 'download' },
 				},

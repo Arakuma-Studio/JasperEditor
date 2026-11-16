@@ -518,7 +518,7 @@ export function DryRunSummary(p: { result: AutomationPassResult }) {
 						: t('Export: native')
 					: s.cost.class === 'hybrid'
 						? t(
-								'Export: native, with these layers baked by the Remotion renderer ({0})',
+								'Export: native, with these layers or spans rendered by Remotion ({0})',
 								s.cost.effects.join(', '),
 							)
 						: t('Export: rendered through the Remotion path ({0})', s.cost.effects.join(', '))}

@@ -13,6 +13,7 @@ import {
 	type EnvelopeJson,
 	mediaRegisterCommand,
 	ProposalRefreshResponseSchema,
+	type RegisteredMedia,
 } from '@jasper/api';
 import { encodeWav } from '@jasper/audio-dsp';
 import { appdirPaths } from '@jasper/config';
@@ -33,6 +34,7 @@ import { encodePng } from '@jasper/testkit/png';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { planExport } from '../src/export/planner.ts';
 import { coreServices } from '../src/tools/services.ts';
+import { writeSolidVideo } from './fixtures.ts';
 import { closeApps, editorCookie, makeApp, TEST_HOST, tempAppdir } from './helpers.ts';
 import { asset } from './sound-design-fixture.ts';
 import { SR, writeWav } from './sound-fixtures.ts';
@@ -52,9 +54,12 @@ const json = (h: Record<string, string>) => ({ ...h, 'content-type': 'applicatio
 
 type App = Awaited<ReturnType<typeof makeApp>>;
 let app: App;
+/** The A-roll's two camera files and an overlay picture, in the engine store (`beforeAll`): exports refuse offline media. */
+let sources: [RegisteredMedia, RegisteredMedia];
+let overlayPicture: RegisteredMedia;
 let projects = 0;
 
-/** A saved project: V1 an A-roll of fake clips of `lengths` frames (two sources), plus extra commands. */
+/** A saved project: V1 an A-roll of clips of `lengths` frames (the two `sources` in turn), plus extra commands. */
 function seed(lengths: number[], extra: (F: number) => unknown[] = () => [], preset = 'hd-1080p-30') {
 	const ids = createCounterIdSource(5);
 	let doc: ProjectDocument = createEmptyProject({ ids, name: 'Overlays', preset });
@@ -69,8 +74,8 @@ function seed(lengths: number[], extra: (F: number) => unknown[] = () => [], pre
 			origin: 'user',
 			sequenceId: seqId,
 			commands: [
-				{ type: 'media.register', asset: asset('video', 3600), ref: '$a' },
-				{ type: 'media.register', asset: asset('video', 3600), ref: '$b' },
+				mediaRegisterCommand(sources[0], '$a', '$ai'),
+				mediaRegisterCommand(sources[1], '$b', '$bi'),
 				...lengths.map((len, i) => {
 					const c = {
 						type: 'clip.place',
@@ -213,6 +218,45 @@ function pictureFolder(names: string[]): string {
 	return dir;
 }
 
+/**
+ * Dialogue commands for `seed`'s extras: 12 s of quiet tone with a loud burst at 4.0–4.6 s on A1 (a real file, in the
+ * engine store), transcribed with "¡no!" there.
+ */
+async function shoutDialogue(): Promise<(F: number) => unknown[]> {
+	const n = 12 * SR;
+	const ch = new Float32Array(n);
+	for (let i = 0; i < n; i++) {
+		const t = i / SR;
+		const loud = t >= 4 && t < 4.6;
+		ch[i] = (loud ? 0.7 : 0.05) * Math.sin(2 * Math.PI * 300 * t);
+	}
+	const wav = join(tempAppdir('jasper-ovl-voice-'), 'voice.wav');
+	writeFileSync(wav, encodeWav([ch, ch], SR, 's16'));
+	const reg = await coreServices(app).media.registerPath(wav, {});
+	return (F) => [
+		{ ...mediaRegisterCommand(reg, '$v', '$vi', 'voice') },
+		{
+			type: 'clip.place',
+			source: { mediaId: '$v' },
+			at: 0,
+			tracks: { audio: 'A1' },
+			video: false,
+			audio: true,
+			sourceRange: { in: { flicks: 0 }, out: { flicks: 360 * F } },
+		},
+		{
+			type: 'transcript.create',
+			mediaId: '$v',
+			language: 'es',
+			origin: 'manual',
+			words: [
+				{ text: 'hola', start: 30 * F, end: 45 * F },
+				{ text: '¡no!', start: 120 * F, end: 137 * F },
+			],
+		},
+	];
+}
+
 describe('editing automation overlay passes (real engine)', { timeout: 600_000 }, () => {
 	beforeAll(async () => {
 		const kit = tempAppdir('jasper-ovl-kit-');
@@ -224,6 +268,16 @@ describe('editing automation overlay passes (real engine)', { timeout: 600_000 }
 		// These cases plan hybrid effects; dev mode allows the installed renderer without an optional LGPL bundle.
 		// Explicit token/editor-key authentication still applies; strict binary refusal is owned by lgpl-binaries.
 		app = await makeApp({ dev: true, token: TOKEN, editorKey: KEY });
+		// 152 s each: the music beds' A-roll reads 4 500 frames of source
+		const media = coreServices(app).media;
+		const dir = tempAppdir('jasper-ovl-src-');
+		sources = [
+			await media.registerPath(writeSolidVideo(join(dir, 'cam-a.mp4'), 152, { color: '0x305070' })),
+			await media.registerPath(writeSolidVideo(join(dir, 'cam-b.mp4'), 152, { color: '0x705030' })),
+		];
+		const png = join(dir, 'overlay.png');
+		writeFileSync(png, encodePng({ width: 400, height: 200, data: new Uint8Array(400 * 200 * 4).fill(200) }));
+		overlayPicture = await media.registerPath(png);
 		const r = await post('/api/sounds/index', {}, EDITOR_H);
 		expect(r.statusCode, r.body).toBe(202);
 		const job = await coreServices(app).queue.wait((r.json() as EngineJob).id);
@@ -348,7 +402,7 @@ describe('editing automation overlay passes (real engine)', { timeout: 600_000 }
 
 	it('overlay slides: one-sided Smooth Slides at the overlay’s free edges; hybrid export', async () => {
 		const { projectId, seqId } = seed([900], () => [
-			{ type: 'media.register', asset: asset('image'), ref: '$img' },
+			mediaRegisterCommand(overlayPicture, '$img', '$imgi'),
 			{
 				type: 'clip.place',
 				source: { mediaId: '$img' },
@@ -375,41 +429,7 @@ describe('editing automation overlay passes (real engine)', { timeout: 600_000 }
 	});
 
 	it('stingers: a measured shout + "!" → generated TV static (picture and synth noise at −18 dB); hybrid export', async () => {
-		// dialogue: 12 s of quiet tone with a loud burst at 4.0–4.6 s, transcribed with "¡no!" there
-		const dir = tempAppdir('jasper-ovl-voice-');
-		const n = 12 * SR;
-		const ch = new Float32Array(n);
-		for (let i = 0; i < n; i++) {
-			const t = i / SR;
-			const loud = t >= 4 && t < 4.6;
-			ch[i] = (loud ? 0.7 : 0.05) * Math.sin(2 * Math.PI * 300 * t);
-		}
-		const wav = join(dir, 'voice.wav');
-		writeFileSync(wav, encodeWav([ch, ch], SR, 's16'));
-		const reg = await coreServices(app).media.registerPath(wav, {});
-		const F = 705_600_000 / 30;
-		const { projectId, seqId } = seed([150, 150, 60], () => [
-			{ ...mediaRegisterCommand(reg, '$v', '$vi', 'voice') },
-			{
-				type: 'clip.place',
-				source: { mediaId: '$v' },
-				at: 0,
-				tracks: { audio: 'A1' },
-				video: false,
-				audio: true,
-				sourceRange: { in: { flicks: 0 }, out: { flicks: 360 * F } },
-			},
-			{
-				type: 'transcript.create',
-				mediaId: '$v',
-				language: 'es',
-				origin: 'manual',
-				words: [
-					{ text: 'hola', start: 30 * F, end: 45 * F },
-					{ text: '¡no!', start: 120 * F, end: 137 * F },
-				],
-			},
-		]);
+		const { projectId, seqId } = seed([150, 150, 60], await shoutDialogue());
 		const dry = await dryRun(projectId, 'stingers', { sequenceId: seqId, params: {} });
 		expect(dry.warnings.map((w) => w.code)).toContain('W_NO_LOUDNESS');
 		const { result } = await propose(projectId, 'stingers', { sequenceId: seqId, params: {} });
@@ -438,5 +458,27 @@ describe('editing automation overlay passes (real engine)', { timeout: 600_000 }
 			'synth.static',
 		);
 		expect((await exportPath(doc, seqId)).path).toBe('hybrid');
+	});
+
+	it('stingers measure the dialogue while a picture of the sequence is offline', async () => {
+		// the loudness used to be planned as a video export: any offline picture refused it (MEDIA_OFFLINE), so no
+		// stinger was placed (W_LOUDNESS_FAILED). Measuring the sound reads no picture; only exports refuse it.
+		const dialogue = await shoutDialogue();
+		const { projectId, seqId } = seed([150, 150, 60], (F) => [
+			...dialogue(F),
+			{ type: 'media.register', asset: asset('image'), ref: '$off' },
+			{
+				type: 'clip.place',
+				source: { mediaId: '$off' },
+				at: 0,
+				tracks: { video: 'V2' },
+				video: true,
+				audio: false,
+				sourceRange: { in: { flicks: 0 }, out: { flicks: 60 * F } },
+			},
+		]);
+		const { result } = await propose(projectId, 'stingers', { sequenceId: seqId, params: {} });
+		expect(result.warnings.map((w) => w.code)).not.toContain('W_LOUDNESS_FAILED');
+		expect(result.summary).toMatchObject({ pass: 'stingers', count: 1 });
 	});
 });

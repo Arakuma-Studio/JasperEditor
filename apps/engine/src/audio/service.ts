@@ -173,13 +173,14 @@ export class AudioService {
 		}
 		if (req.activity?.startFrame !== undefined && req.activity.endFrame !== undefined && s.type !== 'range')
 			range = { type: 'custom', startFrame: req.activity.startFrame, endFrame: req.activity.endFrame };
+		// the sound alone (an audio-only deliverable): an offline picture never refuses the analysis; offline sound does
 		return this.core.exports.plan({
 			envelope: req.envelope as never,
 			sequenceId: req.sequenceId,
 			settings: {
 				sequenceId: req.sequenceId,
 				range,
-				container: 'mp4',
+				container: 'wav',
 				engine: 'auto',
 				destination: { type: 'download' },
 			},
@@ -349,13 +350,15 @@ export class AudioService {
 		});
 		let planned: PlannedExport;
 		try {
+			// planned as the sound alone (an audio-only deliverable): it reads no picture, so an offline picture never
+			// refuses the measurement; offline sound still does (MEDIA_OFFLINE: it would be measured as silence)
 			planned = await this.core.exports.plan({
 				envelope: envelope as never,
 				sequenceId: input.sequenceId,
 				settings: {
 					sequenceId: input.sequenceId,
 					range: { type: 'entire' },
-					container: 'mp4',
+					container: 'wav',
 					engine: 'auto',
 					destination: { type: 'download' },
 				},
