@@ -73,6 +73,9 @@ const STEP_CHANGES: Record<string, (from: Rec) => Record<string, unknown>> = {
 	'13→14': () => ({}),
 	// v14 → v15 (HTML composition pages on the v14 line): version bump only; v14 builds open the files read-only.
 	'14→15': () => ({}),
+	// v15 → v16 (Corner Pin motion blur: shutter params on `jasper.corner-pin`): version bump only; v15 builds open the
+	// files read-only.
+	'15→16': () => ({}),
 };
 
 describe('schema history fixtures (S01:MIG-002)', () => {
@@ -141,7 +144,7 @@ describe('schema history fixtures (S01:MIG-002)', () => {
 	it('the v13 fixture with an HTML composition page (the other v13 line) migrates without repairs', () => {
 		const r = loadProject(fixture('13-html'), { effects: defaultEffectRegistry });
 		expect(r.readOnly).toBe(false);
-		expect(r.migration.steps).toEqual(['v13→v14', 'v14→v15']);
+		expect(r.migration.steps).toEqual(['v13→v14', 'v14→v15', 'v15→v16']);
 		expect(r.repairs).toEqual([]);
 		expect(r.issues).toEqual([]);
 		expect(features(r.document as unknown as Rec)).toMatchObject({
@@ -167,5 +170,31 @@ describe('schema history fixtures (S01:MIG-002)', () => {
 			ownWords: ['boing'],
 			punchInStart: 'caption',
 		});
+	});
+
+	it("a Corner Pin's shutter params load from v15-shaped data unchanged and survive a v16 save and reload", () => {
+		const SHAPE = 'clp_00000000000SH001';
+		const pin = (d: Rec) => {
+			const clip = ((d.sequences as Rec).seq_000000000000SEQ1 as Rec).clips as Rec;
+			const fx = ((clip[SHAPE] as Rec).effects as Rec[]).find((e) => e.effectId === 'jasper.corner-pin');
+			const p = fx?.params as Record<string, { value: unknown }> | undefined;
+			return p && [p.useCompShutterAngle?.value, p.shutterAngle?.value, p.mbQuality?.value];
+		};
+		// v15 files hold no corner pin with shutter params: they load without repairs and draw unblurred.
+		const old = loadProject(fixture(15), { effects: defaultEffectRegistry });
+		expect(old.repairs).toEqual([]);
+		expect(pin(old.document as unknown as Rec)).toBeUndefined();
+		const r = loadProject(fixture(16), { effects: defaultEffectRegistry });
+		expect(r.repairs).toEqual([]);
+		expect(pin(r.document as unknown as Rec)).toEqual([false, 180, 'high']);
+		const saved = JSON.parse(
+			JSON.stringify(
+				makeEnvelope(r.document, { revision: 3, savedAt: '2026-11-16T13:00:00.000Z', platform: 'web' }),
+			),
+		);
+		expect(saved.schemaVersion).toBeGreaterThan(15);
+		const again = loadProject(saved, { effects: defaultEffectRegistry });
+		expect(again.repairs).toEqual([]);
+		expect(pin(again.document as unknown as Rec)).toEqual([false, 180, 'high']);
 	});
 });

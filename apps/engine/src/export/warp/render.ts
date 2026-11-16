@@ -11,7 +11,7 @@ import { terminateTree } from '../../tools/process.ts';
 import { capDecoderThreads } from '../memory.ts';
 import { BT709_FRAME_TAGS } from '../native.ts';
 import type { PixelRect } from './kernel.ts';
-import { WarpPool, type WarpSlot } from './pool.ts';
+import { type PinBlurFrame, WarpPool, type WarpSlot } from './pool.ts';
 
 export type WarpFrameSpec = {
 	/** Destination px → source px; null = the layer is invisible on this frame. */
@@ -19,6 +19,8 @@ export type WarpFrameSpec = {
 	rect: PixelRect | null;
 	/** 0…1. */
 	opacity: number;
+	/** Corner Pin motion blur of this frame (`inv` / `rect` then warp its canvas), absent = none. */
+	blur?: PinBlurFrame | null;
 };
 
 type WarpRenderJob = {
@@ -41,6 +43,9 @@ type WarpRenderJob = {
 	onSpawn?(child: ChildProcess): void;
 	onProgress?(done: number, total: number): void;
 };
+
+/** Bytes all workers' Corner Pin blur canvases may take together (one canvas per worker, at least one worker). */
+const BLUR_CANVAS_BUDGET = 1 << 30;
 
 export class WarpRenderError extends Error {
 	constructor(
@@ -140,7 +145,10 @@ export async function renderWarpLayer(ff: Ffmpeg, job: WarpRenderJob): Promise<v
 	const total = job.frames.length;
 	if (total === 0) throw new WarpRenderError('TOOL_FAILED', 'warp: no frames to render');
 	const frameBytes = job.sw * job.sh * 4;
-	const workers = Math.max(1, Math.min(job.workers, total));
+	// Corner Pin motion blur: every worker keeps one blur canvas; together they stay within the budget.
+	const canvasBytes = job.frames.reduce((m, f) => (f.blur ? Math.max(m, f.blur.lw * f.blur.lh * 4) : m), 0);
+	const byMemory = canvasBytes > 0 ? Math.max(1, Math.floor(BLUR_CANVAS_BUDGET / canvasBytes)) : total;
+	const workers = Math.max(1, Math.min(job.workers, total, byMemory));
 	const pool = new WarpPool(
 		{ sw: job.sw, sh: job.sh, dw: job.width, dh: job.height, format: 'yuva444p10' },
 		{ workers, slots: Math.min(total, workers + 3) },
@@ -203,6 +211,7 @@ export async function renderWarpLayer(ff: Ffmpeg, job: WarpRenderJob): Promise<v
 						inv: pad ? null : spec.inv,
 						rect: pad ? null : spec.rect,
 						opacity: spec.opacity,
+						blur: pad ? null : (spec.blur ?? null),
 					})
 					.then(
 						() => {

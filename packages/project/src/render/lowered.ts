@@ -19,7 +19,7 @@ import {
 	type EffectRegistry,
 	effectParamMetric,
 } from '../registry/effects.ts';
-import { FX_MB_WARP_SIZE } from '../registry/fx/glsl/motion-blur.ts';
+import { mbPoseAt, mbTapTime } from '../registry/fx/motion-blur.ts';
 import {
 	FX_MAX_PADDING,
 	type FxFrameContext,
@@ -324,37 +324,22 @@ function transformPoses(
 		const n = plan[0];
 		const K = Math.max(plan[1], 2);
 		const S = Math.max(plan[2], 1);
-		const warped = (plan[3] & 2) !== 0;
 		const keys = (u.u_mbKeys as { vec4s: number[] }).vec4s;
-		const warp = (u.u_mbWarp as { vec4s: number[] }).vec4s;
+		const warp = (plan[3] & 2) !== 0 ? (u.u_mbWarp as { vec4s: number[] }).vec4s : null;
 		const list: { inv: Affine6; w: number }[] = [];
+		const tap: [number, number] = [0, 1];
+		const pose = new Array<number>(S * 4).fill(0);
 		let wsum = 0;
 		for (let i = 0; i < n; i++) {
-			const a = (i + 0.5) / n;
-			let s = a;
-			let wt = 1;
-			if (warped) {
-				const x = Math.min(1, Math.max(0, a)) * (FX_MB_WARP_SIZE - 1);
-				const mI = Math.min(Math.floor(x), FX_MB_WARP_SIZE - 2);
-				const t0 = warp[mI]!;
-				const t1 = warp[mI + 1]!;
-				s = t0 + (t1 - t0) * (x - mI);
-				wt = Math.max(t1 - t0, 0) * (FX_MB_WARP_SIZE - 1);
-			}
+			mbTapTime(i, n, 0.5, warp, tap);
+			const wt = tap[1];
 			wsum += wt;
-			const uu = Math.min(1, Math.max(0, s)) * (K - 1);
-			const k = Math.min(Math.floor(uu), K - 2);
-			const fr = uu - k;
-			const part = (pi: number, c: number) => {
-				const lo = keys[(k * S + pi) * 4 + c]!;
-				const hi = keys[((k + 1) * S + pi) * 4 + c]!;
-				return lo + (hi - lo) * fr;
-			};
+			mbPoseAt(keys, K, S, tap[0], pose);
 			// Pose = (a, b, c, d) (tx, ty, opacity, valid); s = (a·x + c·y + tx, b·x + d·y + ty).
-			if (part(1, 3) <= 0.5) continue;
+			if (pose[7]! <= 0.5) continue;
 			list.push({
-				inv: [part(0, 0), part(0, 2), part(1, 0), part(0, 1), part(0, 3), part(1, 1)],
-				w: wt * clamp01(part(1, 2) / 100),
+				inv: [pose[0]!, pose[2]!, pose[4]!, pose[1]!, pose[3]!, pose[5]!],
+				w: wt * clamp01(pose[6]! / 100),
 			});
 		}
 		return { list, blurred: true, wsum: wsum > 0 ? wsum : 1 };

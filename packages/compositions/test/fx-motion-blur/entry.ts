@@ -13,7 +13,7 @@ import {
 	type TrSide,
 } from '@jasper/project';
 import { fxHost, runShaderPlan } from '../../src/fx/host.ts';
-import { fxCanvasLayout } from '../../src/fx/plan.ts';
+import { fxCanvasLayout, planLayerFx } from '../../src/fx/plan.ts';
 
 type Px = [number, number, number, number];
 
@@ -160,10 +160,22 @@ function report(out: HTMLCanvasElement, box: { x: number; y: number; w: number; 
 	return r;
 }
 
+/** No GPU step: the layer's picture as it is. */
+function identity(a: EffectArgs): Out {
+	const layout = fxCanvasLayout(
+		{ width: a.width, height: a.height },
+		{ left: 0, top: 0, right: 0, bottom: 0 },
+		8192,
+		a.scale ?? 1,
+	);
+	const out = canvas(layout.width, layout.height, (ctx) => paint(ctx, layout.box, a.paint ?? 'vline'));
+	return report(out, layout.box, a) as Out;
+}
+
 function runEffect(a: EffectArgs): Out {
 	const h = fxHost();
 	if (!h) throw new Error('no WebGL2');
-	const spec = defaultEffectRegistry.get(a.id) as EffectSpec | undefined;
+	let spec = defaultEffectRegistry.get(a.id) as EffectSpec | undefined;
 	if (!spec) throw new Error(`unknown effect ${a.id}`);
 	const params = {
 		...Object.fromEntries(spec.params.map((p) => [p.name, p.default])),
@@ -176,6 +188,18 @@ function runEffect(a: EffectArgs): Out {
 	const paramsAt = at ? (f: number) => (f === frame ? p : at(f)) : undefined;
 	const box = { width: a.width, height: a.height };
 	const scale = a.scale ?? 1;
+	// A built-in without a shader (the Corner Pin's motion blur): the GPU step the layer's fx plan gives it.
+	const fxPlan = spec.gpu
+		? null
+		: planLayerFx([{ id: 'fx1', effectId: spec.id, effectVersion: spec.version, enabled: true, params: p }], {
+				registry: defaultEffectRegistry,
+				gpu: 'ok',
+				ctx: { ...box, pxScale: scale, fps: 30, frame },
+				...(paramsAt ? { paramsAt: () => paramsAt } : {}),
+			});
+	const step = fxPlan?.steps.find((s) => s.kind === 'gpu');
+	if (!spec.gpu && !step) return identity(a);
+	if (step?.kind === 'gpu') spec = step.spec;
 	const padding = gpuPadding(spec, p, { ...box, pxScale: scale, fps: 30, frame, paramsAt });
 	const layout = fxCanvasLayout(box, padding, 8192, scale);
 	const plan = planGpuEffect(

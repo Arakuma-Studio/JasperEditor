@@ -20,6 +20,8 @@ import {
 } from './color-effects.ts';
 import { EXPRESSION_CONTROL_EFFECTS } from './expression-controls.ts';
 import { FX_EFFECTS } from './fx/index.ts';
+import { mbQualityParam } from './fx/motion-blur.ts';
+import { fxParam } from './fx/params.ts';
 import type { GpuEffect } from './fx/shader.ts';
 import { LUMETRI_SPATIAL_EFFECT } from './lumetri-spatial.ts';
 
@@ -666,7 +668,8 @@ const pinCorner = (name: string, label: string, def: [number, number]): ParamSpe
  * Corner Pin (M2, ARCHITECTURE §19.5, S09:TRK-050): pins the layer's four corners (normalized to its box,
  * TL/TR/BR/BL) before Motion. Rendered by the scene resolver as a projective layer map (`projective`):
  * CSS `matrix3d` in the preview, the engine warp stage on the native path. A non-convex quad is ignored
- * (the layer draws unpinned).
+ * (the layer draws unpinned). Motion blur of the pin's movement uses Transform's settings ("Use Composition's
+ * Shutter Angle", "Shutter Angle", "Mo Blur Quality"; `render/corner-pin-blur.ts`): off by default, as in Transform.
  */
 export const CORNER_PIN_EFFECT: EffectSpec = {
 	id: 'jasper.corner-pin',
@@ -681,6 +684,15 @@ export const CORNER_PIN_EFFECT: EffectSpec = {
 		pinCorner('topRight', 'Upper Right', [1, 0]),
 		pinCorner('bottomRight', 'Lower Right', [1, 1]),
 		pinCorner('bottomLeft', 'Lower Left', [0, 1]),
+		fxParam.toggle('useCompShutterAngle', "Use Composition's Shutter Angle", true),
+		fxParam.number(
+			'shutterAngle',
+			'Shutter Angle',
+			0,
+			{ min: 0, max: 360, step: 0.1 },
+			{ unit: 'deg', animatable: true },
+		),
+		mbQualityParam(),
 	],
 	// Realized by the layer matrix (LayerBox matrix3d), not by a CSS/SVG filter stage.
 	preview: {},

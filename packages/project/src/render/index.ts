@@ -1,3 +1,4 @@
+export * from './corner-pin-blur.ts';
 export * from './crop.ts';
 export * from './gl-needs.ts';
 export * from './homography.ts';

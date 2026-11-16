@@ -4,7 +4,9 @@
 //   Edge Feather, or a crop the colour stage could not keep in place — see `cropNeedsChain`); in it:
 //   shader effects → `gpu` steps, consecutive colour effects → one baked-LUT `lut` step (S06 runs), CSS-filter
 //   effects → 2D `css` steps, a hard crop → `crop`, a feathered crop → its GPU stand-in (fx/builtins.ts), flips →
-//   `flip`; the corner pin stays the layer matrix (D-27: always last);
+//   `flip`; the corner pin stays the layer matrix (D-27: always last); a corner pin with motion blur adds its blur
+//   step (`CORNER_PIN_BLUR_GPU`, render/corner-pin-blur.ts) after everything else, and the chain then covers the whole
+//   stack (the blur must see the finished picture the pin places);
 //   built-ins whose preview needs an SVG filter at their params (one-direction Gaussian Blur, Repeat Edge Pixels)
 //   run as GPU stand-ins (fx/builtins.ts) in stack order; a Repeat Edge blur needs the chain by itself (no SVG filter
 //   repeats the edge in Chrome, `gaussianBlurRepeatsEdge`); anything else there (other style fragments) cannot run on
@@ -14,7 +16,9 @@
 import {
 	activeMasks,
 	addPadding,
+	CORNER_PIN_BLUR_GPU,
 	CORNER_PIN_EFFECT_ID,
+	cornerPinBlurInstance,
 	type EffectParams,
 	type EffectRegistry,
 	type EffectSpec,
@@ -145,7 +149,9 @@ export function planLayerFx(
 	const ordered = effects.filter((fx) => fx.enabled && !!specOf(fx));
 	const opacityMasks = opts.masks?.length ? activeMasks(opts.masks) : [];
 	const masked = opacityMasks.length > 0 || ordered.some((fx) => effectMasks(fx).length > 0);
-	const whole = !!opts.capture || masked;
+	// The corner pin's motion blur: a GPU step after every other step (the pin is the layer map, D-27).
+	const pinBlur = cornerPinBlurInstance(ordered);
+	const whole = !!opts.capture || masked || !!pinBlur;
 	// Crops the CSS/colour-stage paths cannot draw exactly (Edge Feather; a crop before a pixel-mixing effect that the
 	// colour stage would move into its chain) need the chain like shader effects do, and so does a Repeat Edge blur.
 	const chainCrops = cropNeedsChain(ordered, (fx) => specOf(fx), opts.featheredCrops);
@@ -157,6 +163,7 @@ export function planLayerFx(
 		// A crop drawn by the chain falls back to its hard `clip-path` (cssEffects) with the chip.
 		for (const fx of ordered)
 			if (needsChain(fx)) bypassed.push({ fxId: fx.id, effectId: fx.effectId, reason: 'gpu-unavailable' });
+		if (pinBlur) bypassed.push({ fxId: pinBlur.id, effectId: pinBlur.effectId, reason: 'gpu-unavailable' });
 		// GPU mask processing is unavailable too; preview Opacity masks use a CPU mask image.
 		if (masked)
 			bypassed.push({ fxId: MASKS_BYPASS_ID, effectId: MASKS_BYPASS_ID, reason: 'gpu-unavailable' });
@@ -316,6 +323,21 @@ export function planLayerFx(
 			a.maskJoin = true;
 	}
 	if (opacityMasks.length) steps.push({ kind: 'mask', masks: opacityMasks });
+	if (pinBlur) {
+		if (opts.failed?.(pinBlur.effectId))
+			bypassed.push({ fxId: pinBlur.id, effectId: pinBlur.effectId, reason: 'shader-failed' });
+		else {
+			const spec: EffectSpec = { ...specOf(pinBlur)!, gpu: CORNER_PIN_BLUR_GPU };
+			const paramsAt = opts.paramsAt?.(pinBlur);
+			const pad = gpuPadding(spec, pinBlur.params, {
+				...opts.ctx,
+				inputPadding: padding,
+				...(paramsAt ? { paramsAt } : {}),
+			});
+			padding = addPadding(padding, pad);
+			steps.push({ kind: 'gpu', fx: pinBlur, spec, padding: pad });
+		}
+	}
 	return { active: true, steps, cssEffects, reordered, bypassed, padding, timeDependent };
 }
 

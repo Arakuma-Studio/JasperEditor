@@ -694,6 +694,7 @@ their exact taps and long ones stop banding (`pm_taps`).
 | S_StripSlide, S_StripSlideTransition | 12 / ≤ 32 straight taps | real eased slide, ≤ 64 taps |
 | S_Retime (Motion Blur), S_FilmDamage (Shake Motion Blur) | 7 / 5 taps | ≥ the old count, ≤ 64 by extent |
 | Smooth Slide (Motion Blur) | 4 / 8 / 16 fixed poses (separate copies) | 32 key poses of the eased push and dolly, Low / Medium / High = Draft / Auto / High qualities (≤ 16 / 64 / 96 taps) by corner travel |
+| Corner Pin (`jasper.corner-pin`, the layer map; Transform's Shutter Angle settings) | none | 32 key pins H(s) = P(s)⁻¹ · P(frame) applied as the last step of the layer's picture chain, ≤ 64 taps by pinned-corner travel (+ Mo Blur Quality); the native warp stage runs the same plan on the CPU (`pinBlurFrame`), see [corner-pin-motion-blur.md](corner-pin-motion-blur.md) |
 
 Unchanged (already the reference): S_SwishPan, S_Swish3D, S_WhipLash, S_MochaWhip, S_HyperPush/Pull, S_FilmRoll
 (adaptive `sw_taps`; S_FilmRoll's gate shake stays a linear smear of its per-frame jump — the shake model is

@@ -181,6 +181,12 @@ export const MIGRATIONS: readonly MigrationStep[] = [
 	// protocol, so its clips would neither preview, render nor export, and their strict source type would refuse the
 	// asset.
 	{ from: 14, to: 15, migrate: (doc) => doc },
+	// v16 (Corner Pin motion blur): a `jasper.corner-pin` instance may carry Transform's shutter params
+	// (`useCompShutterAngle`, `shutterAngle`, `mbQuality`: Use Composition's Shutter Angle, Shutter Angle, Mo Blur
+	// Quality), which render as motion blur of the pin's movement. Existing data needs no changes (absent = no blur);
+	// the bump makes v15 builds open v16 files read-only: they would keep the params but ignore them and preview and
+	// export the pin sharp.
+	{ from: 15, to: 16, migrate: (doc) => doc },
 ];
 
 /** Data that is not a loadable project (not an object, an unknown format, no migration path, schema mismatch). */

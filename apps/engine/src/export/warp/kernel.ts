@@ -229,3 +229,167 @@ export function destRect(fwd: Mat3, sw: number, sh: number, dw: number, dh: numb
 	];
 	return r[2] > r[0] && r[3] > r[1] ? r : null;
 }
+
+/** Entries of the time-warp table in a `pinBlurFrame` program (`FX_MB_WARP_SIZE`). */
+export const PIN_BLUR_WARP_SIZE = 32;
+/** Numbers before the warp table in a `pinBlurFrame` program. */
+export const PIN_BLUR_HEADER = 9;
+
+/**
+ * Corner Pin motion blur on the native path (@jasper/project `render/corner-pin-blur.ts`, the GL step
+ * `CORNER_PIN_BLUR_GPU`): the layer picture in its own (pre-pin) pixels with the pin's shutter applied, so that the
+ * frame's pin (`warpFrame`) draws the smear. For every pixel of `dst` (`lw×lh`, the step's canvas: layer px
+ * `(x + ½) / pxScale − padLeft`), the taps of the planned shutter — tap times through the time warp, the per-pixel
+ * jitter of capped or warped plans, key poses H interpolated linearly: the shader's `fx_mbTap`, `fx_mbJitter` and
+ * `fx_mbPose`, passed in as `tapTime`, `jitter` and `poseAt` (`mbTapTime`, `mbJitter`, `mbPoseAt`) — sample `src`
+ * (`sw×sh` straight RGBA, the layer box) bilinearly at H · y with texels outside it transparent, premultiplied, and
+ * sum `Σ w · sample / Σ w`; `dst` is straight RGBA. Self-contained (runs in the workers).
+ *
+ * `prog`: `[taps, keys, flags (1 jitter, 2 time warp), seedHash, pxScale, padLeft, padTop, source px per layer px x,
+ * y, warp × PIN_BLUR_WARP_SIZE, keys × 12 (h0…h8, valid, 0, 0)]`.
+ */
+export function pinBlurFrame(
+	src: Uint8Array,
+	sw: number,
+	sh: number,
+	dst: Uint8Array,
+	lw: number,
+	lh: number,
+	prog: Float64Array,
+	tapTime: (i: number, n: number, j: number, warp: ArrayLike<number> | null, out: Float64Array) => void,
+	poseAt: (packed: ArrayLike<number>, keys: number, stride: number, s: number, out: Float64Array) => void,
+	jitter: (x: number, y: number, seedHash: number) => number,
+): void {
+	dst.fill(0, 0, lw * lh * 4);
+	const n = prog[0]! | 0;
+	const K = prog[1]! | 0;
+	const flags = prog[2]! | 0;
+	const seedHash = prog[3]! >>> 0;
+	const pxs = prog[4]!;
+	const pl = prog[5]!;
+	const pt = prog[6]!;
+	const ax = prog[7]!;
+	const ay = prog[8]!;
+	const warp = flags & 2 ? prog.subarray(9, 9 + 32) : null;
+	const packed = prog.subarray(9 + 32, 9 + 32 + K * 12);
+	if (n < 1 || K < 2) return;
+	const s32 =
+		src.byteOffset % 4 === 0
+			? new Uint32Array(src.buffer, src.byteOffset, sw * sh)
+			: new Uint32Array(src.slice(0, sw * sh * 4).buffer);
+	const tw = new Float64Array(2);
+	const pose = new Float64Array(12);
+	const jittered = (flags & 1) !== 0;
+	// Strata centres: the same n taps (weight, h0…h8, valid) for every pixel. Jittered: per pixel, the key poses
+	// applied to the pixel (K vec4 (h·y, valid), linear in y as the poses are) are interpolated at each tap's time —
+	// the same value as interpolating the poses first.
+	const fixed = new Float64Array(jittered ? 0 : n * 11);
+	const keyed = new Float64Array(jittered ? K * 4 : 0);
+	const h4 = new Float64Array(4);
+	if (!jittered)
+		for (let i = 0; i < n; i++) {
+			tapTime(i, n, 0.5, warp, tw);
+			poseAt(packed, K, 3, tw[0]!, pose);
+			fixed[i * 11] = tw[1]!;
+			for (let k = 0; k < 10; k++) fixed[i * 11 + 1 + k] = pose[k]!;
+		}
+	const maxU = sw - 1;
+	const maxV = sh - 1;
+	for (let y = 0; y < lh; y++) {
+		const ly = (y + 0.5) / pxs - pt;
+		for (let x = 0; x < lw; x++) {
+			const lx = (x + 0.5) / pxs - pl;
+			const j = jittered ? jitter(x, y, seedHash) : 0.5;
+			if (jittered)
+				for (let k = 0; k < K; k++) {
+					const o = k * 12;
+					keyed[k * 4] = packed[o]! * lx + packed[o + 1]! * ly + packed[o + 2]!;
+					keyed[k * 4 + 1] = packed[o + 3]! * lx + packed[o + 4]! * ly + packed[o + 5]!;
+					keyed[k * 4 + 2] = packed[o + 6]! * lx + packed[o + 7]! * ly + packed[o + 8]!;
+					keyed[k * 4 + 3] = packed[o + 9]!;
+				}
+			let R = 0;
+			let G = 0;
+			let B = 0;
+			let A = 0;
+			let wsum = 0;
+			for (let i = 0; i < n; i++) {
+				let w: number;
+				let hx: number;
+				let hy: number;
+				let hz: number;
+				let valid: number;
+				if (jittered) {
+					tapTime(i, n, j, warp, tw);
+					poseAt(keyed, K, 1, tw[0]!, h4);
+					w = tw[1]!;
+					hx = h4[0]!;
+					hy = h4[1]!;
+					hz = h4[2]!;
+					valid = h4[3]!;
+				} else {
+					const o = i * 11;
+					w = fixed[o]!;
+					valid = fixed[o + 10]!;
+					hx = fixed[o + 1]! * lx + fixed[o + 2]! * ly + fixed[o + 3]!;
+					hy = fixed[o + 4]! * lx + fixed[o + 5]! * ly + fixed[o + 6]!;
+					hz = fixed[o + 7]! * lx + fixed[o + 8]! * ly + fixed[o + 9]!;
+				}
+				wsum += w;
+				if (!(valid > 0.5) || !(hz > 1e-6)) continue;
+				const u = (hx / hz) * ax - 0.5;
+				const v = (hy / hz) * ay - 0.5;
+				if (!(u > -1 && v > -1 && u < sw && v < sh)) continue;
+				const iu = Math.floor(u);
+				const iv = Math.floor(v);
+				const fx = u - iu;
+				const fy = v - iv;
+				if (iu >= 0 && iv >= 0 && iu < maxU && iv < maxV) {
+					// Interior: all four texels exist.
+					const q = iv * sw + iu;
+					const t00 = s32[q]!;
+					const t10 = s32[q + 1]!;
+					const t01 = s32[q + sw]!;
+					const t11 = s32[q + sw + 1]!;
+					const a00 = (t00 >>> 24) * (1 - fx) * (1 - fy) * w;
+					const a10 = (t10 >>> 24) * fx * (1 - fy) * w;
+					const a01 = (t01 >>> 24) * (1 - fx) * fy * w;
+					const a11 = (t11 >>> 24) * fx * fy * w;
+					A += a00 + a10 + a01 + a11;
+					R += (t00 & 255) * a00 + (t10 & 255) * a10 + (t01 & 255) * a01 + (t11 & 255) * a11;
+					G +=
+						((t00 >> 8) & 255) * a00 +
+						((t10 >> 8) & 255) * a10 +
+						((t01 >> 8) & 255) * a01 +
+						((t11 >> 8) & 255) * a11;
+					B +=
+						((t00 >> 16) & 255) * a00 +
+						((t10 >> 16) & 255) * a10 +
+						((t01 >> 16) & 255) * a01 +
+						((t11 >> 16) & 255) * a11;
+					continue;
+				}
+				// Border: texels outside the picture are transparent.
+				for (let t = 0; t < 4; t++) {
+					const tu = iu + (t & 1);
+					const tv = iv + (t >> 1);
+					if (tu < 0 || tv < 0 || tu > maxU || tv > maxV) continue;
+					const px = s32[tv * sw + tu]!;
+					const a = (px >>> 24) * (t & 1 ? fx : 1 - fx) * (t >> 1 ? fy : 1 - fy) * w;
+					A += a;
+					R += (px & 255) * a;
+					G += ((px >> 8) & 255) * a;
+					B += ((px >> 16) & 255) * a;
+				}
+			}
+			if (!(A > 0) || !(wsum > 0)) continue;
+			const k = 1 / A;
+			const al = A / wsum;
+			const d = (y * lw + x) * 4;
+			dst[d] = R * k + 0.5;
+			dst[d + 1] = G * k + 0.5;
+			dst[d + 2] = B * k + 0.5;
+			dst[d + 3] = (al > 255 ? 255 : al) + 0.5;
+		}
+	}
+}

@@ -53,7 +53,7 @@ import { CaptionStyleSchema, ClipMarkerSchema, type Sequence, SequenceSchema } f
  * v15 (HTML composition pages on the v14 line): `mg-bundle` assets may be HTML composition pages (`mgBundle.html`,
  * source type `html-page`); version bump only, so v14 builds — which would drive such a page with the Remotion page
  * protocol and whose strict source type refuses `html-page` — open v15 files read-only (docs/project-files.md). */
-export const CURRENT_SCHEMA_VERSION = 15;
+export const CURRENT_SCHEMA_VERSION = 16;
 
 const markSchema = z.looseObject({ flicks: nonNegInt() });
 export const SourceMarksSchema = z.looseObject({
