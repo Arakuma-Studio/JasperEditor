@@ -387,6 +387,31 @@ describe.runIf(PACG_GL)('fx family premiere-adjust-color-keying in WebGL2', { ti
 			).toBe(255);
 			expect((await s.px({ id, params: {}, picture: ORANGE, box, media: black }, 8, 8))[3]).toBe(255);
 		}
+		// Track Matte Key with Matte = None (no track, no clip) is no matte: the layer passes through, also reversed.
+		expect(
+			await s.px({ id: 'jasper.track-matte-key', params: { reverse: true }, picture: ORANGE, box }, 8, 8),
+		).toEqual(O);
+	});
+
+	it('Track Matte Key ▸ Decontaminate Edges with a clean plate restores the foreground colour of a soft edge', async () => {
+		// A plate pixel half foreground F, half background B (I = ½F + ½B), keyed at ½ by the matte.
+		const F: Px = [40, 200, 90, 128];
+		const half = { matte: solid('rgba(255, 255, 255, 0.5)'), u_cleanPlate: solid('rgb(220, 40, 30)') };
+		const req = (decontaminate: string) =>
+			s.px(
+				{
+					id: 'jasper.track-matte-key',
+					params: { decontaminate, cleanPlateTrack: 'trk_P' },
+					picture: solid('rgb(130, 120, 60)'),
+					box,
+					media: half,
+				},
+				8,
+				8,
+			);
+		expect(near(await req('cleanPlate'), F)).toBe(true);
+		// Off keeps the plate's mixed colour (the halo).
+		expect(near(await req('off'), [130, 120, 60, 128])).toBe(true);
 	});
 
 	it('Drop Shadow and Radial Shadow draw into the padding', async () => {

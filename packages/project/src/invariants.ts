@@ -35,7 +35,7 @@ import { type IdPrefix, type IdSource, idPrefixOf, isValidId } from './ids.ts';
 import { interpretationIssues, mediaDurationFlicks } from './interpret/model.ts';
 import { isRovingKey, keySidesIssue, normalizeKeySides, retimeRoving } from './keyframes.ts';
 import { MASK_EXPANSION_RANGE, MASK_FEATHER_RANGE, MASK_OPACITY_RANGE } from './masks/model.ts';
-import { TRACK_MATTE_EFFECT_ID, trackMatteTracksOf } from './masks/track-matte.ts';
+import { TRACK_MATTE_EFFECT_ID, TRACK_MATTE_TRACK_PARAMS, trackMatteTracksOf } from './masks/track-matte.ts';
 import {
 	angleById,
 	fixMulticamSelections,
@@ -2550,14 +2550,23 @@ export function repairDocument(
 			};
 			for (const c of Object.values(seq.clips))
 				for (const fx of (c as { effects?: EffectInstance[] }).effects ?? []) {
-					if (fx.effectId !== TRACK_MATTE_EFFECT_ID || !fx.params.matteTrack) continue;
-					const a = fx.params.matteTrack;
-					const bad = (v: unknown) =>
-						typeof v === 'string' && v !== '' && (!videoIds.has(v) || v === c.trackId || reach(v, c.trackId));
-					if ([a.value, ...a.keyframes.map((k) => k.value)].some(bad)) {
-						a.value = '';
-						a.keyframes = [];
-						note('clear-track-matte', fx.id, 'track matte referenced a missing track or formed a cycle');
+					if (fx.effectId !== TRACK_MATTE_EFFECT_ID) continue;
+					for (const { param } of TRACK_MATTE_TRACK_PARAMS) {
+						const a = fx.params[param];
+						if (!a) continue;
+						const bad = (v: unknown) =>
+							typeof v === 'string' &&
+							v !== '' &&
+							(!videoIds.has(v) || v === c.trackId || reach(v, c.trackId));
+						if ([a.value, ...a.keyframes.map((k) => k.value)].some(bad)) {
+							a.value = '';
+							a.keyframes = [];
+							note(
+								'clear-track-matte',
+								fx.id,
+								`track matte ${param === 'matteTrack' ? 'matte' : 'clean plate'} referenced a missing track or formed a cycle`,
+							);
+						}
 					}
 				}
 		}

@@ -540,6 +540,21 @@ export function registerMaskTools(ctx: ToolContext): void {
 			const fx = (clip as { effects?: EffectInstance[] }).effects?.find(
 				(e) => e.effectId === 'jasper.track-matte-key',
 			);
+			// matteTrack null removes the Track Matte Key (a key without a track would only pass the clip through).
+			if (!trackId) {
+				if (!fx) return jsonResult({ clipId: args.clipId, removed: null });
+				const res = await transact(
+					ctx,
+					args.projectId,
+					{
+						label: 'Remove Track Matte',
+						commands: [{ type: 'effect.remove', effectInstanceId: fx.id }],
+						sequenceId: seq.id,
+					},
+					extra,
+				);
+				return jsonResult({ ...txBody(res, requireOk(res)), removed: fx.id });
+			}
 			const commands: unknown[] = [];
 			const params = {
 				matteTrack: trackId,
@@ -558,7 +573,7 @@ export function registerMaskTools(ctx: ToolContext): void {
 					effectId: 'jasper.track-matte-key',
 					params,
 				});
-			if (args.hideMatteTrack && trackId)
+			if (args.hideMatteTrack)
 				commands.push({ type: 'track.update', trackId, patch: { output: false }, sequenceId: seq.id });
 			const res = await transact(
 				ctx,

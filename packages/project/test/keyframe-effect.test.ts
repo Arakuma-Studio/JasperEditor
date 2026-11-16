@@ -248,7 +248,9 @@ describe('effect.add / remove / reorder / setEnabled (S01:FX-020…023)', () => 
 		h.ok([{ type: 'effect.remove', effectInstanceId: `effects.${a}` }]);
 		expect(clipOf(h, id).effects.map((e) => e.id)).toEqual([b]);
 		// The documents before the edits are untouched (undo restores them).
-		expect((Object.values(before.sequences)[0]!.clips[id] as VClip).effects.map((e) => [e.id, e.enabled])).toEqual([
+		expect(
+			(Object.values(before.sequences)[0]!.clips[id] as VClip).effects.map((e) => [e.id, e.enabled]),
+		).toEqual([
 			[a, true],
 			[b, true],
 		]);

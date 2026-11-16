@@ -52,8 +52,12 @@ import { CaptionStyleSchema, ClipMarkerSchema, type Sequence, SequenceSchema } f
  * (docs/project-files.md).
  * v15 (HTML composition pages on the v14 line): `mg-bundle` assets may be HTML composition pages (`mgBundle.html`,
  * source type `html-page`); version bump only, so v14 builds — which would drive such a page with the Remotion page
- * protocol and whose strict source type refuses `html-page` — open v15 files read-only (docs/project-files.md). */
-export const CURRENT_SCHEMA_VERSION = 16;
+ * protocol and whose strict source type refuses `html-page` — open v15 files read-only (docs/project-files.md).
+ * v16 (Corner Pin motion blur): shutter params on `jasper.corner-pin`; version bump only (docs/project-files.md).
+ * v17 (Track Matte hold-out): Decontaminate Edges params on `jasper.track-matte-key`; version bump only, so v16 builds
+ * — which would keep the params but composite the soft edges with the old background's colour — open v17 files
+ * read-only (docs/project-files.md). */
+export const CURRENT_SCHEMA_VERSION = 17;
 
 const markSchema = z.looseObject({ flicks: nonNegInt() });
 export const SourceMarksSchema = z.looseObject({

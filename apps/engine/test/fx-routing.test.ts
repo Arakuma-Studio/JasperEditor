@@ -71,6 +71,28 @@ describe('GPU shader effects in the export planner and layer bakes', () => {
 		expect(nativeBlockers(clip('video', []), caps, [], registry)).toEqual([]);
 	});
 
+	it('a Track Matte Key reading tracks goes to the Remotion path, not a layer bake that draws the clip alone', () => {
+		const bake = { id: 'layer-bake', claimsLayer: () => true, bakes: () => 'remotion' as const };
+		const keyed = (params: Record<string, unknown>): RenderVisualClip => ({
+			...clip('video', []),
+			effects: [
+				{
+					...fx('jasper.track-matte-key'),
+					params: Object.fromEntries(
+						Object.entries(params).map(([k, v]) => [k, { value: v, keyframes: [] }]),
+					),
+				},
+			] as never,
+		});
+		expect(nativeBlockers(keyed({ matteTrack: 'trk_M' }), caps, [bake], registry).join()).toMatch(
+			/Track Matte Key reading track trk_M/,
+		);
+		const plate = keyed({ matteTrack: 'trk_M', decontaminate: 'cleanPlate', cleanPlateTrack: 'trk_P' });
+		expect(nativeBlockers(plate, caps, [bake], registry).join()).toContain('trk_M, trk_P');
+		// Matte = None: nothing to read, the bake draws the key (a pass-through).
+		expect(nativeBlockers(keyed({ matteTrack: '' }), caps, [bake], registry)).toEqual([]);
+	});
+
 	it('a look routes like any GPU effect: not native, a still bake unless something in it moves (spec 19)', () => {
 		const look = (appearance: unknown, kind = 'shape'): RenderVisualClip => {
 			const c = clip(kind, []);

@@ -250,4 +250,29 @@ describe('mask MCP tools', () => {
 		expect(fx.params.compositeUsing!.value).toBe('matteLuma');
 		expect(seq.videoTracks[0]!.output).toBe(false);
 	});
+
+	it('set_track_matte {matteTrack: null} removes the Track Matte Key (not a key without a track)', async () => {
+		const { engine, call } = await connect();
+		const fxOf = () =>
+			(Object.values(engine.doc().sequences)[0]!.clips[engine.solid] as { effects: { effectId: string }[] })
+				.effects;
+		await call('set_track_matte', {
+			projectId: 'prj_t',
+			clipId: engine.solid,
+			matteTrack: 'V1',
+			reverse: true,
+		});
+		expect(fxOf().map((e) => e.effectId)).toEqual(['jasper.track-matte-key']);
+		const r = await call('set_track_matte', { projectId: 'prj_t', clipId: engine.solid, matteTrack: null });
+		expect(r.r.isError, r.text).toBeFalsy();
+		expect(fxOf()).toEqual([]);
+		// Again: nothing to remove, nothing changes.
+		const again = await call('set_track_matte', {
+			projectId: 'prj_t',
+			clipId: engine.solid,
+			matteTrack: null,
+		});
+		expect(again.r.isError, again.text).toBeFalsy();
+		expect(fxOf()).toEqual([]);
+	});
 });

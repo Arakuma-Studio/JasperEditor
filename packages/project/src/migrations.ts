@@ -187,6 +187,11 @@ export const MIGRATIONS: readonly MigrationStep[] = [
 	// the bump makes v15 builds open v16 files read-only: they would keep the params but ignore them and preview and
 	// export the pin sharp.
 	{ from: 15, to: 16, migrate: (doc) => doc },
+	// v17 (Track Matte hold-out): a `jasper.track-matte-key` instance may carry Decontaminate Edges (`decontaminate`
+	// off / cleanPlate / estimate, `cleanPlateTrack`, `searchRadius`), which restores the foreground colour of soft
+	// matte edges. Existing data needs no changes (absent = Off); the bump makes v16 builds open v17 files read-only:
+	// they would keep the params but ignore them and preview and export the edges with the old background's colour.
+	{ from: 16, to: 17, migrate: (doc) => doc },
 ];
 
 /** Data that is not a loadable project (not an object, an unknown format, no migration path, schema mismatch). */

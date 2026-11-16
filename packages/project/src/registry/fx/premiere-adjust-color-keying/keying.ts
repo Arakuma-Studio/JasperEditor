@@ -435,21 +435,43 @@ export const IMAGE_MATTE_KEY = defineShaderEffect({
 	},
 });
 
+/** Spiral taps of Decontaminate Edges ▸ Estimate from Background (golden-angle disc, uniform by area). */
+const TM_ESTIMATE_TAPS = 64;
+
 /**
  * Track Matte Key (Premiere: Matte = a video track, Composite Using = Matte Alpha / Matte Luma, Reverse). wp masks:
  * `matteTrack` names a video track of the sequence; its composite at the same sequence frame (every clip of that
  * track with its effects, masks, Motion and opacity, rendered alone) is the matte, placed in sequence space — so the
  * fill layer's own Motion moves the fill under a fixed matte, as in After Effects. The composition binds it as
  * `u_matte` (sequence-sized) and sets `u_matteFromTrack`. Without a track the older `matte` media param (a clip
- * stretched over the layer box) is used.
+ * stretched over the layer box) is used; with neither (Matte = None) the layer passes through unchanged, also with
+ * Reverse.
+ *
+ * Decontaminate Edges (docs/wp-notes/track-matte-holdout.md): the matting equation I = αF + (1 − α)B (Smith & Blinn
+ * 1996) solved for the premultiplied foreground, αF = clamp(I − (1 − α)·B, 0, α), with α = the key's matte value and B
+ * the clean plate (`cleanPlateTrack`'s composite, bound as `u_cleanPlate` in sequence space) or a background estimated
+ * from the nearby pure-background pixels of the layer (normalised convolution weighted by (1 − α)⁸ and a Gaussian of
+ * the distance, after Forte & Pitié 2021). Unmixed in the stored (encoded) values, so the edge composited over a new
+ * background is exactly I with B replaced by it.
  */
 export const TRACK_MATTE_KEY = defineShaderEffect({
 	id: 'jasper.track-matte-key',
 	label: 'Track Matte Key',
 	category: 'Keying',
 	description:
-		"Shows the layer through another video track's alpha or luminance (travelling matte), at the same sequence time.",
-	keywords: ['travelling matte', 'traveling matte', 'mask', 'luma matte', 'alpha matte', 'track matte'],
+		"Shows the layer through another video track's alpha or luminance (travelling matte), at the same sequence time; Decontaminate Edges removes the old background's colour from soft matte edges (clean plate or estimated).",
+	keywords: [
+		'travelling matte',
+		'traveling matte',
+		'mask',
+		'luma matte',
+		'alpha matte',
+		'track matte',
+		'hold-out',
+		'decontaminate',
+		'clean plate',
+		'edge colour',
+	],
 	params: [
 		{
 			name: 'matteTrack',
@@ -462,28 +484,100 @@ export const TRACK_MATTE_KEY = defineShaderEffect({
 		compositeUsingParam(),
 		fxParam.toggle('reverse', 'Reverse', false),
 		fxParam.media('matte', 'Matte Clip (no track)'),
+		popup('decontaminate', 'Decontaminate Edges', [
+			['off', 'Off'],
+			['cleanPlate', 'Clean Plate Track'],
+			['estimate', 'Estimate from Background'],
+		]),
+		{
+			name: 'cleanPlateTrack',
+			label: 'Clean Plate',
+			type: 'string',
+			default: '',
+			animatable: false,
+			ui: { control: 'track' },
+		},
+		fxParam.pixels('searchRadius', 'Background Search Radius', 32, 256),
 	],
 	gpu: {
-		uniforms: (p) => ({ u_matteFromTrack: typeof p.matteTrack === 'string' && p.matteTrack !== '' }),
+		uniforms: (p) => ({
+			u_matteFromTrack: typeof p.matteTrack === 'string' && p.matteTrack !== '',
+			u_cleanFromTrack:
+				p.decontaminate === 'cleanPlate' && typeof p.cleanPlateTrack === 'string' && p.cleanPlateTrack !== '',
+		}),
+		textures: () => [{ uniform: 'u_cleanPlate', mediaId: '' }],
 		passes: [
 			{
 				include: [GLSL_PACG],
 				frag: /* glsl */ `
-void main() {
-  vec4 src = texture(u_source, v_uv);
-  if (u_matte_size.x <= 0.0) { fragColor = u_reverse ? vec4(0.0) : src; return; }
+// Sequence-frame uv of a layer px (the track composites are sequence-sized).
+vec2 tm_compUv(vec2 lp) {
+  vec3 q = u_layerToComp * vec3(lp, 1.0);
+  return (q.xy / (abs(q.z) < 1e-9 ? 1e-9 : q.z)) / u_compSize;
+}
+bool tm_outside(vec2 uv) { return any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0))); }
+// The key's matte value (Composite Using, Reverse) at layer px lp.
+float tm_key(vec2 lp) {
   vec4 m;
   if (u_matteFromTrack) {
-    // The track composite is sequence-sized: this layer pixel's position in the sequence frame.
-    vec3 q = u_layerToComp * vec3(fx_layerPx(), 1.0);
-    vec2 uv = (q.xy / (abs(q.z) < 1e-9 ? 1e-9 : q.z)) / u_compSize;
-    m = (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) ? vec4(0.0) : texture(u_matte, uv);
+    vec2 uv = tm_compUv(lp);
+    m = tm_outside(uv) ? vec4(0.0) : texture(u_matte, uv);
   } else {
-    m = pacg_media(u_matte, u_matte_size, true);
+    vec2 uv = lp / max(u_box.zw / u_pxScale, vec2(1e-6));
+    m = tm_outside(uv) ? vec4(0.0) : texture(u_matte, uv);
   }
   float k = u_compositeUsing == 0 ? m.a : fx_luma(pacg_straight(m)) * m.a;
-  if (u_reverse) k = 1.0 - k;
-  fragColor = src * k;
+  return u_reverse ? 1.0 - k : k;
+}
+// The clean plate (straight colour) under layer px lp; false where it has no picture.
+bool tm_cleanPlate(vec2 lp, out vec3 b) {
+  b = vec3(0.0);
+  if (!u_cleanFromTrack || u_cleanPlate_size.x <= 0.0) return false;
+  vec2 uv = tm_compUv(lp);
+  if (tm_outside(uv)) return false;
+  vec4 c = texture(u_cleanPlate, uv);
+  if (c.a <= 0.0) return false;
+  b = c.rgb / c.a;
+  return true;
+}
+// The background estimated from the layer's own pixels around lp that the matte leaves out.
+bool tm_estimate(vec2 lp, out vec3 b) {
+  b = vec3(0.0);
+  float r = max(u_searchRadius, 1.0);
+  vec3 acc = vec3(0.0);
+  float wsum = 0.0;
+  for (int i = 0; i < ${TM_ESTIMATE_TAPS}; i++) {
+    float t = (float(i) + 0.5) / ${TM_ESTIMATE_TAPS}.0;
+    float ang = float(i) * 2.399963229728653;
+    vec2 p = lp + r * sqrt(t) * vec2(cos(ang), sin(ang));
+    vec2 uv = fx_uvOfLayerPx(p);
+    if (!fx_inBox(uv)) continue;
+    vec4 s = texture(u_source, uv);
+    if (s.a <= 0.0) continue;
+    float bg = 1.0 - tm_key(p);
+    bg *= bg; bg *= bg; bg *= bg;
+    // Gaussian of the distance with sigma = r / 2 (t = d^2 / r^2).
+    float w = bg * s.a * exp(-2.0 * t);
+    acc += w * (s.rgb / s.a);
+    wsum += w;
+  }
+  if (wsum < 1e-4) return false;
+  b = acc / wsum;
+  return true;
+}
+void main() {
+  vec4 src = texture(u_source, v_uv);
+  // Matte = None: no matte, the layer passes through (also with Reverse).
+  if (u_matte_size.x <= 0.0) { fragColor = src; return; }
+  vec2 lp = fx_layerPx();
+  float k = tm_key(lp);
+  vec3 b;
+  bool unmix = u_decontaminate != 0 && k > 0.0 && k < 1.0 && src.a > 0.0
+    && (u_decontaminate == 1 ? tm_cleanPlate(lp, b) : tm_estimate(lp, b));
+  if (!unmix) { fragColor = src * k; return; }
+  // I = kF + (1 - k)B  =>  kF = I - (1 - k)B, a premultiplied colour of alpha k.
+  vec3 kf = clamp(src.rgb / src.a - (1.0 - k) * b, 0.0, k);
+  fragColor = vec4(kf, k) * src.a;
 }`,
 			},
 		],
