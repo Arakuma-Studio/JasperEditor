@@ -504,7 +504,12 @@ export const threeDHandlers = {
 		const param = (prop: string, value: unknown) =>
 			(paramHandlers['param.set'] as (d: DDoc, c: CommandOf<'param.set'>, x: HandlerContext) => unknown)(
 				doc,
-				{ type: 'param.set', target: ['scene3d', seq.id, prop], value, ...(cmd.at ? { at: cmd.at } : {}) },
+				{
+					type: 'param.set',
+					target: ['scene3d', seq.id, prop],
+					value,
+					...(cmd.at !== undefined ? { at: cmd.at } : {}),
+				},
 				h,
 			);
 		if (cmd.exposure !== undefined) param('exposure', cmd.exposure);

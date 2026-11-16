@@ -1,5 +1,6 @@
 import { produce } from 'immer';
 import { z } from 'zod';
+import { keyPathText } from '../agent/strict.ts';
 import { normalizeCaptionData } from '../captions/model.ts';
 import { normalizeSubtitleClips } from '../captions/subtitles/normalize.ts';
 import { looksLikeId } from '../ids.ts';
@@ -84,10 +85,11 @@ function validateCommands(raw: readonly unknown[]): { commands: Command[]; error
 		const parsed = COMMAND_CATALOG[type].schema.safeParse(c);
 		if (!parsed.success) {
 			for (const issue of parsed.error.issues) {
+				const where = keyPathText(issue.path as (string | number)[]);
 				errors.push({
 					commandIndex: i,
 					code: 'E_SCHEMA',
-					message: `${type}: ${issue.message}`,
+					message: `${type}: ${where ? `${where}: ` : ''}${issue.message}`,
 					path: zodPath(issue.path),
 				});
 			}
@@ -127,7 +129,7 @@ function applyTransactionUnchecked(
 				envelope.error.issues.map((i) => ({
 					commandIndex: -1,
 					code: 'E_SCHEMA',
-					message: i.message,
+					message: i.path.length ? `${keyPathText(i.path as (string | number)[])}: ${i.message}` : i.message,
 					path: zodPath(i.path),
 				})),
 			),

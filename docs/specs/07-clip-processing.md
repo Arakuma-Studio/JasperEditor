@@ -108,8 +108,14 @@ Requirement ids: `PRC-NNN` (processing model and jobs), `PST-NNN` (steps), `PRM-
   transcript of the media moves by the offset between the two files (`sourceTimingShift`): (1) both declare a
   source range of the same source → `old.firstFrame − new.firstFrame`; (2) only the new file declares one → the
   current file is taken to be that source (a warning when the names differ); (3) only the current file does →
-  the new file is taken to be the source (back to the raw); (4) otherwise both start timecodes. Without a basis
-  the command fails; without `keepSourceTiming` content time is kept. In both cases every clip is checked
+  the new file is taken to be the source (back to the raw); (4) otherwise both start timecodes; (5) otherwise
+  files equally long within one frame keep content time (`same-length`: a re-encode holds the same frames from its
+  first one, and content time counts from each file's first frame, so a different start PTS moves nothing). The two
+  probed rates must correspond: equal, or drifting apart by less than half a frame over the longer file (ffprobe's
+  average rate of variable-rate phone footage is frames ÷ duration, so a re-encode with the same timestamps reads a
+  slightly different rational). Without a basis the command fails naming the property that differs with both values
+  (`Frame rate differs: … 30.052000 fps (7513/250), … 30.110000 fps (3011/100)`, `Duration differs: …`); without
+  `keepSourceTiming` content time is kept. In both cases every clip is checked
   against the new file (PRC-017: `refuse` | `trim`). Processed versions are not replaced (process again). A file chosen in the Replace Footage dialog but not committed (another pick, cancel/close, a failed replace, closing during the upload) is discarded at once with `DELETE /api/media/:mediaKey`, which deletes only engine-managed copies no stored project or project version references.
 - **PRC-019 (P0, M3)** Declared source ranges. `media.setSourceRange {mediaId, sourceRange | null}` records which
   source frames a file holds (origin `manual`), refusing self links, cycles and rate mismatches; a file whose

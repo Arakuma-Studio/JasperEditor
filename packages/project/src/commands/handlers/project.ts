@@ -445,7 +445,12 @@ export const projectHandlers = {
 				probe: (cmd.probe ?? asset.probe) as MediaAsset['probe'],
 				sourceRange: (sr === undefined ? asset.sourceRange : sr) as MediaAsset['sourceRange'],
 			});
-			if (!t.ok) h.fail('E_INVALID_PARAM', `Cannot keep the source timing: ${t.reason}`);
+			if (!t.ok)
+				h.fail(
+					'E_INVALID_PARAM',
+					`Cannot keep the source timing: ${t.reason}. Pass keepSourceTiming: false to keep the in-points as they are`,
+					{ path: ['keepSourceTiming'] },
+				);
 			if (t.warning) h.warn('W_SOURCE_NAME_MISMATCH', t.warning);
 			timing = t;
 			shift = frameShiftFlicks(t.shiftFrames, t.frameRate);

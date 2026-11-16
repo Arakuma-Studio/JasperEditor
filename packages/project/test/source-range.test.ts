@@ -739,12 +739,41 @@ describe('Replace Footage with "keep source timing" (S07:PRC-018)', () => {
 		expect(!tooShort.ok && tooShort.errors[0]!.code).toBe('E_OUT_OF_MEDIA');
 	});
 
-	it('refuses keep-source-timing without a source relation or timecodes', () => {
-		const { h, mediaId } = replaceSetup();
+	it('without a source range or timecodes keeps an equally long file in place and refuses another length', () => {
+		const { h, mediaId, videoId } = replaceSetup();
 		const before = h.doc;
-		const none = h.tx([relinkCmd(mediaId, replacement(1800), { keepSourceTiming: true })]);
-		expect(!none.ok && none.errors[0]!.code).toBe('E_INVALID_PARAM');
+		const shorter = h.tx([relinkCmd(mediaId, replacement(1700), { keepSourceTiming: true })]);
+		expect(!shorter.ok && shorter.errors[0]).toMatchObject({
+			code: 'E_INVALID_PARAM',
+			message: expect.stringMatching(
+				/Duration differs: crudo\.mp4 lasts 60\.000000 s, T02\.mov 56\.666667 s/,
+			),
+		});
 		expect(h.doc).toBe(before);
+		const same = h.ok([relinkCmd(mediaId, replacement(1800), { keepSourceTiming: true })]);
+		expect(same.results[0]).toMatchObject({ shiftFrames: 0, basis: 'same-length' });
+		expect(vclip(h, videoId).sourceIn).toBe(180 * F30);
+	});
+
+	it('matches variable-rate re-encodes whose average rates differ by a sub-frame drift, and names real rate gaps', () => {
+		// ffprobe's avg_frame_rate of phone footage is frames ÷ duration: an H.264 re-encode of HEVC with the same
+		// timestamps reports a slightly different rational that prints alike at 3 decimals.
+		const withRate = (rate: Rational, name: string) => {
+			const a = replacement(1803, { name });
+			(a.probe.streams[0] as { frameRate: Rational }).frameRate = rate;
+			a.probe.durationFlicks = 60 * 705_600_000;
+			a.probe.variableFrameRate = true;
+			return a;
+		};
+		const hevc = withRate({ num: 7513, den: 250 }, 'IMG_0001.MOV');
+		const h264 = withRate({ num: 3005183, den: 100000 }, 'IMG_0001_h264.mp4');
+		expect(sourceTimingShift(hevc, h264)).toMatchObject({ ok: true, shiftFrames: 0, basis: 'same-length' });
+		const off = withRate({ num: 3011, den: 100 }, 'IMG_0001_h264.mp4');
+		expect(sourceTimingShift(hevc, off)).toEqual({
+			ok: false,
+			reason:
+				'Frame rate differs: IMG_0001.MOV runs at 30.052000 fps (7513/250), IMG_0001_h264.mp4 at 30.110000 fps (3011/100) (source frames cannot be kept one to one)',
+		});
 	});
 
 	it('re-anchors versions of the media on the new file (or detaches those it no longer holds)', () => {

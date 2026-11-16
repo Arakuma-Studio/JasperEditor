@@ -188,11 +188,15 @@ export const batchHandlers = {
 			within(where, ['targets', String(i)], () => {
 				const { clip } = h.clip(doc, t.clipId);
 				let target: string[];
-				if (t.path[0] === 'effect') {
+				// `["effect", id, param]` (the param.set target) or `["effects", id, param]` (the get_clip_properties key
+				// `effects.<id>.<param>` split on ".").
+				if (t.path[0] === 'effect' || t.path[0] === 'effects') {
 					if (t.path.length !== 3)
-						h.fail('E_INVALID_PARAM', 'an effect path is ["effect", effectInstanceId, param]', {
-							path: ['path'],
-						});
+						h.fail(
+							'E_INVALID_PARAM',
+							`an effect path is ["effect", effectInstanceId, param] (got ${t.path.length} segments)`,
+							{ path: ['path'] },
+						);
 					// a temp ref of an effect added earlier in the transaction (`path` is not an id key: resolved here)
 					const raw = t.path[1]!;
 					const fxId = isTempRef(raw) ? h.refs.get(raw) : raw;

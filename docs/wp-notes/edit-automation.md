@@ -105,9 +105,11 @@ D-51 / spec 12 §2.5 (`packages/project/src/proposals/`); this section is what s
   id in `blocking`) unless `overwrite: true` (then like `clip.addAdjustment`). Result `{clipIds, effectInstanceIds,
   trackId}`. History label "New Adjustment Layers".
 - `keyframe.addBatch {sequenceId?, targets: [{clipId, path, keys: [{at, value?, interpolation?, inInterpolation?,
-  easeIn?, easeOut?, spatial?}]}]}` — `path` is the property within the clip (`["transform", "scale"]`, `["opacity"]`,
-  …) or `["effect", effectInstanceId | "$ref", param]` for an effect of that clip; `at` as `keyframe.add` (`{frames}`
-  from the clip's start, `{sequenceFrame}`, …). Two keys of a target on one frame are refused. Result `{keyframeIds,
+  easeIn?, easeOut?, spatial?}]}]}` — `path` is the property's `clip.properties` key split on "."
+  (`["transform", "scale"]`, `["opacity"]`, `["effects", effectInstanceId | "$ref", param]`); an effect may also be
+  given as its param.set target `["effect", effectInstanceId | "$ref", param]`; `at` as `keyframe.add` (`12` or
+  `{frames: 12}` from the clip's start, `{sequenceFrame}`, …). Schema refusals name the key path
+  (`keyframe.addBatch: targets[0].keys[3].at: …`). Two keys of a target on one frame are refused. Result `{keyframeIds,
   targets}`. Label "Add Keyframes".
 - Both run the single commands' handlers item by item inside one command (same rules: track locks and kinds, the
   effect registry, value ranges and clamping warnings, interpolation sides, the shape box), so a batch is exactly the
