@@ -7,6 +7,7 @@ import { ENV, readFlag } from '@jasper/config';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { EngineLink, startupTimeoutMs } from './link.ts';
 import { createJasperMcpServer } from './server.ts';
+import { keepStdoutClean } from './stdout.ts';
 import { parseToolsets, TOOLSET_NAMES } from './toolsets.ts';
 import { MCP_SERVER_VERSION } from './version.ts';
 
@@ -35,15 +36,6 @@ failing; with --appdir, only that appdir's engine.`;
 
 function log(line: string): void {
 	process.stderr.write(`[jasper-mcp] ${line}\n`);
-}
-
-/**
- * stdout carries JSON-RPC only. Anything a dependency prints with console.log/info/debug would corrupt
- * the stream, so those go to stderr for the life of the process.
- */
-function keepStdoutClean(): void {
-	for (const level of ['log', 'info', 'debug'] as const)
-		console[level] = (...args: unknown[]) => console.error(...args);
 }
 
 async function main(): Promise<void> {

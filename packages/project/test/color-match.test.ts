@@ -173,6 +173,37 @@ describe('Auto tone', () => {
 		expect(Math.abs(ok.exposure)).toBeLessThan(0.6);
 		expect(ok.saturation).toBe(100);
 	});
+	/** A correctly exposed interior (a lightness ramp, median ≈ 50 %) with a bright window over the right fifth. */
+	const interior = (scale = 1): MatchImage => {
+		const w = 160;
+		const h = 90;
+		const rgb = new Float32Array(w * h * 3);
+		for (let y = 0; y < h; y++)
+			for (let x = 0; x < w; x++) {
+				const v = x >= 128 ? 1 : scale * (0.08 + (0.84 * x) / 127);
+				const i = (y * w + x) * 3;
+				rgb[i] = v;
+				rgb[i + 1] = v * 0.97;
+				rgb[i + 2] = v * 0.92;
+			}
+		return { w, h, rgb };
+	};
+	it('keeps the mid-tones of a well exposed frame with a bright window (no darkening)', () => {
+		const r = autoTone(interior());
+		expect(r.before[2]!).toBeGreaterThan(45);
+		expect(r.after[2]!).toBeGreaterThanOrEqual(r.before[2]! - 1);
+		expect(r.exposure).toBeGreaterThan(-0.1);
+		// the window stays white
+		expect(r.after[4]!).toBeGreaterThan(97);
+	});
+	it('intent "brighten" lifts the mid-tones without darkening the highlights', () => {
+		const img = interior(0.85);
+		const balance = autoTone(img);
+		const bright = autoTone(img, {}, { intent: 'brighten' });
+		expect(bright.after[2]!).toBeGreaterThan(bright.before[2]! + 6);
+		expect(bright.after[2]!).toBeGreaterThan(balance.after[2]! + 4);
+		expect(bright.after[4]!).toBeGreaterThan(97);
+	});
 	it('returns finite controls and quantiles for an empty or transparent frame', () => {
 		for (const image of [
 			{ w: 0, h: 0, rgb: new Float32Array(0) },

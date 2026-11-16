@@ -397,6 +397,10 @@ export function registerRenderTools(ctx: ToolContext): void {
 					.optional()
 					.describe('Target, e.g. -14. null: off.'),
 				truePeakDb: z.number().min(-20).max(0).optional().describe('Default -1.'),
+				videoOnly: z
+					.boolean()
+					.optional()
+					.describe('No audio stream (default: silence when nothing is heard).'),
 				captions: z
 					.object({
 						burnIn: z
@@ -461,6 +465,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 				audioSampleRate,
 				normalizeLufs,
 				truePeakDb,
+				videoOnly,
 				captions,
 				usePreviews,
 				smartRender,
@@ -483,12 +488,29 @@ export function registerRenderTools(ctx: ToolContext): void {
 				...(kind === 'gif' && normalizeLufs !== undefined ? ['normalizeLufs'] : []),
 				...(kind !== 'wav' && kind !== 'flac' && audioBitDepth !== undefined ? ['audioBitDepth'] : []),
 				...(kind !== 'm4a' && audioBitrateKbps !== undefined ? ['audioBitrateKbps'] : []),
+				...(kind !== 'video' && videoOnly !== undefined ? ['videoOnly'] : []),
 			];
 			if (misplaced.length)
 				throw new ToolError(
 					'E_INVALID_PARAM',
 					`${misplaced.join(', ')} ${misplaced.length === 1 ? 'does' : 'do'} not apply to format "${kind}"`,
 					'preset / crf / videoBitrateKbps are for "video", gif for "gif", audioBitDepth for "wav" / "flac", audioBitrateKbps for "m4a"; a GIF has no sound.',
+				);
+			// a picture-only file has no sound to shape: its audio options are refused by name, never ignored
+			const soundless = videoOnly
+				? [
+						...(audioChannels !== undefined ? ['audioChannels'] : []),
+						...(audioSampleRate !== undefined ? ['audioSampleRate'] : []),
+						...(normalizeLufs !== undefined ? ['normalizeLufs'] : []),
+						...(truePeakDb !== undefined ? ['truePeakDb'] : []),
+						...(credits ? ['credits'] : []),
+					]
+				: [];
+			if (soundless.length)
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					`videoOnly writes no audio stream; ${soundless.join(', ')} ${soundless.length === 1 ? 'is' : 'are'} for the sound`,
+					'Leave out videoOnly to export the sound, or the audio options.',
 				);
 			const p = findExportPreset(kind === 'video' ? preset : undefined);
 			if (!p)
@@ -575,6 +597,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 			if (usePreviews) settings.usePreviews = true;
 			if (smartRender !== undefined) settings.smartRender = smartRender;
 			if (draftUseProxies) settings.draftUseProxies = true;
+			if (videoOnly) settings.videoOnly = true;
 			// spec 12 §2.11: the sound credits sidecar (default: the sequence's setting / CC BY sounds used)
 			const creditsDefaulted = credits === undefined;
 			const sidecar =
@@ -583,7 +606,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 					: credits === null || typeof credits === 'string'
 						? credits
 						: credits.sidecar;
-			if (sidecar)
+			if (sidecar && !videoOnly)
 				settings.credits = {
 					sidecar,
 					...(credits && typeof credits === 'object' && credits.scope ? { scope: credits.scope } : {}),

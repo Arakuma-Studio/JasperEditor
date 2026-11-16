@@ -15,6 +15,15 @@ Workstream AF-EXP of [spec 18](../specs/18-agent-footage-editing.md) §2.7. No c
 | MCP `start_export {format: video \| gif \| wav \| flac \| m4a, gif, audioBitDepth, audioBitrateKbps}` | `apps/mcp/src/tools/render.ts`, `apps/mcp/src/export-presets.ts` (`buildDeliverableSettings`) |
 | Export mode ▸ Export As (Video / Animated GIF / Audio Only – WAV, FLAC, M4A) with their rows; remembered per sequence; Quick Export uses it | `apps/web/src/export/{ExportMode.tsx,settings.ts,quick.ts}` |
 
+**Sound stream of a video file.** A video export always carries an audio stream: the mix, or silence of the export's
+length (`anullsrc`) when nothing on the sequence is heard. That is the default on purpose: Premiere's Export Audio is
+on by default (that it then writes silence for a sequence without sound is our assumption, not checked), files with
+and without sound do not join with stream copy, and some upload and ingest pipelines expect a sound stream. `videoOnly: true` (`ExportSettings`; MCP `start_export {videoOnly}`)
+writes the picture alone: no mixdown, no sound credits, verification expects no audio stream; the audio options
+(`audioChannels`, `audioSampleRate`, `normalizeLufs`, `truePeakDb`, `credits`) are refused with it, and so is
+`videoOnly` with `format` gif / wav / flac / m4a. The editor's Export mode has no picture-only switch yet (alpha
+masters set it).
+
 ## 2. GIF (AF-EXP-001)
 
 - **Nothing dropped.** `deliverableOf` turns a GIF request into the settings of a picture intermediate — ProRes 4444

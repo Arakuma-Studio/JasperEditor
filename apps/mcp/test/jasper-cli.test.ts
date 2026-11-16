@@ -4,6 +4,9 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { StillRequest } from '@jasper/api';
+import type { EngineClient } from '@jasper/engine-client';
+import { createCounterIdSource, createEmptyProject } from '@jasper/project';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { runCli, writeToolImages } from '../src/jasper-cli.ts';
 import type { EngineConnection } from '../src/link.ts';
@@ -93,6 +96,115 @@ describe('call --out', () => {
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}
+	});
+});
+
+/** A fake engine for frame renders: one project, stills succeed at once (`destination` writes the file). */
+function stillEngine(dir: string) {
+	const doc = createEmptyProject({ ids: createCounterIdSource(5), name: 'Stills', preset: 'hd-1080p-30' });
+	const stills: StillRequest[] = [];
+	const png = Buffer.from('89504e470d0a1a0a', 'hex');
+	let result: Record<string, unknown> = {};
+	const client = {
+		agentQuery: async () => ({ result: doc, revision: 0, via: 'headless' }),
+		listProjects: async () => ({ projects: [{ projectId: 'prj_s', name: 'Stills' }] }),
+		agentUi: async () => ({ result: { projectId: 'prj_s' } }),
+		requestStill: async (req: StillRequest) => {
+			stills.push(req);
+			if (req.destination) {
+				const path = join(req.destination.folder, `${req.destination.name}.${req.format ?? 'png'}`);
+				writeFileSync(path, png);
+				result = { path, format: req.format ?? 'png' };
+			} else result = { url: '/stills/1.png' };
+			return { id: 'job_still', state: 'queued', progress: 0 };
+		},
+		getJob: async (id: string) => ({ id, title: 'Still', state: 'succeeded', progress: 1, result }),
+		fetchBytes: async () => ({ bytes: new Uint8Array(png), contentType: 'image/png' }),
+	};
+	const link: EngineConnection = {
+		target: { url: 'http://engine.test', token: null, source: 'explicit' },
+		client: async () => client as unknown as EngineClient,
+		invalidate: () => {},
+		close: async () => {},
+	};
+	const run = async (...args: string[]) => {
+		const out: string[] = [];
+		const err: string[] = [];
+		const code = await runCli(args, {
+			stdout: (t) => out.push(t),
+			stderr: (t) => err.push(t),
+			link,
+			env: {},
+			cwd: dir,
+		});
+		return { code, out: out.join(''), err: err.join('') };
+	};
+	return { run, stills };
+}
+
+describe('frame renders and results from the CLI', () => {
+	it('call returns the path of every image it writes, with --out or to a temporary file', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'jasper-cli-img-'));
+		try {
+			const { run } = stillEngine(dir);
+			const named = await run('call', 'render_frame', 'at=10', '--out', 'f.png', '--json');
+			expect(named.code, named.err).toBe(0);
+			expect(JSON.parse(named.out)).toMatchObject({ frame: 10, images: [join(dir, 'f.png')] });
+			const temp = await run('call', 'render_frame', 'at=10', '--json');
+			const body = JSON.parse(temp.out) as { images: string[] };
+			expect(body.images).toHaveLength(1);
+			expect(existsSync(body.images[0]!)).toBe(true);
+			rmSync(body.images[0]!, { force: true });
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it('render-frame --full writes the full-size frame through export_frame; --width over 1280 names --full', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'jasper-cli-full-'));
+		try {
+			const { run, stills } = stillEngine(dir);
+			writeFileSync(join(dir, 'f.png'), 'old');
+			const full = await run('render-frame', '--at', '10', '--out', 'f.png', '--full', '--json');
+			expect(full.code, full.err).toBe(0);
+			expect(stills[0]).toMatchObject({ frame: 10, format: 'png', destination: { folder: dir } });
+			expect(stills[0]!.width).toBeUndefined();
+			expect(JSON.parse(full.out)).toMatchObject({ out: join(dir, 'f.png'), frame: 10 });
+			expect(readFileSync(join(dir, 'f.png'), 'hex')).toBe('89504e470d0a1a0a');
+			const wide = await run('render-frame', '--at', '10', '--out', 'f.png', '--width', '1920');
+			expect(wide.code).toBe(2);
+			expect(wide.err).toContain('--full');
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it('a failed call prints its structured error on stdout, also without --json', async () => {
+		const link: EngineConnection = {
+			target: null,
+			client: async () => {
+				throw new Error('engine went away');
+			},
+			invalidate: () => {},
+			close: async () => {},
+		};
+		const out: string[] = [];
+		const err: string[] = [];
+		const code = await runCli(['call', 'import_mg_bundle', 'projectId=prj_s', 'path=/tmp/bundle'], {
+			stdout: (t) => out.push(t),
+			stderr: (t) => err.push(t),
+			link,
+		});
+		expect(code).toBe(1);
+		expect(JSON.parse(out.join(''))).toMatchObject({ ok: false, error: { code: 'INTERNAL' } });
+		expect(err.join('')).toContain('engine went away');
+	});
+
+	it('an MCP tool name given as a command points to the command or to call', async () => {
+		const err: string[] = [];
+		expect(await runCli(['render_frame'], { stdout: () => {}, stderr: (t) => err.push(t) })).toBe(2);
+		expect(err.join('')).toMatch(/jasper render-frame/);
+		expect(err.join('')).toMatch(/jasper call render_frame/);
 	});
 });
 

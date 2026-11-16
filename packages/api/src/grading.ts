@@ -1,4 +1,5 @@
 // Analysis measures frames rendered through the export paths, so measurements describe exported pixels.
+import { AUTO_TONE_INTENTS } from '@jasper/project';
 import { z } from 'zod';
 import { EnvelopeSchema } from './projects.ts';
 
@@ -136,6 +137,8 @@ export const AutoToneRequestSchema = z.object({
 	clipId: z.string(),
 	effectId: z.string().optional(),
 	frame: z.number().int().min(0),
+	/** "balance" (default) keeps a good exposure; "brighten" also lifts the mid-tones (color/auto-tone.ts). */
+	intent: z.enum(AUTO_TONE_INTENTS).optional(),
 });
 export type AutoToneRequest = z.infer<typeof AutoToneRequestSchema>;
 

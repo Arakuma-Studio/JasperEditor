@@ -6,6 +6,8 @@ import {
 	AlphaDeliveryRequestSchema,
 	AlphaDeliveryResultSchema,
 	AudioAnalyzeResultSchema,
+	AutoToneRequestSchema,
+	AutoToneResponseSchema,
 	ExportVerifyResultSchema,
 	FontCatalogSchema,
 	GamutCheckRequestSchema,
@@ -35,6 +37,7 @@ import {
 	type AutomationPass,
 	analyzeSequenceCleanup,
 	applyTransaction,
+	autoTone,
 	builtinCleanupSettings,
 	type CleanupAnalysis,
 	type Clip,
@@ -617,6 +620,8 @@ export function createFakeEngine(
 			...(done && job.failure ? { error: job.failure } : {}),
 		};
 	};
+	/** Exports written with `videoOnly`: their file has no audio stream (and no sound rows). */
+	const pictureOnly = new Set<string>();
 	const verifyResult = (exportId: string, checks: 'fast' | 'full', target?: string) => {
 		const row = (
 			id: string,
@@ -634,10 +639,12 @@ export function createFakeEngine(
 			message,
 		});
 		const failing = setup.verify?.failRow;
-		const ids =
+		const sound = !pictureOnly.has(exportId);
+		const ids = (
 			checks === 'fast'
 				? ['streams', 'duration', 'av-skew']
-				: ['decode', 'streams', 'duration', 'av-skew', 'loudness'];
+				: ['decode', 'streams', 'duration', 'av-skew', 'loudness']
+		).filter((id) => sound || (id !== 'av-skew' && id !== 'loudness'));
 		const rows = ids.map((id) =>
 			id === failing
 				? row(id, 'fail', -9.1, -14, 'Integrated loudness −9.1 LUFS against the −14 LUFS target')
@@ -663,7 +670,7 @@ export function createFakeEngine(
 						frameRate: 30,
 						pixFmt: 'yuv420p',
 					},
-					{ index: 1, type: 'audio', codec: 'aac', sampleRate: 48000, channels: 2 },
+					...(sound ? [{ index: 1, type: 'audio', codec: 'aac', sampleRate: 48000, channels: 2 }] : []),
 				],
 			},
 			rows,
@@ -1267,6 +1274,7 @@ export function createFakeEngine(
 				outputPath?: string;
 				format?: string;
 				destination?: { type: string; path?: string; overwrite?: boolean };
+				videoOnly?: boolean;
 			};
 		}) => {
 			const dest = req.settings?.destination;
@@ -1275,14 +1283,14 @@ export function createFakeEngine(
 			const path = kept
 				? asked.replace(/(\.[^./]+)?$/, (ext) => ` (2)${ext}`)
 				: (asked ?? req.settings?.outputPath ?? `/home/user/exports/cut.${req.settings?.format ?? 'mp4'}`);
-			return jobView(
-				newJob('export', 'Export', setup.exportPolls ?? 1, {
-					path,
-					...(kept ? { requestedPath: asked } : {}),
-					...(asked && setup.outputExists && dest?.overwrite ? { replaced: true } : {}),
-					sizeBytes: 48_000_000,
-				}),
-			);
+			const job = newJob('export', 'Export', setup.exportPolls ?? 1, {
+				path,
+				...(kept ? { requestedPath: asked } : {}),
+				...(asked && setup.outputExists && dest?.overwrite ? { replaced: true } : {}),
+				sizeBytes: 48_000_000,
+			});
+			if (req.settings?.videoOnly) pictureOnly.add(job.id);
+			return jobView(job);
 		},
 		deriveMedia: (key: string, req: { recipe: { op: string; format?: string } }) => {
 			const { recipe } = req;
@@ -1357,6 +1365,14 @@ export function createFakeEngine(
 				},
 				waveform: { type: req.waveformType ?? 'rgb', lo: v, hi: v, columns, traces: traces(['r', 'g', 'b']) },
 			});
+		},
+		/** Auto Tone of the grey footage (96/255 everywhere) by the real solver, with the requested intent. */
+		gradingAutoTone: (raw: unknown) => {
+			const req = body(AutoToneRequestSchema, raw);
+			const grey = { w: 16, h: 9, rgb: new Float32Array(16 * 9 * 3).fill(96 / 255) };
+			const r = autoTone(grey, {}, req.intent ? { intent: req.intent } : {});
+			const { before, after, ...params } = r;
+			return AutoToneResponseSchema.parse({ clipId: req.clipId, effectId: null, params, before, after });
 		},
 		/** TL-103: every cell drawn by `rasterFrame`, served at `/renders/<job>/cells/<n>` like the engine's. */
 		requestStillSheet: (raw: unknown) => {

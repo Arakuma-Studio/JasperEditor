@@ -1,5 +1,6 @@
 import {
 	type Animatable,
+	AUTO_TONE_INTENTS,
 	type Clip,
 	CREATIVE_LOOKS,
 	type EffectInstance,
@@ -272,7 +273,7 @@ export function registerGradingTools(ctx: ToolContext): void {
 		{
 			title: 'Auto tone',
 			description:
-				'Lumetri Color ▸ Basic Correction ▸ Auto: sets Exposure, Contrast, Highlights, Shadows, Whites and Blacks of a clip from its picture (before its Lumetri instance) so the luma spans a well-exposed range (black point ≈ 2 %, white point ≈ 98 %, median ≈ 42 %); saturation is left alone. Returns the luma quantiles (1/10/50/90/99 %) before and after. apply: false only reports. One undoable transaction ("Agent: Auto Tone").',
+				'Lumetri Color ▸ Basic Correction ▸ Auto: sets Exposure, Contrast, Highlights, Shadows, Whites and Blacks of a clip from its picture (before its Lumetri instance): lifts a dark frame, keeps good exposure and bright windows; saturation is left alone. Returns the luma quantiles (1/10/50/90/99 %) before and after. apply: false only reports. One undoable transaction ("Agent: Auto Tone").',
 			input: {
 				projectId: ProjectIdArg,
 				clipId: z.string().min(1).describe('Clip ("clp_…")'),
@@ -280,6 +281,10 @@ export function registerGradingTools(ctx: ToolContext): void {
 					'Frame inside the clip to analyse (default: the playhead on the clip, else its middle)',
 				).optional(),
 				effectInstanceId: z.string().optional().describe("The Lumetri instance (default: the clip's first)"),
+				intent: z
+					.enum(AUTO_TONE_INTENTS)
+					.optional()
+					.describe('brighten: also lift the mid-tones (default balance)'),
 				apply: z.boolean().optional().describe('Write the params (default true)'),
 			},
 			annotations: EDIT,
@@ -291,6 +296,7 @@ export function registerGradingTools(ctx: ToolContext): void {
 			const frame = await clipFrame(ctx, args.projectId, seq, clip, args.at, live);
 			const r = await ctx.engine((c) =>
 				c.gradingAutoTone({
+					...(args.intent ? { intent: args.intent } : {}),
 					envelope: toolEnvelope(doc, revision),
 					sequenceId: seq.id,
 					clipId: clip.id,

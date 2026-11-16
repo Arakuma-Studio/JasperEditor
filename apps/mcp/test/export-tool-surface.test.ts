@@ -163,6 +163,18 @@ describe('start_export', () => {
 		});
 	});
 
+	it('a video carries a sound stream unless videoOnly asks for the picture alone', async () => {
+		const { engine, call } = await connect();
+		expect((await call('start_export', { projectId: PROJECT })).isError).toBe(false);
+		expect(engine.starts[0]!.settings.videoOnly).toBeUndefined();
+		const r = await call('start_export', { projectId: PROJECT, videoOnly: true });
+		expect(r.isError, JSON.stringify(r.body)).toBe(false);
+		expect(engine.starts[1]!.settings.videoOnly).toBe(true);
+		const mixed = await call('start_export', { projectId: PROJECT, videoOnly: true, normalizeLufs: -14 });
+		expect(mixed.body).toMatchObject({ error: { code: 'E_INVALID_PARAM' } });
+		expect(engine.starts).toHaveLength(2);
+	});
+
 	it('`jasper call start_export {}` never exports a guessed project: the refusal names projectId', async () => {
 		const engine = fakeEngine();
 		const err: string[] = [];

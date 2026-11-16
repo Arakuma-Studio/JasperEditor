@@ -123,11 +123,26 @@ playhead).
 ### Auto
 
 Premiere's Auto (helpx "Use Auto Color": "applies intelligent color corrections: exposure, white balance and
-contrast", Sensei, undocumented maths). Ours is explicit: the luma distribution of the clip's picture before its
-Lumetri instance is pushed towards p1 = 2 %, p10 = 10 %, p50 = 42 %, p90 = 80 %, p99 = 98 % by a damped
-least-squares solve of Exposure, Contrast, Highlights, Shadows, Whites, Blacks through the real Lumetri maths
-(letterbox cropped). Saturation and white balance are left alone (deliberate: a muted look or a warm cast is the
-grader's choice). One "Auto Tone" step.
+contrast", Sensei, undocumented maths). Ours is explicit: five luma quantiles (p1, p10, p50, p90, p99) of the clip's
+picture before its Lumetri instance are pushed towards targets by a damped least-squares solve of Exposure, Contrast,
+Highlights, Shadows, Whites, Blacks through the real Lumetri maths (letterbox cropped). Saturation and white balance are
+left alone (deliberate: a muted look or a warm cast is the grader's choice). One "Auto Tone" step.
+
+The targets start from the frame (`autoToneTargets`; our own choices, labelled assumptions, no published reference):
+
+- **Mid-tones** (weight 2): intent `balance` (default; the editor's Auto button) keeps a median inside 42–62 % and only
+  lifts a darker one to 42 % or lowers a brighter one to 62 %; `brighten` (MCP `auto_tone {intent}`) lifts it 10 points,
+  to at least 50 % and at most 66 %, and never lowers it.
+- **Black point / shadows:** a frame without blacks moves halfway towards p1 = 2 % / p10 = 20 %; one with blacks keeps
+  them (never lifted).
+- **White point / highlights:** a dim frame is pushed to p90 = 80 %, p99 = 98 %; windows, screens or sky that already
+  reach them are never pulled down; only an over-bright frame's highlights follow its mid-tones down.
+
+The fixed targets used before (p1 2 %, p10 10 %, p50 42 %, p90 80 %, p99 98 %) darkened correctly exposed footage: a
+synthetic interior with a median of 58 % and a bright window came out at 43 % (`color-match.test.ts`, "keeps the
+mid-tones…"; reported by the video team on a real bright interior). Measured on synthetic ramps now: that frame keeps
+its median (balance), a 21 %-median under-exposed ramp is lifted to 43 % (balance) / 46 % (brighten), a 63 %-median
+airy ramp ends at 61 % with its blacks at 15 %. Limits: still one frame (the analysed `at`), no white balance.
 
 ### Lumetri Scopes
 

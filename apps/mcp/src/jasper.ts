@@ -1,6 +1,10 @@
 // `jasper` bin entry (docs/wp-notes/mcp-cli.md §5): the one-shot CLI. Ctrl+C cancels the running command
 // (an export or render is cancelled in the engine and its partial output deleted).
 import { runCli } from './jasper-cli.ts';
+import { keepStdoutClean } from './stdout.ts';
+
+// stdout carries the command's output (JSON lines with --json); dependency logging goes to stderr
+keepStdoutClean();
 
 const ac = new AbortController();
 let interrupted = false;

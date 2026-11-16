@@ -283,7 +283,9 @@ export class GradingService {
 		const base = this.paramsAt(fx, clip, req.frame, rate);
 		// Auto starts from neutral tone sliders (Premiere's Auto replaces them).
 		const neutral = { ...base, exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0 };
-		const r = autoTone(matchImageFromRgba8(img.data, img.width, img.height), neutral);
+		const r = autoTone(matchImageFromRgba8(img.data, img.width, img.height), neutral, {
+			...(req.intent ? { intent: req.intent } : {}),
+		});
 		return {
 			clipId: req.clipId,
 			effectId: fx?.id ?? null,

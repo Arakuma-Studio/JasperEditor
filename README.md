@@ -900,17 +900,19 @@ jasper props clp_123 --at 2s                     # value, evaluated, keyframes
 jasper get clip/clp_123/opacity --at 45          # one parameter
 jasper set clip/clp_123/transform.position '[640,200]'
 jasper inspect                                   # the timeline table (--json: the sequence summary)
-jasper render-frame --at 00:00:02:00 --out f.png --width 960
+jasper render-frame --at 00:00:02:00 --out f.png --width 960   # inline render, at most 1280 wide
+jasper render-frame --at 2s --out full.png --full                # the sequence's full size (export_frame)
 jasper export --out cut.mp4 --range 0..10s       # waits with progress; Ctrl+C cancels and deletes the file
 jasper export --out cut.mp4 --overwrite          # replace cut.mp4 (else an existing file is kept: "cut (2).mp4")
 jasper --timeout 540 call transcribe mediaId=med_1  # wait at most 9 min; past that the error names the
                                                  # transcribe {projectId, jobIds} call that waits and commits
 jasper ui elements panel=timeline                # the live window (ui click id=…, ui screenshot --out w.png)
 jasper call get_mixer --json                     # any MCP tool
+jasper call render_frame at=2s --json            # images go to temp files (or --out); "images" lists the paths
 ```
 
 `--json` prints one JSON document per line; exit status 0 = ok, 1 = the command failed (its error code, message
-and hint on stderr), 2 = usage error. `jasper --help` is the reference.
+and hint on stderr; `call` and `--json` also print `{"ok": false, "error"}` on stdout), 2 = usage error. `jasper --help` is the reference.
 
 #### Scene files: `jasper apply`, `preview`, `export-scene`
 
