@@ -28,7 +28,8 @@ import {
 	type TrackingWorker,
 } from './worker.ts';
 
-const PLANAR_METHOD = 'klt-homography@1';
+/** @2: KLT on a predicted crop (half resolution above 1280 px) + robust dense refinement, hold-out regions. */
+const PLANAR_METHOD = 'klt-homography@2';
 const POINT_METHOD = 'template@1';
 /** wp masks: frame-to-frame KLT + robust model fit of the pixels inside a mask outline. */
 const MASK_METHOD = 'mask-klt@1';
@@ -90,6 +91,7 @@ function validateTrackRequest(
 		y >= -slack &&
 		x <= width + slack &&
 		y <= height + slack;
+	if (r.options?.holdout && r.kind !== 'planar') return 'options.holdout applies to planar trackers only';
 	if (r.kind === 'mask') {
 		const p = r.reference.polygon;
 		if (!p) return 'A mask track needs reference.polygon (the mask outline in media px)';
@@ -243,10 +245,20 @@ export class TrackingService {
 			return w;
 		};
 
+		const holdout = holdoutByFrame(r, size);
 		const feed = (w: TrackingWorker, frame: number, buf: Uint8Array, reference: boolean) => {
 			const ab = buf.buffer as ArrayBuffer;
+			const polys = holdout?.(frame);
 			const p = w
-				.result({ type: reference ? 'reference' : 'frame', frame, buf: ab }, [ab])
+				.result(
+					{
+						type: reference ? 'reference' : 'frame',
+						frame,
+						buf: ab,
+						...(polys?.length ? { holdout: polys } : {}),
+					},
+					[ab],
+				)
 				.then((res) => onResult(frame, res));
 			p.catch(() => undefined);
 			return p;
@@ -406,6 +418,33 @@ function homographyToMediaPx(h: number[], sx: number, sy: number): number[] {
 	return m.map((v) => Math.round(v * 1e9) / 1e9);
 }
 
+/**
+ * The request's hold-out polygons per source frame in tracking px (static entries apply to every frame), or null
+ * when there are none.
+ */
+function holdoutByFrame(
+	r: TrackRequest,
+	size: { sx: number; sy: number },
+): ((frame: number) => number[][]) | null {
+	const entries = r.options?.holdout;
+	if (!entries?.length) return null;
+	const always: number[][] = [];
+	const perFrame = new Map<number, number[][]>();
+	for (const e of entries) {
+		const poly = G.toTrackingPx(e.polygon.flat(), size.sx, size.sy);
+		if (e.frame === undefined) always.push(poly);
+		else {
+			const list = perFrame.get(e.frame);
+			if (list) list.push(poly);
+			else perFrame.set(e.frame, [poly]);
+		}
+	}
+	return (frame) => {
+		const own = perFrame.get(frame);
+		return own ? [...always, ...own] : always;
+	};
+}
+
 function round3(v: number): number {
 	return Math.round(v * 1000) / 1000;
 }
@@ -448,14 +487,15 @@ function trackerConfig(
 			corners: G.toTrackingPx(r.reference.corners!.flat(), size.sx, size.sy),
 			features: r.options?.features ?? 'inside',
 			refineEdges: r.options?.refineEdges === true,
-			ecc: r.quality === 'best',
-			maxFeatures: 400,
+			dense: r.quality !== 'fast',
+			kltLevel: size.width > 1280 ? 1 : 0,
+			maxFeatures: 300,
 			qualityLevel: 0.01,
 			minDistance: 6,
-			winSize: 21,
+			winSize: 17,
 			maxLevel: 3,
 			fbMax: 1,
-			ransacThreshold: 2,
+			ransacThreshold: 1.5,
 			minSurvival: 0.3,
 		};
 		return cfg;

@@ -39,7 +39,14 @@ type PointTruth = {
 	points: [number, number][];
 };
 
-const TRACK_FIXTURES = ['plate-planar.mp4', 'plate-planar.json', 'plate-point.mp4', 'plate-point.json'];
+const TRACK_FIXTURES = [
+	'plate-planar.mp4',
+	'plate-planar.json',
+	'plate-planar-hard.mp4',
+	'plate-planar-hard.json',
+	'plate-point.mp4',
+	'plate-point.json',
+];
 const LGPL_DIR = join(ROOT, 'vendor', 'ffmpeg-lgpl', `${process.platform}-${process.arch}`);
 const LGPL_FFMPEG = join(LGPL_DIR, process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg');
 
@@ -52,16 +59,20 @@ function ensureTrackFixtures(): void {
 
 let app: TestApp;
 let planarKey: string;
+let hardKey: string;
 let pointKey: string;
 let planar: PlanarTruth;
+let hard: PlanarTruth;
 let point: PointTruth;
 
 beforeAll(async () => {
 	ensureTrackFixtures();
 	planar = JSON.parse(readFileSync(fixture('plate-planar.json'), 'utf8'));
+	hard = JSON.parse(readFileSync(fixture('plate-planar-hard.json'), 'utf8'));
 	point = JSON.parse(readFileSync(fixture('plate-point.json'), 'utf8'));
 	app = await makeApp({ totalSlots: 8 });
 	planarKey = (await register(app, fixture('plate-planar.mp4'))).mediaKey;
+	hardKey = (await register(app, fixture('plate-planar-hard.mp4'))).mediaKey;
 	pointKey = (await register(app, fixture('plate-point.mp4'))).mediaKey;
 }, 240_000);
 afterAll(closeApps);
@@ -212,7 +223,7 @@ describe('decoding (S09:TRK-011)', () => {
 	});
 });
 
-describe('planar tracker klt-homography@1 (S09:TRK-012, §8.2)', () => {
+describe('planar tracker klt-homography@2 (S09:TRK-012, §8.2)', () => {
 	it('tracks the plate both ways from a mid reference within 1.5 px RMS, 4 px max, with live progress', async () => {
 		const events: TrackProgress[] = [];
 		const off = coreServices(app).broadcaster.subscribe((e: EventEnvelope) => {
@@ -229,7 +240,7 @@ describe('planar tracker klt-homography@1 (S09:TRK-012, §8.2)', () => {
 			startFrame: 0,
 			fps: { num: 30, den: 1 },
 			stride: 8,
-			method: 'klt-homography@1',
+			method: 'klt-homography@2',
 			trackerId: 'tkr_test0001',
 		});
 		expect(result.data).toHaveLength(planar.frames * 8);
@@ -300,6 +311,51 @@ describe('planar tracker klt-homography@1 (S09:TRK-012, §8.2)', () => {
 		expect(result.startFrame).toBe(5);
 		expect(result.data).toHaveLength(16 * 8);
 		for (const e of planarErrors(result, planar).values()) expect(e).toBeLessThanOrEqual(4);
+	}, 120_000);
+});
+
+describe('planar tracker on handheld footage (motion blur, occluder, hold-out)', () => {
+	it('keeps every corner within 1.5 px through camera shake blur and a hand passing over the plane', async () => {
+		const { result } = await runTrack({
+			projectId: 'prj_0000000000000001',
+			mediaKey: hardKey,
+			kind: 'planar',
+			reference: { frame: hard.reference.frame, corners: hard.reference.corners },
+			range: { startFrame: 0, endFrame: hard.frames },
+			direction: 'both',
+			quality: 'best',
+		});
+		expect(result.lost).toEqual([]);
+		let sum = 0;
+		for (let i = 0; i < hard.frames; i++)
+			for (let k = 0; k < 4; k++) {
+				const e = Math.hypot(
+					result.data[i * 8 + 2 * k]! - hard.corners[i]![k]![0],
+					result.data[i * 8 + 2 * k + 1]! - hard.corners[i]![k]![1],
+				);
+				sum += e * e;
+				expect(e, `frame ${i} corner ${k}`).toBeLessThanOrEqual(1.5);
+			}
+		expect(Math.sqrt(sum / (4 * hard.frames))).toBeLessThanOrEqual(0.5);
+	}, 180_000);
+
+	it('ignores everything inside the hold-out regions', async () => {
+		const whole: [number, number][] = [
+			[-10, -10],
+			[planar.width + 10, -10],
+			[planar.width + 10, planar.height + 10],
+			[-10, planar.height + 10],
+		];
+		const held = [120, 121, 122, 123];
+		const { result } = await runTrack(
+			planarBody({
+				direction: 'forward',
+				options: { holdout: held.map((frame) => ({ frame, polygon: whole })) },
+			}),
+		);
+		expect(result.lost).toEqual(held);
+		const errors = planarErrors(result, planar);
+		for (const [f, e] of errors) if (f > 125) expect(e).toBeLessThanOrEqual(1.5);
 	}, 120_000);
 });
 

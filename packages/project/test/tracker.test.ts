@@ -283,18 +283,23 @@ describe('samples (S09:TRK-002, TRK-020)', () => {
 		expect(valuesAt(s, 5 * F + F / 2)!.values[0]).toBeCloseTo(701.5, 9);
 		expect(valuesAt(s, 100 * F)!.values[0]).toBe(truthQuad(9)[0][0]);
 	});
-	it('smooths jitter with a centred average and holds the end samples', () => {
+	it('smooths jitter by confidence without lagging motion or following lost samples', () => {
+		// x moves 10 px per frame with ±1 px jitter; frame 4 is lost (confidence 0) and repeats frame 3's values.
+		const xs = [1, 9, 21, 29, 29, 51, 59, 71, 79];
 		const samples: TrackerSamples = {
 			start: 0,
 			step: F,
 			stride: 2,
-			data: [0, 6, 9, 6, 0, 6],
-			confidence: [1, 0.5, 1],
+			data: xs.flatMap((x) => [x, 5]),
+			confidence: [1, 1, 1, 1, 0, 1, 1, 1, 1],
 		};
-		const smoothed = smoothSamples(samples, 1);
-		expect(smoothed.data).toEqual([3, 6, 3, 6, 3, 6]);
-		expect(smoothed.confidence).toEqual([1, 0.5, 1]);
-		expect(samples.data).toEqual([0, 6, 9, 6, 0, 6]);
+		const smoothed = smoothSamples(samples, 2);
+		for (let i = 0; i < xs.length; i++) {
+			expect(Math.abs(smoothed.data[2 * i]! - 10 * i)).toBeLessThan(1);
+			expect(smoothed.data[2 * i + 1]).toBeCloseTo(5, 9);
+		}
+		expect(smoothed.confidence).toEqual(samples.confidence);
+		expect(samples.data.slice(0, 4)).toEqual([1, 5, 9, 5]);
 	});
 	it('merges disjoint spans with lost samples in the gap', () => {
 		const a: TrackerSamples = { start: 0, step: F, stride: 2, data: [0, 0, 1, 1], confidence: [1, 1] };
