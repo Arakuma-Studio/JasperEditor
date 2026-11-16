@@ -107,8 +107,10 @@ export type MediaHandle = {
 	 */
 	alpha?: boolean;
 	/**
-	 * `false` when a browser (WebCodecs / `<video>`) cannot decode the original, e.g. ProRes: previews need
-	 * `proxyUrl`, engine renders decode the original natively. Absent = decodable or unknown.
+	 * `false` when the browser that draws the media (WebCodecs / `<video>`) cannot decode the original, e.g. ProRes:
+	 * previews need `proxyUrl`, engine renders read the original's frames through FFmpeg (`<OffthreadVideo>`).
+	 * Absent = decodable or unknown. Engine renders also mark media whose decoding depends on the platform (HEVC) as
+	 * `false`: see `mediaDecodeHints`.
 	 */
 	browserDecodable?: boolean;
 	/**
@@ -185,14 +187,24 @@ export function interpretMediaHandle(asset: MediaAsset, handle: MediaHandle | nu
 	return out;
 }
 
-/** The `alpha` / `browserDecodable` hints of a MediaHandle, from the asset's probe (S04:PB-004). */
+/**
+ * The `alpha` / `browserDecodable` hints of a MediaHandle, from the asset's probe (S04:PB-004). `target`: who draws
+ * the media. A probe's `browserDecodable: null` (HEVC) means the platform decides: Chrome decodes HEVC only through
+ * hardware decoders, which an editor's browser may have and the engine's headless render browser has not. Previews
+ * try the original; engine renders (`'render'`) read such media through FFmpeg like ProRes, so every render shows
+ * the same frames whatever the machine.
+ */
 export function mediaDecodeHints(
 	probe: Pick<MediaAsset['probe'], 'hasAlpha' | 'streams'>,
+	target: 'preview' | 'render' = 'preview',
 ): Pick<MediaHandle, 'alpha' | 'browserDecodable'> {
 	const vs = probe.streams.find((s) => s.type === 'video');
+	const undecodable =
+		vs?.type === 'video' &&
+		(vs.browserDecodable === false || (target === 'render' && vs.browserDecodable === null));
 	return {
 		...(probe.hasAlpha ? { alpha: true } : {}),
-		...(vs?.type === 'video' && vs.browserDecodable === false ? { browserDecodable: false } : {}),
+		...(undecodable ? { browserDecodable: false } : {}),
 	};
 }
 

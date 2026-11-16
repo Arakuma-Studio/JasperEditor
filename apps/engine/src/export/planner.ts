@@ -962,6 +962,30 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			warnings.unshift({ code: 'GRAPHICS_SOFTWARE', message: s.message ?? 'Graphics render in software' });
 	}
 
+	// AGENTS §4: footage the render browser cannot decode (HEVC, ProRes…) is read through FFmpeg in browser-drawn
+	// layers; what cannot be read frame-exactly that way is refused by name here, not as a failure mid-render.
+	if (path === 'remotion' || path === 'hybrid') {
+		const bakedIds = new Set(baked.map((b) => b.clipId));
+		const unreadable = browserDrawnClips(snapshot, path === 'remotion' ? null : bakedIds).flatMap((c) => {
+			const reason = 'mediaId' in c.source ? browserFrameProblem(c, media[c.source.mediaId]) : null;
+			return reason ? [{ clipId: c.clipId, reason }] : [];
+		});
+		if (unreadable.length > 0)
+			throw new PlanError(
+				MEDIA_UNDECODABLE,
+				409,
+				`Footage the render browser cannot read: ${unreadable
+					.slice(0, 5)
+					.map((u) => u.reason)
+					.join('; ')}${unreadable.length > 5 ? ` and ${unreadable.length - 5} more` : ''}`,
+				{
+					path,
+					blockers: unreadable.map((u) => ({ path, reason: u.reason, itemId: u.clipId })),
+					hint: 'Convert the file to MP4 (derive_media) and swap it in with replace_footage.',
+				},
+			);
+	}
+
 	// Spec 19 TL-075: a 3D model or HDR environment that is gone never exports as a scene without it.
 	const missing3d = missing3dAssets(snapshot);
 	if (missing3d.length > 0)
@@ -1367,8 +1391,54 @@ export function localHandle(asset: MediaAsset, m: LocalMedia): MediaHandle {
 		durationFlicks: r.probe.durationFlicks,
 		hasAudio: r.hasAudio,
 		rotation: r.probe.rotationDegrees,
-		...mediaDecodeHints(r.probe),
+		...mediaDecodeHints(r.probe, 'render'),
 	};
+}
+
+/** Plan error code for clips drawn by the render browser whose footage it cannot read (`browserFrameProblem`). */
+export const MEDIA_UNDECODABLE = 'MEDIA_UNDECODABLE';
+
+/** ffprobe container names whose frame tables the render page demuxes (mediabunny: MP4/QuickTime, Matroska, MPEG-TS). */
+const PAGE_DEMUXED = /(^|,)(mov|mp4|matroska|webm|mpegts)(,|$)/;
+
+/**
+ * Why the render browser cannot draw a clip's footage frame-exactly, else null. Footage it cannot decode
+ * (`mediaDecodeHints(…, 'render')`: ProRes, HEVC…) is read through the render's FFmpeg (`<OffthreadVideo>`) at the
+ * media times of its frames; for variable-frame-rate media those come from the container's frame table, which the
+ * page demuxes for MP4/QuickTime, Matroska/WebM and MPEG-TS files only.
+ */
+export function browserFrameProblem(
+	c: Pick<RenderVisualClip, 'name' | 'retime'>,
+	m: Pick<LocalMedia, 'record'> | undefined,
+): string | null {
+	const r = m?.record;
+	const vs = r?.probe.streams.find((s) => s.type === 'video');
+	if (r?.kind !== 'video' || vs?.type !== 'video' || !c.retime?.vfr) return null;
+	if (mediaDecodeHints(r.probe, 'render').browserDecodable !== false || PAGE_DEMUXED.test(r.container))
+		return null;
+	return `clip "${c.name}" has variable-frame-rate ${vs.codec} video in a ${r.container} file: the render browser cannot decode ${vs.codec} and cannot read that container's frame timestamps`;
+}
+
+/**
+ * Visual clips the render browser draws: all of them on the Remotion path (`baked` null); on the hybrid path the baked
+ * layers, the sides of baked transition spans and the clips nested in baked nest clips.
+ */
+function browserDrawnClips(snap: RenderSnapshot, baked: ReadonlySet<string> | null): RenderVisualClip[] {
+	const out: RenderVisualClip[] = [];
+	const walk = (s: RenderSnapshot, all: boolean) => {
+		for (const t of s.videoTracks) {
+			const sides = new Set<string | null>();
+			for (const tr of t.transitions ?? [])
+				if (baked?.has(tr.id)) sides.add(tr.outgoingClipId).add(tr.incomingClipId);
+			for (const c of t.clips) {
+				const drawn = all || !baked || baked.has(c.clipId) || sides.has(c.clipId);
+				if (drawn) out.push(c);
+				if ('nest' in c.source) walk(c.source.nest.snapshot, drawn);
+			}
+		}
+	};
+	walk(snap, false);
+	return out;
 }
 
 /** Plan error code for template media params holding media a template cannot draw as a picture. */

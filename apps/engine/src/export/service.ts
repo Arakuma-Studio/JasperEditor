@@ -2906,7 +2906,7 @@ export class ExportService {
 					durationFlicks: r.probe.durationFlicks,
 					hasAudio: r.hasAudio,
 					rotation: r.probe.rotationDegrees,
-					...mediaDecodeHints(r.probe),
+					...mediaDecodeHints(r.probe, 'render'),
 				};
 			},
 			resolveFont: (font, weight, italic) => {

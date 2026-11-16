@@ -98,8 +98,18 @@ The result is drawn in the layer box or handed to the colour stage / fx picture.
 
 - Player: while a frame is not decoded yet the Player buffers, so no stale frame is shown during playback.
 - Renders: each frame holds a `delayRender` until it is drawn.
-- ProRes or other originals the browser can't decode: renders read them with `<OffthreadVideo>` at the exact frame
-  (Frame Sampling).
+- Originals the render browser can't decode — ProRes, and HEVC, which Chrome decodes only through platform
+  hardware decoders that the headless render browser lacks (`mediaDecodeHints(probe, 'render')` marks a probe's
+  `browserDecodable: null` as undecodable for engine renders) — are read with `<OffthreadVideo>`, i.e. by the
+  render's LGPL FFmpeg (the same decoder as the native export), frozen at the media time of frame a (and b for
+  blending). Constant-rate media use the probed frame grid; VFR media use the container's frame timestamps, demuxed
+  in the page by mediabunny without decoding (`frameTimesOf`), and ask FFmpeg for a time a quarter into the frame's
+  own interval, which selects that frame under either "containing" or "nearest" extraction. Plain layers show the
+  composed picture in the layer box like `DecodedRetimed` (before, only fx / colour-stage consumers received it and
+  a plain layer stayed black). The planner refuses (`MEDIA_UNDECODABLE`, naming the clip and codec) a browser-drawn layer of VFR
+  undecodable media in a container the page cannot demux (MP4/QuickTime, Matroska/WebM and MPEG-TS can be).
+  Assumption (not documented by Remotion): `<OffthreadVideo>` times count from the file's start time like ffmpeg
+  `-ss`; verified only for files whose video starts at 0 (phone footage, the fixtures).
 - The Program monitor decodes at ≤ 1920 px on the long side; renders decode at full size.
 - Retimed layers count as frame-dependent, so the sequence re-renders them every frame.
 - **Reversed audio** (`audio/reversed.ts`): Remotion's `<Audio>` can't play backwards. A reversed clip plays a WAV
@@ -274,6 +284,7 @@ transition and reports `approximated`.
 | Preview frame choice | `packages/compositions/test/retime-frames.test.ts` (real Chrome + mediabunny: CFR forward/backward/random, reverse across GOPs, VFR timestamps) |
 | GPU = CPU | `retime-gl.test.ts` (§5) |
 | Native export | `apps/engine/test/time-export.test.ts`: reverse, remap (50 % + freeze + palindrome), VFR, Frame Blending at 50 %, Optical Flow, scene job |
+| HEVC in browser-drawn renders | `apps/engine/test/hevc-browser.e2e.test.ts` (REMOTION_E2E=1; fixtures `vfr-code-hevc.mp4` / `frame-code-hevc.mp4` from `scripts/fixtures/hevc.mjs`, libkvazaar or hevc_nvenc): native, Remotion and hybrid (GPU effect bake) exports and Program stills show the oracle's frame on all 90 frames (VFR by timestamp + CFR); Remotion vs native share within 3/255 ≥ 0.99 (measured SSIM 0.9986 on 2026-11-16); `browser-frames-plan.test.ts` (the plan refusal) |
 | Native and Remotion exports, same sequence | `apps/engine/scripts/verify-time.ts` against a live engine (720p sequence: reversed clip 0–29, remapped 30–101 with 50 % / freeze / reverse, VFR clip 102–151; every frame's code read with ffmpeg): native **152/152**, Remotion **152/152** (`cd apps/engine && pnpm exec tsx scripts/verify-time.ts --engine http://127.0.0.1:<port>`) |
 | Real app | `e2e/time.spec.ts` (built app, Chrome): band drag → slower, one undo step; Time Interpolation menu; Effect Controls section; Program monitor shows `floor(t·0.5)`-th source frames; native export shows the same frames; Scene Edit Detection dialog cuts scenes.mp4 at its 4 cuts in one undo step. **5/5 pass** (`E2E_PORT=<port> pnpm e2e e2e/time.spec.ts`). |
 | Frame-rate conform (§15) | `packages/project/test/fps-conform.test.ts` (the rule per rate pair, fast-check against rational floor, `samplesOnFrameGrid`, the snapshot); `apps/engine/test/fps-conform-native.test.ts` (native frame codes = rule for 29.97 → 30, 23.976 → 24, 25 → 30, 60 → 30, 30 → 29.97, an in-point, 70 %, a hold; filters; untagged matrix); `apps/engine/test/fps-conform.e2e.test.ts` (REMOTION_E2E=1: native, hybrid, Remotion and preview stills, and the colour of four colour encodings) |
