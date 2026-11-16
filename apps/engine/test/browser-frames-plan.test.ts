@@ -36,9 +36,21 @@ describe.runIf(existsSync(SOURCE))('browser-drawn HEVC footage at plan time', ()
 	}, 120_000);
 	afterAll(closeApps);
 
+	/**
+	 * The fixture's frames are variable-rate by construction; ffprobe's rate guess for FLV depends on the encoder's
+	 * frame reordering (FLV stores millisecond times and a nominal rate), so the remux is marked as what it is.
+	 */
+	async function registerVfr(file: string) {
+		const m = await register(app, file);
+		const registry = coreServices(app).registry;
+		const rec = registry.get(m.mediaKey)!;
+		await registry.put({ ...rec, probe: { ...rec.probe, variableFrameRate: true } });
+		return { ...m, probe: { ...m.probe, variableFrameRate: true } };
+	}
+
 	async function doc(file: string, gpuEffect: boolean) {
 		const d = new DocBuilder('hd-720p-30');
-		const mediaId = d.addMedia(await register(app, file));
+		const mediaId = d.addMedia(await registerVfr(file));
 		const clip = d.tx([{ type: 'clip.place', source: { mediaId }, at: 0, matchSequence: 'keep', ref: '$c' }])
 			.refs.$c!;
 		if (gpuEffect) d.tx([{ type: 'effect.add', target: { clipId: clip }, effectId: 'jasper.bevel-edges' }]);
