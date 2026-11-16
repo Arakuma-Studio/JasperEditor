@@ -1572,27 +1572,28 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 	const frameSec = fps.den / fps.num;
 
 	const encoder = output.encoder ?? LEGACY_X264_CHOICE;
-	const enc = o.still
-		? null
-		: videoEncodeArgs(encoder, {
-				crf: output.crf,
-				speed: output.speed ?? 'balanced',
-				width: output.width,
-				height: output.height,
-				fps: output.fps,
-				...(output.bitrateKbps ? { bitrateKbps: output.bitrateKbps } : {}),
-				...(output.proresProfile ? { proresProfile: output.proresProfile } : {}),
-				...(output.gop ? { gop: output.gop } : {}),
-				...(output.noBFrames ? { noBFrames: true } : {}),
-				// color-mgmt: bit depth, colour code points, HDR metadata.
-				...(output.color
-					? {
-							bitDepth: output.color.bitDepth,
-							colorCodes: output.color.codes,
-							svtHdr: svtHdrParams(output.color),
-						}
-					: {}),
-			});
+	const enc =
+		o.still || output.pngFrames
+			? null
+			: videoEncodeArgs(encoder, {
+					crf: output.crf,
+					speed: output.speed ?? 'balanced',
+					width: output.width,
+					height: output.height,
+					fps: output.fps,
+					...(output.bitrateKbps ? { bitrateKbps: output.bitrateKbps } : {}),
+					...(output.proresProfile ? { proresProfile: output.proresProfile } : {}),
+					...(output.gop ? { gop: output.gop } : {}),
+					...(output.noBFrames ? { noBFrames: true } : {}),
+					// color-mgmt: bit depth, colour code points, HDR metadata.
+					...(output.color
+						? {
+								bitDepth: output.color.bitDepth,
+								colorCodes: output.color.codes,
+								svtHdr: svtHdrParams(output.color),
+							}
+						: {}),
+				});
 	// keyframes-blend: the composite runs as a pipeline of ffmpeg processes when the stack has blend layers: each blend
 	// layer ends a process (its output = the composite below ‖ the layer on transparency, side by side, raw RGBA) and
 	// the blend kernel's result starts the next one as its first input (`pipe:3`). The last process encodes.
@@ -1813,6 +1814,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 	vout.push(`trim=end_frame=${output.frames}`, 'setpts=PTS-STARTPTS');
 	// color-mgmt: stills are the display rendition (working → display LUT), exports the output colour space.
 	if (o.still) vout.push(...(o.colorLut ? ['format=rgba', o.colorLut] : []), 'format=rgb24');
+	else if (output.pngFrames) vout.push('format=rgb24');
 	else {
 		// The encoder's pixel format (yuv420p; nv12 + hwupload for QSV/VAAPI; 4:2:2/4:4:4 10-bit for ProRes).
 		if (output.color) vout.push(...outputFilters(output.color, o.colorLut ?? null, SWS_FLAGS));
@@ -1825,7 +1827,7 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 	// 5.1, loudness normalisation — `audio/mixdown.ts`), resampled with SoX to the delivered rate when it differs.
 	/** The input index of a stream-copied audio encode (no audio filter chain then). */
 	let copiedAudio: number | null = null;
-	if (!o.still && !output.videoOnly) {
+	if (!o.still && !output.pngFrames && !output.videoOnly) {
 		const totalSamples = Math.round(output.durationSec * output.audioSampleRate);
 		const layout = output.audioChannels === 1 ? 'mono' : output.audioChannels === 6 ? '5.1' : 'stereo';
 		if (o.audio?.encoded) {
@@ -1848,6 +1850,13 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 	args.push('-filter_complex', filter, '-map', '[vout]');
 	if (o.still) {
 		args.push('-frames:v', '1', '-update', '1', '-f', 'image2', '-c:v', 'png', o.outputFile);
+	} else if (output.pngFrames) {
+		args.push(
+			// (a constant rate, as the video outputs: image2 would otherwise drop frames that repeat a timestamp)
+			...['-r', rate(output.fps), '-frames:v', String(output.frames), '-start_number', '0'],
+			...['-f', 'image2', '-c:v', 'png'],
+			...['-threads', String(Math.max(1, o.threads)), o.outputFile],
+		);
 	} else {
 		args.push(
 			...(output.videoOnly ? [] : ['-map', copiedAudio !== null ? `${copiedAudio}:a:0` : '[aout]']),

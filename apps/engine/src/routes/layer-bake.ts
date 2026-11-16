@@ -29,6 +29,8 @@ export default async function layerBakeRoutes(app: FastifyInstance): Promise<voi
 	app.jasper.services[LAYER_BAKE_SERVICE_KEY] = svc;
 	svc.registerRunners();
 	const unregisterExt = core.registerNativeExtension(layerBakeExtension(svc));
+	// export layer routes (layer-routes.ts): plates are served to the render browser by `/mg/layers/:key/graded.png`
+	core.exports.registerPlateStore(svc.dir);
 	const unregisterCap = core.registerCapabilityProvider(() => ({
 		features: { layerBake: svc.capability() },
 	}));
@@ -37,6 +39,7 @@ export default async function layerBakeRoutes(app: FastifyInstance): Promise<voi
 	});
 	app.addHook('onClose', async () => {
 		svc.stop();
+		core.exports.registerPlateStore(null);
 		unregisterExt();
 		unregisterCap();
 	});

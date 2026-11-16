@@ -4,7 +4,7 @@
 // WP-2G registers (`registerMgMasterProvider`).
 
 import type { ChildProcess } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { createReadStream, readdirSync, readFileSync, statSync } from 'node:fs';
 import {
 	copyFile,
@@ -43,7 +43,9 @@ import {
 	clipContentTime,
 	copyableRuns,
 	type MediaHandle,
+	makeEnvelope,
 	mediaDecodeHints,
+	type ProjectDocument,
 	type RenderSnapshot,
 	type RenderVisualClip,
 	resolveLayerProps,
@@ -97,6 +99,7 @@ import { runPsdExport } from './delivery/psd-job.ts';
 import { planPsd } from './delivery/psd-plan.ts';
 import { gpuDecodePolicyFromEnv, nvdecEligible, nvdecForGraph, probeCudaDecode } from './gpu.ts';
 import { motionStage } from './keyframed.ts';
+import { createLayerRouteExtension, passDocument } from './layer-routes.ts';
 import { guardMediaDuring, offlineUsesOf } from './media-guard.ts';
 import {
 	compositeMemoryBudget,
@@ -116,6 +119,7 @@ import {
 } from './native.ts';
 import {
 	type DeferredLayer,
+	failureText,
 	LayerBakeError,
 	layerOverride,
 	layerSpan,
@@ -137,8 +141,10 @@ import {
 	planExport,
 } from './planner.ts';
 import { joinedRanges, joinPlans, joinRefusal, overlapRefusal } from './ranges.ts';
+import { spanRuns } from './routing.ts';
 import { ExportRunReport } from './run-report.ts';
 import {
+	joinsByCopy,
 	planPictureSegments,
 	type SegmentMemory,
 	type SegmentPlan,
@@ -168,7 +174,7 @@ import type { StreamLayerPlan } from './stream/plan.ts';
 import { streamLayer } from './stream/run.ts';
 import { BakeChangedError, streamTaps } from './stream/taps.ts';
 import { createSyntheticExtension } from './synthetic.ts';
-import { concatFilter, type ExportRun, exportRuns, fallbackRuns, type PreviewPiece } from './use-previews.ts';
+import { concatFilter, type ExportRun, exportRuns, type PreviewPiece } from './use-previews.ts';
 import { buildVerifyContext, type OfflineSpan, soundEditsOf, writeVerifyContext } from './verify-context.ts';
 import { deliverableOfContainer, EXPORT_JOB_ID_RE, runExportVerify, targetRefusal } from './verify-job.ts';
 
@@ -186,10 +192,6 @@ class NativePrepareError extends Error {
 /** edit-structure: what the Remotion-path extensions prepared for nested sequences, per top-level preparation. */
 const NESTED_REMOTION = new WeakMap<ReadonlyMap<string, unknown>, Map<string, PreparedExtensions>>();
 
-/** Seconds at most between the frames of failed layer bakes rendered as one Remotion stretch (`fallbackRuns`). */
-const FALLBACK_MERGE_SEC = 2;
-/** Remotion stretches of an export whose layer bakes failed at most; more: the whole range on the Remotion path. */
-const MAX_FALLBACK_STRETCHES = 8;
 /**
  * The share of a native export's bar its preparation's bakes fill while they report (`NativePrepareContext.progress`);
  * the composite fills the rest. An estimate (≈): the bakes of a measured graphics-heavy export took 222 of 487 s
@@ -289,6 +291,16 @@ export class ExportService {
 	constructor(private readonly deps: ExportServiceDeps) {
 		// edit-structure: Bars and Tone / counting leader pictures and tones (always available: ffmpeg only).
 		this.nativeExtensions.register(createSyntheticExtension({ ffmpeg: deps.ff }));
+		// layer-routes.ts: the placeholders of layer-route passes (the base under the next pass).
+		this.nativeExtensions.register(this.layerRoutes.ext);
+	}
+
+	private readonly layerRoutes = createLayerRouteExtension();
+	/** layer-routes.ts: where plates are written for the Remotion passes (the layer cache's served directory). */
+	private plateDir: string | null = null;
+	/** The layer-bake routes register the directory their `/mg/layers/:key/graded.png` route serves. */
+	registerPlateStore(dir: string | null): void {
+		this.plateDir = dir;
 	}
 
 	/** M2 hook: colour (LUT), motion-graphics pre-renders, warp stage… keep features on the native path. */
@@ -1051,27 +1063,27 @@ export class ExportService {
 							stage: `Rendering frames ${r.start}–${r.end} · ${extra?.stage ?? ''}`,
 						}),
 				};
-				const res = await this.renderToFile(
+				const res = await this.renderPiece(
 					sub,
+					req,
+					planned,
+					r,
 					{
-						...req,
-						settings: {
-							...req.settings,
-							usePreviews: false,
-							videoOnly: true,
-							container: 'mov',
-							range: { type: 'custom', startFrame: r.start, endFrame: r.end },
-							...(r.engine ? { engine: r.engine } : {}),
-							video: {
-								codec: 'prores',
-								proresProfile,
-								width: seq.width,
-								height: seq.height,
-								frameRate: { num: seq.fps.num, den: seq.fps.den },
-								scaling: 'stretch',
-								quality: { mode: 'crf', value: 10 },
-								encoderSpeed: 'fast',
-							},
+						...req.settings,
+						usePreviews: false,
+						videoOnly: true,
+						container: 'mov',
+						range: { type: 'custom', startFrame: r.start, endFrame: r.end },
+						...(r.engine ? { engine: r.engine } : {}),
+						video: {
+							codec: 'prores',
+							proresProfile,
+							width: seq.width,
+							height: seq.height,
+							frameRate: { num: seq.fps.num, den: seq.fps.den },
+							scaling: 'stretch',
+							quality: { mode: 'crf', value: 10 },
+							encoderSpeed: 'fast',
 						},
 					},
 					file,
@@ -2314,7 +2326,9 @@ export class ExportService {
 			}
 		}
 		const count = await report.time('frameCheck', () =>
-			this.deps.ff.countVideoFrames(output, { signal: ctx.signal }),
+			planned.output.pngFrames
+				? readdir(dirname(output)).then((names) => names.filter((f) => /^\d{6}\.png$/.test(f)).length)
+				: this.deps.ff.countVideoFrames(output, { signal: ctx.signal }),
 		);
 		const expected = planned.output.frames;
 		if (count !== expected) {
@@ -2822,12 +2836,9 @@ export class ExportService {
 		if (planned.deliverable?.kind === 'audio') return null;
 		if (planned.output.alpha) return 'an alpha output is rendered as one Remotion master';
 		if (!isPlainRec709Output(planned.output.color)) return 'colour-managed outputs are rendered in one piece';
-		const fps = planned.snapshot.settings.fps;
-		const runs = fallbackRuns(planned.range, failure.layers, {
-			mergeFrames: Math.max(1, Math.round((FALLBACK_MERGE_SEC * fps.num) / Math.max(1, fps.den))),
-			maxStretches: MAX_FALLBACK_STRETCHES,
-		});
-		if (!runs) return 'the layers that could not be baked are drawn across most of the range';
+		const runs = spanRuns(planned.range, failure.layers)?.runs;
+		if (!runs)
+			return 'the layers that could not be baked are drawn across so much of the range that Remotion for all of it is estimated cheaper';
 		const stretches = runs.filter((r) => r.kind === 'render' && r.engine === 'remotion');
 		// Each stretch must be renderable on the Remotion path; else the whole range cannot be either (the caller fails
 		// with the bake's error).
@@ -2856,8 +2867,333 @@ export class ExportService {
 		warnings.push({ code: 'LAYER_BAKE_FALLBACK', message });
 		ctx.log(`warning LAYER_BAKE_FALLBACK: ${message}`);
 		ctx.progress(0, { stage: `Rendering frames ${frames} with Remotion` });
-		const res = await this.renderWithPreviews(ctx, req, planned, output, runs, audioIn);
-		return { ...res, path: 'hybrid', warnings: [...warnings, ...res.warnings] };
+		const res = await this.renderRoutes(ctx, req, planned, output, runs, audioIn);
+		return { ...res, warnings: [...warnings, ...res.warnings] };
+	}
+
+	/**
+	 * routing.ts: renders `runs` — the native / hybrid stretches on the export's own path, the `engine: 'remotion'` ones
+	 * on the Remotion path (the whole stack over their frames) — and joins them into `output` with the export's mix.
+	 * When every piece can be the file's own picture (an encoder whose pieces join by stream copy, the sequence's rate and
+	 * aspect ratio), each is encoded with the export's settings and they are joined by stream copy, as native segments
+	 * are (`joinSegments`); else, or when the pieces' parameter sets differ, they are rendered to frame-exact ProRes
+	 * intermediates joined by one encode, as Use Previews does (`renderWithPreviews`).
+	 */
+	private async renderRoutes(
+		ctx: JobContext,
+		req: ExportStartRequest,
+		planned: PlannedExport,
+		output: string,
+		runs: ExportRun[],
+		mix?: Promise<MixdownResult | null>,
+	): Promise<Awaited<ReturnType<ExportService['renderWithPreviews']>>> {
+		const o = planned.output;
+		const seq = planned.snapshot.settings;
+		const audioP = mix ?? (o.videoOnly ? Promise.resolve(null) : this.renderAudio(planned, ctx));
+		audioP.catch(() => {});
+		const direct =
+			!!o.encoder &&
+			joinsByCopy(o.encoder.encoder) &&
+			!planned.joined &&
+			!o.alpha &&
+			!o.pixelAspect &&
+			o.fps.num * seq.fps.den === seq.fps.num * o.fps.den &&
+			o.frames === planned.range.end - planned.range.start &&
+			Math.abs(o.width / o.height - seq.width / seq.height) <= 0.01;
+		const remotionFrames = runs.reduce(
+			(n, r) => n + (r.kind === 'render' && r.engine ? r.end - r.start : 0),
+			0,
+		);
+		ctx.log(
+			`routing: ${runs.length} pieces, ${remotionFrames} of ${planned.range.end - planned.range.start} frames on the Remotion path (${direct ? 'joined by stream copy' : 'ProRes intermediates, one encode'})`,
+		);
+		if (!direct) {
+			const res = await this.renderWithPreviews(ctx, req, planned, output, runs, audioP);
+			return { ...res, path: 'hybrid' };
+		}
+		const soxr = await hasSoxr(this.deps.ff);
+		const sound = this.segmentSound(planned, audioP, soxr, ctx, ctx.signal);
+		sound.catch(() => {});
+		const scratch = await ctx.scratchDir();
+		const ext = o.encoder!.container;
+		const total = Math.max(1, planned.range.end - planned.range.start);
+		const warnings: { code: string; message: string }[] = [];
+		const parts: { graph: { outputFrames: number }; file: string; label: string }[] = [];
+		let done = 0;
+		for (const [i, r] of runs.entries()) {
+			if (r.kind !== 'render') throw new JobError('INTERNAL', 'A routed export has no preview pieces', false);
+			const n = r.end - r.start;
+			const file = join(scratch, `route-${i}.${ext}`);
+			const where = `frames ${r.start}–${r.end}${r.engine ? ' (Remotion)' : ''}`;
+			const sub: JobContext = {
+				...ctx,
+				progress: (v, extra) =>
+					ctx.progress(((done + (v ?? 0) * n) / total) * 0.95, {
+						...extra,
+						stage: `Rendering ${where} · ${extra?.stage ?? ''}`,
+					}),
+			};
+			const res = await this.renderPiece(
+				sub,
+				req,
+				planned,
+				r,
+				{
+					...req.settings,
+					usePreviews: false,
+					videoOnly: true,
+					range: { type: 'custom', startFrame: r.start, endFrame: r.end },
+					...(r.engine ? { engine: r.engine } : {}),
+				},
+				file,
+			);
+			warnings.push(...res.warnings);
+			parts.push({ graph: { outputFrames: n }, file, label: where });
+			done += n;
+		}
+		if (!(await this.joinSegments(planned, parts, output, await sound, ctx))) {
+			ctx.log(
+				'routing: the pieces were encoded with different parameter sets; rendering them as ProRes intermediates',
+			);
+			for (const p of parts) await rm(p.file, { force: true });
+			const res = await this.renderWithPreviews(ctx, req, planned, output, runs, audioP);
+			return { ...res, path: 'hybrid', warnings: [...warnings, ...res.warnings] };
+		}
+		const count = await this.deps.ff.countVideoFrames(output, { signal: ctx.signal });
+		if (count !== o.frames)
+			throw new JobError(
+				'FRAME_COUNT_MISMATCH',
+				`Expected ${o.frames} frames, the output has ${count}`,
+				true,
+				{
+					expected: o.frames,
+					actual: count,
+				},
+			);
+		return {
+			planned,
+			frames: count,
+			path: 'hybrid',
+			remotionOutput: undefined,
+			warnings: dedupeWarnings(warnings),
+			audio: await audioP,
+		};
+	}
+
+	/**
+	 * One piece of a routed (or Use Previews) export with `settings` (its range, picture-only): a layer route's passes
+	 * (`run.layers`, layer-routes.ts), else a render of the range on its path.
+	 */
+	private async renderPiece(
+		ctx: JobContext,
+		req: ExportStartRequest,
+		planned: PlannedExport,
+		run: ExportRun,
+		settings: ExportSettings,
+		file: string,
+	): Promise<{
+		renderPath: 'copy' | 'native' | 'hybrid' | 'remotion';
+		warnings: { code: string; message: string }[];
+	}> {
+		if (run.kind === 'render' && run.layers?.length) {
+			const why = this.plateDir
+				? null
+				: 'no plate store on this engine (the layer-bake routes are not loaded)';
+			if (!why)
+				try {
+					return await this.renderLayered(ctx, req, planned, { ...run, layers: run.layers }, settings, file);
+				} catch (e) {
+					if (ctx.signal.aborted || (e as JobError)?.code === 'JOB_CANCELLED') throw e;
+					return this.wholeStackPiece(ctx, req, run, settings, file, failureText(e));
+				}
+			return this.wholeStackPiece(ctx, req, run, settings, file, why);
+		}
+		const res = await this.renderToFile(ctx, { ...req, settings }, file);
+		return { renderPath: res.renderPath, warnings: res.warnings };
+	}
+
+	/** A layer route that could not run: the span with its whole stack on the Remotion path, and a warning saying why. */
+	private async wholeStackPiece(
+		ctx: JobContext,
+		req: ExportStartRequest,
+		run: ExportRun,
+		settings: ExportSettings,
+		file: string,
+		why: string,
+	): Promise<{
+		renderPath: 'copy' | 'native' | 'hybrid' | 'remotion';
+		warnings: { code: string; message: string }[];
+	}> {
+		const message = `Frames ${run.start}–${run.end} rendered with their whole stack on the Remotion path instead of split at their adjustment layers: ${why}`;
+		ctx.log(`warning LAYER_ROUTE_FALLBACK: ${message}`);
+		const res = await this.renderToFile(ctx, { ...req, settings: { ...settings, engine: 'remotion' } }, file);
+		return {
+			renderPath: res.renderPath,
+			warnings: [...res.warnings, { code: 'LAYER_ROUTE_FALLBACK', message }],
+		};
+	}
+
+	/**
+	 * layer-routes.ts: the span `run` split at its adjustment tracks. For each of them (bottom → top): the native
+	 * composite of the tracks below it down to the previous one, over the base so far, as lossless RGB PNG frames at the
+	 * sequence size (the plate, served to the browser); Remotion draws that adjustment track over the plate (the clip's
+	 * effects, crop, opacity, fades and blend, exactly as the composition draws an adjustment layer over the composite
+	 * below it) as lossless PNG frames, kept as a lossless FFV1 file (the new base). The last native pass composites the
+	 * tracks above the last adjustment track over the base into `file` with `settings` (the export's piece).
+	 */
+	private async renderLayered(
+		ctx: JobContext,
+		req: ExportStartRequest,
+		planned: PlannedExport,
+		run: { start: number; end: number; layers: string[] },
+		settings: ExportSettings,
+		file: string,
+	): Promise<{
+		renderPath: 'copy' | 'native' | 'hybrid' | 'remotion';
+		warnings: { code: string; message: string }[];
+	}> {
+		const doc = planned.document;
+		const seqId = planned.sequenceId;
+		const order = doc.sequences[seqId]!.videoTracks.map((t) => t.id);
+		const seq = planned.snapshot.settings;
+		const frames = run.end - run.start;
+		const scratch = await ctx.scratchDir();
+		const plateRoot = this.plateDir!;
+		const placeholders: string[] = [];
+		const plates: string[] = [];
+		const revision = req.envelope.revision;
+		const envelopeOf = (document: ProjectDocument) =>
+			makeEnvelope(document, { revision, savedAt: new Date().toISOString(), platform: 'engine' });
+		/** The pass document showing `visible` over `base` (a placeholder registered for it). */
+		const pass = (visible: readonly string[], base: { native?: string; plateKey?: string } | null) => {
+			const { document, placeholderId } = passDocument(
+				doc,
+				seqId,
+				new Set(visible),
+				base ? run : null,
+				revision,
+			);
+			if (placeholderId) {
+				this.layerRoutes.put(placeholderId, { startFrame: run.start, frames, ...base });
+				placeholders.push(placeholderId);
+			}
+			return envelopeOf(document);
+		};
+		const passSettings = (engine: 'native' | 'remotion'): ExportSettings => ({
+			...settings,
+			engine,
+			usePreviews: false,
+			videoOnly: true,
+			range: { type: 'custom', startFrame: run.start, endFrame: run.end },
+			// captions are burned in once, by the last pass
+			captions: { ...settings.captions, burnIn: false },
+			container: 'mov',
+			video: {
+				codec: 'prores',
+				width: seq.width,
+				height: seq.height,
+				frameRate: { num: seq.fps.num, den: seq.fps.den },
+				scaling: 'stretch',
+				quality: { mode: 'crf', value: 10 },
+				encoderSpeed: 'fast',
+			},
+		});
+		const warnings: { code: string; message: string }[] = [];
+		let base: string | null = null;
+		let lo = 0;
+		try {
+			for (const [i, track] of run.layers.entries()) {
+				const k = order.indexOf(track);
+				if (k < lo)
+					throw new JobError('INTERNAL', 'The adjustment tracks of a layer route are out of order', false);
+				// the plate: the tracks below this adjustment track (down to the previous one) over the base
+				const plateKey = createHash('sha1')
+					.update(`${ctx.job.id}:${run.start}:${i}:${randomId('plate', 8)}`)
+					.digest('hex');
+				const plateDir = join(plateRoot, plateKey, 'graded');
+				await mkdir(plateDir, { recursive: true });
+				plates.push(join(plateRoot, plateKey));
+				ctx.progress(0, {
+					stage: `Frames ${run.start}–${run.end}: native plate ${i + 1}/${run.layers.length}`,
+				});
+				const plated = await this.plan({
+					envelope: pass(order.slice(lo, k), base ? { native: base } : null),
+					sequenceId: seqId,
+					settings: passSettings('native'),
+				});
+				plated.output.pngFrames = true;
+				const masters = await this.collectMgMasters(plated, ctx);
+				if (masters === null)
+					throw new JobError('PATH_NOT_ELIGIBLE', 'Motion-graphic masters are unavailable (fframes)', false);
+				await this.runNative(plated, masters, join(plateDir, '%06d.png'), ctx, false, null, true, true);
+				warnings.push(...this.takePrepareWarnings(ctx));
+				// Remotion: the adjustment track over the plate
+				ctx.progress(0, {
+					stage: `Frames ${run.start}–${run.end}: adjustment layers ${i + 1}/${run.layers.length} on Remotion`,
+				});
+				const drawn = await this.plan({
+					envelope: pass([track], { plateKey }),
+					sequenceId: seqId,
+					settings: passSettings('remotion'),
+				});
+				const prepared = await this.prepareForRemotion(drawn, ctx);
+				const out = join(scratch, `layer-${run.start}-${i}`);
+				await rm(out, { recursive: true, force: true });
+				await mkdir(out, { recursive: true });
+				const sheet = await this.deps.remotion.renderStillSheet({
+					inputProps: this.remotionProps(drawn, prepared),
+					outputDir: out,
+					signal: ctx.signal,
+					concurrency: remotionConcurrency(ctx.slots),
+					log: ctx.log,
+				});
+				const pngs = (await readdir(out))
+					.map((f) => ({ f, n: Number(/^(\d+)\.png$/.exec(f)?.[1] ?? Number.NaN) }))
+					.filter((x) => Number.isInteger(x.n))
+					.sort((a, b) => a.n - b.n);
+				if (sheet.frames !== frames || pngs.length !== frames)
+					throw new JobError(
+						'FRAME_COUNT_MISMATCH',
+						`The Remotion pass of frames ${run.start}–${run.end} has ${pngs.length} frames, expected ${frames}`,
+						true,
+					);
+				for (const [j, p] of pngs.entries())
+					await rename(join(out, p.f), join(out, `f${String(j).padStart(6, '0')}.png`));
+				// the new base: those frames, lossless (FFV1, straight alpha kept), for the next native pass
+				const next = join(scratch, `base-${run.start}-${i}.mkv`);
+				await this.deps.ff.run(
+					[
+						'-y',
+						...['-framerate', `${seq.fps.num}/${seq.fps.den}`, '-start_number', '0'],
+						...['-i', join(out, 'f%06d.png')],
+						...['-frames:v', String(frames), '-c:v', 'ffv1', '-level', '3', '-pix_fmt', 'bgra', next],
+					],
+					{ signal: ctx.signal, onSpawn: ctx.trackChild },
+				);
+				await rm(out, { recursive: true, force: true });
+				if (base) await rm(base, { force: true });
+				await rm(join(plateRoot, plateKey), { recursive: true, force: true });
+				base = next;
+				lo = k + 1;
+			}
+			// the tracks above the last adjustment track over the base: the export's piece
+			ctx.progress(0, { stage: `Frames ${run.start}–${run.end}: native layers above` });
+			const res = await this.renderToFile(
+				ctx,
+				{
+					...req,
+					envelope: pass(order.slice(lo), { native: base! }),
+					settings: { ...settings, engine: 'native' },
+				},
+				file,
+			);
+			ctx.log(`routing: frames ${run.start}–${run.end} split at ${run.layers.length} adjustment track(s)`);
+			return { renderPath: 'hybrid', warnings: [...warnings, ...res.warnings] };
+		} finally {
+			for (const id of placeholders) this.layerRoutes.drop(id);
+			for (const d of plates) await rm(d, { recursive: true, force: true });
+			if (base) await rm(base, { force: true });
+		}
 	}
 
 	private planDeps(caps: PlanCapabilities): Parameters<typeof planExport>[1] {
@@ -3076,6 +3412,8 @@ export class ExportService {
 		warnings: { code: string; message: string }[];
 		audio: MixdownResult | null;
 	}> {
+		// routing.ts: an export routed per span renders its pieces on their paths and joins them
+		if (planned.routes) return this.renderRoutes(ctx, req, planned, output, planned.routes);
 		const encoder = planned.output.encoder;
 		let frames = 0;
 		let remotionOutput: 'direct' | 'intermediate' | undefined;

@@ -10,8 +10,11 @@ export type PreviewPiece = { start: number; frames: number; file: string };
 /** What the export reads: preview files, and the stretches it renders itself. */
 export type ExportRun =
 	| { kind: 'preview'; start: number; end: number; file: string }
-	/** `engine: 'remotion'`: a stretch whose layers could not be baked (`fallbackRuns`), rendered on the Remotion path. */
-	| { kind: 'render'; start: number; end: number; engine?: 'remotion' };
+	/**
+	 * `engine: 'remotion'`: a stretch rendered on the Remotion path (routing.ts `spanRuns`); with `layers`, split at
+	 * those adjustment tracks (bottom → top): only they are drawn by Remotion, over native plates (layer-routes.ts).
+	 */
+	| { kind: 'render'; start: number; end: number; engine?: 'remotion'; layers?: string[] };
 
 /**
  * The runs of `range`: every preview piece fully inside the range is used as is; a piece crossing the range edge is
@@ -34,43 +37,6 @@ export function exportRuns(
 	}
 	if (at < range.end) out.push({ kind: 'render', start: at, end: range.end });
 	return out;
-}
-
-/**
- * The runs of `range` when the layers drawn on `spans` could not be baked (a `LayerBakeError`): those frames, merged
- * when fewer than `mergeFrames` apart, render on the Remotion path and the rest on the export's own path. Null when the
- * Remotion stretches would cover the whole range, or be more than `maxStretches` (the whole range on the Remotion
- * path is then the smaller cost).
- */
-export function fallbackRuns(
-	range: { start: number; end: number },
-	spans: readonly { start: number; end: number }[],
-	o: { mergeFrames: number; maxStretches: number },
-): ExportRun[] | null {
-	const sorted = spans
-		.map((s) => ({ start: Math.max(range.start, s.start), end: Math.min(range.end, s.end) }))
-		.filter((s) => s.end > s.start)
-		.sort((a, b) => a.start - b.start);
-	if (sorted.length === 0) return null;
-	const merged: { start: number; end: number }[] = [];
-	for (const s of sorted) {
-		const last = merged.at(-1);
-		if (last && s.start - last.end < o.mergeFrames) last.end = Math.max(last.end, s.end);
-		else merged.push({ ...s });
-	}
-	if (merged.length > o.maxStretches) return null;
-	// (a native stretch shorter than the merge distance at an edge: drawn by the Remotion stretch next to it)
-	if (merged[0]!.start - range.start < o.mergeFrames) merged[0]!.start = range.start;
-	if (range.end - merged.at(-1)!.end < o.mergeFrames) merged.at(-1)!.end = range.end;
-	const out: ExportRun[] = [];
-	let at = range.start;
-	for (const s of merged) {
-		if (s.start > at) out.push({ kind: 'render', start: at, end: s.start });
-		out.push({ kind: 'render', start: s.start, end: s.end, engine: 'remotion' });
-		at = s.end;
-	}
-	if (at < range.end) out.push({ kind: 'render', start: at, end: range.end });
-	return out.length > 1 ? out : null;
 }
 
 /**

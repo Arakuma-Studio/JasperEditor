@@ -44,7 +44,7 @@ function exportJob(id: string, path: string | null, state = 'succeeded'): Engine
 	} as EngineJob;
 }
 
-function fakeEngine() {
+function fakeEngine(blockers: RenderPlan['blockers'] = []) {
 	const doc = createEmptyProject({ ids: createCounterIdSource(5), name: 'Surface', preset: 'hd-1080p-30' });
 	const starts: ExportStartRequest[] = [];
 	const verified: string[] = [];
@@ -59,7 +59,7 @@ function fakeEngine() {
 		path: 'native',
 		segments: [],
 		audio: { mode: 'native-mix' },
-		blockers: [],
+		blockers,
 		warnings: [],
 		estimate: { seconds: 1, bytes: 1 },
 	};
@@ -120,8 +120,8 @@ afterEach(async () => {
 	open = [];
 });
 
-async function connect() {
-	const engine = fakeEngine();
+async function connect(blockers: RenderPlan['blockers'] = []) {
+	const engine = fakeEngine(blockers);
 	const { server } = createJasperMcpServer({ link: engine.link, agentName: 'surface-test' });
 	const [x, y] = InMemoryTransport.createLinkedPair();
 	await server.connect(x);
@@ -161,6 +161,21 @@ describe('start_export', () => {
 		expect(empty.body).toMatchObject({
 			error: { code: 'E_INVALID_PARAM', message: expect.stringMatching(/^range\[1\]/) },
 		});
+	});
+
+	it('every reason the plan is not native is returned: a short why, the rest in details', async () => {
+		const blockers = Array.from({ length: 7 }, (_, i) => ({
+			itemId: `clp_${i}`,
+			path: 'native' as const,
+			reason: `adjustment clip "Kit ${i}": effect ${i} has no native path`,
+		}));
+		const { call } = await connect(blockers);
+		const r = await call('start_export', { projectId: PROJECT });
+		expect(r.isError, JSON.stringify(r.body)).toBe(false);
+		const plan = (r.body as { plan: { why: string[]; details: { blockers: { itemIds: string[] }[] } } }).plan;
+		expect(plan.why).toHaveLength(6);
+		expect(plan.why.at(-1)).toBe('and 2 more (details.blockers)');
+		expect(plan.details.blockers.flatMap((b) => b.itemIds)).toEqual(blockers.map((b) => b.itemId));
 	});
 
 	it('a video carries a sound stream unless videoOnly asks for the picture alone', async () => {

@@ -198,7 +198,9 @@ function blockerReasons(detail: unknown): string[] {
 	const reasons = list
 		.map((b) => (b as { reason?: unknown } | null)?.reason)
 		.filter((r): r is string => typeof r === 'string');
-	return [...new Set(reasons)].slice(0, 5);
+	const all = [...new Set(reasons)];
+	// (the hint stays short; the error's details.blockers carry every one)
+	return all.length > 5 ? [...all.slice(0, 5), `and ${all.length - 5} more in details.blockers`] : all;
 }
 
 /**

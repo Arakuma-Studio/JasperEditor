@@ -681,7 +681,8 @@ describe('overlays with an alpha channel on the native path', () => {
 				{ registry: core.registry, fonts: core.fonts, capabilities: { ...caps, decoders } },
 			);
 		const without = await plan(['vp9', 'prores']);
-		expect(without.plan.path).toBe('remotion');
+		// the overlay's frames render on the Remotion path (routing.ts), the rest natively when that pays
+		expect(without.plan.segments.some((s) => s.mode === 'remotion')).toBe(true);
 		expect(without.plan.blockers.length).toBeGreaterThan(0);
 		expect((await plan(['vp9', 'prores', 'libvpx-vp9'])).plan.path).toBe('native');
 	});

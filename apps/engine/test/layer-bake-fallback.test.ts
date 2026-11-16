@@ -69,7 +69,9 @@ describe('a failed layer bake', { timeout: 600_000 }, () => {
 			const doc = (input.inputProps as { doc: RenderSnapshot }).doc;
 			remotionRanges.push(doc.range);
 			const frames = doc.range.end - doc.range.start;
-			const { width, height } = doc.settings;
+			// (Remotion draws at the output size: `scale`)
+			const width = Math.round(doc.settings.width * (input.scale ?? 1));
+			const height = Math.round(doc.settings.height * (input.scale ?? 1));
 			const r = spawnSync('ffmpeg', [
 				'-v',
 				'error',

@@ -384,6 +384,17 @@ export const RenderPlanSchema = z.object({
 		}),
 	),
 	estimate: z.object({ seconds: z.number().min(0), bytes: z.number().min(0) }),
+	/**
+	 * An `auto` export routed per span: frames rendered on the native / hybrid path and on the Remotion path, and the
+	 * Remotion spans (`segments` with mode `remotion`; warning `REMOTION_SPANS` says which and why). Absent = one path.
+	 */
+	paths: z
+		.object({
+			native: z.number().int().min(0),
+			remotion: z.number().int().min(0),
+			spans: z.number().int().min(0),
+		})
+		.optional(),
 	/** Whether stream copy is used, how many frames are copied, and why not. */
 	smart: z
 		.object({ used: z.boolean(), copiedFrames: z.number().int(), reasons: z.array(z.string()) })
