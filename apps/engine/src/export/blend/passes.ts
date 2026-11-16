@@ -363,7 +363,11 @@ export function chainStackedFrame(
 							J === 1
 								? 0
 								: ((Math.imul(x, 3242174889 | 0) + Math.imul(y, 2447445414 | 0) + seedHash) >>> 8) >>> 14;
-						acc.fill(0);
+						// (texAdd written out: this loop is most of the kernel's time)
+						let a0 = 0;
+						let a1 = 0;
+						let a2 = 0;
+						let a3 = 0;
 						let o = q * n * 7;
 						for (let i = 0; i < n; i++, o += 7) {
 							const w = tab[o]!;
@@ -371,9 +375,38 @@ export function chainStackedFrame(
 							const xs = tab[o + 1]! * lx + tab[o + 2]! * ly + tab[o + 3]!;
 							const ys = tab[o + 4]! * lx + tab[o + 5]! * ly + tab[o + 6]!;
 							if (!(xs >= -0.5 && xs <= CW - 0.5 && ys >= -0.5 && ys <= CH - 0.5)) continue;
-							texAdd(A, xs, ys, w);
+							// xs ≥ −½: the integer part is −1 or xs | 0.
+							const xi = xs < 0 ? -1 : xs | 0;
+							const yi = ys < 0 ? -1 : ys | 0;
+							const fx = xs - xi;
+							const fy = ys - yi;
+							const x0 = xi < 0 ? 0 : xi;
+							const x1 = xi + 1 >= CW ? CW - 1 : xi + 1;
+							const r0 = (yi < 0 ? 0 : yi) * CW;
+							const r1 = (yi + 1 >= CH ? CH - 1 : yi + 1) * CW;
+							const i00 = (r0 + x0) << 2;
+							const i10 = (r0 + x1) << 2;
+							const i01 = (r1 + x0) << 2;
+							const i11 = (r1 + x1) << 2;
+							const w11 = fx * fy * w;
+							const w10 = fx * w - w11;
+							const w01 = fy * w - w11;
+							const w00 = w - w10 - w01 - w11;
+							a0 += A[i00]! * w00 + A[i10]! * w10 + A[i01]! * w01 + A[i11]! * w11;
+							a1 += A[i00 + 1]! * w00 + A[i10 + 1]! * w10 + A[i01 + 1]! * w01 + A[i11 + 1]! * w11;
+							a2 += A[i00 + 2]! * w00 + A[i10 + 2]! * w10 + A[i01 + 2]! * w01 + A[i11 + 2]! * w11;
+							a3 += A[i00 + 3]! * w00 + A[i10 + 3]! * w10 + A[i01 + 3]! * w01 + A[i11 + 3]! * w11;
 						}
-						put(B, (y * CW + x) * 4, wsums[q]!);
+						const k = wsums[q]!;
+						const ob = (y * CW + x) * 4;
+						const v0 = a0 * k;
+						const v1 = a1 * k;
+						const v2 = a2 * k;
+						const v3 = a3 * k;
+						B[ob] = v0 <= 0 ? 0 : v0 >= 255 ? 255 : Math.round(v0);
+						B[ob + 1] = v1 <= 0 ? 0 : v1 >= 255 ? 255 : Math.round(v1);
+						B[ob + 2] = v2 <= 0 ? 0 : v2 >= 255 ? 255 : Math.round(v2);
+						B[ob + 3] = v3 <= 0 ? 0 : v3 >= 255 ? 255 : Math.round(v3);
 					}
 				}
 			} else {

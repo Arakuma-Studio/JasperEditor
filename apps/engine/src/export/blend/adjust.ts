@@ -11,6 +11,7 @@
 // shaders' `uniforms` and `padding` hooks with the frame context the compositions build (`loweredFrameContext`), the
 // Transform's taps from its uniforms (`transformPoses`, shared with lowered layers).
 import {
+	ADJUSTMENT_KERNEL_EFFECTS,
 	clipContentTime,
 	defaultEffectRegistry,
 	type EffectParams,
@@ -31,15 +32,8 @@ const MIRROR = 'jasper.mirror';
 const REPLICATE = 'jasper.replicate';
 const OFFSET = 'jasper.offset';
 const DIRECTIONAL_BLUR = 'jasper.directional-blur';
-/** The effects the kernel draws on an adjustment layer (passes.ts). */
-const KERNEL_EFFECTS: ReadonlySet<string> = new Set([
-	TRANSFORM_EFFECT,
-	SHAKE,
-	MIRROR,
-	REPLICATE,
-	OFFSET,
-	DIRECTIONAL_BLUR,
-]);
+/** The effects the kernel draws on an adjustment layer (passes.ts; the list the automation cost estimate shares). */
+const KERNEL_EFFECTS = ADJUSTMENT_KERNEL_EFFECTS;
 /** Largest effect canvas side (box + padding) of the kernel. */
 const MAX_SIDE = 4096;
 

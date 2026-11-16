@@ -2,6 +2,7 @@ export * from './corner-pin-blur.ts';
 export * from './crop.ts';
 export * from './gl-needs.ts';
 export * from './homography.ts';
+export * from './adjustment-native.ts';
 export * from './lowered.ts';
 export * from './plan.ts';
 export * from './previews.ts';
