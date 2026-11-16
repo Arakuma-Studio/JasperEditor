@@ -94,5 +94,5 @@ Remotion), which renders the GL step. The bake's crop rectangle reaches one fram
 - A smear that crosses the horizon of the frame's pin (extreme perspective + fast motion) is clipped at
   `FX_MAX_PADDING` (2048 layer px) beyond the picture.
 - Motion keyframes are not blurred by the Corner Pin's shutter (§2 Scope).
-- Older builds (schema 15, no bump) keep the three params on load and save but draw the pin unblurred; their
-  `effect.add` refuses the unknown names in a paste. See docs/project-files.md.
+- Schema v16: v15 builds open files with these params read-only (they would ignore them and export the pin
+  sharp). See docs/project-files.md.

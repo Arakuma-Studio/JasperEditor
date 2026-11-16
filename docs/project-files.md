@@ -59,6 +59,7 @@ crash recovery).
 | 13 | subtitle locks and own-subtitle words (spec 13); HTML compositions — introduced at v13 on two parallel lines, so a v13 file may hold either | **subtitle line** (fixture `schema-v13.jasper`): `caption.locked` on subtitle text clips (edited by hand: text, razor, trim, move, or locked in Text ▸ Subtitles / `regenerate_captions {lock}`) and `rules.ownWords` on subtitle groups. **HTML line** (fixture `schema-v13-html.jasper`): `mg-bundle` assets may be HTML composition pages (see v15) | `v12→v13`: version bump only, so v12 builds open v13 files read-only. Why: a v12 build's `captions.regenerate` ignores the lock and would replace the hand-edited subtitles, its strict stored-rules reader would read a group with `ownWords` as unreadable and reset its rules to the defaults on load, and it would drive an HTML page with the Remotion page protocol while its strict source-type enum refuses `html-page` |
 | 14 | punch-ins on caption starts (spec 15 EA-021) | punch-ins `start: 'caption'` in the style recipes' pass parameters (`ProjectDocument.styleRecipes`) | `v13→v14`: version bump only, so v13 builds open v14 files read-only. Why: a v13 build's strict recipe reader would read a recipe holding `start: 'caption'` as unreadable and drop it on load (`drop-style-recipe`) |
 | 15 | HTML compositions on the v14 line | `mg-bundle` assets may be HTML composition pages: `MediaAsset.mgBundle.html {entry, query}` and source type `html-page` ([wp-notes/html-compositions.md](wp-notes/html-compositions.md)). The header is read leniently (`z.custom`); INV-MG-HTML reports an unreadable one and repair `drop-html-page` removes it with the bundle's compositions (the clips stay and show "Composition … not in bundle"; import the page again); `media.register` / `media.relink` refuse it with `E_SCHEMA` | `v14→v15`: version bump only, so v14 builds (the subtitle-lock line, which never knew HTML pages) open v15 files read-only. Why: a v14 build would drive such a page with the Remotion page protocol (no preview, render or export) and its strict source-type enum refuses `html-page`. A v13 file from the HTML line migrates through `v13→v14→v15` unchanged |
+| 16 | Corner Pin motion blur | a `jasper.corner-pin` instance may carry Transform's shutter params `useCompShutterAngle`, `shutterAngle`, `mbQuality` (Use Composition's Shutter Angle, Shutter Angle, Mo Blur Quality), which render as motion blur of the pin's movement ([wp-notes/corner-pin-motion-blur.md](wp-notes/corner-pin-motion-blur.md)); absent = no blur, so stored pins draw unchanged | `v15→v16`: version bump only, so v15 builds open v16 files read-only. Why: effect params are a loose record, so a v15 build would keep the params but ignore them and preview and export the pin sharp (a misread, AGENTS §0) |
 
 Every version has a hand-made fixture, `packages/project/test/fixtures/schema-v<N>.jasper`, that must load
 forever (S01:MIG-002), and `packages/project/test/schema-history.test.ts` checks that:
@@ -244,14 +245,14 @@ v14 files read-only (the v14 bump above).
 |---|---|---|---|
 | `StyleRecipe.passes['punch-ins'].params.start` value `caption` | spec 15 EA-021 | part of the strict recipe schema (`PunchInParamsSchema`: `caption`, `midpoint`, `word`; absent = `midpoint`). The style recipe library (`<appdir>/style-recipes/`, app state) is not versioned with the project: a v13 engine sets such a recipe file aside (`set-aside`, renamed, never deleted) | as every recipe: `drop-style-recipe` when unreadable. Idempotent |
 
-### Effect params added since v15 (no bump)
+### Fields added in v16
 
-Params added to a built-in effect after v15. Effect params are a loose record: a v15 build keeps them through load,
-edit and save (`effect.add` validates only the names it is given; repair never prunes params), so no data is dropped.
+Corner Pin motion blur ([wp-notes/corner-pin-motion-blur.md](wp-notes/corner-pin-motion-blur.md)); v15 builds open v16
+files read-only (the v16 bump above).
 
 | Field | Since | Read leniently | Repair |
 |---|---|---|---|
-| `params.useCompShutterAngle`, `params.shutterAngle`, `params.mbQuality` of a `jasper.corner-pin` instance | Corner Pin motion blur ([wp-notes/corner-pin-motion-blur.md](wp-notes/corner-pin-motion-blur.md)) | ordinary effect params, Transform's specs; absent = composition shutter (no blur), 0°, Auto, so stored pins draw unchanged. A v15 build draws the pin unblurred and refuses the names when a pin is pasted into it (`E_INVALID_PARAM`) | none needed |
+| `params.useCompShutterAngle`, `params.shutterAngle`, `params.mbQuality` of a `jasper.corner-pin` instance | Corner Pin motion blur | ordinary effect params with Transform's specs; absent = composition shutter (no blur), 0°, Auto, so stored pins draw unchanged | none needed |
 
 ## Saving
 

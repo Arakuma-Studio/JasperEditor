@@ -62,6 +62,7 @@ describe('schema v4 (ARCHITECTURE §20.1, D-32)', () => {
 			'v12→v13',
 			'v13→v14',
 			'v14→v15',
+			'v15→v16',
 		]);
 		expect(r.repairs).toEqual([]);
 		expect(r.issues).toEqual([]);
