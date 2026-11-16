@@ -22,6 +22,7 @@ import {
 } from '@jasper/project';
 import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
+	cancelRender,
 	continueRender,
 	delayRender,
 	Freeze,
@@ -33,7 +34,15 @@ import {
 import { mediaSrc } from '../pipeline.ts';
 import type { RenderOptions } from '../types.ts';
 import { RetimeCompositor } from './flow-gl.ts';
-import { acquireFrameSource, type DecodedFrame, type FrameSource, releaseFrameSource } from './frames.ts';
+import {
+	acquireFrameSource,
+	type DecodedFrame,
+	type FrameSource,
+	type FrameTimes,
+	frameIndexAt,
+	frameTimesOf,
+	releaseFrameSource,
+} from './frames.ts';
 
 /** Longest side of the frames decoded for the Program monitor (renders decode at full size). */
 const PREVIEW_MAX = 1920;
@@ -199,24 +208,25 @@ function DecodedRetimed(
 }
 
 /**
- * Renders of originals the browser cannot decode: the frames come from <OffthreadVideo> (the render's FFmpeg) frozen
- * at the exact media times of frame a (and b), composed like decoded frames. Constant-rate media only (the frame
- * grid is the probed rate).
+ * Renders of originals the browser cannot decode (ProRes, HEVC): the frames come from <OffthreadVideo> (the render's
+ * FFmpeg) frozen at the media times of frame a (and b), composed like decoded frames. Constant-rate media use the
+ * probed frame grid; variable-frame-rate media the container's frame timestamps (`frameTimesOf`, demuxed in the page
+ * without decoding), so they show the frames `FrameSource` and the native export show.
  */
 function OffthreadRetimed(
 	props: RetimedFeedProps & { mode: TimeInterpolation; size: ReturnType<typeof retimeSizes> },
 ) {
 	const { clip, media, mode, size } = props;
-	const rate = clip.retime?.mediaRate ?? { num: 30, den: 1 };
-	const fps = rate.num / rate.den;
 	const t = retimeMediaSeconds(clip, props.pictureTime);
-	const dur = (media.durationFlicks ?? Number.POSITIVE_INFINITY) / FLICKS_PER_SECOND;
-	const last = Math.max(0, Math.floor(dur * fps - 1e-3) - 1);
-	const ia = Math.min(last, Math.floor(t * fps + 1e-6));
-	let w = mode === 'frame-sampling' || ia >= last ? 0 : t * fps - ia;
-	if (!(w > INTERP_EPS)) w = 0;
-	const useB = w > 0 && w < 1 - INTERP_EPS;
-	const a = w >= 1 - INTERP_EPS ? ia + 1 : ia;
+	const table = useFrameTimes(clip.retime?.vfr ? media.url : null);
+	const pick = table
+		? pickByTimestamps(table, t, mode)
+		: clip.retime?.vfr
+			? null
+			: pickOnGrid(clip, media, t, mode);
+	const a = pick?.a.index ?? -1;
+	const w = pick?.w ?? 0;
+	const useB = !!pick?.b;
 	const comps = useVideoConfig().fps;
 	const pics = useRef<{ key: number; a: CanvasImageSource | null; b: CanvasImageSource | null }>({
 		key: -1,
@@ -226,6 +236,17 @@ function OffthreadRetimed(
 	if (pics.current.key !== a) pics.current = { key: a, a: null, b: null };
 	const [comp] = useState(() => new RetimeCompositor());
 	useEffect(() => () => comp.dispose(), [comp]);
+	// Plain layers show the composed picture in the layer box (as `DecodedRetimed`); the <OffthreadVideo>s are hidden.
+	const host = useRef<HTMLDivElement | null>(null);
+	useLayoutEffect(() => {
+		const el = comp.canvas as HTMLCanvasElement;
+		if (!host.current || !props.visible) return;
+		el.style.width = '100%';
+		el.style.height = '100%';
+		el.style.display = 'block';
+		host.current.appendChild(el);
+		return () => el.remove();
+	}, [comp, props.visible]);
 	const emit = () => {
 		const pa = pics.current.a;
 		if (!pa) return;
@@ -249,41 +270,134 @@ function OffthreadRetimed(
 		props.onPicture(out, W, H);
 	};
 	const hidden = { position: 'absolute', inset: 0, opacity: 0 } as const;
-	// Frame n of the media starts at n / fps seconds: a 1×-speed <OffthreadVideo> frozen at its frame 0 with
-	// `trimBefore` (composition frames of media time, fractional allowed) = n / fps · composition fps shows it.
+	// A 1×-speed <OffthreadVideo> frozen at its frame 0 with `trimBefore` (composition frames of media time,
+	// fractional allowed) = media time · composition fps shows the frame at that media time.
 	return (
 		<>
-			<Freeze frame={0} key={`a${a}`}>
-				<OffthreadVideo
-					src={media.url}
-					trimBefore={(a / fps) * comps}
-					muted
-					transparent={media.alpha === true}
-					style={hidden}
-					showInTimeline={false}
-					onVideoFrame={(img) => {
-						pics.current.a = img;
-						if (!useB) emit();
-						else if (pics.current.b) emit();
-					}}
-				/>
-			</Freeze>
-			{useB ? (
-				<Freeze frame={0} key={`b${a}`}>
-					<OffthreadVideo
-						src={media.url}
-						trimBefore={((a + 1) / fps) * comps}
-						muted
-						transparent={media.alpha === true}
-						style={hidden}
-						showInTimeline={false}
-						onVideoFrame={(img) => {
-							pics.current.b = img;
-							if (pics.current.a) emit();
-						}}
-					/>
-				</Freeze>
+			{props.visible ? <div ref={host} style={{ position: 'absolute', inset: 0 }} /> : null}
+			{pick ? (
+				<>
+					<Freeze frame={0} key={`a${a}`}>
+						<OffthreadVideo
+							src={media.url}
+							trimBefore={pick.a.at * comps}
+							muted
+							transparent={media.alpha === true}
+							style={hidden}
+							showInTimeline={false}
+							onVideoFrame={(img) => {
+								pics.current.a = img;
+								if (!useB) emit();
+								else if (pics.current.b) emit();
+							}}
+						/>
+					</Freeze>
+					{pick.b ? (
+						<Freeze frame={0} key={`b${a}`}>
+							<OffthreadVideo
+								src={media.url}
+								trimBefore={pick.b.at * comps}
+								muted
+								transparent={media.alpha === true}
+								style={hidden}
+								showInTimeline={false}
+								onVideoFrame={(img) => {
+									pics.current.b = img;
+									if (pics.current.a) emit();
+								}}
+							/>
+						</Freeze>
+					) : null}
+				</>
 			) : null}
 		</>
 	);
+}
+
+/** The frames of a retimed picture: frame indices and the media times FFmpeg is asked for (`at`), blend weight of b. */
+type OffthreadPick = { a: { index: number; at: number }; b: { index: number; at: number } | null; w: number };
+
+/** Blend weight rules of `framesFor`: a weight within INTERP_EPS of a frame shows that frame alone. */
+function settle(
+	a: OffthreadPick['a'],
+	b: OffthreadPick['a'] | null,
+	w: number,
+	mode: TimeInterpolation,
+): OffthreadPick {
+	if (mode === 'frame-sampling' || !b || !(w > INTERP_EPS)) return { a, b: null, w: 0 };
+	if (w >= 1 - INTERP_EPS) return { a: b, b: null, w: 0 };
+	return { a, b, w };
+}
+
+/** Constant-rate media: frame n starts at n / rate seconds of the probed rate. */
+function pickOnGrid(
+	clip: RetimedFeedProps['clip'],
+	media: MediaHandle,
+	t: number,
+	mode: TimeInterpolation,
+): OffthreadPick {
+	const rate = clip.retime?.mediaRate ?? { num: 30, den: 1 };
+	const fps = rate.num / rate.den;
+	const dur = (media.durationFlicks ?? Number.POSITIVE_INFINITY) / FLICKS_PER_SECOND;
+	const last = Math.max(0, Math.floor(dur * fps - 1e-3) - 1);
+	const ia = Math.min(last, Math.floor(t * fps + 1e-6));
+	const at = (i: number) => ({ index: i, at: i / fps });
+	return settle(at(ia), ia < last ? at(ia + 1) : null, t * fps - ia, mode);
+}
+
+/**
+ * Variable-frame-rate media: the frame at or before t by its timestamp (the first frame before it), as `FrameSource`.
+ * FFmpeg is asked for a time a quarter into the frame's own interval, which selects that frame whether its
+ * extractor picks the frame containing the time or the nearest one.
+ */
+function pickByTimestamps(table: FrameTimes, t: number, mode: TimeInterpolation): OffthreadPick {
+	const { times, end } = table;
+	const n = times.length;
+	const at = (i: number) => {
+		const next = i + 1 < n ? times[i + 1]! : end;
+		return { index: i, at: Math.max(0, times[i]! + Math.max(0, next - times[i]!) / 4) };
+	};
+	const ia = frameIndexAt(times, Math.min(t, end - 1e-6));
+	if (ia + 1 >= n) return settle(at(ia), null, 0, mode);
+	return settle(at(ia), at(ia + 1), (t - times[ia]!) / (times[ia + 1]! - times[ia]!), mode);
+}
+
+/**
+ * The frame timestamps of `src` (null: not needed, or not read yet). The frame is held from the first render (effects
+ * run after the first paint) until they are read and the frames they pick are mounted; a failure fails the render.
+ */
+function useFrameTimes(src: string | null): FrameTimes | null {
+	const [table, setTable] = useState<{ src: string; times: FrameTimes } | null>(null);
+	const [hold] = useState(() => (src ? delayRender(`Frame timestamps of ${src}`) : null));
+	const released = useRef(false);
+	const release = useRef(() => {
+		if (hold === null || released.current) return;
+		released.current = true;
+		continueRender(hold);
+	});
+	useEffect(() => release.current, []);
+	useEffect(() => {
+		if (!src) return;
+		let live = true;
+		frameTimesOf(src)
+			.then((times) => {
+				if (live) setTable({ src, times });
+			})
+			.catch((e: unknown) => {
+				cancelRender(
+					new Error(
+						`Cannot read the frame timestamps of ${src}: ${e instanceof Error ? e.message : String(e)}`,
+					),
+				);
+			});
+		return () => {
+			live = false;
+		};
+	}, [src]);
+	const ready = !!src && table?.src === src;
+	// After the commit that mounted the picked <OffthreadVideo>s (child effects run first: they hold their frames).
+	useEffect(() => {
+		if (ready) release.current();
+	}, [ready]);
+	return ready ? table!.times : null;
 }

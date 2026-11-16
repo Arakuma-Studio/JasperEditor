@@ -71,14 +71,7 @@ export class FrameSource {
 		const track: InputVideoTrack | null = await this.input.getPrimaryVideoTrack();
 		if (!track) throw new Error(`No video track in ${this.src}`);
 		if (!(await track.canDecode())) throw new Error(`The browser cannot decode the video of ${this.src}`);
-		// Negative timestamps represent priming/pre-roll hidden by container edit lists. Clamp each track's
-		// first timestamp to zero so media time agrees with ffmpeg input seeking.
-		const firsts = [await track.getFirstTimestamp()];
-		for (const t of await this.input.getTracks()) firsts.push(await t.getFirstTimestamp());
-		this.origin = Math.min(
-			...firsts.map((x) => (Number.isFinite(x) ? Math.max(0, x) : Number.POSITIVE_INFINITY)),
-		);
-		if (!Number.isFinite(this.origin)) this.origin = 0;
+		this.origin = await mediaOrigin(this.input, track);
 		this.first = (await track.getFirstTimestamp()) - this.origin;
 		this.end = (await track.computeDuration()) - this.origin;
 		this.sink = new CanvasSink(track, {
@@ -223,6 +216,87 @@ export class FrameSource {
 		this.bytes = 0;
 		this.input?.dispose();
 	}
+}
+
+/**
+ * Media time 0 of a file: the earliest first timestamp of its tracks. Negative timestamps represent priming/pre-roll
+ * hidden by container edit lists: each track's first timestamp is clamped to zero so media time agrees with ffmpeg
+ * input seeking.
+ */
+async function mediaOrigin(input: Input, track: InputVideoTrack): Promise<number> {
+	const firsts = [await track.getFirstTimestamp()];
+	for (const t of await input.getTracks()) firsts.push(await t.getFirstTimestamp());
+	const origin = Math.min(
+		...firsts.map((x) => (Number.isFinite(x) ? Math.max(0, x) : Number.POSITIVE_INFINITY)),
+	);
+	return Number.isFinite(origin) ? origin : 0;
+}
+
+/** The frame timestamps of a video track, read from the container without decoding a frame. */
+export type FrameTimes = {
+	/** Media time of every frame (seconds, same origin as `FrameSource`), in presentation order. */
+	times: Float64Array;
+	/** End of the video track (media time). */
+	end: number;
+};
+
+/** Frames listed per media at most (a 10-hour 120 fps video); longer track tables are refused. */
+const MAX_FRAMES = 4_320_000;
+const timeTables = new Map<string, Promise<FrameTimes>>();
+
+/**
+ * The frame timestamps of `src` (cached per URL). Demuxing only, so it works for media the browser cannot decode:
+ * renders that read such media through FFmpeg (`<OffthreadVideo>`) pick variable-frame-rate frames by these, exactly
+ * like `FrameSource` and the native export.
+ */
+export function frameTimesOf(src: string): Promise<FrameTimes> {
+	const hit = timeTables.get(src);
+	if (hit) return hit;
+	const p = readFrameTimes(src);
+	timeTables.set(src, p);
+	p.catch(() => timeTables.delete(src));
+	if (timeTables.size > 64) timeTables.delete(timeTables.keys().next().value!);
+	return p;
+}
+
+async function readFrameTimes(src: string): Promise<FrameTimes> {
+	const input = new Input({ source: new UrlSource(src), formats: ALL_FORMATS });
+	try {
+		const track = await input.getPrimaryVideoTrack();
+		if (!track) throw new Error(`No video track in ${src}`);
+		const origin = await mediaOrigin(input, track);
+		const times: number[] = [];
+		for await (const p of new EncodedPacketSink(track).packets(undefined, undefined, {
+			metadataOnly: true,
+		})) {
+			if (times.length >= MAX_FRAMES) throw new Error(`More than ${MAX_FRAMES} frames in ${src}`);
+			if (Number.isFinite(p.timestamp)) times.push(p.timestamp - origin);
+		}
+		if (times.length === 0) throw new Error(`No video frames in ${src}`);
+		const sorted = Float64Array.from(times).sort();
+		const end = (await track.computeDuration()) - origin;
+		return {
+			times: sorted,
+			end: Number.isFinite(end) ? Math.max(end, sorted[sorted.length - 1]!) : sorted[sorted.length - 1]!,
+		};
+	} finally {
+		input.dispose();
+	}
+}
+
+/** Index of the frame shown at media time t: the last frame at or before t (the first frame before it). */
+export function frameIndexAt(times: Float64Array, t: number): number {
+	let lo = 0;
+	let hi = times.length - 1;
+	let ans = 0;
+	while (lo <= hi) {
+		const mid = (lo + hi) >> 1;
+		if (times[mid]! <= t + EPS) {
+			ans = mid;
+			lo = mid + 1;
+		} else hi = mid - 1;
+	}
+	return ans;
 }
 
 const sources = new Map<string, { src: FrameSource; refs: number }>();
