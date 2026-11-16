@@ -632,3 +632,65 @@ describe('warp sources and cancellation', () => {
 		expect(readdirSync(cacheDir)).toEqual([]);
 	}, 120_000);
 });
+
+describe('Corner Pin motion blur on the native path (docs/wp-notes/corner-pin-motion-blur.md)', () => {
+	const SHUTTER = { useCompShutterAngle: false, shutterAngle: 360 };
+	/** The card (640×360 at 100 %, centred) pinned at its own size, sliding `speed` box widths per frame. */
+	async function slidingCard(speed: number, shutter: Record<string, unknown>) {
+		const { d, clip } = await cardDoc({ pin: false });
+		const at = (f: number) => {
+			const x = speed * (f - 12);
+			return { topLeft: [x, 0], topRight: [1 + x, 0], bottomRight: [1 + x, 1], bottomLeft: [x, 1] };
+		};
+		const r = d.tx([
+			{
+				type: 'effect.add',
+				target: { clipId: clip },
+				effectId: CORNER_PIN_EFFECT_ID,
+				params: shutter,
+				ref: '$fx',
+			},
+		]);
+		const fx = r.refs.$fx!;
+		d.tx(
+			[0, 24].flatMap((f) =>
+				Object.entries(at(f)).map(([name, value]) => ({
+					type: 'keyframe.add',
+					target: ['effect', fx, name],
+					at: { sequenceFrame: f },
+					value,
+				})),
+			),
+		);
+		return d;
+	}
+
+	it('a fast pin move at shutter 360 is one continuous smear; shutter 0 is the unblurred picture', async () => {
+		// 0.05 box widths per frame = 32 px per frame: the card's left edge (white border on the dark plate, at x = 640
+		// on frame 12) becomes a 32 px ramp of ~32 taps.
+		const blurred = await still(await slidingCard(0.05, SHUTTER), 12);
+		expect(blurred.renderPath).toBe('native');
+		// The left edge only: the plate up to the white border's plateau (the border is 40 px wide).
+		const row = Array.from({ length: 80 }, (_, i) => lum(blurred, 580 + i, 540));
+		const lo = row[0]!;
+		const hi = Math.max(...row);
+		const at = (k: number) => row.findIndex((v) => v >= lo + k * (hi - lo));
+		const width = at(0.9) - at(0.1);
+		// A box shutter over a constant move: a linear ramp 32 px wide (10–90 % ≈ 26 px), without plateaus or jumps
+		// (separate copies would leave steps of (hi − lo) / copies with flat runs between them).
+		const slope = (hi - lo) / 32;
+		const steps = row.slice(at(0.1), at(0.9) + 1).map((v, i, a) => (i ? v - a[i - 1]! : slope));
+		console.info(
+			`[corner pin blur native] ramp ${width} px, steps ${Math.min(...steps).toFixed(1)}…${Math.max(...steps).toFixed(1)} (mean ${slope.toFixed(1)})`,
+		);
+		expect(width).toBeGreaterThanOrEqual(24);
+		expect(width).toBeLessThanOrEqual(28);
+		expect(Math.min(...steps)).toBeGreaterThan(0.4 * slope);
+		expect(Math.max(...steps)).toBeLessThan(1.8 * slope);
+
+		const off = await still(await slidingCard(0.05, { useCompShutterAngle: false, shutterAngle: 0 }), 12);
+		const plain = await still(await slidingCard(0.05, {}), 12);
+		expect(off.rgb.equals(plain.rgb)).toBe(true);
+		expect(off.rgb.equals(blurred.rgb)).toBe(false);
+	}, 180_000);
+});

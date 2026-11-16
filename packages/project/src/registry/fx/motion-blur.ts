@@ -231,3 +231,76 @@ export function mbUniforms(plan: MbPlan): {
 		u_mbWarp: { vec4s: warp },
 	};
 }
+
+// CPU taps of a plan, the same arithmetic as `GLSL_MB_POSES` (`fx_mbTap`, `fx_mbPose`, `fx_mbJitter`), for renderers
+// that draw a planned shutter without WebGL (the native export's kernels, the lowered layers). Each function is
+// self-contained (no imports, no module scope): the native kernels inline their source text into worker threads.
+
+/**
+ * Shutter time s (0..1 over the interval) and box-shutter weight of tap `i` of `n`, stratified with offset `j`
+ * (0.5 = the stratum centre), through the plan's time warp (`warp`: `MbPlan.warp`, null = identity): `out[0]` = s,
+ * `out[1]` = weight. GLSL `fx_mbTap`.
+ */
+export function mbTapTime(
+	i: number,
+	n: number,
+	j: number,
+	warp: ArrayLike<number> | null,
+	out: { 0: number; 1: number },
+): void {
+	const a = (i + j) / n;
+	if (!warp) {
+		out[0] = a;
+		out[1] = 1;
+		return;
+	}
+	const last = warp.length - 1;
+	const x = Math.min(1, Math.max(0, a)) * last;
+	const m = Math.min(Math.floor(x), last - 1);
+	const t0 = warp[m]!;
+	const t1 = warp[m + 1]!;
+	out[0] = t0 + (t1 - t0) * (x - m);
+	out[1] = Math.max(t1 - t0, 0) * last;
+}
+
+/**
+ * The pose at shutter time `s`: the `stride` vec4s linearly interpolated between the plan's key poses (`packed`,
+ * `keys` × `stride` vec4s), written to `out` (4 · stride numbers). GLSL `fx_mbPose` for every part.
+ */
+export function mbPoseAt(
+	packed: ArrayLike<number>,
+	keys: number,
+	stride: number,
+	s: number,
+	out: { [i: number]: number },
+): void {
+	const K = Math.max(keys, 2);
+	const S = Math.max(stride, 1);
+	const u = Math.min(1, Math.max(0, s)) * (K - 1);
+	const k = Math.min(Math.floor(u), K - 2);
+	const f = u - k;
+	const a = k * S * 4;
+	const b = (k + 1) * S * 4;
+	for (let c = 0; c < S * 4; c++) {
+		const lo = packed[a + c]!;
+		out[c] = lo + (packed[b + c]! - lo) * f;
+	}
+}
+
+/**
+ * The per-pixel stratum offset of a jittered plan at pass pixel (x, y) (integers, top-left origin) — GLSL
+ * `fx_mbJitter` bit for bit; `seedHash` = `mbSeedHash(u_seed)`.
+ */
+export function mbJitter(x: number, y: number, seedHash: number): number {
+	const h = (Math.imul(x, 3242174889 | 0) + Math.imul(y, 2447445414 | 0) + seedHash) >>> 0;
+	return (h >>> 8) * (1 / 16777216);
+}
+
+/** The seed term of `fx_mbJitter`: `fx_pcg(fx_seedBits(seed) ^ 0x5bd1e995u)` with `fx_seedBits`' float32 product. */
+export function mbSeedHash(seed: number): number {
+	const s = Math.min(1, Math.max(0, Math.fround(Number.isFinite(seed) ? seed : 0)));
+	const v = (Math.floor(Math.fround(s * 4294967040)) ^ 0x5bd1e995) >>> 0;
+	const state = (Math.imul(v, 747796405) + 2891336453) >>> 0;
+	const word = Math.imul(((state >>> ((state >>> 28) + 4)) ^ state) >>> 0, 277803737) >>> 0;
+	return ((word >>> 22) ^ word) >>> 0;
+}

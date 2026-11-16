@@ -3,7 +3,9 @@
 // kinds is animated by the builder itself (S03:ENG-032, `../keyframed.ts`). `prepare` renders each claimed layer
 // into a sequence-space, straight-alpha ProRes 4444 intermediate (cached under `<appdir>/cache/warp/<key>.mov`);
 // `override` hands it to the builder as a `sequence` override (the builder applies transition fades and overlays
-// it at 0,0). FFmpeg's `perspective` filter is GPL-only (D-13), so the warp runs in our worker threads.
+// it at 0,0). FFmpeg's `perspective` filter is GPL-only (D-13), so the warp runs in our worker threads. A Corner Pin
+// with motion blur (@jasper/project `render/corner-pin-blur.ts`) first gets its shutter drawn in layer space from the
+// same plan as the composition's GL step (`pinBlurFrame`); the frame's pin then warps that canvas.
 import { createHash } from 'node:crypto';
 import { mkdir, stat } from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
@@ -11,14 +13,24 @@ import { join } from 'node:path';
 import {
 	CORNER_PIN_EFFECT_ID,
 	clipContentTime,
+	cornerPinBlurInstance,
+	cornerPinBlurPadding,
 	defaultEffectRegistry,
+	type EffectParams,
 	type EffectRegistry,
+	effectParamMetric,
+	FX_MAX_CANVAS,
+	FX_MB_WARP_SIZE,
+	fxParamsAtFn,
+	fxSeed,
 	invertMat3,
 	isAnimated,
 	layerMapOf,
 	type Mat3,
 	maskExportRoute,
+	mbSeedHash,
 	multiplyMat3,
+	planCornerPinBlur,
 	type RenderVisualClip,
 	resolveLayerProps,
 } from '@jasper/project';
@@ -35,7 +47,8 @@ import {
 	type NativePrepareContext,
 } from '../native-ext.ts';
 import type { PlannedExport } from '../planner.ts';
-import { destRect } from './kernel.ts';
+import { destRect, PIN_BLUR_HEADER, PIN_BLUR_WARP_SIZE } from './kernel.ts';
+import type { PinBlurFrame } from './pool.ts';
 import { decoderArgs, renderWarpLayer, type WarpFrameSpec, WarpRenderError } from './render.ts';
 
 const WARP_EXTENSION_ID = 'warp';
@@ -75,6 +88,62 @@ const r9 = (x: number) => {
 	return Object.is(v, -0) ? 0 : v;
 };
 
+/**
+ * Corner Pin motion blur of a clip at sequence frame `f` (null = none: no blurring pin, or nothing moves in the
+ * shutter): the plan and canvas of the composition's GL step (`planCornerPinBlur`, `cornerPinBlurPadding`, the fx
+ * canvas layout with no other GPU effect) as a `pinBlurFrame` program, and the canvas px → layer px map.
+ */
+function pinBlurOf(
+	c: RenderVisualClip,
+	props: ReturnType<typeof resolveLayerProps>,
+	f: number,
+	fps: number,
+	size: { sw: number; sh: number },
+): { blur: PinBlurFrame; toLayer: Mat3 } | null {
+	const pin = cornerPinBlurInstance(props.effects);
+	const inst = pin && c.effects.find((e) => e.id === pin.id);
+	if (!pin || !inst) return null;
+	const box = c.intrinsicBox;
+	const params = pin.params as EffectParams;
+	const lf = f - c.start;
+	const ctx = {
+		width: box.width,
+		height: box.height,
+		pxScale: 1,
+		frame: lf,
+		paramsAt: fxParamsAtFn(inst, c, fps, { frame: lf, params }, (name) => effectParamMetric(inst, name, box)),
+	};
+	const plan = planCornerPinBlur(params, ctx);
+	if (plan.taps <= 1) return null;
+	const pad = cornerPinBlurPadding(params, ctx);
+	// compositions fx/plan.ts `fxCanvasLayout`: whole layer px, scaled down only beyond FX_MAX_CANVAS.
+	const cssW = Math.max(1, Math.ceil(box.width + pad.left + pad.right));
+	const cssH = Math.max(1, Math.ceil(box.height + pad.top + pad.bottom));
+	const pxScale = Math.min(1, FX_MAX_CANVAS / Math.max(cssW, cssH));
+	const lw = Math.max(1, Math.ceil(cssW * pxScale));
+	const lh = Math.max(1, Math.ceil(cssH * pxScale));
+	if (FX_MB_WARP_SIZE !== PIN_BLUR_WARP_SIZE || (plan.warp && plan.warp.length !== PIN_BLUR_WARP_SIZE))
+		throw new Error(`warp: the corner pin blur time warp does not have ${PIN_BLUR_WARP_SIZE} entries`);
+	const prog = new Float64Array(PIN_BLUR_HEADER + PIN_BLUR_WARP_SIZE + plan.packed.length);
+	prog.set([
+		plan.taps,
+		plan.keys,
+		(plan.jitter ? 1 : 0) | (plan.warp ? 2 : 0),
+		mbSeedHash(fxSeed(c.clipId, pin.id, params, pin.patternOrigin)),
+		pxScale,
+		pad.left,
+		pad.top,
+		size.sw / box.width,
+		size.sh / box.height,
+	]);
+	if (plan.warp) prog.set(plan.warp, PIN_BLUR_HEADER);
+	prog.set(plan.packed, PIN_BLUR_HEADER + PIN_BLUR_WARP_SIZE);
+	return {
+		blur: { prog, lw, lh },
+		toLayer: [1 / pxScale, 0, -pad.left, 0, 1 / pxScale, -pad.top, 0, 0, 1],
+	};
+}
+
 /** Per-frame layer maps (source frame px → sequence px) and opacities of a clip over `[f0, f1)`. */
 function warpFrames(
 	c: RenderVisualClip,
@@ -100,11 +169,18 @@ function warpFrames(
 	for (let f = f0; f < f1; f++) {
 		const props = resolveLayerProps(c, clipContentTime(c, f, fps));
 		const opacity = props.opacity / 100;
-		const fwd = multiplyMat3(layerMapOf(props), toLayer).map(r9) as Mat3;
+		// With motion blur the warp draws the blur canvas (layer px + padding) instead of the source frame.
+		const pb = pinBlurOf(c, props, f, fps.num / fps.den, size);
+		const fwd = multiplyMat3(layerMapOf(props), pb ? pb.toLayer : toLayer).map(r9) as Mat3;
 		const inv = invertMat3(fwd);
-		const rect = inv && opacity > 0 ? destRect(fwd, size.sw, size.sh, size.width, size.height) : null;
+		const [w, h] = pb ? [pb.blur.lw, pb.blur.lh] : [size.sw, size.sh];
+		const rect = inv && opacity > 0 ? destRect(fwd, w, h, size.width, size.height) : null;
 		maps.push(inv ? fwd : null);
-		specs.push(rect && inv ? { inv, rect, opacity } : { inv: null, rect: null, opacity: 0 });
+		specs.push(
+			rect && inv
+				? { inv, rect, opacity, ...(pb ? { blur: pb.blur } : {}) }
+				: { inv: null, rect: null, opacity: 0 },
+		);
 	}
 	return { maps, specs };
 }
@@ -223,6 +299,10 @@ export function createWarpExtension(deps: WarpDeps): NativeExtension {
 					frames: n,
 					maps,
 					opacities: specs.map((s) => s.opacity),
+					// Corner Pin motion blur programs (absent without blur: earlier cache keys stay valid).
+					...(specs.some((s) => s.blur)
+						? { blur: specs.map((s) => (s.blur ? [s.blur.lw, s.blur.lh, ...s.blur.prog] : null)) }
+						: {}),
 				}),
 			)
 			.digest('hex')

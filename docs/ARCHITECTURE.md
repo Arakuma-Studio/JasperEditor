@@ -1060,7 +1060,9 @@ file (`commands/schemas/<area>.ts`) and registers it in `schemas/index.ts` + `ca
 - `jasper.corner-pin` effect (registered, `native: null`): params `topLeft/topRight/bottomRight/bottomLeft`, vec2
   **normalised to the layer box**. `resolveLayerProps` returns `projective = Motion · H(box → pinned quad)` and the
   pinned `quad`; `LayerBox` draws `projective` with `matrix3d`. Until the warp stage lands, corner pins route to
-  the Remotion path (planner blocker "uses effect jasper.corner-pin").
+  the Remotion path (planner blocker "uses effect jasper.corner-pin"). Motion blur (Transform's Shutter Angle
+  params on the pin) is a last step of the layer's picture chain in pre-pin pixels, the projective map unchanged
+  (`render/corner-pin-blur.ts`; the warp stage draws the same plan, docs/wp-notes/corner-pin-motion-blur.md).
 - Tracking API (`packages/api/src/tracking.ts`): `TrackRequest` / `TrackResult` (source frames, media px); route
   `trackingTrack`; job kind `track`. Results are committed by the client with `tracker.setSamples`.
 - Warp stage: the `warp` native extension (`claimsLayer` for corner pins, and keyframed Motion of animated images — other keyframed Motion is drawn by the builder's streamed sub-pixel layers, D-34; `override` space

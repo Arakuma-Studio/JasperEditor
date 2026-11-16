@@ -244,6 +244,15 @@ v14 files read-only (the v14 bump above).
 |---|---|---|---|
 | `StyleRecipe.passes['punch-ins'].params.start` value `caption` | spec 15 EA-021 | part of the strict recipe schema (`PunchInParamsSchema`: `caption`, `midpoint`, `word`; absent = `midpoint`). The style recipe library (`<appdir>/style-recipes/`, app state) is not versioned with the project: a v13 engine sets such a recipe file aside (`set-aside`, renamed, never deleted) | as every recipe: `drop-style-recipe` when unreadable. Idempotent |
 
+### Effect params added since v15 (no bump)
+
+Params added to a built-in effect after v15. Effect params are a loose record: a v15 build keeps them through load,
+edit and save (`effect.add` validates only the names it is given; repair never prunes params), so no data is dropped.
+
+| Field | Since | Read leniently | Repair |
+|---|---|---|---|
+| `params.useCompShutterAngle`, `params.shutterAngle`, `params.mbQuality` of a `jasper.corner-pin` instance | Corner Pin motion blur ([wp-notes/corner-pin-motion-blur.md](wp-notes/corner-pin-motion-blur.md)) | ordinary effect params, Transform's specs; absent = composition shutter (no blur), 0°, Auto, so stored pins draw unchanged. A v15 build draws the pin unblurred and refuses the names when a pin is pasted into it (`E_INVALID_PARAM`) | none needed |
+
 ## Saving
 
 - **Atomic writes** (S01:PER-016): every project, version, view and journal file is written to a hidden temp

@@ -1,4 +1,10 @@
-import { defaultEffectRegistry, mat3ToCss, matrixToCss, type ResolvedEffect } from '@jasper/project';
+import {
+	cornerPinBlurInstance,
+	defaultEffectRegistry,
+	mat3ToCss,
+	matrixToCss,
+	type ResolvedEffect,
+} from '@jasper/project';
 import { type CSSProperties, type ReactNode, useMemo } from 'react';
 import { canUseHtmlInCanvas, FxDomPicture } from '../fx/FxPicture.tsx';
 import { useCpuMaskStyle } from '../fx/mask-fallback.ts';
@@ -69,7 +75,9 @@ export function LayerBox({
 				!!layer.media?.vector ||
 				!!layer.transition?.tap ||
 				!!layer.matte ||
-				!!layer.composite),
+				!!layer.composite ||
+				// A corner pin's motion blur is a canvas step of the layer's picture (render/corner-pin-blur.ts).
+				!!cornerPinBlurInstance(props.effects)),
 		canRun: canUseHtmlInCanvas(),
 		chain,
 	});

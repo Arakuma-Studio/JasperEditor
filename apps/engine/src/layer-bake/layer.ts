@@ -5,6 +5,7 @@ import {
 	type Appearance,
 	applyMat3,
 	contentTimeAt,
+	cornerPinMayBlur,
 	defaultEffectRegistry,
 	type EffectRegistry,
 	type EffectSpec,
@@ -696,8 +697,10 @@ export function cropRect(
 	let y1 = Number.NEGATIVE_INFINITY;
 	const animated =
 		hasKeyframesDeep(c.transform) || c.effects.some((fx) => fx.enabled && hasKeyframesDeep(fx.params));
-	const last = animated ? frames.f1 : Math.min(frames.f1, frames.f0 + 1);
-	for (let f = frames.f0; f < last; f++) {
+	// Corner Pin motion blur smears up to half a frame beyond the first and last frames' quads.
+	const smear = animated && cornerPinMayBlur(c) ? 1 : 0;
+	const last = animated ? frames.f1 + smear : Math.min(frames.f1, frames.f0 + 1);
+	for (let f = frames.f0 - smear; f < last; f++) {
 		const props = resolveLayerProps(c, contentTimeAt(c, f, seq.fps));
 		const m = layerMapOf(props);
 		for (const p of corners) {

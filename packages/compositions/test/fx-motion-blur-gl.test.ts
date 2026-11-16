@@ -303,6 +303,17 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 			expect((await transition({ ...travel, png: false })).checksum).toBe(t1.checksum);
 		});
 
+		it('Corner Pin: shutter 0 and a pin that does not move leave the picture exactly as it is', async () => {
+			const off = await effect({
+				...pinSlide(0.15, { useCompShutterAngle: false, shutterAngle: 0 }),
+				paint: 'grid',
+			});
+			const still = await effect({ ...pinSlide(0, PIN_SHUTTER), paint: 'grid' });
+			const moving = await effect({ ...pinSlide(0.15, PIN_SHUTTER), paint: 'grid' });
+			expect(still.checksum).toBe(off.checksum);
+			expect(moving.checksum).not.toBe(off.checksum);
+		});
+
 		it('a different seed changes the grain of a capped smear', async () => {
 			const twitchy = SMEARS.find(([n]) => n === 'shake-twitchy')![2] as EffectArgs;
 			const fast = { ...twitchy, png: false, params: { ...twitchy.params, amplitude: 10 } };
@@ -310,6 +321,28 @@ describe.runIf(!!CHROME && process.env.FX_GL !== '0')(
 		});
 	},
 );
+
+const PIN_SHUTTER = { useCompShutterAngle: false, shutterAngle: 360 };
+/** The layer's corner pin sliding the whole box `speed` box widths per frame to the right (frame 2 = in place). */
+function pinSlide(speed: number, shutter: Record<string, unknown> = PIN_SHUTTER): EffectArgs {
+	const at = (frame: number) => {
+		const x = speed * (frame - 2);
+		return {
+			frame,
+			params: { topLeft: [x, 0], topRight: [1 + x, 0], bottomRight: [1 + x, 1], bottomLeft: [x, 1] },
+		};
+	};
+	return {
+		id: 'jasper.corner-pin',
+		width: W,
+		height: H,
+		frame: 2,
+		row: H / 2,
+		png: !!process.env.MB_PNG_DIR,
+		params: shutter,
+		keys: [at(0), at(4)],
+	};
+}
 
 /**
  * `allowHoles`: Jumpy's jumps are instantaneous in the shake model (held random targets), so a jump inside the shutter
@@ -414,6 +447,10 @@ const SMEARS: [string, 'effect' | 'transition', EffectArgs | TransitionArgs, Lim
 		},
 		{ minLength: 60, maxRatio: 1.6 },
 	],
+	// Corner Pin (the layer map) with Transform's 360° shutter: its blur step in the layer's fx plan. The whole box
+	// slides 48 px per frame (≈ 48 taps, strata centres) and 80 px per frame (Auto's 64 taps, jittered).
+	['corner-pin-layer', 'effect', pinSlide(0.15), { minLength: 40, maxRatio: 1.6 }],
+	['corner-pin-layer-capped', 'effect', pinSlide(0.25), { minLength: 65, maxRatio: 1.6 }],
 	[
 		// Transform, 180° shutter: 128 px per frame → a 64 px smear.
 		'transform-fast',
