@@ -74,7 +74,13 @@ describe.runIf(enabled)('transition kits on adjustment layers (native)', () => {
 	it('plans every LONG_PACK family natively', async () => {
 		const pack = builtinKitPack('long-pack')!;
 		for (const family of pack.families) {
-			const d = cardDoc();
+			// Two solids meeting at the cut (Decorate Cuts places a kit on a cut between different clips).
+			const d = new DocBuilder();
+			d.tx([
+				{ type: 'sequence.updateSettings', settings: { width: GW, height: GH } },
+				{ type: 'clip.addSolid', at: 0, duration: CUT, track: 'V1', color: [0.1, 0.2, 0.8, 1] },
+				{ type: 'clip.addSolid', at: CUT, duration: CUT, track: 'V1', color: [0.15, 0.6, 0.2, 1] },
+			]);
 			const weights = Object.fromEntries(pack.families.map((f) => [f.id, f.id === family.id ? 1 : 0]));
 			const plan = planDecorateCuts(d.doc, d.seqId, {
 				pack: 'long-pack',

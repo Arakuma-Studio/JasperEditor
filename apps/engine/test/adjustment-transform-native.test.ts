@@ -164,7 +164,7 @@ describe.runIf(enabled)('Transform on adjustment layers (native)', () => {
 		const refused = await plan(before);
 		expect(refused.path).not.toBe('native');
 		expect(refused.blockers.map((b) => b.reason).join('\n')).toMatch(
-			/jasper\.black-white before its Transform/,
+			/jasper\.black-white before a geometric effect/,
 		);
 	}, 120_000);
 

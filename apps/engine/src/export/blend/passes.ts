@@ -19,7 +19,7 @@
 /** One pass of the chain (numbers only: posted to the workers per frame). */
 export type ChainPass =
 	/** Transform: `taps` = (w, m0…m5) per tap, layer px → source layer px (u = m0·x + m1·y + m2). */
-	| { k: 'tf'; taps: number[]; wsum: number }
+	| { k: 'tf'; taps: number[]; wsum: number; mb?: ChainShutter }
 	/** S_Shake: `q` = 3 poses (dx, dy, cos θ / zoom, sin θ / zoom), `rgb` = per-channel poses, wrap 0 No, 1 Tile, 2 Reflect. */
 	| { k: 'shake'; q: number[]; rgb: boolean; z: number; wx: number; wy: number }
 	/** Mirror: reflection centre (box fractions) and the unit direction of the angle. */
@@ -29,6 +29,20 @@ export type ChainPass =
 	| { k: 'offset'; sx: number; sy: number; blend: number }
 	/** Directional Blur: `u_dbStep` (canvas px). */
 	| { k: 'dblur'; sx: number; sy: number };
+
+/**
+ * A Transform's planned shutter (`mbUniforms`: `u_mbPlan` taps, keys, stride, flags 1 jitter / 2 time warp; `u_mbKeys`;
+ * `u_mbWarp`) and its `u_seed`: the shader's taps per pixel (`fx_mbTap`, `fx_mbPose`, `fx_mbJitter`).
+ */
+export type ChainShutter = {
+	n: number;
+	K: number;
+	S: number;
+	flags: number;
+	keys: number[];
+	warp: number[];
+	seed: number;
+};
 
 /** The chain at one frame: the canvas padding (left, top, right, bottom) and the passes in stack order. */
 export type ChainFrame = { pad: [number, number, number, number]; passes: ChainPass[] };
@@ -128,6 +142,16 @@ export function chainStackedFrame(
 		return x;
 	};
 	const aspect = H / W;
+	// fx_pcg(fx_seedBits(u_seed) ^ 0x5bd1e995u) of fx_mbJitter (u_seed and the product in float32, as the GPU).
+	const pcg = (v: number) => {
+		const state = (Math.imul(v, 747796405) + 2891336453) >>> 0;
+		const word = Math.imul(((state >>> ((state >>> 28) + 4)) ^ state) >>> 0, 277803737) >>> 0;
+		return ((word >>> 22) ^ word) >>> 0;
+	};
+	const mbSeed = (seed: number) => {
+		const f = Math.fround(Math.min(1, Math.max(0, Math.fround(seed))));
+		return pcg((Math.fround(f * 4294967040) >>> 0) ^ 0x5bd1e995);
+	};
 	// dw_tap(src (frame units), wrap) of S_Shake's input A into px.
 	const dwTap = (sx: number, sy: number, wx: number, wy: number) => {
 		let nx = sx + 0.5;
@@ -196,7 +220,54 @@ export function chainStackedFrame(
 					const lx = x + 0.5 - pl;
 					const ly = y + 0.5 - pt;
 					const inBox = lx >= 0 && lx < W && ly >= 0 && ly < H;
-					if (p.k === 'tf') {
+					if (p.k === 'tf' && p.mb) {
+						// The shader's motion blur loop: taps at (i + j) / n through the time warp, poses interpolated between
+						// the keys, weight t.y × opacity, normalised by Σ t.y; j = the pixel's R2 jitter when the plan says so.
+						const mb = p.mb;
+						let j = 0.5;
+						if (mb.flags & 1) {
+							const seedHash = ((mb as { hash?: number }).hash ??= mbSeed(mb.seed));
+							const h = (Math.imul(x, 3242174889 | 0) + Math.imul(y, 2447445414 | 0) + seedHash) >>> 0;
+							j = (h >>> 8) / 16777216;
+						}
+						acc.fill(0);
+						let wsum = 0;
+						const K = Math.max(mb.K, 2);
+						const S = Math.max(mb.S, 1);
+						for (let i = 0; i < mb.n; i++) {
+							const a = (i + j) / mb.n;
+							let st = a;
+							let wt = 1;
+							if (mb.flags & 2) {
+								const xw = (a < 0 ? 0 : a > 1 ? 1 : a) * 31;
+								const m = Math.min(Math.floor(xw), 30);
+								const t0 = mb.warp[m]!;
+								const t1 = mb.warp[m + 1]!;
+								st = t0 + (t1 - t0) * (xw - m);
+								wt = Math.max(t1 - t0, 0) * 31;
+							}
+							wsum += wt;
+							const uu = (st < 0 ? 0 : st > 1 ? 1 : st) * (K - 1);
+							const kk = Math.min(Math.floor(uu), K - 2);
+							const fr = uu - kk;
+							const pose = (c: number) => {
+								const lo = mb.keys[kk * S * 4 + c]!;
+								return lo + (mb.keys[(kk + 1) * S * 4 + c]! - lo) * fr;
+							};
+							if (pose(7) <= 0.5) continue;
+							const sx = pose(0) * lx + pose(2) * ly + pose(4);
+							const sy = pose(1) * lx + pose(3) * ly + pose(5);
+							const u = (sx + pl) / CW;
+							const v = (sy + pt) / CH;
+							if (!(u >= 0 && u <= 1 && v >= 0 && v <= 1)) continue;
+							tex(A, u, v);
+							const op = pose(6) / 100;
+							const k = (op < 0 ? 0 : op > 1 ? 1 : op) * wt;
+							for (let c = 0; c < 4; c++) acc[c] = acc[c]! + px[c]! * k;
+						}
+						const s = 1 / Math.max(wsum, 1e-6);
+						store(B, o, acc[0]! * s, acc[1]! * s, acc[2]! * s, acc[3]! * s);
+					} else if (p.k === 'tf') {
 						acc.fill(0);
 						const t = p.taps;
 						for (let j = 0; j < t.length; j += 7) {

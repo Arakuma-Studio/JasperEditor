@@ -135,8 +135,27 @@ export function planAdjustmentFrames(o: {
 			const pt = (v: unknown): [number, number] =>
 				Array.isArray(v) && v.length === 2 ? [num(v[0], 0.5), num(v[1], 0.5)] : [0.5, 0.5];
 			if (fx.effectId === TRANSFORM_EFFECT) {
-				const poses = transformPoses(u, num(p.opacity, 100));
-				passes.push({ k: 'tf', taps: poses.list.flatMap((q) => [q.w, ...q.inv]), wsum: poses.wsum });
+				const plan = (u.u_mbPlan as { ivec4: number[] } | undefined)?.ivec4;
+				if (plan && plan[0]! > 1)
+					// Motion blur: the shader's own per-pixel taps (its jitter included) from the planned shutter.
+					passes.push({
+						k: 'tf',
+						taps: [],
+						wsum: 1,
+						mb: {
+							n: plan[0]!,
+							K: plan[1]!,
+							S: plan[2]!,
+							flags: plan[3]!,
+							keys: (u.u_mbKeys as { vec4s: number[] }).vec4s,
+							warp: (u.u_mbWarp as { vec4s: number[] }).vec4s,
+							seed: ctx.seed,
+						},
+					});
+				else {
+					const poses = transformPoses(u, num(p.opacity, 100));
+					passes.push({ k: 'tf', taps: poses.list.flatMap((q) => [q.w, ...q.inv]), wsum: poses.wsum });
+				}
 			} else if (fx.effectId === SHAKE) {
 				const wrap = (v: unknown) => (v === 'no' ? 0 : v === 'tile' ? 1 : 2);
 				passes.push({
