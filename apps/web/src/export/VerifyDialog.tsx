@@ -43,6 +43,7 @@ const CHECK_LABELS: Record<VerifyRow['id'], string> = {
 	'offline-media': 'Media Offline frames',
 	loudness: 'Loudness',
 	'true-peak': 'True peak',
+	'pre-encode-peak': 'Pre-encode true peak',
 	silence: 'Silence',
 	'target-container': 'Platform: container',
 	'target-aspect': 'Platform: frame shape',

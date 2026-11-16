@@ -175,6 +175,7 @@ import { streamLayer } from './stream/run.ts';
 import { BakeChangedError, streamTaps } from './stream/taps.ts';
 import { createSyntheticExtension } from './synthetic.ts';
 import { concatFilter, type ExportRun, exportRuns, type PreviewPiece } from './use-previews.ts';
+import { mixOverFix, preEncodeOver } from './verify.ts';
 import { buildVerifyContext, type OfflineSpan, soundEditsOf, writeVerifyContext } from './verify-context.ts';
 import { deliverableOfContainer, EXPORT_JOB_ID_RE, runExportVerify, targetRefusal } from './verify-job.ts';
 
@@ -1362,12 +1363,14 @@ export class ExportService {
 	private async writeVerifyContext(
 		planned: PlannedExport,
 		dir: string,
-		hasAudio: boolean,
+		audio: MixdownResult | null,
 		frames: number,
 		ctx: JobContext,
 		offline: readonly OfflineSpan[],
 	): Promise<void> {
 		const del = planned.deliverable;
+		const hasAudio = !!audio;
+		const preEncodePeak = preEncodePeakOf(audio);
 		try {
 			const o = planned.output;
 			const enc = o.encoder;
@@ -1380,6 +1383,7 @@ export class ExportService {
 					...(planned.joined ? { pieces: planned.joined.map((p) => p.range) } : {}),
 					soundEdits: soundEditsOf(planned.joined?.map((p) => p.snapshot) ?? [planned.snapshot]),
 					offline,
+					...(preEncodePeak ? { preEncodePeak } : {}),
 					output: { ...o, encoder: enc ? { container: enc.container, codec: enc.codec } : null },
 					pixFmt: enc
 						? o.alpha
@@ -3796,7 +3800,7 @@ export class ExportService {
 		// spec 18 AF-VER-001: what was asked and the cuts of the range, for verify_export (with the frames drawn from
 		// offline media, which the plan refuses: never encoded unsaid)
 		const offline = offlineSpansOf(planned);
-		await this.writeVerifyContext(planned, dir, !!audio, frames, ctx, offline);
+		await this.writeVerifyContext(planned, dir, audio, frames, ctx, offline);
 		const byteSize = (await stat(output)).size;
 		const downloadUrl = `/renders/${ctx.job.id}/output`;
 		let finalPath: string | undefined;
@@ -3891,6 +3895,7 @@ export class ExportService {
 					]
 				: []),
 			...(audioLoudness ? deliveryWarnings(audioLoudness) : []),
+			...mixOverWarnings(planned, audio),
 			...resultSoundWarnings(planned.plan, !!creditsResult?.name),
 		];
 		const result = {
@@ -4608,6 +4613,64 @@ function deliveryWarnings(
 			},
 		});
 	return out;
+}
+
+/** The mix the encoder was given, of an export delivered as mixed (normalisation off): verify.json `preEncodePeak`. */
+function preEncodePeakOf(
+	audio: MixdownResult | null,
+): { truePeakDbtp: number; atSec: number | null; integratedLufs: number | null } | null {
+	if (!audio?.path || audio.normalized || !Number.isFinite(audio.loudness.truePeakDb)) return null;
+	const at = audio.truePeakAt;
+	return {
+		truePeakDbtp: audio.loudness.truePeakDb,
+		atSec: at !== null && at !== undefined && audio.sampleRate > 0 ? at / audio.sampleRate : null,
+		integratedLufs: Number.isFinite(audio.loudness.integrated) ? audio.loudness.integrated : null,
+	};
+}
+
+/**
+ * AGENTS §4 (never silent): the mix went into the encoder over full scale with normalisation off. An integer file
+ * clips there; ffmpeg's AAC encoder turns the frames around each over down instead (its clip avoidance: an audible dip,
+ * and the file's own true peak lands just under 0 dBTP), and a player decoding to integer clips what stays over. Our
+ * path hands the encoder the float mix; nothing clips before it (wp-note sound-design "Fix: overs without normalisation").
+ */
+function mixOverWarnings(
+	p: PlannedExport,
+	audio: MixdownResult | null,
+): { code: string; message: string; params: Record<string, string | number> }[] {
+	if (p.output.videoOnly || p.output.alpha || p.deliverable?.kind === 'gif') return [];
+	const peak = preEncodePeakOf(audio);
+	const seq = p.document.sequences[p.sequenceId];
+	const over = preEncodeOver(
+		peak
+			? {
+					preEncodePeak: peak,
+					normalize: p.output.normalize ?? null,
+					fps: seq?.settings.frameRate ?? p.output.fps,
+					range: p.range,
+					...(p.joined && p.joined.length > 1 ? { pieces: p.joined.map((j) => j.range) } : {}),
+					dropFrame: seq?.settings.dropFrame === true,
+					startTimecodeFrames: Math.max(0, Math.trunc(seq?.settings.startTimecodeFrames ?? 0)),
+				}
+			: null,
+	);
+	if (!over) return [];
+	// (an over under 0.05 dB says its hundredths rather than "+0.0")
+	const tp = Math.round(over.truePeakDbtp * 10) / 10 || Math.round(over.truePeakDbtp * 100) / 100;
+	return [
+		{
+			code: 'AUDIO_MIX_OVER',
+			// the editor says it from code + params (apps/web/src/export/warning-text.ts): in English exactly these words
+			message: `The mix goes into the encoder at +${tp} dBTP${over.at ? `, worst at ${over.at.timecode}` : ''}, over full scale with loudness normalisation off: the file clips there (an AAC encoder turns those moments down instead, an audible dip). To fix it, ${mixOverFix(over.integratedLufs)}`,
+			params: {
+				truePeakDbtp: tp,
+				...(over.at ? { timecode: over.at.timecode, atSec: over.at.sec } : {}),
+				...(over.integratedLufs !== null
+					? { integratedLufs: Math.round(over.integratedLufs * 10) / 10 }
+					: {}),
+			},
+		},
+	];
 }
 
 function sequenceName(p: PlannedExport): string {

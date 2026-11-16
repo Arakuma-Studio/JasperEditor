@@ -107,6 +107,18 @@ export const ExportVerifyContextSchema = z.object({
 	}),
 	/** The export's loudness normalisation (null = off). */
 	normalize: z.object({ targetLufs: z.number(), truePeakDb: z.number() }).nullable(),
+	/**
+	 * The mix the encoder was given, of an export delivered as mixed (normalisation off): its true peak, where its worst
+	 * over is (seconds from the file's start) and its integrated loudness. Row `pre-encode-peak`; absent = not
+	 * recorded (normalised, no audio, or an older build).
+	 */
+	preEncodePeak: z
+		.object({
+			truePeakDbtp: z.number(),
+			atSec: z.number().min(0).nullable(),
+			integratedLufs: z.number().nullable(),
+		})
+		.optional(),
 	cuts: z.array(VerifyCutSchema).max(MAX_VERIFY_CUTS),
 	/** Why the cut list is incomplete or missing (cut rows are then `unverified` / say so). */
 	cutsNote: z.string().max(500).optional(),
@@ -341,6 +353,8 @@ export type VerifyContextSource = {
 	pieces?: readonly { start: number; end: number }[];
 	/** The clips the render drew with offline media (`media-guard.ts` `offlineUsesOf`); absent = not known. */
 	offline?: readonly OfflineSpan[];
+	/** The un-normalised mix's true peak, its place and loudness (`preEncodePeak`); absent = not known / normalised. */
+	preEncodePeak?: NonNullable<ExportVerifyContext['preEncodePeak']>;
 	/**
 	 * Sequence frames where an audible audio clip of the render starts or ends (`soundEditsOf`); a cut on any other frame
 	 * is `soundThrough`. Absent = not known (no cut is marked).
@@ -514,6 +528,7 @@ export function buildVerifyContext(s: VerifyContextSource): ExportVerifyContext 
 				},
 			},
 			normalize: o.normalize,
+			...preEncodeOf(s),
 		};
 	return {
 		...common,
@@ -540,6 +555,21 @@ export function buildVerifyContext(s: VerifyContextSource): ExportVerifyContext 
 					: null,
 		},
 		normalize: o.videoOnly || o.alpha ? null : o.normalize,
+		...(o.videoOnly || o.alpha ? {} : preEncodeOf(s)),
+	};
+}
+
+/** The recorded pre-encode peak of an un-normalised mix (finite numbers only). */
+function preEncodeOf(s: VerifyContextSource): Pick<ExportVerifyContext, 'preEncodePeak'> {
+	const p = s.preEncodePeak;
+	if (!p || s.output.normalize || !Number.isFinite(p.truePeakDbtp)) return {};
+	const finite = (x: number | null) => (x !== null && Number.isFinite(x) ? x : null);
+	return {
+		preEncodePeak: {
+			truePeakDbtp: p.truePeakDbtp,
+			atSec: p.atSec !== null && Number.isFinite(p.atSec) && p.atSec >= 0 ? p.atSec : null,
+			integratedLufs: finite(p.integratedLufs),
+		},
 	};
 }
 

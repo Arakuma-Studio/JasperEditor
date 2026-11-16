@@ -385,8 +385,10 @@ export const RenderPlanSchema = z.object({
 	),
 	estimate: z.object({ seconds: z.number().min(0), bytes: z.number().min(0) }),
 	/**
-	 * An `auto` export routed per span: frames rendered on the native / hybrid path and on the Remotion path, and the
-	 * Remotion spans (`segments` with mode `remotion`; warning `REMOTION_SPANS` says which and why). Absent = one path.
+	 * Sequence frames rendered on the native / hybrid path and on the Remotion path, and the Remotion spans (`segments`
+	 * with mode `remotion`). An `auto` export routed per span has both (warning `REMOTION_SPANS` says which and why); a
+	 * one-path plan has all its frames on its path (a Remotion plan: one span). Absent only for an audio-only file (no
+	 * picture) and from older engines.
 	 */
 	paths: z
 		.object({
@@ -487,7 +489,9 @@ export const ExportResultSchema = z.object({
 	 * and an `auto` export was rendered on the Remotion path instead, `LAYER_BAKE_FALLBACK` when only the frames of
 	 * layers whose bake failed were, `LAYER_BAKE_RETRIED` when a bake succeeded on a retry; also the plan's sound warnings
 	 * (`W_SOUND_CREDITS`, `W_SOUND_CHECK_STALE` with `level: 'info'`) and, when the file is not in the requested
-	 * container or audio codec, `OUTPUT_CONTAINER_CHANGED` / `AUDIO_CODEC_CHANGED` (WP6.5a, AGENTS §4).
+	 * container or audio codec, `OUTPUT_CONTAINER_CHANGED` / `AUDIO_CODEC_CHANGED` (WP6.5a, AGENTS §4); `AUDIO_MIX_OVER`
+	 * when the mix went into the encoder over 0 dBTP with normalisation off (params `truePeakDbtp`, `timecode`,
+	 * `atSec`, `integratedLufs` when measurable: the file clips there, or AAC turns those moments down).
 	 */
 	warnings: z
 		.array(
@@ -723,6 +727,7 @@ export const VERIFY_CHECK_IDS = [
 	'offline-media',
 	'loudness',
 	'true-peak',
+	'pre-encode-peak',
 	'silence',
 	'target-container',
 	'target-aspect',

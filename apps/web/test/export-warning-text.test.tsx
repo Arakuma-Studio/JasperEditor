@@ -90,6 +90,13 @@ const ENGINE: { code: string; message: string; params: ExportWarningParams }[] =
 		message: 'The delivered audio measures -14.8 LUFS, not the -14 LUFS target',
 		params: { integratedLufs: -14.8, targetLufs: -14, ceilingDbtp: -1.5, why: 'converge' },
 	},
+	// the mix went into the encoder over full scale (service.ts `mixOverWarnings`)
+	{
+		code: 'AUDIO_MIX_OVER',
+		message:
+			"The mix goes into the encoder at +4.8 dBTP, worst at 00:00:01:16, over full scale with loudness normalisation off: the file clips there (an AAC encoder turns those moments down instead, an audible dip). To fix it, turn on loudness normalisation (its true-peak limiter; at -11.3 LUFS, the mix's own loudness, the level stays) or lower the mix",
+		params: { truePeakDbtp: 4.8, timecode: '00:00:01:16', atSec: 1.55, integratedLufs: -11.3 },
+	},
 ];
 
 afterEach(async () => {
