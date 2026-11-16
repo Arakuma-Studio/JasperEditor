@@ -59,6 +59,29 @@ function rangeFrames(seq: Parameters<typeof frameOf>[0], r: z.infer<typeof Range
 export const EXPORT_GUIDE =
 	'Exporting: starts rendering a sequence to a video file (or, with format, an animated GIF or an audio-only WAV / FLAC / M4A file) and returns a job id at once; format "gif" renders the picture on the same path as a video (nothing the timeline shows is dropped) and converts it with a palette and dithering (gif: fps default 15 max 50, width default the sequence width capped at 1080, loop 0 = forever / 1 = once / n plays, dither, palette); a GIF has no sound and the plan warns GIF_NO_AUDIO; result.gif gives the frames written. Formats "wav" (16/24-bit PCM, audioBitDepth), "flac" (16/24-bit) and "m4a" (AAC, audioBitrateKbps) write the sequence mix through the same mixer as every export (range, audioChannels, audioSampleRate, normalizeLufs apply); plan.deliverable says what the file will be. Video: follow it with wait_for_job (or get_job), or pass wait: true to block until it is written. Cancelling the MCP request (notifications/cancelled) during wait cancels the export and deletes the partial file. The engine picks the fastest path that can render everything (native ffmpeg for footage-only cuts, Remotion when there are text/effects). Uses the live editor state when the project is open. With outputPath the file is written there (existing files are never overwritten: the engine then writes "name (2).mp4" and the job result gives the real path); otherwise it is downloadable from the job result URL. Sound credits: a credits file goes next to the output (credits; result.credits {format, count, url, path}); soundWarnings (and result.warnings) name W_SOUND_CREDITS when a sound heard in the export needs a credit and no credits file is written, W_SOUND_LICENSE_NC for non-commercial sounds, W_SOUND_SHARE_ALIKE for CC BY-SA sounds (the video must then be shared under CC BY-SA), and W_SOUND_CHECK_STALE (level info) when the stored Sound Check is out of date or failed — tell the user. result.container / result.audioCodec are what the file holds; OUTPUT_CONTAINER_CHANGED / AUDIO_CODEC_CHANGED (plan and result warnings) say when that is not what was requested (e.g. PCM needs MOV, ProRes masters carry PCM) — tell the user. Loudness normalisation (the Mix\'s, or normalizeLufs): plan.loudness gives the target and the true-peak limiter ceiling in front of the encoder (target less the codec\'s headroom: 0 for PCM, 0.5–2 dB for AAC / Opus by bit rate); the engine encodes the audio, decodes it and turns the moments the codec still pushes over the target down, then result.audioLoudness reports the delivered file\'s own audio decoded (measuredOn "decoded-file"; pcm = the mix it encoded): integratedLufs, truePeakDbtp, limiterCeilingDbtp, codecHeadroomDb, loudnessPasses, encodePasses, localCorrections, ceilingLimited, truePeakMet. AUDIO_TRUE_PEAK_OVER / AUDIO_LOUDNESS_CEILING (result warnings) say when the delivered file misses the target — tell the user. A finished export (wait: true, or wait_for_job) also returns output (container, duration, streams, size) and the fast verification rows (streams, duration, av-skew) with verified; run verify_export {exportId: jobId} for the full checks (black / flash frames and clicks at cuts, loudness, true peak, silences) and verify_export {target} for a platform. Platform presets (delivery-youtube, delivery-youtube-shorts, delivery-instagram-reels, delivery-tiktok, delivery-x, delivery-linkedin; list_export_presets) export at the platform\'s size, rate and loudness; a sequence of another shape (a horizontal sequence for a vertical platform) is refused with a hint to auto_reframe_sequence — it is never cropped.';
 
+/**
+ * Why the plan is not all native: `why` = the first five distinct reasons (and how many more); `details.blockers` =
+ * every reason with the items it names, when there are more than five.
+ */
+function whyOf(blockers: readonly { itemId?: string; reason: string }[]): {
+	why?: string[];
+	details?: { blockers: { reason: string; itemIds: string[] }[] };
+} {
+	if (blockers.length === 0) return {};
+	const byReason = new Map<string, string[]>();
+	for (const b of blockers) {
+		const ids = byReason.get(b.reason) ?? [];
+		if (b.itemId) ids.push(b.itemId);
+		byReason.set(b.reason, ids);
+	}
+	const reasons = [...byReason.keys()];
+	if (reasons.length <= 5) return { why: reasons };
+	return {
+		why: [...reasons.slice(0, 5), `and ${reasons.length - 5} more (details.blockers)`],
+		details: { blockers: [...byReason].map(([reason, itemIds]) => ({ reason, itemIds })) },
+	};
+}
+
 export function registerRenderTools(ctx: ToolContext): void {
 	defineTool(
 		ctx,
@@ -635,9 +658,9 @@ export function registerRenderTools(ctx: ToolContext): void {
 				: undefined;
 			const planBody = {
 				path: plan.path,
-				...(plan.blockers.length
-					? { why: [...new Set(plan.blockers.map((b) => b.reason))].slice(0, 5) }
-					: {}),
+				...whyOf(plan.blockers),
+				// per-span routing: frames on each path and the Remotion spans (warning REMOTION_SPANS says which, why)
+				...(plan.paths ? { paths: plan.paths } : {}),
 				...(plan.encoder ? { encoder: plan.encoder.label } : {}),
 				...(plan.warnings.length ? { warnings: plan.warnings.slice(0, 5).map((w) => w.message) } : {}),
 				...(plan.smart ? { smartRender: plan.smart } : {}),

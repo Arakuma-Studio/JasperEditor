@@ -48,7 +48,7 @@ function solidsWithPush(): { d: DocBuilder; t: string } {
 }
 
 describe('planner: missing span renderer', () => {
-	it('without a span renderer (no layer-bake extension) a GPU transition still sends the export to Remotion', async () => {
+	it('without a span renderer (no layer-bake extension) a GPU transition sends its frames to Remotion', async () => {
 		const { d, t } = solidsWithPush();
 		const { planExport } = await import('../src/export/planner.ts');
 		const bare = await planExport(
@@ -60,7 +60,8 @@ describe('planner: missing span renderer', () => {
 				extensions: [],
 			},
 		);
-		expect(bare.plan.path).toBe('remotion');
+		// routing.ts: the transition's frames render on the Remotion path (the whole range when it covers most of it)
+		expect(bare.plan.segments.some((s) => s.mode === 'remotion')).toBe(true);
 		expect(bare.plan.blockers.some((b) => b.itemId === t && b.reason.includes('Push'))).toBe(true);
 	});
 });

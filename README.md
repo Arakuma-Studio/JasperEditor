@@ -1266,6 +1266,12 @@ graphics)** and lists one graphics group per baked layer.
   warning `LAYER_BAKE_RETRIED`). Still failing, an **Auto** export renders only that layer's frames on the Remotion
   path and the rest natively (warning `LAYER_BAKE_FALLBACK` naming the clip, frames and error), or the whole range
   when the layer cannot be split off (warning `NATIVE_FALLBACK`); a forced **Native** export fails with the error.
+- **Per-span routing:** when the native path cannot draw some clips or transitions, an **Auto** export renders only
+  the frames they are drawn on through Remotion and the rest natively (plan `paths`, warning `REMOTION_SPANS` with
+  every span and why). A span whose Remotion items are all adjustment layers is split at them: the layers below
+  render natively into a plate, Remotion applies only the adjustment layer to it, and the layers above composite
+  natively on top, so the picture outside the effect matches the frames around the span
+  (docs/wp-notes/export-span-routing.md).
 - Without the Remotion renderer (no browser / no LGPL FFmpeg directory in a packaged engine) these layers block
   the native path and the plan explains why; `GET /api/capabilities` reports `features.layerBake`.
 - **Transparent background:** Export mode ▸ Format **ProRes 422 HQ** ▸ Background **Transparent** (MCP: `start_export

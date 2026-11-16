@@ -52,6 +52,11 @@ export const MAX_SEGMENTS = 16;
 const JOINABLE =
 	/^(libx264|libopenh264|h264_(nvenc|qsv|vaapi|amf|videotoolbox)|hevc_(nvenc|qsv|vaapi|amf|videotoolbox)|libkvazaar|prores_ks)$/;
 
+/** Whether pieces encoded separately with `encoder` join by stream copy (native segments, routing.ts pieces). */
+export function joinsByCopy(encoder: string): boolean {
+	return JOINABLE.test(encoder);
+}
+
 export type PictureSegment = { start: number; end: number };
 export type SegmentPlan = {
 	segments: PictureSegment[];

@@ -91,6 +91,7 @@ import {
 	gifBytes,
 	gifFrames,
 } from './deliverables.ts';
+import { layerRouteOf } from './layer-routes.ts';
 import { describeUse, offlineUsesOf } from './media-guard.ts';
 import {
 	bakeRecipeOf,
@@ -100,6 +101,7 @@ import {
 	estimateFrom,
 } from './memory.ts';
 import { BUILTIN_NATIVE_EFFECTS, type NativeExtension } from './native-ext.ts';
+import { blockerSpans, remotionItems, spanList, spanRuns } from './routing.ts';
 import { planPictureSegments, segmentPolicyFromEnv } from './segments.ts';
 import { soundPlanWarnings } from './sound-credits.ts';
 import { needsSubpixel } from './stream/plan.ts';
@@ -163,6 +165,12 @@ const NATIVE_VISUAL_KINDS = new Set([
 ]);
 
 export type OutputSpec = {
+	/**
+	 * routing.ts layer routes: the picture as lossless 8-bit RGB PNG frames (`outputFile` is an image2 pattern, frame 0 =
+	 * the range's first frame) in the working colour space, without the output conversion — a plate the Remotion pass
+	 * draws under an adjustment layer. Plain Rec.709 only (the planner routes nothing else per layer).
+	 */
+	pngFrames?: boolean;
 	width: number;
 	height: number;
 	fps: Rational;
@@ -238,6 +246,11 @@ export type PlannedExport = {
 	smart?: { codec: import('./smart.ts').SmartCodec; pieces: import('./smart.ts').SmartPiece[] };
 	/** previews (Use Previews): the stretches of the range read from render previews, and those rendered. */
 	previews?: import('./use-previews.ts').ExportRun[];
+	/**
+	 * routing.ts: the pieces of an `auto` export routed per span (native / hybrid stretches and `engine: 'remotion'`
+	 * ones), joined frame-exactly (service.ts `renderRoutes`). Absent = one path for the range.
+	 */
+	routes?: import('./use-previews.ts').ExportRun[];
 	/**
 	 * ranges.ts: the ranges of a multi-range export in file order, each with its own plan's snapshot. `range` is then
 	 * their span and `snapshot` the first range's.
@@ -926,6 +939,59 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		path = 'remotion';
 	} else path = nativeEligible ? nativePath : 'remotion';
 
+	// routing.ts (docs/wp-notes/export-span-routing.md): an `auto` export whose native blockers all belong to clips or
+	// transitions renders only the frames they are drawn on through Remotion — the whole stack there, as a Remotion
+	// export draws it — and the rest on the native path, when that is estimated cheaper than Remotion for everything.
+	let routed: {
+		runs: import('./use-previews.ts').ExportRun[];
+		remotionFrames: number;
+		seconds: number;
+	} | null = null;
+	let routedItems: Set<string> | null = null;
+	if (
+		path === 'remotion' &&
+		settings.engine !== 'remotion' &&
+		!video?.alpha &&
+		!input.still &&
+		deps.capabilities.remotionLocal !== 'unavailable' &&
+		// (BT.709 written as worked, any bit depth: the native composite and the browser both work at 8 bits)
+		(!output.color || (output.color.space.id === 'rec709' && !output.color.converts))
+	) {
+		const spans = blockerSpans(snapshot, range, blockers);
+		routed = spans && spans.length > 0 ? spanRuns(range, spans) : null;
+		if (routed && spans) {
+			path = 'hybrid';
+			routedItems = remotionItems(snapshot, range, routed.runs);
+			// layer-routes.ts: a span whose Remotion items are all adjustment layers is split at them
+			const whole = new Map<string, number>();
+			let layered = 0;
+			routed.runs = routed.runs.map((r) => {
+				if (r.kind !== 'render' || r.engine !== 'remotion') return r;
+				const route = layerRouteOf(
+					snapshot,
+					r,
+					spans.filter((b) => b.start < r.end && b.end > r.start),
+				);
+				if ('tracks' in route) {
+					layered++;
+					return { ...r, layers: route.tracks };
+				}
+				whole.set(route.reason, (whole.get(route.reason) ?? 0) + 1);
+				return r;
+			});
+			const stretches = routed.runs.filter((r) => r.kind === 'render' && r.engine === 'remotion');
+			const reasons = new Map<string, number>();
+			for (const b of spans) if (b.reason) reasons.set(b.reason, (reasons.get(b.reason) ?? 0) + 1);
+			const why = [...reasons].map(([reason, n]) => (n > 1 ? `${reason} (${n}×)` : reason));
+			const total = range.end - range.start;
+			warnings.push({
+				code: 'REMOTION_SPANS',
+				message: `${routed.remotionFrames} of ${total} frames (${Math.round((100 * routed.remotionFrames) / total)} %) need the Remotion path, in ${stretches.length} span${stretches.length === 1 ? '' : 's'}; the rest renders on the native path: frames ${spanList(stretches)}. Why: ${why.slice(0, 10).join('; ')}${why.length > 10 ? `; and ${why.length - 10} more reasons (plan blockers list every one)` : ''}. ${layered} span${layered === 1 ? '' : 's'} split at ${layered === 1 ? 'its' : 'their'} adjustment layers (only those layers on Remotion, over native plates)${whole.size ? `; ${stretches.length - layered} with the whole stack on Remotion: ${[...whole].map(([reason, n]) => (n > 1 ? `${reason} (${n}×)` : reason)).join('; ')}` : ''}`,
+				itemIds: [...new Set(spans.flatMap((b) => (b.itemId ? [b.itemId] : [])))],
+			});
+		}
+	}
+
 	// TL-124 / TL-125 / TL-123: what the browser draws and needs WebGL2 for (colour and GPU effects, also in nested
 	// sequences; GPU transitions; masked effects; blend modes; 3D layers) is refused here when the render browser has
 	// none (or lacks the float targets an effect requires), naming the causes, not as a failure in the middle of a render.
@@ -933,12 +999,9 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	if ((path === 'remotion' || path === 'hybrid') && deps.capabilities.webgl) {
 		const all = snapshotGlNeeds(snapshot, deps.effects);
 		const bakedIds = new Set(baked.map((b) => b.clipId));
-		const needs =
-			path === 'remotion'
-				? all
-				: all.filter(
-						(n) => (n.clipId && bakedIds.has(n.clipId)) || (n.transitionId && bakedIds.has(n.transitionId)),
-					);
+		// (a routed export: what its Remotion spans draw too)
+		const drawn = (id: string | undefined) => !!id && (bakedIds.has(id) || !!routedItems?.has(id));
+		const needs = path === 'remotion' ? all : all.filter((n) => drawn(n.clipId) || drawn(n.transitionId));
 		if (needs.length > 0) {
 			webgl = await deps.capabilities.webgl();
 			const refusal = webglRefusal(needs, webgl);
@@ -967,7 +1030,10 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	// layers; what cannot be read frame-exactly that way is refused by name here, not as a failure mid-render.
 	if (path === 'remotion' || path === 'hybrid') {
 		const bakedIds = new Set(baked.map((b) => b.clipId));
-		const unreadable = browserDrawnClips(snapshot, path === 'remotion' ? null : bakedIds).flatMap((c) => {
+		const unreadable = browserDrawnClips(
+			snapshot,
+			path === 'remotion' ? null : routedItems ? new Set([...bakedIds, ...routedItems]) : bakedIds,
+		).flatMap((c) => {
 			const reason = 'mediaId' in c.source ? browserFrameProblem(c, media[c.source.mediaId]) : null;
 			return reason ? [{ clipId: c.clipId, reason }] : [];
 		});
@@ -1081,8 +1147,13 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 					stillBakes * 0.1) *
 				pixelFactor
 			: 0;
-	const estimateSeconds =
-		path !== 'remotion' ? (durationSec / 1.5) * pixelFactor + bakeSeconds : (frames / 8) * pixelFactor;
+	const estimateSeconds = routed
+		? (((frames - routed.remotionFrames) * durationSec) / frames / 1.5 + routed.remotionFrames / 8) *
+				pixelFactor +
+			bakeSeconds
+		: path !== 'remotion'
+			? (durationSec / 1.5) * pixelFactor + bakeSeconds
+			: (frames / 8) * pixelFactor;
 	const bpp = 0.1 * 2 ** ((18 - output.crf) / 6);
 	const estimateBytes = Math.round(
 		(pixels * fpsNum(output.fps) * durationSec * bpp) / 8 +
@@ -1110,14 +1181,39 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		planId,
 		documentRevision,
 		path,
-		segments: [
-			{
-				startFrame: range.start,
-				endFrame: range.end,
-				mode: path === 'remotion' ? 'remotion' : mgClips.length + baked.length > 0 ? 'mixed' : 'native',
-				graphicsGroups,
-			},
-		],
+		segments: routed
+			? routed.runs.map((r, i) =>
+					r.kind === 'render' && r.engine === 'remotion'
+						? {
+								startFrame: r.start,
+								endFrame: r.end,
+								mode: 'remotion' as const,
+								graphicsGroups: [{ id: `rs${i + 1}`, engine: 'remotion' as const, itemIds: [] }],
+							}
+						: {
+								startFrame: r.start,
+								endFrame: r.end,
+								mode: mgClips.length + baked.length > 0 ? ('mixed' as const) : ('native' as const),
+								graphicsGroups,
+							},
+				)
+			: [
+					{
+						startFrame: range.start,
+						endFrame: range.end,
+						mode: path === 'remotion' ? 'remotion' : mgClips.length + baked.length > 0 ? 'mixed' : 'native',
+						graphicsGroups,
+					},
+				],
+		...(routed
+			? {
+					paths: {
+						native: frames - routed.remotionFrames,
+						remotion: routed.remotionFrames,
+						spans: routed.runs.filter((r) => r.kind === 'render' && r.engine === 'remotion').length,
+					},
+				}
+			: {}),
 		audio: {
 			mode: 'native-mix',
 			...(audioOut.normalize
@@ -1171,6 +1267,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 			captions: captionBurnMode(settings),
 			captionSettings: settings.captions,
 			...(draftProxies.length ? { draftProxies } : {}),
+			...(routed ? { routes: routed.runs } : {}),
 			deliverable: { kind: 'gif', gif, render: settings },
 		};
 	}
@@ -1185,6 +1282,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		captions: captionBurnMode(settings),
 		captionSettings: settings.captions,
 		...(draftProxies.length ? { draftProxies } : {}),
+		...(routed ? { routes: routed.runs } : {}),
 	};
 }
 
