@@ -445,13 +445,17 @@ export const ClipUpdateCmd = cmd('clip.update', {
 	clipIds: IdListSchema.optional(),
 	patch: ClipPatchSchema,
 });
+/**
+ * Speed/Duration (S01:CLP-008). Absent `reverse` / `maintainPitch` keep each clip's current setting; `ripple` defaults
+ * to false (the dialog's "Ripple Edit, Shifting Trailing Clips" starts unchecked).
+ */
 export const ClipSetSpeedCmd = cmd('clip.setSpeed', {
 	clipIds: IdListSchema,
 	rate: z.number().min(0.01).max(100).optional(),
 	duration: TimeInputSchema.optional(),
 	reverse: z.boolean().optional(),
 	maintainPitch: z.boolean().optional(),
-	ripple: z.boolean(),
+	ripple: z.boolean().optional(),
 });
 /**
  * What a source swap does when the new media does not hold every source frame the clip shows (M3,

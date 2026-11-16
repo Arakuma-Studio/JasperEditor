@@ -285,6 +285,51 @@ describe('keyframe.addBatch', () => {
 		).toEqual([]);
 	});
 
+	it('takes `at` as a bare frame count and an effect by its clip.properties key path', () => {
+		const h = new Harness();
+		const [c] = clipsOnV1(h, 1);
+		h.ok([{ type: 'effect.add', target: { clipId: c!.id }, effectId: 'jasper.gaussian-blur' }]);
+		const fxId = fxOf(h.clips('V1')[0]!)[0]!.id;
+		h.ok([
+			{
+				type: 'keyframe.addBatch',
+				targets: [
+					{ clipId: c!.id, path: ['transform', 'scale'], keys: [{ at: 30, value: 100 }] },
+					{ clipId: c!.id, path: ['effects', fxId, 'radius'], keys: [{ at: 4, value: 9 }] },
+				],
+			},
+		]);
+		const clip = h.clips('V1')[0]!;
+		const scale = (clip as { transform: { scale: Animatable<number> } }).transform.scale;
+		expect(scale.keyframes.map((k) => k.time)).toEqual([clip.sourceIn + 30 * F30]);
+		const radius = fxOf(clip)[0]!.params.radius as Animatable<number>;
+		expect(radius.keyframes.map((k) => [k.time, k.value])).toEqual([[clip.sourceIn + 4 * F30, 9]]);
+	});
+
+	it('a schema refusal names the offending key path', () => {
+		const h = new Harness();
+		const [c] = clipsOnV1(h, 1);
+		const r = h.tx([
+			{
+				type: 'keyframe.addBatch',
+				targets: [
+					{
+						clipId: c!.id,
+						path: ['transform', 'scale'],
+						keys: [
+							{ at: 1, value: 100 },
+							{ at: 2.5, value: 120 },
+						],
+					},
+				],
+			},
+		]);
+		expect(errorsOf(r)[0]).toMatchObject({
+			code: 'E_SCHEMA',
+			message: expect.stringMatching(/^keyframe\.addBatch: targets\[0\]\.keys\[1\]\.at: expected frames/),
+		});
+	});
+
 	it('resolves an effect added earlier in the transaction by its temp ref', () => {
 		const h = new Harness();
 		const [c] = clipsOnV1(h, 1);

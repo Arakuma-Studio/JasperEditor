@@ -177,6 +177,7 @@ export class HandlerContext {
 		let t: number;
 		if (at === undefined) t = fromSeqFrame(clip.start);
 		else if (typeof at === 'string') t = fromSeqFrame(this.frame(seq, at));
+		else if (typeof at === 'number') t = fromSeqFrame(clip.start + at);
 		else if ('frames' in at) t = fromSeqFrame(clip.start + at.frames);
 		else if ('sequenceFrame' in at) t = fromSeqFrame(at.sequenceFrame);
 		else t = at.flicks;
@@ -191,6 +192,7 @@ export class HandlerContext {
 		const F = flicksPerFrame(seq.settings.frameRate as Rational);
 		if (at === undefined) return 0;
 		if (typeof at === 'string') return this.frame(seq, at) * F;
+		if (typeof at === 'number') return at * F;
 		if ('frames' in at) return at.frames * F;
 		if ('sequenceFrame' in at) return at.sequenceFrame * F;
 		return Math.round(at.flicks / F) * F;

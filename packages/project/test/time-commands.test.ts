@@ -36,6 +36,27 @@ function place(h: Harness, at: number, opts: { seconds?: number; inSec?: number;
 const vid = (h: Harness, id: string) => h.seq.clips[id] as VideoClip;
 const clean = (h: Harness) => expect(checkInvariants(h.doc)).toEqual([]);
 
+describe('clip.setSpeed', () => {
+	it('defaults: no ripple, and Reverse / Maintain Pitch keep what the clip has', () => {
+		const h = new Harness();
+		const p = place(h, 0);
+		const next = place(h, 200);
+		h.ok([{ type: 'clip.setSpeed', clipIds: [p.v], reverse: true, maintainPitch: false, ripple: false }]);
+		const before = h.doc;
+		h.ok([{ type: 'clip.setSpeed', clipIds: [p.v], rate: 0.5 }]);
+		// 120 frames at 50 % would be 240: clamped to the next clip (no ripple), which stays where it was
+		expect([vid(h, p.v).duration, vid(h, next.v).start]).toEqual([200, 200]);
+		expect(vid(h, p.v).speed).toEqual({ rate: 0.5, reverse: true, maintainPitch: false });
+		clean(h);
+		// undo = the document before; redo is deterministic
+		const after = h.doc;
+		h.doc = before;
+		expect(vid(h, p.v).speed.rate).toBe(1);
+		h.ok([{ type: 'clip.setSpeed', clipIds: [p.v], rate: 0.5 }]);
+		expect(h.seq.clips[p.v]).toEqual(after.sequences[h.seqId]!.clips[p.v]);
+	});
+});
+
 describe('timeRemap.enable', () => {
 	it('enables with an identity curve and warns that the linked audio stays at 100 %', () => {
 		const h = new Harness();

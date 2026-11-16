@@ -958,7 +958,7 @@ Arguments in brackets are optional. "Target tracks" accept ids or labels (`"V2"`
 | `gap.close` | `trackId`, `at` | Ripple-deletes the gap containing `at`. |
 | `clip.duplicate` | `clipIds`, `at` \| `deltaFrames`, [`tracks`] | Copies with new ids (includes their link groups), overwrite mode. |
 | `clip.update` | `clipId(s)`, `patch` | Patch of non-animated fields (name, label, enabled, text content and box, style, template params, crop-independent props). For animated props use `param.set`. |
-| `clip.setSpeed` | `clipIds`, [`rate`], [`duration`], [`reverse`], [`maintainPitch`], `ripple` | CLP-008 |
+| `clip.setSpeed` | `clipIds`, [`rate`], [`duration`], [`reverse`], [`maintainPitch`] (absent: the clip's own), [`ripple`] (default false) | CLP-008 |
 | `clip.replaceSource` | `clipId`, `mediaId`, [`keepDuration`], M3: [`fit`] | Replaces the media with another version of the same original, keeping effects and keyframes and the source frames shown (S07:PRC-016/017: in-point remapped from the versions' source ranges; `fit: refuse \| trim \| skip` when the version does not cover the clip). |
 | `clip.fitToFrame` | `clipIds`, `mode: 'fit' \| 'fill' \| 'none'` | FX-004 |
 | `clip.link` / `clip.unlink` | `clipIds` | CLP-010 |
@@ -982,7 +982,7 @@ Arguments in brackets are optional. "Target tracks" accept ids or labels (`"V2"`
 | `transition.applyDefault` | `clipIds`, `edges: 'both' \| 'in' \| 'out'` | Premiere Shift+D |
 
 - **CMD-010 (P0)** `ParamPath` addresses any animatable property with JSON-pointer-like segments, for example `["clip", "clp_…", "transform", "position"]`, `["clip", "clp_…", "opacity"]`, `["effect", "fx_…", "radius"]`, `["track", "trk_…", "volumeDb"]`, `["master", "volumeDb"]`.
-- **CMD-013 (P0)** The `at` argument of parameter and keyframe commands accepts `{frames: n}` (frames relative to the clip's first frame, converted to content time with CLP-004), `{sequenceFrame: n}` (absolute timeline frame inside the clip), `{flicks: n}` (content time directly), or a timecode string (absolute timeline). For track and master parameters, all forms are converted to sequence time.
+- **CMD-013 (P0)** The `at` argument of parameter and keyframe commands accepts `{frames: n}` or a bare integer `n` (frames relative to the clip's first frame, converted to content time with CLP-004), `{sequenceFrame: n}` (absolute timeline frame inside the clip), `{flicks: n}` (content time directly), or a timecode string (absolute timeline). For track and master parameters, all forms are converted to sequence time.
 - **CMD-014 (P0)** Command arguments never use the key `type` for entity data, because `type` names the command. Entity fields called `type` elsewhere (marker type, locator type) are passed as `markerType`, `locatorType` and so on.
 - **CMD-011 (P0)** Commands that act on "targeted tracks" or "the playhead" take those values as **explicit arguments**. The UI fills them from session state. Handlers never read session state, so agents and tests get deterministic results.
 - **CMD-012 (P1)** **Macro commands** (for example "remove silences", "cut at scene changes", "auto-duck music under dialogue") are not part of `project-model`. They are agent tools or UI actions that query the engine for analysis results (silence ranges, scene cuts, loudness) and then submit **one** transaction of primitive commands. That keeps undo, validation and history uniform.

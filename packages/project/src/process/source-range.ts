@@ -17,7 +17,7 @@ import { retargetRotos } from '../roto/index.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { MediaAsset, MediaProbe, SourceRange } from '../schema/media.ts';
 import type { TimeRemap } from '../schema/sequence.ts';
-import { flicksPerFrame, type Rational, rationalEquals, roundSym } from '../time.ts';
+import { FLICKS_PER_SECOND, flicksPerFrame, type Rational, rationalEquals, roundSym } from '../time.ts';
 import { activeRemap, clipMediaRange, clipMediaTimeFn } from '../time-remap/model.ts';
 import { parseTimecode } from '../timecode.ts';
 import { mediaFrameRate } from '../tracking/request.ts';
@@ -58,7 +58,27 @@ function nameOf(m: Pick<MediaAsset, 'originalName' | 'id'> | undefined, id: stri
 	return m?.originalName ?? id;
 }
 
-const rateText = (r: Rational) => (r.den === 1 ? `${r.num}` : (r.num / r.den).toFixed(3));
+/** A rate for a refusal: decimal to 6 places plus the exact rational, so two close rates never print alike. */
+const rateDetail = (r: Rational) =>
+	r.den === 1 ? `${r.num} fps` : `${(r.num / r.den).toFixed(6)} fps (${r.num}/${r.den})`;
+
+/**
+ * True when two probed rates count the same frames one to one over `seconds` (the longer file): they drift apart by
+ * less than half a frame. ffprobe's average rate of variable-rate footage (phone video) is frames ÷ duration, so a
+ * re-encode with the very same timestamps can report a slightly different rational (S07:PRC-018). Without a
+ * duration only exactly equal rates match.
+ */
+function ratesCorrespond(a: Rational, b: Rational, seconds: number | null): boolean {
+	if (rationalEquals(a, b)) return true;
+	if (seconds === null || !(seconds > 0) || !Number.isFinite(seconds)) return false;
+	const drift = Math.abs(a.num / a.den - b.num / b.den) * seconds;
+	return Number.isFinite(drift) && drift < 0.5;
+}
+
+const durationSeconds = (...probes: (MediaProbe | undefined)[]): number | null => {
+	const ds = probes.map((p) => p?.durationFlicks).filter((d): d is number => typeof d === 'number' && d > 0);
+	return ds.length ? Math.max(...ds) / FLICKS_PER_SECOND : null;
+};
 
 /**
  * Where a media's content time sits in its root original's content time (S07:PRC-016). Fails when a link
@@ -79,15 +99,16 @@ export function rootPlacement(doc: MediaTable, mediaId: string): RootPlacement |
 		if (link.frameRate) {
 			const own = mediaFrameRate(m);
 			const pr = mediaFrameRate(parent);
-			if (own && !rationalEquals(own, link.frameRate))
+			const secs = durationSeconds(m.probe, parent?.probe);
+			if (own && !ratesCorrespond(own, link.frameRate, secs))
 				return {
 					ok: false,
-					reason: `${nameOf(m, id)} runs at ${rateText(own)} fps but its source range counts ${nameOf(parent, link.parentId)} frames at ${rateText(link.frameRate)} fps (frames must correspond one to one)`,
+					reason: `${nameOf(m, id)} runs at ${rateDetail(own)} but its source range counts ${nameOf(parent, link.parentId)} frames at ${rateDetail(link.frameRate)} (frames must correspond one to one)`,
 				};
-			if (pr && !rationalEquals(pr, link.frameRate))
+			if (pr && !ratesCorrespond(pr, link.frameRate, secs))
 				return {
 					ok: false,
-					reason: `${nameOf(parent, link.parentId)} runs at ${rateText(pr)} fps but ${nameOf(m, id)} counts its frames at ${rateText(link.frameRate)} fps`,
+					reason: `${nameOf(parent, link.parentId)} runs at ${rateDetail(pr)} but ${nameOf(m, id)} counts its frames at ${rateDetail(link.frameRate)}`,
 				};
 			shift += frameShiftFlicks(link.firstFrame, link.frameRate);
 		}
@@ -328,7 +349,12 @@ export type SourceTimingBasis =
 	/** The current file declares a range; the new file is taken to be its source (going back to the raw). */
 	| 'current-is-range'
 	/** Both files carry a start timecode. */
-	| 'timecode';
+	| 'timecode'
+	/**
+	 * Neither range nor both timecodes, but the files are equally long (within a frame) at corresponding rates: the
+	 * new file holds the same frames from its first one (a re-encode), so content time stays (shift 0).
+	 */
+	| 'same-length';
 
 export type SourceTimingShift =
 	| {
@@ -378,14 +404,17 @@ export function sourceTimingShift(current: TimingFile, next: TimingFile): Source
 	const b = next.sourceRange ?? null;
 	const rate = b?.frameRate ?? a?.frameRate ?? rn ?? rc;
 	if (!rate) return { ok: false, reason: 'Neither file has a video frame rate to count source frames with' };
-	if (rc && rn && !rationalEquals(rc, rn))
+	if (rc && rn && !ratesCorrespond(rc, rn, durationSeconds(current.probe, next.probe)))
 		return {
 			ok: false,
-			reason: `The files run at different frame rates (${rateText(rc)} and ${rateText(rn)} fps): source frames cannot be kept one to one`,
+			reason: `Frame rate differs: ${current.originalName} runs at ${rateDetail(rc)}, ${next.originalName} at ${rateDetail(rn)} (source frames cannot be kept one to one)`,
 		};
 	if (a && b) {
 		if (!rationalEquals(a.frameRate, b.frameRate))
-			return { ok: false, reason: 'The two source ranges count frames at different rates' };
+			return {
+				ok: false,
+				reason: `Source range frame rate differs: ${current.originalName} counts ${rateDetail(a.frameRate)}, ${next.originalName} ${rateDetail(b.frameRate)}`,
+			};
 		if (!sameSource(a, b))
 			return {
 				ok: false,
@@ -433,12 +462,30 @@ export function sourceTimingShift(current: TimingFile, next: TimingFile): Source
 			basis: 'timecode',
 			detail: `Timecode ${next.probe.startTimecode} (new) vs ${current.probe.startTimecode} (current)`,
 		};
+	// No range and no pair of timecodes: content time counts from each file's first frame (decoders seek relative to
+	// the stream start), so equally long files at corresponding rates hold the same frames at the same content time.
+	const dc = current.probe.durationFlicks;
+	const dn = next.probe.durationFlicks;
+	const F = flicksPerFrame(rate);
+	if (dc !== null && dn !== null && Math.abs(dc - dn) <= F)
+		return {
+			ok: true,
+			shiftFrames: 0,
+			frameRate: rate,
+			basis: 'same-length',
+			detail: `${next.originalName} and ${current.originalName} are equally long (${secondsText(dn)} and ${secondsText(dc)}): the same frames from the first one`,
+		};
+	const tcNote = `start timecode ${current.probe.startTimecode ?? 'none'} (current) and ${next.probe.startTimecode ?? 'none'} (new)`;
 	return {
 		ok: false,
 		reason:
-			'Neither file declares its source range (no sidecar) and they do not both carry a start timecode, so the source timing cannot be kept',
+			dc !== null && dn !== null
+				? `Duration differs: ${current.originalName} lasts ${secondsText(dc)}, ${next.originalName} ${secondsText(dn)} (${Math.round(Math.abs(dc - dn) / F)} frames), and neither file declares its source range (no sidecar) nor do both carry a start timecode (${tcNote}) to place one inside the other`
+				: `No source range (sidecar), no pair of start timecodes (${tcNote}) and no known duration of ${dc === null ? current.originalName : next.originalName} to match the files by`,
 	};
 }
+
+const secondsText = (flicks: number) => `${(flicks / FLICKS_PER_SECOND).toFixed(6)} s`;
 
 /**
  * The frames of media `mediaId` to process for clips (S07:PRC-015 "clip range + handles"): the union of the

@@ -81,8 +81,9 @@ export type BatchKey = z.infer<typeof BatchKeySchema>;
 export const KeyframeBatchTargetSchema = z.strictObject({
 	clipId: IdRefSchema,
 	/**
-	 * The property within the clip: `["transform", "scale"]`, `["opacity"]`, … (the path of `keyframe.add` after
-	 * `["clip", clipId]`), or `["effect", effectInstanceId, param]` for an effect of this clip.
+	 * The property within the clip: its `clip.properties` key split on "." (`["transform", "scale"]`, `["opacity"]`,
+	 * `["effects", effectInstanceId, param]`), i.e. the path of `keyframe.add` after `["clip", clipId]`; an effect of this
+	 * clip may also be given as its param.set target `["effect", effectInstanceId, param]`.
 	 */
 	path: z.array(z.string().min(1)).min(1).max(8),
 	keys: z.array(BatchKeySchema).min(1).max(BATCH_LIMITS.maxKeysPerParam),
