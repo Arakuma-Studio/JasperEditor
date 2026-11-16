@@ -33,7 +33,8 @@ describe('per-span routing', () => {
 				sourceRange: { in: { sourceFrames: 0 }, out: { sourceFrames: 150 } },
 			},
 			{ type: 'clip.addAdjustment', at: 60, duration: 30, track: 'V2', ref: '$fx' },
-			{ type: 'effect.add', target: { clipId: '$fx' }, effectId: 'jasper.mirror', params: {} },
+			// S_Glow: a GPU effect with no native pass on adjustment layers (blend/passes.ts)
+			{ type: 'effect.add', target: { clipId: '$fx' }, effectId: 'jasper.s.glow', params: {} },
 		]);
 		const r = await app.inject({
 			method: 'POST',

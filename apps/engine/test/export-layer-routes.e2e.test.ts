@@ -12,6 +12,12 @@ import { coreServices } from '../src/tools/services.ts';
 import { DocBuilder, ensureFixtures, fixture, JSON_H, register } from './helpers.ts';
 import { tempAppdir } from './temp.ts';
 
+/**
+ * Adjustment-layer effects with no native pass (GPU effects the native chain, blend/passes.ts, does not run), so the
+ * spans under them need Remotion.
+ */
+const REMOTION_ONLY = { edges: 'jasper.s.edge-detect', emboss: 'jasper.s.emboss' };
+
 const W = 1280;
 const H = 720;
 let engine: RunningEngine;
@@ -145,15 +151,10 @@ describe.runIf(process.env.REMOTION_E2E === '1')('layer routes', { timeout: 1_80
 		const plain = new DocBuilder('hd-720p-30');
 		plain.doc = structuredClone(d.doc);
 		plain.revision = d.revision;
-		// Offset (no native path on adjustment layers) on the right half only (its crop)
+		// S_Emboss (a GPU effect with no native pass: Remotion only) on the right half only (its crop)
 		d.tx([
 			{ type: 'clip.addAdjustment', at: 30, duration: 30, track: 'V2', ref: '$fx' },
-			{
-				type: 'effect.add',
-				target: { clipId: '$fx' },
-				effectId: 'jasper.offset',
-				params: { shiftCenterTo: [0.8, 0.6] },
-			},
+			{ type: 'effect.add', target: { clipId: '$fx' }, effectId: REMOTION_ONLY.emboss, params: {} },
 			{ type: 'effect.add', target: { clipId: '$fx' }, effectId: 'jasper.crop', params: { left: 50 } },
 		]);
 		const routed = await exportOf(d, 'auto');
@@ -184,17 +185,12 @@ describe.runIf(process.env.REMOTION_E2E === '1')('layer routes', { timeout: 1_80
 			{ type: 'param.set', target: ['clip', '$s1', 'transform', 'scale'], value: 50 },
 			{ type: 'param.set', target: ['clip', '$s1', 'transform', 'position'], value: [400, 300] },
 			{ type: 'clip.addAdjustment', at: 50, duration: 50, track: 'V2', ref: '$a2' },
-			{ type: 'effect.add', target: { clipId: '$a2' }, effectId: 'jasper.mirror', params: {} },
+			{ type: 'effect.add', target: { clipId: '$a2' }, effectId: REMOTION_ONLY.edges, params: {} },
 			{ type: 'clip.addSolid', at: 0, duration: 150, track: 'V3', color: [1, 0, 0, 1], ref: '$s3' },
 			{ type: 'param.set', target: ['clip', '$s3', 'transform', 'scale'], value: 25 },
 			{ type: 'clip.addText', at: 0, duration: 150, track: 'V4', content: { text: 'Clip type' } },
 			{ type: 'clip.addAdjustment', at: 50, duration: 50, track: 'V5', ref: '$a5' },
-			{
-				type: 'effect.add',
-				target: { clipId: '$a5' },
-				effectId: 'jasper.offset',
-				params: { shiftCenterTo: [0.65, 0.5] },
-			},
+			{ type: 'effect.add', target: { clipId: '$a5' }, effectId: REMOTION_ONLY.emboss, params: {} },
 			{ type: 'clip.addSolid', at: 0, duration: 150, track: 'V6', color: [0, 0, 1, 1], ref: '$s6' },
 			{ type: 'param.set', target: ['clip', '$s6', 'opacity'], value: 30 },
 		]);
