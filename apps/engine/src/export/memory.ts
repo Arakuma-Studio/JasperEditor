@@ -142,7 +142,7 @@ type ProfileItem = {
  * How each top-level layer of `snap` is drawn (computed once; `estimateFrom` then counts any range cheaply). Masters
  * in one run of shaken masters share a `run` id (one input, AS-073). `covers`: the media layers that would be a piece
  * of the composite's base (opaque, filling the frame: decided by the caller from the media and the Motion); as in the
- * builder, pieces do not overlap and a blend-mode layer or a Transform / S_Shake adjustment layer closes the base.
+ * builder, pieces do not overlap and a blend-mode layer or an adjustment layer with geometric effects closes the base.
  */
 export function compositeProfile(
 	snap: RenderSnapshot,

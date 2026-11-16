@@ -1,9 +1,9 @@
 // The blend pipeline of the native export (keyframes-blend): the processes before the composite (`NativeGraph.blend`
 // segments), each one's raw output (composite below ‖ blend layer) through the blend kernel (pool.ts) into the next
-// process's backdrop pipe (`pipe:3`), the last kernel into the composite. A Transform adjustment layer's segment
-// (`seg.adjust`, adjust.ts) outputs the composite alone and its kernel writes the composite ‖ its transformed copy. Every process also gets its own sub-pixel
-// streams. Backpressure: a fixed set of shared frame slots; a process's stdout is paused while none is free, a slot
-// is reused once the sink accepted its frame. A failure anywhere stops the whole pipeline and is reported.
+// process's backdrop pipe (`pipe:3`), the last kernel into the composite. An adjustment layer's segment with geometric
+// effects (`seg.adjust`, adjust.ts) outputs the composite alone and its kernel writes the composite ‖ the chain's output
+// (passes.ts). Every process also gets its own sub-pixel streams. Backpressure: a fixed set of shared frame slots; a
+// process's stdout is paused while none is free, a slot is reused once the sink accepted its frame. A failure anywhere stops the whole pipeline and is reported.
 import type { ChildProcess } from 'node:child_process';
 import type { Writable } from 'node:stream';
 import type { Ffmpeg } from '../../tools/ffmpeg.ts';
@@ -84,19 +84,15 @@ async function blendSegment(
 	const W = size.width;
 	const H = size.height;
 	const adjust = seg.adjust;
-	// Blend layers read `2W×H` frames (composite ‖ layer); a kernel adjustment reads the composite alone (padded).
-	const pad = adjust?.pad ?? 0;
-	const frameBytes = adjust ? (W + 2 * pad) * (H + 2 * pad) * 4 : W * H * 8;
+	// Blend layers read `2W×H` frames (composite ‖ layer); a geometric adjustment reads the composite alone.
+	const frameBytes = W * H * (adjust ? 4 : 8);
 	const what = adjust ? 'adjustment layer' : 'blend layer';
 	let pool: { slots: Slot[]; close(): Promise<void> };
 	let runSlot: (slot: Slot, i: number) => Promise<void>;
 	if (adjust) {
-		const p = new AdjustPool({ W, H, pad }, opts);
+		const p = new AdjustPool({ W, H }, opts);
 		pool = p;
-		runSlot = (slot, i) => {
-			const f = adjust.frames[i] ?? null;
-			return p.run(p.slots[slot.index]!, f?.rect ? f.prog : null, f?.rect ?? null);
-		};
+		runSlot = (slot, i) => p.run(p.slots[slot.index]!, adjust.frames[i] ?? null);
 	} else {
 		const p = new BlendPool({ W, H }, opts);
 		pool = p;

@@ -1,4 +1,5 @@
-// Transform and S_Shake (with colour effects: Tint, Hue/Saturation, Black & White) on adjustment layers: the native path
+// Geometric effects (Transform, S_Shake, the transition kits' Replicate, Mirror, Offset, Directional Blur, several per
+// layer) with colour effects (Tint, Hue/Saturation, Black & White) on adjustment layers: the native path
 // (blend/adjust.ts) against the Program preview's renderer. Each scene is rendered by the engine's still route (it
 // must plan `native`) and by Remotion (the compositions the Player draws: the adjustment scope's canvas chain runs the
 // shaders and colour runs on the composite below), compared per pixel.
@@ -40,7 +41,15 @@ const PARITY: Tolerance = { minPsnr: 45, maxAbs: 32, p99: 3 };
 type Pose = { anchor: [number, number]; position: [number, number]; scale: number; rotation: number };
 
 type Cmd = Record<string, unknown>;
-type Scene = { name: string; frame: number; tolerance: Tolerance; commands: Cmd[]; edge?: Pose };
+type Scene = {
+	name: string;
+	frame: number;
+	tolerance: Tolerance;
+	commands: Cmd[];
+	edge?: Pose;
+	/** A transition kit of LONG_PACK at frame KIT_CUT instead of the adjustment clip `$a` (family, variant). */
+	kit?: [string, string];
+};
 const TF = (params: Record<string, unknown>): Cmd => ({
 	type: 'effect.add',
 	target: { clipId: '$a' },
@@ -64,6 +73,7 @@ const STATIC = TF({
 });
 const ZOOM_OUT: Pose = { anchor: [0.5, 0.5], position: [0.45, 0.5], scale: 70, rotation: -12 };
 const BLURRED = { useCompShutterAngle: false, shutterAngle: 360 };
+const KIT_CUT = 30;
 const FX = (effectId: string, params: Record<string, unknown>, ref: string): Cmd => ({
 	type: 'effect.add',
 	target: { clipId: '$a' },
@@ -225,6 +235,44 @@ const SCENES: Scene[] = [
 			{ type: 'param.set', target: ['clip', '$a', 'opacity'], value: 80 },
 		],
 	},
+	// S19 as it is now (ASSEMBLY_S49_S89): a Transform zoom first, then the Reflect shake and the Tint ramp.
+	{
+		name: 's19-zoom-shake-tint',
+		frame: 20,
+		tolerance: PARITY,
+		commands: [
+			TF({ anchorPoint: [0.5, 0.4], position: [0.5, 0.4] }),
+			key('scaleHeight', 10, 100),
+			key('scaleHeight', 29, 140),
+			FX('jasper.s.shake', S19_SHAKE, '$sh'),
+			FX('jasper.tint', { amountToTint: 0 }, '$ti'),
+			fxKey('$ti', 'amountToTint', 0, 0),
+			fxKey('$ti', 'amountToTint', 29, 100),
+		],
+	},
+	// The transition kits of LONG_PACK (automation/kits.ts) around the cut at KIT_CUT.
+	...(
+		[
+			['jolt', 'default', -3],
+			['jolt', 'default', 2],
+			['whip', 'left', -2],
+			['whip', 'up', 3],
+			['zoom-blur', 'down', -3],
+			['zoom-blur', 'right', 4],
+			['zoom-through', 'in', -5],
+			['zoom-through', 'in', 5],
+			['zoom-through', 'out', -6],
+			['spin', 'ccw', -4],
+		] as const
+	).map(
+		([family, variant, at]): Scene => ({
+			name: `kit-${family}-${variant}${at < 0 ? at : `+${at}`}`,
+			frame: KIT_CUT + at,
+			tolerance: PARITY,
+			commands: [],
+			kit: [family, variant],
+		}),
+	),
 ];
 
 /**
@@ -320,9 +368,18 @@ describe.runIf(enabled)(
 				{ type: 'clip.place', source: { mediaId: t }, at: 0, tracks: { video: 'V2' }, ref: '$t' },
 				{ type: 'param.set', target: ['clip', '$t', 'transform', 'scale'], value: 60 },
 				{ type: 'param.set', target: ['clip', '$t', 'transform', 'position'], value: [90, 60] },
-				{ type: 'clip.addAdjustment', at: 0, duration: 30, track: 'V3', ref: '$a' },
-				...scene.commands,
 			]);
+			if (scene.kit) {
+				// The kit's adjustment clips as Decorate Cuts places them (parameters in px scaled to the frame).
+				const f = project.builtinKitPack('long-pack')!.families.find((x) => x.id === scene.kit![0])!;
+				const v = f.variants.find((x) => x.id === scene.kit![1])!;
+				const clips = project.kitClips(f, v, KIT_CUT, Math.min(golden.GW, golden.GH) / 1080);
+				d.tx([{ type: 'clip.addAdjustmentBatch', trackId: 'V3', items: clips }]);
+			} else
+				d.tx([
+					{ type: 'clip.addAdjustment', at: 0, duration: 30, track: 'V3', ref: '$a' },
+					...scene.commands,
+				]);
 			return d;
 		}
 
