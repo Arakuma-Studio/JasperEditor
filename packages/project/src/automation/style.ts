@@ -220,7 +220,7 @@ export function styleSimIds(start = 1): IdSource {
 const ID_IN_TEXT = /(?<![a-z])[a-z]{2,3}_[0-9A-HJKMNP-TV-Z]{16}(?![0-9A-Z])/g;
 const isSimId = (s: string) => /^[a-z]{2,3}_ZS[0-9A-HJKMNP-TV-Z]{14}$/.test(s);
 
-const ID_KEY_RE = /(?:Id|Ids)$|^(?:target|track|tracks|matteTrack)$/;
+const ID_KEY_RE = /(?:Id|Ids)$|^(?:target|track|tracks|matteTrack|cleanPlateTrack)$/;
 const DECL_KEYS = new Set(['ref', 'itemRef', 'type', 'payload', 'preset']);
 
 /**

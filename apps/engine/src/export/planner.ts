@@ -41,6 +41,7 @@ import {
 	sequenceFormatOf,
 	snapshotGlNeeds,
 	THREE_D_ASSET_MISSING,
+	trackMatteTracksOf,
 	transitionSpec,
 	uncoveredPicture,
 	warpExportIssues,
@@ -1528,6 +1529,14 @@ export function nativeBlockers(
 		if (c.retime?.vfr) return `${label} has variable-frame-rate media and no retime stage is available`;
 		return null;
 	};
+	// wp masks: a Track Matte Key reads the composites of other tracks (matte, clean plate). The native kernel has no
+	// Track Matte Key and a layer bake draws its clip alone, without those tracks (the matte would be dropped): the
+	// Remotion path renders the clip with them.
+	const readTracks = trackMatteTracksOf(c);
+	if (readTracks.length)
+		out.push(
+			`${label} uses a Track Matte Key reading track ${readTracks.join(', ')}, which only the Remotion path renders`,
+		);
 	if (exts.some((e) => e.claimsLayer?.(c))) {
 		const r = retimeBlocker();
 		if (r) out.push(r);

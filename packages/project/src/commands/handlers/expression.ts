@@ -5,7 +5,7 @@
 import type { Draft } from 'immer';
 import type { Expression } from '../../schema/common.ts';
 import type { TextContent } from '../../schema/sequence.ts';
-import type { DDoc, HandlerContext } from '../context.ts';
+import { type DDoc, effectNotFoundMessage, type HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { locateEffect, resolveTarget } from './param.ts';
@@ -99,7 +99,7 @@ export const expressionHandlers = {
 	},
 	'effect.rename': (doc, cmd: CommandOf<'effect.rename'>, h: HandlerContext) => {
 		const loc = locateEffect(doc, cmd.effectInstanceId);
-		if (!loc) return h.fail('E_NOT_FOUND', `Effect instance not found: ${cmd.effectInstanceId}`);
+		if (!loc) return h.fail('E_NOT_FOUND', effectNotFoundMessage(cmd.effectInstanceId));
 		if (loc.clip) assertUnlocked(findTrackIn(loc.seq, loc.clip.trackId)!.track, h);
 		if (loc.track) assertUnlocked(loc.track, h);
 		const name = cmd.name?.trim() ?? '';

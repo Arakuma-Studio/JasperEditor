@@ -49,9 +49,9 @@ import {
 	rotoFrameUrl,
 	sideCompToCanvas,
 	TEXT_WARP_EFFECT_ID,
-	TRACK_MATTE_EFFECT_ID,
 	textContentPad,
 	titleLookStructure,
+	trackMatteBindings,
 	workingKey,
 } from '@jasper/project';
 import { useContext, useMemo } from 'react';
@@ -624,12 +624,11 @@ export function useLayerFx(
 						},
 					};
 					const gp = planGpuEffect(s.spec as EffectSpec, { id: s.fx.id, params: s.fx.params }, ctx, canvas);
-					// Track Matte Keys bind the track composite as u_matte.
-					const matteTrack = s.fx.effectId === TRACK_MATTE_EFFECT_ID ? s.fx.params.matteTrack : undefined;
-					if (typeof matteTrack === 'string' && matteTrack) {
-						if (!trackMattes.includes(matteTrack)) trackMattes.push(matteTrack);
+					// Track Matte Keys bind the composites of the tracks they read (matte, clean plate) as textures.
+					for (const b of trackMatteBindings(s.fx)) {
+						if (!trackMattes.includes(b.trackId)) trackMattes.push(b.trackId);
 						gp.textures = gp.textures.map((t) =>
-							t.uniform === 'u_matte' ? { ...t, mediaId: trackMatteMediaId(matteTrack) } : t,
+							t.uniform === b.uniform ? { ...t, mediaId: trackMatteMediaId(b.trackId) } : t,
 						);
 					}
 					const st = stackTime.get(s.fx.id);

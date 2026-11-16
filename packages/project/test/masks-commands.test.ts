@@ -334,4 +334,45 @@ describe('mask commands', () => {
 		expect(report.some((r) => r.action === 'clear-track-matte')).toBe(true);
 		expect(checkInvariants(document, { effects: defaultEffectRegistry })).toEqual([]);
 	});
+
+	it('a Decontaminate Edges clean plate track is read like a matte track: snapshot, refusals, repair', () => {
+		const { h, clipId } = setup();
+		const [v1, v2] = [h.seq.videoTracks[0]!.id, h.seq.videoTracks[1]!.id];
+		h.ok([{ type: 'track.add', kind: 'video', ref: '$v4' }]);
+		const v4 = h.seq.videoTracks[3]!.id;
+		h.ok([
+			{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V2', color: [1, 1, 1, 1] },
+			{ type: 'clip.addSolid', at: 0, duration: 30, track: 'V4', color: [1, 0, 0, 1] },
+			{
+				type: 'effect.add',
+				target: { clipId },
+				effectId: 'jasper.track-matte-key',
+				params: { matteTrack: v2, decontaminate: 'cleanPlate', cleanPlateTrack: v4 },
+				ref: '$k',
+			},
+			{ type: 'track.update', trackId: v4, patch: { output: false } },
+		]);
+		const fxId = (h.seq.clips[clipId] as { effects: { id: string }[] }).effects.at(-1)!.id;
+		const snap = buildRenderSnapshot(h.doc, h.seqId, { resolveMedia: () => null, resolveFont: () => null });
+		expect(snap.matteTracks?.map((t) => t.trackId)).toEqual([v4]);
+		// The clip's own track cannot be its clean plate.
+		expect(h.tx([{ type: 'param.set', target: ['effect', fxId, 'cleanPlateTrack'], value: v1 }]).ok).toBe(
+			false,
+		);
+		// Like a matte track, a clean plate track in use cannot be removed.
+		expect(h.tx([{ type: 'track.remove', trackIds: [v4], force: true }]).ok).toBe(false);
+		const doc = JSON.parse(JSON.stringify(h.doc));
+		const seq = Object.values(doc.sequences)[0] as {
+			clips: Record<string, { effects: { params: Record<string, { value: unknown }> }[] }>;
+		};
+		seq.clips[clipId]!.effects.at(-1)!.params.cleanPlateTrack!.value = 'trk_missing';
+		expect(checkInvariants(doc, { effects: defaultEffectRegistry }).map((i) => i.message)).toContainEqual(
+			expect.stringContaining('missing matte track trk_missing'),
+		);
+		const { document, report } = repairDocument(doc, createCounterIdSource(900));
+		expect(report.filter((r) => r.action === 'clear-track-matte').map((r) => r.detail)).toEqual([
+			expect.stringContaining('clean plate'),
+		]);
+		expect(checkInvariants(document, { effects: defaultEffectRegistry })).toEqual([]);
+	});
 });

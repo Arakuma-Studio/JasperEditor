@@ -22,7 +22,7 @@ import { CORNER_PIN_EFFECT_ID } from '../../render/scene.ts';
 import type { Animatable, Keyframe } from '../../schema/common.ts';
 import type { Mask } from '../../schema/mask.ts';
 import type { Clip, EffectInstance } from '../../schema/sequence.ts';
-import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
+import { type DClip, type DDoc, type DSeq, effectNotFoundMessage, type HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';
 import type { CommandOf, MaskPathOp, ParamAt } from '../schemas/index.ts';
 import { finish } from './keyframe.ts';
@@ -59,7 +59,7 @@ function ownerList(
 		return { seq, clip, fx: null, list: c.masks };
 	}
 	const found = locateEffect(doc, target.effectId!);
-	if (!found) return h.fail('E_NOT_FOUND', `Effect instance not found: ${target.effectId}`);
+	if (!found) return h.fail('E_NOT_FOUND', effectNotFoundMessage(target.effectId!));
 	if (!found.clip)
 		return h.fail('E_INVALID_PARAM', 'Masks apply to effects of clips (not track or master effects)');
 	const spec = h.registries.effects.get(found.fx.effectId, found.fx.effectVersion);

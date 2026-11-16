@@ -11,7 +11,7 @@ import { WARP_STABILIZER_EFFECT_ID, warpAnalysisProblem } from '../../gaps/warp/
 import { intrinsicBoxOf } from '../../registry/properties.ts';
 import type { MediaAsset } from '../../schema/media.ts';
 import { FLICKS_PER_SECOND } from '../../time.ts';
-import type { DDoc, HandlerContext } from '../context.ts';
+import { type DDoc, effectNotFoundMessage, type HandlerContext } from '../context.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { clipCoreHandlers } from './clip-core.ts';
 import { insertProjectItems, parseCommandClipboard } from './clipboard.ts';
@@ -252,7 +252,7 @@ export const gapsHandlers = {
 	},
 	'effect.setWarpAnalysis': (doc, cmd: CommandOf<'effect.setWarpAnalysis'>, h) => {
 		const loc = locateEffect(doc, cmd.effectInstanceId);
-		if (!loc) return h.fail('E_NOT_FOUND', `Effect instance not found: ${cmd.effectInstanceId}`);
+		if (!loc) return h.fail('E_NOT_FOUND', effectNotFoundMessage(cmd.effectInstanceId));
 		if (loc.fx.effectId !== WARP_STABILIZER_EFFECT_ID)
 			h.fail('E_INVALID_PARAM', `${cmd.effectInstanceId} is not a Warp Stabilizer`);
 		if (!loc.clip) h.fail('E_INVALID_PARAM', 'The Warp Stabilizer analyses clips only');

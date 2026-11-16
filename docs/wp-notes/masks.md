@@ -111,8 +111,12 @@ same bytes for `rasterizeMaskPack` (CPU) and the shader.
   each matte-track clip's chain ends with a matte tap (`fxMatteTap`) delivering its picture to a `TrackMatteHub`, which
   composites the frame on the GPU (premultiplied over, projective placement); fill layers bind it as `u_matte`. Renders
   hold a `delayRender` until every clip of the matte track delivered *this* frame (deterministic in any frame order).
-  Export: the fill has a GPU effect, so it is baked (hybrid) or rendered by Remotion; layer bakes include the matte
-  tracks. Without a track the old `matte` media param still works.
+  Export: a fill whose key reads a track renders on the Remotion path (the planner names the Track Matte Key; a layer
+  bake draws its clip alone, without the matte track, so it would drop the matte — the earlier claim that bakes
+  include matte tracks was wrong). Without a track the old `matte` media param still works; with neither (Matte =
+  None, `set_track_matte {matteTrack: null}` removes the key) the layer passes through unchanged, also with Reverse.
+  Decontaminate Edges (clean plate track or estimated background) restores the foreground colour of soft edges:
+  [track-matte-holdout.md](track-matte-holdout.md).
 
 ## 5. Editing
 

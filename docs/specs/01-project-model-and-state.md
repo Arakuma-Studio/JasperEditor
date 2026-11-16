@@ -970,7 +970,7 @@ Arguments in brackets are optional. "Target tracks" accept ids or labels (`"V2"`
 | Command | Arguments | Semantics |
 |---|---|---|
 | `effect.add` | `target: {clipId} \| {trackId} \| 'master'`, `effectId`, [`index`], [`params`], [`ref`] | |
-| `effect.remove` / `effect.reorder` / `effect.setEnabled` | `effectInstanceId`, … | |
+| `effect.remove` / `effect.reorder` / `effect.setEnabled` | `effectInstanceId`, … | Every command argument naming an effect instance (`effectInstanceId(s)`, a mask's `effectId`, the id segment of `["effect", id, param]`) takes the id (`fx_…`) or its `clip.properties` key without the parameter (`effects.fx_…`); refusals name both forms. |
 | `param.set` | `target: ParamPath`, `value`, [`at`: content time or sequence frame] | Stopwatch semantics (KF-005): sets or creates a keyframe when animated, otherwise sets `value`. |
 | `param.setAnimated` | `target`, `animated: boolean`, [`at`] | KF-005 |
 | `keyframe.add` / `keyframe.update` / `keyframe.remove` / `keyframe.move` | `target`, keyframe fields | KF-001, KF-005 |

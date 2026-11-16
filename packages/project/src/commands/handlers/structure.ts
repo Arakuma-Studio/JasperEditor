@@ -6,7 +6,7 @@ import type { Draft } from 'immer';
 import { reidCaptionGroups } from '../../captions/subtitles/model.ts';
 import { clipEnd, contentTimeAt, isThroughEdit } from '../../derive/index.ts';
 import { anim, createSequence, defaultTransform } from '../../factories.ts';
-import { TRACK_MATTE_EFFECT_ID } from '../../masks/track-matte.ts';
+import { TRACK_MATTE_EFFECT_ID, TRACK_MATTE_TRACK_PARAMS } from '../../masks/track-matte.ts';
 import { projectLookMediaIds } from '../../param-media.ts';
 import { contentDurationFlicks, isBoundedContent, kindCapabilities } from '../../registry/kinds.ts';
 import type { ProjectItem } from '../../schema/document.ts';
@@ -232,22 +232,27 @@ function remapTrackMattes(
 		for (const fx of (c as { effects?: { id: string; effectId: string; params: Record<string, unknown> }[] })
 			.effects ?? []) {
 			if (fx.effectId !== TRACK_MATTE_EFFECT_ID) continue;
-			const a = fx.params.matteTrack as { value: unknown; keyframes: { value: unknown }[] } | undefined;
-			if (!a) continue;
-			let lost = false;
-			const next = (v: unknown): unknown => {
-				if (typeof v !== 'string' || v === '') return v;
-				const to = map(v);
-				if (!to || to === c.trackId) {
-					lost = true;
-					return '';
-				}
-				return to;
-			};
-			a.value = next(a.value);
-			for (const k of a.keyframes) k.value = next(k.value);
-			if (lost)
-				h.warn('W_TRACK_MATTE_CLEARED', `Track Matte Key ${fx.id} of clip ${c.id} lost its matte track`);
+			for (const { param } of TRACK_MATTE_TRACK_PARAMS) {
+				const a = fx.params[param] as { value: unknown; keyframes: { value: unknown }[] } | undefined;
+				if (!a) continue;
+				let lost = false;
+				const next = (v: unknown): unknown => {
+					if (typeof v !== 'string' || v === '') return v;
+					const to = map(v);
+					if (!to || to === c.trackId) {
+						lost = true;
+						return '';
+					}
+					return to;
+				};
+				a.value = next(a.value);
+				for (const k of a.keyframes) k.value = next(k.value);
+				if (lost)
+					h.warn(
+						'W_TRACK_MATTE_CLEARED',
+						`Track Matte Key ${fx.id} of clip ${c.id} lost its ${param === 'matteTrack' ? 'matte' : 'clean plate'} track`,
+					);
+			}
 		}
 }
 

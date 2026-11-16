@@ -191,6 +191,13 @@ sampling / frame blending / optical flow render identically in preview and expor
 **Done when:** ellipse, 4-point polygon and pen masks with feather, opacity, expansion and invert apply to effects and
 clip opacity, are keyframable, track forward/backward, and export natively.
 **Status (merged):** done — see [wp-notes/masks.md](wp-notes/masks.md): masks on effects and Opacity with tracking; Opacity masks export natively (≤ 3/255, `apps/engine/test/masks-export.test.ts`), effect masks through the layer bake. Limits: the CSS fallback covers Opacity masks only; no mask motion blur.
+Track Matte Keys that read a track (matte or clean plate) export through Remotion only (a layer bake draws the clip
+alone; the planner names the key). Track Matte hold-out ([wp-notes/track-matte-holdout.md](wp-notes/track-matte-holdout.md)):
+Decontaminate Edges ▸ Estimate from Background is an approximation (one normalised-convolution estimate of the
+background, measured mean 0.93 / max 6.9 code values off the true foreground on a 24 px edge, against 13.3 / 44.6
+without it); the unmix runs in the sequence's encoded values, so with Blend using 1.0 gamma (linear-light blending) it
+is not the exact inverse of the blend; the matte is sampled on the fill layer's own pixel grid, so a fill scaled above
+100 % gets a matte resampled to that grid (edges softened by up to the scale factor).
 
 ### roto
 **Done when:** a segmentation model (permissive licence) propagates a roto mask across frames with manual correction,
