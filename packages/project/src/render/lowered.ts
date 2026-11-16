@@ -89,22 +89,16 @@ function paramValues(fx: RenderVisualClip['effects'][number], name: string): unk
 
 /**
  * Why an effect cannot be lowered (null = it can): only Transform and S_Shake without motion blur, RGB split or
- * wrap; no effect masks. `reflect`: S_Shake may also wrap with Reflect (the caller's picture holds the reflection,
- * see `loweredLayerTaps`).
+ * wrap; no effect masks.
  */
-export function loweredEffectRefusal(
-	fx: RenderVisualClip['effects'][number],
-	opts: { reflect?: boolean } = {},
-): string | null {
+function effectRefusal(fx: RenderVisualClip['effects'][number]): string | null {
 	if (fx.masks?.length) return 'effect masks';
 	if (fx.effectId === TRANSFORM) return null;
 	if (fx.effectId === SHAKE) {
 		const all = (n: string, ok: (v: unknown) => boolean) => paramValues(fx, n).every(ok);
 		if (!all('motionBlur', (v) => v === false || v === undefined)) return 'S_Shake motion blur';
-		const wraps = opts.reflect ? ['no', 'reflect'] : ['no'];
 		for (const w of ['wrapX', 'wrapY'] as const)
-			if (!shakeWraps(fx, w).every((v) => wraps.includes(v)))
-				return opts.reflect ? 'S_Shake Tile wrap' : 'S_Shake wrap';
+			if (!shakeWraps(fx, w).every((v) => v === 'no')) return 'S_Shake wrap';
 		const one = (n: string, d: number) => {
 			const vs = paramValues(fx, n);
 			return vs.length === 0 ? [d] : vs.map((v) => num(v, d));
@@ -151,7 +145,7 @@ export function loweredRefusal(c: RenderVisualClip): string | null {
 		return 'expressions';
 	const fxs = c.effects.filter((fx) => fx.enabled);
 	for (const fx of fxs) {
-		const r = loweredEffectRefusal(fx);
+		const r = effectRefusal(fx);
 		if (r) return r;
 	}
 	if (fxs.filter(transformBlurs).length > 1) return 'more than one motion-blurred Transform';
@@ -192,6 +186,41 @@ export type LoweredTap = {
 };
 
 /**
+ * The frame context the compositions give an effect's `uniforms` / `padding` hooks at sequence frame `frame`
+ * (fx/stage.ts: layer box, pxScale 1, fps, clip-local frame, seed, `fxParamsAtFn` with the box metric). `cache`: the
+ * per-instance `FxParamsAt` across frames (sub-frame shutter samples).
+ */
+export function loweredFrameContext(o: {
+	clip: RenderVisualClip;
+	fx: ResolvedEffect;
+	frame: number;
+	fps: number;
+	box: { width: number; height: number };
+	cache: Map<string, ReturnType<typeof fxParamsAtFn>>;
+}): FxFrameContext {
+	const { clip: c, fx, fps } = o;
+	const lf = o.frame - c.start;
+	let at = o.cache.get(fx.id);
+	const inst = c.effects.find((e) => e.id === fx.id);
+	if (!at && inst) {
+		at = fxParamsAtFn(inst, c, fps, undefined, (name) => effectParamMetric(inst, name, c.intrinsicBox));
+		o.cache.set(fx.id, at);
+	}
+	return {
+		width: o.box.width,
+		height: o.box.height,
+		pxScale: 1,
+		fps,
+		frame: lf,
+		patternFrame: lf + fxFrameOffset(fx.patternOrigin),
+		duration: c.duration,
+		seed: fxSeed(c.clipId, fx.id, fx.params as EffectParams, fx.patternOrigin),
+		progress: fxClipProgress(lf, c.duration),
+		...(at ? { paramsAt: at } : {}),
+	};
+}
+
+/**
  * The taps of a lowered layer at sequence frame `frame` in LAYER space (Motion excluded): `map` sends a point of the
  * layer's output (what Motion places) to the source still's layer px; the first stage of every tap is the effect
  * canvas (when there are GPU effects), then each effect's sample rectangle from the last effect to the first. The
@@ -208,31 +237,10 @@ export function loweredLayerTaps(o: {
 }): { taps: LoweredTap[]; wsum: number; canvas: [number, number, number, number] | null } {
 	const { clip: c, props, fps } = o;
 	const registry = o.registry ?? defaultEffectRegistry;
-	const lf = o.frame - c.start;
 	const box = { width: props.box.width, height: props.box.height };
 	const effects = props.effects.filter((fx) => fx.enabled);
-	const byId = new Map(c.effects.map((e) => [e.id, e]));
 	const cache = o.paramsAtCache ?? new Map();
-	const ctxOf = (fx: ResolvedEffect): FxFrameContext => {
-		let at = cache.get(fx.id);
-		const inst = byId.get(fx.id);
-		if (!at && inst) {
-			at = fxParamsAtFn(inst, c, fps, undefined, (name) => effectParamMetric(inst, name, c.intrinsicBox));
-			cache.set(fx.id, at);
-		}
-		return {
-			width: box.width,
-			height: box.height,
-			pxScale: 1,
-			fps,
-			frame: lf,
-			patternFrame: lf + fxFrameOffset(fx.patternOrigin),
-			duration: c.duration,
-			seed: fxSeed(c.clipId, fx.id, fx.params as EffectParams, fx.patternOrigin),
-			progress: fxClipProgress(lf, c.duration),
-			...(at ? { paramsAt: at } : {}),
-		};
-	};
+	const ctxOf = (fx: ResolvedEffect) => loweredFrameContext({ clip: c, fx, frame: o.frame, fps, box, cache });
 	// The effect canvas: the box grown by the text's own paint (stroke, shadow, ink: `textContentPad`) and the GPU
 	// effects' padding (compositions fx/plan.ts `planLayerFx`, `fxCanvasLayout`).
 	const cp =
@@ -283,26 +291,9 @@ export function loweredLayerTaps(o: {
 			taps = next;
 		} else if (fx.effectId === SHAKE) {
 			const sh = shakeInverse(u, box, num(fx.params.zDist, 1));
-			// Wrap No samples the effect canvas; with a Reflect axis (`dw_tap`) the axes that do not wrap are cut at the
-			// box and the reflecting ones are unbounded: the picture must hold the reflection there (the adjustment
-			// kernel pads the composite with its mirror image), so only an S_Shake whose input is the picture may reflect.
-			const wrap = (v: unknown) => (v === 'no' || v === 'tile' ? v : 'reflect');
-			const wx = wrap(fx.params.wrapX);
-			const wy = wrap(fx.params.wrapY);
-			if (wx === 'tile' || wy === 'tile') throw new Error(`lowered layer ${c.clipId}: S_Shake Tile wrap`);
-			const far = 1e7;
-			const rect: [number, number, number, number] =
-				wx === 'no' && wy === 'no'
-					? canvas
-					: [
-							wx === 'reflect' ? -far : 0,
-							wy === 'reflect' ? -far : 0,
-							wx === 'reflect' ? far : box.width,
-							wy === 'reflect' ? far : box.height,
-						];
 			taps = taps.map((tap) => {
 				const map = composeAffine(sh, tap.map);
-				return { w: tap.w, map, stages: [...tap.stages, { map, rect }] };
+				return { w: tap.w, map, stages: [...tap.stages, { map, rect: canvas }] };
 			});
 		} else throw new Error(`lowered layer ${c.clipId}: ${fx.effectId} cannot be lowered`);
 	}
@@ -314,7 +305,7 @@ export function loweredLayerTaps(o: {
  * or with motion blur the shader's taps (`fx_mbTap` at the strata centres through `u_mbWarp`, poses `fx_mbPose`
  * interpolated linearly between the `u_mbKeys`, weight `t.y × clamp(opacity / 100)`).
  */
-function transformPoses(
+export function transformPoses(
 	u: Record<string, unknown>,
 	opacityParam: number,
 ): { list: { inv: Affine6; w: number }[]; blurred: boolean; wsum: number } {

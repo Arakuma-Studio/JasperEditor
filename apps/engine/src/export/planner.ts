@@ -75,7 +75,7 @@ import {
 	outputFormatChanges,
 } from '../tools/encoders.ts';
 import {
-	adjustmentPadRefusal,
+	adjustmentPlanRefusal,
 	isKernelAdjustment,
 	isKernelEffect,
 	kernelAdjustmentRefusals,
@@ -626,9 +626,9 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	for (const c of visual) {
 		for (const reason of nativeBlockers(c, deps.capabilities, deps.extensions ?? [], deps.effects))
 			blockers.push({ itemId: c.clipId, path: 'native', reason });
-		// An S_Shake reflecting farther than the frame: the kernel's mirror padding cannot hold it (blend/adjust.ts).
+		// An effect canvas larger than the kernel draws (blend/adjust.ts).
 		if (isKernelAdjustment(c) && kernelAdjustmentRefusals(c).length === 0) {
-			const pad = adjustmentPadRefusal(c, snapshot.settings.fps);
+			const pad = adjustmentPlanRefusal(c, snapshot.settings.fps);
 			if (pad) blockers.push({ itemId: c.clipId, path: 'native', reason: pad });
 		}
 		const bakeEngine = (deps.extensions ?? []).map((e) => e.bakes?.(c) ?? null).find((x) => x !== null);
@@ -1672,7 +1672,7 @@ export function nativeBlockers(
 	// `nestBlockers` refuses them inside nested sequences.
 	const rb = retimeBlocker();
 	if (rb) out.push(rb);
-	// Transform / S_Shake on an adjustment layer: drawn on the composite by the multi-tap kernel (blend/adjust.ts).
+	// Geometric effects on an adjustment layer: run on the composite by the kernel's GL chain (blend/adjust.ts).
 	const adjustKernel = isKernelAdjustment(c);
 	if (adjustKernel) out.push(...kernelAdjustmentRefusals(c));
 	for (const fx of c.effects) {
@@ -1811,7 +1811,7 @@ function nestBlockers(snap: RenderSnapshot): { clipId: string; reason: string }[
 				if (isKernelAdjustment(x))
 					out.push({
 						clipId: x.clipId,
-						reason: `adjustment clip "${x.name}" inside nested sequence clip "${c.name}" uses Transform or S_Shake (native Transform / S_Shake adjustment layers apply to the sequence's own stack)`,
+						reason: `adjustment clip "${x.name}" inside nested sequence clip "${c.name}" has geometric effects (native geometric adjustment layers apply to the sequence's own stack)`,
 					});
 			}
 			out.push(...nestBlockers(sub));

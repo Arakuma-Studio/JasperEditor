@@ -121,8 +121,12 @@ async function still(d: DocBuilder, frame: number): Promise<{ img: Rgba8; path: 
 const reasons = (p: Awaited<ReturnType<typeof plan>>) => p.blockers.map((b) => b.reason).join('\n');
 
 describe.runIf(enabled)('S_Shake and Tint on adjustment layers (native)', () => {
-	it('keeps S19 (Reflect shake + keyframed Tint) native and names what it refuses', async () => {
+	it('keeps S19 (zoom, Reflect shake, keyframed Tint) native and names what it refuses', async () => {
+		// The S19 layer as it is now (ASSEMBLY_S49_S89): a Transform zoom first, then the shake and the Tint ramp.
 		const s19 = scene([
+			fx('jasper.transform', { anchorPoint: [0.5, 0.4], position: [0.5, 0.4] }, '$tf'),
+			key('$tf', 'scaleHeight', 10, 100),
+			key('$tf', 'scaleHeight', 29, 140),
 			fx('jasper.s.shake', S19_SHAKE, '$sh'),
 			fx('jasper.tint', { amountToTint: 0 }, '$ti'),
 			key('$ti', 'amountToTint', 0, 0),
@@ -134,11 +138,6 @@ describe.runIf(enabled)('S_Shake and Tint on adjustment layers (native)', () => 
 		const blurred = await plan(scene([fx('jasper.s.shake', { ...S19_SHAKE, motionBlur: true }, '$sh')]).d);
 		expect(blurred.path).not.toBe('native');
 		expect(reasons(blurred)).toMatch(/S_Shake motion blur/);
-		const reflectAndZoom = await plan(
-			scene([fx('jasper.s.shake', S19_SHAKE, '$sh'), fx('jasper.transform', { scaleHeight: 120 }, '$tf')]).d,
-		);
-		// The preview resamples after each effect; one kernel pass would resample once.
-		expect(reasons(reflectAndZoom)).toMatch(/has 2 Transform \/ S_Shake effects/);
 	}, 120_000);
 
 	it('draws a keyframed Tint of the composite below', async () => {

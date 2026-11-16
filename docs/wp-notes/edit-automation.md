@@ -372,11 +372,12 @@ caps the job fails `PROPOSAL_TOO_LARGE` with `{code: 'E_TOO_LARGE', fit, suggest
 suggests In to Out). A kit with a whoosh is 5 commands (batch adjustment, cue, place, 2 trims), so about 1 000 kits fit
 one proposal (≈ 55 min of long form at 17.9 cuts / min).
 
-Export cost class (dry run `summary.cost`): `native` for Motion keys (punch-ins, Ken Burns); `remotion` for kits and
-adjustment punch-ins — the export planner has no native or layer-bake route for an adjustment layer's shader effects
-(`nativeBlockers` names them: "adjustment clip … uses effect jasper.s.shake, which the native path cannot render"), so
-the whole export goes through the Remotion renderer (tested in `apps/engine/test/automation.test.ts`: kits → path
-`remotion` with the blocker; punch-ins + Ken Burns → `native`).
+Export cost class (dry run `summary.cost`): `native` for Motion keys (punch-ins, Ken Burns), adjustment punch-ins and
+the long-form kits — the export's adjustment kernel runs their geometric effects (edit-structure wp-note), and
+`adjustmentRemoteEffects` (render/adjustment-native.ts, the engine's effect list) estimates it; `remotion` for the
+Shorts shake kit (S_Shake with motion blur: the export planner names it and the whole export goes through the
+Remotion renderer). Tested in `apps/engine/test/automation.test.ts` (long-form kits → path `native`, as the dry run
+said; punch-ins + Ken Burns → `native`).
 
 ### Export cost of 100 kits (EA-033, measured)
 
@@ -471,8 +472,8 @@ default.
 
 ### Limits
 
-- Kits export through the Remotion path (whole export); a hybrid route that bakes only the kit spans of the composite
-  does not exist (the cost is in the export bench below).
+- The Shorts shake kit exports through the Remotion path (whole export: S_Shake motion blur has no native route); the
+  long-form kits are native (CPU kernel: dense kit frames cost seconds of CPU each, edit-structure wp-note).
 - The whoosh is cut to the kit's span with hard edges (like the user's slices of a compilation); no fade is added.
 - `sfx.media`: only the first 120 s of the media are searched for sounds; silent given slices are dropped (warned);
   the Decorate Cuts dialog in the editor does not offer the cut list, kit selection or whoosh media (agents only).
