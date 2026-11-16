@@ -19,8 +19,9 @@ export default async function audioRoutes(app: FastifyInstance): Promise<void> {
 		'/api/audio/analyze',
 		guarded<Wait>(async (req, reply) => {
 			const body = parseOr400(AudioAnalyzeRequestSchema, req.body);
-			const job = await svc.submitAnalysis(body);
-			return replyWithJob(core.queue, job, req.query.wait, reply, 'ANALYSIS_FAILED');
+			const { job, cached } = await svc.submitAnalysis(body);
+			// a kept measurement of the same mix finishes at once: answered finished even without wait
+			return replyWithJob(core.queue, job, cached ? '1' : req.query.wait, reply, 'ANALYSIS_FAILED');
 		}),
 	);
 

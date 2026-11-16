@@ -1,7 +1,9 @@
 // Audio analysis and loudness normalisation jobs (audio-mix).
 // * `analysis` jobs (`POST /api/audio/analyze`): BS.1770-4 / R128 loudness, sample and true peak of a sequence, a
 //   range, soloed tracks or single clips, rendered by the offline mixer (`renderMixdown`, the export's mixer), plus
-//   the activity regions of the measured audio for auto-ducking.
+//   the activity regions of the measured audio for auto-ducking. A job with progress (frames mixed of the range) and
+//   cancellation; its result is kept by the content of what it mixes (`analysisKey`), so the same measurement of an
+//   unchanged mix answers at once, and a request repeated while one runs joins that job (its dedupe key).
 // * `analysis` jobs too (`POST /api/media/:key/loudness-normalize`): a loudness-normalised version of a media's audio
 //   stream (two-pass: measure, then gain + look-ahead true-peak limiter), written as a 24-bit WAV and registered as a
 //   derived media (the client commits `media.derive {recipe: {op: 'loudness-normalize'}}`).
@@ -47,6 +49,13 @@ import { layoutOf, type MixdownResult, renderMixdown } from './mixdown.ts';
 import { publishNormalizedAudio } from './publish.ts';
 
 export const LOUDNESS_RECIPE_VERSION = 1;
+
+/** Bump when an analysis of the same mix would measure differently (results kept under older keys are not reused). */
+const ANALYSIS_VERSION = 1;
+/** Analysis results kept per engine (most recently used). */
+const MAX_KEPT_ANALYSES = 64;
+/** The mixer's stage while it mixes (`renderPass1`); the analysis adds the frames mixed. */
+const MIXING_STAGE = 'Mixing audio';
 
 /** A summary as the API's nullable measure. */
 export function measureOf(s: LoudnessSummary, durationSec: number): LoudnessMeasure {
@@ -119,8 +128,17 @@ export class ActivityEnvelope {
 	}
 }
 
+type AnalysisInput = { request: AudioAnalyzeRequest; result?: AudioAnalyzeResult };
+
 export class AudioService {
-	constructor(private readonly core: CoreServices) {}
+	/** Finished analyses by `analysisKey`, most recently used last. */
+	private readonly kept = new Map<string, AudioAnalyzeResult>();
+
+	constructor(
+		private readonly core: CoreServices,
+		/** The offline mixer (the export's). */
+		private readonly mix: typeof renderMixdown = renderMixdown,
+	) {}
 
 	registerRunners(): void {
 		// One runner for both: loudness normalisation jobs carry `loudnessNormalize` in their input.
@@ -131,24 +149,77 @@ export class AudioService {
 		);
 	}
 
-	/** Validates by planning (synchronous errors) and submits the job. */
+	/**
+	 * Validates by planning (synchronous errors) and submits the job. `cached`: the same measurement of the same mix is
+	 * kept — the job takes no CPU slot and finishes at once with it.
+	 */
 	async submitAnalysis(
 		req: AudioAnalyzeRequest,
 		origin: EngineJob['origin'] = { type: 'user' },
-	): Promise<EngineJob> {
-		await this.plan(req); // PlanErrors surface synchronously
+	): Promise<{ job: EngineJob; cached: boolean }> {
+		const planned = await this.plan(req); // PlanErrors surface synchronously
+		const key = this.analysisKey(planned, req);
+		const kept = this.kept.get(key);
+		if (kept) {
+			this.kept.delete(key);
+			this.kept.set(key, kept);
+		}
 		const doc = req.envelope.document as { projectId?: string };
 		const projectId = req.projectId ?? (typeof doc.projectId === 'string' ? doc.projectId : undefined);
-		return this.core.queue.submit({
+		const input: AnalysisInput = {
+			request: req,
+			// the document's own fingerprint (an analysis stored with it is current for this document)
+			...(kept ? { result: { ...kept, mixHash: mixFingerprint(planned.document, planned.sequenceId) } } : {}),
+		};
+		const job = this.core.queue.submit({
 			kind: 'analysis',
 			title: `Analyze audio – ${req.scope.type}`,
 			priority: 'interactive',
-			cpuSlots: 1,
-			minSlots: 1,
+			cpuSlots: kept ? 0 : 1,
+			minSlots: kept ? 0 : 1,
 			origin,
 			...(projectId ? { projectId } : {}),
-			input: { request: req },
+			// the same measurement of the same mix while it runs: that job (a slow mix is never rendered twice at once)
+			...(kept ? {} : { dedupeKey: `analysis:${key}` }),
+			input,
 		});
+		return { job, cached: !!kept };
+	}
+
+	/**
+	 * The content key of an analysis: what the offline mixer plays (the snapshot's mixer graph without the Mix
+	 * normalisation — measured without it — and its audio clips, each medium by its fingerprint), the planned range and
+	 * what is measured (scope, levels, activity, delivery target). Entity ids stay as they are: a scope names clips and
+	 * tracks by id.
+	 */
+	private analysisKey(planned: PlannedExport, req: AudioAnalyzeRequest): string {
+		const snap = planned.snapshot;
+		const fp = (id: string) => planned.media[id]?.record.fingerprint ?? null;
+		const scope =
+			req.scope.type === 'tracks'
+				? { ...req.scope, trackIds: req.scope.trackIds.map((r) => this.trackId(planned, r) ?? r) }
+				: req.scope;
+		return createHash('sha256')
+			.update(
+				JSON.stringify({
+					v: ANALYSIS_VERSION,
+					mix: snap.audioMix ? { ...snap.audioMix, loudness: null } : null,
+					clips: snap.audioClips.map((c) => ({ ...c, fp: fp(c.mediaId) })),
+					fps: snap.settings.fps,
+					range: planned.range,
+					scope,
+					levels: req.levels ?? 'mix',
+					activity: req.activity ?? null,
+					delivery: this.deliveryTarget(planned, req),
+				}),
+			)
+			.digest('hex');
+	}
+
+	private keep(key: string, result: AudioAnalyzeResult): void {
+		this.kept.delete(key);
+		this.kept.set(key, result);
+		while (this.kept.size > MAX_KEPT_ANALYSES) this.kept.delete(this.kept.keys().next().value!);
 	}
 
 	private async plan(req: AudioAnalyzeRequest): Promise<PlannedExport> {
@@ -200,7 +271,9 @@ export class AudioService {
 	}
 
 	private async runAnalysis(ctx: JobContext): Promise<AudioAnalyzeResult> {
-		const req = (ctx.input as { request: AudioAnalyzeRequest }).request;
+		const input = ctx.input as AnalysisInput;
+		if (input.result) return input.result;
+		const req = input.request;
 		let planned: PlannedExport;
 		try {
 			planned = await this.plan(req);
@@ -208,6 +281,16 @@ export class AudioService {
 			if (e instanceof PlanError) throw new JobError(e.code, e.message, false, e.detail);
 			throw e;
 		}
+		const result = await this.measure(ctx, req, planned);
+		if (!ctx.signal.aborted) this.keep(this.analysisKey(planned, req), result);
+		return result;
+	}
+
+	private async measure(
+		ctx: JobContext,
+		req: AudioAnalyzeRequest,
+		planned: PlannedExport,
+	): Promise<AudioAnalyzeResult> {
 		const snap = planned.snapshot;
 		const sr = snap.audioMix?.sampleRate ?? 48000;
 		const fps = snap.settings.fps;
@@ -240,7 +323,7 @@ export class AudioService {
 			const levels = req.levels ?? 'mix';
 			for (const [i, c] of found.entries()) {
 				ctx.progress(i / (found.length + 1), { stage: `Measuring clip ${i + 1}/${found.length}` });
-				const r = await renderMixdown({
+				const r = await this.mix({
 					...base,
 					range: { start: c.start, end: c.start + c.duration },
 					onlyClips: new Set([c.clipId]),
@@ -254,7 +337,7 @@ export class AudioService {
 			const end = req.activity?.endFrame ?? Math.max(...found.map((c) => c.start + c.duration));
 			range = { start, end: Math.max(start + 1, end) };
 			ctx.progress(found.length / (found.length + 1), { stage: 'Measuring the clips together' });
-			mix = await renderMixdown({
+			mix = await this.mix({
 				...base,
 				range,
 				onlyClips: wanted,
@@ -272,13 +355,26 @@ export class AudioService {
 			// the whole sequence: also the export's converged delivery for the target (the preview plays its gain)
 			const deliveryTarget =
 				scope.type === 'sequence' && range === planned.range ? this.deliveryTarget(planned, req) : null;
-			mix = await renderMixdown({
+			// progress: the frames of the range mixed so far (a slow effect chain mixes slower than real time)
+			const frames = Math.max(0, range.end - range.start);
+			const samples = Math.max(1, frameToSample(range.end, fps, sr) - frameToSample(range.start, fps, sr));
+			let mixed = 0;
+			mix = await this.mix({
 				...base,
 				range,
 				...(scope.type === 'tracks' ? { onlyTracks: new Set(this.trackIds(planned, scope.trackIds)) } : {}),
-				...(env ? { onBlock: (p: Float32Array[], n: number) => env.push(p, n) } : {}),
+				onBlock: (p: Float32Array[], n: number) => {
+					env?.push(p, n);
+					mixed += n;
+				},
 				...(deliveryTarget ? { normalize: deliveryTarget } : {}),
-				onProgress: (f, stage) => ctx.progress(f * 0.95, { stage }),
+				onProgress: (f, stage) =>
+					ctx.progress(f * 0.95, {
+						stage:
+							stage === MIXING_STAGE
+								? `${MIXING_STAGE}: frame ${Math.min(frames, Math.floor((mixed / samples) * frames))} of ${frames}`
+								: stage,
+					}),
 			});
 		}
 		let activity: AudioAnalyzeResult['activity'];
@@ -375,7 +471,7 @@ export class AudioService {
 		let acc = 0;
 		const lufs: (number | null)[] = [];
 		const MAX_POINTS = 2_000_000;
-		await renderMixdown({
+		await this.mix({
 			ff: this.core.ffmpeg,
 			snapshot: snap,
 			media: this.media(planned),
@@ -421,13 +517,20 @@ export class AudioService {
 	}
 
 	private trackIds(planned: PlannedExport, refs: string[]): string[] {
-		const seq = planned.document.sequences[planned.sequenceId]!;
 		return refs.map((r) => {
-			const m = /^A(\d+)$/i.exec(r);
-			const id = m ? seq.audioTracks[Number(m[1]) - 1]?.id : seq.audioTracks.find((t) => t.id === r)?.id;
+			const id = this.trackId(planned, r);
 			if (!id) throw new JobError('NOT_FOUND', `Audio track not found: ${r}`, false);
 			return id;
 		});
+	}
+
+	/** An audio track's id by label ("A1") or id; null when the sequence has none such. */
+	private trackId(planned: PlannedExport, ref: string): string | null {
+		const seq = planned.document.sequences[planned.sequenceId]!;
+		const m = /^A(\d+)$/i.exec(ref);
+		return (
+			(m ? seq.audioTracks[Number(m[1]) - 1]?.id : seq.audioTracks.find((t) => t.id === ref)?.id) ?? null
+		);
 	}
 
 	submitNormalize(mediaKey: string, req: LoudnessNormalizeRequest): EngineJob {

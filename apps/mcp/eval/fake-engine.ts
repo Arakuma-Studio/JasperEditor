@@ -123,6 +123,11 @@ export type EngineSetup = {
 	 * `{{pendingJob}}` (the job a timed-out `transcribe` named).
 	 */
 	pendingTranscription?: { polls: number };
+	/**
+	 * Job reads an audio analysis takes (a long mix through slow effects); a request that waits for it (`wait=1`) is cut
+	 * off like the 180 s engine request deadline.
+	 */
+	analysisPolls?: number;
 	/** What an export's verification finds. */
 	verify?: { failRow?: string };
 	/** A finished export of the project wrote this path in an earlier session (its job id is not in the chat). */
@@ -1317,12 +1322,15 @@ export function createFakeEngine(
 				}),
 			);
 		},
-		analyzeAudio: () =>
-			jobView(
+		analyzeAudio: (_req: unknown, wait?: boolean) => {
+			const polls = setup.analysisPolls ?? 0;
+			if (wait && polls > 0)
+				throw new EngineRequestAborted('timeout', 'The engine did not answer within 180 s');
+			return jobView(
 				newJob(
 					'audio-analyze',
 					'Measure loudness',
-					0,
+					polls,
 					AudioAnalyzeResultSchema.parse({
 						sampleRate: 48000,
 						range: { startFrame: 0, endFrame: 1200 },
@@ -1330,7 +1338,8 @@ export function createFakeEngine(
 						mixHash: 'mix_1',
 					}),
 				),
-			),
+			);
+		},
 		verifyExport: (exportId: string, req: { checks?: 'fast' | 'full'; target?: string } = {}) =>
 			jobView(newJob('export-verify', 'Verify', 1, verifyResult(exportId, req.checks ?? 'full', req.target))),
 		requestStill: () => jobView(newJob('still', 'Still', 1, { url: '/stills/1.png' })),
