@@ -152,7 +152,14 @@ time, `clipContentTime` = held only with Hold Filters. Freeze handles: `freezeHe
   video + a still overlay, H.264 1280×720; Ryzen 9 5900X 24 threads / 94 GB / RTX 3080 Ti, the engine at nice 19 and
   idle I/O beside the user's own processes). The S5 punch-in at 1037–1095 (load 5–17): before (44f7518bb, Remotion
   path) 151 s and 138 s, after (native) 43.1 s and 45.1 s. `BENCH_CASE=s19` without the zoom (load 5–16): before
-  (ec093bea2, Remotion) 300.9 s and 324.2 s, after 60.5 s and 59.8 s. KITS_AND_S19_TIMES
+  (ec093bea2, Remotion) 300.9 s and 324.2 s, after 60.5 s and 59.8 s. Transition kits (`BENCH_CASE=kits`, every run
+  started with no ffmpeg on the machine, at load 4–7 except one, load up to 26 during the runs): 9000 frames with a
+  cut every 300 (29 kits: Jolt 11, Whip 7, Zoom blur 4, Spin 4, Zoom through 3, ≈ 10 % of the frames, the main
+  project's density): before (dcdf40c74, Remotion path) 458.4 s, after (native) 246.5 s; 1880 frames with a cut every
+  60 (31 kits, ≈ 37 % of the frames): before 118 s, after 179.1 s (started at load 17) and 179 s — slower than
+  Remotion, the CPU kernel's shutter taps dominate (a Zoom blur or Spin frame with 64 taps ≈ 4 s of one core). S19 as
+  it is now (`BENCH_CASE=s19`: the zoom first, then shake and Tint; started at load 23 and 18): before 113.6 s
+  (Remotion), after 44.4 s.
 - Frame holds (video, animated image, motion-graphic masters, layer overrides): seek to the held time, one frame
   looped. Freeze handles: the source is built for the real frames, then `tpad … clone`.
 - Synthetics (`synthetic.ts` extension, always registered): bars → PNG (`still` layer override), leader → PNG-in-MOV
