@@ -164,9 +164,17 @@ Commands: `status`, `projects`, `describe [name…] [--full]` (no name: the comm
 both prints both, with a note on stderr; neither is `E_NOT_FOUND`, resolved without the engine),
 `exec <type> k=v… | '<json>'`, `run <file.jsonl|->`, `get <path>`, `set <path> <value>`, `props <clip>`,
 `inspect [seq]`, `import <file…>`, `render-frame --at --out
-[--width]`, `export --out [--preset --range --engine]`, `query <name> k=v…`, `ui <action> k=v…`, `tools`, `call
+[--width | --full]` (`--width` ≤ 1280 through `render_frame`, whose image comes back inline and so stays small;
+`--full` writes the sequence's full size through `export_frame` — never proxies, format by extension — into the
+output's folder under a temporary name and renames it over `--out`, so it needs the engine on this machine), `export
+--out [--preset --range --engine]`, `query <name> k=v…`, `ui <action> k=v…`, `tools`, `call
 <tool> k=v… [--out f.png]` (`--out` writes every image the tool returns: one to the path, several — e.g. the
-previews of an `add_motion_graphic {dryRun, preview}` batch — to `f-0.png`, `f-1.png`… in result order). It runs the very same tools in process (`createJasperMcpServer` + an in-memory MCP client), so the
+previews of an `add_motion_graphic {dryRun, preview}` batch — to `f-0.png`, `f-1.png`… in result order; without
+`--out` they go to temporary files; the printed JSON lists the paths in `images`, so no image is dropped). `call`'s
+stdout is always one JSON document: a failure prints `{"ok": false, "error"}` there too (with or without `--json`;
+the human line stays on stderr), a tool error whose text is not JSON becomes `{"error": {"code": "E_FAILED",
+"message"}}`, and the `jasper` bin sends dependency `console.log` to stderr like `jasper-mcp`. An MCP tool name given
+as a command (`jasper render_frame`) answers with the command (`render-frame`) and `jasper call render_frame`. It runs the very same tools in process (`createJasperMcpServer` + an in-memory MCP client), so the
 CLI, MCP and HTTP behave identically (strict arguments, live editor targeting, approvals, progress on stderr,
 Ctrl+C = MCP cancellation → the export is cancelled and its file deleted). Project: `--project <id|name>`,
 `JASPER_PROJECT`, the project open in an editor window, or the only project. `--json` = one JSON document per

@@ -1,10 +1,20 @@
 // Lumetri ▸ Basic Correction ▸ Auto (color-grade): sets Exposure, Contrast, Highlights, Shadows, Whites, Blacks and
 // Saturation from the frame, as Premiere's Auto Tone does (helpx "Basic Correction ▸ Tone ▸ Auto": "Premiere Pro
 // sets the slider values to optimize the image"; the algorithm is undocumented). Ours is explicit and repeatable:
-// the luma distribution of the clip's picture before Lumetri is pushed towards a well-exposed target — a black point
-// near 2 %, a white point near 98 %, the median near 42 % — by a damped least-squares solve through the real
-// Lumetri maths (like Colour Match), so the result is ordinary, editable slider values. Saturation is reported but
-// left alone (raising it on a deliberately muted frame would fight the grade).
+// five luma quantiles of the clip's picture before Lumetri (1, 10, 50, 90, 99 %) are pushed towards targets by a
+// damped least-squares solve through the real Lumetri maths (like Colour Match), so the result is ordinary, editable
+// slider values. Saturation is reported but left alone (raising it on a deliberately muted frame would fight the grade).
+//
+// The targets start from the frame (`autoToneTargets`), so a correct exposure is kept rather than pulled to one fixed
+// look. Our own choices (no published reference; assumptions, checked on synthetic frames in color-match.test.ts):
+// - mid-tones: "balance" keeps a median inside 42–62 % (well exposed, bright interiors included) and only lifts a
+//   darker one to 42 % or lowers a brighter one to 62 %; "brighten" lifts it 10 points (to at least 50 %, at most
+//   66 %) and never lowers it;
+// - black point and shadows: a frame without blacks gets them halfway to 2 % / 20 % (a deliberately airy frame keeps
+//   some of its look; a black point forced to 2 % crushed it), a frame with blacks keeps them (never lifted);
+// - white point and highlights: up to 98 % / 80 % when the frame is dim, never pulled down when windows, screens or
+//   sky already reach them (a fixed 98 % white target used to darken such frames); only an over-bright frame's
+//   highlights follow its mid-tones down.
 import type { EffectParams } from '../registry/effects.ts';
 import { luma709 } from './grade-math.ts';
 import { cropLetterbox, gradeMatchImage, type MatchImage, shrinkMatchImage } from './match.ts';
@@ -22,9 +32,26 @@ export type AutoToneResult = {
 	after: number[];
 };
 
-/** Quantiles of the target distribution (p1, p10, p50, p90, p99). */
-const TARGET = [0.02, 0.1, 0.42, 0.8, 0.98];
+/** What Auto aims for: "balance" (default) keeps a good exposure; "brighten" also lifts the mid-tones. */
+export const AUTO_TONE_INTENTS = ['balance', 'brighten'] as const;
+export type AutoToneIntent = (typeof AUTO_TONE_INTENTS)[number];
+
 const Q = [0.01, 0.1, 0.5, 0.9, 0.99];
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+/** Target quantiles (p1, p10, p50, p90, p99) for a frame whose quantiles are `q` (header comment). */
+export function autoToneTargets(q: readonly number[], intent: AutoToneIntent = 'balance'): number[] {
+	const [p1 = 0, p10 = 0, p50 = 0, p90 = 0, p99 = 0] = q;
+	const med = intent === 'brighten' ? Math.max(p50, clamp(p50 + 0.1, 0.5, 0.66)) : clamp(p50, 0.42, 0.62);
+	const lift = Math.max(0, med - p50);
+	const drop = Math.min(0, med - p50);
+	// Lifted shadows move halfway at most: a hazy or airy frame gets depth without its blacks being crushed.
+	const t1 = p1 <= 0.02 ? p1 : Math.max(0.02, p1 / 2);
+	const t10 = clamp(p10 + 0.25 * lift, 0.06, Math.max(0.2, p10 * 0.6));
+	const t90 = Math.max(0.8, med + 0.1, Math.min(1, p90 + drop));
+	const t99 = Math.max(0.98, t90, Math.min(1, p99 + drop));
+	return [t1, Math.max(t1, t10), med, t90, t99];
+}
 
 function quantiles(img: MatchImage): number[] {
 	const n = img.w * img.h;
@@ -63,15 +90,22 @@ function toneParams(base: EffectParams, x: readonly number[], saturation: number
  * Auto tone of `image` (the clip's picture before its Lumetri instance, display-encoded). `base` = the instance's
  * params (everything else is kept; the tone sliders start from 0 like Premiere's Auto).
  */
-export function autoTone(image: MatchImage, base: EffectParams = {}): AutoToneResult {
+export function autoTone(
+	image: MatchImage,
+	base: EffectParams = {},
+	opts: { intent?: AutoToneIntent } = {},
+): AutoToneResult {
 	const img = shrinkMatchImage(cropLetterbox(image), 128);
 	const N = 6;
 	const lambda = 0.05;
 	let x = new Array<number>(N).fill(0);
 	const sat0 = typeof base.saturation === 'number' ? base.saturation : 100;
+	const before = quantiles(gradeMatchImage(img, toneParams(base, x, sat0)));
+	const target = autoToneTargets(before, opts.intent);
+	// The median weighs most: the mid-tone exposure is what a viewer reads as too dark or too bright.
 	const resid = (xs: readonly number[]) => {
 		const q = quantiles(gradeMatchImage(img, toneParams(base, xs, sat0)));
-		return q.map((v, i) => (v - TARGET[i]!) * (i === 2 ? 1.5 : 1));
+		return q.map((v, i) => (v - target[i]!) * (i === 2 ? 2 : 1));
 	};
 	const cost = (xs: readonly number[]): [number[], number] => {
 		const r = resid(xs);
@@ -81,7 +115,6 @@ export function autoTone(image: MatchImage, base: EffectParams = {}): AutoToneRe
 		return [r, c];
 	};
 	let [r, c] = cost(x);
-	const before = quantiles(gradeMatchImage(img, toneParams(base, x, sat0)));
 	let mu = 1e-2;
 	for (let it = 0; it < 15; it++) {
 		const h = 1e-2;

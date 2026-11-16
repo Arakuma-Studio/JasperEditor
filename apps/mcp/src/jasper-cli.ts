@@ -4,8 +4,10 @@
 // edits go to the open editor window live when the project is open there (one `Agent: …` History entry).
 //
 // Exit status: 0 ok, 1 the command failed, 2 usage error. --json prints one JSON document per result line.
-import { readFileSync, writeFileSync } from 'node:fs';
-import { extname, isAbsolute, resolve } from 'node:path';
+import { randomBytes } from 'node:crypto';
+import { readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { basename, dirname, extname, isAbsolute, join, resolve } from 'node:path';
 import { AgentQueryNameSchema } from '@jasper/api';
 import { isCommandType } from '@jasper/project';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -38,8 +40,10 @@ Commands:
   props <clipId>                      every property of a clip: value, evaluated, keyframes, target
   inspect [sequenceId]                the timeline table (--json: the sequence summary)
   import <file…>                      import media files (absolute or relative paths)
-  render-frame --at <time> --out <file.png> [--width N]
-                                      render the Program output at a time to a PNG
+  render-frame --at <time> --out <file.png> [--width N | --full]
+                                      render the Program output at a time to a PNG (--width at most 1280,
+                                      default 640); --full: the sequence's full size through export_frame
+                                      (png, jpg, tif, exr, dpx, bmp or tga by the extension)
   export --out <file> [--preset ID] [--range from..to] [--engine auto|native|remotion] [--overwrite]
                                       export and wait (progress on stderr; Ctrl+C cancels and deletes the file);
                                       an existing file is kept (" (2)" is appended) unless --overwrite
@@ -48,8 +52,9 @@ Commands:
                                       click, drag, scroll, key, type, set, locate, hit, commands, command
   tools                               list every MCP tool
   call <tool> [k=v… | '<json>'] [--out f.png]
-                                      call any MCP tool; --out writes the images it returns
-                                      (several: f-0.png, f-1.png… in result order)
+                                      call any MCP tool; prints its JSON result (a failure: {"ok": false,
+                                      "error"}). Images it returns are written to --out (several: f-0.png,
+                                      f-1.png… in result order) or to temporary files; "images" lists the paths
   apply <scene.yaml|.json> [--dry-run]
                                       make a sequence match a scene file: only what differs, one undo step
                                       (applying it again changes nothing)
@@ -217,6 +222,12 @@ function jsonOf(r: CallToolResult): unknown {
 		return t;
 	}
 }
+/** A failure body as `{error: {code, message}, …}`, also when a tool's text is not JSON or holds no `error`. */
+function failureBody(body: unknown): { error?: { code?: string; message?: string; hint?: string } } {
+	if (body && typeof body === 'object' && !Array.isArray(body) && 'error' in body)
+		return body as { error?: { code?: string; message?: string; hint?: string } };
+	return { error: { code: 'E_FAILED', message: typeof body === 'string' ? body : JSON.stringify(body) } };
+}
 function imageOf(r: CallToolResult): Buffer | null {
 	const img = r.content.find((c) => c.type === 'image') as { data?: string } | undefined;
 	return img?.data ? Buffer.from(img.data, 'base64') : null;
@@ -349,6 +360,85 @@ function paramTarget(path: string): string[] | null {
 
 function needArgs(pos: readonly string[], n: number, usage: string) {
 	if (pos.length < n) throw new UsageError(`Usage: jasper ${usage}`);
+}
+
+/** render_frame's widest inline image (its schema's maximum). */
+const MAX_INLINE_WIDTH = 1280;
+
+const IMAGE_EXT: Record<string, string> = {
+	'image/png': '.png',
+	'image/jpeg': '.jpg',
+	'image/webp': '.webp',
+};
+
+/** `call` without --out: each image of the result in its own temporary file (the paths, in result order). */
+function tempImages(r: CallToolResult, toolName: string): string[] {
+	const stem = join(tmpdir(), `jasper-${toolName}-${randomBytes(4).toString('hex')}`);
+	return r.content.flatMap((c, i) => {
+		if (c.type !== 'image' || !c.data) return [];
+		const path = `${stem}-${i}${IMAGE_EXT[c.mimeType] ?? '.png'}`;
+		writeFileSync(path, Buffer.from(c.data, 'base64'));
+		return [path];
+	});
+}
+
+/** export_frame formats by file extension (`render-frame --full`). */
+const STILL_FORMATS: Record<string, string> = {
+	'.png': 'png',
+	'.jpg': 'jpeg',
+	'.jpeg': 'jpeg',
+	'.tif': 'tiff',
+	'.tiff': 'tiff',
+	'.exr': 'exr',
+	'.dpx': 'dpx',
+	'.bmp': 'bmp',
+	'.tga': 'tga',
+};
+
+/**
+ * `render-frame --full`: export_frame (full resolution, never proxies) into the output's folder under a temporary
+ * name, then renamed over `out`, so --out replaces the file as the inline render does. The engine writes the file, so
+ * it has to run on this machine (as for `import` and `export --out`).
+ */
+async function fullFrame(c: Ctx, out: string): Promise<void> {
+	const ext = extname(out).toLowerCase();
+	const format = STILL_FORMATS[ext];
+	if (!format)
+		throw new UsageError(`--full writes ${Object.keys(STILL_FORMATS).join(', ')} files, not "${ext || out}"`);
+	const r = await tool(
+		c,
+		'export_frame',
+		{
+			projectId: await c.projectId(),
+			at: timeValue(c.flags.at as string),
+			folder: dirname(out),
+			name: `.${basename(out, extname(out))}.jasper-${randomBytes(4).toString('hex')}`,
+			format,
+			...(typeof c.flags.sequence === 'string' ? { sequenceId: c.flags.sequence } : {}),
+		},
+		true,
+	);
+	const body = jsonOf(r) as { path?: string; frame?: number; timecode?: string; format?: string };
+	if (!body.path)
+		throw new CommandFailed({ error: { code: 'INTERNAL', message: 'export_frame wrote no file' } });
+	try {
+		renameSync(body.path, out);
+	} catch (e) {
+		rmSync(body.path, { force: true });
+		throw new CommandFailed({
+			error: {
+				code: 'E_OUTPUT',
+				message: `The frame was written to ${body.path} but could not be moved to ${out}: ${(e as Error).message}`,
+				hint: '--full needs the engine on this machine; otherwise use --width (at most 1280).',
+			},
+		});
+	}
+	const bytes = statSync(out).size;
+	emit(
+		c,
+		{ frame: body.frame, timecode: body.timecode, format: body.format, out, bytes },
+		`wrote ${out} (${bytes} bytes)`,
+	);
 }
 
 const COMMANDS: Record<string, (c: Ctx, args: string[]) => Promise<void>> = {
@@ -554,9 +644,18 @@ const COMMANDS: Record<string, (c: Ctx, args: string[]) => Promise<void>> = {
 	},
 	async 'render-frame'(c) {
 		if (typeof c.flags.at !== 'string' || typeof c.flags.out !== 'string')
-			throw new UsageError('Usage: jasper render-frame --at <time> --out <file.png> [--width N]');
+			throw new UsageError('Usage: jasper render-frame --at <time> --out <file.png> [--width N | --full]');
 		const width = typeof c.flags.width === 'string' ? Number(c.flags.width) : undefined;
 		if (width !== undefined && !Number.isInteger(width)) throw new UsageError('--width must be an integer');
+		if (c.flags.full) {
+			if (width !== undefined) throw new UsageError('--full renders the sequence size; leave out --width');
+			return fullFrame(c, resolve(c.cwd, c.flags.out));
+		}
+		// render_frame returns its image inline, so it stays small; a full-size file is export_frame's (--full)
+		if (width !== undefined && width > MAX_INLINE_WIDTH)
+			throw new UsageError(
+				`--width is at most ${MAX_INLINE_WIDTH}; --full writes the frame at the sequence's full size`,
+			);
 		const r = await tool(
 			c,
 			'render_frame',
@@ -666,9 +765,20 @@ const COMMANDS: Record<string, (c: Ctx, args: string[]) => Promise<void>> = {
 			params.timeoutSeconds = typeof wait.maximum === 'number' ? Math.min(sec, wait.maximum) : sec;
 		}
 		const r = await tool(c, args[0]!, params, true);
-		if (typeof c.flags.out === 'string')
-			for (const path of writeToolImages(r, resolve(c.cwd, c.flags.out))) c.out.stderr(`wrote ${path}\n`);
-		emit(c, jsonOf(r));
+		// images never vanish from a result printed as JSON: --out, else temporary files; "images" names them
+		const images =
+			typeof c.flags.out === 'string'
+				? writeToolImages(r, resolve(c.cwd, c.flags.out))
+				: tempImages(r, args[0]!);
+		for (const path of images) c.out.stderr(`wrote ${path}\n`);
+		const body = jsonOf(r);
+		if (!images.length) return emit(c, body);
+		emit(
+			c,
+			body && typeof body === 'object' && !Array.isArray(body)
+				? { ...body, images }
+				: { result: body, images },
+		);
 	},
 	apply: (c, args) => applyScene(sceneCtx(c), args),
 	preview: (c, args) => previewScene(sceneCtx(c), args),
@@ -743,7 +853,14 @@ export async function runCli(
 	const [cmd, ...rest] = positional;
 	const run = COMMANDS[cmd!];
 	if (!run) {
-		io.stderr(`jasper: unknown command "${cmd}" (jasper --help lists them)\n`);
+		// an MCP tool name (render_frame) given as a command: name the command (render-frame) and `call`
+		const dashed = cmd!.replaceAll('_', '-');
+		const hint = cmd!.includes('_')
+			? `${COMMANDS[dashed] ? `the command is \`jasper ${dashed}\`; ` : ''}MCP tools run with \`jasper call ${cmd}\``
+			: 'jasper --help lists them';
+		const message = `unknown command "${cmd}" (${hint})`;
+		if (json) io.stdout(`${JSON.stringify({ ok: false, error: { code: 'E_USAGE', message } })}\n`);
+		io.stderr(`jasper: ${message}\n`);
 		return 2;
 	}
 	const env = io.env ?? process.env;
@@ -763,37 +880,42 @@ export async function runCli(
 			env,
 			log: (l) => io.stderr(`[jasper] ${l}\n`),
 		});
-	const s = await openSession(link, str('agent-name') ?? 'jasper-cli', io.stderr, io.signal);
+	let s: CliSession | null = null;
 	let projectId: string | null = null;
-	const ctx: Ctx = {
-		s,
-		flags,
-		out: io,
-		json,
-		cwd: io.cwd ?? process.cwd(),
-		...(io.signal ? { signal: io.signal } : {}),
-		projectId: async () => {
-			projectId ??= await resolveProject(s, str('project') ?? env.JASPER_PROJECT);
-			return projectId;
-		},
-		namedProject: !!(str('project') ?? env.JASPER_PROJECT),
-	};
+	// `call` prints a tool's JSON result, so its failures are JSON on stdout too (scripts parse stdout)
+	const jsonErrors = json || cmd === 'call';
 	try {
+		const session = await openSession(link, str('agent-name') ?? 'jasper-cli', io.stderr, io.signal);
+		s = session;
+		const ctx: Ctx = {
+			s: session,
+			flags,
+			out: io,
+			json,
+			cwd: io.cwd ?? process.cwd(),
+			...(io.signal ? { signal: io.signal } : {}),
+			projectId: async () => {
+				projectId ??= await resolveProject(session, str('project') ?? env.JASPER_PROJECT);
+				return projectId;
+			},
+			namedProject: !!(str('project') ?? env.JASPER_PROJECT),
+		};
 		await run(ctx, rest);
 		return 0;
 	} catch (e) {
 		if (e instanceof UsageError) {
-			if (json)
+			if (jsonErrors)
 				io.stdout(`${JSON.stringify({ ok: false, error: { code: 'E_USAGE', message: e.message } })}\n`);
 			io.stderr(`jasper: ${e.message}\n`);
 			return 2;
 		}
-		const body =
+		const body = failureBody(
 			e instanceof CommandFailed
 				? e.body
-				: { error: { code: (e as { code?: string }).code ?? 'INTERNAL', message: (e as Error).message } };
-		if (json) io.stdout(`${JSON.stringify({ ok: false, ...(body as object) })}\n`);
-		const err = (body as { error?: { code?: string; message?: string; hint?: string } }).error;
+				: { error: { code: (e as { code?: string }).code ?? 'INTERNAL', message: (e as Error).message } },
+		);
+		if (jsonErrors) io.stdout(`${JSON.stringify({ ok: false, ...body })}\n`);
+		const err = body.error;
 		io.stderr(
 			err
 				? `jasper: ${err.code ?? 'ERROR'}: ${err.message ?? ''}${err.hint ? `\n  hint: ${err.hint}` : ''}\n`
@@ -801,7 +923,7 @@ export async function runCli(
 		);
 		return 1;
 	} finally {
-		await s.close();
+		await s?.close();
 		if (!io.link) await link.close();
 	}
 }

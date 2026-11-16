@@ -1,6 +1,6 @@
 {
   "contexts": {
-    "core": 25788,
+    "core": 25893,
     "+project": 11910,
     "+media": 15917,
     "+processing": 6277,
@@ -9,7 +9,7 @@
     "+time": 6996,
     "+multicam": 11496,
     "+transitions": 6967,
-    "+color": 17181,
+    "+color": 17266,
     "+effects": 21241,
     "+keyframes": 20628,
     "+text": 29596,
@@ -27,7 +27,7 @@
     "+automation": 27587,
     "+export": 13017,
     "+ui": 13941,
-    "all": 508931
+    "all": 509121
   },
   "tool": 10493
 }
