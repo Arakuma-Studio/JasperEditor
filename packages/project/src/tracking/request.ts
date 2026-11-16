@@ -1,8 +1,11 @@
 // Planning a tracking job from the document (S09:TRK-010, TRK-024, TRU-001): which source frames of the plate's
 // media to track from which reference geometry, and how to merge the result. Shared by the UI and the MCP tools
 // so "Track Forward", "Track from Here", steps and agents build identical engine requests.
+import { evaluate } from '../keyframes.ts';
+import { type BezierPath, flattenPath, mapPath, type PathPoint } from '../path/model.ts';
+import { intrinsicBoxOf } from '../registry/properties.ts';
 import type { Quad } from '../render/homography.ts';
-import type { Vec2 } from '../schema/common.ts';
+import type { Animatable, Vec2 } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { MediaAsset } from '../schema/media.ts';
 import type { ClipTracker, TrackerSamples, VideoClip } from '../schema/sequence.ts';
@@ -155,6 +158,57 @@ export function planTrack(
 		},
 		merge,
 	};
+}
+
+/** Engine `options.holdout` entry: a polygon (media px) on one source frame, or on every frame without `frame`. */
+export type TrackHoldoutEntry = { frame?: number; polygon: Vec2[] };
+
+/** Most hold-out vertices one request may carry (the engine's limit). */
+export const TRACK_HOLDOUT_MAX_VERTICES = 500_000;
+
+/**
+ * Hold-out regions for a planar track from masks of the plate clip (S09 hold-out): each mask's outline at every
+ * source frame of the plan's range, in media px (a mask without Mask Path keys gives one entry for every frame). The
+ * outlines are the regions the tracker ignores, whatever the masks' mode; a mask in mode None changes nothing in the
+ * picture. Throws when a mask is not on the plate or the outlines exceed the engine's vertex limit.
+ */
+export function trackHoldout(
+	doc: ProjectDocument,
+	plan: TrackPlan,
+	maskIds: readonly string[],
+): TrackHoldoutEntry[] {
+	if (!maskIds.length) return [];
+	const seq = doc.sequences[plan.sequenceId];
+	const clip = seq?.clips[plan.clipId];
+	if (!seq || clip?.kind !== 'video') throw new Error('The tracked clip no longer exists');
+	const box = intrinsicBoxOf({ clip, doc, seq });
+	const toPx = (q: PathPoint): PathPoint => [q[0] * box.width, q[1] * box.height];
+	const outline = (path: BezierPath): Vec2[] =>
+		flattenPath({ closed: true, vertices: mapPath(path, toPx).vertices }, 1).pts.map(
+			(p) => [p[0], p[1]] as Vec2,
+		);
+	const out: TrackHoldoutEntry[] = [];
+	let vertices = 0;
+	const push = (e: TrackHoldoutEntry) => {
+		if (e.polygon.length < 3) return;
+		vertices += e.polygon.length;
+		if (vertices > TRACK_HOLDOUT_MAX_VERTICES)
+			throw new Error('The hold-out masks have too many points for this range; track a shorter range');
+		out.push(e);
+	};
+	for (const id of maskIds) {
+		const mask = clip.masks?.find((m) => m.id === id);
+		if (!mask) throw new Error('A hold-out mask is no longer on the tracked clip');
+		const anim = mask.path as Animatable<BezierPath>;
+		if (!anim.keyframes.length) {
+			push({ polygon: outline(anim.value) });
+			continue;
+		}
+		const { startFrame, endFrame } = plan.request.range;
+		for (let f = startFrame; f < endFrame; f++)
+			push({ frame: f, polygon: outline(evaluate(anim, f * plan.step)) });
+	}
+	return out;
 }
 
 /** A `track` job result (engine `TrackResult`, source frames) as document samples (content flicks). */

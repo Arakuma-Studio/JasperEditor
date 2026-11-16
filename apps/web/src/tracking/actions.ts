@@ -25,8 +25,10 @@ import {
 	samplesEnd,
 	samplesFromTrackResult,
 	sequenceFramesOfContent,
+	type TrackHoldoutEntry,
 	type TrackMode,
 	trackedTargets,
+	trackHoldout,
 	trackLayerOf,
 	type VideoClip,
 } from '@jasper/project';
@@ -180,6 +182,20 @@ export async function startTrack(
 	}
 	const mediaKey = mediaKeyOf(doc.media[plan.mediaId]);
 	if (!mediaKey) return fail('The plate’s media is not in the engine store (import it first)', trackerId);
+	let holdout: TrackHoldoutEntry[] = [];
+	if (loc.tracker.kind === 'planar') {
+		// Masks removed from the plate since they were picked are dropped silently.
+		const onPlate = new Set((loc.clip.masks ?? []).map((m) => m.id));
+		try {
+			holdout = trackHoldout(
+				doc,
+				plan,
+				opts.holdout.filter((id) => onPlate.has(id)),
+			);
+		} catch (e) {
+			return fail((e as Error).message, trackerId);
+		}
+	}
 	trackingStore.setState((s) => ({
 		running: {
 			...s.running,
@@ -196,6 +212,7 @@ export async function startTrack(
 					options: {
 						features: opts.surroundings ? ('surroundings' as const) : ('inside' as const),
 						refineEdges: opts.refineEdges,
+						...(holdout.length ? { holdout } : {}),
 					},
 				}
 			: {}),

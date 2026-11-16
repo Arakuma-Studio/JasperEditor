@@ -13839,5 +13839,8 @@
   "The page reads it as location.search.": "La página la lee como location.search.",
   "window.__duration": "window.__duration",
   "window.__ready": "window.__ready",
-  "window.__seek(t)": "window.__seek(t)"
+  "window.__seek(t)": "window.__seek(t)",
+  "Draw a mask on this clip (mode None) around what passes in front of the surface, then tick it here.": "Dibuja una máscara en este clip (modo Ninguno) alrededor de lo que pasa por delante de la superficie y márcala aquí.",
+  "Ignore {0}": "Ignorar {0}",
+  "The tracker ignores this mask's outline on every frame (hands or objects in front of the surface). Set the mask's mode to None so it does not cut the picture.": "El rastreador ignora el contorno de esta máscara en cada fotograma (manos u objetos delante de la superficie). Pon el modo de la máscara en Ninguno para que no recorte la imagen."
 }

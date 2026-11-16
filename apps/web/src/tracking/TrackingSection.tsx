@@ -4,6 +4,7 @@
 import {
 	type ClipTracker,
 	type CommandInput,
+	findTracker,
 	mediaFrameRate,
 	type Rational,
 	samplesSummary,
@@ -237,6 +238,7 @@ function TrackerControls({
 		const id = s.activeSequenceId;
 		return id ? s.document.sequences[id]?.clips : undefined;
 	});
+	const plateMasks = useSessionState((s) => findTracker(s.document, tracker.id)?.clip.masks);
 	const [smoothing, setSmoothing] = useState(tracker.smoothing ?? 0);
 	useEffect(() => setSmoothing(tracker.smoothing ?? 0), [tracker.smoothing]);
 	const busy = !!job;
@@ -333,6 +335,39 @@ function TrackerControls({
 								Snap to edges
 							</span>
 						</CheckboxField>
+					</div>
+				</Row>
+			) : null}
+			{tracker.kind === 'planar' ? (
+				<Row label="Ignore">
+					<div className="flex min-w-0 flex-col gap-[2px] py-[2px]" data-testid="tracking-holdout">
+						{plateMasks?.length ? (
+							plateMasks.map((m) => (
+								<CheckboxField
+									key={m.id}
+									label={`Ignore ${m.name}`}
+									value={opts.holdout.includes(m.id)}
+									onChange={(v) =>
+										setOptions(tracker.id, tracker.kind, {
+											holdout: v ? [...opts.holdout, m.id] : opts.holdout.filter((id) => id !== m.id),
+										})
+									}
+									disabled={busy}
+								>
+									<span
+										className="truncate"
+										title="The tracker ignores this mask's outline on every frame (hands or objects in front of the surface). Set the mask's mode to None so it does not cut the picture."
+									>
+										{m.name}
+									</span>
+								</CheckboxField>
+							))
+						) : (
+							<span className="text-pr-small text-pr-dim">
+								Draw a mask on this clip (mode None) around what passes in front of the surface, then tick it
+								here.
+							</span>
+						)}
 					</div>
 				</Row>
 			) : null}

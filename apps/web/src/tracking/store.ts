@@ -12,14 +12,22 @@ type TrackerOptions = {
 	surroundings: boolean;
 	/** Planar: snap the quad's sides to straight edges (engine `options.refineEdges`). */
 	refineEdges: boolean;
+	/** Planar: masks of the plate whose outlines the tracker ignores (engine `options.holdout`). */
+	holdout: readonly string[];
 };
 
 const DEFAULT_OPTIONS: TrackerOptions = {
 	quality: 'balanced',
 	surroundings: false,
 	refineEdges: true,
+	holdout: [],
 };
-const POINT_OPTIONS: TrackerOptions = { quality: 'balanced', surroundings: false, refineEdges: false };
+const POINT_OPTIONS: TrackerOptions = {
+	quality: 'balanced',
+	surroundings: false,
+	refineEdges: false,
+	holdout: [],
+};
 
 type LiveProgress = {
 	data: number[];

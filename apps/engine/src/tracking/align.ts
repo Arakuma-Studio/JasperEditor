@@ -179,19 +179,27 @@ export function alignBlur5(
 	w: number,
 	h: number,
 ): Float32Array {
-	const tmp = new Float32Array(w * (h + 4));
+	// Horizontal pass in integer arithmetic (×16), over 4 extra rows; clamped taps only at the window's edges.
+	const tmp = new Int32Array(w * (h + 4));
 	const cols = stride;
+	const cIn0 = Math.min(w, Math.max(0, 2 - x0));
+	const cIn1 = Math.max(cIn0, Math.min(w, cols - 2 - x0));
 	for (let r = -2; r < h + 2; r++) {
 		const sr = Math.min(rows - 1, Math.max(0, y0 + r)) * stride;
 		const o = (r + 2) * w;
 		for (let c = 0; c < w; c++) {
+			if (c === cIn0 && cIn1 > cIn0) {
+				let i = sr + x0 + c;
+				for (; c < cIn1; c++, i++)
+					tmp[o + c] = src[i - 2]! + src[i + 2]! + 4 * (src[i - 1]! + src[i + 1]!) + 6 * src[i]!;
+				if (c >= w) break;
+			}
 			const x = x0 + c;
-			const a = src[sr + Math.max(0, x - 2)]!;
-			const b = src[sr + Math.max(0, x - 1)]!;
-			const m = src[sr + x]!;
-			const d = src[sr + Math.min(cols - 1, x + 1)]!;
-			const e = src[sr + Math.min(cols - 1, x + 2)]!;
-			tmp[o + c] = (a + e + 4 * (b + d) + 6 * m) * 0.0625;
+			tmp[o + c] =
+				src[sr + Math.max(0, x - 2)]! +
+				src[sr + Math.min(cols - 1, x + 2)]! +
+				4 * (src[sr + Math.max(0, x - 1)]! + src[sr + Math.min(cols - 1, x + 1)]!) +
+				6 * src[sr + x]!;
 		}
 	}
 	const out = new Float32Array(w * h);
@@ -201,7 +209,7 @@ export function alignBlur5(
 		for (let c = 0; c < w; c++) {
 			const k = t0 + c;
 			out[o + c] =
-				(tmp[k]! + tmp[k + 4 * w]! + 4 * (tmp[k + w]! + tmp[k + 3 * w]!) + 6 * tmp[k + 2 * w]!) * 0.0625;
+				(tmp[k]! + tmp[k + 4 * w]! + 4 * (tmp[k + w]! + tmp[k + 3 * w]!) + 6 * tmp[k + 2 * w]!) * (1 / 256);
 		}
 	}
 	return out;
