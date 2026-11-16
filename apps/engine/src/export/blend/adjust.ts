@@ -31,7 +31,6 @@ const SHAKE = 'jasper.s.shake';
 const MIRROR = 'jasper.mirror';
 const REPLICATE = 'jasper.replicate';
 const OFFSET = 'jasper.offset';
-const DIRECTIONAL_BLUR = 'jasper.directional-blur';
 /** The effects the kernel draws on an adjustment layer (passes.ts; the list the automation cost estimate shares). */
 const KERNEL_EFFECTS = ADJUSTMENT_KERNEL_EFFECTS;
 /** Largest effect canvas side (box + padding) of the kernel. */
