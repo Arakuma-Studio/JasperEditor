@@ -375,8 +375,11 @@ one proposal (≈ 55 min of long form at 17.9 cuts / min).
 Export cost class (dry run `summary.cost`): `native` for Motion keys (punch-ins, Ken Burns); `remotion` for kits and
 adjustment punch-ins — the export planner has no native or layer-bake route for an adjustment layer's shader effects
 (`nativeBlockers` names them: "adjustment clip … uses effect jasper.s.shake, which the native path cannot render"), so
-the whole export goes through the Remotion renderer (tested in `apps/engine/test/automation.test.ts`: kits → path
-`remotion` with the blocker; punch-ins + Ken Burns → `native`).
+the kits' frames go through the Remotion renderer (tested in `apps/engine/test/automation.test.ts`: kits → Remotion
+segments with the blocker; punch-ins + Ken Burns → `native`). Since per-span routing
+([export-span-routing.md](export-span-routing.md)) an `auto` export of kits plans `hybrid` (only the kits' spans on
+Remotion) while the dry run still says `remotion`: Apply Style's "export route = dry run cost class" check
+(`apps/engine/test/apply-style.test.ts`) fails until the cost class follows the routing.
 
 ### Export cost of 100 kits (EA-033, measured)
 
@@ -607,6 +610,10 @@ are in `AUTOMATION_DEFAULTS`.
 - The loudness is measured when proposing (and on Refresh) by `AudioService.momentaryCurve`; a dry run reuses a
   measurement of the same mix (memory cache keyed by `mixFingerprint`) or says `W_NO_LOUDNESS` (the dialog then still
   allows Propose with a count of 0).
+- `momentaryCurve` plans the mix as an audio-only deliverable (`container: 'wav'`), so the export planner reads no
+  picture: an offline picture (B-roll, an overlay) does not stop the measurement. Offline sound anywhere in the sequence
+  still refuses it (`MEDIA_OFFLINE`, reported as `W_LOUDNESS_FAILED`, no stinger from loudness), also on audio tracks
+  the dialogue measurement does not read.
 
 ### Export cost (EA-033)
 

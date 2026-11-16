@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ffmpegPath, ffprobePath } from '@jasper/testkit/oracle';
@@ -33,4 +33,33 @@ export function ensureFixtures(): void {
 
 export function fixture(name: string): string {
 	return join(FIXTURES, name);
+}
+
+/**
+ * A real camera file for tests that export or measure (an offline media refuses both): `seconds` of a solid-colour
+ * 1920×1080 30 fps MPEG-4 Part 2 picture (LGPL encoder) with, when `audio`, a silent 48 kHz stereo AAC track. One
+ * second is encoded and looped by stream copy, so a long source costs about as much as a short one.
+ */
+export function writeSolidVideo(
+	path: string,
+	seconds: number,
+	opts: { color: string; audio?: boolean },
+): string {
+	const ff = (args: string[]) => {
+		const r = spawnSync(TEST_FFMPEG, ['-hide_banner', '-loglevel', 'error', '-y', ...args]);
+		if (r.status !== 0) throw new Error(`ffmpeg failed: ${r.stderr?.toString() ?? r.error}`);
+	};
+	const second = `${path}.1s.mp4`;
+	ff([
+		...['-f', 'lavfi', '-i', `color=c=${opts.color}:s=1920x1080:r=30:d=1`],
+		...['-c:v', 'mpeg4', '-q:v', '31', '-g', '30', '-pix_fmt', 'yuv420p', second],
+	]);
+	ff([
+		...['-stream_loop', String(Math.ceil(seconds) - 1), '-i', second],
+		...(opts.audio ? ['-f', 'lavfi', '-i', `anullsrc=r=48000:cl=stereo:d=${seconds}`] : []),
+		...['-map', '0:v', ...(opts.audio ? ['-map', '1:a', '-c:a', 'aac'] : [])],
+		...['-c:v', 'copy', '-t', String(seconds), path],
+	]);
+	rmSync(second);
+	return path;
 }

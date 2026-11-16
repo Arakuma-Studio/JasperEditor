@@ -10,7 +10,9 @@ import {
 	ApplyStyleResultSchema,
 	type EngineJob,
 	type EnvelopeJson,
+	LOCAL_ENGINE_ID,
 	ProposalRefreshResponseSchema,
+	type RegisteredMedia,
 	StyleCheckResponseSchema,
 } from '@jasper/api';
 import { appdirPaths } from '@jasper/config';
@@ -31,6 +33,7 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { planExport } from '../src/export/planner.ts';
 import { coreServices } from '../src/tools/services.ts';
+import { writeSolidVideo } from './fixtures.ts';
 import { closeApps, editorCookie, makeApp, TEST_HOST, tempAppdir } from './helpers.ts';
 import { PACK, writeWav } from './sound-fixtures.ts';
 
@@ -118,6 +121,18 @@ function camera(seconds: number): Omit<MediaAsset, 'id'> {
 	} as Omit<MediaAsset, 'id'>;
 }
 
+/** The camera's real file (picture + sound, in the engine store: `beforeAll`), linked before an export (`linkCamera`). */
+let cameraFile: RegisteredMedia;
+
+/**
+ * The `n`th word of the transcript: distinct words (no two alike, as speech is), so the cleanup's restart and retake
+ * detection finds none ("palabra12 palabra13" reads as one word said again and again).
+ */
+const SYLLABLES = ['ba', 'ce', 'di', 'fo', 'gu', 'ja', 'le', 'mi', 'no', 'pu'];
+const MIDDLES = ['r', 's', 'l', 'n', 't', 'm', 'd', 'v', 'z', 'x'];
+const wordAt = (n: number) =>
+	`${SYLLABLES[n % 10]}${MIDDLES[Math.floor(n / 10) % 10]}${SYLLABLES[(Math.floor(n / 10) + n) % 10]}`;
+
 let projects = 0;
 /**
  * A saved talking-head edit: jump cuts of `lengths` frames from one camera file (picture + sound), a transcript with
@@ -139,7 +154,7 @@ function seed(lengths: number[]) {
 		for (let f = 0; f + 9 <= len; f += 12) {
 			if (pause && f + 9 > pause.from && f < pause.to) continue;
 			words.push({
-				text: words.length % 7 === 6 ? '¡genial!' : `palabra${words.length}`,
+				text: words.length % 7 === 6 ? '¡genial!' : wordAt(words.length),
 				start: (src + f) * F,
 				end: (src + f + 9) * F,
 			});
@@ -237,6 +252,41 @@ async function getProposal(projectId: string, id: string): Promise<Proposal> {
 	return (r.json() as { proposal: Proposal }).proposal;
 }
 
+/**
+ * The document with the camera media linked to its real file (Link Media): the passes plan on word timings with the
+ * file offline (`camera`), while an export refuses offline media (MEDIA_OFFLINE).
+ */
+function linkCamera(doc: ProjectDocument, seqId: string): ProjectDocument {
+	const [mediaId] = Object.keys(doc.media).filter((id) => doc.media[id]!.originalName.startsWith('cam-'));
+	const r = applyTransaction(
+		doc,
+		{
+			label: 'link media',
+			origin: 'user',
+			sequenceId: seqId,
+			commands: [
+				{
+					type: 'media.relink',
+					mediaId,
+					locator: { type: 'engine-store', engineId: LOCAL_ENGINE_ID, key: cameraFile.mediaKey },
+					probe: cameraFile.probe,
+					fingerprint: cameraFile.fingerprint,
+					sizeBytes: cameraFile.sizeBytes,
+					force: true,
+				},
+			],
+		},
+		{
+			ids: createCounterIdSource(950),
+			now: () => '2026-10-26T02:00:00.000Z',
+			revision: 0,
+			registries: defaultRegistries(),
+		},
+	);
+	if (!r.result.ok) throw new Error(JSON.stringify(r.result.errors));
+	return r.document;
+}
+
 const CAPS = { native: true, remotionLocal: 'ready' as const, fframes: 'ready' as const, mgMasters: true };
 async function exportPath(doc: ProjectDocument, seqId: string) {
 	const core = coreServices(app);
@@ -283,6 +333,13 @@ describe('Apply Style (real engine, indexed kit, cleanup analysis)', { timeout: 
 		process.env.JASPER_SOUND_SYNTH_VARIANTS = '1';
 		process.env.JASPER_SOUND_AUTO_INDEX = '0';
 		app = await makeApp({ dev: false, token: TOKEN, editorKey: KEY });
+		// 47 s: the edits read 1 360 frames of source
+		cameraFile = await coreServices(app).media.registerPath(
+			writeSolidVideo(join(tempAppdir('jasper-style-cam-'), 'cam.mp4'), 47, {
+				color: '0x305070',
+				audio: true,
+			}),
+		);
 		const r = await post('/api/sounds/index', {}, EDITOR_H);
 		expect(r.statusCode, r.body).toBe(202);
 		const job = await coreServices(app).queue.wait((r.json() as EngineJob).id);
@@ -360,7 +417,7 @@ describe('Apply Style (real engine, indexed kit, cleanup analysis)', { timeout: 
 		expect(Object.keys((seq as { captionGroups?: object }).captionGroups ?? {})).toHaveLength(1);
 		expect(seq.videoTracks.map((t) => t.name)).toEqual(expect.arrayContaining(['FX', 'Subtitles']));
 		expect(projectStyleRecipes(after.doc).active).toBe('builtin:fast-long-form');
-		expect((await exportPath(after.doc, seqId)).path).toBe(res.cost);
+		expect((await exportPath(linkCamera(after.doc, seqId), seqId)).path).toBe(res.cost);
 		// Style Check on the result: kits on target, dead air unmeasured (no voice analysis of these files)
 		const ck = await post(styleUrl(projectId, 'check'), { sequenceId: seqId });
 		expect(ck.statusCode, ck.body).toBe(200);

@@ -349,13 +349,15 @@ export class AudioService {
 		});
 		let planned: PlannedExport;
 		try {
+			// planned as the sound alone (an audio-only deliverable): it reads no picture, so an offline picture never
+			// refuses the measurement; offline sound still does (MEDIA_OFFLINE: it would be measured as silence)
 			planned = await this.core.exports.plan({
 				envelope: envelope as never,
 				sequenceId: input.sequenceId,
 				settings: {
 					sequenceId: input.sequenceId,
 					range: { type: 'entire' },
-					container: 'mp4',
+					container: 'wav',
 					engine: 'auto',
 					destination: { type: 'download' },
 				},
