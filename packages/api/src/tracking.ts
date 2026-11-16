@@ -44,6 +44,23 @@ export const TrackRequestSchema = z.object({
 			 */
 			refineEdges: z.boolean().optional(),
 			/**
+			 * Planar hold-out regions: areas the tracker ignores (hands or objects passing in front of the plane,
+			 * reflections). Polygons in media px; an entry with `frame` applies to that source frame only, one without
+			 * applies to every frame. At most 500 000 vertices in total.
+			 */
+			holdout: z
+				.array(
+					z.object({
+						frame: z.number().int().min(0).optional(),
+						polygon: z.array(Vec2).min(3).max(10_000),
+					}),
+				)
+				.max(100_000)
+				.refine((h) => h.reduce((n, e) => n + e.polygon.length, 0) <= 500_000, {
+					message: 'holdout has more than 500000 vertices',
+				})
+				.optional(),
+			/**
 			 * wp masks (kind `mask`): the motion model — Position, Position & Rotation, Position, Scale & Rotation
 			 * (Premiere's methods) or Perspective (a homography).
 			 */

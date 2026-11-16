@@ -15,6 +15,7 @@ import {
 	smoothSamples,
 	type TrackerSamples,
 	trackerGeometryAt,
+	trackHoldout,
 	type Vec2,
 	valuesAt,
 } from '../src/index.ts';
@@ -283,18 +284,23 @@ describe('samples (S09:TRK-002, TRK-020)', () => {
 		expect(valuesAt(s, 5 * F + F / 2)!.values[0]).toBeCloseTo(701.5, 9);
 		expect(valuesAt(s, 100 * F)!.values[0]).toBe(truthQuad(9)[0][0]);
 	});
-	it('smooths jitter with a centred average and holds the end samples', () => {
+	it('smooths jitter by confidence without lagging motion or following lost samples', () => {
+		// x moves 10 px per frame with ±1 px jitter; frame 4 is lost (confidence 0) and repeats frame 3's values.
+		const xs = [1, 9, 21, 29, 29, 51, 59, 71, 79];
 		const samples: TrackerSamples = {
 			start: 0,
 			step: F,
 			stride: 2,
-			data: [0, 6, 9, 6, 0, 6],
-			confidence: [1, 0.5, 1],
+			data: xs.flatMap((x) => [x, 5]),
+			confidence: [1, 1, 1, 1, 0, 1, 1, 1, 1],
 		};
-		const smoothed = smoothSamples(samples, 1);
-		expect(smoothed.data).toEqual([3, 6, 3, 6, 3, 6]);
-		expect(smoothed.confidence).toEqual([1, 0.5, 1]);
-		expect(samples.data).toEqual([0, 6, 9, 6, 0, 6]);
+		const smoothed = smoothSamples(samples, 2);
+		for (let i = 0; i < xs.length; i++) {
+			expect(Math.abs(smoothed.data[2 * i]! - 10 * i)).toBeLessThan(1);
+			expect(smoothed.data[2 * i + 1]).toBeCloseTo(5, 9);
+		}
+		expect(smoothed.confidence).toEqual(samples.confidence);
+		expect(samples.data.slice(0, 4)).toEqual([1, 5, 9, 5]);
 	});
 	it('merges disjoint spans with lost samples in the gap', () => {
 		const a: TrackerSamples = { start: 0, step: F, stride: 2, data: [0, 0, 1, 1], confidence: [1, 1] };
@@ -471,5 +477,46 @@ describe('planTrack (S09:TRK-010, TRK-024)', () => {
 		expect(here.request.reference.corners![0]).toEqual(truthQuad(40)[0]);
 		const back = planTrack(h.doc, id, { mode: 'step-back', at: 40 * F });
 		expect(back.request.range).toEqual({ startFrame: 39, endFrame: 41 });
+	});
+
+	it('turns plate masks into hold-out polygons in media px, per frame when the mask is animated', () => {
+		const { h, plate } = setup();
+		const r = h.ok([
+			{ type: 'tracker.add', clipId: plate, kind: 'planar', at: { frames: 10 }, corners: REF },
+			{ type: 'mask.add', clipId: plate, shape: 'polygon', mode: 'none', ref: '$still' },
+			{ type: 'mask.add', clipId: plate, shape: 'polygon', mode: 'none', ref: '$hand' },
+		]);
+		const id = (r.results[0] as { trackerId: string }).trackerId;
+		const [still, hand] = (clip(h, plate) as { masks: { id: string }[] }).masks.map((m) => m.id);
+		const square = (x: number) => ({
+			closed: true,
+			vertices: [
+				[x, 0.25],
+				[x + 0.1, 0.25],
+				[x + 0.1, 0.5],
+				[x, 0.5],
+			].map((p) => ({ p, in: [0, 0], out: [0, 0] })),
+		});
+		h.ok([
+			{
+				type: 'mask.setPathKeys',
+				maskId: hand!,
+				keys: [
+					{ at: { frames: 12 }, path: square(0.2) },
+					{ at: { frames: 13 }, path: square(0.3) },
+				],
+			},
+		]);
+		const plan = planTrack(h.doc, id, { mode: 'step-forward', at: 12 * F });
+		const { width, height } = h.doc.media[plan.mediaId]!.probe.streams.find((s) => s.type === 'video') as {
+			width: number;
+			height: number;
+		};
+		const entries = trackHoldout(h.doc, plan, [still!, hand!]);
+		expect(entries.filter((e) => e.frame === undefined)).toHaveLength(1);
+		const moving = entries.filter((e) => e.frame !== undefined);
+		expect(moving.map((e) => e.frame)).toEqual([12, 13]);
+		expect(moving[1]!.polygon[0]).toEqual([0.3 * width, 0.25 * height]);
+		expect(() => trackHoldout(h.doc, plan, ['msk_missing'])).toThrow(/no longer on the tracked clip/);
 	});
 });

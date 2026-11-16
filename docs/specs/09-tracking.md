@@ -25,7 +25,8 @@ recording, graphic, composition…).
    Motion).
 4. Agents can place trackers, run them and apply them over MCP.
 
-Non-goals (M2): hold-out mattes for foreground occluders (P2: tracked masks), 3D camera solving, mocha-style
+Non-goals (M2): hold-out mattes for foreground occluders (P2: tracked masks; planar hold-out regions landed with
+`klt-homography@2`, TRK-015), 3D camera solving, mocha-style
 spline surfaces, tracking on nested sequences.
 
 ## 2. Model
@@ -62,17 +63,21 @@ spline surfaces, tracking on nested sequences.
   in a `worker_threads` worker (the main thread never blocks); frames decoded by ffmpeg to `gray8` rawvideo at the
   tracking resolution (`fast` ≤ 960 px wide, `balanced` ≤ 1280 px, `best` = source width), geometry scaled back to
   media pixels. The licence is listed in About/Licenses.
-- **TRK-012 (P0)** Planar tracker (`method: 'klt-homography@1'`):
-  1. On the reference frame, detect Shi–Tomasi corners (`goodFeaturesToTrack`, up to 400, quality 0.01, min
-     distance 6 px) inside the reference quad (option "Track surroundings": in a ring 5–25 % of the quad size
-     outside it — for screens whose content changes).
-  2. For every frame in the direction(s), track the reference features **from the reference frame directly** into
-     the frame with pyramidal Lucas–Kanade (window 21, 4 levels) and a forward-backward check (≤ 1 px); frames far
-     from the reference (low survival < 30 %) re-anchor on the last good frame (chained, with its own features).
-  3. Estimate the homography with RANSAC (reprojection threshold 2 px at tracking resolution), map the reference
-     corners; confidence = inlier ratio × (1 − normalised reprojection error).
-  4. Optional drift correction (`quality: 'best'`): an ECC refinement (`findTransformECC`, homography model) of the
-     quad region against the reference.
+- **TRK-012 (P0)** Planar tracker (`method: 'klt-homography@2'`; `@1` until `perf/planar-tracker`, see
+  `docs/wp-notes/wp-m2-track.md` "Planar tracker @2"):
+  1. On the reference frame, detect Shi–Tomasi corners (up to 300) inside the reference quad (option "Track
+     surroundings": in a ring 5–25 % of the quad size outside it — for screens whose content changes), and build a
+     dense template pyramid of the same region.
+  2. For every frame, a crop around the constant-velocity prediction is pyramided; the anchor's features are tracked
+     into the pre-warped crop with pyramidal Lucas–Kanade (window 17; at half resolution above 1280 px) and a
+     forward-backward check; frames far from the reference (survival < 30 %) re-anchor on the last good frame.
+  3. RANSAC homography (1.5 KLT-level px).
+  4. `balanced` and `best`: robust ESM alignment (Tukey-weighted, gain/bias invariant) of the reference template to
+     the frame from the KLT estimate (or the prediction when KLT fails), coarse to fine; confidence = correlation ×
+     √(inlier share) × in-frame share (KLT only: inlier ratio × (1 − normalised reprojection error)).
+- **TRK-015 (P1)** Hold-out regions: `options.holdout` polygons (media px, per source frame or static) are excluded
+  from feature detection, matching and the dense stage. The UI picks masks of the plate (Properties ▸ Tracking ▸
+  Ignore).
 - **TRK-013 (P0)** Point tracker (`method: 'template@1'`): normalised cross-correlation (`matchTemplate`
   `TM_CCOEFF_NORMED`) of the reference patch within the search window around the previous position, refined with
   KLT; the template is re-anchored to the reference patch every frame to cancel drift; confidence = correlation
@@ -86,7 +91,8 @@ spline surfaces, tracking on nested sequences.
   and target), the plate geometry into the target:
   1. plate content time `t_p(f)` → sample (linear interpolation between neighbouring samples; outside the tracked
      span the nearest sample is held);
-  2. optional temporal smoothing (centred moving average of radius `tracker.smoothing` frames) on corners;
+  2. optional temporal smoothing on corners: a confidence-weighted local linear regression of radius
+     `tracker.smoothing` frames (no lag on straight motion; lost samples do not pull);
   3. media px → sequence px through the plate's layer map at `f` (its Motion and its own corner pin/projective map);
   4. sequence px → target layer px through the inverse of the target's Motion at `f`.
 - **TRK-021 (P0)** `mode: 'corner-pin'`: the target gets a `jasper.corner-pin` effect (created at the top of its

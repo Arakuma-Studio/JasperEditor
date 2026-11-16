@@ -69,25 +69,55 @@ function quadToValues(q: Quad): number[] {
 }
 
 /**
- * Centred moving average of radius `radius` samples (window 2r+1), ends padded with the first/last sample so
- * a static track stays static and real motion is not lagged at the edges. Confidence is unchanged.
+ * Confidence-weighted local linear regression (LOESS of degree 1, Cleveland 1979, "Robust Locally Weighted Regression
+ * and Smoothing Scatterplots", JASA 74(368)) over a window of radius `radius` samples: weight = confidence × tricube
+ * of the distance. A straight-line motion is reproduced exactly (no lag, also at the ends), jitter is averaged away,
+ * and lost or unreliable samples (confidence 0, which repeat the last good values) do not pull the result: they are
+ * filled from their neighbours. Samples without any confident neighbour keep their values. Confidence is unchanged.
  */
 export function smoothSamples(s: TrackerSamples, radius: number): TrackerSamples {
 	const r = Math.max(0, Math.floor(radius));
 	const n = sampleCount(s);
 	if (r === 0 || n < 2) return s;
-	const out = new Array<number>(n * s.stride);
+	const out = s.data.slice(0, n * s.stride);
 	for (let i = 0; i < n; i++) {
+		const j0 = Math.max(0, i - r);
+		const j1 = Math.min(n - 1, i + r);
+		// Weighted sums of 1, d, d² (d = j − i) over the window.
+		let sw = 0;
+		let sd = 0;
+		let sdd = 0;
+		for (let j = j0; j <= j1; j++) {
+			const w = sampleWeight(s, i, j, r);
+			const d = j - i;
+			sw += w;
+			sd += w * d;
+			sdd += w * d * d;
+		}
+		if (!(sw > 1e-9)) continue;
+		const det = sw * sdd - sd * sd;
 		for (let k = 0; k < s.stride; k++) {
-			let sum = 0;
-			for (let j = i - r; j <= i + r; j++) {
-				const jj = Math.min(n - 1, Math.max(0, j));
-				sum += s.data[jj * s.stride + k]!;
+			let sy = 0;
+			let sdy = 0;
+			for (let j = j0; j <= j1; j++) {
+				const w = sampleWeight(s, i, j, r);
+				const y = s.data[j * s.stride + k]!;
+				sy += w * y;
+				sdy += w * (j - i) * y;
 			}
-			out[i * s.stride + k] = sum / (2 * r + 1);
+			// Value of the fitted line at d = 0; a weighted mean when the weights sit on one sample.
+			out[i * s.stride + k] = det > 1e-9 * sw * sw ? (sdd * sy - sd * sdy) / det : sy / sw;
 		}
 	}
 	return { ...s, data: out };
+}
+
+function sampleWeight(s: TrackerSamples, i: number, j: number, r: number): number {
+	const c = s.confidence[j] ?? 0;
+	if (!(c > 0)) return 0;
+	const u = Math.abs(j - i) / (r + 1);
+	const t = 1 - u * u * u;
+	return c * t * t * t;
 }
 
 /** The tracker's geometry at content time `t`: from the samples (smoothed), else the reference. */

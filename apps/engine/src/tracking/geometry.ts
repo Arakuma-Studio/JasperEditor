@@ -569,3 +569,83 @@ export function toTrackingPx(values: number[], sx: number, sy: number): number[]
 export function toMediaPx(values: number[], sx: number, sy: number): number[] {
 	return values.map((v, i) => (v + 0.5) * (i % 2 === 0 ? sx : sy) - 0.5);
 }
+
+/**
+ * Hold-out mask (S09 hold-out regions): the union of `polygons` (tracking px, flattened x, y pairs; pixel centres
+ * inside a polygon by the even–odd rule) grown by `grow` px (a square dilation), as a `width`×`height` byte mask
+ * (1 = held out). Null when no pixel is held out.
+ */
+export function rasterizeHoldout(
+	polygons: readonly (readonly number[])[],
+	width: number,
+	height: number,
+	grow: number,
+): Uint8Array | null {
+	const mask = new Uint8Array(width * height);
+	let bx0 = width;
+	let by0 = height;
+	let bx1 = -1;
+	let by1 = -1;
+	const xs: number[] = [];
+	for (const poly of polygons) {
+		const n = Math.floor(poly.length / 2);
+		if (n < 3) continue;
+		let ymin = Number.POSITIVE_INFINITY;
+		let ymax = Number.NEGATIVE_INFINITY;
+		for (let i = 0; i < n; i++) {
+			const y = poly[2 * i + 1]!;
+			if (!Number.isFinite(y) || !Number.isFinite(poly[2 * i]!)) continue;
+			ymin = Math.min(ymin, y);
+			ymax = Math.max(ymax, y);
+		}
+		const r0 = Math.max(0, Math.ceil(ymin));
+		const r1 = Math.min(height - 1, Math.floor(ymax));
+		for (let r = r0; r <= r1; r++) {
+			xs.length = 0;
+			for (let i = 0; i < n; i++) {
+				const j = (i + 1) % n;
+				const ax = poly[2 * i]!;
+				const ay = poly[2 * i + 1]!;
+				const bx = poly[2 * j]!;
+				const by = poly[2 * j + 1]!;
+				if (ay <= r !== by <= r) xs.push(ax + ((r - ay) * (bx - ax)) / (by - ay));
+			}
+			xs.sort((a, b) => a - b);
+			for (let k = 0; k + 1 < xs.length; k += 2) {
+				const c0 = Math.max(0, Math.ceil(xs[k]!));
+				const c1 = Math.min(width - 1, Math.floor(xs[k + 1]!));
+				if (c1 < c0) continue;
+				mask.fill(1, r * width + c0, r * width + c1 + 1);
+				bx0 = Math.min(bx0, c0);
+				bx1 = Math.max(bx1, c1);
+				by0 = Math.min(by0, r);
+				by1 = Math.max(by1, r);
+			}
+		}
+	}
+	if (bx1 < 0) return null;
+	const g = Math.max(0, Math.round(grow));
+	if (g === 0) return mask;
+	// Separable square dilation over the touched box.
+	const x0 = Math.max(0, bx0 - g);
+	const x1 = Math.min(width - 1, bx1 + g);
+	const y0 = Math.max(0, by0 - g);
+	const y1 = Math.min(height - 1, by1 + g);
+	const tmp = new Uint8Array(width * height);
+	for (let y = by0; y <= by1; y++) {
+		const row = y * width;
+		for (let x = bx0; x <= bx1; x++) {
+			if (!mask[row + x]) continue;
+			tmp.fill(1, row + Math.max(x0, x - g), row + Math.min(x1, x + g) + 1);
+		}
+	}
+	for (let x = x0; x <= x1; x++) {
+		for (let y = y0; y <= y1; y++) {
+			if (!tmp[y * width + x]) continue;
+			const a = Math.max(y0, y - g);
+			const b = Math.min(y1, y + g);
+			for (let yy = a; yy <= b; yy++) mask[yy * width + x] = 1;
+		}
+	}
+	return mask;
+}

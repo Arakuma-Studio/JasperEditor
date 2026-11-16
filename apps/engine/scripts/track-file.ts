@@ -41,11 +41,17 @@ const probe = await ff.probeJson([
 	'v:0',
 	'-count_packets',
 	'-show_entries',
-	'stream=width,height,r_frame_rate,nb_read_packets:stream_side_data=rotation',
+	'stream=width,height,r_frame_rate,avg_frame_rate,nb_read_packets:stream_side_data=rotation',
 	file,
 ]);
 const st = (probe.streams as Record<string, unknown>[])[0]!;
-const [num, den] = String(st.r_frame_rate).split('/').map(Number) as [number, number];
+// The engine's media registry uses the average rate (probe.ts): phone footage has a nominal 30/1 and an average
+// such as 855000/28451, and the frame a time seeks to depends on it.
+const [num, den] = String(
+	st.avg_frame_rate && st.avg_frame_rate !== '0/0' ? st.avg_frame_rate : st.r_frame_rate,
+)
+	.split('/')
+	.map(Number) as [number, number];
 const rot = Math.abs(
 	Number(
 		((st.side_data_list as { rotation?: number }[] | undefined) ?? []).find((d) => d.rotation)?.rotation ?? 0,

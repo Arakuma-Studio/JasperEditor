@@ -6,6 +6,7 @@
 import { createRequire } from 'node:module';
 import { type MessagePort, Worker } from 'node:worker_threads';
 import type { OpenCv } from '../tools/opencv.ts';
+import * as Align from './align.ts';
 import * as Geometry from './geometry.ts';
 import { createMaskTracker, type MaskConfig } from './mask.ts';
 import { createPlanarTracker, type FrameResult, type FrameTracker, type PlanarConfig } from './planar.ts';
@@ -16,7 +17,13 @@ export type TrackerConfig = PlanarConfig | PointConfig | MaskConfig | WarpConfig
 
 type WorkerRequest =
 	| { type: 'init'; cfg: TrackerConfig }
-	| { type: 'reference' | 'frame'; frame: number; buf: ArrayBuffer }
+	| {
+			type: 'reference' | 'frame';
+			frame: number;
+			buf: ArrayBuffer;
+			/** Planar: hold-out polygons of this frame (tracking px, flattened x, y pairs). */
+			holdout?: number[][];
+	  }
 	| { type: 'release' };
 
 type WorkerReply =
@@ -32,7 +39,7 @@ function workerMain(
 	 * rewritten by esbuild's ESM bundling into its `__require` shim, which does not exist inside the worker. */
 	load: (id: string) => OpenCv,
 	cvPath: string,
-	G: typeof Geometry,
+	G: typeof Geometry & typeof Align,
 	makePlanar: typeof createPlanarTracker,
 	makePoint: typeof createPointTracker,
 	makeMask: typeof createMaskTracker,
@@ -42,6 +49,7 @@ function workerMain(
 	const cv = load(cvPath);
 	let ready = false;
 	let tracker: FrameTracker | null = null;
+	let size: { width: number; height: number } | null = null;
 	const pending: WorkerRequest[] = [];
 	const errorText = (e: unknown): string => {
 		if (typeof e === 'number' && cv?.exceptionFromPtr) {
@@ -58,6 +66,7 @@ function workerMain(
 			if (m.type === 'init') {
 				tracker?.dispose();
 				tracker = null;
+				size = { width: m.cfg.width, height: m.cfg.height };
 				tracker =
 					m.cfg.kind === 'planar'
 						? makePlanar(cv, G, m.cfg)
@@ -70,7 +79,17 @@ function workerMain(
 			} else if (m.type === 'reference' || m.type === 'frame') {
 				if (!tracker) throw new Error('tracker not initialised');
 				const img = new Uint8Array(m.buf);
-				const r = m.type === 'reference' ? tracker.reference(img) : tracker.track(img);
+				// Hold-out regions grow by ~4 px at 1080p: the occluder's motion-blurred edge.
+				const hold =
+					m.holdout?.length && size
+						? G.rasterizeHoldout(
+								m.holdout,
+								size.width,
+								size.height,
+								Math.max(2, Math.round(size.width / 480)),
+							)
+						: null;
+				const r = m.type === 'reference' ? tracker.reference(img, hold) : tracker.track(img, hold);
 				port.postMessage({ type: 'result', frame: m.frame, ...r });
 			} else if (m.type === 'release') {
 				tracker?.dispose();
@@ -104,7 +123,9 @@ export function openCvPath(): string {
 
 function workerSource(): string {
 	if (cachedSource) return cachedSource;
-	const geo = Object.entries(Geometry).filter(([, v]) => typeof v === 'function');
+	const geo = [...Object.entries(Geometry), ...Object.entries(Align)].filter(
+		([, v]) => typeof v === 'function',
+	);
 	cachedSource = [
 		// esbuild's keepNames helper, in case the transpiler that produced these functions inserted it.
 		'var __name = (f) => f;',

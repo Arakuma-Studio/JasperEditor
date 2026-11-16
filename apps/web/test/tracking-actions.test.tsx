@@ -87,13 +87,29 @@ describe('tracking actions', () => {
 		const { session, plate } = trackingSession();
 		const engine = fakeEngine();
 		const id = addTracker(session, plate, 'planar');
-		setOptions(id, 'planar', { quality: 'best', surroundings: true, refineEdges: false });
+		const added = session.apply({
+			label: 'Add Mask',
+			origin: 'user',
+			commands: [{ type: 'mask.add', clipId: plate, shape: 'polygon', mode: 'none' }],
+		});
+		expect(added.ok).toBe(true);
+		const maskId = (seqOf(session).clips[plate] as { masks: { id: string }[] }).masks[0]!.id;
+		setOptions(id, 'planar', {
+			quality: 'best',
+			surroundings: true,
+			refineEdges: false,
+			holdout: [maskId, 'msk_removed'],
+		});
 		await startTrack(session, engine, id, 'both');
-		expect(engine.calls[0]!.body).toMatchObject({
+		const body = engine.calls[0]!.body as { options: { holdout: { frame?: number; polygon: number[][] }[] } };
+		expect(body).toMatchObject({
 			quality: 'best',
 			direction: 'both',
 			options: { features: 'surroundings', refineEdges: false },
 		});
+		expect(body.options.holdout).toHaveLength(1);
+		expect(body.options.holdout[0]!.frame).toBeUndefined();
+		expect(body.options.holdout[0]!.polygon.length).toBeGreaterThanOrEqual(4);
 	});
 
 	it('re-tracks from here and re-applies to the linked target inside the same "Track" entry', async () => {
