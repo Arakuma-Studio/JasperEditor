@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { LicenseComponent } from '@jasper/api';
+import { resolveRubberBandWasm } from '../audio/rubberband.ts';
 import { ORT_CUDA_PACKAGE } from '../speech/cuda.ts';
 import type { ProcessingService } from './service.ts';
 import { VIDSTAB_PIN } from './vidstab-pin.ts';
@@ -53,6 +54,26 @@ export async function processingLicenses(svc: ProcessingService): Promise<Licens
 			`vid.stab, relicensed to LGPL-2.1-or-later in August 2026 (${VIDSTAB_PIN.relicenseIssue}); shipped as a separate WebAssembly module (vidstab.wasm) built from the pinned commit.`,
 		texts: vsText ? [{ title: 'GNU Lesser General Public License, version 2.1', text: vsText }] : [],
 	});
+	// The Pitch Shifter's optional Rubber Band engine (GPL-2.0-or-later, accepted by the owner: AGENTS.md §2), a
+	// separate WebAssembly module next to engine.mjs (dist) or in @jasper/audio-fx (dev).
+	{
+		const rbWasm = resolveRubberBandWasm();
+		const rbDirs = [...(rbWasm ? [dirname(rbWasm)] : []), here];
+		const rbText = readFirst(rbDirs.map((d) => join(d, 'LICENSE-rubberband.txt')));
+		const rbNotice = readFirst(rbDirs.map((d) => join(d, 'NOTICE-rubberband.txt')));
+		out.push({
+			id: 'rubberband',
+			name: 'Rubber Band Library (rubberband.wasm)',
+			version: '4.0.0',
+			license: 'GPL-2.0-or-later',
+			bundled: true,
+			sourceUrl: 'https://github.com/breakfastquay/rubberband/tree/v4.0.0',
+			notice:
+				rbNotice ??
+				"Rubber Band Library 4.0.0, GPL-2.0-or-later: the Pitch Shifter's optional engine, a separate WebAssembly module (rubberband.wasm) built by scripts/rubberband-wasm/build.sh.",
+			texts: rbText ? [{ title: 'GNU General Public License, version 2', text: rbText }] : [],
+		});
+	}
 	// The npm package ships no licence file: ours is the upstream LICENSE of the pinned release (v1.30.0).
 	const ortLicense =
 		packageFile('onnxruntime-node', 'LICENSE') ??

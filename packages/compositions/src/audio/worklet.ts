@@ -226,12 +226,18 @@ registerProcessor('jasper-limiter', LimiterProcessor);
 class FxProcessor extends AudioWorkletProcessor {
 	private readonly core: FxSlotCore;
 	constructor(options: {
-		processorOptions?: { channels?: number; effect?: EffectInstance; time?: number };
+		processorOptions?: {
+			channels?: number;
+			effect?: EffectInstance;
+			time?: number;
+			rubberband?: WebAssembly.Module;
+		};
 	}) {
 		super(options);
 		const o = options.processorOptions ?? {};
 		const channels = Math.max(1, o.channels ?? 2);
 		this.core = new FxSlotCore(sampleRate, channels, this.port);
+		if (o.rubberband) this.core.message({ type: 'rubberband', module: o.rubberband });
 		// The instance comes with the node: the first quantum is already processed (a message would arrive later).
 		if (o.effect)
 			this.core.message({ type: 'effect', effect: o.effect, time: Number.isFinite(o.time) ? o.time! : 0 });

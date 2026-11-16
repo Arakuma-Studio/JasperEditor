@@ -40,9 +40,12 @@ import {
 	runDeliveryPass,
 	solveDelivery,
 } from './deliver.ts';
+import { installRubberBand } from './rubberband.ts';
 
 // audio-fx: the audio effect processors (clip effects and track / submix / Mix inserts) for the offline mixer.
 installAudioFxProcessors();
+// the Pitch Shifter's optional Rubber Band engine (a separate GPL module; missing = Signalsmith + plan warning)
+installRubberBand();
 
 /**
  * An online clip source. `container` (ffprobe `format_name`) makes streams the browser cannot decode decode

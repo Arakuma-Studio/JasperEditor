@@ -49,6 +49,16 @@ await build({
 	rmSync(join(root, 'dist', 'models', 'clap'), { recursive: true, force: true });
 	if (existsSync(join(root, 'models', 'clap')))
 		cpSync(join(root, 'models', 'clap'), join(root, 'dist', 'models', 'clap'), { recursive: true });
+	// The Pitch Shifter's optional Rubber Band engine: the separate GPL module and its licence files next to
+	// engine.mjs, where src/audio/rubberband.ts looks first (packages/audio-fx/wasm, scripts/rubberband-wasm).
+	const rbDir = join(root, '..', '..', 'packages', 'audio-fx', 'wasm');
+	for (const f of [
+		'rubberband.wasm',
+		'RUBBERBAND-WASM.json',
+		'LICENSE-rubberband.txt',
+		'NOTICE-rubberband.txt',
+	])
+		if (existsSync(join(rbDir, f))) cpSync(join(rbDir, f), join(root, 'dist', f));
 	rmSync(join(root, 'dist', 'sounds'), { recursive: true, force: true });
 	if (existsSync(join(root, 'sounds')))
 		cpSync(join(root, 'sounds'), join(root, 'dist', 'sounds'), { recursive: true });

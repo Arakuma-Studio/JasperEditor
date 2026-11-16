@@ -42,6 +42,8 @@ export type AudioEffectInit = {
 	expensive?: boolean;
 	version?: number;
 	migrate?: EffectSpec['migrate'];
+	/** Values new instances get (`effect.add`) where they differ from the defaults stored instances read. */
+	instanceDefaults?: EffectSpec['instanceDefaults'];
 };
 
 export function defineAudioEffect(init: AudioEffectInit): EffectSpec {
@@ -64,6 +66,7 @@ export function defineAudioEffect(init: AudioEffectInit): EffectSpec {
 		description: init.description,
 		...(init.keywords ? { keywords: init.keywords } : {}),
 		...(init.migrate ? { migrate: init.migrate } : {}),
+		...(init.instanceDefaults ? { instanceDefaults: init.instanceDefaults } : {}),
 	};
 }
 

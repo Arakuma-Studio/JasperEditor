@@ -6,12 +6,14 @@ import {
 	type MeterReading,
 	type MixGraph,
 	onActiveMixGraph,
+	previewRubberBand,
 	setMixWorkletUrl,
 	VISIBLE_START_WAIT,
 } from '@jasper/compositions';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { auditionMeter } from './audition-meter.ts';
 import { audioPrefs } from './prefs.ts';
+import { RUBBERBAND_WASM_URL } from './rubberband-url.ts';
 import { MIX_WORKLET_URL } from './worklet-url.ts';
 
 let installed = false;
@@ -22,6 +24,12 @@ export function installAudioRuntime(): void {
 	setMixWorkletUrl(MIX_WORKLET_URL);
 	// audio-fx: audio effects play through their preview slots (AudioWorklet, the export's DSP code).
 	installAudioFxPreview();
+	// the Pitch Shifter's Rubber Band engine: fetched once, when the first Pitch Shifter slot needs it
+	previewRubberBand.setLoader(async () => {
+		const r = await fetch(RUBBERBAND_WASM_URL);
+		if (!r.ok) throw new Error(`HTTP ${r.status}`);
+		return WebAssembly.compile(await r.arrayBuffer());
+	});
 	const apply = (g: MixGraph | null) => g?.setMixdown(audioPrefs.get().mixdown);
 	onActiveMixGraph(apply);
 	audioPrefs.subscribe(() => apply(activeMixGraph()));

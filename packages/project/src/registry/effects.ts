@@ -237,8 +237,9 @@ export type EffectSpec = {
 	 */
 	internal?: boolean;
 	/**
-	 * Wave expressions: defaults that depend on the clip the effect is applied to (Point Control starts at the
-	 * clip's centre). Applied by `effect.add` on clips for params the command does not set.
+	 * Defaults of new instances, applied by `effect.add` for params the command does not set: values that depend on
+	 * the clip (Wave expressions: Point Control starts at the clip's centre; `box`: the sequence frame on tracks, 0 × 0 on the Mix),
+	 * or that differ from `default`, which stored instances without the param read (the Pitch Shifter's engine).
 	 */
 	instanceDefaults?(ctx: { box: { width: number; height: number } }): Record<string, ParamValue>;
 	/** color-grade: bypassed together with the colour effects by the before/after toggle (`colorBypass`). */

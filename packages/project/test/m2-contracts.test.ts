@@ -53,6 +53,7 @@ describe('v3 schema (ARCHITECTURE §19.1)', () => {
 			'v14→v15',
 			'v15→v16',
 			'v16→v17',
+			'v17→v18',
 		]);
 		const d = r.document;
 		expect(d.media.med_00000000000000C1!.lut?.size).toBe(33);

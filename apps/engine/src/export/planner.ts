@@ -47,6 +47,7 @@ import {
 	warpExportIssues,
 } from '@jasper/project';
 import { codecHeadroomDb } from '../audio/deliver.ts';
+import { pitchEngineWarnings } from '../audio/rubberband.ts';
 import { lutRefs } from '../color/extension.ts';
 import { type ExportColor, ExportColorError, exportColorOf } from '../color/output.ts';
 import type { FontCatalogService } from '../fonts/catalog.ts';
@@ -556,6 +557,8 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 	warnings.push(
 		...soundPlanWarnings(document, input.sequenceId, snapshot, settings, input.still ? { still: true } : {}),
 	);
+	// Pitch Shifters set to Rubber Band R3 render with Signalsmith where its module is missing (never silently).
+	if (!input.still && !settings.videoOnly) warnings.push(...pitchEngineWarnings(snapshot));
 	if (draftProxies.length)
 		warnings.push({
 			code: 'DRAFT_PROXIES',

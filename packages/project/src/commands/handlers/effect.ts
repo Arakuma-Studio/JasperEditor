@@ -184,8 +184,6 @@ export const effectHandlers = {
 			c.effects ??= [];
 			list = c.effects;
 			box = intrinsicBoxOf({ doc: doc as never, seq: seq as never, clip: clip as never });
-			// Wave expressions: clip-dependent defaults (Point Control starts at the clip's centre).
-			if (spec.instanceDefaults) instanceDefaults = spec.instanceDefaults({ box });
 		} else {
 			const seq = h.sequence(doc, cmd.target.sequenceId ?? cmd.sequenceId);
 			// submix tracks (`S1`… or their id) take track effects too.
@@ -199,6 +197,10 @@ export const effectHandlers = {
 			list = track.effects;
 			box = { width: seq.settings.width, height: seq.settings.height };
 		}
+		// Clip-dependent defaults (Point Control starts at the clip's centre) and the values new instances get (the
+		// Pitch Shifter's engine), for params the command does not set.
+		if (spec.instanceDefaults)
+			instanceDefaults = spec.instanceDefaults({ box: box ?? { width: 0, height: 0 } });
 		const fx: EffectInstance = {
 			id: h.ids.next('fx'),
 			effectId: spec.id,

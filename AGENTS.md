@@ -60,6 +60,8 @@
 5. Use permissive dependencies: MIT, Apache-2.0, BSD, ISC, Zlib, 0BSD, CC0, Unicode,
    BSL-1.0 or OFL-1.1; MPL-2.0 is allowed unmodified. No GPL/AGPL. LGPL is allowed only
    as a separate, replaceable executable or WebAssembly module with its notice.
+6. Rubber Band (GPL-2.0-or-later) is allowed only as the Pitch Shifter's optional engine, isolated in its own
+   WebAssembly module (`scripts/rubberband-wasm`; user decision, the editor is private); FFmpeg stays LGPL.
 
 ## 3. Assets and ported code
 

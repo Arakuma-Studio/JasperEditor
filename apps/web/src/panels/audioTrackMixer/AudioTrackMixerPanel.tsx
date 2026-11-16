@@ -24,6 +24,7 @@ import { type MixerController, mixerControllerFor } from '../../audio/automation
 import { dbText, Fader, Knob, Panner51 } from '../../audio/components/controls.tsx';
 import { LevelMeter } from '../../audio/components/LevelMeter.tsx';
 import { useMeterReading, useMixGraph } from '../../audio/runtime.ts';
+import { PitchEngineMark } from '../../audio-fx/pitch-engine.tsx';
 import { MODE_LABELS } from '../mixer-labels.ts';
 import { EMPTY_SESSION_STORE } from '../session-store.ts';
 import type { PanelProps } from '../types.ts';
@@ -120,6 +121,7 @@ function Strip({ session, seq, strip, strips, ctl, t, audioEffects }: StripProps
 					>
 						{audioEffects.find((s) => s.id === e.effectId)?.label ?? e.effectId}
 					</button>
+					<PitchEngineMark fx={e} />
 					<button
 						type="button"
 						className="text-pr-dim hover:text-pr-text"
