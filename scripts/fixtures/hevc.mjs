@@ -26,8 +26,9 @@ function hevcArgs(ff) {
 	const list = encoders(ff);
 	if (listed(list, 'libkvazaar'))
 		return ['-c:v', 'libkvazaar', '-kvazaar-params', 'preset=fast,qp=16,period=32'];
+	// No B-frames: FFmpeg 6.1's NVENC wrapper writes wrong timestamps for reordered variable-rate frames.
 	if (listed(list, 'hevc_nvenc') && nvencWorks(ff))
-		return ['-c:v', 'hevc_nvenc', '-preset', 'p5', '-rc', 'constqp', '-qp', '16', '-g', '30', '-bf', '2'];
+		return ['-c:v', 'hevc_nvenc', '-preset', 'p5', '-rc', 'constqp', '-qp', '16', '-g', '30', '-bf', '0'];
 	return null;
 }
 
