@@ -21,7 +21,7 @@ import type { Animatable } from '../../schema/common.ts';
 import type { Mask } from '../../schema/mask.ts';
 import type { Puppet, PuppetPinKind, PuppetPinProp } from '../../schema/puppet.ts';
 import type { Clip, EffectInstance } from '../../schema/sequence.ts';
-import type { DDoc, HandlerContext } from '../context.ts';
+import { type DDoc, effectNotFoundMessage, type HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';
 import type { CommandOf, ParamAt } from '../schemas/index.ts';
 import { finish } from './keyframe.ts';
@@ -34,7 +34,7 @@ export const SIM_WARP_OWNER = 'sim-warp' as const;
 /** A clip effect instance of one of `effectIds` (refusing tracks, master and other effects). */
 function clipEffect(doc: DDoc, id: string, effectIds: readonly string[], h: HandlerContext): FxLoc {
 	const loc = locateEffect(doc, id);
-	if (!loc) return h.fail('E_NOT_FOUND', `Effect instance not found: ${id}`);
+	if (!loc) return h.fail('E_NOT_FOUND', effectNotFoundMessage(id));
 	if (!effectIds.includes(loc.fx.effectId))
 		return h.fail('E_INVALID_PARAM', `${id} is a ${loc.fx.effectId}, not ${effectIds.join(' / ')}`);
 	if (!loc.clip)

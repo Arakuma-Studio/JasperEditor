@@ -64,7 +64,7 @@ import {
 	paintProblem,
 	titleLookOf,
 } from '../../title-looks/validate.ts';
-import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
+import { type DClip, type DDoc, type DSeq, effectNotFoundMessage, type HandlerContext } from '../context.ts';
 import { assertUnlocked, cleanupSequence, findTrackIn, trackSlotOf } from '../placement.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { commonFields, frameBox, newGeneratorClip, visualFields } from './clip-common.ts';
@@ -109,7 +109,7 @@ function lookClip(doc: DDoc, id: string, h: HandlerContext): { seq: DSeq; clip: 
 /** The look instance `id`, on an unlocked track. */
 function lookInstance(doc: DDoc, id: string, h: HandlerContext): LookLocation {
 	const loc = locateEffect(doc, id);
-	if (!loc) return h.fail('E_NOT_FOUND', `Effect instance not found: ${id}`);
+	if (!loc) return h.fail('E_NOT_FOUND', effectNotFoundMessage(id));
 	if (loc.fx.effectId !== TITLE_LOOK_EFFECT_ID || !loc.clip || !loc.fx.appearance)
 		h.fail('E_INVALID_PARAM', `${id} is not a look on a clip`);
 	assertUnlocked(findTrackIn(loc.seq, loc.clip!.trackId)!.track, h);

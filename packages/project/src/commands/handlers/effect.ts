@@ -19,7 +19,7 @@ import {
 	SpatialSchema,
 } from '../../schema/common.ts';
 import { type EffectInstance, isKnownClipKind } from '../../schema/sequence.ts';
-import type { DDoc, HandlerContext } from '../context.ts';
+import { type DDoc, effectNotFoundMessage, type HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';
 import { type CommandOf, MAX_EXPRESSION_LENGTH } from '../schemas/index.ts';
 import { refreshAutoBezier } from './keyframe.ts';
@@ -30,7 +30,7 @@ type DEffect = Draft<EffectInstance>;
 
 function mustLocate(doc: DDoc, fxId: string, h: HandlerContext) {
 	const loc = locateEffect(doc, fxId);
-	if (!loc) return h.fail('E_NOT_FOUND', `Effect instance not found: ${fxId}`);
+	if (!loc) return h.fail('E_NOT_FOUND', effectNotFoundMessage(fxId));
 	if (loc.clip) assertUnlocked(findTrackIn(loc.seq, loc.clip.trackId)!.track, h);
 	if (loc.track) assertUnlocked(loc.track, h);
 	return loc;

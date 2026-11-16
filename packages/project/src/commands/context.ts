@@ -252,6 +252,43 @@ export function substituteKnownRefs<T>(value: T, refs: ReadonlyMap<string, strin
 	return walk(value, false) as T;
 }
 
+/** `clip.properties` / `get_clip_properties` key prefix of an effect instance (`effects.<id>.<param>`). */
+const EFFECT_KEY_PREFIX = 'effects.';
+
+/**
+ * An effect instance id given as itself (`fx_…`) or as its properties key `effects.<id>` (what `props` prints, without
+ * the parameter): the bare id.
+ */
+export function effectInstanceIdOf(raw: string): string {
+	return raw.startsWith(EFFECT_KEY_PREFIX) && raw.length > EFFECT_KEY_PREFIX.length
+		? raw.slice(EFFECT_KEY_PREFIX.length)
+		: raw;
+}
+
+/** The refusal message of an effect instance id that names no effect (with the forms it accepts). */
+export function effectNotFoundMessage(raw: string): string {
+	return `Effect instance not found: ${raw} (give the instance id "fx_…" or its properties key "effects.fx_…", without a parameter name)`;
+}
+
+/** `effectInstanceId` / `effectInstanceIds` arguments in the `effects.<id>` form → the bare ids (`effectInstanceIdOf`). */
+export function normalizeEffectInstanceIds<T>(value: T): T {
+	const walk = (v: unknown): unknown => {
+		if (Array.isArray(v)) return v.map(walk);
+		if (!v || typeof v !== 'object') return v;
+		const out: Record<string, unknown> = {};
+		for (const [k, x] of Object.entries(v)) {
+			let nx: unknown;
+			if (k === 'effectInstanceId' && typeof x === 'string') nx = effectInstanceIdOf(x);
+			else if (k === 'effectInstanceIds' && Array.isArray(x))
+				nx = x.map((s) => (typeof s === 'string' ? effectInstanceIdOf(s) : s));
+			else nx = DECL_KEYS.has(k) ? x : walk(x);
+			Object.defineProperty(out, k, { value: nx, enumerable: true, writable: true, configurable: true });
+		}
+		return out;
+	};
+	return walk(value) as T;
+}
+
 /**
  * Replaces temp refs (`$name`), `"$selection"` and `"$selection.primary"` in id-bearing arguments
  * (keys ending in `Id`/`Ids`, `target`, `track`, `tracks`) at execution time (S01:CMD-006, SEL-009).

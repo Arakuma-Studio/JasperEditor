@@ -229,6 +229,37 @@ describe('effect.add / remove / reorder / setEnabled (S01:FX-020…023)', () => 
 		expect(checkInvariants(h.doc, { effects: defaultEffectRegistry })).toEqual([]);
 	});
 
+	it('takes an effect instance as its properties key "effects.<id>" too, and names both forms when refusing', () => {
+		const { h, id } = withSolid();
+		const r = h.ok([
+			{ type: 'effect.add', target: { clipId: id }, effectId: 'jasper.crop', ref: '$a' },
+			{ type: 'effect.add', target: { clipId: id }, effectId: 'jasper.gaussian-blur', ref: '$b' },
+		]);
+		const [a, b] = [r.refs.$a!, r.refs.$b!];
+		const before = h.doc;
+		h.ok([
+			{ type: 'effect.setEnabled', effectInstanceId: `effects.${b}`, enabled: false },
+			{ type: 'param.set', target: ['effect', `effects.${b}`, 'radius'], value: 12 },
+			{ type: 'mask.add', effectId: `effects.${b}`, shape: 'ellipse' },
+			{ type: 'effect.reorder', effectInstanceId: `effects.${b}`, index: 0 },
+		]);
+		const fxB = clipOf(h, id).effects[0]!;
+		expect([fxB.id, fxB.enabled, fxB.params.radius!.value, fxB.masks?.length]).toEqual([b, false, 12, 1]);
+		h.ok([{ type: 'effect.remove', effectInstanceId: `effects.${a}` }]);
+		expect(clipOf(h, id).effects.map((e) => e.id)).toEqual([b]);
+		// The documents before the edits are untouched (undo restores them).
+		expect((Object.values(before.sequences)[0]!.clips[id] as VClip).effects.map((e) => [e.id, e.enabled])).toEqual([
+			[a, true],
+			[b, true],
+		]);
+		const bad = h.tx([{ type: 'effect.remove', effectInstanceId: `effects.${b}.radius` }]);
+		expect(!bad.ok && bad.errors[0]).toMatchObject({
+			code: 'E_NOT_FOUND',
+			message: expect.stringContaining('"effects.fx_…"'),
+		});
+		expect(checkInvariants(h.doc, { effects: defaultEffectRegistry })).toEqual([]);
+	});
+
 	it('supports track and master targets with an audio effect registry', () => {
 		const gain: EffectSpec = {
 			id: 'test.gain',

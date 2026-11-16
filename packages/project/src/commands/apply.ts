@@ -8,7 +8,7 @@ import { checkTransactionInvariants } from '../invariants-incremental.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import { normalizeLookLinks } from '../title-looks/normalize.ts';
 import { COMMAND_CATALOG, isCommandType } from './catalog.ts';
-import { HandlerContext, substituteRefs } from './context.ts';
+import { HandlerContext, normalizeEffectInstanceIds, substituteRefs } from './context.ts';
 import { diffDocuments } from './diff.ts';
 import { markNormalized } from './draft-read.ts';
 import { collectOrphans } from './handlers/project.ts';
@@ -169,7 +169,8 @@ function applyTransactionUnchecked(
 			commands.forEach((raw, i) => {
 				h.commandIndex = i;
 				ctx.onCommand?.(i);
-				const cmd = substituteRefs(raw, refs, ctx.selection);
+				// `effects.<id>` (the properties key) names the effect instance `<id>`.
+				const cmd = normalizeEffectInstanceIds(substituteRefs(raw, refs, ctx.selection));
 				const entry = COMMAND_CATALOG[cmd.type];
 				results.push(entry.handler(draft, cmd as never, h) ?? null);
 			});

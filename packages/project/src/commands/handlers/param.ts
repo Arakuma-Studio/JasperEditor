@@ -34,7 +34,7 @@ import {
 import { appearanceAnimAt, LIGHT_SPECS, PALETTE_SLOT, slotParamSpec } from '../../title-looks/properties.ts';
 import { paintLimitProblem, paintProblem } from '../../title-looks/validate.ts';
 import { transitionSpec, transitionStartFrame } from '../../transitions.ts';
-import type { DClip, DDoc, DSeq, HandlerContext } from '../context.ts';
+import { type DClip, type DDoc, type DSeq, effectInstanceIdOf, effectNotFoundMessage, type HandlerContext } from '../context.ts';
 import { assertUnlocked, findTrackIn } from '../placement.ts';
 import { ClipPatchSchema } from '../schemas/clip.ts';
 import type { CommandOf, ParamAt } from '../schemas/index.ts';
@@ -145,7 +145,8 @@ function effectIndex(list: readonly EffectInstance[] | undefined, fxId: string):
  * Finds an effect instance in a clip, track or master stack. The search reads the document without creating drafts
  * (`peek`; it runs for every parameter and keyframe command), then resolves only the found path through the draft.
  */
-export function locateEffect(doc: DDoc, fxId: string): EffectLocation | null {
+export function locateEffect(doc: DDoc, raw: string): EffectLocation | null {
+	const fxId = effectInstanceIdOf(raw);
 	const sequences = peek<Record<string, Sequence>>(doc, 'sequences')!;
 	for (const sid of peekKeys(sequences)) {
 		const s = peek<Sequence>(sequences, sid)!;
@@ -313,7 +314,7 @@ export function resolveTarget(
 	}
 	if (head === 'effect' && a && rest.length === 1) {
 		const found = locateEffect(doc, a);
-		if (!found) return h.fail('E_NOT_FOUND', `Effect instance not found: ${a}`);
+		if (!found) return h.fail('E_NOT_FOUND', effectNotFoundMessage(a));
 		const effSpec = h.registries.effects.get(found.fx.effectId, found.fx.effectVersion);
 		if (!effSpec)
 			return h.fail('E_UNKNOWN_EFFECT', `Unknown effect ${found.fx.effectId} (bypassed, not editable)`);
@@ -340,7 +341,7 @@ export function resolveTarget(
 	// spec 19 TL-014: `["appearance", fxId, layerId | "palette" | "light", name]` (content time of the owning clip).
 	if (head === 'appearance' && a && rest.length === 2) {
 		const found = locateEffect(doc, a);
-		if (!found) return h.fail('E_NOT_FOUND', `Effect instance not found: ${a}`);
+		if (!found) return h.fail('E_NOT_FOUND', effectNotFoundMessage(a));
 		const look = found.fx.appearance as Draft<Appearance> | undefined;
 		if (found.fx.effectId !== TITLE_LOOK_EFFECT_ID || !look || !found.clip) return bad();
 		const clip = found.clip;
