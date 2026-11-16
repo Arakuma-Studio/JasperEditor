@@ -10935,7 +10935,85 @@ cd apps/engine && pnpm exec vitest run test/export-lossy-true-peak.test.ts -t "u
 - ffmpeg's clip avoidance still changes the level of an un-normalised mix that goes over full scale. It is the same on
   every export path, because all of them mux the same mix WAV through the same encoder. The preview's audio output
   clips such a mix instead. Loudness normalisation (its true-peak limiter) or lowering the mix avoids both.
-- Nothing warns about an un-normalised mix over 0 dBTP at export; Sound Check's OVERLOAD ("clipping without
-  normalisation") does.
+- An un-normalised mix over 0 dBTP is now warned about at export and flagged by verify_export (next section).
 - MCP tool text is unchanged. `start_export`'s description already says `audioLoudness` reports the decoded file
   under normalisation and still holds.
+
+## Fix: overs without normalisation
+
+**Reported.** A full export (draft-720p-h264, AAC, loudness normalisation off) of a mix at +4.75 dBTP (a pitch-shifted
+voice, no limiter) gave a file that tops out at −0.13 dBTP and sounds clipped. The question was whether the clip is
+in our encoder path or in AAC. A second item: the export's plan had no `paths`, although it was `hybrid` with 12 native
+segments and no Remotion spans.
+
+**Where the overs go (traced in code).** Every export path hands the encoder the float mix:
+
+- pass 1 of the mixdown (`audio/mixdown.ts` `renderPass1`) writes the mixer's output as a float32 WAV. Nothing clamps
+  on the way: no limiter, no `Math.min(1, …)`, no integer intermediate;
+- the one-graph mux (`export/service.ts` `audioStream`) gives ffmpeg that WAV with only an `aresample` when the
+  delivered rate differs. The native graph, the segmented export's sound file (`segmentSound`) and the Remotion mux
+  use `mixAudioFilters`: `aformat=sample_fmts=fltp`, `apad`, `atrim`. AAC and Opus take float input, so ffmpeg converts
+  flt → fltp, which does not clip;
+- the only conversions to integer are the final encoders of integer files (`pcm_s16le` / `pcm_s24le`, FLAC with
+  `-sample_fmt s16|s32`). Clipping there is the honest clip of an integer file.
+
+**Proof (measured, vendored LGPL ffmpeg n7.1.5 and the system ffmpeg 6.1.1 for development, same results; numpy on the
+decoded f32le).**
+
+| Signal (float WAV, 48 kHz) | Encode | Decoded file |
+| --- | --- | --- |
+| voice-like (pulse train, 24 harmonics, syllable envelope) at +4.75 dBTP throughout | AAC 160 kb/s, both ffmpegs | +3.7 dBTP; 303 samples ≥ 1.0; no flat runs |
+| −6 dBFS body, one 30 ms burst at +4.75 dBTP | AAC 128 kb/s, `aformat=fltp` as the export does | −0.1 dBTP; no flat runs |
+| AM sine at +4.75 dBFS | `pcm_s16le` | 0.00 dBFS; 42 160 samples at full scale (hard clip) |
+
+In the burst case, the 1024-sample frames that hold the over are turned down as a whole: RMS −4.2 and −4.8 dB against
+the mix, peaks −0.55 and −0.71 dBFS, and the waveform keeps its shape (mix 1.255 1.524 1.679 1.728 1.69, file
+0.672 0.815 0.897 0.921 0.898 around the crest). The neighbouring frames are unchanged within 0.1 dB, and the 1.3 dB
+next frame is the overlapping window. This is ffmpeg's AAC clip avoidance (`aacenc.c`, previous section): a gain dip of
+about 40 ms around each over, which lands the file just under 0 dBTP. That is the reported −0.13 dBTP. It is not a
+sample-format clip. Where the frames stay over full scale (the sustained case: +3.7 dBTP), a player that decodes to
+integer clips what remains. Either way, the file's own true peak cannot show the problem: verify's `true-peak` row passed
+the reported file.
+
+**Change.**
+
+- No sample-format fix was needed: the float path to the encoder is already in place.
+- `renderPass1` places the worst true peak (`peakTracker`: the loudest sample of the block where the meter's true peak
+  rose, the end of the block before included for the oversampler's delay; within a sample or two of the
+  inter-sample peak). `MixdownResult.truePeakAt` carries it for a mix delivered as mixed.
+- Export warning `AUDIO_MIX_OVER` (result `warnings`, the editor's finished-export notice, Spanish text): normalisation
+  off and the mix over 0 dBTP. It gives the peak, the timecode and file seconds of the worst over, and the fix: turn
+  on loudness normalisation, or lower the mix. With the mix's integrated loudness as the target, normalisation keeps
+  the level and adds only the true-peak limiter. Params: `truePeakDbtp`, `timecode`, `atSec`, `integratedLufs`.
+- `verify.json` records `preEncodePeak` (true peak, seconds, integrated loudness) for un-normalised exports. verify_export
+  adds the row `pre-encode-peak` (judgement, `fail`) over 0 dBTP, with `at` and the same fix. Like `offline-media`, it
+  has no pass row: none for a mix at or under 0 dBTP, for a normalised export (the limiter's ceiling governs and the
+  `true-peak` row checks it), or for an export from an older build.
+- `plan.paths` is on every picture plan. A routed plan has its split, a native / hybrid plan has
+  `{native: frames, remotion: 0, spans: 0}`, and a Remotion plan has `{native: 0, remotion: frames, spans: 1}`. Before,
+  only a plan routed per span had it. The reported plan was hybrid because of baked layers, not routing, so it had
+  none. An audio-only plan still has none, because it renders no picture.
+
+**Decision: no opt-in ceiling without normalisation.** The delivery stage (`deliver.ts` `solveDelivery`) solves a gain
+*and* a limiter ceiling against a loudness target, and its decoded check steers the loudness. A ceiling-only mode would
+need a new solve branch (gain fixed at 0 dB, corrections only), a new export setting, a control and an MCP parameter.
+It is not there yet, so it is not added here. The same result comes from existing behaviour: normalisation at the mix's
+own integrated loudness, which the warning names, with the default −1 dBTP ceiling. The limiter then catches the overs,
+and the solver's gain keeps the integrated loudness. Nothing is applied silently: the mix changes only when asked.
+
+**Tests.** `apps/engine/test/export-mix-over.test.ts` exports a 200 Hz tone at −6 dBFS with one 100 ms burst to
++4.75 dBTP at 1.55 s (30 fps), normalisation off, as AAC 128 kb/s in MP4 and as 24-bit WAV. Each export must warn
+`AUDIO_MIX_OVER` with ≈ 4.75 dBTP, `atSec` within 10 ms of 1.55 and timecode 00:00:01:16. verify_export's
+`pre-encode-peak` row must fail at frame 46. The MP4 plan's `paths` must be `{native: 90, remotion: 0, spans: 0}`.
+Both tests failed before the change (no `paths`; no warning).
+
+**Limits.**
+
+- The worst over's place is the loudest sample near the meter's peak, not a second true-peak measurement. A mix with
+  several overs gets one warning, for the worst; Sound Check's OVERLOAD lists them over time.
+- The preview's audio output hard-clips an over, while AAC dips it. Exports agree with each other, because every path
+  muxes the same float mix. They differ from the preview only for a mix over full scale, which is what the warning
+  is about.
+- MCP tool text is unchanged. The warning and the row reach agents in the `start_export` result and the verify_export
+  rows.
+

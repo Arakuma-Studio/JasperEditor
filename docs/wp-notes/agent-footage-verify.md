@@ -81,6 +81,12 @@ tolerances and pinning documented thresholds to code by a test — [`licenses/po
     target's level; `unverified` when there is neither, or the audio is too short or quiet to gate.
   - `true-peak` (format): true peak ≤ ceiling + 0.1 dB; the ceiling is the export's normalisation ceiling, else the
     target's (−1 dBTP), else 0 dBTP (full scale: over it the decoded file clips).
+  - `pre-encode-peak` (judgement, fail; `full`): an export with normalisation off whose mix went into the encoder over
+    0 dBTP, recorded at export in `verify.json` `preEncodePeak` (true peak, seconds of the worst over, integrated
+    loudness). `at` is the worst over. The fix is loudness normalisation (at the mix's own loudness the level stays) or
+    a lower mix, after asking the user. No row otherwise (a mix at or under 0 dBTP, a normalised export, an older
+    build). The file's own `true-peak` cannot show it, because ffmpeg's AAC encoder turns the frames around an over
+    down (sound-design wp-note "Fix: overs without normalisation").
   - `silence` (judgement, warn): spans where every channel is at or under −90 dBFS for more than 2 s.
   - `target-*` with `target` (`DELIVERY_TARGETS` id): `target-container` (format: a container the platform takes),
     `target-aspect` (pass at the target's shape ±1 %; judgement warn for another shape the platform takes; format fail

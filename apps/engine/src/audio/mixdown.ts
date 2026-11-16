@@ -146,6 +146,8 @@ export type MixPass1 = {
 	mixMs: number;
 	/** SHA-256 of the samples of a normalised mix (the delivery cache key, deliver.ts). */
 	contentHash: string | null;
+	/** Output sample of the mix's worst true peak (`peakTracker`); null without a meter or for silence. */
+	truePeakAt: number | null;
 };
 
 export type MixdownResult = {
@@ -158,6 +160,11 @@ export type MixdownResult = {
 	loudness: LoudnessSummary;
 	/** Wall time of the mix itself (pass 1: the mixer, the meter, the file), ms. */
 	mixMs?: number;
+	/**
+	 * Output sample of the worst true peak of a mix delivered as mixed (not normalised; `peakTracker`): where an over
+	 * full scale clips (export warning AUDIO_MIX_OVER). Absent with normalisation or when not known.
+	 */
+	truePeakAt?: number | null;
 	/**
 	 * Loudness before normalisation, the gain applied (after convergence), the delivery target and how the delivery
 	 * came to it (limiter ceiling, passes, the decoded check of a lossy codec: `deliver.ts`).
@@ -226,6 +233,56 @@ const BLOCK = 48_000;
 
 /** The `loudness` of a render without a meter (`meter: false`). */
 const SILENT_SUMMARY: LoudnessSummary = new LoudnessMeter(48_000, 1).summary();
+
+/** Samples at the end of a block searched with the next one (the true-peak oversampler's delay is a few samples). */
+const PEAK_TAIL = 64;
+
+/**
+ * Where a streamed mix's worst true peak is: the loudest sample of the block in which the meter's true peak rose, the
+ * end of the block before included (the oversampler can carry a peak into the next block). An inter-sample peak lies
+ * between two samples, so this places the worst over to within a sample or two; it measures nothing itself.
+ */
+function peakTracker(meter: { truePeak(): number }) {
+	let max = 0;
+	let at = -1;
+	let tail = { value: 0, at: -1 };
+	const loudest = (view: readonly Float32Array[], from: number, n: number, offset: number) => {
+		let value = 0;
+		let where = -1;
+		for (const c of view)
+			for (let i = from; i < n; i++) {
+				const v = Math.abs(c[i]!);
+				if (v > value) {
+					value = v;
+					where = offset + i;
+				}
+			}
+		return { value, at: where };
+	};
+	return {
+		/** After `meter.process` of `n` samples of `view` that start at output sample `offset`. */
+		process(view: readonly Float32Array[], n: number, offset: number): void {
+			const tp = meter.truePeak();
+			if (Number.isFinite(tp) && tp > max) {
+				max = tp;
+				const own = loudest(view, 0, n, offset);
+				at = own.value >= tail.value ? own.at : tail.at;
+			}
+			tail = loudest(view, Math.max(0, n - PEAK_TAIL), n, offset);
+		},
+		/** After `meter.flush`: a peak the oversampler still held belongs to the last samples. */
+		flush(): void {
+			const tp = meter.truePeak();
+			if (Number.isFinite(tp) && tp > max) {
+				max = tp;
+				at = tail.at;
+			}
+		},
+		at(): number | null {
+			return at >= 0 ? at : null;
+		},
+	};
+}
 
 /**
  * Pass 1 of `renderMixdown`: the mixer over the range, metered (and hashed for normalisation), written as a float32
@@ -300,6 +357,7 @@ export async function renderPass1(o: MixdownOptions): Promise<MixPass1> {
 		o.meter === false && !keep && !solveOnly
 			? null
 			: new LoudnessMeter(sr, channels, { weights: defaultChannelWeights(channels) });
+	const peaks = meter ? peakTracker(meter) : null;
 	// (a measure-only render may share its scratch directory: its pass 1 gets a name of its own)
 	const pass1 = keep
 		? join(o.scratchDir, o.normalize ? 'mix-pass1.wav' : 'mix.wav')
@@ -336,6 +394,7 @@ export async function renderPass1(o: MixdownOptions): Promise<MixPass1> {
 				}
 			}
 			meter?.process(view, 0, n);
+			peaks?.process(view, n, done);
 			o.onBlock?.(view, n);
 			if (fh) {
 				const bytes = interleave(view, n);
@@ -350,6 +409,7 @@ export async function renderPass1(o: MixdownOptions): Promise<MixPass1> {
 		await fh?.close();
 	}
 	meter?.flush();
+	peaks?.flush();
 	return {
 		path: pass1,
 		sampleRate: sr,
@@ -358,6 +418,7 @@ export async function renderPass1(o: MixdownOptions): Promise<MixPass1> {
 		loudness: meter ? meter.summary() : SILENT_SUMMARY,
 		mixMs: performance.now() - t0,
 		contentHash: hash ? hash.digest('hex') : null,
+		truePeakAt: peaks?.at() ?? null,
 	};
 }
 
@@ -369,7 +430,15 @@ export async function renderMixdown(o: MixdownOptions): Promise<MixdownResult> {
 	const soxr = await hasSoxr(o.ff);
 	const solveOnly = !!o.measureOnly && !!o.normalize;
 	if (!o.normalize || !pass1) {
-		return { path: pass1, sampleRate: sr, channels, samples: total, loudness: before, mixMs };
+		return {
+			path: pass1,
+			sampleRate: sr,
+			channels,
+			samples: total,
+			loudness: before,
+			mixMs,
+			truePeakAt: p1.truePeakAt ?? null,
+		};
 	}
 	const norm = o.normalize;
 	const contentHash = p1.contentHash ?? undefined;

@@ -181,6 +181,33 @@ function deliveryText(code: string, p: ExportWarningParams): string | null {
 		: t('The delivered audio measures {0} LUFS, not the {1} LUFS target', lufs.toFixed(1), target);
 }
 
+/** The mix went into the encoder over full scale with normalisation off (`AUDIO_MIX_OVER`). */
+function mixOverText(p: ExportWarningParams): string | null {
+	const tp = num(p, 'truePeakDbtp');
+	if (tp === null) return null;
+	const tc = str(p, 'timecode');
+	const lufs = num(p, 'integratedLufs');
+	const fix =
+		lufs === null
+			? t('turn on loudness normalisation (its true-peak limiter) or lower the mix')
+			: t(
+					"turn on loudness normalisation (its true-peak limiter; at {0} LUFS, the mix's own loudness, the level stays) or lower the mix",
+					lufs,
+				);
+	return tc === null
+		? t(
+				'The mix goes into the encoder at +{0} dBTP, over full scale with loudness normalisation off: the file clips there (an AAC encoder turns those moments down instead, an audible dip). To fix it, {1}',
+				tp,
+				fix,
+			)
+		: t(
+				'The mix goes into the encoder at +{0} dBTP, worst at {1}, over full scale with loudness normalisation off: the file clips there (an AAC encoder turns those moments down instead, an audible dip). To fix it, {2}',
+				tp,
+				tc,
+				fix,
+			);
+}
+
 /** An export warning in the UI language (the engine's English message when it cannot be said from its params). */
 export function exportWarningText(w: Warning): string {
 	const p = w.params && typeof w.params === 'object' && !Array.isArray(w.params) ? w.params : null;
@@ -192,6 +219,8 @@ export function exportWarningText(w: Warning): string {
 				? formatText(w.code, p)
 				: w.code === 'AUDIO_TRUE_PEAK_OVER' || w.code === 'AUDIO_LOUDNESS_CEILING'
 					? deliveryText(w.code, p)
-					: soundText(w.code, p);
+					: w.code === 'AUDIO_MIX_OVER'
+						? mixOverText(p)
+						: soundText(w.code, p);
 	return text ?? w.message;
 }

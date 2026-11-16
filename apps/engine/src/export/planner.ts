@@ -1205,15 +1205,17 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 						graphicsGroups,
 					},
 				],
-		...(routed
+		// frames on each path, on every picture plan: a one-path plan has them all on its path (a Remotion plan's one
+		// segment is its span)
+		paths: routed
 			? {
-					paths: {
-						native: frames - routed.remotionFrames,
-						remotion: routed.remotionFrames,
-						spans: routed.runs.filter((r) => r.kind === 'render' && r.engine === 'remotion').length,
-					},
+					native: frames - routed.remotionFrames,
+					remotion: routed.remotionFrames,
+					spans: routed.runs.filter((r) => r.kind === 'render' && r.engine === 'remotion').length,
 				}
-			: {}),
+			: path === 'remotion'
+				? { native: 0, remotion: frames, spans: 1 }
+				: { native: frames, remotion: 0, spans: 0 },
 		audio: {
 			mode: 'native-mix',
 			...(audioOut.normalize

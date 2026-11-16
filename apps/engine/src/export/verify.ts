@@ -248,7 +248,10 @@ export type JudgeInput = {
 const r2 = (v: number, d = 2) => (Number.isFinite(v) ? Math.round(v * 10 ** d) / 10 ** d : v);
 const fpsOf = (q: { num: number; den: number }) => q.num / q.den;
 
-function atOf(ctx: ExportVerifyContext | null, videoFps: number | null, sec: number): VerifyAt {
+/** What places a file time on the sequence (frame, timecode). */
+type Placing = Pick<ExportVerifyContext, 'fps' | 'range' | 'pieces' | 'dropFrame' | 'startTimecodeFrames'>;
+
+function atOf(ctx: Placing | null, videoFps: number | null, sec: number): VerifyAt {
 	if (ctx) {
 		const fps = fpsOf(ctx.fps);
 		const frame = sequenceFrameAt(ctx, Math.max(0, Math.floor(sec * fps + 1e-6)));
@@ -709,6 +712,55 @@ function loudnessRows(input: JudgeInput, full: FullMeasurements): VerifyRow[] {
 	return rows;
 }
 
+/**
+ * An export delivered as mixed (normalisation off) whose mix went into the encoder over full scale: its true peak,
+ * the place of its worst over and its loudness (export warning AUDIO_MIX_OVER, row `pre-encode-peak`). Null when the
+ * mix stayed at or under 0 dBTP, was normalised (its limiter's ceiling governs), or was not recorded.
+ */
+export function preEncodeOver(
+	ctx: (Placing & Pick<ExportVerifyContext, 'preEncodePeak' | 'normalize'>) | null,
+): { truePeakDbtp: number; at: VerifyAt | null; integratedLufs: number | null } | null {
+	const p = ctx?.preEncodePeak;
+	if (!ctx || !p || ctx.normalize || !(p.truePeakDbtp > T.defaultTruePeakCeilingDbtp)) return null;
+	return {
+		truePeakDbtp: p.truePeakDbtp,
+		at: p.atSec === null ? null : atOf(ctx, null, p.atSec),
+		integratedLufs: p.integratedLufs,
+	};
+}
+
+/** What fixes a mix over full scale, without changing its loudness where the mix's own is known. */
+export function mixOverFix(integratedLufs: number | null): string {
+	return integratedLufs === null
+		? 'turn on loudness normalisation (its true-peak limiter) or lower the mix'
+		: `turn on loudness normalisation (its true-peak limiter; at ${r2(integratedLufs, 1)} LUFS, the mix's own loudness, the level stays) or lower the mix`;
+}
+
+/**
+ * `pre-encode-peak`: the mix the encoder was given (recorded at export) went over full scale. An integer file (WAV,
+ * FLAC, PCM in MOV) clips over 0 dBFS; ffmpeg's AAC encoder turns the frames around an over down instead (an audible
+ * dip), and a player that decodes to integer clips what stays over. Neither shows in the file's own true peak. No row
+ * otherwise (as `offline-media`): a mix at or under 0 dBTP, a normalised export, or an export of an older build.
+ */
+function preEncodeRows(ctx: ExportVerifyContext | null): VerifyRow[] {
+	const over = preEncodeOver(ctx);
+	if (!over) return [];
+	const tp = r2(over.truePeakDbtp, 2);
+	const ceiling = T.defaultTruePeakCeilingDbtp;
+	return [
+		{
+			id: 'pre-encode-peak',
+			kind: 'judgement',
+			status: 'fail',
+			measured: tp,
+			expected: ceiling,
+			tolerance: 0,
+			...(over.at ? { at: over.at } : {}),
+			message: `Pre-encode true peak ${tp} dBTP above ${ceiling} dBTP${over.at ? ` (worst at ${over.at.timecode})` : ''}: the file clips (an AAC encoder turns those moments down instead, an audible dip), whatever the file's own true peak says. Ask the user, then ${mixOverFix(over.integratedLufs)} and export again.`,
+		},
+	];
+}
+
 function silenceRows(input: JudgeInput, full: FullMeasurements): VerifyRow[] {
 	if (!full.loudness)
 		return [
@@ -1047,6 +1099,7 @@ export function judgeExport(input: JudgeInput): VerifyRow[] {
 		rows.push(...cutRows(input, input.full));
 		if (what !== 'gif') {
 			rows.push(...loudnessRows(input, input.full));
+			if (input.full.loudness) rows.push(...preEncodeRows(input.context));
 			rows.push(...silenceRows(input, input.full));
 		}
 	}
