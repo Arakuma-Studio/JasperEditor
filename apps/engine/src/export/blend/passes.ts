@@ -290,7 +290,7 @@ export function chainStackedFrame(
 			}
 			return;
 		}
-		const k = 1 / (taps * 255);
+		const k = 1 / taps;
 		for (let y = 0; y < CH; y++)
 			for (let x = 0; x < CW; x++) {
 				acc.fill(0);
@@ -352,7 +352,7 @@ export function chainStackedFrame(
 						tab[o + 5] = pose(3);
 						tab[o + 6] = pose(5) + pt - 0.5;
 					}
-					wsums[q] = 1 / Math.max(wsum, 1e-6) / 255;
+					wsums[q] = 1 / Math.max(wsum, 1e-6);
 				}
 				const seedHash = mbSeed(mb.seed);
 				for (let y = 0; y < CH; y++) {
@@ -391,7 +391,7 @@ export function chainStackedFrame(
 					t[6] === 0
 				)
 					continue;
-				const k = 1 / Math.max(p.wsum, 1e-6) / 255;
+				const k = 1 / Math.max(p.wsum, 1e-6);
 				for (let y = 0; y < CH; y++) {
 					const ly = y + 0.5 - pt;
 					for (let x = 0; x < CW; x++) {
