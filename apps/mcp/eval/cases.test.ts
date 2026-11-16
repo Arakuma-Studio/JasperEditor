@@ -249,6 +249,14 @@ const ROUTES: Record<string, Route> = {
 	'automation-decorate-all-cuts-control': {
 		calls: (v) => [['decorate_cuts', { projectId: v.project }]],
 	},
+	'automation-shorts-kit-export-cost': {
+		calls: (v) => [['decorate_cuts', { projectId: v.project, pack: 'shorts-shake', mode: 'dryRun' }]],
+		reply: "Only part of it: the dry run says hybrid, so only the kits' spans render on Remotion.",
+	},
+	'automation-longform-kit-export-cost-control': {
+		calls: (v) => [['decorate_cuts', { projectId: v.project, mode: 'dryRun' }]],
+		reply: 'No: the dry run says the long-form kits export natively.',
+	},
 };
 
 const ROUTED_PREFIXES = ['titles-', 'effects-', 'three-d-', 'delivery-', 'cleanup-', 'job-', 'automation-'];

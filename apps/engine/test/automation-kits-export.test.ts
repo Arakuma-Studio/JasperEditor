@@ -1,6 +1,7 @@
 // Cut kits through export (spec 15 EA-033, EA-050; AGENTS §4): one kit of every family (Shake, Jolt, Whip, Zoom blur,
-// Zoom through, Spin), planned by Decorate Cuts and accepted, exported through the route the planner chooses (the
-// Remotion path: adjustment clips with shader effects have no native route) and compared frame by frame with the
+// Zoom through, Spin), planned by Decorate Cuts and accepted, exported through the route the planner chooses (native
+// for the long-form families, whose geometric effects run as the adjustment kernel's GL chain, blend/passes.ts; the
+// Remotion path for Shake, whose S_Shake motion blur the kernel does not draw) and compared frame by frame with the
 // Program composition (the Remotion still of the same document); the kit must also be visible (frames differ from the
 // undecorated edit). Opt-in: REMOTION_E2E=1 (headless Chrome with GL, ffmpeg).
 import { spawnSync } from 'node:child_process';
@@ -200,7 +201,7 @@ describe.runIf(enabled)('cut kits export like the Program composition (REMOTION_
 			const kit = plan.kits[0]!;
 			const frames = [kit.start + 1, CUT - 4, CUT - 1, CUT, CUT + 2, CUT + 6, kit.end - 2];
 			const { done, out } = await exportDoc(d);
-			expect(done.result).toMatchObject({ renderPath: 'remotion' });
+			expect(done.result).toMatchObject({ renderPath: pack === 'long-pack' ? 'native' : 'remotion' });
 			const decoded = decodeFrames(out, frames);
 			const lines: string[] = [];
 			let visible = 0;

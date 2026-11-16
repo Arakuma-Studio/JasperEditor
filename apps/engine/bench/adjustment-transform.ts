@@ -1,11 +1,13 @@
 // Run from the repository root: pnpm exec tsx apps/engine/bench/adjustment-transform.ts
 // Export time of a sequence shaped like the S5 punch-in that sent whole exports to Remotion (docs/wp-notes/
-// edit-structure.md "Native Transform on adjustment layers"): 1880 frames of 1080p30 video with a scaled overlay, an
-// adjustment layer at 1037–1095 whose keyframed Transform (100 → 180 → 215 %, 360° shutter) punches in, exported at
-// 1280×720 H.264; then a still inside the punch-in. `BENCH_CASE=s19`: S19's adjustment layer instead (ASSEMBLY_S9_S23:
-// a fast, low-amplitude S_Shake wrapping with Reflect and Tint ramping to black and white, eased, over 1037–1227).
-// Requires ffmpeg (and Chrome when the export plans Remotion). `BENCH_PORT` (default 0) and `BENCH_APPDIR` choose the
-// engine's port and appdir. Prints one JSON line.
+// edit-structure.md "Native adjustment-layer export times"): 1880 frames (`BENCH_FRAMES`) of 1080p30 video with a scaled
+// overlay, an adjustment layer at 1037–1095 whose keyframed Transform (100 → 180 → 215 %, 360° shutter) punches in,
+// exported at 1280×720 H.264; then a still at frame 1040. `BENCH_CASE=s19`: S19's adjustment layer instead
+// (ASSEMBLY_S9_S23: a fast, low-amplitude S_Shake wrapping with Reflect and Tint ramping to black and white, eased,
+// over 1037–1227, after the 100 → 140 % zoom added later, ASSEMBLY_S49_S89). `BENCH_CASE=kits`: the picture cut every
+// 60 frames (`BENCH_CUT`) with Decorate Cuts' LONG_PACK transition kits on every cut (seed 1). Requires ffmpeg (and
+// Chrome when the export plans Remotion). `BENCH_PORT` (default 0) and `BENCH_APPDIR` choose the engine's port and
+// appdir. Prints one JSON line.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -17,11 +19,15 @@ import {
 	createEmptyProject,
 	defaultRegistries,
 	makeEnvelope,
+	passItems,
+	planDecorateCuts,
 } from '@jasper/project';
 import { startEngine } from '../src/index.ts';
 import { coreServices } from '../src/tools/services.ts';
 
-const FRAMES = 1880;
+/** `BENCH_FRAMES` (default 1880) frames; kits: a cut every `BENCH_CUT` (default 60) frames. */
+const FRAMES = Math.max(300, Number(process.env.BENCH_FRAMES ?? 1880));
+const CUT_EVERY = Math.max(40, Number(process.env.BENCH_CUT ?? 60));
 const appdir = process.env.BENCH_APPDIR || mkdtempSync(join(tmpdir(), 'jasper-adj-tf-bench-'));
 const media = mkdtempSync(join(tmpdir(), 'jasper-adj-tf-bench-media-'));
 const ff = (args: string[]) => {
@@ -85,9 +91,9 @@ function edit(video: unknown, overlay: unknown) {
 	transact([{ type: 'media.register', asset: { ...(video as object), derivation: null } }]);
 	transact([{ type: 'media.register', asset: { ...(overlay as object), derivation: null } }]);
 	const [v, o] = results.map((r) => (r as { mediaId: string }).mediaId);
-	const key = (param: string, frame: number, value: unknown) => ({
+	const key = (param: string, frame: number, value: unknown, ref = '$tf') => ({
 		type: 'keyframe.add',
-		target: ['effect', '$tf', param],
+		target: ['effect', ref, param],
 		at: { sequenceFrame: frame },
 		value,
 		interpolation: 'linear',
@@ -119,6 +125,15 @@ function edit(video: unknown, overlay: unknown) {
 		{
 			type: 'effect.add',
 			target: { clipId: '$a' },
+			effectId: 'jasper.transform',
+			params: { anchorPoint: [0.5, 0.4], position: [0.5, 0.4] },
+			ref: '$tz',
+		},
+		key('scaleHeight', 1140, 100, '$tz'),
+		key('scaleHeight', 1227, 140, '$tz'),
+		{
+			type: 'effect.add',
+			target: { clipId: '$a' },
 			effectId: 'jasper.s.shake',
 			params: {
 				amplitude: 0.4,
@@ -142,14 +157,32 @@ function edit(video: unknown, overlay: unknown) {
 		{ ...key('amountToTint', 1037, 0), interpolation: 'bezier' },
 		key('amountToTint', 1224, 100),
 	];
+	const kits = process.env.BENCH_CASE === 'kits';
+	// kits: the picture cut every CUT_EVERY frames (each piece from another part of the video: real cuts).
+	const pieces = kits
+		? Array.from({ length: Math.ceil(FRAMES / CUT_EVERY) }, (_, i) => ({
+				type: 'clip.place',
+				source: { mediaId: v },
+				at: i * CUT_EVERY,
+				sourceRange: {
+					in: { sourceFrames: (i * 397) % (FRAMES - CUT_EVERY) },
+					out: {
+						sourceFrames: ((i * 397) % (FRAMES - CUT_EVERY)) + Math.min(CUT_EVERY, FRAMES - i * CUT_EVERY),
+					},
+				},
+				tracks: { video: 'V1' },
+			}))
+		: [
+				{
+					type: 'clip.place',
+					source: { mediaId: v },
+					at: 0,
+					sourceRange: { in: { sourceFrames: 0 }, out: { sourceFrames: FRAMES } },
+					tracks: { video: 'V1' },
+				},
+			];
 	transact([
-		{
-			type: 'clip.place',
-			source: { mediaId: v },
-			at: 0,
-			sourceRange: { in: { sourceFrames: 0 }, out: { sourceFrames: FRAMES } },
-			tracks: { video: 'V1' },
-		},
+		...pieces,
 		{ type: 'track.add', kind: 'video', count: 2 },
 		{
 			type: 'clip.place',
@@ -161,8 +194,13 @@ function edit(video: unknown, overlay: unknown) {
 		},
 		{ type: 'param.set', target: ['clip', '$o', 'transform', 'scale'], value: 80 },
 		{ type: 'param.set', target: ['clip', '$o', 'transform', 'position'], value: [1518, 648] },
-		...(process.env.BENCH_CASE === 's19' ? s19 : s5),
+		...(kits ? [] : process.env.BENCH_CASE === 's19' ? s19 : s5),
 	]);
+	if (kits) {
+		const plan = planDecorateCuts(doc, seqId, { pack: 'long-pack', sfx: { enabled: false }, seed: 1 });
+		transact(passItems(doc, plan).items.flatMap((it) => it.commands));
+		console.info(`[adjustment kits bench] ${plan.kits.length} kits: ${JSON.stringify(plan.families)}`);
+	}
 	return {
 		envelope: makeEnvelope(doc, { revision, savedAt: new Date().toISOString(), platform: 'benchmark' }),
 		seqId,

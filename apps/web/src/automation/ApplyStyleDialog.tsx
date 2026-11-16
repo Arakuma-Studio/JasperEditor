@@ -39,7 +39,7 @@ const STATUS_TEXT: Record<StyleStageReportDto['status'], string> = {
 };
 export const COST_TEXT: Record<'native' | 'hybrid' | 'remotion', string> = {
 	native: 'Native export',
-	hybrid: 'Native export with baked layers',
+	hybrid: 'Native export, some layers or spans on Remotion',
 	remotion: 'Export through Remotion (slower)',
 };
 

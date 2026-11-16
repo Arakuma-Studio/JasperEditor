@@ -369,13 +369,13 @@ describe('Apply Style (real engine, indexed kit, cleanup analysis)', { timeout: 
 		expect(by.cleanup!.count).toBeGreaterThan(0);
 		expect(by.cleanup!.warnings.map((w) => w.code)).toContain('W_VOICE_NOT_ANALYSED');
 		expect(by.subtitles).toMatchObject({ status: 'planned', cost: 'hybrid' });
-		expect(by['decorate-cuts']).toMatchObject({ status: 'planned', cost: 'remotion' });
+		expect(by['decorate-cuts']).toMatchObject({ status: 'planned', cost: 'native' });
 		expect(by['decorate-cuts']!.sfx).toMatchObject({ type: 'whoosh' });
 		expect(by['decorate-cuts']!.sfx!.available).toBeGreaterThan(0);
 		expect(by.music).toMatchObject({ status: 'skipped' });
 		expect(by.music!.reason).toMatch(/no bin named “Music”/);
 		expect(d.warnings.map((w) => w.code)).toContain('W_ROLE_MISSING');
-		expect(d.cost).toBe('remotion');
+		expect(d.cost).toBe('hybrid');
 		expect(d.proposalId).toBeNull();
 		expect(d.budget.fits).toBe(true);
 		const after = await savedDoc(projectId);

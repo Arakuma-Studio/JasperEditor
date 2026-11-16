@@ -7,6 +7,7 @@
 import type { BatchEffect } from '../commands/schemas/batch.ts';
 import { EDIT_AUTOMATION_FEATURE } from '../proposals/features.ts';
 import type { ProposalItemInput } from '../proposals/schema.ts';
+import { adjustmentRemoteEffects } from '../render/adjustment-native.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Sequence } from '../schema/sequence.ts';
 import type { SoundSlice } from '../sound/insert.ts';
@@ -34,11 +35,11 @@ import {
 /** Export cost class of a pass's output (EA-033). */
 export type AutomationCost = {
 	/**
-	 * `native`: Motion keys, clips and audio the native ffmpeg export draws; `hybrid`: the export stays native with the
-	 * decorated layers or transition spans pre-rendered by the layer bake (Remotion) — clips with GPU effects (S_Shake,
-	 * Noise) and GPU transitions (Smooth Slide); without the layer bake the export takes the Remotion path; `remotion`:
-	 * adjustment clips with GPU effects — the export planner sends the whole export through the Remotion renderer (no
-	 * native or layer-bake route draws an adjustment layer's shader effects).
+	 * `native`: Motion keys, clips, audio and adjustment clips the native ffmpeg export draws; `hybrid`: the export stays
+	 * native with some layers or spans rendered by Remotion — clips with GPU effects (S_Shake, Noise) and GPU transitions
+	 * (Smooth Slide) baked by the layer bake, adjustment clips with effects the native export cannot draw on them
+	 * (`adjustmentRemoteEffects`: e.g. S_Shake with motion blur) on their own spans (the planner's span routing);
+	 * `remotion`: the whole export on Remotion (results stored before span routing; the passes no longer give it).
 	 */
 	class: 'native' | 'hybrid' | 'remotion';
 	/** Frames the decorations cover. */
@@ -53,16 +54,10 @@ export const ZOOM_TRACK_ITEM = 'zoom-track';
 const FX_TRACK_REF = '$fxTrack';
 const ZOOM_TRACK_REF = '$zoomTrack';
 
-/** Effects the native export draws on an adjustment layer (crop and flips, `BUILTIN_NATIVE_EFFECTS`). */
-const NATIVE_EFFECTS: ReadonlySet<string> = new Set([
-	'jasper.crop',
-	'jasper.flip-horizontal',
-	'jasper.flip-vertical',
-]);
-
-function effectsCost(effects: readonly BatchEffect[], frames: number): AutomationCost {
-	const remote = [...new Set(effects.map((e) => e.effectId).filter((id) => !NATIVE_EFFECTS.has(id)))];
-	return { class: remote.length ? 'remotion' : 'native', frames, effects: remote };
+/** The cost of adjustment clips (their effects in stack order, one list per clip): native unless one cannot be drawn. */
+function effectsCost(clips: readonly (readonly BatchEffect[])[], frames: number): AutomationCost {
+	const remote = [...new Set(clips.flatMap((effects) => adjustmentRemoteEffects(effects)))];
+	return { class: remote.length ? 'hybrid' : 'native', frames, effects: remote };
 }
 
 /** Library sounds a pass places: the registered media (from the engine) and the pick per item id. */
@@ -217,7 +212,7 @@ export function kitItem(
 			},
 			cut: k.cut,
 			cost: effectsCost(
-				k.clips.flatMap((c) => c.effects),
+				k.clips.map((c) => c.effects),
 				k.end - k.start,
 			).class,
 			...(s
@@ -312,7 +307,7 @@ export function decorateCutsItems(
 	);
 	const items: ProposalItemInput[] = [];
 	const unsounded: string[] = [];
-	const allEffects: BatchEffect[] = [];
+	const allEffects: BatchEffect[][] = [];
 	let frames = 0;
 	for (const k of plan.kits) {
 		const { sound, setup: si } = sfx?.slices
@@ -320,7 +315,7 @@ export function decorateCutsItems(
 			: itemSound(doc, sfx, sounds, k.id);
 		if (sfx && !sound) unsounded.push(k.id);
 		const requires = [...(plan.fxTrack.create ? [FX_TRACK_ITEM] : []), ...(si ? [si] : [])];
-		for (const c of k.clips) allEffects.push(...c.effects);
+		for (const c of k.clips) allEffects.push(c.effects);
 		frames += k.end - k.start;
 		items.push(kitItem(seq, k, { trackRef, requires, sound }));
 	}
@@ -428,7 +423,7 @@ export function punchItem(
 			emphasis: p.emphasis,
 			method: adjustment ? 'adjustment' : 'motion',
 			anchorOn: { clips: [p.clipId] },
-			cost: adjustment ? 'remotion' : 'native',
+			cost: adjustment ? effectsCost([p.adjustment.effects], p.end - p.frame).class : 'native',
 			...(s ? { sound: { soundId: s.soundId, title: s.title, mediaId: s.mediaId } } : {}),
 		},
 		alternatives: [
@@ -472,12 +467,12 @@ export function punchInItems(doc: ProjectDocument, seq: Sequence, plan: PunchPla
 	);
 	const items: ProposalItemInput[] = [];
 	const unsounded: string[] = [];
-	const effects: BatchEffect[] = [];
+	const effects: BatchEffect[][] = [];
 	let frames = 0;
 	for (const p of plan.punches) {
 		const { sound, setup: si } = itemSound(doc, sfx, sounds, p.id);
 		if (sfx && !sound) unsounded.push(p.id);
-		if (plan.method === 'adjustment') effects.push(...p.adjustment.effects);
+		if (plan.method === 'adjustment') effects.push(p.adjustment.effects);
 		frames += p.end - p.frame;
 		const requires = [
 			...(plan.method === 'adjustment' && plan.zoomTrack?.create ? [ZOOM_TRACK_ITEM] : []),

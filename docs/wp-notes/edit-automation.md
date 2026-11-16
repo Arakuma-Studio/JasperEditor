@@ -372,14 +372,15 @@ caps the job fails `PROPOSAL_TOO_LARGE` with `{code: 'E_TOO_LARGE', fit, suggest
 suggests In to Out). A kit with a whoosh is 5 commands (batch adjustment, cue, place, 2 trims), so about 1 000 kits fit
 one proposal (≈ 55 min of long form at 17.9 cuts / min).
 
-Export cost class (dry run `summary.cost`): `native` for Motion keys (punch-ins, Ken Burns); `remotion` for kits and
-adjustment punch-ins — the export planner has no native or layer-bake route for an adjustment layer's shader effects
-(`nativeBlockers` names them: "adjustment clip … uses effect jasper.s.shake, which the native path cannot render"), so
-the kits' frames go through the Remotion renderer (tested in `apps/engine/test/automation.test.ts`: kits → Remotion
-segments with the blocker; punch-ins + Ken Burns → `native`). Since per-span routing
-([export-span-routing.md](export-span-routing.md)) an `auto` export of kits plans `hybrid` (only the kits' spans on
-Remotion) while the dry run still says `remotion`: Apply Style's "export route = dry run cost class" check
-(`apps/engine/test/apply-style.test.ts`) fails until the cost class follows the routing.
+Export cost class (dry run `summary.cost`): `native` for Motion keys (punch-ins, Ken Burns), adjustment punch-ins and
+the long-form kits — the export's adjustment kernel runs their geometric effects (edit-structure wp-note), and
+`adjustmentRemoteEffects` (render/adjustment-native.ts, the engine's effect list) estimates it; `hybrid` for the
+Shorts shake kit (S_Shake with motion blur: the export planner names it, and its span routing renders only the kits'
+spans on Remotion, the rest natively — [export-span-routing.md](export-span-routing.md)). The passes no longer give
+`remotion` (the whole export on Remotion); results stored before keep it. The estimate does not price the cost model:
+kits over most of a short edit can make the planner route the whole export to Remotion while the dry run says `hybrid`.
+Tested in `apps/engine/test/automation.test.ts` (long-form kits → path `native`, the shorts kit → `hybrid`, as the dry
+run said; punch-ins + Ken Burns → `native`).
 
 ### Export cost of 100 kits (EA-033, measured)
 
@@ -446,7 +447,7 @@ default.
 - `apps/engine/test/automation.test.ts` (6, real engine with an indexed generated kit): dry run stores nothing;
   refusals; Decorate Cuts proposal with whooshes placed through sound design, accepted by an agent as one
   transaction, kits exactly on their ranges, whoosh trimmed to the kit with its peak on the cut, export planner path
-  `remotion` naming the effect; Refresh after a ripple and Reroll through the route; punch-ins and Ken Burns accepted,
+  `native` for the long-form kits and `hybrid` for the shorts kit (its spans on Remotion, as the dry run says); Refresh after a ripple and Reroll through the route; punch-ins and Ken Burns accepted,
   export path `native`; policy off → 403. `apps/engine/test/proposals-features.test.ts` updated (the built-in refresher).
 - `apps/engine/test/automation-kits-export.test.ts` (REMOTION_E2E=1, 6): one kit of each family, exported through the
   route the planner chooses (Remotion) and compared with the Program composition's Remotion still of the same frames:
@@ -474,8 +475,8 @@ default.
 
 ### Limits
 
-- Kits export through the Remotion path (whole export); a hybrid route that bakes only the kit spans of the composite
-  does not exist (the cost is in the export bench below).
+- The Shorts shake kit exports through the Remotion path (whole export: S_Shake motion blur has no native route); the
+  long-form kits are native (CPU kernel: dense kit frames cost seconds of CPU each, edit-structure wp-note).
 - The whoosh is cut to the kit's span with hard edges (like the user's slices of a compilation); no fade is added.
 - `sfx.media`: only the first 120 s of the media are searched for sounds; silent given slices are dropped (warned);
   the Decorate Cuts dialog in the editor does not offer the cut list, kit selection or whoosh media (agents only).

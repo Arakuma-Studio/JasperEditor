@@ -1,40 +1,46 @@
-// Adjustment layers with Transform or S_Shake on the native path (docs/wp-notes/edit-structure.md "Native Transform
-// and S_Shake on adjustment layers"). The preview runs the effects' shaders on the composite below the layer
+// Adjustment layers with geometric effects on the native path (docs/wp-notes/edit-structure.md "Native geometric
+// effects on adjustment layers"). The preview runs the effects' shaders on the composite below the layer
 // (AdjustmentScope's canvas chain: stash → effects → mix). The native composite ends its process at such a layer (a cut
-// of the blend pipeline, blend/run.ts): the composite so far goes out as raw RGBA, the multi-tap kernel draws it
-// through the effects' per-frame maps (Transform with its shutter taps, S_Shake's pose) — the lowered layers' kernel
-// and taps (`drawTaps`, `planLoweredFrames`, shared with the Program preview's 2D path), with the composite as the
-// picture — and the next process receives `2W×H` frames, the composite ‖ the drawn composite. There the layer is drawn
-// by the usual adjustment chain (its effects after the kernel's — colour runs, flips —, crop region, opacity, fades,
-// blend mode) with the drawn half as its source and the original half as what it mixes over. One Transform or one
-// S_Shake per layer (the preview resamples after every effect; one kernel pass resamples once). An S_Shake that wraps
-// with Reflect gets the composite padded with its mirror image (`fillborders` mirror = the shader's continuous
-// reflection about the frame edge, sampled bilinearly), as far as its taps reach.
+// of the blend pipeline, blend/run.ts): the composite so far goes out as raw `W×H` RGBA, a worker pool runs the same
+// chain on it — one resample pass per effect in stack order, as the GPU host does (passes.ts) — and the next process
+// receives `2W×H` frames, the composite ‖ the chain's output. There the layer is drawn by the usual adjustment chain
+// (its effects after the geometric ones — colour runs, flips —, crop region, opacity, fades, blend mode) with the drawn
+// half as its source and the original half as what it mixes over.
 //
-// `adjustStackedFrame` is self-contained (no imports, no closures over module scope): its source text runs in the
-// worker threads (pool.ts), so tests and production share one implementation.
+// The passes' per-frame values come from the effects themselves: the evaluated params (`resolveLayerProps`), the
+// shaders' `uniforms` and `padding` hooks with the frame context the compositions build (`loweredFrameContext`), the
+// Transform's taps from its uniforms (`transformPoses`, shared with lowered layers).
 import {
+	ADJUSTMENT_KERNEL_EFFECTS,
+	clipContentTime,
 	defaultEffectRegistry,
+	type EffectParams,
 	type EffectRegistry,
+	gpuPadding,
 	hasActiveExpression,
-	loweredEffectRefusal,
+	loweredFrameContext,
 	type Rational,
 	type RenderVisualClip,
+	resolveLayerProps,
+	transformPoses,
 } from '@jasper/project';
-import { planLoweredFrames, type TapFrame } from '../stream/lowered.ts';
+import type { ChainFrame, ChainPass } from './passes.ts';
 
 export const TRANSFORM_EFFECT = 'jasper.transform';
-export const SHAKE_EFFECT = 'jasper.s.shake';
-/** The effects the kernel draws on an adjustment layer. */
-const KERNEL_EFFECTS: ReadonlySet<string> = new Set([TRANSFORM_EFFECT, SHAKE_EFFECT]);
-/** Largest frame side of the kernel (the lowered layers' effect canvas limit, `loweredLayerTaps`). */
+const SHAKE = 'jasper.s.shake';
+const MIRROR = 'jasper.mirror';
+const REPLICATE = 'jasper.replicate';
+const OFFSET = 'jasper.offset';
+/** The effects the kernel draws on an adjustment layer (passes.ts; the list the automation cost estimate shares). */
+const KERNEL_EFFECTS = ADJUSTMENT_KERNEL_EFFECTS;
+/** Largest effect canvas side (box + padding) of the kernel. */
 const MAX_SIDE = 4096;
 
 type Effect = RenderVisualClip['effects'][number];
-const kernelEffect = (fx: Effect) => fx.enabled && KERNEL_EFFECTS.has(fx.effectId);
-const label = (fx: Effect) => (fx.effectId === TRANSFORM_EFFECT ? 'Transform' : 'S_Shake');
+const kernelEffect = (fx: Pick<Effect, 'enabled' | 'effectId'>) =>
+	fx.enabled && KERNEL_EFFECTS.has(fx.effectId);
 
-/** True when the clip is an adjustment layer with an enabled Transform or S_Shake (drawn through the kernel). */
+/** True when the clip is an adjustment layer with an enabled geometric effect the kernel draws. */
 export function isKernelAdjustment(c: Pick<RenderVisualClip, 'kind' | 'effects'>): boolean {
 	return c.kind === 'adjustment' && c.effects.some(kernelEffect);
 }
@@ -52,22 +58,26 @@ const deepExpression = (v: unknown): boolean => {
 	return Object.values(o).some(deepExpression);
 };
 
-const values = (fx: Effect, name: string): unknown[] => {
-	const a = fx.params[name];
-	return a ? [a.value, ...a.keyframes.map((k) => k.value)] : [];
-};
-
-/** True when an S_Shake wraps with Reflect on an axis somewhere in the clip (a missing param is the default, Reflect). */
-function shakeReflects(fx: Effect): boolean {
-	if (fx.effectId !== SHAKE_EFFECT) return false;
-	return ['wrapX', 'wrapY'].some((w) => {
-		const vs = values(fx, w);
-		return vs.length === 0 || vs.some((v) => v === 'reflect');
-	});
+/**
+ * True when an adjustment layer's output is its geometric effects' output, as it is: only geometric effects, Normal,
+ * Opacity 100 % without keys, no fades, masks or 3D. Consecutive such layers (one track's transition kits) share one
+ * kernel pass that replaces the composite in their frames (native.ts), instead of a pass and an overlay each.
+ */
+export function isPlainKernelAdjustment(c: RenderVisualClip): boolean {
+	return (
+		isKernelAdjustment(c) &&
+		c.effects.every((fx) => !fx.enabled || KERNEL_EFFECTS.has(fx.effectId)) &&
+		(c.blendMode ?? 'normal') === 'normal' &&
+		c.opacity.value === 100 &&
+		c.opacity.keyframes.length === 0 &&
+		!c.fades?.length &&
+		!c.masks?.length &&
+		!c.threeD
+	);
 }
 
 /**
- * Why the native path cannot draw the Transform / S_Shake of an adjustment layer (empty = it can; only asked for
+ * Why the native path cannot draw the geometric effects of an adjustment layer (empty = it can; only asked for
  * `isKernelAdjustment` clips). The other effects are checked by the planner as on any adjustment layer.
  */
 export function kernelAdjustmentRefusals(c: RenderVisualClip): string[] {
@@ -78,144 +88,125 @@ export function kernelAdjustmentRefusals(c: RenderVisualClip): string[] {
 	enabled.forEach((fx, i) => {
 		if (kernelEffect(fx)) last = i;
 	});
-	// The kernel draws on the composite as it is below the layer: effects before it (or between two kernel effects)
-	// would have to run first.
+	// The kernel runs the geometric effects on the composite as it is below the layer: another effect before one of
+	// them (a colour run, a crop, a flip) would have to run between its passes.
 	for (const fx of enabled.slice(0, last))
 		if (!kernelEffect(fx))
 			out.push(
-				`${name} has ${fx.effectId} before its ${label(enabled[last]!)} (the native path draws Transform and S_Shake first on adjustment layers)`,
+				`${name} has ${fx.effectId} before a geometric effect (the native path draws its geometric effects first on adjustment layers)`,
 			);
 	const kernel = enabled.filter(kernelEffect);
 	for (const fx of kernel) {
-		const r = loweredEffectRefusal(fx, { reflect: true });
-		if (r) out.push(`${name} uses ${r}, which the native kernel does not draw`);
+		if (fx.masks?.length) out.push(`${name} has effect masks on ${fx.effectId}`);
+		if (deepExpression(fx.params)) out.push(`${name} has expressions on ${fx.effectId}`);
+		if (fx.effectId === SHAKE) {
+			const a = fx.params.motionBlur;
+			if (a && [a.value, ...a.keyframes.map((k) => k.value)].some((v) => v === true))
+				out.push(`${name} uses S_Shake motion blur, which the native kernel does not draw`);
+		}
 	}
-	if (kernel.some((fx) => deepExpression(fx.params)))
-		out.push(`${name} has expressions on its Transform or S_Shake (not sampled by the native kernel)`);
-	// One effect per kernel pass: the preview resamples after every effect, the kernel would compose them into one
-	// resample (measured: 37 dB against the preview for S_Shake then Transform 130 %).
-	if (kernel.length > 1)
-		out.push(
-			`${name} has ${kernel.length} Transform / S_Shake effects (the native kernel draws one per adjustment layer)`,
-		);
-	if (c.intrinsicBox.width > MAX_SIDE || c.intrinsicBox.height > MAX_SIDE)
-		out.push(`${name} draws Transform / S_Shake on a frame larger than ${MAX_SIDE} px`);
 	return out;
 }
 
 /**
- * The kernel frames of a Transform / S_Shake adjustment layer over sequence frames `[f0, f1)` on a `W×H` composite:
- * per frame the drawn rectangle and the multi-tap program (sequence px → picture px; the effects' maps, coverage stages
- * and the Transform's shutter taps), and `pad`: the picture is the composite with `pad` px of its mirror image on every
- * side (an S_Shake wrapping with Reflect; 0 = the composite itself). The layer's opacity is not applied here (the
- * adjustment chain mixes it). Throws when a reflection would reach farther than the frame's smaller side (the planner
- * refuses that first, `adjustmentPadRefusal`).
+ * The kernel's chain over sequence frames `[f0, f1)`: per frame the effect canvas padding and one pass per geometric
+ * effect (passes.ts), from the evaluated params and the shaders' own hooks. The layer's opacity is not applied here
+ * (the adjustment chain mixes it). Throws when the effect canvas exceeds `MAX_SIDE`.
  */
 export function planAdjustmentFrames(o: {
 	clip: RenderVisualClip;
 	f0: number;
 	f1: number;
 	fps: Rational;
-	W: number;
-	H: number;
 	registry?: EffectRegistry;
-}): { frames: TapFrame[]; pad: number } {
-	// Only the kernel's effects: the kernel draws nothing else (the effects after them run in the next process).
-	const clip: RenderVisualClip = { ...o.clip, effects: o.clip.effects.filter(kernelEffect) };
-	const plan = (pad: number) =>
-		planLoweredFrames({
-			clip,
-			f0: o.f0,
-			f1: o.f1,
-			fps: o.fps,
-			picture: { x: -pad, y: -pad, w: o.W + 2 * pad, h: o.H + 2 * pad },
-			W: o.W,
-			H: o.H,
-			registry: o.registry ?? defaultEffectRegistry,
-		}).frames;
-	const frames = plan(0);
-	if (!clip.effects.some(shakeReflects)) return { frames, pad: 0 };
-	// How far beyond the frame the taps sample for an output inside it (affine maps: at the frame's corners).
-	let reach = 0;
-	for (const f of frames) {
-		const p = f.prog;
-		let i = 2;
-		for (let t = 0; t < (p[0]! | 0); t++) {
-			const m = p.slice(i + 1, i + 7);
-			for (const [x, y] of [
-				[0, 0],
-				[o.W, 0],
-				[o.W, o.H],
-				[0, o.H],
-			] as const) {
-				const u = m[0]! * x + m[1]! * y + m[2]!;
-				const v = m[3]! * x + m[4]! * y + m[5]!;
-				reach = Math.max(reach, -u, u - o.W, -v, v - o.H);
+}): ChainFrame[] {
+	const c = o.clip;
+	const registry = o.registry ?? defaultEffectRegistry;
+	const fps = o.fps.num / o.fps.den;
+	const cache = new Map();
+	const frames: ChainFrame[] = [];
+	for (let f = o.f0; f < o.f1; f++) {
+		const props = resolveLayerProps(c, clipContentTime(c, f, o.fps));
+		const box = { width: props.box.width, height: props.box.height };
+		const effects = props.effects.filter(kernelEffect);
+		const pad: [number, number, number, number] = [0, 0, 0, 0];
+		const passes: ChainPass[] = [];
+		for (const fx of effects) {
+			const spec = registry.get(fx.effectId, fx.effectVersion);
+			if (!spec?.gpu) throw new Error(`adjustment clip "${c.name}": ${fx.effectId} has no shader`);
+			const p = fx.params as EffectParams;
+			const ctx = loweredFrameContext({ clip: c, fx, frame: f, fps, box, cache });
+			const padding = gpuPadding(spec, p, ctx);
+			pad[0] += padding.left;
+			pad[1] += padding.top;
+			pad[2] += padding.right;
+			pad[3] += padding.bottom;
+			const u = (spec.gpu.uniforms?.(p, ctx) ?? {}) as Record<string, unknown>;
+			const num = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+			const pt = (v: unknown): [number, number] =>
+				Array.isArray(v) && v.length === 2 ? [num(v[0], 0.5), num(v[1], 0.5)] : [0.5, 0.5];
+			if (fx.effectId === TRANSFORM_EFFECT) {
+				const plan = (u.u_mbPlan as { ivec4: number[] } | undefined)?.ivec4;
+				if (plan && plan[0]! > 1)
+					// Motion blur: the shader's own per-pixel taps (its jitter included) from the planned shutter.
+					passes.push({
+						k: 'tf',
+						taps: [],
+						wsum: 1,
+						mb: {
+							n: plan[0]!,
+							K: plan[1]!,
+							S: plan[2]!,
+							flags: plan[3]!,
+							keys: (u.u_mbKeys as { vec4s: number[] }).vec4s,
+							warp: (u.u_mbWarp as { vec4s: number[] }).vec4s,
+							seed: ctx.seed,
+						},
+					});
+				else {
+					const poses = transformPoses(u, num(p.opacity, 100));
+					passes.push({ k: 'tf', taps: poses.list.flatMap((q) => [q.w, ...q.inv]), wsum: poses.wsum });
+				}
+			} else if (fx.effectId === SHAKE) {
+				const wrap = (v: unknown) => (v === 'no' ? 0 : v === 'tile' ? 1 : 2);
+				passes.push({
+					k: 'shake',
+					q: (u.u_shakeNow as { vec4s: number[] }).vec4s,
+					rgb: u.u_shakeRgb === true,
+					z: num(p.zDist, 1),
+					wx: wrap(p.wrapX),
+					wy: wrap(p.wrapY),
+				});
+			} else if (fx.effectId === MIRROR) {
+				const [cx, cy] = pt(p.reflectionCenter);
+				const a = (num(p.reflectionAngle, 0) * Math.PI) / 180;
+				passes.push({ k: 'mirror', cx, cy, dx: Math.cos(a), dy: Math.sin(a) });
+			} else if (fx.effectId === REPLICATE) passes.push({ k: 'replicate', n: num(p.count, 2) });
+			else if (fx.effectId === OFFSET) {
+				const [sx, sy] = pt(p.shiftCenterTo);
+				passes.push({ k: 'offset', sx, sy, blend: num(p.blendWithOriginal, 0) });
+			} else {
+				const step = (u.u_dbStep as number[] | undefined) ?? [0, 0];
+				passes.push({ k: 'dblur', sx: step[0]!, sy: step[1]! });
 			}
-			i += 12 + (p[i + 11]! | 0) * 10;
 		}
+		const cw = Math.ceil(box.width + pad[0] + pad[2]);
+		const ch = Math.ceil(box.height + pad[1] + pad[3]);
+		if (cw > MAX_SIDE || ch > MAX_SIDE)
+			throw new Error(
+				`adjustment clip "${c.name}": its effect canvas is ${cw}×${ch} px (at most ${MAX_SIDE} on the native path)`,
+			);
+		frames.push({ pad, passes });
 	}
-	if (!(reach > 0)) return { frames, pad: 0 };
-	const pad = Math.ceil(reach) + 2;
-	if (pad > Math.min(o.W, o.H))
-		throw new Error(
-			`adjustment clip "${o.clip.name}": its S_Shake reflects ${pad} px beyond the frame (at most ${Math.min(o.W, o.H)})`,
-		);
-	return { frames: plan(pad), pad };
+	return frames;
 }
 
-/** Why a kernel adjustment layer's reflection cannot be padded natively (null = it can). */
-export function adjustmentPadRefusal(c: RenderVisualClip, fps: Rational): string | null {
-	const W = Math.max(1, Math.round(c.intrinsicBox.width));
-	const H = Math.max(1, Math.round(c.intrinsicBox.height));
+/** Why the kernel cannot run a kernel adjustment layer's chain (its canvas too large; null = it can). */
+export function adjustmentPlanRefusal(c: RenderVisualClip, fps: Rational): string | null {
 	try {
-		planAdjustmentFrames({ clip: c, f0: c.start, f1: c.start + c.duration, fps, W, H });
+		planAdjustmentFrames({ clip: c, f0: c.start, f1: c.start + c.duration, fps });
 		return null;
 	} catch (e) {
 		return e instanceof Error ? e.message : String(e);
-	}
-}
-
-/** The kernel `drawTaps` (stream/kernel.ts), passed in so that this function stays self-contained. */
-type DrawTaps = (
-	src: Uint8Array,
-	sw: number,
-	cw: number,
-	ch: number,
-	dst: Uint8Array,
-	dw: number,
-	dh: number,
-	prog: ArrayLike<number>,
-	opacity: number,
-	rect: ArrayLike<number> | null,
-	acc: Float32Array,
-) => void;
-
-/**
- * One frame of the cut: `src` = the composite with `pad` px of padding on every side (`(W + 2·pad) × (H + 2·pad)`
- * straight RGBA), `out` = `2W×H`, the composite ‖ the picture drawn through `prog` within `rect` (transparent
- * elsewhere). `prog` null = the layer is not drawn on this frame (the right half repeats the composite; the next
- * process does not read it). `tmp` = `W×H×4` bytes, `acc` = the kernel's scratch (at least `4 × rect area` floats).
- */
-export function adjustStackedFrame(
-	drawTaps: DrawTaps,
-	src: Uint8Array,
-	W: number,
-	H: number,
-	pad: number,
-	prog: ArrayLike<number> | null,
-	rect: ArrayLike<number> | null,
-	out: Uint8Array,
-	tmp: Uint8Array,
-	acc: Float32Array,
-): void {
-	const row = W * 4;
-	const sw = W + 2 * pad;
-	if (prog) drawTaps(src, sw, sw, H + 2 * pad, tmp, W, H, prog, 1, rect, acc);
-	for (let y = 0; y < H; y++) {
-		const s = ((y + pad) * sw + pad) * 4;
-		const o = 2 * y * row;
-		out.set(src.subarray(s, s + row), o);
-		out.set(prog ? tmp.subarray(y * row, (y + 1) * row) : src.subarray(s, s + row), o + row);
 	}
 }

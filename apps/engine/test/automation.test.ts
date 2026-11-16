@@ -272,7 +272,8 @@ describe('editing automation passes (real engine, indexed kit)', { timeout: 600_
 		expect(r.statusCode, r.body).toBe(200);
 		const out = AutomationPassResultSchema.parse(r.json());
 		expect(out.summary).toMatchObject({ pass: 'decorate-cuts', count: 4, considered: 4, coverage: 1 });
-		expect(out.summary.cost.class).toBe('remotion');
+		// the long-form kits' effects run on the native adjustment kernel (blend/adjust.ts)
+		expect(out.summary.cost.class).toBe('native');
 		expect(out.summary.track).toBe('new track FX');
 		expect(out.sfx).toMatchObject({ enabled: true, type: 'whoosh', placed: 4 });
 		expect(out.sfx!.available).toBeGreaterThanOrEqual(4);
@@ -352,11 +353,25 @@ describe('editing automation passes (real engine, indexed kit)', { timeout: 600_
 			expect(Math.abs(peak - m.frame * F)).toBeLessThanOrEqual(F);
 		}
 		expect(clips.length).toBe(4);
-		// the export planner sends the kits' frames to the Remotion path (routing.ts: the rest natively when that pays)
-		// and says why
+		// the export planner keeps the kits native, as the dry run's cost class said
 		const plan = await exportPath(after.doc, seqId);
-		expect(plan.segments.some((s) => s.mode === 'remotion')).toBe(true);
-		expect(JSON.stringify(plan.blockers)).toMatch(/adjustment clip .* uses effect jasper\./);
+		expect(plan.blockers).toEqual([]);
+		expect(plan.path).toBe('native');
+	});
+
+	it('the shorts kit (S_Shake with motion blur) exports hybrid, only its spans on Remotion, as the dry run says', async () => {
+		const { projectId, seqId } = seed([120, 120, 120, 120]);
+		const body = { sequenceId: seqId, params: { pack: 'shorts-shake', seed: 4, sfx: { enabled: false } } };
+		const dry = await post(url(projectId, 'decorate-cuts'), { ...body, mode: 'dryRun' });
+		expect(dry.statusCode, dry.body).toBe(200);
+		expect(AutomationPassResultSchema.parse(dry.json()).summary.cost).toMatchObject({
+			class: 'hybrid',
+			effects: ['jasper.s.shake'],
+		});
+		const { result } = await propose(projectId, 'decorate-cuts', body);
+		await acceptAll(projectId, result.proposalId!);
+		const { doc } = await savedDoc(projectId);
+		expect((await exportPath(doc, seqId)).path).toBe('hybrid');
 	});
 
 	it('Refresh proposal re-plans a kit whose cut moved; Reroll draws it again with the next seed', async () => {
