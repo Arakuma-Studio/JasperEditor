@@ -173,6 +173,20 @@ feeds them or that they feed.
   sequence's own pan, sends and submixes are not applied inside the nest.
 - The `tracks` analysis scope measures the Mix with only those tracks playing (solo semantics, the Mix fader
   included, normalisation excluded).
+- Analyses (`POST /api/audio/analyze`) are `analysis` jobs: progress is the frames of the range mixed so far
+  ("Mixing audio: frame n of N"), cancelling stops the mix. A finished result is kept per engine (64, most recently
+  used) by the content of what the offline mixer plays (`AudioService.analysisKey`: the snapshot's mixer graph without
+  the Mix normalisation, its audio clips with their media fingerprints, the range, scope, levels, activity and delivery
+  target), so the same measurement of an unchanged mix answers at once — finished, `200` even without `wait` — and a
+  request repeated while one runs joins it (dedupe key). The sound-design caches do not serve it: `MeasureCache` holds
+  whole-mix summaries keyed by `audioWorld` (sound design's own delivery analysis), and the delivery cache is keyed by
+  the mixed pass 1, so it needs the mix it would skip. The MCP tools (`measure_loudness`, `set_audio_gain` normalise
+  modes, `auto_duck`, `set_loudness_normalization`, `auto_match_loudness`, `generate_essential_ducking`) start the job and
+  poll it with progress for up to 300 s; they used to wait inside one engine request, which a mix through slow effects
+  (Rubber Band R3 at "best": ≈ 3.5× real time on stereo, reported) outlived at the 180 s request deadline. Past the
+  wait `measure_loudness` returns `{jobId, timedOut, running, next: wait_for_job}`; the others refuse with `E_TIMEOUT`
+  and the same next step, then answer at once from the kept result. Tests: `apps/engine/test/audio-analysis-job.test.ts`,
+  `apps/mcp/test/measure-loudness.test.ts`; eval case `loudness-slow-mix`.
 
 ## 6. Limits
 
@@ -185,3 +199,6 @@ feeds them or that they feed.
 - macOS microphone entitlement / prompt are configured but untested (no macOS).
 - Submix tracks appear in the mixers, MCP and the model but not as timeline rows (timeline layout is `edit-ux`'s).
 - No insert effects ship here (they are audio-fx's); slots accept any registered audio effect.
+- Kept analyses live in engine memory only: an engine restart measures again. The editor's own analyses (Loudness
+  Normalization ▸ Analyze, Measure Loudness, Auto Duck) still wait on one request (`wait=1`; no client deadline) and
+  show no progress, though repeats come back at once from the kept result.

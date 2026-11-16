@@ -17,12 +17,14 @@ import {
 import { z } from 'zod';
 import { ProjectIdArg, SequenceIdArg } from '../arguments.ts';
 import {
+	cancelIfAborted,
 	DESTRUCTIVE_IDEMPOTENT,
 	defineTool,
 	EDIT,
 	EDIT_IDEMPOTENT,
 	type Extra,
 	frameOf,
+	isTerminal,
 	loadDoc,
 	READ_ONLY,
 	requireOk,
@@ -59,15 +61,51 @@ function resultOf<T>(job: EngineJob): T {
 	return job.result as T;
 }
 
+/** How long a tool waits for a measurement before it answers with the running job. */
+const ANALYZE_WAIT_SEC = 300;
+
+type AnalyzeRequest = Pick<AudioAnalyzeRequest, 'sequenceId' | 'scope' | 'levels' | 'activity' | 'delivery'>;
+
+/**
+ * Starts an analysis job and waits for it with progress, up to ANALYZE_WAIT_SEC (a mix through slow effects takes
+ * minutes; a request that waited for it ran out of time). A cancelled tool call cancels the job; a measurement of an
+ * unchanged mix the engine kept comes back finished at once.
+ */
+async function runAnalysis(
+	ctx: ToolContext,
+	projectId: string,
+	req: AnalyzeRequest,
+	extra: Extra | undefined,
+): Promise<{ job: EngineJob; timedOut: boolean }> {
+	const { doc, revision } = await loadDoc(ctx, projectId);
+	const job = await ctx.engine((c) =>
+		c.analyzeAudio({ ...req, projectId, envelope: toolEnvelope(doc, revision) }),
+	);
+	await cancelIfAborted(ctx, extra, job.id);
+	return isTerminal(job) ? { job, timedOut: false } : waitJob(ctx, job.id, ANALYZE_WAIT_SEC * 1000, extra);
+}
+
+/** Where a running analysis is ("62 %, Mixing audio: frame 17402 of 28080"). */
+const runningAt = (job: EngineJob) =>
+	[job.progress !== null ? `${Math.round(job.progress * 100)} %` : null, job.stage]
+		.filter(Boolean)
+		.join(', ');
+
+/** An analysis's result; refused with the job to wait for when it outlived the tool's wait. */
 export async function analyze(
 	ctx: ToolContext,
 	projectId: string,
-	req: Pick<AudioAnalyzeRequest, 'sequenceId' | 'scope' | 'levels' | 'activity' | 'delivery'>,
+	req: AnalyzeRequest,
+	extra?: Extra,
 ): Promise<AudioAnalyzeResult> {
-	const { doc, revision } = await loadDoc(ctx, projectId);
-	const job = await ctx.engine((c) =>
-		c.analyzeAudio({ ...req, projectId, envelope: toolEnvelope(doc, revision) }, true),
-	);
+	const { job, timedOut } = await runAnalysis(ctx, projectId, req, extra);
+	if (timedOut)
+		throw new ToolError(
+			'E_TIMEOUT',
+			`The audio measurement is still running after ${ANALYZE_WAIT_SEC} s (${runningAt(job)})`,
+			`Call wait_for_job {jobId: "${job.id}"}, then this tool again with the same arguments: the measurement is kept, so it answers at once.`,
+			{ jobId: job.id },
+		);
 	return resultOf<AudioAnalyzeResult>(job);
 }
 
@@ -165,7 +203,7 @@ export function registerAudioTools(ctx: ToolContext): void {
 			},
 			annotations: READ_ONLY,
 		},
-		async ({ projectId, sequenceId, scope, start, end, tracks, clipIds, levels }) => {
+		async ({ projectId, sequenceId, scope, start, end, tracks, clipIds, levels }, extra) => {
 			const { doc } = await loadDoc(ctx, projectId);
 			const seq = pickSequence(doc, sequenceId);
 			const kind =
@@ -192,14 +230,27 @@ export function registerAudioTools(ctx: ToolContext): void {
 					...(end !== undefined ? { endFrame: frameOf(seq, end) } : {}),
 				};
 			else s = { type: 'sequence' };
-			const r = await analyze(ctx, projectId, {
-				sequenceId: seq.id,
-				scope: s,
-				...(levels ? { levels } : {}),
-				// a measurement: the export's converged delivery is solved by set_loudness_normalization
-				delivery: null,
-			});
-			return jsonResult({ ...r, stale: false });
+			const { job, timedOut } = await runAnalysis(
+				ctx,
+				projectId,
+				{
+					sequenceId: seq.id,
+					scope: s,
+					...(levels ? { levels } : {}),
+					// a measurement: the export's converged delivery is solved by set_loudness_normalization
+					delivery: null,
+				},
+				extra,
+			);
+			// a long mix (slow effects) outlived the wait: the job keeps measuring, and its result is the measurement
+			if (timedOut)
+				return jsonResult({
+					jobId: job.id,
+					timedOut: true,
+					running: runningAt(job),
+					next: `Call wait_for_job {jobId: "${job.id}"}: its result is the measurement.`,
+				});
+			return jsonResult({ ...resultOf<AudioAnalyzeResult>(job), stale: false });
 		},
 	);
 
@@ -457,11 +508,16 @@ export function registerAudioTools(ctx: ToolContext): void {
 			const seq = pickSequence(doc, sequenceId);
 			let peaks: Record<string, number | null> | undefined;
 			if (mode === 'normalizeMax' || mode === 'normalizeAll') {
-				const r = await analyze(ctx, projectId, {
-					sequenceId: seq.id,
-					scope: { type: 'clips', clipIds },
-					levels: 'source',
-				});
+				const r = await analyze(
+					ctx,
+					projectId,
+					{
+						sequenceId: seq.id,
+						scope: { type: 'clips', clipIds },
+						levels: 'source',
+					},
+					extra,
+				);
 				peaks = Object.fromEntries(clipIds.map((id) => [id, r.clips?.[id]?.samplePeakDb ?? null]));
 			}
 			const body = await apply(
@@ -513,17 +569,22 @@ export function registerAudioTools(ctx: ToolContext): void {
 				);
 			const start = Math.min(...targets.map((c) => c!.start));
 			const end = Math.max(...targets.map((c) => c!.start + c!.duration));
-			const r = await analyze(ctx, a.projectId, {
-				sequenceId: seq.id,
-				scope: a.triggerClipIds?.length
-					? { type: 'clips', clipIds: a.triggerClipIds }
-					: { type: 'tracks', trackIds: a.triggerTracks! },
-				activity: {
-					sensitivity: a.sensitivity ?? DUCK_DEFAULTS.sensitivity,
-					startFrame: start,
-					endFrame: end,
+			const r = await analyze(
+				ctx,
+				a.projectId,
+				{
+					sequenceId: seq.id,
+					scope: a.triggerClipIds?.length
+						? { type: 'clips', clipIds: a.triggerClipIds }
+						: { type: 'tracks', trackIds: a.triggerTracks! },
+					activity: {
+						sensitivity: a.sensitivity ?? DUCK_DEFAULTS.sensitivity,
+						startFrame: start,
+						endFrame: end,
+					},
 				},
-			});
+				extra,
+			);
 			const regions = r.activity?.regions ?? [];
 			const body = await apply(
 				ctx,
@@ -570,14 +631,19 @@ export function registerAudioTools(ctx: ToolContext): void {
 			if (doAnalyze !== false) {
 				// the export's converged delivery for the target being set (the preview plays its gain)
 				const cur = seq.master.loudness;
-				const r = await analyze(ctx, projectId, {
-					sequenceId: seq.id,
-					scope: { type: 'sequence' },
-					delivery: {
-						targetLufs: targetLufs ?? cur?.targetLufs ?? -23,
-						truePeakDb: truePeakDb ?? cur?.truePeakDb ?? -1,
+				const r = await analyze(
+					ctx,
+					projectId,
+					{
+						sequenceId: seq.id,
+						scope: { type: 'sequence' },
+						delivery: {
+							targetLufs: targetLufs ?? cur?.targetLufs ?? -23,
+							truePeakDb: truePeakDb ?? cur?.truePeakDb ?? -1,
+						},
 					},
-				});
+					extra,
+				);
 				analysis = {
 					integratedLufs: r.loudness.integratedLufs,
 					truePeakDbtp: r.loudness.truePeakDbtp,

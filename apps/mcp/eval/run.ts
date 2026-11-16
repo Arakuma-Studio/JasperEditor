@@ -159,6 +159,7 @@ async function runSample(input: {
 			...(testCase.setup?.pendingTranscription
 				? { pendingTranscription: testCase.setup.pendingTranscription }
 				: {}),
+			...(testCase.setup?.analysisPolls ? { analysisPolls: testCase.setup.analysisPolls } : {}),
 			...(testCase.setup?.verify ? { verify: testCase.setup.verify } : {}),
 			...(testCase.setup?.pastExport ? { pastExport: testCase.setup.pastExport } : {}),
 			...(testCase.setup?.logo ? { logo: true } : {}),

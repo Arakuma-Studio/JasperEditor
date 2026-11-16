@@ -758,11 +758,16 @@ export function registerAudioFxTools(ctx: ToolContext): void {
 			const { doc } = await loadDoc(ctx, a.projectId);
 			const seq = pickSequence(doc, a.sequenceId);
 			const untyped = a.clipIds.filter((id) => !readEssentialSound(audioClip(seq, id).essential));
-			const r = await analyze(ctx, a.projectId, {
-				sequenceId: seq.id,
-				scope: { type: 'clips', clipIds: a.clipIds },
-				levels: 'source',
-			});
+			const r = await analyze(
+				ctx,
+				a.projectId,
+				{
+					sequenceId: seq.id,
+					scope: { type: 'clips', clipIds: a.clipIds },
+					levels: 'source',
+				},
+				extra,
+			);
 			const measured: Record<string, number | null> = {};
 			for (const id of a.clipIds) measured[id] = r.clips?.[id]?.integratedLufs ?? null;
 			const body = await apply(
@@ -952,11 +957,16 @@ export function registerAudioFxTools(ctx: ToolContext): void {
 				);
 			const start = Math.min(...targets.map((c) => c.start));
 			const end = Math.max(...targets.map((c) => c.start + c.duration));
-			const r = await analyze(ctx, a.projectId, {
-				sequenceId: seq.id,
-				scope: { type: 'clips', clipIds: triggers },
-				activity: { sensitivity: s.ducking.sensitivity, startFrame: start, endFrame: end },
-			});
+			const r = await analyze(
+				ctx,
+				a.projectId,
+				{
+					sequenceId: seq.id,
+					scope: { type: 'clips', clipIds: triggers },
+					activity: { sensitivity: s.ducking.sensitivity, startFrame: start, endFrame: end },
+				},
+				extra,
+			);
 			const regions = r.activity?.regions ?? [];
 			const body = await apply(
 				ctx,
