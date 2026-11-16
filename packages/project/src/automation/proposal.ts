@@ -9,6 +9,7 @@ import { EDIT_AUTOMATION_FEATURE } from '../proposals/features.ts';
 import type { ProposalItemInput } from '../proposals/schema.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Sequence } from '../schema/sequence.ts';
+import type { SoundSlice } from '../sound/insert.ts';
 import {
 	SOUND_PROPOSAL_SETUP_GROUP,
 	type SoundProposalMedia,
@@ -19,7 +20,16 @@ import type { DecoratePlan, KitChoice, KitPlacement } from './decorate-cuts.ts';
 import type { KenBurnsPlacement, KenBurnsPlan } from './ken-burns.ts';
 import { AUTOMATION_PASS_GROUP, type AutomationPass } from './params.ts';
 import type { MotionPlan, PunchPlacement, PunchPlan } from './punch-ins.ts';
-import { editAnchor, placedSpan, type SfxMediaInfo, sfxCommands, sfxMediaInfo } from './sfx.ts';
+import {
+	editAnchor,
+	placedSliceSpan,
+	placedSpan,
+	type SfxMediaInfo,
+	sfxCommands,
+	sfxMediaInfo,
+	soundSliceOf,
+	type WhooshSlice,
+} from './sfx.ts';
 
 /** Export cost class of a pass's output (EA-033). */
 export type AutomationCost = {
@@ -61,6 +71,13 @@ export type PassSfx = {
 	assign: ReadonlyMap<string, { soundId: string; gainOffsetDb: number }>;
 	type: string;
 	gainDb?: number;
+	/** Decorate Cuts: whooshes cut from one project media instead (the slice index per item id). */
+	slices?: {
+		mediaId: string;
+		title: string;
+		slices: readonly WhooshSlice[];
+		assign: ReadonlyMap<string, number>;
+	};
 };
 
 export type PassItems = {
@@ -131,6 +148,8 @@ export type ItemSound = {
 	type: string;
 	gainDb?: number;
 	gainOffsetDb: number;
+	/** Only this part of the media (a whoosh slice). */
+	slice?: SoundSlice;
 };
 
 /** The proposal item of one kit (`trackRef`: the FX track id or `$fxTrack`; `requires`: its setup items). */
@@ -144,7 +163,9 @@ export function kitItem(
 	const key = refKey(k.id);
 	const soundFor = s
 		? (() => {
-				const expected = placedSpan(s.info, k.frame, fps, 'peak');
+				const expected = s.slice
+					? placedSliceSpan(s.slice, s.info.durationFlicks, k.frame, fps)
+					: placedSpan(s.info, k.frame, fps, 'peak');
 				const anchor = editAnchor(seq, { ...k.cut, frame: k.frame });
 				return (c: KitChoice) =>
 					sfxCommands({
@@ -161,6 +182,7 @@ export function kitItem(
 						label: `${c.variantLabel} whoosh`,
 						anchor,
 						...(s.gainDb !== undefined ? { gainDb: s.gainDb } : { gainOffsetDb: s.gainOffsetDb }),
+						...(s.slice ? { slice: s.slice } : {}),
 						expected,
 						trim: { start: c.start, end: c.end },
 					});
@@ -198,7 +220,9 @@ export function kitItem(
 				k.clips.flatMap((c) => c.effects),
 				k.end - k.start,
 			).class,
-			...(s ? { sound: { soundId: s.soundId, title, mediaId: s.mediaId } } : {}),
+			...(s
+				? { sound: { soundId: s.soundId, title, mediaId: s.mediaId, ...(s.slice ? { slice: s.slice } : {}) } }
+				: {}),
 		},
 		...(k.alternatives.length
 			? {
@@ -243,6 +267,24 @@ export function itemSound(
 	};
 }
 
+/** The sound of a kit cut from the whoosh media (`sfx.slices`), or null. */
+function sliceSound(doc: ProjectDocument, sfx: PassSfx | undefined, itemId: string): ItemSound | null {
+	const w = sfx?.slices;
+	const i = w?.assign.get(itemId);
+	const slice = i !== undefined ? w!.slices[i] : undefined;
+	if (!sfx || !w || !slice) return null;
+	return {
+		mediaId: w.mediaId,
+		info: sfxMediaInfo(doc.media?.[w.mediaId] ?? null),
+		soundId: `${w.mediaId}#${i}`,
+		title: `${w.title} ${slice.from.toFixed(2)}–${slice.to.toFixed(2)} s`,
+		type: sfx.type,
+		...(sfx.gainDb !== undefined ? { gainDb: sfx.gainDb } : {}),
+		gainOffsetDb: 0,
+		slice: soundSliceOf(slice),
+	};
+}
+
 export function decorateCutsItems(
 	doc: ProjectDocument,
 	seq: Sequence,
@@ -265,7 +307,7 @@ export function decorateCutsItems(
 	} else trackRef = plan.fxTrack.trackId;
 	const sounds = soundSetup(
 		doc,
-		sfx,
+		sfx?.slices ? undefined : sfx,
 		plan.kits.map((k) => k.id),
 	);
 	const items: ProposalItemInput[] = [];
@@ -273,7 +315,9 @@ export function decorateCutsItems(
 	const allEffects: BatchEffect[] = [];
 	let frames = 0;
 	for (const k of plan.kits) {
-		const { sound, setup: si } = itemSound(doc, sfx, sounds, k.id);
+		const { sound, setup: si } = sfx?.slices
+			? { sound: sliceSound(doc, sfx, k.id), setup: null }
+			: itemSound(doc, sfx, sounds, k.id);
 		if (sfx && !sound) unsounded.push(k.id);
 		const requires = [...(plan.fxTrack.create ? [FX_TRACK_ITEM] : []), ...(si ? [si] : [])];
 		for (const c of k.clips) allEffects.push(...c.effects);

@@ -220,6 +220,35 @@ const ROUTES: Record<string, Route> = {
 	'automation-punch-midpoint-control': {
 		calls: (v) => [['add_punch_ins', { projectId: v.project, start: 'midpoint' }]],
 	},
+	'automation-decorate-explicit-cuts': {
+		calls: (v) => [['decorate_cuts', { projectId: v.project, cuts: ['10s', '00:00:25:00'] }]],
+	},
+	'automation-decorate-kit-variants': {
+		calls: (v) => [['decorate_cuts', { projectId: v.project, kits: ['whip/left', 'whip/right'] }]],
+	},
+	'automation-decorate-whoosh-media': {
+		calls: (v) => [
+			[
+				'decorate_cuts',
+				{
+					projectId: v.project,
+					sfx: {
+						media: {
+							mediaId: v.seed_w!,
+							slices: [
+								{ from: 0.5, to: 1.4 },
+								{ from: 2, to: 3.1 },
+								{ from: 4, to: 4.6 },
+							],
+						},
+					},
+				},
+			],
+		],
+	},
+	'automation-decorate-all-cuts-control': {
+		calls: (v) => [['decorate_cuts', { projectId: v.project }]],
+	},
 };
 
 const ROUTED_PREFIXES = ['titles-', 'effects-', 'three-d-', 'delivery-', 'cleanup-', 'job-', 'automation-'];

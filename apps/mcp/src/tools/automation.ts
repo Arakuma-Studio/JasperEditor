@@ -12,7 +12,7 @@ import {
 } from '@jasper/api';
 import { TimeInputSchema } from '@jasper/project';
 import { z } from 'zod';
-import { ProjectIdArg, SequenceIdArg } from '../arguments.ts';
+import { ProjectIdArg, SequenceIdArg, TimeArgSchema } from '../arguments.ts';
 import {
 	cancelIfAborted,
 	defineTool,
@@ -27,7 +27,7 @@ import { jsonResult, ToolError } from '../errors.ts';
 import { pickSequence } from '../format.ts';
 
 export const AUTOMATION_GUIDE = `Editing automation (spec 15): passes that decorate the edit the way the user's videos are cut, each as ONE proposal (feature "edit-automation", Review groups Cut kits / Punch-ins / Ken Burns / Reactions / Overlay slides / Music beds / Stingers) the user reviews in the Review panel (timeline ghosts, ✓ / ✕ per item, ⇄ alternatives, ↻ Refresh proposal after edits, Reroll per item) and applies as one undo step.
-- decorate_cuts: a cut kit at every picture cut (the cut map, list_cuts): an adjustment clip on an "FX" track above the picture (created when needed), centred on the cut exactly — vertical sequences get the shorts kit (S_Shake 10 + 10 frames, Amplitude 0.5, Frequency 6, Motion Blur), others the long-form pack (Jolt 49 %, Whip 17 %, Zoom blur 17 %, Zoom through 9 %, Spin 8 %, few repeats: P(same as previous) 0.23) — with 2-key eased curves; kits never overlap (close cuts take a shorter family or are skipped, reported), plus a whoosh exactly as long as the kit with its peak on the cut, placed through sound design (a cue anchored to the edit + soundDesign.place; a library sound of type sfx.type, default whoosh, from the starter kit / packs / your folders). Kits render through the Remotion export path (their shader effects have no native route): the dry run says so.
+- decorate_cuts: a cut kit at every picture cut (the cut map, list_cuts; or only the cuts listed in cuts): an adjustment clip on an "FX" track above the picture (created when needed), centred on the cut exactly — vertical sequences get the shorts kit (S_Shake 10 + 10 frames, Amplitude 0.5, Frequency 6, Motion Blur), others the long-form pack (Jolt 49 %, Whip 17 %, Zoom blur 17 %, Zoom through 9 %, Spin 8 %, few repeats: P(same as previous) 0.23) — with 2-key eased curves; kits never overlap (close cuts take a shorter family or are skipped, reported), plus a whoosh exactly as long as the kit with its peak on the cut, placed through sound design (a cue anchored to the edit + soundDesign.place; a library sound of type sfx.type, default whoosh, from the starter kit / packs / your folders; or slices of one project media: sfx.media). Kits render through the Remotion export path (their shader effects have no native route): the dry run says so.
 - add_punch_ins: Motion zooms on the A-roll clips ≥ 1.5 s (density 0.7 of them, "!" / "?" phrases first): from the clip's midpoint (or nearest word start, or start "caption": the subtitle start the user would pick), 7 frames linear 100 → 180 %, held to the cut; target centre, a point, or the subject (face tracking / saliency); method "motion" (default, Motion keys: native export) or "adjustment" (a Transform clip on a ZOOM track right above the A-roll); optional whoosh.
 - add_ken_burns: slow zooms over 15 % of the remaining A-roll clips, keys on the first and last frame, 100 ↔ 118 % (vertical) / 130 %, zoom-in : zoom-out 2 : 1. Native export.
 - place_reactions: the user's reaction pictures (assets: {bin} name or id, {folder} absolute path, or {mediaIds}; nothing is shipped — ask the user which bin or folder holds them) on a "Reactions" track (below an FX track so kits shake them too) where the edit asks for one: markers whose name contains "reaction" or names a picture, calls to action and exclamations of the transcript (built-in Spanish / English lists, editable: words.cta, words.exclamations; any word with "!"), and optionally where face tracking finds no face on the A-roll (triggers.speakerNotVisible; run track_faces first). Each starts on a cut within 0.5 s, lasts 2.1 s (vertical) / 2.6 s, at a measured slot (shorts: bottom left / centre / right; long form: mid height at 15 / 50 / 83 %), flipped on the left slots, 60–65 % Motion scale (capped at 45 % of the frame height), S_Shake wobble (Amplitude 0.8, Frequency 2), never over subtitles, at most maxPerMinute (12 vertical, 1 landscape); 3 other pictures per item (⇄). Exports natively with the wobbled pictures baked (hybrid).
@@ -40,18 +40,12 @@ export const AUTOMATION_GUIDE = `Editing automation (spec 15): passes that decor
 const RangeArg = z
 	.object({ start: TimeInputSchema, end: TimeInputSchema })
 	.optional()
-	.describe('Only this part of the sequence [start, end): frames, {"seconds": x} or "HH:MM:SS:FF"');
+	.describe('Only this part of the sequence [start, end)');
 const ModeArg = z
 	.enum(['propose', 'dryRun'])
 	.optional()
 	.describe('"propose" (default): store a proposal for review; "dryRun": only say what the pass would do');
-const SeedArg = z
-	.number()
-	.int()
-	.min(0)
-	.max(0xffff_ffff)
-	.optional()
-	.describe('Seed of the random choices (default 1); the same seed and edit give the same plan');
+const SeedArg = z.number().int().min(0).max(0xffff_ffff).optional().describe('Random seed (default 1)');
 const TrackArg = (what: string) => z.string().min(1).max(128).optional().describe(what);
 const SfxArg = z
 	.object({
@@ -92,6 +86,22 @@ const SfxArg = z
 			.max(16)
 			.optional()
 			.describe('Sounds the rotation cycles through (default 12)'),
+	})
+	.optional();
+/** Decorate Cuts' sound: the library sound options, or whooshes sliced from one project media (bounds: the engine). */
+const DecorateSfxArg = SfxArg.unwrap()
+	.extend({
+		media: z
+			.object({
+				mediaId: z.string(),
+				slices: z
+					.array(z.object({ from: z.number(), to: z.number() }))
+					.optional()
+					.describe('Seconds of the media (default: its sounds split by quiet)'),
+				match: z.enum(['length', 'rotate']).optional(),
+			})
+			.optional()
+			.describe('Whooshes sliced from a project media'),
 	})
 	.optional();
 const TimeoutArg = z
@@ -139,6 +149,7 @@ type Args = {
 	sequenceId?: string;
 	mode?: 'propose' | 'dryRun';
 	range?: { start: unknown; end: unknown };
+	cuts?: unknown[];
 	timeoutSeconds?: number;
 } & Record<string, unknown>;
 
@@ -200,6 +211,7 @@ async function runPass(
 			);
 		params.range = range;
 	}
+	if (a.cuts) params.cuts = a.cuts.map((t) => frameOf(seq, t));
 	const body = { sequenceId: seq.id, mode: a.mode ?? 'propose', params };
 	const out = await ctx.engine((c) => c.automationPass(a.projectId, pass, body, extra.signal));
 	if (body.mode === 'dryRun') {
@@ -255,7 +267,7 @@ export function registerAutomationTools(ctx: ToolContext): void {
 			description:
 				'Propose a cut kit on every picture cut: adjustment clips with eased effects and a whoosh. Nothing changes until it is accepted.',
 			details:
-				'Spec 15 Decorate Cuts: a cut kit centred on every picture cut (adjustment clips with eased effect keys on an "FX" track above the picture) plus a whoosh of the kit\'s length with its peak on the cut (sound design cue + placement), as a PROPOSAL for review — nothing changes until it is accepted. Vertical sequences default to the shorts shake kit (S_Shake 10 + 10 frames), others to the long-form pack (Jolt / Whip / Zoom blur / Zoom through / Spin with their measured shares and a repeat penalty). Kits never overlap: a cut too close to the previous kit takes a shorter family or is skipped (listed with its reason). mode "dryRun" returns the counts, coverage, families, skips, export cost (kits render through the Remotion path) and the sounds available without storing anything. Each item keeps its seed: refresh_proposal {reroll: true} draws another kit for it.',
+				'Spec 15 Decorate Cuts: a cut kit centred on every picture cut (adjustment clips with eased effect keys on an "FX" track above the picture) plus a whoosh of the kit\'s length with its peak on the cut (sound design cue + placement), as a PROPOSAL for review — nothing changes until it is accepted. Vertical sequences default to the shorts shake kit (S_Shake 10 + 10 frames), others to the long-form pack (Jolt / Whip / Zoom blur / Zoom through / Spin with their measured shares and a repeat penalty). Kits never overlap: a cut too close to the previous kit takes a shorter family or is skipped (listed with its reason). mode "dryRun" returns the counts, coverage, families, skips, export cost (kits render through the Remotion path) and the sounds available without storing anything. Each item keeps its seed: refresh_proposal {reroll: true} draws another kit for it. cuts: exactly these cuts, of any kind (another frame is refused with E_NOT_A_CUT naming the nearest cut); kits: a subset of the pack; sfx.media: whooshes sliced from a project media (the given slices, or without them its sounds separated by quiet; the engine measures each peak), the slice nearest each kit\'s length (or in turn), peak on the cut, trimmed to the kit.',
 			input: {
 				projectId: ProjectIdArg,
 				sequenceId: SequenceIdArg,
@@ -275,9 +287,9 @@ export function registerAutomationTools(ctx: ToolContext): void {
 					.min(0)
 					.max(1)
 					.optional()
-					.describe(
-						'Weight factor of the previous kit’s family (pack default 0.54: P(same) = 0.23; 1 = independent)',
-					),
+					.describe('Weight factor of the previous kit’s family (default 0.54; 1 = independent)'),
+				kits: z.array(z.string()).optional().describe('Only these pack kits: "whip", "whip/left"…'),
+				cuts: z.array(TimeArgSchema).optional().describe('Only these cuts (list_cuts frames or times)'),
 				track: TrackArg('Only cuts on this video track (the A-roll, e.g. "V1"); default every picture cut'),
 				range: RangeArg,
 				includeInsertEdges: z
@@ -305,7 +317,7 @@ export function registerAutomationTools(ctx: ToolContext): void {
 				fxTrack: TrackArg(
 					'Video track for the kits (default: a free "FX" track above the picture, else a new one)',
 				),
-				sfx: SfxArg,
+				sfx: DecorateSfxArg,
 				seed: SeedArg,
 				timeoutSeconds: TimeoutArg,
 			},
@@ -318,6 +330,7 @@ export function registerAutomationTools(ctx: ToolContext): void {
 				a as Args,
 				pick(a, [
 					'pack',
+					'kits',
 					'families',
 					'repeatPenalty',
 					'track',

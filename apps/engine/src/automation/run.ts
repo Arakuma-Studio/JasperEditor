@@ -9,7 +9,7 @@
 //      ducking) and the dialogue's momentary loudness (stinger punchlines, rendered by the offline mixer);
 //   4. the pass's sounds through the sound-design system: the library's sounds of the role (`whoosh`; the stingers'
 //      generated TV static), from the allowed sources / pack / folder, ranked and rotated by the pure helpers,
-//      registered for the project (setup items);
+//      registered for the project (setup items) — or Decorate Cuts' whooshes cut from a project media (whoosh.ts);
 //   5. the budget (E_TOO_LARGE with a range that fits), then the proposal through the proposals service.
 // Nothing is applied: the user reviews the proposal (or an allowed agent accepts it).
 import { mkdtemp, readdir, rm, stat } from 'node:fs/promises';
@@ -52,6 +52,8 @@ import {
 	type SoundProposalMedia,
 	sfxNeeds,
 	sfxPool,
+	whooshNeeds,
+	whooshPassSfx,
 } from '@jasper/project';
 import type { AgentService } from '../agent/service.ts';
 import type { AudioService } from '../audio/service.ts';
@@ -63,6 +65,7 @@ import { liveDocument } from '../sound-design/plan.ts';
 import type { VoiceActivityService } from '../sound-design/voice.ts';
 import type { SoundService } from '../sounds/service.ts';
 import { HttpError } from '../tools/reply.ts';
+import { measureWhooshSlices, type WhooshAudio } from './whoosh.ts';
 
 export type AutomationDeps = {
 	agent: () => AgentService | undefined;
@@ -76,6 +79,8 @@ export type AutomationDeps = {
 	voice?: () => VoiceActivityService | undefined;
 	/** Stingers: the dialogue's momentary loudness. */
 	audio?: () => AudioService | undefined;
+	/** Decorate Cuts' whooshes cut from a project media: ffmpeg and the media store. */
+	whooshAudio?: () => WhooshAudio | undefined;
 };
 
 export type AutomationJobInput = {
@@ -480,6 +485,40 @@ export async function registerSounds(
 	return { media, failed };
 }
 
+/**
+ * Decorate Cuts' whooshes cut from `sfx.media` (null when the pass takes library sounds): the measured slices assigned
+ * to the kits, and the pass's sound report.
+ */
+export async function whooshSounds(
+	deps: AutomationDeps,
+	doc: ProjectDocument,
+	plan: AutomationPlan,
+	params: Record<string, unknown>,
+	signal?: AbortSignal,
+): Promise<{
+	sfx: PassSfx;
+	report: NonNullable<AutomationPassResult['sfx']>;
+	warnings: { code: string; message: string }[];
+} | null> {
+	const needs = whooshNeeds(plan, params);
+	if (!needs) return null;
+	const m = await measureWhooshSlices(deps.whooshAudio?.(), doc, needs.media, signal);
+	const sfx = whooshPassSfx(doc, plan, needs, m.slices);
+	const assign = sfx.slices!.assign;
+	return {
+		sfx,
+		report: {
+			enabled: true,
+			type: needs.sfx.type,
+			available: m.slices.length,
+			placed: assign.size,
+			sounds: new Set(assign.values()).size,
+			unsounded: needs.items.length - assign.size,
+		},
+		warnings: m.warnings,
+	};
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // Dry run and job
 
@@ -502,13 +541,14 @@ export async function dryRunPass(
 	const plan = planOrThrow(doc, input.pass, input.sequenceId, input.params, inputs.ctx);
 	const needs = sfxNeeds(doc, plan, input.params as { sfx?: never });
 	const pick = await pickSounds(deps.sounds(), needs, plan.sequenceId);
+	const whoosh = await whooshSounds(deps, doc, plan, input.params);
 	// Sound commands counted as if placed (the budget of the real proposal); the picture items are exact.
 	const items = passItems(doc, plan);
 	const summary = passSummary(plan, items);
-	const extra = pick ? pick.assign.size * 4 : 0;
+	const extra = (pick ? pick.assign.size * 4 : 0) + (whoosh ? whoosh.report.placed * 4 : 0);
 	const budget = budgetOf(items.items);
 	const fits = budget.fits && budget.commands + extra <= 5000;
-	const warnings = [...summary.warnings, ...inputs.warnings];
+	const warnings = [...summary.warnings, ...inputs.warnings, ...(whoosh?.warnings ?? [])];
 	if (needs && !pick?.available)
 		warnings.push({
 			code: 'W_NO_SOUNDS',
@@ -520,16 +560,18 @@ export async function dryRunPass(
 		projectId: input.projectId,
 		sequenceId: plan.sequenceId,
 		summary,
-		sfx: needs
-			? {
-					enabled: true,
-					type: needs.sfx.type,
-					available: pick?.available ?? 0,
-					placed: pick?.assign.size ?? 0,
-					sounds: new Set([...(pick?.assign.values() ?? [])].map((a) => a.soundId)).size,
-					unsounded: needs.items.length - (pick?.assign.size ?? 0),
-				}
-			: null,
+		sfx: whoosh
+			? whoosh.report
+			: needs
+				? {
+						enabled: true,
+						type: needs.sfx.type,
+						available: pick?.available ?? 0,
+						placed: pick?.assign.size ?? 0,
+						sounds: new Set([...(pick?.assign.values() ?? [])].map((a) => a.soundId)).size,
+						unsounded: needs.items.length - (pick?.assign.size ?? 0),
+					}
+				: null,
 		budget: { ...budget, fits, commands: budget.commands + extra },
 		proposalId: null,
 		revision,
@@ -633,6 +675,13 @@ async function runJob(ctx: JobContext, deps: AutomationDeps): Promise<Automation
 			code: 'W_NO_SOUNDS',
 			message: `No ${needs.sfx.type} sound in the allowed sources: the decorations have no sound (install the starter kit or a pack, or add a folder)`,
 		});
+	ctx.progress(0.4, { stage: 'Finding the whooshes in the media' });
+	const whoosh = await whooshSounds(deps, doc, plan, params, ctx.signal);
+	if (ctx.signal.aborted) throw new JobError('JOB_CANCELLED', 'Cancelled');
+	if (whoosh) {
+		sfx = whoosh.sfx;
+		warnings.push(...whoosh.warnings);
+	}
 	ctx.progress(0.82, { stage: 'Building the proposal' });
 	const items = passItems(doc, plan, sfx);
 	const summary = passSummary(plan, items);
@@ -643,16 +692,18 @@ async function runJob(ctx: JobContext, deps: AutomationDeps): Promise<Automation
 			fit: budget.fit,
 			suggestedRange: budget.suggestedRange,
 		});
-	const sfxReport = needs
-		? {
-				enabled: true,
-				type: needs.sfx.type,
-				available: pick?.available ?? 0,
-				placed: registered,
-				sounds: sfx ? sfx.media.length : 0,
-				unsounded: needs.items.length - registered,
-			}
-		: null;
+	const sfxReport = whoosh
+		? whoosh.report
+		: needs
+			? {
+					enabled: true,
+					type: needs.sfx.type,
+					available: pick?.available ?? 0,
+					placed: registered,
+					sounds: sfx ? sfx.media.length : 0,
+					unsounded: needs.items.length - registered,
+				}
+			: null;
 	const draft = passDraft(plan, items, params, { warnings, ...(sfxReport ? { sfx: sfxReport } : {}) });
 	const base = {
 		mode: 'propose' as const,

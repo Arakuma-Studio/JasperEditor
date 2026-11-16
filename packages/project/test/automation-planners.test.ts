@@ -9,7 +9,9 @@ import { captionStart } from '../src/automation/punch-caption.ts';
 import {
 	type AdjustmentClip,
 	type Animatable,
+	type AudioClip,
 	AutomationInputError,
+	assignWhooshSlices,
 	automationReportOf,
 	batchKeysOf,
 	type Clip,
@@ -32,10 +34,13 @@ import {
 	planDecorateCuts,
 	planKenBurns,
 	planPunchIns,
+	RecipePassesSchema,
 	refreshAutomationItems,
 	refreshProposalItems,
 	repeatProbability,
 	revalidate,
+	whooshNeeds,
+	whooshPassSfx,
 	zoomMotion,
 } from '../src/index.ts';
 import { Harness } from './helpers.ts';
@@ -408,6 +413,113 @@ describe('Decorate Cuts proposal', () => {
 	});
 });
 
+describe('Decorate Cuts inputs: explicit cuts, a kit selection, whooshes cut from a media', () => {
+	const lengths = Array.from({ length: 12 }, (_, i) => 60 + ((i * 37) % 90));
+
+	it('decorates exactly the listed cuts (coverage ignored) and refuses frames that are not cuts by name', () => {
+		const { h, cuts } = aroll(lengths);
+		const chosen = [cuts[7]!, cuts[2]!, cuts[2]!];
+		const plan = planDecorateCuts(h.doc, h.seqId, { cuts: chosen, coverage: 0 });
+		expect(plan.kits.map((k) => k.frame)).toEqual([cuts[2], cuts[7]]);
+		expect(plan.considered).toBe(2);
+		let err: unknown;
+		try {
+			planDecorateCuts(h.doc, h.seqId, { cuts: [cuts[2]!, cuts[4]! + 1] });
+		} catch (e) {
+			err = e;
+		}
+		expect(err).toBeInstanceOf(AutomationInputError);
+		expect((err as AutomationInputError).code).toBe('E_NOT_A_CUT');
+		expect((err as Error).message).toContain(`${cuts[4]! + 1} (nearest cut ${cuts[4]}`);
+		// the range still bounds the list
+		expect(() =>
+			planDecorateCuts(h.doc, h.seqId, { cuts: [cuts[9]!], range: { start: 0, end: cuts[5]! } }),
+		).toThrow(/not picture cuts in \[0, /);
+	});
+
+	it('a kit selection draws only those families / variants of the pack; unknown kits are refused with the list', () => {
+		const { h } = aroll(lengths);
+		const left = planDecorateCuts(h.doc, h.seqId, { kits: ['whip/left'] });
+		expect(left.kits.length).toBeGreaterThan(5);
+		for (const k of left.kits) {
+			expect([k.family, k.variant]).toEqual(['whip', 'left']);
+			for (const a of k.alternatives) expect([a.family, a.variant]).toEqual(['whip', 'left']);
+		}
+		const two = planDecorateCuts(h.doc, h.seqId, { kits: ['spin', 'zoom-through/in'], seed: 3 });
+		expect(new Set(two.kits.map((k) => `${k.family}/${k.family === 'spin' ? '*' : k.variant}`))).toEqual(
+			new Set(['spin/*', 'zoom-through/in']),
+		);
+		expect(() => planDecorateCuts(h.doc, h.seqId, { kits: ['spin/up'] })).toThrow(
+			/no kit "spin\/up" \(it has jolt, jolt\/.*whip\/left/,
+		);
+		// project-specific inputs stay out of style recipes (an earlier build would drop such a recipe on load)
+		const recipe = (params: unknown) =>
+			RecipePassesSchema.safeParse({ 'decorate-cuts': { enabled: true, params } }).success;
+		expect(recipe({ families: { spin: 0 } })).toBe(true);
+		expect(recipe({ kits: ['whip'] })).toBe(false);
+		expect(recipe({ cuts: [10] })).toBe(false);
+		expect(recipe({ sfx: { media: { mediaId: 'med_1' } } })).toBe(false);
+	});
+
+	it('slices are matched to the kit length (neighbours differ when as near) or rotated', () => {
+		const slices = [
+			{ from: 0, to: 0.4, peak: 0.3 },
+			{ from: 1, to: 1.66, peak: 1.5 },
+			{ from: 2, to: 2.68, peak: 2.5 },
+			{ from: 3, to: 4.5, peak: 4 },
+		];
+		const items = [20, 40, 40, 40, 90].map((frames, i) => ({ id: `kit:${i}`, frames }));
+		const byLength = assignWhooshSlices(items, slices, { match: 'length', fps: 60 });
+		expect([...byLength.values()]).toEqual([0, 1, 2, 1, 3]);
+		const rotated = assignWhooshSlices(items, slices, { match: 'rotate', fps: 60 });
+		expect([...rotated.values()]).toEqual([0, 1, 2, 3, 0]);
+	});
+
+	it('kits get whooshes cut from the media: peak on the cut, trimmed to the kit, kept by a refresh', () => {
+		const { h, cuts } = aroll([120, 120, 120]);
+		const whoosh = h.registerVideo({ kind: 'audio', seconds: 30 });
+		const params = parsePassParams('decorate-cuts', {
+			kits: ['spin'],
+			sfx: { media: { mediaId: whoosh, slices: [{ from: 3, to: 6 }], match: 'rotate' } },
+		});
+		const plan = planDecorateCuts(h.doc, h.seqId, params);
+		const needs = whooshNeeds(plan, params)!;
+		expect(needs.media.mediaId).toBe(whoosh);
+		// the engine measures each slice's peak; 4.6 s here
+		const sfx = whooshPassSfx(h.doc, plan, needs, [{ from: 3, to: 6, peak: 4.6 }]);
+		const items = passItems(h.doc, plan, sfx);
+		expect(items.unsounded).toEqual([]);
+		const p = propose(h, passDraft(plan, items, params));
+		// a reroll keeps the slice of the item
+		const r = refreshAutomationItems(h.doc, p, [`kit:${cuts[0]}`], { reroll: true });
+		expect(r.ok && r.items).toHaveLength(1);
+		const place = r.ok
+			? (r.items[0]!.commands as { type: string; layers?: { slice?: unknown }[] }[]).find(
+					(c) => c.type === 'soundDesign.place',
+				)
+			: undefined;
+		expect(place?.layers?.[0]?.slice).toEqual({ fromSec: 3, toSec: 6, peakSec: 4.6 });
+		acceptAll(h, p);
+		expect(checkInvariants(h.doc)).toEqual([]);
+		const F = flicksPerFrame(h.seq.settings.frameRate);
+		const audio = Object.values(h.seq.clips).filter(
+			(c): c is AudioClip => c.kind === 'audio' && c.mediaId === whoosh,
+		);
+		expect(audio.map((c) => c.start).sort((a, b) => a - b)).toEqual(plan.kits.map((k) => k.start));
+		for (const c of audio) {
+			const k = plan.kits.find((x) => x.start === c.start)!;
+			expect(c.duration).toBe(k.end - k.start);
+			// the slice's peak plays on the cut frame
+			expect(c.start * F + (4.6 * FLICKS_PER_SECOND - c.sourceIn)).toBeCloseTo(k.frame * F, -3);
+			expect(c.sourceIn).toBeGreaterThanOrEqual(3 * FLICKS_PER_SECOND);
+		}
+		// an unknown media is refused before planning
+		expect(() => planDecorateCuts(h.doc, h.seqId, { sfx: { media: { mediaId: 'med_nope' } } })).toThrow(
+			/no media med_nope/,
+		);
+	});
+});
+
 describe('punch-ins planner', () => {
 	it('density of the clips ≥ 1.5 s get a 7-frame linear ramp to 180 % from the midpoint, held to the cut', () => {
 		const { h, ids } = aroll([30, 60, 90, 120, 150, 180, 210, 240, 270, 300]);
@@ -676,6 +788,8 @@ describe('robustness (fuzz)', () => {
 							'repeatPenalty',
 							'fxTrack',
 							'start',
+							'cuts',
+							'kits',
 						),
 						fc.jsonValue(),
 						{ maxKeys: 6 },

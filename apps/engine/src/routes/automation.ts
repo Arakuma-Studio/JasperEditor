@@ -58,6 +58,7 @@ export default async function automationRoutes(app: FastifyInstance): Promise<vo
 		localPaths: () => core.config.dev || isLoopbackHost(core.config.host),
 		voice: () => services.voice as VoiceActivityService | undefined,
 		audio: () => services.audio as AudioService | undefined,
+		whooshAudio: () => ({ ff: core.ffmpeg, registry: core.registry }),
 	};
 	core.queue.registerRunner('edit-automation', (ctx) => runAutomationJob(ctx, deps));
 	const proposals = deps.proposals();

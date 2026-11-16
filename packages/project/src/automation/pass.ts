@@ -9,7 +9,12 @@ import { type DecoratePlan, planDecorateCuts } from './decorate-cuts.ts';
 import { type KenBurnsPlan, planKenBurns } from './ken-burns.ts';
 import { type MusicPlan, planMusicBed } from './music.ts';
 import { musicItems, reactionItems, slideItems, stingerItems } from './overlay-items.ts';
-import { AUTOMATION_PARAM_SCHEMAS, type AutomationPass, type AutomationSfx } from './params.ts';
+import {
+	AUTOMATION_PARAM_SCHEMAS,
+	type AutomationPass,
+	type AutomationSfx,
+	type WhooshMedia,
+} from './params.ts';
 import {
 	automationDraft,
 	decorateCutsItems,
@@ -20,7 +25,7 @@ import {
 } from './proposal.ts';
 import { type PunchContext, type PunchPlan, planPunchIns } from './punch-ins.ts';
 import { planReactions, type ReactionPlan } from './reactions.ts';
-import { type ResolvedSfx, resolveSfx } from './sfx.ts';
+import { assignWhooshSlices, type ResolvedSfx, resolveSfx, type WhooshSlice } from './sfx.ts';
 import type { LoudnessCurve } from './signals.ts';
 import { planSlides, type SlidePlan } from './slides.ts';
 import { planStingers, STINGER_SYNTH_RECIPE, type StingerPlan } from './stingers.ts';
@@ -132,6 +137,8 @@ export function sfxNeeds(
 	if (plan.pass !== 'decorate-cuts' && plan.pass !== 'punch-ins') return null;
 	const sfx = resolveSfx(params.sfx, true);
 	if (!sfx.enabled) return null;
+	// whooshes cut from a project media need no library sounds (`whooshNeeds`)
+	if (plan.pass === 'decorate-cuts' && whooshMediaOf(params)) return null;
 	const fps = fpsValue(frameGeometry(automationSequence(doc, plan.sequenceId)).fps);
 	if (plan.pass === 'decorate-cuts') {
 		if (!plan.kits.length) return null;
@@ -150,6 +157,48 @@ export function sfxNeeds(
 		items: plan.punches.map((p) => ({ id: p.id, seed: p.seed })),
 		windowSec: plan.punches[0]!.rampFrames / fps,
 		visualKind: 'move',
+	};
+}
+
+const whooshMediaOf = (params: { sfx?: unknown }): WhooshMedia | null =>
+	((params.sfx as { media?: WhooshMedia } | undefined)?.media ?? null) as WhooshMedia | null;
+
+/** What Decorate Cuts' whooshes cut from a project media need: the media, its slices (or `auto`) and the kits. */
+export type WhooshNeeds = {
+	media: WhooshMedia;
+	items: { id: string; frames: number }[];
+	sfx: ResolvedSfx;
+};
+
+/** Null unless a Decorate Cuts plan with kits takes its whooshes from `sfx.media` (and sounds are on). */
+export function whooshNeeds(plan: AutomationPlan, params: { sfx?: unknown }): WhooshNeeds | null {
+	if (plan.pass !== 'decorate-cuts' || !plan.kits.length) return null;
+	const media = whooshMediaOf(params);
+	const sfx = resolveSfx(params.sfx as AutomationSfx | undefined, true);
+	if (!media || !sfx.enabled) return null;
+	return { media, items: plan.kits.map((k) => ({ id: k.id, frames: k.end - k.start })), sfx };
+}
+
+/** The pass's sounds from the measured slices of the whoosh media (assigned per `media.match`). */
+export function whooshPassSfx(
+	doc: ProjectDocument,
+	plan: AutomationPlan,
+	needs: WhooshNeeds,
+	slices: readonly WhooshSlice[],
+): PassSfx {
+	const fps = fpsValue(frameGeometry(automationSequence(doc, plan.sequenceId)).fps);
+	const m = doc.media?.[needs.media.mediaId];
+	return {
+		media: [],
+		assign: new Map(),
+		type: needs.sfx.type,
+		...(needs.sfx.gainDb !== undefined ? { gainDb: needs.sfx.gainDb } : {}),
+		slices: {
+			mediaId: needs.media.mediaId,
+			title: (m?.originalName || needs.media.mediaId).slice(0, 80),
+			slices,
+			assign: assignWhooshSlices(needs.items, slices, { match: needs.media.match ?? 'length', fps }),
+		},
 	};
 }
 
