@@ -90,7 +90,7 @@ async function blendSegment(
 	let pool: { slots: Slot[]; close(): Promise<void> };
 	let runSlot: (slot: Slot, i: number) => Promise<void>;
 	if (adjust) {
-		const p = new AdjustPool({ W, H }, opts);
+		const p = new AdjustPool({ W, H, replace: adjust.replace === true }, opts);
 		pool = p;
 		runSlot = (slot, i) => p.run(p.slots[slot.index]!, adjust.frames[i] ?? null);
 	} else {

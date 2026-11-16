@@ -65,7 +65,7 @@ export class BlendPool {
 	}
 }
 
-/** One frame slot of a geometric adjustment cut: `src` (the composite, `W×H` RGBA) and `out` (`2W×H` RGBA). */
+/** One frame slot of a geometric adjustment cut: `src` (the composite, `W×H` RGBA) and `out` (`2W×H`, or `W×H` replacing). */
 export type AdjustSlot = { index: number; src: Uint8Array; out: Uint8Array };
 
 const ADJUST_WORKER_SOURCE = `
@@ -73,16 +73,16 @@ const ADJUST_WORKER_SOURCE = `
 var __name = (f) => f;
 const { parentPort, workerData } = require('node:worker_threads');
 const chainStackedFrame = ${chainStackedFrame.toString()};
-const { W, H } = workerData;
+const { W, H, replace } = workerData;
 const len = W * H * 4;
 const slots = workerData.slots.map((buf) => ({
 	src: new Uint8Array(buf, 0, len),
-	out: new Uint8Array(buf, len, 2 * len),
+	out: new Uint8Array(buf, len, replace ? len : 2 * len),
 }));
 const scratch = {};
 parentPort.on('message', (m) => {
 	const s = slots[m.slot];
-	chainStackedFrame(s.src, W, H, m.frame, s.out, scratch);
+	chainStackedFrame(s.src, W, H, m.frame, s.out, scratch, replace);
 	parentPort.postMessage(m.slot);
 });
 `;
@@ -94,20 +94,21 @@ export class AdjustPool {
 	readonly slots: AdjustSlot[] = [];
 	private readonly pool: ExportWorkerPool<AdjustMsg, number>;
 
-	constructor(size: { W: number; H: number }, opts: { workers: number; slots: number }) {
+	constructor(size: { W: number; H: number; replace: boolean }, opts: { workers: number; slots: number }) {
 		const counts = framePoolSize(opts);
-		const { W, H } = size;
+		const { W, H, replace } = size;
 		const len = W * H * 4;
+		const outLen = replace ? len : 2 * len;
 		const bufs: SharedArrayBuffer[] = [];
 		for (let i = 0; i < counts.slots; i++) {
-			const buf = new SharedArrayBuffer(len * 3);
+			const buf = new SharedArrayBuffer(len + outLen);
 			bufs.push(buf);
-			this.slots.push({ index: i, src: new Uint8Array(buf, 0, len), out: new Uint8Array(buf, len, 2 * len) });
+			this.slots.push({ index: i, src: new Uint8Array(buf, 0, len), out: new Uint8Array(buf, len, outLen) });
 		}
 		this.pool = new ExportWorkerPool(
 			'adjust',
 			opts.workers,
-			() => new Worker(ADJUST_WORKER_SOURCE, { eval: true, workerData: { slots: bufs, W, H } }),
+			() => new Worker(ADJUST_WORKER_SOURCE, { eval: true, workerData: { slots: bufs, W, H, replace } }),
 		);
 	}
 

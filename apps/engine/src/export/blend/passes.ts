@@ -53,7 +53,9 @@ export type ChainScratch = { a?: Uint8Array; b?: Uint8Array; c?: Uint8Array };
 /**
  * One frame of the cut: `src` = the composite (`W×H` straight RGBA8), `out` = `2W×H`, the composite ‖ the chain's
  * output inside the box (straight RGBA8). `frame` null = the layer is not drawn on this frame (the right half repeats
- * the composite; the next process does not read it).
+ * the composite; the next process does not read it). `replace`: `out` = `W×H`, the chain's output as the adjustment
+ * chain would mix it at Opacity 100 % — premultiplied, alpha 1 (`premultiply`, `lutrgb=a=maxval`) — or the composite
+ * where `frame` is null.
  */
 export function chainStackedFrame(
 	src: Uint8Array,
@@ -62,9 +64,14 @@ export function chainStackedFrame(
 	frame: ChainFrame | null,
 	out: Uint8Array,
 	scratch: ChainScratch,
+	replace: boolean,
 ): void {
 	const row = W * 4;
 	if (!frame) {
+		if (replace) {
+			out.set(src.subarray(0, W * H * 4));
+			return;
+		}
 		for (let y = 0; y < H; y++) {
 			const s = src.subarray(y * row, (y + 1) * row);
 			out.set(s, 2 * y * row);
@@ -184,35 +191,222 @@ export function chainStackedFrame(
 		tex(A, (nx * W + pl) / CW, (ny * H + pt) / CH);
 		for (let k = 0; k < 4; k++) px[k] = px[k]! * c;
 	};
+	// texture() in texel coordinates (x = u·CW − ½): acc += w × bilinear(T) (0…255 scale), CLAMP_TO_EDGE.
+	const texAdd = (T: Uint8Array, xs: number, ys: number, w: number) => {
+		const xf = Math.floor(xs);
+		const yf = Math.floor(ys);
+		const fx = xs - xf;
+		const fy = ys - yf;
+		const x0 = xf < 0 ? 0 : xf >= CW ? CW - 1 : xf;
+		const x1 = xf + 1 < 0 ? 0 : xf + 1 >= CW ? CW - 1 : xf + 1;
+		const r0 = (yf < 0 ? 0 : yf >= CH ? CH - 1 : yf) * CW;
+		const r1 = (yf + 1 < 0 ? 0 : yf + 1 >= CH ? CH - 1 : yf + 1) * CW;
+		const i00 = (r0 + x0) * 4;
+		const i10 = (r0 + x1) * 4;
+		const i01 = (r1 + x0) * 4;
+		const i11 = (r1 + x1) * 4;
+		const w11 = fx * fy * w;
+		const w10 = fx * w - w11;
+		const w01 = fy * w - w11;
+		const w00 = w - w10 - w01 - w11;
+		acc[0] = acc[0]! + T[i00]! * w00 + T[i10]! * w10 + T[i01]! * w01 + T[i11]! * w11;
+		acc[1] = acc[1]! + T[i00 + 1]! * w00 + T[i10 + 1]! * w10 + T[i01 + 1]! * w01 + T[i11 + 1]! * w11;
+		acc[2] = acc[2]! + T[i00 + 2]! * w00 + T[i10 + 2]! * w10 + T[i01 + 2]! * w01 + T[i11 + 2]! * w11;
+		acc[3] = acc[3]! + T[i00 + 3]! * w00 + T[i10 + 3]! * w10 + T[i01 + 3]! * w01 + T[i11 + 3]! * w11;
+	};
+	/** acc (0…255 scale) × k → T at o, rounded (the RGBA8 target). */
+	const put = (T: Uint8Array, o: number, k: number) => {
+		for (let c = 0; c < 4; c++) {
+			const v = acc[c]! * k;
+			T[o + c] = v <= 0 ? 0 : v >= 255 ? 255 : Math.round(v);
+		}
+	};
+	/**
+	 * Directional Blur's box of `taps` texel offsets t·(sx, sy), t = t0 + i·dt, averaged, from S into D. Along an axis
+	 * every tap is a lerp of two neighbours with the same fraction for every pixel: one sparse 1D kernel per pass.
+	 */
+	const box = (
+		S: Uint8Array,
+		D: Uint8Array,
+		sx: number,
+		sy: number,
+		taps: number,
+		t0: number,
+		dt: number,
+	) => {
+		const horizontal = Math.abs(sy) < 1e-9;
+		const vertical = Math.abs(sx) < 1e-9;
+		if (horizontal || vertical) {
+			const step = horizontal ? sx : sy;
+			const ks: number[] = [];
+			const ws: number[] = [];
+			const add = (k: number, w: number) => {
+				const at = ks.indexOf(k);
+				if (at >= 0) ws[at] = ws[at]! + w;
+				else {
+					ks.push(k);
+					ws.push(w);
+				}
+			};
+			for (let i = 0; i < taps; i++) {
+				const off = step * (t0 + i * dt);
+				const k = Math.floor(off);
+				add(k, 1 - (off - k));
+				add(k + 1, off - k);
+			}
+			const n = ks.length;
+			const scale = 1 / (taps * 255);
+			const len = horizontal ? CW : CH;
+			const lines = horizontal ? CH : CW;
+			const stride = horizontal ? 4 : CW * 4;
+			const lineStep = horizontal ? CW * 4 : 4;
+			for (let l = 0; l < lines; l++) {
+				const base = l * lineStep;
+				for (let x = 0; x < len; x++) {
+					let a0 = 0;
+					let a1 = 0;
+					let a2 = 0;
+					let a3 = 0;
+					for (let j = 0; j < n; j++) {
+						let xi = x + ks[j]!;
+						xi = xi < 0 ? 0 : xi >= len ? len - 1 : xi;
+						const i = base + xi * stride;
+						const w = ws[j]!;
+						a0 += S[i]! * w;
+						a1 += S[i + 1]! * w;
+						a2 += S[i + 2]! * w;
+						a3 += S[i + 3]! * w;
+					}
+					const o = base + x * stride;
+					const v0 = a0 * scale;
+					const v1 = a1 * scale;
+					const v2 = a2 * scale;
+					const v3 = a3 * scale;
+					D[o] = Math.round((v0 < 0 ? 0 : v0 > 1 ? 1 : v0) * 255);
+					D[o + 1] = Math.round((v1 < 0 ? 0 : v1 > 1 ? 1 : v1) * 255);
+					D[o + 2] = Math.round((v2 < 0 ? 0 : v2 > 1 ? 1 : v2) * 255);
+					D[o + 3] = Math.round((v3 < 0 ? 0 : v3 > 1 ? 1 : v3) * 255);
+				}
+			}
+			return;
+		}
+		const k = 1 / (taps * 255);
+		for (let y = 0; y < CH; y++)
+			for (let x = 0; x < CW; x++) {
+				acc.fill(0);
+				for (let i = 0; i < taps; i++) {
+					const t = t0 + i * dt;
+					texAdd(S, x + sx * t, y + sy * t, 1);
+				}
+				put(D, (y * CW + x) * 4, k);
+			}
+	};
 	for (const p of frame.passes) {
 		if (p.k === 'dblur') {
-			// Pass 1 (`coarse`, RGBA8): 33 taps over ±length; pass 2: 9 taps over one tap spacing.
-			const dx = p.sx / CW;
-			const dy = p.sy / CH;
-			for (let y = 0; y < CH; y++)
-				for (let x = 0; x < CW; x++) {
-					const u = (x + 0.5) / CW;
-					const v = (y + 0.5) / CH;
-					acc.fill(0);
-					for (let i = 0; i < 33; i++) {
-						const t = i / 16 - 1;
-						tex(A, u + dx * t, v + dy * t);
-						for (let k = 0; k < 4; k++) acc[k] = acc[k]! + px[k]!;
+			// Pass 1 (`coarse`, RGBA8): 33 taps over ±length; pass 2: 9 taps over one tap spacing. Length 0: the identity.
+			if (p.sx === 0 && p.sy === 0) continue;
+			box(A, C, p.sx, p.sy, 33, -1, 1 / 16);
+			box(C, B, p.sx, p.sy, 9, -0.5 / 16, 1 / 128);
+		} else if (p.k === 'tf') {
+			if (p.mb) {
+				// The shader's motion blur loop: taps at (i + j) / n through the time warp, poses interpolated between the
+				// keys, weight t.y × opacity, normalised by Σ t.y. Per pixel only j changes (its R2 jitter when the plan says
+				// so): the taps are tabulated over j (1024 steps; 0.5 without jitter).
+				const mb = p.mb;
+				const n = mb.n;
+				const J = mb.flags & 1 ? 1024 : 1;
+				const K = Math.max(mb.K, 2);
+				const S = Math.max(mb.S, 1);
+				const tab = new Float64Array(J * n * 7);
+				const wsums = new Float64Array(J);
+				for (let q = 0; q < J; q++) {
+					const j = J === 1 ? 0.5 : (q + 0.5) / J;
+					let wsum = 0;
+					for (let i = 0; i < n; i++) {
+						const a = (i + j) / n;
+						let st = a;
+						let wt = 1;
+						if (mb.flags & 2) {
+							const xw = (a < 0 ? 0 : a > 1 ? 1 : a) * 31;
+							const m = Math.min(Math.floor(xw), 30);
+							const t0 = mb.warp[m]!;
+							const t1 = mb.warp[m + 1]!;
+							st = t0 + (t1 - t0) * (xw - m);
+							wt = Math.max(t1 - t0, 0) * 31;
+						}
+						wsum += wt;
+						const uu = (st < 0 ? 0 : st > 1 ? 1 : st) * (K - 1);
+						const kk = Math.min(Math.floor(uu), K - 2);
+						const fr = uu - kk;
+						const pose = (c: number) => {
+							const lo = mb.keys[kk * S * 4 + c]!;
+							return lo + (mb.keys[(kk + 1) * S * 4 + c]! - lo) * fr;
+						};
+						const o = (q * n + i) * 7;
+						const op = pose(6) / 100;
+						tab[o] = pose(7) > 0.5 ? (op < 0 ? 0 : op > 1 ? 1 : op) * wt : 0;
+						tab[o + 1] = pose(0);
+						tab[o + 2] = pose(2);
+						tab[o + 3] = pose(4) + pl - 0.5;
+						tab[o + 4] = pose(1);
+						tab[o + 5] = pose(3);
+						tab[o + 6] = pose(5) + pt - 0.5;
 					}
-					store(C, (y * CW + x) * 4, acc[0]! / 33, acc[1]! / 33, acc[2]! / 33, acc[3]! / 33);
+					wsums[q] = 1 / Math.max(wsum, 1e-6) / 255;
 				}
-			for (let y = 0; y < CH; y++)
-				for (let x = 0; x < CW; x++) {
-					const u = (x + 0.5) / CW;
-					const v = (y + 0.5) / CH;
-					acc.fill(0);
-					for (let i = 0; i < 9; i++) {
-						const t = (i / 8 - 0.5) / 16;
-						tex(C, u + dx * t, v + dy * t);
-						for (let k = 0; k < 4; k++) acc[k] = acc[k]! + px[k]!;
+				const seedHash = mbSeed(mb.seed);
+				for (let y = 0; y < CH; y++) {
+					const ly = y + 0.5 - pt;
+					for (let x = 0; x < CW; x++) {
+						const lx = x + 0.5 - pl;
+						const q =
+							J === 1
+								? 0
+								: ((Math.imul(x, 3242174889 | 0) + Math.imul(y, 2447445414 | 0) + seedHash) >>> 8) >>> 14;
+						acc.fill(0);
+						let o = q * n * 7;
+						for (let i = 0; i < n; i++, o += 7) {
+							const w = tab[o]!;
+							if (w === 0) continue;
+							const xs = tab[o + 1]! * lx + tab[o + 2]! * ly + tab[o + 3]!;
+							const ys = tab[o + 4]! * lx + tab[o + 5]! * ly + tab[o + 6]!;
+							if (!(xs >= -0.5 && xs <= CW - 0.5 && ys >= -0.5 && ys <= CH - 0.5)) continue;
+							texAdd(A, xs, ys, w);
+						}
+						put(B, (y * CW + x) * 4, wsums[q]!);
 					}
-					store(B, (y * CW + x) * 4, acc[0]! / 9, acc[1]! / 9, acc[2]! / 9, acc[3]! / 9);
 				}
+			} else {
+				const t = p.taps;
+				// The identity (one tap, no move, full opacity): bilinear at texel centres reproduces the input.
+				if (
+					t.length === 7 &&
+					p.wsum === 1 &&
+					t[0] === 1 &&
+					t[1] === 1 &&
+					t[2] === 0 &&
+					t[3] === 0 &&
+					t[4] === 0 &&
+					t[5] === 1 &&
+					t[6] === 0
+				)
+					continue;
+				const k = 1 / Math.max(p.wsum, 1e-6) / 255;
+				for (let y = 0; y < CH; y++) {
+					const ly = y + 0.5 - pt;
+					for (let x = 0; x < CW; x++) {
+						const lx = x + 0.5 - pl;
+						acc.fill(0);
+						for (let j = 0; j < t.length; j += 7) {
+							const xs = t[j + 1]! * lx + t[j + 2]! * ly + t[j + 3]! + pl - 0.5;
+							const ys = t[j + 4]! * lx + t[j + 5]! * ly + t[j + 6]! + pt - 0.5;
+							if (!(xs >= -0.5 && xs <= CW - 0.5 && ys >= -0.5 && ys <= CH - 0.5)) continue;
+							texAdd(A, xs, ys, t[j]!);
+						}
+						put(B, (y * CW + x) * 4, k);
+					}
+				}
+			}
 		} else
 			for (let y = 0; y < CH; y++)
 				for (let x = 0; x < CW; x++) {
@@ -220,68 +414,7 @@ export function chainStackedFrame(
 					const lx = x + 0.5 - pl;
 					const ly = y + 0.5 - pt;
 					const inBox = lx >= 0 && lx < W && ly >= 0 && ly < H;
-					if (p.k === 'tf' && p.mb) {
-						// The shader's motion blur loop: taps at (i + j) / n through the time warp, poses interpolated between
-						// the keys, weight t.y × opacity, normalised by Σ t.y; j = the pixel's R2 jitter when the plan says so.
-						const mb = p.mb;
-						let j = 0.5;
-						if (mb.flags & 1) {
-							const seedHash = ((mb as { hash?: number }).hash ??= mbSeed(mb.seed));
-							const h = (Math.imul(x, 3242174889 | 0) + Math.imul(y, 2447445414 | 0) + seedHash) >>> 0;
-							j = (h >>> 8) / 16777216;
-						}
-						acc.fill(0);
-						let wsum = 0;
-						const K = Math.max(mb.K, 2);
-						const S = Math.max(mb.S, 1);
-						for (let i = 0; i < mb.n; i++) {
-							const a = (i + j) / mb.n;
-							let st = a;
-							let wt = 1;
-							if (mb.flags & 2) {
-								const xw = (a < 0 ? 0 : a > 1 ? 1 : a) * 31;
-								const m = Math.min(Math.floor(xw), 30);
-								const t0 = mb.warp[m]!;
-								const t1 = mb.warp[m + 1]!;
-								st = t0 + (t1 - t0) * (xw - m);
-								wt = Math.max(t1 - t0, 0) * 31;
-							}
-							wsum += wt;
-							const uu = (st < 0 ? 0 : st > 1 ? 1 : st) * (K - 1);
-							const kk = Math.min(Math.floor(uu), K - 2);
-							const fr = uu - kk;
-							const pose = (c: number) => {
-								const lo = mb.keys[kk * S * 4 + c]!;
-								return lo + (mb.keys[(kk + 1) * S * 4 + c]! - lo) * fr;
-							};
-							if (pose(7) <= 0.5) continue;
-							const sx = pose(0) * lx + pose(2) * ly + pose(4);
-							const sy = pose(1) * lx + pose(3) * ly + pose(5);
-							const u = (sx + pl) / CW;
-							const v = (sy + pt) / CH;
-							if (!(u >= 0 && u <= 1 && v >= 0 && v <= 1)) continue;
-							tex(A, u, v);
-							const op = pose(6) / 100;
-							const k = (op < 0 ? 0 : op > 1 ? 1 : op) * wt;
-							for (let c = 0; c < 4; c++) acc[c] = acc[c]! + px[c]! * k;
-						}
-						const s = 1 / Math.max(wsum, 1e-6);
-						store(B, o, acc[0]! * s, acc[1]! * s, acc[2]! * s, acc[3]! * s);
-					} else if (p.k === 'tf') {
-						acc.fill(0);
-						const t = p.taps;
-						for (let j = 0; j < t.length; j += 7) {
-							const sx = t[j + 1]! * lx + t[j + 2]! * ly + t[j + 3]!;
-							const sy = t[j + 4]! * lx + t[j + 5]! * ly + t[j + 6]!;
-							const u = (sx + pl) / CW;
-							const v = (sy + pt) / CH;
-							if (!(u >= 0 && u <= 1 && v >= 0 && v <= 1)) continue;
-							tex(A, u, v);
-							for (let k = 0; k < 4; k++) acc[k] = acc[k]! + px[k]! * t[j]!;
-						}
-						const s = 1 / Math.max(p.wsum, 1e-6);
-						store(B, o, acc[0]! * s, acc[1]! * s, acc[2]! * s, acc[3]! * s);
-					} else if (p.k === 'shake') {
+					if (p.k === 'shake') {
 						const fx = (x + 0.5 - pl - 0.5 * W) / W;
 						const fy = (y + 0.5 - pt - 0.5 * H) / W;
 						const nx = fx + 0.5;
@@ -377,6 +510,18 @@ export function chainStackedFrame(
 		const t = A;
 		A = B;
 		B = t;
+	}
+	if (replace) {
+		for (let y = 0; y < H; y++)
+			for (let x = 0; x < W; x++) {
+				const i = ((y + pt) * CW + x + pl) * 4;
+				const o = (y * W + x) * 4;
+				out[o] = A[i]!;
+				out[o + 1] = A[i + 1]!;
+				out[o + 2] = A[i + 2]!;
+				out[o + 3] = 255;
+			}
+		return;
 	}
 	// The box of the chain's output, straight alpha, beside the composite.
 	for (let y = 0; y < H; y++) {

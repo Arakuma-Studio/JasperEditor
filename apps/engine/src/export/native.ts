@@ -41,7 +41,12 @@ import { variantHasAlpha } from '../imports/variants.ts';
 import { alphaDecoder } from '../media/alpha.ts';
 import { audioEncodeArgs, LEGACY_X264_CHOICE, videoEncodeArgs } from '../tools/encoders.ts';
 import { sec } from '../tools/ffmpeg.ts';
-import { isKernelAdjustment, isKernelEffect, planAdjustmentFrames } from './blend/adjust.ts';
+import {
+	isKernelAdjustment,
+	isKernelEffect,
+	isPlainKernelAdjustment,
+	planAdjustmentFrames,
+} from './blend/adjust.ts';
 import type { ChainFrame } from './blend/passes.ts';
 import { adjustmentCropFilters, cropFeatherFilter, hardCropFilter, isFeatheredCrop } from './crop.ts';
 import { NVDEC_INPUT_ARGS } from './gpu.ts';
@@ -221,7 +226,7 @@ export type BlendSegment = {
 	 * An adjustment layer with geometric effects (blend/adjust.ts) instead of a blend: stdout carries the composite alone
 	 * (`W×H`) and the kernel writes the composite ‖ its chain's output (`2W×H`, passes.ts; null = not drawn).
 	 */
-	adjust?: { frames: (ChainFrame | null)[] };
+	adjust?: { frames: (ChainFrame | null)[]; replace?: boolean };
 };
 
 /** The frames a blend layer is drawn on (relative to the stack's first frame) and its Dissolve seeds. */
@@ -865,6 +870,12 @@ type StackContext = {
 		 * `2W×H` frames: the composite ‖ the chain's output.
 		 */
 		adjust(composite: string, frames: (ChainFrame | null)[]): string;
+		/**
+		 * Plain adjustment layers with geometric effects (`isPlainKernelAdjustment`, consecutive in the stack: one track's
+		 * transition kits): ends the current process with the composite; the kernel replaces it with the active layer's
+		 * chain output on its frames, and the label returned, in the next process, is the new composite (`W×H`).
+		 */
+		adjustReplace(composite: string, frames: (ChainFrame | null)[]): string;
 	};
 };
 
@@ -1177,7 +1188,31 @@ function drawStack(ctx: StackContext): string {
 	}
 
 	const half = frameSec / 2;
-	for (const layer of layers) {
+	/** Plain geometric adjustment layers already drawn by one shared kernel pass (`adjustReplace`). */
+	const replaced = new Set<LayerPlan>();
+	for (const [index, layer] of layers.entries()) {
+		if (replaced.has(layer)) continue;
+		// Plain adjustment layers with geometric effects, consecutive in the stack (a track's transition kits): one kernel
+		// pass for all of them replaces the composite on their frames (blend/adjust.ts) — no pass and overlay each.
+		if (ctx.blend && 'clip' in layer && isPlainKernelAdjustment(layer.clip)) {
+			const group: { clip: RenderVisualClip; f0: number; f1: number }[] = [];
+			for (let i = index; i < layers.length; i++) {
+				const l = layers[i]!;
+				if (!('clip' in l) || !isPlainKernelAdjustment(l.clip)) break;
+				if (group.some((g) => g.f0 < l.f1 && l.f0 < g.f1)) break;
+				group.push(l);
+				replaced.add(l);
+			}
+			const frames: (ChainFrame | null)[] = new Array(R1 - R0 + 1).fill(null);
+			for (const g of group) {
+				const planned = planAdjustmentFrames({ clip: g.clip, f0: g.f0, f1: g.f1, fps });
+				for (const [k, fr] of planned.entries()) frames[g.f0 - R0 + k] = fr;
+			}
+			// (the process ends here: its base is complete)
+			closeBase();
+			last = ctx.blend.adjustReplace(last, frames);
+			continue;
+		}
 		// keyframes-blend: a layer with a blend mode is drawn onto a transparent frame and handed, with the composite
 		// below it, to the blend kernel between two processes of the pipeline (`ctx.blend.cut`).
 		const blendMode = ctx.blend ? layerBlendMode(layer) : 'normal';
@@ -1724,6 +1759,21 @@ export function buildNativeGraph(o: NativeBuildOptions): NativeGraph {
 					`[${backdrop}][${layer}]hstack=inputs=2,trim=end_frame=${stackFrames},setpts=PTS-STARTPTS[${label}]`,
 				);
 				return endProc(label, blendSegmentFrames(plan, mode, R0, stackFrames), W);
+			},
+			adjustReplace: (composite, frames) => {
+				const label = `bk${segments.length}`;
+				proc.chains.push(`[${composite}]trim=end_frame=${stackFrames},setpts=PTS-STARTPTS[${label}]`);
+				return endProc(
+					label,
+					{
+						frames: stackFrames,
+						mode: 0,
+						active: frames.map((f) => f !== null),
+						seeds: [],
+						adjust: { frames, replace: true },
+					},
+					W,
+				);
 			},
 			adjust: (composite, frames) => {
 				const label = `bk${segments.length}`;

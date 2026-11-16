@@ -66,6 +66,24 @@ const deepExpression = (v: unknown): boolean => {
 };
 
 /**
+ * True when an adjustment layer's output is its geometric effects' output, as it is: only geometric effects, Normal,
+ * Opacity 100 % without keys, no fades, masks or 3D. Consecutive such layers (one track's transition kits) share one
+ * kernel pass that replaces the composite in their frames (native.ts), instead of a pass and an overlay each.
+ */
+export function isPlainKernelAdjustment(c: RenderVisualClip): boolean {
+	return (
+		isKernelAdjustment(c) &&
+		c.effects.every((fx) => !fx.enabled || KERNEL_EFFECTS.has(fx.effectId)) &&
+		(c.blendMode ?? 'normal') === 'normal' &&
+		c.opacity.value === 100 &&
+		c.opacity.keyframes.length === 0 &&
+		!c.fades?.length &&
+		!c.masks?.length &&
+		!c.threeD
+	);
+}
+
+/**
  * Why the native path cannot draw the geometric effects of an adjustment layer (empty = it can; only asked for
  * `isKernelAdjustment` clips). The other effects are checked by the planner as on any adjustment layer.
  */
