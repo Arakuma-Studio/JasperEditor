@@ -1,0 +1,78 @@
+{
+  "$comment": "Inputs of scripts/rubberband-wasm/build.sh (Rubber Band Library -> rubberband.wasm, the Pitch Shifter's optional rubberband-r3 engine). Rubber Band is GPL-2.0-or-later: allowed only as this isolated module (AGENTS.md §2, user decision). FFmpeg is never built with librubberband. Toolchain: the same wasi-sdk pin as scripts/vidstab-wasm/manifest.json (build.sh checks).",
+  "rubberband": {
+    "repository": "https://github.com/breakfastquay/rubberband",
+    "tag": "v4.0.0",
+    "commit": "1d95888bec3ae0a17c0c4af791810d5a63f6bc35",
+    "version": "4.0.0",
+    "license": "GPL-2.0-or-later",
+    "url": "https://github.com/breakfastquay/rubberband/archive/refs/tags/v4.0.0.tar.gz",
+    "sha256": "24300f48a8014b7c863b573a9647e61b1b19b37875e2cdd92005e64c6424d266",
+    "source": "single/RubberBandSingle.cpp",
+    "defines": ["_WASI_EMULATED_MMAN", "_WASI_EMULATED_PROCESS_CLOCKS", "_WASI_EMULATED_SIGNAL"]
+  },
+  "exports": [
+    "rubberband_new",
+    "rubberband_delete",
+    "rubberband_reset",
+    "rubberband_set_pitch_scale",
+    "rubberband_set_formant_scale",
+    "rubberband_set_formant_option",
+    "rubberband_get_preferred_start_pad",
+    "rubberband_get_start_delay",
+    "rubberband_get_latency",
+    "rubberband_get_samples_required",
+    "rubberband_set_max_process_size",
+    "rubberband_process",
+    "rubberband_available",
+    "rubberband_retrieve",
+    "rubberband_get_engine_version",
+    "rubberband_set_default_debug_level"
+  ],
+  "toolchain": {
+    "name": "wasi-sdk",
+    "version": "34.0",
+    "tag": "wasi-sdk-34",
+    "clang": "23.1.0-wasi-sdk",
+    "hosts": {
+      "linux-x64": {
+        "url": "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-x86_64-linux.tar.gz",
+        "sha256": "b761e3a0721dbae9c09a0059e5fdb2bf917d1b4a8a7b430fb3b5aafb0984b2c4"
+      },
+      "linux-arm64": {
+        "url": "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-arm64-linux.tar.gz",
+        "sha256": "f7e243dff54d60bcc576e94d6166b69f410f2500ae4a9ceef34315be10e77971"
+      },
+      "darwin-x64": {
+        "url": "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-x86_64-macos.tar.gz",
+        "sha256": "87d27fa8adc68dee59bfbf2e22a6d34ef717c34d6bf1d8af2a56fc929d9ce0eb"
+      },
+      "darwin-arm64": {
+        "url": "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-arm64-macos.tar.gz",
+        "sha256": "9c59398106b417f8f14913380fdf0097a8cc0ff4af9eb3ce0065a859e88d49e9"
+      },
+      "win32-x64": {
+        "url": "https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-x86_64-windows.tar.gz",
+        "sha256": "cccb5c323a9b34f0349a9b09e8804a0a7632c68c3310f4b5f437ed57d7e71d8f"
+      }
+    }
+  },
+  "cxxflags": [
+    "--target=wasm32-wasip1",
+    "-O3",
+    "-msimd128",
+    "-fno-exceptions",
+    "-fno-rtti",
+    "-std=c++14",
+    "-ffunction-sections",
+    "-fdata-sections"
+  ],
+  "ldflags": [
+    "-mexec-model=reactor",
+    "-Wl,--gc-sections",
+    "-Wl,--strip-all",
+    "-Wl,-z,stack-size=1048576",
+    "-Wl,--max-memory=1073741824"
+  ],
+  "libs": ["-lwasi-emulated-mman", "-lwasi-emulated-process-clocks", "-lwasi-emulated-signal"]
+}

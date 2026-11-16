@@ -80,6 +80,10 @@ for (const f of [
 	'VIDSTAB-WASM.json',
 	'LICENSE-vidstab.txt',
 	'NOTICE-vidstab.txt',
+	'rubberband.wasm',
+	'RUBBERBAND-WASM.json',
+	'LICENSE-rubberband.txt',
+	'NOTICE-rubberband.txt',
 	'models',
 	'third-party',
 	// The sound library's bundled starter kit (spec 12 §2.1).

@@ -1,0 +1,80 @@
+{
+  "file": "rubberband.wasm",
+  "sha256": "6ca8c188768df61f878a59741a617a184171a26ee82dc7a8732ed2ea91f7c13b",
+  "bytes": 494249,
+  "rubberband": {
+    "repository": "https://github.com/breakfastquay/rubberband",
+    "tag": "v4.0.0",
+    "commit": "1d95888bec3ae0a17c0c4af791810d5a63f6bc35",
+    "version": "4.0.0",
+    "license": "GPL-2.0-or-later",
+    "url": "https://github.com/breakfastquay/rubberband/archive/refs/tags/v4.0.0.tar.gz",
+    "sha256": "24300f48a8014b7c863b573a9647e61b1b19b37875e2cdd92005e64c6424d266",
+    "source": "single/RubberBandSingle.cpp",
+    "defines": ["_WASI_EMULATED_MMAN", "_WASI_EMULATED_PROCESS_CLOCKS", "_WASI_EMULATED_SIGNAL"],
+    "modified": false
+  },
+  "glue": {
+    "files": ["scripts/rubberband-wasm/glue.cpp", "scripts/rubberband-wasm/shim.h"],
+    "license": "GPL-2.0-or-later"
+  },
+  "toolchain": {
+    "name": "wasi-sdk",
+    "version": "34.0",
+    "tag": "wasi-sdk-34",
+    "clang": "clang version 23.1.0-wasi-sdk (https://github.com/llvm/llvm-project 895aa2c896ada719451be2e3673c83da8ddf1141)"
+  },
+  "cxxflags": [
+    "--target=wasm32-wasip1",
+    "-O3",
+    "-msimd128",
+    "-fno-exceptions",
+    "-fno-rtti",
+    "-std=c++14",
+    "-ffunction-sections",
+    "-fdata-sections"
+  ],
+  "ldflags": [
+    "-mexec-model=reactor",
+    "-Wl,--gc-sections",
+    "-Wl,--strip-all",
+    "-Wl,-z,stack-size=1048576",
+    "-Wl,--max-memory=1073741824"
+  ],
+  "libs": ["-lwasi-emulated-mman", "-lwasi-emulated-process-clocks", "-lwasi-emulated-signal"],
+  "imports": [
+    "wasi_snapshot_preview1.environ_get",
+    "wasi_snapshot_preview1.environ_sizes_get",
+    "wasi_snapshot_preview1.clock_time_get",
+    "wasi_snapshot_preview1.fd_close",
+    "wasi_snapshot_preview1.fd_fdstat_get",
+    "wasi_snapshot_preview1.fd_prestat_get",
+    "wasi_snapshot_preview1.fd_prestat_dir_name",
+    "wasi_snapshot_preview1.fd_read",
+    "wasi_snapshot_preview1.fd_seek",
+    "wasi_snapshot_preview1.fd_write",
+    "wasi_snapshot_preview1.proc_exit"
+  ],
+  "exports": [
+    "_initialize",
+    "rubberband_new",
+    "rubberband_delete",
+    "rubberband_reset",
+    "rubberband_get_engine_version",
+    "rubberband_set_pitch_scale",
+    "rubberband_set_formant_scale",
+    "rubberband_get_preferred_start_pad",
+    "rubberband_get_start_delay",
+    "rubberband_get_latency",
+    "rubberband_set_formant_option",
+    "rubberband_get_samples_required",
+    "rubberband_set_max_process_size",
+    "rubberband_process",
+    "rubberband_available",
+    "rubberband_retrieve",
+    "rubberband_set_default_debug_level",
+    "rbx_malloc",
+    "rbx_free"
+  ],
+  "rebuild": "scripts/rubberband-wasm/build.sh"
+}

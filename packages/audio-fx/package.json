@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./rubberband.wasm": "./wasm/rubberband.wasm"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",

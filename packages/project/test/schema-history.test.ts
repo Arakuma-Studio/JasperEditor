@@ -79,6 +79,9 @@ const STEP_CHANGES: Record<string, (from: Rec) => Record<string, unknown>> = {
 	// v16 → v17 (Track Matte hold-out: Decontaminate Edges params on `jasper.track-matte-key`): version bump only; v16
 	// builds open the files read-only.
 	'16→17': () => ({}),
+	// v17 → v18 (Pitch Shifter engines: `engine`, `quality`, `preserveFormants` on `jasper.audio.pitch-shifter`): version
+	// bump only; v17 builds open the files read-only.
+	'17→18': () => ({}),
 };
 
 describe('schema history fixtures (S01:MIG-002)', () => {
@@ -147,7 +150,7 @@ describe('schema history fixtures (S01:MIG-002)', () => {
 	it('the v13 fixture with an HTML composition page (the other v13 line) migrates without repairs', () => {
 		const r = loadProject(fixture('13-html'), { effects: defaultEffectRegistry });
 		expect(r.readOnly).toBe(false);
-		expect(r.migration.steps).toEqual(['v13→v14', 'v14→v15', 'v15→v16', 'v16→v17']);
+		expect(r.migration.steps).toEqual(['v13→v14', 'v14→v15', 'v15→v16', 'v16→v17', 'v17→v18']);
 		expect(r.repairs).toEqual([]);
 		expect(r.issues).toEqual([]);
 		expect(features(r.document as unknown as Rec)).toMatchObject({
@@ -222,5 +225,27 @@ describe('schema history fixtures (S01:MIG-002)', () => {
 		const again = loadProject(saved, { effects: defaultEffectRegistry });
 		expect(again.repairs).toEqual([]);
 		expect(keyOf(again.document as unknown as Rec)).toEqual(['cleanPlate', 'trk_0000000000000V02', 32]);
+	});
+
+	it("a Pitch Shifter's engine params load from v18 without repairs and survive a save and reload", () => {
+		const shifterOf = (d: Rec) => {
+			const seq = (d.sequences as Rec).seq_000000000000SEQ1 as Rec;
+			const fx = ((seq.audioTracks as Rec[])[0]!.effects as Rec[]).find(
+				(e) => e.effectId === 'jasper.audio.pitch-shifter',
+			);
+			const p = fx?.params as Record<string, { value: unknown }> | undefined;
+			return p && [p.engine?.value, p.quality?.value, p.preserveFormants?.value, p.semitones?.value];
+		};
+		const r = loadProject(fixture(18), { effects: defaultEffectRegistry });
+		expect(r.repairs).toEqual([]);
+		expect(shifterOf(r.document as unknown as Rec)).toEqual(['rubberband-r3', 'best', true, -1]);
+		const saved = JSON.parse(
+			JSON.stringify(
+				makeEnvelope(r.document, { revision: 3, savedAt: '2026-11-16T15:00:00.000Z', platform: 'web' }),
+			),
+		);
+		const again = loadProject(saved, { effects: defaultEffectRegistry });
+		expect(again.repairs).toEqual([]);
+		expect(shifterOf(again.document as unknown as Rec)).toEqual(['rubberband-r3', 'best', true, -1]);
 	});
 });

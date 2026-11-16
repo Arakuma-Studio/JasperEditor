@@ -29,6 +29,8 @@ export * from './core/oversample.ts';
 export * from './core/smooth.ts';
 export * from './core/stft.ts';
 export * from './core/util.ts';
+export { rubberBandStatus, setRubberBandModule } from './effects/pitch/rubberband.ts';
+export { PITCH_ENGINES, type PitchEngine, pitchShifterLatency } from './effects/pitch.ts';
 export * from './host.ts';
 export * from './registry.ts';
 export * from './synth/render.ts';

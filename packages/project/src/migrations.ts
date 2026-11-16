@@ -192,6 +192,11 @@ export const MIGRATIONS: readonly MigrationStep[] = [
 	// matte edges. Existing data needs no changes (absent = Off); the bump makes v16 builds open v17 files read-only:
 	// they would keep the params but ignore them and preview and export the edges with the old background's colour.
 	{ from: 16, to: 17, migrate: (doc) => doc },
+	// v18 (Pitch Shifter engines): a `jasper.audio.pitch-shifter` instance may carry `engine` (legacy / signalsmith /
+	// rubberband-r3), `quality` (best / fast) and `preserveFormants`. Existing data needs no changes (absent = the
+	// legacy phase vocoder, so stored shifters sound the same); the bump makes v17 builds open v18 files read-only:
+	// they would keep the params but ignore them and preview and export another engine.
+	{ from: 17, to: 18, migrate: (doc) => doc },
 ];
 
 /** Data that is not a loadable project (not an object, an unknown format, no migration path, schema mismatch). */

@@ -137,8 +137,9 @@ packages/compositions/test/audio-fx-preview.test.ts apps/engine/test/audio-fx.te
 - **Hard Limiter** never exceeds Maximum Amplitude (sample peak) in random blocks; with True Peak the 4× interpolated
   peak stays within ceiling + 0.1 dB; below the ceiling it is a pure delay equal to `latency()`.
 - **DeHummer** notches 50/60 Hz and every enabled harmonic by ≥ 30 dB while a 1 kHz tone stays within 0.5 dB.
-- **Pitch Shifter** shifts 440 Hz by the requested semitones + cents within 0.5 %; zero shift is the input delayed by
-  exactly `latency()`.
+- **Pitch Shifter** (legacy engine) shifts 440 Hz by the requested semitones + cents within 0.5 %; zero shift is the
+  input delayed by exactly `latency()`. The Signalsmith Stretch and Rubber Band R3 engines, Preserve Formants and their
+  measurements: [pitch-shifter-engines.md](pitch-shifter-engines.md).
 - **Latency compensation**: every effect's `latency()` equals its measured impulse delay (limiter, FFT filter, DeNoise,
   pitch and convolution).
 - **Determinism and block-size independence** for every processor (generic registry contract, parameter change

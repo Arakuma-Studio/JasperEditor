@@ -7,7 +7,7 @@
 // export's grid, as the export's `EffectSlot` does (sound-design Phase 4 verification: a build sweep evaluated once
 // per frame was up to 0.08 off the export at its release). Exported for tests (the class runs in Node with a stub
 // `AudioWorkletProcessor`).
-import { CONTROL_BLOCK, EffectChain } from '@jasper/audio-fx';
+import { CONTROL_BLOCK, EffectChain, rubberBandStatus, setRubberBandModule } from '@jasper/audio-fx';
 import type { EffectInstance } from '@jasper/project/audio';
 
 /**
@@ -23,15 +23,24 @@ export type FxSlotMessage =
 	| { type: 'time'; time: number; clock?: SlotClock }
 	| { type: 'meters'; on: boolean }
 	| { type: 'reset' }
-	| { type: 'dispose' };
+	| { type: 'dispose' }
+	/** The Pitch Shifter's Rubber Band module (one per worklet scope; the slot then rebuilds its processors). */
+	| { type: 'rubberband'; module: WebAssembly.Module };
 
-/** Worklet → main: live meters of the effect (gain reduction per band, loudness readings…). */
-export type FxSlotReading = { type: 'meters'; values: number[] };
+/**
+ * Worklet → main: live meters of the effect (gain reduction per band, loudness readings…); `engine`: a Pitch Shifter
+ * set to Rubber Band R3 runs Signalsmith here (`fallback` = why), or runs as set again (`fallback` null).
+ */
+export type FxSlotReading =
+	| { type: 'meters'; values: number[] }
+	| { type: 'engine'; fallback: string | null };
 
 export const FX_PROCESSOR_NAME = 'jasper-audio-fx';
 const METER_EVERY = 4800;
 
 type Port = { postMessage(message: FxSlotReading): void };
+
+const PITCH_SHIFTER = 'jasper.audio.pitch-shifter';
 
 /** Processor logic, independent of the worklet global scope (tests drive it directly). */
 export class FxSlotCore {
@@ -45,6 +54,8 @@ export class FxSlotCore {
 	/** The running clock while playing (null: the time of the last message stands). */
 	private clock: (SlotClock & { time: number }) | null = null;
 	private readonly flicksPerSample: number;
+	private effect: EffectInstance | null = null;
+	private fallback: string | null = null;
 	alive = true;
 
 	constructor(
@@ -61,7 +72,9 @@ export class FxSlotCore {
 	message(m: FxSlotMessage): void {
 		switch (m.type) {
 			case 'effect':
+				this.effect = m.effect;
 				this.chain.setEffects([{ ...m.effect, enabled: true }]);
+				this.reportEngine();
 				this.clock = m.clock && validClock(m.clock) ? { ...m.clock, time: m.time } : null;
 				if (this.chain.animated()) this.chain.automate(m.time);
 				// The processors were built with the catalogue defaults: the first instance applies at once (nothing was
@@ -87,7 +100,32 @@ export class FxSlotCore {
 			case 'dispose':
 				this.alive = false;
 				break;
+			case 'rubberband':
+				if (rubberBandStatus().available) break;
+				setRubberBandModule(m.module);
+				// processors that fell back pick the engine again from a clean state
+				if (this.effect?.effectId === PITCH_SHIFTER) {
+					this.chain.setEffects([]);
+					this.chain.setEffects([{ ...this.effect, enabled: true }]);
+					this.chain.reset();
+					this.reportEngine();
+				}
+				break;
 		}
+	}
+
+	/** Tells the main thread when a Pitch Shifter set to Rubber Band R3 runs Signalsmith (and when that ends). */
+	private reportEngine(): void {
+		if (this.effect?.effectId !== PITCH_SHIFTER) return;
+		let fallback: string | null = null;
+		for (const p of this.chain.processors()) {
+			const running = (p.processor as { runningEngine?: () => string }).runningEngine?.();
+			if (this.effect.params.engine?.value === 'rubberband-r3' && running !== 'rubberband-r3')
+				fallback = rubberBandStatus().error ?? 'Rubber Band is not available';
+		}
+		if (fallback === this.fallback) return;
+		this.fallback = fallback;
+		this.port?.postMessage({ type: 'engine', fallback });
 	}
 
 	/**

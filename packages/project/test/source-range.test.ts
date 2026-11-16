@@ -871,6 +871,7 @@ describe('schema v5 migration (S07:PRC-015)', () => {
 			'v14→v15',
 			'v15→v16',
 			'v16→v17',
+			'v17→v18',
 		]);
 		expect(r.repairs).toEqual([]);
 		expect(r.issues).toEqual([]);
@@ -906,6 +907,7 @@ describe('schema v5 migration (S07:PRC-015)', () => {
 			'v14→v15',
 			'v15→v16',
 			'v16→v17',
+			'v17→v18',
 		]);
 		expect(m.document.media[v]!.sourceRange).toEqual({
 			mediaId,

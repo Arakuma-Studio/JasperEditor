@@ -57,7 +57,7 @@ import { CaptionStyleSchema, ClipMarkerSchema, type Sequence, SequenceSchema } f
  * v17 (Track Matte hold-out): Decontaminate Edges params on `jasper.track-matte-key`; version bump only, so v16 builds
  * — which would keep the params but composite the soft edges with the old background's colour — open v17 files
  * read-only (docs/project-files.md). */
-export const CURRENT_SCHEMA_VERSION = 17;
+export const CURRENT_SCHEMA_VERSION = 18;
 
 const markSchema = z.looseObject({ flicks: nonNegInt() });
 export const SourceMarksSchema = z.looseObject({

@@ -1,0 +1,22 @@
+Rubber Band Library in rubberband.wasm
+======================================
+
+rubberband.wasm contains the Rubber Band Library by Particular Programs Ltd / Breakfast Quay,
+https://github.com/breakfastquay/rubberband, version 4.0.0 (tag v4.0.0, commit 1d95888bec3ae0a17c0c4af791810d5a63f6bc35),
+licensed under the GNU General Public License version 2 or (at your option) any later version. The licence
+text is in LICENSE-rubberband.txt. It is linked with a small glue layer of JasperEditor
+(scripts/rubberband-wasm/glue.cpp and shim.h), licensed GPL-2.0-or-later as well.
+
+JasperEditor uses this module only as the optional "Rubber Band R3" engine of its Pitch Shifter effect. The
+module is a separate file loaded at run time; the application never compiles Rubber Band into its own code,
+and its FFmpeg build does not include librubberband. Using a GPL component here is a deliberate decision of
+the project's owner for a privately used editor.
+
+Corresponding source: https://github.com/breakfastquay/rubberband/archive/refs/tags/v4.0.0.tar.gz
+(sha256 24300f48a8014b7c863b573a9647e61b1b19b37875e2cdd92005e64c6424d266) and scripts/rubberband-wasm/ in the JasperEditor sources. Build details and
+the sha256 of the shipped module: RUBBERBAND-WASM.json. To rebuild, or to use a modified Rubber Band:
+
+    RUBBERBAND_SRC=/path/to/rubberband scripts/rubberband-wasm/build.sh /some/outdir
+
+and replace rubberband.wasm with the result, or set JASPER_RUBBERBAND_WASM=/some/outdir/rubberband.wasm
+for the engine.

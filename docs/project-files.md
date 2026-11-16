@@ -61,6 +61,7 @@ crash recovery).
 | 15 | HTML compositions on the v14 line | `mg-bundle` assets may be HTML composition pages: `MediaAsset.mgBundle.html {entry, query}` and source type `html-page` ([wp-notes/html-compositions.md](wp-notes/html-compositions.md)). The header is read leniently (`z.custom`); INV-MG-HTML reports an unreadable one and repair `drop-html-page` removes it with the bundle's compositions (the clips stay and show "Composition … not in bundle"; import the page again); `media.register` / `media.relink` refuse it with `E_SCHEMA` | `v14→v15`: version bump only, so v14 builds (the subtitle-lock line, which never knew HTML pages) open v15 files read-only. Why: a v14 build would drive such a page with the Remotion page protocol (no preview, render or export) and its strict source-type enum refuses `html-page`. A v13 file from the HTML line migrates through `v13→v14→v15` unchanged |
 | 16 | Corner Pin motion blur | a `jasper.corner-pin` instance may carry Transform's shutter params `useCompShutterAngle`, `shutterAngle`, `mbQuality` (Use Composition's Shutter Angle, Shutter Angle, Mo Blur Quality), which render as motion blur of the pin's movement ([wp-notes/corner-pin-motion-blur.md](wp-notes/corner-pin-motion-blur.md)); absent = no blur, so stored pins draw unchanged | `v15→v16`: version bump only, so v15 builds open v16 files read-only. Why: effect params are a loose record, so a v15 build would keep the params but ignore them and preview and export the pin sharp (a misread, AGENTS §0) |
 | 17 | Track Matte hold-out | a `jasper.track-matte-key` instance may carry Decontaminate Edges: `decontaminate` (`off` / `cleanPlate` / `estimate`), `cleanPlateTrack` (a video track id, read like `matteTrack`: checked by INV-006 / INV-012, cleared by `clear-track-matte`, remapped by track edits) and `searchRadius` (layer px), which restore the foreground colour of soft matte edges ([wp-notes/track-matte-holdout.md](wp-notes/track-matte-holdout.md)); absent = Off, so stored keys draw unchanged | `v16→v17`: version bump only, so v16 builds open v17 files read-only. Why: effect params are a loose record, so a v16 build would keep the params but ignore them and preview and export the edges with the old background's colour (a misread, AGENTS §0) |
+| 18 | Pitch Shifter engines | a `jasper.audio.pitch-shifter` instance may carry `engine` (`legacy` / `signalsmith` / `rubberband-r3`), `quality` (`best` / `fast`) and `preserveFormants` ([wp-notes/pitch-shifter-engines.md](wp-notes/pitch-shifter-engines.md)); absent = the legacy phase vocoder, so stored shifters sound unchanged (new instances get `signalsmith`) | `v17→v18`: version bump only, so v17 builds open v18 files read-only. Why: effect params are a loose record, so a v17 build would keep the params but ignore them and preview and export the legacy engine (a misread, AGENTS §0) |
 
 Every version has a hand-made fixture, `packages/project/test/fixtures/schema-v<N>.jasper`, that must load
 forever (S01:MIG-002), and `packages/project/test/schema-history.test.ts` checks that:
@@ -254,6 +255,15 @@ files read-only (the v16 bump above).
 | Field | Since | Read leniently | Repair |
 |---|---|---|---|
 | `params.useCompShutterAngle`, `params.shutterAngle`, `params.mbQuality` of a `jasper.corner-pin` instance | Corner Pin motion blur | ordinary effect params with Transform's specs; absent = composition shutter (no blur), 0°, Auto, so stored pins draw unchanged | none needed |
+
+### Fields added in v18
+
+Pitch Shifter engines ([wp-notes/pitch-shifter-engines.md](wp-notes/pitch-shifter-engines.md)); v17 builds open v18
+files read-only (the v18 bump above).
+
+| Field | Since | Read leniently | Repair |
+|---|---|---|---|
+| `params.engine`, `params.quality`, `params.preserveFormants` of a `jasper.audio.pitch-shifter` instance | Pitch Shifter engines | ordinary effect params (enum, enum, boolean); absent = `legacy`, `best`, off, so stored shifters sound the same; `effect.add` gives new instances `engine: signalsmith` (`instanceDefaults`) | none needed |
 
 ## Saving
 
