@@ -121,8 +121,8 @@ export function gifWidthOf(seq: Pick<Sequence, 'settings'>, c: GifChoice): numbe
 	return Math.max(2, Math.round(w / 2) * 2);
 }
 
-/** spec 18 AF-EXP-002: WAV / FLAC bits per sample and the M4A (AAC) bit rate. */
-export type AudioFileChoice = { bitDepth: 16 | 24; bitrateKbps: number };
+/** spec 18 AF-EXP-002: WAV / FLAC bits per sample (32 = float, WAV only) and the M4A (AAC) bit rate. */
+export type AudioFileChoice = { bitDepth: 16 | 24 | 32; bitrateKbps: number };
 export const DEFAULT_AUDIO_FILE_CHOICE: AudioFileChoice = { bitDepth: 24, bitrateKbps: 256 };
 export const AAC_BITRATES = [128, 192, 256, 320] as const;
 
@@ -240,7 +240,8 @@ export function buildExportSettings(
 				channels,
 				...(format === 'm4a'
 					? { bitrateKbps: channels === 6 ? Math.max(384, f.bitrateKbps) : f.bitrateKbps }
-					: { bitDepth: f.bitDepth }),
+					: // FLAC stores integers only: a remembered 32-bit float choice writes its 24 bits
+						{ bitDepth: format === 'flac' && f.bitDepth === 32 ? 24 : f.bitDepth }),
 				...normalize,
 			},
 			engine: 'auto',
@@ -465,7 +466,7 @@ export function outputDescription(
 		const what =
 			st.container === 'm4a'
 				? `M4A · AAC ${a?.bitrateKbps ?? 192} kb/s`
-				: `${st.container.toUpperCase()} · ${st.container === 'wav' ? 'PCM' : 'FLAC'} ${a?.bitDepth ?? 24}-bit`;
+				: `${st.container.toUpperCase()} · ${st.container === 'wav' ? 'PCM' : 'FLAC'} ${a?.bitDepth ?? 24}-bit${a?.bitDepth === 32 ? ' float' : ''}`;
 		return `${what} · ${rate} ${ch} · no picture · ${duration}`;
 	}
 	if (alpha && encoder?.codec === 'prores')
@@ -794,7 +795,7 @@ function sanitizeGifChoice(g: Partial<GifChoice>): GifChoice {
 
 function sanitizeAudioFileChoice(f: Partial<AudioFileChoice>): AudioFileChoice {
 	return {
-		bitDepth: f.bitDepth === 16 ? 16 : 24,
+		bitDepth: f.bitDepth === 16 || f.bitDepth === 32 ? f.bitDepth : 24,
 		bitrateKbps: (AAC_BITRATES as readonly number[]).includes(f.bitrateKbps as number)
 			? (f.bitrateKbps as number)
 			: DEFAULT_AUDIO_FILE_CHOICE.bitrateKbps,

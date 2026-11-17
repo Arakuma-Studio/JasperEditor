@@ -199,6 +199,8 @@ export function buildExportSettings(
 		/** audio-mix: channels (default: 6 for a 5.1 Mix, else 2), rate (default: the sequence rate), loudness. */
 		audioChannels?: 1 | 2 | 6;
 		audioSampleRate?: 44100 | 48000 | 96000;
+		/** PCM bits per sample of a MOV preset (default 24; 32 = float). */
+		audioBitDepth?: 16 | 24 | 32;
 		normalize?: { targetLufs: number; truePeakDb: number } | null;
 	},
 ): ExportSettings {
@@ -239,6 +241,9 @@ export function buildExportSettings(
 			...(opts.audioChannels === 6 || (opts.audioChannels === undefined && s.masterLayout === '5.1')
 				? { bitrateKbps: Math.max(preset.audioKbps ?? 0, 384) }
 				: { bitrateKbps: preset.audioKbps }),
+			...(opts.audioBitDepth !== undefined && preset.container === 'mov'
+				? { bitDepth: opts.audioBitDepth }
+				: {}),
 			...(normalize !== undefined ? { normalize } : {}),
 		},
 		engine: opts.engine,
@@ -269,8 +274,8 @@ export function buildDeliverableSettings(
 		gif?: ExportSettings['gif'];
 		audioChannels?: 1 | 2 | 6;
 		audioSampleRate?: 44100 | 48000 | 96000;
-		/** WAV / FLAC bits per sample (default 24). */
-		audioBitDepth?: 16 | 24;
+		/** WAV / FLAC bits per sample (default 24; 32 = float, WAV only: the engine refuses it for FLAC). */
+		audioBitDepth?: 16 | 24 | 32;
 		/** M4A (AAC) bit rate (default 192 kb/s stereo, 384 for 5.1). */
 		audioBitrateKbps?: number;
 		normalize?: { targetLufs: number; truePeakDb: number } | null;

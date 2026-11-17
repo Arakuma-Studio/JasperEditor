@@ -161,6 +161,41 @@ describe('measurement worker threads: same results as in-thread (real engine, bu
 				true,
 			);
 	});
+
+	it("an export's pass-1 mix on a worker reports its progress and writes the in-thread mix's bytes", async () => {
+		// (an audio-only export mixes there too: its job shows the mix's progress, and the engine's event loop stays free)
+		const { audioWorld } = await import('../src/sound-design/bed.ts');
+		const world = await audioWorld(doc.doc, doc.seqId, base.registry);
+		const mix = async (measurer: SoundDesignMeasurer, tag: string) => {
+			const scratchDir = mkdtempSync(join(tmpdir(), `jasper-pass1-${tag}-`));
+			artifactDirs.push(scratchDir);
+			const progress: [number, string][] = [];
+			const r = await measurer.run(
+				{
+					kind: 'mixPass1',
+					req: {
+						snapshot: world.snapshot,
+						media: world.mediaFiles,
+						range: { start: 0, end: 300 },
+						length: 10 * 48_000,
+						normalize: null,
+						scratchDir,
+					},
+				},
+				{ ff: base.ff, onProgress: (f, stage) => progress.push([f, stage]) },
+			);
+			return { r, progress, bytes: readFileSync(r.path!) };
+		};
+		const here = await mix(new SoundDesignMeasurer(null), 'here');
+		const there = await mix(worker, 'worker');
+		expect(there.progress.length).toBeGreaterThan(0);
+		for (const [f, stage] of there.progress) {
+			expect(f).toBeGreaterThan(0);
+			expect(f).toBeLessThanOrEqual(1);
+			expect(stage).toBe('Mixing audio');
+		}
+		expect(there.bytes.equals(here.bytes)).toBe(true);
+	});
 });
 
 const FF = new Ffmpeg({ ffmpeg: null, ffprobe: null });

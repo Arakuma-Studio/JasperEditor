@@ -220,6 +220,26 @@ describe('H.264 + PCM in MOV on a real engine (WP6.5a item 6)', { timeout: 300_0
 		expect(info.streams.find((s) => s.codec_type === 'audio')?.codec_name).toBe('pcm_s24le');
 	});
 
+	it('PCM at 32 bits in MOV: the file holds 32-bit float PCM', async () => {
+		const d = await doc();
+		const s = settings(d, { audio: { codec: 'pcm', bitDepth: 32, sampleRate: 48000, channels: 2 } });
+		expect((await plan(d, { audio: s.audio })).audio.codec).toBe('pcm_f32le');
+		const start = await app.inject({
+			method: 'POST',
+			url: '/api/exports',
+			headers: JSON_H,
+			payload: { envelope: d.envelope(), sequenceId: d.seqId, settings: s },
+		});
+		expect(start.statusCode, start.body).toBe(202);
+		const job = (await coreServices(app).queue.wait((start.json() as EngineJob).id)) as EngineJob & {
+			result: { audioCodec?: string };
+		};
+		expect(job.error, JSON.stringify(job.error)).toBeUndefined();
+		expect(job.result.audioCodec).toBe('pcm_f32le');
+		const info = probeFile((await coreServices(app).exports.outputFile(job.id))!);
+		expect(info.streams.find((x) => x.codec_type === 'audio')?.codec_name).toBe('pcm_f32le');
+	});
+
 	it('PCM asked in MP4: the plan and the job result say the audio is AAC', async () => {
 		const d = await doc();
 		const p = await plan(d, { container: 'mp4' });

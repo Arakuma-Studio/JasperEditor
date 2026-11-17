@@ -230,7 +230,7 @@ describe('buildExportSettings for GIF and audio-only files', () => {
 			JSON.stringify({
 				format: 'avi',
 				gif: { fps: 500, width: 3, loop: -2, dither: 'x', palette: 7 },
-				audioFile: { bitDepth: 32, bitrateKbps: 1 },
+				audioFile: { bitDepth: 8, bitrateKbps: 1 },
 			}),
 		);
 		const r = loadExportChoice(session.projectId, seq.id)!;
@@ -294,6 +294,15 @@ describe('Export mode ▸ Export As (AF-EXP-003)', () => {
 			audio: { codec: 'pcm', bitDepth: 16, channels: 1 },
 		});
 		expect(planned.at(-1)!.settings.video).toBeUndefined();
+		// 32-bit float is a WAV choice; FLAC stores integers, so it offers 16 / 24 and writes 24
+		fireEvent.change(screen.getByTestId('export-audio-bit-depth'), { target: { value: '32' } });
+		await settle();
+		expect(planned.at(-1)!.settings.audio).toMatchObject({ codec: 'pcm', bitDepth: 32 });
+		fireEvent.change(screen.getByTestId('export-format'), { target: { value: 'flac' } });
+		await settle();
+		expect(planned.at(-1)!.settings.audio).toMatchObject({ codec: 'flac', bitDepth: 24 });
+		expect(screen.queryByRole('option', { name: '32-bit float' })).toBeNull();
+		expect(screen.getByText(/FLAC stores whole numbers only/)).toBeTruthy();
 		fireEvent.change(screen.getByTestId('export-format'), { target: { value: 'm4a' } });
 		await settle();
 		expect(screen.queryByTestId('export-audio-bit-depth')).toBeNull();

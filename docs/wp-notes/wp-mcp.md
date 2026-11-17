@@ -179,8 +179,9 @@ gained `mcpInfo()` and `focusWindow()` (IPC `jasper:mcp-info`, window action `fo
   (asserted in unit, integration and engine tests). It lives only in `runtime.json` (0600, in the user's
   appdir) and in `--token` / `JASPER_ENGINE_TOKEN` if the user passes it.
 - **Unbounded waits:** engine requests had no deadline. `guardedFetch` adds one (180 s, `--request-timeout`)
-  → `ENGINE_TIMEOUT`. `wait_for_job` ≤ 900 s, `open_project_in_editor` ≤ 60 s, MG preview ≤ 120 s, engine
-  start ≤ 120 s (`--startup-timeout`), health probe 1.5 s, shutdown 6 s.
+  → `ENGINE_TIMEOUT`. `wait_for_job` ≤ 3600 s (progress at least every 10 s), `open_project_in_editor` ≤ 60 s, MG
+  preview ≤ 120 s, engine start ≤ 120 s (`--startup-timeout`), health probe 1.5 s and, when it times out, once more
+  after 0.5 s with 9 s (the same URL only), shutdown 6 s.
 - **Blind retries:** `withEngine` re-sent any request after a NETWORK error, including transactions that
   may already have been applied. Writes cut off mid-flight now fail with `ENGINE_CONNECTION_LOST` and a hint
   to re-read the project; reads and never-sent writes (ECONNREFUSED…) are still retried once, and only on the

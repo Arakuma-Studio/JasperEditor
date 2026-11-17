@@ -42,7 +42,18 @@ recorded in `licenses/ported/mcp-cli-effectcraft.md` and `licenses/ported/mcp-cl
 
 - `progressReporter(extra)`: one channel per request shared by all its reporters (nested waits), at most one
   `notifications/progress` per 100 ms, strictly increasing, the latest value wins with a trailing send, `flush()`
-  before a result so the final update precedes the response, nothing without a `progressToken`.
+  before a result so the final update precedes the response, nothing without a `progressToken`. `keepAlive(total,
+  message)`: when nothing was sent for 10 s, the last progress plus 1e-6 × total (MCP progress must increase; kept
+  under `total`), so a queued job or a long stage at the same percentage still sends one notification every 10 s.
+  `waitJob` calls it on every poll. A client that resets its request timeout on progress (TypeScript SDK
+  `resetTimeoutOnProgress`; its default request timeout is 60 s) therefore keeps a long wait open; a client with a
+  fixed tool timeout ends it there, and `wait_for_job` called again picks it up.
+- Wait caps (reported 2026-11-17: `wait_for_job` capped at 900 s while `start_export {wait}` allowed 3600):
+  `wait_for_job {timeoutSeconds}` now also takes up to 3600 (default 120). Nothing on the server side bounds a wait:
+  stdio has no transport timeout, and each poll is its own short engine request (`--request-timeout`, default 180 s,
+  bounds one request, never the wait). Test: `conventions.test.ts` "wait_for_job waits up to an hour…": a job at 10 %
+  for two simulated minutes gets ≥ 10 increasing notifications under 0.11, then 1 (before: 900 refused, and one
+  notification at 0.1 until the end).
 - `waitJob` watches `extra.signal`: on `notifications/cancelled` it cancels the engine job, waits (≤ 10 s) until it
   is terminal — the engine deletes partial outputs before it reports `cancelled` — and throws `RequestCancelled`
   (the SDK sends no response for a cancelled request). `cancelIfAborted` covers a cancel that arrives while a job

@@ -812,7 +812,8 @@ export function audioEncodeArgs(audioEncoder: string, kbps: number, channels = 2
 			`${Math.min(510 * Math.max(1, channels / 2), kbps)}k`,
 			...(channels > 2 ? ['-mapping_family', '1'] : []),
 		];
-	if (audioEncoder === 'pcm_s16le' || audioEncoder === 'pcm_s24le') return ['-c:a', audioEncoder];
+	if (audioEncoder === 'pcm_s16le' || audioEncoder === 'pcm_s24le' || audioEncoder === 'pcm_f32le')
+		return ['-c:a', audioEncoder];
 	return ['-c:a', 'aac', '-b:a', `${kbps}k`];
 }
 

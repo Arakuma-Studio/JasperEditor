@@ -92,7 +92,7 @@ import {
 	sidecarTracks,
 	subtitleCodecFor,
 } from './captions.ts';
-import { audioOnlyMuxArgs, gifGraphs, gifMuxLoop, gifToRgb } from './deliverables.ts';
+import { audioOnlyMuxArgs, gifGraphs, gifMuxLoop, gifToRgb, isFloatAudioCodec } from './deliverables.ts';
 import { type DeliveryDeps, type DeliveryFrames, runAlphaDelivery } from './delivery/alpha.ts';
 import { runGamutCheck } from './delivery/gamut.ts';
 import { runPsdExport } from './delivery/psd-job.ts';
@@ -2494,20 +2494,23 @@ export class ExportService {
 			(m) => ctx.log(m),
 		);
 		const mix = await this.report(ctx).time('audio', async () => {
-			// (an audio-only export, which reports the mix's progress and runs nothing beside it, mixes here)
-			const pass1 = opts.onProgress
-				? undefined
-				: await workers.mixPass1({
-						// the mixer reads the audio, the Mix and the settings: the picture's tracks stay here
-						snapshot: { ...planned.snapshot, videoTracks: [] },
-						media,
-						range: planned.range,
-						...(pieces ? { pieces } : {}),
-						length,
-						outputLayout,
-						normalize: o.normalize ?? null,
-						scratchDir,
-					});
+			// every export mixes on a worker, an audio-only one too (its mix's progress comes back from the worker): a
+			// minutes-long mix on the main thread held the engine's event loop (p50 43–52 ms, max 4.2–4.9 s on the PC's
+			// audio-only exports), so requests and MCP health probes went unanswered (wp-note export-performance §15)
+			const pass1 = await workers.mixPass1(
+				{
+					// the mixer reads the audio, the Mix and the settings: the picture's tracks stay here
+					snapshot: { ...planned.snapshot, videoTracks: [] },
+					media,
+					range: planned.range,
+					...(pieces ? { pieces } : {}),
+					length,
+					outputLayout,
+					normalize: o.normalize ?? null,
+					scratchDir,
+				},
+				opts.onProgress ? onProgress : undefined,
+			);
 			return renderMixdown({
 				ff: this.deps.ff,
 				snapshot: planned.snapshot,
@@ -2525,7 +2528,7 @@ export class ExportService {
 				signal: ctx.signal,
 				onSpawn: ctx.trackChild,
 				onProgress,
-				...(pass1 ? { pass1 } : {}),
+				pass1,
 				runner: workers.runner,
 			});
 		});
@@ -4639,6 +4642,8 @@ function mixOverWarnings(
 	audio: MixdownResult | null,
 ): { code: string; message: string; params: Record<string, string | number> }[] {
 	if (p.output.videoOnly || p.output.alpha || p.deliverable?.kind === 'gif') return [];
+	// a 32-bit float file keeps the samples over full scale: nothing clips, so there is nothing to warn about
+	if (isFloatAudioCodec(audioCodecOf(p.output.encoder, p.output))) return [];
 	const peak = preEncodePeakOf(audio);
 	const seq = p.document.sequences[p.sequenceId];
 	const over = preEncodeOver(

@@ -59,13 +59,53 @@ masters set it).
   the export's channels (1 / 2 / 6, 5.1 folded by BS.775), rate (44.1 / 48 / 96 kHz, SoX when present) and loudness
   normalisation (the Mix's, or `audio.normalize`), with the delivery's decoded check for M4A (lossy) and for any
   resampled file. FLAC counts as lossless (no codec headroom).
-- Encoders: WAV `pcm_s16le` / `pcm_s24le` (`-rf64 auto` past 4 GiB), FLAC `flac` (`-sample_fmt s16` / `s32` → 24-bit),
+- Encoders: WAV `pcm_s16le` / `pcm_s24le` / `pcm_f32le` (`bitDepth: 32`, see §3b; `-rf64 auto` past 4 GiB), FLAC `flac` (`-sample_fmt s16` / `s32` → 24-bit),
   M4A `aac` (bit rate, default 192 kb/s stereo, 384 for 5.1; `ipod` muxer with `+faststart`). The checked AAC encode
   of a normalised delivery is stream-copied. 16-bit files are not dithered (as every PCM export path).
 - The file's duration is checked against the range: |file − range| ≤ max(1 frame, 50 ms), else `DURATION_MISMATCH`.
 - Refusals (`VALIDATION_FAILED`): `video` or `videoOnly` with an audio container, a codec other than the container's
-  (WAV = `pcm`, FLAC = `flac`, M4A = `aac`), `bitDepth` with M4A or a video container, FLAC in a video container,
-  caption streams. Burned-in captions do not apply; sidecars do.
+  (WAV = `pcm`, FLAC = `flac`, M4A = `aac`), `bitDepth` with M4A or with a video file's non-PCM audio, `bitDepth: 32`
+  with FLAC ("FLAC stores integer samples only"), FLAC in a video container, caption streams. Burned-in captions do not
+  apply; sidecars do.
+
+## 3b. 32-bit float PCM (`bitDepth: 32`)
+
+Reported by the video team (2026-11-17): WAV and FLAC exports were integer only, so a mix over full scale with
+normalisation off was hard-clipped in the file, and a limiter applied to the file afterwards could not undo it.
+
+- **Settings.** `audio.bitDepth` takes 16, 24 or 32; 32 is IEEE float (`pcm_f32le`). WAV: 16 / 24 / 32. PCM in a MOV
+  (`codec: 'pcm'`): 16 / 24 / 32, default 24 as before. FLAC: 16 / 24; 32 is refused, because FLAC has no float
+  format. MP4 / WebM have no PCM. A PCM request there is written as AAC / Opus with `AUDIO_CODEC_CHANGED`, as before.
+  `bitDepth` with AAC / Opus audio in a video file is refused.
+- **Path.** Every path already hands the encoder the offline mixer's float32 WAV, with nothing clipping before it
+  (wp-note sound-design "Fix: overs without normalisation"). `pcm_f32le` keeps those samples: a +4.75 dBTP over reads
+  1.73 in the file. `audioCodecOf` → `pcmEncoderOf(bits)` is the one choice for every path (native, hybrid, Remotion
+  mux, smart-render join and the delivery's checked encodes), so preview and every path agree (AGENTS §4).
+- **Warnings and verification.** `AUDIO_MIX_OVER` does not fire for a float file, and verify_export adds no
+  `pre-encode-peak` row for it: nothing clips. The `true-peak` row of a float file without normalisation and without
+  a delivery target reports the true peak over full scale as `pass`, with `expected: null`. Its message says the file
+  keeps the over, and that an integer or lossy conversion without lowering it clips or dips those moments. With
+  normalisation or a target, the row judges against that ceiling as before. Verification decodes the file to f32, so
+  loudness and true peak are measured above full scale. ffprobe reports `pcm_f32le` with 32 bits, which the `streams`
+  row compares with the expectation.
+- **Editor.** Export As ▸ *Audio Only – WAV* offers Bit Depth 24-bit / 16-bit / 32-bit float, with a note when float is
+  chosen. *FLAC* offers 24 / 16 and says that FLAC stores whole numbers only, so for float export WAV. A remembered 32
+  writes 24 to a FLAC. Video exports in the editor keep their 24-bit PCM in MOV; the float MOV is in the API and MCP.
+- **MCP.** `start_export {audioBitDepth: 16 | 24 | 32}` for `format: "wav"` / `"flac"` (the engine refuses FLAC 32
+  with the reason), or a video with a MOV preset (`master-prores-422hq`). Another preset is refused with
+  `E_INVALID_PARAM` and a hint naming the MOV preset or `format: "wav"`. With `videoOnly`, it is refused like the
+  other audio options.
+- **Tests.** `export-mix-over.test.ts` exports the +4.75 dBTP burst as a float WAV. The file's samples must peak at
+  ≈ +4.75 dBFS (> 1.0), with no `AUDIO_MIX_OVER`, no `pre-encode-peak` row, `streams` passing and `true-peak` passing
+  with the measured peak. `export-container.test.ts`: H.264 with PCM 32 in MOV → ffprobe `pcm_f32le`.
+  `export-gif-audio.test.ts` (FLAC 32 refused) and the web dialog test (WAV 32 reaches the plan; FLAC shows 16 / 24 and
+  writes 24). All failed before the change: the schema refused 32.
+- **Checked in the app** (dev engine and Vite on their own ports, headless Chrome, 2026-11-17): WAV ▸ Bit Depth "32-bit
+  float" shows the note and the summary "WAV · PCM 32-bit float · 48 kHz stereo"; switching to FLAC shows 24-bit with
+  the FLAC note and "FLAC 24-bit" (screenshots inspected, not committed).
+- **MCP eval** (claude, default model, Orquester account): `export-float-wav` (bad) 4/4 on this branch, 0/2 on main
+  (the agent found no float option); `export-flac-integer` (control) 4/4 here, 2/2 on main. Budget: core 25 893 →
+  25 882 bytes, all 509 028 → 509 017 (the `wait_for_job` default line went, the `audioBitDepth` line grew).
 
 ## 4. Editor and MCP (AF-EXP-003)
 
@@ -76,7 +116,7 @@ masters set it).
   picture rows and Engine are hidden. The Summary line and the downloaded name's extension follow the file. The
   disabled "Audio Only" destination placeholder was removed.
 - MCP `start_export {format}`: options of another format (`preset`, `crf`, `videoBitrateKbps` with GIF / audio, `gif`
-  outside GIF, audio options with GIF, `audioBitDepth` outside WAV / FLAC, `audioBitrateKbps` outside M4A) are refused
+  outside GIF, audio options with GIF, `audioBitDepth` outside WAV / FLAC / a MOV preset, `audioBitrateKbps` outside M4A) are refused
   by name (`E_INVALID_PARAM`); `plan.deliverable` and `result.gif` / `result.container` / `result.audioCodec` describe
   the file.
 
@@ -135,6 +175,11 @@ concat, because `start_export` took one `range`.
 | Running dev engine: `start_export {format: flac, audioBitDepth 16, normalizeLufs −16}` → FLAC 16-bit 48 kHz stereo, 4.000 s; `ebur128` of the file −16.0 LUFS | pass | — |
 
 ## 6. Limits
+
+- 32-bit float (§3b) keeps overs in the file only. The Program monitor's audio output still hard-clips them, and a
+  player or integer conversion of the file clips them too, so above full scale the float file and the preview differ
+  (as `AUDIO_MIX_OVER`'s limits say for every export). Float is not offered for MOV exports in the editor's Export
+  panel (the API and MCP have it), and FLAC cannot hold it. A float file is not dithered or normalised unless asked.
 
 - Several ranges in one file: one more encode (from ProRes 4444) than a one-range export; no smart rendering or
   render previews; caption streams / sidecars, alpha masters and non-BT.709 outputs are refused (export each range).

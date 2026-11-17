@@ -191,11 +191,23 @@ export function frameOf(seq: Sequence, t: unknown, hint = TIME_HINT): number {
 
 /** At most one `notifications/progress` per request every this many ms (docs/wp-notes/mcp-cli.md §2). */
 const PROGRESS_INTERVAL_MS = 100;
+/**
+ * A wait whose progress stands still (a queued job, a long stage) still sends one notification this often, so a client
+ * that resets its request timeout on progress (MCP `resetTimeoutOnProgress`) does not give up on a long wait.
+ */
+const PROGRESS_KEEPALIVE_MS = 10_000;
+/** The step a keep-alive adds to the last progress sent (MCP progress must increase): far below what a report shows. */
+const KEEPALIVE_STEP = 1e-6;
 
 type ProgressReporter = {
 	(progress: number, total?: number, message?: string): void;
 	/** Sends the latest pending update (waiting out the interval) so it arrives before the result. */
 	flush(): Promise<void>;
+	/**
+	 * Keeps a long wait visible: when nothing was sent for PROGRESS_KEEPALIVE_MS, sends the last progress plus a step
+	 * too small to show (fraction of `total`, kept under it) with `message`.
+	 */
+	keepAlive(total: number, message?: string): void;
 };
 
 type ProgressParams = ProgressNotification['params'];
@@ -250,6 +262,11 @@ export function progressReporter(extra: Extra): ProgressReporter {
 		if (wait <= 0) send();
 		else if (!c.timer) c.timer = setTimeout(send, wait);
 	}) as ProgressReporter;
+	report.keepAlive = (total: number, message?: string) => {
+		if (token === undefined || c.pending || Date.now() - c.lastSentAt < PROGRESS_KEEPALIVE_MS) return;
+		const next = Math.max(0, c.lastProgress) + KEEPALIVE_STEP * total;
+		if (next < total) report(next, total, message);
+	};
 	report.flush = async () => {
 		if (!c.pending) return;
 		const wait = c.lastSentAt + PROGRESS_INTERVAL_MS - Date.now();
@@ -548,8 +565,9 @@ export async function waitJob(
 			await report?.flush();
 			return { job, timedOut: false };
 		}
-		if (job.progress !== null)
-			report?.(Math.min(job.progress, 0.999), 1, `${job.title}${job.stage ? ` — ${job.stage}` : ''}`);
+		const what = `${job.title}${job.stage ? ` — ${job.stage}` : ''}`;
+		if (job.progress !== null) report?.(Math.min(job.progress, 0.999), 1, what);
+		report?.keepAlive(1, job.state === 'queued' ? `${job.title}: queued` : what);
 		if (Date.now() >= until) {
 			await report?.flush();
 			return { job, timedOut: true };

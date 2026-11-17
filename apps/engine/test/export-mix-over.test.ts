@@ -4,8 +4,10 @@
 // turns the frames around an over down and an integer file clips it, so the file's own true peak cannot say it.
 // The export says it (AUDIO_MIX_OVER: the peak, where the worst over is, the fix), records it for verify_export (row
 // `pre-encode-peak`), and the plan of a one-path export says its frames are all on that path (`paths`).
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ExportResult, ExportVerifyResult } from '@jasper/api';
+import { decodeWav } from '@jasper/audio-dsp';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { coreServices } from '../src/tools/services.ts';
 import { closeApps, DocBuilder, JSON_H, makeApp, register, type TestApp, tempAppdir } from './helpers.ts';
@@ -113,5 +115,26 @@ describe('a mix over full scale without normalisation', { timeout: 600_000 }, ()
 			audio: { codec: 'pcm', bitDepth: 24, sampleRate: SR, channels: 2, normalize: null },
 		});
 		expectFlagged(result, (await verify(id)).rows);
+	});
+
+	it('32-bit float WAV: the overs stay in the file (samples over 1.0), no clip warning, verify passes them', async () => {
+		const { id, result } = await exportOf({
+			container: 'wav',
+			audio: { codec: 'pcm', bitDepth: 32, sampleRate: SR, channels: 2, normalize: null },
+		});
+		expect(result.audioCodec).toBe('pcm_f32le');
+		const wav = decodeWav(readFileSync((await coreServices(app).exports.outputFile(id))!));
+		expect(wav.float).toBe(true);
+		expect(wav.bitsPerSample).toBe(32);
+		const peak = Math.max(...wav.channels.map((c) => c.reduce((m, x) => Math.max(m, Math.abs(x)), 0)));
+		expect(20 * Math.log10(peak)).toBeCloseTo(OVER_DBTP, 1);
+		expect((result.warnings ?? []).map((w) => w.code)).not.toContain('AUDIO_MIX_OVER');
+		const { rows } = await verify(id);
+		expect(rows.find((r) => r.id === 'pre-encode-peak')).toBeUndefined();
+		expect(rows.find((r) => r.id === 'streams')?.status, JSON.stringify(rows)).toBe('pass');
+		const tp = rows.find((r) => r.id === 'true-peak');
+		expect(tp?.status, JSON.stringify(tp)).toBe('pass');
+		expect(tp!.measured as number).toBeCloseTo(OVER_DBTP, 1);
+		expect(tp!.message).toMatch(/32-bit float/);
 	});
 });

@@ -44,6 +44,8 @@ type Bins = Ffmpeg['bins'];
 export type MeasureWorkerRequest = { id: number; op: MeasureOp; bins: Bins } | { cancel: number };
 export type MeasureWorkerResponse =
 	| { id: number; ok: true; result: unknown }
+	/** An op's progress (a pass-1 mix's), passed to its `env.onProgress`; not an answer. */
+	| { id: number; progress: number; stage: string }
 	| { id: number; ok: false; message: string; aborted: boolean; code?: string; retryable?: boolean }
 	| { id: 0; ready: true };
 
@@ -250,6 +252,10 @@ export class SoundDesignMeasurer {
 					resolve(slot);
 					return;
 				}
+				if ('progress' in m) {
+					slot.pending.get(m.id)?.env.onProgress?.(m.progress, m.stage);
+					return;
+				}
 				const grace = slot.cancelling.get(m.id);
 				if (grace) {
 					clearTimeout(grace);
@@ -387,7 +393,10 @@ export function exportAudioWorkers(
 	env: RenderEnv,
 	durationSec: number,
 	log?: (m: string) => void,
-): { mixPass1(req: MixPass1Request): Promise<MixPass1>; runner: DeliveryRunner } {
+): {
+	mixPass1(req: MixPass1Request, onProgress?: RenderEnv['onProgress']): Promise<MixPass1>;
+	runner: DeliveryRunner;
+} {
 	exportAudio ??= new SoundDesignMeasurer(resolveMeasureWorker(), log, { size: EXPORT_AUDIO_WORKERS });
 	const m = exportAudio;
 	const timeoutMs = Math.max(
@@ -399,7 +408,8 @@ export function exportAudioWorkers(
 		...(signal ? { signal } : {}),
 	});
 	return {
-		mixPass1: (req) => m.run({ kind: 'mixPass1', req }, env, { timeoutMs }),
+		mixPass1: (req, onProgress) =>
+			m.run({ kind: 'mixPass1', req }, onProgress ? { ...env, onProgress } : env, { timeoutMs }),
 		runner: {
 			pass: (req, signal) => m.run({ kind: 'deliveryPass', req }, withSignal(signal), { timeoutMs }),
 			measureEncoded: (req, signal) =>

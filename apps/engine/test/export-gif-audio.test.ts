@@ -137,7 +137,11 @@ describe('deliverableOf: what the settings ask for, or a refusal by name', () =>
 			[{ ...base, container: 'wav', video }, /sound only/],
 			[{ ...base, container: 'wav', videoOnly: true }, /contradicts/],
 			[{ ...base, container: 'mp4', audio: { ...audio, codec: 'flac' } }, /FLAC files/],
-			[{ ...base, container: 'mov', audio: { ...audio, codec: 'pcm', bitDepth: 16 } }, /WAV and FLAC/],
+			[{ ...base, container: 'mp4', audio: { ...audio, bitDepth: 16 } }, /WAV and FLAC files and to PCM/],
+			[
+				{ ...base, container: 'flac', audio: { ...audio, codec: 'flac', bitDepth: 32 } },
+				/integer samples only/,
+			],
 		];
 		for (const [s, msg] of bad) {
 			expect(() => deliverableOf(s, SEQ), JSON.stringify(s)).toThrow(DeliverableError);

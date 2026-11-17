@@ -1192,6 +1192,7 @@ function AudioFileFields(props: {
 	onChange: (v: AudioFileChoice) => void;
 }) {
 	const control = 'h-[var(--pr-control-h)] w-full rounded-pr-control bg-pr-field px-2 text-pr-text';
+	const flac = props.format === 'flac';
 	return props.format === 'm4a' ? (
 		<Field label="Bit Rate">
 			<select
@@ -1208,17 +1209,35 @@ function AudioFileFields(props: {
 			</select>
 		</Field>
 	) : (
-		<Field label="Bit Depth">
-			<select
-				data-testid="export-audio-bit-depth"
-				className={control}
-				value={String(props.value.bitDepth)}
-				onChange={(e) => props.onChange({ ...props.value, bitDepth: e.target.value === '16' ? 16 : 24 })}
-			>
-				<option value="24">24-bit</option>
-				<option value="16">16-bit</option>
-			</select>
-		</Field>
+		<>
+			<Field label="Bit Depth">
+				<select
+					data-testid="export-audio-bit-depth"
+					className={control}
+					value={String(flac && props.value.bitDepth === 32 ? 24 : props.value.bitDepth)}
+					onChange={(e) =>
+						props.onChange({
+							...props.value,
+							bitDepth: e.target.value === '16' ? 16 : e.target.value === '32' ? 32 : 24,
+						})
+					}
+				>
+					<option value="24">24-bit</option>
+					<option value="16">16-bit</option>
+					{flac ? null : <option value="32">32-bit float</option>}
+				</select>
+			</Field>
+			{flac ? (
+				<p className="text-pr-small text-pr-muted">
+					FLAC stores whole numbers only (16 or 24 bits): a mix over full scale clips. For 32-bit float,
+					export WAV.
+				</p>
+			) : props.value.bitDepth === 32 ? (
+				<p className="text-pr-small text-pr-muted">
+					32-bit float keeps the mix's peaks over full scale (0 dBFS) instead of clipping them, for mastering.
+				</p>
+			) : null}
+		</>
 	);
 }
 

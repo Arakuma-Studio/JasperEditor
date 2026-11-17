@@ -10982,7 +10982,8 @@ the reported file.
   rose, the end of the block before included for the oversampler's delay; within a sample or two of the
   inter-sample peak). `MixdownResult.truePeakAt` carries it for a mix delivered as mixed.
 - Export warning `AUDIO_MIX_OVER` (result `warnings`, the editor's finished-export notice, Spanish text): normalisation
-  off and the mix over 0 dBTP. It gives the peak, the timecode and file seconds of the worst over, and the fix: turn
+  off and the mix over 0 dBTP, written to an integer or lossy file (a 32-bit float WAV / MOV keeps the overs: no
+  warning and no `pre-encode-peak` row, wp-note agent-footage-export §3b). It gives the peak, the timecode and file seconds of the worst over, and the fix: turn
   on loudness normalisation, or lower the mix. With the mix's integrated loudness as the target, normalisation keeps
   the level and adds only the true-peak limiter. Params: `truePeakDbtp`, `timecode`, `atSec`, `integratedLufs`.
 - `verify.json` records `preEncodePeak` (true peak, seconds, integrated loudness) for un-normalised exports. verify_export
