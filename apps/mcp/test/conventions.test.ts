@@ -303,6 +303,39 @@ describe('progress and cancellation', () => {
 		expect(sent).toEqual([]);
 	});
 
+	it('wait_for_job waits up to an hour and keeps progress coming while the job stands still', async () => {
+		await connect();
+		engine.jobs.set('job_4', { ...fakeJob('job_4', 'running', 0.1), kind: 'proxy' } as EngineJob);
+		vi.useFakeTimers();
+		try {
+			const progress: number[] = [];
+			const call = client.callTool(
+				{ name: 'wait_for_job', arguments: { jobId: 'job_4', timeoutSeconds: 3600 } },
+				undefined,
+				{
+					onprogress: (p) => {
+						progress.push(p.progress);
+					},
+					resetTimeoutOnProgress: true,
+				},
+			);
+			// two minutes at the same progress: more than the MCP SDK's default 60 s request timeout
+			await vi.advanceTimersByTimeAsync(120_000);
+			engine.jobs.set('job_4', { ...fakeJob('job_4', 'succeeded', 1), kind: 'proxy' } as EngineJob);
+			await vi.advanceTimersByTimeAsync(1_000);
+			const r = (await call) as CallToolResult;
+			expect(r.isError, JSON.stringify(r.content)).toBeFalsy();
+			// one a few times a minute, each over the last (MCP progress increases), none showing past what the job said
+			expect(progress.length).toBeGreaterThanOrEqual(10);
+			for (let i = 1; i < progress.length; i++) expect(progress[i]!).toBeGreaterThan(progress[i - 1]!);
+			expect(progress.at(-2)!).toBeLessThan(0.11);
+			expect(progress.at(-1)).toBe(1);
+		} finally {
+			vi.clearAllTimers();
+			vi.useRealTimers();
+		}
+	});
+
 	it('notifications/cancelled on wait_for_job cancels the engine job', async () => {
 		await connect();
 		engine.jobs.set('job_2', fakeJob('job_2'));

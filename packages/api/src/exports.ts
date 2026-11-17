@@ -185,12 +185,15 @@ export const ExportSettingsSchema = z.object({
 	audio: z
 		.object({
 			/**
-			 * `pcm` is 24-bit and requires MOV in a video export; WAV exports write 16 or 24 bits (`bitDepth`). `flac` is for
-			 * FLAC files only, `aac` in M4A files.
+			 * `pcm` requires MOV in a video export (24-bit unless `bitDepth` says otherwise); WAV exports write 16 or 24 bits
+			 * or 32-bit float (`bitDepth`). `flac` is for FLAC files only, `aac` in M4A files.
 			 */
 			codec: z.enum(['aac', 'opus', 'pcm', 'flac']),
-			/** spec 18 AF-EXP-002: bits per sample of a WAV or FLAC file (default 24). */
-			bitDepth: z.union([z.literal(16), z.literal(24)]).optional(),
+			/**
+			 * spec 18 AF-EXP-002: bits per sample of a WAV, FLAC or PCM-in-MOV file (default 24). 32 = 32-bit float
+			 * (`pcm_f32le`): samples over full scale are kept, not clipped. FLAC stores integers only (16 or 24).
+			 */
+			bitDepth: z.union([z.literal(16), z.literal(24), z.literal(32)]).optional(),
 			/** 44.1 / 48 / 96 kHz (default: the sequence rate). AAC and Opus encode at 48 kHz max 96. */
 			sampleRate: z.union([z.literal(44100), z.literal(48000), z.literal(96000)]),
 			/** 6 = discrete 5.1 (L R C LFE Ls Rs); a 5.1 Mix exported as 2/1 channels is folded (BS.775). */
@@ -427,7 +430,7 @@ export const RenderPlanSchema = z.object({
 			z.object({
 				kind: z.literal('audio'),
 				container: z.enum(AUDIO_ONLY_CONTAINERS),
-				/** ffmpeg encoder: `pcm_s16le`, `pcm_s24le`, `flac` or `aac`. */
+				/** ffmpeg encoder: `pcm_s16le`, `pcm_s24le`, `pcm_f32le` (32-bit float), `flac` or `aac`. */
 				codec: z.string(),
 				sampleRate: z.number().int(),
 				channels: z.number().int(),
@@ -461,7 +464,10 @@ export const ExportResultSchema = z.object({
 	/** FFmpeg video encoder and container actually used (D-13). */
 	encoder: z.string().optional(),
 	container: z.enum(EXPORT_CONTAINERS).optional(),
-	/** FFmpeg audio encoder actually used (`aac`, `libopus`, `pcm_s16le`, `pcm_s24le`, `flac`); absent without audio. */
+	/**
+	 * FFmpeg audio encoder actually used (`aac`, `libopus`, `pcm_s16le`, `pcm_s24le`, `pcm_f32le`, `flac`); absent
+	 * without audio.
+	 */
 	audioCodec: z.string().optional(),
 	/**
 	 * Remotion path only (D-13): `intermediate` = Remotion rendered ProRes and the engine encoded the
@@ -491,7 +497,8 @@ export const ExportResultSchema = z.object({
 	 * (`W_SOUND_CREDITS`, `W_SOUND_CHECK_STALE` with `level: 'info'`) and, when the file is not in the requested
 	 * container or audio codec, `OUTPUT_CONTAINER_CHANGED` / `AUDIO_CODEC_CHANGED` (WP6.5a, AGENTS §4); `AUDIO_MIX_OVER`
 	 * when the mix went into the encoder over 0 dBTP with normalisation off (params `truePeakDbtp`, `timecode`,
-	 * `atSec`, `integratedLufs` when measurable: the file clips there, or AAC turns those moments down).
+	 * `atSec`, `integratedLufs` when measurable: the file clips there, or AAC turns those moments down; never for a
+	 * 32-bit float file, which keeps the overs).
 	 */
 	warnings: z
 		.array(

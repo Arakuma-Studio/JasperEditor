@@ -69,6 +69,9 @@ export type Discovery = { target: EngineTarget | null; starting: StartingEngine 
 
 type HealthResult = { ok: true; version: string; runtimeFile: string | null } | { ok: false; reason: string };
 
+/** The first health probe's deadline (`healthTimeoutMs` overrides it). */
+const HEALTH_TIMEOUT_MS = 1500;
+
 /** GET /health with a short timeout (the route is public even in token mode). */
 async function probeHealth(
 	url: string,
@@ -76,7 +79,7 @@ async function probeHealth(
 ): Promise<HealthResult> {
 	const f = opts.fetch ?? globalThis.fetch;
 	const ctrl = new AbortController();
-	const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 1500);
+	const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? HEALTH_TIMEOUT_MS);
 	try {
 		const res = await f(`${url.replace(/\/$/, '')}/health`, { signal: ctrl.signal });
 		if (!res.ok) return { ok: false, reason: `HTTP ${res.status}` };
@@ -95,6 +98,27 @@ async function probeHealth(
 	} finally {
 		clearTimeout(timer);
 	}
+}
+
+/**
+ * GET /health, asked once more when it timed out: an engine that took the connection but did not answer in time is
+ * alive and busy — a synchronous step of heavy work (a Remotion bundle read, an offline mix on the main thread) holds
+ * its event loop for seconds (the PC's export logs: maxima of 3.5–6.2 s, wp-note export-performance §15). The second
+ * probe follows a pause of a third of the first deadline and waits six times as long (9 s at the default); the same
+ * URL only, so a busy engine is never swapped for another one. A refused connection (nothing listening) is not retried.
+ */
+async function probeHealthPatiently(
+	url: string,
+	opts: { fetch?: typeof fetch; timeoutMs?: number } = {},
+): Promise<HealthResult> {
+	const first = await probeHealth(url, opts);
+	if (first.ok || first.reason !== 'timeout') return first;
+	const base = opts.timeoutMs ?? HEALTH_TIMEOUT_MS;
+	await new Promise((r) => setTimeout(r, base / 3));
+	const second = await probeHealth(url, { ...opts, timeoutMs: base * 6 });
+	return second.ok || second.reason !== 'timeout'
+		? second
+		: { ok: false, reason: `timeout (asked twice: ${Math.round(base)} ms, then ${Math.round(base * 6)} ms)` };
 }
 
 function defaultPidAlive(pid: number): boolean {
@@ -198,7 +222,8 @@ export async function findEngine(opts: DiscoveryOptions = {}): Promise<Discovery
 	const log = opts.log ?? (() => {});
 	const now = opts.now ?? Date.now;
 	const pidAlive = opts.pidAlive ?? defaultPidAlive;
-	const probe = (url: string) => probeHealth(url, { fetch: opts.fetch, timeoutMs: opts.healthTimeoutMs });
+	const probe = (url: string) =>
+		probeHealthPatiently(url, { fetch: opts.fetch, timeoutMs: opts.healthTimeoutMs });
 
 	const url = opts.url ?? env[ENV.ENGINE_URL];
 	const token = opts.token ?? env[ENV.ENGINE_TOKEN] ?? null;

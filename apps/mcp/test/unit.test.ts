@@ -112,6 +112,30 @@ describe('engine discovery', () => {
 		},
 	);
 
+	it.skipIf(process.platform !== 'linux')(
+		'a busy engine that answers its health probe late is still the one found, not the default port',
+		async () => {
+			// the engine's event loop held by heavy work: the first /health times out, the second is answered
+			const busy = mkdtempSync(join(tmpdir(), 'jasper-mcp-busy-'));
+			writeRuntime(busy, { url: 'http://127.0.0.1:7', port: 7, pid: process.pid, token: 'busy' });
+			let asked = 0;
+			const healthy = fakeFetch(['http://127.0.0.1:7', 'http://127.0.0.1:47900']);
+			const f = (async (input: string | URL, init?: RequestInit) => {
+				if (String(input) === 'http://127.0.0.1:7/health' && asked++ === 0)
+					return new Promise((_, reject) =>
+						init?.signal?.addEventListener('abort', () =>
+							reject(Object.assign(new Error('aborted'), { name: 'AbortError' })),
+						),
+					);
+				return healthy(input, init);
+			}) as typeof fetch;
+			const env = { JASPER_APPDIR: busy, XDG_DATA_HOME: '/nonexistent', XDG_CONFIG_HOME: '/nonexistent' };
+			const t = await discoverEngine({ env, fetch: f, healthTimeoutMs: 30 });
+			expect(t).toMatchObject({ url: 'http://127.0.0.1:7', token: 'busy', source: 'runtime-file' });
+			expect(asked).toBe(2);
+		},
+	);
+
 	it('falls back to the default dev port', async () => {
 		const t = await discoverEngine({
 			env: { XDG_DATA_HOME: '/nonexistent', XDG_CONFIG_HOME: '/nonexistent', HOME: '/nonexistent' },
@@ -202,7 +226,8 @@ describe('engine request guard (no unbounded waits, no blind re-apply)', () => {
 				return c.listProjects();
 			}).catch((e) => e);
 			await healthStarted;
-			await vi.advanceTimersByTimeAsync(40);
+			// the health probe timed out, then its second, longer try (a pause of a third, six times the deadline)
+			await vi.advanceTimersByTimeAsync(40 + 40 / 3 + 40 * 6);
 			expect(requestStarted).toBe(true);
 			await vi.advanceTimersByTimeAsync(40);
 			expect(deadline.signal.aborted).toBe(true);

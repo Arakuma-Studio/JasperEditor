@@ -91,6 +91,7 @@ import {
 	type GifSpec,
 	gifBytes,
 	gifFrames,
+	pcmEncoderOf,
 } from './deliverables.ts';
 import { layerRouteOf } from './layer-routes.ts';
 import { describeUse, offlineUsesOf } from './media-guard.ts';
@@ -189,8 +190,8 @@ export type OutputSpec = {
 	audioBitrateKbps: number;
 	/** audio-mix: delivered sample rate (the mix runs at the sequence rate and is resampled with SoX when different). */
 	audioSampleRate: number;
-	/** audio-mix: 24-bit PCM requested (MOV). */
-	audioPcm?: boolean;
+	/** audio-mix: PCM requested (MOV) at these bits per sample (32 = float); absent = not requested. */
+	audioPcm?: 16 | 24 | 32;
 	/** audio-mix: two-pass loudness normalisation of the final mix. */
 	normalize: { targetLufs: number; truePeakDb: number } | null;
 	/** Average video bitrate override (see ExportSettings `video.bitrateKbps`). */
@@ -212,7 +213,7 @@ export type OutputSpec = {
 	noBFrames?: boolean;
 	/** color-mgmt: the colour space, tags, bit depth and HDR metadata written (absent = 8-bit BT.709 SDR). */
 	color?: ExportColor;
-	/** spec 18 AF-EXP-002: the audio encoder of an audio-only file (`pcm_s16le`, `pcm_s24le`, `flac`, `aac`). */
+	/** spec 18 AF-EXP-002: the audio encoder of an audio-only file (`pcm_s16le`, `pcm_s24le`, `pcm_f32le`, `flac`, `aac`). */
 	audioCodec?: string;
 	/** spec 18 AF-EXP-002: bits per sample of a FLAC file. */
 	audioBits?: 16 | 24;
@@ -845,7 +846,7 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 		audioChannels: audioOut.channels,
 		audioBitrateKbps: settings.audio?.bitrateKbps ?? (audioOut.channels === 6 ? 384 : 192),
 		audioSampleRate: audioOut.sampleRate,
-		audioPcm: settings.audio?.codec === 'pcm',
+		...(settings.audio?.codec === 'pcm' ? { audioPcm: settings.audio.bitDepth ?? 24 } : {}),
 		normalize: audioOut.normalize,
 		...(video?.bitrateKbps ? { bitrateKbps: video.bitrateKbps } : {}),
 		...(video?.proresProfile ? { proresProfile: video.proresProfile } : {}),
@@ -1362,7 +1363,7 @@ function planAudioOnly(o: {
 		audioSampleRate: audioOut.sampleRate,
 		normalize: audioOut.normalize,
 		audioCodec: spec.codec,
-		...(spec.codec === 'flac' && spec.bitDepth ? { audioBits: spec.bitDepth } : {}),
+		...(spec.codec === 'flac' && spec.bitDepth ? { audioBits: spec.bitDepth === 16 ? 16 : 24 } : {}),
 	};
 	const headroom = codecHeadroomDb({ codec: spec.codec, bitrateKbps, channels: audioOut.channels });
 	const planId = planIdOf({
@@ -1479,7 +1480,7 @@ export function audioCodecOf(
 	// spec 18 AF-EXP-002: an audio-only file's own encoder
 	if (output.audioCodec) return output.audioCodec;
 	const base = encoder?.audioEncoder ?? 'aac';
-	if (base.startsWith('pcm_')) return output.audioPcm ? 'pcm_s24le' : base;
+	if (base.startsWith('pcm_')) return output.audioPcm ? pcmEncoderOf(output.audioPcm) : base;
 	return base;
 }
 

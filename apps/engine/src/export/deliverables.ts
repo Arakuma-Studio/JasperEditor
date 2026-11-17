@@ -6,7 +6,8 @@
 //   display rendition the Program monitor shows (the still path's display LUT). The sound is left out and the plan
 //   says so (GIF_NO_AUDIO).
 // - Audio only (AF-EXP-002): the offline mixer's output (the one DSP of preview and every export path, with the
-//   export's range, rate, channels and loudness normalisation) written as WAV (16/24-bit PCM), FLAC or M4A (AAC).
+//   export's range, rate, channels and loudness normalisation) written as WAV (16/24-bit PCM or 32-bit float), FLAC or
+//   M4A (AAC).
 import {
 	type AudioOnlyContainer,
 	type ExportSettings,
@@ -18,11 +19,21 @@ import {
 export type GifSpec = Omit<Extract<NonNullable<RenderPlan['deliverable']>, { kind: 'gif' }>, 'kind'>;
 export type AudioOnlySpec = {
 	container: AudioOnlyContainer;
-	/** ffmpeg encoder: `pcm_s16le`, `pcm_s24le`, `flac` or `aac`. */
+	/** ffmpeg encoder: `pcm_s16le`, `pcm_s24le`, `pcm_f32le` (32-bit float), `flac` or `aac`. */
 	codec: string;
-	/** WAV / FLAC bits per sample. */
-	bitDepth?: 16 | 24;
+	/** WAV / FLAC bits per sample (32: float, WAV only). */
+	bitDepth?: 16 | 24 | 32;
 };
+
+/** The PCM encoder of a bit depth: 16- or 24-bit integer, or 32-bit float (overs above full scale kept). */
+export function pcmEncoderOf(bits: 16 | 24 | 32): 'pcm_s16le' | 'pcm_s24le' | 'pcm_f32le' {
+	return bits === 16 ? 'pcm_s16le' : bits === 32 ? 'pcm_f32le' : 'pcm_s24le';
+}
+
+/** Whether an audio encoder writes floating-point samples (a mix over full scale survives in the file). */
+export function isFloatAudioCodec(codec: string | null | undefined): boolean {
+	return codec === 'pcm_f32le' || codec === 'pcm_f64le';
+}
 
 export type Deliverable =
 	| { kind: 'video' }
@@ -153,12 +164,16 @@ export function deliverableOf(
 			);
 		if (a?.bitDepth && c === 'm4a')
 			throw new DeliverableError('M4A (AAC) has no bit depth; choose a bit rate (`audio.bitrateKbps`)');
+		if (a?.bitDepth === 32 && c === 'flac')
+			throw new DeliverableError(
+				'FLAC stores integer samples only (16 or 24 bits); 32-bit float needs WAV (`container: "wav"`)',
+			);
 		const bits = a?.bitDepth ?? 24;
 		const audio: AudioOnlySpec =
 			c === 'wav'
-				? { container: c, codec: bits === 16 ? 'pcm_s16le' : 'pcm_s24le', bitDepth: bits }
+				? { container: c, codec: pcmEncoderOf(bits), bitDepth: bits }
 				: c === 'flac'
-					? { container: c, codec: 'flac', bitDepth: bits }
+					? { container: c, codec: 'flac', bitDepth: bits === 16 ? 16 : 24 }
 					: { container: c, codec: 'aac' };
 		return { kind: 'audio', audio };
 	}
@@ -166,7 +181,8 @@ export function deliverableOf(
 		throw new DeliverableError(
 			'FLAC audio is written in FLAC files (`container: "flac"`), not in video files',
 		);
-	if (settings.audio?.bitDepth) throw new DeliverableError('`audio.bitDepth` applies to WAV and FLAC files');
+	if (settings.audio?.bitDepth && settings.audio.codec !== 'pcm')
+		throw new DeliverableError('`audio.bitDepth` applies to WAV and FLAC files and to PCM audio in MOV');
 	return { kind: 'video' };
 }
 

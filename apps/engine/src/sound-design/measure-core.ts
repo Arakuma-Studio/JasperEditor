@@ -55,11 +55,13 @@ export type RenderRequest = {
 	meter?: boolean;
 };
 
-/** What a render needs besides its request: the decoders' ffmpeg, cancellation, child tracking. */
+/** What a render needs besides its request: the decoders' ffmpeg, cancellation, child tracking, progress. */
 export type RenderEnv = {
 	ff: Ffmpeg;
 	signal?: AbortSignal;
 	onSpawn?(child: import('node:child_process').ChildProcess): void;
+	/** A pass-1 mix's progress (fraction of the export's audio, stage); relayed from a worker thread. */
+	onProgress?(fraction: number, stage: string): void;
 };
 
 export type RenderedPcm = { pcm: Pcm; truePeakDb: number | null; sampleRate: number };
@@ -272,6 +274,7 @@ export async function runMeasureOp<O extends MeasureOp>(
 				scratchDir: req.scratchDir,
 				...(env.signal ? { signal: env.signal } : {}),
 				...(env.onSpawn ? { onSpawn: env.onSpawn } : {}),
+				...(env.onProgress ? { onProgress: env.onProgress } : {}),
 			})) as MeasureOpResult<O['kind']>;
 		}
 		case 'deliveryPass':

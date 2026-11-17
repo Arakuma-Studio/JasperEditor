@@ -6,6 +6,7 @@
 // (MIT; licenses/ported/ffmpeg-skill.md; no code copied). Pure: the measurements come from verify-measure.ts.
 import type { ExportOutputInfo, ExportOutputStream, VerifyAt, VerifyRow } from '@jasper/api';
 import { type DeliveryTarget, formatTimecode } from '@jasper/project';
+import { isFloatAudioCodec } from './deliverables.ts';
 import {
 	type ExportVerifyContext,
 	fileOffsetOf,
@@ -685,7 +686,21 @@ function loudnessRows(input: JudgeInput, full: FullMeasurements): VerifyRow[] {
 		});
 	}
 	const ceiling = norm?.truePeakDb ?? input.target?.limits.truePeakDbtp ?? T.defaultTruePeakCeilingDbtp;
-	if (l.truePeakDbtp === null)
+	// a 32-bit float file keeps samples over full scale (nothing clips in it): without a ceiling asked for (normalisation
+	// or a delivery target) its true peak is reported, not judged against full scale
+	const floatAsMixed =
+		!norm && !input.target && isFloatAudioCodec(ctx?.expected.audio?.codec) && l.truePeakDbtp !== null;
+	if (floatAsMixed && l.truePeakDbtp! > ceiling + T.truePeakToleranceDb)
+		rows.push({
+			id: 'true-peak',
+			kind: 'format',
+			status: 'pass',
+			measured: r2(l.truePeakDbtp!, 2),
+			expected: null,
+			tolerance: null,
+			message: `True peak ${r2(l.truePeakDbtp!, 2)} dBTP, over full scale and kept as it is by the 32-bit float file (nothing clipped). Converting it to an integer format or a lossy codec without lowering it clips or dips those moments.`,
+		});
+	else if (l.truePeakDbtp === null)
 		rows.push({
 			id: 'true-peak',
 			kind: 'format',
@@ -743,6 +758,8 @@ export function mixOverFix(integratedLufs: number | null): string {
  * otherwise (as `offline-media`): a mix at or under 0 dBTP, a normalised export, or an export of an older build.
  */
 function preEncodeRows(ctx: ExportVerifyContext | null): VerifyRow[] {
+	// a 32-bit float file keeps the overs: the file's own true peak (row `true-peak`) is the whole story
+	if (isFloatAudioCodec(ctx?.expected.audio?.codec)) return [];
 	const over = preEncodeOver(ctx);
 	if (!over) return [];
 	const tp = r2(over.truePeakDbtp, 2);

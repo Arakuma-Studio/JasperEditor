@@ -57,7 +57,7 @@ function rangeFrames(seq: Parameters<typeof frameOf>[0], r: z.infer<typeof Range
 
 /** What an export writes and reports: the `export` guide, reference an agent reads when it needs a detail. */
 export const EXPORT_GUIDE =
-	'Exporting: starts rendering a sequence to a video file (or, with format, an animated GIF or an audio-only WAV / FLAC / M4A file) and returns a job id at once; format "gif" renders the picture on the same path as a video (nothing the timeline shows is dropped) and converts it with a palette and dithering (gif: fps default 15 max 50, width default the sequence width capped at 1080, loop 0 = forever / 1 = once / n plays, dither, palette); a GIF has no sound and the plan warns GIF_NO_AUDIO; result.gif gives the frames written. Formats "wav" (16/24-bit PCM, audioBitDepth), "flac" (16/24-bit) and "m4a" (AAC, audioBitrateKbps) write the sequence mix through the same mixer as every export (range, audioChannels, audioSampleRate, normalizeLufs apply); plan.deliverable says what the file will be. Video: follow it with wait_for_job (or get_job), or pass wait: true to block until it is written. Cancelling the MCP request (notifications/cancelled) during wait cancels the export and deletes the partial file. The engine picks the fastest path that can render everything (native ffmpeg for footage-only cuts, Remotion when there are text/effects). Uses the live editor state when the project is open. With outputPath the file is written there (existing files are never overwritten: the engine then writes "name (2).mp4" and the job result gives the real path); otherwise it is downloadable from the job result URL. Sound credits: a credits file goes next to the output (credits; result.credits {format, count, url, path}); soundWarnings (and result.warnings) name W_SOUND_CREDITS when a sound heard in the export needs a credit and no credits file is written, W_SOUND_LICENSE_NC for non-commercial sounds, W_SOUND_SHARE_ALIKE for CC BY-SA sounds (the video must then be shared under CC BY-SA), and W_SOUND_CHECK_STALE (level info) when the stored Sound Check is out of date or failed — tell the user. result.container / result.audioCodec are what the file holds; OUTPUT_CONTAINER_CHANGED / AUDIO_CODEC_CHANGED (plan and result warnings) say when that is not what was requested (e.g. PCM needs MOV, ProRes masters carry PCM) — tell the user. Loudness normalisation (the Mix\'s, or normalizeLufs): plan.loudness gives the target and the true-peak limiter ceiling in front of the encoder (target less the codec\'s headroom: 0 for PCM, 0.5–2 dB for AAC / Opus by bit rate); the engine encodes the audio, decodes it and turns the moments the codec still pushes over the target down, then result.audioLoudness reports the delivered file\'s own audio decoded (measuredOn "decoded-file"; pcm = the mix it encoded): integratedLufs, truePeakDbtp, limiterCeilingDbtp, codecHeadroomDb, loudnessPasses, encodePasses, localCorrections, ceilingLimited, truePeakMet. AUDIO_TRUE_PEAK_OVER / AUDIO_LOUDNESS_CEILING (result warnings) say when the delivered file misses the target — tell the user. A finished export (wait: true, or wait_for_job) also returns output (container, duration, streams, size) and the fast verification rows (streams, duration, av-skew) with verified; run verify_export {exportId: jobId} for the full checks (black / flash frames and clicks at cuts, loudness, true peak, silences) and verify_export {target} for a platform. Platform presets (delivery-youtube, delivery-youtube-shorts, delivery-instagram-reels, delivery-tiktok, delivery-x, delivery-linkedin; list_export_presets) export at the platform\'s size, rate and loudness; a sequence of another shape (a horizontal sequence for a vertical platform) is refused with a hint to auto_reframe_sequence — it is never cropped.';
+	'Exporting: starts rendering a sequence to a video file (or, with format, an animated GIF or an audio-only WAV / FLAC / M4A file) and returns a job id at once; format "gif" renders the picture on the same path as a video (nothing the timeline shows is dropped) and converts it with a palette and dithering (gif: fps default 15 max 50, width default the sequence width capped at 1080, loop 0 = forever / 1 = once / n plays, dither, palette); a GIF has no sound and the plan warns GIF_NO_AUDIO; result.gif gives the frames written. Formats "wav" (16/24-bit PCM or 32-bit float, audioBitDepth), "flac" (16/24-bit: FLAC has no float) and "m4a" (AAC, audioBitrateKbps) write the sequence mix through the same mixer as every export (range, audioChannels, audioSampleRate, normalizeLufs apply); plan.deliverable says what the file will be. Video: follow it with wait_for_job (or get_job), or pass wait: true to block until it is written. Cancelling the MCP request (notifications/cancelled) during wait cancels the export and deletes the partial file. The engine picks the fastest path that can render everything (native ffmpeg for footage-only cuts, Remotion when there are text/effects). Uses the live editor state when the project is open. With outputPath the file is written there (existing files are never overwritten: the engine then writes "name (2).mp4" and the job result gives the real path); otherwise it is downloadable from the job result URL. Sound credits: a credits file goes next to the output (credits; result.credits {format, count, url, path}); soundWarnings (and result.warnings) name W_SOUND_CREDITS when a sound heard in the export needs a credit and no credits file is written, W_SOUND_LICENSE_NC for non-commercial sounds, W_SOUND_SHARE_ALIKE for CC BY-SA sounds (the video must then be shared under CC BY-SA), and W_SOUND_CHECK_STALE (level info) when the stored Sound Check is out of date or failed — tell the user. result.container / result.audioCodec are what the file holds; OUTPUT_CONTAINER_CHANGED / AUDIO_CODEC_CHANGED (plan and result warnings) say when that is not what was requested (e.g. PCM needs MOV, ProRes masters carry PCM) — tell the user. Loudness normalisation (the Mix\'s, or normalizeLufs): plan.loudness gives the target and the true-peak limiter ceiling in front of the encoder (target less the codec\'s headroom: 0 for PCM, 0.5–2 dB for AAC / Opus by bit rate); the engine encodes the audio, decodes it and turns the moments the codec still pushes over the target down, then result.audioLoudness reports the delivered file\'s own audio decoded (measuredOn "decoded-file"; pcm = the mix it encoded): integratedLufs, truePeakDbtp, limiterCeilingDbtp, codecHeadroomDb, loudnessPasses, encodePasses, localCorrections, ceilingLimited, truePeakMet. AUDIO_TRUE_PEAK_OVER / AUDIO_LOUDNESS_CEILING (result warnings) say when the delivered file misses the target — tell the user. A finished export (wait: true, or wait_for_job) also returns output (container, duration, streams, size) and the fast verification rows (streams, duration, av-skew) with verified; run verify_export {exportId: jobId} for the full checks (black / flash frames and clicks at cuts, loudness, true peak, silences) and verify_export {target} for a platform. Platform presets (delivery-youtube, delivery-youtube-shorts, delivery-instagram-reels, delivery-tiktok, delivery-x, delivery-linkedin; list_export_presets) export at the platform\'s size, rate and loudness; a sequence of another shape (a horizontal sequence for a vertical platform) is refused with a hint to auto_reframe_sequence — it is never cropped.';
 
 /**
  * Why the plan is not all native: `why` = the first five distinct reasons (and how many more); `details.blockers` =
@@ -367,9 +367,9 @@ export function registerRenderTools(ctx: ToolContext): void {
 					.optional()
 					.describe('With format gif.'),
 				audioBitDepth: z
-					.union([z.literal(16), z.literal(24)])
+					.union([z.literal(16), z.literal(24), z.literal(32)])
 					.optional()
-					.describe('WAV or FLAC. Default 24.'),
+					.describe('Default 24; 32 = float (WAV, MOV): keeps overs.'),
 				audioBitrateKbps: z
 					.number()
 					.int()
@@ -509,7 +509,9 @@ export function registerRenderTools(ctx: ToolContext): void {
 				...(kind === 'gif' && audioChannels !== undefined ? ['audioChannels'] : []),
 				...(kind === 'gif' && audioSampleRate !== undefined ? ['audioSampleRate'] : []),
 				...(kind === 'gif' && normalizeLufs !== undefined ? ['normalizeLufs'] : []),
-				...(kind !== 'wav' && kind !== 'flac' && audioBitDepth !== undefined ? ['audioBitDepth'] : []),
+				...(kind !== 'wav' && kind !== 'flac' && kind !== 'video' && audioBitDepth !== undefined
+					? ['audioBitDepth']
+					: []),
 				...(kind !== 'm4a' && audioBitrateKbps !== undefined ? ['audioBitrateKbps'] : []),
 				...(kind !== 'video' && videoOnly !== undefined ? ['videoOnly'] : []),
 			];
@@ -517,7 +519,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 				throw new ToolError(
 					'E_INVALID_PARAM',
 					`${misplaced.join(', ')} ${misplaced.length === 1 ? 'does' : 'do'} not apply to format "${kind}"`,
-					'preset / crf / videoBitrateKbps are for "video", gif for "gif", audioBitDepth for "wav" / "flac", audioBitrateKbps for "m4a"; a GIF has no sound.',
+					'preset / crf / videoBitrateKbps are for "video", gif for "gif", audioBitDepth for "wav" / "flac" / a MOV preset, audioBitrateKbps for "m4a"; a GIF has no sound.',
 				);
 			// a picture-only file has no sound to shape: its audio options are refused by name, never ignored
 			const soundless = videoOnly
@@ -526,6 +528,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 						...(audioSampleRate !== undefined ? ['audioSampleRate'] : []),
 						...(normalizeLufs !== undefined ? ['normalizeLufs'] : []),
 						...(truePeakDb !== undefined ? ['truePeakDb'] : []),
+						...(audioBitDepth !== undefined ? ['audioBitDepth'] : []),
 						...(credits ? ['credits'] : []),
 					]
 				: [];
@@ -541,6 +544,13 @@ export function registerRenderTools(ctx: ToolContext): void {
 					'E_NOT_FOUND',
 					`Unknown export preset "${preset}"`,
 					`Use one of ${EXPORT_PRESETS.map((x) => x.id).join(', ')}.`,
+				);
+			// a video's bit depth is that of PCM audio, which only the MOV presets carry
+			if (kind === 'video' && audioBitDepth !== undefined && (p.container !== 'mov' || p.alpha))
+				throw new ToolError(
+					'E_INVALID_PARAM',
+					`audioBitDepth needs PCM audio; preset "${p.id}" writes ${p.alpha ? 'no audio' : p.container === 'webm' ? 'Opus' : 'AAC'}`,
+					'Use preset "master-prores-422hq" (MOV with PCM), or format "wav" for the sound alone.',
 				);
 			if (overwrite && !outputPath)
 				throw new ToolError(
@@ -602,6 +612,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 							...(videoBitrateKbps !== undefined ? { videoBitrateKbps } : {}),
 							...(audioChannels !== undefined ? { audioChannels } : {}),
 							...(audioSampleRate !== undefined ? { audioSampleRate } : {}),
+							...(audioBitDepth !== undefined ? { audioBitDepth } : {}),
 							...normalize,
 						})
 					: buildDeliverableSettings(seq, kind, {
@@ -752,7 +763,8 @@ export function registerRenderTools(ctx: ToolContext): void {
 				'Wait for a job and return its result. On `timedOut: true` call again. Cancelling this request cancels the job.',
 			input: {
 				jobId: JobIdArg,
-				timeoutSeconds: z.number().int().min(1).max(900).optional().describe('Default 120, max 900.'),
+				// default 120 s; the longest wait matches start_export's (a long wait sends progress, mcp-cli.md §2)
+				timeoutSeconds: z.number().int().min(1).max(3600).optional(),
 			},
 			annotations: READ_ONLY,
 		},

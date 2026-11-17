@@ -1150,6 +1150,47 @@ further, and raising the engine's needs privileges. The 0.1 % shown during the b
 it counts encoded frames, and the composite waits for the masters it needs (`bakeWait`), so it stays near 0 while the
 stage text counts the masters (`Baking graphics: n/m ready`); a display matter, not a stall.
 
+**"Engine not answering" once, the retry worked (2026-11-17): audio-only mixes on the main thread, a 1.5 s health
+probe.** Read-only from the user's PC (`~/code-projects/JasperEditor/.stage/engine/logs/jobs/*.log`, the dev engine's
+appdir; `~/je-dev.log` holds only the startup lines, written 11-16 17:24): the `event loop delay` lines of the 46
+latest kept job logs (11-15 08:11 to 11-17 00:22, local time).
+- **Audio-only exports of the 46-minute mix** (`audio: mixed in 227–281 s`, WAV `pcm_s24le`): p50 43–61 ms, p99
+  146–202 ms, max 3.5–4.9 s (11-16 16:46, 11-17 00:16, 00:22). The loop was busy for the whole mix, not only once:
+  p50 is 20 ms (the resolution) in every other kind of job. Cause: `renderAudio` ran an audio-only export's pass-1 mix
+  in-thread ("an audio-only export … mixes here", so that its progress could be reported), while every video export's
+  mix ran on the measurement workers. The offline mixer then held the event loop block by block for minutes.
+- **Motion-graphics and hybrid exports**: p50 20 ms, max 3.5–6.2 s (`mg: 4–5 composition master(s) ready`; 6174 ms on
+  11-16 01:23). These are the main-thread blocks listed above: Remotion's synchronous `bundle.js` read per
+  `prepareServer` and the spawns. They are not changed here.
+- **Short audio exports**: max 0.6–2.9 s.
+
+Any `GET /health` that lands in such a block waits for it. jasper-mcp's discovery gave the probe 1.5 s. When
+discovery runs (the first call, or again after a network error or a new token), an engine found through
+`JASPER_APPDIR`, the platform or desktop appdir, or the default port that is busy for longer was logged as "not
+answering" and skipped. With nothing else answering, the call failed with `ENGINE_NOT_FOUND` and its "not answering:
+timeout" reasons, and the next call, after the block, succeeded. An `--appdir` engine is used even when it does not
+answer, so the `jasper --appdir .stage` CLI was not affected by the probe. Its requests waited out the block within
+their 180 s deadline. The failing call's own log was not available, so which of the two paths it took is not known.
+
+Changes:
+- An audio-only export's mix runs on the measurement workers like every other export's (`exportAudioWorkers.mixPass1`
+  with the progress callback). The worker relays the mix's progress as `{id, progress, stage}` messages, at most one
+  every 200 ms (`measure-worker.ts`). `SoundDesignMeasurer` hands them to the op's `env.onProgress`, and in-thread
+  (no worker module, vitest) `runMeasureOp` passes the same callback to `renderPass1`. The bytes are the in-thread
+  mix's. Test: `sound-design-measure-worker.test.ts` "an export's pass-1 mix on a worker reports its progress…" (the
+  bundled worker: progress in (0, 1] with the stage "Mixing audio", the WAV byte-identical to the in-thread one). It
+  failed before: no progress came back.
+- Discovery's `/health` probe that times out is asked once more after a third of its deadline, with six times the
+  deadline (0.5 s, then 9 s by default, over the 6.2 s worst block measured). It is the same URL, so no other engine
+  is ever asked instead, and `--appdir` stays strict. A refused connection (nothing listening) is not retried, so a
+  stopped engine is reported as fast as before. A hung engine now takes ≈ 11 s to be reported instead of 1.5 s. Test:
+  `apps/mcp/test/unit.test.ts` "a busy engine that answers its health probe late is still the one found…" (a
+  `JASPER_APPDIR` engine whose first probe times out is found, not the default port's engine; failed before).
+
+Not measured here: the event-loop delay of an audio-only export after the change. The kept job logs on the PC will
+show it once the engine there is updated. ffmpeg spawns and Remotion's `bundle.js` read still block for up to several
+seconds during motion-graphics exports.
+
 ## 16. Short motion-graphics exports: warm render browsers, the bundle over HTTP, no composition page, fewer pages (implemented)
 
 `remotion/service.ts`, `remotion/browser-pool.ts`, `remotion/page-pool.ts`, `mg-bundles/text-measure.ts`
