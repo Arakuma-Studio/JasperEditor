@@ -66,7 +66,10 @@ tolerances and pinning documented thresholds to code by a test — [`licenses/po
     tracks `(output off)` and `get_project` gives `output: false`. Reported: a Shift+click on a track eye (TL-257) hid
     all 8 video tracks; every render and export was black and `uncovered-video` gave no reason. Limits: only picture
     clips count (a hidden track holding only titles is not named), and a nest whose inner tracks are all hidden is not
-    looked into.
+    looked into. The Program monitor shows the same all-hidden condition (`allUsedVideoTracksHidden`, whole sequence, no
+    range) as a chip over the picture, "All video tracks hidden (track eyes off in the Timeline)", so a black Program
+    picture says why in the editor too; it goes away as soon as one track with clips is shown. No confirmation is
+    asked on the Shift+click: it is one undoable step, and hiding all video for fast audio work is a legitimate use.
   - `offline-media` (format, fail; in `fast` and `full`): frames the render drew from a clip whose media was offline —
     the "Media Offline" card in the picture, silence in the sound — recorded at export in `verify.json` `offline`
     (`{start, end, clipId, name, mediaId, sound, at?}`, ≤ 200, then `offlineMore`; computed from the snapshot the
