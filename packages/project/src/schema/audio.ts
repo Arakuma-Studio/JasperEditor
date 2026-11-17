@@ -10,6 +10,23 @@ export const AUDIO_CHANNEL_FORMATS = ['mono', 'stereo', '5.1'] as const;
 export const AudioChannelFormatSchema = z.enum(AUDIO_CHANNEL_FORMATS);
 export type AudioChannelFormat = (typeof AUDIO_CHANNEL_FORMATS)[number];
 
+/**
+ * Pan law of a mono clip on a stereo track (`Sequence.settings.monoClipPanLaw`, schema v19):
+ * - `-3dB`: constant power, `[cos θ, sin θ]` with `θ = (pan + 1)·π/4` — 0.7071 (−3 dB) on both sides at the centre,
+ *   unity on one side panned hard. Premiere's law for a mono signal sent to a stereo bus (a mono clip on a stereo
+ *   track, a mono track into a stereo Mix), and the law mono tracks always use here. The default.
+ * - `0dB`: the clip on both sides at unity and its pan as balance (the opposite side attenuated with a cosine): how
+ *   projects saved before v19 play (the v18→v19 migration stores it on every sequence).
+ */
+export const MONO_CLIP_PAN_LAWS = ['-3dB', '0dB'] as const;
+export type MonoClipPanLaw = (typeof MONO_CLIP_PAN_LAWS)[number];
+export const MonoClipPanLawSchema = z.enum(MONO_CLIP_PAN_LAWS);
+
+/** A sequence's mono clip pan law: the stored value, else (absent or unreadable) the default `-3dB`. */
+export function monoClipPanLawOf(settings: { monoClipPanLaw?: unknown }): MonoClipPanLaw {
+	return settings.monoClipPanLaw === '0dB' ? '0dB' : '-3dB';
+}
+
 /** Sequence audio sample rates (Premiere offers 32/44.1/48/88.2/96 kHz; we support the three common ones). */
 export const SEQUENCE_SAMPLE_RATES = [44100, 48000, 96000] as const;
 export const SequenceSampleRateSchema = z.union([z.literal(44100), z.literal(48000), z.literal(96000)]);

@@ -116,6 +116,18 @@ function migrateV7ToV8(doc: Rec): Rec {
 	return doc;
 }
 
+/**
+ * v18 → v19: before v19 a mono clip on a stereo track played at unity on both sides (its pan a balance); v19 pans it
+ * with the −3 dB constant-power law by default. Older sequences keep how they sound: `settings.monoClipPanLaw: '0dB'`.
+ */
+function migrateV18ToV19(doc: Rec): Rec {
+	const sequences = isRec(doc.sequences) ? doc.sequences : {};
+	for (const seq of Object.values(sequences))
+		if (isRec(seq) && isRec(seq.settings) && seq.settings.monoClipPanLaw === undefined)
+			seq.settings.monoClipPanLaw = '0dB';
+	return doc;
+}
+
 /** Migrations run in order; every supported version keeps a loadable fixture (S01:MIG-002). */
 export const MIGRATIONS: readonly MigrationStep[] = [
 	{ from: 1, to: 2, migrate: migrateV1ToV2 },
@@ -197,6 +209,9 @@ export const MIGRATIONS: readonly MigrationStep[] = [
 	// legacy phase vocoder, so stored shifters sound the same); the bump makes v17 builds open v18 files read-only:
 	// they would keep the params but ignore them and preview and export another engine.
 	{ from: 17, to: 18, migrate: (doc) => doc },
+	// v19 (mono clip pan law): mono clips on stereo tracks pan with the −3 dB constant-power law unless
+	// `Sequence.settings.monoClipPanLaw` says `0dB`; every sequence of an older file stores `0dB`, so it plays as before.
+	{ from: 18, to: 19, migrate: migrateV18ToV19 },
 ];
 
 /** Data that is not a loadable project (not an object, an unknown format, no migration path, schema mismatch). */

@@ -1,7 +1,8 @@
 // Invariants and load-time repairs of the audio-mix data (INV-MIX): submix tracks are audio-kind tracks without
 // clips; outputs and sends name existing submixes without feedback (a submix only feeds a later submix); at most
-// MAX_SENDS sends; lane keys are known; loudness settings are in range; a stored converged delivery is readable.
-import { readLoudnessDelivery, STRIP_LANES } from '../schema/audio.ts';
+// MAX_SENDS sends; lane keys are known; loudness settings are in range; a stored converged delivery is readable; the
+// mono clip pan law is a known one.
+import { MONO_CLIP_PAN_LAWS, readLoudnessDelivery, STRIP_LANES } from '../schema/audio.ts';
 import type { Sequence, Track } from '../schema/sequence.ts';
 import { MAX_SENDS } from './strip.ts';
 
@@ -49,6 +50,11 @@ export function audioMixIssues(seq: Sequence, where: string[]): MixIssue[] {
 	subs.forEach((t, i) => {
 		check(t, i);
 	});
+	if (!panLawReadable(seq))
+		out.push({
+			message: `Unknown mono clip pan law ${JSON.stringify(seq.settings.monoClipPanLaw)}`,
+			path: [...where, 'settings', 'monoClipPanLaw'],
+		});
 	const delivery = (seq.master.loudness?.analysis as { delivery?: unknown } | null | undefined)?.delivery;
 	if (delivery !== undefined && delivery !== null && !readLoudnessDelivery(delivery))
 		out.push({
@@ -57,6 +63,10 @@ export function audioMixIssues(seq: Sequence, where: string[]): MixIssue[] {
 		});
 	return out;
 }
+
+const panLawReadable = (seq: Sequence) =>
+	seq.settings.monoClipPanLaw === undefined ||
+	(MONO_CLIP_PAN_LAWS as readonly unknown[]).includes(seq.settings.monoClipPanLaw);
 
 /** Conservative repair: drops invalid outputs (→ the Mix), sends and lanes, and clips on submixes are kept out. */
 export function repairAudioMix(
@@ -100,6 +110,14 @@ export function repairAudioMix(
 		if (t.kind !== 'audio') (t as { kind: string }).kind = 'audio';
 		fix(t, i);
 	});
+	if (!panLawReadable(seq)) {
+		delete seq.settings.monoClipPanLaw;
+		note(
+			'drop-pan-law',
+			seq.id,
+			'removed an unknown mono clip pan law: mono clips on stereo tracks pan at −3 dB',
+		);
+	}
 	// an unreadable converged delivery is dropped: the preview plays the one-pass gain until the mix is analysed again
 	const analysis = seq.master.loudness?.analysis as { delivery?: unknown } | null | undefined;
 	if (

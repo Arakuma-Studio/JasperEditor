@@ -61,7 +61,24 @@ Mix:   bus sum → inserts → fader → loudness gain (target − measured) →
 ```
 
 Mono strips pan with the −3 dB constant-power law (Premiere's default pan law); stereo strips and sends use balance
-(centre = unity); 5.1 → stereo folds with ITU-R BS.775 (k = 1/√2, LFE omitted; Preferences ▸ Audio ▸ 5.1 Mixdown
+(centre = unity). A mono clip (one channel after Modify ▸ Audio Channels) on a stereo track pans with the sequence's
+**mono clip pan law** (`settings.monoClipPanLaw`, Sequence Settings ▸ Audio ▸ Mono Clip Pan Law, schema v19):
+`-3dB` (the default) = the same constant-power law, `[cos θ, sin θ]`, `θ = (pan + 1)·π/4`: 0.7071 (−3.01 dB) on both
+sides at the centre, unity on one side panned hard; `0dB` = the clip at unity on both sides and its pan a balance
+(the opposite side attenuated with a cosine): +3 dB of power at the centre, how every mono clip played before v19.
+The v18→v19 migration stores `0dB` on every older sequence, so no saved project changes its sound; new sequences
+get `-3dB`. The export mixer (`OfflineMixer.applyClip`) and the preview graph (`clipPanMatrix`) apply the same law
+from the clip's `RenderAudioClip.monoPanLaw` (a flattened nested clip keeps its own sequence's law); it is part of
+`mixFingerprint` only at `-3dB`, so loudness analyses stored before v19 stay current. Source for Premiere: Adobe's
+community manager (mstegner, 5 June 2023): "In Premiere Pro, the Pan Law is engaged anytime a mono audio signal is
+sent to a stereo audio buss. This means a mono clip on a stereo audio track, or a mono audio track into a stereo Mix
+track. The Pan Law will attenuate the audio signal by -3 dB when the signal is panned to the center"
+(<https://community.adobe.com/questions-729/bug-report-track-hard-limiter-issues-1410345>); it cannot be turned off
+in Premiere (<https://community.adobe.com/t5/premiere-pro-discussions/3db-shift-when-importing-audio-to-adobe-premiere-pro/m-p/12169962>,
+<https://community.adobe.com/questions-729/mono-and-stereo-panning-inconsistencies-1408120>). Adobe's own help pages
+do not state the figure; the `0dB` choice is ours (projects made before v19, or a mix built for unity mono clips).
+Tests: `packages/project/test/audio-mix.test.ts` (both laws, the setting's edit, refusal and repair),
+`packages/compositions/test/audio-preview-oracle.test.ts` (preview = export for panned mono clips). 5.1 → stereo folds with ITU-R BS.775 (k = 1/√2, LFE omitted; Preferences ▸ Audio ▸ 5.1 Mixdown
 Type selects front / +rear / +LFE for the monitor); a strip feeding a 5.1 bus uses the 5.1 panner (unit-power point
 source, Center % sharing the front image, LFE send). Solo keeps soloed and solo-safe strips plus everything that
 feeds them or that they feed.
@@ -172,7 +189,22 @@ feeds them or that they feed.
 - Nested sequences reach the mix flattened (edit-structure's `nestGain`: nested track faders and Mix); the nested
   sequence's own pan, sends and submixes are not applied inside the nest.
 - The `tracks` analysis scope measures the Mix with only those tracks playing (solo semantics, the Mix fader
-  included, normalisation excluded).
+  included, normalisation excluded), over the whole sequence or a range (`startFrame` / `endFrame` / `inOut`, like the
+  `range` scope). `measure_loudness` sends `start` / `end` (or `scope: "inOut"`) with every scope but `clips`, of the
+  soloed `tracks` when given; `scope: "tracks"` with a range used to measure the whole sequence (video team report,
+  2026-11-17). The kept result's key holds the planned range, so a ranged request never gets a whole-sequence result.
+- The `clips` scope measures each clip **pre-fader**: the sum of the track inputs (`tap: 'track-inputs'`) with only
+  that clip playing — the same decode and source range, clip gain, clip effects, volume, fades and pan as the mix, but
+  not the track's fader, pan, inserts, sends or the Mix; `levels: "source"` also skips the clip levels. The
+  `measure_loudness` result says so (`clipLevels`). At that tap the mixer used to discard the graph's read-ahead (the
+  latency of any track, submix or Mix insert, e.g. a Pitch Shifter on another track) although the track inputs carry
+  none, so every clip was measured that many samples late and lost its start: a 0.52 s trim of an MP3 pop measured
+  −23.9 dBFS against −11.7 dBFS in the mix (the reported project, A1's Rubber Band R3 Pitch Shifter). The track inputs
+  are now read on time (`OfflineMixer`), which also corrects the sound-design renders at that tap. Test:
+  `audio-analysis-job.test.ts` (a trimmed libmp3lame fixture, `pop-trim.mp3`, within 0.5 dB of the mix). MP3 encoder
+  delay is not a factor: FFmpeg trims the LAME header's priming samples on every decode, and an input seek lands on
+  the same sample position as a decode from the start (checked on `pop-trim.mp3` and the reported `197. pop.mp3`:
+  best lag 0; the seek's samples differ only by the decoder's warm-up, far below −80 dB).
 - Analyses (`POST /api/audio/analyze`) are `analysis` jobs: progress is the frames of the range mixed so far
   ("Mixing audio: frame n of N"), cancelling stops the mix. A finished result is kept per engine (64, most recently
   used) by the content of what the offline mixer plays (`AudioService.analysisKey`: the snapshot's mixer graph without

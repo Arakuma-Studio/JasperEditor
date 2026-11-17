@@ -1,11 +1,12 @@
 // `mixFingerprint`: a hash of everything a sequence's mix depends on (audio tracks and their clips, submixes, the Mix
-// without its loudness settings, audio transitions, the media fingerprints and interpretations and the nested sequences
-// they play). Entity ids and names are not part of it: they name things, they do not change the sound — every id is replaced by
+// without its loudness settings, the mono clip pan law, audio transitions, the media fingerprints and interpretations
+// and the nested sequences they play). Entity ids and names are not part of it: they name things, they do not change the sound — every id is replaced by
 // its order of first appearance and clips are ordered by where they play, so the same mix built again (a re-applied
 // dip, an accepted proposal measured on its preview, a copy) has the same fingerprint (sound-design Phase 4
 // verification; WP4.2a dropped keyframe ids only). A stored loudness analysis whose `mixHash` differs is stale.
 import { looksLikeId } from '../ids.ts';
 import { mediaTimeMap } from '../interpret/model.ts';
+import { monoClipPanLawOf } from '../schema/audio.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Clip, Sequence } from '../schema/sequence.ts';
 import { fnv1a64 } from '../structure/nest.ts';
@@ -73,6 +74,8 @@ function parts(doc: ProjectDocument, seq: Sequence, seen: Set<string>, out: unkn
 		);
 	const { loudness: _l, ...master } = seq.master;
 	out.push({
+		// the −3 dB mono clip pan law (v19) only: an analysis stored before v19 (migrated to `0dB`) stays current
+		...(monoClipPanLawOf(seq.settings) === '-3dB' ? { monoPan: '-3dB' } : {}),
 		rate: seq.settings.audioSampleRate,
 		layout: seq.settings.masterLayout,
 		fps: seq.settings.frameRate,

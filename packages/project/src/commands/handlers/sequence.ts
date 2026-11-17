@@ -303,6 +303,7 @@ export const sequenceHandlers = {
 		if (p.backgroundColor) seq.settings.backgroundColor = [...p.backgroundColor];
 		if (p.audioSampleRate !== undefined) seq.settings.audioSampleRate = p.audioSampleRate;
 		if (p.masterLayout !== undefined) seq.settings.masterLayout = p.masterLayout;
+		if (p.monoClipPanLaw !== undefined) seq.settings.monoClipPanLaw = p.monoClipPanLaw;
 		applyColorSettings(seq, p, h);
 	},
 	'sequence.setInOut': (doc, cmd, h: HandlerContext) => {

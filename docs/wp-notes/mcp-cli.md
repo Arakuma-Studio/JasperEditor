@@ -179,7 +179,9 @@ both prints both, with a note on stderr; neither is `E_NOT_FOUND`, resolved with
 `--full` writes the sequence's full size through `export_frame` — never proxies, format by extension — into the
 output's folder under a temporary name and renames it over `--out`, so it needs the engine on this machine), `export
 --out [--preset --range --engine]`, `query <name> k=v…`, `ui <action> k=v…`, `tools`, `call
-<tool> k=v… [--out f.png]` (`--out` writes every image the tool returns: one to the path, several — e.g. the
+<tool> k=v… | '<json>' | @args.json | - [--out f.png]` (the arguments: `k=v` pairs, one JSON object, or one JSON
+object read from a file, `@args.json` relative to the cwd, or from stdin, `-`, which `run -` reads too: big
+`apply_commands` batches exceed the OS's argument limit, E2BIG; `--out` writes every image the tool returns: one to the path, several — e.g. the
 previews of an `add_motion_graphic {dryRun, preview}` batch — to `f-0.png`, `f-1.png`… in result order; without
 `--out` they go to temporary files; the printed JSON lists the paths in `images`, so no image is dropped). `call`'s
 stdout is always one JSON document: a failure prints `{"ok": false, "error"}` there too (with or without `--json`;

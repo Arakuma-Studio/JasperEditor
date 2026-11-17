@@ -51,9 +51,11 @@ Commands:
   ui <action> [k=v…] [--out f.png]    live UI of the open editor window: state, elements, screenshot,
                                       click, drag, scroll, key, type, set, locate, hit, commands, command
   tools                               list every MCP tool
-  call <tool> [k=v… | '<json>'] [--out f.png]
+  call <tool> [k=v… | '<json>' | @args.json | -] [--out f.png]
                                       call any MCP tool; prints its JSON result (a failure: {"ok": false,
-                                      "error"}). Images it returns are written to --out (several: f-0.png,
+                                      "error"}). The arguments: k=v pairs, one JSON object, or a JSON object read
+                                      from a file (@args.json) or stdin (-), for arguments too long for a command
+                                      line. Images it returns are written to --out (several: f-0.png,
                                       f-1.png… in result order) or to temporary files; "images" lists the paths
   apply <scene.yaml|.json> [--dry-run]
                                       make a sequence match a scene file: only what differs, one undo step
@@ -165,14 +167,17 @@ function looseValue(s: string): unknown {
 	}
 }
 
+/** A JSON object argument (`what` names where it came from in the error). */
+function jsonObject(text: string, what: string): Record<string, unknown> {
+	const v = looseValue(text);
+	if (!v || typeof v !== 'object' || Array.isArray(v))
+		throw new UsageError(`Not a JSON object: ${what.length > 200 ? `${what.slice(0, 200)}…` : what}`);
+	return v as Record<string, unknown>;
+}
+
 /** `k=v` pairs → an object (dotted keys nest); a single JSON object argument is taken as is. */
 function kvArgs(items: readonly string[]): Record<string, unknown> {
-	if (items.length === 1 && items[0]!.trim().startsWith('{')) {
-		const v = looseValue(items[0]!);
-		if (!v || typeof v !== 'object' || Array.isArray(v))
-			throw new UsageError(`Not a JSON object: ${items[0]}`);
-		return v as Record<string, unknown>;
-	}
+	if (items.length === 1 && items[0]!.trim().startsWith('{')) return jsonObject(items[0]!, items[0]!);
 	const out: Record<string, unknown> = {};
 	for (const it of items) {
 		const eq = it.indexOf('=');
@@ -189,6 +194,30 @@ function kvArgs(items: readonly string[]): Record<string, unknown> {
 		o[keys.at(-1)!] = looseValue(it.slice(eq + 1));
 	}
 	return out;
+}
+
+/**
+ * A tool's arguments: `kvArgs`, or one JSON object read from a file (`@args.json`, relative to the cwd) or from stdin
+ * (`-`) — arguments longer than a command line takes (E2BIG, "Argument list too long").
+ */
+function toolArgs(c: Ctx, items: readonly string[]): Record<string, unknown> {
+	const one = items.length === 1 ? items[0]! : null;
+	if (one === '-') return jsonObject(c.stdin(), 'stdin');
+	if (one?.startsWith('@')) {
+		const path = resolve(c.cwd, one.slice(1));
+		let text: string;
+		try {
+			text = readFileSync(path, 'utf8');
+		} catch (e) {
+			throw new UsageError(
+				`Cannot read ${path}: ${(e as NodeJS.ErrnoException).code ?? (e as Error).message}`,
+			);
+		}
+		return jsonObject(text, path);
+	}
+	if (items.some((it) => it === '-' || it.startsWith('@')))
+		throw new UsageError('@file or - is the only argument: the whole JSON object comes from it');
+	return kvArgs(items);
 }
 
 /** `--at`: 30 (frames), 2.5s / 250ms / 00:03 / 1:02:03 (friendly times, arguments.ts), HH:MM:SS:FF, or JSON. */
@@ -305,6 +334,8 @@ type Ctx = {
 	out: Out;
 	json: boolean;
 	cwd: string;
+	/** All of stdin (`run -`, `call <tool> -`). */
+	stdin(): string;
 	signal?: AbortSignal;
 	projectId(): Promise<string>;
 	/** Whether --project / JASPER_PROJECT names the project (else `projectId()` guesses it). */
@@ -498,7 +529,7 @@ const COMMANDS: Record<string, (c: Ctx, args: string[]) => Promise<void>> = {
 	},
 	async run(c, args) {
 		needArgs(args, 1, 'run <file.jsonl | ->');
-		const text = args[0] === '-' ? readFileSync(0, 'utf8') : readFileSync(resolve(c.cwd, args[0]!), 'utf8');
+		const text = args[0] === '-' ? c.stdin() : readFileSync(resolve(c.cwd, args[0]!), 'utf8');
 		const projectId = await c.projectId();
 		let failed = 0;
 		const lines = text.split('\n');
@@ -745,8 +776,8 @@ const COMMANDS: Record<string, (c: Ctx, args: string[]) => Promise<void>> = {
 		emit(c, jsonOf(r));
 	},
 	async call(c, args) {
-		needArgs(args, 1, 'call <tool> [k=v… | json]');
-		const params = kvArgs(args.slice(1));
+		needArgs(args, 1, 'call <tool> [k=v… | json | @file.json | -]');
+		const params = toolArgs(c, args.slice(1));
 		const tools = await listTools(c);
 		const def = tools.find((t) => t.name === args[0]);
 		if (!def) throw new UsageError(`Unknown tool "${args[0]}" (jasper tools lists them)`);
@@ -831,7 +862,14 @@ async function resolveProject(s: CliSession, wanted: string | undefined): Promis
 /** Runs one CLI invocation; returns the exit status. */
 export async function runCli(
 	argv: readonly string[],
-	io: Out & { env?: NodeJS.ProcessEnv; cwd?: string; link?: EngineConnection; signal?: AbortSignal },
+	io: Out & {
+		env?: NodeJS.ProcessEnv;
+		cwd?: string;
+		link?: EngineConnection;
+		signal?: AbortSignal;
+		/** All of stdin (default: the process's). */
+		stdin?: () => string;
+	},
 ): Promise<number> {
 	let parsed: ParsedArgs;
 	try {
@@ -893,6 +931,7 @@ export async function runCli(
 			out: io,
 			json,
 			cwd: io.cwd ?? process.cwd(),
+			stdin: io.stdin ?? (() => readFileSync(0, 'utf8')),
 			...(io.signal ? { signal: io.signal } : {}),
 			projectId: async () => {
 				projectId ??= await resolveProject(session, str('project') ?? env.JASPER_PROJECT);

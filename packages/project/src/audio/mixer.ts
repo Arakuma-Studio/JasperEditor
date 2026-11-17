@@ -64,7 +64,10 @@ export type MixerOptions = {
 	onMissingProcessor?: (effect: EffectInstance) => void;
 	/** Only these strips contribute (solo-like analysis of a single track); default all. */
 	onlyTracks?: ReadonlySet<string>;
-	/** Skip strip processing after the track input (track-level analysis): output the sum of the track inputs. */
+	/**
+	 * Skip strip processing after the track input (track-level analysis): output the sum of the track inputs, on time
+	 * (none of the graph's read-ahead is discarded: the inputs carry no strip latency).
+	 */
 	tap?: 'master' | 'track-inputs';
 	/**
 	 * Opt-in (analysis renders of a few clips: the sound-design solo and bed renders): only these clips play, and the
@@ -172,7 +175,7 @@ type Voice = {
 export class OfflineMixer {
 	readonly sampleRate: number;
 	readonly outputLayout: Layout;
-	/** Total graph latency in samples (the output is read ahead by it). */
+	/** Total graph latency in samples (the output is read ahead by it, except at the `track-inputs` tap). */
 	readonly latency: number;
 	private readonly fps: Rational;
 	private readonly flicksPerSample: number;
@@ -267,7 +270,8 @@ export class OfflineMixer {
 		});
 		this.latency = this.master.postLat;
 		this.pos = o.startSample;
-		this.toDiscard = this.latency;
+		// The track inputs are on time (clips pre-roll their own effects): only the strips' output is read ahead.
+		this.toDiscard = o.tap === 'track-inputs' ? 0 : this.latency;
 		const played = new Set(mix.strips.filter((s) => s.kind === 'track' && !s.inaudible).map((s) => s.id));
 		this.voices = snap.audioClips
 			.filter((c) => played.has(c.trackId) && (!o.onlyTracks || o.onlyTracks.has(c.trackId)))
@@ -431,7 +435,10 @@ export class OfflineMixer {
 		}
 	}
 
-	/** Gain → volume → fades → clip pan → track input, for `k` samples starting at absolute sample `a`. */
+	/**
+	 * Gain → volume → fades → clip pan → track input, for `k` samples starting at absolute sample `a`. Clip pan into a
+	 * stereo track: balance, or the −3 dB constant-power law for a mono clip with `monoPanLaw`.
+	 */
 	private applyClip(v: Voice, a: number, k: number, dst: number): void {
 		const c = v.clip;
 		const st = this.strips[v.trackIndex]!;
@@ -461,6 +468,8 @@ export class OfflineMixer {
 		const mat = conversionMatrix(src, layoutFromChannels(tw));
 		const panAnimated = isAnimated(c.pan);
 		const panConst = c.pan.value;
+		// a mono clip at −3 dB (`monoPanLaw`): constant power, also at the centre; else balance
+		const constantPower = w === 1 && c.monoPanLaw === '-3dB';
 		for (let i = 0; i < k; i++) {
 			let pl = 1;
 			let pr = 1;
@@ -472,7 +481,9 @@ export class OfflineMixer {
 					const content = contentAt(c, local, F);
 					p = evaluate(c.pan, content);
 				}
-				if (p !== 0) [pl, pr] = balanceGains(Math.max(-1, Math.min(1, p / 100)));
+				const x = Math.max(-1, Math.min(1, p / 100));
+				if (constantPower) [pl, pr] = panMonoGains(x);
+				else if (p !== 0) [pl, pr] = balanceGains(x);
 			}
 			const g = gain[i]!;
 			if (g === 0) continue;

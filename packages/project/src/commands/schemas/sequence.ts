@@ -1,6 +1,10 @@
 import { z } from 'zod';
 import { WORKING_SPACE_CHOICES } from '../../color/model.ts';
-import { AudioChannelFormatSchema, SequenceSampleRateSchema } from '../../schema/audio.ts';
+import {
+	AudioChannelFormatSchema,
+	MonoClipPanLawSchema,
+	SequenceSampleRateSchema,
+} from '../../schema/audio.ts';
 import { AnimNumberSchema, LabelColorSchema, RationalSchema, RGBASchema } from '../../schema/common.ts';
 import {
 	CaptionStandardSchema,
@@ -28,6 +32,8 @@ const SettingsPatch = z.strictObject({
 	audioSampleRate: SequenceSampleRateSchema.optional(),
 	/** channel format of the Mix. */
 	masterLayout: AudioChannelFormatSchema.optional(),
+	/** pan law of mono clips on stereo tracks: −3 dB at centre (constant power) or 0 dB (unity, balance). */
+	monoClipPanLaw: MonoClipPanLawSchema.optional(),
 	/**
 	 * color-mgmt: Working Color Space — rec709, srgb, rec2020, p3d65, displayp3, rec2100-pq, rec2100-hlg, or a linear
 	 * variant (`rec709-linear`…) which also turns on Linearize Working Space.

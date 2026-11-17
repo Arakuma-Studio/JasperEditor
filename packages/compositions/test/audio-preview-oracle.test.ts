@@ -125,6 +125,47 @@ function scene(opts: { set: 'exact' | 'stft'; loudness?: boolean }): Case {
 	return { snapshot, data };
 }
 
+/**
+ * Two mono clips on stereo tracks (Modify ▸ Audio Channels: one channel each) of a sequence at the −3 dB mono clip pan
+ * law: one centred, one panned 40 right. The preview and the export both pan them with the constant-power law.
+ */
+function monoScene(): Case {
+	const h = new Harness();
+	const m = h.registerVideo({ kind: 'audio', seconds: 4 });
+	h.ok([
+		{
+			type: 'clip.place',
+			source: { mediaId: m },
+			at: AT,
+			tracks: { audio: 'A1' },
+			audioMapping: 'mono-per-channel',
+		},
+	]);
+	const right = Object.values(h.seq.clips).find((c) => c.trackId === h.seq.audioTracks[1]!.id)!;
+	h.ok([{ type: 'param.set', target: ['clip', right.id, 'pan'], value: 40 }]);
+	const snapshot = buildRenderSnapshot(h.doc, h.seqId, {
+		resolveMedia: (a) => ({
+			url: a.id,
+			proxyUrl: null,
+			kind: a.kind,
+			width: null,
+			height: null,
+			durationFlicks: a.probe.durationFlicks,
+			hasAudio: true,
+			rotation: 0,
+		}),
+		resolveFont: () => null,
+	});
+	const data = new Map<string, number[][]>();
+	snapshot.audioClips.forEach((c, i) => {
+		// each clip reads a mono stream of its own (the preview selects from the stream, the export reads it mapped)
+		Object.assign(c, { channels: { streamIndex: 0, map: [0] }, streamChannels: 1 });
+		const [s0, s1end] = spanOf(c, snapshot.settings.fps, SR);
+		data.set(c.clipId, [noise(30 + i, Math.min(s1end - s0, 2 * LEN))]);
+	});
+	return { snapshot, data };
+}
+
 function reader(data: Map<string, number[][]>) {
 	return (clip: RenderAudioClip, at: { offset: number; length: number }): ClipReader => {
 		const d = data.get(clip.clipId)!;
@@ -263,6 +304,15 @@ describe.runIf(!!CHROME)(
 			// the STFT frame phase only shows at the onset (−43 dB here), never as a delay
 			expect(compare(p.channels, e, 0, onset + 9600).worst).toBeLessThan(0.01);
 			expect(compare(p.channels, e, onset + 9600).worst).toBeLessThan(3e-4);
+		});
+
+		it('mono clips on stereo tracks: the −3 dB pan law, as the export', async () => {
+			const c = monoScene();
+			expect(c.snapshot.audioClips.map((x) => x.monoPanLaw)).toEqual(['-3dB', '-3dB']);
+			const [p, e] = await Promise.all([preview(c), exported(c)]);
+			const r = compare(p.channels, e);
+			expect(r.peak).toBeGreaterThan(0.1);
+			expect(r.worst).toBeLessThan(1e-4);
 		});
 
 		it('loudness normalisation: the preview limiter latency is part of the read-ahead', async () => {
