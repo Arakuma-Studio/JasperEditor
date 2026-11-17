@@ -161,6 +161,8 @@ export type SheetMeta = {
 	numbered?: boolean;
 	/** Per cell of the sheet (cells not listed are measurement frames, not shown). */
 	shown: { cell: number; timecode?: string; label?: string }[];
+	/** What the caller saw in the document when it asked (hidden video tracks), returned with the sheet. */
+	warnings?: string[];
 };
 
 /** Pixels between the cells of a sheet and around them (`composeGrid`). */
@@ -199,6 +201,7 @@ export async function composeSheet(ctx: ToolContext, r: StillSheetResult, images
 				...(c.label ? { label: c.label } : {}),
 			})),
 			...(renderedBy.length ? { renderedBy } : {}),
+			...(meta?.warnings?.length ? { warnings: meta.warnings } : {}),
 		},
 		image: {
 			type: 'image' as const,

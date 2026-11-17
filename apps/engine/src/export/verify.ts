@@ -5,7 +5,7 @@
 // row and no `unverified` format row. Row shape and the format / judgement split are adapted from kajisho5/ffmpeg-skill
 // (MIT; licenses/ported/ffmpeg-skill.md; no code copied). Pure: the measurements come from verify-measure.ts.
 import type { ExportOutputInfo, ExportOutputStream, VerifyAt, VerifyRow } from '@jasper/api';
-import { type DeliveryTarget, formatTimecode } from '@jasper/project';
+import { type DeliveryTarget, formatTimecode, hiddenTracksPhrase } from '@jasper/project';
 import { isFloatAudioCodec } from './deliverables.ts';
 import {
 	type ExportVerifyContext,
@@ -1036,9 +1036,11 @@ function uncoveredRows(ctx: ExportVerifyContext | null): VerifyRow[] {
 			expected: 0,
 			tolerance: null,
 			at,
-			message: r.audible
-				? `Frames ${r.start}–${r.end} (${n} frame${n === 1 ? '' : 's'}, from ${at.timecode}) have no picture on any video track while audio plays: black in the file under the sound (a hole left by a lift or a trim). Extend a neighbouring video clip over them, or ask the user.`
-				: `Frames ${r.start}–${r.end} (${n} frame${n === 1 ? '' : 's'}, from ${at.timecode}) have no picture on any video track (silent): black in the file. Ask the user whether it is meant.`,
+			message: r.hidden
+				? `Frames ${r.start}–${r.end} (${n} frame${n === 1 ? '' : 's'}, from ${at.timecode}) have no picture${r.audible ? ' while audio plays' : ''}: ${hiddenTracksPhrase(r.hidden, r.hidden.length + (r.hiddenMore ?? 0))} (${r.hidden.length + (r.hiddenMore ?? 0) === 1 ? 'its' : 'their'} clips would cover these frames). Turn the track eye back on, or ask the user whether it is meant.`
+				: r.audible
+					? `Frames ${r.start}–${r.end} (${n} frame${n === 1 ? '' : 's'}, from ${at.timecode}) have no picture on any video track while audio plays: black in the file under the sound (a hole left by a lift or a trim). Extend a neighbouring video clip over them, or ask the user.`
+					: `Frames ${r.start}–${r.end} (${n} frame${n === 1 ? '' : 's'}, from ${at.timecode}) have no picture on any video track (silent): black in the file. Ask the user whether it is meant.`,
 		};
 	});
 	const rows = capped(listed, 'uncovered-video', 'judgement', 'uncovered ranges');

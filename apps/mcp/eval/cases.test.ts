@@ -211,6 +211,14 @@ const ROUTES: Record<string, Route> = {
 		],
 		reply: 'The transcription job is done.',
 	},
+	'delivery-hidden-track-black': {
+		calls: (v) => [['render_frame', { projectId: v.project, at: '5s' }]],
+		reply: 'Video track V1 has its output (the track eye) off, so its clip is not drawn.',
+	},
+	'delivery-black-end-control': {
+		calls: (v) => [['render_frame', { projectId: v.project, at: '50s' }]],
+		reply: 'Nothing is on the timeline at 50 s: the last clip ends at 40 s.',
+	},
 	'delivery-split-clip-control': {
 		calls: (v) => [['split_at', { projectId: v.project, clipIds: [v.clip], at: '10s' }]],
 	},
