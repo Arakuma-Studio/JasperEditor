@@ -38,6 +38,8 @@ export type RecoveryJournalWriter = {
 	/** Stops timers and listeners; the journal stays as it is. */
 	dispose(): void;
 	getStatus(): RecoveryJournalStatus;
+	/** Labels of the unsaved History steps, oldest first (the last `MAX_LABELS`). */
+	unsavedLabels(): string[];
 };
 
 /** Labels kept for the recovery prompt. */
@@ -209,5 +211,6 @@ export function createRecoveryJournal(
 			cancelTimer();
 		},
 		getStatus: () => status,
+		unsavedLabels: () => changes.map((c) => c.label),
 	};
 }

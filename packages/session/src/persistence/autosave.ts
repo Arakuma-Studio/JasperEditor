@@ -7,8 +7,9 @@
 // - read-only sessions and sessions whose lease was lost never save;
 // - the view record is saved with a 1 s debounce (S01:SES-004).
 import type { AgentPersistence } from '@jasper/api';
-import { jsonWarmUnits } from '@jasper/project';
+import { jsonWarmUnits, type ProjectDocument } from '@jasper/project';
 import type { EditorSession } from '../session.ts';
+import type { ConflictDetails } from './conflict.ts';
 import type { ProjectStore } from './types.ts';
 
 export type AutosaveOptions = {
@@ -29,8 +30,11 @@ export type AutosaveStatus = {
 	saving: boolean;
 	lastSavedRevision: number;
 	lastSavedAt: number | null;
-	/** Server revision reported by a 409 (autosave is paused until resolved). */
-	conflict: { serverRevision: number } | null;
+	/**
+	 * Server revision reported by a 409, or found by a re-acquired lease (autosave is paused until resolved), and once
+	 * read what Overwrite and Reload would each discard.
+	 */
+	conflict: { serverRevision: number; details?: ConflictDetails } | null;
 	error: string | null;
 	paused: AutosavePause;
 	/** Number of successful saves (diagnostics/tests). */
@@ -47,8 +51,18 @@ export type Autosaver = {
 	readonly lastSavedRevision: number;
 	getStatus(): AutosaveStatus;
 	subscribe(listener: (s: AutosaveStatus) => void): () => void;
-	/** Conflict resolution "Overwrite": saves over the server revision reported by the 409. */
+	/** Conflict resolution "Overwrite": saves over the server revision reported by the 409 (or read since). */
 	overwrite(): Promise<void>;
+	/** The document this window knows is on disk at `serverRevision` (as opened, or as last saved). */
+	baseDocument(): ProjectDocument;
+	/** Resolves once no save is in flight. */
+	settled(): Promise<void>;
+	/** The project was saved elsewhere while this window has unsaved changes: pause as a 409 would. */
+	reportConflict(serverRevision: number, details?: ConflictDetails): void;
+	/** Attaches what each conflict choice would discard (ignored when no conflict is pending). */
+	setConflictDetails(details: ConflictDetails): void;
+	/** The session took `doc`, saved elsewhere at `serverRevision`, as local revision `revision` (nothing unsaved). */
+	adopted(serverRevision: number, revision: number, doc: ProjectDocument): void;
 	/** Whether automatic saving is enabled; explicit saves remain available. */
 	readonly automatic: boolean;
 	/** Whether the session's live revision is on disk, and the revision that is (agents: get_project, transactions). */
@@ -73,6 +87,8 @@ export function createAutosaver(
 	 * session made before autosave attached (spec 13 SH-004: measuring pending text) are unsaved, not saved.
 	 */
 	let savedBase = Math.min(session.openedRevision, session.store.getState().revision);
+	/** The document on disk at `savedBase`, as far as this window knows (conflict details diff against it). */
+	let savedDoc = session.openedDocument;
 	let status: AutosaveStatus = {
 		saving: false,
 		lastSavedRevision: savedBase,
@@ -137,6 +153,7 @@ export function createAutosaver(
 				const r = await store.save(session.projectId, doc, { revision, baseRevision: savedBase });
 				if (r.ok) {
 					savedBase = r.revision;
+					savedDoc = doc;
 					firstDirtyAt = null;
 					session.markSaved(revision);
 					setStatus({
@@ -283,6 +300,28 @@ export function createAutosaver(
 			setStatus({ conflict: null, serverRevision: savedBase });
 			syncPause();
 			await save();
+		},
+		baseDocument: () => savedDoc,
+		async settled() {
+			while (inFlight) await inFlight;
+		},
+		reportConflict(serverRevision, details) {
+			if (disposed || status.conflict) return;
+			cancelTimer();
+			setStatus({ conflict: { serverRevision, ...(details ? { details } : {}) } });
+			syncPause();
+		},
+		setConflictDetails(details) {
+			if (disposed || !status.conflict) return;
+			setStatus({ conflict: { serverRevision: details.serverRevision, details } });
+		},
+		adopted(serverRevision, revision, doc) {
+			if (disposed) return;
+			cancelTimer();
+			firstDirtyAt = null;
+			savedBase = serverRevision;
+			savedDoc = doc;
+			setStatus({ lastSavedRevision: revision, serverRevision, error: null });
 		},
 	};
 }
