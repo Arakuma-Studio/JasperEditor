@@ -52,6 +52,8 @@ export const EVENT_PAYLOADS = {
 		deleted: z.array(z.string()),
 		isUndo: z.boolean(),
 		isRedo: z.boolean().optional(),
+		/** Saved by the engine itself (a headless agent transaction), not relayed from an editor window. */
+		headless: z.boolean().optional(),
 	}),
 	'agent.approval.requested': ApprovalSchema,
 	'agent.approval.resolved': z.object({

@@ -3,6 +3,8 @@ import { EngineError } from '@jasper/engine-client';
 import {
 	type AutosaveStatus,
 	attachPersistence,
+	type ChangeKind,
+	type ChangeSet,
 	type EditorSession,
 	LeaseHeldError,
 	type PersistenceController,
@@ -110,11 +112,27 @@ function LifecycleBody(props: {
 					detail: e instanceof Error ? e.message : String(e),
 					durationMs: 8000,
 				}),
+			// The lease lapsed (tab in the background, engine restart) and the project was saved elsewhere meanwhile;
+			// with nothing unsaved here, the editor took the newer revision.
+			onUpdated: ({ revision, incoming }) =>
+				notices.push({
+					kind: 'info',
+					message: t('Updated to revision {0} (changes made elsewhere)', revision),
+					detail: changeSetText(incoming) ?? undefined,
+					durationMs: 8000,
+				}),
+		});
+		// Headless agent transactions name the changes a lapsed lease or a conflict brings in.
+		const off = engine.subscribe((e) => {
+			if (e?.type !== 'doc.changed' || !e.payload.headless || e.payload.projectId !== session.projectId)
+				return;
+			c.noteExternalChange({ revision: e.payload.revision, label: e.payload.label });
 		});
 		return () => {
+			off();
 			void c.dispose();
 		};
-	}, [session]);
+	}, [session, engine.subscribe]);
 
 	// spec 18 AF-BRF-005: finish Home ▸ Describe your video (brief, files, Connect an AI Agent…) once autosave is attached
 	useStartBrief(session);
@@ -364,7 +382,10 @@ function PersistenceBanners(props: { session: EditorSession; onReplace(s: Editor
 				Editing was taken over by another session. Changes made here are no longer saved.
 			</Banner>,
 		);
-	if (status.conflict)
+	if (status.conflict) {
+		const details = status.conflict.details;
+		const incoming = details ? (changeSetText(details.incoming) ?? t('no changes found')) : null;
+		const local = details ? (changeSetText(details.local) ?? t('no changes found')) : null;
 		banners.push(
 			<Banner
 				key="conflict"
@@ -372,12 +393,17 @@ function PersistenceBanners(props: { session: EditorSession; onReplace(s: Editor
 				testId="banner-conflict"
 				actions={
 					<>
-						<Button disabled={busy} onClick={() => void run(() => reopenSession(session))}>
+						<Button
+							disabled={busy}
+							title={local ? t('Discards your unsaved changes: {0}', local) : undefined}
+							onClick={() => void run(() => reopenSession(session))}
+						>
 							Reload
 						</Button>
 						<Button
 							variant="danger"
 							disabled={busy}
+							title={incoming ? t('Discards the changes saved elsewhere: {0}', incoming) : undefined}
 							onClick={() =>
 								void run(async () => {
 									await persistenceFor(session)?.autosaver.overwrite();
@@ -390,10 +416,30 @@ function PersistenceBanners(props: { session: EditorSession; onReplace(s: Editor
 					</>
 				}
 			>
-				This project was saved from somewhere else (revision {status.conflict.serverRevision}). Autosave is
-				paused: reload the saved version or overwrite it with yours.
+				<div>
+					{details?.source === 'lease'
+						? t(
+								'This project was saved from somewhere else (revision {0}) while this window was not holding it (the tab was in the background or the engine restarted). Autosave is paused: reload the saved version or overwrite it with yours.',
+								status.conflict.serverRevision,
+							)
+						: t(
+								'This project was saved from somewhere else (revision {0}). Autosave is paused: reload the saved version or overwrite it with yours.',
+								status.conflict.serverRevision,
+							)}
+				</div>
+				{details ? (
+					<ul className="mt-0.5 text-pr-small text-pr-muted" data-testid="banner-conflict-details">
+						<li title={details.incoming.labels.join('\n') || undefined}>
+							{t('Overwrite discards the changes saved elsewhere: {0}', incoming)}
+						</li>
+						<li title={details.local.labels.join('\n') || undefined}>
+							{t('Reload discards your unsaved changes: {0}', local)}
+						</li>
+					</ul>
+				) : null}
 			</Banner>,
 		);
+	}
 	const repairs = state.openIssues.filter((i) => i.code === 'W_REPAIRED');
 	if (repairs.length && !repairedDismissed)
 		banners.push(
@@ -414,6 +460,40 @@ function PersistenceBanners(props: { session: EditorSession; onReplace(s: Editor
 			</Banner>,
 		);
 	return <>{banners}</>;
+}
+
+const CHANGE_KIND_LABELS: Record<ChangeKind, string> = {
+	clips: 'Clips',
+	tracks: 'Tracks',
+	sequences: 'Sequences',
+	markers: 'Markers',
+	transitions: 'Transitions',
+	media: 'Project items',
+	other: 'Other project data',
+};
+const SHOWN_CHANGE_LABELS = 3;
+
+/**
+ * A change set in one line: the first labels (transactions or History steps) and the counts per kind ("Agent: Add
+ * title — Clips: 1 added"); null when it holds nothing.
+ */
+function changeSetText(set: ChangeSet): string | null {
+	const counts: string[] = [];
+	for (const kind of Object.keys(CHANGE_KIND_LABELS) as ChangeKind[]) {
+		const c = set.summary[kind];
+		if (!c) continue;
+		const parts = [
+			c.added ? t('{0} added', c.added) : null,
+			c.changed ? t('{0} changed', c.changed) : null,
+			c.removed ? t('{0} removed', c.removed) : null,
+		].filter(Boolean);
+		if (parts.length) counts.push(`${CHANGE_KIND_LABELS[kind]}: ${parts.join(', ')}`);
+	}
+	const shown = set.labels.slice(-SHOWN_CHANGE_LABELS);
+	const more = set.labels.length - shown.length;
+	const labels = shown.length ? `${shown.join(', ')}${more > 0 ? ` ${t('and {0} more', more)}` : ''}` : '';
+	const text = [labels, counts.join('; ')].filter(Boolean).join(' — ');
+	return text || null;
 }
 
 /**

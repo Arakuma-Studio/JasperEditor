@@ -162,6 +162,11 @@ export type SessionEvents = {
 	'selection.changed': { selection: Selection };
 	'gesture.changed': { active: boolean; label: string | null };
 	'agent.flash': { clipIds: string[]; agent: string };
+	/**
+	 * A heartbeat found the lease gone (engine restart, expiry while the tab was throttled) or lost, and the store
+	 * acquired it again under `leaseId`: the project was unleased in between.
+	 */
+	'lease.reacquired': { leaseId: string; previousLeaseId: string | null };
 	closed: Record<string, never>;
 };
 export type SessionEventName = keyof SessionEvents;

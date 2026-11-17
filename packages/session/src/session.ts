@@ -148,6 +148,8 @@ export class EditorSession {
 	 * persistence layer attaches (spec 13 SH-004: pending text measured at once); autosave saves from here.
 	 */
 	readonly openedRevision: number;
+	/** The document as opened (`openedRevision`): what this session knows is on disk until autosave saves. */
+	readonly openedDocument: ProjectDocument;
 	readonly sessionId: string;
 	readonly ctx: SessionContext;
 	readonly engine?: EngineClient;
@@ -172,6 +174,7 @@ export class EditorSession {
 	constructor(opts: EditorSessionOptions) {
 		this.projectId = opts.projectId;
 		this.openedRevision = opts.revision ?? 0;
+		this.openedDocument = opts.document;
 		this.sessionId = opts.sessionId ?? createSessionId();
 		this.ctx = opts.ctx;
 		this.engine = opts.engine;
@@ -349,6 +352,9 @@ export class EditorSession {
 		const cur = this.store.getState().lease;
 		if (cur.status === 'read-only' || (cur.status === 'held' && cur.leaseId === leaseId)) return;
 		this.store.setState({ lease: { status: 'held', leaseId } });
+		// The project went unleased in between: a headless agent write may have landed. The persistence controller
+		// compares the revision on disk with the one this session's edits are based on.
+		this.emit('lease.reacquired', { leaseId, previousLeaseId: cur.leaseId });
 	}
 
 	/**
@@ -651,6 +657,72 @@ export class EditorSession {
 		if (selection !== before.selection) this.emit('selection.changed', { selection });
 		this.verifyWhenIdle();
 		return { ok: true, revision, refs: {}, created: [], changed: [], deleted: [], warnings: [], results: [] };
+	}
+
+	/**
+	 * Takes `doc`, saved elsewhere at `revision` (a headless agent write that landed while this session's lease had
+	 * lapsed), as the committed document, when this session has nothing unsaved. Not an undoable step, and History is
+	 * cleared: its snapshots predate `doc`, so undoing one would put the older document back over the incoming changes
+	 * and autosave would save that. Selection, open sequences and per-sequence view state are kept where still valid.
+	 * `doc` must have been through the load pipeline. The session is clean afterwards (the caller's autosaver is
+	 * told the new base revision).
+	 */
+	adoptSaved(doc: ProjectDocument, revision: number, label: string): TransactionResult {
+		const before = this.store.getState();
+		const fail = (code: string, message: string): TransactionResult => ({
+			ok: false,
+			revision: before.revision,
+			errors: [{ commandIndex: -1, code, message }],
+		});
+		if (this.closed) return fail('E_NO_SESSION', 'Session closed');
+		if (before.readOnly) return READ_ONLY_RESULT(before.revision);
+		if (this.gestureState) return fail('E_QUEUED', 'A gesture is in progress');
+		if (before.dirty) return fail('E_SAVE_CONFLICT', 'The session has unsaved changes');
+		if (doc.projectId !== this.projectId)
+			return fail('E_INVALID_PARAM', 'The document belongs to another project');
+		if (!Number.isFinite(revision)) return fail('E_INVALID_PARAM', 'Invalid revision');
+		// Revisions only move forward (agents fast-forward by them, AGT-010).
+		const next = Math.max(Math.trunc(revision), before.revision + 1);
+		const diff = diffDocuments(before.document, doc);
+		for (const id of [...diff.created, ...diff.changed, ...diff.deleted]) this.entityRevisions.set(id, next);
+		this.history.clear();
+		const selection = filterSelection(before.selection, doc);
+		const open = before.tabs.open.filter((id) => doc.sequences[id]);
+		const activeSequenceId =
+			before.activeSequenceId && doc.sequences[before.activeSequenceId]
+				? before.activeSequenceId
+				: (open[0] ?? Object.keys(doc.sequences)[0] ?? null);
+		this.store.setState({
+			document: doc,
+			revision: next,
+			selection,
+			views: this.syncViews(doc, before.views),
+			tabs: open.length === before.tabs.open.length ? before.tabs : { open },
+			activeSequenceId,
+			history: this.history.view(),
+			dirty: false,
+		});
+		this.transport.setMaxFrame(Number.POSITIVE_INFINITY);
+		this.emit('doc.changed', {
+			revision: next,
+			label,
+			origin: 'system',
+			...diff,
+			isUndo: false,
+			isRedo: false,
+		});
+		if (selection !== before.selection) this.emit('selection.changed', { selection });
+		this.verifyWhenIdle();
+		return {
+			ok: true,
+			revision: next,
+			refs: {},
+			created: diff.created,
+			changed: diff.changed,
+			deleted: diff.deleted,
+			warnings: [],
+			results: [],
+		};
 	}
 
 	beginGesture(label: string): Gesture {

@@ -273,7 +273,11 @@ files read-only (the v18 bump above).
   never a torn one.
 - **Autosave** (S01:PER-020): the editor saves the committed document 1.5 s after the last edit and at least
   every 10 s while edits keep coming, never in the middle of a drag. Ctrl+S saves now. A 409 pauses autosave
-  until the user chooses Reload or Overwrite.
+  until the user chooses Reload or Overwrite. The conflict banner then reads the project on disk and says what each
+  choice discards: Overwrite the changes saved elsewhere since this window's base revision (labels of the engine's
+  headless transactions seen on its event stream, and counts of clips, tracks, sequences, markers, transitions and
+  project items added, changed or removed), Reload this window's unsaved History steps and their counts
+  (`packages/session/src/persistence/conflict.ts`). Overwrite saves over the revision whose changes were listed.
 - **Single writer** (S01:PER-040): opening a project takes a lease (30 s, heartbeat every 10 s). A second editor
   opens read-only and can **Take over editing**. Closing or reloading the tab releases the lease with a
   keepalive request on `pagehide`; if that never arrives (a crash) the lease expires after 30 s. A reload does not
@@ -284,7 +288,15 @@ files read-only (the v18 bump above).
 - **Losing the lease** ends saving and journalling in that window ("Editing was taken over…" banner). Only another
   session holding the project does that: a heartbeat that fails with an engine error or a timeout leaves the lease
   as it was (the next heartbeat confirms it), and a lease the engine forgot (restart, expiry while the tab was
-  throttled) is re-acquired and used under its new id, by the journal and the agent relay alike. A window whose
+  throttled) is re-acquired and used under its new id, by the journal and the agent relay alike. The project was
+  unleased in between, so a headless agent write may have landed: the window reads the project once the lease is
+  back (`attachPersistence`, session event `lease.reacquired`) and compares its revision with the one the next save
+  is based on. Unchanged, nothing happens. Moved on while the window has nothing unsaved (no unsaved edit, no drag
+  in progress), the window takes the newer document in place (`EditorSession.adoptSaved`: selection, open sequences
+  and view state kept where still valid, History cleared because undoing an older snapshot would put the older
+  document back over the incoming changes) and shows "Updated to revision N (changes made elsewhere)". Moved on
+  while the window has unsaved changes, the conflict banner appears at once, before any save, with what Overwrite
+  and Reload would each discard; autosave and agent edits pause as for a 409. A window whose
   lease is lost refuses agent transactions (`E_NOT_OWNER`) and stops announcing a lease on WS /agent; the engine
   relays a transaction only to the window of the session that holds the project's lease
   (`AgentService.relayTarget`), so an edit acknowledged to an agent is one the window can save.
@@ -375,6 +387,9 @@ Tests: `apps/engine/test/recovery-versions.test.ts` (routes, lock semantics acro
 processes, schema backup, restore), `packages/session/test/persistence/recovery.test.ts` (timing, clearing,
 recovery as an undoable step, Revert, close order), `packages/session/test/persistence/engine-store.test.ts`
 (leases: transient heartbeat errors, journalling under a re-acquired lease, a lost window refusing agent edits),
+`packages/session/test/persistence/lease-reacquire.test.ts` (a lapsed lease or an engine restart with a headless
+write in the gap: a clean window takes the newer revision, one with unsaved edits shows the conflict at once with
+both sides listed; a 409's details),
 `apps/web/test/agent-bridge.test.ts` and `apps/engine/test/agent.test.ts` (relay only to the lease holder, a
 headless write racing a lease grant, conflict refusals and `persistence` in relay answers), `apps/web/test/agent-ui.test.ts`
 (`file.save` during a conflict), `apps/mcp/test/persistence.test.ts`,
@@ -384,9 +399,12 @@ Known limits: a journal write that fails is reported only on the console (`[reco
 edits made in the last ~1 s before a reload or tab close can be lost when the browser skips the "unsaved changes"
 prompt (`beforeunload`, shown only after the user interacted with the page) and neither the save nor the journal
 request completes during unload (neither is a keepalive request: project bodies exceed its 64 KB limit).
-A heartbeat that re-acquires a lease the engine forgot (restart, expiry) does not re-read the project: a headless
-write that landed in the gap still surfaces as a conflict at the next autosave (agent edits are refused from then
-on). `PUT /api/projects/:pid` (If-Match only; an agent needs the user's approval for it) is not lease-checked:
+Resolving a conflict is Reload or Overwrite only: History keeps document snapshots, not the commands that made
+them, so the window's unsaved edits cannot be replayed on top of the newer revision (no rebase). Labels of
+incoming changes come from the engine's `doc.changed` events (`headless: true`) the window received; changes made
+while its event stream was down (an engine restart) or by another editor window are counted but not named. If
+reading the project after a re-acquired lease fails, the window falls back to the 409 at its next save.
+`PUT /api/projects/:pid` (If-Match only; an agent needs the user's approval for it) is not lease-checked:
 a window it supersedes finds out at its next save, as a conflict.
 
 ## Newer files
