@@ -163,6 +163,7 @@ const LABELS: Record<CommandType, string> = {
 	'clip.extract': 'Ripple Delete',
 	'range.lift': 'Lift',
 	'range.extract': 'Extract',
+	'range.insertTime': 'Insert Time',
 	'gap.close': 'Close Gap',
 	'clip.duplicate': 'Duplicate',
 	'clip.update': 'Edit Clip',

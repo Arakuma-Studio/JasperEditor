@@ -2,6 +2,7 @@
 // Both validate against the bundle's propsSchema when present.
 import type { Draft } from 'immer';
 import {
+	compositionLengthRemedy,
 	compositionOfClip,
 	compositionSequenceFrames,
 	formatSchemaIssues,
@@ -123,7 +124,7 @@ export const compositionHandlers = {
 		if (duration > total) {
 			h.warn(
 				'W_DURATION_CLAMPED',
-				`Composition ${info.id} is ${total} frames long; the clip is limited to it`,
+				`Composition ${info.id} is ${total} frames long at the sequence rate; the clip is limited to it. To make it longer, ${compositionLengthRemedy(doc.media[cmd.composition.mediaId]!)}`,
 			);
 			duration = total;
 		}

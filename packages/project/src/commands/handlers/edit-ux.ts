@@ -19,7 +19,7 @@ import { syntheticDefaultFlicks } from '../../structure/synthetic.ts';
 import { contentSpanFlicks, FRAME_EPS, flicksPerFrame, type Rational } from '../../time.ts';
 import type { DClip, DDoc, HandlerContext } from '../context.ts';
 import { assertUnlocked, cleanupSequence, end, findTrackIn, setClipRange } from '../placement.ts';
-import { contentWindow, rippleTrimGroup, trimLimits } from '../ripple.ts';
+import { contentWindow, rippleTrimGroup, trimClampMessage, trimLimits } from '../ripple.ts';
 import type { CommandOf } from '../schemas/index.ts';
 import { holesBefore, warnNewHoles } from '../uncovered-guard.ts';
 import { placeSource } from './clip-core.ts';
@@ -458,7 +458,7 @@ function trimEditsHandler(doc: DDoc, cmd: CommandOf<'clip.trimEdits'>, h: Handle
 	}
 	let d = lo > hi ? 0 : Math.min(hi, Math.max(lo, cmd.deltaFrames));
 	if (d !== cmd.deltaFrames)
-		h.warn('W_DURATION_CLAMPED', `Trim clamped from ${cmd.deltaFrames} to ${d} frames`);
+		h.warn('W_DURATION_CLAMPED', trimClampMessage(doc, seq, [...regular, ...ripple], cmd.deltaFrames, d));
 	if (d === 0) return { deltaFrames: 0 };
 	if (ripple.length)
 		d = rippleTrimGroup(doc, seq, h, ripple, d, {

@@ -661,6 +661,29 @@ function rangeExtractHandler(doc: DDoc, cmd: CommandOf<'range.extract'>, h: Hand
 	return { from, to, tracks: [...ids], fades, ...(snapped ? { snapped: { clean: snapped.clean } } : {}) };
 }
 
+/**
+ * Insert Time, the counterpart of range.extract: `duration` empty frames at `at` on the named tracks (default every
+ * unlocked track) and their sync-locked followers. Clips spanning `at` are split there; generated overlays on tracks
+ * the command does not name are lengthened whole (overlay-ripple.ts), as range.extract shortens them.
+ */
+function rangeInsertTimeHandler(doc: DDoc, cmd: CommandOf<'range.insertTime'>, h: HandlerContext) {
+	const seq = h.sequence(doc, cmd.sequenceId);
+	const at = h.frame(seq, cmd.at);
+	const n = h.durationFrames(seq, cmd.duration);
+	if (at < 0) h.fail('E_INVALID_PARAM', `Insert point ${at} is before frame 0`);
+	if (!Number.isSafeInteger(n) || n < 1)
+		h.fail('E_INVALID_PARAM', 'Insert Time needs a duration of at least 1 frame');
+	const tracks = rangeTracks(seq, cmd.tracks, h);
+	const ids = new Set(tracks.map((t) => t.id));
+	for (const t of syncFollowerTracks(seq, ids)) ids.add(t.id);
+	const named = new Set(cmd.tracks ? tracks.map((t) => t.id) : []);
+	const followers = [...ids].filter((id) => !named.has(id));
+	relinkSplits(seq, insertShiftKeeping(seq, named, followers, at, n, h), h);
+	if (cmd.rippleMarkers !== false) shiftMarkers(seq, at, n);
+	cleanupSequence(seq, h);
+	return { at, duration: n, tracks: [...ids] };
+}
+
 function gapCloseHandler(doc: DDoc, cmd: CommandOf<'gap.close'>, h: HandlerContext) {
 	const seq = h.sequence(doc, cmd.sequenceId);
 	const track = h.track(seq, cmd.trackId);
@@ -696,5 +719,6 @@ export const clipEditHandlers = {
 	'clip.fitToFrame': fitToFrameHandler,
 	'range.lift': rangeLiftHandler,
 	'range.extract': rangeExtractHandler,
+	'range.insertTime': rangeInsertTimeHandler,
 	'gap.close': gapCloseHandler,
 } satisfies HandlerMap;

@@ -154,6 +154,21 @@ describe('edit-structure MCP tools', () => {
 		const kinds = Object.values(engine.doc().sequences[engine.seqId]!.clips).map((c) => c.kind);
 		expect(kinds).not.toContain('nest-video');
 	});
+	it('apply_commands runs range.insertTime under a History label longer than 80 characters', async () => {
+		const { engine, call } = await connect();
+		const label = `Insert a 24-frame gap at 00:00:00:05 on every track for the sponsor read ${'·'.repeat(100)}`;
+		const r = await call('apply_commands', {
+			label,
+			commands: [{ type: 'range.insertTime', at: 5, duration: 24 }],
+		});
+		expect(r.isError, JSON.stringify(r.body)).toBe(false);
+		expect(Object.values(engine.doc().sequences[engine.seqId]!.clips).map((c) => c.start)).toEqual([34, 34]);
+		const tooLong = await call('apply_commands', {
+			label: 'x'.repeat(201),
+			commands: [{ type: 'range.insertTime', at: 5, duration: 24 }],
+		});
+		expect(tooLong.isError).toBe(true);
+	});
 	it('list_cuts lists picture cuts with timecodes, pages and refuses bad tracks', async () => {
 		const { engine, call } = await connect();
 		const mediaId = Object.keys(engine.doc().media)[0]!;

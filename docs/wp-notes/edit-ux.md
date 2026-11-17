@@ -116,8 +116,10 @@ gaps and lost their shrink keyframes; a ripple trim shortening under a card was 
   and on sync-locked tracks the insert edits — insert placement (`clip.place {mode: "insert"}`, source inserts),
   insert moves (`clip.move {mode: "insert"}`, Ctrl-drag), Paste Insert, Insert Frame Hold Segment — ripple speed
   changes (`clip.setSpeed {ripple: true}` and time-remap edits with `ripple`: lengthened or shortened) and `gap.close`
-  (shortened instead of refusing). `insertShiftKeeping` / `removeShiftKeeping` wrap `insertShift` / `removeShift`
-  for those callers. A track listed in `range.extract {tracks}` is cut as before, overlays included.
+  (shortened instead of refusing). `range.insertTime` lengthens them as `range.extract` shortens them (every track its
+  `tracks` does not list), so an insert and an extract of the same frames give the timeline back.
+  `insertShiftKeeping` / `removeShiftKeeping` wrap `insertShift` / `removeShift` for those callers. A track listed in
+  `range.extract {tracks}` or `range.insertTime {tracks}` is cut as before, overlays included.
 - Not overlays: media-backed clips (video, audio, stills, animated images, 3D models), nests and compositions
   (their content has its own timeline, like footage), and subtitle text clips (their words belong to the time).
 
@@ -132,6 +134,26 @@ wrong material.
 No per-track "protect from ripple" option was added: it would be a new stored track field (a schema bump with
 migration, fixture and compatibility tests, AGENTS §0) while other agents are changing the schema in parallel, and the
 refit above already protects every overlay on every track; footage that must not move can keep using sync lock off.
+
+### Insert Time and marker ripples (`clip-edit.ts` `rangeInsertTimeHandler`, `clip-core.ts` `clip.move`)
+
+- `range.insertTime {at, duration, tracks?, rippleMarkers?}` is the counterpart of `range.extract`: `duration` empty
+  frames at `at` on the listed tracks (default every unlocked track) plus their sync-locked unlocked followers, in one
+  undo step. Locked tracks never move (as `range.extract`); with explicit `tracks`, a listed locked track is refused
+  (`E_TRACK_LOCKED`). Sequence markers at/after `at` move with the time unless `rippleMarkers: false`.
+- Clips spanning `at` are **split** there, not refused: that is what an insert edit does on a targeted track in
+  Premiere, what `range.extract` does at its edges, and what an editor asking for a gap at a frame wants (the report
+  that led to it: a 24-frame gap at 40871 over 890 clips). Linked pieces stay linked (`relinkSplits`). Generated
+  overlays on tracks the command does not name are lengthened whole (above).
+- UI: Sequence ▸ Insert Time… (after Extract) opens a dialog at the playhead with the duration (default 1 s), Targeted
+  Tracks Only and Ripple Sequence Markers (default: the timeline's ripple-markers toggle). No default shortcut
+  (Premiere has none). MCP: `apply_commands` with `range.insertTime` (no separate tool, as `range.extract`).
+- `clip.move {rippleMarkers: true}` in overwrite mode (the default) used to ignore the flag: it only applied to insert
+  moves. Now the sequence markers from the first moved clip's old start on move by `deltaFrames` (a hand-made ripple
+  of all later clips carries the markers, as Premiere's Ripple Sequence Markers does for ripple edits). Without the
+  flag an overwrite move leaves markers where they are, as before; insert moves still default to `true`.
+- Limit: track-level automation (volume / pan keys on tracks and the Mix) does not move with any ripple edit, this one
+  included.
 
 ## 2. Trim mode and the Trim Monitor (`apps/web`)
 

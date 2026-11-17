@@ -955,6 +955,7 @@ Arguments in brackets are optional. "Target tracks" accept ids or labels (`"V2"`
 | `clip.lift` | `clipIds` | Removes clips and leaves gaps. |
 | `clip.extract` | `clipIds` | Ripple delete: removes clips and closes the gaps on their tracks and sync-locked tracks. |
 | `range.lift` / `range.extract` | `from`, `to`, `tracks` (default: targeted) | Premiere Lift/Extract of the In/Out range on targeted tracks. |
+| `range.insertTime` | `at`, `duration`, `tracks` (default: every unlocked track), `rippleMarkers` | Inverse of `range.extract`: empty frames at `at`, spanning clips split; sync-locked tracks follow, locked tracks stay. |
 | `gap.close` | `trackId`, `at` | Ripple-deletes the gap containing `at`. |
 | `clip.duplicate` | `clipIds`, `at` \| `deltaFrames`, [`tracks`] | Copies with new ids (includes their link groups), overwrite mode. |
 | `clip.update` | `clipId(s)`, `patch` | Patch of non-animated fields (name, label, enabled, text content and box, style, template params, crop-independent props). For animated props use `param.set`. |

@@ -654,6 +654,131 @@ describe('range.lift / range.extract (S02:TL-690, AC-13d, AC-16b)', () => {
 	});
 });
 
+describe('clip.move rippleMarkers', () => {
+	it('an overwrite move with rippleMarkers: true carries the sequence markers from the first moved clip on', () => {
+		const h = new Harness();
+		h.ok([
+			solid(0, 100, 'V1'),
+			solid(100, 100, 'V1'),
+			solid(200, 100, 'V1'),
+			{ type: 'marker.add', frame: 50, name: 'before' },
+			{ type: 'marker.add', frame: 100, name: 'at' },
+			{ type: 'marker.add', frame: 250, name: 'after' },
+		]);
+		const later = h.clips('V1').slice(1);
+		const before = h.doc;
+		h.ok([{ type: 'clip.move', clipIds: later.map((c) => c.id), deltaFrames: 24, rippleMarkers: true }]);
+		expect(h.spans('V1')).toEqual([
+			[0, 100],
+			[124, 224],
+			[224, 324],
+		]);
+		expect(h.seq.markers.map((m) => [m.name, m.frame])).toEqual([
+			['before', 50],
+			['at', 124],
+			['after', 274],
+		]);
+		// one undo step: the document before the move is untouched
+		expect(Object.values(before.sequences)[0]!.markers.map((m) => m.frame)).toEqual([50, 100, 250]);
+		// back again, and without the flag a move leaves the markers where they are
+		h.ok([{ type: 'clip.move', clipIds: later.map((c) => c.id), deltaFrames: -24, rippleMarkers: true }]);
+		expect(h.seq.markers.map((m) => m.frame)).toEqual([50, 100, 250]);
+		h.ok([{ type: 'clip.move', clipIds: later.map((c) => c.id), deltaFrames: 24 }]);
+		expect(h.seq.markers.map((m) => m.frame)).toEqual([50, 100, 250]);
+	});
+});
+
+describe('range.insertTime', () => {
+	it('inserts a gap on every unlocked track, splitting what spans the point, moving markers; one undo step', () => {
+		const h = new Harness();
+		const [v, a] = place(h, 0, { outSec: 10 });
+		h.ok([
+			solid(400, 50, 'V2'),
+			{ type: 'marker.add', frame: 100, name: 'at' },
+			{ type: 'marker.add', frame: 99, name: 'before' },
+			{ type: 'marker.add', frame: 420, name: 'after' },
+		]);
+		const before = h.doc;
+		const snapshot = structuredClone(before);
+		h.ok([{ type: 'range.insertTime', at: 100, duration: 24 }]);
+		expect(h.spans('V1')).toEqual([
+			[0, 100],
+			[124, 324],
+		]);
+		expect(h.spans('A1')).toEqual(h.spans('V1'));
+		expect(h.spans('V2')).toEqual([[424, 474]]);
+		const rightV = h.clips('V1')[1]!;
+		const rightA = h.clips('A1')[1]!;
+		expect(rightV.sourceIn).toBe(100 * F30);
+		expect(rightV.linkId).not.toBeNull();
+		expect(rightV.linkId).toBe(rightA.linkId);
+		expect(byId(h, v!).linkId).toBe(byId(h, a!).linkId);
+		expect(h.seq.markers.map((m) => [m.name, m.frame])).toEqual([
+			['before', 99],
+			['at', 124],
+			['after', 444],
+		]);
+		expect(checkInvariants(h.doc)).toEqual([]);
+		expect(before).toEqual(snapshot);
+	});
+
+	it('named tracks plus sync-locked followers move; locked and unsynced tracks stay; rippleMarkers false keeps markers', () => {
+		const h = new Harness();
+		h.ok([solid(0, 300, 'V1'), solid(200, 50, 'V2'), solid(200, 50, 'V3'), solid(200, 50, 'V4')]);
+		h.ok([
+			{ type: 'track.update', trackId: 'V3', patch: { syncLock: false } },
+			{ type: 'track.update', trackId: 'V4', patch: { locked: true } },
+			{ type: 'marker.add', frame: 250 },
+		]);
+		h.ok([{ type: 'range.insertTime', at: 150, duration: 30, tracks: ['V1'], rippleMarkers: false }]);
+		expect(h.spans('V1')).toEqual([
+			[0, 150],
+			[180, 330],
+		]);
+		expect(h.spans('V2')).toEqual([[230, 280]]);
+		expect(h.spans('V3')).toEqual([[200, 250]]);
+		expect(h.spans('V4')).toEqual([[200, 250]]);
+		expect(h.seq.markers[0]!.frame).toBe(250);
+	});
+
+	it('is undone by range.extract of the same frames', () => {
+		const h = new Harness();
+		place(h, 0, { outSec: 10 });
+		h.ok([solid(50, 200, 'V2'), { type: 'marker.add', frame: 200 }]);
+		const spans = ['V1', 'V2', 'A1'].map((t) => h.spans(t));
+		h.ok([{ type: 'range.insertTime', at: 100, duration: 24 }]);
+		h.ok([{ type: 'range.extract', from: 100, to: 124 }]);
+		// the clips split at 100 stay two pieces; the overlay on V2 was lengthened, not split, so it is whole again
+		expect(['V1', 'V2', 'A1'].map((t) => h.spans(t))).toEqual([
+			[
+				[0, 100],
+				[100, 300],
+			],
+			spans[1],
+			[
+				[0, 100],
+				[100, 300],
+			],
+		]);
+		expect(h.seq.markers[0]!.frame).toBe(200);
+	});
+
+	it('refuses a non-positive duration, a negative frame and an explicitly locked track', () => {
+		const h = new Harness();
+		h.ok([solid(0, 300, 'V1')]);
+		expect(h.tx([{ type: 'range.insertTime', at: 10, duration: 0 }])).toMatchObject({
+			ok: false,
+			errors: [{ code: 'E_INVALID_PARAM' }],
+		});
+		expect(h.tx([{ type: 'range.insertTime', at: -1, duration: 5 }])).toMatchObject({ ok: false });
+		h.ok([{ type: 'track.update', trackId: 'V1', patch: { locked: true } }]);
+		expect(h.tx([{ type: 'range.insertTime', at: 10, duration: 5, tracks: ['V1'] }])).toMatchObject({
+			ok: false,
+			errors: [{ code: 'E_TRACK_LOCKED' }],
+		});
+	});
+});
+
 describe('gap.close (S02:TL-741)', () => {
 	it('closes the gap and ripples sync-locked tracks that are empty in the gap range', () => {
 		const h = new Harness();

@@ -164,6 +164,16 @@ export function compositionSequenceFrames(
 	return Math.max(1, Math.round((info.durationInFrames * fpsOf(seqRate)) / info.fps));
 }
 
+/**
+ * How to make a composition longer (S08:MGC-004 bounds its clips by it): the length comes from the bundle (Remotion's
+ * durationInFrames / calculateMetadata with the default props) or from an HTML page's window.__duration.
+ */
+export function compositionLengthRemedy(asset: Pick<MediaAsset, 'mgBundle'>): string {
+	return asset.mgBundle?.html
+		? 'raise window.__duration in the page, then reload it (Properties ▸ Composition ▸ Reload page) or import it again'
+		: "raise the composition's durationInFrames (or what its calculateMetadata returns) in its Remotion project, then rebuild the bundle (Properties ▸ Composition ▸ Rebuild bundle) or import it again";
+}
+
 /** Composition frame (at the sequence rate) shown at content time `t` (flicks): floor(t · fps + ε). */
 export function compositionFrameAt(contentTime: number, seqRate: Rational): number {
 	return Math.floor((contentTime * seqRate.num) / (seqRate.den * FLICKS_PER_SECOND) + 1e-6);

@@ -173,7 +173,7 @@ export function registerEditingTools(ctx: ToolContext): void {
 				"Run document commands atomically as one undo step; put related changes in one call. Schemas: `describe_commands`. `dryRun`: validate only. Deleting tracks or items and `force: true` wait for the user's approval. For a multi-step cut use `propose_edits`.",
 			input: {
 				projectId: ProjectIdArg,
-				label: z.string().min(1).max(80).describe('Shown in History.'),
+				label: z.string().min(1).max(200).describe('Shown in History.'),
 				commands: z
 					.array(
 						// Each command's own keys are checked against its schema by the engine (unknown keys anywhere

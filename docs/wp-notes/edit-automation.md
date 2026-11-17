@@ -121,6 +121,13 @@ D-51 / spec 12 §2.5 (`packages/project/src/proposals/`); this section is what s
 - MCP: `describe_commands {types: ["clip.addAdjustmentBatch", "keyframe.addBatch"]}` gives schemas and worked
   examples (`apps/mcp/src/examples.ts`, applied to a real document by `apps/mcp/test/proposal-features.test.ts`); they
   run through `apply_commands` like any command.
+- Time base of `at` (every parameter / keyframe command, `ParamAtSchema`): the form decides it — `12` / `{frames: 12}`
+  count from the clip start, `{sequenceFrame: n}` and `"HH:MM:SS:FF"` are sequence time, `{flicks}` is content time;
+  on track and Mix parameters all are sequence time. MCP tools that take a time (`set_effect_param {at}`) take
+  sequence time and pass `{sequenceFrame}`. The schema's description states it, because the advertised schema compacts
+  the union to integer | string. No `timeBase` switch was added: `{sequenceFrame}` already says "sequence time" in the
+  same field, and a switch would be a second route for one intent with contradictory combinations
+  (`timeBase: "sequence"` + `{frames}`); the default stays clip time, so existing calls keep their meaning.
 
 ### For producers (checklist)
 

@@ -17,6 +17,7 @@ import { formatTimecode, parseTimecodeEntry } from '../gaps/time-display.ts';
 export const FIT_CLIP_DIALOG = 'editux.fitClip';
 export const SPEED_DURATION_DIALOG = 'editux.speedDuration';
 export const SUBCLIP_DIALOG = 'editux.subclip';
+export const INSERT_TIME_DIALOG = 'editux.insertTime';
 
 let registered = false;
 export function registerEditUxDialogs(): void {
@@ -25,6 +26,7 @@ export function registerEditUxDialogs(): void {
 	registerDialog(FIT_CLIP_DIALOG, FitClipDialog);
 	registerDialog(SPEED_DURATION_DIALOG, SpeedDurationDialog);
 	registerDialog(SUBCLIP_DIALOG, SubclipDialog);
+	registerDialog(INSERT_TIME_DIALOG, InsertTimeDialog);
 }
 
 function Row({ label, htmlFor, children }: { label: string; htmlFor?: string; children: React.ReactNode }) {
@@ -255,6 +257,107 @@ export function SpeedDurationDialog(props: HostedDialogProps<SpeedProps>) {
 				<Checkbox checked={reverse} onCheckedChange={setReverse} label="Reverse Speed" />
 				<Checkbox checked={pitch} onCheckedChange={setPitch} label="Maintain Audio Pitch" />
 				<Checkbox checked={ripple} onCheckedChange={setRipple} label="Ripple Edit, Shifting Trailing Clips" />
+				<ErrorLine error={error} />
+			</div>
+		</Dialog>
+	);
+}
+
+type InsertTimeProps = {
+	session: EditorSession;
+	sequenceId: string;
+	/** Default insert point (the playhead). */
+	at: number;
+	/** Targeted unlocked tracks (empty: nothing targeted). */
+	targeted: string[];
+	rippleMarkers: boolean;
+};
+
+/** Sequence ▸ Insert Time…: empty frames at a point on every unlocked (or the targeted) track, one undo step. */
+export function InsertTimeDialog(props: HostedDialogProps<InsertTimeProps>) {
+	const { session, sequenceId, targeted } = props;
+	const { open, finish } = useDialogClose(props.close);
+	const seq = session.getCommitted().sequences[sequenceId] as Sequence | undefined;
+	const rate = (seq?.settings.frameRate ?? { num: 30, den: 1 }) as Rational;
+	const dropFrame = !!seq?.settings.dropFrame;
+	const second = Math.max(1, Math.round(rate.num / rate.den));
+	const [atText, setAtText] = useState(formatTimecode(props.at, rate, { dropFrame }));
+	const [durText, setDurText] = useState(formatTimecode(second, rate, { dropFrame }));
+	const [targetedOnly, setTargetedOnly] = useState(false);
+	const [markers, setMarkers] = useState(props.rippleMarkers);
+	const [error, setError] = useState<string | null>(null);
+	const ids = { at: useId(), dur: useId() };
+	const apply = () => {
+		const at = parseTimecodeEntry(atText, rate, { dropFrame, current: props.at });
+		const n = parseTimecodeEntry(durText, rate, { dropFrame, current: second });
+		if (at === null || at < 0) {
+			setError('Invalid insert point');
+			return false;
+		}
+		if (n === null || n < 1) {
+			setError('Invalid duration');
+			return false;
+		}
+		const r = session.apply({
+			label: 'Insert Time',
+			origin: 'user',
+			sequenceId,
+			commands: [
+				{
+					type: 'range.insertTime',
+					at,
+					duration: n,
+					...(targetedOnly && targeted.length ? { tracks: targeted } : {}),
+					rippleMarkers: markers,
+				},
+			],
+		});
+		if (!r.ok) {
+			setError(r.errors[0]?.message ?? 'Insert Time failed');
+			return false;
+		}
+		finish(r.results[0]);
+		return true;
+	};
+	return (
+		<Dialog
+			open={open}
+			onOpenChange={(o) => !o && finish()}
+			title="Insert Time"
+			size="small"
+			primaryLabel="OK"
+			onPrimary={apply}
+			data-testid="insert-time-dialog"
+		>
+			<div className="flex flex-col gap-1.5 text-pr-ui">
+				<Row label="Insert At" htmlFor={ids.at}>
+					<TextField
+						id={ids.at}
+						value={atText}
+						onChange={(e) => setAtText(e.target.value)}
+						aria-label="Insert At"
+						data-testid="insert-time-at"
+					/>
+				</Row>
+				<Row label="Duration" htmlFor={ids.dur}>
+					<TextField
+						id={ids.dur}
+						value={durText}
+						onChange={(e) => setDurText(e.target.value)}
+						aria-label="Duration"
+						data-testid="insert-time-duration"
+					/>
+				</Row>
+				<Checkbox
+					checked={targetedOnly}
+					onCheckedChange={setTargetedOnly}
+					disabled={targeted.length === 0}
+					label="Targeted Tracks Only"
+				/>
+				<Checkbox checked={markers} onCheckedChange={setMarkers} label="Ripple Sequence Markers" />
+				<p className="text-pr-muted">
+					Clips across the insert point are split. Locked tracks stay; sync-locked tracks follow.
+				</p>
 				<ErrorLine error={error} />
 			</div>
 		</Dialog>

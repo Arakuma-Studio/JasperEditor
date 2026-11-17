@@ -87,6 +87,17 @@ Results (engine 48140, web 52140):
   wp-m3-mgtext (MGC-036…039, `docs/wp-notes/wp-m3-mgtext.md`).
 - MGU-005: P2 per spec, not done. → Done in wp-m3-mgtext (on-canvas editing, promoted to P1).
 - MGC-024: live-host budget is first-come, not ranked by distance to the playhead.
+- MGC-004 length: a composition clip cannot run longer than its composition (`durationInFrames` at the sequence rate, as
+  the bundle reported it at import with its default props). Lengthening past it is refused (`E_OUT_OF_MEDIA`) or
+  clamped (`W_DURATION_CLAMPED`, also `clip.addComposition {duration}`) with the composition's id and length and the
+  remedy (raise `durationInFrames` / what `calculateMetadata` returns, then Rebuild bundle or import again; for HTML
+  pages raise `window.__duration` and Reload page) — `commands/ripple.ts` `trimClampMessage`,
+  `composition/props.ts` `compositionLengthRemedy`. Rendering past the composition was not chosen: Remotion would
+  render the frames if the renderer's composition duration were overridden, but what a composition draws past its
+  designed end (a hold, a blank `<Sequence>`, an out-animation moved by `useVideoConfig().durationInFrames`) is up to
+  its code, and preview (live host, preview WebM), masters and export would all need the per-clip duration (AGENTS §4).
+  Not handled: a `calculateMetadata` whose length depends on props — masters select the composition with the clip's
+  props, but the clip bound stays the import-time length.
 - A GPU transition span bake (layer-bake `bakesTransition`) whose side is a composition clip gets no master URL: the bake
   render now fails (`MG_RENDER_FAILED`) instead of baking the offline card, so an `auto` export falls back to the
   Remotion path (`NATIVE_FALLBACK`) and a forced `native` one fails (by code reading; no test covers it); the span
