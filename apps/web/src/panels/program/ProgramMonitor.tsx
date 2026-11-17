@@ -11,6 +11,7 @@ import {
 	type RenderOptions,
 	SequenceComposition,
 } from '@jasper/compositions';
+import { allUsedVideoTracksHidden } from '@jasper/project';
 import { type EditorSession, type GestureFrames, gestureFrames } from '@jasper/session';
 import {
 	useDerivedPreviewDocument,
@@ -162,6 +163,8 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 	useMissingFontsNotice(session, fontCatalog);
 	const assetEpoch = useRemoteAssetsEpoch();
 	const seq = seqId ? drawn.sequences[seqId] : undefined;
+	// Every video track with clips has its eye off (a Shift+click on one eye hides them all): the picture is black.
+	const videoHidden = useMemo(() => (seq ? allUsedVideoTracksHidden(seq).length > 0 : false), [seq]);
 	const prevDoc = useRef<RenderDoc | null>(null);
 	const tier = resolutionToProxy(monitor.playbackResolution).tier;
 	// the Multi-Camera view plays a virtual document — the angle grid next to the program — in the same
@@ -632,6 +635,15 @@ function ProgramMonitorBody({ session, instanceId }: { session: EditorSession; i
 						data-testid="program-dropped-frames"
 						data-dropped={dropped}
 					/>
+				) : null}
+				{videoHidden && !mcView ? (
+					<span
+						className="pointer-events-none absolute top-2 left-1/2 max-w-[80%] -translate-x-1/2 truncate rounded-pr-control bg-pr-raised px-1.5 text-pr-small text-pr-warning"
+						role="status"
+						data-testid="program-video-hidden"
+					>
+						All video tracks hidden (track eyes off in the Timeline)
+					</span>
 				) : null}
 				{proxyChip ? (
 					<span

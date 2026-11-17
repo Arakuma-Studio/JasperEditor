@@ -10,6 +10,7 @@ import { installAudioFxProcessors } from '@jasper/audio-fx';
 import { mgRegistry } from '@jasper/mg-templates';
 import {
 	advanced3dLimitWarnings,
+	allUsedVideoTracksHidden,
 	blendModeInfo,
 	buildRenderSnapshot,
 	clipContentTime,
@@ -404,16 +405,8 @@ function hiddenTracksWarning(
 	if (!hidden.length) return null;
 	const label = (id: string) => trackLabel(seq, id) ?? id;
 	const frames = range.end - range.start;
-	const used = seq.videoTracks.filter((t) =>
-		Object.values(seq.clips).some(
-			(c) =>
-				c.trackId === t.id &&
-				c.enabled !== false &&
-				c.start < range.end &&
-				c.start + c.duration > range.start,
-		),
-	);
-	if (used.length && used.every((t) => t.output === false))
+	const used = allUsedVideoTracksHidden(seq, range);
+	if (used.length)
 		return {
 			code: 'VIDEO_TRACKS_HIDDEN',
 			message: `Every video track with clips in the range has its output (the track eye) off (${trackLabelList(used.map((t) => label(t.id)))}): the export shows none of their picture (black). Turn the track eye back on if this is not meant`,

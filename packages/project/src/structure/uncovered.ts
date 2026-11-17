@@ -164,3 +164,22 @@ export function hiddenTracksPhrase(labels: readonly string[], total = labels.len
 		? `video track ${labels[0]} has output off`
 		: `${total} video tracks have output off (${trackLabelList(labels, 8, total)})`;
 }
+
+/**
+ * The video tracks with an enabled clip (over `range` when given), in track order, when every one of them has its
+ * output (the track eye) off; empty otherwise. A Shift+click on an eye hides them all: the Program monitor shows a chip
+ * and the export plan warns `VIDEO_TRACKS_HIDDEN`.
+ */
+export function allUsedVideoTracksHidden(
+	seq: Sequence,
+	range?: { start: number; end: number },
+): Sequence['videoTracks'] {
+	const used = new Set<string>();
+	for (const c of Object.values(seq.clips)) {
+		if (c.enabled === false) continue;
+		if (range && !(c.start < range.end && c.start + c.duration > range.start)) continue;
+		used.add(c.trackId);
+	}
+	const tracks = seq.videoTracks.filter((t) => used.has(t.id));
+	return tracks.length && tracks.every((t) => t.output === false) ? tracks : [];
+}
