@@ -3,6 +3,7 @@ import { editPointFrame, type NearestKind, resolvePropertyAt, type Sequence } fr
 import { z } from 'zod';
 import {
 	FIT_CLIP_DIALOG,
+	INSERT_TIME_DIALOG,
 	registerEditUxDialogs,
 	rememberedFitChoice,
 	rememberFitChoice,
@@ -455,6 +456,16 @@ export const editUxCommands: UiCommand[] = [
 			},
 		},
 	),
+	cmd('timeline.insertTime', 'Insert Time…', E, (ctx, e) => {
+		registerEditUxDialogs();
+		ctx.ui.openDialog(INSERT_TIME_DIALOG, {
+			session: e.session,
+			sequenceId: e.seq.id,
+			at: e.playhead,
+			targeted: [...e.view.targeting.video, ...e.view.targeting.audio].filter((id) => !isLocked(e.seq, id)),
+			rippleMarkers: e.session.getState().toggles.rippleMarkers,
+		});
+	}),
 	{
 		id: 'timeline.toggleLinkedSelection',
 		label: 'Linked Selection',

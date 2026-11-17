@@ -30,22 +30,28 @@ export const ContentTimeInputSchema = z.union([
 export type ContentTimeInput = z.infer<typeof ContentTimeInputSchema>;
 
 /**
- * `at` for parameter/keyframe commands (S01:CMD-013). A bare integer is `{frames}` (frames from the clip's start; the
- * sequence frame for track and master parameters), like the sequence times of `TimeInputSchema`.
+ * `at` for parameter/keyframe commands (S01:CMD-013). Its time base depends on the form, not on a switch: a bare
+ * integer or `{frames}` counts from the clip's start (the sequence frame for track and master parameters), while
+ * `{sequenceFrame}` and a timecode string are sequence time and `{flicks}` is the clip's content (source) time. The
+ * description says so because the advertised schema compacts this union to integer | string (apps/mcp advertise.ts).
  */
-export const ParamAtSchema = z.union(
-	[
-		z.number().int(),
-		z.strictObject({ frames: z.number().int() }),
-		z.strictObject({ sequenceFrame: z.number().int().min(0) }),
-		z.strictObject({ flicks: z.number().int().min(0) }),
-		z.string().regex(/^-?\d{1,3}[:;]\d{1,2}[:;]\d{1,2}[:;.]\d{1,3}$/, 'timecode HH:MM:SS:FF'),
-	],
-	{
-		error:
-			'expected frames from the clip start (12 or {"frames": 12}), {"sequenceFrame": n}, {"flicks": n} or "HH:MM:SS:FF"',
-	},
-);
+export const ParamAtSchema = z
+	.union(
+		[
+			z.number().int(),
+			z.strictObject({ frames: z.number().int() }),
+			z.strictObject({ sequenceFrame: z.number().int().min(0) }),
+			z.strictObject({ flicks: z.number().int().min(0) }),
+			z.string().regex(/^-?\d{1,3}[:;]\d{1,2}[:;]\d{1,2}[:;.]\d{1,3}$/, 'timecode HH:MM:SS:FF'),
+		],
+		{
+			error:
+				'expected frames from the clip start (12 or {"frames": 12}), {"sequenceFrame": n}, {"flicks": n} or "HH:MM:SS:FF"',
+		},
+	)
+	.describe(
+		'On a clip: 12 or {"frames": 12} = frames from the clip start; {"sequenceFrame": n} or "HH:MM:SS:FF" = sequence time. Track and Mix params: sequence time.',
+	);
 export type ParamAt = z.infer<typeof ParamAtSchema>;
 
 /** Address of an animatable property (S01:CMD-010), e.g. `["clip", "clp_…", "transform", "position"]`. */

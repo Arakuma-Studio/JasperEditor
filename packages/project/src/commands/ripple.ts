@@ -11,6 +11,11 @@
 // A **split-edit follower** is a clip on a rippling track that straddles the edit, linked to a later clip that
 // shifts (its sound leads the cut, a J cut). It moves with its picture instead of being split or blocking the edit;
 // the edit is refused when it has no room (E_SYNC_CONFLICT) unless the caller clamps (gesture behaviour).
+import {
+	compositionLengthRemedy,
+	compositionOfClip,
+	compositionSequenceFrames,
+} from '../composition/props.ts';
 import { contentDurationFlicks, isBoundedContent } from '../registry/kinds.ts';
 import type { ProjectItem } from '../schema/document.ts';
 import type { Clip } from '../schema/sequence.ts';
@@ -123,10 +128,41 @@ export function refuseExtendPastContent(
 		if (edge === 'out' ? delta > 0 && room.tail === 0 : delta < 0 && room.head === 0)
 			h.fail(
 				'E_OUT_OF_MEDIA',
-				`Clip ${c.id} cannot be extended: its source has nothing left ${edge === 'out' ? 'after its Out' : 'before its In'}`,
+				compositionLengthNote(doc, seq, c) ??
+					`Clip ${c.id} cannot be extended: its source has nothing left ${edge === 'out' ? 'after its Out' : 'before its In'}`,
 				{ blocking: [c.id] },
 			);
 	}
+}
+
+/**
+ * S08:MGC-004: a composition clip shows only its composition's frames (the bound is the length the bundle reported at
+ * import, with its default props). Says so with the length and where to change it, for a composition clip.
+ */
+function compositionLengthNote(doc: DDoc, seq: DSeq, c: DClip): string | null {
+	const found = c.kind === 'composition' ? compositionOfClip(doc, c as Clip) : undefined;
+	if (!found) return null;
+	const frames = compositionSequenceFrames(found.info, seq.settings.frameRate as Rational);
+	return `Clip ${c.id} shows composition ${found.info.id}, which is ${frames} frames long at the sequence rate; its clips show only those frames. To make it longer, ${compositionLengthRemedy(found.asset)}`;
+}
+
+/** W_DURATION_CLAMPED text of a trim: with the composition's length when a composition clip ran out of frames. */
+export function trimClampMessage(
+	doc: DDoc,
+	seq: DSeq,
+	members: readonly { clip: DClip; edge: 'in' | 'out' }[],
+	delta: number,
+	clamped: number,
+): string {
+	const base = `Trim clamped from ${delta} to ${clamped} frames`;
+	for (const { clip: c, edge } of members) {
+		if (c.kind !== 'composition' || (edge === 'out' ? delta <= 0 : delta >= 0)) continue;
+		const room = contentHandles(doc, seq, c);
+		if ((edge === 'out' ? room.tail : room.head) >= Math.abs(delta)) continue;
+		const note = compositionLengthNote(doc, seq, c);
+		if (note) return `${base}: ${note}`;
+	}
+	return base;
 }
 
 export type TrimLimits = { min: number; max: number };
@@ -304,7 +340,7 @@ export function rippleTrimGroup(
 	const hi = Math.min(...lim.map((l) => l.max));
 	let d = lo > hi ? 0 : Math.min(hi, Math.max(lo, delta));
 	if (d === 0) refuseExtendPastContent(doc, seq, h, members, delta);
-	if (d !== delta) h.warn('W_DURATION_CLAMPED', `Trim clamped from ${delta} to ${d} frames`);
+	if (d !== delta) h.warn('W_DURATION_CLAMPED', trimClampMessage(doc, seq, members, delta, d));
 	if (d === 0) return 0;
 	let planned = planRipple(seq, members, d);
 	if (!planned.ok) {

@@ -324,6 +324,7 @@ export const MENUBAR: readonly MenubarMenuModel[] = [
 			sep,
 			c('timeline.lift', 'Lift'),
 			c('timeline.extract', 'Extract'),
+			c('timeline.insertTime', 'Insert Time…'),
 			sep,
 			sub('Go to Gap', [
 				c('sequence.goToNextGap', 'Next in Sequence'),

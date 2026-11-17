@@ -13,8 +13,8 @@
 // - a removal that covers the whole overlay removes it (it showed only removed time), as before;
 // - `W_OVERLAY_FITTED` names each overlay kept whole.
 // Removals: range.extract, clip.extract, ripple trims, cutRanges, gap.close, ripple speed changes (`removeShiftKeeping`).
-// Inserts: ripple trims, insert placement / moves, paste insert, Insert Frame Hold Segment, ripple speed changes
-// (`insertShiftKeeping`).
+// Inserts: ripple trims, insert placement / moves, paste insert, Insert Frame Hold Segment, range.insertTime, ripple
+// speed changes (`insertShiftKeeping`).
 // Subtitle text clips (a `caption`) and media-backed clips are cut as before: their words / frames belong to the time.
 
 import type { Keyframe } from '../schema/common.ts';

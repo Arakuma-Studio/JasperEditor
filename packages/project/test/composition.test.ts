@@ -305,6 +305,21 @@ describe('bounded content (S08:MGC-004)', () => {
 		expect(checkInvariants(h.doc)).toEqual([]);
 	});
 
+	it('lengthening past the composition is refused naming its length and how to make it longer', () => {
+		const { h, mediaId } = setup();
+		const id = addTitle(h, mediaId);
+		const r = h.tx([{ type: 'clip.trim', clipId: id, edge: 'out', deltaFrames: 30, mode: 'ripple' }]);
+		expect(r.ok).toBe(false);
+		if (r.ok) return;
+		expect(r.errors[0]).toMatchObject({ code: 'E_OUT_OF_MEDIA', blocking: [id] });
+		expect(r.errors[0]!.message).toMatch(/Title.* 90 frames/);
+		expect(r.errors[0]!.message).toMatch(/durationInFrames.*Rebuild bundle/);
+		// a partial extension says the same in its warning
+		h.ok([{ type: 'clip.trim', clipId: id, edge: 'out', deltaFrames: -20 }]);
+		const w = h.ok([{ type: 'clip.trim', clipId: id, edge: 'out', deltaFrames: 50 }]).warnings;
+		expect(w.find((x) => x.code === 'W_DURATION_CLAMPED')?.message).toMatch(/from 50 to 20 .* 90 frames/);
+	});
+
 	it('split keeps the composition content time continuous', () => {
 		const { h, mediaId } = setup();
 		const id = addTitle(h, mediaId);

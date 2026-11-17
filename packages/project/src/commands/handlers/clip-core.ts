@@ -64,6 +64,7 @@ import {
 	rippleDeleteSpans,
 	rippleTrimGroup,
 	tracksHolding,
+	trimClampMessage,
 	trimLimits,
 } from '../ripple.ts';
 import type { ClipPatch } from '../schemas/clip.ts';
@@ -683,16 +684,10 @@ function trimHandler(doc: DDoc, cmd0: CommandOf<'clip.trim'>, h: HandlerContext)
 	const lo = Math.max(...lim.map((l) => l.min));
 	const hi = Math.min(...lim.map((l) => l.max));
 	const clamped = lo > hi ? 0 : Math.min(hi, Math.max(lo, d));
-	if (clamped === 0)
-		refuseExtendPastContent(
-			doc,
-			seq,
-			h,
-			members.map((m) => ({ clip: m, edge: cmd.edge })),
-			d,
-		);
+	const edges = members.map((m) => ({ clip: m, edge: cmd.edge }));
+	if (clamped === 0) refuseExtendPastContent(doc, seq, h, edges, d);
 	if (clamped !== d) {
-		h.warn('W_DURATION_CLAMPED', `Trim clamped from ${d} to ${clamped} frames`);
+		h.warn('W_DURATION_CLAMPED', trimClampMessage(doc, seq, edges, d, clamped));
 		d = clamped;
 	}
 	if (d === 0) return { deltaFrames: 0 };
@@ -878,6 +873,13 @@ export const clipCoreHandlers = {
 			const pools = trackCandidates(seq, hulls, moving);
 			for (const p of plan)
 				relinkSplits(seq, clearRange(seq, p.dest.id, p.start, p.end, h, moving, pools.get(p.dest.id)), h);
+			// An overwrite move has no ripple point of its own, so markers stay unless asked: with rippleMarkers: true the
+			// sequence markers from the first moved clip's old start on travel with the clips (a hand-made ripple).
+			if (cmd.rippleMarkers === true && cmd.deltaFrames !== 0) {
+				const from = Math.min(...plan.map((p) => p.clip.start));
+				for (const m of seq.markers) if (m.frame >= from) m.frame = Math.max(0, m.frame + cmd.deltaFrames);
+				seq.markers.sort((a, b) => a.frame - b.frame);
+			}
 		} else {
 			const at = Math.min(...plan.map((p) => p.start));
 			const n = Math.max(...plan.map((p) => p.end)) - at;

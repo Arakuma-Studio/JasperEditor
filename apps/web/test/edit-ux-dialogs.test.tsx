@@ -6,6 +6,8 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createCommandContext, registerAllCommands, runCommand } from '../src/commands/index.ts';
 import {
 	FitClipDialog,
+	INSERT_TIME_DIALOG,
+	InsertTimeDialog,
 	rememberedFitChoice,
 	rememberFitChoice,
 	SpeedDurationDialog,
@@ -39,6 +41,40 @@ function harness() {
 		});
 	return { ...t, mediaId, itemId, ctx, dialogs };
 }
+
+describe('Insert Time dialog', () => {
+	it('Sequence ▸ Insert Time… opens at the playhead and inserts the time on every track in one entry', async () => {
+		const h = harness();
+		h.apply([
+			{
+				type: 'clip.place',
+				source: { mediaId: h.mediaId },
+				at: 0,
+				sourceRange: { in: { seconds: 0 }, out: { seconds: 4 } },
+			},
+			{ type: 'marker.add', frame: 90 },
+		]);
+		const before = h.session.getCommitted();
+		h.session.transport.seek(60);
+		await runCommand('timeline.insertTime', h.ctx());
+		const opened = h.dialogs.find((d) => d.kind === INSERT_TIME_DIALOG)!;
+		expect(opened.props.at).toBe(60);
+		render(
+			<InsertTimeDialog {...(opened.props as Parameters<typeof InsertTimeDialog>[0])} close={() => {}} />,
+		);
+		fireEvent.change(screen.getByTestId('insert-time-duration'), { target: { value: '00:00:00:24' } });
+		fireEvent.click(screen.getByText('OK'));
+		expect(h.spans('V1')).toEqual([
+			[0, 60],
+			[84, 144],
+		]);
+		expect(h.spans('A1')).toEqual(h.spans('V1'));
+		expect(h.seq().markers[0]!.frame).toBe(114);
+		expect(h.history().at(-1)).toBe('Insert Time');
+		h.session.undo();
+		expect(h.session.getCommitted()).toEqual(before);
+	});
+});
 
 describe('Speed/Duration dialog', () => {
 	it('halving speed ripples linked video and audio in one entry', () => {

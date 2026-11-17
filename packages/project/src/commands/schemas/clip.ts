@@ -299,6 +299,10 @@ export const ClipMoveCmd = cmd('clip.move', {
 	mode: EditModeSchema.optional(),
 	createTracks: z.boolean().optional(),
 	syncConflict: SyncConflictSchema.optional(),
+	/**
+	 * insert: sequence markers at/after the insert point shift with the ripple (default true). overwrite: markers
+	 * stay (default); `true` moves every sequence marker from the first moved clip's old start on by `deltaFrames`.
+	 */
 	rippleMarkers: z.boolean().optional(),
 	/** edit-structure (S01:CLP-012): members of the clips' clip groups move with them (default true). */
 	groups: z.boolean().optional(),
@@ -385,6 +389,20 @@ export const RangeExtractCmd = cmd('range.extract', {
 	snapToSilence: SnapToSilenceSchema.optional(),
 	/** Voice-analysis windows around the cut (`cutLevelWindows`); the MCP server attaches them. */
 	levels: CutLevelsSchema.optional(),
+});
+/**
+ * Insert Time (the counterpart of `range.extract`): opens `duration` empty frames at `at` on `tracks` (default every
+ * unlocked track) and their sync-locked followers — clips spanning `at` are split there (linked pieces stay linked),
+ * everything at/after `at` moves right. Locked tracks never move. Generated overlays on tracks not named stay whole,
+ * lengthened (overlay-ripple.ts), so `range.extract` of the same frames restores the timeline.
+ */
+export const RangeInsertTimeCmd = cmd('range.insertTime', {
+	sequenceId: IdRefSchema.optional(),
+	at: TimeInputSchema,
+	duration: TimeInputSchema,
+	tracks: z.array(TrackRefSchema).min(1).optional(),
+	/** Sequence markers at/after `at` move with the time (default true). */
+	rippleMarkers: z.boolean().optional(),
 });
 export const GapCloseCmd = cmd('gap.close', {
 	sequenceId: IdRefSchema.optional(),
@@ -506,6 +524,7 @@ export const CLIP_COMMANDS = [
 	ClipExtractCmd,
 	RangeLiftCmd,
 	RangeExtractCmd,
+	RangeInsertTimeCmd,
 	GapCloseCmd,
 	ClipDuplicateCmd,
 	ClipUpdateCmd,
