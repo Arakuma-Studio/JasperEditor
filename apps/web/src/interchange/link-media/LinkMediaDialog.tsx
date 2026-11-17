@@ -38,6 +38,7 @@ import {
 	runScan,
 	type ScanOutcome,
 } from './flow.ts';
+import { offlineMedia, usedMediaIds } from './offline.ts';
 
 export type LinkMediaProps = {
 	session: EditorSession;
@@ -57,16 +58,8 @@ type RowStatus =
 
 const ROW_H = 24;
 const LIST_H = 192;
-/** Media that is offline: an imported placeholder (no file yet) or a file the engine cannot find. */
-export function offlineMedia(session: EditorSession): MediaAsset[] {
-	const st = session.getState();
-	const doc = session.getCommitted();
-	return (Object.values(doc.media) as MediaAsset[]).filter(
-		(m) =>
-			(m.kind === 'video' || m.kind === 'audio' || m.kind === 'image' || m.kind === 'animated-image') &&
-			(m.fingerprint.startsWith('pending:interchange:') || st.media[m.id]?.availability === 'offline'),
-	);
-}
+
+export { offlineMedia };
 
 /** The folders above a file, nearest first (`/a/b/c.mov` → `/a/b`, `/a`, `/`). */
 function parentChain(file: string): string[] {
@@ -89,6 +82,7 @@ const HOW_LABELS: Record<string, string> = {
 	'same-folder': 'Same folder',
 	search: 'Search',
 	fingerprint: 'Same content',
+	updated: 'Updated file',
 };
 
 /** The Locate view's state: the asset being located, the folder shown and the file picked. */
@@ -102,7 +96,18 @@ type LocateState = {
 	message: string | null;
 };
 
-type Confirming = { asset: MediaAsset; path: string; found: Found; failed: string[] };
+/** A file that differs, waiting for Link anyway; `updated`: the asset's own file re-rendered in place. */
+type Confirming = { asset: MediaAsset; path: string; found: Found; failed: string[]; updated?: boolean };
+
+const NO_SCAN: ScanOutcome = {
+	found: [],
+	ambiguous: [],
+	notFound: [],
+	scannedFiles: 0,
+	truncated: false,
+	timedOut: false,
+	mappings: [],
+};
 
 export function LinkMediaDialog(props: HostedDialogProps<LinkMediaProps>) {
 	const { session, engine } = props;
@@ -112,6 +117,12 @@ export function LinkMediaDialog(props: HostedDialogProps<LinkMediaProps>) {
 		const all = offlineMedia(session);
 		return props.mediaIds?.length ? all.filter((m) => props.mediaIds!.includes(m.id)) : all;
 	}, [session, props.mediaIds]);
+	/** Rows whose file is still at its last known path but changed (re-rendered in place). */
+	const changed = useMemo(() => {
+		const rt = session.getState().media;
+		return new Set(rows.filter((r) => rt[r.id]?.offlineReason === 'changed').map((r) => r.id));
+	}, [session, rows]);
+	const used = useMemo(() => usedMediaIds(session.getCommitted()), [session]);
 	const clipNames = useMemo(() => {
 		const out = new Map<string, string>();
 		for (const i of Object.values(session.getCommitted().items))
@@ -289,19 +300,7 @@ export function LinkMediaDialog(props: HostedDialogProps<LinkMediaProps>) {
 				onJob,
 			);
 			await takeOutcome(r, [{ assetId: asset.id, found, force: found.needsConfirm }]);
-		} else
-			await takeOutcome(
-				{
-					found: [],
-					ambiguous: [],
-					notFound: [],
-					scannedFiles: 0,
-					truncated: false,
-					timedOut: false,
-					mappings: [],
-				},
-				[{ assetId: asset.id, found, force: found.needsConfirm }],
-			);
+		} else await takeOutcome(NO_SCAN, [{ assetId: asset.id, found, force: found.needsConfirm }]);
 		const next = stillOffline(asset.id)[0];
 		if (next) setSelected(next.id);
 	};
@@ -409,20 +408,46 @@ export function LinkMediaDialog(props: HostedDialogProps<LinkMediaProps>) {
 		const s = stateOf(id);
 		if (s.kind !== 'confirm') return;
 		void guard(t('Linking…'), async () => {
-			await takeOutcome(
-				{
-					found: [],
-					ambiguous: [],
-					notFound: [],
-					scannedFiles: 0,
-					truncated: false,
-					timedOut: false,
-					mappings: [],
-				},
-				[{ assetId: id, found: s.found, force: true }],
-			);
+			await takeOutcome(NO_SCAN, [{ assetId: id, found: s.found, force: true }]);
 		});
 	};
+
+	/**
+	 * Use the updated file: the asset's own file, re-rendered in place, is registered again from its last known path
+	 * (probed afresh) and linked. When the edit uses the asset and the new file differs in what the user would notice
+	 * (duration, frame rate, resolution, audio), the differences are shown first: they can change the edit.
+	 */
+	const acceptUpdated = (asset: MediaAsset, confirmed?: Found) =>
+		guard(t('Checking {0}…', asset.originalName), async () => {
+			const path = lastKnownPath(asset).path;
+			if (!path) throw new Error(t('"{0}" has no recorded path.', asset.originalName));
+			let found = confirmed;
+			if (!found) {
+				const r = await engine.relinkAsset(asset.id, {
+					projectId,
+					path,
+					asset: relinkBody(asset),
+					match: [],
+				});
+				found = {
+					assetId: asset.id,
+					path,
+					media: r.media,
+					match: r.match,
+					diff: r.diff,
+					needsConfirm: r.needsConfirm,
+					how: 'updated',
+				};
+				const noticeable = r.diff.filter((d) => d.field !== 'size');
+				if (used.has(asset.id) && noticeable.length) {
+					setConfirming({ asset, path, found, failed: [], updated: true });
+					return;
+				}
+			}
+			setConfirming(null);
+			const n = await takeOutcome(NO_SCAN, [{ assetId: asset.id, found, force: true }]);
+			if (n) setSummary(t('"{0}" now uses the updated file.', asset.originalName));
+		});
 
 	const offlineSelected = () => {
 		if (!selected) return;
@@ -510,7 +535,9 @@ export function LinkMediaDialog(props: HostedDialogProps<LinkMediaProps>) {
 					<ConfirmPanel
 						c={confirming}
 						onLink={() =>
-							void guard(t('Linking…'), () => linkLocated(confirming.asset, confirming.path, true))
+							confirming.updated
+								? void acceptUpdated(confirming.asset, confirming.found)
+								: void guard(t('Linking…'), () => linkLocated(confirming.asset, confirming.path, true))
 						}
 						onBack={() => setConfirming(null)}
 						busy={!!busy}
@@ -559,8 +586,10 @@ export function LinkMediaDialog(props: HostedDialogProps<LinkMediaProps>) {
 									a={a}
 									clipName={clipNames.get(a.id) ?? a.originalName}
 									status={stateOf(a.id)}
+									changed={changed.has(a.id)}
 									host={host?.platform ?? null}
 									onLinkAnyway={() => linkAnyway(a.id)}
+									onUseUpdated={() => void acceptUpdated(a)}
 									onChoose={(p) => void guard(t('Checking {0}…', a.originalName), () => linkLocated(a, p))}
 									busy={!!busy}
 								/>
@@ -801,12 +830,16 @@ function RowCells(props: {
 	a: MediaAsset;
 	clipName: string;
 	status: RowStatus;
+	/** The file is still at its last known path but changed (re-rendered in place). */
+	changed: boolean;
 	host: HostPlatform | null;
 	onLinkAnyway(): void;
+	onUseUpdated(): void;
 	onChoose(path: string): void;
 	busy: boolean;
 }) {
 	const { a, status } = props;
+	const updatable = props.changed && (status.kind === 'offline' || status.kind === 'confirm');
 	const last = lastKnownPath(a).path;
 	const foreign = last && props.host ? isForeignPath(last, props.host) : false;
 	return (
@@ -818,14 +851,32 @@ function RowCells(props: {
 				{foreign ? <span className="ml-1 text-pr-dim">({t('another computer')})</span> : null}
 			</span>
 			<span className="flex min-w-0 items-center gap-1 truncate" data-testid="link-media-row-status">
-				{status.kind === 'offline' ? <span className="text-pr-warning">Offline</span> : null}
+				{updatable ? (
+					<>
+						<span
+							className="truncate text-pr-warning"
+							title={t('The file at its last known path was re-rendered or edited after it was imported.')}
+						>
+							Changed on disk
+						</span>
+						<Button
+							variant="quiet"
+							onClick={props.onUseUpdated}
+							disabled={props.busy}
+							data-testid="link-media-use-updated"
+						>
+							Use the updated file
+						</Button>
+					</>
+				) : null}
+				{status.kind === 'offline' && !updatable ? <span className="text-pr-warning">Offline</span> : null}
 				{status.kind === 'skipped' ? <span className="text-pr-muted">Left offline</span> : null}
 				{status.kind === 'linked' ? (
 					<span className="truncate text-pr-success" title={status.path}>
 						{t('Linked ({0})', t(HOW_LABELS[status.how] ?? status.how))}
 					</span>
 				) : null}
-				{status.kind === 'confirm' ? (
+				{status.kind === 'confirm' && !updatable ? (
 					<>
 						<span
 							className="truncate text-pr-warning"
@@ -864,7 +915,12 @@ function ConfirmPanel(props: { c: Confirming; onLink(): void; onBack(): void; bu
 	return (
 		<div className="flex flex-col gap-2" data-testid="link-media-confirm">
 			<p className="text-pr-text">
-				{t('"{0}" is not the same as "{1}":', displayPath(c.path), c.asset.originalName)}
+				{c.updated
+					? t(
+							'The updated file at "{0}" differs from the one imported. Clips using it may change:',
+							displayPath(c.path),
+						)
+					: t('"{0}" is not the same as "{1}":', displayPath(c.path), c.asset.originalName)}
 			</p>
 			<ul className="list-disc pl-5 text-pr-warning">
 				{c.failed.map((f) => (
@@ -883,10 +939,10 @@ function ConfirmPanel(props: { c: Confirming; onLink(): void; onBack(): void; bu
 					disabled={props.busy}
 					data-testid="link-media-link-anyway"
 				>
-					Link anyway
+					{c.updated ? t('Use the updated file') : t('Link anyway')}
 				</Button>
 				<Button variant="secondary" onClick={props.onBack} disabled={props.busy}>
-					Choose another file
+					{c.updated ? t('Back') : t('Choose another file')}
 				</Button>
 			</div>
 		</div>

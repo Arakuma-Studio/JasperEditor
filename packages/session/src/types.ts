@@ -78,6 +78,11 @@ export type DerivativeStatus = {
 /** Runtime media status (S01:LIFE-050). Never in the document. */
 export type MediaRuntime = {
 	availability: 'resolving' | 'online' | 'offline' | 'needs-engine' | 'error';
+	/**
+	 * Link Media: why an `offline` medium is offline — `changed` when its file is still at the recorded path but was
+	 * re-rendered or edited in place (size or mtime differ). Absent = missing.
+	 */
+	offlineReason?: 'missing' | 'changed';
 	playbackUrl: string | null;
 	proxyUrl: string | null;
 	posterUrl: string | null;

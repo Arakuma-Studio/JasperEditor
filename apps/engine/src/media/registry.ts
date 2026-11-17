@@ -62,20 +62,35 @@ type IndexFile = { version: 1; engineId: string; items: Record<string, MediaReco
 type Availability = 'online' | 'missing';
 
 /**
- * The file of a record is still the one registered: it exists with the recorded size and, for the user's own files,
- * the recorded mtime (S04:AS-010). An export checks the records it planned with against it when it ends.
+ * What is at a record's path now: `unchanged` (the registered file: same size and, for the user's own files, the same
+ * mtime, S04:AS-010), `changed` (a regular file is there but its size or mtime differs: re-rendered or edited in place)
+ * or `missing` (nothing, or not a regular file).
+ */
+export type FileState = 'unchanged' | 'changed' | 'missing';
+
+export async function fileState(
+	r: Pick<MediaRecord, 'storage' | 'sizeBytes' | 'mtimeMs'>,
+): Promise<FileState> {
+	try {
+		const s = await stat(r.storage.path);
+		if (!s.isFile()) return 'missing';
+		// Managed copies are ours: only the size matters. User files must keep their mtime.
+		const same =
+			s.size === r.sizeBytes && (r.storage.type !== 'path' || Math.abs(s.mtimeMs - r.mtimeMs) <= 1);
+		return same ? 'unchanged' : 'changed';
+	} catch {
+		return 'missing';
+	}
+}
+
+/**
+ * The file of a record is still the one registered (`fileState` is `unchanged`). An export checks the records it
+ * planned with against it when it ends (MEDIA_CHANGED_DURING_EXPORT).
  */
 export async function fileMatches(
 	r: Pick<MediaRecord, 'storage' | 'sizeBytes' | 'mtimeMs'>,
 ): Promise<boolean> {
-	try {
-		const s = await stat(r.storage.path);
-		if (!s.isFile() || s.size !== r.sizeBytes) return false;
-		// Managed copies are ours: only the size matters. User files must keep their mtime.
-		return r.storage.type !== 'path' || Math.abs(s.mtimeMs - r.mtimeMs) <= 1;
-	} catch {
-		return false;
-	}
+	return (await fileState(r)) === 'unchanged';
 }
 
 export class MediaRegistry {

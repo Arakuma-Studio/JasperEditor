@@ -203,8 +203,33 @@ The Link Media dialog (`LinkMediaDialog.tsx`) opens from three places:
 - The interchange import report.
 
 It also opens automatically once per project open (`useLinkMediaOnOpen`). This happens when the engine has
-answered for every medium, the project is writable and media are offline. It waits until other dialogs, such as
-unsaved-changes recovery, have closed.
+answered for every medium, the project is writable and offline media are **used** by the edit (`offline.ts`
+`usedMediaIds`: the source of a clip in any sequence, nested and multicam source sequences included, media shown by a
+clip's template or effect parameters, and media of project looks). It waits until other dialogs, such as
+unsaved-changes recovery, have closed. **Choice made here:** offline media nothing uses never open it. They are
+counted by a quiet badge in the Project panel footer ("n offline (m changed)", tooltip with used / unused / changed
+counts). The badge opens Link Media for every offline medium (`project.linkMedia {all: true}`). It shrinks and
+truncates before the footer's buttons in a narrow panel.
+
+**Changed on disk.** The engine's media status says why a `missing` medium is offline (`MediaStatus.offline`,
+optional, absent from older engines): `changed` when the user's own file (path storage) is still at its recorded
+path but its size or mtime differs from the registry record (re-rendered or edited in place), `missing` otherwise
+(`fileState` in `apps/engine/src/media/registry.ts`). The web runtime keeps it as `MediaRuntime.offlineReason`.
+Such rows read "Changed on disk" with **Use the updated file**, beside the normal Locate. It registers the file again
+from the same path (`/api/assets/:id/relink` with no match properties: a fresh probe and fingerprint, a new
+content-addressed record) and links it with `media.relink` (`force`, one undoable "Link Media" step).
+
+- Unused media: one click.
+- Used media whose new file differs in duration, resolution, frame rate or audio: the differences are shown first,
+  then "Use the updated file" / Back. A size-only difference needs no confirmation.
+- Nothing is accepted automatically.
+- The document's own invariants still apply. A re-render shorter than its clips need is refused (INV-005) and the
+  error is shown. Nothing changes.
+- The export guard is unchanged: a source that changes during an export still fails it with
+  `MEDIA_CHANGED_DURING_EXPORT` (`fileMatches` = `fileState` is `unchanged`).
+
+A relink now re-resolves the medium's engine key in the web runtime (`doc.changed` on a `med_` id runs `syncNew`).
+Before, a linked medium stayed "Media Offline" until the project was reopened.
 
 The dialog contains:
 
@@ -258,7 +283,13 @@ nothing is left to locate.
   project result and an end-to-end anchor run.
 - `apps/web/test/link-media.test.tsx` covers the dialog flow (Locate, auto relink, one transaction, Link anyway,
   undo and redo, Offline, Offline All), 2 000 relinks in one transaction with undo and redo, a refused transaction,
-  and the open-time prompt.
+  and the open-time prompt. It also covers:
+  - no prompt for an unused offline medium, with the Project panel badge opening Link Media;
+  - the prompt for a medium used only inside a nested sequence;
+  - Use the updated file: one click for unused media and undo, the difference list first for used media;
+  - the runtime carrying `offlineReason` and resolving the new key after a relink.
+- `apps/engine/test/polish-media-status.test.ts` checks that a file re-rendered at its path reports `changed` and a
+  deleted one `missing`. `apps/engine/test/export.test.ts` still fails an export whose source changes mid-render.
 - `apps/mcp/test/interchange.test.ts` covers paging, path style, and `link_media` with relinkOthers.
 
 **Exercised in the running app** (engine 47915, vite 5185, Linux):
@@ -270,6 +301,18 @@ nothing is left to locate.
 4. Reopening the project opened the dialog by itself for the two still offline.
 5. A folder search found `sans.wav` as "Differs" (the EDL guessed a picture stream). Link anyway was refused by
    INV-CHANNELS and the error was shown; nothing else changed.
+
+**Unused and changed media, exercised in the running app** (engine 47961, vite 5291, own `JASPER_APPDIR`, Linux,
+Chrome):
+
+1. A project had one file on the timeline and one unused. The unused file was re-rendered at its path.
+2. On reopen no dialog opened. The Project panel footer showed "1 offline (1 changed)".
+3. The badge opened Link Media with the row "Changed on disk". Use the updated file linked it in one click; the
+   item went Online and the badge disappeared.
+4. The used file was replaced at its path by a 6 s, 1280×720, 25 fps render. The dialog opened by itself on reopen.
+   Use the updated file listed the duration, resolution, frame rate and size differences. Accepting was refused by
+   INV-005 (the clip needs 10 s) and the error was shown; the project was unchanged.
+5. A same-length re-render of the used file linked in one click. The timeline clip came back without a reload.
 
 **Limits:**
 
@@ -283,4 +326,8 @@ nothing is left to locate.
 - One run checks at most 20 000 offline media.
 - The MCP `link_media` transaction carries every command in one request (≈ 1–1.5 KB per file). Very large runs
   approach the 20 MB request limit (estimate from probe sizes, not measured).
+- Use the updated file links one row at a time. There is no "use all updated files" action.
+- The MCP `list_offline_media` does not report `changed` yet. Agents relink the same path with `link_media {mediaId,
+  path, force}`.
+- A changed file in engine-managed storage (a copy under the appdir) is reported `missing`, not `changed`.
 - There is no `.prproj` importer yet. A future one should set `IMedia.relativePath` from `<RelativePath>`.

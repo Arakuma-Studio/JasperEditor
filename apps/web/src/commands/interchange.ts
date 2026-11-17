@@ -58,11 +58,13 @@ export const interchangeCommands: UiCommand[] = [
 		scope: 'global',
 		when: (ctx) => writable(ctx) && offlineMedia(ctx.session!).length > 0,
 		disabledReason: () => 'No media is offline',
-		run: (ctx) => {
+		run: (ctx, args) => {
 			const s = ctx.session;
 			if (!s) return;
 			const st = s.getState();
-			const selected = st.selection.project.items
+			// `{all: true}` (the Project panel's offline badge): every offline medium, whatever is selected.
+			const all = (args as { all?: unknown } | undefined)?.all === true;
+			const selected = (all ? [] : st.selection.project.items)
 				.map((id) => st.document.items[id])
 				.flatMap((i) => (i?.kind === 'media' ? [i.mediaId] : []));
 			const offline = new Set(offlineMedia(s).map((m) => m.id));

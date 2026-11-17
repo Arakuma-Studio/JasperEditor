@@ -9,10 +9,12 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { collectMenuItems, type MenuItemSpec, projectItemMenuExtensions } from '../../extensions/index.ts';
 import { labelName } from '../../gaps/app-prefs.ts';
 import { runIfRegistered, useLocalCommandCtx } from '../../home/ui-bridge.ts';
+import { t } from '../../i18n/runtime.ts';
 import { mediaKeyOf } from '../../import/assets.ts';
 import { type ClientJob, useClientJobs } from '../../import/client-jobs.ts';
 import { pickFilesInBrowser } from '../../import/desktop.ts';
 import { EngineImportService, readDataTransfer, writeProjectItemsDrag } from '../../import/service.ts';
+import { offlineSummary } from '../../interchange/link-media/offline.ts';
 import { useEngine } from '../../state/engine.tsx';
 import { getImportService, HOST_PATHS_MIME, PROJECT_ITEMS_MIME } from '../../state/services.ts';
 import type { PanelProps } from '../types.ts';
@@ -462,6 +464,13 @@ export function ProjectPanel(props: PanelProps) {
 					/>
 				) : null}
 				<span className="flex-1" />
+				<OfflineBadge
+					session={session}
+					doc={doc}
+					runtime={runtime}
+					readOnly={readOnly}
+					onOpen={() => void runIfRegistered('project.linkMedia', ctx, { all: true })}
+				/>
 				<IconButton
 					icon="app.import"
 					label="Import"
@@ -1268,6 +1277,50 @@ function ContextMenu(props: {
 				onClose={props.onClose}
 			/>
 		</Menu>
+	);
+}
+
+/**
+ * Link Media's quiet indicator: how many media are offline (the open-time dialog only opens for media the edit uses;
+ * the others are counted here), how many of them were re-rendered in place; a click opens Link Media for all of them.
+ */
+function OfflineBadge(props: {
+	session: EditorSession;
+	doc: unknown;
+	runtime: unknown;
+	readOnly: boolean;
+	onOpen(): void;
+}) {
+	const { session, doc, runtime } = props;
+	// biome-ignore lint/correctness/useExhaustiveDependencies: doc and runtime are the store slices offlineSummary reads
+	const s = useMemo(() => offlineSummary(session), [session, doc, runtime]);
+	const total = s.used.length + s.unused.length;
+	if (!total) return null;
+	const parts = [
+		t('{0} offline media file(s): {1} used in sequences, {2} unused.', total, s.used.length, s.unused.length),
+	];
+	if (s.changed.length)
+		parts.push(t('{0} changed on disk since import (re-rendered at the same path).', s.changed.length));
+	parts.push(props.readOnly ? t('The project is read-only.') : t('Click to open Link Media.'));
+	return (
+		<Button
+			variant="quiet"
+			// shrinks before the footer's buttons do: the text truncates, the icon and the count stay
+			className="h-[calc(var(--pr-row-h)-4px)] min-w-0 shrink justify-start gap-1 overflow-hidden px-1.5 text-pr-small text-pr-warning"
+			onClick={props.onOpen}
+			disabled={props.readOnly}
+			title={parts.join(' ')}
+			aria-label={parts.join(' ')}
+			data-testid="project-offline-badge"
+			data-offline-used={s.used.length}
+			data-offline-unused={s.unused.length}
+			data-offline-changed={s.changed.length}
+		>
+			<Icon id="status.warning" size={12} className="shrink-0" />
+			<span className="min-w-0 truncate">
+				{s.changed.length ? t('{0} offline ({1} changed)', total, s.changed.length) : t('{0} offline', total)}
+			</span>
+		</Button>
 	);
 }
 
