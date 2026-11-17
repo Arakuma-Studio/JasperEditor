@@ -13,6 +13,8 @@ import {
 	type ProjectDocument,
 	type SyntheticSource,
 	syntheticPicture,
+	trackLabel,
+	type UncoveredRange,
 	uncoveredPicture,
 } from '@jasper/project';
 import { z } from 'zod';
@@ -23,6 +25,8 @@ export const VERIFY_CONTEXT_FILE = 'verify.json';
 export const MAX_VERIFY_CUTS = 5000;
 /** Most uncovered (no-picture) ranges recorded per export. */
 export const MAX_VERIFY_UNCOVERED = 500;
+/** Most hidden track labels recorded per uncovered range. */
+export const MAX_VERIFY_HIDDEN = 32;
 /** Most offline-media spans recorded per export. */
 export const MAX_VERIFY_OFFLINE = 200;
 /** Least frame coverage of a picture layer the verification cut list follows (the cut map's minimum). */
@@ -134,6 +138,13 @@ export const ExportVerifyContextSchema = z.object({
 				audible: z.boolean(),
 				/** As a cut's `at`. */
 				at: z.number().int().min(0).optional(),
+				/**
+				 * Labels ("V1") of the video tracks whose output (eye) was off with picture over part of the range
+				 * (`uncoveredPicture`'s `hidden`), at most MAX_VERIFY_HIDDEN; absent = none, or an older build.
+				 */
+				hidden: z.array(z.string().max(40)).min(1).max(MAX_VERIFY_HIDDEN).optional(),
+				/** Hidden tracks past the ones listed. */
+				hiddenMore: z.number().int().min(1).optional(),
 			}),
 		)
 		.max(MAX_VERIFY_UNCOVERED)
@@ -435,7 +446,8 @@ function joinedCutsOf(
 		for (const c of markSoundThrough(own.cuts, soundEdits)) cuts.push({ ...c, at: at + c.frame - p.start });
 		if (seq && withUncovered)
 			for (const r of uncoveredPicture(doc, seq, p)) {
-				if (uncovered.length < MAX_VERIFY_UNCOVERED) uncovered.push({ ...r, at: at + r.start - p.start });
+				if (uncovered.length < MAX_VERIFY_UNCOVERED)
+					uncovered.push({ ...recordedUncovered(seq, r), at: at + r.start - p.start });
 				else more++;
 			}
 		at += p.end - p.start;
@@ -449,7 +461,21 @@ function joinedCutsOf(
 	};
 }
 
-/** The verification context of a finished export (see the file comment). */
+/** An uncovered range as verify.json records it: hidden tracks by label (the document may change later), capped. */
+function recordedUncovered(
+	seq: Seq,
+	r: UncoveredRange,
+): NonNullable<ExportVerifyContext['uncovered']>[number] {
+	const { hidden, ...rest } = r;
+	if (!hidden?.length) return rest;
+	const labels = hidden.map((id) => (trackLabel(seq, id) ?? id).slice(0, 40));
+	return {
+		...rest,
+		hidden: labels.slice(0, MAX_VERIFY_HIDDEN),
+		...(labels.length > MAX_VERIFY_HIDDEN ? { hiddenMore: labels.length - MAX_VERIFY_HIDDEN } : {}),
+	};
+}
+
 /** The range's frames with no picture (structure/uncovered.ts), capped. */
 export function uncoveredOf(
 	doc: ProjectDocument,
@@ -458,11 +484,12 @@ export function uncoveredOf(
 ): Pick<ExportVerifyContext, 'uncovered' | 'uncoveredMore'> {
 	const all = uncoveredPicture(doc, seq, range);
 	return {
-		uncovered: all.slice(0, MAX_VERIFY_UNCOVERED),
+		uncovered: all.slice(0, MAX_VERIFY_UNCOVERED).map((r) => recordedUncovered(seq, r)),
 		...(all.length > MAX_VERIFY_UNCOVERED ? { uncoveredMore: all.length - MAX_VERIFY_UNCOVERED } : {}),
 	};
 }
 
+/** The verification context of a finished export (see the file comment). */
 export function buildVerifyContext(s: VerifyContextSource): ExportVerifyContext {
 	const seq = s.document.sequences?.[s.sequenceId];
 	const o = s.output;

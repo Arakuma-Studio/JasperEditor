@@ -306,7 +306,8 @@ const FOOTAGE_GREY = [96, 96, 96];
 
 /** The clips of `seq` on screen at `frame`, bottom track first. */
 function visibleAt(seq: Sequence, frame: number, hidden: readonly string[] = []): Clip[] {
-	const order = new Map(seq.videoTracks.map((t, i) => [t.id, i]));
+	// a track whose output (eye) is off draws nothing, as in the engine
+	const order = new Map(seq.videoTracks.flatMap((t, i) => (t.output === false ? [] : [[t.id, i] as const])));
 	return (Object.values(seq.clips) as Clip[])
 		.filter(
 			(c) =>
@@ -1342,7 +1343,20 @@ export function createFakeEngine(
 		},
 		verifyExport: (exportId: string, req: { checks?: 'fast' | 'full'; target?: string } = {}) =>
 			jobView(newJob('export-verify', 'Verify', 1, verifyResult(exportId, req.checks ?? 'full', req.target))),
-		requestStill: () => jobView(newJob('still', 'Still', 1, { url: '/stills/1.png' })),
+		/** The frame as `rasterFrame` draws it (black where no shown track has a picture). */
+		requestStill: (req: {
+			envelope: { document: unknown };
+			sequenceId: string;
+			frame: number;
+			width?: number;
+		}) => {
+			const job = newJob('still', 'Still', 1, null);
+			const url = `/stills/${job.id}.png`;
+			const doc = req.envelope.document as unknown as ProjectDocument;
+			files.set(url, rasterFrame(doc, req.sequenceId, req.frame, req.width ?? 640).png);
+			job.result = { url };
+			return jobView(job);
+		},
 		/** The grey footage everywhere: every channel at 96/255, nothing clipped. */
 		gradingScopes: (raw: unknown) => {
 			const req = body(GradingScopesRequestSchema, raw);

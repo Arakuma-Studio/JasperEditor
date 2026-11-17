@@ -8,6 +8,7 @@ import {
 	clipMediaRange,
 	flicksToSeconds,
 	fpsOf,
+	hiddenTracksPhrase,
 	isRemapped,
 	linkedPartners,
 	type MediaAsset,
@@ -23,6 +24,7 @@ import {
 	trackLabel,
 	transitionSpan,
 	transitionSpec,
+	uncoveredPicture,
 } from '@jasper/project';
 import { ToolError } from './errors.ts';
 
@@ -203,6 +205,7 @@ function sequenceSummary(doc: ProjectDocument, seq: Sequence) {
 			label: trackLabel(seq, t.id),
 			kind: t.kind,
 			...(t.locked ? { locked: true } : {}),
+			...(t.kind === 'video' && t.output === false ? { output: false } : {}),
 			...(t.mute ? { mute: true } : {}),
 			clips: Object.values(seq.clips).filter((c) => c.trackId === t.id).length,
 		})),
@@ -315,7 +318,13 @@ export function timelineTable(
 			.filter((c) => c.trackId === t.id && c.start < to && c.start + c.duration > from)
 			.sort((a, b) => a.start - b.start);
 		const label = trackLabel(seq, t.id) ?? t.id;
-		const flags = [t.locked ? 'locked' : '', t.mute ? 'muted' : ''].filter(Boolean).join(',');
+		const flags = [
+			t.locked ? 'locked' : '',
+			t.kind === 'video' && t.output === false ? 'output off' : '',
+			t.mute ? 'muted' : '',
+		]
+			.filter(Boolean)
+			.join(',');
 		if (!clips.length) {
 			lines.push(`${label}${flags ? ` (${flags})` : ''} | (empty)`);
 			continue;
@@ -351,4 +360,31 @@ export function timelineTable(
 			`In/Out: ${seq.inPoint === null ? '—' : sequenceTimecode(seq, seq.inPoint)} / ${seq.outPoint === null ? '—' : sequenceTimecode(seq, seq.outPoint)}`,
 		);
 	return lines.join('\n');
+}
+
+/**
+ * `render_frame` / `render_frames`: why frames have no picture when hidden video tracks (output off) hold picture
+ * there, else null. Reported: a Shift+click on a track eye hid all 8 tracks and every render came back black, unexplained.
+ */
+export function hiddenPictureWarning(
+	doc: ProjectDocument,
+	seq: Sequence,
+	frames: readonly number[],
+): string | null {
+	if (!seq.videoTracks.some((t) => t.output === false)) return null;
+	const at: number[] = [];
+	const ids = new Set<string>();
+	for (const f of new Set(frames)) {
+		const hidden = uncoveredPicture(doc, seq, { start: f, end: f + 1 })[0]?.hidden;
+		if (!hidden) continue;
+		at.push(f);
+		for (const id of hidden) ids.add(id);
+	}
+	if (!at.length) return null;
+	const labels = seq.videoTracks.filter((t) => ids.has(t.id)).map((t) => trackLabel(seq, t.id) ?? t.id);
+	const where =
+		at.length === 1
+			? `Frame ${at[0]} has`
+			: `Frames ${at.slice(0, 8).join(', ')}${at.length > 8 ? '…' : ''} have`;
+	return `${where} no picture because ${hiddenTracksPhrase(labels)}: ${labels.length === 1 ? 'its' : 'their'} clips are there but not drawn. Each shows again with track.update {trackId: "${labels[0]}", patch: {output: true}} (the track eye); ask the user whether they hid them.`;
 }

@@ -30,7 +30,7 @@ import {
 	EXPORT_PRESETS,
 	findExportPreset,
 } from '../export-presets.ts';
-import { pickSequence, timelineTable } from '../format.ts';
+import { hiddenPictureWarning, pickSequence, timelineTable } from '../format.ts';
 import {
 	failedJobError,
 	renderErrorHint,
@@ -142,6 +142,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 				(job) => failedJobError(ctx, job, 'Check get_timeline; engine_status shows the render setup.'),
 			).catch((e) => renderToolError(ctx, e));
 			const seq = loaded.doc.sequences[r.sequenceId];
+			const hidden = seq ? hiddenPictureWarning(loaded.doc, seq, [r.frame]) : null;
 			return {
 				content: [
 					{
@@ -152,6 +153,7 @@ export function registerRenderTools(ctx: ToolContext): void {
 							...(seq ? { timecode: sequenceTimecode(seq, r.frame) } : {}),
 							width: r.width,
 							...(r.renderPath ? { renderedBy: r.renderPath } : {}),
+							...(hidden ? { warnings: [hidden] } : {}),
 						}),
 					},
 					{

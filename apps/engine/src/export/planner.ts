@@ -19,6 +19,8 @@ import {
 	effectMediaRefs,
 	hasAudioProcessor,
 	hasEffectMasks,
+	hiddenCover,
+	hiddenTracksPhrase,
 	isAnimated,
 	loadProject,
 	type MediaAsset,
@@ -41,6 +43,8 @@ import {
 	sequenceFormatOf,
 	snapshotGlNeeds,
 	THREE_D_ASSET_MISSING,
+	trackLabel,
+	trackLabelList,
 	trackMatteTracksOf,
 	transitionSpec,
 	uncoveredPicture,
@@ -383,6 +387,47 @@ function linearBlendSequences(snap: RenderSnapshot, name = ''): string[] {
 	return out;
 }
 
+/** Share of the range hidden tracks must cover over otherwise-black frames for `VIDEO_TRACKS_HIDDEN`. */
+const HIDDEN_COVER_SHARE = 0.25;
+
+/**
+ * `VIDEO_TRACKS_HIDDEN` (never a blocker: hiding a track is legitimate): every video track with clips in the range has
+ * its output (eye) off, or hidden tracks' picture would cover at least a quarter of the range that
+ * otherwise exports black. Reported: a Shift+click on an eye hid all 8 tracks and every export was black.
+ */
+function hiddenTracksWarning(
+	document: ProjectDocument,
+	seq: ProjectDocument['sequences'][string],
+	range: { start: number; end: number },
+): RenderPlan['warnings'][number] | null {
+	const hidden = seq.videoTracks.filter((t) => t.output === false);
+	if (!hidden.length) return null;
+	const label = (id: string) => trackLabel(seq, id) ?? id;
+	const frames = range.end - range.start;
+	const used = seq.videoTracks.filter((t) =>
+		Object.values(seq.clips).some(
+			(c) =>
+				c.trackId === t.id &&
+				c.enabled !== false &&
+				c.start < range.end &&
+				c.start + c.duration > range.start,
+		),
+	);
+	if (used.length && used.every((t) => t.output === false))
+		return {
+			code: 'VIDEO_TRACKS_HIDDEN',
+			message: `Every video track with clips in the range has its output (the track eye) off (${trackLabelList(used.map((t) => label(t.id)))}): the export shows none of their picture (black). Turn the track eye back on if this is not meant`,
+		};
+	const cover = hiddenCover(document, seq, uncoveredPicture(document, seq, range));
+	if (!(frames > 0) || cover.frames < frames * HIDDEN_COVER_SHARE) return null;
+	return {
+		code: 'VIDEO_TRACKS_HIDDEN',
+		message: `${upperFirst(hiddenTracksPhrase(cover.tracks.map(label)))}: ${cover.tracks.length === 1 ? 'its' : 'their'} clips would cover ${cover.frames} frames (${Math.round((cover.frames / frames) * 100)}% of the range) that export black. Turn the track eye back on if this is not meant`,
+	};
+}
+
+const upperFirst = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
 export async function planExport(input: PlanInput, deps: PlanDeps): Promise<PlannedExport> {
 	let document: ProjectDocument;
 	try {
@@ -553,6 +598,10 @@ export async function planExport(input: PlanInput, deps: PlanDeps): Promise<Plan
 				message: `${n} frame${n === 1 ? ' has' : 's have'} no picture on any video track while audio plays (frames ${list.join(', ')}${holes.length > 5 ? ` and ${holes.length - 5} more ranges` : ''}): they export black. Extend a neighbouring video clip over them, or ask the user`,
 			});
 		}
+	}
+	if (!input.still) {
+		const w = hiddenTracksWarning(document, seq, range);
+		if (w) warnings.push(w);
 	}
 	// spec 12 §2.11: sounds heard that need a credit without a credits sidecar; a stale / failed Sound Check (info).
 	warnings.push(

@@ -54,6 +54,19 @@ tolerances and pinning documented thresholds to code by a test — [`licenses/po
     audio-only files and transparent (alpha) masters. Reported: two 7-frame V1 holes under kept audio exported as the
     subtitle over black and passed `cut-black` (a gap is "intended black" there). The planner also warns
     `UNCOVERED_VIDEO` (frames and ranges) when audio plays over frames with no picture.
+    Hidden tracks: a range where video tracks whose output (eye) is off hold picture records their labels
+    (`hidden: ["V1", …]`, ≤ 32, then `hiddenMore`; labels, since the document may change later), and the row names them
+    ("2 video tracks have output off (V1, V2) (their clips would cover these frames). Turn the track eye back on, or ask
+    the user whether it is meant."). Exports of older builds record no labels and keep the plain message. The planner
+    warns `VIDEO_TRACKS_HIDDEN` (never a blocker: hiding a track is legitimate) when every video track with clips in the
+    range has its output off, or when hidden tracks' picture would cover at least 25 % of the range over frames that
+    otherwise export black (an assumed threshold: a multicam's hidden angles under a shown one never reach it); it lists
+    the tracks. `render_frame` / `render_frames` add `warnings` naming the hidden tracks when a requested frame has no
+    picture on a shown track while hidden tracks hold picture there; `get_timeline` (and `jasper inspect`) flag such
+    tracks `(output off)` and `get_project` gives `output: false`. Reported: a Shift+click on a track eye (TL-257) hid
+    all 8 video tracks; every render and export was black and `uncovered-video` gave no reason. Limits: only picture
+    clips count (a hidden track holding only titles is not named), and a nest whose inner tracks are all hidden is not
+    looked into.
   - `offline-media` (format, fail; in `fast` and `full`): frames the render drew from a clip whose media was offline —
     the "Media Offline" card in the picture, silence in the sound — recorded at export in `verify.json` `offline`
     (`{start, end, clipId, name, mediaId, sound, at?}`, ≤ 200, then `offlineMore`; computed from the snapshot the

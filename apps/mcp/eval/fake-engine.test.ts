@@ -254,3 +254,37 @@ describe('the eval fake engine: looks, effects, 3D and stills (AGENTS.md §10 ca
 		expect(s.calls().filter((c) => c.unmodelled)).toEqual([]);
 	});
 });
+
+describe('the eval fake engine: hidden video tracks', () => {
+	let s: Awaited<ReturnType<typeof session>>;
+	beforeAll(async () => {
+		// reported: a Shift+click on a track eye hid every video track; renders came back black with nothing saying why
+		s = await session('hidden', {
+			project: 'interview',
+			seed: [{ type: 'track.update', trackId: 'V1', patch: { output: false } }],
+		});
+	});
+	afterAll(() => s.close());
+
+	it('get_timeline flags the track, render_frame and render_frames name it', async () => {
+		const table = (await s.client.callTool({
+			name: 'get_timeline',
+			arguments: { projectId: s.project },
+		})) as CallToolResult;
+		expect((table.content[0] as { text: string }).text).toMatch(/^V1 \(output off\) \| clp_/m);
+		const project = await s.ok('get_project', { projectId: s.project });
+		expect(project.json.sequences[0].tracks[0]).toMatchObject({ label: 'V1', output: false });
+		const frame = await s.ok('render_frame', { projectId: s.project, at: 30 });
+		expect(frame.json.warnings).toEqual([
+			expect.stringMatching(/^Frame 30 has no picture because video track V1 has output off/),
+		]);
+		const sheet = await s.ok('render_frames', { projectId: s.project, times: [10, 20] });
+		expect(sheet.json.warnings).toEqual([
+			expect.stringMatching(/^Frames 10, 20 have no picture .*output: true/),
+		]);
+	});
+
+	it('logged every call without an unmodelled engine call', () => {
+		expect(s.calls().filter((c) => c.unmodelled)).toEqual([]);
+	});
+});

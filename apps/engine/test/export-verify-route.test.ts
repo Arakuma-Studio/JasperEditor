@@ -202,6 +202,67 @@ describe('POST /api/exports/:jobId/verify', () => {
 		expect(ctx.uncovered).toEqual([{ start: 20, end: 27, audible: true }]);
 	});
 
+	it('hidden video tracks: the plan warns VIDEO_TRACKS_HIDDEN (never refuses) and verify.json names them', async () => {
+		// reported: a Shift+click on a track eye hid every video track; every export was black, nothing said why
+		const a = await register(app, shot('hidden.mp4', '0x707070', 440));
+		const d = new DocBuilder();
+		const m = d.addMedia(a);
+		const place = (at: number, track: string, frames: number) => ({
+			type: 'clip.place',
+			source: { mediaId: m },
+			at,
+			video: true,
+			audio: track === 'V1',
+			tracks: { video: track },
+			sourceRange: { in: { sourceFrames: 0 }, out: { sourceFrames: frames } },
+		});
+		d.tx([place(0, 'V1', 45), place(0, 'V2', 9)]);
+		const [v1, v2] = d.doc.sequences[d.seqId]!.videoTracks.map((t) => t.id);
+		const hide = (trackId: string, off: boolean) =>
+			d.tx([{ type: 'track.update', trackId, patch: { output: !off } }]);
+		const hiddenWarning = async () => {
+			const plan = await app.inject({
+				method: 'POST',
+				url: '/api/exports/plan',
+				headers: JSON_H,
+				payload: { envelope: d.envelope(), sequenceId: d.seqId, settings: settings(d.seqId) },
+			});
+			expect(plan.statusCode, plan.body).toBe(200);
+			const w = (plan.json() as { warnings: { code: string; message: string }[] }).warnings;
+			return w.find((x) => x.code === 'VIDEO_TRACKS_HIDDEN')?.message;
+		};
+		hide(v1!, true);
+		hide(v2!, true);
+		expect(await hiddenWarning()).toMatch(
+			/^Every video track with clips in the range has its output \(the track eye\) off \(V1, V2\)/,
+		);
+		// V2 shows frames 0–9; hidden V1 would cover the 36 black frames after them (80 % of the range)
+		hide(v2!, false);
+		expect(await hiddenWarning()).toMatch(
+			/^Video track V1 has output off: its clips would cover 36 frames \(80%/,
+		);
+		const ctx = buildVerifyContext({
+			document: d.doc,
+			sequenceId: d.seqId,
+			range: { start: 0, end: 45 },
+			output: {
+				width: 1920,
+				height: 1080,
+				fps: { num: 30, den: 1 },
+				audioChannels: 2,
+				audioSampleRate: 48000,
+				normalize: null,
+				encoder: { container: 'mp4', codec: 'h264' },
+			},
+			pixFmt: 'yuv420p',
+			audioEncoder: 'aac',
+		});
+		expect(ctx.uncovered).toEqual([{ start: 9, end: 45, audible: true, hidden: ['V1'] }]);
+		// V1 shown again covers everything: nothing to say
+		hide(v1!, false);
+		expect(await hiddenWarning()).toBeUndefined();
+	});
+
 	it('refuses unknown jobs, other kinds and bad bodies', { timeout: 60_000 }, async () => {
 		const unknown = await app.inject({
 			method: 'POST',

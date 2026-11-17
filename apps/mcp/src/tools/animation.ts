@@ -34,7 +34,7 @@ import {
 } from '../context.ts';
 import { toolEnvelope } from '../envelope.ts';
 import { jsonResult, ToolError } from '../errors.ts';
-import { clipSummary, pickSequence } from '../format.ts';
+import { clipSummary, hiddenPictureWarning, pickSequence } from '../format.ts';
 import {
 	awaitSheet,
 	composeSheet,
@@ -569,6 +569,7 @@ export function registerAnimationTools(ctx: ToolContext): void {
 				cells: { document: number; sequenceId: string; frame: number }[];
 				shown: SheetMeta['shown'];
 				columns: number;
+				warnings?: string[];
 			};
 			if (a.proposalId) {
 				const { proposalId, itemIds, times, count, sequenceId } = a;
@@ -597,12 +598,14 @@ export function registerAnimationTools(ctx: ToolContext): void {
 					if (to <= from) throw new ToolError('E_INVALID_PARAM', '`to` must be after `from`');
 					frames = spreadFrames(from, to, a.count ?? 6);
 				}
+				const hidden = hiddenPictureWarning(doc, seq, frames);
 				plan = {
 					seq,
 					documents: [toolEnvelope(doc, loaded.revision)],
 					cells: frames.map((frame) => ({ document: 0, sequenceId: seq.id, frame })),
 					shown: frames.map((frame, cell) => ({ cell, timecode: sequenceTimecode(seq, frame) })),
 					columns: a.columns ?? 4,
+					...(hidden ? { warnings: [hidden] } : {}),
 				};
 			}
 			const { seq } = plan;
@@ -613,6 +616,7 @@ export function registerAnimationTools(ctx: ToolContext): void {
 				columns,
 				shown: plan.shown,
 				...(a.overlay ? { overlay: a.overlay } : {}),
+				...(plan.warnings ? { warnings: plan.warnings } : {}),
 			};
 			const jobId = await submitSheet(
 				ctx,

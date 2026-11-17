@@ -140,6 +140,8 @@ describe('verify_export on fixture exports with known defects', () => {
 		const uncovered = [
 			{ start: 20, end: 27, audible: true },
 			{ start: 70, end: 75, audible: false },
+			// reported: a Shift+click on a track eye hid every track; the row gave no reason
+			{ start: 80, end: 90, audible: true, hidden: ['V1', 'V2'] },
 		];
 		const r = await verifyExportFile({
 			ff,
@@ -151,9 +153,13 @@ describe('verify_export on fixture exports with known defects', () => {
 		expect(rowsOf(r.rows, 'uncovered-video')).toMatchObject([
 			{ status: 'fail', kind: 'judgement', measured: 7, at: { frame: 20, timecode: '00:00:00:20' } },
 			{ status: 'warn', measured: 5, at: { frame: 70 } },
+			{ status: 'fail', measured: 10 },
 		]);
 		expect(rowsOf(r.rows, 'uncovered-video')[0]!.message).toMatch(
 			/Frames 20–27 \(7 frames.*while audio plays/,
+		);
+		expect(rowsOf(r.rows, 'uncovered-video')[2]!.message).toMatch(
+			/2 video tracks have output off \(V1, V2\) \(their clips would cover these frames\)\. Turn the track eye back on/,
 		);
 		expect(r.verified).toBe(false);
 	});
