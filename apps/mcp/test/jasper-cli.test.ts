@@ -127,7 +127,7 @@ function stillEngine(dir: string) {
 		invalidate: () => {},
 		close: async () => {},
 	};
-	const run = async (...args: string[]) => {
+	const runWith = async (stdin: string, ...args: string[]) => {
 		const out: string[] = [];
 		const err: string[] = [];
 		const code = await runCli(args, {
@@ -136,10 +136,12 @@ function stillEngine(dir: string) {
 			link,
 			env: {},
 			cwd: dir,
+			stdin: () => stdin,
 		});
 		return { code, out: out.join(''), err: err.join('') };
 	};
-	return { run, stills };
+	const run = (...args: string[]) => runWith('', ...args);
+	return { run, runWith, stills };
 }
 
 describe('frame renders and results from the CLI', () => {
@@ -155,6 +157,27 @@ describe('frame renders and results from the CLI', () => {
 			expect(body.images).toHaveLength(1);
 			expect(existsSync(body.images[0]!)).toBe(true);
 			rmSync(body.images[0]!, { force: true });
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	// Video team report (2026-11-17): `jasper call apply_commands '<json>'` failed with "Argument list too long".
+	it('call reads its JSON arguments from @file or stdin', async () => {
+		const dir = mkdtempSync(join(tmpdir(), 'jasper-cli-args-'));
+		try {
+			const { run, runWith, stills } = stillEngine(dir);
+			writeFileSync(join(dir, 'args.json'), JSON.stringify({ at: 12 }));
+			const file = await run('call', 'render_frame', '@args.json', '--out', 'a.png', '--json');
+			expect(file.code, file.err).toBe(0);
+			expect(JSON.parse(file.out)).toMatchObject({ frame: 12 });
+			const piped = await runWith('{"at": 7}', 'call', 'render_frame', '-', '--out', 'b.png', '--json');
+			expect(piped.code, piped.err).toBe(0);
+			expect(JSON.parse(piped.out)).toMatchObject({ frame: 7 });
+			expect(stills.map((x) => x.frame)).toEqual([12, 7]);
+			const missing = await run('call', 'render_frame', '@nope.json');
+			expect(missing.code).toBe(2);
+			expect(missing.out).toContain('nope.json');
 		} finally {
 			rmSync(dir, { recursive: true, force: true });
 		}

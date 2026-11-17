@@ -82,6 +82,9 @@ const STEP_CHANGES: Record<string, (from: Rec) => Record<string, unknown>> = {
 	// v17 → v18 (Pitch Shifter engines: `engine`, `quality`, `preserveFormants` on `jasper.audio.pitch-shifter`): version
 	// bump only; v17 builds open the files read-only.
 	'17→18': () => ({}),
+	// v18 → v19 (mono clip pan law): every sequence stores `monoClipPanLaw: '0dB'`, so mono clips on stereo tracks keep
+	// playing at unity on both sides (v19's default is the −3 dB constant-power law).
+	'18→19': () => ({ 'sequences.seq_000000000000SEQ1.settings.monoClipPanLaw': '0dB' }),
 };
 
 describe('schema history fixtures (S01:MIG-002)', () => {
@@ -150,7 +153,7 @@ describe('schema history fixtures (S01:MIG-002)', () => {
 	it('the v13 fixture with an HTML composition page (the other v13 line) migrates without repairs', () => {
 		const r = loadProject(fixture('13-html'), { effects: defaultEffectRegistry });
 		expect(r.readOnly).toBe(false);
-		expect(r.migration.steps).toEqual(['v13→v14', 'v14→v15', 'v15→v16', 'v16→v17', 'v17→v18']);
+		expect(r.migration.steps).toEqual(['v13→v14', 'v14→v15', 'v15→v16', 'v16→v17', 'v17→v18', 'v18→v19']);
 		expect(r.repairs).toEqual([]);
 		expect(r.issues).toEqual([]);
 		expect(features(r.document as unknown as Rec)).toMatchObject({

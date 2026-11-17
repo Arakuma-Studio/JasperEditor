@@ -130,6 +130,16 @@ export class ActivityEnvelope {
 
 type AnalysisInput = { request: AudioAnalyzeRequest; result?: AudioAnalyzeResult };
 
+/** A range or tracks scope that names a range (frames or In/Out); without one it measures the whole sequence. */
+function hasRange(
+	s: AudioAnalyzeRequest['scope'],
+): s is Extract<AudioAnalyzeRequest['scope'], { inOut?: boolean }> {
+	return (
+		(s.type === 'range' || s.type === 'tracks') &&
+		(!!s.inOut || s.startFrame !== undefined || s.endFrame !== undefined)
+	);
+}
+
 export class AudioService {
 	/** Finished analyses by `analysisKey`, most recently used last. */
 	private readonly kept = new Map<string, AudioAnalyzeResult>();
@@ -233,16 +243,15 @@ export class AudioService {
 		if (!seq) throw new PlanError('NOT_FOUND', 404, `Sequence ${req.sequenceId} not found`);
 		let range: ExportSettings['range'] = { type: 'entire' };
 		const s = req.scope;
-		if (s.type === 'range') {
+		if (hasRange(s)) {
 			if (s.inOut) range = { type: 'in-out' };
-			else if (s.startFrame !== undefined || s.endFrame !== undefined) {
+			else {
 				let end = 0;
 				for (const c of Object.values(seq.clips) as { start: number; duration: number }[])
 					end = Math.max(end, c.start + c.duration);
 				range = { type: 'custom', startFrame: s.startFrame ?? 0, endFrame: s.endFrame ?? end };
 			}
-		}
-		if (req.activity?.startFrame !== undefined && req.activity.endFrame !== undefined && s.type !== 'range')
+		} else if (req.activity?.startFrame !== undefined && req.activity.endFrame !== undefined)
 			range = { type: 'custom', startFrame: req.activity.startFrame, endFrame: req.activity.endFrame };
 		// the sound alone (an audio-only deliverable): an offline picture never refuses the analysis; offline sound does
 		return this.core.exports.plan({
@@ -346,11 +355,7 @@ export class AudioService {
 				...(env ? { onBlock: (p: Float32Array[], n: number) => env.push(p, n) } : {}),
 			});
 		} else {
-			if (
-				req.activity?.startFrame !== undefined &&
-				req.activity.endFrame !== undefined &&
-				scope.type !== 'range'
-			)
+			if (req.activity?.startFrame !== undefined && req.activity.endFrame !== undefined && !hasRange(scope))
 				range = { start: req.activity.startFrame, end: req.activity.endFrame };
 			// the whole sequence: also the export's converged delivery for the target (the preview plays its gain)
 			const deliveryTarget =

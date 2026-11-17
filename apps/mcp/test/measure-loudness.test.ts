@@ -28,6 +28,7 @@ function fakeEngine(polls: number) {
 		preset: 'hd-1080p-30',
 	});
 	const waited: boolean[] = [];
+	const scopes: unknown[] = [];
 	const cancelled: string[] = [];
 	let left = polls;
 	const job = () => {
@@ -52,8 +53,9 @@ function fakeEngine(polls: number) {
 	};
 	const client = {
 		agentQuery: async () => ({ result: doc, revision: 1, via: 'headless' }),
-		analyzeAudio: async (_req: unknown, wait?: boolean) => {
+		analyzeAudio: async (req: { scope: unknown }, wait?: boolean) => {
 			waited.push(!!wait);
+			scopes.push(req.scope);
 			return { ...job(), state: 'queued', progress: 0 };
 		},
 		getJob: async () => {
@@ -71,7 +73,7 @@ function fakeEngine(polls: number) {
 		invalidate: () => {},
 		close: async () => {},
 	};
-	return { link, waited, cancelled };
+	return { link, waited, cancelled, scopes };
 }
 
 let open: Client[] = [];
@@ -142,5 +144,22 @@ describe('measure_loudness on a slow mix', () => {
 		expect(r).toMatchObject({ jobId: 'job_mix', timedOut: true });
 		expect(r.next).toBe('Call wait_for_job {jobId: "job_mix"}: its result is the measurement.');
 		expect(engine.cancelled).toEqual([]);
+	});
+});
+
+describe('measure_loudness scopes', () => {
+	// Video team report (2026-11-17): scope "tracks" with start/end measured the whole sequence.
+	it('measures start…end (or In/Out) of soloed tracks and of the mix whatever the scope says', async () => {
+		const { engine, measure } = await connect(0);
+		await measure({ scope: 'tracks', start: 30, end: 90 });
+		await measure({ scope: 'inOut' });
+		await measure({ scope: 'sequence', tracks: undefined, start: 30, end: 90 });
+		await measure({ scope: 'range', tracks: undefined, start: 30 });
+		expect(engine.scopes).toEqual([
+			{ type: 'tracks', trackIds: ['A1'], startFrame: 30, endFrame: 90 },
+			{ type: 'tracks', trackIds: ['A1'], inOut: true },
+			{ type: 'range', startFrame: 30, endFrame: 90 },
+			{ type: 'range', startFrame: 30 },
+		]);
 	});
 });

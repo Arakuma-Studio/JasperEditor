@@ -85,6 +85,17 @@ const LOUDNESS = {
 	durationSec: 40,
 };
 
+/** A clip measured alone (`analyzeAudio` clips scope): pre-fader, 8 dB under `LOUDNESS` (a +8 dB track fader). */
+const CLIP_LOUDNESS = {
+	integratedLufs: -27.4,
+	lra: 0,
+	truePeakDbtp: -11.1,
+	samplePeakDb: -11.4,
+	maxMomentaryLufs: -20.8,
+	maxShortTermLufs: null,
+	durationSec: 2,
+};
+
 type HistoryStep = { agent: string; label: string; before: ProjectDocument; after: ProjectDocument };
 
 export type EngineFault = {
@@ -1323,10 +1334,12 @@ export function createFakeEngine(
 				}),
 			);
 		},
-		analyzeAudio: (_req: unknown, wait?: boolean) => {
+		analyzeAudio: (req: { scope: { type: string; clipIds?: string[] } }, wait?: boolean) => {
 			const polls = setup.analysisPolls ?? 0;
 			if (wait && polls > 0)
 				throw new EngineRequestAborted('timeout', 'The engine did not answer within 180 s');
+			// clips: each at its track input, before the track fader (`CLIP_LOUDNESS`, the mix's peak 8 dB down)
+			const clips = req.scope.type === 'clips' ? (req.scope.clipIds ?? []) : null;
 			return jobView(
 				newJob(
 					'audio-analyze',
@@ -1335,7 +1348,8 @@ export function createFakeEngine(
 					AudioAnalyzeResultSchema.parse({
 						sampleRate: 48000,
 						range: { startFrame: 0, endFrame: 1200 },
-						loudness: LOUDNESS,
+						loudness: clips ? CLIP_LOUDNESS : LOUDNESS,
+						...(clips ? { clips: Object.fromEntries(clips.map((id) => [id, CLIP_LOUDNESS])) } : {}),
 						mixHash: 'mix_1',
 					}),
 				),

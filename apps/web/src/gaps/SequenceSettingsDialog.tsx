@@ -1,5 +1,7 @@
 import {
 	isAllowedSequenceRate,
+	type MonoClipPanLaw,
+	monoClipPanLawOf,
 	type Rational,
 	SEQUENCE_PAR_CHOICES,
 	type Sequence,
@@ -44,6 +46,7 @@ type Form = {
 	dropFrame: boolean;
 	sampleRate: 44100 | 48000 | 96000;
 	layout: 'mono' | 'stereo' | '5.1';
+	panLaw: MonoClipPanLaw;
 };
 
 function formOf(seq: Sequence): Form {
@@ -60,6 +63,7 @@ function formOf(seq: Sequence): Form {
 		dropFrame: seq.settings.dropFrame,
 		sampleRate: seq.settings.audioSampleRate as Form['sampleRate'],
 		layout: seq.settings.masterLayout as Form['layout'],
+		panLaw: monoClipPanLawOf(seq.settings),
 	};
 }
 
@@ -101,6 +105,7 @@ function settingsPatch(seq: Sequence, f: Form): { patch: Record<string, unknown>
 		patch.dropFrame = f.dropFrame && supportsDropFrame(rate);
 	if (f.sampleRate !== cur.sampleRate) patch.audioSampleRate = f.sampleRate;
 	if (f.layout !== cur.layout) patch.masterLayout = f.layout;
+	if (f.panLaw !== cur.panLaw) patch.monoClipPanLaw = f.panLaw;
 	return { patch };
 }
 
@@ -329,6 +334,18 @@ function SequenceSettingsDialog(props: HostedDialogProps<Props>) {
 								{ value: 'mono', label: 'Mono' },
 								{ value: 'stereo', label: 'Stereo' },
 								{ value: '5.1', label: '5.1' },
+							]}
+						/>
+					</Row>
+					<Row label="Mono Clip Pan Law">
+						<Select
+							label="Pan law of mono clips on stereo tracks"
+							className="w-56"
+							value={form.panLaw}
+							onValueChange={(v) => set({ panLaw: v as MonoClipPanLaw })}
+							options={[
+								{ value: '-3dB', label: '−3 dB (constant power)' },
+								{ value: '0dB', label: '0 dB (unity, balance)' },
 							]}
 						/>
 					</Row>

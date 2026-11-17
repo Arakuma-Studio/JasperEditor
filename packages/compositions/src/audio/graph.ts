@@ -726,7 +726,10 @@ function clipKeyBreaks(
 	return out;
 }
 
-/** The clip pan stage (clip width → track width) at sequence time `t` (flicks): balance into a stereo track. */
+/**
+ * The clip pan stage (clip width → track width) at sequence time `t` (flicks): balance into a stereo track, or the
+ * −3 dB constant-power law for a mono clip with `monoPanLaw` (as the export's mixer, `OfflineMixer.applyClip`).
+ */
 function clipPanMatrix(
 	clip: RenderAudioClip,
 	w: number,
@@ -743,7 +746,9 @@ function clipPanMatrix(
 		const frame = Math.min(clip.start + clip.duration - 1e-6, Math.max(clip.start, t / F));
 		p = laneAt(clip.pan, contentTimeAt(clip, frame, fps));
 	}
-	return p !== 0 ? scaleRows(m, balanceGains(Math.max(-1, Math.min(1, p / 100)))) : m;
+	const x = Math.max(-1, Math.min(1, p / 100));
+	if (w === 1 && clip.monoPanLaw === '-3dB') return scaleRows(m, panMonoGains(x));
+	return p !== 0 ? scaleRows(m, balanceGains(x)) : m;
 }
 
 class ClipNodes {

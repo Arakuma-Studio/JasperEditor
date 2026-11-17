@@ -1052,6 +1052,12 @@ export const SequenceSettingsSchema = z.looseObject({
 	 * leniently: INV-APPEARANCE checks it, repair drops what is unreadable. Absent = the default light.
 	 */
 	globalLight: z.custom<GlobalLight>(() => true).optional(),
+	/**
+	 * audio-mix (schema v19): pan law of a mono clip on a stereo track, `-3dB` | `0dB` (`MONO_CLIP_PAN_LAWS`). Absent =
+	 * `-3dB`; projects from before v19 store `0dB` (how they played). A string so an unknown value loads: INV-MIX reports
+	 * it and repair drops it. Read with `monoClipPanLawOf`.
+	 */
+	monoClipPanLaw: z.string().optional(),
 });
 export type SequenceSettings = DeepStrip<z.infer<typeof SequenceSettingsSchema>>;
 

@@ -64,6 +64,10 @@ function resultOf<T>(job: EngineJob): T {
 /** How long a tool waits for a measurement before it answers with the running job. */
 const ANALYZE_WAIT_SEC = 300;
 
+/** What a clips-scope measurement (levels "mix") includes: the engine measures each clip at its track input. */
+const CLIP_LEVELS =
+	'pre-fader: each clip as its track receives it; the track fader, pan, effects and the Mix are not applied';
+
 type AnalyzeRequest = Pick<AudioAnalyzeRequest, 'sequenceId' | 'scope' | 'levels' | 'activity' | 'delivery'>;
 
 /**
@@ -218,18 +222,21 @@ export function registerAudioTools(ctx: ToolContext): void {
 						'get_timeline lists clip ids.',
 					);
 				s = { type: 'clips', clipIds };
-			} else if (kind === 'tracks') {
-				if (!tracks?.length)
+			} else {
+				if (kind === 'tracks' && !tracks?.length)
 					throw new ToolError('E_INVALID_PARAM', 'scope "tracks" needs tracks', 'Pass e.g. ["A1"].');
-				s = { type: 'tracks', trackIds: tracks };
-			} else if (kind === 'inOut') s = { type: 'range', inOut: true };
-			else if (kind === 'range')
-				s = {
-					type: 'range',
-					...(start !== undefined ? { startFrame: frameOf(seq, start) } : {}),
-					...(end !== undefined ? { endFrame: frameOf(seq, end) } : {}),
-				};
-			else s = { type: 'sequence' };
+				// every other scope measures start…end (or In/Out) when given, of the soloed tracks when given
+				const range =
+					kind === 'inOut'
+						? { inOut: true }
+						: {
+								...(start !== undefined ? { startFrame: frameOf(seq, start) } : {}),
+								...(end !== undefined ? { endFrame: frameOf(seq, end) } : {}),
+							};
+				if (tracks?.length) s = { type: 'tracks', trackIds: tracks, ...range };
+				else if (Object.keys(range).length) s = { type: 'range', ...range };
+				else s = { type: 'sequence' };
+			}
 			const { job, timedOut } = await runAnalysis(
 				ctx,
 				projectId,
@@ -250,7 +257,11 @@ export function registerAudioTools(ctx: ToolContext): void {
 					running: runningAt(job),
 					next: `Call wait_for_job {jobId: "${job.id}"}: its result is the measurement.`,
 				});
-			return jsonResult({ ...resultOf<AudioAnalyzeResult>(job), stale: false });
+			return jsonResult({
+				...resultOf<AudioAnalyzeResult>(job),
+				...(s.type === 'clips' && levels !== 'source' ? { clipLevels: CLIP_LEVELS } : {}),
+				stale: false,
+			});
 		},
 	);
 

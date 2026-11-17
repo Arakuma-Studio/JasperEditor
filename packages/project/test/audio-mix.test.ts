@@ -172,6 +172,36 @@ describe('offline mixer', () => {
 		expect(close(r![10]!, 0.5 * 2 * K * K)).toBe(true);
 	});
 
+	// Video team report (2026-11-17): mono sources played on both channels at full level, +3 dB over an equal-power
+	// mapping. Premiere applies its −3 dB pan law to a mono clip on a stereo track (docs/wp-notes/audio-mix.md §1.4).
+	it("a mono clip on a stereo track pans with the sequence's law: −3 dB constant power, or unity and balance", async () => {
+		const h = new Harness();
+		const m = h.registerVideo({ kind: 'audio', seconds: 20 });
+		h.ok([
+			{
+				type: 'clip.place',
+				source: { mediaId: m },
+				at: 0,
+				tracks: { audio: 'A1' },
+				audioMapping: 'mono-per-channel',
+			},
+		]);
+		h.ok([{ type: 'mixer.updateStrip', stripId: 'A2', patch: { mute: true } }]);
+		const clip = Object.values(h.seq.clips).find((c) => c.trackId === h.seq.audioTracks[0]!.id)!;
+		const levels = { [m]: [0.5, 0.25] };
+		let [l, r] = await render(h, levels);
+		expect([l![10]!, r![10]!].map((x) => close(x, 0.5 * K))).toEqual([true, true]);
+		h.ok([{ type: 'param.set', target: ['clip', clip.id, 'pan'], value: -100 }]);
+		[l, r] = await render(h, levels);
+		expect([l![10]!, r![10]!].map((x, i) => close(x, i === 0 ? 0.5 : 0))).toEqual([true, true]);
+		h.ok([
+			{ type: 'param.set', target: ['clip', clip.id, 'pan'], value: 0 },
+			{ type: 'sequence.updateSettings', settings: { monoClipPanLaw: '0dB' } },
+		]);
+		[l, r] = await render(h, levels);
+		expect([l![10]!, r![10]!].map((x) => close(x, 0.5))).toEqual([true, true]);
+	});
+
 	it('track fader, Mix fader and mute', async () => {
 		const { h, a, b } = audioHarness();
 		h.ok([
@@ -691,6 +721,25 @@ describe('mixer commands', () => {
 		expect(a.integratedLufs).toBe(-18.18);
 		expect(report.some((e) => e.action === 'drop-loudness-delivery')).toBe(true);
 		expect(checkInvariants(document).filter((i) => i.invariant === 'INV-MIX')).toEqual([]);
+	});
+
+	it('the mono clip pan law: set as one undoable edit, an unknown one refused, and an unreadable stored one repaired', () => {
+		const h = new Harness();
+		const before = h.doc;
+		const hash = mixFingerprint(h.doc, h.seqId);
+		h.ok([{ type: 'sequence.updateSettings', settings: { monoClipPanLaw: '0dB' } }]);
+		expect(h.seq.settings.monoClipPanLaw).toBe('0dB');
+		expect(before.sequences[h.seqId]!.settings.monoClipPanLaw).toBeUndefined();
+		expect(mixFingerprint(h.doc, h.seqId)).not.toBe(hash);
+		const doc = h.doc;
+		expect(h.tx([{ type: 'sequence.updateSettings', settings: { monoClipPanLaw: '-6dB' } }]).ok).toBe(false);
+		expect(h.doc).toBe(doc);
+		const raw = JSON.parse(JSON.stringify(h.doc)) as ProjectDocument;
+		Object.values(raw.sequences)[0]!.settings.monoClipPanLaw = '-6dB';
+		expect(checkInvariants(raw).some((i) => i.invariant === 'INV-MIX')).toBe(true);
+		const { document, report } = repairDocument(raw, createCounterIdSource(99));
+		expect(Object.values(document.sequences)[0]!.settings.monoClipPanLaw).toBeUndefined();
+		expect(report.some((e) => e.action === 'drop-pan-law')).toBe(true);
 	});
 
 	it('mixFingerprint ignores keyframe ids (the same curve written again is the same mix)', () => {

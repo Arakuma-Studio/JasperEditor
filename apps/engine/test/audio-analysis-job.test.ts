@@ -2,7 +2,7 @@
 // the same measurement of an unchanged mix is kept, so asking again answers at once. The slow mix is a stand-in mixer
 // that stops halfway until the test lets it go on (no timing).
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { type AudioAnalyzeRequest, AudioAnalyzeRequestSchema, type AudioAnalyzeResult } from '@jasper/api';
@@ -12,7 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { renderMixdown } from '../src/audio/mixdown.ts';
 import { AudioService } from '../src/audio/service.ts';
 import { coreServices } from '../src/tools/services.ts';
-import { closeApps, DocBuilder, JSON_H, makeApp, register, type TestApp } from './helpers.ts';
+import { closeApps, DocBuilder, fixture, JSON_H, makeApp, register, type TestApp } from './helpers.ts';
 
 let app: TestApp;
 let tone: string;
@@ -42,6 +42,18 @@ async function toneDoc(on: TestApp) {
 	const m = d.addMedia(await register(on, tone));
 	d.tx([{ type: 'clip.place', source: { mediaId: m }, at: 0, tracks: { audio: 'A1' } }]);
 	return d;
+}
+
+/** Measures through the engine route and returns the result. */
+async function analyze(on: TestApp, d: DocBuilder, scope: unknown): Promise<AudioAnalyzeResult> {
+	const r = await on.inject({
+		method: 'POST',
+		url: '/api/audio/analyze?wait=1',
+		headers: JSON_H,
+		payload: { envelope: d.envelope(), sequenceId: d.seqId, scope, delivery: null },
+	});
+	expect(r.statusCode, r.body).toBe(200);
+	return r.json().result as AudioAnalyzeResult;
 }
 
 const request = (d: DocBuilder, scope: AudioAnalyzeRequest['scope']): AudioAnalyzeRequest =>
@@ -152,5 +164,49 @@ describe('loudness analysis jobs', () => {
 		expect(repeat.cached).toBe(false);
 		queue.cancel(repeat.job.id);
 		expect((await queue.wait(repeat.job.id)).state).toBe('cancelled');
+	});
+});
+
+describe('measured scopes', () => {
+	it('soloed tracks are measured over the range asked for, not the whole sequence', async () => {
+		const d = await toneDoc(app);
+		const whole = await analyze(app, d, { type: 'tracks', trackIds: ['A1'] });
+		expect(whole.range).toEqual({ startFrame: 0, endFrame: 120 });
+		// the same mix measured whole a moment ago: the kept result must not answer a ranged request
+		const ranged = await analyze(app, d, { type: 'tracks', trackIds: ['A1'], startFrame: 30, endFrame: 60 });
+		expect(ranged.range).toEqual({ startFrame: 30, endFrame: 60 });
+		expect(ranged.loudness.durationSec).toBe(1);
+	});
+
+	// Video team report (2026-11-17): a 0.52 s trim of `197. pop.mp3` measured a −23.9 dBFS peak per clip and played at
+	// about −12 dBFS in the export. A Pitch Shifter on another track gave the mix a read-ahead, which the per-clip
+	// measurement (the sum of the track inputs, no strips) discarded too: it dropped the clip's first samples, the pop.
+	it('a trimmed MP3 clip measures what the mix plays of it while a latent effect sits on another track', async () => {
+		const pop = fixture('pop-trim.mp3');
+		expect(existsSync(pop), 'pop-trim.mp3 needs pnpm fixtures with an FFmpeg that has libmp3lame').toBe(true);
+		const d = new DocBuilder();
+		const m = d.addMedia(await register(app, pop));
+		d.tx([
+			{
+				type: 'clip.place',
+				source: { mediaId: m },
+				sourceRange: { in: { seconds: 0.18 }, out: { seconds: 0.7 } },
+				at: 30,
+				tracks: { audio: 'A1' },
+			},
+		]);
+		const clipId = d.clipIds()[0]!;
+		d.tx([
+			{ type: 'audio.setGain', clipIds: [clipId], mode: 'set', db: -6.9 },
+			{ type: 'effect.add', target: { trackId: 'A2' }, effectId: 'jasper.audio.pitch-shifter' },
+		]);
+		const clip = d.doc.sequences[d.seqId]!.clips[clipId]!;
+		const measured = (await analyze(app, d, { type: 'clips', clipIds: [clipId] })).clips![clipId]!;
+		const played = (
+			await analyze(app, d, { type: 'range', startFrame: clip.start, endFrame: clip.start + clip.duration })
+		).loudness;
+		expect(played.samplePeakDb!).toBeGreaterThan(-13);
+		expect(Math.abs(measured.samplePeakDb! - played.samplePeakDb!)).toBeLessThan(0.5);
+		expect(Math.abs(measured.integratedLufs! - played.integratedLufs!)).toBeLessThan(0.5);
 	});
 });

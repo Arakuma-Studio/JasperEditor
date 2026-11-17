@@ -56,8 +56,13 @@ import { CaptionStyleSchema, ClipMarkerSchema, type Sequence, SequenceSchema } f
  * v16 (Corner Pin motion blur): shutter params on `jasper.corner-pin`; version bump only (docs/project-files.md).
  * v17 (Track Matte hold-out): Decontaminate Edges params on `jasper.track-matte-key`; version bump only, so v16 builds
  * — which would keep the params but composite the soft edges with the old background's colour — open v17 files
- * read-only (docs/project-files.md). */
-export const CURRENT_SCHEMA_VERSION = 18;
+ * read-only (docs/project-files.md).
+ * v18 (Pitch Shifter engines): `engine`, `quality`, `preserveFormants` on `jasper.audio.pitch-shifter`; version bump
+ * only (docs/project-files.md).
+ * v19 (mono clip pan law): `Sequence.settings.monoClipPanLaw` (`-3dB` default, `0dB`); `v18→v19` stores `0dB` on every
+ * sequence, so older projects sound as before, and v18 builds — which would play every mono clip at 0 dB — open v19
+ * files read-only (docs/project-files.md). */
+export const CURRENT_SCHEMA_VERSION = 19;
 
 const markSchema = z.looseObject({ flicks: nonNegInt() });
 export const SourceMarksSchema = z.looseObject({

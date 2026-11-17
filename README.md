@@ -909,6 +909,8 @@ jasper --timeout 540 call transcribe mediaId=med_1  # wait at most 9 min; past t
 jasper ui elements panel=timeline                # the live window (ui click id=…, ui screenshot --out w.png)
 jasper call get_mixer --json                     # any MCP tool
 jasper call render_frame at=2s --json            # images go to temp files (or --out); "images" lists the paths
+jasper call apply_commands @tx.json              # the arguments as one JSON object from a file (or - for stdin):
+generate-tx | jasper call apply_commands -       # for arguments too long for a command line ("Argument list too long")
 ```
 
 `--json` prints one JSON document per line; exit status 0 = ok, 1 = the command failed (its error code, message

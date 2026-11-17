@@ -2,20 +2,29 @@ import { z } from 'zod';
 import { RegisteredMediaSchema } from './media.ts';
 import { EnvelopeSchema } from './projects.ts';
 
+/**
+ * A range of sequence frames `[startFrame, endFrame)` (start default 0, end default the end of the last clip);
+ * `inOut: true` = the sequence In/Out instead. None of them = the whole sequence.
+ */
+const RangeFields = {
+	startFrame: z.number().int().min(0).optional(),
+	endFrame: z.number().int().min(1).optional(),
+	inOut: z.boolean().optional(),
+};
+
 /** What part of the sequence is measured. */
 export const AudioScopeSchema = z.discriminatedUnion('type', [
 	/** The whole sequence's mix (the Mix output, before loudness normalisation). */
 	z.object({ type: z.literal('sequence') }),
-	/** The mix over sequence frames `[startFrame, endFrame)`; `inOut: true` = the sequence In/Out. */
-	z.object({
-		type: z.literal('range'),
-		startFrame: z.number().int().min(0).optional(),
-		endFrame: z.number().int().min(1).optional(),
-		inOut: z.boolean().optional(),
-	}),
-	/** The mix with only these tracks playing (solo), through their strips and the Mix. */
-	z.object({ type: z.literal('tracks'), trackIds: z.array(z.string().min(1)).min(1) }),
-	/** Each clip on its own (pre-fader, with or without its gain/volume/fades/pan; see `levels`). */
+	/** The mix over a range (`RangeFields`). */
+	z.object({ type: z.literal('range'), ...RangeFields }),
+	/** The mix with only these tracks playing (solo), through their strips and the Mix, over a range or the whole sequence. */
+	z.object({ type: z.literal('tracks'), trackIds: z.array(z.string().min(1)).min(1), ...RangeFields }),
+	/**
+	 * Each clip on its own, pre-fader: what its track receives of it (the clip's decode and source range, gain, clip
+	 * effects, volume, fades and pan, as the mix plays them), before the track's fader, pan, effects and the Mix.
+	 * `levels: source` skips the gain, volume, fades and pan.
+	 */
 	z.object({ type: z.literal('clips'), clipIds: z.array(z.string().min(1)).min(1) }),
 ]);
 export type AudioScope = z.infer<typeof AudioScopeSchema>;

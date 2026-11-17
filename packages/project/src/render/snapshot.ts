@@ -37,6 +37,7 @@ import { clipEngines, type EngineId, isBoundedContent, kindCapabilities } from '
 import { expandLumetriSpatial } from '../registry/lumetri-spatial.ts';
 import { intrinsicBoxOf } from '../registry/properties.ts';
 import { type RenderRotoMatte, rotoIsStale, rotoStorePath } from '../roto/index.ts';
+import { type MonoClipPanLaw, monoClipPanLawOf } from '../schema/audio.ts';
 import type { Animatable, Keyframe, RGBA } from '../schema/common.ts';
 import type { ProjectDocument } from '../schema/document.ts';
 import type { Mask } from '../schema/mask.ts';
@@ -516,6 +517,12 @@ export type RenderAudioClip = {
 	 * the clip's frames; outside them the nearest run applies.
 	 */
 	nestGain?: { start: number; end: number; db: number }[];
+	/**
+	 * audio-mix (schema v19): a mono clip (one channel after its channel map) of a sequence whose
+	 * `settings.monoClipPanLaw` is `-3dB`: on a stereo track it pans with the constant-power law (0.7071 on both sides at
+	 * the centre). Absent: at unity on both sides, its pan a balance (`0dB`, and every clip that is not mono).
+	 */
+	monoPanLaw?: '-3dB';
 };
 
 /** social-comment §7.8: what an anime template draws besides its params (see `SnapshotOptions.templateAssets`). */
@@ -701,6 +708,16 @@ function rotosOf(
 		};
 	}
 	return Object.keys(out).length ? { rotos: out } : {};
+}
+
+/** `RenderAudioClip.monoPanLaw` of a media clip: set for a mono clip (its channel map, else its stream) at −3 dB. */
+function monoPanLawField(
+	law: MonoClipPanLaw,
+	map: readonly number[],
+	stream: { streamChannels?: number },
+): { monoPanLaw?: '-3dB' } {
+	const width = map.length > 0 ? map.length : stream.streamChannels;
+	return law === '-3dB' && width === 1 ? { monoPanLaw: '-3dB' } : {};
 }
 
 function streamChannelsOf(asset: MediaAsset | undefined, index: number): { streamChannels?: number } {
@@ -1318,6 +1335,7 @@ export function buildRenderSnapshot(
 		warnings.push({ clipId: s.transitionId, code: 'TRANSITION_SKIPPED', message: s.reason });
 
 	const audioMix = buildAudioMix(seq);
+	const panLaw = monoClipPanLawOf(seq.settings);
 	const played = playedTracks(audioMix);
 	const audible = seq.audioTracks.filter((t) => played.has(t.id));
 	// Caption tracks draw above every video track.
@@ -1444,6 +1462,7 @@ export function buildRenderSnapshot(
 			if (c.kind !== 'audio') continue;
 			useMedia(c.mediaId);
 			const x = audioTransitions.clips.get(c.id);
+			const stream = streamChannelsOf(doc.media[c.mediaId], c.channels.streamIndex);
 			audioClips.push({
 				clipId: c.id,
 				trackId: t.id,
@@ -1458,7 +1477,8 @@ export function buildRenderSnapshot(
 				pan: c.pan,
 				effects: c.effects,
 				track: { volumeDb: t.volumeDb ?? ZERO, pan: t.pan ?? ZERO },
-				...streamChannelsOf(doc.media[c.mediaId], c.channels.streamIndex),
+				...stream,
+				...monoPanLawField(panLaw, c.channels.map, stream),
 				...transitionFields(x),
 				...mediaTimeFields(c, doc),
 			});
@@ -1614,6 +1634,8 @@ export function flattenNestAudio(
 			effects: [...a.effects, ...nest.effects],
 			track: { volumeDb: track.volumeDb ?? ZERO, pan: track.pan ?? ZERO },
 			...(a.generator ? { generator: a.generator } : {}),
+			// the nested sequence's law: its clips are mixed by its settings
+			...(a.monoPanLaw ? { monoPanLaw: a.monoPanLaw } : {}),
 			...(runs.length === 1 && runs[0]!.db === 0 ? {} : { nestGain: runs }),
 			...(edgeFades.length ? { fades: edgeFades } : {}),
 		});
