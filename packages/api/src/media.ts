@@ -119,6 +119,12 @@ export const MediaStatusSchema = z.object({
 	mediaKey: z.string(),
 	status: z.enum(['online', 'missing', 'processing', 'error']),
 	/**
+	 * Why a `missing` medium is offline (Link Media): `changed` = the user's file is still at its path but its size or
+	 * mtime differs from the record (re-rendered in place; "Use the updated file" registers it again), `missing` =
+	 * nothing usable is there. Absent from older engines (read as `missing`).
+	 */
+	offline: z.enum(['missing', 'changed']).optional(),
+	/**
 	 * Every kind this engine knows; partial so a client accepts an engine from before a kind existed (pp-wma-preview:
 	 * `playback-audio`) instead of failing the whole status.
 	 */

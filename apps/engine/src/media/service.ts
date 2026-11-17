@@ -20,7 +20,7 @@ import { exists, safeFileName } from '../tools/fs.ts';
 import { KeyedMutex } from '../tools/mutex.ts';
 import { fingerprintFile, fingerprintHex, mediaKeyFor } from './fingerprint.ts';
 import { type ProbeResult, probeFile } from './probe.ts';
-import type { MediaRecord, MediaRegistry } from './registry.ts';
+import { fileState, type MediaRecord, type MediaRegistry } from './registry.ts';
 import { readSourceSidecar } from './sidecar.ts';
 
 type ProbeJobInput = { path: string; name: string };
@@ -424,13 +424,17 @@ export class MediaService {
 	async status(mediaKey: string): Promise<MediaStatus | null> {
 		const r = this.deps.registry.get(mediaKey);
 		if (!r) return null;
-		const online = (await this.deps.registry.availability(mediaKey)) === 'online';
+		const file = await fileState(r);
+		const online = file === 'unchanged';
 		let derivatives = await this.deps.derivatives.status(r);
 		// S04:CA-004: artifacts the cache GC removed (or that were never made) are made again when asked for.
 		if (online && this.deps.derivatives.regenerateMissing(r, derivatives).length)
 			derivatives = await this.deps.derivatives.status(r);
 		const busy = Object.values(derivatives).some((d) => d.state === 'queued' || d.state === 'running');
-		return { mediaKey, status: online ? (busy ? 'processing' : 'online') : 'missing', derivatives };
+		if (online) return { mediaKey, status: busy ? 'processing' : 'online', derivatives };
+		// Link Media: the user's own file re-rendered in place is `changed` (offered as "Use the updated file").
+		const offline = file === 'changed' && r.storage.type === 'path' ? 'changed' : 'missing';
+		return { mediaKey, status: 'missing', offline, derivatives };
 	}
 }
 

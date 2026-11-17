@@ -155,10 +155,14 @@ export function createMediaRuntimeSync(
 		}
 	};
 
-	const applyStatus = (s: Pick<MediaStatus, 'mediaKey' | 'status' | 'derivatives'>) => {
+	const applyStatus = (s: Pick<MediaStatus, 'mediaKey' | 'status' | 'derivatives' | 'offline'>) => {
 		const availability: MediaRuntime['availability'] =
 			s.status === 'missing' ? 'offline' : s.status === 'error' ? 'error' : 'online';
-		patchKey(s.mediaKey, { availability, playbackUrl: engine.mediaUrl(s.mediaKey) });
+		patchKey(s.mediaKey, {
+			availability,
+			offlineReason: s.status === 'missing' ? (s.offline ?? 'missing') : undefined,
+			playbackUrl: engine.mediaUrl(s.mediaKey),
+		});
 		for (const [kind, d] of Object.entries(s.derivatives ?? {}) as [DerivativeKind, ApiDerivativeStatus][]) {
 			applyDerivative(
 				s.mediaKey,
@@ -421,11 +425,11 @@ export function createMediaRuntimeSync(
 	syncVariants();
 	syncPosters();
 	const offDoc = session.on('doc.changed', (ev) => {
-		if (ev.created.some((id) => id.startsWith('med_')) || ev.deleted.some((id) => id.startsWith('med_')))
-			syncNew();
-		else if (ev.isUndo || ev.isRedo) syncNew();
-		// imports: Interpret Footage changed a media (or it was just added): its interpreted picture.
 		const touched = [...ev.created, ...ev.changed].filter((id) => id.startsWith('med_'));
+		// A relink (Link Media, Replace Footage) changes a medium's engine key: syncNew resolves the new key (it skips
+		// media whose key did not change).
+		if (touched.length || ev.deleted.some((id) => id.startsWith('med_')) || ev.isUndo || ev.isRedo) syncNew();
+		// imports: Interpret Footage changed a media (or it was just added): its interpreted picture.
 		if (touched.length || ev.isUndo || ev.isRedo) {
 			syncVariants(ev.isUndo || ev.isRedo ? undefined : touched);
 			syncPosters();

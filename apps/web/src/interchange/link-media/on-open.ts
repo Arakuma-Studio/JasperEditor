@@ -1,12 +1,13 @@
 // Premiere shows Link Media when a project opens with offline media (docs/wp-notes/link-media.md §5). Here: once per
-// opened project, when the engine has answered for every medium, a writable project with offline media opens the
-// Link Media dialog — after any dialog already on screen (recovery of unsaved changes) has closed.
+// opened project, when the engine has answered for every medium, a writable project whose edit USES offline media (a
+// clip in any sequence, nested ones included) opens the Link Media dialog — after any dialog already on screen
+// (recovery of unsaved changes) has closed. Offline media nothing uses only get the Project panel's quiet badge.
 import type { EngineClient } from '@jasper/engine-client';
 import type { EditorSession } from '@jasper/session';
 import { openDialog, openModals, subscribeModals } from '@jasper/ui';
 import { useEffect } from 'react';
 import { LINK_MEDIA_DIALOG } from '../dialogs.tsx';
-import { offlineMedia } from './LinkMediaDialog.tsx';
+import { offlineSummary } from './offline.ts';
 
 /** How long the media runtime may take to resolve before the check gives up (ms). */
 const SETTLE_LIMIT_MS = 120_000;
@@ -67,9 +68,9 @@ export function useLinkMediaOnOpen(session: EditorSession, engine: EngineClient,
 		let offModal: () => void = () => undefined;
 		const offResolved = whenResolved(session, () => {
 			checked.add(session);
-			if (!offlineMedia(session).length) return;
+			if (!offlineSummary(session).used.length) return;
 			offModal = whenNoModal(() => {
-				if (!offlineMedia(session).length || session.getState().readOnly) return;
+				if (!offlineSummary(session).used.length || session.getState().readOnly) return;
 				void openDialog(LINK_MEDIA_DIALOG, { session, engine, atOpen: true });
 			});
 		});
